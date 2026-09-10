@@ -186,6 +186,7 @@ build_devices_menu(desktop_t *app)
     int i, any;
 
     tiku_menu_clear(&app->devmenu);
+    tiku_menu_clear(&app->devsub);
     snprintf(app->devmenu.title, sizeof app->devmenu.title, "Devices");
     (void)tiku_menu_add(&app->devmenu, "This machine",
                         TIKU_TRK_CMD_DEVICE_HOST, 0, 0u, 1);
@@ -205,10 +206,10 @@ build_devices_menu(desktop_t *app)
         /* Where it is, then what it is: the port leads, because that is
          * what tells two boards of one processor apart. */
         if (desktop_board_port(app, leaf, port, sizeof port) > 0) {
-            const char *at = strrchr(port, '/');
+            char where[32];
 
-            snprintf(row, sizeof row, "%s \xC2\xBB %s",
-                     (at != NULL && at[1] != '\0') ? at + 1 : port, leaf);
+            device_port_where(port, where, sizeof where);
+            snprintf(row, sizeof row, "%s \xC2\xBB %s", where, leaf);
         } else {
             snprintf(row, sizeof row, "%s", leaf);
         }
@@ -217,15 +218,18 @@ build_devices_menu(desktop_t *app)
         if (strcmp(leaf, app->current_device) == 0) {
             tiku_menu_mark(&app->devmenu, cmd, 1);
         }
+        /* The same board again under Disconnect, so letting one go is
+         * the same reading as picking one. */
+        (void)tiku_menu_add(&app->devsub, row,
+                            TIKU_TRK_CMD_DEVICE_DROP_BASE + i, 0, 0u, 1);
+        tiku_menu_set_icon(&app->devsub,
+                           TIKU_TRK_CMD_DEVICE_DROP_BASE + i,
+                           "microcontroller");
     }
-    if (app->current_device[0] != '\0') {
-        char label[96];
-
-        snprintf(label, sizeof label, "Disconnect %s",
-                 app->current_device);
-        (void)tiku_menu_add(&app->devmenu, label,
-                            TIKU_TRK_CMD_DEVICE_DISCONNECT, 0, 0u, 1);
-    }
+    /* Disconnect opens ONTO the boards, so any of them can be let go --
+     * not only whichever happens to be current. */
+    (void)tiku_menu_add_submenu(&app->devmenu, "Disconnect", &app->devsub,
+                                any);
     any = 0;
     for (i = 0; i < app->ncandidates && i < TIKU_MOUNT_MAX; i++) {
         char row[128];
@@ -444,6 +448,16 @@ system_invoke(desktop_t *app, int command)
         }
         return 1;
     }
+    if (command >= TIKU_TRK_CMD_DEVICE_DROP_BASE &&
+        command < TIKU_TRK_CMD_DEVICE_DROP_BASE + TIKU_MOUNT_MAX) {
+        char leaf[64];
+
+        if (device_leaf_at(app, command - TIKU_TRK_CMD_DEVICE_DROP_BASE,
+                           leaf, sizeof leaf)) {
+            (void)device_disconnect(app, leaf);
+        }
+        return 1;
+    }
     if (command >= TIKU_TRK_CMD_DEVICE_CONNECT_BASE &&
         command < TIKU_TRK_CMD_DEVICE_CONNECT_BASE + TIKU_MOUNT_MAX) {
         int i = command - TIKU_TRK_CMD_DEVICE_CONNECT_BASE;
@@ -461,9 +475,6 @@ system_invoke(desktop_t *app, int command)
         (void)device_scan(app);
         desktop_board_look_begin(app, -1, NULL);   /* name them */
         app->dirty = 1;
-        return 1;
-    case TIKU_TRK_CMD_DEVICE_DISCONNECT:
-        (void)device_disconnect(app, app->current_device);
         return 1;
     case TIKU_TRK_CMD_ABOUT:
         (void)embed_open_or_raise(app, &tiku_trk_about_app);

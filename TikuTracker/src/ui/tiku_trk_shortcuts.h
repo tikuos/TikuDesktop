@@ -111,7 +111,6 @@ enum {
     /* The Devices menu on the global bar */
     TIKU_TRK_CMD_DEVICE_HOST,        /* be current on this machine */
     TIKU_TRK_CMD_DEVICE_SCAN,        /* re-list the bus */
-    TIKU_TRK_CMD_DEVICE_DISCONNECT,  /* let the current device go */
     /* Query-icon drop menu (Q-034) */
     TIKU_TRK_CMD_CREATE_QUERY,
     TIKU_TRK_CMD_CREATE_QUERY_TPL,
@@ -126,6 +125,7 @@ enum {
  */
 #define TIKU_TRK_CMD_DEVICE_PICK_BASE    0x2000
 #define TIKU_TRK_CMD_DEVICE_CONNECT_BASE 0x2100
+#define TIKU_TRK_CMD_DEVICE_DROP_BASE    0x2200
 
 /**
  * @brief What the enablement rules are asked about.

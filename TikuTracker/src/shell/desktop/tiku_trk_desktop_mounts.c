@@ -388,9 +388,9 @@ port_is_mounted(desktop_t *app, const char *port)
  *
  * @return how many were mounted.
  */
-/** @brief Where a candidate port really is: its tty leaf, ttyACM3. */
-static void
-device_where_of(const char *port, char *out, size_t max)
+/** @brief Where a port really is: its tty leaf, ttyACM3. */
+void
+device_port_where(const char *port, char *out, size_t max)
 {
     char real[PATH_MAX];
     const char *leaf;
@@ -435,7 +435,7 @@ device_candidate_record(desktop_t *app, const char *port, const char *name)
     i = app->ncandidates++;
     snprintf(app->candidates[i].port, sizeof app->candidates[i].port,
              "%s", port);
-    device_where_of(port, app->candidates[i].where,
+    device_port_where(port, app->candidates[i].where,
                     sizeof app->candidates[i].where);
     snprintf(app->candidates[i].name, sizeof app->candidates[i].name,
              "%s", (name != NULL) ? name : "");
@@ -544,6 +544,14 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
         return 0;
     }
     tiku_trail("mount %s on %s", prefix, port);
+    /* Connecting a board with nothing else current is a person saying
+     * where their work goes: it becomes the current device.  A second
+     * board joins it and does NOT take the place, because the one
+     * already chosen was chosen. */
+    if (app->current_device[0] == '\0' &&
+        strncmp(prefix, "/devices/", 9) == 0) {
+        device_set_current(app, prefix + 9);
+    }
     /* A board with a /gui has windows to show: a channel beside the
      * shell carries them.  The stat is answered from the manifest just
      * loaded, so it costs no wire. */
