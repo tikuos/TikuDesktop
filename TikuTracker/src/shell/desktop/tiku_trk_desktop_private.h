@@ -253,6 +253,14 @@ typedef struct desktop {
         char name[64];              /* its processor, once asked      */
     }                        candidates[TIKU_MOUNT_MAX];
     int                      ncandidates;   /* how many are on offer   */
+    /* What a connected board says about itself, for the About box: read
+     * on a worker and kept, so drawing never waits on the wire. */
+    struct {
+        char    name[64];           /* the board it describes         */
+        char    text[1024];         /* "label\tvalue" a line          */
+        int64_t at;                 /* when it was last answered      */
+        int     asking;             /* a read is out for it           */
+    }                        dev_stats[TIKU_MOUNT_MAX];
     /* The one program running on a board, and who asked for it: the
      * board's shell is held while it runs, so a second run would be a
      * second holder and there is only one line. */
@@ -774,6 +782,8 @@ void device_set_current(desktop_t *app, const char *name);
 void device_candidate_record(desktop_t *app, const char *port,
                              const char *label);
 void device_port_where(const char *port, char *out, size_t max);
+int  desktop_device_stats(desktop_t *app, const char *board, char *out,
+                          size_t max);
 void device_current_broadcast(desktop_t *app);
 int  mount_one(desktop_t *app, const char *port, int baud, const char *at,
                int probe);

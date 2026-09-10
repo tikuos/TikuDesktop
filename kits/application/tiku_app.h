@@ -150,6 +150,18 @@ typedef struct tiku_app_services {
     int (*current_device)(void *ctx, char *out, size_t max);
 
     /**
+     * @brief What @p board says about itself: one "label<TAB>value" a
+     *        line -- its processor, its speed, what memory it has left.
+     *
+     * Answered from what the shell KEPT, never from the wire, so a
+     * window drawing it never waits; a stale answer sets the shell
+     * asking and lands on a later frame.  Empty until the first one has.
+     * @return the bytes written.
+     */
+    int (*device_stats)(void *ctx, const char *board, char *out,
+                        size_t max);
+
+    /**
      * @brief Run @p program on the board called @p board.
      *
      * The shell hands it to that board's interpreter and TELLS the

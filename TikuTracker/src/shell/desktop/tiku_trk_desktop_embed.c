@@ -307,6 +307,23 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
     ew->window->frame.w = w + 2 * TIKU_WINDOW_BORDER;
     ew->window->frame.h = h + tiku_window_tab_h() +
                           2 * TIKU_WINDOW_BORDER;
+    /* The corner stays where it is -- unless the window now runs off
+     * the screen, where it was clamped when it opened: a window that
+     * grew on a later tick is owed the same.  Off the bottom is worse
+     * than a jump, because a window nobody can see is one nobody can
+     * close. */
+    if (ew->window->frame.y + ew->window->frame.h > app->surf->h) {
+        ew->window->frame.y = app->surf->h - ew->window->frame.h;
+    }
+    if (ew->window->frame.x + ew->window->frame.w > app->surf->w) {
+        ew->window->frame.x = app->surf->w - ew->window->frame.w;
+    }
+    if (ew->window->frame.y < 0) {
+        ew->window->frame.y = 0;
+    }
+    if (ew->window->frame.x < 0) {
+        ew->window->frame.x = 0;
+    }
     app->dirty = 1;
     return 0;
 }
@@ -528,6 +545,15 @@ embed_svc_current_device(void *ctx, char *out, size_t max)
     return (int)strlen(out);
 }
 
+/** @brief What a board says about itself, for an app that shows it. */
+static int
+embed_svc_device_stats(void *ctx, const char *board, char *out, size_t max)
+{
+    struct desktop_embed *slot = ctx;
+
+    return desktop_device_stats(slot->app, board, out, max);
+}
+
 /** @brief Run a program on a board, telling this slot what it prints. */
 static int
 embed_svc_board_run(void *ctx, const char *board, const char *program)
@@ -688,6 +714,7 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.clip_get = embed_svc_clip_get;
     slot->services.board_names = embed_svc_board_names;
     slot->services.current_device = embed_svc_current_device;
+    slot->services.device_stats = embed_svc_device_stats;
     slot->services.board_run = embed_svc_board_run;
     slot->services.board_input = embed_svc_board_input;
         slot->services.board_stop = embed_svc_board_stop;
