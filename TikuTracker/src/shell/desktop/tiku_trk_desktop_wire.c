@@ -284,21 +284,49 @@ probe_done(void *ctx)
     case DESKTOP_ASK_RECLAIM:
         desktop_board_reclaim_landed(app, p->dev);
         return;
-    default:
+    case DESKTOP_ASK_LOOK:
+    case DESKTOP_ASK_BOOT:
+        /* A scan LISTS, it does not mount: a board that answered is
+         * remembered as a candidate under its processor name, and the
+         * port is let go until the Devices menu connects it. */
+        if (p->dev != NULL) {
+            const tiku_identity_t *id =
+                tiku_backend_tiku_identity(p->dev);
+            char name[64];
+
+            /* The PROCESSOR names it, as the mount does: that is what a
+             * person choosing between two boards chooses by. */
+            if (id != NULL && id->mcu[0] != '\0') {
+                snprintf(name, sizeof name, "%s", id->mcu);
+            } else if (id != NULL && id->name[0] != '\0') {
+                snprintf(name, sizeof name, "%s", id->name);
+            } else {
+                device_mount_name(p->dev, app->backend, name,
+                                  sizeof name);
+            }
+            device_candidate_record(app, p->port, name);
+            tiku_backend_close(p->dev);
+        } else if (p->ch != NULL) {
+            tiku_channel_close(p->ch);
+        }
+        break;
+    default:                    /* DESKTOP_ASK_CONNECT: the one that mounts */
+        if (p->dev != NULL) {
+            (void)mount_landed(app, p->dev, p->port,
+                               p->at[0] ? p->at : NULL);
+        } else {
+            tiku_trail("  %s: nothing answered", p->port);
+            if (p->ch != NULL) {
+                (void)channel_keep(app, p->ch);
+            }
+        }
         break;
     }
-    if (p->dev != NULL) {
-        (void)mount_landed(app, p->dev, p->port, p->at[0] ? p->at : NULL);
-    } else {
-        tiku_trail("  %s: nothing answered", p->port);
-        if (p->ch != NULL) {
-            (void)channel_keep(app, p->ch);
+    if (app->look.going) {
+        app->look.landed++;
+        if (--app->look.pending <= 0 && p->kind == DESKTOP_ASK_LOOK) {
+            desktop_board_look_done(app);
         }
-    }
-    app->look.landed++;
-    if (--app->look.pending <= 0 && app->look.going &&
-        p->kind == DESKTOP_ASK_LOOK) {
-        desktop_board_look_done(app);
     }
 }
 

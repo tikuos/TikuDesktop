@@ -388,44 +388,129 @@ port_is_mounted(desktop_t *app, const char *port)
  *
  * @return how many were mounted.
  */
+/** @brief Where a candidate port really is: its tty leaf, ttyACM3. */
+static void
+device_where_of(const char *port, char *out, size_t max)
+{
+    char real[PATH_MAX];
+    const char *leaf;
+
+    if (realpath(port, real) != NULL &&
+        (leaf = strrchr(real, '/')) != NULL && leaf[1] != '\0') {
+        snprintf(out, max, "%s", leaf + 1);         /* ttyACM3 */
+        return;
+    }
+    leaf = strrchr(port, '/');
+    snprintf(out, max, "%s",
+             (leaf != NULL && leaf[1] != '\0') ? leaf + 1 : port);
+}
+
+/**
+ * @brief Remember a port a scan found but nothing mounted: the Devices
+ *        menu offers it to connect.
+ *
+ * A scan knows only where the port is; the probe that follows calls this
+ * again with the processor @p name, which is what a person chooses by.
+ */
+void
+device_candidate_record(desktop_t *app, const char *port, const char *name)
+{
+    int i;
+
+    if (app == NULL || port == NULL || port[0] == '\0') {
+        return;
+    }
+    for (i = 0; i < app->ncandidates; i++) {
+        if (strcmp(app->candidates[i].port, port) == 0) {
+            if (name != NULL && name[0] != '\0') {
+                snprintf(app->candidates[i].name,
+                         sizeof app->candidates[i].name, "%s", name);
+            }
+            return;
+        }
+    }
+    if (app->ncandidates >= TIKU_MOUNT_MAX) {
+        return;
+    }
+    i = app->ncandidates++;
+    snprintf(app->candidates[i].port, sizeof app->candidates[i].port,
+             "%s", port);
+    device_where_of(port, app->candidates[i].where,
+                    sizeof app->candidates[i].where);
+    snprintf(app->candidates[i].name, sizeof app->candidates[i].name,
+             "%s", (name != NULL) ? name : "");
+}
+
+/**
+ * @brief Enumerate the ports on the bus into the candidate list, without
+ *        opening any.  A port already mounted is connected, not a
+ *        candidate.  Returns how many candidates are on offer.
+ */
+int
+device_scan(desktop_t *app)
+{
+    char scan[TIKU_MOUNT_MAX][256];
+    int found, i;
+
+    if (app == NULL) {
+        return 0;
+    }
+    app->ncandidates = 0;
+    found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
+    for (i = 0; i < found && i < TIKU_MOUNT_MAX; i++) {
+        if (port_is_mounted(app, scan[i])) {
+            continue;
+        }
+        device_candidate_record(app, scan[i], NULL);
+    }
+    return app->ncandidates;
+}
+
+/**
+ * @brief Bring up the devices at boot.
+ *
+ * A port named on the command line is a request to mount THAT board now,
+ * and the boot waits for it.  With no port named the bus is only LISTED
+ * -- a board becomes ours when the Devices menu connects it, never by
+ * merely being found.
+ *
+ * @return how many boards are mounted (the scan path returns how many
+ *         are on offer).
+ */
 int
 mount_devices(desktop_t *app, const char *port, int baud, const char *at)
 {
-    char scan[TIKU_MOUNT_MAX][256];
-    int found, i, mounted = 0;
+    int i, mounted = 0;
 
     app->board_baud = baud;     /* what a board let go is found again at */
     if (port != NULL && port[0] != '\0') {
-        snprintf(scan[0], sizeof scan[0], "%s", port);
-        found = 1;
-    } else {
-        found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
-    }
-    /* Every port asked at once; the boot waits for the answers, since
-     * the loop is not turning yet and the splash is honest about it.  A
-     * port named on the command line is known to be a board and is
-     * waited for; one merely found is only asked. */
-    app->look.going = 1;
-    app->look.session = -1;
-    app->look.slot = NULL;
-    app->look.pending = 0;
-    app->look.count = 0;
-    app->look.landed = 0;
-    for (i = 0; i < found && i < TIKU_MOUNT_MAX; i++) {
-        if (desktop_wire_probe(app, DESKTOP_ASK_BOOT, scan[i], baud,
-                               !(port != NULL && port[0] != '\0'), at) == 0) {
+        /* A port named on the command line is a request to mount THAT
+         * board now; the boot waits for the answer since the loop is
+         * not turning yet and the splash is honest about it. */
+        app->look.going = 1;
+        app->look.session = -1;
+        app->look.slot = NULL;
+        app->look.pending = 0;
+        app->look.count = 0;
+        app->look.landed = 0;
+        if (desktop_wire_probe(app, DESKTOP_ASK_CONNECT, port, baud, 0,
+                               at) == 0) {
             app->look.pending++;
             app->look.count++;
         }
-    }
-    desktop_wire_wait(app, &app->look.pending, 60000L);
-    app->look.going = 0;
-    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
-        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+        desktop_wire_wait(app, &app->look.pending, 60000L);
+        app->look.going = 0;
+        for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+            const char *prefix = tiku_mount_prefix_at(app->backend, i);
 
-        mounted += (prefix != NULL && strncmp(prefix, "/devices/", 9) == 0);
+            mounted += (prefix != NULL &&
+                        strncmp(prefix, "/devices/", 9) == 0);
+        }
+        return mounted;
     }
-    return mounted;
+    /* No port named: list what is on the bus and mount nothing.  A board
+     * becomes ours only when the Devices menu connects it. */
+    return device_scan(app);
 }
 
 /**

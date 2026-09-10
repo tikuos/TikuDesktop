@@ -91,7 +91,11 @@ static const tiku_trk_pref_t table[] = {
     { "sound.window-minimize.clip", T, TIKU_TRK_PAGE_NONE, 0, 0, 0, "" },
     { "sound.window-zoom.clip",  T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
     { "sound.window-activate.clip", T, TIKU_TRK_PAGE_NONE, 0, 0, 0, "" },
-    { "sound.shutdown.clip",     T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" }
+    { "sound.shutdown.clip",     T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    /* The device the Devices menu was current on, remembered by name and
+     * by the port that reconnects it.  No control of their own. */
+    { "CurrentDevice",           T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    { "CurrentDevicePort",       T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" }
 };
 
 #define NPREF ((int)(sizeof table / sizeof table[0]))

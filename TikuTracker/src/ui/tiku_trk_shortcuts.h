@@ -108,11 +108,24 @@ enum {
     TIKU_TRK_CMD_APP_ABOUT,          /* the focused program's, hoisted */
     TIKU_TRK_CMD_SCREENSHOT,         /* save the screen to a PNG */
     TIKU_TRK_CMD_SHUTDOWN,
+    /* The Devices menu on the global bar */
+    TIKU_TRK_CMD_DEVICE_HOST,        /* be current on this machine */
+    TIKU_TRK_CMD_DEVICE_SCAN,        /* re-list the bus */
+    TIKU_TRK_CMD_DEVICE_DISCONNECT,  /* let the current device go */
     /* Query-icon drop menu (Q-034) */
     TIKU_TRK_CMD_CREATE_QUERY,
     TIKU_TRK_CMD_CREATE_QUERY_TPL,
     TIKU_TRK_CMD_CANCEL
 };
+
+/*
+ * The Devices menu's dynamic rows: one command per connected device
+ * (PICK), one per available port (CONNECT).  High, fixed bases so the
+ * index added to them never collides with the enum above or with a
+ * folder command.
+ */
+#define TIKU_TRK_CMD_DEVICE_PICK_BASE    0x2000
+#define TIKU_TRK_CMD_DEVICE_CONNECT_BASE 0x2100
 
 /**
  * @brief What the enablement rules are asked about.

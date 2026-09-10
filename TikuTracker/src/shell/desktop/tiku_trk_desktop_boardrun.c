@@ -101,8 +101,16 @@ board_count(desktop_t *app)
 static tiku_backend_t *
 board_named(desktop_t *app, const char *name)
 {
+    const char *want = name;
+    tiku_backend_t *first = NULL;
     int i, slots = tiku_mount_slots(app->backend);
 
+    /* No name asked: steer to the current device when one is set,
+     * otherwise the first board, as before. */
+    if ((want == NULL || want[0] == '\0') &&
+        app->current_device[0] != '\0') {
+        want = app->current_device;
+    }
     for (i = 0; i < slots; i++) {
         const char *prefix = tiku_mount_prefix_at(app->backend, i);
         tiku_backend_t *b = tiku_mount_at(app->backend, i);
@@ -111,12 +119,17 @@ board_named(desktop_t *app, const char *name)
             strncmp(prefix, "/devices/", 9) != 0) {
             continue;
         }
-        if (name == NULL || name[0] == '\0' ||
-            strcmp(leaf_of(prefix), name) == 0) {
-            return b;           /* no name asked: the first board */
+        if (first == NULL) {
+            first = b;
+        }
+        if (want == NULL || want[0] == '\0' ||
+            strcmp(leaf_of(prefix), want) == 0) {
+            return b;
         }
     }
-    return NULL;
+    /* An empty ask still falls back to the first board; a named one that
+     * is not here does not. */
+    return (name == NULL || name[0] == '\0') ? first : NULL;
 }
 
 /** @brief The channel of the board mounted at @p prefix, or NULL. */
@@ -640,6 +653,89 @@ desktop_board_look_done(desktop_t *app)
         app->look.again = 0;
         desktop_board_look_begin(app, session, slot);
     }
+}
+
+/**
+ * @brief Tell every open application, and every remote session, that the
+ *        current device changed, so a window defaulting to it re-reads.
+ */
+void
+device_current_broadcast(desktop_t *app)
+{
+    int e;
+
+    if (app == NULL) {
+        return;
+    }
+    for (e = 0; e < TIKU_TRK_EMBED_MAX; e++) {
+        if (app->embeds[e].running && app->embeds[e].descriptor != NULL &&
+            app->embeds[e].descriptor->board_said != NULL) {
+            app->embeds[e].descriptor->board_said(app->embeds[e].state,
+                TIKU_APP_BOARD_CURRENT, app->current_device);
+        }
+    }
+    desktop_board_names_tell(app);
+    app->dirty = 1;
+}
+
+/**
+ * @brief Make @p name the current device (empty for this machine),
+ *        remember it and its port, and tell everyone who defaults to it.
+ */
+void
+device_set_current(desktop_t *app, const char *name)
+{
+    tiku_trk_prefs_t *prefs;
+
+    if (app == NULL) {
+        return;
+    }
+    snprintf(app->current_device, sizeof app->current_device, "%s",
+             (name != NULL) ? name : "");
+    app->current_device_port[0] = '\0';
+    if (app->current_device[0] != '\0') {
+        (void)desktop_board_port(app, app->current_device,
+                                 app->current_device_port,
+                                 sizeof app->current_device_port);
+    }
+    prefs = prefs_model(app);
+    tiku_trk_prefs_set_text(prefs, "CurrentDevice", app->current_device);
+    tiku_trk_prefs_set_text(prefs, "CurrentDevicePort",
+                            app->current_device_port);
+    (void)tiku_trk_prefs_save(prefs, app->prefs_window.path);
+    device_current_broadcast(app);
+}
+
+/** @brief Mount the board on @p port and, when it lands, it can be made
+ *         current.  The one path that adds a /devices entry now. */
+int
+device_connect(desktop_t *app, const char *port)
+{
+    int baud;
+
+    if (app == NULL || port == NULL || port[0] == '\0') {
+        return -1;
+    }
+    baud = (app->board_baud > 0) ? app->board_baud : 115200;
+    return desktop_wire_probe(app, DESKTOP_ASK_CONNECT, port, baud, 0, NULL);
+}
+
+/** @brief Let a board go; if it was the current device, fall back to
+ *         this machine. */
+int
+device_disconnect(desktop_t *app, const char *name)
+{
+    char prefix[TIKU_PATH_MAX];
+
+    if (app == NULL || name == NULL || name[0] == '\0') {
+        return -1;
+    }
+    if (app->current_device[0] != '\0' &&
+        strcmp(app->current_device, name) == 0) {
+        device_set_current(app, "");
+    }
+    snprintf(prefix, sizeof prefix, "/devices/%s", name);
+    return desktop_board_unmount(app, prefix);
 }
 
 /**

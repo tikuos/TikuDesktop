@@ -661,6 +661,37 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         /* The chime has played by now on the kit's own defaults; from
          * here the settings file says which moments sound. */
         tiku_trk_soundprefs_apply(prefs_model(app));
+        /* The device the desktop was current on last time: remembered by
+         * name and port, and its ONE port reconnected here -- not a sweep
+         * of the bus, so explicit-connect still holds. */
+        {
+            tiku_trk_prefs_t *prefs = prefs_model(app);
+            const char *dev = tiku_trk_prefs_text(prefs, "CurrentDevice");
+            const char *dport =
+                tiku_trk_prefs_text(prefs, "CurrentDevicePort");
+
+            snprintf(app->current_device, sizeof app->current_device,
+                     "%s", (dev != NULL) ? dev : "");
+            snprintf(app->current_device_port,
+                     sizeof app->current_device_port, "%s",
+                     (dport != NULL) ? dport : "");
+            if (app->current_device_port[0] != '\0') {
+                app->look.going = 1;
+                app->look.pending = 0;
+                app->look.session = -1;
+                app->look.slot = NULL;
+                if (device_connect(app, app->current_device_port) == 0) {
+                    app->look.pending++;
+                }
+                desktop_wire_wait(app, &app->look.pending, 5000L);
+                app->look.going = 0;
+            }
+            /* Ask what is on the bus for its name, so the Devices menu
+             * reads "nrf54l15 (ttyACM3)" and not a bare port.  On
+             * workers: the answers land as the loop starts turning, and
+             * a port already connected is left alone. */
+            desktop_board_look_begin(app, -1, NULL);
+        }
     }
     tiku_trk_folder_file_actions_init(&app->file_actions, app->fs,
         app->backend, &app->clip,

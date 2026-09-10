@@ -237,6 +237,22 @@ typedef struct desktop {
         uint32_t             next_id;   /* the next window id to hand out */
         int                  running;   /* the slot holds an application  */
     } embeds[TIKU_TRK_EMBED_MAX];
+    /* The device the desktop is CURRENT on: the mount leaf a board
+     * answers to, empty for this machine.  Apps default to it, and it
+     * is remembered across runs.  A board mounts only when connected,
+     * so this can name one that is not here yet -- it reconnects when
+     * the board comes back. */
+    char                     current_device[64];
+    char                     current_device_port[256]; /* to reconnect it */
+    /* Ports a scan turned up that are not mounted: what the Devices
+     * menu offers to connect.  The label is the by-id leaf until a
+     * probe upgrades it to the processor name. */
+    struct {
+        char port[256];             /* the device node to open        */
+        char where[32];             /* the tty leaf: ttyACM3          */
+        char name[64];              /* its processor, once asked      */
+    }                        candidates[TIKU_MOUNT_MAX];
+    int                      ncandidates;   /* how many are on offer   */
     /* The one program running on a board, and who asked for it: the
      * board's shell is held while it runs, so a second run would be a
      * second holder and there is only one line. */
@@ -352,6 +368,7 @@ typedef struct desktop {
      * reaches into a window's widgets. */
     int                  gbar_on;       /* -1 until the first sync      */
     tiku_menu_t      sysmenu;           /* the system menu at the left  */
+    tiku_menu_t      devmenu;           /* the Devices menu beside it   */
     tiku_menu_t      gmenu[TIKU_MENUSET_MENUS];     /* the published menus */
     tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];   /* their submenus      */
     tiku_menubar_t   gbar;              /* the strip they hang from     */
@@ -749,6 +766,13 @@ void desktop_board_reclaim_done(desktop_t *app);
 void desktop_board_say(desktop_t *app, int session,
                        struct desktop_embed *slot, int what,
                        const char *text);
+int  device_scan(desktop_t *app);
+int  device_connect(desktop_t *app, const char *port);
+int  device_disconnect(desktop_t *app, const char *name);
+void device_set_current(desktop_t *app, const char *name);
+void device_candidate_record(desktop_t *app, const char *port,
+                             const char *label);
+void device_current_broadcast(desktop_t *app);
 int  mount_one(desktop_t *app, const char *port, int baud, const char *at,
                int probe);
 int  desktop_board_release(desktop_t *app, const char *name);
@@ -801,7 +825,10 @@ void begin_shutdown(desktop_t *app);
 
 /* tiku_trk_desktop_wire.c */
 typedef struct desktop_wire desktop_wire_t;
-enum { DESKTOP_ASK_LOOK, DESKTOP_ASK_BOOT, DESKTOP_ASK_RECLAIM };
+/* LOOK and BOOT scan without mounting (they record a candidate and let
+ * the port go); CONNECT is the one kind that mounts what answered. */
+enum { DESKTOP_ASK_LOOK, DESKTOP_ASK_BOOT, DESKTOP_ASK_RECLAIM,
+       DESKTOP_ASK_CONNECT };
 int  desktop_wire_probe(desktop_t *app, int kind, const char *port,
                         int baud, int probe, const char *at);
 void desktop_wire_wait(desktop_t *app, int *pending, long ms);

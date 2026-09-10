@@ -140,6 +140,117 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
     tiku_window_publish_menus(fl->win, &set, folder_menu_pick, app);
 }
 
+/** @brief The i-th connected device leaf, in the same name order the
+ *         Devices menu is built in, so a pick's index maps back. */
+static int
+device_leaf_at(desktop_t *app, int idx, char *out, size_t max)
+{
+    char names[512];
+    const char *p = names;
+    int i = 0;
+
+    out[0] = '\0';
+    if (idx < 0 || desktop_board_names(app, names, sizeof names) <= 0) {
+        return 0;
+    }
+    while (*p != '\0') {
+        const char *nl = strchr(p, '\n');
+        size_t len = (nl != NULL) ? (size_t)(nl - p) : strlen(p);
+
+        if (i == idx) {
+            if (len >= max) {
+                len = max - 1u;
+            }
+            memcpy(out, p, len);
+            out[len] = '\0';
+            return 1;
+        }
+        i++;
+        if (nl == NULL) {
+            break;
+        }
+        p = nl + 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief The Devices menu: this machine, the boards connected now, the
+ *        ports on offer to connect, and a rescan.  A connected row picks
+ *        the current device; an available row connects and mounts it.
+ */
+static void
+build_devices_menu(desktop_t *app)
+{
+    char leaf[64];
+    int i, any;
+
+    tiku_menu_clear(&app->devmenu);
+    snprintf(app->devmenu.title, sizeof app->devmenu.title, "Devices");
+    (void)tiku_menu_add(&app->devmenu, "This machine",
+                        TIKU_TRK_CMD_DEVICE_HOST, 0, 0u, 1);
+    tiku_menu_mark(&app->devmenu, TIKU_TRK_CMD_DEVICE_HOST,
+                   app->current_device[0] == '\0');
+    any = 0;
+    for (i = 0; device_leaf_at(app, i, leaf, sizeof leaf) &&
+                i < TIKU_MOUNT_MAX; i++) {
+        int cmd = TIKU_TRK_CMD_DEVICE_PICK_BASE + i;
+        char row[128], port[256];
+
+        if (!any) {
+            (void)tiku_menu_add_separator(&app->devmenu);
+            any = 1;
+        }
+        /* Where it is, then what it is: the port leads, because that is
+         * what tells two boards of one processor apart. */
+        if (desktop_board_port(app, leaf, port, sizeof port) > 0) {
+            const char *at = strrchr(port, '/');
+
+            snprintf(row, sizeof row, "%s \xC2\xBB %s",
+                     (at != NULL && at[1] != '\0') ? at + 1 : port, leaf);
+        } else {
+            snprintf(row, sizeof row, "%s", leaf);
+        }
+        (void)tiku_menu_add(&app->devmenu, row, cmd, 0, 0u, 1);
+        if (strcmp(leaf, app->current_device) == 0) {
+            tiku_menu_mark(&app->devmenu, cmd, 1);
+        }
+    }
+    if (app->current_device[0] != '\0') {
+        char label[96];
+
+        snprintf(label, sizeof label, "Disconnect %s",
+                 app->current_device);
+        (void)tiku_menu_add(&app->devmenu, label,
+                            TIKU_TRK_CMD_DEVICE_DISCONNECT, 0, 0u, 1);
+    }
+    any = 0;
+    for (i = 0; i < app->ncandidates && i < TIKU_MOUNT_MAX; i++) {
+        char row[128];
+
+        if (port_is_mounted(app, app->candidates[i].port)) {
+            continue;           /* already connected, shown above */
+        }
+        /* Only a port a board ANSWERED on is worth offering: a name is
+         * the proof one is there.  The ports a debug probe puts up
+         * beside the console answer nothing and are not devices. */
+        if (app->candidates[i].name[0] == '\0') {
+            continue;
+        }
+        if (!any) {
+            (void)tiku_menu_add_separator(&app->devmenu);
+            any = 1;
+        }
+        snprintf(row, sizeof row, "%s \xC2\xBB %s",
+                 app->candidates[i].where, app->candidates[i].name);
+        (void)tiku_menu_add(&app->devmenu, row,
+                            TIKU_TRK_CMD_DEVICE_CONNECT_BASE + i, 0, 0u, 1);
+    }
+    (void)tiku_menu_add_separator(&app->devmenu);
+    (void)tiku_menu_add(&app->devmenu, "Scan", TIKU_TRK_CMD_DEVICE_SCAN,
+                        0, 0u, 1);
+}
+
 /** @brief Rebuild the strip's scratch menus from the PUBLISHED data. */
 void
 rebuild_global_bar(desktop_t *app)
@@ -296,6 +407,12 @@ rebuild_global_bar(desktop_t *app)
         }
         (void)tiku_menubar_add(&app->gbar, to);
     }
+    /* Devices last, at the right end: the current device is a global
+     * fact so its menu is always on the bar, and putting it after the
+     * focused window's own menus keeps their places (and the clicks
+     * aimed at them) exactly where they were. */
+    build_devices_menu(app);
+    (void)tiku_menubar_add(&app->gbar, &app->devmenu);
     app->gbar.open = was_open;
 }
 
@@ -311,7 +428,37 @@ rebuild_global_bar(desktop_t *app)
 static int
 system_invoke(desktop_t *app, int command)
 {
+    if (command >= TIKU_TRK_CMD_DEVICE_PICK_BASE &&
+        command < TIKU_TRK_CMD_DEVICE_PICK_BASE + TIKU_MOUNT_MAX) {
+        char leaf[64];
+
+        if (device_leaf_at(app, command - TIKU_TRK_CMD_DEVICE_PICK_BASE,
+                           leaf, sizeof leaf)) {
+            device_set_current(app, leaf);
+        }
+        return 1;
+    }
+    if (command >= TIKU_TRK_CMD_DEVICE_CONNECT_BASE &&
+        command < TIKU_TRK_CMD_DEVICE_CONNECT_BASE + TIKU_MOUNT_MAX) {
+        int i = command - TIKU_TRK_CMD_DEVICE_CONNECT_BASE;
+
+        if (i >= 0 && i < app->ncandidates) {
+            (void)device_connect(app, app->candidates[i].port);
+        }
+        return 1;
+    }
     switch (command) {
+    case TIKU_TRK_CMD_DEVICE_HOST:
+        device_set_current(app, "");
+        return 1;
+    case TIKU_TRK_CMD_DEVICE_SCAN:
+        (void)device_scan(app);
+        desktop_board_look_begin(app, -1, NULL);   /* name them */
+        app->dirty = 1;
+        return 1;
+    case TIKU_TRK_CMD_DEVICE_DISCONNECT:
+        (void)device_disconnect(app, app->current_device);
+        return 1;
     case TIKU_TRK_CMD_ABOUT:
         (void)embed_open_or_raise(app, &tiku_trk_about_app);
         return 1;
@@ -359,7 +506,7 @@ void
 global_or_invoke(desktop_t *app, folder_t *ffl, int command)
 {
     if (app->gbar_open >= 0 && app->gbar_from != NULL &&
-        app->popup != &app->sysmenu &&
+        app->popup != &app->sysmenu && app->popup != &app->devmenu &&
         app->gbar_from->menu_pick != NULL) {
         app->gbar_from->menu_pick(app->gbar_from, command,
                                   app->gbar_from->menu_pick_context);

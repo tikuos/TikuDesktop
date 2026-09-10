@@ -142,6 +142,14 @@ typedef struct tiku_app_services {
     int (*board_names)(void *ctx, char *out, size_t max);
 
     /**
+     * @brief The current device the desktop is on, empty for this
+     *        machine.  An application with no board of its own defaults
+     *        its work to this; it changes as board_said(BOARD_CURRENT).
+     * @return the bytes written.
+     */
+    int (*current_device)(void *ctx, char *out, size_t max);
+
+    /**
      * @brief Run @p program on the board called @p board.
      *
      * The shell hands it to that board's interpreter and TELLS the
@@ -328,6 +336,8 @@ typedef struct {
 #define TIKU_APP_BOARD_RECLAIMED 7  /**< taken back; text = the board   */
 #define TIKU_APP_BOARD_LOOKED   8   /**< looked; text = how many there are */
 #define TIKU_APP_BOARD_RUNNING  9   /**< sent, and now running          */
+#define TIKU_APP_BOARD_CURRENT  10  /**< the current device changed;
+                                     *   text = its name, empty for host */
 #define TIKU_APP_EXPORT "tiku_app_v1"
 
 typedef struct {
