@@ -189,6 +189,7 @@ build_devices_menu(desktop_t *app)
     snprintf(app->devmenu.title, sizeof app->devmenu.title, "Devices");
     (void)tiku_menu_add(&app->devmenu, "This machine",
                         TIKU_TRK_CMD_DEVICE_HOST, 0, 0u, 1);
+    tiku_menu_set_icon(&app->devmenu, TIKU_TRK_CMD_DEVICE_HOST, "computer");
     tiku_menu_mark(&app->devmenu, TIKU_TRK_CMD_DEVICE_HOST,
                    app->current_device[0] == '\0');
     any = 0;
@@ -212,6 +213,7 @@ build_devices_menu(desktop_t *app)
             snprintf(row, sizeof row, "%s", leaf);
         }
         (void)tiku_menu_add(&app->devmenu, row, cmd, 0, 0u, 1);
+        tiku_menu_set_icon(&app->devmenu, cmd, "microcontroller");
         if (strcmp(leaf, app->current_device) == 0) {
             tiku_menu_mark(&app->devmenu, cmd, 1);
         }
@@ -245,10 +247,14 @@ build_devices_menu(desktop_t *app)
                  app->candidates[i].where, app->candidates[i].name);
         (void)tiku_menu_add(&app->devmenu, row,
                             TIKU_TRK_CMD_DEVICE_CONNECT_BASE + i, 0, 0u, 1);
+        tiku_menu_set_icon(&app->devmenu,
+                           TIKU_TRK_CMD_DEVICE_CONNECT_BASE + i,
+                           "microcontroller");
     }
     (void)tiku_menu_add_separator(&app->devmenu);
     (void)tiku_menu_add(&app->devmenu, "Scan", TIKU_TRK_CMD_DEVICE_SCAN,
                         0, 0u, 1);
+    tiku_menu_set_icon(&app->devmenu, TIKU_TRK_CMD_DEVICE_SCAN, "magnifier");
 }
 
 /** @brief Rebuild the strip's scratch menus from the PUBLISHED data. */

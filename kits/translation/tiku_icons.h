@@ -63,6 +63,17 @@ const tiku_icon_t *tiku_icons_find(const char *name);
 int tiku_icons_load_dir(const char *dir);
 
 /**
+ * @brief Take one icon from memory into the set, under @p name.
+ *
+ * How a program that BAKES its own art puts it beside Haiku's, without a
+ * directory to read: the blob is copied, so static bytes may be handed
+ * over.  A name already in the set is replaced and keeps its place.
+ *
+ * @return 1 when it was taken, 0 when it was not.
+ */
+int tiku_icons_add(const char *name, const void *data, size_t len);
+
+/**
  * @brief Render @p name at @p size x @p size, once per size.
  *
  * The result is premultiplied 0xAARRGGBB owned by the cache, valid until

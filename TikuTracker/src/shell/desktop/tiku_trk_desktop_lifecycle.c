@@ -15,6 +15,7 @@
 #include "tiku_trail.h"
 
 #include "tiku_link_tcp.h"          /* the port a board dials, for -listen */
+#include "tiku_icons_tiku.h"        /* the art TikuOS bakes of its own */
 
 /** @brief A script's resize: the same path a window manager's takes. */
 static int
@@ -599,6 +600,8 @@ boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp
     tiku_trk_folder_menu_init(&app->folder_menu, &app->menus, &app->clip,
         app->backend, app->fs, &app->types, &app->launcher, &app->bar_fl,
         &app->bar_open);
+    /* TikuOS's own art joins Haiku's before anything draws a menu. */
+    (void)tiku_icons_tiku_register();
     tiku_menu_set_icon_painter(paint_menu_icon);
     tiku_trk_deskbar_set_menu_icon_painter(app->deskbar, deskbar_menu_icon,
                                            app);

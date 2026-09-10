@@ -1822,13 +1822,15 @@ icons_forget(int index)
 }
 
 /** @brief Take one file as the icon named @p name.  @return nonzero. */
+static int icons_install(unsigned char *blob, size_t size,
+                         const char *name);
+
 static int
 icons_take(const char *path, const char *name)
 {
     unsigned char *blob;
     long size;
     FILE *f = fopen(path, "rb");
-    int i, at = -1;
 
     if (f == NULL) {
         return 0;
@@ -1845,6 +1847,18 @@ icons_take(const char *path, const char *name)
         return 0;
     }
     (void)fclose(f);
+    return icons_install(blob, (size_t)size, name);
+}
+
+/**
+ * @brief Put @p blob (already this set's to free) into the live table
+ *        under @p name.  @return 1 when it was taken.
+ */
+static int
+icons_install(unsigned char *blob, size_t size, const char *name)
+{
+    int i, at = -1;
+
     /* A file replaces the art of the same name and keeps its place, so
      * everything already drawing "folder" draws the new one. */
     for (i = 0; i < tiku_icon_live_count; i++) {
@@ -1879,8 +1893,35 @@ icons_take(const char *path, const char *name)
         tiku_icon_live[at].name = kept;
     }
     tiku_icon_live[at].data = blob;
-    tiku_icon_live[at].len = (size_t)size;
+    tiku_icon_live[at].len = size;
     return 1;
+}
+
+/**
+ * @brief Take one icon from memory into the set, under @p name.
+ *
+ * The blob is COPIED, so a caller may hand over static bytes and the set
+ * frees what it holds the same way it frees what it read from a file.
+ *
+ * @return 1 when it was taken, 0 when it was not.
+ */
+int
+tiku_icons_add(const char *name, const void *data, size_t len)
+{
+    unsigned char *blob;
+
+    icons_wake();
+    if (name == NULL || data == NULL || len == 0u || len > 256u * 1024u) {
+        return 0;
+    }
+    blob = malloc(len);
+    if (blob == NULL) {
+        return 0;
+    }
+    memcpy(blob, data, len);
+    /* install owns the blob from here, and frees it itself when it
+     * cannot take it -- so there is nothing to free on this side. */
+    return icons_install(blob, len, name);
 }
 
 int
