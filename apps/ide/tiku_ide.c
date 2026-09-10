@@ -1725,6 +1725,15 @@ project_body(void)
     return r;
 }
 
+/* The rows sit INSIDE the sunken box, clear of its bevel: a row's
+ * white fill drawn at the box edge would erase the border under it, and
+ * the heading would look like it spilled onto the grey. */
+static tiku_rect_t
+project_list_area(void)
+{
+    return tiku_inset(project_body(), 2);
+}
+
 static const char *
 row_name(void *ctx, int row)
 {
@@ -1748,7 +1757,8 @@ project_paint(ide_t *st)
     }
     tiku_fill(st->proj_surface, all, TIKU_C_PANEL);
     tiku_ui_sunken(st->proj_surface, body, TIKU_C_DOC);
-    tiku_list_draw(&st->tv_list, st->proj_surface, body, row_name, st);
+    tiku_list_draw(&st->tv_list, st->proj_surface, project_list_area(),
+                   row_name, st);
     tiku_fill(st->proj_surface, strip, TIKU_C_PANEL);
     if (st->note[0] != '\0') {
         snprintf(says, sizeof says, "%s", st->note);
@@ -2427,7 +2437,8 @@ messages_paint(ide_t *st)
     }
     tiku_fill(st->msg_surface, all, TIKU_C_PANEL);
     tiku_ui_sunken(st->msg_surface, body, TIKU_C_DOC);
-    tiku_list_draw(&st->msg_list, st->msg_surface, body, msg_name, st);
+    tiku_list_draw(&st->msg_list, st->msg_surface, tiku_inset(body, 2),
+                   msg_name, st);
         tiku_fill(st->msg_surface, strip, TIKU_C_PANEL);
     if (st->asking) {
         /* The program is waiting for a person: its own prompt as the
@@ -4117,8 +4128,8 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                                   MSG_H - STRIP_H - 2 * MARGIN };
         if (event->type == TIKU_EVENT_POINTER_DOWN) {
             tiku_list_click(&st->msg_list,
-                            tiku_list_at(&st->msg_list, body, event->x,
-                                         event->y),
+                            tiku_list_at(&st->msg_list, tiku_inset(body, 2),
+                                         event->x, event->y),
                             event->modifiers);
             messages_show(st);
             return 0;
@@ -4160,7 +4171,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             return 0;
         }
         if (tiku_list_key(&st->msg_list, event->key, event->modifiers,
-                          body)) {
+                          tiku_inset(body, 2))) {
             messages_show(st);
         }
         return 0;
@@ -4169,7 +4180,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (event->type == TIKU_EVENT_POINTER_DOWN) {
-        int row = tiku_list_at(&st->tv_list, project_body(), event->x,
+        int row = tiku_list_at(&st->tv_list, project_list_area(), event->x,
                                event->y);
 
         /* The second click of two on the same row OPENS it, exactly as
@@ -4195,7 +4206,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (tiku_list_key(&st->tv_list, event->key, event->modifiers,
-                      project_body())) {
+                      project_list_area())) {
         project_paint(st);
         project_publish(st);    /* Run follows the row it would run */
     }
