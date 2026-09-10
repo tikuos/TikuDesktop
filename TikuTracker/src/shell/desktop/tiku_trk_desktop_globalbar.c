@@ -175,9 +175,9 @@ device_leaf_at(desktop_t *app, int idx, char *out, size_t max)
 }
 
 /**
- * @brief The Devices menu: this machine, the boards connected now, the
- *        ports on offer to connect, and a rescan.  A connected row picks
- *        the current device; an available row connects and mounts it.
+ * @brief Separate connection actions from the default destination.
+ *        Checks belong only to the default submenu; the main menu names
+ *        each connection state and says what picking a device will do.
  */
 static void
 build_devices_menu(desktop_t *app)
@@ -188,50 +188,52 @@ build_devices_menu(desktop_t *app)
     tiku_menu_clear(&app->devmenu);
     tiku_menu_clear(&app->devsub);
     snprintf(app->devmenu.title, sizeof app->devmenu.title, "Devices");
-    (void)tiku_menu_add(&app->devmenu, "This machine",
+    snprintf(app->devsub.title, sizeof app->devsub.title, "Default device");
+    (void)tiku_menu_add(&app->devsub, "This machine",
                         TIKU_TRK_CMD_DEVICE_HOST, 0, 0u, 1);
-    tiku_menu_set_icon(&app->devmenu, TIKU_TRK_CMD_DEVICE_HOST, "computer");
-    tiku_menu_mark(&app->devmenu, TIKU_TRK_CMD_DEVICE_HOST,
+    tiku_menu_set_icon(&app->devsub, TIKU_TRK_CMD_DEVICE_HOST, "computer");
+    tiku_menu_mark(&app->devsub, TIKU_TRK_CMD_DEVICE_HOST,
                    app->current_device[0] == '\0');
+    snprintf(leaf, sizeof leaf, "Default device: %.31s",
+             app->current_device[0] ? app->current_device : "This machine");
+    (void)tiku_menu_add_submenu(&app->devmenu, leaf, &app->devsub, 1);
+    (void)tiku_menu_add_separator(&app->devmenu);
+    (void)tiku_menu_add(&app->devmenu, "Connected devices", 0, 0, 0u, 0);
     any = 0;
     for (i = 0; device_leaf_at(app, i, leaf, sizeof leaf) &&
                 i < TIKU_MOUNT_MAX; i++) {
         int cmd = TIKU_TRK_CMD_DEVICE_PICK_BASE + i;
-        char row[128], port[256];
+        char row[48], action[48], port[256];
 
         if (!any) {
-            (void)tiku_menu_add_separator(&app->devmenu);
+            (void)tiku_menu_add_separator(&app->devsub);
             any = 1;
         }
-        /* Where it is, then what it is: the port leads, because that is
-         * what tells two boards of one processor apart. */
+        /* Name first; retain the port to distinguish identical boards.
+         * Bound both so the action and port survive the menu label cap. */
         if (desktop_board_port(app, leaf, port, sizeof port) > 0) {
             char where[32];
 
             device_port_where(port, where, sizeof where);
-            snprintf(row, sizeof row, "%s \xC2\xBB %s", where, leaf);
+            snprintf(row, sizeof row, "%.18s (%.14s)", leaf, where);
         } else {
-            snprintf(row, sizeof row, "%s", leaf);
+            snprintf(row, sizeof row, "%.35s", leaf);
         }
-        (void)tiku_menu_add(&app->devmenu, row, cmd, 0, 0u, 1);
-        tiku_menu_set_icon(&app->devmenu, cmd, "microcontroller");
+        (void)tiku_menu_add(&app->devsub, row, cmd, 0, 0u, 1);
+        tiku_menu_set_icon(&app->devsub, cmd, "microcontroller");
         if (strcmp(leaf, app->current_device) == 0) {
-            tiku_menu_mark(&app->devmenu, cmd, 1);
+            tiku_menu_mark(&app->devsub, cmd, 1);
         }
-        /* The same board again under Disconnect, so letting one go is
-         * the same reading as picking one. */
-        (void)tiku_menu_add(&app->devsub, row,
+        snprintf(action, sizeof action, "Disconnect %.35s", row);
+        (void)tiku_menu_add(&app->devmenu, action,
                             TIKU_TRK_CMD_DEVICE_DROP_BASE + i, 0, 0u, 1);
-        tiku_menu_set_icon(&app->devsub,
+        tiku_menu_set_icon(&app->devmenu,
                            TIKU_TRK_CMD_DEVICE_DROP_BASE + i,
                            "microcontroller");
     }
-    /* Disconnect opens ONTO the boards, so any of them can be let go --
-     * not only whichever happens to be current.  With none connected
-     * there is nothing to let go, and the row is not there to read. */
-    if (any) {
-        (void)tiku_menu_add_submenu(&app->devmenu, "Disconnect",
-                                    &app->devsub, 1);
+    if (!any) {
+        (void)tiku_menu_add(&app->devmenu, "No devices connected",
+                            0, 0, 0u, 0);
     }
     any = 0;
     for (i = 0; i < app->ncandidates && i < TIKU_MOUNT_MAX; i++) {
@@ -248,10 +250,12 @@ build_devices_menu(desktop_t *app)
         }
         if (!any) {
             (void)tiku_menu_add_separator(&app->devmenu);
+            (void)tiku_menu_add(&app->devmenu, "Available devices",
+                                0, 0, 0u, 0);
             any = 1;
         }
-        snprintf(row, sizeof row, "%s \xC2\xBB %s",
-                 app->candidates[i].where, app->candidates[i].name);
+        snprintf(row, sizeof row, "Connect to %.18s (%.14s)",
+                 app->candidates[i].name, app->candidates[i].where);
         (void)tiku_menu_add(&app->devmenu, row,
                             TIKU_TRK_CMD_DEVICE_CONNECT_BASE + i, 0, 0u, 1);
         tiku_menu_set_icon(&app->devmenu,
@@ -259,7 +263,8 @@ build_devices_menu(desktop_t *app)
                            "microcontroller");
     }
     (void)tiku_menu_add_separator(&app->devmenu);
-    (void)tiku_menu_add(&app->devmenu, "Scan", TIKU_TRK_CMD_DEVICE_SCAN,
+    (void)tiku_menu_add(&app->devmenu, "Scan for devices",
+                        TIKU_TRK_CMD_DEVICE_SCAN,
                         0, 0u, 1);
     tiku_menu_set_icon(&app->devmenu, TIKU_TRK_CMD_DEVICE_SCAN, "magnifier");
 }

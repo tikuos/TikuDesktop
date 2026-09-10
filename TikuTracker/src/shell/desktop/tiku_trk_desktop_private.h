@@ -377,7 +377,7 @@ typedef struct desktop {
     int                  gbar_on;       /* -1 until the first sync      */
     tiku_menu_t      sysmenu;           /* the system menu at the left  */
     tiku_menu_t      devmenu;           /* the Devices menu beside it   */
-    tiku_menu_t      devsub;            /* its Disconnect submenu       */
+    tiku_menu_t      devsub;            /* its default-device submenu   */
     tiku_menu_t      gmenu[TIKU_MENUSET_MENUS];     /* the published menus */
     tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];   /* their submenus      */
     tiku_menubar_t   gbar;              /* the strip they hang from     */

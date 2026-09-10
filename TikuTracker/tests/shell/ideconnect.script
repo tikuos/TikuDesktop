@@ -24,6 +24,8 @@ note and the desktop is current on THIS machine again, so a project
 note that names no board still runs here until it says otherwise
 click 264 8
 wait 10
+menu-pick Default device:
+wait 10
 menu-pick This machine
 wait 20
 click 980 30
