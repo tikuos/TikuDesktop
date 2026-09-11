@@ -63,6 +63,12 @@ static const char *const basic_word[] = {
 
 #define BASIC_WORD_N ((int)(sizeof basic_word / sizeof basic_word[0]))
 
+const char *
+tiku_syntax_basic_keyword(int index)
+{
+    return index >= 0 && index < BASIC_WORD_N ? basic_word[index] : NULL;
+}
+
 /** @brief The longest spelling above, plus its terminator. */
 #define BASIC_WORD_MAX 16
 

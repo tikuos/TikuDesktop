@@ -38,7 +38,7 @@ expect-pixel 803 350 b1b1b1
 expect-pixel 803 500 d8d8d8
 note a press high on the track pages the view UP, and the thumb comes
 note with it: what was empty track is now the thumb, and the reverse
-click 806 300
+click 806 330
 wait 20
 expect-pixel 803 350 d8d8d8
 expect-pixel 803 500 b1b1b1

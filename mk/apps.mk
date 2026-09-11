@@ -156,12 +156,13 @@ $(BUILD)/tests/Fault.so: $(D)/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD)/tests
 $(APPS_D)/Bench.so: $(D)/bench/tiku_bench.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
-$(PROG_D)/TikuBasic.so: $(D)/ide/tiku_ide.c $(PIC_LIBS) | $(PROG_D)
+IDE_HELPERS := $(wildcard $(D)/ide/*.inl)
+$(PROG_D)/TikuBasic.so: $(D)/ide/tiku_ide.c $(IDE_HELPERS) $(PIC_LIBS) | $(PROG_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 # The same source wearing its other name: what differs is what it puts
 # forward, and a copy would only learn to disagree.
-$(PROG_D)/TikuC.so: $(D)/ide/tiku_ide.c $(PIC_LIBS) | $(PROG_D)
+$(PROG_D)/TikuC.so: $(D)/ide/tiku_ide.c $(IDE_HELPERS) $(PIC_LIBS) | $(PROG_D)
 	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(APPS_D)/%.so: $(D)/examples/%.c $(PIC_LIBS) | $(APPS_D)

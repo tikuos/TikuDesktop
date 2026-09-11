@@ -31,9 +31,9 @@ key Return
 wait 90
 expect-title main.bas
 note the path's own ink, on a glyph of "/dev/led"
-expect-pixel 268 299 69435c
+expect-pixel 268 323 69435c
 note the plain string's red, on a glyph of "hello there" a row below
-expect-pixel 288 313 a02020
+expect-pixel 288 337 a02020
 note and the statement before them both is still the reserved word's blue
-expect-pixel 241 296 0000b0
+expect-pixel 241 320 0000b0
 quit

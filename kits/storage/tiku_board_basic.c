@@ -64,6 +64,8 @@ struct tiku_board_basic {
      * go and come on it rather than through the shell's line. */
     tiku_board_basic_stream_t stream;
     int                       streamed;
+    int                       debug;     /* explicit DEBUG ON upload preamble */
+    int                       debug_ready; /* version acknowledged before RUN */
 };
 
 #define MODE_RUN    0
@@ -364,14 +366,16 @@ send_next(tiku_board_basic_t *r)
          * a line of the old one the new one does not overwrite would run
          * with it.  NEW before anything. */
         r->newed = 1;
+        r->debug = r->at && strncmp(r->at, "DEBUG ON\n", 9) == 0;
         (void)send_text(r, "NEW\n");
         return;
     }
     while (r->at != NULL && *r->at != '\0') {
         nl = strchr(r->at, '\n');
         n = (nl != NULL) ? (size_t)(nl - r->at) : strlen(r->at);
-        if (n >= LINE_MAX) {
-            n = LINE_MAX - 1u;
+        if (n + 2u > LINE_MAX) {
+            r->state = TIKU_BOARD_BASIC_FAILED;
+            return;
         }
         memcpy(line, r->at, n);
         line[n] = '\0';
@@ -390,6 +394,10 @@ send_next(tiku_board_basic_t *r)
     if (r->mode == MODE_SAVE) {
         (void)snprintf(r->echo, sizeof r->echo, "SAVE \"%s\"", r->name);
     } else {
+        if (r->debug && !r->debug_ready) {
+            r->state = TIKU_BOARD_BASIC_FAILED;
+            return; /* Old firmware must never silently run without debugging. */
+        }
         (void)snprintf(r->echo, sizeof r->echo, "%s",
                        (r->mode == MODE_LIST) ? "LIST" : "RUN");
     }
@@ -418,6 +426,12 @@ tiku_board_basic_pump(tiku_board_basic_t *r, int timeout_ms,
     draw_in(r, timeout_ms);
 
         if (r->state == TIKU_BOARD_BASIC_SENDING) {
+        if (r->debug && strstr(r->buf, "[TDBG VERSION 1]")) { r->debug_ready = 1; }
+        if (r->debug && strstr(r->buf, "[TDBG ERROR ")) {
+            if (fn) { fn("Debugger setup rejected by firmware", ctx); }
+            r->state = TIKU_BOARD_BASIC_FAILED;
+            return r->state;
+        }
         /* One prompt, one line: anything the board says while taking the
          * program is its own echo and not the program's output. */
         if (r->streamed) {
@@ -551,4 +565,3 @@ tiku_board_basic_streamed(const tiku_board_basic_t *r)
 {
     return r != NULL && r->streamed;
 }
-

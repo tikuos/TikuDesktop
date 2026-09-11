@@ -85,11 +85,13 @@ note first line, and the view has come up to show that line
 key Prior
 wait 4
 key Prior
+wait 4
+key Prior
 wait 8
-expect-pixel 253 298 000000
+expect-pixel 253 322 000000
 note with the page at its top, a click lands the caret on the line
 note under the pointer at its first column -- the third line here
-click 194 332
+click 194 356
 wait 6
 key k
 wait 6

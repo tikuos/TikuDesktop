@@ -34,7 +34,7 @@ note the menu offers the start; a project that does not say what it is
 note FOR is offered no Build, and the file roads live under File
 click 71 8
 wait 8
-expect-menu New Project…|Open Project…||Run
+expect-menu New Project…|Open Project…|Recover unsaved files||Run
 menu-pick New Project…
 wait 40
 expect-title Save
@@ -47,7 +47,7 @@ expect-file-has /tmp/trk_home/untitled/project.tiku file main.bas
 note and the editor is already open on main.bas, at half the screen,
 note the page numbered 10 with the caret standing black just past it
 expect-title main.bas
-expect-pixel 216 296 000000
+expect-pixel 216 320 000000
 note the source file is REAL before anything was ever saved: the Open
 note panel stands in the project's own folder and LISTS it, and picking
 note it brings the open editor forward rather than opening a second one

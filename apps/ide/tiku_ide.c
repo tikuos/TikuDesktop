@@ -19,7 +19,10 @@
  */
 
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
+#include <sys/file.h>
+#include <sys/socket.h>
 #include <signal.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -45,6 +48,7 @@
 #include "tiku_clipboard.h"
 #include "tiku_field.h"
 #include "tiku_textview.h"
+#include "tiku_board_basic.h"
 #include "tiku_ui.h"
 
 /* Which program this build of the source IS. */
@@ -62,7 +66,7 @@
 #define APP_MAIN_FILE "main.bas"
 #endif
 
-#define IDE_W      320
+#define IDE_W      440
 #define IDE_H      300
 /* An editor is where the WORK happens, so it opens at half the screen
  * rather than at a peephole somebody enlarges every single time. */
@@ -72,6 +76,10 @@
 #define TOOLBAR_H  30
 #define PAGE_SB    12   /* the page's own scrollbar gutter, at the right */
 #define FIND_H     26   /* the find bar, dropped under the toolbar */
+#define TARGET_H   24
+#define SEARCH_TOP (TOOLBAR_H + TARGET_H)
+#define ASSIST_H 126
+#define DEBUG_H 134
 #define MARGIN     6
 
 /* The editor toolbar's two tools, in the window's own coordinates. */
@@ -140,6 +148,17 @@ enum {
 #define CMD_SAVEBOARD 23
 #define CMD_FIND     21
 #define CMD_REMOVEFILE 22
+#define CMD_REPLACE   24
+#define CMD_RECOVER   25
+#define CMD_PROJECT_FIND 26
+#define CMD_COMPLETE 27
+#define CMD_HELPWORD 28
+#define CMD_DEBUG 29
+#define CMD_BREAKPOINT 30
+#define CMD_DEBUG_STEP 31
+#define CMD_DEBUG_CONT 32
+#define CMD_DEBUG_PANEL 33
+#define CMD_CLEARBREAKS 34
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /** @brief One line of the project window: a file, or a group's name. */
@@ -202,6 +221,23 @@ typedef struct {
     int                  drag_select;   /* a press began on the page */
     int                  finding;        /* the find bar is open */
     tiku_field_t         find;           /* what is being searched for */
+    tiku_field_t         replacement;
+    int                  replacing, find_focus;
+    char                 feedback[128];
+    char                 recovery[640];
+    int                  recovery_fd;
+    int                  load_failed;
+    uint64_t             recovery_stamp;
+    int                  recovery_current;
+    int                  recovery_blocked;
+    int                  assist_open, assist_at, assist_n;
+    int                  assist_match[192];
+    char                 assist_prefix[32];
+    int                  assist_y, assist_x0, assist_x1;
+    int                  debug_show, watch_focus;
+    uint16_t             breaks[16];
+    tiku_field_t         watches;
+    char                 watch_value[8][112];
     int                  scroll_x;       /* the page slid left, for long lines */
     int                  tip;            /* the toolbar tool under the pointer, -1 none */
 } edit_t;
@@ -300,18 +336,47 @@ typedef struct {
     char                            partial[160];
     int                             child_numbered; /* a BASIC run */
     int64_t                         run_from;   /* when it started */
+    int64_t                         recovery_at;
+    int                             recovery_scanned;
+    char                            target_status[160];
+    char                            upload_board[64], upload_name[8];
+    char                            upload_program[8192];
+    uint32_t                        closing_editor;
+    int                             debugging, debug_paused, debug_pc;
+    int                             debug_values, debug_socket, debug_eof;
+    tiku_board_basic_t              *local_debug;
 } ide_t;
 
 static void project_paint(ide_t *st);
 static void project_publish(ide_t *st);
 static void console_open(ide_t *st, const char *file, const char *board);
 static void messages_show(ide_t *st);
+static void messages_paint(ide_t *st);
 static int  dest_board(ide_t *st, char *out, size_t max);
 static void run_file_where(ide_t *st, const char *path);
 static void run_file(ide_t *st, const char *path);
 static void run_file_on_board(ide_t *st, const char *path,
                               const char *board);
 static void splash_drop(ide_t *st);
+static void edit_publish(ide_t *st, edit_t *e);
+static void edit_paint(ide_t *st, edit_t *e);
+static void recovery_scan(ide_t *st);
+static void upload_confirm(ide_t *st);
+static void search_project(ide_t *st, edit_t *e);
+static void assist_paint(edit_t *e);
+static void assist_open(edit_t *e, int complete);
+static int assist_event(edit_t *e, const tiku_event_t *event);
+static void debug_paint(ide_t *st, edit_t *e);
+static int debug_event(ide_t *st, edit_t *e, const tiku_event_t *event);
+static void debug_start(ide_t *st, edit_t *e);
+static void debug_command(ide_t *st, const char *command);
+static int debug_line(ide_t *st, const char *line);
+static void debug_tick(ide_t *st);
+static void debug_cleanup(ide_t *st);
+static void ide_board_said(void *state, int what, const char *text);
+static int ide_pick(void *state, uint32_t window, int command);
+static void debug_break(edit_t *e);
+static int debug_locked(ide_t *st, edit_t *e);
 static void announce_paint_art(tiku_surface_t *sf, const char *status,
                                const tiku_surface_t *art);
 
@@ -458,13 +523,18 @@ static edit_t *
 edit_of_path(ide_t *st, const char *path)
 {
     int i;
+    char *absolute = realpath(path, NULL);
+    const char *want = absolute ? absolute : path;
 
     for (i = 0; i < IDE_EDITS; i++) {
         if (st->edit[i].surface != NULL &&
-            strcmp(st->edit[i].path, path) == 0) {
+            (strcmp(st->edit[i].path, want) == 0 ||
+             strcmp(st->edit[i].path, path) == 0)) {
+            free(absolute);
             return &st->edit[i];
         }
     }
+    free(absolute);
     return NULL;
 }
 
@@ -636,8 +706,17 @@ tb_renum(tiku_surface_t *s, int x)
 static int
 edit_page_top(const edit_t *e)
 {
-    return TOOLBAR_H + (e->finding ? FIND_H : 0);
+    return SEARCH_TOP + (e->finding ? FIND_H * 3 : 0) +
+           (e->assist_open ? ASSIST_H : 0);
 }
+
+static int
+edit_page_bottom(const edit_t *e)
+{
+    return e->h - STRIP_H - (e->debug_show ? DEBUG_H : 0);
+}
+
+#include "tiku_ide_safety.inl"
 
 static void
 edit_paint(ide_t *st, edit_t *e)
@@ -645,9 +724,9 @@ edit_paint(ide_t *st, edit_t *e)
     const tiku_font_t *f = tiku_font_plain();
     int ptop = edit_page_top(e);
     tiku_rect_t bar = { 0, 0, e->w, TOOLBAR_H };
-    tiku_rect_t page = { 0, ptop, e->w, e->h - STRIP_H - ptop };
+    tiku_rect_t page = { 0, ptop, e->w, edit_page_bottom(e) - ptop };
     tiku_rect_t strip = { 0, e->h - STRIP_H, e->w, STRIP_H };
-    int rows = (e->h - STRIP_H - ptop - MARGIN) / (f->height + 2);
+    int rows = (edit_page_bottom(e) - ptop - MARGIN) / (f->height + 2);
     tiku_syntax_state_t carry = TIKU_SYNTAX_OPEN;
     int top = tiku_textview_top(&e->tv);
     int i;
@@ -710,6 +789,7 @@ edit_paint(ide_t *st, edit_t *e)
      * is on the mouse, as PICTURES -- a toolbar of worded buttons is a
      * second menu, and the reach was the point. */
     tiku_fill(e->surface, bar, TIKU_C_PANEL);
+    target_paint(st, e);
     {
         tiku_rect_t sv = TB_SAVE;
 
@@ -766,25 +846,29 @@ edit_paint(ide_t *st, edit_t *e)
          * away.  For a BASIC file, a number typed here goes to that
          * LINE -- the label says so, because the language's lines wear
          * their numbers and "find 250" reads two ways. */
-        tiku_rect_t fbar = { 0, TOOLBAR_H, e->w, FIND_H };
+        tiku_rect_t fbar = { 0, SEARCH_TOP, e->w, FIND_H * 3 };
         tiku_rect_t fld;
-        const char *label = (e->lang == TIKU_SYNTAX_BASIC)
+        const char *label = (e->lang == TIKU_SYNTAX_BASIC && !e->replacing)
                                 ? "Find / line:" : "Find:";
         int lw = tiku_text_width(f, label);
 
         tiku_fill(e->surface, fbar, TIKU_C_PANEL);
-        tiku_hline(e->surface, 0, TOOLBAR_H + FIND_H - 1, e->w,
+        tiku_hline(e->surface, 0, SEARCH_TOP + FIND_H * 3 - 1, e->w,
                         tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
         tiku_text(e->surface, f, MARGIN,
-                       TOOLBAR_H + (FIND_H - f->height) / 2 + f->ascent,
+                       SEARCH_TOP + (FIND_H - f->height) / 2 + f->ascent,
                        label, TIKU_C_TEXT);
-        fld = (tiku_rect_t){ MARGIN + lw + 6, TOOLBAR_H + 3,
+        fld = (tiku_rect_t){ MARGIN + lw + 6, SEARCH_TOP + 3,
                              e->w - (MARGIN + lw + 6) - MARGIN,
                              FIND_H - 6 };
-        tiku_ui_textfield(e->surface, fld, e->find.text,
-                          e->find.caret, 0u);
+        tiku_ui_textfield_sel(e->surface, fld, e->find.text,
+                          e->find_focus == 0 ? e->find.caret : -1,
+                          e->find.sel_a, e->find.sel_b, 0u);
+        search_paint(e);
     }
     tiku_ui_sunken(e->surface, page, TIKU_C_DOC);
+    if (e->assist_open) { assist_paint(e); }
+    if (e->debug_show) { debug_paint(st, e); }
     for (i = 0; i < rows; i++) {
         int line = top + i;
         const char *text = tiku_textview_line(&e->tv, line);
@@ -792,6 +876,20 @@ edit_paint(ide_t *st, edit_t *e)
 
         if (text == NULL) {
             break;
+        }
+        if (e->lang == TIKU_SYNTAX_BASIC) {
+            unsigned number = (unsigned)strtoul(text, NULL, 10);
+            int b, marked = 0;
+            for (b = 0; b < 16; b++) { marked |= number && e->breaks[b] == number; }
+            if (marked) {
+                tiku_rect_t r = { 2, y, e->w - PAGE_SB - 3, f->height + 2 };
+                tiku_fill(e->surface, r, TIKU_RGB(255, 222, 222));
+            }
+            if (st->debugging && st->debug_paused &&
+                !strcmp(st->child_file, e->path) && number == (unsigned)st->debug_pc) {
+                tiku_rect_t r = { 2, y, e->w - PAGE_SB - 3, f->height + 2 };
+                tiku_fill(e->surface, r, TIKU_RGB(211, 238, 185));
+            }
         }
         if (e->lang != TIKU_SYNTAX_NONE) {
             tiku_span_t span[64];
@@ -892,7 +990,7 @@ edit_paint(ide_t *st, edit_t *e)
 
         if (total > rows && rows > 0) {
             tiku_rect_t sb = { e->w - PAGE_SB, ptop, PAGE_SB,
-                               e->h - STRIP_H - ptop };
+                               edit_page_bottom(e) - ptop };
 
             tiku_ui_scrollbar(e->surface, sb,
                 (float)top / (float)(total - rows),
@@ -925,6 +1023,11 @@ edit_paint(ide_t *st, edit_t *e)
     tiku_text(e->surface, f, MARGIN,
                    strip.y + (STRIP_H - f->height) / 2 + f->ascent,
                    where, TIKU_C_TEXT);
+    if (e->feedback[0]) {
+        tiku_fill(e->surface, strip, TIKU_C_PANEL);
+        tiku_text(e->surface, f, MARGIN, strip.y + f->ascent + 3,
+                  e->feedback, TIKU_C_TEXT);
+    }
     if (e->tip >= 0) {
         /* The hovered tool's name, on the kit's own tip, below the
          * button so the pointer does not sit on the words. */
@@ -948,7 +1051,8 @@ edit_rows(const edit_t *e)
 {
     const tiku_font_t *f = tiku_font_plain();
 
-    return (e->h - STRIP_H - edit_page_top(e) - MARGIN) / (f->height + 2);
+    int rows = (edit_page_bottom(e) - edit_page_top(e) - MARGIN) / (f->height + 2);
+    return rows > 0 ? rows : 1;
 }
 
 /**
@@ -1044,8 +1148,10 @@ edit_clip(ide_t *st, edit_t *e, int command)
         tiku_textview_select_all(&e->tv);
         return 1;
     case CMD_UNDO:
+        e->feedback[0] = '\0';
         return tiku_textview_undo(&e->tv);
     case CMD_REDO:
+        e->feedback[0] = '\0';
         return tiku_textview_redo(&e->tv);
     default:
         return 0;
@@ -1125,7 +1231,7 @@ edit_find_run(edit_t *e)
     if (q[0] == '\0') {
         return;
     }
-    if (e->lang == TIKU_SYNTAX_BASIC) {
+    if (e->lang == TIKU_SYNTAX_BASIC && !e->replacing) {
         int alldig = 1, i;
 
         for (i = 0; q[i] != '\0'; i++) {
@@ -1153,8 +1259,14 @@ edit_find_run(edit_t *e)
     tiku_textview_caret(&e->tv, &cy, &cx);
     if (find_forward(&e->tv, q, cy, cx, &hy, &hx)) {
         edit_select_span(e, hy, hx, hx + (int)strlen(q));
+        snprintf(e->feedback, sizeof e->feedback, "Match at line %d", hy + 1);
+    } else {
+        snprintf(e->feedback, sizeof e->feedback, "No matches");
     }
 }
+
+#include "tiku_ide_search.inl"
+#include "tiku_ide_assist.inl"
 
 static int
 norm_is_word(int c)
@@ -1496,10 +1608,25 @@ edit_publish(ide_t *st, edit_t *e)
     mrow(&menus.menu[1], "Select all", CMD_SELALL, 'a', TIKU_MOD_CMD, 1);
     msep(&menus.menu[1]);
     mrow(&menus.menu[1], "Find…", CMD_FIND, 'f', TIKU_MOD_CMD, 1);
+    mrow(&menus.menu[1], "Find and Replace…", CMD_REPLACE, 'h',
+         TIKU_MOD_CMD, 1);
+    mrow(&menus.menu[1], "Find in project", CMD_PROJECT_FIND, 0, 0u,
+         st->proj.nrow > 0 && !st->running);
     if (e->lang == TIKU_SYNTAX_BASIC) {
         /* The tidy that renumbers by tens, for the language whose
          * lines wear their numbers. */
         mrow(&menus.menu[1], "Renumber", CMD_RENUM, 0, 0u, 1);
+        mrow(&menus.menu[1], "Complete keyword", CMD_COMPLETE, ' ', TIKU_MOD_CMD, !debug_locked(st, e));
+        mrow(&menus.menu[1], "Keyword help", CMD_HELPWORD, 'k', TIKU_MOD_CMD, 1);
+        menus.nmenu = 4;
+        snprintf(menus.menu[3].title, sizeof menus.menu[3].title, "Debug");
+        mrow(&menus.menu[3], "Start debugging", CMD_DEBUG, 'd', TIKU_MOD_CMD, !st->running);
+        mrow(&menus.menu[3], "Toggle breakpoint at caret", CMD_BREAKPOINT, 'b', TIKU_MOD_CMD, !st->running);
+        mrow(&menus.menu[3], "Clear breakpoints", CMD_CLEARBREAKS, 0, 0u, !st->running);
+        mrow(&menus.menu[3], "Step line", CMD_DEBUG_STEP, 'j', TIKU_MOD_CMD, debug_locked(st, e) && st->debug_paused);
+        mrow(&menus.menu[3], "Continue", CMD_DEBUG_CONT, 'g', TIKU_MOD_CMD, debug_locked(st, e) && st->debug_paused);
+        mrow(&menus.menu[3], "Stop", CMD_STOP, '.', TIKU_MOD_CMD, debug_locked(st, e));
+        mrow(&menus.menu[3], "Show debugger / watches", CMD_DEBUG_PANEL, 0, 0u, 1);
     }
     window_menu(st, &menus.menu[2]);
     (void)st->services->menus(st->services->ctx, e->id, &menus);
@@ -1509,39 +1636,126 @@ edit_publish(ide_t *st, edit_t *e)
 static void
 edit_load(edit_t *e)
 {
-    static char whole[TIKU_TEXTVIEW_LINES_MAX * 8];
+    size_t limit = TIKU_TEXTVIEW_LINES_MAX * TIKU_TEXTVIEW_LINE_MAX;
+    char *whole = malloc(limit + 1);
     FILE *f = fopen(e->path, "r");
+    size_t got = 0;
+    int ok = whole != NULL;
 
     tiku_textview_init(&e->tv);
     if (f == NULL) {
         tiku_textview_set(&e->tv, "");
+        if (errno != ENOENT) { e->load_failed = 1; }
+        free(whole);
         return;
     }
-    {
-        size_t got = fread(whole, 1u, sizeof whole - 1u, f);
-
+    if (whole) {
+        got = fread(whole, 1, limit, f);
         whole[got] = '\0';
+        ok = !ferror(f) && got < limit && !memchr(whole, '\0', got) &&
+             document_fits(whole);
     }
-    (void)fclose(f);
-    tiku_textview_set(&e->tv, whole);
+    if (fclose(f) != 0) { ok = 0; }
+    if (ok) { tiku_textview_set(&e->tv, whole); }
+    else {
+        e->load_failed = 1;
+        snprintf(e->feedback, sizeof e->feedback,
+                 "File could not be loaded safely; saving and running are blocked");
+    }
+    free(whole);
+}
+
+/** Project search uses unsaved editor text where available. */
+static void
+search_project(ide_t *st, edit_t *e)
+{
+    int i, skipped = 0;
+    edit_t *temp;
+
+    if (st->running) { return; }
+    if (!e->find.text[0]) {
+        search_open(e, 1);
+        snprintf(e->feedback, sizeof e->feedback,
+                 "Enter Find text, then choose Edit > Find in project");
+        return;
+    }
+    temp = calloc(1, sizeof *temp);
+    if (!temp) { return; }
+    st->nmsg = 0;
+    for (i = 0; i < st->proj.nrow && st->nmsg < IDE_MSGS; i++) {
+        edit_t *source;
+        int y;
+
+        if (st->proj.row[i].heading) { continue; }
+        source = edit_of_path(st, st->proj.row[i].path);
+        if (!source) {
+            snprintf(temp->path, sizeof temp->path, "%s", st->proj.row[i].path);
+            temp->load_failed = 0;
+            edit_load(temp);
+            source = temp;
+        }
+        if (source->load_failed) { skipped++; }
+        for (y = 0; !source->load_failed && y < source->tv.nline &&
+                    st->nmsg < IDE_MSGS; y++) {
+            const char *line = tiku_textview_line(&source->tv, y);
+            msg_t *m;
+            if (!strstr(line, e->find.text)) { continue; }
+            m = &st->msg[st->nmsg++];
+            memset(m, 0, sizeof *m);
+            snprintf(m->file, sizeof m->file, "%s", source->path);
+            m->line = y + 1;
+            snprintf(m->text, sizeof m->text, "%.48s:%d: %.90s",
+                     st->proj.row[i].name, y + 1, line);
+        }
+        if (source == temp) { tiku_textview_free(&temp->tv); }
+    }
+    free(temp);
+    snprintf(e->feedback, sizeof e->feedback,
+             "%d matching lines%s; %d unreadable files skipped", st->nmsg,
+             st->nmsg == IDE_MSGS ? " (result limit reached)" : "", skipped);
+    tiku_list_set_count(&st->msg_list, st->nmsg);
+    if (st->nmsg) { messages_show(st); }
+    else { messages_paint(st); }
 }
 
 static int
 edit_save(edit_t *e)
 {
-    FILE *f = fopen(e->path, "w");
-    int i;
+    FILE *f;
+    int i, fd, ok = 1;
+    char temp[560];
+    struct stat sb;
+    mode_t mode = 0600;
 
+    if (e->load_failed) { return 0; }
+    if (lstat(e->path, &sb) == 0) {
+        if (!S_ISREG(sb.st_mode)) {
+            snprintf(e->feedback, sizeof e->feedback, "Save failed: not a regular file");
+            return 0;
+        }
+        mode = sb.st_mode & 0777;
+    }
+    snprintf(temp, sizeof temp, "%s.XXXXXX", e->path);
+    fd = mkstemp(temp);
+    f = fd < 0 ? NULL : fdopen(fd, "w");
     if (f == NULL) {
+        if (fd >= 0) { close(fd); unlink(temp); }
+        snprintf(e->feedback, sizeof e->feedback, "Save failed: %s", strerror(errno));
         return 0;
     }
     for (i = 0; i < tiku_textview_lines(&e->tv); i++) {
-        (void)fprintf(f, "%s\n", tiku_textview_line(&e->tv, i));
+        if (fprintf(f, "%s\n", tiku_textview_line(&e->tv, i)) < 0) { ok = 0; }
     }
-    if (fclose(f) != 0) {
+    if (fchmod(fd, mode) != 0 || fflush(f) != 0 || fsync(fd) != 0) { ok = 0; }
+    if (fclose(f) != 0) { ok = 0; }
+    if (!ok || rename(temp, e->path) != 0) {
+        unlink(temp);
+        snprintf(e->feedback, sizeof e->feedback, "Save failed; unsaved work retained");
         return 0;
     }
     tiku_textview_saved(&e->tv);
+    (void)recovery_write(e);
+    snprintf(e->feedback, sizeof e->feedback, "Saved");
     return 1;
 }
 
@@ -1619,9 +1833,17 @@ edit_open(ide_t *st, const prow_t *row)
     memset(e, 0, sizeof *e);
     e->tip = -1;
     snprintf(e->path, sizeof e->path, "%s", row->path);
+    {
+        char *absolute = realpath(row->path, NULL);
+        if (absolute && strlen(absolute) < sizeof e->path) {
+            snprintf(e->path, sizeof e->path, "%s", absolute);
+        }
+        free(absolute);
+    }
     snprintf(e->name, sizeof e->name, "%s", row->name);
     e->lang = lang_of(e->name);
     edit_load(e);
+    recovery_open(e);
     if (e->lang == TIKU_SYNTAX_BASIC) {
         /* A program is CONTINUED, not reread from the top: the caret
          * lands at the end of the last line, so the first Return is
@@ -1632,6 +1854,7 @@ edit_open(ide_t *st, const prow_t *row)
                             tiku_textview_line_len(&e->tv, last));
     }
     if (e->lang == TIKU_SYNTAX_BASIC &&
+        !tiku_textview_modified(&e->tv) && !e->load_failed &&
         tiku_textview_lines(&e->tv) <= 1 &&
         tiku_textview_line_len(&e->tv, 0) == 0) {
         /* A fresh page of BASIC begins where every line of it must:
@@ -1648,11 +1871,15 @@ edit_open(ide_t *st, const prow_t *row)
     (void)tiku_textview_reveal(&e->tv, edit_rows(e));
     e->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_PANEL);
     if (e->surface == NULL) {
+        recovery_release(e, 0);
+        tiku_textview_free(&e->tv);
         return;
     }
     e->id = st->services->open(st->services->ctx, e->name, EDIT_W,
                                EDIT_H);
     if (e->id == 0u) {
+        recovery_release(e, 0);
+        tiku_textview_free(&e->tv);
         tiku_surface_free(e->surface);
         e->surface = NULL;
         snprintf(st->note, sizeof st->note, "no room for another window");
@@ -1675,6 +1902,25 @@ edit_drop(ide_t *st, edit_t *e)
 {
     int i;
 
+    if (debug_locked(st, e)) {
+        snprintf(e->feedback, sizeof e->feedback, "Stop the debug run before closing its source");
+        edit_paint(st, e);
+        return;
+    }
+    if (tiku_textview_modified(&e->tv)) {
+        char text[256];
+        snprintf(text, sizeof text, "Save changes to %s before closing?", e->name);
+        st->closing_editor = e->id;
+        tiku_alert_open(&st->ask, TIKU_ALERT_WARN, CMD_QUIT,
+                        text, "Cancel|Discard|Save");
+        if (st->services->raise_window) {
+            st->services->raise_window(st->services->ctx, st->proj_id);
+        }
+        project_paint(st);
+        return;
+    }
+    recovery_release(e, 0);
+    tiku_textview_free(&e->tv);
     st->services->close(st->services->ctx, e->id);
     tiku_surface_free(e->surface);
     e->surface = NULL;
@@ -1688,6 +1934,51 @@ edit_drop(ide_t *st, edit_t *e)
             edit_publish(st, &st->edit[i]);
         }
     }
+}
+
+/** Reopen private snapshots; originals are never changed by recovery. */
+static void
+recovery_scan(ide_t *st)
+{
+    char dir[560], file[840], lock[860];
+    DIR *d;
+    struct dirent *entry;
+
+    if (!recovery_dir(dir, sizeof dir) || !(d = opendir(dir))) { return; }
+    while ((entry = readdir(d)) != NULL) {
+        prow_t row = {0};
+        FILE *f;
+        const char *leaf;
+        size_t n = strlen(entry->d_name);
+        int i, fd, free_slot = 0;
+
+        if (n < 6 || strcmp(entry->d_name + n - 6, ".draft")) { continue; }
+        for (i = 0; i < IDE_EDITS; i++) { free_slot |= !st->edit[i].surface; }
+        if (!free_slot) {
+            snprintf(st->note, sizeof st->note,
+                     "More recovery files: close a file, then Recover unsaved files");
+            project_paint(st);
+            break;
+        }
+        snprintf(file, sizeof file, "%s/%s", dir, entry->d_name);
+        snprintf(lock, sizeof lock, "%s.lock", file);
+        fd = open(lock, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (fd < 0) { continue; }
+        if (flock(fd, LOCK_EX | LOCK_NB) != 0) { close(fd); continue; }
+        close(fd);
+        fd = open(file, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+        f = fd < 0 ? NULL : fdopen(fd, "r");
+        if (!f && fd >= 0) { close(fd); }
+        if (!f) { continue; }
+        if (!fgets(row.path, sizeof row.path, f)) { row.path[0] = '\0'; }
+        fclose(f);
+        row.path[strcspn(row.path, "\n")] = '\0';
+        if (row.path[0] != '/' || edit_of_path(st, row.path)) { continue; }
+        leaf = strrchr(row.path, '/');
+        snprintf(row.name, sizeof row.name, "%s", leaf + 1);
+        edit_open(st, &row);
+    }
+    closedir(d);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1770,6 +2061,7 @@ project_paint(ide_t *st)
         int aw, ah;
 
         tiku_alert_size(&aw, &ah);
+        if (st->ask.tag == CMD_SAVEBOARD) { ah = 220; }
         if (aw > IDE_W - 16) {
             aw = IDE_W - 16;
         }
@@ -1813,6 +2105,10 @@ project_publish(ide_t *st)
     menus.menu[0].item[3].enabled = 1;
     {
     int mrow = 4;
+    snprintf(menus.menu[0].item[mrow].label,
+             sizeof menus.menu[0].item[mrow].label, "Recover unsaved files");
+    menus.menu[0].item[mrow].command = CMD_RECOVER;
+    menus.menu[0].item[mrow++].enabled = 1;
     menus.menu[0].item[mrow].separator = 1;
     mrow++;
 #ifndef TIKU_IDE_C
@@ -2149,6 +2445,15 @@ static void
 run_file_where(ide_t *st, const char *path)
 {
     char dest[64];
+    edit_t *e = edit_of_path(st, path);
+
+    if (st->running) { return; }
+    if (e && (e->load_failed ||
+        (tiku_textview_modified(&e->tv) && !edit_save(e)))) {
+        snprintf(st->note, sizeof st->note, "Run cancelled: source could not be saved");
+        project_paint(st);
+        return;
+    }
 
     if (dest_board(st, dest, sizeof dest)) {
         run_file_on_board(st, path, dest);
@@ -2443,6 +2748,11 @@ run_stop(ide_t *st, const char *why)
     if (!st->running) {
         return;
     }
+    if (st->local_debug) {
+        debug_cleanup(st);
+        st->running = st->asking = 0;
+        return;
+    }
     if (st->board[0] != '\0') {
         /* Somebody else's program: asked to stop, not killed.  A kill
          * here would signal this process's own group -- there is no
@@ -2537,8 +2847,6 @@ static void
 run_file_on_board(ide_t *st, const char *path, const char *board)
 {
     char program[8192];
-    FILE *f;
-    size_t n;
 
     if (st->running) {
         snprintf(st->note, sizeof st->note, "already running");
@@ -2551,15 +2859,17 @@ run_file_on_board(ide_t *st, const char *path, const char *board)
         project_paint(st);
         return;
     }
-    f = fopen(path, "rb");
-    if (f == NULL) {
-        snprintf(st->note, sizeof st->note, "cannot read the file");
+    if (!board_connected(st, board)) {
+        snprintf(st->note, sizeof st->note, "Device disconnected; choose it in TikuDesktop");
         project_paint(st);
         return;
     }
-    n = fread(program, 1u, sizeof program - 1u, f);
-    (void)fclose(f);
-    program[n] = '\0';
+    if (!upload_read(st, path, program, sizeof program)) {
+        edit_t *e = edit_of_path(st, path);
+        if (e) { snprintf(e->feedback, sizeof e->feedback, "%s", st->note); }
+        project_paint(st);
+        return;
+    }
 
             snprintf(st->child_file, sizeof st->child_file, "%s", path);
     snprintf(st->board, sizeof st->board, "%s", board);
@@ -2591,14 +2901,21 @@ run_file_on_board(ide_t *st, const char *path, const char *board)
 static void
 save_file_on_board(ide_t *st, const char *path)
 {
-    char program[8192];
     char boards[256];
     char name[8];
+    char question[512];
     const char *base, *dot;
-    FILE *f;
-    size_t n, k;
+    size_t k, i;
+    edit_t *e = edit_of_path(st, path);
     if (st->running) {
         snprintf(st->note, sizeof st->note, "already running");
+        project_paint(st);
+        return;
+    }
+    if (st->ask.open) { return; }
+    if (e && (e->load_failed ||
+        (tiku_textview_modified(&e->tv) && !edit_save(e)))) {
+        snprintf(st->note, sizeof st->note, "Upload cancelled: source save failed");
         project_paint(st);
         return;
     }
@@ -2617,19 +2934,51 @@ save_file_on_board(ide_t *st, const char *path)
     }
     memcpy(name, base, k);
     name[k] = '\0';
-    f = fopen(path, "rb");
-    if (f == NULL) {
-        snprintf(st->note, sizeof st->note, "cannot read the file");
+    for (i = 0; i < k; i++) {
+        if (!((name[i] >= 'a' && name[i] <= 'z') ||
+              (name[i] >= 'A' && name[i] <= 'Z') ||
+              (name[i] >= '0' && name[i] <= '9') || name[i] == '_')) { break; }
+    }
+    if (!k || i != k) {
+        snprintf(st->note, sizeof st->note,
+                 "Board names need letters, digits or underscore. Rename the file.");
         project_paint(st);
         return;
     }
-    n = fread(program, 1u, sizeof program - 1u, f);
-    (void)fclose(f);
-    program[n] = '\0';
-    snprintf(st->board, sizeof st->board, "%s", boards);
+    if (!upload_read(st, path, st->upload_program, sizeof st->upload_program)) {
+        project_paint(st);
+        return;
+    }
+    snprintf(st->upload_board, sizeof st->upload_board, "%s", boards);
+    snprintf(st->upload_name, sizeof st->upload_name, "%s", name);
+    snprintf(question, sizeof question,
+             "Replace any existing program? "
+             "Save /data/%s.bas on %.63s. %zu bytes.%s",
+             name, boards, strlen(st->upload_program),
+             ((dot ? (size_t)(dot - base) : strlen(base)) > 7) ?
+             " Filename shortened to seven characters; check for name collisions." : "");
+    tiku_alert_open(&st->ask, TIKU_ALERT_WARN, CMD_SAVEBOARD,
+                    question, "Cancel|Save / Replace");
+    st->ask.dflt = 0;
+    if (st->services->raise_window) {
+        st->services->raise_window(st->services->ctx, st->proj_id);
+    }
+    project_paint(st);
+}
+
+/** The confirmation owns an immutable program and device, not the new default. */
+static void
+upload_confirm(ide_t *st)
+{
+    if (st->running || !board_connected(st, st->upload_board)) {
+        snprintf(st->note, sizeof st->note, "Upload cancelled: device busy or disconnected");
+        project_paint(st);
+        return;
+    }
+    snprintf(st->board, sizeof st->board, "%s", st->upload_board);
     st->child_fd = -1;
-    if (!st->services->board_save(st->services->ctx, st->board, name,
-                                  program)) {
+    if (!st->services->board_save(st->services->ctx, st->board,
+                                  st->upload_name, st->upload_program)) {
         st->board[0] = '\0';
         snprintf(st->note, sizeof st->note, "the board would not take it");
         project_paint(st);
@@ -2638,7 +2987,7 @@ save_file_on_board(ide_t *st, const char *path)
     st->running = 1;
     st->saving = 1;
     st->run_from = 0;
-    snprintf(st->note, sizeof st->note, "keeping %s on %s…", name,
+    snprintf(st->note, sizeof st->note, "keeping %s on %s…", st->upload_name,
              st->board);
     project_paint(st);
 }
@@ -2757,6 +3106,8 @@ console_open(ide_t *st, const char *file, const char *board)
 /**
  * @brief What the program running on a board printed, and how it ended.
  */
+#include "tiku_ide_debug.inl"
+
 static void
 ide_board_said(void *state, int what, const char *text)
 {
@@ -2780,6 +3131,7 @@ ide_board_said(void *state, int what, const char *text)
     if (!st->running || st->board[0] == '\0') {
         return;
     }
+    if (what == TIKU_APP_BOARD_LINE && text && debug_line(st, text)) { return; }
         if (what == TIKU_APP_BOARD_RUNNING) {
         console_take(st, "running", 1);
         console_paint(st);
@@ -2820,6 +3172,17 @@ ide_board_said(void *state, int what, const char *text)
     }
     st->running = 0;
     st->asking = 0;
+    if (st->debugging) {
+        edit_t *source = edit_of_path(st, st->child_file);
+        st->debugging = st->debug_paused = 0;
+        if (source) {
+            snprintf(source->feedback, sizeof source->feedback, "%s",
+                     what == TIKU_APP_BOARD_FAILED ?
+                     "Debug failed: firmware must support DEBUG v1; check setup limits" :
+                     "Debug run ended");
+            edit_paint(st, source); edit_publish(st, source);
+        }
+    }
     if (what == TIKU_APP_BOARD_SAVED || st->saving) {
         /* A save says where it went, not in a message window: nothing
          * was printed, and a window for nothing is furniture. */
@@ -3046,6 +3409,31 @@ ide_tick(void *state, int64_t now_us)
     if (st == NULL) {
         return;
     }
+    if (st->proj_id && !st->splash_surface && !st->recovery_scanned) {
+        st->recovery_scanned = 1;
+        recovery_scan(st);
+    }
+    {
+        char status[160];
+        int i, checkpoint = now_us - st->recovery_at >= 2000000;
+
+        target_text(st, status, sizeof status);
+        if (strcmp(status, st->target_status)) { project_paint(st); }
+        for (i = 0; i < IDE_EDITS; i++) {
+            edit_t *e = &st->edit[i];
+            if (!e->surface) { continue; }
+            if (checkpoint && !recovery_write(e)) {
+                snprintf(e->feedback, sizeof e->feedback,
+                         "Recovery unavailable — save your work manually");
+            }
+            if (checkpoint || strcmp(status, st->target_status)) {
+                edit_paint(st, e);
+                edit_publish(st, e);
+            }
+        }
+        snprintf(st->target_status, sizeof st->target_status, "%s", status);
+        if (checkpoint) { st->recovery_at = now_us; }
+    }
     if (st->splash_surface != NULL) {
         /* The splash leaves on its own: an announcement is not a door
          * somebody should have to close.  While it stands, the status
@@ -3087,6 +3475,7 @@ ide_tick(void *state, int64_t now_us)
     if (!st->running) {
         return;
     }
+    if (st->local_debug) { debug_tick(st); return; }
     if (st->run_from == 0) {
         st->run_from = now_us;
     }
@@ -3364,6 +3753,7 @@ ide_stop(void *state)
     if (st == NULL) {
         return;
     }
+    if (st->local_debug) { debug_cleanup(st); st->running = 0; }
     if (st->running && st->board[0] != '\0') {
         /* A board program left running goes to the interpreter's INPUT
          * with nobody to answer, and the board's console then goes
@@ -3381,6 +3771,8 @@ ide_stop(void *state)
         st->running = 0;
     }
     for (i = 0; i < IDE_EDITS; i++) {
+        recovery_release(&st->edit[i], 0);
+        tiku_textview_free(&st->edit[i].tv);
         tiku_surface_free(st->edit[i].surface);
     }
     tiku_surface_free(st->msg_surface);
@@ -3465,10 +3857,11 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
     }
     if (st->ask.open && window == st->proj_id) {
         int at = -1;
+        int tag = st->ask.tag;
 
         if (event->type == TIKU_EVENT_KEY_DOWN) {
             at = tiku_alert_key(&st->ask, event->key);
-        } else {
+        } else if (event->type == TIKU_EVENT_POINTER_DOWN) {
             at = tiku_alert_button_at(&st->ask, st->ask_frame.w,
                      st->ask_frame.h, event->x - st->ask_frame.x,
                      event->y - st->ask_frame.y);
@@ -3480,22 +3873,47 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             return 0;           /* not the question's key: ignored */
         }
         tiku_alert_reset(&st->ask);
+        if (tag == CMD_QUIT) {
+            edit_t *closing = edit_of_id(st, st->closing_editor);
+            if (closing && at == 1) {
+                recovery_release(closing, 1);
+                tiku_textview_saved(&closing->tv);
+                edit_drop(st, closing);
+            } else if (closing && at == 2) {
+                if (edit_save(closing)) { edit_drop(st, closing); }
+                else { edit_paint(st, closing); }
+            }
+            project_paint(st);
+            return 0;
+        }
+        if (tag == CMD_SAVEBOARD) {
+            if (at == 1) { upload_confirm(st); }
+            else { project_paint(st); }
+            return 0;
+        }
         if (at == 1) {
+            int i;
+            for (i = 0; i < IDE_EDITS; i++) {
+                recovery_release(&st->edit[i], 1);
+            }
             return 1;           /* Discard: the project, and all of it */
         }
         project_paint(st);      /* Cancel: everything stands */
         return 0;
     }
+    if (st->ask.open) { return 0; }
     if (e != NULL && event->type == TIKU_EVENT_RESIZE) {
         /* The corner moved: repaint at the size the window now is, and
          * the next frame hands it over.  This arrives on every step of
          * the drag, so the page tracks the frame. */
-        int w = (event->width > 160) ? event->width : 160;
+        int w = (event->width > 360) ? event->width : 360;
         int h = (event->height > 100) ? event->height : 100;
         tiku_surface_t *grown = tiku_surface_new(w, h,
                                                       TIKU_C_PANEL);
 
         if (grown != NULL) {
+            if (h < 320) { e->assist_open = e->finding = 0; }
+            if (h < 260) { e->debug_show = e->watch_focus = 0; }
             tiku_surface_free(e->surface);
             e->surface = grown;
             e->w = w;
@@ -3519,10 +3937,38 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         /* An editor window: the document takes it. */
         unsigned ch = (unsigned char)event->text[0];
 
+        if (debug_event(st, e, event)) {
+            edit_paint(st, e); edit_publish(st, e); project_publish(st);
+            return 0;
+        }
+        if (event->type == TIKU_EVENT_KEY_DOWN && (event->modifiers & TIKU_MOD_CMD)) {
+            int cmd = event->key == 'd' ? CMD_DEBUG : event->key == 'b' ? CMD_BREAKPOINT :
+                      event->key == 'j' ? CMD_DEBUG_STEP : event->key == 'g' ? CMD_DEBUG_CONT :
+                      event->key == 'k' ? CMD_HELPWORD : event->key == ' ' ? CMD_COMPLETE : 0;
+            if (cmd && e->lang == TIKU_SYNTAX_BASIC) { return ide_pick(st, window, cmd); }
+        }
+        if (debug_locked(st, e)) {
+            int tool = tb_tool_at(e, event->x, event->y);
+            if (event->type == TIKU_EVENT_POINTER_DOWN && tool >= 0 && tool != 2) { return 0; }
+            if (event->type == TIKU_EVENT_KEY_DOWN &&
+                !(event->key >= TIKU_KEY_UP && event->key <= TIKU_KEY_PAGE_DOWN) &&
+                !((event->modifiers & TIKU_MOD_CMD) && (event->key == 'c' || event->key == '.')) &&
+                !(e->assist_open && event->key == TIKU_KEY_ESCAPE)) { return 0; }
+        }
+        if (assist_event(e, event)) {
+            edit_paint(st, e); edit_publish(st, e); project_publish(st);
+            return 0;
+        }
         if (event->type == TIKU_EVENT_POINTER_DOWN) {
             tiku_rect_t save_b = TB_SAVE;
             tiku_rect_t run_b = TB_RUN;
 
+            if (search_pointer(e, event->x, event->y)) {
+                edit_paint(st, e);
+                edit_publish(st, e);
+                project_publish(st);
+                return 0;
+            }
             if (event->x >= save_b.x && event->x < save_b.x + save_b.w &&
                 event->y >= save_b.y && event->y < save_b.y + save_b.h) {
                 (void)edit_save(e);
@@ -3565,12 +4011,8 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                     return 0;
                 }
                 if (hit_f) {
-                    e->finding = !e->finding;
-                    if (e->finding) {
-                        tiku_field_start(&e->find, "");
-                    } else {
-                        tiku_field_stop(&e->find);
-                    }
+                    if (e->finding) { e->finding = 0; }
+                    else { search_open(e, 0); }
                     edit_paint(st, e);
                     return 0;
                 }
@@ -3608,11 +4050,11 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * answer -- and moves the page WITHOUT the caret, because a
              * person looking elsewhere has not moved where they type. */
             if (event->x >= e->w - PAGE_SB &&
-                event->y >= edit_page_top(e) && event->y < e->h - STRIP_H) {
+                event->y >= edit_page_top(e) && event->y < edit_page_bottom(e)) {
                 int rows = edit_rows(e);
                 int top = tiku_textview_top(&e->tv);
                 int ptop = edit_page_top(e);
-                int mid = ptop + (e->h - STRIP_H - ptop) / 2;
+                int mid = ptop + (edit_page_bottom(e) - ptop) / 2;
                 int step = (rows > 1) ? rows - 1 : 1;
 
                 (void)tiku_textview_scroll_to(&e->tv,
@@ -3625,7 +4067,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * there -- a drag from here grows it, and a click that does
              * not move leaves anchor and caret together, which is none. */
             if (event->x < e->w - PAGE_SB &&
-                event->y >= edit_page_top(e) && event->y < e->h - STRIP_H) {
+                event->y >= edit_page_top(e) && event->y < edit_page_bottom(e)) {
                 edit_place_from_xy(e, event->x, event->y);
                 tiku_textview_select_none(&e->tv);
                 tiku_textview_select_begin(&e->tv);
@@ -3649,7 +4091,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * pointer; a move with no such press is not ours. */
             if (e->drag_select &&
                 event->x < e->w - PAGE_SB &&
-                event->y >= edit_page_top(e) && event->y < e->h - STRIP_H) {
+                event->y >= edit_page_top(e) && event->y < edit_page_bottom(e)) {
                 edit_place_from_xy(e, event->x, event->y);
                 (void)tiku_textview_reveal(&e->tv, edit_rows(e));
                 edit_paint(st, e);
@@ -3664,30 +4106,10 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             ch = event->key;
         }
         if (e->finding) {
-            /* The find bar has the keys while it is open: Escape puts it
-             * away, Return walks the hits, the rest edit the word. */
-            if (event->key == TIKU_KEY_ESCAPE) {
-                e->finding = 0;
-                tiku_field_stop(&e->find);
-                edit_paint(st, e);
-                return 0;
-            }
-            if (event->key == TIKU_KEY_RETURN) {
-                edit_find_run(e);
-                edit_paint(st, e);
-                return 0;
-            }
-            if (event->key == TIKU_KEY_BACKSPACE) {
-                (void)tiku_field_key(&e->find, TIKU_FIELD_BACKSPACE, 0, '\0');
-            } else if (event->key == TIKU_KEY_LEFT) {
-                (void)tiku_field_key(&e->find, TIKU_FIELD_LEFT, 0, '\0');
-            } else if (event->key == TIKU_KEY_RIGHT) {
-                (void)tiku_field_key(&e->find, TIKU_FIELD_RIGHT, 0, '\0');
-            } else if (ch >= 32u && ch < 127u &&
-                       !(event->modifiers & TIKU_MOD_CMD)) {
-                (void)tiku_field_key(&e->find, TIKU_FIELD_CHAR, 0, (char)ch);
-            }
+            if (event->type != TIKU_EVENT_KEY_DOWN) { return 0; }
+            search_key(st, e, event);
             edit_paint(st, e);
+            edit_publish(st, e);
             return 0;
         }
         {
@@ -3705,9 +4127,9 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 event->key == TIKU_KEY_PAGE_DOWN;
 
             /* Cmd-F opens the find bar, which then has the keys. */
-            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'f') {
-                e->finding = 1;
-                tiku_field_start(&e->find, "");
+            if ((event->modifiers & TIKU_MOD_CMD) &&
+                (event->key == 'f' || event->key == 'h')) {
+                search_open(e, event->key == 'h');
                 edit_paint(st, e);
                 return 0;
             }
@@ -3851,6 +4273,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
             (void)tiku_textview_reveal(&e->tv, rows);
             edit_paint(st, e);
             if (edited) {
+                e->feedback[0] = '\0';
                 edit_publish(st, e);
                 project_publish(st);   /* the mark follows the document */
             }
@@ -3877,7 +4300,10 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         }
         if ((event->modifiers & TIKU_MOD_CMD) &&
             (event->key == 'c' || event->text[0] == 'c') && st->running) {
-            if (st->services->board_stop != NULL) {
+            if (st->local_debug) {
+                run_stop(st, "? debug run stopped");
+                console_paint(st);
+            } else if (st->services->board_stop != NULL) {
                 (void)st->services->board_stop(st->services->ctx);
             }
             return 0;
@@ -3895,7 +4321,9 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 snprintf(echo, sizeof echo, "%s%s", st->ask_prompt,
                          st->answer.text);
                 console_take(st, echo, 0);
-                if (st->services->board_input != NULL) {
+                if (st->local_debug) {
+                    (void)tiku_board_basic_input(st->local_debug, st->answer.text);
+                } else if (st->services->board_input != NULL) {
                     (void)st->services->board_input(st->services->ctx,
                                                     st->answer.text);
                 }
@@ -4013,6 +4441,32 @@ ide_pick(void *state, uint32_t window, int command)
     ide_t *st = state;
     edit_t *e = edit_of_id(st, window);
 
+    if (st->ask.open) { return 0; }
+    if (e && e->lang == TIKU_SYNTAX_BASIC) {
+        if (command == CMD_HELPWORD || (command == CMD_COMPLETE && !debug_locked(st, e))) {
+            assist_open(e, command == CMD_COMPLETE); edit_paint(st, e); return 0;
+        }
+        if (command == CMD_DEBUG || command == CMD_DEBUG_PANEL || command == CMD_BREAKPOINT || command == CMD_CLEARBREAKS ||
+            command == CMD_DEBUG_STEP || command == CMD_DEBUG_CONT) {
+            debug_show(e);
+            if (command == CMD_DEBUG) { debug_start(st, e); }
+            if (command == CMD_BREAKPOINT && !st->running) { debug_break(e); }
+            if (command == CMD_CLEARBREAKS && !st->running) { memset(e->breaks, 0, sizeof e->breaks); }
+            if (debug_locked(st, e) && (command == CMD_DEBUG_STEP || command == CMD_DEBUG_CONT)) {
+                debug_command(st, command == CMD_DEBUG_STEP ? "DEBUG STEP" : "DEBUG CONT");
+            }
+            edit_paint(st, e); edit_publish(st, e); project_publish(st);
+            return 0;
+        }
+        if (debug_locked(st, e) && command != CMD_COPY && command != CMD_STOP &&
+            command != CMD_QUIT && command < CMD_WINDOW) { return 0; }
+    }
+    if (command == CMD_RECOVER) { recovery_scan(st); return 0; }
+    if (e && command == CMD_PROJECT_FIND) {
+        search_project(st, e);
+        edit_paint(st, e);
+        return 0;
+    }
     if (command >= CMD_WINDOW) {
         int i = command - CMD_WINDOW;
 
@@ -4040,9 +4494,8 @@ ide_pick(void *state, uint32_t window, int command)
         edit_publish(st, e);
         return 0;
     }
-    if (e != NULL && command == CMD_FIND) {
-        e->finding = 1;
-        tiku_field_start(&e->find, "");
+    if (e != NULL && (command == CMD_FIND || command == CMD_REPLACE)) {
+        search_open(e, command == CMD_REPLACE);
         edit_paint(st, e);
         return 0;
     }
@@ -4254,6 +4707,8 @@ ide_closed(void *state, uint32_t window)
     edit_t *e = edit_of_id(st, window);
 
     if (e != NULL) {
+        recovery_release(e, 0);
+        tiku_textview_free(&e->tv);
         tiku_surface_free(e->surface);
         e->surface = NULL;
         project_paint(st);

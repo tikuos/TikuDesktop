@@ -39,17 +39,17 @@ key Right
 wait 3
 key End shift
 wait 8
-expect-pixel 250 332 336698
+expect-pixel 250 356 336698
 note a character typed lands ON the span, replacing every bit of it
 key z
 wait 8
 note a DRAG of the pointer selects too: over the first line's word,
 note then a character replaces it
-press 218 294 1
+press 218 318 1
 wait 4
-move 292 294 1
+move 292 318 1
 wait 4
-release 292 294 1
+release 292 318 1
 wait 8
 key k
 wait 8

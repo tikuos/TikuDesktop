@@ -73,7 +73,7 @@ click 500 600
 wait 8
 click 71 8
 wait 8
-expect-menu Open Project…||Build for host||Close Project
+expect-menu Open Project…|Recover unsaved files||Build for host||Close Project
 menu-pick Build for host
 wait 200
 expect-title Messages

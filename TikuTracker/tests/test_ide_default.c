@@ -17,7 +17,7 @@ static int current(void *ctx, char *out, size_t max)
 static int menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 {
     (void)ctx;
-    assert(set->nmenu == 3);
+    assert(set->nmenu == (id == 1 ? 3 : 4));
     assert(strcmp(set->menu[2].title, "Window") == 0);
     if (id == 1) project_updates++;
     else {

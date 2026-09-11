@@ -138,8 +138,8 @@ size_t tiku_textview_selected(const tiku_textview_t *tv, char *out,
  *
  * The first character removes a held selection exactly as a typed key
  * does -- pasting over a selection replaces it -- and the rest lands
- * after it.  Only printable ASCII and the newline are taken; what a
- * file should not hold is dropped rather than half-taken.
+ * after it. Text bytes, tabs and line endings are preserved, including
+ * UTF-8 bytes, so whole-document edits and undo do not strip file data.
  */
 void tiku_textview_insert_text(tiku_textview_t *tv, const char *text);
 

@@ -448,9 +448,8 @@ tiku_textview_insert_text(tiku_textview_t *tv, const char *text)
         return;
     }
     for (i = 0; text[i] != '\0'; i++) {
-        if (text[i] == '\n' ||
-            ((unsigned char)text[i] >= 32u &&
-             (unsigned char)text[i] < 127u)) {
+        if (text[i] == '\n' || text[i] == '\t' || text[i] == '\r' ||
+            ((unsigned char)text[i] >= 32u && text[i] != 127)) {
             clean[n++] = text[i];
         }
     }
@@ -683,7 +682,7 @@ tiku_textview_newline(tiku_textview_t *tv)
         return;
     }
     (void)sel_delete(tv);       /* a return over a selection replaces it */
-    if (tv->nline + 1 >= TIKU_TEXTVIEW_LINES_MAX) {
+    if (tv->nline + 1 > TIKU_TEXTVIEW_LINES_MAX) {
         return;
     }
     l = &tv->line[tv->cy];

@@ -48,13 +48,13 @@ note opening a project does not start another device scan
 wait 10
 click 71 8
 wait 8
-expect-menu New Project…|Open Project…||Run||Close Project|
+expect-menu New Project…|Open Project…|Recover unsaved files||Run||Close Project|
 click-window Project
 wait 200
 note runs go to this machine until a board is chosen
 click 71 8
 wait 8
-expect-menu New Project…|Open Project…||Run||Close Project|
+expect-menu New Project…|Open Project…|Recover unsaved files||Run||Close Project|
 click-window Project
 wait 10
 note change the desktop default while the project is open
@@ -81,5 +81,5 @@ menu-pick This machine
 wait 10
 click 71 8
 wait 8
-expect-menu New Project…|Open Project…||Run||Close Project|
+expect-menu New Project…|Open Project…|Recover unsaved files||Run||Close Project|
 quit

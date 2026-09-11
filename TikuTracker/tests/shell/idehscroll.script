@@ -32,11 +32,11 @@ note the file opens with the caret at the end of its long last line,
 note so the page has already slid to keep the caret near the right edge
 key End
 wait 6
-expect-pixel 790 312 000000
+expect-pixel 790 336 000000
 note Home walks the caret to column zero, and the view comes home with
 note it: the caret stands at the left, the right edge cleared
 key Home
 wait 6
-expect-pixel 196 312 000000
-expect-pixel 790 312 ffffff
+expect-pixel 196 336 000000
+expect-pixel 790 336 ffffff
 quit

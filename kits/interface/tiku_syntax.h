@@ -30,6 +30,9 @@ typedef enum {
     TIKU_SYNTAX_C           /* C, which carries a remark between lines */
 } tiku_syntax_lang_t;
 
+/** @brief BASIC keyword at index, or NULL past the end; shared with completion. */
+const char *tiku_syntax_basic_keyword(int index);
+
 /**
  * @brief What a line was left in the middle of.
  *

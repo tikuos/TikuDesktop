@@ -41,6 +41,7 @@ static int host_prompted;
 /* Nonzero once the program has said anything: the newlines the line
  * editor echoes BEFORE that are the feeding, not the output. */
 static int host_spoke;
+static int host_stream, host_eof;
 
 void
 tiku_basic_host_printf(const char *fmt, ...)
@@ -51,6 +52,7 @@ tiku_basic_host_printf(const char *fmt, ...)
     va_start(ap, fmt);
     (void)vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
+    if (host_stream) { fputs(buf, stdout); fflush(stdout); return; }
     /* The prompt and the banner are the REPL talking to a person at a
      * keyboard; a batch run has neither, and an editor's output pane
      * wants what the PROGRAM said.  The prompt still MEANS something --
@@ -89,8 +91,21 @@ tiku_clock_seconds(void)
 
 /* The console: a batch run never has keys waiting, and INPUT answers
  * end-of-file rather than hanging a build machine. */
-int tiku_shell_io_rx_ready(void) { return 0; }
-int tiku_shell_io_getc(void)     { return -1; }
+#include <poll.h>
+#include <unistd.h>
+int tiku_shell_io_rx_ready(void)
+{
+    struct pollfd fd = { STDIN_FILENO, POLLIN, 0 };
+    return host_stream && poll(&fd, 1, 0) > 0;
+}
+int tiku_shell_io_getc(void)
+{
+    unsigned char ch;
+    if (!host_stream) { return -1; }
+    if (read(STDIN_FILENO, &ch, 1) == 1) { return ch; }
+    host_eof = 1;
+    return 3; /* EOF also releases a blocking INPUT. */
+}
 int tiku_shell_io_has_echo(void) { return 0; }
 int tiku_shell_net_getc(void)    { return -1; }
 void tiku_shell_net_pump(void)   {}
@@ -322,6 +337,20 @@ main(int argc, char **argv)
     }
     if (argc > 2) {
         snprintf(vfs_root, sizeof vfs_root, "%s", argv[2]);
+    }
+    if (!strcmp(argv[1], "--interactive")) {
+        host_stream = 1;
+        tiku_basic_mode_enter();
+        while (tiku_basic_mode_active() && !host_eof) {
+            int budget = 256;
+            struct pollfd input = { STDIN_FILENO, POLLIN, 0 };
+            while (budget-- && tiku_shell_io_rx_ready() && !host_eof) {
+                tiku_basic_mode_feed_char(tiku_shell_io_getc());
+            }
+            tiku_basic_mode_tick();
+            (void)poll(&input, 1, 1);
+        }
+        return 0;
     }
     f = fopen(argv[1], "r");
     if (f == NULL) {
