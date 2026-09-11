@@ -116,6 +116,10 @@
 #define IDE_MSGS   200
 /* How long a run may take before it is stopped rather than trusted. */
 #define IDE_RUN_LIMIT_US 30000000
+/* How long a board is given to answer a Stop before the run is let go
+ * on this side.  Long enough for a busy console, short enough that a
+ * board pulled from its cable does not hold the page. */
+#define IDE_BOARD_STOP_US 5000000
 
 #define CMD_OPEN     1
 #define CMD_QUIT     2
@@ -336,6 +340,7 @@ typedef struct {
     char                            partial[160];
     int                             child_numbered; /* a BASIC run */
     int64_t                         run_from;   /* when it started */
+    int64_t                         stop_asked; /* a board stop, unanswered */
     int64_t                         recovery_at;
     int                             recovery_scanned;
     char                            target_status[160];
@@ -2760,7 +2765,14 @@ run_stop(ide_t *st, const char *why)
         if (st->services->board_stop != NULL) {
             (void)st->services->board_stop(st->services->ctx);
         }
-        return;                 /* the shell says when it has stopped */
+        /* The shell says when it has stopped -- unless the board is
+         * gone, and then nobody ever will: the tick lets the run go
+         * here after the grace below, so Stop always ends in a page
+         * that can be edited again. */
+        if (st->stop_asked == 0) {
+            st->stop_asked = -1;        /* the next tick dates it */
+        }
+        return;
     }
     (void)kill(st->child, SIGTERM);
     (void)waitpid(st->child, NULL, 0);
@@ -2827,6 +2839,7 @@ run_file(ide_t *st, const char *path)
     st->child_fd = fds[0];
     st->running = 1;
     st->run_from = 0;           /* the first tick says when */
+    st->stop_asked = 0;
     st->nmsg = 0;
     st->partial[0] = '\0';
     /* No window yet: a run that says nothing has nothing to show, and
@@ -2886,6 +2899,7 @@ run_file_on_board(ide_t *st, const char *path, const char *board)
     }
         st->running = 1;
     st->run_from = 0;
+    st->stop_asked = 0;
     messages_paint(st);
     console_open(st, path, st->board);
 }
@@ -2987,6 +3001,7 @@ upload_confirm(ide_t *st)
     st->running = 1;
     st->saving = 1;
     st->run_from = 0;
+    st->stop_asked = 0;
     snprintf(st->note, sizeof st->note, "keeping %s on %s…", st->upload_name,
              st->board);
     project_paint(st);
@@ -3104,6 +3119,35 @@ console_open(ide_t *st, const char *file, const char *board)
 }
 
 /**
+ * @brief Let a board run go on this side when the board never answered.
+ *
+ * The program may well still be running out there; what ends here is
+ * this application's hold on the page, which a Stop must always lift.
+ */
+static void
+board_run_released(ide_t *st)
+{
+    edit_t *source = edit_of_path(st, st->child_file);
+
+    st->stop_asked = 0;
+    st->running = st->asking = 0;
+    st->board[0] = '\0';
+    if (st->debugging) {
+        st->debugging = st->debug_paused = 0;
+    }
+    if (source != NULL) {
+        snprintf(source->feedback, sizeof source->feedback,
+                 "The board did not answer Stop; the page is yours again"
+                 " (the program may still be running there)");
+        edit_paint(st, source);
+        edit_publish(st, source);
+    }
+    message_take(st, "? the board did not answer the stop");
+    project_paint(st);
+    project_publish(st);
+}
+
+/**
  * @brief What the program running on a board printed, and how it ended.
  */
 #include "tiku_ide_debug.inl"
@@ -3172,6 +3216,7 @@ ide_board_said(void *state, int what, const char *text)
     }
     st->running = 0;
     st->asking = 0;
+    st->stop_asked = 0;
     if (st->debugging) {
         edit_t *source = edit_of_path(st, st->child_file);
         st->debugging = st->debug_paused = 0;
@@ -3321,6 +3366,7 @@ build_project(ide_t *st)
     st->child_fd = fds[0];
     st->running = 1;
     st->run_from = 0;
+    st->stop_asked = 0;
     st->child_file[0] = '\0';
     messages_paint(st);
 }
@@ -3484,6 +3530,12 @@ ide_tick(void *state, int64_t now_us)
      * EBADF from the closed descriptor, which the loop below reads as a
      * finished run -- the run ended before it had said anything. */
     if (st->board[0] != '\0') {
+        if (st->stop_asked == -1) {
+            st->stop_asked = now_us;
+        } else if (st->stop_asked > 0 &&
+                   now_us - st->stop_asked > IDE_BOARD_STOP_US) {
+            board_run_released(st);
+        }
         return;
     }
     /*

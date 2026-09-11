@@ -291,6 +291,7 @@ test_reclaim_LDLIBS := -lutil -lpthread
 test_link_LDLIBS := -lutil
 test_menutext_LDLIBS := -lX11 -lm
 test_ide_default_LDLIBS := -lX11 -lm
+test_ide_deadboard_LDLIBS := -lX11 -lm
 test_ide_workflow_LDLIBS := -lX11 -lm
 test_ide_debug_LDLIBS := -lX11 -lm
 test_deviceprefs_LDLIBS := -lX11 -lm
