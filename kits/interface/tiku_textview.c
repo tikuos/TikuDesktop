@@ -12,6 +12,23 @@
 #include <string.h>
 
 #include "tiku_textview.h"
+#include "tiku_text_input.h"
+
+/** @brief Byte offsets at the adjacent UTF-8 codepoint boundaries. */
+static int text_previous(const char *s, int at)
+{
+    int start = at > 0 ? at - 1 : 0;
+    while (start > 0 && at - start < 4 &&
+           ((unsigned char)s[start] & 0xc0) == 0x80) start--;
+    return start;
+}
+static int text_next(const char *s, int at, int length)
+{
+    int end = at < length ? at + 1 : length;
+    while (end < length && end - at < 4 &&
+           ((unsigned char)s[end] & 0xc0) == 0x80) end++;
+    return end;
+}
 
 /** @brief Replace one line's text with @p len bytes of @p text. */
 static void
@@ -180,7 +197,7 @@ tiku_textview_init(tiku_textview_t *tv)
     memset(tv, 0, sizeof *tv);
     /* One empty line, never zero: every operation below may assume the
      * caret has a line to stand on, which is what keeps them short. */
-    line_set(&tv->line[0], "", 0);
+    /* NULL is an empty line too; clearing/freeing a view must not allocate. */
     tv->nline = 1;
     tv->recording = 1;          /* the journal listens from the start */
 }
@@ -322,6 +339,8 @@ tiku_textview_place(tiku_textview_t *tv, int line, int col)
     tv->cy = line;
     if (col < 0) { col = 0; }
     if (col > tv->line[line].len) { col = tv->line[line].len; }
+    while (tv->recording && col > 0 && col < tv->line[line].len &&
+           ((unsigned char)tv->line[line].text[col] & 0xc0) == 0x80) col--;
     tv->cx = col;
 }
 
@@ -400,7 +419,7 @@ tiku_textview_selected(const tiku_textview_t *tv, char *out, size_t max)
         return 0;
     }
     for (line = y0; line <= y1; line++) {
-        const char *text = tv->line[line].text;
+        const char *text = tiku_textview_line(tv, line);
         int len = tv->line[line].len;
         int c0 = (line == y0) ? x0 : 0;
         int c1 = (line == y1) ? x1 : len;
@@ -423,6 +442,54 @@ tiku_textview_selected(const tiku_textview_t *tv, char *out, size_t max)
     }
     out[used] = '\0';
     return used;
+}
+
+int tiku_textview_commit(tiku_textview_t *tv, const char *text)
+{
+    tiku_text_input_t checked;
+    int y0, x0, y1, x1;
+    if (!tv || !text || !tv->nline ||
+        !tiku_text_input_set(&checked, text, strlen(text))) return 0;
+    if (!*text) return 1;
+    if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
+        y0 = y1 = tv->cy; x0 = x1 = tv->cx;
+    }
+    /* Stale or mid-codepoint endpoints must not reach byte-based replay. */
+    if (y0 < 0 || y1 < y0 || y1 >= tv->nline || x0 < 0 || x1 < 0 ||
+        x0 > tv->line[y0].len || x1 > tv->line[y1].len ||
+        (x0 < tv->line[y0].len && ((unsigned char)tv->line[y0].text[x0] & 0xc0) == 0x80) ||
+        (x1 < tv->line[y1].len && ((unsigned char)tv->line[y1].text[x1] & 0xc0) == 0x80)) return 0;
+    int length = x0, lines = tv->nline - (y1 - y0);
+    int tail = tv->line[y1].len - x1;
+    /* Existing undo replays bytes through temporary joined lines. Reject a
+     * replacement those intermediate lines cannot hold, before any mutation. */
+    for (int y = y0; y < y1; y++)
+        if (tv->line[y].len + tail >= TIKU_TEXTVIEW_LINE_MAX) return 0;
+    /* And the pairs the commit's own newlines make: undo replays byte by
+     * byte, joining each new line back onto the one above, so a pair whose
+     * sum will not fit leaves a replay that stops half way. */
+    int above = -1;
+    for (const char *s = checked.text; *s; s++) {
+        if (*s == '\n') {
+            if (above >= 0 && above + length >= TIKU_TEXTVIEW_LINE_MAX) {
+                return 0;
+            }
+            above = length;
+            lines++; length = 0;
+        } else {
+            length++;
+        }
+        if (length + tail >= TIKU_TEXTVIEW_LINE_MAX ||
+            lines > TIKU_TEXTVIEW_LINES_MAX) return 0;
+    }
+
+    if (above >= 0 && above + length + tail >= TIKU_TEXTVIEW_LINE_MAX) {
+        return 0;
+    }
+    tiku_textview_group_begin(tv);
+    tiku_textview_insert_text(tv, checked.text);
+    tiku_textview_group_end(tv);
+    return 1;
 }
 
 void
@@ -578,6 +645,9 @@ caret_clamp(tiku_textview_t *tv)
     if (tv->cy >= 0 && tv->cx > tv->line[tv->cy].len) {
         tv->cx = tv->line[tv->cy].len;
     }
+    while (tv->recording && tv->cy >= 0 && tv->cx > 0 &&
+           tv->cx < tv->line[tv->cy].len &&
+           ((unsigned char)tv->line[tv->cy].text[tv->cx] & 0xc0) == 0x80) tv->cx--;
 }
 
 /**
@@ -625,7 +695,7 @@ sel_delete(tiku_textview_t *tv)
     /* The span kept whole FIRST, so the journal holds it as one delete
      * a single undo restores -- rather than the string of backspaces
      * that actually take it apart below. */
-    span = dupn("", count);
+    span = malloc((size_t)count + 1u);
     if (span != NULL) {
         (void)tiku_textview_selected(tv, span, (size_t)count + 1u);
     }
@@ -662,9 +732,10 @@ tiku_textview_insert(tiku_textview_t *tv, char ch)
     {
         int ol = tv->cy, oc = tv->cx;
 
-        memcpy(buf, l->text, (size_t)tv->cx);
+        const char *source = tiku_textview_line(tv, tv->cy);
+        memcpy(buf, source, (size_t)tv->cx);
         buf[tv->cx] = ch;
-        memcpy(buf + tv->cx + 1, l->text + tv->cx,
+        memcpy(buf + tv->cx + 1, source + tv->cx,
                (size_t)(l->len - tv->cx));
         line_set(l, buf, l->len + 1);
         tv->cx++;
@@ -694,7 +765,7 @@ tiku_textview_newline(tiku_textview_t *tv)
         int ol = tv->cy, oc = tv->cx;
 
         memset(&tv->line[tv->cy + 1], 0, sizeof tv->line[0]);
-        line_set(&tv->line[tv->cy + 1], l->text + tv->cx, tail);
+        line_set(&tv->line[tv->cy + 1], tiku_textview_line(tv, tv->cy) + tv->cx, tail);
         line_set(l, l->text, tv->cx);
         tv->nline++;
         tv->cy++;
@@ -716,8 +787,8 @@ join_previous(tiku_textview_t *tv, int at)
     if (seam + cur->len >= TIKU_TEXTVIEW_LINE_MAX) {
         return;
     }
-    memcpy(buf, prev->text, (size_t)seam);
-    memcpy(buf + seam, cur->text, (size_t)cur->len);
+    memcpy(buf, tiku_textview_line(tv, at - 1), (size_t)seam);
+    memcpy(buf + seam, tiku_textview_line(tv, at), (size_t)cur->len);
     line_set(prev, buf, seam + cur->len);
     free(cur->text);
     for (i = at; i < tv->nline - 1; i++) {
@@ -744,15 +815,17 @@ tiku_textview_backspace(tiku_textview_t *tv)
     }
     l = &tv->line[tv->cy];
     if (tv->cx > 0) {
-        char gone = l->text[tv->cx - 1];
-        int gl = tv->cy, gc = tv->cx - 1;
+        int gc = tv->recording ? text_previous(l->text, tv->cx) : tv->cx - 1;
+        int gl = tv->cy, n = tv->cx - gc;
+        char gone[4];
+        memcpy(gone, l->text + gc, (size_t)n);
 
-        memcpy(buf, l->text, (size_t)(tv->cx - 1));
-        memcpy(buf + tv->cx - 1, l->text + tv->cx,
+        memcpy(buf, l->text, (size_t)gc);
+        memcpy(buf + gc, l->text + tv->cx,
                (size_t)(l->len - tv->cx));
-        line_set(l, buf, l->len - 1);
-        tv->cx--;
-        record(tv, 2, gl, gc, &gone, 1);
+        line_set(l, buf, l->len - n);
+        tv->cx = gc;
+        record(tv, 2, gl, gc, gone, n);
     } else if (tv->cy > 0) {
         int gl = tv->cy - 1, gc = tv->line[tv->cy - 1].len;
 
@@ -776,14 +849,16 @@ tiku_textview_delete(tiku_textview_t *tv)
     }
     l = &tv->line[tv->cy];
     if (tv->cx < l->len) {
-        char gone = l->text[tv->cx];
+        int end = tv->recording ? text_next(l->text, tv->cx, l->len) : tv->cx + 1;
+        int n = end - tv->cx;
+        char gone[4];
+        memcpy(gone, l->text + tv->cx, (size_t)n);
         int gl = tv->cy, gc = tv->cx;
 
         memcpy(buf, l->text, (size_t)tv->cx);
-        memcpy(buf + tv->cx, l->text + tv->cx + 1,
-               (size_t)(l->len - tv->cx - 1));
-        line_set(l, buf, l->len - 1);
-        record(tv, 2, gl, gc, &gone, 1);
+        memcpy(buf + tv->cx, l->text + end, (size_t)(l->len - end));
+        line_set(l, buf, l->len - n);
+        record(tv, 2, gl, gc, gone, n);
     } else if (tv->cy + 1 < tv->nline) {
         /* Forwards at a line's end is the same fold as backspace at the
          * next line's head, so it is the same code -- and the caret must
@@ -804,7 +879,7 @@ tiku_textview_move(tiku_textview_t *tv, tiku_textview_move_t how)
     switch (how) {
     case TIKU_TEXTVIEW_LEFT:
         if (tv->cx > 0) {
-            tv->cx--;
+            tv->cx = text_previous(tv->line[tv->cy].text, tv->cx);
         } else if (tv->cy > 0) {
             tv->cy--;
             tv->cx = tv->line[tv->cy].len;
@@ -812,7 +887,7 @@ tiku_textview_move(tiku_textview_t *tv, tiku_textview_move_t how)
         break;
     case TIKU_TEXTVIEW_RIGHT:
         if (tv->cx < tv->line[tv->cy].len) {
-            tv->cx++;
+            tv->cx = text_next(tv->line[tv->cy].text, tv->cx, tv->line[tv->cy].len);
         } else if (tv->cy + 1 < tv->nline) {
             tv->cy++;
             tv->cx = 0;
@@ -842,6 +917,7 @@ tiku_textview_move(tiku_textview_t *tv, tiku_textview_move_t how)
     if (tv->cx > tv->line[tv->cy].len) {
         tv->cx = tv->line[tv->cy].len;
     }
+    caret_clamp(tv);
 }
 
 int
@@ -896,7 +972,7 @@ tiku_textview_text(const tiku_textview_t *tv, char *out, size_t max)
         size_t len = (size_t)tv->line[i].len;
 
         if (out != NULL && need + len + 1u < max) {
-            memcpy(out + need, tv->line[i].text, len);
+            memcpy(out + need, tiku_textview_line(tv, i), len);
             out[need + len] = '\n';
         }
         need += len + 1u;

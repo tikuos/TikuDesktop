@@ -99,6 +99,8 @@ int tiku_form_editing(const tiku_form_t *f);
  *         value), 3 reverted with Escape.
  */
 int tiku_form_key(tiku_form_t *f, unsigned key, char ch);
+/** @brief Append UTF-8 to the focused entry without writing its value. */
+int tiku_form_text(tiku_form_t *f, const char *text);
 
 tiku_rect_t tiku_form_row_rect(const tiku_form_t *f, tiku_rect_t body,
                                int i);

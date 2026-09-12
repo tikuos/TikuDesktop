@@ -54,7 +54,8 @@ typedef enum {
     TIKU_FIELD_IGNORED = 0,
     TIKU_FIELD_HANDLED,
     TIKU_FIELD_COMMITTED,
-    TIKU_FIELD_CANCELLED
+    TIKU_FIELD_CANCELLED,
+    TIKU_FIELD_REJECTED             /* atomic event input did not fit/validate */
 } tiku_field_result_t;
 
 /** @brief An open editor: text, caret and the selected range. */
@@ -79,6 +80,8 @@ typedef struct {
  * rename two operations.
  */
 void tiku_field_start(tiku_field_t *e, const char *text);
+/** @brief Atomically insert valid UTF-8 at the selection; refuse invalid/full input. */
+tiku_field_result_t tiku_field_commit(tiku_field_t *e, const char *text);
 
 /**
  * @brief Refuse @p deny's characters at the keystroke (MA-046).

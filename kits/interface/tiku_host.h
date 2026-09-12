@@ -23,6 +23,9 @@ tiku_host_t *tiku_host_open(int width, int height,
 /** @brief Release the native window and every platform resource it owns. */
 void tiku_host_close(tiku_host_t *host);
 
+/** @brief Discard uncommitted composition when an internal text target changes. */
+void tiku_host_cancel_composition(tiku_host_t *host);
+
 /** @brief Native pixels per logical pixel of the display (1..4). */
 int tiku_host_scale(const tiku_host_t *host);
 
@@ -33,7 +36,13 @@ int tiku_host_present(tiku_host_t *host,
 /** @brief Change the native window title. */
 void tiku_host_set_title(tiku_host_t *host, const char *title);
 
-/** @brief Poll one normalized event without blocking. */
+/** @brief Poll one normalized event without waiting for other applications.
+ * The X11 host exports local text copies and asynchronously refreshes CLIPBOARD
+ * on activation, paste, and menu clicks. Input waits behind an in-flight import
+ * for at most one second. TIKU_EVENT_CLIPBOARD is delivered before that input;
+ * shells must mirror the new text to remote apps before forwarding their keys.
+ * event.key carries a TIKU_CLIPBOARD_* status from tiku_clipboard.h.
+ */
 int tiku_host_poll(tiku_host_t *host, tiku_event_t *event);
 
 /** @brief Select the horizontal-resize pointer while a divider is hot. */

@@ -70,6 +70,11 @@ test: all
 	        *) $$t ;; \
 	    esac || exit 1; \
 	done
+	@if command -v Xvfb > /dev/null 2>&1 || command -v Xephyr > /dev/null 2>&1; then \
+	    $(MAKE) --no-print-directory test-host-clipboard; \
+	else \
+	    echo "host clipboard: SKIPPED -- install Xvfb or Xephyr"; \
+	fi
 	@python3 $(T)/tools/check_contract.py $(T)/FEATURES.md
 	@python3 $(T)/tools/check_menu_commands.py
 	@python3 $(T)/tools/check_shipping.py

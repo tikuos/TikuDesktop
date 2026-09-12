@@ -295,6 +295,26 @@ test_ide_deadboard_LDLIBS := -lX11 -lm
 test_ide_workflow_LDLIBS := -lX11 -lm
 test_ide_debug_LDLIBS := -lX11 -lm
 test_deviceprefs_LDLIBS := -lX11 -lm
+test_startup_CFLAGS := -ffunction-sections -fdata-sections
+test_startup_SRCS := $(T)/src/core/tiku_trk_frame.c
+test_startup_LDLIBS := -lX11 -lm -ldl -Wl,--gc-sections
+test_controls_LDLIBS := -lX11 -lm
+test_text_input_LDLIBS := -lX11 -lm
+test_legacy_input_CFLAGS := -ffunction-sections -fdata-sections
+test_legacy_input_SRCS := $(COMMON) $(POSEVIEW) \
+    $(T)/src/core/tiku_trk_select.c $(T)/src/ui/tiku_trk_find.c \
+    $(T)/src/ui/tiku_trk_titleview.c \
+    $(T)/src/ui/windows/tiku_trk_folder_window.c \
+    $(T)/src/ui/windows/tiku_trk_folder_edit.c \
+    $(T)/src/ui/windows/tiku_trk_find_window.c \
+    $(T)/src/ui/windows/tiku_trk_select_window.c \
+    $(T)/src/ui/windows/tiku_trk_info_window.c \
+    $(T)/src/ui/windows/tiku_trk_panel_window.c \
+    $(T)/src/ui/overlays/tiku_trk_status_overlay.c
+test_legacy_input_LDLIBS := -lX11 -lm -ldl -Wl,--gc-sections
+test_preferences_kit_LDLIBS := -lX11 -lm
+test_clipboard_text_LDLIBS := -lX11 -lm
+test_host_clipboard_LDLIBS := -lX11 -lm
 test_formrow_LDLIBS := -lX11 -lm
 test_gui_CFLAGS := -I$(T)/tests/boardstub -Iboard/gui -Wno-unused-function
 test_deskprefs_SRCS   := $(T)/src/core/tiku_trk_deskprefs.c $(T)/src/core/tiku_trk_background.c
@@ -308,3 +328,7 @@ $(BUILD)/tests/test_%: $(OBJ)/$(T)/tests/test_%.o $$(call objs,$$(test_$$*_SRCS)
 
 .PHONY: tests
 tests: $(TESTBINS)
+
+.PHONY: test-host-clipboard
+test-host-clipboard: $(BUILD)/tests/test_host_clipboard
+	python3 $(T)/tests/run_host_clipboard.py

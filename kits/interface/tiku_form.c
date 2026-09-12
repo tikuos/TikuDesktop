@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "tiku_form.h"
+#include "tiku_text_input.h"
 #include "tiku_event.h"
 #include "tiku_font.h"
 #include "tiku_layout.h"
@@ -480,9 +481,7 @@ tiku_form_key(tiku_form_t *f, unsigned key, char ch)
         return 3;
     }
     if (key == TIKU_KEY_BACKSPACE) {
-        if (n > 0u) {
-            row->edit[n - 1u] = '\0';
-        }
+        tiku_text_input_backspace(row->edit, sizeof row->edit);
         return 1;
     }
     if (ch >= ' ' && (unsigned char)ch < 127u && n + 1u < sizeof row->edit) {
@@ -490,4 +489,11 @@ tiku_form_key(tiku_form_t *f, unsigned key, char ch)
         row->edit[n + 1u] = '\0';
     }
     return 1;
+}
+
+int tiku_form_text(tiku_form_t *f, const char *text)
+{
+    int i = tiku_form_editing(f);
+    return i >= 0 && tiku_text_input_append(f->row[i].edit,
+                                           sizeof f->row[i].edit, text);
 }

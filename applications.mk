@@ -27,6 +27,16 @@ APPL_SRCS   += applications/board/gui/tiku_measure_board.c
 # board's recording surface (board/gui/tiku_gfx.h and friends, found
 # first on the include path).
 APPL_SRCS   += applications/kits/interface/tiku_field.c
+APPL_SRCS   += applications/kits/interface/tiku_field_event.c
+APPL_SRCS   += applications/kits/interface/tiku_text_input.c
+APPL_SRCS   += applications/kits/interface/tiku_dialog.c
+APPL_SRCS   += applications/kits/interface/tiku_choice.c
+APPL_SRCS   += applications/kits/interface/tiku_choice_paint.c
+APPL_SRCS   += applications/kits/interface/tiku_text_layout.c
+APPL_SRCS   += applications/kits/interface/tiku_text_layout_paint.c
+APPL_SRCS   += applications/kits/interface/tiku_properties.c
+APPL_SRCS   += applications/kits/interface/tiku_properties_paint.c
+APPL_SRCS   += applications/kits/interface/tiku_preferences_layout.c
 APPL_SRCS   += applications/kits/interface/tiku_scroll.c
 APPL_SRCS   += applications/kits/interface/tiku_slider.c
 APPL_SRCS   += applications/kits/interface/tiku_tabs.c

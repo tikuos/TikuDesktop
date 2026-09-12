@@ -48,6 +48,12 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_ui.c $(K)/interface/tiku_dl.c \
                $(K)/interface/tiku_logo.c \
                $(K)/interface/tiku_scroll.c $(K)/interface/tiku_field.c \
+               $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c \
+               $(K)/interface/tiku_text_input.c \
+               $(K)/interface/tiku_choice.c $(K)/interface/tiku_choice_paint.c \
+               $(K)/interface/tiku_text_layout.c $(K)/interface/tiku_text_layout_paint.c \
+               $(K)/interface/tiku_properties.c $(K)/interface/tiku_properties_paint.c \
+               $(K)/interface/tiku_preferences_layout.c \
                $(K)/interface/tiku_clipboard.c \
                $(K)/interface/tiku_menu.c $(K)/interface/tiku_tabs.c \
                $(K)/interface/tiku_slider.c $(K)/interface/tiku_colors.c \
@@ -60,7 +66,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_slider_paint.c $(K)/interface/tiku_tabs_paint.c \
                $(K)/interface/tiku_list_paint.c $(K)/interface/tiku_colors_paint.c \
                $(K)/interface/tiku_window.c \
-               $(K)/interface/tiku_x11.c
+               $(K)/interface/tiku_x11.c $(K)/interface/tiku_x11_clipboard.c
 TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_hvif.c $(K)/translation/tiku_image.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
@@ -160,6 +166,11 @@ dl:
 # The behaviour files must compile for a board that has no display: the
 # firmware's own compiler, the kit's headers only, nothing else.
 BEHAVIOUR_SRCS := $(K)/interface/tiku_field.c $(K)/interface/tiku_scroll.c \
+                  $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c \
+                  $(K)/interface/tiku_text_input.c \
+                  $(K)/interface/tiku_choice.c \
+                  $(K)/interface/tiku_text_layout.c $(K)/interface/tiku_properties.c \
+                  $(K)/interface/tiku_preferences_layout.c \
                   $(K)/interface/tiku_textview.c $(K)/interface/tiku_slider.c \
                   $(K)/interface/tiku_tabs.c $(K)/interface/tiku_list.c \
                   $(K)/interface/tiku_layout.c $(K)/interface/tiku_colors.c \
@@ -175,6 +186,15 @@ check-behaviour:
 	    arm-none-eabi-gcc -std=gnu11 -fsyntax-only -Wall -Wextra \
 	        -mcpu=cortex-m33 -mthumb -I$(K)/interface $$f || exit 1; \
 	done; echo "check-behaviour: every behaviour file compiles for the board"
+	@arm-none-eabi-gcc -std=gnu11 -fsyntax-only -Wall -Wextra -Werror \
+	    -mcpu=cortex-m33 -mthumb -DTIKU_DISPLAYLESS=1 \
+	    -Iboard/gui -I$(K)/interface \
+	    $(K)/interface/tiku_dialog.c $(K)/interface/tiku_choice.c \
+	    $(K)/interface/tiku_field_event.c $(K)/interface/tiku_choice_paint.c \
+	    $(K)/interface/tiku_text_input.c \
+	    $(K)/interface/tiku_text_layout.c $(K)/interface/tiku_text_layout_paint.c \
+	    $(K)/interface/tiku_properties.c $(K)/interface/tiku_properties_paint.c \
+	    $(K)/interface/tiku_preferences_layout.c
 check-dl:
 	@python3 $(K)/interface/tools/gendl.py desktop $(K)/interface/dl_ops.txt \
 	    | diff -q - $(K)/interface/tiku_dl_ops.h > /dev/null \

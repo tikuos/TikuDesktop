@@ -142,6 +142,11 @@ size_t tiku_textview_selected(const tiku_textview_t *tv, char *out,
  * UTF-8 bytes, so whole-document edits and undo do not strip file data.
  */
 void tiku_textview_insert_text(tiku_textview_t *tv, const char *text);
+/** @brief Insert one validated UTF-8 commit as one undo group.
+ * Refuses invalid text or line/count overflow before changing the selection.
+ * Public caret columns remain byte offsets, snapped to codepoint boundaries.
+ */
+int tiku_textview_commit(tiku_textview_t *tv, const char *text);
 
 /** @brief Take back the last edit; @return 1 if there was one. */
 int tiku_textview_undo(tiku_textview_t *tv);

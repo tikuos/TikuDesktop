@@ -18,21 +18,7 @@
 
 #include <stdint.h>
 
-typedef enum {
-    TIKU_EVENT_NONE = 0,
-    TIKU_EVENT_EXPOSE,
-    TIKU_EVENT_CLOSE,
-    TIKU_EVENT_RESIZE,
-    TIKU_EVENT_KEY_DOWN,
-    TIKU_EVENT_KEY_UP,
-    TIKU_EVENT_POINTER_DOWN,
-    TIKU_EVENT_POINTER_UP,
-    TIKU_EVENT_POINTER_MOVE,
-    TIKU_EVENT_WHEEL,
-    TIKU_EVENT_ACTIVATED,
-    TIKU_EVENT_DEACTIVATED,
-    TIKU_EVENT_TICK
-} tiku_event_type_t;
+#include "tiku_input.h"
 
 /* Logical modifiers.  A platform adapter maps its physical keyboard onto
  * these; applications never inspect native mask bits. */
@@ -62,18 +48,7 @@ typedef enum {
 #define TIKU_KEY_CMD      17u
 #define TIKU_KEY_OPTION   18u
 
-typedef struct {
-    tiku_event_type_t type;
-    int64_t                time_us;
-    unsigned               modifiers;
-    unsigned               key;
-    unsigned               button;
-    unsigned               repeat;
-    char                   text[8];
-    int                    x, y;
-    int                    dx, dy;
-    int                    width, height;
-} tiku_event_t;
+typedef tiku_input_event_t tiku_event_t;
 
 #endif /* TIKU_DISPLAYLESS */
 #endif /* TIKU_EVENT_H_ */

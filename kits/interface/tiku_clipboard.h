@@ -25,8 +25,21 @@
 
 #define TIKU_CLIPBOARD_MAX 4096
 
+/* TIKU_EVENT_CLIPBOARD carries one of these results in event.key. */
+enum { TIKU_CLIPBOARD_OK = 1, TIKU_CLIPBOARD_UNAVAILABLE,
+       TIKU_CLIPBOARD_TOO_LARGE, TIKU_CLIPBOARD_INVALID, TIKU_CLIPBOARD_TIMEOUT };
+
+/** @brief User-facing transfer result, empty on success. */
+const char *tiku_clipboard_status_text(int status);
+
 /** @brief Put @p text on the clipboard; NULL clears it. */
 void tiku_clipboard_set(const char *text);
+
+/** @brief Atomically import a complete UTF-8 string from an external source.
+ * Returns 1 on success, 0 for overflow, embedded NUL or malformed UTF-8.
+ * Failure leaves both contents and stamp unchanged. No truncation is allowed.
+ */
+int tiku_clipboard_import(const char *text, size_t length);
 
 /** @brief What the clipboard holds -- never NULL, empty when nothing. */
 const char *tiku_clipboard_text(void);

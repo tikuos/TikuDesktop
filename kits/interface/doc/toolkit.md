@@ -29,6 +29,17 @@ how the two ends are kept the same, and how to add to them.
 
 `make check-toolkit` runs all of the above at once.
 
+The shared [dialog, dropdown and field-input controls](controls.md) compose
+existing paint operations, so they do not introduce a new display-list opcode.
+Their sources, along with preferences layout, property-table and text-layout
+helpers, are included in both desktop and board builds. `check-behaviour` also
+compiles these adapters and their painters with `TIKU_DISPLAYLESS` and the actual
+board headers, catching recording-surface and event-type drift.
+
+The shared [text-input adapter](text-input.md) assembles bounded UTF-8 commits
+without changing the event structure. The desktop X11 host supplies XIM/Compose
+input; fields and documents validate a whole commit before editing.
+
 ## Adding a control
 
 Say the desktop gains a `dial`.

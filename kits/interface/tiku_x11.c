@@ -21,9 +21,13 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <locale.h>
 
 #include "tiku_host.h"
 #include "tiku_gfx.h"
+#include "tiku_x11_clipboard.h"
+#include "tiku_text_input.h"
 
 struct tiku_host {
     Display *display;
@@ -37,7 +41,87 @@ struct tiku_host {
     int logical_height;
     int native_width;
     int native_height;
+    tiku_x11_clipboard_t clipboard;
+    tiku_event_t deferred;
+    int has_deferred, clipboard_ready;
+    XIM input_method;
+    XIC input_context;
+    XIMCallback input_destroy;
+    tiku_text_input_t commit;
 };
+
+/** @brief Xlib owns destruction when an input-method service disconnects. */
+static void input_destroyed(XIM im, XPointer ctx, XPointer data)
+{
+    tiku_host_t *host = (tiku_host_t *)ctx;
+    (void)im; (void)data;
+    host->input_method = NULL; host->input_context = NULL;
+    tiku_text_input_reset(&host->commit);
+}
+
+/** @brief Negotiate IM-managed composition UI, falling back to local Compose. */
+static void input_open(tiku_host_t *host)
+{
+    XIMStyles *styles = NULL;
+    XIMStyle chosen = 0;
+    if (host->input_method) return;
+    (void)XSetLocaleModifiers("");
+    host->input_method = XOpenIM(host->display, NULL, NULL, NULL);
+    if (!host->input_method) {
+        (void)XSetLocaleModifiers("@im=none");
+        host->input_method = XOpenIM(host->display, NULL, NULL, NULL);
+        (void)XSetLocaleModifiers("");
+    }
+    if (!host->input_method) return;
+    if (!XGetIMValues(host->input_method, XNQueryInputStyle, &styles, NULL) && styles) {
+        XIMStyle choices[] = {XIMPreeditNothing | XIMStatusNothing,
+                               XIMPreeditNone | XIMStatusNone};
+        for (int j = 0; !chosen && j < 2; j++)
+            for (unsigned i = 0; i < styles->count_styles; i++)
+                if (styles->supported_styles[i] == choices[j]) chosen = choices[j];
+    }
+    if (styles) XFree(styles);
+    if (chosen) host->input_context = XCreateIC(host->input_method,
+        XNInputStyle, chosen, XNClientWindow, host->window,
+        XNFocusWindow, host->window, NULL);
+    if (!host->input_context) {
+        XCloseIM(host->input_method); host->input_method = NULL; return;
+    }
+    host->input_destroy = (XIMCallback){(XPointer)host, input_destroyed};
+    (void)XSetIMValues(host->input_method, XNDestroyCallback, &host->input_destroy, NULL);
+    long mask = 0;
+    XWindowAttributes attr;
+    if (!XGetICValues(host->input_context, XNFilterEvents, &mask, NULL) &&
+        XGetWindowAttributes(host->display, host->window, &attr))
+        XSelectInput(host->display, host->window, attr.your_event_mask | mask);
+}
+
+void tiku_host_cancel_composition(tiku_host_t *host)
+{
+    if (!host) return;
+    if (host->input_context) {
+        char *discard = Xutf8ResetIC(host->input_context);
+        if (discard) XFree(discard);
+    }
+    tiku_text_input_reset(&host->commit);
+}
+
+/** @brief Encode a keysym's Unicode value when no XIM context is available. */
+static int input_utf8(unsigned cp, char *out)
+{
+    if (cp < 128) { out[0] = (char)cp; return 1; }
+    if (cp < 2048) { out[0] = (char)(0xc0 | cp >> 6);
+        out[1] = (char)(0x80 | (cp & 63)); return 2; }
+    if (cp >= 0xd800 && cp <= 0xdfff) return 0;
+    if (cp < 65536) { out[0] = (char)(0xe0 | cp >> 12);
+        out[1] = (char)(0x80 | ((cp >> 6) & 63));
+        out[2] = (char)(0x80 | (cp & 63)); return 3; }
+    if (cp > 0x10ffff) return 0;
+    out[0] = (char)(0xf0 | cp >> 18);
+    out[1] = (char)(0x80 | ((cp >> 12) & 63));
+    out[2] = (char)(0x80 | ((cp >> 6) & 63));
+    out[3] = (char)(0x80 | (cp & 63)); return 4;
+}
 
 /** @brief Read the desktop's integer UI scale from its Xft DPI setting. */
 static int
@@ -174,6 +258,8 @@ tiku_host_open(int width, int height, const char *title)
     if (width <= 0 || height <= 0) {
         return NULL;
     }
+    /* Only character classification changes; numeric VFS formatting stays C. */
+    (void)setlocale(LC_CTYPE, "");
     host = calloc(1u, sizeof *host);
     if (host == NULL) {
         return NULL;
@@ -199,7 +285,10 @@ tiku_host_open(int width, int height, const char *title)
     XSelectInput(host->display, host->window,
                  ExposureMask | KeyPressMask | KeyReleaseMask |
                  ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
-                 StructureNotifyMask | FocusChangeMask);
+                 StructureNotifyMask | FocusChangeMask | PropertyChangeMask);
+    tiku_x11_clipboard_init(&host->clipboard, host->display, host->window);
+    host->clipboard_ready = 1;
+    input_open(host);
     host->delete_window = XInternAtom(host->display, "WM_DELETE_WINDOW",
                                       False);
     XSetWMProtocols(host->display, host->window, &host->delete_window, 1);
@@ -226,6 +315,10 @@ tiku_host_close(tiku_host_t *host)
     if (host->image != NULL) {
         XDestroyImage(host->image);
     }
+    if (host->input_context) XDestroyIC(host->input_context);
+    host->input_context = NULL;
+    if (host->input_method) XCloseIM(host->input_method);
+    host->input_method = NULL;
     if (host->display != NULL && host->resize_cursor != None) {
         XFreeCursor(host->display, host->resize_cursor);
     }
@@ -233,6 +326,7 @@ tiku_host_close(tiku_host_t *host)
         XFreeGC(host->display, host->gc);
     }
     if (host->display != NULL && host->window != None) {
+        if (host->clipboard_ready) tiku_x11_clipboard_close(&host->clipboard);
         XDestroyWindow(host->display, host->window);
     }
     if (host->display != NULL) {
@@ -289,16 +383,55 @@ tiku_host_set_title(tiku_host_t *host, const char *title)
     }
 }
 
+/** @brief Clipboard deadlines use elapsed time, not X server timestamps. */
+static int64_t monotonic_us(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
+}
+
+/** @brief Publish an imported clipboard before releasing its deferred input. */
+static int clipboard_result(tiku_host_t *host, tiku_event_t *event)
+{
+    if (!host->clipboard.result) return 0;
+    memset(event, 0, sizeof *event);
+    event->type = TIKU_EVENT_CLIPBOARD;
+    event->key = (unsigned)host->clipboard.result;
+    host->clipboard.result = 0;
+    return 1;
+}
+
 int
 tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
 {
     XEvent native;
 
-    if (host == NULL || event == NULL || XPending(host->display) == 0) {
+    if (host == NULL || event == NULL) {
         return 0;
     }
+    int64_t now = monotonic_us();
+    if (tiku_text_input_next(&host->commit, event)) return 1;
+    tiku_x11_clipboard_tick(&host->clipboard, now);
+    /* Do not consume later clicks/keys while importing for an earlier event.
+     * Only protocol events bypass the input barrier. Each poll stays bounded. */
+    for (int i = 0; i < 32 && XCheckIfEvent(host->display, &native,
+         tiku_x11_clipboard_match, (XPointer)&host->clipboard); i++)
+        (void)tiku_x11_clipboard_event(&host->clipboard, &native, now);
+    if (clipboard_result(host, event)) return 1;
+    /* Input waits only for an import someone is waiting on.  A refresh
+     * armed by an ordinary click must never hold the desk still while a
+     * stopped application sits on the selection. */
+    if (host->clipboard.requestor && host->has_deferred) return 0;
+    if (host->has_deferred) {
+        *event = host->deferred;
+        host->has_deferred = 0;
+        return 1;
+    }
+    if (!XPending(host->display)) return 0;
     XNextEvent(host->display, &native);
     memset(event, 0, sizeof *event);
+    if (XFilterEvent(&native, None)) return 1;
     switch (native.type) {
     case Expose:
         event->type = TIKU_EVENT_EXPOSE;
@@ -306,8 +439,26 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
     case KeyPress:
     case KeyRelease: {
         KeySym keysym = NoSymbol;
-        int n = XLookupString(&native.xkey, event->text,
-                              (int)sizeof event->text - 1, &keysym, NULL);
+        char text[TIKU_TEXT_INPUT_MAX] = {0};
+        Status status = XLookupNone;
+        int n;
+        if (native.type == KeyPress && host->input_context) {
+            n = Xutf8LookupString(host->input_context, &native.xkey, text,
+                                  sizeof text - 1, &keysym, &status);
+            if (status == XBufferOverflow) {
+                tiku_host_cancel_composition(host);
+                event->type = TIKU_EVENT_TEXT_INPUT;
+                event->button = TIKU_TEXT_REJECT;
+                return 1;
+            }
+            if (status != XLookupChars && status != XLookupBoth) n = 0;
+        } else {
+            n = XLookupString(&native.xkey, text, sizeof text - 1, &keysym, NULL);
+            if (keysym >= 0x01000000 && keysym <= 0x0110ffff)
+                n = input_utf8((unsigned)(keysym & 0xffffff), text);
+            else if (keysym >= 0xa0 && keysym <= 0xff)
+                n = input_utf8((unsigned)keysym, text);
+        }
 
         event->type = (native.type == KeyPress)
                           ? TIKU_EVENT_KEY_DOWN
@@ -315,8 +466,20 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
         event->modifiers = event_modifiers(native.xkey.state);
         event->key = event_key(keysym);
         event->time_us = (int64_t)native.xkey.time * 1000;
-        if (n < 0) { n = 0; }
-        event->text[n] = '\0';
+        if (n < 0 || n >= (int)sizeof text) n = 0;
+        text[n] = 0;
+        if (native.type == KeyPress && n &&
+            !(event->modifiers & (TIKU_MOD_CMD | TIKU_MOD_OPTION)) &&
+            (n > 1 || (unsigned char)text[0] >= 128 || status == XLookupChars)) {
+            if (tiku_text_input_set(&host->commit, text, (size_t)n)) {
+                (void)tiku_text_input_next(&host->commit, event);
+            } else { memset(event, 0, sizeof *event);
+                event->type = TIKU_EVENT_TEXT_INPUT; event->button = TIKU_TEXT_REJECT; }
+        } else if (native.type == KeyPress && n < (int)sizeof event->text)
+            memcpy(event->text, text, (size_t)n + 1);
+        if (native.type == KeyPress &&
+            (event->modifiers & (TIKU_MOD_CMD | TIKU_MOD_OPTION)))
+            tiku_host_cancel_composition(host);
         break;
     }
     case ButtonPress:
@@ -346,9 +509,13 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
         event->time_us = (int64_t)native.xmotion.time * 1000;
         break;
     case FocusIn:
+        input_open(host);
+        if (host->input_context) XSetICFocus(host->input_context);
         event->type = TIKU_EVENT_ACTIVATED;
         break;
     case FocusOut:
+        tiku_host_cancel_composition(host);
+        if (host->input_context) XUnsetICFocus(host->input_context);
         event->type = TIKU_EVENT_DEACTIVATED;
         break;
     case ConfigureNotify:
@@ -369,6 +536,21 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
     default:
         event->type = TIKU_EVENT_NONE;
         break;
+    }
+    int paste = event->type == TIKU_EVENT_KEY_DOWN && event->key == 'v' &&
+                (event->modifiers & TIKU_MOD_CMD);
+    if (event->type == TIKU_EVENT_POINTER_DOWN && event->button == 1)
+        tiku_host_cancel_composition(host);
+    if (event->type == TIKU_EVENT_ACTIVATED || paste ||
+        (event->type == TIKU_EVENT_POINTER_DOWN && event->button == 1)) {
+        int forced = paste || event->type == TIKU_EVENT_ACTIVATED;
+        int waiting = tiku_x11_clipboard_request(&host->clipboard, now,
+                                                 forced);
+        if ((waiting && forced) || host->clipboard.result) {
+            host->deferred = *event;
+            host->has_deferred = 1;
+            return clipboard_result(host, event);
+        }
     }
     return 1;
 }

@@ -10,10 +10,47 @@
  */
 
 #include "tiku_clipboard.h"
+#include "tiku_text_input.h"
 #include "tiku_field.h"
 
 #include <stdio.h>
 #include <string.h>
+
+static int field_previous(const tiku_field_t *e)
+{
+    int at = e->caret > 0 ? e->caret - 1 : 0;
+    while (at > 0 && ((unsigned char)e->text[at] & 0xc0) == 0x80) at--;
+    return at;
+}
+static int field_next(const tiku_field_t *e)
+{
+    int at = e->caret < e->len ? e->caret + 1 : e->len;
+    while (at < e->len && ((unsigned char)e->text[at] & 0xc0) == 0x80) at++;
+    return at;
+}
+
+tiku_field_result_t tiku_field_commit(tiku_field_t *e, const char *text)
+{
+    tiku_text_input_t checked;
+    if (!e || !e->active || !e->editable || !text) return TIKU_FIELD_IGNORED;
+    size_t n = strlen(text);
+    int lo = e->sel_a < e->sel_b ? e->sel_a : e->sel_b;
+    int hi = e->sel_a > e->sel_b ? e->sel_a : e->sel_b;
+    if (!n) return TIKU_FIELD_HANDLED;
+    if (lo < 0 || hi > e->len || e->len < 0 || e->len >= TIKU_FIELD_MAX ||
+        (lo < e->len && ((unsigned char)e->text[lo] & 0xc0) == 0x80) ||
+        (hi < e->len && ((unsigned char)e->text[hi] & 0xc0) == 0x80)) return TIKU_FIELD_REJECTED;
+    if (!tiku_text_input_set(&checked, text, n) ||
+        n + (size_t)(e->len - hi + lo) >= sizeof e->text) return TIKU_FIELD_REJECTED;
+    for (size_t i = 0; i < n; i++)
+        if ((unsigned char)text[i] < 32 || text[i] == 127 ||
+            (e->deny && strchr(e->deny, text[i]))) return TIKU_FIELD_REJECTED;
+    memmove(e->text + lo + n, e->text + hi, (size_t)(e->len - hi) + 1);
+    memcpy(e->text + lo, checked.text, n);
+    e->len += (int)n - (hi - lo);
+    e->caret = e->sel_a = e->sel_b = lo + (int)n;
+    return TIKU_FIELD_HANDLED;
+}
 
 /* Every field speaks the DESK's one text clipboard, so what was cut
  * from a rename can be pasted into a program and back.  It is still a
@@ -200,10 +237,10 @@ tiku_field_key(tiku_field_t *e, tiku_field_key_t key, int shift,
         return TIKU_FIELD_HANDLED;
 
     case TIKU_FIELD_LEFT:
-        move_caret(e, e->caret - 1, shift);
+        move_caret(e, field_previous(e), shift);
         return TIKU_FIELD_HANDLED;
     case TIKU_FIELD_RIGHT:
-        move_caret(e, e->caret + 1, shift);
+        move_caret(e, field_next(e), shift);
         return TIKU_FIELD_HANDLED;
     case TIKU_FIELD_HOME:
         move_caret(e, 0, shift);
@@ -219,10 +256,11 @@ tiku_field_key(tiku_field_t *e, tiku_field_key_t key, int shift,
         if (tiku_field_selection(e, NULL, NULL)) {
             delete_selection(e);
         } else if (e->caret > 0) {
-            memmove(e->text + e->caret - 1, e->text + e->caret,
+            int at = field_previous(e);
+            memmove(e->text + at, e->text + e->caret,
                     (size_t)(e->len - e->caret) + 1u);
-            e->len--;
-            e->caret--;
+            e->len -= e->caret - at;
+            e->caret = at;
             e->sel_a = e->sel_b = e->caret;
         }
         return TIKU_FIELD_HANDLED;
@@ -234,9 +272,10 @@ tiku_field_key(tiku_field_t *e, tiku_field_key_t key, int shift,
         if (tiku_field_selection(e, NULL, NULL)) {
             delete_selection(e);
         } else if (e->caret < e->len) {
-            memmove(e->text + e->caret, e->text + e->caret + 1,
-                    (size_t)(e->len - e->caret));
-            e->len--;
+            int at = field_next(e);
+            memmove(e->text + e->caret, e->text + at,
+                    (size_t)(e->len - at) + 1u);
+            e->len -= at - e->caret;
         }
         return TIKU_FIELD_HANDLED;
 
@@ -259,21 +298,10 @@ tiku_field_key(tiku_field_t *e, tiku_field_key_t key, int shift,
         return TIKU_FIELD_HANDLED;
 
     case TIKU_FIELD_PASTE: {
-        size_t i;
-
-        if (!e->editable) {
+        if (!e->editable || !tiku_clipboard_text()[0]) {
             return TIKU_FIELD_HANDLED;
         }
-
-        delete_selection(e);
-        {
-            const char *held = tiku_clipboard_text();
-
-            for (i = 0; held[i] != '\0'; i++) {
-                (void)tiku_field_key(e, TIKU_FIELD_CHAR, 0, held[i]);
-            }
-        }
-        return TIKU_FIELD_HANDLED;
+        return tiku_field_commit(e, tiku_clipboard_text());
     }
 
     case TIKU_FIELD_COMMIT:
