@@ -49,6 +49,7 @@ APP_PREFIXES = ("tiku_trk_desktop", "tiku_trk_app.")
 # no display, so a paint header in one would drag the whole drawing end
 # in; the paint lives beside them in tiku_<x>_paint.c.
 BEHAVIOUR = ("tiku_field", "tiku_scroll", "tiku_textview", "tiku_slider",
+             "tiku_doc",
              "tiku_field_event", "tiku_dialog", "tiku_choice", "tiku_input",
              "tiku_text_input", "tiku_sensor",
              "tiku_text_layout", "tiku_properties", "tiku_preferences_layout",
