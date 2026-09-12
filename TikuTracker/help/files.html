@@ -1,0 +1,170 @@
+<h1>Windows and files</h1>
+
+<p>A folder opens in a window of its own, and opening the same folder
+again brings that window forward instead of making a second one. The
+window is titled with the folder's own name, or with its whole path when
+<code>ShowFullPathInTitleBar</code> is set on the Windows page of
+TikuTracker preferences; with <code>SingleWindowBrowse</code> set, one
+window changes place rather than a new one opening. A strip along the
+bottom counts what is there: <code>empty folder</code>,
+<code>N items</code>, or <code>N/M selected</code>.</p>
+
+<h2 id="views">The three views</h2>
+
+<p>The Window menu offers <b>Icon view</b>, <b>Mini icon view</b> and
+<b>List view</b>, and marks the one in force. <b>Ctrl+1</b>, <b>Ctrl+2</b>
+and <b>Ctrl+3</b> switch between them. The Icon view row carries a submenu
+of sizes from 32 x 32 to 128 x 128.</p>
+
+<p>List view draws a strip of column titles and adds an <b>Attributes</b>
+menu to the menu bar; both go when the view changes. Clicking a title
+sorts by that column, and clicking the sorted column again reverses it.
+Shift and a click set the tie-break, or swap it with the key when the
+sorted column is clicked. A title dragged sideways moves its column, and
+the band at its right edge resizes it.</p>
+
+<h2 id="choosing">Choosing, opening, renaming</h2>
+
+<p>A plain click picks one entry; a click on empty space clears the
+selection. <b>Ctrl</b> and a click add or remove one entry. <b>Shift</b>
+and a click take the range from the last anchor. <b>Ctrl+Shift</b> and a
+click give the whole range the state the clicked entry does not have.
+Typing letters jumps to the best match by name.</p>
+
+<p>A double click on a folder opens it in its own window; on anything else
+it hands the item to the application that opens its type. Holding
+<b>Alt</b> over either closes the window it came from. A double click
+inside the Location column opens the folder that column names. A link
+whose target is gone opens nothing and says so.</p>
+
+<p><b>Ctrl+E</b> opens an editor on the selected name, in place.
+<b>Return</b> commits it and <b>Escape</b> abandons it; a name the
+filesystem refuses keeps the editor open with the text selected whole for
+retyping. <b>Tab</b> commits and walks on, to the Value column of the same
+entry when there is one to edit and otherwise to the next name;
+<b>Shift+Tab</b> walks back. Entries of the device namespace cannot be
+renamed, and the walk skips them.</p>
+
+<h2 id="menus">The File and Window menus</h2>
+
+<p>A folder window carries two menus, <b>File</b> and <b>Window</b>. In
+list view a third, <b>Attributes</b>, is added after Window.</p>
+
+<p><b>File</b> holds Find…, then New folder (a <b>New</b> submenu, with
+<b>Templates</b> inside it, once the Templates folder holds anything),
+then Open, Edit query, <b>Open with</b>, Get info, Edit name, Duplicate
+and Move to Trash, then Move to, Copy to and Create link, then Cut, Copy
+and Paste, then Identify, and last an <b>Add-ons</b> submenu. In the
+Trash, Delete and Restore stand where Duplicate and Move to Trash would,
+and Empty Trash leads the menu.</p>
+
+<p><b>Window</b> holds the three view modes, then Resize to fit, an
+<b>Arrange by</b> submenu (Name, Kind, Size, Value, Capability, then
+Reverse order, then Clean up), then Select…, Select all, Invert selection,
+Open parent, Close, Close all in workspace, and Preferences….</p>
+
+<p><b>Attributes</b> is a row per column: Name, which is always on and
+cannot be turned off, then Kind, Value, Size, Capability, Modified,
+Location, Permissions and Original path, then Copy layout and Paste
+layout.</p>
+
+<h2 id="shift">Nine commands change under Shift</h2>
+
+<p>Nine rows change both their wording and what they do while Shift is
+held. The second name is usually not a menu row of its own: it is the
+first one with Shift down. Delete is the exception, since the Trash's File
+menu offers it as a row in its own right.</p>
+
+<table>
+<tr><th>Unshifted</th><th>With Shift held</th></tr>
+<tr><td>Clean up</td><td>Clean up all</td></tr>
+<tr><td>Close</td><td>Close all</td></tr>
+<tr><td>Copy</td><td>Copy more</td></tr>
+<tr><td>Cut</td><td>Cut more</td></tr>
+<tr><td>Paste</td><td>Paste links</td></tr>
+<tr><td>Create link</td><td>Create relative link</td></tr>
+<tr><td>Create link here</td><td>Create relative link here</td></tr>
+<tr><td>Identify</td><td>Force identify</td></tr>
+<tr><td>Move to Trash</td><td>Delete</td></tr>
+</table>
+
+<h2 id="drag">Drag and drop</h2>
+
+<p>Dragging entries onto a folder is TikuDesktop's. The single-window
+TikuTracker has no drop-onto-a-folder handling at all: a drag there ends
+by putting icons down where they were dropped.</p>
+
+<p>What a drop does is read when the button comes up, not when the drag
+began. Within one filesystem a drop moves; across two it copies. Holding
+<b>Alt</b> copies in either case, and copies onto the folder the items
+already sit in. Holding <b>Ctrl</b> makes links instead, and adding Shift
+makes them relative. A secondary click that ends the drag asks first,
+with <b>Move here</b>, <b>Copy here</b>, <b>Create link here</b> and
+<b>Cancel</b>; an unwritable destination greys the first three, an
+unwritable source greys only Move here.</p>
+
+<h2 id="trash">The Trash</h2>
+
+<p><b>Del</b> moves the selection to the Trash, and <b>Shift+Del</b>
+deletes outright, as plain Del does inside the Trash. There is a Trash per
+filesystem, which is what keeps moving something into it a rename rather
+than a copy, and a Trash window shows the union of them all. A device
+namespace has no Trash: its nodes are not files, so a delete there
+happens outright, with no question about the Trash. <b>Restore</b> puts a
+trashed item back where it came from, making any missing folders on the
+way, and does not overwrite something that has since taken the original
+name. A whole volume dragged onto the Trash is unmounted rather than
+deleted.</p>
+
+<h2 id="info">Get Info</h2>
+
+<p><b>Get info</b> opens one window per item, titled with the item's name
+and the word <code>info</code>, cascaded so several stay legible. Its tabs
+are <b>Information</b>, <b>Permissions</b> and <b>Attributes</b>.</p>
+
+<p>Information lists the size, or the capacity for a volume, then Created,
+Modified, Kind and Location, and then whichever of Link to, Opens with,
+Filesystem and Dimensions apply. Clicking the Opens with row steps to the
+next application that handles the type and records that choice.
+Permissions is three boxes, Read, Write and Execute; where the store
+serving the item cannot set them the boxes are greyed and the window says
+<i>This item's permissions are not yours to set.</i> Clicking the name
+opens an editor on it. A double click on the icon at the top opens the
+item, a drag from it carries the item, and a drop onto it puts what was
+dragged into that folder.</p>
+
+<h2 id="openwith">Open with</h2>
+
+<p>The File menu's <b>Open with</b> row is a submenu of the applications
+that claim the selection's types, best match first, each saying how it
+matches: <i>opens this type</i>, <i>opens this kind of file</i> or
+<i>opens anything</i>, with the preferred one marked. Its last row,
+<b>Open with…</b>, opens a window of the same name listing ten at a time,
+with <b>Open</b> and <b>Open and make preferred</b> beneath it. Choosing
+an application that does not claim the type asks first, offering Cancel
+and Open; Escape answers Cancel.</p>
+
+<h2 id="select">The Select window</h2>
+
+<p><b>Select…</b> opens a small window titled <b>Select</b>. There is
+one of it, aimed each time at the window it was opened from.
+<b>Ctrl+Shift+A</b> centres it on the pointer; the menu row opens it in a
+fixed place. It is headed <i>Select items whose name</i>:
+a text field, a rule, and the boxes <b>Ignore case</b> and <b>Invert
+selection</b>. The rules are <i>starts with</i>, <i>ends with</i>,
+<i>contains</i>, <i>matches wildcard expression</i> and <i>matches regular
+expression</i>. It starts out on the wildcard rule with Ignore case
+ticked, so a typed name with no wildcards in it is an exact match that
+ignores case, and it keeps whatever was last chosen.</p>
+
+<p>The <b>Select</b> button applies the pattern to the window it was
+opened from, then closes. It picks entries out rather than hiding the
+rest, and reports how many it found. An expression the matcher will not
+take selects nothing and says why.</p>
+
+<hr>
+
+<p>The whole key table is on <a href="keys.html">The keyboard</a>. The
+bar along the bottom of the screen is on
+<a href="deskbar.html">The Deskbar</a>. Back to
+<a href="index.html">the contents</a>.</p>

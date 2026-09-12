@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "tiku_trk_help_window.h"
 #include "tiku_dl.h"
@@ -588,6 +589,94 @@ main(void)
         }
         (void)remove(root);
     }
+    /*
+     * The folder this desktop ships, read as a reader would read it: a
+     * page that has outgrown the arena, a link to a page nobody wrote
+     * and a name no heading wears are all things nothing else would
+     * catch until somebody pressed them.
+     */
+    printf("\nevery page of the shipped help folder reads and links\n");
+    {
+        static const char *const shipped[] = {
+            "index.html", "files.html", "deskbar.html", "settings.html",
+            "devices.html", "finding.html", "keys.html",
+            "apps/calculator.html", "apps/bench.html", "apps/console.html",
+            "apps/editor.html", "apps/terminal.html",
+            "apps/tikubasic.html", "apps/tikuc.html", "apps/demo.html"
+        };
+        const char *folder = "TikuTracker/help";
+        tiku_doc_t *page = calloc(1, sizeof *page);
+        int read_ok = 1, laid = 1, links = 1, anchors = 1, entities = 1;
+        int pages = 0;
+
+        if (access("TikuTracker/help/index.html", R_OK) != 0) {
+            folder = "help";
+        }
+        for (size_t i = 0; page && i < sizeof shipped / sizeof shipped[0];
+             i++) {
+            char path[TIKU_PATH_MAX];
+            char text[TIKU_DOC_TEXT_MAX + 64];
+            FILE *f;
+            size_t n;
+
+            snprintf(path, sizeof path, "%s/%s", folder, shipped[i]);
+            f = fopen(path, "r");
+            if (f == NULL) { read_ok = 0; continue; }
+            n = fread(text, 1, sizeof text - 1, f);
+            fclose(f);
+            text[n] = '\0';
+            pages++;
+            /* Nothing cut: a page over the arena loses its tail, and
+             * the tail is where a page puts what it links to. */
+            if (!tiku_doc_read(page, text)) read_ok = 0;
+            for (int w = 240; w <= 720; w += 240) {
+                tiku_doc_layout(page, w);
+                if (!tiku_doc_check(page)) laid = 0;
+            }
+            /* An entity this dialect does not know survives as its own
+             * text, which is a page with "&mdash;" printed in it. */
+            for (int k = 0; k < tiku_doc_piece_count(page); k++) {
+                const tiku_doc_piece_t *pc = tiku_doc_piece(page, k);
+                const char *t = tiku_doc_text(page, pc->off);
+
+                for (int c = 0; c + 2 < pc->len; c++) {
+                    if (t[c] != '&') continue;
+                    for (int e = c + 1; e < pc->len && e < c + 10; e++) {
+                        if (t[e] == ';') entities = 0;
+                        if (t[e] < 'a' || t[e] > 'z') break;
+                    }
+                }
+            }
+            for (int k = 0; k < tiku_doc_link_count(page); k++) {
+                const char *href = tiku_doc_link_href(page, k);
+                char other[TIKU_PATH_MAX];
+
+                if (href[0] == '/' || !*href) continue;
+                if (href[0] == '#') {
+                    if (tiku_doc_anchor_y(page, href + 1) < 0) {
+                        printf("         (%s: no anchor %s)\n", shipped[i],
+                               href);
+                        anchors = 0;
+                    }
+                    continue;
+                }
+                snprintf(other, sizeof other, "%s/%s", folder, href);
+                if (access(other, R_OK) != 0) {
+                    printf("         (%s: no page %s)\n", shipped[i], href);
+                    links = 0;
+                }
+            }
+        }
+        check(pages == (int)(sizeof shipped / sizeof shipped[0]),
+              "every page the folder is said to hold is there");
+        check(read_ok, "and each one fits the reader's arena whole");
+        check(laid, "and lays out at three widths with its tables agreeing");
+        check(entities, "and spells every entity in the dialect's own set");
+        check(links, "every link between pages reaches a page that exists");
+        check(anchors, "and every name reaches a heading that wears it");
+        free(page);
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the pages open where they say");
     return fails ? 1 : 0;
 }

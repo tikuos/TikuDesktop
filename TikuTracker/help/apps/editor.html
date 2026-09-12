@@ -1,0 +1,151 @@
+<h1>Editor</h1>
+
+<p>The Deskbar row <b>Editor</b>, under Applications, starts a plain text
+editor. The window opens at 560 by 400 pixels. Opened with no file, it is
+titled <b>Edit</b>, which is the program's own name.</p>
+
+<p>Along the foot of the window is one line of small text: a
+<code>*</code> while there are changes nothing has saved, the file the
+document came from or <code>untitled</code>, the line and column the
+caret is in, and the editor's last message.</p>
+
+<h2 id="opening">What it opens</h2>
+
+<p>Started from the Deskbar, the editor opens with nothing in it: the
+foot line says <code>untitled</code> and <code>new file</code>.</p>
+
+<p>The Deskbar row starts the loadable copy of the editor, which takes no
+file name. The separate <code>tiku-edit</code> program takes one when it
+is started, and that is how a document reaches it when an applications
+entry naming that program opens one. It reads the file whole, breaks it
+at the line ends, titles the window with the last part of the path,
+and says how many lines it read. A name that is nowhere on disk is not
+refused: the document opens empty and the foot line says
+<code>new file</code>.</p>
+
+<p>The name also decides the colouring, once, before anything is drawn:
+<code>.bas</code> opens coloured as BASIC, <code>.c</code> and
+<code>.h</code> as C, every other name as plain text.</p>
+
+<p><b>Open…</b> on the File menu asks the desktop for its file panel,
+starting in the folder the open document lives in, or where the shell
+would open it when the document has no name yet. The panel answers
+later, and a panel closed without choosing answers not at all. When it
+does answer, the editor reads the name for the colouring again and loads
+the file over what was in the window.</p>
+
+<h2 id="saving">How it saves</h2>
+
+<p><b>Save</b> writes every line of the window to the file the document
+was opened as, each line followed by a line end, so a saved file ends
+with one. The foot line then says how many lines were written. The
+write counts as done only when the file is closed, which is where a full
+disk shows up: the close fails, the foot line says <code>could not finish
+writing</code>, and the document stays marked as changed. A file that
+cannot be opened for writing is reported as <code>cannot write</code>
+and the path.</p>
+
+<p>A document with no name has nowhere to save. Save says <code>no file
+name to save to</code> and writes nothing; <b>Save as…</b> is the row
+that gives it a name. Saving-as takes the name first and writes after,
+so a write that fails leaves the document pointing at the name it was
+given.</p>
+
+<h2 id="menu">The File menu</h2>
+
+<p>The editor publishes one menu, <b>File</b>, drawn on the bar across
+the top of the screen while an Editor window is in front.</p>
+
+<ul>
+<li id="save"><b>Save</b> writes the document. It is offered greyed while
+there is nothing to save.</li>
+<li id="revert"><b>Revert</b> reads the file again and the changes go,
+and is greyed the same way. A document with no name has no file to read,
+and reverting it leaves the window empty.</li>
+<li id="quit"><b>Quit</b> ends the program at once. It does not ask, and
+unsaved changes go with it.</li>
+<li id="colour"><b>Colour as BASIC</b> turns the colouring on and off,
+and shows a mark while it is on. What it turns on is BASIC, whatever the
+file is named.</li>
+<li id="run-row"><b>Run</b> runs the document. It is offered greyed
+unless the document is being coloured as BASIC and no run is going.</li>
+<li id="open"><b>Open…</b> and <b>Save as…</b> ask the desktop for its
+file panel.</li>
+</ul>
+
+<h2 id="keys">The keys</h2>
+
+<p>A printable character is inserted at the caret. Text from a
+compose key or an input method is inserted in one piece; one that does
+not fit is refused and the foot line says so.</p>
+
+<table>
+<tr><th>Key</th><th>What it does</th></tr>
+<tr><td>Left, Right</td><td>One character, and across a line end into
+the line before or after</td></tr>
+<tr><td>Up, Down</td><td>One line, keeping the column where the line
+reached is long enough</td></tr>
+<tr><td>Home, End</td><td>The start and the end of the line</td></tr>
+<tr><td>Page Up, Page Down</td><td>A screenful of lines, keeping the
+column</td></tr>
+<tr><td>Return</td><td>Breaks the line at the caret</td></tr>
+<tr><td>Backspace</td><td>The character before the caret; at the head of
+a line, joins it to the line above</td></tr>
+<tr><td>Del</td><td>The character under the caret; at the end of a line,
+joins the next line to it</td></tr>
+<tr><td>Ctrl+S</td><td>Saves</td></tr>
+<tr><td>Escape</td><td>Closes the window, asking first when there are
+unsaved changes</td></tr>
+</table>
+
+<p>Ctrl+S is the only chord the editor answers; Ctrl held with any other
+key does nothing here. The view follows the caret, and the pointer moves
+nothing in the text.</p>
+
+<h2 id="closing">Closing</h2>
+
+<p>Escape on a document with no changes closes the window. On one with
+changes it opens a question over the text instead: <b>Discard unsaved
+changes?</b> Cancel keeps the window and Discard closes it, losing what
+was typed. Escape presses Cancel and Return presses Discard. The question
+offers no Save, so save before closing.</p>
+
+<h2 id="run">Running a BASIC program</h2>
+
+<p>Run writes the document to its file first, so what runs is the file
+and not a copy that existed only in the window; a document with no name
+is written to <code>/tmp/tiku_edit_run.bas</code> and run from there. It
+is handed to <code>tiku-basic</code>, the same interpreter a board runs,
+together with the folder the file is in, which is where the program's own
+files are written.</p>
+
+<p>What the program prints appears in a pane at the foot of the window,
+newest last, and the text area shrinks by the height of the pane. The
+pane keeps the last 48 lines and shows seven. The foot line says
+<code>running</code> while the run lasts, then <code>finished</code> when
+the program ended cleanly and <code>stopped</code> when it did not. Once
+a run has printed, the pane stays for the rest of the session.</p>
+
+<p>The interpreter is looked for by name, so it has to be on the path;
+the <code>TIKU_BASIC</code> variable names another one. When there is
+none, the pane says it could not run it and the foot line says
+<code>stopped</code>.</p>
+
+<h2 id="limits">What the window holds</h2>
+
+<p>The editor reads the first 31999 bytes of a file, keeps at most 4000
+lines, and cuts a line longer than 1023 characters. Saving writes what
+the window holds, so anything the reading left behind is not written
+back.</p>
+
+<hr>
+
+<h2 id="more">See also</h2>
+
+<ul>
+<li><a href="files.html">Files</a></li>
+<li><a href="index.html">TikuDesktop Help</a></li>
+</ul>
+
+<p>While an Editor window is in front, the <b>Tiku</b> menu carries a
+<b>Help…</b> row, and it opens this page.</p>

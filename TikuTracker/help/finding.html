@@ -1,0 +1,166 @@
+<h1>Finding things</h1>
+
+<p><b>Find</b> searches the namespace and opens a window of results.
+<b>Select</b> picks items out of a window already open. Both belong to
+TikuDesktop: the single-window TikuTracker front-end has no Select
+window, and asking it to Find puts a line in its status bar saying the
+command is not available in that shell.</p>
+
+<h2 id="find">The Find window</h2>
+
+<p>It opens with <b>Ctrl+F</b>, from <code>Find&#8230;</code> in a
+window's File menu, from <code>Find&#8230;</code> in the Deskbar leaf, or
+from <code>Find&#8230;</code> in the Tiku menu. Only one is ever open: a
+second request brings that window forward. <b>Return</b> presses the
+default button, <b>Escape</b> closes the window.</p>
+
+<p>The control at the top, labelled <b>Find</b>, chooses between
+<code>by name</code>, <code>by attribute</code> and
+<code>by formula</code>. The window opens on <code>by name</code>.</p>
+
+<h3 id="byname">By name</h3>
+
+<p>One field, labelled <b>Name contains</b>. A star anywhere in the text
+makes the whole text a pattern, so <code>*.txt</code> and <code>a*b</code>
+are matched against the whole name; text with no star is matched as a
+substring. Case is folded, and a space matches any run of characters, so
+<code>foo bar</code> also finds <code>foo-bar</code>. Empty text matches
+everything.</p>
+
+<p><b>Ctrl+Space</b> in this field completes what is typed against the
+first place the search is scoped to, or against the home folder when the
+search is everywhere.</p>
+
+<h3 id="byattribute">By attribute</h3>
+
+<p>Rows, each of them a field, an operator and a value. <b>+</b> adds a
+row and <b>-</b> removes the last one; there are at most four, and the
+remove button is disabled rather than hidden while one row is left.
+Between a row and the next sits <code>and</code> or <code>or</code>. Rows
+fold strictly left to right with no precedence, so <i>a</i> or <i>b</i>
+and <i>c</i> means (<i>a</i> or <i>b</i>) and <i>c</i>.</p>
+
+<p>The field menu always offers <b>Name</b>, <b>Size</b> and
+<b>Modified</b>. <b>Path</b>, <b>Kind</b>, <b>Value</b>, <b>Unit</b> and
+<b>Capability</b> appear only once a type is chosen in <b>Of type</b>, and
+only where that type declares them. A field offers just the operators
+that suit it: text fields offer contains, is, is not, starts with and ends
+with; Size offers is, greater than and less than; Modified offers after
+and before. A Modified value is written as <code>now</code>,
+<code>today</code>, <code>yesterday</code>, <code>3 days ago</code>,
+<code>2 hours from now</code>, or a date such as
+<code>2026-09-13</code>.</p>
+
+<h3 id="byformula">By formula</h3>
+
+<p>One field, labelled <b>Formula</b>, holding the predicate itself.
+Switching into this mode fills the field with the predicate the controls
+were asking. Switching back out keeps the attribute rows as they were.</p>
+
+<pre>(name=="[tT][xX][tT]")&amp;&amp;(size&gt;100)</pre>
+
+<p>A term is a field name, one of <code>==</code>, <code>!=</code>,
+<code>&gt;</code> or <code>&lt;</code>, and a value, in brackets; a quoted
+value is used as a pattern exactly as written. Terms join with
+<code>&amp;&amp;</code> and <code>||</code>. The field names are
+<code>name</code>, <code>path</code>, <code>kind</code>,
+<code>value</code>, <code>size</code>, <code>cap</code>,
+<code>unit</code>, <code>writable</code>, <code>type</code> and
+<code>modified</code>. A formula that does not parse runs nothing, and the
+status line says the formula is invalid. <b>Of type</b> is not shown in
+this mode, because the formula is the whole question.</p>
+
+<h2 id="scope">Type, scope and Trash</h2>
+
+<p><b>Of type</b> narrows every term to one type. Its menu leads with
+<b>All files and folders</b>, then the four types chosen most recently,
+then a submenu per family headed by <code>All</code> and the family name.
+Choosing a family admits everything under it.</p>
+
+<p><b>Search in</b> says where to look: <b>Everywhere</b>, then the
+top-level places the desktop read when it started, at most eight of them,
+and last <b>Select folders&#8230;</b>, which opens a file panel and scopes
+the search to the folder chosen there at once. The button shows the one
+place, the number of places, or Everywhere. <b>Include Trash</b> is off
+unless it is ticked.</p>
+
+<h2 id="results">The results</h2>
+
+<p>A search opens its own window, titled <code>find #</code> and a number,
+and the status line reports how many results came back and where from.
+The window is live: it re-runs about every three seconds while it is
+open, keeps the items that still match, and says what came in and went
+out.</p>
+
+<p><b>Ctrl+G</b>, or <b>Edit query</b> in the File menu, re-opens the Find
+window filled in with that search instead of running it again. If one of
+its places is no longer here, the status line says so rather than
+searching somewhere else.</p>
+
+<h2 id="saved">Saved searches</h2>
+
+<p>A saved search is a record the desktop keeps under a name, in one of
+two kinds. Choosing either from the <b>Queries</b> menu fills the Find
+window in, ready to be changed; neither is run by being chosen. The
+difference is what <b>Save</b> does: it writes back into a loaded
+<b>query</b>, and running that search again replaces its record rather
+than leaving a second one, but it refuses a loaded <b>template</b>
+unless the window is the one editing that template in place. Every search
+that is run leaves a record behind, and one never given a name of its own
+is marked temporary and swept away after seven days.</p>
+
+<p>The <b>Queries</b> button opens a menu holding <b>Save as
+template</b>, then the templates, then the searches that were run, newest
+first and at most ten of them, and last <b>Edit loaded template</b> when a
+template is loaded and is not already being edited in place. Choosing a
+name loads that record into the window.</p>
+
+<p>The <b>Save</b> button writes back to the record the window came from.
+With nothing attached it asks where instead, through the Save panel: the
+search is written as a file at the place chosen, and the same record is
+kept under that file's name so the Queries menu knows it too.</p>
+
+<p>The small query icon in the window can be dragged. Dropped on a folder
+or on the desktop it offers <b>Create a Query</b> and <b>Create a Query
+template</b>, which save the search there under the name
+<code>New Query</code>; both rows are disabled where nothing can be
+written. There is no icon while the title reads
+<code>Edit Query template</code>.</p>
+
+<h2 id="select">The Select window</h2>
+
+<p><b>Ctrl+Shift+A</b> opens it near the pointer, and
+<b>Select&#8230;</b> in the Window menu opens the same window. It belongs
+to the window it was opened from and changes the selection there; it
+hides nothing.</p>
+
+<p>The label reads <b>Select items whose name</b>, and beneath it are the
+expression, the rule, <b>Ignore case</b>, <b>Invert selection</b> and the
+<b>Select</b> button. Clicking the rule, or pressing <b>Tab</b>, steps to
+the next one.</p>
+
+<table>
+<tr><th>Rule</th><th>What it matches</th></tr>
+<tr><td>starts with</td><td>names beginning with the expression</td></tr>
+<tr><td>ends with</td><td>names ending with it</td></tr>
+<tr><td>contains</td><td>names holding it anywhere</td></tr>
+<tr><td>matches wildcard expression</td><td>the whole name, with
+<code>*</code>, <code>?</code> and character classes</td></tr>
+<tr><td>matches regular expression</td><td>the expression anywhere in the
+name; <code>^</code> and <code>$</code> anchor it</td></tr>
+</table>
+
+<p>It opens on the wildcard rule with Ignore case ticked, so an expression
+with no wildcards in it is an exact, case-blind match. <b>Return</b>
+selects and <b>Escape</b> closes. Selecting replaces whatever was
+selected in that window, and the status line says how many items were
+picked; with <b>Invert selection</b> ticked the items that do not match
+are the ones picked. A regular expression that does not compile is
+refused in an alert, and nothing is selected. Closing the window hides it
+rather than emptying it, so the expression, the rule and the two boxes are
+still there next time.</p>
+
+<hr>
+
+<p>See also <a href="files.html">Files and folders</a>, and the
+<a href="index.html">contents</a>.</p>

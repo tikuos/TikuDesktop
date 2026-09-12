@@ -1,0 +1,188 @@
+<h1 id="deskbar">The Deskbar</h1>
+
+<p>The Deskbar is the bar TikuDesktop keeps on screen. Its head is the
+leaf: one button with the TikuOS mark on it and the word <b>TikuOS</b>.
+Under it come the running applications, one row each, then the tray,
+then the theme switch, then the clock. The bar starts at the right edge
+of the screen, and Deskbar preferences, at the foot of this page,
+changes its shape. The single-window TikuTracker front-end has no
+Deskbar. See also <a href="settings.html">Settings</a> and
+<a href="index.html">the contents</a>.</p>
+
+<h2 id="leaf">The leaf menu</h2>
+
+<p>A click on the leaf opens the leaf menu, which is built each time it
+opens from what is on the machine at that moment. Its rows, in the order
+they are drawn:</p>
+
+<ul>
+<li><b>About this system</b> opens the About this system window</li>
+<li><b>Find…</b> opens the Find window, the same one Ctrl+F opens</li>
+<li><b>Help…</b> opens these pages</li>
+<li><b>Settings</b> holds the preference windows, listed below</li>
+<li>one row for each application group that has a member: Applications,
+Programming, Device Tools, Demos</li>
+<li>a rule, then one row for every place mounted other than the root,
+opening where it is mounted; the forms a board publishes follow its
+row, one each, opening that form's panel</li>
+<li>a rule, then <b>Recent documents</b>, <b>Recent folders</b> and
+<b>Recent applications</b>, each shown only while its list has something
+in it, its box in Deskbar preferences is ticked, and its count there is
+above zero</li>
+<li>a rule, then the items of the Deskbar folder,
+<code>.config/deskbar</code> under the home directory or
+<code>/usr/share/tiku-tracker/deskbar</code> when there is no user
+folder; the rule is left out when the folder added nothing</li>
+<li>a rule, then <b>Shut down…</b></li>
+</ul>
+
+<p>A row with an arrow expands beside the menu rather than choosing
+anything, and the menu stays up. <b>Shut down…</b> is the exception:
+only its arrow expands, and a click on the rest of the row chooses it.
+Choosing it puts up the question "Shut down the desktop?" first. Its
+arrow opens <b>Power off</b> and <b>Restart system</b>, which act the
+moment they are chosen.</p>
+
+<h3 id="settings">Settings</h3>
+
+<p>The Settings submenu, in the order it is drawn: <b>Deskbar
+preferences…</b>, <b>TikuTracker preferences…</b>, <b>TikuDesktop
+preferences…</b>, <b>Fonts…</b>, <b>Sounds…</b>, <b>Devices
+Preferences…</b>, <b>Startup Preferences…</b>, then <b>Show
+replicants</b>. That last row names the state it would switch to, so it
+reads <b>Hide replicants</b> once chosen, and choosing it leaves the
+menu open with the other word in place. The tray's rows are drawn either
+way.</p>
+
+<h2 id="groups">The four groups</h2>
+
+<p>A program is sorted into a group by the file it is installed as and
+the folder it is installed in.</p>
+
+<table>
+<tr><th>Group</th><th>What it holds</th></tr>
+<tr><td>Applications</td><td>every other <code>.so</code> in
+<code>apps</code></td></tr>
+<tr><td>Programming</td><td>every <code>.so</code> in
+<code>apps/programming</code></td></tr>
+<tr><td>Device Tools</td><td><code>Bench.so</code>,
+<code>TikuBench.so</code>, <code>TikuConsole.so</code>, and Device
+Monitor and VFS Inspector, which are built in</td></tr>
+<tr><td>Demos</td><td><code>hello.so</code>, <code>clock.so</code>,
+<code>counter.so</code>, <code>sketch.so</code>, <code>twowin.so</code>,
+<code>sensors.so</code>, <code>gallery.so</code>, <code>demo.so</code>,
+<code>sounds.so</code></td></tr>
+</table>
+
+<p>A row is named after its file: <code>tiku_</code> goes from the
+front, underscores become spaces, <code>.so</code> goes from the end and
+the first letter is capitalised, so <code>editor.so</code> is offered as
+<b>Editor</b>. Two are renamed after that:
+<code>DeveloperCalculator.so</code> is <b>Developer Calculator</b> and
+<code>Bench.so</code> is <b>TikuBench</b>. Rows stand in file-name
+order, and a group with no member gets no row. Choosing a row starts the
+program in a process of its own through the <code>tiku-run</code> runner
+installed beside the desktop; with no runner there, no installed file is
+offered at all. Device Monitor and VFS Inspector open in the desktop
+itself.</p>
+
+<h2 id="clock">The clock</h2>
+
+<p>In a tall dock the clock is the last thing on the bar, below the tray
+and the theme switch. It reads the day and month, then the time, as in
+<code>13 Sep 20:41</code>. Resting the pointer on it says the whole date
+in words. A click opens a calendar beside the bar. Four steppers along
+its head move it a month or a year at a time, a click in the grid picks
+a day, and a click anywhere else closes it.</p>
+
+<p>A secondary click opens the clock menu, whose four rows each name the
+state they would switch to: <b>Show clock</b> or <b>Hide clock</b>,
+<b>Show seconds</b> or <b>Hide seconds</b>, <b>Show day of week</b> or
+<b>Hide day of week</b>, <b>Show time zone</b> or <b>Hide time
+zone</b>. The zone is the name the system gives it, or the word
+<code>local</code> when it has none.</p>
+
+<h2 id="windows">Application rows and their windows</h2>
+
+<p>The arrow at a row's right end opens the list of that application's
+windows beneath it, a minimized window marked differently from an open
+one. On an application row a double click brings every window on the
+desktop up, as Show all does, and focuses the top one; Ctrl+click shows
+all, Ctrl+Shift+click hides all, a middle click starts another copy of
+the program, and Ctrl+Alt+Shift+click kills it without asking it to
+quit. On a window row a click raises the window and restores it if it
+was minimized, Ctrl+click minimizes it, and a secondary click closes
+it.</p>
+
+<p>A secondary click on an application row opens its window menu:
+<b>Hide all</b>, <b>Show all</b>, a rule, and <b>Close all</b>. Hide all
+cannot be chosen while every one of that application's windows is
+already minimized, nor Show all while none of them is. Hide all
+minimizes every window on the desktop, Show all restores them, and Close
+all closes them; closing windows is never a request to quit. An
+application with no window open gets two rows instead: <b>No
+windows</b>, which cannot be chosen, and <b>Quit application</b>, which
+asks the program to quit. The file manager itself gets only the first of
+those. In the collapsed docks the whole list folds into a second button
+under the leaf, which pops a menu of the running applications.</p>
+
+<h2 id="replicants">Replicants</h2>
+
+<p>In a tall dock the tray sits between the application list and the
+clock. It holds at most eight replicants. Each is one row: its name on
+the left, and on the right the present value of a node of the namespace,
+formatted as that node says it should be read rather than as a raw
+number.</p>
+
+<p>Dropping exactly one node on the tray subscribes to it, and the
+status line says so, or says the tray refused it because the name is
+taken or the tray is full. A replicant whose node has moved is
+re-pointed to where it went; one whose node is gone is dropped. The list
+is written to the session store, so it comes back with the next desktop.
+Dropping on the leaf instead links what was dropped into the Deskbar
+folder. Started against a device, the desktop puts three readings in the
+tray itself: <b>uptime</b>, <b>boots</b> and <b>free</b>.</p>
+
+<h2 id="switch">The theme switch</h2>
+
+<p>In a tall dock the theme switch has a strip of its own between the
+tray and the clock, and a press anywhere in that row steps the theme to
+the next of light, dark and no hue. Along the top or the bottom the
+switch sits at the far end of the bar, past the last application
+button.</p>
+
+<h2 id="prefs">Deskbar preferences</h2>
+
+<p>Opened from Settings. Every change applies to the bar at once and is
+written down. The rows, in the order they are drawn:</p>
+
+<ul>
+<li><b>Sort applications by name</b>, else rows stand in the order the
+applications started</li>
+<li><b>TikuTracker always first</b>, ahead of whatever the sort says</li>
+<li><b>Show application expander</b>, the arrow that opens a row's
+windows; it can be set only in the tall docks</li>
+<li><b>Expand new applications</b>, so an application arrives with its
+windows already listed; like the row above it, this can be set only in
+the tall docks</li>
+<li><b>Hide application names</b>, leaving the icons; resting on a row
+then says the name</li>
+<li><b>Icon size</b>, stepped by 8 px between 16 and 96, and <b>Font
+size</b>, stepped by 2 px between 10 and 16</li>
+<li><b>Recent documents</b>, <b>Recent folders</b> and <b>Recent
+applications</b>: a box that puts each list in the leaf menu, and a
+count of up to 50</li>
+<li><b>Always on top</b>, <b>Auto-raise</b>, which can be set only while
+Always on top is off, and <b>Auto-hide</b></li>
+</ul>
+
+<p>Below the rows is the dock monitor, labelled <b>Dock location</b>. A
+click in it moves the bar: the left and right thirds put the bar at that
+edge, tall when the click is in the middle band and collapsed above or
+below it to the leaf, the applications button, the tray, the theme
+switch and the clock; the middle column puts the bar along the top or
+the bottom. The dock and the bar's width are remembered for
+the next session. The foot of the window has <b>Defaults</b>,
+<b>Revert</b>, which restores the settings the window opened with, and
+<b>Edit in TikuTracker…</b>, which opens the Deskbar folder in a file
+window.</p>

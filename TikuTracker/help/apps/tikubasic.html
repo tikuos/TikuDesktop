@@ -1,0 +1,160 @@
+<h1>TikuBasic</h1>
+
+<p>TikuBasic is where a BASIC program is written, run and kept. The
+Deskbar leaf offers it under <b>Programming</b>. <b>TikuC</b> is the
+same application built for C: the same windows and the same way of
+working, putting Build forward where this one puts Run. See
+<a href="apps/tikuc.html">TikuC</a>.</p>
+
+<p>With one of its windows in front, <b>Help…</b> in the
+<b>Tiku</b> menu on the top bar opens this page.</p>
+
+<h2 id="windows">The project window and the editor</h2>
+
+<p>Starting the application shows its announcement for a moment, and
+then a window named <b>Project</b>. A project is a folder:
+<b>New Project…</b> makes a folder of the name given, holding the
+project description and the program's first source file. The list in
+the window is the files that description names. A <code>group</code>
+line in the description becomes a heading row among them.</p>
+
+<p>The <b>Project</b> menu holds <b>New Project…</b>,
+<b>Open Project…</b>, <b>Recover unsaved files</b>, the run and save
+rows described below, <b>Stop</b> while a program is running,
+<b>Build for</b> the target the project names, and <b>Close
+Project</b>. <b>About TikuBasic</b> is not among them: the desktop
+takes that row and puts it in the <b>Tiku</b> menu on the top bar,
+beside <b>Help…</b>. The <b>File</b> menu holds <b>New File…</b>,
+<b>Open File…</b>, <b>Add File…</b> and <b>Remove File</b>, which takes
+a row out of the project description and leaves the file on the
+disk.</p>
+
+<p>Opening a row opens an editor window of its own, named after the
+file. A file already open is raised rather than opened twice, and two
+editor windows fit at once; asking for a third says there is no room
+for another window. The <b>Window</b> menu, which the project window
+and every editor carries, lists the editors open now, and one holding
+unsaved work has <i>(changed)</i> beside its name.</p>
+
+<p>The editor's toolbar for a BASIC file is <b>Save</b>, <b>Run</b>,
+<b>Stop</b>, <b>Undo</b>, <b>Redo</b>, <b>Find</b> and
+<b>Renumber</b>. A C file's toolbar is <b>Save</b>, <b>Build</b>,
+<b>Undo</b>, <b>Redo</b> and <b>Find</b>: Stop and Renumber belong to
+BASIC. A new BASIC file opens with line 10 already typed. Renumber
+counts the numbered lines by tens again and
+rewrites every branch to follow, as one undoable change.</p>
+
+<h2 id="where">Where a program runs</h2>
+
+<p>The line under the editor's toolbar says where the next run goes. It
+reads <code>Run on:</code> with the name of the device and then
+<code>Ready</code> or <code>Disconnected</code>. With no default device
+set the whole line is <code>Run on: This computer — no default
+device</code>. While a program is running the same line says so, and
+names what it is running on.</p>
+
+<p>The destination is the desktop's default device, chosen in the
+<b>Devices</b> menu on the top bar; see
+<a href="devices.html">Devices</a>. A default that is named but not
+connected is never quietly replaced with a run on this machine.</p>
+
+<p>A run on a board opens a console window named for the file and the
+board, holding what the program printed and the errors with the line
+numbers the interpreter gave them. A run on this machine puts what the
+program printed in the <b>Messages</b> window instead, and is stopped
+if it has not finished within thirty seconds. A program that asks for a
+line asks in the window its output is going to, and <b>Return</b> sends
+what was typed.</p>
+
+<h2 id="run">Run saves the file first</h2>
+
+<p>Run saves a changed file before anything is sent anywhere. A save
+that fails stops the run, and the note line says the source could not
+be saved.</p>
+
+<p>The saved file is then read whole. Three things are refused before
+any of it reaches a board, so a part of a program is never sent:</p>
+
+<ul>
+<li>more than 8191 bytes, which is <i>Upload too large (maximum 8191
+bytes)</i></li>
+<li>a NUL byte anywhere in the file</li>
+<li>a file that could not be read</li>
+</ul>
+
+<p>A board's firmware has limits of its own and can refuse a program
+that passes all three.</p>
+
+<h2 id="save">Save on a board</h2>
+
+<p><b>Save on</b> the board, in the Project menu, keeps the selected
+file on the board rather than running it. The row is there only while
+the desktop has a default device. A modified editor is saved first, as
+for a run.</p>
+
+<p>The name on the board is the file's name without its extension, cut
+to the seven characters this interface takes, and it must be letters,
+digits or underscore; another name is refused and the file has to be
+renamed. The board holds the program as
+<code>/data/&lt;name&gt;.bas</code>.</p>
+
+<p>Saving always asks first, because nothing here can ask the board
+whether that name is already taken. The question names the path, the
+board and the byte count, and says when the name was shortened to seven
+characters. <b>Cancel</b> is the button chosen by default;
+<b>Save / Replace</b> sends it. What goes is the board and the program
+as they were when the question was put, whether or not either has
+changed since.</p>
+
+<h2 id="find">Find and Replace</h2>
+
+<p><b>Edit &gt; Find…</b> (Ctrl+F) and <b>Edit &gt; Find and
+Replace…</b> (Ctrl+H) open the bar under the toolbar, as does the Find
+tool. In a BASIC file, Find on its own labels the field
+<code>Find / line:</code>: a query of digits alone goes to the line
+with that number, and falls back to a literal search when no line has
+it. Find and Replace does not do this. Otherwise a search is literal
+and case-sensitive and does not cross a line end. The buttons are
+<b>Next</b>, <b>Replace</b>, <b>All</b> and <b>Close</b>; <b>Tab</b>
+changes field, <b>Return</b> finds the next match, or replaces the
+selected one when the caret is in the replacement field, and
+<b>Escape</b> closes the bar.</p>
+
+<p>Replace changes the selected match, so a first press selects one.
+All replaces every match in the file as a single undoable change. An
+empty replacement deletes what was found. A replacement that would
+leave a line longer than 1023 bytes is refused whole and nothing in the
+file changes.</p>
+
+<p><b>Edit &gt; Find in project</b> looks for the Find field's text
+through every file the project names, reading an open editor's unsaved
+text where there is one. Every line that holds the text becomes a row
+in the Messages window, at most 200 of them, and the editor says how
+many matching lines were found and how many files could not be read. It
+does not replace across files, and it is not offered while a program is
+running.</p>
+
+<h2 id="messages">The Messages window</h2>
+
+<p>The <b>Messages</b> window is made when there is first something to
+put in it, and holds what a run on this machine printed, what a build
+said, and the results of Find in project. Its strip says
+<i>running…</i> or <i>the run has finished</i>.</p>
+
+<p>A row that names a line carries <b>Go to line</b> and that number
+in the window's <b>Message</b> menu, and <b>Return</b> does the same:
+the file's editor opens if it is not open already, the caret goes to
+that line, and the window comes forward. A row that names no line
+reads <i>This one is not about anywhere</i> and cannot be
+followed.</p>
+
+<p>Errors from a run on a board are in that run's console with their
+line numbers. Messages is used for them only when there is no console
+to hold them.</p>
+
+<hr>
+
+<p><a href="apps/tikuc.html">TikuC</a> is this application built for C.
+<a href="devices.html">Devices</a> covers connecting a board and
+choosing the default one. <a href="index.html">Back to the
+contents</a>.</p>

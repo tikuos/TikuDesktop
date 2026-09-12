@@ -8,8 +8,9 @@ menu-pick Help
 wait 12
 expect-title Help
 expect-narrate TikuDesktop Help
-note the contents page says what the keys do
-expect-narrate Tab
+note the contents page lists the pages, and the reader's own controls
+note are the buttons above it
+expect-narrate The pages
 expect-control Contents
 shot /tmp/trk_help_index.png
 note Tab reaches the first link and Return follows it
@@ -17,9 +18,9 @@ key Tab
 wait 4
 key Return
 wait 12
-expect-narrate Device Monitor
-expect-narrate VFS Inspector
-shot /tmp/trk_help_devices.png
+expect-narrate Windows and files
+expect-narrate The three views
+shot /tmp/trk_help_files.png
 note and Backspace comes back to the page it was read from
 key BackSpace
 wait 12

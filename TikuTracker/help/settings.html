@@ -1,0 +1,177 @@
+<h1>Settings</h1>
+
+<p>The Deskbar leaf's <b>Settings</b> row opens a submenu of seven
+preference windows, in this order: <b>Deskbar preferences…</b>,
+<b>TikuTracker preferences…</b>, <b>TikuDesktop preferences…</b>,
+<b>Fonts…</b>, <b>Sounds…</b>, <b>Devices Preferences…</b> and
+<b>Startup Preferences…</b>. The row below them shows or hides replicants
+and opens no window. Back to the <a href="index.html">contents</a>.</p>
+
+<h2 id="deskbar">Deskbar preferences</h2>
+
+<p>Eight rows are tick boxes: <b>Sort applications by name</b>,
+<b>TikuTracker always first</b>, <b>Show application expander</b>,
+<b>Expand new applications</b>, <b>Hide application names</b>, <b>Always on
+top</b>, <b>Auto-raise</b> and <b>Auto-hide</b>. Five rows carry a minus
+and a plus instead: <b>Icon size</b> steps by 8 px between 16 and 96,
+<b>Font size</b> by 2 px between 10 and 16, and <b>Recent documents</b>,
+<b>Recent folders</b> and <b>Recent applications</b> each have a tick box
+of their own and a count from 0 to 50.</p>
+
+<p>Three rows grey out when they do not apply. Show application expander and
+Expand new applications work only while the bar is docked left expanded or
+right expanded, and Auto-raise only while Always on top is off.</p>
+
+<p>The box beside <b>Dock location</b> shows the number of the dock the bar
+is in now, and a click in it moves the bar: the left third gives the left
+mini dock, or the left expanded dock in its middle band, the right third the
+two right docks the same way, and the middle column the top dock above and
+the bottom dock below. The keys reach the same six: <b>8</b> or <b>Up</b>,
+<b>2</b> or <b>Down</b>, <b>7</b> or <b>Home</b>, <b>9</b> or <b>PageUp</b>,
+<b>1</b> or <b>End</b>, <b>3</b> or <b>PageDown</b>.</p>
+
+<p>Every change reaches the bar and is written at once, so there is no Done
+button. <b>Defaults</b> puts back the built-in settings and <b>Revert</b>
+what the window opened with; each is greyed when it has nothing to do.
+<b>Edit in TikuTracker…</b> opens the Deskbar's own folder,
+<code>~/.config/deskbar</code>, in a file-manager window.</p>
+
+<h2 id="tracker">TikuTracker preferences</h2>
+
+<p>Four page names run down the left: <b>Desktop</b>, <b>Windows</b>,
+<b>Volume icons</b> and <b>Disk mount</b>. Click one to show its settings.
+A page name is drawn heavier while that page holds a change made since the
+window opened. Settings carry the names they have in the settings file:</p>
+
+<ul>
+<li><b>Desktop</b>: ShowDisksIcon, MountVolumesOntoDesktop,
+MountSharedVolumesOntoDesktop, IntegrateNonBootBeOSDesktops,
+SelectedLabelColor</li>
+<li><b>Windows</b>: ShowFullPathInTitleBar, SingleWindowBrowse,
+ShowNavigator, TransparentSelection, SortFolderNamesFirst, HideDotFiles,
+TypeAheadFiltering, GenerateImageThumbnails, DarkMode, GlobalMenuBar</li>
+<li><b>Volume icons</b>: ShowVolumeSpaceBar, UsedSpaceColor,
+FreeSpaceColor, WarningSpaceColor</li>
+<li><b>Disk mount</b>: EjectWhenUnmounting, AutoMount</li>
+</ul>
+
+<p>A tick box turns its setting on or off. A colour swatch is the control
+for a colour, and a click steps to the next colour of a list of twelve.
+DarkMode has three positions rather than two, light, dark and without hue.
+MountSharedVolumesOntoDesktop is greyed while MountVolumesOntoDesktop is
+off, and a click on it is refused. Each change is written to
+<code>~/.config/TrackerSettings</code> as it is made. <b>Revert</b> acts on
+all four pages at once, not only on the one showing. <b>Defaults</b> acts on
+the first three; <b>Disk mount</b> is never put back to a default.</p>
+
+<h2 id="desktop">TikuDesktop preferences</h2>
+
+<p>This window sets the picture behind the Desktop and the size of the
+icons on it. The six-row list begins with <b>No picture</b>; the rest are
+the picture files in the Desktop folder and in the wallpapers folder beside
+it, read each time the window opens. While neither folder holds one the
+list says <b>Drop a picture in the Desktop to offer it here</b>.</p>
+
+<p>Under <b>How it is laid</b> are <b>At its own corner</b>,
+<b>Centred</b>, <b>Scaled to fit</b> and <b>Tiled</b>; they take a click
+only while a picture is showing. The <b>Icon size</b> minus and plus step
+through 32, 40, 48, 64, 96 and 128 px, and the ends stop rather than wrap.
+Every choice reaches the Desktop and is written at once, and
+<b>Defaults</b> and <b>Revert</b> work as they do in the Deskbar
+window.</p>
+
+<h2 id="fonts">Fonts</h2>
+
+<p>The <b>Family</b> list offers the faces the toolkit carries, then any
+TrueType families found in <code>~/.config/tracker/fonts</code>. That folder
+is read each time the window opens, so a face dropped in while it was shut
+is offered when it opens again. <b>Size</b> steps by 2 px between 10 and
+16, and <b>Preview</b> shows both weights of what is chosen. A line in the
+window says that changes apply immediately and that Revert restores the
+settings the window opened with. <b>Done</b> closes it. The size here is
+the one the Deskbar window's Font size row changes.</p>
+
+<h2 id="sounds">Sounds</h2>
+
+<p>Each row is one moment: a tick box naming it, a button naming what it
+plays, a <b>...</b> button and <b>Test</b>. These are the eight moments,
+and what each is set to until it is changed.</p>
+
+<table>
+<tr><th>Moment</th><th>Sounds by default</th></tr>
+<tr><td>Startup chime</td><td>yes</td></tr>
+<tr><td>Beep</td><td>yes</td></tr>
+<tr><td>Window opened</td><td>no</td></tr>
+<tr><td>Window closed</td><td>no</td></tr>
+<tr><td>Window minimized</td><td>no</td></tr>
+<tr><td>Window zoomed</td><td>no</td></tr>
+<tr><td>Window activated</td><td>no</td></tr>
+<tr><td>Shutdown</td><td>yes</td></tr>
+</table>
+
+<p>The middle button says <b>Built-in</b> or the name of a file. Pressing
+it steps to the next file in <code>~/.config/tracker/sounds</code> and plays
+it, and back to Built-in after the last one; only <code>.wav</code> and
+<code>.score</code> files are offered, and the button is greyed while the
+folder holds none. The <b>...</b> button
+opens a file panel at the home folder, and the file chosen there is copied
+into the sounds folder and played. <b>Test</b> plays a row even when its
+moment is turned off. <b>Volume</b> is a slider from 0 to 100 percent whose
+knob follows the pointer and is written when it is let go. <b>Defaults</b>
+and <b>Revert</b> cover the moments, their files and the volume
+together.</p>
+
+<h2 id="devices">Devices Preferences</h2>
+
+<p>This window reads and changes settings on a connected board, so connect
+one from the <b>Devices</b> menu first; see <a href="devices.html">Devices</a>.
+The list down the left is the boards now mounted, and the table beside it
+is what the selected board reports. Choose a row of that table and the
+group underneath edits that setting. The window opens on <b>CPU clock</b>,
+and with nothing connected it says <b>No devices connected</b>.</p>
+
+<table>
+<tr><th>Setting</th><th>Node</th><th>What it changes</th></tr>
+<tr><td>Device name</td><td>/sys/device/name</td><td>1 to 31 bytes, saved
+on the device. Reconnect to update its menu name.</td></tr>
+<tr><td>CPU clock</td><td>/sys/cpu/freq</td><td>Shown in MHz. A rate is
+chosen from what the device offers. Firmware that changes the clock at reboot
+keeps it with Save for restart, and the device is restarted by hand; firmware
+that changes it live takes it with Apply. Firmware without the capability
+nodes is read-only.</td></tr>
+<tr><td>Date and time</td><td>/sys/time</td><td>Shown in UTC. Sync now
+sends this computer's time.</td></tr>
+<tr><td>Cryptography</td><td>/sys/crypto/mode</td><td>Automatic or
+Software only. Resets at reboot.</td></tr>
+<tr><td>Radio transmit power</td><td>/sys/radio/txpower</td><td>A whole
+number of dBm. The device validates the level. Resets at reboot.</td></tr>
+<tr><td>Idle sleep mode</td><td>/sys/power/mode</td><td>Reported by the
+device and not changed from here.</td></tr>
+</table>
+
+<p>The button beside the editor is <b>Apply</b>, named <b>Sync now</b> for
+the date and time and <b>Save for restart</b> for a clock the device
+changes at reboot. Choosing from a dropdown changes the draft only, never
+the device. A write is read back afterwards and the line under the group
+says what happened. <b>Refresh devices</b> reads the mount list and the
+selected board again. <b>Done</b>, and <b>Ctrl+W</b>, close the window
+without applying what was typed.</p>
+
+<h2 id="startup">Startup Preferences</h2>
+
+<p>Under <b>Windows</b> are <b>Reopen my previous folders</b>, which
+restores the folders of the last session, and <b>Open default folders if
+none reopen</b>. Turn both off to start with no folder windows. Under
+<b>Open these applications</b> is the list of installed applications, six
+rows at a time, with <b>&lt;</b> and <b>&gt;</b> to page through it; the
+line beneath counts the applications ticked across every page.</p>
+
+<p><b>Open nothing</b> clears both folder boxes and every application box.
+<b>Save</b> writes the choices, <b>Cancel</b> discards them, <b>Ctrl+S</b>
+saves and <b>Ctrl+W</b> closes without saving. Changes take effect the next
+time you start TikuDesktop, and saving never starts or closes an
+application now. An application the saved list does not name starts only if
+it was installed as a trusted one. The list holds 32 applications, and a
+save that would pass that says so instead of dropping choices. Safe mode
+skips the saved folders and the applications; the default-folder box still
+applies.</p>

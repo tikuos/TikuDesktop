@@ -1,0 +1,82 @@
+<h1>TikuC</h1>
+
+<p>TikuC is TikuBasic built for C. One source makes both, so the project
+window, the editor windows, the Window menu, Find and Replace, and the
+recovery of unsaved files all work as
+<a href="apps/tikubasic.html">TikuBasic</a> describes them. This page
+says only what is different. The Deskbar leaf offers TikuC under
+<b>Programming</b>, and its project window is titled <b>Project</b>.</p>
+
+<h2 id="differs">What differs</h2>
+
+<p>A file's language comes from its name rather than from which of the
+two programs opened it: <code>.c</code> and <code>.h</code> are C,
+<code>.bas</code> is BASIC. TikuC differs only in which rows and tools
+it offers.</p>
+
+<ul>
+<li><b>New Project…</b> writes a project whose one file is
+<code>main.c</code> and opens it. <b>New File…</b> offers the name
+<code>untitled.c</code>.</li>
+<li>A C page's toolbar is Save, Build, Undo, Redo and Find. The run
+arrow, the stop square and the renumber tool are drawn only on a BASIC
+page.</li>
+<li>A C page's <b>File</b> menu holds only <b>Save</b> and <b>Close</b>.
+Its <b>Edit</b> menu ends at <b>Find in project</b>: no <b>Renumber</b>,
+no <b>Complete keyword</b>, no <b>Keyword help</b>. There is no
+<b>Debug</b> menu.</li>
+<li>The <b>Project</b> menu offers no Run row, no <b>Save on</b> a board
+and no <b>Stop</b>. Nothing here runs a C program. The line under the
+toolbar still reads <code>Run on:</code> with a device name, because the
+editor window is the same one, but on a C page nothing uses it.</li>
+<li><b>Build for</b> is always on the <b>Project</b> menu. In TikuBasic
+that row appears only when the project says what it is for.</li>
+<li>Checkpoints of changed, unsaved files are kept in
+<code>~/.TikuC-recovery</code>.</li>
+</ul>
+
+<h2 id="build">Build</h2>
+
+<p>Build runs a compiler over the project's C and shows what the
+compiler printed. Every row of the project whose name ends in
+<code>.c</code> is passed to it, with the project's own folder on the
+include path and with <code>-fsyntax-only</code>, so nothing is written
+and nothing is linked. Making an image for a board needs a toolchain for
+that board. Build pressed on the toolbar saves the page first.</p>
+
+<p>The target is the <code>target</code> line of the project
+description. A project that names none is built for <code>host</code>,
+which is this machine. These are the compilers TikuC looks for.</p>
+
+<table>
+<tr><th>Target</th><th>Compiler</th></tr>
+<tr><td>host</td><td>cc</td></tr>
+<tr><td>rp2350, ambiq, nordic, stm32n6, ra8p1</td>
+<td>arm-none-eabi-gcc</td></tr>
+<tr><td>msp430</td><td>msp430-elf-gcc</td></tr>
+</table>
+
+<p>A target outside that table is refused with <code>? nothing here
+knows how to build for</code> and its name. A project with no
+<code>.c</code> row in it is refused with <code>? this project has no C
+in it to build</code>. A build that has not finished after thirty
+seconds is stopped.</p>
+
+<h2 id="messages">What the compiler said</h2>
+
+<p>Everything the compiler printed goes to the <b>Messages</b> window,
+which comes forward once the build has ended. A build that printed
+nothing opens no window and leaves the screen as it was; a compiler that
+prints nothing has found nothing to report. A line that begins with a
+file name and a line number is remembered as a position in that file:
+select that row and the <b>Message</b> menu offers <b>Go to line</b>
+with the number, which opens that file, if it is not open already, and
+puts the caret on the line. For a row about nowhere the menu says
+<b>This one is not about anywhere</b> instead.</p>
+
+<hr>
+
+<p>The rest of the program is described in
+<a href="apps/tikubasic.html">TikuBasic</a>. With a TikuC window in
+front, the <b>Tiku</b> menu on the top bar carries a <b>Help…</b> row
+that opens this page. <a href="index.html">Back to the contents</a>.</p>

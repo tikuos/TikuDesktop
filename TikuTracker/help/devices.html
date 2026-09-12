@@ -1,18 +1,140 @@
 <h1>Devices</h1>
 
-<p>A board reaches this desktop over a cable or over a network, and is
-mounted under <code>/devices</code> once you connect it from the
-<b>Devices</b> menu on the top bar.</p>
+<p>A board reaches this desktop over a serial port, or by dialling in
+over the network when the desktop was started to listen for one. A
+connected board is mounted under <code>/devices</code> by its
+processor's name, so its files and settings open in a window like any
+other place here.</p>
+
+<h2 id="menu">The Devices menu</h2>
+
+<p>The <b>Devices</b> menu sits at the right end of the menu bar across
+the top of the screen, after the menus of the window in front, and it
+stays there whatever window is focused. Its rows are these.</p>
+
+<ul>
+<li><b>Default device</b> names the device in use:
+<code>Default device: This machine</code> when no board is current, and
+the board's name in place of <code>This machine</code> when one is. Its
+submenu is titled <b>Default device</b>; the first row is <b>This
+machine</b> and the rest are the connected boards, each as its name and
+the port it answered on. The one in use is marked.</li>
+<li><b>Connected devices</b> is a heading, with one <b>Disconnect</b>
+row under it for each mounted board, naming it and its port. When none
+is mounted the heading is followed by <b>No devices connected</b>.</li>
+<li><b>Available devices</b> is a heading listing one <b>Connect to</b>
+row for each port that answered with a name and is not already mounted.
+A port that answers nothing is never offered, so the second port a debug
+probe puts up beside a board's console does not appear.</li>
+<li><b>Scan for devices</b> lists the ports again and asks each one
+that is not mounted for its name. A scan only lists. The board that
+answered is remembered under its processor's name, and its port is
+closed again.</li>
+</ul>
+
+<h2 id="connect">Connecting and disconnecting</h2>
+
+<p><b>Connect to</b> is the one row that mounts a board. It opens the
+port, and the board that answers is mounted under its processor's name.
+If nothing was current at the time, the board that lands becomes the
+current device; a second board joins it and does not take its place.</p>
+
+<p><b>Disconnect</b> unmounts the board and closes the port. It goes
+back onto the <b>Available devices</b> list under the name it already
+answered to, so a second scan is not needed to find it. If it was the
+current device, the desktop steps to another connected board, and falls
+back to this machine only when there is none.</p>
+
+<h2 id="current">The current device</h2>
+
+<p>The current device is where work goes when a window is not told
+otherwise; <b>This machine</b> means the desktop's own namespace. Every
+open application and every connected session is told when it changes.
+The choice is remembered by name and by port, and saved as soon as it is
+made. At the next start the desktop reconnects that one remembered port.
+It asks the other ports only for their names, so connecting a board
+stays something that is asked for.</p>
+
+<h2 id="panels">A board's own windows</h2>
+
+<p>A board can publish forms of its own under <code>gui</code>. The
+first time the desktop sees them it opens each as a window titled by the
+form. A press on a button or switch row writes the change back to the
+board; a text row writes on Return, and a slider when the pointer is
+released. The board reporting a change under <code>gui</code> makes the
+open windows re-read. Four are held at once. A form with rows this build
+cannot draw says how many along the bottom.</p>
 
 <h2 id="monitor">Device Monitor</h2>
 
-<p>The monitor samples a connected board every five seconds and draws what
-it read. A reading the firmware does not publish is shown as
-<b>Unavailable</b>, never as a zero.</p>
+<p><b>Device Monitor</b> opens from <b>Device Tools</b> in the Deskbar
+menu. It captures the current device as it opens, and a later change of
+the current device never retargets it. <b>Use default</b> adopts the
+current device and <b>Next device</b> steps to the next connected board;
+either drops the readings already taken.</p>
+
+<p>The monitor samples the board, then waits five seconds after each
+finished sample before asking again. <b>Pause</b> holds the last
+snapshot on screen; <b>Resume</b> and <b>Refresh</b> start it reading
+again. A reading the board does not publish is shown as
+<b>Unavailable</b>, never as a zero. Closing the window stops the
+polling.</p>
+
+<table>
+<tr><th>Reading</th><th>Shown in</th><th>Read from</th></tr>
+<tr><td>Uptime</td><td>s</td><td><code>/sys/uptime</code></td></tr>
+<tr><td>CPU clock</td><td>MHz</td><td><code>/sys/cpu/freq</code></td></tr>
+<tr><td>Process RAM</td><td>KiB</td><td><code>/sys/mem/used</code></td></tr>
+<tr><td>Stack headroom</td><td>KiB</td><td><code>/sys/mem/stack_free</code></td></tr>
+<tr><td>Processes</td><td>count</td><td><code>/proc/count</code></td></tr>
+<tr><td>Store used</td><td>KiB</td><td><code>/sys/mem/nvm_map</code></td></tr>
+</table>
+
+<p>Process RAM is what the processes allocated, not the whole of the
+board's SRAM; capacity is read from <code>/sys/mem/sram</code>. Process
+RAM and store allocation each keep 120 samples of history, about ten
+minutes at that interval. Under the graphs the monitor lists up to eight
+processes, each as its number, name, state, SRAM bytes and queued
+events.</p>
 
 <h2 id="inspector">VFS Inspector</h2>
 
-<p>The inspector browses a device's namespace. Only audited settings can be
-edited, and every edit is reviewed and confirmed before it is written.</p>
+<p><b>VFS Inspector</b> also opens from <b>Device Tools</b> and takes
+its target the same way. On opening it reads the board's directory tree
+and the values it knows are safe to read, and shows <code>/sys</code>
+first, or <code>/</code> when there is no <code>/sys</code>.</p>
 
-<p><a href="index.html">Back to the contents</a>.</p>
+<p>The left pane is the tree, sorted by name; <b>+</b> and <b>-</b> or
+the Left and Right arrow keys open and close a branch. The right pane
+lists the selected directory in the columns <b>Name</b>, <b>Type</b>,
+<b>Access</b> and <b>Data</b>. Type an absolute path in the address
+field and press <b>Go to path</b> to jump, or <b>Up</b> for the parent.
+<b>Refresh</b> reads the tree and the safe values again.</p>
+
+<p>A value the inspector will not read on its own says <b>Manual
+read</b>, one it did not reach within its scan limits says <b>Not
+read</b>, and a reading that failed says <b>Unavailable</b>. Click a
+value, or select it and press Return, to read that one endpoint.
+<b>Copy value</b> copies the whole of the accepted text even when the
+preview shows only its first lines. A value over 2046 bytes, or one that
+is not text, is refused.</p>
+
+<p>Fewer endpoints can be edited here than the board marks writable.
+Five audited settings have an editor: <code>/sys/device/name</code>,
+<code>/sys/cpu/freq_target</code>, <code>/sys/crypto/mode</code>,
+<code>/sys/radio/txpower</code> and <code>/sys/time</code>. Everything
+else is read only here, command endpoints included. An edit is read,
+reviewed, then confirmed: <b>Review edit</b> shows the target, the path,
+the current value and the proposed one, <b>Confirm save</b> writes once
+and reads back, and <b>Cancel edit</b> changes nothing. A write is never
+retried on its own: a lost answer is reported as uncertain, and wants a
+<b>Refresh</b> before another try. A clock target must be one of the
+rates the board advertises, and no restart is automatic.</p>
+
+<p>Both windows close with <b>Done</b> or with Escape.</p>
+
+<hr>
+
+<p>The desktop's own settings are in
+<a href="settings.html">Settings</a>.
+<a href="index.html">Back to the contents</a>.</p>

@@ -1,0 +1,137 @@
+<h1>Terminal</h1>
+
+<p>Terminal runs the shell of the machine TikuDesktop itself is running
+on. It is opened from <b>Applications</b> in the Deskbar leaf. It opens
+no serial port and reads no connected board: the shell in the window is
+this computer's. The console of a board is a different program,
+<a href="apps/console.html">TikuConsole</a>, under
+<b>Device Tools</b>.</p>
+
+<h2 id="shell">The shell it runs</h2>
+
+<p>Opening the window starts one shell on a pseudo-terminal of its own.
+The program started is the one named by the <code>SHELL</code>
+variable; when that variable is unset or empty, or when the shell it
+names cannot be run, <code>/bin/sh</code> is started instead. The shell
+is started interactive, and the pseudo-terminal is its controlling
+terminal, so job control works in it. <code>TERM</code> is set to
+<code>vt100</code> for it.</p>
+
+<p>When no shell can be started at all, the screen says
+<code>no shell could be started</code> and the strip says
+<code>the shell has exited</code>. Nothing is sent and nothing is
+received. <b>Clear</b> and <b>Reset</b> still blank the screen, and
+<b>Quit</b> still ends Terminal.</p>
+
+<h2 id="window">The window</h2>
+
+<p>The screen is 80 columns by 24 rows. The window opens at that size
+and keeps it: Terminal does not ask the desktop for a window the person
+may resize, so the size does not change while it is open. The window is
+titled <code>Terminal</code>, and a title a program sends over the
+terminal is read and discarded rather than shown.</p>
+
+<p>Under the screen is a strip of one line. While the shell is running
+it names the screen's size and the terminal being emulated, as
+<code>80x24 vt100</code>. While the view is scrolled back it says how
+many lines back the view is, and once the shell has ended it says
+<code>the shell has exited</code>.</p>
+
+<p>The screen draws the eight ANSI colours, bold and reverse video. The
+cursor is a block on the place the next character lands, drawn only
+while the shell is running and the live screen is being shown. The
+sequences understood are a VT100 subset: enough for a line editor, a
+pager and a full-screen editor.</p>
+
+<h2 id="keys">Typing</h2>
+
+<p>Every key goes to the shell as the bytes a terminal sends for it.</p>
+
+<table>
+<tr><th>Key</th><th>What the shell is sent</th></tr>
+<tr><td>A printed character</td><td>that character</td></tr>
+<tr><td>Return</td><td>a carriage return</td></tr>
+<tr><td>Backspace</td><td>the delete code</td></tr>
+<tr><td>Tab, Escape</td><td>tab, escape</td></tr>
+<tr><td>Arrows, Home, End, Delete, Page Up, Page Down</td>
+<td>the escape sequence a terminal sends for that key</td></tr>
+<tr><td>Ctrl and a letter</td>
+<td>that letter's control code, so Ctrl+C sends code 3</td></tr>
+</table>
+
+<p>Text committed by an input method is sent whole, so accented and
+non-Latin characters reach the shell as typed. Ctrl with a key that is
+not a letter sends nothing. <b>Ctrl+W</b> is taken by the desktop
+before Terminal is offered it; it is described under
+<a href="#closing">Closing it</a>.</p>
+
+<h2 id="back">Looking back</h2>
+
+<p>Lines that scroll off the top of the screen are kept, 500 of them. A
+program that sets a scroll region scrolls inside it, and those lines are
+not kept. <b>Shift+Page Up</b> steps back through what is kept 23 lines
+at a time, one line short of a screen, so a line of the old screen stays
+in view; <b>Shift+Page Down</b> comes forward again. Neither is sent to
+the shell. While the view is back, the strip says how many lines back it is
+and that Shift+Page Down returns. Typing brings the view to the live
+screen first, so a keystroke never lands on a screen that is not being
+shown.</p>
+
+<h2 id="menu">The Terminal menu</h2>
+
+<p>While its window is in front, Terminal puts one menu named
+<b>Terminal</b> on the bar at the top of the screen.</p>
+
+<ul>
+<li id="clear"><b>Clear</b> blanks the screen and puts the cursor at
+the top left. The shell is not told, so its idea of the screen is
+unchanged. Lines already scrolled off stay in the scrollback, and the
+lines cleared off the screen are not added to it.</li>
+<li id="reset"><b>Reset</b> puts the colours, the attributes, the
+scroll region, the parser and the cursor back as they were when the
+window opened, and blanks the screen. The shell is not ended. Use
+<b>Reset</b> when a program stopped mid-sequence and left the screen
+unreadable.</li>
+<li id="quit"><b>Quit</b> ends Terminal, as closing its window
+does.</li>
+</ul>
+
+<p>The <b>Tiku</b> menu carries a <b>Help…</b> row while Terminal's
+window is in front, and that row opens this page.</p>
+
+<h2 id="clipboard">The clipboard</h2>
+
+<p>Terminal does not use the desktop's clipboard. It puts no text
+on it and takes none from it, so there is no copy out of the screen and
+no paste into the shell. Ctrl with a letter is sent on as that letter's
+control code, which is what Ctrl+V does as well. Clicking in the screen
+selects nothing: Terminal reads the keyboard only.</p>
+
+<h2 id="closing">Closing it</h2>
+
+<p><b>Ctrl+W</b> closes the window. The desktop closes it itself and
+never hands that chord to the program inside, so a Terminal is always
+closable from the keyboard. Terminal has one window, and closing it
+ends Terminal, which is also what <b>Quit</b> does. Either way the
+shell is sent a hangup and the pseudo-terminal is closed.</p>
+
+<p>When the shell ends by itself, by <code>exit</code> or otherwise,
+the window stays open and the strip says
+<code>the shell has exited</code>. Nothing is started in its place, and
+keys are not sent. Close the window and open Terminal again for a
+new shell.</p>
+
+<h2 id="board">A board's shell</h2>
+
+<p>Terminal always runs a shell on this machine. The default device in
+the <b>Devices</b> menu does not change what it runs, and a board
+mounted on this desktop is not reachable from it. The shell of a
+connected board is reached with
+<a href="apps/console.html">TikuConsole</a>, which asks the desktop for
+the chosen board and holds that board's serial port from <b>Open
+console</b> until <b>Return to desktop</b>.</p>
+
+<hr>
+
+<p><a href="apps/console.html">TikuConsole</a> is the console of a
+connected board. <a href="index.html">Back to the contents</a>.</p>

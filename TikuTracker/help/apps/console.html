@@ -1,0 +1,100 @@
+<h1>TikuConsole</h1>
+
+<p>TikuConsole is the desktop's serial console for a connected board. It
+is opened from <b>Device Tools</b> in the Deskbar leaf. Opening the
+application does not touch a serial port: it shows the boards this
+desktop has mounted and waits to be told which one to talk to.</p>
+
+<h2 id="choose">Choosing a board</h2>
+
+<p>The list at the top of the window holds the boards mounted now. When
+the desktop's default device is one of them, it is already chosen as the
+window opens, and <b>Open console</b> acts on it straight away. When the
+board that was chosen is no longer there, the list is offered again and
+no other board is picked in its place.</p>
+
+<p>Connecting a board, and setting which one is the default, is done
+from the <b>Devices</b> menu on the top bar. See
+<a href="devices.html">Devices</a>.</p>
+
+<h2 id="open">Open console</h2>
+
+<p><b>Open console</b> asks the desktop to let go of the chosen board,
+and then opens that board's serial port for itself. The board's port and
+MCU are read before the desktop releases it, because neither can be read
+once the mount is gone. The statistics shown are the last set the
+desktop kept, and they stop being refreshed with the mount. The console
+opens the port only once the desktop has finished closing it, so the two
+never hold the cable at the same time.</p>
+
+<p>The desktop refuses to let go of any board while a program is running
+on one of them. The status line then says that the device is busy or
+unavailable. Stop the other device work and press <b>Open console</b>
+again. If the desktop has not answered within ten seconds, the console
+gives up and asks for the board back.</p>
+
+<h2 id="exclusive">What exclusive access means</h2>
+
+<p>Releasing a board takes its mount down. While TikuConsole holds the
+port:</p>
+
+<ul>
+<li><code>/devices/&lt;name&gt;</code> is not in the namespace, so a
+folder window on that board, and any file operation reading or writing
+through it, no longer finds it</li>
+<li>any window the board itself publishes is closed with the mount</li>
+<li>the Device Monitor and the VFS Inspector read a board through its
+mount, so a board the console holds is not there for them to read</li>
+<li>the board list and the baud setting are locked, so the port cannot
+be changed under the connection</li>
+<li>the figures on the <b>Device</b> tab are the snapshot taken before
+the release, not live readings</li>
+</ul>
+
+<p>Two owners on one serial port corrupt each other's traffic, so the
+desktop hands the board over whole or not at all.</p>
+
+<h2 id="return">Return to desktop</h2>
+
+<p><b>Return to desktop</b> closes the console's own descriptor,
+discards input that has not been sent, and asks the desktop to take the
+board back. The desktop asks every serial port at once and mounts back
+the one whose identity matches the board that went. A different board is
+never mounted in its place.</p>
+
+<p>When every port has answered and none of them had it, the status line
+says the handoff failed and to check <b>Devices</b> before retrying.
+When nothing has answered within fifteen seconds, it says the device did
+not return and to reconnect it through <b>Devices</b>. When the desktop
+will not take the request at all, which happens for a board this desktop
+never let go and while an earlier return is still under way, the status
+line says the device could not be returned and to reconnect it through
+<b>Devices</b>.</p>
+
+<p>Finish any interactive program on the board before handing it back. A
+board that does not answer the request does not come back, and has to be
+connected again from <b>Devices</b>.</p>
+
+<h2 id="files">Files...</h2>
+
+<p><b>Files...</b> opens <code>/devices/&lt;name&gt;/data</code>, the
+board's data folder, in the file manager. Pressed while the console
+holds the port, it performs the same handoff first and opens the folder
+once the board is back on the desktop.</p>
+
+<p>Copying a file into that folder puts the file on the board. Copying
+one out brings a copy here and leaves the board's own file in place: a
+file can be copied off a board, but not moved off it, because nothing in
+the backend contract removes anything from a board.</p>
+
+<p>The gesture is the ordinary one, with two limits. A folder cannot be
+copied between this machine and a board. A file larger than 64 KiB is
+refused, because files crossing between stores are read whole. When the
+file manager will not open the path, the path is put on the clipboard
+and the status line says so.</p>
+
+<hr>
+
+<p><a href="devices.html">Devices</a> covers connecting a board, the
+Device Monitor and the VFS Inspector.
+<a href="index.html">Back to the contents</a>.</p>

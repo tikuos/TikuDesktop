@@ -1,0 +1,90 @@
+<h1>Descriptor Demo</h1>
+
+<p>The Descriptor Demo is one application written once and run two
+ways. The desktop hosts it inside itself, linked in with the rest of
+the shell, when <code>TIKU_EMBED_DEMO</code> is set in the desktop's
+environment. The program <code>build/tiku-demo-app</code> is the same
+application code as a process of its own: it connects to a desktop
+already running, over the socket
+<code>~/.config/tracker/desk.sock</code>, and waits up to eight seconds
+for that socket to appear. There is no Deskbar row for it, under
+<b>Demos</b> or anywhere else.</p>
+
+<p>It is written to be run both ways and compared. The application asks
+its host for a window, paints into it, publishes a menu and is handed
+events, and is never told which of the two hosts it got. What the
+window shows, the order it is painted in and what the menu does are
+therefore the answers both hosts give to the same requests.</p>
+
+<h2 id="window">What the window shows</h2>
+
+<p>The window is titled <b>Descriptor Demo</b>. It is 400 by 210 pixels
+and does not resize: the demo never asks its host for a window the
+person may resize.</p>
+
+<p>On the left is the TikuOS mark, the word <b>TikuOS</b> under it, a
+short rule, and the words <b>one descriptor</b>.</p>
+
+<p>On the right are three lines.</p>
+
+<ul>
+<li id="heading">The heading <b>The same descriptor, either way</b>.</li>
+<li id="kernel">The kernel of the machine this is running on: its
+name, its release and its machine type, as
+<code>uname</code> reports them. When that call fails the line reads
+<code>unknown kernel</code>.</li>
+<li id="uptime">How long the machine has been up, read from
+<code>/proc/uptime</code> and written as <code>up 3 days, 4:07</code>.
+Once a minute the strip this line sits in is repainted. That strip runs
+from where the three lines start to the right edge of the window, and
+the repaint covers nothing above it or below it.</li>
+</ul>
+
+<p>Along the foot is a line such as <code>pid 4711: whose faults are
+whose</code>. The process id in it is the one thing on the panel that
+differs between the two hosts: linked in, it is the desktop's own
+process id, and out of process it is the demo's.</p>
+
+<h2 id="remote">The Remote menu</h2>
+
+<p>The window publishes one menu, named <b>Remote</b>, and it reaches
+the bar at the top of the screen while the demo's window is in front.
+Out of process the menu crosses the socket as plain data first. It
+carries two rows.</p>
+
+<ul>
+<li id="refresh"><b>Refresh</b> paints the whole panel again. Anything
+drawn over it since it opened, including the marks below, is painted
+over.</li>
+<li id="quit"><b>Quit</b> ends the application. Linked in, the desktop
+stops it and takes its window down; out of process, the program exits
+and the desktop takes down the window whose session has gone. The
+<b>Escape</b> key does the same thing, and so does closing the window,
+which is the only window the demo opens.</li>
+</ul>
+
+<p>The application names this page for itself when it starts, so the
+<b>Tiku</b> menu carries a <b>Help…</b> row while the demo's window is
+in front, and that row opens this page. The demo names it the same way
+from either host.</p>
+
+<h2 id="marks">A drag leaves marks</h2>
+
+<p>Pressing the pointer over the panel, moving it and releasing it each
+stamp a small square where the pointer is. The press and the moves are
+drawn in the colour of a window tab and the release is drawn in the text
+colour, so the end of a drag can be told from the rest of it. A move
+with no button held reaches the window as well, so passing the pointer
+across the panel marks it too.</p>
+
+<p>Most of the marks stay. The once-a-minute repaint covers the strip
+the uptime line sits in, so a mark that landed inside that strip is
+painted over when the minute changes, and a mark anywhere else is left
+alone. A drag across the window crosses that strip. <b>Refresh</b>
+clears every mark. Out of process, every one of those pointer events
+crossed the socket to the application and every mark came back as part
+of a frame. The marks a drag leaves are the same either way.</p>
+
+<hr>
+
+<p><a href="index.html">Back to the contents</a>.</p>

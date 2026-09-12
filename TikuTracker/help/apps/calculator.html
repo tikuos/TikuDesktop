@@ -1,0 +1,108 @@
+<h1>Developer Calculator</h1>
+
+<p>The Deskbar row is <b>Developer Calculator</b>, under
+<b>Applications</b>. The calculator does not read a connected device.
+Everything it shows comes from the four fields in its own window.</p>
+
+<p>It opens with the value field holding <code>0</code>, the bit range
+set to <code>7</code> down to <code>0</code>, and the checksum field
+holding <code>123456789</code>. Input is read in base 16 and the word is
+32 bits wide.</p>
+
+<h2 id="words">Words and radices</h2>
+
+<p>The first button reads <b>Input: base 16</b> and names the radix the
+value field is read in. Each press moves to the next radix: 16, 10, 2,
+8, and back to 16. The value is kept across the change and rewritten in
+the new radix. In base 16 a leading <code>0x</code> is accepted, and in
+base 2 a leading <code>0b</code>.</p>
+
+<p>The second button reads <b>32-bit word</b>. Each press doubles the
+width, from 8 to 16 to 32 to 64, and the press after 64 returns to 8.
+Narrowing to a width the current value does not fit is refused, and
+the status line at the foot of the window says <i>Value does not fit N
+bits. Change the value before narrowing.</i> Nothing is masked away.</p>
+
+<p>Every value is an exact unsigned integer. There is no floating point
+and no signed reading, so a negative sign, a digit that does not belong
+to the radix, and a value past the selected width are all rejected. A
+rejected value is not rounded: the four views read <i>Invalid or outside
+selected unsigned width</i> until the field is corrected.</p>
+
+<p>A valid value is shown in four views at once.</p>
+
+<table>
+<tr><th>View</th><th>Radix</th></tr>
+<tr><td>Hex</td><td>16</td></tr>
+<tr><td>Decimal</td><td>10</td></tr>
+<tr><td>Octal</td><td>8</td></tr>
+<tr><td>Binary</td><td>2, on its own full-width line</td></tr>
+</table>
+
+<h2 id="bits">The bit grid</h2>
+
+<p>Below the views are 64 buttons, 16 to a row, highest bit first. Each
+is labelled with its bit index and that bit's current value, such as
+<code>31:1</code>. Clicking one toggles that bit and the views follow.
+Bits outside the selected width are disabled, and so is the whole grid
+while the value is invalid.</p>
+
+<p><b>Swap byte order</b> reverses the bytes of the selected word only.
+The bit order inside each byte is unchanged. Nothing swaps by itself:
+the button is the only way it happens.</p>
+
+<h2 id="range">Taking a bit range</h2>
+
+<p>The <b>High bit</b> and <b>Low</b> fields take an inclusive range and
+the line beside them shows what it holds, in hex and in decimal. Both
+fields are read in decimal whatever the input radix is. The range must
+satisfy 0 &lt;= low &lt;= high &lt; the word width; outside that, and
+also while the value field itself is invalid, the line reads <i>Use 0
+&lt;= low &lt;= high &lt; word width.</i> instead of showing a
+number.</p>
+
+<h2 id="crc">Checksums</h2>
+
+<p>The checksum field is read either as literal UTF-8 text or as
+hexadecimal byte pairs. The button above the field reads <b>CRC input:
+UTF-8 text</b> or <b>CRC input: Hex bytes</b> for the reading in force,
+and pressing it changes the reading. Hex pairs may be separated by
+spaces or tabs, but a lone half-byte is an error and the line reads
+<i>Invalid hex bytes: use pairs such as 00 FF 12.</i> No newline and no terminator are added to what you typed.</p>
+
+<p>The line below the field gives the byte count and both checksums.
+Both are computed over the same bytes.</p>
+
+<table>
+<tr><th>Checksum</th><th>Polynomial</th><th>Initial</th><th>Final XOR</th><th>"123456789"</th></tr>
+<tr><td>CRC-32/ISO-HDLC</td><td>EDB88320, reflected</td><td>FFFFFFFF</td><td>FFFFFFFF</td><td>CBF43926</td></tr>
+<tr><td>CRC-16/CCITT-FALSE</td><td>1021</td><td>FFFF</td><td>none</td><td>29B1</td></tr>
+</table>
+
+<p>The two values in the last column are the standard check values for
+those two checksums, and the field holds <code>123456789</code> when the
+window opens, so they are on screen at the start.</p>
+
+<p>A field takes at most 255 bytes. Typed as hex pairs with no spaces
+between them, that is 127 bytes of data. Text past the limit is refused
+and the status line says so rather than taking part of it.</p>
+
+<h2 id="copy">Copying, and closing</h2>
+
+<p><b>Copy conversions</b> puts the four views on the desktop clipboard,
+one to a line. <b>Copy checksums</b> puts the byte count and both
+checksums there. Each says <i>Copied to desktop clipboard.</i> in the
+status line, or <i>Clipboard unavailable.</i> when there is no clipboard
+to write to. Neither button copies while what it would copy is
+invalid.</p>
+
+<p><b>Tab</b> and <b>Shift+Tab</b> step between the buttons, the fields
+and the bits. <b>Done</b>, the Escape key, and <b>Close</b> in the
+window's own <b>Calculator</b> menu all close the window. <b>Ctrl+W</b>
+does not. The calculator runs in a process of its own, so that chord
+goes to the calculator rather than to the desktop, and the calculator
+does not act on it.</p>
+
+<hr>
+
+<p><a href="index.html">Back to the contents</a>.</p>
