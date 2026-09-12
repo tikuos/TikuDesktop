@@ -322,6 +322,8 @@ rebuild_global_bar(desktop_t *app)
                        (embed_win_of_window(app, fw) != NULL ||
                         tiku_remote_owner(&app->remote, fw) != NULL));
 
+        const char *page = program ? desktop_help_page_of(app, fw) : NULL;
+
         if (app->about_hoist != 0) {
             (void)tiku_menu_add(&app->sysmenu, app->about_label,
                                     TIKU_TRK_CMD_APP_ABOUT, 0, 0u, 1);
@@ -332,6 +334,17 @@ rebuild_global_bar(desktop_t *app)
                                     TIKU_TRK_CMD_ABOUT, 0, 0u, 1);
             tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT,
                                     MARK_ICON);
+        }
+        /* The page is the application's own, named by it at start, so
+         * the row is there when there is something behind it and not
+         * otherwise: a Help that says "no such page" is worse than a
+         * menu with no Help in it. */
+        if (page != NULL && desktop_help_ready(app)) {
+            snprintf(app->help_row, sizeof app->help_row, "%s", page);
+            (void)tiku_menu_add(&app->sysmenu, tiku_str("menu.help"),
+                                    TIKU_TRK_CMD_APP_HELP, 0, 0u, 1);
+        } else {
+            app->help_row[0] = '\0';
         }
         if (!program) {
             (void)tiku_menu_add_separator(&app->sysmenu);
@@ -498,6 +511,13 @@ system_invoke(desktop_t *app, int command)
         /* Taken next turn, once the menu is gone, so the shot is of the
          * desktop and not of the menu that asked for it. */
         app->shot_pending = 1;
+        return 1;
+    case TIKU_TRK_CMD_APP_HELP:
+        /* The page the program in front named for itself, opened in the
+         * desktop's own reader: the help folder is the shell's. */
+        if (app->help_row[0] != '\0') {
+            tiku_trk_help_window_open_page(&app->help_window, app->help_row);
+        }
         return 1;
     case TIKU_TRK_CMD_APP_ABOUT:
         /* The hoisted row: it looks like the system's but it belongs to

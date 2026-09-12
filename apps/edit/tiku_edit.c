@@ -601,6 +601,9 @@ edit_start(void **state, const tiku_app_services_t *services)
              (slash != NULL) ? slash + 1
              : (st->path[0] != '\0') ? st->path : "Edit");
     st->id = services->open(services->ctx, title, EDIT_W, EDIT_H);
+    if (services->help_page != NULL) {
+        (void)services->help_page(services->ctx, "apps/editor.html");
+    }
     paint(st);
     publish(st);
     *state = st;

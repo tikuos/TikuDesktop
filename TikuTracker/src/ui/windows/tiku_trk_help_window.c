@@ -578,6 +578,33 @@ static int event(tiku_window_t *window, const tiku_event_t *ev, void *ctx)
     return taken;
 }
 
+int tiku_trk_help_window_ready(const tiku_trk_help_window_t *c)
+{
+    return c != NULL && c->root[0] != '\0';
+}
+
+void tiku_trk_help_window_open_page(tiku_trk_help_window_t *c,
+                                    const char *page)
+{
+    if (c == NULL) return;
+    if (c->window && c->window->open) {
+        /* Already open on some other page: it goes to this one, and the
+         * page it was showing joins the history the way a followed link
+         * does. */
+        tiku_workspace_activate(c->workspace, c->window);
+        if (page != NULL && *page) (void)tiku_trk_help_window_go(c, page);
+        return;
+    }
+    tiku_trk_help_window_open(c);
+    if (page != NULL && *page && c->window != NULL) {
+        if (tiku_trk_help_window_go(c, page) == TIKU_TRK_HELP_PAGE) {
+            /* Opened ON the page, not at the contents by way of it:
+             * there is nowhere behind, and Contents is the way home. */
+            c->nback = c->nforward = 0;
+        }
+    }
+}
+
 void tiku_trk_help_window_open(tiku_trk_help_window_t *c)
 {
     tiku_rect_t frame;

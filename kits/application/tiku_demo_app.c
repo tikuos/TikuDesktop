@@ -135,6 +135,11 @@ demo_start(void **state, const tiku_app_services_t *services)
     }
     st->id = services->open(services->ctx, "Descriptor Demo", DEMO_W,
                             DEMO_H);
+    /* The page is the desktop's to show; this only names it, and only
+     * where the host is new enough to take the naming. */
+    if (services->help_page != NULL) {
+        (void)services->help_page(services->ctx, "apps/demo.html");
+    }
     paint(st);
     show(st);
     {

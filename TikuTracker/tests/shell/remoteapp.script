@@ -28,6 +28,28 @@ wait 4
 click 68 8
 wait 4
 expect-menu Refresh
+key Escape
+wait 6
+click-window Descriptor Demo
+wait 6
+note the page it named at start came over the wire too: a Help row in the
+note system menu while its window is in front, and the desktop's own
+note reader opens it
+click 20 8
+wait 4
+expect-menu About this system…|Help…|
+menu-pick Help…
+wait 15
+expect-title Help
+expect-narrate Descriptor Demo
+click-window Help
+wait 4
+key w ctrl
+wait 8
+click-window Descriptor Demo
+wait 6
+click 68 8
+wait 4
 note and a pick rides the wire back: Quit ends the process, and the
 note compositor sweeps the window whose session died
 menu-pick Quit

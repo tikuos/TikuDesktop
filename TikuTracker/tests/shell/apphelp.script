@@ -1,0 +1,36 @@
+# shell: desktop
+# home: fixture
+# setup: apphelp
+# An application names its own page at start, and the system menu carries
+# a Help row while one of its windows is in front.  This is the hosted
+# half: the same descriptor runs out of process in remoteapp.script.
+wait 15
+note the work window covers it: put that away first
+key w ctrl
+wait 4
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click-window Descriptor Demo
+wait 6
+expect-title Descriptor Demo
+click 20 8
+wait 4
+expect-menu About this system…|Help…|
+note the page the demo named, opened in the desktop's own reader
+menu-pick Help…
+wait 15
+expect-title Help
+expect-narrate Descriptor Demo
+expect-narrate What the window shows
+note and the reader itself is a window of the desktop's own, so with it
+note in front the row is gone: the page was the application's
+click 20 8
+wait 4
+expect-menu About this system…||Find…|Preferences…||Take Screenshot||Shut down…|
+key Escape
+wait 4
+click-window Help
+wait 4
+key w ctrl
+wait 8
+expect-no-title Help

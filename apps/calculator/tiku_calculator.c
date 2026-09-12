@@ -206,6 +206,9 @@ static int calc_start(void **state, const tiku_app_services_t *services)
     p->surface = tiku_surface_new(CALC_W, CALC_H, TIKU_C_PANEL);
     if (!p->surface) { free(p); return -1; }
     p->id = services->open(services->ctx, "Developer Calculator", CALC_W, CALC_H);
+    if (services->help_page != NULL) {
+        (void)services->help_page(services->ctx, "apps/calculator.html");
+    }
     if (!p->id) { tiku_surface_free(p->surface); free(p); return -1; }
     const char *initial[] = {"0", "7", "0", "123456789"};
     for (int i = 0; i < 4; i++) { tiku_field_start(&p->fields[i], initial[i]); tiku_field_input_init(&p->inputs[i]); }

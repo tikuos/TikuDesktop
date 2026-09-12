@@ -159,6 +159,9 @@ static int bench_start(void **state, const tiku_app_services_t *services)
     st->surface = tiku_surface_new(BW, BH, TIKU_C_PANEL);
     if (!st->surface) { free(st); return -1; }
     st->id = services->open(services->ctx, "Bench", BW, BH);
+    if (services->help_page != NULL) {
+        (void)services->help_page(services->ctx, "apps/bench.html");
+    }
     if (!st->id) { tiku_surface_free(st->surface); free(st); return -1; }
     tiku_tabs_init(&st->tabs);
     const char *tabs[] = {"Suites", "Run options", "Results", "Output", "Console",

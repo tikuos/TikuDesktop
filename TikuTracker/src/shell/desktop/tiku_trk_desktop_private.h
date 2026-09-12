@@ -238,7 +238,14 @@ typedef struct desktop {
         } win[TIKU_TRK_EMBED_WINDOWS];
         uint32_t             next_id;   /* the next window id to hand out */
         int                  running;   /* the slot holds an application  */
+        /* The page of the help folder the application named for itself,
+         * empty when it named none: what the system menu's Help row
+         * opens while one of its windows is in front. */
+        char                 help_page[128];
     } embeds[TIKU_TRK_EMBED_MAX];
+    /* The page the system menu's Help row would open: the application
+     * in front named it, and the row is drawn only when it did. */
+    char                     help_row[128];
     /* The device the desktop is CURRENT on: the mount leaf a board
      * answers to, empty for this machine.  Apps default to it, and it
      * is remembered across runs.  A board mounts only when connected,
@@ -771,6 +778,17 @@ int embed_deliver(struct embed_win *ew, const tiku_event_t *ev);
 int embed_open_or_raise(desktop_t *app,
                         const tiku_app_descriptor_t *descriptor);
 int embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor);
+
+/** @brief Whether this desktop found a help folder at all. */
+int desktop_help_ready(desktop_t *app);
+
+/**
+ * @brief The page the application owning @p window named for itself.
+ *
+ * @return the page name, or NULL when the window belongs to no
+ *         application or to one that named none.
+ */
+const char *desktop_help_page_of(desktop_t *app, tiku_window_t *window);
 int tick_embeds(void *ctx);
 struct embed_win *embed_win_of_window(desktop_t *app, const tiku_window_t *w);
 void embed_drop_window(struct embed_win *ew, int tell);

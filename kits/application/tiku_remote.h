@@ -208,6 +208,7 @@ typedef struct tiku_remote_session {
      * asking for something this desktop has not agreed to yet. */
     tiku_remote_window_t win[TIKU_REMOTE_WINDOWS];
     unsigned             features;      /* what the peer said it can  */
+    char                 help_page[128]; /* the page it named, or empty */
     /* Partial-read state: the wire is a stream and a FRAME is large.
      * The header accumulates too -- a serial link has no peek. */
     unsigned char        hbuf[8];
@@ -310,6 +311,10 @@ const uint32_t *tiku_remote_pixels(
 #define TIKU_MSG_CLIP   0x636c6970u   /* 'clip' */
 /* Ask the desktop to open a namespace path with its normal file handler. */
 #define TIKU_MSG_OPENPATH 0x6f706174u /* 'opat', string "path" */
+/* Name the application's own page of the desktop's help folder.  Said
+ * once, at start; it opens nothing, it is what the system menu's Help
+ * row reads while one of this session's windows is in front. */
+#define TIKU_MSG_HELPPAGE 0x68656c70u /* 'help', string "page" */
 
 /* A program on a board the shell has mounted.  The shell owns the board
  * and the run, so an application ASKs for one and is TOLD what it

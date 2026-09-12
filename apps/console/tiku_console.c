@@ -86,6 +86,9 @@ static int console_start(void **state, const tiku_app_services_t *services)
     st->surface = tiku_surface_new(CW, CH, TIKU_C_PANEL);
     if (!st->surface) { free(st); return -1; }
     st->id = services->open(services->ctx, "TikuConsole", CW, CH);
+    if (services->help_page != NULL) {
+        (void)services->help_page(services->ctx, "apps/console.html");
+    }
     if (!st->id) { tiku_surface_free(st->surface); free(st); return -1; }
     tiku_dialog_init(&st->dialog); tiku_tabs_init(&st->tabs);
     tiku_tabs_add(&st->tabs, "Console"); tiku_tabs_add(&st->tabs, "Network");

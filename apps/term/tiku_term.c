@@ -816,6 +816,9 @@ term_start(void **state, const tiku_app_services_t *services)
     }
     st->id = services->open(services->ctx, "Terminal", width_px(st),
                             height_px(st));
+    if (services->help_page != NULL) {
+        (void)services->help_page(services->ctx, "apps/terminal.html");
+    }
     paint(st);
     publish(st);
     *state = st;

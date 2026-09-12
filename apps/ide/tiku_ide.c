@@ -3773,6 +3773,13 @@ ide_start(void **state, const tiku_app_services_t *services)
         return -1;
     }
     st->services = services;
+    if (services->help_page != NULL) {
+#ifdef TIKU_IDE_C
+        (void)services->help_page(services->ctx, "apps/tikuc.html");
+#else
+        (void)services->help_page(services->ctx, "apps/tikubasic.html");
+#endif
+    }
     tiku_list_init(&st->tv_list, 1);
     st->click_row = -1;
     st->proj_surface = tiku_surface_new(IDE_W, IDE_H, TIKU_C_PANEL);

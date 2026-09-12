@@ -106,6 +106,7 @@ enum {
     /* The global bar's system menu */
         TIKU_TRK_CMD_ABOUT,
     TIKU_TRK_CMD_APP_ABOUT,          /* the focused program's, hoisted */
+    TIKU_TRK_CMD_APP_HELP,           /* the page the program named      */
     TIKU_TRK_CMD_SCREENSHOT,         /* save the screen to a PNG */
     TIKU_TRK_CMD_SHUTDOWN,
     /* The Devices menu on the global bar */

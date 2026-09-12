@@ -98,6 +98,19 @@ void tiku_trk_help_window_opener(tiku_trk_help_window_t *c,
 void tiku_trk_help_window_open(tiku_trk_help_window_t *c);
 
 /**
+ * @brief Show @p page of the help folder, opening the window for it.
+ *
+ * The contents page is read first, so a window opened this way still
+ * knows the folder it is reading and says the same thing about a page
+ * that is not there.
+ */
+void tiku_trk_help_window_open_page(tiku_trk_help_window_t *c,
+                                    const char *page);
+
+/** @brief Whether there is a help folder at all.  @return nonzero. */
+int tiku_trk_help_window_ready(const tiku_trk_help_window_t *c);
+
+/**
  * @brief Follow @p href from the page now shown.
  *
  * A name beginning '#' is a place in this page; a plain file name is a

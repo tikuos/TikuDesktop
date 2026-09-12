@@ -367,6 +367,17 @@ static int svc_open_path(void *ctx, const char *path)
     tiku_msg_free(m); return sent;
 }
 
+/** @brief Name this application's page of the desktop's help folder. */
+static int svc_help_page(void *ctx, const char *page)
+{
+    client_ctx_t *c = ctx;
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_HELPPAGE);
+    if (!m || !page) { tiku_msg_free(m); return 0; }
+    tiku_msg_add_string(m, "page", page);
+    int sent = tiku_remote_say(&c->remote, m);
+    tiku_msg_free(m); return sent;
+}
+
 static int
 svc_current_device(void *ctx, char *out, size_t max)
 {
@@ -512,6 +523,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.board_mcu = svc_board_mcu;
     services.board_release = svc_board_release;
     services.open_path = svc_open_path;
+    services.help_page = svc_help_page;
         services.board_reclaim = svc_board_reclaim;
     services.board_find = svc_board_find;
     services.current_device = svc_current_device;

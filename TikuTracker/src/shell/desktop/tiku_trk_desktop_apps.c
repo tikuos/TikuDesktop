@@ -305,6 +305,41 @@ app_icon(const char *file)
     return "application";
 }
 
+/** @brief Whether this desktop found a help folder at all. */
+int
+desktop_help_ready(desktop_t *app)
+{
+    return app != NULL && tiku_trk_help_window_ready(&app->help_window);
+}
+
+/**
+ * @brief The page the application owning @p window named for itself.
+ *
+ * Asked while the system menu is being built, so it answers from what
+ * is already in hand: the slot for an application hosted here, the
+ * session for one in a process of its own.
+ *
+ * @return the page name, or NULL when the window belongs to no
+ *         application, or to one that named no page.
+ */
+const char *
+desktop_help_page_of(desktop_t *app, tiku_window_t *window)
+{
+    struct embed_win *ew;
+    tiku_remote_session_t *session;
+
+    if (app == NULL || window == NULL) return NULL;
+    ew = embed_win_of_window(app, window);
+    if (ew != NULL && ew->slot != NULL && ew->slot->help_page[0] != '\0') {
+        return ew->slot->help_page;
+    }
+    session = tiku_remote_owner(&app->remote, window);
+    if (session != NULL && session->help_page[0] != '\0') {
+        return session->help_page;
+    }
+    return NULL;
+}
+
 /**
  * @brief The help folder: its own page is what proves it is one.
  *

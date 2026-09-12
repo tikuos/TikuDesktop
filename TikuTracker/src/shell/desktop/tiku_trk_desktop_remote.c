@@ -308,6 +308,13 @@ remote_hear(desktop_t *app)
 
                 tiku_clipboard_set((text != NULL) ? text : "");
             }
+            if (tiku_msg_what(m) == TIKU_MSG_HELPPAGE) {
+                const char *page = tiku_msg_find_string(m, "page", 0);
+
+                snprintf(app->remote.session[i].help_page,
+                         sizeof app->remote.session[i].help_page, "%s",
+                         (page != NULL) ? page : "");
+            }
             if (tiku_msg_what(m) == TIKU_MSG_OPENPATH) {
                 const char *path = tiku_msg_find_string(m, "path", 0);
                 if (path && !desktop_app_open_path(app, path)) {

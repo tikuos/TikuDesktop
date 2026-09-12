@@ -246,6 +246,20 @@ typedef struct tiku_app_services {
      * @return nonzero when the asking was taken.
      */
     int (*board_find)(void *ctx);
+
+    /**
+     * @brief Name this application's own page of the desktop's help.
+     *
+     * Said once, at start: it opens nothing.  What it buys is a Help
+     * row in the system menu while one of this application's windows is
+     * in front, which opens the page named here.  @p page is a name
+     * inside the help folder, "apps/bench.html" and the like.
+     *
+     * An older host leaves this NULL, so an application asks before it
+     * calls.
+     * @return nonzero when there is a help folder to read the page from.
+     */
+    int (*help_page)(void *ctx, const char *page);
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */

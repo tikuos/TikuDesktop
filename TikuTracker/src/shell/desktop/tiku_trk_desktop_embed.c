@@ -655,6 +655,17 @@ static int embed_svc_open_path(void *ctx, const char *path)
     return slot && desktop_app_open_path(slot->app, path);
 }
 
+/** @brief Remember the page this application named for itself. */
+static int embed_svc_help_page(void *ctx, const char *page)
+{
+    struct desktop_embed *slot = ctx;
+
+    if (slot == NULL) return 0;
+    snprintf(slot->help_page, sizeof slot->help_page, "%s",
+             page != NULL ? page : "");
+    return desktop_help_ready(slot->app);
+}
+
 /** @brief Let a board go, port and all. */
 static int
 embed_svc_board_release(void *ctx, const char *board)
@@ -736,6 +747,7 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.open_path = embed_svc_open_path;
         slot->services.board_reclaim = embed_svc_board_reclaim;
     slot->services.board_find = embed_svc_board_find;
+    slot->services.help_page = embed_svc_help_page;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }
