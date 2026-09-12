@@ -580,6 +580,10 @@ close_window(desktop_t *app, tiku_window_t *w)
         desktop_deviceprefs_close(app);
         return;
     }
+    if (desktop_utility_owns(app, w)) {
+        desktop_utility_close(app, w);
+        return;
+    }
     if (w == desktop_startup_handle(app)) {
         desktop_startup_close(app);
         return;

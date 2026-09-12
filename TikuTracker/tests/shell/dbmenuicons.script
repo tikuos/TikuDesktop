@@ -2,11 +2,11 @@
 # home: fixture
 # DB-002: the leaf menu's rows carry real art -- a folder beside /sys,
 # painted by the shell through the injected painter.  The row sits below
-# Applications, and the art moves down with it.
+# the application groups, and the art moves down with them.
 wait 12
 click 980 20
 wait 3
-expect-pixel 701 155 fac468
+expect-pixel 701 176 fac468
 note and the rows that expand carry art of their own
 expect-pixel 701 113 fac468
 note and so do the rows inside them: what configures the bar, and what

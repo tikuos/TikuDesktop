@@ -322,6 +322,15 @@ offer_installed(desktop_t *app, const char *argv0)
     DIR *dir;
     int have_runner;
 
+    (void)tiku_trk_deskbar_add_app_in(app->deskbar,
+        TIKU_TRK_DB_GROUP_DEVICE_TOOLS, "Device Monitor",
+        "builtin:monitor", "application");
+    (void)tiku_trk_deskbar_add_app_in(app->deskbar,
+        TIKU_TRK_DB_GROUP_DEVICE_TOOLS, "VFS Inspector", "builtin:vfs",
+        "application");
+    desktop_startup_offer(app, "builtin:monitor", "Device Monitor",
+                          "utilities");
+    desktop_startup_offer(app, "builtin:vfs", "VFS Inspector", "utilities");
     if (!find_apps_dir(argv0, root, sizeof root)) {
         return;
     }

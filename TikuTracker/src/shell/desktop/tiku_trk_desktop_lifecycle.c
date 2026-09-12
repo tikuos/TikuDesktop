@@ -1209,6 +1209,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     int rc = 0;
     int i;
 
+    desktop_utilities_destroy(app);
     tiku_sound_free();
     /*
      * The way out, named as it happens.  Each line goes up before the

@@ -7,7 +7,7 @@ key w ctrl
 wait 5
 click 980 20
 wait 6
-expect-menu À propos de ce système|Rechercher…|Réglages|Applications|-|Dossiers récents|-|Arrêter…|
+expect-menu À propos de ce système|Rechercher…|Réglages|Applications|Outils pour appareils|-|Dossiers récents|-|Arrêter…|
 menu-pick Réglages
 wait 5
 menu-pick Polices

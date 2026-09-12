@@ -1,0 +1,32 @@
+# shell: desktop
+# Utility windows are available without a board and never discover ports.
+# With no target they say so rather than drawing a zero.
+wait 20
+click 980 20
+wait 4
+menu-pick Device Tools
+wait 4
+menu-pick Device Monitor
+wait 12
+expect-title Device Monitor
+expect-narrate No connected target
+expect-narrate Unavailable
+expect-control Refresh
+shot /tmp/trk_device_monitor_empty.png
+key Escape
+wait 6
+expect-no-title Device Monitor
+click 980 20
+wait 4
+menu-pick Device Tools
+wait 4
+menu-pick VFS Inspector
+wait 12
+expect-title VFS Inspector
+expect-narrate Device namespace
+expect-narrate No connected target
+expect-control Go to path
+shot /tmp/trk_vfs_inspector_empty.png
+key w ctrl
+wait 6
+expect-no-title VFS Inspector

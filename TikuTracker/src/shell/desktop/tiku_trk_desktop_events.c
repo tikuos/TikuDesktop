@@ -29,7 +29,8 @@ void desktop_text_input(desktop_t *app, const tiku_event_t *ev)
         if (embed_deliver(ew, ev)) embed_stop(ew->slot);
     } else if (tiku_remote_owner(&app->remote, w) != NULL) {
         tiku_remote_event(&app->remote, w, ev);
-    } else if (w && w == desktop_deviceprefs_handle(app)) {
+    } else if (w && (w == desktop_deviceprefs_handle(app) ||
+                    desktop_utility_owns(app, w))) {
         (void)tiku_window_send(w, ev);
     } else {
         if (ev->button & TIKU_TEXT_BEGIN) app->legacy_target = w;
@@ -743,7 +744,11 @@ if (ev->button == 4u || ev->button == 5u) {
         we.y = ev->y - rc.y;
         we.dy = (ev->button == 4u) ? -3 : 3;
         we.time_us = tiku_trk_now();
-        if (ew != NULL) {
+        if (desktop_utility_owns(app, ww)) {
+            we.x = ev->x; we.y = ev->y;
+            (void)tiku_window_send(ww, &we);
+            app->dirty = 1;
+        } else if (ew != NULL) {
             if (embed_deliver(ew, &we)) {
                 embed_stop(ew->slot);
             }
@@ -1033,6 +1038,7 @@ if (hit == TIKU_HIT_CLOSE) {
                               ev->y);
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            (w == desktop_deviceprefs_handle(app) ||
+            desktop_utility_owns(app, w) ||
             w == desktop_startup_handle(app))) {
     tiku_workspace_activate(app->desk, w);
     if (ev->button == 1) app->prefs_track = w;
@@ -2471,7 +2477,13 @@ if (key == TIKU_KEY_TAB && (ev->modifiers & TIKU_MOD_CMD)) {
     app->dirty = 1;
     return;
 }
+if (key == 'w' && (ev->modifiers & TIKU_MOD_CMD)) {
+    close_window(app, w);
+    app->dirty = 1;
+    return;
+}
 if (w != NULL && (w == desktop_deviceprefs_handle(app) ||
+                 desktop_utility_owns(app, w) ||
                  w == desktop_startup_handle(app)) &&
     !alert_model(app)->open) {
     /* Under the desk's own shortcuts: the panel takes every key it is
@@ -2520,11 +2532,6 @@ if (key == TIKU_KEY_TAB && fl != NULL) {
         (void)tiku_trk_poseview_tab_next(fl->view,
             (ev->modifiers & TIKU_MOD_SHIFT) != 0u);
     }
-    app->dirty = 1;
-    return;
-}
-if (key == 'w' && (ev->modifiers & TIKU_MOD_CMD)) {
-    close_window(app, w);
     app->dirty = 1;
     return;
 }
@@ -2735,6 +2742,7 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         (void)tiku_window_send(desktop_deviceprefs_handle(app), &deactivate);
     }
     desktop_spring_tick(app);
+    desktop_utilities_tick(app);
     desktop_idle_work(app);
     desktop_press_hold(app);
     desktop_rename_pulse(app);

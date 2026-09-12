@@ -375,6 +375,11 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         tiku_trk_desktop_prefs_window_open(&app->desktop_prefs_window);
         break;
     case TIKU_TRK_DB_LAUNCH_APP: {
+        if (!strcmp(pick->path, "builtin:monitor") ||
+            !strcmp(pick->path, "builtin:vfs")) {
+            desktop_utility_open(app, !strcmp(pick->path, "builtin:vfs"));
+            break;
+        }
         /* Started, not opened: these are programs, and they place their
          * own windows through the session the same way any application
          * does. */

@@ -143,6 +143,7 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_report.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_wire.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_deviceprefs.c \
+                 $(T)/src/shell/desktop/tiku_trk_desktop_utilities.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_startup.c
 
 # tiku_trk_deskbar, one composition over the files of one directory.
@@ -301,6 +302,10 @@ test_bench_LDLIBS := -lX11 -lm
 test_console_LDLIBS := -lX11 -lm
 test_ide_debug_LDLIBS := -lX11 -lm
 test_deviceprefs_LDLIBS := -lX11 -lm
+test_device_utilities_SRCS := $(T)/src/core/tiku_trk_task.c
+test_device_utilities_LDLIBS := -lX11 -lm
+test_registry_SRCS := $(T)/src/core/tiku_trk_task.c
+test_registry_LDLIBS := -lX11 -lm
 test_startup_CFLAGS := -ffunction-sections -fdata-sections
 test_startup_SRCS := $(T)/src/core/tiku_trk_frame.c
 test_startup_LDLIBS := -lX11 -lm -ldl -Wl,--gc-sections

@@ -539,6 +539,9 @@ done
 # written in the subset both drivers speak, so the same file proves the
 # same thing twice, two ways.
 for s in $conducted; do
+    if [ -n "${TRK_SHELL_ONLY:-}" ] && [ "$s" != "$TRK_SHELL_ONLY" ]; then
+        continue
+    fi
     cs="$root/tests/shell/$s"
     [ -e "$cs" ] || continue
     printf '\n== %s (conducted, shipping shell)\n' "$s"

@@ -381,6 +381,7 @@ typedef struct desktop {
     tiku_menu_t      devmenu;           /* the Devices menu beside it   */
     tiku_menu_t      devsub;            /* its default-device submenu   */
     struct desktop_deviceprefs *deviceprefs; /* connected-device settings */
+    struct desktop_utility *utility[2]; /* monitor and VFS inspector */
     struct desktop_startup *startup; /* startup catalog and preferences */
     tiku_window_t *prefs_track; /* preferences content pointer capture */
     tiku_window_t *input_focus; /* last IME target, never dereferenced */
@@ -795,6 +796,11 @@ int  device_connect(desktop_t *app, const char *port);
 int  device_disconnect(desktop_t *app, const char *name);
 void device_set_current(desktop_t *app, const char *name);
 void desktop_deviceprefs_open(desktop_t *app);
+void desktop_utility_open(desktop_t *app, int mode);
+int desktop_utility_owns(desktop_t *app, tiku_window_t *w);
+void desktop_utility_close(desktop_t *app, tiku_window_t *w);
+void desktop_utilities_destroy(desktop_t *app);
+void desktop_utilities_tick(desktop_t *app);
 int desktop_deviceprefs_popup(desktop_t *app);
 void desktop_startup_offer(desktop_t *app, const char *path,
     const char *label, const char *group);

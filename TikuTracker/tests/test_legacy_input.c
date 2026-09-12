@@ -13,6 +13,8 @@ void embed_stop(struct desktop_embed *slot)
 { (void)slot; assert(0); }
 tiku_window_t *desktop_deviceprefs_handle(desktop_t *app)
 { (void)app; return NULL; }
+int desktop_utility_owns(desktop_t *app, tiku_window_t *w)
+{ (void)app; (void)w; return 0; }
 tiku_trk_described_t *panel_of_window(desktop_t *app, const tiku_window_t *w)
 { return app->panels[0].window == w ? &app->panels[0] : NULL; }
 tiku_trk_folder_window_t *tiku_trk_folder_lifecycle_find(
