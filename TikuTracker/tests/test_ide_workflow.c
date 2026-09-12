@@ -1,5 +1,6 @@
 /* Host regressions for upload preflight, search, recovery and target state. */
 #include <assert.h>
+#include "tiku_dl.h"
 #define TIKU_APP_EMBED
 #include "../../apps/ide/tiku_ide.c"
 
@@ -183,6 +184,26 @@ static void test_ui(ide_t *st, const char *dir)
     snprintf(e->name, sizeof e->name, "sensor.bas");
     tiku_textview_init(&e->tv);
     tiku_textview_set(&e->tv, "10 PRINT \"Temperature\"\n20 PRINT 42\n30 END");
+    {
+        tiku_text_input_t input;
+        tiku_event_t text;
+        const char *phrase = "REM café 日本語";
+        tiku_textview_select_all(&e->tv);
+        assert(tiku_text_input_set(&input, phrase, strlen(phrase)));
+        while (tiku_text_input_next(&input, &text)) {
+            ide_event(st, e->id, &text);
+            if (!(text.button & TIKU_TEXT_END)) assert(strstr(tiku_textview_line(&e->tv, 0), "Temperature"));
+        }
+        assert(!strcmp(tiku_textview_line(&e->tv, 0), phrase) && runs == previous_runs);
+        assert(tiku_textview_undo(&e->tv));
+        assert(strstr(tiku_textview_line(&e->tv, 0), "Temperature"));
+        tiku_textview_select_none(&e->tv);
+        search_open(e, 0);
+        assert(tiku_text_input_set(&input, "café", 5));
+        while (tiku_text_input_next(&input, &text)) ide_event(st, e->id, &text);
+        assert(!strcmp(e->find.text, "café"));
+        e->finding = 0;
+    }
     ide_pick(st, e->id, CMD_REPLACE);
     tiku_field_start(&e->find, "PRINT");
     tiku_field_start(&e->replacement, "REM");
@@ -312,6 +333,44 @@ static void test_reopen(ide_t *st, const char *dir)
     unsetenv("TIKU_IDE_RECOVERY_DIR");
 }
 
+static void test_splash_license(void)
+{
+    for (int size = 12; size <= 16; size += 4) {
+        tiku_font_set_size(size);
+        tiku_surface_t *s = tiku_surface_new(SPLASH_W, SPLASH_H, TIKU_C_DOC);
+        tiku_dl_t *dl = tiku_dl_new();
+        unsigned char wire[16384];
+        char words[8192], path[100];
+        size_t n = 0, at = 0;
+        tiku_dl_fact_t fact;
+        assert(s && dl);
+        announce_paint_art(s, "Opening the project", NULL);
+        snprintf(path, sizeof path, "/tmp/tikubasic-splash-license-%d.png", size);
+        assert(!tiku_surface_png(s, path));
+        s->record = dl;
+        announce_license(s);
+        s->record = NULL;
+        tiku_dl_say(dl, words, sizeof words);
+        assert(strstr(words, "Apache License, Version 2.0"));
+        assert(strstr(words, "WITHOUT WARRANTIES OR CONDITIONS OF"));
+        assert(strstr(words, "permissions and limitations under the License."));
+        assert(tiku_dl_flatten(dl, wire, sizeof wire, &n));
+        int lines = 0;
+        const tiku_font_t *font = tiku_font_at(10);
+        while (tiku_dl_read(wire, n, &at, &fact)) {
+            if (fact.kind != TIKU_DL_FACT_TEXT) continue;
+            assert(fact.rect.x == 18 && fact.rect.y > SPLASH_H / 2);
+            assert(fact.rect.x + tiku_text_width(font, fact.text) < SPLASH_W - 18);
+            assert(fact.rect.y + font->height - font->ascent < SPLASH_H - 1);
+            lines++;
+        }
+        assert(lines == 7 && tiku_font_size() == size);
+        tiku_dl_free(dl);
+        tiku_surface_free(s);
+    }
+    tiku_font_set_size(12);
+}
+
 int main(void)
 {
     char dir[] = "/tmp/tikubasic-test-XXXXXX", label[160];
@@ -345,6 +404,7 @@ int main(void)
     test_recovery(dir);
     test_ui(st, dir);
     test_reopen(st, dir);
+    test_splash_license();
     assert(rmdir(dir) == 0);
     free(st);
     puts("PASS: upload boundaries/confirmation, target state, replacement/undo, recovery");

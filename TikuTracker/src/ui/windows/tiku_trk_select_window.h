@@ -53,4 +53,8 @@ void tiku_trk_select_window_open(tiku_trk_select_window_t *controller,
 int tiku_trk_select_window_key(tiku_trk_select_window_t *controller,
     int key, unsigned modifiers, char character);
 
+/** @brief Insert committed text only; 0 not focused, 1 handled, -1 rejected. */
+int tiku_trk_select_window_text(tiku_trk_select_window_t *controller,
+    const char *text);
+
 #endif /* TIKU_TRK_SELECT_WINDOW_H_ */

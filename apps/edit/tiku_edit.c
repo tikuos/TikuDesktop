@@ -22,6 +22,7 @@
 
 #include "tiku_app.h"
 #include "tiku_textview.h"
+#include "tiku_text_input.h"
 #include "tiku_alert.h"
 #include "tiku_client.h"
 #include "tiku_font.h"
@@ -60,6 +61,7 @@ typedef struct {
      * document object every application that edits text can hold, rather
      * than each one growing its own line array and its own caret rules. */
     tiku_textview_t                 tv;
+    tiku_text_input_t               commit;
     /* The question the close gesture asks while there are unsaved
      * changes.  The kit's own alert, held over this window's content:
      * an application no longer needs a shell to be able to ask. */
@@ -628,6 +630,8 @@ edit_event(void *state, const tiku_event_t *event)
     if (st->ask.open) {
         int at = -1;
 
+        tiku_text_input_reset(&st->commit);
+
         if (event->type == TIKU_EVENT_KEY_DOWN) {
             at = tiku_alert_key(&st->ask, event->key);
         } else if (event->type == TIKU_EVENT_POINTER_DOWN) {
@@ -651,6 +655,17 @@ edit_event(void *state, const tiku_event_t *event)
         if (at == 1) {
             return 1;           /* done: the host closes the window */
         }
+        paint(st);
+        return 0;
+    }
+    int commit = tiku_text_input_event(&st->commit, event);
+    if (event->type == TIKU_EVENT_TEXT_INPUT) {
+        was_modified = tiku_textview_modified(&st->tv);
+        if (commit == TIKU_TEXT_REJECTED ||
+            (commit == TIKU_TEXT_COMPLETE && !tiku_textview_commit(&st->tv, st->commit.text)))
+            snprintf(st->note, sizeof st->note, "Text input is invalid or does not fit.");
+        touched(st, was_modified);
+        (void)tiku_textview_reveal(&st->tv, rows);
         paint(st);
         return 0;
     }

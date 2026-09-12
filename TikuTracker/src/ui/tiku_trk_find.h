@@ -21,6 +21,7 @@
 #define TIKU_TRK_FIND_H_
 
 #include "tiku_menu.h"
+#include "tiku_text_input.h"
 #include "tiku_query.h"
 #include "tiku_trk_types.h"
 
@@ -130,6 +131,9 @@ typedef struct {
     struct tiku_store *store;
     const tiku_trk_types_t *types;
 } tiku_trk_find_t;
+
+/** @brief Append UTF-8 to the focused field without running the query. */
+int tiku_trk_find_text(tiku_trk_find_t *f, const char *text);
 
 /**
  * @brief Load the record @p name into the panel (Q-031, Q-032, Q-035).

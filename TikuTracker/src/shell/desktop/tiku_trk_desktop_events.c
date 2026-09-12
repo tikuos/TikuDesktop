@@ -16,6 +16,54 @@
 #include "tiku_trk_desktop_private.h"
 #include "tiku_work.h"
 
+/** @brief Committed text bypasses menus and keyboard command dispatch. */
+void desktop_text_input(desktop_t *app, const tiku_event_t *ev)
+{
+    tiku_window_t *w = tiku_workspace_focused(app->desk);
+    struct embed_win *ew = embed_win_of_window(app, w);
+    if (alert_model(app)->open || app->popup) {
+        tiku_text_input_reset(&app->legacy_commit);
+        return;
+    }
+    if (ew != NULL) {
+        if (embed_deliver(ew, ev)) embed_stop(ew->slot);
+    } else if (tiku_remote_owner(&app->remote, w) != NULL) {
+        tiku_remote_event(&app->remote, w, ev);
+    } else if (w && w == desktop_deviceprefs_handle(app)) {
+        (void)tiku_window_send(w, ev);
+    } else {
+        if (ev->button & TIKU_TEXT_BEGIN) app->legacy_target = w;
+        if (app->legacy_target != w) tiku_text_input_reset(&app->legacy_commit);
+        int state = tiku_text_input_event(&app->legacy_commit, ev);
+        int result = state == TIKU_TEXT_REJECTED ? -1 : 0;
+        if (state == TIKU_TEXT_COMPLETE) {
+            const char *text = app->legacy_commit.text;
+            result = tiku_trk_info_windows_text(&app->info_windows, text);
+            if (!result)
+                result = tiku_trk_panel_window_text(&app->file_panel, text);
+            if (!result)
+                result = tiku_trk_find_window_text(&app->find_window, text);
+            if (!result)
+                result = tiku_trk_select_window_text(&app->select_window, text);
+            tiku_trk_described_t *panel = panel_of_window(app, w);
+            if (!result && panel && tiku_form_editing(&panel->form) >= 0)
+                result = tiku_form_text(&panel->form, text) ? 1 : -1;
+            if (!result && app->finding) {
+                result = tiku_text_input_append(app->find_buf,
+                    sizeof app->find_buf, text) ? 1 : -1;
+                app->find_len = (int)strlen(app->find_buf);
+            }
+            folder_t *fl = folder_of(app, w);
+            if (!result && (!w || fl))
+                result = tiku_trk_folder_edit_text(&app->folder_edit, fl, text);
+        }
+        if (result < 0)
+            snprintf(app->status, sizeof app->status,
+                     "Text input is invalid or does not fit this field.");
+    }
+    app->dirty = 1;
+}
+
 /**
  * @brief A button went down: what is under the pointer decides everything that
  * follows.
@@ -23,6 +71,18 @@
 void
 desktop_pointer_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
+if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
+    tiku_window_t *pw = desktop_deviceprefs_handle(app);
+    tiku_event_t pe = *ev;
+    if (ev->button == 1) app->prefs_track = pw;
+    if (ev->button == 4 || ev->button == 5) {
+        pe.type = TIKU_EVENT_WHEEL;
+        pe.dy = ev->button == 4 ? -1 : 1;
+    }
+    (void)tiku_window_send(pw, &pe);
+    app->dirty = 1;
+    return;
+}
 if (ev->button == 1u && ev->modifiers == 0u) {
     /* The resize strip: four pixels along the bar's
      * inner edge, and the drag sets the short axis by
@@ -972,8 +1032,10 @@ if (hit == TIKU_HIT_CLOSE) {
     tiku_workspace_begin_track(app->desk, w, hit, ev->x,
                               ev->y);
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
-           w == desktop_deviceprefs_handle(app)) {
+           (w == desktop_deviceprefs_handle(app) ||
+            w == desktop_startup_handle(app))) {
     tiku_workspace_activate(app->desk, w);
+    if (ev->button == 1) app->prefs_track = w;
     (void)tiku_window_send(w, ev);
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            w == tiku_trk_select_window_handle(
@@ -1356,6 +1418,19 @@ desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
     (void)lp;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
+if (app->prefs_track != NULL && app->prefs_track->open) {
+    tiku_event_t pe = *ev;
+    if (alert_model(app)->open) pe.type = TIKU_EVENT_DEACTIVATED;
+    (void)tiku_window_send(app->prefs_track, &pe);
+    if (alert_model(app)->open) app->prefs_track = NULL;
+    app->dirty = 1;
+    return;
+}
+if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
+    (void)tiku_window_send(desktop_deviceprefs_handle(app), ev);
+    app->dirty = 1;
+    return;
+}
 if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
     /* The volume knob is in hand: every move is its. */
     (void)tiku_window_send(
@@ -1626,6 +1701,15 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
     (void)lp;
 int dropped = tiku_trk_drag_active(&app->drag);
+if (app->prefs_track != NULL) {
+    tiku_window_t *pw = app->prefs_track;
+    tiku_event_t pe = *ev;
+    if (alert_model(app)->open) pe.type = TIKU_EVENT_DEACTIVATED;
+    if (ev->button == 1) app->prefs_track = NULL;
+    if (pw->open) (void)tiku_window_send(pw, &pe);
+    app->dirty = 1;
+    return;
+}
 
 if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
     (void)tiku_window_send(
@@ -1934,6 +2018,11 @@ if (panel_key(app, key, key_char(ev))) {
 if (tiku_trk_panel_window_key(&app->file_panel, key,
                               ev->modifiers,
                               key_char(ev))) {
+    if (tiku_trk_panel_window_refused(&app->file_panel)) {
+        snprintf(app->status, sizeof app->status,
+                 "The clipboard does not fit this name.");
+        app->dirty = 1;
+    }
     return;
 }
 if (tiku_workspace_focused(app->desk) ==
@@ -2020,7 +2109,8 @@ if (app->finding) {
         app->dirty = 1;
     } else if (key == TIKU_KEY_BACKSPACE) {
         if (app->find_len > 0) {
-            app->find_buf[--app->find_len] = '\0';
+            tiku_text_input_backspace(app->find_buf, sizeof app->find_buf);
+            app->find_len = (int)strlen(app->find_buf);
         }
         app->dirty = 1;
     } else {
@@ -2066,6 +2156,20 @@ if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
     tiku_trk_deskbar_prefs_window_close(
         &app->deskbar_prefs_window);
     app->dirty = 1;
+    return;
+}
+if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+    desktop_startup_handle(app) != NULL &&
+    tiku_workspace_focused(app->desk) == desktop_startup_handle(app)) {
+    /* Startup preferences close, and the draft with them; the desktop
+     * stays, as it does for the other settings windows (DB-053). */
+    desktop_startup_close(app);
+    return;
+}
+if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+    desktop_deviceprefs_handle(app) != NULL &&
+    tiku_workspace_focused(app->desk) == desktop_deviceprefs_handle(app)) {
+    desktop_deviceprefs_close(app);
     return;
 }
 if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD)) {
@@ -2367,7 +2471,8 @@ if (key == TIKU_KEY_TAB && (ev->modifiers & TIKU_MOD_CMD)) {
     app->dirty = 1;
     return;
 }
-if (w != NULL && w == desktop_deviceprefs_handle(app) &&
+if (w != NULL && (w == desktop_deviceprefs_handle(app) ||
+                 w == desktop_startup_handle(app)) &&
     !alert_model(app)->open) {
     /* Under the desk's own shortcuts: the panel takes every key it is
      * focused for, but Cmd-Tab above still reaches the switcher. */
@@ -2612,6 +2717,23 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
 void
 desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
+    tiku_window_t *focused = tiku_workspace_focused(app->desk);
+    if (app->input_focus != focused || alert_model(app)->open) {
+        tiku_host_cancel_composition(app->host);
+        tiku_text_input_reset(&app->legacy_commit);
+        app->input_focus = focused;
+    }
+    tiku_event_t deactivate = {.type = TIKU_EVENT_DEACTIVATED};
+    if (app->prefs_track &&
+        (app->prefs_track != focused || alert_model(app)->open)) {
+        (void)tiku_window_send(app->prefs_track, &deactivate);
+        app->prefs_track = NULL;
+    }
+    if (desktop_deviceprefs_popup(app) &&
+        (focused != desktop_deviceprefs_handle(app) ||
+         alert_model(app)->open)) {
+        (void)tiku_window_send(desktop_deviceprefs_handle(app), &deactivate);
+    }
     desktop_spring_tick(app);
     desktop_idle_work(app);
     desktop_press_hold(app);

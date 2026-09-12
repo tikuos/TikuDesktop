@@ -73,8 +73,10 @@ int main(void)
     debug_break(e);
     debug_show(e);
     tiku_field_start(&e->watches, "A,TEMP,A$");
+    st->stop_asked = 1; /* A new session must not inherit a Stop deadline. */
     debug_start(st, e);
     assert(st->running && st->local_debug);
+    assert(!st->stop_asked);
     until_paused(st, 10);
     assert(!strcmp(e->watch_value[0], "A = 0"));
     assert(!strcmp(e->watch_value[1], "TEMP = <not defined>"));

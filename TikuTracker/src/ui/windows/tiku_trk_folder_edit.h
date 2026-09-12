@@ -26,6 +26,7 @@ typedef struct {
     int *dirty;
     int editing;
     tiku_field_t value_edit;
+    tiku_trk_folder_window_t *value_folder; /* owner of the value editor */
     char edit_path[TIKU_PATH_MAX];
     tiku_desc_t edit_desc;
     int renaming;
@@ -75,5 +76,9 @@ void tiku_trk_folder_edit_finish_rename(tiku_trk_folder_edit_t *controller,
 int tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
     tiku_trk_folder_window_t *folder, unsigned key, unsigned modifiers,
     char character);
+
+/** @brief Insert committed text only; 0 not focused, 1 handled, -1 rejected. */
+int tiku_trk_folder_edit_text(tiku_trk_folder_edit_t *controller,
+    tiku_trk_folder_window_t *folder, const char *text);
 
 #endif /* TIKU_TRK_FOLDER_EDIT_H_ */

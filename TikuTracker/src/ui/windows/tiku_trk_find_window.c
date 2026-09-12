@@ -300,3 +300,16 @@ tiku_trk_find_window_popup_open(
     return controller->window != NULL && controller->window->open &&
         tiku_trk_find_popup_open(&controller->model);
 }
+
+int
+tiku_trk_find_window_text(tiku_trk_find_window_t *controller,
+    const char *text)
+{
+    if (!controller->window || !controller->window->open ||
+        tiku_workspace_focused(controller->workspace) != controller->window)
+        return 0;
+    if (tiku_trk_find_popup_open(&controller->model)) return 1;
+    int result = tiku_trk_find_text(&controller->model, text);
+    mark_dirty(controller);
+    return result ? 1 : -1;
+}

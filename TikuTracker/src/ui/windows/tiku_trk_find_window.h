@@ -82,4 +82,8 @@ int tiku_trk_find_window_icon_at(tiku_trk_find_window_t *controller,
 int tiku_trk_find_window_popup_open(
     const tiku_trk_find_window_t *controller);
 
+/** @brief Insert committed text only; 0 not focused, 1 handled, -1 rejected. */
+int tiku_trk_find_window_text(tiku_trk_find_window_t *controller,
+    const char *text);
+
 #endif /* TIKU_TRK_FIND_WINDOW_H_ */

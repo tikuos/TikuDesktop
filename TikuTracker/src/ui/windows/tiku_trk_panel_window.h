@@ -69,12 +69,16 @@ typedef struct {
     int                    fav_count;
     char                   fav_path[12][TIKU_PATH_MAX];
     char                   fav_label[12][48];
+    int                    refused;   /* a paste the name would not take */
 } tiku_trk_panel_window_t;
 
 /**
  * @brief Bind the panel to its workspace, backend, store and icons, and to
  *        the shell's commit callback.  Opens no window.
  */
+/** @brief Whether the last key refused a paste, clearing the mark. */
+int tiku_trk_panel_window_refused(tiku_trk_panel_window_t *controller);
+
 void tiku_trk_panel_window_init(tiku_trk_panel_window_t *controller,
     tiku_workspace_t *workspace, tiku_backend_t *backend,
     tiku_store_t *store, tiku_trk_nodeicon_t *icons, int row_h,
@@ -147,5 +151,9 @@ int tiku_trk_panel_window_device_gone(tiku_trk_panel_window_t *controller,
 int tiku_trk_panel_window_scroll(const tiku_trk_panel_window_t *controller);
 /** @brief How many rows the list holds, 0 with no list. */
 int tiku_trk_panel_window_rows(const tiku_trk_panel_window_t *controller);
+
+/** @brief Insert committed text only; 0 not focused, 1 handled, -1 rejected. */
+int tiku_trk_panel_window_text(tiku_trk_panel_window_t *controller,
+    const char *text);
 
 #endif /* TIKU_TRK_PANEL_WINDOW_H_ */

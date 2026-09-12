@@ -1086,6 +1086,15 @@ tiku_trk_panel_window_model(tiku_trk_panel_window_t *controller)
 }
 
 int
+tiku_trk_panel_window_refused(tiku_trk_panel_window_t *controller)
+{
+    int was = controller->refused;
+
+    controller->refused = 0;
+    return was;
+}
+
+int
 tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                           unsigned modifiers, char character)
 {
@@ -1223,6 +1232,7 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
             }
         } else if (controller->model.mode == TIKU_TRK_PANEL_SAVE &&
                    controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME) {
+            tiku_field_t before = controller->name;
             if (key == ' ' && (modifiers & TIKU_MOD_CMD) != 0u) {
                 /* Cmd-Space completes the name against the folder shown
                  * (NeXT UIG ch3: file-name completion wherever a file
@@ -1242,18 +1252,29 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                 /* The desk's editing keys, in the panel's name too: a
                  * name copied from an editor's page lands here, and a
                  * name cut here lands there. */
-                (void)tiku_field_key(&controller->name,
+                if (tiku_field_key(&controller->name,
                     (key == 'x') ? TIKU_FIELD_CUT
                   : (key == 'c') ? TIKU_FIELD_COPY
                   : (key == 'v') ? TIKU_FIELD_PASTE
                                  : TIKU_FIELD_SELECT_ALL,
-                    tracker_mods, '\0');
+                    tracker_mods, '\0') == TIKU_FIELD_REJECTED) {
+                    /* The panel has no status line of its own; the shell
+                     * asks after the key and says it. */
+                    controller->refused = 1;
+                }
             } else if (key == TIKU_KEY_BACKSPACE) {
                 (void)tiku_field_key(&controller->name,
                     TIKU_FIELD_BACKSPACE, tracker_mods, '\0');
             } else if (character != '\0') {
                 (void)tiku_field_key(&controller->name,
                     TIKU_FIELD_CHAR, tracker_mods, character);
+            }
+            if (controller->name.len >= (int)sizeof controller->model.name) {
+                /* The panel's own name is shorter than the field's: what
+                 * the field took, this reverts, and that is a refusal
+                 * the shell has to be able to say out loud. */
+                controller->name = before;
+                controller->refused = 1;
             }
             snprintf(controller->model.name, sizeof controller->model.name,
                      "%.*s", (int)sizeof controller->model.name - 1,
@@ -1325,4 +1346,25 @@ tiku_trk_panel_window_rows(const tiku_trk_panel_window_t *controller)
 {
     return controller->view != NULL
         ? tiku_trk_poseview_count(controller->view) : 0;
+}
+
+int
+tiku_trk_panel_window_text(tiku_trk_panel_window_t *controller,
+    const char *text)
+{
+    if (!controller->window || !controller->window->open ||
+        tiku_workspace_focused(controller->workspace) != controller->window)
+        return 0;
+    if ((controller->alert && controller->alert->open) ||
+        controller->fav_open ||
+        controller->model.mode != TIKU_TRK_PANEL_SAVE ||
+        controller->model.focus != TIKU_TRK_PANEL_FOCUS_NAME) return 1;
+    tiku_field_t changed = controller->name;
+    if (tiku_field_commit(&changed, text) == TIKU_FIELD_REJECTED ||
+        changed.len >= (int)sizeof controller->model.name) return -1;
+    controller->name = changed;
+    memcpy(controller->model.name, changed.text, (size_t)changed.len + 1);
+    controller->model.name_len = changed.len;
+    mark_dirty(controller);
+    return 1;
 }

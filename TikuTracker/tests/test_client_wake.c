@@ -28,6 +28,7 @@
 #include "tiku_client.h"
 #include "tiku_gfx.h"
 #include "tiku_remote.h"
+#include "tiku_text_input.h"
 
 static int fails;
 
@@ -54,6 +55,7 @@ typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t            *surface;
     uint32_t                        id;
+    tiku_text_input_t commit;
 } echo_state_t;
 
 static int
@@ -91,7 +93,18 @@ echo_event(void *state, const tiku_event_t *event)
 {
     echo_state_t *st = state;
 
+    if (tiku_text_input_event(&st->commit, event) == TIKU_TEXT_COMPLETE) {
+        st->surface->px[0] = !strcmp(st->commit.text, "A composed phrase: café 日本語")
+                            ? 0x00fedcbau : 0x00123456u;
+        (void)st->services->frame(st->services->ctx, st->id, st->surface->px, 8, 8);
+    }
     if (event->type == TIKU_EVENT_KEY_DOWN) {
+        if (event->key == 'v') {
+            char text[64];
+            int n = st->services->clip_get(st->services->ctx, text, sizeof text);
+            st->surface->px[0] = n > 0 && !strcmp(text, "fresh host caf\xc3\xa9")
+                                ? 0x00abcdefu : 0x00123456u;
+        }
         (void)st->services->frame(st->services->ctx, st->id,
                                   st->surface->px, 8, 8);
         if (event->key == 'q') {
@@ -212,6 +225,30 @@ main(void)
     check(worst >= 0 && worst < 20,
           "an event is answered without waiting out a nap");
 
+    {
+        tiku_msg_t *clip = tiku_msg_new(TIKU_MSG_CLIP);
+        (void)tiku_msg_add_string(clip, "text", "fresh host caf\xc3\xa9");
+        check(tiku_remote_tell(&listener, 0, clip),
+              "the imported clipboard is queued before the paste key");
+        tiku_msg_free(clip);
+        key.key = 'v';
+        tiku_remote_event(&listener, &fake, &key);
+        check(await_frame(&listener, 500) >= 0,
+              "the app responds to paste after the clipboard update");
+        const uint32_t *pixels = tiku_remote_pixels(&listener.session[0].win[0]);
+        check(pixels && pixels[0] == 0x00abcdefu,
+              "a remote app reads fresh UTF-8 text on its first paste");
+    }
+    {
+        const char *phrase = "A composed phrase: café 日本語";
+        tiku_text_input_t input;
+        tiku_event_t text;
+        check(tiku_text_input_set(&input, phrase, strlen(phrase)), "stage a multi-event UTF-8 commit");
+        while (tiku_text_input_next(&input, &text)) tiku_remote_event(&listener, &fake, &text);
+        check(await_frame(&listener, 500) >= 0, "the remote app receives the complete text commit");
+        const uint32_t *pixels = tiku_remote_pixels(&listener.session[0].win[0]);
+        check(pixels && pixels[0] == 0x00fedcbau, "UTF-8 commit framing survives the existing event protocol");
+    }
     key.key = 'q';
     tiku_remote_event(&listener, &fake, &key);
     for (i = 0; i < 100; i++) {

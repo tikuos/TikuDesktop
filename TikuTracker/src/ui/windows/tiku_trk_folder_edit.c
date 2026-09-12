@@ -48,6 +48,7 @@ tiku_trk_folder_edit_begin_value(tiku_trk_folder_edit_t *controller,
         return;
     }
     controller->editing = 1;
+    controller->value_folder = folder;
     controller->edit_desc = pose->desc;
     snprintf(controller->edit_path, sizeof controller->edit_path, "%s",
              pose->model.path);
@@ -259,6 +260,9 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         folder != controller->rename_folder) {
         return 0;               /* not this window's editor */
     }
+    if (!controller->renaming && controller->editing &&
+        controller->value_folder && controller->value_folder->win &&
+        folder != controller->value_folder) return 0;
     if ((modifiers & TIKU_MOD_CMD) &&
         (key == 'x' || key == 'c' || key == 'v')) {
         tiku_field_key_t text_key = (key == 'x') ? TIKU_FIELD_CUT
@@ -266,7 +270,11 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
                                                  : TIKU_FIELD_PASTE;
         editor = controller->renaming ? &controller->rename_edit
                                       : &controller->value_edit;
-        (void)tiku_field_key(editor, text_key, 0, '\0');
+        if (tiku_field_key(editor, text_key, 0, '\0') ==
+            TIKU_FIELD_REJECTED && controller->status != NULL) {
+            snprintf(controller->status, controller->status_size,
+                     "The clipboard does not fit this name.");
+        }
         *controller->dirty = 1;
         return 1;
     }
@@ -357,4 +365,20 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
     }
     *controller->dirty = 1;
     return 1;
+}
+
+int
+tiku_trk_folder_edit_text(tiku_trk_folder_edit_t *controller,
+    tiku_trk_folder_window_t *folder, const char *text)
+{
+    if (!controller || (!controller->renaming && !controller->editing))
+        return 0;
+    tiku_trk_folder_window_t *owner = controller->renaming
+        ? controller->rename_folder : controller->value_folder;
+    if (!owner || (folder != owner && (owner->win || folder))) return 0;
+    tiku_field_t *field = controller->renaming
+        ? &controller->rename_edit : &controller->value_edit;
+    int result = tiku_field_commit(field, text);
+    *controller->dirty = 1;
+    return result == TIKU_FIELD_REJECTED ? -1 : 1;
 }

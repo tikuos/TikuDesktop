@@ -1736,7 +1736,6 @@ tiku_trk_find_backspace(tiku_trk_find_t *f)
 {
     size_t max = 0;
     char *field;
-    size_t n;
 
     if (f == NULL) {
         return;
@@ -1745,10 +1744,15 @@ tiku_trk_find_backspace(tiku_trk_find_t *f)
     if (field == NULL) {
         return;
     }
-    n = strlen(field);
-    if (n > 0u) {
-        field[n - 1u] = '\0';
-    }
+    tiku_text_input_backspace(field, max);
+}
+
+int tiku_trk_find_text(tiku_trk_find_t *f, const char *text)
+{
+    size_t max = 0;
+    if (!f || tiku_trk_find_popup_open(f)) return 0;
+    char *field = focused_field(f, &max);
+    return field && tiku_text_input_append(field, max, text);
 }
 
 /**

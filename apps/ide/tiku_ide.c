@@ -48,6 +48,7 @@
 #include "tiku_clipboard.h"
 #include "tiku_field.h"
 #include "tiku_textview.h"
+#include "tiku_text_input.h"
 #include "tiku_board_basic.h"
 #include "tiku_ui.h"
 
@@ -219,6 +220,7 @@ typedef struct {
     tiku_surface_t *surface;    /* NULL when the seat is free */
     int                  w, h;       /* the window's CURRENT content */
     tiku_textview_t tv;
+    tiku_text_input_t commit;
     tiku_syntax_lang_t   lang;
     char                 path[512];
     char                 name[64];
@@ -334,6 +336,7 @@ typedef struct {
     int                             asking;
     char                            ask_prompt[160];
     tiku_field_t                    answer;
+    tiku_text_input_t               answer_commit;
     int                             saving;     /* a save, not a run  */
     pid_t                           child;
     char                            child_file[512];
@@ -3642,6 +3645,35 @@ splash_art_load(void)
     return NULL;
 }
 
+#ifndef TIKU_IDE_C
+/** @brief Apache's standard notice in the splash's otherwise empty lower area. */
+static void
+announce_license(tiku_surface_t *sf)
+{
+    /* Verbatim boilerplate from the repository LICENSE, without its
+     * copyright placeholder; only the line breaks differ. */
+    static const char *const notice[] = {
+        "Licensed under the Apache License, Version 2.0 (the \"License\");",
+        "you may not use this file except in compliance with the License. You may obtain a copy of",
+        "the License at http://www.apache.org/licenses/LICENSE-2.0",
+        "Unless required by applicable law or agreed to in writing, software distributed under the",
+        "License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF",
+        "ANY KIND, either express or implied. See the License for the specific language governing",
+        "permissions and limitations under the License."
+    };
+    const tiku_font_t *small = tiku_font_at(10);
+    /* Same banner/name/status metrics as the shared splash painter, with
+     * a four-pixel gap before the fine print. The bottom-right mark stays. */
+    int y = sf->h / 2 + 12 + tiku_font_at(26)->height + 6 +
+            tiku_font_plain()->height + 4;
+    for (size_t i = 0; i < sizeof notice / sizeof *notice; i++) {
+        tiku_text(sf, small, 18, y + small->ascent, notice[i],
+                  TIKU_RGB(128, 128, 128));
+        y += small->height - 1; /* Compact leading keeps the footer clear. */
+    }
+}
+#endif
+
 /** @brief This program's splash screen: its name, and the words that are true. */
 static void
 announce_paint_art(tiku_surface_t *sf, const char *status,
@@ -3658,12 +3690,12 @@ announce_paint_art(tiku_surface_t *sf, const char *status,
     };
 
     if (status != NULL) {
-        /* The SPLASH says only what a passing card should: the art,
-         * the name, and what is being gathered.  The credits and the
-         * version belong to the About box, which is the same card
-         * held still for somebody who ASKED -- that is what asking
-         * is for. */
+        /* Keep the art, title and startup status; TikuBasic uses the
+         * lower space for a quiet license notice rather than credits. */
         tiku_splash_paint(sf, APP_NAME, NULL, 0, NULL, status, art);
+#ifndef TIKU_IDE_C
+        announce_license(sf);
+#endif
         return;
     }
     tiku_splash_paint(sf, APP_NAME, LINES,
@@ -3880,6 +3912,39 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
     ide_t *st = state;
     edit_t *e = edit_of_id(st, window);
 
+    if (e != NULL) {
+        int result = tiku_text_input_event(&e->commit, event);
+        if (event->type == TIKU_EVENT_TEXT_INPUT) {
+            if ((debug_locked(st, e) && !e->watch_focus) || st->ask.open) return 0;
+            if (result == TIKU_TEXT_REJECTED) {
+                snprintf(e->feedback, sizeof e->feedback, "Text input is invalid or too long.");
+            } else if (result == TIKU_TEXT_COMPLETE) {
+                int accepted;
+                if (e->finding || e->watch_focus) {
+                    tiku_field_t *field = e->finding
+                        ? (e->find_focus ? &e->replacement : &e->find) : &e->watches;
+                    accepted = tiku_field_commit(field, e->commit.text) != TIKU_FIELD_REJECTED;
+                } else {
+                    e->assist_open = 0;
+                    accepted = tiku_textview_commit(&e->tv, e->commit.text);
+                    (void)tiku_textview_reveal(&e->tv, edit_rows(e));
+                }
+                snprintf(e->feedback, sizeof e->feedback, "%s",
+                         accepted ? "" : "Text does not fit this field or line.");
+            }
+            edit_paint(st, e); edit_publish(st, e); project_publish(st);
+            return 0;
+        }
+    } else if (window == st->con_id || window == st->msg_id) {
+        int result = tiku_text_input_event(&st->answer_commit, event);
+        if (event->type == TIKU_EVENT_TEXT_INPUT) {
+            if (st->asking && result == TIKU_TEXT_COMPLETE)
+                (void)tiku_field_commit(&st->answer, st->answer_commit.text);
+            if (window == st->con_id) console_paint(st);
+            else messages_show(st);
+            return 0;
+        }
+    }
     if (event->type != TIKU_EVENT_KEY_DOWN &&
         event->type != TIKU_EVENT_POINTER_DOWN &&
         event->type != TIKU_EVENT_POINTER_MOVE &&

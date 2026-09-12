@@ -710,3 +710,17 @@ tiku_trk_info_windows_select_tab(tiku_trk_info_windows_t *controller,
     }
     mark_dirty(controller);
 }
+
+int
+tiku_trk_info_windows_text(tiku_trk_info_windows_t *controller,
+    const char *text)
+{
+    int slot = tiku_trk_info_windows_slot(controller,
+        tiku_workspace_focused(controller->workspace));
+    if (slot < 0) return 0;
+    if (controller->renaming != slot ||
+        (controller->alert && controller->alert->open)) return 1;
+    int result = tiku_field_commit(&controller->name, text);
+    mark_dirty(controller);
+    return result == TIKU_FIELD_REJECTED ? -1 : 1;
+}

@@ -168,7 +168,9 @@ assist_paint(edit_t *e)
             "Place the caret on a keyword, or type a prefix for completion.");
     }
     tiku_text(e->surface, f, 6, SEARCH_TOP + ASSIST_H - 4,
-              "Arrows: choose   Enter: insert   Esc: close   Firmware features vary",
+              e->assist_open == 2 ?
+              "Arrows: choose   Enter: insert   Esc: close   Firmware features vary" :
+              "Click a keyword for help   Esc: close   Firmware features vary",
               TIKU_C_TEXT);
 }
 

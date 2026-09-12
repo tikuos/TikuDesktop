@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include "tiku_app.h"
+#include "tiku_text_input.h"
 #include "tiku_client.h"
 #include "tiku_font.h"
 #include "tiku_gfx.h"
@@ -88,6 +89,7 @@ typedef struct {
     int                             alive;
     int                             dirty;
     int                             cell_w, cell_h;
+    tiku_text_input_t                commit;
 } term_state_t;
 
 /* The ANSI eight, then the eight bright ones the bold attribute picks. */
@@ -899,6 +901,12 @@ term_event(void *state, const tiku_event_t *event)
     const char *seq = NULL;
     char one;
 
+    int commit = tiku_text_input_event(&st->commit, event);
+    if (event->type == TIKU_EVENT_TEXT_INPUT) {
+        if (commit == TIKU_TEXT_COMPLETE)
+            send_bytes(st, st->commit.text, (size_t)st->commit.length);
+        return 0;
+    }
     if (event->type != TIKU_EVENT_KEY_DOWN) {
         return 0;
     }

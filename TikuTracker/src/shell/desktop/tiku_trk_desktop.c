@@ -315,7 +315,30 @@ tracker_run(int argc, char **argv)
                  * something nobody is going to see. */
                 continue;
             }
+            if (ev.type != TIKU_EVENT_TEXT_INPUT)
+                (void)tiku_text_input_event(&app.legacy_commit, &ev);
             switch (ev.type) {
+            case TIKU_EVENT_TEXT_INPUT:
+                desktop_text_input(&app, &ev);
+                break;
+            case TIKU_EVENT_CLIPBOARD:
+                clip_mirror(&app);
+                if (ev.key != TIKU_CLIPBOARD_OK) {
+                    snprintf(app.status, sizeof app.status, "%s",
+                             tiku_clipboard_status_text((int)ev.key));
+                    app.dirty = 1;
+                }
+                break;
+            case TIKU_EVENT_DEACTIVATED: {
+                tiku_window_t *fw = tiku_workspace_focused(app.desk);
+                if (app.prefs_track && app.prefs_track != fw)
+                    (void)tiku_window_send(app.prefs_track, &ev);
+                app.prefs_track = NULL;
+                if (fw == desktop_deviceprefs_handle(&app) ||
+                    fw == desktop_startup_handle(&app))
+                    (void)tiku_window_send(fw, &ev);
+                break;
+            }
             case TIKU_EVENT_RESIZE:
                 (void)resize_desktop(&app, ev.width, ev.height);
                 app.dirty = 1;

@@ -29,6 +29,7 @@
 #include "tiku_trk_drag.h"
 #include "tiku_trk_panel.h"
 #include "tiku_field.h"
+#include "tiku_text_input.h"
 #include "tiku_model.h"
 #include "tiku_fs.h"
 #include "tiku_iconpaint.h"
@@ -80,6 +81,7 @@ typedef struct {
     /* inline rename: the editor is a mode, as Tracker's TextWidget is */
     int                  editing;
     tiku_field_t      ed;            /* the rename editor                  */
+    tiku_text_input_t commit;        /* one whole committed text sequence  */
     char                 edit_path[TIKU_PATH_MAX]; /* the entry being renamed */
     int                  edit_row;   /* its row                            */
     /* The window's own activation state, which decides whether a selection

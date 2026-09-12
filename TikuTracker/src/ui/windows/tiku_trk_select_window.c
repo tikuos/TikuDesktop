@@ -302,3 +302,16 @@ tiku_trk_select_window_key(tiku_trk_select_window_t *controller,
     mark_dirty(controller);
     return 1;
 }
+
+int
+tiku_trk_select_window_text(tiku_trk_select_window_t *controller,
+    const char *text)
+{
+    if (!controller->window || !controller->window->open ||
+        tiku_workspace_focused(controller->workspace) != controller->window)
+        return 0;
+    if (controller->field != SELECT_HIT_EXPRESSION) return 1;
+    int result = tiku_field_commit(&controller->model.expr, text);
+    mark_dirty(controller);
+    return result == TIKU_FIELD_REJECTED ? -1 : 1;
+}

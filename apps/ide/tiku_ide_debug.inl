@@ -186,6 +186,7 @@ debug_start(ide_t *st, edit_t *e)
     st->debug_paused = st->debug_pc = st->debug_values = 0;
     st->asking = st->saving = st->nmsg = 0;
     st->child_numbered = 1; st->run_from = 0;
+    st->stop_asked = 0;
     tiku_textview_select_none(&e->tv);
     memset(e->watch_value, 0, sizeof e->watch_value);
     snprintf(e->feedback, sizeof e->feedback, "Starting debugger; source is read-only until stopped");

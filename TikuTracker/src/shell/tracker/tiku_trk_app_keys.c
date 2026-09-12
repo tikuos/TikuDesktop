@@ -581,7 +581,13 @@ browser_key_rename(app_t *a, const tiku_event_t *event, unsigned key,
             tiku_field_key_t text_key = (key == 'x') ? TIKU_FIELD_CUT
                                       : (key == 'c') ? TIKU_FIELD_COPY
                                                      : TIKU_FIELD_PASTE;
-            (void)tiku_field_key(&a->ed, text_key, 0, '\0');
+            if (tiku_field_key(&a->ed, text_key, 0, '\0') ==
+                TIKU_FIELD_REJECTED) {
+                /* An atomic paste that does not fit says so: refusing in
+                 * silence reads as a key that did nothing. */
+                snprintf(a->status, sizeof a->status,
+                         "The clipboard does not fit this field.");
+            }
             a->dirty = 1;
             return 2;
         }

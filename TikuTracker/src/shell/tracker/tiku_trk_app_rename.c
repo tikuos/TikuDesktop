@@ -34,6 +34,8 @@ browser_begin_rename(app_t *a)
         return;
     }
     a->editing = 1;
+    tiku_text_input_reset(&a->commit);
+    tiku_host_cancel_composition(a->host);
     a->edit_row = browser_pose_index(a, p);
     tiku_field_start(&a->ed, p->model.name);
     /* A character the store will refuse must never reach the field. */

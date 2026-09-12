@@ -135,4 +135,8 @@ int tiku_trk_info_windows_device_gone(tiku_trk_info_windows_t *controller,
 int tiku_trk_info_windows_refresh(tiku_trk_info_windows_t *controller,
                                   int64_t now);
 
+/** @brief Insert committed text only; 0 not focused, 1 handled, -1 rejected. */
+int tiku_trk_info_windows_text(tiku_trk_info_windows_t *controller,
+    const char *text);
+
 #endif /* TIKU_TRK_INFO_WINDOW_H_ */

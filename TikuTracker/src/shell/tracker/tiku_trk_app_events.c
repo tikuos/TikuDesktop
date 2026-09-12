@@ -10,6 +10,7 @@
  */
 
 #include "tiku_trk_app_private.h"
+#include "tiku_clipboard.h"
 
 /* Used before they are defined. */
 int browser_press_list(app_t *app, const tiku_event_t *ev, browser_loop_t *lp);
@@ -409,7 +410,22 @@ browser_turn_begin(app_t *app, browser_loop_t *lp)
             break;
         }
 
+        int text_state = tiku_text_input_event(&app->commit, &ev);
         switch (ev.type) {
+        case TIKU_EVENT_TEXT_INPUT:
+            if (app->status_overlay.alert.open || app->popup) break;
+            if (text_state == TIKU_TEXT_COMPLETE) {
+                tiku_field_t *field = app->nav_editing ? &app->nav_edit :
+                                      app->editing ? &app->ed : NULL;
+                if (field && tiku_field_commit(field, app->commit.text) ==
+                             TIKU_FIELD_REJECTED)
+                    snprintf(app->status, sizeof app->status,
+                             "Text does not fit this field.");
+            } else if (text_state == TIKU_TEXT_REJECTED)
+                snprintf(app->status, sizeof app->status,
+                         "Text input is invalid or too long.");
+            app->dirty = 1;
+            break;
         case TIKU_EVENT_RESIZE:
             if (ev.width > 0 && ev.height > 0 &&
                 (ev.width != app->surf->w || ev.height != app->surf->h)) {
@@ -436,6 +452,13 @@ browser_turn_begin(app_t *app, browser_loop_t *lp)
             break;
         case TIKU_EVENT_EXPOSE:
             app->dirty = 1;
+            break;
+        case TIKU_EVENT_CLIPBOARD:
+            if (ev.key != TIKU_CLIPBOARD_OK) {
+                snprintf(app->status, sizeof app->status, "%s",
+                         tiku_clipboard_status_text((int)ev.key));
+                app->dirty = 1;
+            }
             break;
         case TIKU_EVENT_KEY_DOWN:
             tiku_trk_loop_note_activity(app->loop);

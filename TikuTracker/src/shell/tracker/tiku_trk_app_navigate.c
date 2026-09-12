@@ -131,6 +131,8 @@ browser_begin_location(app_t *a)
 {
     browser_end_rename(a, 1);
     a->nav_editing = 1;
+    tiku_text_input_reset(&a->commit);
+    tiku_host_cancel_composition(a->host);
     tiku_field_start(&a->nav_edit,
                         tiku_trk_navigator_current(&a->nav));
     a->dirty = 1;
