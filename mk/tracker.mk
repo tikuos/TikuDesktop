@@ -295,6 +295,7 @@ test_ide_default_LDLIBS := -lX11 -lm
 test_ide_deadboard_LDLIBS := -lX11 -lm
 test_ide_workflow_LDLIBS := -lX11 -lm
 test_sensor_LDLIBS := -lX11 -lm
+test_bench_LDLIBS := -lX11 -lm
 test_ide_debug_LDLIBS := -lX11 -lm
 test_deviceprefs_LDLIBS := -lX11 -lm
 test_startup_CFLAGS := -ffunction-sections -fdata-sections

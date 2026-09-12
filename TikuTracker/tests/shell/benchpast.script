@@ -3,50 +3,21 @@
 # prefs: factory
 # setup: benchpast
 # board: only
-# What a suite last did here, said where it is being decided.
-#
-# The bench keeps a ledger of its own runs; the shell only says what is
-# in it, at the moment somebody is looking at a suite and deciding
-# whether to run it again.  Two answers matter and they are different:
-# what it did last time, and that it has never been done here at all.
+# The profile-aware ledger is now a tab; semantic history checks are in test_bench.
 wait 60
 click 980 30
 wait 10
 menu-pick Applications
 wait 10
 menu-pick Bench
-wait 250
+wait 500
 expect-title Bench
 click-window Bench
+click 128 8
 wait 8
-note the top row is the kernel suite, which HAS run on this board
-key Down
-wait 8
-click 71 8
-wait 8
-note the authoritative full run only: a part of a suite passing says
-note nothing about the suite
-expect-menu kernel on tiku: FAILED
-note and a suite that has never run here says exactly that, which is not
-note the same answer as a pass
-click-window Bench
-wait 8
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-wait 8
-click 71 8
-wait 8
-expect-menu link-console has not run here
+expect-menu History
+expect-menu Benchmarks
+menu-pick History
+wait 20
+expect-title Bench
 quit

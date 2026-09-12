@@ -3,60 +3,46 @@
 # prefs: factory
 # setup: benchrun
 # board: only
-# The bench, run against a mounted board from the shell.
-#
-# TikuBench builds, flashes and talks to boards; none of that is done
-# again here.  What the shell adds is the board -- already mounted and
-# named -- and the hand-over of its port, since a run that reflashes a
-# board cannot share it with the shell that has it open.  So the whole
-# question this asks is: does the shell let go, does the run reach the
-# board, and does the shell get its board back?
+# Hardware opt-in: monitored link-console run, never implicit flashing.
 wait 60
 click 980 30
 wait 10
 menu-pick Applications
 wait 10
 menu-pick Bench
-wait 250
+wait 500
 expect-title Bench
-note the suites are the bench's own list, not a copy of it kept here;
-note down to link-console, which a board answers on its own; the list
-note holds only what a board HERE can answer, so the count is stable
 click-window Bench
-wait 8
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-key Down
-wait 3
-wait 8
 click 71 8
 wait 8
-note the board is offered BY NAME, which is what the shell knows and
-note the bench would otherwise have to be told
-expect-menu Show the parts of link-console
-expect-menu Run on nrf54lm20b
-menu-pick Run on nrf54lm20b
-note the results window is made only when the bench has said something,
-note so its being here at all is the run's own report arriving
+menu-pick Find suites
+key l
+key i
+key n
+key k
+key -
+key c
+key o
+key n
+key s
+key o
+key l
+key e
+wait 12
+click 71 8
+wait 8
+menu-pick Select visible
+click 71 8
+wait 8
+menu-pick Run selected...
+note Run must be explicitly chosen; Return alone would cancel.
+key Tab
+key Return
 wait 900
-expect-title Results
-note and everything the run SAID is kept, not only what it meant: a run
-note that fails before it means anything is not a dead end
-expect-file-has /tmp/trk_bench_logs/link-console-nrf54lm20b.log [PASS] armed
-note and the board is the shell's again: let go for the run, taken back
-note after it, and answering as it did before any of this
+expect-title Bench
+note Results now stay in the main Bench window, and the run that reached
+note the board is named there: a run that said nothing leaves no row.
+expect-narrate link-console
 wait 500
 expect-read /devices/nrf54lm20b/sys/device/name tiku
 quit

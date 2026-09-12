@@ -1,0 +1,13 @@
+"""Read-only synthetic catalogue for desktop Bench integration tests."""
+print("B\tnrf54l15\tnRF54L15\tnordic\t115200\t0\t0")
+print("B\tmsp430fr5994\tFR5994\tmsp430\t9600\t1\t0")
+print("B\trp2350\tRP2350\trp\t115200\t0\t1")
+print("S\tkernel\tKernel\tKernel checks\tany\tCanonical kernel checks\t0")
+print("C\tkernel\tcommon\tCommon utilities\t*\tCore\tfunctional\t\t*")
+print("C\tkernel\treset\tReset survival\tnrf54l15,rp2350-uart\tReset\tdiagnostic\trp2350-usb=USB console cannot survive reset\t")
+print("S\tsecond\tTools\tSecond suite\tany\tAnother suite\t0")
+print("C\tsecond\tother\tOther test\t*\tTools\tfunctional\t\t*")
+print("S\tshell\tShell\tShell checks\tany\tNeeds large MSP firmware\t1")
+print("H\tnrf54l15\tkernel\tfull\tfail\t90000\tnrf54l15")
+print("H\tnrf54l15\tkernel\tselected\tpass\t10\tnrf54l15")
+print("M\tnrf54l15\tcontext-switch\tcycles\t42\t40\tsuspect\t1")

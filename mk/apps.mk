@@ -153,7 +153,7 @@ $(BUILD)/tests/Stall.so: $(D)/stall/tiku_stall.c $(PIC_LIBS) | $(BUILD)/tests
 $(BUILD)/tests/Fault.so: $(D)/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD)/tests
 	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
-$(APPS_D)/Bench.so: $(D)/bench/tiku_bench.c $(PIC_LIBS) | $(APPS_D)
+$(APPS_D)/Bench.so: $(D)/bench/tiku_bench.c $(wildcard $(D)/bench/*.inl) $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 IDE_HELPERS := $(wildcard $(D)/ide/*.inl)

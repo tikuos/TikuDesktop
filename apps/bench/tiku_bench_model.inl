@@ -1,0 +1,243 @@
+/* Registry/profile model shared by the live UI and display-free regressions. */
+static int csv_has(const char *csv, const char *word)
+{
+    if (!strcmp(csv, "*") || !strcmp(csv, "any")) return 1;
+    if (!*word) return 0;
+    size_t n = strlen(word);
+    for (const char *p = csv; *p;) {
+        const char *end = strchr(p, ',');
+        size_t len = end ? (size_t)(end - p) : strlen(p);
+        if (len == n && !memcmp(p, word, n)) return 1;
+        if (!end) break;
+        p = end + 1;
+    }
+    return 0;
+}
+
+/** Prefer the explicit checkout, otherwise resolve beside applications/build. */
+static void locate_bench(bench_t *st)
+{
+    const char *env = getenv("TIKU_BENCH");
+    if (env && *env) { snprintf(st->directory, sizeof st->directory, "%s", env); return; }
+    char exe[1024];
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+    if (n > 0) {
+        exe[n] = '\0';
+        char *at = strstr(exe, "/applications/");
+        if (at) {
+            *at = '\0';
+            snprintf(st->directory, sizeof st->directory, "%.480s/TikuBench", exe);
+            return;
+        }
+    }
+    snprintf(st->directory, sizeof st->directory, "%s/tikuOS/TikuBench",
+             getenv("HOME") ? getenv("HOME") : ".");
+}
+
+/** Oversized metadata is an error, not a silently incomplete test catalogue. */
+static void meta_copy(bench_t *st, char *out, size_t cap, const char *value)
+{
+    if (snprintf(out, cap, "%s", value) >= (int)cap) st->metadata_bad = 1;
+}
+#define MC(dst, src) meta_copy(st, dst, sizeof(dst), src)
+static void metadata_line(bench_t *st, char *line)
+{
+    char *f[10]; int n = 0;
+    if (!line[0] || line[1] != '\t') return;
+    char *p = line;
+    while (n < 10) {
+        f[n++] = p;
+        char *tab = strchr(p, '\t');
+        if (!tab) break;
+        *tab = '\0'; p = tab + 1;
+    }
+    if (*f[0] == 'B' && n >= 7) {
+        if (st->nboard == 32) { st->metadata_bad = 1; return; }
+        board_t *b = &st->boards[st->nboard++];
+        MC(b->key, f[1]); b->baud = atoi(f[4]); b->large = atoi(f[5]); b->usb = atoi(f[6]);
+    } else if (*f[0] == 'S' && n >= 7) {
+        if (st->nsuite == NS) { st->metadata_bad = 1; return; }
+        suite_t *s = &st->suites[st->nsuite++]; memset(s, 0, sizeof *s);
+        MC(s->key, f[1]); MC(s->group, f[2]); MC(s->name, f[3]);
+        MC(s->boards, f[4]); MC(s->description, f[5]);
+        s->large = atoi(f[6]); s->first = st->nleaf;
+    } else if (*f[0] == 'C' && n >= 9) {
+        if (!st->nsuite || st->nleaf == NL ||
+            strcmp(st->suites[st->nsuite - 1].key, f[1])) { st->metadata_bad = 1; return; }
+        leaf_t *l = &st->leaves[st->nleaf++]; memset(l, 0, sizeof *l);
+        MC(l->id, f[2]); MC(l->label, f[3]); MC(l->profiles, f[4]);
+        MC(l->group, f[5]); MC(l->kind, f[6]); MC(l->reasons, f[7]); MC(l->full, f[8]);
+        st->suites[st->nsuite - 1].count++;
+    } else if (*f[0] == 'H' && n >= 7 && st->nhistory < NH) {
+        past_t *h = &st->history[st->nhistory++];
+        MC(h->board, f[1]); MC(h->suite, f[2]); MC(h->kind, f[3]);
+        MC(h->verdict, f[4]); h->age = atol(f[5]); MC(h->profile, f[6]);
+    } else if (*f[0] == 'M' && n >= 8 && st->nmetric < NH) {
+        metric_t *m = &st->metrics[st->nmetric++];
+        for (int i = 1; i < 8; i++) MC(m->field[i], f[i]);
+    } else if (*f[0] == 'B' || *f[0] == 'S' || *f[0] == 'C') st->metadata_bad = 1;
+}
+#undef MC
+
+static void clear_selection(bench_t *st)
+{
+    for (int i = 0; i < st->nsuite; i++) st->suites[i].selected = 0;
+    for (int i = 0; i < st->nleaf; i++) st->leaves[i].selected = 0;
+}
+
+static const board_t *board_info(const bench_t *st)
+{
+    for (int i = 0; i < st->nboard; i++)
+        if (!strcmp(st->boards[i].key, st->mcu)) return &st->boards[i];
+    return NULL;
+}
+
+static void profile_update(bench_t *st)
+{
+    const board_t *b = board_info(st);
+    st->supported = b != NULL;
+    if (!b || !b->large) st->large = 0;
+    if (!b || !b->usb) st->usb = 0;
+    snprintf(st->profile, sizeof st->profile, "%.55s%s", st->mcu,
+             b && b->usb ? (st->usb ? "-usb" : "-uart") : "");
+    entries_build(st);
+}
+
+/** Capture MCU and port while the shell still has a warm device record. */
+static void target_capture(bench_t *st)
+{
+    st->mcu[0] = st->port[0] = '\0';
+    if (st->services->board_mcu)
+        st->services->board_mcu(st->services->ctx, st->target_name, st->mcu, sizeof st->mcu);
+    if (st->services->board_port)
+        st->services->board_port(st->services->ctx, st->target_name, st->port, sizeof st->port);
+    for (char *p = st->mcu; *p; p++) *p = (char)tolower((unsigned char)*p);
+    profile_update(st);
+}
+
+static void targets_refresh(bench_t *st)
+{
+    char names[1024] = "", chosen[64] = "";
+    if (st->services->board_names)
+        st->services->board_names(st->services->ctx, names, sizeof names);
+    /* Same board list, same answer: with none mounted that list is the
+     * empty string, and rebuilding it every tick repainted an idle
+     * window and republished its menus once a second. */
+    if (!strcmp(names, st->mounted) && st->refreshed) return;
+    st->refreshed = 1;
+    snprintf(st->mounted, sizeof st->mounted, "%s", names);
+    snprintf(chosen, sizeof chosen, "%s", st->target_name);
+    if (!*chosen && st->services->current_device)
+        st->services->current_device(st->services->ctx, chosen, sizeof chosen);
+    tiku_choice_init(&st->target);
+    char *save = NULL;
+    for (char *p = strtok_r(names, "\n", &save); p; p = strtok_r(NULL, "\n", &save))
+        tiku_choice_add(&st->target, p, 1);
+    int selected = -1;
+    for (int i = 0; i < st->target.count; i++)
+        if (!strcmp(st->target.item[i].label, chosen)) selected = i;
+    /* Never silently switch a vanished selected board to a different device. */
+    if (selected < 0 && !*chosen && st->target.count) selected = 0;
+    st->target.selected = selected;
+    st->target_name[0] = '\0';
+    if (selected >= 0)
+        snprintf(st->target_name, sizeof st->target_name, "%s", st->target.item[selected].label);
+    target_capture(st); st->dirty = 1;
+}
+
+static int suite_supported(const bench_t *st, const suite_t *s)
+{
+    return st->supported && csv_has(s->boards, st->mcu) &&
+        !(s->large && !strncmp(st->mcu, "msp430", 6) && !st->large);
+}
+static int leaf_supported(const bench_t *st, const leaf_t *l, int full)
+{ return csv_has(full ? l->full : l->profiles, st->profile); }
+
+/** Unsupported leaves stay visible and explain their canonical exclusion. */
+static const char *leaf_reason(const bench_t *st, const leaf_t *l, char *out, size_t cap)
+{
+    size_t n = strlen(st->profile);
+    for (const char *p = l->reasons; *p;) {
+        const char *end = strstr(p, ";;");
+        if (!strncmp(p, st->profile, n) && p[n] == '=') {
+            size_t len = end ? (size_t)(end - p - n - 1) : strlen(p + n + 1);
+            snprintf(out, cap, "%.*s", (int)len, p + n + 1); return out;
+        }
+        if (!end) break;
+        p = end + 2;
+    }
+    return "Not available in this profile";
+}
+
+static int contains(const char *text, const char *needle)
+{
+    if (!*needle) return 1;
+    for (; *text; text++) {
+        size_t i = 0;
+        while (needle[i] && text[i] &&
+               tolower((unsigned char)needle[i]) == tolower((unsigned char)text[i])) i++;
+        if (!needle[i]) return 1;
+    }
+    return 0;
+}
+
+static void entries_build(bench_t *st)
+{
+    st->nentry = 0;
+    const char *filter = st->field[0].text;
+    for (int i = 0; i < st->nsuite; i++) {
+        suite_t *s = &st->suites[i];
+        int match = contains(s->key, filter) || contains(s->name, filter) || contains(s->group, filter);
+        int childmatch = 0;
+        for (int j = s->first; j < s->first + s->count; j++)
+            childmatch |= contains(st->leaves[j].id, filter) || contains(st->leaves[j].label, filter);
+        if (!match && !childmatch) continue;
+        st->entries[st->nentry++] = (entry_t){i, -1};
+        if (!s->expanded && !*filter) continue;
+        for (int j = s->first; j < s->first + s->count; j++)
+            if (match || contains(st->leaves[j].id, filter) || contains(st->leaves[j].label, filter))
+                st->entries[st->nentry++] = (entry_t){i, j};
+    }
+    tiku_list_set_count(&st->list[TAB_SUITES], st->nentry);
+}
+
+static void toggle_entry(bench_t *st, int row, int expand)
+{
+    if (st->busy || st->loading || row < 0 || row >= st->nentry) return;
+    entry_t e = st->entries[row]; suite_t *s = &st->suites[e.suite];
+    if (expand && e.leaf < 0) { s->expanded = !s->expanded; entries_build(st); return; }
+    if (!suite_supported(st, s)) return;
+    if (e.leaf < 0) {
+        s->selected = !s->selected;
+        for (int i = s->first; i < s->first + s->count; i++) st->leaves[i].selected = 0;
+    } else if (leaf_supported(st, &st->leaves[e.leaf], 0)) {
+        s->selected = 0; st->leaves[e.leaf].selected = !st->leaves[e.leaf].selected;
+    }
+}
+
+/** Build an immutable queue. Full-suite selection never expands into --only. */
+static int queue_build(bench_t *st)
+{
+    st->njob = st->job = 0;
+    if (!st->metadata_ok || !st->supported || !*st->target_name) return 0;
+    for (int i = 0; i < st->nsuite; i++) {
+        suite_t *s = &st->suites[i];
+        if (!suite_supported(st, s)) continue;
+        job_t *job = &st->jobs[st->njob]; job->suite = i; job->only[0] = '\0';
+        snprintf(job->key, sizeof job->key, "%s", s->key);
+        size_t used = 0;
+        if (!s->selected) for (int j = s->first; j < s->first + s->count; j++) {
+            leaf_t *l = &st->leaves[j];
+            if (!l->selected || !leaf_supported(st, l, 0)) continue;
+            size_t n = strlen(l->id);
+            if (used + n + 2 > sizeof job->only) {
+                snprintf(st->note, sizeof st->note, "Selection exceeds command capacity; split the run.");
+                st->njob = 0; return 0;
+            }
+            if (used) job->only[used++] = ',';
+            memcpy(job->only + used, l->id, n + 1); used += n;
+        }
+        if (s->selected || used) st->njob++;
+    }
+    return st->njob > 0;
+}
