@@ -154,6 +154,12 @@ tiku_list_at(const tiku_list_t *l, tiku_rect_t body, int x, int y)
         return -1;
     }
     row = l->top + (y - body.y) / h;
+    /* A body that is not a whole number of rows tall has a strip at its
+     * foot the painter leaves empty: a click there is on no row, not on
+     * the row that would have been drawn next. */
+    if (row >= l->top + tiku_list_visible_rows(l, body)) {
+        return -1;
+    }
     return (row >= 0 && row < l->count) ? row : -1;
 }
 

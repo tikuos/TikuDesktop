@@ -114,6 +114,19 @@ main(void)
     check(tiku_list_at(&l, body, 150, 45) == -1 &&
           tiku_list_at(&l, body, 350, 55) == -1,
           "and a point outside the body lands on none");
+    {
+        /* A body that is not a whole number of rows tall leaves a strip
+         * at its foot that the painter never fills. */
+        tiku_rect_t ragged = {100, 50, 200, 90};
+
+        check(tiku_list_visible_rows(&l, ragged) == 4,
+              "a body four and a half rows tall shows four");
+        check(tiku_list_at(&l, ragged, 150, 125) == 3,
+              "the last row drawn takes a click on it");
+        check(tiku_list_at(&l, ragged, 150, 135) == -1,
+              "and the empty strip below it takes none, rather than the "
+              "row nothing was drawn for");
+    }
 
     printf("\nplain clicking picks one row and anchors on it\n");
     tiku_list_click(&l, 2, 0u);
