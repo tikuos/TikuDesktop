@@ -13,6 +13,16 @@ static utility_snapshot_t *utility_cache_find(utility_snapshot_t *s, const char 
     return NULL;
 }
 
+/** Forget one directory, so a branch the device dropped cannot be reopened. */
+static void utility_cache_forget(struct desktop_utility *p, const char *path)
+{
+    for (utility_snapshot_t **at = &p->cache; *at; at = &(*at)->next)
+        if (!strcmp((*at)->path, path)) {
+            utility_snapshot_t *gone = *at;
+            *at = gone->next; free(gone); return;
+        }
+}
+
 /** Cache a refreshed directory, bounded independently of the visible tree. */
 static void utility_cache_store(struct desktop_utility *p, utility_job_t *j)
 {

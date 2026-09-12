@@ -85,6 +85,9 @@ static void utility_tree_drop(struct desktop_utility *p, int node)
     for (int i = 1; i < U_ROWS; i++)
         if (p->tree[i].path[0] && p->tree[i].parent == node) utility_tree_drop(p, i);
     if (p->tree_selected == node) p->tree_selected = p->tree[node].parent;
+    /* The snapshot goes with the branch: a directory the device has just
+     * said is gone must not be reachable again from the cache. */
+    utility_cache_forget(p, p->tree[node].path);
     memset(&p->tree[node], 0, sizeof p->tree[node]);
 }
 

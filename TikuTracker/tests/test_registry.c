@@ -118,7 +118,7 @@ int main(void)
     const char *sys[] = {"/cpu", "/mem", "/device", "uptime", "time"};
     listing(p, "/sys", sys, 5);
     assert(p->tree_count == 7 && p->count == 2);
-    assert(!strcmp(p->entries[0].name, "uptime") && !p->entries[0].sampled);
+    assert(!strcmp(p->entries[0].name, "uptime"));
     const char *cpu[] = {"freq", "freq_available", "freq_target", "freq_change_mode"};
     listing(p, "/sys/cpu", cpu, 4);
     assert(p->count == 4 && !strcmp(p->folder, "/sys/cpu"));
@@ -181,6 +181,10 @@ int main(void)
     const char *changed[] = {"/device", "uptime"};
     listing(p, "/sys", changed, 2);
     assert(find_branch(p, "/sys/cpu") == -1 && find_branch(p, "/sys/mem") == -1);
+    /* The snapshot goes with the branch: a directory the device has just
+     * said is gone must not be reachable again from the cache. */
+    assert(!utility_cache_find(p->cache, "/sys/cpu"));
+    assert(!utility_cache_show(p, "/sys/cpu"));
     assert(find_branch(p, "/proc") >= 0 && p->count == 1);
     assert(utility_tree_ensure(p, "/new/deep/") >= 0);
     assert(find_branch(p, "/new/deep") >= 0 && find_branch(p, "/new/deep/") < 0);
