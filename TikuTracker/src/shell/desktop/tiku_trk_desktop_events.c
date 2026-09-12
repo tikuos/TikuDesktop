@@ -373,22 +373,6 @@ if (ev->button == 1u &&
     }
 }
 {
-    tiku_window_t *fonts =
-        tiku_trk_fonts_window_handle(&app->fonts_window);
-
-    if (fonts != NULL && fonts->open &&
-        !alert_model(app)->open) {
-        tiku_event_t window_event = { 0 };
-
-        window_event.type = TIKU_EVENT_POINTER_DOWN;
-        window_event.time_us = tiku_trk_now();
-        window_event.x = ev->x;
-        window_event.y = ev->y;
-        window_event.button = ev->button;
-        if (tiku_window_send(fonts, &window_event)) {
-            return;
-        }
-    }
     {
         tiku_window_t *sounds =
             tiku_trk_sounds_window_handle(&app->sounds_window);
@@ -744,7 +728,8 @@ if (ev->button == 4u || ev->button == 5u) {
         we.y = ev->y - rc.y;
         we.dy = (ev->button == 4u) ? -3 : 3;
         we.time_us = tiku_trk_now();
-        if (desktop_utility_owns(app, ww)) {
+        if (ww == tiku_trk_fonts_window_handle(&app->fonts_window) ||
+            desktop_utility_owns(app, ww)) {
             we.x = ev->x; we.y = ev->y;
             (void)tiku_window_send(ww, &we);
             app->dirty = 1;
@@ -1039,7 +1024,8 @@ if (hit == TIKU_HIT_CLOSE) {
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            (w == desktop_deviceprefs_handle(app) ||
             desktop_utility_owns(app, w) ||
-            w == desktop_startup_handle(app))) {
+            w == desktop_startup_handle(app) ||
+            w == tiku_trk_fonts_window_handle(&app->fonts_window))) {
     tiku_workspace_activate(app->desk, w);
     if (ev->button == 1) app->prefs_track = w;
     (void)tiku_window_send(w, ev);
@@ -2484,7 +2470,8 @@ if (key == 'w' && (ev->modifiers & TIKU_MOD_CMD)) {
 }
 if (w != NULL && (w == desktop_deviceprefs_handle(app) ||
                  desktop_utility_owns(app, w) ||
-                 w == desktop_startup_handle(app)) &&
+                 w == desktop_startup_handle(app) ||
+                 w == tiku_trk_fonts_window_handle(&app->fonts_window)) &&
     !alert_model(app)->open) {
     /* Under the desk's own shortcuts: the panel takes every key it is
      * focused for, but Cmd-Tab above still reaches the switcher. */

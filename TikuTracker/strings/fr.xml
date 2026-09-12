@@ -71,6 +71,10 @@
   <string name="prefs.desktop.mode.tiled">Mosaïque</string>
 
   <string name="prefs.fonts.family">Famille</string>
+  <string name="prefs.fonts.subtitle">Choisissez l’apparence du texte sur le bureau.</string>
+  <string name="prefs.fonts.preview">Aperçu</string>
+  <string name="prefs.fonts.help">Les changements sont immédiats. Rétablir restaure les réglages à l’ouverture.</string>
+  <string name="prefs.fonts.done">Terminé</string>
   <string name="prefs.fonts.size">Taille</string>
   <string name="prefs.fonts.sample_title">TikuTracker</string>
   <string name="prefs.fonts.sample_body">Élégant café 0123456789</string>

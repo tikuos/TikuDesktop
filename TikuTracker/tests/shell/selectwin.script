@@ -24,9 +24,11 @@ wait 4
 menu-pick Fonts
 wait 12
 expect-title Fonts
-click 652 300
+key Tab
+key Tab
+key Return
 wait 12
-click 652 310
+key Return
 wait 12
 expect-font Sans 16
 key w ctrl

@@ -1,214 +1,89 @@
-/*
- * TikuTracker -- the file manager for TikuOS.
- *
- * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- *
- * tiku_trk_fonts_window.c - the letters the interface is drawn in.
- *
- * A choice takes effect the moment it is made, so the specimen at the
- * bottom is simply the interface itself: what a person is judging is the
- * window they are judging it in.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
+/* Font Preferences: classic grouped panel using shared dialog controls.
+ * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_trk_fonts_window.h"
-
 #include <stdio.h>
 #include <string.h>
-
 #include "tiku_font.h"
-#include "tiku_gfx.h"
 #include "tiku_ui.h"
+#include "tiku_list_paint.h"
+#include "tiku_preferences_layout.h"
+#include "tiku_text_layout_paint.h"
 #include "tiku_trk_deskbar_prefs.h"
 #include "tiku_strings.h"
 
-#define PAD 16
+enum { FAMILY = 1, MINUS, PLUS, DEFAULTS, REVERT, DONE };
+typedef struct {
+    tiku_rect_t family, list, size, minus, number, plus, preview, paper;
+    tiku_rect_t help, defaults, revert, done;
+} font_layout_t;
 
-/*
- * Every measurement below is asked of the face in force rather than
- * written down, because this is the one window in which the face changes
- * WHILE it is open.  A row written down as 22 pixels is a row that stops
- * holding its own words the moment somebody presses the + it contains.
- *
- * The arithmetic is chosen so that at 12 px -- what the interface has
- * always defaulted to -- each answers exactly the number the R5
- * measurements give, and the window is pixel for pixel that one.
- */
+/** Imported families scroll instead of growing the panel off screen. */
+static int body_height(void)
+{ return 300 + 7 * tiku_font_plain()->height; }
 
-/** @brief How many families the list shows: the folder decides. */
-static int
-rows_of(const tiku_trk_fonts_window_t *controller)
+/** One geometry shared by painting and input at every supported font size. */
+static font_layout_t layout(tiku_rect_t c)
 {
-    int n = controller->offer.count;
-
-    return (n > 0) ? n : 1;
+    font_layout_t l;
+    int fh = tiku_font_plain()->height, bh = tiku_ui_button_h();
+    int top = c.y + fh + 34, left = 216;
+    int bottom = c.y + body_height() - bh - 18;
+    l.family = (tiku_rect_t){c.x + 18, top, left, bottom - top - 72};
+    l.list = tiku_preferences_group_body(l.family);
+    l.size = (tiku_rect_t){c.x + left + 34, top, c.w - left - 52, bh + fh + 42};
+    tiku_rect_t inner = tiku_preferences_group_body(l.size);
+    l.minus = (tiku_rect_t){inner.x, inner.y, 42, bh};
+    l.plus = (tiku_rect_t){inner.x + inner.w - 42, inner.y, 42, bh};
+    l.number = (tiku_rect_t){l.minus.x + 50, inner.y, inner.w - 100, bh};
+    l.preview = (tiku_rect_t){l.size.x, l.size.y + l.size.h + 16,
+        l.size.w, l.family.y + l.family.h - l.size.y - l.size.h - 16};
+    l.paper = tiku_preferences_group_body(l.preview);
+    l.help = (tiku_rect_t){c.x + 18, l.family.y + l.family.h + 14,
+        c.w - 36, 2 * (fh + 3)};
+    tiku_preferences_action_t leading = {tiku_str("button.defaults"), 112};
+    tiku_preferences_action_t trailing[] = {
+        {tiku_str("button.revert"), 100}, {tiku_str("prefs.fonts.done"), 88}
+    };
+    tiku_rect_t buttons[2];
+    tiku_preferences_actions((tiku_rect_t){c.x + 18, bottom, c.w - 36, bh},
+        &leading, trailing, 2, 12, &l.defaults, buttons);
+    l.revert = buttons[0]; l.done = buttons[1];
+    return l;
 }
 
-/** @brief One family in the list. */
-static int
-row_h(void)
+/** Include the title tab and border in the workspace frame. */
+static int window_height(void)
+{ return body_height() + tiku_window_tab_h() + TIKU_WINDOW_BORDER; }
+
+/** Refit without moving the panel out from under the pointer. */
+static void refit(tiku_trk_fonts_window_t *p)
 {
-    return tiku_ui_row_h();                        /* 22 at 12 px */
-}
-
-/** @brief Where the list starts, under the word above it. */
-static int
-list_y(void)
-{
-    return tiku_font_bold()->height + 27;          /* 42 at 12 px */
-}
-
-/** @brief Where the size stepper sits, under however many families. */
-static int
-size_y(const tiku_trk_fonts_window_t *controller)
-{
-    return list_y() + rows_of(controller) * row_h() + row_h() + 8;
-}
-
-/** @brief How tall the specimen's sheet of paper is. */
-static int
-paper_h(void)
-{
-    return tiku_font_bold()->height +
-           tiku_font_plain()->height + 22;          /* 52 at 12 px */
-}
-
-/** @brief Where the specimen sits, under the stepper. */
-static int
-sample_y(const tiku_trk_fonts_window_t *controller)
-{
-    return size_y(controller) + tiku_ui_button_h() + 8;
-}
-
-/** @brief And the buttons, under that. */
-static int
-button_y(const tiku_trk_fonts_window_t *controller)
-{
-    return sample_y(controller) + paper_h() + 10;
-}
-
-/*
- * The size stepper: two real buttons with the number between them.
- *
- * Two real buttons rather than the string "-   12 px   +" with any
- * click right of pixel 300 counted as a plus: at 12 px the plus sign
- * lands just past 300, at 10 px the string is shorter, the plus sign
- * sits at 289, and every click ON IT reads as a minus -- a size that
- * can be taken down and never brought back up.  A control is where it
- * is drawn, so these hand back the same rectangles the drawing uses,
- * and the hit test asks them rather than guessing.
- *
- * They are laid out from the RIGHT edge in.  That is not a detail: it is
- * what keeps the two buttons within a few pixels of the same place at
- * every size, so a hand going back for a second press finds them there.
- */
-static tiku_rect_t
-plus_rect(const tiku_trk_fonts_window_t *controller,
-          tiku_rect_t content)
-{
-    tiku_rect_t r;
-
-    r.w = tiku_ui_step_w();
-    r.h = tiku_ui_button_h();
-    r.x = content.x + content.w - PAD - r.w;
-    r.y = content.y + size_y(controller);
-    return r;
-}
-
-/** @brief How wide the number between them needs to be, at any size. */
-static int
-number_w(void)
-{
-    return tiku_text_width(tiku_font_plain(), "00 px") + 20;
-}
-
-/** @brief The size stepper's minus, left of the number it changes. */
-static tiku_rect_t
-minus_rect(const tiku_trk_fonts_window_t *controller,
-           tiku_rect_t content)
-{
-    tiku_rect_t r = plus_rect(controller, content);
-
-    r.x -= number_w() + 8 + r.w;
-    return r;
-}
-
-/*
- * The two at the foot, wide enough for whatever the words are.  They were
- * 112 and 100 pixels, which held the English at 12 px and nothing else --
- * a translation, or a larger face, and the label ran past its own button.
- * The old numbers stay as floors, so at 12 px in English they are exactly
- * the buttons they were.
- */
-static tiku_rect_t
-defaults_rect(const tiku_trk_fonts_window_t *controller,
-              tiku_rect_t content)
-{
-    tiku_rect_t r;
-
-    r.x = content.x + PAD;
-    r.y = content.y + button_y(controller);
-    r.w = tiku_ui_button_w(tiku_str("button.defaults"), 112);
-    r.h = tiku_ui_button_h();
-    return r;
-}
-
-/** @brief The Revert button, beside Defaults, wide enough for its words. */
-static tiku_rect_t
-revert_rect(const tiku_trk_fonts_window_t *controller,
-            tiku_rect_t content)
-{
-    tiku_rect_t d = defaults_rect(controller, content);
-    tiku_rect_t r = d;
-
-    r.x = d.x + d.w + 10;
-    r.w = tiku_ui_button_w(tiku_str("button.revert"), 100);
-    return r;
-}
-
-/** @brief The whole window, title bar and all. */
-static int
-window_height(const tiku_trk_fonts_window_t *controller)
-{
-    return button_y(controller) + tiku_ui_button_h() + PAD +
-           tiku_window_tab_h() + TIKU_WINDOW_BORDER;
-}
-
-/**
- * @brief Grow or shrink the window to what it now needs.
- *
- * The face can change from inside this window and from the Deskbar's
- * preferences, so the fit is taken every time it is drawn: no
- * arrangement of the two windows leaves this one the wrong size.  The
- * top-left corner stays put, since a window that re-centred itself on
- * every press would walk out from under the button being pressed.
- */
-static void
-refit(tiku_trk_fonts_window_t *controller)
-{
-    int want;
-
-    if (controller->window == NULL || !controller->window->open) {
-        return;
-    }
-    want = window_height(controller);
-    if (controller->window->frame.h != want) {
-        controller->window->frame.h = want;
-        if (controller->dirty != NULL) {
-            *controller->dirty = 1;
-        }
+    if (p->window && p->window->open &&
+        p->window->frame.h != window_height()) {
+        p->window->frame.h = window_height();
+        if (p->dirty) *p->dirty = 1;
     }
 }
 
-/** @brief Whether the point lies within @p r. */
-static int
-inside(tiku_rect_t r, int x, int y)
+/** Disabled and focused controls share the same model used for hit testing. */
+static void controls(tiku_trk_fonts_window_t *p, font_layout_t l)
 {
-    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+    tiku_dialog_begin(&p->dialog, DONE, DONE);
+    tiku_dialog_add(&p->dialog, FAMILY, l.list, TIKU_DIALOG_INPUT,
+                    p->offer.count > 0);
+    tiku_dialog_add(&p->dialog, MINUS, l.minus, TIKU_DIALOG_BUTTON,
+        p->model.value.size > TIKU_TRK_FONT_MIN);
+    tiku_dialog_add(&p->dialog, PLUS, l.plus, TIKU_DIALOG_BUTTON,
+        p->model.value.size < TIKU_TRK_FONT_MAX);
+    tiku_dialog_add(&p->dialog, DEFAULTS, l.defaults, TIKU_DIALOG_BUTTON,
+        tiku_trk_fontprefs_defaultable(&p->model));
+    tiku_dialog_add(&p->dialog, REVERT, l.revert, TIKU_DIALOG_BUTTON,
+        tiku_trk_fontprefs_revertable(&p->model));
+    tiku_dialog_add(&p->dialog, DONE, l.done, TIKU_DIALOG_BUTTON, 1);
+    tiku_dialog_end(&p->dialog);
 }
 
-/** @brief Put what the window says onto the interface it is drawn in. */
+/** Save only font preferences and keep the Deskbar's settings in step. */
 static void
 apply(tiku_trk_fonts_window_t *controller)
 {
@@ -236,166 +111,121 @@ apply(tiku_trk_fonts_window_t *controller)
     }
 }
 
-/**
- * @brief Draw the faces on offer with the chosen one marked, the size
- *        stepper and the buttons, refitting the window to the face first.
- */
-static void
-draw(tiku_window_t *window, tiku_surface_t *surface,
-     tiku_rect_t content, void *context)
+/** Name a family without duplicating the font registry. */
+static const char *family_name(void *ctx, int row)
 {
-    tiku_trk_fonts_window_t *controller = context;
-    const tiku_trk_fontprefs_values_t *v = &controller->model.value;
-    const tiku_font_t *font = tiku_font_plain();
-    const tiku_font_t *bold = tiku_font_bold();
-    char number[32];
-    int rows = rows_of(controller);
-    int chosen_row = tiku_trk_fontprefs_chosen(&controller->model,
-                                               &controller->offer);
-    int i;
+    tiku_trk_fonts_window_t *p = ctx;
+    return row >= 0 && row < p->offer.count ? p->offer.name[row] : "";
+}
 
-    (void)window;
-    refit(controller);
-    tiku_fill(surface, content, TIKU_C_PANEL);
-    tiku_text(surface, bold, content.x + PAD,
-                   content.y + bold->ascent + 10,
-                   tiku_str("prefs.fonts.family"), TIKU_C_TEXT);
-    {
-        tiku_rect_t list = { content.x + PAD, content.y + list_y(),
-                                  content.w - 2 * PAD, rows * row_h() };
-
-        tiku_fill(surface, list, TIKU_C_DOC);
-        tiku_frame(surface, list,
-                        tiku_tint(TIKU_C_PANEL,
-                                       TIKU_DARKEN_2));
-        for (i = 0; i < rows; i++) {
-            tiku_rect_t row = { list.x + 1, list.y + 1 + i * row_h(),
-                                     list.w - 2, row_h() };
-            const char *name = (i < controller->offer.count)
-                                   ? controller->offer.name[i] : NULL;
-            int chosen = (i == chosen_row);
-
-            if (name == NULL || name[0] == '\0') {
-                continue;
-            }
-            if (chosen) {
-                tiku_fill(surface, row, TIKU_C_SELECT);
-            }
-            tiku_text(surface, font, row.x + 8,
-                           row.y + (row_h() - font->height) / 2 +
-                               font->ascent,
-                           name, chosen ? TIKU_C_SELTEXT
-                                        : TIKU_C_TEXT);
-        }
-    }
-
-    {
-        tiku_rect_t minus = minus_rect(controller, content);
-        tiku_rect_t plus = plus_rect(controller, content);
-        tiku_rect_t shown = { minus.x + minus.w + 4, minus.y,
-                                   number_w(), minus.h };
-
-        tiku_text(surface, bold, content.x + PAD,
-                       minus.y + (minus.h - bold->height) / 2 + bold->ascent,
-                       tiku_str("prefs.fonts.size"), TIKU_C_TEXT);
-        tiku_ui_button(surface, minus, "-",
-                            (v->size > TIKU_TRK_FONT_MIN)
-                                ? 0u : TIKU_S_DISABLED);
-        tiku_ui_button(surface, plus, "+",
-                            (v->size < TIKU_TRK_FONT_MAX)
-                                ? 0u : TIKU_S_DISABLED);
-        snprintf(number, sizeof number, "%d px", v->size);
-        (void)tiku_text_centered(surface, font, shown, number,
-                                      TIKU_C_TEXT);
-    }
-
-    /* The specimen: the face itself, at the size itself, drawn on paper
-     * rather than on the panel so the ink is judged against what a
-     * document will show it against. */
-    {
-        tiku_rect_t paper = { content.x + PAD,
-                                   content.y + sample_y(controller),
-                                   content.w - 2 * PAD, paper_h() };
-
-        tiku_fill(surface, paper, TIKU_C_DOC);
-        tiku_frame(surface, paper,
-                        tiku_tint(TIKU_C_PANEL,
-                                       TIKU_DARKEN_2));
-        tiku_text(surface, bold, paper.x + 10,
-                       paper.y + 6 + bold->ascent,
-                       tiku_str("prefs.fonts.sample_title"),
-                       TIKU_C_TEXT);
-        tiku_text(surface, font, paper.x + 10,
-                       paper.y + 10 + bold->height + font->ascent,
-                       tiku_str("prefs.fonts.sample_body"),
-                       TIKU_C_TEXT);
-    }
-
-    {
-        tiku_rect_t d = defaults_rect(controller, content);
-        tiku_rect_t r = revert_rect(controller, content);
-
-        tiku_ui_button(surface, d, tiku_str("button.defaults"),
-                            tiku_trk_fontprefs_defaultable(&controller->model)
-                                ? 0u : TIKU_S_DISABLED);
-        tiku_ui_button(surface, r, tiku_str("button.revert"),
-                            tiku_trk_fontprefs_revertable(&controller->model)
-                                ? 0u : TIKU_S_DISABLED);
+/** Native button state follows focus, capture and availability. */
+static void buttons_draw(tiku_trk_fonts_window_t *p, tiku_surface_t *s)
+{
+    const char *labels[] = {"", "", "-", "+", tiku_str("button.defaults"),
+        tiku_str("button.revert"), tiku_str("prefs.fonts.done")};
+    for (int i = 0; i < p->dialog.count; i++) {
+        const tiku_dialog_control_t *c = &p->dialog.control[i];
+        if (c->id == FAMILY) continue;
+        unsigned flags = c->enabled ? 0 : TIKU_S_DISABLED;
+        if (tiku_dialog_focused(&p->dialog, c->id)) flags |= TIKU_S_FOCUS;
+        if (tiku_dialog_pressed(&p->dialog, c->id)) flags |= TIKU_S_PRESSED;
+        tiku_ui_button(s, c->rect, labels[c->id], flags);
     }
 }
 
-/**
- * @brief A press chooses a face, steps the size, or presses a button,
- *        and what it chose is applied.  @return 1 when taken.
- */
-static int
-event(tiku_window_t *window, const tiku_event_t *event,
-      void *context)
+/** An etched family well, compact size control and live paper specimen. */
+static void draw(tiku_window_t *window, tiku_surface_t *s,
+                 tiku_rect_t content, void *ctx)
 {
-    tiku_trk_fonts_window_t *controller = context;
-    tiku_rect_t content = tiku_window_content(window);
-    int x = event->x - content.x, y = event->y - content.y;
-    int rows = rows_of(controller);
+    tiku_trk_fonts_window_t *p = ctx;
+    refit(p); content = tiku_window_content(window);
+    font_layout_t l = layout(content);
+    controls(p, l);
+    tiku_fill(s, content, TIKU_C_PANEL);
+    tiku_text_line_draw(s, (tiku_rect_t){content.x + 18, content.y + 8,
+        content.w - 36, tiku_font_plain()->height + 12},
+        TIKU_MEASURE_PLAIN, tiku_str("prefs.fonts.subtitle"), TIKU_C_TEXT);
+    tiku_ui_group(s, l.family, tiku_str("prefs.fonts.family"));
+    tiku_ui_group(s, l.size, tiku_str("prefs.fonts.size"));
+    tiku_ui_group(s, l.preview, tiku_str("prefs.fonts.preview"));
+    tiku_fill(s, l.list, TIKU_C_DOC);
+    tiku_frame(s, l.list, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_list_set_count(&p->families, p->offer.count);
+    tiku_list_draw(&p->families, s, l.list, family_name, p);
+    if (tiku_dialog_focused(&p->dialog, FAMILY))
+        tiku_frame(s, l.list, TIKU_C_SELECT);
+    char number[24];
+    snprintf(number, sizeof number, "%d px", p->model.value.size);
+    tiku_text_centered(s, tiku_font_plain(), l.number, number, TIKU_C_TEXT);
+    tiku_fill(s, l.paper, TIKU_C_DOC);
+    tiku_frame(s, l.paper, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_rect_t title = {l.paper.x + 12, l.paper.y + 8, l.paper.w - 24,
+                         tiku_font_bold()->height + 10};
+    tiku_text_line_draw(s, title, TIKU_MEASURE_BOLD,
+        tiku_str("prefs.fonts.sample_title"), TIKU_C_TEXT);
+    tiku_text_block_draw(s, (tiku_rect_t){title.x, title.y + title.h + 8,
+        title.w, l.paper.h - title.h - 28}, TIKU_MEASURE_PLAIN,
+        tiku_str("prefs.fonts.sample_body"), TIKU_C_TEXT, 3);
+    tiku_text_block_draw(s, l.help, TIKU_MEASURE_PLAIN,
+        tiku_str("prefs.fonts.help"), TIKU_C_TEXT, 3);
+    buttons_draw(p, s);
+}
 
-    if (event->type != TIKU_EVENT_POINTER_DOWN ||
-        !inside(content, event->x, event->y)) {
-        return 0;
+/** Apply a choice once, then align the list with the selected family. */
+static void activate(tiku_trk_fonts_window_t *p, int command)
+{
+    int changed = 0;
+    if (command == DONE) { tiku_trk_fonts_window_close(p); return; }
+    if (command == MINUS || command == PLUS)
+        changed = tiku_trk_fontprefs_step_size(&p->model, command == PLUS);
+    if (command == DEFAULTS) {
+        tiku_trk_fontprefs_defaults(&p->model); changed = 1;
     }
-    if (y >= list_y() && y < list_y() + rows * row_h() &&
-        x >= PAD && x < content.w - PAD) {
-        if (tiku_trk_fontprefs_choose(&controller->model, &controller->offer,
-                                      (y - list_y() - 1) / row_h())) {
-            apply(controller);
-        }
-        return 1;
+    if (command == REVERT) {
+        tiku_trk_fontprefs_revert(&p->model); changed = 1;
     }
-    /*
-     * The stepper is asked for its rectangles rather than told where they
-     * are.  Whatever the face, a press lands on the button it looks like
-     * it landed on -- which is the whole of the bug this replaces.
-     */
-    if (inside(minus_rect(controller, content), event->x, event->y) ||
-        inside(plus_rect(controller, content), event->x, event->y)) {
-        int up = inside(plus_rect(controller, content), event->x, event->y);
+    if (changed) apply(p);
+    tiku_list_select_only(&p->families,
+        tiku_trk_fontprefs_chosen(&p->model, &p->offer));
+    tiku_list_reveal(&p->families,
+        layout(tiku_window_content(p->window)).list);
+}
 
-        if (tiku_trk_fontprefs_step_size(&controller->model, up)) {
-            apply(controller);
+/** Release-to-activate buttons, keyboard selection and wheel scrolling. */
+static int event(tiku_window_t *window, const tiku_event_t *ev, void *ctx)
+{
+    tiku_trk_fonts_window_t *p = ctx;
+    font_layout_t l = layout(tiku_window_content(window));
+    controls(p, l);
+    /* A chord is not list navigation: Cmd-A on a one-at-a-time list is
+     * "select the first", and the whole desktop would be drawn in it.
+     * Return reaches the panel's Done as Escape reaches its cancel. */
+    if (p->dialog.focus == FAMILY && ev->type == TIKU_EVENT_KEY_DOWN &&
+        !(ev->modifiers & (TIKU_MOD_CMD | TIKU_MOD_OPTION)) &&
+        ev->key != TIKU_KEY_TAB && ev->key != TIKU_KEY_ESCAPE &&
+        ev->key != TIKU_KEY_RETURN) {
+        tiku_list_key(&p->families, ev->key, ev->modifiers, l.list);
+        if (tiku_trk_fontprefs_choose(&p->model, &p->offer,
+                                      p->families.cursor)) apply(p);
+        if (p->dirty) *p->dirty = 1;
+        return 1;
+    }
+    tiku_dialog_result_t result = tiku_dialog_event(&p->dialog, ev);
+    if (result.activated != TIKU_DIALOG_NONE) activate(p, result.activated);
+    if (ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1) {
+        int row = tiku_list_at(&p->families, l.list, ev->x, ev->y);
+        if (row >= 0) {
+            tiku_list_select_only(&p->families, row);
+            if (tiku_trk_fontprefs_choose(&p->model, &p->offer, row)) apply(p);
+            result.taken = 1;
         }
-        return 1;
     }
-    if (inside(defaults_rect(controller, content), event->x, event->y) &&
-        tiku_trk_fontprefs_defaultable(&controller->model)) {
-        tiku_trk_fontprefs_defaults(&controller->model);
-        apply(controller);
-        return 1;
+    if (ev->type == TIKU_EVENT_WHEEL) {
+        tiku_list_scroll_to(&p->families, p->families.top + ev->dy * 3, l.list);
+        result.taken = 1;
     }
-    if (inside(revert_rect(controller, content), event->x, event->y) &&
-        tiku_trk_fontprefs_revertable(&controller->model)) {
-        tiku_trk_fontprefs_revert(&controller->model);
-        apply(controller);
-        return 1;
-    }
-    return 0;
+    if (result.taken && p->dirty) *p->dirty = 1;
+    return result.taken;
 }
 
 void
@@ -413,6 +243,8 @@ tiku_trk_fonts_window_init(tiku_trk_fonts_window_t *controller,
     controller->screen_h = screen_h;
     controller->dirty = dirty;
     tiku_trk_fontprefs_init(&controller->model);
+    tiku_dialog_init(&controller->dialog);
+    tiku_list_init(&controller->families, 1);
 }
 
 void
@@ -422,6 +254,7 @@ tiku_trk_fonts_window_close(tiku_trk_fonts_window_t *controller)
         tiku_workspace_close(controller->workspace, controller->window);
     }
     controller->window = NULL;
+    tiku_dialog_init(&controller->dialog);
     if (controller->dirty != NULL) {
         *controller->dirty = 1;
     }
@@ -451,8 +284,13 @@ tiku_trk_fonts_window_open(tiku_trk_fonts_window_t *controller)
      * a face dropped in while it was shut is offered when it reopens. */
     (void)tiku_trk_fontprefs_offer(&controller->offer);
 
+    tiku_dialog_init(&controller->dialog);
+    tiku_list_init(&controller->families, 1);
+    tiku_list_set_count(&controller->families, controller->offer.count);
+    tiku_list_select_only(&controller->families,
+        tiku_trk_fontprefs_chosen(&controller->model, &controller->offer));
     frame.w = TIKU_TRK_FONTS_W;
-    frame.h = window_height(controller);
+    frame.h = window_height();
     frame.x = (controller->screen_w - frame.w) / 2;
     frame.y = (controller->screen_h - frame.h) / 3;
     controller->window = tiku_workspace_open(controller->workspace,
@@ -460,6 +298,8 @@ tiku_trk_fonts_window_open(tiku_trk_fonts_window_t *controller)
     if (controller->window != NULL) {
         tiku_window_set_size_controls(controller->window, 0, 0);
         tiku_window_set_handlers(controller->window, event, NULL, NULL);
+        tiku_list_reveal(&controller->families,
+            layout(tiku_window_content(controller->window)).list);
     }
     if (controller->dirty != NULL) {
         *controller->dirty = 1;

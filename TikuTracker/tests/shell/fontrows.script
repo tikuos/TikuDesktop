@@ -23,10 +23,12 @@ menu-pick Fonts
 wait 12
 expect-title Fonts
 expect-font Sans 12
-click 652 300
+key Tab
+key Tab
+key Return
 wait 12
 expect-font Sans 14
-click 652 310
+key Return
 wait 12
 expect-font Sans 16
 note and back to the folder, whose rows are now taller than they were
@@ -54,7 +56,11 @@ wait 4
 menu-pick Fonts
 wait 12
 expect-title Fonts
-click 382 435
+key Tab
+key Tab
+key Return
 wait 12
 expect-font Sans 12
+key w ctrl
+wait 8
 expect-pixel 300 392 336698

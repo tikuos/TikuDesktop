@@ -1,7 +1,6 @@
 # shell: desktop
-# The letters the interface is drawn in are a preference: the families
-# the toolkit carries are offered by name, choosing one redraws the whole
-# desktop in it at once, and the size beside it moves a rung at a time.
+# Grouped Font Preferences uses native dialog keyboard navigation.
+# Pointer capture, all sizes and layout geometry are covered by test_fonts_window.
 wait 15
 key w ctrl
 wait 5
@@ -12,66 +11,43 @@ wait 4
 menu-pick Fonts
 wait 12
 expect-title Fonts
-note the window opens on what the interface is drawn in right now
 expect-font Sans 12
 shot /tmp/trk_fonts_sans.png
-wait 3
 note choosing another family redraws everything, this window included
-click 400 225
+key Down
 wait 12
 expect-font Serif 12
 shot /tmp/trk_fonts_serif.png
-wait 3
-click 400 247
+key Down
 wait 12
 expect-font Mono 12
 shot /tmp/trk_fonts_mono.png
-wait 3
-note and the size is a ladder beside it
-click 652 300
+note Tab moves from Family to Minus, then Plus
+key Tab
+key Tab
+key Return
 wait 12
 expect-font Mono 14
-note a face chosen here survives the OTHER window that owns the record
+key Return
+wait 12
+expect-font Mono 16
+shot /tmp/trk_fonts_16.png
+note reopen to reset keyboard focus; at maximum size Plus is skipped
+key w ctrl
+wait 6
 click 980 20
 wait 4
 menu-pick Settings
 wait 4
-menu-pick Deskbar preferences
-wait 8
-expect-title Deskbar preferences
-click 400 100
-wait 10
-expect-font Mono 14
-key w ctrl
-wait 6
-expect-title Fonts
-note Defaults puts back the face the interface came with
-click 382 415
+menu-pick Fonts
+wait 12
+key Tab
+key Tab
+key Return
 wait 12
 expect-font Sans 12
 shot /tmp/trk_fonts_default.png
-wait 3
-note and the ladder must be clickable WHERE IT IS DRAWN, at every rung
-click 563 300
-wait 12
-expect-font Sans 10
-note the plus is in the same place at 10 px as at 12: press it again
-click 652 292
-wait 12
-expect-font Sans 12
-note the window must GROW with the letters, or the words fall out of the foot
-expect-pixel 500 458 336698
-click 652 300
-wait 12
-expect-font Sans 14
-click 652 310
-wait 12
-expect-font Sans 16
-shot /tmp/trk_fonts_16.png
-wait 3
-note and now the foot of the window reaches past where it used to end
-expect-pixel 500 458 d8d8d8
-click 382 435
-wait 12
-expect-font Sans 12
-expect-pixel 500 458 336698
+note Escape closes the preferences without undoing the live choice
+key Escape
+wait 6
+expect-no-title Fonts

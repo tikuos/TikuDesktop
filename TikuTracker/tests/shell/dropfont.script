@@ -14,12 +14,14 @@ wait 12
 expect-title Fonts
 expect-font Sans 12
 note the dropped face is offered after the baked ones, by its own name
-click 400 263
+key Down
+key Down
+key Down
 wait 12
 expect-font DejaVu Sans 12
 shot /tmp/trk_dropfont.png
 wait 3
 note and a baked family takes the interface back
-click 400 197
+key Home
 wait 12
 expect-font Sans 12

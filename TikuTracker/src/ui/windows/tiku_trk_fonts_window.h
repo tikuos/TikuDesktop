@@ -13,12 +13,16 @@
 #include "tiku_window.h"
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_fontprefs.h"
+#include "tiku_dialog.h"
+#include "tiku_list.h"
 
-#define TIKU_TRK_FONTS_W 372
+#define TIKU_TRK_FONTS_W 620
 
 typedef struct {
     tiku_trk_fontprefs_t       model;
     tiku_trk_fontprefs_offer_t offer;
+    tiku_dialog_t dialog;       /* shared focus and pointer capture */
+    tiku_list_t families;       /* imported families scroll in the same well */
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
     tiku_trk_deskbar_t    *deskbar;

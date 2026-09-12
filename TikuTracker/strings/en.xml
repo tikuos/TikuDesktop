@@ -85,6 +85,10 @@
 
   <!-- Fonts window. -->
   <string name="prefs.fonts.family">Family</string>
+  <string name="prefs.fonts.subtitle">Choose how text looks throughout the desktop.</string>
+  <string name="prefs.fonts.preview">Preview</string>
+  <string name="prefs.fonts.help">Changes apply immediately. Revert restores the settings you opened with.</string>
+  <string name="prefs.fonts.done">Done</string>
   <string name="prefs.fonts.size">Size</string>
   <string name="prefs.fonts.sample_title">TikuTracker</string>
   <string name="prefs.fonts.sample_body">Handgloves 0123456789</string>
