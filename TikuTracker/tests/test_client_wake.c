@@ -99,6 +99,10 @@ echo_event(void *state, const tiku_event_t *event)
         (void)st->services->frame(st->services->ctx, st->id, st->surface->px, 8, 8);
     }
     if (event->type == TIKU_EVENT_KEY_DOWN) {
+        if (event->key == 'o' && st->services->open_path) {
+            st->services->open_path(st->services->ctx,
+                                   "/devices/lab-board/data");
+        }
         if (event->key == 'v') {
             char text[64];
             int n = st->services->clip_get(st->services->ctx, text, sizeof text);
@@ -248,6 +252,22 @@ main(void)
         check(await_frame(&listener, 500) >= 0, "the remote app receives the complete text commit");
         const uint32_t *pixels = tiku_remote_pixels(&listener.session[0].win[0]);
         check(pixels && pixels[0] == 0x00fedcbau, "UTF-8 commit framing survives the existing event protocol");
+    }
+    {
+        tiku_msg_t *opened_path = NULL;
+        key.key = 'o';
+        tiku_remote_event(&listener, &fake, &key);
+        for (i = 0; i < 100 && !opened_path; i++) {
+            tiku_remote_poll(&listener);
+            opened_path = tiku_remote_said(&listener, 0);
+            if (!opened_path) usleep(1000);
+        }
+        const char *path = opened_path ?
+            tiku_msg_find_string(opened_path, "path", 0) : NULL;
+        check(opened_path && tiku_msg_what(opened_path) == TIKU_MSG_OPENPATH &&
+              path && !strcmp(path, "/devices/lab-board/data"),
+              "a remote app opens Files in the desktop namespace, not locally");
+        tiku_msg_free(opened_path);
     }
     key.key = 'q';
     tiku_remote_event(&listener, &fake, &key);

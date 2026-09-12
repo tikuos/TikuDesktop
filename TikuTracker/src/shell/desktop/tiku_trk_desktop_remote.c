@@ -263,10 +263,10 @@ remote_hear(desktop_t *app)
                 const char *board = tiku_msg_find_string(m, "board", 0);
                 int ok = desktop_board_release(app, board);
 
-                desktop_board_tell(app, i,
-                                   ok ? TIKU_APP_BOARD_RELEASED
-                                      : TIKU_APP_BOARD_FAILED,
-                                   (board != NULL) ? board : "");
+                /* Success is acknowledged after the close worker finishes,
+                 * not while another owner still has the serial port open. */
+                if (!ok) desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED,
+                                           (board != NULL) ? board : "");
                 desktop_board_names_tell(app);
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDBACK) {
@@ -307,6 +307,14 @@ remote_hear(desktop_t *app)
                 const char *text = tiku_msg_find_string(m, "text", 0);
 
                 tiku_clipboard_set((text != NULL) ? text : "");
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_OPENPATH) {
+                const char *path = tiku_msg_find_string(m, "path", 0);
+                if (path && !desktop_app_open_path(app, path)) {
+                    snprintf(app->status, sizeof app->status,
+                             "Could not open %.180s", path);
+                    app->dirty = 1;
+                }
             }
             tiku_msg_free(m);
         }

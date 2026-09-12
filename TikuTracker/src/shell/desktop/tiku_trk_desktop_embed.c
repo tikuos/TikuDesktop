@@ -611,20 +611,24 @@ embed_svc_board_find(void *ctx)
 }
 
 /** @brief A path, opened as a double click on it would open it. */
-static int
-embed_svc_open_path(void *ctx, const char *path)
+int
+desktop_app_open_path(desktop_t *app, const char *path)
 {
-    struct desktop_embed *slot = ctx;
     tiku_model_t model;
 
-    if (slot == NULL || slot->app == NULL || path == NULL ||
-        slot->app->backend == NULL ||
-        slot->app->backend->ops->stat(slot->app->backend, path,
+    if (app == NULL || path == NULL ||
+        app->backend == NULL ||
+        app->backend->ops->stat(app->backend, path,
                                       &model) != 0) {
         return 0;
     }
-    tiku_trail("open %s for %s", path, slot->descriptor->name);
-    if (open_one(slot->app, &model)) {
+    tiku_trail("open %s for an application", path);
+    /* A folder is opened AS a folder: falling through to the document
+     * road shows its parent instead, and reports that as success. */
+    if (tiku_model_is_container(&model)) {
+        return open_folder(app, path) ? 1 : 0;
+    }
+    if (open_one(app, &model)) {
         return 1;
     }
     /* Nothing registered to open it -- a fresh machine has no
@@ -640,8 +644,15 @@ embed_svc_open_path(void *ctx, const char *path)
             return 0;
         }
         *slash = '\0';
-        return open_folder(slot->app, folder) != NULL;
+        return open_folder(app, folder) != NULL;
     }
+}
+
+/** @brief Use the same namespace opener for an in-process application. */
+static int embed_svc_open_path(void *ctx, const char *path)
+{
+    struct desktop_embed *slot = ctx;
+    return slot && desktop_app_open_path(slot->app, path);
 }
 
 /** @brief Let a board go, port and all. */

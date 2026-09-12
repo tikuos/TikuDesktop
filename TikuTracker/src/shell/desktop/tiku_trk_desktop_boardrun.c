@@ -390,7 +390,10 @@ desktop_board_release(desktop_t *app, const char *name)
         tiku_trail("release %s", name);
     /* The router took the obligation when it was mounted, so removing
      * it closes it: closing again here would be closing it twice. */
-    (void)desktop_board_unmount(app, prefix);
+    if (desktop_board_unmount_released(app, prefix) != 0) {
+        app->released[i].used = 0;
+        return 0;
+    }
     app->dirty = 1;
     return 1;
 }

@@ -40,6 +40,10 @@ The shared [text-input adapter](text-input.md) assembles bounded UTF-8 commits
 without changing the event structure. The desktop X11 host supplies XIM/Compose
 input; fields and documents validate a whole commit before editing.
 
+The [sensor widgets](sensors.md) add bounded histories, time-series plots,
+readouts, level meters and sparklines. Their painters compose existing drawing
+operations and are compiled against both desktop and board headers.
+
 ## Adding a control
 
 Say the desktop gains a `dial`.

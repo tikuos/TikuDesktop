@@ -202,43 +202,7 @@ desktop_wire_changed(desktop_t *app, int slot)
            app->wire[slot].answered && app->wire[slot].n > 0;
 }
 
-/** @brief On a worker, behind whatever still holds the board: close it. */
-static void
-close_run(void *ctx)
-{
-    tiku_backend_close(ctx);
-}
-
-/**
- * @brief Take the mount at @p prefix down now, and close its backend
- *        once nothing is in the middle of asking it.
- */
-int
-desktop_board_unmount(desktop_t *app, const char *prefix)
-{
-    tiku_backend_t *dev;
-    tiku_work_job_t job;
-    char key[TIKU_WORK_KEY];
-
-    board_key(key, sizeof key, prefix);
-    (void)tiku_work_cancel(key);
-    dev = tiku_mount_detach(app->backend, prefix);
-    if (dev == NULL) {
-        return -1;
-    }
-    tiku_trail("unmount %s", prefix);
-    /* Closed by a job with the board's key, so it runs after whatever
-     * is still in the middle of asking the board; the loop never waits
-     * for that, and the wire is never closed under a hand. */
-    memset(&job, 0, sizeof job);
-    job.run = close_run;
-    job.ctx = dev;
-    snprintf(job.key, sizeof job.key, "%s", key);
-    if (tiku_work_post(&job) != 0) {
-        tiku_backend_close(dev);
-    }
-    return 0;
-}
+#include "tiku_trk_desktop_release.inl"
 
 #define PROBE_MS 3000           /* a port with no prompt may still frame */
 

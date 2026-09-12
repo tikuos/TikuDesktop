@@ -7,6 +7,9 @@
 - Run saves the source first. Failed saves block execution. Uploads larger than
   8,191 bytes, embedded NULs, and read failures are rejected without sending a
   partial program. Firmware may impose additional limits and can reject a program.
+- Device-run errors stay in the console with their line numbers; finishing a run
+  does not open a duplicate Messages window. Messages is used as a fallback if
+  no console is available.
 - **Save on [board]** previews `/data/<name>.bas`, the board and byte count.
   The current desktop board-save interface supports seven-character names.
   Shortening is called out, and saving always requires explicit overwrite
@@ -38,10 +41,13 @@ does not rewrite a checkpoint. Writes use private temporary files and atomic
 rename; per-file locks prevent concurrent instances from overwriting snapshots.
 `TIKU_IDE_RECOVERY_DIR` may select another absolute, user-owned private directory.
 
-On restart, recovery files reopen as **modified**, with a recovery notice. The
-original source is unchanged until Save. Only two editor windows fit the current
-app session; **Project > Recover unsaved files** opens remaining snapshots after
-closing a file. Saving or explicitly discarding removes that file's snapshot.
+Startup opens an empty Project window; saved drafts do not automatically open
+editors or load a previous project. **Project > Recover unsaved files** explicitly
+opens available snapshots. Opening a source file also restores its own snapshot,
+if present. Recovered buffers are **modified**, with a recovery notice; the original
+source is unchanged until Save. Only two editor windows fit the current app
+session; close a file and use the recovery command again for remaining snapshots.
+Saving or explicitly discarding removes that file's snapshot.
 Closing a modified editor asks Save/Discard/Cancel. Unexpected host closure keeps
 a final checkpoint when possible. A crash can lose edits since the last successful
 checkpoint; this is not a replacement for backups or a power-loss guarantee.

@@ -896,6 +896,8 @@ int  desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
                           int *complete);
 int  desktop_wire_changed(desktop_t *app, int slot);
 int  desktop_board_unmount(desktop_t *app, const char *prefix);
+int  desktop_board_unmount_released(desktop_t *app, const char *prefix);
+int  desktop_app_open_path(desktop_t *app, const char *path);
 
 /* tiku_trk_desktop_report.c */
 int  desktop_report_write(desktop_t *app, const char *why, char *out,

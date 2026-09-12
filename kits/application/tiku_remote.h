@@ -308,6 +308,8 @@ const uint32_t *tiku_remote_pixels(
  * whenever the clipboard moves, so a session's copy is always warm and
  * clip_get() never waits on the wire. */
 #define TIKU_MSG_CLIP   0x636c6970u   /* 'clip' */
+/* Ask the desktop to open a namespace path with its normal file handler. */
+#define TIKU_MSG_OPENPATH 0x6f706174u /* 'opat', string "path" */
 
 /* A program on a board the shell has mounted.  The shell owns the board
  * and the run, so an application ASKs for one and is TOLD what it

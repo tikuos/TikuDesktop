@@ -5,7 +5,8 @@
 #include "../../apps/ide/tiku_ide.c"
 
 static const char *selected = "board-a";
-static int saves, runs;
+static int saves, runs, window_opens;
+static char last_window[128];
 static char sent_board[64], sent_name[8], sent_program[8192];
 
 static int current(void *ctx, char *out, size_t max)
@@ -17,7 +18,12 @@ static int menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 static int frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 { (void)ctx; (void)id; (void)px; (void)w; (void)h; return 0; }
 static uint32_t open_window(void *ctx, const char *title, int w, int h)
-{ (void)ctx; (void)title; (void)w; (void)h; return 99; }
+{
+    (void)ctx; (void)w; (void)h;
+    window_opens++;
+    snprintf(last_window, sizeof last_window, "%s", title);
+    return 99;
+}
 static void close_window(void *ctx, uint32_t id)
 { (void)ctx; (void)id; }
 static int save(void *ctx, const char *board, const char *name, const char *text)
@@ -278,9 +284,34 @@ static void test_ui(ide_t *st, const char *dir)
     st->msg_surface = NULL;
 }
 
+static void test_empty_startup(const tiku_app_services_t *services,
+                               const char *snapshot)
+{
+    /* A saved draft must not open an editor on either launch. */
+    for (int launch = 0; launch < 2; launch++) {
+        void *state = NULL;
+        int opened = window_opens;
+        assert(access(snapshot, F_OK) == 0);
+        assert(ide_start(&state, services) == 0);
+        ide_t *fresh = state;
+        ide_tick(fresh, 1);
+        ide_tick(fresh, SPLASH_US + 2);
+        ide_tick(fresh, SPLASH_US + 4000000);
+        assert(fresh->proj_id && !fresh->splash_surface);
+        assert(!fresh->proj.nrow && !fresh->proj.dir[0]);
+        assert(window_opens == opened + 2);
+        assert(!strcmp(last_window, "Project"));
+        for (int i = 0; i < IDE_EDITS; i++) {
+            assert(!fresh->edit[i].surface && !fresh->edit[i].path[0]);
+        }
+        ide_stop(fresh);
+        assert(access(snapshot, F_OK) == 0);
+    }
+}
+
 static void test_reopen(ide_t *st, const char *dir)
 {
-    char recovery[512], lock[680], path[512];
+    char recovery[512], lock[680], path[512], snapshot[680];
     edit_t *first = calloc(1, sizeof *first), *other = calloc(1, sizeof *other);
     edit_t *restored;
     FILE *f;
@@ -298,15 +329,17 @@ static void test_reopen(ide_t *st, const char *dir)
     tiku_textview_place(&first->tv, 0, 6);
     tiku_textview_insert_text(&first->tv, " ' unsaved");
     assert(recovery_write(first));
+    snprintf(snapshot, sizeof snapshot, "%s", first->recovery);
     snprintf(lock, sizeof lock, "%s.lock", first->recovery);
     snprintf(other->path, sizeof other->path, "%s", path);
     edit_load(other);
     recovery_open(other);
     assert(other->recovery_fd == -1); /* Never steal another editor's checkpoint. */
     recovery_scan(st);
-    assert(!edit_of_path(st, path)); /* Active instance is skipped on startup. */
+    assert(!edit_of_path(st, path)); /* Explicit recovery skips active instances. */
     recovery_release(first, 0);
-    recovery_scan(st);
+    test_empty_startup(st->services, snapshot);
+    ide_pick(st, st->proj_id, CMD_RECOVER);
     restored = edit_of_path(st, path);
     assert(restored && strstr(restored->feedback, "Recovered"));
     assert(tiku_textview_modified(&restored->tv));
@@ -331,6 +364,45 @@ static void test_reopen(ide_t *st, const char *dir)
     unlink(path);
     assert(rmdir(recovery) == 0);
     unsetenv("TIKU_IDE_RECOVERY_DIR");
+}
+
+static void test_console_errors(const tiku_app_services_t *services)
+{
+    static const int endings[] = { TIKU_APP_BOARD_ENDED,
+        TIKU_APP_BOARD_FAILED, TIKU_APP_BOARD_STOPPED };
+    static const char *const status[] = { "ended", "failed", "stopped" };
+    ide_t *st = calloc(1, sizeof *st);
+
+    assert(st);
+    st->services = services;
+    st->proj_id = 1;
+    for (int i = 0; i < 3; i++) {
+        st->running = 1;
+        st->nmsg = 0;
+        snprintf(st->board, sizeof st->board, "board-a");
+        console_open(st, "main.bas", st->board);
+        int opened = window_opens;
+        int start = st->ncon;
+        ide_board_said(st, TIKU_APP_BOARD_LINE, "? syntax");
+        ide_board_said(st, TIKU_APP_BOARD_LINE, "at line 20");
+        ide_board_said(st, endings[i], NULL);
+        assert(!st->running && !st->board[0]);
+        assert(!st->msg_surface && !st->msg_id);
+        assert(window_opens == opened);
+        assert(!strcmp(st->con[start], "? syntax"));
+        assert(!strcmp(st->con[start + 1], "at line 20"));
+        assert(!strcmp(st->con[st->ncon - 1], status[i]));
+    }
+    tiku_surface_free(st->con_surface);
+    st->con_surface = NULL;
+    /* If no console is available, diagnostics must still be visible. */
+    st->running = 1;
+    st->nmsg = 0;
+    snprintf(st->board, sizeof st->board, "board-a");
+    ide_board_said(st, TIKU_APP_BOARD_FAILED, NULL);
+    assert(st->msg_surface && st->nmsg == 1);
+    assert(!strcmp(last_window, "Messages"));
+    ide_stop(st);
 }
 
 static void test_splash_license(void)
@@ -404,6 +476,7 @@ int main(void)
     test_recovery(dir);
     test_ui(st, dir);
     test_reopen(st, dir);
+    test_console_errors(&services);
     test_splash_license();
     assert(rmdir(dir) == 0);
     free(st);

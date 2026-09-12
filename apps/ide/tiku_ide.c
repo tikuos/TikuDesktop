@@ -345,7 +345,6 @@ typedef struct {
     int64_t                         run_from;   /* when it started */
     int64_t                         stop_asked; /* a board stop, unanswered */
     int64_t                         recovery_at;
-    int                             recovery_scanned;
     char                            target_status[160];
     char                            upload_board[64], upload_name[8];
     char                            upload_program[8192];
@@ -3254,23 +3253,15 @@ ide_board_said(void *state, int what, const char *text)
         message_take(st, "? the run was stopped by hand");
     }
     if (st->con_surface != NULL) {
-        int i, errors = 0;
-
         console_take(st, "", 1);
         console_take(st, (what == TIKU_APP_BOARD_FAILED)  ? "failed"
                        : (what == TIKU_APP_BOARD_STOPPED) ? "stopped"
                                                           : "ended", 1);
         console_paint(st);
         console_publish(st);
-        /* Messages is for what went wrong: with a console showing what
-         * the program said, it opens only when a row is an error. */
-        for (i = 0; i < st->nmsg; i++) {
-            errors += (strstr(st->msg[i].text, "? ") != NULL);
-        }
-        if (errors > 0) {
-            messages_show(st);
-        }
     } else {
+        /* The console already contains the errors and their line numbers.
+         * Use Messages only as a fallback when no console is available. */
         messages_show(st);
     }
     project_publish(st);
@@ -3458,10 +3449,8 @@ ide_tick(void *state, int64_t now_us)
     if (st == NULL) {
         return;
     }
-    if (st->proj_id && !st->splash_surface && !st->recovery_scanned) {
-        st->recovery_scanned = 1;
-        recovery_scan(st);
-    }
+    /* Start with an empty Project window. Recover drafts only when the
+     * user opens their source file or chooses Recover unsaved files. */
     {
         char status[160];
         int i, checkpoint = now_us - st->recovery_at >= 2000000;

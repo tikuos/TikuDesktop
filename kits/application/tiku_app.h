@@ -217,9 +217,9 @@ typedef struct tiku_app_services {
      * @brief Open @p path as a double click on it would: a folder as a
      *        window, a document in its program.
      *
-     * Absent (NULL) for an application out of process, whose shell is
-     * not on this machine's paths.
-     * @return nonzero when something opened.
+     * Paths are interpreted in the desktop's namespace, also for an
+     * out-of-process application. An older host may leave this NULL.
+     * @return nonzero when opened, or the asynchronous request was sent.
      */
     int (*open_path)(void *ctx, const char *path);
 
