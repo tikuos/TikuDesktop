@@ -32,7 +32,7 @@ retries for a few seconds, so either order of starting works. Escape closes
 any of them; so does Quit in the window's own menu, which appears in the
 global bar when `GlobalMenuBar` is on.
 
-Sensor Monitor is also available as **Sensors** in the desktop Applications menu after
+Sensor Monitor is also available as **Sensors** in the desktop Demos menu after
 `make apps`. It does not access hardware. Its controls exercise missing samples,
 disconnection, fixed/automatic scales, time ranges, trace selection and pause
 without stopping acquisition. See the [sensor widget guide](../../kits/interface/doc/sensors.md).
@@ -88,8 +88,10 @@ a pty. Each builds twice -- as a program of its own, `build/tiku-edit` and
 
 A desktop climbs from its own binary to `build/apps` -- or is told where
 it is by `$TIKU_APPS` -- and offers every `.so` it finds there under
-**Applications** in the Deskbar's leaf menu, under a name taken from the
-file itself, so they can be started without a command line at all. A pick
+the Deskbar's leaf menu, under a name taken from the file itself. Shipped
+examples appear in **Demos**, TikuBench and TikuConsole in **Device Tools**,
+and other root-level apps in **Applications**. Their installation paths
+and saved startup identities are unchanged. A pick
 is run through `build/tiku-run`, in a process of its own; a file moved
 into `build/apps/trusted/` is loaded into the desktop's own process
 instead. Where the file sits is the whole of the decision, since it is

@@ -6,11 +6,11 @@
 # message, and a session that was ITSELF a window quietly became the
 # second one and wore its name.  The application is started the way an
 # installed application is started -- through the runner, from the
-# Applications menu -- so nothing about the road is special.
+# Demos menu -- so nothing about the road is special.
 wait 25
 click 980 30
 wait 4
-menu-pick Applications
+menu-pick Demos
 wait 4
 expect-menu Twowin
 menu-pick Twowin

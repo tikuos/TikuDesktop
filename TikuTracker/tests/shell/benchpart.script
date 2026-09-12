@@ -3,13 +3,14 @@
 # prefs: factory
 # setup: benchpart
 # board: only
+# mount: /devices/board1
 # Hardware opt-in: monitored link-console run, never implicit flashing.
 wait 60
 click 980 30
 wait 10
-menu-pick Applications
+menu-pick Device Tools
 wait 10
-menu-pick Bench
+menu-pick TikuBench
 wait 500
 expect-title Bench
 click-window Bench

@@ -1,7 +1,7 @@
 # TikuConsole in TikuDesktop
 
 Build with `make -C applications apps shells`, restart TikuDesktop, then open
-**Applications > TikuConsole**. This is a native desktop-kit application, with
+**Device Tools > TikuConsole**. This is a native desktop-kit application, with
 no GTK or Python dependency. The existing **Terminal** remains the host shell.
 
 ## Device workflow

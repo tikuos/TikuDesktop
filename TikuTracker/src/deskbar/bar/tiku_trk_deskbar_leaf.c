@@ -180,28 +180,22 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, tiku_str("menu.settings"),
              NULL, 0);
     {
-        int napps = 0, nprog = 0;
-
+        const char *keys[] = {"menu.applications", "menu.programming",
+                              "menu.device_tools", "menu.demos"};
+        /* A group added without its name would read this table past its
+         * end: the two are one list, and the compiler says so. */
+        _Static_assert(sizeof keys / sizeof keys[0] ==
+                       TIKU_TRK_DB_GROUP_COUNT, "a group has no name");
+        int counts[TIKU_TRK_DB_GROUP_COUNT] = {0};
         for (i = 0; i < db->app_count; i++) {
-            if (db->app[i].group == TIKU_TRK_DB_GROUP_PROGRAMMING) {
-                nprog++;
-            } else {
-                napps++;
-            }
+            int group = db->app[i].group;
+            if (group >= 0 && group < TIKU_TRK_DB_GROUP_COUNT) counts[group]++;
         }
-        if (napps > 0) {
-            /* One row, not one per program: the leaf is the system's
-             * own menu, and a list of what happens to be installed
-             * belongs inside it rather than across it. */
-            add_item(db, TIKU_TRK_DB_ITEM_APPS,
-                     tiku_str("menu.applications"), NULL, 0);
-        }
-        if (nprog > 0) {
-            /* What a person programs WITH, in a row of its own: the
-             * tools for making programs are not one more thing that
-             * happens to be installed. */
-            add_item(db, TIKU_TRK_DB_ITEM_PROGRAMMING,
-                     tiku_str("menu.programming"), NULL, 0);
+        for (i = 0; i < TIKU_TRK_DB_GROUP_COUNT; i++) {
+            if (counts[i]) add_item(db,
+                i == TIKU_TRK_DB_GROUP_PROGRAMMING ?
+                    TIKU_TRK_DB_ITEM_PROGRAMMING : TIKU_TRK_DB_ITEM_APPS,
+                tiku_str(keys[i]), NULL, i);
         }
     }
     {
@@ -283,7 +277,13 @@ db_build_leaf(tiku_trk_deskbar_t *db)
             w.db = db;
             w.n = 0;
             w.into = NULL;
-            w.max = TIKU_TRK_DB_LEAF_MAX;
+            /* Two rows held back for the rule and Shut down, which are
+             * added after this walk and would otherwise be the first
+             * rows a full folder pushed out of the menu. */
+            w.max = TIKU_TRK_DB_LEAF_MAX - 2 - db->leaf_count;
+            if (w.max < 0) {
+                w.max = 0;
+            }
             (void)db->backend->ops->list(db->backend, dir, db_menu_entry, &w);
         }
         if (db->leaf_count == before + 1) {

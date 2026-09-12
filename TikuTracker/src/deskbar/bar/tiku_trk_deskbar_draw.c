@@ -507,7 +507,7 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
                it->kind == TIKU_TRK_DB_ITEM_PROGRAMMING) {
         int want = (it->kind == TIKU_TRK_DB_ITEM_PROGRAMMING)
                        ? TIKU_TRK_DB_GROUP_PROGRAMMING
-                       : TIKU_TRK_DB_GROUP_APPS;
+                       : it->which;
         int i;
 
         for (i = 0; i < db->app_count &&

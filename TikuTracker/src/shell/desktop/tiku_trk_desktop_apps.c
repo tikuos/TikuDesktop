@@ -11,6 +11,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_trk_desktop_appgroups.inl"
 
 /** @brief One destination row of a picker (CW-035). */
 static void
@@ -383,12 +384,18 @@ offer_installed(desktop_t *app, const char *argv0)
 
             snprintf(path, sizeof path, "%s/%s", root, name[i]);
             app_label(name[i], label, sizeof label);
+            /* Renamed before the catalogue is offered, so the Deskbar
+             * row and Startup Preferences name the program the same. */
+            if (!strcmp(name[i], "DeveloperCalculator.so"))
+                snprintf(label, sizeof label, "Developer Calculator");
+            else if (!strcmp(name[i], "Bench.so"))
+                snprintf(label, sizeof label, "TikuBench");
             desktop_startup_offer(app, path, label, "apps");
             /* The row carries the FILE; how it is started is decided
              * where the pick is answered, which is the one place that
              * knows the runner's own path. */
-            (void)tiku_trk_deskbar_add_app(app->deskbar, label, path,
-                                           app_icon(name[i]));
+            (void)tiku_trk_deskbar_add_app_in(app->deskbar,
+                installed_group(name[i]), label, path, app_icon(name[i]));
         }
     }
 

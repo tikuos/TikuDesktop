@@ -1,0 +1,26 @@
+# shell: desktop
+# The shipped examples and board utilities have separate system submenus.
+# Only inspect menu contents: no board tests or console commands are run.
+wait 20
+click 980 20
+wait 4
+menu-pick Applications
+wait 4
+expect-menu Editor|Terminal
+click 500 700
+wait 4
+click 980 20
+wait 4
+menu-pick Device Tools
+wait 4
+expect-menu TikuBench|TikuConsole
+shot /tmp/trk_device_tools_menu.png
+click 500 700
+wait 4
+click 980 20
+wait 4
+menu-pick Demos
+wait 4
+expect-menu Clock|Counter|Hello|Sensors|Sketch|Twowin
+shot /tmp/trk_demos_menu.png
+key Escape

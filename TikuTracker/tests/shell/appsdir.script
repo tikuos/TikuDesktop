@@ -14,10 +14,10 @@ wait 4
 expect-title Clock
 click 980 20
 wait 4
-note the programs are under Applications, one row that expands
-menu-pick Applications
+note the example programs are under Demos, one row that expands
+menu-pick Demos
 wait 4
-expect-menu Editor|Sketch|Terminal
+expect-menu Sketch
 note choosing one that is not trusted starts it through the runner
 menu-pick Sketch
 wait 110

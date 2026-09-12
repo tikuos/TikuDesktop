@@ -3,13 +3,14 @@
 # prefs: factory
 # setup: benchpast
 # board: only
+# mount: /devices/board1
 # The profile-aware ledger is now a tab; semantic history checks are in test_bench.
 wait 60
 click 980 30
 wait 10
-menu-pick Applications
+menu-pick Device Tools
 wait 10
-menu-pick Bench
+menu-pick TikuBench
 wait 500
 expect-title Bench
 click-window Bench

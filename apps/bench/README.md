@@ -1,6 +1,6 @@
 # Bench in TikuDesktop
 
-Open **Applications > Bench** after building `make apps`. This is a native
+Open **Device Tools > TikuBench** after building `make apps`. This is a native
 TikuDesktop-kit frontend, not a GTK window embedded inside the desktop.
 It reads `TikuBench/gui/tb_meta.py` and runs the existing
 `python3 -u -m tikubench run ...` backend. No test/build/flash implementation is

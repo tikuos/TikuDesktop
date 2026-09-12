@@ -90,7 +90,7 @@ typedef struct {
 } tiku_trk_replicant_t;
 
 /** @brief How many rows the leaf menu holds, and its submenu. */
-#define TIKU_TRK_DB_LEAF_MAX 24
+#define TIKU_TRK_DB_LEAF_MAX 32
 #define TIKU_TRK_DB_SUB_MAX  50
 
 /** @brief What one leaf-menu row IS, which decides what a click does. */
@@ -211,8 +211,10 @@ tiku_trk_db_dock_t tiku_trk_deskbar_dock_at(int x, int y, int sw, int sh,
                                             tiku_trk_db_dock_t now);
 
 /** @brief The width (or height, when horizontal) the user has set. */
-/* How many programs a shell may offer in the leaf menu. */
-#define TIKU_TRK_DB_APPS_MAX 12
+/* How many programs a shell may offer in the leaf menu.  The table is
+ * shared by every group, so a shipped tree that fills it drops whichever
+ * group is scanned last -- today that is Programming. */
+#define TIKU_TRK_DB_APPS_MAX 24
 
 #define TIKU_TRK_DB_MIN_W 134
 #define TIKU_TRK_DB_MAX_W 320
@@ -702,7 +704,10 @@ int tiku_trk_deskbar_add_app(tiku_trk_deskbar_t *db, const char *label,
 /** @brief Which group of the leaf an installed program's row lives in. */
 enum {
     TIKU_TRK_DB_GROUP_APPS = 0,
-    TIKU_TRK_DB_GROUP_PROGRAMMING
+    TIKU_TRK_DB_GROUP_PROGRAMMING,
+    TIKU_TRK_DB_GROUP_DEVICE_TOOLS,
+    TIKU_TRK_DB_GROUP_DEMOS,
+    TIKU_TRK_DB_GROUP_COUNT
 };
 
 /**
