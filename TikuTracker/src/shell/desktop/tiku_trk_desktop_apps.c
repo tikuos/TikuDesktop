@@ -306,6 +306,80 @@ app_icon(const char *file)
 }
 
 /**
+ * @brief The help folder: its own page is what proves it is one.
+ *
+ * Looked for the way a companion program is, and named outright by
+ * TIKU_HELP for a test or an install that keeps its pages elsewhere.
+ *
+ * @return nonzero when @p out names a folder with pages in it.
+ */
+int
+find_help_dir(const char *argv0, char *out, size_t max)
+{
+    static const char *const where[] = {
+        "%s/help", "%s/TikuTracker/help", "%s/share/tiku/help"
+    };
+    char dir[TIKU_PATH_MAX];
+    char *slash;
+    int up;
+
+    if (getenv("TIKU_HELP") != NULL) {
+        char page[TIKU_PATH_MAX];
+
+        snprintf(out, max, "%s", getenv("TIKU_HELP"));
+        /* Named outright, and still asked for its own page: a folder
+         * with nothing in it is not the help folder. */
+        if (snprintf(page, sizeof page, "%s/index.html", out) <
+            (int)sizeof page && access(page, R_OK) == 0) {
+            return 1;
+        }
+        out[0] = '\0';
+        return 0;
+    }
+    snprintf(dir, sizeof dir, "%s", (argv0 != NULL) ? argv0 : "");
+    slash = strrchr(dir, '/');
+    if (slash != NULL) {
+        *slash = '\0';
+    } else {
+        snprintf(dir, sizeof dir, ".");
+    }
+    for (up = 0; up < 5; up++) {
+        char step[TIKU_PATH_MAX];
+        size_t i;
+        int k;
+
+        snprintf(step, sizeof step, "%s", dir);
+        for (k = 0; k < up; k++) {
+            size_t used = strlen(step);
+
+            if (used + 4u >= sizeof step) {
+                break;
+            }
+            snprintf(step + used, sizeof step - used, "/..");
+        }
+        for (i = 0; i < sizeof where / sizeof where[0]; i++) {
+            char found[TIKU_PATH_MAX];
+            char page[TIKU_PATH_MAX];
+
+            if (snprintf(found, sizeof found, where[i], step) >=
+                (int)sizeof found) {
+                continue;
+            }
+            if (snprintf(page, sizeof page, "%s/index.html", found) >=
+                (int)sizeof page) {
+                continue;
+            }
+            if (access(page, R_OK) == 0) {
+                snprintf(out, max, "%s", found);
+                return 1;
+            }
+        }
+    }
+    out[0] = '\0';
+    return 0;
+}
+
+/**
  * @brief Offer every application installed beside this desktop.
  *
  * A file in `apps` is started in a process of its own through the

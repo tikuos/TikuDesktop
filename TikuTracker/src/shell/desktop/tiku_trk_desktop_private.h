@@ -50,6 +50,7 @@
 #include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_trk_desktop_prefs_window.h"
 #include "tiku_trk_fonts_window.h"
+#include "tiku_trk_help_window.h"
 #include "tiku_trk_sounds_window.h"
 #include "tiku_strings.h"
 #include "tiku_volume.h"
@@ -505,6 +506,7 @@ typedef struct desktop {
     tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;   /* Deskbar   */
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
     tiku_trk_fonts_window_t         fonts_window;           /* the faces */
+    tiku_trk_help_window_t          help_window;            /* the pages */
     tiku_trk_sounds_window_t        sounds_window;          /* the moments */
     tiku_sound_event_t sound_pick;  /* the moment the file panel is for */
     tiku_window_t *sound_focused;   /* the front window last turn */
@@ -700,6 +702,7 @@ void sync_folder_preferences(desktop_t *app);
 /* tiku_trk_desktop_apps.c */
 void build_pickers(desktop_t *app, folder_t *fl);
 void offer_installed(desktop_t *app, const char *argv0);
+int  find_help_dir(const char *argv0, char *out, size_t max);
 
 /* tiku_trk_desktop_commands.c */
 folder_t *open_folder(desktop_t *app, const char *path);

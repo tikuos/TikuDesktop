@@ -33,6 +33,7 @@
   <string name="menu.about">About this system</string>
   <string name="menu.find">Find…</string>
   <string name="menu.settings">Settings</string>
+  <string name="menu.help">Help…</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.programming">Programming</string>
   <string name="menu.device_tools">Device Tools</string>
@@ -82,6 +83,19 @@
   <string name="prefs.desktop.mode.centred">Centred</string>
   <string name="prefs.desktop.mode.scaled">Scaled to fit</string>
   <string name="prefs.desktop.mode.tiled">Tiled</string>
+
+  <!-- Help window. -->
+  <string name="title.help">Help</string>
+  <string name="button.back">Back</string>
+  <string name="button.forward">Forward</string>
+  <string name="help.home">Contents</string>
+  <string name="help.cut">This page was cut at its</string>
+  <string name="help.no_such_page">There is no such page in the help folder.</string>
+  <string name="help.no_such_place">This page has no such place in it.</string>
+  <string name="help.not_followed">Web addresses are not opened from here.</string>
+  <string name="help.too_long">This page is longer than the reader holds; the rest is not shown.</string>
+  <string name="help.not_a_place">That is not a place on this machine.</string>
+  <string name="help.no_folder">No help folder was found beside this desktop.</string>
 
   <!-- Fonts window. -->
   <string name="prefs.fonts.family">Family</string>

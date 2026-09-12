@@ -117,7 +117,8 @@ typedef enum {
     TIKU_TRK_DB_ITEM_APPS,      /* expand it: the installed programs    */
     TIKU_TRK_DB_ITEM_PROGRAMMING, /* expand it: the programs for programs */
     TIKU_TRK_DB_ITEM_APP,       /* start the program named by its path  */
-    TIKU_TRK_DB_ITEM_PANEL      /* open the described panel at its path */
+    TIKU_TRK_DB_ITEM_PANEL,     /* open the described panel at its path */
+    TIKU_TRK_DB_ITEM_HELP       /* the desktop's own pages               */
 } tiku_trk_db_item_kind_t;
 
 /** @brief Which recent list a RECENT row shows. */
@@ -350,6 +351,7 @@ typedef enum {
     TIKU_TRK_DB_RESTART,          /* the submenu acts (DB-006)      */
     TIKU_TRK_DB_TOGGLE_DARK,      /* the little switch on the tray  */
     TIKU_TRK_DB_LAUNCH_APP,       /* `path` is the program to start */
+    TIKU_TRK_DB_HELP,             /* the desktop's own pages        */
 } tiku_trk_db_action_t;
 
 typedef struct {

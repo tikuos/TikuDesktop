@@ -12,8 +12,8 @@ wait 4
 expect-menu Editor|Terminal
 note each row wears its own art: paper for the editor, an application
 note for the terminal, and they are not the same picture
-expect-pixel 494 112 fffcc0
-expect-pixel 492 137 ec6666
+expect-pixel 494 133 fffcc0
+expect-pixel 492 158 ec6666
 note choosing the editor starts it; its window arrives over the session
 menu-pick Editor
 wait 90

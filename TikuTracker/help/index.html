@@ -1,0 +1,48 @@
+<h1>TikuDesktop Help</h1>
+
+<p>These pages are read from the <code>help</code> folder beside the
+program, and are written in a small dialect of HTML: headings,
+paragraphs, lists, code, quotations and links. There is no network
+behind them, so a page is only ever a file of this folder.</p>
+
+<h2 id="pages">The pages</h2>
+
+<ul>
+<li><a href="devices.html">Devices</a>: connecting a board, the Device
+Monitor and the VFS Inspector</li>
+</ul>
+
+<h2 id="keys">Reading with the keyboard</h2>
+
+<p>The page itself takes the keyboard when the window opens, so a
+reader who never reaches for the mouse can still walk it.</p>
+
+<ul>
+<li><b>Tab</b> and <b>Shift+Tab</b> step from link to link, and the
+link that will be followed is ringed</li>
+<li><b>Return</b> follows it</li>
+<li><b>Backspace</b> comes back to the page it was read from, and the
+place in it that was being read</li>
+<li><b>Page Up</b> and <b>Page Down</b> move a screen at a time,
+<b>Home</b> and <b>End</b> reach the ends of the page</li>
+<li><b>Ctrl+W</b> closes the window</li>
+</ul>
+
+<h2 id="links">Where a link goes</h2>
+
+<p>A name beginning with <code>#</code> is a place in the page now
+shown. A file name is another page of this folder, and one that climbs
+out of it with <code>..</code> is refused. A path beginning with
+<code>/</code> is a place on this machine, and is opened in a window of
+its own rather than read here.</p>
+
+<p>A web address is not followed. The reader says so in its own line
+rather than doing nothing, because a link that looks followed and did
+nothing is worse than one that is refused out loud.</p>
+
+<hr>
+
+<p>Written for the desktop and read by it. The folder these pages come
+from can be named outright with the <code>TIKU_HELP</code> variable,
+which is how a copy under development is read instead of the installed
+one.</p>

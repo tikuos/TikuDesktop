@@ -90,6 +90,30 @@ begin_shutdown(desktop_t *app)
     app->dirty = 1;
 }
 
+/** @brief A help page's link into the namespace: the desk opens it. */
+static int
+help_opened(void *ctx, const char *path)
+{
+    desktop_t *app = ctx;
+    tiku_model_t m;
+
+    if (app == NULL || path == NULL || path[0] != '/') {
+        return 0;
+    }
+    /* Asked for before it is opened: a place this machine has not got
+     * would otherwise be written into the recent folders on its way to
+     * a window that never appears. */
+    if (app->backend == NULL || app->backend->ops->stat == NULL ||
+        app->backend->ops->stat(app->backend, path, &m) != 0) {
+        return 0;
+    }
+    if (open_folder(app, path) == NULL) {
+        return 0;
+    }
+    app->dirty = 1;
+    return 1;
+}
+
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
 status_answer(void *context, const tiku_alert_t *alert)
@@ -529,6 +553,14 @@ boot_settings(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         DESK_W, DESK_H, &app->dirty);
     tiku_trk_fonts_window_init(&app->fonts_window, app->desk, app->deskbar,
                                app->store, DESK_W, DESK_H, &app->dirty);
+    {
+        char help[TIKU_PATH_MAX];
+
+        if (!find_help_dir(o->argv0, help, sizeof help)) help[0] = '\0';
+        tiku_trk_help_window_init(&app->help_window, app->desk, help,
+                                  DESK_W, DESK_H, &app->dirty);
+        tiku_trk_help_window_opener(&app->help_window, help_opened, app);
+    }
     {
         /* After the Deskbar's own settings have been applied, because a
          * face dropped in the fonts folder has to win over the baked
@@ -1232,6 +1264,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     tiku_trk_deskbar_prefs_window_destroy(&app->deskbar_prefs_window);
     tiku_trk_desktop_prefs_window_destroy(&app->desktop_prefs_window);
     tiku_trk_fonts_window_destroy(&app->fonts_window);
+    tiku_trk_help_window_destroy(&app->help_window);
     desktop_deviceprefs_destroy(app);
     desktop_startup_destroy(app);
     tiku_trk_sounds_window_destroy(&app->sounds_window);

@@ -576,6 +576,10 @@ close_window(desktop_t *app, tiku_window_t *w)
         tiku_trk_fonts_window_close(&app->fonts_window);
         return;
     }
+    if (w == tiku_trk_help_window_handle(&app->help_window)) {
+        tiku_trk_help_window_close(&app->help_window);
+        return;
+    }
     if (w == desktop_deviceprefs_handle(app)) {
         desktop_deviceprefs_close(app);
         return;

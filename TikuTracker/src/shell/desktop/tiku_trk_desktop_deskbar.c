@@ -362,6 +362,9 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
     case TIKU_TRK_DB_FONT_PREFERENCES:
         tiku_trk_fonts_window_open(&app->fonts_window);
         break;
+    case TIKU_TRK_DB_HELP:
+        tiku_trk_help_window_open(&app->help_window);
+        break;
     case TIKU_TRK_DB_SOUND_PREFERENCES:
         tiku_trk_sounds_window_open(&app->sounds_window);
         break;

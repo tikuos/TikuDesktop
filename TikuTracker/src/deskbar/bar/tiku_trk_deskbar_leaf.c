@@ -174,6 +174,7 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     add_item(db, TIKU_TRK_DB_ITEM_ABOUT, tiku_str("menu.about"), NULL,
              0);
     add_item(db, TIKU_TRK_DB_ITEM_FIND, tiku_str("menu.find"), NULL, 0);
+    add_item(db, TIKU_TRK_DB_ITEM_HELP, tiku_str("menu.help"), NULL, 0);
     /* One row for everything that configures the desktop, the way the
      * programs have one: the leaf says what a person can do here, and
      * the lists live inside it. */

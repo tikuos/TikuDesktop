@@ -56,6 +56,7 @@ DESKTOP_CONTROLLERS := $(T)/src/deskbar/tiku_trk_deskbar_roster.c \
                        $(T)/src/ui/windows/tiku_trk_deskbar_prefs_window.c \
                        $(T)/src/ui/windows/tiku_trk_desktop_prefs_window.c \
                        $(T)/src/ui/windows/tiku_trk_fonts_window.c \
+                       $(T)/src/ui/windows/tiku_trk_help_window.c \
                        $(T)/src/ui/windows/tiku_trk_sounds_window.c \
                        $(T)/src/ui/windows/tiku_trk_select_window.c \
                        $(T)/src/ui/windows/tiku_trk_switcher_window.c \

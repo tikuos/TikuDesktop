@@ -23,6 +23,7 @@
   <string name="menu.about">À propos de ce système</string>
   <string name="menu.find">Rechercher…</string>
   <string name="menu.settings">Réglages</string>
+  <string name="menu.help">Aide…</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.programming">Programmation</string>
   <string name="menu.device_tools">Outils pour appareils</string>
@@ -69,6 +70,18 @@
   <string name="prefs.desktop.mode.centred">Centrée</string>
   <string name="prefs.desktop.mode.scaled">Ajustée</string>
   <string name="prefs.desktop.mode.tiled">Mosaïque</string>
+
+  <string name="title.help">Aide</string>
+  <string name="button.back">Retour</string>
+  <string name="button.forward">Suivant</string>
+  <string name="help.home">Sommaire</string>
+  <string name="help.cut">Cette page a été coupée à</string>
+  <string name="help.no_such_page">Cette page n’existe pas dans le dossier d’aide.</string>
+  <string name="help.no_such_place">Cette page ne contient pas cet endroit.</string>
+  <string name="help.not_followed">Les adresses web ne s’ouvrent pas d’ici.</string>
+  <string name="help.too_long">Cette page dépasse la taille lisible ; la suite n’est pas affichée.</string>
+  <string name="help.not_a_place">Ce n’est pas un emplacement de cette machine.</string>
+  <string name="help.no_folder">Aucun dossier d’aide n’a été trouvé.</string>
 
   <string name="prefs.fonts.family">Famille</string>
   <string name="prefs.fonts.subtitle">Choisissez l’apparence du texte sur le bureau.</string>

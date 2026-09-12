@@ -1,0 +1,38 @@
+# shell: desktop
+# The desktop's own pages: opened from the leaf, read by key, and
+# followed to another page and back again.
+wait 20
+click 980 20
+wait 4
+menu-pick Help
+wait 12
+expect-title Help
+expect-narrate TikuDesktop Help
+note the contents page says what the keys do
+expect-narrate Tab
+expect-control Contents
+shot /tmp/trk_help_index.png
+note Tab reaches the first link and Return follows it
+key Tab
+wait 4
+key Return
+wait 12
+expect-narrate Device Monitor
+expect-narrate VFS Inspector
+shot /tmp/trk_help_devices.png
+note and Backspace comes back to the page it was read from
+key BackSpace
+wait 12
+expect-narrate TikuDesktop Help
+note a page too tall for the window moves under the page keys: the foot
+note of the contents is not on the screen until End is pressed
+expect-no-narrate Written for the desktop
+key End
+wait 8
+expect-narrate Written for the desktop
+key Home
+wait 8
+expect-narrate TikuDesktop Help
+key w ctrl
+wait 8
+expect-no-title Help

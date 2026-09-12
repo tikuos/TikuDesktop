@@ -51,6 +51,10 @@ drives a shipping shell from outside.  The harness that runs them is
     expect-deskbar-at <x> <y>
     expect-title <substring>
     expect-menu <substring>
+    expect-narrate <substring>          -- the focused window, said from
+                                           its own display list
+    expect-no-narrate <substring>       -- and what it does not say, which
+                                           is what proves it moved
     expect-sound <event>                -- the moment sounded (counted; a
                                            scripted run is mute)
     expect-no-sound <event>

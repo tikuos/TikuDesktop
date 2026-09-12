@@ -729,6 +729,7 @@ if (ev->button == 4u || ev->button == 5u) {
         we.dy = (ev->button == 4u) ? -3 : 3;
         we.time_us = tiku_trk_now();
         if (ww == tiku_trk_fonts_window_handle(&app->fonts_window) ||
+            ww == tiku_trk_help_window_handle(&app->help_window) ||
             desktop_utility_owns(app, ww)) {
             we.x = ev->x; we.y = ev->y;
             (void)tiku_window_send(ww, &we);
@@ -1025,6 +1026,7 @@ if (hit == TIKU_HIT_CLOSE) {
            (w == desktop_deviceprefs_handle(app) ||
             desktop_utility_owns(app, w) ||
             w == desktop_startup_handle(app) ||
+            w == tiku_trk_help_window_handle(&app->help_window) ||
             w == tiku_trk_fonts_window_handle(&app->fonts_window))) {
     tiku_workspace_activate(app->desk, w);
     if (ev->button == 1) app->prefs_track = w;
@@ -2471,6 +2473,7 @@ if (key == 'w' && (ev->modifiers & TIKU_MOD_CMD)) {
 if (w != NULL && (w == desktop_deviceprefs_handle(app) ||
                  desktop_utility_owns(app, w) ||
                  w == desktop_startup_handle(app) ||
+                 w == tiku_trk_help_window_handle(&app->help_window) ||
                  w == tiku_trk_fonts_window_handle(&app->fonts_window)) &&
     !alert_model(app)->open) {
     /* Under the desk's own shortcuts: the panel takes every key it is

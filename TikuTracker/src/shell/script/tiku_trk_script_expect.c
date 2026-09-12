@@ -303,18 +303,25 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         }
         return 1;
     }
-    case OP_EXPECT_NARRATE: {
+    case OP_EXPECT_NARRATE:
+    case OP_EXPECT_NO_NARRATE: {
         /* The focused window as its display list narrates it: the same
          * answer the conductor's "narrate" noun gives, so this line means
-         * one thing in both drivers. */
+         * one thing in both drivers.  The negative is what proves a
+         * window MOVED: words that were not there before, and are. */
         char lines[2048];
+        int said;
 
         lines[0] = '\0';
         if (st != NULL && st->narrate != NULL) {
             (void)st->narrate(st->pose_ctx, lines, sizeof lines);
         }
-        sc_verdict(s, strstr(lines, cur->text) != NULL,
-                "narration says", cur->text);
+        said = strstr(lines, cur->text) != NULL;
+        if (cur->op == OP_EXPECT_NO_NARRATE) {
+            sc_verdict(s, !said, "narration does not say", cur->text);
+        } else {
+            sc_verdict(s, said, "narration says", cur->text);
+        }
         if (s->fails > 0 && lines[0] != '\0') {
             printf("         (narration: \"%s\")\n", lines);
         }
@@ -647,6 +654,9 @@ sc_parse_said(sc_step_t *st, char **w, int n)
         sc_rest(w, n, 1, st->text, sizeof st->text);
     } else if (strcmp(w[0], "expect-narrate") == 0 && n >= 2) {
         st->op = OP_EXPECT_NARRATE;
+        sc_rest(w, n, 1, st->text, sizeof st->text);
+    } else if (strcmp(w[0], "expect-no-narrate") == 0 && n >= 2) {
+        st->op = OP_EXPECT_NO_NARRATE;
         sc_rest(w, n, 1, st->text, sizeof st->text);
     } else if (strcmp(w[0], "expect-sound") == 0 && n >= 2) {
         st->op = OP_EXPECT_SOUND;

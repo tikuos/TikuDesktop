@@ -396,6 +396,9 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             case TIKU_TRK_DB_ITEM_FIND:
                 pick->what = TIKU_TRK_DB_FIND;
                 break;
+            case TIKU_TRK_DB_ITEM_HELP:
+                pick->what = TIKU_TRK_DB_HELP;
+                break;
             case TIKU_TRK_DB_ITEM_PREFS:
                 pick->what = TIKU_TRK_DB_PREFERENCES;
                 break;
