@@ -1,8 +1,10 @@
 # shell: desktop
-# The calculator starts through the real application runner and closes on
-# Escape.  Its arithmetic, checksums and controls are test_calculator's.
+# prefs: factory
+# The calculator starts through the real application runner, publishes its
+# own menu over the wire, and closes from the row in it.  Its arithmetic,
+# checksums and controls are test_calculator's.
 wait 20
-click 980 20
+click 980 30
 wait 4
 menu-pick Applications
 wait 4
@@ -13,6 +15,11 @@ key f
 key f
 wait 10
 shot /tmp/trk_calculator.png
-key Escape
-wait 20
+note the strip carries the application's own menu, from the description
+note that came down the wire for its window
+click 60 8
+wait 8
+expect-menu Close
+menu-pick Close
+wait 30
 expect-no-title Developer Calculator

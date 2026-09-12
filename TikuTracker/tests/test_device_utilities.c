@@ -109,6 +109,17 @@ int main(void)
     tiku_font_set_size(16); tiku_workspace_draw(app->desk);
     assert(!tiku_surface_png(s, "/tmp/tiku-vfs-large.png"));
     tiku_font_set_size(12);
+    /* The tick paces both windows, but only a sample changes a pixel:
+     * an idle inspector and a paused monitor ask for no repaint. */
+    for (int i = 0; i < 2; i++) {
+        app->utility[i]->busy = 0; app->utility[i]->next = 0;
+    }
+    app->utility[0]->paused = 1;
+    app->dirty = 0; desktop_utilities_tick(app);
+    assert(!app->dirty && app->utility[1]->next > 0);
+    app->utility[0]->paused = 0; app->utility[0]->next = 0;
+    app->dirty = 0; desktop_utilities_tick(app);
+    assert(app->dirty);
     struct desktop_utility *monitor = app->utility[0];
     monitor->paused = 1; monitor->sampled = 123;
     j = job(&b, "/sys", 0); j->mode = 0; j->owner = monitor;
