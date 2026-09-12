@@ -142,7 +142,8 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_boardrun.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_report.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_wire.c \
-                 $(T)/src/shell/desktop/tiku_trk_desktop_deviceprefs.c
+                 $(T)/src/shell/desktop/tiku_trk_desktop_deviceprefs.c \
+                 $(T)/src/shell/desktop/tiku_trk_desktop_startup.c
 
 # tiku_trk_deskbar, one composition over the files of one directory.
 DESKBAR := $(T)/src/deskbar/bar/tiku_trk_deskbar.c \

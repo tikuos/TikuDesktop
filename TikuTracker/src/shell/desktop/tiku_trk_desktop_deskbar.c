@@ -368,6 +368,9 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
     case TIKU_TRK_DB_DEVICE_PREFERENCES:
         desktop_deviceprefs_open(app);
         break;
+    case TIKU_TRK_DB_STARTUP_PREFERENCES:
+        desktop_startup_open(app);
+        break;
     case TIKU_TRK_DB_DESKTOP_PREFERENCES:
         tiku_trk_desktop_prefs_window_open(&app->desktop_prefs_window);
         break;

@@ -32,6 +32,7 @@
 #include "tiku_attr.h"
 #include "tiku_logo.h"
 #include "tiku_host.h"
+#include "tiku_text_input.h"
 #include "tiku_trk_application.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
@@ -380,6 +381,11 @@ typedef struct desktop {
     tiku_menu_t      devmenu;           /* the Devices menu beside it   */
     tiku_menu_t      devsub;            /* its default-device submenu   */
     struct desktop_deviceprefs *deviceprefs; /* connected-device settings */
+    struct desktop_startup *startup; /* startup catalog and preferences */
+    tiku_window_t *prefs_track; /* preferences content pointer capture */
+    tiku_window_t *input_focus; /* last IME target, never dereferenced */
+    tiku_text_input_t legacy_commit; /* staged text for shell-owned fields */
+    tiku_window_t *legacy_target; /* target at the start of a text commit */
     tiku_menu_t      gmenu[TIKU_MENUSET_MENUS];     /* the published menus */
     tiku_menu_t      gsub[TIKU_MENUSET_MENUS][4];   /* their submenus      */
     tiku_menubar_t   gbar;              /* the strip they hang from     */
@@ -789,6 +795,15 @@ int  device_connect(desktop_t *app, const char *port);
 int  device_disconnect(desktop_t *app, const char *name);
 void device_set_current(desktop_t *app, const char *name);
 void desktop_deviceprefs_open(desktop_t *app);
+int desktop_deviceprefs_popup(desktop_t *app);
+void desktop_startup_offer(desktop_t *app, const char *path,
+    const char *label, const char *group);
+void desktop_startup_run(desktop_t *app, int safe_mode,
+    int *restore, int *fallback);
+void desktop_startup_open(desktop_t *app);
+tiku_window_t *desktop_startup_handle(desktop_t *app);
+void desktop_startup_close(desktop_t *app);
+void desktop_startup_destroy(desktop_t *app);
 tiku_window_t *desktop_deviceprefs_handle(desktop_t *app);
 void desktop_deviceprefs_close(desktop_t *app);
 void desktop_deviceprefs_destroy(desktop_t *app);
@@ -820,6 +835,7 @@ extern tiku_window_t *w;
 extern tiku_window_t *w;
 extern unsigned key;
 extern unsigned mods;
+void desktop_text_input(desktop_t *app, const tiku_event_t *ev);
 void desktop_key_down(desktop_t *app, const tiku_event_t *ev,
                       desktop_loop_t *lp);
 void desktop_pointer_down(desktop_t *app, const tiku_event_t *ev,

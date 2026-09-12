@@ -329,28 +329,18 @@ offer_installed(desktop_t *app, const char *argv0)
         snprintf(app->runner, sizeof app->runner, "%s", runner);
     }
 
-    /* Loaded first, so a trusted application is running before anything
-     * the user could click. */
+    /* Discover first; startup preferences decide what runs after boot. */
     snprintf(trusted, sizeof trusted, "%s/trusted", root);
     dir = opendir(trusted);
     while (dir != NULL && (entry = readdir(dir)) != NULL) {
         char path[TIKU_PATH_MAX];
-        char why[192];
-        const tiku_app_descriptor_t *loaded;
         size_t n = strlen(entry->d_name);
 
         if (n < 4u || strcmp(entry->d_name + n - 3, ".so") != 0) {
             continue;
         }
         snprintf(path, sizeof path, "%s/%s", trusted, entry->d_name);
-        loaded = tiku_app_load(path, why, sizeof why);
-        if (loaded == NULL || !embed_start(app, loaded)) {
-            /* Said, not swallowed: an application that was installed and
-             * did not appear is a fault the user has to be told about. */
-            snprintf(app->status, sizeof app->status, "%s: %s",
-                     entry->d_name, (loaded == NULL) ? why : "no room");
-            app->dirty = 1;
-        }
+        desktop_startup_offer(app, path, entry->d_name, "trusted");
     }
     if (dir != NULL) {
         (void)closedir(dir);
@@ -393,6 +383,7 @@ offer_installed(desktop_t *app, const char *argv0)
 
             snprintf(path, sizeof path, "%s/%s", root, name[i]);
             app_label(name[i], label, sizeof label);
+            desktop_startup_offer(app, path, label, "apps");
             /* The row carries the FILE; how it is started is decided
              * where the pick is answered, which is the one place that
              * knows the runner's own path. */
@@ -442,6 +433,7 @@ offer_installed(desktop_t *app, const char *argv0)
 
             snprintf(path, sizeof path, "%s/%s", progdir, name[i]);
             app_label(name[i], label, sizeof label);
+            desktop_startup_offer(app, path, label, "programming");
             (void)tiku_trk_deskbar_add_app_in(app->deskbar,
                 TIKU_TRK_DB_GROUP_PROGRAMMING, label, path,
                 app_icon(name[i]));

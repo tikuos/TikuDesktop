@@ -348,6 +348,9 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_DEVICE_PREFS) {
                     pick->what = TIKU_TRK_DB_DEVICE_PREFERENCES;
+                } else if (db->sub[si].kind ==
+                           TIKU_TRK_DB_ITEM_STARTUP_PREFS) {
+                    pick->what = TIKU_TRK_DB_STARTUP_PREFERENCES;
                 } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_PANEL) {
                     pick->what = TIKU_TRK_DB_OPEN_PANEL;
                     snprintf(pick->path, sizeof pick->path, "%s",

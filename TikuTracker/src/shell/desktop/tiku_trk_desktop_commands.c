@@ -580,6 +580,10 @@ close_window(desktop_t *app, tiku_window_t *w)
         desktop_deviceprefs_close(app);
         return;
     }
+    if (w == desktop_startup_handle(app)) {
+        desktop_startup_close(app);
+        return;
+    }
     if (w == tiku_trk_sounds_window_handle(&app->sounds_window)) {
         tiku_trk_sounds_window_close(&app->sounds_window);
         return;

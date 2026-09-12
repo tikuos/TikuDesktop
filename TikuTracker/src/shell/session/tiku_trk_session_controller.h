@@ -41,11 +41,11 @@ void tiku_trk_session_restore_deskbar(
 /**
  * @brief Open the folders the session starts with: @p paths when given,
  *        else the saved session (none in safe mode), else the home or,
- *        on a device, its memory and devices.
+ *        on a device, its memory and devices when @p fallback is enabled.
  */
 void tiku_trk_session_restore_folders(
     tiku_trk_session_controller_t *controller, const char *const *paths,
-    int path_count, int safe_mode, int device_backend);
+    int path_count, int safe_mode, int device_backend, int fallback);
 /**
  * @brief Save the session: every open folder window, each view's state
  *        and columns, and the Deskbar's dock and width; then flush.

@@ -88,7 +88,7 @@ restore_saved(tiku_trk_session_controller_t *controller, int safe_mode)
 void
 tiku_trk_session_restore_folders(
     tiku_trk_session_controller_t *controller, const char *const *paths,
-    int path_count, int safe_mode, int device_backend)
+    int path_count, int safe_mode, int device_backend, int fallback)
 {
     int opened = 0;
     int i;
@@ -103,7 +103,7 @@ tiku_trk_session_restore_folders(
         return;
     }
     opened = restore_saved(controller, safe_mode);
-    if (opened != 0) {
+    if (opened != 0 || !fallback) {
         return;
     }
     if (device_backend) {

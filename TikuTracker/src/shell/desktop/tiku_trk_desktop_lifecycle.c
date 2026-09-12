@@ -790,6 +790,7 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 static int
 boot_session(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
+    int restore, fallback;
     (void)lp;
     if (o->use_device) {
         /* The tray is the device: three values that say at a glance whether
@@ -818,8 +819,9 @@ boot_session(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
             }
         }
     }
+    desktop_startup_run(app, o->safe_mode, &restore, &fallback);
     tiku_trk_session_restore_folders(&app->session, o->openme, o->nopen,
-                                     o->safe_mode, o->use_device);
+        o->safe_mode || !restore, o->use_device, fallback);
 
     (void)tiku_trk_find_open_default(find_model(app), (int64_t)time(NULL));
     return -1;
@@ -1230,6 +1232,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     tiku_trk_desktop_prefs_window_destroy(&app->desktop_prefs_window);
     tiku_trk_fonts_window_destroy(&app->fonts_window);
     desktop_deviceprefs_destroy(app);
+    desktop_startup_destroy(app);
     tiku_trk_sounds_window_destroy(&app->sounds_window);
     tiku_trk_prefs_window_destroy(&app->prefs_window);
     splash_stage(app, "the Deskbar");
