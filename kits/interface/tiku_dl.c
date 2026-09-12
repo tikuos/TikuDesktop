@@ -1230,6 +1230,17 @@ tiku_dl_read(const void *buf, size_t len, size_t *at, tiku_dl_fact_t *out)
             }
         }
         return 1;
+    case OP_HLINE:
+    case OP_VLINE:
+        /* A line carries three numbers and a colour, not a rectangle:
+         * read as one, its fourth field comes out of the colour. */
+        if (n < 6u) {
+            return 0;
+        }
+        out->rect = (tiku_rect_t){ get_i16(a), get_i16(a + 2),
+                                   op == OP_HLINE ? get_i16(a + 4) : 1,
+                                   op == OP_HLINE ? 1 : get_i16(a + 4) };
+        return 1;
     default:
         /* Paint, icons and anything newer than this reader: the rect
          * where one exists, and no further claim. */

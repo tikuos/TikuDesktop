@@ -535,6 +535,22 @@ main(void)
         check(tiku_dl_misses(m) == 0 && tiku_dl_count(m) == 3,
               "while what the vocabulary CAN say is still said, and "
               "still costs the list nothing");
+        {
+            /* A line carries three numbers and a colour.  Read as a
+             * rectangle it would take its height out of the colour,
+             * and a reader would be told a hairline is thousands of
+             * pixels tall. */
+            char wire[512];
+            size_t len = 0, at = 0;
+            tiku_dl_fact_t f;
+            int thin = 0;
+
+            (void)tiku_dl_flatten(m, wire, sizeof wire, &len);
+            while (tiku_dl_read(wire, len, &at, &f)) {
+                if (f.rect.w == 8 && f.rect.h == 1 && f.rect.x == 2) thin++;
+            }
+            check(thin == 1, "and a line reads back as the line it is");
+        }
 
         p->record = NULL;
         tiku_dl_free(m);
