@@ -91,6 +91,44 @@ tiku_dim(tiku_rgb_t ink, tiku_rgb_t ground)
         ((ink & 0xFFu) + (ground & 0xFFu)) / 2u);
 }
 
+/**
+ * @brief The shade a meaning is written in.
+ *
+ * kits/interface/tiku_gfx.c's answer with the default table's colours
+ * in place of the theme's, since a board wears no theme.  FAINT and
+ * PATH are derived here as they are there, so a file drawn on both ends
+ * puts the same ink on the same word.
+ */
+/*
+ * The nine meanings are numbered, not named, wherever they cross: a run
+ * carries its ink as a byte.  Both ends pin the numbering to these
+ * literals, so a tenth meaning added to one end and not the other is a
+ * build that stops rather than a page drawn in the wrong colours.
+ */
+_Static_assert(TIKU_INK_PLAIN == 0 && TIKU_INK_FAINT == 1 &&
+               TIKU_INK_WORD == 2 && TIKU_INK_NUM == 3 &&
+               TIKU_INK_STR == 4 && TIKU_INK_REMARK == 5 &&
+               TIKU_INK_WRONG == 6 && TIKU_INK_PATH == 7 &&
+               TIKU_INK_LINK == 8,
+               "the board's ink numbering is the desktop's");
+
+tiku_rgb_t
+tiku_ink(tiku_ink_t which)
+{
+    switch (which) {
+    case TIKU_INK_FAINT:  return tiku_dim(TIKU_C_TEXT, TIKU_C_DOC);
+    case TIKU_INK_WORD:   return TIKU_C_CODE_WORD;
+    case TIKU_INK_NUM:    return TIKU_C_CODE_NUM;
+    case TIKU_INK_STR:    return TIKU_C_CODE_STR;
+    case TIKU_INK_REMARK: return TIKU_C_CODE_REM;
+    case TIKU_INK_WRONG:  return TIKU_C_DANGER;
+    case TIKU_INK_PATH:   return tiku_dim(TIKU_C_CODE_STR, TIKU_C_SELECT);
+    case TIKU_INK_LINK:   return TIKU_C_SELECT;
+    case TIKU_INK_PLAIN:
+    default:              return TIKU_C_TEXT;
+    }
+}
+
 tiku_rect_t
 tiku_inset(tiku_rect_t r, int n)
 {

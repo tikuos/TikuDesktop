@@ -199,6 +199,7 @@ check-behaviour:
 	    $(K)/interface/tiku_sensor.c $(K)/interface/tiku_sensor_paint.c \
 	    $(K)/interface/tiku_text_layout.c $(K)/interface/tiku_text_layout_paint.c \
 	    $(K)/interface/tiku_properties.c $(K)/interface/tiku_properties_paint.c \
+	    $(K)/interface/tiku_doc_paint.c \
 	    $(K)/interface/tiku_preferences_layout.c
 check-dl:
 	@python3 $(K)/interface/tools/gendl.py desktop $(K)/interface/dl_ops.txt \

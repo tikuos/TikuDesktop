@@ -288,6 +288,18 @@ tiku_dim(tiku_rgb_t ink, tiku_rgb_t ground)
         ((ink & 0xFFu) + (ground & 0xFFu)) / 2u);
 }
 
+/*
+ * The same pinning the board's shim makes (board/gui/tiku_paint_board.c):
+ * an ink crosses to a board as a byte, so the numbering is the contract
+ * and both ends say what it is.
+ */
+_Static_assert(TIKU_INK_PLAIN == 0 && TIKU_INK_FAINT == 1 &&
+               TIKU_INK_WORD == 2 && TIKU_INK_NUM == 3 &&
+               TIKU_INK_STR == 4 && TIKU_INK_REMARK == 5 &&
+               TIKU_INK_WRONG == 6 && TIKU_INK_PATH == 7 &&
+               TIKU_INK_LINK == 8,
+               "the desktop's ink numbering is the board's");
+
 tiku_rgb_t
 tiku_ink(tiku_ink_t which)
 {

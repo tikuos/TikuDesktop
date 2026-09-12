@@ -15,19 +15,32 @@ The forms road costs a line of text per control and needs nothing but
 the namespace mount.  The drawing road gives a process a window of its
 own, in a few hundred bytes a frame.
 
+A third thing a board can put in a window is a **page**: `tiku_doc` and
+`tiku_doc_paint` are the reader TikuDesktop's own Help window uses, and
+they compile for the board.  A board serves its page itself, so there is
+no copy on the desk to keep in step.  `board/samples/doc_demo.c` is the
+sample; `TIKU_APPL_DOC=1` adds the reader and `TIKU_APPL_DOC_DEMO=1` the
+sample.  On an nRF54L15 the pair costs 5.2 KB of code and 13.6 KB of
+.bss with the caps `applications.mk` sets, so it is its own flag rather
+than part of `TIKU_APPL_GUI`.  A board wears no theme: a colour written
+into an op is painted as written, so a page is the light table's ink
+wherever it is read.
+
 ## Build and flash (nRF54LM20-DK)
 
 From the firmware repository, with this repository cloned into
 `applications/`:
 
     make MCU=nrf54lm20a TIKU_SHELL_ENABLE=1 TIKU_APPL_GUI=1 \
-         TIKU_APPL_GUI_DEMO=1 TIKU_APPL_DRAW_DEMO=1
+         TIKU_APPL_GUI_DEMO=1 TIKU_APPL_DRAW_DEMO=1 \
+         TIKU_APPL_DOC=1 TIKU_APPL_DOC_DEMO=1
     make flash MCU=nrf54lm20a TIKU_SHELL_ENABLE=1 TIKU_APPL_GUI=1 \
-         TIKU_APPL_GUI_DEMO=1 TIKU_APPL_DRAW_DEMO=1
+         TIKU_APPL_GUI_DEMO=1 TIKU_APPL_DRAW_DEMO=1 \
+         TIKU_APPL_DOC=1 TIKU_APPL_DOC_DEMO=1
 
 `TIKU_APPL_GUI` builds the library and its one mainline hook (the `/gui`
 root and the console channel, attached together behind the macro); the
-two `_DEMO` flags add the samples.  Without the macro the firmware is
+three `_DEMO` flags add the samples.  Without the macro the firmware is
 byte-identical to a tree that never had this directory:
 
     arm-none-eabi-nm main.elf | grep -c tiku_gui      # 0 without, 10+ with

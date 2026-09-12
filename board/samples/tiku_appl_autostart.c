@@ -19,6 +19,9 @@ extern struct tiku_process gui_demo_process;
 #if TIKU_APPL_DRAW_DEMO
 extern struct tiku_process draw_demo_process;
 #endif
+#if TIKU_APPL_DOC_DEMO
+extern struct tiku_process doc_demo_process;
+#endif
 
 TIKU_AUTOSTART_PROCESSES(
 #if TIKU_APPL_GUI_DEMO
@@ -26,5 +29,8 @@ TIKU_AUTOSTART_PROCESSES(
 #endif
 #if TIKU_APPL_DRAW_DEMO
     &draw_demo_process,
+#endif
+#if TIKU_APPL_DOC_DEMO
+    &doc_demo_process,
 #endif
     NULL);

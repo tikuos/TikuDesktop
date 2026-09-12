@@ -56,6 +56,34 @@ typedef struct {
 #define TIKU_C_DANGER     TIKU_RGB(203, 48, 48)
 #define TIKU_C_NOTE       TIKU_RGB(255, 255, 200)
 #define TIKU_C_TABTEXT    TIKU_RGB(0, 0, 0)
+/* The four a program's own words are written in, which the desktop
+ * reads from its theme and a board carries as the default table's. */
+#define TIKU_C_CODE_WORD  TIKU_RGB(0, 0, 176)
+#define TIKU_C_CODE_NUM   TIKU_RGB(0, 112, 96)
+#define TIKU_C_CODE_STR   TIKU_RGB(160, 32, 32)
+#define TIKU_C_CODE_REM   TIKU_RGB(96, 112, 96)
+
+/**
+ * @brief What a run of text MEANS, the same nine the desktop names.
+ *
+ * The values and their order are kits/interface/tiku_gfx.h's, because a
+ * file compiled for both ends resolves the name here and the meaning
+ * there.  What a board cannot do is follow a theme: the desktop repaints
+ * a NAMED op in whatever table it wears, but a colour written into an op
+ * is painted as it was written, so a board's page is the light table's
+ * ink wherever it is read.
+ */
+typedef enum {
+    TIKU_INK_PLAIN = 0,
+    TIKU_INK_FAINT,
+    TIKU_INK_WORD,
+    TIKU_INK_NUM,
+    TIKU_INK_STR,
+    TIKU_INK_REMARK,
+    TIKU_INK_WRONG,
+    TIKU_INK_PATH,
+    TIKU_INK_LINK
+} tiku_ink_t;
 
 /* The drawing calls the paint files make, each an op when outermost. */
 void tiku_fill(tiku_surface_t *s, tiku_rect_t r, tiku_rgb_t c);
@@ -66,6 +94,7 @@ void tiku_bevel(tiku_surface_t *s, tiku_rect_t r, tiku_rgb_t light,
                 tiku_rgb_t shadow);
 void tiku_clip_set(tiku_surface_t *s, tiku_rect_t r);
 void tiku_clip_reset(tiku_surface_t *s);
+tiku_rgb_t tiku_ink(tiku_ink_t which);
 tiku_rgb_t tiku_tint(tiku_rgb_t c, float tint);
 tiku_rgb_t tiku_dim(tiku_rgb_t ink, tiku_rgb_t ground);
 tiku_rect_t tiku_inset(tiku_rect_t r, int n);

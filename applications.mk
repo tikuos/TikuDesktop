@@ -60,6 +60,22 @@ ifeq ($(TIKU_APPL_DRAW_DEMO),1)
 APPL_SRCS   += applications/board/samples/draw_demo.c
 APPL_CFLAGS += -DTIKU_APPL_DRAW_DEMO=1
 endif
+# The document reader, which a board uses to serve a page of its own.
+# Its own gate because the tables it lays a page into are fourteen
+# kilobytes of .bss, which an image that shows no page should not carry.
+# The caps are the board's: the desktop's would be eighty.
+ifeq ($(TIKU_APPL_DOC),1)
+APPL_SRCS   += applications/kits/interface/tiku_doc.c
+APPL_SRCS   += applications/kits/interface/tiku_doc_paint.c
+APPL_CFLAGS += -DTIKU_APPL_DOC=1 -DTIKU_DOC_TEXT_MAX=2048 \
+               -DTIKU_DOC_BLOCKS_MAX=64 -DTIKU_DOC_LINES_MAX=192 \
+               -DTIKU_DOC_PIECES_MAX=384 -DTIKU_DOC_LINKS_MAX=32 \
+               -DTIKU_DOC_ANCHORS_MAX=16 -DTIKU_DOC_IMAGES_MAX=4
+ifeq ($(TIKU_APPL_DOC_DEMO),1)
+APPL_SRCS   += applications/board/samples/doc_demo.c
+APPL_CFLAGS += -DTIKU_APPL_DOC_DEMO=1
+endif
+endif
 # The desk over an address: /gui/desk dials a desktop and the session
 # rides the kit's IP link instead of the cable.  Needs the kit under it
 # (TIKU_KITS_NET_LINK_IP_ENABLE=1 TIKU_KIT_NET_ENABLE=1), which the
@@ -80,7 +96,8 @@ ifneq ($(filter 1,$(TIKU_APPL_GUI_IP) $(TIKU_APPL_GUI_BLE)),)
 APPL_SRCS   += applications/board/gui/tiku_draw_desk.c
 APPL_CFLAGS += -DTIKU_APPL_GUI_DESK=1
 endif
-ifneq ($(filter 1,$(TIKU_APPL_GUI_DEMO) $(TIKU_APPL_DRAW_DEMO)),)
+ifneq ($(filter 1,$(TIKU_APPL_GUI_DEMO) $(TIKU_APPL_DRAW_DEMO) \
+                  $(TIKU_APPL_DOC_DEMO)),)
 APPL_SRCS   += applications/board/samples/tiku_appl_autostart.c
 endif
 endif
