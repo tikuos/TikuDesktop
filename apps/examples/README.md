@@ -1,6 +1,6 @@
 # Toolkit examples
 
-Four applications, smallest first. Each is one C file that defines a
+Small applications, each one C file that defines a
 `tiku_app_descriptor_t` and nothing else, so the same source runs two
 ways: as its own process over the window session, or hosted inside a
 desktop that linked it.
@@ -11,24 +11,31 @@ desktop that linked it.
 | `clock.c` | `tick`, and repainting only when the displayed value changed |
 | `counter.c` | pointer hit-testing, keys and menu picks reaching one value |
 | `sketch.c` | a drag followed from press through move to release |
+| `sensors.c` | live plots, readouts, meters, sparklines and paused snapshots |
 
 ## Building and running
 
 ```sh
 cd applications
-make examples                 # build/tiku-example-{hello,clock,counter,sketch}
+make examples                 # includes build/tiku-example-sensors
 
 # in one terminal: a desktop to host them
 ./build/TikuDesktop ~/Desktop
 
 # in another: any example, as its own process
 ./build/tiku-example-sketch
+./build/tiku-example-sensors   # Sensor Monitor, explicitly simulated readings
 ```
 
 The application finds the desktop at `$HOME/.config/tracker/desk.sock`, and
 retries for a few seconds, so either order of starting works. Escape closes
 any of them; so does Quit in the window's own menu, which appears in the
 global bar when `GlobalMenuBar` is on.
+
+Sensor Monitor is also available as **Sensors** in the desktop Applications menu after
+`make apps`. It does not access hardware. Its controls exercise missing samples,
+disconnection, fixed/automatic scales, time ranges, trace selection and pause
+without stopping acquisition. See the [sensor widget guide](../../kits/interface/doc/sensors.md).
 
 ## The two deployments
 

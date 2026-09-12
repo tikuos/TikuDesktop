@@ -105,6 +105,18 @@ static void choice_test(void)
     ev = pointer(TIKU_EVENT_POINTER_DOWN, 245, 5);
     assert(tiku_choice_event(&c, &ev, a, screen, 0) == TIKU_CHOICE_HANDLED);
     assert(!c.open && c.selected == 0);
+    /* Nothing chosen is still a list to choose FROM: a caller that clears
+     * its selection (the board it named went away) must not be handed a
+     * control no key or click can open. */
+    c.selected = -1;
+    ev = key(' ', 0);
+    assert(tiku_choice_event(&c, &ev, a, screen, 1) == TIKU_CHOICE_HANDLED);
+    assert(c.open);
+    ev = key(TIKU_KEY_DOWN, 0); tiku_choice_event(&c, &ev, a, screen, 1);
+    ev = key(TIKU_KEY_RETURN, 0);
+    assert(tiku_choice_event(&c, &ev, a, screen, 1) == TIKU_CHOICE_CHANGED);
+    assert(c.selected >= 0 && !c.open);
+    c.selected = 0;
     for (int i = c.count; i < TIKU_CHOICE_MAX; i++) {
         char label[24]; snprintf(label, sizeof label, "Option %d", i);
         assert(tiku_choice_add(&c, label, 1) == i);

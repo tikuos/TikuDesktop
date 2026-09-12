@@ -47,9 +47,9 @@ PROG_D      := $(APPS_D)/programming
 SO_APPS     := $(APPS_D)/terminal.so $(APPS_D)/editor.so \
                $(APPS_D)/Bench.so \
                $(PROG_D)/TikuBasic.so $(PROG_D)/TikuC.so
-SO_EXAMPLES := $(patsubst %,$(APPS_D)/%.so,hello clock counter sketch twowin)
+SO_EXAMPLES := $(patsubst %,$(APPS_D)/%.so,hello clock counter sketch twowin sensors)
 
-EXAMPLE_NAMES := hello clock counter sketch
+EXAMPLE_NAMES := hello clock counter sketch sensors
 EXAMPLES      := $(patsubst %,$(BUILD)/tiku-example-%,$(EXAMPLE_NAMES))
 
 # The board's own BASIC interpreter, compiled for the host: the editor runs

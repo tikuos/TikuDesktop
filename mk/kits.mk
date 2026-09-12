@@ -50,6 +50,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_scroll.c $(K)/interface/tiku_field.c \
                $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c \
                $(K)/interface/tiku_text_input.c \
+               $(K)/interface/tiku_sensor.c $(K)/interface/tiku_sensor_paint.c \
                $(K)/interface/tiku_choice.c $(K)/interface/tiku_choice_paint.c \
                $(K)/interface/tiku_text_layout.c $(K)/interface/tiku_text_layout_paint.c \
                $(K)/interface/tiku_properties.c $(K)/interface/tiku_properties_paint.c \
@@ -168,6 +169,7 @@ dl:
 BEHAVIOUR_SRCS := $(K)/interface/tiku_field.c $(K)/interface/tiku_scroll.c \
                   $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c \
                   $(K)/interface/tiku_text_input.c \
+                  $(K)/interface/tiku_sensor.c \
                   $(K)/interface/tiku_choice.c \
                   $(K)/interface/tiku_text_layout.c $(K)/interface/tiku_properties.c \
                   $(K)/interface/tiku_preferences_layout.c \
@@ -192,6 +194,7 @@ check-behaviour:
 	    $(K)/interface/tiku_dialog.c $(K)/interface/tiku_choice.c \
 	    $(K)/interface/tiku_field_event.c $(K)/interface/tiku_choice_paint.c \
 	    $(K)/interface/tiku_text_input.c \
+	    $(K)/interface/tiku_sensor.c $(K)/interface/tiku_sensor_paint.c \
 	    $(K)/interface/tiku_text_layout.c $(K)/interface/tiku_text_layout_paint.c \
 	    $(K)/interface/tiku_properties.c $(K)/interface/tiku_properties_paint.c \
 	    $(K)/interface/tiku_preferences_layout.c

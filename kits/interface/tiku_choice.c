@@ -93,7 +93,9 @@ tiku_choice_result_t tiku_choice_event(tiku_choice_t *c,
     if (!c->enabled || e->type == TIKU_EVENT_DEACTIVATED) {
         tiku_choice_close(c); return TIKU_CHOICE_IGNORED;
     }
-    if (!c->count || c->selected < 0) return TIKU_CHOICE_IGNORED;
+    /* A list with nothing chosen yet is still a list to choose FROM: a
+     * caller that cleared its selection must not be left a dead control. */
+    if (!c->count) return TIKU_CHOICE_IGNORED;
     if (e->type == TIKU_EVENT_KEY_DOWN && (focused || c->open)) {
         if (c->open && (e->key == TIKU_KEY_ESCAPE || e->key == TIKU_KEY_TAB)) {
             tiku_choice_close(c);
