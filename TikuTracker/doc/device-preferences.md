@@ -5,6 +5,16 @@ connected device by name/icon, choose a setting, and press Apply (or Sync now).
 Refresh devices reloads the mount list and the selected device's values.
 Device connection and the default execution target remain in the Devices menu.
 
+The classic-style panel separates the inset device list, current-value table,
+and an etched editor for the selected setting. Read-only settings are labelled
+explicitly. **Done** closes the panel without applying pending input; changes
+still require **Apply**, **Sync now**, or **Save for restart**. The layout uses
+shared font-scaled rectangles for painting and hit testing.
+Current values now use the shared two-column property-table control. Unavailable
+values use subdued ink; long labels and values show `...` independently without
+crossing columns. Group interiors and footer actions share the same layout
+helpers as Startup Preferences. Explanations wrap through the shared text kit.
+
 The panel initially selects **CPU clock**. Its row distinguishes the running
 rate from a different saved rate. Choose a frequency from the dropdown, then
 press **Save for restart**; an unchanged selection disables Save. The dropdown
@@ -12,6 +22,17 @@ labels unsaved choices explicitly. Space opens the list, arrow keys choose,
 and Enter closes the open list without writing. Restart the device manually
 when ready. Older firmware displays an update/reconnect hint instead of a
 nonfunctional control; fixed clocks and read-only connections are explained.
+
+CPU and cryptography use the shared dropdown control: Escape cancels an open
+list, Tab dismisses it and moves focus, and clicking outside dismisses without
+changing the selection. Selecting an option never writes to the device.
+Tab/Shift-Tab visits enabled devices, settings, editors and buttons. Space
+activates the focused row or button. Text fields support pointer selection,
+Shift-arrow selection, Home/End, Command-A/C/X/V, and Command-Z/Shift-Z undo/redo.
+The X11 host bridges text to other desktop applications. Transfers are bounded
+to 4095 UTF-8 bytes; failed or empty pastes leave the selection unchanged.
+Text insertion is atomic and UTF-8 codepoint-safe, not full IME or
+grapheme editing. Buttons activate on release, so dragging out cancels a press.
 
 ## VFS audit
 

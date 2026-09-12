@@ -1,6 +1,14 @@
 /* Device preferences: capabilities, explicit writes and confirmed readback. */
 #include <assert.h>
+#include "tiku_icons_tiku.h"
+#include "tiku_measure.h"
 #include "../src/shell/desktop/tiku_trk_desktop_deviceprefs.c"
+
+static tiku_rect_t dp_setting_row(dp_layout_t l, int i)
+{
+    tiku_properties_t table = {.count = DP_COUNT, .row_h = dp_row()};
+    return tiku_properties_row(&table, l.table, i);
+}
 
 static char vals[DP_COUNT][96] = {"Desk sensor", "128000000",
                                   "1789041600", "auto", "0", "WFI"};
@@ -64,8 +72,21 @@ static int mock_write(tiku_backend_t *b, const char *path, const void *in,
     return 0;
 }
 
+/* Exercise complete pointer gestures, not press-only pseudo-clicks. */
+static int send_input(tiku_window_t *w, const tiku_event_t *ev)
+{
+    int result = tiku_window_send(w, ev);
+    if (ev->type == TIKU_EVENT_POINTER_DOWN && w->open) {
+        tiku_event_t up = *ev;
+        up.type = TIKU_EVENT_POINTER_UP;
+        result |= tiku_window_send(w, &up);
+    }
+    return result;
+}
+
 int main(void)
 {
+    assert(tiku_icons_tiku_register() > 0);
     const tiku_backend_ops_t ops = {.stat=mock_stat, .read=mock_read,
                                    .write=mock_write};
     tiku_backend_t backend = {.ops=&ops};
@@ -168,7 +189,7 @@ int main(void)
     snprintf(p.names[0], sizeof p.names[0], "nrf54l15");
     snprintf(p.names[1], sizeof p.names[1], "nrf54lm20b");
     snprintf(p.status, sizeof p.status,
-             "Select a setting to view or change it.");
+             "Settings read from device.");
     p.setting = DP_CPU;
     dp_edit(&p);
     assert(dp_clock_pending(&p) && !dp_clock_dirty(&p));
@@ -192,68 +213,111 @@ int main(void)
         char path[80];
         tiku_theme_set(dark ? tiku_theme_dark() : NULL);
         tiku_surface_t *s = tiku_surface_new(820, 500, TIKU_C_PANEL);
-        p.clock_menu = dark;
+        p.choice.open = dark;
         dp_draw(NULL, s, (tiku_rect_t){0,0,820,500}, &p);
         snprintf(path, sizeof path, "/tmp/tiku-deviceprefs-%d.png", dark);
         assert(tiku_surface_png(s, path) == 0);
         tiku_surface_free(s);
     }
-    p.clock_menu = 0;
+    tiku_theme_set(NULL);
+    {
+        struct desktop_deviceprefs preview = p;
+        tiku_surface_t *s = tiku_surface_new(760, 520, TIKU_C_PANEL);
+        preview.choice.open = 0;
+        preview.setting = DP_SLEEP;
+        dp_draw(NULL, s, (tiku_rect_t){0,0,760,520}, &preview);
+        assert(tiku_surface_png(s, "/tmp/tiku-deviceprefs-readonly.png") == 0);
+        preview.count = 0;
+        preview.setting = DP_CPU;
+        memset(preview.values, 0, sizeof preview.values);
+        memset(&preview.clock, 0, sizeof preview.clock);
+        snprintf(preview.status, sizeof preview.status,
+                 "Connect a device from the desktop Devices menu.");
+        dp_draw(NULL, s, (tiku_rect_t){0,0,760,520}, &preview);
+        assert(tiku_surface_png(s, "/tmp/tiku-deviceprefs-empty.png") == 0);
+        tiku_surface_free(s);
+    }
+    p.choice.open = 0;
     app = calloc(1, sizeof *app);
     app->surf = tiku_surface_new(1100, 800, TIKU_C_PANEL);
     app->desk = tiku_workspace_new(app->surf);
     p.app = app;
     app->deviceprefs = &p;
     p.window = tiku_workspace_open(app->desk, "Devices Preferences",
-        (tiku_rect_t){30, 60, 820, 500}, dp_draw, &p, NULL);
+        (tiku_rect_t){30, 60, 760, 540}, dp_draw, &p, NULL);
     tiku_window_set_handlers(p.window, dp_event, NULL, NULL);
     assert(desktop_deviceprefs_handle(app) == p.window);
     tiku_rect_t c = tiku_window_content(p.window);
+    dp_layout_t layout = dp_layout(c, p.setting);
     tiku_event_t ev = {.type=TIKU_EVENT_POINTER_DOWN, .button=1,
-        .x=c.x+220, .y=c.y+18+(DP_CRYPTO+1)*dp_row()+4};
-    assert(tiku_window_send(p.window, &ev));
+        .x=dp_setting_row(layout, DP_CRYPTO).x+4,
+        .y=dp_setting_row(layout, DP_CRYPTO).y+4};
+    assert(send_input(p.window, &ev));
     assert(p.setting == DP_CRYPTO);
-    ev.y = c.y+18+(DP_COUNT+4)*dp_row()+4;
-    assert(tiku_window_send(p.window, &ev));
+    layout = dp_layout(c, p.setting);
+    ev.x = layout.edit.x+4; ev.y = layout.edit.y+4;
+    assert(send_input(p.window, &ev));
+    assert(p.choice.open);
+    ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN, .key=TIKU_KEY_DOWN};
+    assert(send_input(p.window, &ev));
+    ev.key = TIKU_KEY_RETURN;
+    assert(send_input(p.window, &ev));
     assert(!strcmp(p.field.text, "sw"));
-    ev.y = c.y+18+dp_row()+4;
-    assert(tiku_window_send(p.window, &ev));
+    ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1};
+    ev.x = dp_setting_row(layout, DP_NAME).x+4;
+    ev.y = dp_setting_row(layout, DP_NAME).y+4;
+    assert(send_input(p.window, &ev));
     assert(p.setting == DP_NAME);
     ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN,
         .key='a', .modifiers=TIKU_MOD_CMD};
-    assert(tiku_window_send(p.window, &ev));
+    assert(send_input(p.window, &ev));
     ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN,
         .key='X', .text="X"};
-    assert(tiku_window_send(p.window, &ev));
+    assert(send_input(p.window, &ev));
     assert(!strcmp(p.field.text, "X"));
-    ev.key = TIKU_KEY_TAB;
-    assert(tiku_window_send(p.window, &ev));
-    assert(p.setting == DP_CPU);
     ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,
-        .x=c.x+220, .y=c.y+18+(DP_COUNT+4)*dp_row()+4};
-    assert(tiku_window_send(p.window, &ev));
-    assert(p.clock_menu);
-    ev.y -= dp_row();
-    assert(tiku_window_send(p.window, &ev));
-    assert(!p.clock_menu && !strcmp(p.field.text, "128000000"));
+        .x=dp_setting_row(layout, DP_CPU).x+4,
+        .y=dp_setting_row(layout, DP_CPU).y+4};
+    assert(send_input(p.window, &ev));
+    assert(p.setting == DP_CPU);
+    layout = dp_layout(c, p.setting);
+    assert(layout.done.y + layout.done.h <= c.y + c.h);
+    assert(dp_device_row(layout, TIKU_MOUNT_MAX - 1).y +
+           dp_device_row(layout, TIKU_MOUNT_MAX - 1).h <=
+           layout.devices.y + layout.devices.h);
+    before = writes;
+    ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,
+        .x=layout.table.x+1, .y=layout.table.y+1};
+    assert(send_input(p.window, &ev));
+    assert(p.setting == DP_CPU && writes == before);
+    ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,
+        .x=layout.edit.x+4, .y=layout.edit.y+4};
+    assert(send_input(p.window, &ev));
+    assert(p.choice.open);
+    tiku_rect_t popup = tiku_choice_popup(&p.choice, layout.edit, c);
+    ev.x = popup.x+4;
+    ev.y = popup.y+2+tiku_measure_row_h()+4;
+    assert(send_input(p.window, &ev));
+    assert(!p.choice.open && !strcmp(p.field.text, "128000000"));
     assert(!strcmp(clock_target, "64000000")); /* selection is not a write */
     assert(dp_clock_dirty(&p));
     before = writes;
     ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN, .key=' '};
-    assert(tiku_window_send(p.window, &ev));
-    assert(p.clock_menu);
+    assert(send_input(p.window, &ev));
+    assert(p.choice.open);
     ev.key = TIKU_KEY_RETURN;
-    assert(tiku_window_send(p.window, &ev));
-    assert(!p.clock_menu && writes == before && !p.busy);
+    assert(send_input(p.window, &ev));
+    assert(!p.choice.open && writes == before && !p.busy);
     tiku_field_start(&p.field, p.clock.target);
     assert(!dp_clock_dirty(&p));
     dp_apply(&p); /* unchanged Save must not queue a write */
     assert(writes == before && !p.busy);
     p.busy = 1;
-    ev.type = TIKU_EVENT_KEY_DOWN;
-    ev.key = TIKU_KEY_ESCAPE;
-    assert(tiku_window_send(p.window, &ev));
+    ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,
+        .x=layout.done.x+4, .y=layout.done.y+4};
+    assert(send_input(p.window, &ev));
     assert(desktop_deviceprefs_handle(app) == NULL);
+    assert(writes == before); /* Done closes even while busy, without a write. */
     tiku_workspace_free(app->desk);
     tiku_surface_free(app->surf);
     free(app);
