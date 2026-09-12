@@ -302,6 +302,7 @@ test_bench_LDLIBS := -lX11 -lm
 test_console_LDLIBS := -lX11 -lm
 test_ide_debug_LDLIBS := -lX11 -lm
 test_deviceprefs_LDLIBS := -lX11 -lm
+test_calculator_LDLIBS := -lX11 -lm
 test_device_utilities_SRCS := $(T)/src/core/tiku_trk_task.c
 test_device_utilities_LDLIBS := -lX11 -lm
 test_registry_SRCS := $(T)/src/core/tiku_trk_task.c

@@ -5,7 +5,7 @@
 #include "tiku_input.h"
 #include "tiku_geom.h"
 
-#define TIKU_DIALOG_MAX 64
+#define TIKU_DIALOG_MAX 96
 #define TIKU_DIALOG_NONE (-1)
 typedef enum { TIKU_DIALOG_BUTTON, TIKU_DIALOG_TOGGLE,
                TIKU_DIALOG_INPUT } tiku_dialog_kind_t;
