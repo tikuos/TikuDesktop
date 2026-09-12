@@ -302,6 +302,10 @@ until there is a second reason to want one.
 
 ## 10. Phases
 
+All five are built.  P0 and P1 are the kit, P2 the Help window and its
+Deskbar row, P3 the pages and the per-application Help row, P4 the board.
+Tables were deferred from P0 and landed with P3.
+
 **P0 — the document model.** `tiku_doc.h/.c` with parse, layout, hit test,
 links, anchors and caps. No painting, no window. `test_doc` covers it.
 Ends with `make check-behaviour` green, which proves the file is board-safe.
