@@ -60,7 +60,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_slider.c $(K)/interface/tiku_colors.c \
                $(K)/interface/tiku_textview.c $(K)/interface/tiku_alert.c \
                $(K)/interface/tiku_syntax.c $(K)/interface/tiku_list.c \
-               $(K)/interface/tiku_doc.c \
+               $(K)/interface/tiku_doc.c $(K)/interface/tiku_doc_paint.c \
                $(K)/interface/tiku_splash.c \
                $(K)/interface/tiku_layout.c $(K)/interface/tiku_form.c \
                $(K)/interface/tiku_form_row.c \

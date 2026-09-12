@@ -302,9 +302,25 @@ static void text_add(read_t *r, const char *s, int n)
             ? TIKU_DOC_BLOCK_QUOTE : TIKU_DOC_BLOCK_P, 0, 0)) return;
     if (!run_open(r)) return;
     if (r->pending) {
+        tiku_doc_run_t *run = &d->run[r->run];
+
         r->pending = 0;
-        if (d->ntext > d->run[r->run].off) arena_byte(d, ' ');
-        else if (d->nrun > d->block[r->block].run0 + 1) arena_byte(d, ' ');
+        if (d->ntext > run->off) {
+            arena_byte(d, ' ');
+        } else if (r->run > d->block[r->block].run0 &&
+                   (run - 1)->link == TIKU_DOC_NONE && arena_room(d, 1)) {
+            /* The space goes to the words before it rather than to the
+             * ones about to start, unless those words are a link: what
+             * is underlined is the link and not the gap beside it. */
+            tiku_doc_run_t *prev = run - 1;
+
+            d->text[prev->off + prev->len] = ' ';
+            prev->len++;
+            d->text[d->ntext++] = 0;
+            run->off = d->ntext;
+        } else if (r->run > d->block[r->block].run0) {
+            arena_byte(d, ' ');
+        }
     }
     if (!arena_room(d, n)) return;
     memcpy(d->text + d->ntext, s, (size_t)n);
@@ -488,8 +504,15 @@ static const char *tag_do(read_t *r, const char *p, const char **skip_to)
     case T_H1: case T_H2: case T_H3: {
         int kind = TIKU_DOC_BLOCK_H1 + (tag - T_H1);
 
-        if (close) { block_end(r); break; }
+        if (close) {
+            block_end(r);
+            r->face = TIKU_MEASURE_PLAIN;
+            break;
+        }
         if (!block_begin(r, kind, 0, 0)) break;
+        /* A heading's words are the bold face, which is the face they
+         * are measured in as well as drawn in. */
+        r->face = TIKU_MEASURE_BOLD;
         anchor_add(r, body);
         break;
     }
@@ -973,18 +996,6 @@ static void block_metrics(const tiku_doc_t *d, int i, int *above, int *below,
     if (i == 0) *above = 0;
 }
 
-/** @brief The face a block's own words take. */
-static int block_face(const tiku_doc_t *d, int i)
-{
-    switch (d->block[i].kind) {
-    case TIKU_DOC_BLOCK_H1:
-    case TIKU_DOC_BLOCK_H2:
-    case TIKU_DOC_BLOCK_H3: return TIKU_MEASURE_BOLD;
-    case TIKU_DOC_BLOCK_PRE: return TIKU_MEASURE_MONO;
-    default: return TIKU_MEASURE_PLAIN;
-    }
-}
-
 /** @brief One block: its space above, its lines, its space below. */
 static void lay_block(lay_t *L, int i)
 {
@@ -1069,7 +1080,6 @@ static void lay_block(lay_t *L, int i)
     line_close(L);
     b->h = (int16_t)(L->y + below - b->y);
     L->y += below;
-    (void)block_face(d, i);
 }
 
 int tiku_doc_layout(tiku_doc_t *d, int width)

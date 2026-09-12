@@ -300,6 +300,21 @@ main(void)
         check(tiku_doc_link_next(&doc, TIKU_DOC_NONE, 1) == 1 &&
               tiku_doc_link_next(&doc, 0, 1) == 1,
               "and the walk back does too");
+        /* What is underlined is the link, not the gap beside it. */
+        int clean = 1;
+        for (int link = 0; link < tiku_doc_link_count(&doc); link++) {
+            int at = 0, count = 0;
+
+            if (!tiku_doc_link_pieces(&doc, link, &at, &count)) continue;
+            for (int i = at; i < at + count; i++) {
+                const tiku_doc_piece_t *pc = tiku_doc_piece(&doc, i);
+                const char *t = tiku_doc_text(&doc, pc->off);
+
+                if (!pc->len) continue;
+                if (t[0] == ' ' || t[pc->len - 1] == ' ') clean = 0;
+            }
+        }
+        check(clean, "and a link's own words carry no space at either end");
     }
 
     printf("\nthe page reads as it was written, and no address is in it\n");
@@ -517,6 +532,21 @@ main(void)
         tiku_doc_layout(&doc, 400);
         check(tiku_doc_full(&doc) & TIKU_DOC_FACE_FLAT,
               "a page with a heading says its headings are flat");
+        int bold = 0, of_heading = 0;
+        for (int i = 0; i < tiku_doc_line_count(&doc); i++) {
+            const tiku_doc_line_t *ln = tiku_doc_line(&doc, i);
+
+            if (tiku_doc_block(&doc, ln->block)->kind != TIKU_DOC_BLOCK_H1) {
+                continue;
+            }
+            for (int k = ln->piece0; k < ln->piece0 + ln->npiece; k++) {
+                of_heading++;
+                if (tiku_doc_run(&doc, tiku_doc_piece(&doc, k)->run)->face ==
+                    TIKU_MEASURE_BOLD) bold++;
+            }
+        }
+        check(of_heading > 0 && bold == of_heading,
+              "and every word of a heading is in the bold face");
         tiku_doc_read(&doc, "<p>words only</p>");
         tiku_doc_layout(&doc, 400);
         check(!(tiku_doc_full(&doc) & TIKU_DOC_FACE_FLAT),

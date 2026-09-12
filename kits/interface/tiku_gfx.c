@@ -308,6 +308,11 @@ tiku_ink(tiku_ink_t which)
          * a path reads as a path on every table and names no fourth
          * colour of its own. */
         return tiku_dim(TIKU_C_CODE_STR, TIKU_C_SELECT);
+    case TIKU_INK_LINK:
+        /* The shade the desk already gives a thing pointed at.  A table
+         * with no hue makes it nearly the document's own ink, which is
+         * why a link is underlined as well as tinted. */
+        return TIKU_C_SELECT;
     case TIKU_INK_PLAIN:
     default:
         /* An ink this build does not know reads as the document's own,
