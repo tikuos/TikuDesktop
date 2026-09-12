@@ -190,6 +190,56 @@ main(void)
         tiku_dl_free(few);
     }
 
+    printf("\na table is drawn whole, however tall its first column is\n");
+    {
+        /* The cells of a row are drawn one after another, so the last
+         * line of a tall first column sits BELOW the first line of a
+         * short second one.  A painter that stopped at the first line
+         * past the frame would draw the first column and lose the
+         * rest. */
+        static const char *const table =
+            "<table><tr>"
+            "<td>a first column with enough words in it to wrap several "
+            "times over at this width, which is what pushes the lines "
+            "of the cells beside it up above its own last line</td>"
+            "<td>rhubarb</td></tr></table>";
+        tiku_rect_t slot = {10, 10, 240, 70};
+        tiku_doc_paint_t how = {0, TIKU_DOC_NONE, NULL, NULL, NULL};
+        tiku_dl_t *dl;
+        char said[16384];
+        size_t len = 0;
+        int found = 0;
+
+        tiku_doc_read(&doc, table);
+        tiku_doc_layout(&doc, slot.w);
+        dl = drawn(&how, slot);
+        (void)tiku_dl_flatten(dl, said, sizeof said, &len);
+        for (size_t i = 0; i + 7 < len; i++) {
+            if (!memcmp(said + i, "rhubarb", 7)) found = 1;
+        }
+        check(found, "the second column is drawn even though the first "
+                     "runs past the frame");
+        tiku_dl_free(dl);
+
+        /* And the rule under a row is drawn once, the width of the
+         * page, by the cell that begins the row. */
+        tiku_rect_t room = {10, 10, 240, 400};
+        tiku_dl_t *all = drawn(&how, room);
+        int rules = 0;
+        size_t at = 0;
+        tiku_dl_fact_t f;
+
+        (void)tiku_dl_flatten(all, said, sizeof said, &len);
+        while (tiku_dl_read(said, len, &at, &f)) {
+            if (f.kind == TIKU_DL_FACT_PAINT && f.rect.h == 1 &&
+                f.rect.w == room.w) rules++;
+        }
+        check(rules == 1, "and one rule, the width of the page, under it");
+        tiku_dl_free(all);
+        tiku_doc_read(&doc, page);
+        tiku_doc_layout(&doc, where.w);
+    }
+
     printf("\nthe painter measures nothing of its own\n");
     {
         FILE *f = fopen("kits/interface/tiku_doc_paint.c", "r");

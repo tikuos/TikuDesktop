@@ -54,6 +54,9 @@
 #ifndef TIKU_DOC_IMAGES_MAX
 #define TIKU_DOC_IMAGES_MAX  32
 #endif
+#ifndef TIKU_DOC_COLS_MAX
+#define TIKU_DOC_COLS_MAX    8
+#endif
 /* How deep the elements may nest while reading.  Parse-time only. */
 #define TIKU_DOC_DEPTH_MAX   16
 
@@ -71,6 +74,12 @@ typedef enum {
     TIKU_DOC_BLOCK_QUOTE,
     TIKU_DOC_BLOCK_RULE,
     TIKU_DOC_BLOCK_IMAGE,
+    /*
+     * One cell of a table.  Its row is its index, its column and span
+     * are its own; a table is the cells that lie next to each other,
+     * since the element that held them is not a block of its own.
+     */
+    TIKU_DOC_BLOCK_CELL,
     /*
      * What a cap cost, as a block of its own.  A page that was cut gets
      * one at the end, so the cut takes room in the line table and is
@@ -107,6 +116,8 @@ typedef enum {
 
 /** @brief An ordered list: the item's number is its own. */
 #define TIKU_DOC_BLOCK_ORDERED 0x01u
+/** @brief A cell of the head of its table: a <th>, drawn bold. */
+#define TIKU_DOC_BLOCK_HEADER  0x02u
 
 /*
  * Which table filled, as bits.  tiku_doc_full_first() hands back the
@@ -135,6 +146,15 @@ typedef enum {
 #define TIKU_DOC_FACE_FLAT    0x200u
 /** @brief A word was broken between codepoints to fit a narrow box. */
 #define TIKU_DOC_NARROW       0x400u
+/**
+ * @brief A table had more columns than there are, and folded the rest.
+ *
+ * Like the two above, this says how the page was fitted rather than
+ * that anything was lost: a cell past the last column is laid in the
+ * last one, under whatever is already there, so its words are still
+ * read.
+ */
+#define TIKU_DOC_COLS_FOLDED  0x800u
 
 /**
  * @brief One stretch of one face, one ink and one link.
@@ -158,9 +178,11 @@ typedef struct {
     int16_t h;
     int16_t run0, nrun;
     int16_t line0, nline;       /* set by layout                         */
-    int16_t index;              /* an ordered item's number, else 0      */
+    int16_t index;              /* an ordered item's number, a cell's row */
     int16_t image;              /* into the image table, or TIKU_DOC_NONE */
-    uint8_t kind, depth, flags, spare;
+    uint8_t kind, depth, flags;
+    uint8_t col, span;          /* a cell's column, and how many it takes */
+    uint8_t spare;
 } tiku_doc_block_t;
 
 /**

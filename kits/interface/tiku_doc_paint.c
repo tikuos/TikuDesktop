@@ -93,6 +93,15 @@ static void block_art(tiku_surface_t *s, const tiku_doc_t *d, int i,
                                 tiku_ink(TIKU_INK_FAINT));
         }
         break;
+    case TIKU_DOC_BLOCK_CELL:
+        /* One rule under the whole row, drawn by the row's first cell:
+         * every cell of a row is as tall as the row, so any of them
+         * knows where the line goes, and one of them is enough. */
+        if (b->col == 0) {
+            tiku_hline(s, r.x, box.y + box.h - 1, r.w,
+                       tiku_ink(TIKU_INK_FAINT));
+        }
+        break;
     case TIKU_DOC_BLOCK_IMAGE: {
         const tiku_doc_image_t *im = NULL;
 
@@ -136,7 +145,10 @@ void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
         int y = r.y + (int)ln->y - scroll;
 
         if (y + ln->h <= r.y) continue;
-        if (y >= r.y + r.h) break;      /* the lines only go down */
+        /* Not a break: a table lays its cells side by side, so a line
+         * past the frame may be followed by one back at the top of the
+         * row and still to be drawn. */
+        if (y >= r.y + r.h) continue;
         if (ln->block != drawn_block) {
             drawn_block = ln->block;
             block_art(s, d, ln->block, r, scroll, how);

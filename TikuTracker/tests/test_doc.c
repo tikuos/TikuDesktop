@@ -553,6 +553,225 @@ main(void)
               "and a page without one does not");
     }
 
+    printf("\na table is read as cells, and laid out as columns\n");
+    {
+        static const char *const page =
+            "<p>before</p>"
+            "<table>"
+            "<tr><th>Road</th><th>What it does</th></tr>"
+            "<tr><td>Forms</td><td>declares rows bound to its own "
+            "variables and publishes them under the namespace</td></tr>"
+            "<tr><td>Drawing</td><td>opens a window</td></tr>"
+            "</table>"
+            "<p>after</p>";
+        int cells = 0, headers = 0, bold = 1, rows = 0;
+        int first = TIKU_DOC_NONE, second = TIKU_DOC_NONE;
+
+        tiku_doc_read(&doc, page);
+        for (int i = 0; i < tiku_doc_block_count(&doc); i++) {
+            const tiku_doc_block_t *b = tiku_doc_block(&doc, i);
+
+            if (b->kind != TIKU_DOC_BLOCK_CELL) continue;
+            cells++;
+            if (b->index + 1 > rows) rows = b->index + 1;
+            if (b->flags & TIKU_DOC_BLOCK_HEADER) {
+                headers++;
+                if (tiku_doc_run(&doc, b->run0)->face != TIKU_MEASURE_BOLD) {
+                    bold = 0;
+                }
+            }
+            if (b->index == 1 && b->col == 0) first = i;
+            if (b->index == 1 && b->col == 1) second = i;
+        }
+        check(cells == 6 && rows == 3 && headers == 2,
+              "six cells over three rows, two of them the head");
+        check(bold, "and a head cell's words are the bold face, which is "
+                    "the face they were measured in");
+
+        tiku_doc_layout(&doc, 400);
+        check(tiku_doc_check(&doc),
+              "the tables agree after a table is laid out");
+        {
+            const tiku_doc_block_t *a = tiku_doc_block(&doc, first);
+            const tiku_doc_block_t *b = tiku_doc_block(&doc, second);
+            tiku_rect_t ra = tiku_doc_block_rect(&doc, first);
+            tiku_rect_t rb = tiku_doc_block_rect(&doc, second);
+
+            check(first != TIKU_DOC_NONE && second != TIKU_DOC_NONE &&
+                  a->y == b->y,
+                  "two cells of one row begin at the same height");
+            check(ra.x + ra.w <= rb.x,
+                  "and the second begins to the right of the first, which "
+                  "is what a column is");
+            check(a->h == b->h,
+                  "both are as tall as the row, so a rule under one is a "
+                  "rule under all of them");
+        }
+        {
+            /* The wide cell wraps, and its second line is under its own
+             * column rather than under the page. */
+            const tiku_doc_block_t *b = tiku_doc_block(&doc, second);
+            int wrapped = b->nline > 1;
+            int aligned = 1;
+
+            for (int k = b->line0; k < b->line0 + b->nline; k++) {
+                if (tiku_doc_line(&doc, k)->x !=
+                    tiku_doc_line(&doc, b->line0)->x) aligned = 0;
+            }
+            check(wrapped && aligned,
+                  "a cell too narrow for its words wraps inside its own "
+                  "column");
+        }
+        {
+            /* Every word of the table is reachable where it was drawn,
+             * the second column included: the cells of a row share a
+             * band of the page and are told apart by x alone. */
+            int reached = 0, links = 0;
+
+            for (int i = 0; i < tiku_doc_piece_count(&doc); i++) {
+                tiku_rect_t r = tiku_doc_piece_rect(&doc, i);
+                tiku_doc_hit_t h = tiku_doc_hit(&doc, r.x + r.w / 2,
+                                                r.y + r.h / 2);
+
+                if (h.piece == i) reached++;
+            }
+            check(reached == tiku_doc_piece_count(&doc),
+                  "every piece of the page is hit where it was drawn");
+            (void)links;
+        }
+        {
+            /* A link in the second column: the one a reader of a table
+             * is most likely to press, and the one a hit test that
+             * stopped at the first line of a band could never reach. */
+            tiku_doc_read(&doc,
+                "<table><tr><td>left</td>"
+                "<td><a href=\"other.html\">right</a></td></tr></table>");
+            tiku_doc_layout(&doc, 300);
+            int found = TIKU_DOC_NONE;
+
+            for (int i = 0; i < tiku_doc_piece_count(&doc); i++) {
+                tiku_rect_t r = tiku_doc_piece_rect(&doc, i);
+                tiku_doc_hit_t h = tiku_doc_hit(&doc, r.x + 1, r.y + 1);
+
+                if (h.kind == TIKU_DOC_HIT_LINK) found = h.link;
+            }
+            check(found != TIKU_DOC_NONE &&
+                  !strcmp(tiku_doc_link_href(&doc, found), "other.html"),
+                  "a link in the second column is followed from where it "
+                  "is drawn");
+        }
+    }
+
+    printf("\na table too wide for the columns there are is still read\n");
+    {
+        char page[512];
+        int at = 0;
+
+        at += snprintf(page + at, sizeof page - at, "<table><tr>");
+        for (int c = 0; c < TIKU_DOC_COLS_MAX + 3; c++) {
+            at += snprintf(page + at, sizeof page - at,
+                           "<td>c%d</td>", c);
+        }
+        snprintf(page + at, sizeof page - at, "</tr></table>");
+        tiku_doc_read(&doc, page);
+        tiku_doc_layout(&doc, 400);
+        check((tiku_doc_full(&doc) & TIKU_DOC_COLS_FOLDED) != 0,
+              "a table past the last column says so");
+        check(tiku_doc_check(&doc) &&
+              strstr(sentence(&doc), "c10") != NULL,
+              "and folds the rest into the last column rather than "
+              "losing them");
+        {
+            /* Folded, not stacked on top of one another: two cells in
+             * one column are drawn one under the other. */
+            int over = 0;
+
+            for (int i = 0; i < tiku_doc_line_count(&doc); i++) {
+                for (int k = i + 1; k < tiku_doc_line_count(&doc); k++) {
+                    const tiku_doc_line_t *a = tiku_doc_line(&doc, i);
+                    const tiku_doc_line_t *b = tiku_doc_line(&doc, k);
+
+                    if (a->x != b->x) continue;
+                    if (a->y < b->y + b->h && b->y < a->y + a->h) over++;
+                }
+            }
+            check(over == 0, "and no two of them are drawn over each other");
+        }
+    }
+
+    printf("\na cell without its table, and a table without its rows\n");
+    {
+        int held = 1;
+        static const char *const loose[] = {
+            "<td>a cell nobody opened a table for</td>",
+            "<tr><td>one</td><td>two</td></tr>",
+            "<table><tr><td>never closed</td>",
+            "<table></table>", "<table><tr></tr></table>",
+            "<table><tr><td></td><td></td></tr></table>",
+            "<table><tr><td colspan=\"3\">wide</td></tr>"
+            "<tr><td>a</td><td>b</td><td>c</td></tr></table>",
+            "<table><tr><td colspan=\"99\">too wide</td></tr></table>",
+            "<table><tr><td colspan=\"x\">not a number</td></tr></table>"
+        };
+
+        for (size_t i = 0; i < sizeof loose / sizeof loose[0]; i++) {
+            tiku_doc_read(&doc, loose[i]);
+            for (int w = 1; w <= 400; w += 133) {
+                tiku_doc_layout(&doc, w);
+                if (!tiku_doc_check(&doc)) held = 0;
+                (void)tiku_doc_hit(&doc, 5, 5);
+            }
+        }
+        check(held, "every one of them leaves the tables agreeing");
+
+        {
+            /* A row of empty cells is a row: it takes its height and
+             * gets its rule, because a cell with nothing in it is still
+             * a place in the grid. */
+            int blank, full;
+
+            tiku_doc_read(&doc, "<table><tr><td></td><td></td></tr>"
+                          "<tr><td>x</td><td>y</td></tr></table>");
+            tiku_doc_layout(&doc, 300);
+            blank = tiku_doc_height(&doc);
+            tiku_doc_read(&doc, "<table><tr><td>x</td><td>y</td></tr>"
+                          "</table>");
+            tiku_doc_layout(&doc, 300);
+            full = tiku_doc_height(&doc);
+            check(blank > full,
+                  "a row of empty cells takes the room of a row");
+        }
+
+        tiku_doc_read(&doc, "<table><tr><td colspan=\"2\">over both</td>"
+                      "</tr><tr><td>a</td><td>b</td></tr></table>");
+        tiku_doc_layout(&doc, 300);
+        {
+            tiku_rect_t wide = tiku_doc_block_rect(&doc, 0);
+            tiku_rect_t right = tiku_doc_block_rect(&doc, 2);
+
+            check(wide.y < right.y && right.x > 0,
+                  "a cell over two columns is a row of its own, and the "
+                  "row under it still has two");
+        }
+    }
+
+    printf("\nthe rule that a page goes down refuses one that does not\n");
+    {
+        int was;
+
+        tiku_doc_read(&doc, "<p>one two three four five six seven</p>");
+        tiku_doc_layout(&doc, 60);
+        check(tiku_doc_line_count(&doc) > 1 && tiku_doc_check(&doc),
+              "a paragraph over several lines agrees with itself");
+        was = (int)doc.line[1].y;
+        doc.line[1].y = doc.line[0].y - 1;
+        check(!tiku_doc_check(&doc),
+              "and a line put back above the one before it, inside the "
+              "same block, is refused");
+        doc.line[1].y = was;
+        check(tiku_doc_check(&doc), "put back, it agrees again");
+    }
+
     printf("\na page written wrong is still a page\n");
     {
         static const char *const nasty[] = {

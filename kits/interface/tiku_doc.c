@@ -167,7 +167,8 @@ static int entity(const char *p, char *out, const char **after)
 
 enum {
     T_UNKNOWN = 0, T_P, T_H1, T_H2, T_H3, T_UL, T_OL, T_LI, T_PRE,
-    T_QUOTE, T_HR, T_IMG, T_A, T_B, T_I, T_CODE, T_BR, T_SKIP
+    T_QUOTE, T_HR, T_IMG, T_A, T_B, T_I, T_CODE, T_BR, T_SKIP,
+    T_TABLE, T_TR, T_TH, T_TD
 };
 
 /** @brief The element @p name is, or T_UNKNOWN. */
@@ -180,7 +181,9 @@ static int tag_of(const char *name, int n)
         {"img", 3, T_IMG}, {"a", 1, T_A}, {"b", 1, T_B}, {"strong", 6, T_B},
         {"i", 1, T_I}, {"em", 2, T_I}, {"code", 4, T_CODE}, {"br", 2, T_BR},
         {"script", 6, T_SKIP}, {"style", 5, T_SKIP}, {"head", 4, T_SKIP},
-        {"title", 5, T_SKIP}
+        {"title", 5, T_SKIP},
+        {"table", 5, T_TABLE}, {"tr", 2, T_TR}, {"th", 2, T_TH},
+        {"td", 2, T_TD}
     };
     for (size_t i = 0; i < sizeof k / sizeof k[0]; i++) {
         if (k[i].n == n && !memcmp(k[i].name, name, (size_t)n)) return k[i].tag;
@@ -197,6 +200,8 @@ typedef struct {
     int run;                    /* the run being filled, or NONE        */
     int pending;                /* a space is owed before the next word */
     int quote;                  /* inside a <blockquote>                */
+    int table;                  /* inside a <table>                     */
+    int row, col;               /* the cell the next <td> would be      */
     int depth;                  /* how many lists are open              */
     int ordered[TIKU_DOC_DEPTH_MAX];
     int number[TIKU_DOC_DEPTH_MAX];
@@ -261,7 +266,8 @@ static void block_end(read_t *r)
     tiku_doc_block_t *b = &d->block[r->block];
     b->nrun = (int16_t)(d->nrun - b->run0);
     if (!b->nrun && b->kind != TIKU_DOC_BLOCK_RULE &&
-        b->kind != TIKU_DOC_BLOCK_IMAGE) {
+        b->kind != TIKU_DOC_BLOCK_IMAGE &&
+        b->kind != TIKU_DOC_BLOCK_CELL) {
         d->nblock--;            /* a block with nothing in it is nothing */
     }
     r->block = TIKU_DOC_NONE;
@@ -363,6 +369,48 @@ static int attr(const char *p, const char *name, tiku_doc_t *d)
         if (quote && *p) p++;
     }
     return TIKU_DOC_NONE;
+}
+
+/**
+ * @brief A whole number written in an attribute of the tag at @p p.
+ *
+ * Read from the tag itself rather than through attr(), which copies
+ * what it finds into the page's text: a span is a number the layout
+ * wants, not words anybody reads.
+ *
+ * @return the number, or @p fallback when there is none or it is not
+ *         a number.
+ */
+static int attr_num(const char *p, const char *name, int fallback)
+{
+    size_t n = strlen(name);
+
+    while (*p && *p != '>') {
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+        if (*p == '>' || !*p) break;
+        const char *key = p;
+        while (*p && *p != '=' && *p != '>' && *p != ' ') p++;
+        size_t klen = (size_t)(p - key);
+        while (*p == ' ') p++;
+        if (*p != '=') continue;
+        p++;
+        while (*p == ' ') p++;
+        char quote = (*p == '"' || *p == '\'') ? *p : 0;
+        if (quote) p++;
+        const char *val = p;
+        while (*p && (quote ? *p != quote : (*p != ' ' && *p != '>'))) p++;
+        if (klen == n && !memcmp(key, name, n)) {
+            int v = 0, digits = 0;
+
+            for (const char *c = val; c < p && *c >= '0' && *c <= '9'; c++) {
+                v = v * 10 + (*c - '0');
+                if (++digits > 4) return fallback;
+            }
+            return digits ? v : fallback;
+        }
+        if (quote && *p) p++;
+    }
+    return fallback;
 }
 
 /** @brief Remember a name a link may reach. */
@@ -553,6 +601,56 @@ static const char *tag_do(read_t *r, const char *p, const char **skip_to)
         block_end(r);
         r->quote = !close;
         break;
+    case T_TABLE:
+        block_end(r);
+        r->table = !close;
+        r->row = -1;
+        r->col = 0;
+        break;
+    case T_TR:
+        block_end(r);
+        if (!close) {
+            if (!r->table) { r->table = 1; r->row = -1; }
+            r->row++;
+            r->col = 0;
+        }
+        break;
+    case T_TH: case T_TD: {
+        int span;
+
+        if (close) {
+            block_end(r);
+            r->face = TIKU_MEASURE_PLAIN;
+            break;
+        }
+        /* A cell met outside a table opens one: dropping it would drop
+         * its words, and a page written wrong is still a page to read. */
+        if (!r->table) { r->table = 1; r->row = 0; r->col = 0; }
+        if (r->row < 0) r->row = 0;
+        span = attr_num(body, "colspan", 1);
+        if (span < 1) span = 1;
+        if (r->col >= TIKU_DOC_COLS_MAX) {
+            /* Past the last column there is nowhere to put a cell, so
+             * its words join the last one rather than being lost. */
+            r->d->full |= TIKU_DOC_COLS_FOLDED;
+            r->col = TIKU_DOC_COLS_MAX - 1;
+            span = 1;
+        }
+        if (r->col + span > TIKU_DOC_COLS_MAX) {
+            r->d->full |= TIKU_DOC_COLS_FOLDED;
+            span = TIKU_DOC_COLS_MAX - r->col;
+        }
+        if (!block_begin(r, TIKU_DOC_BLOCK_CELL, 0, r->row)) break;
+        r->d->block[r->block].col = (uint8_t)r->col;
+        r->d->block[r->block].span = (uint8_t)span;
+        r->col += span;
+        if (tag == T_TH) {
+            r->d->block[r->block].flags |= TIKU_DOC_BLOCK_HEADER;
+            r->face = TIKU_MEASURE_BOLD;
+        }
+        anchor_add(r, body);
+        break;
+    }
     case T_HR:
         if (!close && block_begin(r, TIKU_DOC_BLOCK_RULE, 0, 0)) block_end(r);
         break;
@@ -990,10 +1088,201 @@ static void block_metrics(const tiku_doc_t *d, int i, int *above, int *below,
         *above = line / 3; *below = line / 3; *indent = line;
         break;
     case TIKU_DOC_BLOCK_RULE: *above = line / 2; *below = line / 2; break;
+    /* A cell's room is its table's to give: lay_table() holds the pen
+     * for the whole of one, and never asks. */
+    case TIKU_DOC_BLOCK_CELL: *below = 0; break;
     case TIKU_DOC_BLOCK_NOTICE: *above = line; *below = line / 2; break;
     default: break;
     }
     if (i == 0) *above = 0;
+}
+
+/** @brief The columns of one table, and where each of them begins. */
+typedef struct {
+    int x[TIKU_DOC_COLS_MAX];
+    int w[TIKU_DOC_COLS_MAX];
+    int n;
+} cols_t;
+
+/**
+ * @brief The narrowest and the widest one cell can be drawn.
+ *
+ * The narrowest is its longest word, since a word is not broken unless
+ * a column is narrower than one; the widest is everything it holds on
+ * a single line.  Both are measured in the runs' own faces, which is
+ * how a header cell counts as the bold face it is drawn in.
+ */
+static void cell_extent(const tiku_doc_t *d, int i, int *min, int *max)
+{
+    const tiku_doc_block_t *b = &d->block[i];
+
+    *min = 0;
+    *max = 0;
+    for (int k = 0; k < b->nrun; k++) {
+        const tiku_doc_run_t *rn = &d->run[b->run0 + k];
+        const char *t = d->text + rn->off;
+        int at = 0;
+
+        *max += word_w(rn->face, t, rn->len);
+        while (at < rn->len) {
+            int end = at;
+            int w;
+
+            while (end < rn->len && t[end] != ' ') end++;
+            w = word_w(rn->face, t + at, end - at);
+            if (w > *min) *min = w;
+            at = end;
+            while (at < rn->len && t[at] == ' ') at++;
+        }
+    }
+}
+
+/**
+ * @brief Share @p width out between the columns of one table.
+ *
+ * Every column is given its widest content when they all fit, and
+ * otherwise its longest word plus a share of what is left over in
+ * proportion to what it wanted.  The columns always add up to the width
+ * they were given, so a rule drawn under a row reaches both edges.
+ */
+static void cols_measure(const tiku_doc_t *d, int first, int last, int width,
+                         int gap, cols_t *C)
+{
+    int min[TIKU_DOC_COLS_MAX] = {0};
+    int max[TIKU_DOC_COLS_MAX] = {0};
+    int summin = 0, summax = 0, room, used = 0;
+
+    C->n = 1;
+    for (int i = first; i < last; i++) {
+        int end = d->block[i].col + (d->block[i].span ? d->block[i].span : 1);
+
+        if (end > C->n) C->n = end;
+    }
+    if (C->n > TIKU_DOC_COLS_MAX) C->n = TIKU_DOC_COLS_MAX;
+    for (int i = first; i < last; i++) {
+        const tiku_doc_block_t *b = &d->block[i];
+        int lo, hi;
+
+        if (b->span > 1) continue;      /* a spanning cell speaks below */
+        cell_extent(d, i, &lo, &hi);
+        if (lo > min[b->col]) min[b->col] = lo;
+        if (hi > max[b->col]) max[b->col] = hi;
+    }
+    /* A column nothing but a spanning cell reaches still needs a width,
+     * so the span hands its own out over the columns it covers. */
+    for (int i = first; i < last; i++) {
+        const tiku_doc_block_t *b = &d->block[i];
+        int span = b->span ? b->span : 1;
+        int lo, hi, have = 0, want;
+
+        if (span < 2) continue;
+        cell_extent(d, i, &lo, &hi);
+        for (int c = b->col; c < b->col + span && c < C->n; c++) have += max[c];
+        want = hi - have - gap * (span - 1);
+        if (want <= 0) continue;
+        for (int c = b->col; c < b->col + span && c < C->n; c++) {
+            max[c] += want / span;
+            if (min[c] < lo / span) min[c] = lo / span;
+        }
+    }
+    for (int c = 0; c < C->n; c++) {
+        if (max[c] < min[c]) max[c] = min[c];
+        summin += min[c];
+        summax += max[c];
+    }
+    room = width - gap * (C->n - 1);
+    if (room < C->n) room = C->n;
+    for (int c = 0; c < C->n; c++) {
+        if (summax <= room) {
+            C->w[c] = summax > 0 ? max[c] + (room - summax) * max[c] / summax
+                                 : room / C->n;
+        } else if (summin <= room && summax > summin) {
+            C->w[c] = min[c] +
+                      (room - summin) * (max[c] - min[c]) / (summax - summin);
+        } else {
+            C->w[c] = room / C->n;
+        }
+        if (C->w[c] < 1) C->w[c] = 1;
+        used += C->w[c];
+    }
+    /* What the division left over goes to the last column, so the row
+     * ends where the page does. */
+    C->w[C->n - 1] += room - used;
+    if (C->w[C->n - 1] < 1) C->w[C->n - 1] = 1;
+    C->x[0] = 0;
+    for (int c = 1; c < C->n; c++) C->x[c] = C->x[c - 1] + C->w[c - 1] + gap;
+}
+
+/**
+ * @brief One table: its cells laid side by side, row by row.
+ *
+ * The pen goes back to the top of the row for every cell, so a table is
+ * the one place in a page where y does not only go down.  What reads
+ * the line table knows it: the painter draws every line it is given,
+ * the hit test asks every line whose band holds the point, and
+ * tiku_doc_check() allows a step backwards into a cell and nowhere else.
+ *
+ * @return the block past the table.
+ */
+static int lay_table(lay_t *L, int first)
+{
+    tiku_doc_t *d = L->d;
+    int line = face_h(TIKU_MEASURE_PLAIN);
+    int gap = line / 2, pad = line / 4;
+    int page = L->width;
+    int last = first, i = first;
+    cols_t C;
+
+    while (last < d->nblock && d->block[last].kind == TIKU_DOC_BLOCK_CELL) {
+        last++;
+    }
+    cols_measure(d, first, last, page, gap, &C);
+    if (first > 0) L->y += line / 2;
+    while (i < last) {
+        int row = d->block[i].index;
+        int top = L->y, bottom = L->y;
+        int bot[TIKU_DOC_COLS_MAX];
+        int j = i;
+
+        for (int c = 0; c < C.n; c++) bot[c] = top;
+        while (j < last && d->block[j].index == row) {
+            tiku_doc_block_t *b = &d->block[j];
+            int span = b->span ? b->span : 1;
+            int c = b->col < C.n ? b->col : C.n - 1;
+            int endc = c + span - 1 < C.n ? c + span - 1 : C.n - 1;
+
+            /* Where its column has got to, which is the top of the row
+             * unless two cells were folded into one column. */
+            L->y = bot[c];
+            L->block = j;
+            b->y = L->y;
+            b->line0 = (int16_t)d->nline;
+            b->nline = 0;
+            L->width = C.x[endc] + C.w[endc];
+            L->xc = C.x[c];
+            if (line_open(L, C.x[c])) {
+                for (int k = 0; k < b->nrun; k++) {
+                    place_run(L, b->run0 + k);
+                    if (L->line == TIKU_DOC_NONE && k + 1 < b->nrun &&
+                        !line_open(L, L->xc)) break;
+                }
+                line_close(L);
+            }
+            for (int k = c; k <= endc; k++) bot[k] = L->y;
+            if (L->y > bottom) bottom = L->y;
+            j++;
+        }
+        /* Every cell of a row is as tall as the row, so the rule drawn
+         * under one is drawn under all of them. */
+        for (int k = i; k < j; k++) {
+            d->block[k].h = (int16_t)(bottom + pad - d->block[k].y);
+        }
+        L->y = bottom + pad;
+        i = j;
+    }
+    L->width = page;
+    L->y += line / 2;
+    return last;
 }
 
 /** @brief One block: its space above, its lines, its space below. */
@@ -1117,7 +1406,10 @@ int tiku_doc_layout(tiku_doc_t *d, int width)
     L.width = width;
     L.line = TIKU_DOC_NONE;
     L.piece = TIKU_DOC_NONE;
-    for (int i = 0; i < d->nblock; i++) lay_block(&L, i);
+    for (int i = 0; i < d->nblock; ) {
+        if (d->block[i].kind == TIKU_DOC_BLOCK_CELL) i = lay_table(&L, i);
+        else lay_block(&L, i), i++;
+    }
     /* What a cap cost takes room of its own, so nothing can pass over it. */
     if ((d->full & DOC_FULL_CAPS) && d->nblock < TIKU_DOC_BLOCKS_MAX) {
         tiku_doc_block_t *b = &d->block[d->nblock];
@@ -1259,23 +1551,32 @@ tiku_doc_hit_t tiku_doc_hit(const tiku_doc_t *d, int x, int y)
     h.line = TIKU_DOC_NONE;
     h.piece = TIKU_DOC_NONE;
     if (!tiku_doc_laid(d)) return h;
-    line = tiku_doc_line_at(d, y);
+    line = TIKU_DOC_NONE;
+    /* Every line whose band holds the point, not the first: the cells of
+     * a table share a band and are told apart by x alone. */
+    for (int k = 0; k < d->nline; k++) {
+        const tiku_doc_line_t *ln = &d->line[k];
+
+        if (y < ln->y || y >= ln->y + ln->h) continue;
+        if (line == TIKU_DOC_NONE) line = k;
+        for (int i = ln->piece0; i < ln->piece0 + ln->npiece; i++) {
+            int left = ln->x + d->piece[i].x;
+
+            if (x < left || x >= left + d->piece[i].w) continue;
+            h.line = k;
+            h.block = ln->block;
+            h.piece = i;
+            h.kind = TIKU_DOC_HIT_TEXT;
+            if (d->run[d->piece[i].run].link != TIKU_DOC_NONE) {
+                h.kind = TIKU_DOC_HIT_LINK;
+                h.link = d->run[d->piece[i].run].link;
+            }
+            return h;
+        }
+    }
     if (line == TIKU_DOC_NONE) return h;
     h.line = line;
     h.block = d->line[line].block;
-    for (int i = d->line[line].piece0;
-         i < d->line[line].piece0 + d->line[line].npiece; i++) {
-        int left = d->line[line].x + d->piece[i].x;
-
-        if (x < left || x >= left + d->piece[i].w) continue;
-        h.piece = i;
-        h.kind = TIKU_DOC_HIT_TEXT;
-        if (d->run[d->piece[i].run].link != TIKU_DOC_NONE) {
-            h.kind = TIKU_DOC_HIT_LINK;
-            h.link = d->run[d->piece[i].run].link;
-        }
-        return h;
-    }
     if (h.block != TIKU_DOC_NONE &&
         d->block[h.block].kind == TIKU_DOC_BLOCK_IMAGE &&
         d->block[h.block].image != TIKU_DOC_NONE) {
@@ -1373,15 +1674,27 @@ int tiku_doc_check(const tiku_doc_t *d)
         if (ln->piece0 < 0 || ln->npiece < 0) return 0;
         if (ln->piece0 + ln->npiece > d->npiece) return 0;
         if (ln->block < 0 || ln->block >= d->nblock) return 0;
-        if (ln->y < last_y) return 0;
+        /* y only goes down, except back to the top of a row for the
+         * next cell of a table.  Nothing else may step backwards. */
+        if (ln->y < last_y &&
+            d->block[ln->block].kind != TIKU_DOC_BLOCK_CELL) return 0;
         last_y = (int)ln->y;
         if (ln->h <= 0) return 0;
     }
     for (int i = 0; i < d->nblock; i++) {
         const tiku_doc_block_t *b = &d->block[i];
 
+        int down = 0;
+
         if (b->run0 < 0 || b->run0 + b->nrun > d->nrun) return 0;
         if (b->nline && b->line0 + b->nline > d->nline) return 0;
+        /* Inside one block y always goes down, a cell included: the
+         * step backwards a table makes is between cells, never within
+         * one. */
+        for (int k = b->line0; k < b->line0 + b->nline && k < d->nline; k++) {
+            if ((int)d->line[k].y < down) return 0;
+            down = (int)d->line[k].y;
+        }
     }
     for (int i = 0; i < d->nlink; i++) {
         if (d->link[i].piece0 == TIKU_DOC_NONE) continue;
