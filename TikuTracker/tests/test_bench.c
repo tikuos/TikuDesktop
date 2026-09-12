@@ -27,9 +27,17 @@ static tiku_app_services_t svc = {.open = opened, .close = closed, .frame = fram
     .menus = menus, .current_device = current, .board_names = names,
     .board_mcu = mcu, .board_port = port, .board_release = release, .board_reclaim = reclaim};
 
-static void pump(bench_t *st)
+/**
+ * @brief Tick until the child is gone, giving it @p seconds to do it.
+ *
+ * A round is a millisecond of ours and ten of the app's clock, so the
+ * escalation the cancel checks watch for arrives ten times sooner than
+ * it would on a desk.  The budget is the caller's because the fixtures
+ * answer at once while the real registry imports every suite it lists.
+ */
+static void pump_for(bench_t *st, int seconds)
 {
-    for (int i = 0; i < 5000 && (st->child || st->loading); i++) {
+    for (int i = 0; i < seconds * 1000 && (st->child || st->loading); i++) {
         bench_tick(st, st->now + 10000);
         usleep(1000);
     }
@@ -40,6 +48,11 @@ static void pump(bench_t *st)
         for (int i = 0; i < st->nlog; i++) fprintf(stderr, "%s\n", st->logs[i].text);
     }
     assert(!st->child && !st->loading);
+}
+
+static void pump(bench_t *st)
+{
+    pump_for(st, 5);
 }
 
 static bench_t *start(void)
@@ -186,7 +199,9 @@ static void real_catalogue_test(void)
     }
     setenv("TIKU_BENCH", dir, 1); free(dir);
     void *state = NULL; assert(!bench_start(&state, &svc));
-    bench_t *st = state; pump(st);
+    /* Minutes, not the fixtures' seconds: the reader imports every
+     * suite module in the checkout to list it. */
+    bench_t *st = state; pump_for(st, 120);
     if (!st->metadata_ok) fprintf(stderr, "%s\n", st->note);
     assert(st->metadata_ok && st->nsuite > 80 && st->nleaf > 400);
     for (int i = 0; i < st->nsuite; i++) if (!strcmp(st->suites[i].key, "kernel")) {
