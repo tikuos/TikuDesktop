@@ -6,7 +6,8 @@ A kit is only a folder until something refuses the includes that would
 undo it.  This holds the table the Makefile's header describes and fails
 if a kit reaches somewhere it was not given.
 
-Two things are checked:
+Two things are checked, over every .c, .h and .inl a kit holds -- an
+.inl is compiled into its includer, so a boundary broken there is broken:
 
   * every include that crosses a kit boundary is one ALLOWS permits, and
   * no kit reaches an application -- desktop or Tracker source.  A kit
@@ -49,7 +50,7 @@ APP_PREFIXES = ("tiku_trk_desktop", "tiku_trk_app.")
 # no display, so a paint header in one would drag the whole drawing end
 # in; the paint lives beside them in tiku_<x>_paint.c.
 BEHAVIOUR = ("tiku_field", "tiku_scroll", "tiku_textview", "tiku_slider",
-             "tiku_doc",
+             "tiku_doc", "tiku_markdown",
              "tiku_field_event", "tiku_dialog", "tiku_choice", "tiku_input",
              "tiku_text_input", "tiku_sensor",
              "tiku_text_layout", "tiku_properties", "tiku_preferences_layout",
@@ -71,7 +72,7 @@ def main():
     for kit, allowed in sorted(ALLOWS.items()):
         d = os.path.join(KITS_DIR, kit)
         for name in sorted(os.listdir(d)):
-            if not name.endswith((".c", ".h")):
+            if not name.endswith((".c", ".h", ".inl")):
                 continue
             path = os.path.join(d, name)
             text = open(path, encoding="utf-8", errors="replace").read()
@@ -96,6 +97,12 @@ def main():
     d = os.path.join(KITS_DIR, "interface")
     for name in sorted(os.listdir(d)):
         stem = name[:-2] if name.endswith((".c", ".h")) else None
+        if name.endswith(".inl"):
+            # An .inl is compiled INTO the file that includes it, so it
+            # carries that file's rules: tiku_doc_storage.inl is tiku_doc.
+            base = name[:-4]
+            stem = next((b for b in BEHAVIOUR
+                         if base == b or base.startswith(b + "_")), None)
         if stem not in BEHAVIOUR:
             continue
         text = open(os.path.join(d, name), encoding="utf-8",
