@@ -378,6 +378,27 @@ static int svc_help_page(void *ctx, const char *page)
     tiku_msg_free(m); return sent;
 }
 
+/** @brief Request a contextual topic from the desktop's reader. */
+static int svc_help_open(void *ctx, const char *page)
+{
+    client_ctx_t *c = ctx;
+    if (!page || strlen(page) >= 256) return 0;
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_HELPOPEN); if (!m) return 0;
+    tiku_msg_add_string(m, "page", page);
+    int sent = tiku_remote_say(&c->remote, m); tiku_msg_free(m); return sent;
+}
+
+/** @brief Bounded report bodies use the same reader without temporary files. */
+static int svc_help_html(void *ctx, const char *title, const char *html)
+{
+    client_ctx_t *c = ctx;
+    if (!html || strlen(html) > 15000 || (title && strlen(title) > 127)) return 0;
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_HELPHTML); if (!m) return 0;
+    if (!tiku_msg_add_string(m, "title", title ? title : "Report") ||
+        !tiku_msg_add_string(m, "html", html)) { tiku_msg_free(m); return 0; }
+    int sent = tiku_remote_say(&c->remote, m); tiku_msg_free(m); return sent;
+}
+
 static int
 svc_current_device(void *ctx, char *out, size_t max)
 {
@@ -496,12 +517,13 @@ svc_board_stop(void *ctx)
 }
 
 static int
-pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
+pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
 {
     tiku_app_services_t services;
     void *state = NULL;
 
     memset(&services, 0, sizeof services);
+    services.startup_document = document;
     services.ctx = ctx;
     services.open = svc_open;
     services.frame = svc_frame;
@@ -524,6 +546,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
     services.board_release = svc_board_release;
     services.open_path = svc_open_path;
     services.help_page = svc_help_page;
+    services.help_open = svc_help_open;
+    services.help_html = svc_help_html;
         services.board_reclaim = svc_board_reclaim;
     services.board_find = svc_board_find;
     services.current_device = svc_current_device;
@@ -667,6 +691,12 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx)
 int
 tiku_client_run(const tiku_app_descriptor_t *app)
 {
+    return tiku_client_run_document(app, NULL);
+}
+
+int
+tiku_client_run_document(const tiku_app_descriptor_t *app, const char *path)
+{
     client_ctx_t ctx;
 
     if (app == NULL) {
@@ -678,7 +708,7 @@ tiku_client_run(const tiku_app_descriptor_t *app)
                                  8000) != 0) {
         return 1;
     }
-    return pump(app, &ctx);
+    return pump(app, &ctx, path);
 }
 
 int
@@ -694,5 +724,5 @@ tiku_client_run_fd(const tiku_app_descriptor_t *app, int fd)
             (app->name != NULL) ? app->name : "app", fd) != 0) {
         return 1;
     }
-    return pump(app, &ctx);
+    return pump(app, &ctx, NULL);
 }

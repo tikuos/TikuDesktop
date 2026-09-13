@@ -219,6 +219,10 @@ typedef struct tiku_remote_session {
     /* What this session has said and nobody has taken yet. */
     tiku_msg_t     *said[TIKU_REMOTE_SAID];
     int                  said_head, said_count, said_lost;
+    /* Bounded, nonblocking desktop-to-app output. A stopped app must not
+     * stop the desktop's event loop, including its Force Quit controls. */
+    unsigned char       *out;
+    size_t               out_size, out_sent;
 } tiku_remote_session_t;
 
 typedef struct tiku_remote_listener {
@@ -311,10 +315,19 @@ const uint32_t *tiku_remote_pixels(
 #define TIKU_MSG_CLIP   0x636c6970u   /* 'clip' */
 /* Ask the desktop to open a namespace path with its normal file handler. */
 #define TIKU_MSG_OPENPATH 0x6f706174u /* 'opat', string "path" */
+/* Local image dispatch; the reply acknowledges opening, not decoding. */
+#define TIKU_MSG_IMAGEOPEN 0x696f706eu /* 'iopn', string "path" */
+#define TIKU_MSG_IMAGEOPENED 0x696f7064u /* 'iopd', int32 "accepted" */
+/* Local host documents, unlike OPENPATH's desktop-namespace path.
+ * Accepted acknowledges dispatch, not successful parsing by the app. */
+#define TIKU_MSG_DOCUMENTOPEN 0x646f706eu /* 'dopn', string "path" */
+#define TIKU_MSG_DOCUMENTOPENED 0x646f7064u /* 'dopd', int32 "accepted" */
 /* Name the application's own page of the desktop's help folder.  Said
  * once, at start; it opens nothing, it is what the system menu's Help
  * row reads while one of this session's windows is in front. */
 #define TIKU_MSG_HELPPAGE 0x68656c70u /* 'help', string "page" */
+#define TIKU_MSG_HELPOPEN 0x686f706eu /* 'hopn', string "page" */
+#define TIKU_MSG_HELPHTML 0x6868746du /* 'hhtm', strings "title", "html" */
 
 /* A program on a board the shell has mounted.  The shell owns the board
  * and the run, so an application ASKs for one and is TOLD what it
@@ -360,6 +373,14 @@ int tiku_remote_tell(tiku_remote_listener_t *listener, int index,
 /** @brief The session owning @p window, or NULL. */
 tiku_remote_session_t *tiku_remote_owner(
     tiku_remote_listener_t *listener, struct tiku_window *window);
+
+/** @brief Acquire a close-on-exec, kernel-authenticated local process handle.
+ * Returns -1 for unsafe/unsupported peers. Caller must close the descriptor.
+ * Only same-user peers other than this process are eligible.
+ */
+int tiku_remote_process_handle(const tiku_remote_session_t *session, long *pid);
+/** @brief Force termination through a pinned handle, never a numeric PID. */
+int tiku_remote_process_kill(int handle);
 
 /*---------------------------------------------------------------------------*/
 /* The application's side: the same contracts, backed by the wire.           */

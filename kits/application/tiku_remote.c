@@ -8,6 +8,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#define _GNU_SOURCE 1
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -19,6 +20,9 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
 
 #include <signal.h>
 
@@ -38,6 +42,51 @@
  * client is reading it into a buffer before it has looked at it.
  */
 #define REMOTE_MAX_DOWN (256u * 1024u)
+
+/** @brief Pin the authenticated local peer; never trust a client-supplied PID.
+ * The caller owns the returned descriptor. Unsupported transports/platforms,
+ * another user's processes, and the desktop itself cannot be terminated.
+ */
+int tiku_remote_process_handle(const tiku_remote_session_t *session, long *pid)
+{
+#if defined(__linux__) && defined(SO_PEERPIDFD)
+    struct ucred cred;
+    socklen_t size = sizeof cred;
+    int handle = -1;
+    if (!session || !session->used || session->fd < 0) {
+        errno = ENOTCONN; return -1;
+    }
+    if (getsockopt(session->fd, SOL_SOCKET, SO_PEERCRED, &cred, &size))
+        return -1;
+    if (size != sizeof cred || cred.uid != geteuid() ||
+        cred.pid <= 1 || cred.pid == getpid()) {
+        errno = EPERM; return -1;
+    }
+    size = sizeof handle;
+    if (getsockopt(session->fd, SOL_SOCKET, SO_PEERPIDFD, &handle, &size))
+        return -1;
+    if (fcntl(handle, F_SETFD, FD_CLOEXEC) < 0) {
+        int error = errno;
+        close(handle); errno = error; return -1;
+    }
+    if (pid) *pid = cred.pid;
+    return handle;
+#else
+    (void)session; (void)pid;
+    errno = ENOTSUP; return -1;
+#endif
+}
+
+/** @brief Kill only the pinned process, even if its numeric PID was reused. */
+int tiku_remote_process_kill(int handle)
+{
+#if defined(__linux__) && defined(SYS_pidfd_send_signal)
+    return (int)syscall(SYS_pidfd_send_signal, handle, SIGKILL, NULL, 0);
+#else
+    (void)handle;
+    errno = ENOTSUP; return -1;
+#endif
+}
 
 int
 tiku_remote_path(char *out, size_t max)
@@ -104,6 +153,51 @@ send_msg(int fd, uint32_t type, const void *payload, uint32_t n)
 
 static void window_unmap(tiku_remote_window_t *win);
 
+/** @brief Flush a bounded amount without waiting for a frozen peer. */
+static void session_flush(tiku_remote_session_t *s)
+{
+    size_t budget = 64u * 1024u;
+    while (s->out_sent < s->out_size && budget) {
+        size_t n = s->out_size - s->out_sent;
+        if (n > budget) n = budget;
+        ssize_t sent = write(s->fd, s->out + s->out_sent, n);
+        if (sent <= 0) {
+            if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ||
+                            errno == EINTR)) return;
+            (void)shutdown(s->fd, SHUT_RDWR);
+            return;
+        }
+        s->out_sent += (size_t)sent; budget -= (size_t)sent;
+    }
+    if (s->out_sent == s->out_size) {
+        free(s->out); s->out = NULL;
+        s->out_sent = s->out_size = 0;
+    }
+}
+
+/** @brief Queue whole frames, never corrupting the stream under backpressure.
+ * Refuse new messages when full, retaining the peer so it can be force quit.
+ */
+static int session_send(tiku_remote_session_t *s, uint32_t type,
+                         const void *payload, uint32_t n)
+{
+    session_flush(s);
+    size_t pending = s->out_size - s->out_sent;
+    if (n > REMOTE_MAX_DOWN || pending + 8u + n > 2u * REMOTE_MAX_DOWN)
+        return 0;
+    if (pending && s->out_sent) memmove(s->out, s->out + s->out_sent, pending);
+    s->out_sent = 0; s->out_size = pending;
+    unsigned char *out = realloc(s->out, pending + 8u + n);
+    if (!out) return 0;
+    s->out = out;
+    memcpy(out + pending, &type, 4);
+    memcpy(out + pending + 4, &n, 4);
+    if (n) memcpy(out + pending + 8, payload, n);
+    s->out_size += 8u + n;
+    session_flush(s);
+    return 1;
+}
+
 /** @brief The row this session knows as @p id, or NULL. */
 static tiku_remote_window_t *
 session_window(tiku_remote_session_t *s, uint32_t id)
@@ -141,11 +235,16 @@ session_free(tiku_remote_session_t *s)
         window_unmap(&s->win[j]);
         free(s->win[j].frame);
         s->win[j].frame = NULL;
+        /* The list is given back with the window everywhere else; a
+         * session that ends gives back every window it held. */
+        tiku_dl_free(s->win[j].list);
+        s->win[j].list = NULL;
     }
     if (s->fd >= 0) {
         (void)close(s->fd);
     }
     free(s->buf);
+    free(s->out);
     while (s->said_count > 0) {
         tiku_msg_free(s->said[s->said_head]);
         s->said_head = (s->said_head + 1) % TIKU_REMOTE_SAID;
@@ -289,7 +388,7 @@ session_message(tiku_remote_session_t *s)
 
                 memcpy(reply, &version, 4);
                 memcpy(reply + 4, &mine, 4);
-                send_msg(s->fd, TIKU_RMSG_WELCOME, reply, sizeof reply);
+                session_send(s, TIKU_RMSG_WELCOME, reply, sizeof reply);
             }
         }
         break;
@@ -724,6 +823,7 @@ tiku_remote_poll(tiku_remote_listener_t *listener)
         if (!s->used) {
             continue;
         }
+        session_flush(s);
         r = session_read(s);
         if (r < 0) {
             session_free(s);
@@ -834,7 +934,7 @@ tiku_remote_event(tiku_remote_listener_t *listener,
     }
     memcpy(payload, &win->win_id, 4);
     memcpy(payload + 4, event, sizeof *event);
-    send_msg(win->session->fd, TIKU_RMSG_EVENT, payload,
+    session_send(win->session, TIKU_RMSG_EVENT, payload,
              sizeof payload);
 }
 
@@ -852,7 +952,7 @@ tiku_remote_pick(tiku_remote_listener_t *listener,
     }
     memcpy(payload, &win->win_id, 4);
     memcpy(payload + 4, &c, 4);
-    send_msg(win->session->fd, TIKU_RMSG_PICK, payload,
+    session_send(win->session, TIKU_RMSG_PICK, payload,
              sizeof payload);
 }
 
@@ -866,7 +966,7 @@ tiku_remote_window_closed(tiku_remote_listener_t *listener,
     if (win == NULL || win->session == NULL) {
         return;
     }
-    send_msg(win->session->fd, TIKU_RMSG_CLOSED, &win->win_id, 4);
+    session_send(win->session, TIKU_RMSG_CLOSED, &win->win_id, 4);
     /* The ROW is given back, not the session: an application whose
      * second window was closed still has its first. */
     window_unmap(win);
@@ -926,7 +1026,8 @@ tiku_remote_lost(const tiku_remote_listener_t *listener, int index)
  * is never half-written onto a wire the other end is reading in frames.
  */
 static int
-send_flat(int fd, uint32_t type, const tiku_msg_t *m)
+send_flat(int fd, uint32_t type, const tiku_msg_t *m,
+          tiku_remote_session_t *session)
 {
     size_t n = tiku_msg_flat_size(m);
     unsigned char *flat;
@@ -942,9 +1043,11 @@ send_flat(int fd, uint32_t type, const tiku_msg_t *m)
         free(flat);
         return 0;
     }
-    send_msg(fd, type, flat, (uint32_t)n);
+    int sent = 1;
+    if (session) sent = session_send(session, type, flat, (uint32_t)n);
+    else send_msg(fd, type, flat, (uint32_t)n);
     free(flat);
-    return 1;
+    return sent;
 }
 
 int
@@ -953,7 +1056,7 @@ tiku_remote_tell(tiku_remote_listener_t *listener, int index,
 {
     tiku_remote_session_t *s = session_at(listener, index);
 
-    return (s != NULL) ? send_flat(s->fd, TIKU_RMSG_TELL, m) : 0;
+    return (s != NULL) ? send_flat(s->fd, TIKU_RMSG_TELL, m, s) : 0;
 }
 
 int
@@ -1074,7 +1177,7 @@ int
 tiku_remote_say(tiku_remote_client_t *client,
                      const tiku_msg_t *m)
 {
-    return (client != NULL) ? send_flat(client->fd, TIKU_RMSG_SAY, m) : 0;
+    return client ? send_flat(client->fd, TIKU_RMSG_SAY, m, NULL) : 0;
 }
 
 tiku_msg_t *

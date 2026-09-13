@@ -47,6 +47,7 @@ PROG_D      := $(APPS_D)/programming
 SO_APPS     := $(APPS_D)/terminal.so $(APPS_D)/editor.so \
                $(APPS_D)/Bench.so $(APPS_D)/TikuConsole.so \
                $(APPS_D)/DeveloperCalculator.so \
+               $(APPS_D)/TikuHex.so \
                $(PROG_D)/TikuBasic.so $(PROG_D)/TikuC.so
 SO_EXAMPLES := $(patsubst %,$(APPS_D)/%.so,hello clock counter sketch twowin sensors)
 
@@ -159,6 +160,9 @@ $(APPS_D)/Bench.so: $(D)/bench/tiku_bench.c $(wildcard $(D)/bench/*.inl) $(PIC_L
 
 $(APPS_D)/DeveloperCalculator.so: $(D)/calculator/tiku_calculator.c $(wildcard $(D)/calculator/*.inl) $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+
+$(APPS_D)/TikuHex.so: $(D)/hex/tiku_hex.c $(D)/hex/tiku_hex_model.c $(D)/hex/tiku_hex_model.h $(PIC_LIBS) | $(APPS_D)
+	$(CC) $(SO_CFLAGS) -o $@ $(D)/hex/tiku_hex.c $(D)/hex/tiku_hex_model.c $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(APPS_D)/TikuConsole.so: $(D)/console/tiku_console.c $(wildcard $(D)/console/*.inl) $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm

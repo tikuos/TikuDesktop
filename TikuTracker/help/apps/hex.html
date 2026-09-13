@@ -1,0 +1,50 @@
+<h1>TikuHex</h1>
+<p>Open <b>Device Tools → TikuHex</b> to inspect or edit a local binary
+file, firmware image, or saved device dump. Tracker also offers
+<b>Open With → TikuHex</b>, and the utility is available in
+<a href="settings.html#associations">File Associations preferences</a>.
+It never executes the file's contents or writes directly to a device.</p>
+
+<h2>Inspecting bytes</h2>
+<p>The main view shows hexadecimal offsets, sixteen hexadecimal bytes per
+row, and ASCII alongside them. Non-printable bytes appear as dots; their
+actual values, including NUL, are preserved. Click a byte in either view.
+The status line shows its offset in hex and decimal, its numeric value,
+file size, and how many bytes differ from the saved file. When space
+permits, the inspector shows its bits and unsigned 16/32-bit little- and
+big-endian values. A short tail is shown as unavailable, never read past.</p>
+
+<p>Use arrow keys, Home/End, Page Up/Page Down, the page buttons, or the
+mouse wheel. Enter a decimal offset or <code>0x</code>-prefixed hex value
+and press <b>Go</b> or Enter. <b>Hex find</b> accepts 1–64 complete bytes,
+such as <code>00 FF 12</code>. Find next searches forward and wraps once.
+Copy copies the selected byte as two hexadecimal digits.</p>
+
+<h2>Editing and saving</h2>
+<p>Every file opens <b>Read-only</b>. Click that button to enable
+<b>Editing bytes</b>. In Hex input, two hex digits replace one byte;
+Escape or moving the cursor cancels an incomplete pair. In ASCII input,
+a printable ASCII character replaces one byte. Clicking either view also
+selects that input mode. Changed bytes are underlined. Undo/Redo retain
+up to 512 replacements; Ctrl+Z and Ctrl+Y are their shortcuts.</p>
+
+<p>This version is <b>overwrite-only</b>: it does not insert or delete
+bytes, and preserves file length. It opens regular local files up to
+16 MiB. Empty files can be inspected and copied but not extended.
+Symbolic links, device nodes, and streams are refused. Export a device
+snapshot to a local file before opening it.</p>
+
+<p><b>Save</b> (Ctrl+S) stages the complete binary in a temporary file in
+the same folder, checks the original's identity and contents, and replaces
+it atomically. A changed, replaced, or hard-linked original is not
+overwritten. <b>Save As</b> requires a new filename and never replaces an
+existing unrelated file. A failed save leaves edits in memory. For
+valuable firmware or calibration files, keep an independent backup.</p>
+
+<p>Open and Close ask before discarding unsaved edits. Closing a dirty
+window's title bar reopens it with the same question: Save, Keep editing,
+or Discard edits. If TikuDesktop disconnects, TikuHex attempts to leave a
+private raw recovery file named <code>/tmp/TikuHex-recovery-XXXXXX</code>
+and reports its path on standard error. Open that file normally to recover
+the bytes. This is best-effort shutdown recovery, not crash/power-loss
+autosave; temporary files may be cleaned at reboot.</p>

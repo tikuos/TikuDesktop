@@ -260,6 +260,16 @@ typedef struct tiku_app_services {
      * @return nonzero when there is a help folder to read the page from.
      */
     int (*help_page)(void *ctx, const char *page);
+    /** @brief Open a contextual help topic, optionally with a #section. */
+    int (*help_open)(void *ctx, const char *topic);
+    /** @brief Show a generated report in the HTML reader (body below 15 KB).
+     * Call only following a user action; no files, scripts or browser are opened.
+     * The host copies the body before returning. */
+    int (*help_html)(void *ctx, const char *title, const char *html);
+    /** @brief Explicit local document supplied at launch, or NULL.
+     * Valid throughout start(); copy it if needed later. Never a remembered
+     * session path. Opening a document must not execute its contents. */
+    const char *startup_document;
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */
@@ -349,7 +359,8 @@ typedef struct {
  * 2: the board services and board_said().  An application built for 1
  * has no field to put them in, so the loader refuses it rather than
  * reading past the end of a descriptor that is a field short. */
-#define TIKU_APP_ABI    3u
+/* 4: explicit startup_document in the services supplied by the host. */
+#define TIKU_APP_ABI    4u
 
 /** @brief What board_said() is carrying. */
 #define TIKU_APP_BOARD_LINE     0   /**< one line the program printed   */
