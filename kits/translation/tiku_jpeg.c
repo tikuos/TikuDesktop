@@ -11,6 +11,7 @@
  */
 
 #include "tiku_jpeg.h"
+#include "tiku_image.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -125,6 +126,7 @@ huff_build(jhuff_t *h)
 static int
 huff_decode(jbits_t *b, const jhuff_t *h)
 {
+    if (!h->present) return -1;
     int code = getbit(b), l = 1;
 
     while (l <= 16 && (h->maxcode[l] < 0 || code > h->maxcode[l])) {
@@ -137,7 +139,8 @@ huff_decode(jbits_t *b, const jhuff_t *h)
     if (l > 16) {
         return -1;
     }
-    return h->huffval[h->valptr[l] + code - h->mincode[l]];
+    int at = h->valptr[l] + code - h->mincode[l];
+    return at >= 0 && at < 256 ? h->huffval[at] : -1;
 }
 
 /**
@@ -150,13 +153,10 @@ huff_decode(jbits_t *b, const jhuff_t *h)
 static void
 idct8(const int *in, unsigned char *out, int stride)
 {
-    static int cs[8][8];
-    static int built;
     int tmp[64], u, x, y;
 
-    if (!built) {
-        /* cos((2x+1) u pi / 16) * (u ? 1 : 1/sqrt2), scaled by 1024. */
-        static const int c[8][8] = {
+    /* Immutable tables also allow simultaneous thumbnail/snapshot workers. */
+    static const int cs[8][8] = {
             { 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024 },
             { 1420, 1204,  805,  283, -283, -805,-1204,-1420 },
             { 1338,  554, -554,-1338,-1338, -554,  554, 1338 },
@@ -165,11 +165,7 @@ idct8(const int *in, unsigned char *out, int stride)
             {  805,-1420,  283, 1204,-1204, -283, 1420, -805 },
             {  554,-1338, 1338, -554, -554, 1338,-1338,  554 },
             {  283, -805, 1204,-1420, 1420,-1204,  805, -283 }
-        };
-
-        memcpy(cs, c, sizeof cs);
-        built = 1;
-    }
+    };
     for (y = 0; y < 8; y++) {       /* rows */
         for (x = 0; x < 8; x++) {
             long s = 0;
@@ -217,7 +213,8 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
     int c, rc = -1, mcux, mcuy, mx, my;
     uint32_t *px = NULL;
 
-    if (src == NULL || n < 4 || src[0] != 0xff || src[1] != 0xd8) {
+    if (src == NULL || n < 4 || (unsigned long)n > TIKU_IMAGE_BYTES_MAX ||
+        src[0] != 0xff || src[1] != 0xd8) {
         return -1;                  /* not a JPEG at all */
     }
     memset(qt, 0, sizeof qt);
@@ -253,9 +250,11 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                 int z;
 
                 k++;
-                if (id > 3 || (prec != 0 && prec != 1)) {
+                if (id > 3 || (prec != 0 && prec != 1) ||
+                    k + 64 * (prec + 1) > i + len) {
                     goto done;
                 }
+                if (prec) { rc = 1; goto done; }
                 for (z = 0; z < 64; z++) {
                     qt[id][z] = prec ? (unsigned short)((src[k] << 8) |
                                                         src[k + 1])
@@ -271,7 +270,7 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                 jhuff_t *t;
 
                 k++;
-                if (id > 3 || cls > 1) {
+                if (id > 3 || cls > 1 || k + 16 > i + len) {
                     goto done;
                 }
                 t = cls ? &ac[id] : &dc[id];
@@ -290,8 +289,10 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                 t->present = 1;
             }
         } else if (marker == 0xdd) {             /* DRI */
+            if (len != 4) goto done;
             restart = (src[i + 2] << 8) | src[i + 3];
         } else if (marker == 0xc0 || marker == 0xc1) {   /* SOF0/SOF1 */
+            if (len < 8 || ncomp) goto done;
             if (src[i + 2] != 8) {
                 rc = 1;             /* 12-bit samples */
                 goto done;
@@ -299,7 +300,9 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
             h = (src[i + 3] << 8) | src[i + 4];
             w = (src[i + 5] << 8) | src[i + 6];
             ncomp = src[i + 7];
-            if (ncomp < 1 || ncomp > MAXCOMP || w <= 0 || h <= 0) {
+            if ((ncomp != 1 && ncomp != 3) || w <= 0 || h <= 0 ||
+                len != 8 + 3 * ncomp ||
+                (size_t)w > TIKU_IMAGE_PIXELS_MAX / (size_t)h) {
                 goto done;
             }
             for (c = 0; c < ncomp; c++) {
@@ -321,9 +324,11 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
             rc = 1;                 /* progressive or arithmetic */
             goto done;
         } else if (marker == 0xda) {             /* SOS: the scan itself */
+            if (len < 3) goto done;
             int ns = src[i + 2];
 
-            if (w == 0 || ncomp == 0) {
+            if (w == 0 || ncomp == 0 || ns != ncomp ||
+                len != 6 + 2 * ns) {
                 goto done;
             }
             for (c = 0; c < ns; c++) {
@@ -333,6 +338,7 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                     if (comp[k].id == id) {
                         comp[k].td = src[i + 4 + c * 2] >> 4;
                         comp[k].ta = src[i + 4 + c * 2] & 15;
+                        if (comp[k].td > 3 || comp[k].ta > 3) goto done;
                     }
                 }
             }
@@ -387,9 +393,14 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
 
                                 memset(blk, 0, sizeof blk);
                                 t = huff_decode(&bits, &dc[comp[c].td]);
-                                if (t < 0) { bits.bad = 1; break; }
+                                if (t < 0 || t > 11) {
+                                    bits.bad = 1; break;
+                                }
                                 comp[c].dcpred +=
                                     extend(getbits(&bits, t), t);
+                                if (abs(comp[c].dcpred) > 32767) {
+                                    bits.bad = 1; break;
+                                }
                                 blk[0] = comp[c].dcpred *
                                          qt[comp[c].tq][0];
                                 for (k = 1; k < 64; ) {
@@ -400,13 +411,14 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                                     if (rs < 0) { bits.bad = 1; break; }
                                     r = rs >> 4;
                                     sz = rs & 15;
+                                    if (sz > 10) { bits.bad = 1; break; }
                                     if (sz == 0) {
                                         if (r != 15) { break; }
                                         k += 16;
                                         continue;
                                     }
                                     k += r;
-                                    if (k > 63) { break; }
+                                    if (k > 63) { bits.bad = 1; break; }
                                     blk[zigzag[k]] =
                                         extend(getbits(&bits, sz), sz) *
                                         qt[comp[c].tq][k];
@@ -421,9 +433,12 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                     }
                 }
             }
-            /* An entropy stream that ended early still yields a picture --
-             * the blocks it did reach are real, and a truncated photo is
-             * more use as a thumbnail than none. */
+            /* A partial camera frame must never replace a complete snapshot. */
+            if (bits.bad) goto done;
+            while (bits.pos + 1 < n && src[bits.pos] == 0xff &&
+                   src[bits.pos + 1] == 0xff) bits.pos++;
+            if (bits.pos + 1 >= n || src[bits.pos] != 0xff ||
+                src[bits.pos + 1] != 0xd9) goto done;
             px = malloc((size_t)w * (size_t)h * sizeof *px);
             if (px == NULL) {
                 goto done;

@@ -6,11 +6,8 @@
  *
  * tiku_image.h - reading a raster image into pixels.
  *
- * Thumbnails need something a vector icon format cannot give: the picture a
- * file actually holds.  This reads the formats that need no decompressor --
- * BMP, and the stored-deflate PNG the desktop's own writer emits -- and says
- * plainly when it cannot read one, so the thumbnail machinery above it can
- * be complete and tested while the decoder is still growing.
+ * Content-sniffed BMP, PNG (including deflate and Adam7), and baseline JPEG.
+ * Both file and memory entry points bound encoded bytes and decoded pixels.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,6 +16,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+/** @brief Resource ceilings shared by thumbnails and snapshot viewers. */
+#define TIKU_IMAGE_BYTES_MAX (32u * 1024u * 1024u)
+#define TIKU_IMAGE_PIXELS_MAX (16u * 1024u * 1024u)
 
 /** @brief Decoded pixels, 32-bit, 0xAARRGGBB, top row first. */
 typedef struct {
@@ -49,6 +50,13 @@ int tiku_image_is_image(const char *path);
  */
 tiku_image_err_t tiku_image_load(const char *path,
                                          tiku_image_t *out);
+
+/** @brief Decode binary bytes, including embedded NULs. No ownership transfer.
+ * On success out receives owned pixels (caller frees any previous image).
+ * On failure out is untouched. The same limits as file loading apply.
+ */
+tiku_image_err_t tiku_image_decode(const void *bytes, size_t len,
+                                  tiku_image_t *out);
 
 void tiku_image_free(tiku_image_t *im);
 

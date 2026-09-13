@@ -213,22 +213,22 @@ codes(state_t *s, const huff_t *lencode, const huff_t *distcode)
 static int
 fixed_block(state_t *s)
 {
-    static huff_t lencode, distcode;
-    static int built;
+    /* Built on the stack every time, as dynamic_block's are: a static
+     * table filled at first use races between two decoding threads, and
+     * a viewer and a thumbnail are two jobs on the same worker pool.
+     * Building them costs a few hundred stores against a whole block's
+     * decode. */
+    huff_t lencode, distcode;
+    short lengths[FIXLCODES];
+    int symbol;
 
-    if (!built) {
-        short lengths[FIXLCODES];
-        int symbol;
-
-        for (symbol = 0; symbol < 144; symbol++)   { lengths[symbol] = 8; }
-        for (; symbol < 256; symbol++)             { lengths[symbol] = 9; }
-        for (; symbol < 280; symbol++)             { lengths[symbol] = 7; }
-        for (; symbol < FIXLCODES; symbol++)       { lengths[symbol] = 8; }
-        (void)construct(&lencode, lengths, FIXLCODES);
-        for (symbol = 0; symbol < MAXDCODES; symbol++) { lengths[symbol] = 5; }
-        (void)construct(&distcode, lengths, MAXDCODES);
-        built = 1;
-    }
+    for (symbol = 0; symbol < 144; symbol++)   { lengths[symbol] = 8; }
+    for (; symbol < 256; symbol++)             { lengths[symbol] = 9; }
+    for (; symbol < 280; symbol++)             { lengths[symbol] = 7; }
+    for (; symbol < FIXLCODES; symbol++)       { lengths[symbol] = 8; }
+    (void)construct(&lencode, lengths, FIXLCODES);
+    for (symbol = 0; symbol < MAXDCODES; symbol++) { lengths[symbol] = 5; }
+    (void)construct(&distcode, lengths, MAXDCODES);
     return codes(s, &lencode, &distcode);
 }
 

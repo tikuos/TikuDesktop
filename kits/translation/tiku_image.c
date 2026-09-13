@@ -4,7 +4,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_image.c - BMP and stored-deflate PNG readers, and thumb scaling.
+ * tiku_image.c - bounded raster readers and thumbnail scaling.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 int
 tiku_image_is_image(const char *path)
@@ -63,6 +64,7 @@ slurp(const char *path, unsigned char **out)
         return -1;
     }
     if (fseek(f, 0, SEEK_END) != 0 || (n = ftell(f)) < 0 ||
+        (unsigned long)n > TIKU_IMAGE_BYTES_MAX ||
         fseek(f, 0, SEEK_SET) != 0) {
         (void)fclose(f);
         return -1;
@@ -122,12 +124,16 @@ load_bmp(const unsigned char *b, long n, tiku_image_t *out)
     }
     /* A negative height means the rows are stored top-down. */
     flip = (h > 0);
+    if (h == INT32_MIN) return TIKU_IMG_BAD;
     if (h < 0) {
         h = -h;
     }
     if (w <= 0 || h <= 0 || w > 20000 || h > 20000) {
         return TIKU_IMG_BAD;
     }
+    if ((size_t)w > TIKU_IMAGE_PIXELS_MAX / (size_t)h ||
+        hdr > (uint32_t)n - 14u || off < 14u + hdr)
+        return TIKU_IMG_BAD;
     /* Rows are padded to a multiple of four bytes. */
     stride = ((long)w * (long)(bpp / 8u) + 3L) & ~3L;
     if ((long)off + stride * h > n) {
@@ -260,6 +266,7 @@ png_pass(const unsigned char *raw, long avail, int pw, int ph,
             return -1;
         }
         type = raw[used++];
+        if (type > 4) { free(prev); free(cur); return -1; }
         memcpy(cur, raw + used, (size_t)rowbytes);
         used += rowbytes;
         unfilter(cur, (y > 0) ? prev : NULL, rowbytes, f->bpp, type);
@@ -319,6 +326,18 @@ png_pass(const unsigned char *raw, long avail, int pw, int ph,
     return used;
 }
 
+/** @brief Reject corrupted PNG chunks before they affect snapshot pixels. */
+static uint32_t png_crc(const unsigned char *bytes, size_t len)
+{
+    uint32_t crc = 0xffffffffu;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= bytes[i];
+        for (int bit = 0; bit < 8; bit++)
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xedb88320u : 0);
+    }
+    return ~crc;
+}
+
 static tiku_image_err_t
 load_png(const unsigned char *b, long n, tiku_image_t *out)
 {
@@ -326,7 +345,7 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
     unsigned char *idat = NULL, *raw = NULL;
     uint32_t pal[256];
     long ilen = 0, i = 8, rawlen, got;
-    int w = 0, h = 0, interlace = 0, npal = 0, p;
+    int w = 0, h = 0, interlace = 0, npal = 0, p, ended = 0;
     png_fmt_t f;
     tiku_image_err_t rc = TIKU_IMG_BAD;
 
@@ -344,7 +363,13 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
         if ((long)len > n || i + 12 + (long)len > n) {
             break;
         }
-        if (memcmp(type, "IHDR", 4) == 0 && len >= 13u) {
+        if (png_crc(b + i + 4, (size_t)len + 4) !=
+            be32(b + i + 8 + len)) {
+            free(idat); return TIKU_IMG_BAD;
+        }
+        if (memcmp(type, "IHDR", 4) == 0) {
+            if (len != 13u || i != 8 || b[i + 18] || b[i + 19] ||
+                b[i + 20] > 1) { free(idat); return TIKU_IMG_BAD; }
             w = (int)be32(b + i + 8);
             h = (int)be32(b + i + 12);
             f.depth = b[i + 16];
@@ -382,11 +407,17 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
             memcpy(idat + ilen, b + i + 8, len);
             ilen += (long)len;
         } else if (memcmp(type, "IEND", 4) == 0) {
+            ended = len == 0;
             break;
         }
         i += 12 + (long)len;
     }
-    if (w <= 0 || h <= 0 || idat == NULL || w > 30000 || h > 30000) {
+    if (!ended || w <= 0 || h <= 0 || idat == NULL ||
+        w > 30000 || h > 30000) {
+        free(idat);
+        return TIKU_IMG_BAD;
+    }
+    if ((size_t)w > TIKU_IMAGE_PIXELS_MAX / (size_t)h) {
         free(idat);
         return TIKU_IMG_BAD;
     }
@@ -400,7 +431,7 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
     }
     /* Truecolour and alpha channels are 8 bits here; the sub-byte depths
      * belong to greyscale and palette, which is where they buy anything. */
-    if ((f.colour == 2 || f.colour == 6) && f.depth != 8) {
+    if ((f.colour == 2 || f.colour == 4 || f.colour == 6) && f.depth != 8) {
         free(idat);
         return TIKU_IMG_UNSUPPORTED;
     }
@@ -479,7 +510,22 @@ tiku_image_load(const char *path, tiku_image_t *out)
     if (n < 0) {
         return TIKU_IMG_BAD;
     }
-    memset(out, 0, sizeof *out);
+    rc = tiku_image_decode(b, (size_t)n, out);
+    free(b);
+    return rc;
+}
+
+/** @brief Decode into a temporary image so a failed load never loses pixels. */
+tiku_image_err_t
+tiku_image_decode(const void *bytes, size_t len, tiku_image_t *result)
+{
+    const unsigned char *b = bytes;
+    tiku_image_t decoded = {0};
+    tiku_image_t *out = &decoded;
+    tiku_image_err_t rc;
+    if (!b || !result || !len || len > TIKU_IMAGE_BYTES_MAX)
+        return TIKU_IMG_BAD;
+    long n = (long)len;
     if (n >= 2 && b[0] == 'B' && b[1] == 'M') {
         rc = load_bmp(b, n, out);
     } else if (n >= 8 && b[0] == 137 && b[1] == 'P') {
@@ -500,7 +546,8 @@ tiku_image_load(const char *path, tiku_image_t *out)
     } else {
         rc = TIKU_IMG_NOT_IMAGE;
     }
-    free(b);
+    if (rc == TIKU_IMG_OK) *result = decoded;
+    else tiku_image_free(&decoded);
     return rc;
 }
 

@@ -17,6 +17,10 @@
 #include "tiku_icons.h"
 #include "tiku_icons_tiku.h"
 
+#include "tiku_icons_navigation.inl"
+#include "tiku_icons_reader.inl"
+#include "tiku_icons_viewer.inl"
+
 /* microcontroller -- a chip: dark body, silver legs, the pin-one dot */
 static const uint8_t tiku_icon_microcontroller[311] = {
     0x6E, 0x63, 0x69, 0x66, 0x0B, 0x01, 0xB4, 0xB8, 0xBC, 0xFF, 0x01, 0xB4,
@@ -115,5 +119,15 @@ tiku_icons_tiku_register(void)
                           sizeof tiku_icon_computer);
     took += tiku_icons_add("magnifier", tiku_icon_magnifier,
                           sizeof tiku_icon_magnifier);
+    took += tiku_icons_add("nav_back", tiku_icon_nav_back,
+                          sizeof tiku_icon_nav_back);
+    took += tiku_icons_add("nav_forward", tiku_icon_nav_forward,
+                          sizeof tiku_icon_nav_forward);
+    took += tiku_icons_add("nav_reload", tiku_icon_nav_reload,
+                          sizeof tiku_icon_nav_reload);
+    took += tiku_icons_add("reader", tiku_icon_reader,
+                          sizeof tiku_icon_reader);
+    took += tiku_icons_add("image_viewer", tiku_icon_image_viewer,
+                          sizeof tiku_icon_image_viewer);
     return took;
 }
