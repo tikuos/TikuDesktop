@@ -98,6 +98,20 @@ main(void)
     (void)tiku_trk_launch_set_preferred(st, "image/png", "Anything");
     check(tiku_trk_launch_agreed(&r, two, 2, st) != NULL, "AW-043",
           "made to agree, they have an answer again");
+    {
+        /* A real type of the length the office formats reach: the store
+         * keeps the whole name or the choice is written and never
+         * found again. */
+        const char *lengthy = "application/vnd.oasis.opendocument.text";
+        char back[TIKU_TRK_APP_NAME_MAX];
+
+        check(strlen(lengthy) > 31u, "AW-044",
+              "the type is longer than a short name would hold");
+        (void)tiku_trk_launch_set_preferred(st, lengthy, "Anything");
+        (void)tiku_trk_launch_preferred(st, lengthy, back, sizeof back);
+        check(strcmp(back, "Anything") == 0, "AW-044",
+              "and a choice saved for it comes back whole");
+    }
 
     printf("\nrunning it (AW-002, AW-035, AW-038, AW-039)\n");
     {

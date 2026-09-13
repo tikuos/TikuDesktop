@@ -31,7 +31,9 @@
 #include <stdint.h>
 
 #define STATE_NODE_MAX 256
-#define STATE_ATTR_MAX 32
+/* Room for the longest thing named here: a MIME type (TIKU_TYPE_MAX) and
+ * the prefix the xattr store puts in front of it. */
+#define STATE_ATTR_MAX 64
 #define STATE_VAL_MAX  4096
 #define SIDECAR_MAGIC  "TRKSTATE1"
 
@@ -78,6 +80,12 @@ rec_set(tiku_store_t *s, const char *node, const char *attr,
     unsigned char *copy;
 
     if (len > STATE_VAL_MAX) {
+        return -1;
+    }
+    /* Refused rather than shortened: a name cut down here is a name the
+     * lookup no longer matches, so every write would add one more
+     * record nothing can read back. */
+    if (strlen(node) >= sizeof r->node || strlen(attr) >= sizeof r->attr) {
         return -1;
     }
     copy = malloc(len ? len : 1u);
