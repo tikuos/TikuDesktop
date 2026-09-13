@@ -1,0 +1,32 @@
+# shell: desktop
+# Follow an HTML link into Markdown and use the shared reader controls.
+wait 20
+key F1
+wait 12
+key Tab
+key Tab
+key Tab
+key Tab
+key Tab
+key Tab
+key Tab
+key Return
+wait 12
+expect-title Help
+expect-narrate Markdown pages
+expect-narrate Formatting
+shot /tmp/trk_help_markdown.png
+key f ctrl
+key P
+key R
+key I
+key N
+key T
+key Return
+wait 10
+expect-narrate Match
+expect-narrate Hello from TikuBasic
+shot /tmp/trk_help_markdown_code.png
+key w ctrl
+wait 6
+expect-no-title Help

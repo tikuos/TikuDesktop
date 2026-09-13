@@ -7,5 +7,7 @@ click-row 1 3
 wait 3
 menu-pick Open with
 wait 3
-expect-menu Stamper (opens this type)||Texty (opens this kind of file)||Anything (opens anything)
+note the shipped Editor reads every text there is, so it stands in the
+note middle group beside the registered one that claims the same
+expect-menu Stamper (opens this type)||Editor (opens this kind of file)|Texty (opens this kind of file)||Anything (opens anything)
 quit

@@ -51,6 +51,7 @@
 #include "tiku_trk_desktop_prefs_window.h"
 #include "tiku_trk_fonts_window.h"
 #include "tiku_trk_help_window.h"
+#include "tiku_trk_image_window.h"
 #include "tiku_trk_sounds_window.h"
 #include "tiku_strings.h"
 #include "tiku_volume.h"
@@ -178,7 +179,13 @@ typedef struct desktop {
     /* Being taken down: the loop runs on so the screen can go under,
      * but nothing a person does reaches anything any more. */
     int                  closing;
-    int                  dirty;         /* a frame is owed               */
+    int                  dirty;         /* 1: full, 2: bounded repaint    */
+    tiku_rect_t          damage;
+    int64_t              last_present; /* last frame's start, monotonic us */
+    uint64_t             full_frames, partial_frames, frame_pixels;
+    uint64_t             draw_us, present_us, slow_frames;
+    int64_t              frame_samples[128]; /* bounded render-cost history */
+    unsigned             frame_sample_count; /* cumulative sample sequence */
     /* Menus.  One set serves every folder window, rebuilt from whichever is
      * focused each time a menu opens -- the original rebuilds on open too. */
     tiku_trk_cwmenu_t    menus;
@@ -391,6 +398,8 @@ typedef struct desktop {
     struct desktop_deviceprefs *deviceprefs; /* connected-device settings */
     struct desktop_utility *utility[2]; /* monitor and VFS inspector */
     struct desktop_startup *startup; /* startup catalog and preferences */
+    struct desktop_associations *associations; /* file-type preferences */
+    struct desktop_forcequit *forcequit; /* safe local-app termination */
     tiku_window_t *prefs_track; /* preferences content pointer capture */
     tiku_window_t *input_focus; /* last IME target, never dereferenced */
     tiku_text_input_t legacy_commit; /* staged text for shell-owned fields */
@@ -514,6 +523,8 @@ typedef struct desktop {
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
     tiku_trk_fonts_window_t         fonts_window;           /* the faces */
     tiku_trk_help_window_t          help_window;            /* the pages */
+    tiku_trk_help_window_t          reader_window;          /* documents */
+    tiku_trk_image_window_t        *image_window;           /* snapshots */
     tiku_trk_sounds_window_t        sounds_window;          /* the moments */
     tiku_sound_event_t sound_pick;  /* the moment the file panel is for */
     tiku_window_t *sound_focused;   /* the front window last turn */
@@ -763,6 +774,8 @@ void blit(desktop_t *app);
 void desktop_focus_paint(desktop_t *app);
 void desktop_idle_work(desktop_t *app);
 void draw_all(desktop_t *app);
+void desktop_damage(desktop_t *app, tiku_rect_t rect);
+void desktop_frame_report(desktop_t *app, FILE *out);
 void global_bar_status_draw(desktop_t *app, tiku_rect_t strip);
 void desktop_screenshot_tick(desktop_t *app);
 void set_backdrop_color(void *context, const tiku_trk_color_t *color);
@@ -781,6 +794,15 @@ int embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor);
 
 /** @brief Whether this desktop found a help folder at all. */
 int desktop_help_ready(desktop_t *app);
+/** @brief Ask for a document, or consume the native file panel's answer. */
+void desktop_reader_choose(void *ctx);
+void desktop_image_choose(void *ctx);
+int desktop_image_file(desktop_t *app, const char *path);
+int desktop_image_open(void *ctx, const char *path);
+int desktop_document_local(desktop_t *app, const char *path);
+int desktop_document_open(void *ctx, const tiku_trk_app_t *application,
+                           const char *path);
+int desktop_reader_file(desktop_t *app, const char *path);
 
 /**
  * @brief The page the application owning @p window named for itself.
@@ -831,6 +853,16 @@ void desktop_startup_open(desktop_t *app);
 tiku_window_t *desktop_startup_handle(desktop_t *app);
 void desktop_startup_close(desktop_t *app);
 void desktop_startup_destroy(desktop_t *app);
+void desktop_associations_open(desktop_t *app);
+tiku_window_t *desktop_associations_handle(desktop_t *app);
+void desktop_associations_close(desktop_t *app);
+void desktop_associations_destroy(desktop_t *app);
+void desktop_forcequit_open(desktop_t *app);
+tiku_window_t *desktop_forcequit_handle(desktop_t *app);
+void desktop_forcequit_close(desktop_t *app);
+void desktop_forcequit_destroy(desktop_t *app);
+int desktop_forcequit_input(desktop_t *app, const tiku_event_t *ev);
+void desktop_forcequit_overlay(desktop_t *app);
 tiku_window_t *desktop_deviceprefs_handle(desktop_t *app);
 void desktop_deviceprefs_close(desktop_t *app);
 void desktop_deviceprefs_destroy(desktop_t *app);

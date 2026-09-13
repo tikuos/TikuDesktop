@@ -468,6 +468,7 @@ boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     tiku_trk_find_window_init(&app->find_window, app->desk, DESK_W, DESK_H,
         &app->dirty, app->status, sizeof app->status, panel_search, app);
     prepare_places(app);
+    tiku_trk_launch_clear(&app->apps);
     offer_installed(app, o->argv0);
     /*
      * The stream's icon player, injected below the kit boundary: the
@@ -560,6 +561,10 @@ boot_settings(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         tiku_trk_help_window_init(&app->help_window, app->desk, help,
                                   DESK_W, DESK_H, &app->dirty);
         tiku_trk_help_window_opener(&app->help_window, help_opened, app);
+        tiku_trk_document_window_init(&app->reader_window, app->desk,
+            DESK_W, DESK_H, &app->dirty, desktop_reader_choose, app);
+        app->image_window = tiku_trk_image_window_new(app->desk,
+            &app->dirty, desktop_image_choose, app);
     }
     {
         /* After the Deskbar's own settings have been applied, because a
@@ -599,7 +604,7 @@ boot_fonts(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
              * icon cache is what asks (IV-011). */
             tiku_trk_nodeicon_set_types(&app->nicons, &app->types);
         }
-        tiku_trk_launch_clear(&app->apps);
+        (void)tiku_trk_launch_add_image(&app->apps);
         {
             /* This Tracker is in the list, so choosing it is answerable:
              * it opens folders here rather than starting a second desktop
@@ -629,6 +634,8 @@ boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp
     splash_stage(app, "applications");
     tiku_trk_launch_controller_init(&app->launcher, &app->apps, app->store,
         app->status, sizeof app->status, launch_open_path, app);
+    tiku_trk_launch_controller_image(&app->launcher, desktop_image_open);
+    app->launcher.open_document = desktop_document_open;
     tiku_trk_folder_menu_init(&app->folder_menu, &app->menus, &app->clip,
         app->backend, app->fs, &app->types, &app->launcher, &app->bar_fl,
         &app->bar_open);
@@ -1241,6 +1248,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     int rc = 0;
     int i;
 
+    if (getenv("TIKU_FRAME_STATS")) desktop_frame_report(app, stderr);
     desktop_utilities_destroy(app);
     tiku_sound_free();
     /*
@@ -1265,8 +1273,13 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     tiku_trk_desktop_prefs_window_destroy(&app->desktop_prefs_window);
     tiku_trk_fonts_window_destroy(&app->fonts_window);
     tiku_trk_help_window_destroy(&app->help_window);
+    tiku_trk_help_window_destroy(&app->reader_window);
+    tiku_trk_image_window_destroy(app->image_window);
+    app->image_window = NULL;
     desktop_deviceprefs_destroy(app);
     desktop_startup_destroy(app);
+    desktop_associations_destroy(app);
+    desktop_forcequit_destroy(app);
     tiku_trk_sounds_window_destroy(&app->sounds_window);
     tiku_trk_prefs_window_destroy(&app->prefs_window);
     splash_stage(app, "the Deskbar");

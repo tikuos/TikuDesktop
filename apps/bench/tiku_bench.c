@@ -35,7 +35,7 @@ enum { TAB_SUITES, TAB_OPTIONS, TAB_RESULTS, TAB_OUTPUT, TAB_CONSOLE,
        TAB_HISTORY, TAB_METRICS };
 enum { RUN = 1, STOP, REFRESH, SELECT_ALL, CLEAR, OPEN, TOGGLE, COPY_LOG,
        CLEAR_LOG, SEND, FLASH, LARGE, USB, PK, EPAPER, FOLLOW, OPEN_LOG,
-       FIND_SUITES, FOCUS_LIST, TARGET = 30,
+       FIND_SUITES, FOCUS_LIST, REPORT = 20, TARGET = 30,
        LIST = 31, F_FILTER = 40, F_BAUD, F_MAKE, F_FLAGS, F_INPUT };
 typedef struct {
     char key[48], group[64], name[128], boards[512], description[768];
@@ -98,6 +98,7 @@ static void stop_run(bench_t *st);
 static int action(bench_t *st, int command);
 #include "tiku_bench_model.inl"
 #include "tiku_bench_process.inl"
+#include "tiku_bench_report.inl"
 #include "tiku_bench_ui.inl"
 
 /** Pump bounded process output without blocking the desktop. */

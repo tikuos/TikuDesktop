@@ -590,7 +590,15 @@ edit_start(void **state, const tiku_app_services_t *services)
         free(st);
         return -1;
     }
-    snprintf(st->path, sizeof st->path, "%s", edit_path);
+    const char *document = services->startup_document;
+    if (!document) document = edit_path;
+    if (strlen(document) >= sizeof st->path) {
+        tiku_dl_free(st->dl);
+        tiku_surface_free(st->surface);
+        free(st);
+        return -1;
+    }
+    snprintf(st->path, sizeof st->path, "%s", document);
     /* The name decides, once, before anything is drawn; after that the
      * menu does.  A file called .bas opens coloured, and everything else
      * opens as what it is -- prose. */

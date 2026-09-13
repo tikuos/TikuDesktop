@@ -25,8 +25,8 @@ main(int argc, char **argv)
     const tiku_app_descriptor_t *app;
     char why[256];
 
-    if (argc < 2) {
-        fprintf(stderr, "usage: tiku-run <application.so>\n");
+    if (argc < 2 || argc > 3) {
+        fprintf(stderr, "usage: tiku-run <application.so> [document]\n");
         return 2;
     }
         {
@@ -41,5 +41,5 @@ main(int argc, char **argv)
         fprintf(stderr, "tiku-run: %s: %s\n", argv[1], why);
         return 2;
     }
-    return tiku_client_run(app);
+    return tiku_client_run_document(app, argc == 3 ? argv[2] : NULL);
 }

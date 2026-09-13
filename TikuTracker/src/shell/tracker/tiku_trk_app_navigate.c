@@ -168,6 +168,6 @@ browser_open_selection(app_t *a)
     }
     if (tiku_model_is_container(&p->model)) {
         (void)browser_navigate_to(a, p->model.path, 1);
-    }
+    } else (void)browser_open_image(a, &p->model);
     a->dirty = 1;
 }

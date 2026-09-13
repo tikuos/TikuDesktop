@@ -109,6 +109,28 @@ main(void)
               "and it hands back who died and what killed them");
     }
 
+    {
+        tiku_trk_death_t gone;
+        pid_t stopped = child_that(SIGKILL, 0);
+        int got = 0;
+        tiku_trk_launch_note(stopped, "ForceQuit.so");
+        tiku_trk_launch_expect_stop(stopped);
+        for (int k = 0; k < 50 && !got; k++) {
+            usleep(20000);
+            got = tiku_trk_launch_reap(&gone, 1);
+        }
+        check(got == 1 && gone.signal == SIGKILL && gone.expected,
+              "deliberate Force Quit is reaped without a false crash notice");
+        stopped = child_that(SIGKILL, 0);
+        tiku_trk_launch_note(stopped, "Unexpected.so");
+        got = 0;
+        for (int k = 0; k < 50 && !got; k++) {
+            usleep(20000);
+            got = tiku_trk_launch_reap(&gone, 1);
+        }
+        check(got == 1 && !gone.expected,
+              "a reused roster slot does not hide an unexpected termination");
+    }
     printf("%d passed, %d failed\n", passes, fails);
     return fails ? 1 : 0;
 }

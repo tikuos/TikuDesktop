@@ -1,0 +1,71 @@
+# shell: desktop
+# prefs: factory
+# mkdir: /tmp/trk_home
+# file: ~/broken.png not an image
+# Native image viewer controls; the file is deliberately not valid PNG.
+wait 20
+click 980 40
+wait 4
+menu-pick Applications
+wait 4
+expect-menu TikuImage
+menu-pick TikuImage
+wait 16
+expect-title TikuImage
+expect-narrate Open an image or camera snapshot
+expect-narrate Open Image
+expect-window-at 95 76
+shot /tmp/trk_image_empty.png
+click 214 86
+wait 8
+expect-window-at 2 23
+click 121 33
+wait 8
+expect-window-at 95 76
+key o ctrl
+wait 12
+expect-title Open
+shot /tmp/trk_image_picker.png
+click 400 200
+click 675 413
+wait 24
+expect-no-title Open
+expect-narrate Not a PNG, JPEG or BMP image
+key o ctrl
+wait 12
+click 400 220
+click 675 413
+wait 24
+expect-title snapshot.bmp
+expect-narrate 2 x 3 px
+key 1
+wait 4
+expect-narrate 100%
+key r ctrl
+wait 24
+expect-narrate 100%
+key 0
+wait 4
+expect-narrate fit
+shot /tmp/trk_image_loaded.png
+click-window TikuImage
+key F1
+wait 12
+expect-title Help
+expect-narrate Standalone TikuTracker
+key w ctrl
+wait 8
+expect-no-title Help
+click-window TikuImage
+key w ctrl
+wait 8
+expect-no-title TikuImage
+click 980 40
+wait 4
+menu-pick Applications
+wait 4
+menu-pick TikuImage
+wait 12
+expect-narrate Open an image or camera snapshot
+expect-no-title snapshot.bmp
+key w ctrl

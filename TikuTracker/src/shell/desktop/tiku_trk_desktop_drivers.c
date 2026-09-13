@@ -289,6 +289,7 @@ script_redraw_diff(void *ctx)
     for (i = 0u; i < (size_t)app->folder_count; i++) {
         tiku_trk_folder_window_forget(&app->folders[i]);
     }
+    app->dirty = 1; /* Reference must rebuild content, not reuse drag pixels. */
     draw_all(app);
     for (i = 0u; i < n; i++) {
         if (was[i] != app->surf->px[i]) {

@@ -11,6 +11,10 @@ note the row starts at the default; a click chooses Stamper
 click 280 285
 wait 3
 expect-status opens with Stamper
+note the next click walks on to the other application that claims it
+click 280 285
+wait 3
+expect-status opens with Editor
 note past the last candidate the choice returns to the default
 click 280 285
 wait 3

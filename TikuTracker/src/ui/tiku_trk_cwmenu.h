@@ -35,6 +35,9 @@
 #define TIKU_TRK_CMD_SET_LINK_TARGET 1703
 /* The Sounds window asked for a file from anywhere for one moment. */
 #define TIKU_TRK_CMD_CHOOSE_SOUND    1704
+/* TikuReader's file picker, not a filesystem mutation. */
+#define TIKU_TRK_CMD_READER_OPEN     1705
+#define TIKU_TRK_CMD_IMAGE_OPEN      1706
 #define TIKU_TRK_CMD_DEST_BASE       1720
 #define TIKU_TRK_CMD_DEST_MAX        16
 #define TIKU_TRK_MOUNT_PART_MAX 32

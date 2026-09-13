@@ -185,6 +185,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             if (x >= sm.x && x < sm.x + sm.w && y >= sm.y + 2 &&
                 y < sm.y + 2 + db->sub_count * rowh) {
                 sub = (y - sm.y - 2) / rowh;
+                leaf = -1; /* The submenu is above any overlapping parent. */
             }
         }
     }
@@ -308,11 +309,57 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             changed = 1;
         }
     }
-    if (leaf != db->leaf_hot)   { db->leaf_hot = leaf;   changed = 1; }
+    if (leaf != db->leaf_hot) {
+        db->leaf_hot = leaf;
+        db->sub_pending = -1;
+        changed = 1;
+    }
     if (sub != db->sub_hot)     { db->sub_hot = sub;     changed = 1; }
     if (win != db->win_hot)     { db->win_hot = win;     changed = 1; }
     if (clock != db->clock_hot) { db->clock_hot = clock; changed = 1; }
     return changed;
+}
+
+/** @brief Every row bearing an arrow expands by click or by hover. */
+static int item_expands(int kind)
+{
+    return kind == TIKU_TRK_DB_ITEM_DIR ||
+           kind == TIKU_TRK_DB_ITEM_RECENT ||
+           kind == TIKU_TRK_DB_ITEM_APPS ||
+           kind == TIKU_TRK_DB_ITEM_PROGRAMMING ||
+           kind == TIKU_TRK_DB_ITEM_SETTINGS ||
+           kind == TIKU_TRK_DB_ITEM_QUIT;
+}
+
+int tiku_trk_deskbar_menu_tick(tiku_trk_deskbar_t *db, int64_t now)
+{
+    if (!db) return 0;
+    int row = db->leaf_hot;
+    if (!db->menu_open || row < 0 || row >= db->leaf_count ||
+        db->leaf[row].kind == TIKU_TRK_DB_ITEM_DISABLED ||
+        db->leaf[row].kind == TIKU_TRK_DB_ITEM_SEP) {
+        db->sub_pending = -1;
+        return 0;
+    }
+    int wanted = item_expands(db->leaf[row].kind) ? row : -1;
+    if (wanted == db->sub_of) {
+        db->sub_pending = -1;
+        return 0;
+    }
+    if (db->sub_pending == row && db->sub_entered == -1) return 0;
+    if (db->sub_pending != row || now < db->sub_entered) {
+        db->sub_pending = row;
+        db->sub_entered = now;
+        return 0;
+    }
+    if (now-db->sub_entered < TIKU_TRK_DB_SUBMENU_DELAY_US) return 0;
+    /* Populate once, only after a dwell. No synthetic click: Quit and
+     * every other command must still require deliberate selection. */
+    int before = db->sub_of;
+    db_open_sub(db, wanted);
+    db->sub_pending = row;
+    db->sub_entered = -1; /* Empty/unavailable folders are tried only once. */
+    return before != db->sub_of;
 }
 
 int
@@ -438,9 +485,12 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
 
     db->sub_count = 0;
     db->sub_of = -1;
+    db->sub_hot = -1;
+    db->sub_pending = -1;
     if (at < 0 || at >= db->leaf_count) {
         return;
     }
+    db->leaf_hot = at; /* A click supersedes any previously hovered row. */
     it = &db->leaf[at];
     if (it->kind == TIKU_TRK_DB_ITEM_QUIT) {
         /* The confirm-vs-immediate split (DB-006): the parent asks, the
@@ -495,6 +545,10 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_STARTUP_PREFS;
         snprintf(si->label, sizeof si->label, "Startup Preferences…");
+        si = &db->sub[db->sub_count++];
+        memset(si, 0, sizeof *si);
+        si->kind = TIKU_TRK_DB_ITEM_ASSOC_PREFS;
+        snprintf(si->label, sizeof si->label, "File Associations…");
         si = &db->sub[db->sub_count++];
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_SHOW_REPLICANTS;
@@ -666,7 +720,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
     const tiku_font_t *fb = tiku_font_bold();
     tiku_rgb_t dark = tiku_tint(TIKU_C_PANEL, 1.40f);
     tiku_rect_t leaf;
-    int i, j, y, rows;
+    int y, rows;
     int team_h;
 
     if (db == NULL || s == NULL) {
@@ -907,12 +961,7 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                                r.y + (rowh - f->height) / 2 + f->ascent,
                                db->leaf[i].label,
                                tiku_tint(TIKU_C_PANEL, 1.55f));
-            } else if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
-                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_RECENT ||
-                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_APPS ||
-                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_PROGRAMMING ||
-                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_SETTINGS ||
-                       db->leaf[i].kind == TIKU_TRK_DB_ITEM_QUIT) {
+            } else if (item_expands(db->leaf[i].kind)) {
                 /* What expands says so, the way every hierarchical menu
                  * marks the rows that go somewhere (DB-002) -- with the
                  * drawn mark the rest of the menus use, rather than a

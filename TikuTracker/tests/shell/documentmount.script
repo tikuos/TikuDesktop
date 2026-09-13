@@ -1,0 +1,26 @@
+# shell: desktop
+# prefs: factory
+# setup: documentassociation
+# mount: /computer
+# open: /computer/tmp/trk_home/documents
+# The process must receive the local filename, not the mount alias.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 90
+expect-status Opened
+expect-title a-notes.TXT
+key w ctrl
+wait 15
+click-window documents
+click-row 1
+wait 2
+click-row 1
+wait 90
+expect-title b-source.BAS
+key w ctrl
+wait 10
+click-window Project
+key w ctrl
+quit

@@ -18,6 +18,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #include "tiku_trk_help_window.h"
 #include "tiku_dl.h"
@@ -336,6 +337,7 @@ main(void)
     {
         tiku_window_t *w = tiku_trk_help_window_handle(&help);
         int tall, taller;
+        int original_width = w->frame.w;
 
         tiku_workspace_draw(ws);
         tall = tiku_doc_height(help.doc);
@@ -346,7 +348,7 @@ main(void)
         check(tiku_doc_width(help.doc) < 360 &&
               tiku_doc_width(help.doc) > 0,
               "laid out for the room the narrower window leaves");
-        w->frame.w = 620;
+        w->frame.w = original_width;
         tiku_workspace_draw(ws);
         check(tiku_doc_height(help.doc) == tall,
               "and back again when it grows");
@@ -541,7 +543,7 @@ main(void)
         check(help.bar.tracking == 0, "and letting go lets go");
     }
 
-    printf("\na page too long for the reader says so\n");
+    printf("\ndesktop pages grow beyond the old embedded text budget\n");
     {
         char big[TIKU_TRK_HELP_PAGE_MAX * 2];
         char path[TIKU_PATH_MAX];
@@ -556,8 +558,9 @@ main(void)
         f = fopen(path, "w");
         if (f) { fputs(big, f); fclose(f); }
         check(tiku_trk_help_window_go(&help, "long.html") ==
-              TIKU_TRK_HELP_PAGE, "a page longer than the reader opens");
-        check(help.oversize == 1, "and the window knows it was cut");
+              TIKU_TRK_HELP_PAGE, "a page longer than 16 KiB opens in full");
+        check(help.oversize == 0 && help.doc->ntext > TIKU_TRK_HELP_PAGE_MAX,
+              "and desktop storage reads past the old 16 KiB boundary");
         (void)tiku_trk_help_window_go(&help, "index.html");
         check(help.oversize == 0, "a page that fitted is not said to be cut");
     }
@@ -597,13 +600,13 @@ main(void)
      */
     printf("\nevery page of the shipped help folder reads and links\n");
     {
-        static const char *const shipped[] = {
-            "index.html", "files.html", "deskbar.html", "settings.html",
-            "devices.html", "finding.html", "keys.html",
-            "apps/calculator.html", "apps/bench.html", "apps/console.html",
-            "apps/editor.html", "apps/terminal.html",
-            "apps/tikubasic.html", "apps/tikuc.html", "apps/demo.html"
-        };
+        /* The folder is WALKED, not listed: a page added to it is
+         * checked without this file being edited, which is how a new
+         * page arrives with a link nobody followed. */
+        enum { SHIPPED_MAX = 128 };
+        char shipped[SHIPPED_MAX][TIKU_PATH_MAX];
+        int nshipped = 0;
+        static const char *const where[] = {"", "apps", "fr", "fr/apps"};
         const char *folder = "TikuTracker/help";
         tiku_doc_t *page = calloc(1, sizeof *page);
         int read_ok = 1, laid = 1, links = 1, anchors = 1, entities = 1;
@@ -612,8 +615,26 @@ main(void)
         if (access("TikuTracker/help/index.html", R_OK) != 0) {
             folder = "help";
         }
-        for (size_t i = 0; page && i < sizeof shipped / sizeof shipped[0];
-             i++) {
+        for (size_t w = 0; w < sizeof where / sizeof where[0]; w++) {
+            char dir[TIKU_PATH_MAX];
+            struct dirent *de;
+            DIR *d;
+
+            snprintf(dir, sizeof dir, "%s%s%s", folder,
+                     *where[w] ? "/" : "", where[w]);
+            d = opendir(dir);
+            if (d == NULL) continue;
+            while ((de = readdir(d)) != NULL && nshipped < SHIPPED_MAX) {
+                const char *dot = strrchr(de->d_name, '.');
+
+                if (dot == NULL || strcmp(dot, ".html") != 0) continue;
+                snprintf(shipped[nshipped], sizeof shipped[0], "%s%s%s",
+                         where[w], *where[w] ? "/" : "", de->d_name);
+                nshipped++;
+            }
+            closedir(d);
+        }
+        for (int i = 0; page && i < nshipped; i++) {
             char path[TIKU_PATH_MAX];
             char text[TIKU_DOC_TEXT_MAX + 64];
             FILE *f;
@@ -660,15 +681,44 @@ main(void)
                     }
                     continue;
                 }
-                snprintf(other, sizeof other, "%s/%s", folder, href);
+                /* A link may name a place in another page: the reader
+                 * splits at the '#', so the check does too, and then
+                 * asks that page whether it wears the name. */
+                const char *hash = strchr(href, '#');
+                size_t nlen = hash ? (size_t)(hash - href) : strlen(href);
+
+                snprintf(other, sizeof other, "%s/%.*s", folder,
+                         (int)nlen, href);
                 if (access(other, R_OK) != 0) {
-                    printf("         (%s: no page %s)\n", shipped[i], href);
+                    printf("         (%s: no page %.*s)\n", shipped[i],
+                           (int)nlen, href);
                     links = 0;
+                } else if (hash != NULL && hash[1] != '\0') {
+                    tiku_doc_t *far = calloc(1, sizeof *far);
+                    char ftext[TIKU_DOC_TEXT_MAX + 64];
+                    FILE *ff = fopen(other, "r");
+                    size_t fn = ff ? fread(ftext, 1, sizeof ftext - 1, ff) : 0;
+
+                    if (ff) fclose(ff);
+                    ftext[fn] = '\0';
+                    if (far != NULL) {
+                        tiku_doc_read(far, ftext);
+                        tiku_doc_layout(far, 400);
+                        if (tiku_doc_anchor_y(far, hash + 1) < 0) {
+                            printf("         (%s: %s has no %s)\n",
+                                   shipped[i], other, hash + 1);
+                            anchors = 0;
+                        }
+                        free(far);
+                    }
                 }
             }
         }
-        check(pages == (int)(sizeof shipped / sizeof shipped[0]),
-              "every page the folder is said to hold is there");
+        check(nshipped >= 15 && pages == nshipped,
+              "every page in the folder was read");
+        check(nshipped < SHIPPED_MAX,
+              "and the walk reached the end of it rather than its own "
+              "ceiling, which would check fewer pages in silence");
         check(read_ok, "and each one fits the reader's arena whole");
         check(laid, "and lays out at three widths with its tables agreeing");
         check(entities, "and spells every entity in the dialect's own set");

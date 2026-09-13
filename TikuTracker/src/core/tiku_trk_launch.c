@@ -73,6 +73,31 @@ tiku_trk_launch_add(tiku_trk_apps_t *r, const char *name, const char *cmd,
     return r->count - 1;
 }
 
+int tiku_trk_launch_add_image(tiku_trk_apps_t *r)
+{
+    if (!r) return -1;
+    for (int i = 0; i < r->count; i++)
+        if (r->app[i].is_image) return i;
+    int at = tiku_trk_launch_add(r, "TikuImage", "builtin:viewer",
+        "image/png,image/jpeg,image/bmp,image/x-ms-bmp");
+    if (at >= 0) r->app[at].is_image = 1;
+    return at;
+}
+
+int tiku_trk_launch_add_document(tiku_trk_apps_t *r, const char *name,
+    const char *runner, const char *module, const char *types)
+{
+    if (!r || !runner || !*runner || !module || !*module ||
+        strlen(runner) >= TIKU_TRK_APP_CMD_MAX ||
+        strlen(module) >= TIKU_PATH_MAX) return -1;
+    for (int i = 0; i < r->count; i++)
+        if (!strcmp(r->app[i].module, module)) return i;
+    int at = tiku_trk_launch_add(r, name, runner, types);
+    if (at >= 0)
+        snprintf(r->app[at].module, sizeof r->app[at].module, "%s", module);
+    return at;
+}
+
 int
 tiku_trk_launch_load(tiku_trk_apps_t *r, const char *path)
 {
@@ -191,15 +216,26 @@ tiku_trk_launch_set_preferred(struct tiku_store *store, const char *type,
                                 (app_name != NULL) ? strlen(app_name) : 0u);
 }
 
-/** @brief Order: better relation first, the user's choice ahead of both. */
-static int
-cand_before(const tiku_trk_cand_t *a, const tiku_trk_cand_t *b)
+int
+tiku_trk_launch_cand_before(const tiku_trk_cand_t *a,
+                            const tiku_trk_cand_t *b)
 {
     if (a->preferred != b->preferred) {
         return a->preferred > b->preferred;
     }
     if (a->rel != b->rel) {
         return (int)a->rel > (int)b->rel;
+    }
+    /* Between applications that claim the type, a shipped default leads
+     * an equal match, never a saved choice.  Applications that claim
+     * nothing rank by name alone: there is no handler to prefer. */
+    if (a->rel != TIKU_TRK_REL_NONE) {
+        int ad = a->app->is_image || a->app->module[0];
+        int bd = b->app->is_image || b->app->module[0];
+
+        if (ad != bd) {
+            return ad > bd;
+        }
     }
     return strcmp(a->app->name, b->app->name) < 0;
 }
@@ -250,7 +286,7 @@ tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
         tiku_trk_cand_t hold = out[i];
         int k = i;
 
-        while (k > 0 && cand_before(&hold, &out[k - 1])) {
+        while (k > 0 && tiku_trk_launch_cand_before(&hold, &out[k - 1])) {
             out[k] = out[k - 1];
             k--;
         }
@@ -313,6 +349,8 @@ tiku_trk_launch_reason(tiku_trk_launch_err_t err)
         return "There is nothing to open.";
     case TIKU_TRK_LAUNCH_IS_TRACKER:
         return "That is this Tracker, which is already running.";
+    case TIKU_TRK_LAUNCH_IS_IMAGE:
+        return "That is TikuImage, hosted by the desktop.";
     case TIKU_TRK_LAUNCH_FAILED:
         return "That application could not be started.";
     default:
@@ -350,6 +388,7 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
     if (app == NULL || app->cmd[0] == '\0') {
         return TIKU_TRK_LAUNCH_NO_APP;
     }
+    if (app->is_image) return TIKU_TRK_LAUNCH_IS_IMAGE;
     if (app->is_tracker) {
         /* Choosing this Tracker is not a launch: the running one takes it,
          * which is what stops a second copy of the desktop appearing
@@ -357,6 +396,12 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
         return TIKU_TRK_LAUNCH_IS_TRACKER;
     }
     argv[argc++] = app->cmd;
+    if (app->module[0]) {
+        /* One fresh app per document: never silently lose a batch. */
+        if (n != 1 || !paths || !paths[0] || !*paths[0])
+            return TIKU_TRK_LAUNCH_NOTHING;
+        argv[argc++] = app->module;
+    }
     for (i = 0; i < n && argc < (int)(sizeof argv / sizeof argv[0]) - 1;
          i++) {
         if (paths[i] == NULL || paths[i][0] == '\0') {
@@ -412,7 +457,14 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
 static struct {
     pid_t pid;
     char  name[64];
+    int expected;
 } launched[LAUNCHED_MAX];
+
+void tiku_trk_launch_expect_stop(pid_t pid)
+{
+    for (int i = 0; i < LAUNCHED_MAX; i++)
+        if (pid > 1 && launched[i].pid == pid) launched[i].expected = 1;
+}
 
 void
 tiku_trk_launch_note(pid_t pid, const char *name)
@@ -422,6 +474,7 @@ tiku_trk_launch_note(pid_t pid, const char *name)
     for (i = 0; i < LAUNCHED_MAX; i++) {
         if (launched[i].pid == 0) {
             launched[i].pid = pid;
+            launched[i].expected = 0;
             snprintf(launched[i].name, sizeof launched[i].name, "%s",
                      (name != NULL) ? name : "?");
             return;
@@ -431,6 +484,7 @@ tiku_trk_launch_note(pid_t pid, const char *name)
      * the system, only not named here. */
     memmove(&launched[0], &launched[1], sizeof launched - sizeof launched[0]);
     launched[LAUNCHED_MAX - 1].pid = pid;
+    launched[LAUNCHED_MAX - 1].expected = 0;
     snprintf(launched[LAUNCHED_MAX - 1].name,
              sizeof launched[LAUNCHED_MAX - 1].name, "%s",
              (name != NULL) ? name : "?");
@@ -464,10 +518,11 @@ tiku_trk_launch_reap(tiku_trk_death_t *out, int max)
                      launched[i].name);
             out[n].signal = WIFSIGNALED(status) ? WTERMSIG(status) : 0;
             out[n].status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            out[n].expected = launched[i].expected &&
+                              out[n].signal == SIGKILL;
         }
         launched[i].pid = 0;
         n++;
     }
     return n;
 }
-

@@ -314,7 +314,10 @@ static void start_draw(tiku_window_t *w, tiku_surface_t *s,
         tiku_rect_t r = start_app_row(l, i - p->page);
         start_check(s, r, NULL, p->items[i].enabled,
                     tiku_dialog_focused(&p->dialog, i + 2));
-        tiku_icon_paint(s, "application", r.x + 24,
+        tiku_icon_paint(s, !strcmp(p->items[i].path, "builtin:reader") ?
+                        "reader" :
+                        !strcmp(p->items[i].path, "builtin:viewer") ?
+                        "image_viewer" : "application", r.x + 24,
                         r.y + (r.h - 16) / 2, 16);
         start_app_label(s, r, p->items[i].label);
     }

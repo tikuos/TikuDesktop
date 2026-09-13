@@ -273,6 +273,8 @@ tracker_run(int argc, char **argv)
     while (app.running) {
         tiku_watch_beat();
         desktop_turn_begin(&app, &opt, &lp);
+        int64_t event_started = tiku_trk_now();
+        int event_count = 0;
         for (;;) {
             tiku_event_t ev;
             int have = 0;
@@ -288,6 +290,7 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if (script_result == TIKU_TRK_SCRIPT_ADAPTER_SHOT) {
+                    app.dirty = 1;
                     draw_all(&app);
                     (void)tiku_surface_png(
                         app.surf, app.script_adapter.shot_path);
@@ -317,6 +320,11 @@ tracker_run(int argc, char **argv)
             }
             if (ev.type != TIKU_EVENT_TEXT_INPUT)
                 (void)tiku_text_input_event(&app.legacy_commit, &ev);
+            if (ev.type == TIKU_EVENT_KEY_DOWN ||
+                ev.type == TIKU_EVENT_TEXT_INPUT ||
+                ev.type == TIKU_EVENT_POINTER_DOWN ||
+                ev.type == TIKU_EVENT_POINTER_MOVE)
+                tiku_trk_loop_note_activity(app.loop);
             switch (ev.type) {
             case TIKU_EVENT_TEXT_INPUT:
                 desktop_text_input(&app, &ev);
@@ -331,12 +339,17 @@ tracker_run(int argc, char **argv)
                 break;
             case TIKU_EVENT_DEACTIVATED: {
                 tiku_window_t *fw = tiku_workspace_focused(app.desk);
+                /* A hover cannot mature after native focus has left. */
+                if (tiku_trk_deskbar_motion(app.deskbar, -1, -1))
+                    app.dirty = 1;
                 if (app.prefs_track && app.prefs_track != fw)
                     (void)tiku_window_send(app.prefs_track, &ev);
                 app.prefs_track = NULL;
                 if (fw == desktop_deviceprefs_handle(&app) ||
                     desktop_utility_owns(&app, fw) ||
-                    fw == desktop_startup_handle(&app))
+                    fw == desktop_startup_handle(&app) ||
+                    fw == desktop_associations_handle(&app) ||
+                    fw == desktop_forcequit_handle(&app))
                     (void)tiku_window_send(fw, &ev);
                 break;
             }
@@ -357,13 +370,6 @@ tracker_run(int argc, char **argv)
                 desktop_pointer_up(&app, &ev, &lp);
                 break;
             case TIKU_EVENT_KEY_UP:
-                if (ev.type == TIKU_EVENT_KEY_DOWN ||
-                    ev.type == TIKU_EVENT_POINTER_DOWN ||
-                    ev.type == TIKU_EVENT_POINTER_MOVE) {
-                    /* The user did something: idle-only work starts its
-                     * wait again (AW-085). */
-                    tiku_trk_loop_note_activity(app.loop);
-                }
                 if (tiku_trk_switcher_window_shown(&app.switcher_window) &&
                     ev.key == TIKU_KEY_CMD) {
                     /* Released inside the hair trigger the user meant the
@@ -387,6 +393,9 @@ tracker_run(int argc, char **argv)
             if (lp.sc != NULL) {
                 break;              /* one instruction per turn */
             }
+            /* A stream of input cannot starve timers or the next frame. */
+            if (++event_count >= 64 ||
+                tiku_trk_now()-event_started >= 2000) break;
         }
         desktop_turn_end(&app, &opt, &lp);
     }

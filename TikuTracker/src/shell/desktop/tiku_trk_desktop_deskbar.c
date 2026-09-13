@@ -74,6 +74,12 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
     case TIKU_TRK_DB_ITEM_DEVICE_PREFS:
         art = "microcontroller";
         break;
+    case TIKU_TRK_DB_ITEM_ASSOC_PREFS:
+        art = "folder_prefs";
+        break;
+    case TIKU_TRK_DB_ITEM_FORCE_QUIT:
+        art = "application";
+        break;
     case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
         art = "package";
         break;
@@ -280,31 +286,11 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         execv("/proc/self/exe", restart_argv);
         app->running = 0;       /* exec refused: end instead */
         break;
-    case TIKU_TRK_DB_QUIT_TEAM: {
-        /* Politely: SIGTERM, the process's chance to
-         * put its affairs in order (DB-028). */
-        long tp[16];
-        int k, m = tiku_trk_deskbar_team_pids(
-            app->deskbar, pick->team, tp, 16);
-
-        for (k = 0; k < m; k++) {
-            (void)kill((pid_t)tp[k], SIGTERM);
-        }
-        break;
-    }
+    case TIKU_TRK_DB_QUIT_TEAM:
     case TIKU_TRK_DB_KILL_TEAM: {
-        /* The Vulcan Death Grip: no quit request,
-         * and the row goes without waiting for the
-         * roster (DB-020). */
-        long tp[16];
-        int k, m = tiku_trk_deskbar_team_pids(
-            app->deskbar, pick->team, tp, 16);
-
-        for (k = 0; k < m; k++) {
-            (void)kill((pid_t)tp[k], SIGKILL);
-        }
-        tiku_trk_deskbar_remove_team(app->deskbar,
-                                     pick->team);
+        /* Roster names can group unrelated processes, including the shell.
+         * Select an authenticated peer and confirm in the native dialog. */
+        desktop_forcequit_open(app);
         break;
     }
     case TIKU_TRK_DB_HIDE_ALL:
@@ -365,6 +351,9 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
     case TIKU_TRK_DB_HELP:
         tiku_trk_help_window_open(&app->help_window);
         break;
+    case TIKU_TRK_DB_FORCE_QUIT:
+        desktop_forcequit_open(app);
+        break;
     case TIKU_TRK_DB_SOUND_PREFERENCES:
         tiku_trk_sounds_window_open(&app->sounds_window);
         break;
@@ -374,10 +363,21 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
     case TIKU_TRK_DB_STARTUP_PREFERENCES:
         desktop_startup_open(app);
         break;
+    case TIKU_TRK_DB_ASSOC_PREFERENCES:
+        desktop_associations_open(app);
+        break;
     case TIKU_TRK_DB_DESKTOP_PREFERENCES:
         tiku_trk_desktop_prefs_window_open(&app->desktop_prefs_window);
         break;
     case TIKU_TRK_DB_LAUNCH_APP: {
+        if (!strcmp(pick->path, "builtin:reader")) {
+            tiku_trk_help_window_open(&app->reader_window);
+            break;
+        }
+        if (!strcmp(pick->path, "builtin:viewer")) {
+            tiku_trk_image_window_open(app->image_window);
+            break;
+        }
         if (!strcmp(pick->path, "builtin:monitor") ||
             !strcmp(pick->path, "builtin:vfs")) {
             desktop_utility_open(app, !strcmp(pick->path, "builtin:vfs"));

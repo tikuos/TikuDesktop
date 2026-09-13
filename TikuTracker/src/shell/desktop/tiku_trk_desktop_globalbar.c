@@ -320,9 +320,11 @@ rebuild_global_bar(desktop_t *app)
     {
         int program = (fw != NULL &&
                        (embed_win_of_window(app, fw) != NULL ||
+                        fw == app->reader_window.window ||
+                        fw == tiku_trk_image_window_handle(app->image_window) ||
                         tiku_remote_owner(&app->remote, fw) != NULL));
 
-        const char *page = program ? desktop_help_page_of(app, fw) : NULL;
+        const char *page = desktop_help_page_of(app, fw);
 
         if (app->about_hoist != 0) {
             (void)tiku_menu_add(&app->sysmenu, app->about_label,

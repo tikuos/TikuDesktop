@@ -1,0 +1,41 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/hexfiles
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 90
+expect-title TikuHex
+shot /tmp/tikuhex-desktop.png
+note Explicitly enable editing, enter one hex byte and save the binary.
+click 440 68
+click 194 168
+key 4
+key 1
+wait 8
+key s ctrl
+wait 20
+expect-file-has /tmp/trk_home/hexfiles/snapshot.bin A
+note Dirty title-bar close preserves the buffer and asks before discarding.
+key 4
+key 2
+wait 8
+click 94 26
+wait 30
+expect-title Unsaved changes
+key Escape
+key z ctrl
+wait 8
+key w ctrl
+wait 20
+click-window hexfiles
+click-row 0 3
+wait 4
+menu-pick Open with
+wait 4
+expect-menu TikuHex
+menu-pick TikuHex
+wait 90
+expect-title TikuHex
+quit

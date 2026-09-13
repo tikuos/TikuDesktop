@@ -105,6 +105,7 @@ typedef enum {
     TIKU_TRK_DB_ITEM_SOUND_PREFS,
     TIKU_TRK_DB_ITEM_DEVICE_PREFS,
     TIKU_TRK_DB_ITEM_STARTUP_PREFS,
+    TIKU_TRK_DB_ITEM_ASSOC_PREFS,
     TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
     TIKU_TRK_DB_ITEM_QUIT,
     TIKU_TRK_DB_ITEM_PATH,      /* open it                              */
@@ -118,7 +119,8 @@ typedef enum {
     TIKU_TRK_DB_ITEM_PROGRAMMING, /* expand it: the programs for programs */
     TIKU_TRK_DB_ITEM_APP,       /* start the program named by its path  */
     TIKU_TRK_DB_ITEM_PANEL,     /* open the described panel at its path */
-    TIKU_TRK_DB_ITEM_HELP       /* the desktop's own pages               */
+    TIKU_TRK_DB_ITEM_HELP,      /* the desktop's own pages               */
+    TIKU_TRK_DB_ITEM_FORCE_QUIT
 } tiku_trk_db_item_kind_t;
 
 /** @brief Which recent list a RECENT row shows. */
@@ -333,6 +335,7 @@ typedef enum {
     TIKU_TRK_DB_SOUND_PREFERENCES,
     TIKU_TRK_DB_DEVICE_PREFERENCES,
     TIKU_TRK_DB_STARTUP_PREFERENCES,
+    TIKU_TRK_DB_ASSOC_PREFERENCES,
     TIKU_TRK_DB_OPEN_PANEL,     /* path names a described panel */
     TIKU_TRK_DB_HIDE_ALL,
     TIKU_TRK_DB_SHOW_ALL,
@@ -352,6 +355,7 @@ typedef enum {
     TIKU_TRK_DB_TOGGLE_DARK,      /* the little switch on the tray  */
     TIKU_TRK_DB_LAUNCH_APP,       /* `path` is the program to start */
     TIKU_TRK_DB_HELP,             /* the desktop's own pages        */
+    TIKU_TRK_DB_FORCE_QUIT,       /* safe local-app termination     */
 } tiku_trk_db_action_t;
 
 typedef struct {
@@ -390,6 +394,14 @@ int tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
  * @return Nonzero when a highlight moved, so the caller knows to paint.
  */
 int tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y);
+
+/** @brief Dwell before opening a submenu, matching other spring menus. */
+#define TIKU_TRK_DB_SUBMENU_DELAY_US 500000
+/** @brief Advance submenu hover using monotonic microseconds, even at rest.
+ * Returns nonzero only when a submenu opens, switches, or closes. Hover never
+ * selects a command. Leaving a row cancels its pending opening.
+ */
+int tiku_trk_deskbar_menu_tick(tiku_trk_deskbar_t *db, int64_t now);
 
 /**
  * @brief A release: an armed expander press commits here (DB-022).

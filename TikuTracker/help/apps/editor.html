@@ -14,14 +14,18 @@ caret is in, and the editor's last message.</p>
 <p>Started from the Deskbar, the editor opens with nothing in it: the
 foot line says <code>untitled</code> and <code>new file</code>.</p>
 
-<p>The Deskbar row starts the loadable copy of the editor, which takes no
-file name. The separate <code>tiku-edit</code> program takes one when it
-is started, and that is how a document reaches it when an applications
-entry naming that program opens one. It reads the file whole, breaks it
-at the line ends, titles the window with the last part of the path,
-and says how many lines it read. A name that is nowhere on disk is not
-refused: the document opens empty and the foot line says
-<code>new file</code>.</p>
+<p>Double-click a local <code>.txt</code> file in Tracker to open it in
+Editor, or choose <b>Open with → Editor</b>. Each document launch opens
+a separate editor, leaving existing unsaved windows alone. Uppercase
+extensions work too. A preferred handler you explicitly selected takes
+precedence over this default. Standalone TikuTracker uses the running
+TikuDesktop to open the document; save device files locally first.</p>
+
+<p>The separate <code>tiku-edit</code> program also accepts a file name.
+The loadable editor accepts one through
+<code>tiku-run editor.so document.txt</code>. The window takes the file's
+name and the foot line reports how many lines were read. Launching from
+the Deskbar without a document still opens an empty editor.</p>
 
 <p>The name also decides the colouring, once, before anything is drawn:
 <code>.bas</code> opens coloured as BASIC, <code>.c</code> and

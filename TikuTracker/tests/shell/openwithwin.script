@@ -53,6 +53,9 @@ menu-pick Open with
 wait 3
 menu-pick Open with…
 wait 8
+note past the two that claim it stands the one that does not
+key Down
+wait 2
 key Down
 wait 2
 key Down

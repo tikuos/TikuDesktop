@@ -49,21 +49,15 @@ embed_window_draw(tiku_window_t *window, tiku_surface_t *surface,
                   tiku_rect_t content, void *context)
 {
     struct embed_win *ew = context;
-    int x, y, w, h;
 
     (void)window;
     tiku_fill(surface, content, TIKU_C_PANEL);
     if (ew == NULL || ew->frame == NULL) {
         return;
     }
-    w = (ew->fw < content.w) ? ew->fw : content.w;
-    h = (ew->fh < content.h) ? ew->fh : content.h;
-    for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x++) {
-            tiku_pixel(surface, content.x + x, content.y + y,
-                            ew->frame[(size_t)y * (size_t)ew->fw + x]);
-        }
-    }
+    tiku_surface_t frame = {.px = ew->frame, .w = ew->fw,
+                            .h = ew->fh, .scale = 1};
+    tiku_blit(surface, content.x, content.y, &frame);
 }
 
 /** @brief The window @p w of a hosted application, or NULL. */
@@ -666,6 +660,25 @@ static int embed_svc_help_page(void *ctx, const char *page)
     return desktop_help_ready(slot->app);
 }
 
+/** @brief Open a topic for a dialog or a requested error explanation. */
+static int embed_svc_help_open(void *ctx, const char *page)
+{
+    struct desktop_embed *slot = ctx;
+    if (!slot || !page || strlen(page) >= 256) return 0;
+    tiku_trk_help_window_open(&slot->app->help_window);
+    return tiku_trk_help_window_go(&slot->app->help_window, page) !=
+        TIKU_TRK_HELP_NOWHERE;
+}
+
+/** @brief Display a generated report owned by the reader after this call. */
+static int embed_svc_help_html(void *ctx, const char *title, const char *html)
+{
+    struct desktop_embed *slot = ctx;
+    if (!slot || !html || strlen(html) > 15000 ||
+        (title && strlen(title) > 127)) return 0;
+    return tiku_trk_help_window_html(&slot->app->help_window, title, html);
+}
+
 /** @brief Let a board go, port and all. */
 static int
 embed_svc_board_release(void *ctx, const char *board)
@@ -748,6 +761,8 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
         slot->services.board_reclaim = embed_svc_board_reclaim;
     slot->services.board_find = embed_svc_board_find;
     slot->services.help_page = embed_svc_help_page;
+    slot->services.help_open = embed_svc_help_open;
+    slot->services.help_html = embed_svc_help_html;
     if (descriptor->start(&slot->state, &slot->services) != 0) {
         return 0;
     }

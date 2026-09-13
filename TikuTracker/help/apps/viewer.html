@@ -1,0 +1,57 @@
+<h1>TikuImage</h1>
+<p>An image and camera-snapshot viewer using TikuDesktop's native controls.
+Choose <b>Applications &gt; TikuImage</b>. Startup preferences can launch an
+empty viewer automatically; images and watches are not restored.</p>
+<h2 id="open">Opening an image</h2>
+<p>Choose <b>Open</b> or press <b>Ctrl+O</b> and select a local image.
+PNG, baseline JPEG and uncompressed 24/32-bit BMP are supported. The format
+is detected from the file contents, not just the filename. Image files
+opened in Tracker use TikuImage by default. PNG (.png), JPEG (.jpg/.jpeg)
+and BMP (.bmp) associations also recognize uppercase extensions. TikuImage
+appears in Open With and the Info window's Opens with choices. An explicitly
+chosen alternative handler takes precedence. A failed load keeps the previous
+image and explains why in
+the status strip; no separate error dialog interrupts you.</p>
+<p>Standalone TikuTracker forwards image opens to the running TikuDesktop;
+start the desktop first. It does not start another desktop automatically.
+Open one image at a time; multi-file Open With requests are refused explicitly.</p>
+<h2 id="view">Inspecting pixels</h2>
+<ul>
+<li><b>Fit</b> or <b>0</b> fits the image while preserving its proportions.</li>
+<li><b>1:1</b> or <b>1</b> shows one image pixel per desktop logical pixel.</li>
+<li><b>+</b> and <b>-</b> zoom; Ctrl+mouse wheel also zooms.</li>
+<li>Drag the canvas or use arrow keys to pan. The mouse wheel pans vertically;
+Shift+wheel pans horizontally.</li>
+<li><b>Rotate</b> or <b>R</b> rotates the view clockwise without changing
+the saved image.</li>
+<li>The title-tab maximize button fills the usable desktop; click again
+to restore the previous window size.</li>
+</ul>
+<p>The status strip shows source dimensions, encoded size, zoom and source
+path. Transparent pixels appear over a checkerboard. Enlarged pixels use
+nearest-neighbour scaling for inspection; source colours are preserved
+even when the desktop uses a monochrome theme.</p>
+<h2 id="snapshots">Camera snapshots</h2>
+<p><b>Reload</b> or <b>Ctrl+R</b> rereads the current file. <b>Watch 2s</b>
+checks it every two seconds and decodes only when it changes. A capture
+tool should write a complete PNG/JPEG/BMP to a temporary file, then rename
+it over the watched filename. Failed or incomplete reads keep the last good
+image and pause the watch. Reload after correcting the file, then enable
+Watch again. Closing stops the watch and discards the document.</p>
+<p>This is a snapshot viewer, not a camera driver or video stream. Device
+VFS reads currently provide text values and the firmware download command
+can truncate large files. Direct device image download is therefore not
+offered. Save a complete snapshot on this computer using your acquisition
+tool first. No camera is started and no device setting is changed.</p>
+<h2 id="limits">Limits and application integration</h2>
+<p>Encoded files are limited to 32 MiB and decoded images to 16 Mi pixels.
+Loading runs in background workers. Zoom caches only the visible canvas.
+Progressive JPEG, 16-bit PNG, GIF, SVG and raw sensor buffers are not
+currently decoded. EXIF orientation and colour profiles are not applied;
+use Rotate when needed. This viewer does not perform scientific image
+calibration or alter original files.</p>
+<p>Native desktop controllers can submit a complete encoded snapshot with
+<code>tiku_trk_image_window_bytes</code>. It copies the producer's binary
+buffer before returning and decodes off the UI thread. Acquisition,
+transport, frame boundaries and camera-specific controls belong to the
+producer. This is a host controller API, not a device wire protocol.</p>

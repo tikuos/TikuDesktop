@@ -16,7 +16,7 @@
  *
  * Hide all is refused when every window is already minimized and Show all
  * when none is; an application with no windows gets 'No windows' plus a
- * 'Quit application' -- suppressed for the file manager itself (DB-028).
+ * 'Force Quit…' -- suppressed for the file manager itself (DB-028).
  * @return how many rows.
  */
 int
@@ -32,7 +32,7 @@ db_win_menu_items(const tiku_trk_deskbar_t *db, int team, const char **items,
         if (t->takes_anything) {
             return 1;
         }
-        items[1] = "Quit application";
+        items[1] = "Force Quit…";
         enabled[1] = 1;
         return 2;
     }
@@ -127,6 +127,8 @@ db_reset_menu_hots(tiku_trk_deskbar_t *db)
 {
     db->leaf_hot = -1;
     db->sub_hot = -1;
+    db->sub_pending = -1;
+    db->sub_entered = 0;
     db->win_hot = -1;
     db->clock_hot = -1;
     db->apps_hot = -1;

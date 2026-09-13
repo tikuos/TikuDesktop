@@ -194,6 +194,37 @@ remote_reconcile(desktop_t *app)
     }
 }
 
+/** @brief Acknowledge local-image dispatch before the client exits. */
+static void remote_image_open(desktop_t *app, int session, tiku_msg_t *m)
+{
+    const char *path = tiku_msg_find_string(m, "path", 0);
+    int ok = tiku_trk_image_file_supported(path) &&
+             desktop_document_local(app, path);
+    tiku_msg_t *reply = tiku_msg_new(TIKU_MSG_IMAGEOPENED);
+    if (reply) {
+        (void)tiku_msg_add_int32(reply, "accepted", ok);
+        (void)tiku_remote_tell(&app->remote, session, reply);
+        tiku_msg_free(reply);
+    }
+}
+
+/** @brief Dispatch requested local documents through associations. */
+static void remote_document_open(desktop_t *app, int session, tiku_msg_t *m)
+{
+    const char *path = tiku_msg_find_string(m, "path", 0);
+    const char *ext = path ? strrchr(path, '.') : NULL;
+    int supported = ext && (!strcasecmp(ext, ".bas") ||
+        !strcasecmp(ext, ".tiku") || !strcasecmp(ext, ".txt") ||
+        !strcasecmp(ext, ".md"));
+    int ok = supported && desktop_document_local(app, path);
+    tiku_msg_t *reply = tiku_msg_new(TIKU_MSG_DOCUMENTOPENED);
+    if (reply) {
+        (void)tiku_msg_add_int32(reply, "accepted", ok);
+        (void)tiku_remote_tell(&app->remote, session, reply);
+        tiku_msg_free(reply);
+    }
+}
+
 /**
  * @brief Take what each session has said, and act on what it asked for.
  *
@@ -211,6 +242,10 @@ remote_hear(desktop_t *app)
         tiku_msg_t *m;
 
         while ((m = tiku_remote_said(&app->remote, i)) != NULL) {
+            if (tiku_msg_what(m) == TIKU_MSG_IMAGEOPEN)
+                remote_image_open(app, i, m);
+            if (tiku_msg_what(m) == TIKU_MSG_DOCUMENTOPEN)
+                remote_document_open(app, i, m);
             if (tiku_msg_what(m) == TIKU_MSG_PICK &&
                 app->pending_pick.kind == 0) {
                 int32_t window = 0, mode = TIKU_APP_PICK_OPEN;
@@ -314,6 +349,19 @@ remote_hear(desktop_t *app)
                 snprintf(app->remote.session[i].help_page,
                          sizeof app->remote.session[i].help_page, "%s",
                          (page != NULL) ? page : "");
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_HELPOPEN) {
+                const char *page = tiku_msg_find_string(m, "page", 0);
+                if (page && strlen(page) < 256)
+                    tiku_trk_help_window_open_page(&app->help_window, page);
+            }
+            if (tiku_msg_what(m) == TIKU_MSG_HELPHTML) {
+                const char *title = tiku_msg_find_string(m, "title", 0);
+                const char *html = tiku_msg_find_string(m, "html", 0);
+                if (html && strlen(html) <= 15000 &&
+                    (!title || strlen(title) <= 127))
+                    (void)tiku_trk_help_window_html(&app->help_window,
+                                                    title, html);
             }
             if (tiku_msg_what(m) == TIKU_MSG_OPENPATH) {
                 const char *path = tiku_msg_find_string(m, "path", 0);
@@ -455,15 +503,20 @@ remote_sweep(desktop_t *app)
     tiku_window_t *w;
     int i;
 
-    for (i = 0; ; i++) {
+    for (i = 0; ; ) {
         w = tiku_workspace_at(app->desk, i);
         if (w == NULL) {
             break;
         }
         if (w->open && w->draw == remote_window_draw &&
             tiku_remote_owner(&app->remote, w) == NULL) {
+            /* Closing compacts the workspace's order, so the next
+             * window is at this index: advancing here would step over
+             * it, and a killed application would leave a ghost. */
             tiku_workspace_close(app->desk, w);
             app->dirty = 1;
+            continue;
         }
+        i++;
     }
 }

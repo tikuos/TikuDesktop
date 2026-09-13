@@ -443,6 +443,43 @@ static void test_splash_license(void)
     tiku_font_set_size(12);
 }
 
+/** @brief Only an explicit launch file populates a fresh TikuBasic session. */
+static void test_launch_document(tiku_app_services_t *services, const char *dir)
+{
+    char source[512], manifest[512];
+    snprintf(source, sizeof source, "%s/literal file;name.BAS", dir);
+    snprintf(manifest, sizeof manifest, "%s/project.TIKU", dir);
+    const char *program = "10 PRINT 9876\n20 END\n";
+    const char *project = "title Launch Test\ngroup Sources\nfile literal file;name.BAS\n";
+    file_write(source, program, strlen(program));
+    file_write(manifest, project, strlen(project));
+    int before_runs = runs, before_saves = saves;
+    void *state = NULL;
+    services->startup_document = source;
+    assert(!ide_start(&state, services));
+    ide_t *opened = state;
+    edit_t *e = edit_of_path(opened, source);
+    assert(e && !e->load_failed && !tiku_textview_modified(&e->tv));
+    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 9876"));
+    assert(!opened->proj_file[0] && !opened->running);
+    ide_stop(opened);
+    services->startup_document = manifest;
+    assert(!ide_start(&state, services));
+    opened = state;
+    assert(!strcmp(opened->proj_file, manifest));
+    assert(!strcmp(opened->proj.title, "Launch Test"));
+    assert(opened->proj.nrow == 2 && !edit_of_path(opened, source));
+    ide_stop(opened);
+    services->startup_document = NULL;
+    assert(!ide_start(&state, services));
+    opened = state;
+    assert(!opened->proj_file[0] && !opened->proj.nrow);
+    assert(!edit_of_path(opened, source));
+    ide_stop(opened);
+    assert(runs == before_runs && saves == before_saves);
+    assert(!unlink(source) && !unlink(manifest));
+}
+
 int main(void)
 {
     char dir[] = "/tmp/tikubasic-test-XXXXXX", label[160];
@@ -478,6 +515,7 @@ int main(void)
     test_reopen(st, dir);
     test_console_errors(&services);
     test_splash_license();
+    test_launch_document(&services, dir);
     assert(rmdir(dir) == 0);
     free(st);
     puts("PASS: upload boundaries/confirmation, target state, replacement/undo, recovery");

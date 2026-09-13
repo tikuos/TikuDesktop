@@ -1,0 +1,43 @@
+# shell: desktop
+# prefs: factory
+# mkdir: /tmp/trk_home
+wait 20
+click 980 40
+wait 4
+menu-pick Applications
+wait 4
+menu-pick TikuReader
+wait 12
+expect-title TikuReader
+note hover changes only chrome, not the rest of the desktop
+move 150 86
+wait 2
+expect-same-as-redraw
+move 152 87
+wait 2
+expect-same-as-redraw
+move 450 400
+wait 2
+expect-same-as-redraw
+note live drag frames must equal a complete repaint before release
+press 95 50
+move 175 100
+wait 2
+expect-window-at 104 90
+expect-same-as-redraw
+move 225 120
+wait 2
+expect-window-at 154 110
+expect-same-as-redraw
+move 70 50
+wait 2
+expect-same-as-redraw
+release 70 50
+wait 4
+expect-same-as-redraw
+note resize invalidates content and updates the real controller
+key f ctrl
+wait 4
+expect-narrate Find
+expect-same-as-redraw
+quit

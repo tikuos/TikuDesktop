@@ -30,6 +30,7 @@ int main(void)
                                            "application"));
     }
     assert(installed_group("custom.so") == TIKU_TRK_DB_GROUP_APPS);
+    assert(installed_group("TikuHex.so") == TIKU_TRK_DB_GROUP_DEVICE_TOOLS);
     /* Programming is read last, so a table one entry short loses it
      * whole rather than losing the app that overflowed. */
     assert(tiku_trk_deskbar_add_app_in(db, TIKU_TRK_DB_GROUP_PROGRAMMING,

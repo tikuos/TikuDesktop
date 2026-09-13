@@ -580,6 +580,15 @@ close_window(desktop_t *app, tiku_window_t *w)
         tiku_trk_help_window_close(&app->help_window);
         return;
     }
+    if (w == tiku_trk_image_window_handle(app->image_window)) {
+        if (app->prefs_track == w) app->prefs_track = NULL;
+        tiku_trk_image_window_close(app->image_window);
+        return;
+    }
+    if (w == tiku_trk_help_window_handle(&app->reader_window)) {
+        tiku_trk_help_window_close(&app->reader_window);
+        return;
+    }
     if (w == desktop_deviceprefs_handle(app)) {
         desktop_deviceprefs_close(app);
         return;
@@ -590,6 +599,14 @@ close_window(desktop_t *app, tiku_window_t *w)
     }
     if (w == desktop_startup_handle(app)) {
         desktop_startup_close(app);
+        return;
+    }
+    if (w == desktop_forcequit_handle(app)) {
+        desktop_forcequit_close(app);
+        return;
+    }
+    if (w == desktop_associations_handle(app)) {
+        desktop_associations_close(app);
         return;
     }
     if (w == tiku_trk_sounds_window_handle(&app->sounds_window)) {

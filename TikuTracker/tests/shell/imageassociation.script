@@ -1,0 +1,45 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/images
+# All advertised extensions route through the real application registry.
+wait 20
+click-row 0
+wait 2
+click-row 0
+wait 24
+expect-title TikuImage - a.PNG
+expect-narrate 2 x 3 px
+key w ctrl
+wait 4
+click-row 1
+wait 2
+click-row 1
+wait 24
+expect-title TikuImage - b.JPG
+key w ctrl
+wait 4
+click-row 2
+wait 2
+click-row 2
+wait 24
+expect-title TikuImage - c.JPEG
+key w ctrl
+wait 4
+click-row 3
+wait 2
+click-row 3
+wait 24
+expect-title TikuImage - d.BMP
+key w ctrl
+wait 4
+click-row 0 3
+wait 4
+menu-pick Open with
+wait 4
+expect-menu TikuImage (opens this type)
+menu-pick TikuImage
+wait 24
+expect-title TikuImage - a.PNG
+expect-narrate 2 x 3 px
+key w ctrl
+quit

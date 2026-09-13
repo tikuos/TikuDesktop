@@ -144,14 +144,30 @@ follow_font(desktop_t *app)
     app->dirty = 1;
 }
 
-/**
- * @brief One frame of the whole desktop, back to front: the backdrop,
- *        the windows, the bars, the menus and overlays, the splash.
- */
+/** @brief Accumulate known damage without weakening a full invalidation. */
+void desktop_damage(desktop_t *app, tiku_rect_t rect)
+{
+    if (rect.w <= 0 || rect.h <= 0) return;
+    /* Every existing writer of dirty=1 remains a full invalidation.
+     * A later bounded change must never downgrade that request. */
+    if (app->dirty && app->dirty != 2) return;
+    app->damage = app->dirty ? tiku_rect_union(app->damage, rect) : rect;
+    app->dirty = 2;
+}
+
+/** @brief Composite the requested region with safe full-redraw fallbacks. */
 void
 draw_all(desktop_t *app)
 {
     follow_font(app);
+    int partial = app->dirty == 2;
+    int64_t started = tiku_trk_now();
+    tiku_clip_damage(app->surf, partial ? &app->damage : NULL);
+    tiku_workspace_cache_mode(app->desk,
+        partial ? TIKU_CACHE_REUSE : TIKU_CACHE_REFRESH);
+    app->frame_pixels += (uint64_t)app->surf->clip.w*app->surf->clip.h;
+    if (partial) app->partial_frames++;
+    else app->full_frames++;
     /* The strip tracker's owner, refreshed per frame so only the window a
      * gesture is running in draws the slide and the guide (TS-063). */
     app->folder_render.strip_owner =
@@ -180,6 +196,12 @@ draw_all(desktop_t *app)
     desktop_draw_popup(app);
     desktop_draw_overlays(app);
     desktop_draw_splash(app);
+    desktop_forcequit_overlay(app);
+    tiku_clip_damage(app->surf, NULL);
+    int64_t elapsed = tiku_trk_now()-started;
+    app->draw_us += elapsed;
+    app->frame_samples[app->frame_sample_count++ % 128] = elapsed;
+    if (elapsed > 16667) app->slow_frames++;
 }
 
 /**

@@ -35,7 +35,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     int r;
     int secondary = (button == 3);
     const tiku_font_t *f = tiku_font_plain();
-    int i, j, ry;
+    int ry;
 
     if (db == NULL || pick == NULL) {
         return 0;
@@ -351,6 +351,8 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 } else if (db->sub[si].kind ==
                            TIKU_TRK_DB_ITEM_STARTUP_PREFS) {
                     pick->what = TIKU_TRK_DB_STARTUP_PREFERENCES;
+                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_ASSOC_PREFS) {
+                    pick->what = TIKU_TRK_DB_ASSOC_PREFERENCES;
                 } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_PANEL) {
                     pick->what = TIKU_TRK_DB_OPEN_PANEL;
                     snprintf(pick->path, sizeof pick->path, "%s",
@@ -398,6 +400,9 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 break;
             case TIKU_TRK_DB_ITEM_HELP:
                 pick->what = TIKU_TRK_DB_HELP;
+                break;
+            case TIKU_TRK_DB_ITEM_FORCE_QUIT:
+                pick->what = TIKU_TRK_DB_FORCE_QUIT;
                 break;
             case TIKU_TRK_DB_ITEM_PREFS:
                 pick->what = TIKU_TRK_DB_PREFERENCES;

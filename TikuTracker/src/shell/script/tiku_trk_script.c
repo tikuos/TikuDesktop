@@ -114,6 +114,7 @@ sc_key_of(const char *name)
         { "Tab", TIKU_KEY_TAB },
         { "Menu", TIKU_KEY_MENU },
         { "F2", TIKU_KEY_F2 },
+        { "F1", TIKU_KEY_F1 },
         { "space", ' ' },
         { "comma", ',' },
         { "plus", '+' },

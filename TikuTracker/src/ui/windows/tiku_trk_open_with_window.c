@@ -71,19 +71,6 @@ mark_dirty(tiku_trk_open_with_window_t *c)
     }
 }
 
-/** @brief Order for the list: the better the claim, the higher the row. */
-static int
-better(const tiku_trk_cand_t *a, const tiku_trk_cand_t *b)
-{
-    if (a->preferred != b->preferred) {
-        return a->preferred > b->preferred;
-    }
-    if (a->rel != b->rel) {
-        return a->rel > b->rel;
-    }
-    return strcmp(a->app->name, b->app->name) < 0;
-}
-
 /** @brief Where Open and the make-preferred button sit along the bottom. */
 static void
 buttons(tiku_trk_open_with_window_t *c, tiku_rect_t content,
@@ -359,7 +346,7 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
     /* Better claims first; a stable order the eye can rely on. */
     for (i = 0; i < c->count; i++) {
         for (j = i + 1; j < c->count; j++) {
-            if (better(&c->cand[j], &c->cand[i])) {
+            if (tiku_trk_launch_cand_before(&c->cand[j], &c->cand[i])) {
                 tiku_trk_cand_t t = c->cand[i];
 
                 c->cand[i] = c->cand[j];

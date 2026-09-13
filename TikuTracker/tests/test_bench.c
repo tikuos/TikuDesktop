@@ -23,9 +23,17 @@ static int frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 { (void)ctx; (void)id; (void)px; (void)w; (void)h; frames++; return 0; }
 static int menus(void *ctx, uint32_t id, const tiku_menuset_t *m)
 { (void)ctx; (void)id; (void)m; return 0; }
+static char report_body[15001];
+static int report(void *ctx, const char *title, const char *html)
+{
+    (void)ctx; assert(!strcmp(title, "TikuBench results"));
+    assert(strlen(html) <= 15000);
+    strcpy(report_body, html); return 1;
+}
 static tiku_app_services_t svc = {.open = opened, .close = closed, .frame = frame,
     .menus = menus, .current_device = current, .board_names = names,
-    .board_mcu = mcu, .board_port = port, .board_release = release, .board_reclaim = reclaim};
+    .board_mcu = mcu, .board_port = port, .board_release = release, .board_reclaim = reclaim,
+    .help_html = report};
 
 /**
  * @brief Tick until the child is gone, giving it @p seconds to do it.
@@ -242,6 +250,14 @@ int main(void)
     assert(dir); setenv("TIKU_BENCH", dir, 1); free(dir);
     bench_t *st = start();
     model_test(st); result_test(st);
+    assert(st->nresult > 0);
+    result_t saved = st->results[0];
+    strcpy(st->results[0].id, "<sensor&>");
+    int before_release = releases;
+    report_open(st);
+    assert(strstr(report_body, "&lt;sensor&amp;&gt;") &&
+        !strstr(report_body, "<sensor&>") && releases == before_release);
+    st->results[0] = saved;
     run_test(st, "normal", 0); run_test(st, "nonzero", 1); run_test(st, "empty", 1);
     cancel_test(st); interactive_test(st); ui_test(st);
     bench_stop(st);

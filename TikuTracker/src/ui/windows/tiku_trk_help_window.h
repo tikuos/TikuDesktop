@@ -35,6 +35,10 @@
 #define TIKU_TRK_HELP_HISTORY 16
 /** @brief The largest page this window will read in. */
 #define TIKU_TRK_HELP_PAGE_MAX TIKU_DOC_TEXT_MAX
+/** @brief Desktop file safety ceiling, independent of embedded text storage. */
+#define TIKU_TRK_READER_FILE_MAX (8u * 1024u * 1024u)
+/** @brief Maximum table storage for one desktop document. */
+#define TIKU_TRK_READER_MEMORY_MAX (64u * 1024u * 1024u)
 
 /** @brief Where a link went. */
 typedef enum {
@@ -54,14 +58,20 @@ typedef enum {
 typedef int (*tiku_trk_help_open_fn)(void *ctx, const char *path);
 
 typedef struct {
+    int pixel, width, height;
+    tiku_doc_place_t place;
+} tiku_trk_help_position_t;
+
+typedef struct {
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
     int              *dirty;
+    /* Nonempty only when the last event changed hover chrome alone. */
+    tiku_rect_t       hover_damage;
     int               screen_w, screen_h;
     /*
-     * The page is held through a pointer: a document is eighty
-     * kilobytes of tables, and every other window controller here is
-     * embedded in the desktop's own struct by value.
+     * The page and optional larger tables live on the heap rather than
+     * inside the desktop's by-value window controller.
      */
     tiku_doc_t       *doc;
     tiku_scroll_t     bar;
@@ -77,12 +87,38 @@ typedef struct {
     int               oversize;        /* the page had more than fitted   */
     struct {
         char page[TIKU_PATH_MAX];
-        int  at;
+        tiku_trk_help_position_t at;
     } back[TIKU_TRK_HELP_HISTORY], forward[TIKU_TRK_HELP_HISTORY];
     int nback, nforward;
     tiku_trk_help_open_fn opener;
     void *opener_ctx;
+    struct help_reader *reader;
+    int document_mode;             /* local documents, separate from Help */
+    void (*choose_file)(void *ctx); /* explicit native Open-file request */
+    void *choose_ctx;
 } tiku_trk_help_window_t;
+
+/** @brief An independent Markdown/HTML reader, initially without a file. */
+void tiku_trk_document_window_init(tiku_trk_help_window_t *c,
+    tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
+    void (*choose_file)(void *ctx), void *ctx);
+/** @brief Read a literal local filename, retaining history on failure. */
+int tiku_trk_document_window_file(tiku_trk_help_window_t *c, const char *path);
+/** @brief Reload, retaining logical position and navigation history. */
+int tiku_trk_document_window_reload(tiku_trk_help_window_t *c);
+/** @brief Toggle maximize/restore inside the desktop's usable frame area. */
+int tiku_trk_document_window_zoom(tiku_trk_help_window_t *c, tiku_rect_t area);
+/** @brief Whether the suffix names a supported local markup document. */
+int tiku_trk_document_file_supported(const char *path);
+
+/** @brief Open a bounded generated document, without writing a help file. */
+int tiku_trk_help_window_html(tiku_trk_help_window_t *c,
+                            const char *title, const char *html);
+/** @brief Find decoded page text; backwards selects the preceding match. */
+int tiku_trk_help_window_find(tiku_trk_help_window_t *c,
+                            const char *query, int backwards);
+/** @brief Copy selected text, or the code block at the reading position. */
+int tiku_trk_help_window_copy(tiku_trk_help_window_t *c, int code);
 
 /** @brief Empty, with @p root the folder the pages are read from. */
 void tiku_trk_help_window_init(tiku_trk_help_window_t *c,

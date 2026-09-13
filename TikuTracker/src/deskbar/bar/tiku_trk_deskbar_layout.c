@@ -217,6 +217,9 @@ tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db)
         db->calendar_open = 0;
         db->clock_menu_open = 0;
         db->win_menu_team = -1;
+        db->sub_of = -1;
+        db->sub_count = 0;
+        db_reset_menu_hots(db);
     }
 }
 

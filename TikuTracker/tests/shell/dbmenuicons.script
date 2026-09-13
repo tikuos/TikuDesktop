@@ -6,13 +6,13 @@
 wait 12
 click 980 20
 wait 3
-expect-pixel 701 197 fac468
+expect-pixel 701 218 fac468
 note and the rows that expand carry art of their own
-expect-pixel 701 134 fac468
+expect-pixel 701 155 fac468
 note and so do the rows inside them: what configures the bar, and what
 note configures Tracker, each beside its own picture
 menu-pick Settings
 wait 5
-expect-pixel 492 108 f8c874
 expect-pixel 492 129 f8c874
+expect-pixel 492 150 f8c874
 quit

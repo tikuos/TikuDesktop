@@ -1,0 +1,49 @@
+# shell: desktop
+# prefs: factory
+# setup: documentassociation
+# open: /tmp/trk_home/documents
+wait 25
+click 980 40
+wait 4
+menu-pick Settings
+wait 4
+expect-menu File Associations
+menu-pick File Associations
+wait 20
+expect-title File Associations
+shot /tmp/tiku-associations.png
+note Choose Editor for BASIC without launching or running anything.
+click 562 240
+key s ctrl
+wait 8
+expect-title documents
+click-row 1
+wait 2
+click-row 1
+wait 90
+expect-title b-source.BAS
+expect-windows 2
+note Existing editors stay open while defaults change for future opens.
+click-window documents
+wait 8
+expect-title documents
+click 980 40
+wait 4
+menu-pick Settings
+wait 4
+menu-pick File Associations
+wait 12
+expect-title File Associations
+note Restore the default for this type.
+shot /tmp/tiku-associations-reopen.png
+click 563 187
+key s ctrl
+wait 8
+expect-title documents
+click-row 1
+wait 2
+click-row 1
+wait 90
+expect-title b-source.BAS
+expect-windows 4
+quit

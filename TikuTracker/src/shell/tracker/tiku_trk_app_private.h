@@ -78,6 +78,7 @@ typedef struct {
     /* file operations */
     tiku_fs_t       *fs;
     char                 status[220]; /* the status line's text            */
+    struct browser_image_job *image_job; /* image dispatch in flight       */
     /* inline rename: the editor is a mode, as Tracker's TextWidget is */
     int                  editing;
     tiku_field_t      ed;            /* the rename editor                  */
@@ -236,6 +237,8 @@ void browser_sync_navigator_preference(app_t *a, int force);
 int browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp);
 int browser_parse_args(int argc, char **argv, browser_options_t *o);
 int browser_teardown(app_t *app, browser_loop_t *lp);
+int browser_open_image(app_t *app, const tiku_model_t *model);
+void browser_image_detach(app_t *app);
 
 /* tiku_trk_app_navigate.c */
 int browser_navigate_to(app_t *a, const char *path, int record);

@@ -3820,6 +3820,28 @@ ide_start(void **state, const tiku_app_services_t *services)
         project_paint(st);
         project_publish(st);
     }
+    if (services->startup_document && services->startup_document[0]) {
+        const char *path = services->startup_document;
+        const char *ext = strrchr(path, '.');
+        splash_drop(st);
+        if (strlen(path) >= sizeof st->proj_file) {
+            snprintf(st->note, sizeof st->note, "Document path is too long");
+            project_paint(st);
+        } else if (ext && !strcasecmp(ext, ".tiku")) {
+            project_take(st, path);
+        } else {
+            prow_t want = {0};
+            const char *leaf = strrchr(path, '/');
+            if (strlen(path) >= sizeof want.path) {
+                snprintf(st->note, sizeof st->note, "Document path is too long");
+                project_paint(st);
+            } else {
+                snprintf(want.path, sizeof want.path, "%s", path);
+                snprintf(want.name, sizeof want.name, "%s", leaf ? leaf + 1 : path);
+                edit_open(st, &want);
+            }
+        }
+    }
     *state = st;
     return 0;
 }

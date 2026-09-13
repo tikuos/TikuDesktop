@@ -598,7 +598,7 @@ reap_deaths(desktop_t *app)
     for (g = 0; g < n && g < 4; g++) {
         char says[256];
 
-        if (gone[g].signal == 0) {
+        if (gone[g].signal == 0 || gone[g].expected) {
             continue;   /* it ended; only a death is news */
         }
         snprintf(says, sizeof says,

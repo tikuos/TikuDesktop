@@ -19,6 +19,42 @@
 #include "tiku_report.h"
 #include "tiku_trail.h"
 
+/** @brief Software-render cost, bounded history, and actual upload payload. */
+void desktop_frame_report(desktop_t *app, FILE *out)
+{
+    int64_t samples[128];
+    unsigned n = app->frame_sample_count < 128 ? app->frame_sample_count : 128;
+    uint64_t draws, hits, frames, bytes, rects;
+    size_t cache;
+    tiku_workspace_cache_stats(app->desk, &draws, &hits, &cache);
+    tiku_host_present_stats(app->host, &frames, &bytes, &rects);
+    for (unsigned i = 0; i < n; i++) {
+        unsigned j = i;
+        int64_t value = app->frame_samples[i];
+        while (j && samples[j-1] > value) {
+            samples[j] = samples[j-1]; j--;
+        }
+        samples[j] = value;
+    }
+    fprintf(out, "rendering: full=%llu partial=%llu logical_pixels=%llu\n",
+        (unsigned long long)app->full_frames,
+        (unsigned long long)app->partial_frames,
+        (unsigned long long)app->frame_pixels);
+    fprintf(out, "  draw_us=%llu present_us=%llu over_16ms=%llu "
+        "recent_median_us=%lld recent_p95_us=%lld\n",
+        (unsigned long long)app->draw_us,
+        (unsigned long long)app->present_us,
+        (unsigned long long)app->slow_frames,
+        (long long)(n ? samples[n/2] : 0),
+        (long long)(n ? samples[(n*95-1)/100] : 0));
+    fprintf(out, "  content_draws=%llu cache_hits=%llu cache_bytes=%zu\n",
+        (unsigned long long)draws, (unsigned long long)hits, cache);
+    fprintf(out, "  present_calls=%llu upload_rectangles=%llu "
+        "upload_bytes=%llu (pixel payload, excludes X11 overhead)\n",
+        (unsigned long long)frames, (unsigned long long)rects,
+        (unsigned long long)bytes);
+}
+
 /** @brief A run's state as the trail names it. */
 static const char *
 run_state_name(int state)
@@ -37,6 +73,7 @@ snapshot(FILE *f, void *ctx)
     desktop_t *app = ctx;
     int i, n = 0;
 
+    desktop_frame_report(app, f);
     fprintf(f, "mounts:\n");
     if (app->backend != NULL) {
         for (i = 0; i < tiku_mount_slots(app->backend); i++) {

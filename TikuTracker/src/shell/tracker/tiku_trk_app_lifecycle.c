@@ -20,6 +20,7 @@ browser_teardown(app_t *app, browser_loop_t *lp)
 {
     int rc = 0;
 
+    browser_image_detach(app);
     tiku_sound_free();
     tiku_host_close(app->host);
     tiku_surface_free(app->surf);

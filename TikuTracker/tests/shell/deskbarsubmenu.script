@@ -1,0 +1,33 @@
+# shell: desktop
+# A stationary pointer opens a Deskbar submenu without another click.
+wait 12
+click 980 20
+wait 4
+move 800 132
+wait 35
+expect-menu Fonts
+expect-menu Devices Preferences
+expect-same-as-redraw
+note crossing the gap into Settings keeps the submenu open
+move 685 132
+wait 4
+move 500 132
+wait 30
+expect-menu Fonts
+expect-same-as-redraw
+note moving to Applications replaces Settings after the hover delay
+move 800 153
+wait 35
+expect-menu TikuReader
+expect-same-as-redraw
+note moving back needs no click; selecting a child still works
+move 800 132
+wait 35
+expect-menu Fonts
+menu-pick Fonts
+wait 12
+expect-title Fonts
+key Escape
+wait 4
+expect-no-title Fonts
+quit

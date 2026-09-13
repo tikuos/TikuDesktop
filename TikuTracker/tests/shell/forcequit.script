@@ -1,0 +1,63 @@
+# shell: desktop
+# prefs: factory
+# setup: hexeditor
+# open: /tmp/trk_home/hexfiles
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 90
+expect-title TikuHex
+key k ctrl alt
+wait 12
+expect-title Force Quit
+shot /tmp/tiku-forcequit.png
+note Cancel must leave the editor running.
+click 288 180
+click 626 510
+wait 4
+key Return
+wait 4
+expect-windows 3
+click 626 510
+wait 4
+shot /tmp/tiku-forcequit-confirm.png
+click 750 510
+wait 4
+expect-windows 3
+note Confirm termination; only the editor disappears, without a crash popup.
+click 626 510
+wait 4
+click 626 510
+wait 60
+expect-windows 2
+expect-title Force Quit
+shot /tmp/tiku-forcequit-stopped.png
+key w ctrl
+wait 8
+expect-title hexfiles
+note The visible Deskbar command opens the same native dialog.
+click 980 40
+wait 4
+expect-menu Force Quit
+menu-pick Force Quit
+wait 8
+expect-title Force Quit
+note The window picker offers a safe normal close for a desktop-owned folder.
+click 280 470
+wait 4
+shot /tmp/tiku-forcequit-picker.png
+click 110 50
+wait 8
+expect-title Force Quit
+shot /tmp/tiku-forcequit-protected.png
+click 626 510
+wait 4
+expect-windows 2
+click 276 510
+wait 8
+expect-windows 1
+key q ctrl
+wait 8
+expect-windows 0
+quit

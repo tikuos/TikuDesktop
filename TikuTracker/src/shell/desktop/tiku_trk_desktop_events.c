@@ -30,6 +30,9 @@ void desktop_text_input(desktop_t *app, const tiku_event_t *ev)
     } else if (tiku_remote_owner(&app->remote, w) != NULL) {
         tiku_remote_event(&app->remote, w, ev);
     } else if (w && (w == desktop_deviceprefs_handle(app) ||
+                    w == tiku_trk_help_window_handle(&app->help_window) ||
+                    w == tiku_trk_help_window_handle(&app->reader_window) ||
+                    w == tiku_trk_image_window_handle(app->image_window) ||
                     desktop_utility_owns(app, w))) {
         (void)tiku_window_send(w, ev);
     } else {
@@ -72,6 +75,7 @@ void desktop_text_input(desktop_t *app, const tiku_event_t *ev)
 void
 desktop_pointer_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
+if (desktop_forcequit_input(app, ev)) return;
 if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
     tiku_window_t *pw = desktop_deviceprefs_handle(app);
     tiku_event_t pe = *ev;
@@ -727,9 +731,12 @@ if (ev->button == 4u || ev->button == 5u) {
         we.x = ev->x - rc.x;
         we.y = ev->y - rc.y;
         we.dy = (ev->button == 4u) ? -3 : 3;
+        we.modifiers = ev->modifiers;
         we.time_us = tiku_trk_now();
         if (ww == tiku_trk_fonts_window_handle(&app->fonts_window) ||
             ww == tiku_trk_help_window_handle(&app->help_window) ||
+            ww == tiku_trk_help_window_handle(&app->reader_window) ||
+            ww == tiku_trk_image_window_handle(app->image_window) ||
             desktop_utility_owns(app, ww)) {
             we.x = ev->x; we.y = ev->y;
             (void)tiku_window_send(ww, &we);
@@ -974,6 +981,22 @@ if (hit == TIKU_HIT_ZOOM) {
         (void)tiku_workspace_zoom(app->desk, w,
                                  tiku_trk_folder_window_fit_width(fl),
                                  tiku_trk_folder_window_fit_height(fl));
+    } else if (w == tiku_trk_help_window_handle(&app->reader_window) ||
+               w == tiku_trk_image_window_handle(app->image_window)) {
+        tiku_trk_rect_t area = tiku_trk_desktop_view_area(&app->desktop_view);
+        /* A bottom Deskbar's pose area includes the menu inset in its
+         * height. Clamp the frame against the real screen as well. */
+        if (area.y + area.h > app->surf->h) area.h = app->surf->h - area.y;
+        if (tiku_trk_deskbar_dock(app->deskbar) == TIKU_TRK_DB_BOTTOM) {
+            tiku_rect_t bar = tiku_trk_deskbar_frame(app->deskbar);
+            area.h = bar.y - area.y - 4;
+        }
+        tiku_rect_t bounds = {area.x, area.y, area.w, area.h};
+        int zoomed = w == tiku_trk_image_window_handle(app->image_window) ?
+            tiku_trk_image_window_zoom(app->image_window, bounds) :
+            tiku_trk_document_window_zoom(&app->reader_window, bounds);
+        if (zoomed)
+            tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
     }
     app->dirty = 1;
     return;
@@ -1026,7 +1049,11 @@ if (hit == TIKU_HIT_CLOSE) {
            (w == desktop_deviceprefs_handle(app) ||
             desktop_utility_owns(app, w) ||
             w == desktop_startup_handle(app) ||
+            w == desktop_associations_handle(app) ||
+            w == desktop_forcequit_handle(app) ||
             w == tiku_trk_help_window_handle(&app->help_window) ||
+            w == tiku_trk_help_window_handle(&app->reader_window) ||
+            w == tiku_trk_image_window_handle(app->image_window) ||
             w == tiku_trk_fonts_window_handle(&app->fonts_window))) {
     tiku_workspace_activate(app->desk, w);
     if (ev->button == 1) app->prefs_track = w;
@@ -1409,6 +1436,7 @@ resize_deliver(desktop_t *app, tiku_window_t *w)
 void
 desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
+if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
@@ -1472,6 +1500,26 @@ if (!tiku_trk_drag_active(&app->drag)) {
      * of.  An application that wants none returns 0
      * and the move cost a message. */
     tiku_window_t *hw = NULL;
+
+    (void)tiku_workspace_hit(app->desk, ev->x, ev->y, &hw);
+    tiku_window_t *reader = tiku_trk_help_window_handle(&app->reader_window);
+    tiku_window_t *viewer = tiku_trk_image_window_handle(app->image_window);
+    if (viewer && viewer->open) {
+        tiku_event_t hover = *ev;
+        if (hw != viewer) { hover.x = -1; hover.y = -1; }
+        (void)tiku_window_send(viewer, &hover);
+    }
+    if (reader && reader->open) {
+        tiku_event_t hover = *ev;
+        int pending = app->dirty;
+        if (hw != reader) { hover.x = -1; hover.y = -1; }
+        (void)tiku_window_send(reader, &hover);
+        if (app->reader_window.hover_damage.w > 0) {
+            app->dirty = pending;
+            desktop_damage(app, app->reader_window.hover_damage);
+            tiku_workspace_cache_forget(app->desk, reader);
+        }
+    }
 
     if (tiku_workspace_hit(app->desk, ev->x, ev->y,
                                 &hw) == TIKU_HIT_CONTENT &&
@@ -1676,6 +1724,8 @@ if (tiku_trk_deskbar_pointer(app->deskbar, ev->x,
     app->dirty = 1;
 }
 if (tiku_workspace_tracking(app->desk)) {
+    tiku_window_t *moving = tiku_workspace_moving(app->desk);
+    tiku_rect_t before = moving ? moving->frame : (tiku_rect_t){0};
     if (tiku_workspace_track(app->desk, ev->x,
                             ev->y)) {
         if (app->resize_track != NULL) {
@@ -1684,7 +1734,8 @@ if (tiku_workspace_tracking(app->desk)) {
              * corner rather than snapping when the hand lets go. */
             resize_deliver(app, app->resize_track);
         }
-        app->dirty = 1;
+        if (moving) desktop_damage(app, tiku_rect_union(before, moving->frame));
+        else app->dirty = 1;
     }
 }
 }
@@ -1693,6 +1744,7 @@ if (tiku_workspace_tracking(app->desk)) {
 void
 desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
+if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
 int dropped = tiku_trk_drag_active(&app->drag);
 if (app->prefs_track != NULL) {
@@ -1942,7 +1994,29 @@ if (app->resize_track != NULL) {
 void
 desktop_key_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
+    if (desktop_forcequit_input(app, ev)) {
+        /* The rescue shortcut must not leave an old menu intercepting
+         * clicks in the newly raised dialog. */
+        tiku_trk_deskbar_close_menu(app->deskbar);
+        app->popup = app->popup_sub = NULL;
+        app->popup_fl = app->bar_fl = NULL;
+        app->popup_path[0] = 0; app->nav_on = 0;
+        app->bar_open = app->gbar_open = -1;
+        app->gbar.open = app->menus.bar.open = -1;
+        return;
+    }
     (void)lp;
+    /* The down edge alone: this function is reached on both, and its own
+     * key-up guard is further down, so an unguarded F1 opened the page
+     * twice and left the reader a step of back history to nowhere. */
+    if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_F1 &&
+        !app->popup) {
+        const char *topic = desktop_help_page_of(app,
+            tiku_workspace_focused(app->desk));
+        tiku_trk_help_window_open_page(&app->help_window,
+            topic ? topic : "index.html");
+        app->dirty = 1; return;
+    }
 /* A menu that is open rewrites itself as modifiers move:
  * nine of its items change label AND command together while
  * Shift is held.  The table already knows how; this is the
@@ -2089,6 +2163,24 @@ if (tiku_workspace_focused(app->desk) ==
         return;
     }
 }
+if (w != NULL && w == tiku_trk_image_window_handle(app->image_window) &&
+    !alert_model(app)->open &&
+    !(key == TIKU_KEY_TAB && (ev->modifiers & TIKU_MOD_CMD))) {
+    if ((key == 'w' || key == 'q') && (ev->modifiers & TIKU_MOD_CMD))
+        close_window(app, w);
+    else (void)tiku_window_send(w, ev);
+    app->dirty = 1;
+    return;
+}
+if (w != NULL && w == tiku_trk_help_window_handle(&app->reader_window) &&
+    !alert_model(app)->open &&
+    !(key == TIKU_KEY_TAB && (ev->modifiers & TIKU_MOD_CMD))) {
+    if ((key == 'w' || key == 'q') && (ev->modifiers & TIKU_MOD_CMD))
+        tiku_trk_help_window_close(&app->reader_window);
+    else (void)tiku_window_send(w, ev);
+    app->dirty = 1;
+    return;
+}
 if (tiku_trk_find_window_key(&app->find_window, key,
                              key_char(ev))) {
     return;
@@ -2161,6 +2253,18 @@ if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
     return;
 }
 if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+    desktop_forcequit_handle(app) != NULL &&
+    tiku_workspace_focused(app->desk) == desktop_forcequit_handle(app)) {
+    desktop_forcequit_close(app);
+    return;
+}
+if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+    desktop_associations_handle(app) != NULL &&
+    tiku_workspace_focused(app->desk) == desktop_associations_handle(app)) {
+    desktop_associations_close(app);
+    return;
+}
+if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
     desktop_deviceprefs_handle(app) != NULL &&
     tiku_workspace_focused(app->desk) == desktop_deviceprefs_handle(app)) {
     desktop_deviceprefs_close(app);
@@ -2186,6 +2290,13 @@ if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD)) {
     }
 }
 if (key == 'f' && (ev->modifiers & TIKU_MOD_CMD)) {
+    if (w != NULL &&
+        w == tiku_trk_help_window_handle(&app->help_window) &&
+        !alert_model(app)->open) {
+        (void)tiku_window_send(w, ev);
+        app->dirty = 1;
+        return;
+    }
     open_panel(app);
     return;
 }
@@ -2473,7 +2584,11 @@ if (key == 'w' && (ev->modifiers & TIKU_MOD_CMD)) {
 if (w != NULL && (w == desktop_deviceprefs_handle(app) ||
                  desktop_utility_owns(app, w) ||
                  w == desktop_startup_handle(app) ||
+                 w == desktop_associations_handle(app) ||
+                 w == desktop_forcequit_handle(app) ||
                  w == tiku_trk_help_window_handle(&app->help_window) ||
+                 w == tiku_trk_help_window_handle(&app->reader_window) ||
+                 w == tiku_trk_image_window_handle(app->image_window) ||
                  w == tiku_trk_fonts_window_handle(&app->fonts_window)) &&
     !alert_model(app)->open) {
     /* Under the desk's own shortcuts: the panel takes every key it is
@@ -2732,7 +2847,10 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         (void)tiku_window_send(desktop_deviceprefs_handle(app), &deactivate);
     }
     desktop_spring_tick(app);
+    if (tiku_trk_deskbar_menu_tick(app->deskbar, tiku_trk_now()))
+        app->dirty = 1;
     desktop_utilities_tick(app);
+    tiku_trk_image_window_tick(app->image_window, tiku_trk_now());
     desktop_idle_work(app);
     desktop_press_hold(app);
     desktop_rename_pulse(app);
@@ -2747,9 +2865,15 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         if (app->shot_pending) {
         app->dirty = 1;         /* redraw without the menu, then capture */
     }
-    if (app->dirty) {
+    if (app->dirty && (lp->sc ||
+        tiku_trk_now()-app->last_present >= 16667)) {
         draw_all(app);
+        int64_t before_present = tiku_trk_now();
         blit(app);
+        app->present_us += tiku_trk_now()-before_present;
+        /* Frame start, not frame end: drawing time is inside the budget. */
+        app->last_present = before_present -
+            app->frame_samples[(app->frame_sample_count-1) % 128];
         if (o->shot != NULL && lp->shot_at > 0 && tiku_trk_now() >= lp->shot_at) {
             (void)tiku_surface_png(app->surf, o->shot);
             printf("wrote %s\n", o->shot);
@@ -2797,6 +2921,14 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         if (due >= 0 && due < nap) {
             nap = (due < 1000) ? 1000 : due;
         }
-        usleep((useconds_t)nap);
+        if (lp->sc) usleep((useconds_t)nap);
+        else {
+            if (app->dirty) {
+                int64_t frame_due = app->last_present+16667-tiku_trk_now();
+                if (frame_due < nap) nap = frame_due;
+            }
+            if (app->cq_head == app->cq_tail)
+                tiku_host_wait(app->host, nap);
+        }
     }
 }

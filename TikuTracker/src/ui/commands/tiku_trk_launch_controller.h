@@ -28,6 +28,9 @@ typedef struct {
     size_t                        status_size;
     tiku_trk_launch_open_path_fn  open_path;
     void                         *open_context;
+    int (*open_image)(void *context, const char *path);
+    int (*open_document)(void *context, const tiku_trk_app_t *app,
+                          const char *path);
 } tiku_trk_launch_controller_t;
 
 /** @brief Bind the application registry, status sink, and Tracker callback. */
@@ -35,6 +38,10 @@ void tiku_trk_launch_controller_init(tiku_trk_launch_controller_t *controller,
     tiku_trk_apps_t *apps, tiku_store_t *store, char *status,
     size_t status_size, tiku_trk_launch_open_path_fn open_path,
     void *open_context);
+
+/** @brief Bind the native image opener; it uses the existing shell context. */
+void tiku_trk_launch_controller_image(tiku_trk_launch_controller_t *controller,
+    int (*open_image)(void *context, const char *path));
 
 /** @brief Return the preferred application for one model, if any. */
 const tiku_trk_app_t *tiku_trk_launch_controller_handler(

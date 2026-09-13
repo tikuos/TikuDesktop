@@ -7,6 +7,24 @@
   fichier partiel est parfaitement valable.
 -->
 <strings lang="fr">
+  <string name="reader.open">Ouvrir…</string>
+  <string name="reader.reload">Recharger</string>
+  <string name="reader.close">Fermer</string>
+  <string name="reader.find">Rechercher…</string>
+  <string name="reader.bookmark">Basculer le signet</string>
+  <string name="reader.search_folder">Chercher dossier</string>
+  <string name="reader.location">Adresse :</string>
+  <string name="reader.location_focus">Adresse…</string>
+  <string name="reader.go">Aller</string>
+  <string name="reader.find_button">Chercher</string>
+  <string name="reader.tip_back">Précédent (Alt+Gauche)</string>
+  <string name="reader.tip_forward">Suivant (Alt+Droite)</string>
+  <string name="reader.tip_reload">Recharger (Ctrl+R)</string>
+  <string name="reader.tip_open">Ouvrir un document (Ctrl+O)</string>
+  <string name="reader.tip_find">Rechercher dans le document (Ctrl+F)</string>
+  <string name="reader.tip_go">Ouvrir l'adresse (Entrée)</string>
+  <string name="reader.tip_find_close">Fermer la recherche (Échap)</string>
+  <string name="reader.location_hint">Ouvrir un document Markdown ou HTML local</string>
 
   <string name="button.defaults">Par défaut</string>
   <string name="button.revert">Rétablir</string>
@@ -24,6 +42,7 @@
   <string name="menu.find">Rechercher…</string>
   <string name="menu.settings">Réglages</string>
   <string name="menu.help">Aide…</string>
+  <string name="menu.force_quit">Forcer à quitter…</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.programming">Programmation</string>
   <string name="menu.device_tools">Outils pour appareils</string>
@@ -75,6 +94,16 @@
   <string name="button.back">Retour</string>
   <string name="button.forward">Suivant</string>
   <string name="help.home">Sommaire</string>
+  <string name="help.prev">&lt;</string>
+  <string name="help.next">&gt;</string>
+  <string name="help.search_all">Toute l’aide</string>
+  <string name="help.copy">Copier</string>
+  <string name="help.copy_code">Code</string>
+  <string name="help.outline">Plan</string>
+  <string name="help.add_bookmark">+</string>
+  <string name="help.bookmarks">Signets</string>
+  <string name="help.copy_link">Lien</string>
+  <string name="help.find_hint">Rechercher (Ctrl+F)…</string>
   <string name="help.cut">Cette page a été coupée à</string>
   <string name="help.no_such_page">Cette page n’existe pas dans le dossier d’aide.</string>
   <string name="help.no_such_place">Cette page ne contient pas cet endroit.</string>

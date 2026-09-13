@@ -19,6 +19,7 @@ they are drawn:</p>
 <li><b>About this system</b> opens the About this system window</li>
 <li><b>Find…</b> opens the Find window, the same one Ctrl+F opens</li>
 <li><b>Help…</b> opens these pages</li>
+<li><b>Force Quit…</b> selects an unresponsive application to stop</li>
 <li><b>Settings</b> holds the preference windows, listed below</li>
 <li>one row for each application group that has a member: Applications,
 Programming, Device Tools, Demos</li>
@@ -36,12 +37,15 @@ folder; the rule is left out when the folder added nothing</li>
 <li>a rule, then <b>Shut down…</b></li>
 </ul>
 
-<p>A row with an arrow expands beside the menu rather than choosing
-anything, and the menu stays up. <b>Shut down…</b> is the exception:
-only its arrow expands, and a click on the rest of the row chooses it.
-Choosing it puts up the question "Shut down the desktop?" first. Its
-arrow opens <b>Power off</b> and <b>Restart system</b>, which act the
-moment they are chosen.</p>
+<p>Rest the pointer on a row with an arrow for half a second to open its
+submenu automatically. Clicking the row opens it immediately. Moving to
+another row starts a fresh delay; moving into the submenu keeps it open.
+Hovering only opens menus, never chooses a command.</p>
+
+<p><b>Shut down…</b> also expands on hover, or by clicking its arrow.
+Clicking the rest of that row puts up the question "Shut down the desktop?"
+first. Its submenu contains <b>Power off</b> and <b>Restart system</b>,
+which act only when deliberately chosen.</p>
 
 <h3 id="settings">Settings</h3>
 
@@ -66,7 +70,8 @@ the folder it is installed in.</p>
 <tr><td>Programming</td><td>every <code>.so</code> in
 <code>apps/programming</code></td></tr>
 <tr><td>Device Tools</td><td><code>Bench.so</code>,
-<code>TikuBench.so</code>, <code>TikuConsole.so</code>, and Device
+<code>TikuBench.so</code>, <code>TikuConsole.so</code>,
+<code>TikuHex.so</code>, and Device
 Monitor and VFS Inspector, which are built in</td></tr>
 <tr><td>Demos</td><td><code>hello.so</code>, <code>clock.so</code>,
 <code>counter.so</code>, <code>sketch.so</code>, <code>twowin.so</code>,
@@ -102,6 +107,26 @@ state they would switch to: <b>Show clock</b> or <b>Hide clock</b>,
 zone</b>. The zone is the name the system gives it, or the word
 <code>local</code> when it has none.</p>
 
+<h2 id="forcequit">Force Quit</h2>
+
+<p>Choose <b>Force Quit…</b> from the TikuOS menu, or press
+<b>Ctrl+Alt+K</b> while TikuDesktop has keyboard focus. Select a connected
+application in the list, or press <b>Choose window…</b> and click one of
+its windows. Escape or a secondary click cancels window selection.</p>
+
+<p><b>Force Quit…</b> asks for confirmation before terminating the selected
+application and all its windows. Unsaved work is lost. <b>Cancel</b> is the
+confirmation's default action; merely selecting an app does not stop it.
+<b>Refresh</b> takes a new snapshot of connected applications. The displayed
+PID identifies the selected local process, not a similarly named app.</p>
+
+<p>A desktop-owned window, such as a folder or preferences panel, offers
+<b>Close Window</b> instead. Device-side windows and unsupported peers cannot
+be force quit here. Local termination requires Linux kernel support for
+authenticated process handles; unavailable support disables the action.
+This tool cannot recover a frozen desktop itself or terminate arbitrary
+host programs that have no TikuDesktop application connection.</p>
+
 <h2 id="windows">Application rows and their windows</h2>
 
 <p>The arrow at a row's right end opens the list of that application's
@@ -109,8 +134,8 @@ windows beneath it, a minimized window marked differently from an open
 one. On an application row a double click brings every window on the
 desktop up, as Show all does, and focuses the top one; Ctrl+click shows
 all, Ctrl+Shift+click hides all, a middle click starts another copy of
-the program, and Ctrl+Alt+Shift+click kills it without asking it to
-quit. On a window row a click raises the window and restores it if it
+the program, and Ctrl+Alt+Shift+click opens the Force Quit dialog.
+On a window row a click raises the window and restores it if it
 was minimized, Ctrl+click minimizes it, and a secondary click closes
 it.</p>
 
@@ -121,8 +146,8 @@ already minimized, nor Show all while none of them is. Hide all
 minimizes every window on the desktop, Show all restores them, and Close
 all closes them; closing windows is never a request to quit. An
 application with no window open gets two rows instead: <b>No
-windows</b>, which cannot be chosen, and <b>Quit application</b>, which
-asks the program to quit. The file manager itself gets only the first of
+windows</b>, which cannot be chosen, and <b>Force Quit…</b>, which
+opens the application selection dialog. The file manager gets only the first of
 those. In the collapsed docks the whole list folds into a second button
 under the leaf, which pops a menu of the running applications.</p>
 

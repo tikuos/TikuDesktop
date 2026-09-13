@@ -14,6 +14,7 @@
  */
 
 #include "tiku_trk_app_private.h"
+#include "tiku_work.h"
 
 /** @brief Paint a menu row's icon, dimmed over the panel colour when the
  *         row is disabled.  @return what the icon painter returns. */
@@ -67,6 +68,7 @@ tracker_run(int argc, char **argv)
     }
 
     while (a.running) {
+        (void)tiku_work_collect();
         browser_sync_navigator_preference(&a, 0);
         /* Events first, then the device: the window stays responsive while a
          * slow link is being read, which is the whole point of pumping here

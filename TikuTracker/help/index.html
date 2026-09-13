@@ -1,7 +1,7 @@
 <h1>TikuDesktop Help</h1>
 
 <p>These pages are read from the <code>help</code> folder beside the
-program, and are written in a small dialect of HTML: headings,
+program, and can be written in Markdown or a small dialect of HTML: headings,
 paragraphs, lists, tables, code, quotations and links. There is no
 network behind them, so a page is only ever a file of this folder.</p>
 
@@ -20,6 +20,8 @@ leaf's Settings row opens</li>
 Monitor and the VFS Inspector</li>
 <li><a href="keys.html">The keyboard</a>: every chord, written out,
 since a menu draws only the letter</li>
+<li><a href="markdown.md">Markdown pages</a>: formatting, code examples,
+tables, links and supported syntax</li>
 </ul>
 
 <h2 id="programs">The programs</h2>
@@ -29,6 +31,7 @@ the Tiku menu while one of its windows is in front.</p>
 
 <ul>
 <li><a href="apps/calculator.html">Developer Calculator</a></li>
+<li><a href="apps/hex.html">TikuHex binary editor</a></li>
 <li><a href="apps/editor.html">Editor</a></li>
 <li><a href="apps/terminal.html">Terminal</a></li>
 <li><a href="apps/tikubasic.html">TikuBasic</a> and
@@ -36,9 +39,30 @@ the Tiku menu while one of its windows is in front.</p>
 <li><a href="apps/bench.html">TikuBench</a> and
 <a href="apps/console.html">TikuConsole</a></li>
 <li><a href="apps/demo.html">Descriptor Demo</a></li>
+<li><a href="apps/reader.html">TikuReader</a>: local Markdown and HTML documents</li>
+<li><a href="apps/viewer.html">TikuImage</a>: images and camera snapshots</li>
 </ul>
 
 <h2 id="keys">Reading with the keyboard</h2>
+
+<p><b>Ctrl+F</b> focuses Find in page. Enter and Shift+Enter find the next
+and previous match; Ctrl+G and Ctrl+Shift+G repeat the search. Matches
+are highlighted, including phrases split by bold or other inline markup.
+Use <b>Search all help</b> for a list of matching pages and short excerpts.</p>
+
+<p>Drag across text and press <b>Ctrl+C</b> to copy it. <b>Ctrl+A</b>
+selects the whole page when the page has keyboard focus. <b>Copy code</b>
+copies the selected code block, or the first visible block, without HTML
+markup. Oversized selections are refused rather than silently cut.</p>
+
+<p><b>Outline</b> shows the page's headings. <b>+</b> adds or removes a
+bookmark at the reading position, and <b>Bookmarks</b> lists saved places.
+Both lists support the keyboard and independent scrolling. Resizing and
+font changes preserve the paragraph being read.</p>
+
+<p><b>F1</b> opens help for the current application or preferences window.
+TikuBench's <b>View / Results report</b> opens a readable snapshot using
+this same window; viewing a report does not run tests.</p>
 
 <p>The page itself takes the keyboard when the window opens, so a
 reader who never reaches for the mouse can still walk it.</p>
@@ -62,7 +86,9 @@ out of it with <code>..</code> is refused. A path beginning with
 <code>/</code> is a place on this machine, and is opened in a window of
 its own rather than read here.</p>
 
-<p>A web address is not followed. The reader says so in its own line
+<p>A web address is not followed. Hovering a link previews its destination;
+select a link with Tab and choose <b>Copy link</b> to copy the address.
+The reader says so in its own line
 rather than doing nothing, because a link that looks followed and did
 nothing is worse than one that is refused out loud.</p>
 
@@ -72,3 +98,9 @@ nothing is worse than one that is refused out loud.</p>
 from can be named outright with the <code>TIKU_HELP</code> variable,
 which is how a copy under development is read instead of the installed
 one.</p>
+
+<p>Local PNG, BMP and baseline JPEG images can appear in pages. Images are
+scaled to fit the page and unavailable images retain their alternative
+text. Remote images are never fetched. Translations can be placed under
+language folders such as <code>help/fr/</code>; missing translated pages
+fall back individually to the main help folder.</p>

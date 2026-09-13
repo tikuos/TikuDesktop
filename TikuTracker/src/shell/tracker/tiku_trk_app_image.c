@@ -1,0 +1,114 @@
+/* Standalone Tracker hands local documents to the running desktop.
+ * SPDX-License-Identifier: Apache-2.0 */
+#include "tiku_trk_app_private.h"
+#include "tiku_remote.h"
+#include "tiku_mount.h"
+#include "tiku_work.h"
+
+struct browser_image_job {
+    app_t *owner;
+    char path[TIKU_PATH_MAX];
+    int accepted;
+    int document;
+};
+
+/** @brief Keep the connection until the desktop acknowledges the request. */
+static void browser_image_run(void *ctx)
+{
+    struct browser_image_job *j = ctx;
+    tiku_remote_client_t client = {.fd = -1};
+    if (tiku_remote_connect(&client, "TikuTracker", 0)) return;
+    tiku_msg_t *m = tiku_msg_new(j->document ? TIKU_MSG_DOCUMENTOPEN :
+                                            TIKU_MSG_IMAGEOPEN);
+    if (m) {
+        (void)tiku_msg_add_string(m, "path", j->path);
+        int sent = tiku_remote_say(&client, m);
+        tiku_msg_free(m);
+        int64_t until = tiku_trk_now() + 2000000;
+        while (sent && tiku_trk_now() < until) {
+            uint32_t id = 0;
+            int command = 0;
+            tiku_event_t event;
+            int got = tiku_remote_read(&client, &id, &event, &command);
+            if (got < 0) break;
+            m = tiku_remote_heard(&client);
+            if (m && tiku_msg_what(m) == (j->document ?
+                TIKU_MSG_DOCUMENTOPENED : TIKU_MSG_IMAGEOPENED)) {
+                int32_t accepted = 0;
+                (void)tiku_msg_find_int32(m, "accepted", 0, &accepted);
+                j->accepted = accepted != 0;
+                tiku_msg_free(m); break;
+            }
+            tiku_msg_free(m);
+            usleep(10000);
+        }
+    }
+    tiku_remote_disconnect(&client);
+}
+
+/** @brief No UI or backend is retained after Tracker closes. */
+static void browser_image_done(void *ctx)
+{
+    struct browser_image_job *j = ctx;
+    if (!j->owner) return;
+    snprintf(j->owner->status, sizeof j->owner->status, j->accepted ?
+        "Opening %s on TikuDesktop" :
+        "Could not open %s. Start TikuDesktop and check the app is installed.",
+        j->document ? "document" : "image");
+    j->owner->image_job = NULL; j->owner->dirty = 1;
+}
+
+/** @brief Jobs own their copied path; freeing never touches a backend. */
+static void browser_image_free(void *ctx)
+{
+    free(ctx);
+}
+
+/** @brief Files use desktop associations; no device text reads occur. */
+int browser_open_image(app_t *app, const tiku_model_t *model)
+{
+    int document = !strcmp(model->type, "text/plain") ||
+        !strcmp(model->type, "text/x-basic") ||
+        !strcmp(model->type, "application/x-tiku-project");
+    if (!document && strcmp(model->type, "image/png") &&
+        strcmp(model->type, "image/jpeg") && strcmp(model->type, "image/bmp") &&
+        strcmp(model->type, "image/x-ms-bmp")) return 0;
+    if (app->image_job) {
+        snprintf(app->status, sizeof app->status, "A file is still opening.");
+        return 1;
+    }
+    char local[TIKU_PATH_MAX];
+    tiku_backend_t *b = tiku_backend_serving(app->backend, model->path,
+                                            local, sizeof local);
+    if (!b || !b->ops || strcmp(b->ops->name, "posix") || local[0] != '/') {
+        snprintf(app->status, sizeof app->status,
+                 "Save the device file on this computer first.");
+        return 1;
+    }
+    struct browser_image_job *j = calloc(1, sizeof *j);
+    if (!j) {
+        snprintf(app->status, sizeof app->status, "Not enough memory.");
+        return 1;
+    }
+    j->owner = app; j->document = document;
+    snprintf(j->path, sizeof j->path, "%s", local);
+    tiku_work_job_t work = {.run = browser_image_run,
+        .done = browser_image_done, .free = browser_image_free, .ctx = j};
+    if (tiku_work_post(&work)) {
+        free(j);
+        snprintf(app->status, sizeof app->status,
+                 "File-opening worker is busy.");
+    } else {
+        app->image_job = j;
+        snprintf(app->status, sizeof app->status, "Opening %s...",
+                 document ? "document" : "image");
+    }
+    return 1;
+}
+
+/** @brief A late completion must not update the closed browser's stack. */
+void browser_image_detach(app_t *app)
+{
+    if (app->image_job) app->image_job->owner = NULL;
+    app->image_job = NULL;
+}

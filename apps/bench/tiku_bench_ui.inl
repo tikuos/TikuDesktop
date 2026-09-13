@@ -310,12 +310,17 @@ static void publish(bench_t *st)
         snprintf(m.menu[1].item[i].label, sizeof m.menu[1].item[i].label, "%s", st->tabs.label[i]);
         m.menu[1].item[i].command = 100 + i; m.menu[1].item[i].enabled = 1;
     }
+    int report = m.menu[1].nitem++;
+    snprintf(m.menu[1].item[report].label, sizeof m.menu[1].item[report].label, "Results report...");
+    m.menu[1].item[report].command = REPORT;
+    m.menu[1].item[report].enabled = st->services->help_html && st->nresult > 0;
     st->services->menus(st->services->ctx, st->id, &m);
 }
 
 static int action(bench_t *st, int command)
 {
     if (st->confirm.open) return 0;
+    if (command == REPORT) { report_open(st); return 0; }
     if (command >= 100 && command < 107) {
         tiku_tabs_select(&st->tabs, command - 100); st->dirty = 1; return 0;
     }

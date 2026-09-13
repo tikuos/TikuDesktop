@@ -337,6 +337,29 @@ desktop_help_page_of(desktop_t *app, tiku_window_t *window)
     if (session != NULL && session->help_page[0] != '\0') {
         return session->help_page;
     }
+    if (window == app->reader_window.window) return "apps/reader.html";
+    if (window == tiku_trk_image_window_handle(app->image_window))
+        return "apps/viewer.html";
+    if (window == app->fonts_window.window) return "settings.html#fonts";
+    if (window == app->prefs_window.window) return "settings.html#tracker";
+    if (window == app->deskbar_prefs_window.window)
+        return "settings.html#deskbar";
+    if (window == app->desktop_prefs_window.window)
+        return "settings.html#desktop";
+    if (window == app->sounds_window.window) return "settings.html#sounds";
+    if (window == app->find_window.window ||
+        window == app->select_window.window) return "finding.html";
+    if (!strcmp(window->title, "Devices Preferences"))
+        return "settings.html#devices";
+    if (!strcmp(window->title, "Startup Preferences"))
+        return "settings.html#startup";
+    if (!strcmp(window->title, "File Associations"))
+        return "settings.html#associations";
+    if (window == desktop_forcequit_handle(app))
+        return "deskbar.html#forcequit";
+    if (!strcmp(window->title, "Device Monitor")) return "devices.html#monitor";
+    if (!strcmp(window->title, "VFS Inspector"))
+        return "devices.html#inspector";
     return NULL;
 }
 
@@ -440,6 +463,12 @@ offer_installed(desktop_t *app, const char *argv0)
     desktop_startup_offer(app, "builtin:monitor", "Device Monitor",
                           "utilities");
     desktop_startup_offer(app, "builtin:vfs", "VFS Inspector", "utilities");
+    (void)tiku_trk_deskbar_add_app_in(app->deskbar,
+        TIKU_TRK_DB_GROUP_APPS, "TikuReader", "builtin:reader", "reader");
+    desktop_startup_offer(app, "builtin:reader", "TikuReader", "applications");
+    tiku_trk_deskbar_add_app_in(app->deskbar,
+        TIKU_TRK_DB_GROUP_APPS, "TikuImage", "builtin:viewer", "image_viewer");
+    desktop_startup_offer(app, "builtin:viewer", "TikuImage", "applications");
     if (!find_apps_dir(argv0, root, sizeof root)) {
         return;
     }
@@ -508,6 +537,15 @@ offer_installed(desktop_t *app, const char *argv0)
                 snprintf(label, sizeof label, "Developer Calculator");
             else if (!strcmp(name[i], "Bench.so"))
                 snprintf(label, sizeof label, "TikuBench");
+            if (!strcmp(name[i], "editor.so"))
+                /* The generic text handler: it opens every text there
+                 * is, which is a weaker claim than an installed
+                 * application naming one type it was chosen for. */
+                tiku_trk_launch_add_document(&app->apps, "Editor", runner,
+                    path, "text/");
+            if (!strcmp(name[i], "TikuHex.so"))
+                tiku_trk_launch_add_document(&app->apps, "TikuHex", runner,
+                    path, "application/octet-stream,*");
             desktop_startup_offer(app, path, label, "apps");
             /* The row carries the FILE; how it is started is decided
              * where the pick is answered, which is the one place that
@@ -558,6 +596,9 @@ offer_installed(desktop_t *app, const char *argv0)
 
             snprintf(path, sizeof path, "%s/%s", progdir, name[i]);
             app_label(name[i], label, sizeof label);
+            if (!strcmp(name[i], "TikuBasic.so"))
+                tiku_trk_launch_add_document(&app->apps, "TikuBasic", runner,
+                    path, "text/x-basic,application/x-tiku-project");
             desktop_startup_offer(app, path, label, "programming");
             (void)tiku_trk_deskbar_add_app_in(app->deskbar,
                 TIKU_TRK_DB_GROUP_PROGRAMMING, label, path,

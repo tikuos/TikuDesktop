@@ -1,0 +1,44 @@
+<h1>TikuReader</h1>
+<p>Read local Markdown and HTML documents in a dedicated desktop window.
+Launch it from Applications &gt; TikuReader. Help remains a separate reader.</p>
+<p>The compact toolbar provides Back, Forward, Reload, Open and Find icons.
+Hover an icon to see its name and shortcut. The address fits alongside the
+icons, or below them in a narrow window. The title-tab maximize button fills
+the available desktop; click it again to restore the previous size.</p>
+<h2 id="open">Opening documents</h2>
+<p>Choose Open or press Ctrl+O. Select a local .md, .markdown, .html or .htm
+file in the native file picker. Other file types and device endpoints are
+not opened. Copy device documents to the computer first.</p>
+<p>The Location bar also opens local documents. Press Ctrl+L, type a complete
+path (or a filename in the current document's folder), then Enter or Go.
+Escape restores the current address. Filenames containing # or % are literal.
+For long addresses, use Open; editing then uses the filename within its folder.</p>
+<p>The reader starts with a welcome page, not a previously opened document.
+During one desktop session, closing and reopening the reader retains its page.</p>
+<h2 id="navigation">Navigation and reading</h2>
+<p>Back and Forward retain reading positions. Alt+Left and Alt+Right do the
+same. Local links resolve relative to the displayed file, including parent
+directories and heading anchors. Web links and file URLs are not opened.</p>
+<p>Find or Ctrl+F opens a search bar below the document. Escape or its close
+button hides the bar. Enter and Shift+Enter move between
+matches; Ctrl+G and Ctrl+Shift+G do the same. Search folder scans the current
+document's folder and subfolders when explicitly requested.</p>
+<p>View &gt; Outline follows headings. View &gt; Bookmarks remembers local
+filenames and reading positions across launches; Ctrl+D toggles a bookmark.
+Select text and use Ctrl+C, or choose Edit &gt; Copy code for an example
+without running it. The Edit menu also provides Copy link and Search folder.</p>
+<h2 id="reload">Changes on disk</h2>
+<p>Reload or Ctrl+R reads the latest saved version without adding a history
+entry. If the file is missing or unreadable, the current display is kept.</p>
+<h2 id="limits">Supported documents and safety</h2>
+<p>This is an offline, read-only document reader, not a web browser. It uses
+the same bounded HTML and Markdown dialect as Help. Scripts, forms, external
+stylesheets and network requests are not executed. Images are allowed only
+inside the displayed document's directory or its subdirectories.</p>
+<p>Files up to 8 MiB are read completely, using document-sized memory buffers.
+Larger, binary or over-budget files are refused and the current page is kept.
+Renderer tables have a 64 MiB budget per document; unusually complex or narrow
+layouts can still display a capacity notice. Folder search examines at most
+128 documents, four directory levels and 32 MiB of source text.
+Bookmarks are limited to 32 and are separate from Help bookmarks.</p>
+<p><a href="markdown.md">Markdown support</a> · <a href="index.html">Help contents</a></p>

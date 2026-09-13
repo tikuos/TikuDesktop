@@ -1,0 +1,56 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Real out-of-process Editor and TikuBasic launches from Tracker.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 90
+expect-status Opened
+expect-title a-notes.TXT
+key w ctrl
+wait 20
+click-window documents
+click-row 1
+wait 2
+click-row 1
+wait 90
+expect-title b-source.BAS
+click-window Project
+expect-title Project
+click-window b-source.BAS
+expect-no-title Console
+key w ctrl
+wait 10
+click-window Project
+key w ctrl
+wait 20
+click-window documents
+click-row 2
+wait 2
+click-row 2
+wait 90
+expect-title Project
+expect-no-title b-source.BAS
+key Down
+key Return
+wait 60
+expect-title b-source.BAS
+expect-no-title Console
+key w ctrl
+wait 10
+click-window Project
+key w ctrl
+wait 20
+click-window documents
+click-row 0 3
+wait 4
+menu-pick Open with
+wait 4
+expect-menu Editor (opens this kind of file)
+menu-pick Editor
+wait 90
+expect-title a-notes.TXT
+key w ctrl
+quit

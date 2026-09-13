@@ -1,0 +1,41 @@
+# shell: desktop
+# Reader shortcuts must reach the Help window instead of the global Find dialog.
+wait 20
+key F1
+wait 12
+expect-title Help
+expect-narrate TikuDesktop Help
+key f ctrl
+key k
+key e
+key y
+key b
+key o
+key a
+key r
+key d
+key Return
+wait 10
+expect-title Help
+expect-no-title Find
+expect-narrate Match
+key g ctrl
+wait 6
+expect-narrate Match
+key w ctrl
+wait 6
+expect-no-title Help
+click 980 20
+wait 4
+menu-pick Device Tools
+wait 4
+menu-pick VFS Inspector
+wait 10
+key F1
+wait 12
+expect-title Help
+expect-narrate VFS Inspector
+shot /tmp/trk_help_context.png
+key w ctrl
+wait 6
+expect-no-title Help

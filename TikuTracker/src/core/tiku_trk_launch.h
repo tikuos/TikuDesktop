@@ -55,6 +55,8 @@ typedef struct tiku_trk_app {
      * so an application never opens itself (AW-038). */
     char path[TIKU_PATH_MAX];
     int  is_tracker;                     /* this Tracker, not a launch    */
+    int  is_image;                       /* desktop's native TikuImage    */
+    char module[TIKU_PATH_MAX];          /* runner's literal first arg    */
 } tiku_trk_app_t;
 
 /** @brief One candidate, with what made it one. */
@@ -69,8 +71,24 @@ typedef struct tiku_trk_apps {
     int            count;                    /* how many slots are used      */
 } tiku_trk_apps_t;
 
+/**
+ * @brief Order for a candidate list: the user's choice, then the better
+ * claim, then the handler the desktop would reach for on its own.
+ *
+ * @return non-zero when @p a belongs above @p b.
+ */
+int tiku_trk_launch_cand_before(const tiku_trk_cand_t *a,
+                                const tiku_trk_cand_t *b);
+
 /** @brief Forget every application. */
 void tiku_trk_launch_clear(tiku_trk_apps_t *r);
+
+/** @brief Register TikuImage's built-in PNG/JPEG/BMP handler once. */
+int tiku_trk_launch_add_image(tiku_trk_apps_t *r);
+
+/** @brief Register a document app, launched as runner module file. */
+int tiku_trk_launch_add_document(tiku_trk_apps_t *r, const char *name,
+    const char *runner, const char *module, const char *types);
 
 /**
  * @brief Add one application.  @return its index, or -1.
@@ -151,7 +169,8 @@ typedef enum {
     TIKU_TRK_LAUNCH_NO_APP,      /* nothing claims the type               */
     TIKU_TRK_LAUNCH_NOTHING,     /* no documents to open                  */
     TIKU_TRK_LAUNCH_IS_TRACKER,  /* handled here instead (AW-035)         */
-    TIKU_TRK_LAUNCH_FAILED       /* the command could not be run          */
+    TIKU_TRK_LAUNCH_FAILED,      /* the command could not be run          */
+    TIKU_TRK_LAUNCH_IS_IMAGE     /* native image controller, not exec     */
 } tiku_trk_launch_err_t;
 
 /**
@@ -192,12 +211,15 @@ const char *tiku_trk_launch_reason(tiku_trk_launch_err_t err);
  * person reading what happened.
  */
 void tiku_trk_launch_note(pid_t pid, const char *name);
+/** @brief Mark a successfully requested SIGKILL as intentional for notices. */
+void tiku_trk_launch_expect_stop(pid_t pid);
 
 /** @brief How a launched program ended. */
 typedef struct {
     char name[64];
     int  signal;                /* what killed it, or 0 */
     int  status;                /* what it exited with, when it exited */
+    int  expected;              /* deliberate Force Quit, not a crash */
 } tiku_trk_death_t;
 
 /**
