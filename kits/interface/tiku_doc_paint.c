@@ -29,7 +29,11 @@ static const tiku_font_t *face_of(int face)
     switch (face) {
     case TIKU_MEASURE_BOLD: return tiku_font_bold();
     case TIKU_MEASURE_MONO: return tiku_font_mono(0);
-    default: return tiku_font_plain();
+    default:
+#ifndef TIKU_DISPLAYLESS
+        if (face >= 10) return tiku_font_at(face);
+#endif
+        return tiku_font_plain();
     }
 }
 
@@ -129,8 +133,9 @@ static void block_art(tiku_surface_t *s, const tiku_doc_t *d, int i,
     }
 }
 
-void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
-                   const tiku_doc_paint_t *how)
+void tiku_doc_draw_marked(tiku_surface_t *s, const tiku_doc_t *d,
+                         tiku_rect_t r, const tiku_doc_paint_t *how,
+                         tiku_doc_mark_fn mark, void *ctx)
 {
     int scroll = how ? how->scroll : 0;
     int focus = how ? how->focus_link : TIKU_DOC_NONE;
@@ -160,6 +165,7 @@ void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
             tiku_rgb_t ink;
 
             if (!run) continue;
+            if (mark) mark(ctx, s, k, (tiku_rect_t){x, y, pc->w, ln->h});
             ink = tiku_doc_ink(run->ink);
             tiku_text(s, face_of(run->face), x, y + ln->ascent,
                       piece_text(d, pc), ink);
@@ -175,4 +181,11 @@ void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
         }
     }
     tiku_clip_reset(s);
+}
+
+/** @brief The undecorated reader remains the default on both hosts and boards. */
+void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
+                   const tiku_doc_paint_t *how)
+{
+    tiku_doc_draw_marked(s, d, r, how, NULL, NULL);
 }

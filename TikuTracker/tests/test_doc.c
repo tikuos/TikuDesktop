@@ -530,8 +530,9 @@ main(void)
     {
         tiku_doc_read(&doc, "<h1>Heading</h1><p>words</p>");
         tiku_doc_layout(&doc, 400);
-        check(tiku_doc_full(&doc) & TIKU_DOC_FACE_FLAT,
-              "a page with a heading says its headings are flat");
+        check(((tiku_doc_full(&doc) & TIKU_DOC_FACE_FLAT) != 0) ==
+              (tiku_measure_heading(1) == TIKU_MEASURE_BOLD),
+              "a page reports flat headings only when its measuring end requires them");
         int bold = 0, of_heading = 0;
         for (int i = 0; i < tiku_doc_line_count(&doc); i++) {
             const tiku_doc_line_t *ln = tiku_doc_line(&doc, i);
@@ -542,11 +543,11 @@ main(void)
             for (int k = ln->piece0; k < ln->piece0 + ln->npiece; k++) {
                 of_heading++;
                 if (tiku_doc_run(&doc, tiku_doc_piece(&doc, k)->run)->face ==
-                    TIKU_MEASURE_BOLD) bold++;
+                    tiku_measure_heading(1)) bold++;
             }
         }
         check(of_heading > 0 && bold == of_heading,
-              "and every word of a heading is in the bold face");
+              "and every word of a heading uses the measured heading face");
         tiku_doc_read(&doc, "<p>words only</p>");
         tiku_doc_layout(&doc, 400);
         check(!(tiku_doc_full(&doc) & TIKU_DOC_FACE_FLAT),

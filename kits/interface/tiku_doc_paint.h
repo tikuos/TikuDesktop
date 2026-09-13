@@ -48,6 +48,13 @@ typedef struct {
 void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
                    const tiku_doc_paint_t *how);
 
+/** @brief Optional decoration of a piece, before its text is painted. */
+typedef void (*tiku_doc_mark_fn)(void *ctx, tiku_surface_t *s,
+                               int piece, tiku_rect_t where);
+void tiku_doc_draw_marked(tiku_surface_t *s, const tiku_doc_t *d,
+                         tiku_rect_t r, const tiku_doc_paint_t *how,
+                         tiku_doc_mark_fn mark, void *ctx);
+
 /** @brief The shade a run of a page means, under the live theme. */
 tiku_rgb_t tiku_doc_ink(int doc_ink);
 

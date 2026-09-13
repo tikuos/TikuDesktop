@@ -19,14 +19,14 @@
 
 #include <string.h>
 
-/* The tables are indexed by int16_t, so a cap past that would wrap. */
-_Static_assert(TIKU_DOC_BLOCKS_MAX  < 32767, "blocks index is int16_t");
-_Static_assert(TIKU_DOC_RUNS_MAX    < 32767, "runs index is int16_t");
-_Static_assert(TIKU_DOC_LINES_MAX   < 32767, "lines index is int16_t");
-_Static_assert(TIKU_DOC_PIECES_MAX  < 32767, "pieces index is int16_t");
-_Static_assert(TIKU_DOC_LINKS_MAX   < 32767, "links index is int16_t");
+/* Default caps remain small; runtime buffers also validate index ranges. */
+_Static_assert(TIKU_DOC_BLOCKS_MAX  < INT32_MAX, "blocks index is int32_t");
+_Static_assert(TIKU_DOC_RUNS_MAX    < INT32_MAX, "runs index is int32_t");
+_Static_assert(TIKU_DOC_LINES_MAX   < INT32_MAX, "lines index is int32_t");
+_Static_assert(TIKU_DOC_PIECES_MAX  < INT32_MAX, "pieces index is int32_t");
+_Static_assert(TIKU_DOC_LINKS_MAX   < INT32_MAX, "links index is int32_t");
 _Static_assert(TIKU_DOC_BLOCKS_MAX  > 1, "a page needs room for a notice");
-_Static_assert(TIKU_DOC_TEXT_MAX    <= 32767, "a run's length is int16_t");
+_Static_assert(TIKU_DOC_TEXT_MAX    <= INT32_MAX / 4, "text range is bounded");
 
 /* One line's worth of scratch, the size the text helpers already use. */
 #define DOC_WORD_MAX 256
@@ -57,7 +57,7 @@ static int utf8_len(const char *s)
 /** @brief Room for @p n more bytes and a terminator. */
 static int arena_room(tiku_doc_t *d, int n)
 {
-    if (d->ntext + n + 1 <= TIKU_DOC_TEXT_MAX) return 1;
+    if (n >= 0 && n < d->limits.text - d->ntext) return 1;
     d->full |= TIKU_DOC_FULL_TEXT;
     return 0;
 }
@@ -214,7 +214,7 @@ static void run_close(read_t *r)
     tiku_doc_t *d = r->d;
 
     if (r->run == TIKU_DOC_NONE) return;
-    d->run[r->run].len = (int16_t)(d->ntext - d->run[r->run].off);
+    d->run[r->run].len = (int32_t)(d->ntext - d->run[r->run].off);
     if (d->run[r->run].len == 0) {
         /* Nothing was put in it, so it is not a run. */
         d->nrun--;
@@ -232,14 +232,14 @@ static int run_open(read_t *r)
 
     if (r->run != TIKU_DOC_NONE) return 1;
     if (r->block == TIKU_DOC_NONE) return 0;
-    if (d->nrun == TIKU_DOC_RUNS_MAX) { d->full |= TIKU_DOC_FULL_RUNS; return 0; }
+    if (d->nrun == d->limits.runs) { d->full |= TIKU_DOC_FULL_RUNS; return 0; }
     if (!arena_room(d, 1)) return 0;
     tiku_doc_run_t *run = &d->run[d->nrun];
     memset(run, 0, sizeof *run);
     run->off = d->ntext;
     run->face = (uint8_t)r->face;
     run->ink = (uint8_t)r->ink;
-    run->link = (int16_t)r->link;
+    run->link = (int32_t)r->link;
     run->flags = (uint8_t)r->flags;
     r->run = d->nrun++;
     return 1;
@@ -253,7 +253,7 @@ static void style_changed(read_t *r)
     if (r->run == TIKU_DOC_NONE) return;
     if (d->run[r->run].face == (uint8_t)r->face &&
         d->run[r->run].ink == (uint8_t)r->ink &&
-        d->run[r->run].link == (int16_t)r->link) return;
+        d->run[r->run].link == (int32_t)r->link) return;
     run_close(r);
 }
 
@@ -264,7 +264,7 @@ static void block_end(read_t *r)
     run_close(r);
     if (r->block == TIKU_DOC_NONE) return;
     tiku_doc_block_t *b = &d->block[r->block];
-    b->nrun = (int16_t)(d->nrun - b->run0);
+    b->nrun = (int32_t)(d->nrun - b->run0);
     if (!b->nrun && b->kind != TIKU_DOC_BLOCK_RULE &&
         b->kind != TIKU_DOC_BLOCK_IMAGE &&
         b->kind != TIKU_DOC_BLOCK_CELL) {
@@ -282,7 +282,7 @@ static int block_begin(read_t *r, int kind, int depth, int index)
     block_end(r);
     /* The last slot is kept for the notice, so a page that fills the
      * table can still say that it did. */
-    if (d->nblock >= TIKU_DOC_BLOCKS_MAX - 1) {
+    if (d->nblock >= d->limits.blocks - 1) {
         d->full |= TIKU_DOC_FULL_BLOCKS;
         return 0;
     }
@@ -290,9 +290,9 @@ static int block_begin(read_t *r, int kind, int depth, int index)
     memset(b, 0, sizeof *b);
     b->kind = (uint8_t)kind;
     b->depth = (uint8_t)depth;
-    b->index = (int16_t)index;
+    b->index = (int32_t)index;
     b->image = TIKU_DOC_NONE;
-    b->run0 = (int16_t)d->nrun;
+    b->run0 = (int32_t)d->nrun;
     r->block = d->nblock++;
     r->pending = 0;
     return 1;
@@ -420,12 +420,12 @@ static void anchor_add(read_t *r, const char *p)
     int id = attr(p, "id", d);
 
     if (id == TIKU_DOC_NONE || r->block == TIKU_DOC_NONE) return;
-    if (d->nanchor == TIKU_DOC_ANCHORS_MAX) {
+    if (d->nanchor == d->limits.anchors) {
         d->full |= TIKU_DOC_FULL_ANCHORS;
         return;
     }
     d->anchor[d->nanchor].id = id;
-    d->anchor[d->nanchor].block = (int16_t)r->block;
+    d->anchor[d->nanchor].block = (int32_t)r->block;
     d->anchor[d->nanchor].spare = 0;
     d->nanchor++;
 }
@@ -501,16 +501,16 @@ static void image_add(read_t *r, const char *p)
     if (!block_begin(r, TIKU_DOC_BLOCK_IMAGE, 0, 0)) return;
     src = attr(p, "src", d);
     alt = attr(p, "alt", d);
-    if (d->nimage == TIKU_DOC_IMAGES_MAX) {
+    if (d->nimage == d->limits.images) {
         d->full |= TIKU_DOC_FULL_IMAGES;
     } else {
         d->image[d->nimage].src = src;
         d->image[d->nimage].alt = alt;
         d->image[d->nimage].w = 0;
         d->image[d->nimage].h = 0;
-        d->image[d->nimage].block = (int16_t)r->block;
+        d->image[d->nimage].block = (int32_t)r->block;
         d->image[d->nimage].spare = 0;
-        d->block[r->block].image = (int16_t)d->nimage++;
+        d->block[r->block].image = (int32_t)d->nimage++;
     }
     if (alt != TIKU_DOC_NONE) {
         int ink = r->ink;
@@ -664,13 +664,13 @@ static const char *tag_do(read_t *r, const char *p, const char **skip_to)
          * lands inside the sentence. */
         run_close(r);
         stack_push(r, T_A);
-        if (r->d->nlink == TIKU_DOC_LINKS_MAX) {
+        if (r->d->nlink == r->d->limits.links) {
             r->d->full |= TIKU_DOC_FULL_LINKS;
         } else {
             int href = attr(body, "href", r->d);
 
             r->d->link[r->d->nlink].href = href;
-            r->d->link[r->d->nlink].run0 = (int16_t)r->d->nrun;
+            r->d->link[r->d->nlink].run0 = (int32_t)r->d->nrun;
             r->d->link[r->d->nlink].nrun = 0;
             r->d->link[r->d->nlink].piece0 = TIKU_DOC_NONE;
             r->d->link[r->d->nlink].npiece = 0;
@@ -721,16 +721,25 @@ static void links_close(tiku_doc_t *d)
         int last = d->link[i].run0;
 
         while (last < d->nrun && d->run[last].link == i) last++;
-        d->link[i].nrun = (int16_t)(last - d->link[i].run0);
+        d->link[i].nrun = (int32_t)(last - d->link[i].run0);
     }
 }
 
 void tiku_doc_init(tiku_doc_t *d)
 {
     memset(d, 0, sizeof *d);
+    d->text = d->small_text; d->block = d->small_block;
+    d->run = d->small_run; d->line = d->small_line;
+    d->piece = d->small_piece; d->link = d->small_link;
+    d->anchor = d->small_anchor; d->image = d->small_image;
+    d->limits = (tiku_doc_limits_t){TIKU_DOC_TEXT_MAX, TIKU_DOC_BLOCKS_MAX,
+        TIKU_DOC_RUNS_MAX, TIKU_DOC_LINES_MAX, TIKU_DOC_PIECES_MAX,
+        TIKU_DOC_LINKS_MAX, TIKU_DOC_ANCHORS_MAX, TIKU_DOC_IMAGES_MAX};
     d->title = TIKU_DOC_NONE;
     d->laid_width = TIKU_DOC_NONE;
 }
+
+#include "tiku_doc_storage.inl"
 
 void tiku_doc_images(tiku_doc_t *d, tiku_doc_image_fn fn, void *ctx)
 {
@@ -746,7 +755,10 @@ int tiku_doc_read(tiku_doc_t *d, const char *html)
     const char *p = html ? html : "";
     const char *skip_to = NULL;
 
-    tiku_doc_init(d);
+    if (d->storage) {
+        tiku_doc_limits_t limits = d->limits;
+        (void)tiku_doc_init_storage(d, &limits, d->storage, d->storage_bytes);
+    } else tiku_doc_init(d);
     d->image_fn = fn;
     d->image_ctx = ctx;
     memset(&r, 0, sizeof r);
@@ -898,7 +910,7 @@ static void line_close(lay_t *L)
 
         while (last->len > 0 && d->text[last->off + last->len - 1] == ' ') {
             last->len--;
-            last->w = (int16_t)word_w(face, d->text + last->off, last->len);
+            last->w = (int32_t)word_w(face, d->text + last->off, last->len);
         }
         /* The pen goes back with it, since the line's own width is
          * where the pen ended and a space that is not drawn is not
@@ -907,10 +919,10 @@ static void line_close(lay_t *L)
         if (!last->len) ln->npiece--, d->npiece--;
     }
     if (!ln->h) {
-        ln->h = (int16_t)face_h(TIKU_MEASURE_PLAIN);
-        ln->ascent = (int16_t)tiku_measure_ascent(TIKU_MEASURE_PLAIN);
+        ln->h = (int32_t)face_h(TIKU_MEASURE_PLAIN);
+        ln->ascent = (int32_t)tiku_measure_ascent(TIKU_MEASURE_PLAIN);
     }
-    ln->w = (int16_t)L->x;
+    ln->w = (int32_t)L->x;
     L->y += ln->h;
     L->line = TIKU_DOC_NONE;
     L->piece = TIKU_DOC_NONE;
@@ -922,17 +934,17 @@ static int line_open(lay_t *L, int x)
     tiku_doc_t *d = L->d;
 
     if (L->line != TIKU_DOC_NONE) return 1;
-    if (d->nline == TIKU_DOC_LINES_MAX) { d->full |= TIKU_DOC_FULL_LINES; return 0; }
+    if (d->nline == d->limits.lines) { d->full |= TIKU_DOC_FULL_LINES; return 0; }
     tiku_doc_line_t *ln = &d->line[d->nline];
     memset(ln, 0, sizeof *ln);
     ln->y = L->y;
-    ln->block = (int16_t)L->block;
-    ln->piece0 = (int16_t)d->npiece;
-    ln->x = (int16_t)x;
+    ln->block = (int32_t)L->block;
+    ln->piece0 = (int32_t)d->npiece;
+    ln->x = (int32_t)x;
     L->line = d->nline++;
     L->x = 0;
     L->piece = TIKU_DOC_NONE;
-    if (d->block[L->block].nline == 0) d->block[L->block].line0 = (int16_t)L->line;
+    if (d->block[L->block].nline == 0) d->block[L->block].line0 = (int32_t)L->line;
     d->block[L->block].nline++;
     return 1;
 }
@@ -946,19 +958,19 @@ static int piece_add(lay_t *L, int run, int off, int n, int w)
     tiku_doc_line_t *ln = &d->line[L->line];
     if (L->piece != TIKU_DOC_NONE && d->piece[L->piece].run == run &&
         d->piece[L->piece].off + d->piece[L->piece].len == off) {
-        d->piece[L->piece].len = (int16_t)(d->piece[L->piece].len + n);
-        d->piece[L->piece].w = (int16_t)(d->piece[L->piece].w + w);
+        d->piece[L->piece].len = (int32_t)(d->piece[L->piece].len + n);
+        d->piece[L->piece].w = (int32_t)(d->piece[L->piece].w + w);
     } else {
-        if (d->npiece == TIKU_DOC_PIECES_MAX) {
+        if (d->npiece == d->limits.pieces) {
             d->full |= TIKU_DOC_FULL_PIECES;
             return 0;
         }
         tiku_doc_piece_t *pc = &d->piece[d->npiece];
         pc->off = off;
-        pc->len = (int16_t)n;
-        pc->x = (int16_t)L->x;
-        pc->w = (int16_t)w;
-        pc->run = (int16_t)run;
+        pc->len = (int32_t)n;
+        pc->x = (int32_t)L->x;
+        pc->w = (int32_t)w;
+        pc->run = (int32_t)run;
         L->piece = d->npiece++;
         ln->npiece++;
     }
@@ -967,8 +979,8 @@ static int piece_add(lay_t *L, int run, int off, int n, int w)
         int face = d->run[run].face;
         int h = face_h(face), a = tiku_measure_ascent(face);
 
-        if (h > ln->h) ln->h = (int16_t)h;
-        if (a > ln->ascent) ln->ascent = (int16_t)a;
+        if (h > ln->h) ln->h = (int32_t)h;
+        if (a > ln->ascent) ln->ascent = (int32_t)a;
     }
     return 1;
 }
@@ -1193,12 +1205,16 @@ static void cols_measure(const tiku_doc_t *d, int first, int last, int width,
     room = width - gap * (C->n - 1);
     if (room < C->n) room = C->n;
     for (int c = 0; c < C->n; c++) {
+        /* In long: a page of very wide cells makes the numerator of the
+         * share larger than an int holds. */
         if (summax <= room) {
-            C->w[c] = summax > 0 ? max[c] + (room - summax) * max[c] / summax
-                                 : room / C->n;
+            C->w[c] = summax > 0
+                ? max[c] + (int)((long)(room - summax) * max[c] / summax)
+                : room / C->n;
         } else if (summin <= room && summax > summin) {
             C->w[c] = min[c] +
-                      (room - summin) * (max[c] - min[c]) / (summax - summin);
+                      (int)((long)(room - summin) * (max[c] - min[c]) /
+                            (summax - summin));
         } else {
             C->w[c] = room / C->n;
         }
@@ -1256,7 +1272,7 @@ static int lay_table(lay_t *L, int first)
             L->y = bot[c];
             L->block = j;
             b->y = L->y;
-            b->line0 = (int16_t)d->nline;
+            b->line0 = (int32_t)d->nline;
             b->nline = 0;
             L->width = C.x[endc] + C.w[endc];
             L->xc = C.x[c];
@@ -1275,7 +1291,7 @@ static int lay_table(lay_t *L, int first)
         /* Every cell of a row is as tall as the row, so the rule drawn
          * under one is drawn under all of them. */
         for (int k = i; k < j; k++) {
-            d->block[k].h = (int16_t)(bottom + pad - d->block[k].y);
+            d->block[k].h = (int32_t)(bottom + pad - d->block[k].y);
         }
         L->y = bottom + pad;
         i = j;
@@ -1296,27 +1312,27 @@ static void lay_block(lay_t *L, int i)
     L->y += above;
     L->block = i;
     b->y = L->y;
-    b->line0 = (int16_t)d->nline;
+    b->line0 = (int32_t)d->nline;
     b->nline = 0;
 
     if (b->kind == TIKU_DOC_BLOCK_RULE) {
         if (line_open(L, indent)) {
-            d->line[L->line].h = (int16_t)(face_h(TIKU_MEASURE_PLAIN) / 2);
+            d->line[L->line].h = (int32_t)(face_h(TIKU_MEASURE_PLAIN) / 2);
             d->line[L->line].ascent = d->line[L->line].h;
             line_close(L);
         }
-        b->h = (int16_t)(L->y + below - b->y);
+        b->h = (int32_t)(L->y + below - b->y);
         L->y += below;
         return;
     }
     if (b->kind == TIKU_DOC_BLOCK_NOTICE) {
         if (line_open(L, indent)) {
-            d->line[L->line].h = (int16_t)face_h(TIKU_MEASURE_PLAIN);
+            d->line[L->line].h = (int32_t)face_h(TIKU_MEASURE_PLAIN);
             d->line[L->line].ascent =
-                (int16_t)tiku_measure_ascent(TIKU_MEASURE_PLAIN);
+                (int32_t)tiku_measure_ascent(TIKU_MEASURE_PLAIN);
             line_close(L);
         }
-        b->h = (int16_t)(L->y + below - b->y);
+        b->h = (int32_t)(L->y + below - b->y);
         L->y += below;
         return;
     }
@@ -1326,14 +1342,14 @@ static void lay_block(lay_t *L, int i)
         if (d->image_fn && d->image[b->image].src != TIKU_DOC_NONE &&
             d->image_fn(d->image_ctx, d->text + d->image[b->image].src, &w, &h)
             && w > 0 && h > 0) {
-            d->image[b->image].w = (int16_t)w;
-            d->image[b->image].h = (int16_t)h;
+            d->image[b->image].w = (int32_t)w;
+            d->image[b->image].h = (int32_t)h;
             if (line_open(L, indent)) {
-                d->line[L->line].h = (int16_t)h;
-                d->line[L->line].ascent = (int16_t)h;
+                d->line[L->line].h = (int32_t)h;
+                d->line[L->line].ascent = (int32_t)h;
                 line_close(L);
             }
-            b->h = (int16_t)(L->y + below - b->y);
+            b->h = (int32_t)(L->y + below - b->y);
             L->y += below;
             return;
         }
@@ -1367,7 +1383,7 @@ static void lay_block(lay_t *L, int i)
             !line_open(L, L->xc)) break;
     }
     line_close(L);
-    b->h = (int16_t)(L->y + below - b->y);
+    b->h = (int32_t)(L->y + below - b->y);
     L->y += below;
 }
 
@@ -1387,14 +1403,18 @@ int tiku_doc_layout(tiku_doc_t *d, int width)
         d->nblock--;
     }
     d->full &= ~(TIKU_DOC_FULL_LINES | TIKU_DOC_FULL_PIECES | TIKU_DOC_NARROW);
-    /* A heading wants a size the measuring end cannot answer, so every
-     * heading is the bold face at the body size. */
+    d->full &= ~TIKU_DOC_FACE_FLAT;
+    /* Select faces through the measuring end; board fallbacks stay explicit. */
     for (int i = 0; i < d->nblock; i++) {
         if (d->block[i].kind == TIKU_DOC_BLOCK_H1 ||
             d->block[i].kind == TIKU_DOC_BLOCK_H2 ||
             d->block[i].kind == TIKU_DOC_BLOCK_H3) {
-            d->full |= TIKU_DOC_FACE_FLAT;
-            break;
+            int level = d->block[i].kind == TIKU_DOC_BLOCK_H1 ? 1 :
+                d->block[i].kind == TIKU_DOC_BLOCK_H2 ? 2 : 3;
+            int face = tiku_measure_heading(level);
+            if (level < 3 && face == TIKU_MEASURE_BOLD) d->full |= TIKU_DOC_FACE_FLAT;
+            for (int k = d->block[i].run0; k < d->block[i].run0+d->block[i].nrun; k++)
+                d->run[k].face = (uint8_t)face;
         }
     }
     for (int i = 0; i < d->nlink; i++) {
@@ -1411,13 +1431,13 @@ int tiku_doc_layout(tiku_doc_t *d, int width)
         else lay_block(&L, i), i++;
     }
     /* What a cap cost takes room of its own, so nothing can pass over it. */
-    if ((d->full & DOC_FULL_CAPS) && d->nblock < TIKU_DOC_BLOCKS_MAX) {
+    if ((d->full & DOC_FULL_CAPS) && d->nblock < d->limits.blocks) {
         tiku_doc_block_t *b = &d->block[d->nblock];
 
         memset(b, 0, sizeof *b);
         b->kind = TIKU_DOC_BLOCK_NOTICE;
         b->image = TIKU_DOC_NONE;
-        b->run0 = (int16_t)d->nrun;
+        b->run0 = (int32_t)d->nrun;
         d->nblock++;
         lay_block(&L, d->nblock - 1);
     }
@@ -1426,7 +1446,7 @@ int tiku_doc_layout(tiku_doc_t *d, int width)
 
         if (link < 0 || link >= d->nlink) continue;
         if (d->link[link].piece0 == TIKU_DOC_NONE) {
-            d->link[link].piece0 = (int16_t)i;
+            d->link[link].piece0 = (int32_t)i;
             d->link[link].npiece = 1;
         } else if (d->link[link].piece0 + d->link[link].npiece == i) {
             /* Only what lies against it: a page that left an anchor open
@@ -1472,15 +1492,15 @@ const char *tiku_doc_title(const tiku_doc_t *d)
 
 int tiku_doc_full_first(const tiku_doc_t *d, const char **what, int *cap)
 {
-    static const struct { unsigned bit; const char *what; int cap; } t[] = {
-        {TIKU_DOC_FULL_TEXT,    "text",    TIKU_DOC_TEXT_MAX},
-        {TIKU_DOC_FULL_BLOCKS,  "blocks",  TIKU_DOC_BLOCKS_MAX - 1},
-        {TIKU_DOC_FULL_RUNS,    "runs",    TIKU_DOC_RUNS_MAX},
-        {TIKU_DOC_FULL_LINES,   "lines",   TIKU_DOC_LINES_MAX},
-        {TIKU_DOC_FULL_PIECES,  "pieces",  TIKU_DOC_PIECES_MAX},
-        {TIKU_DOC_FULL_LINKS,   "links",   TIKU_DOC_LINKS_MAX},
-        {TIKU_DOC_FULL_ANCHORS, "anchors", TIKU_DOC_ANCHORS_MAX},
-        {TIKU_DOC_FULL_IMAGES,  "images",  TIKU_DOC_IMAGES_MAX},
+    const struct { unsigned bit; const char *what; int cap; } t[] = {
+        {TIKU_DOC_FULL_TEXT,    "text",    d->limits.text},
+        {TIKU_DOC_FULL_BLOCKS,  "blocks",  d->limits.blocks - 1},
+        {TIKU_DOC_FULL_RUNS,    "runs",    d->limits.runs},
+        {TIKU_DOC_FULL_LINES,   "lines",   d->limits.lines},
+        {TIKU_DOC_FULL_PIECES,  "pieces",  d->limits.pieces},
+        {TIKU_DOC_FULL_LINKS,   "links",   d->limits.links},
+        {TIKU_DOC_FULL_ANCHORS, "anchors", d->limits.anchors},
+        {TIKU_DOC_FULL_IMAGES,  "images",  d->limits.images},
         {TIKU_DOC_FULL_DEPTH,   "nesting", TIKU_DOC_DEPTH_MAX}
     };
 

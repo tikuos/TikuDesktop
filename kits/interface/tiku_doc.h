@@ -20,6 +20,7 @@
 #define TIKU_DOC_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "tiku_geom.h"
 #include "tiku_measure.h"
@@ -136,12 +137,10 @@ typedef enum {
 /**
  * @brief A heading wanted a size the measuring end cannot answer.
  *
- * tiku_measure_width() resolves the three named faces and answers
- * anything else at the plain face's current size, and a board measures
- * from one baked table, so a heading laid out at one size and drawn at
- * another would overflow its box.  Headings are the bold face at the
- * body size until tiku_measure grows the display list's face ladder;
- * this bit says so rather than leaving it to be noticed.
+ * Desktop headings use the measured font-size ladder. At its largest
+ * size, and on boards that provide a single baked metrics table, bold
+ * at body size is the fallback. This bit reports that fallback without
+ * treating it as lost document content.
  */
 #define TIKU_DOC_FACE_FLAT    0x200u
 /** @brief A word was broken between codepoints to fit a narrow box. */
@@ -164,8 +163,8 @@ typedef enum {
  */
 typedef struct {
     int32_t off;                /* into the page's text                  */
-    int16_t len;
-    int16_t link;               /* into the link table, or TIKU_DOC_NONE */
+    int32_t len;
+    int32_t link;               /* into the link table, or TIKU_DOC_NONE */
     uint8_t face;               /* a TIKU_MEASURE_* number               */
     uint8_t ink;                /* tiku_doc_ink_t                        */
     uint8_t flags;
@@ -175,11 +174,11 @@ typedef struct {
 /** @brief A paragraph, a heading, an item: what the runs hang from. */
 typedef struct {
     int32_t y;                  /* set by layout; the space above is in it */
-    int16_t h;
-    int16_t run0, nrun;
-    int16_t line0, nline;       /* set by layout                         */
-    int16_t index;              /* an ordered item's number, a cell's row */
-    int16_t image;              /* into the image table, or TIKU_DOC_NONE */
+    int32_t h;
+    int32_t run0, nrun;
+    int32_t line0, nline;       /* set by layout                         */
+    int32_t index;              /* an ordered item's number, a cell's row */
+    int32_t image;              /* into the image table, or TIKU_DOC_NONE */
     uint8_t kind, depth, flags;
     uint8_t col, span;          /* a cell's column, and how many it takes */
     uint8_t spare;
@@ -195,39 +194,39 @@ typedef struct {
  */
 typedef struct {
     int32_t off;                /* into the page's text: the bytes drawn */
-    int16_t len;
-    int16_t x;                  /* from the line's own x                 */
-    int16_t w;
-    int16_t run;
+    int32_t len;
+    int32_t x;                  /* from the line's own x                 */
+    int32_t w;
+    int32_t run;
 } tiku_doc_piece_t;
 
 /** @brief A line of a block: where it sits and which pieces are on it. */
 typedef struct {
     int32_t y;
-    int16_t h, ascent;
-    int16_t block;
-    int16_t piece0, npiece;
-    int16_t x, w;               /* the indent, and the advance used      */
+    int32_t h, ascent;
+    int32_t block;
+    int32_t piece0, npiece;
+    int32_t x, w;               /* the indent, and the advance used      */
 } tiku_doc_line_t;
 
 /** @brief A link, and every piece of it, which stay next to each other. */
 typedef struct {
     int32_t href;               /* into the page's text                  */
-    int16_t run0, nrun;
-    int16_t piece0, npiece;     /* set by layout                         */
+    int32_t run0, nrun;
+    int32_t piece0, npiece;     /* set by layout                         */
 } tiku_doc_link_t;
 
 /** @brief A name a link may reach, and the block wearing it. */
 typedef struct {
     int32_t id;
-    int16_t block, spare;
+    int32_t block, spare;
 } tiku_doc_anchor_t;
 
 /** @brief A picture: where it comes from, what it says, how big it is. */
 typedef struct {
     int32_t src, alt;
-    int16_t w, h;
-    int16_t block, spare;
+    int32_t w, h;
+    int32_t block, spare;
 } tiku_doc_image_t;
 
 /** @brief What a point landed on. */
@@ -272,16 +271,21 @@ typedef struct {
 typedef int (*tiku_doc_image_fn)(void *ctx, const char *src,
                                  int *w, int *h);
 
+/** @brief Per-document capacities; defaults remain suitable for small pages. */
 typedef struct {
-    char text[TIKU_DOC_TEXT_MAX];
+    int text, blocks, runs, lines, pieces, links, anchors, images;
+} tiku_doc_limits_t;
+
+typedef struct {
+    char *text;
     int  ntext;
-    tiku_doc_block_t  block[TIKU_DOC_BLOCKS_MAX];
-    tiku_doc_run_t    run[TIKU_DOC_RUNS_MAX];
-    tiku_doc_line_t   line[TIKU_DOC_LINES_MAX];
-    tiku_doc_piece_t  piece[TIKU_DOC_PIECES_MAX];
-    tiku_doc_link_t   link[TIKU_DOC_LINKS_MAX];
-    tiku_doc_anchor_t anchor[TIKU_DOC_ANCHORS_MAX];
-    tiku_doc_image_t  image[TIKU_DOC_IMAGES_MAX];
+    tiku_doc_block_t  *block;
+    tiku_doc_run_t    *run;
+    tiku_doc_line_t   *line;
+    tiku_doc_piece_t  *piece;
+    tiku_doc_link_t   *link;
+    tiku_doc_anchor_t *anchor;
+    tiku_doc_image_t  *image;
     int nblock, nrun, nline, npiece, nlink, nanchor, nimage;
     int title;                  /* into the text, or TIKU_DOC_NONE       */
     unsigned full;              /* which caps filled, and how            */
@@ -292,17 +296,41 @@ typedef struct {
     int height;
     tiku_doc_image_fn image_fn;
     void *image_ctx;
+    tiku_doc_limits_t limits;    /* capacities of the bound buffers */
+    void *storage;              /* optional caller-owned, aligned memory */
+    size_t storage_bytes;
+    /* Default storage needs no heap, and is never enlarged globally. */
+    char small_text[TIKU_DOC_TEXT_MAX];
+    tiku_doc_block_t  small_block[TIKU_DOC_BLOCKS_MAX];
+    tiku_doc_run_t    small_run[TIKU_DOC_RUNS_MAX];
+    tiku_doc_line_t   small_line[TIKU_DOC_LINES_MAX];
+    tiku_doc_piece_t  small_piece[TIKU_DOC_PIECES_MAX];
+    tiku_doc_link_t   small_link[TIKU_DOC_LINKS_MAX];
+    tiku_doc_anchor_t small_anchor[TIKU_DOC_ANCHORS_MAX];
+    tiku_doc_image_t  small_image[TIKU_DOC_IMAGES_MAX];
 } tiku_doc_t;
 
 /*
- * A page is around eighty kilobytes with these caps, so it is held
- * where a window's other state is not: through a pointer, not by value.
+ * A page includes fixed fallback tables, and may reference larger storage.
+ * Hold it through a pointer rather than copying it by value.
  * Every window controller in TikuTracker is embedded in the desktop's
  * own struct, which is already megabytes of stack.
  */
 
 /** @brief An empty page: no blocks, no text, nothing laid out. */
 void tiku_doc_init(tiku_doc_t *d);
+
+/** @brief Bytes for caller-owned storage; zero means invalid capacities. */
+size_t tiku_doc_storage_size(const tiku_doc_limits_t *limits);
+/**
+ * @brief Initialize with larger buffers, without allocating in the parser.
+ * Memory must be 8-byte aligned and remain alive until the last use.
+ * Read/layout retain these capacities. Reinitialization does not free memory.
+ * Documents contain internal pointers: do not copy them by value.
+ * Returns zero without modifying the document for invalid/undersized storage.
+ */
+int tiku_doc_init_storage(tiku_doc_t *d, const tiku_doc_limits_t *limits,
+                         void *storage, size_t bytes);
 
 /** @brief Say who can size a picture.  Both may be NULL. */
 void tiku_doc_images(tiku_doc_t *d, tiku_doc_image_fn fn, void *ctx);
