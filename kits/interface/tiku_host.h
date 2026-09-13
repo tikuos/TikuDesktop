@@ -32,6 +32,11 @@ int tiku_host_scale(const tiku_host_t *host);
 /** @brief Copy the software surface into the native window. */
 int tiku_host_present(tiku_host_t *host,
                            const tiku_surface_t *surface);
+/** @brief Wait for native input or a deadline; never consumes queued input. */
+void tiku_host_wait(tiku_host_t *host, int64_t timeout_us);
+/** @brief Cumulative native presentation counters (bytes are pixel payload). */
+void tiku_host_present_stats(tiku_host_t *host, uint64_t *frames,
+                             uint64_t *bytes, uint64_t *rectangles);
 
 /** @brief Change the native window title. */
 void tiku_host_set_title(tiku_host_t *host, const char *title);

@@ -56,7 +56,49 @@ struct tiku_workspace {
     int track_y;
     void (*backdrop)(tiku_surface_t *surface, void *context);
     void *backdrop_context;
+    struct {
+        tiku_surface_t *pixels;
+        int valid, active;
+    } cache[TIKU_WINDOW_MAX];
+    int cache_mode;
+    size_t cache_bytes;
+    uint64_t content_draws, cache_hits;
 };
+
+/** @brief Retire a slot's pixel allocation before it is reused. */
+static void cache_free(tiku_workspace_t *ws, int slot)
+{
+    tiku_surface_t *s = ws->cache[slot].pixels;
+    if (s) {
+        ws->cache_bytes -= (size_t)s->w*s->h*s->scale*s->scale*sizeof *s->px;
+        tiku_surface_free(s);
+    }
+    memset(&ws->cache[slot], 0, sizeof ws->cache[slot]);
+}
+
+void tiku_workspace_cache_forget(tiku_workspace_t *ws, tiku_window_t *w)
+{
+    if (!ws) return;
+    for (int i = 0; i < TIKU_WINDOW_MAX; i++)
+        if (!w || w == &ws->windows[i]) ws->cache[i].valid = 0;
+}
+
+void tiku_workspace_cache_mode(tiku_workspace_t *ws, int mode)
+{
+    if (!ws) return;
+    ws->cache_mode = mode;
+    if (mode != TIKU_CACHE_REUSE) tiku_workspace_cache_forget(ws, NULL);
+    if (mode == TIKU_CACHE_OFF)
+        for (int i = 0; i < TIKU_WINDOW_MAX; i++) cache_free(ws, i);
+}
+
+void tiku_workspace_cache_stats(tiku_workspace_t *ws,
+    uint64_t *draws, uint64_t *hits, size_t *bytes)
+{
+    if (draws) *draws = ws ? ws->content_draws : 0;
+    if (hits) *hits = ws ? ws->cache_hits : 0;
+    if (bytes) *bytes = ws ? ws->cache_bytes : 0;
+}
 
 static int
 inside(tiku_rect_t rect, int x, int y)
@@ -231,6 +273,7 @@ tiku_workspace_close(tiku_workspace_t *workspace,
     slot = (int)(window - workspace->windows);
     at = order_index(workspace, slot);
     window->open = 0;
+    cache_free(workspace, slot);
     if (at >= 0) {
         for (i = at; i < workspace->count - 1; i++) {
             workspace->order[i] = workspace->order[i + 1];
@@ -388,6 +431,12 @@ tiku_workspace_tracking(const tiku_workspace_t *workspace)
     return workspace != NULL && workspace->track_window >= 0;
 }
 
+tiku_window_t *tiku_workspace_moving(tiku_workspace_t *ws)
+{
+    return ws && ws->track_window >= 0 && ws->track_what == TIKU_HIT_TAB
+        ? &ws->windows[ws->track_window] : NULL;
+}
+
 int
 tiku_workspace_track(tiku_workspace_t *workspace, int x, int y)
 {
@@ -485,6 +534,62 @@ draw_button(tiku_surface_t *surface, int x, int y, int zoom, int active)
         zoom ? TIKU_TAB_ZOOM : TIKU_TAB_CLOSE, face, 0);
 }
 
+/** @brief Capture only complete, visible content, never an occluded crop. */
+static void cache_capture(tiku_workspace_t *ws, int slot, tiku_rect_t r,
+                           int active)
+{
+    tiku_surface_t *s = ws->surface, *p = ws->cache[slot].pixels;
+    int sc = s->scale > 0 ? s->scale : 1;
+    size_t bytes = (size_t)r.w*r.h*sc*sc*sizeof *s->px;
+    ws->cache[slot].valid = 0;
+    if (r.x < s->clip.x || r.y < s->clip.y ||
+        r.x+r.w > s->clip.x+s->clip.w ||
+        r.y+r.h > s->clip.y+s->clip.h) return;
+    if (p && (p->w != r.w || p->h != r.h || p->scale != sc)) {
+        cache_free(ws, slot); p = NULL;
+    }
+    if (!p) {
+        if (bytes > 64u*1024u*1024u - ws->cache_bytes) return;
+        p = tiku_surface_new(r.w, r.h, 0);
+        if (!p) return;
+        if (sc > 1 && tiku_surface_rescale(p, sc, 0)) {
+            tiku_surface_free(p); return;
+        }
+        p->scale = sc;
+        ws->cache[slot].pixels = p; ws->cache_bytes += bytes;
+    }
+    for (int y = 0; y < r.h*sc; y++)
+        memcpy(p->px+(size_t)y*r.w*sc,
+            s->px+((size_t)r.y*sc+y)*s->w*sc+(size_t)r.x*sc,
+            (size_t)r.w*sc*sizeof *p->px);
+    ws->cache[slot].valid = 1; ws->cache[slot].active = active;
+}
+
+/** @brief Reuse content while moving; keep ordinary/recording draws live. */
+static void draw_content(tiku_workspace_t *ws, tiku_window_t *w,
+                          tiku_rect_t r, int active)
+{
+    tiku_surface_t *s = ws->surface;
+    int slot = (int)(w-ws->windows);
+    tiku_surface_t *p = ws->cache[slot].pixels;
+    if (!w->draw || r.w <= 0 || r.h <= 0) return;
+    tiku_clip_set(s, r);
+    if (s->clip.w <= 0 || s->clip.h <= 0) { tiku_clip_reset(s); return; }
+    if (!s->record && ws->cache_mode == TIKU_CACHE_REUSE &&
+        ws->cache[slot].valid && ws->cache[slot].active == active && p &&
+        p->w == r.w && p->h == r.h &&
+        p->scale == (s->scale > 0 ? s->scale : 1)) {
+        tiku_blit(s, r.x, r.y, p); ws->cache_hits++;
+    } else {
+        ws->content_draws++;
+        w->draw(w, s, r, w->context);
+        tiku_clip_set(s, r);
+        if (!s->record && ws->cache_mode != TIKU_CACHE_OFF)
+            cache_capture(ws, slot, r, active);
+    }
+    tiku_clip_reset(s);
+}
+
 static void
 draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
             int active)
@@ -507,11 +612,7 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
         (void)active;
         tiku_fill(surface, window->frame, TIKU_C_PANEL);
         tiku_frame(surface, window->frame, dark);
-        if (window->draw != NULL && content.w > 0 && content.h > 0) {
-            tiku_clip_set(surface, content);
-            window->draw(window, surface, content, window->context);
-            tiku_clip_reset(surface);
-        }
+        draw_content(workspace, window, content, active);
         return;
     }
     tiku_fill(surface, body, TIKU_C_PANEL);
@@ -540,11 +641,7 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
                                       TIKU_C_TABTEXT);
         tiku_clip_reset(surface);
     }
-    if (window->draw != NULL && content.w > 0 && content.h > 0) {
-        tiku_clip_set(surface, content);
-        window->draw(window, surface, content, window->context);
-        tiku_clip_reset(surface);
-    }
+    draw_content(workspace, window, content, active);
     if (window->resizable) {
         int gx = window->frame.x + window->frame.w - 14;
         int gy = window->frame.y + window->frame.h - 14;
@@ -587,7 +684,11 @@ tiku_workspace_draw(tiku_workspace_t *workspace)
         tiku_window_t *window =
             &workspace->windows[workspace->order[i]];
 
-        if (window->open && !window->minimized) {
+        tiku_rect_t clip = workspace->surface->clip;
+        tiku_rect_t f = window->frame;
+        if (window->open && !window->minimized &&
+            f.x < clip.x+clip.w && f.y < clip.y+clip.h &&
+            f.x+f.w > clip.x && f.y+f.h > clip.y) {
             draw_window(workspace, window,
                         workspace->order[i] == workspace->focused);
         }

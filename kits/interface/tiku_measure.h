@@ -25,6 +25,8 @@ int tiku_measure_width(int face, const char *text);
 /** @brief The face's line height, and its ascent. */
 int tiku_measure_height(int face);
 int tiku_measure_ascent(int face);
+/** @brief A heading face supported by this end; boards may return bold. */
+int tiku_measure_heading(int level);
 /** @brief A list row's height, and a stepper's square half. */
 int tiku_measure_row_h(void);
 int tiku_measure_step_w(void);

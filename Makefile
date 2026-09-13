@@ -71,7 +71,7 @@ test: all
 	    esac || exit 1; \
 	done
 	@if command -v Xvfb > /dev/null 2>&1 || command -v Xephyr > /dev/null 2>&1; then \
-	    $(MAKE) --no-print-directory test-host-clipboard; \
+	    $(MAKE) --no-print-directory test-host-clipboard test-host-render; \
 	else \
 	    echo "host clipboard: SKIPPED -- install Xvfb or Xephyr"; \
 	fi

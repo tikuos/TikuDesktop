@@ -183,6 +183,7 @@ tiku_surface_resize(tiku_surface_t *s, int w, int h,
     s->px = pixels;
     s->w = w;
     s->h = h;
+    s->damage_active = 0;
     tiku_clip_reset(s);
     return 0;
 }
@@ -219,6 +220,17 @@ tiku_surface_free(tiku_surface_t *s)
     }
 }
 
+tiku_rect_t tiku_rect_union(tiku_rect_t a, tiku_rect_t b)
+{
+    if (a.w <= 0 || a.h <= 0) return b;
+    if (b.w <= 0 || b.h <= 0) return a;
+    int right = a.x+a.w > b.x+b.w ? a.x+a.w : b.x+b.w;
+    int bottom = a.y+a.h > b.y+b.h ? a.y+a.h : b.y+b.h;
+    if (b.x < a.x) a.x = b.x;
+    if (b.y < a.y) a.y = b.y;
+    a.w = right-a.x; a.h = bottom-a.y; return a;
+}
+
 void
 tiku_clip_reset(tiku_surface_t *s)
 {
@@ -230,6 +242,7 @@ tiku_clip_reset(tiku_surface_t *s)
         s->clip.y = 0;
         s->clip.w = s->w;
         s->clip.h = s->h;
+        if (s->damage_active) tiku_clip_set(s, s->damage);
     }
 }
 
@@ -250,10 +263,28 @@ tiku_clip_set(tiku_surface_t *s, tiku_rect_t r)
     y1 = r.y + r.h;
     if (x1 > s->w) { x1 = s->w; }
     if (y1 > s->h) { y1 = s->h; }
+    if (s->damage_active) {
+        if (x0 < s->damage.x) x0 = s->damage.x;
+        if (y0 < s->damage.y) y0 = s->damage.y;
+        if (x1 > s->damage.x+s->damage.w) x1 = s->damage.x+s->damage.w;
+        if (y1 > s->damage.y+s->damage.h) y1 = s->damage.y+s->damage.h;
+    }
     s->clip.x = x0;
     s->clip.y = y0;
     s->clip.w = (x1 > x0) ? x1 - x0 : 0;
     s->clip.h = (y1 > y0) ? y1 - y0 : 0;
+}
+
+void tiku_clip_damage(tiku_surface_t *s, const tiku_rect_t *region)
+{
+    if (!s) return;
+    s->damage_active = 0;
+    tiku_clip_reset(s);
+    if (region) {
+        tiku_clip_set(s, *region);
+        s->damage = s->clip;
+        s->damage_active = 1;
+    }
 }
 
 tiku_rgb_t
@@ -418,6 +449,7 @@ tiku_blit(tiku_surface_t *dst, int x, int y,
     if (y0 < dst->clip.y)               { y0 = dst->clip.y; }
     if (x1 > dst->clip.x + dst->clip.w) { x1 = dst->clip.x + dst->clip.w; }
     if (y1 > dst->clip.y + dst->clip.h) { y1 = dst->clip.y + dst->clip.h; }
+    if (x1 <= x0 || y1 <= y0) return;
     if (scale_of(dst) == scale_of(src)) {
         int sc = scale_of(dst), sub;
         long dstride = (long)dst->w * sc;

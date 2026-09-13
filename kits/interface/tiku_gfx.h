@@ -156,6 +156,8 @@ typedef struct {
      * all twice.  Only the outermost call is written down.
      */
     int               record_depth;
+    tiku_rect_t        damage; /* optional outer repaint clip */
+    int                damage_active;
 } tiku_surface_t;
 
 /*
@@ -198,8 +200,12 @@ void tiku_surface_free(tiku_surface_t *s);
 /** @brief Restrict drawing to @p r (intersected with the surface). */
 void tiku_clip_set(tiku_surface_t *s, tiku_rect_t r);
 
-/** @brief Drop the clip back to the whole surface. */
+/** @brief Reset the local clip, retaining any outer repaint boundary. */
 void tiku_clip_reset(tiku_surface_t *s);
+/** @brief Restrict all nested clips to a repaint region; NULL removes it. */
+void tiku_clip_damage(tiku_surface_t *s, const tiku_rect_t *region);
+/** @brief Bounding rectangle of two regions; empty regions are ignored. */
+tiku_rect_t tiku_rect_union(tiku_rect_t a, tiku_rect_t b);
 
 /** @brief Apply a BeOS tint to a colour (see the constants above). */
 tiku_rgb_t tiku_tint(tiku_rgb_t c, float tint);

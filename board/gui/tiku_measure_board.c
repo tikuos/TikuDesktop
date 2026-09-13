@@ -11,6 +11,12 @@
 
 #include "tiku_draw.h"
 
+/** @brief The board's baked metrics currently provide one bold heading size. */
+int tiku_measure_heading(int level)
+{
+    (void)level; return TIKU_MEASURE_BOLD;
+}
+
 int
 tiku_measure_width(int face, const char *text)
 {

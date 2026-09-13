@@ -20,8 +20,17 @@ face_of(int face)
     switch (face) {
     case TIKU_MEASURE_BOLD: return tiku_font_bold();
     case TIKU_MEASURE_MONO: return tiku_font_mono(0);
-    default:                return tiku_font_plain();
+    default:                return face >= 10 ? tiku_font_at(face) : tiku_font_plain();
     }
+}
+
+/** @brief Use the measured font ladder, never draw a size layout cannot measure. */
+int tiku_measure_heading(int level)
+{
+    int body = tiku_font_size();
+    int size = body + (level == 1 ? 4 : level == 2 ? 2 : 0);
+    if (size > 16) size = 16;
+    return size > body ? size : TIKU_MEASURE_BOLD;
 }
 
 int

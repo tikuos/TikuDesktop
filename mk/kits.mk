@@ -43,6 +43,7 @@ STORAGE     := $(K)/storage/tiku_board_basic.c $(K)/storage/tiku_model.c $(K)/st
                $(K)/storage/tiku_vdir.c $(K)/storage/tiku_volume.c \
                $(K)/storage/tiku_mount.c
 INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
+               $(K)/interface/tiku_present.c \
                $(K)/interface/tiku_font.c $(K)/interface/tiku_ttf.c \
                $(K)/interface/tiku_glyphpath.c $(K)/interface/tiku_cff.c \
                $(K)/interface/tiku_ui.c $(K)/interface/tiku_dl.c \
@@ -165,6 +166,8 @@ dl:
 	    > $(K)/interface/tiku_dl_ops.h
 	python3 $(K)/interface/tools/gendl.py board $(K)/interface/dl_ops.txt \
 	    > board/gui/tiku_draw_ops.h
+	python3 $(K)/interface/tools/genevent.py $(K)/interface/tiku_event.h \
+	    > board/gui/tiku_event.h
 # The behaviour files must compile for a board that has no display: the
 # firmware's own compiler, the kit's headers only, nothing else.
 BEHAVIOUR_SRCS := $(K)/interface/tiku_field.c $(K)/interface/tiku_scroll.c \

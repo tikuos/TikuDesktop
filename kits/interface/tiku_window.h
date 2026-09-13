@@ -179,6 +179,22 @@ void tiku_workspace_begin_track(tiku_workspace_t *workspace,
 int tiku_workspace_track(tiku_workspace_t *workspace, int x, int y);
 void tiku_workspace_end_track(tiku_workspace_t *workspace);
 int tiku_workspace_tracking(const tiku_workspace_t *workspace);
+/** @brief The window being moved (not resized), or NULL. */
+tiku_window_t *tiku_workspace_moving(tiku_workspace_t *workspace);
+
+enum { TIKU_CACHE_OFF, TIKU_CACHE_REFRESH, TIKU_CACHE_REUSE };
+/** @brief Opt-in content caching, bounded to 64 MiB per workspace.
+ * REFRESH on any content/style/focus change; REUSE only for pure movement.
+ * Coordinates used by controllers must be refreshed before the next input
+ * gesture. Recording always bypasses caches. OFF is the default.
+ */
+void tiku_workspace_cache_mode(tiku_workspace_t *workspace, int mode);
+/** @brief Invalidate one window (NULL invalidates all). */
+void tiku_workspace_cache_forget(tiku_workspace_t *workspace,
+                                  tiku_window_t *window);
+/** @brief Cumulative content callback/cache-hit counts and current bytes. */
+void tiku_workspace_cache_stats(tiku_workspace_t *workspace,
+    uint64_t *draws, uint64_t *hits, size_t *bytes);
 
 void tiku_workspace_draw(tiku_workspace_t *workspace);
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import select
 import shutil
 import subprocess
+import sys
 
 server = shutil.which("Xvfb") or shutil.which("Xephyr")
 if not server:
@@ -24,7 +25,8 @@ try:
     if not number.isdigit():
         raise SystemExit("Nested display failed to report its display number.")
     env = dict(os.environ, TIKU_CLIPBOARD_TEST_DISPLAY=":" + number.decode())
-    binary = Path(__file__).resolve().parents[2] / "build/tests/test_host_clipboard"
+    binary = (Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else
+              Path(__file__).resolve().parents[2] / "build/tests/test_host_clipboard")
     raise SystemExit(subprocess.run([str(binary)], env=env, timeout=30).returncode)
 finally:
     child.terminate()

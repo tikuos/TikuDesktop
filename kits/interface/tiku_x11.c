@@ -23,6 +23,8 @@
 #include <string.h>
 #include <time.h>
 #include <locale.h>
+#include <poll.h>
+#include "tiku_present.h"
 
 #include "tiku_host.h"
 #include "tiku_gfx.h"
@@ -48,6 +50,8 @@ struct tiku_host {
     XIC input_context;
     XIMCallback input_destroy;
     tiku_text_input_t commit;
+    int force_present;
+    uint64_t presented_frames, presented_bytes, presented_rects;
 };
 
 /** @brief Xlib owns destruction when an input-method service disconnects. */
@@ -191,6 +195,7 @@ resize_image(tiku_host_t *host, int width, int height)
     }
     if (host->image != NULL) { XDestroyImage(host->image); }
     host->image = image;
+    host->force_present = 1;
     host->native_width = width;
     host->native_height = height;
     host->logical_width = (width + host->scale - 1) / host->scale;
@@ -232,6 +237,7 @@ event_key(KeySym keysym)
     case XK_Tab:       return TIKU_KEY_TAB;
     case XK_Menu:      return TIKU_KEY_MENU;
     case XK_F2:        return TIKU_KEY_F2;
+    case XK_F1:        return TIKU_KEY_F1;
     case XK_Shift_L:
     case XK_Shift_R:   return TIKU_KEY_SHIFT;
     case XK_Control_L:
@@ -344,29 +350,50 @@ tiku_host_present(tiku_host_t *host,
         surface->h != host->logical_height) {
         return -1;
     }
-    if (surface->scale == host->scale && host->scale > 1) {
-        /* The surface already holds native pixels: rows go over 1:1. */
-        tiku_rgb_t *out = (tiku_rgb_t *)host->image->data;
-        long sw = (long)surface->w * surface->scale;
-        long sh = (long)surface->h * surface->scale;
-        long w = (sw < host->native_width) ? sw : host->native_width;
-        long h = (sh < host->native_height) ? sh : host->native_height;
-        long row;
-
-        for (row = 0; row < h; row++) {
-            memcpy(out + row * host->native_width, surface->px + row * sw,
-                   (size_t)w * sizeof *out);
-        }
-    } else {
-        tiku_scale_pixels((tiku_rgb_t *)host->image->data,
-                               host->native_width, host->native_height,
-                               surface->px, surface->w, surface->h);
+    tiku_rect_t rects[TIKU_PRESENT_RECTS];
+    int n = tiku_present_update((tiku_rgb_t *)host->image->data,
+        host->native_width, host->native_height,
+        host->image->bytes_per_line / (int)sizeof(tiku_rgb_t),
+        surface, host->force_present, rects, TIKU_PRESENT_RECTS);
+    if (n < 0) return -1;
+    host->force_present = 0;
+    host->presented_frames++;
+    for (int i = 0; i < n; i++) {
+        tiku_rect_t r = rects[i];
+        XPutImage(host->display, host->window, host->gc, host->image,
+            r.x, r.y, r.x, r.y, (unsigned)r.w, (unsigned)r.h);
+        host->presented_bytes += (uint64_t)r.w*r.h*sizeof(tiku_rgb_t);
+        host->presented_rects++;
     }
-    XPutImage(host->display, host->window, host->gc, host->image,
-              0, 0, 0, 0, (unsigned)host->native_width,
-              (unsigned)host->native_height);
-    XFlush(host->display);
+    if (n) XFlush(host->display);
     return 0;
+}
+
+void tiku_host_present_stats(tiku_host_t *host, uint64_t *frames,
+                             uint64_t *bytes, uint64_t *rectangles)
+{
+    if (frames) *frames = host ? host->presented_frames : 0;
+    if (bytes) *bytes = host ? host->presented_bytes : 0;
+    if (rectangles) *rectangles = host ? host->presented_rects : 0;
+}
+
+void tiku_host_wait(tiku_host_t *host, int64_t timeout_us)
+{
+    if (timeout_us <= 0) return;
+    if (timeout_us > 60000000) timeout_us = 60000000;
+    struct pollfd fd = {.fd = -1, .events = POLLIN};
+    if (host) {
+        if (host->commit.offset < host->commit.length ||
+            host->clipboard.result ||
+            (host->has_deferred && !host->clipboard.requestor)) return;
+        /* Queued user input behind a clipboard import cannot run yet.
+         * Wait for protocol traffic instead of spinning on that queue. */
+        if (!(host->has_deferred && host->clipboard.requestor) &&
+            XPending(host->display)) return;
+        fd.fd = ConnectionNumber(host->display);
+        XFlush(host->display);
+    }
+    (void)poll(&fd, 1, (int)((timeout_us + 999) / 1000));
 }
 
 int
@@ -434,6 +461,7 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
     if (XFilterEvent(&native, None)) return 1;
     switch (native.type) {
     case Expose:
+        host->force_present = 1;
         event->type = TIKU_EVENT_EXPOSE;
         break;
     case KeyPress:
@@ -496,9 +524,14 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
         event->time_us = (int64_t)native.xbutton.time * 1000;
         break;
     case MotionNotify:
-        while (XCheckTypedWindowEvent(host->display, host->window,
-                                      MotionNotify, &native)) {
-            /* Only the newest position matters before the next frame. */
+        for (int moves = 0; moves < 64 && XPending(host->display); moves++) {
+            XEvent next;
+            XPeekEvent(host->display, &next);
+            if (next.type != MotionNotify ||
+                next.xmotion.window != native.xmotion.window ||
+                next.xmotion.state != native.xmotion.state) break;
+            /* Collapse only consecutive moves: never cross a release. */
+            XNextEvent(host->display, &native);
         }
         event->type = TIKU_EVENT_POINTER_MOVE;
         event->x = logical_coord(native.xmotion.x, host->native_width,

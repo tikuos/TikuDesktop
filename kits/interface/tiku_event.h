@@ -47,6 +47,7 @@
 #define TIKU_KEY_SHIFT    16u
 #define TIKU_KEY_CMD      17u
 #define TIKU_KEY_OPTION   18u
+#define TIKU_KEY_F1       19u
 
 typedef tiku_input_event_t tiku_event_t;
 

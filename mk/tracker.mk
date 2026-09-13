@@ -250,6 +250,7 @@ test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_
 test_fontprefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/deskbar/tiku_trk_fontprefs.c
 test_help_window_SRCS := $(T)/src/ui/windows/tiku_trk_help_window.c
 test_help_window_LDLIBS := -lX11 -lm
+test_host_render_LDLIBS := -lX11 -lm
 test_fonts_window_SRCS := $(test_fontprefs_SRCS)
 test_fonts_window_LDLIBS := -lX11 -lm
 test_app_groups_SRCS := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
@@ -349,3 +350,7 @@ tests: $(TESTBINS)
 .PHONY: test-host-clipboard
 test-host-clipboard: $(BUILD)/tests/test_host_clipboard
 	python3 $(T)/tests/run_host_clipboard.py
+
+.PHONY: test-host-render
+test-host-render: $(BUILD)/tests/test_host_render
+	python3 $(T)/tests/run_host_clipboard.py $(BUILD)/tests/test_host_render

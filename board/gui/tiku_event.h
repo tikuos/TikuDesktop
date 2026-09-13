@@ -37,5 +37,6 @@
 #define TIKU_KEY_SHIFT    16u
 #define TIKU_KEY_CMD      17u
 #define TIKU_KEY_OPTION   18u
+#define TIKU_KEY_F1       19u
 
 #endif /* TIKU_EVENT_BOARD_ */
