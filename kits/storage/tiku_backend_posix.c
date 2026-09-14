@@ -147,11 +147,70 @@ type_by_name(const char *name)
  * Not a guess: no name prefix, no scan for a descriptor id; a file
  * either carries the stamp or it does not.
  */
+#ifdef __APPLE__
+/**
+ * @brief The same stamp in Mach-O, where a section carries its segment.
+ *
+ * The load commands are the section table here, and the segment the
+ * application kit asks for -- __TIKUOS -- exists in a file only because
+ * something linked that kit.  Walking them is the head of the file and
+ * nothing else, the same bargain the ELF reader strikes.
+ */
+static int
+macho_has_stamp(FILE *f, unsigned long at)
+{
+    unsigned char h[32];
+    unsigned long ncmds, sizeofcmds, off, i;
+
+    if (fseek(f, (long)at, SEEK_SET) != 0 ||
+        fread(h, 1u, sizeof h, f) != sizeof h) {
+        return 0;
+    }
+    /* 64-bit, host-endian: the only shape this ships. */
+    if (!(h[0] == 0xcf && h[1] == 0xfa && h[2] == 0xed && h[3] == 0xfe)) {
+        return 0;
+    }
+    ncmds = (unsigned long)h[16] | ((unsigned long)h[17] << 8) |
+            ((unsigned long)h[18] << 16) | ((unsigned long)h[19] << 24);
+    sizeofcmds = (unsigned long)h[20] | ((unsigned long)h[21] << 8) |
+                 ((unsigned long)h[22] << 16) | ((unsigned long)h[23] << 24);
+    if (ncmds == 0u || ncmds > 4096u || sizeofcmds > (1u << 20)) {
+        return 0;
+    }
+    off = at + sizeof h;
+    for (i = 0u; i < ncmds; i++) {
+        unsigned char c[24];
+        unsigned long cmd, cmdsize;
+
+        if (fseek(f, (long)off, SEEK_SET) != 0 ||
+            fread(c, 1u, sizeof c, f) != sizeof c) {
+            return 0;
+        }
+        cmd = (unsigned long)c[0] | ((unsigned long)c[1] << 8) |
+              ((unsigned long)c[2] << 16) | ((unsigned long)c[3] << 24);
+        cmdsize = (unsigned long)c[4] | ((unsigned long)c[5] << 8) |
+                  ((unsigned long)c[6] << 16) | ((unsigned long)c[7] << 24);
+        if (cmdsize < sizeof c) {
+            return 0;
+        }
+        if (cmd == 0x19u /* LC_SEGMENT_64 */ &&
+            memcmp(c + 8, "__TIKUOS", 9) == 0) {
+            return 1;
+        }
+        off += cmdsize;
+    }
+    return 0;
+}
+#endif
+
 static int
 is_tiku_app(const char *path)
 {
     unsigned char h[64];
     FILE *f = fopen(path, "rb");
+#ifdef __APPLE__
+    unsigned char fat[8];
+#endif
     unsigned long shoff, stroff = 0;
     unsigned shentsize, shnum, shstrndx, i;
     int found = 0;
@@ -159,8 +218,34 @@ is_tiku_app(const char *path)
     if (f == NULL) {
         return 0;
     }
-    if (fread(h, 1u, sizeof h, f) != sizeof h ||
-        h[0] != 0x7f || h[1] != 'E' || h[2] != 'L' || h[3] != 'F' ||
+    if (fread(h, 1u, sizeof h, f) != sizeof h) {
+        (void)fclose(f);
+        return 0;
+    }
+#ifdef __APPLE__
+    /* A universal file is a directory of Mach-O files; the stamp is in
+     * every slice or in none, so the first one answers for all. */
+    if (h[0] == 0xca && h[1] == 0xfe && h[2] == 0xba && h[3] == 0xbe) {
+        unsigned long slice = 0u, i;
+
+        if (fseek(f, 8L + 8L, SEEK_SET) == 0 &&
+            fread(fat, 1u, sizeof fat, f) == sizeof fat) {
+            /* Big-endian, as everything in a fat header is. */
+            for (i = 0u; i < 4u; i++) {
+                slice = (slice << 8) | (unsigned long)fat[i];
+            }
+        }
+        found = slice != 0u ? macho_has_stamp(f, slice) : 0;
+        (void)fclose(f);
+        return found;
+    }
+    if (h[0] == 0xcf && h[1] == 0xfa) {
+        found = macho_has_stamp(f, 0u);
+        (void)fclose(f);
+        return found;
+    }
+#endif
+    if (h[0] != 0x7f || h[1] != 'E' || h[2] != 'L' || h[3] != 'F' ||
         h[4] != 2 /* 64-bit; the only shape this ships */ ||
         h[5] != 1 /* little-endian */) {
         (void)fclose(f);

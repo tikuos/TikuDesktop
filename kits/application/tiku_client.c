@@ -32,7 +32,13 @@
  * -- and knows.  Anything that links this kit carries it, which is
  * exactly the set of things that ARE TikuOS applications.
  */
+#ifdef __APPLE__
+/* Mach-O names a section by its segment too, and the stamp reader
+ * knows both spellings. */
+__attribute__((used, section("__TIKUOS,__tikuos")))
+#else
 __attribute__((used, section(".tikuos")))
+#endif
 static const char tiku_app_stamp_client[] = "TikuOS-application-1";
 
 typedef struct {

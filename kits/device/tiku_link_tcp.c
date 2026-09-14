@@ -270,6 +270,17 @@ tiku_link_tcp_listen(int port)
 {
     struct sockaddr_in a;
     int fd = socket(AF_INET, SOCK_STREAM, 0);
+#ifdef __APPLE__
+    /* Darwin has no MSG_NOSIGNAL, so a send to a peer that hung up would
+     * raise SIGPIPE and take the program with it.  The socket carries the
+     * suppression instead, from here, because this link may be the only
+     * thing a program opens. */
+    if (fd >= 0) {
+        int on = 1;
+
+        (void)setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+    }
+#endif
     int one = 1;
 
     if (fd < 0) {

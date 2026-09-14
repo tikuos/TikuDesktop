@@ -18,6 +18,38 @@ CFLAGS  ?= -O2 -g
 CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra
 LDFLAGS ?=
 
+# Darwin says several of these things with other words, and puts X11
+# where a package manager left it rather than in /usr.  The one header
+# holding the translations is forced in rather than included by hand:
+# what differs is libc's spelling, not this tree's code, so no source
+# should have to name a platform.  _DARWIN_C_SOURCE because a source
+# that asks for _XOPEN_SOURCE gets a strict POSIX libc here -- one
+# without cfmakeraw, ptsname_r, or the timespecs in struct stat -- and
+# fails on the seam rather than on anything real.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+X11_PREFIX ?= $(firstword $(wildcard /opt/X11 /opt/homebrew/opt/libx11 \
+                                     /usr/local/opt/libx11))
+ifeq ($(X11_PREFIX),)
+$(error no X11 development files found: install XQuartz (brew install --cask \
+xquartz) or brew install libx11, or set X11_PREFIX=)
+endif
+X11_CFLAGS := -I$(X11_PREFIX)/include \
+              $(addprefix -I,$(wildcard /opt/homebrew/include /usr/local/include))
+X11_LDFLAGS := -L$(X11_PREFIX)/lib \
+               $(addprefix -L,$(wildcard /opt/homebrew/lib /usr/local/lib))
+CFLAGS  += -D_DARWIN_C_SOURCE -include kits/support/tiku_darwin.h $(X11_CFLAGS)
+LDFLAGS += $(X11_LDFLAGS)
+# What GNU ld spells --gc-sections.
+GC_SECTIONS := -Wl,-dead_strip
+# shm_open and clock_gettime are in libSystem here, not a library of
+# their own.
+RT_LIBS :=
+else
+GC_SECTIONS := -Wl,--gc-sections
+RT_LIBS := -lrt
+endif
+
 KIT_INC := -Ikits/support -Ikits/device -Ikits/storage -Ikits/interface \
            -Ikits/translation -Ikits/application -Ikits/media -I$(BUILD)/gen
 TRK_INC := -I$(T)/src/core -I$(T)/src/ui -I$(T)/src/ui/commands \

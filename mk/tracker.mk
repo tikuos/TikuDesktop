@@ -304,7 +304,7 @@ test_conduct_LDLIBS := -lX11 -lm
 test_client_wake_LDLIBS := -lX11 -lm
 test_appload_LDLIBS := -lX11 -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
-test_shm_LDLIBS := -lX11 -lm -lrt
+test_shm_LDLIBS := -lX11 -lm $(RT_LIBS)
 test_channel_LDLIBS := -lutil -lpthread
 test_trail_CFLAGS := -I$(K)/support
 test_report_CFLAGS := -I$(K)/support
@@ -339,9 +339,9 @@ test_startup_CFLAGS := -ffunction-sections -fdata-sections
 test_associations_CFLAGS := -ffunction-sections -fdata-sections
 test_associations_SRCS := $(T)/src/core/tiku_trk_associations.c \
     $(T)/src/core/tiku_trk_launch.c $(T)/src/core/tiku_trk_types.c
-test_associations_LDLIBS := -lX11 -lm -Wl,--gc-sections
+test_associations_LDLIBS := -lX11 -lm $(GC_SECTIONS)
 test_startup_SRCS := $(T)/src/core/tiku_trk_frame.c
-test_startup_LDLIBS := -lX11 -lm -ldl -Wl,--gc-sections
+test_startup_LDLIBS := -lX11 -lm -ldl $(GC_SECTIONS)
 test_controls_LDLIBS := -lX11 -lm
 test_text_input_LDLIBS := -lX11 -lm
 test_legacy_input_CFLAGS := -ffunction-sections -fdata-sections
@@ -355,7 +355,7 @@ test_legacy_input_SRCS := $(COMMON) $(POSEVIEW) \
     $(T)/src/ui/windows/tiku_trk_info_window.c \
     $(T)/src/ui/windows/tiku_trk_panel_window.c \
     $(T)/src/ui/overlays/tiku_trk_status_overlay.c
-test_legacy_input_LDLIBS := -lX11 -lm -ldl -Wl,--gc-sections
+test_legacy_input_LDLIBS := -lX11 -lm -ldl $(GC_SECTIONS)
 test_legacy_input_SRCS += $(T)/src/ui/windows/tiku_trk_help_window.c
 test_legacy_input_SRCS += $(T)/src/ui/windows/tiku_trk_image_window.c
 test_preferences_kit_LDLIBS := -lX11 -lm

@@ -1,8 +1,8 @@
 # applications — what runs on a TikuOS desktop, and the desktop itself
 
-Host builds (Linux, X11) of the application tree: six kits, the Tracker
-rewrite with its two shells, and the applications that run on it.  This
-directory is its own repository, cloned into a tikuOS checkout at
+Host builds (Linux and macOS, X11) of the application tree: six kits, the
+Tracker rewrite with its two shells, and the applications that run on it.
+This directory is its own repository, cloned into a tikuOS checkout at
 `tikuOS/applications/`; see *Where it must live*, below.
 
 ## The four directories
@@ -49,6 +49,25 @@ TRK_PORT=/dev/ttyACM0 make test
 
 Read a result by its counts, not its colour: a suite that silently stopped
 prints no failures.  `TikuTracker/HANDOVER.md` §2 lists the build's traps.
+
+### On macOS
+
+The same commands, with `sysctl -n hw.ncpu` where Linux says `nproc`.
+What has to be there is the command-line tools (`xcode-select --install`)
+and the X11 client library, which Homebrew has as `brew install libx11`;
+`mk/toolchain.mk` finds it, or XQuartz's copy in `/opt/X11`, or takes
+`X11_PREFIX=` from you.
+
+**No X server is needed to build or to test.**  The driven scripts run
+with `DISPLAY=` empty and read the offscreen surface, so `make test` is
+the same run here as there.  XQuartz is for putting a window in front of
+a person, and `make run` without one says `tracker: no display` and stops.
+
+What differs underneath is said in two places and nowhere else: the
+Darwin block in `mk/toolchain.mk`, and `kits/support/tiku_darwin.h`, which
+is forced in front of every source so that none of them has to name a
+platform.  `PLAN-macos.md` holds the rest -- what works, what is still
+dark, and in which order it is being taken.
 
 ## Two flavours of each shell
 

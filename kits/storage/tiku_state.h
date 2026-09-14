@@ -63,7 +63,7 @@
  * object (PoseView's FSGetDeskDir branch does exactly this for root and
  * Trash). */
 #define TIKU_KEY_DEV_ROOT  "\x01root"
-#define TIKU_KEY_DESKTOP   "\x01desk"
+#define TIKU_KEY_DESKTOP   "\x01" "desk"
 /* The session's own slot: the set of open windows belongs to no folder. */
 #define TIKU_KEY_SESSION   "\x01session"
 

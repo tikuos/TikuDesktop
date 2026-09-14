@@ -14,6 +14,12 @@
 #include <pthread.h>
 #include <errno.h>
 #include <sys/mount.h>
+#ifdef __APPLE__
+#include <sys/param.h>
+#include <sys/ucred.h>
+/* Darwin spells it unmount(2) and takes the flags this tree never passes. */
+#define umount(path) unmount((path), 0)
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +40,92 @@ name_of(const char *mount, char *out, size_t max)
              (slash != NULL && slash[1] != '\0') ? slash + 1 : mount);
 }
 
+#ifdef __APPLE__
+/*
+ * Darwin keeps no /proc: the mount table is asked for, not read, and it
+ * arrives already parsed -- with the read-only and local bits the Linux
+ * side has to pick out of an option string, and with the block counts
+ * that would otherwise cost a statvfs per row.
+ */
+int
+tiku_volumes_scan_now(tiku_volumes_t *vs)
+{
+    struct statfs *mounts = NULL;
+    int count, i, data_rw = 0;
+
+    if (vs == NULL) {
+        return -1;
+    }
+    memset(vs, 0, sizeof *vs);
+    count = getmntinfo(&mounts, MNT_NOWAIT);
+    if (count <= 0) {
+        return -1;
+    }
+    /*
+     * The boot volume is two volumes: a sealed, read-only system and a
+     * writable data volume, joined so that one namespace hangs off "/".
+     * The system half is what "/" reports and it says read-only, which is
+     * true of the seal and false of every path a person can reach -- and
+     * both halves answer to the same st_dev, so the volume a path belongs
+     * to cannot be told apart afterwards.  Ask the writable half once,
+     * here, and let "/" wear its answer.
+     */
+    for (i = 0; i < count; i++) {
+        if (strcmp(mounts[i].f_mntonname, "/System/Volumes/Data") == 0) {
+            data_rw = (mounts[i].f_flags & MNT_RDONLY) == 0;
+            break;
+        }
+    }
+    for (i = 0; i < count && vs->n < TIKU_VOLUME_MAX; i++) {
+        const struct statfs *m = &mounts[i];
+        const char *type = m->f_fstypename;
+        int is_root = strcmp(m->f_mntonname, "/") == 0;
+        tiku_volume_t *v;
+        struct stat st;
+
+        /* Only volumes a person could browse.  MNT_DONTBROWSE is the
+         * system's own word for that, set on every one of the boot
+         * group's halves and on the recovery and preboot volumes: the
+         * same bit the platform's own file manager reads, so what this
+         * desktop shows is what the machine says to show. */
+        if ((m->f_flags & MNT_DONTBROWSE) != 0 && !is_root) {
+            continue;
+        }
+        if (strcmp(type, "devfs") == 0 || strcmp(type, "autofs") == 0 ||
+            strcmp(type, "nullfs") == 0 || strcmp(type, "fdesc") == 0) {
+            continue;
+        }
+        if (stat(m->f_mntonname, &st) != 0) {
+            continue;
+        }
+        v = &vs->v[vs->n];
+        memset(v, 0, sizeof *v);
+        snprintf(v->mount, sizeof v->mount, "%s", m->f_mntonname);
+        name_of(m->f_mntonname, v->name, sizeof v->name);
+        v->dev = st.st_dev;
+        snprintf(v->source, sizeof v->source, "%s", m->f_mntfromname);
+        snprintf(v->fstype, sizeof v->fstype, "%.*s",
+                 (int)(sizeof v->fstype - 1u), type);
+        v->read_only = (m->f_flags & MNT_RDONLY) ? 1 : 0;
+        if (is_root && data_rw) {
+            v->read_only = 0;
+        }
+        v->shared = tiku_volume_shared_type(type) ||
+                    !(m->f_flags & MNT_LOCAL);
+        v->persistent = !(strcmp(type, "tmpfs") == 0 ||
+                          strcmp(type, "devfs") == 0);
+        v->is_boot = is_root;
+        /* The system volume group's siblings -- /System/Volumes/Data and
+         * the rest -- are parts of the boot disk wearing mount points,
+         * and offering to eject one is offering to break the machine. */
+        v->removable = !v->is_boot && (m->f_flags & MNT_LOCAL) != 0;
+        v->total = (uint64_t)m->f_blocks * (uint64_t)m->f_bsize;
+        v->avail = (uint64_t)m->f_bavail * (uint64_t)m->f_bsize;
+        vs->n++;
+    }
+    return vs->n;
+}
+#else
 int
 tiku_volumes_scan_now(tiku_volumes_t *vs)
 {
@@ -121,6 +213,8 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
     (void)fclose(f);
     return vs->n;
 }
+
+#endif /* __APPLE__ */
 
 int
 tiku_volume_shared_type(const char *fstype)
@@ -490,9 +584,18 @@ tiku_volume_mount(const char *devname, char *why, size_t max)
     snprintf(dev, sizeof dev, "/dev/%s", devname);
     /* The permission check comes before anything else the kernel would
      * object to, so an unprivileged browser learns the true reason. */
+#ifndef __APPLE__
     if (mount(dev, "/mnt", "ext4", 0, NULL) == 0) {
         return 0;
     }
+#else
+    /* Darwin's mount(2) takes a filesystem and a directory, not a device,
+     * and the thing that knows which is which is diskutil.  Rather than
+     * guess at a mount point and a format, say plainly that this is the
+     * system's job -- which is also what happens: a disk attached here is
+     * mounted before a browser ever sees it. */
+    errno = ENOTSUP;
+#endif
     if (why != NULL) {
         snprintf(why, max, (errno == EPERM)
                      ? "Mounting \"%.40s\" needs the system's leave."

@@ -24,8 +24,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <sys/xattr.h>
+#define TIKU_HAVE_XATTR 1
 #endif
 
 #include <stdint.h>
@@ -335,6 +336,45 @@ xattr_name(const char *attr, char *out, size_t max)
     snprintf(out, max, "user.%s", attr);
 }
 
+#if defined(TIKU_HAVE_XATTR)
+/*
+ * The same three calls, spelled once.  Darwin's take a position and an
+ * options word Linux's do not, and both are zero every time this store
+ * asks: what is kept here is a whole value on the file itself, never a
+ * window into a resource fork, and a symlink is followed because the node
+ * a pose belongs to is what the link points at.
+ */
+static ssize_t
+state_get(const char *node, const char *name, void *buf, size_t max)
+{
+#if defined(__APPLE__)
+    return getxattr(node, name, buf, max, 0u, 0);
+#else
+    return getxattr(node, name, buf, max);
+#endif
+}
+
+static int
+state_set(const char *node, const char *name, const void *buf, size_t len)
+{
+#if defined(__APPLE__)
+    return setxattr(node, name, buf, len, 0u, 0);
+#else
+    return setxattr(node, name, buf, len, 0);
+#endif
+}
+
+static ssize_t
+state_list(const char *node, char *names, size_t max)
+{
+#if defined(__APPLE__)
+    return listxattr(node, names, max, 0);
+#else
+    return listxattr(node, names, max);
+#endif
+}
+#endif /* TIKU_HAVE_XATTR */
+
 int
 tiku_state_read(tiku_store_t *s, const char *node, const char *attr,
                     void *buf, size_t max)
@@ -343,12 +383,12 @@ tiku_state_read(tiku_store_t *s, const char *node, const char *attr,
         return -1;
     }
     if (s->kind == STORE_XATTR) {
-#if defined(__linux__)
+#if defined(TIKU_HAVE_XATTR)
         char name[STATE_ATTR_MAX + 8];
         ssize_t n;
 
         xattr_name(attr, name, sizeof name);
-        n = getxattr(node, name, buf, max);
+        n = state_get(node, name, buf, max);
         return (n >= 0) ? (int)n : -1;
 #else
         return -1;
@@ -378,11 +418,11 @@ tiku_state_write(tiku_store_t *s, const char *node, const char *attr,
         return -1;                     /* read-only: the caller degrades */
     }
     if (s->kind == STORE_XATTR) {
-#if defined(__linux__)
+#if defined(TIKU_HAVE_XATTR)
         char name[STATE_ATTR_MAX + 8];
 
         xattr_name(attr, name, sizeof name);
-        return (setxattr(node, name, buf, len, 0) == 0) ? 0 : -1;
+        return (state_set(node, name, buf, len) == 0) ? 0 : -1;
 #else
         return -1;
 #endif
@@ -401,9 +441,9 @@ tiku_state_each(tiku_store_t *s, const char *node,
         return 0;
     }
     if (s->kind == STORE_XATTR) {
-#if defined(__linux__)
+#if defined(TIKU_HAVE_XATTR)
         char names[4096];
-        ssize_t len = listxattr(node, names, sizeof names);
+        ssize_t len = state_list(node, names, sizeof names);
         ssize_t at;
 
         if (len <= 0) {
@@ -419,7 +459,7 @@ tiku_state_each(tiku_store_t *s, const char *node,
             if (strncmp(nm, "user._trk/", 10) != 0) {
                 continue;
             }
-            got = getxattr(node, nm, val, sizeof val);
+            got = state_get(node, nm, val, sizeof val);
             if (got < 0) {
                 got = 0;
             }
