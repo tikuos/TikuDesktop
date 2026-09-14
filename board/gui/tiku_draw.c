@@ -163,6 +163,13 @@ tiku_draw_open(tiku_draw_window_t *win, const char *title, int w, int h,
     if (!said_hello) {
         tiku_draw_hello("board");
     }
+    /* Every field, not only the ones the caller passed: the menu text and
+     * the event queue's head are read before anything writes them -- on
+     * the greeting, which replays a window's menus, and on the first event
+     * -- and a window on a stack rather than in bss arrives holding
+     * whatever the last task left there.  Both in-tree callers are static
+     * and so were zero for free, which is why this was quiet. */
+    memset(win, 0, sizeof *win);
     win->id = next_id++;
     win->w = w;
     win->h = h;
