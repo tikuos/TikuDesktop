@@ -45,6 +45,7 @@ DEVICE      := $(K)/device/tiku_tx.c $(K)/device/tiku_session.c $(K)/device/tiku
                $(K)/device/tiku_link_tcp.c \
                $(K)/device/tiku_ns.c
 STORAGE     := $(K)/storage/tiku_board_basic.c $(K)/storage/tiku_model.c $(K)/storage/tiku_state.c \
+               $(K)/storage/tiku_vfs_rpc.c \
                $(K)/storage/tiku_ident.c $(K)/storage/tiku_attr.c \
                $(K)/storage/tiku_query.c $(K)/storage/tiku_fs.c \
                $(K)/storage/tiku_backend_posix.c \
