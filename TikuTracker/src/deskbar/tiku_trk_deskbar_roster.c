@@ -8,97 +8,59 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
+#include "tiku_sys.h"
 #include "tiku_trk_deskbar_roster.h"
+
+/** @brief What one pass of the roster is building, across the callbacks. */
+struct roster_pass {
+    tiku_trk_deskbar_t *deskbar;
+    long                live[512];
+    int                 nlive;
+    int                 changed;
+};
+
+/** @brief One running program, offered by the system seam. */
+static void
+roster_note(const tiku_sys_process_t *process, void *ctx)
+{
+    struct roster_pass *pass = ctx;
+
+    /* Tracker is seeded by its shell, so discovering it again would
+     * publish the same application twice. */
+    if (strcmp(process->name, "desktop") == 0) {
+        return;
+    }
+    (void)tiku_trk_deskbar_add_team_pid(pass->deskbar, process->name,
+                                        process->pid, process->command,
+                                        &pass->changed);
+    if (pass->nlive < (int)(sizeof pass->live / sizeof pass->live[0])) {
+        pass->live[pass->nlive++] = process->pid;
+    }
+}
 
 int
 tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar)
 {
-    DIR *directory;
-    struct dirent *entry;
-    long live[512];
-    int nlive = 0, changed = 0;
+    struct roster_pass pass;
 
     if (deskbar == NULL) {
         return 0;
     }
-    directory = opendir("/proc");
-    if (directory == NULL) {
+    memset(&pass, 0, sizeof pass);
+    pass.deskbar = deskbar;
+    if (tiku_sys_processes(roster_note, &pass) < 0) {
         return 0;
     }
-    while ((entry = readdir(directory)) != NULL) {
-        char path[TIKU_PATH_MAX], name[64], argv0[160];
-        FILE *file;
-        size_t length;
-        struct stat process;
-
-        if (entry->d_name[0] < '1' || entry->d_name[0] > '9') {
-            continue;
-        }
-        if (snprintf(path, sizeof path, "/proc/%s", entry->d_name) < 0 ||
-            stat(path, &process) != 0 || process.st_uid != getuid()) {
-            continue;
-        }
-        /* An empty command line denotes a kernel thread, which has no
-         * image or windows for the user to activate. */
-        if (snprintf(path, sizeof path, "/proc/%s/cmdline",
-                     entry->d_name) < 0) {
-            continue;
-        }
-        file = fopen(path, "r");
-        if (file == NULL) {
-            continue;
-        }
-        length = fread(argv0, 1, sizeof argv0 - 1u, file);
-        (void)fclose(file);
-        if (length == 0u) {
-            continue;
-        }
-        argv0[length < sizeof argv0 - 1u ? length : sizeof argv0 - 1u] =
-            '\0';
-        if (snprintf(path, sizeof path, "/proc/%s/comm",
-                     entry->d_name) < 0) {
-            continue;
-        }
-        file = fopen(path, "r");
-        if (file == NULL) {
-            continue;
-        }
-        if (fgets(name, sizeof name, file) == NULL) {
-            (void)fclose(file);
-            continue;
-        }
-        (void)fclose(file);
-        length = strlen(name);
-        while (length > 0u &&
-               (name[length - 1u] == '\n' || name[length - 1u] == ' ')) {
-            name[--length] = '\0';
-        }
-        /* Tracker is seeded by its shell, so discovering it again would
-         * publish the same application twice. */
-        if (name[0] != '\0' && strcmp(name, "desktop") != 0) {
-            long pid = atol(entry->d_name);
-
-            (void)tiku_trk_deskbar_add_team_pid(deskbar, name, pid, argv0,
-                                                &changed);
-            if (nlive < (int)(sizeof live / sizeof live[0])) {
-                live[nlive++] = pid;
-            }
-        }
-    }
-    (void)closedir(directory);
     /* The other half of a roster: what QUIT since last time.  An entry
      * whose last instance went disappears (DB-015). */
-    if (tiku_trk_deskbar_prune_teams(deskbar, live, nlive)) {
-        changed = 1;
+    if (tiku_trk_deskbar_prune_teams(deskbar, pass.live, pass.nlive)) {
+        pass.changed = 1;
     }
-    return changed;
+    return pass.changed;
 }
 
 void

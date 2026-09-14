@@ -41,6 +41,35 @@ KIT_HEADLESS = ("tiku_scroll.c", "tiku_field.c", "tiku_scroll.h",
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
 
+# Where the machine underneath may be named, and nowhere else.
+#
+# What differs between hosts lives behind a seam -- one declaration, one
+# file per host, the Makefile choosing by uname -s -- so that a shell, an
+# application or a kit's logic never has to ask which machine it is on.
+# The list below is the seam: everything in it is either a per-host file
+# or the one place a binary format, a socket option or a mount table is
+# read.  A name added here is a decision; a name that ARRIVES here by
+# somebody reaching for #ifdef is the thing this check exists to stop.
+PLATFORM_SEAM = {
+    "tiku_sys.h", "tiku_sys_linux.c", "tiku_sys_darwin.c",
+    "tiku_darwin.h",
+    "tiku_volume.c",            # the mount table; milestone 4 splits it
+    "tiku_state.c",             # the one place xattrs are spoken
+    "tiku_remote.c",            # pidfd; milestone 4 takes it to the seam
+    "tiku_app.c", "tiku_app_load.c", "tiku_client.c",
+    "tiku_backend_posix.c",     # the stamp's section, written and read
+    "tiku_link_tcp.c",          # SO_NOSIGPIPE where there is no MSG_
+    "tiku_sound_pulse.c",       # the host backend; milestone 3 adds its twin
+}
+
+PLATFORM_WORD = re.compile(r"__linux__|__APPLE__")
+
+# A HOST /proc read, not the board's own namespace: this tree talks to a
+# device whose VFS has a /proc too, and those paths are strings it sends,
+# not files it opens.  Matching the call tells the two apart.
+HOST_PROC = re.compile(r'\b(?:fopen|opendir|open|readlink|execv|execl)\s*'
+                       r'\(\s*"/proc')
+
 # The one structural fact the tree cannot show: which sources belong to
 # ONE front-end.  Nearly everything is linked into both binaries -- the
 # two shells are one product built two ways -- and the whole remainder
@@ -143,6 +172,25 @@ def main() -> int:
             if ui:
                 errors.append(f"{path}: headless module imports UI: {', '.join(ui)}")
 
+    # The platform rule, over every tree that is compiled for a host.
+    for tree in (TRACKER_SRC, KITS, ROOT.parent / "apps", ROOT.parent / "board"):
+        if not tree.is_dir():
+            continue
+        for path in sorted(tree.rglob("*")):
+            if path.suffix not in (".c", ".h", ".inl") or not path.is_file():
+                continue
+            if path.name in PLATFORM_SEAM:
+                continue
+            text = path.read_text(errors="replace")
+            word = PLATFORM_WORD.search(text)
+            if word is not None:
+                errors.append(f"{path}: names a platform ({word.group(0)}); "
+                              "what differs belongs behind tiku_sys.h")
+            proc = HOST_PROC.search(text)
+            if proc is not None:
+                errors.append(f"{path}: reads the host's /proc; "
+                              "what differs belongs behind tiku_sys.h")
+
     errors.extend(ownership())
 
     if errors:
@@ -152,7 +200,8 @@ def main() -> int:
         return 1
 
     print("architecture boundaries hold "
-          f"({len(X11_LEGACY)} explicit X11 migration exceptions remain)")
+          f"({len(X11_LEGACY)} explicit X11 migration exceptions remain, "
+          f"{len(PLATFORM_SEAM)} files may name a machine)")
     return 0
 
 

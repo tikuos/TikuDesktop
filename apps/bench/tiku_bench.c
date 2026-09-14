@@ -12,6 +12,8 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "tiku_sys.h"
 #include "tiku_app.h"
 #include "tiku_alert.h"
 #include "tiku_choice_paint.h"

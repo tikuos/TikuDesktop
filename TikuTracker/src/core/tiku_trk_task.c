@@ -72,15 +72,10 @@ tiku_trk_task_system_busy(void)
 
     if (task_load_fn != NULL) {
         load = task_load_fn();
-    } else {
-        FILE *f = fopen("/proc/loadavg", "r");
-
-        if (f != NULL) {
-            if (fscanf(f, "%lf", &load) != 1) {
-                load = -1.0;
-            }
-            (void)fclose(f);
-        }
+    } else if (getloadavg(&load, 1) != 1) {
+        /* Not through /proc: getloadavg(3) is the same number and every
+         * host this runs on has it. */
+        load = -1.0;
     }
     if (load < 0.0) {
         return 0;               /* no meter is not a reason to stall */

@@ -21,9 +21,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "tiku_logo.h"
 #include "tiku_report.h"
+#include "tiku_sys.h"
 #include "tiku_list.h"
 #include "tiku_trk_task.h"
 #include "tiku_trk_about_window.h"
@@ -950,50 +952,26 @@ static int about_content_w(void)
 }
 
 /**
- * @brief How many processors, from /proc.
+ * @brief How many processors.
  *
  * The count and nothing else, not the model name: on a machine whose
- * cpuinfo does not carry one, the device tree answers instead with the
- * name of the COMPUTER, and an About box for an operating system then
- * announces the laptop it happens to be running on.
+ * processor table does not carry one, the device tree answers instead
+ * with the name of the COMPUTER, and an About box for an operating
+ * system then announces the laptop it happens to be running on.
  */
 static int
 count_cpus(void)
 {
-    FILE *f = fopen("/proc/cpuinfo", "r");
-    char line[256];
-    int n = 0;
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while (f != NULL && fgets(line, sizeof line, f) != NULL) {
-        if (strncmp(line, "processor", 9) == 0) {
-            n++;
-        }
-    }
-    if (f != NULL) {
-        (void)fclose(f);
-    }
-    return (n > 0) ? n : 1;
+    return (n > 0) ? (int)n : 1;
 }
 
-/** @brief MemTotal and MemAvailable, in kilobytes. */
+/** @brief Total and available memory, in kilobytes. */
 static void
 read_memory(long *total_kb, long *avail_kb)
 {
-    FILE *f = fopen("/proc/meminfo", "r");
-    char line[128];
-
-    *total_kb = 0;
-    *avail_kb = 0;
-    while (f != NULL && fgets(line, sizeof line, f) != NULL) {
-        if (strncmp(line, "MemTotal:", 9) == 0) {
-            (void)sscanf(line + 9, "%ld", total_kb);
-        } else if (strncmp(line, "MemAvailable:", 13) == 0) {
-            (void)sscanf(line + 13, "%ld", avail_kb);
-        }
-    }
-    if (f != NULL) {
-        (void)fclose(f);
-    }
+    tiku_sys_memory(total_kb, avail_kb);
 }
 
 /** @brief Kind and moment from a report's name, for its row. */
@@ -1015,59 +993,15 @@ report_label(const char *path, char *out, size_t max)
 }
 
 /**
- * @brief A frame as the report wrote it, made readable: the desk's own
- *        offsets through addr2line on this build, a library's symbol
- *        as it stands.
+ * @brief A frame as the report wrote it, made readable.
+ *
+ * Both the shape of the line and what can name an offset in it belong to
+ * the host that wrote it, so both live behind the system seam.
  */
 static void
 frame_name(const char *raw, char *out, size_t max)
 {
-    const char *paren = strchr(raw, '(');
-    const char *self = strrchr(raw, '/');
-    char leaf[64] = "";
-
-    self = (self != NULL) ? self + 1 : raw;
-    (void)sscanf(self, "%63[^(]", leaf);
-    if (paren != NULL && paren[1] == '+' &&
-        strcmp(leaf, "TikuDesktop") == 0) {
-        char cmd[256], line[160];
-        FILE *p;
-
-        snprintf(cmd, sizeof cmd,
-                 "addr2line -e /proc/self/exe -f -C -p %.*s 2>/dev/null",
-                 (int)strcspn(paren + 1, ")"), paren + 1);
-        p = popen(cmd, "r");
-        if (p != NULL && fgets(line, sizeof line, p) != NULL) {
-            char *at = strstr(line, " at ");
-
-            if (at != NULL) {
-                *at = '\0';
-            }
-                        line[strcspn(line, "\n")] = '\0';
-            if (strncmp(line, "??", 2) == 0) {
-                /* An offset this build does not have: the report is an
-                 * earlier build's, and only its own binary could say. */
-                snprintf(out, max, "an earlier build's %.*s",
-                         (int)strcspn(paren + 1, ")"), paren + 1);
-            } else {
-                snprintf(out, max, "%.119s", line);
-            }
-            (void)pclose(p);
-            return;
-        }
-        if (p != NULL) {
-            (void)pclose(p);
-        }
-    }
-        if (paren != NULL && paren[1] != '+' && paren[1] != ')') {
-        snprintf(out, max, "%s: %.*s", leaf, (int)strcspn(paren + 1, "+)"),
-                 paren + 1);
-    } else if (paren != NULL) {
-        snprintf(out, max, "%s %.*s", leaf, (int)strcspn(paren + 1, ")"),
-                 paren + 1);
-    } else {
-        snprintf(out, max, "%.100s", raw);
-    }
+    tiku_sys_frame_name(raw, out, max);
 }
 
 /** @brief Read the chosen report's account into the detail. */

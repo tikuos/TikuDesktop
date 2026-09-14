@@ -20,9 +20,7 @@ static void locate_bench(bench_t *st)
     const char *env = getenv("TIKU_BENCH");
     if (env && *env) { snprintf(st->directory, sizeof st->directory, "%s", env); return; }
     char exe[1024];
-    ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
-    if (n > 0) {
-        exe[n] = '\0';
+    if (tiku_sys_self_path(exe, sizeof exe) == 0) {
         char *at = strstr(exe, "/applications/");
         if (at) {
             *at = '\0';

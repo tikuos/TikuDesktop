@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "tiku_demo_app.h"
+#include "tiku_sys.h"
 #include "tiku_gfx.h"
 #include "tiku_logo.h"
 #include "tiku_font.h"
@@ -43,14 +44,7 @@ typedef struct {
 static long
 read_uptime(void)
 {
-    FILE *f = fopen("/proc/uptime", "r");
-    double up = 0.0;
-
-    if (f != NULL) {
-        (void)fscanf(f, "%lf", &up);
-        (void)fclose(f);
-    }
-    return (long)up;
+    return tiku_sys_uptime();
 }
 
 static void
