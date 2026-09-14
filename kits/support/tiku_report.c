@@ -27,6 +27,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "tiku_sys.h"
 #include "tiku_trail.h"
 
 /*---------------------------------------------------------------------------*/
@@ -46,6 +47,12 @@ static char  program_name[64];
 static int   armed;
 static volatile sig_atomic_t asked;
 static void *frames[FRAMES];        /* filled in the handler; never freed */
+/*
+ * The instruction that faulted, taken from the signal's own context.
+ * An array of one because it is printed through backtrace_symbols_fd(),
+ * which names it the same way it names the frames below it.
+ */
+static void *fault_pc[1];
 /* The handler runs HERE, not on the stack that faulted: a crash that IS
  * the stack running out would otherwise fault the handler too, and
  * leave no report -- which is the most a report is for. */
@@ -142,6 +149,18 @@ write_report(const char *path, const char *why, long num, const char *unit,
 
     at = put_str(line, 0u, "\nwhere it was:\n");
     (void)!write(fd, line, at);
+    /* The faulting instruction first, and from the context rather than
+     * from the walk: a function that only stores keeps no frame pointer
+     * on arm64, so the walk steps from the trampoline straight to the
+     * caller and the frame a reader most wants is the one missing. */
+    if (fault_pc[0] != NULL) {
+        backtrace_symbols_fd(fault_pc, 1, fd);
+        /* Two lists, and each is numbered from nothing by the same call:
+         * said out loud, so the second 0 does not read as the first one
+         * again. */
+        at = put_str(line, 0u, "-- and the frames above it --\n");
+        (void)!write(fd, line, at);
+    }
     if (depth > 0) {
         backtrace_symbols_fd(frames, depth, fd);
     }
@@ -153,9 +172,13 @@ write_report(const char *path, const char *why, long num, const char *unit,
 
 /** @brief The fault itself: write it down, then die as it would have. */
 static void
-took_signal(int sig)
+took_signal(int sig, siginfo_t *info, void *context)
 {
-    int depth = backtrace(frames, FRAMES);
+    int depth;
+
+    (void)info;
+    fault_pc[0] = tiku_sys_fault_pc(context);
+    depth = backtrace(frames, FRAMES);
 
     write_report(report_path, named(sig), 0L, NULL, depth);
     write_report(latest_path, named(sig), 0L, NULL, depth);
@@ -257,11 +280,12 @@ tiku_report_install(const char *program, const char *dir)
         struct sigaction sa;
 
         memset(&sa, 0, sizeof sa);
-        sa.sa_handler = took_signal;
+        sa.sa_sigaction = took_signal;
         /* ONSTACK so a stack-overflow crash is caught; RESETHAND so a
          * fault INSIDE the handler dies rather than looping; NODEFER so
-         * the re-raise below reaches the default action at once. */
-        sa.sa_flags = SA_RESETHAND | SA_NODEFER | SA_ONSTACK;
+         * the re-raise below reaches the default action at once; SIGINFO
+         * for the context, which is where the faulting address is. */
+        sa.sa_flags = SA_RESETHAND | SA_NODEFER | SA_ONSTACK | SA_SIGINFO;
         (void)sigemptyset(&sa.sa_mask);
         (void)sigaction(FATAL[i], &sa, NULL);
     }

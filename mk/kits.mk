@@ -27,10 +27,19 @@
 
 K := kits
 
+# The one thing in this kit that cannot be written once: what a signal's
+# context calls the program counter, which POSIX leaves to the machine.
+# One file per host, chosen here, so that no source under kits/ has to
+# name a platform to get an answer (tiku_sys.h).
+ifeq ($(UNAME_S),Darwin)
+SYS         := $(K)/support/tiku_sys_darwin.c
+else
+SYS         := $(K)/support/tiku_sys_linux.c
+endif
 SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c \
                $(K)/support/tiku_trail.c $(K)/support/tiku_report.c \
                $(K)/support/tiku_watch.c \
-               $(K)/support/tiku_work.c
+               $(K)/support/tiku_work.c $(SYS)
 DEVICE      := $(K)/device/tiku_tx.c $(K)/device/tiku_session.c $(K)/device/tiku_channel.c \
                $(K)/device/tiku_link.c $(K)/device/tiku_link_serial.c \
                $(K)/device/tiku_link_tcp.c \
