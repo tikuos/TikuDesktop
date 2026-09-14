@@ -301,6 +301,8 @@ test_edit_SRCS   := $(T)/src/core/tiku_trk_select.c $(T)/src/core/tiku_trk_match
 test_menu_SRCS   := $(T)/src/ui/tiku_trk_shortcuts.c $(T)/src/ui/tiku_trk_cwmenu.c
 test_splash_SRCS   := $(T)/src/shell/tiku_trk_splash.c
 test_conduct_LDLIBS := -lX11 -lm
+# A thread stands in for the desktop's own process, reading the line.
+test_remote_LDLIBS := -lpthread
 test_client_wake_LDLIBS := -lX11 -lm
 test_appload_LDLIBS := -lX11 -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"

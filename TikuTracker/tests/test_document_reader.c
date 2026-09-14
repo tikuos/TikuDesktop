@@ -318,7 +318,16 @@ static void browser_hover(tiku_workspace_t *workspace, tiku_surface_t *s)
 
 int main(void)
 {
-    char base[] = "/tmp/tiku-document-reader.XXXXXX"; assert(mkdtemp(base));
+    char base[TIKU_PATH_MAX] = "/tmp/tiku-document-reader.XXXXXX";
+    char real[TIKU_PATH_MAX];
+
+    assert(mkdtemp(base));
+    /* Resolved, because the code under test resolves what it is given:
+     * on a host where /tmp is a symlink (macOS points it at
+     * /private/tmp) every assertion below would be comparing the name
+     * handed in against the name handed back. */
+    assert(realpath(base, real));
+    snprintf(base, sizeof base, "%s", real);
     char path[1200], sub[1024], marks[1024];
     snprintf(sub, sizeof sub, "%s/sub", base); assert(!mkdir(sub, 0700));
     snprintf(marks, sizeof marks, "%s/bookmarks", base);

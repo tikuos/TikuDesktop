@@ -10,7 +10,38 @@ root=$here/../..
 # Everything is built at the top of the applications tree, into one
 # build/ -- the shells, the driver, the applications this suite starts.
 top=$root/..
-work=/tmp/trk_script
+# Where /tmp really is.  Every path this harness hands the shell can come
+# back through realpath() -- the document reader, the IDE and the launcher
+# all resolve what they are given -- so a /tmp that is a symlink (macOS
+# points it at /private/tmp) would have every assertion comparing the name
+# going in against the name coming out.  Resolved once, here.  On Linux it
+# is the string it always was and nothing below changes.
+tmp=$(cd /tmp 2>/dev/null && pwd -P) || tmp=/tmp
+# How deep that root sits.  One script walks Up from the fixture to the
+# root by counting, and the count is the depth.
+tmpdepth=$(printf '%s' "${tmp#/}" | tr -cd / | wc -c)
+tmpdepth=$((tmpdepth + 1))
+work=$tmp/trk_script
+# Writing an extended attribute, which the two hosts spell with different
+# programs: GNU attr has setfattr(1), macOS has xattr(1).  The fixtures
+# that plant a background record call this and know about neither.
+set_xattr() {
+    if command -v setfattr > /dev/null 2>&1; then
+        setfattr -n "$1" -v "$2" "$3"
+    else
+        xattr -w "$1" "$2" "$3"
+    fi
+}
+
+# A second volume, for the scripts that are about having more than one:
+# the Trash's union, what may be unmounted, what a copy crosses.  The
+# scripts say /dev/shm because that is a volume on every Linux; where the
+# host offers another one instead, the script is read through the same
+# substitution that resolves /tmp.  Given back on the way out, however
+# the run ends.
+vol2=$(sh "$here/../second-volume.sh" open 2>/dev/null) || vol2=""
+vol2sub=${vol2:-/dev/shm}
+trap 'sh "$here/../second-volume.sh" close "$vol2"' EXIT INT TERM
 fails=0
 
 # The scripted shells are the DEVELOPMENT flavour: the interpreter that
@@ -28,7 +59,7 @@ conducted="defaultbar.script narrate.script told.script mounts.script calert.scr
 # device state aside WITHOUT drawing a pixel, for the day a setting makes
 # the screen unreadable.
 if [ -z "${TRK_SHELL_ONLY:-}" ] || [ "${TRK_SHELL_ONLY:-}" = "resetflag" ]; then
-    rsthome=/tmp/trk_reset_home
+    rsthome=$tmp/trk_reset_home
     rm -rf "$rsthome"
     mkdir -p "$rsthome/.config" "$rsthome/.local/share/tracker/devices"
     echo "DarkMode on" > "$rsthome/.config/TrackerSettings"
@@ -59,6 +90,52 @@ for s in "$here"/*.script; do
             continue
         fi
     fi
+    # One script walks Up from the fixture to the root and counts the
+    # steps, so the count IS how deep the temporary root sits.  Where /tmp
+    # resolves somewhere deeper the count is about the host's layout
+    # rather than the desktop's, and the script is passed by out loud.
+    if [ "$tmpdepth" -ne 1 ] && grep -q '^# host: shallow-tmp' "$s"; then
+        printf '\n== %s SKIPPED -- /tmp resolves to %s, deeper than the\n' \
+            "$(basename "$s")" "$tmp"
+        printf '   script counts\n'
+        continue
+    fi
+    # A script about a second volume cannot run where there is only one.
+    # Said out loud with the reason: a suite that quietly ran one lane
+    # fewer reads exactly like a suite that ran them all.
+    if [ -z "$vol2" ] && grep -q '/dev/shm' "$s"; then
+        printf '\n== %s SKIPPED -- this host offers no second volume\n' \
+            "$(basename "$s")"
+        continue
+    fi
+    # A lane about a REFUSED unmount needs a volume this user may not
+    # unmount.  The host's own -- /dev/shm, which wants root -- is one; a
+    # volume the harness mounted itself is not, and ejecting it would
+    # succeed, which is the opposite answer AND would take the second
+    # volume away from every script after this one.
+    if grep -q '^# volume: not-mine' "$s" && [ "$vol2" != /dev/shm ]; then
+        printf '\n== %s SKIPPED -- the only second volume here is one this\n' \
+            "$(basename "$s")"
+        printf '   user CAN unmount, and the lane is about a refusal\n'
+        continue
+    fi
+    # The scripts say /tmp, which is what a person types.  Where /tmp is a
+    # symlink the shell resolves it -- the reader, the IDE and the launcher
+    # all call realpath() on what they are handed -- so the script is read
+    # through one substitution first and the name it asserts is the name
+    # the shell will report back.  Where the two already agree the script
+    # runs from where it lies, untouched, which is every Linux.  A script
+    # that TYPES its path a key at a time says "# paths: literal": there
+    # the name going in is the name coming out whatever /tmp is, and
+    # rewriting only the assertion would make the two disagree.
+    if { [ "$tmp" != /tmp ] || [ "$vol2sub" != /dev/shm ]; } &&
+       ! grep -q '^# paths: literal' "$s" &&
+       grep -qE '/tmp/|/dev/shm' "$s"; then
+        mkdir -p "$tmp/trk_resolved"
+        sed -e "s|/tmp/|$tmp/|g" -e "s|/dev/shm|$vol2sub|g" "$s" \
+            > "$tmp/trk_resolved/$(basename "$s")"
+        s="$tmp/trk_resolved/$(basename "$s")"
+    fi
     which=$(sed -n 's/^# shell: //p' "$s" | head -1)
     [ -z "$which" ] && which=both
     for bin in tracker desktop; do
@@ -84,7 +161,7 @@ for s in "$here"/*.script; do
         # its window lands on it: run against the real home, a test drops
         # its files into the account and then reads a Desktop covered in
         # its own leftovers.
-        deskhome="/tmp/trk_home"
+        deskhome="$tmp/trk_home"
         deskfill=""
         embed=""
         splash=""
@@ -241,7 +318,7 @@ for s in "$here"/*.script; do
         # filesystem, so a script asserting a path under $HOME/.Trash must
         # keep its files under $HOME -- a host where /tmp is its own
         # volume would otherwise resolve them somewhere else.
-        work=/tmp/trk_script
+        work=$tmp/trk_script
         if grep -q '^# work: home' "$s"; then
             work="$deskhome/.trk-shell-fixture"
         fi
@@ -259,13 +336,13 @@ for s in "$here"/*.script; do
         # the home IS what part two starts from, so wiping the home here
         # would leave part two with no session to reopen.
         case $(basename "$s") in
-            session2.script) rm -rf /tmp/trk_script ;;
-            *) rm -rf /tmp/trk_script "$deskhome" ;;
+            session2.script) rm -rf $tmp/trk_script ;;
+            *) rm -rf $tmp/trk_script "$deskhome" ;;
         esac
         # What is INSTALLED is the fixture's to say: a lane must not
         # depend on whatever is sitting in the build tree, and a stray
         # trusted application would open a window in every script.
-        appsdir=/tmp/trk_apps
+        appsdir=$tmp/trk_apps
         rm -rf "$appsdir"
         mkdir -p "$appsdir"
         cp -f "$top/build/apps/terminal.so" \
@@ -298,8 +375,19 @@ for s in "$here"/*.script; do
         # names, else the one named after the script, else nothing.
         setup=$(sed -n 's/^# setup: //p' "$s" | head -1)
         [ -z "$setup" ] && setup=$(basename "$s" .script)
+        # Sourced, not run, so a fixture has the harness's own names:
+        # $deskhome, $work, $appsdir, $top, $s, the resolved $tmp and
+        # $vol2sub, and set_xattr.  A fixture that could not lay out what
+        # its script needs says so in $skip and the lane is passed by with
+        # the reason printed; silence here would read as a pass.
+        skip=""
         if [ -f "$here/setup/$setup.sh" ]; then
             . "$here/setup/$setup.sh"
+        fi
+        if [ -n "$skip" ]; then
+            printf '\n== %s (%s) SKIPPED -- %s\n' \
+                "$(basename "$s")" "$bin" "$skip"
+            continue
         fi
         # A shared navigator preference is written by the multi-window
         # Preferences UI and observed by the browser process.  This fixture
@@ -322,10 +410,10 @@ for s in "$here"/*.script; do
         fi
         if grep -q '^# addons: fixture' "$s"; then
             mkdir -p "$deskhome/.config/tracker/add-ons"
-            printf '#!/bin/sh\nprintf "%%s\\n" "$@" >> /tmp/trk_addon_ran\n' \
-                > "$deskhome/.config/tracker/add-ons/stamp"
+            printf '#!/bin/sh\nprintf "%%s\\n" "$@" >> %s/trk_addon_ran\n' \
+                "$tmp" > "$deskhome/.config/tracker/add-ons/stamp"
             chmod +x "$deskhome/.config/tracker/add-ons/stamp"
-            rm -f /tmp/trk_addon_ran
+            rm -f "$tmp/trk_addon_ran"
         fi
         if grep -q '^# prefs: filter-on' "$s"; then
             mkdir -p "$deskhome/.config"
@@ -364,20 +452,20 @@ for s in "$here"/*.script; do
         # which is the only way to check a launch really happened.
         if grep -q '^# apps: fixture3' "$s"; then
             mkdir -p "$deskhome/.config/tracker"
-            printf '#!/bin/sh\nprintf "%%s\\n" "$@" > /tmp/trk_launched\n' \
-                > /tmp/trk_stamp.sh
-            chmod +x /tmp/trk_stamp.sh
-            rm -f /tmp/trk_launched
-            printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\nTexty\t/tmp/trk_stamp.sh\ttext/\nAnything\t/tmp/trk_stamp.sh\t*\n' \
-                > "$deskhome/.config/tracker/apps"
+            printf '#!/bin/sh\nprintf "%%s\\n" "$@" > %s/trk_launched\n' \
+                "$tmp" > "$tmp/trk_stamp.sh"
+            chmod +x "$tmp/trk_stamp.sh"
+            rm -f "$tmp/trk_launched"
+            printf 'Stamper\t%s/trk_stamp.sh\ttext/plain\nTexty\t%s/trk_stamp.sh\ttext/\nAnything\t%s/trk_stamp.sh\t*\n' \
+                "$tmp" "$tmp" "$tmp" > "$deskhome/.config/tracker/apps"
         elif grep -q '^# apps: fixture' "$s"; then
             mkdir -p "$deskhome/.config/tracker"
-            printf '#!/bin/sh\nprintf "%%s\\n" "$@" > /tmp/trk_launched\n' \
-                > /tmp/trk_stamp.sh
-            chmod +x /tmp/trk_stamp.sh
-            rm -f /tmp/trk_launched
-            printf 'Stamper\t/tmp/trk_stamp.sh\ttext/plain\nOddball\t/tmp/trk_stamp.sh\timage/png\n' \
-                > "$deskhome/.config/tracker/apps"
+            printf '#!/bin/sh\nprintf "%%s\\n" "$@" > %s/trk_launched\n' \
+                "$tmp" > "$tmp/trk_stamp.sh"
+            chmod +x "$tmp/trk_stamp.sh"
+            rm -f "$tmp/trk_launched"
+            printf 'Stamper\t%s/trk_stamp.sh\ttext/plain\nOddball\t%s/trk_stamp.sh\timage/png\n' \
+                "$tmp" "$tmp" > "$deskhome/.config/tracker/apps"
         fi
         # Tracker's own Desktop, which is not the login session's.
         deskdir="$deskhome/.config/tracker/Desktop"
@@ -434,14 +522,14 @@ for s in "$here"/*.script; do
             printf '\n== %s (%s, board on %s, quiet after %ss)\n' \
                 "$(basename "$s")" "$bin" "$TRK_PORT" "${deadafter:-8}"
             rm -rf "$deskhome"/.local/share/tracker/devices/*.state
-            rm -f /tmp/trk_deadport
+            rm -f "$tmp/trk_deadport"
             python3 "$top/TikuTracker/tests/tools/deadport.py" \
                 --port "$TRK_PORT" --dead-after "${deadafter:-8}" \
-                --dead-for 600 --say /tmp/trk_deadport \
-                < /dev/null > /tmp/trk_deadport.log 2>&1 &
+                --dead-for 600 --say "$tmp/trk_deadport" \
+                < /dev/null > "$tmp/trk_deadport.log" 2>&1 &
             relay=$!
             i=0
-            while [ ! -s /tmp/trk_deadport ] && [ $i -lt 50 ]; do
+            while [ ! -s "$tmp/trk_deadport" ] && [ $i -lt 50 ]; do
                 sleep 0.1; i=$((i + 1))
             done
             DISPLAY= HOME="$deskhome" \
@@ -449,7 +537,7 @@ for s in "$here"/*.script; do
                 TIKU_APPS="$appsdir" \
                 TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
-                -devices -p "$(cat /tmp/trk_deadport)" \
+                -devices -p "$(cat "$tmp/trk_deadport")" \
                 -script "$s" || fails=$((fails+1))
             kill $relay 2>/dev/null
             wait $relay 2>/dev/null
@@ -473,7 +561,7 @@ for s in "$here"/*.script; do
             rm -rf "$deskhome"/.local/share/tracker/devices/*.state
             PYTHONPATH="$top/../TikuBench" python3 -m tikubench.core.tcp_peer \
                 --port "$TRK_PORT" --to 127.0.0.1:7749 --arm --dial-wait 30 \
-                > /tmp/trk_boardnet_relay.log 2>&1 &
+                > "$tmp/trk_boardnet_relay.log" 2>&1 &
             relay=$!
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
@@ -493,7 +581,7 @@ for s in "$here"/*.script; do
             rm -rf "$deskhome"/.local/share/tracker/devices/*.state
             PYTHONPATH="$top/../TikuBench" python3 -m tikubench.core.tcp_peer \
                 --port "$TRK_PORT2" --to 127.0.0.1:7749 --arm --dial-wait 30 \
-                > /tmp/trk_boardboth_relay.log 2>&1 &
+                > "$tmp/trk_boardboth_relay.log" 2>&1 &
             relay=$!
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
@@ -516,7 +604,7 @@ for s in "$here"/*.script; do
             printf 'write /gui/desk off\r\nwrite /gui/desk ble\r\n' > "$TRK_PORT"
             PYTHONPATH="$top/../TikuBench" python3 -m tikubench.core.ble_peer \
                 --name TIKU-DESK --to 127.0.0.1:7749 --discover-wait 120 \
-                --verbose > /tmp/trk_boardble_relay.log 2>&1 &
+                --verbose > "$tmp/trk_boardble_relay.log" 2>&1 &
             relay=$!
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
@@ -544,9 +632,15 @@ for s in $conducted; do
     fi
     cs="$root/tests/shell/$s"
     [ -e "$cs" ] || continue
+    if [ "$tmp" != /tmp ] || [ "$vol2sub" != /dev/shm ]; then
+        mkdir -p "$tmp/trk_resolved"
+        sed -e "s|/tmp/|$tmp/|g" -e "s|/dev/shm|$vol2sub|g" "$cs" \
+            > "$tmp/trk_resolved/$s"
+        cs="$tmp/trk_resolved/$s"
+    fi
     printf '\n== %s (conducted, shipping shell)\n' "$s"
-    chome=/tmp/trk_conduct_home
-    csock=/tmp/trk_conduct.sock
+    chome=$tmp/trk_conduct_home
+    csock=$tmp/trk_conduct.sock
     rm -rf "$chome" "$work" "$csock"
     mkdir -p "$chome/Desktop" "$work/sub"
     echo hi > "$work/a.txt"
@@ -561,7 +655,7 @@ for s in $conducted; do
     # Through env(1): a word an expansion produced is not an assignment
     # to the shell, and a lane that silently ran nothing would read as a
     # driver failure on a healthy driver.
-    ( DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
+    ( DISPLAY= HOME="$chome" TIKU_APPS="$tmp/trk_apps" \
         env ${cmount:+TIKU_MOUNT=$cmount} \
         "$top/build/TikuDesktop" "${copen:-$work}" -conduct "$csock" \
         -conduct-token trk-drive > /dev/null 2>&1 & )
@@ -587,7 +681,7 @@ for s in $conducted; do
     echo hi > "$work/b.txt"
     echo hi > "$work/c.txt"
     echo other > "$work/sub/a.txt"
-    DISPLAY= HOME="$chome" TIKU_APPS=/tmp/trk_apps \
+    DISPLAY= HOME="$chome" TIKU_APPS="$tmp/trk_apps" \
         env ${cmount:+TIKU_MOUNT=$cmount} \
         "$top/build/dev/trk-conduct" \
         -n "over a line" "$cs" -- "$top/build/TikuDesktop" \
@@ -597,7 +691,7 @@ for s in $conducted; do
     rm -rf "$chome"
 done
 
-rm -rf $work
+rm -rf "$work" "$tmp/trk_resolved"
 if [ $fails -gt 0 ]; then
     printf '\n%d shell script(s) FAILED\n' $fails
     exit 1

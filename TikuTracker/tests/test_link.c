@@ -21,6 +21,7 @@
 #include "tiku_session.h"
 #include "tiku_tx.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
 #ifdef __APPLE__
@@ -31,6 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -83,12 +85,55 @@ on_msg(const unsigned char *msg, size_t len, void *ctx)
 }
 
 /** @brief Write all @p n bytes to @p fd, or record a failure. */
+/*
+ * The link this test is driving, so a write that fills the line can hand
+ * it a turn.  Both ends of the pty are worked by this one thread, and a
+ * pty holds as little as 1024 bytes (macOS; Linux holds several
+ * kilobytes), so a frame larger than that would be waiting for a reader
+ * that is the caller.  Set beside each link opened below; where the
+ * buffer swallows a frame whole, nothing here is ever reached.
+ */
+static tiku_session_t *drain_session;
+static tiku_link_t *drain_link;
+
+/** @brief Give the far end, which is this thread, a turn to read. */
+static void
+drain(void)
+{
+    if (drain_session != NULL) {
+        (void)tiku_session_poll(drain_session, 0);
+    }
+    if (drain_link != NULL) {
+        tiku_link_pump(drain_link);
+    }
+}
+
 static void
 put(int fd, const void *buf, size_t n)
 {
-    if (write(fd, buf, n) != (ssize_t)n) {
+    const unsigned char *p = buf;
+    int spins = 0;
+
+    while (n > 0u) {
+        ssize_t wrote = write(fd, p, n);
+
+        if (wrote > 0) {
+            p += (size_t)wrote;
+            n -= (size_t)wrote;
+            spins = 0;
+            continue;
+        }
+        if (wrote < 0 && errno == EINTR) {
+            continue;
+        }
+        if (wrote < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) &&
+            ++spins < 4000) {
+            drain();
+            continue;
+        }
         printf("  [FAIL] short write\n");
         fails++;
+        return;
     }
 }
 
@@ -614,8 +659,10 @@ dead_link(void)
         return;
     }
     close(slave);
+    (void)fcntl(master, F_SETFL, O_NONBLOCK);
     s = tiku_session_new(tiku_tx_open_serial(path, 115200));
     l = tiku_link_serial_open(s);
+    drain_session = s; drain_link = l;
     st = tiku_link_serial_stats(l);
     rx_len = 0;
     check(st != NULL && take_frame(master, 500, plain) == OVER,
@@ -634,6 +681,7 @@ dead_link(void)
               tiku_link_ready(l) == 0 && take_frame(master, 300, plain) == 0,
           "and the link is dead: a send is refused, not ready, nothing "
           "written");
+    drain_session = NULL; drain_link = NULL;
     tiku_link_close(l);
     tiku_session_free(s);
     close(master);
@@ -659,8 +707,10 @@ main(void)
         return 1;
     }
     close(slave);
+    (void)fcntl(master, F_SETFL, O_NONBLOCK);
     s = tiku_session_new(tiku_tx_open_serial(path, 115200));
     l = tiku_link_serial_open(s);
+    drain_session = s; drain_link = l;
     st = tiku_link_serial_stats(l);
     check(s != NULL && l != NULL && st != NULL,
           "a link opens on a session on the pty, with counters");
@@ -684,6 +734,7 @@ main(void)
     desktop_paced_rx(master, s, l);
     desktop_mtu(master, s, l);
 
+    drain_session = NULL; drain_link = NULL;
     tiku_link_close(l);
     tiku_session_free(s);
     close(master);

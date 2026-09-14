@@ -21,8 +21,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <poll.h>
+#include <pthread.h>
+#include <signal.h>
+#include <sys/socket.h>
 #include <termios.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <util.h>
+#else
+#include <pty.h>
+#endif
 
 #include "tiku_dl.h"
 #include "tiku_iconpaint.h"
@@ -40,12 +50,123 @@ check(int cond, const char *what)
     }
 }
 
+/*
+ * A desktop is a process of its own, reading the line as the bytes
+ * arrive.  This test is one thread, and a pty holds as little as 1024
+ * bytes (macOS; Linux holds several kilobytes), so a client writing a
+ * frame larger than that would be waiting for a reader that is itself.
+ *
+ * A shovel thread stands where that process would: it moves bytes
+ * between the pseudo-terminal and a socket pair the listener is adopted
+ * on, so the line is always being drained.  The session still crosses a
+ * real pty, which is the claim under test; what changes is only that
+ * something is reading the far end, as something always is.
+ *
+ * One buffer per direction, and a direction holding bytes is not read
+ * from again until they have gone, so neither end can be filled by the
+ * other and the shovel cannot wedge.
+ */
+struct shovel_dir {
+    int           from, to;
+    size_t        at, len;
+    unsigned char buf[8192];
+};
+
+static struct shovel_dir shovel_way[2];
+static pthread_t         shovel_thread;
+static volatile sig_atomic_t shovel_stop;
+
+/** @brief Move bytes both ways until the test says stop. */
+static void *
+shovel(void *unused)
+{
+    struct pollfd p[2];
+    int i;
+
+    (void)unused;
+    while (!shovel_stop) {
+        for (i = 0; i < 2; i++) {
+            int holding = shovel_way[i].at < shovel_way[i].len;
+
+            p[i].fd = holding ? shovel_way[i].to : shovel_way[i].from;
+            p[i].events = holding ? POLLOUT : POLLIN;
+            p[i].revents = 0;
+        }
+        if (poll(p, 2u, 20) <= 0) {
+            continue;
+        }
+        for (i = 0; i < 2; i++) {
+            struct shovel_dir *d = &shovel_way[i];
+            ssize_t n;
+
+            if ((p[i].revents & (POLLERR | POLLNVAL)) != 0) {
+                shovel_stop = 1;    /* the line went; stop, do not spin */
+                break;
+            }
+            if (d->at < d->len) {
+                if ((p[i].revents & POLLOUT) == 0) {
+                    continue;
+                }
+                n = write(d->to, d->buf + d->at, d->len - d->at);
+                if (n > 0) {
+                    d->at += (size_t)n;
+                } else if (n < 0 && errno != EAGAIN && errno != EINTR) {
+                    shovel_stop = 1;
+                    break;
+                }
+            } else {
+                if ((p[i].revents & (POLLIN | POLLHUP)) == 0) {
+                    continue;
+                }
+                n = read(d->from, d->buf, sizeof d->buf);
+                if (n > 0) {
+                    d->at = 0u;
+                    d->len = (size_t)n;
+                } else if (n == 0 ||
+                           (errno != EAGAIN && errno != EINTR)) {
+                    shovel_stop = 1;    /* end of the line, not a stall */
+                    break;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+/** @brief Start the shovel between the line and the desktop's end. */
+static int
+shovel_start(int line, int desk)
+{
+    /* Room for the largest message in one piece.  The pty cannot be given
+     * any, which is the whole reason this thread exists; the pair can, and
+     * a desktop reading a 10 KB menu set should not have to be polled
+     * eight times to see the front of it. */
+    int room = 256 * 1024;
+
+    (void)setsockopt(desk, SOL_SOCKET, SO_SNDBUF, &room, sizeof room);
+    (void)setsockopt(desk, SOL_SOCKET, SO_RCVBUF, &room, sizeof room);
+    (void)fcntl(line, F_SETFL, O_NONBLOCK);
+    (void)fcntl(desk, F_SETFL, O_NONBLOCK);
+    shovel_way[0].from = line; shovel_way[0].to = desk;
+    shovel_way[1].from = desk; shovel_way[1].to = line;
+    shovel_stop = 0;
+    return pthread_create(&shovel_thread, NULL, shovel, NULL) == 0;
+}
+
+/** @brief Stop it, and wait: the descriptors are closed after this. */
+static void
+shovel_end(void)
+{
+    shovel_stop = 1;
+    (void)pthread_join(shovel_thread, NULL);
+}
+
 int
 main(void)
 {
     tiku_remote_listener_t listener;
     tiku_remote_client_t client;
-    int master, slave;
+    int master, slave, desk[2];
     char *slave_path;
 
     printf("the session over a serial-shaped link (a pty pair)\n");
@@ -78,7 +199,17 @@ main(void)
     }
     memset(&listener, 0, sizeof listener);
     listener.fd = -1;
-    check(tiku_remote_adopt(&listener, master) == 0,
+    check(socketpair(AF_UNIX, SOCK_STREAM, 0, desk) == 0,
+          "a pair stands in for the desktop's own end of the line");
+    {
+        int room = 256 * 1024;
+
+        (void)setsockopt(desk[0], SOL_SOCKET, SO_SNDBUF, &room, sizeof room);
+        (void)setsockopt(desk[0], SOL_SOCKET, SO_RCVBUF, &room, sizeof room);
+    }
+    check(shovel_start(master, desk[1]),
+          "and something is reading the line, as something always is");
+    check(tiku_remote_adopt(&listener, desk[0]) == 0,
           "the listener adopts the line as a session");
     check(tiku_remote_connect_fd(&client, "serial-app", slave) == 0,
           "the client speaks HELLO down it");
@@ -589,6 +720,10 @@ main(void)
     }
     tiku_remote_disconnect(&client);
     tiku_remote_shutdown(&listener);
+    shovel_end();
+    (void)close(desk[1]);
+    (void)close(master);
+    (void)close(slave);
     printf("\n%s\n", fails ? "FAILURES" : "the wire does not care what "
            "carries it");
     return fails ? 1 : 0;

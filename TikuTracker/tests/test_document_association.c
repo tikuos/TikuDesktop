@@ -69,7 +69,13 @@ int main(int argc, char **argv)
     snprintf(model.type, sizeof model.type, "application/pdf");
     assert(!tiku_trk_launch_controller_handler(&controller, &model));
     tiku_trk_app_t capture = apps.app[basic];
-    snprintf(capture.cmd, sizeof capture.cmd, "/proc/self/exe");
+    /* This binary again, in its child mode: a runner that writes down
+     * what it was handed is the only way to see the argv a launch really
+     * built.  By its own resolved path rather than through /proc, which
+     * only Linux has. */
+    char self[TIKU_PATH_MAX];
+    assert(realpath(argv[0], self));
+    snprintf(capture.cmd, sizeof capture.cmd, "%s", self);
     snprintf(capture.module, sizeof capture.module, "%s/captured args", dir);
     const char *literal[] = {"/tmp/literal file;$(not-a-command).BAS"};
     assert(tiku_trk_launch_run(&capture, literal, 1) == TIKU_TRK_LAUNCH_OK);

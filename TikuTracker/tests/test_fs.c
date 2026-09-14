@@ -30,6 +30,29 @@ check(int cond, const char *row, const char *what)
     if (!cond) { fails++; }
 }
 
+/**
+ * @brief Another volume to test against, or NULL when the host has one disk.
+ *
+ * The harness mounts one and names it; without the harness, /dev/shm is
+ * a volume of its own on every Linux.  Confirmed by device rather than
+ * by name, because a path that turns out to be on the same disk would
+ * let a cross-volume check pass without crossing anything.
+ */
+static const char *
+second_volume(const char *here)
+{
+    const char *at = getenv("TRK_VOLUME2");
+    struct stat a, b;
+
+    if (at == NULL || at[0] == '\0') {
+        at = "/dev/shm";
+    }
+    if (stat(here, &a) != 0 || stat(at, &b) != 0 || a.st_dev == b.st_dev) {
+        return NULL;
+    }
+    return at;
+}
+
 /** @brief Cancel after this many chunk checks; 0 means never. */
 static int cancel_after;
 static int cancel_seen;
@@ -793,21 +816,31 @@ main(void)
             run_to_end(fs);
             {
                 /* EVERY volume's trash at once: a file sitting in another
-                 * volume's trash is emptied with the rest. */
-                char foreign[600];
+                 * volume's trash is emptied with the rest.  Only where
+                 * there IS another one: on a host with a single disk the
+                 * check would pass without crossing anything, which reads
+                 * exactly like a check that held. */
+                const char *other = second_volume(work);
+                char foreign[600], trash[600];
                 struct stat fst;
 
-                (void)mkdir("/dev/shm/.Trash", 0755);
-                snprintf(foreign, sizeof foreign,
-                         "/dev/shm/.Trash/trk_foreign_%d.txt",
-                         (int)getpid());
-                put(foreign, "F");
-                check(tiku_fs_empty_trash(fs) >= 1, "FS-048",
-                      "another volume's trash counts toward the empty");
-                run_to_end(fs);
-                check(stat(foreign, &fst) != 0, "FS-048",
-                      "and its contents are gone with the rest");
-                (void)unlink(foreign);
+                if (other == NULL) {
+                    printf("  [SKIP] %-8s another volume's trash: this host "
+                           "offers only one volume\n", "FS-048");
+                } else {
+                    snprintf(trash, sizeof trash, "%s/.Trash", other);
+                    (void)mkdir(trash, 0755);
+                    snprintf(foreign, sizeof foreign,
+                             "%s/.Trash/trk_foreign_%d.txt",
+                             other, (int)getpid());
+                    put(foreign, "F");
+                    check(tiku_fs_empty_trash(fs) >= 1, "FS-048",
+                          "another volume's trash counts toward the empty");
+                    run_to_end(fs);
+                    check(stat(foreign, &fst) != 0, "FS-048",
+                          "and its contents are gone with the rest");
+                    (void)unlink(foreign);
+                }
             }
             (void)rmdir(work);
         }

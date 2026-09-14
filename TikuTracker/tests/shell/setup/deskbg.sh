@@ -1,5 +1,6 @@
 # Set up before deskbg.script/deskbg2.script runs.  Sourced by run.sh with the harness's
-# variables in scope: $deskhome, $work, $appsdir, $top, $s.
+# variables in scope: $deskhome, $work, $appsdir, $top, $s
+# and its helpers: set_xattr.
 # A folder carrying a background picture, written the way the
 # store keeps one: a 64x48 bitmap of a known colour, and the
 # record naming it, tiled over the window.
@@ -19,7 +20,7 @@ open(sys.argv[1]+"/desktop-background","wb").write(d)
 PYDB
 mkdir -p "$deskhome/.config/tracker/Desktop"
 if [ "$(basename "$s")" = deskbg2.script ]; then
-    setfattr -n 'user._trk/background' \
-        -v "0 600 400 $deskhome/.config/tracker/desktop-background" \
+    set_xattr 'user._trk/background' \
+        "0 600 400 $deskhome/.config/tracker/desktop-background" \
         "$deskhome/.config/tracker/Desktop"
 fi

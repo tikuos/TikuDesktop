@@ -493,9 +493,16 @@ main(void)
 
         /* Real paths on real devices: a volume is found by DEVICE, so a
          * table of invented ones would answer NULL for everything and the
-         * rules below would never be reached. */
+         * rules below would never be reached.  The harness names one it
+         * mounted; without it, /dev/shm is a volume of its own on every
+         * Linux. */
+        const char *other = getenv("TRK_VOLUME2");
+
+        if (other == NULL || other[0] == '\0') {
+            other = "/dev/shm";
+        }
         memset(&vs2, 0, sizeof vs2);
-        if (stat("/", &sb_root) != 0 || stat("/dev/shm", &sb_other) != 0 ||
+        if (stat("/", &sb_root) != 0 || stat(other, &sb_other) != 0 ||
             sb_root.st_dev == sb_other.st_dev) {
             printf("  (skipped: this host has no second device to test "
                    "against)\n");
@@ -506,7 +513,7 @@ main(void)
         snprintf(vs2.v[0].name, sizeof vs2.v[0].name, "Boot");
         vs2.v[0].is_boot = 1;
         vs2.v[0].dev = sb_root.st_dev;
-        snprintf(vs2.v[1].mount, sizeof vs2.v[1].mount, "/dev/shm");
+        snprintf(vs2.v[1].mount, sizeof vs2.v[1].mount, "%s", other);
         snprintf(vs2.v[1].name, sizeof vs2.v[1].name, "stick");
         vs2.v[1].removable = 1;
         vs2.v[1].dev = sb_other.st_dev;
@@ -523,7 +530,7 @@ main(void)
         saved_for = 0;
         {
             tiku_unmount_t r =
-                tiku_volume_unmount(&vs2, "/dev/shm", note_before,
+                tiku_volume_unmount(&vs2, other, note_before,
                                         &saved_for, why, sizeof why);
 
             check(r != TIKU_UNMOUNT_REFUSED, "AW-096",

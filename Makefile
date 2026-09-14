@@ -64,7 +64,14 @@ $(BUILD) $(DEV) $(BUILD)/tests $(APPS_D) $(PROG_D):
 # into build/ or compiles a fixture against the kits expects to be.
 test: all
 	@$(MAKE) --no-print-directory check-architecture check-font check-toolkit
-	@for t in $(TESTBINS) $(TEST_APP); do \
+# The suites that are about having more than one volume ask the harness
+# for a second one; on Linux that is /dev/shm and nothing is mounted or
+# given back.  Opened once for the whole loop and released however the
+# loop ends, because a run cut short must not leave a volume behind.
+	@v=$$(sh $(T)/tests/second-volume.sh open); \
+	trap 'sh $(T)/tests/second-volume.sh close "$$v"' EXIT INT TERM; \
+	export TRK_VOLUME2="$$v"; \
+	for t in $(TESTBINS) $(TEST_APP); do \
 	    case $$t in \
 	        */test_model) $$t $(if $(PORT),-p $(PORT)) $(if $(BAUD),-b $(BAUD)) ;; \
 	        *) $$t ;; \

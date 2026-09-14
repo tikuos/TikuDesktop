@@ -1,5 +1,6 @@
 # shell: tracker
 # home: fixture
+# paths: literal
 # mkdir: ~/Documents
 # NeXT UIG ch3: Cmd-Space completes a partial file name wherever one may
 # be typed -- here the last component of the location field's path.

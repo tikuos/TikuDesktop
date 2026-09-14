@@ -1,4 +1,5 @@
 # shell: desktop
+# host: shallow-tmp
 # AW-061: with "Desktop is root" on, Up from the root lands on the Desktop
 # and the Desktop is the top; turning it off re-answers the next Up.
 wait 10

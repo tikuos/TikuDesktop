@@ -1,5 +1,6 @@
 # shell: both
 # open: /dev/shm
+# volume: not-mine
 # AW-096/CW-034: Unmount is a real command reached from the keyboard, and
 # an unmount that cannot happen says so instead of doing nothing.  Shown a
 # VOLUME -- /dev/shm is one on every Linux, where /tmp is one only on

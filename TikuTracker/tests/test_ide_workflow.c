@@ -500,13 +500,20 @@ static void test_launch_document(tiku_app_services_t *services, const char *dir)
 
 int main(void)
 {
-    char dir[] = "/tmp/tikubasic-test-XXXXXX", label[160];
+    char dir[TIKU_PATH_MAX] = "/tmp/tikubasic-test-XXXXXX";
+    char real[TIKU_PATH_MAX], label[160];
     tiku_app_services_t services = { .current_device = current,
         .board_names = names, .board_save = save, .board_run = run,
         .menus = menus, .frame = frame, .open = open_window, .close = close_window };
     ide_t *st = calloc(1, sizeof *st);
 
     assert(st && mkdtemp(dir));
+    /* Resolved, because the code under test resolves what it is given:
+     * on a host where /tmp is a symlink (macOS points it at
+     * /private/tmp) every assertion below would be comparing the name
+     * handed in against the name handed back. */
+    assert(realpath(dir, real));
+    snprintf(dir, sizeof dir, "%s", real);
     assert(project_body().y == MARGIN);
     assert(project_body().h == IDE_H - STRIP_H - 2 * MARGIN);
     st->services = &services;

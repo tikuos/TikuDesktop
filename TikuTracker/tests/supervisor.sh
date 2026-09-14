@@ -55,7 +55,9 @@ while [ $i -lt 100 ] && [ -z "$second" ]; do
     sleep 0.1; i=$((i + 1))
 done
 check $([ -n "$second" ]; echo $?) "killed from outside, it is started again"
-if [ -n "$second" ] && tr '\0' ' ' < /proc/$second/cmdline | grep -q -- "-after $R/exit-"; then
+# Through ps(1) rather than /proc, which only Linux has; "command" is
+# the full argument list on both, which is what carries -after.
+if [ -n "$second" ] && ps -o command= -p "$second" | grep -q -- "-after $R/exit-"; then
     check 0 "and told where the account of the first one is"
 else
     check 1 "and told where the account of the first one is"
@@ -87,7 +89,9 @@ wait $S; rc=$?
 check $([ $rc -eq 1 ]; echo $?) "a desk that dies twice is left down (rc=$rc)"
 check $(grep -q "not started a third time" /tmp/trk_sup2.out; echo $?) "and the reason is on the supervisor's stderr"
 check $([ "$(ls "$R"/exit-*.txt | wc -l)" -eq 2 ]; echo $?) "with a report for each end"
-pgrep -x TikuDesktop -P $S > /dev/null; check $([ $? -ne 0 ]; echo $?) "leaves no desk behind"
+# Options before the pattern: BSD pgrep takes anything after it as a
+# second pattern, and the check quietly passed on the wrong question.
+pgrep -P $S -x TikuDesktop > /dev/null; check $([ $? -ne 0 ]; echo $?) "leaves no desk behind"
 
 # 3. Ending the supervisor ends the desk, and that is not a mishap.
 fresh
