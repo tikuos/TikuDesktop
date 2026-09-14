@@ -11,6 +11,7 @@
 #define _GNU_SOURCE 1
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -114,35 +115,90 @@ set_nonblock(int fd)
     return (flags >= 0) ? fcntl(fd, F_SETFL, flags | O_NONBLOCK) : -1;
 }
 
-/** @brief Send all of it; a stalled peer forfeits the message. */
+/*
+ * How long a peer that has stopped reading is waited for, and the step
+ * the wait is taken in.  Two seconds is far longer than a desktop busy
+ * with a redraw and far shorter than one that has gone: the descriptors
+ * here are non-blocking, so without a ceiling EAGAIN is forever and the
+ * program spins inside whatever call it was making.
+ */
+#define REMOTE_STALL_MS 2000
+#define REMOTE_STEP_MS    50
+
+/**
+ * @brief Wait for @p fd to be ready for @p what, a step at a time.
+ *
+ * @param waited  Milliseconds spent so far, added to; reset by the
+ *                caller whenever something did move.
+ * @return 0 when it is worth trying again, -1 when the peer has had
+ *         long enough.
+ */
+static int
+wait_ready(int fd, short what, int *waited)
+{
+    struct pollfd one;
+
+    if (*waited >= REMOTE_STALL_MS) {
+        return -1;
+    }
+    one.fd = fd;
+    one.events = what;
+    one.revents = 0;
+    if (poll(&one, 1u, REMOTE_STEP_MS) < 0 && errno != EINTR) {
+        return -1;
+    }
+    *waited += REMOTE_STEP_MS;
+    return 0;
+}
+
+/**
+ * @brief Send all of it; a stalled peer forfeits the LINE, not the message.
+ *
+ * Half a message is worse than none, because the far end reads whatever
+ * follows as a length and every frame after it is nonsense.  So when the
+ * peer has had its two seconds the descriptor is closed and set to -1:
+ * every send guards on `fd < 0` and does nothing, and the read side
+ * reports the disconnect that callers already know how to handle.
+ */
 static void
-send_all(int fd, const void *data, size_t n)
+send_all(int *fd, const void *data, size_t n)
 {
     const unsigned char *p = data;
+    int waited = 0;
 
     while (n > 0u) {
-        ssize_t wrote = write(fd, p, n);
+        ssize_t wrote = write(*fd, p, n);
 
-        if (wrote <= 0) {
-            if (wrote < 0 && (errno == EAGAIN || errno == EINTR)) {
-                continue;       /* a frame is worth a brief stall */
-            }
-            return;
+        if (wrote > 0) {
+            p += (size_t)wrote;
+            n -= (size_t)wrote;
+            waited = 0;         /* it is moving; the clock starts again */
+            continue;
         }
-        p += wrote;
-        n -= (size_t)wrote;
+        if (wrote < 0 && errno == EINTR) {
+            continue;
+        }
+        if (wrote < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) &&
+            wait_ready(*fd, POLLOUT, &waited) == 0) {
+            continue;
+        }
+        break;
+    }
+    if (n > 0u) {
+        (void)close(*fd);
+        *fd = -1;
     }
 }
 
 static void
-send_msg(int fd, uint32_t type, const void *payload, uint32_t n)
+send_msg(int *fd, uint32_t type, const void *payload, uint32_t n)
 {
     uint32_t head[2];
 
     head[0] = type;
     head[1] = n;
     send_all(fd, head, sizeof head);
-    if (n > 0u) {
+    if (n > 0u && *fd >= 0) {
         send_all(fd, payload, n);
     }
 }
@@ -1026,13 +1082,13 @@ tiku_remote_lost(const tiku_remote_listener_t *listener, int index)
  * is never half-written onto a wire the other end is reading in frames.
  */
 static int
-send_flat(int fd, uint32_t type, const tiku_msg_t *m,
+send_flat(int *fd, uint32_t type, const tiku_msg_t *m,
           tiku_remote_session_t *session)
 {
     size_t n = tiku_msg_flat_size(m);
     unsigned char *flat;
 
-    if (fd < 0 || n == 0u || n > REMOTE_MAX_PAYLOAD) {
+    if (*fd < 0 || n == 0u || n > REMOTE_MAX_PAYLOAD) {
         return 0;
     }
     flat = malloc(n);
@@ -1056,7 +1112,7 @@ tiku_remote_tell(tiku_remote_listener_t *listener, int index,
 {
     tiku_remote_session_t *s = session_at(listener, index);
 
-    return (s != NULL) ? send_flat(s->fd, TIKU_RMSG_TELL, m, s) : 0;
+    return (s != NULL) ? send_flat(&s->fd, TIKU_RMSG_TELL, m, s) : 0;
 }
 
 int
@@ -1129,7 +1185,7 @@ tiku_remote_connect_fd(tiku_remote_client_t *client,
     memcpy(payload, &version, 4);
     snprintf((char *)payload + 4, 32, "%s", (name != NULL) ? name : "app");
     memcpy(payload + 36, &features, 4);
-    send_msg(client->fd, TIKU_RMSG_HELLO, payload, sizeof payload);
+    send_msg(&client->fd, TIKU_RMSG_HELLO, payload, sizeof payload);
     (void)set_nonblock(client->fd);
     return 0;
 }
@@ -1166,7 +1222,7 @@ tiku_remote_draw(tiku_remote_client_t *client, uint32_t id,
     memcpy(payload + 8, &h, 4);
     ok = (n == 0u) || tiku_dl_flatten(dl, payload + 12, n, NULL);
     if (ok) {
-        send_msg(client->fd, TIKU_RMSG_DRAW, payload,
+        send_msg(&client->fd, TIKU_RMSG_DRAW, payload,
                  (uint32_t)(12u + n));
     }
     free(payload);
@@ -1177,7 +1233,7 @@ int
 tiku_remote_say(tiku_remote_client_t *client,
                      const tiku_msg_t *m)
 {
-    return client ? send_flat(client->fd, TIKU_RMSG_SAY, m, NULL) : 0;
+    return client ? send_flat(&client->fd, TIKU_RMSG_SAY, m, NULL) : 0;
 }
 
 tiku_msg_t *
@@ -1204,7 +1260,7 @@ tiku_remote_disconnect(tiku_remote_client_t *client)
         client->shared_bytes = 0u;
     }
     if (client->fd >= 0) {
-        send_msg(client->fd, TIKU_RMSG_CLOSE, NULL, 0);
+        send_msg(&client->fd, TIKU_RMSG_CLOSE, NULL, 0);
         (void)close(client->fd);
         client->fd = -1;
     }
@@ -1227,7 +1283,7 @@ tiku_remote_open(tiku_remote_client_t *client, const char *title,
     memcpy(payload + 8, &hh, 4);
     snprintf((char *)payload + 12, TIKU_REMOTE_TITLE, "%s",
              (title != NULL) ? title : "");
-    send_msg(client->fd, TIKU_RMSG_OPEN, payload, sizeof payload);
+    send_msg(&client->fd, TIKU_RMSG_OPEN, payload, sizeof payload);
     return id;
 }
 
@@ -1237,7 +1293,7 @@ tiku_remote_close_window(tiku_remote_client_t *client, uint32_t id)
     if (client == NULL || client->fd < 0) {
         return;
     }
-    send_msg(client->fd, TIKU_RMSG_CLOSE, &id, 4);
+    send_msg(&client->fd, TIKU_RMSG_CLOSE, &id, 4);
 }
 
 void
@@ -1246,7 +1302,7 @@ tiku_remote_raise(tiku_remote_client_t *client, uint32_t id)
     if (client == NULL || client->fd < 0) {
         return;
     }
-    send_msg(client->fd, TIKU_RMSG_RAISE, &id, 4);
+    send_msg(&client->fd, TIKU_RMSG_RAISE, &id, 4);
 }
 
 void
@@ -1257,7 +1313,7 @@ tiku_remote_place(tiku_remote_client_t *client, uint32_t id, int role)
 
     memcpy(payload, &id, 4);
     memcpy(payload + 4, &r, 4);
-    send_msg(client->fd, TIKU_RMSG_PLACE, payload, sizeof payload);
+    send_msg(&client->fd, TIKU_RMSG_PLACE, payload, sizeof payload);
 }
 
 void
@@ -1266,7 +1322,7 @@ tiku_remote_sizeable(tiku_remote_client_t *client, uint32_t id)
     if (client == NULL || client->fd < 0) {
         return;
     }
-    send_msg(client->fd, TIKU_RMSG_SIZEABLE, &id, 4);
+    send_msg(&client->fd, TIKU_RMSG_SIZEABLE, &id, 4);
 }
 
 /**
@@ -1325,7 +1381,7 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
     memcpy(payload + 8, &hh, 4);
     snprintf((char *)payload + 12, TIKU_REMOTE_SHM_NAME, "%s",
              client->shm_name);
-    send_msg(client->fd, TIKU_RMSG_SURFACE, payload, sizeof payload);
+    send_msg(&client->fd, TIKU_RMSG_SURFACE, payload, sizeof payload);
     /* The desktop unlinks the name once it has mapped it; this end keeps
      * only the mapping. */
     return 1;
@@ -1354,7 +1410,7 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
         memcpy((unsigned char *)client->shared + index * one, px, one);
         memcpy(ready, &id, 4);
         memcpy(ready + 4, &index, 4);
-        send_msg(client->fd, TIKU_RMSG_READY, ready, sizeof ready);
+        send_msg(&client->fd, TIKU_RMSG_READY, ready, sizeof ready);
         client->next_buffer =
             (client->next_buffer + 1) % TIKU_REMOTE_BUFFERS;
         return 0;
@@ -1367,7 +1423,7 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
     memcpy(payload + 4, &ww, 4);
     memcpy(payload + 8, &hh, 4);
     memcpy(payload + 12, px, 4u * (size_t)w * (size_t)h);
-    send_msg(client->fd, TIKU_RMSG_FRAME, payload, (uint32_t)n);
+    send_msg(&client->fd, TIKU_RMSG_FRAME, payload, (uint32_t)n);
     free(payload);
     return 0;
 }
@@ -1447,7 +1503,7 @@ tiku_remote_menus(tiku_remote_client_t *client, uint32_t id,
     }
     memcpy(payload, &id, 4);
     memcpy(payload + 4, menus, sizeof *menus);
-    send_msg(client->fd, TIKU_RMSG_MENUS, payload, (uint32_t)n);
+    send_msg(&client->fd, TIKU_RMSG_MENUS, payload, (uint32_t)n);
     free(payload);
     return 0;
 }
@@ -1458,6 +1514,7 @@ tiku_remote_read(tiku_remote_client_t *client, uint32_t *id,
 {
     uint32_t head[2];
     ssize_t got;
+    int waited;
 
     if (client->fd < 0) {
         return -1;
@@ -1488,6 +1545,11 @@ tiku_remote_read(tiku_remote_client_t *client, uint32_t *id,
         if (buf == NULL) {
             return -1;
         }
+        /* Mid-message: the header is already taken, so there is no
+         * stopping half way and coming back.  Waited out with the same
+         * ceiling a send has -- a peer that announced a length and then
+         * went quiet must not hold this program for ever. */
+        waited = 0;
         while (at < n) {
             got = read(client->fd, buf + at, n - at);
             if (got == 0) {
@@ -1495,14 +1557,18 @@ tiku_remote_read(tiku_remote_client_t *client, uint32_t *id,
                 return -1;
             }
             if (got < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK ||
-                    errno == EINTR) {
-                    continue;   /* mid-message: finish it */
+                if (errno == EINTR) {
+                    continue;
+                }
+                if ((errno == EAGAIN || errno == EWOULDBLOCK) &&
+                    wait_ready(client->fd, POLLIN, &waited) == 0) {
+                    continue;
                 }
                 free(buf);
                 return -1;
             }
             at += (size_t)got;
+            waited = 0;
         }
         client->hgot = 0u;
         if (id != NULL && head[1] >= 4u) {
