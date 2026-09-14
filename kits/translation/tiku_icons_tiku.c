@@ -20,6 +20,7 @@
 #include "tiku_icons_navigation.inl"
 #include "tiku_icons_reader.inl"
 #include "tiku_icons_viewer.inl"
+#include "tiku_icons_forcequit.inl"
 
 /* microcontroller -- a chip: dark body, silver legs, the pin-one dot */
 static const uint8_t tiku_icon_microcontroller[311] = {
@@ -129,5 +130,7 @@ tiku_icons_tiku_register(void)
                           sizeof tiku_icon_reader);
     took += tiku_icons_add("image_viewer", tiku_icon_image_viewer,
                           sizeof tiku_icon_image_viewer);
+    took += tiku_icons_add("force_quit", tiku_icon_force_quit,
+                          sizeof tiku_icon_force_quit);
     return took;
 }

@@ -1,0 +1,12 @@
+# shell: desktop
+# prefs: factory
+# The destructive action has its own stop-sign artwork, not a generic app.
+wait 12
+click 980 40
+wait 4
+expect-menu Force Quit
+shot /tmp/tiku-forcequit-menu.png
+menu-pick Force Quit
+wait 8
+expect-title Force Quit
+quit

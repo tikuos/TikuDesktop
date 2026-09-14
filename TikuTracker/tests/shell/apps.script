@@ -10,12 +10,13 @@ note the programs are under Applications, with their own art
 menu-pick Applications
 wait 4
 expect-menu Editor|Terminal
+shot /tmp/tiku-editor-app-menu.png
 note each row wears its own art: paper for the editor, an application
 note for the terminal, and they are not the same picture.  The reader and
 note the viewer stand above them in the list, so the editor is the third
 note row and the terminal the fourth.
-expect-pixel 494 196 fffcc0
-expect-pixel 492 221 ec6666
+expect-pixel 494 154 fffcc0
+expect-pixel 492 179 ec6666
 note choosing the editor starts it; its window arrives over the session
 menu-pick Editor
 wait 90

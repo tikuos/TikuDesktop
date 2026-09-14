@@ -3,25 +3,25 @@
 wait 12
 click 980 20
 wait 4
-move 800 132
+move 800 90
 wait 35
 expect-menu Fonts
 expect-menu Devices Preferences
 expect-same-as-redraw
 note crossing the gap into Settings keeps the submenu open
-move 685 132
+move 685 90
 wait 4
-move 500 132
+move 500 90
 wait 30
 expect-menu Fonts
 expect-same-as-redraw
 note moving to Applications replaces Settings after the hover delay
-move 800 153
+move 800 111
 wait 35
 expect-menu TikuReader
 expect-same-as-redraw
 note moving back needs no click; selecting a child still works
-move 800 132
+move 800 90
 wait 35
 expect-menu Fonts
 menu-pick Fonts

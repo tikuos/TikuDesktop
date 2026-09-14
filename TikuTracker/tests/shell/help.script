@@ -1,10 +1,8 @@
 # shell: desktop
-# The desktop's own pages: opened from the leaf, read by key, and
+# The desktop's own pages: opened with F1, read by key, and
 # followed to another page and back again.
 wait 20
-click 980 20
-wait 4
-menu-pick Help
+key F1
 wait 12
 expect-title Help
 expect-narrate TikuDesktop Help

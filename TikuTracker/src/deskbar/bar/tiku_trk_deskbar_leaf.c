@@ -173,10 +173,7 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     db->sub_of = -1;
     db->sub_count = 0;
     db_reset_menu_hots(db);
-    add_item(db, TIKU_TRK_DB_ITEM_ABOUT, tiku_str("menu.about"), NULL,
-             0);
     add_item(db, TIKU_TRK_DB_ITEM_FIND, tiku_str("menu.find"), NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_HELP, tiku_str("menu.help"), NULL, 0);
     add_item(db, TIKU_TRK_DB_ITEM_FORCE_QUIT, tiku_str("menu.force_quit"),
              NULL, 0);
     /* One row for everything that configures the desktop, the way the

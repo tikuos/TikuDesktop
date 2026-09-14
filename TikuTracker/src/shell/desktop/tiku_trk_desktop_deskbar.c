@@ -78,7 +78,7 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
         art = "folder_prefs";
         break;
     case TIKU_TRK_DB_ITEM_FORCE_QUIT:
-        art = "application";
+        art = "force_quit";
         break;
     case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
         art = "package";

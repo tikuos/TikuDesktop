@@ -1,14 +1,14 @@
 # shell: desktop
 # home: fixture
-# The About box, in the R5 manner: reached from the Deskbar and from the
-# global bar's system menu, modeless, closed from its tab or by Escape
+# The About box, in the R5 manner: reached from the global bar's system
+# menu, modeless, closed from its tab or by Escape
 # -- and its facts
 # come from the host underneath, not from constants.
 wait 12
-note from the Deskbar first, whose About row had no consumer until now
-press 900 20 1
-wait 2
-release 900 20 1
+note About remains available in the global Tiku menu, not the Deskbar leaf
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click 20 8
 wait 4
 menu-pick About this system
 wait 6
@@ -28,8 +28,7 @@ wait 20
 click 20 8
 wait 4
 expect-menu About this system
-note and the strip's About row wears the same mark the leaf's does, from
-note the same geometry -- so the two ways in to the box look like one thing
+note the strip's About row wears the system mark, drawn from its geometry
 expect-pixel 22 31 f7e689
 menu-pick About this system
 wait 6

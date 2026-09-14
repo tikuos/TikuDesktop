@@ -18,24 +18,19 @@ expect-windows 0
 click 980 20
 wait 3
 note the recents row EXPANDS rather than choosing: the menu stays up
-expect-menu About this system|Find…|Help…|Force Quit…|Settings|Applications|Device Tools|-|Recent folders|-|Shut down…|
-note the About row wears the system's own mark, drawn from its geometry
-note rather than looked up in the icon set -- pinned on the pale interior
-note of the near cube, which is the largest steady area it has at the
-note fourteen pixels a menu row gives it
-expect-pixel 698 47 f7e689
+expect-menu Find…|Force Quit…|Settings|Applications|Device Tools|-|Recent folders|-|Shut down…|
 note and a row that expands wears a DRAWN arrow rather than a greater-than
 note typed in the body face: solid through the middle of the mark on
-note Settings, and nothing at all in the same column on About, which is a
+note Settings, and nothing at all in the same column on Find, which is a
 note row that goes nowhere
-expect-pixel 853 132 000000
+expect-pixel 853 90 000000
 expect-pixel 853 50 d8d8d8
 menu-pick Recent folders
 wait 3
 expect-windows 0
 note and its entry opens the folder it names
 note the row expanded: the folders just opened are BESIDE the leaf menu
-expect-menu About this system|Find…|Help…|Force Quit…|Settings|Applications|Device Tools|-|Recent folders|-|Shut down…|sub|trk_script|
+expect-menu Find…|Force Quit…|Settings|Applications|Device Tools|-|Recent folders|-|Shut down…|sub|trk_script|
 menu-pick sub
 wait 8
 expect-windows 1

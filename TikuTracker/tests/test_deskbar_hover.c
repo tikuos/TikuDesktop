@@ -40,6 +40,10 @@ static tiku_trk_deskbar_t *fixture(tiku_surface_t *s, int dock)
     tiku_trk_deskbar_set_recent(db, TIKU_TRK_DB_RECENT_FOLDERS, paths, 1);
     tiku_trk_deskbar_draw(db, s);
     tiku_trk_deskbar_open_menu(db);
+    for (int i = 0; i < db->leaf_count; i++) {
+        assert(db->leaf[i].kind != TIKU_TRK_DB_ITEM_ABOUT);
+        assert(db->leaf[i].kind != TIKU_TRK_DB_ITEM_HELP);
+    }
     return db;
 }
 
@@ -74,9 +78,9 @@ static void tracking(tiku_surface_t *s, int dock)
     assert(tiku_trk_deskbar_menu_tick(db, now+delay));
     assert(db->sub_of == apps && db->sub_count == 1);
     now += 2*delay;
-    hover(db, parent(db,TIKU_TRK_DB_ITEM_ABOUT,0), now);
+    hover(db, parent(db,TIKU_TRK_DB_ITEM_FIND,0), now);
     assert(tiku_trk_deskbar_menu_tick(db, now+delay));
-    assert(db->menu_open && db->sub_of == -1); /* No About command selected. */
+    assert(db->menu_open && db->sub_of == -1); /* No Find command selected. */
     tiku_trk_deskbar_free(db);
 }
 
