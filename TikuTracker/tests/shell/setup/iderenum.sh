@@ -9,5 +9,5 @@ printf 'title Renum\ngroup Sources\nfile main.bas\n' \
 printf '5 rem start\n7 goto 23\n23 print "hi"\n' \
     > "$deskhome/main.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

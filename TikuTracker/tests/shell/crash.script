@@ -21,6 +21,10 @@ expect-alert Fault.so stopped: signal 11
 note and the program left its own account: the signal, and the place
 expect-file-has /tmp/trk_reports/latest-crash.txt SIGSEGV
 expect-file-has /tmp/trk_reports/latest-crash.txt fault_where_it_starts
+note the parent independently records the exact failed child
+expect-file-has /tmp/trk_reports/latest-application-exit.txt Fault.so
+expect-file-has /tmp/trk_reports/latest-application-exit.txt SIGSEGV
+expect-file-has /tmp/trk_reports/latest-application-exit.txt child report:
 note and the last thing it did, near the top where it is read first
 expect-file-has /tmp/trk_reports/latest-crash.txt the last thing it did
 quit

@@ -34,6 +34,8 @@ int tiku_client_run(const tiku_app_descriptor_t *app);
 /** @brief Start with one explicitly requested local document (not executed). */
 int tiku_client_run_document(const tiku_app_descriptor_t *app,
                              const char *path);
+int tiku_client_run_message(const tiku_app_descriptor_t *app,
+                            const struct tiku_msg *message);
 
 /** @brief The same pump over an fd already in hand (a serial link). */
 int tiku_client_run_fd(const tiku_app_descriptor_t *app, int fd);

@@ -34,7 +34,8 @@
 /* Windows one out-of-process application may hold at once. */
 #define TIKU_REMOTE_WINDOWS   8
 #define TIKU_REMOTE_TITLE     64
-#define TIKU_REMOTE_MAX_DIM   1024
+/* Desktop windows can span high-resolution monitors, not just 1K surfaces. */
+#define TIKU_REMOTE_MAX_DIM   8192
 
 /*
  * What a peer can do beyond version 1, sent in HELLO.  A shared surface
@@ -92,6 +93,8 @@
 #define TIKU_RMSG_DRAW    9u   /* u32 id, i32 w, i32 h, a tiku_dl_t */
 #define TIKU_RMSG_RAISE   10u  /* u32 id: bring that window forward  */
 #define TIKU_RMSG_SIZEABLE 11u /* u32 id: the person may resize it   */
+#define TIKU_RMSG_CONFIGURE 26u /* id,w,h,resize,zoom,title[64] */
+#define TIKU_RMSG_DESCRIBE 27u /* id, UTF-8 semantic text for pixel frames */
 #define TIKU_RMSG_PLACE   12u  /* u32 id, i32 role: what KIND it is  */
 /*
  * Menus as text: `menu File`, `item <command> <shortcut|-> <label>`,
@@ -130,6 +133,7 @@
 #define TIKU_RMSG_BASIC_IN  23u  /* text for the board's interpreter      */
 #define TIKU_RMSG_BASIC_OUT 24u  /* what a program on it printed          */
 #define TIKU_RMSG_CLOSED  18u  /* u32 id: the user closed it        */
+#define TIKU_RMSG_SHUTDOWN 25u /* desktop is deliberately ending the session */
 
 /** @brief Where the desktop listens, under this user's HOME. */
 int tiku_remote_path(char *out, size_t max);
@@ -154,6 +158,9 @@ typedef struct tiku_remote_window {
      * rather than being forgotten under the new tenant. */
     struct tiku_window *reap;
     int                  wants_size;    /* a SIZEABLE the shell owes  */
+    int                  configured;    /* pending app window properties */
+    int                  focused;       /* last keyboard-focus notice sent */
+    int                  config_w, config_h, resizable, zoomable;
     uint32_t             win_id;        /* what the application calls it */
     struct tiku_window *window;    /* not owned                       */
     uint32_t            *frame;         /* latest pixels, w*h              */
@@ -164,6 +171,7 @@ typedef struct tiku_remote_window {
     int                  opened;        /* OPEN seen, window wanted        */
     int                  open_w, open_h;
     char                 title[TIKU_REMOTE_TITLE];
+    char                 description[4096]; /* accessibility for pixel frames */
     /* A surface shared with the application: it paints into one buffer
      * while the desktop shows the other, and a frame becomes a message
      * saying which. */
@@ -199,6 +207,7 @@ typedef struct tiku_remote_window {
 
 typedef struct tiku_remote_session {
     int                  fd;
+    uint64_t             generation; /* never reused for another connection */
     int                  used;
     char                 name[32];
     struct tiku_remote_listener *owner;
@@ -226,6 +235,7 @@ typedef struct tiku_remote_session {
 } tiku_remote_session_t;
 
 typedef struct tiku_remote_listener {
+    uint64_t                   next_generation;
     /* Shared surfaces mapped and not yet given back.  A count rather
      * than a flag: a leak is invisible in a freed session, whose fields
      * are cleared either way. */
@@ -478,6 +488,10 @@ void tiku_remote_place(tiku_remote_client_t *client, uint32_t id,
 
 /** @brief Say the person may resize this window. */
 void tiku_remote_sizeable(tiku_remote_client_t *client, uint32_t id);
+int tiku_remote_configure(tiku_remote_client_t *client, uint32_t id,
+    const char *title, int w, int h, int resize, int zoom);
+void tiku_remote_describe(tiku_remote_client_t *client, uint32_t id,
+                          const char *text);
 
 int tiku_remote_menus(tiku_remote_client_t *client, uint32_t id,
                            const tiku_menuset_t *menus);

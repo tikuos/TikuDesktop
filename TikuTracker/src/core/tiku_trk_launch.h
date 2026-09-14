@@ -21,9 +21,15 @@
 #include "tiku_model.h"
 
 struct tiku_store;
+struct tiku_msg;
+struct tiku_trk_app;
+
+/** Launch with bounded structured data over an inherited private descriptor. */
+int tiku_trk_launch_message(const struct tiku_trk_app *app,
+                            const struct tiku_msg *message);
 
 /** @brief How many applications the registry holds, and types each claims. */
-#define TIKU_TRK_APP_MAX        16
+#define TIKU_TRK_APP_MAX        64
 #define TIKU_TRK_APP_TYPES_MAX   8
 #define TIKU_TRK_APP_NAME_MAX   48
 #define TIKU_TRK_APP_CMD_MAX   192
@@ -45,6 +51,7 @@ typedef enum {
 
 /** @brief One application the registry knows about. */
 typedef struct tiku_trk_app {
+    char id[64];                         /* manifest's stable identity */
     char name[TIKU_TRK_APP_NAME_MAX];    /* as the Open With menu says it */
     char cmd[TIKU_TRK_APP_CMD_MAX];      /* argv[0], run with the paths   */
     char type[TIKU_TRK_APP_TYPES_MAX][TIKU_TYPE_MAX]; /* the types claimed */
@@ -55,7 +62,7 @@ typedef struct tiku_trk_app {
      * so an application never opens itself (AW-038). */
     char path[TIKU_PATH_MAX];
     int  is_tracker;                     /* this Tracker, not a launch    */
-    int  is_image;                       /* desktop's native TikuImage    */
+    char icon[64];                       /* manifest artwork identity     */
     char module[TIKU_PATH_MAX];          /* runner's literal first arg    */
 } tiku_trk_app_t;
 
@@ -82,9 +89,6 @@ int tiku_trk_launch_cand_before(const tiku_trk_cand_t *a,
 
 /** @brief Forget every application. */
 void tiku_trk_launch_clear(tiku_trk_apps_t *r);
-
-/** @brief Register TikuImage's built-in PNG/JPEG/BMP handler once. */
-int tiku_trk_launch_add_image(tiku_trk_apps_t *r);
 
 /** @brief Register a document app, launched as runner module file. */
 int tiku_trk_launch_add_document(tiku_trk_apps_t *r, const char *name,
@@ -170,7 +174,6 @@ typedef enum {
     TIKU_TRK_LAUNCH_NOTHING,     /* no documents to open                  */
     TIKU_TRK_LAUNCH_IS_TRACKER,  /* handled here instead (AW-035)         */
     TIKU_TRK_LAUNCH_FAILED,      /* the command could not be run          */
-    TIKU_TRK_LAUNCH_IS_IMAGE     /* native image controller, not exec     */
 } tiku_trk_launch_err_t;
 
 /**
@@ -217,6 +220,8 @@ void tiku_trk_launch_expect_stop(pid_t pid);
 /** @brief How a launched program ended. */
 typedef struct {
     char name[64];
+    long pid;                   /* the exact child whose status was reaped */
+    char report[512];           /* parent exit record, or empty on failure */
     int  signal;                /* what killed it, or 0 */
     int  status;                /* what it exited with, when it exited */
     int  expected;              /* deliberate Force Quit, not a crash */

@@ -344,6 +344,7 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
     app->pending_pick.kind = 1;
     app->pending_pick.slot = slot;
     app->pending_pick.window = id;
+    app->pending_pick.local = 0;
     if (mode == TIKU_APP_PICK_SAVE) {
         tiku_trk_panel_window_open_save(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
@@ -665,9 +666,7 @@ static int embed_svc_help_open(void *ctx, const char *page)
 {
     struct desktop_embed *slot = ctx;
     if (!slot || !page || strlen(page) >= 256) return 0;
-    tiku_trk_help_window_open(&slot->app->help_window);
-    return tiku_trk_help_window_go(&slot->app->help_window, page) !=
-        TIKU_TRK_HELP_NOWHERE;
+    return desktop_help_open(slot->app, page);
 }
 
 /** @brief Display a generated report owned by the reader after this call. */
@@ -676,7 +675,7 @@ static int embed_svc_help_html(void *ctx, const char *title, const char *html)
     struct desktop_embed *slot = ctx;
     if (!slot || !html || strlen(html) > 15000 ||
         (title && strlen(title) > 127)) return 0;
-    return tiku_trk_help_window_html(&slot->app->help_window, title, html);
+    return desktop_help_html(slot->app, title, html);
 }
 
 /** @brief Let a board go, port and all. */

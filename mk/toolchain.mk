@@ -15,7 +15,8 @@ CFLAGS  ?= -O2 -g
 # gnu11, not c11: strict C11 hides the POSIX declarations this tree needs
 # (getaddrinfo, cfmakeraw, clock_gettime) and the build fails on the seam
 # rather than on anything real.
-CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra
+CFLAGS  += -std=gnu11 -D_DEFAULT_SOURCE -Wall -Wextra \
+           -Werror=implicit-function-declaration -Werror=implicit-int
 LDFLAGS ?=
 
 # Darwin says several of these things with other words, and puts X11
@@ -78,3 +79,7 @@ $(OBJ)/$(T)/%.o: $(T)/%.c
 $(OBJ)/$(D)/%.o: $(D)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
+
+$(OBJ)/system/%.o: system/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -MMD -MP -c -o $@ $<

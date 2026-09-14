@@ -1,7 +1,7 @@
 /* Large desktop files must remain navigable, searchable and transactional. */
 #include <assert.h>
 #include <dirent.h>
-#include "../src/ui/windows/tiku_trk_help_window.c"
+#include "../../apps/reader/tiku_reader_help_window.c"
 
 /** @brief Generate over a megabyte of Markdown with a unique tail and anchor. */
 static void large_markdown(const char *path)
@@ -17,17 +17,17 @@ static void large_markdown(const char *path)
 }
 
 /** @brief The declared 8 MiB source boundary is inclusive for ordinary HTML. */
-static void at_source_limit(tiku_trk_help_window_t *c, const char *base)
+static void at_source_limit(tiku_reader_help_window_t *c, const char *base)
 {
     char path[1024]; snprintf(path, sizeof path, "%s/limit.html", base);
     FILE *f = fopen(path, "w"); assert(f);
     const char *tail = " LAST_AT_EIGHT_MIB";
-    size_t bytes = TIKU_TRK_READER_FILE_MAX - strlen(tail);
+    size_t bytes = TIKU_READER_READER_FILE_MAX - strlen(tail);
     for (size_t i = 0; i < bytes; i++) fputc(i % 5 == 4 ? ' ' : 'x', f);
     fputs(tail, f); assert(!fclose(f));
-    assert(tiku_trk_document_window_file(c, path));
+    assert(tiku_reader_document_window_file(c, path));
     tiku_workspace_draw(c->workspace);
-    assert(tiku_trk_help_window_find(c, "LAST_AT_EIGHT_MIB", 0));
+    assert(tiku_reader_help_window_find(c, "LAST_AT_EIGHT_MIB", 0));
     assert(c->reader->match > 7 * 1024 * 1024);
     assert(!c->oversize && tiku_doc_check(c->doc));
 }
@@ -59,47 +59,47 @@ int main(void)
     struct stat st; assert(!stat(path, &st) && st.st_size > 1024 * 1024);
     tiku_surface_t *surface = tiku_surface_new(1000, 760, TIKU_C_PANEL);
     tiku_workspace_t *workspace = tiku_workspace_new(surface); int dirty = 0;
-    tiku_trk_help_window_t c;
-    tiku_trk_document_window_init(&c, workspace, 1000, 760, &dirty, NULL, NULL);
-    assert(tiku_trk_document_window_file(&c, path));
+    tiku_reader_help_window_t c;
+    tiku_reader_document_window_init(&c, workspace, 1000, 760, &dirty, NULL, NULL);
+    assert(tiku_reader_document_window_file(&c, path));
     tiku_workspace_draw(workspace);
     assert(!c.oversize && c.doc->nblock > 10000 && c.reader->length > 1024 * 1024);
-    assert(c.doc->storage && c.doc->storage_bytes <= TIKU_TRK_READER_MEMORY_MAX);
+    assert(c.doc->storage && c.doc->storage_bytes <= TIKU_READER_READER_MEMORY_MAX);
     assert(tiku_doc_check(c.doc) && !(c.doc->full &
         ~(TIKU_DOC_FACE_FLAT | TIKU_DOC_NARROW | TIKU_DOC_COLS_FOLDED)));
-    assert(tiku_trk_help_window_find(&c, "FINAL_NEEDLE", 0));
+    assert(tiku_reader_help_window_find(&c, "FINAL_NEEDLE", 0));
     assert(c.reader->match > 1024 * 1024 && c.bar.value > 32767);
-    assert(tiku_trk_help_window_go(&c, "#tail-section") == TIKU_TRK_HELP_ANCHOR);
-    assert(tiku_trk_help_window_copy(&c, 1));
+    assert(tiku_reader_help_window_go(&c, "#tail-section") == TIKU_READER_HELP_ANCHOR);
+    assert(tiku_reader_help_window_copy(&c, 1));
     assert(strstr(tiku_clipboard_text(), "PRINT 123"));
     reader_bookmark(&c); assert(c.reader->nmarks == 1 && c.reader->marks[0].block > 10000);
     int back = c.nback;
     tiku_doc_place_t at = tiku_doc_place(c.doc, c.bar.value);
-    assert(tiku_trk_document_window_reload(&c)); tiku_workspace_draw(workspace);
+    assert(tiku_reader_document_window_reload(&c)); tiku_workspace_draw(workspace);
     assert(c.nback == back && tiku_doc_place(c.doc, c.bar.value).block == at.block);
     tiku_field_start(&c.reader->query, "FINAL_NEEDLE"); reader_search(&c);
     assert(c.reader->nrows == 1 && !c.reader->limited);
     assert(strstr(c.reader->rows[0].snippet, "FINAL_NEEDLE"));
     snprintf(huge, sizeof huge, "%s/oversize.md", base);
     FILE *f = fopen(huge, "w"); assert(f);
-    assert(!ftruncate(fileno(f), TIKU_TRK_READER_FILE_MAX + 1)); assert(!fclose(f));
+    assert(!ftruncate(fileno(f), TIKU_READER_READER_FILE_MAX + 1)); assert(!fclose(f));
     tiku_doc_t *before = c.doc;
-    assert(!tiku_trk_document_window_file(&c, huge));
+    assert(!tiku_reader_document_window_file(&c, huge));
     assert(c.doc == before && c.nback == back && strstr(c.status, "8 MiB"));
     f = fopen(huge, "w"); assert(f); fputs("# Before", f); fputc(0, f);
     fputs("hidden suffix", f); assert(!fclose(f));
-    assert(!tiku_trk_document_window_file(&c, huge) && c.doc == before);
+    assert(!tiku_reader_document_window_file(&c, huge) && c.doc == before);
     assert(strstr(c.status, "binary"));
-    tiku_trk_help_window_destroy(&c);
-    tiku_trk_document_window_init(&c, workspace, 1000, 760, &dirty, NULL, NULL);
+    tiku_reader_help_window_destroy(&c);
+    tiku_reader_document_window_init(&c, workspace, 1000, 760, &dirty, NULL, NULL);
     assert(c.reader->nmarks == 1 && c.reader->marks[0].block > 10000);
-    assert(tiku_trk_document_window_file(&c, path));
+    assert(tiku_reader_document_window_file(&c, path));
     tiku_workspace_draw(workspace);
     reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
     tiku_list_select_only(&c.reader->list, 0); reader_side_open(&c);
     assert(tiku_doc_place(c.doc, c.bar.value).block == at.block);
     at_source_limit(&c, base);
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
     tiku_workspace_free(workspace); tiku_surface_free(surface);
     sweep(base);
     puts("PASS: >1 MiB Markdown, tail search/anchors, copying, reload, bookmarks and safe refusal");

@@ -15,5 +15,5 @@ for zi in $(seq -w 1 20); do
     echo x > "$deskhome/zz$zi"
 done
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuC.so" \
+cp -f "$top/build/apps/c/TikuC.so" \
       "$appsdir/programming/"

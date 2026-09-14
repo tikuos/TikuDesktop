@@ -1,0 +1,9 @@
+version=1
+id=image
+name=TikuImage
+module=TikuImage.so
+category=applications
+icon=image_viewer
+types=image/png,image/jpeg,image/bmp,image/x-ms-bmp
+startup=applications/builtin:viewer
+help=apps/viewer.html

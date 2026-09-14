@@ -576,25 +576,8 @@ close_window(desktop_t *app, tiku_window_t *w)
         tiku_trk_fonts_window_close(&app->fonts_window);
         return;
     }
-    if (w == tiku_trk_help_window_handle(&app->help_window)) {
-        tiku_trk_help_window_close(&app->help_window);
-        return;
-    }
-    if (w == tiku_trk_image_window_handle(app->image_window)) {
-        if (app->prefs_track == w) app->prefs_track = NULL;
-        tiku_trk_image_window_close(app->image_window);
-        return;
-    }
-    if (w == tiku_trk_help_window_handle(&app->reader_window)) {
-        tiku_trk_help_window_close(&app->reader_window);
-        return;
-    }
     if (w == desktop_deviceprefs_handle(app)) {
         desktop_deviceprefs_close(app);
-        return;
-    }
-    if (desktop_utility_owns(app, w)) {
-        desktop_utility_close(app, w);
         return;
     }
     if (w == desktop_startup_handle(app)) {

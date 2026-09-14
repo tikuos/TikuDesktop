@@ -1,17 +1,17 @@
 /* Registry hierarchy, preserved siblings, conservative reads and native input. */
 #include <assert.h>
-#include "../src/shell/desktop/tiku_trk_desktop_utilities.c"
+#include "../../apps/deviceutils/tiku_device_utilities.c"
 
-int desktop_board_names(desktop_t *app, char *out, size_t n)
+int desktop_board_names(utility_app_t *app, char *out, size_t n)
 { (void)app; return snprintf(out, n, "test-board\n"); }
 
-static int find_branch(struct desktop_utility *p, const char *path)
+static int find_branch(struct device_utility *p, const char *path)
 {
     for (int i = 0; i < U_ROWS; i++) if (!strcmp(p->tree[i].path, path)) return i;
     return -1;
 }
 
-static void listing(struct desktop_utility *p, const char *path,
+static void listing(struct device_utility *p, const char *path,
                     const char *const *names, int count)
 {
     utility_job_t *j = calloc(1, sizeof *j); assert(j);
@@ -66,7 +66,7 @@ static int preload_read(tiku_backend_t *b, const char *path, void *out, size_t c
     return snprintf(out, cap, "64000000\n");
 }
 
-static void test_preload(struct desktop_utility *p)
+static void test_preload(struct device_utility *p)
 {
     const tiku_backend_ops_t ops = {.list=preload_list, .read=preload_read};
     tiku_backend_t b = {.ops=&ops};
@@ -103,12 +103,12 @@ static void test_preload(struct desktop_utility *p)
 
 int main(void)
 {
-    desktop_t *app = calloc(1, sizeof *app); assert(app);
+    utility_app_t *app = calloc(1, sizeof *app); assert(app);
     app->surf = tiku_surface_new(1000, 740, TIKU_RGB(51,102,152));
     app->desk = tiku_workspace_new(app->surf);
     strcpy(app->current_device, "test-board");
-    desktop_utility_open(app, U_INSPECTOR);
-    struct desktop_utility *p = app->utility[U_INSPECTOR]; assert(p);
+    device_utility_open(app, U_INSPECTOR);
+    struct device_utility *p = app->utility[U_INSPECTOR]; assert(p);
     assert(!strcmp(p->target, "test-board") && p->preload);
     strcpy(p->target, "test-board"); strcpy(app->current_device, "test-board");
     const char *root[] = {"/sys", "/proc", "/data"};
@@ -244,7 +244,7 @@ int main(void)
     listing(p, "/", root, 3);
     assert(p->tree_count == 4 && find_branch(p, "/sys") >= 0 && !p->tree_full);
     test_preload(p);
-    desktop_utilities_destroy(app);
+    device_utilities_destroy(app);
     tiku_workspace_free(app->desk); tiku_surface_free(app->surf); free(app);
     puts("PASS: automatic safe snapshots, limits, cancellation, cached navigation, registry tree and disconnect");
     return 0;

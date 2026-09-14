@@ -19,7 +19,7 @@ import sys
 
 # The shells are built at the top of the applications tree.
 ROOT = Path(__file__).resolve().parents[2]
-SHIPPING = ["build/TikuTracker", "build/TikuDesktop"]
+SHIPPING = ["build/system/TikuTracker", "build/system/TikuDesktop"]
 DEVELOPMENT = ["build/dev/TikuTracker", "build/dev/TikuDesktop"]
 
 # Words only the interpreter has any reason to hold.  Ordinary strings

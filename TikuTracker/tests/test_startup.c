@@ -81,7 +81,7 @@ int main(void)
     desktop_startup_offer(app, "/apps/TikuBasic.so", "TikuBasic", "apps");
     assert(!loads && !launches && app->startup->count == 2);
     desktop_startup_run(app, 0, &restore, &fallback);
-    assert(loads == 1 && !launches && restore && fallback);
+    assert(loads == 0 && launches == 1 && restore && fallback);
     desktop_startup_open(app);
     p = app->startup;
     assert(p->window);
@@ -108,16 +108,17 @@ int main(void)
     assert(send_input(p->window, &ev));
     assert(!desktop_startup_handle(app));
     desktop_startup_run(app, 0, &restore, &fallback);
-    assert(!restore && !fallback && loads == 1 && launches == 1);
+    assert(!restore && !fallback && loads == 0 && launches == 2);
     assert(!strcmp(last_path, "/apps/TikuBasic.so"));
     desktop_startup_run(app, 1, &restore, &fallback);
-    assert(loads == 1 && launches == 1); /* Safe mode runs no apps. */
+    assert(loads == 0 && launches == 2); /* Safe mode runs no apps. */
     saved = p->saved;
     desktop_startup_destroy(app);
     /* A moved installation keeps its choices; old absolute paths aren't run. */
-    desktop_startup_offer(app, "/new/apps/TikuBasic.so", "TikuBasic", "apps");
+    desktop_startup_offer_id(app, "/new/apps/TikuBasic.so", "TikuBasic",
+                             "app/basic", "apps/TikuBasic.so");
     desktop_startup_run(app, 0, &restore, &fallback);
-    assert(launches == 2 && !strcmp(last_path, "/new/apps/TikuBasic.so"));
+    assert(launches == 3 && !strcmp(last_path, "/new/apps/TikuBasic.so"));
     p = app->startup;
     assert(start_save(p));
     assert(p->saved.count == 2); /* Temporarily absent Clock is retained. */
@@ -193,7 +194,7 @@ int main(void)
     assert(send_input(p->window, &ev)); /* Save by mouse. */
     assert(!desktop_startup_handle(app));
     desktop_startup_run(app, 0, &restore, &fallback);
-    assert(!restore && !fallback && loads == 1 && launches == 2);
+    assert(!restore && !fallback && loads == 0 && launches == 3);
     desktop_startup_open(app);
     ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN, .key=TIKU_KEY_RETURN};
     assert(send_input(p->window, &ev));

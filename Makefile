@@ -1,7 +1,7 @@
 # applications -- one build for the whole tree.
 #
 # Everything under here is built from this directory into one build/
-# tree, by one make with one dependency graph: the six kits, the Tracker
+# tree, by one make with one dependency graph: the seven kits, the Tracker
 # core and its two shells in both flavours, the applications that run on
 # the desktop, and every test.  Nothing recurses, so `-j` is correct
 # without ordering tricks, and a source compiles once.  The rules live in
@@ -19,6 +19,7 @@
 T      := TikuTracker
 D      := apps
 BUILD  := build
+SYSTEM := $(BUILD)/system
 OBJ    := $(BUILD)/obj
 PIC    := $(BUILD)/pic
 DEV    := $(BUILD)/dev
@@ -42,18 +43,39 @@ include mk/apps.mk
 .PHONY: all kits shells apps tests test run clean sweep-legacy \
         check-architecture check-shipping lint lint
 
-all: sweep-legacy kits shells apps tests
+all: sweep-legacy kits shells system apps examples tests
 
 # Names this tree used to build: swept on every build, because a stale
 # binary under a name somebody still types runs, looks right, and is
 # however old the rename is.
 LEGACY := $(BUILD)/desktop $(BUILD)/tracker $(DEV)/desktop $(DEV)/tracker \
           $(APPS_D)/IDE.so $(APPS_D)/TikuIDE.so \
-          $(APPS_D)/TikuBasic.so $(APPS_D)/TikuC.so
+          $(APPS_D)/TikuBasic.so $(APPS_D)/TikuC.so \
+          $(BUILD)/tiku-run $(BUILD)/tiku-edit $(BUILD)/tiku-term \
+          $(BUILD)/tiku-basic \
+          $(BUILD)/tiku-desk-probe $(BUILD)/tiku-desk-gallery \
+          $(BUILD)/tiku-sound-gallery $(BUILD)/tiku-demo-app \
+          $(BUILD)/tiku-metrics-gen \
+          $(addprefix $(BUILD)/tiku-example-,$(EXAMPLE_NAMES)) \
+          $(APPS_D)/editor.so $(APPS_D)/terminal.so $(APPS_D)/Bench.so \
+          $(APPS_D)/TikuConsole.so $(APPS_D)/DeveloperCalculator.so \
+          $(APPS_D)/TikuHex.so $(APPS_D)/programming/TikuBasic.so \
+          $(APPS_D)/programming/TikuC.so \
+          $(addprefix $(APPS_D)/,$(addsuffix .so,$(SO_EXAMPLE_NAMES)))
 sweep-legacy:
 	@rm -f $(LEGACY)
 
-$(BUILD) $(DEV) $(BUILD)/tests $(APPS_D) $(PROG_D):
+# Old user-facing entry points remain links, not extra copies of binaries.
+.PHONY: launch-links
+launch-links: $(SYSTEM)/TikuDesktop $(SYSTEM)/TikuTracker $(DESK_SUP)
+	ln -sfn system/TikuDesktop $(BUILD)/TikuDesktop
+	ln -sfn system/TikuTracker $(BUILD)/TikuTracker
+	ln -sfn system/tiku-desk $(BUILD)/tiku-desk
+
+all: launch-links
+shells loadable: sweep-legacy
+
+$(BUILD) $(SYSTEM) $(DEV) $(BUILD)/tests $(APPS_D):
 	@mkdir -p $@
 
 # The full run, in the order the pieces depend on each other: the
@@ -89,9 +111,11 @@ test: all
 	@sh $(T)/tests/shell/run.sh
 	@sh $(T)/tests/supervisor.sh
 
-check-architecture:
+check-architecture: shells
 	@python3 $(T)/tools/check_architecture.py
 	@python3 kits/tools/check_kits.py
+	@python3 tools/check_app_boundaries.py
+	@python3 tools/test_app_boundaries.py
 
 check-shipping:
 	@python3 $(T)/tools/check_shipping.py
@@ -121,8 +145,8 @@ lint:
 	fi
 	@python3 tools/check_style.py
 
-run: $(BUILD)/TikuDesktop
-	./$(BUILD)/TikuDesktop
+run: $(SYSTEM)/TikuDesktop system loadable
+	./$(SYSTEM)/TikuDesktop
 
 clean:
 	rm -rf $(BUILD)

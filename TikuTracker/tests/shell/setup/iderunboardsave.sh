@@ -10,4 +10,4 @@ printf '10 PRINT "A"\n' > "$deskhome/blink.bas"
 # The one kept: its name is the slot, and its text is what is read back.
 printf '10 PRINT "KEPT"\n' > "$deskhome/quiet.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" "$appsdir/programming/"
+cp -f "$top/build/apps/basic/TikuBasic.so" "$appsdir/programming/"

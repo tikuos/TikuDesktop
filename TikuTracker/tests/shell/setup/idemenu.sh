@@ -10,5 +10,5 @@ printf 'title Menu\nboard zebra\ngroup Sources\nfile main.bas\nfile util.bas\n' 
 printf '10 rem go\n20 input a$\n' > "$deskhome/main.bas"
 printf '40 rem other\n' > "$deskhome/util.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

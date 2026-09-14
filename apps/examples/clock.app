@@ -1,0 +1,9 @@
+version=1
+id=clock
+name=Clock
+module=clock.so
+category=demos
+icon=application
+types=
+startup=apps/clock.so
+help=

@@ -29,6 +29,7 @@
 
 #include "tiku_remote.h"
 #include "tiku_event.h"
+#include "tiku_trail.h"
 
 /** @brief One frame's ceiling, from the dimension cap. */
 #define REMOTE_MAX_PAYLOAD \
@@ -185,6 +186,8 @@ send_all(int *fd, const void *data, size_t n)
         break;
     }
     if (n > 0u) {
+        tiku_trail("transport write failed: errno %d, %zu bytes pending",
+                   errno, n);
         (void)close(*fd);
         *fd = -1;
     }
@@ -369,6 +372,8 @@ tiku_remote_shutdown(tiku_remote_listener_t *listener)
 
     for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
         if (listener->session[i].used) {
+            /* Best effort and nonblocking, behind anything already queued. */
+            session_send(&listener->session[i], TIKU_RMSG_SHUTDOWN, NULL, 0);
             session_free(&listener->session[i]);
         }
     }
@@ -536,6 +541,8 @@ session_message(tiku_remote_session_t *s)
             win->fw = win->sw;
             win->fh = win->sh;
             win->list_fresh = 0;
+            win->description[0] = 0;
+            tiku_dl_free(win->list); win->list = NULL;
             changed = 1;
         }
         break;
@@ -589,6 +596,8 @@ session_message(tiku_remote_session_t *s)
                     win->fw = w;
                     win->fh = h;
                     win->list_fresh = 1;   /* the copy IS `frame` */
+                    win->description[0] = 0;
+                    tiku_dl_free(win->list); win->list = NULL;
                     changed = 1;
                 }
             }
@@ -633,6 +642,7 @@ session_message(tiku_remote_session_t *s)
                         win->fw = w;
                         win->fh = h;
                         win->list_fresh = 1;
+                        win->description[0] = 0;
                         changed = 1;
                         tiku_dl_free(win->list);
                         win->list = dl;
@@ -670,6 +680,34 @@ session_message(tiku_remote_session_t *s)
         if (win != NULL) {
             win->wants_size = 1;
             changed = 1;
+        }
+        break;
+    case TIKU_RMSG_DESCRIBE:
+        win = s->want >= 5 && s->want <= 4100 ?
+              session_window(s, id_of(p)) : NULL;
+        if (win) {
+            size_t n = s->want - 4;
+            memcpy(win->description, p + 4, n);
+            win->description[n - 1] = 0;
+            changed = 1;
+        }
+        break;
+    case TIKU_RMSG_CONFIGURE:
+        win = s->want == 20u + TIKU_REMOTE_TITLE ?
+              session_window(s, id_of(p)) : NULL;
+        if (win != NULL) {
+            int32_t v[4];
+            memcpy(v, p + 4, sizeof v);
+            if (v[0] >= 0 && v[1] >= 0 &&
+                v[0] <= TIKU_REMOTE_MAX_DIM && v[1] <= TIKU_REMOTE_MAX_DIM &&
+                (!v[0] == !v[1]) &&
+                (v[2] == 0 || v[2] == 1) && (v[3] == 0 || v[3] == 1)) {
+                win->config_w = v[0]; win->config_h = v[1];
+                win->resizable = v[2]; win->zoomable = v[3];
+                memcpy(win->title, p + 20, TIKU_REMOTE_TITLE);
+                win->title[TIKU_REMOTE_TITLE - 1] = 0;
+                win->configured = changed = 1;
+            }
         }
         break;
     case TIKU_RMSG_MENUS:
@@ -836,6 +874,7 @@ tiku_remote_adopt(tiku_remote_listener_t *listener, int fd)
             memset(&listener->session[i], 0, sizeof listener->session[i]);
             listener->session[i].fd = fd;
             listener->session[i].used = 1;
+            listener->session[i].generation = ++listener->next_generation;
             listener->session[i].owner = listener;
             (void)set_nonblock(fd);
             return 0;
@@ -862,6 +901,7 @@ tiku_remote_poll(tiku_remote_listener_t *listener)
                        sizeof listener->session[i]);
                 listener->session[i].fd = fd;
                 listener->session[i].used = 1;
+                listener->session[i].generation = ++listener->next_generation;
                 listener->session[i].owner = listener;
                 (void)set_nonblock(fd);
                 fd = -1;
@@ -1274,7 +1314,8 @@ tiku_remote_open(tiku_remote_client_t *client, const char *title,
     uint32_t id = client->next_id++;
     int32_t ww = w, hh = h;
 
-    if (client->fd < 0) {
+    if (client->fd < 0 || w < 1 || h < 1 ||
+        w > TIKU_REMOTE_MAX_DIM || h > TIKU_REMOTE_MAX_DIM) {
         return 0;
     }
     memset(payload, 0, sizeof payload);
@@ -1284,7 +1325,7 @@ tiku_remote_open(tiku_remote_client_t *client, const char *title,
     snprintf((char *)payload + 12, TIKU_REMOTE_TITLE, "%s",
              (title != NULL) ? title : "");
     send_msg(&client->fd, TIKU_RMSG_OPEN, payload, sizeof payload);
-    return id;
+    return client->fd >= 0 ? id : 0;
 }
 
 void
@@ -1325,6 +1366,32 @@ tiku_remote_sizeable(tiku_remote_client_t *client, uint32_t id)
     send_msg(&client->fd, TIKU_RMSG_SIZEABLE, &id, 4);
 }
 
+int tiku_remote_configure(tiku_remote_client_t *client, uint32_t id,
+    const char *title, int w, int h, int resize, int zoom)
+{
+    unsigned char p[20 + TIKU_REMOTE_TITLE] = {0};
+    int32_t v[4] = {w, h, !!resize, !!zoom};
+    if (!client || client->fd < 0 || !id || w < 0 || h < 0 ||
+        w > TIKU_REMOTE_MAX_DIM || h > TIKU_REMOTE_MAX_DIM || (!w != !h))
+        return 0;
+    memcpy(p, &id, 4); memcpy(p + 4, v, sizeof v);
+    snprintf((char *)p + 20, TIKU_REMOTE_TITLE, "%s", title ? title : "");
+    send_msg(&client->fd, TIKU_RMSG_CONFIGURE, p, sizeof p);
+    return client->fd >= 0;
+}
+
+void tiku_remote_describe(tiku_remote_client_t *client, uint32_t id,
+                          const char *text)
+{
+    unsigned char p[4100];
+    if (!client || client->fd < 0 || !id) return;
+    size_t n = text ? strnlen(text, 4095) : 0;
+    memcpy(p, &id, 4);
+    if (n) memcpy(p + 4, text, n);
+    p[4 + n] = 0;
+    send_msg(&client->fd, TIKU_RMSG_DESCRIBE, p, (uint32_t)(5 + n));
+}
+
 /**
  * @brief Make a surface both processes can see, and tell the desktop.
  *
@@ -1363,6 +1430,17 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
         (void)shm_unlink(client->shm_name);
         return 0;
     }
+#ifdef __linux__
+    /* A sparse tmpfs mapping can succeed then SIGBUS on the first write.
+     * Reserve its pages now; if the shared store is full, send pixels. */
+    int reserved = posix_fallocate(fd, 0, (off_t)bytes);
+    if (reserved) {
+        tiku_trail("shared surface %dx%d unavailable: error %d", w, h, reserved);
+        (void)close(fd);
+        (void)shm_unlink(client->shm_name);
+        return 0;
+    }
+#endif
     at = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     (void)close(fd);
     if (at == MAP_FAILED) {
@@ -1384,7 +1462,7 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
     send_msg(&client->fd, TIKU_RMSG_SURFACE, payload, sizeof payload);
     /* The desktop unlinks the name once it has mapped it; this end keeps
      * only the mapping. */
-    return 1;
+    return client->fd >= 0;
 }
 
 int
@@ -1396,7 +1474,8 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
     int32_t ww = w, hh = h;
 
     if (client == NULL || client->fd < 0 || id == 0u ||
-        px == NULL || w < 1 || h < 1) {
+        px == NULL || w < 1 || h < 1 ||
+        w > TIKU_REMOTE_MAX_DIM || h > TIKU_REMOTE_MAX_DIM) {
         return -1;
     }
     if ((client->features & TIKU_FEAT_SHARED_SURFACE) != 0u &&
@@ -1413,8 +1492,9 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
         send_msg(&client->fd, TIKU_RMSG_READY, ready, sizeof ready);
         client->next_buffer =
             (client->next_buffer + 1) % TIKU_REMOTE_BUFFERS;
-        return 0;
+        return client->fd >= 0 ? 0 : -1;
     }
+    if (client->fd < 0) return -1;
     payload = malloc(n);
     if (payload == NULL) {
         return -1;
@@ -1425,7 +1505,7 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
     memcpy(payload + 12, px, 4u * (size_t)w * (size_t)h);
     send_msg(&client->fd, TIKU_RMSG_FRAME, payload, (uint32_t)n);
     free(payload);
-    return 0;
+    return client->fd >= 0 ? 0 : -1;
 }
 
 int

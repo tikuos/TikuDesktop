@@ -23,7 +23,7 @@ typedef struct {
 } start_config_t;
 
 typedef struct {
-    char path[TIKU_PATH_MAX], label[96], id[96];
+    char path[TIKU_PATH_MAX], label[96], id[96], legacy[96];
     int trusted, enabled;
 } start_app_t;
 
@@ -92,24 +92,26 @@ static void start_load(struct desktop_startup *p)
     p->fallback = c.fallback;
     for (i = 0; i < p->count; i++) {
         int at = start_index(&c, p->items[i].id);
+        if (at < 0 && p->items[i].legacy[0])
+            at = start_index(&c, p->items[i].legacy);
         p->items[i].enabled = at < 0 ? p->items[i].trusted :
                                       c.choice[at].enabled;
     }
 }
 
 /** @brief Register an installed app without executing its code. */
-void desktop_startup_offer(desktop_t *app, const char *path,
-                          const char *label, const char *group)
+void desktop_startup_offer_id(desktop_t *app, const char *path,
+                             const char *label, const char *id,
+                             const char *legacy)
 {
     struct desktop_startup *p = start_get(app);
     start_app_t item;
-    const char *leaf = strrchr(path, '/');
     int i;
     if (p == NULL || p->count == START_MAX) return;
     memset(&item, 0, sizeof item);
     if (strlen(path) >= sizeof item.path ||
-        snprintf(item.id, sizeof item.id, "%s/%s", group,
-                 leaf ? leaf + 1 : path) >= (int)sizeof item.id) return;
+        snprintf(item.id, sizeof item.id, "%s", id) >=
+        (int)sizeof item.id) return;
     for (i = 0; i < p->count; i++) {
         if (!strcmp(item.id, p->items[i].id)) return;
     }
@@ -119,13 +121,25 @@ void desktop_startup_offer(desktop_t *app, const char *path,
     if (i > 3 && !strcmp(item.label + i - 3, ".so")) {
         item.label[i - 3] = 0;
     }
-    item.trusted = !strcmp(group, "trusted");
+    snprintf(item.legacy, sizeof item.legacy, "%s", legacy ? legacy : "");
+    item.trusted = !strncmp(id, "trusted/", 8);
     for (i = p->count; i > 0 &&
          strcmp(p->items[i - 1].id, item.id) > 0; i--) {
         p->items[i] = p->items[i - 1];
     }
     p->items[i] = item;
     p->count++;
+}
+
+/** @brief Compatibility identities for older installs and system panels. */
+void desktop_startup_offer(desktop_t *app, const char *path,
+                          const char *label, const char *group)
+{
+    char id[96];
+    const char *leaf = strrchr(path, '/');
+    if (snprintf(id, sizeof id, "%s/%s", group, leaf ? leaf + 1 : path) <
+        (int)sizeof id)
+        desktop_startup_offer_id(app, path, label, id, NULL);
 }
 
 /** @brief Read folder policy and launch selected apps after boot. */
@@ -142,21 +156,9 @@ void desktop_startup_run(desktop_t *app, int safe_mode,
     for (i = 0; !safe_mode && i < p->count; i++) {
         start_app_t *a = &p->items[i];
         if (!a->enabled) continue;
-        if (a->trusted) {
-            char why[192];
-            const tiku_app_descriptor_t *d =
-                tiku_app_load(a->path, why, sizeof why);
-            if (d == NULL || !embed_start(app, d)) {
-                snprintf(app->status, sizeof app->status,
-                         "Could not start %.64s: %.96s", a->label,
-                         d == NULL ? why : "no room");
-                app->dirty = 1;
-            }
-        } else {
-            tiku_trk_db_pick_t pick = { .what = TIKU_TRK_DB_LAUNCH_APP };
-            snprintf(pick.path, sizeof pick.path, "%s", a->path);
-            deskbar_pick_dispatch(app, &pick, 0, 0);
-        }
+        tiku_trk_db_pick_t pick = { .what = TIKU_TRK_DB_LAUNCH_APP };
+        snprintf(pick.path, sizeof pick.path, "%s", a->path);
+        deskbar_pick_dispatch(app, &pick, 0, 0);
     }
 }
 
@@ -169,6 +171,8 @@ static int start_save(struct desktop_startup *p)
     c.fallback = (unsigned char)p->fallback;
     for (i = 0; i < p->count; i++) {
         int at = start_index(&c, p->items[i].id);
+        if (at < 0 && p->items[i].legacy[0])
+            at = start_index(&c, p->items[i].legacy);
         if (at < 0) {
             if (c.count == START_MAX) {
                 snprintf(p->status, sizeof p->status,
@@ -314,10 +318,13 @@ static void start_draw(tiku_window_t *w, tiku_surface_t *s,
         tiku_rect_t r = start_app_row(l, i - p->page);
         start_check(s, r, NULL, p->items[i].enabled,
                     tiku_dialog_focused(&p->dialog, i + 2));
-        tiku_icon_paint(s, !strcmp(p->items[i].path, "builtin:reader") ?
-                        "reader" :
-                        !strcmp(p->items[i].path, "builtin:viewer") ?
-                        "image_viewer" : "application", r.x + 24,
+        const char *icon = "application";
+        for (int k = 0; k < p->app->apps.count; k++) {
+            const tiku_trk_app_t *a = &p->app->apps.app[k];
+            if (!strcmp(a->module, p->items[i].path) && a->icon[0])
+                icon = a->icon;
+        }
+        tiku_icon_paint(s, icon, r.x + 24,
                         r.y + (r.h - 16) / 2, 16);
         start_app_label(s, r, p->items[i].label);
     }

@@ -14,4 +14,4 @@ printf '10 INPUT "NAME"; A$\n20 IF A$ = "tiku" THEN PRINT UNDEFINED$(\n30 PRINT 
     > "$deskhome/blink.bas"
 printf '10 PRINT "FROMBOARD"\n' > "$deskhome/quiet.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" "$appsdir/programming/"
+cp -f "$top/build/apps/basic/TikuBasic.so" "$appsdir/programming/"

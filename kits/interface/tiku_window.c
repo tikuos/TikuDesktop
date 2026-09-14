@@ -44,6 +44,7 @@ tiku_window_tab_button(void)
 #define MIN_HEIGHT 90
 
 struct tiku_workspace {
+    uint64_t next_generation;
     tiku_surface_t *surface;
     tiku_window_t windows[TIKU_WINDOW_MAX];
     int order[TIKU_WINDOW_MAX];
@@ -213,6 +214,13 @@ tiku_workspace_activate(tiku_workspace_t *workspace,
     workspace->focused = slot;
 }
 
+void
+tiku_workspace_deactivate(tiku_workspace_t *workspace, tiku_window_t *window)
+{
+    if (workspace && tiku_workspace_focused(workspace) == window)
+        workspace->focused = -1;
+}
+
 tiku_window_t *
 tiku_workspace_find(tiku_workspace_t *workspace, void *tag)
 {
@@ -247,6 +255,7 @@ tiku_workspace_open(tiku_workspace_t *workspace, const char *title,
     if (slot == TIKU_WINDOW_MAX) { return NULL; }
     window = &workspace->windows[slot];
     memset(window, 0, sizeof *window);
+    window->generation = ++workspace->next_generation;
     snprintf(window->title, sizeof window->title, "%s",
              (title != NULL) ? title : "");
     window->frame = frame;

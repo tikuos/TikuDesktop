@@ -316,10 +316,13 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
         c->path_ptr[c->path_count] = c->paths[c->path_count];
         c->path_count++;
     }
-    /* EVERY application, each with its BEST relation to the selection
+    /* Every document-capable app, with its best relation to the selection
      * said: the window exists for the case the menu's shortlist cannot
      * answer (AW-046). */
     for (i = 0; i < apps->count && c->count < TIKU_TRK_APP_MAX; i++) {
+        /* A bundle with no types advertises no document-opening API. */
+        if (apps->app[i].module[0] && !apps->app[i].ntype &&
+            !apps->app[i].takes_anything) continue;
         tiku_trk_cand_t *k = &c->cand[c->count++];
 
         k->app = &apps->app[i];

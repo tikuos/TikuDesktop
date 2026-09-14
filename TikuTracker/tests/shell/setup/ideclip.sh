@@ -10,5 +10,5 @@ printf '10 alpha\n20 beta\n30 gamma\n' \
     > "$deskhome/main.bas"
 printf '40 delta\n' > "$deskhome/util.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

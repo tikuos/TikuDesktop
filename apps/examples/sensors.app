@@ -1,0 +1,9 @@
+version=1
+id=sensors
+name=Sensors
+module=sensors.so
+category=demos
+icon=application
+types=
+startup=apps/sensors.so
+help=

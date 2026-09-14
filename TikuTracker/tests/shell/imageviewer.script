@@ -14,14 +14,14 @@ wait 16
 expect-title TikuImage
 expect-narrate Open an image or camera snapshot
 expect-narrate Open Image
-expect-window-at 95 76
+expect-window-at 130 53
 shot /tmp/trk_image_empty.png
-click 214 86
+click 249 63
 wait 8
-expect-window-at 2 23
+expect-window-at 0 21
 click 121 33
 wait 8
-expect-window-at 95 76
+expect-window-at 130 53
 key o ctrl
 wait 12
 expect-title Open

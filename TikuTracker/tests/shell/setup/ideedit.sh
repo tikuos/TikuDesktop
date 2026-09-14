@@ -16,5 +16,5 @@ while [ $i -le 40 ]; do
     i=$((i+1))
 done
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

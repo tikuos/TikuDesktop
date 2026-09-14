@@ -321,6 +321,7 @@ desktop_focus_paint(desktop_t *app)
     {
         tiku_window_t *fw = tiku_workspace_focused(app->desk);
 
+        remote_focus(app, app->status_overlay.alert.open ? NULL : fw);
         for (i = 0; i < app->folder_count; i++) {
             folder_t *fl = &app->folders[i];
 

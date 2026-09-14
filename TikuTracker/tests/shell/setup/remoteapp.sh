@@ -3,5 +3,5 @@
 
 # The out-of-process client: started BESIDE the desktop,
 # its connect retry covers the launch order.
-( HOME="$deskhome" "$top/build/tiku-demo-app" \
+( HOME="$deskhome" "$top/build/examples/tiku-demo-app" \
       >/dev/null 2>&1 & )

@@ -8,5 +8,5 @@ long="aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo
 printf '10 rem head\n20 print "%s Zz"\n' "$long" \
     > "$deskhome/main.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

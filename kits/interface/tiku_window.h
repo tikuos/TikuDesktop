@@ -98,6 +98,7 @@ typedef void (*tiku_menu_pick_fn)(struct tiku_window *window,
                                        int command, void *context);
 
 struct tiku_window {
+    uint64_t                     generation; /* distinguishes reused slots */
     char                         title[TIKU_WINDOW_TITLE_MAX];
     tiku_rect_t             frame;
     int                          z;
@@ -143,6 +144,9 @@ int tiku_workspace_request_close(tiku_workspace_t *workspace,
                                       tiku_window_t *window);
 void tiku_workspace_activate(tiku_workspace_t *workspace,
                                   tiku_window_t *window);
+/** @brief Relinquish keyboard focus without changing window order. */
+void tiku_workspace_deactivate(tiku_workspace_t *workspace,
+                                tiku_window_t *window);
 tiku_window_t *tiku_workspace_focused(
     tiku_workspace_t *workspace);
 int tiku_workspace_count(const tiku_workspace_t *workspace);

@@ -1,0 +1,9 @@
+version=1
+id=counter
+name=Counter
+module=counter.so
+category=demos
+icon=application
+types=
+startup=apps/counter.so
+help=

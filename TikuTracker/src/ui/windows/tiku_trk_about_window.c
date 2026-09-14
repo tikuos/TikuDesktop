@@ -1041,12 +1041,16 @@ load_detail(about_state_t *st)
                      "%.119s", line);
         } else if (strcmp(line, "the last thing it did:") == 0) {
             want_last = 1;
-        } else if (strcmp(line, "where it was:") == 0) {
+        } else if (strcmp(line, "where it was:") == 0 ||
+                   strcmp(line, "symbolized stack (best effort):") == 0) {
             in_frames = 1;
         } else if (in_frames) {
             if (line[0] == '\0') {
                 in_frames = 0;
             } else if (st->detail.nframes < 4 &&
+                       strncmp(line, "instruction:", 12) != 0 &&
+                       strncmp(line, "fault address:", 14) != 0 &&
+                       strncmp(line, "signal code:", 12) != 0 &&
                        strstr(line, "tiku_report") == NULL &&
                        strstr(line, "asked_to_say") == NULL &&
                        strstr(line, "took_signal") == NULL) {

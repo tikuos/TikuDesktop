@@ -1,0 +1,9 @@
+version=1
+id=bench
+name=TikuBench
+module=Bench.so
+category=device-tools
+icon=application
+types=
+startup=apps/Bench.so
+help=apps/bench.html

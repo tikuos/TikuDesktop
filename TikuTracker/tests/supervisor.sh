@@ -9,7 +9,7 @@
 # mistaken for a mishap.
 
 top=$(cd "$(dirname "$0")/../.." && pwd)
-sup="$top/build/tiku-desk"
+sup="$top/build/system/tiku-desk"
 script="$top/TikuTracker/tests/supervisor.script"
 pass=0; fail=0
 

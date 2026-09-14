@@ -99,4 +99,12 @@ int tiku_report_list(char out[][512], int max);
  */
 void tiku_report_now(const char *why);
 
+/** @brief Persist a parent's observation of a failed child, even SIGKILL.
+ * No child stack is invented; any matching child crash report is referenced.
+ * Returns 0 and its unique path on success. Normal/intentional exits are
+ * filtered by the caller. Does not overwrite latest-crash.txt.
+ */
+int tiku_report_child(const char *program, long pid, int sig, int status,
+                      char *out, size_t max);
+
 #endif /* TIKU_REPORT_H_ */

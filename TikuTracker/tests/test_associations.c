@@ -42,7 +42,8 @@ int main(void)
         "/Basic.so", "text/x-basic,application/x-tiku-project");
     tiku_trk_launch_add_document(&app->apps, "Editor", "/runner",
         "/Editor.so", "text/plain,text/");
-    tiku_trk_launch_add_image(&app->apps);
+    tiku_trk_launch_add_document(&app->apps, "TikuImage", "/runner",
+        "/Image.so", "image/png,image/jpeg,image/bmp,image/x-ms-bmp");
     tiku_trk_types_add(&app->types, "text/x-custom", "Custom document", "", "");
     for (int i = 0; i < 10; i++) {
         char type[48], label[48];

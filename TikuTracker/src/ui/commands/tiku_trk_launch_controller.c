@@ -35,27 +35,6 @@ tiku_trk_launch_controller_init(tiku_trk_launch_controller_t *controller,
     };
 }
 
-void tiku_trk_launch_controller_image(tiku_trk_launch_controller_t *controller,
-    int (*open_image)(void *context, const char *path))
-{
-    if (controller) controller->open_image = open_image;
-}
-
-/** @brief A singleton image viewer refuses a batch instead of losing files. */
-static int launch_image(tiku_trk_launch_controller_t *c,
-                        const char *const *paths, int count)
-{
-    if (count != 1 || !paths || !paths[0] || !*paths[0]) {
-        snprintf(c->status, c->status_size,
-                 "Select one image to open in TikuImage.");
-        return 0;
-    }
-    int ok = c->open_image && c->open_image(c->open_context, paths[0]);
-    snprintf(c->status, c->status_size, "%s", ok ?
-        "Opening image with TikuImage" : "Could not open image in TikuImage");
-    return ok;
-}
-
 int
 tiku_trk_launch_controller_run(tiku_trk_launch_controller_t *controller,
     const tiku_trk_app_t *application, const char *const *paths, int count)
@@ -85,8 +64,6 @@ tiku_trk_launch_controller_run(tiku_trk_launch_controller_t *controller,
         return count > 0 && opened == count;
     }
     error = tiku_trk_launch_run(application, paths, count);
-    if (error == TIKU_TRK_LAUNCH_IS_IMAGE)
-        return launch_image(controller, paths, count);
     if (error == TIKU_TRK_LAUNCH_OK) {
         snprintf(controller->status, controller->status_size,
                  "opening %d item%s with %.40s", count,
@@ -199,8 +176,8 @@ tiku_trk_launch_controller_build_menu(
         /* Each candidate wears the application art: the item names a
          * runnable file, and the icon says so (IV-054). */
         tiku_menu_set_icon(menu, TIKU_TRK_CMD_OPEN_WITH_BASE + i,
-                               candidates[i].app->is_image ?
-                               "image_viewer" : "application");
+                               candidates[i].app->icon[0] ?
+                               candidates[i].app->icon : "application");
         if (candidates[i].preferred) {
             menu->item[menu->count - 1].marked = 1;
         }

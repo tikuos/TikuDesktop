@@ -16,6 +16,7 @@
 #include "tiku_report.h"
 
 #include <execinfo.h>
+#include <stdint.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <signal.h>
@@ -44,7 +45,7 @@ static char  latest_stall[PATH_ROOM];
 static char  header[512];           /* program, pid, when it started */
 static char  folder_path[PATH_ROOM / 2];
 static char  program_name[64];
-static int   armed;
+static pid_t armed;
 static volatile sig_atomic_t asked;
 static void *frames[FRAMES];        /* filled in the handler; never freed */
 /*
@@ -53,6 +54,8 @@ static void *frames[FRAMES];        /* filled in the handler; never freed */
  * which names it the same way it names the frames below it.
  */
 static void *fault_pc[1];
+static uintptr_t fault_address;
+static int fault_code;
 /* The handler runs HERE, not on the stack that faulted: a crash that IS
  * the stack running out would otherwise fault the handler too, and
  * leave no report -- which is the most a report is for. */
@@ -102,8 +105,29 @@ named(int sig)
     case SIGFPE:  return "SIGFPE";
     case SIGILL:  return "SIGILL";
     case SIGABRT: return "SIGABRT";
+    case SIGKILL: return "SIGKILL";
+    case SIGTERM: return "SIGTERM";
     default:      return "signal";
     }
+}
+
+/** @brief Hex addresses without printf, allocation or loader locks. */
+static size_t put_hex(char *out, size_t at, uintptr_t v)
+{
+    char digits[2 * sizeof v]; size_t n = 0;
+    at = put_str(out, at, "0x");
+    do { digits[n++] = "0123456789abcdef"[v & 15]; v >>= 4; } while (v);
+    while (n) out[at++] = digits[--n];
+    return at;
+}
+
+/** @brief Symbolization is best effort, after the basic report is durable. */
+static void write_stack(int fd, int depth)
+{
+    const char label[] = "\nsymbolized stack (best effort):\n";
+    (void)!write(fd, label, sizeof label - 1);
+    if (fault_pc[0]) backtrace_symbols_fd(fault_pc, 1, fd);
+    if (depth > 0) backtrace_symbols_fd(frames, depth, fd);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -113,8 +137,8 @@ named(int sig)
 /**
  * @brief Write the whole report to @p path.
  *
- * Only open, write and close: no allocation, no formatting, nothing
- * that takes a lock.  @p why is a phrase the caller already has.
+ * A negative depth writes only the signal-safe baseline. Optional
+ * symbolization follows it, never precedes it. The caller supplies @p why.
  */
 static void
 write_report(const char *path, const char *why, long num, const char *unit,
@@ -122,14 +146,22 @@ write_report(const char *path, const char *why, long num, const char *unit,
 {
     char line[256];
     size_t at;
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+                        O_NOFOLLOW, 0600);
 
     if (fd < 0) {
         return;
     }
     (void)!write(fd, header, strlen(header));
+    struct timespec captured;
+    if (!clock_gettime(CLOCK_REALTIME, &captured)) {
+        at = put_str(line, 0, "captured unix time: ");
+        at = put_num(line, at, captured.tv_sec); line[at++] = '\n';
+        (void)!write(fd, line, at);
+    }
     at = put_str(line, 0u, "stopped by: ");
-    at = put_str(line, at, why);
+    /* Callers may supply a long explanation; leave room for numeric fields. */
+    for (size_t i = 0; why && why[i] && i < 120; i++) line[at++] = why[i];
     if (unit != NULL) {
         at = put_str(line, at, " (");
         at = put_num(line, at, num);
@@ -148,25 +180,21 @@ write_report(const char *path, const char *why, long num, const char *unit,
     tiku_trail_write_last(fd);
 
     at = put_str(line, 0u, "\nwhere it was:\n");
+    at = put_str(line, at, "instruction: ");
+    at = put_hex(line, at, (uintptr_t)fault_pc[0]);
+    at = put_str(line, at, "\nfault address: ");
+    at = put_hex(line, at, fault_address);
+    at = put_str(line, at, "\nsignal code: ");
+    at = put_num(line, at, fault_code); line[at++] = '\n';
     (void)!write(fd, line, at);
     /* The faulting instruction first, and from the context rather than
      * from the walk: a function that only stores keeps no frame pointer
      * on arm64, so the walk steps from the trampoline straight to the
      * caller and the frame a reader most wants is the one missing. */
-    if (fault_pc[0] != NULL) {
-        backtrace_symbols_fd(fault_pc, 1, fd);
-        /* Two lists, and each is numbered from nothing by the same call:
-         * said out loud, so the second 0 does not read as the first one
-         * again. */
-        at = put_str(line, 0u, "-- and the frames above it --\n");
-        (void)!write(fd, line, at);
-    }
-    if (depth > 0) {
-        backtrace_symbols_fd(frames, depth, fd);
-    }
     at = put_str(line, 0u, "\nwhat it was doing:\n");
     (void)!write(fd, line, at);
     tiku_trail_write(fd);
+    if (depth >= 0) write_stack(fd, depth);
     (void)close(fd);
 }
 
@@ -176,12 +204,18 @@ took_signal(int sig, siginfo_t *info, void *context)
 {
     int depth;
 
-    (void)info;
+    fault_address = info ? (uintptr_t)info->si_addr : 0;
+    fault_code = info ? info->si_code : 0;
     fault_pc[0] = tiku_sys_fault_pc(context);
+    /* A damaged stack/unwinder must not prevent even a minimal report. */
+    write_report(report_path, named(sig), sig, "", -1);
+    write_report(latest_path, named(sig), sig, "", -1);
     depth = backtrace(frames, FRAMES);
-
-    write_report(report_path, named(sig), 0L, NULL, depth);
-    write_report(latest_path, named(sig), 0L, NULL, depth);
+    const char *paths[] = {report_path, latest_path};
+    for (int i = 0; i < 2; i++) {
+        int fd = open(paths[i], O_WRONLY | O_APPEND | O_CLOEXEC | O_NOFOLLOW);
+        if (fd >= 0) { write_stack(fd, depth); close(fd); }
+    }
     /* And on, as though nothing had caught it: a core for whoever wants
      * one, and a parent that is told what killed this. */
     (void)signal(sig, SIG_DFL);
@@ -203,11 +237,11 @@ make_path(const char *dir)
     for (i = 1u; work[i] != '\0'; i++) {
         if (work[i] == '/') {
             work[i] = '\0';
-            (void)mkdir(work, 0755);
+            (void)mkdir(work, 0700);
             work[i] = '/';
         }
     }
-    (void)mkdir(work, 0755);
+    (void)mkdir(work, 0700);
 }
 
 void
@@ -234,7 +268,7 @@ tiku_report_install(const char *program, const char *dir)
     time_t now = time(NULL);
     size_t i;
 
-    if (armed) {
+    if (armed == getpid()) {
         return;
     }
         tiku_report_folder(dir, folder, sizeof folder);
@@ -242,6 +276,8 @@ tiku_report_install(const char *program, const char *dir)
     snprintf(folder_path, sizeof folder_path, "%s", folder);
     snprintf(program_name, sizeof program_name, "%s",
              (program != NULL) ? program : "program");
+    for (char *p = program_name; *p; p++)
+        if (*p == '/' || *p == '\\' || (unsigned char)*p < 32) *p = '_';
 
     /* The name is settled now, while formatting is still allowed. */
     (void)localtime_r(&now, &when);
@@ -249,17 +285,18 @@ tiku_report_install(const char *program, const char *dir)
              "%s/crash-%04d%02d%02d-%02d%02d%02d-%s-%ld.txt", folder,
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec,
-             (program != NULL) ? program : "program", (long)getpid());
+             program_name, (long)getpid());
     snprintf(latest_path, sizeof latest_path, "%s/latest-crash.txt", folder);
     snprintf(stall_path, sizeof stall_path,
              "%s/stall-%04d%02d%02d-%02d%02d%02d-%s-%ld.txt", folder,
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec,
-             (program != NULL) ? program : "program", (long)getpid());
+             program_name, (long)getpid());
     snprintf(latest_stall, sizeof latest_stall, "%s/latest-stall.txt",
              folder);
     snprintf(header, sizeof header,
-             "%s\nstarted: %04d-%02d-%02d %02d:%02d:%02d\npid: %ld\n",
+             "%s\nstarted: %04d-%02d-%02d %02d:%02d:%02d\npid: %ld\n"
+             "report runtime build: " __DATE__ " " __TIME__ "\n",
              (program != NULL) ? program : "program",
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec, (long)getpid());
@@ -289,7 +326,7 @@ tiku_report_install(const char *program, const char *dir)
         (void)sigemptyset(&sa.sa_mask);
         (void)sigaction(FATAL[i], &sa, NULL);
     }
-    armed = 1;
+    armed = getpid();
     tiku_trail("reports go to %s", report_path);
 }
 
@@ -342,6 +379,54 @@ tiku_report_now(const char *why)
                  depth);
     write_report(latest_path, (why != NULL) ? why : "asked for", 0L, NULL,
                  depth);
+}
+
+int tiku_report_child(const char *program, long pid, int sig, int status,
+                      char *out, size_t max)
+{
+    char folder[PATH_ROOM / 2], latest[PATH_ROOM], suffix[48];
+    struct tm when; time_t now = time(NULL);
+    if (!out || !max) return -1;
+    out[0] = 0;
+    tiku_report_folder(NULL, folder, sizeof folder); make_path(folder);
+    localtime_r(&now, &when);
+    if ((size_t)snprintf(out, max,
+        "%s/exit-%04d%02d%02d-%02d%02d%02d-%ld.txt", folder,
+        when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
+        when.tm_hour, when.tm_min, when.tm_sec, pid) >= max) {
+        out[0] = 0; return -1;
+    }
+    int fd = open(out, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    if (fd < 0) { out[0] = 0; return -1; }
+    FILE *f = fdopen(fd, "w");
+    if (!f) { close(fd); unlink(out); out[0] = 0; return -1; }
+    fprintf(f, "%s\napplication exit observed by parent %ld\npid: %ld\n",
+            program ? program : "application", (long)getpid(), pid);
+    fprintf(f, "signal: %d (%s)\nexit status: %d\n",
+            sig, sig ? named(sig) : "none", status);
+    fprintf(f, "stopped by: %s %s %d\n", program ? program : "application",
+            sig ? "signal" : "exit status", sig ? sig : status);
+    fputs("This is an exit record, not a stack trace from the child.\n", f);
+    if (sig == SIGKILL)
+        fputs("SIGKILL cannot be caught; an out-of-memory kill is one possible cause.\n", f);
+    snprintf(suffix, sizeof suffix, "-%ld.txt", pid);
+    DIR *dir = opendir(folder); struct dirent *entry;
+    while (dir && (entry = readdir(dir))) {
+        size_t n = strlen(entry->d_name), k = strlen(suffix);
+        if (!strncmp(entry->d_name, "crash-", 6) && n > k &&
+            !strcmp(entry->d_name + n - k, suffix))
+            fprintf(f, "child report: %s/%s\n", folder, entry->d_name);
+    }
+    if (dir) closedir(dir);
+    fputs("\nParent launch/lifecycle trail (not child events):\n", f);
+    fflush(f); tiku_trail_write(fd);
+    int ok = !ferror(f); if (fclose(f)) ok = 0;
+    if (!ok) { out[0] = 0; return -1; }
+    snprintf(latest, sizeof latest, "%s/latest-application-exit.txt", folder);
+    unlink(latest);
+    if (symlink(strrchr(out, '/') + 1, latest))
+        tiku_trail("could not update latest application exit link");
+    return 0;
 }
 
 /*---------------------------------------------------------------------------*/

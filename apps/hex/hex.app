@@ -1,0 +1,9 @@
+version=1
+id=hex
+name=TikuHex
+module=TikuHex.so
+category=device-tools
+icon=application
+types=application/octet-stream,*
+startup=apps/TikuHex.so
+help=apps/hex.html

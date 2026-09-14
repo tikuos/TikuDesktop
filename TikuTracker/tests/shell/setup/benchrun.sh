@@ -4,7 +4,7 @@
 # The bench front-end is an application like any other; it is put where
 # the shell looks for applications, beside the ones the other scripts use.
 mkdir -p "$appsdir"
-cp -f "$top/build/apps/Bench.so" "$appsdir/"
+cp -f "$top/build/apps/bench/Bench.so" "$appsdir/"
 
 # The run's log goes where a person keeps theirs -- under the home --
 # and this fixture's home is made fresh for every run, so a name a

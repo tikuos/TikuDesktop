@@ -11,6 +11,7 @@
  */
 
 #include "tiku_trk_desktop_private.h"
+#include "tiku_manifest.h"
 #include "tiku_trk_desktop_appgroups.inl"
 
 /** @brief One destination row of a picker (CW-035). */
@@ -148,6 +149,8 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
 {
     static const char *const where[] = {
         "%s/%s",                        /* installed beside this shell   */
+        "%s/build/system/%s",
+        "%s/system/%s",
         "%s/build/%s",                  /* the tree's own build          */
         "%s/libexec/tiku/%s"
     };
@@ -201,16 +204,25 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
              * is PATH_MAX and not this tree's shorter path limit: handed
              * a smaller one, a fortified libc aborts the process instead
              * of truncating. */
-            if (realpath(found, real) != NULL) {
-                snprintf(out, max, "%s", real);
-            } else {
-                snprintf(out, max, "%s", found);
+            if (realpath(found, real) != NULL && strlen(real) < max) {
+                memcpy(out, real, strlen(real) + 1);
+                return 1;
             }
-            return 1;
         }
     }
     out[0] = '\0';
     return 0;
+}
+
+/** @brief Launch resources must stay absolute after the child changes cwd. */
+static int canonical_directory(const char *path, char *out, size_t max)
+{
+    char *resolved = realpath(path, NULL);
+    int ok = resolved && strlen(resolved) < max;
+    if (ok) snprintf(out, max, "%s", resolved);
+    else if (max) out[0] = 0;
+    free(resolved);
+    return ok;
 }
 
 /**
@@ -227,8 +239,8 @@ find_apps_dir(const char *argv0, char *out, size_t max)
     int up;
 
     if (getenv("TIKU_APPS") != NULL) {
-        snprintf(out, max, "%s", getenv("TIKU_APPS"));
-        return access(out, X_OK) == 0;
+        return canonical_directory(getenv("TIKU_APPS"), out, max) &&
+               access(out, X_OK) == 0;
     }
     snprintf(dir, sizeof dir, "%s", (argv0 != NULL) ? argv0 : "");
     slash = strrchr(dir, '/');
@@ -240,7 +252,6 @@ find_apps_dir(const char *argv0, char *out, size_t max)
     for (up = 0; up < 5; up++) {
         char step[TIKU_PATH_MAX];
         char found[TIKU_PATH_MAX];
-        char real[PATH_MAX];
         int k;
 
         snprintf(step, sizeof step, "%s", dir);
@@ -252,11 +263,12 @@ find_apps_dir(const char *argv0, char *out, size_t max)
             }
             snprintf(step + used, sizeof step - used, "/..");
         }
-        /* Through real[], for the reason find_companion() gives. */
-        snprintf(found, sizeof found, "%s/build/apps", step);
-        if (access(found, X_OK) == 0 && realpath(found, real) != NULL) {
-            snprintf(out, max, "%s", real);
-            return 1;
+        const char *layouts[] = {"%s/apps", "%s/build/apps"};
+        for (size_t i = 0; i < sizeof layouts / sizeof layouts[0]; i++) {
+            if (snprintf(found, sizeof found, layouts[i], step) >=
+                (int)sizeof found) continue;
+            if (access(found, X_OK) == 0 &&
+                canonical_directory(found, out, max)) return 1;
         }
     }
     out[0] = '\0';
@@ -309,7 +321,7 @@ app_icon(const char *file)
 int
 desktop_help_ready(desktop_t *app)
 {
-    return app != NULL && tiku_trk_help_window_ready(&app->help_window);
+    return app != NULL && app->help_root[0] != 0;
 }
 
 /**
@@ -337,9 +349,6 @@ desktop_help_page_of(desktop_t *app, tiku_window_t *window)
     if (session != NULL && session->help_page[0] != '\0') {
         return session->help_page;
     }
-    if (window == app->reader_window.window) return "apps/reader.html";
-    if (window == tiku_trk_image_window_handle(app->image_window))
-        return "apps/viewer.html";
     if (window == app->fonts_window.window) return "settings.html#fonts";
     if (window == app->prefs_window.window) return "settings.html#tracker";
     if (window == app->deskbar_prefs_window.window)
@@ -357,9 +366,6 @@ desktop_help_page_of(desktop_t *app, tiku_window_t *window)
         return "settings.html#associations";
     if (window == desktop_forcequit_handle(app))
         return "deskbar.html#forcequit";
-    if (!strcmp(window->title, "Device Monitor")) return "devices.html#monitor";
-    if (!strcmp(window->title, "VFS Inspector"))
-        return "devices.html#inspector";
     return NULL;
 }
 
@@ -384,7 +390,7 @@ find_help_dir(const char *argv0, char *out, size_t max)
     if (getenv("TIKU_HELP") != NULL) {
         char page[TIKU_PATH_MAX];
 
-        snprintf(out, max, "%s", getenv("TIKU_HELP"));
+        if (!canonical_directory(getenv("TIKU_HELP"), out, max)) return 0;
         /* Named outright, and still asked for its own page: a folder
          * with nothing in it is not the help folder. */
         if (snprintf(page, sizeof page, "%s/index.html", out) <
@@ -428,8 +434,7 @@ find_help_dir(const char *argv0, char *out, size_t max)
                 continue;
             }
             if (access(page, R_OK) == 0) {
-                snprintf(out, max, "%s", found);
-                return 1;
+                return canonical_directory(found, out, max);
             }
         }
     }
@@ -437,38 +442,85 @@ find_help_dir(const char *argv0, char *out, size_t max)
     return 0;
 }
 
+/** @brief Register metadata without loading the module into the desktop. */
+static void offer_bundle(desktop_t *app, const char *dir,
+                         const char *runner, const tiku_manifest_t *m)
+{
+    char module[TIKU_PATH_MAX], id[96];
+    for (int i = 0; i < app->apps.count; i++)
+        if (!strcmp(app->apps.app[i].id, m->id)) return;
+    if (snprintf(module, sizeof module, "%s/%s", dir, m->module) >=
+        (int)sizeof module || access(module, R_OK) != 0) return;
+    for (int i = 0; i < app->apps.count; i++)
+        if (!strcmp(app->apps.app[i].module, module)) return;
+    int at = tiku_trk_launch_add_document(&app->apps, m->name, runner,
+                                          module, m->types);
+    if (at < 0) return;
+    snprintf(id, sizeof id, "app/%s", m->id);
+    desktop_startup_offer_id(app, module, m->name, id, m->startup);
+    (void)tiku_trk_deskbar_add_app_in(app->deskbar,
+        installed_group(m->category), m->name, module, m->icon);
+    if (at >= 0) {
+        snprintf(app->apps.app[at].id, sizeof app->apps.app[at].id,
+                 "%s", m->id);
+        snprintf(app->apps.app[at].icon, sizeof app->apps.app[at].icon,
+                 "%s", m->icon);
+    }
+}
+
+/** @brief Scan in stable order; old flat modules always run out of process. */
+static void offer_directory(desktop_t *app, const char *root,
+                            const char *runner, const char *legacy)
+{
+    struct dirent **entries = NULL;
+    int count = scandir(root, &entries, NULL, alphasort);
+    for (int i = 0; i < count; i++) {
+        char path[TIKU_PATH_MAX], manifest[TIKU_PATH_MAX];
+        char label[TIKU_TRK_DB_LABEL_MAX];
+        tiku_manifest_t m;
+        const char *name = entries[i]->d_name;
+        size_t n = strlen(name);
+        if (name[0] != '.' &&
+            snprintf(path, sizeof path, "%s/%s", root, name) <
+            (int)sizeof path) {
+            if (snprintf(manifest, sizeof manifest, "%s/app.manifest",
+                         path) < (int)sizeof manifest &&
+                tiku_manifest_read(manifest, &m, NULL, 0) == 0) {
+                offer_bundle(app, path, runner, &m);
+            } else if (legacy && n > 3 && !strcmp(name + n - 3, ".so")) {
+                if (snprintf(manifest, sizeof manifest, "%s.manifest", path) <
+                    (int)sizeof manifest &&
+                    tiku_manifest_read(manifest, &m, NULL, 0) == 0 &&
+                    !strcmp(m.module, name)) {
+                    offer_bundle(app, root, runner, &m);
+                    free(entries[i]);
+                    continue;
+                }
+                app_label(name, label, sizeof label);
+                desktop_startup_offer(app, path, label, legacy);
+                (void)tiku_trk_deskbar_add_app_in(app->deskbar,
+                    installed_group(legacy), label, path, app_icon(name));
+            }
+        }
+        free(entries[i]);
+    }
+    free(entries);
+}
+
 /**
  * @brief Offer every application installed beside this desktop.
  *
  * A file in `apps` is started in a process of its own through the
- * runner; one in `apps/trusted` is loaded into this process.  Moving the
- * file between the two is the whole of the decision.
+ * runner. Legacy directories do not grant in-process execution.
  */
 void
 offer_installed(desktop_t *app, const char *argv0)
 {
     char root[TIKU_PATH_MAX];
     char runner[TIKU_PATH_MAX];
-    char trusted[TIKU_PATH_MAX];
-    struct dirent *entry;
-    DIR *dir;
+    char subdir[TIKU_PATH_MAX];
     int have_runner;
 
-    (void)tiku_trk_deskbar_add_app_in(app->deskbar,
-        TIKU_TRK_DB_GROUP_DEVICE_TOOLS, "Device Monitor",
-        "builtin:monitor", "application");
-    (void)tiku_trk_deskbar_add_app_in(app->deskbar,
-        TIKU_TRK_DB_GROUP_DEVICE_TOOLS, "VFS Inspector", "builtin:vfs",
-        "application");
-    desktop_startup_offer(app, "builtin:monitor", "Device Monitor",
-                          "utilities");
-    desktop_startup_offer(app, "builtin:vfs", "VFS Inspector", "utilities");
-    (void)tiku_trk_deskbar_add_app_in(app->deskbar,
-        TIKU_TRK_DB_GROUP_APPS, "TikuReader", "builtin:reader", "reader");
-    desktop_startup_offer(app, "builtin:reader", "TikuReader", "applications");
-    tiku_trk_deskbar_add_app_in(app->deskbar,
-        TIKU_TRK_DB_GROUP_APPS, "TikuImage", "builtin:viewer", "image_viewer");
-    desktop_startup_offer(app, "builtin:viewer", "TikuImage", "applications");
     if (!find_apps_dir(argv0, root, sizeof root)) {
         return;
     }
@@ -477,132 +529,69 @@ offer_installed(desktop_t *app, const char *argv0)
         snprintf(app->runner, sizeof app->runner, "%s", runner);
     }
 
-    /* Discover first; startup preferences decide what runs after boot. */
-    snprintf(trusted, sizeof trusted, "%s/trusted", root);
-    dir = opendir(trusted);
-    while (dir != NULL && (entry = readdir(dir)) != NULL) {
-        char path[TIKU_PATH_MAX];
-        size_t n = strlen(entry->d_name);
+    if (!have_runner) return;
+    offer_directory(app, root, runner, "apps");
+    if (snprintf(subdir, sizeof subdir, "%s/programming", root) <
+        (int)sizeof subdir)
+        offer_directory(app, subdir, runner, "programming");
+    if (snprintf(subdir, sizeof subdir, "%s/trusted", root) <
+        (int)sizeof subdir)
+        offer_directory(app, subdir, runner, "trusted");
+}
 
-        if (n < 4u || strcmp(entry->d_name + n - 3, ".so") != 0) {
-            continue;
-        }
-        snprintf(path, sizeof path, "%s/%s", trusted, entry->d_name);
-        desktop_startup_offer(app, path, entry->d_name, "trusted");
+/** @brief Invoke a manifest identity without importing application code. */
+int desktop_launch_app(desktop_t *app, const char *id, const char *document)
+{
+    for (int i = 0; i < app->apps.count; i++) {
+        const tiku_trk_app_t *a = &app->apps.app[i];
+        if (strcmp(a->id, id)) continue;
+        const char *paths[] = {document};
+        return tiku_trk_launch_run(a, document ? paths : NULL,
+            document ? 1 : 0) == TIKU_TRK_LAUNCH_OK;
     }
-    if (dir != NULL) {
-        (void)closedir(dir);
-    }
+    snprintf(app->status, sizeof app->status,
+             "Application '%s' is not installed.", id);
+    app->dirty = 1;
+    return 0;
+}
 
-    {
-        /* Sorted, because a directory hands its entries back in whatever
-         * order it likes and a menu whose rows move between runs is a
-         * menu nobody can learn. */
-        char name[TIKU_TRK_DB_APPS_MAX][64];
-        int count = 0;
-        int i, j;
-
-        dir = opendir(root);
-        while (dir != NULL && (entry = readdir(dir)) != NULL &&
-               count < TIKU_TRK_DB_APPS_MAX) {
-            size_t n = strlen(entry->d_name);
-
-            if (n < 4u || n >= sizeof name[0] ||
-                strcmp(entry->d_name + n - 3, ".so") != 0 || !have_runner) {
-                continue;
-            }
-            snprintf(name[count++], sizeof name[0], "%s", entry->d_name);
-        }
-        if (dir != NULL) {
-            (void)closedir(dir);
-        }
-        for (i = 1; i < count; i++) {
-            char hold[64];
-
-            snprintf(hold, sizeof hold, "%s", name[i]);
-            for (j = i; j > 0 && strcmp(name[j - 1], hold) > 0; j--) {
-                snprintf(name[j], sizeof name[0], "%s", name[j - 1]);
-            }
-            snprintf(name[j], sizeof name[0], "%s", hold);
-        }
-        for (i = 0; i < count; i++) {
-            char path[TIKU_PATH_MAX];
-            char label[TIKU_TRK_DB_LABEL_MAX];
-
-            snprintf(path, sizeof path, "%s/%s", root, name[i]);
-            app_label(name[i], label, sizeof label);
-            /* Renamed before the catalogue is offered, so the Deskbar
-             * row and Startup Preferences name the program the same. */
-            if (!strcmp(name[i], "DeveloperCalculator.so"))
-                snprintf(label, sizeof label, "Developer Calculator");
-            else if (!strcmp(name[i], "Bench.so"))
-                snprintf(label, sizeof label, "TikuBench");
-            if (!strcmp(name[i], "editor.so"))
-                /* The generic text handler: it opens every text there
-                 * is, which is a weaker claim than an installed
-                 * application naming one type it was chosen for. */
-                tiku_trk_launch_add_document(&app->apps, "Editor", runner,
-                    path, "text/");
-            if (!strcmp(name[i], "TikuHex.so"))
-                tiku_trk_launch_add_document(&app->apps, "TikuHex", runner,
-                    path, "application/octet-stream,*");
-            desktop_startup_offer(app, path, label, "apps");
-            /* The row carries the FILE; how it is started is decided
-             * where the pick is answered, which is the one place that
-             * knows the runner's own path. */
-            (void)tiku_trk_deskbar_add_app_in(app->deskbar,
-                installed_group(name[i]), label, path, app_icon(name[i]));
+/** @brief Pass help content as bounded data to the installed reader. */
+static int desktop_help_request(desktop_t *app, const char *page,
+                                const char *title, const char *html)
+{
+    tiku_msg_t *m = tiku_msg_new(1);
+    int result = 0;
+    if (!m) return 0;
+    int ok = tiku_msg_add_string(m, "root", app->help_root);
+    if (page) ok &= tiku_msg_add_string(m, "page", page);
+    if (title) ok &= tiku_msg_add_string(m, "title", title);
+    if (html) ok &= tiku_msg_add_string(m, "html", html);
+    for (int i = 0; ok && i < app->apps.count; i++) {
+        const tiku_trk_app_t *a = &app->apps.app[i];
+        if (!strcmp(a->id, "reader")) {
+            result = tiku_trk_launch_message(a, m) == TIKU_TRK_LAUNCH_OK;
+            break;
         }
     }
+    tiku_msg_free(m);
+    if (!result)
+        snprintf(app->status, sizeof app->status,
+                 "Help needs the installed TikuReader application.");
+    app->dirty = 1;
+    return result;
+}
 
-    {
-        /* Where a file is installed decides where it is OFFERED, the
-         * rule trusted/ already keeps: apps/programming/ is the
-         * Programming row's list -- the tools a person makes programs
-         * with, not one more thing that happens to be installed. */
-        char progdir[TIKU_PATH_MAX];
-        char name[TIKU_TRK_DB_APPS_MAX][64];
-        int count = 0;
-        int i, j;
+/** @brief The reader owns help navigation, rendering and document state. */
+int desktop_help_open(desktop_t *app, const char *page)
+{
+    if (page && strlen(page) >= 256) return 0;
+    return desktop_help_request(app, page ? page : "index.html", NULL, NULL);
+}
 
-        snprintf(progdir, sizeof progdir, "%s/programming", root);
-        dir = opendir(progdir);
-        while (dir != NULL && (entry = readdir(dir)) != NULL &&
-               count < TIKU_TRK_DB_APPS_MAX) {
-            size_t n = strlen(entry->d_name);
-
-            if (n < 4u || n >= sizeof name[0] ||
-                strcmp(entry->d_name + n - 3, ".so") != 0 ||
-                !have_runner) {
-                continue;
-            }
-            snprintf(name[count++], sizeof name[0], "%s", entry->d_name);
-        }
-        if (dir != NULL) {
-            (void)closedir(dir);
-        }
-        for (i = 1; i < count; i++) {
-            char hold[64];
-
-            snprintf(hold, sizeof hold, "%s", name[i]);
-            for (j = i; j > 0 && strcmp(name[j - 1], hold) > 0; j--) {
-                snprintf(name[j], sizeof name[0], "%s", name[j - 1]);
-            }
-            snprintf(name[j], sizeof name[0], "%s", hold);
-        }
-        for (i = 0; i < count; i++) {
-            char path[TIKU_PATH_MAX];
-            char label[TIKU_TRK_DB_LABEL_MAX];
-
-            snprintf(path, sizeof path, "%s/%s", progdir, name[i]);
-            app_label(name[i], label, sizeof label);
-            if (!strcmp(name[i], "TikuBasic.so"))
-                tiku_trk_launch_add_document(&app->apps, "TikuBasic", runner,
-                    path, "text/x-basic,application/x-tiku-project");
-            desktop_startup_offer(app, path, label, "programming");
-            (void)tiku_trk_deskbar_add_app_in(app->deskbar,
-                TIKU_TRK_DB_GROUP_PROGRAMMING, label, path,
-                app_icon(name[i]));
-        }
-    }
+/** @brief Generated reports cross the same isolated application boundary. */
+int desktop_help_html(desktop_t *app, const char *title, const char *html)
+{
+    if (!html || strlen(html) > 15000 || (title && strlen(title) > 127))
+        return 0;
+    return desktop_help_request(app, NULL, title, html);
 }

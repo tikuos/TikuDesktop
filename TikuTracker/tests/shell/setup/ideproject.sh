@@ -11,5 +11,5 @@ printf 'title Blinker\ngroup Sources\nfile blink.bas\nfile util.bas\ntarget rp23
 printf '10 PRINT "lamp"\n' > "$deskhome/blink.bas"
 printf '20 REM helpers\n' > "$deskhome/util.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

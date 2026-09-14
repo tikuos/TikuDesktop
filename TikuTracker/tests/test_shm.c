@@ -16,6 +16,7 @@
 #define _GNU_SOURCE 1
 
 #include <stdlib.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
@@ -29,6 +30,16 @@
 #include "tiku_dl.h"
 
 static int fails;
+
+#ifdef __linux__
+static int refuse_reservation;
+int __real_posix_fallocate(int fd, off_t start, off_t length);
+/** Exercise low shared-store space without filling the machine's tmpfs. */
+int __wrap_posix_fallocate(int fd, off_t start, off_t length)
+{
+    return refuse_reservation ? ENOSPC : __real_posix_fallocate(fd, start, length);
+}
+#endif
 
 static void
 check(int cond, const char *what)
@@ -97,6 +108,8 @@ main(void)
     memset(pixels, 0, sizeof pixels);
     check(tiku_remote_frame(&client, 0, pixels, 8, 8) < 0,
           "a repaint before a window exists is refused, not cached");
+    check(tiku_remote_frame(&client, id, pixels, TIKU_REMOTE_MAX_DIM + 1, 8) < 0,
+          "an invalid frame is refused locally before reading its pixels");
     pixels[0] = 0x00112233u;
     (void)tiku_remote_frame(&client, id, pixels, 8, 8);
     settle(&listener, 40);
@@ -184,6 +197,17 @@ main(void)
         shown = tiku_remote_pixels(&s->win[0]);
         check(shown != NULL && shown[0] == 0x00abcdefu,
               "queued surface replacements cannot unlink each other's image");
+#ifdef __linux__
+        refuse_reservation = 1;
+        pixels[0] = 0x00fedcbau;
+        check(!tiku_remote_frame(&client, id, pixels, 4, 8),
+              "shared backing allocation failure falls back to copied pixels");
+        settle(&listener, 20);
+        shown = tiku_remote_pixels(&s->win[0]);
+        check(s->used && s->win[0].frame && shown && shown[0] == 0x00fedcbau,
+              "the copied frame arrives without a SIGBUS or disconnect");
+        refuse_reservation = 0;
+#endif
     }
     tiku_remote_disconnect(&client);
     settle(&listener, 20);

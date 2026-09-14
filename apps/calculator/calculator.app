@@ -1,0 +1,9 @@
+version=1
+id=calculator
+name=Developer Calculator
+module=DeveloperCalculator.so
+category=applications
+icon=application
+types=
+startup=apps/DeveloperCalculator.so
+help=apps/calculator.html

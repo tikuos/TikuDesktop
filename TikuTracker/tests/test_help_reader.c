@@ -1,6 +1,6 @@
 /* Native reader tools, local resources and generated documents; no network. */
 #include <assert.h>
-#include "../src/ui/windows/tiku_trk_help_window.c"
+#include "../../apps/reader/tiku_reader_help_window.c"
 
 static void fixture(const char *root, const char *name, const char *html)
 {
@@ -8,27 +8,27 @@ static void fixture(const char *root, const char *name, const char *html)
     FILE *f = fopen(path, "w"); assert(f); fputs(html, f); fclose(f);
 }
 
-static void press(tiku_trk_help_window_t *c, unsigned key, unsigned modifiers)
+static void press(tiku_reader_help_window_t *c, unsigned key, unsigned modifiers)
 {
     tiku_event_t e = {.type=TIKU_EVENT_KEY_DOWN, .key=key, .modifiers=modifiers};
     tiku_window_send(c->window, &e);
 }
 
-static void markdown(tiku_trk_help_window_t *c, const char *root, tiku_workspace_t *workspace)
+static void markdown(tiku_reader_help_window_t *c, const char *root, tiku_workspace_t *workspace)
 {
     setenv("TIKU_LANG", "en", 1);
     fixture(root, "guide.MD", "# Markdown guide\n\nClock **frequency** in Markdown.\n\n"
         "## Example\n\n```basic\nPRINT \"café <&>\"\nEND\n```\n\n"
         "![sample](picture.png)\n\n[Next](next.html)\n");
     fixture(root, "other.markdown", "# Another Markdown page\n\nClock frequency.\n");
-    assert(tiku_trk_help_window_go(c, "guide.MD#example") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(c, "guide.MD#example") == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace);
     assert(!strcmp(tiku_doc_title(c->doc), "Markdown guide"));
     assert(c->reader->nimages == 1 && c->reader->images[0].image.w == 20);
     assert(tiku_doc_anchor_y(c->doc, "example") >= 0);
-    assert(tiku_trk_help_window_copy(c, 1));
+    assert(tiku_reader_help_window_copy(c, 1));
     assert(!strcmp(tiku_clipboard_text(), "PRINT \"café <&>\"\nEND\n"));
-    assert(tiku_trk_help_window_find(c, "clock frequency", 0));
+    assert(tiku_reader_help_window_find(c, "clock frequency", 0));
     reader_action(c, HELP_OUTLINE); tiku_workspace_draw(workspace);
     assert(c->reader->nrows == 2);
     reader_search(c); assert(c->reader->nrows == 4);
@@ -36,20 +36,20 @@ static void markdown(tiku_trk_help_window_t *c, const char *root, tiku_workspace
     for (int i = 0; i < c->reader->nrows; i++)
         if (!strcmp(c->reader->rows[i].page, "guide.MD")) found++;
     assert(found == 1);
-    assert(tiku_trk_help_window_go(c, tiku_doc_link_href(c->doc, 0)) == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(c, tiku_doc_link_href(c->doc, 0)) == TIKU_READER_HELP_PAGE);
     assert(!strcmp(c->page, "next.html"));
-    assert(tiku_trk_help_window_back(c) && !strcmp(c->page, "guide.MD"));
-    assert(tiku_trk_help_window_forward(c) && !strcmp(c->page, "next.html"));
+    assert(tiku_reader_help_window_back(c) && !strcmp(c->page, "guide.MD"));
+    assert(tiku_reader_help_window_forward(c) && !strcmp(c->page, "next.html"));
     char locale[1200]; snprintf(locale, sizeof locale, "%s/fr", root);
     fixture(locale, "guide.MD", "# Guide français\n\nBonjour Markdown.\n");
     setenv("TIKU_LANG", "fr", 1);
-    assert(tiku_trk_help_window_go(c, "guide.MD") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(c, "guide.MD") == TIKU_READER_HELP_PAGE);
     assert(strstr(c->reader->text, "Bonjour Markdown"));
-    assert(tiku_trk_help_window_go(c, "other.markdown") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(c, "other.markdown") == TIKU_READER_HELP_PAGE);
     assert(strstr(c->reader->text, "Another Markdown"));
     char path[1200]; snprintf(path, sizeof path, "%s/escape.md", root);
     assert(!symlink("../outside.html", path));
-    assert(tiku_trk_help_window_go(c, "escape.md") == TIKU_TRK_HELP_NOWHERE);
+    assert(tiku_reader_help_window_go(c, "escape.md") == TIKU_READER_HELP_NOWHERE);
     setenv("TIKU_LANG", "en", 1);
 }
 
@@ -69,15 +69,15 @@ int main(void)
     assert(!tiku_surface_png(im, path)); tiku_surface_free(im);
     tiku_surface_t *surface = tiku_surface_new(1000, 760, TIKU_C_PANEL);
     tiku_workspace_t *workspace = tiku_workspace_new(surface); int dirty = 0;
-    tiku_trk_help_window_t c;
-    tiku_trk_help_window_init(&c, workspace, root, 1000, 760, &dirty);
-    tiku_trk_help_window_open(&c); tiku_workspace_draw(workspace);
+    tiku_reader_help_window_t c;
+    tiku_reader_help_window_init(&c, workspace, root, 1000, 760, &dirty);
+    tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
     assert(c.reader && c.reader->nimages == 1 && c.reader->images[0].image.w == 20);
-    assert(tiku_trk_help_window_find(&c, "clock frequency", 0));
+    assert(tiku_reader_help_window_find(&c, "clock frequency", 0));
     assert(c.reader->matches == 2); int first = c.reader->match;
-    assert(tiku_trk_help_window_find(&c, "clock frequency", 0) && c.reader->match > first);
-    assert(tiku_trk_help_window_find(&c, "clock frequency", 1) && c.reader->match == first);
-    assert(tiku_trk_help_window_copy(&c, 1));
+    assert(tiku_reader_help_window_find(&c, "clock frequency", 0) && c.reader->match > first);
+    assert(tiku_reader_help_window_find(&c, "clock frequency", 1) && c.reader->match == first);
+    assert(tiku_reader_help_window_copy(&c, 1));
     assert(!strcmp(tiku_clipboard_text(), "PRINT \"café <&>\"\nEND\n"));
     tiku_dialog_focus(&c.dialog, HELP_PAGE); press(&c, 'a', TIKU_MOD_CMD); press(&c, 'c', TIKU_MOD_CMD);
     assert(strstr(tiku_clipboard_text(), "Clock frequency") && !strstr(tiku_clipboard_text(), "<b>"));
@@ -112,32 +112,32 @@ int main(void)
     press(&c, TIKU_KEY_LEFT, 0); tiku_workspace_draw(workspace); assert(c.reader->nrows == 1);
     press(&c, TIKU_KEY_RIGHT, 0); tiku_workspace_draw(workspace); assert(c.reader->nrows == 2);
     reader_bookmark(&c); assert(c.reader->nmarks == 1 && !access(marks, R_OK));
-    assert(tiku_trk_help_window_go(&c, "next.html#missing") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "next.html#missing") == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace); assert(strstr(c.status, tiku_str("help.no_such_place")));
-    assert(tiku_trk_help_window_html(&c, "Report <safe>", "<p>Generated &amp; readable.</p>"));
+    assert(tiku_reader_help_window_html(&c, "Report <safe>", "<p>Generated &amp; readable.</p>"));
     tiku_workspace_draw(workspace);
     assert(strstr(c.reader->text, "Report <safe>") && strstr(c.reader->text, "Generated & readable."));
     char report[64]; strcpy(report, c.page);
-    char *oversized = malloc(TIKU_TRK_HELP_PAGE_MAX + 1); assert(oversized);
-    memset(oversized, 'x', TIKU_TRK_HELP_PAGE_MAX); oversized[TIKU_TRK_HELP_PAGE_MAX] = 0;
-    assert(!tiku_trk_help_window_html(&c, "Too large", oversized) && !strcmp(c.page, report));
+    char *oversized = malloc(TIKU_READER_HELP_PAGE_MAX + 1); assert(oversized);
+    memset(oversized, 'x', TIKU_READER_HELP_PAGE_MAX); oversized[TIKU_READER_HELP_PAGE_MAX] = 0;
+    assert(!tiku_reader_help_window_html(&c, "Too large", oversized) && !strcmp(c.page, report));
     free(oversized);
-    assert(tiku_trk_help_window_back(&c) && !strcmp(c.page, "next.html"));
-    assert(tiku_trk_help_window_forward(&c) && !strcmp(c.page, report));
+    assert(tiku_reader_help_window_back(&c) && !strcmp(c.page, "next.html"));
+    assert(tiku_reader_help_window_forward(&c) && !strcmp(c.page, report));
     char *large = malloc(7000); assert(large);
     strcpy(large, "<pre>"); memset(large+5, 'x', 5000); strcpy(large+5005, "</pre>");
-    assert(tiku_trk_help_window_html(&c, "Long code", large));
+    assert(tiku_reader_help_window_html(&c, "Long code", large));
     tiku_workspace_draw(workspace); tiku_clipboard_set("keep");
-    assert(!tiku_trk_help_window_copy(&c, 1) && !strcmp(tiku_clipboard_text(), "keep")); free(large);
+    assert(!tiku_reader_help_window_copy(&c, 1) && !strcmp(tiku_clipboard_text(), "keep")); free(large);
     snprintf(path, sizeof path, "%s/help/fr", base); assert(!mkdir(path, 0700));
     fixture(path, "index.html", "<h1>Aide française</h1><p>Bonjour.</p>");
-    setenv("TIKU_LANG", "fr", 1); assert(tiku_trk_help_window_home(&c));
+    setenv("TIKU_LANG", "fr", 1); assert(tiku_reader_help_window_home(&c));
     assert(strstr(c.reader->text, "Bonjour"));
-    assert(tiku_trk_help_window_go(&c, "next.html") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "next.html") == TIKU_READER_HELP_PAGE);
     assert(strstr(c.reader->text, "Next topic"));
     fixture(base, "outside.html", "<h1>Outside</h1>");
     snprintf(path, sizeof path, "%s/help/escape.html", base); assert(!symlink("../outside.html", path));
-    assert(tiku_trk_help_window_go(&c, "escape.html") == TIKU_TRK_HELP_NOWHERE);
+    assert(tiku_reader_help_window_go(&c, "escape.html") == TIKU_READER_HELP_NOWHERE);
     assert(!reader_path(&c, "../outside.html", path, sizeof path));
     assert(!reader_path(&c, "https://example.com/picture.png", path, sizeof path));
     markdown(&c, root, workspace);
@@ -145,15 +145,15 @@ int main(void)
     snprintf(path, sizeof path, "%s/help/long.html", base); FILE *f = fopen(path, "w"); assert(f);
     for (int i = 0; i < 60; i++) fprintf(f, "<h2 id='p%d'>Section %d</h2><p>Longer text which wraps when the reading window becomes narrow, preserving this paragraph.</p>", i, i);
     fclose(f);
-    assert(tiku_trk_help_window_go(&c, "long.html#p20") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "long.html#p20") == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace); tiku_doc_place_t at = tiku_doc_place(c.doc, c.bar.value);
     c.window->frame.w = 670; tiku_workspace_draw(workspace);
     assert(tiku_doc_place(c.doc, c.bar.value).block == at.block);
     tiku_font_set_size(16); tiku_workspace_draw(workspace);
     assert(tiku_doc_place(c.doc, c.bar.value).block == at.block);
-    assert(tiku_trk_help_window_go(&c, "next.html") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "next.html") == TIKU_READER_HELP_PAGE);
     tiku_font_set_size(12); tiku_workspace_draw(workspace);
-    assert(tiku_trk_help_window_back(&c)); tiku_workspace_draw(workspace);
+    assert(tiku_reader_help_window_back(&c)); tiku_workspace_draw(workspace);
     assert(tiku_doc_place(c.doc, c.bar.value).block == at.block);
     /* Outline rows name blocks of the page they were built from, and the
      * fold flags are reallocated with each page -- smaller when the new
@@ -168,12 +168,12 @@ int main(void)
     fputs("<h1>Few</h1><p>", f);
     for (int i = 0; i < 4000; i++) fputs("word ", f);
     fputs("</p>", f); fclose(f);
-    assert(tiku_trk_help_window_go(&c, "many.html") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "many.html") == TIKU_READER_HELP_PAGE);
     c.reader->side = 1; tiku_workspace_draw(workspace);
     assert(c.reader->nrows == HELP_ROWS);
     tiku_dialog_focus(&c.dialog, HELP_SIDE);
     tiku_list_select_only(&c.reader->list, c.reader->nrows - 1);
-    assert(tiku_trk_help_window_go(&c, "few.html") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "few.html") == TIKU_READER_HELP_PAGE);
     assert(c.doc->nblock < HELP_ROWS && c.reader->nrows == HELP_ROWS);
     assert(c.bar.value == 0);           /* a new page starts at its top */
     press(&c, TIKU_KEY_LEFT, 0);        /* folds nothing, writes nothing */
@@ -184,10 +184,10 @@ int main(void)
 
     c.window->frame.w = 820; c.reader->side = 1; tiku_workspace_draw(workspace);
     assert(!tiku_surface_png(surface, "/tmp/tiku-help-reader.png"));
-    tiku_trk_help_window_destroy(&c);
-    tiku_trk_help_window_init(&c, workspace, root, 1000, 760, &dirty);
+    tiku_reader_help_window_destroy(&c);
+    tiku_reader_help_window_init(&c, workspace, root, 1000, 760, &dirty);
     assert(c.reader->nmarks == 1 && !strcmp(c.reader->marks[0].page, "index.html"));
-    tiku_trk_help_window_destroy(&c); tiku_workspace_free(workspace); tiku_surface_free(surface);
+    tiku_reader_help_window_destroy(&c); tiku_workspace_free(workspace); tiku_surface_free(surface);
     puts("PASS: help search, copying, images, reports, bookmarks, localization, confinement and reading position");
     return 0;
 }

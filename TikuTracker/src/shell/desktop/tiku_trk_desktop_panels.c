@@ -945,6 +945,66 @@ run_find(desktop_t *app, folder_t *from)
     app->dirty = 1;
 }
 
+/** @brief Map a host directory into the desktop namespace, never a device. */
+static int
+local_picker_start(desktop_t *app, const char *path, char *out, size_t max)
+{
+    if (!path || path[0] != '/') path = "/";
+    if (!tiku_mount_is(app->backend)) {
+        if (!app->backend || !app->backend->ops ||
+            strcmp(app->backend->ops->name, "posix")) return 0;
+        return snprintf(out, max, "%s", path) < (int)max;
+    }
+    for (int i = 0; i < tiku_mount_slots(app->backend); i++) {
+        tiku_backend_t *b = tiku_mount_at(app->backend, i);
+        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+        if (!b || !b->ops || strcmp(b->ops->name, "posix") || !prefix)
+            continue;
+        return snprintf(out, max, "%s%s",
+            !strcmp(prefix, "/") ? "" : prefix, path) < (int)max;
+    }
+    return 0;
+}
+
+/** @brief Remember who asked; never answer a reused session. */
+void
+desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
+{
+    int32_t window = 0, mode = TIKU_APP_PICK_OPEN;
+    const char *start = tiku_msg_find_string(msg, "start", 0);
+    const char *name = tiku_msg_find_string(msg, "name", 0);
+    char mapped[TIKU_PATH_MAX];
+
+    if (app->pending_pick.kind || session < 0 ||
+        session >= TIKU_REMOTE_SESSIONS || !app->remote.session[session].used)
+        return;
+    (void)tiku_msg_find_int32(msg, "window", 0, &window);
+    (void)tiku_msg_find_int32(msg, "mode", 0, &mode);
+    if (mode < TIKU_APP_PICK_OPEN || mode > TIKU_APP_PICK_LOCAL_OPEN) return;
+    if (mode == TIKU_APP_PICK_LOCAL_OPEN) {
+        if (!local_picker_start(app, start, mapped, sizeof mapped)) {
+            snprintf(app->status, sizeof app->status,
+                     "No local filesystem is available for this application");
+            app->dirty = 1;
+            return;
+        }
+        start = mapped;
+    }
+    app->pending_pick.kind = 2;
+    app->pending_pick.session = session;
+    app->pending_pick.generation = app->remote.session[session].generation;
+    app->pending_pick.slot = NULL;
+    app->pending_pick.window = (uint32_t)window;
+    app->pending_pick.local = mode == TIKU_APP_PICK_LOCAL_OPEN;
+    if (mode == TIKU_APP_PICK_SAVE)
+        tiku_trk_panel_window_open_save(&app->file_panel,
+            &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
+    else
+        tiku_trk_panel_window_open_file(&app->file_panel,
+            &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
+    app->dirty = 1;
+}
+
 /**
  * @brief Tell whoever asked what the person chose, and forget the ask.
  *
@@ -961,17 +1021,33 @@ deliver_pick(desktop_t *app, const char *path)
     struct desktop_embed *slot = app->pending_pick.slot;
     int session = app->pending_pick.session;
     uint32_t window = app->pending_pick.window;
+    uint64_t generation = app->pending_pick.generation;
+    int local_only = app->pending_pick.local;
+    char local[TIKU_PATH_MAX];
 
     app->pending_pick.kind = 0;
     app->pending_pick.slot = NULL;
     if (path == NULL) {
         return;
     }
+    if (local_only) {
+        tiku_backend_t *b = tiku_backend_serving(app->backend, path,
+                                                local, sizeof local);
+        if (!b || !b->ops || strcmp(b->ops->name, "posix")) {
+            snprintf(app->status, sizeof app->status,
+                     "This app opens local files; copy the device file first");
+            app->dirty = 1;
+            return;
+        }
+        path = local;
+    }
     if (kind == 1 && slot != NULL && slot->running &&
         slot->descriptor != NULL && slot->descriptor->picked != NULL) {
         slot->descriptor->picked(slot->state, window, path);
         app->dirty = 1;
-    } else if (kind == 2) {
+    } else if (kind == 2 && session >= 0 && session < TIKU_REMOTE_SESSIONS &&
+               app->remote.session[session].used &&
+               app->remote.session[session].generation == generation) {
         tiku_msg_t *m = tiku_msg_new(TIKU_MSG_PICKED);
 
         if (m != NULL) {
@@ -1101,53 +1177,14 @@ sound_choose(void *context, tiku_sound_event_t event)
                                     NULL);
 }
 
-/** @brief Local documents never fall through to device reads or execution. */
+/** @brief Resolve local documents before handing them to the reader process. */
 int desktop_reader_file(desktop_t *app, const char *path)
 {
     char local[TIKU_PATH_MAX];
     tiku_backend_t *b = tiku_backend_serving(app->backend, path, local,
                                             sizeof local);
-    tiku_trk_help_window_open(&app->reader_window);
-    if (!b || !b->ops || !b->ops->name || strcmp(b->ops->name, "posix")) {
-        snprintf(app->reader_window.status, sizeof app->reader_window.status,
-                 "TikuReader opens local files. "
-                 "Copy device documents to this computer first.");
-        app->dirty = 1; return 0;
-    }
-    return tiku_trk_document_window_file(&app->reader_window, local);
-}
-
-/** @brief Start in the last document's folder, using the native picker. */
-void desktop_reader_choose(void *ctx)
-{
-    desktop_t *app = ctx;
-    const char *home = getenv("HOME");
-    const char *start = app->reader_window.root[0] ? app->reader_window.root :
-        home && *home ? home : "/";
-    char initial[TIKU_PATH_MAX];
-    snprintf(initial, sizeof initial, "%s", start);
-    /* In device-root mode the computer is mounted under a local prefix. */
-    if (tiku_mount_is(app->backend)) {
-        for (int i = 0; i < tiku_mount_slots(app->backend); i++) {
-            tiku_backend_t *b = tiku_mount_at(app->backend, i);
-            const char *prefix = tiku_mount_prefix_at(app->backend, i);
-            if (!b || !b->ops || !b->ops->name ||
-                strcmp(b->ops->name, "posix") || !prefix) continue;
-            if (strcmp(prefix, "/") &&
-                snprintf(initial, sizeof initial, "%s%s", prefix, start) >=
-                (int)sizeof initial)
-                snprintf(initial, sizeof initial, "%s", prefix);
-            break;
-        }
-    }
-    tiku_trk_panel_window_open_file(&app->file_panel, &app->reader_window,
-        TIKU_TRK_CMD_READER_OPEN, initial, NULL);
-}
-
-/** @brief One native launch route for double click, Open With and Info. */
-int desktop_image_open(void *ctx, const char *path)
-{
-    return desktop_image_file(ctx, path);
+    if (!b || !b->ops || strcmp(b->ops->name, "posix")) return 0;
+    return desktop_launch_app(app, "reader", local);
 }
 
 /** @brief Resolve namespace paths before handing files to local processes. */
@@ -1191,47 +1228,14 @@ int desktop_document_local(desktop_t *app, const char *path)
     return 0;
 }
 
-/** @brief Image files require binary reads, never text-valued device VFS. */
+/** @brief Legacy image routing delegates to the installed document app. */
 int desktop_image_file(desktop_t *app, const char *path)
 {
     char local[TIKU_PATH_MAX];
     tiku_backend_t *b = tiku_backend_serving(app->backend, path, local,
                                             sizeof local);
-    tiku_trk_image_window_open(app->image_window);
-    if (!b || !b->ops || !b->ops->name || strcmp(b->ops->name, "posix")) {
-        tiku_trk_image_window_note(app->image_window,
-            "Device image download is not available yet. "
-            "Choose a complete snapshot saved on this computer.");
-        return 0;
-    }
-    return tiku_trk_image_window_file(app->image_window, local);
-}
-
-/** @brief Start beside the current snapshot, through the local mount. */
-void desktop_image_choose(void *ctx)
-{
-    desktop_t *app = ctx;
-    const char *home = getenv("HOME");
-    const char *path = tiku_trk_image_window_path(app->image_window);
-    char start[TIKU_PATH_MAX], initial[TIKU_PATH_MAX];
-    if (*path) parent_path(path, start, sizeof start);
-    else snprintf(start, sizeof start, "%s", home && *home ? home : "/");
-    snprintf(initial, sizeof initial, "%s", start);
-    if (tiku_mount_is(app->backend)) {
-        for (int i = 0; i < tiku_mount_slots(app->backend); i++) {
-            tiku_backend_t *b = tiku_mount_at(app->backend, i);
-            const char *prefix = tiku_mount_prefix_at(app->backend, i);
-            if (!b || !b->ops || !b->ops->name ||
-                strcmp(b->ops->name, "posix") || !prefix) continue;
-            if (strcmp(prefix, "/") &&
-                snprintf(initial, sizeof initial, "%s%s", prefix, start) >=
-                (int)sizeof initial)
-                snprintf(initial, sizeof initial, "%s", prefix);
-            break;
-        }
-    }
-    tiku_trk_panel_window_open_file(&app->file_panel, app->image_window,
-        TIKU_TRK_CMD_IMAGE_OPEN, initial, NULL);
+    if (!b || !b->ops || strcmp(b->ops->name, "posix")) return 0;
+    return desktop_launch_app(app, "image", local);
 }
 
 /** @brief Find's Save with nowhere attached: ask WHERE with the panel. */

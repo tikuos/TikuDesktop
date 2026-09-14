@@ -56,8 +56,6 @@ DESKTOP_CONTROLLERS := $(T)/src/deskbar/tiku_trk_deskbar_roster.c \
                        $(T)/src/ui/windows/tiku_trk_deskbar_prefs_window.c \
                        $(T)/src/ui/windows/tiku_trk_desktop_prefs_window.c \
                        $(T)/src/ui/windows/tiku_trk_fonts_window.c \
-                       $(T)/src/ui/windows/tiku_trk_help_window.c \
-                       $(T)/src/ui/windows/tiku_trk_image_window.c \
                        $(T)/src/ui/windows/tiku_trk_sounds_window.c \
                        $(T)/src/ui/windows/tiku_trk_select_window.c \
                        $(T)/src/ui/windows/tiku_trk_switcher_window.c \
@@ -147,7 +145,7 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_report.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_wire.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_deviceprefs.c \
-                 $(T)/src/shell/desktop/tiku_trk_desktop_utilities.c \
+                 $(T)/src/shell/desktop/tiku_trk_desktop_vfs.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_startup.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_associations.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_forcequit.c
@@ -182,6 +180,10 @@ DESKTOP_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
 # that re-parses this file, in the tree's own paths so the checker beside
 # the sources reads them as it always has.
 .PHONY: print-ownership
+.PHONY: print-shell-sources
+print-shell-sources:
+	@echo "$(TRACKER_SRC) $(DESKTOP_SRC)"
+
 print-ownership:
 	@echo "TRACKER:$(patsubst $(T)/%,%,$(filter $(T)/src/%.c,$(TRACKER_SRC)))"
 	@echo "DESKTOP:$(patsubst $(T)/%,%,$(filter $(T)/src/%.c,$(DESKTOP_SRC)))"
@@ -195,7 +197,7 @@ STUB_OBJ           := $(call objs,$(SCRIPT_STUB))
 ENGINE_TRACKER_OBJ := $(call objs,$(SCRIPT_ENGINE_TRACKER))
 ENGINE_DESKTOP_OBJ := $(call objs,$(SCRIPT_ENGINE_DESKTOP))
 
-$(BUILD)/TikuTracker: $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) | $(BUILD)
+$(SYSTEM)/TikuTracker: $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) | $(SYSTEM)
 	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) \
 	      $(LDFLAGS) -lX11 -lm
 
@@ -203,7 +205,7 @@ $(DEV)/TikuTracker: $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) $(DESK_LIBS) | $(DEV)
 	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) $(DESK_LIBS) \
 	      $(LDFLAGS) -lX11 -lm
 
-$(BUILD)/TikuDesktop: $(DESKTOP_OBJ) $(STUB_OBJ) $(DESK_LIBS) | $(BUILD)
+$(SYSTEM)/TikuDesktop: $(DESKTOP_OBJ) $(STUB_OBJ) $(DESK_LIBS) | $(SYSTEM)
 	$(CC) $(CFLAGS) -o $@ $(DESKTOP_OBJ) $(STUB_OBJ) $(DESK_LIBS) \
 	      $(LDFLAGS) -lX11 -lm
 
@@ -217,11 +219,11 @@ CONDUCT_KITS := $(LIB_APPLICATION) $(LIB_INTERFACE) $(LIB_DEVICE) $(LIB_SUPPORT)
 $(DEV)/trk-conduct: $(call objs,$(T)/tests/trk_conduct.c) $(CONDUCT_KITS) | $(DEV)
 	$(CC) $(CFLAGS) -o $@ $< $(CONDUCT_KITS) $(LDFLAGS) -lX11 -lm
 
-$(BUILD)/icon-export: $(call objs,$(T)/tools/tiku_trk_icon_export.c) $(DESK_LIBS) | $(BUILD)
+$(BUILD)/icon-export: $(call objs,$(T)/tools/tiku_trk_icon_export.c) $(DESK_LIBS) | $(SYSTEM)
 	$(CC) $(CFLAGS) -o $@ $< $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
 
 .PHONY: shells
-shells: $(BUILD)/TikuTracker $(BUILD)/TikuDesktop \
+shells: $(SYSTEM)/TikuTracker $(SYSTEM)/TikuDesktop \
         $(DEV)/TikuTracker $(DEV)/TikuDesktop \
         $(DEV)/trk-conduct $(BUILD)/icon-export
 
@@ -247,6 +249,7 @@ test_fs_SRCS   := $(COMMON)
 test_types_SRCS   := $(COMMON)
 test_scroll_SRCS   := $(COMMON)
 test_launch_SRCS   := $(COMMON)
+test_launch_reports_SRCS := $(T)/src/core/tiku_trk_launch.c
 test_query_SRCS   := $(T)/src/ui/tiku_trk_find.c $(T)/src/core/tiku_trk_types.c
 test_notify_SRCS   := $(POSEVIEW) $(T)/src/core/tiku_trk_match.c $(T)/src/core/tiku_trk_clip.c $(T)/src/core/tiku_trk_task.c $(T)/src/core/tiku_trk_repaint.c $(T)/src/ui/tiku_trk_nodeicon.c $(T)/src/core/tiku_trk_types.c
 test_title_SRCS   := $(COMMON) $(POSEVIEW) $(T)/src/ui/tiku_trk_titleview.c
@@ -255,8 +258,9 @@ test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_
 test_deskbar_hover_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_hover_LDLIBS := -lX11 -lm
 test_fontprefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/deskbar/tiku_trk_fontprefs.c
-test_help_window_SRCS := $(T)/src/ui/windows/tiku_trk_help_window.c
+test_help_window_SRCS := $(D)/reader/tiku_reader_help_window.c
 test_help_window_LDLIBS := -lX11 -lm
+test_vfs_rpc_LDLIBS := -pthread
 test_help_reader_LDLIBS := -lX11 -lm
 test_document_reader_LDLIBS := -lX11 -lm
 test_image_viewer_LDLIBS := -lX11 -lm
@@ -265,16 +269,27 @@ test_image_association_LDLIBS := -lX11 -lm
 test_document_association_SRCS := $(COMMON) $(POSEVIEW)
 test_document_association_LDLIBS := -lX11 -lm
 test_editor_document_LDLIBS := -lX11 -lm
+test_editor_resize_LDLIBS := -lX11 -lm
 test_tracker_image_LDLIBS := -lX11 -lm
 test_tracker_image_SRCS := $(T)/src/core/tiku_trk_task.c
 test_host_render_LDLIBS := -lX11 -lm
-test_vfs_rpc_LDLIBS := -pthread
 test_host_render_SRCS := $(T)/src/shell/tiku_trk_splash.c
 test_reader_large_LDLIBS := -lX11 -lm
 test_fonts_window_SRCS := $(test_fontprefs_SRCS)
 test_fonts_window_LDLIBS := -lX11 -lm
 test_app_groups_SRCS := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
 test_app_groups_LDLIBS := -lX11 -lm
+test_openwith_apps_SRCS := $(COMMON) $(T)/src/ui/windows/tiku_trk_open_with_window.c
+test_openwith_apps_LDLIBS := -lX11 -lm
+test_app_discovery_CFLAGS := -ffunction-sections -fdata-sections
+test_app_discovery_SRCS := $(T)/src/core/tiku_trk_launch.c
+test_app_discovery_LDLIBS := -lX11 -lm $(GC_SECTIONS)
+test_app_picker_CFLAGS := -ffunction-sections -fdata-sections
+test_app_picker_LDLIBS := -lX11 -lm $(GC_SECTIONS)
+test_runner_CFLAGS := -ffunction-sections -fdata-sections
+test_runner_LDLIBS := -lX11 -lm -ldl $(GC_SECTIONS)
+$(BUILD)/tests/test_runner: | $(BUILD)/apps/image/TikuImage.so \
+                             $(BUILD)/apps/image/app.manifest
 test_soundprefs_SRCS  := $(T)/src/core/tiku_trk_prefs.c $(T)/src/core/tiku_trk_soundprefs.c
 test_deskbar_prefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
 test_frame_SRCS   := $(COMMON)
@@ -305,9 +320,13 @@ test_conduct_LDLIBS := -lX11 -lm
 # A thread stands in for the desktop's own process, reading the line.
 test_remote_LDLIBS := -lpthread
 test_client_wake_LDLIBS := -lX11 -lm
+test_client_reports_LDLIBS := -lX11 -lm
 test_appload_LDLIBS := -lX11 -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
 test_shm_LDLIBS := -lX11 -lm $(RT_LIBS)
+ifeq ($(UNAME_S),Linux)
+test_shm_LDLIBS += -Wl,--wrap=posix_fallocate
+endif
 test_channel_LDLIBS := -lutil -lpthread
 test_trail_CFLAGS := -I$(K)/support
 test_report_CFLAGS := -I$(K)/support
@@ -359,8 +378,6 @@ test_legacy_input_SRCS := $(COMMON) $(POSEVIEW) \
     $(T)/src/ui/windows/tiku_trk_panel_window.c \
     $(T)/src/ui/overlays/tiku_trk_status_overlay.c
 test_legacy_input_LDLIBS := -lX11 -lm -ldl $(GC_SECTIONS)
-test_legacy_input_SRCS += $(T)/src/ui/windows/tiku_trk_help_window.c
-test_legacy_input_SRCS += $(T)/src/ui/windows/tiku_trk_image_window.c
 test_preferences_kit_LDLIBS := -lX11 -lm
 test_clipboard_text_LDLIBS := -lX11 -lm
 test_host_clipboard_LDLIBS := -lX11 -lm

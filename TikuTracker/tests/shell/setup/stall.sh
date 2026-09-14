@@ -1,10 +1,8 @@
 # Set up before stall.script runs.  Sourced by run.sh with the harness's
 # variables in scope: $deskhome, $work, $appsdir, $top, $s, $tmp.
 
-# An application that stops the shell's turn, put where applications are
-# loaded INTO this process: its tick runs on the shell's own loop, which
-# is the only way one program can freeze another here.  Built with the
-# tests, never installed beside the real ones.
+# A legacy trusted installation must still be isolated. Its default
+# auto-start policy survives migration; its former process privilege does not.
 mkdir -p "$appsdir/trusted"
 cp -f "$top/build/tests/Stall.so" "$appsdir/trusted/"
 

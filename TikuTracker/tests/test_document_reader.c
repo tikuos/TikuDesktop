@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <limits.h>
 #include "tiku_icons.h"
-#include "../src/ui/windows/tiku_trk_help_window.c"
+#include "../../apps/reader/tiku_reader_help_window.c"
 
 static int requests;
 
@@ -17,49 +17,49 @@ static void fixture(const char *root, const char *name, const char *text)
 }
 
 /** @brief Deliver real window keyboard events, including command modifiers. */
-static void press(tiku_trk_help_window_t *c, unsigned key, unsigned mods)
+static void press(tiku_reader_help_window_t *c, unsigned key, unsigned mods)
 {
     tiku_event_t ev = {.type=TIKU_EVENT_KEY_DOWN, .key=key, .modifiers=mods};
     tiku_window_send(c->window, &ev);
 }
 
 /** @brief Rejections must retain both the current page and forward history. */
-static void rejected(tiku_trk_help_window_t *c, const char *href)
+static void rejected(tiku_reader_help_window_t *c, const char *href)
 {
     char before[TIKU_PATH_MAX]; strcpy(before, c->page);
     int back = c->nback, forward = c->nforward;
-    assert(tiku_trk_help_window_go(c, href) == TIKU_TRK_HELP_NOWHERE);
+    assert(tiku_reader_help_window_go(c, href) == TIKU_READER_HELP_NOWHERE);
     assert(!strcmp(before, c->page) && back == c->nback && forward == c->nforward);
     assert(c->status[0]);
 }
 
 /** @brief Reload preserves the paragraph and reads past the old source limit. */
-static void long_document(tiku_trk_help_window_t *c, const char *base)
+static void long_document(tiku_reader_help_window_t *c, const char *base)
 {
     char path[1024]; snprintf(path, sizeof path, "%s/long.html", base);
     FILE *f = fopen(path, "w"); assert(f);
     fputs("<h1>Long document</h1>", f);
     for (int i = 0; i < 60; i++) fprintf(f, "<p>Paragraph %d for reading.</p>", i);
     assert(!fclose(f));
-    assert(tiku_trk_document_window_file(c, path));
+    assert(tiku_reader_document_window_file(c, path));
     tiku_workspace_draw(c->workspace);
     tiku_scroll_to(&c->bar, 600);
     tiku_doc_place_t at = tiku_doc_place(c->doc, c->bar.value);
     assert(at.block > 0);
     int back = c->nback, forward = c->nforward;
-    assert(tiku_trk_document_window_reload(c));
+    assert(tiku_reader_document_window_reload(c));
     tiku_workspace_draw(c->workspace);
     assert(tiku_doc_place(c->doc, c->bar.value).block == at.block);
     assert(c->nback == back && c->nforward == forward);
     f = fopen(path, "a"); assert(f);
-    for (int i = 0; i < TIKU_TRK_HELP_PAGE_MAX; i++) fputc('x', f);
+    for (int i = 0; i < TIKU_READER_HELP_PAGE_MAX; i++) fputc('x', f);
     assert(!fclose(f));
-    assert(tiku_trk_document_window_reload(c) && !c->oversize);
-    assert(c->reader->length > TIKU_TRK_HELP_PAGE_MAX);
+    assert(tiku_reader_document_window_reload(c) && !c->oversize);
+    assert(c->reader->length > TIKU_READER_HELP_PAGE_MAX);
 }
 
 /** @brief Exercise the same atomic Unicode commits supplied by the desktop. */
-static void type_text(tiku_trk_help_window_t *c, const char *text)
+static void type_text(tiku_reader_help_window_t *c, const char *text)
 {
     tiku_text_input_t input = {0}; tiku_event_t ev;
     assert(tiku_text_input_set(&input, text, strlen(text)));
@@ -67,7 +67,7 @@ static void type_text(tiku_trk_help_window_t *c, const char *text)
 }
 
 /** @brief Hit-testing uses the browser chrome's drawing rectangles. */
-static void click_control(tiku_trk_help_window_t *c, tiku_rect_t rect)
+static void click_control(tiku_reader_help_window_t *c, tiku_rect_t rect)
 {
     tiku_event_t ev = {.type=TIKU_EVENT_POINTER_DOWN, .button=1,
         .x=rect.x+rect.w/2, .y=rect.y+rect.h/2};
@@ -78,10 +78,10 @@ static void click_control(tiku_trk_help_window_t *c, tiku_rect_t rect)
 /** @brief Find and Location preserve command, focus and history behavior. */
 static void browser_controls(tiku_workspace_t *workspace, const char *base)
 {
-    tiku_trk_help_window_t c; int dirty = 0;
-    tiku_trk_document_window_init(&c, workspace, 1000, 760,
+    tiku_reader_help_window_t c; int dirty = 0;
+    tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
-    tiku_trk_help_window_open(&c); tiku_workspace_draw(workspace);
+    tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
     help_layout_t l = layout(&c, tiku_window_content(c.window));
     assert(!l.find.w && !l.side.w && !l.copy.w && !l.bookmark.w);
     int height = l.page.h;
@@ -138,7 +138,7 @@ static void browser_controls(tiku_workspace_t *workspace, const char *base)
     c.window->frame.w = 180; tiku_workspace_draw(workspace);
     l = layout(&c, tiku_window_content(c.window));
     assert(l.location.w > 0 && l.find.w > 0 && !l.prev.w);
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
 }
 
 /** @brief Long absolute paths remain complete, never truncated into another file. */
@@ -155,56 +155,56 @@ static void browser_long_address(tiku_workspace_t *workspace, const char *base)
     char path[TIKU_PATH_MAX];
     int n = snprintf(path, sizeof path, "%s/deep.md", folder);
     assert(n >= TIKU_FIELD_MAX && n < TIKU_PATH_MAX);
-    tiku_trk_help_window_t c; int dirty = 0;
-    tiku_trk_document_window_init(&c, workspace, 1000, 760,
+    tiku_reader_help_window_t c; int dirty = 0;
+    tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
-    assert(tiku_trk_document_window_file(&c, path));
+    assert(tiku_reader_document_window_file(&c, path));
     assert(!strcmp(c.page, path) && !strcmp(c.reader->location.text, "deep.md"));
     press(&c, 'l', TIKU_MOD_CMD); type_text(&c, path);
     assert(!strcmp(c.reader->location.text, "deep.md"));
     assert(strstr(c.status, "too long"));
     press(&c, TIKU_KEY_RETURN, 0);
     assert(!strcmp(c.page, path) && !c.nback);
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
 }
 
 /** @brief Frame toggling preserves the exact original rectangle and paragraph. */
 static void browser_zoom(tiku_workspace_t *workspace, const char *base)
 {
-    tiku_trk_help_window_t c; int dirty = 0;
+    tiku_reader_help_window_t c; int dirty = 0;
     char path[TIKU_PATH_MAX]; snprintf(path, sizeof path, "%s/long.html", base);
-    tiku_trk_document_window_init(&c, workspace, 1000, 760,
+    tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
-    assert(tiku_trk_document_window_file(&c, path));
+    assert(tiku_reader_document_window_file(&c, path));
     tiku_workspace_draw(workspace); tiku_scroll_to(&c.bar, 600);
     tiku_rect_t original = c.window->frame, area = {12,24,900,710};
     tiku_doc_place_t place = tiku_doc_place(c.doc, c.bar.value);
-    assert(tiku_trk_document_window_zoom(&c, area));
+    assert(tiku_reader_document_window_zoom(&c, area));
     assert(c.window->frame.x == 14 && c.window->frame.y == 26);
     assert(c.window->frame.w == 896 && c.window->frame.h == 706);
     tiku_workspace_draw(workspace);
     assert(tiku_doc_place(c.doc, c.bar.value).block == place.block);
-    assert(tiku_trk_document_window_zoom(&c, area));
+    assert(tiku_reader_document_window_zoom(&c, area));
     assert(!memcmp(&c.window->frame, &original, sizeof original));
     assert(!c.window->zoom_valid);
-    assert(!tiku_trk_document_window_zoom(&c, (tiku_rect_t){0,0,0,0}));
+    assert(!tiku_reader_document_window_zoom(&c, (tiku_rect_t){0,0,0,0}));
     assert(!memcmp(&c.window->frame, &original, sizeof original));
     /* A manual resize establishes a new restore frame on the next zoom. */
-    assert(tiku_trk_document_window_zoom(&c, area));
+    assert(tiku_reader_document_window_zoom(&c, area));
     c.window->frame.w -= 140; original = c.window->frame;
-    assert(tiku_trk_document_window_zoom(&c, area));
-    assert(tiku_trk_document_window_zoom(&c, area));
+    assert(tiku_reader_document_window_zoom(&c, area));
+    assert(tiku_reader_document_window_zoom(&c, area));
     assert(!memcmp(&c.window->frame, &original, sizeof original));
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
 }
 
 /** @brief Scalable icon controls stay labelled, compact and hover-discoverable. */
 static void browser_toolbar(tiku_workspace_t *workspace)
 {
-    tiku_trk_help_window_t c; int dirty = 0;
-    tiku_trk_document_window_init(&c, workspace, 1000, 760,
+    tiku_reader_help_window_t c; int dirty = 0;
+    tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
-    tiku_trk_help_window_open(&c); tiku_workspace_draw(workspace);
+    tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
     help_layout_t l = layout(&c, tiku_window_content(c.window));
     assert(l.back.w <= 34 && l.back.h <= 34);
     assert(l.location.x > l.home.x+l.home.w && l.location.w > 300);
@@ -241,7 +241,7 @@ static void browser_toolbar(tiku_workspace_t *workspace)
         }
     }
     tiku_font_set_size(12);
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
 }
 
 /** @brief Preview the same book artwork at menu, list and application sizes. */
@@ -271,11 +271,11 @@ static void reader_icon_preview(void)
 /** @brief Hover does no work when unchanged; bounded paints equal full ones. */
 static void browser_hover(tiku_workspace_t *workspace, tiku_surface_t *s)
 {
-    tiku_trk_help_window_t c;
+    tiku_reader_help_window_t c;
     int dirty = 0;
-    tiku_trk_document_window_init(&c, workspace, 1000, 760,
+    tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
-    tiku_trk_help_window_open(&c);
+    tiku_reader_help_window_open(&c);
     document_find(&c, 1);
     tiku_workspace_draw(workspace);
     size_t bytes = (size_t)s->w*s->h*sizeof *s->px;
@@ -313,7 +313,7 @@ static void browser_hover(tiku_workspace_t *workspace, tiku_surface_t *s)
     assert(!tiku_dialog_pressed(&c.dialog, HELP_HOME) && !c.hover_damage.w);
     drag.type = TIKU_EVENT_POINTER_UP; tiku_window_send(c.window, &drag);
     assert(requests == before); /* Dragging away still cancels the button. */
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
     puts("PASS: 4,000 unchanged hovers skip repaint; tip damage matches redraw");
 }
 
@@ -352,31 +352,31 @@ int main(void)
     assert(!tiku_surface_png(im, path)); tiku_surface_free(im);
     tiku_surface_t *surface = tiku_surface_new(1000, 760, TIKU_C_PANEL);
     tiku_workspace_t *workspace = tiku_workspace_new(surface); int dirty = 0;
-    tiku_trk_help_window_t c;
-    tiku_trk_document_window_init(&c, workspace, 1000, 760, &dirty, choose, &requests);
-    tiku_trk_help_window_open(&c); tiku_workspace_draw(workspace);
+    tiku_reader_help_window_t c;
+    tiku_reader_document_window_init(&c, workspace, 1000, 760, &dirty, choose, &requests);
+    tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
     assert(c.window && !strcmp(c.window->title, "TikuReader"));
     assert(!c.page[0] && !c.nback && !c.nforward && !requests);
     assert(c.window->has_menus && c.window->menus.nmenu == 3);
     press(&c, 'o', TIKU_MOD_CMD); assert(requests == 1);
-    assert(!tiku_trk_document_window_reload(&c));
+    assert(!tiku_reader_document_window_reload(&c));
     snprintf(path, sizeof path, "%s/notes.MD", base);
-    assert(tiku_trk_document_window_file(&c, path)); tiku_workspace_draw(workspace);
+    assert(tiku_reader_document_window_file(&c, path)); tiku_workspace_draw(workspace);
     assert(!strcmp(tiku_doc_title(c.doc), "Notes") && !c.nback);
-    assert(tiku_trk_help_window_find(&c, "shared words", 0));
-    assert(tiku_trk_help_window_copy(&c, 1));
+    assert(tiku_reader_help_window_find(&c, "shared words", 0));
+    assert(tiku_reader_help_window_copy(&c, 1));
     assert(strstr(tiku_clipboard_text(), "PRINT 42"));
     reader_action(&c, HELP_OUTLINE); tiku_workspace_draw(workspace);
     assert(c.reader->nrows == 2);
-    assert(tiku_trk_help_window_go(&c, tiku_doc_link_href(c.doc, 0)) == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, tiku_doc_link_href(c.doc, 0)) == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace);
     assert(!strcmp(tiku_doc_title(c.doc), "Details") && c.nback == 1);
     assert(!strstr(c.reader->text, "hidden script"));
     assert(c.reader->nimages == 1 && c.reader->images[0].image.w == 20);
-    assert(tiku_trk_help_window_go(&c, "../notes.MD#example") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "../notes.MD#example") == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace);
     assert(!strcmp(tiku_doc_title(c.doc), "Notes"));
-    assert(tiku_trk_help_window_back(&c));
+    assert(tiku_reader_help_window_back(&c));
     assert(!strcmp(tiku_doc_title(c.doc), "Details"));
     rejected(&c, "https://example.com/doc.html");
     rejected(&c, "file:///etc/passwd"); rejected(&c, "tiku:/clock");
@@ -390,11 +390,11 @@ int main(void)
     assert(!reader_path(&c, "escape.png", path, sizeof path));
     reader_bookmark(&c); assert(c.reader->nmarks == 1);
     assert(strstr(c.reader->marks[0].page, "detail #one.HTM"));
-    assert(tiku_trk_help_window_forward(&c));
+    assert(tiku_reader_help_window_forward(&c));
     reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
     tiku_list_select_only(&c.reader->list, 0); reader_side_open(&c);
     assert(!strcmp(tiku_doc_title(c.doc), "Details")); /* literal # in saved path */
-    assert(tiku_trk_help_window_go(&c, "../notes.MD") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "../notes.MD") == TIKU_READER_HELP_PAGE);
     tiku_field_start(&c.reader->query, "Shared words"); reader_search(&c);
     assert(c.reader->nrows == 3);
     for (int i = 0; i < c.reader->nrows; i++) assert(c.reader->rows[i].page[0] == '/');
@@ -403,25 +403,25 @@ int main(void)
     press(&c, 'r', TIKU_MOD_CMD);
     assert(!strcmp(tiku_doc_title(c.doc), "Revised notes") && c.nback == back);
     snprintf(path, sizeof path, "%s/notes.MD", base); assert(!unlink(path));
-    assert(!tiku_trk_document_window_reload(&c));
+    assert(!tiku_reader_document_window_reload(&c));
     assert(!strcmp(tiku_doc_title(c.doc), "Revised notes") && c.nback == back);
-    assert(tiku_trk_help_window_go(&c, "empty.md") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "empty.md") == TIKU_READER_HELP_PAGE);
     assert(c.reader->length == 0 && !c.oversize);
-    assert(tiku_trk_help_window_go(&c, "sub/detail%20%23one.HTM") == TIKU_TRK_HELP_PAGE);
+    assert(tiku_reader_help_window_go(&c, "sub/detail%20%23one.HTM") == TIKU_READER_HELP_PAGE);
     c.reader->side = 1; tiku_workspace_draw(workspace);
     assert(!tiku_surface_png(surface, "/tmp/tiku-document-reader.png"));
     c.window->frame.w = 410; tiku_workspace_draw(workspace);
-    tiku_trk_help_window_close(&c); tiku_trk_help_window_open(&c);
+    tiku_reader_help_window_close(&c); tiku_reader_help_window_open(&c);
     assert(!strcmp(tiku_doc_title(c.doc), "Details")); /* in-session reopen */
-    tiku_trk_help_window_destroy(&c);
-    tiku_trk_document_window_init(&c, workspace, 1000, 760, &dirty, choose, &requests);
+    tiku_reader_help_window_destroy(&c);
+    tiku_reader_document_window_init(&c, workspace, 1000, 760, &dirty, choose, &requests);
     assert(c.reader->nmarks == 1 && !c.page[0]); /* bookmarks, not automatic reopening */
-    tiku_trk_help_window_open(&c); tiku_workspace_draw(workspace);
+    tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
     reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
     tiku_list_select_only(&c.reader->list, 0); reader_side_open(&c);
     assert(!strcmp(tiku_doc_title(c.doc), "Details"));
     long_document(&c, base);
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
     browser_controls(workspace, base);
     browser_long_address(workspace, base);
     browser_zoom(workspace, base);
@@ -429,11 +429,11 @@ int main(void)
     browser_hover(workspace, surface);
     reader_icon_preview();
     /* The reader must not turn Help's slash links into local file reads. */
-    tiku_trk_help_window_init(&c, workspace, base, 1000, 760, &dirty);
-    tiku_trk_help_window_open(&c);
-    assert(tiku_trk_help_window_go(&c, "../index.html") == TIKU_TRK_HELP_NOWHERE);
+    tiku_reader_help_window_init(&c, workspace, base, 1000, 760, &dirty);
+    tiku_reader_help_window_open(&c);
+    assert(tiku_reader_help_window_go(&c, "../index.html") == TIKU_READER_HELP_NOWHERE);
     assert(c.reader->nmarks == 0);
-    tiku_trk_help_window_destroy(&c);
+    tiku_reader_help_window_destroy(&c);
     tiku_workspace_free(workspace); tiku_surface_free(surface);
     puts("PASS: TikuReader navigation, input, reload, search, bookmarks, images and local-only policy");
     return 0;

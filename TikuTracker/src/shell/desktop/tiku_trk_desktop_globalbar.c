@@ -320,8 +320,6 @@ rebuild_global_bar(desktop_t *app)
     {
         int program = (fw != NULL &&
                        (embed_win_of_window(app, fw) != NULL ||
-                        fw == app->reader_window.window ||
-                        fw == tiku_trk_image_window_handle(app->image_window) ||
                         tiku_remote_owner(&app->remote, fw) != NULL));
 
         const char *page = desktop_help_page_of(app, fw);
@@ -518,7 +516,7 @@ system_invoke(desktop_t *app, int command)
         /* The page the program in front named for itself, opened in the
          * desktop's own reader: the help folder is the shell's. */
         if (app->help_row[0] != '\0') {
-            tiku_trk_help_window_open_page(&app->help_window, app->help_row);
+            (void)desktop_help_open(app, app->help_row);
         }
         return 1;
     case TIKU_TRK_CMD_APP_ABOUT:

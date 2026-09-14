@@ -1,20 +1,16 @@
 <h1>Descriptor Demo</h1>
 
-<p>The Descriptor Demo is one application written once and run two
-ways. The desktop hosts it inside itself, linked in with the rest of
-the shell, when <code>TIKU_EMBED_DEMO</code> is set in the desktop's
-environment. The program <code>build/tiku-demo-app</code> is the same
-application code as a process of its own: it connects to a desktop
-already running, over the socket
-<code>~/.config/tracker/desk.sock</code>, and waits up to eight seconds
-for that socket to appear. There is no Deskbar row for it, under
-<b>Demos</b> or anywhere else.</p>
+<p>The Descriptor Demo is an application built against the public SDK.
+Choose it from <b>Demos</b>, or run
+<code>build/examples/tiku-demo-app</code> against an existing desktop.
+Both routes run in a separate process, connected through
+<code>~/.config/tracker/desk.sock</code>. The legacy
+<code>TIKU_EMBED_DEMO</code> switch also starts the separate application;
+it no longer links the demo into the desktop.</p>
 
-<p>It is written to be run both ways and compared. The application asks
-its host for a window, paints into it, publishes a menu and is handed
-events, and is never told which of the two hosts it got. What the
-window shows, the order it is painted in and what the menu does are
-therefore the answers both hosts give to the same requests.</p>
+<p>The same descriptor paints the window, publishes menus and receives events.
+The desktop supplies window and device services without exposing private
+state to the application.</p>
 
 <h2 id="window">What the window shows</h2>
 
@@ -41,9 +37,7 @@ the repaint covers nothing above it or below it.</li>
 </ul>
 
 <p>Along the foot is a line such as <code>pid 4711: whose faults are
-whose</code>. The process id in it is the one thing on the panel that
-differs between the two hosts: linked in, it is the desktop's own
-process id, and out of process it is the demo's.</p>
+whose</code>. The process id is the demo's own, distinct from the desktop.</p>
 
 <h2 id="remote">The Remote menu</h2>
 
@@ -56,9 +50,8 @@ carries two rows.</p>
 <li id="refresh"><b>Refresh</b> paints the whole panel again. Anything
 drawn over it since it opened, including the marks below, is painted
 over.</li>
-<li id="quit"><b>Quit</b> ends the application. Linked in, the desktop
-stops it and takes its window down; out of process, the program exits
-and the desktop takes down the window whose session has gone. The
+<li id="quit"><b>Quit</b> ends the application. The program exits and the desktop takes down
+the window whose session has gone. The
 <b>Escape</b> key does the same thing, and so does closing the window,
 which is the only window the demo opens.</li>
 </ul>

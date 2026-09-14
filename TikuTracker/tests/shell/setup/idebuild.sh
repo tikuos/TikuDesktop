@@ -12,5 +12,5 @@ printf 'title Firmware\ntarget host\ngroup Sources\nfile bad.c\n' \
 printf 'int main(void)\n{\n/* a remark */\nreturn nope;\n}\n' \
     > "$deskhome/bad.c"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

@@ -1,11 +1,10 @@
 # shell: desktop
 # home: fixture
-# Where a file is installed decides how it runs.  The clock in
-# apps/trusted is LOADED into this process and is already showing when
-# the desktop opens; the sketch beside it is a row that starts in a
-# process of its own when chosen.  Neither was linked into anything.
+# Legacy trusted/ preserves automatic startup, not in-process loading.
+# Both the clock and the menu-launched sketch have their own processes.
 wait 25
 note the folder window opened over it; the clock was there first
+click-window trk_script
 key w ctrl
 wait 6
 note the trusted application is already open, without being asked for
@@ -18,7 +17,7 @@ note the example programs are under Demos, one row that expands
 menu-pick Demos
 wait 4
 expect-menu Sketch
-note choosing one that is not trusted starts it through the runner
+note choosing another app starts another runner process
 menu-pick Sketch
 wait 110
 expect-title Sketch

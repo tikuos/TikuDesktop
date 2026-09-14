@@ -1,0 +1,9 @@
+version=1
+id=terminal
+name=Terminal
+module=terminal.so
+category=applications
+icon=application
+types=
+startup=apps/terminal.so
+help=apps/terminal.html

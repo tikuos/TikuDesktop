@@ -12,6 +12,7 @@
 wait 25
 note the shell's own folder window opens over them; it is focused, so
 note the runtime's own close gesture takes it and leaves the two behind
+click-window trk_script
 key w ctrl
 wait 10
 note two windows, not one window wearing the second name: a runtime
@@ -37,8 +38,8 @@ expect-file-has /tmp/trk_twowin/alpha 1
 expect-file-has /tmp/trk_twowin/beta 3
 note the runtime carries a WHEEL to the window UNDER it, the way it
 note carries a key to the window that HAS it: each pane counts only
-note its own, and the direction it was rolled -- this is the embedded
-note lane, the application hosted in the shell's own process
+note its own, and the direction it was rolled -- this is the legacy
+note auto-start lane, now isolated from the desktop as well
 press 499 261 4
 wait 10
 expect-file-has /tmp/trk_twowin/alpha wheel -3
@@ -48,7 +49,7 @@ wait 10
 expect-file-has /tmp/trk_twowin/beta wheel 3
 expect-file-has /tmp/trk_twowin/alpha wheel -3
 note and the DESK's clipboard is one clipboard: what Alpha put on it,
-note Beta reads back -- through the services, hosted in this process
+note Beta reads back through the shared clipboard service
 click-window TwoAlpha
 wait 6
 key y

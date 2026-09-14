@@ -12,5 +12,5 @@ printf '10 PRINT "FROMBOARD"\n20 PRINT 6 * 7\n' > "$deskhome/quiet.bas"
 # same way this machine's does.
 printf '10 PRINT "A"\n20 PRINT UNDEFINED$(\n' > "$deskhome/blink.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

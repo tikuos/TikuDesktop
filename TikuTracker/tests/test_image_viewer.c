@@ -1,11 +1,11 @@
 /* Native image viewer and bounded binary decoder regression tests.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
-#include "../src/ui/windows/tiku_trk_image_window.c"
+#include "../../apps/image/tiku_image_window.c"
 #include "image_fixtures.inc"
 
 /** @brief Pump completion callbacks, with a strict deadline for stuck jobs. */
-static void settle(tiku_trk_image_window_t *c)
+static void settle(tiku_image_window_t *c)
 {
     for (int i = 0; i < 5000 && (c ? c->busy : tiku_work_busy()); i++) {
         (void)tiku_work_collect(); usleep(1000);
@@ -89,7 +89,7 @@ static void chosen(void *ctx)
 }
 
 /** @brief Fit, rotate, high zoom and extreme pan keep bounded cached pixels. */
-static void transform_tests(tiku_trk_image_window_t *c)
+static void transform_tests(tiku_image_window_t *c)
 {
     image_layout(c, tiku_window_content(c->window));
     assert(image_zoom(c) > 0);
@@ -107,9 +107,9 @@ static void transform_tests(tiku_trk_image_window_t *c)
     image_action(c, IV_ACTUAL); assert(c->zoom == 1 && !c->fit);
     image_action(c, IV_FIT); assert(c->fit);
     tiku_rect_t original = c->window->frame;
-    assert(tiku_trk_image_window_zoom(c, (tiku_rect_t){0, 22, 1000, 650}));
+    assert(tiku_image_window_zoom(c, (tiku_rect_t){0, 22, 1000, 650}));
     assert(c->window->frame.x == 2 && c->window->frame.y == 24);
-    assert(tiku_trk_image_window_zoom(c, (tiku_rect_t){0, 22, 1000, 650}));
+    assert(tiku_image_window_zoom(c, (tiku_rect_t){0, 22, 1000, 650}));
     assert(!memcmp(&original, &c->window->frame, sizeof original));
     c->window->frame.w = 280;
     image_layout(c, tiku_window_content(c->window));
@@ -126,21 +126,21 @@ static void transform_tests(tiku_trk_image_window_t *c)
 }
 
 /** @brief Refreshed files keep framing; failures pause instead of discarding. */
-static void watch_tests(tiku_trk_image_window_t *c, const char *file,
+static void watch_tests(tiku_image_window_t *c, const char *file,
                          unsigned char *bmp, size_t len)
 {
     image_action(c, IV_ACTUAL); image_action(c, IV_WATCH);
-    tiku_trk_image_window_tick(c, 1); assert(c->busy);
+    tiku_image_window_tick(c, 1); assert(c->busy);
     uint32_t *before = c->image.px;
-    tiku_trk_image_window_tick(c, 2); settle(c);
+    tiku_image_window_tick(c, 2); settle(c);
     assert(c->image.px == before && c->watching);
     bmp[len - 1] ^= 127;
     write_file(file, bmp, len);
-    tiku_trk_image_window_tick(c, 3000000); settle(c);
+    tiku_image_window_tick(c, 3000000); settle(c);
     assert(c->image.px != before && !c->fit && c->zoom == 1);
     before = c->image.px;
     write_file(file, "incomplete", 10);
-    tiku_trk_image_window_tick(c, 6000000); settle(c);
+    tiku_image_window_tick(c, 6000000); settle(c);
     assert(c->image.px == before && !c->watching);
     assert(strstr(c->status, "Previous image kept"));
     write_file(file, bmp, len);
@@ -162,9 +162,9 @@ int main(int argc, char **argv)
     int dirty = 0, picks = 0;
     tiku_surface_t *s = tiku_surface_new(1000, 680, TIKU_C_BACKDROP);
     tiku_workspace_t *workspace = tiku_workspace_new(s);
-    tiku_trk_image_window_t *c = tiku_trk_image_window_new(workspace,
+    tiku_image_window_t *c = tiku_image_window_new(workspace,
         &dirty, chosen, &picks);
-    assert(c); tiku_trk_image_window_open(c);
+    assert(c); tiku_image_window_open(c);
     assert(c->window && !c->image.px);
     image_layout(c, tiku_window_content(c->window));
     tiku_rect_t button = c->dialog.control[0].rect;
@@ -173,26 +173,26 @@ int main(int argc, char **argv)
     image_event(c->window, &ev, c); assert(!picks);
     ev.type = TIKU_EVENT_POINTER_UP; image_event(c->window, &ev, c);
     assert(picks == 1);
-    assert(tiku_trk_image_window_file(c, file)); settle(c);
+    assert(tiku_image_window_file(c, file)); settle(c);
     assert(c->image.w == 640 && c->image.h == 480);
     transform_tests(c); watch_tests(c, file, bmp, len);
-    tiku_trk_image_window_file(c, file); settle(c);
+    tiku_image_window_file(c, file); settle(c);
     image_action(c, IV_FIT);
     c->dialog.focus = TIKU_DIALOG_NONE;
     tiku_workspace_draw(workspace);
     if (argc > 1) assert(tiku_surface_png(s, shot) == 0);
-    assert(tiku_trk_image_window_bytes(c, "camera snapshot", bmp, len));
+    assert(tiku_image_window_bytes(c, "camera snapshot", bmp, len));
     memset(bmp, 0, len); free(bmp); settle(c);
     assert(c->image.w == 640 && !c->path[0]);
     assert(!image_enabled(c, IV_RELOAD) && !image_enabled(c, IV_WATCH));
-    assert(tiku_trk_image_window_file(c, dir)); settle(c);
+    assert(tiku_image_window_file(c, dir)); settle(c);
     assert(c->image.w == 640 && strstr(c->status, "regular file"));
-    assert(tiku_trk_image_window_file(c, file));
-    tiku_trk_image_window_close(c); settle(c);
+    assert(tiku_image_window_file(c, file));
+    tiku_image_window_close(c); settle(c);
     assert(!c->window && !c->image.px && !c->watching);
-    tiku_trk_image_window_open(c); assert(!c->image.px && !c->path[0]);
-    assert(tiku_trk_image_window_file(c, file));
-    tiku_trk_image_window_destroy(c); settle(NULL);
+    tiku_image_window_open(c); assert(!c->image.px && !c->path[0]);
+    assert(tiku_image_window_file(c, file));
+    tiku_image_window_destroy(c); settle(NULL);
     tiku_workspace_free(workspace); tiku_surface_free(s);
     if (argc > 1) printf("Preview: %s\n", shot);
     else { unlink(file); rmdir(dir); }

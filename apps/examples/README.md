@@ -1,107 +1,61 @@
 # Toolkit examples
 
-Small applications, each one C file that defines a
-`tiku_app_descriptor_t` and nothing else, so the same source runs two
-ways: as its own process over the window session, or hosted inside a
-desktop that linked it.
+Small applications demonstrate the public `tiku_app_descriptor_t` lifecycle.
+They run in their own processes, whether launched as standalone executables or
+as modules through `system/tiku-run`.
 
-| example | what it shows |
-|---|---|
-| `hello.c` | the least an application can be: open a window, paint once |
-| `clock.c` | `tick`, and repainting only when the displayed value changed |
-| `counter.c` | pointer hit-testing, keys and menu picks reaching one value |
-| `sketch.c` | a drag followed from press through move to release |
-| `sensors.c` | live plots, readouts, meters, sparklines and paused snapshots |
+| Example | Demonstrates |
+| --- | --- |
+| `hello.c` | Open a window and paint once |
+| `clock.c` | Tick and repaint only when the value changes |
+| `counter.c` | Pointer, keyboard and menu events |
+| `sketch.c` | Drag tracking |
+| `twowin.c` | Independent window lifetimes |
+| `sensors.c` | Plots, meters, sparklines and paused snapshots |
+| `framework/` | Shared descriptor, events, menus and Help |
 
-## Building and running
+## Build and run
 
 ```sh
-cd applications
-make examples                 # includes build/tiku-example-sensors
+make all
+./build/system/TikuDesktop
 
-# in one terminal: a desktop to host them
-./build/TikuDesktop ~/Desktop
-
-# in another: any example, as its own process
-./build/tiku-example-sketch
-./build/tiku-example-sensors   # Sensor Monitor, explicitly simulated readings
+# Against the running desktop:
+./build/examples/tiku-example-sketch
+./build/examples/tiku-example-sensors
+# Or:
+./build/system/tiku-run "$PWD/build/apps/sketch/sketch.so"
 ```
 
-The application finds the desktop at `$HOME/.config/tracker/desk.sock`, and
-retries for a few seconds, so either order of starting works. Escape closes
-any of them; so does Quit in the window's own menu, which appears in the
-global bar when `GlobalMenuBar` is on.
+The application connects to `$HOME/.config/tracker/desk.sock` and retries for
+up to eight seconds. Its menu appears in the global bar while its window is
+focused. The Demos menu discovers module bundles from their manifests.
 
-Sensor Monitor is also available as **Sensors** in the desktop Demos menu after
-`make apps`. It does not access hardware. Its controls exercise missing samples,
-disconnection, fixed/automatic scales, time ranges, trace selection and pause
-without stopping acquisition. See the [sensor widget guide](../../kits/interface/doc/sensors.md).
+Sensor Monitor is explicitly simulated; it does not access a device.
+It exercises missing samples, disconnection, automatic/fixed scales, ranges,
+trace selection and pause. See the
+[sensor widget guide](../../kits/interface/doc/sensors.md).
 
-## The two deployments
+## Application ownership
 
-An application never learns which one it is in. It calls `open`, `frame`,
-`menus` and `close` on the services it was handed; out of process those are
-backed by the session socket, and linked in they are backed by the
-workspace directly.
+Apps receive services for windows, frames, menus, clipboard, file picking and
+device operations. Content input coordinates are local to the window. Menus
+cross the process boundary as plain data; republish when their state changes.
 
-```c
-const tiku_app_descriptor_t tiku_example_hello = {
-    .id = "org.tikuos.example.hello",
-    .name = "Hello",
-    .start = hello_start,       /* open windows, publish menus */
-    .stop  = hello_stop,        /* give back what start took   */
-    .event = hello_event        /* keys and the pointer        */
-};
+Apps own surfaces, models and workers; the desktop owns composition, chrome,
+focus and placement. Native controllers can use `tiku_window_app` to publish
+an app-owned workspace without importing desktop internals.
 
-int main(void) { return tiku_client_run(&tiku_example_hello); }
-```
+The historical `TIKU_APP_EMBED`/`TIKU_EXAMPLE_EMBED` build switches select a
+descriptor/module instead of a standalone main; they do **not** authorize
+loading it in the desktop. Even `apps/trusted/` starts a separate process.
 
-`main` is compiled out by `-DTIKU_EXAMPLE_EMBED`, which leaves the
-descriptor for a desktop to host in its own process. That switch is the
-whole difference between the two deployments: a device links the
-descriptor, a host runs it beside the desktop, and the code is the same.
+## Adding an application
 
-## What an application owns
+Start from an example, keep its implementation in `apps/<name>/`, and add
+build rules in `mk/apps.mk`. Supply an `app.manifest` with a stable ID,
+display name, module leaf filename, category, icon and accepted file types.
+No shell source changes are needed to register an ordinary application.
 
-Its pixels. `tiku_surface_new` gives it a surface, it draws whatever
-it likes, and `frame` hands a finished picture over. Nothing draws into
-another process's window, which is why a crashed application leaves a
-stale frame rather than a broken desktop.
-
-Coordinates in events are relative to the window's **content**, so a hit
-test written once keeps working wherever the window is moved.
-
-Menus travel as plain data: fill in a `tiku_menuset_t`, call `menus`,
-and picks come back through `pick` as the command numbers the application
-chose. Republish whenever the state behind a row changes -- `counter.c`
-disables *Decrease* at zero, and `clock.c` re-marks *Show seconds* -- since
-the published set is a snapshot, not a live view.
-
-## Applications, next door
-
-`apps/` holds two applications written the same way as the examples, meant
-to be used rather than read: `tiku_edit.c`, a text editor that takes a
-file on the command line, and `tiku_term.c`, a terminal running a shell on
-a pty. Each builds twice -- as a program of its own, `build/tiku-edit` and
-`build/tiku-term`, and as a loadable `build/apps/editor.so` and
-`build/apps/terminal.so`. Every example builds into that same directory.
-
-A desktop climbs from its own binary to `build/apps` -- or is told where
-it is by `$TIKU_APPS` -- and offers every `.so` it finds there under
-the Deskbar's leaf menu, under a name taken from the file itself. Shipped
-examples appear in **Demos**, TikuBench and TikuConsole in **Device Tools**,
-and other root-level apps in **Applications**. Their installation paths
-and saved startup identities are unchanged. A pick
-is run through `build/tiku-run`, in a process of its own; a file moved
-into `build/apps/trusted/` is loaded into the desktop's own process
-instead. Where the file sits is the whole of the decision, since it is
-built the same way for both. `apps/tiku_run.c` is that runner, not an
-application.
-
-## Adding one
-
-Copy the closest example into `examples/`, add its name to
-`EXAMPLE_NAMES` in the Makefile, and it builds with the rest. `make all`
-builds every example, so an application that stops compiling against a
-changed toolkit is caught by an ordinary build rather than by someone
-trying it months later.
+See [application architecture](../ARCHITECTURE.md) for the complete manifest,
+ABI, binary layout, migration rules and checks.

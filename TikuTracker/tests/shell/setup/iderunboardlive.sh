@@ -14,4 +14,4 @@ printf '10 VFSWRITE "/dev/led0", 1\n20 FOR I = 1 TO 400000\n30 NEXT I\n40 VFSWRI
     > "$deskhome/blink.bas"
 printf '10 VFSWRITE "/dev/led0", 0\n' > "$deskhome/quiet.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" "$appsdir/programming/"
+cp -f "$top/build/apps/basic/TikuBasic.so" "$appsdir/programming/"

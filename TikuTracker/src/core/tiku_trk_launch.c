@@ -10,9 +10,13 @@
 
 #include "tiku_trk_launch.h"
 #include "tiku_trail.h"
+#include "tiku_report.h"
 #include "tiku_state.h"
+#include "tiku_msg.h"
 
 #include <stdio.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -71,17 +75,6 @@ tiku_trk_launch_add(tiku_trk_apps_t *r, const char *name, const char *cmd,
     }
     r->count++;
     return r->count - 1;
-}
-
-int tiku_trk_launch_add_image(tiku_trk_apps_t *r)
-{
-    if (!r) return -1;
-    for (int i = 0; i < r->count; i++)
-        if (r->app[i].is_image) return i;
-    int at = tiku_trk_launch_add(r, "TikuImage", "builtin:viewer",
-        "image/png,image/jpeg,image/bmp,image/x-ms-bmp");
-    if (at >= 0) r->app[at].is_image = 1;
-    return at;
 }
 
 int tiku_trk_launch_add_document(tiku_trk_apps_t *r, const char *name,
@@ -230,8 +223,8 @@ tiku_trk_launch_cand_before(const tiku_trk_cand_t *a,
      * an equal match, never a saved choice.  Applications that claim
      * nothing rank by name alone: there is no handler to prefer. */
     if (a->rel != TIKU_TRK_REL_NONE) {
-        int ad = a->app->is_image || a->app->module[0];
-        int bd = b->app->is_image || b->app->module[0];
+        int ad = a->app->module[0] != 0;
+        int bd = b->app->module[0] != 0;
 
         if (ad != bd) {
             return ad > bd;
@@ -349,8 +342,6 @@ tiku_trk_launch_reason(tiku_trk_launch_err_t err)
         return "There is nothing to open.";
     case TIKU_TRK_LAUNCH_IS_TRACKER:
         return "That is this Tracker, which is already running.";
-    case TIKU_TRK_LAUNCH_IS_IMAGE:
-        return "That is TikuImage, hosted by the desktop.";
     case TIKU_TRK_LAUNCH_FAILED:
         return "That application could not be started.";
     default:
@@ -377,18 +368,19 @@ tiku_trk_launch_self(const tiku_model_t *m, tiku_trk_app_t *out)
     return 1;
 }
 
-tiku_trk_launch_err_t
-tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
-                    int n)
+/** @brief Execute only the runner; launch data is never a command string. */
+static tiku_trk_launch_err_t
+launch_process(const tiku_trk_app_t *app, const char *const *paths,
+               int n, int message_fd)
 {
-    const char *argv[TIKU_TRK_APP_MAX + 3];
+    const char *argv[TIKU_TRK_APP_MAX + 5];
+    char descriptor[32];
     int argc = 0, i;
     pid_t pid;
 
     if (app == NULL || app->cmd[0] == '\0') {
         return TIKU_TRK_LAUNCH_NO_APP;
     }
-    if (app->is_image) return TIKU_TRK_LAUNCH_IS_IMAGE;
     if (app->is_tracker) {
         /* Choosing this Tracker is not a launch: the running one takes it,
          * which is what stops a second copy of the desktop appearing
@@ -398,9 +390,16 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
     argv[argc++] = app->cmd;
     if (app->module[0]) {
         /* One fresh app per document: never silently lose a batch. */
-        if (n != 1 || !paths || !paths[0] || !*paths[0])
+        if (n < 0 || n > 1 || (n == 1 &&
+            (!paths || !paths[0] || !*paths[0])))
             return TIKU_TRK_LAUNCH_NOTHING;
         argv[argc++] = app->module;
+    }
+    if (message_fd >= 0) {
+        if (!app->module[0] || n) return TIKU_TRK_LAUNCH_NOTHING;
+        snprintf(descriptor, sizeof descriptor, "%d", message_fd);
+        argv[argc++] = "--message-fd";
+        argv[argc++] = descriptor;
     }
     for (i = 0; i < n && argc < (int)(sizeof argv / sizeof argv[0]) - 1;
          i++) {
@@ -420,6 +419,7 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
     }
     if (pid == 0) {
         const char *home = getenv("HOME");
+        if (message_fd >= 0 && fcntl(message_fd, F_SETFD, 0) < 0) _exit(127);
 
         /* Everything launched starts in the user's home directory, which
          * is what the original gives it (AW-002). */
@@ -442,86 +442,110 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths,
         tiku_trail("launch %s pid %d", leaf, (int)pid);
         tiku_trk_launch_note(pid, leaf);
     }
-    /* Reaped without waiting: a launch that blocked the window it was
-     * started from would be a launch the user watches (AW-036). */
-    (void)waitpid(pid, NULL, WNOHANG);
+    /* Only launch_reap consumes the status, including immediate failures. */
     return TIKU_TRK_LAUNCH_OK;
+}
+
+tiku_trk_launch_err_t
+tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths, int n)
+{
+    return launch_process(app, paths, n, -1);
+}
+
+/** @brief Unlinked storage avoids pipe-capacity blocking during launch. */
+static FILE *launch_message_file(const tiku_msg_t *message)
+{
+    size_t size = tiku_msg_flat_size(message);
+    if (!size || size > 32768) return NULL;
+    void *bytes = malloc(size);
+    FILE *f = bytes ? tmpfile() : NULL;
+    if (!f) { free(bytes); return NULL; }
+    int ok = tiku_msg_flatten(message, bytes, size, NULL) &&
+             fwrite(bytes, 1, size, f) == size && !fflush(f) &&
+             !fseek(f, 0, SEEK_SET) &&
+             fcntl(fileno(f), F_SETFD, FD_CLOEXEC) >= 0;
+    free(bytes);
+    if (!ok) { fclose(f); return NULL; }
+    return f;
+}
+
+int tiku_trk_launch_message(const tiku_trk_app_t *app,
+                            const tiku_msg_t *message)
+{
+    FILE *f = launch_message_file(message);
+    if (!f) return TIKU_TRK_LAUNCH_FAILED;
+    int result = launch_process(app, NULL, 0, fileno(f));
+    fclose(f);
+    return result;
 }
 
 /*---------------------------------------------------------------------------*/
 /* WHAT WAS LAUNCHED, UNTIL IT ENDS                                          */
 /*---------------------------------------------------------------------------*/
 
-#define LAUNCHED_MAX 16
-
-static struct {
+typedef struct launched_app {
     pid_t pid;
     char  name[64];
     int expected;
-} launched[LAUNCHED_MAX];
+    struct launched_app *next;
+} launched_app_t;
+
+static launched_app_t *launched;
 
 void tiku_trk_launch_expect_stop(pid_t pid)
 {
-    for (int i = 0; i < LAUNCHED_MAX; i++)
-        if (pid > 1 && launched[i].pid == pid) launched[i].expected = 1;
+    for (launched_app_t *a = launched; a; a = a->next)
+        if (pid > 1 && a->pid == pid) a->expected = 1;
 }
 
 void
 tiku_trk_launch_note(pid_t pid, const char *name)
 {
-    int i;
-
-    for (i = 0; i < LAUNCHED_MAX; i++) {
-        if (launched[i].pid == 0) {
-            launched[i].pid = pid;
-            launched[i].expected = 0;
-            snprintf(launched[i].name, sizeof launched[i].name, "%s",
-                     (name != NULL) ? name : "?");
-            return;
-        }
-    }
-    /* Full: the oldest gives way.  Its exit will still be collected by
-     * the system, only not named here. */
-    memmove(&launched[0], &launched[1], sizeof launched - sizeof launched[0]);
-    launched[LAUNCHED_MAX - 1].pid = pid;
-    launched[LAUNCHED_MAX - 1].expected = 0;
-    snprintf(launched[LAUNCHED_MAX - 1].name,
-             sizeof launched[LAUNCHED_MAX - 1].name, "%s",
-             (name != NULL) ? name : "?");
+    if (pid <= 1) return;
+    for (launched_app_t *a = launched; a; a = a->next)
+        if (a->pid == pid) return;
+    launched_app_t *a = calloc(1, sizeof *a);
+    if (!a) { tiku_trail("cannot track child %ld", (long)pid); return; }
+    a->pid = pid;
+    snprintf(a->name, sizeof a->name, "%s", name ? name : "?");
+    a->next = launched; launched = a;
 }
 
 int
 tiku_trk_launch_reap(tiku_trk_death_t *out, int max)
 {
-    int i, n = 0;
+    int n = 0;
+    launched_app_t **slot = &launched;
 
-    for (i = 0; i < LAUNCHED_MAX; i++) {
+    while (*slot && (!out || n < max)) {
+        launched_app_t *a = *slot;
         int status = 0;
         pid_t gone;
-
-        if (launched[i].pid == 0) {
-            continue;
+        gone = waitpid(a->pid, &status, WNOHANG);
+        if (gone < 0 && errno == ECHILD) {
+            *slot = a->next; free(a); continue;
         }
-        gone = waitpid(launched[i].pid, &status, WNOHANG);
         if (gone <= 0) {
-            continue;
+            slot = &a->next; continue;
         }
-                if (WIFSIGNALED(status)) {
-            tiku_trail("%s (pid %d) died: signal %d", launched[i].name,
+        if (WIFSIGNALED(status)) {
+            tiku_trail("%s (pid %d) died: signal %d", a->name,
                        (int)gone, WTERMSIG(status));
         } else {
-            tiku_trail("%s (pid %d) ended: %d", launched[i].name, (int)gone,
+            tiku_trail("%s (pid %d) ended: %d", a->name, (int)gone,
                        WIFEXITED(status) ? WEXITSTATUS(status) : -1);
         }
-        if (out != NULL && n < max) {
-            snprintf(out[n].name, sizeof out[n].name, "%s",
-                     launched[i].name);
-            out[n].signal = WIFSIGNALED(status) ? WTERMSIG(status) : 0;
-            out[n].status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-            out[n].expected = launched[i].expected &&
-                              out[n].signal == SIGKILL;
-        }
-        launched[i].pid = 0;
+        tiku_trk_death_t death = {0};
+        snprintf(death.name, sizeof death.name, "%s", a->name);
+        death.pid = (long)gone;
+        death.signal = WIFSIGNALED(status) ? WTERMSIG(status) : 0;
+        death.status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        death.expected = a->expected && death.signal == SIGKILL;
+        if (!death.expected && (death.signal || death.status))
+            tiku_report_child(a->name, death.pid, death.signal,
+                death.status, death.report, sizeof death.report);
+        if (out) out[n] = death;
+        *slot = a->next; free(a);
         n++;
     }
     return n;

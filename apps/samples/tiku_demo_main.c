@@ -9,7 +9,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include "tiku_demo_app.h"
+#include "../examples/framework/tiku_demo_app.h"
 #include "tiku_client.h"
 
 int

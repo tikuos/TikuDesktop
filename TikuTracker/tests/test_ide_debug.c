@@ -33,10 +33,10 @@ int main(void)
     ide_t *st = calloc(1, sizeof *st);
     edit_t *e;
     char dir[] = "/tmp/tikubasic-debug-test-XXXXXX";
-    char *binary = realpath("applications/build/tiku-basic", NULL);
+    char *binary = realpath("applications/build/apps/basic/tiku-basic", NULL);
     tiku_event_t key = { .type = TIKU_EVENT_KEY_DOWN, .key = 'x', .text = "x" };
 
-    if (!binary) { binary = realpath("build/tiku-basic", NULL); }
+    if (!binary) { binary = realpath("build/apps/basic/tiku-basic", NULL); }
     assert(st && binary && mkdtemp(dir));
     assert(setenv("TIKU_BASIC", binary, 1) == 0);
     free(binary);

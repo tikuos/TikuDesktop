@@ -1,5 +1,9 @@
 # Hybrid Application Hosting
 
+> Historical plan. Installed apps now run in separate processes; `trusted/`
+> no longer allows in-process loading. See [ARCHITECTURE.md](ARCHITECTURE.md)
+> for the current source layout, bundle format and runtime boundary.
+
 > **Built 2026-08-21.** All three phases are done and pushed: desktop
 > `39c92d2` (A), `62cf68f` (B), `a69be15` (C); tracker `dec82ae`,
 > `6deb6c0`, `f4b5492`.  Where the plan and the code differ, the code is

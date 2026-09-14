@@ -9,34 +9,37 @@
 int main(void)
 {
     tiku_trk_deskbar_t *db = tiku_trk_deskbar_new(NULL); assert(db);
-    /* The shell's own rows are offered before the directory is read, so
-     * they take table slots the shipped tree also needs. */
+    /* Monitor and Inspector are ordinary bundle entries too. */
     assert(tiku_trk_deskbar_add_app_in(db, TIKU_TRK_DB_GROUP_DEVICE_TOOLS,
-        "Device Monitor", "builtin:monitor", "application"));
+        "Device Monitor", "/opt/apps/monitor/DeviceMonitor.so", "application"));
     assert(tiku_trk_deskbar_add_app_in(db, TIKU_TRK_DB_GROUP_DEVICE_TOOLS,
-        "VFS Inspector", "builtin:vfs", "application"));
+        "VFS Inspector", "/opt/apps/vfs/VFSInspector.so", "application"));
     const char *names[] = {"editor.so", "terminal.so", "Bench.so", "TikuConsole.so",
         "hello.so", "clock.so", "counter.so", "sketch.so", "twowin.so", "sensors.so",
         "DeveloperCalculator.so"};
+    const char *categories[] = {"applications", "applications", "device-tools",
+        "device-tools", "demos", "demos", "demos", "demos", "demos", "demos",
+        "applications"};
     for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
-        int group = installed_group(names[i]);
+        int group = installed_group(categories[i]);
         assert(group == (i < 2 || i == 10 ? TIKU_TRK_DB_GROUP_APPS :
             i < 4 ? TIKU_TRK_DB_GROUP_DEVICE_TOOLS : TIKU_TRK_DB_GROUP_DEMOS));
         char path[128];
-        /* The row carries the installed FILE, as the shell stores it:
-         * the group is decided from the leaf, not from the whole path. */
+        /* Metadata chooses the group; the exact module path is retained. */
         snprintf(path, sizeof path, "/opt/apps/%s", names[i]);
         assert(tiku_trk_deskbar_add_app_in(db, group, names[i], path,
                                            "application"));
     }
     assert(installed_group("custom.so") == TIKU_TRK_DB_GROUP_APPS);
-    assert(installed_group("TikuHex.so") == TIKU_TRK_DB_GROUP_DEVICE_TOOLS);
+    assert(installed_group("device-tools") == TIKU_TRK_DB_GROUP_DEVICE_TOOLS);
+    assert(installed_group("programming") == TIKU_TRK_DB_GROUP_PROGRAMMING);
+    assert(installed_group("TikuHex.so") == TIKU_TRK_DB_GROUP_APPS);
     /* Programming is read last, so a table one entry short loses it
      * whole rather than losing the app that overflowed. */
     assert(tiku_trk_deskbar_add_app_in(db, TIKU_TRK_DB_GROUP_PROGRAMMING,
-        "TikuBasic", "programming/TikuBasic.so", "application"));
+        "TikuBasic", "/opt/apps/basic/TikuBasic.so", "application"));
     assert(tiku_trk_deskbar_add_app_in(db, TIKU_TRK_DB_GROUP_PROGRAMMING,
-        "TikuC", "programming/TikuC.so", "application"));
+        "TikuC", "/opt/apps/c/TikuC.so", "application"));
     db_build_leaf(db);
     int found[4] = {0};
     for (int i = 0; i < db->leaf_count; i++) {
@@ -51,8 +54,10 @@ int main(void)
         for (int j = 0; j < db->sub_count; j++) {
             assert(db->sub[j].kind == TIKU_TRK_DB_ITEM_APP);
             const char *leaf = strrchr(db->sub[j].path, '/');
-            if (group != TIKU_TRK_DB_GROUP_PROGRAMMING && leaf)
-                assert(installed_group(leaf + 1) == group);
+            assert(leaf && !strncmp(db->sub[j].path, "/opt/apps/", 10));
+            for (size_t k = 0; k < sizeof names / sizeof names[0]; k++)
+                if (!strcmp(leaf + 1, names[k]))
+                    assert(installed_group(categories[k]) == group);
         }
     }
     for (int i = 0; i < 4; i++) assert(found[i] == 1);

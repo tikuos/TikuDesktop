@@ -1,0 +1,9 @@
+version=1
+id=editor
+name=Editor
+module=editor.so
+category=applications
+icon=text_file
+types=text/
+startup=apps/editor.so
+help=apps/editor.html

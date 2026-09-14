@@ -7,5 +7,5 @@
 printf '#!/bin/sh\nprintf "\\033[12;1H\\033[7m%%80s\\033[0m" ""\n' \
     > "$tmp/trk_term_cup.sh"
 chmod +x "$tmp/trk_term_cup.sh"
-( HOME="$deskhome" "$top/build/tiku-term" \
+( HOME="$deskhome" "$top/build/apps/terminal/tiku-term" \
       >/dev/null 2>&1 & )

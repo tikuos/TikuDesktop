@@ -346,7 +346,6 @@ tracker_run(int argc, char **argv)
                     (void)tiku_window_send(app.prefs_track, &ev);
                 app.prefs_track = NULL;
                 if (fw == desktop_deviceprefs_handle(&app) ||
-                    desktop_utility_owns(&app, fw) ||
                     fw == desktop_startup_handle(&app) ||
                     fw == desktop_associations_handle(&app) ||
                     fw == desktop_forcequit_handle(&app))

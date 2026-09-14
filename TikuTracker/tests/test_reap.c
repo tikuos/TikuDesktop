@@ -15,6 +15,7 @@
 
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -56,6 +57,10 @@ main(void)
     char said[8192];
     pid_t victim, tidy, stranger;
     int i, n = 0;
+    char reports[] = "/tmp/tiku-reap-reports-XXXXXX";
+
+    if (!mkdtemp(reports) || setenv("TIKU_TRK_REPORTS", reports, 1))
+        return 1;
 
     printf("a program that ends is named\n");
 

@@ -1,0 +1,9 @@
+version=1
+id=hello
+name=Hello
+module=hello.so
+category=demos
+icon=application
+types=
+startup=apps/hello.so
+help=

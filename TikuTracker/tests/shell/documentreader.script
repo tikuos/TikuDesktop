@@ -2,7 +2,7 @@
 # prefs: factory
 # mkdir: /tmp/trk_home
 # file: ~/reader.md # Reader document
-# A native built-in application, not the bundled Help window.
+# A separate reader application, not the Help document mode.
 wait 20
 click 980 40
 wait 4
@@ -15,16 +15,16 @@ expect-title TikuReader
 expect-narrate A quiet place to read local documents
 expect-no-title Help
 note the Reader's real title-tab zoom button maximizes and restores
-expect-window-at 24 40
-click 142 50
+expect-window-at 90 40
+click 208 50
 wait 8
-expect-window-at 2 23
+expect-window-at 0 21
 shot /tmp/trk_reader_maximized.png
 click 120 32
 wait 8
-expect-window-at 24 40
+expect-window-at 90 40
 note compact toolbar controls still expose useful hover tips
-move 150 86
+move 216 86
 wait 8
 expect-narrate Open document (Ctrl+O)
 move 450 400

@@ -90,29 +90,6 @@ begin_shutdown(desktop_t *app)
     app->dirty = 1;
 }
 
-/** @brief A help page's link into the namespace: the desk opens it. */
-static int
-help_opened(void *ctx, const char *path)
-{
-    desktop_t *app = ctx;
-    tiku_model_t m;
-
-    if (app == NULL || path == NULL || path[0] != '/') {
-        return 0;
-    }
-    /* Asked for before it is opened: a place this machine has not got
-     * would otherwise be written into the recent folders on its way to
-     * a window that never appears. */
-    if (app->backend == NULL || app->backend->ops->stat == NULL ||
-        app->backend->ops->stat(app->backend, path, &m) != 0) {
-        return 0;
-    }
-    if (open_folder(app, path) == NULL) {
-        return 0;
-    }
-    app->dirty = 1;
-    return 1;
-}
 
 /** @brief Hand a modal filesystem answer back to the operation engine. */
 static void
@@ -481,10 +458,9 @@ boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         app->remote.fd = -1;
     }
     channels_attach(app);
-    if (getenv("TIKU_EMBED_DEMO") != NULL) {
-        /* The both-ways proof: the SAME descriptor the client runner
-         * takes out of process, hosted here linked-in. */
-        (void)embed_start(app, &tiku_demo_app);
+    if (!o->safe_mode && getenv("TIKU_EMBED_DEMO") != NULL) {
+        /* Historical switch: demos now use the ordinary isolated launcher. */
+        (void)desktop_launch_app(app, "framework-demo", NULL);
     }
     app->loop = tiku_trk_loop_new();
     /* Once a second, so the displayed minute can never go stale while
@@ -555,16 +531,8 @@ boot_settings(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     tiku_trk_fonts_window_init(&app->fonts_window, app->desk, app->deskbar,
                                app->store, DESK_W, DESK_H, &app->dirty);
     {
-        char help[TIKU_PATH_MAX];
-
-        if (!find_help_dir(o->argv0, help, sizeof help)) help[0] = '\0';
-        tiku_trk_help_window_init(&app->help_window, app->desk, help,
-                                  DESK_W, DESK_H, &app->dirty);
-        tiku_trk_help_window_opener(&app->help_window, help_opened, app);
-        tiku_trk_document_window_init(&app->reader_window, app->desk,
-            DESK_W, DESK_H, &app->dirty, desktop_reader_choose, app);
-        app->image_window = tiku_trk_image_window_new(app->desk,
-            &app->dirty, desktop_image_choose, app);
+        if (!find_help_dir(o->argv0, app->help_root, sizeof app->help_root))
+            app->help_root[0] = 0;
     }
     {
         /* After the Deskbar's own settings have been applied, because a
@@ -604,7 +572,6 @@ boot_fonts(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
              * icon cache is what asks (IV-011). */
             tiku_trk_nodeicon_set_types(&app->nicons, &app->types);
         }
-        (void)tiku_trk_launch_add_image(&app->apps);
         {
             /* This Tracker is in the list, so choosing it is answerable:
              * it opens folders here rather than starting a second desktop
@@ -634,7 +601,6 @@ boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp
     splash_stage(app, "applications");
     tiku_trk_launch_controller_init(&app->launcher, &app->apps, app->store,
         app->status, sizeof app->status, launch_open_path, app);
-    tiku_trk_launch_controller_image(&app->launcher, desktop_image_open);
     app->launcher.open_document = desktop_document_open;
     tiku_trk_folder_menu_init(&app->folder_menu, &app->menus, &app->clip,
         app->backend, app->fs, &app->types, &app->launcher, &app->bar_fl,
@@ -1249,7 +1215,7 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     int i;
 
     if (getenv("TIKU_FRAME_STATS")) desktop_frame_report(app, stderr);
-    desktop_utilities_destroy(app);
+    int vfs_drained = desktop_vfs_destroy(app);
     tiku_sound_free();
     /*
      * The way out, named as it happens.  Each line goes up before the
@@ -1272,10 +1238,6 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
     tiku_trk_deskbar_prefs_window_destroy(&app->deskbar_prefs_window);
     tiku_trk_desktop_prefs_window_destroy(&app->desktop_prefs_window);
     tiku_trk_fonts_window_destroy(&app->fonts_window);
-    tiku_trk_help_window_destroy(&app->help_window);
-    tiku_trk_help_window_destroy(&app->reader_window);
-    tiku_trk_image_window_destroy(app->image_window);
-    app->image_window = NULL;
     desktop_deviceprefs_destroy(app);
     desktop_startup_destroy(app);
     desktop_associations_destroy(app);
@@ -1309,7 +1271,8 @@ desktop_teardown(desktop_t *app, desktop_loop_t *lp)
         tiku_trk_script_free(lp->sc);
     }
     tiku_fs_free(app->fs);
-    tiku_backend_close(app->backend);
+    /* A timed-out service worker owns its backend until process exit. */
+    if (vfs_drained) tiku_backend_close(app->backend);
     if (app->conduct_on) {
         tiku_conduct_shutdown(&app->conduct);
     }

@@ -12,4 +12,4 @@ printf '10 PRINT "GO"\n20 FOR I = 1 TO 60000\n30 NEXT I\n40 PRINT "END"\n' \
     > "$deskhome/blink.bas"
 printf '10 PRINT "FROMBOARD"\n' > "$deskhome/quiet.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" "$appsdir/programming/"
+cp -f "$top/build/apps/basic/TikuBasic.so" "$appsdir/programming/"

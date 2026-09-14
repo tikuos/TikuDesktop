@@ -1,0 +1,9 @@
+version=1
+id=twowin
+name=Twowin
+module=twowin.so
+category=demos
+icon=application
+types=
+startup=apps/twowin.so
+help=

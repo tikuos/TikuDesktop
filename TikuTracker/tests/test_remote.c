@@ -256,6 +256,34 @@ main(void)
                      "Ping") == 0,
               "MENUS crossed: the same struct is the wire format");
         {
+            tiku_remote_window_t *rw = &listener.session[0].win[0];
+            check(listener.session[0].generation != 0,
+                  "an adopted session has a distinct lifetime identity");
+            check(tiku_remote_configure(&client, id, "Renamed", 1280, 800, 1, 1),
+                  "native app window metadata can cross the boundary");
+            tiku_remote_describe(&client, id, "image controls and metadata");
+            for (spins = 0; spins < 200; spins++) {
+                tiku_remote_poll(&listener);
+                if (rw->configured && rw->description[0]) break;
+                usleep(10000);
+            }
+            check(rw->configured && !strcmp(rw->title, "Renamed") &&
+                  rw->config_w == 1280 && rw->config_h == 800 &&
+                  rw->resizable && rw->zoomable,
+                  "title, dimensions and maximize controls arrive intact");
+            check(!strcmp(rw->description, "image controls and metadata"),
+                  "pixel frames retain an accessible semantic description");
+            check(!tiku_remote_configure(&client, id, "Invalid",
+                  TIKU_REMOTE_MAX_DIM + 1, 800, 1, 1),
+                  "invalid window metadata is rejected before sending");
+            tiku_remote_frame(&client, id, px, 40, 20);
+            for (spins = 0; spins < 200 && rw->description[0]; spins++) {
+                tiku_remote_poll(&listener); usleep(10000);
+            }
+            check(!rw->description[0] && !rw->list,
+                  "fresh pixels cannot narrate a stale frame");
+        }
+        {
             /*
              * The handshake goes BOTH ways now.
              *
@@ -474,14 +502,8 @@ main(void)
             {
                 unsigned char msg[32];
                 uint32_t type = TIKU_RMSG_DRAW, len = 12u;
-                /*
-                 * Big enough to be absurd, small enough that the machine
-                 * would happily give it: 4096 x 4096 is sixty-four
-                 * megabytes taken on the word of a twenty-byte message.
-                 * A size chosen so large that malloc refuses would test
-                 * malloc, not the check.
-                 */
-                int32_t huge = 4096;
+                /* Outside the current transport limit, before allocation. */
+                int32_t huge = TIKU_REMOTE_MAX_DIM + 1;
                 uint32_t one = 1u;
 
                 memcpy(msg, &type, 4);
@@ -496,7 +518,7 @@ main(void)
                 }
                 check(listener.session[0].win[0].fw == 64 &&
                       listener.session[0].win[0].fh == 32,
-                      "a stream claiming a sixty-four megabyte window is "
+                      "a stream claiming an out-of-range window is "
                       "refused, and the window it had is untouched");
             }
             tiku_dl_free(dl);

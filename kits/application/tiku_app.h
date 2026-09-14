@@ -4,7 +4,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_app.h - embedded application lifecycle and registry.
+ * tiku_app.h - application lifecycle and public desktop services.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,15 +19,16 @@
 #define TIKU_APP_MAX 16
 
 struct tiku_dl;
+struct tiku_msg;
 
 #include "tiku_window.h"
 
 /*
  * The services an application draws THROUGH -- and the reason it never
- * needs to know where it is running.  Linked into the desktop, these are
- * backed by the workspace directly; out of process, by the window session
- * over the desk socket.  Same calls, same order, same data; the process
- * boundary is a deployment property.
+ * needs the desktop's private state. Installed desktop apps always run
+ * out of process, using the window session over the desk socket. The
+ * descriptor also supports system/firmware compositions, but that does
+ * not authorize loading installed application code into the desktop.
  */
 typedef struct tiku_app_services {
     void *ctx;
@@ -77,12 +78,12 @@ typedef struct tiku_app_services {
     /**
      * @brief Ask the SHELL to let the user pick a file, and answer later.
      *
-     * The application says which question (TIKU_APP_PICK_OPEN or _SAVE),
-     * where to start and, saving, a name to offer; the shell puts up its
-     * own panel over the namespace it holds, so a device's files are
-     * pickable by an application that never heard of devices.  It does
-     * not block: the answer arrives later at picked(), possibly never, a
-     * closed panel owing no answer.  Appended: an older host leaves it NULL.
+     * The application says which question (TIKU_APP_PICK_OPEN, _SAVE or
+     * _LOCAL_OPEN), where to start and, saving, a name to offer.  The shell
+     * puts up its own panel over the namespace it holds, so a device's files
+     * are pickable by an application that never heard of devices; LOCAL_OPEN
+     * takes host files alone and answers with a local path.  It does not block:
+     * the answer arrives at picked(), or never; an older host leaves it NULL.
      *
      * @return nonzero when the question was put, or carried out of process.
      */
@@ -270,11 +271,21 @@ typedef struct tiku_app_services {
      * Valid throughout start(); copy it if needed later. Never a remembered
      * session path. Opening a document must not execute its contents. */
     const char *startup_document;
+    /** Update a window's title, requested content size, and size controls.
+     * Zero dimensions leave its current size unchanged. */
+    int (*configure)(void *ctx, uint32_t id, const char *title,
+                     int width, int height, int resizable, int zoomable);
+    /** Optional structured launch data, valid until start() returns. */
+    const struct tiku_msg *startup_message;
+    /** Send a structured request to a desktop-owned service. */
+    int (*send_message)(void *ctx, const struct tiku_msg *message);
 } tiku_app_services_t;
 
 /** @brief Which question pick() asks. */
 #define TIKU_APP_PICK_OPEN 0
 #define TIKU_APP_PICK_SAVE 1
+/* Local-only readers receive a host path, not a device namespace path. */
+#define TIKU_APP_PICK_LOCAL_OPEN 2
 
 /**
  * @brief Window roles for place().
@@ -346,6 +357,8 @@ typedef struct {
      *             the reason (or empty) for the others.
      */
     void (*board_said)(void *state, int what, const char *text);
+    /** Additional service replies, borrowed only for this callback. */
+    void (*message)(void *state, const struct tiku_msg *message);
 } tiku_app_descriptor_t;
 
 /*
@@ -360,7 +373,7 @@ typedef struct {
  * has no field to put them in, so the loader refuses it rather than
  * reading past the end of a descriptor that is a field short. */
 /* 4: explicit startup_document in the services supplied by the host. */
-#define TIKU_APP_ABI    4u
+#define TIKU_APP_ABI    5u
 
 /** @brief What board_said() is carrying. */
 #define TIKU_APP_BOARD_LINE     0   /**< one line the program printed   */

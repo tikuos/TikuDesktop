@@ -1,0 +1,9 @@
+version=1
+id=basic
+name=TikuBasic
+module=TikuBasic.so
+category=programming
+icon=application
+types=text/x-basic,application/x-tiku-project
+startup=programming/TikuBasic.so
+help=apps/tikubasic.html

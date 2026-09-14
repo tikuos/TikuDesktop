@@ -1,10 +1,9 @@
 # shell: desktop
 # home: fixture
-# The both-ways proof, linked-in half: the SAME demo descriptor the
-# client runner takes out of process is hosted here inside the desktop,
-# over workspace-backed services -- and it cannot tell.
+# The legacy auto-start switch must use the normal isolated app runner.
 wait 15
 note the work window covers it: put that away first
+click-window trk_script
 key w ctrl
 wait 3
 click-window Descriptor Demo
@@ -19,7 +18,7 @@ release 470 320
 wait 6
 expect-pixel 450 315 ffcb00
 expect-pixel 470 320 000000
-note its published menu reaches the strip from inside the process
+note its published menu reaches the strip over the session
 write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
 wait 20
 click-window Descriptor Demo

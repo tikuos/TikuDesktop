@@ -270,7 +270,8 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
                 _exit(127);
             }
             if (child > 0) {
-                (void)waitpid(child, NULL, WNOHANG);
+                const char *leaf = strrchr(cmd, '/');
+                tiku_trk_launch_note(child, leaf ? leaf + 1 : cmd);
             }
         }
         break;
@@ -355,7 +356,7 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         tiku_trk_fonts_window_open(&app->fonts_window);
         break;
     case TIKU_TRK_DB_HELP:
-        tiku_trk_help_window_open(&app->help_window);
+        (void)desktop_help_open(app, NULL);
         break;
     case TIKU_TRK_DB_FORCE_QUIT:
         desktop_forcequit_open(app);
@@ -377,16 +378,17 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         break;
     case TIKU_TRK_DB_LAUNCH_APP: {
         if (!strcmp(pick->path, "builtin:reader")) {
-            tiku_trk_help_window_open(&app->reader_window);
+            (void)desktop_launch_app(app, "reader", NULL);
             break;
         }
         if (!strcmp(pick->path, "builtin:viewer")) {
-            tiku_trk_image_window_open(app->image_window);
+            (void)desktop_launch_app(app, "image", NULL);
             break;
         }
         if (!strcmp(pick->path, "builtin:monitor") ||
             !strcmp(pick->path, "builtin:vfs")) {
-            desktop_utility_open(app, !strcmp(pick->path, "builtin:vfs"));
+            (void)desktop_launch_app(app,
+                !strcmp(pick->path, "builtin:vfs") ? "vfs" : "monitor", NULL);
             break;
         }
         /* Started, not opened: these are programs, and they place their

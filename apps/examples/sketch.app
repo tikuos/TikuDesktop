@@ -1,0 +1,9 @@
+version=1
+id=sketch
+name=Sketch
+module=sketch.so
+category=demos
+icon=application
+types=
+startup=apps/sketch.so
+help=

@@ -50,8 +50,6 @@
 #include "tiku_trk_deskbar_prefs_window.h"
 #include "tiku_trk_desktop_prefs_window.h"
 #include "tiku_trk_fonts_window.h"
-#include "tiku_trk_help_window.h"
-#include "tiku_trk_image_window.h"
 #include "tiku_trk_sounds_window.h"
 #include "tiku_strings.h"
 #include "tiku_volume.h"
@@ -88,7 +86,6 @@
 #include "tiku_remote.h"
 #include "tiku_msg.h"
 #include "tiku_form.h"
-#include "tiku_demo_app.h"
 #include "tiku_trk_drop_controller.h"
 #include "tiku_trk_folder_actions.h"
 #include "tiku_trk_folder_file_actions.h"
@@ -351,6 +348,8 @@ typedef struct desktop {
         struct desktop_embed *slot;     /* embedded: which one            */
         int                   session;  /* remote: which session          */
         uint32_t              window;   /* the window that asked          */
+        uint64_t              generation; /* session incarnation         */
+        int                   local;    /* return host filenames only     */
     } pending_pick;
     /*
      * A panel a DEVICE described.  Not a window class of its own: the
@@ -396,7 +395,7 @@ typedef struct desktop {
     tiku_menu_t      devmenu;           /* the Devices menu beside it   */
     tiku_menu_t      devsub;            /* its default-device submenu   */
     struct desktop_deviceprefs *deviceprefs; /* connected-device settings */
-    struct desktop_utility *utility[2]; /* monitor and VFS inspector */
+    struct desktop_vfs_job *vfs_jobs; /* pending device service requests */
     struct desktop_startup *startup; /* startup catalog and preferences */
     struct desktop_associations *associations; /* file-type preferences */
     struct desktop_forcequit *forcequit; /* safe local-app termination */
@@ -522,9 +521,7 @@ typedef struct desktop {
     tiku_trk_deskbar_prefs_window_t deskbar_prefs_window;   /* Deskbar   */
     tiku_trk_desktop_prefs_window_t desktop_prefs_window;   /* the desk  */
     tiku_trk_fonts_window_t         fonts_window;           /* the faces */
-    tiku_trk_help_window_t          help_window;            /* the pages */
-    tiku_trk_help_window_t          reader_window;          /* documents */
-    tiku_trk_image_window_t        *image_window;           /* snapshots */
+    char help_root[TIKU_PATH_MAX]; /* installed documentation directory */
     tiku_trk_sounds_window_t        sounds_window;          /* the moments */
     tiku_sound_event_t sound_pick;  /* the moment the file panel is for */
     tiku_window_t *sound_focused;   /* the front window last turn */
@@ -795,11 +792,17 @@ int embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor);
 /** @brief Whether this desktop found a help folder at all. */
 int desktop_help_ready(desktop_t *app);
 /** @brief Ask for a document, or consume the native file panel's answer. */
-void desktop_reader_choose(void *ctx);
-void desktop_image_choose(void *ctx);
+int desktop_help_open(desktop_t *app, const char *page);
+int desktop_help_html(desktop_t *app, const char *title, const char *html);
+void desktop_vfs_request(desktop_t *app, int session,
+                         const tiku_msg_t *request);
+int desktop_vfs_destroy(desktop_t *app);
+int desktop_launch_app(desktop_t *app, const char *id,
+                       const char *document);
 int desktop_image_file(desktop_t *app, const char *path);
-int desktop_image_open(void *ctx, const char *path);
 int desktop_document_local(desktop_t *app, const char *path);
+/** @brief Present a remote application's file picker in the right namespace. */
+void desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg);
 int desktop_document_open(void *ctx, const tiku_trk_app_t *application,
                            const char *path);
 int desktop_reader_file(desktop_t *app, const char *path);
@@ -839,12 +842,10 @@ int  device_connect(desktop_t *app, const char *port);
 int  device_disconnect(desktop_t *app, const char *name);
 void device_set_current(desktop_t *app, const char *name);
 void desktop_deviceprefs_open(desktop_t *app);
-void desktop_utility_open(desktop_t *app, int mode);
-int desktop_utility_owns(desktop_t *app, tiku_window_t *w);
-void desktop_utility_close(desktop_t *app, tiku_window_t *w);
-void desktop_utilities_destroy(desktop_t *app);
-void desktop_utilities_tick(desktop_t *app);
 int desktop_deviceprefs_popup(desktop_t *app);
+void desktop_startup_offer_id(desktop_t *app, const char *path,
+                             const char *label, const char *id,
+                             const char *legacy);
 void desktop_startup_offer(desktop_t *app, const char *path,
     const char *label, const char *group);
 void desktop_startup_run(desktop_t *app, int safe_mode,
@@ -1015,6 +1016,8 @@ void run_find(desktop_t *app, folder_t *from);
 void clip_mirror(desktop_t *app);
 void pick_sweep(desktop_t *app);
 void remote_hear(desktop_t *app);
+/** @brief Publish window focus changes to isolated app controllers. */
+void remote_focus(desktop_t *app, tiku_window_t *focused);
 void remote_reconcile(desktop_t *app);
 void remote_sweep(desktop_t *app);
 

@@ -20,13 +20,13 @@
 #include <unistd.h>
 #include <dirent.h>
 
-#include "tiku_trk_help_window.h"
+#include "../../apps/reader/tiku_reader_help_window.h"
 #include "tiku_dl.h"
 #include "tiku_font.h"
 #include "tiku_measure.h"
 
 static int fails;
-static tiku_trk_help_window_t help;
+static tiku_reader_help_window_t help;
 static char opened[TIKU_PATH_MAX];
 static int opens;
 
@@ -130,14 +130,14 @@ main(void)
 
     s = tiku_surface_new(1000, 700, TIKU_C_PANEL);
     ws = tiku_workspace_new(s);
-    tiku_trk_help_window_init(&help, ws, root, 1000, 700, &dirty);
-    tiku_trk_help_window_opener(&help, opener, NULL);
+    tiku_reader_help_window_init(&help, ws, root, 1000, 700, &dirty);
+    tiku_reader_help_window_opener(&help, opener, NULL);
 
     printf("\nthe window opens on the folder's own first page\n");
     {
-        tiku_trk_help_window_open(&help);
-        check(tiku_trk_help_window_handle(&help) != NULL, "there is a window");
-        check(strcmp(tiku_trk_help_window_page(&help), "index.html") == 0,
+        tiku_reader_help_window_open(&help);
+        check(tiku_reader_help_window_handle(&help) != NULL, "there is a window");
+        check(strcmp(tiku_reader_help_window_page(&help), "index.html") == 0,
               "and it is showing the contents");
         tiku_workspace_draw(ws);
         check(help.doc && tiku_doc_link_count(help.doc) == 6,
@@ -146,51 +146,51 @@ main(void)
 
     printf("\nwhere a link goes is decided here, not in the kit\n");
     {
-        check(tiku_trk_help_window_go(&help, "#far") == TIKU_TRK_HELP_ANCHOR,
+        check(tiku_reader_help_window_go(&help, "#far") == TIKU_READER_HELP_ANCHOR,
               "a name is a place in the page now shown");
         check(help.bar.value > 0, "and the page moves to it");
-        check(tiku_trk_help_window_go(&help, "#nowhere") ==
-              TIKU_TRK_HELP_NOWHERE, "a name it has not got is nowhere");
-        check(tiku_trk_help_window_status(&help)[0] != 0,
+        check(tiku_reader_help_window_go(&help, "#nowhere") ==
+              TIKU_READER_HELP_NOWHERE, "a name it has not got is nowhere");
+        check(tiku_reader_help_window_status(&help)[0] != 0,
               "and the window says so rather than moving");
         opens = 0;
-        check(tiku_trk_help_window_go(&help, "tiku:/devices/board1") ==
-              TIKU_TRK_HELP_NAMESPACE, "a device path is the desktop's");
+        check(tiku_reader_help_window_go(&help, "tiku:/devices/board1") ==
+              TIKU_READER_HELP_NAMESPACE, "a device path is the desktop's");
         check(opens == 1 && strcmp(opened, "/devices/board1") == 0,
               "and it is handed over whole");
         char web[256], missing[256];
 
-        check(tiku_trk_help_window_go(&help, "https://example.com/") ==
-              TIKU_TRK_HELP_NOWHERE, "a web address is not followed");
+        check(tiku_reader_help_window_go(&help, "https://example.com/") ==
+              TIKU_READER_HELP_NOWHERE, "a web address is not followed");
         check(opens == 1, "and nothing is handed to the desktop for it");
-        snprintf(web, sizeof web, "%s", tiku_trk_help_window_status(&help));
-        (void)tiku_trk_help_window_go(&help, "nosuch.html");
+        snprintf(web, sizeof web, "%s", tiku_reader_help_window_status(&help));
+        (void)tiku_reader_help_window_go(&help, "nosuch.html");
         snprintf(missing, sizeof missing,
-                 "%s", tiku_trk_help_window_status(&help));
+                 "%s", tiku_reader_help_window_status(&help));
         check(web[0] && strcmp(web, missing) != 0,
               "and it is refused as a web address, not as a missing page");
-        check(tiku_trk_help_window_go(&help, "../../etc/passwd") ==
-              TIKU_TRK_HELP_NOWHERE, "nor is a name that climbs out");
-        check(tiku_trk_help_window_go(&help, "nosuch.html") ==
-              TIKU_TRK_HELP_NOWHERE, "a page that is not there is refused");
-        check(strcmp(tiku_trk_help_window_page(&help), "index.html") == 0,
+        check(tiku_reader_help_window_go(&help, "../../etc/passwd") ==
+              TIKU_READER_HELP_NOWHERE, "nor is a name that climbs out");
+        check(tiku_reader_help_window_go(&help, "nosuch.html") ==
+              TIKU_READER_HELP_NOWHERE, "a page that is not there is refused");
+        check(strcmp(tiku_reader_help_window_page(&help), "index.html") == 0,
               "and the page shown is the one that was there");
     }
 
     printf("\na page that is not there leaves the history alone\n");
     {
-        tiku_trk_help_window_t fresh;
+        tiku_reader_help_window_t fresh;
 
         /* Nothing has been read, so there is nothing to step back
          * from, and a refusal must leave the way back empty rather
          * than one below it. */
-        tiku_trk_help_window_init(&fresh, ws, root, 800, 600, &dirty);
-        check(tiku_trk_help_window_go(&fresh, "nosuch.html") ==
-              TIKU_TRK_HELP_NOWHERE, "a page that is not there is refused");
+        tiku_reader_help_window_init(&fresh, ws, root, 800, 600, &dirty);
+        check(tiku_reader_help_window_go(&fresh, "nosuch.html") ==
+              TIKU_READER_HELP_NOWHERE, "a page that is not there is refused");
         check(fresh.nback == 0, "and the way back is still empty");
-        check(tiku_trk_help_window_back(&fresh) == 0,
+        check(tiku_reader_help_window_back(&fresh) == 0,
               "so back from it does nothing rather than reading past the end");
-        tiku_trk_help_window_destroy(&fresh);
+        tiku_reader_help_window_destroy(&fresh);
     }
 
     printf("\na page named with a place in it reaches the place\n");
@@ -210,14 +210,14 @@ main(void)
             "<h2 id=\"foot\">The foot</h2><p>the last of it</p>");
         write_page(root, "jump.html",
             "<h1>Jump</h1><p><a href=\"deep.html#foot\">the foot</a></p>");
-        (void)tiku_trk_help_window_go(&help, "jump.html");
+        (void)tiku_reader_help_window_go(&help, "jump.html");
         tiku_workspace_draw(ws);
         check(help.doc && tiku_doc_link_count(help.doc) == 1,
               "a page whose one link names a place in another page");
-        (void)tiku_trk_help_window_go(&help,
+        (void)tiku_reader_help_window_go(&help,
             tiku_doc_link_href(help.doc, 0));
         tiku_workspace_draw(ws);
-        check(strcmp(tiku_trk_help_window_page(&help), "deep.html") == 0,
+        check(strcmp(tiku_reader_help_window_page(&help), "deep.html") == 0,
               "the page it named opens");
         {
             int foot = tiku_doc_anchor_y(help.doc, "foot");
@@ -228,7 +228,7 @@ main(void)
                   "and the reader is at the place, not at the one whose "
                   "name happened to lie at that offset");
         }
-        check(tiku_trk_help_window_wanted(&help)[0] != '#',
+        check(tiku_reader_help_window_wanted(&help)[0] != '#',
               "and a place is not mistaken for a path to hand over");
     }
 
@@ -237,37 +237,37 @@ main(void)
         int was;
 
         /* From the contents, whatever the block before was reading. */
-        (void)tiku_trk_help_window_go(&help, "index.html");
+        (void)tiku_reader_help_window_go(&help, "index.html");
         tiku_workspace_draw(ws);
         tiku_scroll_to(&help.bar, 120);
         was = help.bar.value;
-        check(tiku_trk_help_window_go(&help, "devices.html") ==
-              TIKU_TRK_HELP_PAGE, "another page of the folder opens");
-        check(strcmp(tiku_trk_help_window_page(&help), "devices.html") == 0,
+        check(tiku_reader_help_window_go(&help, "devices.html") ==
+              TIKU_READER_HELP_PAGE, "another page of the folder opens");
+        check(strcmp(tiku_reader_help_window_page(&help), "devices.html") == 0,
               "and it is the one that was named");
         check(help.bar.value == 0, "a new page starts at its top");
         tiku_workspace_draw(ws);
-        check(tiku_trk_help_window_back(&help) == 1, "back steps back");
-        check(strcmp(tiku_trk_help_window_page(&help), "index.html") == 0 &&
+        check(tiku_reader_help_window_back(&help) == 1, "back steps back");
+        check(strcmp(tiku_reader_help_window_page(&help), "index.html") == 0 &&
               help.bar.value == was,
               "to the page and the paragraph it was left on");
-        check(tiku_trk_help_window_forward(&help) == 1 &&
-              strcmp(tiku_trk_help_window_page(&help), "devices.html") == 0,
+        check(tiku_reader_help_window_forward(&help) == 1 &&
+              strcmp(tiku_reader_help_window_page(&help), "devices.html") == 0,
               "and forward returns to where back came from");
-        check(tiku_trk_help_window_back(&help) == 1, "back once more");
-        while (tiku_trk_help_window_back(&help)) { /* to the beginning */ }
-        check(tiku_trk_help_window_back(&help) == 0,
+        check(tiku_reader_help_window_back(&help) == 1, "back once more");
+        while (tiku_reader_help_window_back(&help)) { /* to the beginning */ }
+        check(tiku_reader_help_window_back(&help) == 0,
               "and back from the first page does nothing at all");
     }
 
     printf("\nthe keyboard reaches every link, then hands the Tab on\n");
     {
-        tiku_window_t *w = tiku_trk_help_window_handle(&help);
+        tiku_window_t *w = tiku_reader_help_window_handle(&help);
         int walked = 0;
 
-        (void)tiku_trk_help_window_go(&help, "index.html");
+        (void)tiku_reader_help_window_go(&help, "index.html");
         tiku_workspace_draw(ws);
-        tiku_dialog_focus(&help.dialog, TIKU_TRK_HELP_CONTROL_PAGE);
+        tiku_dialog_focus(&help.dialog, TIKU_READER_HELP_CONTROL_PAGE);
         for (int i = 0; i < 8; i++) {
             int before = help.focus_link;
 
@@ -284,14 +284,14 @@ main(void)
         /* Where to click is read off the drawing rather than worked out
          * again here: the page is followed at the pixels it was drawn
          * at, which is the whole claim the piece table makes. */
-        tiku_window_t *w = tiku_trk_help_window_handle(&help);
+        tiku_window_t *w = tiku_reader_help_window_handle(&help);
         tiku_dl_t *dl = tiku_dl_new();
         char wire[65536];
         size_t len = 0, at = 0;
         tiku_dl_fact_t f;
         int hit_x = -1, hit_y = -1;
 
-        (void)tiku_trk_help_window_go(&help, "index.html");
+        (void)tiku_reader_help_window_go(&help, "index.html");
         /* Not at the top: a hit that forgets the scroll lands on the
          * line above, and at the top there is no line above to catch it. */
         tiku_workspace_draw(ws);
@@ -324,18 +324,18 @@ main(void)
             press.x = hit_x;
             press.y = hit_y;
             (void)tiku_window_send(w, &press);
-            check(strcmp(tiku_trk_help_window_page(&help),
+            check(strcmp(tiku_reader_help_window_page(&help),
                          "devices.html") == 0,
                   "and pressing it there opens the page it names");
         }
         tiku_dl_free(dl);
-        (void)tiku_trk_help_window_go(&help, "index.html");
+        (void)tiku_reader_help_window_go(&help, "index.html");
         tiku_workspace_draw(ws);
     }
 
     printf("\na narrower window lays the page out again\n");
     {
-        tiku_window_t *w = tiku_trk_help_window_handle(&help);
+        tiku_window_t *w = tiku_reader_help_window_handle(&help);
         int tall, taller;
         int original_width = w->frame.w;
 
@@ -356,7 +356,7 @@ main(void)
 
     printf("\nthe page moves under the keys that move a page\n");
     {
-        tiku_window_t *w = tiku_trk_help_window_handle(&help);
+        tiku_window_t *w = tiku_reader_help_window_handle(&help);
         int top, down, paged;
 
         tiku_scroll_to(&help.bar, 0);
@@ -377,7 +377,7 @@ main(void)
 
     printf("\nDone closes the window from inside its own handler\n");
     {
-        tiku_window_t *w = tiku_trk_help_window_handle(&help);
+        tiku_window_t *w = tiku_reader_help_window_handle(&help);
         tiku_dl_t *dl = tiku_dl_new();
         char wire[65536];
         size_t len = 0, at = 0;
@@ -402,10 +402,10 @@ main(void)
         (void)tiku_window_send(w, &ev);
         ev.type = TIKU_EVENT_POINTER_UP;
         (void)tiku_window_send(w, &ev);
-        check(tiku_trk_help_window_handle(&help) == NULL,
+        check(tiku_reader_help_window_handle(&help) == NULL,
               "and pressing it closes the window it is in");
-        tiku_trk_help_window_open(&help);
-        check(tiku_trk_help_window_handle(&help) != NULL,
+        tiku_reader_help_window_open(&help);
+        check(tiku_reader_help_window_handle(&help) != NULL,
               "which opens again after");
         tiku_workspace_draw(ws);
     }
@@ -414,29 +414,29 @@ main(void)
     {
         int before = opens;
 
-        check(tiku_trk_help_window_go(&help, "tiku:devices/board1") ==
-              TIKU_TRK_HELP_NOWHERE, "a device path must start at the root");
+        check(tiku_reader_help_window_go(&help, "tiku:devices/board1") ==
+              TIKU_READER_HELP_NOWHERE, "a device path must start at the root");
         check(opens == before, "and nothing is handed over for it to drop");
-        check(tiku_trk_help_window_go(&help, "tiku:/devices/gone") ==
-              TIKU_TRK_HELP_NOWHERE,
+        check(tiku_reader_help_window_go(&help, "tiku:/devices/gone") ==
+              TIKU_READER_HELP_NOWHERE,
               "a place the machine has not got is a link that says so");
-        check(tiku_trk_help_window_status(&help)[0] != 0,
+        check(tiku_reader_help_window_status(&help)[0] != 0,
               "rather than one that looks followed and did nothing");
     }
 
     printf("\na window with no folder still opens, and says why\n");
     {
-        tiku_trk_help_window_t lost;
+        tiku_reader_help_window_t lost;
 
-        tiku_trk_help_window_init(&lost, ws, "/tmp/trk_help_none", 800, 600,
+        tiku_reader_help_window_init(&lost, ws, "/tmp/trk_help_none", 800, 600,
                                   &dirty);
-        tiku_trk_help_window_open(&lost);
-        check(tiku_trk_help_window_handle(&lost) != NULL,
+        tiku_reader_help_window_open(&lost);
+        check(tiku_reader_help_window_handle(&lost) != NULL,
               "there is a window to read the refusal in");
-        check(tiku_trk_help_window_status(&lost)[0] != 0,
+        check(tiku_reader_help_window_status(&lost)[0] != 0,
               "and it says there are no pages");
         tiku_workspace_draw(ws);
-        tiku_trk_help_window_destroy(&lost);
+        tiku_reader_help_window_destroy(&lost);
     }
 
     printf("\na change of text size lays the page out again\n");
@@ -444,7 +444,7 @@ main(void)
         int sizes[] = {10, 12, 14, 16};
         int height[4], ok = 1;
 
-        (void)tiku_trk_help_window_go(&help, "index.html");
+        (void)tiku_reader_help_window_go(&help, "index.html");
         for (size_t i = 0; i < sizeof sizes / sizeof sizes[0]; i++) {
             tiku_font_set_size(sizes[i]);
             tiku_workspace_draw(ws);
@@ -486,7 +486,7 @@ main(void)
         /* Where the bar is comes off the drawing, not out of this file:
          * a coordinate written down here goes stale the moment the
          * window's layout moves. */
-        tiku_window_t *w = tiku_trk_help_window_handle(&help);
+        tiku_window_t *w = tiku_reader_help_window_handle(&help);
         tiku_dl_t *dl = tiku_dl_new();
         char wire[65536];
         size_t len = 0, at = 0;
@@ -494,7 +494,7 @@ main(void)
         tiku_rect_t bar = {0, 0, 0, 0};
         tiku_event_t ev = {0};
 
-        (void)tiku_trk_help_window_go(&help, "index.html");
+        (void)tiku_reader_help_window_go(&help, "index.html");
         tiku_scroll_to(&help.bar, 0);
         s->record = dl;
         tiku_workspace_draw(ws);
@@ -545,7 +545,7 @@ main(void)
 
     printf("\ndesktop pages grow beyond the old embedded text budget\n");
     {
-        char big[TIKU_TRK_HELP_PAGE_MAX * 2];
+        char big[TIKU_READER_HELP_PAGE_MAX * 2];
         char path[TIKU_PATH_MAX];
         FILE *f;
         int at = snprintf(big, sizeof big, "<h1>Long</h1>");
@@ -557,26 +557,26 @@ main(void)
         snprintf(path, sizeof path, "%s/long.html", root);
         f = fopen(path, "w");
         if (f) { fputs(big, f); fclose(f); }
-        check(tiku_trk_help_window_go(&help, "long.html") ==
-              TIKU_TRK_HELP_PAGE, "a page longer than 16 KiB opens in full");
-        check(help.oversize == 0 && help.doc->ntext > TIKU_TRK_HELP_PAGE_MAX,
+        check(tiku_reader_help_window_go(&help, "long.html") ==
+              TIKU_READER_HELP_PAGE, "a page longer than 16 KiB opens in full");
+        check(help.oversize == 0 && help.doc->ntext > TIKU_READER_HELP_PAGE_MAX,
               "and desktop storage reads past the old 16 KiB boundary");
-        (void)tiku_trk_help_window_go(&help, "index.html");
+        (void)tiku_reader_help_window_go(&help, "index.html");
         check(help.oversize == 0, "a page that fitted is not said to be cut");
     }
 
     printf("\nthe contents is a move like any other\n");
     {
-        (void)tiku_trk_help_window_go(&help, "devices.html");
-        check(tiku_trk_help_window_back(&help) == 1, "back from a page");
+        (void)tiku_reader_help_window_go(&help, "devices.html");
+        check(tiku_reader_help_window_back(&help) == 1, "back from a page");
         check(help.nforward == 1, "leaves a way forward");
-        check(tiku_trk_help_window_home(&help) == 1, "Contents opens");
+        check(tiku_reader_help_window_home(&help) == 1, "Contents opens");
         check(help.nforward == 0,
               "and Contents clears it: forward would be where the reader "
               "has never been");
     }
 
-    tiku_trk_help_window_destroy(&help);
+    tiku_reader_help_window_destroy(&help);
     tiku_workspace_free(ws);
     tiku_surface_free(s);
     {

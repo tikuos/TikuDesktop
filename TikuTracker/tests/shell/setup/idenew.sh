@@ -15,5 +15,5 @@ d=struct.pack("<2sIHHI",b"BM",54+len(rows),0,0,54)+ \
 open(sys.argv[1]+"/.config/TikuBasic/splash.bmp","wb").write(d)
 PYSPLASH
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

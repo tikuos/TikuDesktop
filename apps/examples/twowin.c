@@ -229,6 +229,8 @@ twowin_event_in(void *state, uint32_t window, const tiku_event_t *event)
     if (event->type != TIKU_EVENT_KEY_DOWN) {
         return 0;
     }
+    if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'w')
+        return drop(st, p);
     /* Two keys are CLIPBOARD verbs, not typing: 'y' puts this pane's
      * name on the desk, 'p' asks the desk and records the answer.  The
      * spike's job is the runtime's plumbing, so the gesture is plain. */

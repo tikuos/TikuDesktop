@@ -95,7 +95,7 @@ From `applications`:
 
 ```sh
 make build/tests/test_ide_workflow build/tests/test_ide_default build/tests/test_textview
-make build/tiku-basic build/tests/test_ide_debug build/tests/test_ide_deadboard
+make build/apps/basic/tiku-basic build/tests/test_ide_debug build/tests/test_ide_deadboard
 build/tests/test_ide_workflow
 build/tests/test_ide_default
 build/tests/test_textview

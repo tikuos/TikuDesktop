@@ -3,12 +3,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_stall.c - an application that stops the shell's turn.
+ * tiku_stall.c - an application that stalls its own isolated event loop.
  *
- * Built only for the tests, and loaded IN the shell's process, where an
- * application's tick runs on the shell's own loop.  One tick of it does
- * not come back for eight seconds, which is the freeze a shell cannot
- * notice about itself.
+ * Built only for tests. A legacy trusted install must still run in a
+ * separate process: this eight-second callback cannot freeze the desktop.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -47,7 +45,8 @@ stall_start(void **state, const tiku_app_services_t *services)
 {
     static int once;
 
-    (void)services;
+    uint32_t window = services->open(services->ctx, APP_NAME, 240, 100);
+    if (!window) return -1;
     *state = &once;
     return 0;
 }

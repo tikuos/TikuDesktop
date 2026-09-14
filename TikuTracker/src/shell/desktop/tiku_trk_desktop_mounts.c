@@ -598,12 +598,16 @@ reap_deaths(desktop_t *app)
     for (g = 0; g < n && g < 4; g++) {
         char says[256];
 
-        if (gone[g].signal == 0 || gone[g].expected) {
+        if ((!gone[g].signal && !gone[g].status) || gone[g].expected) {
             continue;   /* it ended; only a death is news */
         }
         snprintf(says, sizeof says,
-                 "%s stopped: signal %d.  What it was doing is in %s",
-                 gone[g].name, gone[g].signal, tiku_report_latest());
+                 "%s stopped: %s %d. %s",
+                 gone[g].name, gone[g].signal ? "signal" : "exit status",
+                 gone[g].signal ? gone[g].signal : gone[g].status,
+                 gone[g].report[0] ?
+                 "An application exit report was saved in system reports." :
+                 "The application exit report could not be saved.");
         tiku_alert_open(alert_model(app), TIKU_ALERT_WARN, 0, says,
                         tiku_str("alert.btn.ok"));
         app->dirty = 1;

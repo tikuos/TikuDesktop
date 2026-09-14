@@ -1,0 +1,9 @@
+version=1
+id=reader
+name=TikuReader
+module=TikuReader.so
+category=applications
+icon=reader
+types=text/html,text/markdown
+startup=applications/builtin:reader
+help=apps/reader.html

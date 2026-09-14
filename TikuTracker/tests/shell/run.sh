@@ -46,7 +46,7 @@ fails=0
 
 # The scripted shells are the DEVELOPMENT flavour: the interpreter that
 # reads these files is test infrastructure and is not linked into what
-# ships (build/TikuDesktop, build/TikuTracker).  Those refuse -script loudly, so
+# ships (build/system/TikuDesktop, build/system/TikuTracker).  Those refuse -script loudly, so
 # a harness pointed at the wrong one fails rather than passing quietly.
 devbin="$top/build/dev"
 
@@ -66,7 +66,7 @@ if [ -z "${TRK_SHELL_ONLY:-}" ] || [ "${TRK_SHELL_ONLY:-}" = "resetflag" ]; then
     echo junk > "$rsthome/.local/share/tracker/devices/local.state"
     # The SHIPPING binary here on purpose: the rescue path is a product
     # feature, and this is the one check that proves what ships has it.
-    HOME="$rsthome" "$top/build/TikuDesktop" -reset-settings > /dev/null
+    HOME="$rsthome" "$top/build/system/TikuDesktop" -reset-settings > /dev/null
     if [ -e "$rsthome/.config/TrackerSettings" ] ||
        [ -e "$rsthome/.local/share/tracker/devices/local.state" ] ||
        [ ! -e "$rsthome/.config/TrackerSettings.factory-reset" ]; then
@@ -345,9 +345,17 @@ for s in "$here"/*.script; do
         appsdir=$tmp/trk_apps
         rm -rf "$appsdir"
         mkdir -p "$appsdir"
-        cp -f "$top/build/apps/terminal.so" \
-              "$top/build/apps/editor.so" "$appsdir/" \
+        cp -f "$top/build/apps/terminal/terminal.so" \
+              "$top/build/apps/editor/editor.so" "$appsdir/" \
             2>/dev/null || true
+        cp "$top/apps/edit/editor.app" "$appsdir/editor.so.manifest"
+        cp "$top/apps/term/terminal.app" "$appsdir/terminal.so.manifest"
+        mkdir -p "$appsdir/image"
+        cp "$top/build/apps/image/TikuImage.so" "$appsdir/image/"
+        cp "$top/apps/image/image.app" "$appsdir/image/app.manifest"
+        for appbundle in reader monitor vfs; do
+            cp -R "$top/build/apps/$appbundle" "$appsdir/"
+        done
 
         mkdir -p $work/sub
         echo hi > $work/a.txt
@@ -384,6 +392,19 @@ for s in "$here"/*.script; do
         if [ -f "$here/setup/$setup.sh" ]; then
             . "$here/setup/$setup.sh"
         fi
+        # Legacy flat fixture installs carry the bundle's metadata too.
+        # trusted/ is deliberately left metadata-free to exercise migration.
+        for appmanifest in "$top"/build/apps/*/app.manifest; do
+            module=$(sed -n 's/^module=//p' "$appmanifest")
+            [ -n "$module" ] || continue
+            for appplace in "$appsdir" "$appsdir/programming"; do
+                [ -f "$appplace/$module" ] || continue
+                cp "$appmanifest" "$appplace/$module.manifest"
+                if [ "$module" = TikuBasic.so ]; then
+                    cp "$top/build/apps/basic/tiku-basic" "$appplace/"
+                fi
+            done
+        done
         if [ -n "$skip" ]; then
             printf '\n== %s (%s) SKIPPED -- %s\n' \
                 "$(basename "$s")" "$bin" "$skip"
@@ -483,7 +504,7 @@ for s in "$here"/*.script; do
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" \
                 -script "$s" || fails=$((fails+1))
         else
@@ -492,7 +513,7 @@ for s in "$here"/*.script; do
                 ${mountat:+TIKU_MOUNT=$mountat} \
                 ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -script "$s" || fails=$((fails+1))
         fi
@@ -502,7 +523,7 @@ for s in "$here"/*.script; do
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -devices -p "$TRK_PORT" -mount "$mountat" \
                 -script "$s" || fails=$((fails+1))
@@ -535,7 +556,7 @@ for s in "$here"/*.script; do
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -devices -p "$(cat "$tmp/trk_deadport")" \
                 -script "$s" || fails=$((fails+1))
@@ -548,7 +569,7 @@ for s in "$here"/*.script; do
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -devices \
                 -script "$s" || fails=$((fails+1))
@@ -566,7 +587,7 @@ for s in "$here"/*.script; do
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -listen \
                 -script "$s" || fails=$((fails+1))
@@ -586,7 +607,7 @@ for s in "$here"/*.script; do
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -devices -p "$TRK_PORT" ${mountat:+-mount "$mountat"} \
                 -listen \
@@ -609,7 +630,7 @@ for s in "$here"/*.script; do
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
                 TIKU_APPS="$appsdir" \
-                TIKU_BASIC="$(cd "$top" && pwd)/build/tiku-basic" \
+                TIKU_BASIC="$(cd "$top" && pwd)/build/apps/basic/tiku-basic" \
                 "$devbin/$exe" ${openat:-$work} \
                 -listen \
                 -script "$s" || fails=$((fails+1))
@@ -657,7 +678,7 @@ for s in $conducted; do
     # driver failure on a healthy driver.
     ( DISPLAY= HOME="$chome" TIKU_APPS="$tmp/trk_apps" \
         env ${cmount:+TIKU_MOUNT=$cmount} \
-        "$top/build/TikuDesktop" "${copen:-$work}" -conduct "$csock" \
+        "$top/build/system/TikuDesktop" "${copen:-$work}" -conduct "$csock" \
         -conduct-token trk-drive > /dev/null 2>&1 & )
     "$top/build/dev/trk-conduct" -s "$csock" -n conducted -k trk-drive "$cs" ||
         fails=$((fails+1))
@@ -684,7 +705,7 @@ for s in $conducted; do
     DISPLAY= HOME="$chome" TIKU_APPS="$tmp/trk_apps" \
         env ${cmount:+TIKU_MOUNT=$cmount} \
         "$top/build/dev/trk-conduct" \
-        -n "over a line" "$cs" -- "$top/build/TikuDesktop" \
+        -n "over a line" "$cs" -- "$top/build/system/TikuDesktop" \
         "${copen:-$work}" ||
         fails=$((fails+1))
     pkill -x TikuDesktop > /dev/null 2>&1

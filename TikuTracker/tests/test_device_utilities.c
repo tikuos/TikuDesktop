@@ -1,9 +1,7 @@
 /* Device utilities use fake backends: no ports, hardware writes or discovery. */
 #include <assert.h>
-#include "../src/shell/desktop/tiku_trk_desktop_utilities.c"
+#include "../../apps/deviceutils/tiku_device_utilities.c"
 
-int desktop_board_names(desktop_t *app, char *out, size_t n)
-{ (void)app; return snprintf(out, n, "alpha\nbeta\n"); }
 static char name[64] = "alpha";
 static int writes, readonly, failure, mismatch, fixed;
 static int stat_mock(tiku_backend_t *b, const char *path, tiku_model_t *m)
@@ -44,7 +42,7 @@ static void block_run(void *ctx)
 { (void)ctx; while (atomic_load(&blocked)) usleep(10000); }
 static void block_free(void *ctx)
 {
-    utility_job_t *j = ctx; struct desktop_utility *p = j->owner;
+    utility_job_t *j = ctx; struct device_utility *p = j->owner;
     if (j->posted) utility_jobs--;
     if (--p->refs == 0) free(p);
     free(j);
@@ -89,15 +87,15 @@ int main(void)
     utility_metrics_t snapshot = j->metrics; free(j);
     failure = 1; j = job(&b, "/sys", 0); j->mode = 0; utility_run(j);
     assert(!j->metrics.valid); free(j); failure = 0;
-    desktop_t *app = calloc(1, sizeof *app); assert(app);
+    utility_app_t *app = calloc(1, sizeof *app); assert(app);
     tiku_surface_t *s = tiku_surface_new(1000, 780, TIKU_RGB(51,102,152));
     app->desk = tiku_workspace_new(s);
-    desktop_utility_open(app, 0); assert(app->utility[0]);
+    device_utility_open(app, 0); assert(app->utility[0]);
     app->utility[0]->metrics = snapshot;
     snprintf(app->utility[0]->target, 64, "fake-board");
     tiku_workspace_draw(app->desk); assert(!tiku_surface_png(s, "/tmp/tiku-monitor.png"));
-    desktop_utility_open(app, 1); assert(app->utility[1]);
-    struct desktop_utility *p = app->utility[1]; p->writable = 1;
+    device_utility_open(app, 1); assert(app->utility[1]);
+    struct device_utility *p = app->utility[1]; p->writable = 1;
     strcpy(p->path, "/sys/device/name"); strcpy(p->value, "alpha");
     tiku_field_start(&p->address, p->path); tiku_field_start(&p->edit, "beta");
     utility_action(p, U_REVIEW); assert(p->armed && writes == 2);
@@ -115,17 +113,17 @@ int main(void)
         app->utility[i]->busy = 0; app->utility[i]->next = 0;
     }
     app->utility[0]->paused = 1;
-    app->dirty = 0; desktop_utilities_tick(app);
+    app->dirty = 0; device_utilities_tick(app);
     assert(!app->dirty && app->utility[1]->next > 0);
     app->utility[0]->paused = 0; app->utility[0]->next = 0;
-    app->dirty = 0; desktop_utilities_tick(app);
+    app->dirty = 0; device_utilities_tick(app);
     assert(app->dirty);
     /* The test goes on using this one after the desktop and the jobs have
      * both let go of it, so it takes a reference of its own like anything
      * else that outlives an owner.  Without it the last job's free() drops
      * the count to nothing and every line below reads freed memory --
      * which glibc serves and Darwin's malloc aborts on. */
-    struct desktop_utility *monitor = app->utility[0];
+    struct device_utility *monitor = app->utility[0];
     monitor->refs++;
     monitor->paused = 1; monitor->sampled = 123;
     j = job(&b, "/sys", 0); j->mode = 0; j->owner = monitor;
@@ -134,17 +132,17 @@ int main(void)
     j = job(&b, "/sys", 0); j->owner = p; p->refs++; p->busy = 1;
     j->cache = calloc(1, sizeof *j->cache); assert(j->cache);
     p->job = j;
-    desktop_utility_close(app, p->window); assert(!app->utility[1]);
+    device_utility_close(app, p->window); assert(!app->utility[1]);
     assert(atomic_load(&j->cancelled));
     utility_done(j); utility_free(j);
     j = job(&b, "/sys/device/name", 1);
     j->owner = monitor; monitor->refs++; monitor->job = j;
-    desktop_utility_close(app, monitor->window);
+    device_utility_close(app, monitor->window);
     assert(atomic_load(&j->cancelled));
     tiku_work_job_t work = {.run=utility_run, .done=utility_done, .free=utility_free, .ctx=j};
     j->posted = 1; utility_jobs++;
     assert(tiku_work_post(&work) == 0);
-    desktop_utilities_destroy(app);
+    device_utilities_destroy(app);
     assert(utility_jobs == 0 && writes == 2);
     /* A board that stopped answering mid-read must not hold the way out:
      * the wait gives up after five seconds and the loop goes on. */
@@ -154,9 +152,9 @@ int main(void)
                              .ctx=held};
     held->posted = 1; utility_jobs++;
     assert(tiku_work_post(&block) == 0);
-    int64_t began = tiku_trk_now();
-    desktop_utilities_destroy(app);
-    int64_t took = (tiku_trk_now() - began) / 1000;
+    int64_t began = utility_now();
+    device_utilities_destroy(app);
+    int64_t took = (utility_now() - began) / 1000;
     assert(took >= 4500 && took < 9000 && utility_jobs == 1);
     atomic_store(&blocked, 0);
     while (utility_jobs) { (void)tiku_work_collect(); usleep(10000); }

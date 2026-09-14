@@ -6,5 +6,5 @@ printf 'title Case\ngroup Sources\nfile main.bas\n' \
     > "$deskhome/project.tiku"
 printf '10 \n' > "$deskhome/main.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

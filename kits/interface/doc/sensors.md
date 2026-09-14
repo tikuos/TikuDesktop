@@ -95,7 +95,7 @@ to live history. This keeps a frozen view stable even after the live ring wraps.
 
 Build with `make apps` and open **Sensors** from TikuDesktop's Applications
 menu (the Sensor Monitor demo, `build/apps/sensors.so`), or run
-`build/tiku-example-sensors` with the desktop running.
+`build/examples/tiku-example-sensors` with the desktop running.
 
 The demo is explicitly simulated: it does not connect to or configure hardware.
 It samples at most ten times per second, exposes 30/60-second windows,

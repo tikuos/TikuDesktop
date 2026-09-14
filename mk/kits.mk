@@ -37,6 +37,7 @@ else
 SYS         := $(K)/support/tiku_sys_linux.c
 endif
 SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c \
+               $(K)/support/tiku_manifest.c \
                $(K)/support/tiku_trail.c $(K)/support/tiku_report.c \
                $(K)/support/tiku_watch.c \
                $(K)/support/tiku_work.c $(SYS)
@@ -91,10 +92,10 @@ MEDIA       := $(K)/media/tiku_sound.c $(K)/media/tiku_sound_pulse.c \
                $(K)/media/tiku_score.c $(K)/media/tiku_sound_scores.c \
                $(K)/media/tiku_wav.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
+               $(K)/application/tiku_window_app.c \
                $(K)/application/tiku_remote.c \
                $(K)/application/tiku_conduct.c \
-               $(K)/application/tiku_client.c \
-               $(K)/application/tiku_demo_app.c
+               $(K)/application/tiku_client.c
 
 # The English catalogue, baked at build time: the words are the shells'
 # (TikuTracker/strings/en.xml) and the baking is the kit's, so the header
@@ -137,14 +138,14 @@ PIC_LIBS  := $(patsubst $(BUILD)/%,$(PIC)/%,$(DESK_LIBS))
 # quietly runs code that is no longer in the tree.
 #
 define KIT_RULES
-$(BUILD)/libtiku_$(1).a: $$(patsubst $(K)/%.c,$(OBJ)/$(K)/%.o,$($(2)))
+$(BUILD)/libtiku_$(1).a: $$(patsubst $(K)/%.c,$(OBJ)/$(K)/%.o,$($(2))) mk/kits.mk
 	@mkdir -p $$(dir $$@)
 	@rm -f $$@
-	$$(AR) rcs $$@ $$^
-$(PIC)/libtiku_$(1).a: $$(patsubst $(K)/%.c,$(PIC)/$(K)/%.o,$($(2)))
+	$$(AR) rcs $$@ $$(filter %.o,$$^)
+$(PIC)/libtiku_$(1).a: $$(patsubst $(K)/%.c,$(PIC)/$(K)/%.o,$($(2))) mk/kits.mk
 	@mkdir -p $$(dir $$@)
 	@rm -f $$@
-	$$(AR) rcs $$@ $$^
+	$$(AR) rcs $$@ $$(filter %.o,$$^)
 endef
 
 $(eval $(call KIT_RULES,support,SUPPORT))

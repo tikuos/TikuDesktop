@@ -7,7 +7,7 @@
  *
  * Single-selection, list only, no menus, Escape cancels: a window that
  * exists to answer ONE question -- which application -- and get out of the
- * way.  Every registered application is listed with its relation to the
+ * way. Every document-capable application is listed with its relation to the
  * selection said in words (MA-081); the buttons live-update from the
  * selection, and an application that does not claim the type asks first
  * (AW-046).

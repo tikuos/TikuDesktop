@@ -1,0 +1,9 @@
+version=1
+id=console
+name=TikuConsole
+module=TikuConsole.so
+category=device-tools
+icon=application
+types=
+startup=apps/TikuConsole.so
+help=apps/console.html

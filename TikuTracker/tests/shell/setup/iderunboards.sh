@@ -13,4 +13,4 @@ printf 'title TwoBoards\nboard elsewhere\ngroup Sources\nfile blink.bas\nfile qu
 printf '10 VFSWRITE "/dev/led0", 1\n' > "$deskhome/blink.bas"
 printf '10 VFSWRITE "/dev/led0", 0\n' > "$deskhome/quiet.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" "$appsdir/programming/"
+cp -f "$top/build/apps/basic/TikuBasic.so" "$appsdir/programming/"

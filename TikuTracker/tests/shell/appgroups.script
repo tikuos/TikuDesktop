@@ -6,7 +6,7 @@ click 980 20
 wait 4
 menu-pick Applications
 wait 4
-expect-menu Editor|Terminal
+expect-menu Editor|TikuImage|TikuReader|Terminal
 click 500 700
 wait 4
 click 980 20

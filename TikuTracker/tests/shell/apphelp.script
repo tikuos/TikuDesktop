@@ -3,9 +3,10 @@
 # setup: apphelp
 # An application names its own page at start, and the system menu carries
 # a Help row while one of its windows is in front.  This is the hosted
-# half: the same descriptor runs out of process in remoteapp.script.
+# application runs in a separate process, including the legacy demo route.
 wait 15
 note the work window covers it: put that away first
+click-window trk_script
 key w ctrl
 wait 4
 write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
@@ -16,17 +17,16 @@ expect-title Descriptor Demo
 click 20 8
 wait 4
 expect-menu About this system…|Help…|
-note the page the demo named, opened in the desktop's own reader
+note the page the demo named, opened in a separate Reader process
 menu-pick Help…
 wait 15
 expect-title Help
 expect-narrate Descriptor Demo
 expect-narrate What the window shows
-note and the reader itself is a window of the desktop's own, so with it
-note in front the row is gone: the page was the application's
+note Help has its own app menu and does not advertise recursive Help
 click 20 8
 wait 4
-expect-menu About this system…||Find…|Preferences…||Take Screenshot||Shut down…|
+expect-menu About this system…|
 key Escape
 wait 4
 click-window Help

@@ -28,5 +28,5 @@ printf '10 VFSWRITE "/quiet", 1\n' > "$deskhome/quiet.bas"
     printf '250 REM shadowed\n250 PRUNT "bad"\n260 PRINT "after"\n'
 } > "$deskhome/blink.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

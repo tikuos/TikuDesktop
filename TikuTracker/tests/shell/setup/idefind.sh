@@ -7,5 +7,5 @@ printf 'title Find\ngroup Sources\nfile main.bas\n' \
 printf '10 say 40 here\n20 rem\n30 say here\n40 done\n' \
     > "$deskhome/main.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

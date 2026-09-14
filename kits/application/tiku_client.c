@@ -10,6 +10,7 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <poll.h>
@@ -18,6 +19,9 @@
 #include "tiku_client.h"
 #include "tiku_dl.h"
 #include "tiku_remote.h"
+#include "tiku_report.h"
+#include "tiku_trail.h"
+#include "tiku_watch.h"
 
 /*
  * The stamp that says "a TikuOS application built this".
@@ -58,11 +62,26 @@ typedef struct {
     char                      current[64];
 } client_ctx_t;
 
+/* Window properties are data, not access to the desktop workspace. */
+static int svc_configure(void *ctx, uint32_t id, const char *title,
+                         int w, int h, int resize, int zoom)
+{
+    client_ctx_t *c = ctx;
+    return tiku_remote_configure(&c->remote, id, title, w, h, resize, zoom);
+}
+
+static int svc_message(void *ctx, const tiku_msg_t *message)
+{
+    client_ctx_t *c = ctx;
+    return tiku_remote_say(&c->remote, message);
+}
+
 static uint32_t
 svc_open(void *ctx, const char *title, int w, int h)
 {
     client_ctx_t *c = ctx;
     uint32_t id = tiku_remote_open(&c->remote, title, w, h);
+    tiku_trail("window open id %u size %dx%d", id, w, h);
 
     if (id != 0u) {
         c->windows++;
@@ -75,7 +94,9 @@ svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
     client_ctx_t *c = ctx;
 
-    return tiku_remote_frame(&c->remote, id, px, w, h);
+    int result = tiku_remote_frame(&c->remote, id, px, w, h);
+    if (result < 0) tiku_trail("frame failed id %u size %dx%d", id, w, h);
+    return result;
 }
 
 /**
@@ -123,9 +144,15 @@ svc_present(void *ctx, uint32_t id, const struct tiku_dl *dl,
         tiku_dl_misses(dl) == 0 &&
         tiku_dl_flat_size(dl) * 2u < frame &&
         tiku_remote_draw(&c->remote, id, dl, w, h)) {
+        tiku_remote_describe(&c->remote, id, NULL);
         return 1;
     }
-    return tiku_remote_frame(&c->remote, id, px, w, h);
+    int result = svc_frame(ctx, id, px, w, h);
+    char description[4096];
+    if (dl) tiku_dl_say(dl, description, sizeof description);
+    else description[0] = 0;
+    tiku_remote_describe(&c->remote, id, description);
+    return result;
 }
 
 static int
@@ -171,6 +198,7 @@ svc_close(void *ctx, uint32_t id)
     /* The window is given back by NAME; leaving is what happens when
      * the last one has gone, which the pump decides. */
     tiku_remote_close_window(&c->remote, id);
+    tiku_trail("window close requested id %u", id);
     if (c->windows > 0) {
         c->windows--;
     }
@@ -522,14 +550,26 @@ svc_board_stop(void *ctx)
     return sent;
 }
 
+/** Log input shape, never document text, clipboard content or typed keys. */
+static void trace_event(uint32_t id, const tiku_event_t *e)
+{
+    if (e->type == TIKU_EVENT_RESIZE)
+        tiku_trail("resize window %u to %dx%d", id, e->width, e->height);
+    else if (e->type != TIKU_EVENT_POINTER_MOVE && e->type != TIKU_EVENT_EXPOSE)
+        tiku_trail("event %d window %u", (int)e->type, id);
+}
+
 static int
-pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
+pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
+     const tiku_msg_t *message)
 {
     tiku_app_services_t services;
     void *state = NULL;
+    int result = 0;
 
     memset(&services, 0, sizeof services);
     services.startup_document = document;
+    services.startup_message = message;
     services.ctx = ctx;
     services.open = svc_open;
     services.frame = svc_frame;
@@ -540,6 +580,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
     services.place = svc_place;
     services.raise_window = svc_raise;
     services.sizeable = svc_sizeable;
+    services.configure = svc_configure;
+    services.send_message = svc_message;
     services.clip_set = svc_clip_set;
     services.clip_get = svc_clip_get;
     services.board_names = svc_board_names;
@@ -557,13 +599,22 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
         services.board_reclaim = svc_board_reclaim;
     services.board_find = svc_board_find;
     services.current_device = svc_current_device;
+    const char *help = getenv("TIKU_APP_HELP");
+    if (!message && help && *help) svc_help_page(ctx, help);
+    tiku_watch_install(0);
+    tiku_watch_beat();
+    tiku_trail("application start: %s (%s)", app->name ? app->name : "app",
+               app->id ? app->id : "unknown");
     if (app->start != NULL && app->start(&state, &services) != 0) {
+        tiku_report_now("application initialization failed");
         tiku_remote_disconnect(&ctx->remote);
         return 1;
     }
+    tiku_trail("application started: %d windows", ctx->windows);
     for (;;) {
         int done = 0;
         int dead = 0;
+        tiku_watch_beat();
 
         /* DRAIN what is queued before sleeping: a drag is many messages,
          * and one-per-nap starves it. */
@@ -578,10 +629,20 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
                 break;
             }
             if (type < 0) {
+                tiku_trail("desktop connection lost with %d windows open", ctx->windows);
+                if (ctx->windows > 0) {
+                    tiku_report_now("unexpected desktop connection loss");
+                    result = 1;
+                }
                 dead = 1;
                 break;
             }
+            if (type == TIKU_RMSG_SHUTDOWN) {
+                tiku_trail("desktop requested shutdown");
+                done = 1; break;
+            }
             if (type == TIKU_RMSG_CLOSED) {
+                tiku_trail("desktop closed window %u", id);
                 /* The runtime took a window.  An application holding
                  * others keeps going; the last one going is the end. */
                 if (app->closed != NULL) {
@@ -596,6 +657,9 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
                 }
                 continue;
             }
+            if (type == TIKU_RMSG_EVENT) trace_event(id, &event);
+            if (type == TIKU_RMSG_PICK)
+                tiku_trail("menu command %d window %u", command, id);
             if (type == TIKU_RMSG_EVENT &&
                 tiku_app_deliver_event(app, state, id, &event)) {
                 done = 1;
@@ -660,11 +724,13 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
                             app->picked(state, (uint32_t)win, path);
                         }
                     }
+                    if (app->message) app->message(state, heard);
                     tiku_msg_free(heard);
                 }
             }
+            if (done || ctx->windows <= 0) { done = 1; break; }
         }
-        if (app->tick != NULL) {
+        if (!done && !dead && app->tick != NULL) {
             app->tick(state, now_us());
         }
         if (done || dead) {
@@ -688,10 +754,11 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document)
         }
     }
     if (app->stop != NULL) {
+        tiku_trail("application stopping, exit %d", result);
         app->stop(state);
     }
     tiku_remote_disconnect(&ctx->remote);
-    return 0;
+    return result;
 }
 
 int
@@ -708,13 +775,29 @@ tiku_client_run_document(const tiku_app_descriptor_t *app, const char *path)
     if (app == NULL) {
         return 1;
     }
+    tiku_report_install(app->name, NULL);
     memset(&ctx, 0, sizeof ctx);
     if (tiku_remote_connect(&ctx.remote,
                                  (app->name != NULL) ? app->name : "app",
                                  8000) != 0) {
+        tiku_report_now("cannot connect to TikuDesktop");
         return 1;
     }
-    return pump(app, &ctx, path);
+    return pump(app, &ctx, path, NULL);
+}
+
+int tiku_client_run_message(const tiku_app_descriptor_t *app,
+                            const tiku_msg_t *message)
+{
+    client_ctx_t ctx;
+    if (!app || !message) return 1;
+    tiku_report_install(app->name, NULL);
+    memset(&ctx, 0, sizeof ctx);
+    if (tiku_remote_connect(&ctx.remote, app->name ? app->name : "app", 8000)) {
+        tiku_report_now("cannot connect to TikuDesktop");
+        return 1;
+    }
+    return pump(app, &ctx, NULL, message);
 }
 
 int
@@ -725,10 +808,12 @@ tiku_client_run_fd(const tiku_app_descriptor_t *app, int fd)
     if (app == NULL) {
         return 1;
     }
+    tiku_report_install(app->name, NULL);
     memset(&ctx, 0, sizeof ctx);
     if (tiku_remote_connect_fd(&ctx.remote,
             (app->name != NULL) ? app->name : "app", fd) != 0) {
+        tiku_report_now("cannot attach to desktop transport");
         return 1;
     }
-    return pump(app, &ctx, NULL);
+    return pump(app, &ctx, NULL, NULL);
 }

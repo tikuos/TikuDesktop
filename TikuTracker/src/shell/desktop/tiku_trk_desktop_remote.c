@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include "tiku_trail.h"
 #include "tiku_trk_desktop_private.h"
+#include "tiku_vfs_rpc.h"
 
 /** @brief A remote window's pixels are whatever its session last sent. */
 static void
@@ -23,6 +24,11 @@ remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
     int y, w, h;
 
     (void)window;
+    if (rw && surface->record && rw->description[0]) {
+        (void)tiku_dl_text(surface->record, TIKU_DL_PLAIN, content.x,
+                           content.y, rw->description, TIKU_C_TEXT);
+        return;
+    }
     if (rw != NULL && rw->list_fresh && rw->list != NULL &&
         surface->record != NULL) {
         /* A reader, not a screen: the window is what its list says, so
@@ -147,6 +153,18 @@ remote_reconcile(desktop_t *app)
                 tiku_window_set_size_controls(rw->window, 1, 0);
                 rw->wants_size = 0;
             }
+            if (rw->window != NULL && rw->configured) {
+                tiku_window_t *w = rw->window;
+                snprintf(w->title, sizeof w->title, "%s", rw->title);
+                tiku_window_set_size_controls(w, rw->resizable, rw->zoomable);
+                if (rw->config_w && rw->config_h) {
+                    tiku_rect_t content = tiku_window_content(w);
+                    w->frame.w += rw->config_w - content.w;
+                    w->frame.h += rw->config_h - content.h;
+                }
+                rw->configured = 0;
+                app->dirty = 1;
+            }
             if (rw->window != NULL && rw->wants_front) {
                 tiku_workspace_activate(app->desk, rw->window);
                 rw->wants_front = 0;
@@ -198,8 +216,7 @@ remote_reconcile(desktop_t *app)
 static void remote_image_open(desktop_t *app, int session, tiku_msg_t *m)
 {
     const char *path = tiku_msg_find_string(m, "path", 0);
-    int ok = tiku_trk_image_file_supported(path) &&
-             desktop_document_local(app, path);
+    int ok = path && desktop_document_local(app, path);
     tiku_msg_t *reply = tiku_msg_new(TIKU_MSG_IMAGEOPENED);
     if (reply) {
         (void)tiku_msg_add_int32(reply, "accepted", ok);
@@ -225,6 +242,26 @@ static void remote_document_open(desktop_t *app, int session, tiku_msg_t *m)
     }
 }
 
+/** @brief Native app workspaces cannot infer the desktop's keyboard owner. */
+void
+remote_focus(desktop_t *app, tiku_window_t *focused)
+{
+    for (int i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        tiku_remote_session_t *s = &app->remote.session[i];
+        if (!s->used) continue;
+        for (int j = 0; j < TIKU_REMOTE_WINDOWS; j++) {
+            tiku_remote_window_t *rw = &s->win[j];
+            if (!rw->window || !rw->opened) continue;
+            int active = rw->window == focused;
+            if (active == rw->focused) continue;
+            rw->focused = active;
+            tiku_event_t event = {.type = active ? TIKU_EVENT_ACTIVATED :
+                                                   TIKU_EVENT_DEACTIVATED};
+            tiku_remote_event(&app->remote, rw->window, &event);
+        }
+    }
+}
+
 /**
  * @brief Take what each session has said, and act on what it asked for.
  *
@@ -246,29 +283,10 @@ remote_hear(desktop_t *app)
                 remote_image_open(app, i, m);
             if (tiku_msg_what(m) == TIKU_MSG_DOCUMENTOPEN)
                 remote_document_open(app, i, m);
-            if (tiku_msg_what(m) == TIKU_MSG_PICK &&
-                app->pending_pick.kind == 0) {
-                int32_t window = 0, mode = TIKU_APP_PICK_OPEN;
-                const char *start = tiku_msg_find_string(m, "start", 0);
-                const char *name = tiku_msg_find_string(m, "name", 0);
-
-                (void)tiku_msg_find_int32(m, "window", 0, &window);
-                (void)tiku_msg_find_int32(m, "mode", 0, &mode);
-                app->pending_pick.kind = 2;
-                app->pending_pick.session = i;
-                app->pending_pick.slot = NULL;
-                app->pending_pick.window = (uint32_t)window;
-                if (mode == TIKU_APP_PICK_SAVE) {
-                    tiku_trk_panel_window_open_save(&app->file_panel,
-                        &app->pending_pick, TIKU_TRK_CMD_APP_PICK,
-                        start, name);
-                } else {
-                    tiku_trk_panel_window_open_file(&app->file_panel,
-                        &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start,
-                        name);
-                }
-                app->dirty = 1;
-            }
+            if (tiku_msg_what(m) == TIKU_MSG_PICK)
+                desktop_remote_pick(app, i, m);
+            if (tiku_msg_what(m) == TIKU_MSG_VFS_REQUEST)
+                desktop_vfs_request(app, i, m);
             if (tiku_msg_what(m) == TIKU_MSG_BOARDRUN) {
                 const char *board = tiku_msg_find_string(m, "board", 0);
                 const char *prog = tiku_msg_find_string(m, "program", 0);
@@ -353,14 +371,14 @@ remote_hear(desktop_t *app)
             if (tiku_msg_what(m) == TIKU_MSG_HELPOPEN) {
                 const char *page = tiku_msg_find_string(m, "page", 0);
                 if (page && strlen(page) < 256)
-                    tiku_trk_help_window_open_page(&app->help_window, page);
+                    (void)desktop_help_open(app, page);
             }
             if (tiku_msg_what(m) == TIKU_MSG_HELPHTML) {
                 const char *title = tiku_msg_find_string(m, "title", 0);
                 const char *html = tiku_msg_find_string(m, "html", 0);
                 if (html && strlen(html) <= 15000 &&
                     (!title || strlen(title) <= 127))
-                    (void)tiku_trk_help_window_html(&app->help_window,
+                    (void)desktop_help_html(app,
                                                     title, html);
             }
             if (tiku_msg_what(m) == TIKU_MSG_OPENPATH) {

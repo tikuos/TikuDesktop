@@ -1,0 +1,9 @@
+version=1
+id=c
+name=TikuC
+module=TikuC.so
+category=programming
+icon=application
+types=
+startup=programming/TikuC.so
+help=apps/tikuc.html

@@ -9,5 +9,5 @@ printf 'title aproj\ngroup Sources\nfile main.bas\n' \
 : > "$deskhome/aproj/main.bas"
 printf '10 rem stray\n' > "$deskhome/stray.bas"
 mkdir -p "$appsdir/programming"
-cp -f "$top/build/apps/programming/TikuBasic.so" \
+cp -f "$top/build/apps/basic/TikuBasic.so" \
       "$appsdir/programming/"

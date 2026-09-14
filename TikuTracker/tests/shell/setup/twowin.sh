@@ -5,6 +5,6 @@
 # touches anything: what is being proven is the runtime
 # keeping them apart, not the road that starts them.
 mkdir -p "$appsdir/trusted"
-cp -f "$top/build/apps/twowin.so" \
+cp -f "$top/build/apps/twowin/twowin.so" \
       "$appsdir/trusted/"
 rm -rf "$tmp/trk_twowin"
