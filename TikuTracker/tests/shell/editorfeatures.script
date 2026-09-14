@@ -1,0 +1,58 @@
+# shell: desktop
+# prefs: factory
+# setup: documentassociation
+# open: /tmp/trk_home/documents
+# Exercise the real remote Editor's search, save and safe-close routes.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 90
+expect-title a-notes.TXT
+key h ctrl
+wait 8
+key n
+key o
+key t
+key e
+key s
+key Return
+wait 5
+key Tab
+key l
+key o
+key g
+key Return
+wait 8
+shot /tmp/tiku-editor-desktop.png
+note Save works even while the replacement field still has focus
+key s ctrl
+wait 15
+expect-file-has /tmp/trk_home/documents/a-notes.TXT Sensor log
+expect-file-lacks /tmp/trk_home/documents/a-notes.TXT Sensor notes
+key Escape
+key z ctrl
+key s ctrl
+wait 15
+expect-file-has /tmp/trk_home/documents/a-notes.TXT Sensor notes
+key a ctrl
+key c ctrl
+key x ctrl
+key z ctrl
+key s ctrl
+wait 12
+expect-file-has /tmp/trk_home/documents/a-notes.TXT Second line
+key End ctrl
+key x
+key w ctrl
+wait 12
+expect-title a-notes.TXT
+note Return in the unsaved-work question safely cancels
+key Return
+wait 8
+expect-title a-notes.TXT
+key z ctrl
+key w ctrl
+wait 15
+expect-no-title a-notes.TXT
+quit

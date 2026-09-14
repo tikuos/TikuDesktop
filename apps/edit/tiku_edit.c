@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "tiku_app.h"
@@ -30,12 +31,18 @@
 #include "tiku_gfx.h"
 #include "tiku_syntax.h"
 #include "tiku_ui.h"
+#include "tiku_field_event.h"
+#include "tiku_scroll.h"
+#include "tiku_clipboard.h"
+#include "tiku_iconpaint.h"
+#include "tiku_icons_tiku.h"
+
+#include "tiku_edit_buffer.inl"
 
 #define EDIT_W      560
 #define EDIT_H      400
 #define STRIP_H     20
 #define MARGIN      6
-#define LINE_MAX    1024
 
 #define CMD_SAVE   1
 #define CMD_REVERT 2
@@ -44,6 +51,9 @@
 #define CMD_OPEN   5
 #define CMD_SAVEAS 6
 #define CMD_RUN    7
+enum { CMD_NEW = 8, CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE,
+       CMD_ALL, CMD_FIND, CMD_NEXT, CMD_PREV, CMD_REPLACE, CMD_GOTO,
+       CMD_NUMBERS, CMD_REPLACE_ALL, CMD_INVISIBLES };
 
 typedef struct {
     const tiku_app_services_t *services;
@@ -57,10 +67,9 @@ typedef struct {
      */
     tiku_dl_t                      *dl;
     uint32_t                        id;
-    /* The text, the caret and the scroll are the kit's now: one
-     * document object every application that edits text can hold, rather
-     * than each one growing its own line array and its own caret rules. */
-    tiku_textview_t                 tv;
+    /* Desktop-sized dynamic document; the legacy shared textview remains
+     * unchanged for other applications with different compatibility needs. */
+    edit_buffer_t                 tv;
     tiku_text_input_t               commit;
     /* The question the close gesture asks while there are unsaved
      * changes.  The kit's own alert, held over this window's content:
@@ -95,6 +104,21 @@ typedef struct {
     int                             child_fd;
     pid_t                           child;
     char                            out_partial[96];
+    int w, h, left, dragging, finding, find_focus, pending;
+    int crlf, bom, load_failed, disk_known, numbers, allow_open;
+    struct stat disk;
+    tiku_field_t field[3];
+    tiku_field_input_t field_input[3];
+    tiku_scroll_t vertical, horizontal;
+    int width_dirty, max_width, measured_cell, measured_height;
+    tiku_menuset_t last_menus;
+    char scratch[64];
+    uint32_t search_id;
+    tiku_surface_t *search_surface;
+    int search_active, hover_tool, pressed_tool, show_invisibles;
+    int match_case, whole_word;
+    char last_note[128];
+    int64_t note_until;
 } edit_state_t;
 
 /* The file named on the command line, before any state exists. */
@@ -111,224 +135,9 @@ out_pane_h(const edit_state_t *st)
     return 7 * (f->height + 2) + 8;
 }
 
-static int
-rows_visible_of(const edit_state_t *st)
-{
-    return (EDIT_H - STRIP_H - MARGIN - out_pane_h(st)) /
-           (tiku_font_plain()->height + 2);
-}
+#include "tiku_edit_file.inl"
+#include "tiku_edit_view.inl"
 
-/** @brief Read @p path into the buffer.  A missing file is an empty one. */
-static void
-load(edit_state_t *st)
-{
-    FILE *f = fopen(st->path, "r");
-    char buf[LINE_MAX];
-
-    if (f != NULL) {
-        /* Read whole, then handed over in one piece: the splitting into
-         * lines is the document's own business now. */
-        static char whole[TIKU_TEXTVIEW_LINES_MAX * 8];
-        size_t got = fread(whole, 1u, sizeof whole - 1u, f);
-
-        whole[got] = '\0';
-        (void)fclose(f);
-        tiku_textview_set(&st->tv, whole);
-        snprintf(st->note, sizeof st->note, "%d line%s",
-                 tiku_textview_lines(&st->tv),
-                 tiku_textview_lines(&st->tv) == 1 ? "" : "s");
-    } else {
-        tiku_textview_set(&st->tv, "");
-        snprintf(st->note, sizeof st->note, "new file");
-    }
-    (void)buf;
-}
-
-/** @brief @return nonzero when every line reached the disk. */
-static int
-save(edit_state_t *st)
-{
-    FILE *f;
-    int i;
-
-    if (st->path[0] == '\0') {
-        snprintf(st->note, sizeof st->note, "no file name to save to");
-        return 0;
-    }
-    f = fopen(st->path, "w");
-    if (f == NULL) {
-        snprintf(st->note, sizeof st->note, "cannot write %s", st->path);
-        return 0;
-    }
-    for (i = 0; i < tiku_textview_lines(&st->tv); i++) {
-        (void)fprintf(f, "%s\n", tiku_textview_line(&st->tv, i));
-    }
-    /* The close is what can still fail -- a full disk reports here and
-     * nowhere earlier -- so the saved state waits for it. */
-    if (fclose(f) != 0) {
-        snprintf(st->note, sizeof st->note, "could not finish writing");
-        return 0;
-    }
-    tiku_textview_saved(&st->tv);
-    snprintf(st->note, sizeof st->note, "saved %d line%s",
-             tiku_textview_lines(&st->tv),
-             tiku_textview_lines(&st->tv) == 1 ? "" : "s");
-    return 1;
-}
-
-static void
-paint(edit_state_t *st)
-{
-    const tiku_font_t *f = tiku_font_plain();
-    const tiku_font_t *small = tiku_font_at(11);
-    int step = f->height + 2;
-    int rows = rows_visible_of(st);
-    int pane_h = out_pane_h(st);
-
-    /* Painting and recording are the same pass; the list is emptied
-     * first because a frame is the whole window, not the difference. */
-    if (st->dl != NULL) {
-        tiku_dl_clear(st->dl);
-    }
-    st->surface->record = st->dl;
-    tiku_rect_t page = { 0, 0, EDIT_W, EDIT_H - STRIP_H - pane_h };
-    tiku_rect_t pane = { 0, EDIT_H - STRIP_H - pane_h, EDIT_W, pane_h };
-    tiku_rect_t strip = { 0, EDIT_H - STRIP_H, EDIT_W, STRIP_H };
-    char where[128];
-    int i;
-    tiku_syntax_state_t carry = TIKU_SYNTAX_OPEN;
-
-    tiku_fill(st->surface, page, TIKU_C_DOC);
-    /*
-     * What the first line SHOWN was begun in.  BASIC carries nothing,
-     * so this stays OPEN and the walk below does not run; C carries a
-     * remark between its lines, and a window that started classifying
-     * at its own top would paint the inside of a remark as language.
-     */
-    if (st->lang == TIKU_SYNTAX_C) {
-        tiku_span_t span[64];
-
-        for (i = 0; i < tiku_textview_top(&st->tv); i++) {
-            const char *before = tiku_textview_line(&st->tv, i);
-
-            if (before == NULL) {
-                break;
-            }
-            (void)tiku_syntax_spans_on(st->lang, before, carry, &carry,
-                                       span,
-                                       (int)(sizeof span / sizeof span[0]));
-        }
-    }
-    for (i = 0; i < rows &&
-             tiku_textview_top(&st->tv) + i < tiku_textview_lines(&st->tv);
-         i++) {
-        int y = MARGIN + i * step;
-
-        const char *text = tiku_textview_line(&st->tv,
-                               tiku_textview_top(&st->tv) + i);
-
-        if (st->lang != TIKU_SYNTAX_NONE) {
-            /* Classified as it is painted, per visible line: nothing is
-             * kept, so nothing can fall out of step with the text.  An
-             * edit changes what the next frame paints and there is no
-             * second copy to remember to update. */
-            tiku_span_t span[64];
-            int n = tiku_syntax_spans_on(st->lang, text, carry, &carry,
-                                      span,
-                                      (int)(sizeof span / sizeof span[0]));
-
-            (void)tiku_ui_text_spans(st->surface, f, MARGIN, y + f->ascent,
-                                     text, span, n);
-        } else {
-            tiku_text(st->surface, f, MARGIN, y + f->ascent, text,
-                           TIKU_C_TEXT);
-        }
-    }
-    {
-        /* The caret sits where the text before it ends, which is the only
-         * way a proportional face can place it. */
-        int cy, cx, row;
-        char head[LINE_MAX];
-        int cut;
-
-        tiku_textview_caret(&st->tv, &cy, &cx);
-        row = cy - tiku_textview_top(&st->tv);
-        cut = cx;
-        if (row >= 0 && row < rows) {
-            if (cut > tiku_textview_line_len(&st->tv, cy)) {
-                cut = tiku_textview_line_len(&st->tv, cy);
-            }
-            memcpy(head, tiku_textview_line(&st->tv, cy), (size_t)cut);
-            head[cut] = '\0';
-            tiku_vline(st->surface,
-                            MARGIN + tiku_text_width(f, head),
-                            MARGIN + row * step, step, TIKU_C_TEXT);
-        }
-    }
-    if (pane_h > 0) {
-        /* What the run said, newest lines last: a well of its own, with
-         * the words in the OUTPUT ink so a reader is told these came
-         * from the program rather than being part of it. */
-        int fit = (pane.h - 8) / step;
-        int first = (st->out_count > fit) ? st->out_count - fit : 0;
-        int k;
-
-        tiku_ui_sunken(st->surface, pane, TIKU_C_DOC);
-        for (k = first; k < st->out_count; k++) {
-            tiku_text(st->surface, f, pane.x + MARGIN,
-                           pane.y + 4 + (k - first) * step + f->ascent,
-                           st->out[k], tiku_ink(TIKU_INK_REMARK));
-        }
-        if (st->running && st->out_count == 0) {
-            tiku_text(st->surface, f, pane.x + MARGIN,
-                           pane.y + 4 + f->ascent, "running…",
-                           tiku_dim(TIKU_C_TEXT, TIKU_C_DOC));
-        }
-    }
-    tiku_fill(st->surface, strip, TIKU_C_PANEL);
-    tiku_hline(st->surface, 0, strip.y, EDIT_W,
-                    tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
-    /* Marked in ASCII: the interface face carries no bullet, and a
-     * modified file that says nothing about it is the worst of the
-     * three states this line can be in. */
-    {
-        int cy, cx;
-
-        tiku_textview_caret(&st->tv, &cy, &cx);
-        snprintf(where, sizeof where, "%s%s  %d:%d  %s",
-                 tiku_textview_modified(&st->tv) ? "* " : "",
-                 st->path[0] != '\0' ? st->path : "untitled",
-                 cy + 1, cx + 1, st->note);
-    }
-    tiku_text(st->surface, small, MARGIN,
-                   strip.y + (STRIP_H - small->height) / 2 + small->ascent,
-                   where, TIKU_C_TEXT);
-    if (st->ask.open) {
-        int aw, ah;
-
-        tiku_alert_size(&aw, &ah);
-        if (aw > EDIT_W - 16) { aw = EDIT_W - 16; }
-        st->ask_frame = (tiku_rect_t){ (EDIT_W - aw) / 2,
-                                       (EDIT_H - ah) / 3, aw, ah };
-        tiku_alert_draw(&st->ask, st->surface, st->ask_frame);
-    }
-    st->surface->record = NULL;
-    /*
-     * Handed over BOTH ways, and the services layer picks: down a wire
-     * the commands go, in one process the pixels do, and this does not
-     * have to know which -- which is the same bargain the window session
-     * already makes about where the application is running.
-     */
-    if (st->services->present != NULL) {
-        (void)st->services->present(st->services->ctx, st->id, st->dl,
-                                    st->surface->px, EDIT_W, EDIT_H);
-    } else {
-        (void)st->services->frame(st->services->ctx, st->id,
-                                  st->surface->px, EDIT_W, EDIT_H);
-    }
-}
-
-static void paint(edit_state_t *st);
 
 /** @brief Append one finished line of the child's output to the pane. */
 static void
@@ -369,22 +178,26 @@ run_program(edit_state_t *st)
         return;
     }
     if (st->path[0] != '\0') {
-        (void)save(st);
+        if (!save(st)) return;
         snprintf(file, sizeof file, "%s", st->path);
     } else {
         FILE *f;
-        int i;
-
-        snprintf(file, sizeof file, "/tmp/tiku_edit_run.bas");
-        f = fopen(file, "w");
+        if (st->scratch[0]) unlink(st->scratch);
+        snprintf(st->scratch, sizeof st->scratch, "/tmp/tiku-edit-run-XXXXXX");
+        int fd = mkstemp(st->scratch);
+        snprintf(file, sizeof file, "%s", st->scratch);
+        f = fd < 0 ? NULL : fdopen(fd, "wb");
         if (f == NULL) {
+            if (fd >= 0) close(fd);
             snprintf(st->note, sizeof st->note, "cannot write the scratch");
             return;
         }
-        for (i = 0; i < tiku_textview_lines(&st->tv); i++) {
-            (void)fprintf(f, "%s\n", tiku_textview_line(&st->tv, i));
+        int ok = write_document(st, f);
+        if (fclose(f)) ok = 0;
+        if (!ok) {
+            snprintf(st->note, sizeof st->note, "Could not write the run snapshot.");
+            return;
         }
-        (void)fclose(f);
     }
     snprintf(box, sizeof box, "%s", file);
     slash = strrchr(box, '/');
@@ -436,7 +249,14 @@ edit_tick(void *state, int64_t now_us)
     ssize_t n;
     int heard = 0;
 
-    (void)now_us;
+    if (st && strcmp(st->note, st->last_note)) {
+        snprintf(st->last_note, sizeof st->last_note, "%s", st->note);
+        st->note_until = now_us + 8000000;
+    }
+    if (st && st->note[0] && st->note_until && now_us >= st->note_until) {
+        st->note[0] = st->last_note[0] = 0;
+        paint(st);
+    }
     if (st == NULL || !st->running) {
         return;
     }
@@ -473,7 +293,8 @@ edit_tick(void *state, int64_t now_us)
             out_line(st, st->out_partial);
             st->out_partial[0] = '\0';
         }
-        (void)waitpid(st->child, &status, 0);
+        pid_t ended = waitpid(st->child, &status, WNOHANG);
+        if (!ended) return;  /* Closed stdout is not necessarily process exit. */
         st->running = 0;
         (void)close(st->child_fd);
         st->child_fd = -1;
@@ -483,91 +304,12 @@ edit_tick(void *state, int64_t now_us)
         heard = 1;
     }
     if (heard) {
+        publish(st);
         paint(st);
     }
 }
 
-static void
-publish(edit_state_t *st)
-{
-    tiku_menuset_t menus;
-
-    memset(&menus, 0, sizeof menus);
-    menus.nmenu = 1;
-    snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "File");
-    menus.menu[0].nitem = 4;
-    snprintf(menus.menu[0].item[0].label,
-             sizeof menus.menu[0].item[0].label, "Save");
-    menus.menu[0].item[0].command = CMD_SAVE;
-    menus.menu[0].item[0].sc = 's';
-    /* Offered disabled with nothing to save, so the row keeps its place
-     * and its shortcut stays discoverable. */
-    menus.menu[0].item[0].enabled =
-        (unsigned char)tiku_textview_modified(&st->tv);
-    snprintf(menus.menu[0].item[1].label,
-             sizeof menus.menu[0].item[1].label, "Revert");
-    menus.menu[0].item[1].command = CMD_REVERT;
-    menus.menu[0].item[1].enabled =
-        (unsigned char)tiku_textview_modified(&st->tv);
-    snprintf(menus.menu[0].item[2].label,
-             sizeof menus.menu[0].item[2].label, "Quit");
-    menus.menu[0].item[2].command = CMD_QUIT;
-    menus.menu[0].item[2].enabled = 1;
-    /*
-     * A settled row, marked when it is on.  The published protocol does
-     * carry a mark and the bar draws it, so the row keeps ONE name and
-     * says whether it holds -- rather than renaming itself, which reads
-     * as two different commands to anyone scanning the menu twice.
-     */
-    snprintf(menus.menu[0].item[3].label,
-             sizeof menus.menu[0].item[3].label, "Colour as BASIC");
-    menus.menu[0].item[3].command = CMD_SYNTAX;
-    menus.menu[0].item[3].enabled = 1;
-    menus.menu[0].item[3].marked =
-        (unsigned char)(st->lang != TIKU_SYNTAX_NONE);
-    /*
-     * Opening and saving-as are the SHELL's panel, offered only where
-     * the host has one: an application started by a host that cannot
-     * ask has no business showing rows it could not honour.
-     */
-    /* Run is offered where it can be honest: a document the editor
-     * knows is BASIC, run by the interpreter a board runs. */
-    menus.menu[0].nitem = 5;
-    snprintf(menus.menu[0].item[4].label,
-             sizeof menus.menu[0].item[4].label, "Run");
-    menus.menu[0].item[4].command = CMD_RUN;
-    menus.menu[0].item[4].sc = 'r';
-    menus.menu[0].item[4].enabled =
-        (unsigned char)(st->lang == TIKU_SYNTAX_BASIC && !st->running);
-    if (st->services->pick != NULL) {
-        menus.menu[0].nitem = 7;
-        snprintf(menus.menu[0].item[5].label,
-                 sizeof menus.menu[0].item[5].label, "Open…");
-        menus.menu[0].item[5].command = CMD_OPEN;
-        menus.menu[0].item[5].enabled = 1;
-        snprintf(menus.menu[0].item[6].label,
-                 sizeof menus.menu[0].item[6].label, "Save as…");
-        menus.menu[0].item[6].command = CMD_SAVEAS;
-        menus.menu[0].item[6].enabled = 1;
-    }
-    (void)st->services->menus(st->services->ctx, st->id, &menus);
-}
-
-/**
- * @brief Note that an edit happened: the menu may have to change.
- *
- * The document owns the modified flag; what this owns is the moment it
- * FLIPS, because that is when Save and Revert become reachable and the
- * menus have to be published again.
- */
-static void
-touched(edit_state_t *st, int was)
-{
-    st->note[0] = '\0';
-    if (!was && tiku_textview_modified(&st->tv)) {
-        publish(st);            /* Save and Revert become reachable */
-    }
-}
+#include "tiku_edit_commands.inl"
 
 static int
 edit_start(void **state, const tiku_app_services_t *services)
@@ -580,21 +322,35 @@ edit_start(void **state, const tiku_app_services_t *services)
         return -1;
     }
     st->services = services;
-    tiku_textview_init(&st->tv);
+    st->w = EDIT_W; st->h = EDIT_H; st->numbers = 1;
+    st->find_focus = -1; st->child_fd = -1;
+    st->hover_tool = st->pressed_tool = -1; st->match_case = 1;
+    tiku_icons_tiku_register();
+    tiku_scroll_init(&st->vertical, 1);
+    tiku_scroll_init(&st->horizontal, tiku_font_mono_cell(0));
+    for (int i = 0; i < 3; i++) {
+        tiku_field_start(&st->field[i], "");
+        tiku_field_input_init(&st->field_input[i]);
+    }
+    if (!edit_buffer_init(&st->tv)) { free(st); return -1; }
     st->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_DOC);
     /* Only worth keeping when something can use it; a NULL one simply
      * means every frame goes over as pixels, which is what happens
      * linked into a desktop anyway. */
     st->dl = (services->present != NULL) ? tiku_dl_new() : NULL;
     if (st->surface == NULL) {
+        edit_buffer_free(&st->tv);
+        tiku_dl_free(st->dl);
         free(st);
         return -1;
     }
     const char *document = services->startup_document;
     if (!document) document = edit_path;
     if (strlen(document) >= sizeof st->path) {
+        edit_buffer_free(&st->tv);
         tiku_dl_free(st->dl);
         tiku_surface_free(st->surface);
+        tiku_surface_free(st->search_surface);
         free(st);
         return -1;
     }
@@ -605,10 +361,19 @@ edit_start(void **state, const tiku_app_services_t *services)
     st->lang = tiku_syntax_of_path(st->path);
     load(st);
     slash = strrchr(st->path, '/');
-    snprintf(title, sizeof title, "%s",
+    snprintf(title, sizeof title, "%.63s",
              (slash != NULL) ? slash + 1
              : (st->path[0] != '\0') ? st->path : "Edit");
     st->id = services->open(services->ctx, title, EDIT_W, EDIT_H);
+    if (!st->id) {
+        edit_buffer_free(&st->tv);
+        tiku_dl_free(st->dl);
+        tiku_surface_free(st->surface);
+        tiku_surface_free(st->search_surface);
+        free(st);
+        return -1;
+    }
+    if (services->sizeable) services->sizeable(services->ctx, st->id);
     if (services->help_page != NULL) {
         (void)services->help_page(services->ctx, "apps/editor.html");
     }
@@ -624,232 +389,33 @@ edit_stop(void *state)
     edit_state_t *st = state;
 
     if (st != NULL) {
-        tiku_textview_free(&st->tv);
+        if (st->running && st->child > 0) {
+            kill(st->child, SIGKILL);
+            while (waitpid(st->child, NULL, 0) < 0 && errno == EINTR) {}
+        }
+        if (st->child_fd >= 0) close(st->child_fd);
+        if (st->scratch[0]) unlink(st->scratch);
+        if (edit_buffer_modified(&st->tv)) {
+            char recovery[] = "/tmp/TikuEdit-recovery-XXXXXX";
+            int fd = mkstemp(recovery);
+            if (fd >= 0) {
+                FILE *f = fdopen(fd, "wb");
+                if (f) {
+                    int ok = write_document(st, f) && !fflush(f) && !fsync(fd);
+                    if (fclose(f)) ok = 0;
+                    fprintf(stderr, "Editor recovery %s: %s\n", ok ? "saved" : "incomplete", recovery);
+                } else close(fd);
+            }
+        }
+        edit_buffer_free(&st->tv);
         tiku_dl_free(st->dl);
         tiku_surface_free(st->surface);
+        tiku_surface_free(st->search_surface);
         free(st);
     }
 }
 
-static int
-edit_event(void *state, const tiku_event_t *event)
-{
-    edit_state_t *st = state;
-    int rows = rows_visible_of(st);
-    int was_modified;
-
-    if (st->ask.open) {
-        int at = -1;
-
-        tiku_text_input_reset(&st->commit);
-
-        if (event->type == TIKU_EVENT_KEY_DOWN) {
-            at = tiku_alert_key(&st->ask, event->key);
-        } else if (event->type == TIKU_EVENT_POINTER_DOWN) {
-            at = tiku_alert_button_at(&st->ask,
-                     st->ask_frame.w, st->ask_frame.h,
-                     event->x - st->ask_frame.x,
-                     event->y - st->ask_frame.y);
-            if (at >= 0) {
-                st->ask.chosen = at;
-            }
-        } else {
-            return 0;
-        }
-        if (at < 0) {
-            return 0;           /* not the question's key: ignored */
-        }
-        tiku_alert_reset(&st->ask);
-        /* Right to left: Cancel(0) stays, Discard(1) goes.  A save road
-         * would go here the day the editor grows one for a file it can
-         * name; the untitled one it is launched as has nowhere to save. */
-        if (at == 1) {
-            return 1;           /* done: the host closes the window */
-        }
-        paint(st);
-        return 0;
-    }
-    int commit = tiku_text_input_event(&st->commit, event);
-    if (event->type == TIKU_EVENT_TEXT_INPUT) {
-        was_modified = tiku_textview_modified(&st->tv);
-        if (commit == TIKU_TEXT_REJECTED ||
-            (commit == TIKU_TEXT_COMPLETE && !tiku_textview_commit(&st->tv, st->commit.text)))
-            snprintf(st->note, sizeof st->note, "Text input is invalid or does not fit.");
-        touched(st, was_modified);
-        (void)tiku_textview_reveal(&st->tv, rows);
-        paint(st);
-        return 0;
-    }
-    if (event->type != TIKU_EVENT_KEY_DOWN) {
-        return 0;
-    }
-    was_modified = tiku_textview_modified(&st->tv);
-    if ((event->modifiers & TIKU_MOD_CMD) != 0u) {
-        if (event->key == 's' || event->key == 'S') {
-            (void)save(st);
-            publish(st);
-            paint(st);
-        }
-        return 0;
-    }
-    switch (event->key) {
-    case TIKU_KEY_ESCAPE:
-        if (tiku_textview_modified(&st->tv)) {
-            /* The question, not the guillotine: closing must not be the
-             * one gesture that silently destroys typing. */
-            tiku_alert_open(&st->ask, TIKU_ALERT_WARN, 0,
-                            "Discard unsaved changes? "
-                            "The window has changes nothing has saved.",
-                            "Cancel|Discard");
-            paint(st);
-            return 0;
-        }
-        return 1;
-    case TIKU_KEY_RETURN:
-        tiku_textview_newline(&st->tv);
-        break;
-    case TIKU_KEY_BACKSPACE:
-        tiku_textview_backspace(&st->tv);
-        break;
-    case TIKU_KEY_DELETE:
-        tiku_textview_delete(&st->tv);
-        break;
-    case TIKU_KEY_LEFT:
-        tiku_textview_move(&st->tv, TIKU_TEXTVIEW_LEFT);
-        break;
-    case TIKU_KEY_RIGHT:
-        tiku_textview_move(&st->tv, TIKU_TEXTVIEW_RIGHT);
-        break;
-    case TIKU_KEY_UP:
-        tiku_textview_move(&st->tv, TIKU_TEXTVIEW_UP);
-        break;
-    case TIKU_KEY_DOWN:
-        tiku_textview_move(&st->tv, TIKU_TEXTVIEW_DOWN);
-        break;
-    case TIKU_KEY_HOME:
-        tiku_textview_move(&st->tv, TIKU_TEXTVIEW_HOME);
-        break;
-    case TIKU_KEY_END:
-        tiku_textview_move(&st->tv, TIKU_TEXTVIEW_END);
-        break;
-    case TIKU_KEY_PAGE_UP:
-    case TIKU_KEY_PAGE_DOWN: {
-        /* A page is a screenful of lines, and the caret keeps its column
-         * where the line it lands on is long enough to hold it. */
-        int cy, cx;
-
-        tiku_textview_caret(&st->tv, &cy, &cx);
-        cy += (event->key == TIKU_KEY_PAGE_UP) ? -rows : rows;
-        tiku_textview_place(&st->tv, cy, cx);
-        break;
-    }
-    default: {
-        /* The typed CHARACTER rides in text; the key is the folded
-         * keysym shortcuts match on, and the fold loses the case that
-         * Shift put there. */
-        unsigned ch = (unsigned char)event->text[0];
-
-        if (ch == 0u) {
-            ch = event->key;
-        }
-        if (ch >= 32u && ch < 127u) {
-            tiku_textview_insert(&st->tv, (char)ch);
-        } else {
-            return 0;           /* not ours: no repaint owed */
-        }
-        break;
-    }
-    }
-    touched(st, was_modified);
-    (void)tiku_textview_reveal(&st->tv, rows);
-    paint(st);
-    return 0;
-}
-
-static int
-edit_pick(void *state, uint32_t window, int command)
-{
-    edit_state_t *st = state;
-
-    (void)window;
-    switch (command) {
-    case CMD_QUIT:
-        return 1;
-    case CMD_SAVE:
-        (void)save(st);
-        break;
-    case CMD_REVERT:
-        load(st);
-        break;
-    case CMD_RUN:
-        if (st->lang == TIKU_SYNTAX_BASIC) {
-            run_program(st);
-        }
-        break;
-    case CMD_OPEN:
-    case CMD_SAVEAS:
-        if (st->services->pick != NULL) {
-            char dir[512];
-            const char *slash;
-
-            /* Start where this document lives, or at the home the shell
-             * would have chosen anyway. */
-            snprintf(dir, sizeof dir, "%s", st->path);
-            slash = strrchr(dir, '/');
-            if (slash != NULL && slash != dir) {
-                dir[slash - dir] = '\0';
-            } else {
-                dir[0] = '\0';
-            }
-            st->pick_save = (command == CMD_SAVEAS);
-            (void)st->services->pick(st->services->ctx, st->id,
-                st->pick_save ? TIKU_APP_PICK_SAVE : TIKU_APP_PICK_OPEN,
-                (dir[0] != '\0') ? dir : NULL,
-                st->pick_save ? "untitled" : NULL);
-        }
-        break;
-    case CMD_SYNTAX:
-        st->lang = (st->lang == TIKU_SYNTAX_NONE) ? TIKU_SYNTAX_BASIC
-                                                  : TIKU_SYNTAX_NONE;
-        snprintf(st->note, sizeof st->note, "%s",
-                 (st->lang == TIKU_SYNTAX_NONE) ? "plain text"
-                                                : "coloured as BASIC");
-        break;
-    default:
-        return 0;
-    }
-    publish(st);
-    paint(st);
-    return 0;
-}
-
-/**
- * @brief The path the person chose, some frames after the asking.
- *
- * Opening reads the file and re-reads its NAME for the language, so a
- * .bas file arrives coloured without anybody asking twice.  Saving-as
- * takes the name first and then writes, so a failed write leaves the
- * document pointing where it was told rather than where it was.
- */
-static void
-edit_picked(void *state, uint32_t window, const char *path)
-{
-    edit_state_t *st = state;
-
-    (void)window;
-    if (st == NULL || path == NULL || path[0] == '\0') {
-        return;
-    }
-    snprintf(st->path, sizeof st->path, "%s", path);
-    st->lang = tiku_syntax_of_path(st->path);
-    if (st->pick_save) {
-        (void)save(st);
-    } else {
-        load(st);
-    }
-    publish(st);
-    paint(st);
-}
+#include "tiku_edit_input.inl"
 
 const tiku_app_descriptor_t tiku_edit_app = {
     .id = "org.tikuos.edit",
@@ -857,9 +423,11 @@ const tiku_app_descriptor_t tiku_edit_app = {
     .start = edit_start,
     .stop = edit_stop,
     .event = edit_event,
+    .event_in = edit_event_in,
     .pick = edit_pick,
     .tick = edit_tick,
-    .picked = edit_picked
+    .picked = edit_picked,
+    .closed = edit_closed
 };
 
 #ifdef TIKU_APP_SO

@@ -31,17 +31,18 @@ note Run is offered because the NAME said BASIC, and taking it runs
 note the program on the board's own interpreter
 click-window Edit
 wait 4
-click 60 8
+click 212 8
 wait 6
 expect-menu Run
 menu-pick Run
 wait 120
+shot /tmp/tiku-editor-run.png
 note the run's effect is in the sandbox beside the source: the lamp
 note file holds what the program wrote
 expect-file-has /tmp/trk_home/led 7
 note and what the program SAID is in the output pane, in the ink that
 note tells a reader these words came from the run rather than the file
-expect-pixel 233 374 607060
+expect-pixel 229 372 607060
 note put the editor away
 click-window Edit
 wait 4

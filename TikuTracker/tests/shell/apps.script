@@ -43,9 +43,16 @@ note Escape in the question presses Cancel, the safe road: still standing
 key Escape
 wait 6
 expect-title Edit
-note asked again, Return presses the default -- Discard -- and it goes
+note asked again, Return safely cancels rather than discarding typing
 key Escape
 wait 6
 key Return
+wait 8
+expect-title Edit
+key Escape
+wait 6
+note Discard now requires an explicit click in the unsaved-work question
+shot /tmp/tiku-editor-question.png
+click 592 318
 wait 20
 expect-no-title Edit

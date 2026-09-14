@@ -118,7 +118,7 @@ $(DEMOAPP): $(OBJ)/$(D)/samples/tiku_demo_main.o $(LIB_RUNTIME) $(LIB_UI) \
 # One rule per application, generated: a static pattern substitutes its
 # stem once, and the object's path needs the name twice.
 define APP_RULE
-$(BUILD)/tiku-$(1): $(OBJ)/$(D)/$(1)/tiku_$(1).o $(LIB_RUNTIME) $(LIB_UI) \
+$(BUILD)/tiku-$(1): $(OBJ)/$(D)/$(1)/tiku_$(1).o $(LIB_RUNTIME) $(LIB_TRANSLATION) $(LIB_UI) \
                     $(LIB_TRANSPORT) | $(BUILD)
 	$$(CC) $$(CFLAGS) -o $$@ $$^ $$(LDFLAGS) -lX11 -lm
 endef
@@ -143,7 +143,7 @@ SO_CFLAGS := $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -shared \
 $(APPS_D)/terminal.so: $(D)/term/tiku_term.c $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
-$(APPS_D)/editor.so: $(D)/edit/tiku_edit.c $(PIC_LIBS) | $(APPS_D)
+$(APPS_D)/editor.so: $(D)/edit/tiku_edit.c $(wildcard $(D)/edit/*.inl) $(PIC_LIBS) | $(APPS_D)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(BUILD)/tests/slowstatvfs.so: $(T)/tests/tools/slowstatvfs.c | $(BUILD)/tests

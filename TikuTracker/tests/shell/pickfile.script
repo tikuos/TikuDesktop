@@ -50,8 +50,8 @@ expect-no-title Open
 expect-title Edit
 note and it arrived COLOURED, because .bas said which language it is:
 note the line number receded, the statement in the reserved-word ink
-expect-pixel 235 122 7f7f7f
-expect-pixel 276 118 0000b0
+expect-pixel 255 145 838383
+expect-pixel 287 145 0000b0
 note put the editor away rather than leaving it standing
 click-window Edit
 wait 6
