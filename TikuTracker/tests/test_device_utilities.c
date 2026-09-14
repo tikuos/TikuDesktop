@@ -120,7 +120,13 @@ int main(void)
     app->utility[0]->paused = 0; app->utility[0]->next = 0;
     app->dirty = 0; desktop_utilities_tick(app);
     assert(app->dirty);
+    /* The test goes on using this one after the desktop and the jobs have
+     * both let go of it, so it takes a reference of its own like anything
+     * else that outlives an owner.  Without it the last job's free() drops
+     * the count to nothing and every line below reads freed memory --
+     * which glibc serves and Darwin's malloc aborts on. */
     struct desktop_utility *monitor = app->utility[0];
+    monitor->refs++;
     monitor->paused = 1; monitor->sampled = 123;
     j = job(&b, "/sys", 0); j->mode = 0; j->owner = monitor;
     j->metrics.ram = 999; utility_done(j);
@@ -154,6 +160,7 @@ int main(void)
     assert(took >= 4500 && took < 9000 && utility_jobs == 1);
     atomic_store(&blocked, 0);
     while (utility_jobs) { (void)tiku_work_collect(); usleep(10000); }
+    if (--monitor->refs == 0) free(monitor);
     tiku_workspace_free(app->desk); tiku_surface_free(s); free(app);
     puts("PASS: telemetry, missing data, VFS paths, permissions, edit confirmation, readback, cancellation and close lifetime");
     return 0;
