@@ -169,14 +169,27 @@ auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
     }
     if (overshoot == 0 && horizontal == 0) {
         controller->scroll_at = 0;
+        controller->scroll_held = 0;
         return 0;
     }
-    if (controller->scroll_at == 0) {
-        controller->scroll_at = now;
-        return 0;
-    }
-    if (now - controller->scroll_at <= AUTOSCROLL_DELAY_US) {
-        return 0;
+    if (controller->spring_script_pulses > 0) {
+        /* Scripted: the hold is a NUMBER OF TURNS, the same lesson the
+         * band learnt (PVS-050).  Counted in wall time it was the
+         * machine's speed that decided whether a script's twenty-five
+         * turns had used up six hundred milliseconds, and the answer
+         * changed with the load. */
+        if (controller->scroll_held < controller->spring_script_pulses) {
+            controller->scroll_held++;
+            return 0;
+        }
+    } else {
+        if (controller->scroll_at == 0) {
+            controller->scroll_at = now;
+            return 0;
+        }
+        if (now - controller->scroll_at <= AUTOSCROLL_DELAY_US) {
+            return 0;
+        }
     }
     distance = overshoot != 0 ? (overshoot < 0 ? -overshoot : overshoot)
                               : (horizontal < 0 ? -horizontal : horizontal);
@@ -256,6 +269,7 @@ tiku_trk_drag_target_reset(tiku_trk_drag_target_t *controller)
 {
     controller->folder = NULL;
     controller->row = -1;
+    controller->scroll_held = 0;
     controller->hover_at = 0;
     controller->scroll_at = 0;
     controller->sprung = 0;
