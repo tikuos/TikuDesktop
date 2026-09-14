@@ -94,8 +94,23 @@ tiku_sys_processes(void (*fn)(const tiku_sys_process_t *process, void *ctx),
         if (length == 0u) {
             continue;
         }
-        command[length < sizeof command - 1u ? length
-                                             : sizeof command - 1u] = '\0';
+        /* The IMAGE, not argv[0]: a program started by a relative name
+         * is remembered by that name in its command line, and a caller
+         * handed it cannot find the file.  /proc/<pid>/exe answers for
+         * a process of this user's own, which is the only kind offered
+         * here; one that has gone since the directory was read has no
+         * row worth offering. */
+        if (snprintf(path, sizeof path, "/proc/%s/exe", entry->d_name) < 0) {
+            continue;
+        }
+        {
+            ssize_t got = readlink(path, command, sizeof command - 1u);
+
+            if (got <= 0) {
+                continue;
+            }
+            command[got] = '\0';
+        }
         if (snprintf(path, sizeof path, "/proc/%s/comm",
                      entry->d_name) < 0) {
             continue;
