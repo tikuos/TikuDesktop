@@ -1,6 +1,7 @@
 /* Document defaults, MIME detection, overrides, and literal runner arguments.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
+#include <limits.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include "../src/ui/commands/tiku_trk_launch_controller.c"
@@ -73,7 +74,7 @@ int main(int argc, char **argv)
      * what it was handed is the only way to see the argv a launch really
      * built.  By its own resolved path rather than through /proc, which
      * only Linux has. */
-    char self[TIKU_PATH_MAX];
+    char self[PATH_MAX];
     assert(realpath(argv[0], self));
     snprintf(capture.cmd, sizeof capture.cmd, "%s", self);
     snprintf(capture.module, sizeof capture.module, "%s/captured args", dir);

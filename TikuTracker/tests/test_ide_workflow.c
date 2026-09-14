@@ -1,5 +1,6 @@
 /* Host regressions for upload preflight, search, recovery and target state. */
 #include <assert.h>
+#include <limits.h>
 #include "tiku_dl.h"
 #define TIKU_APP_EMBED
 #include "../../apps/ide/tiku_ide.c"
@@ -501,7 +502,7 @@ static void test_launch_document(tiku_app_services_t *services, const char *dir)
 int main(void)
 {
     char dir[TIKU_PATH_MAX] = "/tmp/tikubasic-test-XXXXXX";
-    char real[TIKU_PATH_MAX], label[160];
+    char real[PATH_MAX], label[160];
     tiku_app_services_t services = { .current_device = current,
         .board_names = names, .board_save = save, .board_run = run,
         .menus = menus, .frame = frame, .open = open_window, .close = close_window };

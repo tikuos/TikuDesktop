@@ -1,5 +1,6 @@
 /* TikuReader: local navigation and input without weakening bundled Help. */
 #include <assert.h>
+#include <limits.h>
 #include "tiku_icons.h"
 #include "../src/ui/windows/tiku_trk_help_window.c"
 
@@ -319,7 +320,7 @@ static void browser_hover(tiku_workspace_t *workspace, tiku_surface_t *s)
 int main(void)
 {
     char base[TIKU_PATH_MAX] = "/tmp/tiku-document-reader.XXXXXX";
-    char real[TIKU_PATH_MAX];
+    char real[PATH_MAX];
 
     assert(mkdtemp(base));
     /* Resolved, because the code under test resolves what it is given:
