@@ -10,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "tiku_host.h"
+#include "tiku_trk_splash.h"
 
 /** @brief Monotonic timing for a bounded input wakeup test. */
 static int64_t now_us(void)
@@ -129,6 +130,12 @@ static void presentation(Display *d, Window w, tiku_host_t *host)
     assert(XGetPixel(im,1,0) == 0x987654 && XGetPixel(im,319,239) == 0x123456);
     XDestroyImage(im);
     XClearArea(d,w,0,0,320,240,True); XSync(d,False);
+    /* Startup has not entered its event loop yet. Native damage must
+     * restore the complete last frame without waiting for Expose handling. */
+    im = XGetImage(d,w,0,0,320,240,AllPlanes,ZPixmap); assert(im);
+    assert(XGetPixel(im,1,0) == 0x987654 &&
+           XGetPixel(im,319,239) == 0x123456);
+    XDestroyImage(im);
     settle(host);
     assert(!tiku_host_present(host,s));
     uint64_t repaired;
@@ -139,6 +146,48 @@ static void presentation(Display *d, Window w, tiku_host_t *host)
     assert(XGetPixel(im,1,0) == 0x987654); XDestroyImage(im);
     tiku_surface_free(s);
     puts("PASS: sparse X11 upload, unchanged-frame skip and Expose repair");
+}
+
+/** @brief Boot stages stay complete while application event polling is paused. */
+static void splash_frames(Display *d, Window w, tiku_host_t *host)
+{
+    tiku_surface_t *s = tiku_surface_new(320,240,0xffffff);
+    tiku_trk_splash_t splash;
+    const char *stages[] = {"storage", "fonts", "applications"};
+    assert(s);
+    tiku_trk_splash_begin(&splash,1,1000000);
+    for (int stage = 0; stage < 3; stage++) {
+        int64_t now = 1000000 + stage * TIKU_TRK_SPLASH_STEP_US;
+        tiku_trk_splash_say(&splash,stages[stage],now);
+        tiku_trk_splash_draw(&splash,s,(tiku_rect_t){0,0,320,240},now);
+        assert(!tiku_host_present(host,s));
+        XSync(d,False);
+        /* Simulate a window manager exposing the screen during boot.
+         * No host_poll/settle until ALL startup stages are checked. */
+        XClearArea(d,w,0,0,320,240,True); XSync(d,False);
+        XImage *im = XGetImage(d,w,0,0,320,240,AllPlanes,ZPixmap);
+        assert(im);
+        for (int y = 0; y < 240; y++)
+            for (int x = 0; x < 320; x++)
+                assert(XGetPixel(im,x,y) == (s->px[y*320+x] & 0xffffffu));
+        XDestroyImage(im);
+    }
+    tiku_surface_free(s);
+    puts("PASS: complete splash logo, black background and text survive boot damage");
+}
+
+/** @brief Resizing replaces the retained frame without exposing unpainted data. */
+static void resized_presentation(Display *d, Window w, tiku_host_t *host)
+{
+    XResizeWindow(d,w,400,260); XSync(d,False); settle(host);
+    tiku_surface_t *s = tiku_surface_new(400,260,0x543210);
+    assert(s && !tiku_host_present(host,s));
+    XSync(d,False);
+    XClearArea(d,w,0,0,400,260,True); XSync(d,False);
+    XImage *im = XGetImage(d,w,0,0,400,260,AllPlanes,ZPixmap);
+    assert(im && XGetPixel(im,399,259) == 0x543210);
+    XDestroyImage(im); tiku_surface_free(s);
+    puts("PASS: resized window retains the complete new frame");
 }
 
 int main(void)
@@ -153,9 +202,15 @@ int main(void)
     tiku_host_t *host = tiku_host_open(320,240,"Render test host");
     assert(host); settle(host);
     Window w = find_host(d);
+    XWindowAttributes attrs;
+    assert(XGetWindowAttributes(d,w,&attrs));
+    assert(attrs.map_state == IsUnmapped);
+    puts("PASS: native window stays hidden until its first complete frame");
     presentation(d,w,host);
     ordered_input(d,w,host);
     wakeup(display,w,host);
+    splash_frames(d,w,host);
+    resized_presentation(d,w,host);
     tiku_host_close(host); XCloseDisplay(d);
     return 0;
 }

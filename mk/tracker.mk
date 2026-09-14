@@ -268,6 +268,7 @@ test_editor_document_LDLIBS := -lX11 -lm
 test_tracker_image_LDLIBS := -lX11 -lm
 test_tracker_image_SRCS := $(T)/src/core/tiku_trk_task.c
 test_host_render_LDLIBS := -lX11 -lm
+test_host_render_SRCS := $(T)/src/shell/tiku_trk_splash.c
 test_reader_large_LDLIBS := -lX11 -lm
 test_fonts_window_SRCS := $(test_fontprefs_SRCS)
 test_fonts_window_LDLIBS := -lX11 -lm

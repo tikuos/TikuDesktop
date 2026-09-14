@@ -16,7 +16,9 @@
 
 typedef struct tiku_host tiku_host_t;
 
-/** @brief Open one native window.  @return NULL when no display is present. */
+/** @brief Create a native window, revealed by its first complete presentation.
+ * @return NULL when no display is present.
+ */
 tiku_host_t *tiku_host_open(int width, int height,
                                       const char *title);
 

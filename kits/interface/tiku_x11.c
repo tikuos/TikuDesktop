@@ -36,6 +36,8 @@ struct tiku_host {
     Window window;
     GC gc;
     XImage *image;
+    Pixmap backing;            /* last complete frame, including during boot */
+    int mapped;                /* first presentation reveals the window */
     Atom delete_window;
     Cursor resize_cursor;
     int scale;
@@ -193,6 +195,14 @@ resize_image(tiku_host_t *host, int width, int height)
         free(pixels);
         return -1;
     }
+    Pixmap backing = XCreatePixmap(host->display, host->window,
+        (unsigned)width, (unsigned)height,
+        (unsigned)DefaultDepth(host->display, screen));
+    if (backing == None) { XDestroyImage(image); return -1; }
+    /* The old background remains server-owned until the replacement is
+     * fully painted and installed by present(), even across a resize. */
+    if (host->backing != None) XFreePixmap(host->display, host->backing);
+    host->backing = backing;
     if (host->image != NULL) { XDestroyImage(host->image); }
     host->image = image;
     host->force_present = 1;
@@ -287,7 +297,7 @@ tiku_host_open(int width, int height, const char *title)
         (unsigned)(width * host->scale),
         (unsigned)(height * host->scale), 0,
         BlackPixel(host->display, screen),
-        WhitePixel(host->display, screen));
+        BlackPixel(host->display, screen));
     XSelectInput(host->display, host->window,
                  ExposureMask | KeyPressMask | KeyReleaseMask |
                  ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
@@ -300,8 +310,8 @@ tiku_host_open(int width, int height, const char *title)
     XSetWMProtocols(host->display, host->window, &host->delete_window, 1);
     XStoreName(host->display, host->window,
                (title != NULL) ? title : "TikuOS");
-    XMapWindow(host->display, host->window);
     host->gc = XCreateGC(host->display, host->window, 0, NULL);
+    XSetGraphicsExposures(host->display, host->gc, False);
     if (resize_image(host, width * host->scale,
                      height * host->scale) != 0) {
         tiku_host_close(host);
@@ -330,6 +340,9 @@ tiku_host_close(tiku_host_t *host)
     }
     if (host->display != NULL && host->gc != NULL) {
         XFreeGC(host->display, host->gc);
+    }
+    if (host->display != NULL && host->backing != None) {
+        XFreePixmap(host->display, host->backing);
     }
     if (host->display != NULL && host->window != None) {
         if (host->clipboard_ready) tiku_x11_clipboard_close(&host->clipboard);
@@ -360,12 +373,27 @@ tiku_host_present(tiku_host_t *host,
     host->presented_frames++;
     for (int i = 0; i < n; i++) {
         tiku_rect_t r = rects[i];
-        XPutImage(host->display, host->window, host->gc, host->image,
+        XPutImage(host->display, host->backing, host->gc, host->image,
             r.x, r.y, r.x, r.y, (unsigned)r.w, (unsigned)r.h);
         host->presented_bytes += (uint64_t)r.w*r.h*sizeof(tiku_rgb_t);
         host->presented_rects++;
     }
-    if (n) XFlush(host->display);
+    if (n) {
+        /* Expose handling may wait until boot finishes. Let the server
+         * restore real pixels, never a white clear behind sparse uploads. */
+        XSetWindowBackgroundPixmap(host->display, host->window, host->backing);
+        if (!host->mapped) {
+            XMapWindow(host->display, host->window);
+            host->mapped = 1;
+        } else {
+            for (int i = 0; i < n; i++) {
+                tiku_rect_t r = rects[i];
+                XCopyArea(host->display, host->backing, host->window, host->gc,
+                    r.x, r.y, (unsigned)r.w, (unsigned)r.h, r.x, r.y);
+            }
+        }
+        XFlush(host->display);
+    }
     return 0;
 }
 
