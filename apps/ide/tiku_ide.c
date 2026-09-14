@@ -2028,7 +2028,9 @@ project_paint(ide_t *st)
     tiku_rect_t body = project_body();
     char says[160];
 
-    if (st->proj_surface == NULL) {
+    /* Target updates can arrive while only the splash exists. A frame
+     * for ID zero has no receiver and must not seed the shared-image cache. */
+    if (st->proj_surface == NULL || st->proj_id == 0u) {
         return;
     }
     tiku_fill(st->proj_surface, all, TIKU_C_PANEL);

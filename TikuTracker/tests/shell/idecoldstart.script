@@ -1,0 +1,37 @@
+# shell: desktop
+# prefs: factory
+# No project, recovery state or warmed-up app process is needed.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 20
+expect-title TikuBasic
+note Dismiss the splash before its next stage repaint.
+key Escape
+wait 20
+expect-title Project
+expect-windows 2
+expect-pixel 500 250 ffffff
+shot /tmp/tikubasic-cold-start.png
+click 284 126
+wait 30
+expect-no-title Project
+expect-windows 1
+note A second launch with automatic splash dismissal must render identically.
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 220
+expect-title Project
+expect-windows 2
+expect-pixel 500 250 ffffff
+click 284 126
+wait 30
+expect-no-title Project
+expect-windows 1
+quit

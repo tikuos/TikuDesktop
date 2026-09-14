@@ -6,6 +6,8 @@
 
 static const char *selected = "board-a";
 static int saves, runs, window_opens;
+static int frames_without_window;
+static uint32_t last_frame;
 static char last_window[128];
 static char sent_board[64], sent_name[8], sent_program[8192];
 
@@ -16,13 +18,18 @@ static int names(void *ctx, char *out, size_t max)
 static int menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 { (void)ctx; (void)id; (void)set; return 0; }
 static int frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
-{ (void)ctx; (void)id; (void)px; (void)w; (void)h; return 0; }
+{
+    (void)ctx; (void)px; (void)w; (void)h;
+    if (!id) frames_without_window++;
+    last_frame = id;
+    return 0;
+}
 static uint32_t open_window(void *ctx, const char *title, int w, int h)
 {
     (void)ctx; (void)w; (void)h;
     window_opens++;
     snprintf(last_window, sizeof last_window, "%s", title);
-    return 99;
+    return (uint32_t)(98 + window_opens);
 }
 static void close_window(void *ctx, uint32_t id)
 { (void)ctx; (void)id; }
@@ -293,11 +300,22 @@ static void test_empty_startup(const tiku_app_services_t *services,
         int opened = window_opens;
         assert(access(snapshot, F_OK) == 0);
         assert(ide_start(&state, services) == 0);
+        frames_without_window = 0;
         ide_t *fresh = state;
         ide_tick(fresh, 1);
+        assert(!frames_without_window);
+        if (!launch) {
+            /* Dismiss before the next splash stage: the former grey box. */
+            tiku_event_t dismiss = {.type = TIKU_EVENT_KEY_DOWN,
+                                     .key = TIKU_KEY_ESCAPE};
+            ide_event(fresh, fresh->splash_id, &dismiss);
+        }
         ide_tick(fresh, SPLASH_US + 2);
         ide_tick(fresh, SPLASH_US + 4000000);
         assert(fresh->proj_id && !fresh->splash_surface);
+        assert(!frames_without_window && last_frame == fresh->proj_id);
+        assert((fresh->proj_surface->px[100 * IDE_W + 100] & 0xffffffu) ==
+               (TIKU_C_DOC & 0xffffffu));
         assert(!fresh->proj.nrow && !fresh->proj.dir[0]);
         assert(window_opens == opened + 2);
         assert(!strcmp(last_window, "Project"));
