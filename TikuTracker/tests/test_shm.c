@@ -95,6 +95,8 @@ main(void)
           "machine");
 
     memset(pixels, 0, sizeof pixels);
+    check(tiku_remote_frame(&client, 0, pixels, 8, 8) < 0,
+          "a repaint before a window exists is refused, not cached");
     pixels[0] = 0x00112233u;
     (void)tiku_remote_frame(&client, id, pixels, 8, 8);
     settle(&listener, 40);
@@ -153,6 +155,36 @@ main(void)
 
     check(tiku_remote_mapped(&listener) == 1,
           "the surface is held while the session is alive");
+    {
+        uint32_t other = tiku_remote_open(&client, "Same size", 8, 8);
+        pixels[0] = 0x00123456u;
+        (void)tiku_remote_frame(&client, other, pixels, 8, 8);
+        settle(&listener, 20);
+        shown = tiku_remote_pixels(&s->win[1]);
+        check(shown != NULL && shown[0] == 0x00123456u,
+              "a second equal-sized window receives its own initial surface");
+        pixels[0] = 0x00654321u;
+        (void)tiku_remote_frame(&client, id, pixels, 8, 8);
+        settle(&listener, 20);
+        shown = tiku_remote_pixels(&s->win[0]);
+        check(shown != NULL && shown[0] == 0x00654321u,
+              "switching back paints the first window, not the second");
+        shown = tiku_remote_pixels(&s->win[1]);
+        check(shown != NULL && shown[0] == 0x00123456u,
+              "the other window keeps its own pixels");
+        tiku_remote_close_window(&client, other);
+        settle(&listener, 20);
+        check(tiku_remote_mapped(&listener) == 1,
+              "closing the second window releases just its mapping");
+        /* Delay the desktop between two size changes, as on a cold launch. */
+        (void)tiku_remote_frame(&client, id, pixels, 4, 8);
+        pixels[0] = 0x00abcdefu;
+        (void)tiku_remote_frame(&client, id, pixels, 8, 8);
+        settle(&listener, 20);
+        shown = tiku_remote_pixels(&s->win[0]);
+        check(shown != NULL && shown[0] == 0x00abcdefu,
+              "queued surface replacements cannot unlink each other's image");
+    }
     tiku_remote_disconnect(&client);
     settle(&listener, 20);
     tiku_remote_shutdown(&listener);

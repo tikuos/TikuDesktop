@@ -394,6 +394,8 @@ typedef struct {
     uint32_t     *shared;
     size_t        shared_bytes;
     int           shared_w, shared_h;
+    uint32_t      shared_id;    /* the window this mapping was sent to */
+    uint32_t      shared_serial; /* unique names for queued replacements */
     int           next_buffer;
     char          shm_name[TIKU_REMOTE_SHM_NAME];
     unsigned      features;

@@ -1283,7 +1283,8 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
     void *at;
     int fd;
 
-    if (client->shared != NULL && client->shared_w == w &&
+    if (client->shared != NULL && client->shared_id == id &&
+        client->shared_w == w &&
         client->shared_h == h) {
         return 1;
     }
@@ -1292,8 +1293,11 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
         client->shared = NULL;
     }
     snprintf(client->shm_name, sizeof client->shm_name,
-             "/tiku-desk-%ld-%u", (long)getpid(), (unsigned)id);
-    (void)shm_unlink(client->shm_name);
+             "/tiku-desk-%ld-%u-%u", (long)getpid(), (unsigned)id,
+             (unsigned)++client->shared_serial);
+    /* Each queued SURFACE owns its name. Reusing/unlinking a name here
+     * lets a slow desktop map the replacement for the earlier message,
+     * then unlink it before the replacement's message is processed. */
     fd = shm_open(client->shm_name, O_RDWR | O_CREAT | O_EXCL, 0600);
     if (fd < 0) {
         return 0;
@@ -1310,6 +1314,7 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
         return 0;
     }
     client->shared = at;
+    client->shared_id = id;
     client->shared_bytes = bytes;
     client->shared_w = w;
     client->shared_h = h;
@@ -1334,7 +1339,8 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
     unsigned char *payload;
     int32_t ww = w, hh = h;
 
-    if (client->fd < 0 || px == NULL || w < 1 || h < 1) {
+    if (client == NULL || client->fd < 0 || id == 0u ||
+        px == NULL || w < 1 || h < 1) {
         return -1;
     }
     if ((client->features & TIKU_FEAT_SHARED_SURFACE) != 0u &&
