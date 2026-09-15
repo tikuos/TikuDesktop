@@ -151,15 +151,12 @@ scale_for_dpi(double dpi)
 /**
  * @brief What a screen's own measurements say its dpi is.
  *
- * Asked only when nobody has said.  The two numbers come from the same
- * server describing the same screen, so their ratio is right whichever
- * convention it reports them in -- a server that counts every device
- * pixel gives a high dpi and a large scale, one that counts drawn
- * pixels gives a low dpi and a small scale, and the picture ends up the
- * same size in front of a person either way.
- *
- * A server with nothing to say fakes these to about ninety-six, which
- * lands on scale 1 -- what this did before there was a fallback at all.
+ * Asked only when nobody has said.  Both numbers come from the same
+ * server describing the same screen, so their ratio holds whichever
+ * convention it counts in: device pixels give a high dpi and a large
+ * scale, drawn pixels a low dpi and a small one, and the picture ends
+ * up the same size either way.  A server with nothing to say fakes
+ * about ninety-six, which lands on scale 1.
  *
  * @return the dpi, or 0.0 when the numbers cannot mean anything.
  */
@@ -271,34 +268,27 @@ resize_image(tiku_host_t *host, int width, int height)
 /**
  * @brief Which modifier bits a keymap puts the Command key on.
  *
- * Not a constant anywhere.  X names eight modifiers by number and lets
- * the keymap decide what each one carries, so the bit that means
- * Command is whatever bit the keys Meta and Super happen to sit on --
- * which differs between servers and can be changed by a person at any
- * time.  Asking the map is the only way to be right about all of them;
- * a number written down here would be right about one.
- *
- * What it must NOT return is a modifier this desktop already spends.
- * Meta and Alt share a key on most keymaps, so a rule that took every
- * modifier carrying Meta would take Mod1 -- which is Option here -- and
- * then holding Option would mean giving a command.  Option-clicking a
- * file would copy it AND act on it.  So the four the desktop has
- * already spoken for are removed at the end, and what is left is a key
- * that means nothing else.
+ * Not a constant anywhere: X lets the keymap say what each of its eight
+ * modifiers carries, so the Command bit is wherever Meta and Super sit,
+ * which differs between servers.  The four the desktop already spends
+ * are removed at the end, since Meta and Alt share a key on most
+ * keymaps and Mod1 is Option here: keeping it would make Option-click
+ * copy a file and act on it at once.
  *
  * @param map   The server's modifier map.
  * @param syms  Its keycode-to-keysym table.
- * @param first The keycode @p syms starts at, and @p per its stride.
+ * @param first The keycode @p syms starts at, @p count its length in
+ *              keycodes and @p per its stride.
  * @return the mask, or 0 when this keymap has no key free to mean it.
  */
 static unsigned
 command_mask_of(const XModifierKeymap *map, const KeySym *syms,
-                int first, int per)
+                int first, int count, int per)
 {
     unsigned mask = 0u;
     int index, slot, which;
 
-    if (map == NULL || syms == NULL || per <= 0) {
+    if (map == NULL || syms == NULL || per <= 0 || count <= 0) {
         return 0u;
     }
     for (index = 0; index < 8; index++) {
@@ -306,7 +296,10 @@ command_mask_of(const XModifierKeymap *map, const KeySym *syms,
             KeyCode code = map->modifiermap[index * map->max_keypermod +
                                             slot];
 
-            if (code == 0) {
+            /* The map and the table are two round trips, and a keymap
+             * can change between them: a code outside the range that
+             * was fetched names no row of it. */
+            if (code == 0 || (int)code < first || (int)code >= first + count) {
                 continue;
             }
             for (which = 0; which < per; which++) {
@@ -349,7 +342,7 @@ command_modifiers(Display *display)
     }
     syms = XGetKeyboardMapping(display, (KeyCode)first, count, &per);
     map = XGetModifierMapping(display);
-    mask |= command_mask_of(map, syms, first, per);
+    mask |= command_mask_of(map, syms, first, count, per);
     if (map != NULL) { XFreeModifiermap(map); }
     if (syms != NULL) { XFree(syms); }
     return mask;
