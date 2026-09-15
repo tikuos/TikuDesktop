@@ -94,15 +94,12 @@ void tiku_sys_frame_name(const char *raw, char *out, size_t max);
 /**
  * @brief Pin the process on the other end of the local socket @p fd.
  *
- * The point is identity, not permission.  A pid is a number the system
- * hands out again, so between a person choosing a row in a Force Quit
- * dialog and pressing the button, the process they picked can exit and
- * its number be given to something else.  What comes back here holds the
- * process itself, so a later kill either reaches the one that was seen
- * or reaches nothing.
- *
- * Only this user's own, never init and never the caller: a dialog that
- * could stop the desktop is a dialog that will.
+ * Identity, not permission.  A pid is a number the system hands out
+ * again, so between a person choosing a row in a Force Quit dialog and
+ * pressing the button that process can exit and its number go to
+ * something else; what comes back here holds the process itself, so a
+ * later kill reaches the one that was seen or reaches nothing.  Only
+ * this user's own, never init and never the caller.
  *
  * @param pid  filled with the peer's process id when it is pinned.
  * @return A descriptor for tiku_sys_process_kill(), close-on-exec and
@@ -138,12 +135,10 @@ int tiku_sys_reserve(int fd, long long bytes);
  *
  * Every host names a handful of rates as constants and the ordinary
  * termios call sets those.  Above them the hosts part: Linux names
- * 460800 and 921600 like any other, and macOS names neither -- its
- * termios stops at 230400 and a faster line is set through the driver
- * instead, after the rest of the line's shape has been agreed.
- *
- * Asked only when the ordinary way did not take, so on a host where it
- * did this is never reached and the rate is already right.
+ * 460800 and 921600 like any other, while macOS stops at 230400 and
+ * sets a faster line through the driver, after the rest of the line's
+ * shape has been agreed.  Asked only when the ordinary way did not
+ * take, so where it did this is never reached.
  *
  * @param fd    An open terminal, already configured.
  * @param baud  The rate in bits per second.
@@ -154,16 +149,12 @@ int tiku_sys_serial_speed(int fd, int baud);
 /**
  * @brief The serial ports a board could be on the other end of.
  *
- * Every host has its own name for a USB serial line and its own place
- * to list them, and the two do not resemble each other: Linux has udev
- * write a directory of stable by-id names, macOS has the driver put a
- * node in /dev and nothing else.  What is the SAME is the question --
- * which of this machine's ports might have a board behind it -- and the
- * answer is a path that can be opened.
- *
- * Nothing here is opened.  A port whose device has not answered its
- * host blocks the open for half a minute on some hosts, so listing must
- * cost nothing; deciding is the caller's, off the turn.
+ * Each host lists its USB serial lines its own way: udev writes a
+ * directory of stable by-id names on Linux, while macOS has only the
+ * node the driver put in /dev.  The question is the same on both, and
+ * so is the answer: a path that can be opened.  Nothing here opens one.
+ * A port whose device has not answered can block an open for half a
+ * minute, so listing costs nothing and deciding is the caller's.
  *
  * @param out  Filled with up to @p max paths.
  * @param max  How many will fit.

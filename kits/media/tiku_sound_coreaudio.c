@@ -7,15 +7,12 @@
  * tiku_sound_coreaudio.c - the host backend over CoreAudio's audio queue.
  *
  * The twin of tiku_sound_pulse.c: the same five calls behind the same
- * struct, and the Makefile compiles one of the two.  An audio queue is
- * the right shape for what the kit does -- it hands over a chunk and
- * walks away, and the card asks for the next one on a thread of its own
- * -- so the whole backend is three buffers and which of them are ours.
- *
- * Nothing here is linked at run time the way the other one is: this
- * framework is part of the system, so a Mac either has it or is not a
- * Mac.  What CAN fail is opening an output, on a machine with no device
- * or no session, and that is said once and then played silent.
+ * struct, and the Makefile compiles one of the two.  An audio queue
+ * hands over a chunk and walks away, the card asking for the next one
+ * on a thread of its own, so the backend is three buffers and which of
+ * them are ours.  The framework is part of the system rather than
+ * loaded at run time; opening an output can still fail on a machine
+ * with no device or session, which is said once and then played silent.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

@@ -369,16 +369,12 @@ tiku_sys_reserve(int fd, long long bytes)
 /**
  * @brief Run an open serial line at exactly @p baud.
  *
- * Darwin's termios names no rate above 230400, so a board that talks at
- * 460800 or faster cannot be asked for one through tcsetattr -- the
- * call fails, or takes and leaves the line running at something else.
- * The driver is told directly instead.
- *
- * It must be told LAST.  IOSSIOSPEED sets a rate the termios structure
- * has no constant for, and a later tcsetattr -- for the framing, the
- * flow control, anything -- writes that structure back over it and the
- * line falls to whatever the structure still says.  So this is the end
- * of configuring a port, never the middle.
+ * Darwin's termios names no rate above 230400, so tcsetattr either
+ * fails for a faster board or leaves the line running at something
+ * else; the driver is told directly instead.  It must be told last:
+ * IOSSIOSPEED sets a rate the termios structure has no constant for,
+ * and any later tcsetattr writes that structure back over it.  This is
+ * the end of configuring a port, never the middle.
  */
 int
 tiku_sys_serial_speed(int fd, int baud)
@@ -398,20 +394,12 @@ tiku_sys_serial_speed(int fd, int baud)
 /**
  * @brief The serial ports a board could be on the other end of.
  *
- * Darwin has no by-id directory and no stable names: the driver puts a
- * node in /dev when the device attaches and that is the whole record.
- * Each line gets two of them -- "tty.NAME" and "cu.NAME" -- and only
- * the second is the right one to open: tty blocks until carrier is
- * asserted, which a board that is only listening never does, so a scan
- * that offered it would hand back a path that hangs.
- *
- * What is left is choosing among the cu nodes, and the choice is made
- * by what the driver called itself.  usbmodem is Apple's own CDC class
- * driver, which every board in this tree that speaks USB directly comes
- * up as; usbserial, SLAB and wch are the three USB-to-serial bridges
- * the kits use.  Named the other way round -- everything except the
- * two the machine always has -- the Bluetooth port would be offered as
- * a board, and opening it starts a pairing a person did not ask for.
+ * Darwin has no by-id directory: the driver puts "tty.NAME" and
+ * "cu.NAME" in /dev, and only the cu node can be offered, since tty
+ * blocks until a carrier a listening board never asserts.  The cu nodes
+ * are chosen by driver name: usbmodem is Apple's CDC class driver, and
+ * usbserial, SLAB and wch are the bridges the kits use.  An exclusion
+ * list would offer the Bluetooth port, which pairs when opened.
  */
 int
 tiku_sys_serial_ports(char out[][256], int max)

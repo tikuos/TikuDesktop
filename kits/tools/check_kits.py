@@ -32,7 +32,10 @@ KITS_DIR = os.path.dirname(HERE)
 # list, which is what makes this a table rather than an ordering.
 ALLOWS = {
     "support":     set(),
-    "device":      set(),
+    # A serial line is opened here and its rate agreed here, and both are
+    # what POSIX leaves to the machine: tiku_sys is that seam, and the
+    # support kit is the one below every other.
+    "device":      {"support"},
     "interface":   set(),
     "storage":     {"support", "device"},
     "translation": {"support", "storage", "interface"},

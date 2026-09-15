@@ -15,6 +15,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/* glibc hides the X/Open pty calls behind this; Darwin does not mind it. */
+#define _GNU_SOURCE 1
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -209,10 +212,14 @@ main(void)
         if (a_terminal(&master, &slave) == 0) {
             struct termios t;
             int exact = 1, i;
-            const int RATES[] = { 9600, 115200, 230400, 460800, 921600 };
+            /* The NAMES, not the numbers: a speed_t is the rate itself
+             * on Darwin and a small index on glibc, so only the constant
+             * means the same rate on both. */
+            const speed_t RATES[] = { B9600, B115200, B230400,
+                                      B460800, B921600 };
 
             for (i = 0; i < (int)(sizeof RATES / sizeof RATES[0]); i++) {
-                speed_t want = (speed_t)RATES[i];
+                speed_t want = RATES[i];
 
                 if (tcgetattr(slave, &t) != 0) {
                     exact = 0;
