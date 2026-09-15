@@ -177,7 +177,7 @@ main(int argc, char **argv)
     check(fake.closed == 1, "free closes the backend once");
 
     if (argc > 1 && strcmp(argv[1], "--play") == 0) {
-        const tiku_sound_backend_t *host = tiku_sound_pulse_backend();
+        const tiku_sound_backend_t *host = tiku_sound_host_backend();
 
         printf("the host backend\n");
         check(host != NULL, "libpulse-simple was found");

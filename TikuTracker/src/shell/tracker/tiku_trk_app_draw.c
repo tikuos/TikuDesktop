@@ -13,8 +13,7 @@
 
 /* Used before they are defined. */
 void browser_paint_editor(app_t *a, tiku_surface_t *s,
-                          const tiku_trk_column_t **cols, tiku_rect_t list,
-                          tiku_rect_t count);
+                          const tiku_trk_column_t **cols, tiku_rect_t list);
 void browser_paint_guide(app_t *a, tiku_surface_t *s, tiku_rect_t list);
 void browser_paint_scrollbar(app_t *a, tiku_surface_t *s, tiku_rect_t list,
                              int rows, int scroll, int total);
@@ -403,13 +402,12 @@ browser_draw(app_t *a)
     const tiku_font_t *f = tiku_font_plain();
     const tiku_trk_column_t *cols;
     tiku_rect_t win = { 0, 0, s->w, s->h };
-    tiku_rect_t list, title, bar, count;
+    tiku_rect_t list, title, bar;
     tiku_trk_sc_ctx_t mc;
     int ncol = tiku_trk_poseview_columns(a->view, &cols);
     int rows = browser_visible_rows(a);
     int scroll = tiku_trk_poseview_scroll(a->view);
     int total = tiku_trk_poseview_count(a->view);
-    int i;
 
     (void)tiku_ui_window(s, win, a->title, 1);
     mc = browser_menu_ctx(a, 0u);
@@ -426,7 +424,7 @@ browser_draw(app_t *a)
     browser_paint_rows(a, s, f, &cols, list, ncol, rows, scroll, total);
     browser_paint_scrollbar(a, s, list, rows, scroll, total);
     browser_paint_guide(a, s, list);
-    browser_paint_editor(a, s, &cols, list, count);
+    browser_paint_editor(a, s, &cols, list);
 }
 
 /** @brief Present the surface on the host; a displayless run has no host
@@ -446,8 +444,7 @@ browser_blit(app_t *a)
  */
 void
 browser_paint_editor(app_t *a, tiku_surface_t *s,
-                     const tiku_trk_column_t **cols, tiku_rect_t list,
-                     tiku_rect_t count)
+                     const tiku_trk_column_t **cols, tiku_rect_t list)
 {
     if (a->editing) {
         /* The editor sits where the name is, as an editable field: the row
@@ -486,7 +483,6 @@ browser_paint_editor(app_t *a, tiku_surface_t *s,
     draw_count(a, list);
     draw_popup(a);
     tiku_trk_status_overlay_draw(&a->status_overlay);
-    (void)count;
     a->dirty = 0;
 }
 

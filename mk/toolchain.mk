@@ -46,6 +46,11 @@ GC_SECTIONS := -Wl,-dead_strip
 # shm_open and clock_gettime are in libSystem here, not a library of
 # their own.
 RT_LIBS :=
+# The card's framework.  Named once here rather than on the thirty-odd
+# link lines that reach the media kit, and dropped again by the linker
+# from any binary that calls nothing in it -- which is how the probe,
+# whose whole point is to need nothing, stays needing nothing.
+LDFLAGS += -framework AudioToolbox -Wl,-dead_strip_dylibs
 else
 GC_SECTIONS := -Wl,--gc-sections
 RT_LIBS := -lrt

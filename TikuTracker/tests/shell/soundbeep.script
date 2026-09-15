@@ -1,0 +1,16 @@
+# shell: desktop
+# open: /dev/shm
+# volume: not-mine
+# The one moment that needs something to go wrong: an alert beeps.  Shown
+# a volume this user may not unmount, because a refusal is the readiest
+# alert a script can raise -- which is why this stands apart from
+# sounds.script, whose moments need no volume at all.
+wait 20
+note the volume shown cannot be unmounted, and the refusal is an alert
+key u ctrl
+wait 15
+expect-alert could not be unmounted
+expect-sound beep
+key Escape
+wait 3
+quit

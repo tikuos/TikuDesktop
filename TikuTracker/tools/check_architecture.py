@@ -59,7 +59,6 @@ PLATFORM_SEAM = {
     "tiku_app.c", "tiku_app_load.c", "tiku_client.c",
     "tiku_backend_posix.c",     # the stamp's section, written and read
     "tiku_link_tcp.c",          # SO_NOSIGPIPE where there is no MSG_
-    "tiku_sound_pulse.c",       # the host backend; milestone 3 adds its twin
 }
 
 PLATFORM_WORD = re.compile(r"__linux__|__APPLE__")

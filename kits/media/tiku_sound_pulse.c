@@ -148,7 +148,7 @@ static const tiku_sound_backend_t PULSE = {
 };
 
 const tiku_sound_backend_t *
-tiku_sound_pulse_backend(void)
+tiku_sound_host_backend(void)
 {
     if (!load()) {
         if (!pulse.said) {

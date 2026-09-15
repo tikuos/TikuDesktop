@@ -1,11 +1,10 @@
 # shell: desktop
-# open: /dev/shm
-# volume: not-mine
 # The moments that sound, heard through their count rather than a card:
 # the chime as the boot screen came up, a window opening, one coming back
-# to the front, the beep of an alert once one opens, and nothing for a
-# moment that did not happen.  A scripted run is mute, so this proves the
-# moments, not the speaker.
+# to the front, and nothing for a moment that did not happen.  A scripted
+# run is mute, so this proves the moments, not the speaker.  The alert's
+# beep wants a volume that refuses to unmount and stands apart, in
+# soundbeep.script.
 wait 20
 expect-sound startup
 expect-sound window-open
@@ -24,11 +23,4 @@ note but a window brought back to the front is that moment
 click 80 50
 wait 5
 expect-sound window-activate
-note the volume shown cannot be unmounted, and the refusal is an alert
-key u ctrl
-wait 15
-expect-alert could not be unmounted
-expect-sound beep
-key Escape
-wait 3
 quit

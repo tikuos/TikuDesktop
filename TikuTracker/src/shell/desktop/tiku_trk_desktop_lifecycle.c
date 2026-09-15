@@ -425,7 +425,7 @@ boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
      * counts them and keeps quiet. */
     tiku_sound_init((o->script_path != NULL || o->conduct_path != NULL ||
                      o->conduct_tty != NULL || o->mute)
-                        ? NULL : tiku_sound_pulse_backend());
+                        ? NULL : tiku_sound_host_backend());
     (void)tiku_sound_load_scores();
     tiku_trk_splash_begin(&app->splash,
         app->host != NULL || getenv("TIKU_SPLASH") != NULL, tiku_trk_now());

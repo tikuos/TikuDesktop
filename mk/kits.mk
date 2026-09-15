@@ -89,7 +89,16 @@ TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_icons.c \
                $(K)/translation/tiku_icons_tiku.c \
                $(K)/translation/tiku_fontdir.c
-MEDIA       := $(K)/media/tiku_sound.c $(K)/media/tiku_sound_pulse.c \
+# The card, like the machine underneath, is one file per host: the
+# PulseAudio simple API where there is a sound daemon, CoreAudio's audio
+# queue where there is a Mac.  Neither is compiled on the other's host,
+# so neither has to name a platform to stay out of the way.
+ifeq ($(UNAME_S),Darwin)
+SOUND_HOST  := $(K)/media/tiku_sound_coreaudio.c
+else
+SOUND_HOST  := $(K)/media/tiku_sound_pulse.c
+endif
+MEDIA       := $(K)/media/tiku_sound.c $(SOUND_HOST) \
                $(K)/media/tiku_score.c $(K)/media/tiku_sound_scores.c \
                $(K)/media/tiku_wav.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \

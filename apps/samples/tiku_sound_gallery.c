@@ -33,7 +33,7 @@ play(tiku_sound_event_t e)
 int
 main(int argc, char **argv)
 {
-    const tiku_sound_backend_t *host = tiku_sound_pulse_backend();
+    const tiku_sound_backend_t *host = tiku_sound_host_backend();
     int i, n;
 
     if (host == NULL) {

@@ -47,7 +47,7 @@ int
 browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
 {
     tiku_sound_init((o->script_path != NULL || o->mute)
-                        ? NULL : tiku_sound_pulse_backend());
+                        ? NULL : tiku_sound_host_backend());
     (void)tiku_sound_load_scores();
     if (o->use_device) {
         app->backend = tiku_backend_tiku_open(o->port, o->baud);

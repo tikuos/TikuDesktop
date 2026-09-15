@@ -141,12 +141,16 @@ int tiku_sound_load_file(tiku_sound_event_t event, const char *path);
 size_t tiku_sound_frames(tiku_sound_event_t event);
 
 /**
- * @brief The host backend: the PulseAudio simple API, opened at run time.
+ * @brief Whatever plays sound on the host this was built for.
  *
- * Found through dlopen("libpulse-simple.so.0"), which PipeWire serves as
- * well as PulseAudio.  @return the backend, or NULL when the library is
- * absent, in which case the shell runs silent and says so once.
+ * One name, one file per host behind it, the Makefile choosing: the
+ * PulseAudio simple API opened with dlopen where there is one, an audio
+ * queue where there is CoreAudio.  A shell asks for it without knowing
+ * which, and takes silence for an answer either way.
+ *
+ * @return the backend, or NULL where this host has nothing to play on,
+ *         in which case the shell runs silent and says so once.
  */
-const tiku_sound_backend_t *tiku_sound_pulse_backend(void);
+const tiku_sound_backend_t *tiku_sound_host_backend(void);
 
 #endif /* TIKU_SOUND_H_ */
