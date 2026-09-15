@@ -91,4 +91,46 @@ int tiku_sys_self_path(char *out, size_t max);
  */
 void tiku_sys_frame_name(const char *raw, char *out, size_t max);
 
+/**
+ * @brief Pin the process on the other end of the local socket @p fd.
+ *
+ * The point is identity, not permission.  A pid is a number the system
+ * hands out again, so between a person choosing a row in a Force Quit
+ * dialog and pressing the button, the process they picked can exit and
+ * its number be given to something else.  What comes back here holds the
+ * process itself, so a later kill either reaches the one that was seen
+ * or reaches nothing.
+ *
+ * Only this user's own, never init and never the caller: a dialog that
+ * could stop the desktop is a dialog that will.
+ *
+ * @param pid  filled with the peer's process id when it is pinned.
+ * @return A descriptor for tiku_sys_process_kill(), close-on-exec and
+ *         the caller's to close; -1 with errno set otherwise, ENOTSUP
+ *         where the host cannot pin at all.
+ */
+int tiku_sys_process_pin(int fd, long *pid);
+
+/**
+ * @brief Kill what @p handle pinned.
+ *
+ * @return 0, or -1 with ESRCH when the pinned process has gone -- which
+ *         includes a handle this seam did not issue, since a handle it
+ *         cannot recognise names no process it promised anything about.
+ */
+int tiku_sys_process_kill(int handle);
+
+/**
+ * @brief Make sure every byte of @p fd up to @p bytes really exists.
+ *
+ * A shared mapping over a sparse file can be made, mapped, and then kill
+ * the program with SIGBUS on the first write to a page the store never
+ * had room for.  Asking for the room up front turns that into a refusal
+ * a caller can answer -- here, by sending pixels instead of sharing
+ * them.  Hosts that do not over-commit this way have nothing to do.
+ *
+ * @return 0 when the room is there, an errno value when it is not.
+ */
+int tiku_sys_reserve(int fd, long long bytes);
+
 #endif /* TIKU_SYS_H */

@@ -21,12 +21,10 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
-#ifdef __linux__
-#include <sys/syscall.h>
-#endif
 
 #include <signal.h>
 
+#include "tiku_sys.h"
 #include "tiku_remote.h"
 #include "tiku_event.h"
 #include "tiku_trail.h"
@@ -45,49 +43,26 @@
  */
 #define REMOTE_MAX_DOWN (256u * 1024u)
 
-/** @brief Pin the authenticated local peer; never trust a client-supplied PID.
- * The caller owns the returned descriptor. Unsupported transports/platforms,
- * another user's processes, and the desktop itself cannot be terminated.
+/**
+ * @brief Pin the authenticated local peer; never trust a client-supplied PID.
+ *
+ * What identity means on a given machine is the machine's business
+ * (tiku_sys.h): here it is only which socket to ask about.  The caller
+ * owns the descriptor that comes back.
  */
 int tiku_remote_process_handle(const tiku_remote_session_t *session, long *pid)
 {
-#if defined(__linux__) && defined(SO_PEERPIDFD)
-    struct ucred cred;
-    socklen_t size = sizeof cred;
-    int handle = -1;
-    if (!session || !session->used || session->fd < 0) {
-        errno = ENOTCONN; return -1;
-    }
-    if (getsockopt(session->fd, SOL_SOCKET, SO_PEERCRED, &cred, &size))
+    if (session == NULL || !session->used || session->fd < 0) {
+        errno = ENOTCONN;
         return -1;
-    if (size != sizeof cred || cred.uid != geteuid() ||
-        cred.pid <= 1 || cred.pid == getpid()) {
-        errno = EPERM; return -1;
     }
-    size = sizeof handle;
-    if (getsockopt(session->fd, SOL_SOCKET, SO_PEERPIDFD, &handle, &size))
-        return -1;
-    if (fcntl(handle, F_SETFD, FD_CLOEXEC) < 0) {
-        int error = errno;
-        close(handle); errno = error; return -1;
-    }
-    if (pid) *pid = cred.pid;
-    return handle;
-#else
-    (void)session; (void)pid;
-    errno = ENOTSUP; return -1;
-#endif
+    return tiku_sys_process_pin(session->fd, pid);
 }
 
 /** @brief Kill only the pinned process, even if its numeric PID was reused. */
 int tiku_remote_process_kill(int handle)
 {
-#if defined(__linux__) && defined(SYS_pidfd_send_signal)
-    return (int)syscall(SYS_pidfd_send_signal, handle, SIGKILL, NULL, 0);
-#else
-    (void)handle;
-    errno = ENOTSUP; return -1;
-#endif
+    return tiku_sys_process_kill(handle);
 }
 
 int
@@ -1430,17 +1405,19 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
         (void)shm_unlink(client->shm_name);
         return 0;
     }
-#ifdef __linux__
-    /* A sparse tmpfs mapping can succeed then SIGBUS on the first write.
-     * Reserve its pages now; if the shared store is full, send pixels. */
-    int reserved = posix_fallocate(fd, 0, (off_t)bytes);
-    if (reserved) {
-        tiku_trail("shared surface %dx%d unavailable: error %d", w, h, reserved);
-        (void)close(fd);
-        (void)shm_unlink(client->shm_name);
-        return 0;
+    {
+        /* If the shared store has no room for this, send pixels: better
+         * a slower window than one that dies on its first write. */
+        int reserved = tiku_sys_reserve(fd, (long long)bytes);
+
+        if (reserved) {
+            tiku_trail("shared surface %dx%d unavailable: error %d",
+                       w, h, reserved);
+            (void)close(fd);
+            (void)shm_unlink(client->shm_name);
+            return 0;
+        }
     }
-#endif
     at = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     (void)close(fd);
     if (at == MAP_FAILED) {

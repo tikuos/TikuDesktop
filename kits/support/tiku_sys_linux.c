@@ -17,12 +17,17 @@
 #include "tiku_sys.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -249,4 +254,67 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
     } else {
         snprintf(out, max, "%.100s", raw);
     }
+}
+
+int
+tiku_sys_process_pin(int fd, long *pid)
+{
+#if defined(SO_PEERPIDFD)
+    struct ucred cred;
+    socklen_t size = sizeof cred;
+    int handle = -1;
+
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &size) != 0) {
+        return -1;
+    }
+    /* Never init, never the caller, never another user's: the dialog
+     * this serves can stop a program for good. */
+    if (size != sizeof cred || cred.uid != geteuid() ||
+        cred.pid <= 1 || cred.pid == getpid()) {
+        errno = EPERM;
+        return -1;
+    }
+    size = sizeof handle;
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERPIDFD, &handle, &size) != 0) {
+        return -1;
+    }
+    if (fcntl(handle, F_SETFD, FD_CLOEXEC) < 0) {
+        int keep = errno;
+
+        (void)close(handle);
+        errno = keep;
+        return -1;
+    }
+    if (pid != NULL) {
+        *pid = (long)cred.pid;
+    }
+    return handle;
+#else
+    /* A kernel without SO_PEERPIDFD cannot hold a process, and holding
+     * the NUMBER would be the bug this exists to avoid. */
+    (void)fd;
+    (void)pid;
+    errno = ENOTSUP;
+    return -1;
+#endif
+}
+
+int
+tiku_sys_process_kill(int handle)
+{
+#if defined(SYS_pidfd_send_signal)
+    return (int)syscall(SYS_pidfd_send_signal, handle, SIGKILL, NULL, 0);
+#else
+    (void)handle;
+    errno = ENOTSUP;
+    return -1;
+#endif
+}
+
+int
+tiku_sys_reserve(int fd, long long bytes)
+{
+    /* A sparse tmpfs mapping can succeed then SIGBUS on the first write;
+     * this is the call that says so now instead. */
+    return posix_fallocate(fd, 0, (off_t)bytes);
 }

@@ -55,7 +55,6 @@ PLATFORM_SEAM = {
     "tiku_darwin.h",
     "tiku_volume.c",            # the mount table; milestone 4 splits it
     "tiku_state.c",             # the one place xattrs are spoken
-    "tiku_remote.c",            # pidfd; milestone 4 takes it to the seam
     "tiku_app.c", "tiku_app_load.c", "tiku_client.c",
     "tiku_backend_posix.c",     # the stamp's section, written and read
     "tiku_link_tcp.c",          # SO_NOSIGPIPE where there is no MSG_

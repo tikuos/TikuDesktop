@@ -15,6 +15,7 @@
 #include "tiku_sys.h"
 
 #include <fcntl.h>
+#include <errno.h>
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
@@ -23,7 +24,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <sys/event.h>
 #include <sys/proc_info.h>
+#include <sys/socket.h>
+#include <sys/ucred.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
 #include <sys/ucontext.h>
@@ -217,4 +222,143 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
     } else {
         snprintf(out, max, "%s: %.100s", image, symbol);
     }
+}
+
+/*
+ * What is pinned, and what makes it that process rather than that
+ * number.  There is no pidfd here: a kqueue watching NOTE_EXIT gives a
+ * descriptor with the right shape -- close-on-exec, the caller's to
+ * close -- but the event it carries fires once and is then gone, so it
+ * cannot be asked twice whether the process is still there.  The START
+ * TIME can: the system hands out a pid again but never with the same
+ * microsecond, so a pid whose start time still matches is the same
+ * process and one whose does not is somebody else's.
+ *
+ * Small and fixed: this serves a dialog listing what a person may stop,
+ * and a person cannot pick from thousands.
+ */
+#define PINNED_MAX 64
+
+static struct {
+    int       handle;           /* the kqueue, and what the caller holds */
+    pid_t     pid;
+    long long started;          /* microseconds, from the process itself */
+} pinned[PINNED_MAX];
+
+/** @brief When @p pid began, or -1 when there is no such process now. */
+static long long
+began(pid_t pid)
+{
+    struct proc_bsdinfo info;
+
+    if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof info) !=
+        (int)sizeof info) {
+        return -1;
+    }
+    return (long long)info.pbi_start_tvsec * 1000000 +
+           (long long)info.pbi_start_tvusec;
+}
+
+int
+tiku_sys_process_pin(int fd, long *pid)
+{
+    struct xucred cred;
+    socklen_t size = sizeof cred;
+    pid_t peer = 0;
+    socklen_t psize = sizeof peer;
+    long long start;
+    struct kevent watch;
+    int slot, kq;
+
+    if (getsockopt(fd, SOL_LOCAL, LOCAL_PEERCRED, &cred, &size) != 0) {
+        return -1;
+    }
+    if (getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &peer, &psize) != 0) {
+        return -1;
+    }
+    /* Never init, never the caller, never another user's: the dialog
+     * this serves can stop a program for good. */
+    if (cred.cr_version != XUCRED_VERSION || cred.cr_uid != geteuid() ||
+        peer <= 1 || peer == getpid()) {
+        errno = EPERM;
+        return -1;
+    }
+    for (slot = 0; slot < PINNED_MAX && pinned[slot].handle > 0; slot++) {
+        ;
+    }
+    if (slot == PINNED_MAX) {
+        errno = ENOMEM;
+        return -1;
+    }
+    start = began(peer);
+    if (start < 0) {
+        errno = ESRCH;
+        return -1;
+    }
+    kq = kqueue();
+    if (kq < 0) {
+        return -1;
+    }
+    /* Refused for a process that has already gone, which is the one
+     * answer worth having from this: the row is stale. */
+    EV_SET(&watch, (uintptr_t)peer, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
+    if (kevent(kq, &watch, 1, NULL, 0, NULL) != 0 ||
+        fcntl(kq, F_SETFD, FD_CLOEXEC) < 0) {
+        int keep = errno;
+
+        (void)close(kq);
+        errno = keep;
+        return -1;
+    }
+    pinned[slot].handle = kq;
+    pinned[slot].pid = peer;
+    pinned[slot].started = start;
+    if (pid != NULL) {
+        *pid = (long)peer;
+    }
+    return kq;
+}
+
+int
+tiku_sys_process_kill(int handle)
+{
+    int i;
+
+    for (i = 0; i < PINNED_MAX; i++) {
+        if (pinned[i].handle == handle && handle > 0) {
+            break;
+        }
+    }
+    if (i == PINNED_MAX) {
+        /* Not one of ours: a copy of a descriptor, or a number that was
+         * never a pin.  Nothing is promised about it, so nothing is
+         * killed on its word. */
+        errno = ESRCH;
+        return -1;
+    }
+    if (began(pinned[i].pid) != pinned[i].started) {
+        /* Gone, or gone and the number handed to somebody else.  Either
+         * way the process a person chose is not there to stop. */
+        pinned[i].handle = 0;
+        errno = ESRCH;
+        return -1;
+    }
+    if (kill(pinned[i].pid, SIGKILL) != 0) {
+        return -1;
+    }
+    pinned[i].handle = 0;
+    return 0;
+}
+
+int
+tiku_sys_reserve(int fd, long long bytes)
+{
+    /* Nothing to do: a shared memory object here is given its pages when
+     * it is sized, so a mapping that was made is a mapping that can be
+     * written.  Said out loud rather than left absent, because "this
+     * host does not need it" and "nobody thought about it" look the same
+     * from the call site. */
+    (void)fd;
+    (void)bytes;
+    return 0;
 }
