@@ -59,14 +59,15 @@ lines they are today.
 | **3 ✓** | Sound | `kits/media/tiku_sound_coreaudio.c`: three buffers on an audio queue, the twin of the Pulse backend behind the same five calls, and `mk/kits.mk` compiles one of the two -- neither names a platform because neither is built on the other's host.  `tiku_sound_pulse_backend()` became `tiku_sound_host_backend()`, since four callers were naming a host to ask for sound.  The queue is primed with one buffer of silence before it is started: a queue started empty waits for an IO cycle that never comes, which is a hang rather than an error.  The framework is named once in `mk/toolchain.mk` with `-dead_strip_dylibs`, so `tiku-desk-probe` still references nothing.  `sounds.script` keeps the seven moments that need no volume; `soundbeep.script` takes the alert's beep, which was reached through an unmount refusal and wanted a volume this user may not unmount | one day | the moments pass on both hosts; the Linux build's `libtiku_media.a` has the members it had.  **Not heard from here**: this shell cannot start audio output at all -- `afplay` hangs on a system sound the same way -- so the backend is proven to build, open and take chunks, and `./build/system/tiku-sound-gallery` from a terminal is what proves the speaker |
 | **4 ✓** | Disks and the way out | Force Quit: `tiku_sys_process_pin()`/`_kill()` join the seam, so the application kit's last two `#ifdef`s go.  Linux keeps pidfd; macOS pins with a kqueue on `NOTE_EXIT` for the descriptor's shape and re-checks the process's START TIME immediately before the signal -- a pid is handed out again, never with the same microsecond.  `posix_fallocate` was the other `#ifdef` and becomes `tiku_sys_reserve()`.  Disks: `tiku_partitions_scan()` asks DiskArbitration about each `/dev/disk*`, so the Mount menu has content where it was empty; `removable` is asked of the medium rather than guessed from the mount point, because "not the boot volume and local" calls a second internal volume removable and offering Eject on one is offering to break the machine; `tiku_volume_mount()` mounts through the same service, on a run loop bounded at five seconds so a disk that will not answer does not become a shell that will not answer | one to two days | `test_forcequit` passes, which it had not since the port began, and `forcequit.script` goes 10/13 to 13/13; a ram disk is listed, mounted and unmounted through the kit, and reads removable where the boot volume does not |
 | **5 ✓** | Search that ends | Not what it looked like.  The engine was built to be stepped -- `tiku_query_step(r, budget)`, "advance the walk by at most @p budget directories" -- and **all three of its callers drove it to completion in a `while (!done)` loop on the turn**: the Find panel's search, the quick find, and `tiku_query_refresh()` inside the kit.  On a CI rootfs that is invisible; on a real disk the shell stops until the disk has been read.  `tiku_query_refresh()` is split into `_begin`/step/`_end` so the snapshot outlives the turn that took it, `tiku_trk_folder_lifecycle_step_results()` gives a live window sixteen directories a turn, and the desktop's idle work drives it beside the other stepped work.  A first walk shows rows as it finds them; a re-walk shows nothing until it ends, so a row about to be found again does not blink out.  The status line is left alone -- there is one of it for the whole desktop and a walk is thousands of turns | one day | `query`, `qtemplate`, `qtype` and `querydrop` finish in four to six seconds each, where two of them had to be killed; the whole script suite runs with no watchdog |
-| **6 ~** | A person at the desk | With XQuartz: `tiku_x11.c` reads the Retina scale from `Xft.dpi`/the screen's millimetres so the desktop is not drawn at half size; Command mapped to the desktop's command modifier where Control is today, from a table in one place (`tiku_event.h`'s modifier names), so the Linux keys stay as they are; the X11 clipboard proved against XQuartz's pasteboard bridge; the serial rates above 230400 set with `IOSSIOSPEED` when `tcsetattr` refuses them (`tiku_tx.c`, behind the seam); the IDE's message parser reads clang's diagnostic lines (`file:line:col: error:` is shared; the "note:" and caret lines differ) and `idebuild.script` runs with `CC=clang` on Linux too, so the parser is proved on both; `tiku-desk-probe` and the board link tried against a real board on a Mac, where a CDC device that has not answered EP0 blocks the open for thirty seconds and the desktop must not wait on it in the turn (open the port off the turn, as the utility jobs already are) | two days | `./build/TikuDesktop` on a Retina display at the right size, Cmd-key menus working, paste from another Mac application, a board connected over USB with its panel live; the Linux desktop's keys, clipboard and serial path unchanged, proved by the scripts |
+| **6 ✓** | A person at the desk | With XQuartz: `tiku_x11.c` reads the Retina scale from `Xft.dpi`/the screen's millimetres so the desktop is not drawn at half size; Command mapped to the desktop's command modifier where Control is today, from a table in one place (`tiku_event.h`'s modifier names), so the Linux keys stay as they are; the X11 clipboard proved against XQuartz's pasteboard bridge; the serial rates above 230400 set with `IOSSIOSPEED` when `tcsetattr` refuses them (`tiku_tx.c`, behind the seam); the IDE's message parser reads clang's diagnostic lines (`file:line:col: error:` is shared; the "note:" and caret lines differ) and `idebuild.script` runs with `CC=clang` on Linux too, so the parser is proved on both; `tiku-desk-probe` and the board link tried against a real board on a Mac, where a CDC device that has not answered EP0 blocks the open for thirty seconds and the desktop must not wait on it in the turn (open the port off the turn, as the utility jobs already are) | two days | `./build/TikuDesktop` on a Retina display at the right size, Cmd-key menus working, paste from another Mac application, a board connected over USB with its panel live; the Linux desktop's keys, clipboard and serial path unchanged, proved by the scripts |
 | **7** | The bundle | *Optional.*  `make app` writes `build/TikuDesktop.app` (Info.plist, the mark as `.icns` rendered from the same drawing, the binary and `apps/` inside `Contents/Resources`, `TIKU_APPS` set by the launcher); `LSUIElement` off so it has a Dock tile; codesign ad hoc so Gatekeeper opens it on the machine that built it | half a day | double-clicking the bundle opens the desktop with its applications found |
 | **8** | Native, without XQuartz | *A decision, not a default (§3).*  `kits/interface/tiku_cocoa.m`: the same `tiku_host` contract `tiku_x11.c` fulfils today and the wasm build replaces -- one window, a backing `CGImage` blitted per present, events translated to `tiku_event_t`, the pasteboard for the clipboard, `NSTextInputClient` for the input method; chosen by `TIKU_HOST=cocoa` in the Makefile, X11 remaining the default on both hosts until it is proved; the scripts do not know which host backend drew | three to four days | every script that passes under X11 passes under Cocoa; a Mac with no XQuartz runs the desktop |
 
-Milestone 6 is built as far as a machine with no X server can take it:
-everything that is about the BOARD and the COMPILER is done and proved,
-and everything that is about a window in front of a person is waiting on
-XQuartz, which is a system component and the owner's to install.
+Milestone 6 is built.  The half that was said to need XQuartz did not:
+`xorg-server` is a Homebrew FORMULA, so it installs into a prefix the
+user already owns and wants no password, where the XQuartz cask is a
+`.pkg` and does.  It puts a real X server on the machine, and the
+desktop runs on it.
 
 Order: 0 then 1 (nothing else can be proved until the harness tells the
 truth on both hosts), then 2, 3, 4 in any order, 5 whenever (it is not a
@@ -210,12 +211,44 @@ port on a worker (`probe_run`), not on the turn, so the thirty seconds a
 CDC device that has not answered EP0 costs is thirty seconds of a
 spinner and not of a frozen desktop.  Checked, not assumed.
 
-**Waiting on XQuartz**, which is a system component and wants a
-password this port does not have: the Retina scale from `Xft.dpi`, the
-Command-key table (which is also decision 2 below), the clipboard
-against XQuartz's pasteboard bridge, and a real board's panel live on a
-Mac.  None of the four can be proved without a server, and none of them
-is reached by anything above.
+**The screen.**  `brew install xorg-server` -- a formula, not the cask --
+and the desktop came up on macOS: menu bar, Deskbar, clock, the home
+window with its rows.  Three things followed from having a server to
+ask.
+
+*The scale.*  Reading `Xft.dpi` was already written and was never going
+to fire: `Xft.dpi` is a thing a DESKTOP SESSION sets, and a Mac has no
+session to set it -- the server carries no resource database at all.  So
+the scale fell to the 96.0 default and a Retina screen drew everything
+at half size.  The screen's own measurements are the fallback, and their
+RATIO is right whichever convention a server reports them in.  Measured
+on a 192-dpi server: the menu bar was 21 pixels and is 42.
+
+*The command key.*  `event_modifiers()` had `ControlMask` written into
+it.  Which bit carries Command is not a constant anywhere -- X names
+eight modifiers by number and lets the keymap say what each one holds --
+so it is asked of the server, and the seam says only WHICH KEY a machine
+gives commands with.  Control still means command on both hosts, and on
+a Mac the Command key does as well: added, not swapped, so nothing that
+works stops working.  Decision 2 below is therefore still open and is
+now only about whether Control should STOP.  Proving it turned up the
+trap: Meta and Alt share a key on most keymaps, so the obvious rule
+made Option mean command and Option-clicking a file would have acted on
+it.  The four modifiers the desktop already spends are removed.
+
+*The clipboard.*  `test-host-clipboard` and `test-host-render` had never
+run on this machine -- they want a server and there was none -- and both
+pass now, which is 11 assertions the port had never been under.  One
+does not: Homebrew's `libX11` reports that it supports NO locale, not
+even `C`, so `XOpenIM` cannot succeed and there is no input method at
+all -- no Compose, no dead keys.  The host already falls back to
+`XLookupString`, so plain keys are unaffected; the Compose assertions
+now say they are skipping and why.  Whether XQuartz's own libX11 does
+better is the one thing here still untested.
+
+**Still wanting hardware**, not a password: a board's panel live on a
+Mac.  The port opens off the turn and the ports list correctly; what is
+left is plugging one in.
 
 ### The Linux contract
 
@@ -255,7 +288,15 @@ What "unchanged" means, so it can be checked and not merely intended:
    did not take the rate it was given, where it had discarded the
    answer.  The one they do not see is `tiku_tx_scan_serial()` becoming
    a seam call whose Linux half is the `/dev/serial/by-id` walk moved
-   whole, under rule 2.  Nothing else on Linux is reached by any of it.
+   whole, under rule 2.  Also from 6, and reaching Linux only where it
+   was already broken: the UI scale falls back to the screen's own
+   measurements when no session set `Xft.dpi`, which on a Linux desktop
+   that sets it changes nothing; and `test_host_clipboard` skips its
+   Compose assertions when Xlib says it supports no locale, which on
+   Linux it never does say.  The command modifier is asked of the
+   server rather than written down, but the seam answers "Control" on
+   Linux, so the mask it computes there is the mask it had.  Nothing
+   else on Linux is reached by any of it.
 
 ## 3. Decisions that are yours
 
@@ -267,11 +308,15 @@ What "unchanged" means, so it can be checked and not merely intended:
    (the wasm build is the precedent), so the cost is the file, not a
    refactor.  The proposal: 6 now, 8 when someone who is not a developer
    is handed a Mac with this on it.
-2. **Command or Control.**  The desktop's shortcuts are Control today
-   because X11 on Linux is.  A Mac user's hand goes to Command.  The table
-   in milestone 6 maps one to the other per host; the alternative is to
-   leave Control everywhere, which is honest and slightly wrong on a Mac.
-   The proposal: Command on macOS, in one table.
+2. **Command or Control.**  *Half-answered by milestone 6, and the open
+   half is smaller.*  On a Mac the Command key now gives commands, asked
+   of the keymap rather than written down.  Control still does too, on
+   both hosts, because adding is safe and swapping is not: nothing a
+   person already knows stopped working.  What is left to decide is
+   whether Control should STOP meaning command on a Mac -- which would
+   free it for what a Mac uses it for, and would break every Control
+   chord a developer moving between the two machines has in their
+   hands.  The proposal: leave both, and revisit if someone trips.
 3. **Is macOS a supported host or a development convenience.**  A
    development host needs 0 through 2 and 5: it builds, tests, and lets
    someone work on the tree from a Mac.  A supported host needs 3, 4, 6

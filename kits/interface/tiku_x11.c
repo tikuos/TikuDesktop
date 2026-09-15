@@ -29,6 +29,7 @@
 #include "tiku_host.h"
 #include "tiku_gfx.h"
 #include "tiku_x11_clipboard.h"
+#include "tiku_x11_command.h"
 #include "tiku_text_input.h"
 
 struct tiku_host {
@@ -52,6 +53,7 @@ struct tiku_host {
     XIC input_context;
     XIMCallback input_destroy;
     tiku_text_input_t commit;
+    unsigned command_mask;     /* which modifiers mean "this is a command" */
     int force_present;
     uint64_t presented_frames, presented_bytes, presented_rects;
 };
@@ -129,6 +131,47 @@ static int input_utf8(unsigned cp, char *out)
     out[3] = (char)(0x80 | (cp & 63)); return 4;
 }
 
+/**
+ * @brief How many device pixels make one drawn pixel, at @p dpi.
+ *
+ * Whole numbers only, between one and four.  A desktop drawn at a
+ * fraction of a pixel is a desktop with seams in every border, and past
+ * four the arithmetic costs more than the screen can show.
+ */
+static int
+scale_for_dpi(double dpi)
+{
+    int scale = (int)(dpi / 96.0 + 0.5);
+
+    if (scale < 1) { scale = 1; }
+    if (scale > 4) { scale = 4; }
+    return scale;
+}
+
+/**
+ * @brief What a screen's own measurements say its dpi is.
+ *
+ * Asked only when nobody has said.  The two numbers come from the same
+ * server describing the same screen, so their ratio is right whichever
+ * convention it reports them in -- a server that counts every device
+ * pixel gives a high dpi and a large scale, one that counts drawn
+ * pixels gives a low dpi and a small scale, and the picture ends up the
+ * same size in front of a person either way.
+ *
+ * A server with nothing to say fakes these to about ninety-six, which
+ * lands on scale 1 -- what this did before there was a fallback at all.
+ *
+ * @return the dpi, or 0.0 when the numbers cannot mean anything.
+ */
+static double
+dpi_from_size(int pixels, int millimetres)
+{
+    if (pixels <= 0 || millimetres <= 0) {
+        return 0.0;
+    }
+    return (double)pixels * 25.4 / (double)millimetres;
+}
+
 /** @brief Read the desktop's integer UI scale from its Xft DPI setting. */
 static int
 display_scale(Display *display)
@@ -136,16 +179,13 @@ display_scale(Display *display)
     XrmDatabase database;
     XrmValue value;
     char *manager, *type = NULL;
-    double dpi = 96.0;
-    int scale;
+    double dpi = 0.0;
+    int screen;
 
     const char *forced = getenv("TIKU_SCALE");
 
     if (forced != NULL && forced[0] != '\0') {
-        scale = atoi(forced);
-        if (scale < 1) { scale = 1; }
-        if (scale > 4) { scale = 4; }
-        return scale;
+        return scale_for_dpi(atoi(forced) * 96.0);
     }
     manager = XResourceManagerString(display);
     if (manager != NULL) {
@@ -158,10 +198,25 @@ display_scale(Display *display)
         }
         if (database != NULL) { XrmDestroyDatabase(database); }
     }
-    scale = (int)(dpi / 96.0 + 0.5);
-    if (scale < 1) { scale = 1; }
-    if (scale > 4) { scale = 4; }
-    return scale;
+    /*
+     * Xft.dpi is a thing a DESKTOP SESSION sets, and on a Mac there is
+     * no session to set it: a server started under Aqua carries no
+     * resource database at all.  So a Retina screen said ninety-six and
+     * the whole desktop came up at half the size it should be, every
+     * window and every glyph, with nothing on screen to say why.  The
+     * screen's own measurements are what is left to ask, and they are
+     * the more honest answer anyway -- a person's eyes are a distance
+     * from the glass, not a number in a database.
+     */
+    if (dpi <= 0.0) {
+        screen = DefaultScreen(display);
+        dpi = dpi_from_size(DisplayWidth(display, screen),
+                            DisplayWidthMM(display, screen));
+    }
+    if (dpi <= 0.0) {
+        dpi = 96.0;
+    }
+    return scale_for_dpi(dpi);
 }
 
 /** @brief Map a physical pointer position into the logical framebuffer. */
@@ -213,14 +268,101 @@ resize_image(tiku_host_t *host, int width, int height)
     return 0;
 }
 
+/**
+ * @brief Which modifier bits a keymap puts the Command key on.
+ *
+ * Not a constant anywhere.  X names eight modifiers by number and lets
+ * the keymap decide what each one carries, so the bit that means
+ * Command is whatever bit the keys Meta and Super happen to sit on --
+ * which differs between servers and can be changed by a person at any
+ * time.  Asking the map is the only way to be right about all of them;
+ * a number written down here would be right about one.
+ *
+ * What it must NOT return is a modifier this desktop already spends.
+ * Meta and Alt share a key on most keymaps, so a rule that took every
+ * modifier carrying Meta would take Mod1 -- which is Option here -- and
+ * then holding Option would mean giving a command.  Option-clicking a
+ * file would copy it AND act on it.  So the four the desktop has
+ * already spoken for are removed at the end, and what is left is a key
+ * that means nothing else.
+ *
+ * @param map   The server's modifier map.
+ * @param syms  Its keycode-to-keysym table.
+ * @param first The keycode @p syms starts at, and @p per its stride.
+ * @return the mask, or 0 when this keymap has no key free to mean it.
+ */
+static unsigned
+command_mask_of(const XModifierKeymap *map, const KeySym *syms,
+                int first, int per)
+{
+    unsigned mask = 0u;
+    int index, slot, which;
+
+    if (map == NULL || syms == NULL || per <= 0) {
+        return 0u;
+    }
+    for (index = 0; index < 8; index++) {
+        for (slot = 0; slot < map->max_keypermod; slot++) {
+            KeyCode code = map->modifiermap[index * map->max_keypermod +
+                                            slot];
+
+            if (code == 0) {
+                continue;
+            }
+            for (which = 0; which < per; which++) {
+                KeySym sym = syms[(code - first) * per + which];
+
+                if (sym == XK_Meta_L || sym == XK_Meta_R ||
+                    sym == XK_Super_L || sym == XK_Super_R) {
+                    mask |= 1u << index;
+                }
+            }
+        }
+    }
+    return mask & ~(unsigned)(ShiftMask | LockMask | ControlMask | Mod1Mask);
+}
+
+/**
+ * @brief The modifiers that mean "this is an instruction, not a letter".
+ *
+ * Control always, because every shortcut this desktop has is a Control
+ * chord and a machine that had them yesterday must have them today.  On
+ * a machine whose command key is Command, that key as well -- added,
+ * not swapped, so nothing a person already knows stops working and the
+ * chord their hand reaches for starts.
+ */
+static unsigned
+command_modifiers(Display *display)
+{
+    XModifierKeymap *map;
+    KeySym *syms;
+    int first = 0, count = 0, per = 0;
+    unsigned mask = ControlMask;
+
+    if (!tiku_x11_command_is_meta()) {
+        return mask;
+    }
+    XDisplayKeycodes(display, &first, &count);
+    count = count - first + 1;
+    if (count <= 0) {
+        return mask;
+    }
+    syms = XGetKeyboardMapping(display, (KeyCode)first, count, &per);
+    map = XGetModifierMapping(display);
+    mask |= command_mask_of(map, syms, first, per);
+    if (map != NULL) { XFreeModifiermap(map); }
+    if (syms != NULL) { XFree(syms); }
+    return mask;
+}
+
 /** @brief Translate native modifiers once, at the host boundary. */
 static unsigned
-event_modifiers(unsigned state)
+event_modifiers(const tiku_host_t *host, unsigned state)
 {
     unsigned modifiers = 0u;
 
     if ((state & ShiftMask) != 0u) { modifiers |= TIKU_MOD_SHIFT; }
-    if ((state & ControlMask) != 0u) { modifiers |= TIKU_MOD_CMD; }
+    if ((state & host->command_mask) != 0u) { modifiers |= TIKU_MOD_CMD; }
     if ((state & Mod1Mask) != 0u) { modifiers |= TIKU_MOD_OPTION; }
     if ((state & LockMask) != 0u) { modifiers |= TIKU_MOD_CAPS; }
     return modifiers;
@@ -287,6 +429,7 @@ tiku_host_open(int width, int height, const char *title)
     }
     screen = DefaultScreen(host->display);
     host->scale = display_scale(host->display);
+    host->command_mask = command_modifiers(host->display);
     if (width > INT_MAX / host->scale ||
         height > INT_MAX / host->scale) {
         tiku_host_close(host);
@@ -519,7 +662,7 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
         event->type = (native.type == KeyPress)
                           ? TIKU_EVENT_KEY_DOWN
                           : TIKU_EVENT_KEY_UP;
-        event->modifiers = event_modifiers(native.xkey.state);
+        event->modifiers = event_modifiers(host, native.xkey.state);
         event->key = event_key(keysym);
         event->time_us = (int64_t)native.xkey.time * 1000;
         if (n < 0 || n >= (int)sizeof text) n = 0;
@@ -548,7 +691,7 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
         event->y = logical_coord(native.xbutton.y, host->native_height,
                                  host->logical_height);
         event->button = native.xbutton.button;
-        event->modifiers = event_modifiers(native.xbutton.state);
+        event->modifiers = event_modifiers(host, native.xbutton.state);
         event->time_us = (int64_t)native.xbutton.time * 1000;
         break;
     case MotionNotify:
@@ -566,7 +709,7 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
                                  host->logical_width);
         event->y = logical_coord(native.xmotion.y, host->native_height,
                                  host->logical_height);
-        event->modifiers = event_modifiers(native.xmotion.state);
+        event->modifiers = event_modifiers(host, native.xmotion.state);
         event->time_us = (int64_t)native.xmotion.time * 1000;
         break;
     case FocusIn:
@@ -650,7 +793,7 @@ tiku_host_pointer(tiku_host_t *host, int *x, int *y,
         *y = logical_coord(local_y, host->native_height,
                            host->logical_height);
     }
-    if (modifiers != NULL) { *modifiers = event_modifiers(state); }
+    if (modifiers != NULL) { *modifiers = event_modifiers(host, state); }
     return 1;
 }
 

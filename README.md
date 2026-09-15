@@ -66,8 +66,23 @@ and the X11 client library, which Homebrew has as `brew install libx11`;
 
 **No X server is needed to build or to test.**  The driven scripts run
 with `DISPLAY=` empty and read the offscreen surface, so `make test` is
-the same run here as there.  XQuartz is for putting a window in front of
-a person, and `make run` without one says `tracker: no display` and stops.
+the same run here as there.
+
+Two suites do want one, and `make test` runs them when it finds it:
+`test-host-clipboard` and `test-host-render`, which drive a real server
+on a private display.  `brew install xorg-server` gets you one -- it is
+a FORMULA, so it wants no password, unlike the XQuartz cask -- and puts
+`Xvfb` on the path, which is what those two look for.
+
+For a window in front of a person, `Xvfb` is not enough and XQuartz is
+what to install; `make run` without any server says `tracker: no
+display` and stops.  One thing to know before reaching for it: Homebrew's
+`libx11` reports that it supports no locale at all, not even `C`, so
+`XOpenIM` cannot succeed and there is no Compose, no dead keys and no
+input method on that build.  Plain keys are unaffected -- the host falls
+back to `XLookupString` -- and the Compose assertions say they are
+skipping and why.  Whether XQuartz's own copy of libX11 in `/opt/X11`
+does better is untested.
 
 What differs underneath is said in two places and nowhere else: the
 Darwin block in `mk/toolchain.mk`, and `kits/support/tiku_darwin.h`, which

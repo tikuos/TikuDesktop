@@ -9,6 +9,7 @@
 #include <time.h>
 #include "tiku_x11_clipboard.h"
 #include "tiku_host.h"
+#include "tiku_x11_command.h"
 #include "tiku_text_input.h"
 
 enum { NORMAL, LATIN, CHUNKED, SILENT, REFUSE };
@@ -226,6 +227,22 @@ static void host_test(const char *display)
      * mapping so its Xlib keyboard cache starts with these deterministic keys. */
     KeySym compose_keys[] = {XK_Multi_key, XK_apostrophe, XK_e, 0x010003bb};
     XChangeKeyboardMapping(peer, 240, 1, compose_keys, 4);
+    /* Meta on Mod2, which is the shape a Mac's keymap has: the Command
+     * key is not a modifier X knows by name, it is whichever numbered
+     * one the keymap hung it on.  Installed BEFORE the host opens,
+     * because the host reads the map once and remembers. */
+    KeySym meta = XK_Meta_L;
+    XChangeKeyboardMapping(peer, 250, 1, &meta, 1);
+    XSync(peer, False);
+    XModifierKeymap *modmap = XGetModifierMapping(peer);
+    assert(modmap);
+    for (int slot = 0; slot < modmap->max_keypermod; slot++)
+        if (!modmap->modifiermap[4 * modmap->max_keypermod + slot]) {
+            modmap->modifiermap[4 * modmap->max_keypermod + slot] = 250;
+            break;
+        }
+    assert(XSetModifierMapping(peer, modmap) == MappingSuccess);
+    XFreeModifiermap(modmap);
     XSync(peer, False);
     tiku_host_t *host = tiku_host_open(320,240,"Clipboard test host");
     assert(host);
@@ -259,8 +276,75 @@ static void host_test(const char *display)
         struct timespec pause = {0,1000000}; nanosleep(&pause, NULL);
     }
     assert(changed && pasted && following);
-    /* A local XIM consumes Compose prefixes and emits only the final UTF-8
-     * character. Releases must never duplicate the committed text. */
+    /*
+     * Which key means "this is an instruction".  Control always, on
+     * every host, because every shortcut this desktop has is a Control
+     * chord.  The Command key as well where the machine has one -- and
+     * whether it has one is the seam's answer, not this file's guess.
+     *
+     * Option is the one that must NOT come back as a command: Meta and
+     * Alt share a key on most keymaps, so a rule that took every
+     * modifier carrying Meta would take Option too, and holding Option
+     * would start acting on files rather than copying them.
+     */
+    {
+        static const struct { unsigned state; const char *what; } PRESS[] = {
+            { ControlMask, "Control" },
+            { Mod2Mask,    "the Command key, on whichever modifier" },
+            { Mod1Mask,    "Option" }
+        };
+        int mac = tiku_x11_command_is_meta();
+
+        for (unsigned t = 0; t < sizeof PRESS / sizeof PRESS[0]; t++) {
+            XEvent key = {0};
+            int seen = 0;
+
+            key.xkey = (XKeyEvent){.type=KeyPress, .display=peer, .window=w,
+                .root=DefaultRootWindow(peer), .same_screen=True,
+                .state=PRESS[t].state,
+                .keycode=XKeysymToKeycode(peer, XK_b)};
+            XSendEvent(peer, w, False, KeyPressMask, &key);
+            XSync(peer, False);
+            for (int i = 0; i < 200 && !seen; i++) {
+                while (tiku_host_poll(host, &ev)) {
+                    if (ev.type != TIKU_EVENT_KEY_DOWN) continue;
+                    seen = 1;
+                    if (PRESS[t].state == ControlMask)
+                        assert(ev.modifiers & TIKU_MOD_CMD);
+                    else if (PRESS[t].state == Mod1Mask) {
+                        assert(ev.modifiers & TIKU_MOD_OPTION);
+                        assert(!(ev.modifiers & TIKU_MOD_CMD));
+                    } else
+                        assert(!!(ev.modifiers & TIKU_MOD_CMD) == mac);
+                }
+                struct timespec pause = {0,1000000}; nanosleep(&pause, NULL);
+            }
+            assert(seen);
+            (void)PRESS[t].what;
+        }
+        printf("PASS: a command is Control%s, and never Option\n",
+               mac ? " or Command" : " alone, as this host has no Command key");
+    }
+
+    /*
+     * Compose needs an input method, and an input method needs Xlib to
+     * support a locale.  Homebrew's libX11 on macOS supports NONE --
+     * not even "C" -- so XOpenIM cannot succeed there and the host
+     * falls back to XLookupString, which reads plain keys and knows
+     * nothing of a Compose prefix.  That is a real limit of that build
+     * and not of this tree, so it is said out loud rather than failed
+     * or quietly passed: the assertions below describe an input method
+     * and there is none to describe.
+     */
+    if (!XSupportsLocale()) {
+        puts("SKIP: XIM Compose -- this host's Xlib supports no locale, so "
+             "there is no input method to compose with");
+        tiku_host_cancel_composition(host);
+        tiku_host_close(host);
+        puts("PASS: host emits clipboard update before Paste and preserves "
+             "later input order");
+        return;
+    }
     tiku_text_input_t commit = {0};
     int completed = 0, key_down = 0;
     for (int code = 240; code <= 243; code++) {

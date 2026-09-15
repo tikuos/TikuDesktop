@@ -31,10 +31,14 @@ K := kits
 # context calls the program counter, which POSIX leaves to the machine.
 # One file per host, chosen here, so that no source under kits/ has to
 # name a platform to get an answer (tiku_sys.h).
+# And which key a person gives commands with, which the interface kit
+# cannot ask the seam above because it draws on no kit at all.
 ifeq ($(UNAME_S),Darwin)
 SYS         := $(K)/support/tiku_sys_darwin.c
+X11CMD      := $(K)/interface/tiku_x11_command_darwin.c
 else
 SYS         := $(K)/support/tiku_sys_linux.c
+X11CMD      := $(K)/interface/tiku_x11_command_linux.c
 endif
 SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c \
                $(K)/support/tiku_manifest.c \
@@ -82,7 +86,8 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_slider_paint.c $(K)/interface/tiku_tabs_paint.c \
                $(K)/interface/tiku_list_paint.c $(K)/interface/tiku_colors_paint.c \
                $(K)/interface/tiku_window.c \
-               $(K)/interface/tiku_x11.c $(K)/interface/tiku_x11_clipboard.c
+               $(K)/interface/tiku_x11.c $(K)/interface/tiku_x11_clipboard.c \
+               $(X11CMD)
 TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_hvif.c $(K)/translation/tiku_image.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
