@@ -17,6 +17,11 @@ elif mode == "hang":
 elif mode == "empty":
     sys.exit(0)
 cid = "common" if key == "kernel" else "other"
+if key == "host-only":
+    assert not any(arg in sys.argv for arg in
+                   ("--board", "--port", "--baud", "--flash", "--console",
+                    "--make-var", "--extra-cflags"))
+    cid = "host-check"
 if "--only" in sys.argv:
     cid = sys.argv[sys.argv.index("--only") + 1].split(",")[0]
 print(f"[TC:END] {cid} pass=3 fail=0", end="", flush=True)

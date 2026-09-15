@@ -11,6 +11,13 @@ static int argument(command_t *c, const char *word)
 static int command_build(bench_t *st, const job_t *job, command_t *c)
 {
     memset(c, 0, sizeof *c);
+    if (st->suites[job->suite].host_only) {
+        const char *host[] = {"python3", "-u", "-m", "tikubench", "run",
+                             st->suites[job->suite].key, "--skip-build"};
+        for (size_t i = 0; i < sizeof host / sizeof host[0]; i++) argument(c, host[i]);
+        if (*job->only) { argument(c, "--only"); argument(c, job->only); }
+        return 1;
+    }
     const char *base[] = {"python3", "-u", "-m", "tikubench", "run",
         st->suites[job->suite].key, "--board", st->mcu,
         st->flash ? "--flash" : "--skip-build"};
@@ -42,6 +49,21 @@ static int command_build(bench_t *st, const job_t *job, command_t *c)
     }
     if (*st->field[3].text) { argument(c, "--extra-cflags"); argument(c, st->field[3].text); }
     return 1;
+}
+
+/**
+ * @brief The first queued job whose options do not build, or -1.
+ *
+ * A host-only job reads neither the port, the baud nor the make
+ * variables, so checking only the head of a queue that leads with one
+ * carries a bad option into the batch, where it aborts after the board
+ * has already been released.
+ */
+static int queue_first_invalid(bench_t *st, command_t *c)
+{
+    for (int i = 0; i < st->njob; i++)
+        if (!command_build(st, &st->jobs[i], c)) return i;
+    return -1;
 }
 
 static void log_line(bench_t *st, const char *text, int output)
@@ -239,8 +261,10 @@ static void run_next(bench_t *st)
     st->in_build = 0;
     st->active[0] = st->prompt[0] = '\0'; st->send_n = st->send_at = 0;
     char text[512];
+    const suite_t *s = &st->suites[st->jobs[st->job].suite];
     snprintf(text, sizeof text, "Suite %d/%d: %s on %s (%s)", st->job + 1, st->njob,
-             st->suites[st->jobs[st->job].suite].key, st->target_name, st->profile);
+             s->key, s->host_only ? "this computer" : st->target_name,
+             s->host_only ? "host only" : st->profile);
     log_line(st, text, 1); snprintf(st->note, sizeof st->note, "%s", text);
     for (int i = 0; i < command.argc; i++) log_line(st, command.argv[i], 0);
 }
@@ -341,24 +365,27 @@ static void stop_run(bench_t *st)
 static void run_confirmed(bench_t *st)
 {
     char port[256] = "", mcu[64] = "";
-    if (st->services->board_port)
+    int needs_device = queue_needs_device(st);
+    if (needs_device && st->services->board_port)
         st->services->board_port(st->services->ctx, st->target_name, port, sizeof port);
-    if (st->services->board_mcu)
+    if (needs_device && st->services->board_mcu)
         st->services->board_mcu(st->services->ctx, st->target_name, mcu, sizeof mcu);
     for (char *p = mcu; *p; p++) *p = (char)tolower((unsigned char)*p);
-    if (strcmp(port, st->port) || strcmp(mcu, st->mcu) || !*mcu) {
+    if (needs_device && (strcmp(port, st->port) || strcmp(mcu, st->mcu) || !*mcu)) {
         snprintf(st->note, sizeof st->note, "Device changed during confirmation; select and review it again.");
         st->dirty = 1; return;
     }
     st->busy = 1; st->cancelled = st->batch_failed = 0;
+    st->waiting = st->released = st->reclaiming = 0;
     st->nlog = st->log_head = 0; plan_build(st);
     char pattern[] = "/tmp/tikubench-desktop-XXXXXX";
     int fd = mkstemp(pattern);
     if (fd >= 0) { st->log = fdopen(fd, "w"); if (!st->log) close(fd); }
     snprintf(st->log_path, sizeof st->log_path, "%s", fd >= 0 ? pattern : "unavailable");
     if (!st->log) { st->busy = 0; snprintf(st->note, sizeof st->note, "Cannot create a private run log"); return; }
-    st->waiting = 1; st->deadline = st->now + 10000000;
     tiku_tabs_select(&st->tabs, TAB_RESULTS);
+    if (!needs_device) { run_next(st); st->dirty = 1; return; }
+    st->waiting = 1; st->deadline = st->now + 10000000;
     if (!st->services->board_release || !st->services->board_reclaim ||
         !st->services->board_release(st->services->ctx, st->target_name)) {
         st->waiting = 0; st->batch_failed = 1; release_finish(st);

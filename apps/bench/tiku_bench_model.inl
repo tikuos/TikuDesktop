@@ -59,6 +59,7 @@ static void metadata_line(bench_t *st, char *line)
         MC(s->key, f[1]); MC(s->group, f[2]); MC(s->name, f[3]);
         MC(s->boards, f[4]); MC(s->description, f[5]);
         s->large = atoi(f[6]); s->first = st->nleaf;
+        s->host_only = n >= 8 && !strcmp(f[7], "1");
     } else if (*f[0] == 'C' && n >= 9) {
         if (!st->nsuite || st->nleaf == NL ||
             strcmp(st->suites[st->nsuite - 1].key, f[1])) { st->metadata_bad = 1; return; }
@@ -145,8 +146,8 @@ static void targets_refresh(bench_t *st)
 
 static int suite_supported(const bench_t *st, const suite_t *s)
 {
-    return st->supported && csv_has(s->boards, st->mcu) &&
-        !(s->large && !strncmp(st->mcu, "msp430", 6) && !st->large);
+    return s->host_only || (st->supported && csv_has(s->boards, st->mcu) &&
+        !(s->large && !strncmp(st->mcu, "msp430", 6) && !st->large));
 }
 static int leaf_supported(const bench_t *st, const leaf_t *l, int full)
 { return csv_has(full ? l->full : l->profiles, st->profile); }
@@ -217,7 +218,7 @@ static void toggle_entry(bench_t *st, int row, int expand)
 static int queue_build(bench_t *st)
 {
     st->njob = st->job = 0;
-    if (!st->metadata_ok || !st->supported || !*st->target_name) return 0;
+    if (!st->metadata_ok) return 0;
     for (int i = 0; i < st->nsuite; i++) {
         suite_t *s = &st->suites[i];
         if (!suite_supported(st, s)) continue;
@@ -238,4 +239,12 @@ static int queue_build(bench_t *st)
         if (s->selected || used) st->njob++;
     }
     return st->njob > 0;
+}
+
+/** A host-only queue must not disconnect a board, even if one is selected. */
+static int queue_needs_device(const bench_t *st)
+{
+    for (int i = 0; i < st->njob; i++)
+        if (!st->suites[st->jobs[i].suite].host_only) return 1;
+    return 0;
 }

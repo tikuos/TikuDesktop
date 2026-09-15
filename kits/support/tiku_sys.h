@@ -20,6 +20,11 @@
 
 #include <stddef.h>
 
+/** @brief Flush an open regular file, including the host's drive-cache barrier.
+ * Returns 0 on success, -1 on failure. Call after syncing changed parent
+ * directories too; visibility alone does not establish durable publication. */
+int tiku_sys_sync_file(int fd);
+
 /**
  * @brief The instruction that faulted, out of a signal handler's context.
  *

@@ -16,6 +16,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -66,6 +67,19 @@ int
 main(void)
 {
     printf("the system seam, whichever host is underneath\n");
+
+    {
+        char path[] = "/tmp/tiku-sys-sync-XXXXXX";
+        int fd = mkstemp(path);
+        check(fd >= 0, "a private regular file can be created");
+        if (fd >= 0) {
+            check(write(fd, "sync", 4) == 4 && tiku_sys_sync_file(fd) == 0,
+                  "the host can flush a regular file through its durability barrier");
+            close(fd);
+            check(unlink(path) == 0, "the temporary file is removed");
+        }
+        check(tiku_sys_sync_file(-1) == -1, "a failed flush is reported, not hidden");
+    }
 
     {
         struct looking look;

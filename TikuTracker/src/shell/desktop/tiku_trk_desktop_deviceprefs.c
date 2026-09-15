@@ -15,11 +15,14 @@
 #include "tiku_preferences_layout.h"
 #include "tiku_text_layout_paint.h"
 #include "tiku_work.h"
+#include "tiku_config.h"
+#include "tiku_config_outbox.h"
 #include <time.h>
 
 enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_COUNT };
 enum { DP_DEVICE = 10, DP_SETTING = 30, DP_EDIT = 50,
-       DP_APPLY, DP_REFRESH, DP_DONE };
+       DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET };
+enum { DP_READ = -1, DP_ENROLL = -2, DP_RETRY = -3, DP_DISCARD = -4 };
 static const struct {
     const char *label, *path, *help;
     int editable;
@@ -57,6 +60,11 @@ struct desktop_deviceprefs {
     int count, selected, setting, busy, refs;
     dp_value_t values[DP_COUNT];
     dp_clock_t clock;
+    tiku_config_snapshot_t config[2];  /* name and CPU target, at the
+                                       * revisions on display */
+    tiku_config_pending_t pending;
+    int can_enroll, confirm;   /* 1: enrollment, 2: discard; reset on
+                                * a new device or a refresh */
     tiku_dialog_t dialog;
     tiku_choice_t choice;
     tiku_field_input_t input;
@@ -69,15 +77,18 @@ typedef struct {
     tiku_backend_t *backend;
     dp_value_t values[DP_COUNT];
     dp_clock_t clock;
+    tiku_config_snapshot_t config[2];
+    tiku_config_pending_t pending;
     char input[96], status[192];
-    int write_at, completed;
+    int write_at, completed, can_enroll;
 } dp_job_t;
 
 /** @brief Font-scaled row shared by paint and hit testing. */
 static int dp_row(void) { return tiku_font_plain()->height + 14; }
 
 typedef struct {
-    tiku_rect_t devices, table, group, edit, apply, refresh, done;
+    tiku_rect_t devices, table, group, edit, apply, recovery, recover;
+    tiku_rect_t forget, refresh, done;
     int help_y, status_y;
 } dp_layout_t;
 static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l);
@@ -99,14 +110,22 @@ static dp_layout_t dp_layout(tiku_rect_t c, int setting)
     l.apply = (tiku_rect_t){inner.x + inner.w - bw, inner.y, bw, button};
     l.edit = (tiku_rect_t){inner.x, inner.y, inner.w - bw - 12, button};
     l.help_y = l.edit.y + button + 14;
-    l.status_y = l.group.y + l.group.h + 14;
+    l.recovery = (tiku_rect_t){l.group.x, l.group.y + l.group.h + 14,
+                              l.group.w, 3 * (fh + 2) + button + 38};
+    inner = tiku_preferences_group_body(l.recovery);
+    l.recover = (tiku_rect_t){inner.x,
+        l.recovery.y + l.recovery.h - button - 12,
+        tiku_ui_button_w("Retry saved request", 128), button};
+    l.forget = (tiku_rect_t){l.recover.x + l.recover.w + 12, l.recover.y,
+        tiku_ui_button_w("Forget request…", 110), button};
+    l.status_y = l.recovery.y + l.recovery.h + 12;
     tiku_preferences_action_t refresh = {"Refresh devices", left - 18};
     tiku_preferences_action_t done = {"Done", 88};
     (void)tiku_preferences_actions((tiku_rect_t){c.x + 18,
         l.status_y + 2 * (fh + 2) + 14, c.w - 36, button},
         &refresh, &done, 1, 12, &l.refresh, &l.done);
     l.devices = (tiku_rect_t){c.x + 18, c.y + fh + 28, left - 18,
-                             l.group.y + l.group.h - c.y - fh - 28};
+                             l.recovery.y + l.recovery.h - c.y - fh - 28};
     return l;
 }
 
@@ -160,10 +179,13 @@ static const char *dp_clock_help(const struct desktop_deviceprefs *p)
 /** @brief Start editing the selected setting's last confirmed value. */
 static void dp_edit(struct desktop_deviceprefs *p)
 {
+    int ci = p->setting == DP_NAME ? 0 : p->setting == DP_CPU ? 1 : -1;
+    const char *desired = ci >= 0 && p->config[ci].mode == 1 &&
+        p->config[ci].revision ? p->config[ci].desired : NULL;
     tiku_choice_init(&p->choice);
     tiku_field_input_init(&p->input);
-    tiku_field_start(&p->field, p->setting == DP_CPU ? p->clock.target :
-                     p->values[p->setting].value);
+    tiku_field_start(&p->field, desired ? desired : p->setting == DP_CPU ?
+                     p->clock.target : p->values[p->setting].value);
     tiku_field_deny(&p->field, "\r\n\t/");
     if (p->setting == DP_CPU) {
         for (int i = 0; i < p->clock.count; i++) {
@@ -229,7 +251,27 @@ static void dp_clock_read(tiku_backend_t *b, dp_clock_t *clock)
 static void dp_run(void *ctx)
 {
     dp_job_t *j = ctx;
+    char directory[1024];
+    int local = tiku_config_outbox_dir(directory, sizeof directory) == 0;
     int i, available = 0;
+    if (j->write_at < DP_READ && !tiku_work_cancelled(j)) {
+        int rc = -1;
+        if (!local) snprintf(j->status, sizeof j->status,
+                             "Local recovery directory is not configured.");
+        else if (j->write_at == DP_ENROLL) {
+            rc = tiku_config_outbox_enroll(directory, j->backend,
+                                           j->status, sizeof j->status);
+            if (!rc) snprintf(j->status, sizeof j->status,
+                "Recovery enabled. Current settings are unchanged; future"
+                " name and clock saves are versioned.");
+        } else if (j->write_at == DP_RETRY)
+            rc = tiku_config_outbox_retry(directory, j->backend,
+                &j->pending, j->status, sizeof j->status);
+        else if (j->write_at == DP_DISCARD)
+            rc = tiku_config_outbox_forget(directory, j->backend,
+                &j->pending, j->status, sizeof j->status);
+        (void)rc;
+    }
     if (j->write_at >= 0 && !tiku_work_cancelled(j)) {
         tiku_model_t m;
         const char *path = j->write_at == DP_CPU ? "/sys/cpu/freq_target" :
@@ -242,11 +284,38 @@ static void dp_run(void *ctx)
             snprintf(j->status, sizeof j->status,
             "Setting is no longer writable.");
         } else {
+            int ci = j->write_at == DP_NAME ? 0 :
+                     j->write_at == DP_CPU ? 1 : -1;
+            int rc;
+            tiku_config_pending_t pending = {0};
+            tiku_config_snapshot_t current = {0};
             if (j->write_at == DP_TIME)
                 snprintf(j->input, sizeof j->input, "%lu",
             (unsigned long)time(NULL));
-            if (j->backend->ops->write(j->backend, path, j->input,
-                       strlen(j->input), err, sizeof err) != 0) {
+            if (ci >= 0) (void)tiku_config_read(j->backend, path, &current);
+            if (ci >= 0 && local)
+                (void)tiku_config_outbox_inspect(directory, j->backend,
+                                                 &pending);
+            int managed = ci >= 0 && (current.mode || j->config[ci].mode);
+            /* A record names a device; a bare local fault names none, and
+             * must not stand between a plain board and its setting. */
+            int record = ci >= 0 && pending.state && pending.uid[0];
+            if (record || (managed && (!local || pending.state))) {
+                snprintf(err, sizeof err,
+                         "Resolve Configuration recovery below before saving.");
+                rc = -1;
+            } else if (managed) {
+                if (current.mode != 1 || j->config[ci].mode != 1) {
+                    snprintf(err, sizeof err,
+                             "Recovery state changed or unavailable. "
+                             "Refresh before saving.");
+                    rc = -1;
+                } else rc = tiku_config_outbox_save(directory, j->backend,
+                    path, &j->config[ci], j->input, strlen(j->input),
+                    err, sizeof err);
+            } else rc = j->backend->ops->write(j->backend, path, j->input,
+                       strlen(j->input), err, sizeof err);
+            if (rc != 0) {
                 snprintf(j->status, sizeof j->status, "Could not apply: %.150s",
                      err[0] ? err : "device unavailable or value rejected");
             } else {
@@ -255,6 +324,19 @@ static void dp_run(void *ctx)
             }
         }
     }
+    /* Take the revision before ordinary readbacks. Never pair a later revision
+     * with an earlier displayed desired value: editors use this snapshot. */
+    if (!tiku_work_cancelled(j)) {
+        (void)tiku_config_read(j->backend, "/sys/device/name", &j->config[0]);
+        (void)tiku_config_read(j->backend, "/sys/cpu/freq_target",
+                               &j->config[1]);
+        tiku_model_t provision;
+        j->can_enroll = j->config[0].enrollable &&
+            j->backend->ops->stat(j->backend, "/sys/config/provision",
+                                  &provision) == 0 &&
+            tiku_model_is_writable(&provision);
+    }
+    memset(j->values, 0, sizeof j->values);
     for (i = 0; i < DP_COUNT && !tiku_work_cancelled(j); i++) {
         tiku_model_t m;
         if (j->backend->ops->stat(j->backend, settings[i].path, &m) == 0 &&
@@ -267,13 +349,27 @@ static void dp_run(void *ctx)
         }
     }
     if (!tiku_work_cancelled(j)) dp_clock_read(j->backend, &j->clock);
+    if (j->config[1].mode == 1 && j->config[1].revision)
+        snprintf(j->clock.target, sizeof j->clock.target, "%s",
+                 j->config[1].desired);
     j->values[DP_CPU].writable = j->values[DP_CPU].present &&
                                   j->clock.writable;
     if (j->write_at >= 0 && strncmp(j->status, "Applied;", 8) == 0) {
         dp_value_t *v = &j->values[j->write_at];
         const char *confirmed = j->write_at == DP_CPU ? j->clock.target :
                                 v->value;
-        if (!v->present || !confirmed[0] ||
+        int ci = j->write_at == DP_NAME ? 0 : j->write_at == DP_CPU ? 1 : -1;
+        if (ci >= 0 && j->config[ci].mode == 1 &&
+            (!strcmp(j->config[ci].state, "blocked") ||
+             !strcmp(j->config[ci].state, "accepted"))) {
+            snprintf(j->status, sizeof j->status,
+                     "Configuration saved; device has not confirmed"
+                     " application.");
+        } else if (ci >= 0 && j->config[ci].mode < 0) {
+            snprintf(j->status, sizeof j->status,
+                     "Save sent; recovery status unavailable. Refresh to"
+                     " check.");
+        } else if (!v->present || !confirmed[0] ||
             (j->write_at == DP_CPU && !j->clock.writable)) {
             snprintf(j->status, sizeof j->status,
                      "Write sent; readback failed. Refresh to check.");
@@ -292,10 +388,20 @@ static void dp_run(void *ctx)
                 ? "Saved for next restart. Current clock is unchanged."
                 : "Applied and confirmed by device.");
         }
-    } else if (j->write_at < 0) {
+    } else if (j->write_at == DP_READ) {
         snprintf(j->status, sizeof j->status, "%s", available
                  ? "Settings read from device."
                  : "Device unavailable or busy. Refresh to try again.");
+    }
+    if (!tiku_work_cancelled(j)) {
+        memset(&j->pending, 0, sizeof j->pending);
+        if (local) (void)tiku_config_outbox_inspect(directory, j->backend,
+                                                    &j->pending);
+        else {
+            j->pending.state = TIKU_CONFIG_PENDING_ERROR;
+            snprintf(j->pending.summary, sizeof j->pending.summary,
+                     "Local recovery directory is not configured.");
+        }
     }
 }
 
@@ -308,6 +414,10 @@ static void dp_done(void *ctx)
     if (p->app == NULL) return;
     memcpy(p->values, j->values, sizeof p->values);
     p->clock = j->clock;
+    memcpy(p->config, j->config, sizeof p->config);
+    p->pending = j->pending;
+    p->can_enroll = j->can_enroll;
+    p->confirm = 0;
     snprintf(p->status, sizeof p->status, "%s", j->status);
     dp_edit(p);
     p->app->dirty = 1;
@@ -322,6 +432,10 @@ static void dp_free(void *ctx)
     if (p->app != NULL && !j->completed) {
         memset(p->values, 0, sizeof p->values);
         memset(&p->clock, 0, sizeof p->clock);
+        memset(p->config, 0, sizeof p->config);
+        memset(&p->pending, 0, sizeof p->pending);
+        p->confirm = 0;
+        p->can_enroll = 0;
         tiku_choice_close(&p->choice);
         snprintf(p->status, sizeof p->status,
             "Device disconnected. Refresh the list.");
@@ -345,6 +459,10 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     if (b == NULL || tiku_backend_tiku_identity(b) == NULL) {
         memset(p->values, 0, sizeof p->values);
         memset(&p->clock, 0, sizeof p->clock);
+        memset(p->config, 0, sizeof p->config);
+        memset(&p->pending, 0, sizeof p->pending);
+        p->confirm = 0;
+        p->can_enroll = 0;
         snprintf(p->status, sizeof p->status,
             "Device disconnected. Refresh the list.");
         return;
@@ -354,6 +472,10 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     j->owner = p;
     j->backend = b;
     j->write_at = write_at;
+    memcpy(j->config, p->config, sizeof j->config);
+    j->pending = p->pending;
+    p->confirm = 0;
+    p->can_enroll = 0;
     snprintf(j->input, sizeof j->input, "%.95s", p->field.text);
     if (write_at == DP_TIME) {
         snprintf(j->input, sizeof j->input, "%lu", (unsigned long)time(NULL));
@@ -373,7 +495,25 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     p->busy = 1;
     snprintf(p->status, sizeof p->status, "%s",
              write_at >= 0 ? "Applying to device…"
-                           : "Reading device settings…");
+             : write_at == DP_READ ? "Reading device settings…"
+                                   : "Checking configuration recovery…");
+}
+
+/**
+ * @brief Whether the shown setting takes typing now.
+ *
+ * An unresolved record holds the editors of the board it names, and a
+ * board using recovery waits on its local outbox.  A board that never
+ * heard of recovery keeps its editors whatever the outbox reports.
+ */
+static int dp_can_edit(const struct desktop_deviceprefs *p)
+{
+    int i = p->setting == DP_CPU;
+    int held = p->pending.state &&
+               (p->pending.uid[0] || p->config[i].mode > 0);
+    return !p->busy && p->values[p->setting].writable &&
+        !((p->setting == DP_NAME || p->setting == DP_CPU) &&
+          (p->config[i].mode < 0 || held));
 }
 
 /** @brief Validate editable input before queuing a device mutation. */
@@ -381,7 +521,7 @@ static void dp_apply(struct desktop_deviceprefs *p)
 {
     char *end;
     long v;
-    if (p->busy || !p->values[p->setting].writable) return;
+    if (!dp_can_edit(p)) return;
     if (p->setting == DP_CPU) {
         unsigned long hz = strtoul(p->field.text, &end, 10);
         int i;
@@ -434,6 +574,11 @@ static void dp_refresh(struct desktop_deviceprefs *p)
         p->count++;
     }
     memset(p->values, 0, sizeof p->values);
+    memset(&p->clock, 0, sizeof p->clock);
+    memset(p->config, 0, sizeof p->config);
+    memset(&p->pending, 0, sizeof p->pending);
+    p->confirm = 0;
+    p->can_enroll = 0;
     snprintf(p->status, sizeof p->status,
              "Connect a device from the desktop Devices menu.");
     dp_request(p, -1);
@@ -500,7 +645,7 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
                        dp_layout_t l)
 {
     char title[96];
-    unsigned flags = (p->busy ? TIKU_S_DISABLED : 0) |
+    unsigned flags = (!dp_can_edit(p) ? TIKU_S_DISABLED : 0) |
         (tiku_dialog_focused(&p->dialog, DP_EDIT) ? TIKU_S_FOCUS : 0);
     tiku_rgb_t quiet = tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL);
     snprintf(title, sizeof title, "%s%s", settings[p->setting].label,
@@ -545,6 +690,81 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
         quiet, 3);
 }
 
+/** @brief The one recovery button this state offers, or none. */
+static const char *dp_recovery_action(const struct desktop_deviceprefs *p)
+{
+    if (p->confirm == 1) return "Confirm enable";
+    if (p->confirm == 2) return "Confirm forget";
+    if (p->pending.state == TIKU_CONFIG_PENDING_RETRY)
+        return "Retry saved request";
+    if (p->pending.state == TIKU_CONFIG_PENDING_CONFIRMED)
+        return "Dismiss record";
+    if (!p->pending.state && p->can_enroll) return "Enable recovery…";
+    return NULL;
+}
+/** @brief Forgetting needs a record with a device and a request in it. */
+static int dp_can_forget(const struct desktop_deviceprefs *p)
+{
+    return p->pending.state && p->pending.uid[0] && p->pending.request[0];
+}
+/** @brief The recovery group: what is enrolled, pending and offered. */
+static void dp_recovery_draw(struct desktop_deviceprefs *p,
+                             tiku_surface_t *s, dp_layout_t l)
+{
+    tiku_rect_t inner = tiku_preferences_group_body(l.recovery);
+    char description[288];
+    const char *title = !strcmp(p->pending.path, "/sys/device/name")
+        ? "Configuration recovery — Device name"
+        : !strcmp(p->pending.path, "/sys/cpu/freq_target")
+        ? "Configuration recovery — CPU clock" : "Configuration recovery";
+    const char *action = dp_recovery_action(p);
+    const char *message = p->confirm == 1
+        ? "Experimental: initializes recovery storage in device NVM."
+          " Current settings stay unchanged. No restart."
+        : p->confirm == 2
+        ? "Forget only this computer's saved request? This cannot undo"
+          " or cancel an operation on the device."
+        : p->pending.state ? p->pending.summary
+        : p->config[0].mode == 1
+        ? "Enabled for name and clock saves. Pending requests survive"
+          " desktop restarts. Refresh checks receipts without replaying."
+        : p->can_enroll
+        ? "Optional, experimental recovery for name and clock saves."
+          " Requires qualified device NVM; enable explicitly."
+        : p->config[0].enrollable
+        ? "Recovery is available, but enrollment is read-only on this"
+          " connection. It requires system and filesystem write access."
+        : p->config[0].mode < 0
+        ? "Device recovery state is unavailable. Refresh before changing"
+          " name or clock."
+        : "Recovery is not available in this firmware. Settings use the"
+          " existing device save behavior.";
+    if (p->pending.state && !p->pending.enrollment && !p->confirm) {
+        tiku_config_snapshot_t snapshot;
+        char token[33], value[33];
+        if (!tiku_config_decode_request(p->pending.request, &snapshot,
+                                        token, value)) {
+            snprintf(description, sizeof description,
+                     "Saved request: \u201c%s\u201d. %s", value, message);
+            message = description;
+        }
+    }
+    (void)tiku_ui_group(s, l.recovery, title);
+    dp_explain(s, inner.x, inner.y, inner.w, message,
+               tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL), 3);
+    if (action) tiku_ui_button(s, l.recover, action,
+        (p->busy ? TIKU_S_DISABLED : 0) |
+        (tiku_dialog_focused(&p->dialog, DP_RECOVERY) ? TIKU_S_FOCUS : 0) |
+        (tiku_dialog_pressed(&p->dialog, DP_RECOVERY) ? TIKU_S_PRESSED : 0));
+    if (p->confirm || (dp_can_forget(p) &&
+                       p->pending.state != TIKU_CONFIG_PENDING_CONFIRMED))
+        tiku_ui_button(s, action ? l.forget : l.recover,
+            p->confirm ? "Cancel" : "Forget request…",
+            (p->busy ? TIKU_S_DISABLED : 0) |
+            (tiku_dialog_focused(&p->dialog, DP_FORGET) ? TIKU_S_FOCUS : 0) |
+            (tiku_dialog_pressed(&p->dialog, DP_FORGET) ? TIKU_S_PRESSED : 0));
+}
+
 /** @brief Classic device sidebar, recessed value list and grouped editor. */
 static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
                     void *ctx)
@@ -582,10 +802,11 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
     if (p->count) {
         dp_table(p, s, l);
         dp_editor(p, s, l);
+        dp_recovery_draw(p, s, l);
         dp_explain(s, l.table.x, l.status_y, l.table.w, p->status, quiet, 2);
     } else {
         tiku_rect_t empty = {l.table.x, l.table.y, l.table.w,
-                            l.group.y + l.group.h - l.table.y};
+                            l.recovery.y + l.recovery.h - l.table.y};
         (void)tiku_ui_group(s, empty, "Device settings");
         tiku_icon_paint(s, "microcontroller", empty.x + 24,
                         empty.y + 34, 48);
@@ -609,7 +830,7 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
 /** @brief Keyboard focus order, recomputed from current capabilities. */
 static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
 {
-    int writable = !p->busy && p->values[p->setting].writable;
+    int writable = dp_can_edit(p);
     tiku_dialog_begin(&p->dialog, DP_APPLY, DP_DONE);
     for (int i = 0; i < p->count; i++)
         tiku_dialog_add(&p->dialog, DP_DEVICE + i, dp_device_row(l, i),
@@ -625,6 +846,17 @@ static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
                     writable && p->setting != DP_TIME);
     tiku_dialog_add(&p->dialog, DP_APPLY, l.apply, TIKU_DIALOG_BUTTON,
                     writable && (p->setting != DP_CPU || dp_clock_dirty(p)));
+    const char *action = dp_recovery_action(p);
+    if (action) tiku_dialog_add(&p->dialog, DP_RECOVERY, l.recover,
+                                TIKU_DIALOG_BUTTON,
+                    p->count && !p->busy);
+    if (p->confirm || (dp_can_forget(p) &&
+                       p->pending.state != TIKU_CONFIG_PENDING_CONFIRMED))
+        tiku_dialog_add(&p->dialog, DP_FORGET,
+                        action ? l.forget : l.recover, TIKU_DIALOG_BUTTON,
+                    p->count && !p->busy && (p->confirm ||
+                    (dp_can_forget(p) && p->pending.state !=
+                     TIKU_CONFIG_PENDING_CONFIRMED)));
     tiku_dialog_add(&p->dialog, DP_REFRESH, l.refresh,
                     TIKU_DIALOG_BUTTON, !p->busy);
     tiku_dialog_add(&p->dialog, DP_DONE, l.done, TIKU_DIALOG_BUTTON, 1);
@@ -685,6 +917,11 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         result.activated < DP_DEVICE + p->count) {
         p->selected = result.activated - DP_DEVICE;
         memset(p->values, 0, sizeof p->values);
+        memset(&p->clock, 0, sizeof p->clock);
+        memset(p->config, 0, sizeof p->config);
+        memset(&p->pending, 0, sizeof p->pending);
+        p->confirm = 0;
+        p->can_enroll = 0;
         dp_request(p, -1);
     } else if (result.activated >= DP_SETTING &&
                result.activated < DP_SETTING + DP_COUNT) {
@@ -694,9 +931,18 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         tiku_dialog_focus(&p->dialog, DP_EDIT);
     } else if (result.activated == DP_REFRESH) dp_refresh(p);
     else if (result.activated == DP_APPLY) dp_apply(p);
+    else if (result.activated == DP_RECOVERY && !p->busy) {
+        if (p->confirm) dp_request(p, p->confirm == 1 ? DP_ENROLL : DP_DISCARD);
+        else if (p->pending.state == TIKU_CONFIG_PENDING_RETRY ||
+                 p->pending.state == TIKU_CONFIG_PENDING_CONFIRMED)
+            dp_request(p, DP_RETRY);
+        else if (!p->pending.state && p->can_enroll) p->confirm = 1;
+    } else if (result.activated == DP_FORGET && !p->busy) {
+        p->confirm = p->confirm ? 0 : dp_can_forget(p) ? 2 : 0;
+    }
     else if (!result.taken && !p->busy) {
         if (!dp_choice_event(p, ev, l, c) &&
-            p->values[p->setting].writable &&
+            dp_can_edit(p) &&
             (p->setting == DP_NAME || p->setting == DP_RADIO)) {
             if (tiku_field_event(&p->field, &p->input, ev, l.edit,
                 p->dialog.focus == DP_EDIT) == TIKU_FIELD_REJECTED)

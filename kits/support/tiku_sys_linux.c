@@ -26,6 +26,11 @@
 #include <ucontext.h>
 #include <unistd.h>
 
+int tiku_sys_sync_file(int fd)
+{
+    return fsync(fd);
+}
+
 void *
 tiku_sys_fault_pc(const void *context)
 {

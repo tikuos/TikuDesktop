@@ -8,6 +8,8 @@ print("C\tkernel\treset\tReset survival\tnrf54l15,rp2350-uart\tReset\tdiagnostic
 print("S\tsecond\tTools\tSecond suite\tany\tAnother suite\t0")
 print("C\tsecond\tother\tOther test\t*\tTools\tfunctional\t\t*")
 print("S\tshell\tShell\tShell checks\tany\tNeeds large MSP firmware\t1")
+print("S\thost-only\tFiles & events (VFS)\tHost recovery checks\tany\tNo device access\t0\t1")
+print("C\thost-only\thost-check\tHost checks\t*\tRecovery\tfunctional\t\t*")
 print("H\tnrf54l15\tkernel\tfull\tfail\t90000\tnrf54l15")
 print("H\tnrf54l15\tkernel\tselected\tpass\t10\tnrf54l15")
 print("M\tnrf54l15\tcontext-switch\tcycles\t42\t40\tsuspect\t1")

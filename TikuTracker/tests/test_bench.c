@@ -71,7 +71,7 @@ static bench_t *start(void)
     bench_t *st = state;
     assert(st->loading);
     pump(st);
-    assert(st->metadata_ok && st->nsuite == 3 && st->nleaf == 3);
+    assert(st->metadata_ok && st->nsuite == 4 && st->nleaf == 4);
     assert(st->supported && !strcmp(st->target_name, device));
     assert(!strcmp(st->port, "/dev/fixture-only"));
     return st;
@@ -169,6 +169,71 @@ static void cancel_test(bench_t *st)
     puts("PASS: stop while releasing never starts a runner");
 }
 
+static void host_run_test(bench_t *st)
+{
+    clear_selection(st);
+    setenv("TIKU_BENCH_TEST_MODE", "normal", 1);
+    st->suites[3].selected = 1;
+    assert(st->suites[3].host_only);
+    st->target_name[0] = st->mcu[0] = st->port[0] = 0;
+    profile_update(st);
+    assert(!st->supported && suite_supported(st, &st->suites[3]));
+    st->flash = st->large = st->usb = st->pk = st->epaper = 1;
+    tiku_field_start(&st->field[1], "invalid");
+    tiku_field_start(&st->field[2], "not device make variables");
+    assert(queue_build(st) && !queue_needs_device(st));
+    command_t c;
+    assert(command_build(st, &st->jobs[0], &c));
+    assert(!arg_value(&c, "--board") && !arg_value(&c, "--port") &&
+           !arg_value(&c, "--baud") && !arg_value(&c, "--flash") &&
+           !arg_value(&c, "--make-var") && !arg_value(&c, "--console"));
+    {
+        /* A device job behind a host one is checked before the batch
+         * starts, while the board is still held. */
+        command_t probe;
+        int held = st->njob;
+        assert(queue_first_invalid(st, &probe) < 0);
+        st->jobs[st->njob].suite = 0;
+        st->jobs[st->njob].only[0] = 0;
+        snprintf(st->jobs[st->njob].key, sizeof st->jobs[0].key, "%s",
+                 st->suites[0].key);
+        st->njob++;
+        assert(!st->suites[0].host_only);
+        assert(queue_first_invalid(st, &probe) == 1);
+        st->njob = held;
+    }
+    int before = releases, returned = reclaims;
+    run_confirmed(st);
+    assert(st->child && !st->waiting && releases == before);
+    pump(st);
+    assert(!st->busy && !st->batch_failed && reclaims == returned);
+    assert(st->nresult == 1 && st->results[0].done && st->results[0].pass == 3);
+    assert(!unlink(st->log_path));
+    st->flash = st->large = st->usb = st->pk = st->epaper = 0;
+    tiku_field_start(&st->field[1], "115200");
+    tiku_field_start(&st->field[2], "");
+    snprintf(st->target_name, sizeof st->target_name, "%s", device);
+    target_capture(st);
+    /* Host-only still must not release a board when one IS connected. */
+    assert(queue_build(st)); run_confirmed(st); pump(st);
+    assert(!st->busy && !st->batch_failed && releases == before && reclaims == returned);
+    assert(!unlink(st->log_path));
+    /* A mixed queue still hands the port over once for the device work. */
+    st->suites[0].selected = 1;
+    assert(queue_build(st) && queue_needs_device(st) && st->njob == 2);
+    run_confirmed(st);
+    assert(st->waiting && !st->child && releases == before + 1);
+    bench_board_said(st, TIKU_APP_BOARD_RELEASED, device); pump(st);
+    assert(!st->batch_failed && st->job == 2 && st->reclaiming);
+    assert(releases == before + 1 && reclaims == returned + 1);
+    assert(st->nresult == 2 && st->results[0].done && st->results[1].done);
+    assert(!unlink(st->log_path));
+    bench_board_said(st, TIKU_APP_BOARD_RECLAIMED, device); pump(st);
+    assert(!st->busy);
+    clear_selection(st);
+    puts("PASS: host-only runs without device handoff; mixed queues release/reclaim once");
+}
+
 static void interactive_test(bench_t *st)
 {
     setenv("TIKU_BENCH_TEST_MODE", "wait", 1);
@@ -212,9 +277,14 @@ static void real_catalogue_test(void)
     bench_t *st = state; pump_for(st, 120);
     if (!st->metadata_ok) fprintf(stderr, "%s\n", st->note);
     assert(st->metadata_ok && st->nsuite > 80 && st->nleaf > 400);
+    int recovery = 0;
     for (int i = 0; i < st->nsuite; i++) if (!strcmp(st->suites[i].key, "kernel")) {
         st->suites[i].expanded = 1; st->suites[i].selected = 1;
+    } else if (!strcmp(st->suites[i].key, "vfs-recovery-host")) {
+        recovery++;
+        assert(st->suites[i].host_only && !st->suites[i].large && st->suites[i].count == 7);
     }
+    assert(recovery == 1);
     entries_build(st); paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-catalogue.png"));
     tiku_font_set_size(16); paint(st);
@@ -259,7 +329,7 @@ int main(void)
         !strstr(report_body, "<sensor&>") && releases == before_release);
     st->results[0] = saved;
     run_test(st, "normal", 0); run_test(st, "nonzero", 1); run_test(st, "empty", 1);
-    cancel_test(st); interactive_test(st); ui_test(st);
+    cancel_test(st); interactive_test(st); host_run_test(st); ui_test(st);
     bench_stop(st);
     assert(windows == 1 && frames > 0);
     real_catalogue_test();

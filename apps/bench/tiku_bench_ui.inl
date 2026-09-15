@@ -34,7 +34,7 @@ static void controls(bench_t *st)
     tiku_dialog_begin(&st->dialog, TIKU_DIALOG_NONE, TIKU_DIALOG_NONE);
     tiku_dialog_add(&st->dialog, TARGET, TARGET_RECT, TIKU_DIALOG_INPUT, edit);
     tiku_dialog_add(&st->dialog, RUN, (tiku_rect_t){664, 10, 154, 32}, TIKU_DIALOG_BUTTON,
-        edit && st->metadata_ok && st->supported && selected_count(st));
+        edit && st->metadata_ok && selected_count(st));
     tiku_dialog_add(&st->dialog, STOP, (tiku_rect_t){834, 10, 110, 32},
                     TIKU_DIALOG_BUTTON, (st->busy || st->loading) && !st->reclaiming);
     if (tab != TAB_OPTIONS)
@@ -100,7 +100,7 @@ static void controls_draw(bench_t *st)
         if (c->id == TARGET) {
             st->target.enabled = c->enabled;
             tiku_choice_draw(&st->target, st->surface, TARGET_RECT,
-                st->target.selected >= 0 ? NULL : "Choose connected device", flags);
+                st->target.selected >= 0 ? NULL : "No device (host tests available)", flags);
         } else if (c->id >= F_FILTER) {
             int f = c->id - F_FILTER;
             tiku_ui_textfield_scroll(st->surface, c->rect, st->field[f].text,
@@ -220,8 +220,9 @@ static void paint(bench_t *st)
     tiku_fill(st->surface, (tiku_rect_t){0, 0, BW, BH}, TIKU_C_PANEL);
     text(st, (tiku_rect_t){16, 12, 72, 28}, "Device", 1);
     char status[512];
-    snprintf(status, sizeof status, "%s | %s", *st->profile ? st->profile : "No device",
-             st->flash ? "Build + flash" : "Monitor only");
+    if (!*st->profile) snprintf(status, sizeof status, "Host tests available");
+    else snprintf(status, sizeof status, "%s | %s", st->profile,
+                  st->flash ? "Build + flash" : "Monitor only");
     text(st, (tiku_rect_t){374, 12, 276, 28}, status, 0);
     tiku_tabs_draw(&st->tabs, st->surface, TABS);
     int tab = st->tabs.current;
@@ -363,12 +364,16 @@ static int action(bench_t *st, int command)
         target_capture(st);
         command_t c;
         if (!queue_build(st)) { snprintf(st->note, sizeof st->note, "Select supported suites or sub-tests first."); }
-        else if (!command_build(st, &st->jobs[0], &c)) {
+        else if (queue_first_invalid(st, &c) >= 0) {
             snprintf(st->note, sizeof st->note, "Invalid run options: check baud, port and KEY=VALUE tokens.");
             tiku_tabs_select(&st->tabs, TAB_OPTIONS);
         } else {
             char question[512];
-            snprintf(question, sizeof question,
+            if (!queue_needs_device(st)) snprintf(question, sizeof question,
+                "Run %d host test suite(s) on this computer? No device is needed or released. "
+                "Firmware, serial and board options are ignored. Local test binaries will be built.",
+                st->njob);
+            else snprintf(question, sizeof question,
                 "%d suite(s) on %s (%s), %s. Tests may reset the device or write storage. "
                 "The desktop will release its connection until the queue finishes. Continue?",
                 st->njob, st->target_name, st->profile,

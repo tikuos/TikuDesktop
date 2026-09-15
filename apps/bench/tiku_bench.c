@@ -41,7 +41,7 @@ enum { RUN = 1, STOP, REFRESH, SELECT_ALL, CLEAR, OPEN, TOGGLE, COPY_LOG,
        LIST = 31, F_FILTER = 40, F_BAUD, F_MAKE, F_FLAGS, F_INPUT };
 typedef struct {
     char key[48], group[64], name[128], boards[512], description[768];
-    int large, first, count, selected, expanded;
+    int large, host_only, first, count, selected, expanded;
 } suite_t;
 typedef struct {
     char id[96], label[160], profiles[512], group[64], kind[64];

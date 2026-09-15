@@ -17,8 +17,10 @@ static void report_open(bench_t *st)
 {
     if (!st->services->help_html) { snprintf(st->note, sizeof st->note, "This desktop does not support report pages."); return; }
     char *html = calloc(1, 15001); if (!html) return;
-    char device[512]; report_escape(device, sizeof device, st->target_name);
-    int used = snprintf(html, 15001, "<p>Device: <b>%s</b>. %s</p><table><tr><th>Test</th><th>Result</th></tr>", device,
+    char device[512];
+    report_escape(device, sizeof device,
+        st->njob && !queue_needs_device(st) ? "This computer (host-only tests)" : st->target_name);
+    int used = snprintf(html, 15001, "<p>Target: <b>%s</b>. %s</p><table><tr><th>Test</th><th>Result</th></tr>", device,
         st->busy ? "Run still in progress; this is a snapshot." : "Completed results snapshot.");
     int shown = 0;
     for (; shown < st->nresult && used < 12000; shown++) {

@@ -14,6 +14,7 @@
 
 #include "tiku_sys.h"
 
+#include <fcntl.h>
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
@@ -28,6 +29,12 @@
 #include <sys/ucontext.h>
 #include <time.h>
 #include <unistd.h>
+
+int tiku_sys_sync_file(int fd)
+{
+    if (fsync(fd)) return -1;
+    return fcntl(fd, F_FULLFSYNC);
+}
 
 void *
 tiku_sys_fault_pc(const void *context)
