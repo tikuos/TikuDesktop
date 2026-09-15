@@ -15,8 +15,8 @@
  */
 
 #include "tiku_tx.h"
+#include "tiku_sys.h"
 
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -84,7 +84,24 @@ tx_configure_serial(int fd, int baud)
     t.c_cc[VTIME] = 0;
     (void)cfsetispeed(&t, sp);
     (void)cfsetospeed(&t, sp);
+    /*
+     * Set, then READ BACK.  A rate above 230400 is not a constant on
+     * every host -- it is the number itself -- and a line asked for one
+     * may refuse, or may take it and run at something else, which is
+     * the worse of the two because nothing says so.  Garbage at the
+     * wrong rate looks like a board that is not answering.  So the
+     * agreed rate is checked against the asked one, and where they
+     * differ the host is asked to set it a second way; a host that
+     * cannot fails the open rather than handing back a line that will
+     * only ever produce noise.
+     */
     if (tcsetattr(fd, TCSANOW, &t) != 0) {
+        if (tiku_sys_serial_speed(fd, baud) != 0) {
+            return -1;
+        }
+    } else if (tcgetattr(fd, &t) == 0 && cfgetospeed(&t) != sp &&
+               tiku_sys_serial_speed(fd, baud) != 0) {
+        errno = EINVAL;
         return -1;
     }
     (void)tcflush(fd, TCIOFLUSH);
@@ -328,37 +345,7 @@ tiku_tx_close(tiku_tx_t *tx)
 int
 tiku_tx_scan_serial(char out[][256], int max)
 {
-    static const char *dir = "/dev/serial/by-id";
-    DIR *d = opendir(dir);
-    struct dirent *e;
-    int n = 0;
-
-    if (d == NULL) {
-        return -1;
-    }
-    while (n < max && (e = readdir(d)) != NULL) {
-        if (e->d_name[0] == '.') {
-            continue;
-        }
-        /* by-id names carry the probe: J-Link (Nordic/Ambiq/Renesas kits),
-         * CDC (Pico), FTDI (the FR5994 rig), TikuOS (a board whose console
-         * is its OWN USB port, the LM20 native-USB build -- the probe is off
-         * the console path there, so the port carries the device's name). */
-        if (strstr(e->d_name, "J-Link") == NULL &&
-            strstr(e->d_name, "CDC")    == NULL &&
-            strstr(e->d_name, "FT232")  == NULL &&
-            strstr(e->d_name, "TikuOS") == NULL &&
-            strstr(e->d_name, "Pico")   == NULL) {
-            continue;
-        }
-        /* by-id names run long; a truncated path would open the wrong
-         * device or nothing, so drop the entry instead. */
-        if (strlen(dir) + strlen(e->d_name) + 2u > 256u) {
-            continue;
-        }
-        (void)snprintf(out[n], 256, "%s/%s", dir, e->d_name);
-        n++;
-    }
-    (void)closedir(d);
-    return n;
+    /* Where a machine keeps its serial ports, and what it calls them,
+     * is the machine's own business and is asked for as such. */
+    return tiku_sys_serial_ports(out, max);
 }

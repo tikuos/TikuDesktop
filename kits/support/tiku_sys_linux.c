@@ -318,3 +318,62 @@ tiku_sys_reserve(int fd, long long bytes)
      * this is the call that says so now instead. */
     return posix_fallocate(fd, 0, (off_t)bytes);
 }
+
+/**
+ * @brief Run an open serial line at exactly @p baud.
+ *
+ * Nothing to do here and nothing that can be done.  Linux names every
+ * rate this tree offers as a termios constant, so the ordinary call
+ * already set it and this is only reached when a rate was asked for
+ * that the line itself refused -- which no second way would change.
+ */
+int
+tiku_sys_serial_speed(int fd, int baud)
+{
+    (void)fd;
+    (void)baud;
+    return -1;
+}
+
+/**
+ * @brief The serial ports a board could be on the other end of.
+ *
+ * udev writes a directory of stable names, and the name carries the
+ * probe: J-Link (Nordic/Ambiq/Renesas kits), CDC (Pico), FTDI (the
+ * FR5994 rig), TikuOS (a board whose console is its OWN USB port, the
+ * LM20 native-USB build -- the probe is off the console path there, so
+ * the port carries the device's name).
+ */
+int
+tiku_sys_serial_ports(char out[][256], int max)
+{
+    static const char *dir = "/dev/serial/by-id";
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    int n = 0;
+
+    if (d == NULL) {
+        return -1;
+    }
+    while (n < max && (e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.') {
+            continue;
+        }
+        if (strstr(e->d_name, "J-Link") == NULL &&
+            strstr(e->d_name, "CDC")    == NULL &&
+            strstr(e->d_name, "FT232")  == NULL &&
+            strstr(e->d_name, "TikuOS") == NULL &&
+            strstr(e->d_name, "Pico")   == NULL) {
+            continue;
+        }
+        /* by-id names run long; a truncated path would open the wrong
+         * device or nothing, so drop the entry instead. */
+        if (strlen(dir) + strlen(e->d_name) + 2u > 256u) {
+            continue;
+        }
+        (void)snprintf(out[n], 256, "%s/%s", dir, e->d_name);
+        n++;
+    }
+    (void)closedir(d);
+    return n;
+}

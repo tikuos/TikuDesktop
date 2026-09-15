@@ -14,6 +14,7 @@
  */
 
 #include "tiku_conduct.h"
+#include "tiku_sys.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -259,6 +260,21 @@ tiku_conduct_open_tty(const char *path, int baud)
 
             (void)cfsetispeed(&tio, sp);
             (void)cfsetospeed(&tio, sp);
+            if (tcsetattr(fd, TCSANOW, &tio) != 0) {
+                /* The rate was refused outright.  On a host whose
+                 * termios cannot name it the driver is told instead;
+                 * on one that can, there is nothing else to try and
+                 * the line is left as it was found. */
+                (void)tiku_sys_serial_speed(fd, baud);
+            } else if (tcgetattr(fd, &tio) == 0 &&
+                       cfgetospeed(&tio) != sp) {
+                /* Taken, but not honoured: the line is running at
+                 * something other than what was asked for, which is
+                 * the quiet way a link comes to carry nothing but
+                 * noise -- and looks like a board not answering. */
+                (void)tiku_sys_serial_speed(fd, baud);
+            }
+            return fd;
         }
         (void)tcsetattr(fd, TCSANOW, &tio);
     }

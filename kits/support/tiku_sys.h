@@ -133,4 +133,42 @@ int tiku_sys_process_kill(int handle);
  */
 int tiku_sys_reserve(int fd, long long bytes);
 
+/**
+ * @brief Run an open serial line at exactly @p baud.
+ *
+ * Every host names a handful of rates as constants and the ordinary
+ * termios call sets those.  Above them the hosts part: Linux names
+ * 460800 and 921600 like any other, and macOS names neither -- its
+ * termios stops at 230400 and a faster line is set through the driver
+ * instead, after the rest of the line's shape has been agreed.
+ *
+ * Asked only when the ordinary way did not take, so on a host where it
+ * did this is never reached and the rate is already right.
+ *
+ * @param fd    An open terminal, already configured.
+ * @param baud  The rate in bits per second.
+ * @return 0 when the line is running at it, -1 when this host cannot.
+ */
+int tiku_sys_serial_speed(int fd, int baud);
+
+/**
+ * @brief The serial ports a board could be on the other end of.
+ *
+ * Every host has its own name for a USB serial line and its own place
+ * to list them, and the two do not resemble each other: Linux has udev
+ * write a directory of stable by-id names, macOS has the driver put a
+ * node in /dev and nothing else.  What is the SAME is the question --
+ * which of this machine's ports might have a board behind it -- and the
+ * answer is a path that can be opened.
+ *
+ * Nothing here is opened.  A port whose device has not answered its
+ * host blocks the open for half a minute on some hosts, so listing must
+ * cost nothing; deciding is the caller's, off the turn.
+ *
+ * @param out  Filled with up to @p max paths.
+ * @param max  How many will fit.
+ * @return how many were written, or -1 when this host has no such list.
+ */
+int tiku_sys_serial_ports(char out[][256], int max);
+
 #endif /* TIKU_SYS_H */

@@ -52,8 +52,12 @@ tiku_memrchr(const void *block, int c, size_t n)
 
 /* Darwin's termios speeds ARE the integers (B115200 is 115200), so the
  * two this tree uses that the header stops short of are the same rule
- * carried two rows further.  Whether the driver honours them is the
- * driver's business, exactly as on Linux. */
+ * carried two rows further.  Carrying it is not the same as the line
+ * running at it: the header stops at 230400 because that is where the
+ * ordinary call stops working, and above it a driver may refuse or may
+ * take the number and run at something else.  Which is why a port's
+ * rate is READ BACK after it is set, and tiku_sys_serial_speed() tells
+ * the driver directly when it did not take. */
 #ifndef B460800
 #define B460800 460800
 #endif

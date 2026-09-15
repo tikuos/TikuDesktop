@@ -18,6 +18,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "tiku_sys.h"
@@ -61,6 +64,33 @@ saw(const tiku_sys_process_t *process, void *ctx)
         snprintf(look->my_command, sizeof look->my_command, "%s",
                  process->command ? process->command : "");
     }
+}
+
+/**
+ * @brief A terminal with nothing under it, for asking what a seam says.
+ *
+ * openpty(3) is in a different header on each host and this file will
+ * not name one; the POSIX road to the same pair is in <stdlib.h> on
+ * both.
+ *
+ * @return 0 and a pair, or -1.
+ */
+static int
+a_terminal(int *master, int *slave)
+{
+    const char *name;
+
+    *master = posix_openpt(O_RDWR | O_NOCTTY);
+    if (*master < 0) {
+        return -1;
+    }
+    if (grantpt(*master) != 0 || unlockpt(*master) != 0 ||
+        (name = ptsname(*master)) == NULL ||
+        (*slave = open(name, O_RDWR | O_NOCTTY)) < 0) {
+        close(*master);
+        return -1;
+    }
+    return 0;
 }
 
 int
@@ -147,6 +177,107 @@ main(void)
 
     check(tiku_sys_fault_pc(NULL) == NULL,
           "no context is no instruction, rather than a wild pointer");
+
+    {
+        /*
+         * A rate the ordinary call could not set.  What this can assert
+         * without a cable is the CONTRACT, which is the same on both
+         * hosts: asked about something that is not a serial line it
+         * says it cannot, rather than reporting a line that is now
+         * running at a rate nothing is running at.  A pty is exactly
+         * that -- a terminal with no driver under it -- so it stands in
+         * for every descriptor the answer must be "no" for.
+         */
+        int master, slave;
+
+        check(tiku_sys_serial_speed(-1, 115200) == -1,
+              "a rate cannot be set on a descriptor that is not open");
+        if (a_terminal(&master, &slave) == 0) {
+            check(tiku_sys_serial_speed(slave, 0) == -1,
+                  "nor can no rate at all be set on a real one");
+            check(tiku_sys_serial_speed(slave, 921600) == -1,
+                  "and a terminal with no serial driver under it says "
+                  "so, rather than claiming a line it does not have");
+            close(slave);
+            close(master);
+        }
+        /*
+         * And the rates the tree offers are still set the ordinary way
+         * wherever that works, which is what keeps the second way off
+         * the path a board is usually opened on.
+         */
+        if (a_terminal(&master, &slave) == 0) {
+            struct termios t;
+            int exact = 1, i;
+            const int RATES[] = { 9600, 115200, 230400, 460800, 921600 };
+
+            for (i = 0; i < (int)(sizeof RATES / sizeof RATES[0]); i++) {
+                speed_t want = (speed_t)RATES[i];
+
+                if (tcgetattr(slave, &t) != 0) {
+                    exact = 0;
+                    break;
+                }
+                cfmakeraw(&t);
+                (void)cfsetispeed(&t, want);
+                (void)cfsetospeed(&t, want);
+                if (tcsetattr(slave, TCSANOW, &t) != 0 ||
+                    tcgetattr(slave, &t) != 0 || cfgetospeed(&t) != want) {
+                    exact = 0;
+                    break;
+                }
+            }
+            check(exact,
+                  "every rate the tree offers is set by name and reads "
+                  "back as itself, so the driver is only ever asked "
+                  "when the ordinary way did not take");
+            close(slave);
+            close(master);
+        }
+    }
+
+    {
+        /*
+         * The ports a board could be behind.  There may be none -- no
+         * machine is required to have a board plugged into it -- so
+         * what is asserted is the shape of the answer and the two
+         * promises a caller leans on: every path it gives back is
+         * openable as a path, and nothing is opened to find that out.
+         *
+         * The second promise is why a caller can list on the turn and
+         * decide off it: a port whose device has not answered its host
+         * blocks the open for half a minute on some machines, and a
+         * desktop that stopped for half a minute while drawing a menu
+         * is a desktop that has stopped.
+         */
+        char ports[8][256];
+        int n = tiku_sys_serial_ports(ports, 8);
+        int shaped = 1, quick = 1, i;
+        long long spent;
+
+        check(n >= -1 && n <= 8,
+              "the list of serial ports is as long as it says, or says "
+              "this host keeps no such list");
+        for (i = 0; i < (n > 0 ? n : 0); i++) {
+            if (ports[i][0] != '/' || strlen(ports[i]) < 2u) {
+                shaped = 0;
+            }
+        }
+        check(shaped, "and each one is an absolute path, which is the "
+                      "only thing a caller can do anything with");
+        {
+            struct timespec t0, t1;
+
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            (void)tiku_sys_serial_ports(ports, 8);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            spent = (t1.tv_sec - t0.tv_sec) * 1000LL +
+                    (t1.tv_nsec - t0.tv_nsec) / 1000000LL;
+            quick = (spent < 500);
+        }
+        check(quick, "and listing them costs nothing near what opening "
+                     "one can, because listing opens none of them");
+    }
 
     printf("\n%s\n", fails ? "FAILURES"
                            : "the seam answers about this machine");
