@@ -343,6 +343,14 @@ for s in "$here"/*.script; do
         # depend on whatever is sitting in the build tree, and a stray
         # trusted application would open a window in every script.
         appsdir=$tmp/trk_apps
+        # An application is a PROCESS of its own now, and a desktop that
+        # was killed -- by a crash, by a script that gave up, by a harness
+        # watching the clock -- leaves its children running.  They hold
+        # windows and sockets the next lane then finds already there, and
+        # the lane that breaks is never the lane that leaked them.  Reaped
+        # by the directory they were started from, which is this harness's
+        # own and nobody else's.
+        pkill -f "$appsdir" > /dev/null 2>&1
         rm -rf "$appsdir"
         mkdir -p "$appsdir"
         cp -f "$top/build/apps/terminal/terminal.so" \

@@ -172,7 +172,10 @@ def main() -> int:
                 errors.append(f"{path}: headless module imports UI: {', '.join(ui)}")
 
     # The platform rule, over every tree that is compiled for a host.
-    for tree in (TRACKER_SRC, KITS, ROOT.parent / "apps", ROOT.parent / "board"):
+    # system/ is the application host and the supervisor: they start
+    # processes, which is exactly where somebody reaches for an #ifdef.
+    for tree in (TRACKER_SRC, KITS, ROOT.parent / "apps",
+                 ROOT.parent / "board", ROOT.parent / "system"):
         if not tree.is_dir():
             continue
         for path in sorted(tree.rglob("*")):
