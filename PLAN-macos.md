@@ -60,7 +60,7 @@ lines they are today.
 | **4 ✓** | Disks and the way out | Force Quit: `tiku_sys_process_pin()`/`_kill()` join the seam, so the application kit's last two `#ifdef`s go.  Linux keeps pidfd; macOS pins with a kqueue on `NOTE_EXIT` for the descriptor's shape and re-checks the process's START TIME immediately before the signal -- a pid is handed out again, never with the same microsecond.  `posix_fallocate` was the other `#ifdef` and becomes `tiku_sys_reserve()`.  Disks: `tiku_partitions_scan()` asks DiskArbitration about each `/dev/disk*`, so the Mount menu has content where it was empty; `removable` is asked of the medium rather than guessed from the mount point, because "not the boot volume and local" calls a second internal volume removable and offering Eject on one is offering to break the machine; `tiku_volume_mount()` mounts through the same service, on a run loop bounded at five seconds so a disk that will not answer does not become a shell that will not answer | one to two days | `test_forcequit` passes, which it had not since the port began, and `forcequit.script` goes 10/13 to 13/13; a ram disk is listed, mounted and unmounted through the kit, and reads removable where the boot volume does not |
 | **5 ✓** | Search that ends | Not what it looked like.  The engine was built to be stepped -- `tiku_query_step(r, budget)`, "advance the walk by at most @p budget directories" -- and **all three of its callers drove it to completion in a `while (!done)` loop on the turn**: the Find panel's search, the quick find, and `tiku_query_refresh()` inside the kit.  On a CI rootfs that is invisible; on a real disk the shell stops until the disk has been read.  `tiku_query_refresh()` is split into `_begin`/step/`_end` so the snapshot outlives the turn that took it, `tiku_trk_folder_lifecycle_step_results()` gives a live window sixteen directories a turn, and the desktop's idle work drives it beside the other stepped work.  A first walk shows rows as it finds them; a re-walk shows nothing until it ends, so a row about to be found again does not blink out.  The status line is left alone -- there is one of it for the whole desktop and a walk is thousands of turns | one day | `query`, `qtemplate`, `qtype` and `querydrop` finish in four to six seconds each, where two of them had to be killed; the whole script suite runs with no watchdog |
 | **6 ✓** | A person at the desk | With XQuartz: `tiku_x11.c` reads the Retina scale from `Xft.dpi`/the screen's millimetres so the desktop is not drawn at half size; Command mapped to the desktop's command modifier where Control is today, from a table in one place (`tiku_event.h`'s modifier names), so the Linux keys stay as they are; the X11 clipboard proved against XQuartz's pasteboard bridge; the serial rates above 230400 set with `IOSSIOSPEED` when `tcsetattr` refuses them (`tiku_tx.c`, behind the seam); the IDE's message parser reads clang's diagnostic lines (`file:line:col: error:` is shared; the "note:" and caret lines differ) and `idebuild.script` runs with `CC=clang` on Linux too, so the parser is proved on both; `tiku-desk-probe` and the board link tried against a real board on a Mac, where a CDC device that has not answered EP0 blocks the open for thirty seconds and the desktop must not wait on it in the turn (open the port off the turn, as the utility jobs already are) | two days | `./build/TikuDesktop` on a Retina display at the right size, Cmd-key menus working, paste from another Mac application, a board connected over USB with its panel live; the Linux desktop's keys, clipboard and serial path unchanged, proved by the scripts |
-| **7** | The bundle | *Optional.*  `make app` writes `build/TikuDesktop.app` (Info.plist, the mark as `.icns` rendered from the same drawing, the binary and `apps/` inside `Contents/Resources`, `TIKU_APPS` set by the launcher); `LSUIElement` off so it has a Dock tile; codesign ad hoc so Gatekeeper opens it on the machine that built it | half a day | double-clicking the bundle opens the desktop with its applications found |
+| **7 ✓** | The bundle | *Optional.*  `make app` writes `build/TikuDesktop.app` (Info.plist, the mark as `.icns` rendered from the same drawing, the binary and `apps/` inside `Contents/Resources`, `TIKU_APPS` set by the launcher); `LSUIElement` off so it has a Dock tile; codesign ad hoc so Gatekeeper opens it on the machine that built it | half a day | double-clicking the bundle opens the desktop with its applications found |
 | **8** | Native, without XQuartz | *A decision, not a default (§3).*  `kits/interface/tiku_cocoa.m`: the same `tiku_host` contract `tiku_x11.c` fulfils today and the wasm build replaces -- one window, a backing `CGImage` blitted per present, events translated to `tiku_event_t`, the pasteboard for the clipboard, `NSTextInputClient` for the input method; chosen by `TIKU_HOST=cocoa` in the Makefile, X11 remaining the default on both hosts until it is proved; the scripts do not know which host backend drew | three to four days | every script that passes under X11 passes under Cocoa; a Mac with no XQuartz runs the desktop |
 
 Milestone 6 is built.  The half that was said to need XQuartz did not:
@@ -249,6 +249,46 @@ better is the one thing here still untested.
 **Still wanting hardware**, not a password: a board's panel live on a
 Mac.  The port opens off the turn and the ports list correctly; what is
 left is plugging one in.
+
+### What four flaky tests actually were
+
+`apphelp`, `helpreader`, `imageviewer` and `utilities` had been called
+flaky three times without being looked at.  They were not flaky; they
+were one bug, and it is the same shape as the autoscroll one above.
+
+A scripted `wait` is counted in TURNS, and that is exactly right for
+what it was written for -- a stepped copy, an armed rename, work this
+process does a slice of per turn.  A child process starting is not
+that.  A fork, an exec and a library loaded are work another process
+does, which no number of turns here advances, and the scripted loop
+does not sleep: a dozen turns can pass in less time than the fork
+takes, and the window is simply not there when the next line asks for
+it.  Whether it was there depended on how busy the machine happened to
+be, which is why the failures moved around from run to run and why
+running one lane alone usually "fixed" it.
+
+So a turn spent waiting is now spent ON the child, when there is one
+still coming up: `tiku_remote_wait()` waits on the descriptors and
+returns the instant one of them has something.  The test is "still
+coming up", not "still running" -- a child that has connected is one
+more session, so a desktop with as many sessions as children has
+nothing to wait for and goes back to counting turns.  A lane that
+launches nothing never reaches any of it.
+
+Four lanes, three runs each, 12 of 12 green where they had been 17
+assertions short.  **This was never a macOS bug**: Linux races the same
+way and usually wins.
+
+### Milestone 7, which also needed no board
+
+`make app` builds the bundle, and the one thing worth writing down is
+the trap it hit.  A Mac's filesystem does not distinguish case, so a
+binary copied in as `tikudesktop` and a launcher copied in as
+`TikuDesktop` are ONE FILE, and the second copy wins.  What that
+produced was a launcher exec'ing itself forever, out of a bundle that
+looked correctly built and passed every check that did not run it.  The
+binary is `TikuDesktop-bin` now, and the target asserts the two are
+still two files before it signs.
 
 ### The Linux contract
 

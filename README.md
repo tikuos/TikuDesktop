@@ -74,6 +74,14 @@ on a private display.  `brew install xorg-server` gets you one -- it is
 a FORMULA, so it wants no password, unlike the XQuartz cask -- and puts
 `Xvfb` on the path, which is what those two look for.
 
+`make app` writes `build/TikuDesktop.app`: the same binaries, the mark
+rendered to an `.icns` at all ten sizes a Mac asks for, the applications
+under `Contents/Resources`, and a launcher that tells the program where
+they are.  It is signed ad hoc, so it opens on the machine that built
+it.  Double-clicking it still needs a server -- the launcher finds
+XQuartz's socket if XQuartz is running, and says so in a dialog if
+nothing is, rather than bouncing once in the Dock and dying quietly.
+
 For a window in front of a person, `Xvfb` is not enough and XQuartz is
 what to install; `make run` without any server says `tracker: no
 display` and stops.  One thing to know before reaching for it: Homebrew's
