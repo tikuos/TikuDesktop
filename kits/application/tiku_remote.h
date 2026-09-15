@@ -265,14 +265,11 @@ int tiku_remote_poll(tiku_remote_listener_t *listener);
  * @brief Wait up to @p timeout_us for any session to have something.
  *
  * For a caller between turns with nothing of its own to do and a child
- * process that may be about to speak.  Polling in a spin gives that
- * child no time at all on a machine busy enough: what it is waiting for
- * -- a fork, an exec, a library loaded -- is work another process does,
- * which no number of turns here advances.  Waiting on the descriptors
- * gives it the moment and returns the instant it uses it.
- *
- * Nothing is read.  The caller still calls tiku_remote_poll() to take
- * what arrived; this only says when to bother.
+ * that may be about to speak.  A spin gives that child no time on a
+ * busy machine: a fork, an exec or a library load is work another
+ * process does, which no number of turns here advances.  Waiting on the
+ * descriptors gives it the moment and returns the instant it uses it.
+ * Nothing is read; tiku_remote_poll() still takes what arrived.
  *
  * @return nonzero when something is ready, 0 when the time passed.
  */
