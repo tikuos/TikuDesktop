@@ -498,6 +498,18 @@ void tiku_trk_launch_expect_stop(pid_t pid)
         if (pid > 1 && a->pid == pid) a->expected = 1;
 }
 
+int
+tiku_trk_launch_running(void)
+{
+    /* The list itself: a child stays on it from the moment it was
+     * started until it is reaped, which is exactly the span in which it
+     * may still be starting up and about to say something. */
+    int n = 0;
+
+    for (launched_app_t *a = launched; a; a = a->next) n++;
+    return n;
+}
+
 void
 tiku_trk_launch_note(pid_t pid, const char *name)
 {

@@ -217,6 +217,15 @@ void tiku_trk_launch_note(pid_t pid, const char *name);
 /** @brief Mark a successfully requested SIGKILL as intentional for notices. */
 void tiku_trk_launch_expect_stop(pid_t pid);
 
+/**
+ * @brief How many launched programs have not yet been collected.
+ *
+ * Asked by a caller that is about to wait: a desktop with a child it
+ * started is a desktop whose next event may come from another process
+ * rather than from itself.
+ */
+int tiku_trk_launch_running(void);
+
 /** @brief How a launched program ended. */
 typedef struct {
     char name[64];

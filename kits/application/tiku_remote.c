@@ -766,6 +766,71 @@ session_message(tiku_remote_session_t *s)
     return changed;
 }
 
+/**
+ * @brief Wait up to @p timeout_us for any session to have something.
+ *
+ * The listening socket and every live session, in one wait: a window
+ * that is about to exist announces itself by connecting, and one that
+ * already does by writing, and a caller between turns cannot tell which
+ * it is waiting for.
+ *
+ * @return nonzero when something is ready, 0 when the time passed.
+ */
+/**
+ * @brief How many sessions are connected right now.
+ *
+ * Against the number of children started, this is how a caller tells a
+ * program that is still coming up from one that is up and quiet.
+ */
+int
+tiku_remote_sessions(const tiku_remote_listener_t *listener)
+{
+    int i, n = 0;
+
+    if (listener == NULL) {
+        return 0;
+    }
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        if (listener->session[i].fd >= 0) {
+            n++;
+        }
+    }
+    return n;
+}
+
+int
+tiku_remote_wait(tiku_remote_listener_t *listener, int timeout_us)
+{
+    struct pollfd watch[TIKU_REMOTE_SESSIONS + 1];
+    nfds_t n = 0;
+    int i, ready;
+
+    if (listener == NULL || timeout_us < 0) {
+        return 0;
+    }
+    if (listener->fd >= 0) {
+        watch[n].fd = listener->fd;
+        watch[n].events = POLLIN;
+        watch[n].revents = 0;
+        n++;
+    }
+    for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        if (listener->session[i].fd >= 0) {
+            watch[n].fd = listener->session[i].fd;
+            watch[n].events = POLLIN;
+            watch[n].revents = 0;
+            n++;
+        }
+    }
+    if (n == 0) {
+        return 0;
+    }
+    /* Rounded UP: a timeout that rounds to nothing is a spin, which is
+     * the thing this exists to stop. */
+    ready = poll(watch, n, (timeout_us + 999) / 1000);
+    return ready > 0;
+}
+
 /** @brief Read whatever is ready.  @return change, or -1 when it died. */
 static int
 session_read(tiku_remote_session_t *s)

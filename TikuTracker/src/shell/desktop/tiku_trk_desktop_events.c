@@ -2693,6 +2693,15 @@ return;
 }
 }
 
+/*
+ * How long a scripted turn may spend on a child that has not connected
+ * yet.  It can be generous because it is only ever reached in the gap
+ * between starting a program and that program saying hello, and it
+ * ends the moment it does: a turn pays this in full only when the
+ * child is still loading, and nothing at all once it is up.
+ */
+#define SCRIPT_CHILD_SLICE_US 20000
+
 /**
  * @brief What a turn does before it reads events: the settings file, the
  * script transport, the remote sessions and what travels with them.
@@ -2700,8 +2709,37 @@ return;
 void
 desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
-        (void)lp;
     (void)o;
+    /*
+     * A scripted wait is counted in TURNS, and turns are this process's
+     * own.  Everything a wait was written for -- a stepped copy, an
+     * armed rename -- is work done a slice of per turn, so counting
+     * them is exactly right for it.  A child that was started and has
+     * not drawn yet is not that: a fork, an exec, a library loaded are
+     * work another process does, and no number of turns here advances
+     * any of it.  Under a script the loop does not sleep, so a wait of
+     * a dozen turns can pass in less time than the fork takes and the
+     * window is simply not there when the next line asks for it.
+     * Whether it was depended on how busy the machine happened to be,
+     * which is why this looked like four flaky tests for so long.
+     *
+     * So when a script is waiting and something this desktop started is
+     * still coming up, the turn is spent ON that child instead of past
+     * it.  "Still coming up" is the test, not "still running": a child
+     * that has connected is one more session, so a desktop with as many
+     * sessions as children has nothing left to wait for and goes back
+     * to counting turns like everything else.  Deliberately CONNECTED
+     * and not "has shown a window", though a script asks about the
+     * window: a session that never opens one would leave this waiting
+     * on every turn for the rest of the run, and a fixed cost on every
+     * wait is a worse thing to own than a rare late window.  Nothing is
+     * read here -- the pump below takes what arrived, as it always
+     * did.
+     */
+    if (lp != NULL && lp->sc != NULL && tiku_trk_script_waiting(lp->sc) &&
+        tiku_trk_launch_running() > tiku_remote_sessions(&app->remote)) {
+        (void)tiku_remote_wait(&app->remote, SCRIPT_CHILD_SLICE_US);
+    }
     desktop_report_poll(app);
     /* What the workers finished lands before events are taken, so the
      * screen a click meets already shows what arrived. */

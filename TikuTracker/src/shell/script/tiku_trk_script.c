@@ -341,3 +341,9 @@ tiku_trk_script_report(const tiku_trk_script_t *s, const char *who)
     }
     return (s->fails > 0) ? 1 : 0;
 }
+
+int
+tiku_trk_script_waiting(const tiku_trk_script_t *s)
+{
+    return (s != NULL && s->waiting > 0) ? s->waiting : 0;
+}

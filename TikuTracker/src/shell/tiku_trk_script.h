@@ -136,6 +136,18 @@ typedef struct tiku_trk_script tiku_trk_script_t;
  */
 tiku_trk_script_t *tiku_trk_script_open(const char *path);
 
+/**
+ * @brief Whether the script is in the middle of a wait.
+ *
+ * A wait is turns, not time, because everything it was written for is
+ * work this process does a slice of per turn.  Work another process
+ * does is not that, and a caller that has some outstanding uses this to
+ * know when it may give the world a moment.
+ *
+ * @return the turns still owed, or 0.
+ */
+int tiku_trk_script_waiting(const tiku_trk_script_t *s);
+
 /** @brief Release a script; NULL is fine. */
 void tiku_trk_script_free(tiku_trk_script_t *s);
 

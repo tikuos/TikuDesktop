@@ -56,6 +56,13 @@ tiku_trk_script_pump(tiku_trk_script_t *s,
 }
 
 int
+tiku_trk_script_waiting(const tiku_trk_script_t *s)
+{
+    (void)s;
+    return 0;                   /* nothing waits, because nothing runs */
+}
+
+int
 tiku_trk_script_failures(const tiku_trk_script_t *s)
 {
     (void)s;

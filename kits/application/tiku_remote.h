@@ -261,6 +261,26 @@ int tiku_remote_adopt(tiku_remote_listener_t *listener, int fd);
  */
 int tiku_remote_poll(tiku_remote_listener_t *listener);
 
+/**
+ * @brief Wait up to @p timeout_us for any session to have something.
+ *
+ * For a caller between turns with nothing of its own to do and a child
+ * process that may be about to speak.  Polling in a spin gives that
+ * child no time at all on a machine busy enough: what it is waiting for
+ * -- a fork, an exec, a library loaded -- is work another process does,
+ * which no number of turns here advances.  Waiting on the descriptors
+ * gives it the moment and returns the instant it uses it.
+ *
+ * Nothing is read.  The caller still calls tiku_remote_poll() to take
+ * what arrived; this only says when to bother.
+ *
+ * @return nonzero when something is ready, 0 when the time passed.
+ */
+int tiku_remote_wait(tiku_remote_listener_t *listener, int timeout_us);
+
+/** @brief How many sessions are connected right now. */
+int tiku_remote_sessions(const tiku_remote_listener_t *listener);
+
 /** @brief Send an input event to the session owning @p window. */
 void tiku_remote_event(tiku_remote_listener_t *listener,
                             struct tiku_window *window,
