@@ -15,6 +15,9 @@
 #include <errno.h>
 #include <sys/mount.h>
 #ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <DiskArbitration/DiskArbitration.h>
+#include <dirent.h>
 #include <sys/param.h>
 #include <sys/ucred.h>
 /* Darwin spells it unmount(2) and takes the flags this tree never passes. */
@@ -47,6 +50,128 @@ name_of(const char *mount, char *out, size_t max)
  * side has to pick out of an option string, and with the block counts
  * that would otherwise cost a statvfs per row.
  */
+/** @brief What a mount attempt came back with, filled by the callback. */
+struct mount_answer {
+    int done;
+    int refused;                /* the dissenter's status, 0 for none */
+};
+
+/** @brief The arbitration service's answer, on the run loop below. */
+static void
+mounted(DADiskRef disk, DADissenterRef refusal, void *ctx)
+{
+    struct mount_answer *answer = ctx;
+
+    (void)disk;
+    answer->refused = (refusal != NULL)
+                          ? (int)DADissenterGetStatus(refusal) : 0;
+    answer->done = 1;
+}
+
+/**
+ * @brief Mount @p devname through the arbitration service.
+ *
+ * Which filesystem it holds and where it should go are the system's to
+ * decide here -- the same decision it makes for a disk plugged in while
+ * nobody is looking -- so nothing is guessed at.  The answer comes back
+ * on a run loop, which is run for a bounded five seconds rather than
+ * until it arrives: a disk that will not answer must not become a shell
+ * that will not answer either.
+ *
+ * @return 0 when it mounted, -1 with errno otherwise.
+ */
+static int
+arbitrate_mount(const char *devname)
+{
+    struct mount_answer answer = { 0, 0 };
+    DASessionRef session;
+    DADiskRef disk;
+    int spin;
+
+    session = DASessionCreate(kCFAllocatorDefault);
+    if (session == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+    disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, devname);
+    if (disk == NULL) {
+        CFRelease(session);
+        errno = ENOENT;
+        return -1;
+    }
+    DASessionScheduleWithRunLoop(session, CFRunLoopGetCurrent(),
+                                 kCFRunLoopDefaultMode);
+    DADiskMount(disk, NULL, kDADiskMountOptionDefault, mounted, &answer);
+    for (spin = 0; spin < 50 && !answer.done; spin++) {
+        (void)CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true);
+    }
+    DASessionUnscheduleFromRunLoop(session, CFRunLoopGetCurrent(),
+                                   kCFRunLoopDefaultMode);
+    CFRelease(disk);
+    CFRelease(session);
+    if (!answer.done) {
+        errno = ETIMEDOUT;
+        return -1;
+    }
+    if (answer.refused != 0) {
+        /* The service's own reasons do not map onto errno, and the one
+         * that matters to a person -- it would not let me -- is the one
+         * worth keeping. */
+        errno = EPERM;
+        return -1;
+    }
+    return 0;
+}
+
+/**
+ * @brief Whether the device behind @p from is one a person may take away.
+ *
+ * Asked of the arbitration service rather than guessed from the mount
+ * point: "not the boot volume and local" calls a second internal volume
+ * removable, and offering Eject on one is offering to break the machine.
+ * A medium that says it is removable is; so is a device that says it is
+ * not internal.  A device that says neither is left alone.
+ *
+ * @param from  the f_mntfromname of a mount, "/dev/disk2s5".
+ */
+static int
+device_removable(const char *from)
+{
+    CFDictionaryRef about;
+    DASessionRef session;
+    DADiskRef disk;
+    CFBooleanRef says;
+    int removable = 0;
+
+    if (strncmp(from, "/dev/", 5) != 0) {
+        return 0;               /* not a device: nothing to take away */
+    }
+    session = DASessionCreate(kCFAllocatorDefault);
+    if (session == NULL) {
+        return 0;
+    }
+    disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, from + 5);
+    if (disk != NULL) {
+        about = DADiskCopyDescription(disk);
+        if (about != NULL) {
+            says = CFDictionaryGetValue(about,
+                                        kDADiskDescriptionMediaRemovableKey);
+            if (says != NULL && CFBooleanGetValue(says)) {
+                removable = 1;
+            }
+            says = CFDictionaryGetValue(about,
+                                        kDADiskDescriptionDeviceInternalKey);
+            if (says != NULL && !CFBooleanGetValue(says)) {
+                removable = 1;
+            }
+            CFRelease(about);
+        }
+        CFRelease(disk);
+    }
+    CFRelease(session);
+    return removable;
+}
+
 int
 tiku_volumes_scan_now(tiku_volumes_t *vs)
 {
@@ -118,7 +243,7 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
         /* The system volume group's siblings -- /System/Volumes/Data and
          * the rest -- are parts of the boot disk wearing mount points,
          * and offering to eject one is offering to break the machine. */
-        v->removable = !v->is_boot && (m->f_flags & MNT_LOCAL) != 0;
+        v->removable = !v->is_boot && device_removable(m->f_mntfromname);
         v->total = (uint64_t)m->f_blocks * (uint64_t)m->f_bsize;
         v->avail = (uint64_t)m->f_bavail * (uint64_t)m->f_bsize;
         vs->n++;
@@ -503,13 +628,119 @@ tiku_volwatch_poll(tiku_volwatch_t *w, tiku_volchange_t *out,
     return n;
 }
 
+/**
+ * @brief Drop any entry whose name another entry's name extends.
+ *
+ * A disk that is carved into partitions is not itself the mountable
+ * thing, and both hosts name the parts by extending the whole's name --
+ * sda and sda1, disk2 and disk2s5.
+ *
+ * @return how many are left.
+ */
+static int
+drop_carved(tiku_partition_t *out, int n)
+{
+    int i, j;
+
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++) {
+            size_t li = strlen(out[i].name);
+
+            if (i != j && strncmp(out[j].name, out[i].name, li) == 0 &&
+                strlen(out[j].name) > li) {
+                out[i] = out[--n];
+                i--;
+                break;
+            }
+        }
+    }
+    return n;
+}
+
+#ifdef __APPLE__
+/** @brief A number out of a disk's description, 0 when it has none. */
+static long long
+disk_number(CFDictionaryRef about, CFStringRef key)
+{
+    CFNumberRef value = CFDictionaryGetValue(about, key);
+    long long held = 0;
+
+    if (value == NULL ||
+        !CFNumberGetValue(value, kCFNumberLongLongType, &held)) {
+        return 0;
+    }
+    return held;
+}
+
+/*
+ * Darwin keeps no table of partitions to read.  The disks are asked
+ * about one at a time through the arbitration service, and which ones
+ * there are to ask about is what /dev has entries for -- the same two
+ * facts the other host reads out of /proc/partitions, by the only route
+ * this one offers.
+ */
+int
+tiku_partitions_scan(tiku_partition_t *out, int max)
+{
+    DASessionRef session;
+    struct dirent *entry;
+    DIR *dev;
+    int n = 0;
+
+    if (out == NULL || max <= 0) {
+        return 0;
+    }
+    session = DASessionCreate(kCFAllocatorDefault);
+    if (session == NULL) {
+        return 0;
+    }
+    dev = opendir("/dev");
+    while (dev != NULL && (entry = readdir(dev)) != NULL && n < max) {
+        CFDictionaryRef about;
+        DADiskRef disk;
+
+        if (strncmp(entry->d_name, "disk", 4) != 0) {
+            continue;
+        }
+        disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session,
+                                       entry->d_name);
+        if (disk == NULL) {
+            continue;
+        }
+        about = DADiskCopyDescription(disk);
+        if (about != NULL) {
+            CFURLRef at = CFDictionaryGetValue(
+                about, kDADiskDescriptionVolumePathKey);
+
+            memset(&out[n], 0, sizeof out[n]);
+            snprintf(out[n].name, sizeof out[n].name, "%s", entry->d_name);
+            out[n].kb = (uint64_t)(disk_number(
+                about, kDADiskDescriptionMediaSizeKey) / 1024);
+            if (at != NULL &&
+                CFURLGetFileSystemRepresentation(
+                    at, true, (UInt8 *)out[n].mount,
+                    (CFIndex)sizeof out[n].mount)) {
+                out[n].mounted = 1;
+            }
+            n++;
+            CFRelease(about);
+        }
+        CFRelease(disk);
+    }
+    if (dev != NULL) {
+        (void)closedir(dev);
+    }
+    CFRelease(session);
+    return drop_carved(out, n);
+}
+#else
 int
 tiku_partitions_scan(tiku_partition_t *out, int max)
 {
     tiku_volumes_t vs;
     FILE *f;
     char line[256];
-    int n = 0, have_vols, i, j;
+    int n = 0, have_vols, i;
 
     if (out == NULL || max <= 0) {
         return 0;
@@ -553,22 +784,10 @@ tiku_partitions_scan(tiku_partition_t *out, int max)
         n++;
     }
     (void)fclose(f);
-    /* A disk that is carved into partitions is not itself the mountable
-     * thing: drop any entry another entry's name extends. */
-    for (i = 0; i < n; i++) {
-        for (j = 0; j < n; j++) {
-            size_t li = strlen(out[i].name);
-
-            if (i != j && strncmp(out[j].name, out[i].name, li) == 0 &&
-                strlen(out[j].name) > li) {
-                out[i] = out[--n];
-                i--;
-                break;
-            }
-        }
-    }
-    return n;
+    return drop_carved(out, n);
 }
+#endif /* __APPLE__ */
+
 
 int
 tiku_volume_mount(const char *devname, char *why, size_t max)
@@ -589,12 +808,10 @@ tiku_volume_mount(const char *devname, char *why, size_t max)
         return 0;
     }
 #else
-    /* Darwin's mount(2) takes a filesystem and a directory, not a device,
-     * and the thing that knows which is which is diskutil.  Rather than
-     * guess at a mount point and a format, say plainly that this is the
-     * system's job -- which is also what happens: a disk attached here is
-     * mounted before a browser ever sees it. */
-    errno = ENOTSUP;
+    (void)dev;
+    if (arbitrate_mount(devname) == 0) {
+        return 0;
+    }
 #endif
     if (why != NULL) {
         snprintf(why, max, (errno == EPERM)

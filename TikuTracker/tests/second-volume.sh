@@ -52,7 +52,19 @@ close)
     # Only what this script made.  /dev/shm belongs to the host and
     # ejecting it would take the machine's own with it.
     case "${2:-}" in
-        "/Volumes/$name") diskutil eject "/Volumes/$name" > /dev/null 2>&1 ;;
+        "/Volumes/$name")
+            diskutil eject "/Volumes/$name" > /dev/null 2>&1
+            # And the device under it.  Ejecting the VOLUME leaves the ram
+            # disk it sat on attached, so a run that opened one and closed
+            # it tidily still left thirty-two megabytes and a /dev entry
+            # behind -- once per run, until the machine is rebooted.
+            hdiutil info 2>/dev/null |
+            awk '/^image-path.*ram:\/\//{want=1; next}
+                 /^\/dev\/disk[0-9]+\t/{if (want) { print $1; want=0 }}' |
+            while read -r device; do
+                hdiutil detach "$device" -force > /dev/null 2>&1
+            done
+            ;;
         *) ;;
     esac
     ;;
