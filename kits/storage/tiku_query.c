@@ -913,6 +913,14 @@ struct tiku_qrun {
      * the current results are new since it. */
     unsigned char      *fresh;
     int                 refreshes;
+    /* A refresh in progress.  The snapshot outlives the turn that began
+     * it, because the re-walk does: a search over a real disk is minutes
+     * of work and the shell has a frame to draw every sixteenth of a
+     * second. */
+    tiku_model_t       *old;
+    unsigned char      *seen;
+    int                 old_count;
+    int                 refreshing;
 };
 
 static void
@@ -1134,33 +1142,31 @@ tiku_query_is_new(const tiku_qrun_t *r, int i)
 }
 
 int
-tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out)
+tiku_query_refresh_begin(tiku_qrun_t *r)
 {
-    tiku_model_t *old;
-    unsigned char *seen;
-    int old_count, i, j;
+    int i;
 
-    if (r == NULL) {
+    if (r == NULL || r->refreshing) {
         return -1;
-    }
-    if (out != NULL) {
-        memset(out, 0, sizeof *out);
     }
     /* Snapshot, then re-walk.  The view is NOT cleared: a result that is
      * still there keeps its row, so nothing flickers and no selection is
-     * lost merely because a value moved. */
-    old = calloc((size_t)(r->count > 0 ? r->count : 1), sizeof *old);
-    seen = calloc((size_t)(r->count > 0 ? r->count : 1), 1);
-    if (old == NULL || seen == NULL) {
-        free(old);
-        free(seen);
+     * lost merely because a value moved.  Which is also why nothing is
+     * shown until the walk finishes -- mid-walk the list is half rebuilt,
+     * and a row that is about to be found again would blink out. */
+    r->old = calloc((size_t)(r->count > 0 ? r->count : 1), sizeof *r->old);
+    r->seen = calloc((size_t)(r->count > 0 ? r->count : 1), 1);
+    if (r->old == NULL || r->seen == NULL) {
+        free(r->old);
+        free(r->seen);
+        r->old = NULL;
+        r->seen = NULL;
         return -1;
     }
-    old_count = r->count;
-    for (i = 0; i < old_count; i++) {
-        old[i] = r->results[i];
+    r->old_count = r->count;
+    for (i = 0; i < r->old_count; i++) {
+        r->old[i] = r->results[i];
     }
-
     r->count = 0;
     r->visited = 0;
     r->head = r->tail = 0;
@@ -1190,12 +1196,27 @@ tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out)
     } else {
         enqueue(r, "/");
     }
-    while (!r->done) {
-        if (tiku_query_step(r, 16) < 0) {
-            break;
-        }
-    }
+    r->refreshing = 1;
+    return 0;
+}
 
+int
+tiku_query_refreshing(const tiku_qrun_t *r)
+{
+    return (r != NULL) ? r->refreshing : 0;
+}
+
+int
+tiku_query_refresh_end(tiku_qrun_t *r, tiku_qdiff_t *out)
+{
+    int i, j;
+
+    if (r == NULL || !r->refreshing) {
+        return -1;
+    }
+    if (out != NULL) {
+        memset(out, 0, sizeof *out);
+    }
     if (r->fresh != NULL) {
         free(r->fresh);
     }
@@ -1208,9 +1229,10 @@ tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out)
     for (i = 0; i < r->count; i++) {
         int survived = 0;
 
-        for (j = 0; j < old_count; j++) {
-            if (!seen[j] && strcmp(old[j].path, r->results[i].path) == 0) {
-                seen[j] = 1;
+        for (j = 0; j < r->old_count; j++) {
+            if (!r->seen[j] &&
+                strcmp(r->old[j].path, r->results[i].path) == 0) {
+                r->seen[j] = 1;
                 survived = 1;
                 break;
             }
@@ -1224,10 +1246,10 @@ tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out)
             }
         }
     }
-    for (j = 0; j < old_count; j++) {
+    for (j = 0; j < r->old_count; j++) {
         tiku_model_t probe;
 
-        if (seen[j]) {
+        if (r->seen[j]) {
             continue;
         }
         if (out != NULL) {
@@ -1236,15 +1258,34 @@ tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out)
              * still there at all.  Afterwards the two cases are
              * indistinguishable. */
             if (r->backend->ops->stat == NULL ||
-                r->backend->ops->stat(r->backend, old[j].path, &probe) != 0) {
+                r->backend->ops->stat(r->backend, r->old[j].path,
+                                      &probe) != 0) {
                 out->vanished++;
             }
         }
     }
     r->refreshes++;
-    free(old);
-    free(seen);
+    free(r->old);
+    free(r->seen);
+    r->old = NULL;
+    r->seen = NULL;
+    r->old_count = 0;
+    r->refreshing = 0;
     return 0;
+}
+
+int
+tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out)
+{
+    if (tiku_query_refresh_begin(r) != 0) {
+        return -1;
+    }
+    while (!r->done) {
+        if (tiku_query_step(r, 16) < 0) {
+            break;
+        }
+    }
+    return tiku_query_refresh_end(r, out);
 }
 
 int

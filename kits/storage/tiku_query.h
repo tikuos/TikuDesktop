@@ -291,6 +291,31 @@ typedef struct {
  */
 int tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out);
 
+/**
+ * @brief Begin a refresh without walking it: snapshot, then restart.
+ *
+ * The three calls below are tiku_query_refresh() taken apart, for a
+ * caller with a frame to draw.  A re-walk of a real disk is minutes of
+ * work, so the shell begins one, steps it with tiku_query_step() from
+ * its turn like any other stepped work, and ends it when the walk says
+ * it is done.  The snapshot lives on the run in between.
+ *
+ * Nothing is shown until the end: mid-walk the result list is half
+ * rebuilt, and a row about to be found again would blink out.
+ *
+ * @return 0 when a refresh is under way, -1 when one already was.
+ */
+int tiku_query_refresh_begin(tiku_qrun_t *r);
+
+/** @brief Whether a refresh has begun and not yet been ended. */
+int tiku_query_refreshing(const tiku_qrun_t *r);
+
+/**
+ * @brief End it, once tiku_query_done() says the walk finished.
+ * @return 0, or -1 when no refresh was under way.
+ */
+int tiku_query_refresh_end(tiku_qrun_t *r, tiku_qdiff_t *out);
+
 /** @brief Whether result @p i arrived in the most recent refresh. */
 int tiku_query_is_new(const tiku_qrun_t *r, int i);
 

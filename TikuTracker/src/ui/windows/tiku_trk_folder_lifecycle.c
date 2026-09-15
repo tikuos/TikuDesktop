@@ -345,30 +345,83 @@ tiku_trk_folder_lifecycle_open_results(
     return folder;
 }
 
+/** @brief Put what the run has found into the window. */
+static void
+show_results(tiku_trk_folder_window_t *folder)
+{
+    tiku_model_t *results;
+    int i, count = tiku_query_count(folder->run);
+
+    results = calloc((size_t)(count > 0 ? count : 1), sizeof *results);
+    if (results == NULL) {
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        results[i] = *tiku_query_at(folder->run, i);
+    }
+    (void)tiku_trk_poseview_apply_results(folder->view, results, count,
+                                          tiku_trk_now());
+    free(results);
+}
+
 int
 tiku_trk_folder_lifecycle_refresh_results(
     tiku_trk_folder_lifecycle_t *controller,
     tiku_trk_folder_window_t *folder)
 {
-    tiku_qdiff_t difference;
-    tiku_model_t *results;
-    int i, count;
-
     if (controller == NULL || folder == NULL || folder->run == NULL ||
-        !folder->live ||
-        tiku_query_refresh(folder->run, &difference) != 0) {
+        !folder->live) {
         return 0;
     }
-    count = tiku_query_count(folder->run);
-    results = calloc((size_t)(count > 0 ? count : 1), sizeof *results);
-    if (results != NULL) {
-        for (i = 0; i < count; i++) {
-            results[i] = *tiku_query_at(folder->run, i);
-        }
-        (void)tiku_trk_poseview_apply_results(folder->view, results, count,
-                                              tiku_trk_now());
-        free(results);
+    /* Asked for, not done here.  What a notice knows is that something
+     * changed; the re-walk it implies is minutes of work on a real disk,
+     * and this is the thread with a frame to draw.  The turn takes it
+     * from here (tiku_trk_folder_lifecycle_step_results). */
+    if (tiku_query_refreshing(folder->run)) {
+        return 0;               /* one is already under way */
     }
+    return tiku_query_refresh_begin(folder->run) == 0;
+}
+
+int
+tiku_trk_folder_lifecycle_step_results(
+    tiku_trk_folder_lifecycle_t *controller,
+    tiku_trk_folder_window_t *folder, int budget)
+{
+    tiku_qdiff_t difference;
+    int refreshing;
+
+    if (controller == NULL || folder == NULL || folder->run == NULL ||
+        !folder->live || tiku_query_done(folder->run)) {
+        return 0;
+    }
+    refreshing = tiku_query_refreshing(folder->run);
+    if (tiku_query_step(folder->run, budget) < 0) {
+        return 0;
+    }
+    if (!refreshing) {
+        /* The FIRST walk, where a row that has been found is a row worth
+         * showing: a search over a disk takes long enough that waiting
+         * for all of it would be waiting for nothing to happen.  The
+         * line under it counts up, and says "live" once there is nothing
+         * left to look at -- so a person can tell a search still running
+         * from one that found this much and stopped. */
+        show_results(folder);
+        /* The status line is not written here, and deliberately.  There
+         * is one of it for the whole desktop, the walk takes thousands of
+         * turns, and a person who has gone on to do something else would
+         * watch this scribble over whatever they are being told.  The
+         * window's own count bar is where a search's progress shows. */
+        *controller->dirty = 1;
+        return 1;
+    }
+    if (!tiku_query_done(folder->run)) {
+        return 0;               /* a re-walk shows nothing until it ends */
+    }
+    if (tiku_query_refresh_end(folder->run, &difference) != 0) {
+        return 0;
+    }
+    show_results(folder);
     if (difference.vanished > 0) {
         snprintf(controller->status, controller->status_size,
                  "%d gone, %d no longer match, %d new", difference.vanished,
@@ -380,3 +433,4 @@ tiku_trk_folder_lifecycle_refresh_results(
     *controller->dirty = 1;
     return 1;
 }
+

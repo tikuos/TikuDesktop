@@ -822,11 +822,10 @@ panel_search(void *context, tiku_trk_find_t *panel)
     if (run == NULL) {
         return 0;
     }
-    while (!tiku_query_done(run)) {
-        if (tiku_query_step(run, 16) < 0) {
-            break;
-        }
-    }
+    /* Not walked here.  A search whose scope is a volume is minutes of
+     * work on a real disk, and this is the thread that draws: the window
+     * opens on a run that has found nothing yet and fills as the turn
+     * steps it (tiku_trk_folder_lifecycle_step_results). */
     (void)tiku_trk_find_scope_label(panel, scope, sizeof scope);
     replacing = panel->loaded_kind == TIKU_QREC_QUERY &&
                 panel->loaded_name[0] != '\0';
@@ -877,10 +876,12 @@ panel_search(void *context, tiku_trk_find_t *panel)
 
         if (fl != NULL) {
             snprintf(fl->qname, sizeof fl->qname, "%s", app->last_query);
+            snprintf(fl->qscope, sizeof fl->qscope, "%s", scope);
+            /* What is true at this instant: nothing has been looked at
+             * yet.  The turn writes this line again as the walk finds
+             * things and once more when it ends. */
             snprintf(app->status, sizeof app->status,
-                     "%d result%s in %.30s -- live",
-                     tiku_query_count(fl->run),
-                     (tiku_query_count(fl->run) == 1) ? "" : "s", scope);
+                     "searching %.30s -- 0 results so far", scope);
         } else {
             return 0;
         }

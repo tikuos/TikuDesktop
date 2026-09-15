@@ -362,6 +362,21 @@ desktop_idle_work(desktop_t *app)
         /* One picture at a time, decoded on a worker: the window keeps
      * answering while a folder of images fills in (IV-031). */
     (void)desktop_wire_thumb(app);
+    {
+        /* A live query window's walk, a slice per turn.  A search whose
+         * scope is a volume is minutes of work on a real disk; done here
+         * it costs the turn sixteen directories and the window fills as
+         * it goes, rather than the shell stopping until the disk has been
+         * read (Q-045). */
+        int k;
+
+        for (k = 0; k < app->folder_count; k++) {
+            if (tiku_trk_folder_lifecycle_step_results(
+                    &app->folder_lifecycle, &app->folders[k], 16)) {
+                app->dirty = 1;
+            }
+        }
+    }
     (void)tiku_trk_band_controller_pulse(&app->band_controller,
                                          tiku_trk_now());
     (void)tiku_trk_drag_target_pulse(&app->drag_target,

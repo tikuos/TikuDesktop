@@ -73,6 +73,20 @@ int tiku_trk_folder_lifecycle_refresh_results(
     tiku_trk_folder_window_t *folder);
 
 /**
+ * @brief Give a live query window its turn: the walk, or the re-walk.
+ *
+ * Stepped by @p budget directories, so a search over a real disk costs
+ * the turn a slice rather than all of it.  The first walk shows what it
+ * has found as it finds it; a re-walk shows nothing until it ends, so a
+ * row about to be found again does not blink out.
+ *
+ * @return non-zero when what the window shows has changed.
+ */
+int tiku_trk_folder_lifecycle_step_results(
+    tiku_trk_folder_lifecycle_t *controller,
+    tiku_trk_folder_window_t *folder, int budget);
+
+/**
  * @brief The title a folder window shows for @p path (CW-016).
  *
  * The whole path when ShowFullPathInTitleBar is on, the folder's own

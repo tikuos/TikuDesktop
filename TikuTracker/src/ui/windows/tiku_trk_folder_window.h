@@ -121,6 +121,10 @@ struct tiku_trk_folder_window {
     char                       count_text[256];
     /* The saved query it shows, by name; "" for a folder. */
     char                       qname[TIKU_NAME_MAX];
+    /* Where its search looks, in the words the panel used.  Kept with the
+     * window because the status line is written again as the walk goes
+     * and finishes, long after the panel that started it has closed. */
+    char                       qscope[64];
     /* The picture behind it, decoded once and kept with the window that
      * shows it: re-reading the file every frame is a decode per frame. */
     tiku_image_t           bg_image;       /* the decoded picture */
