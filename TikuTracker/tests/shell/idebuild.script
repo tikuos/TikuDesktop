@@ -39,12 +39,9 @@ wait 200
 note the compiler's complaint arrives as a message, and it is about
 note somewhere: the file it named and the line in it
 expect-title Messages
-note the compiler names the function first and the place second, so the
-note first row is about nowhere and the one under it is the complaint
-key Down
-wait 8
-key Down
-wait 10
+note the messages open on the first row that names a place, which is
+note never the same row twice: one compiler says which function it was
+note in before the complaint, another counts the errors up after it
 click 71 8
 wait 8
 expect-menu Go to line 4

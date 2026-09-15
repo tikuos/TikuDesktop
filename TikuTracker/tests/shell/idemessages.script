@@ -58,8 +58,11 @@ note the messages arrive in a window of their own, which was not there
 note until there was something to put in it
 expect-title Messages
 note what the program said is a row, and it is about nowhere: there is
-note nothing to go to, and the window says so rather than pretending
-key Down
+note nothing to go to, and the window says so rather than pretending.
+note Home rather than a count of Downs: the window opens already standing
+note on the first row that names a place, and which row that is depends
+note on what ran
+key Home
 wait 10
 click 71 8
 wait 8

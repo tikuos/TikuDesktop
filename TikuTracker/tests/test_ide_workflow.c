@@ -16,8 +16,15 @@ static int current(void *ctx, char *out, size_t max)
 { (void)ctx; return snprintf(out, max, "%s", selected); }
 static int names(void *ctx, char *out, size_t max)
 { (void)ctx; return snprintf(out, max, "board-a\nboard-b\n"); }
+static char last_menu_item[128];
 static int menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
-{ (void)ctx; (void)id; (void)set; return 0; }
+{
+    (void)ctx; (void)id;
+    if (set && set->nmenu > 0 && set->menu[0].nitem > 0)
+        snprintf(last_menu_item, sizeof last_menu_item, "%s",
+                 set->menu[0].item[0].label);
+    return 0;
+}
 static int frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
     (void)ctx; (void)px; (void)w; (void)h;
@@ -424,6 +431,68 @@ static void test_console_errors(const tiku_app_services_t *services)
     ide_stop(st);
 }
 
+/*
+ * What a compiler says, read the same way whichever one said it.
+ *
+ * The two the tree is built with lay a complaint out differently: gcc
+ * names the function before saying anything is wrong, clang counts the
+ * errors up after, and both quote the source underneath.  So the error
+ * is never the same ROW twice, and a window that opened on a row number
+ * would open on the function name under one compiler and the complaint
+ * under the other.  It opens on the first row that NAMES A PLACE, which
+ * is the same row under both -- proved here against the real output of
+ * each, so neither has to be installed to prove the other's.
+ */
+static void test_diagnostics(const tiku_app_services_t *services)
+{
+    static const char *const GCC[] = {
+        "bad.c: In function 'main':",
+        "bad.c:4:12: error: 'nope' undeclared (first use in this function)",
+        "    4 |     return nope;",
+        "      |            ^~~~",
+        "bad.c:4:12: note: each undeclared identifier is reported only once",
+        NULL
+    };
+    static const char *const CLANG[] = {
+        "bad.c:4:12: error: use of undeclared identifier 'nope'",
+        "    4 |     return nope;",
+        "      |            ^~~~",
+        "1 error generated.",
+        NULL
+    };
+    static const char *const *const SAID[] = { GCC, CLANG };
+    static const char *const WHO[] = { "gcc", "clang" };
+
+    for (int which = 0; which < 2; which++) {
+        ide_t *st = calloc(1, sizeof *st);
+        int i;
+
+        assert(st);
+        st->services = services;
+        st->proj_id = 1;
+        snprintf(st->child_file, sizeof st->child_file, "bad.c");
+        for (i = 0; SAID[which][i] != NULL; i++)
+            message_take(st, SAID[which][i]);
+        /* The quoted source and the caret are not rows: a person cannot
+         * act on them and the complaint above already names the line. */
+        for (i = 0; i < st->nmsg; i++)
+            assert(!strstr(st->msg[i].text, "|"));
+        assert(st->nmsg == (which == 0 ? 3 : 2));
+        last_menu_item[0] = '\0';
+        messages_show(st);
+        assert(st->msg_surface != NULL);
+        /* Not the first row under either compiler, and the same one. */
+        assert(tiku_list_chosen(&st->msg_list) == (which == 0 ? 1 : 0));
+        assert(!strcmp(last_menu_item, "Go to line 4"));
+        (void)WHO[which];
+        /* A second look keeps what the person was reading. */
+        tiku_list_select_only(&st->msg_list, st->nmsg - 1);
+        messages_show(st);
+        assert(tiku_list_chosen(&st->msg_list) == st->nmsg - 1);
+        ide_stop(st);
+    }
+}
+
 static void test_splash_license(void)
 {
     for (int size = 12; size <= 16; size += 4) {
@@ -540,6 +609,7 @@ int main(void)
     test_ui(st, dir);
     test_reopen(st, dir);
     test_console_errors(&services);
+    test_diagnostics(&services);
     test_splash_license();
     test_launch_document(&services, dir);
     assert(rmdir(dir) == 0);

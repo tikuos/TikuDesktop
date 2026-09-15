@@ -2673,6 +2673,37 @@ message_take(ide_t *st, const char *line)
         }
         return;
     }
+    /*
+     * Under each complaint a compiler quotes the source and points at
+     * it, as a numbered gutter and a row of carets:
+     *
+     *     bad.c:4:12: error: use of undeclared identifier 'nope'
+     *         4 |     return nope;
+     *           |            ^~~~
+     *
+     * Both of them do, in the same shape.  Neither is a thing SAID --
+     * they are the line the row above already names, and following that
+     * row opens the file there and shows it in full.  As rows they are
+     * furniture a person can select and get nowhere from, so they are
+     * folded away and the complaint stands alone.  Only for a compiler:
+     * a BASIC program printing a bar of its own keeps it.
+     */
+    if (!st->child_numbered) {
+        const char *p = line;
+
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        while (*p >= '0' && *p <= '9') {
+            p++;
+        }
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        if (*p == '|' && p != line) {
+            return;
+        }
+    }
     m = &st->msg[st->nmsg++];
     memset(m, 0, sizeof *m);
     snprintf(m->text, sizeof m->text, "%s", line);
@@ -3425,6 +3456,27 @@ messages_show(ide_t *st)
         return;
     }
     (void)tiku_list_set_count(&st->msg_list, st->nmsg);
+    /*
+     * Opened on the first row that names a place.  What a person wants
+     * from a build that failed is the first error, ready to be gone to,
+     * and it is never the first ROW: one compiler says which function it
+     * was in before saying anything went wrong, another counts up the
+     * errors after.  Choosing by what a row IS rather than where it sits
+     * is also the only way to say this that holds for both.
+     *
+     * Only when nothing is chosen, so a second look at the same list
+     * keeps whatever the person was reading.
+     */
+    if (tiku_list_chosen(&st->msg_list) < 0) {
+        int i;
+
+        for (i = 0; i < st->nmsg; i++) {
+            if (st->msg[i].line > 0) {
+                tiku_list_select_only(&st->msg_list, i);
+                break;
+            }
+        }
+    }
     messages_paint(st);
     messages_publish(st);
 }
