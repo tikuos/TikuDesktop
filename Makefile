@@ -34,6 +34,7 @@ include mk/toolchain.mk
 include mk/kits.mk
 include mk/tracker.mk
 include mk/apps.mk
+include mk/bundle.mk
 
 # Said outright: the default goal is the first target with a recipe, and a
 # housekeeping rule above `all` would quietly become what a bare `make`
