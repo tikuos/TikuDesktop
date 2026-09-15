@@ -59,16 +59,21 @@ lines they are today.
 | **3 ✓** | Sound | `kits/media/tiku_sound_coreaudio.c`: three buffers on an audio queue, the twin of the Pulse backend behind the same five calls, and `mk/kits.mk` compiles one of the two -- neither names a platform because neither is built on the other's host.  `tiku_sound_pulse_backend()` became `tiku_sound_host_backend()`, since four callers were naming a host to ask for sound.  The queue is primed with one buffer of silence before it is started: a queue started empty waits for an IO cycle that never comes, which is a hang rather than an error.  The framework is named once in `mk/toolchain.mk` with `-dead_strip_dylibs`, so `tiku-desk-probe` still references nothing.  `sounds.script` keeps the seven moments that need no volume; `soundbeep.script` takes the alert's beep, which was reached through an unmount refusal and wanted a volume this user may not unmount | one day | the moments pass on both hosts; the Linux build's `libtiku_media.a` has the members it had.  **Not heard from here**: this shell cannot start audio output at all -- `afplay` hangs on a system sound the same way -- so the backend is proven to build, open and take chunks, and `./build/system/tiku-sound-gallery` from a terminal is what proves the speaker |
 | **4 ✓** | Disks and the way out | Force Quit: `tiku_sys_process_pin()`/`_kill()` join the seam, so the application kit's last two `#ifdef`s go.  Linux keeps pidfd; macOS pins with a kqueue on `NOTE_EXIT` for the descriptor's shape and re-checks the process's START TIME immediately before the signal -- a pid is handed out again, never with the same microsecond.  `posix_fallocate` was the other `#ifdef` and becomes `tiku_sys_reserve()`.  Disks: `tiku_partitions_scan()` asks DiskArbitration about each `/dev/disk*`, so the Mount menu has content where it was empty; `removable` is asked of the medium rather than guessed from the mount point, because "not the boot volume and local" calls a second internal volume removable and offering Eject on one is offering to break the machine; `tiku_volume_mount()` mounts through the same service, on a run loop bounded at five seconds so a disk that will not answer does not become a shell that will not answer | one to two days | `test_forcequit` passes, which it had not since the port began, and `forcequit.script` goes 10/13 to 13/13; a ram disk is listed, mounted and unmounted through the kit, and reads removable where the boot volume does not |
 | **5 ✓** | Search that ends | Not what it looked like.  The engine was built to be stepped -- `tiku_query_step(r, budget)`, "advance the walk by at most @p budget directories" -- and **all three of its callers drove it to completion in a `while (!done)` loop on the turn**: the Find panel's search, the quick find, and `tiku_query_refresh()` inside the kit.  On a CI rootfs that is invisible; on a real disk the shell stops until the disk has been read.  `tiku_query_refresh()` is split into `_begin`/step/`_end` so the snapshot outlives the turn that took it, `tiku_trk_folder_lifecycle_step_results()` gives a live window sixteen directories a turn, and the desktop's idle work drives it beside the other stepped work.  A first walk shows rows as it finds them; a re-walk shows nothing until it ends, so a row about to be found again does not blink out.  The status line is left alone -- there is one of it for the whole desktop and a walk is thousands of turns | one day | `query`, `qtemplate`, `qtype` and `querydrop` finish in four to six seconds each, where two of them had to be killed; the whole script suite runs with no watchdog |
-| **6** | A person at the desk | With XQuartz: `tiku_x11.c` reads the Retina scale from `Xft.dpi`/the screen's millimetres so the desktop is not drawn at half size; Command mapped to the desktop's command modifier where Control is today, from a table in one place (`tiku_event.h`'s modifier names), so the Linux keys stay as they are; the X11 clipboard proved against XQuartz's pasteboard bridge; the serial rates above 230400 set with `IOSSIOSPEED` when `tcsetattr` refuses them (`tiku_tx.c`, behind the seam); the IDE's message parser reads clang's diagnostic lines (`file:line:col: error:` is shared; the "note:" and caret lines differ) and `idebuild.script` runs with `CC=clang` on Linux too, so the parser is proved on both; `tiku-desk-probe` and the board link tried against a real board on a Mac, where a CDC device that has not answered EP0 blocks the open for thirty seconds and the desktop must not wait on it in the turn (open the port off the turn, as the utility jobs already are) | two days | `./build/TikuDesktop` on a Retina display at the right size, Cmd-key menus working, paste from another Mac application, a board connected over USB with its panel live; the Linux desktop's keys, clipboard and serial path unchanged, proved by the scripts |
+| **6 ~** | A person at the desk | With XQuartz: `tiku_x11.c` reads the Retina scale from `Xft.dpi`/the screen's millimetres so the desktop is not drawn at half size; Command mapped to the desktop's command modifier where Control is today, from a table in one place (`tiku_event.h`'s modifier names), so the Linux keys stay as they are; the X11 clipboard proved against XQuartz's pasteboard bridge; the serial rates above 230400 set with `IOSSIOSPEED` when `tcsetattr` refuses them (`tiku_tx.c`, behind the seam); the IDE's message parser reads clang's diagnostic lines (`file:line:col: error:` is shared; the "note:" and caret lines differ) and `idebuild.script` runs with `CC=clang` on Linux too, so the parser is proved on both; `tiku-desk-probe` and the board link tried against a real board on a Mac, where a CDC device that has not answered EP0 blocks the open for thirty seconds and the desktop must not wait on it in the turn (open the port off the turn, as the utility jobs already are) | two days | `./build/TikuDesktop` on a Retina display at the right size, Cmd-key menus working, paste from another Mac application, a board connected over USB with its panel live; the Linux desktop's keys, clipboard and serial path unchanged, proved by the scripts |
 | **7** | The bundle | *Optional.*  `make app` writes `build/TikuDesktop.app` (Info.plist, the mark as `.icns` rendered from the same drawing, the binary and `apps/` inside `Contents/Resources`, `TIKU_APPS` set by the launcher); `LSUIElement` off so it has a Dock tile; codesign ad hoc so Gatekeeper opens it on the machine that built it | half a day | double-clicking the bundle opens the desktop with its applications found |
 | **8** | Native, without XQuartz | *A decision, not a default (§3).*  `kits/interface/tiku_cocoa.m`: the same `tiku_host` contract `tiku_x11.c` fulfils today and the wasm build replaces -- one window, a backing `CGImage` blitted per present, events translated to `tiku_event_t`, the pasteboard for the clipboard, `NSTextInputClient` for the input method; chosen by `TIKU_HOST=cocoa` in the Makefile, X11 remaining the default on both hosts until it is proved; the scripts do not know which host backend drew | three to four days | every script that passes under X11 passes under Cocoa; a Mac with no XQuartz runs the desktop |
+
+Milestone 6 is built as far as a machine with no X server can take it:
+everything that is about the BOARD and the COMPILER is done and proved,
+and everything that is about a window in front of a person is waiting on
+XQuartz, which is a system component and the owner's to install.
 
 Order: 0 then 1 (nothing else can be proved until the harness tells the
 truth on both hosts), then 2, 3, 4 in any order, 5 whenever (it is not a
 macOS milestone but macOS is where it bites), 6 when a person needs it,
 7 and 8 on decision.  Six to eight days for 0 through 6.
 
-### Where it stands (2026-09-14)
+### Where it stands (2026-09-15)
 
 Milestones 0 to 5 are built.  On this machine -- Apple Silicon, the
 command-line tools, Homebrew's `libx11`, no X server:
@@ -83,9 +88,8 @@ command-line tools, Homebrew's `libx11`, no X server:
 
 What is left is waiting on a milestone, not on a mistake:
 
-- `idebuild.script`, `idec.script` -- the IDE reads gcc's diagnostics,
-  not clang's (milestone 6).
-- Nothing else.  What is left of milestone 5 is a decision rather than a
+- Nothing in the suite.  `idebuild.script` and `idec.script` were the
+  last two and milestone 6 took them.  What is left of milestone 5 is a decision rather than a
   defect: a new search's scope is `everywhere` (`tiku_trk_find_init`),
   which is what Tracker's Find panel defaulted to, so the walk is the
   whole disk even though it no longer blocks.  Narrowing that default
@@ -155,6 +159,64 @@ seam's own test found in the seam.  The last is a feature nobody calls.
    autoscroll now counts turns under a script, exactly as the spring and
    the band do, and the script passes every time.
 
+### What milestone 6 did, and what it is waiting on
+
+Two halves, and only one of them needs a screen.
+
+**The compiler.**  The IDE read gcc's diagnostics and no others, and the
+fix was not a second parser.  The head both compilers share --
+`file:line:col:` -- was already parsed correctly; what broke was
+everything around it.  Under each complaint both quote the source and
+point at it, as a numbered gutter and a row of carets, and the IDE was
+listing those as MESSAGES: four rows for one error, three of them things
+a person cannot act on.  They are folded away now.  And the two scripts
+reached the error by counting `Down` presses from an unselected list,
+which cannot work on both hosts at once: gcc names the function before
+saying anything is wrong and clang counts the errors up after, so the
+error's row NUMBER differs by compiler.  The messages window now opens
+on the first row that NAMES A PLACE -- a failed build opens on its first
+error -- which is the same row under both and needs no count.  Proved in
+`test_ide_workflow` against the real output of each, so neither compiler
+has to be installed to prove the other's, and the row a script lands on
+is no longer a fact about the machine that built it.
+
+**The board.**  Two things, both behind the seam, and one of them was
+worse than the plan knew.
+
+`tiku_sys_serial_speed()` sets a rate the ordinary call could not.  But
+the plan said "when `tcsetattr` refuses them", and refusing is the
+harmless case -- the call reports it.  The other case is a driver that
+TAKES the rate and runs at something else, which nothing reports and
+which looks exactly like a board that is not answering.  So both places
+that configure a port now set the rate and READ IT BACK, and go to the
+driver when the two disagree; `tiku_conduct.c` was discarding
+`tcsetattr`'s result entirely and is the second of them.  Proved against
+this machine's own serial driver: 460800 and 921600 are taken the
+ordinary way, 3000000 is refused by `tcsetattr` and set by the seam.
+
+`tiku_sys_serial_ports()` is the one the plan did not have.  Listing
+ports went through `/dev/serial/by-id`, which is a directory **udev
+writes** -- so on macOS the scan returned -1 always and **no board could
+ever be listed**, through any of its six callers.  The Darwin half walks
+`/dev` for the `cu.` nodes, and the two rules in it are the whole of it:
+`cu` and not `tty`, because tty blocks until carrier is asserted and a
+board that is only listening never asserts it; and named by what driver
+claimed the device, not "everything unfamiliar", because the other way
+round offers the Bluetooth port as a board and opening that starts a
+pairing nobody asked for.  On this machine it correctly lists none.
+
+And one the plan asked for that was already true: the desktop opens a
+port on a worker (`probe_run`), not on the turn, so the thirty seconds a
+CDC device that has not answered EP0 costs is thirty seconds of a
+spinner and not of a frozen desktop.  Checked, not assumed.
+
+**Waiting on XQuartz**, which is a system component and wants a
+password this port does not have: the Retina scale from `Xft.dpi`, the
+Command-key table (which is also decision 2 below), the clipboard
+against XQuartz's pasteboard bridge, and a real board's panel live on a
+Mac.  None of the four can be proved without a server, and none of them
+is reached by anything above.
+
 ### The Linux contract
 
 What "unchanged" means, so it can be checked and not merely intended:
@@ -184,8 +246,16 @@ What "unchanged" means, so it can be checked and not merely intended:
    `test_remote` adopts the listener on a pair fed from the pty by a
    shovel thread, which is a test modelling two processes rather than
    one; and the drag target's autoscroll hold counts turns when a script
-   drives it, which is a path only `-script` ever takes.  Nothing else
-   on Linux is reached by any of it.
+   drives it, which is a path only `-script` ever takes.  From milestone
+   6, three that a Linux user sees and one they do not: the IDE stops
+   listing the quoted source and the caret under a complaint as messages
+   of their own, and a failed build's messages open on its first error
+   rather than on nothing -- both are gcc's output read better, not
+   clang's read at all -- and `tiku_conduct.c` now notices when a line
+   did not take the rate it was given, where it had discarded the
+   answer.  The one they do not see is `tiku_tx_scan_serial()` becoming
+   a seam call whose Linux half is the `/dev/serial/by-id` walk moved
+   whole, under rule 2.  Nothing else on Linux is reached by any of it.
 
 ## 3. Decisions that are yours
 
