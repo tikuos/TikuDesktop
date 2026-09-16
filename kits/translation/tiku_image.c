@@ -18,15 +18,31 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 int
 tiku_image_is_image(const char *path)
 {
     unsigned char magic[8];
+    struct stat st;
     FILE *f;
     size_t n;
 
     if (path == NULL) {
+        return 0;
+    }
+    /* A REGULAR FILE first, and only then its contents.  Asked of the
+     * path rather than of the open file because opening is itself the
+     * risk: a device answers an open and then never answers the read,
+     * and a pipe with nobody at the far end does not answer the open
+     * at all.  Either one stops the turn that asked, which is the whole
+     * desktop, for as long as the thing stays quiet -- forever, in the
+     * case that found this: /dev/console belongs to whoever is logged
+     * in on a Mac and is theirs to read, so the open succeeded and the
+     * read waited for somebody to type.  Linux keeps that node to root
+     * and the open simply failed, which is why it never showed there.
+     * A picture is a regular file on every host. */
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
         return 0;
     }
     /* By CONTENT, not by name.  A file called .txt that holds a PNG is a
