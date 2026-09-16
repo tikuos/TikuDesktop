@@ -246,9 +246,64 @@ all -- no Compose, no dead keys.  The host already falls back to
 now say they are skipping and why.  Whether XQuartz's own libX11 does
 better is the one thing here still untested.
 
-**Still wanting hardware**, not a password: a board's panel live on a
-Mac.  The port opens off the turn and the ports list correctly; what is
-left is plugging one in.
+**The board, plugged in.**  An Apollo510 over USB, and milestone 6 is
+finished: `tiku_sys_serial_ports()` lists exactly it and neither of the
+two ports this machine always has; `tiku-desk-probe` reaches it in
+eight tenths of a second, not the thirty a device that has not answered
+EP0 costs; the desktop mounts it and the Deskbar shows its uptime, its
+boot count and its free memory, with windows open on its `dev/` and
+`mem/`.  Both board-marked scripts -- `devicerow` and `namespace` --
+pass twice each, once offline and once against the hardware.
+
+It did not work the first time, and what stopped it is worth keeping.
+
+**A folder window could hang the desktop forever**, on any host, and a
+Mac is where it finally did.  `tiku_image_is_image()` decides whether a
+file is a picture by reading its first eight bytes, and it read them
+from anything it could open.  A device answers the open and then never
+answers the read; a pipe with nobody at the far end does not answer the
+open at all.  Either stops the turn that asked, which is the whole
+desktop, for as long as the thing stays quiet.  What found it was
+`/dev/console`, which on a Mac belongs to whoever is logged in and is
+theirs to read -- so the open succeeded and the read waited for
+somebody to type.  Linux keeps that node to root, the open fails, and
+the sniff is harmless, which is why it had never shown there.  A
+picture is a regular file on every host, so that is asked first, of the
+path rather than of the open file, because opening is itself the risk.
+
+**And a board's path is not a host's path.**  The sniff that hung was
+looking at the HOST's `/dev/console` because the BOARD has a node of
+that name: run with `-d` the board's namespace is the root, so its
+paths are board-absolute, and this one question took a board path
+straight to `fopen()`.  The hang is gone -- a device is not a regular
+file -- but the confusion under it is not: a board node whose path
+matches a host file would still have that host file opened and its
+first bytes read.  The harm is small (eight bytes, to answer one
+question) and the fix is not: "does this node want a thumbnail" should
+be answered by reading the node THROUGH ITS BACKEND, which is what
+every other question about a node already does.  `tiku_thumb_wanted()`
+takes a path where it wants a model.  Left as found and written down.
+
+**And the suite is not hermetic while a board is plugged in.**  Two
+lanes -- `repaint` and `slide` -- assert exactly how many rows a change
+repaints, which is the whole point of them (PVL-075: a change to one
+row paints one row).  With a board on the bus the desktop's own boot
+discovery lists it, that lands a candidate, and the frame it causes is
+one more paint than the script allows: `expect-drawn 3` sees 4.  Proved
+rather than guessed -- with the scan made to return nothing, both pass;
+with the board visible, both fail at every commit tried, including the
+one that had scored 1430 of 1430 an hour before.
+
+So `make test` currently depends on what is plugged into the machine,
+which is the one thing a suite must not do.  The scripts that WANT a
+board say so (`# board: yes`) and are given one through `TRK_PORT`; the
+rest should be a closed world.  Three ways to make them one, and it is
+a decision rather than a defect to be quietly patched: suppress boot
+discovery when a script drives and no port was named; let the harness
+point the seam at a directory it controls, the way it already controls
+HOME and /tmp; or stop asserting exact paint counts, which throws away
+what those two lanes exist to prove.  The first is the smallest and the
+third is the worst.
 
 ### What four flaky tests actually were
 
