@@ -305,6 +305,29 @@ HOME and /tmp; or stop asserting exact paint counts, which throws away
 what those two lanes exist to prove.  The first is the smallest and the
 third is the worst.
 
+### On the screen, at last
+
+The done-when for milestone 6 said `./build/TikuDesktop` on a Retina
+display at the right size, with the Command key working.  It is, as of
+2026-09-17 on the iMac, through Homebrew's `xorg-server` rather than the
+XQuartz cask: `X11.bin` and `quartz-wm` up on `:0`, "TikuOS Desktop"
+2240x1126 viewable under the menu bar.  The server reports the screen
+in LOGICAL pixels (2240x1230 over 593x325 mm, 95.9 dpi), so the scale
+fallback answers 1 and macOS does the doubling -- which is the right
+result, and not one that could have been guessed.  The live modifier
+map carries Meta on Mod2 and nothing on Mod1, so the resolver yields
+Control|Mod2: Command gives commands, Option does not.
+
+What it took is in the README, because the formula's caveat omits all
+three steps: `brew services` refuses xinit's plists (both are handed to
+launchd by hand, the privileged one as root), and `bin/Xquartz` is a
+stub that opens `libexec/X11.app` by bundle id -- LaunchServices has
+never indexed a bundle inside the Cellar, so the stub exits 10 and
+every client hangs on the socket until `lsregister -f`.  The bundle
+launcher grew two guards on the way: a socket file outlives its agent,
+and a loaded agent without the root helper still hangs clients, so a
+socket counts only with both services present.
+
 ### What four flaky tests actually were
 
 `apphelp`, `helpreader`, `imageviewer` and `utilities` had been called

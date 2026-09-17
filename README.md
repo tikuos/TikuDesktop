@@ -89,7 +89,8 @@ say (the second needs a password, once):
 
 ```sh
 brew install xinit
-launchctl bootstrap gui/$(id -u) /opt/homebrew/opt/xinit/homebrew.mxcl.startx.plist
+cp /opt/homebrew/opt/xinit/homebrew.mxcl.startx.plist ~/Library/LaunchAgents/   # loads at every login
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/homebrew.mxcl.startx.plist  # and now
 sudo cp /opt/homebrew/opt/xinit/homebrew.mxcl.privileged_startx.plist /Library/LaunchDaemons/ \
   && sudo chown root:wheel /Library/LaunchDaemons/homebrew.mxcl.privileged_startx.plist \
   && sudo launchctl bootstrap system /Library/LaunchDaemons/homebrew.mxcl.privileged_startx.plist
