@@ -82,9 +82,29 @@ it.  Double-clicking it still needs a server -- the launcher finds
 XQuartz's socket if XQuartz is running, and says so in a dialog if
 nothing is, rather than bouncing once in the Dock and dying quietly.
 
-For a window in front of a person, `Xvfb` is not enough and XQuartz is
-what to install; `make run` without any server says `tracker: no
-display` and stops.  One thing to know before reaching for it: Homebrew's
+For a window in front of a person, `Xvfb` is not enough: the server
+has to be attached to the login session.  The XQuartz cask does that;
+so does the same `xorg-server`, with three steps its caveat does not
+say (the second needs a password, once):
+
+```sh
+brew install xinit
+launchctl bootstrap gui/$(id -u) /opt/homebrew/opt/xinit/homebrew.mxcl.startx.plist
+sudo cp /opt/homebrew/opt/xinit/homebrew.mxcl.privileged_startx.plist /Library/LaunchDaemons/ \
+  && sudo chown root:wheel /Library/LaunchDaemons/homebrew.mxcl.privileged_startx.plist \
+  && sudo launchctl bootstrap system /Library/LaunchDaemons/homebrew.mxcl.privileged_startx.plist
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f /opt/homebrew/opt/xorg-server/libexec/X11.app
+open build/TikuDesktop.app
+```
+
+`brew services` refuses both plists ("no locatable service file"), so
+they are handed to `launchd` by hand; and `bin/Xquartz` is only a stub
+that opens `X11.app` by bundle id, which LaunchServices has never seen
+inside the Cellar until it is registered -- without that the stub exits
+10 and every client that connects hangs.  The bundle's launcher finds
+the resulting socket on its own.  `make run` without any server says
+`tracker: no display` and stops.  One thing to know: Homebrew's
 `libx11` reports that it supports no locale at all, not even `C`, so
 `XOpenIM` cannot succeed and there is no Compose, no dead keys and no
 input method on that build.  Plain keys are unaffected -- the host falls
