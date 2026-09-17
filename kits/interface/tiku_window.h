@@ -120,6 +120,11 @@ struct tiku_window {
     void                        *menu_pick_context;
     tiku_rect_t             saved_zoom;
     int                          zoom_valid;
+    /* The tab button a press is holding down -- TIKU_HIT_CLOSE or
+     * TIKU_HIT_ZOOM -- drawn depressed until the hand lets go or
+     * leaves it.  The button acts on the RELEASE, as the original's
+     * did, so a press that wanders off does nothing. */
+    int                          pressed;
     /* A PLAIN window wears no furniture: no tab, no buttons, only a
      * hairline around its content -- the look a splash screen or an
      * About panel announces itself in.  It cannot be dragged or closed

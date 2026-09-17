@@ -336,6 +336,15 @@ answers too.  The size comes back as the resize the desktop already
 handles.  Proved both ways: 2240x1230 at 0,0 under quartz-wm on the
 iMac, 640x480 on the render test's private server.
 
+The tab buttons go DOWN now.  `tiku_ui_tab_widget` always knew how to
+draw a pressed box -- its `down` argument inverts the gradient -- but
+nothing ever passed it, and the desktop closed and zoomed on the press.
+The window carries which button a press is holding; the press arms it,
+a move tracks it on and off, and the release on it acts -- the original's
+manner, and the one way to change your mind about closing a window.
+`closebox.script` pins both states of the About box's close button
+(ffea9c up, fbca0a down at its top-left corner) and the cancel.
+
 ### What four flaky tests actually were
 
 `apphelp`, `helpreader`, `imageviewer` and `utilities` had been called

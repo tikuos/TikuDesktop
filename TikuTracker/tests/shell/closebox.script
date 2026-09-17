@@ -1,0 +1,34 @@
+# shell: desktop
+# home: fixture
+# A tab button goes DOWN under the hand and does its work when the hand
+# lets go ON it -- as the original's did -- so a press that wanders off
+# before letting go does nothing, which is the one way to change your
+# mind about closing a window.  Proved on the About box, whose close
+# button about.script already reaches at 295,158.
+wait 12
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click 20 8
+wait 4
+menu-pick About this system
+wait 6
+expect-title About this system
+note the button up: the gradient runs light at its top-left corner
+expect-pixel 293 156 ffea9c
+note pressed and held: the window is still here, the button is down
+press 295 158
+wait 4
+expect-title About this system
+note and down: the same corner is now the gradient's dark end
+expect-pixel 293 156 fbca0a
+note the hand wanders off the button and lets go there: nothing happens
+move 400 400
+wait 4
+release 400 400
+wait 6
+expect-title About this system
+note pressed and released ON it: now it closes
+click 295 158
+wait 6
+expect-no-title About this system
+quit

@@ -533,14 +533,15 @@ tiku_workspace_zoom(tiku_workspace_t *workspace,
 }
 
 static void
-draw_button(tiku_surface_t *surface, int x, int y, int zoom, int active)
+draw_button(tiku_surface_t *surface, int x, int y, int zoom, int active,
+            int down)
 {
     int side = tiku_window_tab_button();
     tiku_rect_t button = { x, y, side, side };
     tiku_rgb_t face = active ? TIKU_C_TAB : TIKU_C_TAB_IDLE;
 
     tiku_ui_tab_widget(surface, button,
-        zoom ? TIKU_TAB_ZOOM : TIKU_TAB_CLOSE, face, 0);
+        zoom ? TIKU_TAB_ZOOM : TIKU_TAB_CLOSE, face, down);
 }
 
 /** @brief Capture only complete, visible content, never an occluded crop. */
@@ -636,10 +637,12 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
         tiku_tint(tab_color, TIKU_DARKEN_2));
     tiku_hline(surface, tab.x + 1, tab.y + tab.h - 1, tab.w - 2,
                     tab_color);
-    draw_button(surface, tab.x + 4, tab.y + (tab_h - btn) / 2, 0, active);
+    draw_button(surface, tab.x + 4, tab.y + (tab_h - btn) / 2, 0, active,
+                window->pressed == TIKU_HIT_CLOSE);
     if (window->zoomable) {
         draw_button(surface, tab.x + tab.w - btn - 4,
-                    tab.y + (tab_h - btn) / 2, 1, active);
+                    tab.y + (tab_h - btn) / 2, 1, active,
+                    window->pressed == TIKU_HIT_ZOOM);
     }
     {
         tiku_rect_t label = { tab.x + btn + 8, tab.y,

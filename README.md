@@ -105,7 +105,13 @@ they are handed to `launchd` by hand; and `bin/Xquartz` is only a stub
 that opens `X11.app` by bundle id, which LaunchServices has never seen
 inside the Cellar until it is registered -- without that the stub exits
 10 and every client that connects hangs.  The bundle's launcher finds
-the resulting socket on its own.  `make run` without any server says
+the resulting socket on its own.  Two habits of that server: it exits
+when its last client leaves, and a fresh connection while one is still
+up re-runs `startx`'s privileged `10-tmpdirs`, which recreates
+`/tmp/.X11-unix` and deletes the live socket -- after which every client
+says `no display` though `X11.bin` is running.  `launchctl kickstart -k
+gui/$(id -u)/homebrew.mxcl.startx` starts it over.  `make run` without
+any server says
 `tracker: no display` and stops.  One thing to know: Homebrew's
 `libx11` reports that it supports no locale at all, not even `C`, so
 `XOpenIM` cannot succeed and there is no Compose, no dead keys and no

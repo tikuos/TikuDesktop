@@ -337,6 +337,12 @@ typedef struct desktop {
     /* The window a resize track is reshaping, so the owner can be told
      * the new size when the hand lets go. */
     tiku_window_t  *resize_track;       /* or NULL                    */
+    /* A tab button held down: the window, which button, and the
+     * modifiers at the PRESS -- what the person meant is decided then,
+     * even if a key is let go before the mouse is. */
+    tiku_window_t  *box_press;          /* the window, or NULL        */
+    int             box_hit;            /* TIKU_HIT_CLOSE or _ZOOM    */
+    unsigned        box_mods;           /* modifiers at the press     */
     /*
      * The application the file panel is up for, if it is up for one.
      * The panel carries only an opaque (target, command) pair, and the

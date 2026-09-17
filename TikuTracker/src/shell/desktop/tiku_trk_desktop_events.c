@@ -67,6 +67,126 @@ void desktop_text_input(desktop_t *app, const tiku_event_t *ev)
 }
 
 /**
+ * @brief What a tab button does, once the hand has let go on it.
+ *
+ * The zoom and close actions as they were, taken out of the press so the
+ * button can be seen going down first; @p mods are the modifiers at the
+ * press, since that is when the person decided what they meant.
+ */
+static void
+tab_box_act(desktop_t *app, tiku_window_t *w, int hit, unsigned mods)
+{
+    if (hit == TIKU_HIT_ZOOM) {
+        folder_t *fl = folder_of(app, w);
+
+        if (fl != NULL) {
+            tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
+            (void)tiku_workspace_zoom(app->desk, w,
+                                     tiku_trk_folder_window_fit_width(fl),
+                                     tiku_trk_folder_window_fit_height(fl));
+        } else if (w && tiku_remote_owner(&app->remote, w)) {
+            tiku_trk_rect_t area =
+                tiku_trk_desktop_view_area(&app->desktop_view);
+            if (area.y + area.h > app->surf->h)
+                area.h = app->surf->h - area.y;
+            if (tiku_trk_deskbar_dock(app->deskbar) == TIKU_TRK_DB_BOTTOM) {
+                tiku_rect_t bar = tiku_trk_deskbar_frame(app->deskbar);
+                area.h = bar.y - area.y - 4;
+            }
+            if (w->zoom_valid) {
+                w->frame = w->saved_zoom;
+                w->zoom_valid = 0;
+            } else {
+                w->saved_zoom = w->frame;
+                w->zoom_valid = 1;
+                w->frame = (tiku_rect_t){area.x, area.y, area.w, area.h};
+            }
+            resize_deliver(app, w);
+            tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
+        }
+        app->dirty = 1;
+        return;
+    }
+    /* Control+close closes every window rather than this one, which is
+     * the only way to clear a spatial desktop without visiting each. */
+    if (mods & TIKU_MOD_CMD) {
+        int k;
+
+        for (k = 0; k < app->folder_count; k++) {
+            if (app->folders[k].win != NULL) {
+                tiku_workspace_close(app->desk, app->folders[k].win);
+            }
+        }
+        if (tiku_trk_find_window_handle(&app->find_window) != NULL) {
+            tiku_trk_find_window_close(&app->find_window);
+        }
+        app->dirty = 1;
+        return;
+    }
+    /* Option+close takes the folder's whole subtree with it: the
+     * windows a descent through a deep folder left behind are exactly
+     * the ones nobody wants to close one at a time (AW-012). */
+    if (mods & TIKU_MOD_OPTION) {
+        folder_t *cf = folder_of(app, w);
+
+        if (cf != NULL) {
+            close_windows_under(app, cf->path);
+            app->dirty = 1;
+            return;
+        }
+    }
+    close_window(app, w);
+    app->dirty = 1;
+}
+
+/** @brief Whether the pointer is still on the pressed button. */
+static int
+tab_box_under(desktop_t *app, int x, int y)
+{
+    tiku_window_t *hw = NULL;
+    int hit = tiku_workspace_hit(app->desk, x, y, &hw);
+
+    return hw == app->box_press && hit == app->box_hit;
+}
+
+/** @brief A held tab button follows the hand: down on it, up off it. */
+static int
+tab_box_move(desktop_t *app, const tiku_event_t *ev)
+{
+    int on;
+
+    if (app->box_press == NULL) {
+        return 0;
+    }
+    on = tab_box_under(app, ev->x, ev->y);
+    if ((app->box_press->pressed != 0) != on) {
+        app->box_press->pressed = on ? app->box_hit : 0;
+        app->dirty = 1;
+    }
+    return 1;
+}
+
+/** @brief The hand lets go: on the button it acts; anywhere else, not. */
+static int
+tab_box_release(desktop_t *app, const tiku_event_t *ev)
+{
+    tiku_window_t *w = app->box_press;
+    int hit = app->box_hit, on;
+
+    if (w == NULL) {
+        return 0;
+    }
+    on = tab_box_under(app, ev->x, ev->y);
+    w->pressed = 0;
+    app->box_press = NULL;
+    app->dirty = 1;
+    if (on && w->open) {
+        tab_box_act(app, w, hit, app->box_mods);
+    }
+    return 1;
+}
+
+/**
  * @brief A button went down: what is under the pointer decides everything that
  * follows.
  */
@@ -967,73 +1087,20 @@ if (w != NULL && hit != TIKU_HIT_CONTENT) {
     }
     tiku_workspace_activate(app->desk, w);
 }
-if (hit == TIKU_HIT_ZOOM) {
-    folder_t *fl = folder_of(app, w);
-
-    if (fl != NULL) {
-        tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
-        (void)tiku_workspace_zoom(app->desk, w,
-                                 tiku_trk_folder_window_fit_width(fl),
-                                 tiku_trk_folder_window_fit_height(fl));
-    } else if (w && tiku_remote_owner(&app->remote, w)) {
-        tiku_trk_rect_t area = tiku_trk_desktop_view_area(&app->desktop_view);
-        if (area.y + area.h > app->surf->h)
-            area.h = app->surf->h - area.y;
-        if (tiku_trk_deskbar_dock(app->deskbar) == TIKU_TRK_DB_BOTTOM) {
-            tiku_rect_t bar = tiku_trk_deskbar_frame(app->deskbar);
-            area.h = bar.y - area.y - 4;
-        }
-        if (w->zoom_valid) {
-            w->frame = w->saved_zoom;
-            w->zoom_valid = 0;
-        } else {
-            w->saved_zoom = w->frame;
-            w->zoom_valid = 1;
-            w->frame = (tiku_rect_t){area.x, area.y, area.w, area.h};
-        }
-        resize_deliver(app, w);
-        tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
-    }
+if (hit == TIKU_HIT_ZOOM || hit == TIKU_HIT_CLOSE) {
+    /* ARMED, not acted on.  The button goes down under the hand and
+     * stays down while the hand stays on it; what it does, it does
+     * when the hand lets go there -- and a press that wanders off the
+     * button before that does nothing at all, which is the one way to
+     * change your mind about closing a window. */
+    w->pressed = hit;
+    app->box_press = w;
+    app->box_hit = hit;
+    app->box_mods = ev->modifiers;
     app->dirty = 1;
     return;
 }
-if (hit == TIKU_HIT_CLOSE) {
-    /* Control+close closes every window rather than this
-     * one, which is the only way to clear a spatial desktop
-     * without visiting each window. */
-    if (ev->modifiers & TIKU_MOD_CMD) {
-        int k;
-
-        for (k = 0; k < app->folder_count; k++) {
-            if (app->folders[k].win != NULL) {
-                tiku_workspace_close(app->desk,
-                                    app->folders[k].win);
-            }
-        }
-        if (tiku_trk_find_window_handle(&app->find_window) !=
-                NULL) {
-            tiku_trk_find_window_close(&app->find_window);
-        }
-        app->dirty = 1;
-        return;
-    }
-    /* Option+close takes the folder's whole subtree with
-     * it: the windows a descent through a deep folder left
-     * behind are exactly the ones nobody wants to close one
-     * at a time (AW-012). */
-    if (ev->modifiers & TIKU_MOD_OPTION) {
-        folder_t *cf = folder_of(app, w);
-
-        if (cf != NULL) {
-            close_windows_under(app, cf->path);
-            app->dirty = 1;
-            return;
-        }
-    }
-}
-if (hit == TIKU_HIT_CLOSE) {
-    close_window(app, w);
-} else if (hit == TIKU_HIT_TAB ||
+if (hit == TIKU_HIT_TAB ||
            hit == TIKU_HIT_RESIZE) {
     /* An application window being RESHAPED will need to
      * hear its new size when the hand lets go. */
@@ -1432,6 +1499,7 @@ if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
+if (tab_box_move(app, ev)) return;
 if (app->prefs_track != NULL && app->prefs_track->open) {
     tiku_event_t pe = *ev;
     if (alert_model(app)->open) pe.type = TIKU_EVENT_DEACTIVATED;
@@ -1720,6 +1788,7 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
 if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
+if (tab_box_release(app, ev)) return;
 int dropped = tiku_trk_drag_active(&app->drag);
 if (app->prefs_track != NULL) {
     tiku_window_t *pw = app->prefs_track;
