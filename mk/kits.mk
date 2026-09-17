@@ -65,7 +65,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_ui.c $(K)/interface/tiku_dl.c \
                $(K)/interface/tiku_logo.c \
                $(K)/interface/tiku_scroll.c $(K)/interface/tiku_field.c \
-               $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c \
+               $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c $(K)/interface/tiku_press.c \
                $(K)/interface/tiku_text_input.c \
                $(K)/interface/tiku_sensor.c $(K)/interface/tiku_sensor_paint.c \
                $(K)/interface/tiku_choice.c $(K)/interface/tiku_choice_paint.c \
@@ -198,7 +198,7 @@ dl:
 # The behaviour files must compile for a board that has no display: the
 # firmware's own compiler, the kit's headers only, nothing else.
 BEHAVIOUR_SRCS := $(K)/interface/tiku_field.c $(K)/interface/tiku_scroll.c \
-                  $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c \
+                  $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c $(K)/interface/tiku_press.c \
                   $(K)/interface/tiku_text_input.c \
                   $(K)/interface/tiku_sensor.c \
                   $(K)/interface/tiku_choice.c \
@@ -223,7 +223,7 @@ check-behaviour:
 	@arm-none-eabi-gcc -std=gnu11 -fsyntax-only -Wall -Wextra -Werror \
 	    -mcpu=cortex-m33 -mthumb -DTIKU_DISPLAYLESS=1 \
 	    -Iboard/gui -I$(K)/interface \
-	    $(K)/interface/tiku_dialog.c $(K)/interface/tiku_choice.c \
+	    $(K)/interface/tiku_dialog.c $(K)/interface/tiku_press.c $(K)/interface/tiku_choice.c \
 	    $(K)/interface/tiku_field_event.c $(K)/interface/tiku_choice_paint.c \
 	    $(K)/interface/tiku_text_input.c \
 	    $(K)/interface/tiku_sensor.c $(K)/interface/tiku_sensor_paint.c \

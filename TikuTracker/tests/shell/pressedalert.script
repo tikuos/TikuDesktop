@@ -1,0 +1,35 @@
+# shell: desktop
+# home: fixture
+# An alert's button goes DOWN under the hand and answers when the hand
+# lets go ON it -- so a press that wanders off before letting go answers
+# nothing, which is the one way to change your mind about an alert.
+# The alert is the one alert.script raises: dragging the folder onto
+# its own sub-folder, which cannot be done and says so with one button.
+wait 10
+press 200 117
+move 200 110
+move 200 97
+release 200 97
+wait 25
+expect-alert exists
+note the button up: its face is the panel's own grey
+expect-pixel 646 306 d8d8d8
+note pressed and held: the alert is still here, the button is down
+press 668 301
+wait 4
+expect-alert exists
+note and down: the face darkens under the hand
+expect-pixel 646 306 b5b5b5
+note the hand wanders off and lets go there: nothing is answered
+move 500 500
+wait 4
+release 500 500
+wait 6
+expect-alert exists
+note pressed and released ON it: now it answers
+click 668 301
+wait 8
+click-row 2
+wait 4
+expect-narrate b.txt
+quit

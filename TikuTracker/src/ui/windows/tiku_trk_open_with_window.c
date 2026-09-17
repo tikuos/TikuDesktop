@@ -149,9 +149,11 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     buttons(c, content, &open_b, &prefer_b);
     enables(c, &can_open, &can_prefer);
     tiku_ui_button(surface, prefer_b, "Open and make preferred",
-                        can_prefer ? 0u : TIKU_S_DISABLED);
+                        (can_prefer ? 0u : TIKU_S_DISABLED) |
+                        (tiku_press_held(&c->press, 2) ? TIKU_S_PRESSED : 0u));
     tiku_ui_button(surface, open_b, "Open",
-                        can_open ? 0u : TIKU_S_DISABLED);
+                        (can_open ? 0u : TIKU_S_DISABLED) |
+                        (tiku_press_held(&c->press, 1) ? TIKU_S_PRESSED : 0u));
 }
 
 /** @brief Close the window, if open, and ask for a redraw. */
@@ -229,20 +231,38 @@ event(tiku_window_t *window, const tiku_event_t *ev,
     tiku_rect_t content, open_b, prefer_b;
 
     (void)window;
-    if (ev->type != TIKU_EVENT_POINTER_DOWN || c->window == NULL) {
+    if (c->window == NULL) {
         return 0;
     }
     content = tiku_window_content(c->window);
     buttons(c, content, &open_b, &prefer_b);
 #define INSIDE(r) (ev->x >= (r).x && ev->x < (r).x + (r).w && \
                    ev->y >= (r).y && ev->y < (r).y + (r).h)
-    if (INSIDE(open_b)) {
-        do_open(c, 0);
-        return 1;
-    }
-    if (INSIDE(prefer_b)) {
-        do_open(c, 1);
-        return 1;
+    {
+        /* Down under the hand, acting when it lets go on the button. */
+        int can_open, can_prefer, under = 0;
+
+        enables(c, &can_open, &can_prefer);
+        if (can_open && INSIDE(open_b)) { under = 1; }
+        if (can_prefer && INSIDE(prefer_b)) { under = 2; }
+        if (ev->type == TIKU_EVENT_POINTER_MOVE) {
+            if (tiku_press_track(&c->press, under)) { mark_dirty(c); }
+            return c->press.id != 0;
+        }
+        if (ev->type == TIKU_EVENT_POINTER_UP) {
+            int id = tiku_press_release(&c->press, under);
+
+            mark_dirty(c);
+            if (id != 0) { do_open(c, id - 1); }
+            return 1;
+        }
+        if (ev->type != TIKU_EVENT_POINTER_DOWN) {
+            return 0;
+        }
+        if (under != 0 && tiku_press_arm(&c->press, under)) {
+            mark_dirty(c);
+            return 1;
+        }
     }
 #undef INSIDE
     {

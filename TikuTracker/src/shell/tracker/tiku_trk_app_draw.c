@@ -165,7 +165,7 @@ draw_count(app_t *a, tiku_rect_t list)
             frac = 1.0f;
             pos = 0.0f;
         }
-        tiku_ui_scrollbar(s, a->hsb_rect, pos, frac, 1);
+        tiku_ui_scrollbar_held(s, a->hsb_rect, pos, frac, 1, a->hsb.arrow_dir);
         if (a->active && !tiku_trk_poseview_is_query(a->view)) {
             tiku_frame(s, a->hsb_rect, TIKU_C_FOCUS);
         }
@@ -533,7 +533,7 @@ browser_paint_scrollbar(app_t *a, tiku_surface_t *s, tiku_rect_t list, int rows,
             pos = 0.0f;
         }
         a->sb_rect = sb;
-        tiku_ui_scrollbar(s, sb, pos, frac, 0);
+        tiku_ui_scrollbar_held(s, sb, pos, frac, 0, a->sb.arrow_dir);
         /* CW-019: the bar highlights with the focus border -- except in a
          * query window, where Haiku keeps the highlight off. */
         if (a->active && !tiku_trk_poseview_is_query(a->view)) {

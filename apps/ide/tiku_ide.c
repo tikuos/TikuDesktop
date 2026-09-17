@@ -4051,11 +4051,29 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         if (event->type == TIKU_EVENT_KEY_DOWN) {
             at = tiku_alert_key(&st->ask, event->key);
         } else if (event->type == TIKU_EVENT_POINTER_DOWN) {
-            at = tiku_alert_button_at(&st->ask, st->ask_frame.w,
-                     st->ask_frame.h, event->x - st->ask_frame.x,
-                     event->y - st->ask_frame.y);
-            if (at >= 0) {
-                st->ask.chosen = at;
+            /* Armed, not answered: the button goes down under the hand
+             * and answers when the hand lets go on it. */
+            if (tiku_alert_press(&st->ask, st->ask_frame.w, st->ask_frame.h,
+                                 event->x - st->ask_frame.x,
+                                 event->y - st->ask_frame.y)) {
+                project_paint(st);
+            }
+            return 0;
+        } else if (event->type == TIKU_EVENT_POINTER_MOVE) {
+            if (tiku_alert_track(&st->ask, st->ask_frame.w, st->ask_frame.h,
+                                 event->x - st->ask_frame.x,
+                                 event->y - st->ask_frame.y)) {
+                project_paint(st);
+            }
+            return 0;
+        } else if (event->type == TIKU_EVENT_POINTER_UP) {
+            at = tiku_alert_release(&st->ask, st->ask_frame.w,
+                                    st->ask_frame.h,
+                                    event->x - st->ask_frame.x,
+                                    event->y - st->ask_frame.y);
+            if (at < 0) {
+                project_paint(st);      /* the button comes back up */
+                return 0;
             }
         }
         if (at < 0) {

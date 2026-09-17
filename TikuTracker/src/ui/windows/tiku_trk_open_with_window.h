@@ -17,6 +17,7 @@
 #ifndef TIKU_TRK_OPEN_WITH_WINDOW_H_
 #define TIKU_TRK_OPEN_WITH_WINDOW_H_
 
+#include "tiku_press.h"
 #include "tiku_window.h"
 #include "tiku_list.h"
 #include "tiku_trk_alert.h"
@@ -52,6 +53,7 @@ typedef struct {
      * anchor rules and the walk are the same ones every other list on
      * this desktop keeps. */
     tiku_list_t       list;
+    tiku_press_t press;     /* the button held: 1 open, 2 prefer */
 } tiku_trk_open_with_window_t;
 
 /**

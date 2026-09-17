@@ -24,6 +24,8 @@
 #include "tiku_gfx.h"
 
 /** @brief How many buttons an alert can carry. */
+#include "tiku_press.h"
+
 #define TIKU_ALERT_BUTTONS 4
 
 /** @brief What an alert is for; it decides the icon and the wording. */
@@ -57,9 +59,29 @@ typedef struct {
      * remember which question it asked.  Opaque here: the values are the
      * asker's own. */
     int               tag;
+    /* The button a press is holding down, drawn so until the hand lets
+     * go on it (which answers) or off it (which does not). */
+    tiku_press_t      press;
 } tiku_alert_t;
 
 void tiku_alert_reset(tiku_alert_t *a);
+
+/**
+ * @brief A press at (@p x, @p y) inside a @p w by @p h frame: arm the
+ *        button under it, if any.
+ * @return nonzero when a button took the press and wants a repaint.
+ */
+int tiku_alert_press(tiku_alert_t *a, int w, int h, int x, int y);
+
+/** @brief The hand moved while pressing.  @return nonzero if it changed. */
+int tiku_alert_track(tiku_alert_t *a, int w, int h, int x, int y);
+
+/**
+ * @brief The hand let go at (@p x, @p y).
+ * @return the button it lets go ON, now chosen, or -1 -- a release
+ *         anywhere else is the press taken back.
+ */
+int tiku_alert_release(tiku_alert_t *a, int w, int h, int x, int y);
 
 /**
  * @brief Raise an alert.  @p buttons is a "|"-separated list, right to

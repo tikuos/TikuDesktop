@@ -345,6 +345,33 @@ manner, and the one way to change your mind about closing a window.
 `closebox.script` pins both states of the About box's close button
 (ffea9c up, fbca0a down at its top-left corner) and the cancel.
 
+Then every other button, the same day.  The look was never missing:
+`TIKU_S_PRESSED` is a state bit every push button, checkbox, radio and
+menu field already knew how to draw, and `tiku_dialog` already armed on
+the press and acted on the release -- the windows built on it were
+right all along.  What was missing was coverage: thirteen windows drew
+their buttons without the bit and acted on the press, and the scrollbar
+had no way to be told an arrow was held.  A small tracker in the
+interface kit (`tiku_press`, behaviour only, tracking by the window's
+own hit test rather than by rectangles) now serves the alert, About,
+Open With, Select, the file panel, the three preferences windows and
+Sounds; `tiku_ui_scrollbar_held` draws a held arrow without touching
+the recorded SCROLLBAR op remote windows draw through.
+
+Two things the change found.  A window that acts on the release must
+be SENT the release: the desktop captured the hand only for the
+dialog-built windows, so the first run of the converted lanes failed
+in five places, each a button waiting for a release that never came --
+a press a window takes now keeps the hand, in every branch.  And the
+Open With window is delivered no pointer event at all in the desktop
+shell, before or after: its buttons and list answer only the keyboard,
+which is why its lanes drive it with Down and Return.  Left as found
+and written down; one branch like Select's would give it the mouse.
+
+`pressedalert.script` pins the alert's Cancel face up (`d8d8d8`) and
+held (`b5b5b5`), the cancel, and the answer -- proved by a row click
+that a modal alert would have eaten.
+
 ### What four flaky tests actually were
 
 `apphelp`, `helpreader`, `imageviewer` and `utilities` had been called

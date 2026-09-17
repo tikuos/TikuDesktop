@@ -15,6 +15,7 @@
 #ifndef TIKU_TRK_SOUNDS_WINDOW_H_
 #define TIKU_TRK_SOUNDS_WINDOW_H_
 
+#include "tiku_press.h"
 #include "tiku_window.h"
 #include "tiku_trk_soundprefs.h"
 
@@ -39,6 +40,9 @@ typedef struct {
     int               opened[TIKU_SOUND_EVENTS]; /* the enables at open */
     char              opened_clip[TIKU_SOUND_EVENTS][TIKU_TRK_PREF_TEXT_MAX];
     int               opened_volume;             /* the volume at open */
+    /* The button held: 3i+1 clip, 3i+2 choose, 3i+3 test, 100 Defaults,
+     * 101 Revert. */
+    tiku_press_t      press;
 } tiku_trk_sounds_window_t;
 
 /**

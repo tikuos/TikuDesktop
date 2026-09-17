@@ -1339,7 +1339,8 @@ fw_draw_finish(tiku_window_t *window, tiku_surface_t *surface,
             frac = 1.0f;
             pos = 0.0f;
         }
-        tiku_ui_scrollbar(surface, sb, pos, frac, 0);
+        tiku_ui_scrollbar_held(surface, sb, pos, frac, 0,
+                               (*folder)->sbar.arrow_dir);
         /* CW-019: the bar highlights with the view's focus border, so the
          * chrome agrees with the list about where the keyboard aims.  A
          * query window keeps the plain bar, as Haiku turns the highlight

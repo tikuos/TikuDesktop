@@ -31,6 +31,7 @@
 #include "tiku_trk_about_window.h"
 #include "tiku_gfx.h"
 #include "tiku_font.h"
+#include "tiku_press.h"
 #include "tiku_ui.h"
 #include "tiku_iconpaint.h"
 #include "tiku_window.h"
@@ -148,6 +149,8 @@ typedef struct {
      * one, and where its stepper was painted so a click can find it. */
     int                        page;
     tiku_rect_t                prev_btn, next_btn;
+    /* The button a press is holding: 1 reports, 2 prev, 3 next, 4 open. */
+    tiku_press_t               press;
 } about_state_t;
 
 #define ABOUT_DEVS  6
@@ -893,12 +896,14 @@ paint_devices(about_state_t *st, int top)
         st->prev_btn = (tiku_rect_t){ bx - bh - 8 - cw - 8 - bh, y - 2,
                                        bh, bh };
         tiku_ui_button(st->surface, st->prev_btn, "",
-                       (st->page > 0) ? 0u : TIKU_S_DISABLED);
+                       ((st->page > 0) ? 0u : TIKU_S_DISABLED) |
+                       (tiku_press_held(&st->press, 2) ? TIKU_S_PRESSED : 0u));
         tiku_ui_arrow(st->surface, st->prev_btn, 2, st->page > 0);
         tiku_text(st->surface, plain, st->prev_btn.x + bh + 8,
                   y - 2 + (bh - h) / 2 + plain->ascent, count, TIKU_C_TEXT);
         tiku_ui_button(st->surface, st->next_btn, "",
-                       (st->page + 1 < st->ndev) ? 0u : TIKU_S_DISABLED);
+                       ((st->page + 1 < st->ndev) ? 0u : TIKU_S_DISABLED) |
+                       (tiku_press_held(&st->press, 3) ? TIKU_S_PRESSED : 0u));
         tiku_ui_arrow(st->surface, st->next_btn, 3,
                       st->page + 1 < st->ndev);
     } else {
@@ -1191,7 +1196,8 @@ paint_reports(about_state_t *st, int y)
     btn.x = surface->w - left - btn.w;
     btn.y = y + 6;
     tiku_ui_button(surface, btn, "Open the file",
-                   (st->chosen >= 0) ? 0u : TIKU_S_DISABLED);
+                   ((st->chosen >= 0) ? 0u : TIKU_S_DISABLED) |
+                   (tiku_press_held(&st->press, 4) ? TIKU_S_PRESSED : 0u));
     st->open_btn = btn;
 }
 
@@ -1299,7 +1305,8 @@ paint(about_state_t *st)
         btn.w = surface->w - 14 - facts_x;
         btn.h = tiku_ui_button_h();
         tiku_ui_button(surface, btn, line,
-                       (st->report[0] == '\0') ? TIKU_S_DISABLED : 0u);
+                       ((st->report[0] == '\0') ? TIKU_S_DISABLED : 0u) |
+                       (tiku_press_held(&st->press, 1) ? TIKU_S_PRESSED : 0u));
         st->reports_btn = btn;
     }
     {   /* Whose it is, where it lives, and on what terms.  Two lines
@@ -1411,6 +1418,40 @@ about_stop(void *state)
     free(st);
 }
 
+/** @brief Whether (@p x, @p y) lies in @p r. */
+static int
+inside_rect(tiku_rect_t r, int x, int y)
+{
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+/**
+ * @brief Which of the About box's buttons is under (@p x, @p y).
+ *
+ * Only a button that can act counts: a greyed one is not there to
+ * press.  1 the reports row, 2 and 3 the page steppers, 4 Open the file.
+ */
+static int
+about_button_at(const about_state_t *st, int x, int y)
+{
+    if (st->report[0] != '\0' && inside_rect(st->reports_btn, x, y)) {
+        return 1;
+    }
+    if (st->ndev > 1) {
+        if (st->page > 0 && inside_rect(st->prev_btn, x, y)) { return 2; }
+        if (st->page + 1 < st->ndev &&
+            inside_rect(st->next_btn, x, y)) {
+            return 3;
+        }
+    }
+    if (st->reports_open && st->chosen >= 0 &&
+        st->services->open_path != NULL &&
+        inside_rect(st->open_btn, x, y)) {
+        return 4;
+    }
+    return 0;
+}
+
 /** @brief Escape asks to close; every other event is watched and ignored. */
 static int
 about_event(void *state, const tiku_event_t *event)
@@ -1427,38 +1468,42 @@ about_event(void *state, const tiku_event_t *event)
         if (event == NULL || st == NULL) {
         return 0;
     }
-        if (event->type == TIKU_EVENT_POINTER_DOWN &&
-        st->report[0] != '\0' &&
-        event->x >= st->reports_btn.x &&
-        event->x < st->reports_btn.x + st->reports_btn.w &&
-        event->y >= st->reports_btn.y &&
-        event->y < st->reports_btn.y + st->reports_btn.h) {
-        /* The row is the door: the reports open under the facts, or
-         * close again. */
-        if (st->reports_open) {
-            st->reports_open = 0;
-        } else {
-            reports_open(st);
-        }
-        st->step = -1;          /* the tick repaints and resizes */
-        return 0;
-    }
-    if (event->type == TIKU_EVENT_POINTER_DOWN && st->ndev > 1) {
-        int hit_prev = event->x >= st->prev_btn.x &&
-                       event->x < st->prev_btn.x + st->prev_btn.w &&
-                       event->y >= st->prev_btn.y &&
-                       event->y < st->prev_btn.y + st->prev_btn.h;
-        int hit_next = event->x >= st->next_btn.x &&
-                       event->x < st->next_btn.x + st->next_btn.w &&
-                       event->y >= st->next_btn.y &&
-                       event->y < st->next_btn.y + st->next_btn.h;
+    /* The buttons go DOWN under the hand and act when it lets go on
+     * them; a press that wanders off does nothing.  One hit test says
+     * which button is under the hand at any moment. */
+    if (event->type == TIKU_EVENT_POINTER_DOWN) {
+        int id = about_button_at(st, event->x, event->y);
 
-        if ((hit_prev && st->page > 0) ||
-            (hit_next && st->page + 1 < st->ndev)) {
-            st->page += hit_next ? 1 : -1;
-            st->step = -1;      /* the tick repaints and resizes */
+        if (id != 0 && tiku_press_arm(&st->press, id)) {
+            st->step = -1;
             return 0;
         }
+    } else if (event->type == TIKU_EVENT_POINTER_MOVE) {
+        if (tiku_press_track(&st->press,
+                             about_button_at(st, event->x, event->y))) {
+            st->step = -1;
+        }
+        return 0;
+    } else if (event->type == TIKU_EVENT_POINTER_UP) {
+        int id = tiku_press_release(&st->press,
+                                    about_button_at(st, event->x, event->y));
+
+        st->step = -1;
+        if (id == 1) {
+            /* The row is the door: the reports open under the facts, or
+             * close again. */
+            if (st->reports_open) {
+                st->reports_open = 0;
+            } else {
+                reports_open(st);
+            }
+        } else if (id == 2 || id == 3) {
+            st->page += (id == 3) ? 1 : -1;
+        } else if (id == 4) {
+            (void)st->services->open_path(st->services->ctx,
+                                          st->paths[st->chosen]);
+        }
+        return 0;
     }
     if (st->reports_open && event->type == TIKU_EVENT_POINTER_DOWN) {
         int row = tiku_list_at(&st->list, st->list_box, event->x, event->y);
@@ -1468,15 +1513,6 @@ about_event(void *state, const tiku_event_t *event)
             st->chosen = row;
             load_detail(st);
             st->step = -1;
-            return 0;
-        }
-                if (st->chosen >= 0 && st->services->open_path != NULL &&
-            event->x >= st->open_btn.x &&
-            event->x < st->open_btn.x + st->open_btn.w &&
-            event->y >= st->open_btn.y &&
-            event->y < st->open_btn.y + st->open_btn.h) {
-            (void)st->services->open_path(st->services->ctx,
-                                          st->paths[st->chosen]);
             return 0;
         }
     }

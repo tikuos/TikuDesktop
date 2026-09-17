@@ -468,6 +468,7 @@ if (ev->button == 1u &&
         window_event.y = ev->y;
         window_event.button = ev->button;
         if (tiku_window_send(dbprefs, &window_event)) {
+            if (ev->button == 1) app->prefs_track = dbprefs;
             return;
         }
     }
@@ -490,6 +491,7 @@ if (ev->button == 1u &&
         window_event.y = ev->y;
         window_event.button = ev->button;
         if (tiku_window_send(dkprefs, &window_event)) {
+            if (ev->button == 1) app->prefs_track = dkprefs;
             return;
         }
     }
@@ -514,6 +516,7 @@ if (ev->button == 1u &&
             window_event.y = ev->y;
             window_event.button = ev->button;
             if (tiku_window_send(sounds, &window_event)) {
+                if (ev->button == 1) app->prefs_track = sounds;
                 return;
             }
         }
@@ -534,6 +537,7 @@ if (ev->button == 1u &&
         window_event.button = ev->button;
         if (tiku_window_send(prefs_window,
                                   &window_event)) {
+            if (ev->button == 1) app->prefs_track = prefs_window;
             return;
         }
     }
@@ -1120,10 +1124,16 @@ if (hit == TIKU_HIT_TAB ||
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            w == tiku_trk_select_window_handle(
                     &app->select_window)) {
+    /* A press the window takes keeps the hand: its buttons act on
+     * the release, which must reach the same window. */
+    if (ev->button == 1) app->prefs_track = w;
     (void)tiku_window_send(w, ev);
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            w == tiku_trk_panel_window_handle(
                     &app->file_panel)) {
+    /* A press the window takes keeps the hand: its buttons act on
+     * the release, which must reach the same window. */
+    if (ev->button == 1) app->prefs_track = w;
     (void)tiku_window_send(w, ev);
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            panel_of_window(app, w) != NULL) {
@@ -1173,6 +1183,9 @@ if (hit == TIKU_HIT_TAB ||
 } else if (hit == TIKU_HIT_CONTENT && w != NULL &&
            w == tiku_trk_find_window_handle(
                     &app->find_window)) {
+    /* A press the window takes keeps the hand: its buttons act on
+     * the release, which must reach the same window. */
+    if (ev->button == 1) app->prefs_track = w;
     (void)tiku_window_send(w, ev);
 } else if (hit == TIKU_HIT_CONTENT) {
     folder_t *fl = (w != NULL) ? folder_of(app, w)
@@ -1499,6 +1512,10 @@ if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
+if (tiku_trk_status_overlay_pointer_move(&app->status_overlay,
+                                         ev->x, ev->y)) {
+    return;
+}
 if (tab_box_move(app, ev)) return;
 if (app->prefs_track != NULL && app->prefs_track->open) {
     tiku_event_t pe = *ev;
@@ -1788,6 +1805,11 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
 if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
+if (tiku_trk_status_overlay_pointer_up(&app->status_overlay,
+                                       ev->x, ev->y)) {
+    app->dirty = 1;
+    return;
+}
 if (tab_box_release(app, ev)) return;
 int dropped = tiku_trk_drag_active(&app->drag);
 if (app->prefs_track != NULL) {

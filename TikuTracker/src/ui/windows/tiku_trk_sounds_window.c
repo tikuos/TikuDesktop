@@ -274,12 +274,18 @@ draw(tiku_window_t *window, tiku_surface_t *surface, tiku_rect_t content,
                              ? TIKU_S_ON : 0u);
         tiku_ui_button(surface, clip_rect(content, i),
                        clip[0] != '\0' ? clip : tiku_str("sound.builtin"),
-                       controller->offer.count > 0 ? 0u : TIKU_S_DISABLED);
+                       (controller->offer.count > 0 ? 0u : TIKU_S_DISABLED) |
+                       (tiku_press_held(&controller->press, 3 * i + 1)
+                            ? TIKU_S_PRESSED : 0u));
         tiku_ui_button(surface, choose_rect(content, i),
                        tiku_str("sound.choose"),
-                       controller->choose != NULL ? 0u : TIKU_S_DISABLED);
+                       (controller->choose != NULL ? 0u : TIKU_S_DISABLED) |
+                       (tiku_press_held(&controller->press, 3 * i + 2)
+                            ? TIKU_S_PRESSED : 0u));
         tiku_ui_button(surface, test_rect(content, i),
-                       tiku_str("button.test"), 0u);
+                       tiku_str("button.test"),
+                       tiku_press_held(&controller->press, 3 * i + 3)
+                           ? TIKU_S_PRESSED : 0u);
     }
     {
         tiku_rect_t track = track_rect(content);
@@ -295,10 +301,14 @@ draw(tiku_window_t *window, tiku_surface_t *surface, tiku_rect_t content,
         (void)tiku_text_centered(surface, font, shown, number, TIKU_C_TEXT);
     }
     tiku_ui_button(surface, defaults_rect(content), tiku_str("button.defaults"),
-                   tiku_trk_soundprefs_defaultable(controller->prefs)
-                       ? 0u : TIKU_S_DISABLED);
+                   (tiku_trk_soundprefs_defaultable(controller->prefs)
+                       ? 0u : TIKU_S_DISABLED) |
+                   (tiku_press_held(&controller->press, 100)
+                        ? TIKU_S_PRESSED : 0u));
     tiku_ui_button(surface, revert_rect(content), tiku_str("button.revert"),
-                   revertable(controller) ? 0u : TIKU_S_DISABLED);
+                   (revertable(controller) ? 0u : TIKU_S_DISABLED) |
+                   (tiku_press_held(&controller->press, 101)
+                        ? TIKU_S_PRESSED : 0u));
 }
 
 /**
@@ -327,6 +337,72 @@ event(tiku_window_t *window, const tiku_event_t *ev, void *context)
         }
         return 1;
     }
+    {
+        /* Every button goes down under the hand and acts when it lets
+         * go on it; the checkboxes and the knob answer the press. */
+        int under = 0, k;
+
+        for (k = 0; k < TIKU_SOUND_EVENTS && under == 0; k++) {
+            if (controller->offer.count > 0 &&
+                inside(clip_rect(content, k), ev->x, ev->y)) {
+                under = 3 * k + 1;
+            } else if (controller->choose != NULL &&
+                       inside(choose_rect(content, k), ev->x, ev->y)) {
+                under = 3 * k + 2;
+            } else if (inside(test_rect(content, k), ev->x, ev->y)) {
+                under = 3 * k + 3;
+            }
+        }
+        if (under == 0 && inside(defaults_rect(content), ev->x, ev->y) &&
+            tiku_trk_soundprefs_defaultable(controller->prefs)) { under = 100; }
+        if (under == 0 && inside(revert_rect(content), ev->x, ev->y) &&
+            revertable(controller)) { under = 101; }
+        if (ev->type == TIKU_EVENT_POINTER_MOVE) {
+            if (tiku_press_track(&controller->press, under)) {
+                if (controller->dirty != NULL) { *controller->dirty = 1; }
+            }
+            return controller->press.id != 0;
+        }
+        if (ev->type == TIKU_EVENT_POINTER_UP) {
+            int id = tiku_press_release(&controller->press, under);
+
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            if (id == 100) {
+                tiku_trk_soundprefs_defaults(controller->prefs);
+                apply(controller);
+            } else if (id == 101) {
+                revert(controller);
+                apply(controller);
+            } else if (id > 0) {
+                k = (id - 1) / 3;
+                switch ((id - 1) % 3) {
+                case 0:
+                    /* Heard as well as shown: a name says little
+                     * about a sound. */
+                    if (tiku_trk_soundprefs_cycle_clip(controller->prefs,
+                                                       &controller->offer, k)) {
+                        apply(controller);
+                        test(k);
+                    }
+                    break;
+                case 1:
+                    if (controller->choose != NULL) {
+                        controller->choose(controller->choose_ctx, k);
+                    }
+                    break;
+                default:
+                    test(k);
+                    break;
+                }
+            }
+            return 1;
+        }
+        if (ev->type == TIKU_EVENT_POINTER_DOWN && under != 0) {
+            (void)tiku_press_arm(&controller->press, under);
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            return 1;
+        }
+    }
     if (ev->type != TIKU_EVENT_POINTER_DOWN ||
         !inside(content, ev->x, ev->y)) {
         return 0;
@@ -337,25 +413,6 @@ event(tiku_window_t *window, const tiku_event_t *ev, void *context)
                 controller->prefs, i,
                 !tiku_trk_soundprefs_enabled(controller->prefs, i));
             apply(controller);
-            return 1;
-        }
-        if (inside(test_rect(content, i), ev->x, ev->y)) {
-            test(i);
-            return 1;
-        }
-        if (inside(choose_rect(content, i), ev->x, ev->y)) {
-            if (controller->choose != NULL) {
-                controller->choose(controller->choose_ctx, i);
-            }
-            return 1;
-        }
-        if (inside(clip_rect(content, i), ev->x, ev->y)) {
-            /* Heard as well as shown: a name says little about a sound. */
-            if (tiku_trk_soundprefs_cycle_clip(controller->prefs,
-                                               &controller->offer, i)) {
-                apply(controller);
-                test(i);
-            }
             return 1;
         }
     }
@@ -374,17 +431,6 @@ event(tiku_window_t *window, const tiku_event_t *ev, void *context)
             }
             return 1;
         }
-    }
-    if (inside(defaults_rect(content), ev->x, ev->y) &&
-        tiku_trk_soundprefs_defaultable(controller->prefs)) {
-        tiku_trk_soundprefs_defaults(controller->prefs);
-        apply(controller);
-        return 1;
-    }
-    if (inside(revert_rect(content), ev->x, ev->y) && revertable(controller)) {
-        revert(controller);
-        apply(controller);
-        return 1;
     }
     return 0;
 }

@@ -608,7 +608,7 @@ static void draw(tiku_window_t *window, tiku_surface_t *s,
             frac = (float)l.page.h / (float)tiku_doc_height(c->doc);
         }
     }
-    tiku_ui_scrollbar(s, l.bar, pos, frac, 0);
+    tiku_ui_scrollbar_held(s, l.bar, pos, frac, 0, c->bar.arrow_dir);
     tiku_text_line_draw(s, l.status, TIKU_MEASURE_PLAIN,
                         c->reader && c->reader->hovered[0] ?
                         c->reader->hovered : c->status[0] ? c->status :

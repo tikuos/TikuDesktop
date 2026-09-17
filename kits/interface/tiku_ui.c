@@ -481,10 +481,16 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
 
 /** @brief A scrollbar arrow button with its triangle. */
 static void
-arrow_button(tiku_surface_t *s, tiku_rect_t r, int dir, int can)
+arrow_button(tiku_surface_t *s, tiku_rect_t r, int dir, int can, int down)
 {
-    tiku_fill(s, r, PANEL);
-    tiku_bevel(s, r, WHITE(), SHADOW());
+    /* Down reads as the button's own pressed look: a darker face and
+     * the bevel inverted, so a held arrow is seen to be held. */
+    tiku_fill(s, r, down ? tiku_tint(PANEL, 1.16f) : PANEL);
+    if (down) {
+        tiku_bevel(s, r, SHADOW(), WHITE());
+    } else {
+        tiku_bevel(s, r, WHITE(), SHADOW());
+    }
     tiku_frame(s, r, FRAME());
     tiku_ui_arrow(s, r, dir, can);
 }
@@ -576,8 +582,8 @@ tiku_ui_gauge(tiku_surface_t *s, tiku_rect_t r, float fraction)
 }
 
 void
-tiku_ui_scrollbar(tiku_surface_t *s, tiku_rect_t r, float pos,
-                       float frac, int horiz)
+tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
+                       float pos, float frac, int horiz, int held)
 {
     int rec = tiku_gfx_rec_enter(s);
     int btn = horiz ? r.h : r.w;
@@ -598,16 +604,16 @@ tiku_ui_scrollbar(tiku_surface_t *s, tiku_rect_t r, float pos,
 
         if (horiz) {
             arrow_button(s, (tiku_rect_t){ r.x, r.y, btn, btn }, 2,
-                         can_back);
+                         can_back, held < 0);
             arrow_button(s, (tiku_rect_t){ r.x + r.w - btn, r.y, btn,
-                                                btn }, 3, can_on);
+                                                btn }, 3, can_on, held > 0);
             track = (tiku_rect_t){ r.x + btn, r.y, r.w - 2 * btn, r.h };
             span = track.w;
         } else {
             arrow_button(s, (tiku_rect_t){ r.x, r.y, btn, btn }, 0,
-                         can_back);
+                         can_back, held < 0);
             arrow_button(s, (tiku_rect_t){ r.x, r.y + r.h - btn, btn,
-                                                btn }, 1, can_on);
+                                                btn }, 1, can_on, held > 0);
             track = (tiku_rect_t){ r.x, r.y + btn, r.w, r.h - 2 * btn };
             span = track.h;
         }
@@ -645,6 +651,13 @@ tiku_ui_scrollbar(tiku_surface_t *s, tiku_rect_t r, float pos,
         }
     }
     tiku_gfx_rec_leave(s, rec);
+}
+
+void
+tiku_ui_scrollbar(tiku_surface_t *s, tiku_rect_t r,
+                  float pos, float frac, int horiz)
+{
+    tiku_ui_scrollbar_held(s, r, pos, frac, horiz, 0);
 }
 
 void

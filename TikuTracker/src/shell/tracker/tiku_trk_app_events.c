@@ -153,6 +153,12 @@ browser_turn_end(app_t *app, const browser_options_t *o, browser_loop_t *lp)
 void
 browser_pointer_up(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
 {
+    if (tiku_trk_status_overlay_pointer_up(&app->status_overlay,
+                                         ev->x, ev->y)) {
+        /* A modal alert eats the hand wherever it lands. */
+        app->dirty = 1;
+        return;
+    }
     /* Letting go applies whatever range arrived while the bar
      * was held (PVL-052). */
     tiku_scroll_release(&app->sb);
@@ -232,6 +238,12 @@ browser_pointer_up(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
 void
 browser_pointer_move(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
 {
+    if (tiku_trk_status_overlay_pointer_move(&app->status_overlay,
+                                          ev->x, ev->y)) {
+        /* A modal alert eats the hand wherever it lands. */
+        app->dirty = 1;
+        return;
+    }
     app->ptr_x = ev->x;
     app->ptr_y = ev->y;
     if (app->popup != NULL) {

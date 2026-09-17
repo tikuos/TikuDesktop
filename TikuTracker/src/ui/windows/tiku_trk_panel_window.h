@@ -10,6 +10,7 @@
 #ifndef TIKU_TRK_PANEL_WINDOW_H_
 #define TIKU_TRK_PANEL_WINDOW_H_
 
+#include "tiku_press.h"
 #include <stddef.h>
 
 #include "tiku_window.h"
@@ -70,6 +71,7 @@ typedef struct {
     char                   fav_path[12][TIKU_PATH_MAX];
     char                   fav_label[12][48];
     int                    refused;   /* a paste the name would not take */
+    tiku_press_t           press;     /* a button held: its PANEL_HIT_ value */
 } tiku_trk_panel_window_t;
 
 /**

@@ -10,6 +10,7 @@
 #ifndef TIKU_TRK_DESKBAR_PREFS_WINDOW_H_
 #define TIKU_TRK_DESKBAR_PREFS_WINDOW_H_
 
+#include "tiku_press.h"
 #include "tiku_window.h"
 #include "tiku_trk_deskbar_prefs.h"
 
@@ -31,6 +32,7 @@ typedef struct {
     char menu_dir[TIKU_PATH_MAX];
     tiku_trk_deskbar_prefs_open_fn open_path;
     void *open_context;
+    tiku_press_t press;     /* 1 Defaults, 2 Revert, 3 the menu folder */
 } tiku_trk_deskbar_prefs_window_t;
 
 /**

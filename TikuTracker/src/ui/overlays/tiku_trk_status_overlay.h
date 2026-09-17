@@ -66,6 +66,20 @@ void tiku_trk_status_overlay_draw(tiku_trk_status_overlay_t *controller);
 int tiku_trk_status_overlay_pointer(tiku_trk_status_overlay_t *controller,
                                     int x, int y);
 
+/**
+ * @brief The hand moved while an alert is up: its button goes down
+ *        under the hand and up off it.  @return nonzero if taken.
+ */
+int tiku_trk_status_overlay_pointer_move(tiku_trk_status_overlay_t *c,
+                                         int x, int y);
+
+/**
+ * @brief The hand let go while an alert is up: on the button it answers,
+ *        anywhere else the press is taken back.  @return nonzero if taken.
+ */
+int tiku_trk_status_overlay_pointer_up(tiku_trk_status_overlay_t *c,
+                                       int x, int y);
+
 /** @return Nonzero while a modal alert owns the keyboard. */
 int tiku_trk_status_overlay_key(tiku_trk_status_overlay_t *controller,
                                 unsigned key);

@@ -199,6 +199,17 @@ void tiku_ui_tip(tiku_surface_t *s, tiku_rect_t r, const char *text);
 void tiku_ui_scrollbar(tiku_surface_t *s, tiku_rect_t r,
                             float pos, float frac, int horiz);
 
+/**
+ * @brief The same bar with one arrow drawn held: @p held is -1 for the
+ *        back arrow, +1 for the forward one, 0 for neither.
+ *
+ * A local entry point.  The recorded bar (tiku_dl's SCROLLBAR op) has no
+ * held field and remote windows draw theirs up, which is a smaller thing
+ * than widening every list an application sends.
+ */
+void tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
+                            float pos, float frac, int horiz, int held);
+
 /** @brief A menu bar with @p n labels; @p active highlights one (-1 none). */
 void tiku_ui_menubar(tiku_surface_t *s, tiku_rect_t r,
                           const char *const *items, int n, int active);

@@ -10,6 +10,7 @@
 #ifndef TIKU_TRK_SELECT_WINDOW_H_
 #define TIKU_TRK_SELECT_WINDOW_H_
 
+#include "tiku_press.h"
 #include "tiku_window.h"
 #include "tiku_trk_select.h"
 
@@ -27,6 +28,7 @@ typedef struct {
     int                     screen_h;
     tiku_trk_select_apply_fn apply;
     void                   *apply_context;
+    tiku_press_t press;     /* the Select button, while held */
 } tiku_trk_select_window_t;
 
 /**

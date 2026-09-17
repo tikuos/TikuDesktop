@@ -257,12 +257,11 @@ tiku_trk_status_overlay_pointer(tiku_trk_status_overlay_t *controller,
 {
     if (controller->alert.open) {
         tiku_rect_t frame = alert_frame(controller);
-        int picked = tiku_alert_button_at(&controller->alert,
-            frame.w, frame.h, x - frame.x, y - frame.y);
 
-        if (picked >= 0) {
-            answer(controller, picked);
-        }
+        /* Armed, not answered: the button goes down and answers on the
+         * release over it (tiku_trk_status_overlay_pointer_up). */
+        (void)tiku_alert_press(&controller->alert, frame.w, frame.h,
+                               x - frame.x, y - frame.y);
         mark_dirty(controller);
         return 1;
     }
@@ -287,6 +286,43 @@ tiku_trk_status_overlay_pointer(tiku_trk_status_overlay_t *controller,
         }
     }
     return 0;
+}
+
+int
+tiku_trk_status_overlay_pointer_move(tiku_trk_status_overlay_t *controller,
+                                     int x, int y)
+{
+    tiku_rect_t frame;
+
+    if (!controller->alert.open) {
+        return 0;
+    }
+    frame = alert_frame(controller);
+    if (tiku_alert_track(&controller->alert, frame.w, frame.h,
+                         x - frame.x, y - frame.y)) {
+        mark_dirty(controller);
+    }
+    return 1;
+}
+
+int
+tiku_trk_status_overlay_pointer_up(tiku_trk_status_overlay_t *controller,
+                                   int x, int y)
+{
+    tiku_rect_t frame;
+    int picked;
+
+    if (!controller->alert.open) {
+        return 0;
+    }
+    frame = alert_frame(controller);
+    picked = tiku_alert_release(&controller->alert, frame.w, frame.h,
+                                x - frame.x, y - frame.y);
+    if (picked >= 0) {
+        answer(controller, picked);
+    }
+    mark_dirty(controller);
+    return 1;
 }
 
 int

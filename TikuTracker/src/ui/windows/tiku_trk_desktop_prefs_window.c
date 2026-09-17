@@ -307,8 +307,12 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         tiku_rect_t shown = { minus.x + minus.w + 4, minus.y,
                                    number_w(), minus.h };
 
-        tiku_ui_button(surface, minus, "-", 0u);
-        tiku_ui_button(surface, plus, "+", 0u);
+        tiku_ui_button(surface, minus, "-",
+                       tiku_press_held(&controller->press, 1)
+                           ? TIKU_S_PRESSED : 0u);
+        tiku_ui_button(surface, plus, "+",
+                       tiku_press_held(&controller->press, 2)
+                           ? TIKU_S_PRESSED : 0u);
         snprintf(number, sizeof number, "%d px", v->icon_size);
         (void)tiku_text_centered(surface, font, shown, number,
                                       TIKU_C_TEXT);
@@ -316,12 +320,16 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
 
     tiku_ui_button(surface, defaults_rect(content),
                         tiku_str("button.defaults"),
-                        tiku_trk_deskprefs_defaultable(&controller->model)
-                            ? 0u : TIKU_S_DISABLED);
+                        (tiku_trk_deskprefs_defaultable(&controller->model)
+                            ? 0u : TIKU_S_DISABLED) |
+                        (tiku_press_held(&controller->press, 3)
+                            ? TIKU_S_PRESSED : 0u));
     tiku_ui_button(surface, revert_rect(content),
                         tiku_str("button.revert"),
-                        tiku_trk_deskprefs_revertable(&controller->model)
-                            ? 0u : TIKU_S_DISABLED);
+                        (tiku_trk_deskprefs_revertable(&controller->model)
+                            ? 0u : TIKU_S_DISABLED) |
+                        (tiku_press_held(&controller->press, 4)
+                            ? TIKU_S_PRESSED : 0u));
 }
 
 /**
@@ -336,6 +344,46 @@ event(tiku_window_t *window, const tiku_event_t *event,
     tiku_rect_t content = tiku_window_content(window);
     int x = event->x - content.x, y = event->y - content.y;
 
+    {
+        /* The four buttons go down under the hand and act when it lets
+         * go on them; the rows and the layouts answer the press. */
+        int under = inside(minus_rect(content), event->x, event->y) ? 1
+                  : inside(plus_rect(content), event->x, event->y) ? 2
+                  : (inside(defaults_rect(content), event->x, event->y) &&
+                     tiku_trk_deskprefs_defaultable(&controller->model)) ? 3
+                  : (inside(revert_rect(content), event->x, event->y) &&
+                     tiku_trk_deskprefs_revertable(&controller->model)) ? 4
+                  : 0;
+
+        if (event->type == TIKU_EVENT_POINTER_MOVE) {
+            if (tiku_press_track(&controller->press, under)) {
+                if (controller->dirty != NULL) { *controller->dirty = 1; }
+            }
+            return controller->press.id != 0;
+        }
+        if (event->type == TIKU_EVENT_POINTER_UP) {
+            int id = tiku_press_release(&controller->press, under);
+
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            if (id == 1 || id == 2) {
+                if (tiku_trk_deskprefs_step_icon(&controller->model, id == 2)) {
+                    apply(controller);
+                }
+            } else if (id == 3) {
+                tiku_trk_deskprefs_defaults(&controller->model);
+                apply(controller);
+            } else if (id == 4) {
+                tiku_trk_deskprefs_revert(&controller->model);
+                apply(controller);
+            }
+            return 1;
+        }
+        if (event->type == TIKU_EVENT_POINTER_DOWN && under != 0) {
+            (void)tiku_press_arm(&controller->press, under);
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            return 1;
+        }
+    }
     if (event->type != TIKU_EVENT_POINTER_DOWN ||
         !inside(content, event->x, event->y)) {
         return 0;
@@ -379,27 +427,6 @@ event(tiku_window_t *window, const tiku_event_t *event,
                 return 1;
             }
         }
-    }
-    if (inside(minus_rect(content), event->x, event->y) ||
-        inside(plus_rect(content), event->x, event->y)) {
-        int up = inside(plus_rect(content), event->x, event->y);
-
-        if (tiku_trk_deskprefs_step_icon(&controller->model, up)) {
-            apply(controller);
-        }
-        return 1;
-    }
-    if (inside(defaults_rect(content), event->x, event->y) &&
-        tiku_trk_deskprefs_defaultable(&controller->model)) {
-        tiku_trk_deskprefs_defaults(&controller->model);
-        apply(controller);
-        return 1;
-    }
-    if (inside(revert_rect(content), event->x, event->y) &&
-        tiku_trk_deskprefs_revertable(&controller->model)) {
-        tiku_trk_deskprefs_revert(&controller->model);
-        apply(controller);
-        return 1;
     }
     return 0;
 }

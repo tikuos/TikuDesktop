@@ -106,7 +106,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
      * ring says so -- it wore no ring at all while the key handler was
      * binding Return to it, the exact inverse of the field above. */
     tiku_ui_button(surface, apply, "Select",
-                        owns ? TIKU_S_DEFAULT : 0u);
+                        (owns ? TIKU_S_DEFAULT : 0u) |
+                        (tiku_press_held(&controller->press, 1)
+                             ? TIKU_S_PRESSED : 0u));
 }
 
 /** @brief Which control a point lands on, or none. */
@@ -170,8 +172,30 @@ event(tiku_window_t *window, const tiku_event_t *event,
     tiku_trk_select_window_t *controller = context;
 
     (void)window;
+    /* The Select button goes down under the hand and applies when the
+     * hand lets go on it; the rest of the window answers the press. */
+    if (event->type == TIKU_EVENT_POINTER_MOVE) {
+        if (tiku_press_track(&controller->press,
+                hit(controller, event->x, event->y) == SELECT_HIT_APPLY)) {
+            mark_dirty(controller);
+        }
+        return controller->press.id != 0;
+    }
+    if (event->type == TIKU_EVENT_POINTER_UP) {
+        if (tiku_press_release(&controller->press,
+                hit(controller, event->x, event->y) == SELECT_HIT_APPLY)) {
+            apply(controller);
+        }
+        mark_dirty(controller);
+        return 1;
+    }
     if (event->type != TIKU_EVENT_POINTER_DOWN) {
         return 0;
+    }
+    if (hit(controller, event->x, event->y) == SELECT_HIT_APPLY) {
+        (void)tiku_press_arm(&controller->press, 1);
+        mark_dirty(controller);
+        return 1;
     }
     switch (hit(controller, event->x, event->y)) {
     case SELECT_HIT_EXPRESSION:

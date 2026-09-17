@@ -362,6 +362,41 @@ tiku_alert_draw(tiku_alert_t *a, tiku_surface_t *s, tiku_rect_t frame)
         /* The R5 button, ring and all: the rightmost is the default,
          * which is where the pointer already is after reading. */
         tiku_ui_button(s, button, a->button[i],
-                            (i == a->dflt) ? TIKU_S_DEFAULT : 0u);
+                            ((i == a->dflt) ? TIKU_S_DEFAULT : 0u) |
+                            (tiku_press_held(&a->press, i + 1)
+                                 ? TIKU_S_PRESSED : 0u));
     }
+}
+
+int
+tiku_alert_press(tiku_alert_t *a, int w, int h, int x, int y)
+{
+    if (a == NULL || !a->open) {
+        return 0;
+    }
+    /* Buttons are numbered from one here: zero is the tracker's "nothing". */
+    return tiku_press_arm(&a->press, tiku_alert_button_at(a, w, h, x, y) + 1);
+}
+
+int
+tiku_alert_track(tiku_alert_t *a, int w, int h, int x, int y)
+{
+    return a != NULL &&
+           tiku_press_track(&a->press, tiku_alert_button_at(a, w, h, x, y) + 1);
+}
+
+int
+tiku_alert_release(tiku_alert_t *a, int w, int h, int x, int y)
+{
+    int id;
+
+    if (a == NULL) {
+        return -1;
+    }
+    id = tiku_press_release(&a->press, tiku_alert_button_at(a, w, h, x, y) + 1);
+    if (id <= 0) {
+        return -1;
+    }
+    a->chosen = id - 1;
+    return id - 1;
 }

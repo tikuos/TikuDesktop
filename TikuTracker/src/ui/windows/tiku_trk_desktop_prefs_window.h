@@ -10,6 +10,7 @@
 #ifndef TIKU_TRK_DESKTOP_PREFS_WINDOW_H_
 #define TIKU_TRK_DESKTOP_PREFS_WINDOW_H_
 
+#include "tiku_press.h"
 #include "tiku_window.h"
 #include "tiku_trk_deskprefs.h"
 #include "tiku_trk_desktop_view.h"
@@ -28,6 +29,7 @@ typedef struct {
     int                          *dirty;
     char                          node[TIKU_PATH_MAX];
     char                          pictures_dir[TIKU_PATH_MAX];
+    tiku_press_t                  press;   /* 1 -, 2 +, 3 Defaults, 4 Revert */
 } tiku_trk_desktop_prefs_window_t;
 
 /**

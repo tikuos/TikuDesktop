@@ -124,7 +124,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         button.w = width;
         button.h = height;
         tiku_ui_button(surface, button, i ? tiku_str("button.revert") : tiku_str("button.defaults"),
-                            enabled ? 0u : TIKU_S_DISABLED);
+                            (enabled ? 0u : TIKU_S_DISABLED) |
+                            (tiku_press_held(&controller->press, i + 1)
+                                 ? TIKU_S_PRESSED : 0u));
     }
 }
 
@@ -138,14 +140,43 @@ event(tiku_window_t *window, const tiku_event_t *event,
     tiku_trk_pref_hit_t hit;
     int which = -1;
 
-    if (event->type != TIKU_EVENT_POINTER_DOWN ||
-        (controller->blocked != NULL && *controller->blocked)) {
+    if (controller->blocked != NULL && *controller->blocked) {
         return 0;
     }
     content = tiku_window_content(window);
     hit = tiku_trk_prefs_hit(&controller->model, controller->page,
                              event->x - content.x, event->y - content.y,
                              &which);
+    /* The two buttons go down under the hand and act when it lets go on
+     * them; everything else in the window answers the press as before. */
+    {
+        int under = (hit == TIKU_TRK_PREF_HIT_DEFAULTS &&
+                     tiku_trk_prefs_any_defaultable(&controller->model)) ? 1
+                  : (hit == TIKU_TRK_PREF_HIT_REVERT &&
+                     tiku_trk_prefs_any_revertable(&controller->model)) ? 2
+                  : 0;
+
+        if (event->type == TIKU_EVENT_POINTER_MOVE) {
+            if (tiku_press_track(&controller->press, under)) {
+                if (controller->dirty != NULL) { *controller->dirty = 1; }
+            }
+            return controller->press.id != 0;
+        }
+        if (event->type == TIKU_EVENT_POINTER_UP) {
+            int id = tiku_press_release(&controller->press, under);
+
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            if (id == 0) { return 1; }
+            hit = (id == 1) ? TIKU_TRK_PREF_HIT_DEFAULTS
+                            : TIKU_TRK_PREF_HIT_REVERT;
+        } else if (event->type == TIKU_EVENT_POINTER_DOWN && under != 0) {
+            (void)tiku_press_arm(&controller->press, under);
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            return 1;
+        } else if (event->type != TIKU_EVENT_POINTER_DOWN) {
+            return 0;
+        }
+    }
     if (hit == TIKU_TRK_PREF_HIT_NONE) {
         return 0;
     }

@@ -10,6 +10,7 @@
 #ifndef TIKU_TRK_PREFS_WINDOW_H_
 #define TIKU_TRK_PREFS_WINDOW_H_
 
+#include "tiku_press.h"
 #include "tiku_window.h"
 #include "tiku_model.h"
 #include "tiku_trk_prefs.h"
@@ -25,6 +26,7 @@ typedef struct {
     const int             *blocked;
     int                    screen_w;
     int                    screen_h;
+    tiku_press_t           press;      /* 1 Defaults, 2 Revert, while held */
 } tiku_trk_prefs_window_t;
 
 /**

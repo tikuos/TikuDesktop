@@ -360,12 +360,16 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
              controller->model.focus == TIKU_TRK_PANEL_FOCUS_NAME)
                 ? TIKU_S_FOCUS : 0u);
     }
-    tiku_ui_button(surface, cancel, "Cancel", 0u);
+    tiku_ui_button(surface, cancel, "Cancel",
+        tiku_press_held(&controller->press, PANEL_HIT_CANCEL)
+            ? TIKU_S_PRESSED : 0u);
     tiku_ui_button(surface, default_button,
         tiku_trk_panel_button_label(&controller->model, selected,
                                     selected_count),
-        !tiku_trk_panel_button_enabled(&controller->model, selected,
-                                       selected_count)
+        (tiku_press_held(&controller->press, PANEL_HIT_DEFAULT)
+            ? TIKU_S_PRESSED : 0u) |
+        (!tiku_trk_panel_button_enabled(&controller->model, selected,
+                                        selected_count)
             ? TIKU_S_DISABLED
         /* The ring is drawn only while the panel owns the keyboard, so
          * it never promises a Return the window would not receive
@@ -373,10 +377,13 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         : (controller->window != NULL &&
            controller->window ==
                tiku_workspace_focused(controller->workspace))
-            ? TIKU_S_DEFAULT : TIKU_S_NORMAL);
+            ? TIKU_S_DEFAULT : TIKU_S_NORMAL));
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
         tiku_ui_button(surface, new_folder_button(controller),
-                            "New folder", 0u);
+                            "New folder",
+                            tiku_press_held(&controller->press,
+                                            PANEL_HIT_NEWFOLDER)
+                                ? TIKU_S_PRESSED : 0u);
     }
     {
         const tiku_font_t *pf = tiku_font_plain();
@@ -406,7 +413,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         }
     }
     tiku_ui_button(surface, favorites_button(controller), "Favorites",
-                        0u);
+                        tiku_press_held(&controller->press, PANEL_HIT_FAVORITES)
+                            ? TIKU_S_PRESSED : 0u);
     if (controller->fav_open) {
         /* Favourites first, then recent folders, and "Add current folder"
          * as the last row (AW-062, CW-058). */
@@ -780,11 +788,39 @@ event(tiku_window_t *window, const tiku_event_t *input,
     int row = -1;
     int64_t now;
 
+    int what;
+
     (void)window;
-    if (input->type != TIKU_EVENT_POINTER_DOWN) {
-        return 0;
+    /* The four buttons go down under the hand and act when it lets go
+     * on them: the release re-enters the switch below as the button's
+     * own hit.  The list, the name and the bar answer the press. */
+    what = hit(controller, input->x, input->y, &row);
+    {
+        int under = (what == PANEL_HIT_CANCEL || what == PANEL_HIT_DEFAULT ||
+                     what == PANEL_HIT_NEWFOLDER || what == PANEL_HIT_FAVORITES)
+                    ? what : 0;
+
+        if (input->type == TIKU_EVENT_POINTER_MOVE) {
+            if (tiku_press_track(&controller->press, under)) {
+                mark_dirty(controller);
+            }
+            return controller->press.id != 0;
+        }
+        if (input->type == TIKU_EVENT_POINTER_UP) {
+            what = tiku_press_release(&controller->press, under);
+            mark_dirty(controller);
+            if (what == 0) {
+                return 1;
+            }
+        } else if (input->type == TIKU_EVENT_POINTER_DOWN && under != 0) {
+            (void)tiku_press_arm(&controller->press, under);
+            mark_dirty(controller);
+            return 1;
+        } else if (input->type != TIKU_EVENT_POINTER_DOWN) {
+            return 0;
+        }
     }
-    switch (hit(controller, input->x, input->y, &row)) {
+    switch (what) {
     case PANEL_HIT_FAVORITES:
         if (!controller->fav_open) {
             favorites_fill(controller);

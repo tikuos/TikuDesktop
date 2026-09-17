@@ -46,11 +46,12 @@ inside(tiku_rect_t r, int x, int y)
 /** @brief A push button in the toolkit's look, greyed when not @p enabled. */
 static void
 button(tiku_surface_t *surface, tiku_rect_t rect,
-       const char *label, int enabled)
+       const char *label, int enabled, int down)
 {
     /* The R5 button, not a beveled slab (the toolkit knows the look). */
     tiku_ui_button(surface, rect, label,
-                        enabled ? 0u : TIKU_S_DISABLED);
+                        (enabled ? 0u : TIKU_S_DISABLED) |
+                        (down ? TIKU_S_PRESSED : 0u));
 }
 
 /** @brief Whether the row's setting applies at this dock and these settings. */
@@ -222,12 +223,15 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
     button(surface, (tiku_rect_t){ content.x + 18, content.y + 488,
            112, 26 }, tiku_str("button.defaults"),
-           tiku_trk_deskbar_prefs_defaultable(&controller->model));
+           tiku_trk_deskbar_prefs_defaultable(&controller->model),
+           tiku_press_held(&controller->press, 1));
     button(surface, (tiku_rect_t){ content.x + 140, content.y + 488,
            100, 26 }, tiku_str("button.revert"),
-           tiku_trk_deskbar_prefs_revertable(&controller->model));
+           tiku_trk_deskbar_prefs_revertable(&controller->model),
+           tiku_press_held(&controller->press, 2));
     button(surface, (tiku_rect_t){ content.x + 278, content.y + 488,
-           142, 26 }, tiku_str("prefs.deskbar.edit_in_tracker"), 1);
+           142, 26 }, tiku_str("prefs.deskbar.edit_in_tracker"), 1,
+           tiku_press_held(&controller->press, 3));
 }
 
 /**
@@ -243,6 +247,45 @@ event(tiku_window_t *window, const tiku_event_t *event,
     int x = event->x - content.x, y = event->y - content.y;
     int row = (y - 12) / 29;
 
+    {
+        /* The three buttons along the bottom go down under the hand and
+         * act when it lets go on them; the rows answer the press. */
+        int under = (inside((tiku_rect_t){ 18, 488, 112, 26 }, x, y) &&
+                     tiku_trk_deskbar_prefs_defaultable(&controller->model)) ? 1
+                  : (inside((tiku_rect_t){ 140, 488, 100, 26 }, x, y) &&
+                     tiku_trk_deskbar_prefs_revertable(&controller->model)) ? 2
+                  : inside((tiku_rect_t){ 278, 488, 142, 26 }, x, y) ? 3
+                  : 0;
+
+        if (event->type == TIKU_EVENT_POINTER_MOVE) {
+            if (tiku_press_track(&controller->press, under)) {
+                if (controller->dirty != NULL) { *controller->dirty = 1; }
+            }
+            return controller->press.id != 0;
+        }
+        if (event->type == TIKU_EVENT_POINTER_UP) {
+            int id = tiku_press_release(&controller->press, under);
+
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            if (id == 1) {
+                tiku_trk_deskbar_prefs_defaults(&controller->model);
+                apply(controller);
+            } else if (id == 2) {
+                tiku_trk_deskbar_prefs_revert(&controller->model);
+                apply(controller);
+            } else if (id == 3 && controller->open_path != NULL &&
+                       controller->menu_dir[0] != '\0') {
+                controller->open_path(controller->open_context,
+                                      controller->menu_dir);
+            }
+            return 1;
+        }
+        if (event->type == TIKU_EVENT_POINTER_DOWN && under != 0) {
+            (void)tiku_press_arm(&controller->press, under);
+            if (controller->dirty != NULL) { *controller->dirty = 1; }
+            return 1;
+        }
+    }
     if (event->type != TIKU_EVENT_POINTER_DOWN ||
         !inside(content, event->x, event->y)) {
         return 0;
@@ -296,25 +339,6 @@ event(tiku_window_t *window, const tiku_event_t *event,
 
         tiku_trk_deskbar_set_dock(controller->deskbar, dock);
         if (controller->dirty != NULL) { *controller->dirty = 1; }
-        return 1;
-    }
-    if (inside((tiku_rect_t){ 18, 488, 112, 26 }, x, y) &&
-        tiku_trk_deskbar_prefs_defaultable(&controller->model)) {
-        tiku_trk_deskbar_prefs_defaults(&controller->model);
-        apply(controller);
-        return 1;
-    }
-    if (inside((tiku_rect_t){ 140, 488, 100, 26 }, x, y) &&
-        tiku_trk_deskbar_prefs_revertable(&controller->model)) {
-        tiku_trk_deskbar_prefs_revert(&controller->model);
-        apply(controller);
-        return 1;
-    }
-    if (inside((tiku_rect_t){ 278, 488, 142, 26 }, x, y)) {
-        if (controller->open_path != NULL && controller->menu_dir[0] != '\0') {
-            controller->open_path(controller->open_context,
-                                  controller->menu_dir);
-        }
         return 1;
     }
     return 0;
