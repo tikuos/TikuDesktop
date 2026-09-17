@@ -42,6 +42,14 @@ if [ -z "${DISPLAY:-}" ]; then
             *)                continue ;;
         esac
         launchctl print "gui/$uid/$service" > /dev/null 2>&1 || continue
+        # Homebrew's startx hands the display over through a ROOT-owned
+        # helper; with the user agent loaded and that helper absent the
+        # server exits at once and a client hangs on the socket.  So the
+        # helper must be there too, or this is not a server.
+        if [ "$service" = homebrew.mxcl.startx ]; then
+            launchctl print system/homebrew.mxcl.privileged_startx \
+                > /dev/null 2>&1 || continue
+        fi
         DISPLAY="$candidate"
         export DISPLAY
         break
