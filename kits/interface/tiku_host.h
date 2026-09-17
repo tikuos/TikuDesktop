@@ -43,6 +43,17 @@ void tiku_host_present_stats(tiku_host_t *host, uint64_t *frames,
 /** @brief Change the native window title. */
 void tiku_host_set_title(tiku_host_t *host, const char *title);
 
+/**
+ * @brief Make the window the whole screen, or a window again.
+ *
+ * Asked of the window manager in the standard way, so a Mac's quartz-wm
+ * and a Linux desktop both answer it; where there is no manager at all
+ * the window is sized to the screen itself.  The new size arrives as
+ * TIKU_EVENT_RESIZE like any other, so a shell has nothing to do but
+ * what it does for a person dragging a corner.
+ */
+void tiku_host_set_fullscreen(tiku_host_t *host, int on);
+
 /** @brief Poll one normalized event without waiting for other applications.
  * The X11 host exports local text copies and asynchronously refreshes CLIPBOARD
  * on activation, paste, and menu clicks. Input waits behind an in-flight import

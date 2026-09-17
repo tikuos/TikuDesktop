@@ -35,6 +35,7 @@ make -j$(nproc)          # kits, both shells in both flavours, the apps, every t
 make test                # gates, unit suites, the BASIC host check, the scripts
 make run                 # build/system/TikuDesktop, over the host filesystem
 ./build/system/TikuDesktop -d   # over a board on serial (-p PORT -b BAUD)
+./build/system/TikuDesktop -fullscreen   # the window is the screen
 ```
 
 The rules are `Makefile` and `mk/` (one fragment per tree); the Makefiles

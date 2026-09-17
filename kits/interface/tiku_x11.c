@@ -14,6 +14,7 @@
  */
 
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <X11/Xresource.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -54,6 +55,7 @@ struct tiku_host {
     XIMCallback input_destroy;
     tiku_text_input_t commit;
     unsigned command_mask;     /* which modifiers mean "this is a command" */
+    int fullscreen;            /* the window is the screen, or wants to be */
     int force_present;
     uint64_t presented_frames, presented_bytes, presented_rects;
 };
@@ -564,6 +566,56 @@ int
 tiku_host_scale(const tiku_host_t *host)
 {
     return (host != NULL && host->scale > 1) ? host->scale : 1;
+}
+
+void
+tiku_host_set_fullscreen(tiku_host_t *host, int on)
+{
+    Atom state, full;
+    int screen;
+
+    if (host == NULL || host->display == NULL) {
+        return;
+    }
+    host->fullscreen = (on != 0);
+    state = XInternAtom(host->display, "_NET_WM_STATE", False);
+    full = XInternAtom(host->display, "_NET_WM_STATE_FULLSCREEN", False);
+    if (!host->mapped) {
+        /* Before the map: a manager reads the state off the window as it
+         * takes it, so the first frame is already the whole screen. */
+        if (on) {
+            XChangeProperty(host->display, host->window, state, XA_ATOM, 32,
+                            PropModeReplace, (unsigned char *)&full, 1);
+        } else {
+            XDeleteProperty(host->display, host->window, state);
+        }
+    } else {
+        /* After it: the manager owns the window's state, and is asked
+         * through the root, as the standard says (1 adds, 0 removes). */
+        XEvent e;
+
+        memset(&e, 0, sizeof e);
+        e.xclient.type = ClientMessage;
+        e.xclient.window = host->window;
+        e.xclient.message_type = state;
+        e.xclient.format = 32;
+        e.xclient.data.l[0] = on ? 1 : 0;
+        e.xclient.data.l[1] = (long)full;
+        e.xclient.data.l[2] = 0;
+        e.xclient.data.l[3] = 1;
+        XSendEvent(host->display, DefaultRootWindow(host->display), False,
+                   SubstructureRedirectMask | SubstructureNotifyMask, &e);
+    }
+    /* And the window itself, for a server with no manager to answer --
+     * a test server, a bare Xvfb.  Under a manager this is overruled by
+     * the manager's own placement, which is the answer wanted anyway. */
+    if (on) {
+        screen = DefaultScreen(host->display);
+        XMoveResizeWindow(host->display, host->window, 0, 0,
+                          (unsigned)DisplayWidth(host->display, screen),
+                          (unsigned)DisplayHeight(host->display, screen));
+    }
+    XFlush(host->display);
 }
 
 void

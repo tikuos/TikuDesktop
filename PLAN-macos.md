@@ -328,6 +328,14 @@ launcher grew two guards on the way: a socket file outlives its agent,
 and a loaded agent without the root helper still hangs clients, so a
 socket counts only with both services present.
 
+`-fullscreen` followed the same day: `tiku_host_set_fullscreen()` asks
+the manager in the standard way (`_NET_WM_STATE_FULLSCREEN`, set before
+the first map so the first frame is already the screen) and sizes the
+window to the screen itself where there is no manager, so a bare Xvfb
+answers too.  The size comes back as the resize the desktop already
+handles.  Proved both ways: 2240x1230 at 0,0 under quartz-wm on the
+iMac, 640x480 on the render test's private server.
+
 ### What four flaky tests actually were
 
 `apphelp`, `helpreader`, `imageviewer` and `utilities` had been called

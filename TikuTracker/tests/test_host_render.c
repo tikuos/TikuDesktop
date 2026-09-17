@@ -20,6 +20,38 @@ static int64_t now_us(void)
     return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;
 }
 
+/**
+ * @brief Fullscreen on a server with no manager: the window is the screen.
+ *
+ * The private server runs no window manager, so this is the fallback
+ * path -- the host sizes the window itself -- and the size must come
+ * back through the same resize event a manager's answer would.
+ */
+static void fullscreen_presentation(Display *d, Window w, tiku_host_t *host)
+{
+    int screen = DefaultScreen(d);
+    int want_w = DisplayWidth(d, screen), want_h = DisplayHeight(d, screen);
+    int seen_w = 0, seen_h = 0;
+    tiku_event_t ev;
+    XWindowAttributes attrs;
+
+    tiku_host_set_fullscreen(host, 1);
+    for (int64_t until = now_us() + 500000; now_us() < until;) {
+        while (tiku_host_poll(host, &ev)) {
+            if (ev.type == TIKU_EVENT_RESIZE) { seen_w = ev.width; seen_h = ev.height; }
+        }
+        if (seen_w == want_w && seen_h == want_h) break;
+        tiku_host_wait(host, 2000);
+    }
+    XSync(d, False);
+    assert(XGetWindowAttributes(d, w, &attrs));
+    assert(attrs.width == want_w && attrs.height == want_h);
+    assert(attrs.x == 0 && attrs.y == 0);
+    assert(seen_w == want_w && seen_h == want_h);
+    printf("PASS: fullscreen makes the window the screen (%dx%d) and says so as a resize\n",
+           want_w, want_h);
+}
+
 /** @brief Find the fixture's own window on the private server. */
 static Window find_host(Display *d)
 {
@@ -211,6 +243,7 @@ int main(void)
     wakeup(display,w,host);
     splash_frames(d,w,host);
     resized_presentation(d,w,host);
+    fullscreen_presentation(d,w,host);
     tiku_host_close(host); XCloseDisplay(d);
     return 0;
 }

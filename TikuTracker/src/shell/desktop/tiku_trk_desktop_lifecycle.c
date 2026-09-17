@@ -269,6 +269,7 @@ desktop_parse_args(int argc, char **argv, desktop_options_t *o)
         else if (strcmp(argv[i], "-shotmenu") == 0) { o->shot_menu = 1; }
         else if (strcmp(argv[i], "-script") == 0 && i + 1 < argc) { o->script_path = argv[++i]; }
                 else if (strcmp(argv[i], "-mute") == 0) { o->mute = 1; }
+        else if (strcmp(argv[i], "-fullscreen") == 0) { o->fullscreen = 1; }
         else if (strcmp(argv[i], "-after") == 0 && i + 1 < argc) {
             o->after = argv[++i];
         }
@@ -399,6 +400,12 @@ boot_namespace(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         if (app->host == NULL) {
             fprintf(stderr, "tracker: no display\n");
             return 1;
+        }
+        /* Before the first frame, so the screen is never seen as a
+         * window that then grows: the manager takes the state with the
+         * window, and the size comes back as a resize like any other. */
+        if (o->fullscreen) {
+            tiku_host_set_fullscreen(app->host, 1);
         }
         if (tiku_host_scale(app->host) > 1) {
             (void)tiku_surface_rescale(app->surf,

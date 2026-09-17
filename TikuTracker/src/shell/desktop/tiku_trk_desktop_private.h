@@ -589,6 +589,7 @@ typedef struct {
     int         safe_mode;
     const char *script_path;        /* -script: the file driving this run */
     int         mute;               /* -mute: every moment silent */
+    int         fullscreen;         /* -fullscreen: the window is the screen */
     /* The conductor channel is OFF unless asked for by name: a shell
      * that anything reaching its socket could puppet is a shell with a
      * hole in it.  The path is given rather than derived so a harness
