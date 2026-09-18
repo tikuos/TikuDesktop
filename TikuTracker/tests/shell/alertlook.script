@@ -13,7 +13,8 @@ note the summary line is BOLD: the doubled stem of its first letter
 expect-pixel 537 190 000000
 expect-pixel 550 190 000000
 note the buttons are label-sized: Cancel starts where Move to Trash needs
-expect-pixel 371 290 828282
+note (its hairline, at mid height, clear of the rounded corners)
+expect-pixel 370 296 828282
 key Escape
 wait 3
 note a refusal is a STOP and wears the red disc, not the caution yellow
@@ -26,14 +27,15 @@ wait 6
 expect-pixel 308 212 cb3030
 key Return
 wait 3
-note the Find window's Search ring shows only while Return would hit it
+note the Find window's Search button wears the accent only while Return
+note would hit it -- the default button is the filled one now
 key f ctrl
 wait 5
-expect-pixel 690 391 cbcbcb
-note focus elsewhere: the ring must not promise a Return it will not get
+expect-pixel 690 391 336698
+note focus elsewhere: the fill must not promise a Return it will not get
 click-desk photos
 wait 1
 click-desk photos
 wait 6
-expect-pixel 690 391 ffffff
+expect-pixel 690 391 d8d8d8
 quit

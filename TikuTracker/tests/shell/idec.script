@@ -28,13 +28,13 @@ note the same scrollbar the folder windows wear, in the same place --
 note and a press on its track PAGES the listing toward the hand
 note the same scrollbar the folder windows wear, in the same gutter --
 note and a press on its track PAGES the listing toward the hand
-expect-pixel 722 230 d8d8d8
+expect-pixel 722 230 7d7d7d
 click 722 360
 wait 8
-expect-pixel 722 230 b1b1b1
+expect-pixel 722 230 c2c2c2
 click 722 215
 wait 8
-expect-pixel 722 230 d8d8d8
+expect-pixel 722 230 7d7d7d
 note the way UP heads the list itself: two clicks step into a folder,
 note and the enclosing folder's row steps back out -- without it a
 note panel that opened deep was a panel a person could not leave.  The

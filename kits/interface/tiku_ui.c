@@ -476,12 +476,7 @@ arrow_button(tiku_surface_t *s, tiku_rect_t r, int dir, int can, int down)
 {
     /* Down reads as the button's own pressed look: a darker face and
      * the bevel inverted, so a held arrow is seen to be held. */
-    tiku_fill(s, r, down ? tiku_tint(PANEL, 1.16f) : PANEL);
-    if (down) {
-        tiku_bevel(s, r, SHADOW(), WHITE());
-    } else {
-        tiku_bevel(s, r, WHITE(), SHADOW());
-    }
+    tiku_fill(s, r, down ? tiku_tint(PANEL, 1.16f) : tiku_tint(PANEL, 1.10f));
     tiku_frame(s, r, FRAME());
     tiku_ui_arrow(s, r, dir, can);
 }
@@ -584,8 +579,8 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
     /* The track a full shade down: one step from the panel read as the
      * panel, and a scrollbar nobody can see is a listing nobody knows
      * is longer than its window. */
-    tiku_fill(s, r, tiku_tint(PANEL, 1.18f));
-    tiku_bevel(s, r, SHADOW(), WHITE());
+    tiku_fill(s, r, tiku_tint(PANEL, 1.10f));
+    tiku_frame(s, r, tiku_tint(PANEL, 1.22f));
 
     {
         /* Whether each direction HAS anywhere to go: at an end the arrow
@@ -624,23 +619,19 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
             ? (tiku_rect_t){ track.x + toff, track.y, tlen, track.h }
             : (tiku_rect_t){ track.x, track.y + toff, track.w, tlen };
 
-    tiku_fill(s, thumb, PANEL);
-    tiku_bevel(s, thumb, WHITE(), SHADOW());
-    tiku_frame(s, thumb, FRAME());
+    {
+        /* A pill, a pixel in from the track on each side. */
+        tiku_rect_t pill = horiz
+            ? (tiku_rect_t){ thumb.x + 1, thumb.y + 2, thumb.w - 2,
+                             thumb.h - 4 }
+            : (tiku_rect_t){ thumb.x + 2, thumb.y + 1, thumb.w - 4,
+                             thumb.h - 2 };
+        int radius = ((horiz ? pill.h : pill.w) - 1) / 2;
 
-    /* The knurl: three grip lines at the thumb's centre, the detail that
-     * makes an R5 scrollbar recognisable at a glance. */
-    for (i = -1; i <= 1; i++) {
-        if (horiz) {
-            int x = thumb.x + thumb.w / 2 + i * 3;
-            tiku_vline(s, x, thumb.y + 4, thumb.h - 8, SHADOW());
-            tiku_vline(s, x + 1, thumb.y + 4, thumb.h - 8, WHITE());
-        } else {
-            int y = thumb.y + thumb.h / 2 + i * 3;
-            tiku_hline(s, thumb.x + 4, y, thumb.w - 8, SHADOW());
-            tiku_hline(s, thumb.x + 4, y + 1, thumb.w - 8, WHITE());
-        }
+        tiku_fill_round(s, pill, radius, TIKU_CORNER_ALL,
+                        tiku_tint(PANEL, 1.42f));
     }
+
     tiku_gfx_rec_leave(s, rec);
 }
 

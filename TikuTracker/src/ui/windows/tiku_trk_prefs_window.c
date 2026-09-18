@@ -36,8 +36,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         rect.y = content.y + y;
         rect.w = width;
         rect.h = height;
-        tiku_fill(surface, rect, selected ? TIKU_C_SELECT
-                                               : TIKU_C_PANEL);
+        tiku_fill(surface, rect, TIKU_C_PANEL);
+        if (selected) {
+            tiku_fill_round(surface, rect, 3, TIKU_CORNER_ALL, TIKU_C_SELECT);
+        }
         {
             const char *name =
                 tiku_trk_prefs_page_name((tiku_trk_page_t)i);

@@ -732,10 +732,11 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
     rows = tiku_trk_deskbar_mini(db->dock) ? 0 : db_list_rows(db);
     db_draw_frame(db, s, &rows);
 
+    /* On the desk the way a window is: a shadow beneath, a hairline
+     * round, corners square since it stands in the screen's corner. */
+    tiku_shadow(s, db->frame, 12, 0, 0.35f);
     tiku_fill(s, db->frame, TIKU_C_PANEL);
-    tiku_bevel(s, db->frame,
-                    tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX),
-                    tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_frame(s, db->frame, tiku_tint(TIKU_C_PANEL, 1.40f));
 
     db_draw_leaf(db, s, fb, dark, &leaf);
 

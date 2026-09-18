@@ -275,7 +275,7 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
             band = (tiku_rgb_t)tiku_trk_prefs_get(render->prefs,
                        "SelectedLabelColor") & 0xffffffu;
         }
-        tiku_fill(surface, label, band);
+        tiku_fill_round(surface, label, 3, TIKU_CORNER_ALL, band);
     }
     {
         tiku_rgb_t ink = TIKU_C_TEXT;
@@ -648,7 +648,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                 }
                 /* Shown-while-inactive is shown in GREY: still there,
                  * plainly not the window the keyboard is in (IV-022). */
-                tiku_fill(surface, name,
+                tiku_fill_round(surface, name, 3, TIKU_CORNER_ALL,
                     win_active ? TIKU_C_SELECT
                                : TIKU_RGB(154, 154, 154));
             }

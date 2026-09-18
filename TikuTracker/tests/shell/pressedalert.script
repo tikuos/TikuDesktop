@@ -12,14 +12,15 @@ move 200 97
 release 200 97
 wait 25
 expect-alert exists
-note the button up: its face is the panel's own grey
-expect-pixel 646 306 d8d8d8
+note the button up: Cancel is the default here, so its face is the
+note desk's accent
+expect-pixel 646 306 336698
 note pressed and held: the alert is still here, the button is down
 press 668 301
 wait 4
 expect-alert exists
 note and down: the face darkens under the hand
-expect-pixel 646 306 b5b5b5
+expect-pixel 646 306 2b5680
 note the hand wanders off and lets go there: nothing is answered
 move 500 500
 wait 4
