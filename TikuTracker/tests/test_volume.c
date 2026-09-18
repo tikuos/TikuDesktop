@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #include "tiku_fs.h"
 #include "tiku_volume.h"
@@ -70,6 +71,35 @@ main(void)
     int n, i, boots = 0;
 
     own_home();
+    printf("reading the partitions\n");
+    {
+        /* The Mount menu asks on every frame a folder window draws, so
+         * asking again must be cheap and must say the same thing: on
+         * Darwin each disk is a mach round trip, kept between asks. */
+        tiku_partition_t first[32], again[32];
+        struct timespec a, b;
+        int pn = tiku_partitions_scan(first, 32), qn = 0, same = 1, k;
+        double ms;
+
+        clock_gettime(CLOCK_MONOTONIC, &a);
+        for (k = 0; k < 50; k++) {
+            qn = tiku_partitions_scan(again, 32);
+        }
+        clock_gettime(CLOCK_MONOTONIC, &b);
+        ms = (double)(b.tv_sec - a.tv_sec) * 1e3 +
+             (double)(b.tv_nsec - a.tv_nsec) / 1e6;
+        for (k = 0; k < pn && k < qn; k++) {
+            same = same && strcmp(first[k].name, again[k].name) == 0 &&
+                   first[k].kb == again[k].kb &&
+                   first[k].mounted == again[k].mounted &&
+                   strcmp(first[k].mount, again[k].mount) == 0;
+        }
+        check(pn == qn && same, "CW-034",
+              "asked again, the partitions are the same partitions");
+        printf("  50 scans in %.1f ms\n", ms);
+        check(ms < 100.0, "CW-034",
+              "and asking fifty times costs under a tenth of a second");
+    }
     printf("reading the mount table\n");
     n = tiku_volumes_scan(&vs);
     check(n > 0, "MA-021", "at least one volume is mounted");

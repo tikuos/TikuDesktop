@@ -678,24 +678,84 @@ disk_number(CFDictionaryRef about, CFStringRef key)
  * there are to ask about is what /dev has entries for -- the same two
  * facts the other host reads out of /proc/partitions, by the only route
  * this one offers.
+ *
+ * Asking costs a mach round trip and a plist per disk, some 8 ms for
+ * twenty of them, and the Mount menu asks on every frame a folder
+ * window draws.  So the answer is kept, and given again while nothing
+ * it depends on has changed: the names under /dev (devfs does not date
+ * the directory when a disk appears, so they are read, not stat'ed)
+ * and the mount table (getmntinfo, a copy the kernel already holds).
  */
+/** @brief FNV-1a over a string, folded into a running hash. */
+static uint64_t
+fold_text(uint64_t h, const char *text)
+{
+    for (; *text != '\0'; text++) {
+        h = (h ^ (unsigned char)*text) * 1099511628211ull;
+    }
+    return h;
+}
+
+/** @brief The mount table folded: where each mount is and what it is. */
+static uint64_t
+fold_mounts(uint64_t h)
+{
+    struct statfs *table = NULL;
+    int n = getmntinfo(&table, MNT_NOWAIT);
+    int i;
+
+    for (i = 0; i < n; i++) {
+        h = fold_text(h, table[i].f_mntonname);
+        h = fold_text(h, table[i].f_mntfromname);
+    }
+    return h;
+}
+
+#define PARTITIONS_HELD 64      /* more disks than a desk ever has      */
+
 int
 tiku_partitions_scan(tiku_partition_t *out, int max)
 {
+    static tiku_partition_t held[PARTITIONS_HELD];
+    static int held_n = -1;     /* -1: nothing kept yet                 */
+    static uint64_t held_key;
     DASessionRef session;
     struct dirent *entry;
     DIR *dev;
-    int n = 0;
+    uint64_t key = 1469598103934665603ull;
+    int n = 0, i;
 
     if (out == NULL || max <= 0) {
         return 0;
     }
+    dev = opendir("/dev");
+    while (dev != NULL && (entry = readdir(dev)) != NULL) {
+        if (strncmp(entry->d_name, "disk", 4) == 0) {
+            key = fold_text(key, entry->d_name);
+        }
+    }
+    key = fold_mounts(key);
+    if (held_n >= 0 && key == held_key) {
+        if (dev != NULL) {
+            (void)closedir(dev);
+        }
+        for (i = 0; i < held_n && i < max; i++) {
+            out[i] = held[i];
+        }
+        return i;
+    }
     session = DASessionCreate(kCFAllocatorDefault);
     if (session == NULL) {
+        if (dev != NULL) {
+            (void)closedir(dev);
+        }
         return 0;
     }
-    dev = opendir("/dev");
-    while (dev != NULL && (entry = readdir(dev)) != NULL && n < max) {
+    if (dev != NULL) {
+        rewinddir(dev);
+    }
+    while (dev != NULL && (entry = readdir(dev)) != NULL &&
+           n < PARTITIONS_HELD) {
         CFDictionaryRef about;
         DADiskRef disk;
 
@@ -712,15 +772,16 @@ tiku_partitions_scan(tiku_partition_t *out, int max)
             CFURLRef at = CFDictionaryGetValue(
                 about, kDADiskDescriptionVolumePathKey);
 
-            memset(&out[n], 0, sizeof out[n]);
-            snprintf(out[n].name, sizeof out[n].name, "%s", entry->d_name);
-            out[n].kb = (uint64_t)(disk_number(
+            memset(&held[n], 0, sizeof held[n]);
+            snprintf(held[n].name, sizeof held[n].name, "%s",
+                     entry->d_name);
+            held[n].kb = (uint64_t)(disk_number(
                 about, kDADiskDescriptionMediaSizeKey) / 1024);
             if (at != NULL &&
                 CFURLGetFileSystemRepresentation(
-                    at, true, (UInt8 *)out[n].mount,
-                    (CFIndex)sizeof out[n].mount)) {
-                out[n].mounted = 1;
+                    at, true, (UInt8 *)held[n].mount,
+                    (CFIndex)sizeof held[n].mount)) {
+                held[n].mounted = 1;
             }
             n++;
             CFRelease(about);
@@ -731,7 +792,12 @@ tiku_partitions_scan(tiku_partition_t *out, int max)
         (void)closedir(dev);
     }
     CFRelease(session);
-    return drop_carved(out, n);
+    held_n = drop_carved(held, n);
+    held_key = key;
+    for (i = 0; i < held_n && i < max; i++) {
+        out[i] = held[i];
+    }
+    return i;
 }
 #else
 int
