@@ -40,6 +40,14 @@ else
 SYS         := $(K)/support/tiku_sys_linux.c
 X11CMD      := $(K)/interface/tiku_x11_command_linux.c
 endif
+# And the window itself: the X host is three files, the Mac's is one
+# (mk/toolchain.mk says which).
+ifeq ($(TIKU_HOST),cocoa)
+HOST        := $(K)/interface/tiku_cocoa.m
+else
+HOST        := $(K)/interface/tiku_x11.c $(K)/interface/tiku_x11_clipboard.c \
+               $(X11CMD)
+endif
 SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c \
                $(K)/support/tiku_manifest.c \
                $(K)/support/tiku_trail.c $(K)/support/tiku_report.c \
@@ -86,8 +94,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_slider_paint.c $(K)/interface/tiku_tabs_paint.c \
                $(K)/interface/tiku_list_paint.c $(K)/interface/tiku_colors_paint.c \
                $(K)/interface/tiku_window.c \
-               $(K)/interface/tiku_x11.c $(K)/interface/tiku_x11_clipboard.c \
-               $(X11CMD)
+               $(HOST)
 TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_hvif.c $(K)/translation/tiku_image.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
@@ -153,11 +160,11 @@ PIC_LIBS  := $(patsubst $(BUILD)/%,$(PIC)/%,$(DESK_LIBS))
 # quietly runs code that is no longer in the tree.
 #
 define KIT_RULES
-$(BUILD)/libtiku_$(1).a: $$(patsubst $(K)/%.c,$(OBJ)/$(K)/%.o,$($(2))) mk/kits.mk
+$(BUILD)/libtiku_$(1).a: $$(addprefix $(OBJ)/,$$(addsuffix .o,$$(basename $($(2))))) mk/kits.mk
 	@mkdir -p $$(dir $$@)
 	@rm -f $$@
 	$$(AR) rcs $$@ $$(filter %.o,$$^)
-$(PIC)/libtiku_$(1).a: $$(patsubst $(K)/%.c,$(PIC)/$(K)/%.o,$($(2))) mk/kits.mk
+$(PIC)/libtiku_$(1).a: $$(addprefix $(PIC)/,$$(addsuffix .o,$$(basename $($(2))))) mk/kits.mk
 	@mkdir -p $$(dir $$@)
 	@rm -f $$@
 	$$(AR) rcs $$@ $$(filter %.o,$$^)

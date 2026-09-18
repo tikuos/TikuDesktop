@@ -28,7 +28,22 @@ LDFLAGS ?=
 # without cfmakeraw, ptsname_r, or the timespecs in struct stat -- and
 # fails on the seam rather than on anything real.
 UNAME_S := $(shell uname -s)
+# The window underneath: Xlib where there is an X server, AppKit on a
+# Mac, chosen here so that only the one file per host that draws on
+# either has to know.  A Mac may still ask for the X host (make
+# TIKU_HOST=x11) -- it is what the X-only host tests are about.
 ifeq ($(UNAME_S),Darwin)
+TIKU_HOST ?= cocoa
+else
+TIKU_HOST ?= x11
+endif
+ifeq ($(TIKU_HOST),x11)
+X11_LIBS := -lX11
+else
+X11_LIBS :=
+endif
+ifeq ($(UNAME_S),Darwin)
+ifeq ($(TIKU_HOST),x11)
 X11_PREFIX ?= $(firstword $(wildcard /opt/X11 /opt/homebrew/opt/libx11 \
                                      /usr/local/opt/libx11))
 ifeq ($(X11_PREFIX),)
@@ -39,6 +54,10 @@ X11_CFLAGS := -I$(X11_PREFIX)/include \
               $(addprefix -I,$(wildcard /opt/homebrew/include /usr/local/include))
 X11_LDFLAGS := -L$(X11_PREFIX)/lib \
                $(addprefix -L,$(wildcard /opt/homebrew/lib /usr/local/lib))
+else
+X11_CFLAGS :=
+X11_LDFLAGS := -framework Cocoa -framework QuartzCore
+endif
 CFLAGS  += -D_DARWIN_C_SOURCE -include kits/support/tiku_darwin.h $(X11_CFLAGS)
 LDFLAGS += $(X11_LDFLAGS)
 # What GNU ld spells --gc-sections.
@@ -69,10 +88,19 @@ $(OBJ)/kits/%.o: kits/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
 
+# The one kit file written to AppKit, in its language; retained and
+# released by hand, so the host's C struct may hold what it opened.
+$(OBJ)/kits/%.o: kits/%.m
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
+
 # The same kit sources again, position-independent: a shared object
 # cannot link an archive of fixed-address code, and applications are
 # loadable.
 $(PIC)/kits/%.o: kits/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -MMD -MP -c -o $@ $<
+$(PIC)/kits/%.o: kits/%.m
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -MMD -MP -c -o $@ $<
 

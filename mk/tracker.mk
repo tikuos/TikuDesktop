@@ -199,28 +199,28 @@ ENGINE_DESKTOP_OBJ := $(call objs,$(SCRIPT_ENGINE_DESKTOP))
 
 $(SYSTEM)/TikuTracker: $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) | $(SYSTEM)
 	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) \
-	      $(LDFLAGS) -lX11 -lm
+	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(DEV)/TikuTracker: $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) $(DESK_LIBS) | $(DEV)
 	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) $(DESK_LIBS) \
-	      $(LDFLAGS) -lX11 -lm
+	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(SYSTEM)/TikuDesktop: $(DESKTOP_OBJ) $(STUB_OBJ) $(DESK_LIBS) | $(SYSTEM)
 	$(CC) $(CFLAGS) -o $@ $(DESKTOP_OBJ) $(STUB_OBJ) $(DESK_LIBS) \
-	      $(LDFLAGS) -lX11 -lm
+	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(DEV)/TikuDesktop: $(DESKTOP_OBJ) $(ENGINE_DESKTOP_OBJ) $(DESK_LIBS) | $(DEV)
 	$(CC) $(CFLAGS) -o $@ $(DESKTOP_OBJ) $(ENGINE_DESKTOP_OBJ) $(DESK_LIBS) \
-	      $(LDFLAGS) -lX11 -lm
+	      $(LDFLAGS) $(X11_LIBS) -lm
 
 # The out-of-process driver: an ordinary program that speaks the conductor
 # channel to a shipping shell and links nothing of Tracker.
 CONDUCT_KITS := $(LIB_APPLICATION) $(LIB_INTERFACE) $(LIB_DEVICE) $(LIB_SUPPORT)
 $(DEV)/trk-conduct: $(call objs,$(T)/tests/trk_conduct.c) $(CONDUCT_KITS) | $(DEV)
-	$(CC) $(CFLAGS) -o $@ $< $(CONDUCT_KITS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(CFLAGS) -o $@ $< $(CONDUCT_KITS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(BUILD)/icon-export: $(call objs,$(T)/tools/tiku_trk_icon_export.c) $(DESK_LIBS) | $(SYSTEM)
-	$(CC) $(CFLAGS) -o $@ $< $(DESK_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(CFLAGS) -o $@ $< $(DESK_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 .PHONY: shells
 shells: $(SYSTEM)/TikuTracker $(SYSTEM)/TikuDesktop \
@@ -231,6 +231,13 @@ shells: $(SYSTEM)/TikuTracker $(SYSTEM)/TikuDesktop \
 # tests/test_<name>.c exists, so one cannot be compiled on every build and
 # executed on none, which is how test_launch once sat for a session.
 TESTS    := $(patsubst $(T)/tests/%.c,%,$(wildcard $(T)/tests/test_*.c))
+# Two suites look at the X window from outside through Xlib and one
+# opens the Mac's; each is a suite only where its host is the host.
+ifeq ($(TIKU_HOST),x11)
+TESTS    := $(filter-out test_host_cocoa,$(TESTS))
+else
+TESTS    := $(filter-out test_host_render test_host_clipboard,$(TESTS))
+endif
 TESTBINS := $(addprefix $(BUILD)/tests/,$(TESTS))
 
 # One line per test: the sources it links besides its own object, and
@@ -256,38 +263,38 @@ test_title_SRCS   := $(COMMON) $(POSEVIEW) $(T)/src/ui/tiku_trk_titleview.c
 test_match_SRCS   := $(T)/src/core/tiku_trk_match.c
 test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
 test_deskbar_hover_SRCS := $(test_deskbar_dock_SRCS)
-test_deskbar_hover_LDLIBS := -lX11 -lm
+test_deskbar_hover_LDLIBS := $(X11_LIBS) -lm
 test_fontprefs_SRCS   := $(T)/src/deskbar/tiku_trk_deskbar_prefs.c $(T)/src/deskbar/tiku_trk_fontprefs.c
 test_help_window_SRCS := $(D)/reader/tiku_reader_help_window.c
-test_help_window_LDLIBS := -lX11 -lm
+test_help_window_LDLIBS := $(X11_LIBS) -lm
 test_vfs_rpc_LDLIBS := -pthread
-test_help_reader_LDLIBS := -lX11 -lm
-test_document_reader_LDLIBS := -lX11 -lm
-test_image_viewer_LDLIBS := -lX11 -lm
+test_help_reader_LDLIBS := $(X11_LIBS) -lm
+test_document_reader_LDLIBS := $(X11_LIBS) -lm
+test_image_viewer_LDLIBS := $(X11_LIBS) -lm
 test_image_association_SRCS := $(COMMON) $(POSEVIEW)
-test_image_association_LDLIBS := -lX11 -lm
+test_image_association_LDLIBS := $(X11_LIBS) -lm
 test_document_association_SRCS := $(COMMON) $(POSEVIEW)
-test_document_association_LDLIBS := -lX11 -lm
-test_editor_document_LDLIBS := -lX11 -lm
-test_editor_resize_LDLIBS := -lX11 -lm
-test_tracker_image_LDLIBS := -lX11 -lm
+test_document_association_LDLIBS := $(X11_LIBS) -lm
+test_editor_document_LDLIBS := $(X11_LIBS) -lm
+test_editor_resize_LDLIBS := $(X11_LIBS) -lm
+test_tracker_image_LDLIBS := $(X11_LIBS) -lm
 test_tracker_image_SRCS := $(T)/src/core/tiku_trk_task.c
-test_host_render_LDLIBS := -lX11 -lm
+test_host_render_LDLIBS := $(X11_LIBS) -lm
 test_host_render_SRCS := $(T)/src/shell/tiku_trk_splash.c
-test_reader_large_LDLIBS := -lX11 -lm
+test_reader_large_LDLIBS := $(X11_LIBS) -lm
 test_fonts_window_SRCS := $(test_fontprefs_SRCS)
-test_fonts_window_LDLIBS := -lX11 -lm
+test_fonts_window_LDLIBS := $(X11_LIBS) -lm
 test_app_groups_SRCS := $(COMMON) $(ICONS) $(DESKBAR) $(T)/src/deskbar/tiku_trk_deskbar_prefs.c
-test_app_groups_LDLIBS := -lX11 -lm
+test_app_groups_LDLIBS := $(X11_LIBS) -lm
 test_openwith_apps_SRCS := $(COMMON) $(T)/src/ui/windows/tiku_trk_open_with_window.c
-test_openwith_apps_LDLIBS := -lX11 -lm
+test_openwith_apps_LDLIBS := $(X11_LIBS) -lm
 test_app_discovery_CFLAGS := -ffunction-sections -fdata-sections
 test_app_discovery_SRCS := $(T)/src/core/tiku_trk_launch.c
-test_app_discovery_LDLIBS := -lX11 -lm $(GC_SECTIONS)
+test_app_discovery_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_app_picker_CFLAGS := -ffunction-sections -fdata-sections
-test_app_picker_LDLIBS := -lX11 -lm $(GC_SECTIONS)
+test_app_picker_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_runner_CFLAGS := -ffunction-sections -fdata-sections
-test_runner_LDLIBS := -lX11 -lm -ldl $(GC_SECTIONS)
+test_runner_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
 $(BUILD)/tests/test_runner: | $(BUILD)/apps/image/TikuImage.so \
                              $(BUILD)/apps/image/app.manifest
 test_soundprefs_SRCS  := $(T)/src/core/tiku_trk_prefs.c $(T)/src/core/tiku_trk_soundprefs.c
@@ -316,14 +323,14 @@ test_clip_SRCS   := $(T)/src/core/tiku_trk_clip.c
 test_edit_SRCS   := $(T)/src/core/tiku_trk_select.c $(T)/src/core/tiku_trk_match.c
 test_menu_SRCS   := $(T)/src/ui/tiku_trk_shortcuts.c $(T)/src/ui/tiku_trk_cwmenu.c
 test_splash_SRCS   := $(T)/src/shell/tiku_trk_splash.c
-test_conduct_LDLIBS := -lX11 -lm
+test_conduct_LDLIBS := $(X11_LIBS) -lm
 # A thread stands in for the desktop's own process, reading the line.
 test_remote_LDLIBS := -lpthread
-test_client_wake_LDLIBS := -lX11 -lm
-test_client_reports_LDLIBS := -lX11 -lm
-test_appload_LDLIBS := -lX11 -lm -ldl
+test_client_wake_LDLIBS := $(X11_LIBS) -lm
+test_client_reports_LDLIBS := $(X11_LIBS) -lm
+test_appload_LDLIBS := $(X11_LIBS) -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
-test_shm_LDLIBS := -lX11 -lm $(RT_LIBS)
+test_shm_LDLIBS := $(X11_LIBS) -lm $(RT_LIBS)
 ifeq ($(UNAME_S),Linux)
 test_shm_LDLIBS += -Wl,--wrap=posix_fallocate
 endif
@@ -340,33 +347,33 @@ test_reap_SRCS := $(T)/src/core/tiku_trk_launch.c
 test_lease_LDLIBS := -lutil -lpthread
 test_reclaim_LDLIBS := -lutil -lpthread
 test_link_LDLIBS := -lutil
-test_menutext_LDLIBS := -lX11 -lm
-test_ide_default_LDLIBS := -lX11 -lm
-test_ide_deadboard_LDLIBS := -lX11 -lm
-test_ide_workflow_LDLIBS := -lX11 -lm
-test_sensor_LDLIBS := -lX11 -lm
-test_bench_LDLIBS := -lX11 -lm
-test_console_LDLIBS := -lX11 -lm
-test_ide_debug_LDLIBS := -lX11 -lm
-test_deviceprefs_LDLIBS := -lX11 -lm
-test_calculator_LDLIBS := -lX11 -lm
-test_notes_LDLIBS := -lX11 -lm
+test_menutext_LDLIBS := $(X11_LIBS) -lm
+test_ide_default_LDLIBS := $(X11_LIBS) -lm
+test_ide_deadboard_LDLIBS := $(X11_LIBS) -lm
+test_ide_workflow_LDLIBS := $(X11_LIBS) -lm
+test_sensor_LDLIBS := $(X11_LIBS) -lm
+test_bench_LDLIBS := $(X11_LIBS) -lm
+test_console_LDLIBS := $(X11_LIBS) -lm
+test_ide_debug_LDLIBS := $(X11_LIBS) -lm
+test_deviceprefs_LDLIBS := $(X11_LIBS) -lm
+test_calculator_LDLIBS := $(X11_LIBS) -lm
+test_notes_LDLIBS := $(X11_LIBS) -lm
 test_hex_SRCS := $(D)/hex/tiku_hex_model.c
-test_hex_LDLIBS := -lX11 -lm
-test_forcequit_LDLIBS := -lX11 -lm
+test_hex_LDLIBS := $(X11_LIBS) -lm
+test_forcequit_LDLIBS := $(X11_LIBS) -lm
 test_device_utilities_SRCS := $(T)/src/core/tiku_trk_task.c
-test_device_utilities_LDLIBS := -lX11 -lm
+test_device_utilities_LDLIBS := $(X11_LIBS) -lm
 test_registry_SRCS := $(T)/src/core/tiku_trk_task.c
-test_registry_LDLIBS := -lX11 -lm
+test_registry_LDLIBS := $(X11_LIBS) -lm
 test_startup_CFLAGS := -ffunction-sections -fdata-sections
 test_associations_CFLAGS := -ffunction-sections -fdata-sections
 test_associations_SRCS := $(T)/src/core/tiku_trk_associations.c \
     $(T)/src/core/tiku_trk_launch.c $(T)/src/core/tiku_trk_types.c
-test_associations_LDLIBS := -lX11 -lm $(GC_SECTIONS)
+test_associations_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_startup_SRCS := $(T)/src/core/tiku_trk_frame.c
-test_startup_LDLIBS := -lX11 -lm -ldl $(GC_SECTIONS)
-test_controls_LDLIBS := -lX11 -lm
-test_text_input_LDLIBS := -lX11 -lm
+test_startup_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+test_controls_LDLIBS := $(X11_LIBS) -lm
+test_text_input_LDLIBS := $(X11_LIBS) -lm
 test_legacy_input_CFLAGS := -ffunction-sections -fdata-sections
 test_legacy_input_SRCS := $(COMMON) $(POSEVIEW) \
     $(T)/src/core/tiku_trk_select.c $(T)/src/ui/tiku_trk_find.c \
@@ -378,11 +385,11 @@ test_legacy_input_SRCS := $(COMMON) $(POSEVIEW) \
     $(T)/src/ui/windows/tiku_trk_info_window.c \
     $(T)/src/ui/windows/tiku_trk_panel_window.c \
     $(T)/src/ui/overlays/tiku_trk_status_overlay.c
-test_legacy_input_LDLIBS := -lX11 -lm -ldl $(GC_SECTIONS)
-test_preferences_kit_LDLIBS := -lX11 -lm
-test_clipboard_text_LDLIBS := -lX11 -lm
-test_host_clipboard_LDLIBS := -lX11 -lm
-test_formrow_LDLIBS := -lX11 -lm
+test_legacy_input_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+test_preferences_kit_LDLIBS := $(X11_LIBS) -lm
+test_clipboard_text_LDLIBS := $(X11_LIBS) -lm
+test_host_clipboard_LDLIBS := $(X11_LIBS) -lm
+test_formrow_LDLIBS := $(X11_LIBS) -lm
 test_gui_CFLAGS := -I$(T)/tests/boardstub -Iboard/gui -Wno-unused-function
 test_deskprefs_SRCS   := $(T)/src/core/tiku_trk_deskprefs.c $(T)/src/core/tiku_trk_background.c
 

@@ -842,13 +842,8 @@ tiku_host_pointer(tiku_host_t *host, int *x, int *y,
     return 1;
 }
 
-/**
- * @brief Open a window showing @p s and pump events until it is closed.
- *
- * @return 0 on a clean exit, -1 if no display was available.
- */
 int
-tiku_x11_show(const tiku_surface_t *s, const char *title)
+tiku_host_show(const tiku_surface_t *s, const char *title)
 {
     Display *d;
     Window w;

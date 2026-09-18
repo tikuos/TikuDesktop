@@ -70,4 +70,13 @@ void tiku_host_set_resize_cursor(tiku_host_t *host, int enabled);
 int tiku_host_pointer(tiku_host_t *host, int *x, int *y,
                            unsigned *modifiers);
 
+/**
+ * @brief Open a window showing @p s and pump events until it is closed.
+ *
+ * For a sample that has one picture to show: a key, a click or the
+ * close box ends it.
+ * @return 0 on a clean exit, -1 if no display was available.
+ */
+int tiku_host_show(const tiku_surface_t *s, const char *title);
+
 #endif /* TIKU_HOST_H_ */

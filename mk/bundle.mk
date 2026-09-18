@@ -55,6 +55,7 @@ app: $(SYSTEM)/TikuDesktop system loadable $(APPICON)
 	  '  <key>NSHighResolutionCapable</key><true/>' \
 	  '  <key>LSMinimumSystemVersion</key><string>11.0</string>' \
 	  '</dict></plist>' > $(BUNDLE)/Contents/Info.plist
+	@echo "$(TIKU_HOST)" > $(BUNDLE)/Contents/Resources/host
 	@cp tools/bundle-launch.sh $(BUNDLE)/Contents/MacOS/TikuDesktop
 	@chmod +x $(BUNDLE)/Contents/MacOS/TikuDesktop
 	@# Proved, not assumed: the launcher and the program it starts must

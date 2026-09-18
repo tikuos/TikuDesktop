@@ -100,7 +100,9 @@ test: all
 	        *) $$t ;; \
 	    esac || exit 1; \
 	done
-	@if command -v Xvfb > /dev/null 2>&1 || command -v Xephyr > /dev/null 2>&1; then \
+	@if [ "$(TIKU_HOST)" != x11 ]; then \
+	    echo "host clipboard: not this host's ($(TIKU_HOST)); make TIKU_HOST=x11 test runs it"; \
+	elif command -v Xvfb > /dev/null 2>&1 || command -v Xephyr > /dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory test-host-clipboard test-host-render; \
 	else \
 	    echo "host clipboard: SKIPPED -- install Xvfb or Xephyr"; \

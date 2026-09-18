@@ -13,3 +13,4 @@ temp/
 # Python's bytecode cache, left behind by the hand-run generators.
 __pycache__/
 *.pyc
+build-*/

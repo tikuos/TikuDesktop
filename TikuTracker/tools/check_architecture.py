@@ -53,6 +53,7 @@ INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
 PLATFORM_SEAM = {
     "tiku_sys.h", "tiku_sys_linux.c", "tiku_sys_darwin.c",
     "tiku_darwin.h",
+    "tiku_cocoa.m",             # the Mac's window, one file
     "tiku_volume.c",            # the mount table; milestone 4 splits it
     "tiku_state.c",             # the one place xattrs are spoken
     "tiku_app.c", "tiku_app_load.c", "tiku_client.c",

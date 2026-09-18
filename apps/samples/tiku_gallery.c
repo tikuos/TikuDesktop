@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tiku_host.h"
 #include "tiku_ui.h"
 #include "tiku_tabs.h"
 #include "tiku_tabs_paint.h"
@@ -23,10 +24,6 @@
 #include "tiku_syntax.h"
 #include "tiku_list.h"
 #include "tiku_list_paint.h"
-
-#ifndef TIKU_NO_X11
-int tiku_x11_show(const tiku_surface_t *s, const char *title);
-#endif
 
 static const char *const MENUS[] = { "File", "Edit", "View", "Window" };
 static const char *const MENUITEMS[] = {
@@ -280,7 +277,7 @@ main(int argc, char **argv)
     }
 #ifndef TIKU_NO_X11
     if (show) {
-        (void)tiku_x11_show(s, "Tiku Desktop -- Widget Gallery");
+        (void)tiku_host_show(s, "Tiku Desktop -- Widget Gallery");
     }
 #else
     (void)show;

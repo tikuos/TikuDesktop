@@ -189,12 +189,12 @@ check-metrics: $(METRICS)
 
 $(GALLERY): $(OBJ)/$(D)/samples/tiku_gallery.o $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS)
 
 $(DEMOAPP): $(OBJ)/$(D)/samples/tiku_demo_main.o $(OBJ)/$(D)/examples/framework/tiku_demo_app.o $(LIB_RUNTIME) $(LIB_UI) \
             $(LIB_TRANSPORT) | $(BUILD)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm
 
 # One rule per application, generated: a static pattern substitutes its
 # stem once, and the object's path needs the name twice.
@@ -202,14 +202,14 @@ define APP_RULE
 $(BUILD)/apps/$(if $(filter edit,$(1)),editor,terminal)/tiku-$(1): $(OBJ)/$(D)/$(1)/tiku_$(1).o $(LIB_RUNTIME) $(LIB_TRANSLATION) $(LIB_UI) \
                     $(LIB_TRANSPORT) | $(BUILD)
 	@mkdir -p $$(dir $$@)
-	$$(CC) $$(CFLAGS) -o $$@ $$^ $$(LDFLAGS) -lX11 -lm
+	$$(CC) $$(CFLAGS) -o $$@ $$^ $$(LDFLAGS) $(X11_LIBS) -lm
 endef
 $(foreach a,$(APP_NAMES),$(eval $(call APP_RULE,$(a))))
 
 $(EXAMPLES): $(BUILD)/examples/tiku-example-%: $(OBJ)/$(D)/examples/%.o $(LIB_RUNTIME) \
                                       $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm
 
 # System process hosts; neither contains application implementation.
 $(DESK_SUP): $(OBJ)/system/desk/tiku_desk.o $(LIB_SUPPORT) | $(BUILD)
@@ -219,7 +219,7 @@ $(DESK_SUP): $(OBJ)/system/desk/tiku_desk.o $(LIB_SUPPORT) | $(BUILD)
 $(RUNNER): $(OBJ)/system/run/tiku_run.o $(LIB_RUNTIME) $(LIB_UI) \
            $(LIB_TRANSPORT) | $(BUILD)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lX11 -lm -ldl
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm -ldl
 
 SO_CFLAGS := $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -shared \
              -DTIKU_APP_EMBED -DTIKU_APP_SO
@@ -227,7 +227,7 @@ SO_CFLAGS := $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -shared \
 examples loadable: $(APPS_D)/framework-demo/FrameworkDemo.so $(APPS_D)/framework-demo/app.manifest
 $(APPS_D)/framework-demo/FrameworkDemo.so: $(D)/examples/framework/tiku_demo_app.c $(PIC_LIBS)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 $(APPS_D)/framework-demo/app.manifest: $(D)/examples/framework/framework-demo.app
 	@mkdir -p $(dir $@)
 	cp $< $@
@@ -235,7 +235,7 @@ $(APPS_D)/framework-demo/app.manifest: $(D)/examples/framework/framework-demo.ap
 apps loadable: $(APPS_D)/image/TikuImage.so $(APPS_D)/image/app.manifest
 $(APPS_D)/image/TikuImage.so: $(D)/image/tiku_image_app.c $(D)/image/tiku_image_window.c $(wildcard $(D)/image/*.h $(D)/image/*.inl) $(PIC_LIBS)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(D)/image/tiku_image_app.c $(D)/image/tiku_image_window.c $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(D)/image/tiku_image_app.c $(D)/image/tiku_image_window.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/image/app.manifest: $(D)/image/image.app
 	@mkdir -p $(dir $@)
@@ -244,7 +244,7 @@ $(APPS_D)/image/app.manifest: $(D)/image/image.app
 apps loadable: $(APPS_D)/reader/TikuReader.so $(APPS_D)/reader/app.manifest
 $(APPS_D)/reader/TikuReader.so: $(D)/reader/tiku_reader_app.c $(D)/reader/tiku_reader_help_window.c $(wildcard $(D)/reader/*.h $(D)/reader/*.inl) $(PIC_LIBS)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(D)/reader/tiku_reader_app.c $(D)/reader/tiku_reader_help_window.c $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(D)/reader/tiku_reader_app.c $(D)/reader/tiku_reader_help_window.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/reader/app.manifest: $(D)/reader/reader.app
 	@mkdir -p $(dir $@)
@@ -255,10 +255,10 @@ apps loadable: $(APPS_D)/monitor/DeviceMonitor.so $(APPS_D)/vfs/VFSInspector.so 
 DEVICE_UTIL_DEPS := $(wildcard $(D)/deviceutils/*.c $(D)/deviceutils/*.inl)
 $(APPS_D)/monitor/DeviceMonitor.so: $(DEVICE_UTIL_DEPS) $(PIC_LIBS)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(D)/deviceutils/tiku_device_app.c $(PIC_LIBS) $(LDFLAGS) -lX11 -lm -pthread
+	$(CC) $(SO_CFLAGS) -o $@ $(D)/deviceutils/tiku_device_app.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm -pthread
 $(APPS_D)/vfs/VFSInspector.so: $(DEVICE_UTIL_DEPS) $(PIC_LIBS)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -DTIKU_VFS_INSPECTOR -o $@ $(D)/deviceutils/tiku_device_app.c $(PIC_LIBS) $(LDFLAGS) -lX11 -lm -pthread
+	$(CC) $(SO_CFLAGS) -DTIKU_VFS_INSPECTOR -o $@ $(D)/deviceutils/tiku_device_app.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm -pthread
 $(APPS_D)/monitor/app.manifest: $(D)/deviceutils/monitor.app
 	@mkdir -p $(dir $@)
 	cp $< $@
@@ -268,11 +268,11 @@ $(APPS_D)/vfs/app.manifest: $(D)/deviceutils/vfs.app
 
 $(APPS_D)/terminal/terminal.so: $(D)/term/tiku_term.c $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/editor/editor.so: $(D)/edit/tiku_edit.c $(wildcard $(D)/edit/*.inl) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(BUILD)/tests/slowstatvfs.so: $(T)/tests/tools/slowstatvfs.c | $(BUILD)/tests
 	@mkdir -p $(dir $@)
@@ -280,49 +280,49 @@ $(BUILD)/tests/slowstatvfs.so: $(T)/tests/tools/slowstatvfs.c | $(BUILD)/tests
 
 $(BUILD)/tests/Stall.so: $(D)/stall/tiku_stall.c $(PIC_LIBS) | $(BUILD)/tests
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(BUILD)/tests/Fault.so: $(D)/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD)/tests
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/bench/Bench.so: $(D)/bench/tiku_bench.c $(wildcard $(D)/bench/*.inl) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/calculator/DeveloperCalculator.so: $(D)/calculator/tiku_calculator.c $(wildcard $(D)/calculator/*.inl) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/notes/TikuNotes.so: $(D)/notes/tiku_notes.c $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/hex/TikuHex.so: $(D)/hex/tiku_hex.c $(D)/hex/tiku_hex_model.c $(D)/hex/tiku_hex_model.h $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(D)/hex/tiku_hex.c $(D)/hex/tiku_hex_model.c $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(D)/hex/tiku_hex.c $(D)/hex/tiku_hex_model.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/console/TikuConsole.so: $(D)/console/tiku_console.c $(wildcard $(D)/console/*.inl) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 IDE_HELPERS := $(wildcard $(D)/ide/*.inl)
 $(APPS_D)/basic/TikuBasic.so: $(D)/ide/tiku_ide.c $(IDE_HELPERS) $(PIC_LIBS) | $(PROG_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 # The same source wearing its other name: what differs is what it puts
 # forward, and a copy would only learn to disagree.
 $(APPS_D)/c/TikuC.so: $(D)/ide/tiku_ide.c $(IDE_HELPERS) $(PIC_LIBS) | $(PROG_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 define EXAMPLE_SO_RULE
 $(APPS_D)/$(1)/$(1).so: $(D)/examples/$(1).c $(PIC_LIBS)
 	@mkdir -p $$(dir $$@)
 	$$(CC) $$(CFLAGS) -Wno-unused-parameter $$(KIT_INC) -fPIC -shared \
 	      -DTIKU_EXAMPLE_EMBED -DTIKU_APP_SO -o $$@ $$< $$(PIC_LIBS) \
-	      $$(LDFLAGS) -lX11 -lm
+	      $$(LDFLAGS) $(X11_LIBS) -lm
 endef
 $(foreach a,$(SO_EXAMPLE_NAMES),$(eval $(call EXAMPLE_SO_RULE,$(a))))
 

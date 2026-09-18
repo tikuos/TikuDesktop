@@ -19,6 +19,16 @@ here=$(cd "$(dirname "$0")" && pwd)
 TIKU_APPS="$here/../Resources/apps"
 export TIKU_APPS
 
+# A desktop built on the Mac's own window (mk/toolchain.mk, TIKU_HOST)
+# draws without any of the below: the bundle says which it carries.
+if [ "$(cat "$here/../Resources/host" 2>/dev/null)" = cocoa ]; then
+    if [ -n "${TIKU_LAUNCH_DRYRUN:-}" ]; then
+        echo "cocoa: no X server needed"
+        exit 0
+    fi
+    exec "$here/TikuDesktop-bin" "$@"
+fi
+
 if [ -z "${DISPLAY:-}" ]; then
     # An X server on a Mac announces itself as a launchd socket, and
     # there are two names for it: XQuartz's, and the one Homebrew's
