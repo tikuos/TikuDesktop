@@ -173,12 +173,33 @@ static void empty_folder(tiku_surface_t *s)
     tiku_trk_deskbar_free(db);
 }
 
+/** @brief What a hover changed is a menu's worth, said once, then empty. */
+static void hover_area(tiku_surface_t *s)
+{
+    tiku_trk_deskbar_t *db = fixture(s, TIKU_TRK_DB_RIGHT_EXPANDED);
+    int h = tiku_font_plain()->height+6;
+    tiku_rect_t menu = db_leaf_menu_rect(db, h, db->leaf_count);
+    int settings = parent(db, TIKU_TRK_DB_ITEM_SETTINGS, 0);
+    tiku_rect_t r = row_rect(db, settings), area;
+    assert(tiku_trk_deskbar_hover_area(db).w == 0); /* nothing yet */
+    assert(tiku_trk_deskbar_motion(db, r.x+r.w/2, r.y+r.h/2));
+    area = tiku_trk_deskbar_hover_area(db);
+    assert(area.w > 0 && area.h > 0);
+    assert(area.x <= menu.x && area.y <= menu.y &&
+           area.x+area.w >= menu.x+menu.w && area.y+area.h >= menu.y+menu.h);
+    assert(area.w < s->w/2 && area.h < s->h); /* a menu, not the desk */
+    assert(tiku_trk_deskbar_hover_area(db).w == 0); /* taken once */
+    assert(!tiku_trk_deskbar_motion(db, r.x+r.w/2+1, r.y+r.h/2));
+    assert(tiku_trk_deskbar_hover_area(db).w == 0); /* nothing moved */
+    tiku_trk_deskbar_free(db);
+}
+
 int main(void)
 {
     tiku_surface_t *s = tiku_surface_new(1000,680,0); assert(s);
     tracking(s,TIKU_TRK_DB_RIGHT_EXPANDED);
     tracking(s,TIKU_TRK_DB_LEFT_EXPANDED);
-    cancellation(s); categories(s); empty_folder(s);
+    cancellation(s); categories(s); empty_folder(s); hover_area(s);
     tiku_surface_free(s);
     puts("PASS: Deskbar hover delay, switching, cancellation, clicks and safety");
     return 0;

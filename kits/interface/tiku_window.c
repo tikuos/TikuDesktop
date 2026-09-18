@@ -63,6 +63,7 @@ struct tiku_workspace {
     } cache[TIKU_WINDOW_MAX];
     int64_t now;                /* the clock, 0 when nobody tells it   */
     int animating;              /* the last draw left motion behind    */
+    tiku_rect_t motion;         /* where that motion is, this frame and next */
     /* Ghosts: the last picture of a window that has just gone, on its
      * way out -- shrinking a little and fading where it was, or flying
      * to the row that keeps it. */
@@ -346,6 +347,14 @@ ghost_take(tiku_workspace_t *ws, tiku_window_t *window, tiku_rect_t to,
     ws->ghost[i].length = length;
 }
 
+/** @brief Note motion under @p r: this frame drew it there, the next may. */
+static void
+motion_add(tiku_workspace_t *ws, tiku_rect_t r)
+{
+    ws->motion = ws->animating ? tiku_rect_union(ws->motion, r) : r;
+    ws->animating = 1;
+}
+
 /** @brief Every ghost on its way, laid over the windows; done ones let go. */
 static void
 ghosts_draw(tiku_workspace_t *ws)
@@ -376,7 +385,7 @@ ghosts_draw(tiku_workspace_t *ws)
         if (at.w < 1) { at.w = 1; }
         if (at.h < 1) { at.h = 1; }
         tiku_blend_scaled(ws->surface, at, ws->ghost[i].pixels, 1.0f - t);
-        ws->animating = 1;
+        motion_add(ws, tiku_rect_union(ws->ghost[i].from, ws->ghost[i].to));
     }
 }
 
@@ -847,7 +856,8 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
         window->frame.y += (int)((1.0f - t) * RISE_PX + 0.5f);
         draw_window_at(workspace, window, active, t);
         window->frame = kept;
-        workspace->animating = 1;
+        kept.h += RISE_PX;
+        motion_add(workspace, kept);
         return;
     }
     draw_window_at(workspace, window, active, 1.0f);
@@ -865,6 +875,13 @@ int
 tiku_workspace_animating(const tiku_workspace_t *workspace)
 {
     return workspace != NULL && workspace->animating;
+}
+
+tiku_rect_t
+tiku_workspace_motion(const tiku_workspace_t *workspace)
+{
+    return (workspace != NULL && workspace->animating)
+        ? workspace->motion : (tiku_rect_t){ 0, 0, 0, 0 };
 }
 
 void

@@ -34,6 +34,10 @@ int tiku_host_scale(const tiku_host_t *host);
 /** @brief Copy the software surface into the native window. */
 int tiku_host_present(tiku_host_t *host,
                            const tiku_surface_t *surface);
+/** @brief The same, when only a logical rectangle of the surface changed
+ *  since the last present; NULL is the whole surface. */
+int tiku_host_present_in(tiku_host_t *host, const tiku_surface_t *surface,
+                         const tiku_rect_t *bounds);
 /** @brief Wait for native input or a deadline; never consumes queued input. */
 void tiku_host_wait(tiku_host_t *host, int64_t timeout_us);
 /** @brief Cumulative native presentation counters (bytes are pixel payload). */

@@ -507,16 +507,23 @@ int
 tiku_host_present(tiku_host_t *host,
                        const tiku_surface_t *surface)
 {
+    return tiku_host_present_in(host, surface, NULL);
+}
+
+int
+tiku_host_present_in(tiku_host_t *host, const tiku_surface_t *surface,
+                     const tiku_rect_t *bounds)
+{
     if (host == NULL || surface == NULL || host->image == NULL ||
         surface->w != host->logical_width ||
         surface->h != host->logical_height) {
         return -1;
     }
     tiku_rect_t rects[TIKU_PRESENT_RECTS];
-    int n = tiku_present_update((tiku_rgb_t *)host->image->data,
+    int n = tiku_present_update_in((tiku_rgb_t *)host->image->data,
         host->native_width, host->native_height,
         host->image->bytes_per_line / (int)sizeof(tiku_rgb_t),
-        surface, host->force_present, rects, TIKU_PRESENT_RECTS);
+        surface, host->force_present, bounds, rects, TIKU_PRESENT_RECTS);
     if (n < 0) return -1;
     host->force_present = 0;
     host->presented_frames++;

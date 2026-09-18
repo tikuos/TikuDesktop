@@ -90,6 +90,21 @@ static void presentation(int scale, int rounded)
     assert(r[0].x == 0 && r[0].y == 0 && r[0].w == w && r[0].h == h);
     assert(!tiku_present_update(out,w,h,stride,s,0,r,64));
     assert(tiku_present_update(out,w,h,w-1,s,0,r,64) == -1);
+    /* Told that only the top-left corner changed, the update looks
+     * nowhere else: a change at the far corner waits for an update
+     * that is allowed there. */
+    s->px[0]++;
+    s->px[(size_t)(h-1)*s->w*scale+w-1]++;
+    tiku_rect_t corner = {0, 0, 8, 8};
+    assert(tiku_present_update_in(out,w,h,stride,s,0,&corner,r,64) == 1);
+    assert(r[0].x == 0 && r[0].y == 0 && r[0].w <= 64 && r[0].h <= 32);
+    assert(out[0] == s->px[0]);
+    assert(out[(size_t)(h-1)*stride+w-1] != s->px[(size_t)(h-1)*s->w*scale+w-1]);
+    tiku_rect_t elsewhere = {0, 0, 8, 8};
+    assert(!tiku_present_update_in(out,w,h,stride,s,0,&elsewhere,r,64));
+    assert(tiku_present_update(out,w,h,stride,s,0,r,64) == 1);
+    assert(r[0].x >= w-64 && r[0].y >= h-32);
+    assert(!tiku_present_update(out,w,h,stride,s,0,r,64));
     free(out); tiku_surface_free(s);
 }
 

@@ -67,7 +67,8 @@ blit(desktop_t *app)
         return;                     /* displayless: the surface IS the
                                      * output, and -shot writes it */
     }
-    (void)tiku_host_present(app->host, app->surf);
+    (void)tiku_host_present_in(app->host, app->surf,
+                               app->frame_partial ? &app->frame_damage : NULL);
 }
 
 /**
@@ -165,7 +166,15 @@ draw_all(desktop_t *app)
     follow_font(app);
     int partial = app->dirty == 2;
     int64_t started = tiku_trk_now();
+    /* This frame consumes the request, so the clear comes first: an
+     * animation that asks for the next frame while this one is drawn
+     * keeps that request.  A clear after the draw wipes it, and a
+     * closing window's ghost then stands still until some other event
+     * dirties the screen. */
+    app->dirty = 0;
     tiku_clip_damage(app->surf, partial ? &app->damage : NULL);
+    app->frame_partial = partial;
+    app->frame_damage = app->surf->clip;
     tiku_workspace_cache_mode(app->desk,
         partial ? TIKU_CACHE_REUSE : TIKU_CACHE_REFRESH);
     app->frame_pixels += (uint64_t)app->surf->clip.w*app->surf->clip.h;
@@ -196,7 +205,9 @@ draw_all(desktop_t *app)
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
     }
     if (tiku_workspace_animating(app->desk)) {
-        app->dirty = 1;         /* the next frame moves it again */
+        /* The next frame moves it again, and only where it moves: a
+         * full frame here is the whole screen for every step of a ghost. */
+        desktop_damage(app, tiku_workspace_motion(app->desk));
     }
     desktop_draw_info_hover(app);
     desktop_draw_strip_drag(app);
@@ -432,7 +443,6 @@ desktop_draw_overlays(desktop_t *app)
         draw_nav_levels(app, app->spring_nav_x, app->spring_nav_y);
     }
     tiku_trk_status_overlay_draw(&app->status_overlay);
-    app->dirty = 0;
 }
 
 #define MENU_FADE_US 90000

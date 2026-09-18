@@ -362,6 +362,14 @@ test_notes_LDLIBS := $(X11_LIBS) -lm
 test_hex_SRCS := $(D)/hex/tiku_hex_model.c
 test_hex_LDLIBS := $(X11_LIBS) -lm
 test_forcequit_LDLIBS := $(X11_LIBS) -lm
+# The real draw_all() against a bare desktop, so the frame loop's own
+# contract is the thing under test; the launcher is left out for its main.
+test_frames_CFLAGS := -ffunction-sections -fdata-sections
+test_frames_SRCS := $(filter-out $(T)/src/shell/desktop/tiku_trk_desktop.c \
+    $(T)/src/shell/desktop/tiku_trk_desktop_draw.c \
+    $(T)/src/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) \
+    $(SCRIPT_STUB)
+test_frames_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
 test_device_utilities_SRCS := $(T)/src/core/tiku_trk_task.c
 test_device_utilities_LDLIBS := $(X11_LIBS) -lm
 test_registry_SRCS := $(T)/src/core/tiku_trk_task.c

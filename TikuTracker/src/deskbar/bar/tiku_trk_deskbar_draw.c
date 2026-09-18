@@ -157,6 +157,42 @@ tiku_trk_deskbar_team_expanded(const tiku_trk_deskbar_t *db, int team)
     return db->teams[team].expanded;
 }
 
+/** @brief Add @p r to what this hover changed on screen. */
+static void
+hover_touch(tiku_trk_deskbar_t *db, tiku_rect_t r)
+{
+    if (r.w <= 0 || r.h <= 0) { return; }
+    db->hover_damage = (db->hover_damage.w > 0)
+                           ? tiku_rect_union(db->hover_damage, r) : r;
+}
+
+/** @brief The tooltip's box as db_draw_tip() places it, or empty. */
+static tiku_rect_t
+tip_box(const tiku_trk_deskbar_t *db)
+{
+    tiku_rect_t b = { 0, 0, 0, 0 };
+
+    if (db->tip_y >= 0 && db->tip[0] != '\0') {
+        b = tiku_ui_tip_size(db->tip);
+        b.x = db->frame.x - b.w - 4;
+        b.y = db->tip_y;
+        if (b.x < 0) { b.x = 0; }
+    }
+    return b;
+}
+
+tiku_rect_t
+tiku_trk_deskbar_hover_area(tiku_trk_deskbar_t *db)
+{
+    tiku_rect_t r = { 0, 0, 0, 0 };
+
+    if (db != NULL) {
+        r = db->hover_damage;
+        db->hover_damage = (tiku_rect_t){ 0, 0, 0, 0 };
+    }
+    return r;
+}
+
 int
 tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
 {
@@ -224,6 +260,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
         }
         if (ahot != db->apps_hot) {
             db->apps_hot = ahot;
+            hover_touch(db, am);
             changed = 1;
         }
     }
@@ -304,19 +341,43 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             }
         }
         if (strcmp(tip, db->tip) != 0 || tip_y != db->tip_y) {
+            /* The box that goes and the box that comes. */
+            hover_touch(db, tip_box(db));
             snprintf(db->tip, sizeof db->tip, "%s", tip);
             db->tip_y = tip_y;
+            hover_touch(db, tip_box(db));
             changed = 1;
         }
     }
     if (leaf != db->leaf_hot) {
         db->leaf_hot = leaf;
         db->sub_pending = -1;
+        hover_touch(db, db_leaf_menu_rect(db, rowh, db->leaf_count));
         changed = 1;
     }
-    if (sub != db->sub_hot)     { db->sub_hot = sub;     changed = 1; }
-    if (win != db->win_hot)     { db->win_hot = win;     changed = 1; }
-    if (clock != db->clock_hot) { db->clock_hot = clock; changed = 1; }
+    if (sub != db->sub_hot) {
+        db->sub_hot = sub;
+        hover_touch(db, db_sub_menu_rect(db,
+            db_leaf_menu_rect(db, rowh, db->leaf_count), rowh));
+        changed = 1;
+    }
+    if (win != db->win_hot) {
+        const char *items[4];
+        int enabled[4];
+        int n = db_win_menu_items(db, db->win_menu_team, items, enabled);
+
+        db->win_hot = win;
+        hover_touch(db, db_win_menu_rect(db, n, rowh));
+        changed = 1;
+    }
+    if (clock != db->clock_hot) {
+        tiku_rect_t m = { db->frame.x - 130, db->frame.y +
+                          db->frame.h - db_clock_row() - 32, 170, 4 * 28 };
+
+        db->clock_hot = clock;
+        hover_touch(db, m);
+        changed = 1;
+    }
     return changed;
 }
 

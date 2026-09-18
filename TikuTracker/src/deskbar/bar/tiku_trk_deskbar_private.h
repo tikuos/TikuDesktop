@@ -108,6 +108,7 @@ struct tiku_trk_deskbar {
     int                  leaf_hot;      /* into leaf[]                  */
     int                  sub_hot;       /* into sub[]                   */
     int                  sub_pending;   /* leaf awaiting hover dwell, -1 */
+    tiku_rect_t          hover_damage;  /* what the last hover changed  */
     int64_t              sub_entered;   /* dwell start; -1 once attempted */
     tiku_trk_db_icon_fn  menu_icon;     /* injected by the shell, or NULL */
     void                *menu_icon_ctx; /* handed back to menu_icon     */

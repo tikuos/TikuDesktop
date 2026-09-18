@@ -254,6 +254,12 @@ void tiku_workspace_set_now(tiku_workspace_t *workspace, int64_t now_us);
 
 /** @brief Whether the last draw left something still moving. */
 int tiku_workspace_animating(const tiku_workspace_t *workspace);
+/**
+ * @brief Where that motion is: the union of where every ghost and rising
+ *        window was drawn this frame and can be drawn next, without their
+ *        shadows.  Empty when nothing moves.
+ */
+tiku_rect_t tiku_workspace_motion(const tiku_workspace_t *workspace);
 
 /**
  * @brief Put a window away, its picture shrinking to @p to as it fades.

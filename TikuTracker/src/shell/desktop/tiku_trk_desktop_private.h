@@ -178,6 +178,8 @@ typedef struct desktop {
     int                  closing;
     int                  dirty;         /* 1: full, 2: bounded repaint    */
     tiku_rect_t          damage;
+    int                  frame_partial; /* the last frame was bounded     */
+    tiku_rect_t          frame_damage;  /* to this, for the present       */
     int64_t              last_present; /* last frame's start, monotonic us */
     uint64_t             full_frames, partial_frames, frame_pixels;
     uint64_t             draw_us, present_us, slow_frames;

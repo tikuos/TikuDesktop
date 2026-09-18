@@ -395,6 +395,15 @@ int tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
  */
 int tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y);
 
+/**
+ * @brief What the last tiku_trk_deskbar_motion() changed on screen.
+ *
+ * The rows and tooltips a hover moves are a strip and a menu, not the
+ * desk, so a caller repaints this much and no more.  Taken once: the
+ * area is cleared by the call.  Empty when nothing moved.
+ */
+tiku_rect_t tiku_trk_deskbar_hover_area(tiku_trk_deskbar_t *db);
+
 /** @brief Dwell before opening a submenu, matching other spring menus. */
 #define TIKU_TRK_DB_SUBMENU_DELAY_US 500000
 /** @brief Advance submenu hover using monotonic microseconds, even at rest.

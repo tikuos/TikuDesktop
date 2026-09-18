@@ -949,6 +949,14 @@ tiku_host_scale(const tiku_host_t *host)
  * is taken then, since a window has to be visible to become the screen.
  */
 int
+tiku_host_present_in(tiku_host_t *host, const tiku_surface_t *surface,
+                     const tiku_rect_t *bounds)
+{
+    (void)bounds;
+    return tiku_host_present(host, surface);
+}
+
+int
 tiku_host_present(tiku_host_t *host, const tiku_surface_t *surface)
 {
     tiku_rect_t rects[TIKU_PRESENT_RECTS];

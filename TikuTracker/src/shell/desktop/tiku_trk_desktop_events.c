@@ -1528,6 +1528,18 @@ pointer_says(desktop_t *app, int x, int y)
     }
 }
 
+/** @brief An Info window whose hover changed repaints, and only it. */
+static void
+info_hover_damage(desktop_t *app, int slot)
+{
+    tiku_window_t *w = (slot >= 0)
+        ? tiku_trk_info_windows_handle(&app->info_windows, slot) : NULL;
+
+    if (w != NULL) {
+        desktop_damage(app, w->frame);
+    }
+}
+
 /**
  * @brief The pointer moved: drags, bands, hovers and the tracking a press
  * began.
@@ -1537,6 +1549,7 @@ desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
 if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
+int was_x = app->ptr_x, was_y = app->ptr_y;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
 pointer_says(app, ev->x, ev->y);
@@ -1635,10 +1648,13 @@ if (!tiku_trk_drag_active(&app->drag)) {
     }
 }
 if (app->qdrag_on) {
-    app->dirty = 1;
+    /* The icon in flight: where it was and where it is, nothing else. */
+    desktop_damage(app, tiku_rect_union(
+        (tiku_rect_t){ was_x - 16, was_y - 16, 32, 32 },
+        (tiku_rect_t){ ev->x - 16, ev->y - 16, 32, 32 }));
 }
 if (tiku_trk_deskbar_motion(app->deskbar, ev->x, ev->y)) {
-    app->dirty = 1;
+    desktop_damage(app, tiku_trk_deskbar_hover_area(app->deskbar));
 }
 if (app->popup != NULL) {
     /* The hot row follows the pointer, in the level it is
@@ -1655,7 +1671,10 @@ if (app->popup != NULL) {
                                           ev->x, ev->y);
     }
     if (menu_moved) {
-        app->dirty = 1;
+        /* The hot row moved inside the menu's own frame. */
+        desktop_damage(app, app->popup_sub != NULL
+            ? tiku_rect_union(app->popup_frame, app->popup_sub_frame)
+            : app->popup_frame);
     }
 }
 if (app->deskbar_press &&
@@ -1725,8 +1744,9 @@ if (tiku_trk_drag_moved(&app->drag, ev->x, ev->y) ||
                   : -1;
 
     if (hot != app->info_windows.drop_hot) {
+        info_hover_damage(app, app->info_windows.drop_hot);
         app->info_windows.drop_hot = hot;
-        app->dirty = 1;
+        info_hover_damage(app, hot);
     }
 }
 {
@@ -1753,6 +1773,8 @@ if (tiku_trk_drag_moved(&app->drag, ev->x, ev->y) ||
     }
     if (hslot != app->info_windows.hover_slot ||
         hfield != app->info_windows.hover_field) {
+        /* The field's pop-up floats past the window's frame, so a
+         * frame-bounded repaint would leave it, or its trace, behind. */
         app->info_windows.hover_slot = hslot;
         app->info_windows.hover_field = hfield;
         app->dirty = 1;
