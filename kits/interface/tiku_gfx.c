@@ -840,12 +840,53 @@ tiku_frame_round(tiku_surface_t *s, tiku_rect_t r, int radius,
     tiku_gfx_rec_leave(s, rec);
 }
 
+/** @brief One shadowed pixel: the alpha for its distance, then the blend. */
+static void
+shadow_px(tiku_rgb_t *px, long d2, const unsigned char *alpha)
+{
+    unsigned a = alpha[d2];
+
+    if (a > 0u) { blend_px(px, 0u, a); }
+}
+
+/**
+ * @brief Lay the shadow band of one strip of rows.
+ *
+ * Rows [y0, y1) of the band, columns [x0, x1) of it: the strip's every
+ * pixel is outside the box, so only its distance decides its darkness.
+ */
+static void
+shadow_strip(tiku_surface_t *s, long stride, int x0, int y0, int x1, int y1,
+             int bx0, int by0, int bx1, int by1, long rad2,
+             const unsigned char *alpha)
+{
+    int x, y;
+
+    for (y = y0; y < y1; y++) {
+        tiku_rgb_t *row = s->px + (long)y * stride;
+        long dy = (y < by0) ? by0 - y : (y > by1) ? y - by1 : 0;
+        long dy2 = dy * dy;
+
+        if (dy2 >= rad2) { continue; }
+        for (x = x0; x < x1; x++) {
+            long dx = (x < bx0) ? bx0 - x : (x > bx1) ? x - bx1 : 0;
+            long d2 = dy2 + dx * dx;
+
+            if (d2 < rad2) { shadow_px(&row[x], d2, alpha); }
+        }
+    }
+}
+
 void
 tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
             float strength)
 {
-    int sc, rad, drop, x0, y0, x1, y1, bx0, by0, bx1, by1, x, y, cr;
-    long stride;
+    /* rad is at most 4 * radius on a scale-4 surface; the table holds a
+     * whole radius of 32 native pixels, which every caller is under. */
+    static unsigned char alpha[32 * 32 + 1];
+    int sc, rad, drop, x0, y0, x1, y1, bx0, by0, bx1, by1, cr;
+    int rx0, ry0, rx1, ry1, cx0, cy0, cx1, cy1;
+    long stride, rad2, d2;
     unsigned edge;
 
     tiku_gfx_rec_miss(s);   /* a blend over what is there has no op */
@@ -858,59 +899,92 @@ tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
     sc = scale_of(s);
     stride = (long)s->w * sc;
     rad = radius * sc;
+    if (rad > 32) { rad = 32; }
+    rad2 = (long)rad * rad;
     cr = (corner > 0) ? corner * sc : 0;
     drop = 2 * sc;                      /* the light is a little above */
+    /*
+     * Falling off as the square of the distance left: dark at the edge,
+     * gone at the radius.  The same arithmetic as before, done once per
+     * distance rather than once per pixel.
+     */
+    for (d2 = 0; d2 < rad2; d2++) {
+        long t = rad2 - d2;
+
+        alpha[d2] = (unsigned char)((long)edge * t / rad * t / rad / rad2);
+    }
     /* The box the shadow falls from, native, and the band around it. */
     bx0 = r.x * sc; by0 = r.y * sc + drop;
     bx1 = (r.x + r.w) * sc - 1; by1 = (r.y + r.h) * sc - 1 + drop;
     x0 = bx0 - rad; y0 = by0 - rad; x1 = bx1 + rad + 1; y1 = by1 + rad + 1;
-    if (x0 < s->clip.x * sc) { x0 = s->clip.x * sc; }
-    if (y0 < s->clip.y * sc) { y0 = s->clip.y * sc; }
-    if (x1 > (s->clip.x + s->clip.w) * sc) {
-        x1 = (s->clip.x + s->clip.w) * sc;
+    cx0 = s->clip.x * sc; cy0 = s->clip.y * sc;
+    cx1 = (s->clip.x + s->clip.w) * sc; cy1 = (s->clip.y + s->clip.h) * sc;
+    if (x0 < cx0) { x0 = cx0; }
+    if (y0 < cy0) { y0 = cy0; }
+    if (x1 > cx1) { x1 = cx1; }
+    if (y1 > cy1) { y1 = cy1; }
+    if (x0 >= x1 || y0 >= y1) { return; }
+    /*
+     * The window covers its own box, so nothing is laid under it: the
+     * band is the strip above the box, the strip below, and the two
+     * beside it.  Walking only those is what keeps a large window from
+     * costing its whole area per frame.
+     */
+    rx0 = r.x * sc; ry0 = r.y * sc;
+    rx1 = (r.x + r.w) * sc; ry1 = (r.y + r.h) * sc;
+    shadow_strip(s, stride, x0, y0, x1, ry0 < y0 ? y0 : ry0 > y1 ? y1 : ry0,
+                 bx0, by0, bx1, by1, rad2, alpha);
+    shadow_strip(s, stride, x0, ry1 < y0 ? y0 : ry1 > y1 ? y1 : ry1, x1, y1,
+                 bx0, by0, bx1, by1, rad2, alpha);
+    {
+        int sy0 = ry0 < y0 ? y0 : ry0, sy1 = ry1 > y1 ? y1 : ry1;
+
+        if (sy0 < sy1) {
+            shadow_strip(s, stride, x0, sy0,
+                         rx0 < x0 ? x0 : rx0 > x1 ? x1 : rx0, sy1,
+                         bx0, by0, bx1, by1, rad2, alpha);
+            shadow_strip(s, stride, rx1 < x0 ? x0 : rx1 > x1 ? x1 : rx1, sy0,
+                         x1, sy1, bx0, by0, bx1, by1, rad2, alpha);
+        }
     }
-    if (y1 > (s->clip.y + s->clip.h) * sc) {
-        y1 = (s->clip.y + s->clip.h) * sc;
-    }
-    for (y = y0; y < y1; y++) {
-        tiku_rgb_t *row = s->px + (long)y * stride;
-        int dy = (y < by0) ? by0 - y : (y > by1) ? y - by1 : 0;
+    /*
+     * Inside the box only a rounded corner's cut shows the desk, and
+     * there the shadow reaches as it does past an edge: as dark as the
+     * edge, for the little past the curve.  The rows within a corner of
+     * the top or the bottom, the columns within one of a side, and
+     * nothing else of the interior; a box narrower than two corners
+     * takes the left and the top one's curve, as the frame draws it.
+     */
+    if (cr <= 0) { return; }
+    {
+        int qx0 = rx0 < x0 ? x0 : rx0, qx1 = rx1 > x1 ? x1 : rx1;
+        int qy0 = ry0 < y0 ? y0 : ry0, qy1 = ry1 > y1 ? y1 : ry1;
+        int x, y;
 
-        for (x = x0; x < x1; x++) {
-            int dx = (x < bx0) ? bx0 - x : (x > bx1) ? x - bx1 : 0;
-            long d2, t;
-            unsigned a;
+        for (y = qy0; y < qy1; y++) {
+            tiku_rgb_t *row;
+            long ey = (y < ry0 + cr) ? ry0 + cr
+                    : (y >= ry1 - cr) ? ry1 - cr - 1 : -1;
 
-            /* Under the window itself: nothing to lay, it is covered --
-             * except in the cut of a rounded corner, where the desk
-             * shows and the shadow must reach as it does past an edge. */
-            if (x >= r.x * sc && x < (r.x + r.w) * sc &&
-                y >= r.y * sc && y < (r.y + r.h) * sc) {
-                int rx1 = (r.x + r.w) * sc, ry1 = (r.y + r.h) * sc;
-                int ex = (x < r.x * sc + cr) ? r.x * sc + cr
-                       : (x >= rx1 - cr) ? rx1 - cr - 1 : -1;
-                int ey = (y < r.y * sc + cr) ? r.y * sc + cr
-                       : (y >= ry1 - cr) ? ry1 - cr - 1 : -1;
-                long ccx, ccy, out2;
+            if (ey < 0) {
+                if (ry1 - cr > ry0 + cr) { y = ry1 - cr - 1; }
+                continue;
+            }
+            row = s->px + (long)y * stride;
+            for (x = qx0; x < qx1; x++) {
+                long ex = (x < rx0 + cr) ? rx0 + cr
+                        : (x >= rx1 - cr) ? rx1 - cr - 1 : -1;
+                long ccx, ccy;
 
-                if (cr <= 0 || ex < 0 || ey < 0) {
+                if (ex < 0) {
+                    if (rx1 - cr > rx0 + cr) { x = rx1 - cr - 1; }
                     continue;
                 }
                 ccx = x - ex; ccy = y - ey;
-                out2 = ccx * ccx + ccy * ccy;
-                if (out2 <= (long)cr * cr) {
-                    continue;           /* under the curve's own paint */
+                if (ccx * ccx + ccy * ccy > (long)cr * cr) {
+                    shadow_px(&row[x], 0, alpha);
                 }
-                /* Past the curve by a little: as dark as the edge is. */
-                dx = 0; dy = 0;
             }
-            d2 = (long)dx * dx + (long)dy * dy;
-            if (d2 >= (long)rad * rad) { continue; }
-            /* Falling off as the square of the distance left: dark at
-             * the edge, gone at the radius, without a square root. */
-            t = (long)rad * rad - d2;
-            a = (unsigned)((long)edge * t / rad * t / rad / ((long)rad * rad));
-            if (a > 0u) { blend_px(&row[x], 0u, a); }
         }
     }
 }
