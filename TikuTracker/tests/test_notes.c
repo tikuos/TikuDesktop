@@ -76,15 +76,56 @@ int main(void)
     notes_tick(state, 1000 + SAVE_AFTER_US);
     assert(file_has(path, "Buy milk"));
 
+    /* The hand: two clicks on a word take the word, three take the line,
+     * a drag takes what it crosses -- and typing replaces what is held. */
+    {
+        tiku_event_t e = { .type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                           .x = 40, .y = 12, .time_us = 2000000 };
+        char held[64];
+        int y0, x0, y1, x1;
+
+        assert(notes_event_in(st, 1, &e) == 0);
+        assert(!tiku_textview_selection(&st->note[0].tv, &y0, &x0, &y1, &x1));
+        e.time_us += 100000;
+        assert(notes_event_in(st, 1, &e) == 0);
+        assert(tiku_textview_selected(&st->note[0].tv, held, sizeof held) > 0);
+        assert(!strcmp(held, "milk"));
+        e.time_us += 100000;
+        assert(notes_event_in(st, 1, &e) == 0);
+        assert(tiku_textview_selected(&st->note[0].tv, held, sizeof held) > 0);
+        assert(!strcmp(held, "Buy milk"));
+        e.time_us += 1000000;             /* long after: a plain click */
+        e.x = 4;
+        assert(notes_event_in(st, 1, &e) == 0);
+        assert(!tiku_textview_selection(&st->note[0].tv, &y0, &x0, &y1, &x1));
+        e.type = TIKU_EVENT_POINTER_MOVE; e.x = 40;
+        assert(notes_event_in(st, 1, &e) == 0);
+        assert(tiku_textview_selected(&st->note[0].tv, held, sizeof held) > 0);
+        assert(!strncmp(held, "Buy", 3) && strlen(held) >= 4);
+        e.type = TIKU_EVENT_POINTER_UP;
+        assert(notes_event_in(st, 1, &e) == 0);
+        e.type = TIKU_EVENT_POINTER_MOVE; e.x = 200;
+        assert(notes_event_in(st, 1, &e) == 0);
+        {
+            char after[64];
+            assert(tiku_textview_selected(&st->note[0].tv, after, sizeof after) > 0);
+            assert(!strcmp(after, held));     /* the hand is up: no growth */
+        }
+        type_text(st, 1, "Get ", 4000000);  /* over "Buy " */
+        assert(!strcmp(last_title, "Get milk"));
+        notes_tick(state, 4000000 + SAVE_AFTER_US);
+        assert(file_has(path, "Get milk"));
+    }
+
     /* Important: the title wears the mark, the head line says so, and the
      * Notes menu puts it first. */
     assert(notes_pick(state, 1, CMD_IMPORTANT) == 0);
-    assert(!strcmp(last_title, "! Buy milk"));
+    assert(!strcmp(last_title, "! Get milk"));
     assert(file_has(path, "important=1"));
     assert(notes_pick(state, 1, CMD_NEW) == 0);
     assert(opens == 2 && !strcmp(last_title, "Note"));
     type_text(st, 2, "Later", 5000);
-    assert(last_menu_rows == 2 && !strcmp(last_menu_first, "! Buy milk"));
+    assert(last_menu_rows == 2 && !strcmp(last_menu_first, "! Get milk"));
     assert(!strcmp(first_menu_title, "Note"));
 
     /* Paper: the head line names it. */
@@ -105,14 +146,14 @@ int main(void)
     /* The desk taking a window keeps the note on disk. */
     notes_closed(state, 1);
     snprintf(path, sizeof path, "%s/note-001.txt", dir);
-    assert(file_has(path, "Buy milk"));
+    assert(file_has(path, "Get milk"));
     notes_stop(state);
 
     /* And a fresh start brings the survivor back, titled by its line. */
     opens = 0; state = NULL;
     assert(notes_start(&state, &sv) == 0);
-    assert(opens == 1 && !strcmp(last_title, "! Buy milk"));
+    assert(opens == 1 && !strcmp(last_title, "! Get milk"));
     notes_stop(state);
-    puts("PASS: notes persist, save after quiet, mark, paper, list, delete, reopen");
+    puts("PASS: notes persist, select by hand, save after quiet, mark, paper, list, delete, reopen");
     return 0;
 }

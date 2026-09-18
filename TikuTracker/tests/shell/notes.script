@@ -29,8 +29,17 @@ menu-pick Important
 wait 10
 expect-title ! Groceries
 expect-file-has /tmp/trk_home/.local/share/notes/note-002.txt important=1
+note two clicks on a word take the word, and typing replaces it
+click 660 197
+click 660 197
+key L shift
+key i
+key s
+key t
+wait 6
+expect-title ! List
 note a new note starts empty, on the same paper, titled Note until typed
-click-window Groceries
+click-window List
 wait 4
 key n ctrl
 wait 40
@@ -47,13 +56,13 @@ wait 60
 expect-file-has /tmp/trk_home/.local/share/notes/note-003.txt Milk
 note Quit is the one row that ends the application: every note's window
 note goes, and every note's file stays
-click-window Groceries
+click-window List
 wait 4
 click 60 8
 wait 8
 menu-pick Quit
 wait 40
-expect-no-title Groceries
+expect-no-title List
 expect-no-title Buy milk
 expect-file-has /tmp/trk_home/.local/share/notes/note-001.txt Buy milk
 quit

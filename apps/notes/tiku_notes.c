@@ -38,6 +38,7 @@
 #define NOTE_MIN_H  80
 #define MARGIN      8
 #define SAVE_AFTER_US 500000    /* half a second of quiet, then the file */
+#define DOUBLE_CLICK_US 400000  /* the desk's own interval               */
 
 /* The commands a note's menus carry; the Notes menu counts on from here. */
 #define CMD_NEW        1
@@ -69,6 +70,9 @@ typedef struct {
     char              path[512];    /* where it lives on disk          */
     int64_t           edited_at;    /* last edit, for the quiet save   */
     int               dirty;        /* the file lags the text          */
+    int64_t           clicked_at;   /* the last press, for a double    */
+    int               click_line, click_col, clicks;
+    int               dragging;     /* the hand is down in the text    */
 } note_t;
 
 typedef struct {
@@ -584,9 +588,9 @@ notes_stop(void *state)
     free(st);
 }
 
-/** @brief Place the caret where the pointer landed, by line and width. */
-static void
-note_click(note_t *n, int x, int y)
+/** @brief Where the pointer landed, as a line and a column of it. */
+static int
+note_locate(note_t *n, int x, int y, int *line_out, int *col_out)
 {
     const tiku_font_t *f = tiku_font_plain();
     int top = tiku_textview_top(&n->tv);
@@ -598,7 +602,7 @@ note_click(note_t *n, int x, int y)
 
     if (line < 0) { line = 0; }
     if (line >= lines) { line = lines - 1; }
-    if (line < 0) { return; }
+    if (line < 0) { return 0; }
     text = tiku_textview_line(&n->tv, line);
     len = (text != NULL) ? (int)strlen(text) : 0;
     if (len > (int)sizeof head - 1) { len = (int)sizeof head - 1; }
@@ -609,8 +613,96 @@ note_click(note_t *n, int x, int y)
         if (tiku_text_width(f, head) > x - MARGIN) { break; }
         col++;
     }
+    *line_out = line;
+    *col_out = col;
+    return 1;
+}
+
+/** @brief A byte a word is made of: a letter, a digit, or beyond ASCII. */
+static int
+word_byte(unsigned char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') || c == '_' || c >= 0x80;
+}
+
+/** @brief Select the span from one column to another on a line. */
+static void
+note_select_span(note_t *n, int line, int from, int to)
+{
     tiku_textview_select_none(&n->tv);
+    tiku_textview_place(&n->tv, line, from);
+    tiku_textview_select_begin(&n->tv);
+    tiku_textview_place(&n->tv, line, to);
+}
+
+/**
+ * @brief The hand comes down in the text.
+ *
+ * One click places the caret and arms a drag; a second within the
+ * desk's interval on the same spot takes the word under it, a third
+ * the line; with Shift held the caret's old place stays the anchor,
+ * so the selection grows to the click.
+ */
+static void
+note_press(note_t *n, const tiku_event_t *ev)
+{
+    const char *text;
+    int line, col, len, from, to;
+
+    if (!note_locate(n, ev->x, ev->y, &line, &col)) {
+        return;
+    }
+    if (ev->time_us - n->clicked_at <= DOUBLE_CLICK_US &&
+        line == n->click_line && abs(col - n->click_col) <= 1) {
+        n->clicks++;
+    } else {
+        n->clicks = 1;
+    }
+    n->clicked_at = ev->time_us;
+    n->click_line = line;
+    n->click_col = col;
+    text = tiku_textview_line(&n->tv, line);
+    len = (text != NULL) ? (int)strlen(text) : 0;
+    if (n->clicks == 2) {
+        from = col;
+        to = col;
+        while (from > 0 && word_byte((unsigned char)text[from - 1])) { from--; }
+        while (to < len && word_byte((unsigned char)text[to])) { to++; }
+        if (from == to) {          /* a gap: the run of it, as fields do */
+            while (from > 0 && !word_byte((unsigned char)text[from - 1])) {
+                from--;
+            }
+            while (to < len && !word_byte((unsigned char)text[to])) { to++; }
+        }
+        note_select_span(n, line, from, to);
+        return;
+    }
+    if (n->clicks >= 3) {
+        note_select_span(n, line, 0, len);
+        return;
+    }
+    if (ev->modifiers & TIKU_MOD_SHIFT) {
+        tiku_textview_select_begin(&n->tv);
+    } else {
+        tiku_textview_select_none(&n->tv);
+    }
     tiku_textview_place(&n->tv, line, col);
+    n->dragging = 1;
+}
+
+/** @brief The hand moves while down: the selection follows it. */
+static int
+note_drag(note_t *n, int x, int y)
+{
+    int line, col;
+
+    if (!n->dragging || !note_locate(n, x, y, &line, &col)) {
+        return 0;
+    }
+    tiku_textview_select_begin(&n->tv);
+    tiku_textview_place(&n->tv, line, col);
+    return 1;
 }
 
 /** @brief A key typed into a note: the same keys the editor answers. */
@@ -677,8 +769,12 @@ notes_event_in(void *state, uint32_t window, const tiku_event_t *ev)
             changed = 1;
         }
     } else if (ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1) {
-        note_click(n, ev->x, ev->y);
+        note_press(n, ev);
         changed = 1;
+    } else if (ev->type == TIKU_EVENT_POINTER_MOVE) {
+        changed = note_drag(n, ev->x, ev->y);
+    } else if (ev->type == TIKU_EVENT_POINTER_UP && ev->button == 1) {
+        n->dragging = 0;
     } else if (ev->type == TIKU_EVENT_KEY_DOWN) {
         if ((ev->modifiers & TIKU_MOD_CMD) && ev->key == 'n') {
             note_t *fresh = note_new(st, n->paper);
