@@ -61,7 +61,7 @@ lines they are today.
 | **5 ✓** | Search that ends | Not what it looked like.  The engine was built to be stepped -- `tiku_query_step(r, budget)`, "advance the walk by at most @p budget directories" -- and **all three of its callers drove it to completion in a `while (!done)` loop on the turn**: the Find panel's search, the quick find, and `tiku_query_refresh()` inside the kit.  On a CI rootfs that is invisible; on a real disk the shell stops until the disk has been read.  `tiku_query_refresh()` is split into `_begin`/step/`_end` so the snapshot outlives the turn that took it, `tiku_trk_folder_lifecycle_step_results()` gives a live window sixteen directories a turn, and the desktop's idle work drives it beside the other stepped work.  A first walk shows rows as it finds them; a re-walk shows nothing until it ends, so a row about to be found again does not blink out.  The status line is left alone -- there is one of it for the whole desktop and a walk is thousands of turns | one day | `query`, `qtemplate`, `qtype` and `querydrop` finish in four to six seconds each, where two of them had to be killed; the whole script suite runs with no watchdog |
 | **6 ✓** | A person at the desk | With XQuartz: `tiku_x11.c` reads the Retina scale from `Xft.dpi`/the screen's millimetres so the desktop is not drawn at half size; Command mapped to the desktop's command modifier where Control is today, from a table in one place (`tiku_event.h`'s modifier names), so the Linux keys stay as they are; the X11 clipboard proved against XQuartz's pasteboard bridge; the serial rates above 230400 set with `IOSSIOSPEED` when `tcsetattr` refuses them (`tiku_tx.c`, behind the seam); the IDE's message parser reads clang's diagnostic lines (`file:line:col: error:` is shared; the "note:" and caret lines differ) and `idebuild.script` runs with `CC=clang` on Linux too, so the parser is proved on both; `tiku-desk-probe` and the board link tried against a real board on a Mac, where a CDC device that has not answered EP0 blocks the open for thirty seconds and the desktop must not wait on it in the turn (open the port off the turn, as the utility jobs already are) | two days | `./build/TikuDesktop` on a Retina display at the right size, Cmd-key menus working, paste from another Mac application, a board connected over USB with its panel live; the Linux desktop's keys, clipboard and serial path unchanged, proved by the scripts |
 | **7 ✓** | The bundle | *Optional.*  `make app` writes `build/TikuDesktop.app` (Info.plist, the mark as `.icns` rendered from the same drawing, the binary and `apps/` inside `Contents/Resources`, `TIKU_APPS` set by the launcher); `LSUIElement` off so it has a Dock tile; codesign ad hoc so Gatekeeper opens it on the machine that built it | half a day | double-clicking the bundle opens the desktop with its applications found |
-| **8** | Native, without XQuartz | *A decision, not a default (§3).*  `kits/interface/tiku_cocoa.m`: the same `tiku_host` contract `tiku_x11.c` fulfils today and the wasm build replaces -- one window, a backing `CGImage` blitted per present, events translated to `tiku_event_t`, the pasteboard for the clipboard, `NSTextInputClient` for the input method; chosen by `TIKU_HOST=cocoa` in the Makefile, X11 remaining the default on both hosts until it is proved; the scripts do not know which host backend drew | three to four days | every script that passes under X11 passes under Cocoa; a Mac with no XQuartz runs the desktop |
+| **8 ✓** | Native, without XQuartz | `kits/interface/tiku_cocoa.m`: the same `tiku_host` contract `tiku_x11.c` fulfils, in one file -- a flipped, layer-backed `NSView` whose `drawRect:` blits only the damaged tiles out of the native buffer (`CGImageCreateWithImageInRect` over the buffer, no copy), the shell's own loop pumping AppKit from inside `wait()` and `poll()`, events translated at the boundary (Command and Control both *command*, the wheel as X's buttons 4 and 5, modifier keys from `flagsChanged`), `NSTextInputClient` for what a key means on this keyboard so an accent lands whole, the pasteboard behind the X glue's import/publish rules, the scale from `backingScaleFactor` so Retina is drawn at 2x.  `TIKU_HOST` in `mk/toolchain.mk`, `cocoa` on a Mac and `x11` elsewhere; `-lX11` became `$(X11_LIBS)` on 75 link lines; the X-only host tests are suites only under the X host and `test_host_cocoa` only under this one; the bundle says which host it carries and its launcher hunts for a display socket only for an X build | one day | `make` on a Mac with no X11 development files at all; `make run` opens the desktop with no server; the Linux build's inputs unchanged |
 
 Milestone 6 is built.  The half that was said to need XQuartz did not:
 `xorg-server` is a Homebrew FORMULA, so it installs into a prefix the
@@ -447,6 +447,62 @@ produced was a launcher exec'ing itself forever, out of a bundle that
 looked correctly built and passed every check that did not run it.  The
 binary is `TikuDesktop-bin` now, and the target asserts the two are
 still two files before it signs.
+
+### Milestone 8: the Mac's own window
+
+Measured first (§ *Why the desktop feels less fluid*, above): the
+XQuartz path spent its time waiting on the WindowServer, not computing,
+and no route through X changed that.  So the window is AppKit's now,
+and the seam held: `tiku_host.h` did not change except to name the one
+sample helper (`tiku_host_show`) that had been called `tiku_x11_show`;
+no shell, application or kit above the host knows which file drew.
+
+What the file does, and why each part is the way it is:
+
+- **The loop stays the shell's.**  AppKit expects to own the process's
+  loop; this desktop owns its own.  `tiku_host_wait()` asks
+  `nextEventMatchingMask:untilDate:` for events until something is
+  queued or the deadline passes, and `tiku_host_poll()` drains what has
+  arrived without waiting.  Events land in a ring the view and the
+  delegate push into, so the translation happens where AppKit calls
+  and the delivery where the shell asks.
+- **A frame is the damaged tiles, drawn at once.**  `present()` runs
+  the same `tiku_present_update` diff the X host runs, marks each tile
+  on the view with `setNeedsDisplayInRect:`, and calls `displayIfNeeded`
+  so the blit happens before it returns; `drawRect:` asks
+  `getRectsBeingDrawn` and copies only those, as sub-images over the
+  native buffer.  The view is flipped so everything above keeps its
+  top-left origin; a flipped context draws an image upside down, so
+  the flip is undone around each draw.
+- **Retina through the scale the seam already reports.**  The scale is
+  `backingScaleFactor` (or `TIKU_SCALE`), the shell rescales its
+  surface as it does under X on a HiDPI Linux, and the layer's own 2x
+  contents scale means one native pixel per device pixel.
+- **Keys the way the X host sent them.**  `charactersIgnoringModifiers`
+  is the key (A-Z folded to a-z, as `XLookupString`'s keysyms were);
+  Command *or* Control is `TIKU_MOD_CMD`, since every shortcut is a
+  Control chord on Linux and a Mac adds a key rather than taking one
+  away; with either held the letter rides in `text`, as before.
+  Otherwise `interpretKeyEvents:` is asked what the key means: ASCII
+  lands in `text`, anything wider becomes a text commit through
+  `tiku_text_input`, and a dead key says nothing until it is finished.
+  Modifier keys arrive as `flagsChanged` and become key events by
+  diffing the flags, because the switcher waits for Cmd to come up.
+- **The clipboard behind the same rules.**  A local copy is published
+  to the pasteboard when the store's stamp moves; an activation or a
+  paste imports whatever changed on the pasteboard (by `changeCount`),
+  a click at most every quarter second, and an import never claims
+  ownership -- the X glue's rules, without the X glue's round trips.
+- **Closing asks.**  The close box, Cmd-Q and the Dock's Quit each queue
+  `TIKU_EVENT_CLOSE` and refuse to terminate the process, so the shell
+  shuts down the way it does on Linux.
+
+Not done, and known: the desktop's Cmd-Tab switcher is the system's
+Cmd-Tab on a Mac, so it is Ctrl-Tab here; a composition in progress is
+not drawn (the X host's `XIMPreeditNothing` did not draw one either);
+the window keeps the scale it opened with when dragged to a screen of
+another scale.  The X11 host remains, `make TIKU_HOST=x11`, with its two
+outside-looking suites.
 
 ### The Linux contract
 

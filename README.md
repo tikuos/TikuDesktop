@@ -59,66 +59,47 @@ prints no failures.  `TikuTracker/HANDOVER.md` §2 lists the build's traps.
 
 ### On macOS
 
-The same commands, with `sysctl -n hw.ncpu` where Linux says `nproc`.
-What has to be there is the command-line tools (`xcode-select --install`)
-and the X11 client library, which Homebrew has as `brew install libx11`;
-`mk/toolchain.mk` finds it, or XQuartz's copy in `/opt/X11`, or takes
-`X11_PREFIX=` from you.
+The same commands, with `sysctl -n hw.ncpu` where Linux says `nproc`,
+and nothing to install beyond the command-line tools
+(`xcode-select --install`).  **The desktop draws through the Mac's own
+window** -- `kits/interface/tiku_cocoa.m`, one file behind the same
+`tiku_host` seam the X11 host fulfils on Linux -- so there is no X
+server to install, start, or attach to the login session:
 
-**No X server is needed to build or to test.**  The driven scripts run
-with `DISPLAY=` empty and read the offscreen surface, so `make test` is
-the same run here as there.
-
-Two suites do want one, and `make test` runs them when it finds it:
-`test-host-clipboard` and `test-host-render`, which drive a real server
-on a private display.  `brew install xorg-server` gets you one -- it is
-a FORMULA, so it wants no password, unlike the XQuartz cask -- and puts
-`Xvfb` on the path, which is what those two look for.
+```sh
+make -j$(sysctl -n hw.ncpu)
+make run                 # a window, Retina-sharp, with the Command key
+make app                 # build/TikuDesktop.app, for the Dock
+open build/TikuDesktop.app
+```
 
 `make app` writes `build/TikuDesktop.app`: the same binaries, the mark
 rendered to an `.icns` at all ten sizes a Mac asks for, the applications
 under `Contents/Resources`, and a launcher that tells the program where
 they are.  It is signed ad hoc, so it opens on the machine that built
-it.  Double-clicking it still needs a server -- the launcher finds
-XQuartz's socket if XQuartz is running, and says so in a dialog if
-nothing is, rather than bouncing once in the Dock and dying quietly.
+it.  After `make clean`, `make && make app` brings it back.
 
-For a window in front of a person, `Xvfb` is not enough: the server
-has to be attached to the login session.  The XQuartz cask does that;
-so does the same `xorg-server`, with three steps its caveat does not
-say (the second needs a password, once):
+**No X server is needed to build or to test.**  The driven scripts run
+with `DISPLAY=` empty and read the offscreen surface, so `make test` is
+the same run here as there.
 
-```sh
-brew install xinit
-cp /opt/homebrew/opt/xinit/homebrew.mxcl.startx.plist ~/Library/LaunchAgents/   # loads at every login
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/homebrew.mxcl.startx.plist  # and now
-sudo cp /opt/homebrew/opt/xinit/homebrew.mxcl.privileged_startx.plist /Library/LaunchDaemons/ \
-  && sudo chown root:wheel /Library/LaunchDaemons/homebrew.mxcl.privileged_startx.plist \
-  && sudo launchctl bootstrap system /Library/LaunchDaemons/homebrew.mxcl.privileged_startx.plist
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -f /opt/homebrew/opt/xorg-server/libexec/X11.app
-open build/TikuDesktop.app
-```
+The X11 host is still there for a Mac that wants it: `make
+TIKU_HOST=x11` builds the desktop over Xlib (the client library from
+`brew install libx11`, or XQuartz's copy in `/opt/X11`, or
+`X11_PREFIX=`), and `make TIKU_HOST=x11 test` also runs the two suites
+that look at an X window from outside, `test-host-clipboard` and
+`test-host-render`, on a private `Xvfb` from `brew install xorg-server`.
+The bundle's launcher carries the choice (`Contents/Resources/host`)
+and hunts for a launchd display socket only for an X build; how to put
+such a server in front of a person is in `PLAN-macos.md`, with the
+reasons it is no longer the way.
 
-`brew services` refuses both plists ("no locatable service file"), so
-they are handed to `launchd` by hand; and `bin/Xquartz` is only a stub
-that opens `X11.app` by bundle id, which LaunchServices has never seen
-inside the Cellar until it is registered -- without that the stub exits
-10 and every client that connects hangs.  The bundle's launcher finds
-the resulting socket on its own.  Two habits of that server: it exits
-when its last client leaves, and a fresh connection while one is still
-up re-runs `startx`'s privileged `10-tmpdirs`, which recreates
-`/tmp/.X11-unix` and deletes the live socket -- after which every client
-says `no display` though `X11.bin` is running.  `launchctl kickstart -k
-gui/$(id -u)/homebrew.mxcl.startx` starts it over.  `make run` without
-any server says
-`tracker: no display` and stops.  One thing to know: Homebrew's
-`libx11` reports that it supports no locale at all, not even `C`, so
-`XOpenIM` cannot succeed and there is no Compose, no dead keys and no
-input method on that build.  Plain keys are unaffected -- the host falls
-back to `XLookupString` -- and the Compose assertions say they are
-skipping and why.  Whether XQuartz's own copy of libX11 in `/opt/X11`
-does better is untested.
+Two habits of the native window worth knowing.  Command and Control
+both mean *command*, so the Control chords a Linux hand knows still
+work and Cmd does what a Mac hand expects; Cmd-Tab belongs to the
+system, so the desktop's own switcher is reached with Ctrl-Tab.  And
+the desktop's quit is its own: the close box, the Dock's Quit and Cmd-Q
+all ask the shell, which shuts down the way it does on Linux.
 
 What differs underneath is said in two places and nowhere else: the
 Darwin block in `mk/toolchain.mk`, and `kits/support/tiku_darwin.h`, which
