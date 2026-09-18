@@ -204,15 +204,9 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         }
         t = tiku_workspace_find(app->desk, pick->tag);
         if (t != NULL) {
-            /* The zoom animates only when the state
-             * really changes (DB-030). */
-            if (t->minimized) {
-                app->zoom_t0 = tiku_trk_now();
-                app->zoom_from = (tiku_rect_t){
-                    x - 8, y - 8, 16, 16 };
-                app->zoom_to = t->frame;
-            }
-            t->minimized = 0;
+            /* Back on the desk, rising as a window just opened does;
+             * only when the state really changes (DB-030). */
+            tiku_workspace_restore(app->desk, t);
             tiku_workspace_activate(app->desk, t);
         }
         break;
@@ -222,13 +216,12 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         }
         t = tiku_workspace_find(app->desk, pick->tag);
         if (t != NULL) {
+            /* Away to the row that keeps it: a ghost of the window
+             * shrinks and fades toward where the hand is. */
             if (!t->minimized) {
-                app->zoom_t0 = tiku_trk_now();
-                app->zoom_from = t->frame;
-                app->zoom_to = (tiku_rect_t){
-                    x - 8, y - 8, 16, 16 };
+                tiku_workspace_minimize(app->desk, t,
+                    (tiku_rect_t){ x - 8, y - 8, 16, 16 });
             }
-            t->minimized = 1;
             tiku_sound_play(TIKU_SOUND_WINDOW_MINIMIZE);
         }
         break;

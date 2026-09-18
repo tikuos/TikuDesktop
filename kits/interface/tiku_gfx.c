@@ -636,6 +636,134 @@ round_corners(tiku_surface_t *s, tiku_rect_t r, int radius, unsigned corners,
     }
 }
 
+tiku_surface_t *
+tiku_grab(const tiku_surface_t *s, tiku_rect_t r)
+{
+    tiku_surface_t *out;
+    int sc, y;
+    long sstride, dstride;
+
+    if (s == NULL || s->px == NULL) {
+        return NULL;
+    }
+    /* Trimmed to the surface: a grab past the edge takes what is there. */
+    if (r.x < 0) { r.w += r.x; r.x = 0; }
+    if (r.y < 0) { r.h += r.y; r.y = 0; }
+    if (r.x + r.w > s->w) { r.w = s->w - r.x; }
+    if (r.y + r.h > s->h) { r.h = s->h - r.y; }
+    if (r.w <= 0 || r.h <= 0) {
+        return NULL;
+    }
+    out = tiku_surface_new(r.w, r.h, 0);
+    if (out == NULL) {
+        return NULL;
+    }
+    sc = scale_of(s);
+    if (sc > 1 && tiku_surface_rescale(out, sc, 0) != 0) {
+        tiku_surface_free(out);
+        return NULL;
+    }
+    sstride = (long)s->w * sc;
+    dstride = (long)r.w * sc;
+    for (y = 0; y < r.h * sc; y++) {
+        memcpy(out->px + (long)y * dstride,
+               s->px + ((long)r.y * sc + y) * sstride + (long)r.x * sc,
+               (size_t)dstride * sizeof *out->px);
+    }
+    return out;
+}
+
+void
+tiku_blend(tiku_surface_t *dst, int x, int y, const tiku_surface_t *src,
+           float amount)
+{
+    int x0, y0, x1, y1, row, col, sc;
+    long dstride, sstride;
+    unsigned a;
+
+    tiku_gfx_rec_miss(dst);  /* a blend over what is there has no op */
+    if (dst == NULL || src == NULL || dst->px == NULL || src->px == NULL ||
+        scale_of(dst) != scale_of(src) || amount <= 0.0f) {
+        return;
+    }
+    if (amount > 1.0f) { amount = 1.0f; }
+    a = (unsigned)(amount * 255.0f + 0.5f);
+    if (a == 0u) {
+        return;
+    }
+    sc = scale_of(dst);
+    x0 = (x > dst->clip.x) ? x : dst->clip.x;
+    y0 = (y > dst->clip.y) ? y : dst->clip.y;
+    x1 = x + src->w; y1 = y + src->h;
+    if (x1 > dst->clip.x + dst->clip.w) { x1 = dst->clip.x + dst->clip.w; }
+    if (y1 > dst->clip.y + dst->clip.h) { y1 = dst->clip.y + dst->clip.h; }
+    if (x1 <= x0 || y1 <= y0) {
+        return;
+    }
+    dstride = (long)dst->w * sc;
+    sstride = (long)src->w * sc;
+    for (row = y0 * sc; row < y1 * sc; row++) {
+        tiku_rgb_t *out = dst->px + (long)row * dstride;
+        const tiku_rgb_t *in = src->px + (long)(row - y * sc) * sstride
+                               - (long)x * sc;
+
+        for (col = x0 * sc; col < x1 * sc; col++) {
+            if (a >= 255u) { out[col] = in[col]; }
+            else { blend_px(&out[col], in[col], a); }
+        }
+    }
+}
+
+void
+tiku_blend_scaled(tiku_surface_t *dst, tiku_rect_t at,
+                  const tiku_surface_t *src, float amount)
+{
+    int x0, y0, x1, y1, row, col, sc, sw, sh;
+    long dstride, sstride;
+    unsigned a;
+
+    tiku_gfx_rec_miss(dst);
+    if (dst == NULL || src == NULL || dst->px == NULL || src->px == NULL ||
+        at.w <= 0 || at.h <= 0 || amount <= 0.0f) {
+        return;
+    }
+    if (amount > 1.0f) { amount = 1.0f; }
+    a = (unsigned)(amount * 255.0f + 0.5f);
+    if (a == 0u) {
+        return;
+    }
+    sc = scale_of(dst);
+    sw = src->w * scale_of(src);
+    sh = src->h * scale_of(src);
+    x0 = (at.x > dst->clip.x) ? at.x : dst->clip.x;
+    y0 = (at.y > dst->clip.y) ? at.y : dst->clip.y;
+    x1 = at.x + at.w; y1 = at.y + at.h;
+    if (x1 > dst->clip.x + dst->clip.w) { x1 = dst->clip.x + dst->clip.w; }
+    if (y1 > dst->clip.y + dst->clip.h) { y1 = dst->clip.y + dst->clip.h; }
+    if (x1 <= x0 || y1 <= y0) {
+        return;
+    }
+    dstride = (long)dst->w * sc;
+    sstride = sw;
+    /* Nearest source pixel for each native destination pixel: a ghost
+     * is on its way out, and a moment's softness is not worth a filter. */
+    for (row = y0 * sc; row < y1 * sc; row++) {
+        tiku_rgb_t *out = dst->px + (long)row * dstride;
+        long sy = (long)(row - at.y * sc) * sh / ((long)at.h * sc);
+
+        if (sy >= sh) { sy = sh - 1; }
+        for (col = x0 * sc; col < x1 * sc; col++) {
+            long sx = (long)(col - at.x * sc) * sw / ((long)at.w * sc);
+            tiku_rgb_t p;
+
+            if (sx >= sw) { sx = sw - 1; }
+            p = src->px[sy * sstride + sx];
+            if (a >= 255u) { out[col] = p; }
+            else { blend_px(&out[col], p, a); }
+        }
+    }
+}
+
 void
 tiku_fill_round(tiku_surface_t *s, tiku_rect_t r, int radius,
                 unsigned corners, tiku_rgb_t c)

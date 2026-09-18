@@ -424,11 +424,9 @@ typedef struct desktop {
     /* The Deskbar's own double-click memory (DB-019). */
     int64_t              db_click_at;   /* the last click, in us        */
     int                  db_click_x, db_click_y;
-    /* The zoom: a frame sliding between the menu item and the window it
-     * names, alive for a few frames after a Deskbar window action
-     * (DB-030). */
-    int64_t              zoom_t0;       /* when it began, in us; 0 = none */
-    tiku_rect_t     zoom_from, zoom_to;
+    /* A menu fades in: which popup was seen last, and since when. */
+    const tiku_menu_t *popup_seen, *popup_sub_seen;
+    int64_t              popup_since, popup_sub_since;
     /* A CMD press on the bar, still ambiguous: moved it re-docks, held
      * still it is a chord the rows answer (DB-049 vs DB-021). */
     int                  dock_armed;    /* such a press is down         */

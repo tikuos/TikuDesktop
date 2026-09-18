@@ -196,6 +196,55 @@ main(void)
         tiku_surface_free(surface);
     }
 
+    /* Ghosts: with a clock, a closed window leaves its picture behind
+     * for a moment and the workspace says it is moving; without one,
+     * nothing lingers; a minimized window flies, a restored one rises. */
+    {
+        tiku_surface_t *gs = tiku_surface_new(300, 200, TIKU_RGB(1, 2, 3));
+        tiku_workspace_t *gw = tiku_workspace_new(gs);
+        tiku_window_t *win;
+        int64_t now = 1000000;
+
+        check(gw != NULL, "a workspace for ghosts");
+        tiku_workspace_set_now(gw, now);
+        win = tiku_workspace_open(gw, "Ghost", (tiku_rect_t){ 60, 40, 120, 90 },
+                                  NULL, NULL, NULL);
+        check(win != NULL, "a window to lose");
+        tiku_workspace_set_now(gw, now + 1000000);   /* long open: still */
+        tiku_workspace_draw(gw);
+        check(!tiku_workspace_animating(gw), "nothing moves");
+        tiku_workspace_close(gw, win);
+        tiku_workspace_set_now(gw, now + 1010000);
+        tiku_workspace_draw(gw);
+        check(tiku_workspace_animating(gw), "something is moving");       /* the ghost is going */
+        tiku_workspace_set_now(gw, now + 2000000);
+        tiku_workspace_draw(gw);
+        check(!tiku_workspace_animating(gw), "nothing moves");      /* and gone */
+        win = tiku_workspace_open(gw, "Away", (tiku_rect_t){ 60, 40, 120, 90 },
+                                  NULL, NULL, NULL);
+        tiku_workspace_set_now(gw, now + 4000000);
+        tiku_workspace_draw(gw);
+        tiku_workspace_minimize(gw, win, (tiku_rect_t){ 280, 180, 16, 16 });
+        check(win->minimized, "the window is minimized");
+        tiku_workspace_set_now(gw, now + 4050000);
+        tiku_workspace_draw(gw);
+        check(tiku_workspace_animating(gw), "something is moving");
+        tiku_workspace_set_now(gw, now + 5000000);
+        tiku_workspace_draw(gw);
+        check(!tiku_workspace_animating(gw), "nothing moves");
+        tiku_workspace_restore(gw, win);
+        check(!win->minimized && win->opened_at == now + 5000000, "restored, and set to rise");
+        tiku_workspace_set_now(gw, now + 5010000);
+        tiku_workspace_draw(gw);
+        check(tiku_workspace_animating(gw), "something is moving");       /* it rises */
+        /* No clock: a close leaves nothing. */
+        tiku_workspace_set_now(gw, 0);
+        tiku_workspace_close(gw, win);
+        tiku_workspace_draw(gw);
+        check(!tiku_workspace_animating(gw), "nothing moves");
+        tiku_workspace_free(gw);
+        tiku_surface_free(gs);
+    }
     printf("\n%s\n", fails ? "window rule FAILED" :
                               "every window rule holds");
     return fails ? 1 : 0;

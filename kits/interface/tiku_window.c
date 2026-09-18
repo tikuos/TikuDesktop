@@ -63,6 +63,15 @@ struct tiku_workspace {
     } cache[TIKU_WINDOW_MAX];
     int64_t now;                /* the clock, 0 when nobody tells it   */
     int animating;              /* the last draw left motion behind    */
+    /* Ghosts: the last picture of a window that has just gone, on its
+     * way out -- shrinking a little and fading where it was, or flying
+     * to the row that keeps it. */
+    struct {
+        tiku_surface_t *pixels;
+        tiku_rect_t from, to;
+        int64_t since;
+        int64_t length;         /* how long it takes, microseconds     */
+    } ghost[4];
     int cache_mode;
     size_t cache_bytes;
     uint64_t content_draws, cache_hits;
@@ -163,6 +172,16 @@ tiku_workspace_new(tiku_surface_t *surface)
 void
 tiku_workspace_free(tiku_workspace_t *workspace)
 {
+    if (workspace != NULL) {
+        int g;
+
+        for (g = 0; g < 4; g++) {
+            if (workspace->ghost[g].pixels != NULL) {
+                tiku_surface_free(workspace->ghost[g].pixels);
+                workspace->ghost[g].pixels = NULL;
+            }
+        }
+    }
     while (workspace != NULL && workspace->count > 0) {
         tiku_workspace_close(workspace,
             &workspace->windows[workspace->order[workspace->count - 1]]);
@@ -273,6 +292,113 @@ tiku_workspace_open(tiku_workspace_t *workspace, const char *title,
     return window;
 }
 
+static float ease_out(float t);
+
+#define GHOST_CLOSE_US    140000
+#define GHOST_MINIMIZE_US 200000
+
+/** @brief The band a window paints: its frame and the shadow past it. */
+static tiku_rect_t
+window_reach(const tiku_window_t *window)
+{
+    tiku_rect_t r = window->frame;
+
+    r.x -= TIKU_WINDOW_SHADOW; r.y -= TIKU_WINDOW_SHADOW;
+    r.w += 2 * TIKU_WINDOW_SHADOW; r.h += 2 * TIKU_WINDOW_SHADOW;
+    return r;
+}
+
+/**
+ * @brief Keep the last picture of @p window as a ghost bound for @p to.
+ *
+ * Taken off the surface as it stands, which is the frame last shown --
+ * the compositor is called between frames, never during one.  Nothing
+ * happens without a clock, or when every ghost slot is spoken for.
+ */
+static void
+ghost_take(tiku_workspace_t *ws, tiku_window_t *window, tiku_rect_t to,
+           int64_t length)
+{
+    tiku_rect_t from = window_reach(window);
+    int i;
+
+    if (ws->now == 0 || ws->surface == NULL || window->minimized) {
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        if (ws->ghost[i].pixels == NULL) { break; }
+    }
+    if (i == 4) {
+        return;
+    }
+    ws->ghost[i].pixels = tiku_grab(ws->surface, from);
+    if (ws->ghost[i].pixels == NULL) {
+        return;
+    }
+    /* The grab may have been trimmed at the screen's edge. */
+    if (from.x < 0) { from.w += from.x; from.x = 0; }
+    if (from.y < 0) { from.h += from.y; from.y = 0; }
+    if (from.x + from.w > ws->surface->w) { from.w = ws->surface->w - from.x; }
+    if (from.y + from.h > ws->surface->h) { from.h = ws->surface->h - from.y; }
+    ws->ghost[i].from = from;
+    ws->ghost[i].to = to;
+    ws->ghost[i].since = ws->now;
+    ws->ghost[i].length = length;
+}
+
+/** @brief Every ghost on its way, laid over the windows; done ones let go. */
+static void
+ghosts_draw(tiku_workspace_t *ws)
+{
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        int64_t age;
+        float t;
+        tiku_rect_t at;
+
+        if (ws->ghost[i].pixels == NULL) { continue; }
+        age = ws->now - ws->ghost[i].since;
+        if (ws->now == 0 || age < 0 || age >= ws->ghost[i].length) {
+            tiku_surface_free(ws->ghost[i].pixels);
+            ws->ghost[i].pixels = NULL;
+            continue;
+        }
+        t = ease_out((float)age / (float)ws->ghost[i].length);
+        at.x = ws->ghost[i].from.x +
+               (int)((ws->ghost[i].to.x - ws->ghost[i].from.x) * t);
+        at.y = ws->ghost[i].from.y +
+               (int)((ws->ghost[i].to.y - ws->ghost[i].from.y) * t);
+        at.w = ws->ghost[i].from.w +
+               (int)((ws->ghost[i].to.w - ws->ghost[i].from.w) * t);
+        at.h = ws->ghost[i].from.h +
+               (int)((ws->ghost[i].to.h - ws->ghost[i].from.h) * t);
+        if (at.w < 1) { at.w = 1; }
+        if (at.h < 1) { at.h = 1; }
+        tiku_blend_scaled(ws->surface, at, ws->ghost[i].pixels, 1.0f - t);
+        ws->animating = 1;
+    }
+}
+
+void
+tiku_workspace_minimize(tiku_workspace_t *workspace, tiku_window_t *window,
+                        tiku_rect_t to)
+{
+    if (workspace == NULL || window == NULL || !window->open) { return; }
+    ghost_take(workspace, window, to, GHOST_MINIMIZE_US);
+    window->minimized = 1;
+}
+
+void
+tiku_workspace_restore(tiku_workspace_t *workspace, tiku_window_t *window)
+{
+    if (workspace == NULL || window == NULL || !window->open) { return; }
+    if (window->minimized) {
+        window->minimized = 0;
+        window->opened_at = workspace->now;   /* it rises, as if new */
+    }
+}
+
 void
 tiku_workspace_close(tiku_workspace_t *workspace,
                           tiku_window_t *window)
@@ -282,6 +408,14 @@ tiku_workspace_close(tiku_workspace_t *workspace,
     int slot, at, i;
 
     if (workspace == NULL || window == NULL || !window->open) { return; }
+    {
+        /* On its way out: the picture shrinks a little where it was. */
+        tiku_rect_t to = window_reach(window);
+        int dx = to.w / 24, dy = to.h / 24;
+
+        to.x += dx; to.y += dy; to.w -= 2 * dx; to.h -= 2 * dy;
+        ghost_take(workspace, window, to, GHOST_CLOSE_US);
+    }
     slot = (int)(window - workspace->windows);
     at = order_index(workspace, slot);
     window->open = 0;
@@ -775,6 +909,7 @@ tiku_workspace_draw(tiku_workspace_t *workspace)
                         workspace->order[i] == workspace->focused);
         }
     }
+    ghosts_draw(workspace);
 }
 
 /**

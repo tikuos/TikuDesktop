@@ -24,7 +24,6 @@ void desktop_draw_bars(desktop_t *app);
 void desktop_draw_drag(desktop_t *app);
 void desktop_draw_strip_drag(desktop_t *app);
 void desktop_draw_info_hover(desktop_t *app);
-void desktop_draw_zoom(desktop_t *app);
 /* End of the forward declarations. */
 
 /** @brief The preferences' backdrop colour, taken as the desktop's. */
@@ -199,7 +198,6 @@ draw_all(desktop_t *app)
     if (tiku_workspace_animating(app->desk)) {
         app->dirty = 1;         /* the next frame moves it again */
     }
-    desktop_draw_zoom(app);
     desktop_draw_info_hover(app);
     desktop_draw_strip_drag(app);
     desktop_draw_drag(app);
@@ -437,6 +435,45 @@ desktop_draw_overlays(desktop_t *app)
     app->dirty = 0;
 }
 
+#define MENU_FADE_US 90000
+#define MENU_SLIDE_PX 4
+
+/**
+ * @brief One menu, fading in and settling down over its first moment.
+ *
+ * The desk under it is taken first and blended back over the drawn
+ * menu at one minus the time, which is a fade with the painter none
+ * the wiser; the card is drawn a few pixels high and comes down.  With
+ * no window to show it to, a menu is simply there, for a script.
+ */
+static void
+draw_popup_menu(desktop_t *app, tiku_menu_t *menu, tiku_rect_t frame,
+                int64_t since)
+{
+    int64_t age = tiku_trk_now() - since;
+    tiku_rect_t reach = { frame.x - 12, frame.y - 12 - MENU_SLIDE_PX,
+                          frame.w + 24, frame.h + 24 + MENU_SLIDE_PX };
+    tiku_surface_t *under;
+    float t, u;
+
+    if (app->host == NULL || age < 0 || age >= MENU_FADE_US) {
+        tiku_menu_draw(menu, app->surf, frame);
+        return;
+    }
+    t = (float)age / (float)MENU_FADE_US;
+    u = 1.0f - t;
+    t = 1.0f - u * u * u;
+    under = tiku_grab(app->surf, reach);
+    frame.y -= (int)((1.0f - t) * MENU_SLIDE_PX + 0.5f);
+    tiku_menu_draw(menu, app->surf, frame);
+    if (under != NULL) {
+        tiku_blend(app->surf, reach.x < 0 ? 0 : reach.x,
+                   reach.y < 0 ? 0 : reach.y, under, 1.0f - t);
+        tiku_surface_free(under);
+    }
+    app->dirty = 1;             /* the next frame moves it again */
+}
+
 /**
  * @brief the open menu, drawn last because it is above everything
  */
@@ -446,18 +483,32 @@ desktop_draw_popup(desktop_t *app)
     /* A menu is drawn last because it is above everything, including the
      * Deskbar strip. */
     if (app->popup != NULL) {
+        if (app->popup != app->popup_seen) {
+            app->popup_seen = app->popup;
+            app->popup_since = tiku_trk_now();
+        }
         /* Re-aimed here because the menus are rebuilt per draw, which
          * clears the hot row a moment after the motion set it. */
         (void)tiku_menu_track(app->popup, app->popup_frame,
                                   app->ptr_x, app->ptr_y);
-        tiku_menu_draw(app->popup, app->surf, app->popup_frame);
+        draw_popup_menu(app, app->popup, app->popup_frame,
+                        app->popup_since);
         if (app->popup_sub != NULL) {
+            if (app->popup_sub != app->popup_sub_seen) {
+                app->popup_sub_seen = app->popup_sub;
+                app->popup_sub_since = tiku_trk_now();
+            }
             (void)tiku_menu_track(app->popup_sub,
                                       app->popup_sub_frame, app->ptr_x,
                                       app->ptr_y);
-            tiku_menu_draw(app->popup_sub, app->surf,
-                               app->popup_sub_frame);
+            draw_popup_menu(app, app->popup_sub, app->popup_sub_frame,
+                            app->popup_sub_since);
+        } else {
+            app->popup_sub_seen = NULL;
         }
+    } else {
+        app->popup_seen = NULL;
+        app->popup_sub_seen = NULL;
     }
 }
 
@@ -705,34 +756,3 @@ desktop_draw_info_hover(desktop_t *app)
     }
 }
 
-/**
- * @brief the zoom animation between a window and its icon
- */
-void
-desktop_draw_zoom(desktop_t *app)
-{
-    if (app->zoom_t0 != 0) {
-        /* The window frame sliding out of or into the menu item's
-         * rectangle: four steps of an inverted outline, done in an eye
-         * blink (DB-030). */
-        int64_t age = tiku_trk_now() - app->zoom_t0;
-
-        if (age > 120000) {
-            app->zoom_t0 = 0;
-        } else {
-            int num = (int)(age / 30000) + 1;   /* 1..4 */
-            tiku_rect_t z;
-
-            z.x = app->zoom_from.x +
-                  (app->zoom_to.x - app->zoom_from.x) * num / 4;
-            z.y = app->zoom_from.y +
-                  (app->zoom_to.y - app->zoom_from.y) * num / 4;
-            z.w = app->zoom_from.w +
-                  (app->zoom_to.w - app->zoom_from.w) * num / 4;
-            z.h = app->zoom_from.h +
-                  (app->zoom_to.h - app->zoom_from.h) * num / 4;
-            tiku_invert_frame(app->surf, z);
-            app->dirty = 1;     /* the next frame moves it again */
-        }
-    }
-}

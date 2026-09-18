@@ -304,6 +304,22 @@ void tiku_copy_bits(tiku_surface_t *s, tiku_rect_t src,
 void tiku_blit(tiku_surface_t *dst, int x, int y,
                     const tiku_surface_t *src);
 
+/** @brief A copy of the pixels under @p r, as a surface of its own. */
+tiku_surface_t *tiku_grab(const tiku_surface_t *s, tiku_rect_t r);
+
+/**
+ * @brief Lay @p src over @p dst at @p x, @p y, @p amount of the way.
+ *
+ * What a fade is made of: a picture taken before and blended back at
+ * one minus the time, or a ghost of a window laid at less than itself.
+ */
+void tiku_blend(tiku_surface_t *dst, int x, int y,
+                const tiku_surface_t *src, float amount);
+
+/** @brief The same, with @p src stretched or shrunk to fill @p at. */
+void tiku_blend_scaled(tiku_surface_t *dst, tiku_rect_t at,
+                       const tiku_surface_t *src, float amount);
+
 /**
  * @brief A soft shadow cast by @p r onto whatever is around it.
  *

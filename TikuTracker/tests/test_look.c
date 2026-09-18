@@ -78,6 +78,34 @@ int main(void)
         assert(lum(tiku_peek(s, 49, 10)) > 600);
         tiku_surface_free(s);
     }
+    /* A grab is the pixels; a blend at half is halfway; scaled, a ghost
+     * lands in its rectangle and nowhere else. */
+    {
+        tiku_surface_t *s = tiku_surface_new(40, 40, TIKU_RGB(0, 0, 0));
+        tiku_surface_t *g;
+        tiku_fill(s, (tiku_rect_t){ 10, 10, 10, 10 }, TIKU_RGB(200, 100, 0));
+        g = tiku_grab(s, (tiku_rect_t){ 8, 8, 14, 14 });
+        assert(g != NULL && g->w == 14 && g->h == 14);
+        assert(tiku_peek(g, 2, 2) == TIKU_RGB(200, 100, 0));
+        assert(tiku_peek(g, 0, 0) == TIKU_RGB(0, 0, 0));
+        tiku_fill(s, (tiku_rect_t){ 0, 0, 40, 40 }, TIKU_RGB(0, 0, 0));
+        tiku_blend(s, 8, 8, g, 0.5f);
+        assert(lum(tiku_peek(s, 12, 12)) > 120 && lum(tiku_peek(s, 12, 12)) < 180);
+        assert(tiku_peek(s, 30, 30) == TIKU_RGB(0, 0, 0));
+        tiku_fill(s, (tiku_rect_t){ 0, 0, 40, 40 }, TIKU_RGB(0, 0, 0));
+        tiku_blend_scaled(s, (tiku_rect_t){ 20, 20, 7, 7 }, g, 1.0f);
+        assert(tiku_peek(s, 23, 23) == TIKU_RGB(200, 100, 0));
+        assert(tiku_peek(s, 19, 19) == TIKU_RGB(0, 0, 0));
+        assert(tiku_peek(s, 27, 27) == TIKU_RGB(0, 0, 0));
+        /* Past the edge: trimmed, never NULL for what is there. */
+        tiku_surface_free(g);
+        g = tiku_grab(s, (tiku_rect_t){ 35, 35, 20, 20 });
+        assert(g != NULL && g->w == 5 && g->h == 5);
+        tiku_surface_free(g);
+        assert(tiku_grab(s, (tiku_rect_t){ 50, 50, 5, 5 }) == NULL);
+        tiku_surface_free(s);
+    }
+
     /* Too small to round: a plain fill, nothing lost. */
     {
         tiku_surface_t *s = tiku_surface_new(20, 20, 0);

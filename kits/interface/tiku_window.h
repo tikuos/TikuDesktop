@@ -255,6 +255,20 @@ void tiku_workspace_set_now(tiku_workspace_t *workspace, int64_t now_us);
 /** @brief Whether the last draw left something still moving. */
 int tiku_workspace_animating(const tiku_workspace_t *workspace);
 
+/**
+ * @brief Put a window away, its picture shrinking to @p to as it fades.
+ *
+ * The window is minimized at once; what moves is a ghost of the last
+ * frame it was seen in, so the desk shows where it went.  With no
+ * clock told, the ghost is skipped and the window simply goes.
+ */
+void tiku_workspace_minimize(tiku_workspace_t *workspace,
+                             tiku_window_t *window, tiku_rect_t to);
+
+/** @brief Bring a minimized window back; it rises as one just opened. */
+void tiku_workspace_restore(tiku_workspace_t *workspace,
+                            tiku_window_t *window);
+
 void tiku_workspace_set_reserved(tiku_workspace_t *workspace,
                                       tiku_rect_t reserved);
 
