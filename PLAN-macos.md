@@ -294,6 +294,31 @@ rather than guessed -- with the scan made to return nothing, both pass;
 with the board visible, both fail at every commit tried, including the
 one that had scored 1430 of 1430 an hour before.
 
+**Why the desktop feels less fluid on the Mac, measured (2026-09-18).**
+Two causes, one ours and one XQuartz's.  Ours: every folder-window draw
+rebuilt the context menu, whose Mount submenu asked `tiku_partitions_scan`,
+and the Darwin scan asked DiskArbitration about every `/dev/disk*` -- a
+mach round trip and a plist per disk, ~8 ms for twenty of them, on every
+frame.  Under a scripted drag the frame median was 8.2 ms (p95 14.1) of a
+16.7 ms budget; with the answer kept between asks (`f5e6c07`) it is
+3.4 ms (p95 5.1).  Idle costs nothing on either host (1.2 %, all in
+poll).
+
+XQuartz's: kernel-accounted CPU for a window-sized upload is ~0.1 ms in
+`X11.bin` and ~0.5 ms in the client, yet wall time per frame is 5-12 ms,
+and a whole 2240x1126 frame straight into the window is 76-93 ms of wall
+for 2 ms of CPU: the server waits on the WindowServer for every flush
+that reaches the screen.  Of the routes tried -- 32-px band tiles, one
+union rect, pixmap+copy, straight to the window, MIT-SHM -- pixmap+copy
+(what `tiku_host_present` does) is already the best; MIT-SHM changes
+nothing and cannot hold a 10 MB frame under the stock 4 MB `shmmax`.
+Same input side: pointer motion reaches us as NSEvent -> X protocol ->
+socket.  That latency is the architecture, and the fundamental fix is a
+native host behind the same seam (`tiku_host_*`, thirteen calls, plus
+clipboard, input method, command key, fullscreen): an NSWindow whose
+layer shows the frame, events straight from AppKit, Retina-aware
+through the scale the host already reports.  Not started.
+
 A third lane, `shutdownscreen`, joins them for a different reason: it
 answers Shut down, waits 60 turns, and expects the black already there
 and the mark still standing.  The closing is 0.7 s of hold and 0.9 s of
