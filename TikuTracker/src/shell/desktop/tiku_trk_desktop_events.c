@@ -1502,6 +1502,33 @@ resize_deliver(desktop_t *app, tiku_window_t *w)
 }
 
 /**
+ * @brief The pointer says what is under it: a window's corner grip
+ *        offers the diagonal resize, anything else the arrow.  Only
+ *        while nothing is being tracked, and only for the front
+ *        window -- a click on another is spent activating it.
+ */
+static void
+pointer_says(desktop_t *app, int x, int y)
+{
+    tiku_window_t *under = NULL;
+    int want = TIKU_CURSOR_ARROW;
+
+    if (app->host == NULL) {
+        return;
+    }
+    if (!tiku_trk_drag_active(&app->drag) && app->popup == NULL &&
+        tiku_workspace_hit(app->desk, x, y, &under) == TIKU_HIT_RESIZE &&
+        under != NULL && under == tiku_workspace_focused(app->desk) &&
+        under->resizable) {
+        want = TIKU_CURSOR_RESIZE_DIAG;
+    }
+    if (want != app->cursor_kind) {
+        app->cursor_kind = want;
+        tiku_host_set_cursor(app->host, want);
+    }
+}
+
+/**
  * @brief The pointer moved: drags, bands, hovers and the tracking a press
  * began.
  */
@@ -1512,6 +1539,7 @@ if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
+pointer_says(app, ev->x, ev->y);
 if (tiku_trk_status_overlay_pointer_move(&app->status_overlay,
                                          ev->x, ev->y)) {
     return;

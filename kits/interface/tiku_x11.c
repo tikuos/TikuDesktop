@@ -42,6 +42,8 @@ struct tiku_host {
     int mapped;                /* first presentation reveals the window */
     Atom delete_window;
     Cursor resize_cursor;
+    Cursor cursors[6];         /* by TIKU_CURSOR_*, made when first asked */
+    int cursor_kind;
     int scale;
     int logical_width;
     int logical_height;
@@ -476,6 +478,15 @@ tiku_host_close(tiku_host_t *host)
     if (host->display != NULL && host->resize_cursor != None) {
         XFreeCursor(host->display, host->resize_cursor);
     }
+    if (host->display != NULL) {
+        int k;
+
+        for (k = 0; k < 6; k++) {
+            if (host->cursors[k] != None) {
+                XFreeCursor(host->display, host->cursors[k]);
+            }
+        }
+    }
     if (host->display != NULL && host->gc != NULL) {
         XFreeGC(host->display, host->gc);
     }
@@ -805,16 +816,34 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
 }
 
 void
-tiku_host_set_resize_cursor(tiku_host_t *host, int enabled)
+tiku_host_set_cursor(tiku_host_t *host, int kind)
 {
-    if (host == NULL) {
+    static const unsigned shapes[6] = {
+        XC_left_ptr, XC_xterm, XC_sb_h_double_arrow, XC_sb_v_double_arrow,
+        XC_bottom_right_corner, XC_hand2
+    };
+
+    if (host == NULL || kind < 0 || kind >= 6 || kind == host->cursor_kind) {
         return;
     }
-    if (enabled) {
-        XDefineCursor(host->display, host->window, host->resize_cursor);
-    } else {
+    host->cursor_kind = kind;
+    if (kind == TIKU_CURSOR_ARROW) {
         XUndefineCursor(host->display, host->window);
+        XFlush(host->display);
+        return;
     }
+    if (host->cursors[kind] == None) {
+        host->cursors[kind] = XCreateFontCursor(host->display, shapes[kind]);
+    }
+    XDefineCursor(host->display, host->window, host->cursors[kind]);
+    XFlush(host->display);
+}
+
+void
+tiku_host_set_resize_cursor(tiku_host_t *host, int enabled)
+{
+    tiku_host_set_cursor(host, enabled ? TIKU_CURSOR_RESIZE_H
+                                       : TIKU_CURSOR_ARROW);
 }
 
 int

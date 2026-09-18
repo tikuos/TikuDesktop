@@ -424,6 +424,7 @@ typedef struct desktop {
     /* The Deskbar's own double-click memory (DB-019). */
     int64_t              db_click_at;   /* the last click, in us        */
     int                  db_click_x, db_click_y;
+    int                  cursor_kind;   /* TIKU_CURSOR_*, as last asked   */
     /* A menu fades in: which popup was seen last, and since when. */
     const tiku_menu_t *popup_seen, *popup_sub_seen;
     int64_t              popup_since, popup_sub_since;

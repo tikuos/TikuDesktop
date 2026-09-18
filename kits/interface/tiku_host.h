@@ -63,6 +63,21 @@ void tiku_host_set_fullscreen(tiku_host_t *host, int on);
  */
 int tiku_host_poll(tiku_host_t *host, tiku_event_t *event);
 
+/* What the pointer looks like: what is under it says.  The arrow is the
+ * rest state; the others are asked for while a thing is hot and given
+ * back the moment it is not. */
+enum {
+    TIKU_CURSOR_ARROW = 0,
+    TIKU_CURSOR_TEXT,           /* over text a caret could land in       */
+    TIKU_CURSOR_RESIZE_H,       /* a divider that moves left and right   */
+    TIKU_CURSOR_RESIZE_V,       /* one that moves up and down            */
+    TIKU_CURSOR_RESIZE_DIAG,    /* a window's corner                     */
+    TIKU_CURSOR_HAND            /* a link, a thing that can be pressed   */
+};
+
+/** @brief Show the pointer that says what is under it. */
+void tiku_host_set_cursor(tiku_host_t *host, int kind);
+
 /** @brief Select the horizontal-resize pointer while a divider is hot. */
 void tiku_host_set_resize_cursor(tiku_host_t *host, int enabled);
 

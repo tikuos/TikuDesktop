@@ -42,6 +42,7 @@ struct tiku_host {
     TikuView *view;
     TikuHostDelegate *delegate;
     NSCursor *cursor;
+    int cursor_kind;            /* TIKU_CURSOR_*, as last set            */
     tiku_rgb_t *pixels;         /* the native frame, last presented      */
     int scale;
     int logical_width, logical_height;
@@ -1105,18 +1106,35 @@ tiku_host_set_fullscreen(tiku_host_t *host, int on)
 }
 
 void
-tiku_host_set_resize_cursor(tiku_host_t *host, int enabled)
+tiku_host_set_cursor(tiku_host_t *host, int kind)
 {
-    if (host == NULL) {
+    NSCursor *which;
+
+    if (host == NULL || kind == host->cursor_kind) {
         return;
     }
     @autoreleasepool {
+        switch (kind) {
+        case TIKU_CURSOR_TEXT:        which = [NSCursor IBeamCursor]; break;
+        case TIKU_CURSOR_RESIZE_H:    which = [NSCursor resizeLeftRightCursor]; break;
+        case TIKU_CURSOR_RESIZE_V:    which = [NSCursor resizeUpDownCursor]; break;
+        case TIKU_CURSOR_RESIZE_DIAG: which = [NSCursor crosshairCursor]; break;
+        case TIKU_CURSOR_HAND:        which = [NSCursor pointingHandCursor]; break;
+        default:                      which = [NSCursor arrowCursor]; kind = 0; break;
+        }
+        host->cursor_kind = kind;
         [host->cursor release];
-        host->cursor = [(enabled ? [NSCursor resizeLeftRightCursor]
-                                 : [NSCursor arrowCursor]) retain];
+        host->cursor = [which retain];
         [host->cursor set];
         [host->window invalidateCursorRectsForView:host->view];
     }
+}
+
+void
+tiku_host_set_resize_cursor(tiku_host_t *host, int enabled)
+{
+    tiku_host_set_cursor(host, enabled ? TIKU_CURSOR_RESIZE_H
+                                       : TIKU_CURSOR_ARROW);
 }
 
 int
