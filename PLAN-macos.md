@@ -294,6 +294,17 @@ rather than guessed -- with the scan made to return nothing, both pass;
 with the board visible, both fail at every commit tried, including the
 one that had scored 1430 of 1430 an hour before.
 
+A third lane, `shutdownscreen`, joins them for a different reason: it
+answers Shut down, waits 60 turns, and expects the black already there
+and the mark still standing.  The closing is 0.7 s of hold and 0.9 s of
+fade, timed by the clock; the wait is counted in turns.  With the
+Apollo510 on the bus a turn costs ~50 ms (the serial poll), so 60 turns
+is three seconds, the shell has already gone, and the script stops at
+line 24 with its steps unreached.  Proved by shortening the wait to 20:
+the screen is mid-fade (`0a141e`, mark `cdbf72`) -- the sequence works,
+the sampling point does not.  Fails identically at the commit before
+the notes work, so it is the board, not the change.
+
 So `make test` currently depends on what is plugged into the machine,
 which is the one thing a suite must not do.  The scripts that WANT a
 board say so (`# board: yes`) and are given one through `TRK_PORT`; the
