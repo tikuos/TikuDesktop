@@ -1,0 +1,22 @@
+# shell: desktop
+# home: fixture
+# The look: a window casts a shadow on the desk, its corners are round,
+# and a menu is a card with a shadow of its own.
+wait 25
+note below the window's foot the backdrop is in shadow: darker than
+note the desk, lighter than the window's own hairline
+expect-pixel 275 342 1c3854
+note the bottom-right corner is cut: neither panel nor plain desk
+expect-pixel 503 339 1c3853
+note past the shadow's reach the desk is itself
+expect-pixel 275 360 336698
+click 71 76
+wait 8
+shot /tmp/trk_look.png
+note the menu's corner is cut the same way
+expect-pixel 54 421 4d6379
+note and the window's panel beside the menu is in the menu's shadow
+expect-pixel 196 300 cdcdcd
+key Escape
+wait 4
+quit

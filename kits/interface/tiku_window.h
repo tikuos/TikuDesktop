@@ -16,6 +16,12 @@
 
 #define TIKU_WINDOW_MAX       16
 #define TIKU_WINDOW_BORDER     5
+/* The shadow's softness, how far it reaches past the frame (two pixels
+ * more, since it falls a little lower than the window), and the corners'
+ * radius.  The reach is what a repaint around a window has to cover. */
+#define TIKU_WINDOW_SHADOW_RADIUS 12
+#define TIKU_WINDOW_SHADOW        (TIKU_WINDOW_SHADOW_RADIUS + 2)
+#define TIKU_WINDOW_RADIUS         5
 #define TIKU_WINDOW_TITLE_MAX 160
 
 /**
@@ -99,6 +105,7 @@ typedef void (*tiku_menu_pick_fn)(struct tiku_window *window,
 
 struct tiku_window {
     uint64_t                     generation; /* distinguishes reused slots */
+    int64_t                      opened_at;  /* the workspace clock, for the rise */
     char                         title[TIKU_WINDOW_TITLE_MAX];
     tiku_rect_t             frame;
     int                          z;
@@ -238,6 +245,16 @@ void tiku_workspace_set_backdrop(tiku_workspace_t *workspace,
     void (*draw)(tiku_surface_t *surface, void *context), void *context);
 int tiku_workspace_zoom(tiku_workspace_t *workspace,
     tiku_window_t *window, int fit_width, int fit_height);
+/**
+ * @brief The time, for what moves on its own: a window rising as it
+ *        opens.  Never told, nothing moves, which is what a scripted
+ *        run wants.
+ */
+void tiku_workspace_set_now(tiku_workspace_t *workspace, int64_t now_us);
+
+/** @brief Whether the last draw left something still moving. */
+int tiku_workspace_animating(const tiku_workspace_t *workspace);
+
 void tiku_workspace_set_reserved(tiku_workspace_t *workspace,
                                       tiku_rect_t reserved);
 

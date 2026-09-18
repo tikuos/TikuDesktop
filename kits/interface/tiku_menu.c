@@ -428,9 +428,10 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
         return;
     }
     tiku_menu_measure(m);
-    tiku_fill(s, frame, base);
-    tiku_bevel(s, frame, tiku_tint(base, TIKU_LIGHTEN_MAX),
-                    tiku_tint(base, TIKU_DARKEN_2));
+    /* A card laid on the desk: a shadow, rounded corners, a hairline. */
+    tiku_shadow(s, frame, 10, 4, 0.35f);
+    tiku_fill_round(s, frame, 4, TIKU_CORNER_ALL, base);
+    tiku_frame_round(s, frame, 4, TIKU_CORNER_ALL, tiku_tint(base, 1.40f));
 
     for (i = 0; i < m->count; i++) {
         tiku_menu_item_t *it = &m->item[i];
@@ -454,7 +455,8 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
             continue;
         }
         if (i == m->hot && it->enabled) {
-            tiku_fill(s, r, TIKU_C_SELECT);
+            tiku_fill_round(s, tiku_inset(r, 1), 3, TIKU_CORNER_ALL,
+                            TIKU_C_SELECT);
             ink = TIKU_C_SELTEXT;
         } else {
             /* Disabled ink is the text pulled toward its own ground:
@@ -630,7 +632,9 @@ tiku_menubar_draw(tiku_menubar_t *b, tiku_surface_t *s,
         tiku_rgb_t ink = TIKU_C_TEXT;
 
         if (i == b->open) {
-            tiku_fill(s, t, TIKU_C_SELECT);
+            /* The open title as a pill, a pixel in from the bar's edges. */
+            tiku_fill_round(s, (tiku_rect_t){ t.x, t.y + 1, t.w, t.h - 2 },
+                            3, TIKU_CORNER_ALL, TIKU_C_SELECT);
             ink = TIKU_C_SELTEXT;
         }
         if (b->menu[i]->mark) {

@@ -133,36 +133,27 @@ tiku_ui_button(tiku_surface_t *s, tiku_rect_t r,
                            : TIKU_C_TEXT;
     const tiku_font_t *font = tiku_font_plain();
 
+    tiku_rgb_t face = PANEL;
+
     if (state & TIKU_S_DEFAULT) {
-        /* The default button wears a ring with clear air between it and the
-         * frame -- the gap is what makes it read as "this one". */
-        tiku_rect_t ring = r;
-        tiku_fill(s, ring, PANEL);
-        tiku_frame(s, ring, DARK());
-        clip_corners(s, ring, PANEL);
-        tiku_bevel(s, tiku_inset(ring, 1), SHADOW(), WHITE());
-        f = tiku_inset(r, 4);
+        /* The default button is the one filled with the desk's accent:
+         * what Return does, said in colour, the way a card's one
+         * confirming button is said on every modern desk. */
+        face = TIKU_C_SELECT;
+        if (!(state & TIKU_S_DISABLED)) { text = TIKU_C_SELTEXT; }
     }
-
-    tiku_fill(s, f, PANEL);
-    tiku_frame(s, f, DARK());
-    clip_corners(s, f, PANEL);
-
     if (state & TIKU_S_PRESSED) {
-        /* Pressed reads as a hole: the face drops two steps and the bevel
-         * inverts, so the state is legible without colour. */
-        tiku_rect_t in = tiku_inset(f, 1);
-        tiku_fill(s, in, tiku_tint(PANEL, 1.16f));
-        tiku_bevel(s, in, DARK(), LIGHT());
-        tiku_bevel(s, tiku_inset(f, 2),
-                        tiku_tint(PANEL, TIKU_DARKEN_2), PANEL);
-    } else {
-        tiku_bevel(s, tiku_inset(f, 1), WHITE(), SHADOW());
-        tiku_bevel(s, tiku_inset(f, 2), LIGHT(), PANEL);
+        /* Pressed reads as the face dropping two steps, no bevel to
+         * invert: a flat control is legible by its shade alone. */
+        face = tiku_tint(face, 1.16f);
     }
-
+    tiku_fill_round(s, f, 4, TIKU_CORNER_ALL, face);
+    tiku_frame_round(s, f, 4, TIKU_CORNER_ALL,
+                     (state & TIKU_S_DEFAULT) ? tiku_tint(face, 1.25f)
+                                              : DARK());
     if (state & TIKU_S_FOCUS) {
-        tiku_frame(s, tiku_inset(f, 3), TIKU_C_FOCUS);
+        tiku_frame_round(s, tiku_inset(f, 2), 3, TIKU_CORNER_ALL,
+                         TIKU_C_FOCUS);
     }
     {
         tiku_rect_t t = f;

@@ -143,6 +143,9 @@ static void dragging(int width, int height, int scale)
         wins[0][3]->frame.x = wins[1][3]->frame.x = 250+(i%30)*8;
         wins[0][3]->frame.y = wins[1][3]->frame.y = 120+(i%15)*5;
         tiku_rect_t damage = tiku_rect_union(before, wins[1][3]->frame);
+        /* What a window dirties is its frame and the shadow past it. */
+        damage.x -= TIKU_WINDOW_SHADOW; damage.y -= TIKU_WINDOW_SHADOW;
+        damage.w += 2*TIKU_WINDOW_SHADOW; damage.h += 2*TIKU_WINDOW_SHADOW;
         for (int k = 0; k < 2; k++) {
             int64_t start = now_us();
             if (k) {

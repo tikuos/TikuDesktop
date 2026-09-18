@@ -305,6 +305,34 @@ void tiku_blit(tiku_surface_t *dst, int x, int y,
                     const tiku_surface_t *src);
 
 /**
+ * @brief A soft shadow cast by @p r onto whatever is around it.
+ *
+ * Laid outside the shape only -- the rectangle with its corners rounded
+ * by @p corner -- a little lower than it, falling off over @p radius
+ * pixels; @p strength is how dark it is at the edge, 0 to 1.  What is
+ * under a window stays as drawn: a shadow blends.
+ */
+void tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
+                 float strength);
+
+/* Which corners a rounded rectangle rounds: a window's body keeps the
+ * one its tab stands on square. */
+#define TIKU_CORNER_TL  0x1u
+#define TIKU_CORNER_TR  0x2u
+#define TIKU_CORNER_BL  0x4u
+#define TIKU_CORNER_BR  0x8u
+#define TIKU_CORNER_ALL 0xfu
+#define TIKU_CORNER_TOP (TIKU_CORNER_TL | TIKU_CORNER_TR)
+
+/** @brief Fill @p r with the @p corners rounded by @p radius, softly. */
+void tiku_fill_round(tiku_surface_t *s, tiku_rect_t r, int radius,
+                     unsigned corners, tiku_rgb_t c);
+
+/** @brief A hairline around @p r, the @p corners rounded by @p radius. */
+void tiku_frame_round(tiku_surface_t *s, tiku_rect_t r, int radius,
+                      unsigned corners, tiku_rgb_t c);
+
+/**
  * @brief Lay @p c over @p r at @p amount, 0 for nothing and 1 for solid.
  *
  * What a fill does not do: a fill replaces, this one mixes.  It is how a

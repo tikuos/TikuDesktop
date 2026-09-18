@@ -542,6 +542,251 @@ tiku_copy_bits(tiku_surface_t *s, tiku_rect_t src, int dx,
     }
 }
 
+/** @brief One pixel, @p c laid over it at @p a of 255. */
+static void
+blend_px(tiku_rgb_t *px, tiku_rgb_t c, unsigned a)
+{
+    unsigned inv = 255u - a;
+    tiku_rgb_t p = *px;
+    unsigned r = (((c >> 16) & 0xFFu) * a + ((p >> 16) & 0xFFu) * inv) / 255u;
+    unsigned g = (((c >> 8) & 0xFFu) * a + ((p >> 8) & 0xFFu) * inv) / 255u;
+    unsigned b = ((c & 0xFFu) * a + (p & 0xFFu) * inv) / 255u;
+
+    *px = (tiku_rgb_t)((r << 16) | (g << 8) | b);
+}
+
+/**
+ * @brief How much of a native pixel a rounded corner covers, 0 to 255.
+ *
+ * The corner is the quarter disc of radius @p r whose centre is at
+ * (@p cx, @p cy); the pixel is the unit square at (@p x, @p y), sampled
+ * four by four.  Whole numbers in, a byte out, so the corner of every
+ * window costs sixteen compares a pixel and no floating point.
+ */
+static unsigned
+corner_coverage(int x, int y, int cx, int cy, int r)
+{
+    int i, j, inside = 0;
+    long rr = (long)r * r * 64;         /* radius in eighths, squared */
+
+    for (j = 0; j < 4; j++) {
+        for (i = 0; i < 4; i++) {
+            long dx = (long)(x * 8 + 1 + i * 2) - cx * 8;
+            long dy = (long)(y * 8 + 1 + j * 2) - cy * 8;
+
+            if (dx * dx + dy * dy <= rr) { inside++; }
+        }
+    }
+    return (unsigned)(inside * 255 / 16);
+}
+
+/**
+ * @brief The corners of @p r, each blended by how much the disc covers.
+ *
+ * With @p ring set, what is drawn is the hairline: the difference
+ * between the corner at @p radius and the corner one pixel inside it.
+ * Native pixels throughout, so a scaled surface gets a smoother curve
+ * rather than a bigger jaggy one.
+ */
+static void
+round_corners(tiku_surface_t *s, tiku_rect_t r, int radius, unsigned corners,
+              tiku_rgb_t c, int ring)
+{
+    int sc = scale_of(s);
+    long stride = (long)s->w * sc;
+    int rad = radius * sc;
+    int x0 = r.x * sc, y0 = r.y * sc;
+    int x1 = (r.x + r.w) * sc, y1 = (r.y + r.h) * sc;
+    int cx0 = s->clip.x * sc, cy0 = s->clip.y * sc;
+    int cx1 = (s->clip.x + s->clip.w) * sc, cy1 = (s->clip.y + s->clip.h) * sc;
+    int k, x, y;
+
+    if (rad <= 0 || r.w < 2 * radius || r.h < 2 * radius) {
+        return;
+    }
+    for (k = 0; k < 4; k++) {
+        /* Each corner's square of pixels, and the disc's centre for it. */
+        int left = (k & 1) ? x1 - rad : x0;
+
+        if (!(corners & (1u << k))) { continue; }
+
+        int top = (k & 2) ? y1 - rad : y0;
+        int cx = (k & 1) ? x1 - rad : x0 + rad;
+        int cy = (k & 2) ? y1 - rad : y0 + rad;
+
+        for (y = top; y < top + rad; y++) {
+            tiku_rgb_t *row;
+
+            if (y < cy0 || y >= cy1) { continue; }
+            row = s->px + (long)y * stride;
+            for (x = left; x < left + rad; x++) {
+                unsigned a;
+
+                if (x < cx0 || x >= cx1) { continue; }
+                a = corner_coverage(x, y, cx, cy, rad);
+                if (ring) {
+                    unsigned in = corner_coverage(x, y, cx, cy, rad - sc);
+
+                    a = (a > in) ? a - in : 0u;
+                }
+                if (a >= 255u) { row[x] = c; }
+                else if (a > 0u) { blend_px(&row[x], c, a); }
+            }
+        }
+    }
+}
+
+void
+tiku_fill_round(tiku_surface_t *s, tiku_rect_t r, int radius,
+                unsigned corners, tiku_rgb_t c)
+{
+    int rec;
+
+    if (s == NULL || r.w <= 0 || r.h <= 0) {
+        return;
+    }
+    if (radius <= 0 || r.w < 2 * radius || r.h < 2 * radius ||
+        (corners & TIKU_CORNER_ALL) == 0u) {
+        tiku_fill(s, r, c);
+        return;
+    }
+    rec = tiku_gfx_rec_enter(s);
+    if (rec) {
+        (void)tiku_dl_fill(s->record, r, c);   /* a fill, to the facts */
+    }
+    /* The cross the corners leave, opaque; a corner kept square is
+     * filled whole; the rest are laid by cover. */
+    tiku_fill(s, (tiku_rect_t){ r.x + radius, r.y, r.w - 2 * radius, r.h },
+              c);
+    tiku_fill(s, (tiku_rect_t){ r.x, r.y + radius, radius, r.h - 2 * radius },
+              c);
+    tiku_fill(s, (tiku_rect_t){ r.x + r.w - radius, r.y + radius, radius,
+                                r.h - 2 * radius }, c);
+    if (!(corners & TIKU_CORNER_TL)) {
+        tiku_fill(s, (tiku_rect_t){ r.x, r.y, radius, radius }, c);
+    }
+    if (!(corners & TIKU_CORNER_TR)) {
+        tiku_fill(s, (tiku_rect_t){ r.x + r.w - radius, r.y, radius, radius },
+                  c);
+    }
+    if (!(corners & TIKU_CORNER_BL)) {
+        tiku_fill(s, (tiku_rect_t){ r.x, r.y + r.h - radius, radius, radius },
+                  c);
+    }
+    if (!(corners & TIKU_CORNER_BR)) {
+        tiku_fill(s, (tiku_rect_t){ r.x + r.w - radius, r.y + r.h - radius,
+                                    radius, radius }, c);
+    }
+    round_corners(s, r, radius, corners, c, 0);
+    tiku_gfx_rec_leave(s, rec);
+}
+
+void
+tiku_frame_round(tiku_surface_t *s, tiku_rect_t r, int radius,
+                 unsigned corners, tiku_rgb_t c)
+{
+    int rec, tl, tr, bl, br;
+
+    if (s == NULL || r.w <= 0 || r.h <= 0) {
+        return;
+    }
+    if (radius <= 0 || r.w < 2 * radius || r.h < 2 * radius ||
+        (corners & TIKU_CORNER_ALL) == 0u) {
+        tiku_frame(s, r, c);
+        return;
+    }
+    rec = tiku_gfx_rec_enter(s);
+    if (rec) {
+        (void)tiku_dl_frame(s->record, r, c);
+    }
+    /* Each straight edge runs to the corner, or stops short of a curve. */
+    tl = (corners & TIKU_CORNER_TL) ? radius : 0;
+    tr = (corners & TIKU_CORNER_TR) ? radius : 0;
+    bl = (corners & TIKU_CORNER_BL) ? radius : 0;
+    br = (corners & TIKU_CORNER_BR) ? radius : 0;
+    tiku_hline(s, r.x + tl, r.y, r.w - tl - tr, c);
+    tiku_hline(s, r.x + bl, r.y + r.h - 1, r.w - bl - br, c);
+    tiku_vline(s, r.x, r.y + tl, r.h - tl - bl, c);
+    tiku_vline(s, r.x + r.w - 1, r.y + tr, r.h - tr - br, c);
+    round_corners(s, r, radius, corners, c, 1);
+    tiku_gfx_rec_leave(s, rec);
+}
+
+void
+tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
+            float strength)
+{
+    int sc, rad, drop, x0, y0, x1, y1, bx0, by0, bx1, by1, x, y, cr;
+    long stride;
+    unsigned edge;
+
+    tiku_gfx_rec_miss(s);   /* a blend over what is there has no op */
+    if (s == NULL || r.w <= 0 || r.h <= 0 || radius <= 0 ||
+        strength <= 0.0f) {
+        return;
+    }
+    if (strength > 1.0f) { strength = 1.0f; }
+    edge = (unsigned)(strength * 255.0f + 0.5f);
+    sc = scale_of(s);
+    stride = (long)s->w * sc;
+    rad = radius * sc;
+    cr = (corner > 0) ? corner * sc : 0;
+    drop = 2 * sc;                      /* the light is a little above */
+    /* The box the shadow falls from, native, and the band around it. */
+    bx0 = r.x * sc; by0 = r.y * sc + drop;
+    bx1 = (r.x + r.w) * sc - 1; by1 = (r.y + r.h) * sc - 1 + drop;
+    x0 = bx0 - rad; y0 = by0 - rad; x1 = bx1 + rad + 1; y1 = by1 + rad + 1;
+    if (x0 < s->clip.x * sc) { x0 = s->clip.x * sc; }
+    if (y0 < s->clip.y * sc) { y0 = s->clip.y * sc; }
+    if (x1 > (s->clip.x + s->clip.w) * sc) {
+        x1 = (s->clip.x + s->clip.w) * sc;
+    }
+    if (y1 > (s->clip.y + s->clip.h) * sc) {
+        y1 = (s->clip.y + s->clip.h) * sc;
+    }
+    for (y = y0; y < y1; y++) {
+        tiku_rgb_t *row = s->px + (long)y * stride;
+        int dy = (y < by0) ? by0 - y : (y > by1) ? y - by1 : 0;
+
+        for (x = x0; x < x1; x++) {
+            int dx = (x < bx0) ? bx0 - x : (x > bx1) ? x - bx1 : 0;
+            long d2, t;
+            unsigned a;
+
+            /* Under the window itself: nothing to lay, it is covered --
+             * except in the cut of a rounded corner, where the desk
+             * shows and the shadow must reach as it does past an edge. */
+            if (x >= r.x * sc && x < (r.x + r.w) * sc &&
+                y >= r.y * sc && y < (r.y + r.h) * sc) {
+                int rx1 = (r.x + r.w) * sc, ry1 = (r.y + r.h) * sc;
+                int ex = (x < r.x * sc + cr) ? r.x * sc + cr
+                       : (x >= rx1 - cr) ? rx1 - cr - 1 : -1;
+                int ey = (y < r.y * sc + cr) ? r.y * sc + cr
+                       : (y >= ry1 - cr) ? ry1 - cr - 1 : -1;
+                long ccx, ccy, out2;
+
+                if (cr <= 0 || ex < 0 || ey < 0) {
+                    continue;
+                }
+                ccx = x - ex; ccy = y - ey;
+                out2 = ccx * ccx + ccy * ccy;
+                if (out2 <= (long)cr * cr) {
+                    continue;           /* under the curve's own paint */
+                }
+                /* Past the curve by a little: as dark as the edge is. */
+                dx = 0; dy = 0;
+            }
+            d2 = (long)dx * dx + (long)dy * dy;
+            if (d2 >= (long)rad * rad) { continue; }
+            /* Falling off as the square of the distance left: dark at
+             * the edge, gone at the radius, without a square root. */
+            t = (long)rad * rad - d2;
+            a = (unsigned)((long)edge * t / rad * t / rad / ((long)rad * rad));
+            if (a > 0u) { blend_px(&row[x], 0u, a); }
+        }
+    }
+}
+
 void
 tiku_veil(tiku_surface_t *s, tiku_rect_t r, tiku_rgb_t c, float amount)
 {

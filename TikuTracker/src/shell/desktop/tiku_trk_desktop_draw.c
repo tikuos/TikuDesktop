@@ -151,6 +151,10 @@ void desktop_damage(desktop_t *app, tiku_rect_t rect)
     /* Every existing writer of dirty=1 remains a full invalidation.
      * A later bounded change must never downgrade that request. */
     if (app->dirty && app->dirty != 2) return;
+    /* A window's shadow reaches past its frame: what a move of it
+     * dirties is that much more on every side. */
+    rect.x -= TIKU_WINDOW_SHADOW; rect.y -= TIKU_WINDOW_SHADOW;
+    rect.w += 2 * TIKU_WINDOW_SHADOW; rect.h += 2 * TIKU_WINDOW_SHADOW;
     app->damage = app->dirty ? tiku_rect_union(app->damage, rect) : rect;
     app->dirty = 2;
 }
@@ -178,6 +182,10 @@ draw_all(desktop_t *app)
                    (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                    app->backdrop_color);
     tiku_trk_deskbar_publish_workspace(app->deskbar, app->team, app->desk);
+    /* The clock for what moves on its own -- a window rising as it
+     * opens -- and none for a run with nobody to show it to, whose
+     * frames must be still for a script to read. */
+    tiku_workspace_set_now(app->desk, (app->host != NULL) ? started : 0);
     if (!tiku_trk_deskbar_raised(app->deskbar)) {
         /* Under the windows: with auto-raise on, a window may cover the
          * bar until the user reaches for it.  Draw order IS the z-order
@@ -187,6 +195,9 @@ draw_all(desktop_t *app)
     } else {
         tiku_workspace_draw(app->desk);
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
+    }
+    if (tiku_workspace_animating(app->desk)) {
+        app->dirty = 1;         /* the next frame moves it again */
     }
     desktop_draw_zoom(app);
     desktop_draw_info_hover(app);

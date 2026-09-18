@@ -11,7 +11,8 @@ menu-pick Select…
 wait 8
 expect-title Select
 note its foot is where a 12 px face puts it
-expect-pixel 400 372 336698
+note the backdrop below its foot, in the front window's shadow
+expect-pixel 400 372 234669
 key w ctrl
 wait 6
 note now raise the interface to 16 px and ask for this window again:

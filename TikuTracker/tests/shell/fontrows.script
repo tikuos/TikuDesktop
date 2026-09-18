@@ -63,4 +63,5 @@ wait 12
 expect-font Sans 12
 key w ctrl
 wait 8
-expect-pixel 300 392 336698
+note the backdrop below its foot, in the window's shadow
+expect-pixel 300 392 326596

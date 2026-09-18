@@ -61,6 +61,8 @@ struct tiku_workspace {
         tiku_surface_t *pixels;
         int valid, active;
     } cache[TIKU_WINDOW_MAX];
+    int64_t now;                /* the clock, 0 when nobody tells it   */
+    int animating;              /* the last draw left motion behind    */
     int cache_mode;
     size_t cache_bytes;
     uint64_t content_draws, cache_hits;
@@ -263,6 +265,7 @@ tiku_workspace_open(tiku_workspace_t *workspace, const char *title,
     window->context = context;
     window->tag = tag;
     window->open = 1;
+    window->opened_at = workspace->now;
     window->resizable = 1;
     window->zoomable = 1;
     workspace->order[workspace->count++] = slot;
@@ -600,9 +603,26 @@ static void draw_content(tiku_workspace_t *ws, tiku_window_t *w,
     tiku_clip_reset(s);
 }
 
+#define RISE_US 150000          /* a window opening lifts into place  */
+#define RISE_PX 8
+
+/** @brief Ease out: fast at first, settling, as a thing put down does. */
+static float
+ease_out(float t)
+{
+    float u = 1.0f - t;
+
+    return 1.0f - u * u * u;
+}
+
+/**
+ * @brief The window's chrome and content, on the new look: a shadow
+ *        beneath, rounded corners where no tab stands, a hairline where
+ *        there were bevels.
+ */
 static void
-draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
-            int active)
+draw_window_at(tiku_workspace_t *workspace, tiku_window_t *window,
+               int active, float lift)
 {
     tiku_surface_t *surface = workspace->surface;
     const tiku_font_t *font = tiku_font_bold();
@@ -616,25 +636,30 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
     tiku_rgb_t tab_color = active ? TIKU_C_TAB
                                        : TIKU_C_TAB_IDLE;
     tiku_rgb_t dark = tiku_tint(TIKU_C_PANEL, 1.40f);
+    int radius = TIKU_WINDOW_RADIUS;
 
     if (window->plain) {
         /* The announcement look: the page, a hairline, nothing else. */
         (void)active;
-        tiku_fill(surface, window->frame, TIKU_C_PANEL);
-        tiku_frame(surface, window->frame, dark);
+        tiku_shadow(surface, window->frame, TIKU_WINDOW_SHADOW_RADIUS,
+                    radius + 1, 0.45f * lift);
+        tiku_fill_round(surface, window->frame, radius + 1, TIKU_CORNER_ALL,
+                        TIKU_C_PANEL);
+        tiku_frame_round(surface, window->frame, radius + 1, TIKU_CORNER_ALL,
+                         dark);
         draw_content(workspace, window, content, active);
         return;
     }
-    tiku_fill(surface, body, TIKU_C_PANEL);
-    tiku_frame(surface, body, dark);
-    tiku_bevel(surface, tiku_inset(body, 1),
-        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX),
-        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
-    tiku_fill(surface, tab, tab_color);
-    tiku_frame(surface, tab, dark);
-    tiku_bevel(surface, tiku_inset(tab, 1),
-        tiku_tint(tab_color, TIKU_LIGHTEN_1),
-        tiku_tint(tab_color, TIKU_DARKEN_2));
+    /* The shadow is the body's; the tab stands in the band above it. */
+    tiku_shadow(surface, body, TIKU_WINDOW_SHADOW_RADIUS, radius,
+                (active ? 0.45f : 0.30f) * lift);
+    tiku_fill_round(surface, body, radius,
+                    TIKU_CORNER_ALL & ~TIKU_CORNER_TL, TIKU_C_PANEL);
+    tiku_frame_round(surface, body, radius,
+                     TIKU_CORNER_ALL & ~TIKU_CORNER_TL, dark);
+    tiku_fill_round(surface, tab, radius, TIKU_CORNER_TOP, tab_color);
+    tiku_frame_round(surface, tab, radius, TIKU_CORNER_TOP, dark);
+    /* One row where the tab meets the body, so the two are one shape. */
     tiku_hline(surface, tab.x + 1, tab.y + tab.h - 1, tab.w - 2,
                     tab_color);
     draw_button(surface, tab.x + 4, tab.y + (tab_h - btn) / 2, 0, active,
@@ -655,8 +680,9 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
     }
     draw_content(workspace, window, content, active);
     if (window->resizable) {
-        int gx = window->frame.x + window->frame.w - 14;
-        int gy = window->frame.y + window->frame.h - 14;
+        /* Two pixels in from the corner, which is a curve now. */
+        int gx = window->frame.x + window->frame.w - 16;
+        int gy = window->frame.y + window->frame.h - 16;
         int i;
 
         for (i = 0; i < 3; i++) {
@@ -666,6 +692,45 @@ draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
                 tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX));
         }
     }
+}
+
+/**
+ * @brief A window just opened rises the last few pixels into its place
+ *        with its shadow deepening; one already there is simply drawn.
+ *        The frame the hand meets is never moved -- only the picture.
+ */
+static void
+draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
+            int active)
+{
+    int64_t age = workspace->now - window->opened_at;
+
+    if (workspace->now != 0 && window->opened_at != 0 &&
+        age >= 0 && age < RISE_US) {
+        tiku_rect_t kept = window->frame;
+        float t = ease_out((float)age / (float)RISE_US);
+
+        window->frame.y += (int)((1.0f - t) * RISE_PX + 0.5f);
+        draw_window_at(workspace, window, active, t);
+        window->frame = kept;
+        workspace->animating = 1;
+        return;
+    }
+    draw_window_at(workspace, window, active, 1.0f);
+}
+
+void
+tiku_workspace_set_now(tiku_workspace_t *workspace, int64_t now_us)
+{
+    if (workspace != NULL) {
+        workspace->now = now_us;
+    }
+}
+
+int
+tiku_workspace_animating(const tiku_workspace_t *workspace)
+{
+    return workspace != NULL && workspace->animating;
 }
 
 void
@@ -692,12 +757,17 @@ tiku_workspace_draw(tiku_workspace_t *workspace)
         workspace->backdrop(workspace->surface,
                             workspace->backdrop_context);
     }
+    workspace->animating = 0;
     for (i = 0; i < workspace->count; i++) {
         tiku_window_t *window =
             &workspace->windows[workspace->order[i]];
 
         tiku_rect_t clip = workspace->surface->clip;
         tiku_rect_t f = window->frame;
+        /* The shadow reaches past the frame, so a window just outside
+         * the clip may still lay something inside it. */
+        f.x -= TIKU_WINDOW_SHADOW; f.y -= TIKU_WINDOW_SHADOW;
+        f.w += 2 * TIKU_WINDOW_SHADOW; f.h += 2 * TIKU_WINDOW_SHADOW;
         if (window->open && !window->minimized &&
             f.x < clip.x+clip.w && f.y < clip.y+clip.h &&
             f.x+f.w > clip.x && f.y+f.h > clip.y) {

@@ -357,6 +357,7 @@ test_console_LDLIBS := $(X11_LIBS) -lm
 test_ide_debug_LDLIBS := $(X11_LIBS) -lm
 test_deviceprefs_LDLIBS := $(X11_LIBS) -lm
 test_calculator_LDLIBS := $(X11_LIBS) -lm
+test_look_LDLIBS := $(X11_LIBS) -lm
 test_notes_LDLIBS := $(X11_LIBS) -lm
 test_hex_SRCS := $(D)/hex/tiku_hex_model.c
 test_hex_LDLIBS := $(X11_LIBS) -lm
