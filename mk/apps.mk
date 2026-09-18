@@ -41,7 +41,7 @@ APPS_D      := $(BUILD)/apps
 SO_APPS     := $(APPS_D)/terminal/terminal.so $(APPS_D)/editor/editor.so \
                $(APPS_D)/bench/Bench.so $(APPS_D)/console/TikuConsole.so \
                $(APPS_D)/calculator/DeveloperCalculator.so \
-               $(APPS_D)/hex/TikuHex.so \
+               $(APPS_D)/hex/TikuHex.so $(APPS_D)/notes/TikuNotes.so \
                $(APPS_D)/basic/TikuBasic.so $(APPS_D)/c/TikuC.so
 SO_EXAMPLE_NAMES := hello clock counter sketch twowin sensors
 SO_EXAMPLES := $(foreach a,$(SO_EXAMPLE_NAMES),$(APPS_D)/$(a)/$(a).so)
@@ -88,6 +88,7 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/console/app.manifest \
     $(APPS_D)/calculator/app.manifest \
     $(APPS_D)/hex/app.manifest \
+    $(APPS_D)/notes/app.manifest \
     $(APPS_D)/basic/app.manifest \
     $(APPS_D)/c/app.manifest \
     $(APPS_D)/hello/app.manifest \
@@ -114,6 +115,10 @@ $(APPS_D)/console/app.manifest: $(D)/console/console.app
 	cp $< $@
 
 $(APPS_D)/calculator/app.manifest: $(D)/calculator/calculator.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+$(APPS_D)/notes/app.manifest: $(D)/notes/notes.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 
@@ -286,6 +291,10 @@ $(APPS_D)/bench/Bench.so: $(D)/bench/tiku_bench.c $(wildcard $(D)/bench/*.inl) $
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 
 $(APPS_D)/calculator/DeveloperCalculator.so: $(D)/calculator/tiku_calculator.c $(wildcard $(D)/calculator/*.inl) $(PIC_LIBS) | $(APPS_D)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
+
+$(APPS_D)/notes/TikuNotes.so: $(D)/notes/tiku_notes.c $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) -lX11 -lm
 

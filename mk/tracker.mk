@@ -350,6 +350,7 @@ test_console_LDLIBS := -lX11 -lm
 test_ide_debug_LDLIBS := -lX11 -lm
 test_deviceprefs_LDLIBS := -lX11 -lm
 test_calculator_LDLIBS := -lX11 -lm
+test_notes_LDLIBS := -lX11 -lm
 test_hex_SRCS := $(D)/hex/tiku_hex_model.c
 test_hex_LDLIBS := -lX11 -lm
 test_forcequit_LDLIBS := -lX11 -lm
