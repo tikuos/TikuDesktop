@@ -184,7 +184,7 @@ clipboard_publish(tiku_host_t *host)
     [board clearContents];
     [board setString:[NSString stringWithUTF8String:tiku_clipboard_text()]
              forType:NSPasteboardTypeString];
-    /* Our own writing is not something to import back. */
+    /* The desktop's own writing is not imported back. */
     host->change_count = [board changeCount];
 }
 
