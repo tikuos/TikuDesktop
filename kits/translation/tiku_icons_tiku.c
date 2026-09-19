@@ -22,6 +22,7 @@
 #include "tiku_icons_viewer.inl"
 #include "tiku_icons_forcequit.inl"
 #include "tiku_icons_shutdown.inl"
+#include "tiku_icons_calculator.inl"
 
 /* microcontroller -- a chip: dark body, silver legs, the pin-one dot */
 static const uint8_t tiku_icon_microcontroller[311] = {
@@ -135,5 +136,7 @@ tiku_icons_tiku_register(void)
                           sizeof tiku_icon_force_quit);
     took += tiku_icons_add("shutdown", tiku_icon_shutdown,
                           sizeof tiku_icon_shutdown);
+    took += tiku_icons_add("calculator", tiku_icon_calculator,
+                          sizeof tiku_icon_calculator);
     return took;
 }
