@@ -11,11 +11,11 @@ menu-pick Applications
 wait 4
 expect-menu Editor|TikuImage|TikuReader|Terminal
 shot /tmp/tiku-editor-app-menu.png
-note each row wears its own art: paper for the editor, an application
-note for the terminal, and they are not the same picture. Stable bundle
-note discovery puts Editor first and Terminal fourth.
-expect-pixel 494 112 fffcc0
-expect-pixel 492 179 ec6666
+note each row wears its own art: the pencil on the editor's sheet, the
+note green prompt on the terminal's screen, and they are not the same
+note picture. Stable bundle discovery puts Editor first and Terminal fourth.
+expect-pixel 494 111 f7d066
+expect-pixel 491 177 5ce678
 note choosing the editor starts it; its window arrives over the session
 menu-pick Editor
 wait 90
