@@ -7015,8 +7015,8 @@ ClearMenuBuildingState sets fMenuBuilt=false; MenusEnded additionally calls sDes
 The parent item's message is kShutdownSystem with "confirm"=true; submenu items carry bare kShutdownSystem/kRebootSystem; both route to BRoster::Private::ShutDown(reboot, confirm, false)  
 `DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`  
 **TIKU:** Maps to a TikuOS power/reset request; the confirm flag distinction should survive  
-**PORT:** The whole split now: the parent's ellipsis asks (Cancel the default, Escape means no -- shutdownask.script), while the arrow beside it expands Power off / Restart system, and either of those ACTS the moment it is chosen, no question -- Power off ends the session outright and Restart system re-execs the same desktop image, this host's power/reset request.  The submenu opens from the row's arrow zone because this port's leaf submenus open by click, not hover.  
-*src/deskbar/tiku_trk_deskbar.c (the QUIT submenu in open_sub, the arrow zone, the sub dispatch); src/shell/tiku_trk_desktop.c (POWER_OFF/RESTART arms); tests/test_deskbar_dock.c (DB-006, mutation-tested); tests/shell/shutdownask.script*
+**PORT:** The whole split now: the parent's ellipsis asks (Cancel the default, Escape means no -- shutdownask.script), while the arrow beside it expands Power off, which ACTS the moment it is chosen, no question -- it ends the session outright, this host's power request.  There is no Restart row: a desktop is shut down, not started over from inside itself.  The submenu opens from the row's arrow zone because this port's leaf submenus open by click, not hover.  
+*src/deskbar/tiku_trk_deskbar.c (the QUIT submenu in open_sub, the arrow zone, the sub dispatch); src/shell/tiku_trk_desktop.c (the POWER_OFF arm); tests/test_deskbar_dock.c (DB-006, mutation-tested); tests/shell/shutdownask.script*
 
 #### DB-007 · important · done
 **'Show replicants' is a checkable item that toggles the dragger handles of every replicant system-wide, and its checkmark reflects the current global state when the menu opens**  

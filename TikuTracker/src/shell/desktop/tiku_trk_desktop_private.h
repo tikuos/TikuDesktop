@@ -576,7 +576,6 @@ typedef struct {
 } select_created_t;
 
 /* The argv the desktop restarts itself with, kept by the Deskbar. */
-extern char **restart_argv;
 
 /* What the command line asked for. */
 typedef struct {
@@ -763,7 +762,6 @@ void spring_open_nav(void *context, const char *path);
 void sync_addons(desktop_t *app, int force);
 
 /* tiku_trk_desktop_deskbar.c */
-extern char **restart_argv;
 int deskbar_menu_icon(void *context, tiku_surface_t *s,
                       const tiku_trk_db_item_t *item, int x, int y, int size);
 int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,

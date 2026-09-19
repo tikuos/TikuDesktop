@@ -555,18 +555,13 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
     it = &db->leaf[at];
     if (it->kind == TIKU_TRK_DB_ITEM_QUIT) {
         /* The confirm-vs-immediate split (DB-006): the parent asks, the
-         * submenu's two rows act the moment they are chosen. */
+         * submenu's row acts the moment it is chosen. */
         tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
 
         memset(si, 0, sizeof *si);
         si->kind = TIKU_TRK_DB_ITEM_POWER_OFF;
         snprintf(si->label, sizeof si->label, "%s",
                  tiku_str("menu.power_off"));
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_RESTART;
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str("menu.restart"));
         db->sub_of = at;
         db->sub_hot = -1;
         return;

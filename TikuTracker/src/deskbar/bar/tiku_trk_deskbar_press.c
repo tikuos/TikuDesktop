@@ -325,8 +325,6 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 y < sm.y + sm.h && si >= 0 && si < db->sub_count) {
                 if (db->sub[si].kind == TIKU_TRK_DB_ITEM_POWER_OFF) {
                     pick->what = TIKU_TRK_DB_POWER_OFF;
-                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_RESTART) {
-                    pick->what = TIKU_TRK_DB_RESTART;
                 } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_APP) {
                     pick->what = TIKU_TRK_DB_LAUNCH_APP;
                     snprintf(pick->path, sizeof pick->path, "%s",

@@ -113,7 +113,6 @@ typedef enum {
     TIKU_TRK_DB_ITEM_RECENT,    /* one of the three recent lists         */
     TIKU_TRK_DB_ITEM_DISABLED,  /* said, not chosen                      */
     TIKU_TRK_DB_ITEM_POWER_OFF, /* inside Shut down: immediate (DB-006)  */
-    TIKU_TRK_DB_ITEM_RESTART,
     TIKU_TRK_DB_ITEM_SETTINGS,  /* expand it: what configures this      */
     TIKU_TRK_DB_ITEM_APPS,      /* expand it: the installed programs    */
     TIKU_TRK_DB_ITEM_PROGRAMMING, /* expand it: the programs for programs */
@@ -350,8 +349,8 @@ typedef enum {
     TIKU_TRK_DB_LAUNCH_TEAM,      /* middle-click: a new instance   */
     TIKU_TRK_DB_KILL_TEAM,        /* the Vulcan Death Grip (DB-020) */
     TIKU_TRK_DB_QUIT_TEAM,        /* the polite request (DB-028)    */
-    TIKU_TRK_DB_POWER_OFF,        /* no confirmation: chosen inside */
-    TIKU_TRK_DB_RESTART,          /* the submenu acts (DB-006)      */
+    TIKU_TRK_DB_POWER_OFF,        /* no confirmation: chosen inside
+                                   * the submenu, which acts (DB-006) */
     TIKU_TRK_DB_TOGGLE_DARK,      /* the little switch on the tray  */
     TIKU_TRK_DB_LAUNCH_APP,       /* `path` is the program to start */
     TIKU_TRK_DB_HELP,             /* the desktop's own pages        */

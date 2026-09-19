@@ -4,7 +4,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_trk_desktop_deskbar.c - the Deskbar's picks: what each row of its
- * menus does, from opening a window to restarting the desktop
+ * menus does, from opening a window to shutting the desktop down
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,8 +18,6 @@ int deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y);
 int deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick);
 /* End of the forward declarations. */
 
-/* The argv the desktop was started with, for Restart system (DB-006). */
-char **restart_argv;
 
 /** @brief Preferences, as this shell shows them: a window of its own. */
 void
@@ -275,17 +273,6 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
          * down the way it came up; what was skipped is the asking. */
         begin_shutdown(app);
         break;
-    case TIKU_TRK_DB_RESTART: {
-        /* A real restart of the desktop: the same image, started
-         * over.  Where the image is takes a host to answer. */
-        char image[TIKU_PATH_MAX];
-
-        if (tiku_sys_self_path(image, sizeof image) == 0) {
-            execv(image, restart_argv);
-        }
-        app->running = 0;       /* exec refused: end instead */
-        break;
-    }
     case TIKU_TRK_DB_QUIT_TEAM:
     case TIKU_TRK_DB_KILL_TEAM: {
         /* Roster names can group unrelated processes, including the shell.

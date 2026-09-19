@@ -837,7 +837,7 @@ main(void)
     }
 
 
-    printf("\nthe shutdown split: the parent asks, the pair acts (DB-006)\n");
+    printf("\nthe shutdown split: the parent asks, Power off acts (DB-006)\n");
     {
         tiku_trk_db_pick_t pick;
         int sx = 0, sy = 0;
@@ -878,13 +878,10 @@ main(void)
             (void)tiku_trk_deskbar_click(db, bar2.x - 2 - 20 + 12, sy, 0u,
                                          1, 1, &pick);
         }
-        memset(&pick, 0, sizeof pick);
-        if (tiku_trk_deskbar_menu_point(db, "Restart system", &sx,
-                                        &sy) == 1) {
-            (void)tiku_trk_deskbar_click(db, sx, sy, 0u, 1, 1, &pick);
-        }
-        check(pick.what == TIKU_TRK_DB_RESTART, "DB-006",
-              "and Restart system likewise");
+        check(tiku_trk_deskbar_menu_point(db, "Restart system", &sx,
+                                          &sy) == 0, "DB-006",
+              "and no Restart row beside it: the desk is shut down, not "
+              "started over");
         tiku_trk_deskbar_close_menu(db);
     }
 
