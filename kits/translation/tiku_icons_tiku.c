@@ -25,6 +25,11 @@
 #include "tiku_icons_calculator.inl"
 #include "tiku_icons_terminal.inl"
 #include "tiku_icons_editor.inl"
+#include "tiku_icons_tool_bench.inl"
+#include "tiku_icons_tool_console.inl"
+#include "tiku_icons_tool_hex.inl"
+#include "tiku_icons_tool_monitor.inl"
+#include "tiku_icons_tool_inspector.inl"
 
 /* microcontroller -- a chip: dark body, silver legs, the pin-one dot */
 static const uint8_t tiku_icon_microcontroller[311] = {
@@ -144,5 +149,15 @@ tiku_icons_tiku_register(void)
                           sizeof tiku_icon_terminal);
     took += tiku_icons_add("editor", tiku_icon_editor,
                           sizeof tiku_icon_editor);
+    took += tiku_icons_add("tool_bench", tiku_icon_tool_bench,
+                          sizeof tiku_icon_tool_bench);
+    took += tiku_icons_add("tool_console", tiku_icon_tool_console,
+                          sizeof tiku_icon_tool_console);
+    took += tiku_icons_add("tool_hex", tiku_icon_tool_hex,
+                          sizeof tiku_icon_tool_hex);
+    took += tiku_icons_add("tool_monitor", tiku_icon_tool_monitor,
+                          sizeof tiku_icon_tool_monitor);
+    took += tiku_icons_add("tool_inspector", tiku_icon_tool_inspector,
+                          sizeof tiku_icon_tool_inspector);
     return took;
 }

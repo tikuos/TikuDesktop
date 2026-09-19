@@ -3,6 +3,6 @@ id=vfs
 name=VFS Inspector
 module=VFSInspector.so
 category=device-tools
-icon=application
+icon=tool_inspector
 startup=utilities/builtin:vfs
 help=devices.html#inspector
