@@ -1,15 +1,14 @@
 # The TikuDesktop Book
 
-*The architecture of the desktop for TikuOS computers, written the way the
-Be Book was written: one chapter per kit, each saying what the kit is for,
-what it holds, and how a program uses it — then the shells built on the
-kits, the applications that run on them, and the boards they connect to.*
+A guide to the architecture of TikuDesktop, the desktop for TikuOS
+computers. It follows the structure of the Be Book: one chapter per kit,
+then the shells built on the kits, the applications that run on them,
+and the boards they connect to.
 
-This book describes the tree as it stands on 19 September 2026. Every
-name in it is a file, a function or a type you can open; where a chapter
-summarises a reasoning that a source file states at length, it says which
-file. It is a guide, not a reference: the headers under `kits/` are the
-reference, and they are written to be read.
+This book describes the tree as of 19 September 2026. Every name in it
+is a file, a function, or a type that exists in the repository. The
+headers under `kits/` are the reference; this book explains how the
+pieces fit together.
 
 ---
 
@@ -17,10 +16,10 @@ reference, and they are written to be read.
 
 **Part I — Orientation**
 1. What TikuDesktop is
-2. The shape of the tree
-3. The rules that keep its shape
+2. The layout of the tree
+3. The rules that keep the layout
 
-**Part II — The Kits**
+**Part II — The kits**
 4. The Support Kit
 5. The Device Kit
 6. The Storage Kit
@@ -29,7 +28,7 @@ reference, and they are written to be read.
 9. The Application Kit
 10. The Media Kit
 
-**Part III — The Tracker and its Shells**
+**Part III — The Tracker and its shells**
 11. The Tracker core
 12. The Desktop shell
 13. The Deskbar
@@ -40,12 +39,12 @@ reference, and they are written to be read.
 16. The applications that ship
 
 **Part V — Boards**
-17. A board on the desk
-18. Two boards on one desk
+17. A board on the desktop
+18. Two boards on one desktop
 
-**Part VI — Proving It**
-19. Tests, lanes and gates
-20. Two hosts, one tree
+**Part VI — Testing and portability**
+19. Tests, scripts, and checks
+20. Linux and macOS
 
 Appendix A — Glossary. Appendix B — Reading order. Appendix C — File map.
 
@@ -55,456 +54,470 @@ Appendix A — Glossary. Appendix B — Reading order. Appendix C — File map.
 
 ## 1. What TikuDesktop is
 
-TikuOS is an operating system for microcontroller-class computers — an
-Apollo510, an nRF54L15, an RP2350 — that are meant to be *computers*, with
-a filesystem, processes, a shell and a namespace, rather than firmware.
-TikuDesktop is the desktop for them. It runs on a Linux or macOS host,
-draws a spatial desktop in the BeOS R5 manner, and treats each board on a
-cable, a socket or a radio as a volume mounted under `/devices`, browsed
-with the same windows that browse the host's own files.
+TikuOS is an operating system for microcontrollers such as the Ambiq
+Apollo510, the Nordic nRF54L15, and the Raspberry Pi RP2350. It gives
+these chips a filesystem, processes, a shell, and a device namespace, so
+they behave like small computers rather than firmware.
 
-Three ideas run through everything below.
+TikuDesktop is the desktop for these computers. It runs on a Linux or
+macOS host and draws a desktop in the style of BeOS R5. Each board
+connected by cable, network, or radio appears as a volume mounted under
+`/devices`. The same file windows that browse the host's files browse
+the board's namespace.
 
-**One toolkit, both ends.** The interface kit that draws the desktop's
-windows is the same code a TikuOS board draws with. A control is written
-once, its *behaviour* (state and input) apart from its *paint*, and the
-board — which has no pixels to paint into — records what it would have
-drawn as a display list and sends that. The desktop plays the list. So a
-board's window on the desk is drawn by the board, with the desktop's own
-widgets, over a serial line that could never carry the pixels.
+Three design decisions shape the whole system.
 
-**The process boundary is a deployment property.** An application is a
-descriptor: `start`, `stop`, `event_in`, `tick`, `pick`, `closed`. It
-draws into surfaces it owns and hands finished frames to *services*. It
-never learns whether those services are the desktop's own functions in
-one process or a socket to a desktop in another. Installed applications
-always run out of process, each in its own `tiku-run`, so an
-application's fault is its own; the contract is identical either way.
+**One toolkit for both the host and the board.** The interface kit that
+draws the desktop's windows is the same code that a TikuOS board uses
+to draw its own windows. Each control is written once. Its *behaviour*
+(state and input handling) is kept in a separate file from its *paint*
+(drawing). A board has no display, so instead of painting it records
+the drawing calls as a *display list* and sends the list to the desktop
+over a serial line. The desktop replays the list. This is how a board
+can show a window on the desktop even though the serial line is far too
+slow to carry pixels.
 
-**The Tracker is the product, built two ways.** The file manager — the
-pose view, the folder windows, the Deskbar, the preferences — is one body
-of code composed into two shells: the spatial desktop (`TikuDesktop`)
-and a single-window browser (`TikuTracker`). Every behaviour is proved in
-both by the same driven scripts, run with no display at all.
+**Applications run in their own processes.** An application is a
+*descriptor*: a struct of entry points (`start`, `stop`, `event_in`,
+`tick`, `pick`, `closed`). The application draws into surfaces it owns
+and hands finished frames to a set of *services*. The services may be
+direct function calls inside the desktop process or messages over a
+socket to a desktop in another process; the application cannot tell the
+difference. Installed applications always run out of process, each in
+its own `tiku-run` host, so a crash in an application does not take
+down the desktop.
 
-## 2. The shape of the tree
+**One file manager, two shells.** The file manager (the pose view, folder
+windows, Deskbar, preferences) is one body of code. It is compiled into
+two programs: `TikuDesktop`, the spatial desktop, and `TikuTracker`, a
+single-window browser. The same driven test scripts run against both,
+without a display.
 
-The repository at `tikuOS/applications/` has five layers, each depending
-only on the ones below it.
+## 2. The layout of the tree
+
+The repository at `tikuOS/applications/` has five layers. Each layer
+depends only on the layers below it.
 
 ```
-apps/            the applications: Editor, Terminal, IDE, Notes, Reader …
+apps/            applications: Editor, Terminal, IDE, Notes, Reader, ...
 system/          tiku-run (application host), tiku-desk (supervisor)
-TikuTracker/     the Tracker: core, ui, deskbar, and both shells
+TikuTracker/     the file manager: core, ui, deskbar, and both shells
 kits/            seven libraries: support, device, storage, interface,
                  translation, application, media
-mk/              the build, one file per concern
+mk/              the build, one makefile per concern
 ```
 
-By size, on the day of writing: the kits are 104 C files and 51 000
-lines; the Tracker 62 000 lines across core, ui, deskbar and shells; the
-applications 13 500 lines; 157 unit-test programs and 264 driven scripts.
-The desktop shell alone is 21 files and 17 600 lines — one composition
-split over files that share `tiku_trk_desktop_private.h` and nothing
-else.
+Sizes on the day of writing: the kits are 104 C files and about 51,000
+lines; the Tracker is about 62,000 lines; the applications about 13,500
+lines. There are 157 unit-test programs and 264 driven scripts. The
+desktop shell alone is 21 files and 17,600 lines.
 
-Everything builds into one `build/` directory:
+Everything builds into one `build/` directory.
 
-| product | where |
+| product | location |
 |---|---|
-| the kits | `build/libtiku_*.a`, PIC twins under `build/pic/` for loadable apps |
-| the shells | `build/system/TikuDesktop`, `build/system/TikuTracker`; script-driven flavours under `build/dev/` |
+| the kits | `build/libtiku_*.a`, plus position-independent copies under `build/pic/` for loadable applications |
+| the shells | `build/system/TikuDesktop`, `build/system/TikuTracker`; script-capable builds under `build/dev/` |
 | the hosts | `build/system/tiku-run`, `build/system/tiku-desk` |
-| the applications | `build/apps/<id>/app.manifest` + `<Module>.so` |
+| the applications | `build/apps/<id>/app.manifest` and `<Module>.so` |
 | the tests | `build/tests/test_*` |
-| the Mac bundle | `build/TikuDesktop.app` from `make app` |
+| the macOS bundle | `build/TikuDesktop.app`, made by `make app` |
 
-## 3. The rules that keep its shape
+## 3. The rules that keep the layout
 
-A layer is only a folder until something refuses the include that would
-undo it. Four checks run under `make test` and each fails the build on a
-single wrong line.
+Four checks run as part of `make test`. Each fails the build if a single
+source line breaks a boundary.
 
-**The kit table** (`kits/tools/check_kits.py`). A kit may include from
-itself and from the kits its row names, and from nothing else — *including
-a kit further down the list*, which is what makes it a table rather than
-an order:
+**The kit table** (`kits/tools/check_kits.py`). Each kit may include
+headers from itself and from the kits listed in its row, and from
+nothing else. A kit may not include from a kit further down the list.
 
 | kit | may include from |
 |---|---|
-| support | — |
+| support | nothing |
 | device | support |
-| interface | — |
+| interface | nothing |
 | storage | support, device |
 | translation | support, storage, interface |
 | application | support, device, interface |
-| media | — |
+| media | nothing |
 
-No kit may name a `tiku_trk_desktop*` or `tiku_trk_app.*` header: a kit
-that knows about the application on top of it has stopped being a kit.
-The same check refuses a paint header (`tiku_gfx.h`, `tiku_font.h`,
-`tiku_ui.h`, `tiku_dl.h`) inside a *behaviour* file, which is what keeps
-a control's logic compilable on a board with no display.
+No kit may include a `tiku_trk_desktop*` or `tiku_trk_app.*` header,
+because a kit must not know about the application built on top of it.
+The same script refuses a drawing header (`tiku_gfx.h`, `tiku_font.h`,
+`tiku_ui.h`, `tiku_dl.h`) inside a behaviour file. This keeps every
+behaviour file compilable on a board with no display.
 
-**The architecture gate** (`TikuTracker/tools/check_architecture.py`).
-Tracker core never includes X11 or a drawing header; no source outside a
-short list may say `__linux__`, `__APPLE__` or open a host `/proc` path;
-the shipping shells link no application code or module loader, proved by
-reading their symbol tables. The list of files allowed to name a machine
-is the *platform seam*: `tiku_sys_{linux,darwin}.c`, `tiku_volume.c`,
-`tiku_state.c`, `tiku_backend_posix.c`, `tiku_link_tcp.c`, `tiku_cocoa.m`
-and a handful more. A name that arrives on that list because somebody
-reached for `#ifdef` is exactly what the check exists to stop.
+**The architecture check** (`TikuTracker/tools/check_architecture.py`).
+The Tracker core may not include X11 or drawing headers. Only a short
+list of files may use `__linux__`, `__APPLE__`, or open a host `/proc`
+path; this list is the *platform seam*: `tiku_sys_linux.c`,
+`tiku_sys_darwin.c`, `tiku_volume.c`, `tiku_state.c`,
+`tiku_backend_posix.c`, `tiku_link_tcp.c`, `tiku_cocoa.m`, and a few
+more. The check also reads the symbol tables of the shipping shells and
+fails if they contain application code or a module loader.
 
 **The application boundary** (`tools/check_app_boundaries.py`). No
-application imports a desktop-private header; no shell contains
+application includes a desktop-private header, and no shell contains
 application code.
 
-**The toolkit check** (`make check-toolkit`). The display-list op table
-(`dl_ops.txt`) generates both ends' headers and fails when either is
-stale; every behaviour file is compiled with the *board's* compiler under
-`TIKU_DISPLAYLESS`; text metrics agree between the desktop's faces and
-the board's tables.
-
-The rest of this book is what those rules protect.
+**The toolkit check** (`make check-toolkit`). The display-list operation
+table (`dl_ops.txt`) generates a header for each end; the check fails if
+either is stale. Every behaviour file is compiled with the board's
+compiler under `TIKU_DISPLAYLESS`. Text measurements from the desktop's
+fonts are compared against the board's metric tables.
 
 ---
 
-# Part II — The Kits
+# Part II — The kits
 
-Each kit is a directory under `kits/`, a static archive, and a set of
-headers whose first comment says what the file is for. A program links
-the kits it needs; the archives are built in link order (application,
-translation, interface, storage, device, media, support) because a kit
-must come before the kits it draws on.
+Each kit is a directory under `kits/`, a static library, and a set of
+headers. The first comment in each header states what the file is for.
+A program links the kits it needs. The link order is application,
+translation, interface, storage, device, media, support, because a
+library must come before the libraries it depends on.
 
 ## 4. The Support Kit
 
-*What every other kit stands on, and nothing that draws or talks to a
-board.* `kits/support/`.
+Directory: `kits/support/`. This kit contains what every other kit
+depends on. It does not draw and does not talk to boards.
 
-**A message that describes itself — `tiku_msg.h`.** In shape it is Be's
-`BMessage`: a code saying what the message is, and under it named fields,
-each with a type and one or more values. A reader asks for what it knows
-by name and steps over what it does not, which is the version tolerance a
-struct compiled at both ends cannot offer once the device on the cable
-runs last month's firmware. The flat form is little-endian throughout,
-every value carries its length, the flat size can be asked before
-writing, and nothing instantiates a class named in the data. It is the
-envelope everything else carries: device replies, launch data, the
-conductor's answers. `doc/message.md` argues the four differences from
-`BMessage`.
+**Messages — `tiku_msg.h`.** A message is a code that says what the
+message is, followed by named fields. Each field has a type and one or
+more values. A reader asks for fields by name and skips fields it does
+not know. This makes messages tolerant of version differences, which
+matters when a board runs older firmware than the desktop. The format is
+little-endian and every value carries its own length. The design is
+close to Be's `BMessage`; `doc/message.md` lists the differences.
+Messages carry device replies, launch data, and the conductor's answers.
 
-**Workers for anything that waits — `tiku_work.h`.** The desktop's loop
-is the one owner of the desk's state. A *job* is what it hands to a
-worker: self-contained, touching nothing it was not given, returning a
-result the loop applies on its next turn. The kit is two rings — requests
-in, results out — and a few threads. Directory listings, thumbnails,
-board polls and the serial open that can block for thirty seconds on a
-Mac all go through it, which is why a window never freezes on them.
+**Workers — `tiku_work.h`.** The desktop's main loop is the only owner of
+desktop state. Slow operations are given to worker threads as *jobs*. A
+job may only touch the data it was given, and it returns a result that
+the loop applies on its next turn. The kit is two queues (requests in,
+results out) and a small pool of threads. Directory listings,
+thumbnails, board polls, and serial port opens all run as jobs, so the
+window never blocks on them.
 
-**Noticing a turn has not ended — `tiku_watch.h`.** A shell with one
-thread freezes by not coming back from something, and nothing inside it
-can notice. A watcher outside the loop counts turns; when one stops
-turning it writes down what that turn was doing.
+**The watchdog — `tiku_watch.h`.** A single-threaded program freezes when
+one turn of its loop does not finish. The watchdog runs outside the loop,
+counts turns, and when a turn takes too long it records what that turn
+was doing.
 
-**What the program was doing — `tiku_trail.h`, `tiku_report.h`.** The
-trail is a fixed ring of formatted lines, always on and never written to
-disk, so the last thing a program did is there when it stops doing
-anything. A report is what a fatal signal leaves: the signal, where it
-happened (through `tiku_sys_fault_pc()`), and the trail up to it — then
-the program dies as it would have, so a core still drops. `SIGUSR2` asks
-a running desktop for the same report on demand.
+**The trail and reports — `tiku_trail.h`, `tiku_report.h`.** The trail is
+a fixed-size ring buffer of log lines kept in memory. It is always on
+and never written to disk during normal operation. When the program
+receives a fatal signal, the report code writes a file containing the
+signal, the faulting address (from `tiku_sys_fault_pc()`), and the trail.
+The program then dies normally so a core dump is still produced.
+Sending `SIGUSR2` to a running desktop writes the same report on demand.
 
-**The words — `tiku_strings.h`.** Every line a person reads is named
-rather than written in code. `tiku_str("menu.about")` returns the line in
-the language in force from `strings/<lang>.xml`; the English is baked in
-as the floor.
+**Strings — `tiku_strings.h`.** Every user-visible string is looked up by
+key. `tiku_str("menu.about")` returns the string for the current
+language from `strings/<lang>.xml`. English strings are compiled in as
+the fallback.
 
-**Manifests — `tiku_manifest.h`.** A version-1 `key=value` file read
-without executing anything. Unknown, duplicate, overlong and malformed
-fields fail closed; `module` is a leaf name, never a command.
+**Manifests — `tiku_manifest.h`.** An application manifest is a
+version-1 `key=value` file. Reading it executes no code. Unknown,
+duplicate, overlong, and malformed fields are rejected. The `module`
+field is a file name, never a command.
 
-**What only the machine can answer — `tiku_sys.h`.** One declaration, one
-file per host, chosen by the Makefile from `uname -s`: processes, memory,
-uptime, the executable's own path, a fault's program counter, serial
-port enumeration and rates above what `termios` names. Everything else in
-the tree is written to POSIX and says the same thing on both hosts.
+**System calls — `tiku_sys.h`.** One header, with one implementation
+file per host operating system, selected by the makefile from
+`uname -s`. It covers the things POSIX leaves to the platform: process
+listing, memory size, uptime, the path of the running executable, the
+faulting program counter in a signal handler, serial port enumeration,
+and serial rates above the standard `termios` set. All other code in the
+tree is written to POSIX and compiles unchanged on both hosts.
 
 ## 5. The Device Kit
 
-*Bytes to and from one board, and the conversations built on them.*
-`kits/device/`. Five layers, each opaque to the one above.
+Directory: `kits/device/`. This kit moves bytes to and from one board
+and builds conversations on top. It has five layers. Each layer hides
+the one below it.
 
-**Transport — `tiku_tx.h`.** Serial, TCP, or a caller's own descriptor and
-hooks, behind three calls. Nothing above knows which. A serial open is
-allowed to take seconds, so it is never done on a thread that draws.
+**Transport — `tiku_tx.h`.** Serial, TCP, or a caller-supplied file
+descriptor with hooks, behind three functions. Code above this layer
+does not know which transport it is using. Opening a serial port may
+take seconds, so it is never done on a thread that draws.
 
-**Session — `tiku_session.h`.** A prompt-aware conversation with one
-device: send a command, get back what the device printed before its next
-prompt. Asynchronous `~<path>` subscription lines are routed to a handler
-wherever they land in the stream. A session also hands over *raw* text —
-a running program's output has no prompt to end it until it ends.
+**Session — `tiku_session.h`.** A session sends a command to a board's
+shell and returns whatever the board printed before its next prompt.
+Asynchronous lines that begin with `~<path>` (subscription updates) are
+passed to a callback wherever they appear in the stream. A session can
+also return raw text, which is needed for a running program's output,
+because that output has no prompt to mark its end.
 
-**Frames — `tiku_frame.h`.** A frame is `END`, a marker byte naming its
-channel, the payload escaped the SLIP way, `END`. The decoder cuts one
-marker's frames out of the byte stream and calls everything else text.
-This is how a board's window session shares the console line with its
-shell.
+**Frames — `tiku_frame.h`.** A frame is an END byte, a marker byte that
+names the channel, the payload with SLIP escaping, and another END byte.
+The decoder extracts frames for one marker from a byte stream and
+treats everything else as text. This lets a board's window session share
+the console line with the board's shell.
 
-**Links — `tiku_link.h`, `tiku_link_serial.h`, `tiku_link_tcp.h`.** Whole
-messages to and from one board on any medium: the desktop's mirror of the
-kernel's link. A message arrives whole and intact or not at all; a link
-that loses one says so, and the session above re-greets.
+**Links — `tiku_link.h`, `tiku_link_serial.h`, `tiku_link_tcp.h`.** A
+link carries whole messages to and from one board over any medium. It
+mirrors the kernel's link on the board side. A message arrives complete
+or not at all. If a link loses a message, it reports the loss and the
+layer above sends a new greeting.
 
-**Channels — `tiku_channel.h`.** The desktop's window session speaks over
-a file descriptor. A channel gives it one: a socket pair, one end for the
-desktop's listener to adopt, the other fed by the messages a link carries
-from the board. It greets the board, re-greets after a loss, backs off
-when nothing answers, and can hold a port of its own for a board built
-without a shell.
+**Channels — `tiku_channel.h`.** The desktop's window session (chapter 9)
+speaks over a file descriptor. A channel provides one: a socket pair,
+where one end is given to the desktop's listener and the other is fed
+by the messages a link receives from the board. The channel greets the
+board, greets again after a loss, and backs off when the board does not
+answer. It can also own a network port for a board that has no shell.
 
 **The namespace mirror — `tiku_ns.h`.** A board's `/sys/vfs/manifest`
-describes its whole namespace: path, kind, permissions, a typed
-descriptor, capabilities. The mirror reads it once, then values on demand
-or as `~` lines when subscribed. This is what every board window renders.
+describes its whole namespace: each node's path, kind, permissions, a
+typed descriptor, and capabilities. The mirror reads the manifest once.
+It reads values on demand, or receives them as `~` lines when
+subscribed. Every board window renders from this mirror.
 
 ## 6. The Storage Kit
 
-*The Model, the backends, and one namespace over all of them.*
-`kits/storage/`.
+Directory: `kits/storage/`. This kit holds the file model, the storage
+backends, and the namespace that joins them.
 
-**The Model — `tiku_model.h`.** Tracker's `Model` is the one place that
-knows what kind of thing a pose wraps; everything above it asks questions
-(`IsContainer`, `IsWritable`, `Kind`) rather than testing a backend. That
-is what lets local files and a device namespace be browsed by the same
-view. A device directory is `VIRTUAL_DIR`, not `DIRECTORY`: it cannot be
-created in, renamed or pasted into, and the whole read-only story for
-`/sys`, `/dev` and `/proc` follows from that one answer. A dynamic store
-like `/data` *is* a real directory.
+**The Model — `tiku_model.h`.** The Model is the one place that knows
+what kind of object a list entry represents. Everything above it asks
+questions such as `IsContainer`, `IsWritable`, and `Kind` instead of
+checking which backend an object came from. This is what lets one view
+browse both host files and a board's namespace. A directory on a board
+is of kind `VIRTUAL_DIR`, not `DIRECTORY`. Nothing can be created in,
+renamed in, or pasted into a virtual directory. That single rule makes
+`/sys`, `/dev`, and `/proc` read-only. A board's `/data` store is a real
+`DIRECTORY`.
 
 **Backends — `tiku_backend_posix.c`, `tiku_backend_tiku.c`.** A backend
 is a table of operations (`tiku_backend_ops_t`): list, stat, read, write,
-rename, remove, ids. The POSIX backend is the host's files; the Tiku
-backend is a board, answered through a session and its namespace mirror.
+rename, remove, and id lookup. The POSIX backend serves the host's
+files. The Tiku backend serves a board, through a session and its
+namespace mirror.
 
-**One namespace — `tiku_mount.h`.** A namespace over several backends,
-itself a backend. Each is attached at a path prefix — `/` for the host,
-`/devices/board1` for a board — and every operation goes to the longest
-prefix that claims it. Three things it must do that a forwarder would
-not: rewrite paths both ways, so a board asked about `/sys/mem` answers
-as `/devices/board1/sys/mem`; synthesise the ancestors, so `/devices`
-exists because something is mounted under it; and keep identities apart,
-so two backends' inode 12345 stay distinct — ids leaving the router carry
-the mount in their top byte. Eight backends at most: the local files and
-seven devices. `doc/namespace.md` is the reasoning.
+**The namespace — `tiku_mount.h`.** The namespace joins several backends
+and is itself a backend, so the code above it does not know there is
+more than one store. Each backend is attached at a path prefix: `/` for
+the host, `/devices/board1` for a board. Each operation goes to the
+backend with the longest matching prefix. The namespace does three
+things a simple forwarder would not: it rewrites paths in both
+directions (a board asked about `/sys/mem` answers with a model whose
+path is `/devices/board1/sys/mem`); it synthesises parent directories
+(`/devices` exists because something is mounted under it); and it keeps
+ids distinct (ids from different backends may collide, so ids leaving
+the namespace carry the mount number in their top byte). The namespace
+holds up to eight backends: the host and seven boards. See
+`doc/namespace.md`.
 
-**File operations — `tiku_fs.h`.** Copy, move, duplicate, rename, trash,
-undo, with Tracker's rules: the same-volume test decides move versus
-copy; duplicate invents a name; every operation reports progress and
-answers conflicts through an alert, so a window never freezes waiting.
+**File operations — `tiku_fs.h`.** Copy, move, duplicate, rename, move
+to trash, and undo, with Tracker's rules. A move within one volume is a
+rename; across volumes it is a copy followed by a delete. Duplicate
+generates a new name instead of asking. Every operation reports
+progress and resolves name conflicts through an alert, so a window
+never blocks on a long copy.
 
-**Where UI state lives — `tiku_state.h`.** Tracker's
-`AttributeStreamNode` seam: pose positions, column sets and view state go
-through one interface, so "the object holds its own state" (local files,
-in extended attributes) and "the viewer holds it for the object" (device
-nodes, in a sidecar keyed by the device's identity) are one code path.
+**UI state — `tiku_state.h`.** Icon positions, column sets, and view
+state are stored through one interface, which is a port of Tracker's
+`AttributeStreamNode`. For host files the state is stored in the file's
+extended attributes. For board nodes it is stored in a *sidecar* file on
+the host, keyed by the board's identity. The callers use one code path
+for both.
 
-**Attributes and descriptors — `tiku_attr.h`.** A TikuOS node carries its
-own display hint: the manifest's meta column is a typed descriptor
-(`vtype,unit,freshness,cost[,lo..hi]`). It is what shows a reading as
-"1.2 MiB" or "15h 57m" rather than a bare integer, and what refuses
-"banana" to a `u32` before the device is troubled.
+**Attributes — `tiku_attr.h`.** A TikuOS node carries a typed descriptor
+in its manifest: `vtype,unit,freshness,cost[,lo..hi]`. The descriptor
+tells the desktop how to format a value (for example `1.2 MiB` or
+`15h 57m`) and lets it reject an invalid write before sending it to the
+board (for example the string `banana` to a `u32` node).
 
-**Identity — `tiku_ident.h`.** A device is recognised by a scored match
-over the identity nodes it publishes, modelled on Tracker's
-`MatchArchivedVolume`; every durable store keys on the string this
-produces, so there is exactly one spelling of "which board is this".
+**Identity — `tiku_ident.h`.** A board is identified by a scored match
+over the identity nodes it publishes, following Tracker's
+`MatchArchivedVolume`. The result is one string. Every persistent store
+keys on that string.
 
-**Queries — `tiku_query.h`.** A predicate plus a scope, as in Tracker:
-terms of (attribute, operator, value), joined with and/or, with the
-folder filter applied outside the predicate so it can be added to a
-running search. No index needs to exist: a volume is a namespace subtree
-and the type registry is the node's own descriptor. A search is *stepped*
-— sixteen directories a turn — so a real disk never stalls the desk.
+**Queries — `tiku_query.h`.** A query is a predicate plus a scope, as in
+Tracker. Terms are (attribute, operator, value), joined with and/or. The
+folder scope is applied outside the predicate, so it can be added to a
+running search. No index is needed: a volume is a subtree of the
+namespace, and the type registry is the node's own descriptor. A search
+is stepped, sixteen directories per loop turn, so a large disk does not
+stall the desktop.
 
-**Change notices — `tiku_notify.h`.** Tracker feeds node-monitor,
-path-monitor and live-query notices through one handler; that entry point
-comes first and every source is made to fit it. The host's source is a
-directory watch; the device's, which cannot push folder-level notices
-yet, is derived by diffing a re-listing against what the view holds.
+**Change notices — `tiku_notify.h`.** All change notices (node monitor,
+path monitor, live query) go through one handler, so a query window and
+a folder window update by the same code. On the host the source is a
+directory watch. A board cannot yet push folder-level notices, so the
+desktop derives them by listing the directory again and comparing.
 
-**Volumes — `tiku_volume.h`.** The mount table, partitions, mount and
-unmount, behind one interface with a Linux and a Darwin body: `/proc`
-files on one, `getmntinfo` and DiskArbitration on the other. The
-partition scan is cached on the Mac, keyed on the disk names and the
-mount table, because the Mount menu asks on every frame a folder window
-draws.
+**Volumes — `tiku_volume.h`.** The mount table, partitions, mount, and
+unmount, with one implementation for Linux (`/proc` files) and one for
+macOS (`getmntinfo` and DiskArbitration). On macOS the partition scan is
+cached and keyed on the set of disk names and the mount table, because
+the Mount menu asks for it on every frame a folder window draws.
 
-**VFS over the owner — `tiku_vfs_rpc.h`.** Device utilities never open a
-second serial connection. They ask the desktop, which serialises the
-request with its own traffic on the device's worker, pins the device by
-identity, and requires a write to be preceded by a read whose bytes still
-match. Replies carry a session generation so a late one cannot reach a
-replacement application.
+**VFS over the owner — `tiku_vfs_rpc.h`.** Device utilities do not open a
+second serial connection. They send requests to the desktop, which owns
+the board's connection. The desktop runs each request on the board's
+worker, in order with its own traffic. The target board is pinned by
+identity. A write must be preceded by a read, and the write is refused
+if the bytes have changed since. Replies carry a session generation so
+a late reply cannot reach a replacement application.
 
 ## 7. The Interface Kit
 
-*Every pixel the desktop draws, and the seam to the machine that shows
-them.* `kits/interface/` — 51 headers, the largest kit, and the one that
-also runs on the board.
+Directory: `kits/interface/`. This kit draws every pixel of the desktop
+and defines the interface to the windowing system. It has 51 headers and
+is the only kit that also runs on the board.
 
-### 7.1 The surface and the theme — `tiku_gfx.h`
+### 7.1 Surfaces and the theme — `tiku_gfx.h`
 
-A surface is a plain 32-bit buffer (`0x00RRGGBB`) with a clip rectangle
-and a *scale*: a Retina surface keeps its pixels at `(w×scale) ×
-(h×scale)` and every call still takes logical coordinates. The
-primitives: `tiku_fill`, `tiku_frame`, `tiku_hline`/`vline`, `tiku_blit`,
-`tiku_copy_bits`, `tiku_veil` (a blend of one colour over a region), and
-since September 2026 `tiku_shadow`, `tiku_fill_round`,
-`tiku_frame_round`, `tiku_grab`, `tiku_blend` and `tiku_blend_scaled` —
-the soft things a modern desk is made of.
+A surface is a 32-bit pixel buffer (`0x00RRGGBB`) with a clip rectangle
+and a scale factor. On a Retina display the surface stores `(w × scale)
+by (h × scale)` pixels, and every drawing call still takes logical
+coordinates. The drawing functions are `tiku_fill`, `tiku_frame`,
+`tiku_hline`, `tiku_vline`, `tiku_blit`, `tiku_copy_bits`, `tiku_veil`
+(blend one colour over a region), and, added in September 2026,
+`tiku_shadow`, `tiku_fill_round`, `tiku_frame_round`, `tiku_grab`,
+`tiku_blend`, and `tiku_blend_scaled`.
 
-The theme is one runtime table of *semantic* colours — panel, document,
-text, tab, selection, focus, backdrop, danger, the code inks — and every
-widget paints through it. The default table is the R5 look (`apps/R5-SPEC.md`
-holds the measured values: panel 216, tab 255,203,0, backdrop 51,102,152);
-a dark table recolours every widget without moving a layout. Every shade
-of the panel comes from `tiku_tint()` (BeOS's `tint_color` arithmetic)
-rather than a second constant.
+The theme is a runtime table of semantic colours: panel, document, text,
+tab, selection, focus, backdrop, danger, and the syntax-colouring inks.
+All widgets draw through the theme. The default table is the BeOS R5
+look; `apps/R5-SPEC.md` lists the measured values (panel 216,216,216;
+tab 255,203,0; backdrop 51,102,152). A dark table changes every colour
+without changing any layout. Shades of the panel colour are computed
+with `tiku_tint()`, which implements BeOS's `tint_color` arithmetic.
 
 ### 7.2 Text — `tiku_font.h`, `tiku_ttf.h`, `tiku_glyphpath.h`, `tiku_cff.h`
 
-The UI face is baked: 8-bit coverage maps generated by `genfont.py`, so
-text is anti-aliased like R5's and the runtime carries no font library.
-A face read from a `.ttf` or `.otf` file rasterises what it is asked for
-through the kit's own TrueType and CFF interpreters — Greek, Cyrillic,
-kana — and keeps it. Stem darkening is applied to analytic coverage so
-small text reads as ink. The face size is a preference (12 px by
-default), and every layout in the tree *asks* how tall a row or a tab is
-rather than writing 22 down.
+The UI font is compiled in as 8-bit coverage bitmaps generated by
+`genfont.py`, so text is anti-aliased and the runtime needs no font
+library. A font loaded from a `.ttf` or `.otf` file is rasterised on
+demand by the kit's own TrueType and CFF interpreters, so it can draw
+any glyph the file contains. The font size is a user preference (12
+pixels by default). Layouts ask the font for row and tab heights rather
+than using fixed numbers.
 
 ### 7.3 Controls — `tiku_ui.h` and the behaviour/paint split
 
-`tiku_ui.h` is the R5 control set as immediate-mode drawing: each call
-paints one control in one state — `tiku_ui_button`, `checkbox`, `radio`,
-`menufield`, `scrollbar`, `tab_widget`. Layout and hit-testing belong to
-the window system, so these stay pure. States combine:
+`tiku_ui.h` draws the R5 controls in immediate mode: each call paints one
+control in one state. The controls are `tiku_ui_button`, `checkbox`,
+`radio`, `menufield`, `scrollbar`, and `tab_widget`. States are flags:
 `TIKU_S_DISABLED`, `TIKU_S_DEFAULT`, `TIKU_S_PRESSED`, `TIKU_S_FOCUS`.
+Layout and hit testing are done by the window system, not here.
 
-Stateful controls come in pairs. `tiku_field.c` keeps a text field's
-state and takes its input; `tiku_field_event.c` maps events to it;
-nothing in either draws. `tiku_slider.c` / `tiku_slider_paint.c`,
-`tiku_tabs.c` / `tiku_tabs_paint.c`, `tiku_list.c` / `tiku_list_paint.c`,
-`tiku_textview.c` (a multi-line editor with selection, undo and a caret),
-`tiku_doc.c` / `tiku_doc_paint.c` (a laid-out document),
-`tiku_markdown.c`, `tiku_sensor.c` / `tiku_sensor_paint.c` (plots,
-meters, sparklines) — all the same shape. `tiku_press.c` tracks a press
-by a window's own hit ids so a button acts on release and shows itself
-held. `tiku_dialog.c` and `tiku_alert.c` compose these into the R5 alert
-and the modal panel; `tiku_form.c` and `tiku_layout.c` lay a described
-panel out from a specification.
+Controls with state come in pairs of files. `tiku_field.c` holds a text
+field's state and handles its input; `tiku_field_event.c` maps events to
+it; neither file draws. The same pattern applies to `tiku_slider`,
+`tiku_tabs`, `tiku_list`, `tiku_textview` (a multi-line editor with
+selection and undo), `tiku_doc` (a laid-out document), `tiku_markdown`,
+and `tiku_sensor` (plots, meters, sparklines), each with a
+`_paint.c` file. `tiku_press.c` tracks a mouse press by hit id so a
+button acts on release and draws as held while pressed. `tiku_dialog.c`
+and `tiku_alert.c` build the R5 alert and modal panel from these parts.
+`tiku_form.c` and `tiku_layout.c` build a panel from a description.
 
 ### 7.4 Windows — `tiku_window.h`
 
-*Composited in-process windows.* A workspace holds up to sixteen windows
-over one surface: their frames, z-order, focus, and a cache of each
-window's content pixels so a drag repaints only what moved. A window has
-a tab with a close and a zoom button, a border, a resize grip, a title,
-and a *draw* callback that paints its content into a clip; it may publish
-menus (a `tiku_menuset_t`, flat data) and a pick callback. The desktop
-owns z-order, focus, invalidation and chrome; the window's owner owns
-what is inside the content rectangle.
+A *workspace* composites up to sixteen windows onto one surface. It owns
+each window's frame, the z-order, focus, and a cache of each window's
+content pixels, so dragging a window repaints only the area that moved.
+A window has a tab with close and zoom buttons, a border, a resize grip,
+a title, and a draw callback that paints its content inside a clip
+rectangle. A window may publish menus as a `tiku_menuset_t` (plain data)
+together with a pick callback. The desktop owns z-order, focus,
+invalidation, and chrome. The window's owner owns the content.
 
-Since September 2026 a window casts a soft shadow that reaches
-`TIKU_WINDOW_SHADOW` (14 px) past its frame, its corners are rounded
-where no tab stands, a window opening rises eight pixels into place over
-150 ms, a closed one leaves a ghost that shrinks and fades, and a
-minimised one flies to its Deskbar row. All of it runs on a *workspace
-clock* the shell ticks only when it has a real window: a scripted run
-tells the workspace no time, and its frames stay still.
+Since September 2026 a window casts a soft shadow that extends
+`TIKU_WINDOW_SHADOW` (14 pixels) past its frame; its corners are rounded
+except under the tab; a new window rises 8 pixels into place over 150 ms;
+a closed window leaves a shrinking, fading copy for 140 ms; a minimised
+window's copy flies to its Deskbar entry. These animations run on a
+workspace clock that the shell advances only when a real display is
+present. A scripted run never advances the clock, so its frames are
+still.
 
 ### 7.5 Menus — `tiku_menu.h`
 
-The running menu object the shell tracks a pointer through and draws:
-items with marks, shortcuts, icons, submenus; layout; hot-row tracking.
-Not the publish protocol — `tiku_menuset_t` is what an application hands
-across, this is what the shell makes of it, built fresh each time a menu
-opens so labels and enabled states are decided from the current
+`tiku_menu_t` is the live menu object the shell draws and tracks the
+pointer through: items with check marks, shortcuts, icons, and submenus;
+layout; and hot-row tracking. It is distinct from `tiku_menuset_t`, the
+flat data an application sends to describe its menus. A menu is rebuilt
+each time it opens, so labels and enabled states reflect the current
 selection.
 
 ### 7.6 The display list — `tiku_dl.h`
 
-*What was drawn, rather than what it came out as.* A session hands its
-window over as pixels; a 372×302 window is 449 376 bytes, thirty-nine
-seconds at 115 200 baud. The display list is the third way to say what a
-window looks like: the *calls* — "a button, here, disabled, labelled
-this" — around six hundred bytes for that same window. It is deliberately
-not an app_server: nothing draws a line on anybody's behalf, the
-vocabulary is the interface's own and semantic where the interface is
-semantic, and measuring stays at the sending end because both ends carry
-the face tables. The recorded form is the wire form, `[u16 op][u16
-length][payload]`, so a player steps over an op it does not know. The op
-table lives in `dl_ops.txt` and generates both ends' headers.
+A window session normally sends a window's pixels. A 372 × 302 window is
+449,376 bytes, which takes 39 seconds at 115,200 baud. The display list
+sends the drawing calls instead: for the same window, about 21 calls
+and 600 bytes. The calls are the interface kit's own, at the level of
+"a button, at this rectangle, disabled, with this label". Text
+measurement is done at the sending end, because both ends have the same
+font metric tables, so no round trip is needed per label.
 
-A list can also be *narrated* — turned into the words a screen reader or
-a test would say — and reduced to *facts* (which buttons, which rows).
-The driven scripts' `expect-narrate` and `expect-control` read those.
+The in-memory form is the wire form: `[u16 op][u16 length][payload]` per
+command. A reader that meets an unknown op skips it by its length. The
+op table is `dl_ops.txt`; a generator produces the header for each end.
+
+A display list can also be *narrated* (turned into descriptive text) and
+reduced to *facts* (which buttons and rows it contains). The test
+scripts' `expect-narrate` and `expect-control` read those outputs.
 
 ### 7.7 The host — `tiku_host.h`
 
-The one seam to the machine that shows pixels and delivers input:
+The host is the interface to the windowing system. Its functions are
 `open`, `close`, `present`, `poll`, `wait`, `scale`, `set_title`,
 `set_fullscreen`, `set_cursor`, `pointer`, `cancel_composition`,
-`present_stats`, and `tiku_host_show` for a sample with one picture to
-show. Two bodies fulfil it: `tiku_x11.c` (with `tiku_x11_clipboard.c` and
-a per-host `tiku_x11_command_*.c` that says which key is Command) and
-`tiku_cocoa.m`, one AppKit file for the Mac. `mk/toolchain.mk` picks
-`TIKU_HOST=cocoa` on Darwin and `x11` elsewhere. `tiku_present.c` is the
-damage diff both share: it compares the new frame against the last in
-64×32 tiles and returns the rectangles that changed.
+`present_stats`, and `tiku_host_show` (open a window, show one surface,
+wait for a key). Two implementations exist: `tiku_x11.c` (with
+`tiku_x11_clipboard.c` and a per-host `tiku_x11_command_*.c` that says
+which key is the command key), and `tiku_cocoa.m`, a single AppKit file
+for macOS. `mk/toolchain.mk` selects `TIKU_HOST=cocoa` on macOS and
+`x11` elsewhere. `tiku_present.c`, shared by both, compares the new
+frame with the previous one in 64 × 32 tiles and returns the changed
+rectangles.
 
-Events cross this seam as `tiku_event_t` — pointer, key, wheel, resize,
-activation, close, clipboard, text input — with logical modifiers
-(`TIKU_MOD_CMD` is Control on Linux, Control *or* Command on the Mac) and
-printable keys as their characters. `tiku_text_input.c` assembles bounded
-UTF-8 commits from an input method so an accent or an ideograph reaches a
-field whole. `tiku_clipboard.h` is the portable store; the hosts mirror
-it to `CLIPBOARD` or the pasteboard.
+Input crosses the host as `tiku_event_t`: pointer, key, wheel, resize,
+activation, close, clipboard, and text input. Modifiers are logical:
+`TIKU_MOD_CMD` is Control on Linux and Control or Command on macOS.
+Printable keys carry their character. `tiku_text_input.c` assembles
+complete UTF-8 strings from an input method so composed characters
+arrive whole. `tiku_clipboard.h` is the portable clipboard store; each
+host mirrors it to the X11 `CLIPBOARD` selection or the macOS
+pasteboard.
 
 ## 8. The Translation Kit
 
-*Pictures and letters from other formats into the desktop's own.*
-`kits/translation/`.
+Directory: `kits/translation/`. This kit converts images and fonts from
+external formats into the desktop's own.
 
 **Icons — `tiku_icons.h`, `tiku_hvif.h`, `tiku_iconpaint.h`.** The
-standard Tracker artwork compiled in as HVIF, Haiku's vector icon
-format: one definition serves every size and the renderer rasterises at
-the size actually asked for, with analytic coverage so edges are smooth.
-Names are the Tracker's own vocabulary — `folder`, `trash_full`,
-`microcontroller` — and a bundle can carry an icon of its own.
-`tiku_icons_tiku.c` holds the icons drawn for this desktop. Rendering is
-cached per name and size, so the same icon in every row of a list costs
-one rasterisation.
+standard Tracker icons are compiled in as HVIF, the Haiku vector icon
+format. One vector definition serves every size; the renderer
+rasterises at the requested size with analytic anti-aliasing. Icons are
+named in Tracker's vocabulary (`folder`, `trash_full`,
+`microcontroller`). `tiku_icons_tiku.c` holds icons drawn for this
+desktop, and an application bundle may carry its own. Rendered icons
+are cached by name and size.
 
-**Images — `tiku_image.h`.** Content-sniffed BMP, PNG (with the kit's own
-inflate) and baseline JPEG, bounded in encoded bytes and decoded pixels.
-Whether a file is an image is decided by its first bytes, never its name.
+**Images — `tiku_image.h`.** Decodes BMP, PNG (with the kit's own
+inflate implementation), and baseline JPEG. Input bytes and output
+pixels are bounded. The format is detected from the file's first bytes,
+not its name.
 
-**Thumbnails — `tiku_thumb.h`.** When to make one, where it lives, and
-the queue that makes it without stopping the window: a cached thumbnail
-is trusted only while newer than the file, a big image goes on a slow
-queue so it cannot hold up the small ones, and a pose shows its type icon
-until the picture is ready.
+**Thumbnails — `tiku_thumb.h`.** Decides when to make a thumbnail, where
+to store it, and queues the work so it does not block the window. A
+cached thumbnail is used only if it is newer than the file. Large images
+go on a separate slow queue. A list entry shows its type icon until the
+thumbnail is ready.
 
-**Fonts dropped in — `tiku_fontdir.h`.** A folder is the interface: drop
-a `.ttf` in it and the family appears in the Fonts window, grouped by the
-name the file calls itself.
+**User fonts — `tiku_fontdir.h`.** Scans a folder of `.ttf` files and
+groups them by the family name inside each file. The families appear in
+the Fonts window.
 
 ## 9. The Application Kit
 
-*How an application is written once and run either in the desktop or in
-a process of its own.* `kits/application/`.
+Directory: `kits/application/`. This kit defines how an application is
+written and how it runs, in the desktop's process or in its own.
 
 **The descriptor — `tiku_app.h`.** An application is a
 `tiku_app_descriptor_t`:
@@ -513,243 +526,254 @@ a process of its own.* `kits/application/`.
 const tiku_app_descriptor_t tiku_notes_app = {
     .id       = "org.tikuos.notes",
     .name     = "Sticky Notes",
-    .start    = notes_start,     /* open windows, paint first frames   */
+    .start    = notes_start,     /* open windows, send first frames */
     .stop     = notes_stop,
-    .tick     = notes_tick,      /* every turn, with the clock          */
-    .pick     = notes_pick,      /* a menu command for one window       */
-    .event_in = notes_event_in,  /* an event, and the window it hit     */
-    .closed   = notes_closed,    /* the runtime took a window           */
+    .tick     = notes_tick,      /* called every loop turn with the time */
+    .pick     = notes_pick,      /* a menu command for one window */
+    .event_in = notes_event_in,  /* an input event and the window it hit */
+    .closed   = notes_closed,    /* the desktop closed a window */
 };
 ```
 
-`pick` and `event_in` return nonzero *only* to say the application is
-done — the runtime reads any other nonzero as a request to quit.
+`pick` and `event_in` must return 0 when they have handled the input.
+A nonzero return means "the application is finished", and the host
+exits.
 
-**The services — `tiku_app_services_t`.** What an application draws
-*through*, and the reason it never needs the desktop's private state:
-`open`, `frame` (a finished pixel frame), `present` (a display list
-instead of pixels), `menus`, `close`, `configure` (title, size,
-resizable, zoomable), `place` (a *role* — announcement or panel — never a
-position, since an application does not know the screen), `resize`,
-`sizeable`, `raise_window`, `pick` (a file panel), `clip_set`/`clip_get`,
-`help_page`/`help_open`/`help_html`, `send_message`, and the board
-services — `board_names`, `current_device`, `device_stats`, `board_run`,
-`board_input`, `board_stop`, `board_save`, `board_port`, `board_mcu`,
-`board_release`, `board_reclaim`, `board_find` — through which an
-application uses a board the desktop already owns.
+**The services — `tiku_app_services_t`.** The services are the functions
+an application calls to reach the desktop. They are: `open`, `frame`
+(send a finished pixel frame), `present` (send a display list instead of
+pixels), `menus`, `close`, `configure` (title, size, resizable,
+zoomable), `place` (request a window *role*, such as announcement or
+panel, never a position, because the application does not know the
+screen), `resize`, `sizeable`, `raise_window`, `pick` (open a file
+panel), `clip_set` and `clip_get`, `help_page`, `help_open`,
+`help_html`, `send_message`, and the board services: `board_names`,
+`current_device`, `device_stats`, `board_run`, `board_input`,
+`board_stop`, `board_save`, `board_port`, `board_mcu`, `board_release`,
+`board_reclaim`, and `board_find`. Through the board services an
+application uses a board that the desktop already owns.
 
-**The window session — `tiku_remote.h`.** A process boundary that is a
-deployment property. A window is a surface plus an event route; menus
-travel as the `tiku_menuset_t` they are; picks come back as commands. The
-wire is little-endian structs, `[u32 type][u32 length][payload]`, over a
-stream socket at `$HOME/.config/tracker/desk.sock`, with a version in
-`HELLO` guarding the rest. The messages: `HELLO`/`WELCOME`, `OPEN`,
-`CONFIGURE`, `FRAME` and `SURFACE` (a shared surface when both ends are
-on one machine), `DRAW` (a display list), `MENUS`, `PLACE`, `RAISE`,
-`SIZEABLE`, `EVENT`, `PICK`, `CLOSE`/`CLOSED`, `SHELL_IN`/`SHELL_OUT` and
-`BASIC_IN`/`BASIC_OUT` (a board's console riding the session), `TELL`,
-`SAY`, `DESCRIBE`, `READY`, `SHUTDOWN`. The same session is what a
-*board* speaks over its channel, which is why a board's window and an
-application's window are the same thing to the desktop.
+**The window session — `tiku_remote.h`.** The window session is the
+protocol between an application process and the desktop. A window is a
+surface plus a route for events. Menus travel as `tiku_menuset_t`.
+Menu picks return as command numbers. The wire format is little-endian
+structs, `[u32 type][u32 length][payload]`, over a Unix stream socket at
+`$HOME/.config/tracker/desk.sock`. `HELLO` carries a protocol version.
+The message types are `HELLO`, `WELCOME`, `OPEN`, `CONFIGURE`, `FRAME`,
+`SURFACE` (a shared-memory surface, used when both ends are on the same
+machine), `DRAW` (a display list), `MENUS`, `PLACE`, `RAISE`,
+`SIZEABLE`, `EVENT`, `PICK`, `CLOSE`, `CLOSED`, `SHELL_IN`,
+`SHELL_OUT`, `BASIC_IN`, `BASIC_OUT` (a board's console carried on the
+session), `TELL`, `SAY`, `DESCRIBE`, `READY`, and `SHUTDOWN`. A board's
+window session uses the same protocol over a channel, so a board window
+and an application window are the same kind of object to the desktop.
 
 **The client — `tiku_client.h`.** `tiku_client_run(&descriptor)`
-connects, starts the descriptor, and pumps until it is done. Built with
-`TIKU_APP_SO`, the same file exports `tiku_app_v1` for `tiku-run` to
-load; built as a program, `main()` calls the client.
+connects to the desktop, calls `start`, and pumps events until the
+application is done. When compiled with `TIKU_APP_SO`, the same source
+file exports `tiku_app_v1`, which `tiku-run` loads. When compiled as a
+program, `main()` calls the client.
 
-**Native controllers — `tiku_window_app.h`.** For an application that has
-window controllers of its own (the Reader, the Image viewer): a private
-workspace whose windows are published over the protocol — only pixels,
-menus and events cross.
+**Native controllers — `tiku_window_app.h`.** For applications that have
+their own window controllers (Reader, Image): a private workspace whose
+windows are published over the session. Only pixels, menus, and events
+cross the process boundary.
 
-**The conductor — `tiku_conduct.h`.** Driving a desktop from outside:
-`INJECT` one input event, `QUERY` one pixel or one named string, over any
-stream. Off unless asked for with `-conduct`, since a device anything can
-puppet has a hole in it. The driven scripts use it when they drive a
-*real* desktop rather than the in-process adapter.
+**The conductor — `tiku_conduct.h`.** A control channel for driving a
+running desktop from another process. It has two commands: `INJECT` one
+input event and `QUERY` one pixel or one named string. It is off unless
+the desktop is started with `-conduct`. Test scripts use it when they
+drive a desktop that has a real display.
 
 ## 10. The Media Kit
 
-*The moments a shell may sound.* `kits/media/`.
+Directory: `kits/media/`.
 
-`tiku_sound.h` is a table of named events in the R5 manner — the startup
-chime, the beep, a window opening, a window minimising — each with a
-clip, an on/off and a share of one volume. A shell raises an event at the
-moment it already knows about and never learns what plays; the kit hands
-PCM to a backend a chunk per turn so the loop never waits on the card.
-`tiku_score.h` writes a sound down as text (`wave`, `attack`, `release`,
-`note`, `rest`) so a system sound is reviewable and renders at any rate;
-`tiku_wav.h` reads a dropped clip. The card is one file per host:
-PulseAudio on Linux, an audio queue on CoreAudio on the Mac. With no
-backend every event is silent and still counted, which is what a scripted
-run proves against.
+`tiku_sound.h` is a table of named sound events in the R5 style: the
+startup chime, the beep, window open, window minimise, and so on. Each
+event has a clip, an on/off setting, and a volume share. A shell raises
+an event; it does not know what plays. The kit hands PCM data to a
+backend one chunk per loop turn, so the loop never waits on the audio
+device. `tiku_score.h` defines a text format for sounds (`wave`,
+`attack`, `release`, `note`, `rest`) so a system sound can be reviewed as
+text and rendered at any sample rate. `tiku_wav.h` reads WAV files. The
+backend is one file per host: PulseAudio on Linux, CoreAudio on macOS.
+With no backend, events are silent but still counted, which is what
+scripted tests check.
 
 ---
 
-# Part III — The Tracker and its Shells
+# Part III — The Tracker and its shells
 
 ## 11. The Tracker core
 
-`TikuTracker/src/core` and `src/ui` are the file manager, ported from a
-first-hand reading of Tracker's source (`spec/ARCHITECTURE.md` cites
-where each structure was read; `FEATURES.md` holds 889 behaviours as
-contract rows, each marked done or differing). The core never includes a
-drawing header: it is behaviour, drawn by the ui layer.
+`TikuTracker/src/core` and `src/ui` contain the file manager. They were
+written from a reading of Tracker's source; `spec/ARCHITECTURE.md`
+cites where each structure was read, and `FEATURES.md` lists 889
+behaviours as contract rows, each marked done or differing. The core
+includes no drawing headers.
 
-**The pose view — `src/ui/poseview/`.** One engine serving icon, mini-icon
-and list mode from one state, as `BPoseView` did: the pose list, the
-filtered list the type-ahead leaves, the visible order, the selection,
-the columns, the grid and drop target for icon placement. Twelve files
-split it by concern — columns, drawing, extent, icon mode, keys, loading,
-rename, selection, sort, spatial placement, type-ahead. Directory reading
-is asynchronous from the first day: a listing lands in batches from a
-worker, and the notification path is the same code path as the initial
-read, so a window is told and never polls.
+**The pose view — `src/ui/poseview/`.** One engine serves icon,
+mini-icon, and list mode from one state, as `BPoseView` did. The state
+includes the pose list, the filtered list produced by type-ahead, the
+visible order, the selection, the columns, and the grid and drop target
+used for icon placement. Twelve files split the engine by concern:
+columns, drawing, extent, icon mode, keys, loading, rename, selection,
+sort, spatial placement, and type-ahead. Directory reading is
+asynchronous: a listing arrives in batches from a worker, and change
+notices use the same code path as the initial read.
 
-**Spatial state lives on the objects.** Icon positions, column sets and
-view state are attributes of the folder (`_trk/pinfo`, `_trk/columns`,
-`_trk/viewstate`, the names Tracker used), through `tiku_state.h` — on
-the host as extended attributes, for a device in a sidecar the desktop
-keeps for it.
+**State on the objects.** Icon positions, column sets, and view state
+are stored as attributes of the folder (`_trk/pinfo`, `_trk/columns`,
+`_trk/viewstate`, Tracker's names), through `tiku_state.h`: extended
+attributes on the host, a sidecar file for a board.
 
-**Around the view.** `titleview` — the column strip and what a drag on it
-means (a press picks resize or reorder; thresholds decide click, reorder,
-resize or removal). `cwmenu` — the context menu, built at open time from
-the selection. `navigator`, `navmenu` — the path bar and its menus.
-`find` — the Find window and its query builder. `springmenu` — the
-spring-loaded folder menu a drag hovers. `nodeicon` — which icon a node
-wears, from its kind, its type, its thumbnail or its own art.
+**Around the view.** `titleview` handles the column header strip and
+what a drag on it means: a press starts a resize or a reorder, and
+thresholds decide whether the result is a click, a reorder, a resize, or
+a column removal. `cwmenu` builds the context menu from the selection.
+`navigator` and `navmenu` are the path bar. `find` is the Find window.
+`springmenu` is the folder menu that opens when a drag hovers over a
+folder. `nodeicon` chooses which icon a node shows.
 
-**Commands and models — `src/core`.** `drag` and `drop_protocol` — the
-drag with Tracker's double-click and copy/move rules; `launch` — which
-application opens a document, asked of a registry the way Tracker asked
-its MIME database (exact type beats supertype beats "anything"); `types`
-— the type registry; `select`, `match` — Select by pattern; `info` — the
-Get Info model; `panel` — the file panel model; `frame` — where windows
-come back; `switcher` — the window switcher; `associations`,
-`prefs`, `deskprefs`, `soundprefs`, `background`, `color`, `alert`,
-`repaint`, `task` (the load meter), `state_pipeline` (how state is read
-in stages).
+**Commands and models — `src/core`.** `drag` and `drop_protocol`
+implement drag and drop with Tracker's copy/move rules. `launch` chooses
+which application opens a document, using a registry in the same way
+Tracker used its MIME database: an exact type match ranks above a
+supertype match, which ranks above an application that accepts
+anything. `types` is the type registry. `select` and `match` implement
+Select by pattern. `info` is the Get Info model, `panel` the file panel
+model, `frame` window placement, `switcher` the window switcher. The
+rest are `associations`, `prefs`, `deskprefs`, `soundprefs`,
+`background`, `color`, `alert`, `repaint`, `task` (the load meter), and
+`state_pipeline`.
 
-**Windows — `src/ui/windows/`.** The folder window (its lifecycle,
-editing and rendering split across three files), About, Get Info, Find,
-Select, Open With, the file panel, preferences (Tracker, desktop,
-Deskbar, fonts, sounds) and the switcher. Each is a window whose draw and
-event callbacks the shell installs into the workspace.
+**Windows — `src/ui/windows/`.** The folder window (split into
+lifecycle, editing, and rendering files), About, Get Info, Find, Select,
+Open With, the file panel, five preference windows (Tracker, desktop,
+Deskbar, fonts, sounds), and the switcher. Each is a window whose draw
+and event callbacks the shell installs into the workspace.
 
 ## 12. The Desktop shell
 
-`TikuTracker/src/shell/desktop/` is the spatial desktop: one composition,
-21 files, all sharing one `desktop_t` through
-`tiku_trk_desktop_private.h`, which nothing outside the directory
-includes.
+`TikuTracker/src/shell/desktop/` is the spatial desktop: 21 files that
+share one `desktop_t` struct through `tiku_trk_desktop_private.h`. No
+file outside the directory includes that header.
 
-### 12.1 The turn
+### 12.1 The main loop
 
-`tracker_run()` in `tiku_trk_desktop.c` is the loop. Each turn:
+`tracker_run()` in `tiku_trk_desktop.c` is the loop. One iteration is a
+*turn*, with three phases.
 
-1. **`desktop_turn_begin`** — apply what the workers finished; reload the
-   settings file if it changed; pump the remote sessions (application and
-   board windows) and the conductor; poll the reports.
-2. **Events** — drain the host (or the script adapter) and dispatch each
-   to `desktop_pointer_down/move/up`, the key handler, resize, close.
-   Every routing decision — which window, which overlay, which drag —
-   happens here in `tiku_trk_desktop_events.c`.
-3. **`desktop_turn_end`** — pump the devices (a listing still arriving
-   keeps drawing), sweep, pump notices; if anything is dirty and a frame
-   is due (16.7 ms since the last), `draw_all` then `blit`; tick the
-   splash and the shutdown; then sleep until the next task is due or the
-   host has input, whichever is sooner.
+1. **`desktop_turn_begin`.** Apply results from the workers. Reload the
+   settings file if it changed. Pump the window sessions (application
+   and board windows) and the conductor. Check for a report request.
+2. **Events.** Read every pending event from the host (or from the
+   script adapter) and dispatch it: `desktop_pointer_down`, `_move`,
+   `_up`, the key handler, resize, close. All routing decisions are in
+   `tiku_trk_desktop_events.c`.
+3. **`desktop_turn_end`.** Pump the devices (a listing still arriving
+   keeps the window redrawing). Pump change notices. If anything is
+   dirty and at least 16.7 ms have passed since the last frame, call
+   `draw_all` and then `blit`. Advance the splash and shutdown
+   animations. Sleep until the next scheduled task or until the host
+   has input, whichever is sooner.
 
-`draw_all` is the whole picture in order: the backdrop; the Deskbar under
-or over the windows according to its raise setting; the workspace (every
-window, then any ghosts); overlays — the Get Info hover, the strip drag,
-the drag picture, the menu bars, the open menu (drawn last, since it is
-above everything), the status overlay, the splash, the Force Quit
-overlay. A partial repaint restricts all of it to a damage rectangle,
-which the workspace's content cache honours: a window being dragged
-repaints from cached pixels, and the shadow's reach is part of the
+`draw_all` draws the whole desktop in a fixed order: the backdrop; the
+Deskbar (below or above the windows, according to its setting); the
+workspace (every window, then any closing-window copies); then the
+overlays: the Get Info hover, the column-strip drag, the drag image, the
+menu bars, the open menu (last, because it is above everything), the
+status overlay, the splash, and the Force Quit overlay. A partial
+repaint limits all of this to a damage rectangle. The workspace's
+content cache respects the damage rectangle, so a window being dragged
+is repainted from cached pixels. The shadow's extent is included in the
 damage.
 
-`blit` presents the surface through the host, which diffs it against the
-last frame and uploads only the tiles that changed. The desktop measures
-itself — draw time per frame, present time, frames over 16 ms, cache hits
-— and writes it into the report `SIGUSR2` asks for.
+`blit` presents the surface through the host. The host compares it with
+the previous frame and uploads only the changed tiles. The desktop
+records draw time per frame, present time, frames over 16 ms, and cache
+hits, and includes them in the `SIGUSR2` report.
 
 ### 12.2 Where things live
 
-| file | owns |
+| file | contents |
 |---|---|
-| `lifecycle` | options, boot, the host, the splash, shutdown |
-| `events` | every pointer and key, the capture rules (a window sent a press is sent the release), the strip, the band, drags |
-| `draw` | `draw_all`, `blit`, the damage, the overlays |
-| `commands` | the menu commands: File, Window, Attributes, the system menu |
+| `lifecycle` | command-line options, startup, the host, the splash, shutdown |
+| `events` | all pointer and key handling; the capture rule (a window that receives a press also receives the release); the column strip; the selection band; drags |
+| `draw` | `draw_all`, `blit`, damage tracking, the overlays |
+| `commands` | the File, Window, Attributes, and system menu commands |
 | `globalbar` | the global menu bar and the Devices menu |
-| `deskbar` | the Deskbar's picks: raise, minimise, close, the leaf |
-| `mounts` | the device mounts, the sweep, the notice pump |
-| `wire` | asking a board what changed, as a job per board, never on the turn |
-| `boardrun` | running a program on a mounted board for an application |
-| `remote` | the windows of out-of-process sessions: frames, menus, configure |
-| `embed` | the services contract for a descriptor hosted in-process (demos) |
+| `deskbar` | handling of Deskbar picks: raise, minimise, close, the leaf menu |
+| `mounts` | device mounts, the periodic sweep, the change-notice pump |
+| `wire` | polling a board for changes, as one job per board, never on the main thread |
+| `boardrun` | running a program on a mounted board on behalf of an application |
+| `remote` | windows of out-of-process sessions: frames, menus, configure |
+| `embed` | the services implementation for a descriptor hosted in-process (demos only) |
 | `apps` | the application registry, launching, Open With |
-| `panels` | the file panel and the alerts the desktop asks |
+| `panels` | the file panel and the desktop's own alerts |
 | `vfs` | the VFS-over-owner service for device utilities |
-| `associations`, `deviceprefs`, `forcequit`, `report`, `startup` | what their names say |
+| `associations`, `deviceprefs`, `forcequit`, `report`, `startup` | as named |
 
-### 12.3 Windows of three kinds
+### 12.3 Three kinds of window
 
-The workspace does not distinguish them, but the shell does:
+The workspace treats all windows alike. The shell distinguishes three
+kinds.
 
-- **Tracker's own** — folder windows, Get Info, Find, preferences. Their
-  draw callbacks are the ui layer's; their events are routed by the
-  shell's rules.
-- **Remote** — an application's, or a board's. `tiku_trk_desktop_remote.c`
-  turns `OPEN` into a workspace window whose draw callback blits the
-  last frame the session sent (or plays its display list), publishes
-  the menus it sent, and forwards events with content-relative
-  coordinates. Closing is the runtime's gesture: Cmd-W or the close box
-  send `CLOSED`, never a request the application could swallow.
-- **Embedded** — a descriptor hosted in the desktop's own process
-  through `tiku_trk_desktop_embed.c`, which fulfils the same services
-  contract in-process. Used for demonstrations; installed applications
-  never take this path.
+- **Tracker's own windows.** Folder windows, Get Info, Find, the
+  preference windows. Their draw callbacks belong to the ui layer.
+- **Remote windows.** An application's or a board's.
+  `tiku_trk_desktop_remote.c` turns an `OPEN` message into a workspace
+  window. The window's draw callback copies the last frame the session
+  sent, or plays the session's display list. The shell publishes the
+  session's menus and forwards events with window-relative coordinates.
+  Closing is initiated by the desktop: Cmd-W or the close box sends
+  `CLOSED`. The application is told; it cannot refuse.
+- **Embedded windows.** A descriptor hosted inside the desktop process
+  through `tiku_trk_desktop_embed.c`, which implements the services
+  contract in-process. This is used for demonstrations. Installed
+  applications never run this way.
 
-### 12.4 The session
+### 12.4 Session and supervisor
 
-`src/shell/session/` restores and persists the desk: every open folder
-window, each view's state and columns, the Deskbar's dock and width, in
-a sidecar store for the device or the local one. Startup opens the paths
-it was given, else the saved session, else the home. Shutdown finishes
-the file work under way, bounded, answering any conflict by renaming.
-`tiku-desk` (`system/desk/`) is the program still standing when the desk
-is not: it starts `TikuDesktop`, keeps its stderr, and when the desk
-ends badly writes down how and starts it once more, told where that
-account is, so the first thing on screen says what happened.
+`src/shell/session/` saves and restores the desktop: every open folder
+window, each view's state and columns, and the Deskbar's position and
+width. The state is stored in the sidecar for a board or in the local
+store. At startup the shell opens the paths given on the command line;
+otherwise the saved session; otherwise the home directory. At shutdown
+it finishes any file operation in progress, with a time limit, resolving
+conflicts by renaming.
+
+`tiku-desk` (`system/desk/`) is a supervisor. It starts `TikuDesktop`,
+keeps its stderr, and if the desktop exits abnormally it records the
+signal, the exit status, and the last output, then restarts the desktop
+once with a pointer to that record so the first thing on screen
+explains what happened. If the desktop fails twice in a minute, the
+supervisor leaves it stopped.
 
 ## 13. The Deskbar
 
-`TikuTracker/src/deskbar/` is the bar: three sections stacked as the
-original has them — the leaf menu (Find, Force Quit, Settings, the
-Applications and Device Tools submenus, recent folders, Shut down), the
-running-application list whose windows nest under each team in expando
-mode, and the tray of replicants with the clock. It docks at any corner
-or as a strip along an edge, mini or expanded, and its preferences are a
-window of its own. Behaviour cites the `DB-*` rows of `FEATURES.md`,
-read from Deskbar's source. The shell publishes the workspace's windows
-to it every frame, so the team list is never stale, and its picks (raise,
-minimise, close) come back as commands the shell answers through the
-workspace — a minimise flies a ghost of the window to the row that keeps
-it.
+`TikuTracker/src/deskbar/` is the Deskbar. It has three sections, in the
+original's order: the leaf menu (Find, Force Quit, Settings, the
+Applications and Device Tools submenus, recent folders, Shut down); the
+list of running applications, with each application's windows nested
+under it in expanded mode; and the tray, with replicants and the clock.
+It can dock at any corner or along an edge, in mini or expanded form.
+Its preferences are a separate window. Its behaviour is documented
+against the `DB-*` rows of `FEATURES.md`. The shell sends the Deskbar the
+current window list every frame. Deskbar picks (raise, minimise, close)
+return to the shell as commands, and the shell carries them out through
+the workspace.
 
 ## 14. The browser shell
 
-`TikuTracker/src/shell/tracker/` is the single-window browser: one folder
-at a time with a navigator, the same pose view, the same file operations
-and the same preferences, in thirteen files. It exists so that the
-Tracker is proved as a *product* rather than as a desktop: every script
-that can run in both shells does, and a behaviour that only one shell
-had — a queued file operation that never ran — was found exactly that
-way.
+`TikuTracker/src/shell/tracker/` is the single-window browser: one
+folder at a time, a navigator bar, the same pose view, the same file
+operations, and the same preferences, in thirteen files. It exists so
+that the file manager is tested as a product independent of the spatial
+desktop. Every script that can run in both shells does. One bug, a
+queued file operation that never ran, was found only because the second
+shell exposed it.
 
 ---
 
@@ -757,7 +781,7 @@ way.
 
 ## 15. Writing an application
 
-The smallest application the toolkit can run is `apps/examples/hello.c`:
+The smallest application is `apps/examples/hello.c`:
 
 ```c
 static int
@@ -766,8 +790,8 @@ hello_start(void **state, const tiku_app_services_t *services)
     hello_state_t *st = calloc(1, sizeof *st);
 
     st->services = services;
-    /* The application owns its pixels.  The services carry a finished
-     * frame across; nothing draws into a window from outside. */
+    /* The application owns its pixels. It sends finished frames
+     * through the services; nothing else draws into its window. */
     st->surface = tiku_surface_new(HELLO_W, HELLO_H, TIKU_C_PANEL);
     st->id = services->open(services->ctx, "Hello", HELLO_W, HELLO_H);
     tiku_text(st->surface, tiku_font_bold(), 20, 40 + font->ascent,
@@ -779,7 +803,8 @@ hello_start(void **state, const tiku_app_services_t *services)
 }
 ```
 
-Then a descriptor, an export and a main:
+The file also defines the descriptor, an export symbol for the module
+loader, and a `main()` for standalone use:
 
 ```c
 #ifdef TIKU_APP_SO
@@ -792,8 +817,8 @@ int main(void) { return tiku_client_run(&hello_app); }
 #endif
 ```
 
-And a manifest, `hello.app`, that the desktop reads without executing
-anything:
+A manifest, `hello.app`, describes the bundle. The desktop reads it
+without executing anything:
 
 ```ini
 version=1
@@ -805,131 +830,133 @@ icon=application
 types=
 ```
 
-`mk/apps.mk` builds the module against the PIC kits into
-`build/apps/hello/`, copies the manifest beside it as `app.manifest`, and
-the Deskbar's Applications (or Demos) menu offers it by its `category`.
-`types` advertises the document types it reads, which is what puts it in
-Open With; `help` names a page in the help root; an optional `startup`
-migrates a legacy preference identity and never auto-launches anything.
+`mk/apps.mk` compiles the module against the position-independent kits
+into `build/apps/hello/` and copies the manifest beside it as
+`app.manifest`. The Deskbar's Applications or Demos menu lists the
+bundle by its `category`. `types` lists the document types the
+application reads; this determines whether it appears in Open With.
+`help` names a page under the help root. `startup` migrates an old
+preference identity and does not start anything automatically.
 
-**What the runtime does for you.** Launching is `tiku-run <module>
-[document]` in a fresh process; the runner loads the module, adds the
-bundle directory to *its child's* environment only, and connects to the
-desk socket. Windows are placed, framed, focused and closed by the
-desktop. Menus are published as data and republished when their state
-changes; the global bar shows them while the window is focused. Text
-input arrives assembled; the clipboard is a service. A fault takes down
-the application, not the desk. This is process and crash isolation, not
+**What the runtime provides.** Launching runs `tiku-run <module>
+[document]` in a new process. The runner loads the module, adds the
+bundle directory to the child's environment, and connects to the desk
+socket. The desktop places, frames, focuses, and closes windows. Menus
+are sent as data; the application sends them again when they change.
+The global menu bar shows them while the window is focused. Text input
+arrives as complete strings. The clipboard is a service. A crash in the
+application does not affect the desktop. This is process isolation, not
 a security sandbox: the application runs under the user's account and
 links the kits.
 
-**What you must do.** Return `0` from `pick` and `event_in` unless the
-application is finished. Keep every window's surface at the size the
-last `RESIZE` said. Hear `closed`, or you will paint into a window that
-is gone. Do slow work on a worker (`tiku_work`) and apply it in `tick`.
-Never include a `tiku_trk_*` header — the boundary check will refuse the
-build, and the desktop's private state is not yours.
+**What the application must do.** Return 0 from `pick` and `event_in`
+unless the application is finished. Keep each window's surface at the
+size given by the last `RESIZE` event. Implement `closed`, or the
+application will draw into a window that no longer exists. Run slow
+work on a worker (`tiku_work`) and apply the result in `tick`. Never
+include a `tiku_trk_*` header; the boundary check rejects it.
 
-**Testing it.** Build the source with `TIKU_APP_EMBED` into a unit test,
-hand it a `tiku_app_services_t` of stubs, and drive `start`, `event_in`,
-`tick` and `pick` directly — `TikuTracker/tests/test_notes.c` does
-exactly this. Then a driven script: a fixture copies the module into the
-test's apps directory, the script opens it from the Applications menu,
-and `expect-title`, `expect-menu`, `expect-narrate` and `expect-file-has`
-prove what it did.
+**Testing.** Compile the application source with `TIKU_APP_EMBED` into a
+unit test, supply a `tiku_app_services_t` of stub functions, and call
+`start`, `event_in`, `tick`, and `pick` directly.
+`TikuTracker/tests/test_notes.c` is an example. Then write a driven
+script: a setup script copies the module into the test's application
+directory, the script opens the application from the Applications menu,
+and `expect-title`, `expect-menu`, `expect-narrate`, and
+`expect-file-has` verify the result.
 
 ## 16. The applications that ship
 
-| bundle | what it is | notes |
+| bundle | description | notes |
 |---|---|---|
-| Editor (`apps/edit`) | a text editor in the PE manner: multiple documents, find, syntax colouring | its own `PE_REFERENCE.md` |
-| Terminal (`apps/term`) | a terminal over a pty | the client's short wait exists for its sake |
-| TikuBasic, TikuC (`apps/ide`) | the IDE: projects, a build for the host or a board, messages that land on a line, a BASIC debugger | shares one body of code; BASIC builds the board's interpreter for the host (`apps/basichost`) |
-| Sticky Notes (`apps/notes`) | a note per window and per file, important ones first in its Notes menu | selects by hand: double-click a word, triple-click a line |
-| Reader / Help (`apps/reader`) | documents and the help pages, with bookmarks and navigation | Help requests launch it in help mode with structured data over a private descriptor |
-| Image (`apps/image`) | an image viewer over `tiku_image` | a native controller through `tiku_window_app` |
-| Console (`apps/console`) | a board's console, and a network console | rides the session's `SHELL_IN`/`SHELL_OUT` |
-| Bench (`apps/bench`) | drives the TikuBench suites on a board and reports | |
-| Device Monitor, VFS Inspector (`apps/deviceutils`) | live readings and the device namespace, written through `tiku_vfs_rpc` | writes require a read, compare and confirm |
-| Calculator, developer Calculator (`apps/calc`, `apps/calculator`) | a plain one and one with bases and widths | |
+| Editor (`apps/edit`) | a text editor in the style of Pe: multiple documents, find, syntax colouring | see `PE_REFERENCE.md` |
+| Terminal (`apps/term`) | a terminal over a pseudo-terminal | |
+| TikuBasic, TikuC (`apps/ide`) | the IDE: projects, builds for the host or a board, error messages that jump to a line, a BASIC debugger | one code base; the BASIC host interpreter is built from the board's interpreter source in `apps/basichost` |
+| Sticky Notes (`apps/notes`) | one note per window and per file; important notes listed first in the Notes menu | double-click selects a word, triple-click a line |
+| Reader / Help (`apps/reader`) | documents and help pages, with bookmarks and navigation | Help requests start it in help mode with structured data over a private descriptor |
+| Image (`apps/image`) | an image viewer built on `tiku_image` | a native controller through `tiku_window_app` |
+| Console (`apps/console`) | a board's console, and a network console | uses `SHELL_IN` and `SHELL_OUT` on the session |
+| Bench (`apps/bench`) | runs the TikuBench suites on a board and reports results | |
+| Device Monitor, VFS Inspector (`apps/deviceutils`) | live readings and the device namespace, through `tiku_vfs_rpc` | a write requires a read, a comparison, and confirmation |
+| Calculator, developer Calculator (`apps/calc`, `apps/calculator`) | a plain calculator, and one with number bases and bit widths | |
 | Hex (`apps/hex`) | a hex editor | |
-| the examples (`apps/examples`) | hello, clock, counter, sketch, twowin, sensors, a framework demo | the least an application can be, each teaching one thing |
-| the samples (`apps/samples`) | the widget gallery, the sound gallery, the probe, a metrics generator | standalone programs, not bundles |
+| examples (`apps/examples`) | hello, clock, counter, sketch, twowin, sensors, and a framework demo | each shows one feature |
+| samples (`apps/samples`) | the widget gallery, the sound gallery, the probe, a metrics generator | standalone programs, not bundles |
 
 ---
 
 # Part V — Boards
 
-## 17. A board on the desk
+## 17. A board on the desktop
 
-A TikuOS board reaches the desktop by cable, socket or radio, and the
-desk treats it three ways at once.
+A TikuOS board connects to the desktop by cable, network, or radio. The
+desktop uses it in three ways.
 
-**As a volume.** `-devices` scans the bus (`tiku_sys_serial_ports`),
-asks each candidate its name, and offers it in the Devices menu at the
-right end of the global bar: *Connect to nRF54L15 (cu.usbmodem…)*.
-Connecting opens a session over the transport, mirrors the namespace,
-and mounts a Tiku backend at `/devices/<name>`. A folder window on
-`/devices/nrf54l15/sys` lists `mem`, `cpu`, `power`, `radio` with typed
-columns; `/data` is a real directory you can drop a file into. What
-changed is asked of the board every few hundred milliseconds by a job
-on its worker — one in flight per board — so a board that goes quiet
-costs the loop nothing, and a mount that goes is detached at once.
+**As a volume.** With `-devices`, the desktop scans the serial ports
+(`tiku_sys_serial_ports`), asks each candidate for its name, and lists
+it in the Devices menu at the right end of the global menu bar, for
+example *Connect to nRF54L15 (cu.usbmodem…)*. Connecting opens a
+session, reads the namespace manifest, and mounts a Tiku backend at
+`/devices/<name>`. A folder window on `/devices/nrf54l15/sys` lists
+`mem`, `cpu`, `power`, and `radio`, with typed columns. `/data` is a
+real directory; files can be dropped into it. The desktop polls each
+board for changes every few hundred milliseconds. The poll is a job on a
+worker, one per board, so a board that stops answering does not block
+the loop. A board that disconnects is unmounted at once.
 
 **As a window.** A board built with `TIKU_APPL_GUI` speaks the window
 session over a channel framed on its console line (`tiku_frame`,
-`tiku_channel`). It opens a window, and because it has no pixels it
-`DRAW`s a display list: the desktop's own widgets, drawn by the board,
-at six hundred bytes a frame. The Board window is the same kind of
-window an application opens. A board with no shell can hold a port of
-its own; a board on a radio or the network dials in through a relay to
-a desktop that `-listen`s.
+`tiku_channel`). It opens a window and, since it has no pixels, sends
+`DRAW` messages carrying a display list. The desktop draws the window
+with its own widgets. The result is a Board window of the same kind as
+an application window. A board with no shell can own a network port. A
+board on a radio or a network dials in through a relay to a desktop
+started with `-listen`.
 
-**As a computer.** The About box (`tiku_trk_about_window.c`) asks each
-connected board for its estate — `/sys/mem/sram_map`, `nvm_map`,
-`/sys/cpu/freq`, uptime, boot count — and draws the SRAM and NVM bars
-with their regions (static, stack pool, tier, code, store, persist),
-one board per page with a stepper. The Device Monitor plots readings;
-the VFS Inspector edits nodes; the IDE builds for the board and runs a
-program on it through `board_run`, hearing what it prints through
-`board_said`. The current device — chosen in the Devices menu — is where
-an application's board work defaults.
+**As a computer.** The About window (`tiku_trk_about_window.c`) asks each
+connected board for its memory maps (`/sys/mem/sram_map`, `nvm_map`),
+its clock (`/sys/cpu/freq`), its uptime, and its boot count, and draws
+the SRAM and NVM bars with their regions (static, stack pool, tier, code,
+store, persist). Each board has a page, with previous and next buttons.
+Device Monitor plots readings. VFS Inspector edits nodes. The IDE builds
+for the board and runs programs on it through `board_run`, receiving
+output through `board_said`. The current device, chosen in the Devices
+menu, is the default target for an application's board operations.
 
-**Identity and state.** A board is known by the identity key
-`tiku_ident` derives from the nodes it publishes; its pose positions and
-window state live in a sidecar keyed on that string, so a board comes
-back where it was, on whichever port it appears.
+**Identity and state.** A board is identified by the key `tiku_ident`
+derives from its identity nodes. Its icon positions and window state are
+stored in a sidecar keyed by that string, so a board's windows return to
+their places regardless of which port it appears on.
 
-## 18. Two boards on one desk
+## 18. Two boards on one desktop
 
-Nothing above is per-board. The namespace holds eight backends; each
-board has its own session, channel, worker job and sidecar; the About
-box pages through them; the Devices menu lists them and marks the
-current one. On the day of writing an nRF54L15-DK and an Apollo510 EVB
-were connected together for the first time: both discovered, both
-mounted, both in About with their own estates, the numbers matching
-what each board's own shell reported. The `boardboth` script proves a
-second topology — one board on the cable and one dialling in over IP —
-in the test suite.
+Nothing in the previous chapter is limited to one board. The namespace
+holds eight backends. Each board has its own session, channel, worker
+job, and sidecar. The About window pages through all connected boards.
+The Devices menu lists them and marks the current one. On the day of
+writing, an nRF54L15-DK and an Apollo510 EVB were connected at the same
+time for the first time: both were discovered and mounted, both appeared
+in About with their own memory maps, and the numbers matched what each
+board's own shell reported. The `boardboth` test script covers a second
+arrangement, one board on a cable and one connecting over IP.
 
 ---
 
-# Part VI — Proving It
+# Part VI — Testing and portability
 
-## 19. Tests, lanes and gates
+## 19. Tests, scripts, and checks
 
-`make test` runs four layers, and each is meant to be read as much as
-run.
+`make test` runs four layers of tests.
 
-**Unit tests** — 157 programs under `TikuTracker/tests/test_*.c`, one
-per subject, discovered by name. They print `[PASS] ROW` lines against
-the contract's row ids (`IV-022`, `DB-030`, `CW-034`) so a failure names
-the behaviour rather than the line.
+**Unit tests.** 157 programs under `TikuTracker/tests/test_*.c`, one
+per subject, found by file name. They print `[PASS] ROW` lines using the
+contract's row ids (`IV-022`, `DB-030`, `CW-034`), so a failure names a
+behaviour.
 
-**Driven scripts** — 264 lanes under `TikuTracker/tests/shell/*.script`,
-run by `run.sh` in both shells with no display: the window is drawn into
-memory exactly as it would be on screen. A script is gestures and
-assertions:
+**Driven scripts.** 264 scripts under `TikuTracker/tests/shell/*.script`,
+run by `run.sh` against both shells with no display. The window is
+drawn into memory exactly as it would be on screen. A script is a list
+of gestures and assertions:
 
 ```
 click 71 8            menu-pick Important     key n ctrl
@@ -941,91 +968,92 @@ expect-windows 3      expect-read /devices nrf54l15|apollo510|
 shot /tmp/trk_look.png                        quit
 ```
 
-`wait N` is N loop turns, never seconds, so a lane is deterministic; a
-fixture under `setup/<lane>.sh` lays out the home the lane runs in;
-headers say what a lane needs (`# board: yes`, `# board: both`,
-`# board: discover`, `# prefs: factory`). A lane can pin a pixel, a
-title, a menu's full text, a window count, a file's contents, a
-narration, a sound raised — which is how a change to the look is
-measured rather than eyeballed: the shadows moved nine pixel-pinned lanes
-and each was re-pinned with its intent kept.
+`wait N` waits N loop turns, not seconds, so a script is deterministic.
+A setup script under `setup/<name>.sh` prepares the home directory the
+script runs in. Header lines declare requirements: `# board: yes`,
+`# board: both`, `# board: discover`, `# prefs: factory`. A script can
+check a pixel, a window title, a menu's full text, the window count, a
+file's contents, a narration, or a sound event. This is how changes to
+the look are verified: the September 2026 shadows changed nine
+pixel-checking scripts, and each was updated with its intent unchanged.
 
-**Gates** — the kit table, the architecture boundary, the application
-boundary, the toolkit check, the contract (`FEATURES.md` has no duplicate
-rows), the menu-command check (every command a person can pick reaches a
-handler), and the shipping check (the shipping shells carry no script
-words).
+**Checks.** The kit table, the architecture check, the application
+boundary, the toolkit check, the contract check (`FEATURES.md` has no
+duplicate rows), the menu-command check (every menu command reaches a
+handler), and the shipping check (the shipping shells contain no
+script-driver code).
 
-**The conductor** — for driving a real, displayed desktop: `-conduct`
-opens the `INJECT`/`QUERY` channel and `build/dev/trk-conduct` drives it
-from outside.
+**The conductor.** For driving a desktop that has a real display:
+`-conduct` opens the `INJECT`/`QUERY` channel, and `build/dev/trk-conduct`
+drives it from another process.
 
-Two things the suite deliberately cannot see: what a board on the bus
-adds (three lanes fail with a board plugged in, and say so), and what
-only a person can judge — which is what the `shot` verb is for.
+Two things the suite cannot verify: what a board on the bus changes
+(three scripts fail when a board is plugged in, and the plan document
+records why), and appearance, which is what the `shot` command is for.
 
-## 20. Two hosts, one tree
+## 20. Linux and macOS
 
-Linux and macOS build the same sources; what differs is said in three
-places and nowhere else.
+Both hosts build the same sources. The differences are confined to three
+places.
 
-- **`kits/support/tiku_sys.h`** and its two bodies: processes, memory,
-  the fault PC, serial enumeration and rates.
-- **`mk/toolchain.mk`**: the Darwin block (`-D_DARWIN_C_SOURCE`, the
-  forced `tiku_darwin.h` prelude that supplies what libc spells
-  differently, the frameworks, `TIKU_HOST`).
-- **The per-host files** the platform seam names: the volume table, the
-  sound card, the window host, the command key.
+- `kits/support/tiku_sys.h` and its two implementations: processes,
+  memory, the fault program counter, serial port enumeration and rates.
+- `mk/toolchain.mk`: the Darwin section (`-D_DARWIN_C_SOURCE`, the
+  `tiku_darwin.h` prelude that supplies names libc spells differently,
+  the frameworks, `TIKU_HOST`).
+- The per-host files on the platform seam: the volume table, the sound
+  backend, the window host, the command key.
 
-On the Mac the desktop draws through `tiku_cocoa.m` — an AppKit window
-whose view blits only the damaged tiles, the shell's own loop pumping
-AppKit from inside `wait` and `poll`, Retina through the scale the host
-reports — so no X server is installed or started; `make TIKU_HOST=x11`
-keeps the Xlib path and its two outside-looking test suites. `make app`
-writes `build/TikuDesktop.app` with the applications inside and a
-launcher that knows which host it carries. The scripts do not know which
-host drew, which is the point.
+On macOS the desktop draws through `tiku_cocoa.m`: an AppKit window
+whose view copies only the changed tiles, with the desktop's own loop
+pumping AppKit events from inside `wait` and `poll`, and the Retina
+scale taken from the host. No X server is needed. `make TIKU_HOST=x11`
+still builds the Xlib host and its two X-specific test suites.
+`make app` produces `build/TikuDesktop.app` containing the applications
+and a launcher that knows which host it was built with. The test scripts
+do not know which host drew the frame.
 
 ---
 
 # Appendix A — Glossary
 
 **Backend** — a table of file operations over one store: the host's
-files, or a board. **Behaviour file** — a control's state and input,
-compiled on the board too; its paint lives beside it. **Channel** — a
-socket pair that carries a board's window session over its console.
-**Conductor** — the inject/query channel for driving a displayed desktop.
-**Descriptor** — an application: its entry points. **Display list** —
-what was drawn, as the interface's own calls, for a board to send.
-**Ghost** — the last picture of a window on its way out. **Job** — work a
-worker does for the loop. **Lane** — one driven script. **Model** — the
-one place that knows what kind of thing a pose wraps. **Mount** — a
-backend at a path prefix. **Pose** — one entry in a view. **Seam** — one
-declaration, one file per host. **Services** — what an application draws
-through. **Session** — a prompt-aware conversation with a board; also the
-window session an application or board speaks. **Sidecar** — where a
-board's UI state lives, keyed by its identity. **Tier** — a board's
-memory arena, as its maps report it. **Turn** — one pass of the shell's
-loop. **Workspace** — the compositor of in-process windows.
+files or a board. **Behaviour file** — the part of a control that keeps
+state and handles input; it compiles on the board; its paint code is in
+a separate file. **Channel** — a socket pair that carries a board's
+window session over its console line. **Conductor** — the inject/query
+channel for driving a desktop with a display. **Descriptor** — an
+application's table of entry points. **Display list** — a recording of
+drawing calls, sent by a board instead of pixels. **Job** — a unit of
+work given to a worker thread. **Lane** — one driven script. **Model** —
+the object that knows what kind of thing a list entry is. **Mount** — a
+backend attached at a path prefix. **Pose** — one entry in a view.
+**Seam** — one declaration with one implementation file per host.
+**Services** — the functions an application calls to reach the desktop.
+**Session** — a prompt-aware conversation with a board's shell; also the
+window session protocol. **Sidecar** — the host-side file holding a
+board's UI state. **Tier** — a region of a board's memory, as reported by
+its maps. **Turn** — one iteration of the shell's main loop. **Workspace**
+— the compositor of in-process windows.
 
 # Appendix B — Reading order
 
 For the architecture: this book, then `TikuTracker/spec/ARCHITECTURE.md`
-(what Tracker was, and what the rewrite must reproduce),
-`spec/ARCH-runtime-boundaries.md` (why applications are processes),
-`apps/ARCHITECTURE.md` (manifests, the ABI, the runtime), and
-`apps/examples/README.md`.
+(what Tracker was and what the rewrite reproduces),
+`spec/ARCH-runtime-boundaries.md` (why applications are separate
+processes), `apps/ARCHITECTURE.md` (manifests, the ABI, the runtime),
+and `apps/examples/README.md`.
 
-For a kit: its header preambles, in the order this book's chapters name
-them, and the `doc/` folder where one exists — `message.md`,
+For a kit: its header comments, in the order this book's chapters list
+them, and the `doc/` folder where one exists: `message.md`,
 `namespace.md`, `display-list.md`, `toolkit.md`, `controls.md`,
 `text-input.md`, `sensors.md`.
 
-For a behaviour: its row in `FEATURES.md`, the test that prints that
-row, and the lane that drives it.
+For a behaviour: its row in `FEATURES.md`, the unit test that prints that
+row, and the script that exercises it.
 
-For the port: `PLAN-macos.md`, which is a record of what each milestone
-found rather than a plan any more.
+For the macOS port: `PLAN-macos.md`, which records what each milestone
+found.
 
 # Appendix C — File map
 
@@ -1056,5 +1084,3 @@ system/            run/tiku_run.c  desk/tiku_desk.c
 apps/              edit term ide notes reader image console bench
                    deviceutils calc calculator hex examples samples basichost
 ```
-
-*Ambuj Varshney, and the tree's own comments, September 2026.*
