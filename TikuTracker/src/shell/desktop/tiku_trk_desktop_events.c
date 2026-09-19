@@ -206,53 +206,6 @@ if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
     app->dirty = 1;
     return;
 }
-if (ev->button == 1u && ev->modifiers == 0u) {
-    /* The resize strip: four pixels along the bar's
-     * inner edge, and the drag sets the short axis by
-     * hand (DB-050). */
-    tiku_rect_t bf =
-        tiku_trk_deskbar_frame(app->deskbar);
-    tiku_trk_db_dock_t dk =
-        tiku_trk_deskbar_dock(app->deskbar);
-    int inner_ok = 0;
-
-    if (dk == TIKU_TRK_DB_RIGHT_EXPANDED &&
-        ev->x >= bf.x && ev->x < bf.x + 4) {
-        inner_ok = 1;
-    }
-    if (dk == TIKU_TRK_DB_LEFT_EXPANDED &&
-        ev->x >= bf.x + bf.w - 4 && ev->x < bf.x + bf.w) {
-        inner_ok = 1;
-    }
-    if (inner_ok && ev->y >= bf.y && ev->y < bf.y + bf.h) {
-        app->bar_resize = 1;
-        app->bar_resize_x = ev->x;
-        app->bar_resize_w = tiku_trk_deskbar_width(
-            app->deskbar);
-        return;
-    }
-}
-if (ev->button == 1u &&
-    (ev->modifiers & TIKU_MOD_CMD)) {
-    /* Before anything else -- but ARMED, not decided: a
-     * CMD press that then moves re-docks the bar
-     * (DB-049); one that lets go where it landed is a
-     * chord the rows answer (DB-019/021). */
-    tiku_rect_t bf =
-        tiku_trk_deskbar_frame(app->deskbar);
-
-    if (ev->x >= bf.x &&
-        ev->x < bf.x + bf.w &&
-        ev->y >= bf.y &&
-        ev->y < bf.y + bf.h) {
-        app->dock_armed = 1;
-        app->dock_x = ev->x;
-        app->dock_y = ev->y;
-        app->dock_mods = ev->modifiers;
-        app->dock_button = ev->button;
-        return;
-    }
-}
 {   /* An info window takes its own clicks first. */
     tiku_window_t *iw = tiku_workspace_focused(app->desk);
     int islot = tiku_trk_info_windows_slot(&app->info_windows,
@@ -548,7 +501,6 @@ if (tiku_trk_status_overlay_pointer(&app->status_overlay,
 }
 tiku_window_t *w = NULL;
 tiku_hit_t hit;
-tiku_trk_db_pick_t pick;
 
 /* A menu that is showing eats the next click wherever it
  * lands: choosing an item, or dismissing. */
@@ -748,67 +700,13 @@ if (app->gbar_on == 1 && app->popup == NULL &&
     }
 }
 
-/* The Deskbar and its menu take precedence: it sits above
- * every window, as a corner strip must. */
-if (tiku_trk_deskbar_menu_open(app->deskbar) ||
-    tiku_trk_deskbar_hit(app->deskbar, ev->x,
-                         ev->y)) {
-    int secondary = (ev->button == 3);
-    int dclicks = 1;
+{
+    /* The surfaces that answer for themselves, the Deskbar first among
+     * them: above every window, as a corner strip must be. */
+    tiku_rect_t taken;
 
-    /* The Deskbar's own double-click: same spot, inside
-     * the interval -- and NOT refreshed when it fires,
-     * so a triple click cannot re-trigger (DB-019). */
-    if (ev->button == 1u &&
-        tiku_trk_now() - app->db_click_at < 500000 &&
-        ev->x - app->db_click_x <= 4 &&
-        app->db_click_x - ev->x <= 4 &&
-        ev->y - app->db_click_y <= 4 &&
-        app->db_click_y - ev->y <= 4) {
-        dclicks = 2;
-        app->db_click_at = 0;
-    } else if (ev->button == 1u) {
-        app->db_click_at = tiku_trk_now();
-        app->db_click_x = ev->x;
-        app->db_click_y = ev->y;
-    }
-if (tiku_trk_deskbar_click(app->deskbar, ev->x,
-                               ev->y, ev->modifiers,
-                               (int)ev->button, dclicks,
-                               &pick)) {
-        if (ev->button == 1u && !secondary) {
-            app->deskbar_press = 1;
-            app->press_at = tiku_trk_now();
-            app->press_x = ev->x;
-            app->press_y = ev->y;
-        }
-        if (pick.what == TIKU_TRK_DB_LAUNCH_APP && ev->button == 1u &&
-            !secondary && desktop_app_at(app, pick.path) != NULL) {
-            /* An installed program's row is a thing to pick up as well
-             * as to choose: the press arms a drag of the program, named
-             * as the row is, and the release starts it only if the hand
-             * never moved. */
-            const tiku_trk_app_t *program = desktop_app_at(app, pick.path);
-            char parent[TIKU_PATH_MAX];
-            tiku_model_t pm;
-
-            parent_path(pick.path, parent, sizeof parent);
-            tiku_trk_drag_arm(&app->drag, ev->x, ev->y, ev->button,
-                              0u, 1, NULL, parent);
-            tiku_trk_drag_set_source_virtual(&app->drag, 1);
-            (void)tiku_trk_drag_add_at(&app->drag, pick.path,
-                (app->backend->ops->stat(app->backend, pick.path, &pm) == 0)
-                    ? pm.type : "", ev->x, ev->y, 1);
-            tiku_trk_drag_name_at(&app->drag, 0, program->name);
-            tiku_trk_drag_target_reset(&app->drag_target);
-            snprintf(app->menu_launch, sizeof app->menu_launch, "%s",
-                     pick.path);
-            app->dirty = 1;
-            return;
-        }
-        deskbar_pick_dispatch(app, &pick,
-                              ev->x, ev->y);
-        app->dirty = 1;
+    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
+        desktop_take_damage(app, taken);
         return;
     }
 }
@@ -818,30 +716,7 @@ if (ev->button == 4u || ev->button == 5u) {
      * has always done. */
     tiku_window_t *ww = NULL;
     folder_t *wfl;
-    tiku_rect_t bf =
-        tiku_trk_deskbar_frame(app->deskbar);
 
-    if (ev->x >= bf.x &&
-        ev->x < bf.x + bf.w &&
-        ev->y >= bf.y &&
-        ev->y < bf.y + bf.h) {
-        /* Over the bar: the list scrolls rather than
-         * whatever window happens to be under it
-         * (DB-034). */
-        int wstep = ((ev->modifiers &
-                      (TIKU_MOD_SHIFT |
-                       TIKU_MOD_CMD |
-                       TIKU_MOD_OPTION)) != 0u)
-                        ? 3 : 1;
-
-        /* A modifier scrolls three times as fast, the
-         * wheel and the arrows alike (DB-034). */
-        if (tiku_trk_deskbar_scroll(app->deskbar,
-                (ev->button == 4u) ? -wstep : wstep)) {
-            app->dirty = 1;
-        }
-        return;
-    }
     (void)tiku_workspace_hit(app->desk, ev->x,
                             ev->y, &ww);
     wfl = folder_of(app, ww);
@@ -1677,8 +1552,11 @@ if (app->qdrag_on) {
         (tiku_rect_t){ was_x - 16, was_y - 16, 32, 32 },
         (tiku_rect_t){ ev->x - 16, ev->y - 16, 32, 32 }));
 }
-if (tiku_trk_deskbar_motion(app->deskbar, ev->x, ev->y)) {
-    desktop_damage(app, tiku_trk_deskbar_hover_area(app->deskbar));
+{
+    tiku_rect_t taken;
+
+    (void)tiku_trk_responders_deliver(&app->responders, ev, &taken);
+    desktop_take_damage(app, taken);
 }
 if (app->popup != NULL) {
     /* The hot row follows the pointer, in the level it is
@@ -1700,11 +1578,6 @@ if (app->popup != NULL) {
             ? tiku_rect_union(app->popup_frame, app->popup_sub_frame)
             : app->popup_frame);
     }
-}
-if (app->deskbar_press &&
-    (ev->x - app->press_x > 4 || app->press_x - ev->x > 4 ||
-     ev->y - app->press_y > 4 || app->press_y - ev->y > 4)) {
-    app->deskbar_press = 0;
 }
 if (app->press_down &&
     (ev->x - app->press_x > 4 ||
@@ -1816,46 +1689,6 @@ if (tiku_trk_drag_moved(&app->drag, ev->x, ev->y) ||
     (void)tiku_trk_band_controller_motion(
         &app->band_controller, ev->x, ev->y, bm);
 }
-if (app->bar_resize) {
-    int dw = (tiku_trk_deskbar_dock(app->deskbar) ==
-              TIKU_TRK_DB_RIGHT_EXPANDED)
-                 ? app->bar_resize_x - ev->x
-                 : ev->x - app->bar_resize_x;
-
-    if (tiku_trk_deskbar_set_width(app->deskbar,
-            app->bar_resize_w + dw) > 0) {
-        app->dirty = 1;
-    }
-}
-if (app->dock_armed &&
-    ((ev->x - app->dock_x) * (ev->x - app->dock_x) +
-     (ev->y - app->dock_y) * (ev->y - app->dock_y) >
-     TIKU_TRK_DRAG_SLOP * TIKU_TRK_DRAG_SLOP)) {
-    app->dock_armed = 0;
-    app->dock_drag = 1;
-}
-if (app->dock_drag) {
-    /* Ctrl held on the bar: the pointer IS the picker.
-     * Where it lets go decides the dock, and a release in
-     * the middle keeps the one it started from (DB-049). */
-        tiku_trk_db_dock_t want =
-        tiku_trk_deskbar_dock_at(ev->x, ev->y,
-            app->surf->w, app->surf->h,
-            tiku_trk_deskbar_dock(app->deskbar));
-
-    if (want != tiku_trk_deskbar_dock(app->deskbar)) {
-        tiku_trk_deskbar_set_dock(app->deskbar, want);
-        app->dirty = 1;
-    }
-}
-if (tiku_trk_deskbar_pointer(app->deskbar, ev->x,
-                             ev->y)) {
-    /* The one input the bar never had.  Auto-hide and
-     * auto-raise are both answers to "where is the
-     * pointer", and neither could be asked (DB-051,
-     * DB-052). */
-    app->dirty = 1;
-}
 if (tiku_workspace_tracking(app->desk)) {
     tiku_window_t *moving = tiku_workspace_moving(app->desk);
     tiku_rect_t before = moving ? moving->frame : (tiku_rect_t){0};
@@ -1879,23 +1712,16 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
 if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
-if (app->menu_launch[0] != '\0') {
-    if (!tiku_trk_drag_active(&app->drag)) {
-        /* Let go where it was pressed: the row was chosen, so the
-         * program starts, and the drag that was only armed is dropped. */
-        tiku_trk_db_pick_t pick;
+{
+    /* The surfaces that answer for themselves; a release a surface took
+     * (a program's row let go where it was pressed) is over. */
+    tiku_rect_t taken;
 
-        memset(&pick, 0, sizeof pick);
-        pick.what = TIKU_TRK_DB_LAUNCH_APP;
-        snprintf(pick.path, sizeof pick.path, "%s", app->menu_launch);
-        app->menu_launch[0] = '\0';
-        tiku_trk_drag_reset(&app->drag);
-        app->deskbar_press = 0;
-        deskbar_pick_dispatch(app, &pick, ev->x, ev->y);
-        app->dirty = 1;
+    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
+        desktop_take_damage(app, taken);
         return;
     }
-    app->menu_launch[0] = '\0';     /* carried off: the drop lands it */
+    desktop_take_damage(app, taken);
 }
 if (tiku_trk_status_overlay_pointer_up(&app->status_overlay,
                                        ev->x, ev->y)) {
@@ -2011,27 +1837,6 @@ if (tiku_trk_titleview_tracking(&app->tstrip) !=
     return;
 }
 
-app->dock_drag = 0;
-app->bar_resize = 0;
-if (app->dock_armed) {
-    /* The press never moved: it was the chord after all
-     * (DB-019/020/021). */
-    tiku_trk_db_pick_t hpick;
-
-    app->dock_armed = 0;
-    if (tiku_trk_deskbar_click(app->deskbar, app->dock_x,
-                               app->dock_y, app->dock_mods,
-                               (int)app->dock_button, 1,
-                               &hpick)) {
-        deskbar_pick_dispatch(app, &hpick, app->dock_x,
-                              app->dock_y);
-        app->dirty = 1;
-    }
-}
-app->deskbar_press = 0;
-if (tiku_trk_deskbar_release(app->deskbar, ev->x, ev->y)) {
-    app->dirty = 1;
-}
 (void)tiku_trk_band_controller_finish(&app->band_controller);
 if (dropped && app->spring_nav_on) {
     /* Choosing a spring entry IS the drop (PVS-051): the
@@ -2223,13 +2028,13 @@ unsigned mods = 0;
 
 if (ev->modifiers & TIKU_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
 if (ev->modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
-if (key == TIKU_KEY_ESCAPE &&
-    tiku_trk_deskbar_calendar_open(app->deskbar)) {
-    /* Escape is a focus-loss equivalent for the small clock
-     * popups; it must not close a folder or edit behind it. */
-    tiku_trk_deskbar_close_calendar(app->deskbar);
-    app->dirty = 1;
-    return;
+{
+    tiku_rect_t taken;
+
+    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
+        desktop_take_damage(app, taken);
+        return;
+    }
 }
 /* Get Info owns its rename editor and window shortcuts. */
 if (tiku_trk_info_windows_key(&app->info_windows, key,
@@ -2737,19 +2542,6 @@ if (key == 'n' && (ev->modifiers & TIKU_MOD_CMD) &&
     app->dirty = 1;
     return;
 }
-if (key == TIKU_KEY_MENU && (ev->modifiers &
-        (TIKU_MOD_CMD | TIKU_MOD_SHIFT | TIKU_MOD_OPTION)) == 0) {
-    /* The Menu key alone opens the leaf menu -- the one
-     * gesture that reaches the Deskbar without the
-     * pointer (DB-011). */
-    if (tiku_trk_deskbar_menu_open(app->deskbar)) {
-        tiku_trk_deskbar_close_menu(app->deskbar);
-    } else {
-        tiku_trk_deskbar_open_menu(app->deskbar);
-    }
-    app->dirty = 1;
-    return;
-}
 if (key == 's' && (ev->modifiers & TIKU_MOD_CMD) &&
     fl != NULL) {
     /* PVK-046: invert -- the only way to say "everything
@@ -3013,8 +2805,13 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         (void)tiku_window_send(desktop_deviceprefs_handle(app), &deactivate);
     }
     desktop_spring_tick(app);
-    if (tiku_trk_deskbar_menu_tick(app->deskbar, tiku_trk_now()))
-        app->dirty = 1;
+    {
+        tiku_rect_t ticked;
+
+        (void)tiku_trk_responders_tick(&app->responders, tiku_trk_now(),
+                                       &ticked);
+        desktop_take_damage(app, ticked);
+    }
     desktop_idle_work(app);
     desktop_press_hold(app);
     desktop_rename_pulse(app);

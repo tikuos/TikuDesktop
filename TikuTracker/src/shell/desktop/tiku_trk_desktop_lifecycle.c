@@ -448,6 +448,8 @@ boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     app->row_h = tiku_font_plain()->height + 5;
     app->desk = tiku_workspace_new(app->surf);
     app->deskbar = tiku_trk_deskbar_new(app->backend);
+    tiku_trk_responders_init(&app->responders);
+    desktop_bar_attach(app);
     app->team = tiku_trk_deskbar_add_team(app->deskbar, "TikuTracker");
     splash_stage(app, "the Deskbar");
     /* The machine's own processes are not this desktop's business: what

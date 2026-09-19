@@ -1,6 +1,6 @@
 # Responders: one interface for every surface on the desk
 
-*2026-09-19.  A plan, not yet built.*
+*2026-09-19.  R0 and R1 built the same day; the rest not yet.*
 
 ## 1. What is wrong today
 
@@ -97,7 +97,7 @@ typedef struct tiku_trk_shell_services {
 
 ## 4. The milestones, in the order they pay back
 
-### R0: the interface and the damage union
+### R0: the interface and the damage union  (DONE 2026-09-19)
 
 - Add `tiku_trk_responder.h` in `TikuTracker/src/ui/` with the two
   structs above and a `tiku_trk_responders_t` list with `push`,
@@ -109,7 +109,7 @@ typedef struct tiku_trk_shell_services {
   `test_responders` drives two fake responders through hit order,
   capture and the returned damage.
 
-### R1: the Deskbar
+### R1: the Deskbar  (DONE 2026-09-19)
 
 - `tiku_trk_deskbar_click`, `_motion`, `_release`, `_pointer` and the
   menu tick move behind a responder in `tiku_trk_desktop_deskbar.c`.
@@ -230,3 +230,42 @@ typedef struct tiku_trk_shell_services {
   dozen lanes fail spuriously under load and will look like a
   milestone's regression.  Compare against a worktree at the previous
   commit before believing one.
+
+## 7. What R0 settled
+
+- A handler returns two things, not one: whether it took the event and
+  what it changed.  The plan's sketch returned the damage alone, which
+  cannot say "not mine"; with both paths live, "not mine" is what lets
+  the old chain run.  The signature is
+  `int (*press)(void *self, const tiku_event_t *ev, tiku_rect_t *damage)`.
+- A damage is a rectangle; "everything" is a rectangle with a negative
+  width, so it cannot be returned by accident, and the union swallows
+  anything into it.  `desktop_take_damage` turns it into the frame
+  request the loop already understands.
+- A tick is part of the interface.  The bar's long press and its
+  submenu dwell are timed, and a surface with no tick would need the
+  loop to know its clocks.
+- A press asks only the surfaces whose `hit` says yes, top down; a move
+  and a release ask the capture holder first and then everyone, since a
+  hover and an auto-hide edge belong to surfaces the pointer is not
+  over.  A key asks everyone top down.
+
+## 8. What R1 settled
+
+- The Deskbar keeps its own state in `desktop_bar_t`: the double-click
+  memory, the armed CMD press, the resize of the bar, the held primary
+  button and the program's row waiting for its release.  Nine fields
+  left `desktop_t`, and `desktop_press_hold` no longer knows the bar.
+- The responder is asked at the point in the old chain where the bar's
+  block stood, after a popup menu and the global bar have had their
+  say.  Two presses that the old chain answered before anything else, the
+  resize strip and the CMD press, now come after a popup: with a popup
+  open, either closes the popup instead of starting on the bar, which
+  is the better answer and no lane depended on the other.
+- The bar's move is never "taken", so the rest of the desk hears every
+  move, as it did; the bar's auto-hide now also answers during a
+  scrollbar drag, which the old chain returned from before reaching it.
+- The lanes never had to change: 21 Deskbar lanes and the whole suite
+  hold, and `test_frames` attaches the bar to a bare desktop's list the
+  way the lifecycle does.
+

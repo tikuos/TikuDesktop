@@ -1242,20 +1242,8 @@ void
 desktop_press_hold(desktop_t *app)
 {
     /* PVS-017: a button held still for the click interval opens the
-     * context menu without waiting for the release. */
-    if (app->deskbar_press &&
-        tiku_trk_now() - app->press_at > 2 * TIKU_TRK_CLICK_SPEED_US) {
-        tiku_trk_db_pick_t dbpick;
-
-        /* A still primary press is the Deskbar's long-press equivalent
-         * of a secondary click.  It replaces the calendar with clock
-         * options without waiting for release. */
-        tiku_trk_deskbar_close_calendar(app->deskbar);
-        (void)tiku_trk_deskbar_click(app->deskbar, app->press_x,
-                                     app->press_y, 0u, 3, 1, &dbpick);
-        app->deskbar_press = 0;
-        app->dirty = 1;
-    }
+     * context menu without waiting for the release.  The Deskbar's own
+     * long press is its responder's tick. */
     if (app->press_down && !app->press_menu && app->popup == NULL &&
         app->press_fl != NULL &&
         tiku_trk_now() - app->press_at > TIKU_TRK_CLICK_SPEED_US) {

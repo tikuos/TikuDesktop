@@ -36,6 +36,7 @@
 #include "tiku_trk_application.h"
 #include "tiku_trk_clip.h"
 #include "tiku_trk_drag.h"
+#include "tiku_trk_responder.h"
 #include "tiku_trk_nodeicon.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_info.h"
@@ -157,6 +158,30 @@ typedef struct {
     int              tracking;  /* a slider's knob is in hand   */
     int              quiet;     /* no bound place answered      */
 } tiku_trk_described_t;
+
+/**
+ * @brief What the Deskbar responder keeps between events: its own
+ *        double-click memory (DB-019), a CMD press still ambiguous
+ *        between a re-dock and a chord (DB-049, DB-021), a resize of
+ *        the bar (DB-050), a primary press held for the long press, and
+ *        a program's row waiting for its release.
+ */
+typedef struct {
+    int64_t  click_at;              /* the last click, in us          */
+    int      click_x, click_y;
+    int      dock_armed;            /* a CMD press is down            */
+    int      dock_x, dock_y;
+    unsigned dock_mods;             /* the press's modifiers          */
+    unsigned dock_button;           /* and its button                 */
+    int      dock_drag;             /* the CMD press moved: re-docking */
+    int      resize;                /* a resize drag is under way     */
+    int      resize_x;              /* where it began                 */
+    int      resize_w;              /* the bar's width then           */
+    int      held;                  /* a primary button is down still */
+    int64_t  press_at;              /* since when, in us              */
+    int      press_x, press_y;
+    char     launch[TIKU_PATH_MAX]; /* a program's row under the hand */
+} desktop_bar_t;
 
 typedef struct desktop {
     tiku_host_t    *host;           /* the display, or NULL when headless */
@@ -423,23 +448,10 @@ typedef struct desktop {
     /* The Find icon in flight (Q-034): dragged, and where it landed. */
     int                  qdrag_on;      /* the drag is under way        */
     char                 qdrop_dest[TIKU_PATH_MAX];  /* the folder hit  */
-    /* The Deskbar's own double-click memory (DB-019). */
-    int64_t              db_click_at;   /* the last click, in us        */
-    int                  db_click_x, db_click_y;
     int                  cursor_kind;   /* TIKU_CURSOR_*, as last asked   */
     /* A menu fades in: which popup was seen last, and since when. */
     const tiku_menu_t *popup_seen, *popup_sub_seen;
     int64_t              popup_since, popup_sub_since;
-    /* A CMD press on the bar, still ambiguous: moved it re-docks, held
-     * still it is a chord the rows answer (DB-049 vs DB-021). */
-    int                  dock_armed;    /* such a press is down         */
-    int                  dock_x, dock_y;
-    unsigned             dock_mods;     /* the press's modifiers        */
-    unsigned             dock_button;   /* and its button               */
-    /* The resize strip along the bar's inner edge (DB-050). */
-    int                  bar_resize;    /* a resize drag is under way   */
-    int                  bar_resize_x;  /* where it began               */
-    int                  bar_resize_w;  /* the bar's width then         */
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth
@@ -559,14 +571,13 @@ typedef struct desktop {
     folder_t            *popup_fl;
     tiku_window_t  *press_window; /* deferred content raise (PVS-022) */
     tiku_window_t  *press_focus;  /* who was in front when it began   */
-    int                  dock_drag;     /* Ctrl-dragging the Deskbar     */
     folder_t            *press_fl;      /* the folder the press is in   */
     int                  press_menu;    /* the long press already fired    */
-    int                  deskbar_press; /* primary hold over the clock     */
-    /* An application row of the leaf menu under a held button: started
-     * when the button comes up where it went down, carried as a drag
-     * when the hand moves first. */
-    char                 menu_launch[TIKU_PATH_MAX];
+    /* The surfaces that answer for themselves, in z-order, and the
+     * Deskbar's own state as the first of them. */
+    tiku_trk_responders_t responders;
+    tiku_trk_responder_t  bar_responder;  /* the Deskbar's entry        */
+    desktop_bar_t         bar;            /* and what it keeps         */
 } desktop_t;
 
 static folder_t *folder_of(desktop_t *app, tiku_window_t *w);
@@ -770,6 +781,10 @@ int deskbar_menu_icon(void *context, tiku_surface_t *s,
                       const tiku_trk_db_item_t *item, int x, int y, int size);
 int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,
                     int dimmed);
+/** @brief Put the Deskbar on the responder list with a fresh state. */
+void desktop_bar_attach(desktop_t *app);
+/** @brief Ask for a frame of what a responder said it changed. */
+void desktop_take_damage(desktop_t *app, tiku_rect_t damage);
 void deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x,
                            int y);
 void open_preferences(void *context);

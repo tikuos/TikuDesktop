@@ -120,6 +120,7 @@ TRACKER_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(T)/src/shell/tiku_trk_script_api.c \
                $(T)/src/deskbar/tiku_trk_deskicons.c \
                $(T)/src/ui/tiku_trk_titleview.c \
+               $(T)/src/ui/tiku_trk_responder.c \
                $(T)/src/ui/tiku_trk_navigator.c \
                $(T)/src/ui/tiku_trk_shortcuts.c \
                $(T)/src/ui/tiku_trk_cwmenu.c \
@@ -134,6 +135,7 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_apps.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_draw.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_deskbar.c \
+                 $(T)/src/shell/desktop/tiku_trk_desktop_bar.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_commands.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_panels.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_globalbar.c \
@@ -168,6 +170,7 @@ DESKTOP_SRC := $(COMMON) $(T)/src/shell/tiku_trk_addon.c \
                $(T)/src/deskbar/tiku_trk_deskicons.c \
                $(T)/src/core/tiku_trk_select.c \
                $(T)/src/ui/tiku_trk_titleview.c \
+               $(T)/src/ui/tiku_trk_responder.c \
                $(DESKBAR) \
                $(DESKTOP_CONTROLLERS) \
                $(T)/src/ui/tiku_trk_shortcuts.c \
@@ -247,6 +250,7 @@ test_task_SRCS   := $(T)/src/core/tiku_trk_task.c
 test_repaint_SRCS   := $(T)/src/core/tiku_trk_repaint.c
 test_drop_protocol_SRCS   := $(T)/src/core/tiku_trk_drop_protocol.c
 test_springmenu_SRCS   := $(T)/src/ui/tiku_trk_springmenu.c
+test_responders_SRCS   := $(T)/src/ui/tiku_trk_responder.c
 test_color_SRCS   := $(T)/src/core/tiku_trk_color.c
 test_addon_SRCS   := $(T)/src/shell/tiku_trk_addon.c
 test_state_pipeline_SRCS   := $(T)/src/core/tiku_trk_state_pipeline.c
