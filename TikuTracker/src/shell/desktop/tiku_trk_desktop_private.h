@@ -578,6 +578,11 @@ typedef struct desktop {
     tiku_trk_responders_t responders;
     tiku_trk_responder_t  bar_responder;  /* the Deskbar's entry        */
     desktop_bar_t         bar;            /* and what it keeps         */
+    tiku_trk_responder_t  info_hover_responder; /* the field pop-up    */
+    tiku_trk_responder_t  spring_responder;     /* the spring navigator */
+    tiku_trk_responder_t  popup_responder;      /* the popup menus     */
+    tiku_trk_responder_t  status_responder;     /* alert and progress  */
+    tiku_trk_responder_t  forcequit_responder;  /* the picker          */
 } desktop_t;
 
 static folder_t *folder_of(desktop_t *app, tiku_window_t *w);
@@ -783,6 +788,8 @@ int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,
                     int dimmed);
 /** @brief Put the Deskbar on the responder list with a fresh state. */
 void desktop_bar_attach(desktop_t *app);
+/** @brief Fill the responder list with every surface, bottom first. */
+void desktop_responders_attach(desktop_t *app);
 /** @brief Ask for a frame of what a responder said it changed. */
 void desktop_take_damage(desktop_t *app, tiku_rect_t damage);
 void deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x,
@@ -895,6 +902,7 @@ tiku_window_t *desktop_forcequit_handle(desktop_t *app);
 void desktop_forcequit_close(desktop_t *app);
 void desktop_forcequit_destroy(desktop_t *app);
 int desktop_forcequit_input(desktop_t *app, const tiku_event_t *ev);
+int desktop_forcequit_picking(desktop_t *app);
 void desktop_forcequit_overlay(desktop_t *app);
 tiku_window_t *desktop_deviceprefs_handle(desktop_t *app);
 void desktop_deviceprefs_close(desktop_t *app);

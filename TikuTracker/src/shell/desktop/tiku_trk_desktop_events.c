@@ -193,7 +193,17 @@ tab_box_release(desktop_t *app, const tiku_event_t *ev)
 void
 desktop_pointer_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
-if (desktop_forcequit_input(app, ev)) return;
+{
+    /* The surfaces that answer for themselves, top down: the picker, the
+     * alert, a menu that is showing, the Deskbar. */
+    tiku_rect_t taken;
+
+    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
+        desktop_take_damage(app, taken);
+        return;
+    }
+    desktop_take_damage(app, taken);
+}
 if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
     tiku_window_t *pw = desktop_deviceprefs_handle(app);
     tiku_event_t pe = *ev;
@@ -495,176 +505,8 @@ if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
         }
     }
 }
-if (tiku_trk_status_overlay_pointer(&app->status_overlay,
-                                    ev->x, ev->y)) {
-    return;
-}
 tiku_window_t *w = NULL;
 tiku_hit_t hit;
-
-/* A menu that is showing eats the next click wherever it
- * lands: choosing an item, or dismissing. */
-if (app->nav_on && app->popup != NULL) {
-    /* A click inside a level chooses: a folder walks in,
-     * and anything else is not choosable, so the click is
-     * simply consumed (CW-056). */
-    const tiku_font_t *nf = tiku_font_plain();
-    int px2 = app->popup_frame.x + app->popup_frame.w - 4;
-    int py2 = app->popup_frame.y + 4;
-    int k, took = 0;
-
-    (void)nf;
-    for (k = 0; k < app->nav.depth && !took; k++) {
-        tiku_rect_t r;
-        int at;
-
-        tiku_trk_nav_place(&app->nav, k, px2, py2,
-                           app->surf->w, app->surf->h,
-                           &r.x, &r.y, &r.w, &r.h);
-        at = tiku_trk_nav_item_at(&app->nav, k, r.x, r.y,
-                                  ev->x,
-                                  ev->y);
-        if (at >= 0) {
-            /* Levels deeper than the one clicked go: the
-             * walk follows the pointer rather than
-             * accumulating every branch visited. */
-            while (app->nav.depth > k + 1) {
-                (void)tiku_trk_nav_leave(&app->nav);
-            }
-            app->nav.level[k].sel = at;
-            if (app->nav.level[k].item[at].is_container) {
-                (void)tiku_trk_nav_enter(&app->nav, at);
-            }
-            took = 1;
-        }
-        px2 = r.x + r.w - 4;
-        py2 = r.y + 2 +
-              ((app->nav.level[k].sel >= 0)
-                   ? app->nav.level[k].sel : 0) *
-              TIKU_TRK_NAV_ROW;
-    }
-    if (took) {
-        app->dirty = 1;
-        return;
-    }
-}
-if (app->popup != NULL) {
-    tiku_window_t *fw = tiku_workspace_focused(app->desk);
-    folder_t *ffl = (app->bar_fl != NULL) ? app->bar_fl
-                  : (app->popup_fl != NULL) ? app->popup_fl
-                                           : folder_of(app, fw);
-    int pick = -1;
-
-    if (app->popup_sub != NULL) {
-        pick = tiku_menu_item_at(app->popup_sub,
-                                     app->popup_sub_frame,
-                                     ev->x,
-                                     ev->y);
-        /*
-         * Enabled, like the parent menu below and like
-         * the other shell: a disabled row is drawn grey
-         * and refuses to light under the pointer, and
-         * this branch alone still ran it.  Mount's rows
-         * are built with enabled = NOT mounted, so
-         * clicking a greyed partition mounted it again.
-         *
-         * pick stays set on purpose: the click is then
-         * swallowed by the dismissal below rather than
-         * being offered to the parent menu underneath.
-         */
-        if (pick >= 0 && app->popup_sub->item[pick].enabled) {
-            if (app->popup_path[0] != '\0') {
-                (void)tiku_trk_folder_file_actions_invoke_path(
-                    &app->file_actions, app->popup_path,
-                    app->popup_sub->item[pick].command);
-                app->dirty = 1;
-            } else {
-                global_or_invoke(app, ffl,
-                    app->popup_sub->item[pick].command);
-            }
-        }
-    }
-    if (pick < 0) {
-        pick = tiku_menu_item_at(app->popup,
-                                     app->popup_frame,
-                                     ev->x,
-                                     ev->y);
-        if (pick >= 0 && app->popup->item[pick].enabled) {
-            if (app->popup->item[pick].submenu != NULL) {
-                /* Opening a submenu is not a choice; the
-                 * menu stays up. */
-                app->popup_sub = app->popup->item[pick].submenu;
-                app->popup_sub_frame =
-                    tiku_menu_place_sub(app->popup, pick,
-                        app->popup_frame,
-                        (tiku_rect_t){ 0, 0,
-                            app->surf->w, app->surf->h });
-                app->dirty = 1;
-                return;
-            }
-            if (app->popup_path[0] != '\0') {
-                int pc = app->popup->item[pick].command;
-                int islot = -1;
-                {
-                    int fi;
-
-                    for (fi = 0;
-                         fi < TIKU_TRK_INFO_WINDOW_MAX;
-                         fi++) {
-                        tiku_trk_info_t *im =
-                            &app->info_windows.model[fi];
-
-                        if (im->used &&
-                            strcmp(im->path,
-                                   app->popup_path) == 0) {
-                            islot = fi;
-                            break;
-                        }
-                    }
-                }
-
-                if (pc == TIKU_TRK_CMD_RECALC_SIZE &&
-                    islot >= 0) {
-                    tiku_trk_info_calc_start(
-                        &app->info_windows.model[islot]);
-                } else if (pc ==
-                               TIKU_TRK_CMD_SET_LINK_TARGET
-                           && islot >= 0) {
-                    /* The same picker AW-074's broken-
-                     * link flow raises. */
-                    folder_t *ffl2 = folder_of(app,
-                        tiku_workspace_focused(
-                            app->desk));
-
-                    app->info_relink = islot;
-                    fpanel_open(app,
-                        (ffl2 != NULL) ? ffl2
-                                       : &app->folders[0],
-                        TIKU_TRK_CMD_GET_INFO);
-                } else {
-                    (void)tiku_trk_folder_file_actions_invoke_path(
-                        &app->file_actions, app->popup_path,
-                        pc);
-                }
-                app->dirty = 1;
-            } else {
-                global_or_invoke(app, ffl,
-                    app->popup->item[pick].command);
-            }
-        }
-    }
-    app->popup_path[0] = '\0';
-    app->popup_fl = NULL;
-    app->popup = NULL;
-    app->popup_sub = NULL;
-    app->bar_fl = NULL;
-    app->bar_open = -1;
-    app->gbar_open = -1;
-    app->gbar.open = -1;
-    app->menus.bar.open = -1;
-    app->dirty = 1;
-    return;
-}
 
 if (app->gbar_on == 1 && app->popup == NULL &&
     ev->y < app->menus.bar.height && ev->button == 1u &&
@@ -700,16 +542,6 @@ if (app->gbar_on == 1 && app->popup == NULL &&
     }
 }
 
-{
-    /* The surfaces that answer for themselves, the Deskbar first among
-     * them: above every window, as a corner strip must be. */
-    tiku_rect_t taken;
-
-    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
-        desktop_take_damage(app, taken);
-        return;
-    }
-}
 if (ev->button == 4u || ev->button == 5u) {
     /* The wheel.  In an icon mode it moves the pixel
      * origin; in a list it steps rows, which is what it
@@ -1446,15 +1278,21 @@ info_hover_damage(desktop_t *app, int slot)
 void
 desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
-if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
 int was_x = app->ptr_x, was_y = app->ptr_y;
 app->ptr_x = ev->x;
 app->ptr_y = ev->y;
 pointer_says(app, ev->x, ev->y);
-if (tiku_trk_status_overlay_pointer_move(&app->status_overlay,
-                                         ev->x, ev->y)) {
-    return;
+{
+    /* The surfaces that answer for themselves, top down: the picker, the
+     * alert, a menu that is showing, the Deskbar. */
+    tiku_rect_t taken;
+
+    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
+        desktop_take_damage(app, taken);
+        return;
+    }
+    desktop_take_damage(app, taken);
 }
 if (tab_box_move(app, ev)) return;
 if (app->prefs_track != NULL && app->prefs_track->open) {
@@ -1552,33 +1390,6 @@ if (app->qdrag_on) {
         (tiku_rect_t){ was_x - 16, was_y - 16, 32, 32 },
         (tiku_rect_t){ ev->x - 16, ev->y - 16, 32, 32 }));
 }
-{
-    tiku_rect_t taken;
-
-    (void)tiku_trk_responders_deliver(&app->responders, ev, &taken);
-    desktop_take_damage(app, taken);
-}
-if (app->popup != NULL) {
-    /* The hot row follows the pointer, in the level it is
-     * over: without this a menu gives no sign of which
-     * item a pick would take. */
-    int menu_moved = 0;
-
-    menu_moved |= tiku_menu_track(app->popup,
-                                      app->popup_frame,
-                                      ev->x, ev->y);
-    if (app->popup_sub != NULL) {
-        menu_moved |= tiku_menu_track(app->popup_sub,
-                                          app->popup_sub_frame,
-                                          ev->x, ev->y);
-    }
-    if (menu_moved) {
-        /* The hot row moved inside the menu's own frame. */
-        desktop_damage(app, app->popup_sub != NULL
-            ? tiku_rect_union(app->popup_frame, app->popup_sub_frame)
-            : app->popup_frame);
-    }
-}
 if (app->press_down &&
     (ev->x - app->press_x > 4 ||
      app->press_x - ev->x > 4 ||
@@ -1620,9 +1431,6 @@ if (tiku_trk_titleview_tracking(&app->tstrip) !=
 }
 if (tiku_trk_drag_moved(&app->drag, ev->x, ev->y) ||
     tiku_trk_drag_active(&app->drag)) {
-    if (app->spring_nav_on) {
-        spring_nav_track(app, ev->x, ev->y);
-    }
     (void)tiku_trk_drag_target_motion(&app->drag_target,
                                       ev->x, ev->y,
                                       tiku_trk_now());
@@ -1644,37 +1452,6 @@ if (tiku_trk_drag_moved(&app->drag, ev->x, ev->y) ||
         info_hover_damage(app, app->info_windows.drop_hot);
         app->info_windows.drop_hot = hot;
         info_hover_damage(app, hot);
-    }
-}
-{
-    /* The pointer resting on a truncated Info field opens
-     * the expanding pop-up; leaving takes it away
-     * (AW-073). */
-    tiku_window_t *hw = NULL;
-    int hslot = -1, hfield = -1, hwhich = -1;
-
-    if (!tiku_trk_drag_active(&app->drag)) {
-        (void)tiku_workspace_hit(app->desk, ev->x, ev->y,
-                                      &hw);
-        hslot = tiku_trk_info_windows_slot(
-            &app->info_windows, hw);
-        if (hslot >= 0 &&
-            hw == tiku_workspace_focused(app->desk) &&
-            tiku_trk_info_windows_hit(&app->info_windows,
-                hslot, ev->x, ev->y, &hwhich) ==
-                TIKU_TRK_INFO_HIT_FIELD) {
-            hfield = hwhich;
-        } else {
-            hslot = -1;
-        }
-    }
-    if (hslot != app->info_windows.hover_slot ||
-        hfield != app->info_windows.hover_field) {
-        /* The field's pop-up floats past the window's frame, so a
-         * frame-bounded repaint would leave it, or its trace, behind. */
-        app->info_windows.hover_slot = hslot;
-        app->info_windows.hover_field = hfield;
-        app->dirty = 1;
     }
 }
 {
@@ -1710,11 +1487,10 @@ if (tiku_workspace_tracking(app->desk)) {
 void
 desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
-if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
 {
-    /* The surfaces that answer for themselves; a release a surface took
-     * (a program's row let go where it was pressed) is over. */
+    /* The surfaces that answer for themselves, top down: the picker, the
+     * alert, a menu that is showing, the Deskbar. */
     tiku_rect_t taken;
 
     if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
@@ -1722,11 +1498,6 @@ if (desktop_forcequit_input(app, ev)) return;
         return;
     }
     desktop_take_damage(app, taken);
-}
-if (tiku_trk_status_overlay_pointer_up(&app->status_overlay,
-                                       ev->x, ev->y)) {
-    app->dirty = 1;
-    return;
 }
 if (tab_box_release(app, ev)) return;
 int dropped = tiku_trk_drag_active(&app->drag);
@@ -1925,8 +1696,6 @@ if (app->sbar_fl != NULL) {
 tiku_trk_drag_reset(&app->drag);
 tiku_trk_drag_target_reset(&app->drag_target);
 app->info_windows.drop_hot = -1;
-app->info_windows.hover_slot = -1;
-app->info_windows.hover_field = -1;
 /* A release ends whatever the press began -- a drag with a
  * picture under the pointer, a band, a drop that raised an
  * alert.  All of it is on the screen until a frame says
@@ -1956,18 +1725,18 @@ if (app->resize_track != NULL) {
 void
 desktop_key_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
-    if (desktop_forcequit_input(app, ev)) {
-        /* The rescue shortcut must not leave an old menu intercepting
-         * clicks in the newly raised dialog. */
-        tiku_trk_deskbar_close_menu(app->deskbar);
-        app->popup = app->popup_sub = NULL;
-        app->popup_fl = app->bar_fl = NULL;
-        app->popup_path[0] = 0; app->nav_on = 0;
-        app->bar_open = app->gbar_open = -1;
-        app->gbar.open = app->menus.bar.open = -1;
+    (void)lp;
+{
+    /* The surfaces that answer for themselves, top down: the picker, the
+     * alert, a menu that is showing, the Deskbar. */
+    tiku_rect_t taken;
+
+    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
+        desktop_take_damage(app, taken);
         return;
     }
-    (void)lp;
+    desktop_take_damage(app, taken);
+}
     /* The down edge alone: this function is reached on both, and its own
      * key-up guard is further down, so an unguarded F1 opened the page
      * twice and left the reader a step of back history to nowhere. */
@@ -1979,44 +1748,6 @@ desktop_key_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
             topic ? topic : "index.html");
         app->dirty = 1; return;
     }
-/* A menu that is open rewrites itself as modifiers move:
- * nine of its items change label AND command together while
- * Shift is held.  The table already knows how; this is the
- * edge that tells it to.  Handled on BOTH key edges, since
- * releasing Shift has to put the labels back. */
-if (app->popup != NULL) {
-    unsigned mk = ev->key;
-
-    if (mk == TIKU_KEY_SHIFT ||
-        mk == TIKU_KEY_CMD) {
-        tiku_window_t *fw = tiku_workspace_focused(app->desk);
-        folder_t *ffl = folder_of(app, fw);
-        unsigned m2 = 0;
-        tiku_trk_sc_ctx_t c2;
-
-        /* TIKU_EVENT_KEY_UP reports the state BEFORE the release,
-         * so the bit has to be taken out by hand or the menu
-         * stays in its shifted face. */
-        if (ev->modifiers & TIKU_MOD_SHIFT) {
-            m2 |= TIKU_TRK_MOD_SHIFT;
-        }
-        if (ev->type == TIKU_EVENT_KEY_UP &&
-            mk == TIKU_KEY_SHIFT) {
-            m2 &= ~(unsigned)TIKU_TRK_MOD_SHIFT;
-        }
-        if (ev->type == TIKU_EVENT_KEY_DOWN &&
-            mk == TIKU_KEY_SHIFT) {
-            m2 |= TIKU_TRK_MOD_SHIFT;
-        }
-        c2 = menu_ctx(app, ffl, m2);
-        tiku_trk_sc_update(app->popup, &c2);
-        if (app->popup_sub != NULL) {
-            tiku_trk_sc_update(app->popup_sub, &c2);
-        }
-        app->dirty = 1;
-    }
-    return;
-}
 if (ev->type == TIKU_EVENT_KEY_UP) {
     return;
 }
@@ -2028,14 +1759,6 @@ unsigned mods = 0;
 
 if (ev->modifiers & TIKU_MOD_SHIFT)   { mods |= TIKU_TRK_MOD_SHIFT; }
 if (ev->modifiers & TIKU_MOD_CMD) { mods |= TIKU_TRK_MOD_CMD; }
-{
-    tiku_rect_t taken;
-
-    if (tiku_trk_responders_deliver(&app->responders, ev, &taken)) {
-        desktop_take_damage(app, taken);
-        return;
-    }
-}
 /* Get Info owns its rename editor and window shortcuts. */
 if (tiku_trk_info_windows_key(&app->info_windows, key,
                               ev->modifiers,
@@ -2454,9 +2177,6 @@ if ((ev->modifiers & TIKU_MOD_CMD) && fl != NULL &&
     tiku_trk_poseview_cleanup(fl->view,
                               tiku_trk_folder_window_content(fl).w);
     app->dirty = 1;
-    return;
-}
-if (tiku_trk_status_overlay_key(&app->status_overlay, key)) {
     return;
 }
 {

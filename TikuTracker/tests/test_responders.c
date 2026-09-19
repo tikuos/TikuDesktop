@@ -79,14 +79,20 @@ int main(void)
     assert(tiku_trk_responders_deliver(&list, &ev, &d) == 0);
     assert(over.moves == 1 && under.moves == 1);
     assert(d.x == 0 && d.y == 0 && d.w == 65 && d.h == 65);
-    /* A press while captured goes to the holder even off its box. */
+    /* A press while captured goes to the holder while it still claims
+     * the point; off its box the release was lost, so the capture ends
+     * and the press goes where it falls. */
+    ev = at(TIKU_EVENT_POINTER_DOWN, 100, 100);
+    assert(tiku_trk_responders_deliver(&list, &ev, &d) == 1);
+    assert(over.presses == 2 && under.presses == 0 && list.capture == &b);
     ev = at(TIKU_EVENT_POINTER_DOWN, 5, 5);
     assert(tiku_trk_responders_deliver(&list, &ev, &d) == 1);
-    assert(over.presses == 2 && under.presses == 0);
+    assert(over.presses == 2 && under.presses == 1 && list.capture == &a);
     /* The release ends the capture. */
     ev = at(TIKU_EVENT_POINTER_UP, 5, 5);
     assert(tiku_trk_responders_deliver(&list, &ev, &d) == 1);
-    assert(over.releases == 1 && list.capture == NULL);
+    assert(under.releases == 1 && list.capture == NULL);
+    under.presses = 0;
 
     /* A press the top one refuses falls to the one under it. */
     over.refuse = 1;

@@ -1,6 +1,6 @@
 # Responders: one interface for every surface on the desk
 
-*2026-09-19.  R0 and R1 built the same day; the rest not yet.*
+*2026-09-19.  R0 to R2 built the same day; the rest not yet.*
 
 ## 1. What is wrong today
 
@@ -122,7 +122,7 @@ typedef struct tiku_trk_shell_services {
   shutdownask, applink, applaunch, deskbarfont, and the hover
   assertion in `test_frames`.
 
-### R2: popups and overlays
+### R2: popups and overlays  (DONE 2026-09-19)
 
 - Popup menus, submenus, the spring-loaded navigator, the status
   overlay, the force-quit overlay and the Info window's hover pop-up
@@ -268,4 +268,28 @@ typedef struct tiku_trk_shell_services {
 - The lanes never had to change: 21 Deskbar lanes and the whole suite
   hold, and `test_frames` attaches the bar to a bare desktop's list the
   way the lifecycle does.
+
+## 9. What R2 settled
+
+- The list is consulted at the top of every handler now, since the
+  surfaces that came before the Deskbar in the old chain are all on it:
+  the force-quit picker, the alert and progress overlay, and the popup
+  menus with the navigator that rides them.  What still follows the old
+  path (tracking windows, the Info window's own clicks, the global bar)
+  comes after, which changes one thing: a press on the Deskbar while one
+  of its menus is out is the Deskbar's before it is the global bar's.
+- A key handler is asked on the up edge as well, because the popup menu
+  relabels its rows as Shift goes down and comes up.
+- The Info window's field pop-up has a frame of its own: its hover
+  repaints the box it left and the box it stands in, not the screen.
+  It paints from the list at the slot the desktop drew it in; the popup
+  menus still paint from the desktop, since they must come above the
+  window bars, which move in R3.
+- A scripted menu pick was a press without a release, which left the
+  popup holding the capture and swallowing the next press.  Two fixes:
+  the harness owes a release after any pick, as after a click, and a
+  holder that no longer claims the point of a new press has lost its
+  release, so the capture ends there.
+- The spring navigator's tracking is a responder; its drop on release
+  is part of the drop path and waits for R3.
 

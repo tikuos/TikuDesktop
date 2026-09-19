@@ -110,6 +110,7 @@ ask(const tiku_trk_responder_t *s, const tiku_event_t *ev,
         taken = (s->release != NULL) ? s->release(s->self, ev, &mine) : 0;
         break;
     case TIKU_EVENT_KEY_DOWN:
+    case TIKU_EVENT_KEY_UP:
         taken = (s->key != NULL) ? s->key(s->self, ev, &mine) : 0;
         break;
     default:
@@ -133,7 +134,17 @@ tiku_trk_responders_deliver(tiku_trk_responders_t *r,
     }
     if (ev->type == TIKU_EVENT_POINTER_DOWN) {
         if (r->capture != NULL) {
-            return ask(r->capture, ev, damage);
+            const tiku_trk_responder_t *holder = r->capture;
+
+            /* A press while captured is a second button or a double
+             * click when the holder still claims the point; when it no
+             * longer does, the release that would have ended the capture
+             * was never delivered, and the capture is over. */
+            if (holder->hit == NULL ||
+                holder->hit(holder->self, ev->x, ev->y)) {
+                return ask(holder, ev, damage);
+            }
+            r->capture = NULL;
         }
         for (i = r->count - 1; i >= 0; i--) {
             const tiku_trk_responder_t *s = r->at[i];
@@ -169,7 +180,7 @@ tiku_trk_responders_deliver(tiku_trk_responders_t *r,
         }
         return 0;
     }
-    if (ev->type == TIKU_EVENT_KEY_DOWN) {
+    if (ev->type == TIKU_EVENT_KEY_DOWN || ev->type == TIKU_EVENT_KEY_UP) {
         for (i = r->count - 1; i >= 0; i--) {
             if (ask(r->at[i], ev, damage)) {
                 return 1;

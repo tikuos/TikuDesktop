@@ -26,6 +26,7 @@ typedef struct tiku_trk_responder {
     int (*press)(void *self, const tiku_event_t *ev, tiku_rect_t *damage);
     int (*move)(void *self, const tiku_event_t *ev, tiku_rect_t *damage);
     int (*release)(void *self, const tiku_event_t *ev, tiku_rect_t *damage);
+    /** @brief A key down or up; the handler reads which from the event. */
     int (*key)(void *self, const tiku_event_t *ev, tiku_rect_t *damage);
     /** @brief The turn's clock: hovers that dwell, presses that are held. */
     int (*tick)(void *self, int64_t now, tiku_rect_t *damage);
@@ -59,14 +60,15 @@ int tiku_trk_responders_push(tiku_trk_responders_t *r,
 void tiku_trk_responders_remove(tiku_trk_responders_t *r,
                                 const tiku_trk_responder_t *s);
 /**
- * @brief Deliver one event.
+ * @brief Deliver one event; @return whether a surface took it, so a
+ *        caller with an older path can skip it.
  *
- * A press goes to the capture holder, else to the topmost surface whose
- * hit() says yes; the taker holds the capture until it takes a release.
- * A move or a release goes to the capture holder first, then down the
- * order until one takes it; a key goes down the order.  Damage from
- * every surface asked is unioned into @p damage.  @return whether a
- * surface took the event, so a caller with an older path can skip it.
+ * A press goes to the capture holder while its hit() still claims the
+ * point (a holder that no longer does lost its release, and the capture
+ * ends), else to the topmost surface whose hit() says yes, which then
+ * holds the capture until a release.  A move or a release goes to the
+ * holder first, then down the order until one takes it; a key goes down
+ * the order.  Every surface asked adds its damage to @p damage.
  */
 int tiku_trk_responders_deliver(tiku_trk_responders_t *r,
                                 const tiku_event_t *ev, tiku_rect_t *damage);

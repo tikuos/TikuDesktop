@@ -17,8 +17,7 @@ int main(void)
     app->desk = tiku_workspace_new(app->surf); assert(app->desk);
     app->deskbar = tiku_trk_deskbar_new(NULL); assert(app->deskbar);
     /* The bar answers through the responder list, as on the real desk. */
-    tiku_trk_responders_init(&app->responders);
-    desktop_bar_attach(app);
+    desktop_responders_attach(app);
     app->remote.fd = -1;
     /* A host, so the workspace has a clock: draw_all() hands it the frame's
      * start only when one is open, and without a clock no ghost is taken. */

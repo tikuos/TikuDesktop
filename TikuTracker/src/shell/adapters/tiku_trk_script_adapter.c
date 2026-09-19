@@ -577,6 +577,9 @@ menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
                     tiku_menu_item_height(menu, i) / 2;
                 event->button = 1u;
                 event->time_us = tiku_trk_now();
+                adapter->release_owed = 1;
+                adapter->release_x = event->x;
+                adapter->release_y = event->y;
                 return 1;
             }
         }

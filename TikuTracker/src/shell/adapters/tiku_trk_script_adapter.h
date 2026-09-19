@@ -39,9 +39,10 @@ typedef struct {
     char *count_text;
     char menu_labels[512];
     char shot_path[TIKU_PATH_MAX];
-    /* A pick on a Deskbar row is a press and a release, as a click is:
-     * the release is owed at the row's point on the next turn, since a
-     * program's row starts its program only when the button comes up. */
+    /* A pick on a menu row is a press and a release, as a click is: the
+     * release is owed at the row's point on the next turn.  A program's
+     * row starts its program only when the button comes up, and a press
+     * without its release leaves a surface holding the capture. */
     int release_owed;
     int release_x, release_y;
     int row_h;

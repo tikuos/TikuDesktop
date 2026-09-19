@@ -340,6 +340,12 @@ int desktop_forcequit_input(desktop_t *app, const tiku_event_t *ev)
     return 1;
 }
 
+/** @brief Whether the picker is up, taking every event until it is done. */
+int desktop_forcequit_picking(desktop_t *app)
+{
+    return app->forcequit != NULL && app->forcequit->picking;
+}
+
 /** @brief A visible selection-mode banner; Escape always gets out. */
 void desktop_forcequit_overlay(desktop_t *app)
 {

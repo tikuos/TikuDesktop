@@ -23,7 +23,6 @@ void desktop_draw_popup(desktop_t *app);
 void desktop_draw_bars(desktop_t *app);
 void desktop_draw_drag(desktop_t *app);
 void desktop_draw_strip_drag(desktop_t *app);
-void desktop_draw_info_hover(desktop_t *app);
 /* End of the forward declarations. */
 
 /** @brief The preferences' backdrop colour, taken as the desktop's. */
@@ -209,7 +208,7 @@ draw_all(desktop_t *app)
          * full frame here is the whole screen for every step of a ghost. */
         desktop_damage(app, tiku_workspace_motion(app->desk));
     }
-    desktop_draw_info_hover(app);
+    tiku_trk_responders_paint(&app->responders, app->surf);
     desktop_draw_strip_drag(app);
     desktop_draw_drag(app);
     desktop_draw_bars(app);
@@ -728,49 +727,4 @@ desktop_draw_strip_drag(desktop_t *app)
     }
 }
 
-/**
- * @brief the hover over an Info window
- */
-void
-desktop_draw_info_hover(desktop_t *app)
-{
-    if (app->info_windows.hover_slot >= 0 &&
-        app->info_windows.hover_field >= 0) {
-        /* The truncated field's full text, floated over everything and
-         * clamped to the screen (AW-073).  Only when the value really is
-         * wider than its row -- a pop-up repeating what is already
-         * readable would be noise. */
-        int slot = app->info_windows.hover_slot;
-        tiku_trk_info_t *info = &app->info_windows.model[slot];
-        char value[TIKU_TRK_INFO_VAL_MAX];
-        const char *label = "";
-        int fx, fy, fw, fh;
-
-        if (tiku_trk_info_field(info, app->store,
-                app->info_windows.hover_field, &label, value,
-                sizeof value) != TIKU_TRK_INFO_F_NONE &&
-            tiku_trk_info_windows_field_rect(&app->info_windows, slot,
-                app->info_windows.hover_field, &fx, &fy, &fw, &fh)) {
-            const tiku_font_t *font = tiku_font_plain();
-            int tw = tiku_text_width(font, value);
-
-            if (tw > fw) {
-                tiku_rect_t box = { fx - 4, fy - 2, tw + 12,
-                                         font->height + 6 };
-
-                if (box.x + box.w > app->surf->w) {
-                    box.x = app->surf->w - box.w;
-                }
-                if (box.x < 0) {
-                    box.x = 0;
-                }
-                tiku_fill(app->surf, box, TIKU_C_NOTE);
-                tiku_frame(app->surf, box, TIKU_C_TEXT);
-                tiku_text(app->surf, font, box.x + 5,
-                               box.y + 2 + font->ascent, value,
-                               TIKU_C_TEXT);
-            }
-        }
-    }
-}
 
