@@ -244,7 +244,18 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
     ly -= origin_y;
     (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
                                     &pose->model, art, sizeof art);
-    if (selected) {
+    /* Under a held button the icon goes dark, so the press itself is
+     * seen and not only the selection it leaves behind. */
+    int held = render->press_down != NULL && *render->press_down &&
+               render->press_folder != NULL &&
+               *render->press_folder == folder &&
+               render->press_row != NULL && *render->press_row >= 0 &&
+               tiku_trk_poseview_at(folder->view, *render->press_row) ==
+                   pose;
+    if (held) {
+        (void)tiku_icon_paint_dim(surface, art, ix, iy, iw, 0.45f,
+                                      TIKU_RGB(0, 0, 0));
+    } else if (selected) {
         (void)tiku_icon_paint_selected(surface, art, ix, iy, iw);
     } else if (pose->model.facts.link_broken) {
         (void)tiku_icon_paint_dim(surface, art, ix, iy, iw, 0.55f,

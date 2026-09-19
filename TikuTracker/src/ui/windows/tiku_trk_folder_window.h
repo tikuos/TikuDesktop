@@ -80,6 +80,12 @@ typedef struct {
     int                   *band_y1;
     tiku_trk_folder_window_t **drop_folder;
     int                   *drop_row;
+    /* The pose a primary button is held on, drawn pressed until the hand
+     * lets go or the press becomes a drag: the window, the row and whether
+     * the button is still down.  Any of them NULL means nothing is held. */
+    tiku_trk_folder_window_t **press_folder;
+    int                   *press_row;
+    int                   *press_down;
     tiku_trk_folder_prepare_menu_fn prepare_menu;
     void                  *prepare_context;
     /* The column strip's live gesture, when one is running: the window it

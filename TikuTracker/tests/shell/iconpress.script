@@ -1,0 +1,18 @@
+# shell: desktop
+# home: fixture
+# A press on a desktop icon is seen while the button is down: the icon
+# goes dark under the hand, and lifts to its selected wash on release.
+wait 12
+key w ctrl
+wait 6
+note the note's paper, unselected, is its own pale yellow
+expect-pixel 170 30 fff3ae
+press 170 38
+wait 2
+note held: dark under the button
+expect-pixel 170 30 8c855f
+release 170 38
+wait 2
+note let go: the selection wash, lighter than the hold
+expect-pixel 170 30 a8a072
+quit
