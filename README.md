@@ -126,6 +126,8 @@ board's own BASIC interpreter for the host from
 ## Reading order
 
 `TikuTracker/HANDOVER.md` — how the work is done, the contract, what bites.
+`BOOK.md` — the architecture as a book: one chapter per kit, then the
+shells, the applications and the boards.  Start here.
 `TikuTracker/FEATURES.md` — the fidelity contract, 889 rows read from the
 original source.  `TikuTracker/spec/` — the architecture as decided.
 `apps/examples/README.md` — the least an application can be.
