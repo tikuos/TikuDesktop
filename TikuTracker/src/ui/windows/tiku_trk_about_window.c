@@ -286,8 +286,12 @@ static void
 fmt_bytes(unsigned long n, char *out, size_t max)
 {
     if (n >= 1024UL * 1024UL) {
-        snprintf(out, max, "%lu.%lu MB", n / (1024UL * 1024UL),
-                 ((n % (1024UL * 1024UL)) * 10UL) / (1024UL * 1024UL));
+        /* To the nearest tenth, not the tenth below it: 1.49 MB read
+         * as 1.4 on a board whose RRAM is a hair under 1.5. */
+        unsigned long tenths = (n * 10UL + 512UL * 1024UL) /
+                               (1024UL * 1024UL);
+
+        snprintf(out, max, "%lu.%lu MB", tenths / 10UL, tenths % 10UL);
     } else if (n >= 1024UL) {
         snprintf(out, max, "%lu KB", n / 1024UL);
     } else {
