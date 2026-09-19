@@ -88,6 +88,7 @@ struct tiku_fs {
     void               *moved_ctx;
         int                 cancelling;   /* the flag cancel() itself sets  */
     int                 link_relative;
+    char                link_as[TIKU_NAME_MAX]; /* the one link's name, or "" */
     /* One hand on the engine: a worker steps it while the loop reads
      * its progress, answers its questions and cancels it.  The hand is
      * put down around each read and write of bytes, so the loop waits
@@ -964,8 +965,22 @@ fs_link(tiku_fs_t *fs, const char *const *paths, int n,
         return -1;
     }
     fs->link_relative = relative;
+    fs->link_as[0] = '\0';
     return start(fs, TIKU_OP_LINK, paths, n, dst,
                  TIKU_CONFLICT_ASK);
+}
+static int
+fs_link_as(tiku_fs_t *fs, const char *path, const char *dst,
+           const char *name, int relative)
+{
+    const char *paths[1] = { path };
+
+    if (fs == NULL || name == NULL || name[0] == '\0') {
+        return -1;
+    }
+    fs->link_relative = relative;
+    snprintf(fs->link_as, sizeof fs->link_as, "%s", name);
+    return start(fs, TIKU_OP_LINK, paths, 1, dst, TIKU_CONFLICT_ASK);
 }
 static int
 fs_delete(tiku_fs_t *fs, const char *const *paths, int n)
@@ -2299,8 +2314,10 @@ delete_attempt:
 
         /* "<name> link" ONLY when the plain name is taken, so linking into
          * another folder keeps the original name (FS-009). */
-        if (tiku_fs_link_name(fs, fs->dst, leaf_of(src), name,
-                                  sizeof name) != 0 ||
+        if (tiku_fs_link_name(fs, fs->dst,
+                              fs->link_as[0] != '\0' ? fs->link_as
+                                                      : leaf_of(src),
+                              name, sizeof name) != 0 ||
             join(dstpath, sizeof dstpath, fs->dst, name) != 0) {
             fs->prog.failed++;
             fs->qcursor++;
@@ -3422,6 +3439,21 @@ tiku_fs_link(tiku_fs_t *fs, const char *const *paths, int n, const char *dst, in
     }
     fs_take((tiku_fs_t *)fs);
     r = fs_link(fs, paths, n, dst, relative);
+    fs_give((tiku_fs_t *)fs);
+    return r;
+}
+
+int
+tiku_fs_link_as(tiku_fs_t *fs, const char *path, const char *dst,
+                const char *name, int relative)
+{
+    int r;
+
+    if (fs == NULL) {
+        return -1;
+    }
+    fs_take((tiku_fs_t *)fs);
+    r = fs_link_as(fs, path, dst, name, relative);
     fs_give((tiku_fs_t *)fs);
     return r;
 }

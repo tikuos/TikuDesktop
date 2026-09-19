@@ -102,6 +102,10 @@ typedef struct {
     unsigned mods;
     int      count;
     char     path[TIKU_TRK_DRAG_MAX][TIKU_PATH_MAX];
+    /* What a link made of the item is called, when it is not the item's
+     * own leaf: an application dragged from a menu is named as the menu
+     * named it.  Empty for the leaf. */
+    char     name[TIKU_TRK_DRAG_MAX][TIKU_NAME_MAX];
     char     src_dir[TIKU_PATH_MAX];
     int      src_virtual;          /* source is a merged/namespace view */
     void    *src_win;               /* opaque owner token                */
@@ -156,6 +160,9 @@ int tiku_trk_drag_add(tiku_trk_drag_t *d, const char *path);
  */
 int tiku_trk_drag_add_at(tiku_trk_drag_t *d, const char *path,
                          const char *type, int x, int y, int from_list);
+
+/** @brief Name what a link of item @p i is called; NULL or "" for its leaf. */
+void tiku_trk_drag_name_at(tiku_trk_drag_t *d, int i, const char *name);
 
 /**
  * @brief Where item @p i should land for a drop at @p dx, @p dy.

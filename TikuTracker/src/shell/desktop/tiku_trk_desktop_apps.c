@@ -12,6 +12,8 @@
 
 #include "tiku_trk_desktop_private.h"
 #include "tiku_manifest.h"
+#include "tiku_icons.h"
+#include <limits.h>
 #include "tiku_trk_desktop_appgroups.inl"
 
 /** @brief One destination row of a picker (CW-035). */
@@ -539,7 +541,47 @@ offer_installed(desktop_t *app, const char *argv0)
         offer_directory(app, subdir, runner, "trusted");
 }
 
-/** @brief Invoke a manifest identity without importing application code. */
+/**
+ * @brief The installed application @p path is the module of, through a
+ *        link if it is one; NULL for anything else.
+ */
+const tiku_trk_app_t *
+desktop_app_at(desktop_t *app, const char *path)
+{
+    char real[PATH_MAX];
+    const char *look = path;
+
+    if (path == NULL || path[0] == '\0') {
+        return NULL;
+    }
+    if (realpath(path, real) != NULL) {
+        look = real;
+    }
+    for (int i = 0; i < app->apps.count; i++) {
+        const tiku_trk_app_t *a = &app->apps.app[i];
+
+        if (a->module[0] != '\0' && (strcmp(a->module, look) == 0 ||
+                                     strcmp(a->module, path) == 0)) {
+            return a;
+        }
+    }
+    return NULL;
+}
+
+/** @brief The art a pose that is an application wears, or NULL. */
+const char *
+desktop_app_art(desktop_t *app, const char *path)
+{
+    const tiku_trk_app_t *a = desktop_app_at(app, path);
+
+    if (a == NULL) {
+        return NULL;
+    }
+    return (a->icon[0] != '\0' && tiku_icons_find(a->icon) != NULL)
+               ? a->icon : "application";
+}
+
+/** @brief Start the installed application @p id, on @p document if any. */
 int desktop_launch_app(desktop_t *app, const char *id, const char *document)
 {
     for (int i = 0; i < app->apps.count; i++) {

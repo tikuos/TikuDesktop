@@ -78,6 +78,16 @@ tiku_trk_drag_reset(tiku_trk_drag_t *d)
 }
 
 void
+tiku_trk_drag_name_at(tiku_trk_drag_t *d, int i, const char *name)
+{
+    if (d == NULL || i < 0 || i >= TIKU_TRK_DRAG_MAX) {
+        return;
+    }
+    snprintf(d->name[i], sizeof d->name[i], "%s",
+             (name != NULL) ? name : "");
+}
+
+void
 tiku_trk_drag_arm(tiku_trk_drag_t *d, int x, int y, unsigned buttons,
                   unsigned mods, int clicks, void *src_win,
                   const char *src_dir)

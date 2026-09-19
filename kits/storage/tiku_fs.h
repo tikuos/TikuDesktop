@@ -394,6 +394,13 @@ int tiku_fs_link(tiku_fs_t *fs, const char *const *paths, int n,
                      const char *dst, int relative);
 
 /**
+ * @brief Create one symbolic link to @p path in @p dst, called @p name
+ *        rather than the target's own leaf; "<name> link" when taken.
+ */
+int tiku_fs_link_as(tiku_fs_t *fs, const char *path, const char *dst,
+                    const char *name, int relative);
+
+/**
  * @brief The name a new folder would get in @p dir, collisions avoided.
  *
  * "New folder", then "New folder 2" .. "New folder 9", then "New folder10".

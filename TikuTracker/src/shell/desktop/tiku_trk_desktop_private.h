@@ -563,6 +563,10 @@ typedef struct desktop {
     folder_t            *press_fl;      /* the folder the press is in   */
     int                  press_menu;    /* the long press already fired    */
     int                  deskbar_press; /* primary hold over the clock     */
+    /* An application row of the leaf menu under a held button: started
+     * when the button comes up where it went down, carried as a drag
+     * when the hand moves first. */
+    char                 menu_launch[TIKU_PATH_MAX];
 } desktop_t;
 
 static folder_t *folder_of(desktop_t *app, tiku_window_t *w);
@@ -803,6 +807,13 @@ int desktop_help_html(desktop_t *app, const char *title, const char *html);
 void desktop_vfs_request(desktop_t *app, int session,
                          const tiku_msg_t *request);
 int desktop_vfs_destroy(desktop_t *app);
+/**
+ * @brief The installed application @p path is the module of, through a
+ *        link if it is one; NULL for anything else.
+ */
+const tiku_trk_app_t *desktop_app_at(desktop_t *app, const char *path);
+/** @brief The art a pose that is an application wears, or NULL. */
+const char *desktop_app_art(desktop_t *app, const char *path);
 int desktop_launch_app(desktop_t *app, const char *id,
                        const char *document);
 int desktop_image_file(desktop_t *app, const char *path);

@@ -602,6 +602,17 @@ open_one(desktop_t *app, const tiku_model_t *model)
         !strcmp(model->type, "application/x-tiku-project") ||
         !strcmp(model->type, "text/plain"))
         return launch_paths(app, handler_for(app, model), one, 1);
+    {
+        /* An installed application, or a link to one: the runner starts
+         * it, as the Deskbar's row would; its module is not a program
+         * of its own to exec. */
+        const tiku_trk_app_t *installed = desktop_app_at(app, model->path);
+
+        if (installed != NULL) {
+            return tiku_trk_launch_run(installed, NULL, 0) ==
+                   TIKU_TRK_LAUNCH_OK;
+        }
+    }
     if (tiku_trk_launch_self(model, &itself)) {
         /* No documents: it is being started, not being given something
          * to open.  launch_run drops an application's own path anyway. */

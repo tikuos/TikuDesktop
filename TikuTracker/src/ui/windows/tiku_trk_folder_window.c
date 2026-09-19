@@ -242,8 +242,15 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
     iy -= origin_y;
     lx -= origin_x;
     ly -= origin_y;
-    (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
-                                    &pose->model, art, sizeof art);
+    const char *app_art = (render->app_art != NULL)
+        ? render->app_art(render->app_art_context, pose->model.path) : NULL;
+
+    if (app_art != NULL) {
+        snprintf(art, sizeof art, "%s", app_art);
+    } else {
+        (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
+                                        &pose->model, art, sizeof art);
+    }
     /* Under a held button the icon goes dark, so the press itself is
      * seen and not only the selection it leaves behind. */
     int held = render->press_down != NULL && *render->press_down &&

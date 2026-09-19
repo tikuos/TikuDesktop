@@ -24,6 +24,13 @@ script_resize(void *ctx, int width, int height)
     return resize_desktop((desktop_t *)ctx, width, height) >= 0;
 }
 
+/** @brief The folder views' question: is this pose an application? */
+static const char *
+app_art_of(void *context, const char *path)
+{
+    return desktop_app_art(context, path);
+}
+
 /**
  * @brief Hold the line now up for whatever is still owed it.
  *
@@ -755,6 +762,8 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         .press_folder = &app->press_fl,
         .press_row = &app->press_row,
         .press_down = &app->press_down,
+        .app_art = app_art_of,
+        .app_art_context = app,
         .prepare_menu = tiku_trk_folder_menu_prepare,
         .strip = &app->tstrip,
         .strip_owner = NULL,

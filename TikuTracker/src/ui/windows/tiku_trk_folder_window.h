@@ -86,6 +86,11 @@ typedef struct {
     tiku_trk_folder_window_t **press_folder;
     int                   *press_row;
     int                   *press_down;
+    /* The art a pose wears when it is an installed application, or a
+     * link to one: the shell knows the registry, the view does not.
+     * NULL from the callback means an ordinary node. */
+    const char *(*app_art)(void *context, const char *path);
+    void                  *app_art_context;
     tiku_trk_folder_prepare_menu_fn prepare_menu;
     void                  *prepare_context;
     /* The column strip's live gesture, when one is running: the window it

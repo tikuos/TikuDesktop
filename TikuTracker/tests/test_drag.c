@@ -198,6 +198,13 @@ main(void)
           "PVS-038", "though Option-dropping there duplicates");
 
     tiku_trk_drag_set_source_virtual(&d, 1);
+    /* An item may carry the name a link of it is called by; the rest
+     * keep their leaf. */
+    tiku_trk_drag_name_at(&d, 0, "Program");
+    check(strcmp(d.name[0], "Program") == 0 && d.name[1][0] == '\0',
+          "PVS-033", "a dragged item may name the link a drop makes of it");
+    tiku_trk_drag_name_at(&d, 0, NULL);
+    check(d.name[0][0] == '\0', "PVS-033", "and may give the name up again");
     check(tiku_trk_drag_action(&d, "/dst", 0u, 1) == TIKU_TRK_DROP_LINK,
           "FS-078", "a virtual-directory drag links by default");
     check(tiku_trk_drag_action(&d, "/dst", TIKU_TRK_DRAG_MOD_COPY, 1) ==

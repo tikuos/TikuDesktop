@@ -548,6 +548,9 @@ menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
             event->y = y;
             event->button = 1u;
             event->time_us = tiku_trk_now();
+            adapter->release_owed = 1;
+            adapter->release_x = x;
+            adapter->release_y = y;
             return 1;
         }
         fprintf(stderr, "script: no menu is open for '%s'\n", label);
@@ -590,6 +593,15 @@ tiku_trk_script_adapter_next(tiku_trk_script_adapter_t *adapter,
     tiku_trk_script_state_t state;
     tiku_trk_script_step_t step;
 
+    if (adapter->release_owed) {
+        adapter->release_owed = 0;
+        event->type = TIKU_EVENT_POINTER_UP;
+        event->x = adapter->release_x;
+        event->y = adapter->release_y;
+        event->button = 1u;
+        event->time_us = tiku_trk_now();
+        return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
+    }
     fill_state(adapter, &state);
     if (!tiku_trk_script_pump(script, &state, &step)) {
         return TIKU_TRK_SCRIPT_ADAPTER_STOP;

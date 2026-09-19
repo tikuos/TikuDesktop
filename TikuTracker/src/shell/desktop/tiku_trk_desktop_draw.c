@@ -607,8 +607,16 @@ desktop_draw_drag(desktop_t *app)
                                         &dm) != 0) {
                 continue;
             }
-            (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store, &dm,
-                                            art, sizeof art);
+            {
+                const char *app_art = desktop_app_art(app, app->drag.path[i]);
+
+                if (app_art != NULL) {
+                    snprintf(art, sizeof art, "%s", app_art);
+                } else {
+                    (void)tiku_trk_nodeicon_resolve(&app->nicons, app->store,
+                                                    &dm, art, sizeof art);
+                }
+            }
             box.x = app->drag.x - 16 + i * 6;
             box.y = app->drag.y - 16 + i * 6;
             box.w = 32;

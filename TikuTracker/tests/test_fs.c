@@ -877,6 +877,29 @@ main(void)
         check(there(made), "FS-009",
               "and only a name already taken turns into \"<name> link\"");
 
+        /* A link called what the caller says, not what the target is. */
+        (void)tiku_fs_link_as(fs, victim, B, "Linked", 0);
+        run_to_end(fs);
+        snprintf(made, sizeof made, "%s/Linked", B);
+        n = readlink(made, seen, sizeof seen - 1);
+        check(n > 0, "FS-009", "a link may be given its own name");
+        if (n > 0) {
+            seen[n] = '\0';
+            check(strcmp(seen, victim) == 0, "FS-009",
+                  "and still points at the original");
+        }
+        (void)tiku_fs_link_as(fs, victim, B, "Linked", 0);
+        run_to_end(fs);
+        snprintf(made, sizeof made, "%s/Linked link", B);
+        check(there(made), "FS-009",
+              "a given name already taken turns into \"<name> link\" too");
+        /* The next plain link is named by its leaf again. */
+        (void)tiku_fs_link(fs, sel, 1, B, 0);
+        run_to_end(fs);
+        snprintf(made, sizeof made, "%s/linkme.txt link", B);
+        check(there(made), "FS-009",
+              "and a plain link after a named one keeps the leaf");
+
         /* A relative link, same device. */
         {
             char sub[600];

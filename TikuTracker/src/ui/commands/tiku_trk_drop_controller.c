@@ -302,6 +302,9 @@ drop_allowed(tiku_trk_drop_controller_t *controller,
     return 1;
 }
 
+static const char *link_name_of(const tiku_trk_drop_controller_t *controller,
+                                int i);
+
 /**
  * @brief In an icon view, give each dropped item the spot it was carried
  *        to, so it lands where it was let go rather than where the layout
@@ -309,7 +312,8 @@ drop_allowed(tiku_trk_drop_controller_t *controller,
  */
 static void
 reserve_icon_landings(tiku_trk_drop_controller_t *controller,
-                      const char **paths, int count, int x, int y)
+                      const char **paths, int count, int x, int y,
+                      int linking)
 {
     tiku_trk_folder_window_t *folder = *controller->drop_folder;
     tiku_rect_t content;
@@ -332,7 +336,9 @@ reserve_icon_landings(tiku_trk_drop_controller_t *controller,
             x - (content.x + 2) + origin_x,
             y - (content.y + 2) + origin_y, &landing_x, &landing_y);
         tiku_trk_poseview_drop_land(folder->view,
-            name != NULL ? name + 1 : paths[i], landing_x, landing_y);
+            linking ? link_name_of(controller, i)
+                    : (name != NULL ? name + 1 : paths[i]),
+            landing_x, landing_y);
     }
 }
 
@@ -363,11 +369,74 @@ app_at_path(const tiku_trk_drop_controller_t *controller, const char *path)
             continue;
         }
         if ((a->cmd[0] != '\0' && strcmp(a->cmd, path) == 0) ||
-            (a->path[0] != '\0' && strcmp(a->path, path) == 0)) {
+            (a->path[0] != '\0' && strcmp(a->path, path) == 0) ||
+            (a->module[0] != '\0' && strcmp(a->module, path) == 0)) {
             return a;
         }
     }
     return NULL;
+}
+
+/**
+ * @brief The registered application @p path is or links to, or NULL.
+ *
+ * Through the link: a link on the desk to a program's module is the
+ * program, as far as a drop or a double-click is concerned.
+ */
+static const tiku_trk_app_t *
+app_behind(const tiku_trk_drop_controller_t *controller, const char *path)
+{
+    const tiku_trk_app_t *a = app_at_path(controller, path);
+    char *real;
+
+    if (a != NULL) {
+        return a;
+    }
+    real = realpath(path, NULL);
+    if (real != NULL) {
+        a = app_at_path(controller, real);
+        free(real);
+    }
+    return a;
+}
+
+/**
+ * @brief What a link made of item @p i is called: the name the drag gave
+ *        it, else a program's registered name, else the target's leaf.
+ */
+static const char *
+link_name_of(const tiku_trk_drop_controller_t *controller, int i)
+{
+    const char *path = controller->drag->path[i];
+    const tiku_trk_app_t *program;
+    const char *leaf;
+
+    if (controller->drag->name[i][0] != '\0') {
+        return controller->drag->name[i];
+    }
+    program = app_behind(controller, path);
+    if (program != NULL && program->name[0] != '\0') {
+        return program->name;
+    }
+    leaf = strrchr(path, '/');
+    return (leaf != NULL) ? leaf + 1 : path;
+}
+
+/** @brief Whether every item the drag carries is a registered application. */
+static int
+carries_applications(const tiku_trk_drop_controller_t *controller)
+{
+    int i;
+
+    if (controller->drag->count == 0) {
+        return 0;
+    }
+    for (i = 0; i < controller->drag->count; i++) {
+        if (app_behind(controller, controller->drag->path[i]) == NULL) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 /**
@@ -401,7 +470,7 @@ drop_on_application(tiku_trk_drop_controller_t *controller,
         tiku_model_is_container(&target)) {
         return 0;
     }
-    application = app_at_path(controller, destination);
+    application = app_behind(controller, destination);
     if (application == NULL) {
         /* An executable nothing registered: saying so beats pretending the
          * drop was a move into a file. */
@@ -498,6 +567,13 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
     if ((modifiers & TIKU_MOD_CMD) != 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
     }
+    /* A program stays where it is installed: dragging one somewhere
+     * makes a link to it there, the way the Deskbar's menu offers it,
+     * unless a copy is asked for outright. */
+    if (carries_applications(controller) &&
+        (drag_modifiers & TIKU_TRK_DRAG_MOD_COPY) == 0u) {
+        drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
+    }
     if (tiku_fs_in_trash(controller->fs, destination)) {
         /* FS-041: a whole volume dragged to the Trash means UNMOUNT, not
          * delete -- the boot volume refuses by name.  Volumes are taken
@@ -584,7 +660,8 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
         return;
     }
     if (in_view) {
-        reserve_icon_landings(controller, paths, count, x, y);
+        reserve_icon_landings(controller, paths, count, x, y,
+                              action == TIKU_TRK_DROP_LINK);
     }
     snprintf(controller->progress_destination,
              controller->progress_destination_size, "%s", destination);
@@ -598,8 +675,13 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
     case TIKU_TRK_DROP_LINK: {
         int relative = (modifiers & TIKU_MOD_SHIFT) != 0u;
 
-        (void)tiku_fs_link(controller->fs, paths, count, destination,
+        if (count == 1) {
+            (void)tiku_fs_link_as(controller->fs, paths[0], destination,
+                                  link_name_of(controller, 0), relative);
+        } else {
+            (void)tiku_fs_link(controller->fs, paths, count, destination,
                                relative);
+        }
         snprintf(controller->status, controller->status_size,
                  "%s %d item%s", relative ? "linking (relative)" : "linking",
                  count, count == 1 ? "" : "s");

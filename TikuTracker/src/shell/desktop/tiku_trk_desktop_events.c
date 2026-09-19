@@ -782,6 +782,30 @@ if (tiku_trk_deskbar_click(app->deskbar, ev->x,
             app->press_x = ev->x;
             app->press_y = ev->y;
         }
+        if (pick.what == TIKU_TRK_DB_LAUNCH_APP && ev->button == 1u &&
+            !secondary && desktop_app_at(app, pick.path) != NULL) {
+            /* An installed program's row is a thing to pick up as well
+             * as to choose: the press arms a drag of the program, named
+             * as the row is, and the release starts it only if the hand
+             * never moved. */
+            const tiku_trk_app_t *program = desktop_app_at(app, pick.path);
+            char parent[TIKU_PATH_MAX];
+            tiku_model_t pm;
+
+            parent_path(pick.path, parent, sizeof parent);
+            tiku_trk_drag_arm(&app->drag, ev->x, ev->y, ev->button,
+                              0u, 1, NULL, parent);
+            tiku_trk_drag_set_source_virtual(&app->drag, 1);
+            (void)tiku_trk_drag_add_at(&app->drag, pick.path,
+                (app->backend->ops->stat(app->backend, pick.path, &pm) == 0)
+                    ? pm.type : "", ev->x, ev->y, 1);
+            tiku_trk_drag_name_at(&app->drag, 0, program->name);
+            tiku_trk_drag_target_reset(&app->drag_target);
+            snprintf(app->menu_launch, sizeof app->menu_launch, "%s",
+                     pick.path);
+            app->dirty = 1;
+            return;
+        }
         deskbar_pick_dispatch(app, &pick,
                               ev->x, ev->y);
         app->dirty = 1;
@@ -1855,6 +1879,24 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
 if (desktop_forcequit_input(app, ev)) return;
     (void)lp;
+if (app->menu_launch[0] != '\0') {
+    if (!tiku_trk_drag_active(&app->drag)) {
+        /* Let go where it was pressed: the row was chosen, so the
+         * program starts, and the drag that was only armed is dropped. */
+        tiku_trk_db_pick_t pick;
+
+        memset(&pick, 0, sizeof pick);
+        pick.what = TIKU_TRK_DB_LAUNCH_APP;
+        snprintf(pick.path, sizeof pick.path, "%s", app->menu_launch);
+        app->menu_launch[0] = '\0';
+        tiku_trk_drag_reset(&app->drag);
+        app->deskbar_press = 0;
+        deskbar_pick_dispatch(app, &pick, ev->x, ev->y);
+        app->dirty = 1;
+        return;
+    }
+    app->menu_launch[0] = '\0';     /* carried off: the drop lands it */
+}
 if (tiku_trk_status_overlay_pointer_up(&app->status_overlay,
                                        ev->x, ev->y)) {
     app->dirty = 1;

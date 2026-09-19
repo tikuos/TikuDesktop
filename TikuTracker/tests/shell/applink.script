@@ -1,0 +1,33 @@
+# shell: desktop
+# home: fixture
+# An application dragged out of the leaf menu lands on the desk as a link
+# named as the menu named it, wearing the program's own art, and opens as
+# the program; a release where the row was pressed still starts it.
+wait 12
+key w ctrl
+wait 6
+click 980 20
+wait 4
+menu-pick Programming
+wait 4
+expect-menu TikuBasic
+note picked up from its row and carried to the desk
+press 520 134
+wait 2
+move 400 300
+wait 2
+move 300 500
+wait 2
+release 300 500
+wait 80
+expect-desk-icon TikuBasic
+expect-link /tmp/trk_home/.config/tracker/Desktop/TikuBasic /tmp/trk_apps/programming/basic/TikuBasic.so
+shot /tmp/claude-1000/-home-ambuj-tikuOS/d163cf18-488f-4da3-bf79-19a2cda9f363/scratchpad/applink-desk.png
+note and opened from the desk it is the program, not a file
+click-desk TikuBasic
+wait 2
+click-desk TikuBasic
+wait 150
+expect-title Project
+shot /tmp/claude-1000/-home-ambuj-tikuOS/d163cf18-488f-4da3-bf79-19a2cda9f363/scratchpad/applink-open.png
+quit

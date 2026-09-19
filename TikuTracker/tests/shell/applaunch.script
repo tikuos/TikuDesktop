@@ -1,0 +1,18 @@
+# shell: desktop
+# home: fixture
+# setup: applink
+# A press on an application's row that lets go where it landed still
+# starts the program: the drag that was armed for it is dropped unused.
+wait 12
+click 980 20
+wait 4
+menu-pick Programming
+wait 4
+expect-menu TikuBasic
+press 520 134
+wait 2
+release 520 134
+wait 150
+expect-title Project
+expect-no-file /tmp/trk_home/.config/tracker/Desktop/TikuBasic
+quit
