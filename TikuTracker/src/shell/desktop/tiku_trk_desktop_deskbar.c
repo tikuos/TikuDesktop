@@ -55,6 +55,9 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
     case TIKU_TRK_DB_ITEM_APPS:
         art = "folder_apps";
         break;
+    case TIKU_TRK_DB_ITEM_PROGRAMMING:
+        art = "folder_develop";
+        break;
     case TIKU_TRK_DB_ITEM_SETTINGS:
         art = "folder_system";
         break;
@@ -78,6 +81,9 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
         break;
     case TIKU_TRK_DB_ITEM_FORCE_QUIT:
         art = "force_quit";
+        break;
+    case TIKU_TRK_DB_ITEM_QUIT:
+        art = "shutdown";
         break;
     case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
         art = "package";
