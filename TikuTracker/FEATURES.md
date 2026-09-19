@@ -7010,13 +7010,13 @@ ClearMenuBuildingState sets fMenuBuilt=false; MenusEnded additionally calls sDes
 **PORT:** Rebuilt on every open, from both entry points -- the click on the leaf and the keyboard's own -- so a file put in the Deskbar folder appears without restarting anything.  
 *src/deskbar/tiku_trk_deskbar.c (build_leaf from the click path and from tiku_trk_deskbar_open_menu); tests/test_dbdrop.c*
 
-#### DB-006 · important · done
+#### DB-006 · important · differs
 **Choosing the 'Shutdown…' parent item asks for confirmation; choosing 'Power off' or 'Restart system' inside its submenu acts immediately**  
 The parent item's message is kShutdownSystem with "confirm"=true; submenu items carry bare kShutdownSystem/kRebootSystem; both route to BRoster::Private::ShutDown(reboot, confirm, false)  
 `DeskbarMenu.cpp` → `TDeskbarMenu::AddStandardDeskbarMenuItems`  
 **TIKU:** Maps to a TikuOS power/reset request; the confirm flag distinction should survive  
-**PORT:** The whole split now: the parent's ellipsis asks (Cancel the default, Escape means no -- shutdownask.script), while the arrow beside it expands Power off, which ACTS the moment it is chosen, no question -- it ends the session outright, this host's power request.  There is no Restart row: a desktop is shut down, not started over from inside itself.  The submenu opens from the row's arrow zone because this port's leaf submenus open by click, not hover.  
-*src/deskbar/tiku_trk_deskbar.c (the QUIT submenu in open_sub, the arrow zone, the sub dispatch); src/shell/tiku_trk_desktop.c (the POWER_OFF arm); tests/test_deskbar_dock.c (DB-006, mutation-tested); tests/shell/shutdownask.script*
+**PORT:** One row, no submenu: Shut down… asks (Cancel the default, Escape means no -- shutdownask.script) and then the session goes down.  Haiku's arrow with the immediate Power off and Restart system beside it is dropped: a desktop is shut down, not started over from inside itself, and a submenu of one row that skips the question is a trap rather than a shortcut.  
+*src/deskbar/bar/tiku_trk_deskbar_press.c (the QUIT row); src/shell/desktop/tiku_trk_desktop_deskbar.c (the QUIT arm); tests/test_deskbar_dock.c (DB-006); tests/shell/shutdownask.script*
 
 #### DB-007 · important · done
 **'Show replicants' is a checkable item that toggles the dragger handles of every replicant system-wide, and its checkmark reflects the current global state when the menu opens**  

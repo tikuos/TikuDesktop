@@ -132,15 +132,13 @@ static void categories(tiku_surface_t *s)
         if (kind != TIKU_TRK_DB_ITEM_APPS &&
             kind != TIKU_TRK_DB_ITEM_PROGRAMMING &&
             kind != TIKU_TRK_DB_ITEM_SETTINGS &&
-            kind != TIKU_TRK_DB_ITEM_RECENT &&
-            kind != TIKU_TRK_DB_ITEM_QUIT) continue;
+            kind != TIKU_TRK_DB_ITEM_RECENT) continue;
         hover(db,i,now);
         assert(tiku_trk_deskbar_menu_tick(db,now+delay));
         assert(db->sub_of == i && db->sub_count > 0 && db->menu_open);
-        if (kind == TIKU_TRK_DB_ITEM_QUIT) assert(db->sub_count == 2);
         now += 2*delay; tested++;
     }
-    assert(tested == 7);
+    assert(tested == 6);
     tiku_trk_deskbar_free(db);
 }
 

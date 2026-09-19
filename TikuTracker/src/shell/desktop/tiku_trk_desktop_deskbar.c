@@ -267,12 +267,6 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         }
         break;
     }
-    case TIKU_TRK_DB_POWER_OFF:
-        /* Chosen inside the submenu: no question asked -- the parent's
-         * ellipsis is where the asking lives (DB-006).  It still goes
-         * down the way it came up; what was skipped is the asking. */
-        begin_shutdown(app);
-        break;
     case TIKU_TRK_DB_QUIT_TEAM:
     case TIKU_TRK_DB_KILL_TEAM: {
         /* Roster names can group unrelated processes, including the shell.

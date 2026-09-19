@@ -388,8 +388,7 @@ static int item_expands(int kind)
            kind == TIKU_TRK_DB_ITEM_RECENT ||
            kind == TIKU_TRK_DB_ITEM_APPS ||
            kind == TIKU_TRK_DB_ITEM_PROGRAMMING ||
-           kind == TIKU_TRK_DB_ITEM_SETTINGS ||
-           kind == TIKU_TRK_DB_ITEM_QUIT;
+           kind == TIKU_TRK_DB_ITEM_SETTINGS;
 }
 
 int tiku_trk_deskbar_menu_tick(tiku_trk_deskbar_t *db, int64_t now)
@@ -553,19 +552,6 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
     }
     db->leaf_hot = at; /* A click supersedes any previously hovered row. */
     it = &db->leaf[at];
-    if (it->kind == TIKU_TRK_DB_ITEM_QUIT) {
-        /* The confirm-vs-immediate split (DB-006): the parent asks, the
-         * submenu's row acts the moment it is chosen. */
-        tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
-
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_POWER_OFF;
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str("menu.power_off"));
-        db->sub_of = at;
-        db->sub_hot = -1;
-        return;
-    }
     if (it->kind == TIKU_TRK_DB_ITEM_SETTINGS) {
         tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
 

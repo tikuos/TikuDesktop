@@ -323,9 +323,7 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 
             if (x >= sm.x && x < sm.x + sm.w && y >= sm.y &&
                 y < sm.y + sm.h && si >= 0 && si < db->sub_count) {
-                if (db->sub[si].kind == TIKU_TRK_DB_ITEM_POWER_OFF) {
-                    pick->what = TIKU_TRK_DB_POWER_OFF;
-                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_APP) {
+                if (db->sub[si].kind == TIKU_TRK_DB_ITEM_APP) {
                     pick->what = TIKU_TRK_DB_LAUNCH_APP;
                     snprintf(pick->path, sizeof pick->path, "%s",
                              db->sub[si].path);
@@ -413,12 +411,6 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 db_build_leaf(db);
                 return 1;
             case TIKU_TRK_DB_ITEM_QUIT:
-                if (x >= m.x + m.w - 20) {
-                    /* The arrow: the immediate pair beside the row,
-                     * expanding rather than choosing (DB-006). */
-                    db_open_sub(db, idx);
-                    return 1;
-                }
                 pick->what = TIKU_TRK_DB_QUIT;
                 break;
             case TIKU_TRK_DB_ITEM_APP:
