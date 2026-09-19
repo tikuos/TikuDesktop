@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,8 +29,8 @@ tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     tiku_trk_drag_t *drag, tiku_trk_folder_window_t **drop_folder,
     int *drop_row, tiku_menu_t **popup, tiku_menu_t **popup_sub,
     tiku_rect_t *popup_frame, char *progress_destination,
-    size_t progress_destination_size, char *status, size_t status_size,
-    int *dirty, int screen_w, int screen_h,
+    size_t progress_destination_size, const tiku_trk_services_t *services,
+    int screen_w, int screen_h,
     tiku_trk_drop_color_fn set_color, void *color_context)
 {
     *controller = (tiku_trk_drop_controller_t){
@@ -47,14 +48,37 @@ tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
         .popup_frame = popup_frame,
         .progress_destination = progress_destination,
         .progress_destination_size = progress_destination_size,
-        .status = status,
-        .status_size = status_size,
-        .dirty = dirty,
+        .services = services,
         .set_color = set_color,
         .color_context = color_context,
         .screen_w = screen_w,
         .screen_h = screen_h
     };
+}
+
+/** @brief A line for the status strip, through the shell. */
+static void
+say(tiku_trk_drop_controller_t *controller, const char *fmt, ...)
+{
+    char text[256];
+    va_list ap;
+
+    va_start(ap, fmt);
+    (void)vsnprintf(text, sizeof text, fmt, ap);
+    va_end(ap);
+    if (controller->services != NULL && controller->services->status != NULL) {
+        controller->services->status(controller->services->ctx, text);
+    }
+}
+
+/** @brief Something on the screen changed: a frame is owed. */
+static void
+changed(tiku_trk_drop_controller_t *controller)
+{
+    if (controller->services != NULL && controller->services->damage != NULL) {
+        controller->services->damage(controller->services->ctx,
+                                     (tiku_rect_t){ 0, 0, -1, -1 });
+    }
 }
 
 /** @brief The drag's paths into @p paths.  @return how many there are. */
@@ -94,7 +118,7 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
         if (count > 0) {
             (void)tiku_fs_link(controller->fs, paths, count,
                                    destination, 0);
-            snprintf(controller->status, controller->status_size,
+            say(controller,
                      "linking %d item%s into %.40s", count,
                      count == 1 ? "" : "s", destination);
         }
@@ -109,11 +133,11 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
             int id = tiku_trk_deskbar_add_replicant(controller->deskbar,
                 base != NULL ? base + 1 : paths[0], paths[0]);
 
-            snprintf(controller->status, controller->status_size,
+            say(controller,
                      id > 0 ? "subscribed to the tray (id %d)"
                             : "the tray refused it (name taken or full)",
                      id);
-            *controller->dirty = 1;
+            changed(controller);
         }
         return 1;
     }
@@ -136,7 +160,7 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
             (void)mkdir(destination, 0755);
             (void)tiku_fs_link(controller->fs, paths, count,
                                    destination, 0);
-            snprintf(controller->status, controller->status_size,
+            say(controller,
                      "linking %d item%s into the Deskbar", count,
                      count == 1 ? "" : "s");
         }
@@ -152,13 +176,13 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
         if (!tiku_trk_deskbar_team_accepts(controller->deskbar, team,
                 types, type_count,
                 (modifiers & TIKU_MOD_CMD) != 0u)) {
-            snprintf(controller->status, controller->status_size,
+            say(controller,
                      "%.40s cannot open %s",
                      tiku_trk_deskbar_team_name(controller->deskbar, team),
                      count == 1 ? "that" : "those");
             return 1;
         }
-        snprintf(controller->status, controller->status_size,
+        say(controller,
                  "handing %d item%s to %.40s", count,
                  count == 1 ? "" : "s",
                  tiku_trk_deskbar_team_name(controller->deskbar, team));
@@ -174,7 +198,7 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
             count++;
         }
     }
-    snprintf(controller->status, controller->status_size,
+    say(controller,
              "launching %d item%s", count, count == 1 ? "" : "s");
     return 1;
 }
@@ -220,7 +244,7 @@ arrange_in_source(tiku_trk_drop_controller_t *controller, int x, int y,
         (void)tiku_trk_desktop_view_ensure_visible(controller->desktop_view);
     }
     (void)tiku_trk_poseview_save_state(folder->view);
-    *controller->dirty = 1;
+    changed(controller);
     return 1;
 }
 
@@ -344,60 +368,24 @@ reserve_icon_landings(tiku_trk_drop_controller_t *controller,
 
 void
 tiku_trk_drop_controller_set_launcher(
-    tiku_trk_drop_controller_t *controller, const struct tiku_trk_apps *apps,
-    tiku_trk_drop_launch_fn launch, void *launch_context)
+    tiku_trk_drop_controller_t *controller, tiku_trk_drop_launch_fn launch,
+    void *launch_context)
 {
-    controller->apps = apps;
     controller->launch = launch;
     controller->launch_context = launch_context;
 }
 
-/** @brief The registry entry whose program IS @p path, or NULL. */
-static const tiku_trk_app_t *
-app_at_path(const tiku_trk_drop_controller_t *controller, const char *path)
-{
-    const tiku_trk_apps_t *apps = (const tiku_trk_apps_t *)controller->apps;
-    int i;
-
-    if (apps == NULL) {
-        return NULL;
-    }
-    for (i = 0; i < apps->count; i++) {
-        const tiku_trk_app_t *a = &apps->app[i];
-
-        if (a->is_tracker) {
-            continue;
-        }
-        if ((a->cmd[0] != '\0' && strcmp(a->cmd, path) == 0) ||
-            (a->path[0] != '\0' && strcmp(a->path, path) == 0) ||
-            (a->module[0] != '\0' && strcmp(a->module, path) == 0)) {
-            return a;
-        }
-    }
-    return NULL;
-}
-
 /**
- * @brief The registered application @p path is or links to, or NULL.
- *
- * Through the link: a link on the desk to a program's module is the
- * program, as far as a drop or a double-click is concerned.
+ * @brief The registered application @p path is or links to, or NULL: the
+ *        shell's registry answers, through the link when it is one.
  */
 static const tiku_trk_app_t *
 app_behind(const tiku_trk_drop_controller_t *controller, const char *path)
 {
-    const tiku_trk_app_t *a = app_at_path(controller, path);
-    char *real;
-
-    if (a != NULL) {
-        return a;
+    if (controller->services == NULL || controller->services->app_of == NULL) {
+        return NULL;
     }
-    real = realpath(path, NULL);
-    if (real != NULL) {
-        a = app_at_path(controller, real);
-        free(real);
-    }
-    return a;
+    return controller->services->app_of(controller->services->ctx, path);
 }
 
 /**
@@ -474,9 +462,9 @@ drop_on_application(tiku_trk_drop_controller_t *controller,
     if (application == NULL) {
         /* An executable nothing registered: saying so beats pretending the
          * drop was a move into a file. */
-        snprintf(controller->status, controller->status_size,
+        say(controller,
                  "%s is not a registered application", target.name);
-        *controller->dirty = 1;
+        changed(controller);
         return 1;
     }
     count = drop_paths(controller, paths);
@@ -495,9 +483,9 @@ drop_on_application(tiku_trk_drop_controller_t *controller,
         }
     }
     if (n == 0) {
-        snprintf(controller->status, controller->status_size,
+        say(controller,
                  "%s claims none of those types", application->name);
-        *controller->dirty = 1;
+        changed(controller);
         return 1;
     }
     (void)controller->launch(controller->launch_context, application,
@@ -554,10 +542,10 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
             *controller->drop_folder ==
                 tiku_trk_desktop_view_folder(controller->desktop_view)) {
             controller->set_color(controller->color_context, &color);
-            snprintf(controller->status, controller->status_size,
+            say(controller,
                      "desktop color set to #%02x%02x%02x",
                      color.r, color.g, color.b);
-            *controller->dirty = 1;
+            changed(controller);
         }
         return;
     }
@@ -608,7 +596,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
                 const tiku_volume_t *vol =
                     tiku_volume_of(&vols, path);
 
-                snprintf(controller->status, controller->status_size,
+                say(controller,
                          "unmounted \"%.60s\"",
                          (vol != NULL) ? vol->name : path);
             } else if (why[0] != '\0') {
@@ -618,7 +606,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
             }
         }
         if (vols_dropped > 0 && others == 0) {
-            *controller->dirty = 1;
+            changed(controller);
             return;
         }
     }
@@ -669,7 +657,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
     case TIKU_TRK_DROP_COPY:
         (void)tiku_fs_copy(controller->fs, paths, count, destination,
                                TIKU_CONFLICT_ASK);
-        snprintf(controller->status, controller->status_size,
+        say(controller,
                  "copying %d item%s", count, count == 1 ? "" : "s");
         break;
     case TIKU_TRK_DROP_LINK: {
@@ -682,7 +670,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
             (void)tiku_fs_link(controller->fs, paths, count, destination,
                                relative);
         }
-        snprintf(controller->status, controller->status_size,
+        say(controller,
                  "%s %d item%s", relative ? "linking (relative)" : "linking",
                  count, count == 1 ? "" : "s");
         break;
@@ -690,7 +678,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
     default:
         (void)tiku_fs_move(controller->fs, paths, count, destination,
                                TIKU_CONFLICT_ASK);
-        snprintf(controller->status, controller->status_size,
+        say(controller,
                  "moving %d item%s", count, count == 1 ? "" : "s");
         break;
     }

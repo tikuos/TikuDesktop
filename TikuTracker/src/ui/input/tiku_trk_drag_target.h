@@ -20,7 +20,7 @@
 typedef void (*tiku_trk_drag_open_fn)(void *context, const char *path);
 
 /** @brief Dependencies and state for resolving the target under a drag. */
-typedef struct {
+typedef struct tiku_trk_drag_target {
     tiku_workspace_t *workspace;
     tiku_trk_deskbar_t *deskbar;
     tiku_trk_desktop_view_t *desktop_view;

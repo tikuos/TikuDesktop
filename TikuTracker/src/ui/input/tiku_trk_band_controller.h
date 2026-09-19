@@ -15,7 +15,7 @@
 #include "tiku_trk_folder_window.h"
 
 /** @brief Retained state for an armed or active selection sweep. */
-typedef struct {
+typedef struct tiku_trk_band_controller {
     tiku_trk_folder_window_t *folder;
     tiku_trk_folder_window_t *armed_folder;
     int x0;

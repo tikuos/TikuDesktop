@@ -24,6 +24,7 @@
 #include "tiku_trk_prefs.h"
 #include "tiku_query.h"
 #include "tiku_thumb.h"
+#include "tiku_trk_services.h"
 
 /**
  * @brief Row slots a window keeps pixels for.
@@ -35,6 +36,26 @@
 #define TIKU_TRK_ICONS_KEPT 192
 
 typedef struct tiku_trk_folder_window tiku_trk_folder_window_t;
+struct tiku_trk_folder_edit;
+struct tiku_trk_band_controller;
+struct tiku_trk_drag_target;
+
+/**
+ * @brief A press on a pose, kept from the press to the release: when and
+ *        where, the row and its folder, the window and who was in front,
+ *        whether the button is still down and whether the long press has
+ *        already offered its menu.
+ */
+typedef struct {
+    int64_t                   at;       /* in us                        */
+    int                       x, y;
+    int                       row;      /* the pose row hit, or -1      */
+    tiku_trk_folder_window_t *folder;   /* the folder the press is in   */
+    tiku_window_t            *window;   /* deferred content raise       */
+    tiku_window_t            *focus;    /* who was in front when it began */
+    int                       down;     /* a primary button is held     */
+    int                       menu;     /* the long press already fired */
+} tiku_trk_press_t;
 
 typedef void (*tiku_trk_folder_prepare_menu_fn)(void *context,
                                                  tiku_trk_folder_window_t *);
@@ -66,31 +87,14 @@ typedef struct {
     size_t                 count_text_size;
     int                   *finding;
     char                  *find_text;
-    int                   *editing;
-    char                  *edit_path;
-    tiku_field_t       *value_edit;
-    int                   *renaming;
-    tiku_trk_folder_window_t **rename_folder;
-    int                   *rename_row;
-    tiku_field_t       *rename_edit;
-    tiku_trk_folder_window_t **band_folder;
-    int                   *band_x0;
-    int                   *band_y0;
-    int                   *band_x1;
-    int                   *band_y1;
-    tiku_trk_folder_window_t **drop_folder;
-    int                   *drop_row;
-    /* The pose a primary button is held on, drawn pressed until the hand
-     * lets go or the press becomes a drag: the window, the row and whether
-     * the button is still down.  Any of them NULL means nothing is held. */
-    tiku_trk_folder_window_t **press_folder;
-    int                   *press_row;
-    int                   *press_down;
-    /* The art a pose wears when it is an installed application, or a
-     * link to one: the shell knows the registry, the view does not.
-     * NULL from the callback means an ordinary node. */
-    const char *(*app_art)(void *context, const char *path);
-    void                  *app_art_context;
+    /* The shell's live state a row is drawn against, each by its owner:
+     * the inline editor, the band, the drop target, the press. */
+    const struct tiku_trk_folder_edit    *edit;
+    const struct tiku_trk_band_controller *band;
+    const struct tiku_trk_drag_target     *drop;
+    const tiku_trk_press_t                *press;
+    /* The shell's answers: an application's art, among others. */
+    const tiku_trk_services_t             *services;
     tiku_trk_folder_prepare_menu_fn prepare_menu;
     void                  *prepare_context;
     /* The column strip's live gesture, when one is running: the window it

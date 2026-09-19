@@ -18,7 +18,7 @@
 #include "tiku_fs.h"
 
 /** @brief State and dependencies for both kinds of inline folder editing. */
-typedef struct {
+typedef struct tiku_trk_folder_edit {
     tiku_backend_t *backend;
     tiku_fs_t *fs;
     char *status;

@@ -192,6 +192,7 @@ typedef struct desktop {
     tiku_backend_t  *backend;       /* the namespace: local files and mounts */
     tiku_fs_t       *fs;            /* file operations over it           */
     folder_t             folders[TIKU_WINDOW_MAX];  /* the open folder   */
+    tiku_trk_services_t  services;      /* what the views ask the desktop */
     tiku_trk_folder_render_t folder_render;         /* windows, and what */
     tiku_trk_folder_lifecycle_t folder_lifecycle;   /* draws/opens them  */
     int                  folder_count;  /* folders[] in use              */
@@ -476,9 +477,7 @@ typedef struct desktop {
     char                 clock_stamp[64]; /* what the clock last showed  */
     /* Where the last press landed, for the long press and for telling a
      * slow second click from a drag. */
-    int64_t              press_at;      /* in us                        */
-    int                  press_x, press_y;
-    int                  press_row;     /* the pose row hit, or -1      */
+    tiku_trk_press_t     press;         /* the press on a pose          */
     tiku_trk_drag_t      drag;      /* the gesture between press and drop */
     unsigned             drag_live_mods; /* modifiers as of the last move  */
     /* The column strip's tracker (TS-063): one gesture at a time, owned
@@ -559,7 +558,6 @@ typedef struct desktop {
     int                  spring_nav_x;  /* where its root row is drawn  */
     int                  spring_nav_y;
     tiku_window_t      *prog_was_active;  /* focus to give back */
-    int                  press_down;    /* a primary button is held     */
     int                  ptr_x, ptr_y;  /* where the pointer last was      */
     /* A context menu raised on one named thing -- the info window's icon --
      * rather than on a window's selection (AW-076). */
@@ -569,10 +567,6 @@ typedef struct desktop {
      * back for the folder it was raised on -- and the choice carried out
      * there, not on whatever window has focus. */
     folder_t            *popup_fl;
-    tiku_window_t  *press_window; /* deferred content raise (PVS-022) */
-    tiku_window_t  *press_focus;  /* who was in front when it began   */
-    folder_t            *press_fl;      /* the folder the press is in   */
-    int                  press_menu;    /* the long press already fired    */
     /* The surfaces that answer for themselves, in z-order, and the
      * Deskbar's own state as the first of them. */
     tiku_trk_responders_t responders;
@@ -940,13 +934,6 @@ void desktop_board_tell(desktop_t *app, int session, int what,
 void desktop_board_names_tell(desktop_t *app);
 
 /* tiku_trk_desktop_events.c */
-extern folder_t *fl;
-extern tiku_hit_t hit;
-extern tiku_trk_db_pick_t pick;
-extern tiku_window_t *w;
-extern tiku_window_t *w;
-extern unsigned key;
-extern unsigned mods;
 void desktop_text_input(desktop_t *app, const tiku_event_t *ev);
 void desktop_key_down(desktop_t *app, const tiku_event_t *ev,
                       desktop_loop_t *lp);

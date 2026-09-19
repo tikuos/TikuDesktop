@@ -24,11 +24,35 @@ script_resize(void *ctx, int width, int height)
     return resize_desktop((desktop_t *)ctx, width, height) >= 0;
 }
 
-/** @brief The folder views' question: is this pose an application? */
-static const char *
-app_art_of(void *context, const char *path)
+/** @brief The registry's answer for a path or a link: the desktop's own. */
+static const struct tiku_trk_app *
+services_app_of(void *ctx, const char *path)
 {
-    return desktop_app_art(context, path);
+    return desktop_app_at(ctx, path);
+}
+
+/** @brief The art an application's pose wears. */
+static const char *
+services_art_for(void *ctx, const char *path)
+{
+    return desktop_app_art(ctx, path);
+}
+
+/** @brief A line for the status strip, and the frame that shows it. */
+static void
+services_status(void *ctx, const char *text)
+{
+    desktop_t *app = ctx;
+
+    snprintf(app->status, sizeof app->status, "%s", text);
+    app->dirty = 1;
+}
+
+/** @brief A frame of what a view says it changed. */
+static void
+services_damage(void *ctx, tiku_rect_t r)
+{
+    desktop_take_damage(ctx, r);
 }
 
 /**
@@ -729,6 +753,10 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     tiku_trk_switcher_window_init(&app->switcher_window, app->desk,
         app->deskbar, DESK_W, DESK_H, &app->dirty, app->status,
         sizeof app->status);
+    app->services = (tiku_trk_services_t){
+        .ctx = app, .app_of = services_app_of, .art_for = services_art_for,
+        .status = services_status, .damage = services_damage
+    };
     app->folder_render = (tiku_trk_folder_render_t){
         .workspace = app->desk,
         .menus = &app->menus,
@@ -746,25 +774,11 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         .count_text_size = sizeof app->count_text,
         .finding = &app->finding,
         .find_text = app->find_buf,
-        .editing = &app->folder_edit.editing,
-        .edit_path = app->folder_edit.edit_path,
-        .value_edit = &app->folder_edit.value_edit,
-        .renaming = &app->folder_edit.renaming,
-        .rename_folder = &app->folder_edit.rename_folder,
-        .rename_row = &app->folder_edit.rename_row,
-        .rename_edit = &app->folder_edit.rename_edit,
-        .band_folder = &app->band_controller.folder,
-        .band_x0 = &app->band_controller.x0,
-        .band_y0 = &app->band_controller.y0,
-        .band_x1 = &app->band_controller.x1,
-        .band_y1 = &app->band_controller.y1,
-        .drop_folder = &app->drag_target.folder,
-        .drop_row = &app->drag_target.row,
-        .press_folder = &app->press_fl,
-        .press_row = &app->press_row,
-        .press_down = &app->press_down,
-        .app_art = app_art_of,
-        .app_art_context = app,
+        .edit = &app->folder_edit,
+        .band = &app->band_controller,
+        .drop = &app->drag_target,
+        .press = &app->press,
+        .services = &app->services,
         .prepare_menu = tiku_trk_folder_menu_prepare,
         .strip = &app->tstrip,
         .strip_owner = NULL,
@@ -801,10 +815,10 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         alert_model(app), &app->drag, &app->drag_target.folder,
         &app->drag_target.row,
         &app->popup, &app->popup_sub, &app->popup_frame, app->prog_dest,
-        sizeof app->prog_dest, app->status, sizeof app->status, &app->dirty,
+        sizeof app->prog_dest, &app->services,
         DESK_W, DESK_H, set_backdrop_color, app);
-    tiku_trk_drop_controller_set_launcher(&app->drop_controller,
-        (const struct tiku_trk_apps *)&app->apps, drop_launch, app);
+    tiku_trk_drop_controller_set_launcher(&app->drop_controller, drop_launch,
+                                          app);
     return -1;
 }
 

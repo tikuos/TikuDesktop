@@ -73,12 +73,12 @@ icon_press(desktop_t *app, tiku_window_t *iw, tiku_trk_info_t *info,
         (void)icon_menu(app, info, ev);
         return;
     }
-    if (tiku_trk_now() - app->press_at < 500000) {
+    if (tiku_trk_now() - app->press.at < 500000) {
         (void)open_folder(app, info->path);
-        app->press_at = tiku_trk_now();
+        app->press.at = tiku_trk_now();
         return;
     }
-    app->press_at = tiku_trk_now();
+    app->press.at = tiku_trk_now();
     if (ev->button == 1u && info->model.kind != TIKU_KIND_TRASH) {
         /* The Trash can only ever be opened, not carried. */
         char iparent[TIKU_PATH_MAX];

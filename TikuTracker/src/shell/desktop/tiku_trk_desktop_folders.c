@@ -54,15 +54,15 @@ static void
 press_note(desktop_t *app, folder_t *fl, tiku_window_t *w, int row,
            const tiku_event_t *ev, int64_t now)
 {
-    app->press_at = now;
-    app->press_x = ev->x;
-    app->press_y = ev->y;
-    app->press_row = row;
-    app->press_fl = fl;
-    app->press_window = w;
-    app->press_focus = tiku_workspace_focused(app->desk);
-    app->press_down = 1;
-    app->press_menu = 0;
+    app->press.at = now;
+    app->press.x = ev->x;
+    app->press.y = ev->y;
+    app->press.row = row;
+    app->press.folder = fl;
+    app->press.window = w;
+    app->press.focus = tiku_workspace_focused(app->desk);
+    app->press.down = 1;
+    app->press.menu = 0;
 }
 
 /** @brief Whether the folder is a merged view, which a drag links from. */
@@ -249,7 +249,7 @@ strip_menu(desktop_t *app, folder_t *tfl, tiku_window_t *w,
     app->popup_sub = NULL;
     app->popup_frame = tiku_menu_place(app->popup, ev->x, ev->y,
         (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h });
-    app->press_down = 0;
+    app->press.down = 0;
     return 1;
 }
 
@@ -418,15 +418,15 @@ folders_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     desktop_t *app = self;
 
     *damage = tiku_trk_damage_none();
-    if (app->press_down &&
-        (ev->x - app->press_x > 4 || app->press_x - ev->x > 4 ||
-         ev->y - app->press_y > 4 || app->press_y - ev->y > 4)) {
+    if (app->press.down &&
+        (ev->x - app->press.x > 4 || app->press.x - ev->x > 4 ||
+         ev->y - app->press.y > 4 || app->press.y - ev->y > 4)) {
         /* Moved out of the long-press radius: neither the menu nor the
          * rename is owed (PVS-015, PVS-017). */
-        if (app->press_fl != NULL) {
-            tiku_trk_poseview_cancel_edit_wait(app->press_fl->view);
+        if (app->press.folder != NULL) {
+            tiku_trk_poseview_cancel_edit_wait(app->press.folder->view);
         }
-        app->press_down = 0;
+        app->press.down = 0;
     }
     if (app->sbar_fl != NULL && app->sbar_fl->sbar.tracking) {
         tiku_rect_t sb = tiku_trk_folder_window_scrollbar(app->sbar_fl);
@@ -471,9 +471,9 @@ folders_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 static void
 rows_menu(desktop_t *app, const tiku_event_t *ev)
 {
-    folder_t *pfl = app->press_fl;
-    tiku_trk_pose_t *p = (app->press_row >= 0)
-        ? tiku_trk_poseview_at(pfl->view, app->press_row) : NULL;
+    folder_t *pfl = app->press.folder;
+    tiku_trk_pose_t *p = (app->press.row >= 0)
+        ? tiku_trk_poseview_at(pfl->view, app->press.row) : NULL;
     unsigned cmods = 0u;
     tiku_trk_sc_ctx_t c;
 
@@ -546,16 +546,16 @@ folders_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         /* Taken by an Info window's icon. */
     } else if (dropped) {
         do_drop(app, ev->x, ev->y, ev->modifiers, ev->button);
-    } else if (ev->button == 3u && app->press_down && !app->press_menu &&
-               app->press_fl != NULL) {
+    } else if (ev->button == 3u && app->press.down && !app->press.menu &&
+               app->press.folder != NULL) {
         rows_menu(app, ev);
     }
-    if (!dropped && app->press_down && !app->press_menu &&
-        app->press_window != NULL &&
-        tiku_workspace_focused(app->desk) == app->press_focus) {
+    if (!dropped && app->press.down && !app->press.menu &&
+        app->press.window != NULL &&
+        tiku_workspace_focused(app->desk) == app->press.focus) {
         /* A press that did not become a drag raises its window now, so
          * a drag out of a window behind never raised it (PVS-022). */
-        tiku_workspace_activate(app->desk, app->press_window);
+        tiku_workspace_activate(app->desk, app->press.window);
     }
     if (app->sbar_fl != NULL) {
         tiku_scroll_release(&app->sbar_fl->sbar);
@@ -564,10 +564,10 @@ folders_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     tiku_trk_drag_reset(&app->drag);
     tiku_trk_drag_target_reset(&app->drag_target);
     app->info_windows.drop_hot = -1;
-    app->press_down = 0;
-    app->press_menu = 0;
-    app->press_window = NULL;
-    app->press_focus = NULL;
+    app->press.down = 0;
+    app->press.menu = 0;
+    app->press.window = NULL;
+    app->press.focus = NULL;
     return 0;
 }
 

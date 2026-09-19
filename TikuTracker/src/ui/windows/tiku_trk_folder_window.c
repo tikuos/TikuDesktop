@@ -15,6 +15,9 @@
 #include "tiku_attr.h"
 #include "tiku_strings.h"
 #include "tiku_trk_folder_window.h"
+#include "tiku_trk_drag_target.h"
+#include "tiku_trk_band_controller.h"
+#include "tiku_trk_folder_edit.h"
 
 #include "tiku_trk_titleview.h"
 #include "tiku_trk_gfx_dep.h"
@@ -242,8 +245,10 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
     iy -= origin_y;
     lx -= origin_x;
     ly -= origin_y;
-    const char *app_art = (render->app_art != NULL)
-        ? render->app_art(render->app_art_context, pose->model.path) : NULL;
+    const char *app_art = (render->services != NULL &&
+                           render->services->art_for != NULL)
+        ? render->services->art_for(render->services->ctx, pose->model.path)
+        : NULL;
 
     if (app_art != NULL) {
         snprintf(art, sizeof art, "%s", app_art);
@@ -253,11 +258,9 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
     }
     /* Under a held button the icon goes dark, so the press itself is
      * seen and not only the selection it leaves behind. */
-    int held = render->press_down != NULL && *render->press_down &&
-               render->press_folder != NULL &&
-               *render->press_folder == folder &&
-               render->press_row != NULL && *render->press_row >= 0 &&
-               tiku_trk_poseview_at(folder->view, *render->press_row) ==
+    int held = render->press != NULL && render->press->down &&
+               render->press->folder == folder && render->press->row >= 0 &&
+               tiku_trk_poseview_at(folder->view, render->press->row) ==
                    pose;
     if (held) {
         (void)tiku_icon_paint_dim(surface, art, ix, iy, iw, 0.45f,
@@ -541,8 +544,8 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
     h = sig_bytes(h, &render->row_h, sizeof render->row_h);
     /* The editor draws over the row it is on, so that row differs from the
      * same row without it. */
-    if (*render->renaming && *render->rename_folder == folder &&
-        *render->rename_row == pose->index) {
+    if (render->edit->renaming && render->edit->rename_folder == folder &&
+        render->edit->rename_row == pose->index) {
         h = sig_bytes(h, "edit", 5u);
     }
     (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
@@ -602,7 +605,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
         selected = tiku_trk_poseview_draws_selected(folder->view, pose);
         cut = tiku_trk_clip_mode_of(render->clip, pose->model.node_id) ==
               TIKU_TRK_CLIP_MOVE;
-        if (*render->drop_folder == folder && *render->drop_row == i) {
+        if (render->drop->folder == folder && render->drop->row == i) {
             selected = 1;
         }
         if (ndamage > 0 && i < TIKU_TRK_ROWS_KEPT) {
@@ -963,10 +966,10 @@ draw_transients(tiku_trk_folder_window_t *folder,
 {
     tiku_trk_folder_render_t *render = folder->render;
 
-    if (*render->band_folder == folder) {
+    if (render->band->folder == folder) {
         tiku_rect_t band;
-        int x0 = *render->band_x0, y0 = *render->band_y0;
-        int x1 = *render->band_x1, y1 = *render->band_y1;
+        int x0 = render->band->x0, y0 = render->band->y0;
+        int x1 = render->band->x1, y1 = render->band->y1;
 
         /* The band is where the pointer has been, which is the screen's
          * coordinates and not the surface being painted. */
@@ -983,8 +986,10 @@ draw_transients(tiku_trk_folder_window_t *folder,
                 tiku_trk_prefs_get(render->prefs, "TransparentSelection"));
         }
     }
-    if (*render->renaming && *render->rename_folder == folder && !icons) {
-        int at = *render->rename_row - scroll;
+    if (render->edit->renaming && render->edit->rename_folder == folder &&
+        !icons) {
+        const tiku_field_t *edit = &render->edit->rename_edit;
+        int at = render->edit->rename_row - scroll;
 
         if (at >= 0 && at < rows) {
             /* Grown with the text, capped at the name column, slid to
@@ -993,14 +998,13 @@ draw_transients(tiku_trk_folder_window_t *folder,
             int bw = cap, bs = 0;
             tiku_rect_t box;
 
-            tiku_field_metrics(render->rename_edit, 60, cap,
-                                  fw_measure_prefix, NULL, &bw, &bs);
+            tiku_field_metrics(edit, 60, cap, fw_measure_prefix, NULL, &bw,
+                               &bs);
             box = (tiku_rect_t){ list.x + 2,
                 list.y + 2 + at * render->row_h, bw, render->row_h };
-            tiku_ui_textfield_scroll(surface, box,
-                render->rename_edit->text, render->rename_edit->caret,
-                render->rename_edit->sel_a, render->rename_edit->sel_b,
-                TIKU_S_FOCUS, bs);
+            tiku_ui_textfield_scroll(surface, box, edit->text, edit->caret,
+                                     edit->sel_a, edit->sel_b, TIKU_S_FOCUS,
+                                     bs);
         }
     }
 }
@@ -1025,13 +1029,13 @@ draw_count(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
     if (*render->finding && focused) {
         tiku_ui_sunken(surface, count, TIKU_C_DOC);
         snprintf(label, sizeof label, "find: %.60s_", render->find_text);
-    } else if (*render->editing && focused) {
-        const char *slash = strrchr(render->edit_path, '/');
+    } else if (render->edit->editing && focused) {
+        const char *slash = strrchr(render->edit->edit_path, '/');
 
         tiku_ui_sunken(surface, count, TIKU_C_DOC);
         snprintf(label, sizeof label, "%.100s = %.64s_",
-                 slash != NULL ? slash + 1 : render->edit_path,
-                 render->value_edit->text);
+                 slash != NULL ? slash + 1 : render->edit->edit_path,
+                 render->edit->value_edit.text);
     } else if (render->status[0] != '\0') {
         tiku_fill(surface, count, TIKU_C_PANEL);
         snprintf(label, sizeof label, "%s", render->status);
@@ -1421,7 +1425,7 @@ fw_draw_icons(tiku_window_t *window, tiku_surface_t *surface,
             vsig = sig_bytes(vsig, &m, sizeof m);
             vsig = sig_bytes(vsig, &bg, sizeof bg);
         }
-        band_up = (*render->band_folder == folder);
+        band_up = (render->band->folder == folder);
         full = !folder->kept_ready || vsig != folder->icon_view_sig ||
                origin_x != folder->icon_origin_x ||
                origin_y != folder->icon_origin_y || band_up ||

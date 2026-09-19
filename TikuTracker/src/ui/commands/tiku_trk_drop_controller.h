@@ -48,15 +48,12 @@ typedef struct {
     tiku_rect_t *popup_frame;
     char *progress_destination;
     size_t progress_destination_size;
-    char *status;
-    size_t status_size;
-    int *dirty;
+    const tiku_trk_services_t *services; /* status lines and frames    */
     tiku_trk_drop_color_fn set_color;
     void *color_context;
     /* A drop landing on an application pose is a LAUNCH, not a move
-     * (PVS-044): the registry says which poses are applications, and the
+     * (PVS-044): the services say which poses are applications, and the
      * shell supplies the one act that runs one. */
-    const struct tiku_trk_apps *apps;
     tiku_trk_drop_launch_fn launch;
     void *launch_context;
     int screen_w;
@@ -74,8 +71,8 @@ void tiku_trk_drop_controller_init(tiku_trk_drop_controller_t *controller,
     tiku_trk_drag_t *drag, tiku_trk_folder_window_t **drop_folder,
     int *drop_row, tiku_menu_t **popup, tiku_menu_t **popup_sub,
     tiku_rect_t *popup_frame, char *progress_destination,
-    size_t progress_destination_size, char *status, size_t status_size,
-    int *dirty, int screen_w, int screen_h,
+    size_t progress_destination_size, const tiku_trk_services_t *services,
+    int screen_w, int screen_h,
     tiku_trk_drop_color_fn set_color, void *color_context);
 /**
  * @brief Perform the drop at @p x, @p y with the drag in hand: the Deskbar
@@ -100,7 +97,7 @@ void tiku_trk_drop_controller_execute_into(
 
 /** @brief Teach the controller which poses are applications (PVS-044). */
 void tiku_trk_drop_controller_set_launcher(
-    tiku_trk_drop_controller_t *controller, const struct tiku_trk_apps *apps,
-    tiku_trk_drop_launch_fn launch, void *launch_context);
+    tiku_trk_drop_controller_t *controller, tiku_trk_drop_launch_fn launch,
+    void *launch_context);
 
 #endif /* TIKU_TRK_DROP_CONTROLLER_H_ */

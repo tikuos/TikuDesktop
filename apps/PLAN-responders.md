@@ -1,6 +1,6 @@
 # Responders: one interface for every surface on the desk
 
-*2026-09-19.  R0 to R3 built the same day; the rest not yet.*
+*2026-09-19.  R0 to R4 built the same day; the rest not yet.*
 
 ## 1. What is wrong today
 
@@ -147,7 +147,7 @@ typedef struct tiku_trk_shell_services {
   applink, dropmenu), iconpress, the band and rename lanes, and
   `test_render_perf`'s drag parity.
 
-### R4: the services table
+### R4: the services table  (DONE 2026-09-19)
 
 - `tiku_trk_shell_services_t` replaces the pointer fields in
   `tiku_trk_folder_render_t` and the first fifteen arguments of
@@ -316,4 +316,33 @@ typedef struct tiku_trk_shell_services {
 - Keys are not moved.  The folder windows' keyboard (type-ahead, the
   arrows, a rename in progress) is still `desktop_key_down`'s, about
   680 lines, and waits for its own milestone.
+
+## 11. What R4 settled
+
+- `tiku_trk_services_t` carries four answers: the application behind a
+  path or a link, the art its pose wears, a line for the status strip,
+  and a frame for what changed.  The folder renderer and the drop
+  controller ask through it; the desktop fills it once.
+- The render struct's copied pointers went by their owners: one pointer
+  each to the inline editor, the band, the drop target and the press,
+  where there were seventeen to their fields.  The struct has 30 fields
+  now, from 44; the twenty that remain are geometry, damage and the
+  kit objects a row is drawn with, and going under 20 means splitting
+  the geometry out, which is not this milestone's.
+- The press became `tiku_trk_press_t`, declared with the renderer since
+  it reads it, and one struct on the desktop.  The Tracker shell keeps
+  its own press fields; they were never the renderer's to read.
+- The drop controller's registry matching is gone: it asks the services,
+  and `desktop_app_at` matches what it matched (a module, a command, a
+  path, through a link).  Of the twelve string compares, four remain in
+  that one lookup, three deduplicate registrations, and one in the
+  startup panel wants the art service and waits.
+- The drop controller's init lost three arguments (a status buffer, its
+  size, the dirty flag) for the table; the rest stay, since each is a
+  part it acts through rather than a fact it asks for.
+- The seven externs were declarations of nothing: names of locals in
+  the events file, in a generated block.  They are gone.
+- "Is an application" is not a fact on the model: the backend that
+  stats a file knows no registry, and a fact set after the stat is the
+  service call by another name.
 

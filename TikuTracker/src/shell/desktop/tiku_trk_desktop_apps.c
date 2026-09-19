@@ -560,8 +560,13 @@ desktop_app_at(desktop_t *app, const char *path)
     for (int i = 0; i < app->apps.count; i++) {
         const tiku_trk_app_t *a = &app->apps.app[i];
 
-        if (a->module[0] != '\0' && (strcmp(a->module, look) == 0 ||
-                                     strcmp(a->module, path) == 0)) {
+        if (a->is_tracker) {
+            continue;
+        }
+        if ((a->module[0] != '\0' && (strcmp(a->module, look) == 0 ||
+                                      strcmp(a->module, path) == 0)) ||
+            (a->cmd[0] != '\0' && strcmp(a->cmd, look) == 0) ||
+            (a->path[0] != '\0' && strcmp(a->path, look) == 0)) {
             return a;
         }
     }

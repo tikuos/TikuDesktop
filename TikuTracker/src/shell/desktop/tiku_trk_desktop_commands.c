@@ -1244,28 +1244,28 @@ desktop_press_hold(desktop_t *app)
     /* PVS-017: a button held still for the click interval opens the
      * context menu without waiting for the release.  The Deskbar's own
      * long press is its responder's tick. */
-    if (app->press_down && !app->press_menu && app->popup == NULL &&
-        app->press_fl != NULL &&
-        tiku_trk_now() - app->press_at > TIKU_TRK_CLICK_SPEED_US) {
-        folder_t *pfl = app->press_fl;
-        tiku_trk_pose_t *p = (app->press_row >= 0)
-            ? tiku_trk_poseview_at(pfl->view, app->press_row) : NULL;
+    if (app->press.down && !app->press.menu && app->popup == NULL &&
+        app->press.folder != NULL &&
+        tiku_trk_now() - app->press.at > TIKU_TRK_CLICK_SPEED_US) {
+        folder_t *pfl = app->press.folder;
+        tiku_trk_pose_t *p = (app->press.row >= 0)
+            ? tiku_trk_poseview_at(pfl->view, app->press.row) : NULL;
         tiku_trk_sc_ctx_t c;
 
         tiku_trk_poseview_cancel_edit_wait(pfl->view);
         commit_rename(app, 1);            /* CW-029: mouse-opened */
-        (void)tiku_trk_poseview_context_click(pfl->view, app->press_row);
+        (void)tiku_trk_poseview_context_click(pfl->view, app->press.row);
         c = menu_ctx(app, pfl, 0u);
         build_open_with(app, pfl);
         build_per_type(app, pfl);
         app->popup = tiku_trk_cwmenu_context(&app->menus,
                         (p != NULL) ? &p->model : NULL, &c);
         app->popup_sub = NULL;
-        app->popup_frame = tiku_menu_place(app->popup, app->press_x,
-            app->press_y, (tiku_rect_t){ 0, 0, app->surf->w,
+        app->popup_frame = tiku_menu_place(app->popup, app->press.x,
+            app->press.y, (tiku_rect_t){ 0, 0, app->surf->w,
                                              app->surf->h });
-        app->press_menu = 1;
-        app->press_down = 0;
+        app->press.menu = 1;
+        app->press.down = 0;
         app->dirty = 1;
     }
 }
