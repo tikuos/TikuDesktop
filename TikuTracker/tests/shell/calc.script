@@ -1,0 +1,26 @@
+# shell: desktop
+# prefs: factory
+# The plain calculator starts through the application runner, takes its
+# keys from the keyboard, publishes its own menu and closes from it.  Its
+# arithmetic is test_calc's.
+wait 20
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Calculator
+wait 100
+expect-title Calculator
+key 1
+key 2
+key +
+key 3
+key Return
+wait 10
+shot /tmp/trk_calc.png
+click 60 8
+wait 8
+expect-menu Copy result|Close
+menu-pick Close
+wait 30
+expect-no-title Calculator

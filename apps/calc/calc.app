@@ -1,0 +1,9 @@
+version=1
+id=calc
+name=Calculator
+module=Calculator.so
+category=applications
+icon=application
+types=
+startup=apps/Calculator.so
+help=apps/calc.html
