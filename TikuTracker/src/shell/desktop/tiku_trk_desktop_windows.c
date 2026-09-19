@@ -1,0 +1,590 @@
+/*
+ * tiku_trk_desktop_windows.c - the workspace as a responder: every window's
+ * frame (its tab, its close and zoom boxes, its resize corner), the windows
+ * whose content is theirs to answer (preferences, panels, embedded and
+ * remote applications, the Find window), and the wheel over any of them.
+ *
+ * A folder window's content is the folders responder's; an Info window's
+ * parts are the info responder's.  SPDX-License-Identifier: Apache-2.0
+ */
+#include "tiku_trk_desktop_private.h"
+
+/** @brief Tell a window its content size, so it repaints its page to fit. */
+static void
+resize_deliver(desktop_t *app, tiku_window_t *w)
+{
+    tiku_rect_t rc = tiku_window_content(w);
+    struct embed_win *ew = embed_win_of_window(app, w);
+    tiku_event_t rev;
+
+    memset(&rev, 0, sizeof rev);
+    rev.type = TIKU_EVENT_RESIZE;
+    rev.width = rc.w;
+    rev.height = rc.h;
+    if (ew != NULL) {
+        (void)embed_deliver(ew, &rev);
+    } else if (tiku_remote_owner(&app->remote, w) != NULL) {
+        tiku_remote_event(&app->remote, w, &rev);
+    }
+}
+
+/** @brief The close box or the zoom box, released over the box it was
+ *         pressed in: zoom fits the window, close closes it, with CMD every
+ *         window and with Option the folder's children too. */
+static void
+tab_box_act(desktop_t *app, tiku_window_t *w, int hit, unsigned mods)
+{
+    if (hit == TIKU_HIT_ZOOM) {
+        folder_t *fl = folder_of(app, w);
+
+        if (fl != NULL) {
+            tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
+            (void)tiku_workspace_zoom(app->desk, w,
+                                     tiku_trk_folder_window_fit_width(fl),
+                                     tiku_trk_folder_window_fit_height(fl));
+        } else if (w && tiku_remote_owner(&app->remote, w)) {
+            tiku_trk_rect_t area =
+                tiku_trk_desktop_view_area(&app->desktop_view);
+
+            if (area.y + area.h > app->surf->h)
+                area.h = app->surf->h - area.y;
+            if (tiku_trk_deskbar_dock(app->deskbar) == TIKU_TRK_DB_BOTTOM) {
+                tiku_rect_t bar = tiku_trk_deskbar_frame(app->deskbar);
+                area.h = bar.y - area.y - 4;
+            }
+            if (w->zoom_valid) {
+                w->frame = w->saved_zoom;
+                w->zoom_valid = 0;
+            } else {
+                w->saved_zoom = w->frame;
+                w->zoom_valid = 1;
+                w->frame = (tiku_rect_t){area.x, area.y, area.w, area.h};
+            }
+            resize_deliver(app, w);
+            tiku_sound_play(TIKU_SOUND_WINDOW_ZOOM);
+        }
+        return;
+    }
+    if (mods & TIKU_MOD_CMD) {
+        int k;
+
+        for (k = 0; k < app->folder_count; k++) {
+            if (app->folders[k].win != NULL) {
+                tiku_workspace_close(app->desk, app->folders[k].win);
+            }
+        }
+        if (tiku_trk_find_window_handle(&app->find_window) != NULL) {
+            tiku_trk_find_window_close(&app->find_window);
+        }
+        return;
+    }
+    if (mods & TIKU_MOD_OPTION) {
+        folder_t *cf = folder_of(app, w);
+
+        if (cf != NULL) {
+            close_windows_under(app, cf->path);
+            return;
+        }
+    }
+    close_window(app, w);
+}
+
+/** @brief Whether the pointer is over the box that was pressed. */
+static int
+tab_box_under(desktop_t *app, int x, int y)
+{
+    tiku_window_t *hw = NULL;
+    int hit = tiku_workspace_hit(app->desk, x, y, &hw);
+
+    return hw == app->box_press && hit == app->box_hit;
+}
+
+/** @brief A pressed box goes up when the hand leaves it and down when it
+ *         comes back.  @return whether a box is pressed at all. */
+static int
+tab_box_move(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    int on;
+
+    if (app->box_press == NULL) {
+        return 0;
+    }
+    on = tab_box_under(app, ev->x, ev->y);
+    if ((app->box_press->pressed != 0) != on) {
+        app->box_press->pressed = on ? app->box_hit : 0;
+        *damage = tiku_trk_damage_all();
+    }
+    return 1;
+}
+
+/** @brief The box acts only when released over itself. */
+static int
+tab_box_release(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    tiku_window_t *w = app->box_press;
+    int hit = app->box_hit, on;
+
+    if (w == NULL) {
+        return 0;
+    }
+    on = tab_box_under(app, ev->x, ev->y);
+    w->pressed = 0;
+    app->box_press = NULL;
+    *damage = tiku_trk_damage_all();
+    if (on && w->open) {
+        tab_box_act(app, w, hit, app->box_mods);
+    }
+    return 1;
+}
+
+/**
+ * @brief A window that is open takes a press wherever it lands if its own
+ *        handler says the point was its; a primary press is then tracked
+ *        to that window until the release.
+ */
+static int
+offer_press(desktop_t *app, tiku_window_t *w, const tiku_event_t *ev)
+{
+    tiku_event_t window_event = { 0 };
+
+    if (w == NULL || !w->open || alert_model(app)->open) {
+        return 0;
+    }
+    window_event.type = TIKU_EVENT_POINTER_DOWN;
+    window_event.time_us = tiku_trk_now();
+    window_event.x = ev->x;
+    window_event.y = ev->y;
+    window_event.button = ev->button;
+    if (!tiku_window_send(w, &window_event)) {
+        return 0;
+    }
+    if (ev->button == 1) {
+        app->prefs_track = w;
+    }
+    return 1;
+}
+
+/**
+ * @brief The wheel: in an icon mode it moves the pixel origin, in a list
+ *        it steps rows; over an application's own page it rides in as a
+ *        wheel event in window coordinates, embedded here or across the
+ *        wire, the road a click already takes.
+ */
+static int
+wheel(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    tiku_window_t *ww = NULL;
+    folder_t *wfl;
+
+    (void)tiku_workspace_hit(app->desk, ev->x, ev->y, &ww);
+    wfl = folder_of(app, ww);
+    if (wfl != NULL) {
+        int step = (ev->button == 4u) ? -1 : 1;
+
+        if (tiku_trk_poseview_mode(wfl->view) != TIKU_TRK_MODE_LIST) {
+            int ox = 0, oy = 0;
+
+            tiku_trk_poseview_origin(wfl->view, &ox, &oy);
+            tiku_trk_poseview_set_origin(wfl->view, ox,
+                                         oy + step * 3 * app->row_h);
+        } else {
+            tiku_trk_poseview_scroll_to(wfl->view,
+                tiku_trk_poseview_scroll(wfl->view) + step * 3);
+        }
+        *damage = tiku_trk_damage_all();
+    } else if (ww != NULL) {
+        struct embed_win *ew = embed_win_of_window(app, ww);
+        tiku_rect_t rc = tiku_window_content(ww);
+        tiku_event_t we;
+
+        memset(&we, 0, sizeof we);
+        we.type = TIKU_EVENT_WHEEL;
+        we.x = ev->x - rc.x;
+        we.y = ev->y - rc.y;
+        we.dy = (ev->button == 4u) ? -3 : 3;
+        we.modifiers = ev->modifiers;
+        we.time_us = tiku_trk_now();
+        if (ww == tiku_trk_fonts_window_handle(&app->fonts_window)) {
+            we.x = ev->x;
+            we.y = ev->y;
+            (void)tiku_window_send(ww, &we);
+            *damage = tiku_trk_damage_all();
+        } else if (ew != NULL) {
+            if (embed_deliver(ew, &we)) {
+                embed_stop(ew->slot);
+            }
+            *damage = tiku_trk_damage_all();
+        } else if (tiku_remote_owner(&app->remote, ww) != NULL) {
+            tiku_remote_event(&app->remote, ww, &we);
+            *damage = tiku_trk_damage_all();
+        }
+    }
+    return 1;
+}
+
+/** @brief Every point, since an open preferences window is asked first
+ *         wherever the press lands; a press nobody's returns untaken. */
+static int
+windows_hit(void *self, int x, int y)
+{
+    (void)self; (void)x; (void)y;
+    return 1;
+}
+
+/**
+ * @brief A press: the device preferences popup, an open preferences
+ *        window, then the window under the point: its frame, or its
+ *        content when the window answers for itself.  A folder's content
+ *        is left for the folders responder.
+ */
+static int
+windows_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    desktop_t *app = self;
+    tiku_window_t *w = NULL;
+    tiku_hit_t hit;
+
+    *damage = tiku_trk_damage_none();
+    if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
+        tiku_window_t *pw = desktop_deviceprefs_handle(app);
+        tiku_event_t pe = *ev;
+
+        if (ev->button == 1) app->prefs_track = pw;
+        if (ev->button == 4 || ev->button == 5) {
+            pe.type = TIKU_EVENT_WHEEL;
+            pe.dy = ev->button == 4 ? -1 : 1;
+        }
+        (void)tiku_window_send(pw, &pe);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (offer_press(app, tiku_trk_deskbar_prefs_window_handle(
+                        &app->deskbar_prefs_window), ev) ||
+        offer_press(app, tiku_trk_desktop_prefs_window_handle(
+                        &app->desktop_prefs_window), ev)) {
+        return 1;
+    }
+    {
+        tiku_window_t *sounds =
+            tiku_trk_sounds_window_handle(&app->sounds_window);
+        tiku_window_t *under = NULL;
+
+        (void)tiku_workspace_hit(app->desk, ev->x, ev->y, &under);
+        if (under == sounds && offer_press(app, sounds, ev)) {
+            return 1;
+        }
+    }
+    if (offer_press(app, tiku_trk_prefs_window_handle(&app->prefs_window),
+                    ev)) {
+        return 1;
+    }
+    if (ev->button == 4u || ev->button == 5u) {
+        return wheel(app, ev, damage);
+    }
+    hit = tiku_workspace_hit(app->desk, ev->x, ev->y, &w);
+    if (tiku_trk_find_window_popup_open(&app->find_window)) {
+        w = tiku_trk_find_window_handle(&app->find_window);
+        hit = TIKU_HIT_CONTENT;
+    }
+    if (w == NULL) {
+        return 0;               /* the desk itself is the folders' */
+    }
+    if (hit != TIKU_HIT_CONTENT) {
+        if (app->folder_edit.renaming &&
+            app->folder_edit.rename_folder != NULL &&
+            app->folder_edit.rename_folder->win != NULL &&
+            app->folder_edit.rename_folder->win != w) {
+            commit_rename(app, 1);
+        }
+        tiku_workspace_activate(app->desk, w);
+        *damage = tiku_trk_damage_all();
+        if (hit == TIKU_HIT_ZOOM || hit == TIKU_HIT_CLOSE) {
+            w->pressed = hit;
+            app->box_press = w;
+            app->box_hit = hit;
+            app->box_mods = ev->modifiers;
+        } else if (hit == TIKU_HIT_TAB || hit == TIKU_HIT_RESIZE) {
+            app->resize_track = (hit == TIKU_HIT_RESIZE) ? w : NULL;
+            tiku_workspace_begin_track(app->desk, w, hit, ev->x, ev->y);
+        }
+        return 1;
+    }
+    if (w == desktop_deviceprefs_handle(app) ||
+        w == desktop_startup_handle(app) ||
+        w == desktop_associations_handle(app) ||
+        w == desktop_forcequit_handle(app) ||
+        w == tiku_trk_fonts_window_handle(&app->fonts_window)) {
+        tiku_workspace_activate(app->desk, w);
+        if (ev->button == 1) app->prefs_track = w;
+        (void)tiku_window_send(w, ev);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (w == tiku_trk_select_window_handle(&app->select_window) ||
+        w == tiku_trk_panel_window_handle(&app->file_panel)) {
+        if (ev->button == 1) app->prefs_track = w;
+        (void)tiku_window_send(w, ev);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (panel_of_window(app, w) != NULL) {
+        tiku_workspace_activate(app->desk, w);
+        (void)tiku_window_send(w, ev);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (embed_win_of_window(app, w) != NULL) {
+        struct embed_win *ew = embed_win_of_window(app, w);
+        tiku_event_t rev = *ev;
+        tiku_rect_t rc = tiku_window_content(w);
+
+        tiku_workspace_activate(app->desk, w);
+        rev.x -= rc.x;
+        rev.y -= rc.y;
+        if (embed_deliver(ew, &rev)) {
+            embed_stop(ew->slot);
+        } else {
+            app->embed_press = ew;
+        }
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (tiku_remote_owner(&app->remote, w) != NULL) {
+        tiku_event_t rev = *ev;
+        tiku_rect_t rc = tiku_window_content(w);
+
+        tiku_workspace_activate(app->desk, w);
+        rev.x -= rc.x;
+        rev.y -= rc.y;
+        tiku_remote_event(&app->remote, w, &rev);
+        app->remote_press = w;
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (w == tiku_trk_find_window_handle(&app->find_window)) {
+        if (ev->button == 1u &&
+            tiku_trk_find_window_icon_at(&app->find_window, ev->x, ev->y)) {
+            app->qdrag_on = 1;  /* the query's icon, picked up (Q-034) */
+        } else {
+            if (ev->button == 1) app->prefs_track = w;
+            (void)tiku_window_send(w, ev);
+        }
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    return 0;                   /* a folder's content, or nobody's */
+}
+
+/**
+ * @brief A move: the window a press is tracked to gets it and nobody
+ *        else; otherwise the window under the pointer hears a hover, and
+ *        a tab or corner in hand moves or resizes.
+ */
+static int
+windows_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    desktop_t *app = self;
+
+    *damage = tiku_trk_damage_none();
+    if (tab_box_move(app, ev, damage)) {
+        return 1;
+    }
+    if (app->prefs_track != NULL && app->prefs_track->open) {
+        tiku_event_t pe = *ev;
+
+        if (alert_model(app)->open) pe.type = TIKU_EVENT_DEACTIVATED;
+        (void)tiku_window_send(app->prefs_track, &pe);
+        if (alert_model(app)->open) app->prefs_track = NULL;
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (!alert_model(app)->open && desktop_deviceprefs_popup(app)) {
+        (void)tiku_window_send(desktop_deviceprefs_handle(app), ev);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
+        /* The volume knob is in hand: every move is its. */
+        (void)tiku_window_send(
+            tiku_trk_sounds_window_handle(&app->sounds_window), ev);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (panel_tracking(app) != NULL) {
+        (void)tiku_window_send(panel_tracking(app)->window, ev);
+        return 1;
+    }
+    if (app->embed_press != NULL && app->embed_press->window != NULL) {
+        struct embed_win *ew = app->embed_press;
+        tiku_event_t rev = *ev;
+        tiku_rect_t rc = tiku_window_content(ew->window);
+
+        rev.x -= rc.x;
+        rev.y -= rc.y;
+        if (embed_deliver(ew, &rev)) {
+            embed_stop(ew->slot);
+        }
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (app->remote_press != NULL &&
+        tiku_remote_owner(&app->remote, app->remote_press) != NULL) {
+        tiku_event_t rev = *ev;
+        tiku_rect_t rc = tiku_window_content(app->remote_press);
+
+        rev.x -= rc.x;
+        rev.y -= rc.y;
+        tiku_remote_event(&app->remote, app->remote_press, &rev);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (!tiku_trk_drag_active(&app->drag)) {
+        tiku_window_t *hw = NULL;
+
+        if (tiku_workspace_hit(app->desk, ev->x, ev->y, &hw) ==
+                TIKU_HIT_CONTENT && hw != NULL) {
+            struct embed_win *hew = embed_win_of_window(app, hw);
+            tiku_event_t rev = *ev;
+            tiku_rect_t rc = tiku_window_content(hw);
+
+            rev.x -= rc.x;
+            rev.y -= rc.y;
+            if (hew != NULL) {
+                if (embed_deliver(hew, &rev)) {
+                    embed_stop(hew->slot);
+                }
+            } else if (tiku_remote_owner(&app->remote, hw) != NULL) {
+                tiku_remote_event(&app->remote, hw, &rev);
+            }
+        }
+    }
+    if (tiku_workspace_tracking(app->desk)) {
+        tiku_window_t *moving = tiku_workspace_moving(app->desk);
+        tiku_rect_t before = moving ? moving->frame : (tiku_rect_t){0};
+
+        if (tiku_workspace_track(app->desk, ev->x, ev->y)) {
+            if (app->resize_track != NULL) {
+                /* The frame just changed size under the hand: the window
+                 * hears it now, so its page grows with the corner. */
+                resize_deliver(app, app->resize_track);
+            }
+            *damage = moving ? tiku_rect_union(before, moving->frame)
+                             : tiku_trk_damage_all();
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief A release: the box, the tracked window, the picked-up query icon
+ *        each end what their press began; a tab or corner in hand is let
+ *        go for everyone.
+ */
+static int
+windows_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    desktop_t *app = self;
+
+    *damage = tiku_trk_damage_none();
+    if (tab_box_release(app, ev, damage)) {
+        return 1;
+    }
+    if (app->prefs_track != NULL) {
+        tiku_window_t *pw = app->prefs_track;
+        tiku_event_t pe = *ev;
+
+        if (alert_model(app)->open) pe.type = TIKU_EVENT_DEACTIVATED;
+        if (ev->button == 1) app->prefs_track = NULL;
+        if (pw->open) (void)tiku_window_send(pw, &pe);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
+        (void)tiku_window_send(
+            tiku_trk_sounds_window_handle(&app->sounds_window), ev);
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (panel_tracking(app) != NULL) {
+        (void)tiku_window_send(panel_tracking(app)->window, ev);
+        return 1;
+    }
+    if (app->embed_press != NULL) {
+        struct embed_win *ew = app->embed_press;
+
+        app->embed_press = NULL;
+        if (ew->slot->running && ew->window != NULL) {
+            tiku_event_t rev = *ev;
+            tiku_rect_t rc = tiku_window_content(ew->window);
+
+            rev.x -= rc.x;
+            rev.y -= rc.y;
+            if (embed_deliver(ew, &rev)) {
+                embed_stop(ew->slot);
+            }
+        }
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (app->remote_press != NULL) {
+        if (tiku_remote_owner(&app->remote, app->remote_press) != NULL) {
+            tiku_event_t rev = *ev;
+            tiku_rect_t rc = tiku_window_content(app->remote_press);
+
+            rev.x -= rc.x;
+            rev.y -= rc.y;
+            tiku_remote_event(&app->remote, app->remote_press, &rev);
+        }
+        app->remote_press = NULL;
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    if (app->qdrag_on) {
+        /* The query's icon let go over a folder: a menu of what to do
+         * with it there (Q-034). */
+        tiku_window_t *tw = NULL;
+        folder_t *tfl;
+
+        (void)tiku_workspace_hit(app->desk, ev->x, ev->y, &tw);
+        tfl = (tw != NULL) ? folder_of(app, tw) : desktop_folder(app);
+        app->qdrag_on = 0;
+        if (tfl != NULL && tfl->view != NULL &&
+            (tw == NULL ||
+             tw != tiku_trk_find_window_handle(&app->find_window))) {
+            tiku_model_t dm;
+            int ro = 1;
+
+            if (app->backend->ops->stat(app->backend, tfl->path, &dm) == 0) {
+                ro = !tiku_model_is_mutable_container(&dm);
+            }
+            snprintf(app->qdrop_dest, sizeof app->qdrop_dest, "%s",
+                     tfl->path);
+            app->popup = tiku_trk_cwmenu_query_drop(&app->menus, ro);
+            app->popup_fl = tfl;
+            app->popup_sub = NULL;
+            app->popup_frame = tiku_menu_place(app->popup, ev->x, ev->y,
+                (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h });
+        }
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    tiku_workspace_end_track(app->desk);
+    if (app->resize_track != NULL) {
+        resize_deliver(app, app->resize_track);
+        app->resize_track = NULL;
+        *damage = tiku_trk_damage_all();
+    }
+    return 0;
+}
+
+/** @brief The workspace's entry on the responder list. */
+void
+desktop_windows_attach(desktop_t *app)
+{
+    app->windows_responder = (tiku_trk_responder_t){
+        .name = "windows", .self = app, .hit = windows_hit,
+        .press = windows_press, .move = windows_move,
+        .release = windows_release
+    };
+    (void)tiku_trk_responders_push(&app->responders, &app->windows_responder);
+}

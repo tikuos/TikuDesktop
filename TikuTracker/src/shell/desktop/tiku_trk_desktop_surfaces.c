@@ -315,6 +315,59 @@ popup_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 1;
 }
 
+/* the global menu bar: one strip at the top of the screen */
+
+/** @brief The strip is the point's while the bar is on and no menu shows. */
+static int
+gbar_hit(void *self, int x, int y)
+{
+    desktop_t *app = self;
+
+    (void)x;
+    return app->gbar_on == 1 && app->popup == NULL &&
+           y < app->menus.bar.height;
+}
+
+/**
+ * @brief A primary press on the strip: the camera at its right takes a
+ *        screenshot next turn, so the press is not frozen into it; a
+ *        title opens its menu, from the published description alone.
+ */
+static int
+gbar_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    desktop_t *app = self;
+    tiku_rect_t strip;
+    int bi;
+
+    *damage = tiku_trk_damage_none();
+    if (ev->button != 1u) {
+        return 0;
+    }
+    if (ev->x >= app->shot_btn.x &&
+        ev->x < app->shot_btn.x + app->shot_btn.w) {
+        app->shot_pending = 1;
+        app->shot_pressed = 1;
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
+    strip = global_bar_rect(app);
+    bi = tiku_menubar_title_at(&app->gbar, strip, ev->x, ev->y);
+    if (bi < 0) {
+        return 0;
+    }
+    commit_rename(app, 1);
+    app->gbar_open = bi;
+    app->gbar.open = bi;
+    app->popup = app->gbar.menu[bi];
+    app->popup_sub = NULL;
+    app->popup_frame = tiku_menubar_panel(&app->gbar, strip,
+        (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h });
+    app->nav_on = 0;
+    *damage = tiku_trk_damage_all();
+    return 1;
+}
+
 /* the spring navigator, tracked while a drag rides over it */
 
 /** @brief A drag riding over the spring navigator walks its levels. */
@@ -455,8 +508,10 @@ info_hover_paint(void *self, tiku_surface_t *s)
 
 /* the list */
 
-/** @brief Every surface on the list, bottom first: the bar under the menus,
- *         the menus under the alert, the alert under the picker. */
+/** @brief Every surface on the list, bottom first: the folders under the
+ *         frames, the frames under the Deskbar, the bar under the global
+ *         strip, the strip under the Info windows' parts, those under the
+ *         menus, the menus under the alert and the picker. */
 void
 desktop_responders_attach(desktop_t *app)
 {
@@ -467,6 +522,10 @@ desktop_responders_attach(desktop_t *app)
     };
     app->spring_responder = (tiku_trk_responder_t){
         .name = "spring", .self = app, .move = spring_move
+    };
+    app->gbar_responder = (tiku_trk_responder_t){
+        .name = "global-bar", .self = app, .hit = gbar_hit,
+        .press = gbar_press
     };
     app->popup_responder = (tiku_trk_responder_t){
         .name = "popup", .self = app, .hit = popup_hit, .press = popup_press,
@@ -485,7 +544,11 @@ desktop_responders_attach(desktop_t *app)
     (void)tiku_trk_responders_push(&app->responders,
                                    &app->info_hover_responder);
     (void)tiku_trk_responders_push(&app->responders, &app->spring_responder);
+    desktop_folders_attach(app);
+    desktop_windows_attach(app);
     desktop_bar_attach(app);
+    (void)tiku_trk_responders_push(&app->responders, &app->gbar_responder);
+    desktop_infowin_attach(app);
     (void)tiku_trk_responders_push(&app->responders, &app->popup_responder);
     (void)tiku_trk_responders_push(&app->responders, &app->status_responder);
     (void)tiku_trk_responders_push(&app->responders,

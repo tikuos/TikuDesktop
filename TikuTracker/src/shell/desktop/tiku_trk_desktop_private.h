@@ -583,6 +583,12 @@ typedef struct desktop {
     tiku_trk_responder_t  popup_responder;      /* the popup menus     */
     tiku_trk_responder_t  status_responder;     /* alert and progress  */
     tiku_trk_responder_t  forcequit_responder;  /* the picker          */
+    tiku_trk_responder_t  windows_responder;    /* the frames          */
+    tiku_trk_responder_t  folders_responder;    /* the folders' content */
+    tiku_trk_responder_t  infowin_responder;    /* the Info windows    */
+    tiku_trk_responder_t  gbar_responder;       /* the global bar strip */
+    tiku_trk_click_t      click;                /* the click before this one,
+                                                 * the folders responder's */
 } desktop_t;
 
 static folder_t *folder_of(desktop_t *app, tiku_window_t *w);
@@ -636,7 +642,7 @@ typedef struct {
 
 /* What the shell's loop keeps between one event and the next. */
 typedef struct {
-    tiku_trk_click_t    click;      /* the click before this one */
+    tiku_trk_click_t    click;      /* the Tracker shell's last click     */
     tiku_trk_script_t  *sc;         /* the script driving this run, or NULL */
     int64_t             shot_at;    /* when the -shot frame is due, 0 never */
     int64_t             last_pump, last_requery, last_sweep, started_at;
@@ -790,6 +796,12 @@ int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,
 void desktop_bar_attach(desktop_t *app);
 /** @brief Fill the responder list with every surface, bottom first. */
 void desktop_responders_attach(desktop_t *app);
+/** @brief The workspace's frames and the windows that answer for themselves. */
+void desktop_windows_attach(desktop_t *app);
+/** @brief The folder windows' content and the desk's own. */
+void desktop_folders_attach(desktop_t *app);
+/** @brief The Info windows' parts. */
+void desktop_infowin_attach(desktop_t *app);
 /** @brief Ask for a frame of what a responder said it changed. */
 void desktop_take_damage(desktop_t *app, tiku_rect_t damage);
 void deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x,

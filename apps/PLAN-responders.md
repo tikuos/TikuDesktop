@@ -1,6 +1,6 @@
 # Responders: one interface for every surface on the desk
 
-*2026-09-19.  R0 to R2 built the same day; the rest not yet.*
+*2026-09-19.  R0 to R3 built the same day; the rest not yet.*
 
 ## 1. What is wrong today
 
@@ -133,7 +133,7 @@ typedef struct tiku_trk_shell_services {
   lanes; the Info hover site in `desktop_pointer_move` returns to a
   bounded rectangle.
 
-### R3: folder windows and the workspace
+### R3: folder windows and the workspace  (DONE 2026-09-19)
 
 - A folder window's content (rows, band, rename, scrollbar, title
   strip, drag arming) becomes one responder per window.  The workspace
@@ -292,4 +292,28 @@ typedef struct tiku_trk_shell_services {
   release, so the capture ends there.
 - The spring navigator's tracking is a responder; its drop on release
   is part of the drop path and waits for R3.
+
+## 10. What R3 settled
+
+- Four more surfaces: the workspace's frames with the windows that
+  answer for themselves (preferences, panels, embedded and remote
+  applications, the Find window), the folder windows' content with the
+  desk's own, the Info windows' parts, and the global bar's strip.  The
+  pointer handlers are the delivery alone: about 1,300 lines left
+  `tiku_trk_desktop_events.c` for three files of their own.
+- The order on the list is the order of the old chain, read off it:
+  the folders under the frames, the frames under the Deskbar, the bar
+  under the global strip, the strip under the Info windows' parts, and
+  the overlays over all.  A press on the strip taken by the desk's own
+  folder, before the strip was on the list, was the one regression the
+  lanes found.
+- The desktop's click model moved off the loop struct onto the desktop,
+  since the folders responder has no loop to reach; the Tracker shell
+  keeps its own on its loop.
+- The press context (`press_at`, `press_row`, `press_fl` and the rest)
+  stays as fields for now: the folder renderer and the Tracker shell
+  read them by name, and the struct move is its own commit.
+- Keys are not moved.  The folder windows' keyboard (type-ahead, the
+  arrows, a rename in progress) is still `desktop_key_down`'s, about
+  680 lines, and waits for its own milestone.
 
