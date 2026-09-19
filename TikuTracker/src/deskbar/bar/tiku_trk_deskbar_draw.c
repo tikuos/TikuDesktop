@@ -1341,6 +1341,9 @@ db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f)
     }
 }
 
+#define LEAF_HELD      1.22f    /* the face while the menu is out */
+#define LEAF_HELD_EDGE 1.55f    /* its near edges, in shadow then */
+
 /**
  * @brief the leaf, the one control that is not a list item
  */
@@ -1350,15 +1353,24 @@ db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
 {
     /* The leaf: the one control that is not a list item, so it is the one
      * thing wearing the tab colour. */
+    /* Held down while its menu is out: a deeper face, the bevel turned
+     * so the light falls on the far edges, and the label a pixel down
+     * and right, the way a pressed button's does.  A click on it is
+     * seen at once, and the pop back says the menu has gone. */
+    int down = db->menu_open;
+
     (*leaf) = (tiku_rect_t){ db->frame.x + 2, db->frame.y + 2,
                                tiku_trk_deskbar_vertical(db->dock)
                                    ? db->frame.w - 4 : HLEAF_W,
                                db_leaf_row() };
-    tiku_fill(s, (*leaf), TIKU_C_TAB);
+    tiku_fill(s, (*leaf), down ? tiku_tint(TIKU_C_TAB, LEAF_HELD)
+                               : TIKU_C_TAB);
     tiku_frame(s, (*leaf), dark);
     tiku_bevel(s, tiku_inset((*leaf), 1),
-                    tiku_tint(TIKU_C_TAB, TIKU_LIGHTEN_1),
-                    tiku_tint(TIKU_C_TAB, TIKU_DARKEN_2));
+                    tiku_tint(TIKU_C_TAB, down ? LEAF_HELD_EDGE
+                                               : TIKU_LIGHTEN_1),
+                    tiku_tint(TIKU_C_TAB, down ? TIKU_LIGHTEN_2
+                                               : TIKU_DARKEN_2));
     {
         /*
          * The mark, then the name beside it.  Drawn without its own
@@ -1379,12 +1391,13 @@ db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
         float shade = (db->theme == 1) ? 0.35f
                     : (db->theme == 2) ? 1.15f : 1.0f;
 
-        tiku_logo_paint_with(s, (tiku_rect_t){ (*leaf).x + 4,
-                                               (*leaf).y +
+        tiku_logo_paint_with(s, (tiku_rect_t){ (*leaf).x + 4 + down,
+                                               (*leaf).y + down +
                                                    ((*leaf).h - mark) / 2,
                                                mark, mark }, 0u, NULL,
                              shade);
-        label.x += mark + 8;
+        label.x += mark + 8 + down;
+        label.y += down;
         label.w -= mark + 8;
         (void)tiku_text_centered(s, fb, label, "TikuOS", TIKU_C_TEXT);
     }

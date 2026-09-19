@@ -194,12 +194,34 @@ static void hover_area(tiku_surface_t *s)
     tiku_trk_deskbar_free(db);
 }
 
+/** @brief The leaf is drawn held down while its menu is out, and not after. */
+static void pressed_look(tiku_surface_t *s)
+{
+    tiku_trk_deskbar_t *db = fixture(s, TIKU_TRK_DB_RIGHT_EXPANDED);
+    /* The inner top-left corner of the leaf is its bevel's light edge. */
+    int x = db->frame.x + 3, y = db->frame.y + 3;
+
+    tiku_trk_deskbar_close_menu(db);
+    tiku_trk_deskbar_draw(db, s);
+    tiku_rgb_t up = s->px[y * s->w + x];
+    tiku_trk_deskbar_open_menu(db);
+    tiku_trk_deskbar_draw(db, s);
+    tiku_rgb_t held = s->px[y * s->w + x];
+    assert(held != up);
+    assert((held & 0xff) < (up & 0xff));         /* darker: the light left */
+    tiku_trk_deskbar_close_menu(db);
+    tiku_trk_deskbar_draw(db, s);
+    assert(s->px[y * s->w + x] == up);           /* and back when it goes */
+    tiku_trk_deskbar_free(db);
+}
+
 int main(void)
 {
     tiku_surface_t *s = tiku_surface_new(1000,680,0); assert(s);
     tracking(s,TIKU_TRK_DB_RIGHT_EXPANDED);
     tracking(s,TIKU_TRK_DB_LEFT_EXPANDED);
     cancellation(s); categories(s); empty_folder(s); hover_area(s);
+    pressed_look(s);
     tiku_surface_free(s);
     puts("PASS: Deskbar hover delay, switching, cancellation, clicks and safety");
     return 0;
