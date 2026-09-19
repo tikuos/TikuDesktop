@@ -28,81 +28,17 @@ open_preferences(void *context)
     tiku_trk_prefs_window_open(&app->prefs_window);
 }
 
-/** @brief Real art for the Deskbar's own menu rows (DB-002). */
+/** @brief The art a Deskbar row named for itself when it was built (DB-002). */
 int
 deskbar_menu_icon(void *context, tiku_surface_t *s,
                   const tiku_trk_db_item_t *item, int x, int y, int size)
 {
-    const char *art = NULL;
-    struct stat st;
-
     (void)context;
-    switch (item->kind) {
-    case TIKU_TRK_DB_ITEM_DIR:
-        art = "folder";
-        break;
-    case TIKU_TRK_DB_ITEM_FIND:
-        art = "query";
-        break;
-    case TIKU_TRK_DB_ITEM_RECENT:
-        art = (item->which == 1) ? "folder"
-            : (item->which == 2) ? "application" : "file";
-        break;
-    case TIKU_TRK_DB_ITEM_PATH:
-        art = (stat(item->path, &st) == 0 && S_ISDIR(st.st_mode))
-                  ? "folder" : "file";
-        break;
-    case TIKU_TRK_DB_ITEM_APPS:
-        art = "folder_apps";
-        break;
-    case TIKU_TRK_DB_ITEM_PROGRAMMING:
-        art = "folder_develop";
-        break;
-    case TIKU_TRK_DB_ITEM_SETTINGS:
-        art = "folder_system";
-        break;
-    case TIKU_TRK_DB_ITEM_PREFS:
-        art = "folder_config";
-        break;
-    case TIKU_TRK_DB_ITEM_TRACKER_PREFS:
-        art = "folder_prefs";
-        break;
-    case TIKU_TRK_DB_ITEM_DESKTOP_PREFS:
-        art = "desktop";
-        break;
-    case TIKU_TRK_DB_ITEM_FONT_PREFS:
-        art = "folder_fonts";
-        break;
-    case TIKU_TRK_DB_ITEM_DEVICE_PREFS:
-        art = "microcontroller";
-        break;
-    case TIKU_TRK_DB_ITEM_ASSOC_PREFS:
-        art = "folder_prefs";
-        break;
-    case TIKU_TRK_DB_ITEM_FORCE_QUIT:
-        art = "force_quit";
-        break;
-    case TIKU_TRK_DB_ITEM_QUIT:
-        art = "shutdown";
-        break;
-    case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
-        art = "package";
-        break;
-    case TIKU_TRK_DB_ITEM_ABOUT:
-        /* The row that opens the box about the system wears the system's
-         * own mark -- drawn from its geometry, so it is the same mark at
-         * fourteen pixels here as at eighty in the box it opens. */
-        tiku_logo_paint(s, (tiku_rect_t){ x, y, size, size }, 0u);
-        return 1;
-    case TIKU_TRK_DB_ITEM_APP:
-        /* Whatever the shell named when it offered the row; a program
-         * that said nothing is drawn as what it is. */
-        art = (item->icon[0] != '\0') ? item->icon : "application";
-        break;
-    default:
-        return 0;               /* a command row carries no art */
+    if ((item->kind != TIKU_TRK_DB_ITEM_ROW &&
+         item->kind != TIKU_TRK_DB_ITEM_EXPAND) || item->icon[0] == '\0') {
+        return 0;               /* a separator, a note, or a row with none */
     }
-    return tiku_icon_paint(s, art, x, y, size);
+    return tiku_icon_paint(s, item->icon, x, y, size);
 }
 
 /** @brief Real art for menu items, dimmed for a disabled one (IV-054). */

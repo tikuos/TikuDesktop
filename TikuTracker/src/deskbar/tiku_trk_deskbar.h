@@ -95,31 +95,21 @@ typedef struct {
 
 /** @brief What one leaf-menu row IS, which decides what a click does. */
 typedef enum {
-    TIKU_TRK_DB_ITEM_SEP = 0,
-    TIKU_TRK_DB_ITEM_ABOUT,
-    TIKU_TRK_DB_ITEM_FIND,
-    TIKU_TRK_DB_ITEM_PREFS,
-    TIKU_TRK_DB_ITEM_TRACKER_PREFS,
-    TIKU_TRK_DB_ITEM_DESKTOP_PREFS,
-    TIKU_TRK_DB_ITEM_FONT_PREFS,
-    TIKU_TRK_DB_ITEM_SOUND_PREFS,
-    TIKU_TRK_DB_ITEM_DEVICE_PREFS,
-    TIKU_TRK_DB_ITEM_STARTUP_PREFS,
-    TIKU_TRK_DB_ITEM_ASSOC_PREFS,
-    TIKU_TRK_DB_ITEM_SHOW_REPLICANTS,
-    TIKU_TRK_DB_ITEM_QUIT,
-    TIKU_TRK_DB_ITEM_PATH,      /* open it                              */
-    TIKU_TRK_DB_ITEM_DIR,       /* expand it: its contents are a submenu */
-    TIKU_TRK_DB_ITEM_RECENT,    /* one of the three recent lists         */
-    TIKU_TRK_DB_ITEM_DISABLED,  /* said, not chosen                      */
-    TIKU_TRK_DB_ITEM_SETTINGS,  /* expand it: what configures this      */
-    TIKU_TRK_DB_ITEM_APPS,      /* expand it: the installed programs    */
-    TIKU_TRK_DB_ITEM_PROGRAMMING, /* expand it: the programs for programs */
-    TIKU_TRK_DB_ITEM_APP,       /* start the program named by its path  */
-    TIKU_TRK_DB_ITEM_PANEL,     /* open the described panel at its path */
-    TIKU_TRK_DB_ITEM_HELP,      /* the desktop's own pages               */
-    TIKU_TRK_DB_ITEM_FORCE_QUIT
+    TIKU_TRK_DB_ITEM_ROW,       /* chosen: it acts by its command       */
+    TIKU_TRK_DB_ITEM_SEP,
+    TIKU_TRK_DB_ITEM_DISABLED,  /* said, not chosen                     */
+    TIKU_TRK_DB_ITEM_EXPAND     /* opens the submenu its expand names   */
 } tiku_trk_db_item_kind_t;
+
+/** @brief What an expanding row opens: the builder of its submenu. */
+typedef enum {
+    TIKU_TRK_DB_EXPAND_NONE,
+    TIKU_TRK_DB_EXPAND_DIR,      /* a folder's entries, from its path    */
+    TIKU_TRK_DB_EXPAND_RECENT,   /* one of the recent lists, by which    */
+    TIKU_TRK_DB_EXPAND_APPS,     /* the installed programs of a group    */
+    TIKU_TRK_DB_EXPAND_SETTINGS  /* what configures this                 */
+} tiku_trk_db_expand_t;
+
 
 /** @brief Which recent list a RECENT row shows. */
 typedef enum {
@@ -136,7 +126,9 @@ typedef struct {
     char                    label[TIKU_TRK_DB_LABEL_MAX];
     char                    path[TIKU_PATH_MAX];
     tiku_trk_db_item_kind_t kind;
-    int                     which;   /* RECENT: which list              */
+    int                     command; /* ROW: the tiku_trk_db_action_t   */
+    tiku_trk_db_expand_t    expand;  /* EXPAND: what it opens           */
+    int                     which;   /* RECENT: which list; APPS: group */
     /* The art this row wears, named by whoever offered it.  The bar
      * carries the name and paints nothing itself. */
     char                    icon[24];
@@ -351,6 +343,7 @@ typedef enum {
     TIKU_TRK_DB_TOGGLE_DARK,      /* the little switch on the tray  */
     TIKU_TRK_DB_LAUNCH_APP,       /* `path` is the program to start */
     TIKU_TRK_DB_HELP,             /* the desktop's own pages        */
+    TIKU_TRK_DB_TOGGLE_REPLICANTS, /* the bar's own: the row flips it */
     TIKU_TRK_DB_FORCE_QUIT,       /* safe local-app termination     */
 } tiku_trk_db_action_t;
 

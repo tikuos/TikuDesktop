@@ -54,22 +54,69 @@ db_calendar_shift(tiku_trk_deskbar_t *db, int months, int years)
 }
 
 /** @brief Append a leaf-menu row; a full menu drops it without a word. */
-static void
+static tiku_trk_db_item_t *
 add_item(tiku_trk_deskbar_t *db, tiku_trk_db_item_kind_t kind,
-         const char *label, const char *path, int which)
+         const char *label, const char *path, const char *icon)
 {
     tiku_trk_db_item_t *it;
 
     if (db->leaf_count >= TIKU_TRK_DB_LEAF_MAX) {
-        return;
+        return NULL;
     }
     it = &db->leaf[db->leaf_count++];
     memset(it, 0, sizeof *it);
     it->kind = kind;
-    it->which = which;
     snprintf(it->label, sizeof it->label, "%.*s", (int)sizeof it->label - 1,
              (label != NULL) ? label : "");
     snprintf(it->path, sizeof it->path, "%s", (path != NULL) ? path : "");
+    snprintf(it->icon, sizeof it->icon, "%s", (icon != NULL) ? icon : "");
+    return it;
+}
+
+/** @brief A row that acts by @p command, wearing @p icon. */
+static void
+add_row(tiku_trk_deskbar_t *db, int command, const char *label,
+        const char *path, const char *icon)
+{
+    tiku_trk_db_item_t *it = add_item(db, TIKU_TRK_DB_ITEM_ROW, label, path,
+                                      icon);
+
+    if (it != NULL) {
+        it->command = command;
+    }
+}
+
+/** @brief A row that opens the submenu @p expand builds for @p which. */
+static void
+add_expand(tiku_trk_deskbar_t *db, tiku_trk_db_expand_t expand, int which,
+           const char *label, const char *path, const char *icon)
+{
+    tiku_trk_db_item_t *it = add_item(db, TIKU_TRK_DB_ITEM_EXPAND, label,
+                                      path, icon);
+
+    if (it != NULL) {
+        it->expand = expand;
+        it->which = which;
+    }
+}
+
+/** @brief A folder in a menu expands to its entries; a file opens. */
+void
+db_fill_entry(tiku_trk_db_item_t *it, const tiku_model_t *m)
+{
+    memset(it, 0, sizeof *it);
+    if (tiku_model_is_container(m)) {
+        it->kind = TIKU_TRK_DB_ITEM_EXPAND;
+        it->expand = TIKU_TRK_DB_EXPAND_DIR;
+        snprintf(it->icon, sizeof it->icon, "folder");
+    } else {
+        it->kind = TIKU_TRK_DB_ITEM_ROW;
+        it->command = TIKU_TRK_DB_OPEN_PATH;
+        snprintf(it->icon, sizeof it->icon, "file");
+    }
+    snprintf(it->label, sizeof it->label, "%.*s", (int)sizeof it->label - 1,
+             m->name);
+    snprintf(it->path, sizeof it->path, "%s", m->path);
 }
 
 /** @brief One form under a board's gui/: a row that opens its panel. */
@@ -83,7 +130,7 @@ db_form_entry(const tiku_model_t *m, void *ctx)
         return 0;
     }
     snprintf(path, sizeof path, "%.*s/panel", (int)sizeof path - 8, m->path);
-    add_item(db, TIKU_TRK_DB_ITEM_PANEL, m->name, path, 0);
+    add_row(db, TIKU_TRK_DB_OPEN_PANEL, m->name, path, "");
     return 0;
 }
 
@@ -117,18 +164,9 @@ db_menu_entry(const tiku_model_t *m, void *ctx)
         return 0;               /* a dot file is not a menu entry */
     }
     if (w->into != NULL) {
-        tiku_trk_db_item_t *it = &w->into[w->n++];
-
-        memset(it, 0, sizeof *it);
-        it->kind = tiku_model_is_container(m) ? TIKU_TRK_DB_ITEM_DIR
-                                                  : TIKU_TRK_DB_ITEM_PATH;
-        snprintf(it->label, sizeof it->label, "%.*s",
-                 (int)sizeof it->label - 1, m->name);
-        snprintf(it->path, sizeof it->path, "%s", m->path);
-    } else {
-        add_item(w->db, tiku_model_is_container(m)
-                            ? TIKU_TRK_DB_ITEM_DIR : TIKU_TRK_DB_ITEM_PATH,
-                 m->name, m->path, 0);
+        db_fill_entry(&w->into[w->n++], m);
+    } else if (w->db->leaf_count < TIKU_TRK_DB_LEAF_MAX) {
+        db_fill_entry(&w->db->leaf[w->db->leaf_count++], m);
         w->n++;
     }
     return 0;
@@ -173,14 +211,14 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     db->sub_of = -1;
     db->sub_count = 0;
     db_reset_menu_hots(db);
-    add_item(db, TIKU_TRK_DB_ITEM_FIND, tiku_str("menu.find"), NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_FORCE_QUIT, tiku_str("menu.force_quit"),
-             NULL, 0);
+    add_row(db, TIKU_TRK_DB_FIND, tiku_str("menu.find"), NULL, "query");
+    add_row(db, TIKU_TRK_DB_FORCE_QUIT, tiku_str("menu.force_quit"), NULL,
+            "force_quit");
     /* One row for everything that configures the desktop, the way the
      * programs have one: the leaf says what a person can do here, and
      * the lists live inside it. */
-    add_item(db, TIKU_TRK_DB_ITEM_SETTINGS, tiku_str("menu.settings"),
-             NULL, 0);
+    add_expand(db, TIKU_TRK_DB_EXPAND_SETTINGS, 0, tiku_str("menu.settings"),
+               NULL, "folder_system");
     {
         const char *keys[] = {"menu.applications", "menu.programming",
                               "menu.device_tools", "menu.demos"};
@@ -194,10 +232,10 @@ db_build_leaf(tiku_trk_deskbar_t *db)
             if (group >= 0 && group < TIKU_TRK_DB_GROUP_COUNT) counts[group]++;
         }
         for (i = 0; i < TIKU_TRK_DB_GROUP_COUNT; i++) {
-            if (counts[i]) add_item(db,
-                i == TIKU_TRK_DB_GROUP_PROGRAMMING ?
-                    TIKU_TRK_DB_ITEM_PROGRAMMING : TIKU_TRK_DB_ITEM_APPS,
-                tiku_str(keys[i]), NULL, i);
+            if (counts[i]) add_expand(db, TIKU_TRK_DB_EXPAND_APPS, i,
+                tiku_str(keys[i]), NULL,
+                i == TIKU_TRK_DB_GROUP_PROGRAMMING ? "folder_develop"
+                                                   : "folder_apps");
         }
     }
     {
@@ -228,10 +266,10 @@ db_build_leaf(tiku_trk_deskbar_t *db)
             leaf = strrchr(prefix, '/');
             leaf = (leaf != NULL && leaf[1] != '\0') ? leaf + 1 : prefix;
             if (!any) {
-                add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+                (void)add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, NULL);
                 any = 1;
             }
-            add_item(db, TIKU_TRK_DB_ITEM_PATH, leaf, prefix, 0);
+            add_row(db, TIKU_TRK_DB_OPEN_PATH, leaf, prefix, "folder");
             add_forms(db, prefix);
         }
     }
@@ -243,14 +281,15 @@ db_build_leaf(tiku_trk_deskbar_t *db)
                 db->settings.recent_enabled[i] &&
                 db->settings.recent_count[i] > 0) {
                 if (!any) {
-                    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+                    (void)add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, NULL);
                     any = 1;
                 }
                 /* A list nobody has anything in is not shown at all --
                  * an empty submenu is a promise of nothing (DB-074). */
-                add_item(db, TIKU_TRK_DB_ITEM_RECENT, tiku_str(kRecentKey[i]),
-                         NULL,
-                         i);
+                add_expand(db, TIKU_TRK_DB_EXPAND_RECENT, i,
+                           tiku_str(kRecentKey[i]), NULL,
+                           (i == 1) ? "folder" : (i == 2) ? "application"
+                                                          : "file");
             }
         }
     }
@@ -271,7 +310,7 @@ db_build_leaf(tiku_trk_deskbar_t *db)
          */
         int before = db->leaf_count;
 
-        add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
+        (void)add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, NULL);
         dir = menu_dir_of(db);
         if (dir[0] != '\0' && db->backend->ops->list != NULL) {
             struct menu_walk w;
@@ -292,9 +331,9 @@ db_build_leaf(tiku_trk_deskbar_t *db)
             db->leaf_count = before;
         }
     }
-    add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, 0);
-    add_item(db, TIKU_TRK_DB_ITEM_QUIT, tiku_str("menu.shut_down"), NULL,
-             0);
+    (void)add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, NULL);
+    add_row(db, TIKU_TRK_DB_QUIT, tiku_str("menu.shut_down"), NULL,
+            "shutdown");
 }
 
 void

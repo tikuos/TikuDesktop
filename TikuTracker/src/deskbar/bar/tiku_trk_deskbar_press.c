@@ -323,38 +323,9 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 
             if (x >= sm.x && x < sm.x + sm.w && y >= sm.y &&
                 y < sm.y + sm.h && si >= 0 && si < db->sub_count) {
-                if (db->sub[si].kind == TIKU_TRK_DB_ITEM_APP) {
-                    pick->what = TIKU_TRK_DB_LAUNCH_APP;
-                    snprintf(pick->path, sizeof pick->path, "%s",
-                             db->sub[si].path);
-                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_PREFS) {
-                    pick->what = TIKU_TRK_DB_PREFERENCES;
-                } else if (db->sub[si].kind ==
-                           TIKU_TRK_DB_ITEM_TRACKER_PREFS) {
-                    pick->what = TIKU_TRK_DB_TRACKER_PREFERENCES;
-                } else if (db->sub[si].kind ==
-                           TIKU_TRK_DB_ITEM_DESKTOP_PREFS) {
-                    pick->what = TIKU_TRK_DB_DESKTOP_PREFERENCES;
-                } else if (db->sub[si].kind ==
-                           TIKU_TRK_DB_ITEM_FONT_PREFS) {
-                    pick->what = TIKU_TRK_DB_FONT_PREFERENCES;
-                } else if (db->sub[si].kind ==
-                           TIKU_TRK_DB_ITEM_SOUND_PREFS) {
-                    pick->what = TIKU_TRK_DB_SOUND_PREFERENCES;
-                } else if (db->sub[si].kind ==
-                           TIKU_TRK_DB_ITEM_DEVICE_PREFS) {
-                    pick->what = TIKU_TRK_DB_DEVICE_PREFERENCES;
-                } else if (db->sub[si].kind ==
-                           TIKU_TRK_DB_ITEM_STARTUP_PREFS) {
-                    pick->what = TIKU_TRK_DB_STARTUP_PREFERENCES;
-                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_ASSOC_PREFS) {
-                    pick->what = TIKU_TRK_DB_ASSOC_PREFERENCES;
-                } else if (db->sub[si].kind == TIKU_TRK_DB_ITEM_PANEL) {
-                    pick->what = TIKU_TRK_DB_OPEN_PANEL;
-                    snprintf(pick->path, sizeof pick->path, "%s",
-                             db->sub[si].path);
-                } else if (db->sub[si].kind ==
-                           TIKU_TRK_DB_ITEM_SHOW_REPLICANTS) {
+                const tiku_trk_db_item_t *it = &db->sub[si];
+
+                if (it->command == TIKU_TRK_DB_TOGGLE_REPLICANTS) {
                     /* A toggle is not a departure: the menu stays up
                      * with the row saying the other thing now. */
                     int of = db->sub_of;
@@ -362,10 +333,10 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                     db->show_replicants = !db->show_replicants;
                     db_open_sub(db, of);
                     return 1;
-                } else {
-                    pick->what = TIKU_TRK_DB_OPEN_PATH;
-                    snprintf(pick->path, sizeof pick->path, "%s",
-                             db->sub[si].path);
+                }
+                if (it->kind == TIKU_TRK_DB_ITEM_ROW) {
+                    pick->what = it->command;
+                    snprintf(pick->path, sizeof pick->path, "%s", it->path);
                 }
                 db->menu_open = 0;
                 db->sub_of = -1;
@@ -376,58 +347,22 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             const tiku_trk_db_item_t *it = &db->leaf[idx];
 
             switch (it->kind) {
-            case TIKU_TRK_DB_ITEM_DIR:
-            case TIKU_TRK_DB_ITEM_RECENT:
-            case TIKU_TRK_DB_ITEM_APPS:
-            case TIKU_TRK_DB_ITEM_PROGRAMMING:
-            case TIKU_TRK_DB_ITEM_SETTINGS:
-                /* Expanding is not choosing: the menu stays up, with the
-                 * row's contents beside it. */
+            case TIKU_TRK_DB_ITEM_EXPAND:
                 db_open_sub(db, idx);
                 return 1;
             case TIKU_TRK_DB_ITEM_DISABLED:
             case TIKU_TRK_DB_ITEM_SEP:
                 return 1;       /* said, not chosen */
-            case TIKU_TRK_DB_ITEM_ABOUT:
-                pick->what = TIKU_TRK_DB_SHOW_ABOUT;
-                break;
-            case TIKU_TRK_DB_ITEM_FIND:
-                pick->what = TIKU_TRK_DB_FIND;
-                break;
-            case TIKU_TRK_DB_ITEM_HELP:
-                pick->what = TIKU_TRK_DB_HELP;
-                break;
-            case TIKU_TRK_DB_ITEM_FORCE_QUIT:
-                pick->what = TIKU_TRK_DB_FORCE_QUIT;
-                break;
-            case TIKU_TRK_DB_ITEM_PREFS:
-                pick->what = TIKU_TRK_DB_PREFERENCES;
-                break;
-            case TIKU_TRK_DB_ITEM_TRACKER_PREFS:
-                pick->what = TIKU_TRK_DB_TRACKER_PREFERENCES;
-                break;
-            case TIKU_TRK_DB_ITEM_SHOW_REPLICANTS:
-                db->show_replicants = !db->show_replicants;
-                db_build_leaf(db);
-                return 1;
-            case TIKU_TRK_DB_ITEM_QUIT:
-                pick->what = TIKU_TRK_DB_QUIT;
-                break;
-            case TIKU_TRK_DB_ITEM_APP:
-                pick->what = TIKU_TRK_DB_LAUNCH_APP;
-                snprintf(pick->path, sizeof pick->path, "%s", it->path);
-                break;
-            case TIKU_TRK_DB_ITEM_PATH:
-                pick->what = TIKU_TRK_DB_OPEN_PATH;
-                snprintf(pick->path, sizeof pick->path, "%s", it->path);
-                break;
-            case TIKU_TRK_DB_ITEM_PANEL:
-                pick->what = TIKU_TRK_DB_OPEN_PANEL;
-                snprintf(pick->path, sizeof pick->path, "%s", it->path);
-                break;
             default:
                 break;
             }
+            if (it->command == TIKU_TRK_DB_TOGGLE_REPLICANTS) {
+                db->show_replicants = !db->show_replicants;
+                db_build_leaf(db);
+                return 1;
+            }
+            pick->what = it->command;
+            snprintf(pick->path, sizeof pick->path, "%s", it->path);
         }
         db->menu_open = 0;
         db->sub_of = -1;

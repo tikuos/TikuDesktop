@@ -191,6 +191,7 @@ const char *db_leaf_name(const char *path);
 int db_calendar_days(int year, int month);
 int db_menu_entry(const tiku_model_t *m, void *ctx);
 void db_build_leaf(tiku_trk_deskbar_t *db);
+void db_fill_entry(tiku_trk_db_item_t *it, const tiku_model_t *m);
 void db_calendar_shift(tiku_trk_deskbar_t *db, int months, int years);
 
 /* tiku_trk_deskbar_winmenu.c */

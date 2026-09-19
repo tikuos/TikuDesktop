@@ -39,6 +39,9 @@ typedef struct {
      * column id until a view has given them one. */
     char attr[TIKU_TRK_TYPE_COLS_MAX][TIKU_TRK_ATTR_NAME_MAX];
     int  nattr;
+    /* A document: opened by its handler even when it could be run,
+     * written in the file as the word "document" among the columns. */
+    int  document;
 } tiku_trk_typerec_t;
 
 typedef struct tiku_trk_types {

@@ -19,11 +19,21 @@ static void hover(tiku_trk_deskbar_t *db, int row, int64_t now)
     assert(!tiku_trk_deskbar_menu_tick(db, now));
 }
 
-/** @brief Find a parent by its behavior, independent of translated labels. */
-static int parent(tiku_trk_deskbar_t *db, int kind, int which)
+/** @brief Find a plain row by what it does, independent of labels. */
+static int row_of(tiku_trk_deskbar_t *db, int command)
 {
     for (int i = 0; i < db->leaf_count; i++)
-        if ((int)db->leaf[i].kind == kind && db->leaf[i].which == which)
+        if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_ROW &&
+            db->leaf[i].command == command) return i;
+    return -1;
+}
+
+/** @brief Find an expanding row by what it opens, independent of labels. */
+static int parent(tiku_trk_deskbar_t *db, int expand, int which)
+{
+    for (int i = 0; i < db->leaf_count; i++)
+        if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_EXPAND &&
+            (int)db->leaf[i].expand == expand && db->leaf[i].which == which)
             return i;
     assert(0); return -1;
 }
@@ -41,8 +51,8 @@ static tiku_trk_deskbar_t *fixture(tiku_surface_t *s, int dock)
     tiku_trk_deskbar_draw(db, s);
     tiku_trk_deskbar_open_menu(db);
     for (int i = 0; i < db->leaf_count; i++) {
-        assert(db->leaf[i].kind != TIKU_TRK_DB_ITEM_ABOUT);
-        assert(db->leaf[i].kind != TIKU_TRK_DB_ITEM_HELP);
+        assert(db->leaf[i].command != TIKU_TRK_DB_SHOW_ABOUT);
+        assert(db->leaf[i].command != TIKU_TRK_DB_HELP);
     }
     return db;
 }
@@ -51,8 +61,8 @@ static tiku_trk_deskbar_t *fixture(tiku_surface_t *s, int dock)
 static void tracking(tiku_surface_t *s, int dock)
 {
     tiku_trk_deskbar_t *db = fixture(s, dock);
-    int settings = parent(db, TIKU_TRK_DB_ITEM_SETTINGS, 0);
-    int apps = parent(db, TIKU_TRK_DB_ITEM_APPS, TIKU_TRK_DB_GROUP_APPS);
+    int settings = parent(db, TIKU_TRK_DB_EXPAND_SETTINGS, 0);
+    int apps = parent(db, TIKU_TRK_DB_EXPAND_APPS, TIKU_TRK_DB_GROUP_APPS);
     int64_t delay = TIKU_TRK_DB_SUBMENU_DELAY_US, now = 1000000;
     hover(db, settings, now);
     hover(db, settings, now+delay/2); /* Jitter doesn't restart the dwell. */
@@ -78,7 +88,7 @@ static void tracking(tiku_surface_t *s, int dock)
     assert(tiku_trk_deskbar_menu_tick(db, now+delay));
     assert(db->sub_of == apps && db->sub_count == 1);
     now += 2*delay;
-    hover(db, parent(db,TIKU_TRK_DB_ITEM_FIND,0), now);
+    hover(db, row_of(db, TIKU_TRK_DB_FIND), now);
     assert(tiku_trk_deskbar_menu_tick(db, now+delay));
     assert(db->menu_open && db->sub_of == -1); /* No Find command selected. */
     tiku_trk_deskbar_free(db);
@@ -88,8 +98,8 @@ static void tracking(tiku_surface_t *s, int dock)
 static void cancellation(tiku_surface_t *s)
 {
     tiku_trk_deskbar_t *db = fixture(s, TIKU_TRK_DB_RIGHT_EXPANDED);
-    int settings = parent(db,TIKU_TRK_DB_ITEM_SETTINGS,0);
-    int apps = parent(db,TIKU_TRK_DB_ITEM_APPS,TIKU_TRK_DB_GROUP_APPS);
+    int settings = parent(db,TIKU_TRK_DB_EXPAND_SETTINGS,0);
+    int apps = parent(db,TIKU_TRK_DB_EXPAND_APPS,TIKU_TRK_DB_GROUP_APPS);
     int64_t delay = TIKU_TRK_DB_SUBMENU_DELAY_US;
     hover(db,settings,0);
     (void)tiku_trk_deskbar_motion(db,10,600);
@@ -129,10 +139,7 @@ static void categories(tiku_surface_t *s)
     int tested = 0;
     for (int i = 0; i < db->leaf_count; i++) {
         int kind = db->leaf[i].kind;
-        if (kind != TIKU_TRK_DB_ITEM_APPS &&
-            kind != TIKU_TRK_DB_ITEM_PROGRAMMING &&
-            kind != TIKU_TRK_DB_ITEM_SETTINGS &&
-            kind != TIKU_TRK_DB_ITEM_RECENT) continue;
+        if (kind != TIKU_TRK_DB_ITEM_EXPAND) continue;
         hover(db,i,now);
         assert(tiku_trk_deskbar_menu_tick(db,now+delay));
         assert(db->sub_of == i && db->sub_count > 0 && db->menu_open);
@@ -159,7 +166,8 @@ static void empty_folder(tiku_surface_t *s)
     tiku_backend_t backend = {.ops=&ops};
     db->backend = &backend;
     int row = db->leaf_count++;
-    db->leaf[row].kind = TIKU_TRK_DB_ITEM_DIR;
+    db->leaf[row].kind = TIKU_TRK_DB_ITEM_EXPAND;
+    db->leaf[row].expand = TIKU_TRK_DB_EXPAND_DIR;
     hover(db,row,0);
     assert(!tiku_trk_deskbar_menu_tick(db,500000));
     for (int64_t t = 600000; t < 5000000; t += 100000)
@@ -177,7 +185,7 @@ static void hover_area(tiku_surface_t *s)
     tiku_trk_deskbar_t *db = fixture(s, TIKU_TRK_DB_RIGHT_EXPANDED);
     int h = tiku_font_plain()->height+6;
     tiku_rect_t menu = db_leaf_menu_rect(db, h, db->leaf_count);
-    int settings = parent(db, TIKU_TRK_DB_ITEM_SETTINGS, 0);
+    int settings = parent(db, TIKU_TRK_DB_EXPAND_SETTINGS, 0);
     tiku_rect_t r = row_rect(db, settings), area;
     assert(tiku_trk_deskbar_hover_area(db).w == 0); /* nothing yet */
     assert(tiku_trk_deskbar_motion(db, r.x+r.w/2, r.y+r.h/2));

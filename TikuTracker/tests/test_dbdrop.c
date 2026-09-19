@@ -191,8 +191,8 @@ main(void)
         count = tiku_trk_deskbar_leaf_count(db);
         for (i = 0; i < count; i++) {
             it = tiku_trk_deskbar_leaf_item(db, i);
-            if (it->kind == TIKU_TRK_DB_ITEM_DIR) { dirs++; }
-            if (it->kind == TIKU_TRK_DB_ITEM_RECENT) { recents++; }
+            if (it->expand == TIKU_TRK_DB_EXPAND_DIR) { dirs++; }
+            if (it->expand == TIKU_TRK_DB_EXPAND_RECENT) { recents++; }
             if (it->kind == TIKU_TRK_DB_ITEM_DISABLED) { disabled++; }
         }
         check(dirs == 1 && disabled == 0, "DB-003",
@@ -210,7 +210,7 @@ main(void)
         count = tiku_trk_deskbar_leaf_count(db);
         for (i = 0; i < count; i++) {
             it = tiku_trk_deskbar_leaf_item(db, i);
-            if (it->kind == TIKU_TRK_DB_ITEM_RECENT) { recents++; }
+            if (it->expand == TIKU_TRK_DB_EXPAND_RECENT) { recents++; }
         }
         check(recents == 1, "DB-002",
               "and one with something in it is");
@@ -225,7 +225,7 @@ main(void)
             for (i = 0; i < count; i++) {
                 it = tiku_trk_deskbar_leaf_item(db, i);
                 if (it->kind == TIKU_TRK_DB_ITEM_DISABLED) { disabled++; }
-                if (it->kind == TIKU_TRK_DB_ITEM_DIR) { dirs++; }
+                if (it->expand == TIKU_TRK_DB_EXPAND_DIR) { dirs++; }
                 if (it->kind == TIKU_TRK_DB_ITEM_SEP) {
                     if (prev_sep) { seams++; }
                     prev_sep = 1;

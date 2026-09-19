@@ -180,15 +180,18 @@ tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
     /* A FOLDER takes the links; a file in the menu is launched with them;
      * everything else is fixed, and fixed items are not drop targets at
      * all while a drag is in flight (DB-008). */
-    if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DIR ||
-        (db->leaf[i].kind == TIKU_TRK_DB_ITEM_PATH &&
+    if ((db->leaf[i].kind == TIKU_TRK_DB_ITEM_EXPAND &&
+         db->leaf[i].expand == TIKU_TRK_DB_EXPAND_DIR) ||
+        (db->leaf[i].kind == TIKU_TRK_DB_ITEM_ROW &&
+         db->leaf[i].command == TIKU_TRK_DB_OPEN_PATH &&
          db->leaf[i].path[0] == '/' && db->leaf[i].label[0] == '/')) {
         if (path != NULL) {
             snprintf(path, max, "%s", db->leaf[i].path);
         }
         return TIKU_TRK_DB_DROP_MENU_DIR;
     }
-    if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_PATH) {
+    if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_ROW &&
+        db->leaf[i].command == TIKU_TRK_DB_OPEN_PATH) {
         if (path != NULL) {
             snprintf(path, max, "%s", db->leaf[i].path);
         }

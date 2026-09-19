@@ -596,12 +596,17 @@ open_one(desktop_t *app, const tiku_model_t *model)
     if (model->name[0] != '\0' && open_described_panel(app, model)) {
         return 1;
     }
-    /* Source documents open for editing even if their executable bit is set. */
     one[0] = model->path;
-    if (!strcmp(model->type, "text/x-basic") ||
-        !strcmp(model->type, "application/x-tiku-project") ||
-        !strcmp(model->type, "text/plain"))
-        return launch_paths(app, handler_for(app, model), one, 1);
+    {
+        /* A document opens for editing even with its executable bit set:
+         * the type database says which types are documents. */
+        const tiku_trk_typerec_t *rec = tiku_trk_types_find(&app->types,
+                                                            model->type);
+
+        if (rec != NULL && rec->document) {
+            return launch_paths(app, handler_for(app, model), one, 1);
+        }
+    }
     {
         /* An installed application, or a link to one: the runner starts
          * it, as the Deskbar's row would; its module is not a program

@@ -1,6 +1,6 @@
 # Responders: one interface for every surface on the desk
 
-*2026-09-19.  R0 to R4 built the same day; the rest not yet.*
+*2026-09-19.  R0 to R4 built that day, R5 the next; R6 and R7 not yet.*
 
 ## 1. What is wrong today
 
@@ -163,7 +163,7 @@ typedef struct tiku_trk_shell_services {
   applink, openwithwin and documentassociation lanes; a count of
   `render_t` fields under 20.
 
-### R5: rows carry their own commands
+### R5: rows carry their own commands  (DONE 2026-09-20)
 
 - A Deskbar row carries a command id and an icon name.  The 24 item
   kinds shrink to the structural ones (separator, expander, disabled,
@@ -345,4 +345,25 @@ typedef struct tiku_trk_shell_services {
 - "Is an application" is not a fact on the model: the backend that
   stats a file knows no registry, and a fact set after the stat is the
   service call by another name.
+
+## 12. What R5 settled
+
+- A Deskbar row is one of four things: a row that acts by its command,
+  a separator, a note that cannot be chosen, or an expander that opens
+  the submenu its `expand` names (a folder, a recent list, a group of
+  programs, the settings).  Twenty-four kinds became four and a builder
+  enum of four; the clicker copies the command into the pick and the
+  painter paints the icon the builder named.  The one row that acts
+  inside the bar, showing or hiding replicants, has a command of its own
+  that the clicker answers before making a pick.
+- Two kinds, About and Help, were never built into the leaf menu; they
+  went with the rest.  The recent-programs rows wear the application
+  art now, where the old painter drew a file for them.
+- A document opens in its handler even when it could be run because the
+  type database says so: a record carries the word `document` among
+  its columns, and the shipped defaults say it for plain text, BASIC
+  source and a Tiku project.  `open_one` names no type.  A types file
+  written before this flag has none of the three rows, and a user who
+  kept one adds them by hand; the defaults are installed only where no
+  file is.
 

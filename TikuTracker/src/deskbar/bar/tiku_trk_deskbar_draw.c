@@ -384,11 +384,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
 /** @brief Every row bearing an arrow expands by click or by hover. */
 static int item_expands(int kind)
 {
-    return kind == TIKU_TRK_DB_ITEM_DIR ||
-           kind == TIKU_TRK_DB_ITEM_RECENT ||
-           kind == TIKU_TRK_DB_ITEM_APPS ||
-           kind == TIKU_TRK_DB_ITEM_PROGRAMMING ||
-           kind == TIKU_TRK_DB_ITEM_SETTINGS;
+    return kind == TIKU_TRK_DB_ITEM_EXPAND;
 }
 
 int tiku_trk_deskbar_menu_tick(tiku_trk_deskbar_t *db, int64_t now)
@@ -537,6 +533,25 @@ db_sub_menu_rect(const tiku_trk_deskbar_t *db, tiku_rect_t m, int rowh)
     return r;
 }
 
+/** @brief One submenu row that acts by @p command, wearing @p icon. */
+static tiku_trk_db_item_t *
+sub_row(tiku_trk_deskbar_t *db, int command, const char *label,
+        const char *icon)
+{
+    tiku_trk_db_item_t *si;
+
+    if (db->sub_count >= TIKU_TRK_DB_SUB_MAX) {
+        return NULL;
+    }
+    si = &db->sub[db->sub_count++];
+    memset(si, 0, sizeof *si);
+    si->kind = TIKU_TRK_DB_ITEM_ROW;
+    si->command = command;
+    snprintf(si->label, sizeof si->label, "%s", (label != NULL) ? label : "");
+    snprintf(si->icon, sizeof si->icon, "%s", (icon != NULL) ? icon : "");
+    return si;
+}
+
 /** @brief Fill the submenu for leaf row @p at, or close it. */
 void
 db_open_sub(tiku_trk_deskbar_t *db, int at)
@@ -552,110 +567,88 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
     }
     db->leaf_hot = at; /* A click supersedes any previously hovered row. */
     it = &db->leaf[at];
-    if (it->kind == TIKU_TRK_DB_ITEM_SETTINGS) {
-        tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
-
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_PREFS;
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str("menu.deskbar_prefs"));
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_TRACKER_PREFS;
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str("menu.tracker_prefs"));
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_DESKTOP_PREFS;
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str("menu.desktop_prefs"));
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_FONT_PREFS;
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str("menu.fonts"));
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_SOUND_PREFS;
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str("menu.sounds"));
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_DEVICE_PREFS;
-        snprintf(si->label, sizeof si->label, "Devices Preferences…");
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_STARTUP_PREFS;
-        snprintf(si->label, sizeof si->label, "Startup Preferences…");
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_ASSOC_PREFS;
-        snprintf(si->label, sizeof si->label, "File Associations…");
-        si = &db->sub[db->sub_count++];
-        memset(si, 0, sizeof *si);
-        si->kind = TIKU_TRK_DB_ITEM_SHOW_REPLICANTS;
-        /* Says what choosing it DOES, which is the other state: a row
+    if (it->kind != TIKU_TRK_DB_ITEM_EXPAND) {
+        return;
+    }
+    switch (it->expand) {
+    case TIKU_TRK_DB_EXPAND_SETTINGS:
+        sub_row(db, TIKU_TRK_DB_PREFERENCES, tiku_str("menu.deskbar_prefs"),
+                "folder_config");
+        sub_row(db, TIKU_TRK_DB_TRACKER_PREFERENCES,
+                tiku_str("menu.tracker_prefs"), "folder_prefs");
+        sub_row(db, TIKU_TRK_DB_DESKTOP_PREFERENCES,
+                tiku_str("menu.desktop_prefs"), "desktop");
+        sub_row(db, TIKU_TRK_DB_FONT_PREFERENCES, tiku_str("menu.fonts"),
+                "folder_fonts");
+        sub_row(db, TIKU_TRK_DB_SOUND_PREFERENCES, tiku_str("menu.sounds"),
+                "");
+        sub_row(db, TIKU_TRK_DB_DEVICE_PREFERENCES, "Devices Preferences…",
+                "microcontroller");
+        sub_row(db, TIKU_TRK_DB_STARTUP_PREFERENCES, "Startup Preferences…",
+                "");
+        sub_row(db, TIKU_TRK_DB_ASSOC_PREFERENCES, "File Associations…",
+                "folder_prefs");
+        /* Says what choosing it does, which is the other state: a row
          * labelled with the state it is in reads as a heading. */
-        snprintf(si->label, sizeof si->label, "%s",
-                 tiku_str(db->show_replicants ? "menu.hide_replicants"
-                                                  : "menu.show_replicants"));
-    } else if (it->kind == TIKU_TRK_DB_ITEM_APPS ||
-               it->kind == TIKU_TRK_DB_ITEM_PROGRAMMING) {
-        int want = (it->kind == TIKU_TRK_DB_ITEM_PROGRAMMING)
-                       ? TIKU_TRK_DB_GROUP_PROGRAMMING
-                       : it->which;
+        sub_row(db, TIKU_TRK_DB_TOGGLE_REPLICANTS,
+                tiku_str(db->show_replicants ? "menu.hide_replicants"
+                                             : "menu.show_replicants"),
+                "package");
+        break;
+    case TIKU_TRK_DB_EXPAND_APPS: {
         int i;
 
-        for (i = 0; i < db->app_count &&
-                    db->sub_count < TIKU_TRK_DB_SUB_MAX; i++) {
+        for (i = 0; i < db->app_count && db->sub_count < TIKU_TRK_DB_SUB_MAX;
+             i++) {
             tiku_trk_db_item_t *si;
 
-            if (db->app[i].group != want) {
+            if (db->app[i].group != it->which) {
                 continue;
             }
-            si = &db->sub[db->sub_count++];
-            memset(si, 0, sizeof *si);
-            si->kind = TIKU_TRK_DB_ITEM_APP;
-            snprintf(si->label, sizeof si->label, "%s", db->app[i].label);
-            snprintf(si->path, sizeof si->path, "%s", db->app[i].command);
-            snprintf(si->icon, sizeof si->icon, "%s", db->app[i].icon);
+            si = sub_row(db, TIKU_TRK_DB_LAUNCH_APP, db->app[i].label,
+                         db->app[i].icon[0] != '\0' ? db->app[i].icon
+                                                     : "application");
+            if (si != NULL) {
+                snprintf(si->path, sizeof si->path, "%s", db->app[i].command);
+            }
         }
-    } else if (it->kind == TIKU_TRK_DB_ITEM_RECENT) {
+        break;
+    }
+    case TIKU_TRK_DB_EXPAND_RECENT: {
         int i;
 
         for (i = 0; i < db->recent_count[it->which] &&
                     i < db->settings.recent_count[it->which] &&
                     i < TIKU_TRK_DB_SUB_MAX; i++) {
-            tiku_trk_db_item_t *si = &db->sub[db->sub_count++];
-
-            memset(si, 0, sizeof *si);
-            si->kind = TIKU_TRK_DB_ITEM_PATH;
-            memcpy(si->path, db->recent[it->which][i], sizeof si->path);
-            si->path[sizeof si->path - 1u] = '\0';
-            /* The NAME, not the path: a menu of paths is a menu nobody
+            /* The name, not the path: a menu of paths is a menu nobody
              * can read across at a glance. */
-            {
-                char nm[TIKU_PATH_MAX];
+            tiku_trk_db_item_t *si = sub_row(db, TIKU_TRK_DB_OPEN_PATH,
+                db_leaf_name(db->recent[it->which][i]),
+                (it->which == 1) ? "folder"
+                                 : (it->which == 2) ? "application" : "file");
 
-                /* Through a local: source and destination are both inside
-                 * this bar, and an snprintf between two members of one
-                 * object is not something to leave to chance. */
-                snprintf(nm, sizeof nm, "%s",
-                         db_leaf_name(db->recent[it->which][i]));
-                snprintf(si->label, sizeof si->label, "%.*s",
-                         (int)sizeof si->label - 1, nm);
+            if (si != NULL) {
+                memcpy(si->path, db->recent[it->which][i], sizeof si->path);
+                si->path[sizeof si->path - 1u] = '\0';
             }
         }
-    } else if (it->kind == TIKU_TRK_DB_ITEM_DIR &&
-               db->backend != NULL && db->backend->ops->list != NULL) {
-        struct menu_walk w;
+        break;
+    }
+    case TIKU_TRK_DB_EXPAND_DIR:
+        if (db->backend != NULL && db->backend->ops->list != NULL) {
+            struct menu_walk w;
 
-        w.db = db;
-        w.n = 0;
-        w.into = db->sub;
-        w.max = TIKU_TRK_DB_SUB_MAX;
-        (void)db->backend->ops->list(db->backend, it->path, db_menu_entry, &w);
-        db->sub_count = w.n;
+            w.db = db;
+            w.n = 0;
+            w.into = db->sub;
+            w.max = TIKU_TRK_DB_SUB_MAX;
+            (void)db->backend->ops->list(db->backend, it->path, db_menu_entry,
+                                         &w);
+            db->sub_count = w.n;
+        }
+        break;
+    default:
+        break;
     }
     if (db->sub_count > 0) {
         db->sub_of = at;

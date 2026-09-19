@@ -87,7 +87,9 @@ tiku_trk_types_add(tiku_trk_types_t *db, const char *type, const char *desc,
             len--;
         }
         snprintf(word, sizeof word, "%.*s", (int)len, p);
-        if (strncmp(word, "attr:", 5) == 0 && word[5] != '\0' &&
+        if (strcmp(word, "document") == 0) {
+            r->document = 1;
+        } else if (strncmp(word, "attr:", 5) == 0 && word[5] != '\0' &&
             r->nattr < TIKU_TRK_TYPE_COLS_MAX) {
             /* Named, not numbered: what a view will call it depends on
              * which slot it gets, and that is this session's business. */
@@ -231,6 +233,11 @@ tiku_trk_types_save(const tiku_trk_types_t *db, const char *path)
                           (k > 0 || db->rec[i].ncol > 0) ? "," : "",
                           db->rec[i].attr[k]);
         }
+        if (db->rec[i].document) {
+            (void)fprintf(f, "%sdocument",
+                          (db->rec[i].ncol > 0 || db->rec[i].nattr > 0)
+                              ? "," : "");
+        }
         (void)fputc('\n', f);
     }
     (void)fclose(f);
@@ -252,6 +259,15 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
     tiku_trk_types_init(db);
     (void)tiku_trk_types_add(db, "text/", "Text file", "text_file",
                              "size,modified,permissions");
+    /* Documents that can carry the executable bit and still open for
+     * editing: a source file is read, not run, from a double-click. */
+    (void)tiku_trk_types_add(db, "text/plain", "Text file", "text_file",
+                             "size,modified,permissions,document");
+    (void)tiku_trk_types_add(db, "text/x-basic", "BASIC source", "text_file",
+                             "size,modified,permissions,document");
+    (void)tiku_trk_types_add(db, "application/x-tiku-project",
+                             "Tiku project", "file",
+                             "size,modified,document");
     (void)tiku_trk_types_add(db, "text/x-source", "Source file",
                              "text_file", "size,modified,permissions");
     (void)tiku_trk_types_add(db, "image/", "Image", "file",

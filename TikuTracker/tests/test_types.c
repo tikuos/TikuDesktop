@@ -64,6 +64,27 @@ main(void)
           "Q-007", "and its own declarations without the supertype "
           "hiding them");
 
+    printf("\nthe documents that open for editing whatever their bits\n");
+    r = tiku_trk_types_find(&db, "text/x-basic");
+    check(r != NULL && r->document, "PVS-011",
+          "BASIC source is a document: its handler opens it");
+    r = tiku_trk_types_find(&db, "application/x-tiku-project");
+    check(r != NULL && r->document, "PVS-011", "so is a Tiku project");
+    r = tiku_trk_types_find(&db, "text/x-source");
+    check(r != NULL && !r->document, "PVS-011",
+          "and a source file that says nothing is not");
+    {
+        /* Through the file: the word survives a save and a load. */
+        tiku_trk_types_t again;
+
+        tiku_trk_types_init(&again);
+        check(tiku_trk_types_load(&again, path) >= 0, "PVS-011",
+              "the database reads back");
+        r = tiku_trk_types_find(&again, "text/x-basic");
+        check(r != NULL && r->document, "PVS-011",
+              "with the document word kept");
+    }
+
     printf("\nthe columns a type is worth showing (CW-026, AW-015)\n");
     r = tiku_trk_types_find(&db, "tiku-gpio");
     check(r != NULL && r->ncol == 3 &&

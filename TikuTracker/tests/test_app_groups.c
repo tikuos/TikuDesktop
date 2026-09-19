@@ -43,8 +43,8 @@ int main(void)
     db_build_leaf(db);
     int found[4] = {0};
     for (int i = 0; i < db->leaf_count; i++) {
-        if (db->leaf[i].kind != TIKU_TRK_DB_ITEM_APPS &&
-            db->leaf[i].kind != TIKU_TRK_DB_ITEM_PROGRAMMING) continue;
+        if (db->leaf[i].kind != TIKU_TRK_DB_ITEM_EXPAND ||
+            db->leaf[i].expand != TIKU_TRK_DB_EXPAND_APPS) continue;
         int group = db->leaf[i].which;
         found[group]++;
         db_open_sub(db, i);
@@ -52,7 +52,7 @@ int main(void)
             group == TIKU_TRK_DB_GROUP_PROGRAMMING ? 2 :
             group == TIKU_TRK_DB_GROUP_DEVICE_TOOLS ? 4 : 3));
         for (int j = 0; j < db->sub_count; j++) {
-            assert(db->sub[j].kind == TIKU_TRK_DB_ITEM_APP);
+            assert(db->sub[j].command == TIKU_TRK_DB_LAUNCH_APP);
             const char *leaf = strrchr(db->sub[j].path, '/');
             assert(leaf && !strncmp(db->sub[j].path, "/opt/apps/", 10));
             for (size_t k = 0; k < sizeof names / sizeof names[0]; k++)
@@ -63,7 +63,9 @@ int main(void)
     for (int i = 0; i < 4; i++) assert(found[i] == 1);
     tiku_trk_deskbar_free(db);
     db = tiku_trk_deskbar_new(NULL); db_build_leaf(db);
-    for (int i = 0; i < db->leaf_count; i++) assert(db->leaf[i].kind != TIKU_TRK_DB_ITEM_APPS);
+    for (int i = 0; i < db->leaf_count; i++)
+        assert(db->leaf[i].kind != TIKU_TRK_DB_ITEM_EXPAND ||
+               db->leaf[i].expand != TIKU_TRK_DB_EXPAND_APPS);
     tiku_trk_deskbar_free(db);
     /* Four group rows and a full Deskbar folder: Shut down is added
      * last, so a menu without room for it loses it first. */
@@ -81,7 +83,7 @@ int main(void)
     tiku_trk_deskbar_set_menu_dir(db, "/tmp/trk_leafmax", "/tmp/trk_leafmax");
     db_build_leaf(db);
     assert(db->leaf_count > 4);
-    assert(db->leaf[db->leaf_count - 1].kind == TIKU_TRK_DB_ITEM_QUIT);
+    assert(db->leaf[db->leaf_count - 1].command == TIKU_TRK_DB_QUIT);
     tiku_trk_deskbar_free(db);
     for (int i = 0; i < 30; i++) {
         char path[64];
