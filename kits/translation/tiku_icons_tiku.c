@@ -30,6 +30,16 @@
 #include "tiku_icons_tool_hex.inl"
 #include "tiku_icons_tool_monitor.inl"
 #include "tiku_icons_tool_inspector.inl"
+#include "tiku_icons_app_basic.inl"
+#include "tiku_icons_app_c.inl"
+#include "tiku_icons_app_devcalc.inl"
+#include "tiku_icons_app_notes.inl"
+#include "tiku_icons_app_hello.inl"
+#include "tiku_icons_app_clock.inl"
+#include "tiku_icons_app_counter.inl"
+#include "tiku_icons_app_sketch.inl"
+#include "tiku_icons_app_sensors.inl"
+#include "tiku_icons_app_twowin.inl"
 
 /* microcontroller -- a chip: dark body, silver legs, the pin-one dot */
 static const uint8_t tiku_icon_microcontroller[311] = {
@@ -159,5 +169,25 @@ tiku_icons_tiku_register(void)
                           sizeof tiku_icon_tool_monitor);
     took += tiku_icons_add("tool_inspector", tiku_icon_tool_inspector,
                           sizeof tiku_icon_tool_inspector);
+    took += tiku_icons_add("app_basic", tiku_icon_app_basic,
+                          sizeof tiku_icon_app_basic);
+    took += tiku_icons_add("app_c", tiku_icon_app_c,
+                          sizeof tiku_icon_app_c);
+    took += tiku_icons_add("app_devcalc", tiku_icon_app_devcalc,
+                          sizeof tiku_icon_app_devcalc);
+    took += tiku_icons_add("app_notes", tiku_icon_app_notes,
+                          sizeof tiku_icon_app_notes);
+    took += tiku_icons_add("app_hello", tiku_icon_app_hello,
+                          sizeof tiku_icon_app_hello);
+    took += tiku_icons_add("app_clock", tiku_icon_app_clock,
+                          sizeof tiku_icon_app_clock);
+    took += tiku_icons_add("app_counter", tiku_icon_app_counter,
+                          sizeof tiku_icon_app_counter);
+    took += tiku_icons_add("app_sketch", tiku_icon_app_sketch,
+                          sizeof tiku_icon_app_sketch);
+    took += tiku_icons_add("app_sensors", tiku_icon_app_sensors,
+                          sizeof tiku_icon_app_sensors);
+    took += tiku_icons_add("app_twowin", tiku_icon_app_twowin,
+                          sizeof tiku_icon_app_twowin);
     return took;
 }
