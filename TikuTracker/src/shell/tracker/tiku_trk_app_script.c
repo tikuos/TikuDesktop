@@ -201,6 +201,18 @@ browser_script_say(void *ctx, const char *noun, char *out, size_t max)
         (void)script_recite(a, out, max, 1);
         return 1;
     }
+    if (strcmp(noun, "hot") == 0) {
+        /* The open menu's row under the pointer, by label; empty for
+         * none, so a pointer that left is provable. */
+        const tiku_menu_t *m = (a->popup_sub != NULL && a->popup_sub->hot >= 0)
+                                   ? a->popup_sub : a->popup;
+
+        out[0] = '\0';
+        if (m != NULL && m->hot >= 0 && m->hot < m->count) {
+            snprintf(out, max, "%s", m->item[m->hot].label);
+        }
+        return 1;
+    }
     if (strcmp(noun, "operation") == 0) {
         /* This front-end keeps no progress window; the engine itself is
          * asked, so the noun cannot say idle while a job runs. */

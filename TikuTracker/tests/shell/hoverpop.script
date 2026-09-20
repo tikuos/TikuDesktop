@@ -20,9 +20,9 @@ note the Location is longer than its row; resting on it floats the whole
 move 300 260
 move 300 267
 wait 12
-expect-pixel 600 258 ffffc8
+expect-read tip quite-a-long-directory-name-that-will-not-fit-in-the-row
 note and the pop-up leaves with the pointer
 move 300 400
 wait 4
-expect-pixel 600 258 336698
+expect-said tip
 quit

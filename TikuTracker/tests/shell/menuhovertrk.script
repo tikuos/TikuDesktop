@@ -9,11 +9,11 @@ press-row 1 3
 wait 2
 release-row 1 3
 wait 5
-expect-pixel 32 205 d8d8d8
+expect-said hot
 move 60 200
 wait 3
-expect-pixel 32 205 336698
+expect-said hot Edit name
 move 500 400
 wait 3
-expect-pixel 32 205 d8d8d8
+expect-said hot
 quit

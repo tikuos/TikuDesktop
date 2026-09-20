@@ -99,6 +99,75 @@ conduct_pixel(void *context, int x, int y)
 }
 
 /**
+ * @brief The chrome nouns: what a menu, a tooltip, the strip or a
+ *        minimized window shows, said so a lane about them reads no
+ *        pixel.  @return 0 for a name that is not one of them.
+ */
+static int
+conduct_chrome(desktop_t *app, const char *name, char *out, size_t max)
+{
+    if (strcmp(name, "hot") == 0) {
+        /* The row under the pointer in whatever menu is open, by its
+         * label: the popup's deepest level first, then the Deskbar's
+         * menus.  Empty when no row is hot, which is what a pointer
+         * that left must leave behind. */
+        const tiku_menu_t *m = (app->popup_sub != NULL &&
+                                app->popup_sub->hot >= 0)
+                                   ? app->popup_sub : app->popup;
+
+        out[0] = '\0';
+        if (m != NULL) {
+            if (m->hot >= 0 && m->hot < m->count) {
+                snprintf(out, max, "%s", m->item[m->hot].label);
+            }
+            return 1;
+        }
+        (void)tiku_trk_deskbar_hot_label(app->deskbar, out, max);
+        return 1;
+    }
+    if (strcmp(name, "tip") == 0) {
+        /* The text floating beside the pointer: an Info window's field
+         * pop-up or the Deskbar's tooltip, and empty for neither. */
+        if (!info_hover_text(app, out, max)) {
+            snprintf(out, max, "%s", tiku_trk_deskbar_tip(app->deskbar));
+        }
+        return 1;
+    }
+    if (strcmp(name, "strip") == 0) {
+        /* Whether the global menu bar is up. */
+        snprintf(out, max, "%s", (app->gbar_on == 1) ? "on" : "off");
+        return 1;
+    }
+    if (strcmp(name, "minimized") == 0) {
+        /* The windows that are minimized, by title, "a|b|" style. */
+        int i;
+        size_t used = 0;
+
+        out[0] = '\0';
+        for (i = 0; i < TIKU_WINDOW_MAX; i++) {
+            tiku_window_t *w = tiku_workspace_at(app->desk, i);
+
+            if (w == NULL || !w->open || !w->minimized) {
+                continue;
+            }
+            used += (size_t)snprintf(out + used, (used < max) ? max - used : 0u,
+                                     "%s|", w->title);
+            if (used >= max) {
+                break;
+            }
+        }
+        return 1;
+    }
+    if (strcmp(name, "menu-bottom") == 0) {
+        /* Where the Deskbar's leaf menu ends: a lane about the rows'
+         * height reads this and not a pixel below the last row. */
+        snprintf(out, max, "%d", tiku_trk_deskbar_menu_bottom(app->deskbar));
+        return 1;
+    }
+    return 0;
+}
+
+/**
  * @brief The named things this shell can say about itself.
  *
  * Deliberately a short list of what the shell ALREADY knows -- a title, a
@@ -114,7 +183,10 @@ conduct_text(void *context, const char *name, char *out, size_t max)
     if (name == NULL || out == NULL) {
         return 0;
     }
-            if (strncmp(name, "trail", 5) == 0 &&
+    if (conduct_chrome(app, name, out, max)) {
+        return 1;
+    }
+    if (strncmp(name, "trail", 5) == 0 &&
         (name[5] == '\0' || name[5] == ':')) {
         /* What this shell has been doing, newest lines last.  A noun
          * rather than a verb of its own: it is one more thing the shell

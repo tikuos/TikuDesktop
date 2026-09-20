@@ -127,6 +127,50 @@ sc_pump_desktop(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 }
 
 /**
+ * @brief A noun's answer against the whole text, or a bound: the checks
+ *        that read the shell's own words.  @return 0 for another op.
+ */
+static int
+sc_said_noun(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
+             sc_step_t *cur)
+{
+    switch (cur->op) {
+    case OP_EXPECT_SAID: {
+        char text[2048];
+
+        text[0] = '\0';
+        if (st != NULL && st->say != NULL) {
+            (void)st->say(st->say_ctx, cur->text2, text, sizeof text);
+        }
+        sc_verdict(s, strcmp(text, cur->text) == 0, cur->text2, cur->text);
+        if (s->fails > 0 && strcmp(text, cur->text) != 0) {
+            printf("         (said: \"%s\")\n", text);
+        }
+        return 1;
+    }
+    case OP_EXPECT_UNDER:
+    case OP_EXPECT_OVER: {
+        char text[64], said[96];
+        long got;
+        int under = cur->op == OP_EXPECT_UNDER;
+
+        text[0] = '\0';
+        if (st != NULL && st->say != NULL) {
+            (void)st->say(st->say_ctx, cur->text2, text, sizeof text);
+        }
+        got = atol(text);
+        snprintf(said, sizeof said, "%s is %ld, %s %d", cur->text2, got,
+                 under ? "under" : "over", cur->count);
+        sc_verdict(s, text[0] != '\0' &&
+                   (under ? got < cur->count : got > cur->count), said, "");
+        return 1;
+    }
+    default:
+        return 0;
+    }
+}
+
+/**
  * @brief what the shell says when asked: the count, the menu, the nouns, the
  * narration
  */
@@ -135,6 +179,9 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
              tiku_trk_script_step_t *out, sc_step_t *cur)
 {
     (void)out;
+    if (sc_said_noun(s, st, cur)) {
+        return 1;
+    }
     switch (cur->op) {
 
     case OP_EXPECT_COUNT:
@@ -235,20 +282,6 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         if (s->fails > 0 && text[0] != '\0') {
             printf("         (read: \"%s\")\n", text);
         }
-        return 1;
-    }
-        case OP_EXPECT_UNDER: {
-        char text[64], said[96];
-        long got;
-
-        text[0] = '\0';
-        if (st != NULL && st->say != NULL) {
-            (void)st->say(st->say_ctx, cur->text2, text, sizeof text);
-        }
-        got = atol(text);
-        snprintf(said, sizeof said, "%s is %ld, under %d", cur->text2, got,
-                 cur->count);
-        sc_verdict(s, text[0] != '\0' && got < cur->count, said, "");
         return 1;
     }
     case OP_EXPECT_OPERATION: {
@@ -685,12 +718,20 @@ sc_parse_said(sc_step_t *st, char **w, int n)
         st->op = OP_EXPECT_READ;
         snprintf(st->text2, sizeof st->text2, "%s", w[1]);
         sc_rest(w, n, 2, st->text, sizeof st->text);
-        } else if (strcmp(w[0], "expect-under") == 0 && n >= 3) {
+    } else if ((strcmp(w[0], "expect-under") == 0 ||
+                strcmp(w[0], "expect-over") == 0) && n >= 3) {
         /* A noun that answers a number, and the number it must stay
-         * under: how "the loop never waits" is asserted. */
-        st->op = OP_EXPECT_UNDER;
+         * under (how "the loop never waits" is asserted) or over. */
+        st->op = (w[0][7] == 'u') ? OP_EXPECT_UNDER : OP_EXPECT_OVER;
         snprintf(st->text2, sizeof st->text2, "%s", w[1]);
         st->count = atoi(w[2]);
+    } else if (strcmp(w[0], "expect-said") == 0 && n >= 2) {
+        /* A noun and its WHOLE answer, which may be nothing: the check
+         * expect-read's substring cannot make, that no row is hot or no
+         * text floats. */
+        st->op = OP_EXPECT_SAID;
+        snprintf(st->text2, sizeof st->text2, "%s", w[1]);
+        sc_rest(w, n, 2, st->text, sizeof st->text);
     } else if (strcmp(w[0], "expect-operation") == 0 && n >= 2) {
         st->op = OP_EXPECT_OPERATION;
         sc_rest(w, n, 1, st->text, sizeof st->text);

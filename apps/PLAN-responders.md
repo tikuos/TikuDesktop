@@ -1,6 +1,6 @@
 # Responders: one interface for every surface on the desk
 
-*2026-09-19.  R0 to R4 built that day, R5 the next; R6 and R7 not yet.*
+*2026-09-19.  R0 to R4 built that day, R5 and R6 the next; R7 not yet.*
 
 ## 1. What is wrong today
 
@@ -367,3 +367,30 @@ typedef struct tiku_trk_shell_services {
   kept one adds them by hand; the defaults are installed only where no
   file is.
 
+## 13. What R6 settled
+
+- The harness already drove the responders: a `click`, a `menu-pick`
+  and a `key` are events injected into the same queue the display's
+  events come through, and the desktop delivers them to the list.
+  Nothing changed there.
+- A lane about chrome reads a noun instead of a pixel.  The shell says
+  `hot` (the label of the row under the pointer in whatever menu is
+  open, the popup's deepest level first, then any of the Deskbar's
+  menus), `tip` (the text floating beside the pointer: an Info field's
+  pop-up or the Deskbar's tooltip), `strip` (whether the global bar is
+  up), `minimized` (the minimized windows by title) and `menu-bottom`
+  (where the leaf menu ends).  The browser shell says `hot` too.
+- Two verbs joined `expect-read`: `expect-said <noun> [text]` compares
+  the whole answer, so "no row is hot" and "nothing floats" are checks
+  and not a pixel of the backdrop; `expect-over <noun> <n>` is the
+  mirror of `expect-under`.
+- Eight lanes read nouns now (deskbarhover, menuhover, menuhovertrk,
+  clocktip, hoverpop, globalbar, dbwinrow, deskbarfont); the lane
+  count is 264 as before.  The pixel probes that stay in menu lanes are
+  about drawn art: the expander arrow in dbmenu, the row icons in
+  dbmenuicons and menuicons.  The two probe names the plan proposed,
+  `expect-row-ground` and `expect-icon-of`, were not built: the first
+  is `expect-said hot`, the second is a pixel by nature.
+- Proof: `test_deskbar_hover` names the hot row through the leaf and
+  its submenu and hears nothing once the pointer left; `test_frames`
+  asks the desktop's nouns; both fail with the leaf branch stubbed.

@@ -1,6 +1,7 @@
 /* Delayed Deskbar submenus, without sleeping or sending real commands.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
+#include <string.h>
 #include "../src/deskbar/bar/tiku_trk_deskbar_private.h"
 
 /** @brief A leaf's real on-screen center, for every dock and font size. */
@@ -91,6 +92,35 @@ static void tracking(tiku_surface_t *s, int dock)
     hover(db, row_of(db, TIKU_TRK_DB_FIND), now);
     assert(tiku_trk_deskbar_menu_tick(db, now+delay));
     assert(db->menu_open && db->sub_of == -1); /* No Find command selected. */
+    tiku_trk_deskbar_free(db);
+}
+
+/** @brief The hot row by label: the leaf's, the submenu's over it, none. */
+static void hot_label(tiku_surface_t *s)
+{
+    tiku_trk_deskbar_t *db = fixture(s, TIKU_TRK_DB_RIGHT_EXPANDED);
+    int settings = parent(db, TIKU_TRK_DB_EXPAND_SETTINGS, 0);
+    int find = row_of(db, TIKU_TRK_DB_FIND);
+    int64_t delay = TIKU_TRK_DB_SUBMENU_DELAY_US, now = 1000000;
+    char got[TIKU_TRK_DB_LABEL_MAX];
+    assert(find >= 0);
+    assert(!tiku_trk_deskbar_hot_label(db, got, sizeof got) && got[0] == 0);
+    hover(db, find, now);
+    assert(tiku_trk_deskbar_hot_label(db, got, sizeof got));
+    assert(strcmp(got, db->leaf[find].label) == 0);
+    hover(db, settings, now);
+    assert(tiku_trk_deskbar_menu_tick(db, now+delay) && db->sub_of == settings);
+    tiku_rect_t main = row_rect(db, 0);
+    main = db_leaf_menu_rect(db, main.h, db->leaf_count);
+    tiku_rect_t sub = db_sub_menu_rect(db, main, tiku_font_plain()->height+6);
+    (void)tiku_trk_deskbar_motion(db, sub.x+8, sub.y+10);
+    assert(tiku_trk_deskbar_hot_label(db, got, sizeof got));
+    assert(strcmp(got, db->sub[0].label) == 0);
+    assert(strcmp(got, db->leaf[settings].label) != 0);
+    /* And the bottom edge is the last row's, wherever the font puts it. */
+    assert(tiku_trk_deskbar_menu_bottom(db) == main.y + main.h);
+    (void)tiku_trk_deskbar_motion(db, 5, s->h - 5);
+    assert(!tiku_trk_deskbar_hot_label(db, got, sizeof got) && got[0] == 0);
     tiku_trk_deskbar_free(db);
 }
 
@@ -227,8 +257,9 @@ int main(void)
     tracking(s,TIKU_TRK_DB_RIGHT_EXPANDED);
     tracking(s,TIKU_TRK_DB_LEFT_EXPANDED);
     cancellation(s); categories(s); empty_folder(s); hover_area(s);
-    pressed_look(s);
+    pressed_look(s); hot_label(s);
     tiku_surface_free(s);
-    puts("PASS: Deskbar hover delay, switching, cancellation, clicks and safety");
+    puts("PASS: Deskbar hover delay, switching, cancellation, clicks, safety "
+         "and the hot row by label");
     return 0;
 }

@@ -506,6 +506,22 @@ info_hover_paint(void *self, tiku_surface_t *s)
               TIKU_C_TEXT);
 }
 
+/** @brief The text the pop-up floats now, for a driver's question. */
+int
+info_hover_text(desktop_t *app, char *out, size_t max)
+{
+    char value[TIKU_TRK_INFO_VAL_MAX];
+    tiku_rect_t box;
+
+    if (!info_hover_box(app, app->info_windows.hover_slot,
+                        app->info_windows.hover_field, &box, value,
+                        sizeof value)) {
+        return 0;
+    }
+    snprintf(out, max, "%s", value);
+    return 1;
+}
+
 /* the list */
 
 /** @brief Every surface on the list, bottom first: the folders under the

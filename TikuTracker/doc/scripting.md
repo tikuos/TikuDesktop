@@ -63,6 +63,15 @@ drives a shipping shell from outside.  The harness that runs them is
     expect-sound-off <event>
     expect-volume <n>                   -- the volume in force, 0..100
     expect-no-menu
+    expect-read <noun> <substring>      -- what the shell says of a noun
+                                           (title, titles, status, menu,
+                                           hot, tip, strip, minimized,
+                                           menu-bottom, mounts, alert,
+                                           operation, turns, a /path)
+    expect-said <noun> [text]           -- the whole answer, so "nothing"
+                                           is a check too
+    expect-under <noun> <n>             -- a numeric noun's bound
+    expect-over <noun> <n>
     note <text>                         -- what the next check is for
     quit
 ```

@@ -8,12 +8,12 @@ press-row 1 3
 wait 2
 release-row 1 3
 wait 5
-expect-pixel 195 200 d8d8d8
+expect-said hot
 move 120 200
 wait 3
-expect-pixel 195 200 336698
+expect-said hot Get info
 note and a pointer that leaves takes the highlight with it
 move 400 460
 wait 3
-expect-pixel 195 200 d8d8d8
+expect-said hot
 quit

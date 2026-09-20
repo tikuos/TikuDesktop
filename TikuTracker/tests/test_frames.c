@@ -2,6 +2,7 @@
  * desktop keeps drawing until it is done, with no other event to help it.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include "../src/shell/desktop/tiku_trk_desktop_draw.c"
@@ -68,6 +69,21 @@ int main(void)
         assert(damage.x <= menu.x && damage.x + damage.w >= menu.x + menu.w);
         draw_all(app);
         assert(!app->dirty);
+        /* A driver hears the row by its label, and hears nothing once
+         * the pointer has left; the other chrome nouns answer too. */
+        char said[256];
+        assert(conduct_text(app, "hot", said, sizeof said));
+        assert(strcmp(said, app->deskbar->leaf[0].label) == 0);
+        assert(conduct_text(app, "menu-bottom", said, sizeof said) &&
+               atoi(said) == menu.y + menu.h);
+        mv.x = 5; mv.y = app->surf->h - 5;
+        desktop_pointer_move(app, &mv, &lp);
+        assert(conduct_text(app, "hot", said, sizeof said) && said[0] == 0);
+        assert(conduct_text(app, "tip", said, sizeof said) && said[0] == 0);
+        assert(conduct_text(app, "strip", said, sizeof said) &&
+               strcmp(said, "off") == 0);
+        assert(conduct_text(app, "minimized", said, sizeof said) &&
+               said[0] == 0);
     }
     tiku_trk_deskbar_free(app->deskbar);
     tiku_workspace_free(app->desk); tiku_surface_free(app->surf); free(app);

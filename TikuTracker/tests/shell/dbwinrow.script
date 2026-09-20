@@ -4,14 +4,14 @@
 # it -- reachable at last: a CMD press on the bar is ARMED for the dock
 # drag and delivered as the chord only when it never moves.
 wait 12
-note the folder window is up, white where its list is
-expect-pixel 275 200 ffffff
+note the folder window is up, nothing minimized
+expect-said minimized
 click 932 60 1 ctrl
 wait 20
-note CMD+click on its Deskbar entry minimized it: backdrop shows through
-expect-pixel 275 200 336698
+note CMD+click on its Deskbar entry minimized it
+expect-said minimized trk_script|
 click 932 60 1
 wait 20
 note and a plain click on the same entry brings it back
-expect-pixel 275 200 ffffff
+expect-said minimized
 quit

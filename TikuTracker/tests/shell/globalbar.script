@@ -5,11 +5,11 @@
 # toolkit's menu protocol, with the system menu at its left.  The windows
 # go bare and the desk poses move out from under the strip.
 wait 12
-expect-pixel 300 8 336698
+expect-said strip off
 write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
 wait 20
 note the strip is there now
-expect-pixel 300 8 d8d8d8
+expect-said strip on
 note the focused window's File menu, served from its PUBLISHED description
 click 60 8
 wait 4
@@ -28,8 +28,8 @@ wait 5
 expect-alert Shut down the desktop
 key Escape
 wait 3
-note and off again: the strip returns its pixels to the backdrop
+note and off again
 write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar off
 wait 20
-expect-pixel 300 8 336698
+expect-said strip off
 quit

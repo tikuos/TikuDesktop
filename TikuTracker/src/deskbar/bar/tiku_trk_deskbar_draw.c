@@ -468,6 +468,74 @@ tiku_trk_deskbar_menu_labels(const tiku_trk_deskbar_t *db, int sub,
     return n;
 }
 
+/** @brief The clock menu's four rows, each worded from its setting. */
+static void
+clock_menu_items(const tiku_trk_deskbar_t *db, const char **items)
+{
+    items[0] = tiku_str(db->settings.show_clock ? "menu.clock.hide"
+                                                : "menu.clock.show");
+    items[1] = tiku_str(db->settings.show_seconds ? "menu.seconds.hide"
+                                                  : "menu.seconds.show");
+    items[2] = tiku_str(db->settings.show_day_of_week ? "menu.day.hide"
+                                                      : "menu.day.show");
+    items[3] = tiku_str(db->settings.show_timezone ? "menu.zone.hide"
+                                                   : "menu.zone.show");
+}
+
+int
+tiku_trk_deskbar_hot_label(const tiku_trk_deskbar_t *db, char *out,
+                           size_t cap)
+{
+    const char *label = NULL;
+    const char *items[4];
+    int enabled[4];
+
+    if (db == NULL || out == NULL || cap == 0) { return 0; }
+    if (db->menu_open) {
+        if (db->sub_of >= 0 && db->sub_hot >= 0 &&
+            db->sub_hot < db->sub_count) {
+            label = db->sub[db->sub_hot].label;
+        } else if (db->leaf_hot >= 0 && db->leaf_hot < db->leaf_count) {
+            label = db->leaf[db->leaf_hot].label;
+        }
+    } else if (db->win_menu_team >= 0 && db->win_menu_team < db->team_count) {
+        int n = db_win_menu_items(db, db->win_menu_team, items, enabled);
+
+        if (db->win_hot >= 0 && db->win_hot < n) {
+            label = items[db->win_hot];
+        }
+    } else if (db->clock_menu_open) {
+        clock_menu_items(db, items);
+        if (db->clock_hot >= 0 && db->clock_hot < 4) {
+            label = items[db->clock_hot];
+        }
+    } else if (db->apps_menu_open) {
+        if (db->apps_hot >= 0 && db->apps_hot < db->team_count) {
+            label = db->teams[db->apps_hot].name;
+        }
+    }
+    snprintf(out, cap, "%s", (label != NULL) ? label : "");
+    return label != NULL;
+}
+
+const char *
+tiku_trk_deskbar_tip(const tiku_trk_deskbar_t *db)
+{
+    return (db != NULL && db->tip_y >= 0) ? db->tip : "";
+}
+
+int
+tiku_trk_deskbar_menu_bottom(const tiku_trk_deskbar_t *db)
+{
+    tiku_rect_t m;
+
+    if (db == NULL || !db->menu_open) {
+        return -1;
+    }
+    m = db_leaf_menu_rect(db, tiku_font_plain()->height + 6, db->leaf_count);
+    return m.y + m.h;
+}
+
 int
 tiku_trk_deskbar_menu_point(const tiku_trk_deskbar_t *db, const char *label,
                             int *x, int *y)
@@ -905,18 +973,11 @@ void
 db_draw_clock_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s)
 {
     if (db->clock_menu_open) {
-        const char *items[] = {
-            tiku_str(db->settings.show_clock ? "menu.clock.hide"
-                                                 : "menu.clock.show"),
-            tiku_str(db->settings.show_seconds ? "menu.seconds.hide"
-                                                   : "menu.seconds.show"),
-            tiku_str(db->settings.show_day_of_week ? "menu.day.hide"
-                                                       : "menu.day.show"),
-            tiku_str(db->settings.show_timezone ? "menu.zone.hide"
-                                                    : "menu.zone.show")
-        };
+        const char *items[4];
         tiku_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
                                db_clock_row() - 32, 170, 4 * 28 };
+
+        clock_menu_items(db, items);
         tiku_ui_menu(s, m, items, 4, db->clock_hot);
     }
 }

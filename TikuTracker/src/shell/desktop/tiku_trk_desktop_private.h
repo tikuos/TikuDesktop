@@ -790,6 +790,8 @@ int paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y, int size,
 void desktop_bar_attach(desktop_t *app);
 /** @brief Fill the responder list with every surface, bottom first. */
 void desktop_responders_attach(desktop_t *app);
+/** @brief The Info field pop-up's text; @return 0 with none floating. */
+int info_hover_text(desktop_t *app, char *out, size_t max);
 /** @brief The workspace's frames and the windows that answer for themselves. */
 void desktop_windows_attach(desktop_t *app);
 /** @brief The folder windows' content and the desk's own. */

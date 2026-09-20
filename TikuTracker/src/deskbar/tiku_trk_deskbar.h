@@ -263,6 +263,22 @@ int tiku_trk_deskbar_menu_labels(const tiku_trk_deskbar_t *db, int sub,
                                  char *out, size_t cap);
 
 /**
+ * @brief The label of the row under the pointer in whichever of the
+ *        bar's menus is open: the submenu's over the leaf's, else the
+ *        window, clock or running-applications menu's.
+ *
+ * @return 1 with @p out filled, 0 with @p out empty when no row is hot.
+ */
+int tiku_trk_deskbar_hot_label(const tiku_trk_deskbar_t *db, char *out,
+                               size_t cap);
+
+/** @brief The tooltip showing beside the pointer, or "" for none. */
+const char *tiku_trk_deskbar_tip(const tiku_trk_deskbar_t *db);
+
+/** @brief The open leaf menu's bottom edge on the screen, or -1. */
+int tiku_trk_deskbar_menu_bottom(const tiku_trk_deskbar_t *db);
+
+/**
  * Whether a pointer location is still within the open menu's tracking margin.
  */
 int tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y);

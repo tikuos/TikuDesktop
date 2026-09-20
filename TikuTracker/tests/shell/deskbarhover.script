@@ -6,12 +6,12 @@ press 900 20 1
 wait 2
 release 900 20 1
 wait 5
-expect-pixel 800 60 d8d8d8
+expect-said hot
 move 800 60
 wait 3
-expect-pixel 800 60 336698
+expect-said hot Force Quit…
 note and a pointer that leaves takes the highlight with it
 move 400 460
 wait 3
-expect-pixel 800 60 d8d8d8
+expect-said hot
 quit
