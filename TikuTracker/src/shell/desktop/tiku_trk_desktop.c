@@ -53,7 +53,7 @@ sync_folder_preferences(desktop_t *app)
                 tiku_trk_folder_window_forget(&app->folders[i]);
             }
             app->gbar_open = -1;
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     }
     {
@@ -82,7 +82,7 @@ sync_folder_preferences(desktop_t *app)
             if (desk != NULL) {
                 tiku_trk_folder_window_forget(desk);
             }
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     }
     /* The file panel's top: with the setting on, Up from the root lands
@@ -106,7 +106,7 @@ sync_folder_preferences(desktop_t *app)
                 if (folder->win != NULL && folder->win->open &&
                     strcmp(folder->path, "/") == 0) {
                     close_window(app, folder->win);
-                    app->dirty = 1;
+                    desktop_damage_all(app);
                 }
             }
         }
@@ -125,7 +125,7 @@ sync_folder_preferences(desktop_t *app)
                                           sizeof folder->win->title);
             }
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
 
     /* Every turn, not only on change: a window opened or switched to list
@@ -140,7 +140,7 @@ sync_folder_preferences(desktop_t *app)
         }
         if (filter != tiku_trk_poseview_is_filtering(folder->view)) {
             tiku_trk_poseview_set_filtering(folder->view, filter);
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     }
     if (hide == app->applied_hide_dotfiles &&
@@ -158,7 +158,7 @@ sync_folder_preferences(desktop_t *app)
         tiku_trk_poseview_set_hide_dotfiles(folder->view, hide);
         tiku_trk_poseview_set_folders_first(folder->view, folders_first);
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -273,7 +273,7 @@ tracker_run(int argc, char **argv)
                     break;
                 }
                 if (script_result == TIKU_TRK_SCRIPT_ADAPTER_SHOT) {
-                    app.dirty = 1;
+                    desktop_damage_all(&app);
                     draw_all(&app);
                     (void)tiku_surface_png(
                         app.surf, app.script_adapter.shot_path);
@@ -317,14 +317,14 @@ tracker_run(int argc, char **argv)
                 if (ev.key != TIKU_CLIPBOARD_OK) {
                     snprintf(app.status, sizeof app.status, "%s",
                              tiku_clipboard_status_text((int)ev.key));
-                    app.dirty = 1;
+                    desktop_damage_all(&app);
                 }
                 break;
             case TIKU_EVENT_DEACTIVATED: {
                 tiku_window_t *fw = tiku_workspace_focused(app.desk);
                 /* A hover cannot mature after native focus has left. */
                 if (tiku_trk_deskbar_motion(app.deskbar, -1, -1))
-                    app.dirty = 1;
+                    desktop_damage_all(&app);
                 if (app.prefs_track && app.prefs_track != fw)
                     (void)tiku_window_send(app.prefs_track, &ev);
                 app.prefs_track = NULL;
@@ -337,10 +337,10 @@ tracker_run(int argc, char **argv)
             }
             case TIKU_EVENT_RESIZE:
                 (void)resize_desktop(&app, ev.width, ev.height);
-                app.dirty = 1;
+                desktop_damage_all(&app);
                 break;
             case TIKU_EVENT_EXPOSE:
-                app.dirty = 1;
+                desktop_damage_all(&app);
                 break;
             case TIKU_EVENT_POINTER_DOWN:
                 desktop_pointer_down(&app, &ev, &lp);

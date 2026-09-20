@@ -386,7 +386,7 @@ static int start_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     }
     if (id == START_CANCEL || (id == START_SAVE && start_save(p)))
         desktop_startup_close(p->app);
-    p->app->dirty = 1;
+    desktop_damage_all(p->app);
     return 1;
 }
 
@@ -403,7 +403,7 @@ void desktop_startup_close(desktop_t *app)
     if (app->prefs_track == w) app->prefs_track = NULL;
     if (w != NULL && w->open) tiku_workspace_close(app->desk, w);
     if (app->startup != NULL) app->startup->window = NULL;
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Open or raise Startup Preferences. */
@@ -434,7 +434,7 @@ void desktop_startup_open(desktop_t *app)
         tiku_window_set_size_controls(p->window, 0, 0);
         tiku_window_set_handlers(p->window, start_event, NULL, NULL);
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Release the startup catalog and its window. */

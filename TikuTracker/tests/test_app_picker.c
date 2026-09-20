@@ -1,6 +1,8 @@
 /* Local-only picks and session reuse across the app/desktop boundary. */
 #include <assert.h>
 #include "../src/shell/desktop/tiku_trk_desktop_panels.c"
+/** @brief The painter is not linked: a full frame is the flag, as before. */
+void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
 static int panels, replies;
 static char panel_start[TIKU_PATH_MAX], answer[TIKU_PATH_MAX];

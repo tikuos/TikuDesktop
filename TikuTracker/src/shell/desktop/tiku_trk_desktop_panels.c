@@ -190,7 +190,7 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
     if (p->form.row[row].kind == TIKU_FORM_ENTRY) {
         /* The caret, and nothing written until Return. */
         tiku_form_focus(&p->form, row);
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     if (tiku_form_editing(&p->form) >= 0) {
@@ -202,7 +202,7 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
         (void)tiku_form_press_at(&p->form, content, row, event->x);
         p->tracking = 1;
         p->pending = row;
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     write = tiku_form_press(&p->form, row);
@@ -215,7 +215,7 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
          * the press.
          */
         p->pending = row;
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
     return 1;
 }
@@ -236,7 +236,7 @@ panel_track(tiku_trk_described_t *p, tiku_window_t *window,
     if (event->type == TIKU_EVENT_POINTER_UP) {
         p->tracking = 0;        /* pending stays: the pump writes it */
     }
-    p->app->dirty = 1;
+    desktop_damage_all(p->app);
     return 1;
 }
 
@@ -252,7 +252,7 @@ panel_write(tiku_trk_described_t *p, int row)
         snprintf(p->status, sizeof p->status, "%s: %s",
                  p->form.row[row].label, "nothing serves it");
         tiku_sound_play(TIKU_SOUND_BEEP);
-        p->app->dirty = 1;
+        desktop_damage_all(p->app);
     }
 }
 
@@ -274,7 +274,7 @@ panel_key(desktop_t *app, unsigned key, char ch)
     if (took == 2) {
         p->pending = row;
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return took != 0;
 }
 
@@ -398,7 +398,7 @@ open_panel_path(desktop_t *app, const char *path)
         p->unknown = unknown;
         panel_refresh(p);
         tiku_workspace_activate(app->desk, p->window);
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     p = panel_slot(app);
@@ -427,7 +427,7 @@ open_panel_path(desktop_t *app, const char *path)
     if (p->window != NULL) {
         tiku_window_set_handlers(p->window, panel_event, NULL, NULL);
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return p->window != NULL;
 }
 
@@ -824,7 +824,7 @@ panel_search(void *context, tiku_trk_find_t *panel)
     if (q.invalid) {
         snprintf(app->status, sizeof app->status,
                  "invalid query formula");
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 0;
     }
     /* The checkbox stores the choice; the actual Trash path is resolved at
@@ -902,7 +902,7 @@ panel_search(void *context, tiku_trk_find_t *panel)
             return 0;
         }
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 1;
 }
 
@@ -959,7 +959,7 @@ run_find(desktop_t *app, folder_t *from)
                  app->find_buf, (from != NULL) ? from->path : "/");
     }
     tiku_query_stop(run);
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Map a host directory into the desktop namespace, never a device. */
@@ -1002,7 +1002,7 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
         if (!local_picker_start(app, start, mapped, sizeof mapped)) {
             snprintf(app->status, sizeof app->status,
                      "No local filesystem is available for this application");
-            app->dirty = 1;
+            desktop_damage_all(app);
             return;
         }
         start = mapped;
@@ -1019,7 +1019,7 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
     else
         tiku_trk_panel_window_open_file(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -1053,7 +1053,7 @@ deliver_pick(desktop_t *app, const char *path)
         if (!b || !b->ops || strcmp(b->ops->name, "posix")) {
             snprintf(app->status, sizeof app->status,
                      "This app opens local files; copy the device file first");
-            app->dirty = 1;
+            desktop_damage_all(app);
             return;
         }
         path = local;
@@ -1061,7 +1061,7 @@ deliver_pick(desktop_t *app, const char *path)
     if (kind == 1 && slot != NULL && slot->running &&
         slot->descriptor != NULL && slot->descriptor->picked != NULL) {
         slot->descriptor->picked(slot->state, window, path);
-        app->dirty = 1;
+        desktop_damage_all(app);
     } else if (kind == 2 && session >= 0 && session < TIKU_REMOTE_SESSIONS &&
                app->remote.session[session].used &&
                app->remote.session[session].generation == generation) {
@@ -1305,7 +1305,7 @@ select_named(desktop_t *app, folder_t *fl, const char *name)
              * on screen must not jump to the top. */
             tiku_trk_poseview_scroll_into_view(fl->view, i,
                 tiku_trk_poseview_visible_rows(fl->view));
-            app->dirty = 1;
+            desktop_damage_all(app);
             return i;
         }
     }

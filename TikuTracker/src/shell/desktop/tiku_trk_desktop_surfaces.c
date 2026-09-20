@@ -561,10 +561,12 @@ desktop_responders_attach(desktop_t *app)
                                    &app->info_hover_responder);
     (void)tiku_trk_responders_push(&app->responders, &app->spring_responder);
     desktop_folders_attach(app);
+    desktop_keys_attach(app);
     desktop_windows_attach(app);
     desktop_bar_attach(app);
     (void)tiku_trk_responders_push(&app->responders, &app->gbar_responder);
     desktop_infowin_attach(app);
+    desktop_help_attach(app);
     (void)tiku_trk_responders_push(&app->responders, &app->popup_responder);
     (void)tiku_trk_responders_push(&app->responders, &app->status_responder);
     (void)tiku_trk_responders_push(&app->responders,

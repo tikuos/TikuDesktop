@@ -581,6 +581,8 @@ typedef struct desktop {
     tiku_trk_responder_t  folders_responder;    /* the folders' content */
     tiku_trk_responder_t  infowin_responder;    /* the Info windows    */
     tiku_trk_responder_t  gbar_responder;       /* the global bar strip */
+    tiku_trk_responder_t  keys_responder;       /* the desk's keyboard */
+    tiku_trk_responder_t  help_responder;       /* F1                  */
     tiku_trk_click_t      click;                /* the click before this one,
                                                  * the folders responder's */
 } desktop_t;
@@ -796,6 +798,9 @@ int info_hover_text(desktop_t *app, char *out, size_t max);
 void desktop_windows_attach(desktop_t *app);
 /** @brief The folder windows' content and the desk's own. */
 void desktop_folders_attach(desktop_t *app);
+/* tiku_trk_desktop_keys.c */
+void desktop_keys_attach(desktop_t *app);
+void desktop_help_attach(desktop_t *app);
 /** @brief The Info windows' parts. */
 void desktop_infowin_attach(desktop_t *app);
 /** @brief Ask for a frame of what a responder said it changed. */
@@ -812,6 +817,7 @@ void desktop_focus_paint(desktop_t *app);
 void desktop_idle_work(desktop_t *app);
 void draw_all(desktop_t *app);
 void desktop_damage(desktop_t *app, tiku_rect_t rect);
+void desktop_damage_all(desktop_t *app);
 void desktop_frame_report(desktop_t *app, FILE *out);
 void global_bar_status_draw(desktop_t *app, tiku_rect_t strip);
 void desktop_screenshot_tick(desktop_t *app);

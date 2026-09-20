@@ -522,7 +522,7 @@ pwrite_done(void *ctx)
         }
     }
     panel_refreshed(p, asked, answered);
-    w->app->dirty = 1;
+    desktop_damage_all(w->app);
 }
 
 /**
@@ -622,7 +622,7 @@ rread_done(void *ctx)
 
     if (tiku_trk_deskbar_replicant_set(r->app->deskbar, r->path,
                                        (r->n >= 0) ? r->value : NULL)) {
-        r->app->dirty = 1;
+        desktop_damage_all(r->app);
     }
 }
 
@@ -745,12 +745,12 @@ listing_done(void *ctx)
                                                       tiku_trk_now());
 
         if (nf != TIKU_TRK_NOTIFY_NOTHING) {
-            l->app->dirty = 1;
+            desktop_damage_all(l->app);
         }
     } else {
         (void)tiku_trk_poseview_load_landed(l->view, l->gen, l->entries,
                                             l->n);
-        l->app->dirty = 1;
+        desktop_damage_all(l->app);
     }
     tiku_trail("list: %s landed, %d entries", l->local, l->n);
 }
@@ -862,7 +862,7 @@ fs_done(void *ctx)
     desktop_t *app = ((void **)ctx)[1];
 
     app->fs_job = 0;
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief The asking is over. */
@@ -934,7 +934,7 @@ thumb_done(void *ctx)
     tiku_thumb_landed(&t->app->thumbs, t->app->store, t->path, t->w, t->h,
                       &t->thumb);
     t->app->thumb_job = 0;
-    t->app->dirty = 1;
+    desktop_damage_all(t->app);
 }
 
 /**
@@ -1068,7 +1068,7 @@ unmount_done(void *ctx)
                         TIKU_TRK_ALERT_TAG_REFUSAL, u->why, "Cancel");
     }
     desktop_wire_volumes(app);
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -1357,7 +1357,7 @@ sread_done(void *ctx)
             snprintf(s->app->dev_stats[i].text,
                      sizeof s->app->dev_stats[i].text, "%s", s->text);
             s->app->dev_stats[i].at = tiku_trk_now();
-            s->app->dirty = 1;
+            desktop_damage_all(s->app);
             return;
         }
     }

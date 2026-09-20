@@ -101,7 +101,7 @@ remote_reconcile(desktop_t *app)
                 }
                 tiku_workspace_close(app->desk, rw->reap);
                 rw->reap = NULL;
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
             if (rw->opened && rw->window == NULL) {
                 tiku_rect_t frame;
@@ -141,13 +141,13 @@ remote_reconcile(desktop_t *app)
                 if (rw->window != NULL) {
                     tiku_window_set_size_controls(rw->window, 0, 0);
                 }
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
             if (rw->window != NULL && rw->menus_fresh) {
                 tiku_window_publish_menus(rw->window, &rw->menus,
                                                remote_menu_pick, app);
                 rw->menus_fresh = 0;
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
             if (rw->window != NULL && rw->wants_size) {
                 tiku_window_set_size_controls(rw->window, 1, 0);
@@ -163,12 +163,12 @@ remote_reconcile(desktop_t *app)
                     w->frame.h += rw->config_h - content.h;
                 }
                 rw->configured = 0;
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
             if (rw->window != NULL && rw->wants_front) {
                 tiku_workspace_activate(app->desk, rw->window);
                 rw->wants_front = 0;
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
             if (rw->window != NULL &&
                 (rw->wants_place == TIKU_APP_PLACE_ANNOUNCE ||
@@ -195,7 +195,7 @@ remote_reconcile(desktop_t *app)
                 tiku_window_set_size_controls(rw->window, 0, 0);
                 tiku_window_set_plain(rw->window, plain);
                 rw->wants_place = 0;
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
             /* A row the application gave back: the window goes with it.
              * The session stays -- it has others, or it is about to
@@ -206,7 +206,7 @@ remote_reconcile(desktop_t *app)
                 }
                 tiku_workspace_close(app->desk, rw->window);
                 rw->window = NULL;
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
         }
     }
@@ -386,7 +386,7 @@ remote_hear(desktop_t *app)
                 if (path && !desktop_app_open_path(app, path)) {
                     snprintf(app->status, sizeof app->status,
                              "Could not open %.180s", path);
-                    app->dirty = 1;
+                    desktop_damage_all(app);
                 }
             }
             tiku_msg_free(m);
@@ -532,7 +532,7 @@ remote_sweep(desktop_t *app)
              * window is at this index: advancing here would step over
              * it, and a killed application would leave a ghost. */
             tiku_workspace_close(app->desk, w);
-            app->dirty = 1;
+            desktop_damage_all(app);
             continue;
         }
         i++;

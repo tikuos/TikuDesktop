@@ -224,7 +224,7 @@ static int fq_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
             snprintf(p->status, sizeof p->status, "Force Quit cancelled.");
         } else desktop_forcequit_close(p->app);
     }
-    p->app->dirty = 1;
+    desktop_damage_all(p->app);
     return 1;
 }
 
@@ -252,7 +252,7 @@ void desktop_forcequit_close(desktop_t *app)
     if (p->window && p->window->open)
         tiku_workspace_close(app->desk, p->window);
     p->window = NULL; p->picking = 0; p->swallow_up = 0;
-    fq_release(p); app->dirty = 1;
+    fq_release(p); desktop_damage_all(app);
 }
 
 /** @brief Open a fresh snapshot or raise the existing confirmation safely. */
@@ -268,7 +268,7 @@ void desktop_forcequit_open(desktop_t *app)
     if (p->window && p->window->open) {
         p->picking = 0; p->window->minimized = 0;
         tiku_workspace_activate(app->desk, p->window);
-        app->dirty = 1; return;
+        desktop_damage_all(app); return;
     }
     fq_refresh(p); tiku_dialog_init(&p->dialog);
     tiku_rect_t r = {0, 0, 620, 0};
@@ -282,7 +282,7 @@ void desktop_forcequit_open(desktop_t *app)
         tiku_window_set_size_controls(p->window, 0, 0);
         tiku_window_set_handlers(p->window, fq_event, NULL, fq_destroyed);
     } else fq_release(p);
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Shutdown drops process handles; it never kills applications. */
@@ -313,7 +313,7 @@ static void fq_choose(struct desktop_forcequit *p, const tiku_event_t *ev)
     }
     p->picking = 0; p->swallow_up = 1; p->window->minimized = 0;
     tiku_workspace_activate(p->app->desk, p->window);
-    p->app->dirty = 1;
+    desktop_damage_all(p->app);
 }
 
 /** @brief Global Ctrl+Alt+K and a cancelable, one-click selection mode. */

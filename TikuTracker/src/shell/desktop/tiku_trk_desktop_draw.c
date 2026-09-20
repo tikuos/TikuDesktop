@@ -51,7 +51,7 @@ tick_clock(void *ctx)
          * The FIRST observation is a baseline, not a change -- settings
          * and the fixture freeze both arrive after the loop starts. */
         if (app->clock_stamp[0] != '\0') {
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
         snprintf(app->clock_stamp, sizeof app->clock_stamp, "%s", stamp);
     }
@@ -140,6 +140,13 @@ follow_font(desktop_t *app)
      * first.  Reaching into them as well would be a second way of saying
      * the same thing, and the two would eventually disagree.
      */
+    desktop_damage_all(app);
+}
+
+/** @brief Ask for the whole screen: the one way a full frame is asked. */
+void
+desktop_damage_all(desktop_t *app)
+{
     app->dirty = 1;
 }
 
@@ -262,7 +269,7 @@ desktop_screenshot_tick(desktop_t *app)
         snprintf(app->status, sizeof app->status,
                  "could not save the screenshot");
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -392,7 +399,7 @@ desktop_idle_work(desktop_t *app)
         for (k = 0; k < app->folder_count; k++) {
             if (tiku_trk_folder_lifecycle_step_results(
                     &app->folder_lifecycle, &app->folders[k], 16)) {
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
         }
     }
@@ -419,7 +426,7 @@ desktop_draw_splash(desktop_t *app)
         tiku_trk_splash_draw(&app->splash, app->surf,
                              (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                              tiku_trk_now());
-        app->dirty = 1;         /* not finished going: come back */
+        desktop_damage_all(app);         /* not finished going: come back */
     }
 }
 
@@ -480,7 +487,7 @@ draw_popup_menu(desktop_t *app, tiku_menu_t *menu, tiku_rect_t frame,
                    reach.y < 0 ? 0 : reach.y, under, 1.0f - t);
         tiku_surface_free(under);
     }
-    app->dirty = 1;             /* the next frame moves it again */
+    desktop_damage_all(app);             /* the next frame moves it again */
 }
 
 /**

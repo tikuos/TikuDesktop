@@ -4,6 +4,8 @@
 #include "tiku_icons_tiku.h"
 #include "tiku_measure.h"
 #include "../src/shell/desktop/tiku_trk_desktop_deviceprefs.c"
+/** @brief The painter is not linked: a full frame is the flag, as before. */
+void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
 static tiku_rect_t dp_setting_row(dp_layout_t l, int i)
 {

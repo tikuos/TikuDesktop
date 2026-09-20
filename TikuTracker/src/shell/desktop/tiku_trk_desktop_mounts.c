@@ -40,7 +40,7 @@ refresh_after_mount(void *ctx)
         }
     }
     tiku_trk_desktop_view_rebuild(&app->desktop_view);
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 1;
 }
 
@@ -578,7 +578,7 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
             }
         }
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 1;
 }
 
@@ -610,7 +610,7 @@ reap_deaths(desktop_t *app)
                  "The application exit report could not be saved.");
         tiku_alert_open(alert_model(app), TIKU_ALERT_WARN, 0, says,
                         tiku_str("alert.btn.ok"));
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
 }
 
@@ -798,7 +798,7 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
         }
         lp->last_pump = tiku_trk_now();
         if (changed > 0) {
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     }
 }
@@ -855,7 +855,7 @@ desktop_device_pump(desktop_t *app)
             tiku_trk_poseview_loading(app->folders[i].view)) {
                         (void)tiku_trk_poseview_load_step(app->folders[i].view,
                                               tiku_trk_now());
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     }
     /* The file panel and the Desktop hold views too, and a listing that
@@ -864,12 +864,12 @@ desktop_device_pump(desktop_t *app)
         tiku_trk_poseview_loading(app->file_panel.view)) {
         (void)tiku_trk_poseview_load_step(app->file_panel.view,
                                           tiku_trk_now());
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
     if (app->desktop_view.folder.view != NULL &&
         tiku_trk_poseview_loading(app->desktop_view.folder.view)) {
         (void)tiku_trk_poseview_load_step(app->desktop_view.folder.view,
                                           tiku_trk_now());
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
 }

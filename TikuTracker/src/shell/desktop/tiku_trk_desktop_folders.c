@@ -571,6 +571,163 @@ folders_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
+/**
+ * @brief The focused folder's own keys: a new folder, inverting the
+ *        selection, the Tab walk, opening the active pose or the parent,
+ *        and the arrows and pages over the poses.
+ */
+static int
+folders_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    desktop_t *app = self;
+    unsigned key = ev->key;
+    tiku_window_t *w = tiku_workspace_focused(app->desk);
+    folder_t *fl = folder_of(app, w);
+
+    *damage = tiku_trk_damage_none();
+    if (ev->type != TIKU_EVENT_KEY_DOWN) {
+        return 0;
+    }
+    unsigned mods = 0;
+
+    if (ev->modifiers & TIKU_MOD_SHIFT) {
+        mods |= TIKU_TRK_MOD_SHIFT;
+    }
+    if (ev->modifiers & TIKU_MOD_CMD) {
+        mods |= TIKU_TRK_MOD_CMD;
+    }
+    if (key == 'n' && (ev->modifiers & TIKU_MOD_CMD) &&
+        fl != NULL) {
+        menu_invoke(app, fl, TIKU_TRK_CMD_NEW_FOLDER);
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (key == 's' && (ev->modifiers & TIKU_MOD_CMD) &&
+        fl != NULL) {
+        /* PVK-046: invert -- the only way to say "everything
+         * except these" without clicking the rest. */
+        tiku_trk_poseview_invert_selection(fl->view);
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (key == TIKU_KEY_TAB && fl != NULL) {
+        /* Tab is a name-order walk over poses.  While filtering
+         * is active it is deliberately swallowed. */
+        if (!tiku_trk_poseview_is_filtering(fl->view)) {
+            (void)tiku_trk_poseview_tab_next(fl->view,
+                (ev->modifiers & TIKU_MOD_SHIFT) != 0u);
+        }
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (fl != NULL && key == TIKU_KEY_DOWN &&
+        (ev->modifiers & TIKU_MOD_CMD) &&
+        (ev->modifiers & TIKU_MOD_OPTION)) {
+        tiku_trk_pose_t *p =
+            tiku_trk_poseview_active(fl->view);
+
+        if (p != NULL &&
+            tiku_model_is_container(&p->model)) {
+            tiku_window_t *from = fl->win;
+
+            if (open_folder(app, p->model.path) != NULL) {
+                close_window(app, from);
+            }
+        }
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (fl != NULL && key == TIKU_KEY_DOWN &&
+        (ev->modifiers & TIKU_MOD_CMD)) {
+        tiku_trk_pose_t *p =
+            tiku_trk_poseview_active(fl->view);
+
+        if (p != NULL &&
+            tiku_model_is_container(&p->model)) {
+            (void)open_folder(app, p->model.path);
+        } else if (p != NULL) {
+            begin_edit(app, fl);
+        }
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (fl != NULL && key == TIKU_KEY_UP &&
+        (ev->modifiers & TIKU_MOD_CMD)) {
+        /* PVK-040/CW-051: Cmd+Up opens the parent; Option
+         * additionally takes the spatial window that was left. */
+        if (strcmp(fl->path, "/") != 0) {
+            char parent[TIKU_PATH_MAX];
+            char *slash;
+            tiku_window_t *from = fl->win;
+
+            snprintf(parent, sizeof parent, "%s", fl->path);
+            slash = strrchr(parent, '/');
+            if (slash == parent) {
+                parent[1] = '\0';
+            } else if (slash != NULL) {
+                *slash = '\0';
+            }
+            if (slash != NULL &&
+                open_folder(app, parent) != NULL &&
+                (ev->modifiers & TIKU_MOD_OPTION)) {
+                close_window(app, from);
+            }
+        }
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (fl != NULL) {
+        /* Left and Right matter in an icon mode, where the
+         * arrangement is two-dimensional; the pages matter in
+         * both and were bound in neither shell's multi-window
+         * half (PVK-007, PVK-011). */
+        int nav = (key == TIKU_KEY_UP)    ? TIKU_TRK_KEY_UP
+                : (key == TIKU_KEY_DOWN)  ? TIKU_TRK_KEY_DOWN
+                : (key == TIKU_KEY_LEFT)  ? TIKU_TRK_KEY_LEFT
+                : (key == TIKU_KEY_RIGHT) ? TIKU_TRK_KEY_RIGHT
+                : (key == TIKU_KEY_PAGE_UP) ? TIKU_TRK_KEY_PGUP
+                : (key == TIKU_KEY_PAGE_DOWN)  ? TIKU_TRK_KEY_PGDN
+                : (key == TIKU_KEY_HOME)  ? TIKU_TRK_KEY_HOME
+                : (key == TIKU_KEY_END)   ? TIKU_TRK_KEY_END : 0;
+        if (nav != 0) {
+            (void)tiku_trk_poseview_key_nav(fl->view, nav, mods);
+        } else if (key == TIKU_KEY_RETURN) {
+            tiku_trk_pose_t *p =
+                tiku_trk_poseview_active(fl->view);
+            if (p != NULL &&
+                tiku_model_is_container(&p->model)) {
+                /* Option+Return opens and takes the window it
+                 * came from with it, the keyboard's version of
+                 * an Option double-click (PVK-017). */
+                int chase = (ev->modifiers & TIKU_MOD_OPTION) != 0;
+                tiku_window_t *from = fl->win;
+
+                if (open_folder(app, p->model.path) != NULL &&
+                    chase) {
+                    close_window(app, from);
+                }
+            } else if (p != NULL) {
+                /* Opening a leaf means editing its value: there
+                 * is no other window for it to open. */
+                begin_edit(app, fl);
+            }
+        } else if (key == TIKU_KEY_BACKSPACE) {
+            char parent[TIKU_PATH_MAX];
+            char *slash;
+            snprintf(parent, sizeof parent, "%s", fl->path);
+            slash = strrchr(parent, '/');
+            if (slash != NULL) {
+                if (slash == parent) { parent[1] = '\0'; }
+                else { *slash = '\0'; }
+                (void)open_folder(app, parent);
+            }
+        }
+        desktop_damage_all(app);
+    }
+    return 1;
+    return 1;
+}
+
 /** @brief The folders' entry on the responder list. */
 void
 desktop_folders_attach(desktop_t *app)
@@ -578,7 +735,7 @@ desktop_folders_attach(desktop_t *app)
     app->folders_responder = (tiku_trk_responder_t){
         .name = "folders", .self = app, .hit = folders_hit,
         .press = folders_press, .move = folders_move,
-        .release = folders_release
+        .release = folders_release, .key = folders_key
     };
     (void)tiku_trk_responders_push(&app->responders, &app->folders_responder);
 }

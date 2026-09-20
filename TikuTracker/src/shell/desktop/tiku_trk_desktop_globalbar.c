@@ -495,7 +495,7 @@ system_invoke(desktop_t *app, int command)
     case TIKU_TRK_CMD_DEVICE_SCAN:
         (void)device_scan(app);
         desktop_board_look_begin(app, -1, NULL);   /* name them */
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     case TIKU_TRK_CMD_ABOUT:
         (void)embed_open_or_raise(app, &tiku_trk_about_app);

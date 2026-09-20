@@ -336,7 +336,7 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
                                 nargs) != TIKU_TRK_LAUNCH_OK) {
             snprintf(app->status, sizeof app->status,
                      "could not start %s", pick->path);
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
         break;
     }
@@ -353,7 +353,7 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
                            (tiku_trk_prefs_get(prefs, "DarkMode") + 1) % 3);
         (void)tiku_trk_prefs_save(prefs, app->prefs_window.path);
         sync_folder_preferences(app);
-        app->dirty = 1;
+        desktop_damage_all(app);
         break;
     }
     case TIKU_TRK_DB_SHOW_ABOUT:

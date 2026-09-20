@@ -394,7 +394,7 @@ desktop_board_release(desktop_t *app, const char *name)
         app->released[i].used = 0;
         return 0;
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 1;
 }
 
@@ -648,7 +648,7 @@ desktop_board_look_done(desktop_t *app)
     (void)snprintf(how, sizeof how, "%d", board_count(app));
         desktop_board_say(app, app->look.session, app->look.slot,
                       TIKU_APP_BOARD_LOOKED, how);
-    app->dirty = 1;
+    desktop_damage_all(app);
     if (app->look.again) {
         int session = app->look.again_session;
         struct desktop_embed *slot = app->look.again_slot;
@@ -706,7 +706,7 @@ device_current_broadcast(desktop_t *app)
         }
     }
     desktop_board_names_tell(app);
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -878,7 +878,7 @@ desktop_board_reclaim_landed(desktop_t *app, tiku_backend_t *dev)
                 }
             }
             app->reclaim.found = 1;
-            app->dirty = 1;
+            desktop_damage_all(app);
             tiku_trail("reclaim %s", app->reclaim.name);
         }
     } else if (dev != NULL) {

@@ -577,6 +577,202 @@ windows_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
+/**
+ * @brief The focused window's keys: a panel's or a search's field, an
+ *        application's or a remote window, the inline editor, and Cmd-Q
+ *        closing a settings window or the desk.
+ */
+static int
+windows_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    desktop_t *app = self;
+    unsigned key = ev->key;
+    tiku_window_t *w = tiku_workspace_focused(app->desk);
+    folder_t *fl = folder_of(app, w);
+
+    *damage = tiku_trk_damage_none();
+    if (ev->type != TIKU_EVENT_KEY_DOWN) {
+        return 0;
+    }
+    if (panel_key(app, key, key_char(ev))) {
+        return 1;
+    }
+    if (tiku_trk_panel_window_key(&app->file_panel, key,
+                                  ev->modifiers,
+                                  key_char(ev))) {
+        if (tiku_trk_panel_window_refused(&app->file_panel)) {
+            snprintf(app->status, sizeof app->status,
+                     "The clipboard does not fit this name.");
+            desktop_damage_all(app);
+        }
+        return 1;
+    }
+    if (tiku_workspace_focused(app->desk) ==
+            tiku_trk_find_window_handle(&app->find_window) &&
+        app->find_window.model.focus ==
+            TIKU_TRK_FIND_FOCUS_NAME &&
+        key == ' ' && (ev->modifiers & TIKU_MOD_CMD)) {
+        /* Cmd-Space completes the name against the first
+         * scoped place, or home when the search is everywhere
+         * (NeXT UIG ch3). */
+        tiku_trk_find_t *fm = &app->find_window.model;
+        char dir[TIKU_PATH_MAX];
+        char full[TIKU_NAME_MAX];
+        const char *home = getenv("HOME");
+        int pi, chosen = -1;
+
+        for (pi = 0; pi < fm->place_count; pi++) {
+            if (fm->place_mask & (1u << pi)) {
+                chosen = pi;
+                break;
+            }
+        }
+        if (chosen >= 0) {
+            snprintf(dir, sizeof dir, "/%s", fm->place[chosen]);
+        } else {
+            snprintf(dir, sizeof dir, "%s",
+                     (home != NULL && home[0] != '\0') ? home
+                                                        : "/");
+        }
+        if (tiku_trk_panel_complete(app->backend, dir,
+                fm->name_text, full, sizeof full) > 0) {
+            snprintf(fm->name_text, sizeof fm->name_text,
+                     "%s", full);
+        }
+        desktop_damage_all(app);
+        return 1;
+    }
+    {
+        tiku_window_t *rfw =
+            tiku_workspace_focused(app->desk);
+
+        if (embed_win_of_window(app, rfw) != NULL) {
+            struct embed_win *ew =
+                embed_win_of_window(app, rfw);
+            tiku_event_t rev = *ev;
+
+            /* Closing a window is the RUNTIME's gesture, not
+             * a key the application may swallow: rule 6 gives
+             * the runtime the lifecycle, and an application
+             * that could eat Cmd-W would be unclosable from
+             * the keyboard.  It closes THIS window, which is
+             * the whole window when there is only one. */
+            if (key == 'w' &&
+                (ev->modifiers & TIKU_MOD_CMD)) {
+                embed_drop_window(ew, 1);
+                desktop_damage_all(app);
+                return 1;
+            }
+            if (embed_deliver(ew, &rev)) {
+                embed_stop(ew->slot);
+            }
+            desktop_damage_all(app);
+            return 1;
+        }
+        if (tiku_remote_owner(&app->remote, rfw) != NULL) {
+            tiku_event_t rev = *ev;
+
+            tiku_remote_event(&app->remote, rfw, &rev);
+            desktop_damage_all(app);
+            return 1;
+        }
+    }
+    if (tiku_trk_find_window_key(&app->find_window, key,
+                                 key_char(ev))) {
+        return 1;
+    }
+    if (app->finding) {
+        if (key == TIKU_KEY_RETURN) {
+            app->finding = 0;
+            run_find(app, fl);
+        } else if (key == TIKU_KEY_ESCAPE) {
+            app->finding = 0;
+            app->status[0] = '\0';
+            desktop_damage_all(app);
+        } else if (key == TIKU_KEY_BACKSPACE) {
+            if (app->find_len > 0) {
+                tiku_text_input_backspace(app->find_buf, sizeof app->find_buf);
+                app->find_len = (int)strlen(app->find_buf);
+            }
+            desktop_damage_all(app);
+        } else {
+            char typed = key_char(ev);
+
+            if (typed >= 0x20 && typed < 0x7F &&
+                app->find_len < (int)sizeof app->find_buf - 1) {
+                app->find_buf[app->find_len++] = typed;
+                app->find_buf[app->find_len] = '\0';
+                desktop_damage_all(app);
+            }
+        }
+        return 1;
+    }
+    if (tiku_trk_select_window_key(&app->select_window, key,
+                                   ev->modifiers,
+                                   key_char(ev))) {
+        return 1;
+    }
+    if (tiku_trk_open_with_window_key(&app->open_with_window,
+                                      key, ev->modifiers)) {
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (tiku_trk_folder_edit_key(&app->folder_edit, fl, key,
+            ev->modifiers, key_char(ev))) {
+        return 1;
+    }
+    if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+        tiku_workspace_focused(app->desk) ==
+            tiku_trk_prefs_window_handle(&app->prefs_window)) {
+        tiku_trk_prefs_window_close(&app->prefs_window);
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+        tiku_workspace_focused(app->desk) ==
+            tiku_trk_deskbar_prefs_window_handle(
+                &app->deskbar_prefs_window)) {
+        /* Deskbar preferences close; the desktop stays: quit
+         * belongs to the desktop, not to a settings window
+         * (DB-053). */
+        tiku_trk_deskbar_prefs_window_close(
+            &app->deskbar_prefs_window);
+        desktop_damage_all(app);
+        return 1;
+    }
+    if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+        desktop_startup_handle(app) != NULL &&
+        tiku_workspace_focused(app->desk) == desktop_startup_handle(app)) {
+        /* Startup preferences close, and the draft with them; the desktop
+         * stays, as it does for the other settings windows (DB-053). */
+        desktop_startup_close(app);
+        return 1;
+    }
+    if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+        desktop_forcequit_handle(app) != NULL &&
+        tiku_workspace_focused(app->desk) == desktop_forcequit_handle(app)) {
+        desktop_forcequit_close(app);
+        return 1;
+    }
+    if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+        desktop_associations_handle(app) != NULL &&
+        tiku_workspace_focused(app->desk) == desktop_associations_handle(app)) {
+        desktop_associations_close(app);
+        return 1;
+    }
+    if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
+        desktop_deviceprefs_handle(app) != NULL &&
+        tiku_workspace_focused(app->desk) == desktop_deviceprefs_handle(app)) {
+        desktop_deviceprefs_close(app);
+        return 1;
+    }
+    if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD)) {
+        begin_shutdown(app);
+        return 1;
+    }
+    return 0;
+}
+
 /** @brief The workspace's entry on the responder list. */
 void
 desktop_windows_attach(desktop_t *app)
@@ -584,7 +780,7 @@ desktop_windows_attach(desktop_t *app)
     app->windows_responder = (tiku_trk_responder_t){
         .name = "windows", .self = app, .hit = windows_hit,
         .press = windows_press, .move = windows_move,
-        .release = windows_release
+        .release = windows_release, .key = windows_key
     };
     (void)tiku_trk_responders_push(&app->responders, &app->windows_responder);
 }

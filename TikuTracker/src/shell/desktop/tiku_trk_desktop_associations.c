@@ -220,7 +220,7 @@ static int assoc_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         else snprintf(p->status, sizeof p->status,
             "Could not save. Your previous associations are unchanged.");
     }
-    p->app->dirty = 1;
+    desktop_damage_all(p->app);
     return 1;
 }
 
@@ -237,7 +237,7 @@ void desktop_associations_close(desktop_t *app)
     if (app->prefs_track == w) app->prefs_track = NULL;
     if (w && w->open) tiku_workspace_close(app->desk, w);
     if (app->associations) app->associations->window = NULL;
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Load current preferences on each new opening; otherwise raise. */
@@ -267,7 +267,7 @@ void desktop_associations_open(desktop_t *app)
         tiku_window_set_size_controls(p->window, 0, 0);
         tiku_window_set_handlers(p->window, assoc_event, NULL, NULL);
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Release the window and its unsaved draft at desktop shutdown. */

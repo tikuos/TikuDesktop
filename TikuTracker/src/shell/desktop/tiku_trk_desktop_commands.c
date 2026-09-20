@@ -146,7 +146,7 @@ select_created(void *ctx)
         slash = strrchr(sc->path, '/');
         if (select_named(sc->app, fl,
                          slash != NULL ? slash + 1 : sc->path) >= 0) {
-            sc->app->dirty = 1;
+            desktop_damage_all(sc->app);
             return 1;           /* found and selected: done */
         }
         return 0;               /* the window is there; the entry not yet */
@@ -174,7 +174,7 @@ sync_addons(desktop_t *app, int force)
         if (force || mtime != app->addons_mtime) {
             app->addons_mtime = mtime;
             (void)tiku_trk_addons_discover(&app->addons, app->addons_dir);
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     }
     if (app->addons_keys[0] != '\0') {
@@ -191,7 +191,7 @@ sync_addons(desktop_t *app, int force)
                 buf[got] = '\0';
                 (void)fclose(f);
                 (void)tiku_trk_addons_rebind(&app->addons, buf);
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
         }
     }
@@ -268,7 +268,7 @@ script_command_line(desktop_t *app, const char *line, FILE *reply)
             fprintf(reply, "%s\n", rep.result[i]);
         }
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief The command FILE is the transport (PVK-052): read, act, reply. */
@@ -372,7 +372,7 @@ spring_open_nav(void *context, const char *path)
     app->spring_nav_x = app->drag_target.spring.x +
                         app->drag_target.spring.w;
     app->spring_nav_y = app->drag_target.spring.y;
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Close every spring level and put the walk away. */
@@ -383,7 +383,7 @@ spring_nav_close(desktop_t *app)
     }
     app->nav.depth = 0;
     app->spring_nav_on = 0;
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -452,7 +452,7 @@ spring_nav_track(desktop_t *app, int x, int y)
                 lv->item[hit_item].enabled) {
                 (void)tiku_trk_nav_enter(&app->nav, hit_item);
             }
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
         return;
     }
@@ -614,7 +614,7 @@ close_window(desktop_t *app, tiku_window_t *w)
         return;
     }
     tiku_workspace_close(app->desk, w);
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -636,7 +636,7 @@ drop_on_panel(desktop_t *app, int x, int y)
     if (app->drag.count == 1) {
         tiku_trk_panel_window_drop(&app->file_panel, app->drag.path[0]);
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 1;
 }
 
@@ -921,7 +921,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             snprintf(app->status, sizeof app->status,
                      "%s is not available here",
                      tiku_trk_sc_label(command, 0u));
-            *&app->dirty = 1;
+            desktop_damage_all(app);
             return;
         }
     }
@@ -941,7 +941,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     if (tiku_trk_addons_invoke(&app->addons, command,
                                TIKU_TRK_ADDON_COMMAND_BASE,
                                invoke_addon, app)) {
-        app->dirty = 1;
+        desktop_damage_all(app);
         return;
     }
     if (desktop_cmd_layout(app, fl, command)) {
@@ -960,12 +960,12 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         return;
     }
     if (tiku_trk_folder_actions_invoke(app->desk, fl, command)) {
-        app->dirty = 1;
+        desktop_damage_all(app);
         return;
     }
     if (tiku_trk_folder_file_actions_invoke(&app->file_actions, fl,
                                              command)) {
-        app->dirty = 1;
+        desktop_damage_all(app);
         return;
     }
     switch (command) {
@@ -1071,7 +1071,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
          * something approximate. */
         break;
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -1186,7 +1186,7 @@ desktop_progress_tick(desktop_t *app)
             tiku_trk_progress_sample(progress_model(app), 0, pr->bytes,
                                      tiku_trk_now());
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         if (tiku_trk_status_overlay_progress_opened(
                 &app->status_overlay) == 0) {
             tiku_trk_status_overlay_progress_start(&app->status_overlay,
@@ -1204,7 +1204,7 @@ desktop_progress_tick(desktop_t *app)
             tiku_workspace_activate(app->desk, app->prog_was_active);
         }
         app->prog_was_active = NULL;
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
 }
 
@@ -1229,7 +1229,7 @@ desktop_rename_pulse(desktop_t *app)
         due = tiku_trk_poseview_edit_due(fl->view, tiku_trk_now());
         if (due >= 0 && !app->folder_edit.editing) {
             begin_rename(app, fl, due);
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     }
 }
@@ -1266,7 +1266,7 @@ desktop_press_hold(desktop_t *app)
                                              app->surf->h });
         app->press.menu = 1;
         app->press.down = 0;
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
 }
 
@@ -1288,7 +1288,7 @@ desktop_spring_tick(desktop_t *app)
                  * entries get their states as they arrive (PVS-052). */
                 spring_nav_states(app);
             }
-            app->dirty = 1;
+            desktop_damage_all(app);
         }
     } else if (app->nav_on && app->popup == NULL) {
         app->nav_on = 0;         /* the menu went; so does the walk */
@@ -1323,7 +1323,7 @@ desktop_spring_tick(desktop_t *app)
                  * whole listing and undid the damage the notice had
                  * just recorded (PVL-075). */
                 tiku_trk_poseview_damage_row(fl->view, k);
-                app->dirty = 1;
+                desktop_damage_all(app);
             }
         }
     }
@@ -1365,7 +1365,7 @@ desktop_cmd_new_folder(desktop_t *app, folder_t *fl, int command, int seeded,
             snprintf(app->status, sizeof app->status, "%.180s",
                      error[0] != '\0' ? error : "could not create a new folder");
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     return 0;
@@ -1416,7 +1416,7 @@ desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
             snprintf(app->status, sizeof app->status,
                      "Unmount is not available here");
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     return 0;
@@ -1456,7 +1456,7 @@ desktop_cmd_open_with(desktop_t *app, folder_t *fl, int command)
             tiku_trk_open_with_window_open(&app->open_with_window,
                 &app->apps, wtypes, wt, wsel, wn);
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     return 0;
@@ -1475,7 +1475,7 @@ desktop_cmd_mount(desktop_t *app, folder_t *fl, int command)
          * request has (AW-101, CW-034). */
         app->prefs_window.page = TIKU_TRK_PAGE_MOUNT;
         tiku_trk_prefs_window_open(&app->prefs_window);
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     if (command == TIKU_TRK_CMD_MOUNT_ALL ||
@@ -1522,7 +1522,7 @@ desktop_cmd_mount(desktop_t *app, folder_t *fl, int command)
             snprintf(app->status, sizeof app->status,
                      "every partition is already mounted");
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     return 0;
@@ -1537,7 +1537,7 @@ desktop_cmd_layout(desktop_t *app, folder_t *fl, int command)
 {
     if (command == TIKU_TRK_CMD_COPY_LAYOUT) {
         (void)tiku_trk_poseview_copy_layout(fl->view);
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     if (command == TIKU_TRK_CMD_PASTE_LAYOUT) {
@@ -1545,7 +1545,7 @@ desktop_cmd_layout(desktop_t *app, folder_t *fl, int command)
             (void)tiku_trk_poseview_save_columns(fl->view);
             snprintf(app->status, sizeof app->status, "pasted layout");
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     return 0;
@@ -1588,7 +1588,7 @@ desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
             snprintf(app->status, sizeof app->status, "%.180s",
                      error[0] != '\0' ? error : "could not create from template");
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     (*template_parent) = tiku_trk_cwmenu_template_add_path(&app->menus,
@@ -1616,7 +1616,7 @@ desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
                      error[0] != '\0' ? error :
                      "could not create template submenu");
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     if (command == TIKU_TRK_CMD_EDIT_TEMPLATES) {
@@ -1625,7 +1625,7 @@ desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
         if (root != NULL) {
             (void)open_folder(app, root);
         }
-        app->dirty = 1;
+        desktop_damage_all(app);
         return 1;
     }
     return 0;

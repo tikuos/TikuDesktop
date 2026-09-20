@@ -234,13 +234,32 @@ info_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
+/** @brief The Info windows' keys: their rename editor and shortcuts. */
+static int
+info_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
+{
+    desktop_t *app = self;
+
+    *damage = tiku_trk_damage_none();
+    if (ev->type != TIKU_EVENT_KEY_DOWN) {
+        return 0;
+    }
+    /* Get Info owns its rename editor and window shortcuts. */
+    if (tiku_trk_info_windows_key(&app->info_windows, ev->key,
+                                  ev->modifiers,
+                                  key_char(ev))) {
+        return 1;
+    }
+    return 0;
+}
+
 /** @brief The Info window's entry on the responder list. */
 void
 desktop_infowin_attach(desktop_t *app)
 {
     app->infowin_responder = (tiku_trk_responder_t){
         .name = "info", .self = app, .hit = info_hit, .press = info_press,
-        .move = info_move
+        .move = info_move, .key = info_key
     };
     (void)tiku_trk_responders_push(&app->responders, &app->infowin_responder);
 }

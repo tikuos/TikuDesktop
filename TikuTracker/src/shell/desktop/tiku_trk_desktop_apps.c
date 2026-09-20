@@ -598,7 +598,7 @@ int desktop_launch_app(desktop_t *app, const char *id, const char *document)
     }
     snprintf(app->status, sizeof app->status,
              "Application '%s' is not installed.", id);
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 0;
 }
 
@@ -624,7 +624,7 @@ static int desktop_help_request(desktop_t *app, const char *page,
     if (!result)
         snprintf(app->status, sizeof app->status,
                  "Help needs the installed TikuReader application.");
-    app->dirty = 1;
+    desktop_damage_all(app);
     return result;
 }
 

@@ -1,6 +1,8 @@
 /* Startup preferences: real controls and persistence, mocked app launches. */
 #include <assert.h>
 #include "../src/shell/desktop/tiku_trk_desktop_startup.c"
+/** @brief The painter is not linked: a full frame is the flag, as before. */
+void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 #include "../src/shell/session/tiku_trk_session_controller.c"
 
 static int loads, launches, folders;

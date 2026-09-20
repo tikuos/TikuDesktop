@@ -139,6 +139,7 @@ DESKTOP_SHELL := $(T)/src/shell/desktop/tiku_trk_desktop.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_surfaces.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_windows.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_folders.c \
+                 $(T)/src/shell/desktop/tiku_trk_desktop_keys.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_infowin.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_commands.c \
                  $(T)/src/shell/desktop/tiku_trk_desktop_panels.c \

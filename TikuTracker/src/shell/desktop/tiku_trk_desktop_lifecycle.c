@@ -45,7 +45,7 @@ services_status(void *ctx, const char *text)
     desktop_t *app = ctx;
 
     snprintf(app->status, sizeof app->status, "%s", text);
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief A frame of what a view says it changed. */
@@ -118,7 +118,7 @@ begin_shutdown(desktop_t *app)
         return;
     }
     app->closing = 1;
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 
@@ -1208,7 +1208,7 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     app->applied_hide_dotfiles = -1;
     app->applied_full_path = -1;
     app->applied_folders_first = -1;
-    app->dirty = 1;
+    desktop_damage_all(app);
     /*
      * Everything is built.  The last line names the thing the rest of it
      * was for, and then the screen is told to let go: from here the
@@ -1230,7 +1230,7 @@ desktop_boot(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         tiku_trail("started after %s", o->after);
         tiku_alert_open(alert_model(app), TIKU_ALERT_WARN, 0, says,
                         tiku_str("alert.btn.ok"));
-        app->dirty = 1;
+        desktop_damage_all(app);
     }
     return -1;
 }

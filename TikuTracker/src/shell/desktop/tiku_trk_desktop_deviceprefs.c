@@ -420,7 +420,7 @@ static void dp_done(void *ctx)
     p->confirm = 0;
     snprintf(p->status, sizeof p->status, "%s", j->status);
     dp_edit(p);
-    p->app->dirty = 1;
+    desktop_damage_all(p->app);
 }
 
 /** @brief Retire a job, including cancellation on device disconnect. */
@@ -439,7 +439,7 @@ static void dp_free(void *ctx)
         tiku_choice_close(&p->choice);
         snprintf(p->status, sizeof p->status,
             "Device disconnected. Refresh the list.");
-        p->app->dirty = 1;
+        desktop_damage_all(p->app);
     }
     if (--p->refs == 0) free(p);
     free(j);
@@ -896,12 +896,12 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         (void)tiku_dialog_event(&p->dialog, ev);
         tiku_choice_close(&p->choice);
         p->input.dragging = 0;
-        p->app->dirty = 1;
+        desktop_damage_all(p->app);
         return 1;
     }
     if ((p->choice.open || (p->dialog.focus == DP_EDIT &&
          ev->type == TIKU_EVENT_KEY_DOWN)) && dp_choice_event(p, ev, l, c)) {
-        p->app->dirty = 1;
+        desktop_damage_all(p->app);
         return 1;
     }
     result = tiku_dialog_event(&p->dialog, ev);
@@ -950,7 +950,7 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
                     "Text is too long or contains unsupported characters.");
         }
     }
-    p->app->dirty = 1;
+    desktop_damage_all(p->app);
     return 1;
 }
 
@@ -976,7 +976,7 @@ void desktop_deviceprefs_close(desktop_t *app)
     tiku_choice_close(&app->deviceprefs->choice);
     tiku_workspace_close(app->desk, w);
     app->deviceprefs->window = NULL;
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Open Settings > Devices Preferences, or raise its existing window. */
@@ -1013,7 +1013,7 @@ void desktop_deviceprefs_open(desktop_t *app)
         tiku_window_set_handlers(p->window, dp_event, NULL, NULL);
         dp_refresh(p);
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /** @brief Detach UI ownership; pending jobs keep their snapshots alive. */

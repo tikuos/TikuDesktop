@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include "../src/shell/desktop/tiku_trk_desktop_events.c"
+/** @brief The painter is not linked: a full frame is the flag, as before. */
+void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
 static folder_t folder;
 

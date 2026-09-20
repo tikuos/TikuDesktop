@@ -1,6 +1,6 @@
 # Responders: one interface for every surface on the desk
 
-*2026-09-19.  R0 to R4 built that day, R5 and R6 the next; R7 not yet.*
+*2026-09-19.  R0 to R4 built that day, R5 to R7 the next.*
 
 ## 1. What is wrong today
 
@@ -394,3 +394,32 @@ typedef struct tiku_trk_shell_services {
 - Proof: `test_deskbar_hover` names the hot row through the leaf and
   its submenu and hears nothing once the pointer left; `test_frames`
   asks the desktop's nouns; both fail with the leaf branch stubbed.
+
+## 14. What R7 settled
+
+- The key chain is out of the events file, which is 378 lines now and
+  holds the loop's turn and four entry points that each call one
+  `deliver`.  The chain became four `key` handlers in the order it ran:
+  the Info windows' keys on the Info responder; the focused window's
+  text owners (a panel's field, the search, an application's or a remote
+  window, the inline editor) and the Cmd-Q family on the windows
+  responder; the desk's own chords (F1, the add-ons, the panels, the
+  selection and clipboard chords, undo, the standard set, the view
+  modes, the switcher, closing a window, the settings) on a keys
+  responder of their own, pushed between the folders and the windows,
+  with F1 on a help responder above the Info windows;
+  the folder's navigation on the folders responder.  Each handler starts
+  on the down edge, as the chain did.
+- F1 kept its priority: it ran before every other key of the chain, and
+  an application window that takes every key would have kept the reader
+  away, so it has a responder of its own pushed above the Info windows.
+- `desktop_damage_all()` is the one way a full frame is asked for in the
+  shell: the 171 `dirty = 1` writes in the desktop's own files are calls
+  to it, and the field is written by the painter alone.  Not done: the
+  sixteen UI modules under `src/ui` still take an `int *dirty` handle
+  from `lifecycle.c` and write it 68 times, and the loop reads the field
+  to decide whether to paint.  Turning the handle into a bounded request
+  is a per-module design, one module at a time, not a sweep.
+- Proof: every unit test passes, six of which stub the request because
+  they link one desktop file without the painter; the lanes that drive
+  each moved key group pass; the full suite holds.

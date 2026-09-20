@@ -6,6 +6,8 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include "../src/shell/desktop/tiku_trk_desktop_forcequit.c"
+/** @brief The painter is not linked: a full frame is the flag, as before. */
+void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
 static long expected_pid;
 void tiku_trk_launch_expect_stop(pid_t pid) { expected_pid = pid; }

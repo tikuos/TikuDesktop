@@ -339,7 +339,7 @@ void
 desktop_take_damage(desktop_t *app, tiku_rect_t damage)
 {
     if (tiku_trk_damage_is_all(damage)) {
-        app->dirty = 1;
+        desktop_damage_all(app);
     } else if (!tiku_trk_damage_is_none(damage)) {
         desktop_damage(app, damage);
     }

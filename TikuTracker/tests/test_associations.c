@@ -1,6 +1,8 @@
 /* File-association preferences: real controls, defaults and saved choices. */
 #include <assert.h>
 #include "../src/shell/desktop/tiku_trk_desktop_associations.c"
+/** @brief The painter is not linked: a full frame is the flag, as before. */
+void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
 /** @brief Complete the same press/release gesture as the desktop router. */
 static void click_control(tiku_window_t *w, tiku_rect_t r)

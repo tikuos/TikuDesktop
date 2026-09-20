@@ -179,7 +179,7 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
         return 0;
     }
     tiku_window_set_size_controls(ew->window, 0, 0);
-    app->dirty = 1;
+    desktop_damage_all(app);
     return ew->id;
 }
 
@@ -205,7 +205,7 @@ embed_svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
     ew->frame = copy;
     ew->fw = w;
     ew->fh = h;
-    slot->app->dirty = 1;
+    desktop_damage_all(slot->app);
     return 0;
 }
 
@@ -277,7 +277,7 @@ embed_svc_place(void *ctx, uint32_t id, int role)
     /* An announcement wears no tab and no close; a panel keeps both,
      * because the person who opened it is the one who puts it away. */
     tiku_window_set_plain(ew->window, plain);
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 0;
 }
 
@@ -318,7 +318,7 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
     if (ew->window->frame.x < 0) {
         ew->window->frame.x = 0;
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 0;
 }
 
@@ -354,7 +354,7 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
         tiku_trk_panel_window_open_file(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
     return 1;
 }
 
@@ -386,7 +386,7 @@ embed_drop_window(struct embed_win *ew, int tell)
     if (tell && slot->running && slot->descriptor->closed != NULL) {
         slot->descriptor->closed(slot->state, ew->id);
     }
-    slot->app->dirty = 1;
+    desktop_damage_all(slot->app);
     /* An application with no windows left has nothing to be: the last
      * window closing is the application ending, which is exactly what
      * closing the ONE window always meant. */
@@ -443,7 +443,7 @@ embed_svc_raise(void *ctx, uint32_t id)
         return -1;
     }
     tiku_workspace_activate(slot->app->desk, ew->window);
-    slot->app->dirty = 1;
+    desktop_damage_all(slot->app);
     return 0;
 }
 
@@ -489,7 +489,7 @@ embed_stop(struct desktop_embed *slot)
             app->embed_press = NULL;
         }
     }
-    app->dirty = 1;
+    desktop_damage_all(app);
 }
 
 /**
@@ -802,7 +802,7 @@ embed_open_or_raise(desktop_t *app, const tiku_app_descriptor_t *descriptor)
                     break;
                 }
             }
-            app->dirty = 1;
+            desktop_damage_all(app);
             return 1;
         }
     }
