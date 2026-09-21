@@ -398,11 +398,72 @@ static void ui_test(bench_t *st)
     puts("PASS: list keyboard selection, native controls and safe confirmation");
 }
 
+/** One file under a fresh directory: the options round-trip through it. */
+static void settings_test(char *sandbox)
+{
+    char path[512], text[1024] = "";
+    snprintf(path, sizeof path, "%s/config/tikubench-desktop/settings",
+             sandbox);
+    setenv("TIKU_BENCH_SETTINGS", path, 1);
+    bench_t *st = start();
+    /* No file: the defaults, and nothing written until an option moves. */
+    assert(!st->flash && !st->pk && !st->epaper && !*st->wanted);
+    bench_tick(st, st->now + 10000);
+    assert(access(path, F_OK) != 0);
+    action(st, FLASH); action(st, PK); action(st, EPAPER);
+    st->epanel.selected = 1; st->epattern.selected = 3;
+    tiku_field_start(&st->field[1], "921600");
+    tiku_field_start(&st->field[2], "BOARD=x");
+    tiku_field_start(&st->field[3], "-DY=2");
+    bench_tick(st, st->now + 10000);
+    FILE *f = fopen(path, "r"); assert(f);
+    size_t n = fread(text, 1, sizeof text - 1, f); text[n] = '\0'; fclose(f);
+    assert(strstr(text, "board=laboratory\n") && strstr(text, "baud=921600\n"));
+    assert(strstr(text, "flash=true\n") && strstr(text, "pk_hw=true\n"));
+    assert(strstr(text, "make_vars=BOARD=x\n"));
+    assert(strstr(text, "extra_cflags=-DY=2\n"));
+    assert(strstr(text, "mem_model=small\n") && strstr(text, "console=uart\n"));
+    assert(strstr(text,
+                  "epaper_enable=true\nepaper_panel=1\nepaper_pattern=3\n"));
+    bench_stop(st);
+    /* A second session starts where the first left off, down to argv. */
+    st = start();
+    assert(st->flash && st->pk && st->epaper);
+    assert(st->epanel.selected == 1 && st->epattern.selected == 3);
+    assert(!strcmp(st->field[1].text, "921600"));
+    assert(!strcmp(st->field[2].text, "BOARD=x"));
+    assert(!strcmp(st->field[3].text, "-DY=2") && !*st->wanted);
+    st->suites[0].selected = 1; assert(queue_build(st));
+    command_t c; assert(command_build(st, &st->jobs[0], &c));
+    assert(!strcmp(arg_value(&c, "--baud"), "921600"));
+    assert(arg_value(&c, "--flash"));
+    assert(!strcmp(arg_value(&c, "--extra-cflags"),
+                   "-DEPAPER_KIT_PANEL=2 -DEPAPER_KIT_PATTERN=3 -DY=2"));
+    bench_stop(st);
+    /* A remembered board that is not mounted: the shell's device runs,
+     * the memory waits; a preset out of range and a stray line are
+     * skipped. */
+    f = fopen(path, "w"); assert(f);
+    fputs("board=elsewhere\nepaper_panel=9\nnonsense\nflash=1\n", f); fclose(f);
+    st = start();
+    assert(!strcmp(st->wanted, "elsewhere") && st->flash);
+    assert(st->epanel.selected == 0);
+    bench_stop(st);
+    unlink(path); *strrchr(path, '/') = '\0'; rmdir(path);
+    *strrchr(path, '/') = '\0'; rmdir(path);
+    puts("PASS: run options remembered between sessions");
+}
+
 int main(void)
 {
     char *dir = realpath("applications/TikuTracker/tests/fixtures/bench", NULL);
     if (!dir) dir = realpath("TikuTracker/tests/fixtures/bench", NULL);
     assert(dir); setenv("TIKU_BENCH", dir, 1); free(dir);
+    /* The user's own settings stay out of it. */
+    char sandbox[] = "/tmp/tiku-bench-settings-XXXXXX";
+    assert(mkdtemp(sandbox));
+    char none[512]; snprintf(none, sizeof none, "%s/none", sandbox);
+    setenv("TIKU_BENCH_SETTINGS", none, 1);
     bench_t *st = start();
     model_test(st); result_test(st);
     assert(st->nresult > 0);
@@ -417,6 +478,8 @@ int main(void)
     cancel_test(st); interactive_test(st); host_run_test(st); ui_test(st);
     bench_stop(st);
     assert(windows == 1 && frames > 0);
+    settings_test(sandbox);
+    setenv("TIKU_BENCH_SETTINGS", none, 1); unlink(none); rmdir(sandbox);
     real_catalogue_test();
     puts("PASS: queued subprocesses, final partial line, exit codes and release/reclaim");
     return 0;

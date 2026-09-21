@@ -80,13 +80,14 @@ those numbers are not hard-coded.
 
 ## Parity boundaries
 
-The principal suite-running workflow is available, but this is not complete
-GTK feature parity. Options are currently session-local. The GTK GUI's named
-ePaper panel/pattern preset pickers, saved configuration, grouped category-card
-layout and separate Did Not Run tab have not been ported; ePaper flags can be
-entered in Run options and skipped/not-run evidence appears in Results. Bench
-uses devices connected through TikuDesktop instead of independently scanning
-and opening arbitrary serial ports.
+The suite list is grouped under the catalogue's category headings, a Did not
+run tab lists what the profile leaves out with the reason, History opens with
+a verdict card (UNPROVEN / STALE / fresh), and the ePaper panel and pattern
+presets are the GTK GUI's own tables. Run options, the device and the presets
+are kept in `~/.config/tikubench-desktop/settings` (`TIKU_BENCH_SETTINGS`
+names another file), written when one changes and read at start, under the
+GTK GUI's key names. Bench uses devices connected through TikuDesktop instead
+of independently scanning and opening arbitrary serial ports.
 
 ## Verification
 
@@ -95,7 +96,8 @@ no hardware imports, device I/O, builds or flashing. It covers profile selection
 queue/argv construction, authoritative corrections, no-test results, final
 unterminated lines, nonzero exits, stdin, forced cancellation and port handoff.
 It also reads the actual TikuBench catalogue and renders screenshots to
-`/tmp/tiku-bench-catalogue.png` and `/tmp/tiku-bench-options.png`.
+`/tmp/tiku-bench-catalogue.png` and `/tmp/tiku-bench-options.png`, and
+round-trips the settings file through a directory of its own.
 
 The optional `bench*.script` hardware smoke tests use the new filter/selection
 workflow and inline Results; they require explicit `TRK_PORT` setup. They are

@@ -126,13 +126,20 @@ static void targets_refresh(bench_t *st)
     if (!strcmp(names, st->mounted) && st->refreshed) return;
     st->refreshed = 1;
     snprintf(st->mounted, sizeof st->mounted, "%s", names);
-    snprintf(chosen, sizeof chosen, "%s", st->target_name);
-    if (!*chosen && st->services->current_device)
-        st->services->current_device(st->services->ctx, chosen, sizeof chosen);
     tiku_choice_init(&st->target);
     char *save = NULL;
     for (char *p = strtok_r(names, "\n", &save); p; p = strtok_r(NULL, "\n", &save))
         tiku_choice_add(&st->target, p, 1);
+    snprintf(chosen, sizeof chosen, "%s", st->target_name);
+    /* The remembered board first, while it is not mounted the shell's
+     * own device; the memory is spent the moment the board is found. */
+    for (int i = 0; !*chosen && *st->wanted && i < st->target.count; i++)
+        if (!strcmp(st->target.item[i].label, st->wanted)) {
+            snprintf(chosen, sizeof chosen, "%s", st->wanted);
+            st->wanted[0] = '\0';
+        }
+    if (!*chosen && st->services->current_device)
+        st->services->current_device(st->services->ctx, chosen, sizeof chosen);
     int selected = -1;
     for (int i = 0; i < st->target.count; i++)
         if (!strcmp(st->target.item[i].label, chosen)) selected = i;

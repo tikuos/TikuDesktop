@@ -86,6 +86,7 @@ typedef struct {
     job_t jobs[NS]; int njob, job;
     char target_name[64], mcu[64], port[256], profile[64];
     char mounted[1024], directory[512], note[512], log_path[512];
+    char wanted[64], settings[512], saved[1024]; /* the remembered options */
     int refreshed;              /* the board list has been read once */
     int flash, large, usb, pk, epaper, supported, dirty;
     int busy, waiting, released, reclaiming, cancelled, closing;
@@ -108,6 +109,7 @@ static void release_finish(bench_t *st);
 static void stop_run(bench_t *st);
 static int action(bench_t *st, int command);
 #include "tiku_bench_model.inl"
+#include "tiku_bench_settings.inl"
 #include "tiku_bench_process.inl"
 #include "tiku_bench_report.inl"
 #include "tiku_bench_ui.inl"
@@ -136,7 +138,9 @@ static void bench_tick(void *state, int64_t now_us)
     if (!st->busy && !st->loading && !st->confirm.open && now_us >= st->board_poll) {
         targets_refresh(st); st->board_poll = now_us + 1000000;
     }
-    if (st->dirty) { paint(st); publish(st); st->dirty = 0; }
+    if (st->dirty) {
+        paint(st); publish(st); settings_flush(st); st->dirty = 0;
+    }
     if (st->closing && !st->busy && !st->child && !st->loading)
         st->services->close(st->services->ctx, st->id);
 }
@@ -195,7 +199,11 @@ static int bench_start(void **state, const tiku_app_services_t *services)
         tiku_field_start(&st->field[i], ""); tiku_field_input_init(&st->input[i]);
     }
     tiku_field_start(&st->field[1], "115200");
-    locate_bench(st); targets_refresh(st); metadata_start(st);
+    locate_bench(st); settings_load(st); targets_refresh(st);
+    metadata_start(st);
+    /* Where the options stand now is the file's baseline: nothing is
+     * written until the user moves one. */
+    settings_text(st, st->saved, sizeof st->saved);
     paint(st); publish(st); *state = st;
     return 0;
 }
@@ -212,6 +220,7 @@ static void bench_stop(void *state)
     if (st->child_fd >= 0) close(st->child_fd);
     if (st->input_fd >= 0) close(st->input_fd);
     if (st->log) fclose(st->log);
+    settings_flush(st);
     if ((st->released || st->waiting) && st->services->board_reclaim)
         st->services->board_reclaim(st->services->ctx, st->target_name);
     tiku_surface_free(st->surface); free(st);

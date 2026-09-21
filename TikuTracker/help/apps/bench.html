@@ -40,10 +40,12 @@ flash</b>.</p>
 <h2 id="suites">Suites and tests</h2>
 
 <p>The <b>Suites</b> tab lists every suite in the catalogue with its
-sub-tests under it. The disclosure arrow or <b>Return</b> expands a
-suite; a checkbox or <b>Space</b> selects. The <b>Filter</b> field
-matches a suite's key, name and group and a sub-test's id and label, and
-while it holds text the matching children are shown expanded.</p>
+sub-tests under it, under a heading for each group the catalogue puts
+them in. The disclosure arrow or <b>Return</b> expands a suite, or
+folds a group under its heading; a checkbox or <b>Space</b> selects.
+The <b>Filter</b> field matches a suite's key, name and group and a
+sub-test's id and label, and while it holds text the matching children
+are shown expanded.</p>
 
 <p>Selecting a whole suite runs that suite in full. Selecting sub-tests
 instead runs them as one <code>--only</code> argument. Selected suites
@@ -59,10 +61,14 @@ selects every displayed suite the board supports, each in full.
 filter. Changing the device, the memory model or the
 USB console setting also clears the selection.</p>
 
+<p>The <b>Did not run</b> tab lists every sub-test the chosen board's
+profile leaves out, each with the catalogue's reason, so that what a
+full sweep never touched is on record and not merely absent.</p>
+
 <h2 id="options">Run options</h2>
 
-<p>The <b>Run options</b> tab holds five checkboxes and three
-fields.</p>
+<p>The <b>Run options</b> tab holds five checkboxes, two preset lists
+and three fields.</p>
 
 <ul>
 <li><b>Build + flash (off = monitor existing firmware only)</b> is off
@@ -74,7 +80,10 @@ baud selected by runner)</b> can be set only for boards whose catalogue
 entry allows them.</li>
 <li><b>CRACEN public-key hardware: TIKU_CRACEN_PK_ENABLE=1</b> and
 <b>ePaper kit: HAS_TIKUKITS=1, TIKU_KIT_EPAPER_ENABLE=1</b> add the make
-variables their labels name.</li>
+variables their labels name. With the ePaper kit on, the <b>Panel</b>
+and <b>Pattern</b> lists choose the kit's panel and test pattern; they
+become <code>EPAPER_KIT_PANEL</code> and <code>EPAPER_KIT_PATTERN</code>
+defines ahead of the extra C flags.</li>
 <li><b>UART baud</b> must be digits only, from 1200 to 4000000. A value
 outside that starts no run: the note line asks you to check baud, port
 and KEY=VALUE tokens, and the window returns to Run options. The field
@@ -86,7 +95,13 @@ the port itself.</li>
 <li><b>Extra C flags</b> is passed to the runner as one argument.</li>
 </ul>
 
-<p>Options last as long as the window.</p>
+<p>The options, the device and the presets are remembered in
+<code>~/.config/tikubench-desktop/settings</code>, a key=value file
+written whenever one of them changes and read when Bench starts. A
+remembered board that is not mounted at start is waited for: the
+current device runs meanwhile, and the remembered one is chosen when
+it appears. The environment variable <code>TIKU_BENCH_SETTINGS</code>
+names another file.</p>
 
 <h2 id="run">Running</h2>
 
@@ -127,8 +142,11 @@ asks for one, and work only while a run is under way. A suite that needs
 a board unplugged or reconnected says so in bold above the note
 line.</li>
 <li><b>History</b> and <b>Benchmarks</b> show the records TikuBench kept
-for the current profile. A full result older than 24 hours is marked
-stale. A benchmark comparison is not a test verdict.</li>
+for the current profile. History opens with a verdict card: the latest
+full run's result and age, <b>UNPROVEN</b> when the profile has no
+full run and <b>STALE</b> when that run is older than 24 hours, with
+the latest selected and diagnostic results and a benchmark line beside
+it. A benchmark comparison is not a test verdict.</li>
 </ul>
 
 <p>Each run writes its own log under <code>/tmp</code>. <b>Open full
