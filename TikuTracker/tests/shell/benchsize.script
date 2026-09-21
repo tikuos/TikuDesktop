@@ -4,8 +4,8 @@
 # setup: benchpast
 # Bench asks for the corner: the grip is drawn, and a drag inwards
 # shrinks the frame while Bench keeps its least size behind it.
-# Bench opens at the desk's top left, its tab under the global bar, so
-# the window is never clicked by its tab here: the grip is what is used.
+# Bench opens under the global bar with its tab in reach: it moves by
+# the tab, and its grip lies two pixels in from the corner.
 wait 60
 click 980 30
 wait 10
@@ -14,13 +14,13 @@ wait 10
 menu-pick TikuBench
 wait 500
 expect-title Bench
-expect-window-at 15 3
+expect-window-at 15 21
 note the grip: dark then light hairline, two pixels in from the corner
-expect-pixel 970 668 cbcbcb
-expect-pixel 970 669 ffffff
+expect-pixel 970 666 cbcbcb
+expect-pixel 970 667 ffffff
 note dragged inwards by the grip: the window keeps its least size, and the
 note desk shows where the window was
-press 980 670
+press 980 668
 wait 4
 move 940 630
 wait 4
@@ -32,4 +32,8 @@ release 700 440
 wait 30
 expect-same-as-redraw
 expect-pixel 900 600 336698
+note and by the tab, now that the bar is not over it
+drag-window Bench 200 100
+wait 8
+expect-window-at 170 90
 quit

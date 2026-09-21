@@ -15,6 +15,14 @@ release 520 134
 wait 150
 expect-title Project
 expect-window-at 275 116
+note the zoom box at the tab's right end: the whole desk, then back
+note by the same box, now at the desk's top left
+click 372 126
+wait 8
+expect-window-at 0 0
+click 97 10
+wait 8
+expect-window-at 275 116
 note the window carried to the desk's bottom-right corner, then its grip
 note dragged inwards: the desk shows where the window was
 drag-window Project 560 360

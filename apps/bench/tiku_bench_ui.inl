@@ -8,15 +8,15 @@ static tiku_rect_t tabs_rect(const bench_t *st)
 static tiku_rect_t screen_rect(const bench_t *st)
 { return (tiku_rect_t){0, 0, st->w, st->h}; }
 /* The cards, top to bottom, and the two buttons under them. */
-static const tiku_rect_t CARD_DEVICE = {10, 8, 238, 72};
-static const tiku_rect_t CARD_HISTORY = {10, 86, 238, 108};
-static const tiku_rect_t CARD_LINK = {10, 200, 238, 70};
-static const tiku_rect_t CARD_MODE = {10, 276, 238, 64};
-static const tiku_rect_t CARD_OPTIONS = {10, 346, 238, 64};
-static const tiku_rect_t CARD_EPAPER = {10, 416, 238, 76};
-static const tiku_rect_t CARD_MAKE = {10, 498, 238, 76};
-static const tiku_rect_t RUN_RECT = {10, 580, 150, 28};
-static const tiku_rect_t STOP_RECT = {168, 580, 80, 28};
+static const tiku_rect_t CARD_DEVICE = {10, 6, 238, 72};
+static const tiku_rect_t CARD_HISTORY = {10, 82, 238, 102};
+static const tiku_rect_t CARD_LINK = {10, 188, 238, 70};
+static const tiku_rect_t CARD_MODE = {10, 262, 238, 64};
+static const tiku_rect_t CARD_OPTIONS = {10, 330, 238, 64};
+static const tiku_rect_t CARD_EPAPER = {10, 398, 238, 76};
+static const tiku_rect_t CARD_MAKE = {10, 478, 238, 76};
+static const tiku_rect_t RUN_RECT = {10, 560, 150, 26};
+static const tiku_rect_t STOP_RECT = {168, 560, 80, 26};
 /** Inside a card: what tiku_ui_group leaves once it has drawn the frame. */
 static tiku_rect_t card_in(tiku_rect_t r)
 {
@@ -368,7 +368,7 @@ static void history_card(bench_t *st, tiku_rect_t in)
     char verdict[80], perf[64], line[200];
     int y = in.y;
     history_verdict(st, verdict, sizeof verdict, perf, sizeof perf);
-    text(st, (tiku_rect_t){in.x, y, in.w, 16}, verdict, 1); y += 16;
+    text(st, (tiku_rect_t){in.x, y, in.w, 15}, verdict, 1); y += 15;
     const char *kinds[] = {"full", "selected", "diagnostic"};
     for (int k = 0; k < 3; k++) {
         const past_t *hit = NULL;
@@ -384,9 +384,9 @@ static void history_card(bench_t *st, tiku_rect_t in)
                      n < 3600 ? n / 60 : n < 86400 ? n / 3600 : n / 86400,
                      n < 3600 ? 'm' : n < 86400 ? 'h' : 'd', hit->profile);
         } else snprintf(line, sizeof line, "%s: never", kinds[k]);
-        text(st, (tiku_rect_t){in.x + 8, y, in.w - 8, 16}, line, 0); y += 16;
+        text(st, (tiku_rect_t){in.x + 8, y, in.w - 8, 15}, line, 0); y += 15;
     }
-    text(st, (tiku_rect_t){in.x, y, in.w, 16}, perf, 0);
+    text(st, (tiku_rect_t){in.x, y, in.w, 15}, perf, 0);
 }
 
 /** The three counts over the views, coloured once there is a run. */

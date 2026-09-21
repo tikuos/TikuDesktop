@@ -25,8 +25,8 @@
 #include "tiku_text_layout_paint.h"
 #include "tiku_ui.h"
 
-#define BW 960                      /* the opening size, and the least */
-#define BH 640
+#define BW 960                      /* the opening size, and the least: */
+#define BH 620                      /* under the bar on a 680-px desk   */
 #define NS 192
 #define NL 1024
 #define NR 1024

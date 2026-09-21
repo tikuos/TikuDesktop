@@ -405,8 +405,8 @@ static void ui_test(bench_t *st)
     ev = (tiku_event_t){.type = TIKU_EVENT_RESIZE, .width = 1200, .height = 760};
     bench_event(st, st->id, &ev); paint(st);
     assert(st->w == 1200 && st->h == 760 && st->surface->w == 1200);
-    assert(list_rect(st, TAB_SUITES).w == body.w + 240);
-    assert(list_rect(st, TAB_SUITES).h == body.h + 120);
+    assert(list_rect(st, TAB_SUITES).w == body.w + (1200 - BW));
+    assert(list_rect(st, TAB_SUITES).h == body.h + (760 - BH));
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-wide.png"));
     /* Every view ends above the detail line, the footer and the note,
      * at this size and at the opening one: a list that ran past them
