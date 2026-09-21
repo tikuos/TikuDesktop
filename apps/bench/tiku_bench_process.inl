@@ -47,7 +47,27 @@ static int command_build(bench_t *st, const job_t *job, command_t *c)
         argument(c, "--make-var"); argument(c, "HAS_TIKUKITS=1");
         argument(c, "--make-var"); argument(c, "TIKU_KIT_EPAPER_ENABLE=1");
     }
-    if (*st->field[3].text) { argument(c, "--extra-cflags"); argument(c, st->field[3].text); }
+    {
+        /* The ePaper presets ride in the same extra-cflags argument as
+         * the free-text flags, ahead of them, as the GTK frontend sends
+         * them: a panel by its value, a pattern by its index. */
+        static const int panel_value[] = {1, 2};
+        char *cf = c->words[c->nword]; size_t cap = sizeof c->words[0];
+        cf[0] = '\0';
+        if (st->epaper) {
+            if (c->nword == 32) return 0;
+            int pi = st->epanel.selected >= 0 && st->epanel.selected < 2
+                     ? st->epanel.selected : 0;
+            snprintf(cf, cap,
+                     "-DEPAPER_KIT_PANEL=%d -DEPAPER_KIT_PATTERN=%d%s%s",
+                     panel_value[pi],
+                     st->epattern.selected >= 0 ? st->epattern.selected : 0,
+                     *st->field[3].text ? " " : "", st->field[3].text);
+            argument(c, "--extra-cflags"); argument(c, c->words[c->nword++]);
+        } else if (*st->field[3].text) {
+            argument(c, "--extra-cflags"); argument(c, st->field[3].text);
+        }
+    }
     return 1;
 }
 

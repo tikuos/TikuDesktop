@@ -37,7 +37,8 @@ enum { TAB_SUITES, TAB_OPTIONS, TAB_RESULTS, TAB_OUTPUT, TAB_CONSOLE,
        TAB_HISTORY, TAB_METRICS, TAB_NOTRUN, TAB_COUNT };
 enum { RUN = 1, STOP, REFRESH, SELECT_ALL, CLEAR, OPEN, TOGGLE, COPY_LOG,
        CLEAR_LOG, SEND, FLASH, LARGE, USB, PK, EPAPER, FOLLOW, OPEN_LOG,
-       FIND_SUITES, FOCUS_LIST, REPORT = 20, TARGET = 30,
+       FIND_SUITES, FOCUS_LIST, REPORT = 20, TARGET = 30, PANEL = 32,
+       PATTERN = 33,
        LIST = 31, F_FILTER = 40, F_BAUD, F_MAKE, F_FLAGS, F_INPUT };
 typedef struct {
     char key[48], group[64], name[128], boards[512], description[768];
@@ -70,6 +71,7 @@ typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t *surface; uint32_t id;
     tiku_tabs_t tabs; tiku_dialog_t dialog; tiku_choice_t target;
+    tiku_choice_t epanel, epattern;   /* the ePaper presets, GTK's names */
     tiku_field_t field[5]; tiku_field_input_t input[5];
     tiku_list_t list[TAB_COUNT]; tiku_alert_t confirm;
     suite_t suites[NS]; int nsuite;
@@ -180,6 +182,15 @@ static int bench_start(void **state, const tiku_app_services_t *services)
         tiku_tabs_add(&st->tabs, tabs[i]); tiku_list_init(&st->list[i], 1);
     }
     tiku_dialog_init(&st->dialog); tiku_choice_init(&st->target);
+    /* The ePaper presets, the GTK frontend's own tables: a panel's value
+     * is what EPAPER_KIT_PANEL takes, a pattern's index is its value. */
+    tiku_choice_init(&st->epanel); tiku_choice_init(&st->epattern);
+    tiku_choice_add(&st->epanel, "E2370JS0C1 - 3.70\" BWR", 1);
+    tiku_choice_add(&st->epanel, "E2266KS0C1 - 2.66\" BW", 1);
+    for (int i = 0; i < 4; i++)
+        tiku_choice_add(&st->epattern, (const char *[]){"White", "Black",
+                        "Checkerboard", "Text"}[i], 1);
+    st->epanel.selected = 0; st->epattern.selected = 0;
     for (int i = 0; i < 5; i++) {
         tiku_field_start(&st->field[i], ""); tiku_field_input_init(&st->input[i]);
     }

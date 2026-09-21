@@ -2,14 +2,18 @@
 static const tiku_rect_t TABS = {16, 52, 928, 28};
 static const tiku_rect_t TARGET_RECT = {92, 12, 266, 28};
 static const tiku_rect_t ALERT_RECT = {200, 196, 560, 220};
+/* Under the ePaper toggle on the options tab: the panel and the pattern. */
+static const tiku_rect_t PANEL_RECT = {190, 296, 300, 28};
+static const tiku_rect_t PATTERN_RECT = {560, 296, 200, 28};
 static tiku_rect_t field_rect(int i)
 {
     if (!i) return (tiku_rect_t){76, 92, 500, 28};
     if (i == 4) return (tiku_rect_t){80, 550, 650, 28};
-    return (tiku_rect_t){190, 310 + (i - 1) * 54, 730, 28};
+    return (tiku_rect_t){190, 346 + (i - 1) * 54, 730, 28};
 }
 static tiku_rect_t list_rect(int tab)
 {
+    if (tab == TAB_HISTORY) return (tiku_rect_t){16, 240, 928, 294};
     return (tiku_rect_t){16, 132, 928, tab == TAB_SUITES ? 404 : 402};
 }
 static void text(bench_t *st, tiku_rect_t r, const char *value, int bold)
@@ -54,6 +58,10 @@ static void controls(bench_t *st)
         }
         for (int i = 1; i <= 3; i++) tiku_dialog_add(&st->dialog, F_FILTER + i,
             field_rect(i), TIKU_DIALOG_INPUT, edit && (i != 1 || !st->usb));
+        tiku_dialog_add(&st->dialog, PANEL, PANEL_RECT, TIKU_DIALOG_INPUT,
+                        edit && st->epaper);
+        tiku_dialog_add(&st->dialog, PATTERN, PATTERN_RECT, TIKU_DIALOG_INPUT,
+                        edit && st->epaper);
     } else if (tab == TAB_OUTPUT || tab == TAB_CONSOLE) {
         tiku_dialog_add(&st->dialog, COPY_LOG, (tiku_rect_t){16, 92, 150, 28}, TIKU_DIALOG_BUTTON, st->nlog > 0);
         tiku_dialog_add(&st->dialog, CLEAR_LOG, (tiku_rect_t){178, 92, 110, 28}, TIKU_DIALOG_BUTTON, !st->busy);
@@ -101,6 +109,10 @@ static void controls_draw(bench_t *st)
             st->target.enabled = c->enabled;
             tiku_choice_draw(&st->target, st->surface, TARGET_RECT,
                 st->target.selected >= 0 ? NULL : "No device (host tests available)", flags);
+        } else if (c->id == PANEL || c->id == PATTERN) {
+            tiku_choice_t *ch = c->id == PANEL ? &st->epanel : &st->epattern;
+            ch->enabled = c->enabled;
+            tiku_choice_draw(ch, st->surface, c->rect, NULL, flags);
         } else if (c->id >= F_FILTER) {
             int f = c->id - F_FILTER;
             tiku_ui_textfield_scroll(st->surface, c->rect, st->field[f].text,
@@ -109,6 +121,10 @@ static void controls_draw(bench_t *st)
             tiku_ui_checkbox(st->surface, c->rect, button_label(c->id),
                              flags | (toggle_value(st, c->id) ? TIKU_S_ON : 0));
         else tiku_ui_button(st->surface, c->rect, button_label(c->id), flags);
+    }
+    if (st->tabs.current == TAB_OPTIONS) {
+        text(st, (tiku_rect_t){30, 296, 150, 28}, "ePaper panel", 1);
+        text(st, (tiku_rect_t){500, 296, 60, 28}, "pattern", 1);
     }
 }
 
@@ -244,6 +260,69 @@ static void results_draw(bench_t *st, tiku_rect_t body)
     }
 }
 
+/**
+ * The verdict for the active profile, the GTK frontend's rule: the
+ * latest full kernel run decides -- none is UNPROVEN, one older than a
+ * day is STALE, else Fresh -- and the benchmark records fold into one
+ * performance word, a regression outranking a suspect outranking an
+ * invalid, pass only when every metric passes.
+ */
+static const char *history_verdict(const bench_t *st, char *out, size_t cap,
+                                   char *perf, size_t perf_cap)
+{
+    const past_t *full = NULL;
+    for (int i = 0; i < st->nhistory; i++) {
+        const past_t *h = &st->history[i];
+        if (!strcmp(h->suite, "kernel") && !strcmp(h->kind, "full") &&
+            !strcmp(h->profile, st->profile)) full = h;
+    }
+    snprintf(out, cap, "%s", !full ? "UNPROVEN - no full run" :
+             full->age > 86400 ? "STALE - full run over a day old" :
+             "Fresh full verdict");
+    const char *word = "unproven"; int matched = 0, all_pass = 1;
+    for (int i = 0; i < st->nmetric; i++) {
+        const metric_t *m = &st->metrics[i];
+        if (strcmp(m->field[1], st->profile)) continue;
+        matched = 1;
+        if (strcmp(m->field[6], "pass")) all_pass = 0;
+        if (!strcmp(m->field[6], "regression")) word = "REGRESSION";
+        else if (strcmp(word, "REGRESSION") && !strcmp(m->field[6], "suspect"))
+            word = "suspect - repeat required";
+        else if (strcmp(word, "REGRESSION") && strncmp(word, "suspect", 7) &&
+                 !strcmp(m->field[6], "invalid")) word = "invalid";
+    }
+    if (matched && all_pass) word = "pass";
+    snprintf(perf, perf_cap, "performance: %s", word);
+    return out;
+}
+
+/** The card above the history list: verdict, the three kinds, performance. */
+static void history_card(bench_t *st)
+{
+    char verdict[80], perf[64], line[200];
+    int y = 122;
+    history_verdict(st, verdict, sizeof verdict, perf, sizeof perf);
+    text(st, (tiku_rect_t){20, y, 920, 26}, verdict, 1); y += 26;
+    const char *kinds[] = {"full", "selected", "diagnostic"};
+    for (int k = 0; k < 3; k++) {
+        const past_t *hit = NULL;
+        for (int i = 0; i < st->nhistory; i++) {
+            const past_t *h = &st->history[i];
+            if (!strcmp(h->suite, "kernel") && !strcmp(h->kind, kinds[k]) &&
+                !strcmp(h->profile, st->profile)) hit = h;
+        }
+        if (hit) {
+            long n = hit->age;
+            snprintf(line, sizeof line, "%s: %s  -  %ld%c  -  %s",
+                     kinds[k], hit->verdict,
+                     n < 3600 ? n / 60 : n < 86400 ? n / 3600 : n / 86400,
+                     n < 3600 ? 'm' : n < 86400 ? 'h' : 'd', hit->profile);
+        } else snprintf(line, sizeof line, "%s: never", kinds[k]);
+        text(st, (tiku_rect_t){36, y, 900, 22}, line, 0); y += 22;
+    }
+    text(st, (tiku_rect_t){20, y, 920, 22}, perf, 0);
+}
+
 static void paint(bench_t *st)
 {
     controls(st); detail_counts(st);
@@ -261,10 +340,12 @@ static void paint(bench_t *st)
         for (int i = 1; i <= 3; i++) {
             tiku_rect_t r = field_rect(i); r.x = 30; r.w = 150; text(st, r, names[i], 1);
         }
-        text(st, (tiku_rect_t){30, 478, 880, 26},
-             "Make vars: KEY=VALUE tokens. Memory model uses the checkbox above.", 0);
-        text(st, (tiku_rect_t){30, 508, 880, 26},
-             "ePaper panel/pattern: use -DEPAPER_KIT_PANEL=... in Extra C flags.", 0);
+        text(st, (tiku_rect_t){30, 504, 880, 22},
+             "Make vars: KEY=VALUE tokens. "
+             "Memory model uses the checkbox above.", 0);
+        text(st, (tiku_rect_t){30, 526, 880, 22},
+             "ePaper panel and pattern become -DEPAPER_KIT_PANEL and _PATTERN, "
+             "ahead of the flags.", 0);
         text(st, (tiku_rect_t){30, 546, 880, 26},
              "Tests may reset the board or write storage. Review the suite description first.", 1);
     } else {
@@ -309,12 +390,14 @@ static void paint(bench_t *st)
             text(st, (tiku_rect_t){534, 92, 410, 28}, "Latest 256 lines; full log saved", 0);
             text(st, (tiku_rect_t){16, 550, 60, 28}, "Input", 0);
         } else {
+            if (tab == TAB_HISTORY) history_card(st);
             text(st, (tiku_rect_t){20, 92, 920, 28}, tab == TAB_HISTORY ?
                 "Profile-aware history: full, selected and diagnostic runs remain separate" :
                 tab == TAB_NOTRUN ?
                 "Tests this profile does not run, each with its reason" :
                 "Benchmark baseline/current comparison (not a functional-test verdict)", 1);
-            if (!st->list[tab].count) text(st, (tiku_rect_t){30, 150, 890, 28},
+            if (!st->list[tab].count)
+                text(st, (tiku_rect_t){30, list_rect(tab).y + 18, 890, 28},
                 tab == TAB_NOTRUN ? "Every test runs on this profile"
                                   : "No records for this profile", 0);
         }
@@ -324,6 +407,12 @@ static void paint(bench_t *st)
     text(st, (tiku_rect_t){16, 606, 928, 26}, st->note, 0);
     if (st->target.open) tiku_choice_draw_popup(&st->target, st->surface, TARGET_RECT,
                                                 (tiku_rect_t){0, 0, BW, BH});
+    if (st->epanel.open)
+        tiku_choice_draw_popup(&st->epanel, st->surface, PANEL_RECT,
+                               (tiku_rect_t){0, 0, BW, BH});
+    if (st->epattern.open)
+        tiku_choice_draw_popup(&st->epattern, st->surface, PATTERN_RECT,
+                               (tiku_rect_t){0, 0, BW, BH});
     if (st->confirm.open) tiku_alert_draw(&st->confirm, st->surface, ALERT_RECT);
     st->services->frame(st->services->ctx, st->id, st->surface->px, BW, BH);
 }
@@ -477,6 +566,17 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     }
     tiku_choice_result_t cr = tiku_choice_event(&st->target, ev, TARGET_RECT,
         (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == TARGET);
+    if (cr == TIKU_CHOICE_IGNORED && st->tabs.current == TAB_OPTIONS &&
+        st->epaper) {
+        /* The presets take the event the same way the device does; a
+         * change is a change of argv, nothing else. */
+        tiku_choice_result_t pr = tiku_choice_event(&st->epanel, ev, PANEL_RECT,
+            (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == PANEL);
+        if (pr == TIKU_CHOICE_IGNORED)
+            pr = tiku_choice_event(&st->epattern, ev, PATTERN_RECT,
+                (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == PATTERN);
+        if (pr != TIKU_CHOICE_IGNORED) { st->dirty = 1; return 0; }
+    }
     if (cr != TIKU_CHOICE_IGNORED) {
         if (cr == TIKU_CHOICE_CHANGED && editable(st)) {
             snprintf(st->target_name, sizeof st->target_name, "%s", st->target.item[st->target.selected].label);

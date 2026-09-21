@@ -109,6 +109,17 @@ static void model_test(bench_t *st)
     assert(!strcmp(arg_value(&c, "--port"), "/dev/fixture-only"));
     st->usb = st->flash = st->pk = st->epaper = 1;
     assert(command_build(st, &st->jobs[0], &c));
+    /* The ePaper presets land in the one extra-cflags argument, ahead of
+     * the free-text flags: a panel by its value, a pattern by its index. */
+    st->epanel.selected = 1; st->epattern.selected = 2;
+    tiku_field_start(&st->field[3], "-DX=1");
+    assert(command_build(st, &st->jobs[0], &c));
+    assert(!strcmp(arg_value(&c, "--extra-cflags"),
+                   "-DEPAPER_KIT_PANEL=2 -DEPAPER_KIT_PATTERN=2 -DX=1"));
+    st->epaper = 0; assert(command_build(st, &st->jobs[0], &c));
+    assert(!strcmp(arg_value(&c, "--extra-cflags"), "-DX=1"));
+    tiku_field_start(&st->field[3], ""); st->epaper = 1;
+    st->epanel.selected = 0; st->epattern.selected = 0;   /* as they start */
     assert(!arg_value(&c, "--port") && !arg_value(&c, "--baud"));
     assert(!strcmp(arg_value(&c, "--console"), "usb"));
     st->usb = st->flash = st->pk = st->epaper = 0;
@@ -132,6 +143,23 @@ static void result_test(bench_t *st)
     consume_line(st, zero); assert(st->results[0].skip);
     assert(st->nhistory == 2 && !strcmp(st->history[0].kind, "full"));
     assert(!strcmp(st->history[0].verdict, "fail") && !strcmp(st->history[1].verdict, "pass"));
+    /* The verdict card follows the full record for the profile: one
+     * older than a day is stale, one within it is fresh, none is unproven. */
+    {
+        char v[80], perf[64];
+        const char *profile = st->profile;
+        (void)history_verdict(st, v, sizeof v, perf, sizeof perf);
+        int has_full = 0; long age = 0;
+        for (int i = 0; i < st->nhistory; i++)
+            if (!strcmp(st->history[i].kind, "full") &&
+                !strcmp(st->history[i].suite, "kernel") &&
+                !strcmp(st->history[i].profile, profile)) {
+                has_full = 1; age = st->history[i].age;
+            }
+        assert(!has_full ? !strncmp(v, "UNPROVEN", 8) :
+               age > 86400 ? !strncmp(v, "STALE", 5) : !strncmp(v, "Fresh", 5));
+        assert(!strncmp(perf, "performance: ", 13));
+    }
     puts("PASS: authoritative correction, zero-test skip, full/selected history separation");
 }
 
@@ -331,6 +359,9 @@ static void real_catalogue_test(void)
     }
     paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-catalogue.png"));
+    tiku_tabs_select(&st->tabs, TAB_HISTORY); paint(st);
+    assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-history.png"));
+    tiku_tabs_select(&st->tabs, TAB_SUITES);
     tiku_font_set_size(16); paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-catalogue-large.png"));
     tiku_font_set_size(12);
@@ -358,8 +389,12 @@ static void ui_test(bench_t *st)
     action(st, RUN); assert(st->confirm.open && !st->busy);
     ev.key = TIKU_KEY_RETURN; bench_event(st, st->id, &ev);
     assert(!st->confirm.open && !st->busy); /* Default is Cancel. */
-    tiku_tabs_select(&st->tabs, TAB_OPTIONS); paint(st);
+    tiku_tabs_select(&st->tabs, TAB_OPTIONS); st->epaper = 1; paint(st);
+    assert(st->epanel.count == 2 && st->epattern.count == 4);
+    assert(st->epanel.selected < st->epanel.count &&
+           st->epattern.selected < st->epattern.count);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-options.png"));
+    st->epaper = 0;
     puts("PASS: list keyboard selection, native controls and safe confirmation");
 }
 
