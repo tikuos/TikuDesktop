@@ -377,7 +377,7 @@ static void ui_test(bench_t *st)
     assert(st->nentry > 1 && st->entries[0].suite < 0 &&
            st->entries[1].suite == 0);
     int row_h = tiku_list_row_h(&st->list[TAB_SUITES]);
-    tiku_rect_t body = list_rect(TAB_SUITES);
+    tiku_rect_t body = list_rect(st, TAB_SUITES);
     tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
                        .x = body.x + 100, .y = body.y + row_h + 13};
     bench_event(st, st->id, &ev);
@@ -400,6 +400,17 @@ static void ui_test(bench_t *st)
     tiku_tabs_select(&st->tabs, TAB_OUTPUT); paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-output.png"));
     tiku_tabs_select(&st->tabs, TAB_SUITES);
+    /* The corner: the views take the room, the cards keep their column,
+     * and the window never shrinks under what it opened with. */
+    ev = (tiku_event_t){.type = TIKU_EVENT_RESIZE, .width = 1200, .height = 760};
+    bench_event(st, st->id, &ev); paint(st);
+    assert(st->w == 1200 && st->h == 760 && st->surface->w == 1200);
+    assert(list_rect(st, TAB_SUITES).w == body.w + 240);
+    assert(list_rect(st, TAB_SUITES).h == body.h + 120);
+    assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-wide.png"));
+    ev = (tiku_event_t){.type = TIKU_EVENT_RESIZE, .width = 500, .height = 300};
+    bench_event(st, st->id, &ev); paint(st);
+    assert(st->w == BW && st->h == BH);
     puts("PASS: list keyboard selection, native controls and safe confirmation");
 }
 

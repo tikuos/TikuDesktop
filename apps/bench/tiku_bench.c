@@ -25,7 +25,7 @@
 #include "tiku_text_layout_paint.h"
 #include "tiku_ui.h"
 
-#define BW 960
+#define BW 960                      /* the opening size, and the least */
 #define BH 640
 #define NS 192
 #define NL 1024
@@ -87,6 +87,7 @@ typedef struct {
     char target_name[64], mcu[64], port[256], profile[64];
     char mounted[1024], directory[512], note[512], log_path[512];
     char wanted[64], settings[512], saved[1024]; /* the remembered options */
+    int w, h;                   /* the window's content, BW x BH at least */
     int refreshed;              /* the board list has been read once */
     int flash, large, usb, pk, epaper, supported, dirty;
     int busy, waiting, released, reclaiming, cancelled, closing;
@@ -172,9 +173,13 @@ static int bench_start(void **state, const tiku_app_services_t *services)
     bench_t *st = calloc(1, sizeof *st);
     if (!st) return -1;
     st->services = services; st->child_fd = st->input_fd = -1; st->follow = 1; st->pressed_row = -1;
+    st->w = BW; st->h = BH;
     st->surface = tiku_surface_new(BW, BH, TIKU_C_PANEL);
     if (!st->surface) { free(st); return -1; }
     st->id = services->open(services->ctx, "Bench", BW, BH);
+    /* The views grow with the window; the cards keep their column. */
+    if (st->id && services->sizeable != NULL)
+        (void)services->sizeable(services->ctx, st->id);
     if (services->help_page != NULL) {
         (void)services->help_page(services->ctx, "apps/bench.html");
     }

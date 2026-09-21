@@ -1,10 +1,12 @@
 /* The desktop-kit frontend: the GTK window's shape at the desktop's size,
  * a column of cards about the board and the run beside the tabbed views. */
-#define RX 260                      /* the views' column */
-#define RW 690
-static const tiku_rect_t TABS = {RX, 52, RW, 28};
-static const tiku_rect_t GAUGE_RECT = {RX, 38, RW, 8};
+#define RX 260                      /* the views' column, to the right edge */
+#define RW (st->w - RX - 10)
 static const tiku_rect_t ALERT_RECT = {200, 196, 560, 220};
+static tiku_rect_t tabs_rect(const bench_t *st)
+{ return (tiku_rect_t){RX, 52, RW, 28}; }
+static tiku_rect_t screen_rect(const bench_t *st)
+{ return (tiku_rect_t){0, 0, st->w, st->h}; }
 /* The cards, top to bottom, and the two buttons under them. */
 static const tiku_rect_t CARD_DEVICE = {10, 8, 238, 72};
 static const tiku_rect_t CARD_HISTORY = {10, 86, 238, 108};
@@ -31,11 +33,12 @@ static tiku_rect_t preset_rect(int pattern)
     tiku_rect_t in = card_in(CARD_EPAPER);
     return (tiku_rect_t){in.x + 58, in.y + (pattern ? 26 : 0), in.w - 58, 22};
 }
-static tiku_rect_t field_rect(int i)
+/* The views' bottom edge moves with the window; the cards do not. */
+static tiku_rect_t field_rect(const bench_t *st, int i)
 {
     tiku_rect_t in;
     if (!i) return (tiku_rect_t){RX + 48, 90, 396, 24};
-    if (i == 4) return (tiku_rect_t){RX, 556, 380, 24};
+    if (i == 4) return (tiku_rect_t){RX, st->h - 84, 380, 24};
     if (i == 1) {
         in = card_in(CARD_LINK);
         return (tiku_rect_t){in.x + 48, in.y + 20, in.w - 48, 22};
@@ -43,13 +46,13 @@ static tiku_rect_t field_rect(int i)
     in = card_in(CARD_MAKE);
     return (tiku_rect_t){in.x + 58, in.y + (i == 3 ? 26 : 0), in.w - 58, 22};
 }
-static tiku_rect_t list_rect(int tab)
+static tiku_rect_t list_rect(const bench_t *st, int tab)
 {
-    if (tab == TAB_SUITES) return (tiku_rect_t){RX, 122, RW, 420};
+    if (tab == TAB_SUITES) return (tiku_rect_t){RX, 122, RW, st->h - 98};
     if (tab == TAB_OUTPUT || tab == TAB_CONSOLE)
-        return (tiku_rect_t){RX, 90, RW, 460};
-    if (tab == TAB_HISTORY) return (tiku_rect_t){RX, 118, RW, 462};
-    return (tiku_rect_t){RX, 90, RW, 490};
+        return (tiku_rect_t){RX, 90, RW, st->h - 180};
+    if (tab == TAB_HISTORY) return (tiku_rect_t){RX, 118, RW, st->h - 178};
+    return (tiku_rect_t){RX, 90, RW, st->h - 150};
 }
 static void text(bench_t *st, tiku_rect_t r, const char *value, int bold)
 {
@@ -75,9 +78,9 @@ static void controls(bench_t *st)
     tiku_dialog_begin(&st->dialog, TIKU_DIALOG_NONE, TIKU_DIALOG_NONE);
     tiku_dialog_add(&st->dialog, TARGET, target_rect(), TIKU_DIALOG_INPUT,
                     edit);
-    tiku_dialog_add(&st->dialog, LIST, list_rect(tab), TIKU_DIALOG_INPUT, 1);
+    tiku_dialog_add(&st->dialog, LIST, list_rect(st, tab), TIKU_DIALOG_INPUT, 1);
     if (tab == TAB_SUITES) {
-        tiku_dialog_add(&st->dialog, F_FILTER, field_rect(0),
+        tiku_dialog_add(&st->dialog, F_FILTER, field_rect(st, 0),
                         TIKU_DIALOG_INPUT, edit);
         tiku_dialog_add(&st->dialog, SELECT_ALL,
                         (tiku_rect_t){RX + 452, 90, 70, 24},
@@ -91,21 +94,21 @@ static void controls(bench_t *st)
     } else if (tab == TAB_OUTPUT || tab == TAB_CONSOLE) {
         int live = st->busy && st->child > 0 && !st->cancelled &&
                    st->send_at == st->send_n;
-        tiku_dialog_add(&st->dialog, F_INPUT, field_rect(4),
+        tiku_dialog_add(&st->dialog, F_INPUT, field_rect(st, 4),
                         TIKU_DIALOG_INPUT, live);
         tiku_dialog_add(&st->dialog, SEND,
-                        (tiku_rect_t){RX + 388, 556, 60, 24},
+                        (tiku_rect_t){RX + 388, st->h - 84, 60, 24},
                         TIKU_DIALOG_BUTTON, live);
         tiku_dialog_add(&st->dialog, COPY_LOG,
-                        (tiku_rect_t){RX + 456, 556, 110, 24},
+                        (tiku_rect_t){RX + 456, st->h - 84, 110, 24},
                         TIKU_DIALOG_BUTTON, st->nlog > 0);
         tiku_dialog_add(&st->dialog, CLEAR_LOG,
-                        (tiku_rect_t){RX + 574, 556, 116, 24},
+                        (tiku_rect_t){RX + 574, st->h - 84, 116, 24},
                         TIKU_DIALOG_BUTTON, !st->busy);
     }
     /* The cards: the connection, the build mode, the options, the ePaper
      * presets and the make fields, always in reach. */
-    tiku_dialog_add(&st->dialog, F_BAUD, field_rect(1), TIKU_DIALOG_INPUT,
+    tiku_dialog_add(&st->dialog, F_BAUD, field_rect(st, 1), TIKU_DIALOG_INPUT,
                     edit && !st->usb);
     in = card_in(CARD_MODE);
     tiku_dialog_add(&st->dialog, FLASH, (tiku_rect_t){in.x, in.y, in.w, 18},
@@ -128,9 +131,9 @@ static void controls(bench_t *st)
                     edit && st->epaper);
     tiku_dialog_add(&st->dialog, PATTERN, preset_rect(1), TIKU_DIALOG_INPUT,
                     edit && st->epaper);
-    tiku_dialog_add(&st->dialog, F_MAKE, field_rect(2), TIKU_DIALOG_INPUT,
+    tiku_dialog_add(&st->dialog, F_MAKE, field_rect(st, 2), TIKU_DIALOG_INPUT,
                     edit);
-    tiku_dialog_add(&st->dialog, F_FLAGS, field_rect(3), TIKU_DIALOG_INPUT,
+    tiku_dialog_add(&st->dialog, F_FLAGS, field_rect(st, 3), TIKU_DIALOG_INPUT,
                     edit);
     tiku_dialog_add(&st->dialog, RUN, RUN_RECT, TIKU_DIALOG_BUTTON,
                     edit && st->metadata_ok && selected_count(st));
@@ -260,7 +263,7 @@ static void detail_counts(bench_t *st)
         } else for (int i = 0; i < st->nmetric; i++) n += !strcmp(st->metrics[i].field[1], st->profile);
         tiku_list_set_count(&st->list[tab], n);
         if (st->follow && (tab == TAB_OUTPUT || tab == TAB_CONSOLE))
-            tiku_list_scroll_to(&st->list[tab], n, list_rect(tab));
+            tiku_list_scroll_to(&st->list[tab], n, list_rect(st, tab));
     }
 }
 
@@ -444,14 +447,14 @@ static void paint(bench_t *st)
 {
     int done;
     controls(st); detail_counts(st);
-    tiku_fill(st->surface, (tiku_rect_t){0, 0, BW, BH}, TIKU_C_PANEL);
+    tiku_fill(st->surface, screen_rect(st), TIKU_C_PANEL);
     cards(st);
     pills(st, &done);
-    tiku_ui_gauge(st->surface, GAUGE_RECT,
+    tiku_ui_gauge(st->surface, (tiku_rect_t){RX, 38, RW, 8},
                   st->nresult ? (float)done / st->nresult : 0);
-    tiku_tabs_draw(&st->tabs, st->surface, TABS);
+    tiku_tabs_draw(&st->tabs, st->surface, tabs_rect(st));
     int tab = st->tabs.current;
-    tiku_rect_t body = list_rect(tab);
+    tiku_rect_t body = list_rect(st, tab);
     char status[512];
     tiku_ui_sunken(st->surface, body, TIKU_C_DOC);
     if (tab == TAB_SUITES) browser_draw(st, body);
@@ -480,7 +483,7 @@ static void paint(bench_t *st)
             }
         }
         tiku_text_block_draw(st->surface,
-                             (tiku_rect_t){RX + 4, 548, RW - 8, 36},
+                             (tiku_rect_t){RX + 4, st->h - 92, RW - 8, 36},
                              TIKU_MEASURE_PLAIN, status, TIKU_C_TEXT, 2);
     } else if (tab == TAB_OUTPUT || tab == TAB_CONSOLE) {
         if (!st->list[tab].count)
@@ -502,9 +505,10 @@ static void paint(bench_t *st)
                  0);
     }
     controls_draw(st);
-    if (*st->prompt) text(st, (tiku_rect_t){RX, 586, RW, 18}, st->prompt, 1);
-    text(st, (tiku_rect_t){10, 612, 940, 24}, st->note, 0);
-    tiku_rect_t screen = {0, 0, BW, BH};
+    if (*st->prompt)
+        text(st, (tiku_rect_t){RX, st->h - 54, RW, 18}, st->prompt, 1);
+    text(st, (tiku_rect_t){10, st->h - 28, st->w - 20, 24}, st->note, 0);
+    tiku_rect_t screen = screen_rect(st);
     if (st->target.open)
         tiku_choice_draw_popup(&st->target, st->surface, target_rect(), screen);
     if (st->epanel.open)
@@ -513,7 +517,8 @@ static void paint(bench_t *st)
         tiku_choice_draw_popup(&st->epattern, st->surface, preset_rect(1),
                                screen);
     if (st->confirm.open) tiku_alert_draw(&st->confirm, st->surface, ALERT_RECT);
-    st->services->frame(st->services->ctx, st->id, st->surface->px, BW, BH);
+    st->services->frame(st->services->ctx, st->id, st->surface->px,
+                        st->w, st->h);
 }
 
 static void publish(bench_t *st)
@@ -643,6 +648,20 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         if (st->busy || st->loading) { st->closing = 1; stop_run(st); return 0; }
         return 1;
     }
+    if (ev->type == TIKU_EVENT_RESIZE) {
+        /* The corner moved: the views take the room, never less than
+         * the window opened with, and the next frame is at that size. */
+        int w = ev->width < BW ? BW : ev->width;
+        int h = ev->height < BH ? BH : ev->height;
+        if (w != st->w || h != st->h) {
+            tiku_surface_t *grown = tiku_surface_new(w, h, TIKU_C_PANEL);
+            if (grown) {
+                tiku_surface_free(st->surface); st->surface = grown;
+                st->w = w; st->h = h;
+            }
+        }
+        st->dirty = 1; return 0;
+    }
     if (st->confirm.open) {
         int chosen = -1;
         if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_TAB)
@@ -663,7 +682,7 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     controls(st);
     if (ev->type == TIKU_EVENT_DEACTIVATED) st->pressed_row = -1;
     if (ev->type == TIKU_EVENT_POINTER_UP && ev->button == 1 && st->pressed_row >= 0) {
-        tiku_rect_t body = list_rect(TAB_SUITES);
+        tiku_rect_t body = list_rect(st, TAB_SUITES);
         int row = tiku_list_at(&st->list[TAB_SUITES], body, ev->x, ev->y);
         if (st->tabs.current == TAB_SUITES && row == st->pressed_row &&
             ev->x < body.x + 58)
@@ -671,16 +690,16 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         st->pressed_row = -1; st->dirty = 1; return 0;
     }
     tiku_choice_result_t cr = tiku_choice_event(&st->target, ev, target_rect(),
-        (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == TARGET);
+        screen_rect(st), st->dialog.focus == TARGET);
     if (cr == TIKU_CHOICE_IGNORED && st->epaper && editable(st)) {
         /* The presets take the event the same way the device does; a
          * change is a change of argv, nothing else. */
         tiku_choice_result_t pr = tiku_choice_event(&st->epanel, ev,
-            preset_rect(0), (tiku_rect_t){0, 0, BW, BH},
+            preset_rect(0), screen_rect(st),
             st->dialog.focus == PANEL);
         if (pr == TIKU_CHOICE_IGNORED)
             pr = tiku_choice_event(&st->epattern, ev, preset_rect(1),
-                (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == PATTERN);
+                screen_rect(st), st->dialog.focus == PATTERN);
         if (pr != TIKU_CHOICE_IGNORED) { st->dirty = 1; return 0; }
     }
     if (cr != TIKU_CHOICE_IGNORED) {
@@ -695,7 +714,7 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     if (st->dialog.focus == LIST && ev->type == TIKU_EVENT_KEY_DOWN && ev->key != TIKU_KEY_TAB) {
         if (st->tabs.current == TAB_SUITES && (ev->key == ' ' || ev->key == TIKU_KEY_RETURN))
             action(st, ev->key == ' ' ? TOGGLE : OPEN);
-        else tiku_list_key(&st->list[st->tabs.current], ev->key, ev->modifiers, list_rect(st->tabs.current));
+        else tiku_list_key(&st->list[st->tabs.current], ev->key, ev->modifiers, list_rect(st, st->tabs.current));
         st->dirty = 1; return 0;
     }
     tiku_dialog_result_t dr = tiku_dialog_event(&st->dialog, ev);
@@ -707,7 +726,7 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
             st->tabs.current == TAB_OUTPUT : 1;
         if (!visible || (!editable(st) && i != 4) || (i == 1 && st->usb) ||
             (i == 4 && (!st->busy || st->cancelled || st->send_at != st->send_n))) continue;
-        tiku_field_result_t fr = tiku_field_event(&st->field[i], &st->input[i], ev, field_rect(i), focus);
+        tiku_field_result_t fr = tiku_field_event(&st->field[i], &st->input[i], ev, field_rect(st, i), focus);
         if (fr != TIKU_FIELD_IGNORED) {
             if (!i) entries_build(st);
             if (i == 4 && fr == TIKU_FIELD_COMMITTED) action(st, SEND);
@@ -715,9 +734,9 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         }
     }
     if (ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1) {
-        int tab = tiku_tabs_hit(&st->tabs, TABS, ev->x, ev->y);
+        int tab = tiku_tabs_hit(&st->tabs, tabs_rect(st), ev->x, ev->y);
         if (tab >= 0) { tiku_tabs_select(&st->tabs, tab); st->dirty = 1; return 0; }
-        tiku_rect_t body = list_rect(st->tabs.current);
+        tiku_rect_t body = list_rect(st, st->tabs.current);
         int row = tiku_list_at(&st->list[st->tabs.current], body, ev->x, ev->y);
         tiku_list_click(&st->list[st->tabs.current], row, ev->modifiers);
         if (st->tabs.current == TAB_SUITES && row >= 0 && ev->x < body.x + 58)
@@ -726,11 +745,11 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     } else if (ev->type == TIKU_EVENT_WHEEL) {
         if (st->tabs.current == TAB_OUTPUT || st->tabs.current == TAB_CONSOLE) st->follow = 0;
         tiku_list_t *l = &st->list[st->tabs.current];
-        tiku_list_scroll_to(l, l->top + ev->dy * 3, list_rect(st->tabs.current));
+        tiku_list_scroll_to(l, l->top + ev->dy * 3, list_rect(st, st->tabs.current));
     } else if (!dr.taken && ev->type == TIKU_EVENT_KEY_DOWN) {
         if (st->tabs.current == TAB_SUITES && (ev->key == ' ' || ev->key == TIKU_KEY_RETURN))
             action(st, ev->key == ' ' ? TOGGLE : OPEN);
-        else tiku_list_key(&st->list[st->tabs.current], ev->key, ev->modifiers, list_rect(st->tabs.current));
+        else tiku_list_key(&st->list[st->tabs.current], ev->key, ev->modifiers, list_rect(st, st->tabs.current));
     }
     st->dirty = 1; return 0;
 }

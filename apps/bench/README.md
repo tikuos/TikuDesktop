@@ -6,7 +6,9 @@ the GTK GUI's shape at the desktop's size: a column of cards on the left
 (Device, Kernel history, Connection, Build mode, Options, ePaper kit, Make,
 then Run selected and Stop) that stay in view, and on the right the pills
 counting passed / failed / did not run, a progress bar and the tabbed views
-(Suites, Results, Output, Console, History, Benchmarks, Did not run).
+(Suites, Results, Output, Console, History, Benchmarks, Did not run). The
+window is resizable from its corner: the views grow, the cards keep their
+column, and 960x640 is the least it will be.
 It reads `TikuBench/gui/tb_meta.py` and runs the existing
 `python3 -u -m tikubench run ...` backend. No test/build/flash implementation is
 copied into the desktop. Set `TIKU_BENCH` to another checkout if needed.
