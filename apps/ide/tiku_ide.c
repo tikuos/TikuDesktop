@@ -311,11 +311,13 @@ typedef struct {
      * window standing empty is furniture. */
     uint32_t                        msg_id;
         tiku_surface_t            *msg_surface;
+    int                             msg_w, msg_h;   /* MSG_W x MSG_H at least */
     /* The console: opened for a board run, black, the mono face; every
      * line the program printed in order, the run's states as the
      * console's own dim remarks, and the INPUT line at the bottom. */
     uint32_t                        con_id;
     tiku_surface_t            *con_surface;
+    int                             con_w, con_h;   /* CON_W x CON_H at least */
     char                            con[CON_LINES][CON_COLS];
     unsigned char                   con_dim[CON_LINES];
     int                             ncon;
@@ -2011,13 +2013,20 @@ project_list_area(const ide_t *st)
     return tiku_inset(project_body(st), 2);
 }
 
-/** @brief The project window grows: a list is the one thing that does. */
+/** @brief A window of ours that grows: the project's list, the console
+ *         and the messages all show more with more room. */
+static void
+window_sizeable(ide_t *st, uint32_t id)
+{
+    if (id != 0u && st->services->sizeable != NULL) {
+        (void)st->services->sizeable(st->services->ctx, id);
+    }
+}
+
 static void
 project_sizeable(ide_t *st)
 {
-    if (st->proj_id != 0u && st->services->sizeable != NULL) {
-        (void)st->services->sizeable(st->services->ctx, st->proj_id);
-    }
+    window_sizeable(st, st->proj_id);
 }
 
 static const char *
@@ -2557,10 +2566,10 @@ static void
 messages_paint(ide_t *st)
 {
     const tiku_font_t *f = tiku_font_plain();
-    tiku_rect_t all = { 0, 0, MSG_W, MSG_H };
-    tiku_rect_t strip = { 0, MSG_H - STRIP_H, MSG_W, STRIP_H };
-    tiku_rect_t body = { MARGIN, MARGIN, MSG_W - 2 * MARGIN,
-                              MSG_H - STRIP_H - 2 * MARGIN };
+    tiku_rect_t all = { 0, 0, st->msg_w, st->msg_h };
+    tiku_rect_t strip = { 0, st->msg_h - STRIP_H, st->msg_w, STRIP_H };
+    tiku_rect_t body = { MARGIN, MARGIN, st->msg_w - 2 * MARGIN,
+                              st->msg_h - STRIP_H - 2 * MARGIN };
     char says[160];
 
     if (st->msg_surface == NULL) {
@@ -2576,7 +2585,8 @@ messages_paint(ide_t *st)
          * label, the answer typed beside it, Return to send it. */
         int lw = tiku_text_width(f, st->ask_prompt);
         tiku_rect_t fld = { MARGIN + lw + 6, strip.y + 3,
-                            MSG_W - (MARGIN + lw + 6) - MARGIN, STRIP_H - 6 };
+                            st->msg_w - (MARGIN + lw + 6) - MARGIN,
+                            STRIP_H - 6 };
 
         tiku_text(st->msg_surface, f, MARGIN,
                        strip.y + (STRIP_H - f->height) / 2 + f->ascent,
@@ -2591,7 +2601,7 @@ messages_paint(ide_t *st)
                        says, TIKU_C_TEXT);
     }
     (void)st->services->frame(st->services->ctx, st->msg_id,
-                              st->msg_surface->px, MSG_W, MSG_H);
+                              st->msg_surface->px, st->msg_w, st->msg_h);
 }
 
 /**
@@ -2632,6 +2642,8 @@ messages_open(ide_t *st)
     if (st->msg_surface != NULL) {
         return;
     }
+    st->msg_w = MSG_W;
+    st->msg_h = MSG_H;
     st->msg_surface = tiku_surface_new(MSG_W, MSG_H, TIKU_C_PANEL);
     if (st->msg_surface == NULL) {
         return;
@@ -2645,6 +2657,7 @@ messages_open(ide_t *st)
         project_paint(st);
         return;
     }
+    window_sizeable(st, st->msg_id);
     tiku_list_init(&st->msg_list, 1);
 }
 
@@ -3072,10 +3085,10 @@ static void
 console_paint(ide_t *st)
 {
     const tiku_font_t *f = tiku_font_mono(0);
-    tiku_rect_t all = { 0, 0, CON_W, CON_H };
-    tiku_rect_t strip = { 0, CON_H - STRIP_H, CON_W, STRIP_H };
+    tiku_rect_t all = { 0, 0, st->con_w, st->con_h };
+    tiku_rect_t strip = { 0, st->con_h - STRIP_H, st->con_w, STRIP_H };
     int lh = f->height + 2;
-    int rows = (CON_H - STRIP_H - 2 * MARGIN) / lh;
+    int rows = (st->con_h - STRIP_H - 2 * MARGIN) / lh;
     int first, i, y;
 
     if (st->con_surface == NULL) {
@@ -3098,7 +3111,8 @@ console_paint(ide_t *st)
          * after it, Return to send. */
         int lw = tiku_text_width(f, st->ask_prompt);
         tiku_rect_t fld = { MARGIN + lw + 6, strip.y + 3,
-                            CON_W - (MARGIN + lw + 6) - MARGIN, STRIP_H - 6 };
+                            st->con_w - (MARGIN + lw + 6) - MARGIN,
+                            STRIP_H - 6 };
 
         tiku_text(st->con_surface, f, MARGIN,
                   strip.y + (STRIP_H - f->height) / 2 + f->ascent,
@@ -3112,7 +3126,7 @@ console_paint(ide_t *st)
                               : "the run has finished", CON_DIM);
     }
     (void)st->services->frame(st->services->ctx, st->con_id,
-                              st->con_surface->px, CON_W, CON_H);
+                              st->con_surface->px, st->con_w, st->con_h);
 }
 
 /** @brief The console's one menu: stop the run. */
@@ -3143,6 +3157,8 @@ console_open(ide_t *st, const char *file, const char *board)
     st->ncon = 0;
     st->con_top = -1;
     if (st->con_surface == NULL) {
+        st->con_w = CON_W;
+        st->con_h = CON_H;
         st->con_surface = tiku_surface_new(CON_W, CON_H, CON_BACK);
         if (st->con_surface == NULL) {
             return;
@@ -3154,6 +3170,7 @@ console_open(ide_t *st, const char *file, const char *board)
             st->con_surface = NULL;
             return;
         }
+        window_sizeable(st, st->con_id);
     } else if (st->services->raise_window != NULL) {
         (void)st->services->raise_window(st->services->ctx, st->con_id);
     }
@@ -4123,6 +4140,32 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (st->ask.open) { return 0; }
+    if (event->type == TIKU_EVENT_RESIZE &&
+        (window == st->con_id || window == st->msg_id)) {
+        /* The console's or the messages' corner: more lines in view,
+         * never fewer than the window opened with. */
+        int con = window == st->con_id;
+        int least_w = con ? CON_W : MSG_W, least_h = con ? CON_H : MSG_H;
+        int w = (event->width > least_w) ? event->width : least_w;
+        int h = (event->height > least_h) ? event->height : least_h;
+        int *pw = con ? &st->con_w : &st->msg_w;
+        int *ph = con ? &st->con_h : &st->msg_h;
+        tiku_surface_t **ps = con ? &st->con_surface : &st->msg_surface;
+
+        if (*ps != NULL && (w != *pw || h != *ph)) {
+            tiku_surface_t *grown =
+                tiku_surface_new(w, h, con ? CON_BACK : TIKU_C_PANEL);
+
+            if (grown != NULL) {
+                tiku_surface_free(*ps);
+                *ps = grown;
+                *pw = w;
+                *ph = h;
+            }
+        }
+        if (con) { console_paint(st); } else { messages_paint(st); }
+        return 0;
+    }
     if (window == st->proj_id && event->type == TIKU_EVENT_RESIZE) {
         /* The project's corner: more rows in view, never fewer than
          * the window opened with. */
@@ -4520,7 +4563,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
     }
         if (window == st->con_id && st->con_surface != NULL) {
         if (event->type == TIKU_EVENT_WHEEL) {
-            int rows = (CON_H - STRIP_H - 2 * MARGIN) /
+            int rows = (st->con_h - STRIP_H - 2 * MARGIN) /
                        (tiku_font_mono(0)->height + 2);
             int top = (st->con_top >= 0) ? st->con_top : st->ncon - rows;
 
@@ -4584,8 +4627,8 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (window == st->msg_id && st->msg_surface != NULL) {
-        tiku_rect_t body = { MARGIN, MARGIN, MSG_W - 2 * MARGIN,
-                                  MSG_H - STRIP_H - 2 * MARGIN };
+        tiku_rect_t body = { MARGIN, MARGIN, st->msg_w - 2 * MARGIN,
+                                  st->msg_h - STRIP_H - 2 * MARGIN };
         if (event->type == TIKU_EVENT_POINTER_DOWN) {
             tiku_list_click(&st->msg_list,
                             tiku_list_at(&st->msg_list, tiku_inset(body, 2),
