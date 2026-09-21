@@ -254,6 +254,7 @@ static void test_ui(ide_t *st, const char *dir)
     assert(tiku_surface_png(e->surface, "/tmp/tikubasic-find-replace.png") == 0);
     st->proj_surface = tiku_surface_new(IDE_W, IDE_H, TIKU_C_PANEL);
     assert(st->proj_surface);
+    st->proj_w = IDE_W; st->proj_h = IDE_H;
     tiku_list_init(&st->tv_list, 1);
     snprintf(missing, sizeof missing, "%s/longfilename.bas", dir);
     file_write(missing, "10 PRINT 42\n", 12);
@@ -584,8 +585,9 @@ int main(void)
      * handed in against the name handed back. */
     assert(realpath(dir, real));
     snprintf(dir, sizeof dir, "%s", real);
-    assert(project_body().y == MARGIN);
-    assert(project_body().h == IDE_H - STRIP_H - 2 * MARGIN);
+    st->proj_w = IDE_W; st->proj_h = IDE_H;   /* as ide_start leaves them */
+    assert(project_body(st).y == MARGIN);
+    assert(project_body(st).h == IDE_H - STRIP_H - 2 * MARGIN);
     st->services = &services;
     st->proj_id = 1;
     target_text(st, label, sizeof label);

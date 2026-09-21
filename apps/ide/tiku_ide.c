@@ -271,6 +271,7 @@ typedef struct {
     const tiku_app_services_t *services;
     uint32_t                        proj_id;
     tiku_surface_t            *proj_surface;
+    int                             proj_w, proj_h; /* IDE_W x IDE_H at least */
     tiku_list_t                tv_list;
     project_t                       proj;
     edit_t                          edit[IDE_EDITS];
@@ -1993,10 +1994,10 @@ recovery_scan(ide_t *st)
 /*---------------------------------------------------------------------------*/
 
 static tiku_rect_t
-project_body(void)
+project_body(const ide_t *st)
 {
-    tiku_rect_t r = { MARGIN, MARGIN, IDE_W - 2 * MARGIN,
-                           IDE_H - STRIP_H - 2 * MARGIN };
+    tiku_rect_t r = { MARGIN, MARGIN, st->proj_w - 2 * MARGIN,
+                           st->proj_h - STRIP_H - 2 * MARGIN };
 
     return r;
 }
@@ -2005,9 +2006,18 @@ project_body(void)
  * white fill drawn at the box edge would erase the border under it, and
  * the heading would look like it spilled onto the grey. */
 static tiku_rect_t
-project_list_area(void)
+project_list_area(const ide_t *st)
 {
-    return tiku_inset(project_body(), 2);
+    return tiku_inset(project_body(st), 2);
+}
+
+/** @brief The project window grows: a list is the one thing that does. */
+static void
+project_sizeable(ide_t *st)
+{
+    if (st->proj_id != 0u && st->services->sizeable != NULL) {
+        (void)st->services->sizeable(st->services->ctx, st->proj_id);
+    }
 }
 
 static const char *
@@ -2023,9 +2033,9 @@ static void
 project_paint(ide_t *st)
 {
     const tiku_font_t *f = tiku_font_plain();
-    tiku_rect_t all = { 0, 0, IDE_W, IDE_H };
-    tiku_rect_t strip = { 0, IDE_H - STRIP_H, IDE_W, STRIP_H };
-    tiku_rect_t body = project_body();
+    tiku_rect_t all = { 0, 0, st->proj_w, st->proj_h };
+    tiku_rect_t strip = { 0, st->proj_h - STRIP_H, st->proj_w, STRIP_H };
+    tiku_rect_t body = project_body(st);
     char says[160];
 
     /* Target updates can arrive while only the splash exists. A frame
@@ -2035,7 +2045,7 @@ project_paint(ide_t *st)
     }
     tiku_fill(st->proj_surface, all, TIKU_C_PANEL);
     tiku_ui_sunken(st->proj_surface, body, TIKU_C_DOC);
-    tiku_list_draw(&st->tv_list, st->proj_surface, project_list_area(),
+    tiku_list_draw(&st->tv_list, st->proj_surface, project_list_area(st),
                    row_name, st);
     tiku_fill(st->proj_surface, strip, TIKU_C_PANEL);
     if (st->note[0] != '\0') {
@@ -2071,15 +2081,15 @@ project_paint(ide_t *st)
 
         tiku_alert_size(&aw, &ah);
         if (st->ask.tag == CMD_SAVEBOARD) { ah = 220; }
-        if (aw > IDE_W - 16) {
-            aw = IDE_W - 16;
+        if (aw > st->proj_w - 16) {
+            aw = st->proj_w - 16;
         }
-        st->ask_frame = (tiku_rect_t){ (IDE_W - aw) / 2,
-                                            (IDE_H - ah) / 3, aw, ah };
+        st->ask_frame = (tiku_rect_t){ (st->proj_w - aw) / 2,
+                                            (st->proj_h - ah) / 3, aw, ah };
         tiku_alert_draw(&st->ask, st->proj_surface, st->ask_frame);
     }
     (void)st->services->frame(st->services->ctx, st->proj_id,
-                              st->proj_surface->px, IDE_W, IDE_H);
+                              st->proj_surface->px, st->proj_w, st->proj_h);
 }
 
 /**
@@ -3813,6 +3823,7 @@ splash_drop(ide_t *st)
     if (st->proj_id == 0u) {
         st->proj_id = st->services->open(st->services->ctx, "Project",
                                          IDE_W, IDE_H);
+        project_sizeable(st);
         project_paint(st);
         project_publish(st);
     }
@@ -3836,6 +3847,8 @@ ide_start(void **state, const tiku_app_services_t *services)
     }
     tiku_list_init(&st->tv_list, 1);
     st->click_row = -1;
+    st->proj_w = IDE_W;
+    st->proj_h = IDE_H;
     st->proj_surface = tiku_surface_new(IDE_W, IDE_H, TIKU_C_PANEL);
     if (st->proj_surface == NULL) {
         free(st);
@@ -3871,6 +3884,7 @@ ide_start(void **state, const tiku_app_services_t *services)
         /* No announcement to wait for: the project arrives now. */
         st->proj_id = services->open(services->ctx, "Project", IDE_W,
                                      IDE_H);
+        project_sizeable(st);
         project_paint(st);
         project_publish(st);
     }
@@ -4109,6 +4123,23 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (st->ask.open) { return 0; }
+    if (window == st->proj_id && event->type == TIKU_EVENT_RESIZE) {
+        /* The project's corner: more rows in view, never fewer than
+         * the window opened with. */
+        int w = (event->width > IDE_W) ? event->width : IDE_W;
+        int h = (event->height > IDE_H) ? event->height : IDE_H;
+        tiku_surface_t *grown = (w != st->proj_w || h != st->proj_h)
+            ? tiku_surface_new(w, h, TIKU_C_PANEL) : NULL;
+
+        if (grown != NULL) {
+            tiku_surface_free(st->proj_surface);
+            st->proj_surface = grown;
+            st->proj_w = w;
+            st->proj_h = h;
+        }
+        project_paint(st);
+        return 0;
+    }
     if (e != NULL && event->type == TIKU_EVENT_RESIZE) {
         /* The corner moved: repaint at the size the window now is, and
          * the next frame hands it over.  This arrives on every step of
@@ -4609,7 +4640,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (event->type == TIKU_EVENT_POINTER_DOWN) {
-        int row = tiku_list_at(&st->tv_list, project_list_area(), event->x,
+        int row = tiku_list_at(&st->tv_list, project_list_area(st), event->x,
                                event->y);
 
         /* The second click of two on the same row OPENS it, exactly as
@@ -4635,7 +4666,7 @@ ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (tiku_list_key(&st->tv_list, event->key, event->modifiers,
-                      project_list_area())) {
+                      project_list_area(st))) {
         project_paint(st);
         project_publish(st);    /* Run follows the row it would run */
     }
