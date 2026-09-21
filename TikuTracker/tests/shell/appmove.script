@@ -1,0 +1,23 @@
+# shell: desktop
+# home: fixture
+# setup: applink
+# A program's window moves by its tab like any other: TikuBasic's Project
+# window dragged to a new place is there.
+wait 12
+click 980 20
+wait 4
+menu-pick Programming
+wait 4
+expect-menu TikuBasic
+press 520 134
+wait 2
+release 520 134
+wait 150
+expect-title Project
+drag-window Project 400 300
+wait 8
+expect-window-at 370 290
+note what is on screen is what a full redraw would paint: the window
+note left no stale copy behind and is drawn where it now is
+expect-same-as-redraw
+quit
