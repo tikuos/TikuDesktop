@@ -377,8 +377,9 @@ static void ui_test(bench_t *st)
     assert(st->nentry > 1 && st->entries[0].suite < 0 &&
            st->entries[1].suite == 0);
     int row_h = tiku_list_row_h(&st->list[TAB_SUITES]);
-    tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1, .x = 200,
-                       .y = 145 + row_h};
+    tiku_rect_t body = list_rect(TAB_SUITES);
+    tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                       .x = body.x + 100, .y = body.y + row_h + 13};
     bench_event(st, st->id, &ev);
     ev.type = TIKU_EVENT_KEY_DOWN; ev.key = TIKU_KEY_RETURN;
     bench_event(st, st->id, &ev);
@@ -389,12 +390,16 @@ static void ui_test(bench_t *st)
     action(st, RUN); assert(st->confirm.open && !st->busy);
     ev.key = TIKU_KEY_RETURN; bench_event(st, st->id, &ev);
     assert(!st->confirm.open && !st->busy); /* Default is Cancel. */
-    tiku_tabs_select(&st->tabs, TAB_OPTIONS); st->epaper = 1; paint(st);
+    /* The cards are always in view: the ePaper presets wake with the kit. */
+    st->epaper = 1; paint(st);
     assert(st->epanel.count == 2 && st->epattern.count == 4);
     assert(st->epanel.selected < st->epanel.count &&
            st->epattern.selected < st->epattern.count);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-options.png"));
     st->epaper = 0;
+    tiku_tabs_select(&st->tabs, TAB_OUTPUT); paint(st);
+    assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-output.png"));
+    tiku_tabs_select(&st->tabs, TAB_SUITES);
     puts("PASS: list keyboard selection, native controls and safe confirmation");
 }
 

@@ -33,12 +33,12 @@
 #define NH 256
 #define ONLY_MAX 8192
 #define LINE_MAXIMUM 8192
-enum { TAB_SUITES, TAB_OPTIONS, TAB_RESULTS, TAB_OUTPUT, TAB_CONSOLE,
+enum { TAB_SUITES, TAB_RESULTS, TAB_OUTPUT, TAB_CONSOLE,
        TAB_HISTORY, TAB_METRICS, TAB_NOTRUN, TAB_COUNT };
 enum { RUN = 1, STOP, REFRESH, SELECT_ALL, CLEAR, OPEN, TOGGLE, COPY_LOG,
        CLEAR_LOG, SEND, FLASH, LARGE, USB, PK, EPAPER, FOLLOW, OPEN_LOG,
-       FIND_SUITES, FOCUS_LIST, REPORT = 20, TARGET = 30, PANEL = 32,
-       PATTERN = 33,
+       FIND_SUITES, FOCUS_LIST, REPORT = 20, MONITOR = 21, TARGET = 30,
+       PANEL = 32, PATTERN = 33,
        LIST = 31, F_FILTER = 40, F_BAUD, F_MAKE, F_FLAGS, F_INPUT };
 typedef struct {
     char key[48], group[64], name[128], boards[512], description[768];
@@ -180,7 +180,7 @@ static int bench_start(void **state, const tiku_app_services_t *services)
     }
     if (!st->id) { tiku_surface_free(st->surface); free(st); return -1; }
     tiku_tabs_init(&st->tabs);
-    const char *tabs[] = {"Suites", "Run options", "Results", "Output", "Console",
+    const char *tabs[] = {"Suites", "Results", "Output", "Console",
                           "History", "Benchmarks", "Did not run"};
     for (int i = 0; i < TAB_COUNT; i++) {
         tiku_tabs_add(&st->tabs, tabs[i]); tiku_list_init(&st->list[i], 1);

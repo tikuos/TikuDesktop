@@ -12,6 +12,17 @@ this desktop and shows what came back. The Deskbar leaf offers it under
 <b>View</b> menu whose rows are the seven tabs and, beneath them,
 <b>Results report…</b>.</p>
 
+<p>The window has two parts. Down the left is a column of cards about
+the board and the run: <b>Device</b>, <b>Kernel history</b>,
+<b>Connection</b>, <b>Build mode</b>, <b>Options</b>, <b>ePaper kit</b>
+and <b>Make</b>, with <b>Run selected</b> and <b>Stop</b> under them.
+These stay in view whatever you are looking at. To the right, over the
+tabs, three pills count the groups that passed, failed and did not run,
+a word says whether Bench is idle, reading the catalogue, running or
+finished, and a bar shows how far the queue has got. The tabs under
+them are <b>Suites</b>, <b>Results</b>, <b>Output</b>, <b>Console</b>,
+<b>History</b>, <b>Benchmarks</b> and <b>Did not run</b>.</p>
+
 <h2 id="checkout">What it needs</h2>
 
 <p>The tests, the catalogue and the runner stay in TikuBench. Bench
@@ -23,19 +34,23 @@ variable. With no checkout, or no Python behind it, the note line at
 the foot of the window says the metadata failed and <b>Run selected</b>
 stays disabled.</p>
 
-<p><b>Refresh</b> on the Suites tab, and <b>Refresh catalogue</b> in the
+<p><b>Refresh</b> beside the filter, and <b>Refresh catalogue</b> in the
 Bench menu, read it again.</p>
 
 <h2 id="device">Choosing a device</h2>
 
 <p>Connect a board first from the <b>Devices</b> menu on the top bar, as
-<a href="devices.html">Devices</a> describes. The <b>Device</b> list at
-the top left of the window holds the boards mounted on this desktop.
+<a href="devices.html">Devices</a> describes. The list in the
+<b>Device</b> card holds the boards mounted on this desktop.
 Before anything is chosen Bench uses the current device; once you pick
 a board it keeps that one, and a board that goes away is never silently
-replaced by another. Beside the list Bench prints the profile
-it will run under and either <b>Monitor only</b> or <b>Build +
-flash</b>.</p>
+replaced by another. Under the list the card prints the profile
+Bench will run under and either <b>Monitor only</b> or <b>Build +
+flash</b>. The <b>Kernel history</b> card under it is the verdict for
+that profile: the latest full run's result and age, <b>UNPROVEN</b>
+when the profile has no full run and <b>STALE</b> when that run is
+older than 24 hours, then the latest selected and diagnostic results
+and a performance word folded from the benchmark records.</p>
 
 <h2 id="suites">Suites and tests</h2>
 
@@ -55,44 +70,48 @@ run one after another in the order the catalogue lists them.</p>
 checked. When a suite is highlighted the line under the list shows its
 description. When a sub-test is highlighted it shows the sub-test's
 group and kind, then whether it belongs to a full sweep, is reachable
-only by selecting it, or why it is excluded. <b>Select visible</b>
-selects every displayed suite the board supports, each in full.
-<b>Clear</b> drops every selection, including those hidden by the
-filter. Changing the device, the memory model or the
-USB console setting also clears the selection.</p>
+only by selecting it, or why it is excluded. <b>All</b> (<b>Select
+visible</b> in the Bench menu) selects every displayed suite the board
+supports, each in full. <b>None</b> drops every selection, including
+those hidden by the filter. Changing the device, the memory model or
+the USB console setting also clears the selection.</p>
 
 <p>The <b>Did not run</b> tab lists every sub-test the chosen board's
 profile leaves out, each with the catalogue's reason, so that what a
 full sweep never touched is on record and not merely absent.</p>
 
-<h2 id="options">Run options</h2>
+<h2 id="options">The run options</h2>
 
-<p>The <b>Run options</b> tab holds five checkboxes, two preset lists
-and three fields.</p>
+<p>The cards under Kernel history hold the options a run is started
+with.</p>
 
 <ul>
-<li><b>Build + flash (off = monitor existing firmware only)</b> is off
-when Bench starts. Off, the runner is told to skip the build. On, it
-builds and flashes, which replaces the firmware on the board. A test can
-still reset the board or write its storage either way.</li>
-<li><b>MSP430 large memory model</b> and <b>RP2350 USB console (port and
-baud selected by runner)</b> can be set only for boards whose catalogue
-entry allows them.</li>
-<li><b>CRACEN public-key hardware: TIKU_CRACEN_PK_ENABLE=1</b> and
-<b>ePaper kit: HAS_TIKUKITS=1, TIKU_KIT_EPAPER_ENABLE=1</b> add the make
-variables their labels name. With the ePaper kit on, the <b>Panel</b>
-and <b>Pattern</b> lists choose the kit's panel and test pattern; they
-become <code>EPAPER_KIT_PANEL</code> and <code>EPAPER_KIT_PATTERN</code>
-defines ahead of the extra C flags.</li>
-<li><b>UART baud</b> must be digits only, from 1200 to 4000000. A value
-outside that starts no run: the note line asks you to check baud, port
-and KEY=VALUE tokens, and the window returns to Run options. The field
-is disabled while the USB console is on, because the runner then finds
+<li><b>Connection</b> shows the port the device is on and holds the
+<b>Baud</b> field. The baud must be digits only, from 1200 to 4000000.
+A value outside that starts no run: the note line asks you to check
+baud, port and KEY=VALUE tokens, and the field takes the focus. It is
+disabled while the USB console is on, because the runner then finds
 the port itself.</li>
-<li><b>Make variables</b> takes whitespace-separated
-<code>KEY=VALUE</code> tokens with no shell quoting. A
-<code>MEMORY_MODEL</code> token is refused; use the checkbox.</li>
-<li><b>Extra C flags</b> is passed to the runner as one argument.</li>
+<li><b>Build mode</b> is two radio buttons. <b>Monitor existing
+firmware</b> is where Bench starts: the runner is told to skip the
+build. <b>Build + flash, then monitor</b> builds and flashes, which
+replaces the firmware on the board. A test can still reset the board
+or write its storage either way.</li>
+<li><b>Options</b> holds four checkboxes. <b>MSP430 large</b> selects
+the large memory model and <b>RP2350 USB</b> the USB console, and each
+can be set only for a board whose catalogue entry allows it.
+<b>CRACEN PK</b> adds <code>TIKU_CRACEN_PK_ENABLE=1</code> and
+<b>ePaper kit</b> adds <code>HAS_TIKUKITS=1</code> and
+<code>TIKU_KIT_EPAPER_ENABLE=1</code> to the make variables.</li>
+<li><b>ePaper kit</b> wakes with that checkbox: the <b>Panel</b> and
+<b>Pattern</b> lists choose the kit's panel and test pattern, and become
+<code>EPAPER_KIT_PANEL</code> and <code>EPAPER_KIT_PATTERN</code>
+defines ahead of the extra C flags.</li>
+<li><b>Make</b> holds two fields. <b>Vars</b> takes whitespace-separated
+<code>KEY=VALUE</code> tokens with no shell quoting; a
+<code>MEMORY_MODEL</code> token is refused, use the checkbox.
+<b>CFLAGS</b> is passed to the runner as one extra-cflags
+argument.</li>
 </ul>
 
 <p>The options, the device and the presets are remembered in
@@ -124,34 +143,33 @@ window changes to Results.</p>
 <h2 id="results">Results and output</h2>
 
 <ul>
-<li><b>Results</b> lists a row for every planned test, then the counts
-of passed, failed and skipped groups and how many are complete. A test
-that asserted nothing is a skip, not a pass. A missing completion marker
-or a runner that exits badly is a failure.</li>
+<li><b>Results</b> lists a row for every planned test. The pills over
+the tabs count the groups that passed, failed and did not run, and the
+bar under them fills as groups complete; the pills are grey until a run
+gives them a colour. A test that asserted nothing is a skip, not a
+pass. A missing completion marker or a runner that exits badly is a
+failure.</li>
 <li><b>Output</b> is the test output with the build and flash lines, the
 lines carrying <code>[TC:]</code> completion markers and the runner's
 arguments taken out. <b>Console</b> is everything the runner printed,
 with the arguments each suite was started with. The two tabs share one
 ring of the latest 256 lines, which Output then filters; the whole run
 is in the log file. Scrolling with the wheel stops the view following,
-and <b>Follow tail</b> starts it again. <b>Copy visible log</b> copies
-the kept lines, and <b>Clear view</b> empties both Output and Console
-without touching the log.</li>
-<li>The <b>Input</b> field and <b>Send</b> feed a line to a suite that
-asks for one, and work only while a run is under way. A suite that needs
-a board unplugged or reconnected says so in bold above the note
+and <b>Follow tail</b> in the Bench menu starts it again. Under the
+list, <b>Copy log</b> copies the kept lines and <b>Clear view</b>
+empties both Output and Console without touching the log.</li>
+<li>The field under the list and <b>Send</b> feed a line to a suite
+that asks for one, and work only while a run is under way. A suite that
+needs a board unplugged or reconnected says so in bold above the note
 line.</li>
 <li><b>History</b> and <b>Benchmarks</b> show the records TikuBench kept
-for the current profile. History opens with a verdict card: the latest
-full run's result and age, <b>UNPROVEN</b> when the profile has no
-full run and <b>STALE</b> when that run is older than 24 hours, with
-the latest selected and diagnostic results and a benchmark line beside
-it. A benchmark comparison is not a test verdict.</li>
+for the current profile; the verdict itself is the Kernel history card.
+A benchmark comparison is not a test verdict.</li>
 </ul>
 
 <p>Each run writes its own log under <code>/tmp</code>. <b>Open full
-log</b> opens it through the desktop, and copies its path when it
-cannot. A log worth keeping has to be copied out, because the system
+log</b> in the Bench menu opens it through the desktop, and copies its
+path when it cannot. A log worth keeping has to be copied out, because the system
 is free to clean <code>/tmp</code>.</p>
 
 <h2 id="stop">Stopping and the device</h2>

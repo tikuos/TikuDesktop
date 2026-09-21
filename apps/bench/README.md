@@ -1,7 +1,12 @@
 # Bench in TikuDesktop
 
 Open **Device Tools > TikuBench** after building `make apps`. This is a native
-TikuDesktop-kit frontend, not a GTK window embedded inside the desktop.
+TikuDesktop-kit frontend, not a GTK window embedded inside the desktop. It has
+the GTK GUI's shape at the desktop's size: a column of cards on the left
+(Device, Kernel history, Connection, Build mode, Options, ePaper kit, Make,
+then Run selected and Stop) that stay in view, and on the right the pills
+counting passed / failed / did not run, a progress bar and the tabbed views
+(Suites, Results, Output, Console, History, Benchmarks, Did not run).
 It reads `TikuBench/gui/tb_meta.py` and runs the existing
 `python3 -u -m tikubench run ...` backend. No test/build/flash implementation is
 copied into the desktop. Set `TIKU_BENCH` to another checkout if needed.
@@ -15,15 +20,16 @@ copied into the desktop. Set `TIKU_BENCH` to another checkout if needed.
    arrow or Enter; select with a checkbox or Space. Whole-suite selection remains
    a full run; individual selections become one comma-separated `--only` argument.
    Different selected suites run in registry order, one after another.
-3. Review **Run options**. Monitor-only is the startup default and passes
-   `--skip-build`. Build + flash must be explicitly enabled and passes `--flash`.
+3. Review the cards. **Monitor existing firmware** is the startup default and
+   passes `--skip-build`. **Build + flash, then monitor** must be explicitly
+   chosen and passes `--flash`.
    Test execution itself can still reset hardware or write storage.
 4. Choose **Run selected**, review the target/mode/queue confirmation, then
    choose Run tests. The default button is Cancel. Tab switches the confirmation
    button before Return; a pointer action requires a press and release.
 
-Select visible selects the displayed suites in full, not just matching children.
-Clear removes all selections, including filtered ones. Profile changes clear
+All (Select visible in the menu) selects the displayed suites in full, not just
+matching children. None removes all selections, including filtered ones. Profile changes clear
 selection. Unsupported tests remain visible but disabled with an exclusion
 reason below the list. Dedicated/diagnostic leaves are labelled and are never
 implicitly selected as part of a full kernel sweep. Eligibility, full-profile
@@ -38,7 +44,8 @@ discovery and omits explicit UART port/baud, as the GTK frontend does.
 
 ## Output and evidence
 
-- **Results:** planned rows, pass/fail/skip counts and progress. Zero assertions
+- **Results:** planned rows; the pills and progress bar over the tabs carry
+  the pass/fail/skip counts and how far the queue has got. Zero assertions
   are a skip, not a pass. Missing completion markers and nonzero/signal exits
   fail the run. Host-side `harness_fail` revisions override firmware-green rows;
   kernel firmware totals remain provisional until host validation arrives.
@@ -81,9 +88,9 @@ those numbers are not hard-coded.
 ## Parity boundaries
 
 The suite list is grouped under the catalogue's category headings, a Did not
-run tab lists what the profile leaves out with the reason, History opens with
-a verdict card (UNPROVEN / STALE / fresh), and the ePaper panel and pattern
-presets are the GTK GUI's own tables. Run options, the device and the presets
+run tab lists what the profile leaves out with the reason, the Kernel history
+card carries the verdict (UNPROVEN / STALE / fresh), and the ePaper panel and
+pattern presets are the GTK GUI's own tables. The options, the device and the presets
 are kept in `~/.config/tikubench-desktop/settings` (`TIKU_BENCH_SETTINGS`
 names another file), written when one changes and read at start, under the
 GTK GUI's key names. Bench uses devices connected through TikuDesktop instead
@@ -96,7 +103,8 @@ no hardware imports, device I/O, builds or flashing. It covers profile selection
 queue/argv construction, authoritative corrections, no-test results, final
 unterminated lines, nonzero exits, stdin, forced cancellation and port handoff.
 It also reads the actual TikuBench catalogue and renders screenshots to
-`/tmp/tiku-bench-catalogue.png` and `/tmp/tiku-bench-options.png`, and
+`/tmp/tiku-bench-catalogue.png`, `/tmp/tiku-bench-options.png` and
+`/tmp/tiku-bench-output.png`, and
 round-trips the settings file through a directory of its own.
 
 The optional `bench*.script` hardware smoke tests use the new filter/selection

@@ -1,20 +1,55 @@
-/* The desktop-kit frontend: one window, shared controls, no GTK dependency. */
-static const tiku_rect_t TABS = {16, 52, 928, 28};
-static const tiku_rect_t TARGET_RECT = {92, 12, 266, 28};
+/* The desktop-kit frontend: the GTK window's shape at the desktop's size,
+ * a column of cards about the board and the run beside the tabbed views. */
+#define RX 260                      /* the views' column */
+#define RW 690
+static const tiku_rect_t TABS = {RX, 52, RW, 28};
+static const tiku_rect_t GAUGE_RECT = {RX, 38, RW, 8};
 static const tiku_rect_t ALERT_RECT = {200, 196, 560, 220};
-/* Under the ePaper toggle on the options tab: the panel and the pattern. */
-static const tiku_rect_t PANEL_RECT = {190, 296, 300, 28};
-static const tiku_rect_t PATTERN_RECT = {560, 296, 200, 28};
+/* The cards, top to bottom, and the two buttons under them. */
+static const tiku_rect_t CARD_DEVICE = {10, 8, 238, 72};
+static const tiku_rect_t CARD_HISTORY = {10, 86, 238, 108};
+static const tiku_rect_t CARD_LINK = {10, 200, 238, 70};
+static const tiku_rect_t CARD_MODE = {10, 276, 238, 64};
+static const tiku_rect_t CARD_OPTIONS = {10, 346, 238, 64};
+static const tiku_rect_t CARD_EPAPER = {10, 416, 238, 76};
+static const tiku_rect_t CARD_MAKE = {10, 498, 238, 76};
+static const tiku_rect_t RUN_RECT = {10, 580, 150, 28};
+static const tiku_rect_t STOP_RECT = {168, 580, 80, 28};
+/** Inside a card: what tiku_ui_group leaves once it has drawn the frame. */
+static tiku_rect_t card_in(tiku_rect_t r)
+{
+    int top = tiku_font_plain()->height + 4;
+    return (tiku_rect_t){r.x + 8, r.y + top, r.w - 16, r.h - top - 8};
+}
+static tiku_rect_t target_rect(void)
+{
+    tiku_rect_t in = card_in(CARD_DEVICE);
+    return (tiku_rect_t){in.x, in.y, in.w, 24};
+}
+static tiku_rect_t preset_rect(int pattern)
+{
+    tiku_rect_t in = card_in(CARD_EPAPER);
+    return (tiku_rect_t){in.x + 58, in.y + (pattern ? 26 : 0), in.w - 58, 22};
+}
 static tiku_rect_t field_rect(int i)
 {
-    if (!i) return (tiku_rect_t){76, 92, 500, 28};
-    if (i == 4) return (tiku_rect_t){80, 550, 650, 28};
-    return (tiku_rect_t){190, 346 + (i - 1) * 54, 730, 28};
+    tiku_rect_t in;
+    if (!i) return (tiku_rect_t){RX + 48, 90, 396, 24};
+    if (i == 4) return (tiku_rect_t){RX, 556, 380, 24};
+    if (i == 1) {
+        in = card_in(CARD_LINK);
+        return (tiku_rect_t){in.x + 48, in.y + 20, in.w - 48, 22};
+    }
+    in = card_in(CARD_MAKE);
+    return (tiku_rect_t){in.x + 58, in.y + (i == 3 ? 26 : 0), in.w - 58, 22};
 }
 static tiku_rect_t list_rect(int tab)
 {
-    if (tab == TAB_HISTORY) return (tiku_rect_t){16, 240, 928, 294};
-    return (tiku_rect_t){16, 132, 928, tab == TAB_SUITES ? 404 : 402};
+    if (tab == TAB_SUITES) return (tiku_rect_t){RX, 122, RW, 420};
+    if (tab == TAB_OUTPUT || tab == TAB_CONSOLE)
+        return (tiku_rect_t){RX, 90, RW, 460};
+    if (tab == TAB_HISTORY) return (tiku_rect_t){RX, 118, RW, 462};
+    return (tiku_rect_t){RX, 90, RW, 490};
 }
 static void text(bench_t *st, tiku_rect_t r, const char *value, int bold)
 {
@@ -35,43 +70,72 @@ static int editable(const bench_t *st)
 static void controls(bench_t *st)
 {
     int edit = editable(st), tab = st->tabs.current;
+    const board_t *b = board_info(st);
+    tiku_rect_t in;
     tiku_dialog_begin(&st->dialog, TIKU_DIALOG_NONE, TIKU_DIALOG_NONE);
-    tiku_dialog_add(&st->dialog, TARGET, TARGET_RECT, TIKU_DIALOG_INPUT, edit);
-    tiku_dialog_add(&st->dialog, RUN, (tiku_rect_t){664, 10, 154, 32}, TIKU_DIALOG_BUTTON,
-        edit && st->metadata_ok && selected_count(st));
-    tiku_dialog_add(&st->dialog, STOP, (tiku_rect_t){834, 10, 110, 32},
-                    TIKU_DIALOG_BUTTON, (st->busy || st->loading) && !st->reclaiming);
-    if (tab != TAB_OPTIONS)
-        tiku_dialog_add(&st->dialog, LIST, list_rect(tab), TIKU_DIALOG_INPUT, 1);
+    tiku_dialog_add(&st->dialog, TARGET, target_rect(), TIKU_DIALOG_INPUT,
+                    edit);
+    tiku_dialog_add(&st->dialog, LIST, list_rect(tab), TIKU_DIALOG_INPUT, 1);
     if (tab == TAB_SUITES) {
-        tiku_dialog_add(&st->dialog, F_FILTER, field_rect(0), TIKU_DIALOG_INPUT, edit);
-        tiku_dialog_add(&st->dialog, SELECT_ALL, (tiku_rect_t){588, 92, 144, 28}, TIKU_DIALOG_BUTTON, edit);
-        tiku_dialog_add(&st->dialog, CLEAR, (tiku_rect_t){742, 92, 90, 28}, TIKU_DIALOG_BUTTON, edit);
-        tiku_dialog_add(&st->dialog, REFRESH, (tiku_rect_t){842, 92, 102, 28}, TIKU_DIALOG_BUTTON, edit);
-    } else if (tab == TAB_OPTIONS) {
-        const board_t *b = board_info(st);
-        int ids[] = {FLASH, LARGE, USB, PK, EPAPER};
-        for (int i = 0; i < 5; i++) {
-            int enabled = edit && (i != 1 || (b && b->large)) && (i != 2 || (b && b->usb));
-            tiku_dialog_add(&st->dialog, ids[i], (tiku_rect_t){30, 102 + i * 38, 880, 28},
-                            TIKU_DIALOG_TOGGLE, enabled);
-        }
-        for (int i = 1; i <= 3; i++) tiku_dialog_add(&st->dialog, F_FILTER + i,
-            field_rect(i), TIKU_DIALOG_INPUT, edit && (i != 1 || !st->usb));
-        tiku_dialog_add(&st->dialog, PANEL, PANEL_RECT, TIKU_DIALOG_INPUT,
-                        edit && st->epaper);
-        tiku_dialog_add(&st->dialog, PATTERN, PATTERN_RECT, TIKU_DIALOG_INPUT,
-                        edit && st->epaper);
+        tiku_dialog_add(&st->dialog, F_FILTER, field_rect(0),
+                        TIKU_DIALOG_INPUT, edit);
+        tiku_dialog_add(&st->dialog, SELECT_ALL,
+                        (tiku_rect_t){RX + 452, 90, 70, 24},
+                        TIKU_DIALOG_BUTTON, edit);
+        tiku_dialog_add(&st->dialog, CLEAR,
+                        (tiku_rect_t){RX + 530, 90, 70, 24},
+                        TIKU_DIALOG_BUTTON, edit);
+        tiku_dialog_add(&st->dialog, REFRESH,
+                        (tiku_rect_t){RX + 608, 90, 82, 24},
+                        TIKU_DIALOG_BUTTON, edit);
     } else if (tab == TAB_OUTPUT || tab == TAB_CONSOLE) {
-        tiku_dialog_add(&st->dialog, COPY_LOG, (tiku_rect_t){16, 92, 150, 28}, TIKU_DIALOG_BUTTON, st->nlog > 0);
-        tiku_dialog_add(&st->dialog, CLEAR_LOG, (tiku_rect_t){178, 92, 110, 28}, TIKU_DIALOG_BUTTON, !st->busy);
-        tiku_dialog_add(&st->dialog, FOLLOW, (tiku_rect_t){300, 92, 100, 28}, TIKU_DIALOG_BUTTON, 1);
-        tiku_dialog_add(&st->dialog, OPEN_LOG, (tiku_rect_t){412, 92, 110, 28}, TIKU_DIALOG_BUTTON, *st->log_path != 0);
-        tiku_dialog_add(&st->dialog, F_INPUT, field_rect(4), TIKU_DIALOG_INPUT,
-                        st->busy && st->child > 0 && !st->cancelled && st->send_at == st->send_n);
-        tiku_dialog_add(&st->dialog, SEND, (tiku_rect_t){746, 550, 100, 28},
-                        TIKU_DIALOG_BUTTON, st->busy && st->child > 0 && !st->cancelled && st->send_at == st->send_n);
+        int live = st->busy && st->child > 0 && !st->cancelled &&
+                   st->send_at == st->send_n;
+        tiku_dialog_add(&st->dialog, F_INPUT, field_rect(4),
+                        TIKU_DIALOG_INPUT, live);
+        tiku_dialog_add(&st->dialog, SEND,
+                        (tiku_rect_t){RX + 388, 556, 60, 24},
+                        TIKU_DIALOG_BUTTON, live);
+        tiku_dialog_add(&st->dialog, COPY_LOG,
+                        (tiku_rect_t){RX + 456, 556, 110, 24},
+                        TIKU_DIALOG_BUTTON, st->nlog > 0);
+        tiku_dialog_add(&st->dialog, CLEAR_LOG,
+                        (tiku_rect_t){RX + 574, 556, 116, 24},
+                        TIKU_DIALOG_BUTTON, !st->busy);
     }
+    /* The cards: the connection, the build mode, the options, the ePaper
+     * presets and the make fields, always in reach. */
+    tiku_dialog_add(&st->dialog, F_BAUD, field_rect(1), TIKU_DIALOG_INPUT,
+                    edit && !st->usb);
+    in = card_in(CARD_MODE);
+    tiku_dialog_add(&st->dialog, FLASH, (tiku_rect_t){in.x, in.y, in.w, 18},
+                    TIKU_DIALOG_TOGGLE, edit);
+    tiku_dialog_add(&st->dialog, MONITOR,
+                    (tiku_rect_t){in.x, in.y + 18, in.w, 18},
+                    TIKU_DIALOG_TOGGLE, edit);
+    in = card_in(CARD_OPTIONS);
+    tiku_dialog_add(&st->dialog, LARGE, (tiku_rect_t){in.x, in.y, 108, 18},
+                    TIKU_DIALOG_TOGGLE, edit && b && b->large);
+    tiku_dialog_add(&st->dialog, USB,
+                    (tiku_rect_t){in.x + 112, in.y, in.w - 112, 18},
+                    TIKU_DIALOG_TOGGLE, edit && b && b->usb);
+    tiku_dialog_add(&st->dialog, PK, (tiku_rect_t){in.x, in.y + 18, 108, 18},
+                    TIKU_DIALOG_TOGGLE, edit);
+    tiku_dialog_add(&st->dialog, EPAPER,
+                    (tiku_rect_t){in.x + 112, in.y + 18, in.w - 112, 18},
+                    TIKU_DIALOG_TOGGLE, edit);
+    tiku_dialog_add(&st->dialog, PANEL, preset_rect(0), TIKU_DIALOG_INPUT,
+                    edit && st->epaper);
+    tiku_dialog_add(&st->dialog, PATTERN, preset_rect(1), TIKU_DIALOG_INPUT,
+                    edit && st->epaper);
+    tiku_dialog_add(&st->dialog, F_MAKE, field_rect(2), TIKU_DIALOG_INPUT,
+                    edit);
+    tiku_dialog_add(&st->dialog, F_FLAGS, field_rect(3), TIKU_DIALOG_INPUT,
+                    edit);
+    tiku_dialog_add(&st->dialog, RUN, RUN_RECT, TIKU_DIALOG_BUTTON,
+                    edit && st->metadata_ok && selected_count(st));
+    tiku_dialog_add(&st->dialog, STOP, STOP_RECT, TIKU_DIALOG_BUTTON,
+                    (st->busy || st->loading) && !st->reclaiming);
     tiku_dialog_end(&st->dialog);
 }
 
@@ -79,22 +143,21 @@ static const char *button_label(int id)
 {
     switch (id) {
     case RUN: return "Run selected"; case STOP: return "Stop";
-    case SELECT_ALL: return "Select visible"; case CLEAR: return "Clear";
-    case REFRESH: return "Refresh"; case COPY_LOG: return "Copy visible log";
+    case SELECT_ALL: return "All"; case CLEAR: return "None";
+    case REFRESH: return "Refresh"; case COPY_LOG: return "Copy log";
     case CLEAR_LOG: return "Clear view"; case SEND: return "Send";
-    case FOLLOW: return "Follow tail"; case OPEN_LOG: return "Open full log";
-    case FLASH: return "Build + flash (off = monitor existing firmware only)";
-    case LARGE: return "MSP430 large memory model";
-    case USB: return "RP2350 USB console (port and baud selected by runner)";
-    case PK: return "CRACEN public-key hardware: TIKU_CRACEN_PK_ENABLE=1";
-    case EPAPER: return "ePaper kit: HAS_TIKUKITS=1, TIKU_KIT_EPAPER_ENABLE=1";
+    case FLASH: return "Build + flash, then monitor";
+    case MONITOR: return "Monitor existing firmware";
+    case LARGE: return "MSP430 large"; case USB: return "RP2350 USB";
+    case PK: return "CRACEN PK"; case EPAPER: return "ePaper kit";
     default: return "";
     }
 }
 static int toggle_value(const bench_t *st, int id)
 {
-    return id == FLASH ? st->flash : id == LARGE ? st->large :
-           id == USB ? st->usb : id == PK ? st->pk : st->epaper;
+    return id == FLASH ? st->flash : id == MONITOR ? !st->flash :
+           id == LARGE ? st->large : id == USB ? st->usb :
+           id == PK ? st->pk : st->epaper;
 }
 
 static void controls_draw(bench_t *st)
@@ -107,8 +170,9 @@ static void controls_draw(bench_t *st)
         if (c->id == LIST) continue;
         if (c->id == TARGET) {
             st->target.enabled = c->enabled;
-            tiku_choice_draw(&st->target, st->surface, TARGET_RECT,
-                st->target.selected >= 0 ? NULL : "No device (host tests available)", flags);
+            tiku_choice_draw(&st->target, st->surface, c->rect,
+                st->target.selected >= 0 ? NULL : "No device (host tests)",
+                flags);
         } else if (c->id == PANEL || c->id == PATTERN) {
             tiku_choice_t *ch = c->id == PANEL ? &st->epanel : &st->epattern;
             ch->enabled = c->enabled;
@@ -117,14 +181,13 @@ static void controls_draw(bench_t *st)
             int f = c->id - F_FILTER;
             tiku_ui_textfield_scroll(st->surface, c->rect, st->field[f].text,
                 st->field[f].caret, st->field[f].sel_a, st->field[f].sel_b, flags, st->input[f].scroll);
-        } else if (c->kind == TIKU_DIALOG_TOGGLE)
+        } else if (c->id == FLASH || c->id == MONITOR)
+            tiku_ui_radio(st->surface, c->rect, button_label(c->id),
+                          flags | (toggle_value(st, c->id) ? TIKU_S_ON : 0));
+        else if (c->kind == TIKU_DIALOG_TOGGLE)
             tiku_ui_checkbox(st->surface, c->rect, button_label(c->id),
                              flags | (toggle_value(st, c->id) ? TIKU_S_ON : 0));
         else tiku_ui_button(st->surface, c->rect, button_label(c->id), flags);
-    }
-    if (st->tabs.current == TAB_OPTIONS) {
-        text(st, (tiku_rect_t){30, 296, 150, 28}, "ePaper panel", 1);
-        text(st, (tiku_rect_t){500, 296, 60, 28}, "pattern", 1);
     }
 }
 
@@ -296,13 +359,13 @@ static const char *history_verdict(const bench_t *st, char *out, size_t cap,
     return out;
 }
 
-/** The card above the history list: verdict, the three kinds, performance. */
-static void history_card(bench_t *st)
+/** The Kernel history card: verdict, the three kinds, performance. */
+static void history_card(bench_t *st, tiku_rect_t in)
 {
     char verdict[80], perf[64], line[200];
-    int y = 122;
+    int y = in.y;
     history_verdict(st, verdict, sizeof verdict, perf, sizeof perf);
-    text(st, (tiku_rect_t){20, y, 920, 26}, verdict, 1); y += 26;
+    text(st, (tiku_rect_t){in.x, y, in.w, 16}, verdict, 1); y += 16;
     const char *kinds[] = {"full", "selected", "diagnostic"};
     for (int k = 0; k < 3; k++) {
         const past_t *hit = NULL;
@@ -313,106 +376,142 @@ static void history_card(bench_t *st)
         }
         if (hit) {
             long n = hit->age;
-            snprintf(line, sizeof line, "%s: %s  -  %ld%c  -  %s",
+            snprintf(line, sizeof line, "%s: %s - %ld%c - %s",
                      kinds[k], hit->verdict,
                      n < 3600 ? n / 60 : n < 86400 ? n / 3600 : n / 86400,
                      n < 3600 ? 'm' : n < 86400 ? 'h' : 'd', hit->profile);
         } else snprintf(line, sizeof line, "%s: never", kinds[k]);
-        text(st, (tiku_rect_t){36, y, 900, 22}, line, 0); y += 22;
+        text(st, (tiku_rect_t){in.x + 8, y, in.w - 8, 16}, line, 0); y += 16;
     }
-    text(st, (tiku_rect_t){20, y, 920, 22}, perf, 0);
+    text(st, (tiku_rect_t){in.x, y, in.w, 16}, perf, 0);
+}
+
+/** The three counts over the views, coloured once there is a run. */
+static void pills(bench_t *st, int *done)
+{
+    int pass = 0, fail = 0, skip = 0, x = RX;
+    char label[3][32];
+    *done = 0;
+    for (int i = 0; i < st->nresult; i++) {
+        const result_t *r = &st->results[i]; *done += r->done;
+        fail += !!(r->fail || r->harness); skip += r->skip;
+        pass += r->done && !r->fail && !r->harness && !r->skip;
+    }
+    snprintf(label[0], sizeof label[0], "%d passed", pass);
+    snprintf(label[1], sizeof label[1], "%d failed", fail);
+    snprintf(label[2], sizeof label[2], "%d didn't run", skip);
+    int tone[3] = {pass ? TIKU_TONE_PASS : TIKU_TONE_IDLE,
+                   fail ? TIKU_TONE_FAIL : TIKU_TONE_IDLE,
+                   skip ? TIKU_TONE_WARN : TIKU_TONE_IDLE};
+    for (int i = 0; i < 3; i++) {
+        int w = tiku_ui_pill_w(label[i]);
+        tiku_ui_pill(st->surface, (tiku_rect_t){x, 10, w, 20}, label[i],
+                     tone[i]);
+        x += w + 8;
+    }
+    text(st, (tiku_rect_t){x + 4, 10, RX + RW - x - 4, 20},
+         st->busy ? "running" : st->loading ? "reading the catalogue" :
+         st->nresult ? "finished" : "idle", 0);
+}
+
+/** The cards: the frames and the words in them; the controls come after. */
+static void cards(bench_t *st)
+{
+    char line[512];
+    tiku_rect_t in = tiku_ui_group(st->surface, CARD_DEVICE, "Device");
+    if (!*st->profile) snprintf(line, sizeof line, "Host tests available");
+    else snprintf(line, sizeof line, "%s | %s", st->profile,
+                  st->flash ? "Build + flash" : "Monitor only");
+    text(st, (tiku_rect_t){in.x, in.y + 26, in.w, 18}, line, 0);
+    in = tiku_ui_group(st->surface, CARD_HISTORY, "Kernel history");
+    history_card(st, in);
+    in = tiku_ui_group(st->surface, CARD_LINK, "Connection");
+    snprintf(line, sizeof line, "Port: %s", st->usb ? "the runner finds it" :
+             *st->port ? st->port : "none");
+    text(st, (tiku_rect_t){in.x, in.y, in.w, 16}, line, 0);
+    text(st, (tiku_rect_t){in.x, in.y + 20, 44, 22}, "Baud", 0);
+    (void)tiku_ui_group(st->surface, CARD_MODE, "Build mode");
+    (void)tiku_ui_group(st->surface, CARD_OPTIONS, "Options");
+    in = tiku_ui_group(st->surface, CARD_EPAPER, "ePaper kit");
+    text(st, (tiku_rect_t){in.x, in.y, 56, 22}, "Panel", 0);
+    text(st, (tiku_rect_t){in.x, in.y + 26, 56, 22}, "Pattern", 0);
+    in = tiku_ui_group(st->surface, CARD_MAKE, "Make");
+    text(st, (tiku_rect_t){in.x, in.y, 56, 22}, "Vars", 0);
+    text(st, (tiku_rect_t){in.x, in.y + 26, 56, 22}, "CFLAGS", 0);
 }
 
 static void paint(bench_t *st)
 {
+    int done;
     controls(st); detail_counts(st);
     tiku_fill(st->surface, (tiku_rect_t){0, 0, BW, BH}, TIKU_C_PANEL);
-    text(st, (tiku_rect_t){16, 12, 72, 28}, "Device", 1);
-    char status[512];
-    if (!*st->profile) snprintf(status, sizeof status, "Host tests available");
-    else snprintf(status, sizeof status, "%s | %s", st->profile,
-                  st->flash ? "Build + flash" : "Monitor only");
-    text(st, (tiku_rect_t){374, 12, 276, 28}, status, 0);
+    cards(st);
+    pills(st, &done);
+    tiku_ui_gauge(st->surface, GAUGE_RECT,
+                  st->nresult ? (float)done / st->nresult : 0);
     tiku_tabs_draw(&st->tabs, st->surface, TABS);
     int tab = st->tabs.current;
-    if (tab == TAB_OPTIONS) {
-        const char *names[] = {"", "UART baud", "Make variables", "Extra C flags"};
-        for (int i = 1; i <= 3; i++) {
-            tiku_rect_t r = field_rect(i); r.x = 30; r.w = 150; text(st, r, names[i], 1);
-        }
-        text(st, (tiku_rect_t){30, 504, 880, 22},
-             "Make vars: KEY=VALUE tokens. "
-             "Memory model uses the checkbox above.", 0);
-        text(st, (tiku_rect_t){30, 526, 880, 22},
-             "ePaper panel and pattern become -DEPAPER_KIT_PANEL and _PATTERN, "
-             "ahead of the flags.", 0);
-        text(st, (tiku_rect_t){30, 546, 880, 26},
-             "Tests may reset the board or write storage. Review the suite description first.", 1);
-    } else {
-        tiku_rect_t body = list_rect(tab);
-        tiku_ui_sunken(st->surface, body, TIKU_C_DOC);
-        if (tab == TAB_SUITES) browser_draw(st, body);
-        else if (tab == TAB_RESULTS) results_draw(st, body);
-        else tiku_list_draw(&st->list[tab], st->surface, body, details_row, st);
-        if (tab == TAB_SUITES) {
-            text(st, (tiku_rect_t){16, 92, 56, 28}, "Filter", 0);
-            int row = tiku_list_chosen(&st->list[tab]);
-            snprintf(status, sizeof status, "%d selected | Space toggles a check; Enter expands a suite.", selected_count(st));
-            if (row >= 0 && row < st->nentry) {
-                entry_t e = st->entries[row];
-                if (e.suite < 0) snprintf(status, sizeof status,
-                    "%s: %d suite(s). Enter folds the group.",
-                    st->groups[e.group].name, st->groups[e.group].count);
-                else if (e.leaf < 0) snprintf(status, sizeof status, "%.480s", st->suites[e.suite].description);
-                else {
-                    char reason[400]; const leaf_t *l = &st->leaves[e.leaf];
-                    snprintf(status, sizeof status, "%s | %s | %s", l->group, l->kind,
-                        leaf_supported(st, l, 0) ? (leaf_supported(st, l, 1) ?
-                            "Included in full sweep" : "Explicit selection only") :
-                        leaf_reason(st, l, reason, sizeof reason));
-                }
+    tiku_rect_t body = list_rect(tab);
+    char status[512];
+    tiku_ui_sunken(st->surface, body, TIKU_C_DOC);
+    if (tab == TAB_SUITES) browser_draw(st, body);
+    else if (tab == TAB_RESULTS) results_draw(st, body);
+    else tiku_list_draw(&st->list[tab], st->surface, body, details_row, st);
+    if (tab == TAB_SUITES) {
+        text(st, (tiku_rect_t){RX, 90, 46, 24}, "Filter", 0);
+        int row = tiku_list_chosen(&st->list[tab]);
+        snprintf(status, sizeof status,
+                 "%d selected | Space toggles a check; Enter expands a suite.",
+                 selected_count(st));
+        if (row >= 0 && row < st->nentry) {
+            entry_t e = st->entries[row];
+            if (e.suite < 0) snprintf(status, sizeof status,
+                "%s: %d suite(s). Enter folds the group.",
+                st->groups[e.group].name, st->groups[e.group].count);
+            else if (e.leaf < 0) snprintf(status, sizeof status, "%.480s",
+                                          st->suites[e.suite].description);
+            else {
+                char reason[400]; const leaf_t *l = &st->leaves[e.leaf];
+                snprintf(status, sizeof status, "%s | %s | %s", l->group,
+                    l->kind,
+                    leaf_supported(st, l, 0) ? (leaf_supported(st, l, 1) ?
+                        "Included in full sweep" : "Explicit selection only") :
+                    leaf_reason(st, l, reason, sizeof reason));
             }
-            tiku_text_block_draw(st->surface, (tiku_rect_t){20, 544, 920, 50},
-                                  TIKU_MEASURE_PLAIN, status, TIKU_C_TEXT, 2);
-        } else if (tab == TAB_RESULTS) {
-            int pass = 0, fail = 0, skip = 0, done = 0;
-            for (int i = 0; i < st->nresult; i++) {
-                const result_t *r = &st->results[i]; done += r->done;
-                fail += !!(r->fail || r->harness); skip += r->skip;
-                pass += r->done && !r->fail && !r->harness && !r->skip;
-            }
-            snprintf(status, sizeof status, "Groups: %d passed | %d failed | %d skipped | %d/%d complete",
-                     pass, fail, skip, done, st->nresult);
-            text(st, (tiku_rect_t){20, 92, 920, 26}, status, 1);
-            tiku_ui_gauge(st->surface, (tiku_rect_t){20, 550, 920, 20},
-                           st->nresult ? (float)done / st->nresult : 0);
-        } else if (tab == TAB_OUTPUT || tab == TAB_CONSOLE) {
-            text(st, (tiku_rect_t){534, 92, 410, 28}, "Latest 256 lines; full log saved", 0);
-            text(st, (tiku_rect_t){16, 550, 60, 28}, "Input", 0);
-        } else {
-            if (tab == TAB_HISTORY) history_card(st);
-            text(st, (tiku_rect_t){20, 92, 920, 28}, tab == TAB_HISTORY ?
-                "Profile-aware history: full, selected and diagnostic runs remain separate" :
-                tab == TAB_NOTRUN ?
-                "Tests this profile does not run, each with its reason" :
-                "Benchmark baseline/current comparison (not a functional-test verdict)", 1);
-            if (!st->list[tab].count)
-                text(st, (tiku_rect_t){30, list_rect(tab).y + 18, 890, 28},
-                tab == TAB_NOTRUN ? "Every test runs on this profile"
-                                  : "No records for this profile", 0);
         }
+        tiku_text_block_draw(st->surface,
+                             (tiku_rect_t){RX + 4, 548, RW - 8, 36},
+                             TIKU_MEASURE_PLAIN, status, TIKU_C_TEXT, 2);
+    } else if (tab == TAB_OUTPUT || tab == TAB_CONSOLE) {
+        if (!st->list[tab].count)
+            text(st, (tiku_rect_t){RX + 10, body.y + 10, RW - 20, 24},
+                 "Latest 256 lines appear here; the whole run is in the log",
+                 0);
+    } else if (tab == TAB_HISTORY) {
+        text(st, (tiku_rect_t){RX, 90, RW, 22},
+             "Full, selected and diagnostic runs of the profile stay separate",
+             1);
+        if (!st->list[tab].count)
+            text(st, (tiku_rect_t){RX + 10, body.y + 10, RW - 20, 24},
+                 "No records for this profile", 0);
+    } else if (tab == TAB_METRICS || tab == TAB_NOTRUN) {
+        if (!st->list[tab].count)
+            text(st, (tiku_rect_t){RX + 10, body.y + 10, RW - 20, 24},
+                 tab == TAB_NOTRUN ? "Every test runs on this profile"
+                                   : "No benchmark records for this profile",
+                 0);
     }
     controls_draw(st);
-    if (*st->prompt) text(st, (tiku_rect_t){20, 580, 920, 24}, st->prompt, 1);
-    text(st, (tiku_rect_t){16, 606, 928, 26}, st->note, 0);
-    if (st->target.open) tiku_choice_draw_popup(&st->target, st->surface, TARGET_RECT,
-                                                (tiku_rect_t){0, 0, BW, BH});
+    if (*st->prompt) text(st, (tiku_rect_t){RX, 586, RW, 18}, st->prompt, 1);
+    text(st, (tiku_rect_t){10, 612, 940, 24}, st->note, 0);
+    tiku_rect_t screen = {0, 0, BW, BH};
+    if (st->target.open)
+        tiku_choice_draw_popup(&st->target, st->surface, target_rect(), screen);
     if (st->epanel.open)
-        tiku_choice_draw_popup(&st->epanel, st->surface, PANEL_RECT,
-                               (tiku_rect_t){0, 0, BW, BH});
+        tiku_choice_draw_popup(&st->epanel, st->surface, preset_rect(0), screen);
     if (st->epattern.open)
-        tiku_choice_draw_popup(&st->epattern, st->surface, PATTERN_RECT,
-                               (tiku_rect_t){0, 0, BW, BH});
+        tiku_choice_draw_popup(&st->epattern, st->surface, preset_rect(1),
+                               screen);
     if (st->confirm.open) tiku_alert_draw(&st->confirm, st->surface, ALERT_RECT);
     st->services->frame(st->services->ctx, st->id, st->surface->px, BW, BH);
 }
@@ -421,15 +520,19 @@ static void publish(bench_t *st)
 {
     tiku_menuset_t m = {0}; m.nmenu = 1;
     snprintf(m.menu[0].title, sizeof m.menu[0].title, "Bench");
-    int ids[] = {RUN, STOP, REFRESH, OPEN, TOGGLE, COPY_LOG, FIND_SUITES, FOCUS_LIST, SELECT_ALL};
+    int ids[] = {RUN, STOP, REFRESH, OPEN, TOGGLE, COPY_LOG, FIND_SUITES,
+                 FOCUS_LIST, SELECT_ALL, FOLLOW, OPEN_LOG};
     const char *labels[] = {"Run selected...", "Stop", "Refresh catalogue",
                             "Expand / collapse suite", "Toggle selection", "Copy visible log",
-                            "Find suites", "Focus suite list", "Select visible"};
-    m.menu[0].nitem = 9;
-    for (int i = 0; i < 9; i++) {
+                            "Find suites", "Focus suite list", "Select visible",
+                            "Follow tail", "Open full log"};
+    m.menu[0].nitem = 11;
+    for (int i = 0; i < 11; i++) {
         snprintf(m.menu[0].item[i].label, sizeof m.menu[0].item[i].label, "%s", labels[i]);
         m.menu[0].item[i].command = ids[i];
-        m.menu[0].item[i].enabled = ids[i] == STOP ? st->busy || st->loading : editable(st);
+        m.menu[0].item[i].enabled = ids[i] == STOP ? st->busy || st->loading :
+            ids[i] == FOLLOW ? 1 : ids[i] == OPEN_LOG ? *st->log_path != 0 :
+            editable(st);
     }
     m.nmenu = 2; snprintf(m.menu[1].title, sizeof m.menu[1].title, "View");
     m.menu[1].nitem = st->tabs.count;
@@ -492,7 +595,7 @@ static int action(bench_t *st, int command)
         if (!queue_build(st)) { snprintf(st->note, sizeof st->note, "Select supported suites or sub-tests first."); }
         else if (queue_first_invalid(st, &c) >= 0) {
             snprintf(st->note, sizeof st->note, "Invalid run options: check baud, port and KEY=VALUE tokens.");
-            tiku_tabs_select(&st->tabs, TAB_OPTIONS);
+            tiku_dialog_focus(&st->dialog, F_BAUD); st->dialog.keyboard = 1;
         } else {
             char question[512];
             if (!queue_needs_device(st)) snprintf(question, sizeof question,
@@ -520,7 +623,8 @@ static int action(bench_t *st, int command)
             }
         }
     } else if (command == CLEAR_LOG) st->nlog = st->log_head = 0;
-    else if (command == FLASH) st->flash = !st->flash;
+    else if (command == FLASH || command == MONITOR)
+        st->flash = command == FLASH;
     else if (command == PK) st->pk = !st->pk;
     else if (command == EPAPER) st->epaper = !st->epaper;
     else if (command == LARGE || command == USB) {
@@ -559,21 +663,23 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     controls(st);
     if (ev->type == TIKU_EVENT_DEACTIVATED) st->pressed_row = -1;
     if (ev->type == TIKU_EVENT_POINTER_UP && ev->button == 1 && st->pressed_row >= 0) {
-        int row = tiku_list_at(&st->list[TAB_SUITES], list_rect(TAB_SUITES), ev->x, ev->y);
-        if (st->tabs.current == TAB_SUITES && row == st->pressed_row && ev->x < 74)
+        tiku_rect_t body = list_rect(TAB_SUITES);
+        int row = tiku_list_at(&st->list[TAB_SUITES], body, ev->x, ev->y);
+        if (st->tabs.current == TAB_SUITES && row == st->pressed_row &&
+            ev->x < body.x + 58)
             toggle_entry(st, row, st->pressed_expand);
         st->pressed_row = -1; st->dirty = 1; return 0;
     }
-    tiku_choice_result_t cr = tiku_choice_event(&st->target, ev, TARGET_RECT,
+    tiku_choice_result_t cr = tiku_choice_event(&st->target, ev, target_rect(),
         (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == TARGET);
-    if (cr == TIKU_CHOICE_IGNORED && st->tabs.current == TAB_OPTIONS &&
-        st->epaper) {
+    if (cr == TIKU_CHOICE_IGNORED && st->epaper && editable(st)) {
         /* The presets take the event the same way the device does; a
          * change is a change of argv, nothing else. */
-        tiku_choice_result_t pr = tiku_choice_event(&st->epanel, ev, PANEL_RECT,
-            (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == PANEL);
+        tiku_choice_result_t pr = tiku_choice_event(&st->epanel, ev,
+            preset_rect(0), (tiku_rect_t){0, 0, BW, BH},
+            st->dialog.focus == PANEL);
         if (pr == TIKU_CHOICE_IGNORED)
-            pr = tiku_choice_event(&st->epattern, ev, PATTERN_RECT,
+            pr = tiku_choice_event(&st->epattern, ev, preset_rect(1),
                 (tiku_rect_t){0, 0, BW, BH}, st->dialog.focus == PATTERN);
         if (pr != TIKU_CHOICE_IGNORED) { st->dirty = 1; return 0; }
     }
@@ -597,7 +703,8 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     for (int i = 0; i < 5; i++) {
         int focus = st->dialog.focus == F_FILTER + i;
         int visible = i == 0 ? st->tabs.current == TAB_SUITES : i == 4 ?
-            st->tabs.current == TAB_CONSOLE || st->tabs.current == TAB_OUTPUT : st->tabs.current == TAB_OPTIONS;
+            st->tabs.current == TAB_CONSOLE ||
+            st->tabs.current == TAB_OUTPUT : 1;
         if (!visible || (!editable(st) && i != 4) || (i == 1 && st->usb) ||
             (i == 4 && (!st->busy || st->cancelled || st->send_at != st->send_n))) continue;
         tiku_field_result_t fr = tiku_field_event(&st->field[i], &st->input[i], ev, field_rect(i), focus);
@@ -610,18 +717,17 @@ static int bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     if (ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1) {
         int tab = tiku_tabs_hit(&st->tabs, TABS, ev->x, ev->y);
         if (tab >= 0) { tiku_tabs_select(&st->tabs, tab); st->dirty = 1; return 0; }
-        if (st->tabs.current != TAB_OPTIONS) {
-            int row = tiku_list_at(&st->list[st->tabs.current], list_rect(st->tabs.current), ev->x, ev->y);
-            tiku_list_click(&st->list[st->tabs.current], row, ev->modifiers);
-            if (st->tabs.current == TAB_SUITES && row >= 0 && ev->x < 74)
-                { st->pressed_row = row; st->pressed_expand = ev->x < 38; }
-            if (row >= 0) st->dialog.focus = LIST;
-        }
-    } else if (ev->type == TIKU_EVENT_WHEEL && st->tabs.current != TAB_OPTIONS) {
+        tiku_rect_t body = list_rect(st->tabs.current);
+        int row = tiku_list_at(&st->list[st->tabs.current], body, ev->x, ev->y);
+        tiku_list_click(&st->list[st->tabs.current], row, ev->modifiers);
+        if (st->tabs.current == TAB_SUITES && row >= 0 && ev->x < body.x + 58)
+            { st->pressed_row = row; st->pressed_expand = ev->x < body.x + 22; }
+        if (row >= 0) st->dialog.focus = LIST;
+    } else if (ev->type == TIKU_EVENT_WHEEL) {
         if (st->tabs.current == TAB_OUTPUT || st->tabs.current == TAB_CONSOLE) st->follow = 0;
         tiku_list_t *l = &st->list[st->tabs.current];
         tiku_list_scroll_to(l, l->top + ev->dy * 3, list_rect(st->tabs.current));
-    } else if (!dr.taken && ev->type == TIKU_EVENT_KEY_DOWN && st->tabs.current != TAB_OPTIONS) {
+    } else if (!dr.taken && ev->type == TIKU_EVENT_KEY_DOWN) {
         if (st->tabs.current == TAB_SUITES && (ev->key == ' ' || ev->key == TIKU_KEY_RETURN))
             action(st, ev->key == ' ' ? TOGGLE : OPEN);
         else tiku_list_key(&st->list[st->tabs.current], ev->key, ev->modifiers, list_rect(st->tabs.current));
