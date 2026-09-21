@@ -167,6 +167,12 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
         if (frame.y < 0) {
             frame.y = 0;
         }
+        /* Never under the global bar: a tab nobody can reach is a
+         * window nobody can move, zoom or close.  The bottom may go
+         * short instead; the corner below is the lesser loss. */
+        if (app->gbar_on == 1 && frame.y < app->menus.bar.height) {
+            frame.y = app->menus.bar.height;
+        }
     }
     ew->slot = slot;
     ew->id = slot->next_id++;
@@ -405,7 +411,9 @@ embed_svc_sizeable(void *ctx, uint32_t id)
     if (ew == NULL || ew->window == NULL) {
         return -1;
     }
-    tiku_window_set_size_controls(ew->window, 1, 0);
+    /* A window that can grow can be zoomed: the box is the corner's
+     * shortcut to the whole desk and back. */
+    tiku_window_set_size_controls(ew->window, 1, 1);
     return 0;
 }
 

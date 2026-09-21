@@ -135,6 +135,12 @@ remote_reconcile(desktop_t *app)
                     if (frame.y < 0) {
                         frame.y = 0;
                     }
+                    /* Never under the global bar: a tab nobody can
+                     * reach is a window nobody can move or zoom. */
+                    if (app->gbar_on == 1 &&
+                        frame.y < app->menus.bar.height) {
+                        frame.y = app->menus.bar.height;
+                    }
                 }
                 rw->window = tiku_workspace_open(app->desk, rw->title,
                     frame, remote_window_draw, rw, rw);
@@ -150,7 +156,7 @@ remote_reconcile(desktop_t *app)
                 desktop_damage_all(app);
             }
             if (rw->window != NULL && rw->wants_size) {
-                tiku_window_set_size_controls(rw->window, 1, 0);
+                tiku_window_set_size_controls(rw->window, 1, 1);
                 rw->wants_size = 0;
             }
             if (rw->window != NULL && rw->configured) {

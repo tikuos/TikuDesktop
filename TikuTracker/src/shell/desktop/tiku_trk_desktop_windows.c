@@ -42,7 +42,10 @@ tab_box_act(desktop_t *app, tiku_window_t *w, int hit, unsigned mods)
             (void)tiku_workspace_zoom(app->desk, w,
                                      tiku_trk_folder_window_fit_width(fl),
                                      tiku_trk_folder_window_fit_height(fl));
-        } else if (w && tiku_remote_owner(&app->remote, w)) {
+        } else if (w && (tiku_remote_owner(&app->remote, w) != NULL ||
+                         embed_win_of_window(app, w) != NULL)) {
+            /* A program's window: the whole desk, or back to where it
+             * was.  The program hears the new size either way. */
             tiku_trk_rect_t area =
                 tiku_trk_desktop_view_area(&app->desktop_view);
 
