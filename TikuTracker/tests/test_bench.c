@@ -285,7 +285,51 @@ static void real_catalogue_test(void)
         assert(st->suites[i].host_only && !st->suites[i].large && st->suites[i].count == 7);
     }
     assert(recovery == 1);
-    entries_build(st); paint(st);
+    entries_build(st);
+    /* The list is category cards: a heading over each group, in the
+     * catalogue's order, counting its suites; headings are not pickable;
+     * folding one takes its suites out and leaves the heading. */
+    {
+        int headings = 0, first_heading = -1, kernel_group = -1;
+        for (int i = 0; i < st->nentry; i++) {
+            if (st->entries[i].suite >= 0) continue;
+            headings++;
+            if (first_heading < 0) first_heading = i;
+            assert(tiku_list_is_heading(&st->list[TAB_SUITES], i));
+            assert(st->groups[st->entries[i].group].count > 0);
+            if (!strcmp(st->groups[st->entries[i].group].name, "Kernel"))
+                kernel_group = st->entries[i].group;
+        }
+        assert(headings == st->ngroup && headings >= 8);
+        assert(first_heading == 0);
+        assert(kernel_group >= 0);
+        {
+            int before = st->nentry, row = -1;
+            for (int i = 0; i < st->nentry; i++)
+                if (st->entries[i].suite < 0 &&
+                    st->entries[i].group == kernel_group) row = i;
+            toggle_entry(st, row, 1);
+            assert(st->groups[kernel_group].folded && st->nentry < before);
+            for (int i = 0; i < st->nentry; i++)
+                assert(st->entries[i].suite < 0 ||
+                       st->entries[i].group != kernel_group);
+            toggle_entry(st, row, 1);
+            assert(!st->groups[kernel_group].folded && st->nentry == before);
+        }
+    }
+    /* Did not run: every leaf the profile excludes, none it runs. */
+    notrun_build(st);
+    {
+        int excluded = 0;
+        for (int i = 0; i < st->nleaf; i++)
+            excluded += !leaf_supported(st, &st->leaves[i], 0);
+        assert(st->list[TAB_NOTRUN].count == excluded);
+        st->tabs.current = TAB_NOTRUN;
+        if (excluded) assert(details_row(st, 0) != NULL &&
+                             details_row(st, excluded) == NULL);
+        st->tabs.current = TAB_SUITES;
+    }
+    paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-catalogue.png"));
     tiku_font_set_size(16); paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-catalogue-large.png"));
@@ -297,7 +341,13 @@ static void real_catalogue_test(void)
 static void ui_test(bench_t *st)
 {
     tiku_tabs_select(&st->tabs, TAB_SUITES); paint(st);
-    tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1, .x = 200, .y = 145};
+    /* Row 0 is the first group's heading, not pickable; the first suite
+     * is the row under it. */
+    assert(st->nentry > 1 && st->entries[0].suite < 0 &&
+           st->entries[1].suite == 0);
+    int row_h = tiku_list_row_h(&st->list[TAB_SUITES]);
+    tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1, .x = 200,
+                       .y = 145 + row_h};
     bench_event(st, st->id, &ev);
     ev.type = TIKU_EVENT_KEY_DOWN; ev.key = TIKU_KEY_RETURN;
     bench_event(st, st->id, &ev);

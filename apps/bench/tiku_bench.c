@@ -34,7 +34,7 @@
 #define ONLY_MAX 8192
 #define LINE_MAXIMUM 8192
 enum { TAB_SUITES, TAB_OPTIONS, TAB_RESULTS, TAB_OUTPUT, TAB_CONSOLE,
-       TAB_HISTORY, TAB_METRICS };
+       TAB_HISTORY, TAB_METRICS, TAB_NOTRUN, TAB_COUNT };
 enum { RUN = 1, STOP, REFRESH, SELECT_ALL, CLEAR, OPEN, TOGGLE, COPY_LOG,
        CLEAR_LOG, SEND, FLASH, LARGE, USB, PK, EPAPER, FOLLOW, OPEN_LOG,
        FIND_SUITES, FOCUS_LIST, REPORT = 20, TARGET = 30,
@@ -49,7 +49,12 @@ typedef struct {
     int selected;
 } leaf_t;
 typedef struct { char key[64]; int baud, large, usb; } board_t;
-typedef struct { int suite, leaf; } entry_t;
+/* A row of the suite list: a suite, one of its leaves, or a heading
+ * over a group of suites (suite -1, group the index into groups[]). */
+typedef struct { int suite, leaf, group; } entry_t;
+/* A category the catalogue groups suites under, in its own order. */
+typedef struct { char name[64]; int folded, count; } group_t;
+#define NG 16
 typedef struct {
     char id[160], text[256];
     int job, pass, fail, harness, done, skip;
@@ -66,11 +71,12 @@ typedef struct {
     tiku_surface_t *surface; uint32_t id;
     tiku_tabs_t tabs; tiku_dialog_t dialog; tiku_choice_t target;
     tiku_field_t field[5]; tiku_field_input_t input[5];
-    tiku_list_t list[7]; tiku_alert_t confirm;
+    tiku_list_t list[TAB_COUNT]; tiku_alert_t confirm;
     suite_t suites[NS]; int nsuite;
     leaf_t leaves[NL]; int nleaf;
     board_t boards[32]; int nboard;
-    entry_t entries[NS + NL]; int nentry;
+    entry_t entries[NS + NL + NG]; int nentry;
+    group_t groups[NG]; int ngroup;
     past_t history[NH]; int nhistory;
     metric_t metrics[NH]; int nmetric;
     result_t results[NR]; int nresult;
@@ -93,6 +99,7 @@ typedef struct {
 static void paint(bench_t *st);
 static void publish(bench_t *st);
 static void entries_build(bench_t *st);
+static void notrun_build(bench_t *st);
 static void metadata_start(bench_t *st);
 static void run_next(bench_t *st);
 static void release_finish(bench_t *st);
@@ -168,8 +175,8 @@ static int bench_start(void **state, const tiku_app_services_t *services)
     if (!st->id) { tiku_surface_free(st->surface); free(st); return -1; }
     tiku_tabs_init(&st->tabs);
     const char *tabs[] = {"Suites", "Run options", "Results", "Output", "Console",
-                          "History", "Benchmarks"};
-    for (int i = 0; i < 7; i++) {
+                          "History", "Benchmarks", "Did not run"};
+    for (int i = 0; i < TAB_COUNT; i++) {
         tiku_tabs_add(&st->tabs, tabs[i]); tiku_list_init(&st->list[i], 1);
     }
     tiku_dialog_init(&st->dialog); tiku_choice_init(&st->target);

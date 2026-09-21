@@ -100,6 +100,7 @@ static void profile_update(bench_t *st)
     snprintf(st->profile, sizeof st->profile, "%.55s%s", st->mcu,
              b && b->usb ? (st->usb ? "-usb" : "-uart") : "");
     entries_build(st);
+    notrun_build(st);
 }
 
 /** Capture MCU and port while the shell still has a warm device record. */
@@ -180,30 +181,82 @@ static int contains(const char *text, const char *needle)
     return 0;
 }
 
+/** The group a suite belongs to, added to the table on first sight. */
+static int group_of(bench_t *st, const char *name)
+{
+    for (int i = 0; i < st->ngroup; i++)
+        if (!strcmp(st->groups[i].name, name)) return i;
+    if (st->ngroup == NG) return NG - 1;
+    group_t *g = &st->groups[st->ngroup]; memset(g, 0, sizeof *g);
+    snprintf(g->name, sizeof g->name, "%s", name);
+    return st->ngroup++;
+}
+
+/**
+ * The suite list as rows: a heading for each group in the catalogue's
+ * own order, then the group's suites and, under an expanded suite, its
+ * leaves.  A filter shows every group with a match and opens the suites
+ * in it; a folded group keeps only its heading.  Headings are marked on
+ * the list so the cursor and the checks pass over them.
+ */
 static void entries_build(bench_t *st)
 {
     st->nentry = 0;
     const char *filter = st->field[0].text;
     for (int i = 0; i < st->nsuite; i++) {
-        suite_t *s = &st->suites[i];
-        int match = contains(s->key, filter) || contains(s->name, filter) || contains(s->group, filter);
-        int childmatch = 0;
-        for (int j = s->first; j < s->first + s->count; j++)
-            childmatch |= contains(st->leaves[j].id, filter) || contains(st->leaves[j].label, filter);
-        if (!match && !childmatch) continue;
-        st->entries[st->nentry++] = (entry_t){i, -1};
-        if (!s->expanded && !*filter) continue;
-        for (int j = s->first; j < s->first + s->count; j++)
-            if (match || contains(st->leaves[j].id, filter) || contains(st->leaves[j].label, filter))
-                st->entries[st->nentry++] = (entry_t){i, j};
+        (void)group_of(st, st->suites[i].group);
+    }
+    for (int g = 0; g < st->ngroup; g++) {
+        group_t *grp = &st->groups[g];
+        int heading = st->nentry, shown = 0;
+        grp->count = 0;
+        st->entries[st->nentry++] = (entry_t){-1, -1, g};
+        for (int i = 0; i < st->nsuite; i++) {
+            suite_t *s = &st->suites[i];
+            if (strcmp(s->group, grp->name)) continue;
+            int match = contains(s->key, filter) || contains(s->name, filter) || contains(s->group, filter);
+            int childmatch = 0;
+            for (int j = s->first; j < s->first + s->count; j++)
+                childmatch |= contains(st->leaves[j].id, filter) || contains(st->leaves[j].label, filter);
+            if (!match && !childmatch) continue;
+            grp->count++;
+            if (grp->folded && !*filter) continue;
+            shown++;
+            st->entries[st->nentry++] = (entry_t){i, -1, g};
+            if (!s->expanded && !*filter) continue;
+            for (int j = s->first; j < s->first + s->count; j++)
+                if (match || contains(st->leaves[j].id, filter) || contains(st->leaves[j].label, filter))
+                    st->entries[st->nentry++] = (entry_t){i, j, g};
+        }
+        (void)shown;
+        /* Nothing under it: no heading either. */
+        if (grp->count == 0) st->nentry = heading;
     }
     tiku_list_set_count(&st->list[TAB_SUITES], st->nentry);
+    for (int i = 0; i < st->nentry; i++) {
+        tiku_list_set_heading(&st->list[TAB_SUITES], i,
+                              st->entries[i].suite < 0);
+    }
+}
+
+/** The rows of the Did not run tab: every leaf the active profile excludes. */
+static void notrun_build(bench_t *st)
+{
+    int n = 0;
+    for (int i = 0; i < st->nleaf; i++)
+        if (!leaf_supported(st, &st->leaves[i], 0)) n++;
+    tiku_list_set_count(&st->list[TAB_NOTRUN], n);
 }
 
 static void toggle_entry(bench_t *st, int row, int expand)
 {
     if (st->busy || st->loading || row < 0 || row >= st->nentry) return;
-    entry_t e = st->entries[row]; suite_t *s = &st->suites[e.suite];
+    entry_t e = st->entries[row];
+    if (e.suite < 0) {              /* a heading: fold or open its group */
+        st->groups[e.group].folded = !st->groups[e.group].folded;
+        entries_build(st); return;
+    }
+    suite_t *s = &st->suites[e.suite];
     if (expand && e.leaf < 0) { s->expanded = !s->expanded; entries_build(st); return; }
     if (!suite_supported(st, s)) return;
     if (e.leaf < 0) {

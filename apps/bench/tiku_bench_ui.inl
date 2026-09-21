@@ -140,6 +140,18 @@ static const char *details_row(void *ctx, int row)
             return out;
         }
         return NULL;
+    } else if (tab == TAB_NOTRUN) {
+        int n = 0;
+        for (int i = 0; i < st->nleaf; i++) {
+            const leaf_t *l = &st->leaves[i];
+            if (leaf_supported(st, l, 0)) continue;
+            if (n++ != row) continue;
+            char reason[400];
+            snprintf(out, sizeof out, "%s | %s | %s", l->id, l->label,
+                     leaf_reason(st, l, reason, sizeof reason));
+            return out;
+        }
+        return NULL;
     } else if (tab == TAB_METRICS) {
         int n = 0;
         for (int i = 0; i < st->nmetric; i++) {
@@ -157,7 +169,7 @@ static const char *details_row(void *ctx, int row)
 
 static void detail_counts(bench_t *st)
 {
-    for (int tab = TAB_RESULTS; tab <= TAB_METRICS; tab++) {
+    for (int tab = TAB_RESULTS; tab < TAB_COUNT; tab++) {
         int n = 0;
         if (tab == TAB_RESULTS) n = st->nresult;
         else if (tab == TAB_CONSOLE) n = st->nlog;
@@ -179,9 +191,27 @@ static void browser_draw(bench_t *st, tiku_rect_t body)
     tiku_list_t *l = &st->list[TAB_SUITES];
     int visible = tiku_list_visible_rows(l, body);
     for (int i = l->top; i < l->count && i < l->top + visible; i++) {
-        entry_t e = st->entries[i]; const suite_t *s = &st->suites[e.suite];
-        const leaf_t *leaf = e.leaf >= 0 ? &st->leaves[e.leaf] : NULL;
+        entry_t e = st->entries[i];
         tiku_rect_t row = tiku_list_row_rect(l, body, i);
+        if (e.suite < 0) {
+            /* A group's heading: the card's title bar, with how many
+             * suites it holds and a fold triangle. */
+            const group_t *g = &st->groups[e.group];
+            char title[96];
+            snprintf(title, sizeof title, "%s (%d)", g->name, g->count);
+            tiku_fill(st->surface, row, TIKU_C_PANEL);
+            tiku_hline(st->surface, row.x, row.y + row.h - 1, row.w,
+                       tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+            tiku_ui_arrow(st->surface,
+                          (tiku_rect_t){row.x + 4, row.y + 4, 12, row.h - 8},
+                          g->folded ? 3 : 1, 1);
+            tiku_text_line_draw(st->surface,
+                                (tiku_rect_t){row.x + 24, row.y, row.w - 28, row.h},
+                                TIKU_MEASURE_BOLD, title, TIKU_C_TEXT);
+            continue;
+        }
+        const suite_t *s = &st->suites[e.suite];
+        const leaf_t *leaf = e.leaf >= 0 ? &st->leaves[e.leaf] : NULL;
         int focus = tiku_list_selected(l, i);
         int ok = suite_supported(st, s) && (!leaf || leaf_supported(st, leaf, 0));
         int checked = leaf ? leaf->selected || (s->selected && leaf_supported(st, leaf, 1)) : s->selected;
@@ -249,7 +279,10 @@ static void paint(bench_t *st)
             snprintf(status, sizeof status, "%d selected | Space toggles a check; Enter expands a suite.", selected_count(st));
             if (row >= 0 && row < st->nentry) {
                 entry_t e = st->entries[row];
-                if (e.leaf < 0) snprintf(status, sizeof status, "%.480s", st->suites[e.suite].description);
+                if (e.suite < 0) snprintf(status, sizeof status,
+                    "%s: %d suite(s). Enter folds the group.",
+                    st->groups[e.group].name, st->groups[e.group].count);
+                else if (e.leaf < 0) snprintf(status, sizeof status, "%.480s", st->suites[e.suite].description);
                 else {
                     char reason[400]; const leaf_t *l = &st->leaves[e.leaf];
                     snprintf(status, sizeof status, "%s | %s | %s", l->group, l->kind,
@@ -278,8 +311,12 @@ static void paint(bench_t *st)
         } else {
             text(st, (tiku_rect_t){20, 92, 920, 28}, tab == TAB_HISTORY ?
                 "Profile-aware history: full, selected and diagnostic runs remain separate" :
+                tab == TAB_NOTRUN ?
+                "Tests this profile does not run, each with its reason" :
                 "Benchmark baseline/current comparison (not a functional-test verdict)", 1);
-            if (!st->list[tab].count) text(st, (tiku_rect_t){30, 150, 890, 28}, "No records for this profile", 0);
+            if (!st->list[tab].count) text(st, (tiku_rect_t){30, 150, 890, 28},
+                tab == TAB_NOTRUN ? "Every test runs on this profile"
+                                  : "No records for this profile", 0);
         }
     }
     controls_draw(st);
@@ -385,7 +422,8 @@ static int action(bench_t *st, int command)
     else if (command == CLEAR) clear_selection(st);
     else if (command == OPEN || command == TOGGLE) toggle_entry(st, chosen, command == OPEN);
     else if (command == SELECT_ALL) {
-        for (int i = 0; i < st->nentry; i++) if (st->entries[i].leaf < 0) {
+        for (int i = 0; i < st->nentry; i++)
+        if (st->entries[i].leaf < 0 && st->entries[i].suite >= 0) {
             suite_t *s = &st->suites[st->entries[i].suite];
             if (suite_supported(st, s)) {
                 s->selected = 1;
