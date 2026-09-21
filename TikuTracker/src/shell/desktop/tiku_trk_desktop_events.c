@@ -98,7 +98,12 @@ pointer_says(desktop_t *app, int x, int y)
     if (app->host == NULL) {
         return;
     }
-    if (!tiku_trk_drag_active(&app->drag) && app->popup == NULL &&
+    if (app->resize_track != NULL) {
+        /* A corner in hand keeps the arrow whatever is under the
+         * pointer: a window that will not shrink past its least size
+         * leaves the hand inside it, still resizing. */
+        want = TIKU_CURSOR_RESIZE_DIAG;
+    } else if (!tiku_trk_drag_active(&app->drag) && app->popup == NULL &&
         tiku_workspace_hit(app->desk, x, y, &under) == TIKU_HIT_RESIZE &&
         under != NULL && under == tiku_workspace_focused(app->desk) &&
         under->resizable) {
@@ -138,6 +143,7 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
     (void)lp;
     deliver(app, ev);
+    pointer_says(app, ev->x, ev->y);   /* the corner let go: the arrow back */
 }
 
 /**

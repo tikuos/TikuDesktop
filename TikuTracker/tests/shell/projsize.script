@@ -1,0 +1,33 @@
+# shell: desktop
+# home: fixture
+# setup: applink
+# A program's window shrinks by its grip like a folder's, wherever it
+# stands: the shell's frame follows the hand while the program keeps
+# painting at its least size, and the desk shows where the frame was.
+wait 12
+click 980 20
+wait 4
+menu-pick Programming
+wait 4
+press 520 134
+wait 2
+release 520 134
+wait 150
+expect-title Project
+expect-window-at 275 116
+note the window carried to the desk's bottom-right corner, then its grip
+note dragged inwards: the desk shows where the window was
+drag-window Project 560 360
+wait 8
+expect-window-at 530 350
+press 975 672
+wait 4
+move 900 600
+wait 4
+move 800 500
+wait 4
+release 800 500
+wait 20
+expect-same-as-redraw
+expect-pixel 900 600 336698
+quit
