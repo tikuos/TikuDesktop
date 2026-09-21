@@ -408,8 +408,20 @@ static void ui_test(bench_t *st)
     assert(list_rect(st, TAB_SUITES).w == body.w + 240);
     assert(list_rect(st, TAB_SUITES).h == body.h + 120);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-wide.png"));
-    ev = (tiku_event_t){.type = TIKU_EVENT_RESIZE, .width = 500, .height = 300};
-    bench_event(st, st->id, &ev); paint(st);
+    /* Every view ends above the detail line, the footer and the note,
+     * at this size and at the opening one: a list that ran past them
+     * once covered the note with its rows. */
+    for (int pass = 0; pass < 2; pass++) {
+        for (int t = 0; t < TAB_COUNT; t++) {
+            tiku_rect_t r = list_rect(st, t);
+            int foot = t == TAB_SUITES ? st->h - 92 :
+                       t == TAB_OUTPUT || t == TAB_CONSOLE ? st->h - 84 :
+                       st->h - 54;
+            assert(r.y + r.h <= foot && r.y + r.h <= st->h - 28);
+        }
+        ev = (tiku_event_t){.type = TIKU_EVENT_RESIZE, .width = 500, .height = 300};
+        bench_event(st, st->id, &ev); paint(st);
+    }
     assert(st->w == BW && st->h == BH);
     puts("PASS: list keyboard selection, native controls and safe confirmation");
 }

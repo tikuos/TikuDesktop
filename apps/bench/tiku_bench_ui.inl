@@ -48,7 +48,7 @@ static tiku_rect_t field_rect(const bench_t *st, int i)
 }
 static tiku_rect_t list_rect(const bench_t *st, int tab)
 {
-    if (tab == TAB_SUITES) return (tiku_rect_t){RX, 122, RW, st->h - 98};
+    if (tab == TAB_SUITES) return (tiku_rect_t){RX, 122, RW, st->h - 220};
     if (tab == TAB_OUTPUT || tab == TAB_CONSOLE)
         return (tiku_rect_t){RX, 90, RW, st->h - 180};
     if (tab == TAB_HISTORY) return (tiku_rect_t){RX, 118, RW, st->h - 178};

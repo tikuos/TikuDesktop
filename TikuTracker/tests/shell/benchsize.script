@@ -1,0 +1,35 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: benchpast
+# Bench asks for the corner: the grip is drawn, and a drag inwards
+# shrinks the frame while Bench keeps its least size behind it.
+# Bench opens at the desk's top left, its tab under the global bar, so
+# the window is never clicked by its tab here: the grip is what is used.
+wait 60
+click 980 30
+wait 10
+menu-pick Device Tools
+wait 10
+menu-pick TikuBench
+wait 500
+expect-title Bench
+expect-window-at 15 3
+note the grip: dark then light hairline, two pixels in from the corner
+expect-pixel 970 668 cbcbcb
+expect-pixel 970 669 ffffff
+note dragged inwards by the grip: the window keeps its least size, and the
+note desk shows where the window was
+press 980 670
+wait 4
+move 940 630
+wait 4
+move 800 500
+wait 4
+move 700 440
+wait 4
+release 700 440
+wait 30
+expect-same-as-redraw
+expect-pixel 900 600 336698
+quit
