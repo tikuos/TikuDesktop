@@ -33,6 +33,8 @@ static const tiku_theme_t tiku_theme_r5 = {
     /* code_num */ TIKU_RGB(0, 112, 96),
     /* code_str */ TIKU_RGB(160, 32, 32),
     /* code_rem */ TIKU_RGB(96, 112, 96),
+    /* success  */ TIKU_RGB(46, 125, 50),
+    /* warn     */ TIKU_RGB(178, 106, 0),
 };
 
 /*
@@ -60,6 +62,8 @@ static const tiku_theme_t tiku_theme_dusk = {
     /* code_num */ TIKU_RGB(120, 208, 184),
     /* code_str */ TIKU_RGB(236, 150, 140),
     /* code_rem */ TIKU_RGB(136, 156, 136),
+    /* success  */ TIKU_RGB(88, 168, 92),
+    /* warn     */ TIKU_RGB(214, 150, 48),
 };
 
 const tiku_theme_t *
@@ -104,6 +108,11 @@ static const tiku_theme_t tiku_theme_grey = {
     /* code_num */ TIKU_RGB(96, 96, 96),
     /* code_str */ TIKU_RGB(64, 64, 64),
     /* code_rem */ TIKU_RGB(144, 144, 144),
+    /* Two more verdicts with no hue to tell them by: the good one sits
+     * darker than the stop, the doubtful one lighter, so the three still
+     * order by weight. */
+    /* success  */ TIKU_RGB(40, 40, 40),
+    /* warn     */ TIKU_RGB(128, 128, 128),
 };
 
 const tiku_theme_t *

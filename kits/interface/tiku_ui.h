@@ -177,6 +177,27 @@ void tiku_ui_arrow(tiku_surface_t *s, tiku_rect_t r, int dir, int enabled);
 
 void tiku_ui_gauge(tiku_surface_t *s, tiku_rect_t r, float fraction);
 
+/** @brief What a pill is saying: nothing yet, good, bad, or look here. */
+#define TIKU_TONE_IDLE  0
+#define TIKU_TONE_PASS  1
+#define TIKU_TONE_FAIL  2
+#define TIKU_TONE_WARN  3
+
+/** @brief How wide a pill saying @p label needs to be. */
+int tiku_ui_pill_w(const char *label);
+
+/**
+ * @brief A pill: a count or a state read by its colour before its words.
+ *
+ * A rounded lozenge in the tone's colour with the label in the selection
+ * ink, the badge a test runner puts its passed and failed counts in.  It
+ * is a verdict, not a control: nothing presses it, and it carries no
+ * bevel because it is not raised off the panel.  The tone comes from the
+ * theme, so a mono desktop still orders the three by weight.
+ */
+void tiku_ui_pill(tiku_surface_t *s, tiku_rect_t r, const char *label,
+                  int tone);
+
 /**
  * @brief How wide and tall a tip saying @p text needs to be.
  *

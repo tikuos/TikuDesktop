@@ -567,6 +567,38 @@ tiku_ui_gauge(tiku_surface_t *s, tiku_rect_t r, float fraction)
     tiku_gfx_rec_leave(s, rec);
 }
 
+int
+tiku_ui_pill_w(const char *label)
+{
+    return tiku_text_width(tiku_font_bold(), label) + 20;
+}
+
+void
+tiku_ui_pill(tiku_surface_t *s, tiku_rect_t r, const char *label, int tone)
+{
+    const tiku_font_t *f = tiku_font_bold();
+    tiku_rgb_t ground;
+    int tw;
+
+    if (s == NULL || r.w <= 0 || r.h <= 0) {
+        return;
+    }
+    switch (tone) {
+    case TIKU_TONE_PASS: ground = TIKU_C_SUCCESS; break;
+    case TIKU_TONE_FAIL: ground = TIKU_C_DANGER; break;
+    case TIKU_TONE_WARN: ground = TIKU_C_WARN; break;
+    default:             ground = tiku_tint(PANEL, 1.60f); break;
+    }
+    tiku_fill_round(s, r, r.h / 2, TIKU_CORNER_ALL, ground);
+    if (label == NULL || label[0] == '\0') {
+        return;
+    }
+    tw = tiku_text_width(f, label);
+    tiku_text(s, f, r.x + (r.w - tw) / 2,
+              r.y + (r.h - f->height) / 2 + f->ascent, label,
+              TIKU_C_SELTEXT);
+}
+
 void
 tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
                        float pos, float frac, int horiz, int held)

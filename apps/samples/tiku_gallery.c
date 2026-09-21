@@ -72,8 +72,21 @@ gallery(tiku_surface_t *s)
                         "Disabled", TIKU_S_DISABLED);
     y += 40;
 
-    /* Checkboxes and radios. */
+    /* Checkboxes and radios, and the pills a runner counts in. */
     tiku_text(s, f, c.x, y + f->ascent, "Controls", TIKU_C_TEXT);
+    {
+        static const char *const PILL[] = { "12 passed", "1 failed", "idle" };
+        static const int TONE[] = { TIKU_TONE_PASS, TIKU_TONE_FAIL,
+                                    TIKU_TONE_IDLE };
+        int px = c.x + 90, k;
+
+        for (k = 0; k < 3; k++) {
+            int w = tiku_ui_pill_w(PILL[k]);
+            tiku_ui_pill(s, (tiku_rect_t){ px, y - 1, w, 18 }, PILL[k],
+                         TONE[k]);
+            px += w + 6;
+        }
+    }
     y += 20;
     tiku_ui_checkbox(s, (tiku_rect_t){ c.x, y, 120, 16 },
                           "Show hidden", TIKU_S_ON);

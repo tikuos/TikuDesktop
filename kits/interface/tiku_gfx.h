@@ -74,6 +74,13 @@ typedef struct {
     tiku_rgb_t code_num;
     tiku_rgb_t code_str;
     tiku_rgb_t code_rem;
+    /*
+     * The two verdicts danger was missing: a thing that went right and
+     * a thing that needs a look, so a count can be read by its colour
+     * before its number.  Appended, for the same positional reason.
+     */
+    tiku_rgb_t success;
+    tiku_rgb_t warn;
 } tiku_theme_t;
 
 /** @brief The live theme.  Never NULL. */
@@ -118,6 +125,8 @@ tiku_rgb_t tiku_grey(tiku_rgb_t c);
 #define TIKU_C_CODE_NUM   (tiku_theme()->code_num)
 #define TIKU_C_CODE_STR   (tiku_theme()->code_str)
 #define TIKU_C_CODE_REM   (tiku_theme()->code_rem)
+#define TIKU_C_SUCCESS    (tiku_theme()->success)
+#define TIKU_C_WARN       (tiku_theme()->warn)
 
 /* BeOS tint constants, so the code reads like the documentation. */
 #define TIKU_LIGHTEN_MAX  0.00f
