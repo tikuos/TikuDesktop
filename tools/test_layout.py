@@ -26,7 +26,10 @@ class LayoutTests(unittest.TestCase):
         """Allocate a tree whose name also exercises quoting of paths."""
         directory = tempfile.TemporaryDirectory(prefix='tiku layout ')
         self.addCleanup(directory.cleanup)
-        self.root = Path(directory.name)
+        # Resolved once: on macOS the temporary directory is itself under
+        # a symlink, and a resolve() on one side of a comparison is not
+        # the same path as the unresolved other side.
+        self.root = Path(directory.name).resolve()
 
     def write(self, name, content='fixture', executable=False):
         """Create a single fixture and any missing parent directories."""
