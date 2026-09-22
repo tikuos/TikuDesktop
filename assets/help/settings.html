@@ -140,7 +140,15 @@ read, every section is offered.</p>
 is a setting: choose it and the group underneath edits it. The other rows
 are facts the device reports, such as the MCU, the firmware, the uptime,
 the memory used and free, and the reason for the last reset; choose one
-and the group explains it. Counts of bytes and spans of time are shown as
+and the group explains it. Under <b>Memory</b> and <b>Storage</b> the rows
+with a colour swatch are the estates each memory is carved into, from the
+device's own maps: static data, the stack pool, the tier arena, the code
+window, the module slot, the store and the persist home, each with its
+size and what is in use. Choose one and the group draws the whole memory
+as a bar with that estate outlined. These are decided by the firmware's
+linker and cannot be changed from here; the two switches that can be
+changed, <b>External PSRAM</b> and <b>eMMC card</b>, appear on a board
+that has the hardware, Up bringing it online and Down powering it off. Counts of bytes and spans of time are shown as
 a person reads them. The window opens on <b>Processor</b> with <b>CPU
 clock</b> chosen, grows by its bottom-right corner so a section shows
 more rows, and with nothing connected it says <b>No devices
@@ -163,6 +171,10 @@ Software only. Resets at reboot.</td></tr>
 number of dBm. The device validates the level. Resets at reboot.</td></tr>
 <tr><td>Idle sleep mode</td><td>Power</td><td>/sys/power/mode</td><td>Reported by the
 device and not changed from here.</td></tr>
+<tr><td>External PSRAM</td><td>Memory</td><td>/sys/psram/state</td><td>Up or
+Down. Down is refused while tier allocations live in it.</td></tr>
+<tr><td>eMMC card</td><td>Storage</td><td>/sys/emmc/state</td><td>Up or
+Down.</td></tr>
 </table>
 
 <p>The button beside the editor is <b>Apply</b>, named <b>Sync now</b> for

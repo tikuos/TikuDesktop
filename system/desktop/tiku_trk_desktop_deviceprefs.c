@@ -21,7 +21,8 @@
 #include "tiku_config_outbox.h"
 #include <time.h>
 
-enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_COUNT };
+enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_PSRAM,
+       DP_EMMC, DP_COUNT };
 enum { DP_DEVICE = 10, DP_EDIT = 50,
        DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET,
        DP_SECTION = 70, DP_ROW = 100 };
@@ -61,8 +62,25 @@ static const struct {
             1, SEC_RADIO },
     { "Idle sleep mode", "/sys/power/mode",
       "Reported by the device; changing it is not supported through VFS.", 0,
-      SEC_POWER }
+      SEC_POWER },
+    { "External PSRAM", "/sys/psram/state",
+      "Up brings the external RAM online and attaches its tier; Down "
+      "refuses while allocations are live.", 1, SEC_MEMORY },
+    { "eMMC card", "/sys/emmc/state",
+      "Up powers the card and mounts it; Down powers it off.", 1,
+      SEC_STORAGE }
 };
+/* Each memory by estate, from /sys/mem/sram_map and nvm_map: the rows a
+ * person reads as "where the memory goes", with a bar in the group. */
+typedef struct {
+    int section;               /* SEC_MEMORY for SRAM, SEC_STORAGE for NVM */
+    char key[16];              /* the map's own word */
+    char label[28], value[72], help[128];
+    unsigned long size, used;
+    int live, bank, in_bar;    /* used is live; which bank; part of the bar */
+    tiku_rgb_t hue;
+} dp_estate_t;
+#define DP_ESTATES 14
 /* What a fact's text is made of: the words as read, a byte count, a
  * span of seconds, a clock in hertz, or the clock-control mode's name. */
 enum { FMT_PLAIN, FMT_BYTES, FMT_SECONDS, FMT_HZ, FMT_CLOCKMODE };
@@ -129,7 +147,7 @@ static const struct {
 #define DP_FACTS ((int)(sizeof facts / sizeof facts[0]))
 /* One section's rows: its heading, its settings and facts, or the word
  * that it has nothing on this firmware. */
-#define DP_ROWS (2 + DP_COUNT + DP_FACTS)
+#define DP_ROWS (2 + DP_COUNT + DP_FACTS + DP_ESTATES)
 /* The source list: every board, and under the chosen one its sections. */
 #define DP_TREE (TIKU_MOUNT_MAX + SEC_COUNT)
 
@@ -146,7 +164,7 @@ typedef struct {
 
 /* One line of the outline: a section's heading, a setting, a fact, or
  * the word that a section has nothing here. */
-typedef struct { int section, setting, fact, heading; } dp_row_t;
+typedef struct { int section, setting, fact, heading, estate; } dp_row_t;
 
 struct desktop_deviceprefs {
     desktop_t *app;
@@ -154,7 +172,12 @@ struct desktop_deviceprefs {
     char names[TIKU_MOUNT_MAX][64];
     int count, selected, setting, busy, refs;
     int fact;                  /* the fact on show, or -1 for the setting */
+    int estate;                /* the estate on show, or -1 */
     int section;               /* the section the right side shows */
+    char sram_map[640], nvm_map[640];
+    dp_estate_t estates[DP_ESTATES];
+    int nestate;
+    unsigned long estate_total[2];     /* the SRAM bank and the NVM */
     dp_value_t values[DP_COUNT];
     dp_value_t fact_values[DP_FACTS];
     dp_clock_t clock;
@@ -178,6 +201,7 @@ typedef struct {
     tiku_backend_t *backend;
     dp_value_t values[DP_COUNT];
     dp_value_t fact_values[DP_FACTS];
+    char sram_map[640], nvm_map[640];
     dp_clock_t clock;
     tiku_config_snapshot_t config[2];
     tiku_config_pending_t pending;
@@ -325,22 +349,133 @@ static void dp_fact_text(int format, const char *value, char *out, size_t cap)
     }
 }
 
+/** @brief One map line into an estate; the lines that only name a memory
+ *         set its total instead.  @return whether a row was made. */
+static int dp_estate_line(struct desktop_deviceprefs *p, int section,
+                          char *line, unsigned long *total)
+{
+    static const struct {
+        const char *key, *label, *help;
+        unsigned hue;
+    } looks[] = {
+        { "static", "Static data",
+          "The image's globals and the kernel's own tables.", 0x3B6EA5u },
+        { "stack", "Stack pool",
+          "The room the stack grows in; headroom is the least it has had "
+          "since boot.", 0xC0703Cu },
+        { "tier", "Tier arena",
+          "The allocator's pool for what programs ask for at run time.",
+          0x2E8B57u },
+        { "bank2", "Second bank",
+          "A second SRAM bank the part has, outside the primary bar.",
+          0x7A7A7Au },
+        { "code", "Code window",
+          "The image runs in place from here; what is beyond the code is "
+          "unreachable until the store takes it.", 0x3B6EA5u },
+        { "module", "Module slot",
+          "Where a loadable module is installed.", 0x6A4C93u },
+        { "store", "Store",
+          "Files and user data; the capacity, not what is in use.",
+          0x8A8A2Eu },
+        { "persist", "Persist",
+          "The durable home the kernel keeps its own records in.",
+          0xB03A48u },
+    };
+    char *f[4] = { line, NULL, NULL, NULL };
+    unsigned long v[3] = { 0UL, 0UL, 0UL };
+    int nf = 1, i;
+    dp_estate_t *e;
+    for (i = 1; i < 4; i++) {
+        char *tab = strchr(f[i - 1], '\t');
+        if (tab == NULL) break;
+        *tab = '\0';
+        f[i] = tab + 1;
+        nf++;
+    }
+    for (i = 1; i < nf; i++) v[i - 1] = strtoul(f[i], NULL, 10);
+    if (!strcmp(f[0], "kind")) return 0;
+    if (!strcmp(f[0], "bank") || !strcmp(f[0], "total")) {
+        *total = v[0];
+        return 0;
+    }
+    if (p->nestate >= DP_ESTATES) return 0;
+    e = &p->estates[p->nestate];
+    memset(e, 0, sizeof *e);
+    e->section = section;
+    snprintf(e->key, sizeof e->key, "%s", f[0]);
+    snprintf(e->label, sizeof e->label, "%s", f[0]);
+    e->hue = 0x7A7A7Au;
+    for (i = 0; i < (int)(sizeof looks / sizeof looks[0]); i++) {
+        if (strcmp(looks[i].key, f[0])) continue;
+        snprintf(e->label, sizeof e->label, "%s", looks[i].label);
+        snprintf(e->help, sizeof e->help, "%s", looks[i].help);
+        e->hue = looks[i].hue;
+    }
+    e->size = v[0];
+    e->used = v[1];
+    e->bank = (!strcmp(f[0], "tier") && section == SEC_MEMORY) ? (int)v[2] : 1;
+    e->live = !strcmp(f[0], "tier") || !strcmp(f[0], "code") ||
+              (!strcmp(f[0], "store") && nf >= 3);
+    e->in_bar = strcmp(f[0], "bank2") != 0 && e->bank != 2;
+    {
+        char size[24], used[24];
+        dp_bytes(e->size, size, sizeof size);
+        dp_bytes(e->used, used, sizeof used);
+        if (!strcmp(f[0], "stack"))
+            snprintf(e->value, sizeof e->value, "%s, %s headroom", size, used);
+        else if (e->live)
+            snprintf(e->value, sizeof e->value, "%s, %s used%s", size, used,
+                     e->bank == 2 ? " (second bank)" : "");
+        else
+            snprintf(e->value, sizeof e->value, "%s", size);
+    }
+    p->nestate++;
+    return 1;
+}
+
+/** @brief The estates of both memories, from the maps the device gave. */
+static void dp_estates_build(struct desktop_deviceprefs *p)
+{
+    const struct { char *map; int section; } maps[2] = {
+        { p->sram_map, SEC_MEMORY }, { p->nvm_map, SEC_STORAGE }
+    };
+    int m;
+    p->nestate = 0;
+    p->estate_total[0] = p->estate_total[1] = 0UL;
+    for (m = 0; m < 2; m++) {
+        char copy[640], *line, *save;
+        snprintf(copy, sizeof copy, "%s", maps[m].map);
+        for (line = strtok_r(copy, "\n", &save); line;
+             line = strtok_r(NULL, "\n", &save))
+            (void)dp_estate_line(p, maps[m].section, line,
+                                 &p->estate_total[m]);
+    }
+}
+
 /** @brief Build the section's rows from what the last read brought back. */
 static void dp_outline_build(struct desktop_deviceprefs *p)
 {
     int i, sec = p->section;
+    dp_estates_build(p);
     p->nrow = 0;
-    p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 1};
-    for (i = 0; i < DP_COUNT; i++)
-        if (settings[i].section == sec)
-            p->rows[p->nrow++] = (dp_row_t){sec, i, -1, 0};
+    p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 1, -1};
+    for (i = 0; i < DP_COUNT; i++) {
+        /* A switch for hardware the board has not got is not offered;
+         * the six settings every board answers stay, "Unavailable" said. */
+        int hardware = i == DP_PSRAM || i == DP_EMMC;
+        if (settings[i].section == sec && (!hardware || p->values[i].present))
+            p->rows[p->nrow++] = (dp_row_t){sec, i, -1, 0, -1};
+    }
     for (i = 0; i < DP_FACTS && p->nrow < DP_ROWS - 1; i++)
         if (facts[i].section == sec && p->fact_values[i].present)
-            p->rows[p->nrow++] = (dp_row_t){sec, -1, i, 0};
+            p->rows[p->nrow++] = (dp_row_t){sec, -1, i, 0, -1};
+    for (i = 0; i < p->nestate && p->nrow < DP_ROWS - 1; i++)
+        if (p->estates[i].section == sec)
+            p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 0, i};
     if (p->nrow == 1) {
         /* Nothing on this firmware: the heading says so on its own
          * line, in the quiet ink, rather than standing over nothing. */
-        p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 2};
+        p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 2, -1};
     }
     tiku_list_set_count(&p->list, p->nrow);
     tiku_list_set_row_h(&p->list, dp_row());
@@ -365,6 +500,8 @@ static int dp_section_available(const struct desktop_deviceprefs *p, int sec)
         if (settings[i].section == sec && p->values[i].present) return 1;
     for (i = 0; i < DP_FACTS; i++)
         if (facts[i].section == sec && p->fact_values[i].present) return 1;
+    for (i = 0; i < p->nestate; i++)
+        if (p->estates[i].section == sec) return 1;
     return 0;
 }
 
@@ -374,6 +511,7 @@ static void dp_show_section(struct desktop_deviceprefs *p, int section)
     int i;
     p->section = section;
     p->fact = -1;
+    p->estate = -1;
     dp_outline_build(p);
     for (i = 1; i < p->nrow; i++) {
         if (p->rows[i].setting >= 0) {
@@ -383,6 +521,7 @@ static void dp_show_section(struct desktop_deviceprefs *p, int section)
     }
     for (i = 1; i < p->nrow; i++) {
         if (p->rows[i].fact >= 0) { p->fact = p->rows[i].fact; return; }
+        if (p->rows[i].estate >= 0) { p->estate = p->rows[i].estate; return; }
     }
 }
 
@@ -462,6 +601,10 @@ static void dp_edit(struct desktop_deviceprefs *p)
         tiku_choice_add(&p->choice, "Automatic", 1);
         tiku_choice_add(&p->choice, "Software only", 1);
         tiku_choice_select(&p->choice, strcmp(p->field.text, "auto") != 0);
+    } else if (p->setting == DP_PSRAM || p->setting == DP_EMMC) {
+        tiku_choice_add(&p->choice, "Up", 1);
+        tiku_choice_add(&p->choice, "Down", 1);
+        tiku_choice_select(&p->choice, strcmp(p->field.text, "up") != 0);
     }
 }
 
@@ -476,6 +619,18 @@ static int dp_read(tiku_backend_t *b, const char *path, char *out, size_t max)
     out[n] = '\0';
     out[strcspn(out, "\r\n")] = '\0';
     return out[0] != '\0';
+}
+
+/** @brief A whole text, newlines kept: the maps are many lines. */
+static void dp_read_text(tiku_backend_t *b, const char *path, char *out,
+                         size_t max)
+{
+    tiku_model_t m;
+    int n = -1;
+    out[0] = '\0';
+    if (b->ops->stat(b, path, &m) == 0) n = b->ops->read(b, path, out, max - 1);
+    if (n < 0 || (size_t)n >= max - 1) { out[0] = '\0'; return; }
+    out[n] = '\0';
 }
 
 /** @brief Discover clock controls; older firmware remains read-only. */
@@ -618,6 +773,12 @@ static void dp_run(void *ctx)
             j->fact_values[i].present = 1;
         }
     }
+    if (!tiku_work_cancelled(j)) {
+        dp_read_text(j->backend, "/sys/mem/sram_map", j->sram_map,
+                     sizeof j->sram_map);
+        dp_read_text(j->backend, "/sys/mem/nvm_map", j->nvm_map,
+                     sizeof j->nvm_map);
+    }
     if (!tiku_work_cancelled(j)) dp_clock_read(j->backend, &j->clock);
     if (j->config[1].mode == 1 && j->config[1].revision)
         snprintf(j->clock.target, sizeof j->clock.target, "%s",
@@ -684,6 +845,8 @@ static void dp_done(void *ctx)
     if (p->app == NULL) return;
     memcpy(p->values, j->values, sizeof p->values);
     memcpy(p->fact_values, j->fact_values, sizeof p->fact_values);
+    memcpy(p->sram_map, j->sram_map, sizeof p->sram_map);
+    memcpy(p->nvm_map, j->nvm_map, sizeof p->nvm_map);
     p->clock = j->clock;
     memcpy(p->config, j->config, sizeof p->config);
     p->pending = j->pending;
@@ -713,6 +876,7 @@ static void dp_free(void *ctx)
     if (p->app != NULL && !j->completed) {
         memset(p->values, 0, sizeof p->values);
         memset(p->fact_values, 0, sizeof p->fact_values);
+        p->sram_map[0] = p->nvm_map[0] = '\0';
         memset(&p->clock, 0, sizeof p->clock);
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
@@ -741,6 +905,7 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     if (b == NULL || tiku_backend_tiku_identity(b) == NULL) {
         memset(p->values, 0, sizeof p->values);
         memset(p->fact_values, 0, sizeof p->fact_values);
+        p->sram_map[0] = p->nvm_map[0] = '\0';
         memset(&p->clock, 0, sizeof p->clock);
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
@@ -822,6 +987,11 @@ static void dp_apply(struct desktop_deviceprefs *p)
             "Choose Automatic or Software only.");
         return;
     }
+    if ((p->setting == DP_PSRAM || p->setting == DP_EMMC) &&
+        strcmp(p->field.text, "up") && strcmp(p->field.text, "down")) {
+        snprintf(p->status, sizeof p->status, "Choose Up or Down.");
+        return;
+    }
     if (p->setting == DP_NAME &&
         (p->field.len < 1 || p->field.len > 31)) {
         snprintf(p->status, sizeof p->status,
@@ -858,6 +1028,7 @@ static void dp_refresh(struct desktop_deviceprefs *p)
     }
     memset(p->values, 0, sizeof p->values);
     memset(p->fact_values, 0, sizeof p->fact_values);
+    p->sram_map[0] = p->nvm_map[0] = '\0';
     memset(&p->clock, 0, sizeof p->clock);
     memset(p->config, 0, sizeof p->config);
     memset(&p->pending, 0, sizeof p->pending);
@@ -908,11 +1079,16 @@ static void dp_setting_text(const struct desktop_deviceprefs *p, int i,
     if (i == DP_CRYPTO && v->present)
         snprintf(value, cap, "%s", !strcmp(v->value, "auto")
                  ? "Automatic" : "Software only");
+    if ((i == DP_PSRAM || i == DP_EMMC) && v->present)
+        snprintf(value, cap, "%s", !strcmp(v->value, "up") ? "Up" :
+                 !strcmp(v->value, "down") ? "Down" :
+                 !strcmp(v->value, "asleep") ? "Asleep" : v->value);
 }
 
 /** @brief Whether the row on show is the setting or a fact. */
 static int dp_row_is_shown(const struct desktop_deviceprefs *p, dp_row_t r)
 {
+    if (p->estate >= 0) return r.estate == p->estate;
     return p->fact >= 0 ? r.fact == p->fact
                         : r.setting >= 0 && r.setting == p->setting;
 }
@@ -978,13 +1154,19 @@ static void dp_table(struct desktop_deviceprefs *p, tiku_surface_t *s,
             tiku_rgb_t ink = shown ? TIKU_C_SELTEXT : TIKU_C_TEXT;
             tiku_rgb_t dim = shown ? TIKU_C_SELTEXT : quiet;
             const char *label = r.setting >= 0 ? settings[r.setting].label
-                                               : facts[r.fact].label;
+                              : r.fact >= 0 ? facts[r.fact].label
+                              : p->estates[r.estate].label;
             tiku_fill(s, row, shown ? TIKU_C_SELECT : TIKU_C_DOC);
             if (r.setting >= 0) {
                 dp_setting_text(p, r.setting, value, sizeof value);
-            } else {
+            } else if (r.fact >= 0) {
                 dp_fact_text(facts[r.fact].format,
                              p->fact_values[r.fact].value, value, sizeof value);
+            } else {
+                /* An estate: its swatch before the label, the bar's colour. */
+                snprintf(value, sizeof value, "%s", p->estates[r.estate].value);
+                tiku_fill(s, (tiku_rect_t){row.x + 12, row.y + (row.h - 8) / 2,
+                                           8, 8}, p->estates[r.estate].hue);
             }
             tiku_text_line_draw(s, (tiku_rect_t){row.x + 26, row.y,
                                                  label_w - 26, row.h},
@@ -1013,6 +1195,36 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
     unsigned flags = (!dp_can_edit(p) ? TIKU_S_DISABLED : 0) |
         (tiku_dialog_focused(&p->dialog, DP_EDIT) ? TIKU_S_FOCUS : 0);
     tiku_rgb_t quiet = tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL);
+    if (p->estate >= 0) {
+        /* An estate: its figures, then the whole memory as a bar with
+         * this estate outlined, then what it is for. */
+        const dp_estate_t *e = &p->estates[p->estate];
+        int m = e->section == SEC_STORAGE, i;
+        unsigned long total = p->estate_total[m], at = 0UL;
+        tiku_rect_t bar = {l.edit.x, l.help_y, l.group.w - 28, 12};
+        snprintf(title, sizeof title, "%s", e->label);
+        (void)tiku_ui_group(s, l.group, title);
+        dp_line(s, (tiku_rect_t){l.edit.x, l.edit.y, l.group.w - 28, l.edit.h},
+                e->value, TIKU_C_TEXT);
+        tiku_fill(s, bar, TIKU_C_DOC);
+        for (i = 0; i < p->nestate && total; i++) {
+            const dp_estate_t *k = &p->estates[i];
+            tiku_rect_t seg;
+            if (k->section != e->section || !k->in_bar) continue;
+            seg = (tiku_rect_t){bar.x + (int)(bar.w * at / total), bar.y,
+                                (int)(bar.w * k->size / total), bar.h};
+            if (seg.x + seg.w > bar.x + bar.w) seg.w = bar.x + bar.w - seg.x;
+            if (seg.w > 0) tiku_fill(s, seg, k->hue);
+            if (k == e && seg.w > 0)
+                tiku_frame(s, (tiku_rect_t){seg.x - 1, seg.y - 1, seg.w + 2,
+                                            seg.h + 2}, TIKU_C_TEXT);
+            at += k->size;
+        }
+        tiku_frame(s, bar, tiku_tint(TIKU_C_PANEL, 1.40f));
+        dp_explain(s, l.edit.x, l.help_y + 18, l.group.w - 28, e->help,
+                   quiet, 2);
+        return;
+    }
     if (p->fact >= 0) {
         /* A fact: what the device reports, and what it means. */
         char value[128];
@@ -1039,7 +1251,8 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
             tiku_choice_draw(&p->choice, s, l.edit, label, flags);
         } else if (p->setting == DP_TIME) {
             dp_line(s, l.edit, "Use this computer's time", TIKU_C_TEXT);
-        } else if (p->setting == DP_CRYPTO) {
+        } else if (p->setting == DP_CRYPTO || p->setting == DP_PSRAM ||
+                   p->setting == DP_EMMC) {
             tiku_choice_draw(&p->choice, s, l.edit, NULL, flags);
         } else {
             tiku_ui_textfield_scroll(s, l.edit, p->field.text, p->field.caret,
@@ -1305,7 +1518,8 @@ static int dp_choice_event(struct desktop_deviceprefs *p,
                            const tiku_event_t *ev, dp_layout_t l, tiku_rect_t c)
 {
     tiku_choice_result_t result;
-    if (p->setting != DP_CPU && p->setting != DP_CRYPTO) return 0;
+    if (p->setting != DP_CPU && p->setting != DP_CRYPTO &&
+        p->setting != DP_PSRAM && p->setting != DP_EMMC) return 0;
     result = tiku_choice_event(&p->choice, ev, l.edit, c,
                                p->dialog.focus == DP_EDIT);
     if (result == TIKU_CHOICE_CHANGED) {
@@ -1313,8 +1527,11 @@ static int dp_choice_event(struct desktop_deviceprefs *p,
         if (p->setting == DP_CPU)
             snprintf(value, sizeof value, "%lu",
                      p->clock.rates[p->choice.selected]);
+        else if (p->setting == DP_CRYPTO)
+            snprintf(value, sizeof value, "%s",
+                     p->choice.selected ? "sw" : "auto");
         else snprintf(value, sizeof value, "%s",
-                      p->choice.selected ? "sw" : "auto");
+                      p->choice.selected ? "down" : "up");
         tiku_field_start(&p->field, value);
     }
     return result != TIKU_CHOICE_IGNORED;
@@ -1354,6 +1571,7 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         p->selected = result.activated - DP_DEVICE;
         memset(p->values, 0, sizeof p->values);
         memset(p->fact_values, 0, sizeof p->fact_values);
+        p->sram_map[0] = p->nvm_map[0] = '\0';
         memset(&p->clock, 0, sizeof p->clock);
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
@@ -1366,11 +1584,13 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         if (r.setting >= 0) {
             p->setting = r.setting;
             p->fact = -1;
+            p->estate = -1;
             dp_edit(p);
             dp_controls(p, dp_layout(c, p->setting));
             tiku_dialog_focus(&p->dialog, DP_EDIT);
         } else {
             p->fact = r.fact;
+            p->estate = r.estate;
             tiku_choice_close(&p->choice);
         }
     } else if (result.activated >= DP_SECTION &&
@@ -1449,6 +1669,7 @@ void desktop_deviceprefs_open(desktop_t *app)
         p->refs = 1;
         p->setting = DP_CPU;
         p->fact = -1;
+        p->estate = -1;
         p->section = SEC_PROCESSOR;
         tiku_list_init(&p->list, 1);
         tiku_dialog_init(&p->dialog);

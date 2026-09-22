@@ -20,7 +20,7 @@ static tiku_rect_t dp_setting_row(struct desktop_deviceprefs *p,
 }
 
 static char vals[DP_COUNT][96] = {"Desk sensor", "128000000",
-                                  "1789041600", "auto", "0", "WFI"};
+                                  "1789041600", "auto", "0", "WFI", "up", ""};
 static int writes, readonly, missing, reject, mismatch;
 static int clock_supported;
 static int config_supported, config_fault;
@@ -48,6 +48,11 @@ static const char *fact_value(const char *path)
         { "/sys/mem/used", "81920" }, { "/sys/mem/free", "172032" },
         { "/sys/mem/stack_free", "6144" }, { "/sys/mem/nvm", "1572864" },
         { "/sys/last_reset", "power" }, { "/sys/boot_count", "41" },
+        { "/sys/mem/sram_map", "bank\t262144\nstatic\t40960\nstack\t16384\t6144\n"
+                               "tier\t32768\t1200\t1" },
+        { "/sys/mem/nvm_map", "kind\tflash\ntotal\t1572864\ncode\t262144\t131072\n"
+                              "module\t32768\ntier\t32768\t4096\nstore\t1114112\n"
+                              "persist\t8192" },
     };
     for (size_t i = 0; i < sizeof table / sizeof table[0]; i++)
         if (!strcmp(path, table[i].path)) return table[i].value;
@@ -329,6 +334,8 @@ int main(void)
     tiku_list_init(&p.list, 1);
     memcpy(p.values, j.values, sizeof p.values);
     memcpy(p.fact_values, j.fact_values, sizeof p.fact_values);
+    memcpy(p.sram_map, j.sram_map, sizeof p.sram_map);
+    memcpy(p.nvm_map, j.nvm_map, sizeof p.nvm_map);
     p.clock = j.clock;
     /* The section on show: its heading first, then its settings and the
      * facts the device answered, in bytes and spans a person reads; the
@@ -336,17 +343,33 @@ int main(void)
     {
         char text[128];
         int memory = 0, board[DP_TREE], section[DP_TREE];
+        int estates = 0;
         p.fact = -1;
+        p.estate = -1;
         dp_show_section(&p, SEC_MEMORY);
         assert(p.rows[0].heading == 1 && p.rows[0].section == SEC_MEMORY);
-        assert(p.fact == 8 && p.setting == DP_NAME);   /* SRAM, the first */
-        for (int i = 0; i < p.nrow; i++)
+        /* The PSRAM switch is the section's setting, so it is shown. */
+        assert(p.fact < 0 && p.setting == DP_PSRAM);
+        for (int i = 0; i < p.nrow; i++) {
             memory += p.rows[i].section == SEC_MEMORY && p.rows[i].fact >= 0;
-        assert(memory == 4);
+            estates += p.rows[i].estate >= 0;
+        }
+        assert(memory == 4 && estates == 3);   /* static, stack, tier */
+        assert(p.estate_total[0] == 262144UL);
+        for (int i = 0; i < p.nestate; i++) {
+            if (!strcmp(p.estates[i].key, "stack"))
+                assert(!strcmp(p.estates[i].value, "16.0 KB, 6.0 KB headroom"));
+            if (!strcmp(p.estates[i].key, "code"))
+                assert(!strcmp(p.estates[i].value, "256.0 KB, 128.0 KB used"));
+        }
         dp_show_section(&p, SEC_POWER);
         assert(p.fact < 0 && p.setting == DP_SLEEP);
         dp_show_section(&p, SEC_STORAGE);
-        assert(p.nrow == 2 && p.rows[1].fact >= 0);
+        estates = 0;
+        for (int i = 0; i < p.nrow; i++) estates += p.rows[i].estate >= 0;
+        assert(estates == 5 && p.estate_total[1] == 1572864UL);
+        assert(p.fact >= 0);     /* no eMMC here: its switch is not listed */
+        for (int i = 0; i < p.nrow; i++) assert(p.rows[i].setting != DP_EMMC);
         dp_fact_text(FMT_BYTES, "262144", text, sizeof text);
         assert(!strcmp(text, "256.0 KB"));
         dp_fact_text(FMT_SECONDS, "93784", text, sizeof text);
@@ -410,6 +433,20 @@ int main(void)
         tiku_surface_free(s);
     }
     tiku_theme_set(NULL);
+    {
+        /* Memory, with the stack pool chosen: the bar under its figures. */
+        struct desktop_deviceprefs preview = p;
+        dp_layout_t dl = dp_layout((tiku_rect_t){0,0,820,0}, p.setting);
+        int height = dl.done.y + dl.done.h + 18;
+        tiku_surface_t *s = tiku_surface_new(820, height, TIKU_C_PANEL);
+        preview.choice.open = 0;
+        dp_show_section(&preview, SEC_MEMORY);
+        for (int i = 0; i < preview.nestate; i++)
+            if (!strcmp(preview.estates[i].key, "stack")) preview.estate = i;
+        dp_draw(NULL, s, (tiku_rect_t){0,0,820,height}, &preview);
+        assert(tiku_surface_png(s, "/tmp/tiku-deviceprefs-memory.png") == 0);
+        tiku_surface_free(s);
+    }
     {
         struct desktop_deviceprefs preview = p;
         dp_layout_t dl = dp_layout((tiku_rect_t){0,0,760,0}, p.setting);
