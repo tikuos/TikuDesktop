@@ -136,10 +136,16 @@ Manifest installation and obsolete-output cleanup both depend on migration
 completing first, including with `make -j`. The layout tests exercise these
 Makefile rules against a legacy output tree with delayed migration.
 
-Compatibility symlinks keep `build/system`, `build/apps`, `build/gen`,
-`build/pic` (PIC archives), `build/libtiku_*.a`, `build/icon-export` and the
-three original launch paths usable. New scripts should use the canonical
-paths. The aliases do not duplicate binaries. A macOS bundle formerly at
+The build root holds the three launch paths people type, `build/TikuDesktop`,
+`build/TikuTracker` and `build/tiku-desk`, as links into `build/runtime/`,
+and nothing else of the earlier layout: the archives live in `build/lib/`
+(`lib/pic/` for the PIC ones), the objects in `build/obj/`, the generated
+headers in `build/generated/`, the shells and modules in `build/runtime/`,
+the script-capable shells in `build/dev/`, the tests, tools and examples in
+their own directories. The aliases an earlier layout left beside them
+(`build/system`, `build/apps`, `build/gen`, `build/pic`, `build/libtiku_*.a`,
+`build/icon-export`) are removed by `tools/prepare_build.py` on the next
+build; scripts use the canonical paths. A macOS bundle formerly at
 `build/TikuDesktop.app` is preserved under a `.legacy-backup` suffix before
 being replaced by an alias to `dist/TikuDesktop.app`.
 

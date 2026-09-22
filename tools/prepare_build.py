@@ -31,8 +31,25 @@ def link(path, target):
     path.symlink_to(relative)
 
 
+def unlink_alias(path):
+    """Drop an alias an earlier layout left; a real file or tree stays."""
+    if path.is_symlink():
+        path.unlink()
+
+
+# The launchers people type: the one alias layer the build root keeps.
+LAUNCHERS = ('TikuDesktop', 'TikuTracker', 'tiku-desk')
+
+# Aliases an earlier layout put beside them, for scripts since moved to
+# the canonical paths.  Nothing reads them; they are removed on sight.
+RETIRED = ('system', 'apps', 'gen', 'pic', 'icon-export') + tuple(
+    f'libtiku_{kit}.a' for kit in ('support', 'device', 'storage',
+                                   'interface', 'translation',
+                                   'application', 'media'))
+
+
 def prepare(root=ROOT):
-    """Prepare the canonical layout and aliases used by existing launchers."""
+    """Prepare the canonical layout; the root holds the launchers alone."""
     build = root / 'build'
     build.mkdir(exist_ok=True)
     for old, new in (('system', 'runtime/system'), ('apps', 'runtime/apps'),
@@ -46,15 +63,11 @@ def prepare(root=ROOT):
         name = f'libtiku_{kit}.a'
         relocate(build / name, build / 'lib' / name)
         relocate(build / 'obj/pic' / name, build / 'lib/pic' / name)
-        link(build / name, build / 'lib' / name)
     relocate(build / 'icon-export', build / 'tools/icon-export')
-    for old, new in (('system', 'runtime/system'), ('apps', 'runtime/apps'),
-                     ('gen', 'generated'), ('pic', 'lib/pic'),
-                     ('icon-export', 'tools/icon-export'),
-                     ('TikuDesktop', 'runtime/TikuDesktop'),
-                     ('TikuTracker', 'runtime/TikuTracker'),
-                     ('tiku-desk', 'runtime/tiku-desk')):
-        link(build / old, build / new)
+    for name in RETIRED:
+        unlink_alias(build / name)
+    for name in LAUNCHERS:
+        link(build / name, build / 'runtime' / name)
 
 
 if __name__ == '__main__':

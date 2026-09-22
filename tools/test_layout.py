@@ -79,9 +79,26 @@ class LayoutTests(unittest.TestCase):
         prepare_build.prepare(self.root)
         for old, new in pairs.items():
             self.assertEqual((self.root / 'build' / new).read_text(), old)
-        self.assertTrue((self.root / 'build/system').is_symlink())
-        self.assertEqual((self.root / 'build/pic').resolve(),
-                         self.root / 'build/lib/pic')
+        # The root keeps the three launchers and nothing else of the old
+        # layout: the moved trees leave no alias behind.
+        for name in ('system', 'apps', 'gen', 'pic', 'icon-export',
+                     'libtiku_support.a'):
+            self.assertFalse((self.root / 'build' / name).exists())
+            self.assertFalse((self.root / 'build' / name).is_symlink())
+        for name in ('TikuDesktop', 'TikuTracker', 'tiku-desk'):
+            self.assertTrue((self.root / 'build' / name).is_symlink())
+
+    def test_retired_aliases_are_removed(self):
+        """The earlier layout's aliases go, dangling or not; the trees stay."""
+        (self.root / 'build/lib').mkdir(parents=True)
+        (self.root / 'build/system').symlink_to('runtime/system')
+        (self.root / 'build/pic').symlink_to('lib/pic')
+        (self.root / 'build/libtiku_media.a').symlink_to('lib/libtiku_media.a')
+        prepare_build.prepare(self.root)
+        for name in ('system', 'pic', 'libtiku_media.a'):
+            self.assertFalse((self.root / 'build' / name).is_symlink())
+        self.assertTrue((self.root / 'build/runtime/system').is_dir())
+        self.assertTrue((self.root / 'build/lib/pic').is_dir())
 
     def test_conflicting_migration_does_not_overwrite(self):
         """Ambiguous old and new output trees require an explicit resolution."""
