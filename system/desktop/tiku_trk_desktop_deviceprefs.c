@@ -23,7 +23,8 @@
 
 enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_COUNT };
 enum { DP_DEVICE = 10, DP_EDIT = 50,
-       DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET, DP_ROW = 100 };
+       DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET,
+       DP_SECTION = 70, DP_ROW = 100 };
 enum { DP_READ = -1, DP_ENROLL = -2, DP_RETRY = -3, DP_DISCARD = -4 };
 /* The outline's sections, in the order they are shown.  A setting and a
  * fact each belong to one; a section with nothing on this firmware says
@@ -33,6 +34,12 @@ enum { SEC_IDENTITY, SEC_PROCESSOR, SEC_MEMORY, SEC_STORAGE, SEC_POWER,
 static const char *const section_name[SEC_COUNT] = {
     "Identity", "Processor", "Memory", "Storage", "Power", "Radio",
     "Security", "Boot"
+};
+/* The icon each section wears in the source list, from the kit's set. */
+static const char *const section_icon[SEC_COUNT] = {
+    "section_identity", "section_processor", "section_memory",
+    "section_storage", "section_power", "section_radio",
+    "section_security", "section_boot"
 };
 static const struct {
     const char *label, *path, *help;
@@ -119,9 +126,11 @@ static const struct {
       "Starts from power off, among those." },
 };
 #define DP_FACTS ((int)(sizeof facts / sizeof facts[0]))
-/* The outline can hold every heading, setting and fact, and an
- * "empty" line under a section with nothing on this firmware. */
-#define DP_ROWS (SEC_COUNT * 2 + DP_COUNT + DP_FACTS)
+/* One section's rows: its heading, its settings and facts, or the word
+ * that it has nothing on this firmware. */
+#define DP_ROWS (2 + DP_COUNT + DP_FACTS)
+/* The source list: every board, and under the chosen one its sections. */
+#define DP_TREE (TIKU_MOUNT_MAX + SEC_COUNT)
 
 typedef struct {
     char value[96];
@@ -144,7 +153,7 @@ struct desktop_deviceprefs {
     char names[TIKU_MOUNT_MAX][64];
     int count, selected, setting, busy, refs;
     int fact;                  /* the fact on show, or -1 for the setting */
-    unsigned folded;           /* a bit per section */
+    int section;               /* the section the right side shows */
     dp_value_t values[DP_COUNT];
     dp_value_t fact_values[DP_FACTS];
     dp_clock_t clock;
@@ -202,7 +211,7 @@ static dp_layout_t dp_layout(tiku_rect_t c, int setting)
     int button = tiku_ui_button_h();
     int bw = tiku_ui_button_w(setting == DP_CPU ? "Save for restart" :
                              setting == DP_TIME ? "Sync now" : "Apply", 88);
-    int left = 196 + (fh - 15) * 3;
+    int left = 232 + (fh - 15) * 3;
     int group_h = button + 3 * (fh + 2) + 44;
     int recovery_h = 2 * (fh + 2) + button + 34;
     int below = 18 + group_h + 14 + recovery_h + 12 + 2 * (fh + 2) + 14 +
@@ -238,12 +247,32 @@ static dp_layout_t dp_layout(tiku_rect_t c, int setting)
     return l;
 }
 
-/** @brief Device rows allow two short lines beside the board icon. */
+/** @brief Row @p i of the source list: a board, or a section under one. */
 static tiku_rect_t dp_device_row(dp_layout_t l, int i)
 {
-    int height = (l.devices.h - 8) / TIKU_MOUNT_MAX;
+    int height = dp_row();
     return (tiku_rect_t){l.devices.x + 4, l.devices.y + 4 + i * height,
                          l.devices.w - 8, height};
+}
+
+/**
+ * @brief The source list's rows: each board, and under the selected one
+ *        its sections, the way a system report lists them.  @return the
+ *        count; @p board and @p section say what each row is (-1 for
+ *        the other kind).
+ */
+static int dp_tree(const struct desktop_deviceprefs *p, int *board,
+                   int *section)
+{
+    int n = 0, i, sec;
+    for (i = 0; i < p->count && n < DP_TREE; i++) {
+        board[n] = i; section[n] = -1; n++;
+        if (i != p->selected) continue;
+        for (sec = 0; sec < SEC_COUNT && n < DP_TREE; sec++) {
+            board[n] = -1; section[n] = sec; n++;
+        }
+    }
+    return n;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -295,34 +324,22 @@ static void dp_fact_text(int format, const char *value, char *out, size_t cap)
     }
 }
 
-/** @brief Build the outline from what the last read brought back. */
+/** @brief Build the section's rows from what the last read brought back. */
 static void dp_outline_build(struct desktop_deviceprefs *p)
 {
-    int sec, i;
+    int i, sec = p->section;
     p->nrow = 0;
-    for (sec = 0; sec < SEC_COUNT && p->nrow < DP_ROWS; sec++) {
-        int at = p->nrow, shown = 0, any = 0;
-        p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 1};
-        for (i = 0; i < DP_COUNT; i++) {
-            if (settings[i].section != sec) continue;
-            any++;
-            if (p->folded & (1u << sec)) continue;
+    p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 1};
+    for (i = 0; i < DP_COUNT; i++)
+        if (settings[i].section == sec)
             p->rows[p->nrow++] = (dp_row_t){sec, i, -1, 0};
-            shown++;
-        }
-        for (i = 0; i < DP_FACTS && p->nrow < DP_ROWS - 1; i++) {
-            if (facts[i].section != sec || !p->fact_values[i].present) continue;
-            any++;
-            if (p->folded & (1u << sec)) continue;
+    for (i = 0; i < DP_FACTS && p->nrow < DP_ROWS - 1; i++)
+        if (facts[i].section == sec && p->fact_values[i].present)
             p->rows[p->nrow++] = (dp_row_t){sec, -1, i, 0};
-            shown++;
-        }
-        if (!any && !(p->folded & (1u << sec))) {
-            /* Nothing on this firmware: the heading says so on its own
-             * line, in the quiet ink, rather than standing over nothing. */
-            p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 2};
-        }
-        (void)at; (void)shown;
+    if (p->nrow == 1) {
+        /* Nothing on this firmware: the heading says so on its own
+         * line, in the quiet ink, rather than standing over nothing. */
+        p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 2};
     }
     tiku_list_set_count(&p->list, p->nrow);
     tiku_list_set_row_h(&p->list, dp_row());
@@ -330,10 +347,27 @@ static void dp_outline_build(struct desktop_deviceprefs *p)
         tiku_list_set_heading(&p->list, i, p->rows[i].heading != 0);
 }
 
-/** @brief The outline row showing setting @p setting, or -1 if folded. */
-static int dp_row_of_setting(const struct desktop_deviceprefs *p, int setting)
+/** @brief Show @p section: its first setting, else its first fact. */
+static void dp_show_section(struct desktop_deviceprefs *p, int section)
 {
     int i;
+    p->section = section;
+    p->fact = -1;
+    dp_outline_build(p);
+    for (i = 1; i < p->nrow; i++) {
+        if (p->rows[i].setting >= 0) { p->setting = p->rows[i].setting; return; }
+    }
+    for (i = 1; i < p->nrow; i++) {
+        if (p->rows[i].fact >= 0) { p->fact = p->rows[i].fact; return; }
+    }
+}
+
+/** @brief The row showing setting @p setting, once its section is shown. */
+static int dp_row_of_setting(struct desktop_deviceprefs *p, int setting)
+{
+    int i;
+    p->section = settings[setting].section;
+    dp_outline_build(p);
     for (i = 0; i < p->nrow; i++)
         if (p->rows[i].setting == setting) return i;
     return -1;
@@ -875,13 +909,12 @@ static void dp_table(struct desktop_deviceprefs *p, tiku_surface_t *s,
         char value[128];
         if (r.heading == 1) {
             const char *pill = NULL;
-            int folded = (p->folded & (1u << r.section)) != 0;
             tiku_fill(s, row, TIKU_C_PANEL);
             tiku_hline(s, row.x, row.y + row.h - 1, row.w,
                        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
-            tiku_ui_arrow(s, (tiku_rect_t){row.x + 6, row.y + 6, 12,
-                                           row.h - 12}, folded ? 3 : 1, 1);
-            tiku_text(s, tiku_font_bold(), row.x + 26,
+            tiku_icon_paint(s, section_icon[r.section], row.x + 8,
+                            row.y + (row.h - 16) / 2, 16);
+            tiku_text(s, tiku_font_bold(), row.x + 30,
                       row.y + (row.h - f->height) / 2 + f->ascent,
                       section_name[r.section], TIKU_C_TEXT);
             if (r.section == SEC_PROCESSOR && dp_clock_pending(p))
@@ -1091,15 +1124,37 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
     tiku_text(s, tiku_font_bold(), l.devices.x, c.y + 18 + f->ascent,
               "Devices", TIKU_C_TEXT);
     tiku_ui_sunken(s, l.devices, TIKU_C_DOC);
-    for (i = 0; i < p->count; i++) {
-        tiku_rect_t r = dp_device_row(l, i);
-        if (i == p->selected) tiku_fill(s, r, TIKU_C_SELECT);
-        tiku_icon_paint(s, "microcontroller", r.x + 6,
-                        r.y + (r.h - 24) / 2, 24);
-        dp_explain(s, r.x + 38, r.y + 5, r.w - 44, p->names[i],
-                   i == p->selected ? TIKU_C_SELTEXT : TIKU_C_TEXT, 2);
-        if (tiku_dialog_focused(&p->dialog, DP_DEVICE + i))
-            tiku_frame(s, tiku_inset(r, 1), TIKU_C_FOCUS);
+    {
+        /* The source list: a board in the bold face with its chip, and
+         * under the chosen one its sections, each with its icon; the
+         * section on show is the selection. */
+        int board[DP_TREE], section[DP_TREE];
+        int n = dp_tree(p, board, section);
+        for (i = 0; i < n; i++) {
+            tiku_rect_t r = dp_device_row(l, i);
+            int shown = section[i] == p->section && section[i] >= 0;
+            int id = board[i] >= 0 ? DP_DEVICE + board[i]
+                                   : DP_SECTION + section[i];
+            if (shown) tiku_fill(s, r, TIKU_C_SELECT);
+            if (board[i] >= 0) {
+                tiku_icon_paint(s, "microcontroller", r.x + 4,
+                                r.y + (r.h - 20) / 2, 20);
+                tiku_text_line_draw(s, (tiku_rect_t){r.x + 30, r.y,
+                                                     r.w - 34, r.h},
+                                    TIKU_MEASURE_BOLD, p->names[board[i]],
+                                    TIKU_C_TEXT);
+            } else {
+                tiku_icon_paint(s, section_icon[section[i]], r.x + 26,
+                                r.y + (r.h - 16) / 2, 16);
+                tiku_text_line_draw(s, (tiku_rect_t){r.x + 48, r.y,
+                                                     r.w - 52, r.h},
+                                    TIKU_MEASURE_PLAIN,
+                                    section_name[section[i]],
+                                    shown ? TIKU_C_SELTEXT : TIKU_C_TEXT);
+            }
+            if (tiku_dialog_focused(&p->dialog, id))
+                tiku_frame(s, tiku_inset(r, 1), TIKU_C_FOCUS);
+        }
     }
     if (!p->count) dp_explain(s, l.devices.x + 12, l.devices.y + 14,
         l.devices.w - 24, "No devices connected", quiet, 2);
@@ -1157,16 +1212,21 @@ static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
 {
     int writable = dp_can_edit(p);
     tiku_dialog_begin(&p->dialog, DP_APPLY, DP_DONE);
-    for (int i = 0; i < p->count; i++)
-        tiku_dialog_add(&p->dialog, DP_DEVICE + i, dp_device_row(l, i),
-                        TIKU_DIALOG_BUTTON, !p->busy);
+    {
+        int board[DP_TREE], section[DP_TREE];
+        int n = dp_tree(p, board, section), i;
+        for (i = 0; i < n; i++)
+            tiku_dialog_add(&p->dialog, board[i] >= 0 ? DP_DEVICE + board[i]
+                                                      : DP_SECTION + section[i],
+                            dp_device_row(l, i), TIKU_DIALOG_BUTTON, !p->busy);
+    }
     {
         /* Every outline row in view is a button: a heading folds, a
          * setting or a fact comes onto the group below. */
         int visible = tiku_list_visible_rows(&p->list, l.table), i;
         dp_outline_build(p);
         for (i = p->list.top; i < p->nrow && i < p->list.top + visible; i++) {
-            if (p->rows[i].heading == 2) continue;
+            if (p->rows[i].heading) continue;
             tiku_dialog_add(&p->dialog, DP_ROW + i,
                             tiku_list_row_rect(&p->list, l.table, i),
                             TIKU_DIALOG_BUTTON, !p->busy && p->count);
@@ -1257,11 +1317,7 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     } else if (result.activated >= DP_ROW &&
                result.activated < DP_ROW + p->nrow) {
         dp_row_t r = p->rows[result.activated - DP_ROW];
-        if (r.heading) {
-            p->folded ^= 1u << r.section;
-            dp_outline_build(p);
-            dp_controls(p, dp_layout(c, p->setting));
-        } else if (r.setting >= 0) {
+        if (r.setting >= 0) {
             p->setting = r.setting;
             p->fact = -1;
             dp_edit(p);
@@ -1271,6 +1327,13 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
             p->fact = r.fact;
             tiku_choice_close(&p->choice);
         }
+    } else if (result.activated >= DP_SECTION &&
+               result.activated < DP_SECTION + SEC_COUNT) {
+        dp_show_section(p, result.activated - DP_SECTION);
+        if (p->fact < 0) dp_edit(p);
+        tiku_choice_close(&p->choice);
+        (void)tiku_list_scroll_to(&p->list, 0, l.table);
+        dp_controls(p, dp_layout(c, p->setting));
     } else if (result.activated == DP_REFRESH) dp_refresh(p);
     else if (result.activated == DP_APPLY) dp_apply(p);
     else if (result.activated == DP_RECOVERY && !p->busy) {
@@ -1340,9 +1403,7 @@ void desktop_deviceprefs_open(desktop_t *app)
         p->refs = 1;
         p->setting = DP_CPU;
         p->fact = -1;
-        /* Storage and Boot start folded: the numbers a person comes for
-         * are the identity, the processor and the memory. */
-        p->folded = (1u << SEC_STORAGE) | (1u << SEC_BOOT);
+        p->section = SEC_PROCESSOR;
         tiku_list_init(&p->list, 1);
         tiku_dialog_init(&p->dialog);
         tiku_choice_init(&p->choice);

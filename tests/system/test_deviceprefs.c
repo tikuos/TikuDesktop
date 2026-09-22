@@ -330,31 +330,33 @@ int main(void)
     memcpy(p.values, j.values, sizeof p.values);
     memcpy(p.fact_values, j.fact_values, sizeof p.fact_values);
     p.clock = j.clock;
-    /* The outline: every section has a heading; the facts the device
-     * answered sit under theirs, in bytes and spans a person reads; a
-     * taller window shows more rows; a folded section hides its rows. */
+    /* The section on show: its heading first, then its settings and the
+     * facts the device answered, in bytes and spans a person reads; the
+     * source list holds every board and the chosen one's sections. */
     {
         char text[128];
-        int headings = 0, memory = 0;
-        dp_outline_build(&p);
-        for (int i = 0; i < p.nrow; i++) {
-            headings += p.rows[i].heading == 1;
+        int memory = 0, board[DP_TREE], section[DP_TREE];
+        p.fact = -1;
+        dp_show_section(&p, SEC_MEMORY);
+        assert(p.rows[0].heading == 1 && p.rows[0].section == SEC_MEMORY);
+        assert(p.fact == 8 && p.setting == DP_NAME);   /* SRAM, the first */
+        for (int i = 0; i < p.nrow; i++)
             memory += p.rows[i].section == SEC_MEMORY && p.rows[i].fact >= 0;
-        }
-        assert(headings == SEC_COUNT && memory == 4);
+        assert(memory == 4);
+        dp_show_section(&p, SEC_POWER);
+        assert(p.fact < 0 && p.setting == DP_SLEEP);
+        dp_show_section(&p, SEC_STORAGE);
+        assert(p.nrow == 2 && p.rows[1].fact >= 0);
         dp_fact_text(FMT_BYTES, "262144", text, sizeof text);
         assert(!strcmp(text, "256.0 KB"));
         dp_fact_text(FMT_SECONDS, "93784", text, sizeof text);
         assert(!strcmp(text, "1d 2h 3m"));
         assert(dp_layout((tiku_rect_t){0, 0, 820, 760}, DP_CPU).table.h >
                dp_layout((tiku_rect_t){0, 0, 820, 0}, DP_CPU).table.h);
-        p.folded = 1u << SEC_MEMORY;
-        dp_outline_build(&p);
-        memory = 0;
-        for (int i = 0; i < p.nrow; i++)
-            memory += p.rows[i].section == SEC_MEMORY && p.rows[i].fact >= 0;
-        assert(memory == 0);
-        p.folded = 0;
+        assert(dp_tree(&p, board, section) == 2 + SEC_COUNT);
+        assert(board[0] == 0 && section[1] == SEC_IDENTITY &&
+               board[1 + SEC_COUNT] == 1);
+        dp_show_section(&p, SEC_PROCESSOR);
     }
     snprintf(p.names[0], sizeof p.names[0], "nrf54l15");
     snprintf(p.names[1], sizeof p.names[1], "nrf54lm20b");
