@@ -38,11 +38,13 @@ def unlink_alias(path):
 
 
 # The launchers people type: the one alias layer the build root keeps.
-LAUNCHERS = ('TikuDesktop', 'TikuTracker', 'tiku-desk')
+LAUNCHERS = ('TikuDesktop', 'tiku-desk')
 
 # Aliases an earlier layout put beside them, for scripts since moved to
-# the canonical paths.  Nothing reads them; they are removed on sight.
-RETIRED = ('system', 'apps', 'gen', 'pic', 'icon-export') + tuple(
+# the canonical paths, and the standalone Tracker's launcher, which is
+# no product.  Nothing reads them; they are removed on sight.
+RETIRED = ('system', 'apps', 'gen', 'pic', 'icon-export',
+           'TikuTracker', 'runtime/TikuTracker') + tuple(
     f'libtiku_{kit}.a' for kit in ('support', 'device', 'storage',
                                    'interface', 'translation',
                                    'application', 'media'))

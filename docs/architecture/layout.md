@@ -66,10 +66,11 @@ tree; `make runtime` builds the shipping binaries, applications and resources.
 
 | Output | Purpose |
 | --- | --- |
-| `build/runtime/system/` | TikuDesktop, TikuTracker, tiku-run and tiku-desk |
+| `build/runtime/system/` | TikuDesktop, tiku-run and tiku-desk |
 | `build/runtime/apps/<id>/` | Stable app ID, manifest, module and optional helper/standalone binary |
 | `build/runtime/assets/` | Runtime artwork, sounds, help and translation catalogs |
-| `build/runtime/TikuDesktop`, `TikuTracker`, `tiku-desk` | Resource-aware launchers |
+| `build/runtime/TikuDesktop`, `tiku-desk` | Resource-aware launchers |
+| `build/dev/` | The harness's shells with the script engine, TikuTracker among them: the single-window file manager is test infrastructure, never a product |
 | `build/lib/`, `build/lib/pic/` | SDK static and position-independent archives |
 | `build/obj/`, `build/obj/pic/` | Intermediate object/dependency files |
 | `build/generated/` | Generated headers |
@@ -136,15 +137,16 @@ Manifest installation and obsolete-output cleanup both depend on migration
 completing first, including with `make -j`. The layout tests exercise these
 Makefile rules against a legacy output tree with delayed migration.
 
-The build root holds the three launch paths people type, `build/TikuDesktop`,
-`build/TikuTracker` and `build/tiku-desk`, as links into `build/runtime/`,
+The build root holds the two launch paths people type, `build/TikuDesktop`
+and `build/tiku-desk`, as links into `build/runtime/`,
 and nothing else of the earlier layout: the archives live in `build/lib/`
 (`lib/pic/` for the PIC ones), the objects in `build/obj/`, the generated
 headers in `build/generated/`, the shells and modules in `build/runtime/`,
 the script-capable shells in `build/dev/`, the tests, tools and examples in
 their own directories. The aliases an earlier layout left beside them
 (`build/system`, `build/apps`, `build/gen`, `build/pic`, `build/libtiku_*.a`,
-`build/icon-export`) are removed by `tools/prepare_build.py` on the next
+`build/icon-export`, and `build/TikuTracker`, the standalone file manager
+nothing but the harness starts) are removed by `tools/prepare_build.py` on the next
 build; scripts use the canonical paths. A macOS bundle formerly at
 `build/TikuDesktop.app` is preserved under a `.legacy-backup` suffix before
 being replaced by an alias to `dist/TikuDesktop.app`.

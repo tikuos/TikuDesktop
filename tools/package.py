@@ -13,8 +13,10 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-SYSTEM = ('TikuDesktop', 'TikuTracker', 'tiku-run', 'tiku-desk')
-LAUNCHERS = ('TikuDesktop', 'TikuTracker', 'tiku-desk')
+# The single-window TikuTracker is the harness's, under build/dev/: it
+# ships nowhere, so nothing starts the file manager without the desk.
+SYSTEM = ('TikuDesktop', 'tiku-run', 'tiku-desk')
+LAUNCHERS = ('TikuDesktop', 'tiku-desk')
 RESOURCE_DIRS = ('system', 'applications', 'sounds', 'help', 'strings')
 HELPERS = {'basic': ('tiku-basic',), 'editor': ('tiku-edit',),
            'terminal': ('tiku-term',)}

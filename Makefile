@@ -75,7 +75,7 @@ sweep-legacy: | prepare-build
 
 # Old user-facing entry points remain links, not extra copies of binaries.
 .PHONY: launch-links
-launch-links: prepare-build resources $(SYSTEM)/TikuDesktop $(SYSTEM)/TikuTracker $(DESK_SUP)
+launch-links: prepare-build resources $(SYSTEM)/TikuDesktop $(DESK_SUP)
 
 all: launch-links
 shells loadable: sweep-legacy

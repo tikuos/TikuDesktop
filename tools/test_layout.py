@@ -85,8 +85,10 @@ class LayoutTests(unittest.TestCase):
                      'libtiku_support.a'):
             self.assertFalse((self.root / 'build' / name).exists())
             self.assertFalse((self.root / 'build' / name).is_symlink())
-        for name in ('TikuDesktop', 'TikuTracker', 'tiku-desk'):
+        for name in ('TikuDesktop', 'tiku-desk'):
             self.assertTrue((self.root / 'build' / name).is_symlink())
+        # The single-window Tracker is the harness's alone: no launcher.
+        self.assertFalse((self.root / 'build/TikuTracker').exists())
 
     def test_retired_aliases_are_removed(self):
         """The earlier layout's aliases go, dangling or not; the trees stay."""
@@ -273,8 +275,10 @@ class LayoutTests(unittest.TestCase):
         output = self.launch(target / 'TikuDesktop')
         self.assertEqual(output, [str(target / 'apps'), str(target / 'assets/help'),
                                   str(target / 'assets/strings'), 'two words'])
-        output = self.launch(target / 'TikuTracker', TIKU_HELP='/custom/help')
+        output = self.launch(target / 'tiku-desk', TIKU_HELP='/custom/help')
         self.assertEqual(output[1], '/custom/help')
+        self.assertFalse((target / 'TikuTracker').exists())
+        self.assertFalse((target / 'system/TikuTracker').exists())
 
     def test_legacy_launcher_alias(self):
         """The original build/TikuDesktop entry point uses packaged resources."""

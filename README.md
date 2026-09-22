@@ -42,8 +42,10 @@ make runtime             # production binaries, application bundles and assets
 ```
 
 The main executable names, application IDs, settings and module ABI are
-unchanged. `./build/TikuDesktop`, `./build/TikuTracker` and
-`./build/tiku-desk` remain compatibility launchers. Running `make` inside
+unchanged. `./build/TikuDesktop` and `./build/tiku-desk` remain
+compatibility launchers. The single-window TikuTracker is built only for
+the test harness, under `build/dev/`: the file manager does not start
+without the desktop. Running `make` inside
 `TikuTracker/`, `apps/` or `kits/` still forwards to this build.
 
 The optional `tiku-basic` host interpreter is compiled from

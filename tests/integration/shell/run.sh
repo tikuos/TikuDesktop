@@ -46,8 +46,9 @@ fails=0
 
 # The scripted shells are the DEVELOPMENT flavour: the interpreter that
 # reads these files is test infrastructure and is not linked into what
-# ships (build/runtime/system/TikuDesktop, build/runtime/system/TikuTracker).  Those refuse -script loudly, so
-# a harness pointed at the wrong one fails rather than passing quietly.
+# ships (build/runtime/system/TikuDesktop refuses -script loudly, so a
+# harness pointed at it fails rather than passing quietly).  The
+# single-window TikuTracker exists only here, under build/dev/.
 devbin="$top/build/dev"
 
 # Scripts that are also run through the OUT-OF-PROCESS driver, against the

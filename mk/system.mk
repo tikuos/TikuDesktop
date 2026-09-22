@@ -1,19 +1,19 @@
-# The Tracker rewrite: one core, two shells, each in two flavours.
+# The Tracker rewrite: one core, two shells; the desktop in two flavours.
 #
-# build/TikuTracker is the file manager and build/TikuDesktop the shell
-# that owns the Deskbar, the desk icons and the root window.  They are
-# built side by side because they share a core, and the tests of that
-# core are built beside them.  The session and namespace client under
-# both is not kept here; it is the kits.
+# TikuDesktop is the product: the shell that owns the Deskbar, the desk
+# icons and the root window, and the file manager inside it.  The
+# single-window TikuTracker is the same core without the desk, and it is
+# NOT a product: nothing starts it but the harness, whose 22 tracker
+# lanes drive the file manager's core in isolation.  The session and
+# namespace client under both is not kept here; it is the kits.
 #
 # The scripted driver is TEST infrastructure and is NOT shipped.  Two
-# flavours of each shell come from one object set:
+# flavours of the desktop come from one object set:
 #
-#   build/TikuDesktop      build/TikuTracker      the product: the stub
-#                                                 refuses -script, and no
-#                                                 interpreter is linked
-#   build/dev/TikuDesktop  build/dev/TikuTracker  the harness's binaries,
-#                                                 with the engine
+#   build/runtime/system/TikuDesktop   the product: the stub refuses
+#                                      -script, no interpreter is linked
+#   build/dev/TikuDesktop              the harness's binary, with the
+#   build/dev/TikuTracker              engine; the Tracker exists here only
 #
 # Separate paths rather than one path built two ways: a flag that changes
 # no timestamp would leave an instrumented binary under the shipping name,
@@ -215,10 +215,6 @@ STUB_OBJ           := $(call objs,$(SCRIPT_STUB))
 ENGINE_TRACKER_OBJ := $(call objs,$(SCRIPT_ENGINE_TRACKER))
 ENGINE_DESKTOP_OBJ := $(call objs,$(SCRIPT_ENGINE_DESKTOP))
 
-$(SYSTEM)/TikuTracker: $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) | $(SYSTEM)
-	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(STUB_OBJ) $(DESK_LIBS) \
-	      $(LDFLAGS) $(X11_LIBS) -lm
-
 $(DEV)/TikuTracker: $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) $(DESK_LIBS) | $(DEV)
 	$(CC) $(CFLAGS) -o $@ $(TRACKER_OBJ) $(ENGINE_TRACKER_OBJ) $(DESK_LIBS) \
 	      $(LDFLAGS) $(X11_LIBS) -lm
@@ -241,6 +237,6 @@ $(BUILD)/tools/icon-export: $(call objs,tools/tiku_trk_icon_export.c) $(DESK_LIB
 	$(CC) $(CFLAGS) -o $@ $< $(DESK_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 .PHONY: shells
-shells: $(SYSTEM)/TikuTracker $(SYSTEM)/TikuDesktop \
+shells: $(SYSTEM)/TikuDesktop \
         $(DEV)/TikuTracker $(DEV)/TikuDesktop \
         $(DEV)/trk-conduct $(BUILD)/tools/icon-export

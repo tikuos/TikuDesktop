@@ -15,15 +15,18 @@ front-ends are built from one core:
 - **`build/TikuDesktop`** — the multi-window shell: a backdrop with a Desktop
   pose view, folder windows, the Deskbar, the Find panel, Get Info, the
   Open/Save panel, alerts, a progress window.
-- **`build/TikuTracker`** — the single-window shell, with the column strip,
-  the scrollbar and the status view.
+- **`build/dev/TikuTracker`** — the single-window shell, with the column
+  strip, the scrollbar and the status view. It is the harness's alone:
+  the file manager's core driven in isolation by the tracker lanes, and
+  it is not built as a product, packaged or given a launcher, so the file
+  manager never runs without the desktop.
 
-Each is built in **two flavours from one source tree**. `build/TikuDesktop`
-and `build/TikuTracker` are the product: they link a stub that refuses
-`-script`, and carry neither the script interpreter nor the presentation
+The desktop is built in **two flavours from one source tree**.
+`build/TikuDesktop` is the product: it links a stub that refuses
+`-script`, and carries neither the script interpreter nor the presentation
 adapter that reads rows, menus and pixels back out of a running shell.
 `build/dev/TikuDesktop` and `build/dev/TikuTracker` link that engine and are
-what `tests/shell/run.sh` drives.
+what `tests/integration/shell/run.sh` drives.
 The test infrastructure is a developer tool, not something a device image
 should carry; `tools/check_shipping.py` (run inside `make test`) proves the
 script vocabulary is absent from what ships and present in what the harness

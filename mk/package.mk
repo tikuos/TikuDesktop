@@ -1,6 +1,6 @@
 # Runnable trees contain system binaries, application bundles and resources.
 .PHONY: runtime resources package check-package
-runtime: $(SYSTEM)/TikuDesktop $(SYSTEM)/TikuTracker system apps resources launch-links
+runtime: $(SYSTEM)/TikuDesktop system apps resources launch-links
 
 resources: | prepare-build
 	@python3 tools/package.py resources
