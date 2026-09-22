@@ -357,6 +357,22 @@ int main(void)
         assert(board[0] == 0 && section[1] == SEC_IDENTITY &&
                board[1 + SEC_COUNT] == 1);
         dp_show_section(&p, SEC_PROCESSOR);
+        /* A section the board has nothing for is greyed out and cannot
+         * be chosen; before any read, every section is offered. */
+        {
+            struct desktop_deviceprefs bare = p;
+            dp_value_t sleep = p.values[DP_SLEEP];
+            /* The radio went missing earlier in this run: greyed. */
+            assert(!dp_section_available(&p, SEC_RADIO));
+            assert(dp_section_available(&p, SEC_POWER));
+            p.values[DP_SLEEP].present = 0;
+            assert(!dp_section_available(&p, SEC_POWER));
+            assert(dp_section_available(&p, SEC_MEMORY));
+            p.values[DP_SLEEP] = sleep;
+            memset(bare.values, 0, sizeof bare.values);
+            memset(bare.fact_values, 0, sizeof bare.fact_values);
+            assert(dp_section_available(&bare, SEC_RADIO));
+        }
     }
     snprintf(p.names[0], sizeof p.names[0], "nrf54l15");
     snprintf(p.names[1], sizeof p.names[1], "nrf54lm20b");

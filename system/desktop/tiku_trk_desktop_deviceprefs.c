@@ -82,7 +82,8 @@ static const struct {
       "Burned into the part; it survives renames and reflashes." },
     { SEC_IDENTITY, FMT_SECONDS, "Uptime", "/sys/uptime",
       "Since the last reset." },
-    { SEC_PROCESSOR, FMT_CLOCKMODE, "Clock control", "/sys/cpu/freq_change_mode",
+    { SEC_PROCESSOR, FMT_CLOCKMODE, "Clock control",
+      "/sys/cpu/freq_change_mode",
       "How a new rate takes: at once, at the next restart, or never." },
     { SEC_PROCESSOR, FMT_PLAIN, "Idle time", "/sys/sched/idle",
       "How much of the time the scheduler had nothing to run." },
@@ -347,6 +348,26 @@ static void dp_outline_build(struct desktop_deviceprefs *p)
         tiku_list_set_heading(&p->list, i, p->rows[i].heading != 0);
 }
 
+/**
+ * @brief Whether the board has anything under @p section.
+ *
+ * Known only once a read has come back: before that every section is
+ * offered, since greying them all out would say the board has nothing
+ * when the truth is that nobody has asked it yet.
+ */
+static int dp_section_available(const struct desktop_deviceprefs *p, int sec)
+{
+    int i, read = 0;
+    for (i = 0; i < DP_COUNT; i++) read |= p->values[i].present;
+    for (i = 0; i < DP_FACTS; i++) read |= p->fact_values[i].present;
+    if (!read || p->busy) return 1;
+    for (i = 0; i < DP_COUNT; i++)
+        if (settings[i].section == sec && p->values[i].present) return 1;
+    for (i = 0; i < DP_FACTS; i++)
+        if (facts[i].section == sec && p->fact_values[i].present) return 1;
+    return 0;
+}
+
 /** @brief Show @p section: its first setting, else its first fact. */
 static void dp_show_section(struct desktop_deviceprefs *p, int section)
 {
@@ -355,7 +376,10 @@ static void dp_show_section(struct desktop_deviceprefs *p, int section)
     p->fact = -1;
     dp_outline_build(p);
     for (i = 1; i < p->nrow; i++) {
-        if (p->rows[i].setting >= 0) { p->setting = p->rows[i].setting; return; }
+        if (p->rows[i].setting >= 0) {
+            p->setting = p->rows[i].setting;
+            return;
+        }
     }
     for (i = 1; i < p->nrow; i++) {
         if (p->rows[i].fact >= 0) { p->fact = p->rows[i].fact; return; }
@@ -666,6 +690,16 @@ static void dp_done(void *ctx)
     p->can_enroll = j->can_enroll;
     p->confirm = 0;
     snprintf(p->status, sizeof p->status, "%s", j->status);
+    if (!dp_section_available(p, p->section)) {
+        /* The section on show has nothing on this board: the first one
+         * that has is shown instead, so the window never opens on grey. */
+        int sec;
+        for (sec = 0; sec < SEC_COUNT; sec++)
+            if (dp_section_available(p, sec)) {
+                dp_show_section(p, sec);
+                break;
+            }
+    }
     dp_edit(p);
     desktop_damage_all(p->app);
 }
@@ -1144,13 +1178,22 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
                                     TIKU_MEASURE_BOLD, p->names[board[i]],
                                     TIKU_C_TEXT);
             } else {
-                tiku_icon_paint(s, section_icon[section[i]], r.x + 26,
-                                r.y + (r.h - 16) / 2, 16);
+                /* A section the board has nothing for is greyed out:
+                 * its icon washed toward the paper, its word dimmed. */
+                int have = dp_section_available(p, section[i]);
+                if (have)
+                    tiku_icon_paint(s, section_icon[section[i]], r.x + 26,
+                                    r.y + (r.h - 16) / 2, 16);
+                else
+                    tiku_icon_paint_dim(s, section_icon[section[i]], r.x + 26,
+                                        r.y + (r.h - 16) / 2, 16, 0.6f,
+                                        TIKU_C_DOC);
                 tiku_text_line_draw(s, (tiku_rect_t){r.x + 48, r.y,
                                                      r.w - 52, r.h},
                                     TIKU_MEASURE_PLAIN,
                                     section_name[section[i]],
-                                    shown ? TIKU_C_SELTEXT : TIKU_C_TEXT);
+                                    shown ? TIKU_C_SELTEXT : have ? TIKU_C_TEXT
+                                    : tiku_dim(TIKU_C_TEXT, TIKU_C_DOC));
             }
             if (tiku_dialog_focused(&p->dialog, id))
                 tiku_frame(s, tiku_inset(r, 1), TIKU_C_FOCUS);
@@ -1174,7 +1217,8 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
         tiku_text_line_draw(s, (tiku_rect_t){l.table.x + 44, c.y + 14,
                                              l.table.w - 44, f->height + 4},
                             TIKU_MEASURE_BOLD,
-                            p->count ? p->names[p->selected] : "Device settings",
+                            p->count ? p->names[p->selected]
+                                     : "Device settings",
                             TIKU_C_TEXT);
         dp_line(s, (tiku_rect_t){l.table.x + 44, c.y + f->height + 20,
                                 l.table.w - 44, f->height}, subtitle, quiet);
@@ -1218,7 +1262,9 @@ static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
         for (i = 0; i < n; i++)
             tiku_dialog_add(&p->dialog, board[i] >= 0 ? DP_DEVICE + board[i]
                                                       : DP_SECTION + section[i],
-                            dp_device_row(l, i), TIKU_DIALOG_BUTTON, !p->busy);
+                            dp_device_row(l, i), TIKU_DIALOG_BUTTON,
+                            !p->busy && (board[i] >= 0 ||
+                                         dp_section_available(p, section[i])));
     }
     {
         /* Every outline row in view is a button: a heading folds, a
