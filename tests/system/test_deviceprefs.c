@@ -7,10 +7,16 @@
 /** @brief The painter is not linked: a full frame is the flag, as before. */
 void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
-static tiku_rect_t dp_setting_row(dp_layout_t l, int i)
+/** @brief Where setting @p i sits in the outline, scrolled into view. */
+static tiku_rect_t dp_setting_row(struct desktop_deviceprefs *p,
+                                  dp_layout_t l, int i)
 {
-    tiku_properties_t table = {.count = DP_COUNT, .row_h = dp_row()};
-    return tiku_properties_row(&table, l.table, i);
+    int row;
+    dp_outline_build(p);
+    row = dp_row_of_setting(p, i);
+    assert(row >= 0);
+    (void)tiku_list_scroll_to(&p->list, row, l.table);
+    return tiku_list_row_rect(&p->list, l.table, row);
 }
 
 static char vals[DP_COUNT][96] = {"Desk sensor", "128000000",
@@ -32,6 +38,22 @@ int desktop_board_names(desktop_t *app, char *out, size_t max)
     return snprintf(out, max, "nrf54l15\nnrf54lm20b\n");
 }
 
+/* The facts a board reports beside its settings: a few, so the outline
+ * has sections to show; the rest are "not on this firmware". */
+static const char *fact_value(const char *path)
+{
+    static const struct { const char *path, *value; } table[] = {
+        { "/sys/device/mcu", "nrf54l15" }, { "/sys/version", "0.06" },
+        { "/sys/uptime", "93784" }, { "/sys/mem/sram", "262144" },
+        { "/sys/mem/used", "81920" }, { "/sys/mem/free", "172032" },
+        { "/sys/mem/stack_free", "6144" }, { "/sys/mem/nvm", "1572864" },
+        { "/sys/last_reset", "power" }, { "/sys/boot_count", "41" },
+    };
+    for (size_t i = 0; i < sizeof table / sizeof table[0]; i++)
+        if (!strcmp(path, table[i].path)) return table[i].value;
+    return NULL;
+}
+
 static int which(const char *path)
 {
     if (clock_supported && !strcmp(path, "/sys/cpu/freq_target"))
@@ -47,6 +69,10 @@ static int mock_stat(tiku_backend_t *b, const char *path, tiku_model_t *m)
     (void)b;
     if (config_supported && !strncmp(path, "/sys/config/", 12)) {
         memset(m, 0, sizeof *m); m->facts.perm = TIKU_P_READ | TIKU_P_WRITE;
+        return 0;
+    }
+    if (i < 0 && fact_value(path) != NULL) {
+        memset(m, 0, sizeof *m); m->facts.perm = TIKU_P_READ;
         return 0;
     }
     if (i < 0 || (missing && i == DP_RADIO)) return -1;
@@ -81,6 +107,8 @@ static int mock_read(tiku_backend_t *b, const char *path, void *out, size_t max)
             return snprintf(out, max, "%s\n", clock_mode);
         if (i == DP_COUNT) return snprintf(out, max, "%s\n", clock_target);
     }
+    if (i < 0 && fact_value(path) != NULL)
+        return snprintf(out, max, "%s\n", fact_value(path));
     if (i < 0) return -1;
     return snprintf(out, max, "%s\n", vals[i]);
 }
@@ -296,9 +324,38 @@ int main(void)
     dp_done(late);
     dp_free(late);
     free(app);
-    struct desktop_deviceprefs p = {.count=2, .selected=0, .setting=DP_NAME};
+    struct desktop_deviceprefs p = {.count=2, .selected=0, .setting=DP_NAME,
+                                    .fact=-1};
+    tiku_list_init(&p.list, 1);
     memcpy(p.values, j.values, sizeof p.values);
+    memcpy(p.fact_values, j.fact_values, sizeof p.fact_values);
     p.clock = j.clock;
+    /* The outline: every section has a heading; the facts the device
+     * answered sit under theirs, in bytes and spans a person reads; a
+     * taller window shows more rows; a folded section hides its rows. */
+    {
+        char text[128];
+        int headings = 0, memory = 0;
+        dp_outline_build(&p);
+        for (int i = 0; i < p.nrow; i++) {
+            headings += p.rows[i].heading == 1;
+            memory += p.rows[i].section == SEC_MEMORY && p.rows[i].fact >= 0;
+        }
+        assert(headings == SEC_COUNT && memory == 4);
+        dp_fact_text(FMT_BYTES, "262144", text, sizeof text);
+        assert(!strcmp(text, "256.0 KB"));
+        dp_fact_text(FMT_SECONDS, "93784", text, sizeof text);
+        assert(!strcmp(text, "1d 2h 3m"));
+        assert(dp_layout((tiku_rect_t){0, 0, 820, 760}, DP_CPU).table.h >
+               dp_layout((tiku_rect_t){0, 0, 820, 0}, DP_CPU).table.h);
+        p.folded = 1u << SEC_MEMORY;
+        dp_outline_build(&p);
+        memory = 0;
+        for (int i = 0; i < p.nrow; i++)
+            memory += p.rows[i].section == SEC_MEMORY && p.rows[i].fact >= 0;
+        assert(memory == 0);
+        p.folded = 0;
+    }
     snprintf(p.names[0], sizeof p.names[0], "nrf54l15");
     snprintf(p.names[1], sizeof p.names[1], "nrf54lm20b");
     snprintf(p.status, sizeof p.status,
@@ -384,8 +441,8 @@ int main(void)
     tiku_rect_t c = tiku_window_content(p.window);
     dp_layout_t layout = dp_layout(c, p.setting);
     tiku_event_t ev = {.type=TIKU_EVENT_POINTER_DOWN, .button=1,
-        .x=dp_setting_row(layout, DP_CRYPTO).x+4,
-        .y=dp_setting_row(layout, DP_CRYPTO).y+4};
+        .x=dp_setting_row(&p, layout, DP_CRYPTO).x+4,
+        .y=dp_setting_row(&p, layout, DP_CRYPTO).y+4};
     assert(send_input(p.window, &ev));
     assert(p.setting == DP_CRYPTO);
     layout = dp_layout(c, p.setting);
@@ -398,8 +455,8 @@ int main(void)
     assert(send_input(p.window, &ev));
     assert(!strcmp(p.field.text, "sw"));
     ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1};
-    ev.x = dp_setting_row(layout, DP_NAME).x+4;
-    ev.y = dp_setting_row(layout, DP_NAME).y+4;
+    ev.x = dp_setting_row(&p, layout, DP_NAME).x+4;
+    ev.y = dp_setting_row(&p, layout, DP_NAME).y+4;
     assert(send_input(p.window, &ev));
     assert(p.setting == DP_NAME);
     ev = (tiku_event_t){.type=TIKU_EVENT_KEY_DOWN,
@@ -410,8 +467,8 @@ int main(void)
     assert(send_input(p.window, &ev));
     assert(!strcmp(p.field.text, "X"));
     ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,
-        .x=dp_setting_row(layout, DP_CPU).x+4,
-        .y=dp_setting_row(layout, DP_CPU).y+4};
+        .x=dp_setting_row(&p, layout, DP_CPU).x+4,
+        .y=dp_setting_row(&p, layout, DP_CPU).y+4};
     assert(send_input(p.window, &ev));
     assert(p.setting == DP_CPU);
     layout = dp_layout(c, p.setting);

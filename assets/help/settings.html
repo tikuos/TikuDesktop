@@ -126,27 +126,40 @@ together.</p>
 
 <p>This window reads and changes settings on a connected board, so connect
 one from the <b>Devices</b> menu first; see <a href="devices.html">Devices</a>.
-The list down the left is the boards now mounted, and the table beside it
-is what the selected board reports. Choose a row of that table and the
-group underneath edits that setting. The window opens on <b>CPU clock</b>,
-and with nothing connected it says <b>No devices connected</b>.</p>
+The list down the left is the boards now mounted. Beside it the selected
+board's name stands over what it said it is, the part and the firmware,
+and under that an outline of what the board reports, a section at a time:
+<b>Identity</b>, <b>Processor</b>, <b>Memory</b>, <b>Storage</b>,
+<b>Power</b>, <b>Radio</b>, <b>Security</b> and <b>Boot</b>. A section's
+arrow, or <b>Return</b> on its heading, folds it; Storage and Boot start
+folded. A section the firmware has nothing for says <b>Not on this
+firmware</b> under its heading.</p>
+
+<p>Each row is a label and a value. A row with a chevron at its right end
+is a setting: choose it and the group underneath edits it. The other rows
+are facts the device reports, such as the MCU, the firmware, the uptime,
+the memory used and free, and the reason for the last reset; choose one
+and the group explains it. Counts of bytes and spans of time are shown as
+a person reads them. The window opens on <b>CPU clock</b>, grows by its
+bottom-right corner so the outline shows more rows, and with nothing
+connected it says <b>No devices connected</b>.</p>
 
 <table>
-<tr><th>Setting</th><th>Node</th><th>What it changes</th></tr>
-<tr><td>Device name</td><td>/sys/device/name</td><td>1 to 31 bytes, saved
+<tr><th>Setting</th><th>Section</th><th>Node</th><th>What it changes</th></tr>
+<tr><td>Device name</td><td>Identity</td><td>/sys/device/name</td><td>1 to 31 bytes, saved
 on the device. Reconnect to update its menu name.</td></tr>
-<tr><td>CPU clock</td><td>/sys/cpu/freq</td><td>Shown in MHz. A rate is
+<tr><td>CPU clock</td><td>Processor</td><td>/sys/cpu/freq</td><td>Shown in MHz. A rate is
 chosen from what the device offers. Firmware that changes the clock at reboot
 keeps it with Save for restart, and the device is restarted by hand; firmware
 that changes it live takes it with Apply. Firmware without the capability
 nodes is read-only.</td></tr>
-<tr><td>Date and time</td><td>/sys/time</td><td>Shown in UTC. Sync now
+<tr><td>Date and time</td><td>Identity</td><td>/sys/time</td><td>Shown in UTC. Sync now
 sends this computer's time.</td></tr>
-<tr><td>Cryptography</td><td>/sys/crypto/mode</td><td>Automatic or
+<tr><td>Cryptography</td><td>Security</td><td>/sys/crypto/mode</td><td>Automatic or
 Software only. Resets at reboot.</td></tr>
-<tr><td>Radio transmit power</td><td>/sys/radio/txpower</td><td>A whole
+<tr><td>Radio transmit power</td><td>Radio</td><td>/sys/radio/txpower</td><td>A whole
 number of dBm. The device validates the level. Resets at reboot.</td></tr>
-<tr><td>Idle sleep mode</td><td>/sys/power/mode</td><td>Reported by the
+<tr><td>Idle sleep mode</td><td>Power</td><td>/sys/power/mode</td><td>Reported by the
 device and not changed from here.</td></tr>
 </table>
 

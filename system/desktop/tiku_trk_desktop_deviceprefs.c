@@ -12,6 +12,8 @@
 #include "tiku_dialog.h"
 #include "tiku_choice_paint.h"
 #include "tiku_properties_paint.h"
+#include "tiku_list.h"
+#include "tiku_ui.h"
 #include "tiku_preferences_layout.h"
 #include "tiku_text_layout_paint.h"
 #include "tiku_work.h"
@@ -20,27 +22,106 @@
 #include <time.h>
 
 enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_COUNT };
-enum { DP_DEVICE = 10, DP_SETTING = 30, DP_EDIT = 50,
-       DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET };
+enum { DP_DEVICE = 10, DP_EDIT = 50,
+       DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET, DP_ROW = 100 };
 enum { DP_READ = -1, DP_ENROLL = -2, DP_RETRY = -3, DP_DISCARD = -4 };
+/* The outline's sections, in the order they are shown.  A setting and a
+ * fact each belong to one; a section with nothing on this firmware says
+ * so under its heading rather than vanishing. */
+enum { SEC_IDENTITY, SEC_PROCESSOR, SEC_MEMORY, SEC_STORAGE, SEC_POWER,
+       SEC_RADIO, SEC_SECURITY, SEC_BOOT, SEC_COUNT };
+static const char *const section_name[SEC_COUNT] = {
+    "Identity", "Processor", "Memory", "Storage", "Power", "Radio",
+    "Security", "Boot"
+};
 static const struct {
     const char *label, *path, *help;
-    int editable;
+    int editable, section;
 } settings[DP_COUNT] = {
     { "Device name", "/sys/device/name",
-      "Saved on the device. Reconnect to update its menu name.", 1 },
+      "Saved on the device. Reconnect to update its menu name.", 1,
+      SEC_IDENTITY },
     { "CPU clock", "/sys/cpu/freq",
-      "Set by firmware; this device cannot change it through VFS.", 0 },
+      "Set by firmware; this device cannot change it through VFS.", 0,
+      SEC_PROCESSOR },
     { "Date and time", "/sys/time",
-      "Synchronize the device clock with this computer.", 1 },
+      "Synchronize the device clock with this computer.", 1, SEC_IDENTITY },
     { "Cryptography", "/sys/crypto/mode",
-      "Automatic uses hardware when available. Resets at reboot.", 1 },
+      "Automatic uses hardware when available. Resets at reboot.", 1,
+      SEC_SECURITY },
     { "Radio transmit power", "/sys/radio/txpower",
       "Enter dBm. The device validates supported levels. Resets at reboot.",
-            1 },
+            1, SEC_RADIO },
     { "Idle sleep mode", "/sys/power/mode",
-      "Reported by the device; changing it is not supported through VFS.", 0 }
+      "Reported by the device; changing it is not supported through VFS.", 0,
+      SEC_POWER }
 };
+/* What a fact's text is made of: the words as read, a byte count, a
+ * span of seconds, a clock in hertz, or the clock-control mode's name. */
+enum { FMT_PLAIN, FMT_BYTES, FMT_SECONDS, FMT_HZ, FMT_CLOCKMODE };
+/* The read-only facts beside the settings, each under its section.  A
+ * path the firmware has not got is simply left out of the outline. */
+static const struct {
+    int section, format;
+    const char *label, *path, *help;
+} facts[] = {
+    { SEC_IDENTITY, FMT_PLAIN, "MCU", "/sys/device/mcu",
+      "The part this board is built around." },
+    { SEC_IDENTITY, FMT_PLAIN, "Firmware", "/sys/version",
+      "The TikuOS build running on the device." },
+    { SEC_IDENTITY, FMT_PLAIN, "Board id", "/sys/device/id",
+      "The name the device answers to before it is given one." },
+    { SEC_IDENTITY, FMT_PLAIN, "Unique id", "/sys/device/uid",
+      "Burned into the part; it survives renames and reflashes." },
+    { SEC_IDENTITY, FMT_SECONDS, "Uptime", "/sys/uptime",
+      "Since the last reset." },
+    { SEC_PROCESSOR, FMT_CLOCKMODE, "Clock control", "/sys/cpu/freq_change_mode",
+      "How a new rate takes: at once, at the next restart, or never." },
+    { SEC_PROCESSOR, FMT_PLAIN, "Idle time", "/sys/sched/idle",
+      "How much of the time the scheduler had nothing to run." },
+    { SEC_PROCESSOR, FMT_PLAIN, "Coprocessor", "/sys/coproc/heartbeat",
+      "The second core's heartbeat, when the part has one." },
+    { SEC_MEMORY, FMT_BYTES, "SRAM", "/sys/mem/sram",
+      "The working memory the part has." },
+    { SEC_MEMORY, FMT_BYTES, "Used", "/sys/mem/used",
+      "Allocated to processes now." },
+    { SEC_MEMORY, FMT_BYTES, "Free", "/sys/mem/free",
+      "Headroom now, the stack's included." },
+    { SEC_MEMORY, FMT_BYTES, "Stack headroom", "/sys/mem/stack_free",
+      "The least the stack has had since boot." },
+    { SEC_MEMORY, FMT_PLAIN, "Tiers", "/sys/mem/tiers",
+      "The tier allocator's estates and what each holds." },
+    { SEC_MEMORY, FMT_PLAIN, "Failed allocations", "/sys/mem/failed",
+      "Requests the allocator could not meet since boot." },
+    { SEC_MEMORY, FMT_PLAIN, "Kind", "/sys/mem/kind",
+      "What the memory is made of on this part." },
+    { SEC_STORAGE, FMT_BYTES, "Non-volatile memory", "/sys/mem/nvm",
+      "The storage that survives a reset." },
+    { SEC_STORAGE, FMT_BYTES, "Free", "/sys/mem/nvmfree",
+      "Storage not yet written." },
+    { SEC_RADIO, FMT_PLAIN, "State", "/sys/radio/state",
+      "What the radio is doing now." },
+    { SEC_RADIO, FMT_PLAIN, "Mode", "/sys/radio/mode",
+      "Broadcasting, observing, or off." },
+    { SEC_RADIO, FMT_PLAIN, "Backend", "/sys/radio/backend",
+      "The driver behind the radio." },
+    { SEC_RADIO, FMT_PLAIN, "Beacon", "/sys/radio/beacon",
+      "The advertisement the radio sends, when it does." },
+    { SEC_SECURITY, FMT_PLAIN, "Public-key hardware", "/sys/crypto/pk",
+      "Whether signatures run on the part's own engine." },
+    { SEC_SECURITY, FMT_PLAIN, "Operations", "/sys/crypto/ops",
+      "Cryptographic operations since boot, by path." },
+    { SEC_BOOT, FMT_PLAIN, "Last reset", "/sys/last_reset",
+      "Why the device last started." },
+    { SEC_BOOT, FMT_PLAIN, "Boots", "/sys/boot_count",
+      "Starts since the counter was first kept." },
+    { SEC_BOOT, FMT_PLAIN, "Cold boots", "/sys/cold_boots",
+      "Starts from power off, among those." },
+};
+#define DP_FACTS ((int)(sizeof facts / sizeof facts[0]))
+/* The outline can hold every heading, setting and fact, and an
+ * "empty" line under a section with nothing on this firmware. */
+#define DP_ROWS (SEC_COUNT * 2 + DP_COUNT + DP_FACTS)
 
 typedef struct {
     char value[96];
@@ -53,13 +134,23 @@ typedef struct {
     int count, writable;
 } dp_clock_t;
 
+/* One line of the outline: a section's heading, a setting, a fact, or
+ * the word that a section has nothing here. */
+typedef struct { int section, setting, fact, heading; } dp_row_t;
+
 struct desktop_deviceprefs {
     desktop_t *app;
     tiku_window_t *window;
     char names[TIKU_MOUNT_MAX][64];
     int count, selected, setting, busy, refs;
+    int fact;                  /* the fact on show, or -1 for the setting */
+    unsigned folded;           /* a bit per section */
     dp_value_t values[DP_COUNT];
+    dp_value_t fact_values[DP_FACTS];
     dp_clock_t clock;
+    dp_row_t rows[DP_ROWS];
+    int nrow;
+    tiku_list_t list;          /* the outline's scrolling and headings */
     tiku_config_snapshot_t config[2];  /* name and CPU target, at the
                                        * revisions on display */
     tiku_config_pending_t pending;
@@ -76,6 +167,7 @@ typedef struct {
     struct desktop_deviceprefs *owner;
     tiku_backend_t *backend;
     dp_value_t values[DP_COUNT];
+    dp_value_t fact_values[DP_FACTS];
     dp_clock_t clock;
     tiku_config_snapshot_t config[2];
     tiku_config_pending_t pending;
@@ -86,6 +178,9 @@ typedef struct {
 /** @brief Font-scaled row shared by paint and hit testing. */
 static int dp_row(void) { return tiku_font_plain()->height + 14; }
 
+/* How many outline rows show when the window opens; the corner adds. */
+#define DP_OUTLINE_ROWS 7
+
 typedef struct {
     tiku_rect_t devices, table, group, edit, apply, recovery, recover;
     tiku_rect_t forget, refresh, done;
@@ -93,7 +188,13 @@ typedef struct {
 } dp_layout_t;
 static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l);
 
-/** @brief One font-scaled layout for both drawing and pointer input. */
+/**
+ * @brief One font-scaled layout for both drawing and pointer input.
+ *
+ * With a content height the outline takes whatever the groups and the
+ * buttons leave; without one (the opening size, or a test asking how
+ * tall the window wants to be) it shows DP_OUTLINE_ROWS.
+ */
 static dp_layout_t dp_layout(tiku_rect_t c, int setting)
 {
     dp_layout_t l;
@@ -102,19 +203,27 @@ static dp_layout_t dp_layout(tiku_rect_t c, int setting)
     int bw = tiku_ui_button_w(setting == DP_CPU ? "Save for restart" :
                              setting == DP_TIME ? "Sync now" : "Apply", 88);
     int left = 196 + (fh - 15) * 3;
+    int group_h = button + 3 * (fh + 2) + 44;
+    int recovery_h = 2 * (fh + 2) + button + 34;
+    int below = 18 + group_h + 14 + recovery_h + 12 + 2 * (fh + 2) + 14 +
+                button + 44;
+    int table_h = DP_OUTLINE_ROWS * row + 8;
+    if (c.h > 0 && c.h - (2 * fh + 34) - below > table_h) {
+        table_h = c.h - (2 * fh + 34) - below;
+    }
     l.table = (tiku_rect_t){c.x + left + 18, c.y + 2 * fh + 34,
-                          c.w - left - 36, DP_COUNT * row + 8};
+                          c.w - left - 36, table_h};
     l.group = (tiku_rect_t){l.table.x, l.table.y + l.table.h + 18,
-                          l.table.w, button + 3 * (fh + 2) + 60};
+                          l.table.w, group_h};
     tiku_rect_t inner = tiku_preferences_group_body(l.group);
     l.apply = (tiku_rect_t){inner.x + inner.w - bw, inner.y, bw, button};
     l.edit = (tiku_rect_t){inner.x, inner.y, inner.w - bw - 12, button};
-    l.help_y = l.edit.y + button + 14;
+    l.help_y = l.edit.y + button + 12;
     l.recovery = (tiku_rect_t){l.group.x, l.group.y + l.group.h + 14,
-                              l.group.w, 3 * (fh + 2) + button + 38};
+                              l.group.w, recovery_h};
     inner = tiku_preferences_group_body(l.recovery);
     l.recover = (tiku_rect_t){inner.x,
-        l.recovery.y + l.recovery.h - button - 12,
+        l.recovery.y + l.recovery.h - button - 10,
         tiku_ui_button_w("Retry saved request", 128), button};
     l.forget = (tiku_rect_t){l.recover.x + l.recover.w + 12, l.recover.y,
         tiku_ui_button_w("Forget request…", 110), button};
@@ -135,6 +244,99 @@ static tiku_rect_t dp_device_row(dp_layout_t l, int i)
     int height = (l.devices.h - 8) / TIKU_MOUNT_MAX;
     return (tiku_rect_t){l.devices.x + 4, l.devices.y + 4 + i * height,
                          l.devices.w - 8, height};
+}
+
+/*---------------------------------------------------------------------------*/
+/* The outline: sections, the rows under them, and what each row says       */
+/*---------------------------------------------------------------------------*/
+
+/** @brief A count of bytes as a person reads it. */
+static void dp_bytes(unsigned long n, char *out, size_t cap)
+{
+    if (n >= 1024UL * 1024UL) {
+        snprintf(out, cap, "%.1f MB", n / (1024.0 * 1024.0));
+    } else if (n >= 1024UL) {
+        snprintf(out, cap, "%.1f KB", n / 1024.0);
+    } else {
+        snprintf(out, cap, "%lu bytes", n);
+    }
+}
+
+/** @brief A fact's value in the words its format asks for. */
+static void dp_fact_text(int format, const char *value, char *out, size_t cap)
+{
+    unsigned long n = strtoul(value, NULL, 10);
+    switch (format) {
+    case FMT_BYTES:
+        dp_bytes(n, out, cap);
+        break;
+    case FMT_SECONDS:
+        if (n >= 86400UL) {
+            snprintf(out, cap, "%lud %luh %lum", n / 86400UL,
+                     n % 86400UL / 3600UL, n % 3600UL / 60UL);
+        } else if (n >= 3600UL) {
+            snprintf(out, cap, "%luh %lum", n / 3600UL, n % 3600UL / 60UL);
+        } else {
+            snprintf(out, cap, "%lum %lus", n / 60UL, n % 60UL);
+        }
+        break;
+    case FMT_HZ:
+        snprintf(out, cap, "%g MHz", n / 1000000.0);
+        break;
+    case FMT_CLOCKMODE:
+        snprintf(out, cap, "%s", !strcmp(value, "reboot")
+                 ? "takes effect at restart" : !strcmp(value, "live")
+                 ? "takes effect at once" : !strcmp(value, "fixed")
+                 ? "fixed by firmware" : value);
+        break;
+    default:
+        snprintf(out, cap, "%s", value);
+        break;
+    }
+}
+
+/** @brief Build the outline from what the last read brought back. */
+static void dp_outline_build(struct desktop_deviceprefs *p)
+{
+    int sec, i;
+    p->nrow = 0;
+    for (sec = 0; sec < SEC_COUNT && p->nrow < DP_ROWS; sec++) {
+        int at = p->nrow, shown = 0, any = 0;
+        p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 1};
+        for (i = 0; i < DP_COUNT; i++) {
+            if (settings[i].section != sec) continue;
+            any++;
+            if (p->folded & (1u << sec)) continue;
+            p->rows[p->nrow++] = (dp_row_t){sec, i, -1, 0};
+            shown++;
+        }
+        for (i = 0; i < DP_FACTS && p->nrow < DP_ROWS - 1; i++) {
+            if (facts[i].section != sec || !p->fact_values[i].present) continue;
+            any++;
+            if (p->folded & (1u << sec)) continue;
+            p->rows[p->nrow++] = (dp_row_t){sec, -1, i, 0};
+            shown++;
+        }
+        if (!any && !(p->folded & (1u << sec))) {
+            /* Nothing on this firmware: the heading says so on its own
+             * line, in the quiet ink, rather than standing over nothing. */
+            p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 2};
+        }
+        (void)at; (void)shown;
+    }
+    tiku_list_set_count(&p->list, p->nrow);
+    tiku_list_set_row_h(&p->list, dp_row());
+    for (i = 0; i < p->nrow; i++)
+        tiku_list_set_heading(&p->list, i, p->rows[i].heading != 0);
+}
+
+/** @brief The outline row showing setting @p setting, or -1 if folded. */
+static int dp_row_of_setting(const struct desktop_deviceprefs *p, int setting)
+{
+    int i;
+    for (i = 0; i < p->nrow; i++)
+        if (p->rows[i].setting == setting) return i;
+    return -1;
 }
 
 /** @brief Whether the selected CPU rate still needs to be saved. */
@@ -184,6 +386,7 @@ static void dp_edit(struct desktop_deviceprefs *p)
         p->config[ci].revision ? p->config[ci].desired : NULL;
     tiku_choice_init(&p->choice);
     tiku_field_input_init(&p->input);
+    dp_outline_build(p);
     tiku_field_start(&p->field, desired ? desired : p->setting == DP_CPU ?
                      p->clock.target : p->values[p->setting].value);
     tiku_field_deny(&p->field, "\r\n\t/");
@@ -348,6 +551,15 @@ static void dp_run(void *ctx)
             available++;
         }
     }
+    memset(j->fact_values, 0, sizeof j->fact_values);
+    for (i = 0; i < DP_FACTS && !tiku_work_cancelled(j); i++) {
+        tiku_model_t m;
+        if (j->backend->ops->stat(j->backend, facts[i].path, &m) == 0 &&
+            dp_read(j->backend, facts[i].path, j->fact_values[i].value,
+                    sizeof j->fact_values[i].value)) {
+            j->fact_values[i].present = 1;
+        }
+    }
     if (!tiku_work_cancelled(j)) dp_clock_read(j->backend, &j->clock);
     if (j->config[1].mode == 1 && j->config[1].revision)
         snprintf(j->clock.target, sizeof j->clock.target, "%s",
@@ -413,6 +625,7 @@ static void dp_done(void *ctx)
     j->completed = 1;
     if (p->app == NULL) return;
     memcpy(p->values, j->values, sizeof p->values);
+    memcpy(p->fact_values, j->fact_values, sizeof p->fact_values);
     p->clock = j->clock;
     memcpy(p->config, j->config, sizeof p->config);
     p->pending = j->pending;
@@ -431,6 +644,7 @@ static void dp_free(void *ctx)
     p->busy = 0;
     if (p->app != NULL && !j->completed) {
         memset(p->values, 0, sizeof p->values);
+        memset(p->fact_values, 0, sizeof p->fact_values);
         memset(&p->clock, 0, sizeof p->clock);
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
@@ -458,6 +672,7 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     b = tiku_backend_serving(p->app->backend, path, local, sizeof local);
     if (b == NULL || tiku_backend_tiku_identity(b) == NULL) {
         memset(p->values, 0, sizeof p->values);
+        memset(p->fact_values, 0, sizeof p->fact_values);
         memset(&p->clock, 0, sizeof p->clock);
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
@@ -574,6 +789,7 @@ static void dp_refresh(struct desktop_deviceprefs *p)
         p->count++;
     }
     memset(p->values, 0, sizeof p->values);
+    memset(p->fact_values, 0, sizeof p->fact_values);
     memset(&p->clock, 0, sizeof p->clock);
     memset(p->config, 0, sizeof p->config);
     memset(&p->pending, 0, sizeof p->pending);
@@ -600,44 +816,126 @@ static void dp_line(tiku_surface_t *s, tiku_rect_t r, const char *text,
     tiku_text_line_draw(s, r, TIKU_MEASURE_PLAIN, text, ink);
 }
 
-/** @brief The current value table is separate from the pending edit below. */
+/** @brief A setting's value in the words a person reads. */
+static void dp_setting_text(const struct desktop_deviceprefs *p, int i,
+                            char *value, size_t cap)
+{
+    const dp_value_t *v = &p->values[i];
+    snprintf(value, cap, "%s", v->present ? v->value :
+             (p->busy ? "Reading…" : "Unavailable"));
+    if (i == DP_CPU && v->present) {
+        double mhz = strtoul(v->value, NULL, 10) / 1000000.0;
+        if (dp_clock_pending(p))
+            snprintf(value, cap, "%g MHz now / %g MHz saved",
+                mhz, strtoul(p->clock.target, NULL, 10) / 1000000.0);
+        else snprintf(value, cap, "%g MHz", mhz);
+    }
+    if (i == DP_RADIO && v->present) snprintf(value, cap, "%s dBm", v->value);
+    if (i == DP_TIME && v->present) {
+        time_t seconds = (time_t)strtoull(v->value, NULL, 10);
+        struct tm utc;
+        if (gmtime_r(&seconds, &utc))
+            strftime(value, cap, "%Y-%m-%d %H:%M UTC", &utc);
+    }
+    if (i == DP_CRYPTO && v->present)
+        snprintf(value, cap, "%s", !strcmp(v->value, "auto")
+                 ? "Automatic" : "Software only");
+}
+
+/** @brief Whether the row on show is the setting or a fact. */
+static int dp_row_is_shown(const struct desktop_deviceprefs *p, dp_row_t r)
+{
+    return p->fact >= 0 ? r.fact == p->fact
+                        : r.setting >= 0 && r.setting == p->setting;
+}
+
+/**
+ * @brief The outline: a heading a section, its rows indented under it.
+ *
+ * A heading folds with its arrow; a row is its label on the left and its
+ * value on the right, the editable ones marked with a chevron, since a
+ * person deciding what to press should not have to read the help to
+ * learn which rows open an editor.  The pill on a heading says what the
+ * section is waiting on.
+ */
 static void dp_table(struct desktop_deviceprefs *p, tiku_surface_t *s,
                       dp_layout_t l)
 {
-    tiku_properties_t table;
-    char values[DP_COUNT][128];
-    int focused = -1;
-    tiku_properties_init(&table);
-    table.row_h = dp_row();
-    table.selected = p->setting;
-    for (int i = 0; i < DP_COUNT; i++) {
-        char *value = values[i];
-        dp_value_t *v = &p->values[i];
-        snprintf(value, sizeof values[i], "%s", v->present ? v->value :
-                 (p->busy ? "Reading…" : "Unavailable"));
-        if (i == DP_CPU && v->present) {
-            double mhz = strtoul(v->value, NULL, 10) / 1000000.0;
-            if (dp_clock_pending(p))
-                snprintf(value, sizeof values[i], "%g MHz now / %g MHz saved",
-                    mhz, strtoul(p->clock.target, NULL, 10) / 1000000.0);
-            else snprintf(value, sizeof values[i], "%g MHz", mhz);
+    const tiku_font_t *f = tiku_font_plain();
+    tiku_rgb_t quiet = tiku_dim(TIKU_C_TEXT, TIKU_C_DOC);
+    tiku_rect_t body = l.table;
+    int visible, i, label_w = (body.w - 40) * 2 / 5;
+    dp_outline_build(p);
+    tiku_ui_sunken(s, body, TIKU_C_DOC);
+    tiku_clip_set(s, tiku_inset(body, 2));
+    visible = tiku_list_visible_rows(&p->list, body);
+    for (i = p->list.top; i < p->nrow && i < p->list.top + visible; i++) {
+        dp_row_t r = p->rows[i];
+        tiku_rect_t row = tiku_list_row_rect(&p->list, body, i);
+        char value[128];
+        if (r.heading == 1) {
+            const char *pill = NULL;
+            int folded = (p->folded & (1u << r.section)) != 0;
+            tiku_fill(s, row, TIKU_C_PANEL);
+            tiku_hline(s, row.x, row.y + row.h - 1, row.w,
+                       tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+            tiku_ui_arrow(s, (tiku_rect_t){row.x + 6, row.y + 6, 12,
+                                           row.h - 12}, folded ? 3 : 1, 1);
+            tiku_text(s, tiku_font_bold(), row.x + 26,
+                      row.y + (row.h - f->height) / 2 + f->ascent,
+                      section_name[r.section], TIKU_C_TEXT);
+            if (r.section == SEC_PROCESSOR && dp_clock_pending(p))
+                pill = "restart pending";
+            else if (r.section == SEC_IDENTITY && p->pending.state)
+                pill = "recovery pending";
+            if (pill != NULL) {
+                int w = tiku_ui_pill_w(pill);
+                tiku_ui_pill(s, (tiku_rect_t){row.x + row.w - w - 8,
+                                              row.y + (row.h - 18) / 2, w, 18},
+                             pill, TIKU_TONE_WARN);
+            }
+            continue;
         }
-        if (i == DP_RADIO && v->present) snprintf(value, sizeof values[i],
-            "%s dBm", v->value);
-        if (i == DP_TIME && v->present) {
-            time_t seconds = (time_t)strtoull(v->value, NULL, 10);
-            struct tm utc;
-            if (gmtime_r(&seconds, &utc))
-                strftime(value, sizeof values[i], "%Y-%m-%d %H:%M UTC", &utc);
+        if (r.heading == 2) {
+            tiku_fill(s, row, TIKU_C_DOC);
+            tiku_text_line_draw(s, (tiku_rect_t){row.x + 26, row.y,
+                                                 row.w - 30, row.h},
+                                TIKU_MEASURE_PLAIN,
+                                p->busy ? "Reading…" : "Not on this firmware",
+                                quiet);
+            continue;
         }
-        if (i == DP_CRYPTO && v->present)
-            snprintf(value, sizeof values[i], "%s", !strcmp(v->value,
-            "auto") ? "Automatic" : "Software only");
-        tiku_properties_add(&table, settings[i].label, value,
-            !v->present && !p->busy ? TIKU_PROPERTY_UNAVAILABLE : 0);
-        if (tiku_dialog_focused(&p->dialog, DP_SETTING + i)) focused = i;
+        {
+            int shown = dp_row_is_shown(p, r);
+            int editable = r.setting >= 0 && p->values[r.setting].writable;
+            tiku_rgb_t ink = shown ? TIKU_C_SELTEXT : TIKU_C_TEXT;
+            tiku_rgb_t dim = shown ? TIKU_C_SELTEXT : quiet;
+            const char *label = r.setting >= 0 ? settings[r.setting].label
+                                               : facts[r.fact].label;
+            tiku_fill(s, row, shown ? TIKU_C_SELECT : TIKU_C_DOC);
+            if (r.setting >= 0) {
+                dp_setting_text(p, r.setting, value, sizeof value);
+            } else {
+                dp_fact_text(facts[r.fact].format,
+                             p->fact_values[r.fact].value, value, sizeof value);
+            }
+            tiku_text_line_draw(s, (tiku_rect_t){row.x + 26, row.y,
+                                                 label_w - 26, row.h},
+                                TIKU_MEASURE_PLAIN, label, ink);
+            tiku_text_line_draw(s, (tiku_rect_t){row.x + label_w + 8, row.y,
+                                                 row.w - label_w - 36, row.h},
+                                TIKU_MEASURE_PLAIN, value,
+                                r.setting >= 0 && !p->values[r.setting].present
+                                    ? dim : ink);
+            if (editable)
+                tiku_ui_arrow(s, (tiku_rect_t){row.x + row.w - 20,
+                                               row.y + 6, 10, row.h - 12},
+                              3, 1);
+            if (tiku_dialog_focused(&p->dialog, DP_ROW + i))
+                tiku_frame(s, tiku_inset(row, 1), TIKU_C_FOCUS);
+        }
     }
-    tiku_properties_draw(&table, s, l.table, focused);
+    tiku_clip_reset(s);
 }
 
 /** @brief Etched setting group, with explicit writable/read-only state. */
@@ -648,6 +946,19 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
     unsigned flags = (!dp_can_edit(p) ? TIKU_S_DISABLED : 0) |
         (tiku_dialog_focused(&p->dialog, DP_EDIT) ? TIKU_S_FOCUS : 0);
     tiku_rgb_t quiet = tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL);
+    if (p->fact >= 0) {
+        /* A fact: what the device reports, and what it means. */
+        char value[128];
+        snprintf(title, sizeof title, "%s", facts[p->fact].label);
+        (void)tiku_ui_group(s, l.group, title);
+        dp_fact_text(facts[p->fact].format, p->fact_values[p->fact].value,
+                     value, sizeof value);
+        dp_line(s, (tiku_rect_t){l.edit.x, l.edit.y, l.group.w - 28, l.edit.h},
+                value, TIKU_C_TEXT);
+        dp_explain(s, l.edit.x, l.help_y, l.group.w - 28,
+                   facts[p->fact].help, quiet, 3);
+        return;
+    }
     snprintf(title, sizeof title, "%s%s", settings[p->setting].label,
         p->values[p->setting].present && !p->values[p->setting].writable
         ? " (read-only)" : "");
@@ -751,7 +1062,7 @@ static void dp_recovery_draw(struct desktop_deviceprefs *p,
     }
     (void)tiku_ui_group(s, l.recovery, title);
     dp_explain(s, inner.x, inner.y, inner.w, message,
-               tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL), 3);
+               tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL), 2);
     if (action) tiku_ui_button(s, l.recover, action,
         (p->busy ? TIKU_S_DISABLED : 0) |
         (tiku_dialog_focused(&p->dialog, DP_RECOVERY) ? TIKU_S_FOCUS : 0) |
@@ -793,12 +1104,26 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
     if (!p->count) dp_explain(s, l.devices.x + 12, l.devices.y + 14,
         l.devices.w - 24, "No devices connected", quiet, 2);
     tiku_icon_paint(s, "microcontroller", l.table.x, c.y + 16, 32);
-    dp_line(s, (tiku_rect_t){l.table.x + 44, c.y + 14, l.table.w - 44,
-                            f->height + 4},
-            p->count ? p->names[p->selected] : "Device settings", TIKU_C_TEXT);
-    dp_line(s, (tiku_rect_t){l.table.x + 44, c.y + f->height + 20,
-                            l.table.w - 44, f->height},
-            "Select a setting to view or change.", quiet);
+    {
+        /* The board's own name in the bold face, and under it what the
+         * device said it is: the part and the firmware, when it did. */
+        char subtitle[160] = "Select a row to view or change it.";
+        const char *mcu = p->fact_values[0].present ? p->fact_values[0].value
+                                                    : NULL;
+        const char *fw = p->fact_values[1].present ? p->fact_values[1].value
+                                                   : NULL;
+        if (mcu != NULL || fw != NULL)
+            snprintf(subtitle, sizeof subtitle, "%s%s%s%s",
+                     mcu ? mcu : "", mcu && fw ? " - " : "",
+                     fw ? "firmware " : "", fw ? fw : "");
+        tiku_text_line_draw(s, (tiku_rect_t){l.table.x + 44, c.y + 14,
+                                             l.table.w - 44, f->height + 4},
+                            TIKU_MEASURE_BOLD,
+                            p->count ? p->names[p->selected] : "Device settings",
+                            TIKU_C_TEXT);
+        dp_line(s, (tiku_rect_t){l.table.x + 44, c.y + f->height + 20,
+                                l.table.w - 44, f->height}, subtitle, quiet);
+    }
     if (p->count) {
         dp_table(p, s, l);
         dp_editor(p, s, l);
@@ -835,13 +1160,18 @@ static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
     for (int i = 0; i < p->count; i++)
         tiku_dialog_add(&p->dialog, DP_DEVICE + i, dp_device_row(l, i),
                         TIKU_DIALOG_BUTTON, !p->busy);
-    tiku_properties_t table;
-    tiku_properties_init(&table);
-    table.row_h = dp_row();
-    for (int i = 0; i < DP_COUNT; i++)
-        tiku_properties_add(&table, settings[i].label, NULL, 0);
-    (void)tiku_properties_controls(&table, l.table, &p->dialog, DP_SETTING,
-                                    !p->busy && p->count);
+    {
+        /* Every outline row in view is a button: a heading folds, a
+         * setting or a fact comes onto the group below. */
+        int visible = tiku_list_visible_rows(&p->list, l.table), i;
+        dp_outline_build(p);
+        for (i = p->list.top; i < p->nrow && i < p->list.top + visible; i++) {
+            if (p->rows[i].heading == 2) continue;
+            tiku_dialog_add(&p->dialog, DP_ROW + i,
+                            tiku_list_row_rect(&p->list, l.table, i),
+                            TIKU_DIALOG_BUTTON, !p->busy && p->count);
+        }
+    }
     tiku_dialog_add(&p->dialog, DP_EDIT, l.edit, TIKU_DIALOG_INPUT,
                     writable && p->setting != DP_TIME);
     tiku_dialog_add(&p->dialog, DP_APPLY, l.apply, TIKU_DIALOG_BUTTON,
@@ -917,18 +1247,30 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         result.activated < DP_DEVICE + p->count) {
         p->selected = result.activated - DP_DEVICE;
         memset(p->values, 0, sizeof p->values);
+        memset(p->fact_values, 0, sizeof p->fact_values);
         memset(&p->clock, 0, sizeof p->clock);
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
         p->confirm = 0;
         p->can_enroll = 0;
         dp_request(p, -1);
-    } else if (result.activated >= DP_SETTING &&
-               result.activated < DP_SETTING + DP_COUNT) {
-        p->setting = result.activated - DP_SETTING;
-        dp_edit(p);
-        dp_controls(p, dp_layout(c, p->setting));
-        tiku_dialog_focus(&p->dialog, DP_EDIT);
+    } else if (result.activated >= DP_ROW &&
+               result.activated < DP_ROW + p->nrow) {
+        dp_row_t r = p->rows[result.activated - DP_ROW];
+        if (r.heading) {
+            p->folded ^= 1u << r.section;
+            dp_outline_build(p);
+            dp_controls(p, dp_layout(c, p->setting));
+        } else if (r.setting >= 0) {
+            p->setting = r.setting;
+            p->fact = -1;
+            dp_edit(p);
+            dp_controls(p, dp_layout(c, p->setting));
+            tiku_dialog_focus(&p->dialog, DP_EDIT);
+        } else {
+            p->fact = r.fact;
+            tiku_choice_close(&p->choice);
+        }
     } else if (result.activated == DP_REFRESH) dp_refresh(p);
     else if (result.activated == DP_APPLY) dp_apply(p);
     else if (result.activated == DP_RECOVERY && !p->busy) {
@@ -939,6 +1281,12 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         else if (!p->pending.state && p->can_enroll) p->confirm = 1;
     } else if (result.activated == DP_FORGET && !p->busy) {
         p->confirm = p->confirm ? 0 : dp_can_forget(p) ? 2 : 0;
+    }
+    else if (ev->type == TIKU_EVENT_WHEEL &&
+             ev->x >= l.table.x && ev->x < l.table.x + l.table.w &&
+             ev->y >= l.table.y && ev->y < l.table.y + l.table.h) {
+        (void)tiku_list_scroll_to(&p->list, p->list.top + ev->dy * 3,
+                                  l.table);
     }
     else if (!result.taken && !p->busy) {
         if (!dp_choice_event(p, ev, l, c) &&
@@ -991,6 +1339,11 @@ void desktop_deviceprefs_open(desktop_t *app)
         p->app = app;
         p->refs = 1;
         p->setting = DP_CPU;
+        p->fact = -1;
+        /* Storage and Boot start folded: the numbers a person comes for
+         * are the identity, the processor and the memory. */
+        p->folded = (1u << SEC_STORAGE) | (1u << SEC_BOOT);
+        tiku_list_init(&p->list, 1);
         tiku_dialog_init(&p->dialog);
         tiku_choice_init(&p->choice);
         app->deviceprefs = p;
@@ -1009,7 +1362,8 @@ void desktop_deviceprefs_open(desktop_t *app)
     p->window = tiku_workspace_open(app->desk, "Devices Preferences", r,
             dp_draw, p, NULL);
     if (p->window != NULL) {
-        tiku_window_set_size_controls(p->window, 0, 0);
+        /* The corner: the outline takes the room, the groups keep theirs. */
+        tiku_window_set_size_controls(p->window, 1, 1);
         tiku_window_set_handlers(p->window, dp_event, NULL, NULL);
         dp_refresh(p);
     }
