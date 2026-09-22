@@ -9,7 +9,7 @@ import unittest
 
 class DebuggerTests(unittest.TestCase):
     def setUp(self):
-        binary = Path(__file__).resolve().parents[2] / "build/apps/basic/tiku-basic"
+        binary = Path(__file__).resolve().parents[2] / "build/runtime/apps/basic/tiku-basic"
         self.proc = subprocess.Popen([str(binary), "--interactive", "/tmp"],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT)

@@ -16,12 +16,13 @@
 #
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 
-T      := TikuTracker
-D      := apps
 BUILD  := build
-SYSTEM := $(BUILD)/system
+RUNTIME := $(BUILD)/runtime
+LIBDIR := $(BUILD)/lib
+PICLIB := $(LIBDIR)/pic
+SYSTEM := $(RUNTIME)/system
 OBJ    := $(BUILD)/obj
-PIC    := $(BUILD)/pic
+PIC    := $(OBJ)/pic
 DEV    := $(BUILD)/dev
 
 # The one reach outside this tree: the BASIC host compiles the board's
@@ -32,9 +33,11 @@ TIKUOS ?= $(abspath ..)
 
 include mk/toolchain.mk
 include mk/kits.mk
-include mk/tracker.mk
+include mk/system.mk
 include mk/apps.mk
+include mk/tests.mk
 include mk/bundle.mk
+include mk/package.mk
 
 # Said outright: the default goal is the first target with a recipe, and a
 # housekeeping rule above `all` would quietly become what a bare `make`
@@ -44,7 +47,11 @@ include mk/bundle.mk
 .PHONY: all kits shells apps tests test run clean sweep-legacy \
         check-architecture check-shipping lint lint
 
-all: sweep-legacy kits shells system apps examples tests
+all: sweep-legacy kits shells system apps examples tests resources
+
+.PHONY: prepare-build
+prepare-build:
+	@python3 tools/prepare_build.py
 
 # Names this tree used to build: swept on every build, because a stale
 # binary under a name somebody still types runs, looks right, and is
@@ -63,20 +70,17 @@ LEGACY := $(BUILD)/desktop $(BUILD)/tracker $(DEV)/desktop $(DEV)/tracker \
           $(APPS_D)/TikuHex.so $(APPS_D)/programming/TikuBasic.so \
           $(APPS_D)/programming/TikuC.so \
           $(addprefix $(APPS_D)/,$(addsuffix .so,$(SO_EXAMPLE_NAMES)))
-sweep-legacy:
+sweep-legacy: | prepare-build
 	@rm -f $(LEGACY)
 
 # Old user-facing entry points remain links, not extra copies of binaries.
 .PHONY: launch-links
-launch-links: $(SYSTEM)/TikuDesktop $(SYSTEM)/TikuTracker $(DESK_SUP)
-	ln -sfn system/TikuDesktop $(BUILD)/TikuDesktop
-	ln -sfn system/TikuTracker $(BUILD)/TikuTracker
-	ln -sfn system/tiku-desk $(BUILD)/tiku-desk
+launch-links: prepare-build resources $(SYSTEM)/TikuDesktop $(SYSTEM)/TikuTracker $(DESK_SUP)
 
 all: launch-links
 shells loadable: sweep-legacy
 
-$(BUILD) $(SYSTEM) $(DEV) $(BUILD)/tests $(APPS_D):
+$(BUILD) $(SYSTEM) $(DEV) $(BUILD)/tests $(APPS_D): | prepare-build
 	@mkdir -p $@
 
 # The full run, in the order the pieces depend on each other: the
@@ -91,8 +95,8 @@ test: all
 # for a second one; on Linux that is /dev/shm and nothing is mounted or
 # given back.  Opened once for the whole loop and released however the
 # loop ends, because a run cut short must not leave a volume behind.
-	@v=$$(sh $(T)/tests/second-volume.sh open); \
-	trap 'sh $(T)/tests/second-volume.sh close "$$v"' EXIT INT TERM; \
+	@v=$$(sh tests/integration/second-volume.sh open); \
+	trap 'sh tests/integration/second-volume.sh close "$$v"' EXIT INT TERM; \
 	export TRK_VOLUME2="$$v"; \
 	for t in $(TESTBINS) $(TEST_APP); do \
 	    case $$t in \
@@ -107,21 +111,26 @@ test: all
 	else \
 	    echo "host clipboard: SKIPPED -- install Xvfb or Xephyr"; \
 	fi
-	@python3 $(T)/tools/check_contract.py $(T)/FEATURES.md
-	@python3 $(T)/tools/check_menu_commands.py
-	@python3 $(T)/tools/check_shipping.py
-	@$(if $(BASIC_TARGETS),$(D)/basichost/check_basic_host.sh $(BASICHOST),true)
-	@sh $(T)/tests/shell/run.sh
-	@sh $(T)/tests/supervisor.sh
+	@python3 tools/check_contract.py docs/contracts/tracker.md
+	@python3 tools/check_menu_commands.py
+	@python3 tools/check_shipping.py
+	@$(if $(BASIC_TARGETS),apps/basichost/check_basic_host.sh $(BASICHOST),true)
+	@sh tests/integration/shell/run.sh
+	@sh tests/integration/supervisor.sh
 
 check-architecture: shells
-	@python3 $(T)/tools/check_architecture.py
+	@python3 tools/check_architecture.py
 	@python3 kits/tools/check_kits.py
 	@python3 tools/check_app_boundaries.py
 	@python3 tools/test_app_boundaries.py
+	@$(MAKE) --no-print-directory check-layout
+
+.PHONY: check-layout
+check-layout:
+	@python3 tools/test_layout.py
 
 check-shipping:
-	@python3 $(T)/tools/check_shipping.py
+	@python3 tools/check_shipping.py
 
 # The comment and commit rules are house convention kept in the tikuOS
 # checkout's hygiene/, which is gitignored there and absent from a clone
@@ -130,7 +139,7 @@ check-shipping:
 # comments are written denser than the kernel's, so its ceilings are six
 # lines of prose and a twenty-line header rather than three and fifteen.
 # Size and documentation, the two rules the kernel's coding style is strict
-# about (PLAN-split.md): no function over 200 lines or ten locals, one
+# about (docs/plans/PLAN-split.md): no function over 200 lines or ten locals, one
 # banner per file, every function documented once, every private-header
 # field commented, 80 columns.  Exemptions live in the checker with their
 # reasons.
@@ -148,8 +157,8 @@ lint:
 	fi
 	@python3 tools/check_style.py
 
-run: $(SYSTEM)/TikuDesktop system loadable
-	./$(SYSTEM)/TikuDesktop
+run: $(SYSTEM)/TikuDesktop system loadable resources launch-links
+	./$(RUNTIME)/TikuDesktop
 
 clean:
 	rm -rf $(BUILD)

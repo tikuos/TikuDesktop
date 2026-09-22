@@ -125,7 +125,7 @@ void tiku_font_use_baked(void);
  * live within them (height within two pixels).  A display face may vary;
  * the geometry it sits in may not.  The kits build no tests of their own,
  * so the assertion that holds this rule lives where the toolkit is
- * exercised, in applications/TikuTracker/tests/test_background.c.
+ * exercised, in applications/tests/system/test_background.c.
  */
 
 /** @brief The bold face, for window titles and default-button labels. */

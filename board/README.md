@@ -115,7 +115,7 @@ shell's line editor sees a byte and hands it whole to the channel its
 marker names -- this library registers `0xF1` at boot, the IP stack the
 IPv4 nibble -- and the desktop's session does the same on its side, so
 typed commands and frames interleave freely.  The plan and its milestones
-are in `../PLAN-gui.md`; the link under the session in `../PLAN-link.md`.
+are in `../docs/plans/PLAN-gui.md`; the link under the session in `../docs/plans/PLAN-link.md`.
 
 Inside the frame the link (`kernel/link/tiku_link_console.c` here,
 `kits/device/tiku_link_serial.c` on the desktop) keeps its own four
@@ -144,7 +144,7 @@ delivers them whole and in order, so nothing of the console link's CRC,
 numbering or pacing is needed.  Reading `/gui/desk` says where the link
 stands and what has crossed it.  On the desk a TikuDesktop started with
 `-listen` takes in boards that dial it, greets each and shows its windows;
-`TikuTracker/tests/shell/boardnet.script` is that proven end to end.
+`tests/integration/shell/boardnet.script` is that proven end to end.
 
 A board with a radio need not be on a network either.  With the kernel's
 BLE link built (`TIKU_LINK_BLE_ENABLE=1`, over the coprocessor radio,
@@ -162,7 +162,7 @@ grant goes with the link; reading `/gui/desk` says where that stands.  On
 the desk, `ble_peer` in TikuBench connects
 from the host's adapter and carries the link to a TikuDesktop started with
 `-listen`, as `tcp_peer` carries a dialled connection;
-`TikuTracker/tests/shell/boardble.script` is that end to end.
+`tests/integration/shell/boardble.script` is that end to end.
 
 The shell is not needed for any of this.  With `TIKU_SHELL_ENABLE=0` the
 kernel's console runs a process of its own that drains the wire while a

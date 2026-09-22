@@ -8,7 +8,7 @@
  * for: a board, the machine it is plugged into, and the look that finds
  * one.  HVIF like the rest, so one definition serves every size.
  *
- * AUTHORED by TikuTracker/tools/mkicons.py -- edit the shapes there and
+ * AUTHORED by tools/icons/mkicons.py -- edit the shapes there and
  * run it again rather than editing the bytes below.
  *
  * SPDX-License-Identifier: Apache-2.0

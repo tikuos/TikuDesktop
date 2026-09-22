@@ -11,10 +11,10 @@
  * and the suite depends on none; this is how the kit's own work is
  * checked against one anyway, on a machine that happens to have it.
  *
- *   cc -I../../kits/interface -o glyphdump glyphdump.c \
- *      ../../kits/build/libtiku_interface.a \
- *      ../../kits/build/libtiku_support.a -lm
- *   ./glyphdump <font-file> <px> <codepoint-hex> [<codepoint-hex>...]
+ *   cc -Ikits/interface -o build/tools/glyphdump \
+ *      kits/interface/tools/glyphdump.c build/lib/libtiku_interface.a \
+ *      build/lib/libtiku_support.a -lm
+ *   build/tools/glyphdump <font-file> <px> <codepoint-hex> [...]
  *
  * SPDX-License-Identifier: Apache-2.0
  */

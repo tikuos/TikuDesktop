@@ -1,0 +1,12 @@
+# Production runtime launched from a relocated package, without source assets.
+wait 30
+key F1
+wait 80
+expect-title Help
+expect-narrate TikuDesktop Help
+expect-narrate The pages
+expect-control Contents
+key w ctrl
+wait 20
+expect-no-title Help
+quit

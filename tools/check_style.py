@@ -2,7 +2,7 @@
 """
 The style rules that make lint cannot check by reading comments alone:
 size and documentation, the two things the kernel's coding style is
-strict about and PLAN-split.md adopted.
+strict about and docs/plans/PLAN-split.md adopted.
 
 For every C file under the trees it is given (the shells and the Tracker
 core by default):
@@ -31,7 +31,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TREES = ['TikuTracker/src']
+TREES = ['system/desktop', 'system/tracker', 'system/shared', 'system/deskbar']
 
 FUNC_MAX = 200
 LOCALS_MAX = 10
@@ -60,10 +60,10 @@ EXEMPT_LOCALS = {
 EXEMPT_BANNERS = {
     # Sectioned files outside the seventeen: each under the file ceiling and
     # one job read start to end.  Split when next worked on, not before.
-    'TikuTracker/src/core/tiku_trk_info.c': 'the Info model, five stages',
-    'TikuTracker/src/core/tiku_trk_match.c': 'matching, two stages',
-    'TikuTracker/src/core/tiku_trk_panel.c': 'the file panel, two stages',
-    'TikuTracker/src/ui/tiku_trk_find.c': 'the Find window, five stages',
+    'system/shared/core/tiku_trk_info.c': 'the Info model, five stages',
+    'system/shared/core/tiku_trk_match.c': 'matching, two stages',
+    'system/shared/core/tiku_trk_panel.c': 'the file panel, two stages',
+    'system/shared/ui/tiku_trk_find.c': 'the Find window, five stages',
 }
 EXEMPT_HEADER = {
 }

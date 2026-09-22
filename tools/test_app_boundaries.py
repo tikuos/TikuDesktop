@@ -19,14 +19,14 @@ class BoundaryTests(unittest.TestCase):
 
     def test_sdk_only_app(self):
         self.source("apps/editor/main.c", '#include "tiku_app.h"\n')
-        self.assertEqual(violations(self.root, ["TikuTracker/src/main.c"]), [])
+        self.assertEqual(violations(self.root, ["system/main.c"]), [])
 
     def test_app_imports_private_core(self):
         self.source("apps/editor/main.c", '#include "tiku_trk_desktop_private.h"\n')
         self.assertTrue(violations(self.root, []))
 
     def test_system_imports_app(self):
-        self.source("system/run/main.c", '#include "../../apps/editor/main.c"\n')
+        self.source("system/runner/main.c", '#include "../../apps/editor/main.c"\n')
         self.assertTrue(violations(self.root, []))
 
     def test_kit_imports_app(self):
@@ -34,11 +34,23 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(violations(self.root, []))
 
     def test_shell_loads_module(self):
-        self.source("TikuTracker/src/shell/main.c", "tiku_app_load(path, why, cap);")
+        self.source("system/shared/shell/main.c", "tiku_app_load(path, why, cap);")
         self.assertTrue(violations(self.root, []))
 
     def test_app_linked_into_shell(self):
         self.assertTrue(violations(self.root, ["apps/editor/main.c"]))
+
+    def test_examples_may_share_example_headers(self):
+        self.source("examples/diagnostics/main.c", '#include "../apps/demo.h"\n')
+        self.assertEqual(violations(self.root, []), [])
+
+    def test_examples_may_not_import_desktop_headers(self):
+        self.source("examples/apps/demo.c", '#include "tiku_trk_desktop_private.h"\n')
+        self.assertTrue(violations(self.root, []))
+
+    def test_shared_system_headers_are_allowed_in_shell(self):
+        self.source("system/desktop/main.c", '#include "tiku_trk_desktop_private.h"\n')
+        self.assertEqual(violations(self.root, []), [])
 
 
 if __name__ == "__main__":

@@ -1,134 +1,123 @@
-# applications — what runs on a TikuOS desktop, and the desktop itself
+# TikuDesktop
 
-Host builds (Linux and macOS, X11) of the application tree: seven kits, the
-Tracker rewrite with its two shells, and the applications that run on it.
-This directory is its own repository, cloned into a tikuOS checkout at
-`tikuOS/applications/`; see *Where it must live*, below.
+TikuDesktop, its applications, and its reusable UI/device kits for Linux and
+macOS. This is an independent repository, normally checked out at
+`tikuOS/applications/`.
 
-## Source and binary ownership
+## Where things belong
 
-| directory | holds | products, all under `build/` at this level |
-|---|---|---|
-| `kits/` | seven libraries a program links without knowing what else links them: `support`, `device`, `interface`, `storage`, `translation`, `application`, `media`.  `tools/check_kits.py` holds the dependency table and refuses an include that crosses it | `build/libtiku_*.a` and PIC twins under `build/pic/` |
-| `TikuTracker/` | the file-manager core (`src/core`, `src/ui`, `src/deskbar`) **and both shells** (`src/shell`): the spatial desktop and the single-window browser are one product built two ways.  Also the unit tests, the 200-odd driven scripts, `spec/`, the strings catalogue and the icon sources | `build/system/TikuTracker`, `build/system/TikuDesktop`, their `build/dev/` flavours, `build/dev/trk-conduct`, every `build/tests/test_*` |
-| `system/` | the application process host and desktop supervisor; no application UI | `build/system/tiku-run`, `build/system/tiku-desk` |
-| `apps/` | app-owned code: Editor, Terminal, Basic/C, Bench, Console, Reader/Help, Image, Monitor, VFS Inspector, calculator, hex editor and sticky notes; examples and BASIC host | bundles in `build/apps/<id>/`; standalone samples in `build/examples/`, tools in `build/tools/` |
-| `assets/` | the mark, the banners and splashes the applications wear | — |
-| `tools/` | what works on the tree rather than in it: `split_file.py` cuts a file that grew section banners into a directory of one-functionality files, moving functions whole and generating the rest (`PLAN-split.md`) | — |
+| Directory | Contents |
+| --- | --- |
+| `system/` | Desktop and Tracker shells, Deskbar, shared shell services, application runner, supervisor |
+| `apps/` | End-user applications; each runs in a separate process through the public kits |
+| `kits/` | Seven reusable libraries: support, device, storage, interface, translation, application, media |
+| `examples/` | Demonstration applications and diagnostic galleries; not production apps |
+| `tests/` | System, kit, application and integration tests, fixtures, test drivers |
+| `assets/` | Help, translations, application artwork, sounds and icon sources |
+| `board/` | Optional firmware-side GUI bridge and board examples |
+| `tools/` | Build helpers, source checks, asset generators and developer tools |
+| `mk/` | The single build's Makefile fragments |
+| `docs/` | Architecture, guides, contracts, historical plans and notes |
 
-Each shell is one composition over the files of one directory:
-`TikuTracker/src/shell/desktop/` for the spatial desktop and
-`TikuTracker/src/shell/tracker/` for the single-window browser.  The
-pose view, which both share, is `TikuTracker/src/ui/poseview/`.
+See [the layout guide](docs/architecture/layout.md) for the detailed tree,
+old-to-new paths, and compatibility rules. `TikuTracker/` contains only a
+compatibility Makefile; it no longer owns the desktop, tests or assets.
 
-Installed apps run in separate processes, including Reader/Help, Image, Monitor
-and VFS Inspector. They use the public kits, never desktop-private headers.
-See [application architecture](apps/ARCHITECTURE.md) for manifests, source and
-binary boundaries, device services, migration and adding applications.
+## Build and run
 
-## Building
-
-Everything builds from this directory, into one `build/`:
-
-```sh
-make -j$(nproc)          # kits, both shells in both flavours, the apps, every test
-make test                # gates, unit suites, the BASIC host check, the scripts
-make run                 # build/system/TikuDesktop, over the host filesystem
-./build/system/TikuDesktop -d   # over a board on serial (-p PORT -b BAUD)
-./build/system/TikuDesktop -fullscreen   # the window is the screen
-```
-
-The rules are `Makefile` and `mk/` (one fragment per tree); the Makefiles
-inside `kits/`, `TikuTracker/` and `apps/` only forward here, so
-`make test` typed in any of them is the same run.  One script alone:
+On Linux, install a C toolchain, Make, Python 3 and X11 development libraries.
+macOS uses the native Cocoa window backend and the Xcode command-line tools;
+it does not require an X server. Python 3 must also be available.
 
 ```sh
-TRK_SHELL_ONLY=about.script sh TikuTracker/tests/shell/run.sh
+make -j8                 # complete development build, including tests and demos
+make run                 # build and launch TikuDesktop
+make runtime             # production binaries, application bundles and assets
+./build/runtime/TikuDesktop
+./build/runtime/TikuDesktop -d -p /dev/ttyACM0   # board over serial
+./build/runtime/TikuDesktop -fullscreen
 ```
 
-With a TikuOS board on a serial line, the scripts marked `# board: yes`
-run a second time against it, mounted where the script expects the
-mirrored files:
+The main executable names, application IDs, settings and module ABI are
+unchanged. `./build/TikuDesktop`, `./build/TikuTracker` and
+`./build/tiku-desk` remain compatibility launchers. Running `make` inside
+`TikuTracker/`, `apps/` or `kits/` still forwards to this build.
+
+The optional `tiku-basic` host interpreter is compiled from
+`../kernel/shell/basic/tiku_basic.c`. Set `TIKUOS=/path/to/tikuOS` if the
+firmware checkout is elsewhere; without it, that helper is skipped with a
+message and the other products still build.
+
+## Generated output
+
+```text
+build/
+  runtime/       runnable desktop: launchers, system/, apps/, assets/
+  lib/           SDK archives; position-independent archives in lib/pic/
+  obj/           intermediate objects and dependency files
+  generated/     generated headers
+  dev/           script-enabled shells and the external test driver
+  tests/         unit-test executables and fault-injection modules
+  examples/      standalone demos and diagnostic galleries
+  tools/         compiled development utilities
+dist/
+  TikuDesktop/       portable production folder (make package)
+  TikuDesktop.app/   native Finder bundle (make app on macOS)
+```
+
+Use the top-level runtime launchers rather than copying a binary out of
+`system/`; the launchers locate the matching apps, help and translations.
+`build/runtime/` can contain demos after a development build. Distributions
+are assembled from production source manifests, excluding demos, test
+fixtures, stale bundles, object files and SDK archives.
 
 ```sh
-TRK_PORT=/dev/ttyACM0 make test
+make package
+./dist/TikuDesktop/TikuDesktop
+# macOS only:
+make app
+open dist/TikuDesktop.app
 ```
 
-Read a result by its counts, not its colour: a suite that silently stopped
-prints no failures.  `TikuTracker/HANDOVER.md` §2 lists the build's traps.
+The Finder bundle includes apps, help and translations and is signed ad hoc
+when signing is available. `build/TikuDesktop.app` remains an alias. A
+pre-existing bundle at that old path is preserved as
+`build/TikuDesktop.app.legacy-backup` when the alias is created.
 
-### On macOS
+`make clean` removes `build/`, not `dist/` or user preferences. Packaging
+replaces only an output carrying its generated-package marker; an unknown
+directory at the destination is refused. Packages are relocatable folders
+for the host they were built on, not cross-platform or statically linked
+installers; Linux still needs the host X11/runtime libraries.
 
-The same commands, with `sysctl -n hw.ncpu` where Linux says `nproc`,
-and nothing to install beyond the command-line tools
-(`xcode-select --install`).  **The desktop draws through the Mac's own
-window** -- `kits/interface/tiku_cocoa.m`, one file behind the same
-`tiku_host` seam the X11 host fulfils on Linux -- so there is no X
-server to install, start, or attach to the login session:
+## Verification
 
 ```sh
-make -j$(sysctl -n hw.ncpu)
-make run                 # a window, Retina-sharp, with the Command key
-make app                 # build/TikuDesktop.app, for the Dock
-open build/TikuDesktop.app
+make test                 # boundaries, unit tests, BASIC checks, driven UI tests
+make check-layout         # build migration, packaging and launcher regressions
+make check-architecture   # ownership, SDK boundaries and layout checks
+make check-shipping       # no test interpreter in production shells
+make check-package        # build and validate the production distribution
+make lint                 # repository style and available house comment checks
+TRK_SHELL_ONLY=about.script sh tests/integration/shell/run.sh
 ```
 
-`make app` writes `build/TikuDesktop.app`: the same binaries, the mark
-rendered to an `.icns` at all ten sizes a Mac asks for, the applications
-under `Contents/Resources`, and a launcher that tells the program where
-they are.  It is signed ad hoc, so it opens on the machine that built
-it.  After `make clean`, `make && make app` brings it back.
+The driven UI tests use isolated homes and offscreen rendering. On Linux,
+native-window tests use Xvfb or Xephyr when installed. Hardware lanes are
+opt-in: `TRK_PORT=/dev/ttyACM0 make test`. Set `TIKU_HOST=x11` explicitly to
+use X11 on macOS; use a clean build when changing the host backend.
 
-**No X server is needed to build or to test.**  The driven scripts run
-with `DISPLAY=` empty and read the offscreen surface, so `make test` is
-the same run here as there.
+Production shells in `build/runtime/system/` refuse `-script`. The test
+interpreter exists only in the `build/dev/` versions. See
+[testing](tests/README.md) for ownership and test commands.
 
-The X11 host is still there for a Mac that wants it: `make
-TIKU_HOST=x11` builds the desktop over Xlib (the client library from
-`brew install libx11`, or XQuartz's copy in `/opt/X11`, or
-`X11_PREFIX=`), and `make TIKU_HOST=x11 test` also runs the two suites
-that look at an X window from outside, `test-host-clipboard` and
-`test-host-render`, on a private `Xvfb` from `brew install xorg-server`.
-The bundle's launcher carries the choice (`Contents/Resources/host`)
-and hunts for a launchd display socket only for an X build; how to put
-such a server in front of a person is in `PLAN-macos.md`, with the
-reasons it is no longer the way.
+## Documentation
 
-Two habits of the native window worth knowing.  Command and Control
-both mean *command*, so the Control chords a Linux hand knows still
-work and Cmd does what a Mac hand expects; Cmd-Tab belongs to the
-system, so the desktop's own switcher is reached with Ctrl-Tab.  And
-the desktop's quit is its own: the close box, the Dock's Quit and Cmd-Q
-all ask the shell, which shuts down the way it does on Linux.
+Start with the [documentation index](docs/README.md), the
+[layout guide](docs/architecture/layout.md), or the
+[architecture book](docs/architecture/BOOK.md). Application process isolation,
+manifests and the public SDK are covered by
+[application architecture](docs/architecture/applications.md).
 
-What differs underneath is said in two places and nowhere else: the
-Darwin block in `mk/toolchain.mk`, and `kits/support/tiku_darwin.h`, which
-is forced in front of every source so that none of them has to name a
-platform.  `PLAN-macos.md` holds the rest -- what works, what is still
-dark, and in which order it is being taken.
-
-## Two flavours of each shell
-
-`build/system/TikuDesktop` and `build/system/TikuTracker` are the product: they link a
-stub that refuses `-script`.  `build/dev/…` link the script interpreter the
-harness drives, and `tools/check_shipping.py` proves the vocabulary is
-absent from what ships.  Run the scripts against `build/dev/`, hand a
-person `build/system/` together with the `build/apps/` bundles.
-
-## Where it must live
-
-One thing pins the clone location: `apps/basichost` compiles the
-board's own BASIC interpreter for the host from
-`../../kernel/shell/basic/tiku_basic.c`, so this directory must sit at
-`tikuOS/applications/`.  Everything else builds from anywhere.  The tikuOS
-`.gitignore` covers `applications/`; commit here, not there.
-
-## Reading order
-
-`TikuTracker/HANDOVER.md` — how the work is done, the contract, what bites.
-`BOOK.md` — the architecture as a book: one chapter per kit, then the
-shells, the applications and the boards.  Start here.
-`TikuTracker/FEATURES.md` — the fidelity contract, 889 rows read from the
-original source.  `TikuTracker/spec/` — the architecture as decided.
-`apps/examples/README.md` — the least an application can be.
-`PLAN-structure.md` — the shape this tree is being moved toward.
+The local `_attic-*` directory, when present, is an archive outside the active
+build. It is neither migrated nor packaged.

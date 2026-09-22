@@ -1,6 +1,7 @@
 # Build output, in every corner of the tree: derived from the sources
 # beside it, never carried.
 build/
+dist/
 
 # Editor and OS leavings.
 *.o

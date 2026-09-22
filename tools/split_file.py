@@ -569,8 +569,8 @@ def bootstrap(src, d, inline_names, public, mk, tag=None):
     if mk:
         mkfile, var = mk.split(':')
         m = rd(mkfile)
-        old = '$(T)/' + os.path.relpath(src, 'TikuTracker') if src.startswith('TikuTracker/') else src
-        new = '$(T)/' + os.path.relpath(dst, 'TikuTracker') if dst.startswith('TikuTracker/') else dst
+        old = src
+        new = dst
         n = m.count(old)
         if n == 0:
             sys.exit('%s not named in %s' % (old, mkfile))
@@ -612,7 +612,7 @@ def add_to_mk(mk, tp):
     anchor = re.search(r'^%s := .*$' % re.escape(var), m, re.M)
     if anchor is None:
         sys.exit('%s: no %s :=' % (mkfile, var))
-    rel = '$(T)/' + os.path.relpath(tp, 'TikuTracker') if tp.startswith('TikuTracker/') else tp
+    rel = tp
     # the list's last line is the first one not ending in a backslash
     end = anchor.end()
     while m[end - 1] == '\\':

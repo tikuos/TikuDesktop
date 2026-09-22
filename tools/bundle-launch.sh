@@ -17,7 +17,9 @@
 
 here=$(cd "$(dirname "$0")" && pwd)
 TIKU_APPS="$here/../Resources/apps"
-export TIKU_APPS
+TIKU_HELP="$here/../Resources/assets/help"
+TIKU_STRINGS="$here/../Resources/assets/strings"
+export TIKU_APPS TIKU_HELP TIKU_STRINGS
 
 # A desktop built on the Mac's own window (mk/toolchain.mk, TIKU_HOST)
 # draws without any of the below: the bundle says which it carries.

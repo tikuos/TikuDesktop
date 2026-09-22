@@ -1,0 +1,15 @@
+# The relocated runtime must read its external French catalog and help page.
+wait 30
+key F1
+wait 80
+expect-title Help
+expect-narrate Aide de TikuDesktop
+expect-narrate Les rubriques
+key w ctrl
+wait 20
+expect-no-title Help
+click 60 8
+wait 6
+expect-menu Nouveau dossier
+key Escape
+quit

@@ -94,7 +94,7 @@ to live history. This keeps a frozen view stable even after the live ring wraps.
 ## Demo and verification
 
 Build with `make apps` and open **Sensors** from TikuDesktop's Applications
-menu (the Sensor Monitor demo, `build/apps/sensors.so`), or run
+menu (the Sensor Monitor demo, `build/runtime/apps/sensors.so`), or run
 `build/examples/tiku-example-sensors` with the desktop running.
 
 The demo is explicitly simulated: it does not connect to or configure hardware.

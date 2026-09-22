@@ -78,43 +78,58 @@ RT_LIBS := -lrt
 endif
 
 KIT_INC := -Ikits/support -Ikits/device -Ikits/storage -Ikits/interface \
-           -Ikits/translation -Ikits/application -Ikits/media -I$(BUILD)/gen
-TRK_INC := -I$(T)/src/core -I$(T)/src/ui -I$(T)/src/ui/commands \
-           -I$(T)/src/ui/windows -I$(T)/src/ui/overlays -I$(T)/src/ui/input \
-           -I$(T)/src/deskbar -I$(T)/src/shell -I$(T)/src/shell/adapters \
-           -I$(T)/src/shell/session
+           -Ikits/translation -Ikits/application -Ikits/media -I$(BUILD)/generated
+TRK_INC := -Isystem/shared/core -Isystem/shared/ui -Isystem/shared/ui/commands \
+           -Isystem/shared/ui/windows -Isystem/shared/ui/overlays -Isystem/shared/ui/input \
+           -Isystem/deskbar -Isystem/shared/shell -Isystem/shared/shell/adapters \
+           -Isystem/shared/shell/session
 
-$(OBJ)/kits/%.o: kits/%.c
+$(OBJ)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
 
 # The one kit file written to AppKit, in its language; retained and
 # released by hand, so the host's C struct may hold what it opened.
-$(OBJ)/kits/%.o: kits/%.m
+$(OBJ)/kits/%.o: kits/%.m | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
 
 # The same kit sources again, position-independent: a shared object
 # cannot link an archive of fixed-address code, and applications are
 # loadable.
-$(PIC)/kits/%.o: kits/%.c
+$(PIC)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -MMD -MP -c -o $@ $<
-$(PIC)/kits/%.o: kits/%.m
+$(PIC)/kits/%.o: kits/%.m | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -MMD -MP -c -o $@ $<
 
 # A test may carry flags of its own (test_inflate reads a corpus from
 # tests/); they are looked up by the file's own name.
-$(OBJ)/$(T)/%.o: $(T)/%.c
+$(OBJ)/tests/%.o: tests/%.c | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(KIT_INC) $(TRK_INC) $($(notdir $*)_CFLAGS) \
 	      -MMD -MP -c -o $@ $<
 
-$(OBJ)/$(D)/%.o: $(D)/%.c
+$(OBJ)/apps/%.o: apps/%.c | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
 
-$(OBJ)/system/%.o: system/%.c
+# Process hosts compile against the public SDK only.
+HOST_OBJECTS := $(OBJ)/system/runner/tiku_run.o \
+                $(OBJ)/system/supervisor/tiku_desk.o
+$(HOST_OBJECTS): $(OBJ)/%.o: %.c | prepare-build
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -MMD -MP -c -o $@ $<
+
+$(OBJ)/system/%.o: system/%.c | prepare-build
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) $(TRK_INC) -MMD -MP -c -o $@ $<
+
+$(OBJ)/examples/%.o: examples/%.c | prepare-build
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -MMD -MP -c -o $@ $<
+
+$(OBJ)/tools/%.o: tools/%.c | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(KIT_INC) -MMD -MP -c -o $@ $<

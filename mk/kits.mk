@@ -120,36 +120,36 @@ APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_client.c
 
 # The English catalogue, baked at build time: the words are the shells'
-# (TikuTracker/strings/en.xml) and the baking is the kit's, so the header
+# (assets/strings/en.xml) and the baking is the kit's, so the header
 # is made here from both rather than kept in the tree where it would
 # only learn to disagree with the XML.
-GEN_STRINGS := $(BUILD)/gen/tiku_strings_default.h
-$(GEN_STRINGS): $(T)/strings/en.xml $(K)/support/tools/genstrings.py
+GEN_STRINGS := $(BUILD)/generated/tiku_strings_default.h
+$(GEN_STRINGS): assets/strings/en.xml $(K)/support/tools/genstrings.py | prepare-build
 	@mkdir -p $(dir $@)
 	python3 $(K)/support/tools/genstrings.py $< > $@
 $(OBJ)/$(K)/support/tiku_strings.o $(PIC)/$(K)/support/tiku_strings.o: $(GEN_STRINGS)
 
 # The system sounds, baked the same way from assets/sounds/*.score.
-GEN_SCORES := $(BUILD)/gen/tiku_scores_default.h
-$(GEN_SCORES): $(wildcard assets/sounds/*.score) $(K)/media/tools/genscores.py
+GEN_SCORES := $(BUILD)/generated/tiku_scores_default.h
+$(GEN_SCORES): $(wildcard assets/sounds/*.score) $(K)/media/tools/genscores.py | prepare-build
 	@mkdir -p $(dir $@)
 	python3 $(K)/media/tools/genscores.py assets/sounds > $@
 $(OBJ)/$(K)/media/tiku_sound_scores.o $(PIC)/$(K)/media/tiku_sound_scores.o: $(GEN_SCORES)
 
-LIB_SUPPORT     := $(BUILD)/libtiku_support.a
-LIB_DEVICE      := $(BUILD)/libtiku_device.a
-LIB_STORAGE     := $(BUILD)/libtiku_storage.a
-LIB_INTERFACE   := $(BUILD)/libtiku_interface.a
-LIB_TRANSLATION := $(BUILD)/libtiku_translation.a
-LIB_APPLICATION := $(BUILD)/libtiku_application.a
-LIB_MEDIA       := $(BUILD)/libtiku_media.a
+LIB_SUPPORT     := $(LIBDIR)/libtiku_support.a
+LIB_DEVICE      := $(LIBDIR)/libtiku_device.a
+LIB_STORAGE     := $(LIBDIR)/libtiku_storage.a
+LIB_INTERFACE   := $(LIBDIR)/libtiku_interface.a
+LIB_TRANSLATION := $(LIBDIR)/libtiku_translation.a
+LIB_APPLICATION := $(LIBDIR)/libtiku_application.a
+LIB_MEDIA       := $(LIBDIR)/libtiku_media.a
 
 # In link order: a linker resolves left to right, so a kit must come
 # before the kits it draws on.  DESK_LIBS is the name every rule in the
 # tree links them by.
 DESK_LIBS := $(LIB_APPLICATION) $(LIB_TRANSLATION) $(LIB_INTERFACE) \
              $(LIB_STORAGE) $(LIB_DEVICE) $(LIB_MEDIA) $(LIB_SUPPORT)
-PIC_LIBS  := $(patsubst $(BUILD)/%,$(PIC)/%,$(DESK_LIBS))
+PIC_LIBS  := $(patsubst $(LIBDIR)/%,$(PICLIB)/%,$(DESK_LIBS))
 
 #
 # The archive is REMOVED before it is made, every time.  `ar rcs` adds
@@ -160,11 +160,11 @@ PIC_LIBS  := $(patsubst $(BUILD)/%,$(PIC)/%,$(DESK_LIBS))
 # quietly runs code that is no longer in the tree.
 #
 define KIT_RULES
-$(BUILD)/libtiku_$(1).a: $$(addprefix $(OBJ)/,$$(addsuffix .o,$$(basename $($(2))))) mk/kits.mk
+$(LIBDIR)/libtiku_$(1).a: $$(addprefix $(OBJ)/,$$(addsuffix .o,$$(basename $($(2))))) mk/kits.mk | prepare-build
 	@mkdir -p $$(dir $$@)
 	@rm -f $$@
 	$$(AR) rcs $$@ $$(filter %.o,$$^)
-$(PIC)/libtiku_$(1).a: $$(addprefix $(PIC)/,$$(addsuffix .o,$$(basename $($(2))))) mk/kits.mk
+$(PICLIB)/libtiku_$(1).a: $$(addprefix $(PIC)/,$$(addsuffix .o,$$(basename $($(2))))) mk/kits.mk | prepare-build
 	@mkdir -p $$(dir $$@)
 	@rm -f $$@
 	$$(AR) rcs $$@ $$(filter %.o,$$^)

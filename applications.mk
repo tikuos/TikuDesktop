@@ -14,7 +14,7 @@
 APPL_SRCS   :=
 APPL_CFLAGS :=
 
-# --- gui (a form the desktop draws; PLAN-gui.md) ---------------------------
+# --- gui (a form the desktop draws; docs/plans/PLAN-gui.md) ---------------------------
 ifeq ($(TIKU_APPL_GUI),1)
 APPL_SRCS   += applications/board/gui/tiku_gui.c
 APPL_SRCS   += applications/board/gui/tiku_draw.c
