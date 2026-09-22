@@ -40,6 +40,14 @@
 #include "tiku_icons_app_sketch.inl"
 #include "tiku_icons_app_sensors.inl"
 #include "tiku_icons_app_twowin.inl"
+#include "tiku_icons_section_identity.inl"
+#include "tiku_icons_section_processor.inl"
+#include "tiku_icons_section_memory.inl"
+#include "tiku_icons_section_storage.inl"
+#include "tiku_icons_section_power.inl"
+#include "tiku_icons_section_radio.inl"
+#include "tiku_icons_section_security.inl"
+#include "tiku_icons_section_boot.inl"
 
 /* microcontroller -- a chip: dark body, silver legs, the pin-one dot */
 static const uint8_t tiku_icon_microcontroller[311] = {
@@ -173,6 +181,22 @@ tiku_icons_tiku_register(void)
                           sizeof tiku_icon_app_basic);
     took += tiku_icons_add("app_c", tiku_icon_app_c,
                           sizeof tiku_icon_app_c);
+    took += tiku_icons_add("section_identity", tiku_icon_section_identity,
+                          sizeof tiku_icon_section_identity);
+    took += tiku_icons_add("section_processor", tiku_icon_section_processor,
+                          sizeof tiku_icon_section_processor);
+    took += tiku_icons_add("section_memory", tiku_icon_section_memory,
+                          sizeof tiku_icon_section_memory);
+    took += tiku_icons_add("section_storage", tiku_icon_section_storage,
+                          sizeof tiku_icon_section_storage);
+    took += tiku_icons_add("section_power", tiku_icon_section_power,
+                          sizeof tiku_icon_section_power);
+    took += tiku_icons_add("section_radio", tiku_icon_section_radio,
+                          sizeof tiku_icon_section_radio);
+    took += tiku_icons_add("section_security", tiku_icon_section_security,
+                          sizeof tiku_icon_section_security);
+    took += tiku_icons_add("section_boot", tiku_icon_section_boot,
+                          sizeof tiku_icon_section_boot);
     took += tiku_icons_add("app_devcalc", tiku_icon_app_devcalc,
                           sizeof tiku_icon_app_devcalc);
     took += tiku_icons_add("app_notes", tiku_icon_app_notes,
