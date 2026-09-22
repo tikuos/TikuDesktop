@@ -1,7 +1,7 @@
 /* Large desktop files must remain navigable, searchable and transactional. */
 #include <assert.h>
 #include <dirent.h>
-#include "../../apps/reader/tiku_reader_help_window.c"
+#include "../../apps/reader/tiku_reader_private.h"
 
 /** @brief Generate over a megabyte of Markdown with a unique tail and anchor. */
 static void large_markdown(const char *path)
@@ -72,12 +72,12 @@ int main(void)
     assert(tiku_reader_help_window_go(&c, "#tail-section") == TIKU_READER_HELP_ANCHOR);
     assert(tiku_reader_help_window_copy(&c, 1));
     assert(strstr(tiku_clipboard_text(), "PRINT 123"));
-    reader_bookmark(&c); assert(c.reader->nmarks == 1 && c.reader->marks[0].block > 10000);
+    tiku_reader_bookmark(&c); assert(c.reader->nmarks == 1 && c.reader->marks[0].block > 10000);
     int back = c.nback;
     tiku_doc_place_t at = tiku_doc_place(c.doc, c.bar.value);
     assert(tiku_reader_document_window_reload(&c)); tiku_workspace_draw(workspace);
     assert(c.nback == back && tiku_doc_place(c.doc, c.bar.value).block == at.block);
-    tiku_field_start(&c.reader->query, "FINAL_NEEDLE"); reader_search(&c);
+    tiku_field_start(&c.reader->query, "FINAL_NEEDLE"); tiku_reader_search(&c);
     assert(c.reader->nrows == 1 && !c.reader->limited);
     assert(strstr(c.reader->rows[0].snippet, "FINAL_NEEDLE"));
     snprintf(huge, sizeof huge, "%s/oversize.md", base);
@@ -95,8 +95,8 @@ int main(void)
     assert(c.reader->nmarks == 1 && c.reader->marks[0].block > 10000);
     assert(tiku_reader_document_window_file(&c, path));
     tiku_workspace_draw(workspace);
-    reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
-    tiku_list_select_only(&c.reader->list, 0); reader_side_open(&c);
+    tiku_reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
+    tiku_list_select_only(&c.reader->list, 0); tiku_reader_side_open(&c);
     assert(tiku_doc_place(c.doc, c.bar.value).block == at.block);
     at_source_limit(&c, base);
     tiku_reader_help_window_destroy(&c);

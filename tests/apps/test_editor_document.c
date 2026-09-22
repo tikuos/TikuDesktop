@@ -1,8 +1,7 @@
 /* Editor's explicit launch document and ordinary empty launch.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
-#define TIKU_APP_EMBED
-#include "../../apps/editor/tiku_edit.c"
+#include "../../apps/editor/tiku_editor_private.h"
 
 static char title_seen[128];
 static uint32_t next_window;
@@ -23,7 +22,7 @@ static int sizeable(void *ctx, uint32_t id)
 static int key(edit_state_t *st, unsigned code, unsigned mods)
 {
     tiku_event_t e = {.type = TIKU_EVENT_KEY_DOWN, .key = code, .modifiers = mods};
-    return edit_event(st, &e);
+    return tiku_editor_event(st, &e);
 }
 
 /** Choose a question button using the same measured geometry as the painter. */
@@ -35,7 +34,7 @@ static int answer(edit_state_t *st, int index)
                            &x, &y, &w, &h);
     tiku_event_t e = {.type = TIKU_EVENT_POINTER_DOWN,
         .x = st->ask_frame.x + x + w / 2, .y = st->ask_frame.y + y + h / 2};
-    return edit_event(st, &e);
+    return tiku_editor_event(st, &e);
 }
 
 /** A byte-exact readback includes final line breaks and UTF-8 BOMs. */
@@ -57,53 +56,53 @@ static void undo_roundtrips(edit_state_t *st)
     const char *pieces[] = {"a", "café", "\n", "alpha\nbeta\n", "", "\tend"};
     unsigned seed = 19;
     for (int i = 0; i < 300; i++) {
-        if (i % 15 == 0) edit_buffer_set(&st->tv,
+        if (i % 15 == 0) tiku_editor_buffer_set(&st->tv,
             "A short paragraph with café.\nAnother line with tabs\tand text.\nLast line.");
         seed = seed * 1664525u + 1013904223u;
         int y = (int)(seed % (unsigned)st->tv.nline);
-        edit_buffer_select_none(&st->tv);
-        edit_buffer_place(&st->tv, y, (int)((seed >> 8) % (unsigned)(st->tv.line[y].len + 1)));
+        tiku_editor_buffer_select_none(&st->tv);
+        tiku_editor_buffer_place(&st->tv, y, (int)((seed >> 8) % (unsigned)(st->tv.line[y].len + 1)));
         if (seed & 1) {
-            edit_buffer_select_begin(&st->tv);
+            tiku_editor_buffer_select_begin(&st->tv);
             int other = (int)((seed >> 16) % (unsigned)st->tv.nline);
-            edit_buffer_place(&st->tv, other, (int)((seed >> 5) % (unsigned)(st->tv.line[other].len + 1)));
+            tiku_editor_buffer_place(&st->tv, other, (int)((seed >> 5) % (unsigned)(st->tv.line[other].len + 1)));
         }
-        assert(edit_buffer_text(&st->tv, before, sizeof before) < sizeof before);
-        if (!insert_checked(st, pieces[(seed >> 24) % 6])) continue;
-        assert(edit_buffer_text(&st->tv, after, sizeof after) < sizeof after);
+        assert(tiku_editor_buffer_text(&st->tv, before, sizeof before) < sizeof before);
+        if (!tiku_editor_insert_checked(st, pieces[(seed >> 24) % 6])) continue;
+        assert(tiku_editor_buffer_text(&st->tv, after, sizeof after) < sizeof after);
         if (!strcmp(before, after)) continue;
-        assert(edit_buffer_undo(&st->tv));
-        edit_buffer_text(&st->tv, actual, sizeof actual);
+        assert(tiku_editor_buffer_undo(&st->tv));
+        tiku_editor_buffer_text(&st->tv, actual, sizeof actual);
         if (strcmp(before, actual)) {
             fprintf(stderr, "Roundtrip %d seed %u\nBefore: [%s]\nAfter: [%s]\nUndo: [%s]\n",
                 i, seed, before, after, actual);
         }
         assert(!strcmp(before, actual));
-        assert(edit_buffer_redo(&st->tv));
-        edit_buffer_text(&st->tv, actual, sizeof actual);
+        assert(tiku_editor_buffer_redo(&st->tv));
+        tiku_editor_buffer_text(&st->tv, actual, sizeof actual);
         assert(!strcmp(after, actual));
     }
-    edit_buffer_free(&st->tv);
+    tiku_editor_buffer_free(&st->tv);
 }
 
 /** History pruning and a branch after undo retain accurate save points. */
 static void history_rollover(edit_state_t *st)
 {
-    assert(edit_buffer_set(&st->tv, ""));
-    for (int i = 0; i < 400; i++) assert(edit_buffer_replace(&st->tv, "x"));
+    assert(tiku_editor_buffer_set(&st->tv, ""));
+    for (int i = 0; i < 400; i++) assert(tiku_editor_buffer_replace(&st->tv, "x"));
     assert(st->tv.undo_n == 256 && st->tv.line[0].len == 400);
-    edit_buffer_saved(&st->tv);
-    for (int i = 0; i < 256; i++) assert(edit_buffer_undo(&st->tv));
-    assert(!edit_buffer_undo(&st->tv) && st->tv.line[0].len == 144);
-    assert(edit_buffer_modified(&st->tv));
-    for (int i = 0; i < 256; i++) assert(edit_buffer_redo(&st->tv));
-    assert(!edit_buffer_redo(&st->tv) && !edit_buffer_modified(&st->tv));
-    assert(edit_buffer_undo(&st->tv));
-    assert(edit_buffer_replace(&st->tv, "y"));
-    assert(!edit_buffer_can_redo(&st->tv) && edit_buffer_modified(&st->tv));
-    assert(edit_buffer_undo(&st->tv) && edit_buffer_modified(&st->tv));
-    assert(edit_buffer_redo(&st->tv) && st->tv.line[0].text[399] == 'y');
-    assert(edit_buffer_set(&st->tv, ""));
+    tiku_editor_buffer_saved(&st->tv);
+    for (int i = 0; i < 256; i++) assert(tiku_editor_buffer_undo(&st->tv));
+    assert(!tiku_editor_buffer_undo(&st->tv) && st->tv.line[0].len == 144);
+    assert(tiku_editor_buffer_modified(&st->tv));
+    for (int i = 0; i < 256; i++) assert(tiku_editor_buffer_redo(&st->tv));
+    assert(!tiku_editor_buffer_redo(&st->tv) && !tiku_editor_buffer_modified(&st->tv));
+    assert(tiku_editor_buffer_undo(&st->tv));
+    assert(tiku_editor_buffer_replace(&st->tv, "y"));
+    assert(!tiku_editor_buffer_can_redo(&st->tv) && tiku_editor_buffer_modified(&st->tv));
+    assert(tiku_editor_buffer_undo(&st->tv) && tiku_editor_buffer_modified(&st->tv));
+    assert(tiku_editor_buffer_redo(&st->tv) && st->tv.line[0].text[399] == 'y');
+    assert(tiku_editor_buffer_set(&st->tv, ""));
 }
 
 /** Long lines, many lines and multi-megabyte documents round-trip losslessly. */
@@ -113,79 +112,79 @@ static void large_documents(edit_state_t *st, const char *dir)
     FILE *f = fopen(path, "wb"); assert(f);
     char row[81]; memset(row, 'a', 79); row[79] = '\n'; row[80] = 0;
     for (int i = 0; i < 70000; i++) assert(fwrite(row, 1, 80, f) == 80);
-    fclose(f); assert(read_document(st, path));
-    assert(st->tv.nline == 70001 && save(st));
+    fclose(f); assert(tiku_editor_read_document(st, path));
+    assert(st->tv.nline == 70001 && tiku_editor_save(st));
     struct stat info; assert(!stat(path, &info) && info.st_size == 5600000);
-    edit_buffer_place(&st->tv, 65000, 40);
-    assert(insert_checked(st, "café"));
-    assert(edit_buffer_undo(&st->tv) && st->tv.line[65000].len == 79);
-    assert(edit_buffer_redo(&st->tv) && st->tv.line[65000].len == 84);
-    assert(edit_buffer_undo(&st->tv));
+    tiku_editor_buffer_place(&st->tv, 65000, 40);
+    assert(tiku_editor_insert_checked(st, "café"));
+    assert(tiku_editor_buffer_undo(&st->tv) && st->tv.line[65000].len == 79);
+    assert(tiku_editor_buffer_redo(&st->tv) && st->tv.line[65000].len == 84);
+    assert(tiku_editor_buffer_undo(&st->tv));
     size_t length = 256 * 1024;
     char *longline = malloc(length + 1); assert(longline);
     memset(longline, 'x', length); longline[length] = 0;
-    put_file(path, longline); assert(read_document(st, path));
+    put_file(path, longline); assert(tiku_editor_read_document(st, path));
     assert(st->tv.nline == 1 && st->tv.line[0].len == (int)length);
-    edit_buffer_place(&st->tv, 0, (int)length - 2);
-    assert(insert_checked(st, "\ncafé\n"));
-    assert(st->tv.nline == 3 && edit_buffer_undo(&st->tv));
+    tiku_editor_buffer_place(&st->tv, 0, (int)length - 2);
+    assert(tiku_editor_insert_checked(st, "\ncafé\n"));
+    assert(st->tv.nline == 3 && tiku_editor_buffer_undo(&st->tv));
     assert(st->tv.nline == 1 && !strcmp(st->tv.line[0].text, longline));
     /* Joining two large lines and replacing all of them no longer needs a 1 KB seam. */
-    assert(insert_checked(st, "\n"));
-    edit_buffer_select_all(&st->tv); assert(insert_checked(st, "done"));
-    assert(edit_buffer_undo(&st->tv) && st->tv.nline == 2);
-    assert(edit_buffer_undo(&st->tv) && st->tv.nline == 1);
-    reveal(st); paint(st); assert(st->left > 1024);
-    assert(save(st)); assert(!stat(path, &info) && info.st_size == (off_t)length);
+    assert(tiku_editor_insert_checked(st, "\n"));
+    tiku_editor_buffer_select_all(&st->tv); assert(tiku_editor_insert_checked(st, "done"));
+    assert(tiku_editor_buffer_undo(&st->tv) && st->tv.nline == 2);
+    assert(tiku_editor_buffer_undo(&st->tv) && st->tv.nline == 1);
+    tiku_editor_reveal(st); tiku_editor_paint(st); assert(st->left > 1024);
+    assert(tiku_editor_save(st)); assert(!stat(path, &info) && info.st_size == (off_t)length);
     free(longline); unlink(path);
-    assert(edit_buffer_set(&st->tv, "Alpha alpha alphabet\nalpha\n"));
+    assert(tiku_editor_buffer_set(&st->tv, "Alpha alpha alphabet\nalpha\n"));
     tiku_field_start(&st->field[0], "alpha");
     tiku_field_start(&st->field[1], "beta");
     st->match_case = 0; st->whole_word = 1;
-    replace_all(st);
+    tiku_editor_replace_all(st);
     assert(!strcmp(st->tv.line[0].text, "beta beta alphabet"));
     assert(!strcmp(st->tv.line[1].text, "beta"));
-    assert(edit_buffer_undo(&st->tv));
+    assert(tiku_editor_buffer_undo(&st->tv));
     assert(!strcmp(st->tv.line[0].text, "Alpha alpha alphabet"));
     st->match_case = 1; st->whole_word = 0;
     /* Find owns a different window; ordinary document input still edits text. */
-    edit_buffer_place(&st->tv, 0, 0);
-    edit_pick(st, st->id, CMD_FIND);
+    tiku_editor_buffer_place(&st->tv, 0, 0);
+    tiku_editor_pick(st, st->id, CMD_FIND);
     assert(st->search_id && st->search_id != st->id);
     /* Background exposure keeps field focus; pointer movement stays in Find. */
     tiku_event_t e = {.type = TIKU_EVENT_EXPOSE};
-    edit_event_in(st, st->id, &e); assert(st->search_active);
+    tiku_editor_event_in(st, st->id, &e); assert(st->search_active);
     e = (tiku_event_t){.type = TIKU_EVENT_POINTER_MOVE, .x = 10, .y = 10};
-    edit_event_in(st, st->search_id, &e); assert(st->hover_tool == -1);
+    tiku_editor_event_in(st, st->search_id, &e); assert(st->hover_tool == -1);
     /* Menu commands target their owning window even without activation events. */
-    edit_pick(st, st->id, CMD_ALL);
+    tiku_editor_pick(st, st->id, CMD_ALL);
     assert(st->tv.selecting && !st->search_active);
-    edit_buffer_select_none(&st->tv); edit_buffer_place(&st->tv, 0, 0);
-    edit_pick(st, st->search_id, CMD_ALL);
+    tiku_editor_buffer_select_none(&st->tv); tiku_editor_buffer_place(&st->tv, 0, 0);
+    tiku_editor_pick(st, st->search_id, CMD_ALL);
     assert(st->field[0].sel_b == st->field[0].len && st->search_active);
     int before = st->tv.line[0].len;
     e = (tiku_event_t){.type = TIKU_EVENT_KEY_DOWN, .key = 'x'};
-    edit_event_in(st, st->id, &e); assert(st->tv.line[0].len == before + 1);
+    tiku_editor_event_in(st, st->id, &e); assert(st->tv.line[0].len == before + 1);
     e.key = TIKU_KEY_ESCAPE;
-    edit_event_in(st, st->search_id, &e); assert(!st->search_id && !st->finding);
-    edit_buffer_set(&st->tv, ""); st->path[0] = 0; st->width_dirty = 1;
+    tiku_editor_event_in(st, st->search_id, &e); assert(!st->search_id && !st->finding);
+    tiku_editor_buffer_set(&st->tv, ""); st->path[0] = 0; st->width_dirty = 1;
 }
 
 /** Native toolbar activation requires releasing over the same enabled tool. */
 static void toolbar_actions(edit_state_t *st)
 {
-    tiku_rect_t r = tool_rect(5);
+    tiku_rect_t r = tiku_editor_tool_rect(5);
     tiku_event_t e = {.type = TIKU_EVENT_POINTER_DOWN, .x = r.x + 8, .y = r.y + 8};
-    edit_event_in(st, st->id, &e); assert(st->pressed_tool == 5);
+    tiku_editor_event_in(st, st->id, &e); assert(st->pressed_tool == 5);
     e.type = TIKU_EVENT_POINTER_UP; e.x = 400;
-    edit_event_in(st, st->id, &e);
+    tiku_editor_event_in(st, st->id, &e);
     assert(st->pressed_tool == -1 && !st->search_id);
     e.type = TIKU_EVENT_POINTER_DOWN; e.x = r.x + 8;
-    edit_event_in(st, st->id, &e);
+    tiku_editor_event_in(st, st->id, &e);
     e.type = TIKU_EVENT_POINTER_UP;
-    edit_event_in(st, st->id, &e); assert(st->search_id);
+    tiku_editor_event_in(st, st->id, &e); assert(st->search_id);
     e = (tiku_event_t){.type = TIKU_EVENT_KEY_DOWN, .key = 'w', .modifiers = TIKU_MOD_CMD};
-    assert(!edit_event_in(st, st->search_id, &e));
+    assert(!tiku_editor_event_in(st, st->search_id, &e));
     assert(!st->search_id && !st->finding);
 }
 
@@ -198,119 +197,119 @@ static void workflows(edit_state_t *st, const char *dir)
     const char *samples[] = {"", "one", "one\n", "one\n\n",
         "\xef\xbb\xbf" "café\r\ntwo\r\n"};
     for (unsigned i = 0; i < sizeof samples / sizeof samples[0]; i++) {
-        put_file(path, samples[i]); assert(read_document(st, path));
-        assert(save(st)); expect_file(path, samples[i]);
+        put_file(path, samples[i]); assert(tiku_editor_read_document(st, path));
+        assert(tiku_editor_save(st)); expect_file(path, samples[i]);
     }
     /* More than the old 31999-byte cap must survive a save unchanged. */
     FILE *f = fopen(path, "wb"); assert(f);
     for (int i = 0; i < 2000; i++) assert(fputs("twenty bytes of text!\n", f) >= 0);
-    assert(!fclose(f)); assert(read_document(st, path));
-    assert(st->tv.nline == 2001 && save(st));
+    assert(!fclose(f)); assert(tiku_editor_read_document(st, path));
+    assert(st->tv.nline == 2001 && tiku_editor_save(st));
     struct stat info;
     assert(!stat(path, &info) && info.st_size == (off_t)(2000 * strlen("twenty bytes of text!\n")));
     tiku_event_t resize = {.type = TIKU_EVENT_RESIZE, .width = 780, .height = 530};
-    edit_event(st, &resize); assert(st->w == 780 && st->surface->w == 780);
+    tiku_editor_event(st, &resize); assert(st->w == 780 && st->surface->w == 780);
     tiku_event_t wheel = {.type = TIKU_EVENT_WHEEL, .dy = 20};
-    edit_event(st, &wheel); assert(st->tv.top == 20);
+    tiku_editor_event(st, &wheel); assert(st->tv.top == 20);
     key(st, TIKU_KEY_END, TIKU_MOD_CMD); assert(st->tv.cy == 2000);
     key(st, TIKU_KEY_HOME, TIKU_MOD_CMD); assert(!st->tv.cy && !st->tv.top);
-    put_file(path, "alpha beta alpha\nlast"); assert(read_document(st, path));
+    put_file(path, "alpha beta alpha\nlast"); assert(tiku_editor_read_document(st, path));
     key(st, TIKU_KEY_RIGHT, TIKU_MOD_SHIFT);
     key(st, TIKU_KEY_RIGHT, TIKU_MOD_SHIFT);
     key(st, 'c', TIKU_MOD_CMD); assert(!strcmp(clipboard, "al"));
-    key(st, 'x', TIKU_MOD_CMD); assert(!strcmp(edit_buffer_line(&st->tv, 0), "pha beta alpha"));
-    key(st, 'z', TIKU_MOD_CMD); assert(!edit_buffer_modified(&st->tv));
-    key(st, 'y', TIKU_MOD_CMD); assert(edit_buffer_modified(&st->tv));
+    key(st, 'x', TIKU_MOD_CMD); assert(!strcmp(tiku_editor_buffer_line(&st->tv, 0), "pha beta alpha"));
+    key(st, 'z', TIKU_MOD_CMD); assert(!tiku_editor_buffer_modified(&st->tv));
+    key(st, 'y', TIKU_MOD_CMD); assert(tiku_editor_buffer_modified(&st->tv));
     key(st, 'z', TIKU_MOD_CMD);
-    edit_buffer_place(&st->tv, 0, 0);
+    tiku_editor_buffer_place(&st->tv, 0, 0);
     key(st, 'h', TIKU_MOD_CMD); assert(st->finding == 1);
     tiku_field_start(&st->field[0], "alpha");
-    find_match(st, 0); assert(st->tv.cx == 5);
-    find_match(st, 0); assert(st->tv.cx == 16);
-    find_match(st, 0); assert(st->tv.cx == 5 && strstr(st->note, "wrapped"));
+    tiku_editor_find_match(st, 0); assert(st->tv.cx == 5);
+    tiku_editor_find_match(st, 0); assert(st->tv.cx == 16);
+    tiku_editor_find_match(st, 0); assert(st->tv.cx == 5 && strstr(st->note, "wrapped"));
     tiku_field_start(&st->field[1], "omega");
-    replace_match(st); assert(!strcmp(edit_buffer_line(&st->tv, 0), "omega beta alpha"));
+    tiku_editor_replace_match(st); assert(!strcmp(tiku_editor_buffer_line(&st->tv, 0), "omega beta alpha"));
     key(st, TIKU_KEY_ESCAPE, 0); key(st, 'z', TIKU_MOD_CMD);
-    assert(!strcmp(edit_buffer_line(&st->tv, 0), "alpha beta alpha"));
-    assert(!edit_buffer_modified(&st->tv));
+    assert(!strcmp(tiku_editor_buffer_line(&st->tv, 0), "alpha beta alpha"));
+    assert(!tiku_editor_buffer_modified(&st->tv));
     key(st, 'g', TIKU_MOD_CMD); tiku_field_start(&st->field[2], "2");
     key(st, TIKU_KEY_RETURN, 0); assert(st->tv.cy == 1 && !st->finding);
-    tiku_rect_t page = edit_page(st);
+    tiku_rect_t page = tiku_editor_page(st);
     tiku_event_t click = {.type = TIKU_EVENT_POINTER_DOWN, .x = page.x, .y = page.y + 2};
-    edit_event(st, &click); assert(!st->tv.cy && !st->tv.cx);
-    click.type = TIKU_EVENT_POINTER_MOVE; click.x += prefix_width("alpha", 5);
-    edit_event(st, &click);
-    click.type = TIKU_EVENT_POINTER_UP; edit_event(st, &click);
+    tiku_editor_event(st, &click); assert(!st->tv.cy && !st->tv.cx);
+    click.type = TIKU_EVENT_POINTER_MOVE; click.x += tiku_editor_prefix_width("alpha", 5);
+    tiku_editor_event(st, &click);
+    click.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &click);
     key(st, 'c', TIKU_MOD_CMD); assert(!strcmp(clipboard, "alpha"));
     /* Clipboard supports multiple lines and UTF-8, as one undo operation. */
     clip_set(NULL, "café\nnotes"); key(st, 'v', TIKU_MOD_CMD);
-    assert(!strcmp(edit_buffer_line(&st->tv, 0), "café"));
-    key(st, 'z', TIKU_MOD_CMD); assert(!edit_buffer_modified(&st->tv));
-    key(st, '!', 0); assert(edit_buffer_modified(&st->tv));
+    assert(!strcmp(tiku_editor_buffer_line(&st->tv, 0), "café"));
+    key(st, 'z', TIKU_MOD_CMD); assert(!tiku_editor_buffer_modified(&st->tv));
+    key(st, '!', 0); assert(tiku_editor_buffer_modified(&st->tv));
     assert(!key(st, 'w', TIKU_MOD_CMD) && st->ask.open);
-    key(st, TIKU_KEY_RETURN, 0); assert(!st->ask.open && edit_buffer_modified(&st->tv));
-    edit_closed(st, st->id); assert(st->ask.open);
+    key(st, TIKU_KEY_RETURN, 0); assert(!st->ask.open && tiku_editor_buffer_modified(&st->tv));
+    tiku_editor_closed(st, st->id); assert(st->ask.open);
     key(st, TIKU_KEY_ESCAPE, 0);
     int before = picker_count;
     key(st, 'o', TIKU_MOD_CMD); assert(st->ask.open && picker_count == before);
     key(st, TIKU_KEY_ESCAPE, 0);
     /* Refused reads and writes keep the current path, data and undo state. */
-    put_file(other, "invalid\rbare"); assert(!read_document(st, other));
-    assert(!strcmp(st->path, path) && edit_buffer_modified(&st->tv));
-    put_file(other, "x\r\ny\n"); assert(!read_document(st, other));
-    put_file(path, "changed externally"); assert(!save(st));
+    put_file(other, "invalid\rbare"); assert(!tiku_editor_read_document(st, other));
+    assert(!strcmp(st->path, path) && tiku_editor_buffer_modified(&st->tv));
+    put_file(other, "x\r\ny\n"); assert(!tiku_editor_read_document(st, other));
+    put_file(path, "changed externally"); assert(!tiku_editor_save(st));
     expect_file(path, "changed externally");
     char impossible[512]; snprintf(impossible, sizeof impossible, "%s/no-folder/file.txt", dir);
-    assert(!save_document(st, impossible) && !strcmp(st->path, path));
-    assert(save_document(st, other) && !edit_buffer_modified(&st->tv));
+    assert(!tiku_editor_save_document(st, impossible) && !strcmp(st->path, path));
+    assert(tiku_editor_save_document(st, other) && !tiku_editor_buffer_modified(&st->tv));
     assert(!strcmp(st->path, other));
     key(st, 'n', TIKU_MOD_CMD); assert(!st->path[0] && st->tv.nline == 1);
     key(st, 's', TIKU_MOD_CMD); assert(picker_mode == TIKU_APP_PICK_SAVE);
     /* Typing while an Open panel is outstanding must not be lost. */
     key(st, 'o', TIKU_MOD_CMD); key(st, 'x', 0);
-    edit_picked(st, st->id, path); assert(!st->path[0]);
-    assert(!strcmp(edit_buffer_line(&st->tv, 0), "x"));
+    tiku_editor_picked(st, st->id, path); assert(!st->path[0]);
+    assert(!strcmp(tiku_editor_buffer_line(&st->tv, 0), "x"));
     /* Discard approval does not mark an unsaved file clean if Open is cancelled. */
     key(st, 'o', TIKU_MOD_CMD); answer(st, 1);
-    assert(edit_buffer_modified(&st->tv));
-    edit_picked(st, st->id, path); assert(!strcmp(st->path, path));
+    assert(tiku_editor_buffer_modified(&st->tv));
+    tiku_editor_picked(st, st->id, path); assert(!strcmp(st->path, path));
     /* Saving through a guarded transition continues only after success. */
     key(st, '!', 0); key(st, 'n', TIKU_MOD_CMD); answer(st, 2);
-    assert(!st->path[0] && !edit_buffer_modified(&st->tv));
+    assert(!st->path[0] && !tiku_editor_buffer_modified(&st->tv));
     key(st, 'x', 0); key(st, 'n', TIKU_MOD_CMD); answer(st, 2);
     assert(st->pending == CMD_NEW && picker_mode == TIKU_APP_PICK_SAVE);
-    edit_picked(st, st->id, other);
-    assert(!st->path[0] && !edit_buffer_modified(&st->tv));
-    assert(read_document(st, other));
-    assert(!chmod(other, 0444)); assert(!save(st)); assert(!chmod(other, 0644));
+    tiku_editor_picked(st, st->id, other);
+    assert(!st->path[0] && !tiku_editor_buffer_modified(&st->tv));
+    assert(tiku_editor_read_document(st, other));
+    assert(!chmod(other, 0444)); assert(!tiku_editor_save(st)); assert(!chmod(other, 0644));
     char linkpath[512]; snprintf(linkpath, sizeof linkpath, "%s/link.txt", dir);
-    assert(!symlink(other, linkpath)); assert(!save_document(st, linkpath));
+    assert(!symlink(other, linkpath)); assert(!tiku_editor_save_document(st, linkpath));
     assert(!unlink(linkpath));
     /* Empty replacement is undoable, and clipboard overflow never cuts text. */
-    edit_buffer_select_all(&st->tv); assert(insert_checked(st, ""));
+    tiku_editor_buffer_select_all(&st->tv); assert(tiku_editor_insert_checked(st, ""));
     assert(!st->tv.line[0].len); key(st, 'z', TIKU_MOD_CMD);
-    assert(!strcmp(edit_buffer_line(&st->tv, 0), "x"));
+    assert(!strcmp(tiku_editor_buffer_line(&st->tv, 0), "x"));
     char longline[1024]; memset(longline, 'q', 1023); longline[1023] = 0;
-    edit_buffer_set(&st->tv, longline);
-    edit_buffer_place(&st->tv, 0, 1023);
-    assert(insert_checked(st, "a") && st->tv.line[0].len == 1024);
-    put_file(other, "bad\xff"); assert(!read_document(st, other));
+    tiku_editor_buffer_set(&st->tv, longline);
+    tiku_editor_buffer_place(&st->tv, 0, 1023);
+    assert(tiku_editor_insert_checked(st, "a") && st->tv.line[0].len == 1024);
+    put_file(other, "bad\xff"); assert(!tiku_editor_read_document(st, other));
     assert(st->tv.line[0].len == 1024);
-    edit_buffer_set(&st->tv, "");
+    tiku_editor_buffer_set(&st->tv, "");
     for (int i = 0; i < 10; i++) {
-        assert(insert_checked(st, "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n"));
+        assert(tiku_editor_insert_checked(st, "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n"));
     }
-    edit_buffer_select_all(&st->tv); key(st, 'c', TIKU_MOD_CMD);
+    tiku_editor_buffer_select_all(&st->tv); key(st, 'c', TIKU_MOD_CMD);
     assert(strlen(clipboard) == 530);
-    assert(insert_checked(st, "")); key(st, 'v', TIKU_MOD_CMD);
+    assert(tiku_editor_insert_checked(st, "")); key(st, 'v', TIKU_MOD_CMD);
     assert(st->tv.nline == 11);
-    edit_buffer_set(&st->tv, "");
+    tiku_editor_buffer_set(&st->tv, "");
     char block[502]; memset(block, 'q', 500); block[500] = '\n'; block[501] = 0;
-    for (int i = 0; i < 10; i++) assert(insert_checked(st, block));
-    edit_buffer_select_all(&st->tv);
+    for (int i = 0; i < 10; i++) assert(tiku_editor_insert_checked(st, block));
+    tiku_editor_buffer_select_all(&st->tv);
     key(st, 'x', TIKU_MOD_CMD);
     assert(strstr(st->note, "4095") && st->tv.nline == 11 && strlen(clipboard) == 530);
-    edit_buffer_saved(&st->tv);
+    tiku_editor_buffer_saved(&st->tv);
     assert(!unlink(path) && !unlink(other));
 }
 
@@ -350,15 +349,15 @@ int main(void)
         .clip_set = clip_set, .clip_get = clip_get, .pick = pick_file,
         .sizeable = sizeable};
     void *state = NULL;
-    assert(!edit_start(&state, &services));
+    assert(!tiku_editor_start(&state, &services));
     edit_state_t *st = state;
     assert(!strcmp(st->path, path));
     assert(!strcmp(title_seen, "notes literal;name.TXT"));
-    assert(!strcmp(edit_buffer_line(&st->tv, 0), "Sensor notes"));
-    assert(!edit_buffer_modified(&st->tv) && !st->running);
-    edit_stop(state);
+    assert(!strcmp(tiku_editor_buffer_line(&st->tv, 0), "Sensor notes"));
+    assert(!tiku_editor_buffer_modified(&st->tv) && !st->running);
+    tiku_editor_stop(state);
     services.startup_document = NULL;
-    assert(!edit_start(&state, &services));
+    assert(!tiku_editor_start(&state, &services));
     st = state;
     assert(!st->path[0] && !strcmp(title_seen, "Edit"));
     workflows(st, dir);
@@ -367,17 +366,17 @@ int main(void)
     large_documents(st, dir);
     toolbar_actions(st);
     assert(sizeable_count >= 2);
-    edit_buffer_free(&st->tv);
-    assert(insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));
-    edit_buffer_saved(&st->tv);
-    edit_buffer_place(&st->tv, 0, 0);
-    edit_pick(st, st->id, CMD_FIND);
+    tiku_editor_buffer_free(&st->tv);
+    assert(tiku_editor_insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));
+    tiku_editor_buffer_saved(&st->tv);
+    tiku_editor_buffer_place(&st->tv, 0, 0);
+    tiku_editor_pick(st, st->id, CMD_FIND);
     tiku_field_start(&st->field[0], "capture");
     tiku_field_start(&st->field[1], "session");
-    find_match(st, 0); paint(st);
+    tiku_editor_find_match(st, 0); tiku_editor_paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-editor-preview.png"));
     assert(!tiku_surface_png(st->search_surface, "/tmp/tiku-editor-find-preview.png"));
-    edit_stop(state);
+    tiku_editor_stop(state);
     assert(!unlink(path) && !rmdir(dir));
     puts("PASS: Editor lossless IO, atomic saves, clipboard, undo, search, navigation, resize and guards");
     return 0;

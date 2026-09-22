@@ -30,7 +30,6 @@ TEST_APP  := $(BUILD)/tests/test_app
 FAULT_APP := $(BUILD)/tests/Fault.so $(BUILD)/tests/Stall.so $(BUILD)/tests/slowstatvfs.so
 
 # Applications, as opposed to examples: these are meant to be used.
-APP_NAMES := edit term
 APPS      := $(RUNTIME)/apps/editor/tiku-edit $(RUNTIME)/apps/terminal/tiku-term
 
 # The loadable form of every application and example, under the label a
@@ -211,15 +210,19 @@ $(DEMOAPP): $(OBJ)/examples/diagnostics/tiku_demo_main.o $(OBJ)/examples/apps/fr
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm
 
-# One rule per application, generated: a static pattern substitutes its
-# stem once, and the object's path needs the name twice.
-define APP_RULE
-$(RUNTIME)/apps/$(if $(filter edit,$(1)),editor,terminal)/tiku-$(1): $(OBJ)/apps/$(if $(filter edit,$(1)),editor,terminal)/tiku_$(1).o $(LIB_RUNTIME) $(LIB_TRANSLATION) $(LIB_UI) \
-                    $(LIB_TRANSPORT) | $(BUILD)
-	@mkdir -p $$(dir $$@)
-	$$(CC) $$(CFLAGS) -o $$@ $$^ $$(LDFLAGS) $(X11_LIBS) -lm
-endef
-$(foreach a,$(APP_NAMES),$(eval $(call APP_RULE,$(a))))
+# Standalone entry points; the installed modules below keep their stable names.
+$(RUNTIME)/apps/terminal/tiku-term: $(OBJ)/apps/terminal/tiku_term.o \
+    $(LIB_RUNTIME) $(LIB_TRANSLATION) $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm
+
+EDITOR_SRC := $(filter-out apps/editor/tiku_editor_main.c,$(sort $(wildcard apps/editor/*.c)))
+EDITOR_HEADERS := $(wildcard apps/editor/*.h)
+$(RUNTIME)/apps/editor/tiku-edit: $(call objs,$(EDITOR_SRC)) \
+    $(OBJ)/apps/editor/tiku_editor_main.o $(LIB_RUNTIME) $(LIB_TRANSLATION) \
+    $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm
 
 $(EXAMPLES): $(BUILD)/examples/tiku-example-%: $(OBJ)/examples/apps/%.o $(LIB_RUNTIME) \
                                       $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
@@ -257,9 +260,12 @@ $(APPS_D)/image/app.manifest: apps/image/image.app
 	cp $< $@
 
 apps loadable: $(APPS_D)/reader/TikuReader.so
-$(APPS_D)/reader/TikuReader.so: apps/reader/tiku_reader_app.c apps/reader/tiku_reader_help_window.c $(wildcard apps/reader/*.h apps/reader/*.inl) $(PIC_LIBS)
+READER_SRC := $(sort $(wildcard apps/reader/*.c))
+READER_HEADERS := $(wildcard apps/reader/*.h)
+READER_CORE_SRC := $(filter-out apps/reader/tiku_reader_app.c,$(READER_SRC))
+$(APPS_D)/reader/TikuReader.so: $(READER_SRC) $(READER_HEADERS) $(PIC_LIBS)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ apps/reader/tiku_reader_app.c apps/reader/tiku_reader_help_window.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(READER_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/reader/app.manifest: apps/reader/reader.app
 	@mkdir -p $(dir $@)
@@ -284,9 +290,9 @@ $(APPS_D)/terminal/terminal.so: apps/terminal/tiku_term.c $(PIC_LIBS) | $(APPS_D
 	@mkdir -p $(dir $@)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
-$(APPS_D)/editor/editor.so: apps/editor/tiku_edit.c $(wildcard apps/editor/*.inl) $(PIC_LIBS) | $(APPS_D)
+$(APPS_D)/editor/editor.so: $(EDITOR_SRC) $(EDITOR_HEADERS) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(EDITOR_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(BUILD)/tests/slowstatvfs.so: tests/fixtures/tools/slowstatvfs.c | $(BUILD)/tests
 	@mkdir -p $(dir $@)
@@ -300,9 +306,11 @@ $(BUILD)/tests/Fault.so: tests/fixtures/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD
 	@mkdir -p $(dir $@)
 	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
-$(APPS_D)/bench/Bench.so: apps/bench/tiku_bench.c $(wildcard apps/bench/*.inl) $(PIC_LIBS) | $(APPS_D)
+BENCH_SRC := $(sort $(wildcard apps/bench/*.c))
+BENCH_HEADERS := $(wildcard apps/bench/*.h)
+$(APPS_D)/bench/Bench.so: $(BENCH_SRC) $(BENCH_HEADERS) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(BENCH_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/calculator/DeveloperCalculator.so: apps/developer-calculator/tiku_calculator.c $(wildcard apps/developer-calculator/*.inl) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
@@ -320,20 +328,23 @@ $(APPS_D)/hex/TikuHex.so: apps/hex/tiku_hex.c apps/hex/tiku_hex_model.c apps/hex
 	@mkdir -p $(dir $@)
 	$(CC) $(SO_CFLAGS) -o $@ apps/hex/tiku_hex.c apps/hex/tiku_hex_model.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
-$(APPS_D)/console/TikuConsole.so: apps/console/tiku_console.c $(wildcard apps/console/*.inl) $(PIC_LIBS) | $(APPS_D)
+CONSOLE_SRC := $(sort $(wildcard apps/console/*.c))
+CONSOLE_HEADERS := $(wildcard apps/console/*.h)
+$(APPS_D)/console/TikuConsole.so: $(CONSOLE_SRC) $(CONSOLE_HEADERS) $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(CONSOLE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
-IDE_HELPERS := $(wildcard apps/ide/*.inl)
-$(APPS_D)/basic/TikuBasic.so: apps/ide/tiku_ide.c $(IDE_HELPERS) $(PIC_LIBS) | $(PROG_D)
+IDE_SRC := $(sort $(wildcard apps/ide/*.c))
+IDE_HEADERS := $(wildcard apps/ide/*.h)
+$(APPS_D)/basic/TikuBasic.so: $(IDE_SRC) $(IDE_HEADERS) $(PIC_LIBS) | $(PROG_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(IDE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 # The same source wearing its other name: what differs is what it puts
 # forward, and a copy would only learn to disagree.
-$(APPS_D)/c/TikuC.so: apps/ide/tiku_ide.c $(IDE_HELPERS) $(PIC_LIBS) | $(PROG_D)
+$(APPS_D)/c/TikuC.so: $(IDE_SRC) $(IDE_HEADERS) $(PIC_LIBS) | $(PROG_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $(IDE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 define EXAMPLE_SO_RULE
 $(APPS_D)/$(1)/$(1).so: examples/apps/$(1).c $(PIC_LIBS)

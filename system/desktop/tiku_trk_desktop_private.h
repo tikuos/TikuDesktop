@@ -748,40 +748,67 @@ void build_pickers(desktop_t *app, folder_t *fl);
 void offer_installed(desktop_t *app, const char *argv0);
 int  find_help_dir(const char *argv0, char *out, size_t max);
 
-/* tiku_trk_desktop_commands.c */
-folder_t *open_folder(desktop_t *app, const char *path);
-int drop_launch(void *context, const struct tiku_trk_app *application,
-                const char *const *paths, int count);
-int drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers);
-int drop_on_panel(desktop_t *app, int x, int y);
-int folder_selection(desktop_t *app, folder_t *fl, char paths[][TIKU_PATH_MAX],
-                     const char **out, int max);
-int info_icon_drop_slot(desktop_t *app, int x, int y);
-int spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max);
+/* tiku_desktop_folder_windows.c */
+void parent_path(const char *path, char *out, size_t size);
+void launch_open_path(void *context, const char *path);
+void deskbar_edit_path(void *context, const char *path);
+void file_actions_close_under(void *context, const char *path);
+void offer_broken_link(desktop_t *app, const char *path);
 int trash_union_refresh(desktop_t *app, folder_t *fl);
-void begin_edit(desktop_t *app, folder_t *fl);
-void begin_rename(desktop_t *app, folder_t *fl, int row);
-void build_per_type(desktop_t *app, folder_t *fl);
 void close_window(desktop_t *app, tiku_window_t *w);
 void close_windows_under(desktop_t *app, const char *path);
+folder_t *open_folder(desktop_t *app, const char *path);
+
+/* tiku_desktop_file_actions.c */
 void commit_edit(desktop_t *app, folder_t *fl);
+void begin_rename(desktop_t *app, folder_t *fl, int row);
 void commit_rename(desktop_t *app, int commit);
-void deskbar_edit_path(void *context, const char *path);
-void desktop_press_hold(desktop_t *app);
+void begin_edit(desktop_t *app, folder_t *fl);
+int folder_selection(desktop_t *app, folder_t *fl, char paths[][TIKU_PATH_MAX],
+                     const char **out, int max);
 void desktop_progress_tick(desktop_t *app);
 void desktop_rename_pulse(desktop_t *app);
-void desktop_spring_tick(desktop_t *app);
+int desktop_cmd_new_folder(desktop_t *app, folder_t *fl, int command,
+                           int seeded, int seed_x, int seed_y);
+int desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
+                         const char *template_path,
+                         const char **template_parent, int *seeded,
+                         int *seed_x, int *seed_y);
+int desktop_cmd_destination(desktop_t *app, folder_t *fl, int command,
+                            const char **template_path);
+
+/* tiku_desktop_drop.c */
+int drop_launch(void *context, const struct tiku_trk_app *application,
+                const char *const *paths, int count);
+int drop_on_panel(desktop_t *app, int x, int y);
+int info_icon_drop_slot(desktop_t *app, int x, int y);
+int drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers);
 void do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button);
-void file_actions_close_under(void *context, const char *path);
-void launch_open_path(void *context, const char *path);
-void menu_invoke(desktop_t *app, folder_t *fl, int command);
-void offer_broken_link(desktop_t *app, const char *path);
-void parent_path(const char *path, char *out, size_t size);
-void script_command_file(desktop_t *app, const char *path);
+
+/* tiku_desktop_navigation.c */
+void spring_open_nav(void *context, const char *path);
 void spring_nav_close(desktop_t *app);
 void spring_nav_track(desktop_t *app, int x, int y);
-void spring_open_nav(void *context, const char *path);
+int spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max);
+void desktop_spring_tick(desktop_t *app);
+
+/* tiku_desktop_automation.c */
 void sync_addons(desktop_t *app, int force);
+void script_command_file(desktop_t *app, const char *path);
+int desktop_invoke_addon(const tiku_trk_addon_t *addon, void *context);
+
+/* tiku_desktop_commands.c */
+void build_per_type(desktop_t *app, folder_t *fl);
+void menu_invoke(desktop_t *app, folder_t *fl, int command);
+void desktop_press_hold(desktop_t *app);
+int desktop_cmd_open_with(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_layout(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_query(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_system(desktop_t *app, folder_t *fl, int command);
+
+/* tiku_desktop_volume_commands.c */
+int desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command);
+int desktop_cmd_mount(desktop_t *app, folder_t *fl, int command);
 
 /* tiku_trk_desktop_deskbar.c */
 int deskbar_menu_icon(void *context, tiku_surface_t *s,
@@ -971,7 +998,8 @@ int desktop_parse_args(int argc, char **argv, desktop_options_t *o);
 int desktop_teardown(desktop_t *app, desktop_loop_t *lp);
 void begin_shutdown(desktop_t *app);
 
-/* tiku_trk_desktop_wire.c */
+/* The background jobs: tiku_desktop_device_jobs.c, filesystem_jobs.c and
+ * media_jobs.c, with the probe itself in tiku_trk_desktop_boardrun.c. */
 typedef struct desktop_wire desktop_wire_t;
 /* LOOK and BOOT scan without mounting (they record a candidate and let
  * the port go); CONNECT is the one kind that mounts what answered. */

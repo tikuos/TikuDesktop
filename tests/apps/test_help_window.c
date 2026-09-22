@@ -20,7 +20,7 @@
 #include <unistd.h>
 #include <dirent.h>
 
-#include "../../apps/reader/tiku_reader_help_window.h"
+#include "../../apps/reader/tiku_reader_window.h"
 #include "tiku_dl.h"
 #include "tiku_font.h"
 #include "tiku_measure.h"

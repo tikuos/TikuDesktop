@@ -23,6 +23,10 @@ Reader/Help live in `apps/reader/`; Image in `apps/image/`; Monitor and VFS
 Inspector share app-owned code in `apps/deviceutils/`. None is linked into
 either shipping shell. Help requests launch Reader in its help-document mode.
 
+For filenames and internal module boundaries, see the
+[functional source guide](source-modules.md). Application tests link those
+implementations through headers, without merging source files into the tests.
+
 Tracker's file-manager views and the desktop's own preferences remain core
 system features. This change does not turn every system panel into an app.
 

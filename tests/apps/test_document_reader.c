@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <limits.h>
 #include "tiku_icons.h"
-#include "../../apps/reader/tiku_reader_help_window.c"
+#include "../../apps/reader/tiku_reader_private.h"
 
 static int requests;
 
@@ -82,17 +82,17 @@ static void browser_controls(tiku_workspace_t *workspace, const char *base)
     tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
     tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
-    help_layout_t l = layout(&c, tiku_window_content(c.window));
+    help_layout_t l = tiku_reader_layout(&c, tiku_window_content(c.window));
     assert(!l.find.w && !l.side.w && !l.copy.w && !l.bookmark.w);
     int height = l.page.h;
     click_control(&c, l.find_toggle);
     assert(c.reader->find_visible && c.dialog.focus == HELP_FIND);
-    l = layout(&c, tiku_window_content(c.window));
+    l = tiku_reader_layout(&c, tiku_window_content(c.window));
     assert(l.find.w > 0 && l.find.y > l.page.y+l.page.h);
     assert(l.page.h < height);
     click_control(&c, l.find_close);
     assert(!c.reader->find_visible && c.dialog.focus == HELP_PAGE);
-    document_menu_pick(c.window, HELP_FIND, &c);
+    tiku_reader_document_menu_pick(c.window, HELP_FIND, &c);
     assert(c.reader->find_visible && c.dialog.focus == HELP_FIND);
     press(&c, TIKU_KEY_ESCAPE, 0);
     press(&c, 'f', TIKU_MOD_CMD); type_text(&c, "quiet");
@@ -113,7 +113,7 @@ static void browser_controls(tiku_workspace_t *workspace, const char *base)
     assert(!strcmp(c.reader->location.text, path));
     fixture(base, "café #100%.md", "# Unicode address\n\nAn offline page.\n");
     press(&c, 'l', TIKU_MOD_CMD); type_text(&c, "café #100%.md");
-    click_control(&c, layout(&c, tiku_window_content(c.window)).go);
+    click_control(&c, tiku_reader_layout(&c, tiku_window_content(c.window)).go);
     assert(!strcmp(tiku_doc_title(c.doc), "Unicode address") && c.nback == 1);
     press(&c, TIKU_KEY_LEFT, TIKU_MOD_OPTION);
     assert(!strcmp(c.page, path) && c.nforward == 1);
@@ -122,21 +122,21 @@ static void browser_controls(tiku_workspace_t *workspace, const char *base)
     press(&c, TIKU_KEY_RETURN, 0);
     assert(!strcmp(c.page, path) && c.nforward == 1);
     press(&c, TIKU_KEY_ESCAPE, 0);
-    click_control(&c, layout(&c, tiku_window_content(c.window)).location);
+    click_control(&c, tiku_reader_layout(&c, tiku_window_content(c.window)).location);
     assert(c.dialog.focus == HELP_LOCATION);
     press(&c, 'a', TIKU_MOD_CMD); press(&c, 'c', TIKU_MOD_CMD);
     assert(!strcmp(tiku_clipboard_text(), path));
     assert(tiku_clipboard_import("not the address", 15));
-    document_menu_pick(c.window, HELP_COPY, &c);
+    tiku_reader_document_menu_pick(c.window, HELP_COPY, &c);
     assert(!strcmp(tiku_clipboard_text(), path));
     press(&c, TIKU_KEY_ESCAPE, 0);
     c.window->frame.w = 410; press(&c, 'f', TIKU_MOD_CMD);
     tiku_workspace_draw(workspace);
-    l = layout(&c, tiku_window_content(c.window));
+    l = tiku_reader_layout(&c, tiku_window_content(c.window));
     assert(l.location.w > 100 && l.find.w > 70);
     assert(l.find.x+l.find.w <= l.prev.x);
     c.window->frame.w = 180; tiku_workspace_draw(workspace);
-    l = layout(&c, tiku_window_content(c.window));
+    l = tiku_reader_layout(&c, tiku_window_content(c.window));
     assert(l.location.w > 0 && l.find.w > 0 && !l.prev.w);
     tiku_reader_help_window_destroy(&c);
 }
@@ -205,7 +205,7 @@ static void browser_toolbar(tiku_workspace_t *workspace)
     tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
     tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
-    help_layout_t l = layout(&c, tiku_window_content(c.window));
+    help_layout_t l = tiku_reader_layout(&c, tiku_window_content(c.window));
     assert(l.back.w <= 34 && l.back.h <= 34);
     assert(l.location.x > l.home.x+l.home.w && l.location.w > 300);
     assert(l.location.y < l.back.y+l.back.h);
@@ -234,7 +234,7 @@ static void browser_toolbar(tiku_workspace_t *workspace)
         for (int w = 0; w < 3; w++) {
             c.window->frame.w = widths[w];
             tiku_workspace_draw(workspace);
-            l = layout(&c, tiku_window_content(c.window));
+            l = tiku_reader_layout(&c, tiku_window_content(c.window));
             assert(l.home.x+l.home.w <= l.find_toggle.x);
             assert(l.location.w > 0 && l.find.w > 0 && l.page.h > 0);
             assert(l.location.x+l.location.w <= l.go.x);
@@ -276,7 +276,7 @@ static void browser_hover(tiku_workspace_t *workspace, tiku_surface_t *s)
     tiku_reader_document_window_init(&c, workspace, 1000, 760,
                                   &dirty, choose, &requests);
     tiku_reader_help_window_open(&c);
-    document_find(&c, 1);
+    tiku_reader_document_find(&c, 1);
     tiku_workspace_draw(workspace);
     size_t bytes = (size_t)s->w*s->h*sizeof *s->px;
     tiku_rgb_t *copy = malloc(bytes); assert(copy);
@@ -302,7 +302,7 @@ static void browser_hover(tiku_workspace_t *workspace, tiku_surface_t *s)
         assert(!dirty && !c.hover_damage.w);
     }
     free(copy);
-    help_layout_t l = layout(&c, tiku_window_content(c.window));
+    help_layout_t l = tiku_reader_layout(&c, tiku_window_content(c.window));
     tiku_event_t drag = {.type=TIKU_EVENT_POINTER_DOWN, .button=1,
         .x=l.home.x+3, .y=l.home.y+3};
     int before = requests;
@@ -366,7 +366,7 @@ int main(void)
     assert(tiku_reader_help_window_find(&c, "shared words", 0));
     assert(tiku_reader_help_window_copy(&c, 1));
     assert(strstr(tiku_clipboard_text(), "PRINT 42"));
-    reader_action(&c, HELP_OUTLINE); tiku_workspace_draw(workspace);
+    tiku_reader_action(&c, HELP_OUTLINE); tiku_workspace_draw(workspace);
     assert(c.reader->nrows == 2);
     assert(tiku_reader_help_window_go(&c, tiku_doc_link_href(c.doc, 0)) == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace);
@@ -384,18 +384,18 @@ int main(void)
     rejected(&c, "../pipe.md"); rejected(&c, "../missing.md");
     rejected(&c, "javascript:run()"); rejected(&c, "../notes.MD%00.sh");
     rejected(&c, "../notes%xx.MD"); rejected(&c, "../notes.MD#%00");
-    assert(!reader_path(&c, "../notes.MD", path, sizeof path));
+    assert(!tiku_reader_path(&c, "../notes.MD", path, sizeof path));
     snprintf(path, sizeof path, "%s/escape.png", sub);
     assert(!symlink("../index.html", path));
-    assert(!reader_path(&c, "escape.png", path, sizeof path));
-    reader_bookmark(&c); assert(c.reader->nmarks == 1);
+    assert(!tiku_reader_path(&c, "escape.png", path, sizeof path));
+    tiku_reader_bookmark(&c); assert(c.reader->nmarks == 1);
     assert(strstr(c.reader->marks[0].page, "detail #one.HTM"));
     assert(tiku_reader_help_window_forward(&c));
-    reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
-    tiku_list_select_only(&c.reader->list, 0); reader_side_open(&c);
+    tiku_reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
+    tiku_list_select_only(&c.reader->list, 0); tiku_reader_side_open(&c);
     assert(!strcmp(tiku_doc_title(c.doc), "Details")); /* literal # in saved path */
     assert(tiku_reader_help_window_go(&c, "../notes.MD") == TIKU_READER_HELP_PAGE);
-    tiku_field_start(&c.reader->query, "Shared words"); reader_search(&c);
+    tiku_field_start(&c.reader->query, "Shared words"); tiku_reader_search(&c);
     assert(c.reader->nrows == 3);
     for (int i = 0; i < c.reader->nrows; i++) assert(c.reader->rows[i].page[0] == '/');
     int back = c.nback;
@@ -417,8 +417,8 @@ int main(void)
     tiku_reader_document_window_init(&c, workspace, 1000, 760, &dirty, choose, &requests);
     assert(c.reader->nmarks == 1 && !c.page[0]); /* bookmarks, not automatic reopening */
     tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
-    reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
-    tiku_list_select_only(&c.reader->list, 0); reader_side_open(&c);
+    tiku_reader_action(&c, HELP_BOOKMARKS); tiku_workspace_draw(workspace);
+    tiku_list_select_only(&c.reader->list, 0); tiku_reader_side_open(&c);
     assert(!strcmp(tiku_doc_title(c.doc), "Details"));
     long_document(&c, base);
     tiku_reader_help_window_destroy(&c);

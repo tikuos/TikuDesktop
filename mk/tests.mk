@@ -46,7 +46,11 @@ test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) system/deskbar/tiku_tr
 test_deskbar_hover_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_hover_LDLIBS := $(X11_LIBS) -lm
 test_fontprefs_SRCS   := system/deskbar/tiku_trk_deskbar_prefs.c system/deskbar/tiku_trk_fontprefs.c
-test_help_window_SRCS := apps/reader/tiku_reader_help_window.c
+test_help_window_SRCS := $(READER_CORE_SRC)
+test_help_reader_SRCS := $(READER_CORE_SRC)
+test_document_reader_SRCS := $(READER_CORE_SRC)
+test_reader_large_SRCS := $(READER_CORE_SRC)
+.SECONDARY: $(call objs,$(READER_CORE_SRC))
 test_help_window_LDLIBS := $(X11_LIBS) -lm
 test_vfs_rpc_LDLIBS := -pthread
 test_help_reader_LDLIBS := $(X11_LIBS) -lm
@@ -58,6 +62,9 @@ test_document_association_SRCS := $(COMMON) $(POSEVIEW)
 test_document_association_LDLIBS := $(X11_LIBS) -lm
 test_editor_document_LDLIBS := $(X11_LIBS) -lm
 test_editor_resize_LDLIBS := $(X11_LIBS) -lm
+test_editor_document_SRCS := $(EDITOR_SRC)
+test_editor_resize_SRCS := $(EDITOR_SRC)
+.SECONDARY: $(call objs,$(EDITOR_SRC) $(IDE_SRC))
 test_tracker_image_LDLIBS := $(X11_LIBS) -lm
 test_tracker_image_SRCS := system/shared/core/tiku_trk_task.c
 test_host_render_LDLIBS := $(X11_LIBS) -lm
@@ -135,7 +142,22 @@ test_ide_workflow_LDLIBS := $(X11_LIBS) -lm
 test_sensor_LDLIBS := $(X11_LIBS) -lm
 test_bench_LDLIBS := $(X11_LIBS) -lm
 test_console_LDLIBS := $(X11_LIBS) -lm
+test_bench_SRCS := $(BENCH_SRC)
+test_console_SRCS := $(CONSOLE_SRC)
+.SECONDARY: $(call objs,$(BENCH_SRC) $(CONSOLE_SRC))
 test_ide_debug_LDLIBS := $(X11_LIBS) -lm
+test_ide_default_SRCS := $(IDE_SRC)
+test_ide_deadboard_SRCS := $(IDE_SRC)
+test_ide_workflow_SRCS := $(IDE_SRC)
+test_ide_debug_SRCS := $(IDE_SRC)
+$(OBJ)/apps/ide/tiku_ide_app.o: override CFLAGS += -DTIKU_APP_EMBED
+test_source_models_SRCS := apps/ide/tiku_ide_project.c \
+    apps/editor/tiku_editor_buffer.c apps/reader/tiku_reader_document.c
+test_module_exports_LDLIBS := -ldl
+test_module_exports_CFLAGS := -DTIKU_TEST_APPS=\"$(APPS_D)\"
+$(BUILD)/tests/test_module_exports: | $(APPS_D)/basic/TikuBasic.so \
+    $(APPS_D)/c/TikuC.so $(APPS_D)/editor/editor.so $(APPS_D)/reader/TikuReader.so \
+    $(APPS_D)/bench/Bench.so $(APPS_D)/console/TikuConsole.so
 test_deviceprefs_LDLIBS := $(X11_LIBS) -lm
 test_calculator_LDLIBS := $(X11_LIBS) -lm
 test_look_LDLIBS := $(X11_LIBS) -lm

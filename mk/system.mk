@@ -141,7 +141,13 @@ DESKTOP_SHELL := system/desktop/tiku_trk_desktop.c \
                  system/desktop/tiku_trk_desktop_folders.c \
                  system/desktop/tiku_trk_desktop_keys.c \
                  system/desktop/tiku_trk_desktop_infowin.c \
-                 system/desktop/tiku_trk_desktop_commands.c \
+                 system/desktop/tiku_desktop_folder_windows.c \
+                 system/desktop/tiku_desktop_file_actions.c \
+                 system/desktop/tiku_desktop_drop.c \
+                 system/desktop/tiku_desktop_navigation.c \
+                 system/desktop/tiku_desktop_automation.c \
+                 system/desktop/tiku_desktop_commands.c \
+                 system/desktop/tiku_desktop_volume_commands.c \
                  system/desktop/tiku_trk_desktop_panels.c \
                  system/desktop/tiku_trk_desktop_globalbar.c \
                  system/desktop/tiku_trk_desktop_mounts.c \
@@ -150,7 +156,10 @@ DESKTOP_SHELL := system/desktop/tiku_trk_desktop.c \
                  system/desktop/tiku_trk_desktop_embed.c \
                  system/desktop/tiku_trk_desktop_boardrun.c \
                  system/desktop/tiku_trk_desktop_report.c \
-                 system/desktop/tiku_trk_desktop_wire.c \
+                 system/desktop/tiku_desktop_device_jobs.c \
+                 system/desktop/tiku_desktop_filesystem_jobs.c \
+                 system/desktop/tiku_desktop_media_jobs.c \
+                 system/desktop/tiku_desktop_device_stats.c \
                  system/desktop/tiku_trk_desktop_deviceprefs.c \
                  system/desktop/tiku_trk_desktop_vfs.c \
                  system/desktop/tiku_trk_desktop_startup.c \

@@ -1,7 +1,6 @@
 /* A board that stops answering must not keep the page. */
 #include <assert.h>
-#define TIKU_APP_EMBED
-#include "../../apps/ide/tiku_ide.c"
+#include "../../apps/ide/tiku_ide_private.h"
 
 static int stops;
 static int frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
@@ -42,25 +41,25 @@ int main(void)
     st->debugging = 1;
     snprintf(st->board, sizeof st->board, "nrf54lm20b");
     snprintf(st->child_file, sizeof st->child_file, "%s", e->path);
-    assert(debug_locked(st, e));
-    (void)ide_event(st, e->id, &key);
+    assert(tiku_ide_debug_locked(st, e));
+    (void)tiku_ide_event(st, e->id, &key);
     assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 1"));
 
     /* Stop is asked; the board says nothing at all. */
-    run_stop(st, "? the run was stopped by hand");
+    tiku_ide_run_stop(st, "? the run was stopped by hand");
     assert(stops == 1 && st->running);
-    ide_tick(st, 1000000);
+    tiku_ide_tick(st, 1000000);
     assert(st->running);                /* still its own for now */
-    ide_tick(st, 1000000 + IDE_BOARD_STOP_US);
+    tiku_ide_tick(st, 1000000 + IDE_BOARD_STOP_US);
     assert(st->running);                /* the grace has not elapsed */
-    ide_tick(st, 1000000 + IDE_BOARD_STOP_US + 1);
+    tiku_ide_tick(st, 1000000 + IDE_BOARD_STOP_US + 1);
 
     /* The page is the person's again: not running, not locked, and it
      * takes a keystroke. */
     assert(!st->running && !st->debugging && st->board[0] == '\0');
-    assert(!debug_locked(st, e));
+    assert(!tiku_ide_debug_locked(st, e));
     assert(strstr(e->feedback, "did not answer") != NULL);
-    (void)ide_event(st, e->id, &key);
+    (void)tiku_ide_event(st, e->id, &key);
     assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 1x") ||
            strchr(tiku_textview_line(&e->tv, 0), 'x') != NULL);
     puts("PASS: a board that never answers Stop gives the page back");

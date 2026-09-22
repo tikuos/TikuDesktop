@@ -22,6 +22,9 @@ macOS. This is an independent repository, normally checked out at
 See [the layout guide](docs/architecture/layout.md) for the detailed tree,
 old-to-new paths, and compatibility rules. `TikuTracker/` contains only a
 compatibility Makefile; it no longer owns the desktop, tests or assets.
+The [functional module guide](docs/architecture/source-modules.md) maps source
+filenames to responsibilities within the IDE, Editor, Reader, Bench, Console,
+desktop jobs and desktop commands.
 
 ## Build and run
 
@@ -95,6 +98,8 @@ installers; Linux still needs the host X11/runtime libraries.
 ```sh
 make test                 # boundaries, unit tests, BASIC checks, driven UI tests
 make check-layout         # build migration, packaging and launcher regressions
+make check-source-modules # functional source boundaries and model isolation
+make source-report        # inventory/style audit, including apps, kits and .inl
 make check-architecture   # ownership, SDK boundaries and layout checks
 make check-shipping       # no test interpreter in production shells
 make check-package        # build and validate the production distribution

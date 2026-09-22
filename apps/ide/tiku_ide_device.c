@@ -1,0 +1,425 @@
+/* tiku_ide_device.c -- execution target, upload preflight and board callbacks.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
+#include "tiku_ide_private.h"
+
+/**
+ * @brief Use the desktop's default device for every new run and save.
+ * Legacy project board entries remain on disk but do not override it.
+ * A named device is never silently replaced with a local run.
+ */
+int
+tiku_ide_dest_board(ide_t *st, char *out, size_t max)
+{
+    out[0] = '\0';
+    if (st->services->current_device != NULL) {
+        (void)st->services->current_device(st->services->ctx, out, max);
+    }
+    return out[0] != '\0';
+}
+
+/**
+ * @brief Run @p path on the desktop default device, or this machine.
+ */
+void
+tiku_ide_run_file_where(ide_t *st, const char *path)
+{
+    char dest[64];
+    edit_t *e = tiku_ide_edit_of_path(st, path);
+
+    if (st->running) { return; }
+    if (e && (e->load_failed ||
+        (tiku_textview_modified(&e->tv) && !tiku_ide_edit_save(e)))) {
+        snprintf(st->note, sizeof st->note, "Run cancelled: source could not be saved");
+        tiku_ide_project_paint(st);
+        return;
+    }
+
+    if (tiku_ide_dest_board(st, dest, sizeof dest)) {
+        tiku_ide_run_file_on_board(st, path, dest);
+    } else {
+        tiku_ide_run_file(st, path);
+    }
+}
+
+/**
+ * @brief Run the file at @p path on a board the shell has mounted.
+ *
+ * No child and no pipe: the shell owns the board and the run, and what
+ * the program prints arrives as board_said().  Everything downstream --
+ * the message rows, the folded error, the caret -- is the same road a
+ * run on this machine takes, because a board's interpreter IS this one.
+ */
+void
+tiku_ide_run_file_on_board(ide_t *st, const char *path, const char *board)
+{
+    char program[8192];
+
+    if (st->running) {
+        snprintf(st->note, sizeof st->note, "already running");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    if (st->services->board_run == NULL || board == NULL ||
+        board[0] == '\0') {
+        snprintf(st->note, sizeof st->note, "no board is connected");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    if (!tiku_ide_board_connected(st, board)) {
+        snprintf(st->note, sizeof st->note, "Device disconnected; choose it in TikuDesktop");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    if (!tiku_ide_upload_read(st, path, program, sizeof program)) {
+        edit_t *e = tiku_ide_edit_of_path(st, path);
+        if (e) { snprintf(e->feedback, sizeof e->feedback, "%s", st->note); }
+        tiku_ide_project_paint(st);
+        return;
+    }
+
+            snprintf(st->child_file, sizeof st->child_file, "%s", path);
+    snprintf(st->board, sizeof st->board, "%s", board);
+    st->child_numbered = 1;          /* BASIC names its own lines */
+    st->child_fd = -1;               /* nothing of ours to read   */
+    st->nmsg = 0;
+    st->partial[0] = '\0';
+    (void)tiku_list_set_count(&st->msg_list, 0);
+    if (!st->services->board_run(st->services->ctx, st->board, program)) {
+        st->board[0] = '\0';
+        snprintf(st->note, sizeof st->note, "the board would not take it");
+        tiku_ide_project_paint(st);
+        return;
+    }
+        st->running = 1;
+    st->run_from = 0;
+    st->stop_asked = 0;
+    tiku_ide_messages_paint(st);
+    tiku_ide_console_open(st, path, st->board);
+}
+
+/**
+ * @brief Keep the file at @p path on the first board, under its own name.
+ *
+ * The slot is the file's name without its extension, cut to the seven
+ * characters the board allows; the board shows it as /data/<name>.bas.
+ * The line is held while it goes, exactly as for a run, so Run and Save
+ * are offered again only when the shell says it is done.
+ */
+void
+tiku_ide_save_file_on_board(ide_t *st, const char *path)
+{
+    char boards[256];
+    char name[8];
+    char question[512];
+    const char *base, *dot;
+    size_t k, i;
+    edit_t *e = tiku_ide_edit_of_path(st, path);
+    if (st->running) {
+        snprintf(st->note, sizeof st->note, "already running");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    if (st->ask.open) { return; }
+    if (e && (e->load_failed ||
+        (tiku_textview_modified(&e->tv) && !tiku_ide_edit_save(e)))) {
+        snprintf(st->note, sizeof st->note, "Upload cancelled: source save failed");
+        tiku_ide_project_paint(st);
+        return;
+    }
+            if (st->services->board_save == NULL ||
+        !tiku_ide_dest_board(st, boards, sizeof boards)) {
+        snprintf(st->note, sizeof st->note, "no board is connected");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    base = strrchr(path, '/');
+    base = (base != NULL) ? base + 1 : path;
+    dot = strrchr(base, '.');
+    k = (dot != NULL) ? (size_t)(dot - base) : strlen(base);
+    if (k > 7u) {
+        k = 7u;
+    }
+    memcpy(name, base, k);
+    name[k] = '\0';
+    for (i = 0; i < k; i++) {
+        if (!((name[i] >= 'a' && name[i] <= 'z') ||
+              (name[i] >= 'A' && name[i] <= 'Z') ||
+              (name[i] >= '0' && name[i] <= '9') || name[i] == '_')) { break; }
+    }
+    if (!k || i != k) {
+        snprintf(st->note, sizeof st->note,
+                 "Board names need letters, digits or underscore. Rename the file.");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    if (!tiku_ide_upload_read(st, path, st->upload_program, sizeof st->upload_program)) {
+        tiku_ide_project_paint(st);
+        return;
+    }
+    snprintf(st->upload_board, sizeof st->upload_board, "%s", boards);
+    snprintf(st->upload_name, sizeof st->upload_name, "%s", name);
+    snprintf(question, sizeof question,
+             "Replace any existing program? "
+             "Save /data/%s.bas on %.63s. %zu bytes.%s",
+             name, boards, strlen(st->upload_program),
+             ((dot ? (size_t)(dot - base) : strlen(base)) > 7) ?
+             " Filename shortened to seven characters; check for name collisions." : "");
+    tiku_alert_open(&st->ask, TIKU_ALERT_WARN, CMD_SAVEBOARD,
+                    question, "Cancel|Save / Replace");
+    st->ask.dflt = 0;
+    if (st->services->raise_window) {
+        st->services->raise_window(st->services->ctx, st->proj_id);
+    }
+    tiku_ide_project_paint(st);
+}
+
+/** The confirmation owns an immutable program and device, not the new default. */
+void
+tiku_ide_upload_confirm(ide_t *st)
+{
+    if (st->running || !tiku_ide_board_connected(st, st->upload_board)) {
+        snprintf(st->note, sizeof st->note, "Upload cancelled: device busy or disconnected");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    snprintf(st->board, sizeof st->board, "%s", st->upload_board);
+    st->child_fd = -1;
+    if (!st->services->board_save(st->services->ctx, st->board,
+                                  st->upload_name, st->upload_program)) {
+        st->board[0] = '\0';
+        snprintf(st->note, sizeof st->note, "the board would not take it");
+        tiku_ide_project_paint(st);
+        return;
+    }
+    st->running = 1;
+    st->saving = 1;
+    st->run_from = 0;
+    st->stop_asked = 0;
+    snprintf(st->note, sizeof st->note, "keeping %s on %s…", st->upload_name,
+             st->board);
+    tiku_ide_project_paint(st);
+}
+
+/**
+ * @brief Let a board run go on this side when the board never answered.
+ *
+ * The program may well still be running out there; what ends here is
+ * this application's hold on the page, which a Stop must always lift.
+ */
+void
+tiku_ide_board_run_released(ide_t *st)
+{
+    edit_t *source = tiku_ide_edit_of_path(st, st->child_file);
+
+    st->stop_asked = 0;
+    st->running = st->asking = 0;
+    st->board[0] = '\0';
+    if (st->debugging) {
+        st->debugging = st->debug_paused = 0;
+    }
+    if (source != NULL) {
+        snprintf(source->feedback, sizeof source->feedback,
+                 "The board did not answer Stop; the page is yours again"
+                 " (the program may still be running there)");
+        tiku_ide_edit_paint(st, source);
+        tiku_ide_edit_publish(st, source);
+    }
+    tiku_ide_message_take(st, "? the board did not answer the stop");
+    tiku_ide_project_paint(st);
+    tiku_ide_project_publish(st);
+}
+
+void
+tiku_ide_board_said(void *state, int what, const char *text)
+{
+    ide_t *st = state;
+    if (st == NULL) {
+        return;
+    }
+    if (what == TIKU_APP_BOARD_CURRENT) {
+        int i;
+
+        if (st->proj_id != 0u) {
+            tiku_ide_project_publish(st);
+        }
+        for (i = 0; i < IDE_EDITS; i++) {
+            if (st->edit[i].surface != NULL) {
+                tiku_ide_edit_publish(st, &st->edit[i]);
+            }
+        }
+        return;
+    }
+    if (!st->running || st->board[0] == '\0') {
+        return;
+    }
+    if (what == TIKU_APP_BOARD_LINE && text && tiku_ide_debug_line(st, text)) { return; }
+        if (what == TIKU_APP_BOARD_RUNNING) {
+        tiku_ide_console_take(st, "running", 1);
+        tiku_ide_console_paint(st);
+        return;
+    }
+    if (what == TIKU_APP_BOARD_LINE) {
+        if (text != NULL && text[0] != '\0') {
+            tiku_ide_message_take(st, text);
+            tiku_ide_console_take(st, text, 0);
+            tiku_ide_console_paint(st);
+        }
+        return;
+    }
+    if (what == TIKU_APP_BOARD_ASKS) {
+        /* The program wants a line.  The window it asks in is the one
+         * its output goes to, made now if nothing has been printed yet. */
+        st->asking = 1;
+        snprintf(st->ask_prompt, sizeof st->ask_prompt, "%s",
+                 (text != NULL) ? text : "? ");
+                tiku_field_start(&st->answer, "");
+        if (st->con_surface != NULL) {
+            /* The console is where the program is: it asks there. */
+            tiku_ide_console_paint(st);
+            if (st->services->raise_window != NULL) {
+                (void)st->services->raise_window(st->services->ctx,
+                                                 st->con_id);
+            }
+            return;
+        }
+        tiku_ide_messages_open(st);
+        (void)tiku_list_set_count(&st->msg_list, st->nmsg);
+        tiku_ide_messages_paint(st);
+        tiku_ide_messages_publish(st);
+        if (st->services->raise_window != NULL) {
+            (void)st->services->raise_window(st->services->ctx, st->msg_id);
+        }
+        return;
+    }
+    st->running = 0;
+    st->asking = 0;
+    st->stop_asked = 0;
+    if (st->debugging) {
+        edit_t *source = tiku_ide_edit_of_path(st, st->child_file);
+        st->debugging = st->debug_paused = 0;
+        if (source) {
+            snprintf(source->feedback, sizeof source->feedback, "%s",
+                     what == TIKU_APP_BOARD_FAILED ?
+                     "Debug failed: firmware must support DEBUG v1; check setup limits" :
+                     "Debug run ended");
+            tiku_ide_edit_paint(st, source); tiku_ide_edit_publish(st, source);
+        }
+    }
+    if (what == TIKU_APP_BOARD_SAVED || st->saving) {
+        /* A save says where it went, not in a message window: nothing
+         * was printed, and a window for nothing is furniture. */
+        if (what == TIKU_APP_BOARD_SAVED) {
+            snprintf(st->note, sizeof st->note, "kept on %s as %s",
+                     st->board, (text != NULL) ? text : "");
+        } else {
+            snprintf(st->note, sizeof st->note, "%s would not keep it",
+                     st->board);
+        }
+        st->saving = 0;
+        st->board[0] = '\0';
+        tiku_ide_project_paint(st);
+        tiku_ide_project_publish(st);
+        return;
+    }
+        st->board[0] = '\0';
+    if (what == TIKU_APP_BOARD_FAILED) {
+        tiku_ide_message_take(st, "? the board would not run it");
+    } else if (what == TIKU_APP_BOARD_STOPPED) {
+        tiku_ide_message_take(st, "? the run was stopped by hand");
+    }
+    if (st->con_surface != NULL) {
+        tiku_ide_console_take(st, "", 1);
+        tiku_ide_console_take(st, (what == TIKU_APP_BOARD_FAILED)  ? "failed"
+                       : (what == TIKU_APP_BOARD_STOPPED) ? "stopped"
+                                                          : "ended", 1);
+        tiku_ide_console_paint(st);
+        tiku_ide_console_publish(st);
+    } else {
+        /* The console already contains the errors and their line numbers.
+         * Use Messages only as a fallback when no console is available. */
+        tiku_ide_messages_show(st);
+    }
+    tiku_ide_project_publish(st);
+}
+
+int
+tiku_ide_board_connected(ide_t *st, const char *board)
+{
+    char names[4096], *p;
+    size_t n = strlen(board);
+
+    if (st->services->board_names == NULL) {
+        return 1; /* Older hosts do not expose connection state. */
+    }
+    names[0] = '\0';
+    (void)st->services->board_names(st->services->ctx, names, sizeof names);
+    names[sizeof names - 1] = '\0';
+    for (p = names; *p; ) {
+        char *end = strchr(p, '\n');
+        size_t len = end ? (size_t)(end - p) : strlen(p);
+
+        if (len == n && memcmp(p, board, n) == 0) { return 1; }
+        if (!end) { break; }
+        p = end + 1;
+    }
+    return 0;
+}
+
+void
+tiku_ide_target_text(ide_t *st, char *out, size_t max)
+{
+    char board[64];
+
+    if (st->running) {
+        snprintf(out, max, "%s: %s", st->debugging && st->debug_paused ? "Debug paused" : st->saving ? "Saving" :
+                 st->asking ? "Waiting for input" : "Running",
+                 st->board[0] ? st->board : "This computer");
+    } else if (tiku_ide_dest_board(st, board, sizeof board)) {
+        snprintf(out, max, "Run on: %s — %s", board,
+                 tiku_ide_board_connected(st, board) ? "Ready" : "Disconnected");
+    } else {
+        snprintf(out, max, "Run on: This computer — no default device");
+    }
+}
+
+void
+tiku_ide_target_paint(ide_t *st, edit_t *e)
+{
+    char label[160];
+    const tiku_font_t *f = tiku_font_plain();
+    tiku_rect_t r = { 0, TOOLBAR_H, e->w, TARGET_H };
+
+    tiku_ide_target_text(st, label, sizeof label);
+    while (strlen(label) && tiku_text_width(f, label) > e->w - 12) {
+        label[strlen(label) - 1] = '\0';
+    }
+    tiku_fill(e->surface, r, TIKU_C_PANEL);
+    tiku_text(e->surface, f, 6, r.y + f->ascent + 4, label, TIKU_C_TEXT);
+}
+
+/** Reject, never truncate, data that the board service cannot carry. */
+int
+tiku_ide_upload_read(ide_t *st, const char *path, char *out, size_t max)
+{
+    FILE *f = fopen(path, "rb");
+    size_t n;
+    int extra, bad;
+
+    if (!f) {
+        snprintf(st->note, sizeof st->note, "Cannot read the program");
+        return 0;
+    }
+    n = fread(out, 1, max - 1, f);
+    extra = fgetc(f);
+    bad = ferror(f);
+    if (fclose(f) != 0) { bad = 1; }
+    if (bad || extra != EOF || memchr(out, '\0', n)) {
+        snprintf(st->note, sizeof st->note, "%s", bad ? "Program read failed" :
+                 extra != EOF ? "Upload too large (maximum 8191 bytes)" :
+                 "Upload rejected: program contains a NUL byte");
+        return 0;
+    }
+    out[n] = '\0';
+    return 1;
+}

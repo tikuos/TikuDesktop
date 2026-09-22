@@ -123,6 +123,7 @@ check-architecture: shells
 	@python3 kits/tools/check_kits.py
 	@python3 tools/check_app_boundaries.py
 	@python3 tools/test_app_boundaries.py
+	@$(MAKE) --no-print-directory check-source-modules
 	@$(MAKE) --no-print-directory check-layout
 
 .PHONY: check-layout
@@ -144,10 +145,19 @@ check-shipping:
 # field commented, 80 columns.  Exemptions live in the checker with their
 # reasons.
 .PHONY: check-style
-check-style:
+check-style: check-source-modules
 	@python3 tools/check_style.py
 
-lint:
+.PHONY: check-source-modules source-report
+check-source-modules:
+	@python3 tools/check_source_modules.py
+	@python3 tools/test_source_modules.py
+
+source-report:
+	@python3 tools/check_source_modules.py --report
+	@python3 tools/check_style.py --report
+
+lint: check-source-modules
 	@if [ -x $(TIKUOS)/hygiene/check_comment_style.py ]; then \
 	    python3 $(TIKUOS)/hygiene/check_comment_style.py --root=$(CURDIR) \
 	        --prose=6 --header=20; \

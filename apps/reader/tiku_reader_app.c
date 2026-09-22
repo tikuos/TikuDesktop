@@ -1,6 +1,6 @@
 /* TikuReader and help documents share a reader process, not desktop memory.
  * SPDX-License-Identifier: Apache-2.0 */
-#include "tiku_reader_help_window.h"
+#include "tiku_reader_window.h"
 #include "tiku_window_app.h"
 #include "tiku_msg.h"
 #include <stdlib.h>

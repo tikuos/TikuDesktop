@@ -2,8 +2,7 @@
 #include <assert.h>
 #include <limits.h>
 #include "tiku_dl.h"
-#define TIKU_APP_EMBED
-#include "../../apps/ide/tiku_ide.c"
+#include "../../apps/ide/tiku_ide_private.h"
 
 static const char *selected = "board-a";
 static int saves, runs, window_opens;
@@ -70,33 +69,33 @@ static void test_upload(ide_t *st, const char *dir)
     snprintf(path, sizeof path, "%s/longfilename.bas", dir);
     memset(large, 'x', sizeof large);
     file_write(path, large, 8191);
-    assert(upload_read(st, path, out, sizeof out));
+    assert(tiku_ide_upload_read(st, path, out, sizeof out));
     file_write(path, large, 8192);
-    assert(!upload_read(st, path, out, sizeof out));
+    assert(!tiku_ide_upload_read(st, path, out, sizeof out));
     assert(strstr(st->note, "too large"));
-    run_file_on_board(st, path, "board-a");
+    tiku_ide_run_file_on_board(st, path, "board-a");
     assert(!runs);
     file_write(path, "x\0y", 3);
-    assert(!upload_read(st, path, out, sizeof out));
+    assert(!tiku_ide_upload_read(st, path, out, sizeof out));
     file_write(path, "10 PRINT 42\n", 12);
-    save_file_on_board(st, path);
+    tiku_ide_save_file_on_board(st, path);
     assert(st->ask.open && !saves);
     assert(strstr(st->ask.text, "/data/longfil.bas"));
     assert(strstr(st->ask.text, "Replace any existing"));
     assert(st->ask.dflt == 0);
-    ide_event(st, st->proj_id, &enter);
+    tiku_ide_event(st, st->proj_id, &enter);
     assert(!saves && !st->ask.open);
-    save_file_on_board(st, path);
+    tiku_ide_save_file_on_board(st, path);
     selected = "board-b";
     file_write(path, "10 END\n", 7);
-    upload_confirm(st);
+    tiku_ide_upload_confirm(st);
     assert(saves == 1 && !strcmp(sent_board, "board-a"));
     assert(!strcmp(sent_name, "longfil"));
     assert(!strcmp(sent_program, "10 PRINT 42\n"));
     st->running = st->saving = 0;
     tiku_alert_reset(&st->ask);
     snprintf(st->upload_board, sizeof st->upload_board, "offline");
-    upload_confirm(st);
+    tiku_ide_upload_confirm(st);
     assert(saves == 1);
     unlink(path);
 }
@@ -113,12 +112,12 @@ static void test_search(void)
     tiku_textview_init(&e->tv);
     tiku_textview_set(&e->tv, "10 PRINT 10\n20 PRINT 10\n\tREM café");
     tiku_textview_text(&e->tv, original, sizeof original);
-    search_open(e, 1);
+    tiku_ide_search_open(e, 1);
     tiku_field_start(&e->find, "10");
     tiku_field_start(&e->replacement, "100");
-    search_replace(e, 0); /* Select only first. */
+    tiku_ide_search_replace(e, 0); /* Select only first. */
     assert(!tiku_textview_modified(&e->tv));
-    search_replace(e, 1);
+    tiku_ide_search_replace(e, 1);
     assert(!strcmp(tiku_textview_line(&e->tv, 0), "100 PRINT 100"));
     assert(!strcmp(tiku_textview_line(&e->tv, 2), "\tREM café"));
     assert(tiku_textview_undo(&e->tv));
@@ -127,7 +126,7 @@ static void test_search(void)
     assert(tiku_textview_redo(&e->tv));
     tiku_field_start(&e->find, "100");
     tiku_field_start(&e->replacement, "");
-    search_replace(e, 1);
+    tiku_ide_search_replace(e, 1);
     assert(!strcmp(tiku_textview_line(&e->tv, 0), " PRINT "));
     assert(tiku_textview_undo(&e->tv));
     for (i = 0; i < 600; i++) { original[i] = 'a'; }
@@ -135,11 +134,11 @@ static void test_search(void)
     tiku_textview_set(&e->tv, original);
     tiku_field_start(&e->find, "a");
     tiku_field_start(&e->replacement, "aa");
-    search_replace(e, 1);
+    tiku_ide_search_replace(e, 1);
     assert(!strcmp(tiku_textview_line(&e->tv, 0), original));
     assert(!tiku_textview_modified(&e->tv));
     tiku_field_start(&e->replacement, "b");
-    search_replace(e, 1); /* More matches than the undo journal's capacity. */
+    tiku_ide_search_replace(e, 1); /* More matches than the undo journal's capacity. */
     assert(tiku_textview_line(&e->tv, 0)[599] == 'b');
     assert(tiku_textview_undo(&e->tv));
     assert(!strcmp(tiku_textview_line(&e->tv, 0), original));
@@ -163,28 +162,28 @@ static void test_recovery(const char *dir)
     tiku_textview_init(&e->tv);
     tiku_textview_set(&e->tv, "10 PRINT 42");
     e->tv.saved_at = -1;
-    assert(recovery_write(e));
+    assert(tiku_ide_recovery_write(e));
     f = fopen(e->path, "r");
     assert(f && fgets(original, sizeof original, f));
     fclose(f);
     assert(!strcmp(original, "10 END\n"));
     tiku_textview_set(&e->tv, "10 END");
-    recovery_restore(e);
+    tiku_ide_recovery_restore(e);
     assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 42"));
     assert(tiku_textview_modified(&e->tv));
     assert(strstr(e->feedback, "Recovered"));
-    assert(edit_save(e));
+    assert(tiku_ide_edit_save(e));
     assert(access(draft, F_OK) != 0);
     assert(!tiku_textview_modified(&e->tv));
     tiku_textview_select_all(&e->tv);
     tiku_textview_insert_text(&e->tv, "10 END\n");
-    assert(recovery_write(e));
+    assert(tiku_ide_recovery_write(e));
     tiku_textview_set(&e->tv, "other text");
-    recovery_restore(e);
+    tiku_ide_recovery_restore(e);
     assert(tiku_textview_lines(&e->tv) == 2); /* Preserve a blank final line. */
     tiku_textview_insert_text(&e->tv, "abc");
-    assert(recovery_write(e));
-    recovery_release(e, 1);
+    assert(tiku_ide_recovery_write(e));
+    tiku_ide_recovery_release(e, 1);
     assert(access(draft, F_OK) != 0);
     unlink(e->path);
     tiku_textview_free(&e->tv);
@@ -212,45 +211,45 @@ static void test_ui(ide_t *st, const char *dir)
         tiku_textview_select_all(&e->tv);
         assert(tiku_text_input_set(&input, phrase, strlen(phrase)));
         while (tiku_text_input_next(&input, &text)) {
-            ide_event(st, e->id, &text);
+            tiku_ide_event(st, e->id, &text);
             if (!(text.button & TIKU_TEXT_END)) assert(strstr(tiku_textview_line(&e->tv, 0), "Temperature"));
         }
         assert(!strcmp(tiku_textview_line(&e->tv, 0), phrase) && runs == previous_runs);
         assert(tiku_textview_undo(&e->tv));
         assert(strstr(tiku_textview_line(&e->tv, 0), "Temperature"));
         tiku_textview_select_none(&e->tv);
-        search_open(e, 0);
+        tiku_ide_search_open(e, 0);
         assert(tiku_text_input_set(&input, "café", 5));
-        while (tiku_text_input_next(&input, &text)) ide_event(st, e->id, &text);
+        while (tiku_text_input_next(&input, &text)) tiku_ide_event(st, e->id, &text);
         assert(!strcmp(e->find.text, "café"));
         e->finding = 0;
     }
-    ide_pick(st, e->id, CMD_REPLACE);
+    tiku_ide_pick(st, e->id, CMD_REPLACE);
     tiku_field_start(&e->find, "PRINT");
     tiku_field_start(&e->replacement, "REM");
-    ide_event(st, e->id, &ev);
+    tiku_ide_event(st, e->id, &ev);
     assert(e->find_focus == 1);
     ev.type = TIKU_EVENT_POINTER_DOWN;
-    ev.x = search_button(2).x + 8;
-    ev.y = search_button(2).y + 8;
-    ide_event(st, e->id, &ev);
+    ev.x = tiku_ide_search_button(2).x + 8;
+    ev.y = tiku_ide_search_button(2).y + 8;
+    tiku_ide_event(st, e->id, &ev);
     assert(strstr(tiku_textview_line(&e->tv, 0), "REM"));
-    assert(ide_pick(st, e->id, CMD_UNDO) == 0);
+    assert(tiku_ide_pick(st, e->id, CMD_UNDO) == 0);
     assert(strstr(tiku_textview_line(&e->tv, 0), "PRINT"));
     snprintf(st->proj.row[0].path, sizeof st->proj.row[0].path, "%s/open.bas", dir);
     snprintf(e->path, sizeof e->path, "%s", st->proj.row[0].path);
     snprintf(st->proj.row[0].name, sizeof st->proj.row[0].name, "open.bas");
     st->proj.nrow = 1;
     tiku_list_init(&st->msg_list, 1);
-    search_project(st, e);
+    tiku_ide_search_project(st, e);
     assert(st->nmsg == 2 && st->msg[0].line == 1 && !st->msg[0].numbered);
     tiku_field_start(&e->find, "missing needle");
-    search_project(st, e);
+    tiku_ide_search_project(st, e);
     assert(!st->nmsg);
     tiku_field_start(&e->find, "PRINT");
     st->proj.nrow = 0;
     selected = "nrf54l15";
-    edit_paint(st, e);
+    tiku_ide_edit_paint(st, e);
     assert(tiku_surface_png(e->surface, "/tmp/tikubasic-find-replace.png") == 0);
     st->proj_surface = tiku_surface_new(IDE_W, IDE_H, TIKU_C_PANEL);
     assert(st->proj_surface);
@@ -259,8 +258,8 @@ static void test_ui(ide_t *st, const char *dir)
     snprintf(missing, sizeof missing, "%s/longfilename.bas", dir);
     file_write(missing, "10 PRINT 42\n", 12);
     selected = "board-a";
-    save_file_on_board(st, missing);
-    project_paint(st);
+    tiku_ide_save_file_on_board(st, missing);
+    tiku_ide_project_paint(st);
     assert(tiku_surface_png(st->proj_surface, "/tmp/tikubasic-upload.png") == 0);
     tiku_alert_reset(&st->ask);
     unlink(missing);
@@ -268,7 +267,7 @@ static void test_ui(ide_t *st, const char *dir)
     snprintf(e->path, sizeof e->path, "%s", missing);
     tiku_textview_insert_text(&e->tv, "x");
     selected = "board-a";
-    run_file_where(st, e->path);
+    tiku_ide_run_file_where(st, e->path);
     assert(runs == previous_runs);
     assert(strstr(st->note, "cancelled"));
     snprintf(e->path, sizeof e->path, "%s/oversized.bas", dir);
@@ -277,19 +276,19 @@ static void test_ui(ide_t *st, const char *dir)
         memset(long_line, 'x', sizeof long_line);
         file_write(e->path, long_line, sizeof long_line);
         tiku_textview_free(&e->tv);
-        edit_load(e);
-        assert(e->load_failed && !edit_save(e));
-        run_file_where(st, e->path);
+        tiku_ide_edit_load(e);
+        assert(e->load_failed && !tiku_ide_edit_save(e));
+        tiku_ide_run_file_where(st, e->path);
         assert(runs == previous_runs);
         unlink(e->path);
         e->load_failed = 0;
         tiku_textview_insert_text(&e->tv, "10 END");
     }
-    edit_drop(st, e);
+    tiku_ide_edit_drop(st, e);
     assert(e->surface && st->ask.open && st->ask.tag == CMD_QUIT);
     ev.type = TIKU_EVENT_KEY_DOWN;
     ev.key = TIKU_KEY_ESCAPE;
-    ide_event(st, st->proj_id, &ev);
+    tiku_ide_event(st, st->proj_id, &ev);
     assert(e->surface && !st->ask.open);
     tiku_textview_free(&e->tv);
     tiku_surface_free(e->surface);
@@ -308,19 +307,19 @@ static void test_empty_startup(const tiku_app_services_t *services,
         void *state = NULL;
         int opened = window_opens;
         assert(access(snapshot, F_OK) == 0);
-        assert(ide_start(&state, services) == 0);
+        assert(tiku_ide_start(&state, services) == 0);
         frames_without_window = 0;
         ide_t *fresh = state;
-        ide_tick(fresh, 1);
+        tiku_ide_tick(fresh, 1);
         assert(!frames_without_window);
         if (!launch) {
             /* Dismiss before the next splash stage: the former grey box. */
             tiku_event_t dismiss = {.type = TIKU_EVENT_KEY_DOWN,
                                      .key = TIKU_KEY_ESCAPE};
-            ide_event(fresh, fresh->splash_id, &dismiss);
+            tiku_ide_event(fresh, fresh->splash_id, &dismiss);
         }
-        ide_tick(fresh, SPLASH_US + 2);
-        ide_tick(fresh, SPLASH_US + 4000000);
+        tiku_ide_tick(fresh, SPLASH_US + 2);
+        tiku_ide_tick(fresh, SPLASH_US + 4000000);
         assert(fresh->proj_id && !fresh->splash_surface);
         assert(!frames_without_window && last_frame == fresh->proj_id);
         assert((fresh->proj_surface->px[100 * IDE_W + 100] & 0xffffffu) ==
@@ -331,7 +330,7 @@ static void test_empty_startup(const tiku_app_services_t *services,
         for (int i = 0; i < IDE_EDITS; i++) {
             assert(!fresh->edit[i].surface && !fresh->edit[i].path[0]);
         }
-        ide_stop(fresh);
+        tiku_ide_stop(fresh);
         assert(access(snapshot, F_OK) == 0);
     }
 }
@@ -350,24 +349,24 @@ static void test_reopen(ide_t *st, const char *dir)
     snprintf(path, sizeof path, "%s/reopen.bas", dir);
     file_write(path, "10 END\n", 7);
     snprintf(first->path, sizeof first->path, "%s", path);
-    edit_load(first);
-    recovery_open(first);
+    tiku_ide_edit_load(first);
+    tiku_ide_recovery_open(first);
     assert(first->recovery_fd >= 0);
     tiku_textview_place(&first->tv, 0, 6);
     tiku_textview_insert_text(&first->tv, " ' unsaved");
-    assert(recovery_write(first));
+    assert(tiku_ide_recovery_write(first));
     snprintf(snapshot, sizeof snapshot, "%s", first->recovery);
     snprintf(lock, sizeof lock, "%s.lock", first->recovery);
     snprintf(other->path, sizeof other->path, "%s", path);
-    edit_load(other);
-    recovery_open(other);
+    tiku_ide_edit_load(other);
+    tiku_ide_recovery_open(other);
     assert(other->recovery_fd == -1); /* Never steal another editor's checkpoint. */
-    recovery_scan(st);
-    assert(!edit_of_path(st, path)); /* Explicit recovery skips active instances. */
-    recovery_release(first, 0);
+    tiku_ide_recovery_scan(st);
+    assert(!tiku_ide_edit_of_path(st, path)); /* Explicit recovery skips active instances. */
+    tiku_ide_recovery_release(first, 0);
     test_empty_startup(st->services, snapshot);
-    ide_pick(st, st->proj_id, CMD_RECOVER);
-    restored = edit_of_path(st, path);
+    tiku_ide_pick(st, st->proj_id, CMD_RECOVER);
+    restored = tiku_ide_edit_of_path(st, path);
     assert(restored && strstr(restored->feedback, "Recovered"));
     assert(tiku_textview_modified(&restored->tv));
     assert(strstr(tiku_textview_line(&restored->tv, 0), "unsaved"));
@@ -376,11 +375,11 @@ static void test_reopen(ide_t *st, const char *dir)
     fclose(f);
     assert(!strcmp(disk, "10 END\n"));
     file_write(restored->recovery, "broken header\n", 14);
-    recovery_restore(restored);
+    tiku_ide_recovery_restore(restored);
     assert(restored->recovery_blocked);
-    assert(!recovery_write(restored));
+    assert(!tiku_ide_recovery_write(restored));
     assert(access(restored->recovery, F_OK) == 0);
-    recovery_release(restored, 1);
+    tiku_ide_recovery_release(restored, 1);
     tiku_textview_free(&restored->tv);
     tiku_surface_free(restored->surface);
     restored->surface = NULL;
@@ -407,12 +406,12 @@ static void test_console_errors(const tiku_app_services_t *services)
         st->running = 1;
         st->nmsg = 0;
         snprintf(st->board, sizeof st->board, "board-a");
-        console_open(st, "main.bas", st->board);
+        tiku_ide_console_open(st, "main.bas", st->board);
         int opened = window_opens;
         int start = st->ncon;
-        ide_board_said(st, TIKU_APP_BOARD_LINE, "? syntax");
-        ide_board_said(st, TIKU_APP_BOARD_LINE, "at line 20");
-        ide_board_said(st, endings[i], NULL);
+        tiku_ide_board_said(st, TIKU_APP_BOARD_LINE, "? syntax");
+        tiku_ide_board_said(st, TIKU_APP_BOARD_LINE, "at line 20");
+        tiku_ide_board_said(st, endings[i], NULL);
         assert(!st->running && !st->board[0]);
         assert(!st->msg_surface && !st->msg_id);
         assert(window_opens == opened);
@@ -426,10 +425,10 @@ static void test_console_errors(const tiku_app_services_t *services)
     st->running = 1;
     st->nmsg = 0;
     snprintf(st->board, sizeof st->board, "board-a");
-    ide_board_said(st, TIKU_APP_BOARD_FAILED, NULL);
+    tiku_ide_board_said(st, TIKU_APP_BOARD_FAILED, NULL);
     assert(st->msg_surface && st->nmsg == 1);
     assert(!strcmp(last_window, "Messages"));
-    ide_stop(st);
+    tiku_ide_stop(st);
 }
 
 /*
@@ -473,14 +472,14 @@ static void test_diagnostics(const tiku_app_services_t *services)
         st->proj_id = 1;
         snprintf(st->child_file, sizeof st->child_file, "bad.c");
         for (i = 0; SAID[which][i] != NULL; i++)
-            message_take(st, SAID[which][i]);
+            tiku_ide_message_take(st, SAID[which][i]);
         /* The quoted source and the caret are not rows: a person cannot
          * act on them and the complaint above already names the line. */
         for (i = 0; i < st->nmsg; i++)
             assert(!strstr(st->msg[i].text, "|"));
         assert(st->nmsg == (which == 0 ? 3 : 2));
         last_menu_item[0] = '\0';
-        messages_show(st);
+        tiku_ide_messages_show(st);
         assert(st->msg_surface != NULL);
         /* Not the first row under either compiler, and the same one. */
         assert(tiku_list_chosen(&st->msg_list) == (which == 0 ? 1 : 0));
@@ -488,9 +487,9 @@ static void test_diagnostics(const tiku_app_services_t *services)
         (void)WHO[which];
         /* A second look keeps what the person was reading. */
         tiku_list_select_only(&st->msg_list, st->nmsg - 1);
-        messages_show(st);
+        tiku_ide_messages_show(st);
         assert(tiku_list_chosen(&st->msg_list) == st->nmsg - 1);
-        ide_stop(st);
+        tiku_ide_stop(st);
     }
 }
 
@@ -505,11 +504,11 @@ static void test_splash_license(void)
         size_t n = 0, at = 0;
         tiku_dl_fact_t fact;
         assert(s && dl);
-        announce_paint_art(s, "Opening the project", NULL);
+        tiku_ide_announce_paint_art(s, "Opening the project", NULL);
         snprintf(path, sizeof path, "/tmp/tikubasic-splash-license-%d.png", size);
         assert(!tiku_surface_png(s, path));
         s->record = dl;
-        announce_license(s);
+        tiku_ide_announce_license(s);
         s->record = NULL;
         tiku_dl_say(dl, words, sizeof words);
         assert(strstr(words, "Apache License, Version 2.0"));
@@ -545,26 +544,26 @@ static void test_launch_document(tiku_app_services_t *services, const char *dir)
     int before_runs = runs, before_saves = saves;
     void *state = NULL;
     services->startup_document = source;
-    assert(!ide_start(&state, services));
+    assert(!tiku_ide_start(&state, services));
     ide_t *opened = state;
-    edit_t *e = edit_of_path(opened, source);
+    edit_t *e = tiku_ide_edit_of_path(opened, source);
     assert(e && !e->load_failed && !tiku_textview_modified(&e->tv));
     assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 9876"));
     assert(!opened->proj_file[0] && !opened->running);
-    ide_stop(opened);
+    tiku_ide_stop(opened);
     services->startup_document = manifest;
-    assert(!ide_start(&state, services));
+    assert(!tiku_ide_start(&state, services));
     opened = state;
     assert(!strcmp(opened->proj_file, manifest));
     assert(!strcmp(opened->proj.title, "Launch Test"));
-    assert(opened->proj.nrow == 2 && !edit_of_path(opened, source));
-    ide_stop(opened);
+    assert(opened->proj.nrow == 2 && !tiku_ide_edit_of_path(opened, source));
+    tiku_ide_stop(opened);
     services->startup_document = NULL;
-    assert(!ide_start(&state, services));
+    assert(!tiku_ide_start(&state, services));
     opened = state;
     assert(!opened->proj_file[0] && !opened->proj.nrow);
-    assert(!edit_of_path(opened, source));
-    ide_stop(opened);
+    assert(!tiku_ide_edit_of_path(opened, source));
+    tiku_ide_stop(opened);
     assert(runs == before_runs && saves == before_saves);
     assert(!unlink(source) && !unlink(manifest));
 }
@@ -586,22 +585,22 @@ int main(void)
     assert(realpath(dir, real));
     snprintf(dir, sizeof dir, "%s", real);
     st->proj_w = IDE_W; st->proj_h = IDE_H;   /* as ide_start leaves them */
-    assert(project_body(st).y == MARGIN);
-    assert(project_body(st).h == IDE_H - STRIP_H - 2 * MARGIN);
+    assert(tiku_ide_project_body(st).y == MARGIN);
+    assert(tiku_ide_project_body(st).h == IDE_H - STRIP_H - 2 * MARGIN);
     st->services = &services;
     st->proj_id = 1;
-    target_text(st, label, sizeof label);
+    tiku_ide_target_text(st, label, sizeof label);
     assert(strstr(label, "board-a") && strstr(label, "Ready"));
     selected = "offline";
-    target_text(st, label, sizeof label);
+    tiku_ide_target_text(st, label, sizeof label);
     assert(strstr(label, "Disconnected"));
     selected = "";
-    target_text(st, label, sizeof label);
+    tiku_ide_target_text(st, label, sizeof label);
     assert(strstr(label, "This computer"));
     st->running = 1;
     snprintf(st->board, sizeof st->board, "board-a");
     selected = "board-b";
-    target_text(st, label, sizeof label);
+    tiku_ide_target_text(st, label, sizeof label);
     assert(strstr(label, "Running: board-a"));
     st->running = 0;
     selected = "board-a";

@@ -1,10 +1,9 @@
 /* Real Editor process over the desktop transport, including large resizes.
  * SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE 1
-#define TIKU_APP_EMBED
 #include <assert.h>
 #include <sys/socket.h>
-#include "../../apps/editor/tiku_edit.c"
+#include "../../apps/editor/tiku_editor_private.h"
 #include "tiku_remote.h"
 
 /** Wait for a complete frame of the requested size without hiding disconnects. */

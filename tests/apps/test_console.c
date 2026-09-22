@@ -2,7 +2,7 @@
 #define _GNU_SOURCE
 #include <assert.h>
 #include <sys/stat.h>
-#include "../../apps/console/tiku_console.c"
+#include "../../apps/console/tiku_console_private.h"
 
 static int master, released, releases, reclaims, files, frames;
 static char slave_path[256], clipboard[400000];
@@ -40,7 +40,7 @@ static tiku_app_services_t svc = {.open = opened, .close = closed, .frame = fram
 static console_t *start(void)
 {
     void *state = NULL;
-    assert(!console_start(&state, &svc));
+    assert(!tiku_console_start(&state, &svc));
     console_t *st = state;
     assert(st->state == IDLE && st->fd == -1 && !strcmp(st->board, "lab-board"));
     assert(st->targets.selected == 0); return st;
@@ -51,52 +51,52 @@ static void vanished_target_test(console_t *st)
 {
     board_list = "other-board\nspare-board\n";
     st->names[0] = '\0';
-    targets_refresh(st);
+    tiku_console_targets_refresh(st);
     assert(st->targets.count == 2);
     assert(st->targets.selected == -1);   /* neither is the board in hand */
     assert(!strcmp(st->board, "lab-board"));
     board_list = "lab-board\n";
     st->names[0] = '\0';
-    targets_refresh(st);
+    tiku_console_targets_refresh(st);
     assert(st->targets.count == 1 && st->targets.selected == 0);
 }
 
 static void bytes(console_t *st, const char *value)
-{ for (const unsigned char *p = (const unsigned char *)value; *p; p++) text_byte(st, *p); }
+{ for (const unsigned char *p = (const unsigned char *)value; *p; p++) tiku_console_text_byte(st, *p); }
 
 static void model_test(console_t *st)
 {
     bytes(st, "Hello \x1b[31"); bytes(st, "mred\x1b[0m \xc3"); bytes(st, "\xa9\n");
-    char out[400]; line_string(&st->lines[0], out, sizeof out);
+    char out[400]; tiku_console_line_string(&st->lines[0], out, sizeof out);
     assert(!strcmp(out, "Hello red é")); assert(st->lines[0].cell[6].ink == 1);
-    bytes(st, "abcdef\rXY\x1b[K"); line_string(last_line(st), out, sizeof out);
+    bytes(st, "abcdef\rXY\x1b[K"); tiku_console_line_string(tiku_console_last_line(st), out, sizeof out);
     assert(!strcmp(out, "XY"));
-    bytes(st, "z\b \b!"); line_string(last_line(st), out, sizeof out); assert(!strcmp(out, "XY!"));
+    bytes(st, "z\b \b!"); tiku_console_line_string(tiku_console_last_line(st), out, sizeof out); assert(!strcmp(out, "XY!"));
     bytes(st, "\x1b[999999999999999999999999999999999999999D"); assert(st->column == 0);
     bytes(st, "\x1b]0;hidden title\x1b\\ok"); assert(!st->scan);
     for (int i = 0; i < ROWS + 100; i++) bytes(st, "line\n");
     assert(st->count == ROWS);
-    tiku_field_start(&st->field[1], "line"); rebuild(st); assert(st->visible == ROWS - 1);
+    tiku_field_start(&st->field[1], "line"); tiku_console_rebuild(st); assert(st->visible == ROWS - 1);
     snprintf(clipboard, sizeof clipboard, "keep clipboard");
-    copy_history(st, 0); assert(!strcmp(clipboard, "keep clipboard"));
+    tiku_console_copy_history(st, 0); assert(!strcmp(clipboard, "keep clipboard"));
     assert(strstr(st->note, "Too much text"));
-    message(st, "distinct line"); tiku_field_start(&st->field[1], "distinct");
-    copy_history(st, 0); assert(!strcmp(clipboard, "distinct line\n"));
-    tiku_field_start(&st->field[1], ""); action(st, CLEAR);
-    history_add(st, "info"); history_add(st, "free"); history_add(st, "free");
+    tiku_console_message(st, "distinct line"); tiku_field_start(&st->field[1], "distinct");
+    tiku_console_copy_history(st, 0); assert(!strcmp(clipboard, "distinct line\n"));
+    tiku_field_start(&st->field[1], ""); tiku_console_action(st, CLEAR);
+    tiku_console_history_add(st, "info"); tiku_console_history_add(st, "free"); tiku_console_history_add(st, "free");
     tiku_field_start(&st->field[0], "draft");
-    history_move(st, -1); assert(!strcmp(st->field[0].text, "free"));
-    history_move(st, -1); assert(!strcmp(st->field[0].text, "info"));
-    history_move(st, 1); history_move(st, 1); assert(!strcmp(st->field[0].text, "draft"));
+    tiku_console_history_move(st, -1); assert(!strcmp(st->field[0].text, "free"));
+    tiku_console_history_move(st, -1); assert(!strcmp(st->field[0].text, "info"));
+    tiku_console_history_move(st, 1); tiku_console_history_move(st, 1); assert(!strcmp(st->field[0].text, "draft"));
     puts("PASS: incremental ANSI/UTF-8, line editing, bounded history, search and command recall");
 }
 
 static void acquire(console_t *st)
 {
     int before = releases;
-    begin(st); assert(st->state == RELEASING && st->fd < 0 && releases == before + 1);
-    console_board_said(st, TIKU_APP_BOARD_RELEASED, "other-board"); assert(st->fd < 0);
-    console_board_said(st, TIKU_APP_BOARD_RELEASED, "lab-board");
+    tiku_console_begin(st); assert(st->state == RELEASING && st->fd < 0 && releases == before + 1);
+    tiku_console_board_said(st, TIKU_APP_BOARD_RELEASED, "other-board"); assert(st->fd < 0);
+    tiku_console_board_said(st, TIKU_APP_BOARD_RELEASED, "lab-board");
     assert(st->state == ACTIVE && st->fd >= 0 && !strcmp(st->port, slave_path));
 }
 
@@ -105,90 +105,90 @@ static void io_test(console_t *st)
     acquire(st);
     const char *greeting = "\r\nTikuOS ready\r\n> ";
     assert(write(master, greeting, strlen(greeting)) == (ssize_t)strlen(greeting));
-    for (int i = 0; i < 20 && !st->received; i++) { io_poll(st); usleep(1000); }
+    for (int i = 0; i < 20 && !st->received; i++) { tiku_console_io_poll(st); usleep(1000); }
     assert(st->received == strlen(greeting));
-    tiku_field_start(&st->field[0], "info"); action(st, SEND); io_poll(st);
+    tiku_field_start(&st->field[0], "info"); tiku_console_action(st, SEND); tiku_console_io_poll(st);
     char got[32] = ""; ssize_t n = read(master, got, sizeof got); assert(n == 5 && !memcmp(got, "info\r", 5));
     assert(!*st->field[0].text);
     unsigned char big[OUT_MAX]; memset(big, 'x', sizeof big);
-    assert(queue_bytes(st, big, sizeof big));
-    assert(!queue_bytes(st, "z", 1) && st->out_n == sizeof big);
-    action(st, BREAK); assert(st->out_n == 1 && st->output[0] == 3); io_poll(st);
+    assert(tiku_console_queue_bytes(st, big, sizeof big));
+    assert(!tiku_console_queue_bytes(st, "z", 1) && st->out_n == sizeof big);
+    tiku_console_action(st, BREAK); assert(st->out_n == 1 && st->output[0] == 3); tiku_console_io_poll(st);
     assert(read(master, got, sizeof got) == 1 && got[0] == 3);
     snprintf(clipboard, sizeof clipboard, "info\nrm /data/file");
     st->out_n = st->out_at = 0;
     tiku_event_t ev = {.type = TIKU_EVENT_KEY_DOWN, .key = 'v', .modifiers = TIKU_MOD_CMD};
-    direct_event(st, &ev); assert(st->out_n == 0);
-    snprintf(clipboard, sizeof clipboard, "safe text"); direct_event(st, &ev);
+    tiku_console_direct_event(st, &ev); assert(st->out_n == 0);
+    snprintf(clipboard, sizeof clipboard, "safe text"); tiku_console_direct_event(st, &ev);
     assert(st->out_n == 9); st->out_n = st->out_at = 0;
-    record_toggle(st); assert(st->log);
+    tiku_console_record_toggle(st); assert(st->log);
     struct stat sb; assert(!stat(st->log_path, &sb) && (sb.st_mode & 0777) == 0600);
     assert(write(master, "recorded\r\n", 10) == 10);
-    for (int i = 0; i < 20; i++) { io_poll(st); usleep(1000); }
-    action(st, CLEAR); record_toggle(st);
+    for (int i = 0; i < 20; i++) { tiku_console_io_poll(st); usleep(1000); }
+    tiku_console_action(st, CLEAR); tiku_console_record_toggle(st);
     FILE *log = fopen(st->log_path, "rb"); assert(log);
     assert(fread(got, 1, 10, log) == 10 && !memcmp(got, "recorded\r\n", 10)); fclose(log);
     unlink(st->log_path);
-    action(st, FILES); assert(st->state == RECLAIMING && st->fd == -1 && !files);
-    console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board"); assert(st->state == IDLE && files == 1);
+    tiku_console_action(st, FILES); assert(st->state == RECLAIMING && st->fd == -1 && !files);
+    tiku_console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board"); assert(st->state == IDLE && files == 1);
     puts("PASS: PTY I/O, port handoff, bounded queue, interrupt, safe paste, private logs and Files");
 }
 
 static void network_test(console_t *st)
 {
-    acquire(st); st->now = 1000000; ping_start(st); assert(st->ping_active);
-    st->out_n = st->out_at = 0; st->now = st->ping_next; ping_tick(st);
+    acquire(st); st->now = 1000000; tiku_console_ping_start(st); assert(st->ping_active);
+    st->out_n = st->out_at = 0; st->now = st->ping_next; tiku_console_ping_tick(st);
     assert(st->ping_sent == 1 && st->out_n > 39 && st->output[0] == 0xc0);
-    unsigned char reply[39] = {0}; reply[0] = 0x45; put16(reply + 2, sizeof reply);
+    unsigned char reply[39] = {0}; reply[0] = 0x45; tiku_console_put16(reply + 2, sizeof reply);
     reply[8] = 64; reply[9] = 1;
     memcpy(reply + 12, &st->destination, 4); memcpy(reply + 16, &st->source, 4);
-    put16(reply + 10, checksum(reply, 20)); put16(reply + 24, st->ping_id);
-    memcpy(reply + 28, "tikuconsole", 11); put16(reply + 22, checksum(reply + 20, 19));
+    tiku_console_put16(reply + 10, tiku_console_checksum(reply, 20)); tiku_console_put16(reply + 24, st->ping_id);
+    memcpy(reply + 28, "tikuconsole", 11); tiku_console_put16(reply + 22, tiku_console_checksum(reply + 20, 19));
     st->now += 12000;
-    unsigned char encoded[100]; size_t n = slip_encode(reply, sizeof reply, encoded, sizeof encoded);
-    for (size_t i = 0; i < n; i++) wire_byte(st, encoded[i]);
+    unsigned char encoded[100]; size_t n = tiku_console_slip_encode(reply, sizeof reply, encoded, sizeof encoded);
+    for (size_t i = 0; i < n; i++) tiku_console_wire_byte(st, encoded[i]);
     assert(st->ping_received == 1 && st->rtt_sum == 12.0 && st->rtts.count == 1);
-    ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1);
+    tiku_console_ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1);
     st->ping_seen[0] = 0;
-    reply[10] ^= 1; ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1); reply[10] ^= 1;
-    reply[22] ^= 1; ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1); reply[22] ^= 1;
-    reply[0] = 0x4f; ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1); reply[0] = 0x45;
+    reply[10] ^= 1; tiku_console_ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1); reply[10] ^= 1;
+    reply[22] ^= 1; tiku_console_ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1); reply[22] ^= 1;
+    reply[0] = 0x4f; tiku_console_ip_packet(st, reply, sizeof reply); assert(st->ping_received == 1); reply[0] = 0x45;
     st->ping_seen[0] = 1;
     /* A window frame is END then the 0xf1 marker, the order both encoders
      * write (kits/device/tiku_session.c and the board's console): its
      * payload is never printed as text. */
     int lines = st->count;
-    wire_byte(st, 0xc0); wire_byte(st, 0xf1);
-    wire_byte(st, '\n'); wire_byte(st, 'X'); wire_byte(st, 0xc0);
+    tiku_console_wire_byte(st, 0xc0); tiku_console_wire_byte(st, 0xf1);
+    tiku_console_wire_byte(st, '\n'); tiku_console_wire_byte(st, 'X'); tiku_console_wire_byte(st, 0xc0);
     assert(st->count == lines);
     /* A 0xf1 that is NOT the byte after an END is ordinary text. */
-    wire_byte(st, 'a'); wire_byte(st, 0xf1); wire_byte(st, '\n');
+    tiku_console_wire_byte(st, 'a'); tiku_console_wire_byte(st, 0xf1); tiku_console_wire_byte(st, '\n');
     assert(st->count == lines + 1);
     /* A frame nobody closes is abandoned, and the text after it arrives. */
-    wire_byte(st, 0xc0); wire_byte(st, 0xf1); wire_byte(st, 'Z');
-    st->now += 31000000; io_poll(st);
-    wire_byte(st, 'h'); wire_byte(st, 'i'); wire_byte(st, '\n');
+    tiku_console_wire_byte(st, 0xc0); tiku_console_wire_byte(st, 0xf1); tiku_console_wire_byte(st, 'Z');
+    st->now += 31000000; tiku_console_io_poll(st);
+    tiku_console_wire_byte(st, 'h'); tiku_console_wire_byte(st, 'i'); tiku_console_wire_byte(st, '\n');
     assert(st->count == lines + 2);
     while (st->ping_active) {
-        st->out_at = st->out_n = 0; st->now = st->ping_next; ping_tick(st);
+        st->out_at = st->out_n = 0; st->now = st->ping_next; tiku_console_ping_tick(st);
     }
     assert(st->ping_sent == 4 && st->ping_received == 1 && strstr(st->net_note, "75% loss"));
-    tiku_tabs_select(&st->tabs, NETWORK); paint(st);
+    tiku_tabs_select(&st->tabs, NETWORK); tiku_console_paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-console-network.png"));
-    reclaim(st); console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board");
+    tiku_console_reclaim(st); tiku_console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board");
     puts("PASS: rootless SLIP ping, checksum/address/length validation, duplicates, GUI demux and loss");
 }
 
 static void cancel_test(console_t *st)
 {
-    int before = reclaims; begin(st); action(st, RETURN);
+    int before = reclaims; tiku_console_begin(st); tiku_console_action(st, RETURN);
     assert(st->state == RELEASING && st->cancelled && st->fd < 0);
-    console_board_said(st, TIKU_APP_BOARD_RELEASED, "lab-board");
+    tiku_console_board_said(st, TIKU_APP_BOARD_RELEASED, "lab-board");
     assert(st->state == RECLAIMING && st->fd < 0 && reclaims == before + 1);
-    console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board");
-    begin(st); st->now = st->deadline; console_tick(st, st->now);
+    tiku_console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board");
+    tiku_console_begin(st); st->now = st->deadline; tiku_console_tick(st, st->now);
     assert(st->state == RECLAIMING && st->fd < 0);
-    st->now = st->deadline; console_tick(st, st->now); assert(st->state == IDLE);
+    st->now = st->deadline; tiku_console_tick(st, st->now); assert(st->state == IDLE);
     assert(strstr(st->note, "Reconnect"));
     puts("PASS: cancellation during release and bounded handoff timeouts");
 }
@@ -196,28 +196,28 @@ static void cancel_test(console_t *st)
 static void click(console_t *st, int x, int y)
 {
     tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1, .x = x, .y = y};
-    console_event(st, st->id, &ev); ev.type = TIKU_EVENT_POINTER_UP;
-    console_event(st, st->id, &ev);
+    tiku_console_event(st, st->id, &ev); ev.type = TIKU_EVENT_POINTER_UP;
+    tiku_console_event(st, st->id, &ev);
 }
 
 static void ui_test(console_t *st)
 {
-    acquire(st); tiku_tabs_select(&st->tabs, CONSOLE); paint(st);
+    acquire(st); tiku_tabs_select(&st->tabs, CONSOLE); tiku_console_paint(st);
     click(st, 200, 560); assert(st->dialog.focus == FIELD);
     tiku_field_start(&st->field[0], "help");
     tiku_event_t ev = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_RETURN};
-    console_event(st, st->id, &ev); assert(st->out_n - st->out_at == 5);
+    tiku_console_event(st, st->id, &ev); assert(st->out_n - st->out_at == 5);
     assert(!memcmp(st->output + st->out_at, "help\r", 5)); st->out_n = st->out_at = 0;
     click(st, 100, 520); assert(st->direct && st->dialog.focus == LIST);
-    ev.key = 'x'; console_event(st, st->id, &ev); assert(st->out_n == 1 && st->output[0] == 'x');
+    ev.key = 'x'; tiku_console_event(st, st->id, &ev); assert(st->out_n == 1 && st->output[0] == 'x');
     st->out_n = st->out_at = 0;
     click(st, 200, 108); assert(st->dialog.focus == FIELD + 1);
-    ev.key = 'z'; console_event(st, st->id, &ev); assert(!st->out_n);
+    ev.key = 'z'; tiku_console_event(st, st->id, &ev); assert(!st->out_n);
     tiku_field_start(&st->field[1], "");
     click(st, 480, 64); assert(st->tabs.current == NETWORK);
     click(st, 780, 64); assert(st->tabs.current == DEVICE);
     click(st, 180, 64); assert(st->tabs.current == CONSOLE);
-    reclaim(st); console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board");
+    tiku_console_reclaim(st); tiku_console_board_said(st, TIKU_APP_BOARD_RECLAIMED, "lab-board");
     puts("PASS: pointer controls, tab navigation, Enter-to-send and field/direct-input isolation");
 }
 
@@ -230,12 +230,12 @@ int main(void)
     model_test(st); io_test(st); network_test(st); ui_test(st); cancel_test(st);
     vanished_target_test(st);
     tiku_tabs_select(&st->tabs, CONSOLE);
-    message(st, "TikuOS serial console"); bytes(st, "\x1b[32mReady\x1b[0m\r\n> info\r\nDevice: RP2350\r\n> ");
-    paint(st); assert(!tiku_surface_png(st->surface, "/tmp/tiku-console.png"));
-    tiku_font_set_size(16); paint(st); assert(!tiku_surface_png(st->surface, "/tmp/tiku-console-large.png"));
-    tiku_tabs_select(&st->tabs, DEVICE); paint(st);
+    tiku_console_message(st, "TikuOS serial console"); bytes(st, "\x1b[32mReady\x1b[0m\r\n> info\r\nDevice: RP2350\r\n> ");
+    tiku_console_paint(st); assert(!tiku_surface_png(st->surface, "/tmp/tiku-console.png"));
+    tiku_font_set_size(16); tiku_console_paint(st); assert(!tiku_surface_png(st->surface, "/tmp/tiku-console-large.png"));
+    tiku_tabs_select(&st->tabs, DEVICE); tiku_console_paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-console-device.png"));
-    tiku_font_set_size(12); console_stop(st); close(master);
+    tiku_font_set_size(12); tiku_console_stop(st); close(master);
     assert(frames > 5); puts("PASS: native Console renders at both font sizes; no hardware accessed");
     return 0;
 }

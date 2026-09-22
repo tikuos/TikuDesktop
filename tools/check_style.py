@@ -4,8 +4,8 @@ The style rules that make lint cannot check by reading comments alone:
 size and documentation, the two things the kernel's coding style is
 strict about and docs/plans/PLAN-split.md adopted.
 
-For every C file under the trees it is given (the shells and the Tracker
-core by default):
+For C, Objective-C and implementation fragments under the requested trees
+(the shells and Tracker core for the strict default gate):
 
   * no function over FUNC_MAX lines, and none with more than LOCALS_MAX
     locals declared at its head;
@@ -22,7 +22,8 @@ core by default):
 
 Each rule can carry exemptions, listed below with the reason.  A rule
 fails the build; the counts are printed either way, so a pass says how
-much room is left.  `--report` prints the counts and exits 0; `--all` prints every finding.
+much room is left. `--report` includes apps and kits by default, prints the
+counts and exits 0; `--all` prints every finding on a failing strict run.
 
 Authors: Ambuj Varshney <ambuj@tiku-os.org>
 """
@@ -32,6 +33,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TREES = ['system/desktop', 'system/tracker', 'system/shared', 'system/deskbar']
+REPORT_TREES = TREES + ['apps', 'kits']
 
 FUNC_MAX = 200
 LOCALS_MAX = 10
@@ -159,11 +161,11 @@ def header_lines(lines):
 def main(argv):
     report_only = '--report' in argv
     show_all = '--all' in argv
-    trees = [a for a in argv if not a.startswith('--')] or TREES
+    trees = [a for a in argv if not a.startswith('--')] or (REPORT_TREES if report_only else TREES)
     files = []
     for t in trees:
         for d, _, fs in os.walk(os.path.join(ROOT, t)):
-            files += [os.path.join(d, f) for f in fs if f.endswith(('.c', '.h'))]
+            files += [os.path.join(d, f) for f in fs if f.endswith(('.c', '.h', '.inl', '.m'))]
     errors = []
     counts = dict(funcs=0, long_funcs=0, many_locals=0, banners=0, headers=0,
                   slashes=0, long_lines=0, undocumented=0, twice=0, fields=0)
@@ -228,7 +230,7 @@ def main(argv):
                             and not (above.startswith('/*') or above.startswith('*') or above.endswith('*/'))):
                         counts['fields'] += 1
                         errors.append('%s:%d: field without a comment: %s' % (rel, base + j, fl.strip()))
-        if not p.endswith('.c'):
+        if not p.endswith(('.c', '.inl', '.m')):
             continue
         for name, static, doc, i, j, nloc in functions(L):
             counts['funcs'] += 1

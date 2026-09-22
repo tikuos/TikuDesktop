@@ -52,6 +52,11 @@ because it builds against the optional firmware checkout.
 is the programmer's calculator. Runtime IDs remain `calc` and `calculator`,
 respectively: readable source directory names do not rename saved app IDs.
 
+Within those directories, the [functional module guide](source-modules.md)
+maps filenames to responsibilities and describes private interfaces and the
+source checks. IDE, Editor, Reader, Bench and Console implementations compile as
+separate modules rather than including `.inl` implementation fragments.
+
 ## Runtime and development products
 
 The one root Makefile includes `mk/toolchain.mk`, `kits.mk`, `system.mk`,
