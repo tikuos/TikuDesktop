@@ -68,7 +68,8 @@ static const struct {
       "Up brings the external RAM online and attaches its tier; Down "
       "refuses while allocations are live.", 1, SEC_MEMORY },
     { "eMMC card", "/sys/emmc/state",
-      "Up powers the card and mounts it; Down powers it off.", 1,
+      "Up powers the card and makes it ready for reads and writes; Down "
+      "powers it off.", 1,
       SEC_STORAGE },
     { "NVM tier", "/sys/mem/layout/current",
       "How much of the non-volatile region the tier takes; the store has "
@@ -543,17 +544,6 @@ static void dp_show_section(struct desktop_deviceprefs *p, int section)
         if (p->rows[i].fact >= 0) { p->fact = p->rows[i].fact; return; }
         if (p->rows[i].estate >= 0) { p->estate = p->rows[i].estate; return; }
     }
-}
-
-/** @brief The row showing setting @p setting, once its section is shown. */
-static int dp_row_of_setting(struct desktop_deviceprefs *p, int setting)
-{
-    int i;
-    p->section = settings[setting].section;
-    dp_outline_build(p);
-    for (i = 0; i < p->nrow; i++)
-        if (p->rows[i].setting == setting) return i;
-    return -1;
 }
 
 /** @brief Whether the selected CPU rate still needs to be saved. */

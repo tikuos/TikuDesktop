@@ -7,6 +7,17 @@
 /** @brief The painter is not linked: a full frame is the flag, as before. */
 void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
+/** @brief The row showing setting @p setting, once its section is shown. */
+static int dp_row_of_setting(struct desktop_deviceprefs *p, int setting)
+{
+    int i;
+    p->section = settings[setting].section;
+    dp_outline_build(p);
+    for (i = 0; i < p->nrow; i++)
+        if (p->rows[i].setting == setting) return i;
+    return -1;
+}
+
 /** @brief Where setting @p i sits in the outline, scrolled into view. */
 static tiku_rect_t dp_setting_row(struct desktop_deviceprefs *p,
                                   dp_layout_t l, int i)
