@@ -146,6 +146,16 @@ int tiku_ns_events(tiku_ns_t *ns, tiku_ns_change_t *out, int max,
 int tiku_ns_read(tiku_ns_t *ns, const char *path);
 
 /**
+ * @brief @p value as ONE argument of a line the board's shell parses.
+ *
+ * The shell splits on spaces, and a token opening with a quote runs to the
+ * matching quote with no escapes.  A value that is empty, holds a space or
+ * opens with a quote is wrapped in a quote it does not contain.  @return 0,
+ * or -1 if it holds a line break, both quotes and a space, or overflows.
+ */
+int tiku_ns_quote(const char *value, char *out, size_t cap);
+
+/**
  * @brief Write a value (`write`), then re-read it.
  *
  * @param err  Optional buffer for the device's refusal text.

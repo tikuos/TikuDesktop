@@ -457,13 +457,14 @@ tiku_ns_ls_kinds(tiku_ns_t *ns, const char *path, char out[][64],
 {
     char buf[8192];
     char cmd[TIKU_NS_PATH_MAX + 8];
+    char arg[TIKU_NS_PATH_MAX + 3];
     const char *p;
     int n = 0;
 
-    if (ns == NULL || path == NULL) {
+    if (ns == NULL || path == NULL || tiku_ns_quote(path, arg, sizeof arg)) {
         return -1;
     }
-    snprintf(cmd, sizeof cmd, "ls %s", path);
+    snprintf(cmd, sizeof cmd, "ls %s", arg);
     if (tiku_session_cmd(ns->s, cmd, buf, sizeof buf, 6000) < 0) {
         return -1;
     }
@@ -505,6 +506,28 @@ tiku_ns_ls_kinds(tiku_ns_t *ns, const char *path, char out[][64],
 }
 
 int
+tiku_ns_quote(const char *value, char *out, size_t cap)
+{
+    int n;
+
+    if (value == NULL || out == NULL || cap == 0u ||
+        strpbrk(value, "\r\n") != NULL) {
+        return -1;              /* a line break would end the command there */
+    }
+    if (value[0] != '\0' && strchr(value, ' ') == NULL &&
+        value[0] != '"' && value[0] != '\'') {
+        n = snprintf(out, cap, "%s", value);
+    } else if (strchr(value, '"') == NULL) {
+        n = snprintf(out, cap, "\"%s\"", value);
+    } else if (strchr(value, '\'') == NULL) {
+        n = snprintf(out, cap, "'%s'", value);
+    } else {
+        return -1;              /* both quotes and a space: no way to say it */
+    }
+    return (n >= 0 && (size_t)n < cap) ? 0 : -1;
+}
+
+int
 tiku_ns_ls(tiku_ns_t *ns, const char *path, char out[][64], int max)
 {
     return tiku_ns_ls_kinds(ns, path, out, NULL, max);
@@ -515,13 +538,15 @@ tiku_ns_read(tiku_ns_t *ns, const char *path)
 {
     tiku_node_t *n = ns_find_mut(ns, path);
     char cmd[TIKU_NS_PATH_MAX + 8];
+    char arg[TIKU_NS_PATH_MAX + 3];
     char buf[TIKU_VAL_MAX];
     int rc;
 
-    if (n == NULL || (n->perm & TIKU_NS_P_READ) == 0u) {
+    if (n == NULL || (n->perm & TIKU_NS_P_READ) == 0u ||
+        tiku_ns_quote(path, arg, sizeof arg) != 0) {
         return -1;
     }
-    snprintf(cmd, sizeof cmd, "cat %s", path);
+    snprintf(cmd, sizeof cmd, "cat %s", arg);
     rc = tiku_session_cmd(ns->s, cmd, buf, sizeof buf, 6000);
     if (rc < 0 || strstr(buf, "cannot read") != NULL) {
         n->value_valid = 0;
@@ -540,13 +565,23 @@ tiku_ns_write(tiku_ns_t *ns, const char *path, const char *value,
                    char *err, size_t errmax)
 {
     char cmd[TIKU_NS_PATH_MAX + TIKU_VAL_MAX + 16];
+    char where[TIKU_NS_PATH_MAX + 3], what[TIKU_VAL_MAX + 3];
     char buf[512];
     int rc, attempt;
 
     if (ns == NULL || path == NULL || value == NULL) {
         return -1;
     }
-    snprintf(cmd, sizeof cmd, "write %s %s", path, value);
+    /* Quoted as the shell reads them: an unquoted "a b" arrived as "a". */
+    if (tiku_ns_quote(path, where, sizeof where) != 0 ||
+        tiku_ns_quote(value, what, sizeof what) != 0) {
+        if (err != NULL && errmax > 0u) {
+            snprintf(err, errmax, "the board's shell cannot carry this value:"
+                     " it holds a line break, or both quotes and a space");
+        }
+        return -1;
+    }
+    snprintf(cmd, sizeof cmd, "write %s %s", where, what);
     /*
      * The console has no flow control, so a busy board can drop bytes off
      * the tail of a command -- "write /p 1" arrives as "write /p", and the
