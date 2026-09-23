@@ -124,6 +124,8 @@ static void browser_draw(bench_t *st, tiku_rect_t body)
             strcmp(leaf->kind, "functional") ? leaf->kind : "");
         else snprintf(value, sizeof value, "%s | %s | %s", s->group, s->key, s->name);
         tiku_rgb_t ink = focus ? TIKU_C_SELTEXT : ok ? TIKU_C_TEXT : tiku_dim(TIKU_C_TEXT, TIKU_C_DOC);
+        if (leaf && ok && !focus && !strcmp(leaf->kind, "destructive"))
+            ink = TIKU_C_DANGER;    /* it may erase the store: said in red */
         tiku_text_line_draw(st->surface, (tiku_rect_t){row.x + 52, row.y, row.w - 56, row.h},
                             leaf ? TIKU_MEASURE_PLAIN : TIKU_MEASURE_BOLD, value, ink);
     }

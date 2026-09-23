@@ -226,6 +226,7 @@ int tiku_bench_queue_build(bench_t *st)
         suite_t *s = &st->suites[i];
         if (!tiku_bench_suite_supported(st, s)) continue;
         job_t *job = &st->jobs[st->njob]; job->suite = i; job->only[0] = '\0';
+        job->destructive = 0;
         snprintf(job->key, sizeof job->key, "%s", s->key);
         size_t used = 0;
         if (!s->selected) for (int j = s->first; j < s->first + s->count; j++) {
@@ -238,10 +239,18 @@ int tiku_bench_queue_build(bench_t *st)
             }
             if (used) job->only[used++] = ',';
             memcpy(job->only + used, l->id, n + 1); used += n;
+            if (!strcmp(l->kind, "destructive")) job->destructive = 1;
         }
         if (s->selected || used) st->njob++;
     }
     return st->njob > 0;
+}
+
+int tiku_bench_queue_destructive(const bench_t *st)
+{
+    int n = 0;
+    for (int i = 0; i < st->njob; i++) n += st->jobs[i].destructive;
+    return n;
 }
 
 /** A host-only queue must not disconnect a board, even if one is selected. */

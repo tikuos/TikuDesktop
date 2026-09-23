@@ -68,6 +68,13 @@ are shown expanded.</p>
 instead runs them as one <code>--only</code> argument. Selected suites
 run one after another in the order the catalogue lists them.</p>
 
+<p>A sub-test drawn in red is destructive: it may erase every file in
+<code>/data</code> on the board. A full sweep never includes one. When
+you select one yourself, <b>Run selected</b> asks about it on its own
+before the run's question, with <b>Cancel</b> as the default, and the
+runner is told to allow it for that run only; the next run asks again.
+Use a scratch board.</p>
+
 <p>A suite the chosen board does not support is drawn dim and cannot be
 checked. When a suite is highlighted the line under the list shows its
 description. When a sub-test is highlighted it shows the sub-test's

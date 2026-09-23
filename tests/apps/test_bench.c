@@ -71,7 +71,7 @@ static bench_t *start(void)
     bench_t *st = state;
     assert(st->loading);
     pump(st);
-    assert(st->metadata_ok && st->nsuite == 4 && st->nleaf == 4);
+    assert(st->metadata_ok && st->nsuite == 4 && st->nleaf == 5);
     assert(st->supported && !strcmp(st->target_name, device));
     assert(!strcmp(st->port, "/dev/fixture-only"));
     return st;
@@ -369,6 +369,52 @@ static void real_catalogue_test(void)
     puts("PASS: full native TikuBench registry import (read-only, no hardware)");
 }
 
+/** A destructive leaf: not in a full sweep, asked about on its own before
+ *  the run's question, and the flag given only for that run. */
+static void destructive_test(bench_t *st)
+{
+    command_t c;
+    int wipe = -1;
+    for (int i = 0; i < st->nleaf; i++)
+        if (!strcmp(st->leaves[i].id, "wipe")) wipe = i;
+    assert(wipe >= 0 && !strcmp(st->leaves[wipe].kind, "destructive"));
+    assert(tiku_bench_leaf_supported(st, &st->leaves[wipe], 0));
+    assert(!tiku_bench_leaf_supported(st, &st->leaves[wipe], 1));
+    tiku_bench_clear_selection(st); st->suites[1].selected = 1;
+    assert(tiku_bench_queue_build(st) && !tiku_bench_queue_destructive(st));
+    tiku_bench_clear_selection(st); st->leaves[wipe].selected = 1;
+    assert(tiku_bench_queue_build(st) && tiku_bench_queue_destructive(st) == 1);
+    assert(!strcmp(st->jobs[0].only, "wipe") && st->jobs[0].destructive);
+    assert(tiku_bench_command_build(st, &st->jobs[0], &c));
+    assert(!strcmp(arg_value(&c, "--only"), "wipe"));
+    for (int i = 0; i < c.argc; i++) assert(strcmp(c.argv[i], "--allow-destructive"));
+    /* Run: the warning first, Cancel the default; Return alone cancels. */
+    tiku_bench_action(st, RUN);
+    assert(st->confirm.open && st->confirm.tag == RUN_DESTRUCTIVE && !st->confirm.dflt);
+    tiku_event_t ev = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_RETURN};
+    tiku_bench_event(st, st->id, &ev);
+    assert(!st->confirm.open && !st->busy && !st->allow_destructive);
+    /* Allowed: the run's own question follows, and the flag is in argv. */
+    tiku_bench_action(st, RUN);
+    ev.key = TIKU_KEY_TAB; tiku_bench_event(st, st->id, &ev);
+    ev.key = TIKU_KEY_RETURN; tiku_bench_event(st, st->id, &ev);
+    assert(st->confirm.open && st->confirm.tag == RUN && st->allow_destructive);
+    assert(tiku_bench_command_build(st, &st->jobs[0], &c));
+    {
+        int found = 0;
+        for (int i = 0; i < c.argc; i++) found |= !strcmp(c.argv[i], "--allow-destructive");
+        assert(found);
+    }
+    ev.key = TIKU_KEY_RETURN; tiku_bench_event(st, st->id, &ev);  /* Cancel */
+    assert(!st->confirm.open && !st->busy);
+    /* The next run asks again: consent is never remembered. */
+    tiku_bench_action(st, RUN);
+    assert(st->confirm.open && st->confirm.tag == RUN_DESTRUCTIVE && !st->allow_destructive);
+    ev.key = TIKU_KEY_RETURN; tiku_bench_event(st, st->id, &ev);
+    tiku_bench_clear_selection(st);
+    puts("PASS: a destructive leaf is asked about on its own, for one run");
+}
+
 static void ui_test(bench_t *st)
 {
     tiku_tabs_select(&st->tabs, TAB_SUITES); tiku_bench_paint(st);
@@ -503,7 +549,8 @@ int main(void)
         !strstr(report_body, "<sensor&>") && releases == before_release);
     st->results[0] = saved;
     run_test(st, "normal", 0); run_test(st, "nonzero", 1); run_test(st, "empty", 1);
-    cancel_test(st); interactive_test(st); host_run_test(st); ui_test(st);
+    cancel_test(st); interactive_test(st); host_run_test(st); destructive_test(st);
+    ui_test(st);
     tiku_bench_stop(st);
     assert(windows == 1 && frames > 0);
     settings_test(sandbox);

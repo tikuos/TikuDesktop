@@ -34,6 +34,22 @@ void tiku_bench_publish(bench_t *st)
     st->services->menus(st->services->ctx, st->id, &m);
 }
 
+void tiku_bench_ask_run(bench_t *st)
+{
+    char question[512];
+    if (!tiku_bench_queue_needs_device(st)) snprintf(question, sizeof question,
+        "Run %d host test suite(s) on this computer? No device is needed or released. "
+        "Firmware, serial and board options are ignored. Local test binaries will be built.",
+        st->njob);
+    else snprintf(question, sizeof question,
+        "%d suite(s) on %s (%s), %s. Tests may reset the device or write storage. "
+        "The desktop will release its connection until the queue finishes. Continue?",
+        st->njob, st->target_name, st->profile,
+        st->flash ? "BUILD + FLASH replaces firmware" : "monitor existing firmware");
+    tiku_alert_open(&st->confirm, TIKU_ALERT_WARN, RUN, question, "Cancel|Run tests");
+    st->confirm.dflt = 0; st->confirm_button = -1;
+}
+
 int tiku_bench_action(bench_t *st, int command)
 {
     if (st->confirm.open) return 0;
@@ -84,18 +100,20 @@ int tiku_bench_action(bench_t *st, int command)
             snprintf(st->note, sizeof st->note, "Invalid run options: check baud, port and KEY=VALUE tokens.");
             tiku_dialog_focus(&st->dialog, F_BAUD); st->dialog.keyboard = 1;
         } else {
-            char question[512];
-            if (!tiku_bench_queue_needs_device(st)) snprintf(question, sizeof question,
-                "Run %d host test suite(s) on this computer? No device is needed or released. "
-                "Firmware, serial and board options are ignored. Local test binaries will be built.",
-                st->njob);
-            else snprintf(question, sizeof question,
-                "%d suite(s) on %s (%s), %s. Tests may reset the device or write storage. "
-                "The desktop will release its connection until the queue finishes. Continue?",
-                st->njob, st->target_name, st->profile,
-                st->flash ? "BUILD + FLASH replaces firmware" : "monitor existing firmware");
-            tiku_alert_open(&st->confirm, TIKU_ALERT_WARN, RUN, question, "Cancel|Run tests");
-            st->confirm.dflt = 0; st->confirm_button = -1;
+            /* Consent is per run: a destructive selection is asked about
+             * on its own, before the run's question, Cancel first. */
+            int destructive = tiku_bench_queue_destructive(st);
+            st->allow_destructive = 0;
+            if (destructive) {
+                char question[512];
+                snprintf(question, sizeof question,
+                    "%d selected test(s) may erase ALL files in /data on %s. "
+                    "Use a scratch board. Allow them for this run?",
+                    destructive, st->target_name);
+                tiku_alert_open(&st->confirm, TIKU_ALERT_WARN, RUN_DESTRUCTIVE,
+                                question, "Cancel|Allow and continue");
+                st->confirm.dflt = 0; st->confirm_button = -1;
+            } else tiku_bench_ask_run(st);
         }
     } else if (command == REFRESH) tiku_bench_metadata_start(st);
     else if (command == CLEAR) tiku_bench_clear_selection(st);
@@ -158,7 +176,14 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
             if (at == st->confirm_button) chosen = at;
             st->confirm_button = -1;
         }
-        if (chosen >= 0) { tiku_alert_reset(&st->confirm); if (chosen == 1) tiku_bench_run_confirmed(st); }
+        if (chosen >= 0) {
+            int tag = st->confirm.tag;
+            tiku_alert_reset(&st->confirm);
+            if (chosen == 1 && tag == RUN_DESTRUCTIVE) {
+                st->allow_destructive = 1;
+                tiku_bench_ask_run(st);
+            } else if (chosen == 1) tiku_bench_run_confirmed(st);
+        }
         st->dirty = 1; return 0;
     }
     tiku_bench_controls(st);

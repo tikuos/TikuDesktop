@@ -41,7 +41,8 @@ enum { TAB_SUITES, TAB_RESULTS, TAB_OUTPUT, TAB_CONSOLE,
        TAB_HISTORY, TAB_METRICS, TAB_NOTRUN, TAB_COUNT };
 enum { RUN = 1, STOP, REFRESH, SELECT_ALL, CLEAR, OPEN, TOGGLE, COPY_LOG,
        CLEAR_LOG, SEND, FLASH, LARGE, USB, PK, EPAPER, FOLLOW, OPEN_LOG,
-       FIND_SUITES, FOCUS_LIST, REPORT = 20, MONITOR = 21, TARGET = 30,
+       FIND_SUITES, FOCUS_LIST, REPORT = 20, MONITOR = 21, RUN_DESTRUCTIVE = 22,
+       TARGET = 30,
        PANEL = 32, PATTERN = 33,
        LIST = 31, F_FILTER = 40, F_BAUD, F_MAKE, F_FLAGS, F_INPUT };
 typedef struct {
@@ -69,7 +70,9 @@ typedef struct {
     long age;
 } past_t;
 typedef struct { char field[8][128]; } metric_t;
-typedef struct { int suite; char key[48], only[ONLY_MAX]; } job_t;
+/* A job: one suite, the leaves it is narrowed to, and whether any of
+ * them may erase the store, which needs the person's say-so. */
+typedef struct { int suite, destructive; char key[48], only[ONLY_MAX]; } job_t;
 typedef struct { char text[LINE_MAXIMUM]; int output; } logline_t;
 typedef struct {
     const tiku_app_services_t *services;
@@ -95,6 +98,7 @@ typedef struct {
     int refreshed;              /* the board list has been read once */
     int flash, large, usb, pk, epaper, supported, dirty;
     int busy, waiting, released, reclaiming, cancelled, closing;
+    int allow_destructive;      /* said for this run, never remembered */
     int loading, metadata_ok, metadata_bad, in_build, batch_failed, no_tests;
     int child_fd, input_fd, eof, reaped, exit_status;
     pid_t child;
@@ -142,6 +146,8 @@ void tiku_bench_notrun_build(bench_t *st);
 void tiku_bench_toggle_entry(bench_t *st, int row, int expand);
 int tiku_bench_queue_build(bench_t *st);
 int tiku_bench_queue_needs_device(const bench_t *st);
+/** How many selected leaves may erase the store: the ones a run asks about. */
+int tiku_bench_queue_destructive(const bench_t *st);
 
 /* Device. */
 const board_t *tiku_bench_board_info(const bench_t *st);
@@ -158,6 +164,8 @@ void tiku_bench_run_next(bench_t *st);
 void tiku_bench_process_poll(bench_t *st);
 void tiku_bench_stop_run(bench_t *st);
 void tiku_bench_run_confirmed(bench_t *st);
+/** The run's question: the queue, the device and the mode, Cancel first. */
+void tiku_bench_ask_run(bench_t *st);
 
 /* Results. */
 void tiku_bench_log_line(bench_t *st, const char *text, int output);

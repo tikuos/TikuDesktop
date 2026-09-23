@@ -41,6 +41,10 @@ int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c)
         argument(c, "--baud"); argument(c, st->field[1].text);
     }
     if (*job->only) { argument(c, "--only"); argument(c, job->only); }
+    /* The runner refuses a destructive leaf without this, and it is
+     * given only for the run the person just agreed to. */
+    if (job->destructive && st->allow_destructive)
+        argument(c, "--allow-destructive");
     if (st->large) { argument(c, "--make-var"); argument(c, "MEMORY_MODEL=large"); }
     char vars[TIKU_FIELD_MAX]; snprintf(vars, sizeof vars, "%s", st->field[2].text);
     char *save = NULL;

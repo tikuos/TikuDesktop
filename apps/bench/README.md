@@ -31,7 +31,9 @@ copied into the desktop. Set `TIKU_BENCH` to another checkout if needed.
    choose Run tests. The default button is Cancel. Tab switches the confirmation
    button before Return; a pointer action requires a press and release.
 
-All (Select visible in the menu) selects the displayed suites in full, not just
+A destructive sub-test (drawn in red, never in a full sweep) is asked about on
+its own before the run's question, Cancel first, and `--allow-destructive` is
+given for that run only. All (Select visible in the menu) selects the displayed suites in full, not just
 matching children. None removes all selections, including filtered ones. Profile changes clear
 selection. Unsupported tests remain visible but disabled with an exclusion
 reason below the list. Dedicated/diagnostic leaves are labelled and are never
