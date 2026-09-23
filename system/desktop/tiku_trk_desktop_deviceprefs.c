@@ -83,6 +83,7 @@ typedef struct {
     int pending, pending_erase;
     unsigned long pending_op, pending_value;
     char store[16], held[16], phase[16], boot[48], last[48];
+    char identity[33];         /* the record's incarnation a request quotes */
 } dp_tier_t;
 /* Each memory by estate, from /sys/mem/sram_map and nvm_map: the rows a
  * person reads as "where the memory goes", with a bar in the group. */
@@ -702,6 +703,9 @@ static void dp_layout_read(tiku_backend_t *b, dp_tier_t *l)
         l->revision = strtoul(v, NULL, 10);
     l->current = dp_kv(current, "nvm.tier", v, sizeof v)
                  ? strtoul(v, NULL, 10) : l->dflt;
+    if (!dp_kv(current, "identity", l->identity, sizeof l->identity) ||
+        !strcmp(l->identity, "none"))
+        l->identity[0] = '\0';
     dp_read_text(b, "/sys/mem/layout/pending", pending, sizeof pending);
     if (dp_kv(pending, "op", v, sizeof v)) {
         l->pending = 1;
@@ -718,7 +722,8 @@ static void dp_layout_read(tiku_backend_t *b, dp_tier_t *l)
     (void)dp_kv(status, "boot", l->boot, sizeof l->boot);
     (void)dp_kv(status, "last", l->last, sizeof l->last);
     l->have = 1;
-    l->writable = b->ops->stat(b, "/sys/mem/layout/stage", &m) == 0 &&
+    l->writable = l->identity[0] &&
+                  b->ops->stat(b, "/sys/mem/layout/stage", &m) == 0 &&
                   tiku_model_is_writable(&m);
 }
 
@@ -728,7 +733,10 @@ static void dp_layout_request(const dp_tier_t *l, unsigned long bytes,
                               unsigned long op, int erase, char *out,
                               size_t cap)
 {
-    snprintf(out, cap, "nvm.tier=%lu op=%lu expect=%lu:%lu%s", bytes, op,
+    /* The identity is the record's incarnation: a request from before a
+     * recovery cannot replay after it, since the counters reset. */
+    snprintf(out, cap, "nvm.tier=%lu op=%lu identity=%s expect=%lu:%lu%s",
+             bytes, op, l->identity[0] ? l->identity : "none",
              l->generation, l->revision, erase ? " method=erase" : "");
 }
 
@@ -1484,6 +1492,10 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
                      "(operation %lu%s). Restart the device to apply it, "
                      "or cancel it here.", next, p->layout.pending_op,
                      p->layout.pending_erase ? ", erasing /data" : "");
+        } else if (!strcmp(p->layout.store, "held")) {
+            snprintf(help, sizeof help, "The store is held (%s). Recover "
+                     "its ownership from the device's shell with the layout "
+                     "command before changing the tier.", p->layout.held);
         } else {
             snprintf(help, sizeof help, "%lu to %lu KB in steps of %lu KB. "
                      "Applied at the next restart; the store moves with "

@@ -64,6 +64,7 @@ static const char *fact_value(const char *path)
  * hold files, which refuses a move without the erase. */
 static unsigned long layout_current = 32768, layout_pending_value;
 static unsigned long layout_pending_op, layout_gen = 3, layout_rev = 5;
+static const char layout_identity[] = "00112233445566778899aabbccddeeff";
 static int layout_pending, layout_pending_erase, layout_files = 1;
 static char layout_last_request[128];
 
@@ -73,8 +74,9 @@ static int layout_read(const char *path, char *out, size_t max)
         return snprintf(out, max, "nvm.tier\tstore\t4096\t352256\t4096\t32768\n"
                         "methods\terase\n");
     if (!strcmp(path, "/sys/mem/layout/current"))
-        return snprintf(out, max, "generation\t%lu\nrevision\t%lu\nnvm.tier\t%lu\n",
-                        layout_gen, layout_rev, layout_current);
+        return snprintf(out, max, "generation\t%lu\nrevision\t%lu\n"
+                        "identity\t%s\nnvm.tier\t%lu\n",
+                        layout_gen, layout_rev, layout_identity, layout_current);
     if (!strcmp(path, "/sys/mem/layout/pending"))
         return layout_pending
             ? snprintf(out, max, "op\t%lu\nmethod\t%s\nnvm.tier\t%lu\n",
@@ -94,9 +96,13 @@ static int layout_write(const char *path, const char *in, size_t n,
     snprintf(text, sizeof text, "%.*s", (int)n, in);
     if (!strcmp(path, "/sys/mem/layout/stage")) {
         unsigned long bytes = 0, op = 0, g = 0, r = 0;
+        char id[64] = "";
         snprintf(layout_last_request, sizeof layout_last_request, "%s", text);
-        if (sscanf(text, "nvm.tier=%lu op=%lu expect=%lu:%lu", &bytes, &op, &g,
-                   &r) != 4) { snprintf(err, max, "cannot write (EINVAL)"); return -1; }
+        if (sscanf(text, "nvm.tier=%lu op=%lu identity=%63s expect=%lu:%lu",
+                   &bytes, &op, id, &g, &r) != 5)
+            { snprintf(err, max, "cannot write (EINVAL)"); return -1; }
+        if (strcmp(id, layout_identity))
+            { snprintf(err, max, "cannot write (ECONFLICT)"); return -1; }
         if (g != layout_gen || r != layout_rev)
             { snprintf(err, max, "cannot write (ESTALE)"); return -1; }
         if (layout_pending) { snprintf(err, max, "cannot write (EBUSY)"); return -1; }
@@ -331,7 +337,8 @@ int main(void)
         assert(j.values[DP_TIER].present && j.values[DP_TIER].writable);
         seen = j.layout;
         dp_layout_request(&seen, 16384, 77, 0, request, sizeof request);
-        assert(!strcmp(request, "nvm.tier=16384 op=77 expect=3:5"));
+        assert(!strcmp(request, "nvm.tier=16384 op=77 "
+                       "identity=00112233445566778899aabbccddeeff expect=3:5"));
         j.write_at = DP_TIER;
         snprintf(j.input, sizeof j.input, "%s", request);
         before = writes;
@@ -340,7 +347,9 @@ int main(void)
         assert(strstr(j.status, "Confirm the erase"));
         j.need_erase = 0;
         dp_layout_request(&seen, 16384, 77, 1, request, sizeof request);
-        assert(!strcmp(request, "nvm.tier=16384 op=77 expect=3:5 method=erase"));
+        assert(!strcmp(request, "nvm.tier=16384 op=77 "
+                       "identity=00112233445566778899aabbccddeeff expect=3:5 "
+                       "method=erase"));
         j.write_at = DP_TIER;
         snprintf(j.input, sizeof j.input, "%s", request);
         dp_run(&j);
@@ -359,7 +368,8 @@ int main(void)
         dp_run(&j);
         assert(!j.layout.pending && strstr(j.status, "cancelled"));
         j.write_at = DP_TIER;                       /* a stale expectation */
-        snprintf(j.input, sizeof j.input, "nvm.tier=16384 op=79 expect=3:5");
+        snprintf(j.input, sizeof j.input, "nvm.tier=16384 op=79 identity=%s "
+                 "expect=3:5", layout_identity);
         dp_run(&j);
         assert(strstr(j.status, "changed under you"));
         j.write_at = DP_READ; dp_run(&j);
