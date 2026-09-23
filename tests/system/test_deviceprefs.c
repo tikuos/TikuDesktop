@@ -20,7 +20,8 @@ static tiku_rect_t dp_setting_row(struct desktop_deviceprefs *p,
 }
 
 static char vals[DP_COUNT][96] = {"Desk sensor", "128000000",
-                                  "1789041600", "auto", "0", "WFI", "up", ""};
+                                  "1789041600", "auto", "0", "WFI", "up", "",
+                                  ""};
 static int writes, readonly, missing, reject, mismatch;
 static int clock_supported;
 static int config_supported, config_fault;
@@ -59,6 +60,64 @@ static const char *fact_value(const char *path)
     return NULL;
 }
 
+/* The layout service: one knob, a staged request, and a store that may
+ * hold files, which refuses a move without the erase. */
+static unsigned long layout_current = 32768, layout_pending_value;
+static unsigned long layout_pending_op, layout_gen = 3, layout_rev = 5;
+static int layout_pending, layout_pending_erase, layout_files = 1;
+static char layout_last_request[128];
+
+static int layout_read(const char *path, char *out, size_t max)
+{
+    if (!strcmp(path, "/sys/mem/layout/caps"))
+        return snprintf(out, max, "nvm.tier\tstore\t4096\t352256\t4096\t32768\n"
+                        "methods\terase\n");
+    if (!strcmp(path, "/sys/mem/layout/current"))
+        return snprintf(out, max, "generation\t%lu\nrevision\t%lu\nnvm.tier\t%lu\n",
+                        layout_gen, layout_rev, layout_current);
+    if (!strcmp(path, "/sys/mem/layout/pending"))
+        return layout_pending
+            ? snprintf(out, max, "op\t%lu\nmethod\t%s\nnvm.tier\t%lu\n",
+                       layout_pending_op, layout_pending_erase ? "erase" : "none",
+                       layout_pending_value)
+            : snprintf(out, max, "none\n");
+    if (!strcmp(path, "/sys/mem/layout/status"))
+        return snprintf(out, max, "store\tready\nheld\tnone\nrecord\tvalid\n"
+                        "tier\t%lu\ncorrected\t0\nphase\tnone\n", layout_current);
+    return -1;
+}
+
+static int layout_write(const char *path, const char *in, size_t n,
+                        char *err, size_t max)
+{
+    char text[128];
+    snprintf(text, sizeof text, "%.*s", (int)n, in);
+    if (!strcmp(path, "/sys/mem/layout/stage")) {
+        unsigned long bytes = 0, op = 0, g = 0, r = 0;
+        snprintf(layout_last_request, sizeof layout_last_request, "%s", text);
+        if (sscanf(text, "nvm.tier=%lu op=%lu expect=%lu:%lu", &bytes, &op, &g,
+                   &r) != 4) { snprintf(err, max, "cannot write (EINVAL)"); return -1; }
+        if (g != layout_gen || r != layout_rev)
+            { snprintf(err, max, "cannot write (ESTALE)"); return -1; }
+        if (layout_pending) { snprintf(err, max, "cannot write (EBUSY)"); return -1; }
+        if (bytes < 4096 || bytes > 352256 || bytes % 4096)
+            { snprintf(err, max, "cannot write (ERANGE)"); return -1; }
+        if (layout_files && !strstr(text, "method=erase"))
+            { snprintf(err, max, "cannot write (ECONFLICT)"); return -1; }
+        layout_pending = 1; layout_pending_op = op; layout_pending_value = bytes;
+        layout_pending_erase = strstr(text, "method=erase") != NULL;
+        layout_rev++;
+        return 0;
+    }
+    if (!strcmp(path, "/sys/mem/layout/cancel")) {
+        if (!layout_pending || strtoul(text, NULL, 10) != layout_pending_op)
+            { snprintf(err, max, "cannot write (ENOENT)"); return -1; }
+        layout_pending = 0; layout_rev++;
+        return 0;
+    }
+    return 1;   /* not the service's */
+}
+
 static int which(const char *path)
 {
     if (clock_supported && !strcmp(path, "/sys/cpu/freq_target"))
@@ -78,6 +137,11 @@ static int mock_stat(tiku_backend_t *b, const char *path, tiku_model_t *m)
     }
     if (i < 0 && fact_value(path) != NULL) {
         memset(m, 0, sizeof *m); m->facts.perm = TIKU_P_READ;
+        return 0;
+    }
+    if (!strncmp(path, "/sys/mem/layout/", 16)) {
+        memset(m, 0, sizeof *m);
+        m->facts.perm = TIKU_P_READ | (readonly ? 0 : TIKU_P_WRITE);
         return 0;
     }
     if (i < 0 || (missing && i == DP_RADIO)) return -1;
@@ -114,6 +178,7 @@ static int mock_read(tiku_backend_t *b, const char *path, void *out, size_t max)
     }
     if (i < 0 && fact_value(path) != NULL)
         return snprintf(out, max, "%s\n", fact_value(path));
+    if (!strncmp(path, "/sys/mem/layout/", 16)) return layout_read(path, out, max);
     if (i < 0) return -1;
     return snprintf(out, max, "%s\n", vals[i]);
 }
@@ -123,6 +188,10 @@ static int mock_write(tiku_backend_t *b, const char *path, const void *in,
 {
     (void)b;
     writes++;
+    if (!strncmp(path, "/sys/mem/layout/", 16)) {
+        int rc = layout_write(path, in, n, err, max);
+        if (rc <= 0) return rc;
+    }
     if (config_supported && !strcmp(path, "/sys/config/provision")) {
         assert(config_unenrolled && n == 32);
         snprintf(config_epoch, sizeof config_epoch, "%.*s", (int)n, (const char *)in);
@@ -250,6 +319,51 @@ int main(void)
     clock_rates = "64000000 128000000";
     snprintf(clock_target, sizeof clock_target, "64000000");
     dp_run(&j);
+    /* The layout service through the job: the tier read with its bounds,
+     * a stage refused while the store holds files, confirmed with the
+     * erase, then cancelled; a stale expectation refused. */
+    {
+        char request[128];
+        dp_tier_t seen;
+        assert(j.layout.have && j.layout.current == 32768 &&
+               j.layout.floor == 4096 && j.layout.ceiling == 352256 &&
+               j.layout.step == 4096 && j.layout.erase_ok && !j.layout.pending);
+        assert(j.values[DP_TIER].present && j.values[DP_TIER].writable);
+        seen = j.layout;
+        dp_layout_request(&seen, 16384, 77, 0, request, sizeof request);
+        assert(!strcmp(request, "nvm.tier=16384 op=77 expect=3:5"));
+        j.write_at = DP_TIER;
+        snprintf(j.input, sizeof j.input, "%s", request);
+        before = writes;
+        dp_run(&j);
+        assert(writes == before + 1 && j.need_erase && !j.layout.pending);
+        assert(strstr(j.status, "Confirm the erase"));
+        j.need_erase = 0;
+        dp_layout_request(&seen, 16384, 77, 1, request, sizeof request);
+        assert(!strcmp(request, "nvm.tier=16384 op=77 expect=3:5 method=erase"));
+        j.write_at = DP_TIER;
+        snprintf(j.input, sizeof j.input, "%s", request);
+        dp_run(&j);
+        assert(!j.need_erase && j.layout.pending && j.layout.pending_op == 77 &&
+               j.layout.pending_value == 16384 && j.layout.pending_erase);
+        assert(!strcmp(layout_last_request, request));
+        assert(strstr(j.status, "Staged for the next restart"));
+        assert(strstr(j.values[DP_TIER].value, "32768"));
+        j.write_at = DP_TIER;                       /* a second stage: busy */
+        dp_layout_request(&j.layout, 8192, 78, 0, request, sizeof request);
+        snprintf(j.input, sizeof j.input, "%s", request);
+        dp_run(&j);
+        assert(strstr(j.status, "already staged"));
+        j.write_at = DP_CANCEL_TIER;
+        snprintf(j.input, sizeof j.input, "%lu", j.layout.pending_op);
+        dp_run(&j);
+        assert(!j.layout.pending && strstr(j.status, "cancelled"));
+        j.write_at = DP_TIER;                       /* a stale expectation */
+        snprintf(j.input, sizeof j.input, "nvm.tier=16384 op=79 expect=3:5");
+        dp_run(&j);
+        assert(strstr(j.status, "changed under you"));
+        j.write_at = DP_READ; dp_run(&j);
+    }
     desktop_t *app = calloc(1, sizeof *app);
     /* Keep the displayed revision across the asynchronous job. A concurrent
      * writer must conflict even when the host refreshes availability first. */
@@ -336,6 +450,7 @@ int main(void)
     memcpy(p.fact_values, j.fact_values, sizeof p.fact_values);
     memcpy(p.sram_map, j.sram_map, sizeof p.sram_map);
     memcpy(p.nvm_map, j.nvm_map, sizeof p.nvm_map);
+    p.layout = j.layout;
     p.clock = j.clock;
     /* The section on show: its heading first, then its settings and the
      * facts the device answered, in bytes and spans a person reads; the
@@ -368,8 +483,25 @@ int main(void)
         estates = 0;
         for (int i = 0; i < p.nrow; i++) estates += p.rows[i].estate >= 0;
         assert(estates == 5 && p.estate_total[1] == 1572864UL);
-        assert(p.fact >= 0);     /* no eMMC here: its switch is not listed */
+        /* No eMMC here, so its switch is not listed; the tier is, and it
+         * is the section's setting.  Its editor takes KB and refuses a
+         * size off the step, out of bounds, or unchanged. */
+        assert(p.setting == DP_TIER && p.fact < 0);
         for (int i = 0; i < p.nrow; i++) assert(p.rows[i].setting != DP_EMMC);
+        dp_setting_text(&p, DP_TIER, text, sizeof text);
+        assert(!strcmp(text, "32.0 KB"));
+        dp_edit(&p);
+        assert(!strcmp(p.field.text, "32"));
+        tiku_field_start(&p.field, "33"); dp_apply(&p);
+        assert(strstr(p.status, "steps of 4 KB") && !p.busy);
+        tiku_field_start(&p.field, "400"); dp_apply(&p);
+        assert(strstr(p.status, "Use 4 to 344 KB") && !p.busy);
+        tiku_field_start(&p.field, "32"); dp_apply(&p);
+        assert(strstr(p.status, "already") && !p.busy);
+        p.layout.pending = 1; p.layout.pending_value = 16384;
+        dp_setting_text(&p, DP_TIER, text, sizeof text);
+        assert(!strcmp(text, "32.0 KB now / 16.0 KB at restart"));
+        p.layout.pending = 0;
         dp_fact_text(FMT_BYTES, "262144", text, sizeof text);
         assert(!strcmp(text, "256.0 KB"));
         dp_fact_text(FMT_SECONDS, "93784", text, sizeof text);
@@ -433,6 +565,27 @@ int main(void)
         tiku_surface_free(s);
     }
     tiku_theme_set(NULL);
+    {
+        /* Storage with the tier chosen: the KB field and Save for restart;
+         * then the same with a change staged, the cancel and the pill. */
+        struct desktop_deviceprefs preview = p;
+        dp_layout_t dl = dp_layout((tiku_rect_t){0,0,820,0}, DP_TIER);
+        int height = dl.done.y + dl.done.h + 18;
+        tiku_surface_t *s = tiku_surface_new(820, height, TIKU_C_PANEL);
+        preview.choice.open = 0;
+        dp_show_section(&preview, SEC_STORAGE);
+        dp_edit(&preview);
+        dp_draw(NULL, s, (tiku_rect_t){0,0,820,height}, &preview);
+        assert(tiku_surface_png(s, "/tmp/tiku-deviceprefs-tier.png") == 0);
+        preview.layout.pending = 1;
+        preview.layout.pending_value = 16384;
+        preview.layout.pending_op = 77;
+        preview.layout.pending_erase = 1;
+        dp_edit(&preview);
+        dp_draw(NULL, s, (tiku_rect_t){0,0,820,height}, &preview);
+        assert(tiku_surface_png(s, "/tmp/tiku-deviceprefs-tier-staged.png") == 0);
+        tiku_surface_free(s);
+    }
     {
         /* Memory, with the stack pool chosen: the bar under its figures. */
         struct desktop_deviceprefs preview = p;

@@ -145,10 +145,18 @@ with a colour swatch are the estates each memory is carved into, from the
 device's own maps: static data, the stack pool, the tier arena, the code
 window, the module slot, the store and the persist home, each with its
 size and what is in use. Choose one and the group draws the whole memory
-as a bar with that estate outlined. These are decided by the firmware's
-linker and cannot be changed from here; the two switches that can be
-changed, <b>External PSRAM</b> and <b>eMMC card</b>, appear on a board
-that has the hardware, Up bringing it online and Down powering it off. Counts of bytes and spans of time are shown as
+as a bar with that estate outlined. Most are decided by the firmware's
+linker and cannot be changed from here. The one that can, on firmware
+with the layout service, is the <b>NVM tier</b> under Storage: type its
+size in kilobytes, within the floor, the ceiling and the step the help
+line quotes, and <b>Save for restart</b> stages it. The device applies
+it at its next restart, and the store moves with the tier. When the
+store holds files the window asks first, because staging the move
+erases <b>/data</b>; <b>Erase and stage</b> confirms it. While a change
+is staged the row says both sizes, the heading wears a pill, and the
+button becomes <b>Cancel staged</b>. The two switches, <b>External
+PSRAM</b> and <b>eMMC card</b>, appear on a board that has the hardware,
+Up bringing it online and Down powering it off. Counts of bytes and spans of time are shown as
 a person reads them. The window opens on <b>Processor</b> with <b>CPU
 clock</b> chosen, grows by its bottom-right corner so a section shows
 more rows, and with nothing connected it says <b>No devices
@@ -175,6 +183,9 @@ device and not changed from here.</td></tr>
 Down. Down is refused while tier allocations live in it.</td></tr>
 <tr><td>eMMC card</td><td>Storage</td><td>/sys/emmc/state</td><td>Up or
 Down.</td></tr>
+<tr><td>NVM tier</td><td>Storage</td><td>/sys/mem/layout</td><td>A size in
+KB within the knob's bounds, staged for the next restart; the store
+moves with it, and the erase of /data is confirmed first.</td></tr>
 </table>
 
 <p>The button beside the editor is <b>Apply</b>, named <b>Sync now</b> for

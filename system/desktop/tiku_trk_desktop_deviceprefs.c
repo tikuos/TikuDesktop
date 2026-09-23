@@ -22,11 +22,12 @@
 #include <time.h>
 
 enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_PSRAM,
-       DP_EMMC, DP_COUNT };
+       DP_EMMC, DP_TIER, DP_COUNT };
 enum { DP_DEVICE = 10, DP_EDIT = 50,
        DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET,
        DP_SECTION = 70, DP_ROW = 100 };
-enum { DP_READ = -1, DP_ENROLL = -2, DP_RETRY = -3, DP_DISCARD = -4 };
+enum { DP_READ = -1, DP_ENROLL = -2, DP_RETRY = -3, DP_DISCARD = -4,
+       DP_CANCEL_TIER = -5 };
 /* The outline's sections, in the order they are shown.  A setting and a
  * fact each belong to one; a section with nothing on this firmware says
  * so under its heading rather than vanishing. */
@@ -68,8 +69,21 @@ static const struct {
       "refuses while allocations are live.", 1, SEC_MEMORY },
     { "eMMC card", "/sys/emmc/state",
       "Up powers the card and mounts it; Down powers it off.", 1,
-      SEC_STORAGE }
+      SEC_STORAGE },
+    { "NVM tier", "/sys/mem/layout/current",
+      "How much of the non-volatile region the tier takes; the store has "
+      "the rest. Applied at the next restart.", 1, SEC_STORAGE }
 };
+/* The layout service, as /sys/mem/layout reports it: the one knob's
+ * bounds and value, what is staged, and how the store stands. */
+typedef struct {
+    int have, writable, erase_ok;
+    unsigned long floor, ceiling, step, dflt, current;
+    unsigned long generation, revision;
+    int pending, pending_erase;
+    unsigned long pending_op, pending_value;
+    char store[16], held[16], phase[16], boot[48], last[48];
+} dp_tier_t;
 /* Each memory by estate, from /sys/mem/sram_map and nvm_map: the rows a
  * person reads as "where the memory goes", with a bar in the group. */
 typedef struct {
@@ -180,6 +194,8 @@ struct desktop_deviceprefs {
     unsigned long estate_total[2];     /* the SRAM bank and the NVM */
     dp_value_t values[DP_COUNT];
     dp_value_t fact_values[DP_FACTS];
+    dp_tier_t layout;
+    int erase;                 /* the next tier stage may erase /data */
     dp_clock_t clock;
     dp_row_t rows[DP_ROWS];
     int nrow;
@@ -202,11 +218,12 @@ typedef struct {
     dp_value_t values[DP_COUNT];
     dp_value_t fact_values[DP_FACTS];
     char sram_map[640], nvm_map[640];
+    dp_tier_t layout;
     dp_clock_t clock;
     tiku_config_snapshot_t config[2];
     tiku_config_pending_t pending;
     char input[96], status[192];
-    int write_at, completed, can_enroll;
+    int write_at, completed, can_enroll, need_erase;
 } dp_job_t;
 
 /** @brief Font-scaled row shared by paint and hit testing. */
@@ -234,8 +251,9 @@ static dp_layout_t dp_layout(tiku_rect_t c, int setting)
     dp_layout_t l;
     int row = dp_row(), fh = tiku_font_plain()->height;
     int button = tiku_ui_button_h();
-    int bw = tiku_ui_button_w(setting == DP_CPU ? "Save for restart" :
-                             setting == DP_TIME ? "Sync now" : "Apply", 88);
+    int bw = tiku_ui_button_w(setting == DP_CPU || setting == DP_TIER
+                                  ? "Save for restart" :
+                              setting == DP_TIME ? "Sync now" : "Apply", 88);
     int left = 232 + (fh - 15) * 3;
     int group_h = button + 3 * (fh + 2) + 44;
     int recovery_h = 2 * (fh + 2) + button + 34;
@@ -462,7 +480,7 @@ static void dp_outline_build(struct desktop_deviceprefs *p)
     for (i = 0; i < DP_COUNT; i++) {
         /* A switch for hardware the board has not got is not offered;
          * the six settings every board answers stay, "Unavailable" said. */
-        int hardware = i == DP_PSRAM || i == DP_EMMC;
+        int hardware = i == DP_PSRAM || i == DP_EMMC || i == DP_TIER;
         if (settings[i].section == sec && (!hardware || p->values[i].present))
             p->rows[p->nrow++] = (dp_row_t){sec, i, -1, 0, -1};
     }
@@ -586,6 +604,12 @@ static void dp_edit(struct desktop_deviceprefs *p)
     dp_outline_build(p);
     tiku_field_start(&p->field, desired ? desired : p->setting == DP_CPU ?
                      p->clock.target : p->values[p->setting].value);
+    if (p->setting == DP_TIER) {
+        char kb[24];
+        snprintf(kb, sizeof kb, "%lu", (p->layout.pending
+                 ? p->layout.pending_value : p->layout.current) / 1024UL);
+        tiku_field_start(&p->field, kb);
+    }
     tiku_field_deny(&p->field, "\r\n\t/");
     if (p->setting == DP_CPU) {
         for (int i = 0; i < p->clock.count; i++) {
@@ -633,6 +657,81 @@ static void dp_read_text(tiku_backend_t *b, const char *path, char *out,
     out[n] = '\0';
 }
 
+/** @brief One "key\tvalue" line's value, or NULL, from a text of lines. */
+static const char *dp_kv(const char *text, const char *key, char *out,
+                         size_t cap)
+{
+    size_t klen = strlen(key);
+    const char *p = text;
+    while (*p) {
+        const char *nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        if (len > klen + 1 && !strncmp(p, key, klen) && p[klen] == '\t') {
+            size_t n = len - klen - 1;
+            if (n >= cap) n = cap - 1;
+            memcpy(out, p + klen + 1, n);
+            out[n] = '\0';
+            return out;
+        }
+        if (!nl) break;
+        p = nl + 1;
+    }
+    return NULL;
+}
+
+/** @brief Read /sys/mem/layout; a part without the service leaves it empty. */
+static void dp_layout_read(tiku_backend_t *b, dp_tier_t *l)
+{
+    char caps[256], current[128], pending[128], status[256], v[64];
+    tiku_model_t m;
+    memset(l, 0, sizeof *l);
+    dp_read_text(b, "/sys/mem/layout/caps", caps, sizeof caps);
+    if (!caps[0]) return;
+    /* caps: name, effect, floor, ceiling, step, default; one line a knob. */
+    {
+        const char *line = strstr(caps, "nvm.tier\t");
+        if (line == NULL) return;
+        if (sscanf(line, "nvm.tier\t%*s\t%lu\t%lu\t%lu\t%lu", &l->floor,
+                   &l->ceiling, &l->step, &l->dflt) != 4) return;
+    }
+    l->erase_ok = strstr(caps, "methods\terase") != NULL;
+    dp_read_text(b, "/sys/mem/layout/current", current, sizeof current);
+    if (dp_kv(current, "generation", v, sizeof v))
+        l->generation = strtoul(v, NULL, 10);
+    if (dp_kv(current, "revision", v, sizeof v))
+        l->revision = strtoul(v, NULL, 10);
+    l->current = dp_kv(current, "nvm.tier", v, sizeof v)
+                 ? strtoul(v, NULL, 10) : l->dflt;
+    dp_read_text(b, "/sys/mem/layout/pending", pending, sizeof pending);
+    if (dp_kv(pending, "op", v, sizeof v)) {
+        l->pending = 1;
+        l->pending_op = strtoul(v, NULL, 10);
+        if (dp_kv(pending, "method", v, sizeof v))
+            l->pending_erase = !strcmp(v, "erase");
+        if (dp_kv(pending, "nvm.tier", v, sizeof v))
+            l->pending_value = strtoul(v, NULL, 10);
+    }
+    dp_read_text(b, "/sys/mem/layout/status", status, sizeof status);
+    (void)dp_kv(status, "store", l->store, sizeof l->store);
+    (void)dp_kv(status, "held", l->held, sizeof l->held);
+    (void)dp_kv(status, "phase", l->phase, sizeof l->phase);
+    (void)dp_kv(status, "boot", l->boot, sizeof l->boot);
+    (void)dp_kv(status, "last", l->last, sizeof l->last);
+    l->have = 1;
+    l->writable = b->ops->stat(b, "/sys/mem/layout/stage", &m) == 0 &&
+                  tiku_model_is_writable(&m);
+}
+
+/** @brief The request the stage file takes: the knob, an id, the state
+ *         it expects, and the erase when the person confirmed it. */
+static void dp_layout_request(const dp_tier_t *l, unsigned long bytes,
+                              unsigned long op, int erase, char *out,
+                              size_t cap)
+{
+    snprintf(out, cap, "nvm.tier=%lu op=%lu expect=%lu:%lu%s", bytes, op,
+             l->generation, l->revision, erase ? " method=erase" : "");
+}
+
 /** @brief Discover clock controls; older firmware remains read-only. */
 static void dp_clock_read(tiku_backend_t *b, dp_clock_t *clock)
 {
@@ -663,6 +762,43 @@ static void dp_clock_read(tiku_backend_t *b, dp_clock_t *clock)
         tiku_model_is_writable(&m);
 }
 
+/**
+ * @brief On the worker: stage a tier size for the next restart, or cancel
+ *        the staged one.  The service's refusals say why; a store that
+ *        would lose files asks for the erase rather than being written.
+ */
+static void dp_run_tier(dp_job_t *j)
+{
+    const char *path = j->write_at == DP_TIER ? "/sys/mem/layout/stage"
+                                              : "/sys/mem/layout/cancel";
+    char err[128] = "";
+    int rc = j->backend->ops->write(j->backend, path, j->input,
+                                    strlen(j->input), err, sizeof err);
+    if (rc == 0) {
+        snprintf(j->status, sizeof j->status, "%s",
+                 j->write_at == DP_TIER
+                 ? "Staged for the next restart. Restart the device to "
+                   "move the tier; the store moves with it."
+                 : "The staged change is cancelled.");
+    } else if (strstr(err, "ECONFLICT") && j->write_at == DP_TIER &&
+               !strstr(j->input, "method=erase")) {
+        j->need_erase = 1;
+        snprintf(j->status, sizeof j->status,
+                 "The store holds files that moving the tier would "
+                 "erase. Confirm the erase below to stage it anyway.");
+    } else {
+        snprintf(j->status, sizeof j->status, "Could not stage: %s",
+                 strstr(err, "ESTALE") ? "the layout changed under you; "
+                                         "refresh and try again." :
+                 strstr(err, "ERANGE") ? "outside the tier's bounds or "
+                                         "off its step." :
+                 strstr(err, "EBUSY") ? "a change is already staged; "
+                                        "cancel it first." :
+                 err[0] ? err : "device unavailable or value rejected");
+    }
+    j->write_at = DP_READ;              /* the readback that follows is a read */
+}
+
 /** @brief On a worker: validate permissions, write once, then read back. */
 static void dp_run(void *ctx)
 {
@@ -687,6 +823,10 @@ static void dp_run(void *ctx)
             rc = tiku_config_outbox_forget(directory, j->backend,
                 &j->pending, j->status, sizeof j->status);
         (void)rc;
+    }
+    if ((j->write_at == DP_TIER || j->write_at == DP_CANCEL_TIER) &&
+        !tiku_work_cancelled(j)) {
+        dp_run_tier(j);
     }
     if (j->write_at >= 0 && !tiku_work_cancelled(j)) {
         tiku_model_t m;
@@ -778,6 +918,12 @@ static void dp_run(void *ctx)
                      sizeof j->sram_map);
         dp_read_text(j->backend, "/sys/mem/nvm_map", j->nvm_map,
                      sizeof j->nvm_map);
+        dp_layout_read(j->backend, &j->layout);
+        /* The tier row is the service's, not its file's first line. */
+        j->values[DP_TIER].present = j->layout.have;
+        j->values[DP_TIER].writable = j->layout.have && j->layout.writable;
+        snprintf(j->values[DP_TIER].value, sizeof j->values[DP_TIER].value,
+                 "%lu", j->layout.current);
     }
     if (!tiku_work_cancelled(j)) dp_clock_read(j->backend, &j->clock);
     if (j->config[1].mode == 1 && j->config[1].revision)
@@ -819,7 +965,7 @@ static void dp_run(void *ctx)
                 ? "Saved for next restart. Current clock is unchanged."
                 : "Applied and confirmed by device.");
         }
-    } else if (j->write_at == DP_READ) {
+    } else if (j->write_at == DP_READ && !j->status[0]) {
         snprintf(j->status, sizeof j->status, "%s", available
                  ? "Settings read from device."
                  : "Device unavailable or busy. Refresh to try again.");
@@ -847,11 +993,13 @@ static void dp_done(void *ctx)
     memcpy(p->fact_values, j->fact_values, sizeof p->fact_values);
     memcpy(p->sram_map, j->sram_map, sizeof p->sram_map);
     memcpy(p->nvm_map, j->nvm_map, sizeof p->nvm_map);
+    p->layout = j->layout;
     p->clock = j->clock;
     memcpy(p->config, j->config, sizeof p->config);
     p->pending = j->pending;
     p->can_enroll = j->can_enroll;
-    p->confirm = 0;
+    p->confirm = j->need_erase ? 3 : 0;
+    p->erase = 0;
     snprintf(p->status, sizeof p->status, "%s", j->status);
     if (!dp_section_available(p, p->section)) {
         /* The section on show has nothing on this board: the first one
@@ -928,6 +1076,15 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     if (write_at == DP_TIME) {
         snprintf(j->input, sizeof j->input, "%lu", (unsigned long)time(NULL));
     }
+    if (write_at == DP_TIER) {
+        unsigned long kb = strtoul(p->field.text, NULL, 10);
+        dp_layout_request(&p->layout, kb * 1024UL,
+                          ((unsigned long)time(NULL) & 0x3FFFFFFFUL) + 1UL,
+                          p->erase, j->input, sizeof j->input);
+    }
+    if (write_at == DP_CANCEL_TIER) {
+        snprintf(j->input, sizeof j->input, "%lu", p->layout.pending_op);
+    }
     work.run = dp_run;
     work.done = dp_done;
     work.free = dp_free;
@@ -942,7 +1099,9 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     p->refs++;
     p->busy = 1;
     snprintf(p->status, sizeof p->status, "%s",
-             write_at >= 0 ? "Applying to device…"
+             write_at == DP_TIER ? "Staging the tier size…"
+             : write_at == DP_CANCEL_TIER ? "Cancelling the staged change…"
+             : write_at >= 0 ? "Applying to device…"
              : write_at == DP_READ ? "Reading device settings…"
                                    : "Checking configuration recovery…");
 }
@@ -997,6 +1156,29 @@ static void dp_apply(struct desktop_deviceprefs *p)
         snprintf(p->status, sizeof p->status,
             "Use 1–31 bytes for the device name.");
         return;
+    }
+    if (p->setting == DP_TIER) {
+        unsigned long kb = strtoul(p->field.text, &end, 10), bytes;
+        if (p->layout.pending) { dp_request(p, DP_CANCEL_TIER); return; }
+        if (end == p->field.text || *end) {
+            snprintf(p->status, sizeof p->status,
+                     "Enter the tier's size in KB.");
+            return;
+        }
+        bytes = kb * 1024UL;
+        if (bytes < p->layout.floor || bytes > p->layout.ceiling ||
+            (p->layout.step && bytes % p->layout.step)) {
+            snprintf(p->status, sizeof p->status,
+                     "Use %lu to %lu KB, in steps of %lu KB.",
+                     p->layout.floor / 1024UL, p->layout.ceiling / 1024UL,
+                     p->layout.step / 1024UL);
+            return;
+        }
+        if (bytes == p->layout.current) {
+            snprintf(p->status, sizeof p->status,
+                     "The tier is that size already.");
+            return;
+        }
     }
     if (p->setting == DP_RADIO) {
         v = strtol(p->field.text, &end, 10);
@@ -1079,6 +1261,14 @@ static void dp_setting_text(const struct desktop_deviceprefs *p, int i,
     if (i == DP_CRYPTO && v->present)
         snprintf(value, cap, "%s", !strcmp(v->value, "auto")
                  ? "Automatic" : "Software only");
+    if (i == DP_TIER && v->present) {
+        char now[24], next[24];
+        dp_bytes(p->layout.current, now, sizeof now);
+        if (p->layout.pending) {
+            dp_bytes(p->layout.pending_value, next, sizeof next);
+            snprintf(value, cap, "%s now / %s at restart", now, next);
+        } else snprintf(value, cap, "%s", now);
+    }
     if ((i == DP_PSRAM || i == DP_EMMC) && v->present)
         snprintf(value, cap, "%s", !strcmp(v->value, "up") ? "Up" :
                  !strcmp(v->value, "down") ? "Down" :
@@ -1129,6 +1319,12 @@ static void dp_table(struct desktop_deviceprefs *p, tiku_surface_t *s,
                       section_name[r.section], TIKU_C_TEXT);
             if (r.section == SEC_PROCESSOR && dp_clock_pending(p))
                 pill = "restart pending";
+            else if (r.section == SEC_STORAGE && p->layout.pending)
+                pill = "restart pending";
+            else if (r.section == SEC_STORAGE && p->layout.have &&
+                     strcmp(p->layout.store, "ready") &&
+                     strcmp(p->layout.store, "provision"))
+                pill = "store held";
             else if (r.section == SEC_IDENTITY && p->pending.state)
                 pill = "recovery pending";
             if (pill != NULL) {
@@ -1265,8 +1461,11 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
         if (tiku_dialog_pressed(&p->dialog, DP_APPLY)) flags |= TIKU_S_PRESSED;
         tiku_ui_button(s, l.apply,
                        p->setting == DP_TIME ? "Sync now" :
-                       p->setting == DP_CPU &&
-                       !strcmp(p->clock.mode, "reboot")
+                       p->setting == DP_TIER && p->layout.pending
+                           ? "Cancel staged" :
+                       (p->setting == DP_CPU &&
+                        !strcmp(p->clock.mode, "reboot")) ||
+                       p->setting == DP_TIER
                            ? "Save for restart" : "Apply",
                        flags);
     } else {
@@ -1275,6 +1474,25 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
             p->busy ? "Reading device settings…" :
             p->values[p->setting].present ? "Reported by the device" :
             "Not available on this device", quiet);
+    }
+    if (p->setting == DP_TIER && p->values[DP_TIER].present) {
+        /* The tier: its bounds in KB, and what is staged if anything. */
+        char help[256], next[24];
+        if (p->layout.pending) {
+            dp_bytes(p->layout.pending_value, next, sizeof next);
+            snprintf(help, sizeof help, "%s is staged for the next restart "
+                     "(operation %lu%s). Restart the device to apply it, "
+                     "or cancel it here.", next, p->layout.pending_op,
+                     p->layout.pending_erase ? ", erasing /data" : "");
+        } else {
+            snprintf(help, sizeof help, "%lu to %lu KB in steps of %lu KB. "
+                     "Applied at the next restart; the store moves with "
+                     "it, and /data is erased when it holds files.",
+                     p->layout.floor / 1024UL, p->layout.ceiling / 1024UL,
+                     p->layout.step / 1024UL);
+        }
+        dp_explain(s, l.edit.x, l.help_y, l.group.w - 28, help, quiet, 3);
+        return;
     }
     dp_explain(s, l.edit.x, l.help_y, l.group.w - 28,
         p->setting == DP_CPU ? dp_clock_help(p) : settings[p->setting].help,
@@ -1286,6 +1504,7 @@ static const char *dp_recovery_action(const struct desktop_deviceprefs *p)
 {
     if (p->confirm == 1) return "Confirm enable";
     if (p->confirm == 2) return "Confirm forget";
+    if (p->confirm == 3) return "Erase and stage";
     if (p->pending.state == TIKU_CONFIG_PENDING_RETRY)
         return "Retry saved request";
     if (p->pending.state == TIKU_CONFIG_PENDING_CONFIRMED)
@@ -1304,12 +1523,16 @@ static void dp_recovery_draw(struct desktop_deviceprefs *p,
 {
     tiku_rect_t inner = tiku_preferences_group_body(l.recovery);
     char description[288];
-    const char *title = !strcmp(p->pending.path, "/sys/device/name")
+    const char *title = p->confirm == 3 ? "Moving the tier erases /data"
+        : !strcmp(p->pending.path, "/sys/device/name")
         ? "Configuration recovery — Device name"
         : !strcmp(p->pending.path, "/sys/cpu/freq_target")
         ? "Configuration recovery — CPU clock" : "Configuration recovery";
     const char *action = dp_recovery_action(p);
-    const char *message = p->confirm == 1
+    const char *message = p->confirm == 3
+        ? "The store holds files, and the tier's new size moves it. Staging"
+          " with the erase discards every file in /data at the next restart."
+        : p->confirm == 1
         ? "Experimental: initializes recovery storage in device NVM."
           " Current settings stay unchanged. No restart."
         : p->confirm == 2
@@ -1603,13 +1826,19 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     } else if (result.activated == DP_REFRESH) dp_refresh(p);
     else if (result.activated == DP_APPLY) dp_apply(p);
     else if (result.activated == DP_RECOVERY && !p->busy) {
-        if (p->confirm) dp_request(p, p->confirm == 1 ? DP_ENROLL : DP_DISCARD);
+        if (p->confirm == 3) {
+            p->erase = 1;
+            p->confirm = 0;
+            dp_request(p, DP_TIER);
+        } else if (p->confirm)
+            dp_request(p, p->confirm == 1 ? DP_ENROLL : DP_DISCARD);
         else if (p->pending.state == TIKU_CONFIG_PENDING_RETRY ||
                  p->pending.state == TIKU_CONFIG_PENDING_CONFIRMED)
             dp_request(p, DP_RETRY);
         else if (!p->pending.state && p->can_enroll) p->confirm = 1;
     } else if (result.activated == DP_FORGET && !p->busy) {
         p->confirm = p->confirm ? 0 : dp_can_forget(p) ? 2 : 0;
+        p->erase = 0;
     }
     else if (ev->type == TIKU_EVENT_WHEEL &&
              ev->x >= l.table.x && ev->x < l.table.x + l.table.w &&
@@ -1620,7 +1849,8 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     else if (!result.taken && !p->busy) {
         if (!dp_choice_event(p, ev, l, c) &&
             dp_can_edit(p) &&
-            (p->setting == DP_NAME || p->setting == DP_RADIO)) {
+            (p->setting == DP_NAME || p->setting == DP_RADIO ||
+             p->setting == DP_TIER)) {
             if (tiku_field_event(&p->field, &p->input, ev, l.edit,
                 p->dialog.focus == DP_EDIT) == TIKU_FIELD_REJECTED)
                 snprintf(p->status, sizeof p->status,
