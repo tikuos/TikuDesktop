@@ -126,8 +126,8 @@ static const struct {
       "The working memory the part has." },
     { SEC_MEMORY, FMT_BYTES, "Used", "/sys/mem/used",
       "Allocated to processes now." },
-    { SEC_MEMORY, FMT_BYTES, "Free", "/sys/mem/free",
-      "Headroom now, the stack's included." },
+    { SEC_MEMORY, FMT_BYTES, "Stack room now", "/sys/mem/free",
+      "Between the stack pointer and the end of static data, read live." },
     { SEC_MEMORY, FMT_BYTES, "Stack headroom", "/sys/mem/stack_free",
       "The least the stack has had since boot." },
     { SEC_MEMORY, FMT_PLAIN, "Tiers", "/sys/mem/tiers",
@@ -138,8 +138,9 @@ static const struct {
       "What the memory is made of on this part." },
     { SEC_STORAGE, FMT_BYTES, "Non-volatile memory", "/sys/mem/nvm",
       "The storage that survives a reset." },
-    { SEC_STORAGE, FMT_BYTES, "Free", "/sys/mem/nvmfree",
-      "Storage not yet written." },
+    { SEC_STORAGE, FMT_BYTES, "Tier free", "/sys/mem/nvmfree",
+      "What the NVM tier has not yet handed out; the files' own room is "
+      "the Store row." },
     { SEC_RADIO, FMT_PLAIN, "State", "/sys/radio/state",
       "What the radio is doing now." },
     { SEC_RADIO, FMT_PLAIN, "Mode", "/sys/radio/mode",
@@ -464,8 +465,8 @@ static void dp_estates_build(struct desktop_deviceprefs *p)
     for (m = 0; m < 2; m++) {
         char copy[640], *line, *save;
         snprintf(copy, sizeof copy, "%s", maps[m].map);
-        for (line = strtok_r(copy, "\n", &save); line;
-             line = strtok_r(NULL, "\n", &save))
+        for (line = strtok_r(copy, "\r\n", &save); line;
+             line = strtok_r(NULL, "\r\n", &save))
             (void)dp_estate_line(p, maps[m].section, line,
                                  &p->estate_total[m]);
     }
@@ -658,7 +659,12 @@ static void dp_read_text(tiku_backend_t *b, const char *path, char *out,
     out[n] = '\0';
 }
 
-/** @brief One "key\tvalue" line's value, or NULL, from a text of lines. */
+/**
+ * @brief One "key\tvalue" line's value, or NULL, from a text of lines.
+ *
+ * The board answers through its shell, so a line ends in CRLF: the
+ * carriage return is not part of the value ("none\r" is not "none").
+ */
 static const char *dp_kv(const char *text, const char *key, char *out,
                          size_t cap)
 {
@@ -667,6 +673,7 @@ static const char *dp_kv(const char *text, const char *key, char *out,
     while (*p) {
         const char *nl = strchr(p, '\n');
         size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        while (len > 0 && p[len - 1] == '\r') len--;
         if (len > klen + 1 && !strncmp(p, key, klen) && p[klen] == '\t') {
             size_t n = len - klen - 1;
             if (n >= cap) n = cap - 1;
@@ -725,6 +732,52 @@ static void dp_layout_read(tiku_backend_t *b, dp_tier_t *l)
     l->writable = l->identity[0] &&
                   b->ops->stat(b, "/sys/mem/layout/stage", &m) == 0 &&
                   tiku_model_is_writable(&m);
+}
+
+/**
+ * @brief What a person does about a held store, by the kernel's reason.
+ *
+ * The device's own words for why, and the one command that resolves it:
+ * recovered stores want a restart, lost ownership a recovery by offset,
+ * an interrupted move a resume, a foreign store a format.
+ */
+static const char *dp_held_help(const char *held)
+{
+    static const struct { const char *reason, *help; } table[] = {
+        { "reboot-required", "Ownership is recovered. Restart the device to "
+          "bring /data and the NVM tier back." },
+        { "control-missing", "Ownership of the store is missing. In the "
+          "device's shell, 'layout inspect' lists the store it finds; "
+          "'layout recover nvm.tier=<that offset> --accept-layout' and a "
+          "restart give it back." },
+        { "foreign-contract", "The layout belongs to another firmware image. "
+          "In the device's shell, 'layout inspect' lists the store; 'layout "
+          "recover nvm.tier=<offset> --accept-layout' takes it explicitly." },
+        { "ambiguous", "More than one store header lies in the region. "
+          "'layout inspect' in the device's shell lists them; recover the one "
+          "you know with 'layout recover nvm.tier=<offset> --accept-layout'." },
+        { "elsewhere", "Another store header lies elsewhere in the region. "
+          "'layout inspect' in the device's shell lists it; recover the one "
+          "you know with 'layout recover nvm.tier=<offset> --accept-layout'." },
+        { "interrupted", "A tier move stopped part way. In the device's "
+          "shell, 'layout status' names the operation and 'layout resume "
+          "<operation>' finishes it; then restart." },
+        { "torn", "The store has lost its header but still holds files. "
+          "'mkfs' in the device's shell shows what it holds; 'mkfs "
+          "--erase-data' formats it, erasing them." },
+        { "geometry", "The store was formatted for a region of another size. "
+          "'mkfs' in the device's shell shows what it holds; 'mkfs "
+          "--erase-data' formats it." },
+        { "version", "The store is in another format version. 'mkfs' in the "
+          "device's shell shows what it holds; 'mkfs --erase-data' formats "
+          "it." },
+        { "io", "The layout record could not be written. Restart the device; "
+          "'layout status' in its shell says whether it stays held." },
+    };
+    size_t i;
+    for (i = 0; i < sizeof table / sizeof table[0]; i++)
+        if (!strcmp(held, table[i].reason)) return table[i].help;
+    return "The store is held; 'layout status' in the device's shell says why.";
 }
 
 /** @brief The request the stage file takes: the knob, an id, the state
@@ -1391,6 +1444,39 @@ static void dp_table(struct desktop_deviceprefs *p, tiku_surface_t *s,
     tiku_clip_reset(s);
 }
 
+/**
+ * @brief The tier's help: what is staged, why the store is held, or its
+ *        bounds -- after what the last restart did with a staged change,
+ *        since a refused one otherwise leaves only the old size on show.
+ */
+static void dp_tier_help(const struct desktop_deviceprefs *p, char *help,
+                         size_t cap)
+{
+    char next[24], outcome[32] = "", said[96] = "";
+    unsigned long op = 0;
+    if (p->layout.pending) {
+        dp_bytes(p->layout.pending_value, next, sizeof next);
+        snprintf(help, cap, "%s is staged for the next restart (operation "
+                 "%lu%s). Restart the device to apply it, or cancel it here.",
+                 next, p->layout.pending_op,
+                 p->layout.pending_erase ? ", erasing /data" : "");
+        return;
+    }
+    if (!strcmp(p->layout.store, "held")) {
+        snprintf(help, cap, "%s", dp_held_help(p->layout.held));
+        return;
+    }
+    if (sscanf(p->layout.boot, "%lu %31s", &op, outcome) == 2)
+        snprintf(said, sizeof said, !strcmp(outcome, "ok")
+                 ? "Operation %lu applied at the last restart. "
+                 : "Operation %lu did not apply at the last restart (%s). ",
+                 op, outcome);
+    snprintf(help, cap, "%s%lu to %lu KB in steps of %lu KB. Applied at the "
+             "next restart; the store moves with it, and /data is erased "
+             "when it holds files.", said, p->layout.floor / 1024UL,
+             p->layout.ceiling / 1024UL, p->layout.step / 1024UL);
+}
+
 /** @brief Etched setting group, with explicit writable/read-only state. */
 static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
                        dp_layout_t l)
@@ -1484,25 +1570,8 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
             "Not available on this device", quiet);
     }
     if (p->setting == DP_TIER && p->values[DP_TIER].present) {
-        /* The tier: its bounds in KB, and what is staged if anything. */
-        char help[256], next[24];
-        if (p->layout.pending) {
-            dp_bytes(p->layout.pending_value, next, sizeof next);
-            snprintf(help, sizeof help, "%s is staged for the next restart "
-                     "(operation %lu%s). Restart the device to apply it, "
-                     "or cancel it here.", next, p->layout.pending_op,
-                     p->layout.pending_erase ? ", erasing /data" : "");
-        } else if (!strcmp(p->layout.store, "held")) {
-            snprintf(help, sizeof help, "The store is held (%s). Recover "
-                     "its ownership from the device's shell with the layout "
-                     "command before changing the tier.", p->layout.held);
-        } else {
-            snprintf(help, sizeof help, "%lu to %lu KB in steps of %lu KB. "
-                     "Applied at the next restart; the store moves with "
-                     "it, and /data is erased when it holds files.",
-                     p->layout.floor / 1024UL, p->layout.ceiling / 1024UL,
-                     p->layout.step / 1024UL);
-        }
+        char help[320];
+        dp_tier_help(p, help, sizeof help);
         dp_explain(s, l.edit.x, l.help_y, l.group.w - 28, help, quiet, 3);
         return;
     }

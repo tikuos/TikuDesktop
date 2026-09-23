@@ -139,7 +139,7 @@ read, every section is offered.</p>
 <p>Each row is a label and a value. A row with a chevron at its right end
 is a setting: choose it and the group underneath edits it. The other rows
 are facts the device reports, such as the MCU, the firmware, the uptime,
-the memory used and free, and the reason for the last reset; choose one
+the memory used, the stack's room and the reason for the last reset; choose one
 and the group explains it. Under <b>Memory</b> and <b>Storage</b> the rows
 with a colour swatch are the estates each memory is carved into, from the
 device's own maps: static data, the stack pool, the tier arena, the code
@@ -154,7 +154,14 @@ it at its next restart, and the store moves with the tier. When the
 store holds files the window asks first, because staging the move
 erases <b>/data</b>; <b>Erase and stage</b> confirms it. While a change
 is staged the row says both sizes, the heading wears a pill, and the
-button becomes <b>Cancel staged</b>. The two switches, <b>External
+button becomes <b>Cancel staged</b>. After the restart the help line says
+whether the staged change applied, and why not when it did not. When the
+device holds its store, as it does after a firmware update it cannot vouch
+for, the heading says <b>store held</b>, the row is read-only, and the help
+names what gives the store back in the device's shell: a restart,
+<code>layout recover</code> with the store's offset, <code>layout
+resume</code>, or <code>mkfs</code>, by the device's reason. The two
+switches, <b>External
 PSRAM</b> and <b>eMMC card</b>, appear on a board that has the hardware,
 Up bringing it online and Down powering it off. Counts of bytes and spans of time are shown as
 a person reads them. The window opens on <b>Processor</b> with <b>CPU

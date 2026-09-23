@@ -68,24 +68,33 @@ static const char layout_identity[] = "00112233445566778899aabbccddeeff";
 static int layout_pending, layout_pending_erase, layout_files = 1;
 static char layout_last_request[128];
 
+/* The board answers through its shell: CRLF between lines, as a real
+ * nRF54L15 does, so a parser that keeps the CR is caught here. */
+static int layout_held;         /* ownership lost: no identity, store held */
 static int layout_read(const char *path, char *out, size_t max)
 {
     if (!strcmp(path, "/sys/mem/layout/caps"))
-        return snprintf(out, max, "nvm.tier\tstore\t4096\t352256\t4096\t32768\n"
-                        "methods\terase\n");
+        return snprintf(out, max,
+                        "nvm.tier\tstore\t4096\t352256\t4096\t32768\r\n"
+                        "methods\terase");
     if (!strcmp(path, "/sys/mem/layout/current"))
-        return snprintf(out, max, "generation\t%lu\nrevision\t%lu\n"
-                        "identity\t%s\nnvm.tier\t%lu\n",
-                        layout_gen, layout_rev, layout_identity, layout_current);
+        return snprintf(out, max, "generation\t%lu\r\nrevision\t%lu\r\n"
+                        "identity\t%s\r\nnvm.tier\t%lu",
+                        layout_held ? 0UL : layout_gen,
+                        layout_held ? 0UL : layout_rev,
+                        layout_held ? "none" : layout_identity, layout_current);
     if (!strcmp(path, "/sys/mem/layout/pending"))
         return layout_pending
-            ? snprintf(out, max, "op\t%lu\nmethod\t%s\nnvm.tier\t%lu\n",
+            ? snprintf(out, max, "op\t%lu\r\nmethod\t%s\r\nnvm.tier\t%lu",
                        layout_pending_op, layout_pending_erase ? "erase" : "none",
                        layout_pending_value)
-            : snprintf(out, max, "none\n");
+            : snprintf(out, max, "none");
     if (!strcmp(path, "/sys/mem/layout/status"))
-        return snprintf(out, max, "store\tready\nheld\tnone\nrecord\tvalid\n"
-                        "tier\t%lu\ncorrected\t0\nphase\tnone\n", layout_current);
+        return snprintf(out, max, "store\t%s\r\nheld\t%s\r\nrecord\t%s\r\n"
+                        "tier\t%lu\r\ncorrected\t0\r\nphase\tnone",
+                        layout_held ? "held" : "ready",
+                        layout_held ? "control-missing" : "none",
+                        layout_held ? "absent" : "valid", layout_current);
     return -1;
 }
 
@@ -355,6 +364,7 @@ int main(void)
         dp_run(&j);
         assert(!j.need_erase && j.layout.pending && j.layout.pending_op == 77 &&
                j.layout.pending_value == 16384 && j.layout.pending_erase);
+        assert(!strcmp(j.layout.store, "ready"));      /* no CR kept */
         assert(!strcmp(layout_last_request, request));
         assert(strstr(j.status, "Staged for the next restart"));
         assert(strstr(j.values[DP_TIER].value, "32768"));
@@ -373,6 +383,25 @@ int main(void)
         dp_run(&j);
         assert(strstr(j.status, "changed under you"));
         j.write_at = DP_READ; dp_run(&j);
+        /* Ownership lost, as a board reads after a record it cannot
+         * use: no identity, the store held, and so the row reported
+         * but not offered for staging. */
+        layout_held = 1;
+        j.write_at = DP_READ; dp_run(&j);
+        assert(j.layout.have && !j.layout.identity[0]);
+        assert(!strcmp(j.layout.store, "held") &&
+               !strcmp(j.layout.held, "control-missing"));
+        assert(j.values[DP_TIER].present && !j.values[DP_TIER].writable);
+        /* Each held reason gets its own way out, in the device's terms. */
+        assert(strstr(dp_held_help("control-missing"), "layout recover"));
+        assert(strstr(dp_held_help("reboot-required"), "Restart the device") &&
+               !strstr(dp_held_help("reboot-required"), "recover nvm"));
+        assert(strstr(dp_held_help("interrupted"), "layout resume"));
+        assert(strstr(dp_held_help("torn"), "mkfs --erase-data"));
+        assert(strstr(dp_held_help("no-such-reason"), "layout status"));
+        layout_held = 0;
+        j.write_at = DP_READ; dp_run(&j);
+        assert(j.values[DP_TIER].writable);
     }
     desktop_t *app = calloc(1, sizeof *app);
     /* Keep the displayed revision across the asynchronous job. A concurrent
@@ -512,6 +541,22 @@ int main(void)
         dp_setting_text(&p, DP_TIER, text, sizeof text);
         assert(!strcmp(text, "32.0 KB now / 16.0 KB at restart"));
         p.layout.pending = 0;
+        /* What the last restart did with a staged change is said first:
+         * a refused one would otherwise leave only the old size on show. */
+        {
+            char help[320];
+            dp_tier_help(&p, help, sizeof help);
+            assert(!strncmp(help, "4 to 344 KB", 11));
+            snprintf(p.layout.boot, sizeof p.layout.boot, "77 ok");
+            dp_tier_help(&p, help, sizeof help);
+            assert(strstr(help, "Operation 77 applied at the last restart."));
+            snprintf(p.layout.boot, sizeof p.layout.boot,
+                     "78 would-lose-files");
+            dp_tier_help(&p, help, sizeof help);
+            assert(strstr(help, "Operation 78 did not apply at the last "
+                                "restart (would-lose-files)."));
+            p.layout.boot[0] = '\0';
+        }
         dp_fact_text(FMT_BYTES, "262144", text, sizeof text);
         assert(!strcmp(text, "256.0 KB"));
         dp_fact_text(FMT_SECONDS, "93784", text, sizeof text);
