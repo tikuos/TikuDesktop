@@ -14,4 +14,7 @@
 /** @brief Put TikuOS's own icons into the set, once.  @return how many. */
 int tiku_icons_tiku_register(void);
 
+/** @brief How many icons TikuOS registers: what register() should take. */
+int tiku_icons_tiku_count(void);
+
 #endif /* TIKU_ICONS_TIKU_H_ */

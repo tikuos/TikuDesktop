@@ -27,8 +27,8 @@
 /** @brief How many icons are baked in. */
 #define TIKU_ICON_COUNT 34
 
-/** @brief How many more a directory may add on top of them. */
-#define TIKU_ICON_EXTRA 32
+/** @brief How many more TikuOS's own families and a directory may add. */
+#define TIKU_ICON_EXTRA 96
 
 /** @brief One named HVIF blob. */
 typedef struct {

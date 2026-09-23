@@ -123,95 +123,89 @@ static const uint8_t tiku_icon_magnifier[318] = {
     0x00, 0x0A, 0x02, 0x01, 0x02, 0x00
 };
 
+/* TikuOS's own icons, named for what they ARE beside Haiku's vocabulary:
+ * a shell asks for "microcontroller" the way it asks for "folder". */
+static const struct {
+    const char *name;
+    const uint8_t *blob;
+    size_t len;
+} tiku_icons_tiku[] = {
+#define TIKU_ICON(n) { #n, tiku_icon_##n, sizeof tiku_icon_##n }
+    TIKU_ICON(microcontroller),
+    TIKU_ICON(computer),
+    TIKU_ICON(magnifier),
+    TIKU_ICON(nav_back),
+    TIKU_ICON(nav_forward),
+    TIKU_ICON(nav_reload),
+    TIKU_ICON(reader),
+    TIKU_ICON(image_viewer),
+    TIKU_ICON(force_quit),
+    TIKU_ICON(shutdown),
+    TIKU_ICON(calculator),
+    TIKU_ICON(terminal),
+    TIKU_ICON(editor),
+    TIKU_ICON(tool_bench),
+    TIKU_ICON(tool_console),
+    TIKU_ICON(tool_hex),
+    TIKU_ICON(tool_monitor),
+    TIKU_ICON(tool_inspector),
+    TIKU_ICON(app_basic),
+    TIKU_ICON(app_c),
+    TIKU_ICON(section_identity),
+    TIKU_ICON(section_processor),
+    TIKU_ICON(section_memory),
+    TIKU_ICON(section_storage),
+    TIKU_ICON(section_power),
+    TIKU_ICON(section_radio),
+    TIKU_ICON(section_security),
+    TIKU_ICON(section_boot),
+    TIKU_ICON(app_devcalc),
+    TIKU_ICON(app_notes),
+    TIKU_ICON(app_hello),
+    TIKU_ICON(app_clock),
+    TIKU_ICON(app_counter),
+    TIKU_ICON(app_sketch),
+    TIKU_ICON(app_sensors),
+    TIKU_ICON(app_twowin),
+#undef TIKU_ICON
+};
+#define TIKU_ICONS_TIKU_COUNT \
+    ((int)(sizeof tiku_icons_tiku / sizeof tiku_icons_tiku[0]))
+
+/* The set takes TIKU_ICON_EXTRA icons past the baked ones, and a person's
+ * own icon directory shares them: past this, the last registered were
+ * dropped without a word, which is how four application marks vanished. */
+#define TIKU_ICONS_DIRECTORY_ROOM 32
+_Static_assert(sizeof tiku_icons_tiku / sizeof tiku_icons_tiku[0] +
+               TIKU_ICONS_DIRECTORY_ROOM <= TIKU_ICON_EXTRA,
+               "TikuOS's icons and a directory's no longer fit the set");
+
+int
+tiku_icons_tiku_count(void)
+{
+    return TIKU_ICONS_TIKU_COUNT;
+}
+
 /**
  * @brief Put TikuOS's own icons into the set, once.
  *
- * Named for what they ARE, beside Haiku's vocabulary: a shell asks for
- * "microcontroller" the way it asks for "folder".
- *
- * @return how many were taken.
+ * @return how many were taken: tiku_icons_tiku_count() unless the set
+ *         refused one, which a caller that cares compares.
  */
 int
 tiku_icons_tiku_register(void)
 {
     static int done;
-    int took = 0;
+    int took = 0, i;
 
     if (done) {
         return 0;
     }
     done = 1;
-    took += tiku_icons_add("microcontroller", tiku_icon_microcontroller,
-                          sizeof tiku_icon_microcontroller);
-    took += tiku_icons_add("computer", tiku_icon_computer,
-                          sizeof tiku_icon_computer);
-    took += tiku_icons_add("magnifier", tiku_icon_magnifier,
-                          sizeof tiku_icon_magnifier);
-    took += tiku_icons_add("nav_back", tiku_icon_nav_back,
-                          sizeof tiku_icon_nav_back);
-    took += tiku_icons_add("nav_forward", tiku_icon_nav_forward,
-                          sizeof tiku_icon_nav_forward);
-    took += tiku_icons_add("nav_reload", tiku_icon_nav_reload,
-                          sizeof tiku_icon_nav_reload);
-    took += tiku_icons_add("reader", tiku_icon_reader,
-                          sizeof tiku_icon_reader);
-    took += tiku_icons_add("image_viewer", tiku_icon_image_viewer,
-                          sizeof tiku_icon_image_viewer);
-    took += tiku_icons_add("force_quit", tiku_icon_force_quit,
-                          sizeof tiku_icon_force_quit);
-    took += tiku_icons_add("shutdown", tiku_icon_shutdown,
-                          sizeof tiku_icon_shutdown);
-    took += tiku_icons_add("calculator", tiku_icon_calculator,
-                          sizeof tiku_icon_calculator);
-    took += tiku_icons_add("terminal", tiku_icon_terminal,
-                          sizeof tiku_icon_terminal);
-    took += tiku_icons_add("editor", tiku_icon_editor,
-                          sizeof tiku_icon_editor);
-    took += tiku_icons_add("tool_bench", tiku_icon_tool_bench,
-                          sizeof tiku_icon_tool_bench);
-    took += tiku_icons_add("tool_console", tiku_icon_tool_console,
-                          sizeof tiku_icon_tool_console);
-    took += tiku_icons_add("tool_hex", tiku_icon_tool_hex,
-                          sizeof tiku_icon_tool_hex);
-    took += tiku_icons_add("tool_monitor", tiku_icon_tool_monitor,
-                          sizeof tiku_icon_tool_monitor);
-    took += tiku_icons_add("tool_inspector", tiku_icon_tool_inspector,
-                          sizeof tiku_icon_tool_inspector);
-    took += tiku_icons_add("app_basic", tiku_icon_app_basic,
-                          sizeof tiku_icon_app_basic);
-    took += tiku_icons_add("app_c", tiku_icon_app_c,
-                          sizeof tiku_icon_app_c);
-    took += tiku_icons_add("section_identity", tiku_icon_section_identity,
-                          sizeof tiku_icon_section_identity);
-    took += tiku_icons_add("section_processor", tiku_icon_section_processor,
-                          sizeof tiku_icon_section_processor);
-    took += tiku_icons_add("section_memory", tiku_icon_section_memory,
-                          sizeof tiku_icon_section_memory);
-    took += tiku_icons_add("section_storage", tiku_icon_section_storage,
-                          sizeof tiku_icon_section_storage);
-    took += tiku_icons_add("section_power", tiku_icon_section_power,
-                          sizeof tiku_icon_section_power);
-    took += tiku_icons_add("section_radio", tiku_icon_section_radio,
-                          sizeof tiku_icon_section_radio);
-    took += tiku_icons_add("section_security", tiku_icon_section_security,
-                          sizeof tiku_icon_section_security);
-    took += tiku_icons_add("section_boot", tiku_icon_section_boot,
-                          sizeof tiku_icon_section_boot);
-    took += tiku_icons_add("app_devcalc", tiku_icon_app_devcalc,
-                          sizeof tiku_icon_app_devcalc);
-    took += tiku_icons_add("app_notes", tiku_icon_app_notes,
-                          sizeof tiku_icon_app_notes);
-    took += tiku_icons_add("app_hello", tiku_icon_app_hello,
-                          sizeof tiku_icon_app_hello);
-    took += tiku_icons_add("app_clock", tiku_icon_app_clock,
-                          sizeof tiku_icon_app_clock);
-    took += tiku_icons_add("app_counter", tiku_icon_app_counter,
-                          sizeof tiku_icon_app_counter);
-    took += tiku_icons_add("app_sketch", tiku_icon_app_sketch,
-                          sizeof tiku_icon_app_sketch);
-    took += tiku_icons_add("app_sensors", tiku_icon_app_sensors,
-                          sizeof tiku_icon_app_sensors);
-    took += tiku_icons_add("app_twowin", tiku_icon_app_twowin,
-                          sizeof tiku_icon_app_twowin);
+    for (i = 0; i < TIKU_ICONS_TIKU_COUNT; i++) {
+        took += tiku_icons_add(tiku_icons_tiku[i].name,
+                               tiku_icons_tiku[i].blob,
+                               tiku_icons_tiku[i].len);
+    }
     return took;
 }

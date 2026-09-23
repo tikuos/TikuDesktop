@@ -37,7 +37,9 @@ static int paper(unsigned r, unsigned g, unsigned b) { return r > 200 && g > 200
 
 int main(void)
 {
-    assert(tiku_icons_tiku_register() > 0);
+    /* Every one taken: the set refusing the last few is how four marks
+     * once vanished without a word. */
+    assert(tiku_icons_tiku_register() == tiku_icons_tiku_count());
     tiku_surface_t *s = tiku_surface_new(1000, 280, TIKU_RGB(216,216,216));
     assert(s);
     int x = 8, y = 12;
