@@ -3,7 +3,48 @@
 #include <unistd.h>
 #include "tiku_icons_tiku.h"
 #include "tiku_measure.h"
+/* Keep the actual request/event/completion path, with a deterministic queue
+ * and a RAM-only backend instead of serial discovery or worker threads. */
+#define tiku_backend_serving test_backend_serving
+#define tiku_backend_tiku_identity test_backend_identity
+#define tiku_work_post test_work_post
 #include "../../system/desktop/tiku_trk_desktop_deviceprefs.c"
+#undef tiku_backend_serving
+#undef tiku_backend_tiku_identity
+#undef tiku_work_post
+
+static tiku_backend_t *connected_backend;
+static tiku_work_job_t queued_work;
+static int work_queued;
+
+tiku_backend_t *test_backend_serving(tiku_backend_t *b, const char *path,
+                                     char *local, size_t max)
+{
+    (void)b;
+    snprintf(local, max, "%s", path);
+    return connected_backend;
+}
+const tiku_identity_t *test_backend_identity(const tiku_backend_t *b)
+{
+    static const tiku_identity_t identity = {0};
+    return b && b == connected_backend ? &identity : NULL;
+}
+int test_work_post(const tiku_work_job_t *work)
+{
+    assert(!work_queued);
+    queued_work = *work;
+    work_queued = 1;
+    return 0;
+}
+static void drain_work(void)
+{
+    tiku_work_job_t work = queued_work;
+    assert(work_queued);
+    work_queued = 0;
+    work.run(work.ctx);
+    work.done(work.ctx);
+    work.free(work.ctx);
+}
 /** @brief The painter is not linked: a full frame is the flag, as before. */
 void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
@@ -82,8 +123,10 @@ static char layout_last_request[128];
 /* The board answers through its shell: CRLF between lines, as a real
  * nRF54L15 does, so a parser that keeps the CR is caught here. */
 static int layout_held;         /* ownership lost: no identity, store held */
+static int layout_readback_missing;
 static int layout_read(const char *path, char *out, size_t max)
 {
+    if (layout_readback_missing) return -1;
     if (!strcmp(path, "/sys/mem/layout/caps"))
         return snprintf(out, max,
                         "nvm.tier\tstore\t4096\t352256\t4096\t32768\r\n"
@@ -128,6 +171,7 @@ static int layout_write(const char *path, const char *in, size_t n,
         if (layout_pending) { snprintf(err, max, "cannot write (EBUSY)"); return -1; }
         if (bytes < 4096 || bytes > 352256 || bytes % 4096)
             { snprintf(err, max, "cannot write (ERANGE)"); return -1; }
+        if (bytes == layout_current) return 0; /* kernel no-op */
         if (layout_files && !strstr(text, "method=erase"))
             { snprintf(err, max, "cannot write (ECONFLICT)"); return -1; }
         layout_pending = 1; layout_pending_op = op; layout_pending_value = bytes;
@@ -265,11 +309,128 @@ static int send_input(tiku_window_t *w, const tiku_event_t *ev)
     return result;
 }
 
+static void test_layout_serialization(void)
+{
+    dp_tier_t l = {.generation=100, .revision=100};
+    char wire[DP_LAYOUT_REQUEST_CAP], small[96], exact[128];
+    snprintf(l.identity, sizeof l.identity, "%s", layout_identity);
+    assert(!dp_layout_request(&l, 16384, 718080001, 1, wire, sizeof wire));
+    assert(strlen(wire) == 97 && strstr(wire, " method=erase"));
+    assert(dp_layout_request(&l, 16384, 718080001, 1, small, sizeof small) < 0);
+    assert(!small[0]); /* Failure cannot accidentally send a partial command. */
+    size_t n = strlen(wire);
+    assert(!dp_layout_request(&l, 16384, 718080001, 1, exact, n + 1));
+    assert(!strcmp(wire, exact));
+    assert(dp_layout_request(&l, 16384, 718080001, 1, exact, n) < 0 && !exact[0]);
+    l.generation = l.revision = UINT32_MAX;
+    for (int erase = 0; erase < 2; erase++) {
+        assert(!dp_layout_request(&l, UINT32_MAX, UINT32_MAX, erase, wire, sizeof wire));
+        assert(strstr(wire, "nvm.tier=4294967295 op=4294967295"));
+        assert(strstr(wire, "expect=4294967295:4294967295"));
+        assert((strstr(wire, " method=erase") != NULL) == erase);
+    }
+    l.identity[0] = '\0';
+    assert(dp_layout_request(&l, 16384, 1, 0, wire, sizeof wire) < 0 && !wire[0]);
+    const char *reasons[] = {"control-missing", "foreign-contract", "ambiguous", "elsewhere"};
+    for (unsigned i = 0; i < sizeof reasons / sizeof reasons[0]; i++) {
+        const char *help = dp_held_help(reasons[i]);
+        assert(strstr(help, "candidates, not proof of ownership"));
+        assert(strstr(help, "verified from your previous layout"));
+        assert(!strstr(help, "that offset"));
+        const char *remaining = help;
+        char line[TIKU_TEXT_LINE_MAX];
+        int lines = 0;
+        dp_layout_t box = dp_layout((tiku_rect_t){0, 0, 760, 720}, DP_TIER);
+        while (tiku_text_wrap_next(TIKU_MEASURE_PLAIN, &remaining,
+                                  box.group.w - 28, line, sizeof line, 0)) lines++;
+        assert(lines <= 3); /* The safety qualification must not be elided. */
+    }
+}
+
+static void click_layout_action(struct desktop_deviceprefs *p, int confirm)
+{
+    dp_layout_t l = dp_layout(tiku_window_content(p->window), p->setting);
+    tiku_rect_t r = confirm ? l.recover : l.forget;
+    tiku_event_t ev = {.type=TIKU_EVENT_POINTER_DOWN, .button=1,
+                       .x=r.x+4, .y=r.y+4};
+    assert(send_input(p->window, &ev));
+}
+
+static void test_layout_confirmation(struct desktop_deviceprefs *p, tiku_backend_t *b)
+{
+    connected_backend = b;
+    p->refs = 1;
+    p->setting = DP_TIER;
+    p->section = SEC_STORAGE;
+    p->fact = p->estate = -1;
+    p->selected = 0;
+    p->confirm = p->erase = 0;
+    layout_pending = 0;
+    layout_files = 1;
+    layout_gen = layout_rev = 100;
+    for (int scenario = 0; scenario < 5; scenario++) {
+        char original[DP_LAYOUT_REQUEST_CAP];
+        dp_request(p, DP_READ); drain_work();
+        tiku_field_start(&p->field, "16");
+        dp_apply(p);
+        assert(work_queued && p->busy);
+        snprintf(original, sizeof original, "%s", ((dp_job_t *)queued_work.ctx)->input);
+        drain_work();
+        assert(p->confirm == 3 && !strcmp(p->field.text, "16") && !p->busy);
+        assert(!dp_can_edit(p) && !layout_pending && !strcmp(p->tier_request, original));
+        int before = writes;
+        if (scenario == 1) {
+            click_layout_action(p, 0);
+            assert(!p->confirm && !work_queued && writes == before && !p->erase);
+            continue;
+        }
+        if (scenario == 2) {
+            layout_rev++; /* A concurrent writer after the user's snapshot. */
+        }
+        if (scenario == 3) {
+            p->selected = 1; /* Even an out-of-band device change cannot retarget consent. */
+            click_layout_action(p, 1);
+            assert(!work_queued && writes == before && !p->confirm && !p->erase);
+            p->selected = 0;
+            continue;
+        }
+        if (scenario == 4) {
+            dp_refresh(p); drain_work();
+            assert(!p->confirm && !p->tier_request[0] && writes == before);
+            continue;
+        }
+        /* Even changing a field behind the disabled editor must not replace
+         * the target or the expectation to which consent belongs. */
+        tiku_field_start(&p->field, "32");
+        click_layout_action(p, 1);
+        assert(work_queued && !p->erase);
+        dp_job_t *submitted = queued_work.ctx;
+        assert(!strncmp(submitted->input, original, strlen(original)));
+        assert(!strcmp(submitted->input + strlen(original), " method=erase"));
+        drain_work();
+        assert(writes == before + 1 && !p->confirm && !p->erase);
+        if (scenario == 2) {
+            assert(!layout_pending && strstr(p->status, "changed under you"));
+        } else {
+            assert(layout_pending && layout_pending_value == 16384 && layout_pending_erase);
+            assert(strstr(p->status, "Staged for the next restart"));
+            dp_apply(p); drain_work(); /* Cancel that staged request. */
+            assert(!layout_pending);
+        }
+    }
+    int before = writes;
+    tiku_field_start(&p->field, "18446744073709551615");
+    dp_request(p, DP_TIER); /* Defend even callers that skip dp_apply's validation. */
+    assert(!work_queued && writes == before);
+    connected_backend = NULL;
+}
+
 int main(void)
 {
     char outbox[] = "/tmp/tiku-deviceprefs-outbox-XXXXXX";
     assert(mkdtemp(outbox) && !setenv("TIKU_CONFIG_OUTBOX", outbox, 1));
     assert(tiku_icons_tiku_register() > 0);
+    test_layout_serialization();
     const tiku_backend_ops_t ops = {.stat=mock_stat, .read=mock_read,
                                    .write=mock_write};
     tiku_backend_t backend = {.ops=&ops};
@@ -393,6 +554,20 @@ int main(void)
                  "expect=3:5", layout_identity);
         dp_run(&j);
         assert(strstr(j.status, "changed under you"));
+        j.write_at = DP_READ; dp_run(&j);
+        /* A successful stage write may be a no-op, not a pending change. */
+        assert(!dp_layout_request(&j.layout, layout_current, 80, 0,
+                                   j.input, sizeof j.input));
+        j.write_at = DP_TIER; dp_run(&j);
+        assert(!j.layout.pending && strstr(j.status, "that size already"));
+        assert(!strstr(j.status, "Staged for the next restart"));
+        assert(!dp_layout_request(&j.layout, 16384, 81, 1, j.input, sizeof j.input));
+        layout_readback_missing = 1;
+        j.write_at = DP_TIER; dp_run(&j);
+        assert(layout_pending && strstr(j.status, "not confirmed"));
+        assert(!strstr(j.status, "Staged for the next restart"));
+        layout_readback_missing = 0;
+        layout_pending = 0;
         j.write_at = DP_READ; dp_run(&j);
         /* Ownership lost, as a board reads after a record it cannot
          * use: no identity, the store held, and so the row reported
@@ -798,6 +973,8 @@ int main(void)
     ev.x = layout.forget.x+4;
     assert(send_input(p.window, &ev) && !p.confirm);
     memset(&p.pending, 0, sizeof p.pending);
+    test_layout_confirmation(&p, &backend);
+    before = writes;
     p.busy = 1;
     ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,
         .x=layout.done.x+4, .y=layout.done.y+4};

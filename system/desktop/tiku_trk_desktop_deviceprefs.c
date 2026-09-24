@@ -20,6 +20,7 @@
 #include "tiku_config.h"
 #include "tiku_config_outbox.h"
 #include <time.h>
+#include <stdint.h>
 
 enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_PSRAM,
        DP_EMMC, DP_TIER, DP_COUNT };
@@ -83,9 +84,12 @@ typedef struct {
     unsigned long generation, revision;
     int pending, pending_erase;
     unsigned long pending_op, pending_value;
-    char store[16], held[16], phase[16], boot[48], last[48];
+    char store[16], held[32], phase[16], boot[48], last[48];
     char identity[33];         /* the record's incarnation a request quotes */
 } dp_tier_t;
+/* Four uint32 decimals, a 32-hex identity and protocol punctuation/method
+ * fit in 128 bytes, matching the device's stage parser (including NUL). */
+#define DP_LAYOUT_REQUEST_CAP 128
 /* Each memory by estate, from /sys/mem/sram_map and nvm_map: the rows a
  * person reads as "where the memory goes", with a bar in the group. */
 typedef struct {
@@ -199,6 +203,7 @@ struct desktop_deviceprefs {
     dp_value_t fact_values[DP_FACTS];
     dp_tier_t layout;
     int erase;                 /* the next tier stage may erase /data */
+    char tier_request[DP_LAYOUT_REQUEST_CAP], tier_device[64];
     dp_clock_t clock;
     dp_row_t rows[DP_ROWS];
     int nrow;
@@ -225,8 +230,8 @@ typedef struct {
     dp_clock_t clock;
     tiku_config_snapshot_t config[2];
     tiku_config_pending_t pending;
-    char input[96], status[192];
-    int write_at, completed, can_enroll, need_erase;
+    char input[DP_LAYOUT_REQUEST_CAP], status[192], device[64];
+    int write_at, completed, can_enroll, need_erase, tier_sent;
 } dp_job_t;
 
 /** @brief Font-scaled row shared by paint and hit testing. */
@@ -598,8 +603,11 @@ static void dp_edit(struct desktop_deviceprefs *p)
                      p->clock.target : p->values[p->setting].value);
     if (p->setting == DP_TIER) {
         char kb[24];
-        snprintf(kb, sizeof kb, "%lu", (p->layout.pending
-                 ? p->layout.pending_value : p->layout.current) / 1024UL);
+        unsigned long target = p->layout.pending
+                             ? p->layout.pending_value : p->layout.current;
+        if (p->confirm == 3)
+            (void)sscanf(p->tier_request, "nvm.tier=%lu", &target);
+        snprintf(kb, sizeof kb, "%lu", target / 1024UL);
         tiku_field_start(&p->field, kb);
     }
     tiku_field_deny(&p->field, "\r\n\t/");
@@ -736,19 +744,22 @@ static const char *dp_held_help(const char *held)
     static const struct { const char *reason, *help; } table[] = {
         { "reboot-required", "Ownership is recovered. Restart the device to "
           "bring /data and the NVM tier back." },
-        { "control-missing", "Ownership of the store is missing. In the "
-          "device's shell, 'layout inspect' lists the store it finds; "
-          "'layout recover nvm.tier=<that offset> --accept-layout' and a "
-          "restart give it back." },
-        { "foreign-contract", "The layout belongs to another firmware image. "
-          "In the device's shell, 'layout inspect' lists the store; 'layout "
-          "recover nvm.tier=<offset> --accept-layout' takes it explicitly." },
-        { "ambiguous", "More than one store header lies in the region. "
-          "'layout inspect' in the device's shell lists them; recover the one "
-          "you know with 'layout recover nvm.tier=<offset> --accept-layout'." },
-        { "elsewhere", "Another store header lies elsewhere in the region. "
-          "'layout inspect' in the device's shell lists it; recover the one "
-          "you know with 'layout recover nvm.tier=<offset> --accept-layout'." },
+        { "control-missing", "Ownership missing. "
+          "'layout inspect' shows candidates, not proof of ownership. Use "
+          "'layout recover' only with an offset verified from your previous "
+          "layout. If unknown, stop; back up first." },
+        { "foreign-contract", "Different firmware layout. "
+          "'layout inspect' shows candidates, not proof of ownership. Use "
+          "'layout recover' only with an offset verified from your previous "
+          "layout. If unknown, stop; back up first." },
+        { "ambiguous", "Multiple headers. "
+          "'layout inspect' shows candidates, not proof of ownership. Use "
+          "'layout recover' only with an offset verified from your previous "
+          "layout. If unknown, stop; back up first." },
+        { "elsewhere", "Unexpected header. "
+          "'layout inspect' shows candidates, not proof of ownership. Use "
+          "'layout recover' only with an offset verified from your previous "
+          "layout. If unknown, stop; back up first." },
         { "interrupted", "A tier move stopped part way. In the device's "
           "shell, 'layout status' names the operation and 'layout resume "
           "<operation>' finishes it; then restart." },
@@ -761,8 +772,11 @@ static const char *dp_held_help(const char *held)
         { "version", "The store is in another format version. 'mkfs' in the "
           "device's shell shows what it holds; 'mkfs --erase-data' formats "
           "it." },
-        { "io", "The layout record could not be written. Restart the device; "
+        { "io", "Store or layout initialization could not be persisted. Restart the device; "
           "'layout status' in its shell says whether it stays held." },
+        { "entropy-unavailable", "The device could not generate its ownership "
+          "identity. Blank memory is untouched. Restart to retry; if this "
+          "persists, check the device's random-number generator." },
     };
     size_t i;
     for (i = 0; i < sizeof table / sizeof table[0]; i++)
@@ -772,15 +786,24 @@ static const char *dp_held_help(const char *held)
 
 /** @brief The request the stage file takes: the knob, an id, the state
  *         it expects, and the erase when the person confirmed it. */
-static void dp_layout_request(const dp_tier_t *l, unsigned long bytes,
+static int dp_layout_request(const dp_tier_t *l, unsigned long bytes,
                               unsigned long op, int erase, char *out,
                               size_t cap)
 {
     /* The identity is the record's incarnation: a request from before a
      * recovery cannot replay after it, since the counters reset. */
-    snprintf(out, cap, "nvm.tier=%lu op=%lu identity=%s expect=%lu:%lu%s",
-             bytes, op, l->identity[0] ? l->identity : "none",
+    int n;
+    if (!out || !cap) return -1;
+    out[0] = '\0';
+    if (bytes > UINT32_MAX || !op || op > UINT32_MAX ||
+        l->generation > UINT32_MAX || l->revision > UINT32_MAX ||
+        strlen(l->identity) != 32 ||
+        strspn(l->identity, "0123456789abcdefABCDEF") != 32) return -1;
+    n = snprintf(out, cap, "nvm.tier=%lu op=%lu identity=%s expect=%lu:%lu%s",
+             bytes, op, l->identity,
              l->generation, l->revision, erase ? " method=erase" : "");
+    if (n < 0 || (size_t)n >= cap) { out[0] = '\0'; return -1; }
+    return 0;
 }
 
 /** @brief Discover clock controls; older firmware remains read-only. */
@@ -823,13 +846,14 @@ static void dp_run_tier(dp_job_t *j)
     const char *path = j->write_at == DP_TIER ? "/sys/mem/layout/stage"
                                               : "/sys/mem/layout/cancel";
     char err[128] = "";
+    j->need_erase = j->tier_sent = 0;
     int rc = j->backend->ops->write(j->backend, path, j->input,
                                     strlen(j->input), err, sizeof err);
     if (rc == 0) {
+        j->tier_sent = j->write_at == DP_TIER;
         snprintf(j->status, sizeof j->status, "%s",
                  j->write_at == DP_TIER
-                 ? "Staged for the next restart. Restart the device to "
-                   "move the tier; the store moves with it."
+                 ? "Stage request sent; checking device…"
                  : "The staged change is cancelled.");
     } else if (strstr(err, "ECONFLICT") && j->write_at == DP_TIER &&
                !strstr(j->input, "method=erase")) {
@@ -970,6 +994,22 @@ static void dp_run(void *ctx)
         dp_read_text(j->backend, "/sys/mem/nvm_map", j->nvm_map,
                      sizeof j->nvm_map);
         dp_layout_read(j->backend, &j->layout);
+        if (j->tier_sent) {
+            unsigned long bytes = 0, op = 0;
+            char identity[33] = "";
+            int same = sscanf(j->input, "nvm.tier=%lu op=%lu identity=%32s",
+                              &bytes, &op, identity) == 3 && j->layout.have &&
+                       !strcmp(identity, j->layout.identity);
+            int erase = strstr(j->input, " method=erase") != NULL;
+            snprintf(j->status, sizeof j->status, "%s",
+                same && j->layout.pending && j->layout.pending_op == op &&
+                j->layout.pending_value == bytes && j->layout.pending_erase == erase
+                ? "Staged for the next restart. Restart the device to apply it."
+                : same && !j->layout.pending && j->layout.current == bytes
+                ? "The tier is that size already; no restart change is pending."
+                : "Stage request sent, but the pending change was not confirmed. Refresh to check.");
+            j->tier_sent = 0;
+        }
         /* The tier row is the service's, not its file's first line. */
         j->values[DP_TIER].present = j->layout.have;
         j->values[DP_TIER].writable = j->layout.have && j->layout.writable;
@@ -1050,6 +1090,9 @@ static void dp_done(void *ctx)
     p->pending = j->pending;
     p->can_enroll = j->can_enroll;
     p->confirm = j->need_erase ? 3 : 0;
+    snprintf(p->tier_request, sizeof p->tier_request, "%s",
+             j->need_erase ? j->input : "");
+    snprintf(p->tier_device, sizeof p->tier_device, "%s", j->device);
     p->erase = 0;
     snprintf(p->status, sizeof p->status, "%s", j->status);
     if (!dp_section_available(p, p->section)) {
@@ -1080,6 +1123,8 @@ static void dp_free(void *ctx)
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
         p->confirm = 0;
+        p->erase = 0;
+        p->tier_request[0] = '\0';
         p->can_enroll = 0;
         tiku_choice_close(&p->choice);
         snprintf(p->status, sizeof p->status,
@@ -1109,6 +1154,8 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
         p->confirm = 0;
+        p->erase = 0;
+        p->tier_request[0] = '\0';
         p->can_enroll = 0;
         snprintf(p->status, sizeof p->status,
             "Device disconnected. Refresh the list.");
@@ -1119,20 +1166,43 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     j->owner = p;
     j->backend = b;
     j->write_at = write_at;
+    snprintf(j->device, sizeof j->device, "%s", p->names[p->selected]);
     memcpy(j->config, p->config, sizeof j->config);
     j->pending = p->pending;
-    p->confirm = 0;
-    p->can_enroll = 0;
     snprintf(j->input, sizeof j->input, "%.95s", p->field.text);
     if (write_at == DP_TIME) {
         snprintf(j->input, sizeof j->input, "%lu", (unsigned long)time(NULL));
     }
     if (write_at == DP_TIER) {
-        unsigned long kb = strtoul(p->field.text, NULL, 10);
-        dp_layout_request(&p->layout, kb * 1024UL,
+        int rc;
+        if (p->erase) {
+            /* Consent belongs to the original request, including its stale
+             * check and device. Never rebuild it from refreshed UI fields. */
+            int n = snprintf(j->input, sizeof j->input, "%s method=erase",
+                             p->tier_request);
+            rc = p->confirm == 3 && p->tier_request[0] &&
+                 !strcmp(p->tier_device, j->device) && n >= 0 &&
+                 (size_t)n < sizeof j->input ? 0 : -1;
+        } else {
+            char *end;
+            unsigned long kb = strtoul(p->field.text, &end, 10);
+            rc = end == p->field.text || *end || kb > UINT32_MAX / 1024UL
+                 ? -1 : dp_layout_request(&p->layout, kb * 1024UL,
                           ((unsigned long)time(NULL) & 0x3FFFFFFFUL) + 1UL,
-                          p->erase, j->input, sizeof j->input);
+                          0, j->input, sizeof j->input);
+        }
+        p->erase = 0;
+        if (rc != 0) {
+            free(j);
+            p->confirm = 0;
+            p->tier_request[0] = '\0';
+            snprintf(p->status, sizeof p->status,
+                     "Could not prepare the layout request. Refresh and try again.");
+            return;
+        }
     }
+    p->erase = p->confirm = p->can_enroll = 0;
+    p->tier_request[0] = '\0';
     if (write_at == DP_CANCEL_TIER) {
         snprintf(j->input, sizeof j->input, "%lu", p->layout.pending_op);
     }
@@ -1169,7 +1239,7 @@ static int dp_can_edit(const struct desktop_deviceprefs *p)
     int i = p->setting == DP_CPU;
     int held = p->pending.state &&
                (p->pending.uid[0] || p->config[i].mode > 0);
-    return !p->busy && p->values[p->setting].writable &&
+    return !p->busy && p->confirm != 3 && p->values[p->setting].writable &&
         !((p->setting == DP_NAME || p->setting == DP_CPU) &&
           (p->config[i].mode < 0 || held));
 }
@@ -1211,7 +1281,7 @@ static void dp_apply(struct desktop_deviceprefs *p)
     if (p->setting == DP_TIER) {
         unsigned long kb = strtoul(p->field.text, &end, 10), bytes;
         if (p->layout.pending) { dp_request(p, DP_CANCEL_TIER); return; }
-        if (end == p->field.text || *end) {
+        if (end == p->field.text || *end || kb > UINT32_MAX / 1024UL) {
             snprintf(p->status, sizeof p->status,
                      "Enter the tier's size in KB.");
             return;
@@ -1266,6 +1336,8 @@ static void dp_refresh(struct desktop_deviceprefs *p)
     memset(p->config, 0, sizeof p->config);
     memset(&p->pending, 0, sizeof p->pending);
     p->confirm = 0;
+    p->erase = 0;
+    p->tier_request[0] = '\0';
     p->can_enroll = 0;
     snprintf(p->status, sizeof p->status,
              "Connect a device from the desktop Devices menu.");
@@ -1870,12 +1942,15 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         memset(p->config, 0, sizeof p->config);
         memset(&p->pending, 0, sizeof p->pending);
         p->confirm = 0;
+        p->erase = 0;
+        p->tier_request[0] = '\0';
         p->can_enroll = 0;
         dp_request(p, -1);
     } else if (result.activated >= DP_ROW &&
                result.activated < DP_ROW + p->nrow) {
         dp_row_t r = p->rows[result.activated - DP_ROW];
         if (r.setting >= 0) {
+            if (p->confirm == 3) { p->confirm = 0; p->tier_request[0] = '\0'; }
             p->setting = r.setting;
             p->fact = -1;
             p->estate = -1;
@@ -1889,6 +1964,7 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         }
     } else if (result.activated >= DP_SECTION &&
                result.activated < DP_SECTION + SEC_COUNT) {
+        if (p->confirm == 3) { p->confirm = 0; p->tier_request[0] = '\0'; }
         dp_show_section(p, result.activated - DP_SECTION);
         if (p->fact < 0) dp_edit(p);
         tiku_choice_close(&p->choice);
@@ -1899,7 +1975,6 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     else if (result.activated == DP_RECOVERY && !p->busy) {
         if (p->confirm == 3) {
             p->erase = 1;
-            p->confirm = 0;
             dp_request(p, DP_TIER);
         } else if (p->confirm)
             dp_request(p, p->confirm == 1 ? DP_ENROLL : DP_DISCARD);
@@ -1910,6 +1985,7 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     } else if (result.activated == DP_FORGET && !p->busy) {
         p->confirm = p->confirm ? 0 : dp_can_forget(p) ? 2 : 0;
         p->erase = 0;
+        p->tier_request[0] = '\0';
     }
     else if (ev->type == TIKU_EVENT_WHEEL &&
              ev->x >= l.table.x && ev->x < l.table.x + l.table.w &&

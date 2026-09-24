@@ -305,14 +305,24 @@ static void real_catalogue_test(void)
     bench_t *st = state; pump_for(st, 120);
     if (!st->metadata_ok) fprintf(stderr, "%s\n", st->note);
     assert(st->metadata_ok && st->nsuite > 80 && st->nleaf > 400);
-    int recovery = 0;
+    int recovery = 0, memory = 0;
     for (int i = 0; i < st->nsuite; i++) if (!strcmp(st->suites[i].key, "kernel")) {
         st->suites[i].expanded = 1; st->suites[i].selected = 1;
     } else if (!strcmp(st->suites[i].key, "vfs-recovery-host")) {
         recovery++;
         assert(st->suites[i].host_only && !st->suites[i].large && st->suites[i].count == 7);
+    } else if (!strcmp(st->suites[i].key, "memory-host")) {
+        memory++;
+        assert(st->suites[i].host_only && !st->suites[i].large);
+        int layout = 0, lending = 0;
+        for (int j = st->suites[i].first;
+             j < st->suites[i].first + st->suites[i].count; j++) {
+            layout += !strcmp(st->leaves[j].id, "layout");
+            lending += !strcmp(st->leaves[j].id, "lending");
+        }
+        assert(layout == 1 && lending == 1);
     }
-    assert(recovery == 1);
+    assert(recovery == 1 && memory == 1);
     tiku_bench_entries_build(st);
     /* The list is category cards: a heading over each group, in the
      * catalogue's order, counting its suites; headings are not pickable;
