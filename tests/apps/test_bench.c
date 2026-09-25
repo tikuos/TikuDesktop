@@ -314,13 +314,14 @@ static void real_catalogue_test(void)
     } else if (!strcmp(st->suites[i].key, "memory-host")) {
         memory++;
         assert(st->suites[i].host_only && !st->suites[i].large);
-        int layout = 0, lending = 0;
+        int layout = 0, lending = 0, spans = 0;
         for (int j = st->suites[i].first;
              j < st->suites[i].first + st->suites[i].count; j++) {
             layout += !strcmp(st->leaves[j].id, "layout");
             lending += !strcmp(st->leaves[j].id, "lending");
+            spans += !strcmp(st->leaves[j].id, "spans");
         }
-        assert(layout == 1 && lending == 1);
+        assert(layout == 1 && lending == 1 && spans == 1);
     }
     assert(recovery == 1 && memory == 1);
     tiku_bench_entries_build(st);

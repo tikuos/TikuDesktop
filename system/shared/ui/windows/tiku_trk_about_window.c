@@ -511,6 +511,8 @@ about_estates[] = {
     { "module",  "Modules", 0x6A4C93u },   /* violet                 */
     { "static",  "Static",  0x3B6EA5u },
     { "stack",   "Stack pool", 0xC0703Cu }, /* amber: the pool it grows in */
+    { "guard",   "Guard",   0xB03A48u },
+    { "unassigned", "Unassigned", 0x7A7A7Au },
     { "tier",    "Tier",    0x2E8B57u },   /* green                  */
     { "tier2",   "Tier",    0x2E8B57u },
     { "store",   "Store",   0x8A8A2Eu },   /* olive                  */

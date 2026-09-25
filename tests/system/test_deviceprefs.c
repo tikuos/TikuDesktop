@@ -425,12 +425,58 @@ static void test_layout_confirmation(struct desktop_deviceprefs *p, tiku_backend
     connected_backend = NULL;
 }
 
+static void test_multibank_map(void)
+{
+    struct desktop_deviceprefs p = {0};
+    unsigned long total = 0, sum = 0;
+    const char *rows[] = {
+        "bank\t245760", "static\t109616", "tier\t261120\t64\t2",
+        "tier\t99264\t32\t1", "guard\t4096", "unassigned\t16",
+        "stack\t32768\t8192", "bank2\t261120"
+    };
+    for (unsigned i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        char line[96];
+        snprintf(line, sizeof line, "%s", rows[i]);
+        dp_estate_line(&p, SEC_MEMORY, line, &total);
+    }
+    assert(p.nestate == 7);
+    for (int i = 0; i < p.nestate; i++) {
+        if (p.estates[i].in_bar) sum += p.estates[i].size;
+    }
+    assert(sum == total && total == 245760);
+    assert(p.estates[1].bank == 2 && !p.estates[1].in_bar);
+    assert(p.estates[2].bank == 1 && p.estates[2].in_bar);
+    assert(p.estates[1].used == 64 && p.estates[2].used == 32);
+    assert(!strcmp(p.estates[3].label, "Stack guard"));
+    assert(!strcmp(p.estates[4].label, "Unassigned"));
+
+    memset(&p, 0, sizeof p);
+    const char *apollo[] = {
+        "bank\t524288", "static\t280480", "tier\t3112960\t4096\t2",
+        "tier\t206944\t32\t1", "guard\t4096", "unassigned\t0",
+        "stack\t32768\t8192"
+    };
+    total = sum = 0;
+    for (unsigned i = 0; i < sizeof apollo / sizeof apollo[0]; i++) {
+        char line[96];
+        snprintf(line, sizeof line, "%s", apollo[i]);
+        dp_estate_line(&p, SEC_MEMORY, line, &total);
+    }
+    for (int i = 0; i < p.nestate; i++) {
+        if (p.estates[i].in_bar) sum += p.estates[i].size;
+    }
+    assert(sum == total && total == 524288);
+    assert(!p.estates[1].in_bar && p.estates[1].size == 3112960);
+    assert(p.estates[1].used == 4096 && p.estates[2].used == 32);
+}
+
 int main(void)
 {
     char outbox[] = "/tmp/tiku-deviceprefs-outbox-XXXXXX";
     assert(mkdtemp(outbox) && !setenv("TIKU_CONFIG_OUTBOX", outbox, 1));
     assert(tiku_icons_tiku_register() > 0);
     test_layout_serialization();
+    test_multibank_map();
     const tiku_backend_ops_t ops = {.stat=mock_stat, .read=mock_read,
                                    .write=mock_write};
     tiku_backend_t backend = {.ops=&ops};
