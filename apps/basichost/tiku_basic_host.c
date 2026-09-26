@@ -126,20 +126,25 @@ tiku_tier_init(void)
 }
 
 tiku_mem_err_t
-tiku_tier_arena_create(tiku_arena_t *arena, tiku_mem_tier_t tier,
-                       tiku_mem_arch_size_t size, uint8_t id)
+tiku_mem_arena_create(tiku_arena_t *arena, tiku_mem_arch_size_t size,
+                      uint8_t id, const tiku_mem_request_t *request)
 {
-    uint8_t *buf = malloc(size);
+    void *buf;
+    size_t alignment = request ? request->alignment : 0;
 
-    if (arena == NULL || buf == NULL) {
+    if (arena == NULL || size == 0 ||
+        (request && (request->flags & ~TIKU_MEM_ALLOW_EXTERNAL)) ||
+        (alignment && (alignment & (alignment - 1)))) {
         return TIKU_MEM_ERR_INVALID;
     }
+    if (alignment < sizeof(void *)) alignment = sizeof(void *);
+    if (posix_memalign(&buf, alignment, size) != 0) return TIKU_MEM_ERR_NOMEM;
     memset(arena, 0, sizeof *arena);
     arena->buf = buf;
     arena->capacity = size;
     arena->id = id;
     arena->active = 1;
-    arena->tier = tier;
+    arena->tier = TIKU_MEM_SRAM;
     return TIKU_MEM_OK;
 }
 
@@ -147,16 +152,20 @@ void *
 tiku_arena_alloc(tiku_arena_t *arena, tiku_mem_arch_size_t size)
 {
     void *p;
+    /* This adapter runs on the host ABI, including 64-bit longs/pointers. */
+    const tiku_mem_arch_size_t mask = sizeof(void *) - 1u;
+    tiku_mem_arch_size_t aligned;
 
-    if (arena == NULL || !arena->active ||
-        arena->offset + size > arena->capacity) {
+    if (arena == NULL || !arena->active || size == 0 ||
+        size > UINT32_MAX - mask || arena->offset > arena->capacity ||
+        (aligned = (size + mask) & ~mask) > arena->capacity - arena->offset) {
         if (arena != NULL) {
             arena->fail++;
         }
         return NULL;
     }
     p = arena->buf + arena->offset;
-    arena->offset += size;
+    arena->offset += aligned;
     if (arena->offset > arena->peak) {
         arena->peak = arena->offset;
     }

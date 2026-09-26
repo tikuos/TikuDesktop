@@ -314,14 +314,15 @@ static void real_catalogue_test(void)
     } else if (!strcmp(st->suites[i].key, "memory-host")) {
         memory++;
         assert(st->suites[i].host_only && !st->suites[i].large);
-        int layout = 0, lending = 0, spans = 0;
+        int layout = 0, lending = 0, spans = 0, requests = 0;
         for (int j = st->suites[i].first;
              j < st->suites[i].first + st->suites[i].count; j++) {
             layout += !strcmp(st->leaves[j].id, "layout");
             lending += !strcmp(st->leaves[j].id, "lending");
             spans += !strcmp(st->leaves[j].id, "spans");
+            requests += !strcmp(st->leaves[j].id, "requests");
         }
-        assert(layout == 1 && lending == 1 && spans == 1);
+        assert(layout == 1 && lending == 1 && spans == 1 && requests == 1);
     }
     assert(recovery == 1 && memory == 1);
     tiku_bench_entries_build(st);
@@ -376,8 +377,36 @@ static void real_catalogue_test(void)
     tiku_font_set_size(16); tiku_bench_paint(st);
     assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-catalogue-large.png"));
     tiku_font_set_size(12);
+    /* The actual shared catalogue, not a second desktop list: select and run
+     * just the new host group without releasing even a connected device. */
+    tiku_bench_clear_selection(st);
+    for (int i = 0; i < st->nsuite; i++)
+        if (!strcmp(st->suites[i].key, "memory-host"))
+            for (int j = st->suites[i].first;
+                 j < st->suites[i].first + st->suites[i].count; j++)
+                if (!strcmp(st->leaves[j].id, "requests")) st->leaves[j].selected = 1;
+    assert(tiku_bench_queue_build(st) && st->njob == 1);
+    assert(!strcmp(st->jobs[0].only, "requests") && !tiku_bench_queue_needs_device(st));
+    {
+        command_t c;
+        int before = releases, returned = reclaims;
+        assert(tiku_bench_command_build(st, &st->jobs[0], &c));
+        assert(!strcmp(arg_value(&c, "--only"), "requests"));
+        assert(!arg_value(&c, "--port") && !arg_value(&c, "--board") &&
+               !arg_value(&c, "--flash"));
+        tiku_bench_run_confirmed(st); pump_for(st, 120);
+        assert(!st->busy && !st->batch_failed && releases == before && reclaims == returned);
+        assert(st->nresult == 1 && st->results[0].done && st->results[0].pass > 0);
+        assert(!unlink(st->log_path));
+        /* A child failure marker must turn this same selected leaf red. */
+        tiku_bench_plan_build(st);
+        st->job = 0;
+        char failed[] = "[TC:END] requests pass=0 fail=1";
+        tiku_bench_consume_line(st, failed);
+        assert(st->nresult == 1 && st->results[0].done && st->results[0].fail == 1);
+    }
     tiku_bench_stop(st);
-    puts("PASS: full native TikuBench registry import (read-only, no hardware)");
+    puts("PASS: native registry import and selected memory requests run (no hardware)");
 }
 
 /** A destructive leaf: not in a full sweep, asked about on its own before

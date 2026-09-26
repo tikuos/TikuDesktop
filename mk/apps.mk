@@ -67,6 +67,7 @@ BASIC_TARGETS := $(BASICHOST)
 # translation unit built from a tree that is edited elsewhere, and with
 # only the .c files named here an edit to any of them rebuilds nothing.
 BASIC_DEPS := $(wildcard $(TIKUOS)/kernel/shell/basic/*.h) \
+              $(TIKUOS)/kernel/memory/tiku_mem.h \
               $(wildcard $(TIKUOS)/kernel/shell/basic/*.inl) \
               $(wildcard apps/basichost/kernel/shell/*.h)
 
