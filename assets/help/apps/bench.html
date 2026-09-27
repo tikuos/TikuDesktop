@@ -9,7 +9,7 @@ Opening a report never starts tests, flashes firmware or reconnects a device.</p
 this desktop and shows what came back. The Deskbar leaf offers it under
 <b>Device Tools</b> as <b>TikuBench</b>. The window it opens is named
 <b>Bench</b>, and it puts two menus on the top bar: <b>Bench</b>, and a
-<b>View</b> menu whose rows are the seven tabs and, beneath them,
+<b>View</b> menu whose rows are the eight tabs and, beneath them,
 <b>Results report…</b>.</p>
 
 <p>The window has two parts. Down the left is a column of cards about
@@ -23,7 +23,8 @@ right, over the tabs, three pills count the groups that passed, failed and did n
 a word says whether Bench is idle, reading the catalogue, running or
 finished, and a bar shows how far the queue has got. The tabs under
 them are <b>Suites</b>, <b>Results</b>, <b>Output</b>, <b>Console</b>,
-<b>History</b>, <b>Benchmarks</b> and <b>Did not run</b>.</p>
+<b>History</b>, <b>Benchmarks</b>, <b>Did not run</b> and
+<b>Firmware</b>.</p>
 
 <h2 id="checkout">What it needs</h2>
 
@@ -188,6 +189,50 @@ seconds later. Closing the window while a run is under way stops it
 first, then closes. When the queue ends the desktop takes the device
 back; if it does not return, the note line says to reconnect it in
 Devices.</p>
+
+<h2 id="firmware">Installing firmware</h2>
+
+<p>The <b>Firmware</b> tab builds and installs firmware for the chosen
+board with TikuBench's <code>tikubench firmware</code>, which takes its
+options from the tikuOS Makefile itself, so the tab never holds a copy
+of them. Its first line says what the board runs now: the build the
+image names (its commit, with a + when the tree differed from it, and a
+checksum of its options) and the board it was built for.</p>
+
+<p><b>Preset</b> chooses the starting point: the shell, the shell with
+BASIC, with the init system or with the network stack, the board's own
+radio or accelerator image, or the kernel alone. A preset the Makefile
+refuses for this part is listed but cannot be chosen, and its reason
+shows beside the list. Under it are the options that apply to this
+part, grouped as the Makefile groups them. A checkbox flips a switch,
+and each change goes with every run as <code>--set NAME=VALUE</code>;
+<b>Extra</b> takes more <code>KEY=VALUE</code> words, for the options
+that hold a value.</p>
+
+<p><b>Preview</b> hands the board to the tool, which reads what the board
+runs, builds the image and says what the update does to the values the
+board keeps across updates, its name, aliases and boot count among them.
+Then it hands the board back; nothing is flashed. <b>Install…</b> does
+the same and then asks, the preview in the question and <b>Cancel</b>
+the default; only <b>Install</b> flashes. The tool refuses to build when
+the board answers as another part, or runs an image built for another
+board. It flashes a J-Link board through its own probe without opening
+a window, a Nordic part never through nrfutil, and an Apollo510 only
+after its eMMC and PSRAM are down. Afterwards it reads the board back,
+and the install fails unless the board runs the new build with its file
+store ready. The pills <b>Check</b>, <b>Build</b>, <b>Flash</b> and
+<b>Verify</b> show where it has got, and the line under them what the
+board runs before and after.</p>
+
+<p><b>Stop</b> stops a preview or a build, but not a flash under way: a
+part cut off mid-write is left half-programmed, so that step runs to its
+end. MSP430 boards are built but not flashed on macOS; flash
+<code>main.elf</code> with UniFlash. The kernel-only preset leaves no
+shell, so nothing talks to the board again until a shell image goes back
+on through its probe. <b>Preview firmware</b> and <b>Install
+firmware…</b> in the Bench menu do what the buttons do, and <b>Update…</b>
+beside the installed build in <a href="settings.html#devices">Devices
+Preferences</a> opens this tab for that board.</p>
 
 <hr>
 

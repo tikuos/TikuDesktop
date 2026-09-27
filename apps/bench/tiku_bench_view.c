@@ -50,6 +50,10 @@ const char *tiku_bench_details_row(void *ctx, int row)
             return out;
         }
         return NULL;
+    } else if (tab == TAB_FIRMWARE) {
+        if (row < 0 || row >= st->fw.nrow) return NULL;
+        return st->fw.row[row] < 0 ? st->fw.group[-1 - st->fw.row[row]]
+                                   : st->fw.option[st->fw.row[row]].name;
     } else if (tab == TAB_METRICS) {
         int n = 0;
         for (int i = 0; i < st->nmetric; i++) {
@@ -76,7 +80,8 @@ static void detail_counts(bench_t *st)
                 n += st->logs[(st->log_head + 256 - st->nlog + i) % 256].output;
         } else if (tab == TAB_HISTORY) {
             for (int i = 0; i < st->nhistory; i++) n += !strcmp(st->history[i].profile, st->profile);
-        } else for (int i = 0; i < st->nmetric; i++) n += !strcmp(st->metrics[i].field[1], st->profile);
+        } else if (tab == TAB_FIRMWARE) n = st->fw.nrow;
+        else for (int i = 0; i < st->nmetric; i++) n += !strcmp(st->metrics[i].field[1], st->profile);
         tiku_list_set_count(&st->list[tab], n);
         if (st->follow && (tab == TAB_OUTPUT || tab == TAB_CONSOLE))
             tiku_list_scroll_to(&st->list[tab], n, tiku_bench_list_rect(st, tab));
@@ -277,6 +282,7 @@ void tiku_bench_paint(bench_t *st)
     tiku_ui_sunken(st->surface, body, TIKU_C_DOC);
     if (tab == TAB_SUITES) browser_draw(st, body);
     else if (tab == TAB_RESULTS) results_draw(st, body);
+    else if (tab == TAB_FIRMWARE) tiku_bench_fw_draw(st, body);
     else tiku_list_draw(&st->list[tab], st->surface, body, tiku_bench_details_row, st);
     if (tab == TAB_SUITES) {
         tiku_bench_text(st, (tiku_rect_t){RX, 90, 46, 24}, "Filter", 0);
@@ -334,6 +340,9 @@ void tiku_bench_paint(bench_t *st)
     if (st->epattern.open)
         tiku_choice_draw_popup(&st->epattern, st->surface, tiku_bench_preset_rect(1),
                                screen);
+    if (st->fw.choice.open)
+        tiku_choice_draw_popup(&st->fw.choice, st->surface,
+                               tiku_bench_fw_preset_rect(st), screen);
     if (st->confirm.open) tiku_alert_draw(&st->confirm, st->surface, TIKU_BENCH_ALERT_RECT);
     st->services->frame(st->services->ctx, st->id, st->surface->px,
                         st->w, st->h);

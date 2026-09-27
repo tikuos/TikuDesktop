@@ -8,10 +8,12 @@ static int names(void *ctx, char *out, size_t cap)
 { (void)ctx; return snprintf(out, cap, "%s\n", device); }
 static int current(void *ctx, char *out, size_t cap)
 { (void)ctx; return snprintf(out, cap, "%s", device); }
+/* The fixture's board, unless the hardware lane names a real one. */
+static const char *board_mcu = "nRF54L15", *board_port = "/dev/fixture-only";
 static int mcu(void *ctx, const char *board, char *out, size_t cap)
-{ (void)ctx; (void)board; return snprintf(out, cap, "%s", port_released ? "" : "nRF54L15"); }
+{ (void)ctx; (void)board; return snprintf(out, cap, "%s", port_released ? "" : board_mcu); }
 static int port(void *ctx, const char *board, char *out, size_t cap)
-{ (void)ctx; (void)board; return snprintf(out, cap, "%s", port_released ? "" : "/dev/fixture-only"); }
+{ (void)ctx; (void)board; return snprintf(out, cap, "%s", port_released ? "" : board_port); }
 static int release(void *ctx, const char *board)
 { (void)ctx; assert(!strcmp(board, device)); releases++; port_released = 1; return 1; }
 static int reclaim(void *ctx, const char *board)
@@ -30,10 +32,14 @@ static int report(void *ctx, const char *title, const char *html)
     assert(strlen(html) <= 15000);
     strcpy(report_body, html); return 1;
 }
+/* What the desk keeps about the board: an image that names its build. */
+static const char *kept = "mcu\tnRF54L15\nbuild\told 1\nboard\tnrf54l15dk\n";
+static int stats(void *ctx, const char *board, char *out, size_t cap)
+{ (void)ctx; (void)board; return snprintf(out, cap, "%s", kept); }
 static tiku_app_services_t svc = {.open = opened, .close = closed, .frame = frame,
     .menus = menus, .current_device = current, .board_names = names,
     .board_mcu = mcu, .board_port = port, .board_release = release, .board_reclaim = reclaim,
-    .help_html = report};
+    .help_html = report, .device_stats = stats};
 
 /**
  * @brief Tick until the child is gone, giving it @p seconds to do it.
@@ -76,6 +82,8 @@ static bench_t *start(void)
     assert(!strcmp(st->port, "/dev/fixture-only"));
     return st;
 }
+
+static int fw_row(const bench_t *st, const char *name);
 
 static const char *arg_value(const command_t *c, const char *key)
 {
@@ -405,6 +413,21 @@ static void real_catalogue_test(void)
         tiku_bench_consume_line(st, failed);
         assert(st->nresult == 1 && st->results[0].done && st->results[0].fail == 1);
     }
+    /* The real `tikubench firmware` answers the Firmware tab in its own
+     * records: the board named from its die and image, its presets with
+     * the Makefile's verdict, and the options that apply to the part. */
+    tiku_tabs_select(&st->tabs, TAB_FIRMWARE); st->fw.asked[0] = '\0';
+    tiku_bench_fw_poll(st); pump_for(st, 60);
+    assert(!strcmp(st->fw.board, "nrf54l15") && st->fw.npreset >= 5);
+    assert(!strcmp(st->fw.preset[0].key, "shell") && !*st->fw.preset[0].error);
+    tiku_bench_fw_poll(st); pump_for(st, 60);
+    if (*st->fw.error) fprintf(stderr, "firmware options: %s\n", st->fw.error);
+    assert(!*st->fw.error && st->fw.noption > 20 && st->fw.ngroup >= 4);
+    assert(fw_row(st, "TIKU_SHELL_ENABLE") >= 0 && fw_row(st, "TIKU_FLPR_ENABLE") >= 0);
+    assert(fw_row(st, "TIKU_DRV_GPU_ENABLE") < 0);       /* an Apollo part */
+    tiku_bench_paint(st);
+    assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-firmware-real.png"));
+    tiku_tabs_select(&st->tabs, TAB_SUITES);
     tiku_bench_stop(st);
     puts("PASS: native registry import and selected memory requests run (no hardware)");
 }
@@ -512,6 +535,204 @@ static void ui_test(bench_t *st)
     puts("PASS: list keyboard selection, native controls and safe confirmation");
 }
 
+static int logged(const bench_t *st, const char *text)
+{
+    for (int i = 0; i < st->nlog; i++)
+        if (strstr(st->logs[(st->log_head + 256 - st->nlog + i) % 256].text, text))
+            return 1;
+    return 0;
+}
+
+static int fw_row(const bench_t *st, const char *name)
+{
+    for (int i = 0; i < st->fw.nrow; i++)
+        if (st->fw.row[i] >= 0 && !strcmp(st->fw.option[st->fw.row[i]].name, name))
+            return i;
+    return -1;
+}
+
+/** One firmware run on the released board, up to the install question. */
+static void fw_run(bench_t *st, int install)
+{
+    int before = releases;
+    tiku_bench_fw_start(st, install);
+    assert(st->waiting && !st->child && releases == before + 1);
+    tiku_bench_board_said(st, TIKU_APP_BOARD_RELEASED, device);
+    assert(st->child && st->fw.step == FWS_PREVIEW);
+    pump(st);
+    assert(!strcmp(st->fw.stage[FW_CHECK], "ok") &&
+           !strcmp(st->fw.stage[FW_BUILD], "ok"));
+    assert(!strcmp(st->fw.image, "new 2") && strstr(st->fw.preview, "keeps name"));
+}
+
+static void fw_settle(bench_t *st)
+{
+    int suites = st->nsuite;
+    assert(st->reclaiming && !st->confirm.open);
+    tiku_bench_board_said(st, TIKU_APP_BOARD_RECLAIMED, device);
+    /* A firmware run changes the board, never the catalogue. */
+    assert(!st->busy && !st->loading && !st->child && st->nsuite == suites);
+    assert(!unlink(st->log_path));
+}
+
+static void firmware_test(bench_t *st)
+{
+    setenv("TIKU_BENCH_FW_MODE", "normal", 1);
+    int held = releases;
+    tiku_tabs_select(&st->tabs, TAB_FIRMWARE);
+    /* The tab asks what can be built from the die's name and what the
+     * image says it is, without taking the board. */
+    tiku_bench_fw_poll(st);
+    assert(st->child && st->fw.step == FWS_QUERY);
+    pump(st);
+    assert(!strcmp(st->fw.board, "nrf54l15") && st->fw.npreset == 3);
+    assert(st->fw.choice.selected == 0 && !st->fw.choice.item[2].enabled);
+    tiku_bench_fw_poll(st); pump(st);
+    /* Only what applies to the part, under its headings. */
+    assert(st->fw.noption == 3 && st->fw.nrow == 6 && fw_row(st, "TIKU_DRV_GPU_ENABLE") < 0);
+    assert(releases == held);
+    tiku_bench_fw_poll(st); assert(!st->child);          /* asked once */
+    /* A change shows at once, then make is asked with it. */
+    int x = fw_row(st, "TIKU_DRV_X_ENABLE");
+    tiku_bench_fw_toggle(st, x);
+    assert(!strcmp(st->fw.option[st->fw.row[x]].value, "1") && st->fw.nset == 1);
+    tiku_bench_fw_poll(st); pump(st);
+    x = fw_row(st, "TIKU_DRV_X_ENABLE");
+    assert(!strcmp(st->fw.option[st->fw.row[x]].value, "1"));
+    /* A value is not a checkbox: it goes under Extra. */
+    tiku_bench_fw_toggle(st, fw_row(st, "UART_BAUD"));
+    assert(st->fw.nset == 1 && strstr(st->note, "Extra"));
+    tiku_field_start(&st->field[F_FWVARS - F_FILTER], "BAD");
+    tiku_bench_fw_start(st, 0);
+    assert(!st->busy && releases == held && strstr(st->note, "KEY=VALUE"));
+    tiku_field_start(&st->field[F_FWVARS - F_FILTER], "UART_BAUD=9600");
+
+    /* Preview: released, read, built, said, handed back; nothing asked. */
+    fw_run(st, 0);
+    assert(logged(st, "SETS TIKU_DRV_X_ENABLE=1 UART_BAUD=9600"));
+    assert(strstr(st->fw.status, "runs old 1") && strstr(st->note, "nothing was flashed"));
+    fw_settle(st);
+    assert(st->fw.nset == 1);            /* changes outlive the run */
+
+    /* Install, answered Cancel (the default): nothing is flashed. */
+    fw_run(st, 1);
+    assert(st->confirm.open && st->confirm.tag == FW_CONFIRM && st->confirm.dflt == 0);
+    assert(strstr(st->confirm.text, "keeps name") && strstr(st->confirm.text, "new 2"));
+    assert(st->released && !st->reclaiming && st->busy);
+    tiku_event_t ev = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_RETURN};
+    tiku_bench_event(st, st->id, &ev);
+    assert(!*st->fw.stage[FW_FLASH] && strstr(st->note, "Nothing was installed"));
+    fw_settle(st);
+
+    /* Install, answered Install: flashed, verified, handed back. */
+    fw_run(st, 1);
+    ev.key = TIKU_KEY_TAB; tiku_bench_event(st, st->id, &ev);
+    ev.key = TIKU_KEY_RETURN; tiku_bench_event(st, st->id, &ev);
+    assert(st->child && st->fw.step == FWS_FLASH);
+    pump(st);
+    assert(!strcmp(st->fw.stage[FW_FLASH], "ok") && !strcmp(st->fw.stage[FW_VERIFY], "ok"));
+    assert(strstr(st->fw.status, "After: runs new 2") && strstr(st->note, "Installed new 2"));
+    tiku_bench_paint(st);
+    assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-firmware.png"));
+    fw_settle(st);
+
+    /* A flash that fails says so, and the board still comes back. */
+    setenv("TIKU_BENCH_FW_MODE", "flashfail", 1);
+    fw_run(st, 1);
+    tiku_bench_fw_confirmed(st, 1); pump(st);
+    assert(!strcmp(st->fw.stage[FW_FLASH], "fail") && strstr(st->note, "install failed"));
+    fw_settle(st);
+
+    /* What is not a record is shown whole: a traceback has a colon in
+     * its first word and spaces, and must not pass for one. */
+    {
+        char trace[] = "Traceback (most recent call last):";
+        char tabbed[] = "  File \"x.py\", line 3\tin <module>";
+        int step = st->fw.step;
+        st->fw.step = FWS_QUERY;
+        tiku_bench_consume_line(st, trace); tiku_bench_consume_line(st, tabbed);
+        st->fw.step = step;
+        assert(logged(st, "Traceback (most recent call last):"));
+        assert(logged(st, "line 3\tin <module>"));
+    }
+
+    /* Stop never cuts a flash short. */
+    st->fw.step = FWS_FLASH; strcpy(st->fw.stage[FW_FLASH], "start");
+    tiku_bench_stop_run(st);
+    assert(!st->cancelled && strstr(st->note, "half-written"));
+    st->fw.step = FWS_IDLE; st->fw.stage[FW_FLASH][0] = '\0';
+
+    /* A combination make refuses stops Install before the board is let go. */
+    setenv("TIKU_BENCH_FW_MODE", "refuse", 1);
+    st->fw.want_options = 1; tiku_bench_fw_poll(st); pump(st);
+    assert(strstr(st->fw.error, "no X"));
+    tiku_bench_fw_start(st, 1);
+    assert(!st->busy && strstr(st->note, "refuses") && releases == held + 4);
+    setenv("TIKU_BENCH_FW_MODE", "normal", 1);
+    tiku_field_start(&st->field[F_FWVARS - F_FILTER], "");
+    tiku_tabs_select(&st->tabs, TAB_SUITES);
+    puts("PASS: firmware tab asks, previews, asks before installing, never cuts a flash");
+}
+
+/**
+ * @brief The tab against a real board and the real tikubench, opt-in.
+ *
+ * TIKU_BENCH_FW_PORT and TIKU_BENCH_FW_MCU name the board; nothing holds
+ * its port here, so the handoff is the fake one and the tool opens the
+ * port itself.  TIKU_BENCH_FW_INSTALL=1 answers Install; else Cancel.
+ */
+static void hardware_firmware_test(void)
+{
+    const char *hwport = getenv("TIKU_BENCH_FW_PORT");
+    const char *hwmcu = getenv("TIKU_BENCH_FW_MCU");
+    const char *install = getenv("TIKU_BENCH_FW_INSTALL");
+    char *dir = realpath("TikuBench", NULL);
+    if (!dir) dir = realpath("../TikuBench", NULL);
+    if (!hwport || !hwmcu || !dir) {
+        puts("SKIP: firmware on hardware (set TIKU_BENCH_FW_PORT and _MCU)");
+        free(dir); return;
+    }
+    setenv("TIKU_BENCH", dir, 1); free(dir);
+    board_mcu = hwmcu; board_port = hwport; kept = "";
+    void *state = NULL; assert(!tiku_bench_start(&state, &svc));
+    bench_t *st = state; pump_for(st, 120);
+    tiku_tabs_select(&st->tabs, TAB_FIRMWARE);
+    tiku_bench_fw_poll(st); pump_for(st, 60);
+    tiku_bench_fw_poll(st); pump_for(st, 60);
+    printf("  board %s, %d presets, %d options%s%s\n", st->fw.board,
+           st->fw.npreset, st->fw.noption, *st->fw.error ? ": " : "",
+           st->fw.error);
+    assert(*st->fw.board && st->fw.npreset && st->fw.noption && !*st->fw.error);
+    tiku_bench_fw_start(st, 1);
+    tiku_bench_board_said(st, TIKU_APP_BOARD_RELEASED, device);
+    pump_for(st, 900);                    /* a clean build takes minutes */
+    for (int i = 0; i < FW_NSTAGE; i++)
+        printf("  %-6s %-5s %s\n", (const char *[]){"check", "build",
+               "flash", "verify"}[i], st->fw.stage[i], st->fw.stage_text[i]);
+    printf("  %s\n  %s\n", st->fw.status, st->fw.preview);
+    assert(!strcmp(st->fw.stage[FW_CHECK], "ok") &&
+           !strcmp(st->fw.stage[FW_BUILD], "ok") && st->confirm.open);
+    tiku_event_t ev = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_TAB};
+    if (install && !strcmp(install, "1")) tiku_bench_event(st, st->id, &ev);
+    ev.key = TIKU_KEY_RETURN; tiku_bench_event(st, st->id, &ev);
+    pump_for(st, 900);
+    if (install && !strcmp(install, "1")) {
+        printf("  flash  %s %s\n  verify %s %s\n  %s\n", st->fw.stage[FW_FLASH],
+               st->fw.stage_text[FW_FLASH], st->fw.stage[FW_VERIFY],
+               st->fw.stage_text[FW_VERIFY], st->fw.status);
+        assert(!strcmp(st->fw.stage[FW_VERIFY], "ok"));
+    }
+    printf("  %s\n", st->note);
+    assert(st->reclaiming);
+    tiku_bench_board_said(st, TIKU_APP_BOARD_RECLAIMED, device);
+    tiku_bench_paint(st);
+    assert(!tiku_surface_png(st->surface, "/tmp/tiku-bench-firmware-hw.png"));
+    unlink(st->log_path);
+    tiku_bench_stop(st);
+    board_mcu = "nRF54L15"; board_port = "/dev/fixture-only";
+    puts("PASS: firmware tab against the real tool and a real board");
+}
+
 /** One file under a fresh directory: the options round-trip through it. */
 static void settings_test(char *sandbox)
 {
@@ -591,11 +812,13 @@ int main(void)
     run_test(st, "normal", 0); run_test(st, "nonzero", 1); run_test(st, "empty", 1);
     cancel_test(st); interactive_test(st); host_run_test(st); destructive_test(st);
     ui_test(st);
+    firmware_test(st);
     tiku_bench_stop(st);
     assert(windows == 1 && frames > 0);
     settings_test(sandbox);
     setenv("TIKU_BENCH_SETTINGS", none, 1); unlink(none); rmdir(sandbox);
     real_catalogue_test();
+    hardware_firmware_test();
     puts("PASS: queued subprocesses, final partial line, exit codes and release/reclaim");
     return 0;
 }

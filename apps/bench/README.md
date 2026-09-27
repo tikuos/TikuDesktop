@@ -90,6 +90,24 @@ overflow/malformed required records disable Run; oversized output marks the
 evidence incomplete. The current catalogue imports 95 suites / 502 sub-tests;
 those numbers are not hard-coded.
 
+## Firmware
+
+The **Firmware** tab is a front end over `tikubench firmware ... --events
+tsv`: presets, and the options that apply to the part, come from the tikuOS
+Makefile (`make options`), so none are copied here. It names the board from
+the die (`--mcu`) and the image's own `/sys/device/board` (`--os-board`),
+read from the desktop's kept board facts without taking the port.
+Checkboxes and the Extra field become `--set NAME=VALUE` words.
+
+**Preview** releases the board, runs `firmware preview` (check, build,
+what the durable cells do) and reclaims it. **Install...** runs the same
+and then asks, Cancel first, the preview in the question; only Install
+runs `firmware flash`, on the still-released board, then reclaims it.
+The tool refuses another part or another board's image, pins J-Link, keeps
+Nordic parts off nrfutil, brings the Apollo510's eMMC/PSRAM down first,
+and verifies the build afterwards. Stop is refused while the flash step
+is under way. A firmware run never reloads the catalogue.
+
 ## Parity boundaries
 
 The suite list is grouped under the catalogue's category headings, a Did not
@@ -107,6 +125,12 @@ of independently scanning and opening arbitrary serial ports.
 no hardware imports, device I/O, builds or flashing. It covers profile selection,
 queue/argv construction, authoritative corrections, no-test results, final
 unterminated lines, nonzero exits, stdin, forced cancellation and port handoff.
+The Firmware tab is covered against a fixture `tikubench firmware`
+(queries, option changes, preview, install answered Cancel and Install, a
+failed flash, Stop during a flash, a refused combination) and against the
+real tool's presets and options. `TIKU_BENCH_FW_PORT=<port>
+TIKU_BENCH_FW_MCU=<die> [TIKU_BENCH_FW_INSTALL=1]` adds a run on a real
+board: a preview, answered Cancel unless installing.
 It also reads the actual TikuBench catalogue and renders screenshots to
 `/tmp/tiku-bench-catalogue.png`, `/tmp/tiku-bench-options.png` and
 `/tmp/tiku-bench-output.png`, and

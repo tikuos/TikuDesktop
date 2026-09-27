@@ -59,6 +59,7 @@ static void result_end(bench_t *st, const char *id, int pass, int fail, int harn
 void tiku_bench_consume_line(bench_t *st, char *line)
 {
     if (st->loading) { tiku_bench_metadata_line(st, line); return; }
+    if (st->fw.step != FWS_IDLE) { tiku_bench_fw_line(st, line); return; }
     /* Strip ANSI escape sequences; keep readable text in logs and UI. */
     char clean[LINE_MAXIMUM]; size_t at = 0;
     for (size_t i = 0; line[i] && at + 1 < sizeof clean; i++) {

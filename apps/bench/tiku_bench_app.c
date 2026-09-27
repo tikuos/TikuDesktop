@@ -11,6 +11,7 @@ void tiku_bench_tick(void *state, int64_t now_us)
     bench_t *st = state;
     st->now = now_us;
     tiku_bench_process_poll(st);
+    tiku_bench_fw_poll(st);
     if (st->stop_at && st->now >= st->stop_at && st->child > 0) {
         (void)kill(-st->child, SIGKILL); st->stop_at = 0;
     }
@@ -47,9 +48,13 @@ void tiku_bench_board_said(void *state, int what, const char *text)
         if (st->cancelled) tiku_bench_release_finish(st); else tiku_bench_run_next(st);
     } else if (what == TIKU_APP_BOARD_RECLAIMED && st->reclaiming) {
         st->reclaiming = st->released = st->busy = 0;
-        tiku_bench_metadata_start(st);
+        /* A firmware run changes the board, not the catalogue; the tab
+         * asks again when what the board says about itself changes. */
+        if (st->fw.handoff) st->fw.handoff = 0;
+        else tiku_bench_metadata_start(st);
     } else if (what == TIKU_APP_BOARD_FAILED && (st->waiting || st->reclaiming)) {
         st->waiting = st->reclaiming = st->released = st->busy = 0;
+        st->fw.handoff = 0; st->fw.step = FWS_IDLE; st->fw.install = 0;
         snprintf(st->note, sizeof st->note,
                  "Device handoff failed; check Devices before retrying.");
     }
@@ -62,7 +67,7 @@ int tiku_bench_start(void **state, const tiku_app_services_t *services)
 {
     bench_t *st = calloc(1, sizeof *st);
     if (!st) return -1;
-    st->services = services; st->child_fd = st->input_fd = -1; st->follow = 1; st->pressed_row = -1;
+    st->services = services; st->child_fd = st->input_fd = -1; st->follow = 1; st->pressed_row = st->fw.pressed = -1;
     st->w = BW; st->h = BH;
     st->surface = tiku_surface_new(BW, BH, TIKU_C_PANEL);
     if (!st->surface) { free(st); return -1; }
@@ -76,7 +81,7 @@ int tiku_bench_start(void **state, const tiku_app_services_t *services)
     if (!st->id) { tiku_surface_free(st->surface); free(st); return -1; }
     tiku_tabs_init(&st->tabs);
     const char *tabs[] = {"Suites", "Results", "Output", "Console",
-                          "History", "Benchmarks", "Did not run"};
+                          "History", "Benchmarks", "Did not run", "Firmware"};
     for (int i = 0; i < TAB_COUNT; i++) {
         tiku_tabs_add(&st->tabs, tabs[i]); tiku_list_init(&st->list[i], 1);
     }
@@ -90,11 +95,21 @@ int tiku_bench_start(void **state, const tiku_app_services_t *services)
         tiku_choice_add(&st->epattern, (const char *[]){"White", "Black",
                         "Checkerboard", "Text"}[i], 1);
     st->epanel.selected = 0; st->epattern.selected = 0;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < NFIELD; i++) {
         tiku_field_start(&st->field[i], ""); tiku_field_input_init(&st->input[i]);
     }
+    tiku_choice_init(&st->fw.choice);
     tiku_field_start(&st->field[1], "115200");
-    tiku_bench_locate_bench(st); tiku_bench_settings_load(st); tiku_bench_targets_refresh(st);
+    tiku_bench_locate_bench(st); tiku_bench_settings_load(st);
+    /* Opened for one board's firmware (Device Preferences' Update): that
+     * board, when it is mounted, and the Firmware tab. */
+    if (services->startup_message) {
+        const char *tab = tiku_msg_find_string(services->startup_message, "tab", 0);
+        const char *board = tiku_msg_find_string(services->startup_message, "board", 0);
+        if (tab && !strcmp(tab, "firmware")) tiku_tabs_select(&st->tabs, TAB_FIRMWARE);
+        if (board && *board) snprintf(st->wanted, sizeof st->wanted, "%s", board);
+    }
+    tiku_bench_targets_refresh(st);
     tiku_bench_metadata_start(st);
     /* Where the options stand now is the file's baseline: nothing is
      * written until the user moves one. */

@@ -8,17 +8,20 @@ void tiku_bench_publish(bench_t *st)
     tiku_menuset_t m = {0}; m.nmenu = 1;
     snprintf(m.menu[0].title, sizeof m.menu[0].title, "Bench");
     int ids[] = {RUN, STOP, REFRESH, OPEN, TOGGLE, COPY_LOG, FIND_SUITES,
-                 FOCUS_LIST, SELECT_ALL, FOLLOW, OPEN_LOG};
+                 FOCUS_LIST, SELECT_ALL, FOLLOW, OPEN_LOG, FW_PREVIEW,
+                 FW_INSTALL};
     const char *labels[] = {"Run selected...", "Stop", "Refresh catalogue",
                             "Expand / collapse suite", "Toggle selection", "Copy visible log",
                             "Find suites", "Focus suite list", "Select visible",
-                            "Follow tail", "Open full log"};
-    m.menu[0].nitem = 11;
-    for (int i = 0; i < 11; i++) {
+                            "Follow tail", "Open full log", "Preview firmware",
+                            "Install firmware..."};
+    m.menu[0].nitem = 13;
+    for (int i = 0; i < 13; i++) {
         snprintf(m.menu[0].item[i].label, sizeof m.menu[0].item[i].label, "%s", labels[i]);
         m.menu[0].item[i].command = ids[i];
         m.menu[0].item[i].enabled = ids[i] == STOP ? st->busy || st->loading :
             ids[i] == FOLLOW ? 1 : ids[i] == OPEN_LOG ? *st->log_path != 0 :
+            ids[i] == FW_PREVIEW || ids[i] == FW_INSTALL ? tiku_bench_fw_ready(st) :
             tiku_bench_editable(st);
     }
     m.nmenu = 2; snprintf(m.menu[1].title, sizeof m.menu[1].title, "View");
@@ -54,7 +57,7 @@ int tiku_bench_action(bench_t *st, int command)
 {
     if (st->confirm.open) return 0;
     if (command == REPORT) { tiku_bench_report_open(st); return 0; }
-    if (command >= 100 && command < 107) {
+    if (command >= 100 && command < 100 + TAB_COUNT) {
         tiku_tabs_select(&st->tabs, command - 100); st->dirty = 1; return 0;
     }
     if (command == STOP) { tiku_bench_stop_run(st); return 0; }
@@ -92,6 +95,9 @@ int tiku_bench_action(bench_t *st, int command)
         if (command == FIND_SUITES) tiku_field_start(&st->field[0], "");
         tiku_dialog_focus(&st->dialog, command == FIND_SUITES ? F_FILTER : LIST);
         st->dialog.keyboard = 1; tiku_bench_entries_build(st);
+    } else if (command == RUN && st->child) {
+        snprintf(st->note, sizeof st->note,
+                 "Still reading firmware options; run again in a moment.");
     } else if (command == RUN) {
         tiku_bench_target_capture(st);
         command_t c;
@@ -115,7 +121,12 @@ int tiku_bench_action(bench_t *st, int command)
                 st->confirm.dflt = 0; st->confirm_button = -1;
             } else tiku_bench_ask_run(st);
         }
-    } else if (command == REFRESH) tiku_bench_metadata_start(st);
+    } else if (command == FW_PREVIEW || command == FW_INSTALL) {
+        tiku_bench_fw_start(st, command == FW_INSTALL); return 0;
+    } else if (command == REFRESH) {
+        st->fw.asked[0] = '\0';        /* the Firmware tab asks again too */
+        tiku_bench_metadata_start(st);
+    }
     else if (command == CLEAR) tiku_bench_clear_selection(st);
     else if (command == OPEN || command == TOGGLE) tiku_bench_toggle_entry(st, chosen, command == OPEN);
     else if (command == SELECT_ALL) {
@@ -179,7 +190,10 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         if (chosen >= 0) {
             int tag = st->confirm.tag;
             tiku_alert_reset(&st->confirm);
-            if (chosen == 1 && tag == RUN_DESTRUCTIVE) {
+            /* Either answer settles the install question: the board is
+             * the tool's until one does. */
+            if (tag == FW_CONFIRM) tiku_bench_fw_confirmed(st, chosen == 1);
+            else if (chosen == 1 && tag == RUN_DESTRUCTIVE) {
                 st->allow_destructive = 1;
                 tiku_bench_ask_run(st);
             } else if (chosen == 1) tiku_bench_run_confirmed(st);
@@ -187,7 +201,16 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         st->dirty = 1; return 0;
     }
     tiku_bench_controls(st);
-    if (ev->type == TIKU_EVENT_DEACTIVATED) st->pressed_row = -1;
+    if (ev->type == TIKU_EVENT_DEACTIVATED) st->pressed_row = st->fw.pressed = -1;
+    if (ev->type == TIKU_EVENT_POINTER_UP && ev->button == 1 &&
+        st->fw.pressed >= 0) {
+        /* An option flips on a press and release over the same row. */
+        tiku_rect_t body = tiku_bench_list_rect(st, TAB_FIRMWARE);
+        int row = tiku_list_at(&st->list[TAB_FIRMWARE], body, ev->x, ev->y);
+        if (st->tabs.current == TAB_FIRMWARE && row == st->fw.pressed)
+            tiku_bench_fw_toggle(st, row);
+        st->fw.pressed = -1; st->dirty = 1; return 0;
+    }
     if (ev->type == TIKU_EVENT_POINTER_UP && ev->button == 1 && st->pressed_row >= 0) {
         tiku_rect_t body = tiku_bench_list_rect(st, TAB_SUITES);
         int row = tiku_list_at(&st->list[TAB_SUITES], body, ev->x, ev->y);
@@ -209,6 +232,14 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
                 tiku_bench_screen_rect(st), st->dialog.focus == PATTERN);
         if (pr != TIKU_CHOICE_IGNORED) { st->dirty = 1; return 0; }
     }
+    if (cr == TIKU_CHOICE_IGNORED && st->tabs.current == TAB_FIRMWARE &&
+        tiku_bench_editable(st) && st->fw.npreset > 0) {
+        tiku_choice_result_t fr = tiku_choice_event(&st->fw.choice, ev,
+            tiku_bench_fw_preset_rect(st), tiku_bench_screen_rect(st),
+            st->dialog.focus == FW_PRESET);
+        if (fr == TIKU_CHOICE_CHANGED) tiku_bench_fw_preset_changed(st);
+        if (fr != TIKU_CHOICE_IGNORED) { st->dirty = 1; return 0; }
+    }
     if (cr != TIKU_CHOICE_IGNORED) {
         if (cr == TIKU_CHOICE_CHANGED && tiku_bench_editable(st)) {
             snprintf(st->target_name, sizeof st->target_name, "%s", st->target.item[st->target.selected].label);
@@ -221,16 +252,19 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     if (st->dialog.focus == LIST && ev->type == TIKU_EVENT_KEY_DOWN && ev->key != TIKU_KEY_TAB) {
         if (st->tabs.current == TAB_SUITES && (ev->key == ' ' || ev->key == TIKU_KEY_RETURN))
             tiku_bench_action(st, ev->key == ' ' ? TOGGLE : OPEN);
+        else if (st->tabs.current == TAB_FIRMWARE && ev->key == ' ')
+            tiku_bench_fw_toggle(st, tiku_list_chosen(&st->list[TAB_FIRMWARE]));
         else tiku_list_key(&st->list[st->tabs.current], ev->key, ev->modifiers, tiku_bench_list_rect(st, st->tabs.current));
         st->dirty = 1; return 0;
     }
     tiku_dialog_result_t dr = tiku_dialog_event(&st->dialog, ev);
     if (dr.activated != TIKU_DIALOG_NONE) return tiku_bench_action(st, dr.activated);
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < NFIELD; i++) {
         int focus = st->dialog.focus == F_FILTER + i;
         int visible = i == 0 ? st->tabs.current == TAB_SUITES : i == 4 ?
             st->tabs.current == TAB_CONSOLE ||
-            st->tabs.current == TAB_OUTPUT : 1;
+            st->tabs.current == TAB_OUTPUT :
+            i == F_FWVARS - F_FILTER ? st->tabs.current == TAB_FIRMWARE : 1;
         if (!visible || (!tiku_bench_editable(st) && i != 4) || (i == 1 && st->usb) ||
             (i == 4 && (!st->busy || st->cancelled || st->send_at != st->send_n))) continue;
         tiku_field_result_t fr = tiku_field_event(&st->field[i], &st->input[i], ev, tiku_bench_field_rect(st, i), focus);
@@ -248,6 +282,7 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         tiku_list_click(&st->list[st->tabs.current], row, ev->modifiers);
         if (st->tabs.current == TAB_SUITES && row >= 0 && ev->x < body.x + 58)
             { st->pressed_row = row; st->pressed_expand = ev->x < body.x + 22; }
+        if (st->tabs.current == TAB_FIRMWARE && row >= 0) st->fw.pressed = row;
         if (row >= 0) st->dialog.focus = LIST;
     } else if (ev->type == TIKU_EVENT_WHEEL) {
         if (st->tabs.current == TAB_OUTPUT || st->tabs.current == TAB_CONSOLE) st->follow = 0;

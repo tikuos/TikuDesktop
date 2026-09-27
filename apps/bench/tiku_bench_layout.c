@@ -46,6 +46,8 @@ tiku_rect_t tiku_bench_field_rect(const bench_t *st, int i)
     tiku_rect_t in;
     if (!i) return (tiku_rect_t){RX + 48, 90, 396, 24};
     if (i == 4) return (tiku_rect_t){RX, st->h - 84, 380, 24};
+    if (i == F_FWVARS - F_FILTER)
+        return (tiku_rect_t){RX + 60, st->h - 198, RW - 60, 24};
     if (i == 1) {
         in = card_in(TIKU_BENCH_CARD_LINK);
         return (tiku_rect_t){in.x + 48, in.y + 20, in.w - 48, 22};
@@ -59,6 +61,7 @@ tiku_rect_t tiku_bench_list_rect(const bench_t *st, int tab)
     if (tab == TAB_OUTPUT || tab == TAB_CONSOLE)
         return (tiku_rect_t){RX, 90, RW, st->h - 180};
     if (tab == TAB_HISTORY) return (tiku_rect_t){RX, 118, RW, st->h - 178};
+    if (tab == TAB_FIRMWARE) return (tiku_rect_t){RX, 148, RW, st->h - 352};
     return (tiku_rect_t){RX, 90, RW, st->h - 150};
 }
 void tiku_bench_text(bench_t *st, tiku_rect_t r, const char *value, int bold)
@@ -112,6 +115,19 @@ void tiku_bench_controls(bench_t *st)
         tiku_dialog_add(&st->dialog, CLEAR_LOG,
                         (tiku_rect_t){RX + 574, st->h - 84, 116, 24},
                         TIKU_DIALOG_BUTTON, !st->busy);
+    } else if (tab == TAB_FIRMWARE) {
+        const int ready = tiku_bench_fw_ready(st);
+        tiku_dialog_add(&st->dialog, FW_PRESET, tiku_bench_fw_preset_rect(st),
+                        TIKU_DIALOG_INPUT, edit && st->fw.npreset > 0);
+        tiku_dialog_add(&st->dialog, F_FWVARS,
+                        tiku_bench_field_rect(st, F_FWVARS - F_FILTER),
+                        TIKU_DIALOG_INPUT, edit);
+        tiku_dialog_add(&st->dialog, FW_PREVIEW,
+                        (tiku_rect_t){RX, st->h - 84, 100, 24},
+                        TIKU_DIALOG_BUTTON, ready);
+        tiku_dialog_add(&st->dialog, FW_INSTALL,
+                        (tiku_rect_t){RX + 108, st->h - 84, 110, 24},
+                        TIKU_DIALOG_BUTTON, ready);
     }
     /* The cards: the connection, the build mode, the options, the ePaper
      * presets and the make fields, always in reach. */
@@ -143,9 +159,14 @@ void tiku_bench_controls(bench_t *st)
     tiku_dialog_add(&st->dialog, F_FLAGS, tiku_bench_field_rect(st, 3), TIKU_DIALOG_INPUT,
                     edit);
     tiku_dialog_add(&st->dialog, RUN, RUN_RECT, TIKU_DIALOG_BUTTON,
-                    edit && st->metadata_ok && tiku_bench_selected_count(st));
+                    edit && !st->child && st->metadata_ok &&
+                    tiku_bench_selected_count(st));
+    /* Not while the part is being written: a flash cut short leaves it
+     * half-programmed, so that step always runs to its end. */
     tiku_dialog_add(&st->dialog, STOP, STOP_RECT, TIKU_DIALOG_BUTTON,
-                    (st->busy || st->loading) && !st->reclaiming);
+                    (st->busy || st->loading) && !st->reclaiming &&
+                    !(st->fw.step == FWS_FLASH &&
+                      !strcmp(st->fw.stage[FW_FLASH], "start")));
     tiku_dialog_end(&st->dialog);
 }
 
@@ -160,6 +181,7 @@ static const char *button_label(int id)
     case MONITOR: return "Monitor existing firmware";
     case LARGE: return "MSP430 large"; case USB: return "RP2350 USB";
     case PK: return "CRACEN PK"; case EPAPER: return "ePaper kit";
+    case FW_PREVIEW: return "Preview"; case FW_INSTALL: return "Install...";
     default: return "";
     }
 }
@@ -183,6 +205,10 @@ void tiku_bench_controls_draw(bench_t *st)
             tiku_choice_draw(&st->target, st->surface, c->rect,
                 st->target.selected >= 0 ? NULL : "No device (host tests)",
                 flags);
+        } else if (c->id == FW_PRESET) {
+            st->fw.choice.enabled = c->enabled;
+            tiku_choice_draw(&st->fw.choice, st->surface, c->rect,
+                st->fw.choice.selected >= 0 ? NULL : "No presets", flags);
         } else if (c->id == PANEL || c->id == PATTERN) {
             tiku_choice_t *ch = c->id == PANEL ? &st->epanel : &st->epattern;
             ch->enabled = c->enabled;

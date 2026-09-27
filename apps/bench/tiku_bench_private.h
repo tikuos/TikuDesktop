@@ -25,6 +25,7 @@
 #include "tiku_field_event.h"
 #include "tiku_font.h"
 #include "tiku_list_paint.h"
+#include "tiku_msg.h"
 #include "tiku_tabs_paint.h"
 #include "tiku_text_layout_paint.h"
 #include "tiku_ui.h"
@@ -38,13 +39,15 @@
 #define ONLY_MAX 8192
 #define LINE_MAXIMUM 8192
 enum { TAB_SUITES, TAB_RESULTS, TAB_OUTPUT, TAB_CONSOLE,
-       TAB_HISTORY, TAB_METRICS, TAB_NOTRUN, TAB_COUNT };
+       TAB_HISTORY, TAB_METRICS, TAB_NOTRUN, TAB_FIRMWARE, TAB_COUNT };
 enum { RUN = 1, STOP, REFRESH, SELECT_ALL, CLEAR, OPEN, TOGGLE, COPY_LOG,
        CLEAR_LOG, SEND, FLASH, LARGE, USB, PK, EPAPER, FOLLOW, OPEN_LOG,
        FIND_SUITES, FOCUS_LIST, REPORT = 20, MONITOR = 21, RUN_DESTRUCTIVE = 22,
+       FW_PREVIEW = 23, FW_INSTALL = 24, FW_CONFIRM = 25,
        TARGET = 30,
-       PANEL = 32, PATTERN = 33,
-       LIST = 31, F_FILTER = 40, F_BAUD, F_MAKE, F_FLAGS, F_INPUT };
+       PANEL = 32, PATTERN = 33, FW_PRESET = 34,
+       LIST = 31, F_FILTER = 40, F_BAUD, F_MAKE, F_FLAGS, F_INPUT, F_FWVARS };
+#define NFIELD 6                    /* F_FILTER .. F_FWVARS */
 typedef struct {
     char key[48], group[64], name[128], boards[512], description[768];
     int large, host_only, first, count, selected, expanded;
@@ -74,12 +77,50 @@ typedef struct { char field[8][128]; } metric_t;
  * them may erase the store, which needs the person's say-so. */
 typedef struct { int suite, destructive; char key[48], only[ONLY_MAX]; } job_t;
 typedef struct { char text[LINE_MAXIMUM]; int output; } logline_t;
+/* The Firmware tab: what `tikubench firmware` offers for the board, what
+ * its runs said, and which run is going.  A row of the option list is an
+ * option's index, or -1 - n for the heading over group n. */
+#define NFWP 16
+#define NFWO 64
+enum { FWS_IDLE, FWS_QUERY, FWS_PREVIEW, FWS_FLASH };
+enum { FW_CHECK, FW_BUILD, FW_FLASH, FW_VERIFY, FW_NSTAGE };
+/* A preset as the tool offers it; error is the Makefile's refusal. */
+typedef struct { char key[24], label[64], note[256], error[256]; } fw_preset_t;
+/* An option that applies to the part, its value as make resolved it. */
+typedef struct {
+    char name[48], value[24], kind[8], group[24], help[96];
+} fw_option_t;
+/* An option the person changed: kept apart from the options, which each
+ * answer replaces, and sent with every run as --set NAME=VALUE. */
+typedef struct {
+    char name[48];                  /* the knob */
+    int value;                      /* what it is set to: 0 or 1 */
+} fw_set_t;
+typedef struct {
+    fw_preset_t preset[NFWP]; int npreset;  /* what the tool offers */
+    fw_option_t option[NFWO]; int noption;  /* and the options that apply */
+    fw_set_t set[24]; int nset;             /* what the person changed */
+    int row[NFWO + 16]; int nrow;           /* the option list's rows */
+    char group[16][24]; int ngroup;         /* the headings they sit under */
+    tiku_choice_t choice;           /* the presets */
+    /* Each step's state ("start", "ok", "fail", "skip") and its words. */
+    char stage[FW_NSTAGE][8], stage_text[FW_NSTAGE][200];
+    /* The board key, what was asked about, and what the last run said. */
+    char board[32], asked[256], error[512], preview[512], pnote[256];
+    char keep[24];                  /* the preset to choose again after asking */
+    char image[64], status[256];    /* the image's build; the board's state */
+    /* Which run is going, which query, whether it installs, whether the
+     * options must be asked again, its verdict, the row pressed. */
+    int step, query, install, want_options, ok, pressed;
+    int handoff;                    /* the board was let go for a firmware run */
+    int asking;                     /* the install question is open */
+} fw_t;
 typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t *surface; uint32_t id;
     tiku_tabs_t tabs; tiku_dialog_t dialog; tiku_choice_t target;
     tiku_choice_t epanel, epattern;   /* the ePaper presets, GTK's names */
-    tiku_field_t field[5]; tiku_field_input_t input[5];
+    tiku_field_t field[NFIELD]; tiku_field_input_t input[NFIELD];
     tiku_list_t list[TAB_COUNT]; tiku_alert_t confirm;
     suite_t suites[NS]; int nsuite;
     leaf_t leaves[NL]; int nleaf;
@@ -107,6 +148,7 @@ typedef struct {
     char sendbuf[TIKU_FIELD_MAX + 2]; size_t send_n, send_at;
     char active[160], prompt[256]; int follow, confirm_button, pressed_row, pressed_expand;
     FILE *log;
+    fw_t fw;                    /* the Firmware tab */
 } bench_t;
 
 typedef struct { char *argv[128]; char words[32][256]; int argc, nword; } command_t;
@@ -160,6 +202,9 @@ int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c);
 int tiku_bench_queue_first_invalid(bench_t *st, command_t *c);
 void tiku_bench_metadata_start(bench_t *st);
 void tiku_bench_release_finish(bench_t *st);
+/** Ask for the released board back, or settle when it was never let go. */
+void tiku_bench_reclaim(bench_t *st);
+int tiku_bench_process_spawn(bench_t *st, char *const argv[]);
 void tiku_bench_run_next(bench_t *st);
 void tiku_bench_process_poll(bench_t *st);
 void tiku_bench_stop_run(bench_t *st);
@@ -196,6 +241,28 @@ void tiku_bench_controls_draw(bench_t *st);
 const char *tiku_bench_details_row(void *ctx, int row);
 const char *tiku_bench_history_verdict(const bench_t *st, char *out, size_t cap, char *perf, size_t perf_cap);
 void tiku_bench_paint(bench_t *st);
+
+/* Firmware. */
+/** Start what the Firmware tab still needs to know, when the runner is free. */
+void tiku_bench_fw_poll(bench_t *st);
+/** One record a `tikubench firmware --events tsv` run printed. */
+void tiku_bench_fw_line(bench_t *st, char *line);
+/** Preview, or preview then ask to install: the board is released first. */
+void tiku_bench_fw_start(bench_t *st, int install);
+/** The released board is ours: run the step asked for. */
+void tiku_bench_fw_spawn(bench_t *st);
+/** The firmware runner has exited. */
+void tiku_bench_fw_exit(bench_t *st);
+/** The answer to the install question: 1 installs, 0 hands the board back. */
+void tiku_bench_fw_confirmed(bench_t *st, int install);
+/** Flip the option on row @p row of the option list. */
+void tiku_bench_fw_toggle(bench_t *st, int row);
+/** A different preset was chosen from the dropdown. */
+void tiku_bench_fw_preset_changed(bench_t *st);
+/** Whether Preview and Install can start: a board, a preset, a free runner. */
+int tiku_bench_fw_ready(const bench_t *st);
+tiku_rect_t tiku_bench_fw_preset_rect(const bench_t *st);
+void tiku_bench_fw_draw(bench_t *st, tiku_rect_t body);
 
 /* Commands. */
 void tiku_bench_publish(bench_t *st);

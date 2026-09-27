@@ -34,7 +34,7 @@ stat_read(tiku_backend_t *dev, const char *path, char *out, size_t max)
 
 /* What the board is asked for, in the order the facts are shown. */
 enum { SR_MCU, SR_FREQ, SR_SRAM, SR_USED, SR_NVM, SR_NVMFREE, SR_KIND,
-       SR_UP, SR_BOOTS, SR_N };
+       SR_UP, SR_BOOTS, SR_BUILD, SR_BOARD, SR_N };
 
 /* The corners of a board's namespace that are there only when the part
  * has the thing: what it HAS, asked by whether it can be seen. */
@@ -155,6 +155,16 @@ sread_say(sread_t *s, char raw[][32], const char *tiers)
              raw[SR_MCU][0] ? raw[SR_MCU] : "?", raw[SR_FREQ],
              raw[SR_UP], raw[SR_BOOTS], raw[SR_SRAM], raw[SR_NVM],
              raw[SR_KIND][0] ? raw[SR_KIND] : "NVM");
+    /* What the image says it is: an image older than these nodes has
+     * neither row, which is how a reader tells it is old. */
+    if (raw[SR_BUILD][0] != '\0' && at < sizeof s->text) {
+        at += (size_t)snprintf(s->text + at, sizeof s->text - at,
+                               "build\t%s\n", raw[SR_BUILD]);
+    }
+    if (raw[SR_BOARD][0] != '\0' && at < sizeof s->text) {
+        at += (size_t)snprintf(s->text + at, sizeof s->text - at,
+                               "board\t%s\n", raw[SR_BOARD]);
+    }
     mapped  = say_map(s, &at, "sram", "/sys/mem/sram_map");
     mapped |= say_map(s, &at, "nvm", "/sys/mem/nvm_map");
     for (i = 0; !mapped && i < (int)(sizeof kinds / sizeof kinds[0]); i++) {
@@ -185,7 +195,8 @@ sread_run(void *ctx)
     static const char *const node[SR_N] = {
         "/sys/device/mcu", "/sys/cpu/freq", "/sys/mem/sram",
         "/sys/mem/used",   "/sys/mem/nvm",  "/sys/mem/nvmfree",
-        "/sys/mem/kind",   "/sys/uptime",   "/sys/boot_count"
+        "/sys/mem/kind",   "/sys/uptime",   "/sys/boot_count",
+        "/sys/device/build", "/sys/device/board"
     };
     sread_t *s = ctx;
     char raw[SR_N][32];

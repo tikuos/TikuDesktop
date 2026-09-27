@@ -4,7 +4,6 @@
 #include "tiku_bench_private.h"
 
 static int argument(command_t *c, const char *word);
-static int process_spawn(bench_t *st, char *const argv[]);
 static void job_finish(bench_t *st);
 
 /* Asynchronous runner, bounded output and explicit device-port ownership. */
@@ -101,7 +100,7 @@ int tiku_bench_queue_first_invalid(bench_t *st, command_t *c)
 
 
 
-static int process_spawn(bench_t *st, char *const argv[])
+int tiku_bench_process_spawn(bench_t *st, char *const argv[])
 {
     int out[2], input[2];
     if (pipe(out) < 0) return 0;
@@ -132,7 +131,7 @@ void tiku_bench_metadata_start(bench_t *st)
     st->nsuite = st->nleaf = st->nboard = st->nhistory = st->nmetric = 0;
     st->metadata_bad = st->metadata_ok = 0; st->loading = 1;
     char *argv[] = {"python3", "gui/tb_meta.py", NULL};
-    if (!process_spawn(st, argv)) {
+    if (!tiku_bench_process_spawn(st, argv)) {
         st->loading = 0; snprintf(st->note, sizeof st->note, "Could not start metadata reader");
     } else snprintf(st->note, sizeof st->note, "Reading TikuBench registry and history...");
     st->dirty = 1;
@@ -140,6 +139,12 @@ void tiku_bench_metadata_start(bench_t *st)
 
 void tiku_bench_release_finish(bench_t *st)
 {
+    if (st->fw.step == FWS_PREVIEW || st->fw.step == FWS_FLASH) {
+        /* Stopped, or the release timed out, before its runner started. */
+        st->fw.step = FWS_IDLE; st->fw.install = 0;
+        snprintf(st->note, sizeof st->note, "Stopped; nothing was flashed.");
+        tiku_bench_reclaim(st); return;
+    }
     for (int i = 0; i < st->nresult; i++) if (!st->results[i].done) {
         result_t *r = &st->results[i]; r->done = 1;
         r->skip = st->cancelled; r->harness = !st->cancelled;
@@ -154,6 +159,11 @@ void tiku_bench_release_finish(bench_t *st)
         st->cancelled ? "Stopped" : st->batch_failed ? "Finished with failures" :
         st->no_tests ? "No tests ran (skipped)" : "Finished",
         st->log_path);
+    tiku_bench_reclaim(st);
+}
+
+void tiku_bench_reclaim(bench_t *st)
+{
     if (st->released && st->services->board_reclaim) {
         st->reclaiming = 1; st->deadline = st->now + 15000000;
         if (!st->services->board_reclaim(st->services->ctx, st->target_name)) {
@@ -166,9 +176,12 @@ void tiku_bench_release_finish(bench_t *st)
 
 void tiku_bench_run_next(bench_t *st)
 {
+    if (st->fw.step == FWS_PREVIEW || st->fw.step == FWS_FLASH) {
+        tiku_bench_fw_spawn(st); return;
+    }
     if (st->job >= st->njob || st->cancelled) { tiku_bench_release_finish(st); return; }
     command_t command;
-    if (!tiku_bench_command_build(st, &st->jobs[st->job], &command) || !process_spawn(st, command.argv)) {
+    if (!tiku_bench_command_build(st, &st->jobs[st->job], &command) || !tiku_bench_process_spawn(st, command.argv)) {
         st->batch_failed = 1; tiku_bench_log_line(st, "Runner could not start", 1);
         tiku_bench_release_finish(st); return;
     }
@@ -264,11 +277,17 @@ void tiku_bench_process_poll(bench_t *st)
         if (*st->log_path) snprintf(st->note, sizeof st->note,
             "%s | history refreshed | Log: %.400s", st->cancelled ? "Stopped" :
             st->batch_failed ? "Finished with failures" : st->no_tests ? "No tests ran (skipped)" : "Finished", st->log_path);
-    } else job_finish(st);
+    } else if (st->fw.step != FWS_IDLE) tiku_bench_fw_exit(st);
+    else job_finish(st);
 }
 
 void tiku_bench_stop_run(bench_t *st)
 {
+    if (st->fw.step == FWS_FLASH && !strcmp(st->fw.stage[FW_FLASH], "start")) {
+        snprintf(st->note, sizeof st->note, "Flashing now: cut short, the "
+                 "part would be half-written, so it finishes first.");
+        st->dirty = 1; return;
+    }
     st->cancelled = 1;
     if (st->child > 0) { kill(-st->child, SIGINT); st->stop_at = st->now + 2000000; }
     else if (st->released && !st->reclaiming) tiku_bench_release_finish(st);
