@@ -9,13 +9,15 @@
  * Flate is nearly every stream in the documents read here; LZW, the
  * two ASCII forms and run lengths are small and old files use them.
  * A predictor (ISO 32000 7.4.4.4) undoes the row filtering PNG-style
- * writers add before compressing.  The image codecs stop the chain:
- * their bytes go to whoever decodes pictures.
+ * writers add before compressing.  CCITT fax gives rows of bits, as a
+ * one-bit image's samples are; the other image codecs stop the chain,
+ * their bytes going to whoever decodes pictures.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_pdf_private.h"
+#include "tiku_fax.h"
 #include "tiku_inflate.h"
 
 #include <stdlib.h>
@@ -343,12 +345,42 @@ static const char *
 image_filter(const char *name)
 {
     if (!strcmp(name, "DCTDecode") || !strcmp(name, "DCT")) return "DCTDecode";
-    if (!strcmp(name, "CCITTFaxDecode") || !strcmp(name, "CCF")) {
-        return "CCITTFaxDecode";
-    }
     if (!strcmp(name, "JPXDecode")) return "JPXDecode";
     if (!strcmp(name, "JBIG2Decode")) return "JBIG2Decode";
     return NULL;
+}
+
+/** @brief Whether @p key of @p d is true, or @p dflt when it is absent. */
+static int
+flag(tiku_pdf_t *doc, pdf_obj_t *d, const char *key, int dflt)
+{
+    pdf_obj_t *o = pdf_get(doc, d, key);
+
+    return o != NULL && o->kind == PDF_BOOL ? o->u.b : dflt;
+}
+
+/**
+ * @brief CCITTFaxDecode (ISO 32000 Table 11): rows of bits, as many as
+ *        Rows says, or the image's height when it does not.
+ */
+static long
+fax(tiku_pdf_t *doc, pdf_obj_t *stream, pdf_obj_t *parm,
+    const unsigned char *in, long n, unsigned char **out)
+{
+    tiku_fax_t p;
+
+    p.k = pdf_int(pdf_get(doc, parm, "K"), 0);
+    p.columns = pdf_int(pdf_get(doc, parm, "Columns"), 1728);
+    p.rows = pdf_int(pdf_get(doc, parm, "Rows"), 0);
+    if (p.rows <= 0) {
+        p.rows = pdf_int(pdf_get(doc, stream, "Height"), 0);
+    }
+    if (p.rows <= 0) {
+        p.rows = pdf_int(pdf_get(doc, stream, "H"), 0);    /* inline */
+    }
+    p.byte_align = flag(doc, parm, "EncodedByteAlign", 0);
+    p.black_is_1 = flag(doc, parm, "BlackIs1", 0);
+    return tiku_fax_decode(in, n, &p, out, PDF_STREAM_MAX);
 }
 
 int
@@ -448,6 +480,8 @@ pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *stream, const unsigned char *raw,
         } else if (!strcmp(name, "RunLengthDecode") || !strcmp(name, "RL")) {
             nextn = run_length(cur, curn, &o) == 0 ? o.n : -1;
             next = o.p;
+        } else if (!strcmp(name, "CCITTFaxDecode") || !strcmp(name, "CCF")) {
+            nextn = fax(doc, stream, parm, cur, curn, &next);
         } else if (!strcmp(name, "Crypt")) {
             continue;               /* Identity: nothing was encrypted */
         } else {

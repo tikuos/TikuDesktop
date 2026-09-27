@@ -10,7 +10,8 @@
  * a file with a cross-reference stream and an object stream, packed
  * with a stored DEFLATE block; every byte filter against known input;
  * fonts read through their encoding and through a ToUnicode map; the
- * slips of careless writers, which once broke the reader.  Then,
+ * slips of careless writers, which once broke the reader; a fax image
+ * as libtiff encodes one.  Then,
  * when TIKU_PDF_CORPUS names a folder, every PDF in it is opened and
  * its first page's text shown, which is how the vendor documents are
  * tried without being checked in.
@@ -628,6 +629,69 @@ transp_test(void)
     free(b.p);
 }
 
+#include "../fixtures/fax.inc"
+
+/** @brief One page: a Group 4 fax as a one-bit grey image above, and as
+ *         a stencil painted blue below, both at a pixel a sample. */
+static pdfw_t
+fax_file(void)
+{
+    pdfw_t b = {0};
+    const char *draw = "q 150 0 0 24 0 24 cm /Im1 Do Q "
+                       "q 0 0 1 rg 150 0 0 24 0 0 cm /Im2 Do Q";
+
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 150 48] "
+               "/Resources << /XObject << /Im1 5 0 R /Im2 6 0 R >> >> "
+               "/Contents 4 0 R >>");
+    stream(&b, 4, "", draw, (long)strlen(draw));
+    stream(&b, 5, "/Type /XObject /Subtype /Image /Width 150 /Height 24 "
+                  "/ColorSpace /DeviceGray /BitsPerComponent 1 "
+                  "/Filter /CCITTFaxDecode /DecodeParms << /K -1 "
+                  "/Columns 150 >>", (const char *)fax_small_g4,
+           (long)sizeof fax_small_g4);
+    stream(&b, 6, "/Type /XObject /Subtype /Image /Width 150 /Height 24 "
+                  "/ImageMask true /Filter /CCITTFaxDecode "
+                  "/DecodeParms << /K -1 /Columns 150 >>",
+           (const char *)fax_small_g4, (long)sizeof fax_small_g4);
+    xref(&b, 1, 0);
+    return b;
+}
+
+/** @brief The fax page drawn: every pixel of both as the pattern says. */
+static void
+fax_test(void)
+{
+    pdfw_t b = fax_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+    long grey = 0, stencil = 0;
+    int x, y;
+
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+          pm.w == FAX_SMALL_W && pm.h == 2 * FAX_SMALL_H,
+          "a page of CCITT fax images renders");
+    for (y = 0; pm.px != NULL && y < FAX_SMALL_H; y++) {
+        for (x = 0; x < FAX_SMALL_W; x++) {
+            int ink = fax_pixel(0, x, y);
+
+            grey += pixel(&pm, x, y) != (ink ? 0x000000u : 0xffffffu);
+            stencil += pixel(&pm, x, FAX_SMALL_H + y) !=
+                       (ink ? 0x0000ffu : 0xffffffu);
+        }
+    }
+    check(pm.px != NULL && grey == 0,
+          "a Group 4 image draws as libtiff wrote it, black on white");
+    check(pm.px != NULL && stencil == 0,
+          "and as a stencil, the fill colour where it is black");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
 /**
  * @brief Four pages a careless writer makes: a MediaBox of nothing; a
  *        form whose stray Q would undo its caller's clip; a Separation
@@ -996,6 +1060,7 @@ main(void)
     shade_test();
     transp_test();
     nav_test();
+    fax_test();
     damage_test();
     corpus_test();
     if (fails) {
