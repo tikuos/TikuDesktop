@@ -1132,10 +1132,10 @@ mesh_test(void)
 }
 
 /**
- * @brief Four pages a careless writer makes: a MediaBox of nothing; a
+ * @brief Five pages a careless writer makes: a MediaBox of nothing; a
  *        form whose stray Q would undo its caller's clip; a Separation
  *        whose alternate is no space; an Indexed table over five
- *        colorants.
+ *        colorants; those five colorants painted with themselves.
  */
 static pdfw_t
 damage_file(void)
@@ -1145,17 +1145,20 @@ damage_file(void)
                        "f Q BT /F1 12 Tf 10 200 Td (After) Tj ET";
     const char *sep = "/CS0 cs 0.5 sc 0 0 300 300 re f";
     const char *idx = "/CS1 cs 1 sc 0 0 300 300 re f";
+    const char *inks = "/CS2 cs 0 0 0 0 0.8 sc 0 0 300 300 re f";
     const char *fn = "{ exch pop exch pop exch pop exch pop }";
 
     ws(&b, "%PDF-1.4\n");
     obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
-    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 "
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R 13 0 R] "
+               "/Count 5 "
                "/MediaBox [0 0 300 300] /Resources << /Font << /F1 << "
                "/Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> "
                "/XObject << /Fm 10 0 R >> /ColorSpace << "
                "/CS0 [/Separation /Spot /NoSuchSpace 11 0 R] "
                "/CS1 [/Indexed [/DeviceN [/A /B /C /D /E] /DeviceGray "
-               "12 0 R] 1 <000000000000000000CC>] >> >> >>");
+               "12 0 R] 1 <000000000000000000CC>] "
+               "/CS2 [/DeviceN [/A /B /C /D /E] /DeviceGray 12 0 R] >> >> >>");
     obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 0 0] >>");
     obj(&b, 4, "<< /Type /Page /Parent 2 0 R /Contents 7 0 R >>");
     obj(&b, 5, "<< /Type /Page /Parent 2 0 R /Contents 8 0 R >>");
@@ -1168,6 +1171,8 @@ damage_file(void)
     obj(&b, 11, "<< /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [0] /N 1 >>");
     stream(&b, 12, "/FunctionType 4 /Domain [0 1 0 1 0 1 0 1 0 1] "
                    "/Range [0 1]", fn, (long)strlen(fn));
+    obj(&b, 13, "<< /Type /Page /Parent 2 0 R /Contents 14 0 R >>");
+    stream(&b, 14, "", inks, (long)strlen(inks));
     xref(&b, 1, 0);
     return b;
 }
@@ -1202,6 +1207,10 @@ damage_test(void)
     check(doc != NULL && tiku_pdf_render(doc, 3, 1.0, &pm) == 0 &&
           pixel(&pm, 150, 150) == 0xccccccu,
           "an Indexed table over five colorants reads all five");
+    tiku_pdf_pixmap_free(&pm);
+    check(doc != NULL && tiku_pdf_render(doc, 4, 1.0, &pm) == 0 &&
+          pixel(&pm, 150, 150) == 0xccccccu,
+          "and those five colorants, set and painted, are all read");
     tiku_pdf_pixmap_free(&pm);
     tiku_pdf_close(doc);
     free(b.p);

@@ -769,6 +769,7 @@ pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res)
     }
     if (!strcmp(name, "Separation") || !strcmp(name, "DeviceN")) {
         pdf_obj_t *names = pdf_resolve(doc, spec->u.a.item[1]);
+        int k;
 
         cs = calloc(1, sizeof *cs);
         if (cs == NULL) {
@@ -779,7 +780,9 @@ pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res)
         if (cs->n < 1 || cs->n > PDF_FUNC_MAX_IN) {
             cs->n = 1;
         }
-        cs->initial[0] = cs->initial[1] = cs->initial[2] = cs->initial[3] = 1;
+        for (k = 0; k < PDF_FUNC_MAX_IN; k++) {
+            cs->initial[k] = 1;     /* every ink full, as 8.6.6.4 says */
+        }
         if (spec->u.a.n >= 3) {
             cs->base = pdf_cs_load(doc, spec->u.a.item[2], res);
         }

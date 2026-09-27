@@ -501,7 +501,7 @@ typedef struct pdf_cs {
     unsigned char *lookup;          /* Indexed: hival+1 base colours     */
     int            hival;
     pdf_func_t    *tint;            /* Separation: tint transform        */
-    double         initial[4];      /* the colour set with cs/CS         */
+    double         initial[PDF_FUNC_MAX_IN];    /* set by cs/CS      */
 } pdf_cs_t;
 
 /** @brief The colour space @p spec names or defines; @p res answers a
