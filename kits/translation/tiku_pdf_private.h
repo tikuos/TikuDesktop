@@ -110,6 +110,9 @@ struct tiku_pdf {
     int            nsubst;
     char           subst_pick[6][512];  /* sans, serif, fixed; x bold  */
     unsigned char  subst_chosen[6]; /* that pick was made ("" is none)  */
+    struct pdf_fontkeep *fonts;     /* fonts read, kept between pages    */
+    int            nfonts, cfonts;
+    unsigned long  epoch;           /* pages read or drawn so far        */
 };
 
 /* The lexer and the objects it makes: tiku_pdf_lex.c                        */
@@ -412,6 +415,19 @@ int pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
  */
 int pdf_gfont_mask(pdf_gfont_t *g, long code, const pdf_mat_t *m,
                    pdf_mask_t *out);
+
+/* Fonts kept for the document: tiku_pdf_glyph.c                             */
+
+/** @brief A page is about to be read or drawn: of the fonts kept, those
+ *         pages have left longest go, past a few dozen. */
+void pdf_fonts_page(tiku_pdf_t *doc);
+/** @brief Font @p dict's text view, read once for the document; NULL
+ *         when it is no font. */
+pdf_tfont_t *pdf_font_text(tiku_pdf_t *doc, pdf_obj_t *dict);
+/** @brief Its drawn view likewise; NULL when it cannot be drawn. */
+pdf_gfont_t *pdf_font_drawn(tiku_pdf_t *doc, pdf_obj_t *dict);
+/** @brief The fonts kept, given back when the document closes. */
+void pdf_fonts_free(tiku_pdf_t *doc);
 
 /* Images: tiku_pdf_image.c                                                  */
 

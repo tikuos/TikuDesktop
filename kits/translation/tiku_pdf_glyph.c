@@ -662,3 +662,117 @@ pdf_gfont_mask(pdf_gfont_t *g, long code, const pdf_mat_t *m, pdf_mask_t *out)
     out->h = h;
     return 1;
 }
+
+/* --------------------------------------------------------- fonts kept  */
+
+#define FONTS_KEEP  48              /* fonts kept from page to page      */
+#define FONTS_PAGE  512             /* and one page may ask for, at most */
+
+/** @brief A font read for the document: both its views, and the page
+ *         that last asked for it. */
+struct pdf_fontkeep {
+    pdf_obj_t     *dict;            /* the font dictionary, the key      */
+    pdf_tfont_t   *text;            /* its text view                     */
+    pdf_gfont_t   *drawn;           /* its drawn view, once asked for    */
+    int            tried;           /* the drawn view has been tried     */
+    unsigned long  used;            /* the page that last asked for it   */
+};
+
+void
+pdf_fonts_page(tiku_pdf_t *doc)
+{
+    doc->epoch++;
+    while (doc->nfonts > FONTS_KEEP) {
+        int i, old = 0;
+
+        for (i = 1; i < doc->nfonts; i++) {
+            if (doc->fonts[i].used < doc->fonts[old].used) {
+                old = i;
+            }
+        }
+        pdf_gfont_free(doc->fonts[old].drawn);  /* it borrows the text */
+        pdf_tfont_free(doc->fonts[old].text);
+        doc->fonts[old] = doc->fonts[--doc->nfonts];
+    }
+}
+
+/** @brief Where @p dict is kept, read now if it was not.  @return its
+ *         index, or -1 when it is no font or the page has asked for too
+ *         many.  An index, since reading one may move the rest. */
+static int
+kept(tiku_pdf_t *doc, pdf_obj_t *dict)
+{
+    struct pdf_fontkeep *k;
+    pdf_tfont_t *text;
+    int i;
+
+    if (dict == NULL || dict->kind != PDF_DICT) {
+        return -1;
+    }
+    for (i = 0; i < doc->nfonts; i++) {
+        if (doc->fonts[i].dict == dict) {
+            doc->fonts[i].used = doc->epoch;
+            return i;
+        }
+    }
+    if (doc->nfonts >= FONTS_PAGE || (text = pdf_tfont_load(doc, dict)) ==
+                                     NULL) {
+        return -1;
+    }
+    if (doc->nfonts == doc->cfonts) {
+        int c = doc->cfonts ? doc->cfonts * 2 : 16;
+
+        k = realloc(doc->fonts, (size_t)c * sizeof *k);
+        if (k == NULL) {
+            pdf_tfont_free(text);
+            return -1;
+        }
+        doc->fonts = k;
+        doc->cfonts = c;
+    }
+    k = &doc->fonts[doc->nfonts];
+    memset(k, 0, sizeof *k);
+    k->dict = dict;
+    k->text = text;
+    k->used = doc->epoch;
+    return doc->nfonts++;
+}
+
+pdf_tfont_t *
+pdf_font_text(tiku_pdf_t *doc, pdf_obj_t *dict)
+{
+    int i = kept(doc, dict);
+
+    return i >= 0 ? doc->fonts[i].text : NULL;
+}
+
+pdf_gfont_t *
+pdf_font_drawn(tiku_pdf_t *doc, pdf_obj_t *dict)
+{
+    int i = kept(doc, dict);
+    pdf_gfont_t *g;
+
+    if (i < 0) {
+        return NULL;
+    }
+    if (!doc->fonts[i].tried) {
+        doc->fonts[i].tried = 1;
+        g = pdf_gfont_load(doc, dict, doc->fonts[i].text);
+        doc->fonts[i].drawn = g;
+    }
+    return doc->fonts[i].drawn;
+}
+
+void
+pdf_fonts_free(tiku_pdf_t *doc)
+{
+    int i;
+
+    for (i = 0; i < doc->nfonts; i++) {
+        pdf_gfont_free(doc->fonts[i].drawn);
+        pdf_tfont_free(doc->fonts[i].text);
+    }
+    free(doc->fonts);
+    doc->fonts = NULL;
+    doc->nfonts = doc->cfonts = 0;
+}

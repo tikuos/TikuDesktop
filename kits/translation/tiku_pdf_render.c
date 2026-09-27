@@ -26,12 +26,13 @@
 #define FORM_DEPTH  12
 #define OPS_MAX     4000000L        /* operators one page may run       */
 #define CS_KEEP     64              /* colour spaces alive per page     */
-#define FONTS_MAX   64
 #define DASH_MAX    16
 #define SHADES_KEEP 128             /* shadings loaded per page         */
 #define TILES_KEEP  8               /* pattern cells drawn per page     */
 #define TILE_MAX    512             /* a cell's pixels, each way        */
 #define NEST_MAX    4               /* cells, groups and masks in them  */
+#define GLYPHS_KEPT 4096            /* glyphs a page keeps, drawn       */
+#define GLYPH_BYTES (8L << 20)      /* and the coverage they may hold   */
 
 /** @brief A clip shared by the states that inherited it. */
 typedef struct { pdf_mask_t m; int refs; } clip_t;
@@ -59,11 +60,16 @@ typedef struct {
     int          tmode;
 } gs_t;
 
+/** @brief A glyph drawn once for its page: which, at what size and in
+ *         which quarter of a pixel, and its coverage from there. */
 typedef struct {
-    pdf_obj_t   *dict;
-    pdf_tfont_t *font;
-    pdf_gfont_t *glyphs;
-} fontref_t;
+    const pdf_gfont_t *font;        /* NULL for a slot not used         */
+    long               code;        /* the glyph's code in its font     */
+    float              m[4];        /* the matrix's scale and slant     */
+    int                q;           /* quarter pixels right and down    */
+    int                ink;         /* 0: it has none                   */
+    pdf_mask_t         cov;         /* its coverage, from its pixel     */
+} memo_t;
 
 /** @brief A tiling pattern's cell drawn at the device's resolution: its
  *         colours and coverage, and how it repeats in pattern space. */
@@ -87,8 +93,9 @@ typedef struct {
     pdf_mat_t   tm, tlm;
     pdf_cs_t   *cs_keep[CS_KEEP];
     int         ncs;
-    fontref_t   fonts[FONTS_MAX];
-    int         nfont;
+    memo_t     *memo;               /* glyphs drawn, GLYPHS_KEPT slots  */
+    int         nmemo;
+    long        memo_bytes;
     long        ops;
     int         failed;
     int         t3depth;            /* Type 3 glyphs drawing glyphs      */
@@ -1013,30 +1020,97 @@ op_sh(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
 
 /* ---------------------------------------------------------------- text  */
 
-/** @brief Both views of @p dict, the text one and the drawn one, loaded
- *        once per page. */
-static const fontref_t *
-font_for(rs_t *r, pdf_obj_t *dict)
+/** @brief Every glyph the page kept let go: a full table starts again. */
+static void
+memo_clear(rs_t *r)
 {
     int i;
-    fontref_t *f;
 
-    if (dict == NULL) {
-        return NULL;
-    }
-    for (i = 0; i < r->nfont; i++) {
-        if (r->fonts[i].dict == dict) {
-            return &r->fonts[i];
+    for (i = 0; r->memo != NULL && i < GLYPHS_KEPT; i++) {
+        if (r->memo[i].font != NULL) {
+            pdf_mask_free(&r->memo[i].cov);
+            r->memo[i].font = NULL;
         }
     }
-    if (r->nfont == FONTS_MAX) {
-        return NULL;
+    r->nmemo = 0;
+    r->memo_bytes = 0;
+}
+
+/** @brief Where glyph @p code of @p gf at size @p m and quarter place
+ *         @p q is kept, or the empty slot it would take. */
+static memo_t *
+memo_slot(rs_t *r, const pdf_gfont_t *gf, long code, const float *m, int q)
+{
+    uint32_t h = 2166136261u, v[7];
+    int i;
+
+    v[0] = (uint32_t)(uintptr_t)gf;
+    v[1] = (uint32_t)code;
+    memcpy(v + 2, m, 4 * sizeof *m);
+    v[6] = (uint32_t)q;
+    for (i = 0; i < 7; i++) {
+        h = (h ^ v[i]) * 16777619u;         /* FNV-1a, by words */
     }
-    f = &r->fonts[r->nfont++];
-    f->dict = dict;
-    f->font = pdf_tfont_load(r->doc, dict);
-    f->glyphs = pdf_gfont_load(r->doc, dict, f->font);
-    return f;
+    for (i = (int)(h & (GLYPHS_KEPT - 1)); r->memo[i].font != NULL;
+         i = (i + 1) & (GLYPHS_KEPT - 1)) {
+        if (r->memo[i].font == gf && r->memo[i].code == code &&
+            r->memo[i].q == q && memcmp(r->memo[i].m, m, 4 * sizeof *m) == 0) {
+            break;
+        }
+    }
+    return &r->memo[i];
+}
+
+/**
+ * @brief Glyph @p code's coverage through @p trm: drawn once a page for
+ *        each size and quarter-pixel place, then moved by whole pixels.
+ * @return 1 with @p out, which the page keeps, or 0 for no ink.
+ */
+static int
+glyph_cov(rs_t *r, const pdf_gfont_t *gf, long code, const pdf_mat_t *trm,
+          pdf_mask_t *out)
+{
+    float m[4];
+    double fx = floor(trm->e), fy = floor(trm->f);
+    int qx = (int)((trm->e - fx) * 4 + 0.5);
+    int qy = (int)((trm->f - fy) * 4 + 0.5);
+    memo_t *s;
+
+    if (!(fabs(trm->e) < 1e6 && fabs(trm->f) < 1e6) || (r->memo == NULL &&
+        (r->memo = calloc(GLYPHS_KEPT, sizeof *r->memo)) == NULL)) {
+        return 0;                   /* nowhere near the page, or no room */
+    }
+    fx += qx / 4;                   /* a place of 4 quarters is the next */
+    fy += qy / 4;
+    m[0] = (float)trm->a;
+    m[1] = (float)trm->b;
+    m[2] = (float)trm->c;
+    m[3] = (float)trm->d;
+    s = memo_slot(r, gf, code, m, qx % 4 * 4 + qy % 4);
+    if (s->font == NULL) {
+        pdf_mat_t at = *trm;
+
+        if (r->nmemo >= GLYPHS_KEPT * 3 / 4 || r->memo_bytes > GLYPH_BYTES) {
+            memo_clear(r);
+            s = memo_slot(r, gf, code, m, qx % 4 * 4 + qy % 4);
+        }
+        at.e = qx % 4 / 4.0;
+        at.f = qy % 4 / 4.0;
+        s->ink = pdf_gfont_mask((pdf_gfont_t *)gf, code, &at, &s->cov);
+        s->font = gf;
+        s->code = code;
+        memcpy(s->m, m, sizeof m);
+        s->q = qx % 4 * 4 + qy % 4;
+        r->nmemo++;
+        r->memo_bytes += (long)s->cov.w * s->cov.h;
+    }
+    if (!s->ink) {
+        return 0;
+    }
+    *out = s->cov;
+    out->x0 += (int)fx;
+    out->y0 += (int)fy;
+    return 1;
 }
 
 /**
@@ -1087,7 +1161,7 @@ glyph_ink(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm)
     pdf_mask_t m;
     int mode = g->tmode;
 
-    if (mode == 3 || mode == 7 || !pdf_gfont_mask(gf, code, trm, &m)) {
+    if (mode == 3 || mode == 7 || !glyph_cov(r, gf, code, trm, &m)) {
         return;
     }
     if (mode == 0 || mode == 2 || mode == 4 || mode == 6) {
@@ -1096,7 +1170,6 @@ glyph_ink(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm)
     if (mode == 1 || mode == 2 || mode == 5 || mode == 6) {
         paint(r, &m, 1);            /* stroked text: the outline's fill */
     }
-    pdf_mask_free(&m);
 }
 
 /**
@@ -1115,12 +1188,8 @@ show(rs_t *r, const unsigned char *s, size_t n, pdf_obj_t *res, int depth)
     size_t i, step;
 
     if (f == NULL && g->fontdict != NULL) {
-        const fontref_t *ref = font_for(r, g->fontdict);
-
-        if (ref != NULL) {
-            f = g->tfont = ref->font;
-            g->gfont = ref->glyphs;
-        }
+        f = g->tfont = pdf_font_text(r->doc, g->fontdict);
+        g->gfont = f != NULL ? pdf_font_drawn(r->doc, g->fontdict) : NULL;
     }
     step = (f != NULL && f->two_byte) ? 2 : 1;
     for (i = 0; i + step <= n; i += step) {
@@ -1726,10 +1795,8 @@ rs_finish(rs_t *r)
     for (i = 0; i < r->ncs; i++) {
         pdf_cs_free(r->cs_keep[i]);
     }
-    for (i = 0; i < r->nfont; i++) {
-        pdf_tfont_free(r->fonts[i].font);
-        pdf_gfont_free(r->fonts[i].glyphs);
-    }
+    memo_clear(r);
+    free(r->memo);
     for (i = 0; i < r->nshade; i++) {
         pdf_shade_free(r->shades[i].s);
     }
@@ -1769,6 +1836,7 @@ tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
         pdf_page_matrix(doc, page, scale, x0, y0, &base, &pw, &ph) != 0) {
         return -1;
     }
+    pdf_fonts_page(doc);
     r = rs_new(doc, w, h, 0xffffffffu, base);
     if (r == NULL) {
         return -1;

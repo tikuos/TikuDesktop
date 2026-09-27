@@ -24,7 +24,6 @@
 #define STACK_MAX   32              /* q nesting                        */
 #define OPERANDS    32
 #define FORM_DEPTH  8
-#define FONTS_MAX   64              /* per page, with its forms         */
 
 typedef struct { double a, b, c, d, e, f; } mat_t;
 
@@ -34,12 +33,6 @@ typedef struct {
     double size, tc, tw, th, tl, rise;
     pdf_tfont_t *font;
 } gstate_t;
-
-/** @brief One font loaded for this page, by the name its resources use. */
-typedef struct {
-    pdf_obj_t   *dict;
-    pdf_tfont_t *font;
-} fontref_t;
 
 typedef struct {
     tiku_pdf_t *doc;
@@ -51,8 +44,6 @@ typedef struct {
     int         have_last;          /* a glyph has been placed           */
     double      last_x, last_y, last_size;
     int         last_space;
-    fontref_t   fonts[FONTS_MAX];
-    int         nfont;
     int         failed;
     /* Characters with their boxes, when asked for: each code point the
      * text gets, placed on the page as drawn (tiku_pdf_page_chars). */
@@ -189,28 +180,12 @@ put_char(tx_t *t, uint32_t cp)
     }
 }
 
-/** @brief The font named @p name in @p res, loaded once per page. */
+/** @brief The font named @p name in @p res, as the document keeps it. */
 static pdf_tfont_t *
 font_named(tx_t *t, pdf_obj_t *res, const char *name)
 {
-    pdf_obj_t *fonts = pdf_get(t->doc, res, "Font");
-    pdf_obj_t *dict = pdf_get(t->doc, fonts, name);
-    int i;
-
-    if (dict == NULL || dict->kind != PDF_DICT) {
-        return NULL;
-    }
-    for (i = 0; i < t->nfont; i++) {
-        if (t->fonts[i].dict == dict) {
-            return t->fonts[i].font;
-        }
-    }
-    if (t->nfont == FONTS_MAX) {
-        return NULL;
-    }
-    t->fonts[t->nfont].dict = dict;
-    t->fonts[t->nfont].font = pdf_tfont_load(t->doc, dict);
-    return t->fonts[t->nfont++].font;
+    return pdf_font_text(t->doc, pdf_get(t->doc, pdf_get(t->doc, res,
+                                                         "Font"), name));
 }
 
 /**
@@ -491,11 +466,11 @@ extract(tiku_pdf_t *doc, int page, int want_chars)
     unsigned char *data = NULL;
     long n = 0;
     tx_t *t;
-    int i;
 
     if (p == NULL || pdf_page_content(doc, p, &data, &n) != 0) {
         return NULL;
     }
+    pdf_fonts_page(doc);
     t = calloc(1, sizeof *t);
     if (t == NULL) {
         free(data);
@@ -519,9 +494,6 @@ extract(tiku_pdf_t *doc, int page, int want_chars)
     }
     run(t, data, n, pdf_page_inherited(doc, p, "Resources"), 0);
     free(data);
-    for (i = 0; i < t->nfont; i++) {
-        pdf_tfont_free(t->fonts[i].font);
-    }
     return t;
 }
 
