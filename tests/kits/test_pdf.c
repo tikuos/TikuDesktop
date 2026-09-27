@@ -11,7 +11,8 @@
  * with a stored DEFLATE block; every byte filter against known input;
  * fonts read through their encoding and through a ToUnicode map; the
  * slips of careless writers, which once broke the reader; a fax image
- * as libtiff encodes one; layers on and off.  Then,
+ * as libtiff encodes one; layers on and off; annotations and form
+ * fields that store no appearance, drawn as a viewer draws them.  Then,
  * when TIKU_PDF_CORPUS names a folder, every PDF in it is opened and
  * its first page's text shown, which is how the vendor documents are
  * tried without being checked in.
@@ -795,6 +796,191 @@ oc_test(void)
     free(b.p);
 }
 
+/** @brief Annotations with no appearance stored, one of each kind a
+ *         viewer draws anyway, over a line of text. */
+static pdfw_t
+annot_file(void)
+{
+    static const char *const annots[] = {
+        "<< /Subtype /Square /Rect [20 200 80 260] /C [1 0 0] /IC [0 0 1] "
+        "/BS << /W 3 >> >>",
+        "<< /Subtype /Circle /Rect [100 200 160 260] /C [0 0.6 0] "
+        "/BS << /W 2 >> >>",
+        "<< /Subtype /Line /Rect [170 200 290 270] /L [180 210 280 260] "
+        "/C [0 0 0] /IC [1 0 0] /LE [/OpenArrow /ClosedArrow] "
+        "/BS << /W 2 >> >>",
+        "<< /Subtype /Ink /Rect [290 200 380 260] /InkList [[300 210 320 "
+        "250 340 210 360 250]] /C [0.5 0 0.5] /BS << /W 3 >> >>",
+        "<< /Subtype /Highlight /Rect [18 145 150 165] /QuadPoints [18 165 "
+        "150 165 18 145 150 145] /C [1 1 0] >>",
+        "<< /Subtype /StrikeOut /Rect [18 105 95 125] /QuadPoints [18 105 "
+        "95 105 95 125 18 125] /C [1 0 0] >>",
+        "<< /Subtype /FreeText /Rect [20 20 180 80] /DA (0 0 1 rg /Helv 12 "
+        "Tf) /Contents (A free text note that wraps across lines) >>",
+        "<< /Subtype /Text /Rect [200 40 220 60] /C [1 1 0] >>",
+        "<< /Subtype /Stamp /Rect [250 20 380 70] /Name /Approved >>",
+    };
+    const char *text = "BT /F1 14 Tf 20 150 Td (Highlighted words) Tj ET "
+                       "BT /F1 14 Tf 20 110 Td (Struck out) Tj ET";
+    char list[256];
+    pdfw_t b = {0};
+    size_t i;
+    int at;
+
+    ws(&b, "%PDF-1.7\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    at = snprintf(list, sizeof list, "<< /Type /Page /Parent 2 0 R "
+                  "/MediaBox [0 0 400 300] /Contents 4 0 R /Resources << "
+                  "/Font << /F1 5 0 R >> >> /Annots [");
+    for (i = 0; i < sizeof annots / sizeof annots[0]; i++) {
+        at += snprintf(list + at, sizeof list - (size_t)at, " %d 0 R",
+                       (int)i + 10);
+    }
+    snprintf(list + at, sizeof list - (size_t)at, " ] >>");
+    obj(&b, 3, list);
+    stream(&b, 4, "", text, (long)strlen(text));
+    obj(&b, 5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+    for (i = 0; i < sizeof annots / sizeof annots[0]; i++) {
+        obj(&b, (int)i + 10, annots[i]);
+    }
+    xref(&b, 1, 0);
+    return b;
+}
+
+/** @brief The annotations page drawn: each kind where and as it should
+ *         be, and a round cap with no hole where it meets its line. */
+static void
+annot_test(void)
+{
+    pdfw_t b = annot_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0;
+
+    check(ok, "a page of annotations without appearances renders");
+    if (!ok) {
+        tiku_pdf_close(doc);
+        free(b.p);
+        return;
+    }
+    check(pixel(&pm, 50, 70) == 0x0000ffu && pixel(&pm, 20, 70) == 0xff0000u,
+          "a square: IC within, C round it");
+    check(near(pixel(&pm, 159, 70), 0, 153, 0, 40) &&
+          pixel(&pm, 130, 70) == 0xffffffu,
+          "a circle: its stroke, and no fill without IC");
+    check(near(pixel(&pm, 274, 43), 255, 0, 0, 60),
+          "a line's closed arrow is filled with IC");
+    check(near(pixel(&pm, 310, 70), 128, 0, 128, 40),
+          "an ink stroke is drawn in C");
+    check(near(pixel(&pm, 360, 51), 128, 0, 128, 40),
+          "and its round cap has no hole where it meets the line");
+    check(pixel(&pm, 148, 153) == 0xffff00u,
+          "a highlight is its colour where the paper shows");
+    check(near(pixel(&pm, 60, 184), 255, 0, 0, 80) &&
+          pixel(&pm, 60, 181) == 0xffffffu,
+          "a strike-out crosses the middle of its words, and only that");
+    check(pixel(&pm, 20, 250) == 0x0000ffu,
+          "free text has a point's border in its text colour");
+    check(near(pixel(&pm, 251, 255), 204, 0, 0, 20),
+          "a stamp is framed in red");
+    check(pixel(&pm, 210, 248) == 0xffff00u, "a note shows its icon");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
+/** @brief A form that needs its appearances made: a text field, a check
+ *         box and a radio button on, and a field whose stored look is
+ *         stale (red) against its value. */
+static pdfw_t
+form_file(void)
+{
+    const char *stale = "1 0 0 rg 0 0 160 22 re f";
+    pdfw_t b = {0};
+
+    ws(&b, "%PDF-1.7\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields "
+               "[10 0 R 11 0 R 12 0 R 13 0 R] /NeedAppearances true "
+               "/DA (/Helv 0 Tf 0 g) >> >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 280] "
+               "/Annots [10 0 R 11 0 R 12 0 R 13 0 R] >>");
+    obj(&b, 10, "<< /Subtype /Widget /FT /Tx /T (name) /Rect [20 240 200 "
+                "262] /V (John Smith) /DA (/Helv 12 Tf 0 0 1 rg) /MK << "
+                "/BG [0.9 0.9 1] /BC [0 0 0] >> >>");
+    obj(&b, 11, "<< /Subtype /Widget /FT /Btn /T (agree) /Rect [220 240 240 "
+                "260] /V /Yes /AS /Yes /DA (/ZaDb 0 Tf 0 g) >>");
+    obj(&b, 12, "<< /Subtype /Widget /FT /Btn /Ff 32768 /T (pick) /Rect "
+                "[260 240 280 260] /V /1 /AS /1 /DA (0 g) >>");
+    obj(&b, 13, "<< /Subtype /Widget /FT /Tx /T (stale) /Rect [220 110 380 "
+                "132] /V (NEW VALUE) /DA (/Helv 12 Tf 0 g) /AP << /N 14 0 R "
+                ">> >>");
+    stream(&b, 14, "/Type /XObject /Subtype /Form /BBox [0 0 160 22]",
+           stale, (long)strlen(stale));
+    xref(&b, 1, 0);
+    return b;
+}
+
+/** @brief How many pixels in the box (@p x0, @p y0)-(@p x1, @p y1) are
+ *         darker than @p most on every channel. */
+static int
+dark(const tiku_pdf_pixmap_t *pm, int x0, int y0, int x1, int y1, int most)
+{
+    int x, y, n = 0;
+
+    for (y = y0; y < y1; y++) {
+        for (x = x0; x < x1; x++) {
+            uint32_t c = pixel(pm, x, y);
+
+            n += (int)(c >> 16 & 255) < most && (int)(c >> 8 & 255) < most &&
+                 (int)(c & 255) < most;
+        }
+    }
+    return n;
+}
+
+/** @brief The form drawn from its values. */
+static void
+form_test(void)
+{
+    pdfw_t b = form_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0;
+    int x, blue = 0;
+
+    check(ok, "a form needing its appearances renders");
+    if (!ok) {
+        tiku_pdf_close(doc);
+        free(b.p);
+        return;
+    }
+    for (x = 22; x < 110; x++) {
+        int y;
+
+        for (y = 20; y < 38; y++) {
+            uint32_t c = pixel(&pm, x, y);
+
+            blue += (c & 255) > 200 && (c >> 16 & 255) < 120;
+        }
+    }
+    check(near(pixel(&pm, 195, 36), 230, 230, 255, 2) && blue > 20,
+          "a text field: MK's ground, and its value in DA's colour");
+    check(dark(&pm, 220, 20, 240, 40, 100) > 8,
+          "a check box that is on shows its tick");
+    check(dark(&pm, 267, 27, 273, 33, 60) == 36,
+          "a radio button that is on shows its dot");
+    check(!near(pixel(&pm, 370, 158), 255, 0, 0, 60) &&
+          dark(&pm, 222, 150, 380, 170, 100) > 20,
+          "a stale look is drawn afresh from the value, as the form asks");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
 /**
  * @brief Four pages a careless writer makes: a MediaBox of nothing; a
  *        form whose stray Q would undo its caller's clip; a Separation
@@ -1165,6 +1351,8 @@ main(void)
     nav_test();
     fax_test();
     oc_test();
+    annot_test();
+    form_test();
     damage_test();
     corpus_test();
     if (fails) {

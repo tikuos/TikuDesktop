@@ -1737,6 +1737,30 @@ appearance_matrix(rs_t *r, pdf_obj_t *ap, const double *rect, pdf_mat_t *out)
     return 1;
 }
 
+/** @brief Annotation @p a, which stores no appearance, drawn as a viewer
+ *         draws its kind, in page space. */
+static void
+unstored(rs_t *r, pdf_obj_t *a, pdf_mat_t base)
+{
+    long n = 0;
+    unsigned char *data = pdf_annot_content(r->doc, a, &n);
+    gs_t *g;
+
+    if (data == NULL) {
+        return;
+    }
+    push(r);
+    g = top(r);
+    clip_unref(g->clip);
+    clip_unref(g->pclip);
+    clip_unref(g->smask);
+    state_init(g, base);
+    r->pbase = base;
+    run(r, data, n, pdf_annot_resources(r->doc), 1);
+    pop(r);
+    free(data);
+}
+
 /**
  * @brief The page's annotations over it: each one's normal appearance in
  *        its Rect, as filled forms, stamps and notes have them; popups,
@@ -1759,9 +1783,14 @@ annotations(rs_t *r, pdf_obj_t *page, pdf_mat_t base)
 
         if (a == NULL || a->kind != PDF_DICT || (flags & (2 | 32)) != 0 ||
             pdf_is_name(pdf_get(r->doc, a, "Subtype"), "Popup") ||
-            !pdf_oc_visible(r->doc, pdf_get(r->doc, a, "OC")) ||
-            (ap = appearance(r, a)) == NULL ||
-            !box_of(r, pdf_get(r->doc, a, "Rect"), rect) ||
+            !pdf_oc_visible(r->doc, pdf_get(r->doc, a, "OC"))) {
+            continue;
+        }
+        if (pdf_annot_redraw(r->doc, a) || (ap = appearance(r, a)) == NULL) {
+            unstored(r, a, base);
+            continue;
+        }
+        if (!box_of(r, pdf_get(r->doc, a, "Rect"), rect) ||
             !appearance_matrix(r, ap, rect, &place)) {
             continue;
         }

@@ -900,6 +900,7 @@ tiku_pdf_close(tiku_pdf_t *doc)
         return;
     }
     pdf_fonts_free(doc);            /* they hold what the cache holds */
+    pdf_free(doc->annot_res);
     for (i = 0; i < doc->nxref; i++) {
         pdf_free(doc->cache[i]);
     }

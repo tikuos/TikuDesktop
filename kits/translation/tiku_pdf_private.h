@@ -116,6 +116,7 @@ struct tiku_pdf {
     pdf_obj_t    **oc_off;          /* optional content groups set off  */
     int            noc_off;
     int            oc_read;         /* the configuration has been read  */
+    pdf_obj_t     *annot_res;       /* what drawn annotations' text uses */
 };
 
 /* The lexer and the objects it makes: tiku_pdf_lex.c                        */
@@ -426,6 +427,19 @@ int pdf_gfont_mask(pdf_gfont_t *g, long code, const pdf_mat_t *m,
 int pdf_oc_visible(tiku_pdf_t *doc, pdf_obj_t *oc);
 /** @brief The property list a BDC's @p operand names in @p res, or is. */
 pdf_obj_t *pdf_oc_props(tiku_pdf_t *doc, pdf_obj_t *operand, pdf_obj_t *res);
+
+/* Annotations drawn without an appearance: tiku_pdf_annot.c               */
+
+/** @brief Content in page space drawing annotation @p a as a viewer
+ *         draws its kind when it stores no appearance; NULL for a kind
+ *         with nothing to draw.  The caller frees it. */
+unsigned char *pdf_annot_content(tiku_pdf_t *doc, pdf_obj_t *a, long *n);
+/** @brief The resources that content names: Helvetica, and the
+ *         opacities, plain and multiplying, made once for the document. */
+pdf_obj_t *pdf_annot_resources(tiku_pdf_t *doc);
+/** @brief Whether widget @p a is to be drawn afresh from its field's
+ *         value, its appearance stale: the form's NeedAppearances. */
+int pdf_annot_redraw(tiku_pdf_t *doc, pdf_obj_t *a);
 
 /* Fonts kept for the document: tiku_pdf_glyph.c                             */
 
