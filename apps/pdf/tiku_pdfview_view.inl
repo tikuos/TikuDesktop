@@ -191,7 +191,7 @@ static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
         } else if (id == PV_FIND_FIELD) {
             l->find = box;
             (void)tiku_dialog_add(&c->dialog, id, box, TIKU_DIALOG_INPUT,
-                                  c->doc != NULL);
+                                  c->doc != NULL || c->locked);
         } else {
             (void)tiku_dialog_add(&c->dialog, id, box, TIKU_DIALOG_BUTTON,
                                   pv_enabled(c, id));
@@ -398,15 +398,21 @@ static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
     tiku_ui_button(s, d->rect, pv_tool(d->id), flags);
 }
 
-/** @brief A text field with a hint in it while it is empty. */
+/** @brief A text field with a hint in it while it is empty; the password
+ *         a locked document asks for is drawn as a star a byte. */
 static void pv_field(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r,
                      int id, const char *hint)
 {
-    tiku_field_t *f = id == PV_FIND_FIELD ? &c->find : &c->go;
-    tiku_field_input_t *in = id == PV_FIND_FIELD ? &c->find_in : &c->go_in;
+    int pw = id == PV_FIND_FIELD && c->locked;
+    tiku_field_t *f = pw ? &c->pass : id == PV_FIND_FIELD ? &c->find : &c->go;
+    tiku_field_input_t *in = pw ? &c->pass_in : id == PV_FIND_FIELD
+                                             ? &c->find_in : &c->go_in;
     int focused = c->dialog.focus == id;
+    char shown[TIKU_FIELD_MAX];
 
-    tiku_ui_textfield_scroll(s, r, f->text, focused ? f->caret : -1,
+    snprintf(shown, sizeof shown, "%s", f->text);
+    if (pw) memset(shown, '*', strlen(shown));
+    tiku_ui_textfield_scroll(s, r, shown, focused ? f->caret : -1,
                              focused ? f->sel_a : 0, focused ? f->sel_b : 0,
                              focused ? TIKU_S_FOCUS : 0, in->scroll);
     if (!f->text[0] && !focused)
@@ -487,7 +493,7 @@ static void pv_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t r,
     snprintf(of, sizeof of, "of %d", c->npage);
     tiku_text_line_draw(s, l.of, TIKU_MEASURE_PLAIN, c->npage ? of : "",
                         TIKU_C_TEXT);
-    pv_field(c, s, l.find, PV_FIND_FIELD, "Find");
+    pv_field(c, s, l.find, PV_FIND_FIELD, c->locked ? "Password" : "Find");
     if (l.side.w) pv_side_draw(c, s, l.side);
     if (c->npage) {
         pv_compose(c, l.canvas);

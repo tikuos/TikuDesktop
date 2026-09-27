@@ -107,8 +107,10 @@ struct tiku_pdfview {
     int *rows;                      /* outline entries shown, in order   */
     tiku_list_t list;
     tiku_dialog_t dialog;
-    tiku_field_t find, go;
-    tiku_field_input_t find_in, go_in;
+    tiku_field_t find, go, pass;
+    tiku_field_input_t find_in, go_in, pass_in;
+    int locked, may_copy;           /* waiting for a password; copying ok */
+    char locked_path[TIKU_PATH_MAX];
     pv_match_t *match;
     int nmatch, cur, searching, searched, search_gen, want_next;
     char query[TIKU_FIELD_MAX];     /* what the matches are of           */
@@ -131,6 +133,7 @@ static int pv_query(const char *text, uint32_t *q, int max);
 static void pv_marks(tiku_pdfview_t *c, int p, int x, int y);
 static void pv_side_draw(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r);
 static void pv_open_address(tiku_pdfview_t *c, const char *uri);
+static void pv_forget_password(tiku_pdfview_t *c);
 
 /** @brief Something the window shows has changed. */
 static void pv_changed(tiku_pdfview_t *c)
@@ -233,7 +236,8 @@ static int pv_enabled(tiku_pdfview_t *c, int id)
     if (!c->doc) return 0;
     if (id == PV_OUTLINE) return c->noutline > 0;
     if (id == PV_COPY) return c->selected;
-    if (id == PV_FIND_NEXT || id == PV_FIND_PREV) return c->find.text[0];
+    if (id == PV_FIND_NEXT || id == PV_FIND_PREV)
+        return c->find.text[0] && !c->locked;
     if (id == PV_PREV || id == PV_FIRST) return page > 0;
     if (id == PV_NEXT || id == PV_LAST) return page + 1 < c->npage;
     if (id == PV_BACK) return c->nback > 0;
@@ -346,24 +350,42 @@ static int pv_command_key(tiku_pdfview_t *c, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief A key or typed text for the focused field; Return in the find
- *         field searches, in the page field goes. */
+/** @brief The password field emptied, the password gone from memory. */
+static void pv_forget_password(tiku_pdfview_t *c)
+{
+    memset(c->pass.text, 0, sizeof c->pass.text);
+    tiku_field_start(&c->pass, "");
+    tiku_field_input_init(&c->pass_in);
+}
+
+/** @brief A key or typed text for the focused field: Return in the find
+ *         field searches (or, for a locked document, tries the password
+ *         typed there), in the page field goes. */
 static int pv_field_event(tiku_pdfview_t *c, const tiku_event_t *ev,
                           const pv_layout_t *l)
 {
     int find = c->dialog.focus == PV_FIND_FIELD;
-    tiku_field_t *f = find ? &c->find : &c->go;
+    tiku_field_t *f = find ? (c->locked ? &c->pass : &c->find) : &c->go;
+    tiku_field_input_t *in = find ? (c->locked ? &c->pass_in : &c->find_in)
+                                  : &c->go_in;
     tiku_field_result_t r;
 
     if (!find && c->dialog.focus != PV_PAGE_FIELD) return 0;
     if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_TAB) return 0;
-    r = tiku_field_event(f, find ? &c->find_in : &c->go_in, ev,
-                         find ? l->find : l->page, 1);
-    if (r == TIKU_FIELD_COMMITTED && find) {
+    r = tiku_field_event(f, in, ev, find ? l->find : l->page, 1);
+    if (r == TIKU_FIELD_COMMITTED && find && c->locked) {
+        (void)pv_load(c, c->locked_path, c->pass.text);
+        pv_forget_password(c);
+    } else if (r == TIKU_FIELD_COMMITTED && find) {
         pv_find(c, ev->modifiers & TIKU_MOD_SHIFT ? -1 : 1);
     } else if (r == TIKU_FIELD_COMMITTED) {
         pv_go_typed(c);
     } else if (r == TIKU_FIELD_CANCELLED) {
+        if (find && c->locked) {
+            c->locked = 0;
+            pv_forget_password(c);
+            pv_say(c, "The locked PDF was left closed.");
+        }
         tiku_dialog_focus(&c->dialog, PV_CANVAS);
     } else if (r == TIKU_FIELD_REJECTED) {
         pv_say(c, "That text does not fit the field.");
@@ -539,6 +561,7 @@ tiku_pdfview_t *tiku_pdfview_new(tiku_workspace_t *workspace, int *dirty,
     tiku_field_start(&c->go, "");
     tiku_field_input_init(&c->find_in);
     tiku_field_input_init(&c->go_in);
+    pv_forget_password(c);
     pv_forget(c);
     return c;
 }
@@ -590,5 +613,5 @@ int tiku_pdfview_file(tiku_pdfview_t *c, const char *path)
 {
     if (!c || !c->workspace) return 0;
     tiku_pdfview_open(c);
-    return pv_load(c, path);
+    return pv_load(c, path, "");
 }

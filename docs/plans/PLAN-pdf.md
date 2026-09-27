@@ -97,6 +97,12 @@ an output that grows.  Nothing else in the kits changes.
 5. **Later, when a document needs it.**  Encryption for the Ambiq
    documents (AES-256 R6, with AES-128 and RC4 for older ones),
    transparency groups, forms and other annotations.
+   *Done 2026-09-27*: the standard security handler, revisions 2 to 6,
+   on MD5, SHA-2, RC4 and AES of the support kit's own; the Ambiq
+   brochure opens (8 of 8), and fixtures made here are read by poppler
+   too.  TikuPDF asks for a password in its find field and keeps the
+   author's no-copy.  All sixteen blend modes, luminosity and alpha soft
+   masks, groups composited as one, and every annotation's appearance.
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand

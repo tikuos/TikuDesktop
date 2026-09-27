@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include "../../apps/pdf/tiku_pdfview.c"
+#include "../fixtures/pdf_crypt.inc"
 
 #define PAGES 12
 
@@ -319,6 +320,62 @@ static void field_tests(tiku_pdfview_t *c)
     tiku_dialog_focus(&c->dialog, PV_CANVAS);
 }
 
+/** @brief Write @p e's encrypted fixture to @p path. */
+static void write_locked(const enc_t *e, const char *path)
+{
+    encw_t b = enc_make(e);
+    FILE *f = fopen(path, "wb");
+
+    assert(f && fwrite(b.p, 1, (size_t)b.n, f) == (size_t)b.n);
+    fclose(f);
+    free(b.p);
+}
+
+/** @brief Return in the focused field, as the keyboard sends it. */
+static void enter(tiku_pdfview_t *c)
+{
+    tiku_event_t ev = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_RETURN};
+    pv_event(c->window, &ev, c);
+}
+
+/** @brief A locked PDF asks for its password in the find field's place
+ *         and forgets it once tried; the author's no-copy is kept. */
+static void locked_tests(tiku_pdfview_t *c, const char *dir)
+{
+    static const enc_t locked = {"locked", 5, 6, 256, 1, "secret", "boss", -4};
+    static const enc_t nocopy = {"nocopy", 2, 3, 128, 0, "", "owner", -20};
+    char path[256], other[256];
+
+    snprintf(path, sizeof path, "%s/locked.pdf", dir);
+    snprintf(other, sizeof other, "%s/nocopy.pdf", dir);
+    write_locked(&locked, path);
+    write_locked(&nocopy, other);
+    assert(tiku_pdfview_file(c, path));
+    settle(c);
+    assert(c->locked && strstr(c->status, "locked") && c->npage == PAGES);
+    assert(c->dialog.focus == PV_FIND_FIELD);
+    tiku_field_start(&c->pass, "wrong");
+    enter(c);
+    assert(!c->pass.text[0]);                   /* forgotten once tried */
+    settle(c);
+    assert(c->locked && strstr(c->status, "does not open"));
+    tiku_field_start(&c->pass, "secret");
+    enter(c);
+    settle(c);
+    assert(!c->locked && c->npage == 1 && c->may_copy);
+    assert(c->pages[0].text && c->pages[0].nch > 5);
+    assert(tiku_pdfview_file(c, other));
+    settle(c);
+    assert(c->npage == 1 && !c->may_copy);
+    tiku_clipboard_set("before");
+    pv_select_page(c, 0);
+    pv_action(c, PV_COPY);
+    assert(!strcmp(tiku_clipboard_text(), "before"));
+    assert(strstr(c->status, "does not allow"));
+    unlink(path);
+    unlink(other);
+}
+
 int main(int argc, char **argv)
 {
     char dir[] = "/tmp/tikupdf-XXXXXX", file[256], junk[256], shot[256];
@@ -365,6 +422,7 @@ int main(int argc, char **argv)
     assert(tiku_pdfview_file(c, junk));
     settle(c);
     assert(strstr(c->status, "not a PDF") && c->npage == PAGES);
+    locked_tests(c, dir);
 
     tiku_pdfview_close(c);
     settle(c);
@@ -379,7 +437,7 @@ int main(int argc, char **argv)
     tiku_surface_free(s);
     if (argc > 1) printf("Preview: %s\n", shot);
     else { unlink(file); unlink(junk); rmdir(dir); }
-    puts("PDF viewer: open, draw, zoom, outline, links, find, copy, close "
-         "PASS");
+    puts("PDF viewer: open, draw, zoom, outline, links, find, copy, "
+         "passwords, close PASS");
     return 0;
 }

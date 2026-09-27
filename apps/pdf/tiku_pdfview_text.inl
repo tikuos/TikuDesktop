@@ -338,6 +338,11 @@ static void pv_copy(tiku_pdfview_t *c)
                   "Text.");
         return;
     }
+    if (!c->may_copy) {
+        pv_say(c, "The author of this PDF does not allow its text to be "
+                  "copied.");
+        return;
+    }
     pv_range(c, &from, &to);
     for (int p = from.page; p <= to.page; p++) {
         const pv_page_t *pg = &c->pages[p];

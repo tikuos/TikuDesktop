@@ -23,9 +23,9 @@ static void pv_page_size(tiku_pdf_t *pdf, int p, float *w, float *h)
 /** @brief Opening a file: the document and all a view needs up front. */
 typedef struct {
     tiku_pdfview_t *owner;
-    int generation, npage, noutline;
+    int generation, npage, noutline, may_copy, tried;
     tiku_pdf_err_t err;
-    char path[TIKU_PATH_MAX], *title;
+    char path[TIKU_PATH_MAX], *title, password[TIKU_FIELD_MAX];
     tiku_pdf_t *pdf;
     float *pw, *ph;
     tiku_pdf_outline_t *outline;
@@ -36,8 +36,10 @@ static void pv_load_run(void *ctx)
 {
     pv_load_t *j = ctx;
 
-    j->err = tiku_pdf_open(j->path, &j->pdf);
+    j->err = tiku_pdf_open_password(j->path, j->password, &j->pdf);
+    memset(j->password, 0, sizeof j->password);   /* used; not kept */
     if (j->err != TIKU_PDF_OK) return;
+    j->may_copy = tiku_pdf_may_copy(j->pdf);
     j->npage = tiku_pdf_pages(j->pdf);
     if (j->npage <= 0) {
         j->err = TIKU_PDF_BAD;
@@ -61,7 +63,7 @@ static const char *pv_load_error(tiku_pdf_err_t err)
 {
     if (err == TIKU_PDF_NOT_PDF) return "That file is not a PDF.";
     if (err == TIKU_PDF_UNSUPPORTED)
-        return "That PDF is encrypted, which TikuPDF does not read yet.";
+        return "That PDF is encrypted in a way TikuPDF does not read.";
     return "That PDF is damaged beyond what TikuPDF can repair.";
 }
 
@@ -75,10 +77,23 @@ static void pv_load_done(void *ctx)
     const char *name = strrchr(j->path, '/');
 
     if (j->generation != c->generation || !c->workspace) return;
+    if (j->err == TIKU_PDF_PASSWORD) {
+        /* Locked: the find field asks for its password, masked. */
+        c->locked = 1;
+        snprintf(c->locked_path, sizeof c->locked_path, "%s", j->path);
+        pv_forget_password(c);
+        tiku_dialog_focus(&c->dialog, PV_FIND_FIELD);
+        pv_say(c, j->tried ? "That password does not open it. Try again, "
+                             "or press Escape." :
+                             "This PDF is locked. Type its password in the "
+                             "field above and press Enter.");
+        return;
+    }
     if (j->err != TIKU_PDF_OK) {
         pv_say(c, pv_load_error(j->err));
         return;
     }
+    c->locked = 0;
     d = calloc(1, sizeof *d);
     if (!d) {
         pv_say(c, "Not enough memory to open that PDF.");
@@ -117,6 +132,7 @@ static void pv_load_done(void *ctx)
         snprintf(c->window->title, sizeof c->window->title, "TikuPDF - %.140s",
                  name ? name + 1 : j->path);
     c->fit = PV_BY_WIDTH;
+    c->may_copy = j->may_copy;
     char said[160];
     snprintf(said, sizeof said, "%d page%s%s. Drag across text to select "
              "it; Ctrl+F finds.", c->npage, c->npage == 1 ? "" : "s",
@@ -145,8 +161,9 @@ static void pv_load_free(void *ctx)
     free(j);
 }
 
-/** @brief Ask a worker to open @p path.  One opening at a time. */
-static int pv_load(tiku_pdfview_t *c, const char *path)
+/** @brief Ask a worker to open @p path, with @p password when it is
+ *         locked ("" for none).  One opening at a time. */
+static int pv_load(tiku_pdfview_t *c, const char *path, const char *password)
 {
     pv_load_t *j;
     tiku_work_job_t work;
@@ -161,6 +178,8 @@ static int pv_load(tiku_pdfview_t *c, const char *path)
     j->owner = c;
     j->generation = c->generation;
     snprintf(j->path, sizeof j->path, "%s", path);
+    snprintf(j->password, sizeof j->password, "%s", password);
+    j->tried = password[0] != '\0';
     memset(&work, 0, sizeof work);
     work.run = pv_load_run;
     work.done = pv_load_done;

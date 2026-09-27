@@ -7,8 +7,14 @@ Associations names another reader. TikuPDF also appears in Open With.</p>
 <p>Choose <b>Open</b> or press <b>Ctrl+O</b>. The document opens on a
 background worker, so a datasheet of a thousand pages is ready in a moment
 and the window never waits on it. If a file cannot be opened the status
-line says why &mdash; not a PDF, encrypted, or damaged beyond repair
-&mdash; and the document already shown stays.</p>
+line says why &mdash; not a PDF, or damaged beyond repair &mdash; and the
+document already shown stays.</p>
+<p>Encrypted PDFs open like any other when they need no password, as most
+do. A PDF locked with a password turns the Find field into a Password
+field: type it and press Enter (Escape leaves the PDF closed). The
+password is used once and not kept. A document whose author does not
+allow its text to be copied can still be read and searched; Copy says
+so instead of copying.</p>
 <h2 id="view">Reading</h2>
 <ul>
 <li>Pages follow one another; scroll with the mouse wheel, the arrow keys,
@@ -43,10 +49,11 @@ found.</p>
 <b>Ctrl+A</b> selects the text of the page you are on. The clipboard holds
 4 KB; copying more takes the first 4 KB and the status line says so.</p>
 <h2 id="limits">What is not drawn yet</h2>
-<p>Smooth shadings (axial, radial and function-based) and repeating
-patterns are drawn as the document has them; mesh shadings are drawn in one
-tone, and faxed, JPEG 2000 and JBIG2 pictures as grey boxes, so the page
-keeps its layout. Encrypted PDFs, transparency groups, forms and
-annotations other than links are not read yet. Fonts a PDF
-names without carrying are drawn with the desktop's own faces, at the
-widths the document gives them.</p>
+<p>Smooth shadings (axial, radial and function-based), repeating
+patterns, transparency (blend modes, soft masks and groups) and the
+appearance of annotations and filled-in forms are drawn as the document
+has them. Mesh shadings are drawn in one tone, and faxed, JPEG 2000 and
+JBIG2 pictures as grey boxes, so the page keeps its layout. Forms show
+what was filled in but cannot be edited here. Fonts a PDF names without
+carrying are drawn with the desktop's own faces, at the widths the
+document gives them.</p>
