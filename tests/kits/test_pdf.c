@@ -12,7 +12,8 @@
  * fonts read through their encoding and through a ToUnicode map; the
  * slips of careless writers, which once broke the reader; a fax image
  * as libtiff encodes one; layers on and off; annotations and form
- * fields that store no appearance, drawn as a viewer draws them.  Then,
+ * fields that store no appearance, drawn as a viewer draws them; mesh
+ * shadings.  Then,
  * when TIKU_PDF_CORPUS names a folder, every PDF in it is opened and
  * its first page's text shown, which is how the vendor documents are
  * tried without being checked in.
@@ -981,6 +982,155 @@ form_test(void)
     free(b.p);
 }
 
+/** @brief Bits packed as a mesh shading's stream packs them. */
+typedef struct {
+    char b[256];                    /* the bytes so far                 */
+    int  n, bit;                    /* whole bytes, bits in the next    */
+} bitw_t;
+
+/** @brief @p v in @p k bits, the highest first. */
+static void
+bput(bitw_t *w, unsigned v, int k)
+{
+    while (k-- > 0) {
+        if (w->bit == 0) {
+            w->b[w->n] = 0;
+        }
+        w->b[w->n] |= (char)((v >> k & 1) << (7 - w->bit));
+        if (++w->bit == 8) {
+            w->bit = 0;
+            w->n++;
+        }
+    }
+}
+
+/** @brief On to the next byte, as each vertex or patch starts one. */
+static void
+balign(bitw_t *w)
+{
+    if (w->bit != 0) {
+        w->bit = 0;
+        w->n++;
+    }
+}
+
+/** @brief A vertex or patch point: 16-bit coordinates over 0..100, and
+ *         @p nc 8-bit colour values over 0..1 (none when @p nc is 0). */
+static void
+bvertex(bitw_t *w, double x, double y, const double *c, int nc)
+{
+    int i;
+
+    bput(w, (unsigned)(x / 100 * 65535 + 0.5), 16);
+    bput(w, (unsigned)(y / 100 * 65535 + 0.5), 16);
+    for (i = 0; i < nc; i++) {
+        bput(w, (unsigned)(c[i] * 255 + 0.5), 8);
+    }
+}
+
+/** @brief Three meshes shown by sh: two triangles going on from one
+ *         another (type 4) above, a Coons patch (6) and a tensor-product
+ *         patch (7) below, each colour at a corner. */
+static pdfw_t
+mesh_file(void)
+{
+    static const double red[3] = {1, 0, 0}, green[3] = {0, 1, 0};
+    static const double blue[3] = {0, 0, 1}, yellow[3] = {1, 1, 0};
+    static const double white[3] = {1, 1, 1};
+    static const double coons[12][2] = {
+        {5, 5}, {0, 20}, {10, 35}, {5, 50}, {20, 55}, {35, 45}, {50, 50},
+        {55, 35}, {45, 20}, {50, 5}, {35, 0}, {20, 10}
+    };
+    static const double tensor[16][2] = {
+        {5, 5}, {5, 35}, {5, 65}, {5, 95}, {35, 95}, {65, 95}, {95, 95},
+        {95, 65}, {95, 35}, {95, 5}, {65, 5}, {35, 5}, {20, 20}, {35, 65},
+        {80, 80}, {65, 35}
+    };
+    const double *corner[4] = {red, green, blue, yellow};
+    const char *draw = "q 1 0 0 1 5 115 cm /S4 sh Q q 1 0 0 1 5 5 cm /S6 sh "
+                       "Q q 1 0 0 1 115 5 cm /S7 sh Q";
+    const char *dict = "/ColorSpace /DeviceRGB /BitsPerCoordinate 16 "
+                       "/BitsPerComponent 8 /BitsPerFlag 8 /Decode [0 100 0 "
+                       "100 0 1 0 1 0 1]";
+    char head[256];
+    bitw_t t4 = {{0}, 0, 0}, t6 = {{0}, 0, 0}, t7 = {{0}, 0, 0};
+    pdfw_t b = {0};
+    int i;
+
+    bput(&t4, 0, 8); bvertex(&t4, 5, 5, red, 3); balign(&t4);
+    bput(&t4, 0, 8); bvertex(&t4, 95, 5, green, 3); balign(&t4);
+    bput(&t4, 0, 8); bvertex(&t4, 50, 95, blue, 3); balign(&t4);
+    bput(&t4, 1, 8); bvertex(&t4, 95, 95, yellow, 3); balign(&t4);
+    bput(&t6, 0, 8);
+    bput(&t7, 0, 8);
+    for (i = 0; i < 12; i++) {
+        bvertex(&t6, coons[i][0], coons[i][1], NULL, 0);
+    }
+    for (i = 0; i < 16; i++) {
+        bvertex(&t7, tensor[i][0], tensor[i][1], NULL, 0);
+    }
+    for (i = 0; i < 4 * 3; i++) {   /* the corners' colours: c00 to c30 */
+        bput(&t6, (unsigned)(corner[i / 3][i % 3] * 255), 8);
+    }
+    corner[3] = white;
+    for (i = 0; i < 4 * 3; i++) {
+        bput(&t7, (unsigned)(corner[i / 3][i % 3] * 255), 8);
+    }
+    balign(&t6);
+    balign(&t7);
+    ws(&b, "%PDF-1.7\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 220 220] "
+               "/Contents 4 0 R /Resources << /Shading << /S4 10 0 R "
+               "/S6 11 0 R /S7 12 0 R >> >> >>");
+    stream(&b, 4, "", draw, (long)strlen(draw));
+    snprintf(head, sizeof head, "/ShadingType 4 %s", dict);
+    stream(&b, 10, head, t4.b, t4.n);
+    snprintf(head, sizeof head, "/ShadingType 6 %s", dict);
+    stream(&b, 11, head, t6.b, t6.n);
+    snprintf(head, sizeof head, "/ShadingType 7 %s", dict);
+    stream(&b, 12, head, t7.b, t7.n);
+    xref(&b, 1, 0);
+    return b;
+}
+
+/** @brief The meshes drawn: each corner's colour at its corner, blended
+ *         between, and nothing where no triangle is. */
+static void
+mesh_test(void)
+{
+    pdfw_t b = mesh_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0;
+
+    check(ok, "a page of mesh shadings renders");
+    if (!ok) {
+        tiku_pdf_close(doc);
+        free(b.p);
+        return;
+    }
+    check(near(pixel(&pm, 13, 97), 255, 0, 0, 40) &&
+          near(pixel(&pm, 95, 97), 0, 255, 0, 50) &&
+          near(pixel(&pm, 97, 15), 255, 255, 0, 50),
+          "free triangles: red, green and, going on from them, yellow");
+    check(pixel(&pm, 15, 20) == 0xffffffu,
+          "and nothing where no triangle reaches");
+    check(near(pixel(&pm, 14, 206), 255, 0, 0, 50) &&
+          near(pixel(&pm, 51, 207), 255, 255, 0, 60) &&
+          near(pixel(&pm, 35, 185), 128, 128, 64, 40),
+          "a Coons patch: its corners' colours, and between them a mix");
+    check(near(pixel(&pm, 122, 208), 255, 0, 0, 40) &&
+          near(pixel(&pm, 208, 122), 0, 0, 255, 50) &&
+          near(pixel(&pm, 208, 208), 255, 255, 255, 30),
+          "a tensor-product patch: its corners' colours");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
 /**
  * @brief Four pages a careless writer makes: a MediaBox of nothing; a
  *        form whose stray Q would undo its caller's clip; a Separation
@@ -1353,6 +1503,7 @@ main(void)
     oc_test();
     annot_test();
     form_test();
+    mesh_test();
     damage_test();
     corpus_test();
     if (fails) {
