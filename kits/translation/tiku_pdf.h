@@ -4,13 +4,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_pdf.h - reading a PDF: its pages, and what they say.
+ * tiku_pdf.h - reading a PDF: its pages, what they say, how they look.
  *
  * Written rather than linked, like the pictures beside it: a PDF is
  * objects in a file with a table saying where each is, and the kinds
  * of document read here -- datasheets, manuals, papers -- use a small
- * part of what the format allows (docs/plans/PLAN-pdf.md).  Nothing
- * here draws yet; the text of a page is what this stage gives.
+ * part of what the format allows (docs/plans/PLAN-pdf.md).  A page
+ * gives its text as lines, or its look as pixels at any scale.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,6 +18,7 @@
 #define TIKU_PDF_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct tiku_pdf tiku_pdf_t;
 
@@ -79,5 +80,48 @@ char *tiku_pdf_page_text(tiku_pdf_t *doc, int page);
 
 /** @brief The document's title from its Info dictionary, or NULL. */
 char *tiku_pdf_title(tiku_pdf_t *doc);
+
+/** @brief A page drawn: 0xAARRGGBB pixels, top row first, opaque. */
+typedef struct {
+    int       w, h;
+    uint32_t *px;                   /* w*h, owned; free with _pixmap_free */
+} tiku_pdf_pixmap_t;
+
+/**
+ * @brief Draw @p page at @p scale pixels per point, rotation applied.
+ *
+ * What the format allows and this does not draw yet is left out, never
+ * guessed at: the page is still readable around it.
+ * @return 0 with @p out filled, or -1 when there is no such page or no
+ *         room for it.
+ */
+int tiku_pdf_render(tiku_pdf_t *doc, int page, double scale,
+                    tiku_pdf_pixmap_t *out);
+
+/**
+ * @brief Draw the window @p x0, @p y0, @p w by @p h pixels of the page as
+ *        tiku_pdf_render() would lay it out at @p scale.
+ *
+ * A band of rows at a time keeps the memory to the band, which is how a
+ * small machine would page through a datasheet.
+ */
+int tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0,
+                         int y0, int w, int h, tiku_pdf_pixmap_t *out);
+
+/** @brief The size tiku_pdf_render() would draw @p page at @p scale. */
+int tiku_pdf_render_size(tiku_pdf_t *doc, int page, double scale, int *w,
+                         int *h);
+
+/** @brief Give a drawn page's pixels back. */
+void tiku_pdf_pixmap_free(tiku_pdf_pixmap_t *p);
+
+/**
+ * @brief Where to find faces to stand in for fonts the file does not
+ *        embed: a folder of TrueType files, as the desktop's fonts folder.
+ *
+ * Without one, the machine's own faces are looked for in the usual
+ * places; without those, such text is left out.
+ */
+void tiku_pdf_fonts(tiku_pdf_t *doc, const char *dir);
 
 #endif /* TIKU_PDF_H_ */

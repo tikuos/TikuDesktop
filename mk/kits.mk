@@ -70,6 +70,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_present.c \
                $(K)/interface/tiku_font.c $(K)/interface/tiku_ttf.c \
                $(K)/interface/tiku_glyphpath.c $(K)/interface/tiku_cff.c \
+               $(K)/interface/tiku_type1.c \
                $(K)/interface/tiku_ui.c $(K)/interface/tiku_dl.c \
                $(K)/interface/tiku_logo.c \
                $(K)/interface/tiku_scroll.c $(K)/interface/tiku_field.c \
@@ -105,7 +106,12 @@ TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_pdf_filter.c \
                $(K)/translation/tiku_pdf_page.c \
                $(K)/translation/tiku_pdf_font.c \
-               $(K)/translation/tiku_pdf_text.c
+               $(K)/translation/tiku_pdf_text.c \
+               $(K)/translation/tiku_pdf_raster.c \
+               $(K)/translation/tiku_pdf_color.c \
+               $(K)/translation/tiku_pdf_render.c \
+               $(K)/translation/tiku_pdf_glyph.c \
+               $(K)/translation/tiku_pdf_image.c
 # The card, like the machine underneath, is one file per host: the
 # PulseAudio simple API where there is a sound daemon, CoreAudio's audio
 # queue where there is a Mac.  Neither is compiled on the other's host,

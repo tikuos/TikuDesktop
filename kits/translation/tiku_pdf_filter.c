@@ -356,16 +356,28 @@ pdf_stream_data(tiku_pdf_t *doc, pdf_obj_t *stream, unsigned char **out,
                 long *n, const char **image)
 {
     const unsigned char *raw;
+    long rawn;
+
+    if (pdf_stream_raw(doc, stream, &raw, &rawn) != 0) {
+        if (image != NULL) {
+            *image = NULL;
+        }
+        return -1;
+    }
+    return pdf_filter_bytes(doc, stream, raw, rawn, out, n, image);
+}
+
+int
+pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *stream, const unsigned char *raw,
+                 long rawn, unsigned char **out, long *n, const char **image)
+{
     unsigned char *cur;
-    long rawn, curn;
+    long curn;
     pdf_obj_t *filters, *parms;
     int i;
 
     if (image != NULL) {
         *image = NULL;
-    }
-    if (pdf_stream_raw(doc, stream, &raw, &rawn) != 0) {
-        return -1;
     }
     cur = malloc((size_t)rawn + 1);
     if (cur == NULL) {

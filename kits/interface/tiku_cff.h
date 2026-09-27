@@ -50,4 +50,22 @@ int tiku_cff_outline(const tiku_cff_t *cff, unsigned gid,
 /** @brief Units per em as the CFF's own FontMatrix states it. */
 float tiku_cff_upem(const tiku_cff_t *cff);
 
+/* A PDF names a glyph by its name, its code in the font's own encoding
+ * or, in a CID-keyed font, its CID; the charset answers all three. */
+
+/** @brief The glyph called @p name, or 0 when the font has none. */
+unsigned tiku_cff_glyph_named(const tiku_cff_t *cff, const char *name);
+/** @brief The glyph the font's own encoding gives @p code, or 0: the
+ *        standard encoding, or a custom one with its supplements. */
+unsigned tiku_cff_glyph_coded(const tiku_cff_t *cff, unsigned code);
+/** @brief The glyph with CID @p cid in a CID-keyed font, or 0. */
+unsigned tiku_cff_glyph_cid(const tiku_cff_t *cff, unsigned cid);
+/** @brief Whether the font is CID-keyed. */
+int tiku_cff_is_cid(const tiku_cff_t *cff);
+/** @brief How many glyphs the font has. */
+int tiku_cff_glyphs(const tiku_cff_t *cff);
+
+/** @brief Standard string @p sid of the 391 every CFF shares, or NULL. */
+const char *tiku_cff_standard_string(unsigned sid);
+
 #endif /* TIKU_CFF_H_ */

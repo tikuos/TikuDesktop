@@ -71,6 +71,12 @@ an output that grows.  Nothing else in the kits changes.
    Type 1 (eexec and Type 1 charstrings, beside `tiku_cff`).  Proof:
    the eight files rendered to PNG and read by eye, then pinned as
    expected pixels for the four small ones we own.
+   *Done 2026-09-27*: everything above, with CMYK and YCCK JPEGs
+   (the TI package photographs) taught to `tiku_jpeg` on the way; the
+   pinned pixels are a page of our own making (fills, strokes, clips,
+   forms, images, a stencil, Type 3 text, rotation, bands) since the
+   four small PDFs stay out of the repository.  Shadings and patterns
+   paint a flat grey until milestone 4.
 3. **The window.**  Continuous pages with zoom (fit width, fit page,
    steps), pages rendered in workers and cached, an outline sidebar,
    links that jump within the document, search and copy over the

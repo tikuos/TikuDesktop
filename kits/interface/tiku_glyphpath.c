@@ -41,7 +41,33 @@ struct tiku_path {
     int          started;
     int          failed;
     float        minx, miny, maxx, maxy;
+    float        m[6];          /* the transform on incoming points */
+    int          transformed;
 };
+
+/** @brief The point as the transform, if any, places it. */
+static void
+place(const tiku_path_t *path, float *x, float *y)
+{
+    if (path->transformed) {
+        float px = *x, py = *y;
+
+        *x = path->m[0] * px + path->m[2] * py + path->m[4];
+        *y = path->m[1] * px + path->m[3] * py + path->m[5];
+    }
+}
+
+void
+tiku_path_transform(tiku_path_t *path, const float *m)
+{
+    if (path == NULL) {
+        return;
+    }
+    path->transformed = m != NULL;
+    if (m != NULL) {
+        memcpy(path->m, m, sizeof path->m);
+    }
+}
 
 float
 tiku_hint_x(const tiku_hint_t *hint, float x)
@@ -205,6 +231,7 @@ tiku_path_move(tiku_path_t *path, float x, float y)
     if (path == NULL) {
         return;
     }
+    place(path, &x, &y);
     /* A new contour leaves the last one shut: a font that forgot to say
      * so meant to, and an open contour floods the whole glyph. */
     tiku_path_close(path);
@@ -219,6 +246,7 @@ tiku_path_line(tiku_path_t *path, float x, float y)
     if (path == NULL) {
         return;
     }
+    place(path, &x, &y);
     edge(path, path->x, path->y, x, y);
     path->x = x;
     path->y = y;
@@ -238,6 +266,7 @@ steps_for(float length)
     return n;
 }
 
+/** @brief A cheap length of the segment, to pick a piece count by. */
 static float
 span(float ax, float ay, float bx, float by)
 {
@@ -258,6 +287,8 @@ tiku_path_quad(tiku_path_t *path, float cx, float cy, float x,
     if (path == NULL) {
         return;
     }
+    place(path, &cx, &cy);
+    place(path, &x, &y);
     x0 = path->x;
     y0 = path->y;
     steps = steps_for(span(x0, y0, cx, cy) + span(cx, cy, x, y));
@@ -282,6 +313,9 @@ tiku_path_cubic(tiku_path_t *path, float ax, float ay, float bx,
     if (path == NULL) {
         return;
     }
+    place(path, &ax, &ay);
+    place(path, &bx, &by);
+    place(path, &x, &y);
     x0 = path->x;
     y0 = path->y;
     steps = steps_for(span(x0, y0, ax, ay) + span(ax, ay, bx, by) +

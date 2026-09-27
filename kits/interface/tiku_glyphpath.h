@@ -63,10 +63,22 @@ void tiku_path_reset(tiku_path_t *path);
  */
 int tiku_path_failed(const tiku_path_t *path);
 
+/**
+ * @brief Apply @p m, a PDF-style matrix [a b c d e f], to every point
+ *        pushed from now on: x' = a x + c y + e, y' = b x + d y + f.
+ *
+ * For an outline drawn at a size and slant the hint alone cannot say;
+ * NULL takes it off again.  A reset keeps it.
+ */
+void tiku_path_transform(tiku_path_t *path, const float *m);
+
+/** @brief The builders: a new contour, and a line, each to (x, y). */
 void tiku_path_move(tiku_path_t *path, float x, float y);
 void tiku_path_line(tiku_path_t *path, float x, float y);
+/** @brief A quadratic through one control point to (x, y). */
 void tiku_path_quad(tiku_path_t *path, float cx, float cy,
                          float x, float y);
+/** @brief A cubic through two control points to (x, y). */
 void tiku_path_cubic(tiku_path_t *path, float ax, float ay,
                           float bx, float by, float x, float y);
 

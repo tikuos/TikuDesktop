@@ -52,7 +52,7 @@ struct tiku_ttf {
     int              zones;
 };
 
-/* ---------------------------------------------------------------- bytes */
+/* ---------------------------------------------------------------- bytes  */
 
 static unsigned
 rd16(const unsigned char *p)
@@ -80,7 +80,7 @@ fits(const tiku_ttf_t *t, size_t off, size_t need)
     return off <= t->len && need <= t->len - off;
 }
 
-/* ---------------------------------------------------------------- tables */
+/* ---------------------------------------------------------------- tables  */
 
 /** @brief Find a table by tag.  @return its offset, or 0 when absent. */
 static size_t
@@ -376,7 +376,7 @@ glyph_at(const tiku_ttf_t *t, unsigned g, size_t *off)
     return b - a;
 }
 
-/* -------------------------------------------------------------- outlines */
+/* -------------------------------------------------------------- outlines  */
 
 typedef struct {
     float x, y;
@@ -410,7 +410,8 @@ read_simple(const tiku_ttf_t *t, size_t off, size_t len, int contours,
     points = (int)rd16(t->data + p + (size_t)(contours - 1) * 2u) + 1;
     if (points <= 0 || points > TTF_MAX_POINTS ||
         base + points > TTF_MAX_POINTS ||
-        out->contours + contours > (int)(sizeof out->end / sizeof out->end[0])) {
+        out->contours + contours >
+            (int)(sizeof out->end / sizeof out->end[0])) {
         return 0;
     }
     for (i = 0; i < contours; i++) {
@@ -565,7 +566,7 @@ read_outline(const tiku_ttf_t *t, unsigned g, ttf_outline_t *out,
     return read_composite(t, off, len, out, dx, dy, depth);
 }
 
-/* --------------------------------------------------------------- hinting */
+/* --------------------------------------------------------------- hinting  */
 
 /** @brief How high glyph @p cp reaches, in font units.  0 when unknown. */
 static float
@@ -665,7 +666,7 @@ build_hint(tiku_ttf_t *t, float scale, tiku_hint_t *hint)
     }
 }
 
-/* -------------------------------------------------------------- emitting */
+/* -------------------------------------------------------------- emitting  */
 
 /**
  * @brief Push one contour into @p path, in device space.
@@ -753,7 +754,7 @@ emit_outline(tiku_path_t *path, const ttf_outline_t *outline,
     }
 }
 
-/* ------------------------------------------------------------------- API */
+/* ------------------------------------------------------------------- API  */
 
 int
 tiku_ttf_is_font(const char *path)
@@ -783,40 +784,11 @@ tiku_ttf_is_font(const char *path)
             memcmp(head, "OTTO", 4) == 0);
 }
 
-tiku_ttf_t *
-tiku_ttf_open(const char *path)
+/** @brief Read the tables of the face in @p t's bytes; @p path names it. */
+static tiku_ttf_t *
+open_tables(tiku_ttf_t *t, const char *path)
 {
-    tiku_ttf_t *t;
-    FILE *f;
-    long size;
     size_t dir = 0, head, hhea, maxp, name, cmap, os2;
-
-    if (path == NULL) {
-        return NULL;
-    }
-    f = fopen(path, "rb");
-    if (f == NULL) {
-        return NULL;
-    }
-    if (fseek(f, 0L, SEEK_END) != 0 || (size = ftell(f)) <= 0 ||
-        fseek(f, 0L, SEEK_SET) != 0) {
-        (void)fclose(f);
-        return NULL;
-    }
-    t = calloc(1u, sizeof *t);
-    if (t == NULL) {
-        (void)fclose(f);
-        return NULL;
-    }
-    t->data = malloc((size_t)size);
-    if (t->data == NULL || fread(t->data, 1u, (size_t)size, f) !=
-                           (size_t)size) {
-        (void)fclose(f);
-        tiku_ttf_close(t);
-        return NULL;
-    }
-    (void)fclose(f);
-    t->len = (size_t)size;
 
     if (fits(t, 0u, 12u) && memcmp(t->data, "ttcf", 4) == 0) {
         /* A collection: the first face in it, which is the one a person
@@ -888,13 +860,116 @@ tiku_ttf_open(const char *path)
     }
     read_family(t, name);
     read_cmap(t, cmap);
-    if (t->family[0] == '\0') {
+    if (t->family[0] == '\0' && path != NULL) {
         const char *leaf = strrchr(path, '/');
 
         snprintf(t->family, sizeof t->family, "%s",
                  (leaf != NULL) ? leaf + 1 : path);
     }
     return t;
+}
+
+tiku_ttf_t *
+tiku_ttf_open(const char *path)
+{
+    tiku_ttf_t *t;
+    FILE *f;
+    long size;
+
+    if (path == NULL) {
+        return NULL;
+    }
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0L, SEEK_END) != 0 || (size = ftell(f)) <= 0 ||
+        fseek(f, 0L, SEEK_SET) != 0) {
+        (void)fclose(f);
+        return NULL;
+    }
+    t = calloc(1u, sizeof *t);
+    if (t == NULL) {
+        (void)fclose(f);
+        return NULL;
+    }
+    t->data = malloc((size_t)size);
+    if (t->data == NULL || fread(t->data, 1u, (size_t)size, f) !=
+                           (size_t)size) {
+        (void)fclose(f);
+        tiku_ttf_close(t);
+        return NULL;
+    }
+    (void)fclose(f);
+    t->len = (size_t)size;
+    return open_tables(t, path);
+}
+
+tiku_ttf_t *
+tiku_ttf_open_mem(const unsigned char *data, size_t len)
+{
+    tiku_ttf_t *t;
+
+    if (data == NULL || len == 0u) {
+        return NULL;
+    }
+    t = calloc(1u, sizeof *t);
+    if (t == NULL) {
+        return NULL;
+    }
+    t->data = malloc(len);
+    if (t->data == NULL) {
+        tiku_ttf_close(t);
+        return NULL;
+    }
+    memcpy(t->data, data, len);
+    t->len = len;
+    return open_tables(t, NULL);
+}
+
+int
+tiku_ttf_upem(const tiku_ttf_t *ttf)
+{
+    return (ttf != NULL) ? ttf->upem : 0;
+}
+
+int
+tiku_ttf_glyphs(const tiku_ttf_t *ttf)
+{
+    return (ttf != NULL) ? ttf->num_glyphs : 0;
+}
+
+unsigned
+tiku_ttf_glyph(const tiku_ttf_t *ttf, unsigned cp)
+{
+    return (ttf != NULL) ? glyph_index(ttf, cp) : 0u;
+}
+
+int
+tiku_ttf_advance(const tiku_ttf_t *ttf, unsigned gid)
+{
+    return (ttf != NULL) ? advance_of(ttf, gid) : 0;
+}
+
+int
+tiku_ttf_outline(const tiku_ttf_t *ttf, unsigned gid,
+                 const tiku_hint_t *hint, tiku_path_t *path)
+{
+    static ttf_outline_t outline;       /* 48 KB: not on the stack */
+
+    if (ttf == NULL || hint == NULL || path == NULL) {
+        return 0;
+    }
+    if (ttf->cff != NULL) {
+        return tiku_cff_outline(ttf->cff, gid, hint, path);
+    }
+    outline.n = 0;
+    outline.contours = 0;
+    if (!read_outline(ttf, gid, &outline, 0.0f, 0.0f, 0)) {
+        return (int)gid < ttf->num_glyphs;  /* empty: a space, drawn */
+    }
+    emit_outline(path, &outline, hint);
+    return 1;
 }
 
 void

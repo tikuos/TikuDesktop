@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tiku_gfx.h"
 #include "tiku_pdf.h"
 #include "../../kits/translation/tiku_pdf_private.h"
 
@@ -403,6 +404,135 @@ glyph_test(void)
           "glyph names: the list, one letter, uniXXXX, a suffix, a number");
 }
 
+/* ------------------------------------------------------------ drawing */
+
+static uint32_t
+pixel(const tiku_pdf_pixmap_t *pm, int x, int y)
+{
+    return (x >= 0 && y >= 0 && x < pm->w && y < pm->h)
+           ? pm->px[(size_t)y * pm->w + x] & 0xffffffu : 0xdeadbeefu;
+}
+
+/** @brief Write @p pm as a PNG, for eyes; @return 0 when it was. */
+static int
+png_out(const tiku_pdf_pixmap_t *pm, const char *path)
+{
+    tiku_surface_t *s = tiku_surface_new(pm->w, pm->h, TIKU_C_DOC);
+    int rc;
+
+    if (s == NULL) {
+        return -1;
+    }
+    memcpy(s->px, pm->px, (size_t)pm->w * pm->h * sizeof *pm->px);
+    rc = tiku_surface_png(s, path);
+    tiku_surface_free(s);
+    return rc;
+}
+
+/** @brief A page with a red square, a blue stroke, a clipped green fill
+ *        and a form, on a Rotate 90 page. */
+static pdfw_t
+drawn_file(void)
+{
+    pdfw_t b = {0};
+    const char *content =
+        "1 0 0 rg 0 0 50 50 re f "
+        "0 0 1 RG 4 w 100 100 m 200 100 l S "
+        "q 150 150 40 40 re W n 0 1 0 rg 100 100 200 200 re f Q "
+        "0.5 g q 1 0 0 1 250 350 cm /Fx Do Q "
+        "q 40 0 0 20 100 300 cm /Im Do Q "
+        "1 0 1 rg q 20 0 0 20 200 300 cm /St Do Q "
+        "q 20 0 0 20 100 200 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x40 EI Q "
+        "BT /T3 20 Tf 200 200 Td 0 0.5 0 rg (a) Tj 3 Tr (a) Tj ET "
+        "0 0 0 rg 300 400 m 300 400 l f";
+    const char *fx = "0 0 1 rg 0 0 20 20 re f";
+    /* Two by one: a yellow sample then a cyan one. */
+    const char im[] = "\xff\xff\x00\x00\xff\xff";
+    /* Four by two, one bit: the left half painted (0), the right not. */
+    const char st[] = "\x30\x30";
+    /* A Type 3 glyph filling its whole em. */
+    const char glyph[] = "1000 0 d0 0 0 1000 1000 re f";
+
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] "
+               "/Rotate 90 /Resources << /XObject << /Fx 5 0 R /Im 6 0 R "
+               "/St 7 0 R >> /Font << /T3 8 0 R >> >> /Contents 4 0 R >>");
+    stream(&b, 4, "", content, (long)strlen(content));
+    stream(&b, 5, "/Type /XObject /Subtype /Form /BBox [0 0 20 20]", fx,
+           (long)strlen(fx));
+    stream(&b, 6, "/Type /XObject /Subtype /Image /Width 2 /Height 1 "
+                  "/ColorSpace /DeviceRGB /BitsPerComponent 8", im, 6);
+    stream(&b, 7, "/Type /XObject /Subtype /Image /Width 4 /Height 2 "
+                  "/ImageMask true", st, 2);
+    obj(&b, 8, "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1000 1000] "
+               "/FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << /box 9 0 R >> "
+               "/Encoding << /Type /Encoding /Differences [97 /box] >> "
+               "/FirstChar 97 /LastChar 97 /Widths [1000] >>");
+    stream(&b, 9, "", glyph, (long)strlen(glyph));
+    xref(&b, 1, 0);
+    return b;
+}
+
+static void
+render_test(void)
+{
+    pdfw_t b = drawn_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL}, band = {0, 0, NULL};
+    int w = 0, h = 0;
+
+    check(doc != NULL && tiku_pdf_render_size(doc, 0, 1.0, &w, &h) == 0 &&
+          w == 400 && h == 300, "a 300 by 400 page turned 90 is 400 by 300");
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+          pm.w == 400 && pm.h == 300, "and renders at that size");
+    if (pm.px == NULL) {
+        tiku_pdf_close(doc);
+        free(b.p);
+        return;
+    }
+    /* Turned clockwise: the page's bottom left is now the top left. */
+    check(pixel(&pm, 10, 10) == 0xff0000u, "the red square, at the top left");
+    check(pixel(&pm, 390, 290) == 0xffffffu, "paper where nothing was drawn");
+    /* Turned clockwise, user (x, y) lands at device (y, x).  The stroke
+     * ran along y=100 from x=100 to 200, 4 wide: now down x=100. */
+    check(pixel(&pm, 100, 150) == 0x0000ffu && pixel(&pm, 96, 150) != 0x0000ffu,
+          "a 4-point stroke, blue, where the turn put it");
+    /* Green only inside the 40-point clip square (150..190). */
+    check(pixel(&pm, 170, 170) == 0x00ff00u &&
+          pixel(&pm, 120, 120) == 0xffffffu,
+          "a fill stops at its clip");
+    /* The form: blue 20-point square at user 250..270, 350..370. */
+    check(pixel(&pm, 360, 260) == 0x0000ffu,
+          "a form draws where its matrix puts it");
+    /* The image: user 100..140 by 300..320 is device 300..320 by
+     * 100..140; its first sample (yellow) is the left half in user
+     * space, so the top in device space. */
+    check(pixel(&pm, 310, 105) == 0xffff00u &&
+          pixel(&pm, 310, 135) == 0x00ffffu,
+          "an image's samples land where the matrix turns them");
+    /* The stencil: left half of user 200..220 painted magenta. */
+    check(pixel(&pm, 305, 205) == 0xff00ffu &&
+          pixel(&pm, 305, 215) == 0xffffffu,
+          "a stencil paints the fill colour through its bits");
+    check(pixel(&pm, 210, 110) == 0x404040u, "an inline image draws too");
+    /* Type 3 text: the em square at user 200..220 by 200..220, filled
+     * dark green; the second glyph, invisible, would be at 220..240. */
+    check(pixel(&pm, 210, 210) == 0x008000u &&
+          pixel(&pm, 210, 230) == 0xffffffu,
+          "a Type 3 glyph runs its procedure; render mode 3 draws none");
+    check(tiku_pdf_render_rect(doc, 0, 1.0, 0, 150, 400, 20, &band) == 0 &&
+          band.h == 20 && pixel(&band, 100, 0) == 0x0000ffu &&
+          pixel(&band, 170, 19) == 0x00ff00u,
+          "a band of rows shows the same ink");
+    tiku_pdf_pixmap_free(&band);
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
 /** @brief Every PDF in the folder TIKU_PDF_CORPUS names, opened and read. */
 static void
 corpus_test(void)
@@ -444,6 +574,22 @@ corpus_test(void)
         check(pages > 0 && text != NULL, e->d_name);
         free(text);
         free(title);
+        if (getenv("TIKU_PDF_PNG_DIR") != NULL) {
+            /* The first pages drawn, for eyes: not a check, a look. */
+            tiku_pdf_pixmap_t pm;
+            char png[1200];
+            int k;
+
+            for (k = 0; k < pages && k < 3; k++) {
+                if (tiku_pdf_render(doc, k, 1.5, &pm) == 0) {
+                    snprintf(png, sizeof png, "%s/%.*s-%d.png",
+                             getenv("TIKU_PDF_PNG_DIR"), (int)len - 4,
+                             e->d_name, k);
+                    (void)png_out(&pm, png);
+                    tiku_pdf_pixmap_free(&pm);
+                }
+            }
+        }
         tiku_pdf_close(doc);
     }
     closedir(d);
@@ -460,6 +606,7 @@ main(void)
     not_pdf_test();
     filter_test();
     glyph_test();
+    render_test();
     corpus_test();
     if (fails) {
         printf("%d FAILED\n", fails);

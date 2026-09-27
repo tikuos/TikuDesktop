@@ -20,7 +20,9 @@
  */
 
 #include "tiku_cff.h"
+#include "tiku_cff_strings.inl"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -60,9 +62,13 @@ struct tiku_cff {
     int                  cff2;
     int                  region[CFF2_MAX_VS];
     int                  nregion;
+    /* The charset (glyph to string or CID) and the encoding (code to
+     * glyph), as offsets into the file, and the custom strings. */
+    size_t               charset, encoding;
+    cff_index_t          strings;
 };
 
-/* ------------------------------------------------------------ the bytes */
+/* ------------------------------------------------------------ the bytes  */
 
 static unsigned
 rd8(const unsigned char *p)
@@ -103,7 +109,7 @@ rdoff(const unsigned char *p, int size)
     return v;
 }
 
-/* ---------------------------------------------------------- the INDEXes */
+/* ---------------------------------------------------------- the INDEXes  */
 
 /**
  * @brief Read the INDEX at @p off.
@@ -201,7 +207,7 @@ index_get(const tiku_cff_t *cff, const cff_index_t *idx, int i,
     return b - a;
 }
 
-/* ------------------------------------------------------------ the DICTs */
+/* ------------------------------------------------------------ the DICTs  */
 
 #define DICT_MAX_OPERANDS 48
 
@@ -348,6 +354,7 @@ typedef struct {
     size_t private_off, private_size;
     size_t fdarray, fdselect;
     size_t vstore;
+    size_t charset, encoding;
     float  matrix0;
     int    cid;
     int    charstring_type;
@@ -362,6 +369,16 @@ top_op(int op, const cff_dict_args_t *args, void *ctx)
     case 17:                    /* CharStrings */
         if (args->count >= 1) {
             top->charstrings = as_offset(args->operand[0]);
+        }
+        break;
+    case 15:                    /* charset */
+        if (args->count >= 1) {
+            top->charset = as_offset(args->operand[0]);
+        }
+        break;
+    case 16:                    /* Encoding */
+        if (args->count >= 1) {
+            top->encoding = as_offset(args->operand[0]);
         }
         break;
     case 18:                    /* Private: size then offset */
@@ -452,7 +469,7 @@ read_private(tiku_cff_t *cff, size_t off, size_t size,
     }
 }
 
-/* ------------------------------------------------------- the charstring */
+/* ------------------------------------------------------- the charstring  */
 
 typedef struct {
     const tiku_cff_t *cff;
@@ -801,7 +818,7 @@ run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
         }
         run->sp = 0;
         return 1;
-    case 16:                    /* blend (CFF2): keep the default, drop deltas */
+    case 16:                    /* blend (CFF2): the default, no deltas */
         if (run->cff2 && run->sp >= 1) {
             int n = (int)run->stack[--run->sp];
             int drop = n * run->cur_regions;
@@ -1000,7 +1017,7 @@ run_charstring(cff_run_t *run, const unsigned char *code, size_t len)
     return 1;
 }
 
-/* ------------------------------------------------------------------- API */
+/* ------------------------------------------------------------------- API  */
 
 /** @brief Which Private DICT glyph @p gid draws with, in a CID font. */
 static const cff_index_t *
@@ -1222,6 +1239,9 @@ tiku_cff_open(const unsigned char *data, size_t len)
     }
     read_private(cff, top.private_off, top.private_size, &cff->lsubrs);
     cff->cid = top.cid;
+    cff->charset = top.charset;
+    cff->encoding = top.encoding;
+    cff->strings = strings;
     cff->fdselect = top.fdselect;
     if (top.cid) {
         read_fdarray(cff, top.fdarray);
@@ -1238,6 +1258,200 @@ tiku_cff_open(const unsigned char *data, size_t len)
         }
     }
     return cff;
+}
+
+/**
+ * @brief The string (or CID) glyph @p gid is charted as.
+ *
+ * Charset 0 is the ISOAdobe set, where string and glyph coincide; the
+ * three custom formats list strings one per glyph or in runs.
+ */
+static unsigned
+charted(const tiku_cff_t *cff, unsigned gid)
+{
+    size_t off = cff->charset;
+    unsigned g = 1;
+
+    if (gid == 0u) {
+        return 0;
+    }
+    if (off == 0u) {
+        return gid;                 /* ISOAdobe: string i is glyph i */
+    }
+    if (off == 1u || off == 2u || !fits(cff, off, 1u)) {
+        return 0;                   /* the expert sets: not drawn from */
+    }
+    if (rd8(cff->data + off) == 0u) {
+        if (!fits(cff, off + 1u + (size_t)(gid - 1u) * 2u, 2u)) {
+            return 0;
+        }
+        return rd16(cff->data + off + 1u + (size_t)(gid - 1u) * 2u);
+    }
+    if (rd8(cff->data + off) == 1u || rd8(cff->data + off) == 2u) {
+        size_t at = off + 1u, wide = (rd8(cff->data + off) == 2u) ? 2u : 1u;
+
+        while (g < (unsigned)cff->charstrings.count &&
+               fits(cff, at, 2u + wide)) {
+            unsigned first = rd16(cff->data + at);
+            unsigned left = (wide == 2u) ? rd16(cff->data + at + 2u)
+                                         : rd8(cff->data + at + 2u);
+
+            if (gid >= g && gid <= g + left) {
+                return first + (gid - g);
+            }
+            g += left + 1u;
+            at += 2u + wide;
+        }
+    }
+    return 0;
+}
+
+/** @brief The name behind string @p sid, into @p out. */
+static int
+string_of(const tiku_cff_t *cff, unsigned sid, char *out, size_t max)
+{
+    const unsigned char *p;
+    size_t n;
+
+    if (sid < CFF_STD_STRINGS) {
+        snprintf(out, max, "%s", cff_std_string[sid]);
+        return 1;
+    }
+    n = index_get(cff, &cff->strings, (int)(sid - CFF_STD_STRINGS), &p);
+    if (n == 0u || n >= max) {
+        return 0;
+    }
+    memcpy(out, p, n);
+    out[n] = '\0';
+    return 1;
+}
+
+unsigned
+tiku_cff_glyph_named(const tiku_cff_t *cff, const char *name)
+{
+    unsigned g;
+    char got[128];
+
+    if (cff == NULL || name == NULL || cff->cid) {
+        return 0;
+    }
+    for (g = 1; g < (unsigned)cff->charstrings.count; g++) {
+        unsigned sid = charted(cff, g);
+
+        if (sid != 0u && string_of(cff, sid, got, sizeof got) &&
+            strcmp(got, name) == 0) {
+            return g;
+        }
+    }
+    return 0;
+}
+
+unsigned
+tiku_cff_glyph_cid(const tiku_cff_t *cff, unsigned cid)
+{
+    unsigned g;
+
+    if (cff == NULL) {
+        return 0;
+    }
+    if (!cff->cid) {
+        return (int)cid < cff->charstrings.count ? cid : 0u;
+    }
+    for (g = 1; g < (unsigned)cff->charstrings.count; g++) {
+        if (charted(cff, g) == cid) {
+            return g;
+        }
+    }
+    return 0;
+}
+
+unsigned
+tiku_cff_glyph_coded(const tiku_cff_t *cff, unsigned code)
+{
+    size_t off;
+    unsigned fmt, g;
+
+    if (cff == NULL || code > 255u || cff->cid) {
+        return 0;
+    }
+    off = cff->encoding;
+    if (off == 0u || off == 1u) {
+        unsigned sid = (off == 0u) ? cff_std_encoding[code] : 0u;
+
+        if (sid == 0u) {
+            return 0;
+        }
+        for (g = 1; g < (unsigned)cff->charstrings.count; g++) {
+            if (charted(cff, g) == sid) {
+                return g;
+            }
+        }
+        return 0;
+    }
+    if (!fits(cff, off, 2u)) {
+        return 0;
+    }
+    fmt = rd8(cff->data + off);
+    if ((fmt & 0x7fu) == 0u) {
+        unsigned n = rd8(cff->data + off + 1u);
+
+        for (g = 1; g <= n && fits(cff, off + 1u + g, 1u); g++) {
+            if (rd8(cff->data + off + 1u + g) == code) {
+                return g;
+            }
+        }
+        off += 2u + n;
+    } else if ((fmt & 0x7fu) == 1u) {
+        unsigned ranges = rd8(cff->data + off + 1u), i;
+
+        g = 1;
+        for (i = 0; i < ranges && fits(cff, off + 2u + i * 2u, 2u); i++) {
+            unsigned first = rd8(cff->data + off + 2u + i * 2u);
+            unsigned left = rd8(cff->data + off + 3u + i * 2u);
+
+            if (code >= first && code <= first + left) {
+                return g + (code - first);
+            }
+            g += left + 1u;
+        }
+        off += 2u + (size_t)ranges * 2u;
+    } else {
+        return 0;
+    }
+    if ((fmt & 0x80u) && fits(cff, off, 1u)) {
+        unsigned sups = rd8(cff->data + off), i;
+
+        for (i = 0; i < sups && fits(cff, off + 1u + i * 3u, 3u); i++) {
+            if (rd8(cff->data + off + 1u + i * 3u) == code) {
+                unsigned sid = rd16(cff->data + off + 2u + i * 3u);
+
+                for (g = 1; g < (unsigned)cff->charstrings.count; g++) {
+                    if (charted(cff, g) == sid) {
+                        return g;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+int
+tiku_cff_is_cid(const tiku_cff_t *cff)
+{
+    return cff != NULL && cff->cid;
+}
+
+int
+tiku_cff_glyphs(const tiku_cff_t *cff)
+{
+    return (cff != NULL) ? cff->charstrings.count : 0;
+}
+
+const char *
+tiku_cff_standard_string(unsigned sid)
+{
+    return sid < CFF_STD_STRINGS ? cff_std_string[sid] : NULL;
 }
 
 void

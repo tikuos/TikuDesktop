@@ -6,7 +6,8 @@
  *
  * tiku_pdf_private.h - what the PDF kit's files share: the object
  * model, the document, and the seams between lexer, cross-reference,
- * filters, pages and text.
+ * filters, pages, text, and the drawing side: raster, colour, glyphs,
+ * images and the interpreter that runs a page through them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,6 +18,9 @@
 #include <stdint.h>
 
 #include "tiku_pdf.h"
+#include "tiku_cff.h"
+#include "tiku_ttf.h"
+#include "tiku_type1.h"
 
 /* The file as a whole, and any one decoded stream. */
 #define PDF_FILE_MAX    (256L * 1024L * 1024L)
@@ -86,6 +90,10 @@ struct tiku_pdf {
     int            repaired;        /* the table was rebuilt by scanning */
     int            encrypted;
     int            depth;           /* resolve() recursion, a cycle guard */
+    char           fontdir[512];    /* faces to stand in for fonts     */
+    tiku_ttf_t    *subst[8];        /* the stand-ins opened so far      */
+    char           subst_path[8][512];  /* each one's file             */
+    int            nsubst;
 };
 
 /* The lexer and the objects it makes: tiku_pdf_lex.c                        */
@@ -161,6 +169,11 @@ int pdf_stream_raw(tiku_pdf_t *doc, pdf_obj_t *stream,
  */
 int pdf_stream_data(tiku_pdf_t *doc, pdf_obj_t *stream, unsigned char **out,
                     long *n, const char **image);
+/** @brief The same for @p raw bytes that @p dict describes (an inline
+ *        image: its filters may go by their short names). */
+int pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *dict,
+                     const unsigned char *raw, long rawn, unsigned char **out,
+                     long *n, const char **image);
 
 /* The pages: tiku_pdf_page.c                                                */
 
@@ -197,5 +210,183 @@ void pdf_tfont_free(pdf_tfont_t *f);
 uint32_t pdf_glyph_unicode(const char *name);
 
 /* The text of a page: tiku_pdf_text.c holds tiku_pdf_page_text()          */
+
+/* Drawing: tiku_pdf_raster.c fills and strokes, tiku_pdf_render.c reads   */
+
+/** @brief A matrix as PDF writes one: [a b c d e f], row vectors. */
+typedef struct { double a, b, c, d, e, f; } pdf_mat_t;
+
+/** @brief @p m then @p n, as "cm" composes them; and one from its six. */
+pdf_mat_t pdf_mat_mul(pdf_mat_t m, pdf_mat_t n);
+pdf_mat_t pdf_mat(double a, double b, double c, double d, double e,
+                  double f);
+/** @brief The point (x, y) through @p m. */
+void pdf_mat_apply(const pdf_mat_t *m, double x, double y, double *ox,
+                   double *oy);
+/** @brief How much @p m scales a length, on average. */
+double pdf_mat_scale(const pdf_mat_t *m);
+
+/** @brief A page's pixels, 0xAARRGGBB; and a coverage mask over them. */
+typedef struct { int w, h; uint32_t *px; } pdf_pix_t;
+typedef struct { int x0, y0, w, h; unsigned char *a; } pdf_mask_t;
+
+/**
+ * @brief A path flattened to straight pieces in device space.
+ *
+ * Subpaths are runs of points; a closed one is marked, and an open one
+ * is closed when it is filled, as PDF fills it.
+ */
+typedef struct {
+    float *pt;                      /* x, y pairs                        */
+    int    n, cap;                  /* points, room                      */
+    int   *start;                   /* where each subpath begins         */
+    int   *closed;                  /* per subpath                       */
+    int    nsub, subcap;
+    float  cx, cy;                  /* the current point                 */
+    float  sx, sy;                  /* the subpath's first point         */
+    int    failed;
+} pdf_path_t;
+
+/** @brief A path's life: made empty, emptied again, given back. */
+void pdf_path_init(pdf_path_t *p);
+void pdf_path_clear(pdf_path_t *p);
+void pdf_path_free(pdf_path_t *p);
+/** @brief The builders, in device space: a new subpath, a line, a cubic
+ *        flattened as its size needs, and the subpath shut. */
+void pdf_path_moveto(pdf_path_t *p, double x, double y);
+void pdf_path_lineto(pdf_path_t *p, double x, double y);
+void pdf_path_curveto(pdf_path_t *p, double x1, double y1, double x2,
+                      double y2, double x3, double y3);
+/** @brief Shut the subpath: a line back to where it began. */
+void pdf_path_close(pdf_path_t *p);
+/** @brief The path's extent in whole pixels, clipped to @p w by @p h. */
+int pdf_path_bounds(const pdf_path_t *p, int w, int h, int *x0, int *y0,
+                    int *bw, int *bh);
+
+/**
+ * @brief Coverage of @p p within the box, by @p evenodd or nonzero.
+ * @return a mask the caller frees with pdf_mask_free(), or a mask with
+ *         no bytes when nothing is covered.
+ */
+pdf_mask_t pdf_path_fill(const pdf_path_t *p, int evenodd, int x0, int y0,
+                         int w, int h);
+/** @brief The outline of stroking @p p, as a path to fill nonzero. */
+void pdf_path_stroke(const pdf_path_t *p, double width, int cap, int join,
+                     double miter, const double *dash, int ndash,
+                     double phase, pdf_path_t *out);
+/** @brief Give a mask's bytes back; one with none is fine. */
+void pdf_mask_free(pdf_mask_t *m);
+/** @brief @p m narrowed to what @p clip also covers (clip may be NULL). */
+void pdf_mask_intersect(pdf_mask_t *m, const pdf_mask_t *clip);
+/** @brief A mask over the whole of @p w by @p h, all covered. */
+pdf_mask_t pdf_mask_full(int w, int h);
+/** @brief Paint @p colour through @p m (and @p clip) at @p alpha. */
+void pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
+               uint32_t colour, double alpha);
+
+/* Glyphs: tiku_pdf_glyph.c                                                  */
+
+enum { GF_NONE, GF_TTF, GF_CFF, GF_T1, GF_T3 };
+/** @brief A font as drawing needs it: its program, and how a code
+ *        reaches a glyph in it. */
+typedef struct {
+    int            kind;            /* GF_TTF, GF_CFF, GF_T1, GF_T3       */
+    tiku_ttf_t    *ttf;             /* TrueType, OpenType, or a stand-in  */
+    tiku_cff_t    *cff;             /* a bare CFF (FontFile3)             */
+    tiku_t1_t     *t1;              /* Type 1 (FontFile)                  */
+    unsigned char *blob;            /* the program's bytes the CFF borrows */
+    long           bloblen;
+    int            two_byte, symbolic, substitute, owns_ttf;
+    char          *names[256];      /* a simple font's code to glyph name */
+    int            names_from_pdf;  /* the PDF gave an Encoding           */
+    const uint32_t *uni;            /* code to character, borrowed        */
+    const double  *width;           /* code to advance, borrowed          */
+    unsigned short *cid2gid;        /* a CID font's map, NULL: identity   */
+    long           ncid2gid;
+    double         upem;            /* the program's units per em         */
+    pdf_obj_t     *charprocs, *t3res;   /* Type 3: its glyph programs    */
+    pdf_mat_t      fontmatrix;
+} pdf_gfont_t;
+
+/** @brief Font @p dict as drawn, borrowing its text view @p tf. */
+pdf_gfont_t *pdf_gfont_load(tiku_pdf_t *doc, pdf_obj_t *dict,
+                            const pdf_tfont_t *tf);
+/** @brief Given back; the borrowed text view is left alone. */
+void pdf_gfont_free(pdf_gfont_t *g);
+/**
+ * @brief Coverage of glyph @p code drawn through @p m, which takes text
+ *        space (one unit the em) to the device.
+ * @return 1 with @p out to free with pdf_mask_free(), 0 for no ink.
+ */
+int pdf_gfont_mask(pdf_gfont_t *g, long code, const pdf_mat_t *m,
+                   pdf_mask_t *out);
+
+/* Images: tiku_pdf_image.c                                                  */
+
+/** @brief An image decoded to what drawing needs: colour per sample, an
+ *        alpha per sample when it has one, or a stencil alone. */
+typedef struct {
+    int            w, h;
+    unsigned char *rgb;             /* w*h*3; NULL for a stencil        */
+    unsigned char *alpha;           /* w*h, or NULL when opaque         */
+    int            stencil;         /* an ImageMask: alpha is the shape */
+} pdf_img_t;
+
+/**
+ * @brief Decode the image @p dict describes: an XObject stream, or with
+ *        @p raw an inline image's bytes.
+ *
+ * What cannot be decoded (a fax, a JPEG 2000, a progressive JPEG)
+ * comes back as a grey box of the right size, so the page keeps its
+ * layout.  @return 0, or -1 when there is no image to draw.
+ */
+int pdf_image_decode(tiku_pdf_t *doc, pdf_obj_t *dict,
+                     const unsigned char *raw, long rawn, pdf_obj_t *res,
+                     pdf_img_t *out);
+/** @brief Give a decoded image's samples back. */
+void pdf_image_free(pdf_img_t *img);
+/**
+ * @brief Draw @p img over the unit square that @p ctm places, through
+ *        @p clip at @p alpha; a stencil paints @p fill.
+ */
+void pdf_image_draw(pdf_pix_t *pix, const pdf_img_t *img,
+                    const pdf_mat_t *ctm, const pdf_mask_t *clip,
+                    uint32_t fill, double alpha);
+
+/* Colour: tiku_pdf_color.c                                                  */
+
+enum { CS_GRAY = 1, CS_RGB, CS_CMYK, CS_INDEXED, CS_SEP, CS_LAB, CS_PATTERN };
+#define PDF_FUNC_MAX_IN  8
+#define PDF_FUNC_MAX_OUT 8
+
+typedef struct pdf_func pdf_func_t;
+/** @brief A colour space: its kind, how many numbers a colour is, and
+ *        for Indexed and Separation what those numbers go through. */
+typedef struct pdf_cs {
+    int            kind, n;
+    struct pdf_cs *base;            /* Indexed and Separation: the target */
+    unsigned char *lookup;          /* Indexed: hival+1 base colours     */
+    int            hival;
+    pdf_func_t    *tint;            /* Separation: tint transform        */
+    double         initial[4];      /* the colour set with cs/CS         */
+} pdf_cs_t;
+
+/** @brief The colour space @p spec names or defines; @p res answers a
+ *        name of the page's own.  NULL for one this cannot use. */
+pdf_cs_t *pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res);
+void pdf_cs_free(pdf_cs_t *cs);
+/** @brief The device colour for @p v, @p n numbers in @p cs. */
+uint32_t pdf_cs_colour(const pdf_cs_t *cs, const double *v, int n);
+/** @brief One sample of @p bpc bits at @p i, mapped to 0..255 per part. */
+void pdf_cs_sample(const pdf_cs_t *cs, const unsigned char *s, int bpc,
+                   long i, const double *decode, unsigned char *rgb);
+
+/** @brief A PDF function (ISO 32000 7.10), of any of the four types,
+ *        or an array of them side by side. */
+pdf_func_t *pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec);
+void pdf_func_free(pdf_func_t *f);
+/** @brief @p f at @p in; @return how many outputs were written. */
+int pdf_func_eval(const pdf_func_t *f, const double *in, int nin,
+                  double *out);
 
 #endif /* TIKU_PDF_PRIVATE_H_ */

@@ -210,7 +210,7 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
     jbits_t bits;
     long i = 2;
     int w = 0, h = 0, ncomp = 0, hmax = 1, vmax = 1, restart = 0;
-    int c, rc = -1, mcux, mcuy, mx, my;
+    int c, rc = -1, mcux, mcuy, mx, my, transform = -1;
     uint32_t *px = NULL;
 
     if (src == NULL || n < 4 || (unsigned long)n > TIKU_IMAGE_BYTES_MAX ||
@@ -300,7 +300,7 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
             h = (src[i + 3] << 8) | src[i + 4];
             w = (src[i + 5] << 8) | src[i + 6];
             ncomp = src[i + 7];
-            if ((ncomp != 1 && ncomp != 3) || w <= 0 || h <= 0 ||
+            if ((ncomp != 1 && ncomp != 3 && ncomp != 4) || w <= 0 || h <= 0 ||
                 len != 8 + 3 * ncomp ||
                 (size_t)w > TIKU_IMAGE_PIXELS_MAX / (size_t)h) {
                 goto done;
@@ -319,6 +319,9 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                 if (comp[c].h > hmax) { hmax = comp[c].h; }
                 if (comp[c].v > vmax) { vmax = comp[c].v; }
             }
+        } else if (marker == 0xee && len >= 14 &&
+                   memcmp(src + i + 2, "Adobe", 5) == 0) {
+            transform = src[i + 13];    /* APP14: 2 is YCCK, 0 is CMYK */
         } else if (marker == 0xc2 || marker == 0xc9 || marker == 0xca ||
                    marker == 0xcb) {
             rc = 1;                 /* progressive or arithmetic */
@@ -468,6 +471,29 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                         g = Y - ((22554 * (cb - 128) +
                                   46802 * (cr - 128)) >> 16);
                         bl = Y + ((116130 * (cb - 128)) >> 16);
+                        if (ncomp == 4) {
+                            /* Four inks: YCCK when Adobe says so (the
+                             * first three are then YCbCr of the inverted
+                             * inks), else CMYK as stored. */
+                            long w3 = (long)comp[3].bw * 8;
+                            int k = comp[3].pix[
+                                (long)(y * comp[3].v / vmax) * w3 +
+                                (x * comp[3].h / hmax)];
+                            int cy, ma, ye;
+
+                            if (transform == 2) {
+                                cy = 255 - clamp8(r);
+                                ma = 255 - clamp8(g);
+                                ye = 255 - clamp8(bl);
+                            } else {
+                                cy = Y;
+                                ma = cb;
+                                ye = cr;
+                            }
+                            r = (255 - cy) * (255 - k) / 255;
+                            g = (255 - ma) * (255 - k) / 255;
+                            bl = (255 - ye) * (255 - k) / 255;
+                        }
                         px[(long)y * w + x] = 0xff000000u |
                             ((uint32_t)clamp8(r) << 16) |
                             ((uint32_t)clamp8(g) << 8) |

@@ -9,7 +9,8 @@
  * Most pictures on a real disk are JPEGs, so a thumbnailer that could not
  * read one would be a thumbnailer for screenshots.  Baseline sequential
  * only: progressive is a different scan structure and says so rather than
- * producing half a picture.
+ * producing half a picture.  Grey, YCbCr and the four-ink CMYK and YCCK
+ * a printed datasheet's photographs come in.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

@@ -1,0 +1,528 @@
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_pdf_image.c - a picture on the page: its samples decoded, its
+ * soft mask or stencil made an alpha, and the lot laid over the unit
+ * square the CTM places.
+ *
+ * ISO 32000 8.9: samples of 1 to 16 bits in a colour space, or a
+ * one-bit stencil that paints the fill colour.  JPEGs go through the
+ * kit's decoder; what it cannot read stays a grey box, which is what a
+ * datasheet's logo becomes rather than a hole where a caption points.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "tiku_pdf_private.h"
+#include "tiku_jpeg.h"
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define IMG_MAX_PIXELS  (24L * 1024L * 1024L)
+#define GREY            0xc0
+
+/** @brief @p key of @p d, or its inline-image short name @p alt. */
+static pdf_obj_t *
+key(tiku_pdf_t *doc, pdf_obj_t *d, const char *k, const char *alt)
+{
+    pdf_obj_t *o = pdf_get(doc, d, k);
+
+    return o != NULL ? o : pdf_get(doc, d, alt);
+}
+
+/** @brief A Decode array's numbers into @p v, @return how many. */
+static int
+decode_array(tiku_pdf_t *doc, pdf_obj_t *d, double *v, int max)
+{
+    pdf_obj_t *a = key(doc, d, "Decode", "D");
+    int i, n = 0;
+
+    if (a == NULL || a->kind != PDF_ARRAY) {
+        return 0;
+    }
+    for (i = 0; i < a->u.a.n && n < max; i++) {
+        v[n++] = pdf_number(pdf_resolve(doc, a->u.a.item[i]), 0);
+    }
+    return n;
+}
+
+/** @brief The bytes a row of @p w samples of @p n by @p bpc bits takes. */
+static long
+row_bytes(long w, int n, int bpc)
+{
+    return (w * n * bpc + 7) / 8;
+}
+
+/** @brief The whole image the one grey, opaque. */
+static int
+grey_box(pdf_img_t *img)
+{
+    img->rgb = malloc((size_t)img->w * (size_t)img->h * 3);
+    if (img->rgb == NULL) {
+        return -1;
+    }
+    memset(img->rgb, GREY, (size_t)img->w * (size_t)img->h * 3);
+    return 0;
+}
+
+/** @brief A JPEG's pixels into @p img; a kind the decoder refuses is a
+ *        grey box. */
+static int
+from_jpeg(pdf_img_t *img, const unsigned char *data, long n, int invert)
+{
+    uint32_t *px = NULL;
+    int w = 0, h = 0;
+    long i, total;
+
+    if (tiku_jpeg_decode(data, n, &w, &h, &px) != 0 || px == NULL ||
+        w <= 0 || h <= 0) {
+        free(px);
+        return grey_box(img);
+    }
+    img->w = w;
+    img->h = h;
+    total = (long)w * h;
+    img->rgb = malloc((size_t)total * 3);
+    if (img->rgb == NULL) {
+        free(px);
+        return -1;
+    }
+    for (i = 0; i < total; i++) {
+        unsigned r = (px[i] >> 16) & 0xff, g = (px[i] >> 8) & 0xff;
+        unsigned b = px[i] & 0xff;
+
+        if (invert) {
+            r = 255 - r;
+            g = 255 - g;
+            b = 255 - b;
+        }
+        img->rgb[i * 3] = (unsigned char)r;
+        img->rgb[i * 3 + 1] = (unsigned char)g;
+        img->rgb[i * 3 + 2] = (unsigned char)b;
+    }
+    free(px);
+    return 0;
+}
+
+/**
+ * @brief The samples of @p dict (its own stream, or @p raw) as one
+ *        grey per pixel into @p out, sized @p w by @p h: how a soft
+ *        mask and a stencil are both read.
+ */
+static unsigned char *
+grey_samples(tiku_pdf_t *doc, pdf_obj_t *dict, const unsigned char *raw,
+             long rawn, int *w, int *h, int stencil, pdf_obj_t *res)
+{
+    unsigned char *data = NULL, *out;
+    long n = 0, total, i;
+    const char *filter = NULL;
+    int bpc = stencil ? 1 : (int)pdf_number(key(doc, dict, "BitsPerComponent",
+                                                "BPC"), 8);
+    double dec[2];
+    int ndec = decode_array(doc, dict, dec, 2);
+    int inv = ndec == 2 && dec[0] > dec[1];
+    pdf_cs_t *cs = NULL;
+
+    *w = (int)pdf_number(key(doc, dict, "Width", "W"), 0);
+    *h = (int)pdf_number(key(doc, dict, "Height", "H"), 0);
+    if (*w <= 0 || *h <= 0 || (long)*w * *h > IMG_MAX_PIXELS) {
+        return NULL;
+    }
+    if (raw != NULL ? pdf_filter_bytes(doc, dict, raw, rawn, &data, &n, &filter)
+                    : pdf_stream_data(doc, dict, &data, &n, &filter)) {
+        return NULL;
+    }
+    total = (long)*w * *h;
+    out = malloc((size_t)total);
+    if (out == NULL) {
+        free(data);
+        return NULL;
+    }
+    if (filter != NULL) {
+        if (!strcmp(filter, "DCTDecode")) {
+            pdf_img_t j = {0};
+
+            if (from_jpeg(&j, data, n, 0) == 0 && j.rgb != NULL &&
+                j.w == *w && j.h == *h) {
+                for (i = 0; i < total; i++) {
+                    out[i] = j.rgb[i * 3];
+                }
+            } else {
+                memset(out, 255, (size_t)total);
+            }
+            pdf_image_free(&j);
+        } else {
+            memset(out, 255, (size_t)total);    /* unreadable: no mask */
+        }
+        free(data);
+        return out;
+    }
+    if (!stencil) {
+        cs = pdf_cs_load(doc, key(doc, dict, "ColorSpace", "CS"), res);
+    }
+    for (i = 0; i < total; i++) {
+        long y = i / *w, x = i % *w;
+        long rb = row_bytes(*w, cs != NULL ? cs->n : 1, bpc);
+        long bit = x * (cs != NULL ? cs->n : 1) * bpc;
+
+        if (y * rb + bit / 8 + (bpc + 7) / 8 > n) {
+            out[i] = stencil ? (unsigned char)(inv ? 0 : 255) : 255;
+            continue;
+        }
+        if (stencil) {
+            int b = (data[y * rb + bit / 8] >> (7 - bit % 8)) & 1;
+
+            out[i] = (unsigned char)((b ^ inv) ? 0 : 255);    /* 0 paints */
+        } else {
+            unsigned char rgb[3];
+
+            pdf_cs_sample(cs, data + y * rb, bpc, x, ndec >= 2 ? dec : NULL,
+                          rgb);
+            out[i] = rgb[0];
+        }
+    }
+    pdf_cs_free(cs);
+    free(data);
+    return out;
+}
+
+/** @brief @p m of @p mw by @p mh resampled to @p w by @p h, nearest. */
+static unsigned char *
+resample(const unsigned char *m, int mw, int mh, int w, int h)
+{
+    unsigned char *out = malloc((size_t)w * (size_t)h);
+    int x, y;
+
+    if (out == NULL) {
+        return NULL;
+    }
+    for (y = 0; y < h; y++) {
+        int sy = (int)((long)y * mh / h);
+
+        for (x = 0; x < w; x++) {
+            out[(size_t)y * w + x] = m[(size_t)sy * mw + (long)x * mw / w];
+        }
+    }
+    return out;
+}
+
+/** @brief The image's alpha from its SMask, or its Mask when a stencil. */
+static void
+load_alpha(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_img_t *img, pdf_obj_t *res)
+{
+    pdf_obj_t *sm = pdf_get(doc, dict, "SMask");
+    pdf_obj_t *mk = pdf_get(doc, dict, "Mask");
+    unsigned char *m = NULL;
+    int mw = 0, mh = 0;
+
+    if (sm != NULL && sm->kind == PDF_STREAM) {
+        m = grey_samples(doc, sm, NULL, 0, &mw, &mh, 0, res);
+    } else if (mk != NULL && mk->kind == PDF_STREAM) {
+        /* A stencil mask: a 0 shows the image, a 1 hides it, which is
+         * the stencil's own sense of painted. */
+        m = grey_samples(doc, mk, NULL, 0, &mw, &mh, 1, res);
+    }
+    if (m == NULL) {
+        return;
+    }
+    if (mw == img->w && mh == img->h) {
+        img->alpha = m;
+    } else {
+        img->alpha = resample(m, mw, mh, img->w, img->h);
+        free(m);
+    }
+}
+
+/** @brief Samples of any depth in any colour space to RGB triples. */
+static int
+from_samples(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_img_t *img,
+             const unsigned char *data, long n, pdf_obj_t *res)
+{
+    int bpc = (int)pdf_number(key(doc, dict, "BitsPerComponent", "BPC"), 8);
+    pdf_cs_t *cs = pdf_cs_load(doc, key(doc, dict, "ColorSpace", "CS"), res);
+    double dec[16];
+    int ndec = decode_array(doc, dict, dec, 16), comps = cs != NULL ? cs->n : 1;
+    long rb, y, x;
+
+    if (bpc != 1 && bpc != 2 && bpc != 4 && bpc != 8 && bpc != 16) {
+        pdf_cs_free(cs);
+        return grey_box(img);
+    }
+    img->rgb = malloc((size_t)img->w * (size_t)img->h * 3);
+    if (img->rgb == NULL) {
+        pdf_cs_free(cs);
+        return -1;
+    }
+    rb = row_bytes(img->w, comps, bpc);
+    for (y = 0; y < img->h; y++) {
+        const unsigned char *row = data + y * rb;
+
+        for (x = 0; x < img->w; x++) {
+            unsigned char *px = img->rgb + ((size_t)y * img->w + x) * 3;
+
+            if ((y + 1) * rb > n) {
+                px[0] = px[1] = px[2] = GREY;   /* short data: grey */
+            } else {
+                pdf_cs_sample(cs, row, bpc, x,
+                              ndec >= 2 * comps ? dec : NULL, px);
+            }
+        }
+    }
+    pdf_cs_free(cs);
+    return 0;
+}
+
+int
+pdf_image_decode(tiku_pdf_t *doc, pdf_obj_t *dict, const unsigned char *raw,
+                 long rawn, pdf_obj_t *res, pdf_img_t *out)
+{
+    unsigned char *data = NULL;
+    long n = 0;
+    const char *filter = NULL;
+    pdf_obj_t *im = key(doc, dict, "ImageMask", "IM");
+    int rc;
+
+    memset(out, 0, sizeof *out);
+    out->w = (int)pdf_number(key(doc, dict, "Width", "W"), 0);
+    out->h = (int)pdf_number(key(doc, dict, "Height", "H"), 0);
+    if (out->w <= 0 || out->h <= 0 || (long)out->w * out->h > IMG_MAX_PIXELS) {
+        return -1;
+    }
+    if (im != NULL && im->kind == PDF_BOOL && im->u.b) {
+        int w, h;
+
+        out->stencil = 1;
+        out->alpha = grey_samples(doc, dict, raw, rawn, &w, &h, 1, res);
+        return out->alpha != NULL ? 0 : -1;
+    }
+    if (raw != NULL ? pdf_filter_bytes(doc, dict, raw, rawn, &data, &n, &filter)
+                    : pdf_stream_data(doc, dict, &data, &n, &filter)) {
+        return grey_box(out);
+    }
+    if (filter == NULL) {
+        rc = from_samples(doc, dict, out, data, n, res);
+    } else if (!strcmp(filter, "DCTDecode")) {
+        double dec[8];
+        int ndec = decode_array(doc, dict, dec, 8);
+
+        rc = from_jpeg(out, data, n, ndec >= 2 && dec[0] > dec[1]);
+    } else {
+        rc = grey_box(out);
+    }
+    free(data);
+    if (rc == 0 && raw == NULL) {
+        load_alpha(doc, dict, out, res);
+    }
+    return rc;
+}
+
+void
+pdf_image_free(pdf_img_t *img)
+{
+    if (img != NULL) {
+        free(img->rgb);
+        free(img->alpha);
+        img->rgb = img->alpha = NULL;
+    }
+}
+
+/* --------------------------------------------------------------- drawing  */
+
+/**
+ * @brief @p img shrunk by whole factors to about the size it is drawn
+ *        at, each new sample the mean of its box, so a large picture
+ *        drawn small does not shimmer.
+ */
+static int
+shrink(const pdf_img_t *img, int fx, int fy, pdf_img_t *out)
+{
+    int x, y, k;
+
+    memset(out, 0, sizeof *out);
+    out->w = (img->w + fx - 1) / fx;
+    out->h = (img->h + fy - 1) / fy;
+    out->stencil = img->stencil;
+    if (img->rgb != NULL) {
+        out->rgb = malloc((size_t)out->w * (size_t)out->h * 3);
+    }
+    if (img->alpha != NULL) {
+        out->alpha = malloc((size_t)out->w * (size_t)out->h);
+    }
+    if ((img->rgb != NULL && out->rgb == NULL) ||
+        (img->alpha != NULL && out->alpha == NULL)) {
+        pdf_image_free(out);
+        return -1;
+    }
+    for (y = 0; y < out->h; y++) {
+        for (x = 0; x < out->w; x++) {
+            long sum[4] = {0, 0, 0, 0}, cnt = 0;
+            int sx, sy;
+
+            for (sy = y * fy; sy < (y + 1) * fy && sy < img->h; sy++) {
+                for (sx = x * fx; sx < (x + 1) * fx && sx < img->w; sx++) {
+                    size_t i = (size_t)sy * img->w + sx;
+
+                    if (img->rgb != NULL) {
+                        for (k = 0; k < 3; k++) {
+                            sum[k] += img->rgb[i * 3 + k];
+                        }
+                    }
+                    if (img->alpha != NULL) {
+                        sum[3] += img->alpha[i];
+                    }
+                    cnt++;
+                }
+            }
+            if (cnt == 0) {
+                cnt = 1;
+            }
+            if (out->rgb != NULL) {
+                for (k = 0; k < 3; k++) {
+                    out->rgb[((size_t)y * out->w + x) * 3 + k] =
+                        (unsigned char)(sum[k] / cnt);
+                }
+            }
+            if (out->alpha != NULL) {
+                out->alpha[(size_t)y * out->w + x] =
+                    (unsigned char)(sum[3] / cnt);
+            }
+        }
+    }
+    return 0;
+}
+
+/** @brief The device pixels the unit square covers under @p ctm,
+ *        clipped to @p pw by @p ph.  @return 0 when none. */
+static int
+device_box(const pdf_mat_t *ctm, int pw, int ph, int *box)
+{
+    double minx = 0, maxx = 0, miny = 0, maxy = 0;
+    int k;
+
+    for (k = 0; k < 4; k++) {
+        double x, y;
+
+        pdf_mat_apply(ctm, (k == 1 || k == 2) ? 1 : 0, (k >= 2) ? 1 : 0,
+                      &x, &y);
+        if (k == 0 || x < minx) minx = x;
+        if (k == 0 || x > maxx) maxx = x;
+        if (k == 0 || y < miny) miny = y;
+        if (k == 0 || y > maxy) maxy = y;
+    }
+    box[0] = minx < 0 ? 0 : (int)minx;
+    box[1] = miny < 0 ? 0 : (int)miny;
+    box[2] = maxx + 0.9999 > pw ? pw : (int)(maxx + 0.9999);
+    box[3] = maxy + 0.9999 > ph ? ph : (int)(maxy + 0.9999);
+    return box[0] < box[2] && box[1] < box[3];
+}
+
+/** @brief How many source samples land on one device pixel each way:
+ *        the whole factors the image is shrunk by first. */
+static void
+shrink_factors(const pdf_mat_t *ctm, const pdf_img_t *img, int *fx, int *fy)
+{
+    double dw = sqrt(ctm->a * ctm->a + ctm->b * ctm->b);
+    double dh = sqrt(ctm->c * ctm->c + ctm->d * ctm->d);
+
+    *fx = (int)(img->w / (dw < 1 ? 1 : dw));
+    *fy = (int)(img->h / (dh < 1 ? 1 : dh));
+    if (*fx < 1) *fx = 1;
+    if (*fy < 1) *fy = 1;
+}
+
+/** @brief The matrix taking device points back to the unit square. */
+static pdf_mat_t
+inverse(const pdf_mat_t *m)
+{
+    double det = m->a * m->d - m->b * m->c;
+
+    return pdf_mat(m->d / det, -m->b / det, -m->c / det, m->a / det,
+                   (m->c * m->f - m->d * m->e) / det,
+                   (m->b * m->e - m->a * m->f) / det);
+}
+
+/** @brief @p a of @p rgb (or the fill) laid over one device pixel. */
+static void
+blend(uint32_t *d, const unsigned char *rgb, uint32_t fill, int a)
+{
+    unsigned r = rgb != NULL ? rgb[0] : (fill >> 16) & 0xff;
+    unsigned g = rgb != NULL ? rgb[1] : (fill >> 8) & 0xff;
+    unsigned b = rgb != NULL ? rgb[2] : fill & 0xff;
+    unsigned ua = (unsigned)a, dr = (*d >> 16) & 0xff, dg = (*d >> 8) & 0xff;
+    unsigned db = *d & 0xff;
+
+    dr = (r * ua + dr * (255u - ua) + 127) / 255;
+    dg = (g * ua + dg * (255u - ua) + 127) / 255;
+    db = (b * ua + db * (255u - ua) + 127) / 255;
+    *d = 0xff000000u | dr << 16 | dg << 8 | db;
+}
+
+/** @brief One device pixel of the image: sampled, masked, clipped, laid. */
+static void
+image_pixel(pdf_pix_t *pix, const pdf_img_t *src, const pdf_mat_t *inv,
+            const pdf_mask_t *clip, uint32_t fill, int ca, int x, int y)
+{
+    double u, v;
+    int sx, sy, a = ca;
+    size_t i;
+
+    pdf_mat_apply(inv, x + 0.5, y + 0.5, &u, &v);
+    if (u < 0 || u >= 1 || v < 0 || v >= 1) {
+        return;
+    }
+    sx = (int)(u * src->w);
+    sy = (int)((1 - v) * src->h);           /* the first row is the top */
+    if (sx >= src->w) sx = src->w - 1;
+    if (sy >= src->h) sy = src->h - 1;
+    i = (size_t)sy * src->w + sx;
+    if (src->alpha != NULL) {
+        a = (a * src->alpha[i] + 127) / 255;
+    }
+    if (clip != NULL && clip->a != NULL) {
+        int kx = x - clip->x0, ky = y - clip->y0;
+
+        if (kx < 0 || kx >= clip->w || ky < 0 || ky >= clip->h) {
+            return;
+        }
+        a = (a * clip->a[(size_t)ky * clip->w + kx] + 127) / 255;
+    }
+    if (a > 0) {
+        blend(pix->px + (size_t)y * pix->w + x,
+              src->rgb != NULL ? src->rgb + i * 3 : NULL, fill, a);
+    }
+}
+
+void
+pdf_image_draw(pdf_pix_t *pix, const pdf_img_t *img, const pdf_mat_t *ctm,
+               const pdf_mask_t *clip, uint32_t fill, double alpha)
+{
+    pdf_img_t small;
+    const pdf_img_t *src = img;
+    pdf_mat_t inv;
+    int box[4], x, y, fx, fy, ca = (int)(alpha * 255 + 0.5);
+
+    if (img->w <= 0 || img->h <= 0 || ctm->a * ctm->d == ctm->b * ctm->c ||
+        ca <= 0 || (img->rgb == NULL && img->alpha == NULL) ||
+        !device_box(ctm, pix->w, pix->h, box)) {
+        return;
+    }
+    if (ca > 255) ca = 255;
+    shrink_factors(ctm, img, &fx, &fy);
+    if ((fx > 1 || fy > 1) && shrink(img, fx, fy, &small) == 0) {
+        src = &small;
+    }
+    inv = inverse(ctm);
+    for (y = box[1]; y < box[3]; y++) {
+        for (x = box[0]; x < box[2]; x++) {
+            image_pixel(pix, src, &inv, clip, fill, ca, x, y);
+        }
+    }
+    if (src == &small) {
+        pdf_image_free(&small);
+    }
+}
