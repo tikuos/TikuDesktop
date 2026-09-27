@@ -12,6 +12,7 @@ using the public kits. Desktop controllers and preferences belong in
 | `basichost/` | Optional host build of the firmware BASIC interpreter |
 | `bench/`, `console/` | TikuBench and TikuConsole |
 | `reader/`, `image/` | TikuReader/Help and TikuImage |
+| `pdf/` | TikuPDF: datasheets, manuals and papers |
 | `deviceutils/` | Device Monitor and VFS Inspector |
 | `calculator/` | Ordinary Calculator; stable runtime ID `calc` |
 | `developer-calculator/` | Developer Calculator; stable runtime ID `calculator` |

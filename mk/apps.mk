@@ -94,6 +94,7 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/basic/app.manifest \
     $(APPS_D)/c/app.manifest \
     $(APPS_D)/image/app.manifest \
+    $(APPS_D)/pdf/app.manifest \
     $(APPS_D)/reader/app.manifest \
     $(APPS_D)/monitor/app.manifest \
     $(APPS_D)/vfs/app.manifest
@@ -257,6 +258,16 @@ $(APPS_D)/image/TikuImage.so: apps/image/tiku_image_app.c apps/image/tiku_image_
 	$(CC) $(SO_CFLAGS) -o $@ apps/image/tiku_image_app.c apps/image/tiku_image_window.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/image/app.manifest: apps/image/image.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+apps loadable: $(APPS_D)/pdf/TikuPDF.so
+PDFVIEW_SRC := apps/pdf/tiku_pdfview_app.c apps/pdf/tiku_pdfview.c
+$(APPS_D)/pdf/TikuPDF.so: $(PDFVIEW_SRC) $(wildcard apps/pdf/*.h apps/pdf/*.inl) $(PIC_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -o $@ $(PDFVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+
+$(APPS_D)/pdf/app.manifest: apps/pdf/pdf.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 

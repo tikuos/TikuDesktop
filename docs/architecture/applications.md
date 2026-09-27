@@ -19,7 +19,8 @@ binaries are not part of the desktop shell. The boundary is enforced by
 TikuBasic and TikuC share the app-owned IDE code in `apps/ide/`.
 The BASIC host interpreter is built from the board's interpreter source via
 `apps/basichost/` and belongs to the BASIC bundle, not the system.
-Reader/Help live in `apps/reader/`; Image in `apps/image/`; Monitor and VFS
+Reader/Help live in `apps/reader/`; Image in `apps/image/`; PDF in
+`apps/pdf/`, drawing through the PDF kit on its own workers; Monitor and VFS
 Inspector share app-owned code in `apps/deviceutils/`. None is linked into
 either shipping shell. Help requests launch Reader in its help-document mode.
 

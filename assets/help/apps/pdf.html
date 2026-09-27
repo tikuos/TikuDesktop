@@ -1,0 +1,50 @@
+<h1>TikuPDF</h1>
+<p>A reader for the PDFs this desk works with: datasheets, reference
+manuals and papers. Choose <b>Applications &gt; TikuPDF</b>, or double-click
+a PDF in Tracker; PDFs (.pdf, in any case) open in TikuPDF unless File
+Associations names another reader. TikuPDF also appears in Open With.</p>
+<h2 id="open">Opening a document</h2>
+<p>Choose <b>Open</b> or press <b>Ctrl+O</b>. The document opens on a
+background worker, so a datasheet of a thousand pages is ready in a moment
+and the window never waits on it. If a file cannot be opened the status
+line says why &mdash; not a PDF, encrypted, or damaged beyond repair
+&mdash; and the document already shown stays.</p>
+<h2 id="view">Reading</h2>
+<ul>
+<li>Pages follow one another; scroll with the mouse wheel, the arrow keys,
+Page Up and Page Down, or Space and Shift+Space. Home and End go to the
+first and last page.</li>
+<li><b>Width</b> fits the pages to the window's width and follows it as the
+window is resized; <b>Page</b> fits a whole page. <b>+</b> and <b>-</b>
+(or Ctrl+mouse wheel) step the zoom from 25% to 400%; <b>Ctrl+0</b> shows
+the actual size.</li>
+<li>Type a page number in the field beside the arrows and press Enter to
+go to it. <b>&lt;</b> and <b>&gt;</b> step a page.</li>
+<li>Pages are drawn as you reach them; a page not drawn yet is white, and
+after a zoom the old drawing stands in until the new one is ready.</li>
+</ul>
+<h2 id="outline">Outline and links</h2>
+<p><b>Outline</b> shows the document's own table of contents beside the
+pages; click an entry to go there, or its + and - to fold it. The entry for
+the part you are reading stays marked as you scroll. Links in the page work
+too: the status line says where one leads as the pointer passes over it,
+and a click follows it. <b>Ctrl+[</b> goes back to where you were. A link
+to a web address is copied to the clipboard instead, since no browser is
+started from here.</p>
+<h2 id="find">Finding and copying</h2>
+<p><b>Ctrl+F</b> goes to the Find field. Enter searches the whole document,
+a stretch of pages at a time, so you can read on while it looks; the first
+match after where you are is shown as soon as it is found. Enter or
+<b>Ctrl+G</b> goes to the next match, Shift+Enter or Shift+Ctrl+G to the
+previous. Case, and the different kinds of space, hyphen and quote a
+typeset page uses, do not matter; a phrase broken over two lines is still
+found.</p>
+<p>Drag across text to select it and press <b>Ctrl+C</b> to copy it.
+<b>Ctrl+A</b> selects the text of the page you are on. The clipboard holds
+4 KB; copying more takes the first 4 KB and the status line says so.</p>
+<h2 id="limits">What is not drawn yet</h2>
+<p>Shaded fills and patterns are drawn in flat grey, and faxed, JPEG 2000
+and JBIG2 pictures as grey boxes, so the page keeps its layout. Encrypted
+PDFs, forms and annotations other than links are not read yet. Fonts a PDF
+names without carrying are drawn with the desktop's own faces, at the
+widths the document gives them.</p>

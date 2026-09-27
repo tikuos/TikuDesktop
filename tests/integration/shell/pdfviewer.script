@@ -1,0 +1,34 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/pdfs
+# PDFs route to TikuPDF through the real application registry and open
+# in its own process: by a double-click, and by Open with.
+wait 20
+click-row 0
+wait 2
+click-row 0
+wait 40
+expect-title TikuPDF - guide.pdf
+expect-narrate 3 pages, with an outline
+key w ctrl
+wait 8
+expect-no-title TikuPDF
+click-row 1
+wait 2
+click-row 1
+wait 40
+expect-title TikuPDF - NOTES.PDF
+expect-narrate Page 1 of 3
+shot /tmp/trk_pdf_open.png
+key w ctrl
+wait 8
+click-row 1 3
+wait 4
+menu-pick Open with
+wait 4
+expect-menu TikuPDF (opens this type)
+menu-pick TikuPDF
+wait 40
+expect-title TikuPDF - NOTES.PDF
+key w ctrl
+quit

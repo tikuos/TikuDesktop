@@ -16,7 +16,8 @@ static const char *association_label(const char *type)
         {"image/png", "PNG image (.png)"},
         {"image/jpeg", "JPEG image (.jpg, .jpeg)"},
         {"image/bmp", "Bitmap image (.bmp)"},
-        {"image/x-ms-bmp", "Windows bitmap"}
+        {"image/x-ms-bmp", "Windows bitmap"},
+        {"application/pdf", "PDF document (.pdf)"}
     };
     for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
         if (!strcmp(names[i].type, type)) return names[i].label;

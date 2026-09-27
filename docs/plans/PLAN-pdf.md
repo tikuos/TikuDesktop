@@ -82,6 +82,11 @@ an output that grows.  Nothing else in the kits changes.
    links that jump within the document, search and copy over the
    extracted text, and the `.pdf` association so a double-click in
    Tracker opens it.
+   *Done 2026-09-27*: TikuPDF (`apps/pdf`), every read of a document
+   on one worker at a time (jobs share its key) and the window drawing
+   what came back; the kit gained the outline, links with named
+   destinations, and each character's box.  The RP2350's 1,380 pages
+   open in 64 ms and are searched in about a second, in stretches.
 4. **Vendor extras.**  Axial and radial shadings, tiling patterns,
    constant alpha; a grey box for the fax image and any progressive JPEG.
 5. **Later, when a document needs it.**  Encryption for the Ambiq
