@@ -26,8 +26,9 @@ typedef struct tiku_pdf tiku_pdf_t;
 typedef enum {
     TIKU_PDF_OK = 0,
     TIKU_PDF_NOT_PDF,           /* no %PDF header                       */
-    TIKU_PDF_UNSUPPORTED,       /* encrypted, or a version this refuses */
-    TIKU_PDF_BAD                /* recognised, and beyond repair        */
+    TIKU_PDF_UNSUPPORTED,       /* encrypted by a handler this lacks    */
+    TIKU_PDF_BAD,               /* recognised, and beyond repair        */
+    TIKU_PDF_PASSWORD           /* encrypted: the password does not open it */
 } tiku_pdf_err_t;
 
 /** @brief Whether @p path holds a PDF, by its first bytes. */
@@ -47,6 +48,26 @@ tiku_pdf_err_t tiku_pdf_open(const char *path, tiku_pdf_t **out);
 tiku_pdf_err_t tiku_pdf_decode(const void *bytes, size_t len,
                                tiku_pdf_t **out);
 
+/**
+ * @brief The same for an encrypted document, with @p password (UTF-8),
+ *        its user's or its owner's.
+ *
+ * The standard handler: RC4 and AES-128 (revisions 2 to 4) and AES-256
+ * (5 and 6).  The plain calls use the empty password, which is what
+ * opens most encrypted documents.
+ */
+tiku_pdf_err_t tiku_pdf_open_password(const char *path, const char *password,
+                                      tiku_pdf_t **out);
+/** @brief The same from bytes, which are copied. */
+tiku_pdf_err_t tiku_pdf_decode_password(const void *bytes, size_t len,
+                                        const char *password,
+                                        tiku_pdf_t **out);
+
+/** @brief Whether the document's author allows its text to be copied
+ *         out; always, for one not encrypted or opened by its owner. */
+int tiku_pdf_may_copy(const tiku_pdf_t *doc);
+
+/** @brief Free the document and every object read from it. */
 void tiku_pdf_close(tiku_pdf_t *doc);
 
 /** @brief How many pages the document has. */

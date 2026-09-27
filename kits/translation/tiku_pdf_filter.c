@@ -364,6 +364,20 @@ pdf_stream_data(tiku_pdf_t *doc, pdf_obj_t *stream, unsigned char **out,
         }
         return -1;
     }
+    if (doc->crypt != NULL && stream->u.st.num >= 0) {
+        /* Encrypted bytes are decrypted before the first filter. */
+        unsigned char *clear = malloc((size_t)rawn + 1);
+        int rc;
+
+        if (clear == NULL) {
+            return -1;
+        }
+        memcpy(clear, raw, (size_t)rawn);
+        rawn = pdf_crypt_stream(doc, stream, clear, rawn);
+        rc = pdf_filter_bytes(doc, stream, clear, rawn, out, n, image);
+        free(clear);
+        return rc;
+    }
     return pdf_filter_bytes(doc, stream, raw, rawn, out, n, image);
 }
 

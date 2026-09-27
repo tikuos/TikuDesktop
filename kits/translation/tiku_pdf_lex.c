@@ -661,6 +661,7 @@ parse_dict(pdf_cur_t *c, int depth)
         st->u.st.dict = d;
         st->u.st.off = c->pos;
         st->u.st.len = -1;
+        st->u.st.num = st->u.st.gen = -1;
         return st;
     }
     return d;

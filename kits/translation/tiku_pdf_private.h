@@ -54,7 +54,8 @@ struct pdf_obj {
         struct { pdf_obj_t **item; int n; } a;
         struct { char **key; pdf_obj_t **val; int n; } d;
         struct { long num, gen; } ref;
-        struct { pdf_obj_t *dict; long off, len; } st;    /* len < 0: unknown */
+        struct { pdf_obj_t *dict; long off, len, num, gen; } st;
+                                    /* len < 0 unknown; num < 0 unnumbered */
     } u;
 };
 
@@ -76,6 +77,8 @@ typedef struct {
 
 #define PDF_OBJSTM_KEEP 8
 
+typedef struct pdf_crypt pdf_crypt_t;
+
 /** @brief A page's dictionary and its number, sorted by address. */
 typedef struct {
     pdf_obj_t *dict;                /* the page's dictionary, cached     */
@@ -96,6 +99,7 @@ struct tiku_pdf {
     pdf_pageref_t *pageref;         /* the same, by object; made on use  */
     int            repaired;        /* the table was rebuilt by scanning */
     int            encrypted;
+    pdf_crypt_t   *crypt;           /* its key, when it is encrypted     */
     int            depth;           /* resolve() recursion, a cycle guard */
     char           fontdir[512];    /* faces to stand in for fonts     */
     tiku_ttf_t    *subst[8];        /* the stand-ins opened so far      */
@@ -186,6 +190,27 @@ int pdf_stream_data(tiku_pdf_t *doc, pdf_obj_t *stream, unsigned char **out,
 int pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *dict,
                      const unsigned char *raw, long rawn, unsigned char **out,
                      long *n, const char **image);
+
+/* Encryption: tiku_pdf_crypt.c                                             */
+
+/**
+ * @brief The standard security handler for @p doc with @p password
+ *        (UTF-8; "" is the empty password most documents use).
+ * @return 0 with doc->crypt set; -1 for a handler or cipher this does
+ *         not read; -2 when the password opens it neither as its user
+ *         nor as its owner.
+ */
+int pdf_crypt_open(tiku_pdf_t *doc, const char *password);
+void pdf_crypt_free(pdf_crypt_t *c);
+/** @brief Whether the author lets text be copied out (P bit 5), or the
+ *         owner's password opened it; 1 for a document not encrypted. */
+int pdf_crypt_may_copy(const pdf_crypt_t *c);
+/** @brief The strings of object @p num @p gen, as read, decrypted. */
+void pdf_crypt_object(tiku_pdf_t *doc, pdf_obj_t *o, long num, long gen);
+/** @brief Stream @p st's @p n raw bytes decrypted in place.  @return how
+ *         many remain: AES drops its IV and padding. */
+long pdf_crypt_stream(tiku_pdf_t *doc, pdf_obj_t *st, unsigned char *data,
+                      long n);
 
 /* The pages: tiku_pdf_page.c                                                */
 

@@ -82,7 +82,7 @@ xref_put(tiku_pdf_t *doc, long num, int kind, long off, long idx, int force)
  *             there are not an object.
  */
 static pdf_obj_t *
-parse_at(tiku_pdf_t *doc, long off, long *num)
+parse_at(tiku_pdf_t *doc, long off, long *num, long *gen)
 {
     pdf_cur_t c = { doc->data, doc->len, off };
     pdf_obj_t *a, *b, *k, *o;
@@ -102,6 +102,7 @@ parse_at(tiku_pdf_t *doc, long off, long *num)
         return NULL;
     }
     *num = a->u.i;
+    *gen = b->u.i;
     pdf_free(a);
     pdf_free(b);
     pdf_free(k);
@@ -201,7 +202,7 @@ pdf_object(tiku_pdf_t *doc, long num)
 {
     pdf_obj_t *o = NULL;
     pdf_xref_t *x;
-    long got = -1;
+    long got = -1, gen = 0;
 
     if (num < 0 || num >= doc->nxref) {
         return NULL;
@@ -215,10 +216,17 @@ pdf_object(tiku_pdf_t *doc, long num)
     }
     x->seen = 1;
     if (x->kind == 1) {
-        o = parse_at(doc, x->off, &got);
+        o = parse_at(doc, x->off, &got, &gen);
         if (o != NULL && got != num) {
             pdf_free(o);
             o = NULL;
+        }
+        if (o != NULL && o->kind == PDF_STREAM) {
+            o->u.st.num = num;      /* its key, when it is encrypted */
+            o->u.st.gen = gen;
+        }
+        if (o != NULL && doc->crypt != NULL) {
+            pdf_crypt_object(doc, o, num, gen);
         }
     } else if (x->kind == 2) {
         o = parse_in_objstm(doc, x->off, x->idx, num);
@@ -489,9 +497,9 @@ load_xref_at(tiku_pdf_t *doc, long off, long *visited, int *nvisited)
             return -1;
         }
     } else {
-        long num;
+        long num, gen;
 
-        t = parse_at(doc, c.pos, &num);
+        t = parse_at(doc, c.pos, &num, &gen);
         if (t == NULL || t->kind != PDF_STREAM ||
             xref_stream(doc, t) != 0) {
             pdf_free(t);
@@ -732,9 +740,40 @@ tiku_pdf_is_pdf(const char *path)
     return pdf_find(head, (long)n, 0, "%PDF") >= 0;
 }
 
-/** @brief The document over @p data, which it now owns. */
+/**
+ * @brief Decryption from here on: what was read before it -- the
+ *        dictionary itself aside -- is read again, through the key.
+ */
 static tiku_pdf_err_t
-open_data(unsigned char *data, long len, tiku_pdf_t **out)
+unlock(tiku_pdf_t *doc, const char *password)
+{
+    int rc = pdf_crypt_open(doc, password);
+    long i;
+
+    if (rc != 0) {
+        return rc == -2 ? TIKU_PDF_PASSWORD : TIKU_PDF_UNSUPPORTED;
+    }
+    for (i = 0; i < doc->nxref; i++) {
+        pdf_obj_t *raw = pdf_dict_raw(doc->trailer, "Encrypt");
+
+        if (doc->cache[i] != NULL &&
+            !(raw != NULL && raw->kind == PDF_REF && raw->u.ref.num == i)) {
+            pdf_free(doc->cache[i]);
+            doc->cache[i] = NULL;
+        }
+    }
+    for (i = 0; i < PDF_OBJSTM_KEEP; i++) {
+        free(doc->objstm[i].data);
+        doc->objstm[i].data = NULL;
+    }
+    return TIKU_PDF_OK;
+}
+
+/** @brief The document over @p data, which it now owns, opened with
+ *         @p password when it is encrypted. */
+static tiku_pdf_err_t
+open_data(unsigned char *data, long len, const char *password,
+          tiku_pdf_t **out)
 {
     tiku_pdf_t *doc;
 
@@ -754,9 +793,13 @@ open_data(unsigned char *data, long len, tiku_pdf_t **out)
         return TIKU_PDF_BAD;
     }
     if (pdf_dict_raw(doc->trailer, "Encrypt") != NULL) {
+        tiku_pdf_err_t rc = unlock(doc, password);
+
         doc->encrypted = 1;
-        tiku_pdf_close(doc);
-        return TIKU_PDF_UNSUPPORTED;
+        if (rc != TIKU_PDF_OK) {
+            tiku_pdf_close(doc);
+            return rc;
+        }
     }
     if (pdf_pages_build(doc) != 0 || doc->npage == 0) {
         if (doc->repaired || repair(doc) != 0 || pdf_pages_build(doc) != 0 ||
@@ -770,7 +813,8 @@ open_data(unsigned char *data, long len, tiku_pdf_t **out)
 }
 
 tiku_pdf_err_t
-tiku_pdf_open(const char *path, tiku_pdf_t **out)
+tiku_pdf_open_password(const char *path, const char *password,
+                       tiku_pdf_t **out)
 {
     FILE *f = fopen(path, "rb");
     unsigned char *data;
@@ -792,11 +836,18 @@ tiku_pdf_open(const char *path, tiku_pdf_t **out)
     }
     fclose(f);
     data[len] = '\0';
-    return open_data(data, len, out);
+    return open_data(data, len, password, out);
 }
 
 tiku_pdf_err_t
-tiku_pdf_decode(const void *bytes, size_t len, tiku_pdf_t **out)
+tiku_pdf_open(const char *path, tiku_pdf_t **out)
+{
+    return tiku_pdf_open_password(path, "", out);
+}
+
+tiku_pdf_err_t
+tiku_pdf_decode_password(const void *bytes, size_t len, const char *password,
+                         tiku_pdf_t **out)
 {
     unsigned char *data;
 
@@ -809,10 +860,21 @@ tiku_pdf_decode(const void *bytes, size_t len, tiku_pdf_t **out)
     }
     memcpy(data, bytes, len);
     data[len] = '\0';
-    return open_data(data, (long)len, out);
+    return open_data(data, (long)len, password, out);
 }
 
-/** @brief Free the document and every object read from it. */
+tiku_pdf_err_t
+tiku_pdf_decode(const void *bytes, size_t len, tiku_pdf_t **out)
+{
+    return tiku_pdf_decode_password(bytes, len, "", out);
+}
+
+int
+tiku_pdf_may_copy(const tiku_pdf_t *doc)
+{
+    return doc != NULL && pdf_crypt_may_copy(doc->crypt);
+}
+
 void
 tiku_pdf_close(tiku_pdf_t *doc)
 {
@@ -830,6 +892,7 @@ tiku_pdf_close(tiku_pdf_t *doc)
     for (i = 0; i < doc->nsubst; i++) {
         tiku_ttf_close(doc->subst[i]);
     }
+    pdf_crypt_free(doc->crypt);
     pdf_free(doc->trailer);
     free(doc->cache);
     free(doc->xref);
