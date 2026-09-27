@@ -446,22 +446,6 @@ inverse(const pdf_mat_t *m)
                    (m->b * m->e - m->a * m->f) / det);
 }
 
-/** @brief @p a of @p rgb (or the fill) laid over one device pixel. */
-static void
-blend(uint32_t *d, const unsigned char *rgb, uint32_t fill, int a)
-{
-    unsigned r = rgb != NULL ? rgb[0] : (fill >> 16) & 0xff;
-    unsigned g = rgb != NULL ? rgb[1] : (fill >> 8) & 0xff;
-    unsigned b = rgb != NULL ? rgb[2] : fill & 0xff;
-    unsigned ua = (unsigned)a, dr = (*d >> 16) & 0xff, dg = (*d >> 8) & 0xff;
-    unsigned db = *d & 0xff;
-
-    dr = (r * ua + dr * (255u - ua) + 127) / 255;
-    dg = (g * ua + dg * (255u - ua) + 127) / 255;
-    db = (b * ua + db * (255u - ua) + 127) / 255;
-    *d = 0xff000000u | dr << 16 | dg << 8 | db;
-}
-
 /** @brief One device pixel of the image: sampled, masked, clipped, laid. */
 static void
 image_pixel(pdf_pix_t *pix, const pdf_img_t *src, const pdf_mat_t *inv,
@@ -492,8 +476,11 @@ image_pixel(pdf_pix_t *pix, const pdf_img_t *src, const pdf_mat_t *inv,
         a = (a * clip->a[(size_t)ky * clip->w + kx] + 127) / 255;
     }
     if (a > 0) {
-        blend(pix->px + (size_t)y * pix->w + x,
-              src->rgb != NULL ? src->rgb + i * 3 : NULL, fill, a);
+        pdf_blend(pix, pix->px + (size_t)y * pix->w + x,
+                  src->rgb != NULL ? 0xff000000u |
+                  (uint32_t)src->rgb[i * 3] << 16 |
+                  (uint32_t)src->rgb[i * 3 + 1] << 8 | src->rgb[i * 3 + 2]
+                  : fill, a);
     }
 }
 

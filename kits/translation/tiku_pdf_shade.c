@@ -321,7 +321,7 @@ pdf_shade_paint(pdf_pix_t *pix, const pdf_shade_t *s, const pdf_mat_t *to,
             }
             a = (a * ca + 127) / 255;
             if (a > 0 && (colour >> 24) != 0) {
-                pdf_blend(pix->px + (size_t)y * pix->w + x, colour, a);
+                pdf_blend(pix, pix->px + (size_t)y * pix->w + x, colour, a);
             }
         }
     }

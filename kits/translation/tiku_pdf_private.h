@@ -274,8 +274,9 @@ double pdf_mat_scale(const pdf_mat_t *m);
 int pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
                     pdf_mat_t *m, int *w, int *h);
 
-/** @brief A page's pixels, 0xAARRGGBB; and a coverage mask over them. */
-typedef struct { int w, h; uint32_t *px; } pdf_pix_t;
+/** @brief A page's pixels, 0xAARRGGBB, and the blend mode paints use on
+ *         them now; and a coverage mask over them. */
+typedef struct { int w, h; uint32_t *px; int blend; } pdf_pix_t;
 typedef struct { int x0, y0, w, h; unsigned char *a; } pdf_mask_t;
 
 /**
@@ -331,8 +332,17 @@ pdf_mask_t pdf_mask_full(int w, int h);
 /** @brief Paint @p colour through @p m (and @p clip) at @p alpha. */
 void pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
                uint32_t colour, double alpha);
-/** @brief @p colour laid over pixel @p d with coverage @p a, 0 to 255. */
-void pdf_blend(uint32_t *d, uint32_t colour, int a);
+/** @brief The blend modes (ISO 32000 11.3.5), Normal first. */
+enum { PDF_BM_NORMAL, PDF_BM_MULTIPLY, PDF_BM_SCREEN, PDF_BM_OVERLAY,
+       PDF_BM_DARKEN, PDF_BM_LIGHTEN, PDF_BM_DODGE, PDF_BM_BURN,
+       PDF_BM_HARDLIGHT, PDF_BM_SOFTLIGHT, PDF_BM_DIFFERENCE,
+       PDF_BM_EXCLUSION, PDF_BM_HUE, PDF_BM_SATURATION, PDF_BM_COLOR,
+       PDF_BM_LUMINOSITY };
+/** @brief The mode named @p name; Normal for a name that is not one. */
+int pdf_blend_mode(const char *name);
+/** @brief @p colour laid over pixel @p d of @p pix with coverage @p a,
+ *         0 to 255, through the pixmap's blend mode. */
+void pdf_blend(const pdf_pix_t *pix, uint32_t *d, uint32_t colour, int a);
 
 /* Shadings: tiku_pdf_shade.c                                                */
 

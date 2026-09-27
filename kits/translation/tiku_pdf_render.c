@@ -31,7 +31,7 @@
 #define SHADES_KEEP 128             /* shadings loaded per page         */
 #define TILES_KEEP  8               /* pattern cells drawn per page     */
 #define TILE_MAX    512             /* a cell's pixels, each way        */
-#define NEST_MAX    2               /* patterns inside patterns' cells  */
+#define NEST_MAX    4               /* cells, groups and masks in them  */
 
 /** @brief A clip shared by the states that inherited it. */
 typedef struct { pdf_mask_t m; int refs; } clip_t;
@@ -46,9 +46,11 @@ typedef struct {
     int       fpattern, spattern;   /* the colour space is Pattern      */
     pdf_obj_t *fpat, *spat;         /* the pattern named, or NULL       */
     double    falpha, salpha;
+    int       bm;                   /* the blend mode, PDF_BM_*          */
     double    lw, miter, dash[DASH_MAX], phase;
     int       cap, join, ndash;
-    clip_t   *clip;
+    clip_t   *clip;                 /* what paints are clipped to: ...   */
+    clip_t   *pclip, *smask;        /* ... the path's clip and soft mask */
     /* text */
     pdf_obj_t   *fontdict;
     pdf_tfont_t *tfont;
@@ -106,6 +108,7 @@ static rs_t *rs_new(tiku_pdf_t *doc, int w, int h, uint32_t bg,
                     pdf_mat_t base);
 static uint32_t *rs_finish(rs_t *r);
 static void end_path(rs_t *r);
+static void form(rs_t *r, pdf_obj_t *xo, pdf_obj_t *res, int depth);
 static void moveto(rs_t *r, double x, double y);
 static void lineto(rs_t *r, double x, double y);
 static void draw_image(rs_t *r, pdf_obj_t *dict, const unsigned char *raw,
@@ -133,24 +136,60 @@ clip_unref(clip_t *c)
     }
 }
 
+/** @brief A clip over @p m, which it owns; NULL when there is no room. */
+static clip_t *
+clip_new(pdf_mask_t m)
+{
+    clip_t *c = calloc(1, sizeof *c);
+
+    if (c == NULL) {
+        pdf_mask_free(&m);
+        return NULL;
+    }
+    c->m = m;
+    c->refs = 1;
+    return c;
+}
+
+/** @brief The clip paints use, again: the path's clip, narrowed by the
+ *         soft mask when there is one. */
+static void
+clip_settle(gs_t *g)
+{
+    clip_unref(g->clip);
+    if (g->smask == NULL || g->pclip == NULL) {
+        g->clip = clip_ref(g->smask != NULL ? g->smask : g->pclip);
+        return;
+    }
+    {
+        pdf_mask_t m = g->smask->m;
+
+        m.a = malloc((size_t)m.w * (size_t)m.h + 1);
+        if (m.a != NULL) {
+            memcpy(m.a, g->smask->m.a, (size_t)m.w * (size_t)m.h);
+            pdf_mask_intersect(&m, &g->pclip->m);
+        }
+        g->clip = m.a != NULL ? clip_new(m) : clip_ref(g->pclip);
+    }
+}
+
 /** @brief The state's clip narrowed to @p mask, which it now owns. */
 static void
 clip_with(rs_t *r, pdf_mask_t mask)
 {
     gs_t *g = &r->gs[r->sp];
-    clip_t *c = calloc(1, sizeof *c);
+    clip_t *c;
 
+    if (g->pclip != NULL) {
+        pdf_mask_intersect(&mask, &g->pclip->m);
+    }
+    c = clip_new(mask);
     if (c == NULL) {
-        pdf_mask_free(&mask);
         return;
     }
-    if (g->clip != NULL) {
-        pdf_mask_intersect(&mask, &g->clip->m);
-    }
-    c->m = mask;
-    c->refs = 1;
-    clip_unref(g->clip);
-    g->clip = c;
+    clip_unref(g->pclip);
+    g->pclip = c;
+    clip_settle(g);
 }
 
 /* --------------------------------------------------------------- state  */
@@ -172,6 +211,8 @@ push(rs_t *r)
     r->gs[r->sp + 1] = r->gs[r->sp];
     r->sp++;
     clip_ref(top(r)->clip);
+    clip_ref(top(r)->pclip);
+    clip_ref(top(r)->smask);
 }
 
 /** @brief Q: back to the state before the last q. */
@@ -180,6 +221,8 @@ pop(rs_t *r)
 {
     if (r->sp > 0) {
         clip_unref(top(r)->clip);
+        clip_unref(top(r)->pclip);
+        clip_unref(top(r)->smask);
         r->sp--;
     }
 }
@@ -423,6 +466,188 @@ op_colour(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res)
     set_colour(g, stroke);
 }
 
+/** @brief @p g as a content stream starts it, drawing through @p ctm. */
+static void
+state_init(gs_t *g, pdf_mat_t ctm)
+{
+    memset(g, 0, sizeof *g);
+    g->ctm = ctm;
+    g->fill = g->stroke = 0xff000000u;
+    g->falpha = g->salpha = 1;
+    g->lw = 1;
+    g->miter = 10;
+    g->th = 1;
+    g->nfv = g->nsv = 1;
+}
+
+/**
+ * @brief Form @p xo drawn on its own over a ground of @p bg: in the state
+ *        now in force, but for the alpha, blend mode and soft mask a
+ *        group starts without (ISO 32000 11.6.6).
+ * @return the page's pixels drawn so, for the caller to free, or NULL.
+ */
+static uint32_t *
+offscreen(rs_t *r, pdf_obj_t *xo, uint32_t bg)
+{
+    gs_t *g = top(r);
+    rs_t *sub;
+
+    if (r->nest >= NEST_MAX) {
+        return NULL;
+    }
+    sub = rs_new(r->doc, r->pix.w, r->pix.h, bg, g->ctm);
+    if (sub == NULL) {
+        return NULL;
+    }
+    sub->gs[0] = *g;
+    sub->gs[0].pclip = clip_ref(g->pclip);
+    sub->gs[0].clip = clip_ref(g->pclip);
+    sub->gs[0].smask = NULL;
+    sub->gs[0].falpha = sub->gs[0].salpha = 1;
+    sub->gs[0].bm = PDF_BM_NORMAL;
+    sub->nest = r->nest + 1;
+    sub->stencil = r->stencil;
+    sub->ops = r->ops;
+    sub->pbase = r->pbase;
+    form(sub, xo, r->res, 0);
+    r->ops = sub->ops;
+    return rs_finish(sub);
+}
+
+/** @brief Each pixel's coverage and colour out of @p xo drawn on white
+ *         and on black, the white pass's buffer taking the colours.
+ *  @return the coverage, w*h, for the caller to free with @p *rgb. */
+static unsigned char *
+coverage(rs_t *r, pdf_obj_t *xo, uint32_t **rgb)
+{
+    uint32_t *white = offscreen(r, xo, 0xffffffffu);
+    uint32_t *black = white != NULL ? offscreen(r, xo, 0xff000000u) : NULL;
+    long n = (long)r->pix.w * r->pix.h, i;
+    unsigned char *a = black != NULL ? malloc((size_t)n) : NULL;
+
+    for (i = 0; a != NULL && i < n; i++) {
+        int k, d = 0, al;
+
+        for (k = 0; k < 24; k += 8) {
+            d += (int)((white[i] >> k) & 255) - (int)((black[i] >> k) & 255);
+        }
+        al = 255 - d / 3;
+        al = al < 0 ? 0 : al > 255 ? 255 : al;
+        a[i] = (unsigned char)al;
+        white[i] = 0xff000000u;
+        for (k = 0; al > 0 && k < 24; k += 8) {
+            int v = (int)((black[i] >> k) & 255) * 255 / al;
+
+            white[i] |= (uint32_t)(v > 255 ? 255 : v) << k;
+        }
+    }
+    free(black);
+    if (a == NULL) {
+        free(white);
+        white = NULL;
+    }
+    *rgb = white;
+    return a;
+}
+
+/**
+ * @brief ExtGState SMask @p sm as coverage over the page: group G's
+ *        luminosity drawn on its backdrop BC, or with S Alpha its
+ *        coverage; either through the transfer function TR.
+ */
+static clip_t *
+soft_mask(rs_t *r, pdf_obj_t *sm)
+{
+    pdf_obj_t *grp = pdf_get(r->doc, sm, "G"), *bc = pdf_get(r->doc, sm, "BC");
+    pdf_func_t *tr = pdf_func_load(r->doc, pdf_get(r->doc, sm, "TR"));
+    long n = (long)r->pix.w * r->pix.h, i;
+    unsigned char *a = NULL;
+    uint32_t *px = NULL;
+    pdf_mask_t m;
+
+    if (grp == NULL || grp->kind != PDF_STREAM) {
+        pdf_func_free(tr);
+        return NULL;
+    }
+    if (pdf_is_name(pdf_get(r->doc, sm, "S"), "Alpha")) {
+        a = coverage(r, grp, &px);
+    } else {
+        pdf_cs_t *cs = pdf_cs_load(r->doc, pdf_get(r->doc, pdf_get(r->doc, grp,
+                                                   "Group"), "CS"), r->res);
+        uint32_t ground = 0xff000000u;
+        double v[8];
+        int k, nv = 0;
+
+        for (k = 0; bc != NULL && bc->kind == PDF_ARRAY && k < bc->u.a.n &&
+                    k < 8; k++) {
+            v[nv++] = pdf_number(pdf_resolve(r->doc, bc->u.a.item[k]), 0);
+        }
+        if (nv > 0) ground = pdf_cs_colour(cs, v, nv);
+        pdf_cs_free(cs);
+        px = offscreen(r, grp, ground);
+        a = px != NULL ? malloc((size_t)n) : NULL;
+        for (i = 0; a != NULL && i < n; i++) {
+            a[i] = (unsigned char)((((px[i] >> 16) & 255) * 30 +
+                                    ((px[i] >> 8) & 255) * 59 +
+                                    (px[i] & 255) * 11) / 100);
+        }
+    }
+    for (i = 0; a != NULL && tr != NULL && i < n; i++) {
+        double in = a[i] / 255.0, out = in;
+
+        (void)pdf_func_eval(tr, &in, 1, &out);
+        a[i] = (unsigned char)(out <= 0 ? 0 : out >= 1 ? 255 : out * 255 + 0.5);
+    }
+    pdf_func_free(tr);
+    free(px);
+    if (a == NULL) {
+        return NULL;
+    }
+    memset(&m, 0, sizeof m);
+    m.w = r->pix.w;
+    m.h = r->pix.h;
+    m.a = a;
+    return clip_new(m);
+}
+
+/**
+ * @brief A transparency group painted as one: drawn on its own, then laid
+ *        on the page through the clip and soft mask, at the fill alpha,
+ *        by the blend mode (the group's own inside start plain).
+ */
+static void
+group_paint(rs_t *r, pdf_obj_t *xo)
+{
+    gs_t *g = top(r);
+    const pdf_mask_t *clip = g->clip ? &g->clip->m : NULL;
+    int ca = (int)(g->falpha * 255 + 0.5), x, y;
+    uint32_t *rgb = NULL;
+    unsigned char *a = coverage(r, xo, &rgb);
+
+    if (a == NULL) {
+        return;
+    }
+    r->pix.blend = g->bm;
+    for (y = 0; y < r->pix.h; y++) {
+        for (x = 0; x < r->pix.w; x++) {
+            size_t i = (size_t)y * r->pix.w + x;
+            int k = a[i] * ca / 255;
+
+            if (k > 0 && clip != NULL && clip->a != NULL) {
+                int cx = x - clip->x0, cy = y - clip->y0;
+
+                k = cx < 0 || cy < 0 || cx >= clip->w || cy >= clip->h ? 0
+                    : k * clip->a[(size_t)cy * clip->w + cx] / 255;
+            }
+            if (k > 0) {
+                pdf_blend(&r->pix, r->pix.px + i, rgb[i], k);
+            }
+        }
+    }
+    free(a);
+    free(rgb);
+}
+
 /** @brief gs: the parameters an ExtGState carries that are drawn with. */
 static void
 op_gs(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
@@ -441,6 +666,19 @@ op_gs(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
     if (v != NULL) g->falpha = pdf_number(v, 1);
     v = pdf_get(r->doc, ext, "LW");
     if (v != NULL) g->lw = pdf_number(v, 1);
+    v = pdf_get(r->doc, ext, "BM");
+    if (v != NULL && v->kind == PDF_ARRAY && v->u.a.n > 0) {
+        v = pdf_resolve(r->doc, v->u.a.item[0]);
+    }
+    if (v != NULL && v->kind == PDF_NAME) {
+        g->bm = pdf_blend_mode((const char *)v->u.s.p);
+    }
+    v = pdf_get(r->doc, ext, "SMask");
+    if (v != NULL) {
+        clip_unref(g->smask);
+        g->smask = v->kind == PDF_DICT ? soft_mask(r, v) : NULL;
+        clip_settle(g);
+    }
     v = pdf_get(r->doc, ext, "Font");
     if (v != NULL && v->kind == PDF_ARRAY && v->u.a.n == 2) {
         pdf_obj_t *fd = pdf_resolve(r->doc, v->u.a.item[0]);
@@ -685,7 +923,7 @@ paint_tiling(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to,
             j = j < 0 ? 0 : j >= t->h ? t->h - 1 : j;
             a = a * t->a[(size_t)j * t->w + i] / 255 * ca / 255;
             if (a > 0) {
-                pdf_blend(r->pix.px + (size_t)y * r->pix.w + x,
+                pdf_blend(&r->pix, r->pix.px + (size_t)y * r->pix.w + x,
                           t->coloured ? t->rgb[(size_t)j * t->w + i] : colour,
                           a);
             }
@@ -733,6 +971,7 @@ paint(rs_t *r, const pdf_mask_t *m, int stroke)
         pdf_paint(&r->pix, m, clip, 0xff000000u, 1);
         return;
     }
+    r->pix.blend = g->bm;
     if (stroke ? g->spattern : g->fpattern) {
         if (pat != NULL && paint_pattern(r, pat, m, clip, alpha, colour)) {
             return;
@@ -754,6 +993,7 @@ op_sh(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
                                           (const char *)name->u.s.p));
 
     if (s != NULL && !r->stencil) {
+        r->pix.blend = g->bm;
         pdf_shade_paint(&r->pix, s, &g->ctm, NULL,
                         g->clip ? &g->clip->m : NULL, g->falpha, 0);
     }
@@ -987,6 +1227,14 @@ form(rs_t *r, pdf_obj_t *xo, pdf_obj_t *res, int depth)
     if (depth >= FORM_DEPTH) {
         return;
     }
+    if (!r->stencil && pdf_is_name(pdf_get(r->doc, pdf_get(r->doc, xo,
+                                                            "Group"), "S"),
+                                   "Transparency") &&
+        (top(r)->falpha < 0.999 || top(r)->smask != NULL ||
+         top(r)->bm != PDF_BM_NORMAL)) {
+        group_paint(r, xo);
+        return;
+    }
     push(r);
     if (m != NULL && m->kind == PDF_ARRAY && m->u.a.n == 6) {
         double v[6];
@@ -1054,6 +1302,7 @@ draw_image(rs_t *r, pdf_obj_t *dict, const unsigned char *raw, long rawn,
     pdf_img_t img;
 
     if (pdf_image_decode(r->doc, dict, raw, rawn, res, &img) == 0) {
+        r->pix.blend = r->stencil ? PDF_BM_NORMAL : g->bm;
         pdf_image_draw(&r->pix, &img, &g->ctm, g->clip ? &g->clip->m : NULL,
                        g->fpattern ? 0xff808080u : g->fill, g->falpha);
         pdf_image_free(&img);
@@ -1297,6 +1546,123 @@ run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res, int depth)
     r->res = outer;
 }
 
+/* ------------------------------------------------------- annotations  */
+
+/** @brief Annotation @p a's normal appearance: its N stream, or of the
+ *         states N holds, the one its AS names.  NULL when it has none. */
+static pdf_obj_t *
+appearance(rs_t *r, pdf_obj_t *a)
+{
+    pdf_obj_t *n = pdf_get(r->doc, pdf_get(r->doc, a, "AP"), "N");
+    pdf_obj_t *as = pdf_get(r->doc, a, "AS");
+
+    if (n != NULL && n->kind == PDF_DICT && as != NULL &&
+        as->kind == PDF_NAME) {
+        n = pdf_get(r->doc, n, (const char *)as->u.s.p);
+    }
+    return n != NULL && n->kind == PDF_STREAM ? n : NULL;
+}
+
+/** @brief Four numbers of array @p a into @p v, the corners ordered.
+ *  @return 1 when it is such an array. */
+static int
+box_of(rs_t *r, pdf_obj_t *a, double *v)
+{
+    int i;
+
+    if (a == NULL || a->kind != PDF_ARRAY || a->u.a.n != 4) {
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        v[i] = pdf_number(pdf_resolve(r->doc, a->u.a.item[i]), 0);
+    }
+    if (v[0] > v[2]) { double t = v[0]; v[0] = v[2]; v[2] = t; }
+    if (v[1] > v[3]) { double t = v[1]; v[1] = v[3]; v[3] = t; }
+    return v[2] > v[0] && v[3] > v[1];
+}
+
+/**
+ * @brief Where appearance @p ap lands: its BBox through its Matrix,
+ *        mapped onto annotation Rect @p rect (ISO 32000 12.5.5).
+ *  @return 0 for an appearance with no extent.
+ */
+static int
+appearance_matrix(rs_t *r, pdf_obj_t *ap, const double *rect, pdf_mat_t *out)
+{
+    double bb[4], lo[2] = {1e30, 1e30}, hi[2] = {-1e30, -1e30}, v[6];
+    pdf_obj_t *mo = pdf_get(r->doc, ap, "Matrix");
+    pdf_mat_t m = pdf_mat(1, 0, 0, 1, 0, 0);
+    int k;
+
+    if (!box_of(r, pdf_get(r->doc, ap, "BBox"), bb)) {
+        return 0;
+    }
+    if (mo != NULL && mo->kind == PDF_ARRAY && mo->u.a.n == 6) {
+        for (k = 0; k < 6; k++) {
+            v[k] = pdf_number(pdf_resolve(r->doc, mo->u.a.item[k]),
+                              k == 0 || k == 3);
+        }
+        m = pdf_mat(v[0], v[1], v[2], v[3], v[4], v[5]);
+    }
+    for (k = 0; k < 4; k++) {
+        double x, y;
+
+        pdf_mat_apply(&m, bb[k & 1 ? 2 : 0], bb[k & 2 ? 3 : 1], &x, &y);
+        lo[0] = fmin(lo[0], x);
+        lo[1] = fmin(lo[1], y);
+        hi[0] = fmax(hi[0], x);
+        hi[1] = fmax(hi[1], y);
+    }
+    if (hi[0] - lo[0] < 1e-6 || hi[1] - lo[1] < 1e-6) {
+        return 0;
+    }
+    v[0] = (rect[2] - rect[0]) / (hi[0] - lo[0]);
+    v[1] = (rect[3] - rect[1]) / (hi[1] - lo[1]);
+    *out = pdf_mat(v[0], 0, 0, v[1], rect[0] - lo[0] * v[0],
+                   rect[1] - lo[1] * v[1]);
+    return 1;
+}
+
+/**
+ * @brief The page's annotations over it: each one's normal appearance in
+ *        its Rect, as filled forms, stamps and notes have them; popups,
+ *        and those Hidden or NoView, left out.
+ */
+static void
+annotations(rs_t *r, pdf_obj_t *page, pdf_mat_t base)
+{
+    pdf_obj_t *list = pdf_get(r->doc, page, "Annots");
+    pdf_obj_t *res = pdf_page_inherited(r->doc, page, "Resources");
+    int i;
+
+    for (i = 0; list != NULL && list->kind == PDF_ARRAY &&
+                i < list->u.a.n && !r->failed; i++) {
+        pdf_obj_t *a = pdf_resolve(r->doc, list->u.a.item[i]), *ap;
+        long flags = (long)pdf_number(pdf_get(r->doc, a, "F"), 0);
+        double rect[4];
+        pdf_mat_t place;
+        gs_t *g;
+
+        if (a == NULL || a->kind != PDF_DICT || (flags & (2 | 32)) != 0 ||
+            pdf_is_name(pdf_get(r->doc, a, "Subtype"), "Popup") ||
+            (ap = appearance(r, a)) == NULL ||
+            !box_of(r, pdf_get(r->doc, a, "Rect"), rect) ||
+            !appearance_matrix(r, ap, rect, &place)) {
+            continue;
+        }
+        push(r);
+        g = top(r);
+        clip_unref(g->clip);
+        clip_unref(g->pclip);
+        clip_unref(g->smask);
+        state_init(g, pdf_mat_mul(place, base));
+        r->pbase = g->ctm;
+        form(r, ap, res, 0);
+        pop(r);
+        r->pbase = base;
+    }
+}
+
 /* ------------------------------------------------------------------ API  */
 
 /** @brief A renderer of @p w by @p h pixels on a ground of @p bg, drawing
@@ -1323,13 +1689,7 @@ rs_new(tiku_pdf_t *doc, int w, int h, uint32_t bg, pdf_mat_t base)
     }
     pdf_path_init(&r->path);
     pdf_path_init(&r->tmp);
-    r->gs[0].ctm = base;
-    r->gs[0].fill = r->gs[0].stroke = 0xff000000u;
-    r->gs[0].falpha = r->gs[0].salpha = 1;
-    r->gs[0].lw = 1;
-    r->gs[0].miter = 10;
-    r->gs[0].th = 1;
-    r->gs[0].nfv = r->gs[0].nsv = 1;
+    state_init(&r->gs[0], base);
     r->tm = r->tlm = pdf_mat(1, 0, 0, 1, 0, 0);
     r->pbase = base;
     return r;
@@ -1347,6 +1707,8 @@ rs_finish(rs_t *r)
         pop(r);
     }
     clip_unref(r->gs[0].clip);
+    clip_unref(r->gs[0].pclip);
+    clip_unref(r->gs[0].smask);
     for (i = 0; i < r->ncs; i++) {
         pdf_cs_free(r->cs_keep[i]);
     }
@@ -1401,6 +1763,10 @@ tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
         run(r, data, n, pdf_page_inherited(doc, p, "Resources"), 0);
         free(data);
     }
+    while (r->sp > 0) {
+        pop(r);                     /* a stream that left a q open */
+    }
+    annotations(r, p, base);
     out->w = w;
     out->h = h;
     out->px = rs_finish(r);

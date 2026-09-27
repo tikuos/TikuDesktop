@@ -526,6 +526,108 @@ shade_test(void)
 }
 
 /**
+ * @brief Transparency and annotations on a 300-point page: Multiply and
+ *        Difference, a luminosity and an alpha soft mask and their end, a
+ *        group at half its alpha, and four annotations, two of them unseen.
+ */
+static pdfw_t
+transp_file(void)
+{
+    pdfw_t b = {0};
+    const char *content =
+        "1 0 0 rg 0 250 40 40 re f q /M gs 0 0 1 rg 20 250 40 40 re f Q "
+        "1 0 0 rg 100 250 40 40 re f q /D gs 1 1 1 rg 120 250 40 40 re f Q "
+        "q /Lum gs 1 0 0 rg 0 150 100 50 re f /None gs 0 0 1 rg "
+        "0 100 100 30 re f Q "
+        "q /Al gs 1 0 0 rg 150 150 100 50 re f Q "
+        "q /Half gs /Grp Do Q";
+    const char *lum = "1 g 0 150 50 50 re f";
+    const char *alpha = "q /Half gs 0 g 150 150 100 50 re f Q";
+    const char *grp = "1 0 0 rg 150 20 60 60 re f 0 0 1 rg 180 20 60 60 re f";
+    const char *green = "0 1 0 rg 0 0 10 10 re f";
+    const char *red = "1 0 0 rg 0 0 10 10 re f";
+    const char *blue = "0 0 1 rg 0 0 10 10 re f";
+
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] "
+               "/Resources << /ExtGState << /M << /BM /Multiply >> "
+               "/D << /BM [/Difference] >> /Half << /ca 0.5 >> "
+               "/None << /SMask /None >> "
+               "/Lum << /SMask << /S /Luminosity /G 10 0 R >> >> "
+               "/Al << /SMask << /S /Alpha /G 11 0 R >> >> >> "
+               "/XObject << /Grp 12 0 R >> >> /Contents 4 0 R "
+               "/Annots [20 0 R 21 0 R 22 0 R 23 0 R] >>");
+    stream(&b, 4, "", content, (long)strlen(content));
+    stream(&b, 10, "/Type /XObject /Subtype /Form /BBox [0 0 300 300] "
+                   "/Group << /S /Transparency >>", lum, (long)strlen(lum));
+    stream(&b, 11, "/Type /XObject /Subtype /Form /BBox [0 0 300 300] "
+                   "/Group << /S /Transparency >> /Resources << /ExtGState "
+                   "<< /Half << /ca 0.5 >> >> >>", alpha, (long)strlen(alpha));
+    stream(&b, 12, "/Type /XObject /Subtype /Form /BBox [0 0 300 300] "
+                   "/Group << /S /Transparency >>", grp, (long)strlen(grp));
+    obj(&b, 20, "<< /Type /Annot /Subtype /Square /Rect [20 20 70 40] "
+                "/AP << /N 30 0 R >> >>");
+    obj(&b, 21, "<< /Type /Annot /Subtype /Widget /Rect [80 20 120 40] "
+                "/AP << /N << /On 31 0 R /Off 32 0 R >> >> /AS /Off >>");
+    obj(&b, 22, "<< /Type /Annot /Subtype /Square /F 2 /Rect [20 50 60 70] "
+                "/AP << /N 31 0 R >> >>");
+    obj(&b, 23, "<< /Type /Annot /Subtype /Popup /Rect [80 50 120 70] "
+                "/AP << /N 31 0 R >> >>");
+    stream(&b, 30, "/Type /XObject /Subtype /Form /BBox [0 0 10 10]", green,
+           (long)strlen(green));
+    stream(&b, 31, "/Type /XObject /Subtype /Form /BBox [0 0 10 10]", red,
+           (long)strlen(red));
+    stream(&b, 32, "/Type /XObject /Subtype /Form /BBox [0 0 10 10]", blue,
+           (long)strlen(blue));
+    xref(&b, 1, 0);
+    return b;
+}
+
+static void
+transp_test(void)
+{
+    pdfw_t b = transp_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+          pm.w == 300, "a page of transparency and annotations renders");
+    if (pm.px == NULL) {
+        tiku_pdf_close(doc);
+        free(b.p);
+        return;
+    }
+    check(pixel(&pm, 10, 30) == 0xff0000u && pixel(&pm, 30, 30) == 0 &&
+          pixel(&pm, 50, 30) == 0x0000ffu,
+          "Multiply: blue on red is black, blue on paper stays blue");
+    check(pixel(&pm, 130, 30) == 0x00ffffu && pixel(&pm, 150, 30) == 0,
+          "Difference: white on red is cyan, white on paper black");
+    check(pixel(&pm, 25, 125) == 0xff0000u &&
+          pixel(&pm, 75, 125) == 0xffffffu,
+          "a luminosity mask lets the fill through where its group is white");
+    check(pixel(&pm, 75, 185) == 0x0000ffu, "and SMask None takes it away");
+    check(near(pixel(&pm, 200, 125), 255, 127, 127, 3),
+          "an alpha mask from a half-alpha group lets half through");
+    check(near(pixel(&pm, 165, 250), 255, 127, 127, 3) &&
+          near(pixel(&pm, 225, 250), 127, 127, 255, 3),
+          "a group at half its alpha shows each part at half");
+    check(near(pixel(&pm, 195, 250), 127, 127, 255, 3),
+          "and where its parts overlap, the top one at half: as one");
+    check(pixel(&pm, 45, 270) == 0x00ff00u && pixel(&pm, 15, 270) == 0xffffffu,
+          "an appearance fills its annotation's Rect, scaled from its BBox");
+    check(pixel(&pm, 100, 270) == 0x0000ffu,
+          "a widget shows the appearance of the state its AS names");
+    check(pixel(&pm, 40, 240) == 0xffffffu && pixel(&pm, 100, 240) == 0xffffffu,
+          "hidden annotations and popups are not drawn");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
+/**
  * @brief Three pages, an outline over them and links between them: an
  *        entry and a link by name (the Names tree and the older Dests
  *        dictionary), one straight to a page, one to an address.
@@ -815,6 +917,7 @@ main(void)
     glyph_test();
     render_test();
     shade_test();
+    transp_test();
     nav_test();
     corpus_test();
     if (fails) {

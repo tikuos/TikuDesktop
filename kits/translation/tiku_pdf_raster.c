@@ -689,19 +689,168 @@ pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
                 continue;
             }
             d = pix->px + (size_t)py * pix->w + px;
-            pdf_blend(d, 0xff000000u | cr << 16 | cg << 8 | cb, a);
+            pdf_blend(pix, d, 0xff000000u | cr << 16 | cg << 8 | cb, a);
         }
     }
 }
 
-void
-pdf_blend(uint32_t *d, uint32_t colour, int a)
+/** @brief One channel of separable mode @p mode, backdrop @p b and
+ *         source @p s, each 0 to 255. */
+static int
+separable(int mode, int b, int s)
 {
-    unsigned ua = (unsigned)a, dr = (*d >> 16) & 0xff, dg = (*d >> 8) & 0xff;
-    unsigned db = *d & 0xff;
+    double cb = b / 255.0, cs = s / 255.0, r;
 
-    dr = (dr * (255u - ua) + ((colour >> 16) & 0xff) * ua + 127) / 255;
-    dg = (dg * (255u - ua) + ((colour >> 8) & 0xff) * ua + 127) / 255;
-    db = (db * (255u - ua) + (colour & 0xff) * ua + 127) / 255;
-    *d = 0xff000000u | dr << 16 | dg << 8 | db;
+    switch (mode) {
+    case PDF_BM_MULTIPLY: return b * s / 255;
+    case PDF_BM_SCREEN: return b + s - b * s / 255;
+    case PDF_BM_OVERLAY: return separable(PDF_BM_HARDLIGHT, s, b);
+    case PDF_BM_DARKEN: return b < s ? b : s;
+    case PDF_BM_LIGHTEN: return b > s ? b : s;
+    case PDF_BM_DODGE:
+        return b == 0 ? 0 : s >= 255 ? 255
+               : b * 255 / (255 - s) > 255 ? 255 : b * 255 / (255 - s);
+    case PDF_BM_BURN:
+        return b == 255 ? 255 : s <= 0 ? 0
+               : (255 - b) * 255 / s > 255 ? 0 : 255 - (255 - b) * 255 / s;
+    case PDF_BM_HARDLIGHT:
+        return s <= 127 ? b * 2 * s / 255
+                        : separable(PDF_BM_SCREEN, b, 2 * s - 255);
+    case PDF_BM_SOFTLIGHT:
+        if (cs <= 0.5) {
+            r = cb - (1 - 2 * cs) * cb * (1 - cb);
+        } else {
+            double d = cb <= 0.25 ? ((16 * cb - 12) * cb + 4) * cb
+                                  : sqrt(cb);
+
+            r = cb + (2 * cs - 1) * (d - cb);
+        }
+        return (int)(r * 255 + 0.5);
+    case PDF_BM_DIFFERENCE: return b > s ? b - s : s - b;
+    case PDF_BM_EXCLUSION: return b + s - 2 * b * s / 255;
+    }
+    return s;
+}
+
+/** @brief A colour's luminosity, as the non-separable modes weigh it. */
+static double
+lum(const double *c)
+{
+    return 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+}
+
+/** @brief @p c given luminosity @p l, brought back into the gamut. */
+static void
+set_lum(double *c, double l)
+{
+    double d = l - lum(c), n, x;
+    int k;
+
+    for (k = 0; k < 3; k++) c[k] += d;
+    l = lum(c);
+    n = fmin(c[0], fmin(c[1], c[2]));
+    x = fmax(c[0], fmax(c[1], c[2]));
+    for (k = 0; k < 3; k++) {
+        if (n < 0 && l - n > 1e-9) c[k] = l + (c[k] - l) * l / (l - n);
+        if (x > 1 && x - l > 1e-9) c[k] = l + (c[k] - l) * (1 - l) / (x - l);
+    }
+}
+
+/** @brief @p c given saturation @p s, its hue kept. */
+static void
+set_sat(double *c, double s)
+{
+    int hi = 0, lo = 0, mid, k;
+
+    for (k = 1; k < 3; k++) {
+        if (c[k] > c[hi]) hi = k;
+        if (c[k] < c[lo]) lo = k;
+    }
+    if (hi == lo) {
+        c[0] = c[1] = c[2] = 0;
+        return;
+    }
+    mid = 3 - hi - lo;
+    c[mid] = (c[mid] - c[lo]) * s / (c[hi] - c[lo]);
+    c[hi] = s;
+    c[lo] = 0;
+}
+
+/** @brief The source @p s blended over backdrop @p b by @p mode, all
+ *         0 to 255, into @p s. */
+static void
+mix(int mode, const int *b, int *s)
+{
+    double cb[3], cs[3], sat;
+    int k;
+
+    if (mode < PDF_BM_HUE) {
+        for (k = 0; k < 3; k++) s[k] = separable(mode, b[k], s[k]);
+        return;
+    }
+    for (k = 0; k < 3; k++) {
+        cb[k] = b[k] / 255.0;
+        cs[k] = s[k] / 255.0;
+    }
+    if (mode == PDF_BM_HUE || mode == PDF_BM_SATURATION) {
+        double *from = mode == PDF_BM_HUE ? cs : cb;
+        const double *by = mode == PDF_BM_HUE ? cb : cs;
+
+        sat = fmax(by[0], fmax(by[1], by[2])) -
+              fmin(by[0], fmin(by[1], by[2]));
+        set_sat(from, sat);
+        set_lum(from, lum(cb));
+        memcpy(cs, from, sizeof cs);
+    } else if (mode == PDF_BM_COLOR) {
+        set_lum(cs, lum(cb));
+    } else {
+        double l = lum(cs);
+
+        memcpy(cs, cb, sizeof cs);
+        set_lum(cs, l);
+    }
+    for (k = 0; k < 3; k++) {
+        int v = (int)(cs[k] * 255 + 0.5);
+
+        s[k] = v < 0 ? 0 : v > 255 ? 255 : v;
+    }
+}
+
+int
+pdf_blend_mode(const char *name)
+{
+    static const char *const names[] = {
+        "Normal", "Multiply", "Screen", "Overlay", "Darken", "Lighten",
+        "ColorDodge", "ColorBurn", "HardLight", "SoftLight", "Difference",
+        "Exclusion", "Hue", "Saturation", "Color", "Luminosity"
+    };
+    int i;
+
+    for (i = 0; name != NULL && i < (int)(sizeof names / sizeof names[0]);
+         i++) {
+        if (strcmp(name, names[i]) == 0) {
+            return i;
+        }
+    }
+    return PDF_BM_NORMAL;           /* Compatible, and what is not known */
+}
+
+void
+pdf_blend(const pdf_pix_t *pix, uint32_t *d, uint32_t colour, int a)
+{
+    int b[3] = { (int)((*d >> 16) & 0xff), (int)((*d >> 8) & 0xff),
+                 (int)(*d & 0xff) };
+    int s[3] = { (int)((colour >> 16) & 0xff), (int)((colour >> 8) & 0xff),
+                 (int)(colour & 0xff) };
+    unsigned ua = (unsigned)a, out[3];
+    int k;
+
+    if (pix->blend != PDF_BM_NORMAL) {
+        mix(pix->blend, b, s);
+    }
+    for (k = 0; k < 3; k++) {
+        out[k] = ((unsigned)b[k] * (255u - ua) + (unsigned)s[k] * ua + 127) /
+                 255;
+    }
+    *d = 0xff000000u | out[0] << 16 | out[1] << 8 | out[2];
 }
