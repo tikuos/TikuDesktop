@@ -48,6 +48,16 @@ static void drain_work(void)
 /** @brief The painter is not linked: a full frame is the flag, as before. */
 void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
+/* TikuBench is not started: which board it was asked to open on is kept. */
+static int bench_opened;
+static char bench_board[64];
+int desktop_bench_firmware(desktop_t *app, const char *board)
+{
+    (void)app; bench_opened++;
+    snprintf(bench_board, sizeof bench_board, "%s", board);
+    return 1;
+}
+
 /** @brief The row showing setting @p setting, once its section is shown. */
 static int dp_row_of_setting(struct desktop_deviceprefs *p, int setting)
 {
@@ -422,6 +432,32 @@ static void test_layout_confirmation(struct desktop_deviceprefs *p, tiku_backend
     tiku_field_start(&p->field, "18446744073709551615");
     dp_request(p, DP_TIER); /* Defend even callers that skip dp_apply's validation. */
     assert(!work_queued && writes == before);
+    connected_backend = NULL;
+}
+
+/* Installed build: a value the board reports and an action that writes
+ * nothing to it -- Update hands the board's name to TikuBench. */
+static void test_firmware_row(struct desktop_deviceprefs *p, tiku_backend_t *b)
+{
+    int before = writes, row;
+    connected_backend = b;
+    p->selected = 0; p->fact = p->estate = -1; p->confirm = 0;
+    snprintf(vals[DP_FIRMWARE], sizeof vals[DP_FIRMWARE], "0ee45a2 c5450c67");
+    dp_request(p, DP_READ); drain_work();
+    assert(p->values[DP_FIRMWARE].present && p->values[DP_FIRMWARE].writable);
+    assert(!strcmp(p->values[DP_FIRMWARE].value, "0ee45a2 c5450c67"));
+    row = dp_row_of_setting(p, DP_FIRMWARE);
+    assert(row >= 0 && p->section == SEC_IDENTITY);
+    p->setting = DP_FIRMWARE; dp_edit(p);
+    dp_apply(p);
+    assert(bench_opened == 1 && !strcmp(bench_board, p->names[0]));
+    assert(!work_queued && writes == before && !p->busy);
+    assert(strstr(p->status, "Firmware tab"));
+    /* An image too old to name its build is still offered the update. */
+    vals[DP_FIRMWARE][0] = '\0';
+    dp_request(p, DP_READ); drain_work();
+    assert(p->values[DP_FIRMWARE].present && p->values[DP_FIRMWARE].writable);
+    assert(strstr(p->values[DP_FIRMWARE].value, "Older"));
     connected_backend = NULL;
 }
 
@@ -1020,6 +1056,7 @@ int main(void)
     assert(send_input(p.window, &ev) && !p.confirm);
     memset(&p.pending, 0, sizeof p.pending);
     test_layout_confirmation(&p, &backend);
+    test_firmware_row(&p, &backend);
     before = writes;
     p.busy = 1;
     ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,

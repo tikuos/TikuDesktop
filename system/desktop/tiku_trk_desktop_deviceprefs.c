@@ -23,7 +23,7 @@
 #include <stdint.h>
 
 enum { DP_NAME, DP_CPU, DP_TIME, DP_CRYPTO, DP_RADIO, DP_SLEEP, DP_PSRAM,
-       DP_EMMC, DP_TIER, DP_COUNT };
+       DP_EMMC, DP_TIER, DP_FIRMWARE, DP_COUNT };
 enum { DP_DEVICE = 10, DP_EDIT = 50,
        DP_APPLY, DP_REFRESH, DP_DONE, DP_RECOVERY, DP_FORGET,
        DP_SECTION = 70, DP_ROW = 100 };
@@ -74,7 +74,11 @@ static const struct {
       SEC_STORAGE },
     { "NVM tier", "/sys/mem/layout/current",
       "How much of the non-volatile region the tier takes; the store has "
-      "the rest. Applied at the next restart.", 1, SEC_STORAGE }
+      "the rest. Applied at the next restart.", 1, SEC_STORAGE },
+    { "Installed build", "/sys/device/build",
+      "The commit the image was built from and a checksum of its options. "
+      "Update opens TikuBench to build and install firmware for this "
+      "board, saying first what the update keeps.", 1, SEC_IDENTITY }
 };
 /* The layout service, as /sys/mem/layout reports it: the one knob's
  * bounds and value, what is staged, and how the store stands. */
@@ -118,6 +122,8 @@ static const struct {
       "The name the device answers to before it is given one." },
     { SEC_IDENTITY, FMT_PLAIN, "Unique id", "/sys/device/uid",
       "Burned into the part; it survives renames and reflashes." },
+    { SEC_IDENTITY, FMT_PLAIN, "Built for", "/sys/device/board",
+      "The board the running image was built for." },
     { SEC_IDENTITY, FMT_SECONDS, "Uptime", "/sys/uptime",
       "Since the last reset." },
     { SEC_PROCESSOR, FMT_CLOCKMODE, "Clock control",
@@ -261,7 +267,9 @@ static dp_layout_t dp_layout(tiku_rect_t c, int setting)
     int button = tiku_ui_button_h();
     int bw = tiku_ui_button_w(setting == DP_CPU || setting == DP_TIER
                                   ? "Save for restart" :
-                              setting == DP_TIME ? "Sync now" : "Apply", 88);
+                              setting == DP_TIME ? "Sync now" :
+                              setting == DP_FIRMWARE ? "Update…" : "Apply",
+                              88);
     int left = 232 + (fh - 15) * 3;
     int group_h = button + 3 * (fh + 2) + 44;
     int recovery_h = 2 * (fh + 2) + button + 34;
@@ -880,6 +888,17 @@ static void dp_run_tier(dp_job_t *j)
     j->write_at = DP_READ;              /* the readback that follows is a read */
 }
 
+/**
+ * @brief The installed build: an action, never a write, so always offered;
+ *        an image too old to name its build is the one it matters most for.
+ */
+static void dp_firmware_value(dp_value_t *v)
+{
+    if (!v->present)
+        snprintf(v->value, sizeof v->value, "Older than this field");
+    v->present = v->writable = 1;
+}
+
 /** @brief On a worker: validate permissions, write once, then read back. */
 static void dp_run(void *ctx)
 {
@@ -985,6 +1004,7 @@ static void dp_run(void *ctx)
             available++;
         }
     }
+    dp_firmware_value(&j->values[DP_FIRMWARE]);
     memset(j->fact_values, 0, sizeof j->fact_values);
     for (i = 0; i < DP_FACTS && !tiku_work_cancelled(j); i++) {
         tiku_model_t m;
@@ -1256,6 +1276,15 @@ static void dp_apply(struct desktop_deviceprefs *p)
     char *end;
     long v;
     if (!dp_can_edit(p)) return;
+    if (p->setting == DP_FIRMWARE) {
+        if (!desktop_bench_firmware(p->app, p->names[p->selected]))
+            snprintf(p->status, sizeof p->status,
+                     "Firmware updates need the installed TikuBench.");
+        else snprintf(p->status, sizeof p->status,
+                      "TikuBench opens on its Firmware tab for %.64s.",
+                      p->names[p->selected]);
+        return;
+    }
     if (p->setting == DP_CPU) {
         unsigned long hz = strtoul(p->field.text, &end, 10);
         int i;
@@ -1609,6 +1638,8 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
             tiku_choice_draw(&p->choice, s, l.edit, label, flags);
         } else if (p->setting == DP_TIME) {
             dp_line(s, l.edit, "Use this computer's time", TIKU_C_TEXT);
+        } else if (p->setting == DP_FIRMWARE) {
+            dp_line(s, l.edit, p->values[DP_FIRMWARE].value, TIKU_C_TEXT);
         } else if (p->setting == DP_CRYPTO || p->setting == DP_PSRAM ||
                    p->setting == DP_EMMC) {
             tiku_choice_draw(&p->choice, s, l.edit, NULL, flags);
@@ -1623,6 +1654,7 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
         if (tiku_dialog_pressed(&p->dialog, DP_APPLY)) flags |= TIKU_S_PRESSED;
         tiku_ui_button(s, l.apply,
                        p->setting == DP_TIME ? "Sync now" :
+                       p->setting == DP_FIRMWARE ? "Update…" :
                        p->setting == DP_TIER && p->layout.pending
                            ? "Cancel staged" :
                        (p->setting == DP_CPU &&
@@ -1864,7 +1896,8 @@ static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
         }
     }
     tiku_dialog_add(&p->dialog, DP_EDIT, l.edit, TIKU_DIALOG_INPUT,
-                    writable && p->setting != DP_TIME);
+                    writable && p->setting != DP_TIME &&
+                    p->setting != DP_FIRMWARE);
     tiku_dialog_add(&p->dialog, DP_APPLY, l.apply, TIKU_DIALOG_BUTTON,
                     writable && (p->setting != DP_CPU || dp_clock_dirty(p)));
     const char *action = dp_recovery_action(p);

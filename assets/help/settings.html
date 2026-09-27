@@ -193,11 +193,16 @@ Down.</td></tr>
 <tr><td>NVM tier</td><td>Storage</td><td>/sys/mem/layout</td><td>A size in
 KB within the knob's bounds, staged for the next restart; the store
 moves with it, and the erase of /data is confirmed first.</td></tr>
+<tr><td>Installed build</td><td>Identity</td><td>/sys/device/build</td><td>The
+commit the running image was built from and a checksum of its options;
+<b>Built for</b> beside it names the board. Update… opens TikuBench on its
+<a href="apps/bench.html#firmware">Firmware</a> tab for this board, and
+writes nothing here.</td></tr>
 </table>
 
 <p>The button beside the editor is <b>Apply</b>, named <b>Sync now</b> for
-the date and time and <b>Save for restart</b> for a clock the device
-changes at reboot. Choosing from a dropdown changes the draft only, never
+the date and time, <b>Update…</b> for the installed build and <b>Save
+for restart</b> for a clock the device changes at reboot. Choosing from a dropdown changes the draft only, never
 the device. A write is read back afterwards and the line under the group
 says what happened. <b>Refresh devices</b> reads the mount list and the
 selected board again. <b>Done</b>, and <b>Ctrl+W</b>, close the window

@@ -879,6 +879,8 @@ const tiku_trk_app_t *desktop_app_at(desktop_t *app, const char *path);
 const char *desktop_app_art(desktop_t *app, const char *path);
 int desktop_launch_app(desktop_t *app, const char *id,
                        const char *document);
+/** @brief Open TikuBench on its Firmware tab for the board @p board. */
+int desktop_bench_firmware(desktop_t *app, const char *board);
 int desktop_image_file(desktop_t *app, const char *path);
 int desktop_document_local(desktop_t *app, const char *path);
 /** @brief Present a remote application's file picker in the right namespace. */

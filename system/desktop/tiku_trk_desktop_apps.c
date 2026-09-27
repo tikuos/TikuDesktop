@@ -603,6 +603,26 @@ int desktop_launch_app(desktop_t *app, const char *id, const char *document)
     return 0;
 }
 
+/** @brief TikuBench, told which board and tab to open on, as data. */
+int desktop_bench_firmware(desktop_t *app, const char *board)
+{
+    tiku_msg_t *m = tiku_msg_new(1);
+    int result = 0;
+    if (!m) return 0;
+    int ok = tiku_msg_add_string(m, "tab", "firmware") &&
+             tiku_msg_add_string(m, "board", board ? board : "");
+    for (int i = 0; ok && i < app->apps.count; i++) {
+        const tiku_trk_app_t *a = &app->apps.app[i];
+        if (!strcmp(a->id, "bench")) {
+            result = tiku_trk_launch_message(a, m) == TIKU_TRK_LAUNCH_OK;
+            break;
+        }
+    }
+    tiku_msg_free(m);
+    desktop_damage_all(app);
+    return result;
+}
+
 /** @brief Pass help content as bounded data to the installed reader. */
 static int desktop_help_request(desktop_t *app, const char *page,
                                 const char *title, const char *html)
