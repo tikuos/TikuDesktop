@@ -113,6 +113,9 @@ struct tiku_pdf {
     struct pdf_fontkeep *fonts;     /* fonts read, kept between pages    */
     int            nfonts, cfonts;
     unsigned long  epoch;           /* pages read or drawn so far        */
+    pdf_obj_t    **oc_off;          /* optional content groups set off  */
+    int            noc_off;
+    int            oc_read;         /* the configuration has been read  */
 };
 
 /* The lexer and the objects it makes: tiku_pdf_lex.c                        */
@@ -415,6 +418,14 @@ int pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
  */
 int pdf_gfont_mask(pdf_gfont_t *g, long code, const pdf_mat_t *m,
                    pdf_mask_t *out);
+
+/* Optional content: tiku_pdf_oc.c                                          */
+
+/** @brief Whether @p oc -- a group, a membership dictionary, or NULL for
+ *         content that is no layer's -- shows. */
+int pdf_oc_visible(tiku_pdf_t *doc, pdf_obj_t *oc);
+/** @brief The property list a BDC's @p operand names in @p res, or is. */
+pdf_obj_t *pdf_oc_props(tiku_pdf_t *doc, pdf_obj_t *operand, pdf_obj_t *res);
 
 /* Fonts kept for the document: tiku_pdf_glyph.c                             */
 

@@ -38,6 +38,7 @@ typedef struct {
     tiku_pdf_t *doc;
     gstate_t    gs[STACK_MAX];
     int         sp, qfloor;         /* the top; where the stream began  */
+    int         marked, hide;       /* marked content deep; hidden from */
     mat_t       tm, tlm;
     char       *out;
     long        n, cap;
@@ -188,6 +189,17 @@ font_named(tx_t *t, pdf_obj_t *res, const char *name)
                                                          "Font"), name));
 }
 
+/** @brief The text matrix moved past glyph @p code, @p w wide. */
+static void
+advance(tx_t *t, const gstate_t *g, double w, long code, size_t step)
+{
+    double tx = (w * g->size + g->tc + ((step == 1 && code == 32) ? g->tw
+                                                                  : 0)) *
+                g->th;
+
+    t->tm = mat_mul(mat_of(1, 0, 0, 1, tx, 0), t->tm);
+}
+
 /**
  * @brief Place the glyphs of one string.
  *
@@ -208,10 +220,13 @@ show(tx_t *t, const unsigned char *s, size_t n)
         mat_t trm = mat_mul(mat_mul(mat_of(g->size * g->th, 0, 0, g->size,
                                            0, g->rise), t->tm), g->ctm);
         double size = sqrt(fabs(trm.a * trm.d - trm.b * trm.c));
-        double tx;
 
         if (size <= 0) {
             size = g->size;
+        }
+        if (t->hide) {
+            advance(t, g, w, code, step);   /* placed, but not read */
+            continue;
         }
         if (t->have_last) {
             double dy = trm.f - t->last_y, dx = trm.e - t->last_x;
@@ -245,9 +260,7 @@ show(tx_t *t, const unsigned char *s, size_t n)
                 put_char(t, g->font->uni[code]);
             }
         }
-        tx = (w * g->size + g->tc + ((step == 1 && code == 32) ? g->tw : 0)) *
-             g->th;
-        t->tm = mat_mul(mat_of(1, 0, 0, 1, tx, 0), t->tm);
+        advance(t, g, w, code, step);
         {
             mat_t end = mat_mul(t->tm, g->ctm);
 
@@ -277,7 +290,8 @@ form(tx_t *t, pdf_obj_t *res, const char *name, int depth)
     int sp = t->sp;
 
     if (xo == NULL || xo->kind != PDF_STREAM || depth >= FORM_DEPTH ||
-        !pdf_is_name(pdf_get(t->doc, xo, "Subtype"), "Form")) {
+        !pdf_is_name(pdf_get(t->doc, xo, "Subtype"), "Form") || t->hide ||
+        !pdf_oc_visible(t->doc, pdf_get(t->doc, xo, "OC"))) {
         return;
     }
     if (t->sp + 1 >= STACK_MAX) {
@@ -327,6 +341,25 @@ skip_inline_image(pdf_cur_t *c)
             (ei + 2 >= c->n || c->p[ei + 2] <= ' ')) {
             return;
         }
+    }
+}
+
+/** @brief BMC, BDC and EMC: text in a layer that is off is not read. */
+static void
+marked(tx_t *t, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res)
+{
+    if (strcmp(o, "EMC") == 0) {
+        if (t->marked > 0) {
+            t->hide = t->hide == t->marked ? 0 : t->hide;
+            t->marked--;
+        }
+        return;
+    }
+    t->marked++;
+    if (!t->hide && strcmp(o, "BDC") == 0 && n >= 2 &&
+        pdf_is_name(ops[0], "OC") &&
+        !pdf_oc_visible(t->doc, pdf_oc_props(t->doc, ops[1], res))) {
+        t->hide = t->marked;
     }
 }
 
@@ -413,6 +446,9 @@ op(tx_t *t, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
         }
     } else if (strcmp(o, "Do") == 0 && n >= 1 && ops[0]->kind == PDF_NAME) {
         form(t, res, (const char *)ops[0]->u.s.p, depth);
+    } else if (strcmp(o, "BMC") == 0 || strcmp(o, "BDC") == 0 ||
+               strcmp(o, "EMC") == 0) {
+        marked(t, o, ops, n, res);
     } else if (strcmp(o, "BI") == 0) {
         skip_inline_image(c);
     }
@@ -424,7 +460,7 @@ run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res, int depth)
 {
     pdf_cur_t c = { data, n, 0 };
     pdf_obj_t *ops[OPERANDS];
-    int nops = 0, qfloor = t->qfloor;
+    int nops = 0, qfloor = t->qfloor, mk = t->marked, hide = t->hide;
 
     t->qfloor = t->sp;              /* its Q undoes its own q, no more */
     for (;;) {
@@ -455,6 +491,8 @@ run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res, int depth)
         pdf_free(ops[--nops]);
     }
     t->qfloor = qfloor;
+    t->marked = mk;                 /* a stream's marked content is its own */
+    t->hide = hide;
 }
 
 /** @brief Run @p page's content for its text, and its characters' boxes

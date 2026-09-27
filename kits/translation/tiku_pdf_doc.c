@@ -918,6 +918,7 @@ tiku_pdf_close(tiku_pdf_t *doc)
     }
     pdf_free(doc->trailer);
     free(doc->grave);
+    free(doc->oc_off);
     free(doc->cache);
     free(doc->xref);
     free(doc->page);

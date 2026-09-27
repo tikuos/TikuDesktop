@@ -11,7 +11,7 @@
  * with a stored DEFLATE block; every byte filter against known input;
  * fonts read through their encoding and through a ToUnicode map; the
  * slips of careless writers, which once broke the reader; a fax image
- * as libtiff encodes one.  Then,
+ * as libtiff encodes one; layers on and off.  Then,
  * when TIKU_PDF_CORPUS names a folder, every PDF in it is opened and
  * its first page's text shown, which is how the vendor documents are
  * tried without being checked in.
@@ -693,6 +693,109 @@ fax_test(void)
 }
 
 /**
+ * @brief Layers: groups on and off by the default configuration, one
+ *        off only when viewed (its AS usage), membership dictionaries by
+ *        policy and by expression, and forms, an annotation and text in
+ *        a layer that is off.
+ */
+static pdfw_t
+oc_file(void)
+{
+    pdfw_t b = {0};
+    const char *draw =
+        "/OC /pA BDC 1 0 0 rg 5 35 30 30 re f EMC "
+        "/OC /pB BDC 1 0 0 rg 41 35 30 30 re f EMC "
+        "/OC /pC BDC 1 0 0 rg 77 35 30 30 re f EMC "
+        "/OC /m1 BDC 1 0 0 rg 113 35 30 30 re f EMC "
+        "/OC /m2 BDC 1 0 0 rg 149 35 30 30 re f EMC "
+        "/OC /m3 BDC 1 0 0 rg 185 35 30 30 re f EMC "
+        "/OC /m4 BDC 1 0 0 rg 221 35 30 30 re f EMC "
+        "/OC /pB BDC /Span BMC 1 0 0 rg 257 35 30 30 re f EMC EMC "
+        "0 1 0 rg 257 5 30 20 re f "
+        "q 1 0 0 1 5 0 cm /FmB Do Q q 1 0 0 1 41 0 cm /FmN Do Q "
+        "/OC /pB BDC BT /F1 10 Tf 5 80 Td (Hidden) Tj ET EMC "
+        "BT /F1 10 Tf 100 80 Td (Shown) Tj ET";
+    const char *fill_red = "1 0 0 rg 0 0 30 30 re f";
+    const char *fill_green = "0 1 0 rg 0 0 30 30 re f";
+
+    ws(&b, "%PDF-1.7\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R /OCProperties << "
+               "/OCGs [10 0 R 11 0 R 12 0 R] /D << /OFF [11 0 R] "
+               "/AS [<< /Event /View /Category [/View] /OCGs [12 0 R] >>] "
+               ">> >> >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 100] "
+               "/Contents 4 0 R /Annots [30 0 R] /Resources << /Font << "
+               "/F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> "
+               ">> /XObject << /FmB 5 0 R /FmN 6 0 R >> /Properties << "
+               "/pA 10 0 R /pB 11 0 R /pC 12 0 R /m1 20 0 R /m2 21 0 R "
+               "/m3 22 0 R /m4 23 0 R >> >> >>");
+    stream(&b, 4, "", draw, (long)strlen(draw));
+    stream(&b, 5, "/Type /XObject /Subtype /Form /BBox [0 0 30 30] "
+                  "/OC 11 0 R", fill_red, (long)strlen(fill_red));
+    stream(&b, 6, "/Type /XObject /Subtype /Form /BBox [0 0 30 30]",
+           fill_green, (long)strlen(fill_green));
+    obj(&b, 10, "<< /Type /OCG /Name (A) >>");
+    obj(&b, 11, "<< /Type /OCG /Name (B) >>");
+    obj(&b, 12, "<< /Type /OCG /Name (C) /Usage << /View << /ViewState "
+                "/OFF >> >> >>");
+    obj(&b, 20, "<< /Type /OCMD /OCGs [10 0 R 11 0 R] /P /AllOn >>");
+    obj(&b, 21, "<< /Type /OCMD /OCGs [10 0 R 11 0 R] /P /AnyOn >>");
+    obj(&b, 22, "<< /Type /OCMD /VE [/Not 11 0 R] >>");
+    obj(&b, 23, "<< /Type /OCMD /VE [/And 10 0 R 11 0 R] >>");
+    obj(&b, 30, "<< /Type /Annot /Subtype /Square /Rect [200 0 230 30] "
+                "/OC 11 0 R /AP << /N 31 0 R >> >>");
+    stream(&b, 31, "/Type /XObject /Subtype /Form /BBox [0 0 30 30]",
+           fill_red, (long)strlen(fill_red));
+    xref(&b, 1, 0);
+    return b;
+}
+
+/** @brief The layers page drawn and read: what is off is neither. */
+static void
+oc_test(void)
+{
+    static const struct { int x, y, on; const char *what; } probe[] = {
+        {20, 50, 1, "a group on shows"},
+        {56, 50, 0, "a group the configuration sets off does not"},
+        {92, 50, 0, "nor one whose usage is off when viewed"},
+        {128, 50, 0, "AllOn of an on and an off group is off"},
+        {164, 50, 1, "AnyOn of them is on"},
+        {200, 50, 1, "an expression Not of the off group is on"},
+        {236, 50, 0, "And of the on and the off group is off"},
+        {272, 50, 0, "marked content inside an off layer is off"},
+        {272, 85, 1, "and what follows its end shows again"},
+        {20, 85, 0, "a form in an off layer is not drawn"},
+        {56, 85, 1, "one in none is"},
+        {215, 85, 0, "an annotation in an off layer is not drawn"},
+    };
+    pdfw_t b = oc_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+    char *text = doc != NULL ? tiku_pdf_page_text(doc, 0) : NULL;
+    size_t i;
+
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0,
+          "a page of layers renders");
+    for (i = 0; pm.px != NULL && i < sizeof probe / sizeof probe[0]; i++) {
+        uint32_t want = probe[i].x == 272 && probe[i].y == 85 ? 0x00ff00u
+                      : probe[i].x == 56 && probe[i].y == 85 ? 0x00ff00u
+                      : 0xff0000u;
+
+        check(pixel(&pm, probe[i].x, probe[i].y) ==
+              (probe[i].on ? want : 0xffffffu), probe[i].what);
+    }
+    check(text != NULL && strstr(text, "Shown") != NULL &&
+          strstr(text, "Hidden") == NULL,
+          "text in an off layer is not read, the rest is");
+    free(text);
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
+/**
  * @brief Four pages a careless writer makes: a MediaBox of nothing; a
  *        form whose stray Q would undo its caller's clip; a Separation
  *        whose alternate is no space; an Indexed table over five
@@ -1061,6 +1164,7 @@ main(void)
     transp_test();
     nav_test();
     fax_test();
+    oc_test();
     damage_test();
     corpus_test();
     if (fails) {

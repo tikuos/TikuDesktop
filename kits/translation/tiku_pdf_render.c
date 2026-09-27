@@ -87,6 +87,7 @@ typedef struct {
     pdf_pix_t   pix;
     gs_t        gs[GS_MAX];
     int         sp, qfloor;         /* the top; where the stream began  */
+    int         marked, hide;       /* marked content deep; hidden from */
     pdf_path_t  path, tmp;
     double      ux, uy, usx, usy;   /* the current point in user space  */
     int         pending_clip;       /* after this paint: 1 nonzero, 2 eo */
@@ -986,6 +987,9 @@ paint(rs_t *r, const pdf_mask_t *m, int stroke)
     uint32_t colour = stroke ? g->stroke : g->fill;
     pdf_obj_t *pat = stroke ? g->spat : g->fpat;
 
+    if (r->hide) {
+        return;                     /* a layer that is off */
+    }
     if (r->stencil) {
         pdf_paint(&r->pix, m, clip, 0xff000000u, 1);
         return;
@@ -1011,7 +1015,7 @@ op_sh(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
                                                           "Shading"),
                                           (const char *)name->u.s.p));
 
-    if (s != NULL && !r->stencil) {
+    if (s != NULL && !r->stencil && !r->hide) {
         r->pix.blend = g->bm;
         pdf_shade_paint(&r->pix, s, &g->ctm, NULL,
                         g->clip ? &g->clip->m : NULL, g->falpha, 0);
@@ -1364,7 +1368,8 @@ op_do(rs_t *r, pdf_obj_t *name, pdf_obj_t *res, int depth)
     pdf_obj_t *xo = pdf_get(r->doc, pdf_get(r->doc, res, "XObject"),
                             (const char *)name->u.s.p);
 
-    if (xo == NULL || xo->kind != PDF_STREAM) {
+    if (xo == NULL || xo->kind != PDF_STREAM || r->hide ||
+        !pdf_oc_visible(r->doc, pdf_get(r->doc, xo, "OC"))) {
         return;
     }
     if (pdf_is_name(pdf_get(r->doc, xo, "Subtype"), "Form")) {
@@ -1489,7 +1494,9 @@ inline_image(rs_t *r, pdf_cur_t *c, pdf_obj_t *res)
             len--;
         }
     }
-    draw_image(r, d, c->p + start, len, res);
+    if (!r->hide) {
+        draw_image(r, d, c->p + start, len, res);
+    }
     pdf_free(d);
     c->pos = end < c->n ? end + 2 : c->n;
 }
@@ -1556,6 +1563,26 @@ op_state(rs_t *r, const char *o, pdf_obj_t **ops, int n)
     return 1;
 }
 
+/** @brief BMC, BDC and EMC: marked content, which hides what it holds
+ *         when it is optional content that is off. */
+static void
+op_marked(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res)
+{
+    if (!strcmp(o, "EMC")) {
+        if (r->marked > 0) {
+            r->hide = r->hide == r->marked ? 0 : r->hide;
+            r->marked--;
+        }
+        return;
+    }
+    r->marked++;
+    if (!r->hide && !strcmp(o, "BDC") && n >= 2 &&
+        pdf_is_name(ops[0], "OC") &&
+        !pdf_oc_visible(r->doc, pdf_oc_props(r->doc, ops[1], res))) {
+        r->hide = r->marked;
+    }
+}
+
 /** @brief One operator with its operands, to whichever group owns it. */
 static void
 op(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
@@ -1582,6 +1609,8 @@ op(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
         op_sh(r, ops[0], res);
     } else if (!strcmp(o, "BI")) {
         inline_image(r, c, res);
+    } else if (!strcmp(o, "BMC") || !strcmp(o, "BDC") || !strcmp(o, "EMC")) {
+        op_marked(r, o, ops, n, res);
     } else if (o[0] == 'T' || o[0] == 'B' || o[0] == 'E' || o[0] == '\'' ||
                o[0] == '"') {
         op_text(r, o, ops, n, res, depth);
@@ -1594,7 +1623,7 @@ run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res, int depth)
 {
     pdf_cur_t c = { data, n, 0 };
     pdf_obj_t *ops[OPERANDS], *outer = r->res;
-    int nops = 0, qfloor = r->qfloor;
+    int nops = 0, qfloor = r->qfloor, marked = r->marked, hide = r->hide;
 
     r->res = res;
     r->qfloor = r->sp;              /* its Q undoes its own q, no more */
@@ -1627,6 +1656,8 @@ run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res, int depth)
     }
     r->res = outer;
     r->qfloor = qfloor;
+    r->marked = marked;             /* a stream's marked content is its own */
+    r->hide = hide;
 }
 
 /* ------------------------------------------------------- annotations  */
@@ -1728,6 +1759,7 @@ annotations(rs_t *r, pdf_obj_t *page, pdf_mat_t base)
 
         if (a == NULL || a->kind != PDF_DICT || (flags & (2 | 32)) != 0 ||
             pdf_is_name(pdf_get(r->doc, a, "Subtype"), "Popup") ||
+            !pdf_oc_visible(r->doc, pdf_get(r->doc, a, "OC")) ||
             (ap = appearance(r, a)) == NULL ||
             !box_of(r, pdf_get(r->doc, a, "Rect"), rect) ||
             !appearance_matrix(r, ap, rect, &place)) {
