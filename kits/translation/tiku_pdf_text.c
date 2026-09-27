@@ -1,0 +1,443 @@
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_pdf_text.c - the words on a page, from its content stream.
+ *
+ * The text operators (ISO 32000 9.4) are followed with the transforms
+ * that place them, and nothing is drawn: each glyph's position decides
+ * whether it continues the line, starts a word, or starts a line.
+ * Forms are entered, since headings and figures often live in one.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "tiku_pdf_private.h"
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define TEXT_MAX    (1L << 20)      /* bytes of text one page may give  */
+#define STACK_MAX   32              /* q nesting                        */
+#define OPERANDS    32
+#define FORM_DEPTH  8
+#define FONTS_MAX   64              /* per page, with its forms         */
+
+typedef struct { double a, b, c, d, e, f; } mat_t;
+
+/** @brief The graphics and text state the operators move. */
+typedef struct {
+    mat_t  ctm;
+    double size, tc, tw, th, tl, rise;
+    pdf_tfont_t *font;
+} gstate_t;
+
+/** @brief One font loaded for this page, by the name its resources use. */
+typedef struct {
+    pdf_obj_t   *dict;
+    pdf_tfont_t *font;
+} fontref_t;
+
+typedef struct {
+    tiku_pdf_t *doc;
+    gstate_t    gs[STACK_MAX];
+    int         sp;
+    mat_t       tm, tlm;
+    char       *out;
+    long        n, cap;
+    int         have_last;          /* a glyph has been placed           */
+    double      last_x, last_y, last_size;
+    int         last_space;
+    fontref_t   fonts[FONTS_MAX];
+    int         nfont;
+    int         failed;
+} tx_t;
+
+static void run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res,
+                int depth);
+
+/** @brief @p m then @p n, as PDF composes them: row vectors, m first. */
+static mat_t
+mat_mul(mat_t m, mat_t n)
+{
+    mat_t r;
+
+    r.a = m.a * n.a + m.b * n.c;
+    r.b = m.a * n.b + m.b * n.d;
+    r.c = m.c * n.a + m.d * n.c;
+    r.d = m.c * n.b + m.d * n.d;
+    r.e = m.e * n.a + m.f * n.c + n.e;
+    r.f = m.e * n.b + m.f * n.d + n.f;
+    return r;
+}
+
+/** @brief A matrix from its six numbers. */
+static mat_t
+mat_of(double a, double b, double c, double d, double e, double f)
+{
+    mat_t m = {a, b, c, d, e, f};
+
+    return m;
+}
+
+/** @brief Append one code point as UTF-8. */
+static void
+put_char(tx_t *t, uint32_t cp)
+{
+    char b[4];
+    int n;
+
+    if (cp == 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp < 0xE000)) {
+        return;
+    }
+    if (cp < 0x80) {
+        b[0] = (char)cp;
+        n = 1;
+    } else if (cp < 0x800) {
+        b[0] = (char)(0xC0 | (cp >> 6));
+        b[1] = (char)(0x80 | (cp & 0x3F));
+        n = 2;
+    } else if (cp < 0x10000) {
+        b[0] = (char)(0xE0 | (cp >> 12));
+        b[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        b[2] = (char)(0x80 | (cp & 0x3F));
+        n = 3;
+    } else {
+        b[0] = (char)(0xF0 | (cp >> 18));
+        b[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+        b[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        b[3] = (char)(0x80 | (cp & 0x3F));
+        n = 4;
+    }
+    if (t->n + n + 1 > t->cap) {
+        long cap = t->cap ? t->cap * 2 : 4096;
+        char *p;
+
+        if (t->cap >= TEXT_MAX) {
+            t->failed = 1;
+            return;
+        }
+        p = realloc(t->out, (size_t)cap);
+        if (p == NULL) {
+            t->failed = 1;
+            return;
+        }
+        t->out = p;
+        t->cap = cap;
+    }
+    memcpy(t->out + t->n, b, (size_t)n);
+    t->n += n;
+    t->out[t->n] = '\0';
+    t->last_space = cp == ' ' || cp == '\n';
+}
+
+/** @brief The font named @p name in @p res, loaded once per page. */
+static pdf_tfont_t *
+font_named(tx_t *t, pdf_obj_t *res, const char *name)
+{
+    pdf_obj_t *fonts = pdf_get(t->doc, res, "Font");
+    pdf_obj_t *dict = pdf_get(t->doc, fonts, name);
+    int i;
+
+    if (dict == NULL || dict->kind != PDF_DICT) {
+        return NULL;
+    }
+    for (i = 0; i < t->nfont; i++) {
+        if (t->fonts[i].dict == dict) {
+            return t->fonts[i].font;
+        }
+    }
+    if (t->nfont == FONTS_MAX) {
+        return NULL;
+    }
+    t->fonts[t->nfont].dict = dict;
+    t->fonts[t->nfont].font = pdf_tfont_load(t->doc, dict);
+    return t->fonts[t->nfont++].font;
+}
+
+/**
+ * @brief Place the glyphs of one string.
+ *
+ * Where the first glyph lands, against where the last one ended, says
+ * whether a space or a line break comes first; a page written out of
+ * order still reads as its stream wrote it.
+ */
+static void
+show(tx_t *t, const unsigned char *s, size_t n)
+{
+    gstate_t *g = &t->gs[t->sp];
+    size_t i, step = (g->font != NULL && g->font->two_byte) ? 2 : 1;
+
+    for (i = 0; i + step <= n; i += step) {
+        long code = step == 2 ? ((long)s[i] << 8) | s[i + 1] : s[i];
+        double w = g->font != NULL && g->font->width[code] >= 0
+                   ? g->font->width[code] : g->font ? g->font->missing : 0.5;
+        mat_t trm = mat_mul(mat_mul(mat_of(g->size * g->th, 0, 0, g->size,
+                                           0, g->rise), t->tm), g->ctm);
+        double size = sqrt(fabs(trm.a * trm.d - trm.b * trm.c));
+        double tx;
+
+        if (size <= 0) {
+            size = g->size;
+        }
+        if (t->have_last) {
+            double dy = trm.f - t->last_y, dx = trm.e - t->last_x;
+            double ref = size > t->last_size ? t->last_size : size;
+
+            if (fabs(dy) > 0.5 * ref || dx < -1.5 * ref) {
+                if (!t->last_space) {
+                    put_char(t, '\n');
+                }
+            } else if (dx > 0.18 * ref && !t->last_space) {
+                put_char(t, ' ');
+            }
+        }
+        if (g->font != NULL) {
+            put_char(t, g->font->uni[code]);
+            if (g->font->uni2[code]) {
+                put_char(t, g->font->uni2[code]);
+            }
+        }
+        tx = (w * g->size + g->tc + ((step == 1 && code == 32) ? g->tw : 0)) *
+             g->th;
+        t->tm = mat_mul(mat_of(1, 0, 0, 1, tx, 0), t->tm);
+        {
+            mat_t end = mat_mul(t->tm, g->ctm);
+
+            t->last_x = end.e;
+            t->last_y = trm.f;
+            t->last_size = size;
+            t->have_last = 1;
+        }
+    }
+}
+
+/** @brief Operand @p i of @p n as a number. */
+static double
+num(pdf_obj_t **ops, int n, int i, double dflt)
+{
+    return i < n ? pdf_number(ops[i], dflt) : dflt;
+}
+
+/** @brief A form XObject: its own resources and matrix, then its bytes. */
+static void
+form(tx_t *t, pdf_obj_t *res, const char *name, int depth)
+{
+    pdf_obj_t *xo = pdf_get(t->doc, pdf_get(t->doc, res, "XObject"), name);
+    pdf_obj_t *m, *fres;
+    unsigned char *data = NULL;
+    long n = 0;
+
+    if (xo == NULL || xo->kind != PDF_STREAM || depth >= FORM_DEPTH ||
+        !pdf_is_name(pdf_get(t->doc, xo, "Subtype"), "Form")) {
+        return;
+    }
+    if (t->sp + 1 >= STACK_MAX) {
+        return;
+    }
+    t->gs[t->sp + 1] = t->gs[t->sp];
+    t->sp++;
+    m = pdf_get(t->doc, xo, "Matrix");
+    if (m != NULL && m->kind == PDF_ARRAY && m->u.a.n == 6) {
+        mat_t fm = mat_of(pdf_number(pdf_resolve(t->doc, m->u.a.item[0]), 1),
+                          pdf_number(pdf_resolve(t->doc, m->u.a.item[1]), 0),
+                          pdf_number(pdf_resolve(t->doc, m->u.a.item[2]), 0),
+                          pdf_number(pdf_resolve(t->doc, m->u.a.item[3]), 1),
+                          pdf_number(pdf_resolve(t->doc, m->u.a.item[4]), 0),
+                          pdf_number(pdf_resolve(t->doc, m->u.a.item[5]), 0));
+
+        t->gs[t->sp].ctm = mat_mul(fm, t->gs[t->sp].ctm);
+    }
+    fres = pdf_get(t->doc, xo, "Resources");
+    if (pdf_stream_data(t->doc, xo, &data, &n, NULL) == 0) {
+        run(t, data, n, fres != NULL ? fres : res, depth + 1);
+        free(data);
+    }
+    t->sp--;
+}
+
+/** @brief Past an inline image: BI ... ID <bytes> EI. */
+static void
+skip_inline_image(pdf_cur_t *c)
+{
+    long id = pdf_find(c->p, c->n, c->pos, "ID");
+
+    if (id < 0) {
+        c->pos = c->n;
+        return;
+    }
+    c->pos = id + 3;
+    while (c->pos < c->n) {
+        long ei = pdf_find(c->p, c->n, c->pos, "EI");
+
+        if (ei < 0) {
+            c->pos = c->n;
+            return;
+        }
+        c->pos = ei + 2;
+        if ((ei == 0 || c->p[ei - 1] <= ' ') &&
+            (ei + 2 >= c->n || c->p[ei + 2] <= ' ')) {
+            return;
+        }
+    }
+}
+
+/** @brief One operator with its operands. */
+static void
+op(tx_t *t, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
+   pdf_cur_t *c, int depth)
+{
+    gstate_t *g = &t->gs[t->sp];
+
+    if (strcmp(o, "q") == 0) {
+        if (t->sp + 1 < STACK_MAX) {
+            t->gs[t->sp + 1] = *g;
+            t->sp++;
+        }
+    } else if (strcmp(o, "Q") == 0) {
+        if (t->sp > 0) {
+            t->sp--;
+        }
+    } else if (strcmp(o, "cm") == 0 && n >= 6) {
+        g->ctm = mat_mul(mat_of(num(ops, n, 0, 1), num(ops, n, 1, 0),
+                                num(ops, n, 2, 0), num(ops, n, 3, 1),
+                                num(ops, n, 4, 0), num(ops, n, 5, 0)), g->ctm);
+    } else if (strcmp(o, "BT") == 0) {
+        t->tm = t->tlm = mat_of(1, 0, 0, 1, 0, 0);
+    } else if (strcmp(o, "Tf") == 0 && n >= 2) {
+        if (ops[0]->kind == PDF_NAME) {
+            g->font = font_named(t, res, (const char *)ops[0]->u.s.p);
+        }
+        g->size = num(ops, n, 1, 1);
+    } else if (strcmp(o, "Td") == 0 && n >= 2) {
+        t->tlm = mat_mul(mat_of(1, 0, 0, 1, num(ops, n, 0, 0),
+                                num(ops, n, 1, 0)), t->tlm);
+        t->tm = t->tlm;
+    } else if (strcmp(o, "TD") == 0 && n >= 2) {
+        g->tl = -num(ops, n, 1, 0);
+        t->tlm = mat_mul(mat_of(1, 0, 0, 1, num(ops, n, 0, 0),
+                                num(ops, n, 1, 0)), t->tlm);
+        t->tm = t->tlm;
+    } else if (strcmp(o, "Tm") == 0 && n >= 6) {
+        t->tm = t->tlm = mat_of(num(ops, n, 0, 1), num(ops, n, 1, 0),
+                                num(ops, n, 2, 0), num(ops, n, 3, 1),
+                                num(ops, n, 4, 0), num(ops, n, 5, 0));
+    } else if (strcmp(o, "T*") == 0) {
+        t->tlm = mat_mul(mat_of(1, 0, 0, 1, 0, -g->tl), t->tlm);
+        t->tm = t->tlm;
+    } else if (strcmp(o, "TL") == 0) {
+        g->tl = num(ops, n, 0, 0);
+    } else if (strcmp(o, "Tc") == 0) {
+        g->tc = num(ops, n, 0, 0);
+    } else if (strcmp(o, "Tw") == 0) {
+        g->tw = num(ops, n, 0, 0);
+    } else if (strcmp(o, "Tz") == 0) {
+        g->th = num(ops, n, 0, 100) / 100.0;
+    } else if (strcmp(o, "Ts") == 0) {
+        g->rise = num(ops, n, 0, 0);
+    } else if (strcmp(o, "Tj") == 0 && n >= 1 && ops[0]->kind == PDF_STRING) {
+        show(t, ops[0]->u.s.p, ops[0]->u.s.n);
+    } else if ((strcmp(o, "'") == 0 || strcmp(o, "\"") == 0) && n >= 1) {
+        pdf_obj_t *s = ops[n - 1];
+
+        if (o[0] == '"' && n >= 3) {
+            g->tw = num(ops, n, 0, g->tw);
+            g->tc = num(ops, n, 1, g->tc);
+        }
+        t->tlm = mat_mul(mat_of(1, 0, 0, 1, 0, -g->tl), t->tlm);
+        t->tm = t->tlm;
+        if (s->kind == PDF_STRING) {
+            show(t, s->u.s.p, s->u.s.n);
+        }
+    } else if (strcmp(o, "TJ") == 0 && n >= 1 && ops[0]->kind == PDF_ARRAY) {
+        int i;
+
+        for (i = 0; i < ops[0]->u.a.n; i++) {
+            pdf_obj_t *e = ops[0]->u.a.item[i];
+
+            if (e->kind == PDF_STRING) {
+                show(t, e->u.s.p, e->u.s.n);
+            } else if (e->kind == PDF_INT || e->kind == PDF_REAL) {
+                double tx = -pdf_number(e, 0) / 1000.0 * g->size * g->th;
+
+                t->tm = mat_mul(mat_of(1, 0, 0, 1, tx, 0), t->tm);
+            }
+        }
+    } else if (strcmp(o, "Do") == 0 && n >= 1 && ops[0]->kind == PDF_NAME) {
+        form(t, res, (const char *)ops[0]->u.s.p, depth);
+    } else if (strcmp(o, "BI") == 0) {
+        skip_inline_image(c);
+    }
+}
+
+/** @brief Every operator of @p data, in order. */
+static void
+run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res, int depth)
+{
+    pdf_cur_t c = { data, n, 0 };
+    pdf_obj_t *ops[OPERANDS];
+    int nops = 0;
+
+    for (;;) {
+        pdf_obj_t *o = pdf_parse(&c, 0);
+        int i;
+
+        if (o == NULL || t->failed) {
+            pdf_free(o);
+            break;
+        }
+        if (o->kind != PDF_OP) {
+            if (nops == OPERANDS) {
+                pdf_free(ops[0]);
+                memmove(ops, ops + 1, (size_t)(OPERANDS - 1) * sizeof ops[0]);
+                nops--;
+            }
+            ops[nops++] = o;
+            continue;
+        }
+        op(t, (const char *)o->u.s.p, ops, nops, res, &c, depth);
+        pdf_free(o);
+        for (i = 0; i < nops; i++) {
+            pdf_free(ops[i]);
+        }
+        nops = 0;
+    }
+    while (nops > 0) {
+        pdf_free(ops[--nops]);
+    }
+}
+
+char *
+tiku_pdf_page_text(tiku_pdf_t *doc, int page)
+{
+    pdf_obj_t *p = pdf_page_dict(doc, page);
+    unsigned char *data = NULL;
+    long n = 0;
+    tx_t *t;
+    char *out;
+    int i;
+
+    if (p == NULL || pdf_page_content(doc, p, &data, &n) != 0) {
+        return NULL;
+    }
+    t = calloc(1, sizeof *t);
+    if (t == NULL) {
+        free(data);
+        return NULL;
+    }
+    t->doc = doc;
+    t->gs[0].ctm = mat_of(1, 0, 0, 1, 0, 0);
+    t->gs[0].th = 1;
+    t->tm = t->tlm = t->gs[0].ctm;
+    run(t, data, n, pdf_page_inherited(doc, p, "Resources"), 0);
+    free(data);
+    for (i = 0; i < t->nfont; i++) {
+        pdf_tfont_free(t->fonts[i].font);
+    }
+    out = t->out != NULL ? t->out : calloc(1, 1);
+    free(t);
+    return out;
+}

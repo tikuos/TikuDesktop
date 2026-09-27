@@ -11,6 +11,7 @@
 
 #include "tiku_inflate.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define MAXBITS   15                /* longest Huffman code               */
@@ -29,8 +30,41 @@ typedef struct {
     unsigned char       *out;
     long                 omax;
     long                 owr;
+    long                 olimit;    /* growable: the most out may become */
+    int                  growable;
     int                  bad;
 } state_t;
+
+/**
+ * @brief Make room for @p need more bytes of output.
+ *
+ * A fixed buffer is what it is; a growable one doubles, up to its
+ * limit.  @return 1 when the bytes fit.
+ */
+static int
+room(state_t *s, long need)
+{
+    long want = s->owr + need, cap;
+    unsigned char *p;
+
+    if (want <= s->omax) {
+        return 1;
+    }
+    if (!s->growable || want > s->olimit) {
+        return 0;
+    }
+    cap = s->omax * 2 > want ? s->omax * 2 : want;
+    if (cap > s->olimit) {
+        cap = s->olimit;
+    }
+    p = realloc(s->out, (size_t)cap);
+    if (p == NULL) {
+        return 0;
+    }
+    s->out = p;
+    s->omax = cap;
+    return 1;
+}
 
 /**
  * @brief A canonical Huffman table: how many codes of each length, and the
@@ -168,7 +202,7 @@ codes(state_t *s, const huff_t *lencode, const huff_t *distcode)
             return -1;
         }
         if (symbol < 256) {
-            if (s->owr >= s->omax) {
+            if (!room(s, 1)) {
                 return -1;
             }
             s->out[s->owr++] = (unsigned char)symbol;
@@ -197,7 +231,7 @@ codes(state_t *s, const huff_t *lencode, const huff_t *distcode)
             /* The window is the output written so far, so a distance
              * reaching before the start is the check that stops a crafted
              * stream reading memory it does not own. */
-            if (dist > s->owr || s->owr + len > s->omax) {
+            if (dist > s->owr || !room(s, len)) {
                 return -1;
             }
             while (len-- > 0) {
@@ -341,7 +375,7 @@ stored_block(state_t *s)
         return -1;                  /* the length disagrees with its NOT */
     }
     s->pos += 4;
-    if (s->pos + len > s->slen || s->owr + len > s->omax) {
+    if (s->pos + len > s->slen || !room(s, len)) {
         return -1;
     }
     memcpy(s->out + s->owr, s->src + s->pos, (size_t)len);
@@ -350,12 +384,39 @@ stored_block(state_t *s)
     return 0;
 }
 
+/** @brief Every block to the last.  @return 0, or -1 where it broke. */
+static int
+blocks(state_t *s)
+{
+    int last;
+
+    do {
+        long final = bits(s, 1);
+        long type = bits(s, 2);
+        int err;
+
+        if (final < 0 || type < 0) {
+            return -1;
+        }
+        last = (int)final;
+        switch (type) {
+        case 0:  err = stored_block(s);  break;
+        case 1:  err = fixed_block(s);   break;
+        case 2:  err = dynamic_block(s); break;
+        default: return -1;         /* type 3 is reserved */
+        }
+        if (err != 0 || s->bad) {
+            return -1;
+        }
+    } while (!last);
+    return 0;
+}
+
 long
 tiku_inflate(const unsigned char *src, long slen, unsigned char *out,
                  long omax)
 {
     state_t s;
-    int last;
 
     if (src == NULL || out == NULL || slen < 0 || omax < 0) {
         return -1;
@@ -365,25 +426,55 @@ tiku_inflate(const unsigned char *src, long slen, unsigned char *out,
     s.slen = slen;
     s.out = out;
     s.omax = omax;
-    do {
-        long final = bits(&s, 1);
-        long type = bits(&s, 2);
-        int err;
+    return blocks(&s) == 0 ? s.owr : -1;
+}
 
-        if (final < 0 || type < 0) {
-            return -1;
+/** @brief Whether @p src opens with a zlib header (RFC 1950). */
+static int
+zlib_header(const unsigned char *src, long slen)
+{
+    return slen >= 2 && (src[0] & 0x0fu) == 8u && (src[1] & 0x20u) == 0u &&
+           (((unsigned)src[0] << 8) | src[1]) % 31u == 0u;
+}
+
+long
+tiku_inflate_alloc(const unsigned char *src, long slen, unsigned char **out,
+                   long omax, int zlib)
+{
+    state_t s;
+    long first;
+
+    if (src == NULL || out == NULL || slen < 0 || omax <= 0) {
+        return -1;
+    }
+    memset(&s, 0, sizeof s);
+    s.src = src;
+    s.slen = slen;
+    if (zlib) {
+        /* A PDF sometimes carries raw DEFLATE under the Flate name; the
+         * header says which, and a missing one is not fatal. */
+        if (zlib_header(src, slen)) {
+            s.src += 2;
+            s.slen -= 2;
         }
-        last = (int)final;
-        switch (type) {
-        case 0:  err = stored_block(&s);  break;
-        case 1:  err = fixed_block(&s);   break;
-        case 2:  err = dynamic_block(&s); break;
-        default: return -1;         /* type 3 is reserved */
-        }
-        if (err != 0 || s.bad) {
-            return -1;
-        }
-    } while (!last);
+    }
+    first = slen * 4 + 64;
+    if (first > omax) {
+        first = omax;
+    }
+    s.out = malloc((size_t)first);
+    if (s.out == NULL) {
+        return -1;
+    }
+    s.omax = first;
+    s.olimit = omax;
+    s.growable = 1;
+    (void)blocks(&s);
+    if (s.owr <= 0) {
+        free(s.out);
+        return -1;
+    }
+    *out = s.out;
     return s.owr;
 }
 

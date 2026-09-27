@@ -39,4 +39,17 @@ long tiku_inflate(const unsigned char *src, long slen,
 long tiku_inflate_zlib(const unsigned char *src, long slen,
                            unsigned char *out, long omax);
 
+/**
+ * @brief Inflate into memory this allocates, zlib-wrapped or raw.
+ *
+ * For a stream whose size nobody stated, as a PDF's are.  A stream cut
+ * short or corrupt past some point gives its head, because a page whose
+ * last word is missing still reads; nothing at all is -1.
+ * @param omax  The most @p out may grow to.
+ * @return Bytes written to @p out, which the caller frees; -1 with @p out
+ *         untouched when nothing could be inflated.
+ */
+long tiku_inflate_alloc(const unsigned char *src, long slen,
+                        unsigned char **out, long omax, int zlib);
+
 #endif /* TIKU_INFLATE_H_ */

@@ -100,7 +100,12 @@ TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
                $(K)/translation/tiku_icons.c \
                $(K)/translation/tiku_icons_tiku.c \
-               $(K)/translation/tiku_fontdir.c
+               $(K)/translation/tiku_fontdir.c \
+               $(K)/translation/tiku_pdf_lex.c $(K)/translation/tiku_pdf_doc.c \
+               $(K)/translation/tiku_pdf_filter.c \
+               $(K)/translation/tiku_pdf_page.c \
+               $(K)/translation/tiku_pdf_font.c \
+               $(K)/translation/tiku_pdf_text.c
 # The card, like the machine underneath, is one file per host: the
 # PulseAudio simple API where there is a sound daemon, CoreAudio's audio
 # queue where there is a Mac.  Neither is compiled on the other's host,
