@@ -394,16 +394,45 @@ pdf_path_fill(const pdf_path_t *p, int evenodd, int x0, int y0, int w, int h)
 
 /* ------------------------------------------------------------- stroking  */
 
-/** @brief A closed quadrilateral, wound one way, as a subpath of @p out. */
+/**
+ * @brief Polygon @p pt of @p n points as a closed subpath of @p out,
+ *        always wound the same way round.
+ *
+ * A stroke is its pieces, caps and joins filled together by the nonzero
+ * rule: where two wound opposite ways overlap they cancel, and a round
+ * join or cap shows a hole where it meets the line it rounds.
+ */
+static void
+wound(pdf_path_t *out, const double *pt, int n)
+{
+    double area = 0;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+
+        area += pt[2 * i] * pt[2 * j + 1] - pt[2 * j] * pt[2 * i + 1];
+    }
+    for (i = 0; i < n; i++) {
+        int k = area > 0 ? n - 1 - i : i;   /* the other way: reversed */
+
+        if (i == 0) {
+            pdf_path_moveto(out, pt[2 * k], pt[2 * k + 1]);
+        } else {
+            pdf_path_lineto(out, pt[2 * k], pt[2 * k + 1]);
+        }
+    }
+    pdf_path_close(out);
+}
+
+/** @brief A closed quadrilateral, as a subpath of @p out. */
 static void
 quad(pdf_path_t *out, double ax, double ay, double bx, double by,
      double cx, double cy, double dx, double dy)
 {
-    pdf_path_moveto(out, ax, ay);
-    pdf_path_lineto(out, bx, by);
-    pdf_path_lineto(out, cx, cy);
-    pdf_path_lineto(out, dx, dy);
-    pdf_path_close(out);
+    double pt[8] = {ax, ay, bx, by, cx, cy, dx, dy};
+
+    wound(out, pt, 4);
 }
 
 /** @brief A filled circle of radius @p r at (x, y), as a polygon. */
@@ -411,17 +440,13 @@ static void
 disc(pdf_path_t *out, double x, double y, double r)
 {
     int n = r < 2 ? 8 : r < 6 ? 12 : 24, i;
+    double pt[48];
 
     for (i = 0; i < n; i++) {
-        double t = 2 * M_PI * i / n;
-
-        if (i == 0) {
-            pdf_path_moveto(out, x + r * cos(t), y + r * sin(t));
-        } else {
-            pdf_path_lineto(out, x + r * cos(t), y + r * sin(t));
-        }
+        pt[2 * i] = x + r * cos(2 * M_PI * i / n);
+        pt[2 * i + 1] = y + r * sin(2 * M_PI * i / n);
     }
-    pdf_path_close(out);
+    wound(out, pt, n);
 }
 
 /** @brief One straight piece, its body and a cap at each end asked for. */
@@ -493,20 +518,16 @@ joint(pdf_path_t *out, double ax, double ay, double bx, double by,
             double ml = hypot(mx, my), want = hw / cos(theta / 2);
 
             if (ml > 0) {
-                mx = bx + mx / ml * want;
-                my = by + my / ml * want;
-                pdf_path_moveto(out, bx, by);
-                pdf_path_lineto(out, p1x, p1y);
-                pdf_path_lineto(out, mx, my);
-                pdf_path_lineto(out, p2x, p2y);
-                pdf_path_close(out);
+                quad(out, bx, by, p1x, p1y, bx + mx / ml * want,
+                     by + my / ml * want, p2x, p2y);
                 return;
             }
         }
-        pdf_path_moveto(out, bx, by);
-        pdf_path_lineto(out, p1x, p1y);
-        pdf_path_lineto(out, p2x, p2y);
-        pdf_path_close(out);
+        {
+            double pt[6] = {bx, by, p1x, p1y, p2x, p2y};
+
+            wound(out, pt, 3);
+        }
     }
 }
 
