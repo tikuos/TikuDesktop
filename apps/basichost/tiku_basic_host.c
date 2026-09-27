@@ -127,13 +127,13 @@ tiku_tier_init(void)
 
 tiku_mem_err_t
 tiku_mem_arena_create(tiku_arena_t *arena, tiku_mem_arch_size_t size,
-                      uint8_t id, const tiku_mem_request_t *request)
+                      const tiku_mem_request_t *options)
 {
     void *buf;
-    size_t alignment = request ? request->alignment : 0;
+    size_t alignment = options ? options->alignment : 0;
 
     if (arena == NULL || size == 0 ||
-        (request && (request->flags & ~TIKU_MEM_ALLOW_EXTERNAL)) ||
+        (options && (options->flags & ~TIKU_MEM_ALLOW_EXTERNAL)) ||
         (alignment && (alignment & (alignment - 1)))) {
         return TIKU_MEM_ERR_INVALID;
     }
@@ -142,7 +142,6 @@ tiku_mem_arena_create(tiku_arena_t *arena, tiku_mem_arch_size_t size,
     memset(arena, 0, sizeof *arena);
     arena->buf = buf;
     arena->capacity = size;
-    arena->id = id;
     arena->active = 1;
     arena->tier = TIKU_MEM_SRAM;
     return TIKU_MEM_OK;
