@@ -149,6 +149,7 @@ static const char *pv_tool(int id)
 {
     switch (id) {
     case PV_OUTLINE: return "Outline";
+    case PV_THUMBS: return "Pages";
     case PV_PREV: return "<";
     case PV_NEXT: return ">";
     case PV_ZOOM_OUT: return "-";
@@ -161,13 +162,22 @@ static const char *pv_tool(int id)
     return "";
 }
 
+/** @brief The find field's width at @p x: 170, or what the row has left
+ *         beside its two buttons when that is less but holds a word. */
+static int pv_find_w(tiku_rect_t r, int x)
+{
+    int room = r.x + r.w - 6 - x - 2 * (tiku_ui_button_w(">", 26) + 4);
+
+    return room < 170 && room >= 110 ? room : 170;
+}
+
 /** @brief The toolbar's controls, wrapped when narrow; @return the row
  *         below them. */
 static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
 {
-    static const int ids[] = { PV_OUTLINE, PV_PREV, PV_PAGE_FIELD, PV_NEXT,
-        PV_ZOOM_OUT, PV_ZOOM_IN, PV_FIT_WIDTH, PV_FIT_PAGE, PV_FIND_FIELD,
-        PV_FIND_PREV, PV_FIND_NEXT };
+    static const int ids[] = { PV_OUTLINE, PV_THUMBS, PV_PREV, PV_PAGE_FIELD,
+        PV_NEXT, PV_ZOOM_OUT, PV_ZOOM_IN, PV_FIT_WIDTH, PV_FIT_PAGE,
+        PV_FIND_FIELD, PV_FIND_PREV, PV_FIND_NEXT };
     int bh = tiku_ui_button_h(), x = r.x + 6, y = r.y + 5;
     char of[32];
 
@@ -176,8 +186,8 @@ static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
         int id = ids[i], w = tiku_ui_button_w(pv_tool(id), 26), gap = 4;
         if (id == PV_PAGE_FIELD) w = 46 + 6 + tiku_measure_width(
                                      TIKU_MEASURE_PLAIN, of);
-        if (id == PV_FIND_FIELD) w = 170;
         if (id == PV_ZOOM_OUT || id == PV_FIND_FIELD) x += 10;
+        if (id == PV_FIND_FIELD) w = pv_find_w(r, x);
         if (x > r.x + 6 && x + w > r.x + r.w - 6) {
             x = r.x + 6;
             y += bh + 5;
@@ -215,7 +225,8 @@ static pv_layout_t pv_layout(tiku_pdfview_t *c, tiku_rect_t r)
     l.status = (tiku_rect_t){r.x + 8, r.y + r.h - fh - 3, r.w - 16, fh};
     tiku_rect_t body = {r.x + 4, below, r.w - 8, l.status.y - 3 - below};
     if (body.h < 1) body.h = 1;
-    if (c->side && c->noutline > 0 && body.w >= 2 * PV_SIDE_W) {
+    if (c->side && (c->thumbs ? c->npage : c->noutline) > 0 &&
+        body.w >= 2 * PV_SIDE_W) {
         l.side = (tiku_rect_t){body.x, body.y, PV_SIDE_W, body.h};
         body.x += PV_SIDE_W + 4;
         body.w -= PV_SIDE_W + 4;
@@ -382,6 +393,109 @@ static void pv_compose(tiku_pdfview_t *c, tiku_rect_t canvas)
         (void)pv_request(c, first - 1);
 }
 
+/* --------------------------------------------------------- thumbnails  */
+
+/** @brief One thumbnail's row: its box, its number, a gap. */
+static int pv_thumb_row(void)
+{
+    return PV_THUMB_H + tiku_measure_row_h() + 10;
+}
+
+/** @brief Thumbnail @p p in its row of column @p r, asked for when not
+ *         drawn yet; @p here marks the page in view. */
+static void pv_thumb_draw(tiku_pdfview_t *c, tiku_surface_t *s,
+                          tiku_rect_t r, int p, int here)
+{
+    pv_tile_t *t = pv_thumb(c, p);
+    int drawn = t && t->px;
+    double sc = pv_thumb_scale(c, p);
+    int w = drawn ? t->w : (int)(c->pw[p] * sc + 0.5);
+    int h = drawn ? t->h : (int)(c->ph[p] * sc + 0.5);
+    int top = r.y + p * pv_thumb_row() - c->thumb_top + 6;
+    int x = r.x + (r.w - w) / 2, y = top + (PV_THUMB_H - h) / 2;
+    char num[16];
+
+    if (here)
+        tiku_fill(s, (tiku_rect_t){x - 4, y - 4, w + 8, h + 8},
+                  TIKU_C_SELECT);
+    if (drawn) {
+        t->used = c->frame;
+        tiku_picture(s, x, y, w, h, t->px);
+    } else {
+        tiku_fill(s, (tiku_rect_t){x, y, w, h}, 0xffffffu);
+    }
+    tiku_frame(s, (tiku_rect_t){x - 1, y - 1, w + 2, h + 2},
+               tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
+    snprintf(num, sizeof num, "%d", p + 1);
+    w = tiku_measure_width(TIKU_MEASURE_PLAIN, num) + 2;
+    tiku_text_line_draw(s, (tiku_rect_t){r.x + (r.w - w) / 2,
+                        top + PV_THUMB_H + 4, w, tiku_measure_row_h()},
+                        TIKU_MEASURE_PLAIN, num, TIKU_C_TEXT);
+    if (!t) (void)pv_thumb_request(c, p);
+}
+
+/**
+ * @brief The side column as the pages drawn small, the one the view is on
+ *        marked.  It follows the view to a new page and is otherwise left
+ *        where it was scrolled.
+ */
+static void pv_thumbs_draw(tiku_pdfview_t *c, tiku_surface_t *s,
+                           tiku_rect_t r)
+{
+    tiku_rect_t clip = s->clip;
+    int rh = pv_thumb_row(), cur = pv_current(c);
+    long most = (long)c->npage * rh - r.h;
+
+    tiku_ui_sunken(s, r, TIKU_C_DOC);
+    if (cur != c->thumb_seen) {
+        if ((long)cur * rh < c->thumb_top) c->thumb_top = cur * rh;
+        if ((long)(cur + 1) * rh > c->thumb_top + r.h)
+            c->thumb_top = (cur + 1) * rh - r.h;
+        c->thumb_seen = cur;
+    }
+    if (c->thumb_top > most) c->thumb_top = (int)most;
+    if (c->thumb_top < 0) c->thumb_top = 0;
+    tiku_clip_set(s, r);
+    for (int p = c->thumb_top / rh; p < c->npage &&
+                                    (long)p * rh < c->thumb_top + r.h; p++)
+        pv_thumb_draw(c, s, r, p, p == cur);
+    s->clip = clip;
+}
+
+/** @brief The wheel scrolls the thumbnails; a click goes to its page. */
+static int pv_thumbs_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
+                             const pv_layout_t *l)
+{
+    int rh = pv_thumb_row(), p;
+
+    if (ev->type == TIKU_EVENT_WHEEL) {
+        c->thumb_top += ev->dy * rh / 2;
+        pv_changed(c);
+        return 1;
+    }
+    if (ev->type != TIKU_EVENT_POINTER_DOWN || ev->button != 1) return 1;
+    p = (ev->y - l->side.y + c->thumb_top) / rh;
+    if (p >= 0 && p < c->npage) pv_go(c, p, 0, 1);
+    pv_changed(c);
+    return 1;
+}
+
+/** @brief Keys for the thumbnails: up and down go a page, Home and End
+ *         to the ends. */
+static int pv_thumbs_key(tiku_pdfview_t *c, const tiku_event_t *ev)
+{
+    int p = pv_current(c);
+
+    if (ev->key == TIKU_KEY_UP && p > 0) pv_go(c, p - 1, 0, 0);
+    else if (ev->key == TIKU_KEY_DOWN && p + 1 < c->npage)
+        pv_go(c, p + 1, 0, 0);
+    else if (ev->key == TIKU_KEY_HOME) pv_go(c, 0, 0, 0);
+    else if (ev->key == TIKU_KEY_END) pv_go(c, c->npage - 1, 0, 0);
+    else return 0;
+    pv_changed(c);
+    return 1;
+}
+
 /* -------------------------------------------------------------- paint  */
 
 /** @brief A toolbar button, held down while its mode is on. */
@@ -389,7 +503,8 @@ static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
                       const tiku_dialog_control_t *d)
 {
     unsigned flags = d->enabled ? 0 : TIKU_S_DISABLED;
-    int on = (d->id == PV_OUTLINE && c->side && c->noutline) ||
+    int on = (d->id == PV_OUTLINE && c->side && !c->thumbs &&
+              c->noutline) || (d->id == PV_THUMBS && c->side && c->thumbs) ||
              (d->id == PV_FIT_WIDTH && c->fit == PV_BY_WIDTH) ||
              (d->id == PV_FIT_PAGE && c->fit == PV_BY_PAGE);
 

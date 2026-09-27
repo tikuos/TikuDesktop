@@ -343,6 +343,81 @@ static void field_tests(tiku_pdfview_t *c)
     tiku_dialog_focus(&c->dialog, PV_CANVAS);
 }
 
+/** @brief A key pressed in the viewer. */
+static void press(tiku_pdfview_t *c, int key)
+{
+    tiku_event_t ev = {.type = TIKU_EVENT_KEY_DOWN, .key = key};
+
+    pv_event(c->window, &ev, c);
+}
+
+/** @brief The Pages column: each page drawn small, the page in view
+ *         marked and followed, a click, a key or the wheel moving it, a
+ *         thumbnail on its way let go when another document opens, and
+ *         Outline taking the column back. */
+static void thumbnail_tests(tiku_pdfview_t *c, tiku_surface_t *s,
+                            const char *file)
+{
+    int rh = pv_thumb_row(), back, x, y;
+    tiku_event_t wheel = {.type = TIKU_EVENT_WHEEL, .dy = 2};
+    pv_layout_t l;
+    pv_tile_t *t;
+
+    pv_action(c, PV_FIRST);
+    pv_action(c, PV_THUMBS);
+    assert(c->side && c->thumbs);
+    settle(c);
+    l = layout(c);
+    t = pv_thumb(c, 0);
+    assert(l.side.w == PV_SIDE_W && t && t->px && !t->pending);
+    assert(t->w <= PV_THUMB_W && t->h <= PV_THUMB_H && t->h >= PV_THUMB_H - 1);
+    assert(pv_thumb(c, 1) && pv_thumb(c, 1)->px && !pv_thumb(c, 6));
+    /* Paper inside, the page in view ringed with the selection. */
+    x = l.side.x + (l.side.w - t->w) / 2;
+    y = l.side.y + 6 + (PV_THUMB_H - t->h) / 2;
+    assert((s->px[(size_t)(y + 2) * s->w + x + 2] & 0xffffffu) == 0xffffffu);
+    assert((s->px[(size_t)(y - 3) * s->w + x + 5] & 0xffffffu) ==
+           (TIKU_C_SELECT & 0xffffffu));
+
+    back = c->nback;
+    click(c, l.side.x + l.side.w / 2, l.side.y + rh + rh / 2);
+    assert(pv_current(c) == 1 && c->nback == back + 1);
+    assert(c->dialog.focus == PV_SIDE);
+    press(c, TIKU_KEY_END);
+    assert(pv_current(c) == PAGES - 1);
+    settle(c);
+    assert(c->thumb_top == PAGES * rh - l.side.h);
+    assert(pv_thumb(c, PAGES - 1) && pv_thumb(c, PAGES - 1)->px);
+    press(c, TIKU_KEY_UP);
+    assert(pv_current(c) == PAGES - 2);
+    press(c, TIKU_KEY_HOME);
+    settle(c);
+    assert(pv_current(c) == 0 && c->thumb_top == 0);
+    wheel.x = l.side.x + 10;
+    wheel.y = l.side.y + 10;
+    pv_event(c->window, &wheel, c);
+    settle(c);
+    assert(c->thumb_top == rh && pv_current(c) == 0);
+
+    /* Rows not drawn yet: one is asked for, then the document goes. */
+    c->thumb_top = 6 * rh;
+    tiku_workspace_draw(desk);
+    assert(c->thumb_busy == 1 && pv_thumb(c, 6)->pending);
+    assert(tiku_pdfview_file(c, file));
+    settle(c);
+    assert(c->doc && !c->thumb_busy && c->thumb_top == 0);
+    assert(pv_thumb(c, 0) && pv_thumb(c, 0)->px && !pv_thumb(c, 6));
+
+    pv_action(c, PV_OUTLINE);
+    assert(c->side && !c->thumbs);
+    pv_action(c, PV_THUMBS);
+    pv_action(c, PV_THUMBS);
+    assert(!c->side && !c->thumbs && !layout(c).side.w);
+    pv_action(c, PV_OUTLINE);
+    assert(c->side && !c->thumbs && layout(c).side.w);
+    tiku_dialog_focus(&c->dialog, PV_CANVAS);
+}
+
 /** @brief Write @p e's encrypted fixture to @p path. */
 static void write_locked(const enc_t *e, const char *path)
 {
@@ -433,6 +508,7 @@ int main(int argc, char **argv)
     search_tests(c);
     selection_tests(c);
     field_tests(c);
+    thumbnail_tests(c, s, file);
     pv_action(c, PV_FIRST);
     settle(c);
     tiku_field_start(&c->find, "TikuPDF");
@@ -461,6 +537,6 @@ int main(int argc, char **argv)
     if (argc > 1) printf("Preview: %s\n", shot);
     else { unlink(file); unlink(junk); rmdir(dir); }
     puts("PDF viewer: open, draw, zoom, outline, links, find, copy, "
-         "passwords, close PASS");
+         "thumbnails, passwords, close PASS");
     return 0;
 }

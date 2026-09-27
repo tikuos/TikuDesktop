@@ -396,6 +396,121 @@ static int pv_request(tiku_pdfview_t *c, int p)
     return 1;
 }
 
+/* --------------------------------------------------------- thumbnails  */
+
+/** @brief The scale page @p p fits the thumbnail box at. */
+static double pv_thumb_scale(tiku_pdfview_t *c, int p)
+{
+    double sx = PV_THUMB_W / (c->pw[p] > 1 ? c->pw[p] : 1);
+    double sy = PV_THUMB_H / (c->ph[p] > 1 ? c->ph[p] : 1);
+
+    return sx < sy ? sx : sy;
+}
+
+/** @brief Page @p p's thumbnail, drawn or on its way; NULL for neither. */
+static pv_tile_t *pv_thumb(tiku_pdfview_t *c, int p)
+{
+    for (int i = 0; i < PV_THUMB_KEEP; i++)
+        if (c->thumb[i].page == p) return &c->thumb[i];
+    return NULL;
+}
+
+/** @brief On the loop: the small page goes to its slot. */
+static void pv_thumb_done(void *ctx)
+{
+    pv_render_t *j = ctx;
+    tiku_pdfview_t *c = j->owner;
+    pv_tile_t *t = &c->thumb[j->slot];
+
+    if (!c->workspace || j->doc != c->doc) return;
+    if (t->pending && t->page == j->page) {
+        t->pending = 0;
+        if (j->failed) {
+            t->page = -1;
+            c->pages[j->page].failed = 1;
+        } else {
+            t->px = j->pm.px;
+            t->w = j->pm.w;
+            t->h = j->pm.h;
+            j->pm.px = NULL;
+        }
+    }
+    pv_changed(c);
+}
+
+/** @brief After done or a cancel: the slot is let go if it still waits. */
+static void pv_thumb_free(void *ctx)
+{
+    pv_render_t *j = ctx;
+    tiku_pdfview_t *c = j->owner;
+
+    if (j->doc == c->doc) {
+        pv_tile_t *t = &c->thumb[j->slot];
+        c->thumb_busy--;
+        if (t->pending && t->page == j->page) {
+            t->pending = 0;
+            t->page = -1;
+        }
+        if (c->workspace) pv_changed(c);
+    }
+    tiku_pdf_pixmap_free(&j->pm);
+    pv_doc_unref(j->doc);
+    pv_unref(c);
+    free(j);
+}
+
+/**
+ * @brief Ask a worker to draw page @p p small, when the pages in view
+ *        wait for nothing: thumbnails come one at a time, behind them.
+ *        The slot is the free one, or the one shown least lately.
+ */
+static int pv_thumb_request(tiku_pdfview_t *c, int p)
+{
+    pv_render_t *j;
+    tiku_work_job_t work;
+    int slot = -1;
+
+    if (!c->doc || c->inflight || c->thumb_busy || c->pages[p].failed)
+        return 0;
+    for (int i = 0; i < PV_THUMB_KEEP; i++) {
+        pv_tile_t *t = &c->thumb[i];
+        if (t->pending) continue;
+        if (t->page < 0) { slot = i; break; }
+        if (t->used != c->frame &&
+            (slot < 0 || t->used < c->thumb[slot].used)) slot = i;
+    }
+    if (slot < 0 || !(j = calloc(1, sizeof *j))) return 0;
+    free(c->thumb[slot].px);
+    memset(&c->thumb[slot], 0, sizeof c->thumb[slot]);
+    j->owner = c;
+    j->doc = c->doc;
+    j->slot = slot;
+    j->page = p;
+    j->scale = pv_thumb_scale(c, p);
+    memset(&work, 0, sizeof work);
+    work.run = pv_render_run;       /* the page's pixels, no text */
+    work.done = pv_thumb_done;
+    work.free = pv_thumb_free;
+    work.ctx = j;
+    snprintf(work.key, sizeof work.key, "%s", c->doc->key);
+    c->thumb[slot].page = p;
+    c->thumb[slot].pending = 1;
+    c->thumb[slot].used = c->frame;
+    c->refs++;
+    c->doc->refs++;
+    c->thumb_busy++;
+    if (tiku_work_post(&work) != 0) {
+        c->thumb[slot].page = -1;
+        c->thumb[slot].pending = 0;
+        c->refs--;
+        c->doc->refs--;
+        c->thumb_busy--;
+        free(j);
+        return 0;
+    }
+    return 1;
+}
+
 /* ---------------------------------------------------------- searching  */
 
 /** @brief One stretch of pages searched for the folded query. */

@@ -35,12 +35,15 @@
 #define PV_SEARCH_STEP 24           /* pages one search job reads       */
 #define PV_HISTORY     32
 #define PV_LINE        40           /* what an arrow or a wheel notch scrolls */
+#define PV_THUMB_W     150          /* a thumbnail's box, in pixels     */
+#define PV_THUMB_H     190
+#define PV_THUMB_KEEP  64           /* thumbnails kept drawn            */
 
 enum { PV_OPEN = 1, PV_CLOSE, PV_COPY, PV_SELECT_ALL, PV_FIND, PV_FIND_NEXT,
        PV_FIND_PREV, PV_OUTLINE, PV_ZOOM_IN, PV_ZOOM_OUT, PV_ACTUAL,
        PV_FIT_WIDTH, PV_FIT_PAGE, PV_PREV, PV_NEXT, PV_FIRST, PV_LAST,
-       PV_BACK, PV_MATCH_CASE, PV_WHOLE_WORDS, PV_PAGE_FIELD, PV_FIND_FIELD,
-       PV_CANVAS, PV_SIDE };
+       PV_BACK, PV_MATCH_CASE, PV_WHOLE_WORDS, PV_THUMBS, PV_PAGE_FIELD,
+       PV_FIND_FIELD, PV_CANVAS, PV_SIDE };
 enum { PV_FIXED, PV_BY_WIDTH, PV_BY_PAGE };
 
 /** @brief An open document as its jobs share it. */
@@ -104,6 +107,10 @@ struct tiku_pdfview {
     unsigned long frame;
     tiku_pdf_outline_t *outline;    /* the document's, depth first       */
     int noutline, nrows, side, follow;
+    int thumbs;                     /* the side column shows the pages   */
+    pv_tile_t thumb[PV_THUMB_KEEP]; /* pages drawn small for it          */
+    int thumb_top, thumb_busy;      /* scrolled by; a thumbnail asked for */
+    int thumb_seen;                 /* the page the column last followed */
     unsigned char *folded;
     int *rows;                      /* outline entries shown, in order   */
     tiku_list_t list;
@@ -180,6 +187,13 @@ static void pv_forget(tiku_pdfview_t *c)
         memset(&c->tile[i], 0, sizeof c->tile[i]);
         c->tile[i].page = -1;
     }
+    for (int i = 0; i < PV_THUMB_KEEP; i++) {
+        free(c->thumb[i].px);
+        memset(&c->thumb[i], 0, sizeof c->thumb[i]);
+        c->thumb[i].page = -1;
+    }
+    c->thumb_top = c->thumb_busy = 0;
+    c->thumb_seen = -1;
     for (int p = 0; c->pages && p < c->npage; p++) {
         tiku_pdf_links_free(c->pages[p].link, c->pages[p].nlink);
         free(c->pages[p].ch);
@@ -224,8 +238,8 @@ static const char *pv_label(int id)
         "Select Page Text", "Find...", "Find Next", "Find Previous",
         "Outline", "Zoom In", "Zoom Out", "Actual Size", "Fit Width",
         "Fit Page", "Previous Page", "Next Page", "First Page", "Last Page",
-        "Back", "Match Case", "Whole Words" };
-    return id >= PV_OPEN && id <= PV_WHOLE_WORDS ? labels[id] : "";
+        "Back", "Match Case", "Whole Words", "Thumbnails" };
+    return id >= PV_OPEN && id <= PV_THUMBS ? labels[id] : "";
 }
 
 /** @brief Whether command @p id can do anything now. */
@@ -293,7 +307,13 @@ static void pv_action(tiku_pdfview_t *c, int id)
             pv_find(c, 1);
         }
     }
-    else if (id == PV_OUTLINE) c->side = !c->side && c->noutline > 0;
+    else if (id == PV_OUTLINE) {
+        c->side = !(c->side && !c->thumbs) && c->noutline > 0;
+        c->thumbs = 0;
+    } else if (id == PV_THUMBS) {
+        c->side = !(c->side && c->thumbs);
+        c->thumbs = c->side;
+    }
     else if (id == PV_ZOOM_IN) pv_zoom_step(c, 1);
     else if (id == PV_ZOOM_OUT) pv_zoom_step(c, -1);
     else if (id == PV_ACTUAL) pv_set_scale(c, PV_FIXED, 1.0);
@@ -537,7 +557,9 @@ static void pv_menus(tiku_pdfview_t *c)
                 TIKU_MOD_CMD | TIKU_MOD_SHIFT, 0);
     pv_menu_add(c, &menus.menu[1], PV_MATCH_CASE, 0, 0, c->match_case);
     pv_menu_add(c, &menus.menu[1], PV_WHOLE_WORDS, 0, 0, c->whole_words);
-    pv_menu_add(c, &menus.menu[2], PV_OUTLINE, 0, 0, c->side);
+    pv_menu_add(c, &menus.menu[2], PV_OUTLINE, 0, 0,
+                c->side && !c->thumbs && c->noutline > 0);
+    pv_menu_add(c, &menus.menu[2], PV_THUMBS, 0, 0, c->side && c->thumbs);
     pv_menu_add(c, &menus.menu[2], PV_ZOOM_IN, '+', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[2], PV_ZOOM_OUT, '-', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[2], PV_ACTUAL, '0', TIKU_MOD_CMD,

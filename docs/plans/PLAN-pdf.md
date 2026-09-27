@@ -154,7 +154,10 @@ an output that grows.  Nothing else in the kits changes.
    font readers (342,000 TrueType, CFF and Type 1 programs, the
    corpus's own mutated) were fuzzed alone and are clean.  TikuPDF's
    Edit menu has Match Case and Whole Words, each starting the search
-   again.
+   again.  Thumbnails: a Pages column in the outline's place, each page
+   drawn small by the document's worker when the pages in view wait for
+   nothing, sixty-four kept; it follows the page read and goes where it
+   is clicked.
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand

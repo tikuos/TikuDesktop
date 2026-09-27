@@ -57,6 +57,10 @@ static void pv_side_draw(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r)
 {
     int shown;
 
+    if (c->thumbs) {
+        pv_thumbs_draw(c, s, r);
+        return;
+    }
     tiku_list_set_row_h(&c->list, tiku_measure_row_h());
     tiku_ui_sunken(s, r, TIKU_C_DOC);
     if (c->dialog.focus != PV_SIDE && c->laid_scale) {
@@ -96,6 +100,7 @@ static int pv_side_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
     int row;
 
     if (!l->side.w || !pv_in(l->side, ev->x, ev->y)) return 0;
+    if (c->thumbs) return pv_thumbs_pointer(c, ev, l);
     if (ev->type == TIKU_EVENT_WHEEL) {
         (void)tiku_list_scroll_to(&c->list, c->list.top + ev->dy, l->side);
         pv_changed(c);
@@ -126,6 +131,7 @@ static int pv_side_key(tiku_pdfview_t *c, const tiku_event_t *ev,
     int row = c->list.cursor, i;
 
     if (ev->key == TIKU_KEY_TAB || ev->key == TIKU_KEY_ESCAPE) return 0;
+    if (c->thumbs) return pv_thumbs_key(c, ev);
     if (row >= 0 && row < c->nrows) {
         i = c->rows[row];
         if ((ev->key == TIKU_KEY_LEFT || ev->key == TIKU_KEY_RIGHT) &&
