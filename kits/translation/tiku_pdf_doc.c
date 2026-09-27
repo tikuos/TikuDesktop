@@ -231,6 +231,7 @@ pdf_object(tiku_pdf_t *doc, long num)
     } else if (x->kind == 2) {
         o = parse_in_objstm(doc, x->off, x->idx, num);
     }
+    x = &doc->xref[num];            /* a repair may have moved the table */
     x->seen = 0;
     if (o == NULL && x->set && !doc->repaired && x->kind != 0) {
         if (repair(doc) == 0) {
@@ -571,6 +572,17 @@ digits_before(const unsigned char *p, long end, long *start)
     return v;
 }
 
+/** @brief @p t as the trailer from here; the one from before the repair
+ *         is kept, since a caller may be holding it. */
+static void
+set_trailer(tiku_pdf_t *doc, pdf_obj_t *t)
+{
+    if (doc->trailer != doc->old_trailer) {
+        pdf_free(doc->trailer);
+    }
+    doc->trailer = t;
+}
+
 /**
  * @brief Forget the table and find every object by reading the file.
  *
@@ -584,17 +596,26 @@ static int
 repair(tiku_pdf_t *doc)
 {
     const unsigned char *p = doc->data;
+    pdf_obj_t **fresh;
     long i, n = doc->len;
 
     if (doc->repaired) {
         return -1;
     }
     doc->repaired = 1;
+    /* Whoever asked for an object may be holding it still: what was
+     * parsed before is kept until the document closes, and read anew. */
+    fresh = calloc((size_t)doc->nxref + 1, sizeof *fresh);
+    if (fresh == NULL) {
+        return -1;
+    }
+    doc->grave = doc->cache;
+    doc->ngrave = doc->nxref;
+    doc->cache = fresh;
+    doc->old_trailer = doc->trailer;
     for (i = 0; i < doc->nxref; i++) {
         doc->xref[i].set = 0;
         doc->xref[i].kind = 0;
-        pdf_free(doc->cache[i]);
-        doc->cache[i] = NULL;
     }
     for (i = 0; i < PDF_OBJSTM_KEEP; i++) {
         free(doc->objstm[i].data);
@@ -673,8 +694,7 @@ repair(tiku_pdf_t *doc)
             if (t != NULL && copy != NULL && r->kind == PDF_REF) {
                 *copy = *r;
                 (void)pdf_dict_set(t, "Root", copy);
-                pdf_free(doc->trailer);
-                doc->trailer = t;
+                set_trailer(doc, t);
             } else {
                 pdf_free(t);
                 pdf_free(copy);
@@ -693,8 +713,7 @@ repair(tiku_pdf_t *doc)
         c.pos = i;
         t = pdf_parse(&c, 0);
         if (t != NULL && t->kind == PDF_DICT && pdf_dict_raw(t, "Root")) {
-            pdf_free(doc->trailer);
-            doc->trailer = t;
+            set_trailer(doc, t);
         } else {
             pdf_free(t);
         }
@@ -714,8 +733,7 @@ repair(tiku_pdf_t *doc)
                 }
                 r->u.ref.num = i;
                 (void)pdf_dict_set(t, "Root", r);
-                pdf_free(doc->trailer);
-                doc->trailer = t;
+                set_trailer(doc, t);
                 break;
             }
         }
@@ -886,6 +904,9 @@ tiku_pdf_close(tiku_pdf_t *doc)
     for (i = 0; i < doc->nxref; i++) {
         pdf_free(doc->cache[i]);
     }
+    for (i = 0; i < doc->ngrave; i++) {
+        pdf_free(doc->grave[i]);
+    }
     for (i = 0; i < PDF_OBJSTM_KEEP; i++) {
         free(doc->objstm[i].data);
     }
@@ -893,7 +914,11 @@ tiku_pdf_close(tiku_pdf_t *doc)
         tiku_ttf_close(doc->subst[i]);
     }
     pdf_crypt_free(doc->crypt);
+    if (doc->old_trailer != doc->trailer) {
+        pdf_free(doc->old_trailer);
+    }
     pdf_free(doc->trailer);
+    free(doc->grave);
     free(doc->cache);
     free(doc->xref);
     free(doc->page);

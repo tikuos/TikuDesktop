@@ -150,14 +150,14 @@ enc_keys_r6(const enc_t *e, const unsigned char *key, unsigned char *u,
     unsigned char ik[32], iv[16];
     tiku_aes_t aes;
 
-    memcpy(u + 32, "uvsaltukeysalt", 16);
+    memcpy(u + 32, "uvsalt..ukeysalt", 16);
     enc_hash_r6(e->user, u + 32, NULL, u);
     enc_hash_r6(e->user, u + 40, NULL, ik);
     memcpy(ue, key, 32);
     memset(iv, 0, 16);
     (void)tiku_aes_init(&aes, ik, 256);
     tiku_aes_cbc_encrypt(&aes, iv, ue, 32);
-    memcpy(o + 32, "ovsaltokeysalt", 16);
+    memcpy(o + 32, "ovsalt..okeysalt", 16);
     enc_hash_r6(e->owner, o + 32, u, o);
     enc_hash_r6(e->owner, o + 40, u, ik);
     memcpy(oe, key, 32);

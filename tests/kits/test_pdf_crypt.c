@@ -7,7 +7,7 @@
  * test_pdf_crypt.c - encrypted PDFs made here, as a writer makes them,
  * and read back: RC4 at 40 and 128 bits (revisions 2 and 3), AES-128
  * (4) and AES-256 (6); the empty password, a user's, an owner's, a
- * wrong one; and the author's word on copying.
+ * wrong one; the author's word on copying; and a damaged file.
  *
  * TIKU_PDF_ENC_DIR names a folder to write the files to, so another
  * reader (poppler's pdftotext) can be asked to open them too.
@@ -113,6 +113,45 @@ fixture(const enc_t *e)
     free(b.p);
 }
 
+/** @brief Overwrite the first @p from in @p b with @p to, which is as
+ *         long.  @return whether @p from was there. */
+static int
+patch(encw_t *b, const char *from, const char *to)
+{
+    size_t n = strlen(from);
+    long i;
+
+    for (i = 0; i + (long)n <= b->n; i++) {
+        if (memcmp(b->p + i, from, n) == 0) {
+            memcpy(b->p + i, to, n);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** @brief A damaged file: a table that lies about the Encrypt
+ *         dictionary, which is found by reading the file. */
+static void
+damaged(void)
+{
+    static const enc_t rc4 = {"rc4-128", 2, 3, 128, 0, "", "owner", -20};
+    encw_t b = enc_make(&rc4);
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc;
+    char row[32];
+    int ok;
+
+    snprintf(row, sizeof row, "%010ld 00000 n", b.off[6]);
+    ok = patch(&b, row, "0000000001 00000 n");
+    doc = open_with(&b, "", &err);
+    check(ok && err == TIKU_PDF_OK && reads(doc), "ENC-006",
+          "a table that lies about the Encrypt dictionary is rebuilt, and "
+          "the file still reads");
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
 int
 main(void)
 {
@@ -130,6 +169,7 @@ main(void)
     for (i = 0; i < sizeof fixtures / sizeof fixtures[0]; i++) {
         fixture(&fixtures[i]);
     }
+    damaged();
     printf("%s\n", fails ? "FAIL" : "PASS: RC4 40/128, AES 128/256, "
                                      "passwords and permissions");
     return fails ? 1 : 0;

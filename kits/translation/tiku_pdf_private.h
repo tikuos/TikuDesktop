@@ -92,6 +92,9 @@ struct tiku_pdf {
     long           nxref;
     pdf_obj_t    **cache;           /* parsed indirect objects, by number */
     pdf_obj_t     *trailer;         /* the newest, with Root and Info    */
+    pdf_obj_t     *old_trailer;     /* the one before a repair, kept     */
+    pdf_obj_t    **grave;           /* the cache before a repair, kept   */
+    long           ngrave;
     pdf_objstm_t   objstm[PDF_OBJSTM_KEEP];  /* decoded object streams  */
     int            objstm_next;     /* the slot the next one takes       */
     pdf_obj_t    **page;            /* each page's dictionary, cached    */
