@@ -89,6 +89,11 @@ an output that grows.  Nothing else in the kits changes.
    open in 64 ms and are searched in about a second, in stretches.
 4. **Vendor extras.**  Axial and radial shadings, tiling patterns,
    constant alpha; a grey box for the fax image and any progressive JPEG.
+   *Done 2026-09-27*: function, axial and radial shadings as fills and
+   by `sh`, coloured and uncoloured tiling patterns (the cell drawn once
+   at the device's resolution); TI's shaded pin balls and ST's hatched
+   key boxes now look as printed.  Mesh shadings (4 to 7), in none of
+   the documents, are one tone so what they fill keeps its place.
 5. **Later, when a document needs it.**  Encryption for the Ambiq
    documents (AES-256 R6, with AES-128 and RC4 for older ones),
    transparency groups, forms and other annotations.

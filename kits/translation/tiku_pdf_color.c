@@ -762,7 +762,13 @@ pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res)
         return cs;
     }
     if (!strcmp(name, "Pattern")) {
-        return device_space("Pattern");
+        /* [/Pattern base]: an uncoloured pattern's colour is in base. */
+        cs = device_space("Pattern");
+        if (cs != NULL) {
+            cs->base = pdf_cs_load(doc, spec->u.a.item[1], res);
+            cs->n = cs->base != NULL ? cs->base->n : 1;
+        }
+        return cs;
     }
     return NULL;
 }
@@ -834,8 +840,12 @@ pdf_cs_colour(const pdf_cs_t *cs, const double *v, int n)
             return rgb(t, t, t);
         }
     }
+    case CS_PATTERN:
+        /* The colour an uncoloured pattern paints in; grey for the rest,
+         * whose colours are their own. */
+        return cs->base != NULL ? pdf_cs_colour(cs->base, v, n) : 0xff808080u;
     default:
-        return 0xff808080u;         /* a pattern: drawn later, grey now */
+        return 0xff808080u;
     }
 }
 

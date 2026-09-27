@@ -17,6 +17,7 @@
 
 #include "tiku_pdf_private.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -27,6 +28,10 @@
 #define CS_KEEP     64              /* colour spaces alive per page     */
 #define FONTS_MAX   64
 #define DASH_MAX    16
+#define SHADES_KEEP 128             /* shadings loaded per page         */
+#define TILES_KEEP  8               /* pattern cells drawn per page     */
+#define TILE_MAX    512             /* a cell's pixels, each way        */
+#define NEST_MAX    2               /* patterns inside patterns' cells  */
 
 /** @brief A clip shared by the states that inherited it. */
 typedef struct { pdf_mask_t m; int refs; } clip_t;
@@ -38,7 +43,8 @@ typedef struct {
     double    fv[8], sv[8];         /* their current colour numbers     */
     int       nfv, nsv;
     uint32_t  fill, stroke;         /* as painted                       */
-    int       fpattern, spattern;   /* a pattern was named as colour    */
+    int       fpattern, spattern;   /* the colour space is Pattern      */
+    pdf_obj_t *fpat, *spat;         /* the pattern named, or NULL       */
     double    falpha, salpha;
     double    lw, miter, dash[DASH_MAX], phase;
     int       cap, join, ndash;
@@ -57,6 +63,17 @@ typedef struct {
     pdf_gfont_t *glyphs;
 } fontref_t;
 
+/** @brief A tiling pattern's cell drawn at the device's resolution: its
+ *         colours and coverage, and how it repeats in pattern space. */
+typedef struct {
+    pdf_obj_t     *pat;
+    pdf_mat_t      to;              /* pattern space to the device       */
+    int            w, h, coloured;
+    double         x0, y0, xstep, ystep, sx, sy;   /* sx, sy: px a unit */
+    uint32_t      *rgb;
+    unsigned char *a;
+} tile_t;
+
 typedef struct {
     tiku_pdf_t *doc;
     pdf_pix_t   pix;
@@ -73,10 +90,24 @@ typedef struct {
     long        ops;
     int         failed;
     int         t3depth;            /* Type 3 glyphs drawing glyphs      */
+    pdf_obj_t  *res;                /* the running stream's resources    */
+    pdf_mat_t   pbase;              /* its default space: patterns' base */
+    int         nest, stencil;      /* in a cell; an uncoloured one      */
+    struct { pdf_obj_t *dict; pdf_shade_t *s; } shades[SHADES_KEEP];
+    int         nshade;
+    tile_t     *tiles[TILES_KEEP];
+    int         ntile;
 } rs_t;
 
 static void run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res,
                 int depth);
+static void paint(rs_t *r, const pdf_mask_t *m, int stroke);
+static rs_t *rs_new(tiku_pdf_t *doc, int w, int h, uint32_t bg,
+                    pdf_mat_t base);
+static uint32_t *rs_finish(rs_t *r);
+static void end_path(rs_t *r);
+static void moveto(rs_t *r, double x, double y);
+static void lineto(rs_t *r, double x, double y);
 static void draw_image(rs_t *r, pdf_obj_t *dict, const unsigned char *raw,
                        long rawn, pdf_obj_t *res);
 
@@ -191,11 +222,13 @@ set_space(rs_t *r, pdf_cs_t *cs, int stroke)
         g->scs = cs;
         g->nsv = n;
         g->spattern = cs != NULL && cs->kind == CS_PATTERN;
+        g->spat = NULL;
         for (i = 0; i < n && i < 8; i++) g->sv[i] = cs ? cs->initial[i] : 0;
     } else {
         g->fcs = cs;
         g->nfv = n;
         g->fpattern = cs != NULL && cs->kind == CS_PATTERN;
+        g->fpat = NULL;
         for (i = 0; i < n && i < 8; i++) g->fv[i] = cs ? cs->initial[i] : 0;
     }
     set_colour(g, stroke);
@@ -253,7 +286,6 @@ curveto(rs_t *r, double x1, double y1, double x2, double y2, double x3,
 static void
 fill_path(rs_t *r, int evenodd)
 {
-    gs_t *g = top(r);
     pdf_mask_t m;
     int x0, y0, w, h;
 
@@ -261,10 +293,7 @@ fill_path(rs_t *r, int evenodd)
         return;
     }
     m = pdf_path_fill(&r->path, evenodd, x0, y0, w, h);
-    if (g->fill >> 24) {
-        pdf_paint(&r->pix, &m, g->clip ? &g->clip->m : NULL,
-                  g->fpattern ? 0xffc0c0c0u : g->fill, g->falpha);
-    }
+    paint(r, &m, 0);
     pdf_mask_free(&m);
 }
 
@@ -298,10 +327,7 @@ stroke_path(rs_t *r)
         return;
     }
     m = pdf_path_fill(&r->tmp, 0, x0, y0, w, h);
-    if (g->stroke >> 24) {
-        pdf_paint(&r->pix, &m, g->clip ? &g->clip->m : NULL,
-                  g->spattern ? 0xff808080u : g->stroke, g->salpha);
-    }
+    paint(r, &m, 1);
     pdf_mask_free(&m);
 }
 
@@ -387,8 +413,11 @@ op_colour(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res)
             *nv = k;
         }
         if (n >= 1 && ops[n - 1]->kind == PDF_NAME) {
-            /* A pattern by name: drawn as its likely tone for now. */
-            if (stroke) g->spattern = 1; else g->fpattern = 1;
+            pdf_obj_t *pat = pdf_get(r->doc, pdf_get(r->doc, res, "Pattern"),
+                                     (const char *)ops[n - 1]->u.s.p);
+
+            if (stroke) { g->spattern = 1; g->spat = pat; }
+            else { g->fpattern = 1; g->fpat = pat; }
         }
     }
     set_colour(g, stroke);
@@ -422,6 +451,311 @@ op_gs(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
             g->gfont = NULL;
             g->size = pdf_number(pdf_resolve(r->doc, v->u.a.item[1]), g->size);
         }
+    }
+}
+
+/* ------------------------------------------------------------ patterns  */
+
+/** @brief Shading @p dict, loaded once a page and kept for it. */
+static pdf_shade_t *
+shade_for(rs_t *r, pdf_obj_t *dict)
+{
+    int i;
+
+    if (dict == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < r->nshade; i++) {
+        if (r->shades[i].dict == dict) {
+            return r->shades[i].s;
+        }
+    }
+    if (r->nshade == SHADES_KEEP) {
+        return NULL;
+    }
+    r->shades[r->nshade].dict = dict;
+    r->shades[r->nshade].s = pdf_shade_load(r->doc, dict, r->res);
+    return r->shades[r->nshade++].s;
+}
+
+/** @brief Pattern @p pat's space to the device: its Matrix, then the
+ *         default space of the stream it is painted in. */
+static pdf_mat_t
+pattern_space(rs_t *r, pdf_obj_t *pat)
+{
+    pdf_obj_t *m = pdf_get(r->doc, pat, "Matrix");
+    pdf_mat_t pm = pdf_mat(1, 0, 0, 1, 0, 0);
+    double v[6];
+    int i;
+
+    if (m != NULL && m->kind == PDF_ARRAY && m->u.a.n == 6) {
+        for (i = 0; i < 6; i++) {
+            v[i] = pdf_number(pdf_resolve(r->doc, m->u.a.item[i]),
+                              i == 0 || i == 3);
+        }
+        pm = pdf_mat(v[0], v[1], v[2], v[3], v[4], v[5]);
+    }
+    return pdf_mat_mul(pm, r->pbase);
+}
+
+/** @brief Give a drawn cell back. */
+static void
+tile_free(tile_t *t)
+{
+    if (t != NULL) {
+        free(t->rgb);
+        free(t->a);
+        free(t);
+    }
+}
+
+/** @brief The cell's content drawn on a ground of @p bg by a renderer of
+ *         its own, clipped to the pattern's BBox @p bb.
+ *  @return its pixels, or NULL. */
+static uint32_t *
+tile_draw(rs_t *r, pdf_obj_t *pat, const tile_t *t, const double *bb,
+          uint32_t bg)
+{
+    pdf_mat_t ctm = pdf_mat(t->sx, 0, 0, t->sy, -t->x0 * t->sx,
+                            -t->y0 * t->sy);
+    pdf_obj_t *res = pdf_get(r->doc, pat, "Resources");
+    unsigned char *data = NULL;
+    long n = 0;
+    rs_t *sub;
+
+    if (pdf_stream_data(r->doc, pat, &data, &n, NULL) != 0) {
+        return NULL;
+    }
+    sub = rs_new(r->doc, t->w, t->h, bg, ctm);
+    if (sub == NULL) {
+        free(data);
+        return NULL;
+    }
+    sub->nest = r->nest + 1;
+    sub->stencil = !t->coloured;
+    sub->ops = r->ops;
+    moveto(sub, bb[0], bb[1]);
+    lineto(sub, bb[2], bb[1]);
+    lineto(sub, bb[2], bb[3]);
+    lineto(sub, bb[0], bb[3]);
+    pdf_path_close(&sub->path);
+    sub->pending_clip = 1;
+    end_path(sub);
+    run(sub, data, n, res != NULL ? res : r->res, 0);
+    free(data);
+    r->ops = sub->ops;
+    return rs_finish(sub);
+}
+
+/**
+ * @brief Tiling pattern @p pat's cell at the resolution @p to gives it:
+ *        drawn on white and on black, the two giving each pixel's
+ *        coverage and its colour without a painter that knows alpha.
+ */
+static tile_t *
+tile_make(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to)
+{
+    double bb[4] = {0, 0, 1, 1};
+    pdf_obj_t *box = pdf_get(r->doc, pat, "BBox");
+    uint32_t *white, *black;
+    tile_t *t;
+    long i;
+
+    if (r->nest >= NEST_MAX || (t = calloc(1, sizeof *t)) == NULL) {
+        return NULL;
+    }
+    for (i = 0; box != NULL && box->kind == PDF_ARRAY && box->u.a.n == 4 &&
+                i < 4; i++) {
+        bb[i] = pdf_number(pdf_resolve(r->doc, box->u.a.item[i]), 0);
+    }
+    t->pat = pat;
+    t->to = *to;
+    t->coloured = pdf_number(pdf_get(r->doc, pat, "PaintType"), 1) != 2;
+    t->x0 = fmin(bb[0], bb[2]);
+    t->y0 = fmin(bb[1], bb[3]);
+    t->xstep = fabs(pdf_number(pdf_get(r->doc, pat, "XStep"), 0));
+    t->ystep = fabs(pdf_number(pdf_get(r->doc, pat, "YStep"), 0));
+    if (t->xstep < 1e-6) t->xstep = fabs(bb[2] - bb[0]);
+    if (t->ystep < 1e-6) t->ystep = fabs(bb[3] - bb[1]);
+    t->w = (int)ceil(t->xstep * sqrt(to->a * to->a + to->b * to->b));
+    t->h = (int)ceil(t->ystep * sqrt(to->c * to->c + to->d * to->d));
+    if (t->xstep < 1e-6 || t->ystep < 1e-6) {
+        tile_free(t);
+        return NULL;
+    }
+    t->w = t->w < 1 ? 1 : t->w > TILE_MAX ? TILE_MAX : t->w;
+    t->h = t->h < 1 ? 1 : t->h > TILE_MAX ? TILE_MAX : t->h;
+    t->sx = t->w / t->xstep;
+    t->sy = t->h / t->ystep;
+    white = tile_draw(r, pat, t, bb, 0xffffffffu);
+    black = white != NULL ? tile_draw(r, pat, t, bb, 0xff000000u) : NULL;
+    t->rgb = malloc((size_t)t->w * t->h * sizeof *t->rgb);
+    t->a = malloc((size_t)t->w * t->h);
+    for (i = 0; black != NULL && t->rgb != NULL && t->a != NULL &&
+                i < (long)t->w * t->h; i++) {
+        int k, a, c[3];
+
+        /* On white a pixel is c + (1 - a) 255, on black c: a from the
+         * difference, the colour from black, unpremultiplied. */
+        a = 255 - ((int)((white[i] >> 16) & 255) - (int)((black[i] >> 16) & 255)
+                   + (int)((white[i] >> 8) & 255) - (int)((black[i] >> 8) & 255)
+                   + (int)(white[i] & 255) - (int)(black[i] & 255)) / 3;
+        a = a < 0 ? 0 : a > 255 ? 255 : a;
+        for (k = 0; k < 3; k++) {
+            int v = (int)((black[i] >> (16 - 8 * k)) & 255);
+
+            c[k] = a > 0 ? v * 255 / a : 0;
+            c[k] = c[k] > 255 ? 255 : c[k];
+        }
+        t->a[i] = (unsigned char)a;
+        t->rgb[i] = 0xff000000u | (uint32_t)c[0] << 16 | (uint32_t)c[1] << 8 |
+                    (uint32_t)c[2];
+    }
+    if (black == NULL || t->rgb == NULL || t->a == NULL) {
+        tile_free(t);
+        t = NULL;
+    }
+    free(white);
+    free(black);
+    return t;
+}
+
+/** @brief Pattern @p pat's cell for @p to, drawn once a page. */
+static tile_t *
+tile_for(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to)
+{
+    tile_t *t;
+    int i;
+
+    for (i = 0; i < r->ntile; i++) {
+        if (r->tiles[i]->pat == pat &&
+            memcmp(&r->tiles[i]->to, to, sizeof *to) == 0) {
+            return r->tiles[i];
+        }
+    }
+    t = tile_make(r, pat, to);
+    if (t == NULL) {
+        return NULL;
+    }
+    if (r->ntile == TILES_KEEP) {
+        tile_free(r->tiles[0]);
+        memmove(r->tiles, r->tiles + 1, (TILES_KEEP - 1) * sizeof t);
+        r->ntile--;
+    }
+    r->tiles[r->ntile++] = t;
+    return t;
+}
+
+/** @brief Coverage @p m painted with the cell repeated across it; an
+ *         uncoloured cell paints @p colour.  @return 0 when it cannot be. */
+static int
+paint_tiling(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to,
+             const pdf_mask_t *m, const pdf_mask_t *clip, double alpha,
+             uint32_t colour)
+{
+    tile_t *t = tile_for(r, pat, to);
+    double det = to->a * to->d - to->b * to->c;
+    int x, y, ca = (int)(alpha * 255 + 0.5);
+
+    if (t == NULL || det == 0) {
+        return t != NULL;
+    }
+    for (y = m->y0 < 0 ? 0 : m->y0; y < m->y0 + m->h && y < r->pix.h; y++) {
+        for (x = m->x0 < 0 ? 0 : m->x0; x < m->x0 + m->w && x < r->pix.w;
+             x++) {
+            double px = x + 0.5 - to->e, py = y + 0.5 - to->f;
+            double u = (to->d * px - to->c * py) / det - t->x0;
+            double v = (to->a * py - to->b * px) / det - t->y0;
+            int a = m->a[(size_t)(y - m->y0) * m->w + (x - m->x0)], i, j;
+
+            if (a == 0) continue;
+            if (clip != NULL && clip->a != NULL) {
+                int cx = x - clip->x0, cy = y - clip->y0;
+
+                if (cx < 0 || cy < 0 || cx >= clip->w || cy >= clip->h) {
+                    continue;
+                }
+                a = a * clip->a[(size_t)cy * clip->w + cx] / 255;
+            }
+            u -= floor(u / t->xstep) * t->xstep;
+            v -= floor(v / t->ystep) * t->ystep;
+            i = (int)(u * t->sx);
+            j = (int)(v * t->sy);
+            i = i < 0 ? 0 : i >= t->w ? t->w - 1 : i;
+            j = j < 0 ? 0 : j >= t->h ? t->h - 1 : j;
+            a = a * t->a[(size_t)j * t->w + i] / 255 * ca / 255;
+            if (a > 0) {
+                pdf_blend(r->pix.px + (size_t)y * r->pix.w + x,
+                          t->coloured ? t->rgb[(size_t)j * t->w + i] : colour,
+                          a);
+            }
+        }
+    }
+    return 1;
+}
+
+/** @brief Coverage @p m painted with pattern @p pat: its shading or its
+ *         tiles.  @return 0 for a pattern this cannot draw. */
+static int
+paint_pattern(rs_t *r, pdf_obj_t *pat, const pdf_mask_t *m,
+              const pdf_mask_t *clip, double alpha, uint32_t colour)
+{
+    int type = (int)pdf_number(pdf_get(r->doc, pat, "PatternType"), 0);
+    pdf_mat_t to = pattern_space(r, pat);
+
+    if (type == 2) {
+        pdf_shade_t *s = shade_for(r, pdf_get(r->doc, pat, "Shading"));
+
+        if (s == NULL) {
+            return 0;
+        }
+        pdf_shade_paint(&r->pix, s, &to, m, clip, alpha, 1);
+        return 1;
+    }
+    if (type == 1 && pat->kind == PDF_STREAM) {
+        return paint_tiling(r, pat, &to, m, clip, alpha, colour);
+    }
+    return 0;
+}
+
+/** @brief Coverage @p m in the fill or the stroke colour, which a pattern
+ *         may give pixel by pixel; inside an uncoloured cell, black. */
+static void
+paint(rs_t *r, const pdf_mask_t *m, int stroke)
+{
+    gs_t *g = top(r);
+    const pdf_mask_t *clip = g->clip ? &g->clip->m : NULL;
+    double alpha = stroke ? g->salpha : g->falpha;
+    uint32_t colour = stroke ? g->stroke : g->fill;
+    pdf_obj_t *pat = stroke ? g->spat : g->fpat;
+
+    if (r->stencil) {
+        pdf_paint(&r->pix, m, clip, 0xff000000u, 1);
+        return;
+    }
+    if (stroke ? g->spattern : g->fpattern) {
+        if (pat != NULL && paint_pattern(r, pat, m, clip, alpha, colour)) {
+            return;
+        }
+        colour = 0xffc0c0c0u;       /* a pattern this cannot draw: a tone */
+    }
+    if (colour >> 24) {
+        pdf_paint(&r->pix, m, clip, colour, alpha);
+    }
+}
+
+/** @brief sh: the shading over all the clip leaves, in user space. */
+static void
+op_sh(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
+{
+    gs_t *g = top(r);
+    pdf_shade_t *s = shade_for(r, pdf_get(r->doc, pdf_get(r->doc, res,
+                                                          "Shading"),
+                                          (const char *)name->u.s.p));
+
+    if (s != NULL && !r->stencil) {
+        pdf_shade_paint(&r->pix, s, &g->ctm, NULL,
+                        g->clip ? &g->clip->m : NULL, g->falpha, 0);
     }
 }
 
@@ -478,7 +812,13 @@ glyph_proc(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm,
     top(r)->stroke = g->fill;
     top(r)->salpha = g->falpha;
     r->t3depth++;
-    run(r, data, n, gf->t3res != NULL ? gf->t3res : res, depth + 1);
+    {
+        pdf_mat_t pbase = r->pbase;
+
+        r->pbase = top(r)->ctm;
+        run(r, data, n, gf->t3res != NULL ? gf->t3res : res, depth + 1);
+        r->pbase = pbase;
+    }
     r->t3depth--;
     free(data);
     while (r->sp > 0 && top(r) != g) {
@@ -499,13 +839,10 @@ glyph_ink(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm)
         return;
     }
     if (mode == 0 || mode == 2 || mode == 4 || mode == 6) {
-        pdf_paint(&r->pix, &m, g->clip ? &g->clip->m : NULL,
-                  g->fpattern ? 0xff808080u : g->fill, g->falpha);
+        paint(r, &m, 0);
     }
     if (mode == 1 || mode == 2 || mode == 5 || mode == 6) {
-        /* Stroked text: the outline's edge, at least a pixel. */
-        pdf_paint(&r->pix, &m, g->clip ? &g->clip->m : NULL,
-                  g->spattern ? 0xff808080u : g->stroke, g->salpha);
+        paint(r, &m, 1);            /* stroked text: the outline's fill */
     }
     pdf_mask_free(&m);
 }
@@ -679,7 +1016,11 @@ form(rs_t *r, pdf_obj_t *xo, pdf_obj_t *res, int depth)
         end_path(r);
     }
     if (pdf_stream_data(r->doc, xo, &data, &n, NULL) == 0) {
+        pdf_mat_t pbase = r->pbase;
+
+        r->pbase = top(r)->ctm;     /* the form's space, as it is painted */
         run(r, data, n, fres != NULL ? fres : res, depth + 1);
+        r->pbase = pbase;
         free(data);
     }
     while (r->sp > sp) {
@@ -907,6 +1248,8 @@ op(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
         op_gs(r, ops[0], res);
     } else if (!strcmp(o, "Do") && n >= 1 && ops[0]->kind == PDF_NAME) {
         op_do(r, ops[0], res, depth);
+    } else if (!strcmp(o, "sh") && n >= 1 && ops[0]->kind == PDF_NAME) {
+        op_sh(r, ops[0], res);
     } else if (!strcmp(o, "BI")) {
         inline_image(r, c, res);
     } else if (o[0] == 'T' || o[0] == 'B' || o[0] == 'E' || o[0] == '\'' ||
@@ -920,9 +1263,10 @@ static void
 run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res, int depth)
 {
     pdf_cur_t c = { data, n, 0 };
-    pdf_obj_t *ops[OPERANDS];
+    pdf_obj_t *ops[OPERANDS], *outer = r->res;
     int nops = 0;
 
+    r->res = res;
     for (;;) {
         pdf_obj_t *o = pdf_parse(&c, 0);
         int i;
@@ -950,9 +1294,77 @@ run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res, int depth)
     while (nops > 0) {
         pdf_free(ops[--nops]);
     }
+    r->res = outer;
 }
 
 /* ------------------------------------------------------------------ API  */
+
+/** @brief A renderer of @p w by @p h pixels on a ground of @p bg, drawing
+ *         through @p base, which is also its patterns' default space. */
+static rs_t *
+rs_new(tiku_pdf_t *doc, int w, int h, uint32_t bg, pdf_mat_t base)
+{
+    rs_t *r = calloc(1, sizeof *r);
+    long i;
+
+    if (r == NULL) {
+        return NULL;
+    }
+    r->doc = doc;
+    r->pix.w = w;
+    r->pix.h = h;
+    r->pix.px = malloc((size_t)w * (size_t)h * sizeof *r->pix.px);
+    if (r->pix.px == NULL) {
+        free(r);
+        return NULL;
+    }
+    for (i = 0; i < (long)w * h; i++) {
+        r->pix.px[i] = bg;
+    }
+    pdf_path_init(&r->path);
+    pdf_path_init(&r->tmp);
+    r->gs[0].ctm = base;
+    r->gs[0].fill = r->gs[0].stroke = 0xff000000u;
+    r->gs[0].falpha = r->gs[0].salpha = 1;
+    r->gs[0].lw = 1;
+    r->gs[0].miter = 10;
+    r->gs[0].th = 1;
+    r->gs[0].nfv = r->gs[0].nsv = 1;
+    r->tm = r->tlm = pdf_mat(1, 0, 0, 1, 0, 0);
+    r->pbase = base;
+    return r;
+}
+
+/** @brief Everything a renderer held given back but its pixels, which
+ *         are returned for the caller to free. */
+static uint32_t *
+rs_finish(rs_t *r)
+{
+    uint32_t *px = r->pix.px;
+    int i;
+
+    while (r->sp > 0) {
+        pop(r);
+    }
+    clip_unref(r->gs[0].clip);
+    for (i = 0; i < r->ncs; i++) {
+        pdf_cs_free(r->cs_keep[i]);
+    }
+    for (i = 0; i < r->nfont; i++) {
+        pdf_tfont_free(r->fonts[i].font);
+        pdf_gfont_free(r->fonts[i].glyphs);
+    }
+    for (i = 0; i < r->nshade; i++) {
+        pdf_shade_free(r->shades[i].s);
+    }
+    for (i = 0; i < r->ntile; i++) {
+        tile_free(r->tiles[i]);
+    }
+    pdf_path_free(&r->path);
+    pdf_path_free(&r->tmp);
+    free(r);
+    return px;
+}
 
 int
 tiku_pdf_render_size(tiku_pdf_t *doc, int page, double scale, int *w, int *h)
@@ -974,59 +1386,24 @@ tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
     pdf_obj_t *p = pdf_page_dict(doc, page);
     unsigned char *data = NULL;
     long n = 0;
-    int pw, ph, i;
+    int pw, ph;
 
     if (p == NULL || out == NULL || w <= 0 || h <= 0 || scale <= 0 ||
         (long)w * h > 64L * 1024L * 1024L ||
         pdf_page_matrix(doc, page, scale, x0, y0, &base, &pw, &ph) != 0) {
         return -1;
     }
-    r = calloc(1, sizeof *r);
+    r = rs_new(doc, w, h, 0xffffffffu, base);
     if (r == NULL) {
         return -1;
     }
-    r->doc = doc;
-    r->pix.w = w;
-    r->pix.h = h;
-    r->pix.px = malloc((size_t)w * (size_t)h * sizeof *r->pix.px);
-    if (r->pix.px == NULL) {
-        free(r);
-        return -1;
-    }
-    for (i = 0; i < w * h; i++) {
-        r->pix.px[i] = 0xffffffffu;
-    }
-    pdf_path_init(&r->path);
-    pdf_path_init(&r->tmp);
-    r->gs[0].ctm = base;
-    r->gs[0].fill = r->gs[0].stroke = 0xff000000u;
-    r->gs[0].falpha = r->gs[0].salpha = 1;
-    r->gs[0].lw = 1;
-    r->gs[0].miter = 10;
-    r->gs[0].th = 1;
-    r->gs[0].nfv = r->gs[0].nsv = 1;
-    r->tm = r->tlm = pdf_mat(1, 0, 0, 1, 0, 0);
     if (pdf_page_content(doc, p, &data, &n) == 0) {
         run(r, data, n, pdf_page_inherited(doc, p, "Resources"), 0);
         free(data);
     }
-    while (r->sp > 0) {
-        pop(r);
-    }
-    clip_unref(r->gs[0].clip);
-    for (i = 0; i < r->ncs; i++) {
-        pdf_cs_free(r->cs_keep[i]);
-    }
-    for (i = 0; i < r->nfont; i++) {
-        pdf_tfont_free(r->fonts[i].font);
-        pdf_gfont_free(r->fonts[i].glyphs);
-    }
-    pdf_path_free(&r->path);
-    pdf_path_free(&r->tmp);
     out->w = w;
     out->h = h;
-    out->px = r->pix.px;
-    free(r);
+    out->px = rs_finish(r);
     return 0;
 }
 

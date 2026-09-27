@@ -85,7 +85,7 @@ obj(pdfw_t *b, int num, const char *body)
 static void
 stream(pdfw_t *b, int num, const char *dict_inner, const char *data, long n)
 {
-    char head[128];
+    char head[512];
 
     b->off[num] = b->n;
     if (num >= b->nobj) {
@@ -430,6 +430,102 @@ png_out(const tiku_pdf_pixmap_t *pm, const char *path)
 }
 
 /**
+ * @brief Shadings and patterns on a 300-point page: an axial pattern with
+ *        one end extended, a radial shading by sh in a clip, a coloured
+ *        and an uncoloured tiling, and a fill at half its alpha.
+ */
+static pdfw_t
+shade_file(void)
+{
+    pdfw_t b = {0};
+    const char *content =
+        "/Pattern cs /Ax scn 0 200 100 100 re f "
+        "q 150 150 100 100 re W n /Rd sh Q "
+        "/Pattern cs /Tl scn 0 0 100 100 re f "
+        "/PU cs 0 1 0 /Un scn 150 0 100 100 re f "
+        "/Half gs 1 0 0 rg 0 110 100 60 re f";
+    const char *cell = "0 0 0 rg 0 0 5 5 re f";
+    const char *stencil = "1 0 0 rg 0 0 5 5 re f";
+
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] "
+               "/Resources << /Pattern << /Ax 5 0 R /Tl 6 0 R /Un 7 0 R >> "
+               "/Shading << /Rd 8 0 R >> /ExtGState << /Half << /ca 0.5 >> "
+               ">> /ColorSpace << /PU [/Pattern /DeviceRGB] >> >> "
+               "/Contents 4 0 R >>");
+    stream(&b, 4, "", content, (long)strlen(content));
+    obj(&b, 5, "<< /PatternType 2 /Shading << /ShadingType 2 /ColorSpace "
+               "/DeviceRGB /Coords [20 0 80 0] /Extend [false true] "
+               "/Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] "
+               "/C1 [0 0 1] /N 1 >> >> >>");
+    stream(&b, 6, "/PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 10 10]"
+                  " /XStep 10 /YStep 10 /Resources << >>", cell,
+           (long)strlen(cell));
+    /* Uncoloured: the red it asks for is not its to choose. */
+    stream(&b, 7, "/PatternType 1 /PaintType 2 /TilingType 1 /BBox [0 0 10 10]"
+                  " /XStep 10 /YStep 10 /Resources << >>", stencil,
+           (long)strlen(stencil));
+    obj(&b, 8, "<< /ShadingType 3 /ColorSpace /DeviceRGB "
+               "/Coords [200 200 0 200 200 40] /Function << /FunctionType 2 "
+               "/Domain [0 1] /C0 [0 1 0] /C1 [0 0 1] /N 1 >> >>");
+    xref(&b, 1, 0);
+    return b;
+}
+
+/** @brief Whether @p c is within @p tol of @p r, @p g, @p b. */
+static int
+near(uint32_t c, int r, int g, int b, int tol)
+{
+    return abs((int)(c >> 16 & 255) - r) <= tol &&
+           abs((int)(c >> 8 & 255) - g) <= tol &&
+           abs((int)(c & 255) - b) <= tol;
+}
+
+static void
+shade_test(void)
+{
+    pdfw_t b = shade_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+          pm.w == 300, "a page of shadings and patterns renders");
+    if (pm.px == NULL) {
+        tiku_pdf_close(doc);
+        free(b.p);
+        return;
+    }
+    /* Axial along x 20..80, drawn in the pattern fill (device y 0..100). */
+    check(pixel(&pm, 10, 50) == 0xffffffu,
+          "an axial shading leaves what is before an end not extended");
+    check(near(pixel(&pm, 50, 50), 127, 0, 128, 3),
+          "and is half one colour, half the other, at its middle");
+    check(pixel(&pm, 95, 50) == 0x0000ffu, "and carries the extended end on");
+    /* Radial about user 200, 200 (device 200, 100), radius 0 to 40. */
+    check(near(pixel(&pm, 200, 100), 0, 255, 0, 8) &&
+          near(pixel(&pm, 230, 100), 0, 64, 191, 8),
+          "a radial shading by sh, green at its centre to blue at 40");
+    check(pixel(&pm, 246, 100) == 0xffffffu &&
+          pixel(&pm, 140, 100) == 0xffffffu,
+          "and nothing past its outer circle or outside the clip");
+    /* The coloured cell: black 0..5 of every 10, both ways. */
+    check(pixel(&pm, 2, 298) == 0 && pixel(&pm, 12, 288) == 0 &&
+          pixel(&pm, 7, 298) == 0xffffffu && pixel(&pm, 2, 293) == 0xffffffu,
+          "a coloured tiling repeats its cell");
+    check(pixel(&pm, 152, 298) == 0x00ff00u &&
+          pixel(&pm, 157, 298) == 0xffffffu,
+          "an uncoloured one paints the colour scn gave it");
+    check(near(pixel(&pm, 50, 160), 255, 127, 127, 2),
+          "a fill at half its alpha lets half the paper through");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
+/**
  * @brief Three pages, an outline over them and links between them: an
  *        entry and a link by name (the Names tree and the older Dests
  *        dictionary), one straight to a page, one to an address.
@@ -718,6 +814,7 @@ main(void)
     filter_test();
     glyph_test();
     render_test();
+    shade_test();
     nav_test();
     corpus_test();
     if (fails) {

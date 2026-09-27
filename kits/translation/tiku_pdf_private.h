@@ -306,6 +306,26 @@ pdf_mask_t pdf_mask_full(int w, int h);
 /** @brief Paint @p colour through @p m (and @p clip) at @p alpha. */
 void pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
                uint32_t colour, double alpha);
+/** @brief @p colour laid over pixel @p d with coverage @p a, 0 to 255. */
+void pdf_blend(uint32_t *d, uint32_t colour, int a);
+
+/* Shadings: tiku_pdf_shade.c                                                */
+
+typedef struct pdf_shade pdf_shade_t;
+/** @brief Shading @p dict, its colour space named in @p res: types 1 to 3
+ *        drawn, the meshes as their Background. */
+pdf_shade_t *pdf_shade_load(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_obj_t *res);
+void pdf_shade_free(pdf_shade_t *s);
+/**
+ * @brief Paint @p s, its space taken to the device by @p to, through
+ *        coverage @p m, or over all @p clip leaves when @p m is NULL.
+ *
+ * With @p background its Background fills what the shading leaves out,
+ * as a pattern's fill wants and sh does not.
+ */
+void pdf_shade_paint(pdf_pix_t *pix, const pdf_shade_t *s,
+                     const pdf_mat_t *to, const pdf_mask_t *m,
+                     const pdf_mask_t *clip, double alpha, int background);
 
 /* Glyphs: tiku_pdf_glyph.c                                                  */
 

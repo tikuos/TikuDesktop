@@ -672,7 +672,6 @@ pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
         for (x = 0; x < m->w; x++) {
             int px = m->x0 + x, a = m->a[(size_t)y * m->w + x];
             uint32_t *d;
-            unsigned dr, dg, db;
 
             if (px < 0 || px >= pix->w || a == 0) {
                 continue;
@@ -690,13 +689,19 @@ pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
                 continue;
             }
             d = pix->px + (size_t)py * pix->w + px;
-            dr = (*d >> 16) & 0xff;
-            dg = (*d >> 8) & 0xff;
-            db = *d & 0xff;
-            dr = (dr * (255 - (unsigned)a) + cr * (unsigned)a + 127) / 255;
-            dg = (dg * (255 - (unsigned)a) + cg * (unsigned)a + 127) / 255;
-            db = (db * (255 - (unsigned)a) + cb * (unsigned)a + 127) / 255;
-            *d = 0xff000000u | (dr << 16) | (dg << 8) | db;
+            pdf_blend(d, 0xff000000u | cr << 16 | cg << 8 | cb, a);
         }
     }
+}
+
+void
+pdf_blend(uint32_t *d, uint32_t colour, int a)
+{
+    unsigned ua = (unsigned)a, dr = (*d >> 16) & 0xff, dg = (*d >> 8) & 0xff;
+    unsigned db = *d & 0xff;
+
+    dr = (dr * (255u - ua) + ((colour >> 16) & 0xff) * ua + 127) / 255;
+    dg = (dg * (255u - ua) + ((colour >> 8) & 0xff) * ua + 127) / 255;
+    db = (db * (255u - ua) + (colour & 0xff) * ua + 127) / 255;
+    *d = 0xff000000u | dr << 16 | dg << 8 | db;
 }
