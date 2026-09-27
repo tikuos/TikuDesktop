@@ -104,6 +104,58 @@ an output that grows.  Nothing else in the kits changes.
    author's no-copy.  All sixteen blend modes, luminosity and alpha soft
    masks, groups composited as one, and every annotation's appearance.
 
+6. **What was left after the five.**  Asked for on 2026-09-27, taken
+   roughly in the order a reader would notice each:
+   - images of scans: CCITT fax (TI's one image), progressive JPEG,
+     JBIG2, JPEG 2000 -- grey boxes until each is read;
+   - speed: fonts parsed again for every page drawn, every glyph drawn
+     from its outline each time (a third of a page's time, measured);
+   - optional content (layers drawn whether on or off), annotations
+     without an appearance, form fields;
+   - composite fonts past Identity-H: CMaps, vertical writing, CJK
+     fonts the file leaves out;
+   - mesh shadings (4 to 7) and knockout groups;
+   - the window: thumbnails, rotation, the place and the recent files
+     remembered, whole-word and case search, copying past 4 KB;
+   - the rest of security: SASLprep for AES-256 passwords, certificate
+     encryption, signatures shown;
+   - hardening: a sanitizer build in `mk/`, the JPEG decoder and the
+     font readers fuzzed on their own (the PDF kit already is).
+
+   *Done so far*: CCITT fax, Groups 3 and 4 (`tiku_fax`), as a byte
+   filter so images, stencils and masks all have it; read against
+   libtiff's encoder in every mode, and TI's ESD mark bit for bit as
+   poppler reads it, where a black box stood.  Fonts read once for the
+   document (a few dozen kept between pages) and each glyph drawn once
+   a page for each size and quarter-pixel place: the RP2350's pages
+   draw in 3.6 ms, not 5.5, the MSP430's in 4.9, not 7.3.  Progressive
+   JPEG, and components sent in scans of their own: jpegtran's
+   rewrites of every JPEG in the corpus decode to the very pixels of
+   the baseline they came from, and the decoder is fuzzed alone.
+   Layers: the default configuration with its view-time usage states,
+   membership by policy and by expression, honoured in drawing and in
+   the text read; poppler agrees on every probe but the usage states,
+   which it ignores and the standard does not.  Annotations that store
+   no appearance drawn as a viewer draws their kind: squares, circles,
+   lines and their endings, polygons, ink, highlights and the other
+   text markup, free text, notes, stamps.  On the way, round caps and
+   joins lost their holes: every piece of a stroke is now wound the
+   same way, which ST's and TI's page furniture shows too.  Form fields
+   drawn from their values when they store no look, or the form says
+   its looks are stale (NeedAppearances): text and choices as DA sets
+   them, ticks, dots, captions, MK's ground and border.  Mesh shadings
+   (4 to 7) read into triangles and filled blending between their
+   corners; four made here match poppler's drawing to two levels in
+   255.  The fuzz found a DeviceN of more than four inks reading past
+   its initial colour; it holds eight now.  `make check-sanitize`
+   builds the readers of files from elsewhere under AddressSanitizer
+   and UBSan and runs their suites; its first run found a Type 1 font's
+   head read past its buffer.  The JPEG decoder (23,000 files) and the
+   font readers (342,000 TrueType, CFF and Type 1 programs, the
+   corpus's own mutated) were fuzzed alone and are clean.  TikuPDF's
+   Edit menu has Match Case and Whole Words, each starting the search
+   again.
+
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand
 lines, five to eight weeks of focused work.  Each milestone leaves
