@@ -107,13 +107,14 @@ put_box(tx_t *t, uint32_t cp)
     c->y1 = t->box[3];
 }
 
-/** @brief Where the glyph of width @p w through @p trm lands on the page
- *        drawn: its em, from a fifth below the baseline to the top. */
+/** @brief Where a glyph's box, @p x0 to @p x1 and @p y0 to @p y1 in its
+ *        own ems, lands through @p trm on the page drawn. */
 static void
-glyph_box(tx_t *t, const mat_t *trm, double w, float *box)
+glyph_box(tx_t *t, const mat_t *trm, double x0, double x1, double y0,
+          double y1, float *box)
 {
     mat_t m = mat_mul(*trm, t->base);
-    double gx[4] = {0, w, w, 0}, gy[4] = {-0.2, -0.2, 0.8, 0.8};
+    double gx[4] = {x0, x1, x1, x0}, gy[4] = {y0, y0, y1, y1};
     int k;
 
     for (k = 0; k < 4; k++) {
@@ -189,86 +190,130 @@ font_named(tx_t *t, pdf_obj_t *res, const char *name)
                                                          "Font"), name));
 }
 
-/** @brief The text matrix moved past glyph @p code, @p w wide. */
+/** @brief The text matrix moved past glyph @p gl: across by its width,
+ *         or down by its advance when the font writes downward. */
 static void
-advance(tx_t *t, const gstate_t *g, double w, long code, size_t step)
+advance(tx_t *t, const gstate_t *g, const pdf_shown_t *gl)
 {
-    double tx = (w * g->size + g->tc + ((step == 1 && code == 32) ? g->tw
-                                                                  : 0)) *
-                g->th;
+    double extra = g->tc + (gl->word ? g->tw : 0);
 
-    t->tm = mat_mul(mat_of(1, 0, 0, 1, tx, 0), t->tm);
+    if (g->font != NULL && g->font->vertical) {
+        t->tm = mat_mul(mat_of(1, 0, 0, 1, 0, gl->w1 * g->size + extra),
+                        t->tm);
+    } else {
+        t->tm = mat_mul(mat_of(1, 0, 0, 1, (gl->w * g->size + extra) * g->th,
+                               0), t->tm);
+    }
+}
+
+/** @brief The text render matrix for glyph @p gl, hung from its
+ *         vertical origin when the font writes downward (9.7.4.3). */
+static mat_t
+glyph_matrix(const tx_t *t, const gstate_t *g, const pdf_shown_t *gl)
+{
+    mat_t m = mat_of(g->size * g->th, 0, 0, g->size, 0, g->rise);
+
+    if (g->font != NULL && g->font->vertical) {
+        m = mat_mul(mat_of(1, 0, 0, 1, -gl->vx, -gl->vy), m);
+    }
+    return mat_mul(mat_mul(m, t->tm), g->ctm);
+}
+
+/**
+ * @brief A space or a line break before a glyph at @p x, @p y, as where
+ *        it lands against where the last one ended says: along a line
+ *        written across, or down a column written @p down.
+ */
+static void
+gap(tx_t *t, double x, double y, double size, int down)
+{
+    double ref = size > t->last_size ? t->last_size : size;
+    double along = down ? t->last_y - y : x - t->last_x;
+    double across = down ? x - t->last_x : y - t->last_y;
+
+    /* A break made up between glyphs is an empty box where the last one
+     * ended: it selects and matches, and draws nothing. */
+    if (down) {
+        t->box[1] = t->box[3];
+    } else {
+        t->box[0] = t->box[2];
+    }
+    if (fabs(across) > 0.5 * ref || along < -1.5 * ref) {
+        if (!t->last_space) {
+            put_char(t, '\n');
+        }
+    } else if (along > 0.18 * ref && !t->last_space) {
+        put_char(t, ' ');
+    }
+}
+
+/** @brief Glyph @p gl's characters through @p trm, each with its share
+ *         of the glyph's box. */
+static void
+emit(tx_t *t, const mat_t *trm, const pdf_shown_t *gl, int down)
+{
+    if (t->want_chars) {
+        if (down) {
+            glyph_box(t, trm, 0, gl->w, gl->vy + gl->w1, gl->vy, t->box);
+        } else {
+            glyph_box(t, trm, 0, gl->w, -0.2, 0.8, t->box);
+        }
+    }
+    if (gl->uni2) {
+        /* A ligature: its two characters share the glyph. */
+        float right = t->box[2];
+
+        t->box[2] = (t->box[0] + right) / 2;
+        put_char(t, gl->uni);
+        t->box[0] = t->box[2];
+        t->box[2] = right;
+        put_char(t, gl->uni2);
+    } else {
+        put_char(t, gl->uni);
+    }
 }
 
 /**
  * @brief Place the glyphs of one string.
  *
- * Where the first glyph lands, against where the last one ended, says
- * whether a space or a line break comes first; a page written out of
- * order still reads as its stream wrote it.
+ * Where each lands against where the last one ended says whether a
+ * space or a line break comes first; a page written out of order still
+ * reads as its stream wrote it.  The font's CMap says how many bytes
+ * each code takes.
  */
 static void
 show(tx_t *t, const unsigned char *s, size_t n)
 {
     gstate_t *g = &t->gs[t->sp];
-    size_t i, step = (g->font != NULL && g->font->two_byte) ? 2 : 1;
+    int down = g->font != NULL && g->font->vertical, k;
+    pdf_shown_t gl;
+    size_t i = 0;
 
-    for (i = 0; i + step <= n; i += step) {
-        long code = step == 2 ? ((long)s[i] << 8) | s[i + 1] : s[i];
-        double w = g->font != NULL && g->font->width[code] >= 0
-                   ? g->font->width[code] : g->font ? g->font->missing : 0.5;
-        mat_t trm = mat_mul(mat_mul(mat_of(g->size * g->th, 0, 0, g->size,
-                                           0, g->rise), t->tm), g->ctm);
+    while ((k = pdf_tfont_next(g->font, s + i, n - i, &gl)) > 0) {
+        mat_t trm = glyph_matrix(t, g, &gl);
+        mat_t pen = mat_mul(t->tm, g->ctm);
         double size = sqrt(fabs(trm.a * trm.d - trm.b * trm.c));
 
+        i += (size_t)k;
         if (size <= 0) {
             size = g->size;
         }
         if (t->hide) {
-            advance(t, g, w, code, step);   /* placed, but not read */
+            advance(t, g, &gl);     /* placed, but not read */
             continue;
         }
         if (t->have_last) {
-            double dy = trm.f - t->last_y, dx = trm.e - t->last_x;
-            double ref = size > t->last_size ? t->last_size : size;
-
-            /* A break made up between glyphs is an empty box where the
-             * last one ended: it selects and matches, and draws nothing. */
-            t->box[0] = t->box[2];
-            if (fabs(dy) > 0.5 * ref || dx < -1.5 * ref) {
-                if (!t->last_space) {
-                    put_char(t, '\n');
-                }
-            } else if (dx > 0.18 * ref && !t->last_space) {
-                put_char(t, ' ');
-            }
+            gap(t, down ? pen.e : trm.e, down ? pen.f : trm.f, size, down);
         }
         if (g->font != NULL) {
-            if (t->want_chars) {
-                glyph_box(t, &trm, w, t->box);
-            }
-            if (g->font->uni2[code]) {
-                /* A ligature: its two characters share the glyph. */
-                float right = t->box[2];
-
-                t->box[2] = (t->box[0] + right) / 2;
-                put_char(t, g->font->uni[code]);
-                t->box[0] = t->box[2];
-                t->box[2] = right;
-                put_char(t, g->font->uni2[code]);
-            } else {
-                put_char(t, g->font->uni[code]);
-            }
+            emit(t, &trm, &gl, down);
         }
-        advance(t, g, w, code, step);
-        {
-            mat_t end = mat_mul(t->tm, g->ctm);
-
-            t->last_x = end.e;
-            t->last_y = trm.f;
-            t->last_size = size;
-            t->have_last = 1;
-        }
+        advance(t, g, &gl);
+        pen = mat_mul(t->tm, g->ctm);
+        t->last_x = pen.e;
+        t->last_y = down ? pen.f : trm.f;
+        t->last_size = size;
+        t->have_last = 1;
     }
 }
 
@@ -439,9 +484,11 @@ op(tx_t *t, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
             if (e->kind == PDF_STRING) {
                 show(t, e->u.s.p, e->u.s.n);
             } else if (e->kind == PDF_INT || e->kind == PDF_REAL) {
-                double tx = -pdf_number(e, 0) / 1000.0 * g->size * g->th;
+                double d = -pdf_number(e, 0) / 1000.0 * g->size;
 
-                t->tm = mat_mul(mat_of(1, 0, 0, 1, tx, 0), t->tm);
+                t->tm = mat_mul(g->font != NULL && g->font->vertical
+                                ? mat_of(1, 0, 0, 1, 0, d)
+                                : mat_of(1, 0, 0, 1, d * g->th, 0), t->tm);
             }
         }
     } else if (strcmp(o, "Do") == 0 && n >= 1 && ops[0]->kind == PDF_NAME) {

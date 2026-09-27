@@ -9,8 +9,9 @@
  *
  * A ToUnicode map says outright (ISO 32000 9.10.3); a simple font
  * without one says it through its encoding and the glyph names in it
- * (9.6.6); a composite font's codes are CIDs and the map is the only
- * way in.  Widths come from the font dictionary, per code.
+ * (9.6.6); a composite font's codes go through its CMap to CIDs, which
+ * its collection's table or its CMap's own scheme may name.  Widths come
+ * from the font dictionary: per code, or per CID across and down.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,6 +19,7 @@
 #include "tiku_pdf_private.h"
 #include "tiku_pdf_glyphs.inl"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -355,12 +357,161 @@ cid_widths(tiku_pdf_t *doc, pdf_tfont_t *f, pdf_obj_t *cidfont)
     }
 }
 
+/** @brief Order W2's runs by their first CID. */
+static int
+vrun_cmp(const void *a, const void *b)
+{
+    const pdf_vrun_t *x = a, *y = b;
+
+    return x->first < y->first ? -1 : x->first > y->first;
+}
+
+/** @brief A W2 run of @p first to @p last, from three numbers at @p v. */
+static void
+vrun_add(tiku_pdf_t *doc, pdf_tfont_t *f, long first, long last,
+         pdf_obj_t **v, long *cap)
+{
+    pdf_vrun_t *r;
+
+    if (f->nw2 == *cap) {
+        long more = *cap ? *cap * 2 : 64;
+
+        if (more > 65536 ||
+            (r = realloc(f->w2, (size_t)more * sizeof *r)) == NULL) {
+            return;
+        }
+        f->w2 = r;
+        *cap = more;
+    }
+    r = &f->w2[f->nw2++];
+    r->first = first;
+    r->last = last;
+    r->w1 = pdf_number(pdf_resolve(doc, v[0]), -1000) / 1000.0;
+    r->vx = pdf_number(pdf_resolve(doc, v[1]), 500) / 1000.0;
+    r->vy = pdf_number(pdf_resolve(doc, v[2]), 880) / 1000.0;
+}
+
+/** @brief Metrics of a CID font written down the page (ISO 32000
+ *         9.7.4.3): /DW2 for all, /W2 runs for some, as W is. */
+static void
+cid_vmetrics(tiku_pdf_t *doc, pdf_tfont_t *f, pdf_obj_t *cidfont)
+{
+    pdf_obj_t *dw2 = pdf_get(doc, cidfont, "DW2");
+    pdf_obj_t *w = pdf_get(doc, cidfont, "W2");
+    long i = 0, cap = 0;
+
+    if (dw2 != NULL && dw2->kind == PDF_ARRAY && dw2->u.a.n == 2) {
+        f->dw2_vy = pdf_number(pdf_resolve(doc, dw2->u.a.item[0]), 880) /
+                    1000.0;
+        f->dw2_w1 = pdf_number(pdf_resolve(doc, dw2->u.a.item[1]), -1000) /
+                    1000.0;
+    }
+    while (w != NULL && w->kind == PDF_ARRAY && i + 1 < w->u.a.n) {
+        long c = pdf_int(pdf_resolve(doc, w->u.a.item[i]), -1), k;
+        pdf_obj_t *b = pdf_resolve(doc, w->u.a.item[i + 1]);
+
+        if (c < 0 || b == NULL) {
+            break;
+        }
+        if (b->kind == PDF_ARRAY) {
+            for (k = 0; k + 2 < b->u.a.n; k += 3) {
+                vrun_add(doc, f, c + k / 3, c + k / 3, b->u.a.item + k,
+                         &cap);
+            }
+            i += 2;
+            continue;
+        }
+        if (i + 4 >= w->u.a.n) {
+            break;
+        }
+        vrun_add(doc, f, c, pdf_int(b, c), w->u.a.item + i + 2, &cap);
+        i += 5;
+    }
+    if (f->nw2 > 1) {
+        qsort(f->w2, (size_t)f->nw2, sizeof *f->w2, vrun_cmp);
+    }
+}
+
+/** @brief The collection a CID font's CIDs come from ("Adobe-Japan1"),
+ *         into @p out; "" when they are the font's own (Identity). */
+static void
+collection(tiku_pdf_t *doc, pdf_obj_t *cidfont, char *out, size_t max)
+{
+    pdf_obj_t *info = pdf_get(doc, cidfont, "CIDSystemInfo");
+    pdf_obj_t *reg = pdf_get(doc, info, "Registry");
+    pdf_obj_t *ord = pdf_get(doc, info, "Ordering");
+
+    out[0] = '\0';
+    if (reg != NULL && ord != NULL && reg->kind == PDF_STRING &&
+        ord->kind == PDF_STRING && reg->u.s.n < 16 && ord->u.s.n < 16) {
+        snprintf(out, max, "%.*s-%.*s", (int)reg->u.s.n,
+                 (const char *)reg->u.s.p, (int)ord->u.s.n,
+                 (const char *)ord->u.s.p);
+    }
+}
+
+/** @brief Whether @p cidfont carries its own program. */
+static int
+embedded(tiku_pdf_t *doc, pdf_obj_t *cidfont)
+{
+    pdf_obj_t *desc = pdf_get(doc, cidfont, "FontDescriptor");
+
+    return pdf_get(doc, desc, "FontFile") != NULL ||
+           pdf_get(doc, desc, "FontFile2") != NULL ||
+           pdf_get(doc, desc, "FontFile3") != NULL;
+}
+
+/**
+ * @brief A composite font: its CMap, its CIDs' widths across and down,
+ *        and what they stand for.  When the CMap's codes are Unicode and
+ *        its CIDs are not known here, glyphs go by character, as wide
+ *        as the stand-in draws them.
+ */
+static void
+composite(tiku_pdf_t *doc, pdf_tfont_t *f, pdf_obj_t *font)
+{
+    pdf_obj_t *kids = pdf_get(doc, font, "DescendantFonts");
+    pdf_obj_t *cid = (kids != NULL && kids->kind == PDF_ARRAY &&
+                      kids->u.a.n > 0)
+                     ? pdf_resolve(doc, kids->u.a.item[0]) : NULL;
+    char coll[40];
+    long i;
+
+    f->missing = 1.0;
+    f->dw2_vy = 0.88;
+    f->dw2_w1 = -1.0;
+    f->cmap = pdf_cmap_load(doc, pdf_get(doc, font, "Encoding"));
+    f->vertical = pdf_cmap_vertical(f->cmap);
+    /* A Unicode scheme whose file is not here knows no CID for any code. */
+    f->by_unicode = f->cmap != NULL && pdf_cmap_unicode_codes(f->cmap) &&
+                    pdf_cmap_cid(f->cmap, 0x20, 2) < 0;
+    if (cid != NULL) {
+        collection(doc, cid, coll, sizeof coll);
+        f->cid_uni = coll[0] ? pdf_cid_unicode(doc, coll) : NULL;
+        cid_widths(doc, f, cid);
+        if (f->vertical) {
+            cid_vmetrics(doc, f, cid);
+        }
+    }
+    if (f->by_unicode) {
+        for (i = 0; i < f->codes; i++) {
+            f->width[i] = -1;       /* W's CIDs are not these glyphs */
+        }
+        if (cid == NULL || !embedded(doc, cid)) {
+            (void)pdf_standin_char_widths(doc, font, f->width);
+        }
+    }
+    tounicode(doc, f, pdf_get(doc, font, "ToUnicode"));
+}
+
 void
 pdf_tfont_free(pdf_tfont_t *f)
 {
     if (f == NULL) {
         return;
     }
+    pdf_cmap_free(f->cmap);
+    free(f->w2);
     free(f->uni);
     free(f->uni2);
     free(f->width);
@@ -392,16 +543,7 @@ pdf_tfont_load(tiku_pdf_t *doc, pdf_obj_t *font)
         f->width[i] = -1;
     }
     if (f->two_byte) {
-        pdf_obj_t *kids = pdf_get(doc, font, "DescendantFonts");
-        pdf_obj_t *cid = (kids != NULL && kids->kind == PDF_ARRAY &&
-                          kids->u.a.n > 0)
-                         ? pdf_resolve(doc, kids->u.a.item[0]) : NULL;
-
-        f->missing = 1.0;
-        if (cid != NULL) {
-            cid_widths(doc, f, cid);
-        }
-        tounicode(doc, f, pdf_get(doc, font, "ToUnicode"));
+        composite(doc, f, font);
         return f;
     }
     if (f->type3) {
@@ -425,4 +567,126 @@ pdf_tfont_load(tiku_pdf_t *doc, pdf_obj_t *font)
     simple_widths(doc, f, font, scale);
     tounicode(doc, f, pdf_get(doc, font, "ToUnicode"));
     return f;
+}
+
+/* ------------------------------------------------------------ showing  */
+
+/** @brief Glyph @p cid's metrics down the page: W2's, or DW2 and half
+ *         its width across. */
+static void
+vmetrics(const pdf_tfont_t *f, long cid, pdf_shown_t *g)
+{
+    long lo = 0, hi = f->nw2 - 1;
+
+    g->w1 = f->dw2_w1;
+    g->vx = g->w / 2;
+    g->vy = f->dw2_vy;
+    while (cid >= 0 && lo <= hi) {
+        long mid = lo + (hi - lo) / 2;
+        const pdf_vrun_t *r = &f->w2[mid];
+
+        if (cid < r->first) {
+            hi = mid - 1;
+        } else if (cid > r->last) {
+            lo = mid + 1;
+        } else {
+            g->w1 = r->w1;
+            g->vx = r->vx;
+            g->vy = r->vy;
+            return;
+        }
+    }
+}
+
+/** @brief A simple font's glyph: one byte, its own name. */
+static int
+simple_next(const pdf_tfont_t *f, const unsigned char *s, pdf_shown_t *g)
+{
+    g->code = s[0];
+    g->len = 1;
+    g->key = s[0];
+    g->word = s[0] == 32;
+    g->w = f == NULL ? 0.5 : f->width[s[0]] >= 0 ? f->width[s[0]]
+                                                 : f->missing;
+    if (f != NULL) {
+        g->uni = f->uni[s[0]];
+        g->uni2 = f->uni2[s[0]];
+    }
+    return 1;
+}
+
+int
+pdf_tfont_next(const pdf_tfont_t *f, const unsigned char *s, size_t n,
+               pdf_shown_t *g)
+{
+    long cid = 0;
+    uint32_t u = 0;
+
+    memset(g, 0, sizeof *g);
+    if (n == 0) {
+        return 0;
+    }
+    if (f == NULL || !f->two_byte) {
+        return simple_next(f, s, g);
+    }
+    if (f->cmap != NULL) {
+        g->len = pdf_cmap_next(f->cmap, s, n, &g->code);
+        cid = g->len ? pdf_cmap_cid(f->cmap, g->code, g->len) : 0;
+        u = g->len ? pdf_cmap_unicode(f->cmap, g->code, g->len) : 0;
+    } else if (n >= 2) {            /* no map read: two bytes, Identity */
+        g->len = 2;
+        g->code = (uint32_t)s[0] << 8 | s[1];
+        cid = (long)g->code;
+    }
+    if (g->len == 0) {
+        return 0;
+    }
+    g->word = g->len == 1 && g->code == 32;
+    g->key = cid >= 0 ? cid : f->by_unicode && u < 65536 ? (long)u : 0;
+    if (g->key >= f->codes) {
+        g->key = 0;                 /* no glyph a table of 65536 names */
+    }
+    g->w = f->width[g->key] >= 0 ? f->width[g->key] : f->missing;
+    if (g->code < 65536 && f->uni[g->code] != 0) {
+        g->uni = f->uni[g->code];   /* ToUnicode says, first */
+        g->uni2 = f->uni2[g->code];
+    } else if (u != 0) {
+        g->uni = u;
+    } else if (cid > 0 && f->cid_uni != NULL) {
+        g->uni = f->cid_uni[cid];
+    }
+    if (f->vertical) {
+        vmetrics(f, cid, g);
+    }
+    return g->len;
+}
+
+uint32_t *
+pdf_tfont_glyph_unicode(const pdf_tfont_t *f)
+{
+    uint32_t *t;
+    long c;
+
+    if (f == NULL || !f->two_byte || f->by_unicode ||
+        (t = calloc(65536, sizeof *t)) == NULL) {
+        return NULL;
+    }
+    if (f->cid_uni != NULL) {
+        memcpy(t, f->cid_uni, 65536 * sizeof *t);
+    }
+    /* What the file says of its codes, through the CMap to their CIDs. */
+    for (c = 0; c < 65536; c++) {
+        int len = f->cmap != NULL ? pdf_cmap_len(f->cmap, (uint32_t)c) : 2;
+        long cid = f->cmap != NULL ? pdf_cmap_cid(f->cmap, (uint32_t)c, len)
+                                   : c;
+        uint32_t u = f->uni[c];
+
+        if (u == 0 && f->cmap != NULL) {
+            u = pdf_cmap_unicode(f->cmap, (uint32_t)c, len);
+        }
+        if (u != 0 && cid > 0 && cid < 65536) {
+            t[cid] = u;
+        }
+    }
+    return t;
 }

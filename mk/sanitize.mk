@@ -17,8 +17,8 @@ SAN_SRCS := $(filter kits/translation/tiku_pdf_%.c %/tiku_inflate.c \
                      %/tiku_glyphpath.c,$(INTERFACE)) \
             $(filter %/tiku_digest.c %/tiku_cipher.c,$(SUPPORT))
 SAN_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_SRCS))
-SAN_TESTS := test_pdf test_pdf_crypt test_fax test_crypto test_type1 \
-             test_cff test_thumb
+SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_crypto \
+             test_type1 test_cff test_ttf test_thumb
 
 $(SAN)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)

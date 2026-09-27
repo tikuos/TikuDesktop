@@ -1176,47 +1176,80 @@ glyph_ink(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm)
     }
 }
 
+/** @brief The font the text state names, read on first use. */
+static pdf_tfont_t *
+text_font(rs_t *r, gs_t *g)
+{
+    if (g->tfont == NULL && g->fontdict != NULL) {
+        g->tfont = pdf_font_text(r->doc, g->fontdict);
+        g->gfont = g->tfont != NULL ? pdf_font_drawn(r->doc, g->fontdict)
+                                    : NULL;
+    }
+    return g->tfont;
+}
+
+/**
+ * @brief The text render matrix for glyph @p gl (ISO 32000 9.4.4): size,
+ *        scaling and rise, then the text matrix and the CTM.  Written
+ *        down the page, a glyph hangs from its vertical origin (9.7.4.3).
+ */
+static pdf_mat_t
+glyph_matrix(const rs_t *r, const gs_t *g, const pdf_tfont_t *f,
+             const pdf_shown_t *gl)
+{
+    pdf_mat_t m = pdf_mat(g->size * g->th, 0, 0, g->size, 0, g->rise);
+
+    if (f != NULL && f->vertical) {
+        m = pdf_mat_mul(pdf_mat(1, 0, 0, 1, -gl->vx, -gl->vy), m);
+    }
+    return pdf_mat_mul(m, pdf_mat_mul(r->tm, g->ctm));
+}
+
+/** @brief The text matrix moved past glyph @p gl: across by its width,
+ *         or down by its advance when the font writes downward. */
+static void
+advance(rs_t *r, const gs_t *g, const pdf_tfont_t *f, const pdf_shown_t *gl)
+{
+    double extra = g->tc + (gl->word ? g->tw : 0);
+
+    if (f != NULL && f->vertical) {
+        r->tm = pdf_mat_mul(pdf_mat(1, 0, 0, 1, 0, gl->w1 * g->size + extra),
+                            r->tm);
+    } else {
+        r->tm = pdf_mat_mul(pdf_mat(1, 0, 0, 1, (gl->w * g->size + extra) *
+                                                g->th, 0), r->tm);
+    }
+}
+
 /**
  * @brief Draw one string's glyphs where the text state puts them,
- *        advancing the text matrix by each one's width.
+ *        advancing the text matrix past each.
  *
- * The glyph is drawn through the text render matrix (ISO 32000 9.4.4):
- * size and rise, then the text matrix, then the CTM.  Type 3 glyphs are
- * content streams and are run; the rest are outlines.
+ * The font's CMap says how many bytes each code takes.  Type 3 glyphs
+ * are content streams and are run; the rest are outlines.
  */
 static void
 show(rs_t *r, const unsigned char *s, size_t n, pdf_obj_t *res, int depth)
 {
     gs_t *g = top(r);
-    pdf_tfont_t *f = g->tfont;
-    size_t i, step;
+    pdf_tfont_t *f = text_font(r, g);
+    pdf_shown_t gl;
+    size_t i = 0;
+    int k;
 
-    if (f == NULL && g->fontdict != NULL) {
-        f = g->tfont = pdf_font_text(r->doc, g->fontdict);
-        g->gfont = f != NULL ? pdf_font_drawn(r->doc, g->fontdict) : NULL;
-    }
-    step = (f != NULL && f->two_byte) ? 2 : 1;
-    for (i = 0; i + step <= n; i += step) {
-        long code = step == 2 ? ((long)s[i] << 8) | s[i + 1] : s[i];
-        double w = f != NULL && f->width[code] >= 0 ? f->width[code]
-                   : f != NULL ? f->missing : 0.5;
-        double tx;
-
+    while ((k = pdf_tfont_next(f, s + i, n - i, &gl)) > 0) {
+        i += (size_t)k;
         if (g->gfont != NULL && g->tmode != 3 && g->tmode != 7) {
-            pdf_mat_t trm = pdf_mat_mul(
-                pdf_mat(g->size * g->th, 0, 0, g->size, 0, g->rise),
-                pdf_mat_mul(r->tm, g->ctm));
+            pdf_mat_t trm = glyph_matrix(r, g, f, &gl);
 
             if (g->gfont->kind == GF_T3) {
-                glyph_proc(r, g, g->gfont, code, &trm, res, depth);
+                glyph_proc(r, g, g->gfont, gl.key, &trm, res, depth);
                 g = top(r);
             } else {
-                glyph_ink(r, g, g->gfont, code, &trm);
+                glyph_ink(r, g, g->gfont, gl.key, &trm);
             }
         }
-        tx = (w * g->size + g->tc + ((step == 1 && code == 32) ? g->tw : 0)) *
-             g->th;
-        r->tm = pdf_mat_mul(pdf_mat(1, 0, 0, 1, tx, 0), r->tm);
+        advance(r, g, f, &gl);
     }
 }
 
@@ -1288,9 +1321,13 @@ op_text(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
             if (e->kind == PDF_STRING) {
                 show(r, e->u.s.p, e->u.s.n, res, depth);
             } else if (e->kind == PDF_INT || e->kind == PDF_REAL) {
-                double tx = -pdf_number(e, 0) / 1000.0 * g->size * g->th;
+                double t = -pdf_number(e, 0) / 1000.0 * g->size;
+                const pdf_tfont_t *f = text_font(r, g);
 
-                r->tm = pdf_mat_mul(pdf_mat(1, 0, 0, 1, tx, 0), r->tm);
+                r->tm = pdf_mat_mul(f != NULL && f->vertical
+                                    ? pdf_mat(1, 0, 0, 1, 0, t)
+                                    : pdf_mat(1, 0, 0, 1, t * g->th, 0),
+                                    r->tm);
             }
         }
     }

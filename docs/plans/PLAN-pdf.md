@@ -157,7 +157,17 @@ an output that grows.  Nothing else in the kits changes.
    again.  Thumbnails: a Pages column in the outline's place, each page
    drawn small by the document's worker when the pages in view wait for
    nothing, sixty-four kept; it follows the page read and goes where it
-   is clicked.
+   is clicked.  Composite fonts past Identity-H: CMaps carried and named,
+   codes of one to four bytes, usecmap; Identity and Adobe's Unicode
+   CMaps known without data, the rest read from poppler-data where the
+   machine has it (`tiku_pdf_cmaps` names another folder), with its CID
+   tables for text given no ToUnicode.  Text written down the page hangs
+   from its vertical origin (W2, DW2) and reads in columns.  A CJK font
+   left out is drawn with the machine's faces for its language
+   (Hiragino, Songti, Apple SD Gothic; Noto CJK elsewhere), any face of
+   a collection.  Poppler reads the fixtures as we do and draws the two
+   in a face made here pixel for pixel alike; the corpus's text and
+   drawing are unchanged on every page checked.
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand

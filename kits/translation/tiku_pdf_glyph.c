@@ -51,6 +51,37 @@ static const char *const fallback[][2] = {
     {"mono", "/usr/share/fonts/dejavu/DejaVuSansMono.ttf"},
 };
 
+/* Faces for Chinese, Japanese and Korean, by language and look; "any"
+ * serves every one.  A collection's face follows a #: Noto CJK keeps
+ * JP, KR, SC and TC in that order. */
+#define NOTO "/usr/share/fonts/opentype/noto/"
+static const char *const cjk_fallback[][2] = {
+    {"jp", "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"},
+    {"jp-serif", "/System/Library/Fonts/ヒラギノ明朝 ProN.ttc"},
+    {"sc", "/System/Library/Fonts/Hiragino Sans GB.ttc"},
+    {"sc", "/System/Library/Fonts/STHeiti Light.ttc#1"},
+    {"sc-serif", "/System/Library/Fonts/Supplemental/Songti.ttc#6"},
+    {"tc", "/System/Library/Fonts/STHeiti Light.ttc"},
+    {"tc-serif", "/System/Library/Fonts/Supplemental/Songti.ttc#7"},
+    {"kr", "/System/Library/Fonts/AppleSDGothicNeo.ttc"},
+    {"kr", "/System/Library/Fonts/Supplemental/AppleGothic.ttf"},
+    {"kr-serif", "/System/Library/Fonts/Supplemental/AppleMyungjo.ttf"},
+    {"jp", NOTO "NotoSansCJK-Regular.ttc"},
+    {"kr", NOTO "NotoSansCJK-Regular.ttc#1"},
+    {"sc", NOTO "NotoSansCJK-Regular.ttc#2"},
+    {"tc", NOTO "NotoSansCJK-Regular.ttc#3"},
+    {"jp-serif", NOTO "NotoSerifCJK-Regular.ttc"},
+    {"kr-serif", NOTO "NotoSerifCJK-Regular.ttc#1"},
+    {"sc-serif", NOTO "NotoSerifCJK-Regular.ttc#2"},
+    {"tc-serif", NOTO "NotoSerifCJK-Regular.ttc#3"},
+    {"any", "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"},
+    {"any", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"},
+    {"any", "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc"},
+    {"any", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf"},
+    {"any", "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"},
+};
+#undef NOTO
+
 void
 tiku_pdf_fonts(tiku_pdf_t *doc, const char *dir)
 {
@@ -60,10 +91,34 @@ tiku_pdf_fonts(tiku_pdf_t *doc, const char *dir)
     }
 }
 
-/** @brief The stand-in at @p path, opened once per document. */
+/** @brief Split "file#face" into the file, in @p file, and the face. */
+static unsigned
+subst_face(const char *spec, char *file, size_t max)
+{
+    const char *hash = strrchr(spec, '#');
+
+    snprintf(file, max, "%.*s", hash != NULL ? (int)(hash - spec)
+                                             : (int)strlen(spec), spec);
+    return hash != NULL ? (unsigned)strtoul(hash + 1, NULL, 10) : 0u;
+}
+
+/** @brief Whether the face @p spec names ("file" or "file#face") is a
+ *         font this machine has. */
+static int
+subst_there(const char *spec)
+{
+    char file[512];
+
+    (void)subst_face(spec, file, sizeof file);
+    return tiku_ttf_is_font(file);
+}
+
+/** @brief The stand-in @p path names, opened once per document. */
 static tiku_ttf_t *
 subst_open(tiku_pdf_t *doc, const char *path)
 {
+    char file[512];
+    unsigned face;
     int i;
 
     for (i = 0; i < doc->nsubst; i++) {
@@ -71,10 +126,11 @@ subst_open(tiku_pdf_t *doc, const char *path)
             return doc->subst[i];
         }
     }
-    if (doc->nsubst == 8) {
+    if (doc->nsubst == PDF_SUBST_MAX) {
         return NULL;
     }
-    doc->subst[doc->nsubst] = tiku_ttf_open(path);
+    face = subst_face(path, file, sizeof file);
+    doc->subst[doc->nsubst] = tiku_ttf_open_face(file, face);
     if (doc->subst[doc->nsubst] == NULL) {
         return NULL;
     }
@@ -201,6 +257,162 @@ substitute(tiku_pdf_t *doc, const char *base, long flags)
     const char *file = subst_file(doc, subst_kind(base, flags));
 
     return file[0] != '\0' ? subst_open(doc, file) : NULL;
+}
+
+/** @brief The language a composite font's name says, from @p words of
+ *         four languages' faces: 0 JP, 1 SC, 2 TC, 3 KR; -1 for none. */
+static int
+cjk_named(const char *base)
+{
+    static const char *const words[4][9] = {
+        {"Mincho", "Gothic", "Heisei", "Koz", "Hiragino", "MS-", "Meiryo",
+         "Osaka", "Ryumin"},
+        {"Sim", "STSong", "STHei", "STKai", "STFang", "YaHei", "FangSong",
+         "KaiTi", "DengXian"},
+        {"Ming", "MSung", "MHei", "JhengHei", "Kai", "DFKai", "", "", ""},
+        {"Batang", "Gulim", "Dotum", "Gungsuh", "Malgun", "HYSMyeongJo",
+         "HYGoThic", "Myeong", "Nanum"},
+    };
+    int lang, i;
+
+    for (lang = 0; lang < 4; lang++) {
+        for (i = 0; i < 9; i++) {
+            if (words[lang][i][0] != '\0' && has_word(base, words[lang][i])) {
+                return lang;
+            }
+        }
+    }
+    for (i = 0; base[i] != '\0'; i++) {
+        if ((unsigned char)base[i] >= 0x80) {
+            return 0;               /* a name in its own script: CJK */
+        }
+    }
+    return -1;
+}
+
+/**
+ * @brief Which CJK stand-in composite font @p font asks for: its
+ *        language by the CIDs' collection, else its CMap's name, else its
+ *        own name; then its look.  @return 0 to 7 (language * 2 + serif),
+ *        or -1 when nothing says it is Chinese, Japanese or Korean.
+ */
+static int
+cjk_kind(tiku_pdf_t *doc, pdf_obj_t *font, pdf_obj_t *cidfont,
+         const char *base, long flags)
+{
+    pdf_obj_t *ord = pdf_get(doc, pdf_get(doc, cidfont, "CIDSystemInfo"),
+                             "Ordering");
+    pdf_obj_t *enc = pdf_get(doc, font, "Encoding");
+    const char *e = enc != NULL && enc->kind == PDF_NAME
+                    ? (const char *)enc->u.s.p : "";
+    char o[16] = "";
+    int lang;
+
+    if (ord != NULL && ord->kind == PDF_STRING) {
+        snprintf(o, sizeof o, "%.*s", (int)ord->u.s.n,
+                 (const char *)ord->u.s.p);
+    }
+    lang = strncmp(o, "Japan", 5) == 0 ? 0 : strcmp(o, "GB1") == 0 ? 1 :
+           strcmp(o, "CNS1") == 0 ? 2 :
+           strcmp(o, "Korea1") == 0 || strcmp(o, "KR") == 0 ? 3 : -1;
+    if (lang < 0) {
+        lang = has_word(e, "GB") ? 1 :
+               has_word(e, "CNS") || has_word(e, "B5") ||
+               has_word(e, "HK") ? 2 :
+               has_word(e, "KS") || has_word(e, "UHC") ||
+               has_word(e, "AKR") ? 3 :
+               has_word(e, "JIS") || has_word(e, "RKSJ") ||
+               has_word(e, "EUC") ? 0 : cjk_named(base);
+    }
+    if (lang < 0) {
+        return -1;
+    }
+    return lang * 2 + (((flags & 2) != 0 || has_word(base, "Min") ||
+                        has_word(base, "Song") || has_word(base, "Sung") ||
+                        has_word(base, "Batang") || has_word(base, "Myeong") ||
+                        has_word(base, "Serif")) &&
+                       !has_word(base, "Goth") && !has_word(base, "Sans"));
+}
+
+/** @brief The file standing in for CJK kind @p k: its language and look,
+ *         then its language, then any face that has CJK at all. */
+static const char *
+cjk_file(tiku_pdf_t *doc, int k)
+{
+    static const char *const kinds[] = {"jp", "jp-serif", "sc", "sc-serif",
+                                        "tc", "tc-serif", "kr", "kr-serif"};
+    char *pick = doc->cjk_pick[k];
+    size_t i, pass;
+
+    if (doc->cjk_chosen[k]) {
+        return pick;
+    }
+    doc->cjk_chosen[k] = 1;
+    pick[0] = '\0';
+    for (pass = 0; pass < 3 && pick[0] == '\0'; pass++) {
+        const char *want = pass == 0 ? kinds[k] : pass == 1 ? kinds[k & ~1]
+                                                            : "any";
+
+        for (i = 0; i < sizeof cjk_fallback / sizeof cjk_fallback[0]; i++) {
+            if (strcmp(cjk_fallback[i][0], want) == 0 &&
+                subst_there(cjk_fallback[i][1])) {
+                snprintf(pick, sizeof doc->cjk_pick[k], "%s",
+                         cjk_fallback[i][1]);
+                break;
+            }
+        }
+    }
+    return pick;
+}
+
+/** @brief A face to stand in for composite font @p font: CJK when it is
+ *         Chinese, Japanese or Korean, else as a simple font's. */
+static tiku_ttf_t *
+substitute_cid(tiku_pdf_t *doc, pdf_obj_t *font, pdf_obj_t *cidfont)
+{
+    pdf_obj_t *base = pdf_get(doc, cidfont, "BaseFont");
+    const char *name = base != NULL && base->kind == PDF_NAME
+                       ? (const char *)base->u.s.p : "";
+    long flags = pdf_int(pdf_get(doc, pdf_get(doc, cidfont,
+                                              "FontDescriptor"), "Flags"), 0);
+    int k = cjk_kind(doc, font, cidfont, name, flags);
+    const char *file = k >= 0 ? cjk_file(doc, k) : "";
+
+    if (file[0] != '\0') {
+        return subst_open(doc, file);
+    }
+    return substitute(doc, name, flags);
+}
+
+/** @brief A Type 0 font's descendant, the font its glyphs are in. */
+static pdf_obj_t *
+descendant(tiku_pdf_t *doc, pdf_obj_t *font)
+{
+    pdf_obj_t *kids = pdf_get(doc, font, "DescendantFonts");
+
+    return kids != NULL && kids->kind == PDF_ARRAY && kids->u.a.n > 0
+           ? pdf_resolve(doc, kids->u.a.item[0]) : NULL;
+}
+
+int
+pdf_standin_char_widths(tiku_pdf_t *doc, pdf_obj_t *font, double *width)
+{
+    pdf_obj_t *cidfont = descendant(doc, font);
+    tiku_ttf_t *t = cidfont != NULL ? substitute_cid(doc, font, cidfont)
+                                    : NULL;
+    double em = t != NULL ? tiku_ttf_upem(t) : 0;
+    long c;
+    int any = 0;
+
+    for (c = 0; em > 0 && c < 65536; c++) {
+        unsigned gid = tiku_ttf_glyph(t, (unsigned)c);
+
+        if (gid != 0) {
+            width[c] = tiku_ttf_advance(t, gid) / em;
+            any = 1;
+        }
+    }
+    return any;
 }
 
 int
@@ -427,14 +639,13 @@ pdf_gfont_load(tiku_pdf_t *doc, pdf_obj_t *dict, const pdf_tfont_t *tf)
         return g;
     }
     if (g->two_byte) {
-        pdf_obj_t *kids = pdf_get(doc, dict, "DescendantFonts");
-
-        face = (kids != NULL && kids->kind == PDF_ARRAY && kids->u.a.n > 0)
-               ? pdf_resolve(doc, kids->u.a.item[0]) : NULL;
+        face = descendant(doc, dict);
         if (face == NULL) {
             face = dict;
         }
         load_cid2gid(doc, g, face);
+        g->uni = NULL;              /* glyphs are CIDs, not codes */
+        g->by_unicode = tf != NULL && tf->by_unicode;
     }
     desc = pdf_get(doc, face, "FontDescriptor");
     flags = pdf_int(pdf_get(doc, desc, "Flags"), 0);
@@ -442,12 +653,16 @@ pdf_gfont_load(tiku_pdf_t *doc, pdf_obj_t *dict, const pdf_tfont_t *tf)
     load_program(doc, g, desc);
     if (g->kind == GF_NONE) {
         base = pdf_get(doc, face, "BaseFont");
-        g->ttf = substitute(doc, base != NULL && base->kind == PDF_NAME
+        g->ttf = g->two_byte ? substitute_cid(doc, dict, face) :
+                 substitute(doc, base != NULL && base->kind == PDF_NAME
                             ? (const char *)base->u.s.p : "", flags);
         if (g->ttf != NULL) {
             g->kind = GF_TTF;
             g->substitute = 1;
             g->upem = tiku_ttf_upem(g->ttf);
+        }
+        if (g->ttf != NULL && g->two_byte && !g->by_unicode) {
+            g->uni = g->own_uni = pdf_tfont_glyph_unicode(tf);
         }
     }
     if (!g->two_byte) {
@@ -474,6 +689,7 @@ pdf_gfont_free(pdf_gfont_t *g)
         free(g->names[i]);
     }
     free(g->cid2gid);
+    free(g->own_uni);
     free(g);
 }
 
@@ -525,6 +741,39 @@ ttf_glyph_of(const pdf_gfont_t *g, long code)
     return gid;
 }
 
+/**
+ * @brief A composite font's glyph @p key: a CID through CIDToGIDMap or
+ *        the CFF's charset, or a character (a stand-in, or a font whose
+ *        CMap's codes are Unicode) through the face's own map.
+ */
+static int
+cid_outline(pdf_gfont_t *g, long key, const tiku_hint_t *hint,
+            tiku_path_t *path, double *adv_units)
+{
+    unsigned gid = (unsigned)key;
+    uint32_t u = g->by_unicode ? (uint32_t)key
+                 : g->uni != NULL ? g->uni[key] : 0;
+
+    if (g->cid2gid != NULL && !g->by_unicode) {
+        gid = key < g->ncid2gid ? g->cid2gid[key] : 0;
+    }
+    if (g->kind == GF_CFF && !g->by_unicode) {
+        return tiku_cff_outline(g->cff, tiku_cff_glyph_cid(g->cff, gid), hint,
+                                path);
+    }
+    if (g->kind != GF_TTF) {
+        return 0;
+    }
+    if (g->substitute || g->by_unicode) {
+        gid = u != 0 ? tiku_ttf_glyph(g->ttf, u) : 0;
+        if (gid == 0) {
+            return 0;
+        }
+    }
+    *adv_units = tiku_ttf_advance(g->ttf, gid);
+    return tiku_ttf_outline(g->ttf, gid, hint, path);
+}
+
 /** @brief Draw the outline of @p code into @p path at unit scale, y up. */
 static int
 outline(pdf_gfont_t *g, long code, tiku_path_t *path, double *adv_units)
@@ -536,27 +785,7 @@ outline(pdf_gfont_t *g, long code, tiku_path_t *path, double *adv_units)
     hint.scale = 1.0f;
     *adv_units = -1;
     if (g->two_byte) {
-        long cid = code;
-
-        gid = (unsigned)cid;
-        if (g->cid2gid != NULL) {
-            gid = cid < g->ncid2gid ? g->cid2gid[cid] : 0;
-        }
-        if (g->kind == GF_CFF) {
-            return tiku_cff_outline(g->cff, tiku_cff_glyph_cid(g->cff, gid),
-                                    &hint, path);
-        }
-        if (g->kind == GF_TTF) {
-            if (g->substitute) {
-                uint32_t u = g->uni != NULL ? g->uni[code] : 0;
-
-                gid = u != 0 ? tiku_ttf_glyph(g->ttf, u) : 0;
-                if (gid == 0) return 0;
-            }
-            *adv_units = tiku_ttf_advance(g->ttf, gid);
-            return tiku_ttf_outline(g->ttf, gid, &hint, path);
-        }
-        return 0;
+        return cid_outline(g, code, &hint, path, adv_units);
     }
     if (g->kind == GF_T1) {
         const char *name = g->names[code];

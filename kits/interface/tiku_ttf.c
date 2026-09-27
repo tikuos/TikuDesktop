@@ -785,20 +785,24 @@ tiku_ttf_is_font(const char *path)
             memcmp(head, "OTTO", 4) == 0);
 }
 
-/** @brief Read the tables of the face in @p t's bytes; @p path names it. */
+/** @brief Read the tables of face @p face in @p t's bytes; @p path
+ *         names them. */
 static tiku_ttf_t *
-open_tables(tiku_ttf_t *t, const char *path)
+open_tables(tiku_ttf_t *t, const char *path, unsigned face)
 {
     size_t dir = 0, head, hhea, maxp, name, cmap, os2;
 
     if (fits(t, 0u, 12u) && memcmp(t->data, "ttcf", 4) == 0) {
-        /* A collection: the first face in it, which is the one a person
-         * dropping "the font" in a folder means. */
-        if (!fits(t, 12u, 4u)) {
+        /* A collection: the face asked for, the first unless told; the
+         * one a person dropping "the font" in a folder means. */
+        if (face >= rd32(t->data + 8) || !fits(t, 12u + 4u * face, 4u)) {
             tiku_ttf_close(t);
             return NULL;
         }
-        dir = (size_t)rd32(t->data + 12);
+        dir = (size_t)rd32(t->data + 12 + 4u * face);
+    } else if (face != 0u) {
+        tiku_ttf_close(t);
+        return NULL;
     }
     if (!fits(t, dir, 12u)) {
         tiku_ttf_close(t);
@@ -873,6 +877,12 @@ open_tables(tiku_ttf_t *t, const char *path)
 tiku_ttf_t *
 tiku_ttf_open(const char *path)
 {
+    return tiku_ttf_open_face(path, 0u);
+}
+
+tiku_ttf_t *
+tiku_ttf_open_face(const char *path, unsigned face)
+{
     tiku_ttf_t *t;
     FILE *f;
     long size;
@@ -903,7 +913,7 @@ tiku_ttf_open(const char *path)
     }
     (void)fclose(f);
     t->len = (size_t)size;
-    return open_tables(t, path);
+    return open_tables(t, path, face);
 }
 
 tiku_ttf_t *
@@ -925,7 +935,7 @@ tiku_ttf_open_mem(const unsigned char *data, size_t len)
     }
     memcpy(t->data, data, len);
     t->len = len;
-    return open_tables(t, NULL);
+    return open_tables(t, NULL, 0u);
 }
 
 int

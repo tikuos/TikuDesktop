@@ -201,4 +201,14 @@ void tiku_pdf_pixmap_free(tiku_pdf_pixmap_t *p);
  */
 void tiku_pdf_fonts(tiku_pdf_t *doc, const char *dir);
 
+/**
+ * @brief Where to find CMaps a file names without carrying (Chinese,
+ *        Japanese and Korean encodings): a folder laid out as
+ *        poppler-data's, cMap/<collection>/<name> and cidToUnicode.
+ *
+ * NULL looks where poppler-data is usually kept, "" nowhere; without
+ * one found, such text is read by its code space alone.
+ */
+void tiku_pdf_cmaps(tiku_pdf_t *doc, const char *dir);
+
 #endif /* TIKU_PDF_H_ */

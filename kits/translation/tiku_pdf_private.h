@@ -28,6 +28,7 @@
 #define PDF_NEST_MAX    64          /* arrays in dicts in arrays ...     */
 #define PDF_OBJECTS_MAX 4000000     /* a /Size past this is a lie        */
 #define PDF_PAGES_MAX   20000
+#define PDF_SUBST_MAX   12          /* stand-in faces one document opens */
 
 typedef enum {
     PDF_NULL, PDF_BOOL, PDF_INT, PDF_REAL, PDF_STRING, PDF_NAME,
@@ -105,11 +106,17 @@ struct tiku_pdf {
     pdf_crypt_t   *crypt;           /* its key, when it is encrypted     */
     int            depth;           /* resolve() recursion, a cycle guard */
     char           fontdir[512];    /* faces to stand in for fonts     */
-    tiku_ttf_t    *subst[8];        /* the stand-ins opened so far      */
-    char           subst_path[8][512];  /* each one's file             */
+    tiku_ttf_t    *subst[PDF_SUBST_MAX];    /* the stand-ins opened    */
+    char           subst_path[PDF_SUBST_MAX][512];  /* each one's file */
     int            nsubst;
     char           subst_pick[6][512];  /* sans, serif, fixed; x bold  */
     unsigned char  subst_chosen[6]; /* that pick was made ("" is none)  */
+    char           cjk_pick[8][512];    /* CJK stand-ins, by collection */
+    unsigned char  cjk_chosen[8];
+    char           cmapdir[512];    /* CMaps the file names ("": none)  */
+    int            cmapdir_set;     /* it replaces poppler-data's       */
+    uint32_t      *cid_uni[6];      /* CID -> Unicode, by collection    */
+    unsigned char  cid_uni_tried[6];
     struct pdf_fontkeep *fonts;     /* fonts read, kept between pages    */
     int            nfonts, cfonts;
     unsigned long  epoch;           /* pages read or drawn so far        */
@@ -241,19 +248,90 @@ int pdf_page_content(tiku_pdf_t *doc, pdf_obj_t *page, unsigned char **out,
  *        -1 for none of this document's. */
 int pdf_page_index(tiku_pdf_t *doc, pdf_obj_t *page);
 
+/* Composite fonts' CMaps: tiku_pdf_cmap.c                                  */
+
+typedef struct pdf_cmap pdf_cmap_t;
+
+/**
+ * @brief The CMap a Type 0 font's /Encoding names or carries.
+ *
+ * Identity and the Unicode schemes are known without data; any other
+ * name is read from the CMap folders, or is its code space alone and
+ * knows no CIDs.  NULL only when memory is short.
+ */
+pdf_cmap_t *pdf_cmap_load(tiku_pdf_t *doc, pdf_obj_t *enc);
+void pdf_cmap_free(pdf_cmap_t *m);
+/** @brief The code at @p s, @p n bytes left, by the map's code space.
+ *  @return its bytes (1 to 4), or 0 when the string cuts it short. */
+int pdf_cmap_next(const pdf_cmap_t *m, const unsigned char *s, size_t n,
+                  uint32_t *code);
+/** @brief The bytes of code value @p code: the fewest that hold it. */
+int pdf_cmap_len(const pdf_cmap_t *m, uint32_t code);
+/** @brief The CID @p code (@p len bytes) selects; -1 when the map knows
+ *         none, as a Unicode scheme read without its file. */
+long pdf_cmap_cid(const pdf_cmap_t *m, uint32_t code, int len);
+/** @brief Whether the map's codes are Unicode (UCS-2, UTF-16, -32, -8). */
+int pdf_cmap_unicode_codes(const pdf_cmap_t *m);
+/** @brief The character @p code is when they are; 0 otherwise. */
+uint32_t pdf_cmap_unicode(const pdf_cmap_t *m, uint32_t code, int len);
+/** @brief Whether text in the map is written down the page (WMode 1). */
+int pdf_cmap_vertical(const pdf_cmap_t *m);
+/** @brief CID to character for @p collection ("Adobe-Japan1"): 65536
+ *         entries the document keeps, or NULL when it has none. */
+const uint32_t *pdf_cid_unicode(tiku_pdf_t *doc, const char *collection);
+/** @brief The document's CID tables given back. */
+void pdf_cid_unicode_free(tiku_pdf_t *doc);
+
 /* Fonts, as far as their text goes: tiku_pdf_font.c                        */
 
-/** @brief A font as text extraction needs it: codes to text and widths. */
+/** @brief A run of CIDs written down the page with the same metrics. */
 typedef struct {
-    int       two_byte;             /* codes are two bytes (CID fonts)    */
+    long   first, last;
+    double w1, vx, vy;              /* advance, and the vertical origin  */
+} pdf_vrun_t;
+
+/**
+ * @brief A font as text extraction needs it: codes to text and widths.
+ *
+ * A glyph is named by its code in a simple font, and in a composite one
+ * by its CID -- or by its character, when the CMap's codes are Unicode
+ * and its CIDs are not known (by_unicode).  Widths go by that name.
+ */
+typedef struct {
+    int       two_byte;             /* composite (Type 0): read by CMap  */
     int       type3;
     double    missing;              /* width of a code without one       */
     double    matrix_x;             /* Type 3: FontMatrix's x scale      */
     uint32_t *uni;                  /* code -> Unicode, 0 for none       */
     uint32_t *uni2;                 /* a second character (a ligature)   */
-    double   *width;                /* code -> advance in text space, -1 */
+    double   *width;                /* glyph -> advance in text space, -1 */
     long      codes;                /* 256 or 65536 entries              */
+    pdf_cmap_t *cmap;               /* composite: codes to CIDs          */
+    const uint32_t *cid_uni;        /* CID -> Unicode, its collection's  */
+    int       by_unicode;           /* glyphs named by character         */
+    int       vertical;             /* written down the page             */
+    double    dw2_vy, dw2_w1;       /* DW2: the origin and advance usual */
+    pdf_vrun_t *w2;                 /* W2, sorted by CID                 */
+    long      nw2;
 } pdf_tfont_t;
+
+/** @brief One glyph of a shown string, as reading and drawing need it. */
+typedef struct {
+    uint32_t code;                  /* as the string holds it            */
+    int      len, word;             /* its bytes; a one-byte space (Tw)  */
+    long     key;                   /* the glyph: code, CID or character */
+    double   w;                     /* its advance across, in ems        */
+    double   w1, vx, vy;            /* down the page: advance and origin */
+    uint32_t uni, uni2;             /* its characters, 0 for none known  */
+} pdf_shown_t;
+
+/** @brief The glyph at @p s, @p n bytes left, in @p f (NULL: a byte,
+ *         half an em).  @return the bytes it took; 0 at the end. */
+int pdf_tfont_next(const pdf_tfont_t *f, const unsigned char *s, size_t n,
+                   pdf_shown_t *g);
+/** @brief A composite font's glyphs to characters, for a stand-in that
+ *         draws them by character: 65536 the caller frees, or NULL. */
+uint32_t *pdf_tfont_glyph_unicode(const pdf_tfont_t *f);
 
 /** @brief Read @p font's mapping and widths; NULL when memory is short. */
 pdf_tfont_t *pdf_tfont_load(tiku_pdf_t *doc, pdf_obj_t *font);
@@ -388,6 +466,8 @@ typedef struct {
     unsigned char *blob;            /* the program's bytes the CFF borrows */
     long           bloblen;
     int            two_byte, symbolic, substitute, owns_ttf;
+    int            by_unicode;      /* composite glyphs are characters    */
+    uint32_t      *own_uni;         /* a stand-in's glyph to character    */
     char          *names[256];      /* a simple font's code to glyph name */
     int            names_from_pdf;  /* the PDF gave an Encoding           */
     const uint32_t *uni;            /* code to character, borrowed        */
@@ -412,6 +492,9 @@ void pdf_gfont_free(pdf_gfont_t *g);
  */
 int pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
                        double *width);
+/** @brief The same for a composite font whose glyphs go by character:
+ *         the stand-in's advance for each of the first 65536. */
+int pdf_standin_char_widths(tiku_pdf_t *doc, pdf_obj_t *font, double *width);
 /**
  * @brief Coverage of glyph @p code drawn through @p m, which takes text
  *        space (one unit the em) to the device.

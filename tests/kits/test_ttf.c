@@ -85,6 +85,51 @@ ink_of(const tiku_ttf_glyph_t *g)
 /** @brief Read every truncation of @p path, drawing all of each. */
 static void truncations_of(const char *path);
 
+/**
+ * @brief A collection (.ttc): each face opened by its number and the
+ *        first by default; a number past its faces, or any but the
+ *        first of a file of one face, opens nothing.
+ */
+static void
+collection_test(void)
+{
+    static const char *const ttc[] = {
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"
+    };
+    static const char *const one[] = {
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"
+    };
+    const char *path = pick(ttc, 4), *single = pick(one, 3);
+    tiku_ttf_t *first, *second, *past;
+
+    if (path == NULL) {
+        printf("  [SKIP] DEV-012   no font collection to read\n");
+        return;
+    }
+    first = tiku_ttf_open(path);
+    second = tiku_ttf_open_face(path, 1);
+    past = tiku_ttf_open_face(path, 4096);
+    check(first != NULL && second != NULL && past == NULL, "DEV-012",
+          "a collection's faces open by number, and none past its last");
+    check(first != NULL && second != NULL &&
+          (strcmp(tiku_ttf_family(first), tiku_ttf_family(second)) != 0 ||
+           tiku_ttf_bold(first) != tiku_ttf_bold(second)), "DEV-012",
+          "the second face is another face, not the first again");
+    tiku_ttf_close(first);
+    tiku_ttf_close(second);
+    if (single != NULL) {
+        past = tiku_ttf_open_face(single, 1);
+        check(past == NULL, "DEV-012",
+              "a file of one face has no second");
+        tiku_ttf_close(past);
+    }
+}
+
 int
 main(void)
 {
@@ -101,6 +146,7 @@ main(void)
     tiku_ttf_t *ttf;
 
     printf("reading a font somebody dropped in (DEV-012)\n");
+    collection_test();
     if (path == NULL) {
         printf("  [SKIP] DEV-012   no system face to read\n");
         return 0;

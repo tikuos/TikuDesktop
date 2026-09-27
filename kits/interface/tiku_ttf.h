@@ -30,6 +30,9 @@ typedef struct tiku_ttf tiku_ttf_t;
  *         .otf included, which says so in its header rather than lying.
  */
 tiku_ttf_t *tiku_ttf_open(const char *path);
+/** @brief Face @p face of a collection (.ttc); 0 is the first, and the
+ *         only one a file of one face has. */
+tiku_ttf_t *tiku_ttf_open_face(const char *path, unsigned face);
 /** @brief Open a face from bytes, which are copied. */
 tiku_ttf_t *tiku_ttf_open_mem(const unsigned char *data, size_t len);
 void tiku_ttf_close(tiku_ttf_t *ttf);

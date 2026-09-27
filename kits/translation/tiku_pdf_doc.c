@@ -913,6 +913,7 @@ tiku_pdf_close(tiku_pdf_t *doc)
     for (i = 0; i < doc->nsubst; i++) {
         tiku_ttf_close(doc->subst[i]);
     }
+    pdf_cid_unicode_free(doc);
     pdf_crypt_free(doc->crypt);
     if (doc->old_trailer != doc->trailer) {
         pdf_free(doc->old_trailer);
