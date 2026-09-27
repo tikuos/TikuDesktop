@@ -423,8 +423,9 @@ static void pv_marks(tiku_pdfview_t *c, int p, int x, int y)
 /* ------------------------------------------------------------- finding  */
 
 /** @brief The UTF-8 in @p text as folded characters, spaces run together
- *         and trimmed.  @return how many, into @p q. */
-static int pv_query(const char *text, uint32_t *q, int max)
+ *         and trimmed, case kept with @p keep_case.  @return how many,
+ *         into @p q. */
+static int pv_query(const char *text, uint32_t *q, int max, int keep_case)
 {
     const unsigned char *s = (const unsigned char *)text;
     int n = 0;
@@ -434,7 +435,7 @@ static int pv_query(const char *text, uint32_t *q, int max)
         int more = cp >= 0xf0 ? 3 : cp >= 0xe0 ? 2 : cp >= 0xc0 ? 1 : 0;
         if (more) cp &= 0x3f >> more;
         while (more-- > 0 && (*s & 0xc0) == 0x80) cp = cp << 6 | (*s++ & 0x3f);
-        cp = pv_fold(cp);
+        cp = pv_fold(cp, keep_case);
         if (cp == ' ' && (n == 0 || q[n - 1] == ' ')) continue;
         q[n++] = cp;
     }
@@ -499,7 +500,7 @@ static void pv_find(tiku_pdfview_t *c, int dir)
     uint32_t q[TIKU_FIELD_MAX];
 
     if (!c->doc) return;
-    if (!pv_query(c->find.text, q, TIKU_FIELD_MAX)) {
+    if (!pv_query(c->find.text, q, TIKU_FIELD_MAX, c->match_case)) {
         pv_say(c, "Type what to find.");
         return;
     }

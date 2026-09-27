@@ -246,7 +246,8 @@ static void navigation_tests(tiku_pdfview_t *c)
 }
 
 /** @brief Find steps through the matches in order and says what it
- *         found; a word not there is said to be not found. */
+ *         found; a word not there is said to be not found; Match Case
+ *         and Whole Words narrow it and search again. */
 static void search_tests(tiku_pdfview_t *c)
 {
     tiku_field_start(&c->find, "tikupdf");
@@ -267,6 +268,28 @@ static void search_tests(tiku_pdfview_t *c)
     pv_find(c, 1);
     settle(c);
     assert(c->nmatch == 0 && strstr(c->status, "Not found"));
+    tiku_field_start(&c->find, "tikupdf");
+    pv_find(c, 1);
+    settle(c);
+    assert(c->nmatch == 2);
+    pv_action(c, PV_MATCH_CASE);        /* the search starts again, cased */
+    settle(c);
+    assert(c->match_case && c->nmatch == 0);
+    tiku_field_start(&c->find, "TikuPDF");
+    pv_find(c, 1);
+    settle(c);
+    assert(c->nmatch == 2);
+    pv_action(c, PV_MATCH_CASE);
+    settle(c);
+    tiku_field_start(&c->find, "Page 1");
+    pv_find(c, 1);
+    settle(c);
+    assert(c->nmatch > 1);              /* Page 1, Page 10, Page 11 ... */
+    pv_action(c, PV_WHOLE_WORDS);
+    settle(c);
+    assert(c->whole_words && c->nmatch == 1 && c->match[0].page == 0);
+    pv_action(c, PV_WHOLE_WORDS);
+    settle(c);
     pv_action(c, PV_FIRST);
     settle(c);
 }

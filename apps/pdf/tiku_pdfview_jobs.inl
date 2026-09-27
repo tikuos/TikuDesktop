@@ -403,17 +403,20 @@ typedef struct {
     tiku_pdfview_t *owner;
     pv_doc_t *doc;
     int gen, from, to, nq, nmatch, cap;
+    int keep_case, whole;           /* Match Case, Whole Words          */
     uint32_t q[TIKU_FIELD_MAX];
     pv_match_t *match;
 } pv_search_t;
 
-/** @brief A character as a search compares it: case and the kinds of
- *         space, hyphen and quote a typeset page uses folded together. */
-static uint32_t pv_fold(uint32_t cp)
+/** @brief A character as a search compares it: the kinds of space,
+ *         hyphen and quote a typeset page uses folded together, and case
+ *         too unless @p keep_case. */
+static uint32_t pv_fold(uint32_t cp, int keep_case)
 {
     if (cp == '\n' || cp == '\t' || cp == '\r' || cp == 0xa0) return ' ';
+    if (keep_case && cp < 0x80) return cp;
     if (cp < 0x80) return (uint32_t)tolower((int)cp);
-    if (cp >= 0xc0 && cp <= 0xde && cp != 0xd7) return cp + 0x20;
+    if (!keep_case && cp >= 0xc0 && cp <= 0xde && cp != 0xd7) return cp + 0x20;
     if (cp == 0x2010 || cp == 0x2011 || cp == 0x2013 || cp == 0x2212)
         return '-';
     if (cp == 0x2018 || cp == 0x2019) return '\'';
@@ -449,8 +452,16 @@ static void pv_match_boxes(pv_match_t *m, const tiku_pdf_char_t *ch, long a,
     }
 }
 
+/** @brief Whether @p cp belongs to a word: a letter or digit (or _). */
+static int pv_wordy(uint32_t cp)
+{
+    return cp < 0x80 ? isalnum((int)cp) || cp == '_'
+                     : cp >= 0xc0 && cp != 0xd7 && cp != 0xf7;
+}
+
 /** @brief Every place on page @p p where the query stands, spaces folded
- *         to one so a phrase broken over two lines is still found. */
+ *         to one so a phrase broken over two lines is still found; with
+ *         Whole Words, only where no letter touches either end. */
 static void pv_search_page(pv_search_t *j, int p, const tiku_pdf_char_t *ch,
                            long n)
 {
@@ -458,7 +469,7 @@ static void pv_search_page(pv_search_t *j, int p, const tiku_pdf_char_t *ch,
     long *at = malloc((size_t)n * sizeof *at), m = 0;
 
     for (long i = 0; f && at && i < n; i++) {
-        uint32_t cp = pv_fold(ch[i].cp);
+        uint32_t cp = pv_fold(ch[i].cp, j->keep_case);
         if (cp == ' ' && (m == 0 || f[m - 1] == ' ')) continue;
         f[m] = cp;
         at[m++] = i;
@@ -467,6 +478,9 @@ static void pv_search_page(pv_search_t *j, int p, const tiku_pdf_char_t *ch,
         int k = 0;
         while (k < j->nq && f[i + k] == j->q[k]) k++;
         if (k < j->nq) continue;
+        if (j->whole && ((i > 0 && pv_wordy(f[i - 1])) ||
+                         (i + j->nq < m && pv_wordy(f[i + j->nq]))))
+            continue;
         if (j->nmatch == j->cap) {
             int cap = j->cap ? j->cap * 2 : 32;
             pv_match_t *grown = realloc(j->match, (size_t)cap * sizeof *grown);
@@ -569,7 +583,9 @@ static int pv_search_post(tiku_pdfview_t *c, int from)
     j->from = from;
     j->to = from + PV_SEARCH_STEP < c->npage ? from + PV_SEARCH_STEP
                                              : c->npage;
-    j->nq = pv_query(c->query, j->q, TIKU_FIELD_MAX);
+    j->keep_case = c->match_case;
+    j->whole = c->whole_words;
+    j->nq = pv_query(c->query, j->q, TIKU_FIELD_MAX, j->keep_case);
     memset(&work, 0, sizeof work);
     work.run = pv_search_run;
     work.done = pv_search_done;

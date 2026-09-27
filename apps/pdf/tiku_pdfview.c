@@ -39,7 +39,8 @@
 enum { PV_OPEN = 1, PV_CLOSE, PV_COPY, PV_SELECT_ALL, PV_FIND, PV_FIND_NEXT,
        PV_FIND_PREV, PV_OUTLINE, PV_ZOOM_IN, PV_ZOOM_OUT, PV_ACTUAL,
        PV_FIT_WIDTH, PV_FIT_PAGE, PV_PREV, PV_NEXT, PV_FIRST, PV_LAST,
-       PV_BACK, PV_PAGE_FIELD, PV_FIND_FIELD, PV_CANVAS, PV_SIDE };
+       PV_BACK, PV_MATCH_CASE, PV_WHOLE_WORDS, PV_PAGE_FIELD, PV_FIND_FIELD,
+       PV_CANVAS, PV_SIDE };
 enum { PV_FIXED, PV_BY_WIDTH, PV_BY_PAGE };
 
 /** @brief An open document as its jobs share it. */
@@ -114,6 +115,7 @@ struct tiku_pdfview {
     pv_match_t *match;
     int nmatch, cur, searching, searched, search_gen, want_next;
     char query[TIKU_FIELD_MAX];     /* what the matches are of           */
+    int match_case, whole_words;    /* how the query is compared         */
     pv_mark_t anchor, focus;        /* a selection runs between the two  */
     int selecting, selected, pressing, press_x, press_y;
     int link_page, link_at;         /* the link under the pointer, or -1 */
@@ -129,7 +131,7 @@ static void pv_action(tiku_pdfview_t *c, int id);
 static int pv_enabled(tiku_pdfview_t *c, int id);
 static void pv_zoom_step(tiku_pdfview_t *c, int dir);
 static void pv_outline_start(tiku_pdfview_t *c);
-static int pv_query(const char *text, uint32_t *q, int max);
+static int pv_query(const char *text, uint32_t *q, int max, int keep_case);
 static void pv_marks(tiku_pdfview_t *c, int p, int x, int y);
 static void pv_side_draw(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r);
 static void pv_open_address(tiku_pdfview_t *c, const char *uri);
@@ -222,8 +224,8 @@ static const char *pv_label(int id)
         "Select Page Text", "Find...", "Find Next", "Find Previous",
         "Outline", "Zoom In", "Zoom Out", "Actual Size", "Fit Width",
         "Fit Page", "Previous Page", "Next Page", "First Page", "Last Page",
-        "Back" };
-    return id >= PV_OPEN && id <= PV_BACK ? labels[id] : "";
+        "Back", "Match Case", "Whole Words" };
+    return id >= PV_OPEN && id <= PV_WHOLE_WORDS ? labels[id] : "";
 }
 
 /** @brief Whether command @p id can do anything now. */
@@ -283,6 +285,14 @@ static void pv_action(tiku_pdfview_t *c, int id)
         tiku_field_key(&c->find, TIKU_FIELD_SELECT_ALL, 0, 0);
     } else if (id == PV_FIND_NEXT) pv_find(c, 1);
     else if (id == PV_FIND_PREV) pv_find(c, -1);
+    else if (id == PV_MATCH_CASE || id == PV_WHOLE_WORDS) {
+        if (id == PV_MATCH_CASE) c->match_case = !c->match_case;
+        else c->whole_words = !c->whole_words;
+        if (c->query[0]) {          /* the matches were of the other way */
+            c->query[0] = '\0';
+            pv_find(c, 1);
+        }
+    }
     else if (id == PV_OUTLINE) c->side = !c->side && c->noutline > 0;
     else if (id == PV_ZOOM_IN) pv_zoom_step(c, 1);
     else if (id == PV_ZOOM_OUT) pv_zoom_step(c, -1);
@@ -525,6 +535,8 @@ static void pv_menus(tiku_pdfview_t *c)
     pv_menu_add(c, &menus.menu[1], PV_FIND_NEXT, 'g', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[1], PV_FIND_PREV, 'g',
                 TIKU_MOD_CMD | TIKU_MOD_SHIFT, 0);
+    pv_menu_add(c, &menus.menu[1], PV_MATCH_CASE, 0, 0, c->match_case);
+    pv_menu_add(c, &menus.menu[1], PV_WHOLE_WORDS, 0, 0, c->whole_words);
     pv_menu_add(c, &menus.menu[2], PV_OUTLINE, 0, 0, c->side);
     pv_menu_add(c, &menus.menu[2], PV_ZOOM_IN, '+', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[2], PV_ZOOM_OUT, '-', TIKU_MOD_CMD, 0);
