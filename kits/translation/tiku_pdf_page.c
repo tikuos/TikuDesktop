@@ -15,6 +15,7 @@
 
 #include "tiku_pdf_private.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -193,12 +194,13 @@ pdf_page_content(tiku_pdf_t *doc, pdf_obj_t *page, unsigned char **out,
     return *out != NULL ? 0 : -1;
 }
 
-/** @brief A rectangle's normalised corners; 0 unless it has four numbers. */
+/** @brief A rectangle's normalised corners; 0, and nothing written,
+ *         unless it has four numbers making a box a page could be. */
 static int
 rect(tiku_pdf_t *doc, pdf_obj_t *a, double *x0, double *y0, double *x1,
      double *y1)
 {
-    double v[4];
+    double v[4], w, h;
     int i;
 
     if (a == NULL || a->kind != PDF_ARRAY || a->u.a.n != 4) {
@@ -212,12 +214,16 @@ rect(tiku_pdf_t *doc, pdf_obj_t *a, double *x0, double *y0, double *x1,
         }
         v[i] = pdf_number(o, 0);
     }
+    w = fabs(v[2] - v[0]);
+    h = fabs(v[3] - v[1]);
+    if (!(w > 1 && h > 1 && w < 20000 && h < 20000)) {
+        return 0;
+    }
     *x0 = v[0] < v[2] ? v[0] : v[2];
     *x1 = v[0] < v[2] ? v[2] : v[0];
     *y0 = v[1] < v[3] ? v[1] : v[3];
     *y1 = v[1] < v[3] ? v[3] : v[1];
-    return *x1 - *x0 > 1 && *y1 - *y0 > 1 && *x1 - *x0 < 20000 &&
-           *y1 - *y0 < 20000;
+    return 1;
 }
 
 int
@@ -234,14 +240,14 @@ tiku_pdf_page_size(tiku_pdf_t *doc, int page, double *w, double *h,
     (void)rect(doc, pdf_page_inherited(doc, p, "MediaBox"), &x0, &y0, &x1,
                &y1);
     if (rect(doc, pdf_page_inherited(doc, p, "CropBox"), &cx0, &cy0, &cx1,
-             &cy1)) {
+             &cy1) && cx0 < x1 && cx1 > x0 && cy0 < y1 && cy1 > y0) {
         /* What a viewer shows is the crop, within the media. */
         if (cx0 > x0) x0 = cx0;
         if (cy0 > y0) y0 = cy0;
         if (cx1 < x1) x1 = cx1;
         if (cy1 < y1) y1 = cy1;
     }
-    r = (long)pdf_number(pdf_page_inherited(doc, p, "Rotate"), 0);
+    r = pdf_int(pdf_page_inherited(doc, p, "Rotate"), 0);
     r = ((r % 360) + 360) % 360;
     r = (r + 45) / 90 * 90 % 360;
     if (w != NULL) *w = x1 - x0;

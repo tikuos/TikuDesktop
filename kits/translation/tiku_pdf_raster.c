@@ -189,12 +189,10 @@ pdf_path_curveto(pdf_path_t *p, double x1, double y1, double x2, double y2,
     }
     len = hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) +
           hypot(x3 - x2, y3 - y2);
-    steps = (int)(sqrt(len * 2.0) + 1.0);
+    len = sqrt(len * 2.0) + 1.0;       /* a NaN, or a huge one, is the most */
+    steps = len < FLAT_MAX ? (int)len : FLAT_MAX;
     if (steps < 3) {
         steps = 3;
-    }
-    if (steps > FLAT_MAX) {
-        steps = FLAT_MAX;
     }
     for (i = 1; i <= steps; i++) {
         double t = (double)i / steps, u = 1.0 - t;

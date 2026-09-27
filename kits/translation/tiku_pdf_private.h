@@ -146,6 +146,9 @@ int pdf_array_push(pdf_obj_t *a, pdf_obj_t *item);
 int pdf_is_name(const pdf_obj_t *o, const char *name);
 /** @brief @p o as a number, or @p dflt when it is not one. */
 double pdf_number(const pdf_obj_t *o, double dflt);
+/** @brief @p o as an int, or @p dflt when it is not a number or is one
+ *         no int holds: a count or a size that large is damage. */
+int pdf_int(const pdf_obj_t *o, int dflt);
 /** @brief The next @p word at or after @p from, or -1. */
 long pdf_find(const unsigned char *p, long n, long from, const char *word);
 

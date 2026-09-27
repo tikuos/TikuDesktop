@@ -293,6 +293,7 @@ pdf_crypt_open(tiku_pdf_t *doc, const char *password)
     const unsigned char *pw = (const unsigned char *)(password ? password
                                                                : "");
     size_t pwn = strlen((const char *)pw);
+    double perms;
     int v, ok;
     pdf_crypt_t *c;
 
@@ -301,15 +302,15 @@ pdf_crypt_open(tiku_pdf_t *doc, const char *password)
         (c = calloc(1, sizeof *c)) == NULL) {
         return -1;
     }
-    v = (int)pdf_number(pdf_get(doc, enc, "V"), 0);
-    c->r = (int)pdf_number(pdf_get(doc, enc, "R"), 0);
-    c->perms = (long)(int32_t)(uint32_t)(long long)
-               pdf_number(pdf_get(doc, enc, "P"), 0);
+    v = pdf_int(pdf_get(doc, enc, "V"), 0);
+    c->r = pdf_int(pdf_get(doc, enc, "R"), 0);
+    perms = pdf_number(pdf_get(doc, enc, "P"), 0);   /* signed or not */
+    c->perms = perms > -2147483649.0 && perms < 4294967296.0
+               ? (long)(int32_t)(uint32_t)(long long)perms : 0;
     c->dict_num = raw->kind == PDF_REF ? raw->u.ref.num : -1;
     meta = pdf_get(doc, enc, "EncryptMetadata");
     c->metadata = meta == NULL || meta->kind != PDF_BOOL || meta->u.b;
-    c->keylen = v == 1 ? 5 : (int)pdf_number(pdf_get(doc, enc, "Length"),
-                                             40) / 8;
+    c->keylen = v == 1 ? 5 : pdf_int(pdf_get(doc, enc, "Length"), 40) / 8;
     c->stm = c->str = CRYPT_RC4;
     if (v >= 4) {
         c->stm = filter_method(doc, enc, pdf_get(doc, enc, "StmF"));
@@ -318,7 +319,7 @@ pdf_crypt_open(tiku_pdf_t *doc, const char *password)
     if (v == 4) c->keylen = 16;
     if (v == 5) c->keylen = 32;
     if (v < 1 || v > 5 || v == 3 || c->r < 2 || c->r > 6 ||
-        c->keylen < 5 || c->keylen > 32 || (v < 5 && c->keylen > 16)) {
+        c->keylen < 5 || c->keylen > (v < 5 || c->r < 5 ? 16 : 32)) {
         free(c);
         return -1;
     }

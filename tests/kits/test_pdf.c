@@ -9,7 +9,8 @@
  * and its Length wrong, so the reader has to find the objects itself;
  * a file with a cross-reference stream and an object stream, packed
  * with a stored DEFLATE block; every byte filter against known input;
- * fonts read through their encoding and through a ToUnicode map.  Then,
+ * fonts read through their encoding and through a ToUnicode map; the
+ * slips of careless writers, which once broke the reader.  Then,
  * when TIKU_PDF_CORPUS names a folder, every PDF in it is opened and
  * its first page's text shown, which is how the vendor documents are
  * tried without being checked in.
@@ -628,6 +629,82 @@ transp_test(void)
 }
 
 /**
+ * @brief Four pages a careless writer makes: a MediaBox of nothing; a
+ *        form whose stray Q would undo its caller's clip; a Separation
+ *        whose alternate is no space; an Indexed table over five
+ *        colorants.
+ */
+static pdfw_t
+damage_file(void)
+{
+    pdfw_t b = {0};
+    const char *clip = "q 0 0 100 100 re W n /Fm Do 1 0 0 rg 0 0 300 300 re "
+                       "f Q BT /F1 12 Tf 10 200 Td (After) Tj ET";
+    const char *sep = "/CS0 cs 0.5 sc 0 0 300 300 re f";
+    const char *idx = "/CS1 cs 1 sc 0 0 300 300 re f";
+    const char *fn = "{ exch pop exch pop exch pop exch pop }";
+
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 "
+               "/MediaBox [0 0 300 300] /Resources << /Font << /F1 << "
+               "/Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> "
+               "/XObject << /Fm 10 0 R >> /ColorSpace << "
+               "/CS0 [/Separation /Spot /NoSuchSpace 11 0 R] "
+               "/CS1 [/Indexed [/DeviceN [/A /B /C /D /E] /DeviceGray "
+               "12 0 R] 1 <000000000000000000CC>] >> >> >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 0 0] >>");
+    obj(&b, 4, "<< /Type /Page /Parent 2 0 R /Contents 7 0 R >>");
+    obj(&b, 5, "<< /Type /Page /Parent 2 0 R /Contents 8 0 R >>");
+    obj(&b, 6, "<< /Type /Page /Parent 2 0 R /Contents 9 0 R >>");
+    stream(&b, 7, "", clip, (long)strlen(clip));
+    stream(&b, 8, "", sep, (long)strlen(sep));
+    stream(&b, 9, "", idx, (long)strlen(idx));
+    stream(&b, 10, "/Type /XObject /Subtype /Form /BBox [0 0 300 300]",
+           "Q Q", 3);
+    obj(&b, 11, "<< /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [0] /N 1 >>");
+    stream(&b, 12, "/FunctionType 4 /Domain [0 1 0 1 0 1 0 1 0 1] "
+                   "/Range [0 1]", fn, (long)strlen(fn));
+    xref(&b, 1, 0);
+    return b;
+}
+
+/** @brief The careless writer's pages, read and drawn as it meant them. */
+static void
+damage_test(void)
+{
+    pdfw_t b = damage_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+    char *text = doc != NULL ? tiku_pdf_page_text(doc, 1) : NULL;
+    double pw = 0, ph = 0;
+    int rot = 0;
+
+    check(doc != NULL && tiku_pdf_page_size(doc, 0, &pw, &ph, &rot) == 0 &&
+          pw == 612 && ph == 792,
+          "a MediaBox of nothing leaves the page Letter, not nothing");
+    check(doc != NULL && tiku_pdf_render(doc, 1, 1.0, &pm) == 0 &&
+          pixel(&pm, 50, 250) == 0xff0000u &&
+          pixel(&pm, 150, 150) == 0xffffffu,
+          "a form's stray Q does not undo its caller's clip");
+    tiku_pdf_pixmap_free(&pm);
+    check(text != NULL && strstr(text, "After") != NULL,
+          "nor lose the text that follows it");
+    free(text);
+    check(doc != NULL && tiku_pdf_render(doc, 2, 1.0, &pm) == 0 &&
+          pixel(&pm, 150, 150) == 0x808080u,
+          "a Separation whose alternate is no space paints its tint grey");
+    tiku_pdf_pixmap_free(&pm);
+    check(doc != NULL && tiku_pdf_render(doc, 3, 1.0, &pm) == 0 &&
+          pixel(&pm, 150, 150) == 0xccccccu,
+          "an Indexed table over five colorants reads all five");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
+/**
  * @brief Three pages, an outline over them and links between them: an
  *        entry and a link by name (the Names tree and the older Dests
  *        dictionary), one straight to a page, one to an address.
@@ -919,6 +996,7 @@ main(void)
     shade_test();
     transp_test();
     nav_test();
+    damage_test();
     corpus_test();
     if (fails) {
         printf("%d FAILED\n", fails);

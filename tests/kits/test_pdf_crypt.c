@@ -7,7 +7,7 @@
  * test_pdf_crypt.c - encrypted PDFs made here, as a writer makes them,
  * and read back: RC4 at 40 and 128 bits (revisions 2 and 3), AES-128
  * (4) and AES-256 (6); the empty password, a user's, an owner's, a
- * wrong one; the author's word on copying; and a damaged file.
+ * wrong one; the author's word on copying; and two damaged files.
  *
  * TIKU_PDF_ENC_DIR names a folder to write the files to, so another
  * reader (poppler's pdftotext) can be asked to open them too.
@@ -130,8 +130,9 @@ patch(encw_t *b, const char *from, const char *to)
     return 0;
 }
 
-/** @brief A damaged file: a table that lies about the Encrypt
- *         dictionary, which is found by reading the file. */
+/** @brief Damaged files: a table that lies about the Encrypt dictionary,
+ *         which is found by reading the file; a version and a revision
+ *         that disagree about the key's length, which is refused. */
 static void
 damaged(void)
 {
@@ -148,6 +149,13 @@ damaged(void)
     check(ok && err == TIKU_PDF_OK && reads(doc), "ENC-006",
           "a table that lies about the Encrypt dictionary is rebuilt, and "
           "the file still reads");
+    tiku_pdf_close(doc);
+    free(b.p);
+    b = enc_make(&rc4);
+    ok = patch(&b, "/V 2 /R 3", "/V 5 /R 3");
+    doc = open_with(&b, "", &err);
+    check(ok && err == TIKU_PDF_UNSUPPORTED && doc == NULL, "ENC-007",
+          "a 32-byte key (V 5) for a revision 3 password is refused");
     tiku_pdf_close(doc);
     free(b.p);
 }

@@ -44,7 +44,7 @@ typedef struct {
 typedef struct {
     tiku_pdf_t *doc;
     gstate_t    gs[STACK_MAX];
-    int         sp;
+    int         sp, qfloor;         /* the top; where the stream began  */
     mat_t       tm, tlm;
     char       *out;
     long        n, cap;
@@ -299,6 +299,7 @@ form(tx_t *t, pdf_obj_t *res, const char *name, int depth)
     pdf_obj_t *m, *fres;
     unsigned char *data = NULL;
     long n = 0;
+    int sp = t->sp;
 
     if (xo == NULL || xo->kind != PDF_STREAM || depth >= FORM_DEPTH ||
         !pdf_is_name(pdf_get(t->doc, xo, "Subtype"), "Form")) {
@@ -325,7 +326,7 @@ form(tx_t *t, pdf_obj_t *res, const char *name, int depth)
         run(t, data, n, fres != NULL ? fres : res, depth + 1);
         free(data);
     }
-    t->sp--;
+    t->sp = sp;                     /* whatever q it left unmatched */
 }
 
 /** @brief Past an inline image: BI ... ID <bytes> EI. */
@@ -367,7 +368,7 @@ op(tx_t *t, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
             t->sp++;
         }
     } else if (strcmp(o, "Q") == 0) {
-        if (t->sp > 0) {
+        if (t->sp > t->qfloor) {
             t->sp--;
         }
     } else if (strcmp(o, "cm") == 0 && n >= 6) {
@@ -448,8 +449,9 @@ run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res, int depth)
 {
     pdf_cur_t c = { data, n, 0 };
     pdf_obj_t *ops[OPERANDS];
-    int nops = 0;
+    int nops = 0, qfloor = t->qfloor;
 
+    t->qfloor = t->sp;              /* its Q undoes its own q, no more */
     for (;;) {
         pdf_obj_t *o = pdf_parse(&c, 0);
         int i;
@@ -477,6 +479,7 @@ run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res, int depth)
     while (nops > 0) {
         pdf_free(ops[--nops]);
     }
+    t->qfloor = qfloor;
 }
 
 /** @brief Run @p page's content for its text, and its characters' boxes

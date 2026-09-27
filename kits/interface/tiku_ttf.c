@@ -404,7 +404,8 @@ read_simple(const tiku_ttf_t *t, size_t off, size_t len, int contours,
     int base = out->n;
     unsigned ins;
 
-    if ((size_t)contours * 2u + 12u > len || contours > 64) {
+    if (contours == 0 || (size_t)contours * 2u + 12u > len ||
+        contours > 64) {
         return 0;
     }
     points = (int)rd16(t->data + p + (size_t)(contours - 1) * 2u) + 1;

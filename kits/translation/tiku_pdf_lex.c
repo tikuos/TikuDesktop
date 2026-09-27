@@ -240,6 +240,14 @@ pdf_number(const pdf_obj_t *o, double dflt)
     return dflt;
 }
 
+int
+pdf_int(const pdf_obj_t *o, int dflt)
+{
+    double v = pdf_number(o, dflt);
+
+    return v > -2147483648.0 && v < 2147483648.0 ? (int)v : dflt;
+}
+
 /* ------------------------------------------------------------- tokens  */
 
 /** @brief Bytes of a string or name, grown as they come. */

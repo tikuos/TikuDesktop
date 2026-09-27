@@ -94,7 +94,7 @@ pdf_shade_load(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_obj_t *res)
     if (s == NULL) {
         return NULL;
     }
-    s->type = (int)pdf_number(pdf_get(doc, dict, "ShadingType"), 0);
+    s->type = pdf_int(pdf_get(doc, dict, "ShadingType"), 0);
     s->cs = pdf_cs_load(doc, pdf_get(doc, dict, "ColorSpace"), res);
     s->fn = pdf_func_load(doc, pdf_get(doc, dict, "Function"));
     s->domain[1] = s->domain[3] = 1;
@@ -149,9 +149,9 @@ pdf_shade_free(pdf_shade_t *s)
 static uint32_t
 along(const pdf_shade_t *s, double t)
 {
-    int i = (int)(t * (SHADE_LUT - 1) + 0.5);
+    double k = t * (SHADE_LUT - 1) + 0.5;         /* a NaN is the start */
 
-    return s->lut[i < 0 ? 0 : i >= SHADE_LUT ? SHADE_LUT - 1 : i];
+    return s->lut[k > 0 ? (k < SHADE_LUT - 1 ? (int)k : SHADE_LUT - 1) : 0];
 }
 
 /** @brief Type 2: where @p u, @p v falls along the axis, if between its

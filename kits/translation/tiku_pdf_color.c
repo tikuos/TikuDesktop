@@ -150,6 +150,27 @@ ps_compile(pdf_func_t *f, pdf_cur_t *c, int depth)
     }
 }
 
+/** @brief @p a as the calculator's integers are: held to 32 bits, and
+ *         clear of the one quotient that overflows; a NaN is 0. */
+static long
+ps_int(double a)
+{
+    return a > -2147483647.0 ? (a < 2147483647.0 ? (long)a : 2147483647L)
+                             : a == a ? -2147483647L : 0;
+}
+
+/** @brief bitshift: @p a's 32 bits moved left @p by, or right when it is
+ *         negative, zeros coming in. */
+static double
+ps_shift(double a, double by)
+{
+    uint32_t u = (uint32_t)ps_int(a);
+    long s = ps_int(by);
+
+    u = s >= 32 || s <= -32 ? 0 : s >= 0 ? u << s : u >> -s;
+    return (double)(int32_t)u;
+}
+
 /** @brief Run the calculator over @p st with @p sp values on it. */
 static int
 ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
@@ -209,9 +230,10 @@ ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
             case PS_SUB: a -= b; break;
             case PS_MUL: a *= b; break;
             case PS_DIV: a = b != 0 ? a / b : 0; break;
-            case PS_IDIV: a = b != 0 ? (double)((long)a / (long)b) : 0; break;
-            case PS_MOD: a = (long)b != 0 ? (double)((long)a % (long)b) : 0;
-                         break;
+            case PS_IDIV: a = ps_int(b) != 0
+                              ? (double)(ps_int(a) / ps_int(b)) : 0; break;
+            case PS_MOD: a = ps_int(b) != 0
+                             ? (double)(ps_int(a) % ps_int(b)) : 0; break;
             case PS_ATAN: a = atan2(a, b) * 180 / M_PI;
                           if (a < 0) a += 360; break;
             case PS_EXP: a = pow(a, b); break;
@@ -221,11 +243,10 @@ ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
             case PS_GE: a = a >= b; break;
             case PS_LT: a = a < b; break;
             case PS_LE: a = a <= b; break;
-            case PS_AND: a = (double)((long)a & (long)b); break;
-            case PS_OR: a = (double)((long)a | (long)b); break;
-            case PS_XOR: a = (double)((long)a ^ (long)b); break;
-            default: a = b >= 0 ? (double)((long)a << ((int)b & 63))
-                                : (double)((long)a >> ((int)-b & 63));
+            case PS_AND: a = (double)(ps_int(a) & ps_int(b)); break;
+            case PS_OR: a = (double)(ps_int(a) | ps_int(b)); break;
+            case PS_XOR: a = (double)(ps_int(a) ^ ps_int(b)); break;
+            default: a = ps_shift(a, b);
             }
             st[(*sp)++] = a;
             break;
@@ -242,12 +263,13 @@ ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
             case PS_COS: a = cos(a * M_PI / 180); break;
             case PS_LN: a = a > 0 ? log(a) : 0; break;
             case PS_LOG: a = a > 0 ? log10(a) : 0; break;
-            case PS_CVI: case PS_TRUNCATE: a = (double)(long)a; break;
+            case PS_CVI: a = (double)ps_int(a); break;
+            case PS_TRUNCATE: a = trunc(a); break;
             case PS_FLOOR: a = floor(a); break;
             case PS_CEILING: a = ceil(a); break;
             case PS_ROUND: a = floor(a + 0.5); break;
             case PS_NOT: a = (a == 0 || a == 1) ? !(int)a
-                                                : (double)~(long)a; break;
+                                                : (double)~ps_int(a); break;
             default: break;
             }
             st[*sp - 1] = a;
@@ -269,7 +291,7 @@ ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
             int k, i;
 
             if (n < 1) return -1;
-            k = (int)st[--(*sp)];
+            k = (int)ps_int(st[--(*sp)]);
             if (k < 0 || k > *sp || *sp + k > PS_STACK) return -1;
             for (i = 0; i < k; i++) st[*sp + i] = st[*sp - k + i];
             *sp += k;
@@ -279,7 +301,7 @@ ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
             int k;
 
             if (n < 1) return -1;
-            k = (int)st[--(*sp)];
+            k = (int)ps_int(st[--(*sp)]);
             if (k < 0 || k >= *sp) return -1;
             st[*sp] = st[*sp - 1 - k];
             (*sp)++;
@@ -290,8 +312,8 @@ ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
             double tmp[PS_STACK];
 
             if (n < 2) return -1;
-            j = (int)st[--(*sp)];
-            k = (int)st[--(*sp)];
+            j = (int)ps_int(st[--(*sp)]);
+            k = (int)ps_int(st[--(*sp)]);
             if (k <= 0 || k > *sp) return -1;
             j = ((j % k) + k) % k;
             for (i = 0; i < k; i++) tmp[(i + j) % k] = st[*sp - k + i];
@@ -325,7 +347,7 @@ pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
     if (f == NULL) {
         return NULL;
     }
-    f->type = (int)pdf_number(pdf_get(doc, spec, "FunctionType"), -1);
+    f->type = pdf_int(pdf_get(doc, spec, "FunctionType"), -1);
     f->nin = numbers(doc, pdf_get(doc, spec, "Domain"), f->domain,
                      PDF_FUNC_MAX_IN * 2) / 2;
     f->nout = numbers(doc, pdf_get(doc, spec, "Range"), f->range,
@@ -367,9 +389,10 @@ pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
         }
         f->nout = f->nparts > 0 ? f->part[0]->nout : 0;
     } else if (f->type == 0 && spec->kind == PDF_STREAM) {
+        double cells;
         long n = 0;
 
-        f->bps = (int)pdf_number(pdf_get(doc, spec, "BitsPerSample"), 8);
+        f->bps = pdf_int(pdf_get(doc, spec, "BitsPerSample"), 8);
         if (numbers(doc, pdf_get(doc, spec, "Size"), f->encode0,
                     PDF_FUNC_MAX_IN)
             < f->nin) {
@@ -377,8 +400,8 @@ pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
             return NULL;
         }
         for (i = 0; i < f->nin; i++) {
-            f->size[i] = (int)f->encode0[i];
-            if (f->size[i] < 1) f->size[i] = 1;
+            f->size[i] = f->encode0[i] > 1 && f->encode0[i] < SAMPLES_MAX
+                         ? (int)f->encode0[i] : 1;
         }
         if (numbers(doc, pdf_get(doc, spec, "Encode"), f->encode0,
                     PDF_FUNC_MAX_IN * 2) < f->nin * 2) {
@@ -398,6 +421,13 @@ pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
             return NULL;
         }
         f->nsamples = n;
+        for (i = 0, cells = f->nout; i < f->nin; i++) {
+            cells *= f->size[i];
+        }
+        if (cells * f->bps > 8.0 * SAMPLES_MAX) {
+            pdf_func_free(f);       /* a table bigger than any is read */
+            return NULL;
+        }
     } else if (f->type == 4 && spec->kind == PDF_STREAM) {
         unsigned char *data = NULL;
         long n = 0;
@@ -491,7 +521,7 @@ eval_sampled(const pdf_func_t *f, const double *in, double *out)
         double e = d1 > d0 ? e0 + (x - d0) * (e1 - e0) / (d1 - d0) : 0;
         long k;
 
-        if (e < 0) e = 0;
+        if (!(e > 0)) e = 0;                        /* a NaN too */
         if (e > f->size[i] - 1) e = f->size[i] - 1;
         k = (long)e;
         if (i == 0) {
@@ -596,18 +626,18 @@ pdf_func_eval(const pdf_func_t *f, const double *in, int nin, double *out)
 
 /* -------------------------------------------------------- colour spaces  */
 
+/** @brief A 0..1 part as a byte, whatever the file said (NaN is 0). */
+static uint32_t
+part(double v)
+{
+    return !(v > 0) ? 0 : v >= 1 ? 255 : (uint32_t)(v * 255 + 0.5);
+}
+
 /** @brief Three 0..1 parts as one opaque pixel. */
 static uint32_t
 rgb(double r, double g, double b)
 {
-    int ir = (int)(r * 255 + 0.5), ig = (int)(g * 255 + 0.5);
-    int ib = (int)(b * 255 + 0.5);
-
-    if (ir < 0) ir = 0; if (ir > 255) ir = 255;
-    if (ig < 0) ig = 0; if (ig > 255) ig = 255;
-    if (ib < 0) ib = 0; if (ib > 255) ib = 255;
-    return 0xff000000u | ((uint32_t)ir << 16) | ((uint32_t)ig << 8) |
-           (uint32_t)ib;
+    return 0xff000000u | part(r) << 16 | part(g) << 8 | part(b);
 }
 
 /** @brief A space by its family name, for the device families. */
@@ -681,7 +711,7 @@ pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res)
     }
     if (!strcmp(name, "ICCBased")) {
         pdf_obj_t *st = pdf_resolve(doc, spec->u.a.item[1]);
-        int n = (int)pdf_number(pdf_get(doc, st, "N"), 0);
+        int n = pdf_int(pdf_get(doc, st, "N"), 0);
         pdf_obj_t *alt = pdf_get(doc, st, "Alternate");
 
         if (alt != NULL && (cs = pdf_cs_load(doc, alt, res)) != NULL) {
@@ -707,13 +737,14 @@ pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res)
         cs->kind = CS_INDEXED;
         cs->n = 1;
         cs->base = pdf_cs_load(doc, spec->u.a.item[1], res);
-        cs->hival = (int)pdf_number(pdf_resolve(doc, spec->u.a.item[2]), 0);
+        cs->hival = pdf_int(pdf_resolve(doc, spec->u.a.item[2]), 0);
         lookup = pdf_resolve(doc, spec->u.a.item[3]);
         if (cs->base == NULL || cs->hival < 0 || cs->hival > 255) {
             pdf_cs_free(cs);
             return NULL;
         }
-        cs->lookup = calloc((size_t)(cs->hival + 1) * 4, 1);
+        cs->lookup = calloc((size_t)(cs->hival + 1) * (size_t)cs->base->n,
+                            1);
         if (cs->lookup == NULL) {
             pdf_cs_free(cs);
             return NULL;
@@ -812,11 +843,10 @@ pdf_cs_colour(const pdf_cs_t *cs, const double *v, int n)
         return rgb(l, l, l);
     }
     case CS_INDEXED: {
-        int i = n >= 1 ? (int)(v[0] + 0.5) : 0, k;
+        double x = n >= 1 ? v[0] + 0.5 : 0;
+        int i = x > 0 ? (x < cs->hival ? (int)x : cs->hival) : 0, k;
 
-        if (i < 0) i = 0;
-        if (i > cs->hival) i = cs->hival;
-        for (k = 0; k < cs->base->n && k < 4; k++) {
+        for (k = 0; k < cs->base->n; k++) {
             c[k] = cs->lookup[(size_t)i * cs->base->n + k] / 255.0;
         }
         return pdf_cs_colour(cs->base, c, cs->base->n);
@@ -830,7 +860,7 @@ pdf_cs_colour(const pdf_cs_t *cs, const double *v, int n)
         if (cs->tint != NULL && cs->base != NULL) {
             m = pdf_func_eval(cs->tint, v, n, c);
         }
-        if (m >= cs->base->n && cs->base != NULL) {
+        if (cs->base != NULL && m >= cs->base->n) {
             return pdf_cs_colour(cs->base, c, cs->base->n);
         }
         /* No usable transform: a tint of 1 is full ink, 0 is paper. */

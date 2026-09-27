@@ -219,7 +219,7 @@ pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
     }
     t = substitute(doc, base != NULL && base->kind == PDF_NAME
                         ? (const char *)base->u.s.p : "",
-                   (long)pdf_number(pdf_get(doc, desc, "Flags"), 0));
+                   pdf_int(pdf_get(doc, desc, "Flags"), 0));
     em = t != NULL ? tiku_ttf_upem(t) : 0;
     for (c = 0; em > 0 && c < 256; c++) {
         unsigned gid = uni[c] != 0 ? tiku_ttf_glyph(t, uni[c]) : 0;
@@ -303,7 +303,7 @@ load_names(tiku_pdf_t *doc, pdf_gfont_t *g, pdf_obj_t *font)
                 continue;
             }
             if (o->kind == PDF_INT || o->kind == PDF_REAL) {
-                code = (long)pdf_number(o, 0);
+                code = pdf_int(o, 0);
             } else if (o->kind == PDF_NAME && code >= 0 && code < 256) {
                 free(g->names[code]);
                 g->names[code] = strdup((const char *)o->u.s.p);
@@ -437,7 +437,7 @@ pdf_gfont_load(tiku_pdf_t *doc, pdf_obj_t *dict, const pdf_tfont_t *tf)
         load_cid2gid(doc, g, face);
     }
     desc = pdf_get(doc, face, "FontDescriptor");
-    flags = (long)pdf_number(pdf_get(doc, desc, "Flags"), 0);
+    flags = pdf_int(pdf_get(doc, desc, "Flags"), 0);
     g->symbolic = (flags & 4) != 0 && (flags & 32) == 0;
     load_program(doc, g, desc);
     if (g->kind == GF_NONE) {

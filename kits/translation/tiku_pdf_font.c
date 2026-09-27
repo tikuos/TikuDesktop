@@ -131,7 +131,7 @@ differences(tiku_pdf_t *doc, uint32_t *uni, pdf_obj_t *diff)
             continue;
         }
         if (o->kind == PDF_INT || o->kind == PDF_REAL) {
-            code = (long)pdf_number(o, 0);
+            code = pdf_int(o, 0);
         } else if (o->kind == PDF_NAME && code >= 0 && code < 256) {
             uni[code++] = pdf_glyph_unicode((const char *)o->u.s.p);
         }
@@ -288,7 +288,7 @@ simple_widths(tiku_pdf_t *doc, pdf_tfont_t *f, pdf_obj_t *font, double scale)
 {
     pdf_obj_t *w = pdf_get(doc, font, "Widths");
     pdf_obj_t *desc = pdf_get(doc, font, "FontDescriptor");
-    long first = (long)pdf_number(pdf_get(doc, font, "FirstChar"), 0);
+    long first = pdf_int(pdf_get(doc, font, "FirstChar"), 0);
     int i;
 
     f->missing = pdf_number(pdf_get(doc, desc, "MissingWidth"), 0) * scale;
@@ -328,7 +328,7 @@ cid_widths(tiku_pdf_t *doc, pdf_tfont_t *f, pdf_obj_t *cidfont)
             i + 1 >= w->u.a.n) {
             break;
         }
-        c = (long)pdf_number(a, 0);
+        c = pdf_int(a, 0);
         b = pdf_resolve(doc, w->u.a.item[i + 1]);
         if (b != NULL && b->kind == PDF_ARRAY) {
             for (k = 0; k < b->u.a.n; k++) {
@@ -344,7 +344,7 @@ cid_widths(tiku_pdf_t *doc, pdf_tfont_t *f, pdf_obj_t *cidfont)
         if (i + 2 >= w->u.a.n) {
             break;
         }
-        last = (long)pdf_number(b, 0);
+        last = pdf_int(b, 0);
         cw = pdf_resolve(doc, w->u.a.item[i + 2]);
         for (k = c; k <= last && k < f->codes && k - c < 65536; k++) {
             if (k >= 0) {

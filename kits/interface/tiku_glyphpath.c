@@ -257,9 +257,14 @@ static int
 steps_for(float length)
 {
     /* One piece per two pixels of control polygon: below that the eye
-     * cannot tell, above it the accumulator does the work for nothing. */
-    int n = (int)(length * 0.5f) + 2;
+     * cannot tell, above it the accumulator does the work for nothing.
+     * Tested so that a NaN, or a length no int holds, gets the most. */
+    int n;
 
+    if (!(length < 2.0f * (float)PATH_MAX_STEPS)) {
+        return PATH_MAX_STEPS;
+    }
+    n = (int)(length * 0.5f) + 2;
     if (n > PATH_MAX_STEPS) {
         n = PATH_MAX_STEPS;
     }

@@ -142,8 +142,8 @@ objstm_get(tiku_pdf_t *doc, long num)
         return NULL;
     }
     s->num = num;
-    s->count = (long)pdf_number(pdf_get(doc, st, "N"), 0);
-    s->first = (long)pdf_number(pdf_get(doc, st, "First"), 0);
+    s->count = pdf_int(pdf_get(doc, st, "N"), 0);
+    s->first = pdf_int(pdf_get(doc, st, "First"), 0);
     if (s->count < 0 || s->first < 0 || s->first > s->len) {
         free(s->data);
         s->data = NULL;
@@ -285,7 +285,7 @@ pdf_stream_raw(tiku_pdf_t *doc, pdf_obj_t *stream, const unsigned char **p,
     if (stream->u.st.len < 0) {
         pdf_cur_t c = { doc->data, doc->len, 0 };
 
-        len = (long)pdf_number(pdf_get(doc, stream, "Length"), -1);
+        len = pdf_int(pdf_get(doc, stream, "Length"), -1);
         c.pos = (len >= 0 && off + len <= doc->len) ? off + len : -1;
         if (c.pos < 0 || !pdf_skip_ws(&c) || !pdf_keyword_at(&c, "endstream")) {
             end = pdf_find(doc->data, doc->len, off, "endstream");
@@ -378,12 +378,12 @@ xref_stream(tiku_pdf_t *doc, pdf_obj_t *st)
         return -1;
     }
     for (i = 0; i < 3; i++) {
-        wid[i] = (int)pdf_number(pdf_resolve(doc, w->u.a.item[i]), 0);
+        wid[i] = pdf_int(pdf_resolve(doc, w->u.a.item[i]), 0);
         if (wid[i] < 0 || wid[i] > 8) {
             return -1;
         }
     }
-    size = (long)pdf_number(pdf_get(doc, st, "Size"), 0);
+    size = pdf_int(pdf_get(doc, st, "Size"), 0);
     if (pdf_stream_data(doc, st, &data, &n, NULL) != 0) {
         return -1;
     }
@@ -392,11 +392,9 @@ xref_stream(tiku_pdf_t *doc, pdf_obj_t *st)
         long start = 0, count = size, k;
 
         if (index != NULL && index->kind == PDF_ARRAY) {
-            start = (long)pdf_number(pdf_resolve(doc,
-                                                 index->u.a.item[2 * i]), 0);
-            count = (long)pdf_number(pdf_resolve(doc,
-                                                 index->u.a.item[2 * i + 1]),
-                                     0);
+            start = pdf_int(pdf_resolve(doc, index->u.a.item[2 * i]), 0);
+            count = pdf_int(pdf_resolve(doc, index->u.a.item[2 * i + 1]),
+                            0);
         }
         for (k = 0; k < count; k++) {
             long type = 1, f2, f3;
@@ -507,8 +505,8 @@ load_xref_at(tiku_pdf_t *doc, long off, long *visited, int *nvisited)
             return -1;
         }
     }
-    stm = (long)pdf_number(pdf_dict_raw(t, "XRefStm"), -1);
-    prev = (long)pdf_number(pdf_dict_raw(t, "Prev"), -1);
+    stm = pdf_int(pdf_dict_raw(t, "XRefStm"), -1);
+    prev = pdf_int(pdf_dict_raw(t, "Prev"), -1);
     trailer_merge(doc, t);
     if (stm > 0) {
         (void)load_xref_at(doc, stm, visited, nvisited);

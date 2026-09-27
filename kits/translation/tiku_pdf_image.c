@@ -121,15 +121,15 @@ grey_samples(tiku_pdf_t *doc, pdf_obj_t *dict, const unsigned char *raw,
     unsigned char *data = NULL, *out;
     long n = 0, total, i;
     const char *filter = NULL;
-    int bpc = stencil ? 1 : (int)pdf_number(key(doc, dict, "BitsPerComponent",
-                                                "BPC"), 8);
+    int bpc = stencil ? 1 : pdf_int(key(doc, dict, "BitsPerComponent",
+                                        "BPC"), 8);
     double dec[2];
     int ndec = decode_array(doc, dict, dec, 2);
     int inv = ndec == 2 && dec[0] > dec[1];
     pdf_cs_t *cs = NULL;
 
-    *w = (int)pdf_number(key(doc, dict, "Width", "W"), 0);
-    *h = (int)pdf_number(key(doc, dict, "Height", "H"), 0);
+    *w = pdf_int(key(doc, dict, "Width", "W"), 0);
+    *h = pdf_int(key(doc, dict, "Height", "H"), 0);
     if (*w <= 0 || *h <= 0 || (long)*w * *h > IMG_MAX_PIXELS) {
         return NULL;
     }
@@ -243,7 +243,7 @@ static int
 from_samples(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_img_t *img,
              const unsigned char *data, long n, pdf_obj_t *res)
 {
-    int bpc = (int)pdf_number(key(doc, dict, "BitsPerComponent", "BPC"), 8);
+    int bpc = pdf_int(key(doc, dict, "BitsPerComponent", "BPC"), 8);
     pdf_cs_t *cs = pdf_cs_load(doc, key(doc, dict, "ColorSpace", "CS"), res);
     double dec[16];
     int ndec = decode_array(doc, dict, dec, 16), comps = cs != NULL ? cs->n : 1;
@@ -288,8 +288,8 @@ pdf_image_decode(tiku_pdf_t *doc, pdf_obj_t *dict, const unsigned char *raw,
     int rc;
 
     memset(out, 0, sizeof *out);
-    out->w = (int)pdf_number(key(doc, dict, "Width", "W"), 0);
-    out->h = (int)pdf_number(key(doc, dict, "Height", "H"), 0);
+    out->w = pdf_int(key(doc, dict, "Width", "W"), 0);
+    out->h = pdf_int(key(doc, dict, "Height", "H"), 0);
     if (out->w <= 0 || out->h <= 0 || (long)out->w * out->h > IMG_MAX_PIXELS) {
         return -1;
     }
@@ -396,6 +396,13 @@ shrink(const pdf_img_t *img, int fx, int fy, pdf_img_t *out)
     return 0;
 }
 
+/** @brief @p v held to 0..@p hi, as an int; a NaN is 0. */
+static int
+within(double v, int hi)
+{
+    return v > 0 ? (v < hi ? (int)v : hi) : 0;
+}
+
 /** @brief The device pixels the unit square covers under @p ctm,
  *        clipped to @p pw by @p ph.  @return 0 when none. */
 static int
@@ -414,10 +421,10 @@ device_box(const pdf_mat_t *ctm, int pw, int ph, int *box)
         if (k == 0 || y < miny) miny = y;
         if (k == 0 || y > maxy) maxy = y;
     }
-    box[0] = minx < 0 ? 0 : (int)minx;
-    box[1] = miny < 0 ? 0 : (int)miny;
-    box[2] = maxx + 0.9999 > pw ? pw : (int)(maxx + 0.9999);
-    box[3] = maxy + 0.9999 > ph ? ph : (int)(maxy + 0.9999);
+    box[0] = within(minx, pw);
+    box[1] = within(miny, ph);
+    box[2] = within(maxx + 0.9999, pw);
+    box[3] = within(maxy + 0.9999, ph);
     return box[0] < box[2] && box[1] < box[3];
 }
 
@@ -429,8 +436,8 @@ shrink_factors(const pdf_mat_t *ctm, const pdf_img_t *img, int *fx, int *fy)
     double dw = sqrt(ctm->a * ctm->a + ctm->b * ctm->b);
     double dh = sqrt(ctm->c * ctm->c + ctm->d * ctm->d);
 
-    *fx = (int)(img->w / (dw < 1 ? 1 : dw));
-    *fy = (int)(img->h / (dh < 1 ? 1 : dh));
+    *fx = (int)(img->w / (dw > 1 ? dw : 1));     /* a NaN is 1 */
+    *fy = (int)(img->h / (dh > 1 ? dh : 1));
     if (*fx < 1) *fx = 1;
     if (*fy < 1) *fy = 1;
 }
@@ -456,8 +463,8 @@ image_pixel(pdf_pix_t *pix, const pdf_img_t *src, const pdf_mat_t *inv,
     size_t i;
 
     pdf_mat_apply(inv, x + 0.5, y + 0.5, &u, &v);
-    if (u < 0 || u >= 1 || v < 0 || v >= 1) {
-        return;
+    if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) {
+        return;                     /* off the image, or a NaN */
     }
     sx = (int)(u * src->w);
     sy = (int)((1 - v) * src->h);           /* the first row is the top */

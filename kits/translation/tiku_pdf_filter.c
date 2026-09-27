@@ -435,7 +435,7 @@ pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *stream, const unsigned char *raw,
         if (!strcmp(name, "FlateDecode") || !strcmp(name, "Fl")) {
             nextn = tiku_inflate_alloc(cur, curn, &next, PDF_STREAM_MAX, 1);
         } else if (!strcmp(name, "LZWDecode") || !strcmp(name, "LZW")) {
-            int early = (int)pdf_number(pdf_get(doc, parm, "EarlyChange"), 1);
+            int early = pdf_int(pdf_get(doc, parm, "EarlyChange"), 1);
 
             nextn = lzw(cur, curn, early, &o) == 0 ? o.n : -1;
             next = o.p;
@@ -465,13 +465,13 @@ pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *stream, const unsigned char *raw,
         free(cur);
         cur = next;
         curn = nextn;
-        pred = (int)pdf_number(pdf_get(doc, parm, "Predictor"), 1);
+        pred = pdf_int(pdf_get(doc, parm, "Predictor"), 1);
         if (pred > 1) {
             curn = predict(cur, curn, pred,
-                           (int)pdf_number(pdf_get(doc, parm, "Colors"), 1),
-                           (int)pdf_number(pdf_get(doc, parm,
-                                                   "BitsPerComponent"), 8),
-                           (int)pdf_number(pdf_get(doc, parm, "Columns"), 1));
+                           pdf_int(pdf_get(doc, parm, "Colors"), 1),
+                           pdf_int(pdf_get(doc, parm, "BitsPerComponent"),
+                                   8),
+                           pdf_int(pdf_get(doc, parm, "Columns"), 1));
         }
     }
     *out = cur;

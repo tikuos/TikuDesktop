@@ -80,7 +80,7 @@ typedef struct {
     tiku_pdf_t *doc;
     pdf_pix_t   pix;
     gs_t        gs[GS_MAX];
-    int         sp;
+    int         sp, qfloor;         /* the top; where the stream began  */
     pdf_path_t  path, tmp;
     double      ux, uy, usx, usy;   /* the current point in user space  */
     int         pending_clip;       /* after this paint: 1 nonzero, 2 eo */
@@ -282,6 +282,13 @@ static double
 num(pdf_obj_t **ops, int n, int i, double dflt)
 {
     return i < n ? pdf_number(ops[i], dflt) : dflt;
+}
+
+/** @brief Operand @p i of @p n as an int, or 0. */
+static int
+inum(pdf_obj_t **ops, int n, int i)
+{
+    return i < n ? pdf_int(ops[i], 0) : 0;
 }
 
 /* ---------------------------------------------------------------- paths  */
@@ -661,9 +668,9 @@ op_gs(rs_t *r, pdf_obj_t *name, pdf_obj_t *res)
         return;
     }
     v = pdf_get(r->doc, ext, "CA");
-    if (v != NULL) g->salpha = pdf_number(v, 1);
+    if (v != NULL) g->salpha = fmin(fmax(pdf_number(v, 1), 0), 1);
     v = pdf_get(r->doc, ext, "ca");
-    if (v != NULL) g->falpha = pdf_number(v, 1);
+    if (v != NULL) g->falpha = fmin(fmax(pdf_number(v, 1), 0), 1);
     v = pdf_get(r->doc, ext, "LW");
     if (v != NULL) g->lw = pdf_number(v, 1);
     v = pdf_get(r->doc, ext, "BM");
@@ -785,6 +792,13 @@ tile_draw(rs_t *r, pdf_obj_t *pat, const tile_t *t, const double *bb,
     return rs_finish(sub);
 }
 
+/** @brief A cell's side of @p v pixels: rounded up, 1 to TILE_MAX. */
+static int
+side(double v)
+{
+    return !(v > 1) ? 1 : v < TILE_MAX ? (int)ceil(v) : TILE_MAX;
+}
+
 /**
  * @brief Tiling pattern @p pat's cell at the resolution @p to gives it:
  *        drawn on white and on black, the two giving each pixel's
@@ -815,14 +829,12 @@ tile_make(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to)
     t->ystep = fabs(pdf_number(pdf_get(r->doc, pat, "YStep"), 0));
     if (t->xstep < 1e-6) t->xstep = fabs(bb[2] - bb[0]);
     if (t->ystep < 1e-6) t->ystep = fabs(bb[3] - bb[1]);
-    t->w = (int)ceil(t->xstep * sqrt(to->a * to->a + to->b * to->b));
-    t->h = (int)ceil(t->ystep * sqrt(to->c * to->c + to->d * to->d));
     if (t->xstep < 1e-6 || t->ystep < 1e-6) {
         tile_free(t);
         return NULL;
     }
-    t->w = t->w < 1 ? 1 : t->w > TILE_MAX ? TILE_MAX : t->w;
-    t->h = t->h < 1 ? 1 : t->h > TILE_MAX ? TILE_MAX : t->h;
+    t->w = side(t->xstep * sqrt(to->a * to->a + to->b * to->b));
+    t->h = side(t->ystep * sqrt(to->c * to->c + to->d * to->d));
     t->sx = t->w / t->xstep;
     t->sy = t->h / t->ystep;
     white = tile_draw(r, pat, t, bb, 0xffffffffu);
@@ -917,10 +929,10 @@ paint_tiling(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to,
             }
             u -= floor(u / t->xstep) * t->xstep;
             v -= floor(v / t->ystep) * t->ystep;
-            i = (int)(u * t->sx);
-            j = (int)(v * t->sy);
-            i = i < 0 ? 0 : i >= t->w ? t->w - 1 : i;
-            j = j < 0 ? 0 : j >= t->h ? t->h - 1 : j;
+            u *= t->sx;
+            v *= t->sy;
+            i = u > 0 ? (u < t->w ? (int)u : t->w - 1) : 0;    /* NaN: 0 */
+            j = v > 0 ? (v < t->h ? (int)v : t->h - 1) : 0;
             a = a * t->a[(size_t)j * t->w + i] / 255 * ca / 255;
             if (a > 0) {
                 pdf_blend(&r->pix, r->pix.px + (size_t)y * r->pix.w + x,
@@ -938,7 +950,7 @@ static int
 paint_pattern(rs_t *r, pdf_obj_t *pat, const pdf_mask_t *m,
               const pdf_mask_t *clip, double alpha, uint32_t colour)
 {
-    int type = (int)pdf_number(pdf_get(r->doc, pat, "PatternType"), 0);
+    int type = pdf_int(pdf_get(r->doc, pat, "PatternType"), 0);
     pdf_mat_t to = pattern_space(r, pat);
 
     if (type == 2) {
@@ -1179,7 +1191,7 @@ op_text(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
     } else if (!strcmp(o, "Ts")) {
         g->rise = num(ops, n, 0, 0);
     } else if (!strcmp(o, "Tr")) {
-        g->tmode = (int)num(ops, n, 0, 0);
+        g->tmode = inum(ops, n, 0);
     } else if (!strcmp(o, "Tj") && n >= 1 && ops[0]->kind == PDF_STRING) {
         show(r, ops[0]->u.s.p, ops[0]->u.s.n, res, depth);
     } else if ((!strcmp(o, "'") || !strcmp(o, "\"")) && n >= 1) {
@@ -1376,17 +1388,17 @@ inline_image(rs_t *r, pdf_cur_t *c, pdf_obj_t *res)
     if (v == NULL) {
         pdf_obj_t *im = pdf_get(r->doc, d, "ImageMask");
         pdf_obj_t *cso = pdf_get(r->doc, d, "ColorSpace");
-        long w = (long)pdf_number(pdf_get(r->doc, d, "Width"), 0);
-        long h = (long)pdf_number(pdf_get(r->doc, d, "Height"), 0);
-        int bpc = (int)pdf_number(pdf_get(r->doc, d, "BitsPerComponent"), 8);
+        long w = pdf_int(pdf_get(r->doc, d, "Width"), 0);
+        long h = pdf_int(pdf_get(r->doc, d, "Height"), 0);
+        int bpc = pdf_int(pdf_get(r->doc, d, "BitsPerComponent"), 8);
         int n = 1;
 
         if (im == NULL) im = pdf_get(r->doc, d, "IM");
         if (cso == NULL) cso = pdf_get(r->doc, d, "CS");
-        if (w == 0) w = (long)pdf_number(pdf_get(r->doc, d, "W"), 0);
-        if (h == 0) h = (long)pdf_number(pdf_get(r->doc, d, "H"), 0);
+        if (w == 0) w = pdf_int(pdf_get(r->doc, d, "W"), 0);
+        if (h == 0) h = pdf_int(pdf_get(r->doc, d, "H"), 0);
         if (bpc == 8 && pdf_get(r->doc, d, "BPC") != NULL) {
-            bpc = (int)pdf_number(pdf_get(r->doc, d, "BPC"), 8);
+            bpc = pdf_int(pdf_get(r->doc, d, "BPC"), 8);
         }
         if (im != NULL && im->kind == PDF_BOOL && im->u.b) {
             bpc = 1;
@@ -1423,15 +1435,15 @@ op_state(rs_t *r, const char *o, pdf_obj_t **ops, int n)
     gs_t *g = top(r);
 
     if (!strcmp(o, "q")) push(r);
-    else if (!strcmp(o, "Q")) pop(r);
+    else if (!strcmp(o, "Q") && r->sp > r->qfloor) pop(r);
     else if (!strcmp(o, "cm") && n >= 6) {
         g->ctm = pdf_mat_mul(pdf_mat(num(ops, n, 0, 1), num(ops, n, 1, 0),
                                      num(ops, n, 2, 0), num(ops, n, 3, 1),
                                      num(ops, n, 4, 0), num(ops, n, 5, 0)),
                              g->ctm);
     } else if (!strcmp(o, "w")) g->lw = num(ops, n, 0, 1);
-    else if (!strcmp(o, "J")) g->cap = (int)num(ops, n, 0, 0);
-    else if (!strcmp(o, "j")) g->join = (int)num(ops, n, 0, 0);
+    else if (!strcmp(o, "J")) g->cap = inum(ops, n, 0);
+    else if (!strcmp(o, "j")) g->join = inum(ops, n, 0);
     else if (!strcmp(o, "M")) g->miter = num(ops, n, 0, 10);
     else if (!strcmp(o, "d") && n >= 2 && ops[0]->kind == PDF_ARRAY) {
         int i;
@@ -1513,9 +1525,10 @@ run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res, int depth)
 {
     pdf_cur_t c = { data, n, 0 };
     pdf_obj_t *ops[OPERANDS], *outer = r->res;
-    int nops = 0;
+    int nops = 0, qfloor = r->qfloor;
 
     r->res = res;
+    r->qfloor = r->sp;              /* its Q undoes its own q, no more */
     for (;;) {
         pdf_obj_t *o = pdf_parse(&c, 0);
         int i;
@@ -1544,6 +1557,7 @@ run(rs_t *r, const unsigned char *data, long n, pdf_obj_t *res, int depth)
         pdf_free(ops[--nops]);
     }
     r->res = outer;
+    r->qfloor = qfloor;
 }
 
 /* ------------------------------------------------------- annotations  */
@@ -1638,7 +1652,7 @@ annotations(rs_t *r, pdf_obj_t *page, pdf_mat_t base)
     for (i = 0; list != NULL && list->kind == PDF_ARRAY &&
                 i < list->u.a.n && !r->failed; i++) {
         pdf_obj_t *a = pdf_resolve(r->doc, list->u.a.item[i]), *ap;
-        long flags = (long)pdf_number(pdf_get(r->doc, a, "F"), 0);
+        long flags = pdf_int(pdf_get(r->doc, a, "F"), 0);
         double rect[4];
         pdf_mat_t place;
         gs_t *g;
