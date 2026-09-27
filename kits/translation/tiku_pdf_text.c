@@ -54,6 +54,13 @@ typedef struct {
     fontref_t   fonts[FONTS_MAX];
     int         nfont;
     int         failed;
+    /* Characters with their boxes, when asked for: each code point the
+     * text gets, placed on the page as drawn (tiku_pdf_page_chars). */
+    int              want_chars;
+    mat_t            base;          /* user space to the page drawn     */
+    tiku_pdf_char_t *chars;
+    long             nchars, charcap;
+    float            box[4];        /* the box the next character takes */
 } tx_t;
 
 static void run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res,
@@ -81,6 +88,51 @@ mat_of(double a, double b, double c, double d, double e, double f)
     mat_t m = {a, b, c, d, e, f};
 
     return m;
+}
+
+/** @brief Record @p cp with the box the extractor holds for it. */
+static void
+put_box(tx_t *t, uint32_t cp)
+{
+    tiku_pdf_char_t *c;
+
+    if (t->nchars == t->charcap) {
+        long cap = t->charcap ? t->charcap * 2 : 1024;
+
+        c = realloc(t->chars, (size_t)cap * sizeof *c);
+        if (c == NULL) {
+            t->failed = 1;
+            return;
+        }
+        t->chars = c;
+        t->charcap = cap;
+    }
+    c = &t->chars[t->nchars++];
+    c->cp = cp;
+    c->x0 = t->box[0];
+    c->y0 = t->box[1];
+    c->x1 = t->box[2];
+    c->y1 = t->box[3];
+}
+
+/** @brief Where the glyph of width @p w through @p trm lands on the page
+ *        drawn: its em, from a fifth below the baseline to the top. */
+static void
+glyph_box(tx_t *t, const mat_t *trm, double w, float *box)
+{
+    mat_t m = mat_mul(*trm, t->base);
+    double gx[4] = {0, w, w, 0}, gy[4] = {-0.2, -0.2, 0.8, 0.8};
+    int k;
+
+    for (k = 0; k < 4; k++) {
+        float x = (float)(m.a * gx[k] + m.c * gy[k] + m.e);
+        float y = (float)(m.b * gx[k] + m.d * gy[k] + m.f);
+
+        if (k == 0 || x < box[0]) box[0] = x;
+        if (k == 0 || y < box[1]) box[1] = y;
+        if (k == 0 || x > box[2]) box[2] = x;
+        if (k == 0 || y > box[3]) box[3] = y;
+    }
 }
 
 /** @brief Append one code point as UTF-8. */
@@ -132,6 +184,9 @@ put_char(tx_t *t, uint32_t cp)
     t->n += n;
     t->out[t->n] = '\0';
     t->last_space = cp == ' ' || cp == '\n';
+    if (t->want_chars) {
+        put_box(t, cp);
+    }
 }
 
 /** @brief The font named @p name in @p res, loaded once per page. */
@@ -187,6 +242,9 @@ show(tx_t *t, const unsigned char *s, size_t n)
             double dy = trm.f - t->last_y, dx = trm.e - t->last_x;
             double ref = size > t->last_size ? t->last_size : size;
 
+            /* A break made up between glyphs is an empty box where the
+             * last one ended: it selects and matches, and draws nothing. */
+            t->box[0] = t->box[2];
             if (fabs(dy) > 0.5 * ref || dx < -1.5 * ref) {
                 if (!t->last_space) {
                     put_char(t, '\n');
@@ -196,9 +254,20 @@ show(tx_t *t, const unsigned char *s, size_t n)
             }
         }
         if (g->font != NULL) {
-            put_char(t, g->font->uni[code]);
+            if (t->want_chars) {
+                glyph_box(t, &trm, w, t->box);
+            }
             if (g->font->uni2[code]) {
+                /* A ligature: its two characters share the glyph. */
+                float right = t->box[2];
+
+                t->box[2] = (t->box[0] + right) / 2;
+                put_char(t, g->font->uni[code]);
+                t->box[0] = t->box[2];
+                t->box[2] = right;
                 put_char(t, g->font->uni2[code]);
+            } else {
+                put_char(t, g->font->uni[code]);
             }
         }
         tx = (w * g->size + g->tc + ((step == 1 && code == 32) ? g->tw : 0)) *
@@ -410,14 +479,15 @@ run(tx_t *t, const unsigned char *data, long n, pdf_obj_t *res, int depth)
     }
 }
 
-char *
-tiku_pdf_page_text(tiku_pdf_t *doc, int page)
+/** @brief Run @p page's content for its text, and its characters' boxes
+ *        with @p want_chars.  @return the extractor to free, or NULL. */
+static tx_t *
+extract(tiku_pdf_t *doc, int page, int want_chars)
 {
     pdf_obj_t *p = pdf_page_dict(doc, page);
     unsigned char *data = NULL;
     long n = 0;
     tx_t *t;
-    char *out;
     int i;
 
     if (p == NULL || pdf_page_content(doc, p, &data, &n) != 0) {
@@ -432,12 +502,53 @@ tiku_pdf_page_text(tiku_pdf_t *doc, int page)
     t->gs[0].ctm = mat_of(1, 0, 0, 1, 0, 0);
     t->gs[0].th = 1;
     t->tm = t->tlm = t->gs[0].ctm;
+    t->want_chars = want_chars;
+    if (want_chars) {
+        pdf_mat_t m;
+        int w, h;
+
+        if (pdf_page_matrix(doc, page, 1.0, 0, 0, &m, &w, &h) != 0) {
+            free(data);
+            free(t);
+            return NULL;
+        }
+        t->base = mat_of(m.a, m.b, m.c, m.d, m.e, m.f);
+    }
     run(t, data, n, pdf_page_inherited(doc, p, "Resources"), 0);
     free(data);
     for (i = 0; i < t->nfont; i++) {
         pdf_tfont_free(t->fonts[i].font);
     }
+    return t;
+}
+
+char *
+tiku_pdf_page_text(tiku_pdf_t *doc, int page)
+{
+    tx_t *t = extract(doc, page, 0);
+    char *out;
+
+    if (t == NULL) {
+        return NULL;
+    }
     out = t->out != NULL ? t->out : calloc(1, 1);
     free(t);
     return out;
+}
+
+long
+tiku_pdf_page_chars(tiku_pdf_t *doc, int page, tiku_pdf_char_t **out)
+{
+    tx_t *t = extract(doc, page, 1);
+    long n;
+
+    *out = NULL;
+    if (t == NULL) {
+        return -1;
+    }
+    n = t->nchars;
+    *out = t->chars;
+    free(t->out);
+    free(t);
+    return n;
 }

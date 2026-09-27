@@ -56,6 +56,7 @@ tiku_pdf_fonts(tiku_pdf_t *doc, const char *dir)
 {
     if (doc != NULL) {
         snprintf(doc->fontdir, sizeof doc->fontdir, "%s", dir ? dir : "");
+        memset(doc->subst_chosen, 0, sizeof doc->subst_chosen);
     }
 }
 
@@ -105,12 +106,10 @@ has_word(const char *s, const char *word)
     return 0;
 }
 
-/**
- * @brief A face to stand in for @p base with @p flags: the fonts folder
- *        first, by family, then what the machine has.
- */
-static tiku_ttf_t *
-substitute(tiku_pdf_t *doc, const char *base, long flags)
+/** @brief Which stand-in @p base with @p flags asks for: sans, serif or
+ *        fixed (0, 2, 4), plus one for bold. */
+static int
+subst_kind(const char *base, long flags)
 {
     int serif = (flags & 2) != 0 || has_word(base, "Times") ||
                 has_word(base, "Serif") || has_word(base, "Georgia") ||
@@ -119,60 +118,118 @@ substitute(tiku_pdf_t *doc, const char *base, long flags)
                has_word(base, "Mono");
     int bold = has_word(base, "Bold") || has_word(base, "Black") ||
                has_word(base, "Heavy") || ((flags & (1L << 18)) != 0);
-    const char *kind = mono ? "mono" : serif ? "serif" : "sans";
-    char want[16];
-    size_t i;
 
     if (has_word(base, "Sans") || has_word(base, "Arial") ||
         has_word(base, "Helvetica")) {
         serif = 0;
     }
+    return (mono ? 4 : serif ? 2 : 0) + bold;
+}
+
+/** @brief The family in the fonts folder for kind @p k, into @p out. */
+static void
+folder_pick(const char *dir, int k, char *out, size_t max)
+{
+    tiku_fontdir_t *folder = malloc(sizeof *folder);    /* paths: not stack */
+    const tiku_fontdir_entry_t *pick = NULL;
+    int n, i, mono = k >= 4, serif = k == 2 || k == 3;
+
+    if (folder == NULL) {
+        return;
+    }
+    n = tiku_fontdir_scan(folder, dir);
+    for (i = 0; i < n && pick == NULL; i++) {
+        const char *name = folder->font[i].name;
+        int is_mono = has_word(name, "Mono") || has_word(name, "Courier");
+        int is_serif = has_word(name, "Serif") && !has_word(name, "Sans");
+
+        if ((mono && is_mono) || (!mono && serif && is_serif) ||
+            (!mono && !serif && !is_mono && !is_serif)) {
+            pick = &folder->font[i];
+        }
+    }
+    if (pick == NULL && n > 0) {
+        pick = &folder->font[0];
+    }
+    if (pick != NULL) {
+        snprintf(out, max, "%s", (k & 1) && pick->bold[0] ? pick->bold
+                                                          : pick->regular);
+    }
+    free(folder);
+}
+
+/**
+ * @brief The file standing in for kind @p k: the fonts folder first, by
+ *        family, then what the machine has.  Chosen once per document.
+ */
+static const char *
+subst_file(tiku_pdf_t *doc, int k)
+{
+    static const char *const kinds[] = {"sans", "sans-bold", "serif",
+                                        "serif-bold", "mono", "mono-bold"};
+    char *pick = doc->subst_pick[k];
+    size_t i, pass;
+
+    if (doc->subst_chosen[k]) {
+        return pick;
+    }
+    doc->subst_chosen[k] = 1;
+    pick[0] = '\0';
     if (doc->fontdir[0] != '\0') {
-        static tiku_fontdir_t folder;   /* 16 families of paths: not stack */
-        int n = tiku_fontdir_scan(&folder, doc->fontdir), k;
-        const tiku_fontdir_entry_t *pick = NULL;
+        folder_pick(doc->fontdir, k, pick, sizeof doc->subst_pick[k]);
+    }
+    /* The kind asked for, then for bold its regular face. */
+    for (pass = 0; pass < 2 && pick[0] == '\0'; pass++) {
+        const char *want = kinds[pass == 0 ? k : k & ~1];
 
-        for (k = 0; k < n; k++) {
-            const char *name = folder.font[k].name;
-            int is_mono = has_word(name, "Mono") || has_word(name, "Courier");
-            int is_serif = has_word(name, "Serif") && !has_word(name, "Sans");
-
-            if ((mono && is_mono) || (!mono && serif && is_serif) ||
-                (!mono && !serif && !is_mono && !is_serif)) {
-                pick = &folder.font[k];
+        for (i = 0; i < sizeof fallback / sizeof fallback[0]; i++) {
+            if (strcmp(fallback[i][0], want) == 0 &&
+                tiku_ttf_is_font(fallback[i][1])) {
+                snprintf(pick, sizeof doc->subst_pick[k], "%s",
+                         fallback[i][1]);
                 break;
             }
         }
-        if (pick == NULL && n > 0) {
-            pick = &folder.font[0];
-        }
-        if (pick != NULL) {
-            tiku_ttf_t *t = subst_open(doc, bold && pick->bold[0]
-                                            ? pick->bold : pick->regular);
+    }
+    return pick;
+}
 
-            if (t != NULL) {
-                return t;
-            }
-        }
-    }
-    snprintf(want, sizeof want, "%s%s", kind, bold ? "-bold" : "");
-    for (i = 0; i < sizeof fallback / sizeof fallback[0]; i++) {
-        if (strcmp(fallback[i][0], want) == 0 &&
-            tiku_ttf_is_font(fallback[i][1])) {
-            tiku_ttf_t *t = subst_open(doc, fallback[i][1]);
+/** @brief A face to stand in for @p base with @p flags, or NULL. */
+static tiku_ttf_t *
+substitute(tiku_pdf_t *doc, const char *base, long flags)
+{
+    const char *file = subst_file(doc, subst_kind(base, flags));
 
-            if (t != NULL) {
-                return t;
-            }
+    return file[0] != '\0' ? subst_open(doc, file) : NULL;
+}
+
+int
+pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
+                   double *width)
+{
+    pdf_obj_t *desc = pdf_get(doc, font, "FontDescriptor");
+    pdf_obj_t *base = pdf_get(doc, font, "BaseFont");
+    tiku_ttf_t *t;
+    double em;
+    int c, any = 0;
+
+    if (pdf_get(doc, desc, "FontFile") || pdf_get(doc, desc, "FontFile2") ||
+        pdf_get(doc, desc, "FontFile3")) {
+        return 0;                   /* its own program says, not ours */
+    }
+    t = substitute(doc, base != NULL && base->kind == PDF_NAME
+                        ? (const char *)base->u.s.p : "",
+                   (long)pdf_number(pdf_get(doc, desc, "Flags"), 0));
+    em = t != NULL ? tiku_ttf_upem(t) : 0;
+    for (c = 0; em > 0 && c < 256; c++) {
+        unsigned gid = uni[c] != 0 ? tiku_ttf_glyph(t, uni[c]) : 0;
+
+        if (gid != 0) {
+            width[c] = tiku_ttf_advance(t, gid) / em;
+            any = 1;
         }
     }
-    for (i = 0; bold && i < sizeof fallback / sizeof fallback[0]; i++) {
-        if (strcmp(fallback[i][0], kind) == 0 &&
-            tiku_ttf_is_font(fallback[i][1])) {
-            return subst_open(doc, fallback[i][1]);
-        }
-    }
-    return NULL;
+    return any;
 }
 
 /* --------------------------------------------------------------- loading  */

@@ -293,7 +293,10 @@ simple_widths(tiku_pdf_t *doc, pdf_tfont_t *f, pdf_obj_t *font, double scale)
 
     f->missing = pdf_number(pdf_get(doc, desc, "MissingWidth"), 0) * scale;
     if (w == NULL || w->kind != PDF_ARRAY) {
-        f->missing = 0.5;           /* a standard face: close enough */
+        f->missing = 0.5;           /* a standard face: its stand-in's */
+        if (!f->type3) {
+            (void)pdf_standin_widths(doc, font, f->uni, f->width);
+        }
         return;
     }
     for (i = 0; i < w->u.a.n; i++) {

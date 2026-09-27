@@ -76,6 +76,12 @@ typedef struct {
 
 #define PDF_OBJSTM_KEEP 8
 
+/** @brief A page's dictionary and its number, sorted by address. */
+typedef struct {
+    pdf_obj_t *dict;                /* the page's dictionary, cached     */
+    int        index;               /* its number, from 0                */
+} pdf_pageref_t;
+
 struct tiku_pdf {
     unsigned char *data;            /* the whole file, NUL-terminated    */
     long           len;
@@ -87,6 +93,7 @@ struct tiku_pdf {
     int            objstm_next;     /* the slot the next one takes       */
     pdf_obj_t    **page;            /* each page's dictionary, cached    */
     int            npage;
+    pdf_pageref_t *pageref;         /* the same, by object; made on use  */
     int            repaired;        /* the table was rebuilt by scanning */
     int            encrypted;
     int            depth;           /* resolve() recursion, a cycle guard */
@@ -94,6 +101,8 @@ struct tiku_pdf {
     tiku_ttf_t    *subst[8];        /* the stand-ins opened so far      */
     char           subst_path[8][512];  /* each one's file             */
     int            nsubst;
+    char           subst_pick[6][512];  /* sans, serif, fixed; x bold  */
+    unsigned char  subst_chosen[6]; /* that pick was made ("" is none)  */
 };
 
 /* The lexer and the objects it makes: tiku_pdf_lex.c                        */
@@ -137,6 +146,9 @@ long pdf_find(const unsigned char *p, long n, long from, const char *word);
 
 /** @brief @p o with references followed; NULL for one that goes nowhere. */
 pdf_obj_t *pdf_resolve(tiku_pdf_t *doc, pdf_obj_t *o);
+/** @brief A text string (a title, an outline entry) as UTF-8 the caller
+ *        frees: UTF-16 or UTF-8 with its mark, else PDFDocEncoding. */
+char *pdf_text_string(const pdf_obj_t *s);
 /** @brief The value under @p key, resolved; NULL when absent. */
 pdf_obj_t *pdf_get(tiku_pdf_t *doc, pdf_obj_t *dict, const char *key);
 /**
@@ -187,6 +199,9 @@ pdf_obj_t *pdf_page_inherited(tiku_pdf_t *doc, pdf_obj_t *page,
 /** @brief The page's content streams decoded and joined; caller frees. */
 int pdf_page_content(tiku_pdf_t *doc, pdf_obj_t *page, unsigned char **out,
                      long *n);
+/** @brief Which page @p page (a reference, dictionary or number) is, or
+ *        -1 for none of this document's. */
+int pdf_page_index(tiku_pdf_t *doc, pdf_obj_t *page);
 
 /* Fonts, as far as their text goes: tiku_pdf_font.c                        */
 
@@ -225,6 +240,14 @@ void pdf_mat_apply(const pdf_mat_t *m, double x, double y, double *ox,
                    double *oy);
 /** @brief How much @p m scales a length, on average. */
 double pdf_mat_scale(const pdf_mat_t *m);
+/**
+ * @brief The matrix laying @p page out at @p scale, rotation applied and
+ *        y downwards, with the window's corner (@p x0, @p y0) at (0, 0);
+ *        and the whole page's size in pixels.  Text boxes and links use
+ *        it at scale 1: the page as drawn, in points.
+ */
+int pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
+                    pdf_mat_t *m, int *w, int *h);
 
 /** @brief A page's pixels, 0xAARRGGBB; and a coverage mask over them. */
 typedef struct { int w, h; uint32_t *px; } pdf_pix_t;
@@ -313,6 +336,14 @@ pdf_gfont_t *pdf_gfont_load(tiku_pdf_t *doc, pdf_obj_t *dict,
                             const pdf_tfont_t *tf);
 /** @brief Given back; the borrowed text view is left alone. */
 void pdf_gfont_free(pdf_gfont_t *g);
+/**
+ * @brief Widths for a simple font that gives none (the standard 14 as
+ *        old files use them): the stand-in's advances, which faces made
+ *        metric-compatible with those 14 make the right ones.
+ * @return 1 when any were set into @p width, by code through @p uni.
+ */
+int pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
+                       double *width);
 /**
  * @brief Coverage of glyph @p code drawn through @p m, which takes text
  *        space (one unit the em) to the device.

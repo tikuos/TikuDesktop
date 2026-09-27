@@ -827,10 +827,14 @@ tiku_pdf_close(tiku_pdf_t *doc)
     for (i = 0; i < PDF_OBJSTM_KEEP; i++) {
         free(doc->objstm[i].data);
     }
+    for (i = 0; i < doc->nsubst; i++) {
+        tiku_ttf_close(doc->subst[i]);
+    }
     pdf_free(doc->trailer);
     free(doc->cache);
     free(doc->xref);
     free(doc->page);
+    free(doc->pageref);
     free(doc->data);
     free(doc);
 }
@@ -847,44 +851,90 @@ tiku_pdf_repaired(const tiku_pdf_t *doc)
     return doc != NULL && doc->repaired;
 }
 
-/** @brief A PDF text string as UTF-8: UTF-16 with a BOM, else Latin-1. */
-static char *
-text_string(const pdf_obj_t *s)
+/* PDFDocEncoding's 0x80..0x9f: the punctuation a title is likely to use. */
+static const unsigned short pdfdoc_high[32] = {
+    0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x0192, 0x2044,
+    0x2039, 0x203a, 0x2212, 0x2030, 0x201e, 0x201c, 0x201d, 0x2018,
+    0x2019, 0x201a, 0x2122, 0xfb01, 0xfb02, 0x0141, 0x0152, 0x0160,
+    0x0178, 0x017d, 0x0131, 0x0142, 0x0153, 0x0161, 0x017e, 0x0000
+};
+
+/** @brief @p cp as UTF-8 at @p out + *@p n, a control made a space. */
+static void
+utf8_put(char *out, size_t *n, unsigned long cp)
 {
+    if (cp < 0x20 || cp == 0x7f) {
+        cp = ' ';
+    }
+    if (cp < 0x80) {
+        out[(*n)++] = (char)cp;
+    } else if (cp < 0x800) {
+        out[(*n)++] = (char)(0xc0 | (cp >> 6));
+        out[(*n)++] = (char)(0x80 | (cp & 0x3f));
+    } else if (cp < 0x10000) {
+        out[(*n)++] = (char)(0xe0 | (cp >> 12));
+        out[(*n)++] = (char)(0x80 | ((cp >> 6) & 0x3f));
+        out[(*n)++] = (char)(0x80 | (cp & 0x3f));
+    } else {
+        out[(*n)++] = (char)(0xf0 | (cp >> 18));
+        out[(*n)++] = (char)(0x80 | ((cp >> 12) & 0x3f));
+        out[(*n)++] = (char)(0x80 | ((cp >> 6) & 0x3f));
+        out[(*n)++] = (char)(0x80 | (cp & 0x3f));
+    }
+}
+
+char *
+pdf_text_string(const pdf_obj_t *s)
+{
+    const unsigned char *p;
     char *out;
-    size_t i, n = 0;
+    size_t i, n = 0, len;
 
     if (s == NULL || s->kind != PDF_STRING) {
         return NULL;
     }
-    out = malloc(s->u.s.n * 3 + 1);
+    p = s->u.s.p;
+    len = s->u.s.n;
+    out = malloc(len * 3 + 1);
     if (out == NULL) {
         return NULL;
     }
-    if (s->u.s.n >= 2 && s->u.s.p[0] == 0xfe && s->u.s.p[1] == 0xff) {
-        for (i = 2; i + 1 < s->u.s.n; i += 2) {
-            unsigned cp = ((unsigned)s->u.s.p[i] << 8) | s->u.s.p[i + 1];
+    if (len >= 2 && ((p[0] == 0xfe && p[1] == 0xff) ||
+                     (p[0] == 0xff && p[1] == 0xfe))) {
+        int le = p[0] == 0xff;
 
-            if (cp < 0x80) {
-                out[n++] = (char)cp;
-            } else if (cp < 0x800) {
-                out[n++] = (char)(0xc0 | (cp >> 6));
-                out[n++] = (char)(0x80 | (cp & 0x3f));
-            } else {
-                out[n++] = (char)(0xe0 | (cp >> 12));
-                out[n++] = (char)(0x80 | ((cp >> 6) & 0x3f));
-                out[n++] = (char)(0x80 | (cp & 0x3f));
+        for (i = 2; i + 1 < len; i += 2) {
+            unsigned long cp = le ? (unsigned long)p[i + 1] << 8 | p[i]
+                                  : (unsigned long)p[i] << 8 | p[i + 1];
+
+            if (cp >= 0xd800 && cp < 0xdc00 && i + 3 < len) {
+                unsigned long lo = le ? (unsigned long)p[i + 3] << 8 | p[i + 2]
+                                      : (unsigned long)p[i + 2] << 8 | p[i + 3];
+
+                if (lo >= 0xdc00 && lo < 0xe000) {
+                    cp = 0x10000 + ((cp - 0xd800) << 10) + (lo - 0xdc00);
+                    i += 2;
+                }
+            }
+            if (cp < 0xd800 || cp >= 0xe000) {
+                utf8_put(out, &n, cp);
             }
         }
+    } else if (len >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf) {
+        for (i = 3; i < len; i++) {
+            out[n++] = p[i] < 0x20 ? ' ' : (char)p[i];  /* PDF 2.0 UTF-8 */
+        }
     } else {
-        for (i = 0; i < s->u.s.n; i++) {
-            unsigned cp = s->u.s.p[i];
+        for (i = 0; i < len; i++) {
+            unsigned cp = p[i];
 
-            if (cp < 0x80) {
-                out[n++] = (char)cp;
-            } else {
-                out[n++] = (char)(0xc0 | (cp >> 6));
-                out[n++] = (char)(0x80 | (cp & 0x3f));
+            if (cp >= 0x80 && cp < 0xa0) {
+                cp = pdfdoc_high[cp - 0x80];
+            } else if (cp == 0xa0) {
+                cp = 0x20ac;                /* the euro */
+            }
+            if (cp != 0) {
+                utf8_put(out, &n, cp);
             }
         }
     }
@@ -897,5 +947,5 @@ tiku_pdf_title(tiku_pdf_t *doc)
 {
     pdf_obj_t *info = doc != NULL ? pdf_get(doc, doc->trailer, "Info") : NULL;
 
-    return text_string(pdf_get(doc, info, "Title"));
+    return pdf_text_string(pdf_get(doc, info, "Title"));
 }

@@ -81,6 +81,62 @@ char *tiku_pdf_page_text(tiku_pdf_t *doc, int page);
 /** @brief The document's title from its Info dictionary, or NULL. */
 char *tiku_pdf_title(tiku_pdf_t *doc);
 
+/** @brief One character of a page's text, and the box it stands in on
+ *         the page as drawn at scale 1: points, rotation applied, y down. */
+typedef struct {
+    uint32_t cp;                    /* a made-up break has an empty box   */
+    float    x0, y0, x1, y1;
+} tiku_pdf_char_t;
+
+/**
+ * @brief The characters of @p page, in the order and with the spaces and
+ *        line breaks tiku_pdf_page_text() gives, each where it is drawn.
+ *
+ * What a search highlights and a selection copies.
+ * @return how many, with @p out to free(); -1 when the page is unreadable.
+ */
+long tiku_pdf_page_chars(tiku_pdf_t *doc, int page, tiku_pdf_char_t **out);
+
+/** @brief Where a link or an outline entry leads: a page and the point to
+ *         bring into view on it (as drawn at scale 1), or an address. */
+typedef struct {
+    int    page;                    /* from 0; -1 when not in the document */
+    double left, top;
+    char  *uri;                     /* an address outside it, or NULL     */
+} tiku_pdf_dest_t;
+
+/** @brief One entry of the outline (a document's bookmarks). */
+typedef struct {
+    char           *title;          /* UTF-8                              */
+    int             level;          /* 0 at the top                       */
+    int             below;          /* how many entries follow under it   */
+    int             open;           /* the document shows it unfolded     */
+    tiku_pdf_dest_t to;
+} tiku_pdf_outline_t;
+
+/**
+ * @brief The outline, depth first: an entry, then everything under it.
+ * @return how many entries, with @p out to give back through
+ *         tiku_pdf_outline_free(); 0 for a document without one.
+ */
+int tiku_pdf_outline(tiku_pdf_t *doc, tiku_pdf_outline_t **out);
+void tiku_pdf_outline_free(tiku_pdf_outline_t *items, int n);
+
+/** @brief A link on a page: its area on the page as drawn at scale 1. */
+typedef struct {
+    float           x0, y0, x1, y1;
+    tiku_pdf_dest_t to;
+} tiku_pdf_link_t;
+
+/**
+ * @brief The links on @p page that lead somewhere: a place in the
+ *        document, by name or directly, or an address outside it.
+ * @return how many, with @p out to give back through tiku_pdf_links_free();
+ *         -1 when there is no such page.
+ */
+int tiku_pdf_links(tiku_pdf_t *doc, int page, tiku_pdf_link_t **out);
+void tiku_pdf_links_free(tiku_pdf_link_t *links, int n);
+
 /** @brief A page drawn: 0xAARRGGBB pixels, top row first, opaque. */
 typedef struct {
     int       w, h;

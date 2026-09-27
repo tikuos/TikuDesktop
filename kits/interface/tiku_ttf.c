@@ -955,7 +955,8 @@ int
 tiku_ttf_outline(const tiku_ttf_t *ttf, unsigned gid,
                  const tiku_hint_t *hint, tiku_path_t *path)
 {
-    static ttf_outline_t outline;       /* 48 KB: not on the stack */
+    ttf_outline_t *outline;             /* 48 KB: a worker's own, not shared */
+    int drawn = 1;
 
     if (ttf == NULL || hint == NULL || path == NULL) {
         return 0;
@@ -963,13 +964,19 @@ tiku_ttf_outline(const tiku_ttf_t *ttf, unsigned gid,
     if (ttf->cff != NULL) {
         return tiku_cff_outline(ttf->cff, gid, hint, path);
     }
-    outline.n = 0;
-    outline.contours = 0;
-    if (!read_outline(ttf, gid, &outline, 0.0f, 0.0f, 0)) {
-        return (int)gid < ttf->num_glyphs;  /* empty: a space, drawn */
+    outline = malloc(sizeof *outline);
+    if (outline == NULL) {
+        return 0;
     }
-    emit_outline(path, &outline, hint);
-    return 1;
+    outline->n = 0;
+    outline->contours = 0;
+    if (!read_outline(ttf, gid, outline, 0.0f, 0.0f, 0)) {
+        drawn = (int)gid < ttf->num_glyphs;     /* empty: a space, drawn */
+    } else {
+        emit_outline(path, outline, hint);
+    }
+    free(outline);
+    return drawn;
 }
 
 void

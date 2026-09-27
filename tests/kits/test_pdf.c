@@ -429,6 +429,117 @@ png_out(const tiku_pdf_pixmap_t *pm, const char *path)
     return rc;
 }
 
+/**
+ * @brief Three pages, an outline over them and links between them: an
+ *        entry and a link by name (the Names tree and the older Dests
+ *        dictionary), one straight to a page, one to an address.
+ */
+static pdfw_t
+nav_file(void)
+{
+    pdfw_t b = {0};
+    const char *text = "BT /F1 20 Tf 100 700 Td (Hi) Tj ET "
+                       "BT /F1 20 Tf 100 600 Td (Yo) Tj ET";
+
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R /Outlines 10 0 R "
+               "/Dests << /old [4 0 R /FitH 500] >> "
+               "/Names << /Dests 20 0 R >> >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 "
+               "/MediaBox [0 0 612 792] /Resources << /Font << /F1 7 0 R "
+               ">> >> >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /Contents 6 0 R "
+               "/Annots [8 0 R 9 0 R 13 0 R] >>");
+    obj(&b, 4, "<< /Type /Page /Parent 2 0 R >>");
+    obj(&b, 5, "<< /Type /Page /Parent 2 0 R /Rotate 90 >>");
+    stream(&b, 6, "", text, (long)strlen(text));
+    /* Widths from H (72): H 500, Y 600, i 250, o 550, the rest 0. */
+    obj(&b, 7, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+               "/FirstChar 72 /LastChar 111 /Widths [500 0 0 0 0 0 0 0 0 0 0 0 "
+               "0 0 0 0 0 600 0 0 0 0 0 0 0 0 0 0 "
+               "0 0 0 0 0 250 0 0 0 0 0 550] >>");
+    obj(&b, 8, "<< /Type /Annot /Subtype /Link /Rect [100 700 200 720] "
+               "/Dest (sec2) >>");
+    obj(&b, 9, "<< /Type /Annot /Subtype /Link /Rect [300 50 400 70] "
+               "/A << /S /URI /URI (https://tiku-os.org/) >> >>");
+    obj(&b, 13, "<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] "
+                "/A << /S /Named /N /NextPage >> >>");
+    obj(&b, 10, "<< /Type /Outlines /First 11 0 R /Last 12 0 R >>");
+    obj(&b, 11, "<< /Title (One) /Parent 10 0 R /Next 12 0 R /First 14 0 R "
+                "/Last 14 0 R /Count 1 /Dest [3 0 R /Fit] >>");
+    obj(&b, 14, "<< /Title <FEFF0054007700F8> /Parent 11 0 R "
+                "/Dest [4 0 R /XYZ 0 700 0] >>");
+    obj(&b, 12, "<< /Title (Three\x8d) /Parent 10 0 R /Prev 11 0 R "
+                "/A << /S /GoTo /D /old >> >>");
+    obj(&b, 20, "<< /Kids [21 0 R 22 0 R] >>");
+    obj(&b, 21, "<< /Limits [(a) (m)] /Names [(abc) [3 0 R /Fit]] >>");
+    obj(&b, 22, "<< /Limits [(n) (z)] /Names [(sec2) [5 0 R /XYZ 72 792 0]"
+                " (zz) [3 0 R /Fit]] >>");
+    xref(&b, 1, 0);
+    return b;
+}
+
+static void
+nav_test(void)
+{
+    pdfw_t b = nav_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_outline_t *o = NULL;
+    tiku_pdf_link_t *l = NULL;
+    tiku_pdf_char_t *c = NULL;
+    int n = 0, k = 0;
+    long nc = 0;
+
+    check(doc != NULL && tiku_pdf_pages(doc) == 3, "three pages, linked");
+    if (doc == NULL) {
+        free(b.p);
+        return;
+    }
+    n = tiku_pdf_outline(doc, &o);
+    check(n == 3 && o[0].level == 0 && o[0].below == 1 && o[0].open &&
+          o[1].level == 1 && o[2].level == 0 && o[2].below == 0,
+          "the outline, depth first, with what lies under each entry");
+    check(n == 3 && !strcmp(o[0].title, "One") &&
+          !strcmp(o[1].title, "Tw\xc3\xb8") &&
+          !strcmp(o[2].title, "Three\xe2\x80\x9c"),
+          "titles in UTF-16 and PDFDocEncoding come out as UTF-8");
+    /* XYZ 0 700 on a 792-point page: 92 points down from the top. */
+    check(n == 3 && o[0].to.page == 0 && o[0].to.top == 0 &&
+          o[1].to.page == 1 && o[1].to.top > 91.9 && o[1].to.top < 92.1,
+          "an entry leads to its page and the point on it");
+    check(n == 3 && o[2].to.page == 1 && o[2].to.top > 291.9 &&
+          o[2].to.top < 292.1, "a GoTo by a name the Dests dictionary holds");
+    tiku_pdf_outline_free(o, n);
+
+    k = tiku_pdf_links(doc, 0, &l);
+    check(k == 3, "three links on the first page");
+    /* Rect 100 700 200 720 is 72..92 down the page as drawn. */
+    check(k == 3 && l[0].x0 == 100 && l[0].x1 == 200 && l[0].y0 == 72 &&
+          l[0].y1 == 92, "a link's area, on the page as drawn");
+    /* sec2 by the Names tree: the third page, turned; x 72 is 72 down. */
+    check(k == 3 && l[0].to.page == 2 && l[0].to.top > 71.9 &&
+          l[0].to.top < 72.1, "a name found through the tree's Limits");
+    check(k == 3 && l[1].to.page == -1 && l[1].to.uri != NULL &&
+          !strcmp(l[1].to.uri, "https://tiku-os.org/"), "an address");
+    check(k == 3 && l[2].to.page == 1, "a Named step to the next page");
+    tiku_pdf_links_free(l, k);
+    check(tiku_pdf_links(doc, 1, &l) == 0 && l == NULL,
+          "a page without links has none");
+
+    /* "Hi" at 100, 700 in 20 points: H is 500 wide, i 250. */
+    nc = tiku_pdf_page_chars(doc, 0, &c);
+    check(nc == 5 && c[0].cp == 'H' && c[1].cp == 'i' && c[2].cp == '\n' &&
+          c[3].cp == 'Y' && c[4].cp == 'o', "the characters, in order");
+    check(nc == 5 && c[0].x0 == 100 && c[0].x1 == 110 && c[1].x0 == 110 &&
+          c[1].x1 == 115 && c[0].y0 == 76 && c[0].y1 == 96,
+          "each where it stands: the em from below the baseline");
+    check(nc == 5 && c[2].x0 == c[2].x1, "a made-up break has no width");
+    free(c);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
 /** @brief A page with a red square, a blue stroke, a clipped green fill
  *        and a form, on a Rotate 90 page. */
 static pdfw_t
@@ -607,6 +718,7 @@ main(void)
     filter_test();
     glyph_test();
     render_test();
+    nav_test();
     corpus_test();
     if (fails) {
         printf("%d FAILED\n", fails);

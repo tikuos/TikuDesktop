@@ -249,3 +249,92 @@ tiku_pdf_page_size(tiku_pdf_t *doc, int page, double *w, double *h,
     if (rotate != NULL) *rotate = (int)r;
     return 0;
 }
+
+int
+pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
+            pdf_mat_t *m, int *w, int *h)
+{
+    double pw, ph, bx0 = 0, by0 = 0, bx1 = 612, by1 = 792;
+    int rot;
+    pdf_obj_t *p = pdf_page_dict(doc, page), *box;
+
+    if (p == NULL || tiku_pdf_page_size(doc, page, &pw, &ph, &rot) != 0) {
+        return -1;
+    }
+    box = pdf_page_inherited(doc, p, "CropBox");
+    if (box == NULL) {
+        box = pdf_page_inherited(doc, p, "MediaBox");
+    }
+    if (box != NULL && box->kind == PDF_ARRAY && box->u.a.n == 4) {
+        double v[4];
+        int i;
+
+        for (i = 0; i < 4; i++) {
+            v[i] = pdf_number(pdf_resolve(doc, box->u.a.item[i]), 0);
+        }
+        bx0 = v[0] < v[2] ? v[0] : v[2];
+        bx1 = v[0] < v[2] ? v[2] : v[0];
+        by0 = v[1] < v[3] ? v[1] : v[3];
+        by1 = v[1] < v[3] ? v[3] : v[1];
+    }
+    *w = (int)(pw * scale + 0.5);
+    *h = (int)(ph * scale + 0.5);
+    /* Flip y, then turn: the page's top left lands at the origin. */
+    *m = pdf_mat(scale, 0, 0, -scale, -bx0 * scale, by1 * scale);
+    if (rot == 90) {
+        *m = pdf_mat_mul(*m, pdf_mat(0, 1, -1, 0, ph * scale, 0));
+        *w = (int)(ph * scale + 0.5);
+        *h = (int)(pw * scale + 0.5);
+    } else if (rot == 180) {
+        *m = pdf_mat_mul(*m, pdf_mat(-1, 0, 0, -1, pw * scale, ph * scale));
+    } else if (rot == 270) {
+        *m = pdf_mat_mul(*m, pdf_mat(0, -1, 1, 0, 0, pw * scale));
+        *w = (int)(ph * scale + 0.5);
+        *h = (int)(pw * scale + 0.5);
+    }
+    *m = pdf_mat_mul(*m, pdf_mat(1, 0, 0, 1, -x0, -y0));
+    (void)bx1;
+    (void)by0;
+    return 0;
+}
+
+/** @brief qsort's and bsearch's order for the page index: by address. */
+static int
+by_dict(const void *a, const void *b)
+{
+    const pdf_pageref_t *x = a, *y = b;
+
+    return x->dict < y->dict ? -1 : x->dict > y->dict;
+}
+
+int
+pdf_page_index(tiku_pdf_t *doc, pdf_obj_t *page)
+{
+    pdf_pageref_t key, *hit;
+    int i;
+
+    page = pdf_resolve(doc, page);
+    if (page == NULL || doc->npage == 0) {
+        return -1;
+    }
+    if (page->kind == PDF_INT) {
+        i = (int)page->u.i;                 /* a page number, as GoToR has */
+        return i >= 0 && i < doc->npage ? i : -1;
+    }
+    if (doc->pageref == NULL) {
+        doc->pageref = malloc((size_t)doc->npage * sizeof *doc->pageref);
+        if (doc->pageref == NULL) {
+            return -1;
+        }
+        for (i = 0; i < doc->npage; i++) {
+            doc->pageref[i].dict = doc->page[i];
+            doc->pageref[i].index = i;
+        }
+        qsort(doc->pageref, (size_t)doc->npage, sizeof *doc->pageref,
+              by_dict);
+    }
+    key.dict = page;
+    hit = bsearch(&key, doc->pageref, (size_t)doc->npage,
+                  sizeof *doc->pageref, by_dict);
+    return hit != NULL ? hit->index : -1;
+}
