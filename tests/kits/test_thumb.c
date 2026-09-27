@@ -192,6 +192,27 @@ main(void)
             tiku_image_free(&im);
         }
         (void)remove(pth);
+        {   /* Its progressive twin: the same coefficients in bands and
+             * bits, so to the very pixel what the baseline gives. */
+            tiku_image_t a, b;
+            int same = 0;
+
+            memset(&a, 0, sizeof a);
+            memset(&b, 0, sizeof b);
+            if (tiku_image_decode(jpeg_420, sizeof jpeg_420, &a) ==
+                    TIKU_IMG_OK &&
+                tiku_image_decode(jpeg_420_progressive,
+                                  sizeof jpeg_420_progressive, &b) ==
+                    TIKU_IMG_OK) {
+                same = a.w == b.w && a.h == b.h &&
+                       memcmp(a.px, b.px, (size_t)a.w * (size_t)a.h *
+                                          sizeof *a.px) == 0;
+            }
+            check(same, "IV-028", "a progressive JPEG decodes to the very "
+                  "pixels of its baseline twin");
+            tiku_image_free(&a);
+            tiku_image_free(&b);
+        }
 
         snprintf(pth, sizeof pth, "/tmp/trk_thumb_fx.png");
         f = fopen(pth, "wb");

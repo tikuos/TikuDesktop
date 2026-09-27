@@ -4,8 +4,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_jpeg.c - baseline sequential JPEG: Huffman, dequantise, IDCT,
- * chroma upsample, YCbCr to RGB.
+ * tiku_jpeg.c - JPEG, sequential and progressive: Huffman, dequantise,
+ * IDCT, chroma upsample, YCbCr to RGB.
+ *
+ * A baseline file of one scan is drawn block by block as it is read.
+ * Anything else -- progressive scans that each add a band of
+ * frequencies or one bit more (T.81 Annex G), or components sent in
+ * scans of their own -- keeps every block's coefficients until the
+ * last scan, then draws them all.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,7 +40,9 @@ typedef struct {
     int            td, ta;          /* DC and AC table selectors          */
     int            dcpred;
     int            bw, bh;          /* size in blocks, MCU-aligned        */
+    int            ow, oh;          /* its own blocks, a lone scan's grid */
     unsigned char *pix;             /* bw*8 by bh*8 samples               */
+    short         *coef;            /* bw*bh blocks of 64, when kept      */
 } jcomp_t;
 
 typedef struct {
@@ -44,6 +52,25 @@ typedef struct {
     int                  cnt;
     int                  bad;
 } jbits_t;
+
+/** @brief A decode under way: the tables, the frame, the scan. */
+typedef struct {
+    const unsigned char *src;       /* the file                           */
+    long                 n;
+    unsigned short       qt[4][64]; /* quantisers, in zig-zag order       */
+    jhuff_t              dc[4], ac[4];
+    jcomp_t              comp[MAXCOMP];
+    int                  w, h, ncomp, hmax, vmax;
+    int                  mcux, mcuy;    /* MCUs across and down           */
+    int                  restart;   /* MCUs between restarts, or 0        */
+    int                  transform; /* Adobe APP14: 2 YCCK, 0 CMYK        */
+    int                  progressive;   /* SOF2                           */
+    int                  kept;      /* coefficients kept for a last IDCT  */
+    int                  scans;     /* scans read to their end            */
+    int                  ss, se, ah, al;    /* the scan's band and bits  */
+    int                  eobrun;    /* blocks left whose band is done     */
+    jbits_t              bits;
+} jdec_t;
 
 /** @brief The zig-zag order coefficients arrive in. */
 static const unsigned char zigzag[64] = {
@@ -85,6 +112,7 @@ getbit(jbits_t *b)
     return (int)((b->buf >> b->cnt) & 1ul);
 }
 
+/** @brief @p n bits, the first read the most significant. */
 static int
 getbits(jbits_t *b, int n)
 {
@@ -123,6 +151,7 @@ huff_build(jhuff_t *h)
     h->maxcode[17] = 0x7fffffff;
 }
 
+/** @brief One Huffman-coded value (the standard's DECODE), or -1. */
 static int
 huff_decode(jbits_t *b, const jhuff_t *h)
 {
@@ -194,36 +223,612 @@ idct8(const int *in, unsigned char *out, int stride)
     }
 }
 
+/** @brief @p v held to a byte. */
 static int
 clamp8(int v)
 {
     return (v < 0) ? 0 : ((v > 255) ? 255 : v);
 }
 
+/* ------------------------------------------------------------ markers  */
+
+/** @brief DQT: 8-bit tables.  @return 0, 1 for a 16-bit one (not read),
+ *         or -1 when malformed. */
+static int
+read_dqt(jdec_t *d, long i, int len)
+{
+    const unsigned char *src = d->src;
+    long k = i + 2;
+
+    while (k < i + len) {
+        int prec = src[k] >> 4, id = src[k] & 15, z;
+
+        k++;
+        if (id > 3 || (prec != 0 && prec != 1) ||
+            k + 64 * (prec + 1) > i + len) {
+            return -1;
+        }
+        if (prec) {
+            return 1;
+        }
+        for (z = 0; z < 64; z++) {
+            d->qt[id][z] = src[k++];
+        }
+    }
+    return 0;
+}
+
+/** @brief DHT: Huffman tables.  @return 0, or -1 when malformed. */
+static int
+read_dht(jdec_t *d, long i, int len)
+{
+    const unsigned char *src = d->src;
+    long k = i + 2;
+
+    while (k < i + len) {
+        int cls = src[k] >> 4, id = src[k] & 15, total = 0, z;
+        jhuff_t *t;
+
+        k++;
+        if (id > 3 || cls > 1 || k + 16 > i + len) {
+            return -1;
+        }
+        t = cls ? &d->ac[id] : &d->dc[id];
+        memset(t, 0, sizeof *t);
+        for (z = 1; z <= 16; z++) {
+            t->bits[z] = src[k++];
+            total += t->bits[z];
+        }
+        if (total > 256 || k + total > i + len) {
+            return -1;
+        }
+        for (z = 0; z < total; z++) {
+            t->huffval[z] = src[k++];
+        }
+        huff_build(t);
+        t->present = 1;
+    }
+    return 0;
+}
+
+/** @brief SOF0, 1 or 2: the frame.  @return 0, 1 for 12-bit samples, or
+ *         -1 when malformed. */
+static int
+read_sof(jdec_t *d, long i, int len)
+{
+    const unsigned char *src = d->src;
+    int c;
+
+    if (len < 8 || d->ncomp) {
+        return -1;
+    }
+    if (src[i + 2] != 8) {
+        return 1;
+    }
+    d->h = (src[i + 3] << 8) | src[i + 4];
+    d->w = (src[i + 5] << 8) | src[i + 6];
+    d->ncomp = src[i + 7];
+    if ((d->ncomp != 1 && d->ncomp != 3 && d->ncomp != 4) || d->w <= 0 ||
+        d->h <= 0 || len != 8 + 3 * d->ncomp ||
+        (size_t)d->w > TIKU_IMAGE_PIXELS_MAX / (size_t)d->h) {
+        return -1;
+    }
+    for (c = 0; c < d->ncomp; c++) {
+        const unsigned char *e = src + i + 8 + c * 3;
+        jcomp_t *k = &d->comp[c];
+
+        k->id = e[0];
+        k->h = e[1] >> 4;
+        k->v = e[1] & 15;
+        k->tq = e[2];
+        if (k->h < 1 || k->h > 4 || k->v < 1 || k->v > 4 || k->tq > 3) {
+            return -1;
+        }
+        d->hmax = k->h > d->hmax ? k->h : d->hmax;
+        d->vmax = k->v > d->vmax ? k->v : d->vmax;
+    }
+    return 0;
+}
+
+/**
+ * @brief SOS: the components the scan holds, their tables, its band of
+ *        frequencies and its bits.
+ * @return how many components, into @p which by index, or -1.
+ */
+static int
+read_sos(jdec_t *d, long i, int len, int *which)
+{
+    const unsigned char *src = d->src;
+    int ns = src[i + 2], c, k;
+
+    if (ns < 1 || ns > d->ncomp || len != 6 + 2 * ns) {
+        return -1;
+    }
+    for (c = 0; c < ns; c++) {
+        int id = src[i + 3 + c * 2];
+
+        which[c] = -1;
+        for (k = 0; k < d->ncomp; k++) {
+            if (d->comp[k].id == id) {
+                which[c] = k;
+                d->comp[k].td = src[i + 4 + c * 2] >> 4;
+                d->comp[k].ta = src[i + 4 + c * 2] & 15;
+            }
+        }
+        if (which[c] < 0 || d->comp[which[c]].td > 3 ||
+            d->comp[which[c]].ta > 3) {
+            return -1;
+        }
+    }
+    d->ss = src[i + 3 + 2 * ns];
+    d->se = src[i + 4 + 2 * ns];
+    d->ah = src[i + 5 + 2 * ns] >> 4;
+    d->al = src[i + 5 + 2 * ns] & 15;
+    if (d->progressive &&
+        ((d->ss == 0 ? d->se != 0 : ns != 1 || d->se < d->ss ||
+          d->se > 63) || d->ah > 13 || d->al > 13)) {
+        return -1;                  /* a band no progressive scan has */
+    }
+    return ns;
+}
+
+/** @brief The plane each component is drawn into, and with d->kept its
+ *         coefficients, all rounded up to whole MCUs so the block loop
+ *         never special-cases an edge.  @return 0, or -1. */
+static int
+planes(jdec_t *d)
+{
+    int c;
+
+    d->mcux = (d->w + d->hmax * 8 - 1) / (d->hmax * 8);
+    d->mcuy = (d->h + d->vmax * 8 - 1) / (d->vmax * 8);
+    for (c = 0; c < d->ncomp; c++) {
+        jcomp_t *k = &d->comp[c];
+
+        k->bw = d->mcux * k->h;
+        k->bh = d->mcuy * k->v;
+        k->ow = (d->w * k->h + d->hmax * 8 - 1) / (d->hmax * 8);
+        k->oh = (d->h * k->v + d->vmax * 8 - 1) / (d->vmax * 8);
+        k->pix = calloc((size_t)k->bw * 8u * (size_t)k->bh * 8u, 1u);
+        if (k->pix == NULL) {
+            return -1;
+        }
+        if (d->kept) {
+            k->coef = calloc((size_t)k->bw * (size_t)k->bh * 64u,
+                             sizeof *k->coef);
+            if (k->coef == NULL) {
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* ------------------------------------------------------------- blocks  */
+
+/** @brief A sequential block: the DC difference, then the AC runs, into
+ *         @p blk in natural order, not yet dequantised.  @return 0 or -1. */
+static int
+seq_block(jdec_t *d, jcomp_t *c, int *blk)
+{
+    int t, k;
+
+    memset(blk, 0, 64 * sizeof *blk);
+    t = huff_decode(&d->bits, &d->dc[c->td]);
+    if (t < 0 || t > 11) {
+        return -1;
+    }
+    c->dcpred += extend(getbits(&d->bits, t), t);
+    if (abs(c->dcpred) > 32767) {
+        return -1;
+    }
+    blk[0] = c->dcpred;
+    for (k = 1; k < 64; ) {
+        int rs = huff_decode(&d->bits, &d->ac[c->ta]), r, sz;
+
+        if (rs < 0) {
+            return -1;
+        }
+        r = rs >> 4;
+        sz = rs & 15;
+        if (sz > 10) {
+            return -1;
+        }
+        if (sz == 0) {
+            if (r != 15) {
+                break;
+            }
+            k += 16;
+            continue;
+        }
+        k += r;
+        if (k > 63) {
+            return -1;
+        }
+        blk[zigzag[k]] = extend(getbits(&d->bits, sz), sz);
+        k++;
+    }
+    return 0;
+}
+
+/** @brief A progressive DC scan's block: its first bits, or one more. */
+static int
+dc_block(jdec_t *d, jcomp_t *c, short *co)
+{
+    if (d->ah == 0) {
+        int t = huff_decode(&d->bits, &d->dc[c->td]);
+
+        if (t < 0 || t > 11) {
+            return -1;
+        }
+        c->dcpred += extend(getbits(&d->bits, t), t);
+        if (abs(c->dcpred) > 32767) {
+            return -1;
+        }
+        co[0] = (short)(c->dcpred * (1 << d->al));
+    } else if (getbit(&d->bits)) {
+        co[0] = (short)(co[0] | (1 << d->al));
+    }
+    return d->bits.bad ? -1 : 0;
+}
+
+/** @brief A progressive AC scan's first bits of a block's band; a run of
+ *         blocks with nothing in it is counted, not coded. */
+static int
+ac_first(jdec_t *d, jcomp_t *c, short *co)
+{
+    int k;
+
+    if (d->eobrun > 0) {
+        d->eobrun--;
+        return 0;
+    }
+    for (k = d->ss; k <= d->se; ) {
+        int rs = huff_decode(&d->bits, &d->ac[c->ta]), r, s;
+
+        if (rs < 0) {
+            return -1;
+        }
+        r = rs >> 4;
+        s = rs & 15;
+        if (s == 0) {
+            if (r < 15) {
+                d->eobrun = (1 << r) - 1 + (r ? getbits(&d->bits, r) : 0);
+                break;
+            }
+            k += 16;                /* sixteen zeros */
+            continue;
+        }
+        k += r;
+        if (k > 63 || s > 10) {
+            return -1;
+        }
+        co[zigzag[k]] = (short)(extend(getbits(&d->bits, s), s) *
+                                (1 << d->al));
+        k++;
+    }
+    return d->bits.bad ? -1 : 0;
+}
+
+/** @brief A correction bit for a coefficient already nonzero: a 1 moves
+ *         it one step of the bit being coded away from zero. */
+static void
+correct(jdec_t *d, short *v)
+{
+    int p1 = 1 << d->al;
+
+    if (getbit(&d->bits) && (*v & p1) == 0) {
+        *v = (short)(*v >= 0 ? *v + p1 : *v - p1);
+    }
+}
+
+/**
+ * @brief A progressive AC scan's next bit of a block's band (T.81
+ *        G.1.2.3): a coefficient new at this bit is 1 or -1 of it, each
+ *        one already nonzero that the run passes gets a correction bit.
+ */
+static int
+ac_refine(jdec_t *d, jcomp_t *c, short *co)
+{
+    int k = d->ss;
+
+    for (; d->eobrun == 0 && k <= d->se; k++) {
+        int rs = huff_decode(&d->bits, &d->ac[c->ta]), r, s = 0;
+
+        if (rs < 0) {
+            return -1;
+        }
+        r = rs >> 4;
+        if ((rs & 15) != 0) {
+            s = getbit(&d->bits) ? 1 << d->al : -(1 << d->al);
+        } else if (r != 15) {
+            d->eobrun = (1 << r) + (r ? getbits(&d->bits, r) : 0);
+            break;                  /* the rest by the run below */
+        }
+        for (; k <= d->se; k++) {   /* to the r'th zero past the nonzero */
+            short *v = &co[zigzag[k]];
+
+            if (*v != 0) {
+                correct(d, v);
+            } else if (--r < 0) {
+                break;
+            }
+        }
+        if (s != 0 && k <= d->se) {
+            co[zigzag[k]] = (short)s;
+        }
+    }
+    if (d->eobrun > 0) {
+        for (; k <= d->se; k++) {
+            if (co[zigzag[k]] != 0) {
+                correct(d, &co[zigzag[k]]);
+            }
+        }
+        d->eobrun--;
+    }
+    return d->bits.bad ? -1 : 0;
+}
+
+/** @brief The block of @p c at block row @p row and column @p col, read
+ *         as the scan says: drawn at once, or into its coefficients. */
+static int
+block(jdec_t *d, jcomp_t *c, int row, int col)
+{
+    int blk[64], k;
+    short *co;
+
+    if (!d->kept) {
+        if (seq_block(d, c, blk) != 0) {
+            return -1;
+        }
+        for (k = 0; k < 64; k++) {
+            blk[zigzag[k]] *= d->qt[c->tq][k];
+        }
+        idct8(blk, c->pix + (long)row * 8 * c->bw * 8 + (long)col * 8,
+              c->bw * 8);
+        return 0;
+    }
+    co = c->coef + ((long)row * c->bw + col) * 64;
+    if (!d->progressive) {
+        if (seq_block(d, c, blk) != 0) {
+            return -1;
+        }
+        for (k = 0; k < 64; k++) {
+            co[k] = (short)blk[k];
+        }
+        return 0;
+    }
+    if (d->ss == 0) {
+        return dc_block(d, c, co);
+    }
+    return d->ah == 0 ? ac_first(d, c, co) : ac_refine(d, c, co);
+}
+
+/* -------------------------------------------------------------- scans  */
+
+/** @brief At a restart marker: past it, with the predictors and the run
+ *         of empty bands reset, which is what restart intervals are for. */
+static void
+resync(jdec_t *d, int ns, const int *which)
+{
+    jbits_t *b = &d->bits;
+    int c;
+
+    b->cnt = 0;
+    if (b->bad && b->pos > 0 && d->src[b->pos - 1] == 0xff) {
+        b->pos--;                   /* the marker read into: step back */
+    }
+    while (b->pos + 1 < d->n &&
+           !(d->src[b->pos] == 0xff && d->src[b->pos + 1] >= 0xd0 &&
+             d->src[b->pos + 1] <= 0xd7)) {
+        b->pos++;
+    }
+    b->pos += 2;
+    b->bad = 0;
+    for (c = 0; c < ns; c++) {
+        d->comp[which[c]].dcpred = 0;
+    }
+    d->eobrun = 0;
+}
+
+/** @brief One scan: MCU by MCU when it holds several components, block
+ *         by block over its component's own grid when it holds one.
+ *  @return 0, or -1 where the data went bad. */
+static int
+scan(jdec_t *d, int ns, const int *which)
+{
+    jcomp_t *one = &d->comp[which[0]];
+    long units = ns > 1 ? (long)d->mcux * d->mcuy : (long)one->ow * one->oh;
+    int across = ns > 1 ? d->mcux : one->ow, c;
+    long u;
+
+    for (c = 0; c < ns; c++) {
+        d->comp[which[c]].dcpred = 0;
+    }
+    d->eobrun = 0;
+    for (u = 0; u < units; u++) {
+        int my = (int)(u / across), mx = (int)(u % across), by, bx;
+
+        if (d->restart > 0 && u > 0 && u % d->restart == 0) {
+            resync(d, ns, which);
+        }
+        if (ns == 1) {
+            if (block(d, one, my, mx) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        for (c = 0; c < ns; c++) {
+            jcomp_t *k = &d->comp[which[c]];
+
+            for (by = 0; by < k->v; by++) {
+                for (bx = 0; bx < k->h; bx++) {
+                    if (block(d, k, my * k->v + by, mx * k->h + bx) != 0) {
+                        return -1;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+/** @brief Where the marker after a scan's data begins, or @p n. */
+static long
+after_scan(const jdec_t *d)
+{
+    long p = d->bits.pos > 0 ? d->bits.pos - 1 : 0;
+
+    while (p + 1 < d->n && !(d->src[p] == 0xff && d->src[p + 1] != 0x00 &&
+                             d->src[p + 1] != 0xff &&
+                             (d->src[p + 1] < 0xd0 || d->src[p + 1] > 0xd7))) {
+        p++;
+    }
+    return p + 1 < d->n ? p : d->n;
+}
+
+/** @brief Every kept block dequantised and drawn into its plane. */
+static void
+draw_kept(jdec_t *d)
+{
+    int c, row, col, k;
+
+    for (c = 0; c < d->ncomp; c++) {
+        jcomp_t *m = &d->comp[c];
+
+        for (row = 0; row < m->bh; row++) {
+            for (col = 0; col < m->bw; col++) {
+                const short *co = m->coef + ((long)row * m->bw + col) * 64;
+                int blk[64];
+
+                for (k = 0; k < 64; k++) {
+                    blk[zigzag[k]] = co[zigzag[k]] * d->qt[m->tq][k];
+                }
+                idct8(blk, m->pix + (long)row * 8 * m->bw * 8 +
+                           (long)col * 8, m->bw * 8);
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------- colour  */
+
+/** @brief Component @p c's sample under image pixel (@p x, @p y). */
+static int
+sample(const jdec_t *d, int c, int x, int y)
+{
+    const jcomp_t *k = &d->comp[c];
+
+    return k->pix[(long)(y * k->v / d->vmax) * k->bw * 8 +
+                  (x * k->h / d->hmax)];
+}
+
+/** @brief The planes as 0xAARRGGBB: YCbCr to RGB, and four inks as YCCK
+ *         when Adobe says so (the first three then YCbCr of the inverted
+ *         inks), else CMYK as stored.  @return the pixels, or NULL. */
+static uint32_t *
+to_rgb(const jdec_t *d)
+{
+    uint32_t *px = malloc((size_t)d->w * (size_t)d->h * sizeof *px);
+    int y, x;
+
+    for (y = 0; px != NULL && y < d->h; y++) {
+        for (x = 0; x < d->w; x++) {
+            int Y = sample(d, 0, x, y), cb = 128, cr = 128, r, g, bl;
+
+            if (d->ncomp >= 3) {
+                cb = sample(d, 1, x, y);
+                cr = sample(d, 2, x, y);
+            }
+            r = Y + ((91881 * (cr - 128)) >> 16);
+            g = Y - ((22554 * (cb - 128) + 46802 * (cr - 128)) >> 16);
+            bl = Y + ((116130 * (cb - 128)) >> 16);
+            if (d->ncomp == 4) {
+                int k = sample(d, 3, x, y);
+                int cy = d->transform == 2 ? 255 - clamp8(r) : Y;
+                int ma = d->transform == 2 ? 255 - clamp8(g) : cb;
+                int ye = d->transform == 2 ? 255 - clamp8(bl) : cr;
+
+                r = (255 - cy) * (255 - k) / 255;
+                g = (255 - ma) * (255 - k) / 255;
+                bl = (255 - ye) * (255 - k) / 255;
+            }
+            px[(long)y * d->w + x] = 0xff000000u |
+                ((uint32_t)clamp8(r) << 16) | ((uint32_t)clamp8(g) << 8) |
+                (uint32_t)clamp8(bl);
+        }
+    }
+    return px;
+}
+
+/* ------------------------------------------------------------- decode  */
+
+/** @brief The scan at marker @p i: planes made at the first, the scan
+ *         read.  @return where to read on, or -1 when the decode ends
+ *         (@p *rc then says how). */
+static long
+sos(jdec_t *d, long i, int len, int *rc)
+{
+    int which[MAXCOMP], ns = d->w > 0 ? read_sos(d, i, len, which) : -1;
+
+    if (ns < 0) {
+        return -1;
+    }
+    if (d->comp[0].pix == NULL) {
+        d->kept = d->progressive || ns < d->ncomp;
+        if (planes(d) != 0) {
+            return -1;
+        }
+    }
+    memset(&d->bits, 0, sizeof d->bits);
+    d->bits.p = d->src;
+    d->bits.n = d->n;
+    d->bits.pos = i + len;
+    if (scan(d, ns, which) != 0) {
+        if (!d->kept) {
+            return -1;              /* a partial frame is no picture */
+        }
+    } else {
+        d->scans++;
+    }
+    if (!d->kept) {
+        /* One scan and nothing after it but the end. */
+        long p = d->bits.pos;
+
+        while (p + 1 < d->n && d->src[p] == 0xff && d->src[p + 1] == 0xff) {
+            p++;
+        }
+        if (p + 1 >= d->n || d->src[p] != 0xff || d->src[p + 1] != 0xd9) {
+            return -1;
+        }
+        *rc = 0;
+        return -1;
+    }
+    return d->bits.bad ? d->n : after_scan(d);
+}
+
 int
 tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
                      uint32_t **out)
 {
-    unsigned short qt[4][64];
-    jhuff_t dc[4], ac[4];
-    jcomp_t comp[MAXCOMP];
-    jbits_t bits;
+    jdec_t *d;
     long i = 2;
-    int w = 0, h = 0, ncomp = 0, hmax = 1, vmax = 1, restart = 0;
-    int c, rc = -1, mcux, mcuy, mx, my, transform = -1;
-    uint32_t *px = NULL;
+    int rc = -1, c;
 
     if (src == NULL || n < 4 || (unsigned long)n > TIKU_IMAGE_BYTES_MAX ||
         src[0] != 0xff || src[1] != 0xd8) {
         return -1;                  /* not a JPEG at all */
     }
-    memset(qt, 0, sizeof qt);
-    memset(dc, 0, sizeof dc);
-    memset(ac, 0, sizeof ac);
-    memset(comp, 0, sizeof comp);
-
-    while (i + 4 <= n) {
-        int marker, len;
+    d = calloc(1, sizeof *d);
+    if (d == NULL) {
+        return -1;
+    }
+    d->src = src;
+    d->n = n;
+    d->hmax = d->vmax = 1;
+    d->transform = -1;
+    while (i + 4 <= n && rc < 0) {
+        int marker, len, r = 0;
 
         if (src[i] != 0xff) {
             i++;
@@ -231,291 +836,64 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
         }
         marker = src[i + 1];
         i += 2;
-        if (marker == 0xd8 || marker == 0x01 ||
+        if (marker == 0xd8 || marker == 0x01 || marker == 0xff ||
             (marker >= 0xd0 && marker <= 0xd7)) {
+            i -= marker == 0xff;    /* fill before a marker */
             continue;               /* standalone markers carry no length */
         }
-        if (i + 2 > n) {
-            goto done;
+        if (marker == 0xd9) {
+            break;                  /* the end of the image */
         }
-        len = (src[i] << 8) | src[i + 1];
+        len = i + 2 <= n ? (src[i] << 8) | src[i + 1] : 0;
         if (len < 2 || i + len > n) {
-            goto done;
+            break;
         }
-        if (marker == 0xdb) {                    /* DQT */
-            long k = i + 2;
-
-            while (k < i + len) {
-                int prec = src[k] >> 4, id = src[k] & 15;
-                int z;
-
-                k++;
-                if (id > 3 || (prec != 0 && prec != 1) ||
-                    k + 64 * (prec + 1) > i + len) {
-                    goto done;
-                }
-                if (prec) { rc = 1; goto done; }
-                for (z = 0; z < 64; z++) {
-                    qt[id][z] = prec ? (unsigned short)((src[k] << 8) |
-                                                        src[k + 1])
-                                     : src[k];
-                    k += prec ? 2 : 1;
-                }
-            }
-        } else if (marker == 0xc4) {             /* DHT */
-            long k = i + 2;
-
-            while (k < i + len) {
-                int cls = src[k] >> 4, id = src[k] & 15, total = 0, z;
-                jhuff_t *t;
-
-                k++;
-                if (id > 3 || cls > 1 || k + 16 > i + len) {
-                    goto done;
-                }
-                t = cls ? &ac[id] : &dc[id];
-                memset(t, 0, sizeof *t);
-                for (z = 1; z <= 16; z++) {
-                    t->bits[z] = src[k++];
-                    total += t->bits[z];
-                }
-                if (total > 256 || k + total > i + len) {
-                    goto done;
-                }
-                for (z = 0; z < total; z++) {
-                    t->huffval[z] = src[k++];
-                }
-                huff_build(t);
-                t->present = 1;
-            }
-        } else if (marker == 0xdd) {             /* DRI */
-            if (len != 4) goto done;
-            restart = (src[i + 2] << 8) | src[i + 3];
-        } else if (marker == 0xc0 || marker == 0xc1) {   /* SOF0/SOF1 */
-            if (len < 8 || ncomp) goto done;
-            if (src[i + 2] != 8) {
-                rc = 1;             /* 12-bit samples */
-                goto done;
-            }
-            h = (src[i + 3] << 8) | src[i + 4];
-            w = (src[i + 5] << 8) | src[i + 6];
-            ncomp = src[i + 7];
-            if ((ncomp != 1 && ncomp != 3 && ncomp != 4) || w <= 0 || h <= 0 ||
-                len != 8 + 3 * ncomp ||
-                (size_t)w > TIKU_IMAGE_PIXELS_MAX / (size_t)h) {
-                goto done;
-            }
-            for (c = 0; c < ncomp; c++) {
-                const unsigned char *e = src + i + 8 + c * 3;
-
-                comp[c].id = e[0];
-                comp[c].h = e[1] >> 4;
-                comp[c].v = e[1] & 15;
-                comp[c].tq = e[2];
-                if (comp[c].h < 1 || comp[c].h > 4 ||
-                    comp[c].v < 1 || comp[c].v > 4 || comp[c].tq > 3) {
-                    goto done;
-                }
-                if (comp[c].h > hmax) { hmax = comp[c].h; }
-                if (comp[c].v > vmax) { vmax = comp[c].v; }
-            }
+        if (marker == 0xdb) {
+            r = read_dqt(d, i, len);
+        } else if (marker == 0xc4) {
+            r = read_dht(d, i, len);
+        } else if (marker == 0xdd) {
+            d->restart = len == 4 ? (src[i + 2] << 8) | src[i + 3] : 0;
+            r = len == 4 ? 0 : -1;
+        } else if (marker == 0xc0 || marker == 0xc1 || marker == 0xc2) {
+            d->progressive = marker == 0xc2;
+            r = read_sof(d, i, len);
         } else if (marker == 0xee && len >= 14 &&
                    memcmp(src + i + 2, "Adobe", 5) == 0) {
-            transform = src[i + 13];    /* APP14: 2 is YCCK, 0 is CMYK */
-        } else if (marker == 0xc2 || marker == 0xc9 || marker == 0xca ||
-                   marker == 0xcb) {
-            rc = 1;                 /* progressive or arithmetic */
+            d->transform = src[i + 13];
+        } else if (marker == 0xc3 || (marker >= 0xc5 && marker <= 0xcf &&
+                                      marker != 0xc8 && marker != 0xcc)) {
+            r = 1;                  /* lossless, hierarchical, arithmetic */
+        } else if (marker == 0xda) {
+            long next = sos(d, i, len, &rc);
+
+            if (next < 0) {
+                break;
+            }
+            i = next;
+            continue;
+        }
+        if (r != 0) {
+            rc = r > 0 ? 1 : -1;
             goto done;
-        } else if (marker == 0xda) {             /* SOS: the scan itself */
-            if (len < 3) goto done;
-            int ns = src[i + 2];
-
-            if (w == 0 || ncomp == 0 || ns != ncomp ||
-                len != 6 + 2 * ns) {
-                goto done;
-            }
-            for (c = 0; c < ns; c++) {
-                int id = src[i + 3 + c * 2], k;
-
-                for (k = 0; k < ncomp; k++) {
-                    if (comp[k].id == id) {
-                        comp[k].td = src[i + 4 + c * 2] >> 4;
-                        comp[k].ta = src[i + 4 + c * 2] & 15;
-                        if (comp[k].td > 3 || comp[k].ta > 3) goto done;
-                    }
-                }
-            }
-            /* Every component gets a plane rounded up to whole MCUs, so the
-             * block loop never has to special-case the edges; the extra
-             * columns are simply not read back. */
-            mcux = (w + hmax * 8 - 1) / (hmax * 8);
-            mcuy = (h + vmax * 8 - 1) / (vmax * 8);
-            for (c = 0; c < ncomp; c++) {
-                comp[c].bw = mcux * comp[c].h;
-                comp[c].bh = mcuy * comp[c].v;
-                comp[c].pix = calloc((size_t)comp[c].bw * 8u *
-                                     (size_t)comp[c].bh * 8u, 1u);
-                if (comp[c].pix == NULL) {
-                    goto done;
-                }
-            }
-            memset(&bits, 0, sizeof bits);
-            bits.p = src;
-            bits.n = n;
-            bits.pos = i + len;
-
-            for (my = 0; my < mcuy && !bits.bad; my++) {
-                for (mx = 0; mx < mcux && !bits.bad; mx++) {
-                    int nmcu = my * mcux + mx;
-
-                    if (restart > 0 && nmcu > 0 && nmcu % restart == 0) {
-                        /* Resynchronise: the predictors reset and the next
-                         * marker is skipped, which is the whole point of
-                         * restart intervals. */
-                        bits.cnt = 0;
-                        while (bits.pos + 1 < n &&
-                               !(src[bits.pos] == 0xff &&
-                                 src[bits.pos + 1] >= 0xd0 &&
-                                 src[bits.pos + 1] <= 0xd7)) {
-                            bits.pos++;
-                        }
-                        bits.pos += 2;
-                        bits.bad = 0;
-                        for (c = 0; c < ncomp; c++) {
-                            comp[c].dcpred = 0;
-                        }
-                    }
-                    for (c = 0; c < ncomp; c++) {
-                        int by, bx;
-
-                        for (by = 0; by < comp[c].v; by++) {
-                            for (bx = 0; bx < comp[c].h; bx++) {
-                                int blk[64], t, k;
-                                int row = my * comp[c].v + by;
-                                int col = mx * comp[c].h + bx;
-
-                                memset(blk, 0, sizeof blk);
-                                t = huff_decode(&bits, &dc[comp[c].td]);
-                                if (t < 0 || t > 11) {
-                                    bits.bad = 1; break;
-                                }
-                                comp[c].dcpred +=
-                                    extend(getbits(&bits, t), t);
-                                if (abs(comp[c].dcpred) > 32767) {
-                                    bits.bad = 1; break;
-                                }
-                                blk[0] = comp[c].dcpred *
-                                         qt[comp[c].tq][0];
-                                for (k = 1; k < 64; ) {
-                                    int rs = huff_decode(&bits,
-                                                         &ac[comp[c].ta]);
-                                    int r, sz;
-
-                                    if (rs < 0) { bits.bad = 1; break; }
-                                    r = rs >> 4;
-                                    sz = rs & 15;
-                                    if (sz > 10) { bits.bad = 1; break; }
-                                    if (sz == 0) {
-                                        if (r != 15) { break; }
-                                        k += 16;
-                                        continue;
-                                    }
-                                    k += r;
-                                    if (k > 63) { bits.bad = 1; break; }
-                                    blk[zigzag[k]] =
-                                        extend(getbits(&bits, sz), sz) *
-                                        qt[comp[c].tq][k];
-                                    k++;
-                                }
-                                idct8(blk, comp[c].pix +
-                                          (long)row * 8 * comp[c].bw * 8 +
-                                          (long)col * 8,
-                                      comp[c].bw * 8);
-                            }
-                        }
-                    }
-                }
-            }
-            /* A partial camera frame must never replace a complete snapshot. */
-            if (bits.bad) goto done;
-            while (bits.pos + 1 < n && src[bits.pos] == 0xff &&
-                   src[bits.pos + 1] == 0xff) bits.pos++;
-            if (bits.pos + 1 >= n || src[bits.pos] != 0xff ||
-                src[bits.pos + 1] != 0xd9) goto done;
-            px = malloc((size_t)w * (size_t)h * sizeof *px);
-            if (px == NULL) {
-                goto done;
-            }
-            {
-                int y, x;
-
-                for (y = 0; y < h; y++) {
-                    for (x = 0; x < w; x++) {
-                        int Y, cb = 128, cr = 128, r, g, bl;
-                        long sw = (long)comp[0].bw * 8;
-
-                        Y = comp[0].pix[(long)(y * comp[0].v / vmax) * sw +
-                                        (x * comp[0].h / hmax)];
-                        if (ncomp >= 3) {
-                            long w1 = (long)comp[1].bw * 8;
-                            long w2 = (long)comp[2].bw * 8;
-
-                            cb = comp[1].pix[
-                                (long)(y * comp[1].v / vmax) * w1 +
-                                (x * comp[1].h / hmax)];
-                            cr = comp[2].pix[
-                                (long)(y * comp[2].v / vmax) * w2 +
-                                (x * comp[2].h / hmax)];
-                        }
-                        r = Y + ((91881 * (cr - 128)) >> 16);
-                        g = Y - ((22554 * (cb - 128) +
-                                  46802 * (cr - 128)) >> 16);
-                        bl = Y + ((116130 * (cb - 128)) >> 16);
-                        if (ncomp == 4) {
-                            /* Four inks: YCCK when Adobe says so (the
-                             * first three are then YCbCr of the inverted
-                             * inks), else CMYK as stored. */
-                            long w3 = (long)comp[3].bw * 8;
-                            int k = comp[3].pix[
-                                (long)(y * comp[3].v / vmax) * w3 +
-                                (x * comp[3].h / hmax)];
-                            int cy, ma, ye;
-
-                            if (transform == 2) {
-                                cy = 255 - clamp8(r);
-                                ma = 255 - clamp8(g);
-                                ye = 255 - clamp8(bl);
-                            } else {
-                                cy = Y;
-                                ma = cb;
-                                ye = cr;
-                            }
-                            r = (255 - cy) * (255 - k) / 255;
-                            g = (255 - ma) * (255 - k) / 255;
-                            bl = (255 - ye) * (255 - k) / 255;
-                        }
-                        px[(long)y * w + x] = 0xff000000u |
-                            ((uint32_t)clamp8(r) << 16) |
-                            ((uint32_t)clamp8(g) << 8) |
-                            (uint32_t)clamp8(bl);
-                    }
-                }
-            }
-            *ow = w;
-            *oh = h;
-            *out = px;
-            px = NULL;
-            rc = 0;
-            goto done;
-        } else if (marker == 0xd9) {
-            break;                  /* EOI before any scan */
         }
         i += len;
     }
+    if (d->kept && d->scans > 0 && rc < 0) {
+        draw_kept(d);               /* the scans that came, sharpest last */
+        rc = 0;
+    }
+    if (rc == 0) {
+        *out = to_rgb(d);
+        *ow = d->w;
+        *oh = d->h;
+        rc = *out != NULL ? 0 : -1;
+    }
 done:
     for (c = 0; c < MAXCOMP; c++) {
-        free(comp[c].pix);
+        free(d->comp[c].pix);
+        free(d->comp[c].coef);
     }
-    free(px);
+    free(d);
     return rc;
 }
