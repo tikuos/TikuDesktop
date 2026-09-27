@@ -47,6 +47,17 @@ check(int cond, const char *row, const char *what)
 }
 
 /** @brief Write a 24-bit BMP of @p w x @p h, all one colour. */
+/** @brief @p v at @p p, least significant byte first, as BMP keeps it:
+ *         byte by byte, since the header's fields sit unaligned. */
+static void
+le32(unsigned char *p, uint32_t v)
+{
+    p[0] = (unsigned char)v;
+    p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16);
+    p[3] = (unsigned char)(v >> 24);
+}
+
 static void
 put_bmp(const char *path, int w, int h, unsigned char r, unsigned char g,
         unsigned char b)
@@ -60,11 +71,11 @@ put_bmp(const char *path, int w, int h, unsigned char r, unsigned char g,
     if (f == NULL) { return; }
     memset(hdr, 0, sizeof hdr);
     hdr[0] = 'B'; hdr[1] = 'M';
-    *(uint32_t *)(hdr + 2)  = (uint32_t)(54 + bytes);
-    *(uint32_t *)(hdr + 10) = 54u;
-    *(uint32_t *)(hdr + 14) = 40u;
-    *(int32_t  *)(hdr + 18) = w;
-    *(int32_t  *)(hdr + 22) = h;
+    le32(hdr + 2, (uint32_t)(54 + bytes));
+    le32(hdr + 10, 54u);
+    le32(hdr + 14, 40u);
+    le32(hdr + 18, (uint32_t)w);
+    le32(hdr + 22, (uint32_t)h);
     hdr[26] = 1; hdr[28] = 24;
     (void)fwrite(hdr, 1, sizeof hdr, f);
     for (y = 0; y < h; y++) {

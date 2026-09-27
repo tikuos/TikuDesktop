@@ -36,6 +36,7 @@ include mk/kits.mk
 include mk/system.mk
 include mk/apps.mk
 include mk/tests.mk
+include mk/sanitize.mk
 include mk/bundle.mk
 include mk/package.mk
 

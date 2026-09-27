@@ -344,7 +344,7 @@ tiku_t1_open(const unsigned char *data, size_t len)
     if (data == NULL || len < 16 || len > T1_MAX_SIZE) {
         return NULL;
     }
-    buf = malloc(len);
+    buf = malloc(len + 1);          /* and a NUL: the head is sscanf'd */
     t = calloc(1u, sizeof *t);
     if (buf == NULL || t == NULL) {
         free(buf);
@@ -357,6 +357,7 @@ tiku_t1_open(const unsigned char *data, size_t len)
         memcpy(buf, data, len);
         n = len;
     }
+    buf[n] = '\0';
     ee = find(buf, n, 0, "eexec");
     if (ee < 0) {
         free(buf);
