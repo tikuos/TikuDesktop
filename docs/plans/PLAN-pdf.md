@@ -194,7 +194,16 @@ an output that grows.  Nothing else in the kits changes.
    reaches, its opacity apart; a group inside is one thing.  Isolated
    or not, they come out as the standard composes them, anti-aliased
    edges too, where poppler knocks out only some; groups nested past
-   four deep are drawn as they are rather than dropped.
+   four deep are drawn as they are rather than dropped.  SASLprep
+   (`tiku_saslprep`, in the support kit) for AES-256 passwords: mapped,
+   Unicode 3.2's NFKC with Corrigendum 4, what may not appear refused,
+   the direction checked, from tables the build bakes out of Python's
+   frozen Unicode 3.2 and RFC 3454 data.  It gives what Python's
+   stringprep gives on every code point and 300,000 strings, but where
+   CPython orders marks added after 3.2 by today's classes.  Revisions
+   2 to 4 hash a password in PDFDocEncoding, as the standard asks; for
+   all of them the bytes as typed are tried next, as some writers take
+   them.
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand

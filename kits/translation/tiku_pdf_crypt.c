@@ -11,16 +11,21 @@
  * Revisions 2 to 4 hash the password with MD5 and give every object a
  * key of its own for RC4 or AES-128; 5 and 6 use AES-256 with one key,
  * found through SHA-2 (6 through rounds of AES and SHA-256/384/512).
- * Most encrypted documents open without a password: the empty one.
+ * Most encrypted documents open without a password: the empty one.  A
+ * typed one is tried as the standard hashes it -- PDFDocEncoding, or
+ * SASLprep for 5 and 6 -- then as typed, as some writers take it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_pdf_private.h"
 #include "tiku_crypto.h"
+#include "tiku_saslprep.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+#define PW_MAX 1024                 /* bytes a password may come to      */
 
 enum { CRYPT_NONE, CRYPT_RC4, CRYPT_AESV2, CRYPT_AESV3 };
 
@@ -285,14 +290,65 @@ open_r4(tiku_pdf_t *doc, pdf_crypt_t *c, pdf_obj_t *enc,
     return c->owner;
 }
 
+/** @brief Revisions 2 to 4: @p password in PDFDocEncoding, as the
+ *         standard hashes it (7.6.4.3.1), then its bytes as typed.
+ *  @return whether one opened the document. */
+static int
+open_r4_any(tiku_pdf_t *doc, pdf_crypt_t *c, pdf_obj_t *enc,
+            const char *password)
+{
+    unsigned char pd[PW_MAX];
+    long n = pdf_docenc(password, pd, sizeof pd);
+    size_t raw = strlen(password);
+
+    if (n >= 0 && open_r4(doc, c, enc, pd, (size_t)n)) {
+        return 1;
+    }
+    return (n < 0 || (size_t)n != raw || memcmp(pd, password, raw) != 0) &&
+           open_r4(doc, c, enc, (const unsigned char *)password, raw);
+}
+
+/**
+ * @brief Revisions 5 and 6: @p password SASLprep'd, as the standard
+ *        hashes it (7.6.4.3.3), then as typed for writers that did not
+ *        prepare it; each as the user's, then the owner's.
+ * @return whether one opened the document.
+ */
+static int
+open_r6_any(tiku_pdf_t *doc, pdf_crypt_t *c, pdf_obj_t *enc,
+            const char *password)
+{
+    const unsigned char *o = bytes_of(pdf_get(doc, enc, "O"), 48);
+    const unsigned char *u = bytes_of(pdf_get(doc, enc, "U"), 48);
+    const unsigned char *oe = bytes_of(pdf_get(doc, enc, "OE"), 32);
+    const unsigned char *ue = bytes_of(pdf_get(doc, enc, "UE"), 32);
+    char prep[PW_MAX];
+    const char *tries[2];
+    int t;
+
+    tries[0] = tiku_saslprep(password, prep, sizeof prep) >= 0 ? prep : NULL;
+    tries[1] = tries[0] != NULL && strcmp(prep, password) == 0 ? NULL
+                                                               : password;
+    for (t = 0; o != NULL && u != NULL && oe != NULL && ue != NULL && t < 2;
+         t++) {
+        const unsigned char *pw = (const unsigned char *)tries[t];
+        size_t n = pw != NULL ? strlen(tries[t]) : 0;
+
+        if (pw != NULL && (open_r6(c, pw, n, o, u, oe, ue, 0, c->key) ||
+                           (c->owner = open_r6(c, pw, n, o, u, oe, ue, 1,
+                                               c->key)))) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int
 pdf_crypt_open(tiku_pdf_t *doc, const char *password)
 {
     pdf_obj_t *raw = pdf_dict_raw(doc->trailer, "Encrypt");
     pdf_obj_t *enc = pdf_resolve(doc, raw), *meta;
-    const unsigned char *pw = (const unsigned char *)(password ? password
-                                                               : "");
-    size_t pwn = strlen((const char *)pw);
+    const char *pw = password != NULL ? password : "";
     double perms;
     int v, ok;
     pdf_crypt_t *c;
@@ -323,18 +379,8 @@ pdf_crypt_open(tiku_pdf_t *doc, const char *password)
         free(c);
         return -1;
     }
-    if (c->r <= 4) {
-        ok = open_r4(doc, c, enc, pw, pwn);
-    } else {
-        const unsigned char *o = bytes_of(pdf_get(doc, enc, "O"), 48);
-        const unsigned char *u = bytes_of(pdf_get(doc, enc, "U"), 48);
-        const unsigned char *oe = bytes_of(pdf_get(doc, enc, "OE"), 32);
-        const unsigned char *ue = bytes_of(pdf_get(doc, enc, "UE"), 32);
-
-        ok = o != NULL && u != NULL && oe != NULL && ue != NULL &&
-             (open_r6(c, pw, pwn, o, u, oe, ue, 0, c->key) ||
-              (c->owner = open_r6(c, pw, pwn, o, u, oe, ue, 1, c->key)));
-    }
+    ok = c->r <= 4 ? open_r4_any(doc, c, enc, pw)
+                   : open_r6_any(doc, c, enc, pw);
     if (!ok) {
         free(c);
         return -2;

@@ -174,6 +174,10 @@ pdf_obj_t *pdf_resolve(tiku_pdf_t *doc, pdf_obj_t *o);
 /** @brief A text string (a title, an outline entry) as UTF-8 the caller
  *        frees: UTF-16 or UTF-8 with its mark, else PDFDocEncoding. */
 char *pdf_text_string(const pdf_obj_t *s);
+/** @brief UTF-8 @p in in PDFDocEncoding, as a password of revisions 2 to
+ *         4 is hashed, into @p out (@p cap bytes, no NUL).  @return its
+ *         length, or -1 for a character it has no byte for or no room. */
+long pdf_docenc(const char *in, unsigned char *out, size_t cap);
 /** @brief The value under @p key, resolved; NULL when absent. */
 pdf_obj_t *pdf_get(tiku_pdf_t *doc, pdf_obj_t *dict, const char *key);
 /**

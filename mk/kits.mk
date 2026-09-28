@@ -53,7 +53,8 @@ SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c \
                $(K)/support/tiku_trail.c $(K)/support/tiku_report.c \
                $(K)/support/tiku_watch.c \
                $(K)/support/tiku_work.c $(K)/support/tiku_digest.c \
-               $(K)/support/tiku_cipher.c $(SYS)
+               $(K)/support/tiku_cipher.c $(K)/support/tiku_saslprep.c \
+               $(SYS)
 DEVICE      := $(K)/device/tiku_tx.c $(K)/device/tiku_session.c $(K)/device/tiku_channel.c \
                $(K)/device/tiku_link.c $(K)/device/tiku_link_serial.c \
                $(K)/device/tiku_link_tcp.c \
@@ -157,6 +158,17 @@ $(GEN_STRINGS): assets/strings/en.xml $(K)/support/tools/genstrings.py | prepare
 	@mkdir -p $(dir $@)
 	python3 $(K)/support/tools/genstrings.py $< > $@
 $(OBJ)/$(K)/support/tiku_strings.o $(PIC)/$(K)/support/tiku_strings.o: $(GEN_STRINGS)
+
+# SASLprep's tables, baked from Python's Unicode 3.2 database and RFC
+# 3454's tables, which never change: five thousand decompositions are
+# better made than kept.  Written aside first, so a failed run leaves
+# nothing that looks made.
+GEN_SASLPREP := $(BUILD)/generated/tiku_saslprep_tables.h
+$(GEN_SASLPREP): $(K)/support/tools/gensaslprep.py | prepare-build
+	@mkdir -p $(dir $@)
+	python3 $< > $@.tmp && mv $@.tmp $@
+$(OBJ)/$(K)/support/tiku_saslprep.o $(PIC)/$(K)/support/tiku_saslprep.o: \
+    $(GEN_SASLPREP)
 
 # The system sounds, baked the same way from assets/sounds/*.score.
 GEN_SCORES := $(BUILD)/generated/tiku_scores_default.h

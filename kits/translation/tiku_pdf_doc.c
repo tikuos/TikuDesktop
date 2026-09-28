@@ -949,6 +949,69 @@ static const unsigned short pdfdoc_high[32] = {
     0x0178, 0x017d, 0x0131, 0x0142, 0x0153, 0x0161, 0x017e, 0x0000
 };
 
+/* PDFDocEncoding's 0x18..0x1f: the spacing diacritics. */
+static const unsigned short pdfdoc_marks[8] = {
+    0x02d8, 0x02c7, 0x02c6, 0x02d9, 0x02dd, 0x02db, 0x02da, 0x02dc
+};
+
+/** @brief The PDFDocEncoding byte for @p cp, or -1 when there is none. */
+static int
+pdfdoc_byte(unsigned long cp)
+{
+    int i;
+
+    if (cp < 0x80 && (cp < 0x18 || cp > 0x1f)) {
+        return (int)cp;
+    }
+    if (cp == 0x20ac) {
+        return 0xa0;                /* the euro, where Latin-1 has NBSP */
+    }
+    if (cp > 0xa0 && cp <= 0xff && cp != 0xad) {
+        return (int)cp;
+    }
+    for (i = 0; cp != 0 && i < 32; i++) {
+        if (pdfdoc_high[i] == cp) {
+            return 0x80 + i;
+        }
+    }
+    for (i = 0; i < 8; i++) {
+        if (pdfdoc_marks[i] == cp) {
+            return 0x18 + i;
+        }
+    }
+    return -1;
+}
+
+long
+pdf_docenc(const char *in, unsigned char *out, size_t cap)
+{
+    const unsigned char *p = (const unsigned char *)in;
+    size_t n = 0;
+
+    while (*p != 0) {
+        unsigned long cp = *p;
+        int k = cp < 0x80 ? 0 : cp >= 0xc2 && cp < 0xe0 ? 1 : cp >= 0xe0 &&
+                cp < 0xf0 ? 2 : cp >= 0xf0 && cp < 0xf5 ? 3 : -1, i, b;
+
+        if (k < 0) {
+            return -1;
+        }
+        cp &= k == 0 ? 0x7fu : 0x3fu >> k;
+        for (i = 1; i <= k; i++) {
+            if ((p[i] & 0xc0) != 0x80) {
+                return -1;
+            }
+            cp = cp << 6 | (p[i] & 0x3fu);
+        }
+        if ((b = pdfdoc_byte(cp)) < 0 || n == cap) {
+            return -1;
+        }
+        out[n++] = (unsigned char)b;
+        p += k + 1;
+    }
+    return (long)n;
+}
+
 /** @brief @p cp as UTF-8 at @p out + *@p n, a control made a space. */
 static void
 utf8_put(char *out, size_t *n, unsigned long cp)

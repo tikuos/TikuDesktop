@@ -17,10 +17,12 @@ SAN_SRCS := $(filter kits/translation/tiku_pdf_%.c %/tiku_inflate.c \
                      $(TRANSLATION)) \
             $(filter %/tiku_ttf.c %/tiku_cff.c %/tiku_type1.c \
                      %/tiku_glyphpath.c,$(INTERFACE)) \
-            $(filter %/tiku_digest.c %/tiku_cipher.c,$(SUPPORT))
+            $(filter %/tiku_digest.c %/tiku_cipher.c %/tiku_saslprep.c,\
+                     $(SUPPORT))
 SAN_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_SRCS))
 SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
-             test_crypto test_type1 test_cff test_ttf test_thumb
+             test_crypto test_saslprep test_type1 test_cff test_ttf \
+             test_thumb
 
 $(SAN)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)
@@ -30,6 +32,8 @@ $(SAN)/kits/%.o: kits/%.c | prepare-build
 $(SAN)/tests/%.o: tests/%.c | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(TRK_INC) -c -o $@ $<
+
+$(SAN)/$(K)/support/tiku_saslprep.o: $(GEN_SASLPREP)
 
 # The instrumented readers come first, so the kits' own copies of them
 # are never taken from the archives.

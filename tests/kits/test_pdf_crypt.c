@@ -7,7 +7,8 @@
  * test_pdf_crypt.c - encrypted PDFs made here, as a writer makes them,
  * and read back: RC4 at 40 and 128 bits (revisions 2 and 3), AES-128
  * (4) and AES-256 (6); the empty password, a user's, an owner's, a
- * wrong one; the author's word on copying; and two damaged files.
+ * wrong one; the author's word on copying; passwords typed otherwise
+ * than they were hashed (SASLprep, PDFDocEncoding); two damaged files.
  *
  * TIKU_PDF_ENC_DIR names a folder to write the files to, so another
  * reader (poppler's pdftotext) can be asked to open them too.
@@ -113,6 +114,68 @@ fixture(const enc_t *e)
     free(b.p);
 }
 
+/**
+ * @brief Passwords typed otherwise than the writer hashed them: for
+ *        AES-256 what SASLprep makes the same (7.6.4.3.3), and one a
+ *        writer hashed as typed; for revisions 3 and 4 PDFDocEncoding's
+ *        bytes (7.6.4.3.1), and UTF-8 a writer took as it was.
+ */
+static void
+typed(void)
+{
+    static const struct {
+        enc_t       e;              /* as written: its passwords, hashed */
+        const char *typed;          /* what is typed to open it          */
+        int         owner;          /* it is the owner's                 */
+        const char *what;
+    } cases[] = {
+        {{"sasl-hyphen", 5, 6, 256, 1, "IX", "boss", -20}, "I\xC2\xADX", 0,
+         "AES-256: a soft hyphen in a password is nothing to SASLprep"},
+        {{"sasl-nine", 5, 6, 256, 1, "IX", "boss", -20}, "\xE2\x85\xA8", 0,
+         "a Roman numeral nine is I and X to it"},
+        {{"sasl-wide", 5, 6, 256, 1, "Pass", "boss", -20},
+         "\xEF\xBC\xB0\xEF\xBD\x81\xEF\xBD\x93\xEF\xBD\x93", 0,
+         "full-width letters are the letters"},
+        {{"sasl-mark", 5, 6, 256, 1, "caf\xC3\xA9", "boss", -20},
+         "cafe\xCC\x81", 0,
+         "an accent typed after its letter is the accented letter"},
+        {{"sasl-owner", 5, 6, 256, 1, "user", "IX", -20}, "\xE2\x85\xA8", 1,
+         "and an owner's password is prepared alike"},
+        {{"sasl-raw", 5, 6, 256, 1, "\xE2\x85\xA8", "boss", -20},
+         "\xE2\x85\xA8", 0,
+         "a password a writer hashed as typed still opens as typed"},
+        {{"docenc-accent", 4, 4, 128, 1, "caf\xE9", "owner", -20},
+         "caf\xC3\xA9", 0,
+         "AES-128: an accent typed in UTF-8 is hashed in PDFDocEncoding"},
+        {{"docenc-euro", 2, 3, 128, 0, "\xA0" "5", "owner", -20},
+         "\xE2\x82\xAC" "5", 0,
+         "RC4: PDFDocEncoding's euro is its own byte, not Latin-1's"},
+        {{"docenc-utf8", 4, 4, 128, 1, "caf\xC3\xA9", "owner", -20},
+         "caf\xC3\xA9", 0,
+         "a password a writer took as UTF-8 still opens as typed"},
+    };
+    static const enc_t nine = {"sasl-nine", 5, 6, 256, 1, "IX", "boss", -20};
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc;
+    encw_t b;
+    size_t i;
+
+    for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        b = enc_make(&cases[i].e);
+        doc = open_with(&b, cases[i].typed, &err);
+        check(err == TIKU_PDF_OK && reads(doc) &&
+              tiku_pdf_may_copy(doc) == cases[i].owner, "ENC-008",
+              cases[i].what);
+        tiku_pdf_close(doc);
+        free(b.p);
+    }
+    b = enc_make(&nine);
+    doc = open_with(&b, "I\x07X", &err);
+    check(err == TIKU_PDF_PASSWORD && doc == NULL, "ENC-008",
+          "a control character, which SASLprep refuses, does not open it");
+    free(b.p);
+}
+
 /** @brief Overwrite the first @p from in @p b with @p to, which is as
  *         long.  @return whether @p from was there. */
 static int
@@ -177,6 +240,7 @@ main(void)
     for (i = 0; i < sizeof fixtures / sizeof fixtures[0]; i++) {
         fixture(&fixtures[i]);
     }
+    typed();
     damaged();
     printf("%s\n", fails ? "FAIL" : "PASS: RC4 40/128, AES 128/256, "
                                      "passwords and permissions");
