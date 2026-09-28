@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "tiku_pdf.h"
+#include "tiku_cms.h"
 #include "tiku_cff.h"
 #include "tiku_ttf.h"
 #include "tiku_type1.h"
@@ -219,13 +220,17 @@ int pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *dict,
 /* Encryption: tiku_pdf_crypt.c                                             */
 
 /**
- * @brief The standard security handler for @p doc with @p password
- *        (UTF-8; "" is the empty password most documents use).
+ * @brief The security handler for @p doc: the standard one with
+ *        @p password (UTF-8; "" is the empty password most documents
+ *        use), or Adobe.PubSec with @p key (NULL for none).
  * @return 0 with doc->crypt set; -1 for a handler or cipher this does
- *         not read; -2 when the password opens it neither as its user
- *         nor as its owner.
+ *         not read; -2 when the password opens it neither as its user nor
+ *         as its owner; -3 when @p key is none it was sealed to.
  */
-int pdf_crypt_open(tiku_pdf_t *doc, const char *password);
+int pdf_crypt_open(tiku_pdf_t *doc, const char *password,
+                   const tiku_key_t *key);
+/** @brief Whether @p doc is sealed to certificates (Adobe.PubSec). */
+int pdf_crypt_certificate(tiku_pdf_t *doc);
 void pdf_crypt_free(pdf_crypt_t *c);
 /** @brief Whether the author lets text be copied out (P bit 5), or the
  *         owner's password opened it; 1 for a document not encrypted. */
@@ -362,13 +367,15 @@ void pdf_mat_apply(const pdf_mat_t *m, double x, double y, double *ox,
 /** @brief How much @p m scales a length, on average. */
 double pdf_mat_scale(const pdf_mat_t *m);
 /**
- * @brief The matrix laying @p page out at @p scale, rotation applied and
- *        y downwards, with the window's corner (@p x0, @p y0) at (0, 0);
- *        and the whole page's size in pixels.  Text boxes and links use
- *        it at scale 1: the page as drawn, in points.
+ * @brief The matrix laying @p page out at @p scale, its rotation and
+ *        @p turn degrees clockwise more applied and y downwards, with the
+ *        window's corner (@p x0, @p y0) at (0, 0); and the whole page's
+ *        size in pixels.  Text boxes and links use it at scale 1 and no
+ *        turn: the page as drawn, in points.  -1 unless @p turn is a
+ *        multiple of 90.
  */
-int pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
-                    pdf_mat_t *m, int *w, int *h);
+int pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int turn,
+                    int x0, int y0, pdf_mat_t *m, int *w, int *h);
 
 /** @brief A page's pixels, 0xAARRGGBB, how paints go onto them now; and
  *         a coverage mask over them. */

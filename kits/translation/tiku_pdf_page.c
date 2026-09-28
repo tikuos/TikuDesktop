@@ -256,17 +256,45 @@ tiku_pdf_page_size(tiku_pdf_t *doc, int page, double *w, double *h,
     return 0;
 }
 
+void
+tiku_pdf_turn_point(double w, double h, int rotate, int back, double *x,
+                    double *y)
+{
+    int q = (rotate % 360 + 360) % 360 / 90;
+    double px = *x, py = *y, t;
+
+    if (back && q % 2) {
+        /* A quarter turn is undone by three more, of the turned page. */
+        q = 4 - q;
+        t = w;
+        w = h;
+        h = t;
+    }
+    if (q == 1) {
+        *x = h - py;
+        *y = px;
+    } else if (q == 2) {
+        *x = w - px;
+        *y = h - py;
+    } else if (q == 3) {
+        *x = py;
+        *y = w - px;
+    }
+}
+
 int
-pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
-            pdf_mat_t *m, int *w, int *h)
+pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int turn, int x0,
+                int y0, pdf_mat_t *m, int *w, int *h)
 {
     double pw, ph, bx0 = 0, by0 = 0, bx1 = 612, by1 = 792;
     int rot;
     pdf_obj_t *p = pdf_page_dict(doc, page), *box;
 
-    if (p == NULL || tiku_pdf_page_size(doc, page, &pw, &ph, &rot) != 0) {
+    if (p == NULL || turn % 90 != 0 ||
+        tiku_pdf_page_size(doc, page, &pw, &ph, &rot) != 0) {
         return -1;
     }
+    rot = (rot + turn % 360 + 360) % 360;   /* the view's turn on the page's */
     box = pdf_page_inherited(doc, p, "CropBox");
     if (box == NULL) {
         box = pdf_page_inherited(doc, p, "MediaBox");

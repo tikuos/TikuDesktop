@@ -570,7 +570,7 @@ extract(tiku_pdf_t *doc, int page, int want_chars)
         pdf_mat_t m;
         int w, h;
 
-        if (pdf_page_matrix(doc, page, 1.0, 0, 0, &m, &w, &h) != 0) {
+        if (pdf_page_matrix(doc, page, 1.0, 0, 0, 0, &m, &w, &h) != 0) {
             free(data);
             free(t);
             return NULL;

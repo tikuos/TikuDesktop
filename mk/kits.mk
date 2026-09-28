@@ -130,6 +130,7 @@ TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_pdf_nav.c \
                $(K)/translation/tiku_pdf_shade.c \
                $(K)/translation/tiku_pdf_crypt.c \
+               $(K)/translation/tiku_pdf_sign.c \
                $(K)/translation/tiku_pdf_oc.c \
                $(K)/translation/tiku_pdf_cmap.c \
                $(K)/translation/tiku_pdf_annot.c

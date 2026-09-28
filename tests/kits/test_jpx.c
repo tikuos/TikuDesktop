@@ -280,7 +280,7 @@ draw_check(int pw, int ph, const pic_t *pic, const unsigned char *want,
     tiku_pdf_pixmap_t pm;
 
     if (tiku_pdf_decode(b.p, (size_t)b.n, &doc) != TIKU_PDF_OK ||
-        tiku_pdf_render(doc, 0, 1.0, &pm) != 0) {
+        tiku_pdf_render(doc, 0, 1.0, 0, &pm) != 0) {
         check(0, what);
     } else {
         check(unlike(&pm, want, pw, ph) == 0, what);

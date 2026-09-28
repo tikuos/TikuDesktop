@@ -166,7 +166,7 @@ explicit_dest(tiku_pdf_t *doc, pdf_obj_t *a, tiku_pdf_dest_t *out)
     }
     out->page = pdf_page_index(doc, a->u.a.item[0]);
     if (out->page < 0 ||
-        pdf_page_matrix(doc, out->page, 1.0, 0, 0, &m, &w, &h) != 0) {
+        pdf_page_matrix(doc, out->page, 1.0, 0, 0, 0, &m, &w, &h) != 0) {
         return;
     }
     have = view_point(doc, a, &x, &y);
@@ -363,7 +363,8 @@ tiku_pdf_links(tiku_pdf_t *doc, int page, tiku_pdf_link_t **out)
     int i, n = 0, w, h;
 
     *out = NULL;
-    if (p == NULL || pdf_page_matrix(doc, page, 1.0, 0, 0, &m, &w, &h) != 0) {
+    if (p == NULL ||
+        pdf_page_matrix(doc, page, 1.0, 0, 0, 0, &m, &w, &h) != 0) {
         return -1;
     }
     annots = pdf_get(doc, p, "Annots");

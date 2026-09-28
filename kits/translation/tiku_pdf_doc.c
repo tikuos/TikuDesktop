@@ -761,13 +761,14 @@ tiku_pdf_is_pdf(const char *path)
  *        dictionary itself aside -- is read again, through the key.
  */
 static tiku_pdf_err_t
-unlock(tiku_pdf_t *doc, const char *password)
+unlock(tiku_pdf_t *doc, const char *password, const tiku_key_t *key)
 {
-    int rc = pdf_crypt_open(doc, password);
+    int rc = pdf_crypt_open(doc, password, key);
     long i;
 
     if (rc != 0) {
-        return rc == -2 ? TIKU_PDF_PASSWORD : TIKU_PDF_UNSUPPORTED;
+        return rc == -2 ? TIKU_PDF_PASSWORD : rc == -3 ? TIKU_PDF_CERTIFICATE
+                                                       : TIKU_PDF_UNSUPPORTED;
     }
     for (i = 0; i < doc->nxref; i++) {
         pdf_obj_t *raw = pdf_dict_raw(doc->trailer, "Encrypt");
@@ -786,10 +787,10 @@ unlock(tiku_pdf_t *doc, const char *password)
 }
 
 /** @brief The document over @p data, which it now owns, opened with
- *         @p password when it is encrypted. */
+ *         @p password or, sealed to certificates, @p key. */
 static tiku_pdf_err_t
 open_data(unsigned char *data, long len, const char *password,
-          tiku_pdf_t **out)
+          const tiku_key_t *key, tiku_pdf_t **out)
 {
     tiku_pdf_t *doc;
 
@@ -809,7 +810,7 @@ open_data(unsigned char *data, long len, const char *password,
         return TIKU_PDF_BAD;
     }
     if (pdf_dict_raw(doc->trailer, "Encrypt") != NULL) {
-        tiku_pdf_err_t rc = unlock(doc, password);
+        tiku_pdf_err_t rc = unlock(doc, password, key);
 
         doc->encrypted = 1;
         if (rc != TIKU_PDF_OK) {
@@ -828,31 +829,98 @@ open_data(unsigned char *data, long len, const char *password,
     return TIKU_PDF_OK;
 }
 
+/** @brief File @p path read whole, @p max bytes at most, a NUL after.
+ *         @return its bytes to free(), @p len of them, or NULL. */
+static unsigned char *
+slurp(const char *path, long max, long *len)
+{
+    FILE *f = fopen(path, "rb");
+    unsigned char *data;
+
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (*len = ftell(f)) < 0 ||
+        *len > max || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    data = malloc((size_t)*len + 1);
+    if (data == NULL || fread(data, 1, (size_t)*len, f) != (size_t)*len) {
+        free(data);
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    data[*len] = '\0';
+    return data;
+}
+
 tiku_pdf_err_t
 tiku_pdf_open_password(const char *path, const char *password,
                        tiku_pdf_t **out)
 {
-    FILE *f = fopen(path, "rb");
-    unsigned char *data;
     long len;
+    unsigned char *data = slurp(path, PDF_FILE_MAX, &len);
 
-    if (f == NULL) {
-        return TIKU_PDF_BAD;
-    }
-    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 ||
-        len > PDF_FILE_MAX || fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        return TIKU_PDF_BAD;
-    }
-    data = malloc((size_t)len + 1);
-    if (data == NULL || fread(data, 1, (size_t)len, f) != (size_t)len) {
+    return data != NULL ? open_data(data, len, password, NULL, out)
+                        : TIKU_PDF_BAD;
+}
+
+/** @brief The document's @p len bytes at @p data, which it now owns,
+ *         opened with the key in key file @p kf, unlocked by @p password. */
+static tiku_pdf_err_t
+open_with_key(unsigned char *data, long len, const void *kf, size_t kn,
+              const char *password, tiku_pdf_t **out)
+{
+    tiku_key_t *key = NULL;
+    tiku_pdf_err_t rc;
+    int got = tiku_key_read(kf, kn, password, &key);
+
+    if (got != TIKU_KEY_OK) {
         free(data);
-        fclose(f);
+        return got == TIKU_KEY_PASSWORD ? TIKU_PDF_PASSWORD
+                                        : TIKU_PDF_KEY_FILE;
+    }
+    rc = open_data(data, len, "", key, out);
+    tiku_key_free(key);
+    return rc;
+}
+
+tiku_pdf_err_t
+tiku_pdf_open_key(const char *path, const char *keyfile, const char *password,
+                  tiku_pdf_t **out)
+{
+    long len, kn;
+    unsigned char *data = slurp(path, PDF_FILE_MAX, &len), *kf;
+    tiku_pdf_err_t rc;
+
+    if (data == NULL) {
         return TIKU_PDF_BAD;
     }
-    fclose(f);
+    if ((kf = slurp(keyfile, 1L << 20, &kn)) == NULL) {
+        free(data);
+        return TIKU_PDF_KEY_FILE;
+    }
+    rc = open_with_key(data, len, kf, (size_t)kn, password, out);
+    memset(kf, 0, (size_t)kn);
+    free(kf);
+    return rc;
+}
+
+tiku_pdf_err_t
+tiku_pdf_decode_key(const void *bytes, size_t len, const void *key,
+                    size_t keylen, const char *password, tiku_pdf_t **out)
+{
+    unsigned char *data;
+
+    if (bytes == NULL || len > (size_t)PDF_FILE_MAX ||
+        (data = malloc(len + 1)) == NULL) {
+        return TIKU_PDF_BAD;
+    }
+    memcpy(data, bytes, len);
     data[len] = '\0';
-    return open_data(data, len, password, out);
+    return open_with_key(data, (long)len, key, keylen, password, out);
 }
 
 tiku_pdf_err_t
@@ -876,7 +944,7 @@ tiku_pdf_decode_password(const void *bytes, size_t len, const char *password,
     }
     memcpy(data, bytes, len);
     data[len] = '\0';
-    return open_data(data, (long)len, password, out);
+    return open_data(data, (long)len, password, NULL, out);
 }
 
 tiku_pdf_err_t

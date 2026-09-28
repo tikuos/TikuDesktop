@@ -28,7 +28,10 @@ typedef enum {
     TIKU_PDF_NOT_PDF,           /* no %PDF header                       */
     TIKU_PDF_UNSUPPORTED,       /* encrypted by a handler this lacks    */
     TIKU_PDF_BAD,               /* recognised, and beyond repair        */
-    TIKU_PDF_PASSWORD           /* encrypted: the password does not open it */
+    TIKU_PDF_PASSWORD,          /* encrypted: the password does not open it */
+    TIKU_PDF_CERTIFICATE,       /* sealed to certificates: the key given,
+                                   if any, is none of theirs           */
+    TIKU_PDF_KEY_FILE           /* the key file is not one this reads   */
 } tiku_pdf_err_t;
 
 /** @brief Whether @p path holds a PDF, by its first bytes. */
@@ -62,6 +65,22 @@ tiku_pdf_err_t tiku_pdf_open_password(const char *path, const char *password,
 tiku_pdf_err_t tiku_pdf_decode_password(const void *bytes, size_t len,
                                         const char *password,
                                         tiku_pdf_t **out);
+
+/**
+ * @brief The same for a document sealed to certificates (Adobe.PubSec),
+ *        with the reader's key file @p keyfile -- PKCS#12 (.p12, .pfx) or
+ *        PEM, holding an RSA key -- unlocked by @p password.
+ * @return TIKU_PDF_PASSWORD when the password does not open the key file;
+ *         TIKU_PDF_KEY_FILE when it is not a key file this reads;
+ *         TIKU_PDF_CERTIFICATE when its key is none the document was
+ *         sealed to; otherwise as tiku_pdf_open().
+ */
+tiku_pdf_err_t tiku_pdf_open_key(const char *path, const char *keyfile,
+                                 const char *password, tiku_pdf_t **out);
+/** @brief The same from bytes, the key file's too; both are copied. */
+tiku_pdf_err_t tiku_pdf_decode_key(const void *bytes, size_t len,
+                                   const void *key, size_t keylen,
+                                   const char *password, tiku_pdf_t **out);
 
 /** @brief Whether the document's author allows its text to be copied
  *         out; always, for one not encrypted or opened by its owner. */
@@ -158,6 +177,49 @@ typedef struct {
 int tiku_pdf_links(tiku_pdf_t *doc, int page, tiku_pdf_link_t **out);
 void tiku_pdf_links_free(tiku_pdf_link_t *links, int n);
 
+/** @brief How a signature stands. */
+enum { TIKU_PDF_SIG_GOOD = 1,       /* what its certificate's key signed  */
+       TIKU_PDF_SIG_CHANGED,        /* the bytes it covers were changed   */
+       TIKU_PDF_SIG_BROKEN,         /* not its certificate's key's        */
+       TIKU_PDF_SIG_UNCHECKED };    /* in a form this does not check      */
+
+/** @brief What a signature is for. */
+enum { TIKU_PDF_SIG_APPROVAL, TIKU_PDF_SIG_CERTIFY, TIKU_PDF_SIG_TIMESTAMP };
+
+/** @brief One signature on the document, as read and checked. */
+typedef struct {
+    char    *field;                 /* its field's full name, UTF-8       */
+    char    *signer;                /* whom its certificate names         */
+    char    *org, *issuer;          /* the signer's organisation, and whom
+                                       the certificate is from; or NULL   */
+    char    *reason, *location, *contact;  /* as the signer gave them    */
+    char    *stamp_by;              /* a timestamp's authority, or NULL   */
+    char     why[96];               /* what is wrong, "" for nothing      */
+    int64_t  signed_at;             /* the signer's own claim: seconds
+                                       since 1970, UTC; 0 for none        */
+    int64_t  stamped_at;            /* a timestamp's time, or 0           */
+    int      status;                /* TIKU_PDF_SIG_GOOD ...              */
+    int      stamp;                 /* the timestamp's own status, or 0   */
+    int      kind;                  /* TIKU_PDF_SIG_APPROVAL ...          */
+    int      whole;                 /* nothing was added to the file after */
+    int      self_signed;           /* its certificate vouches for itself */
+    int      page;                  /* the page its field is on, or -1    */
+    float    x0, y0, x1, y1;        /* its box there, as drawn at scale 1;
+                                       empty for an invisible one         */
+} tiku_pdf_signature_t;
+
+/**
+ * @brief The document's signatures in the order they were made, each
+ *        checked: whether the bytes it covers are what was signed, by the
+ *        key of the certificate it carries, and whether anything was
+ *        added after.  Whether that certificate is who it names is a
+ *        question of trust, not asked here.
+ * @return how many, with @p out to give back through
+ *         tiku_pdf_signatures_free(); 0 for none.
+ */
+int tiku_pdf_signatures(tiku_pdf_t *doc, tiku_pdf_signature_t **out);
+void tiku_pdf_signatures_free(tiku_pdf_signature_t *sigs, int n);
+
 /** @brief A page drawn: 0xAARRGGBB pixels, top row first, opaque. */
 typedef struct {
     int       w, h;
@@ -165,29 +227,42 @@ typedef struct {
 } tiku_pdf_pixmap_t;
 
 /**
- * @brief Draw @p page at @p scale pixels per point, rotation applied.
+ * @brief Draw @p page at @p scale pixels per point, its own rotation
+ *        applied and then @p rotate degrees clockwise more: the view's
+ *        turn, a multiple of 90 (-90 is 270).
  *
  * What the format allows and this does not draw yet is left out, never
  * guessed at: the page is still readable around it.
- * @return 0 with @p out filled, or -1 when there is no such page or no
- *         room for it.
+ * @return 0 with @p out filled, or -1 when there is no such page, no
+ *         room for it, or @p rotate is not a multiple of 90.
  */
-int tiku_pdf_render(tiku_pdf_t *doc, int page, double scale,
+int tiku_pdf_render(tiku_pdf_t *doc, int page, double scale, int rotate,
                     tiku_pdf_pixmap_t *out);
 
 /**
  * @brief Draw the window @p x0, @p y0, @p w by @p h pixels of the page as
- *        tiku_pdf_render() would lay it out at @p scale.
+ *        tiku_pdf_render() would lay it out at @p scale and @p rotate.
  *
  * A band of rows at a time keeps the memory to the band, which is how a
  * small machine would page through a datasheet.
  */
-int tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0,
-                         int y0, int w, int h, tiku_pdf_pixmap_t *out);
+int tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale,
+                         int rotate, int x0, int y0, int w, int h,
+                         tiku_pdf_pixmap_t *out);
 
-/** @brief The size tiku_pdf_render() would draw @p page at @p scale. */
-int tiku_pdf_render_size(tiku_pdf_t *doc, int page, double scale, int *w,
-                         int *h);
+/** @brief The size tiku_pdf_render() would draw @p page at @p scale and
+ *         @p rotate. */
+int tiku_pdf_render_size(tiku_pdf_t *doc, int page, double scale,
+                         int rotate, int *w, int *h);
+
+/**
+ * @brief Where the point @p x, @p y of a page as drawn at scale 1 -- a
+ *        text box's or a link's corner, @p w by @p h points in all --
+ *        lands when the view turns it @p rotate degrees clockwise more;
+ *        with @p back, the other way, from the turned page to its own.
+ */
+void tiku_pdf_turn_point(double w, double h, int rotate, int back,
+                         double *x, double *y);
 
 /** @brief Give a drawn page's pixels back. */
 void tiku_pdf_pixmap_free(tiku_pdf_pixmap_t *p);

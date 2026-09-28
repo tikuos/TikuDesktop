@@ -367,7 +367,7 @@ carried_test(void)
     check(fabsf(a[2] - a[0] - 50) < 0.5f && fabsf(one[0] - 70) < 0.5f &&
           fabsf(one[2] - one[0] - 100) < 0.5f && fabsf(bb[0] - 170) < 0.5f,
           "widths by CID: the half box 50, the box 100, .notdef DW's 100");
-    check(tiku_pdf_render(doc, 0, 1.0, &pm) == 0, "the page draws");
+    check(tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0, "the page draws");
     check(inked(&pm, 45, 640) && inked(&pm, 120, 640) &&
           !inked(&pm, 220, 640) && !inked(&pm, 45, 690),
           "<41> draws the half box, <8140> the box, <42> nothing");
@@ -589,7 +589,7 @@ vertical_test(void)
           fabsf(y[1] - 200) < 0.5f && fabsf(y[3] - 250) < 0.5f,
           "W2's glyph: 25 either side, its advance half an em");
     check(fabsf(x2[1] - 250) < 0.5f, "the pen went down 100, then 50");
-    check(doc && tiku_pdf_render(doc, 0, 1.0, &pm) == 0, "the page draws");
+    check(doc && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0, "the page draws");
     if (doc != NULL) {
         check(inked(&pm, 260, 690) && !inked(&pm, 240, 690) &&
               inked(&pm, 340, 620) && !inked(&pm, 300, 700),
@@ -624,7 +624,7 @@ standin_test(void)
     tiku_pdf_pixmap_t pm;
     long ink = 0, x, y;
 
-    if (doc == NULL || tiku_pdf_render(doc, 0, 1.0, &pm) != 0) {
+    if (doc == NULL || tiku_pdf_render(doc, 0, 1.0, 0, &pm) != 0) {
         check(0, "the stand-in page draws");
         tiku_pdf_close(doc);
         free(b.p);
@@ -677,7 +677,7 @@ damage_test(void)
         tiku_pdf_pixmap_t pm;
         char *t = doc ? tiku_pdf_page_text(doc, 0) : NULL;
 
-        if (doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0) {
+        if (doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0) {
             tiku_pdf_pixmap_free(&pm);
         }
         free(t);

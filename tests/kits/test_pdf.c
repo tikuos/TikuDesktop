@@ -494,7 +494,7 @@ shade_test(void)
     tiku_pdf_t *doc = open_bytes(&b, &err);
     tiku_pdf_pixmap_t pm = {0, 0, NULL};
 
-    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0 &&
           pm.w == 300, "a page of shadings and patterns renders");
     if (pm.px == NULL) {
         tiku_pdf_close(doc);
@@ -596,7 +596,7 @@ transp_test(void)
     tiku_pdf_t *doc = open_bytes(&b, &err);
     tiku_pdf_pixmap_t pm = {0, 0, NULL};
 
-    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0 &&
           pm.w == 300, "a page of transparency and annotations renders");
     if (pm.px == NULL) {
         tiku_pdf_close(doc);
@@ -690,7 +690,7 @@ knockout_test(void)
     tiku_pdf_t *doc = open_bytes(&b, &err);
     tiku_pdf_pixmap_t pm = {0, 0, NULL};
 
-    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0 &&
           pm.w == 300, "a page of knockout groups renders");
     if (pm.px == NULL) {
         tiku_pdf_close(doc);
@@ -764,7 +764,7 @@ fax_test(void)
     long grey = 0, stencil = 0;
     int x, y;
 
-    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0 &&
           pm.w == FAX_SMALL_W && pm.h == 2 * FAX_SMALL_H,
           "a page of CCITT fax images renders");
     for (y = 0; pm.px != NULL && y < FAX_SMALL_H; y++) {
@@ -869,7 +869,7 @@ oc_test(void)
     char *text = doc != NULL ? tiku_pdf_page_text(doc, 0) : NULL;
     size_t i;
 
-    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0,
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0,
           "a page of layers renders");
     for (i = 0; pm.px != NULL && i < sizeof probe / sizeof probe[0]; i++) {
         uint32_t want = probe[i].x == 272 && probe[i].y == 85 ? 0x00ff00u
@@ -949,7 +949,7 @@ annot_test(void)
     tiku_pdf_err_t err;
     tiku_pdf_t *doc = open_bytes(&b, &err);
     tiku_pdf_pixmap_t pm = {0, 0, NULL};
-    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0;
+    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0;
 
     check(ok, "a page of annotations without appearances renders");
     if (!ok) {
@@ -1041,7 +1041,7 @@ form_test(void)
     tiku_pdf_err_t err;
     tiku_pdf_t *doc = open_bytes(&b, &err);
     tiku_pdf_pixmap_t pm = {0, 0, NULL};
-    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0;
+    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0;
     int x, blue = 0;
 
     check(ok, "a form needing its appearances renders");
@@ -1195,7 +1195,7 @@ mesh_test(void)
     tiku_pdf_err_t err;
     tiku_pdf_t *doc = open_bytes(&b, &err);
     tiku_pdf_pixmap_t pm = {0, 0, NULL};
-    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0;
+    int ok = doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0;
 
     check(ok, "a page of mesh shadings renders");
     if (!ok) {
@@ -1283,7 +1283,7 @@ damage_test(void)
     check(doc != NULL && tiku_pdf_page_size(doc, 0, &pw, &ph, &rot) == 0 &&
           pw == 612 && ph == 792,
           "a MediaBox of nothing leaves the page Letter, not nothing");
-    check(doc != NULL && tiku_pdf_render(doc, 1, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 1, 1.0, 0, &pm) == 0 &&
           pixel(&pm, 50, 250) == 0xff0000u &&
           pixel(&pm, 150, 150) == 0xffffffu,
           "a form's stray Q does not undo its caller's clip");
@@ -1291,15 +1291,15 @@ damage_test(void)
     check(text != NULL && strstr(text, "After") != NULL,
           "nor lose the text that follows it");
     free(text);
-    check(doc != NULL && tiku_pdf_render(doc, 2, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 2, 1.0, 0, &pm) == 0 &&
           pixel(&pm, 150, 150) == 0x808080u,
           "a Separation whose alternate is no space paints its tint grey");
     tiku_pdf_pixmap_free(&pm);
-    check(doc != NULL && tiku_pdf_render(doc, 3, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 3, 1.0, 0, &pm) == 0 &&
           pixel(&pm, 150, 150) == 0xccccccu,
           "an Indexed table over five colorants reads all five");
     tiku_pdf_pixmap_free(&pm);
-    check(doc != NULL && tiku_pdf_render(doc, 4, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 4, 1.0, 0, &pm) == 0 &&
           pixel(&pm, 150, 150) == 0xccccccu,
           "and those five colorants, set and painted, are all read");
     tiku_pdf_pixmap_free(&pm);
@@ -1464,6 +1464,52 @@ drawn_file(void)
     return b;
 }
 
+/**
+ * @brief The view turned a quarter, a half and three quarters (and a
+ *        quarter back): each is the unturned page, every pixel where the
+ *        turn takes it; tiku_pdf_turn_point() takes it back; a turn
+ *        other than a quarter's is refused.
+ */
+static void
+turn_test(tiku_pdf_t *doc, const tiku_pdf_pixmap_t *pm)
+{
+    static const int turns[] = { 90, 180, 270, -90 };
+    tiku_pdf_pixmap_t tp = {0, 0, NULL};
+    size_t i;
+    int w = 0, h = 0;
+
+    for (i = 0; i < sizeof turns / sizeof turns[0]; i++) {
+        int t = turns[i], side = t % 180 != 0, x, y;
+        long same = 0, back = 0;
+
+        if (tiku_pdf_render(doc, 0, 1.0, t, &tp) != 0 ||
+            tp.w != (side ? pm->h : pm->w) || tp.h != (side ? pm->w : pm->h)) {
+            check(0, "a turned page renders at its turned size");
+            tiku_pdf_pixmap_free(&tp);
+            continue;
+        }
+        for (y = 0; y < pm->h; y++) {
+            for (x = 0; x < pm->w; x++) {
+                double tx = x + 0.5, ty = y + 0.5, bx, by;
+
+                tiku_pdf_turn_point(pm->w, pm->h, t, 0, &tx, &ty);
+                bx = tx;
+                by = ty;
+                tiku_pdf_turn_point(pm->w, pm->h, t, 1, &bx, &by);
+                back += bx == x + 0.5 && by == y + 0.5;
+                same += pixel(pm, x, y) == pixel(&tp, (int)tx, (int)ty);
+            }
+        }
+        check(same == (long)pm->w * pm->h && back == same,
+              "a turned page is the page's pixels, where the turn puts "
+              "them, and turned back they are where they were");
+        tiku_pdf_pixmap_free(&tp);
+    }
+    check(tiku_pdf_render_size(doc, 0, 1.0, 45, &w, &h) != 0 &&
+          tiku_pdf_render(doc, 0, 1.0, 45, &tp) != 0 && tp.px == NULL,
+          "a turn of 45 degrees is refused");
+}
+
 static void
 render_test(void)
 {
@@ -1473,9 +1519,9 @@ render_test(void)
     tiku_pdf_pixmap_t pm = {0, 0, NULL}, band = {0, 0, NULL};
     int w = 0, h = 0;
 
-    check(doc != NULL && tiku_pdf_render_size(doc, 0, 1.0, &w, &h) == 0 &&
+    check(doc != NULL && tiku_pdf_render_size(doc, 0, 1.0, 0, &w, &h) == 0 &&
           w == 400 && h == 300, "a 300 by 400 page turned 90 is 400 by 300");
-    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0 &&
           pm.w == 400 && pm.h == 300, "and renders at that size");
     if (pm.px == NULL) {
         tiku_pdf_close(doc);
@@ -1512,11 +1558,12 @@ render_test(void)
     check(pixel(&pm, 210, 210) == 0x008000u &&
           pixel(&pm, 210, 230) == 0xffffffu,
           "a Type 3 glyph runs its procedure; render mode 3 draws none");
-    check(tiku_pdf_render_rect(doc, 0, 1.0, 0, 150, 400, 20, &band) == 0 &&
+    check(tiku_pdf_render_rect(doc, 0, 1.0, 0, 0, 150, 400, 20, &band) == 0 &&
           band.h == 20 && pixel(&band, 100, 0) == 0x0000ffu &&
           pixel(&band, 170, 19) == 0x00ff00u,
           "a band of rows shows the same ink");
     tiku_pdf_pixmap_free(&band);
+    turn_test(doc, &pm);
     tiku_pdf_pixmap_free(&pm);
     tiku_pdf_close(doc);
     free(b.p);
@@ -1570,7 +1617,7 @@ corpus_test(void)
             int k;
 
             for (k = 0; k < pages && k < 3; k++) {
-                if (tiku_pdf_render(doc, k, 1.5, &pm) == 0) {
+                if (tiku_pdf_render(doc, k, 1.5, 0, &pm) == 0) {
                     snprintf(png, sizeof png, "%s/%.*s-%d.png",
                              getenv("TIKU_PDF_PNG_DIR"), (int)len - 4,
                              e->d_name, k);

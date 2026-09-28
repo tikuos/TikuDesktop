@@ -4,21 +4,22 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_pdf_crypt.c - the standard security handler (ISO 32000-2 7.6.4):
- * the file key from a password, and each object's strings and streams
+ * tiku_pdf_crypt.c - the security handlers (ISO 32000-2 7.6): the file
+ * key from a password (the standard handler) or from a certificate's
+ * private key (Adobe.PubSec), and each object's strings and streams
  * decrypted with it as the object is read.
  *
  * Revisions 2 to 4 hash the password with MD5 and give every object a
  * key of its own for RC4 or AES-128; 5 and 6 use AES-256 with one key,
- * found through SHA-2 (6 through rounds of AES and SHA-256/384/512).
- * Most encrypted documents open without a password: the empty one.  A
- * typed one is tried as the standard hashes it -- PDFDocEncoding, or
- * SASLprep for 5 and 6 -- then as typed, as some writers take it.
+ * found through SHA-2.  A typed password is tried as the standard hashes
+ * it, then as typed.  A document sealed to certificates holds, for each
+ * recipient, the seed of its key in an envelope only their key opens.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_pdf_private.h"
+#include "tiku_cms.h"
 #include "tiku_crypto.h"
 #include "tiku_saslprep.h"
 
@@ -343,18 +344,165 @@ open_r6_any(tiku_pdf_t *doc, pdf_crypt_t *c, pdf_obj_t *enc,
     return 0;
 }
 
+/* ------------------------------------------------------- certificates  */
+
+/** @brief The bytes of one recipient @p r, a string, in @p *p, @p *n.
+ *         @return 0, or -1 for what is not one. */
+static int
+recipient_bytes(tiku_pdf_t *doc, pdf_obj_t *r, const unsigned char **p,
+                size_t *n)
+{
+    r = pdf_resolve(doc, r);
+    if (r == NULL || r->kind != PDF_STRING || r->u.s.n == 0) {
+        return -1;
+    }
+    *p = r->u.s.p;
+    *n = r->u.s.n;
+    return 0;
+}
+
+/** @brief Recipient @p i of @p list, an array of them or the one string a
+ *         crypt filter may give.  @return 0, or -1 past the last. */
+static int
+recipient_at(tiku_pdf_t *doc, pdf_obj_t *list, int i,
+             const unsigned char **p, size_t *n)
+{
+    if (list != NULL && list->kind == PDF_ARRAY) {
+        return i < list->u.a.n ? recipient_bytes(doc, list->u.a.item[i], p, n)
+                               : -1;
+    }
+    return i == 0 ? recipient_bytes(doc, list, p, n) : -1;
+}
+
+/**
+ * @brief The seed @p key's envelope among @p list holds (7.6.5.3): 20
+ *        bytes, then the four of the permissions, highest first.
+ * @return 0 with the seed in @p seed and the permissions in @p perms (all
+ *         granted when the envelope gives none), or -1.
+ */
+static int
+pubsec_seed(tiku_pdf_t *doc, pdf_obj_t *list, const tiku_key_t *key,
+            unsigned char seed[20], long *perms)
+{
+    const unsigned char *p;
+    unsigned char *open;
+    size_t n;
+    long got;
+    int i;
+
+    for (i = 0; recipient_at(doc, list, i, &p, &n) == 0 && i < 256; i++) {
+        if ((got = tiku_cms_open(key, p, n, &open)) >= 20) {
+            memcpy(seed, open, 20);
+            *perms = got >= 24 ? (long)(int32_t)((uint32_t)open[20] << 24 |
+                                                 (uint32_t)open[21] << 16 |
+                                                 (uint32_t)open[22] << 8 |
+                                                 open[23]) : -1;
+            memset(open, 0, (size_t)got);
+            free(open);
+            return 0;
+        }
+        free(open);
+    }
+    return -1;
+}
+
+/** @brief The file key from @p seed: the first keylen bytes of the SHA-1
+ *         -- SHA-256 for a 32-byte key -- of it, each recipient in @p list,
+ *         and four 0xff when @p clear (metadata left clear). */
+static void
+pubsec_key(tiku_pdf_t *doc, pdf_crypt_t *c, pdf_obj_t *list,
+           const unsigned char *seed, int clear)
+{
+    static const unsigned char ff[4] = { 0xff, 0xff, 0xff, 0xff };
+    unsigned char d[32];
+    const unsigned char *p;
+    tiku_hash_t h;
+    size_t n;
+    int i;
+
+    (void)tiku_hash_init(&h, c->keylen > 16 ? TIKU_HASH_SHA256
+                                            : TIKU_HASH_SHA1);
+    tiku_hash_update(&h, seed, 20);
+    for (i = 0; recipient_at(doc, list, i, &p, &n) == 0; i++) {
+        tiku_hash_update(&h, p, n);
+    }
+    if (clear) {
+        tiku_hash_update(&h, ff, 4);
+    }
+    tiku_hash_final(&h, d);
+    memcpy(c->key, d, (size_t)c->keylen);
+    memset(d, 0, sizeof d);
+}
+
+/**
+ * @brief Adobe.PubSec (7.6.5): the envelope @p key opens gives the seed;
+ *        the file key is the SHA-1 -- SHA-256 for AES-256 -- of it, every
+ *        recipient's bytes in order and, where metadata is left clear,
+ *        four 0xff.  Recipients are the dictionary's (V 1 and 2) or the
+ *        crypt filter's.  @return 0; -1 for what is not read; -3 when
+ *        @p key is none of the recipients'.
+ */
+static int
+open_pubsec(tiku_pdf_t *doc, pdf_crypt_t *c, pdf_obj_t *enc,
+            const tiku_key_t *key, int v)
+{
+    unsigned char seed[20];
+    pdf_obj_t *cf = enc, *list, *meta, *name;
+
+    if (v >= 4) {
+        name = pdf_get(doc, enc, c->stm != CRYPT_NONE ? "StmF" : "StrF");
+        cf = name != NULL && name->kind == PDF_NAME
+             ? pdf_get(doc, pdf_get(doc, enc, "CF"), (const char *)name->u.s.p)
+             : NULL;
+        if ((meta = pdf_get(doc, cf, "EncryptMetadata")) != NULL &&
+            meta->kind == PDF_BOOL) {
+            c->metadata = meta->u.b;
+        }
+    }
+    if ((list = pdf_get(doc, cf, "Recipients")) == NULL) {
+        return -1;
+    }
+    if (key == NULL || pubsec_seed(doc, list, key, seed, &c->perms) != 0) {
+        return -3;
+    }
+    pubsec_key(doc, c, list, seed, v >= 4 && !c->metadata);
+    memset(seed, 0, sizeof seed);
+    return 0;
+}
+
+/** @brief A crypt filter's key length for a certificate-sealed document:
+ *         AES's own, or RC4's /Length, in bits or (small) in bytes. */
+static int
+pubsec_keylen(tiku_pdf_t *doc, pdf_obj_t *enc, const pdf_crypt_t *c, int v)
+{
+    pdf_obj_t *name = pdf_get(doc, enc, c->stm != CRYPT_NONE ? "StmF"
+                                                             : "StrF");
+    pdf_obj_t *cf = name != NULL && name->kind == PDF_NAME
+                    ? pdf_get(doc, pdf_get(doc, enc, "CF"),
+                              (const char *)name->u.s.p) : NULL;
+    int len = pdf_int(pdf_get(doc, cf != NULL ? cf : enc, "Length"),
+                      v == 1 ? 40 : 128);
+
+    if (c->stm == CRYPT_AESV3 || c->str == CRYPT_AESV3) return 32;
+    if (c->stm == CRYPT_AESV2 || c->str == CRYPT_AESV2) return 16;
+    return len <= 16 ? len : len / 8;
+}
+
 int
-pdf_crypt_open(tiku_pdf_t *doc, const char *password)
+pdf_crypt_open(tiku_pdf_t *doc, const char *password, const tiku_key_t *key)
 {
     pdf_obj_t *raw = pdf_dict_raw(doc->trailer, "Encrypt");
     pdf_obj_t *enc = pdf_resolve(doc, raw), *meta;
     const char *pw = password != NULL ? password : "";
     double perms;
-    int v, ok;
+    int v, ok, pubsec;
     pdf_crypt_t *c;
 
-    if (enc == NULL || enc->kind != PDF_DICT ||
-        !pdf_is_name(pdf_get(doc, enc, "Filter"), "Standard") ||
+    if (enc == NULL || enc->kind != PDF_DICT) {
+        return -1;
+    }
+    pubsec = pdf_is_name(pdf_get(doc, enc, "Filter"), "Adobe.PubSec");
+    if ((!pubsec && !pdf_is_name(pdf_get(doc, enc, "Filter"), "Standard")) ||
         (c = calloc(1, sizeof *c)) == NULL) {
         return -1;
     }
@@ -374,6 +522,20 @@ pdf_crypt_open(tiku_pdf_t *doc, const char *password)
     }
     if (v == 4) c->keylen = 16;
     if (v == 5) c->keylen = 32;
+    if (pubsec) {
+        c->keylen = pubsec_keylen(doc, enc, c, v);
+        if (v < 1 || v > 5 || v == 3 || c->keylen < 5 || c->keylen > 32 ||
+            (c->keylen > 16 && v < 5)) {
+            free(c);
+            return -1;
+        }
+        if ((ok = open_pubsec(doc, c, enc, key, v)) != 0) {
+            free(c);
+            return ok;
+        }
+        doc->crypt = c;
+        return 0;
+    }
     if (v < 1 || v > 5 || v == 3 || c->r < 2 || c->r > 6 ||
         c->keylen < 5 || c->keylen > (v < 5 || c->r < 5 ? 16 : 32)) {
         free(c);
@@ -399,6 +561,15 @@ int
 pdf_crypt_may_copy(const pdf_crypt_t *c)
 {
     return c == NULL || c->owner || (c->perms & 0x10) != 0;
+}
+
+int
+pdf_crypt_certificate(tiku_pdf_t *doc)
+{
+    pdf_obj_t *enc = pdf_resolve(doc, pdf_dict_raw(doc->trailer, "Encrypt"));
+
+    return enc != NULL &&
+           pdf_is_name(pdf_get(doc, enc, "Filter"), "Adobe.PubSec");
 }
 
 /* --------------------------------------------------------- decrypting  */

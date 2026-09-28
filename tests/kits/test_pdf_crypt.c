@@ -9,6 +9,8 @@
  * (4) and AES-256 (6); the empty password, a user's, an owner's, a
  * wrong one; the author's word on copying; passwords typed otherwise
  * than they were hashed (SASLprep, PDFDocEncoding); two damaged files.
+ * Then documents pyHanko sealed to certificates, opened with key files
+ * other writers made, and refused to the wrong key.
  *
  * TIKU_PDF_ENC_DIR names a folder to write the files to, so another
  * reader (poppler's pdftotext) can be asked to open them too.
@@ -22,6 +24,8 @@
 
 #include "tiku_crypto.h"
 #include "tiku_pdf.h"
+#include "../fixtures/cms.inc"
+#include "../fixtures/pubsec.inc"
 
 static int fails;
 
@@ -223,6 +227,99 @@ damaged(void)
     free(b.p);
 }
 
+/** @brief A fixture's bytes, decoded from its base64, to free(). */
+static unsigned char *
+unbase64(const char *b64, size_t *n)
+{
+    static const char abc[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    unsigned char *p = malloc(strlen(b64));
+    unsigned v = 0;
+    int bits = 0;
+
+    for (*n = 0; *b64 && *b64 != '='; b64++) {
+        v = v << 6 | (unsigned)(strchr(abc, *b64) - abc);
+        if ((bits += 6) >= 8) {
+            bits -= 8;
+            p[(*n)++] = (unsigned char)(v >> bits);
+        }
+    }
+    return p;
+}
+
+/** @brief Sealed document @p pdf opened with key file @p key and its
+ *         password @p pw.  @return the error; with @p text, whether the
+ *         page said what it was sealed with, and may_copy in @p copy. */
+static tiku_pdf_err_t
+sealed(const char *pdf, const char *key, const char *pw, int *text,
+       int *copy)
+{
+    size_t n, kn;
+    unsigned char *p = unbase64(pdf, &n), *k = key ? unbase64(key, &kn) : NULL;
+    tiku_pdf_t *doc = NULL;
+    tiku_pdf_err_t err = k ? tiku_pdf_decode_key(p, n, k, kn, pw, &doc)
+                           : tiku_pdf_decode_password(p, n, pw, &doc);
+    char *page = doc ? tiku_pdf_page_text(doc, 0) : NULL, *title;
+
+    title = doc ? tiku_pdf_title(doc) : NULL;
+    if (text) {
+        *text = page && strstr(page, "Sealed to a certificate") &&
+                title && !strcmp(title, "Sealed to a certificate");
+    }
+    if (copy) *copy = doc ? tiku_pdf_may_copy(doc) : -1;
+    free(page);
+    free(title);
+    tiku_pdf_close(doc);
+    free(p);
+    free(k);
+    return err;
+}
+
+/** @brief Documents sealed to certificates (Adobe.PubSec), every kind
+ *         pyHanko writes, opened with key files cryptography and LibreSSL
+ *         wrote; the wrong key, the wrong password, no key. */
+static void
+certificates(void)
+{
+    static const struct { const char *pdf, *what; } kinds[] = {
+        { ps_aes256, "V 5, AES-256 (with pyHanko's MAC)" },
+        { ps_aes128, "V 4, an AES-128 crypt filter" },
+        { ps_rc4cf, "V 4, an RC4 crypt filter" },
+        { ps_rc4, "V 2, RC4 128, no crypt filter" },
+        { ps_rc4_40, "V 1, RC4 40" },
+        { ps_oaep, "its envelope's key sealed by RSA-OAEP" },
+        { ps_meta, "metadata left clear" },
+        { ps_two, "the second of two recipients" },
+    };
+    char what[96];
+    size_t i;
+    int text = 0, copy = 0;
+
+    for (i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
+        snprintf(what, sizeof what, "sealed: %s", kinds[i].what);
+        check(sealed(kinds[i].pdf, ck_p12_legacy, "secret", &text, &copy) ==
+              TIKU_PDF_OK && text && copy == 1, "ENC-020", what);
+    }
+    check(sealed(ps_aes256, ck_p12_modern, "p\xc3\xa4ssw\xc3\xb6rd", &text,
+                 NULL) == TIKU_PDF_OK && text &&
+          sealed(ps_rc4, ck_pem_plain, "", &text, NULL) == TIKU_PDF_OK &&
+          text && sealed(ps_two, ck_pem_rsa, "", &text, NULL) ==
+          TIKU_PDF_OK && text, "ENC-021",
+          "by PBES2's PKCS#12, PEM with a certificate, and a bare key");
+    check(sealed(ps_aes256, NULL, "", NULL, NULL) == TIKU_PDF_CERTIFICATE &&
+          sealed(ps_other, ck_p12_legacy, "secret", NULL, NULL) ==
+          TIKU_PDF_CERTIFICATE, "ENC-022",
+          "no key, or a key it was not sealed to: a certificate is asked for");
+    check(sealed(ps_aes256, ck_p12_legacy, "public", NULL, NULL) ==
+          TIKU_PDF_PASSWORD &&
+          sealed(ps_aes256, ck_pem_ec, "", NULL, NULL) == TIKU_PDF_KEY_FILE &&
+          sealed(ps_aes256, ck_message, "", NULL, NULL) == TIKU_PDF_KEY_FILE,
+          "ENC-023", "the key file's wrong password; an EC key; no key file");
+    check(sealed(ps_nocopy, ck_p12_legacy, "secret", &text, &copy) ==
+          TIKU_PDF_OK && text && copy == 0, "ENC-024",
+          "the sealer's word on copying text out is kept");
+}
+
 int
 main(void)
 {
@@ -242,7 +339,8 @@ main(void)
     }
     typed();
     damaged();
+    certificates();
     printf("%s\n", fails ? "FAIL" : "PASS: RC4 40/128, AES 128/256, "
-                                     "passwords and permissions");
+                                     "passwords, permissions, certificates");
     return fails ? 1 : 0;
 }

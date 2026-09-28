@@ -217,7 +217,7 @@ static void pv_render_run(void *ctx)
 {
     pv_render_t *j = ctx;
 
-    if (tiku_pdf_render(j->doc->pdf, j->page, j->scale, &j->pm) != 0)
+    if (tiku_pdf_render(j->doc->pdf, j->page, j->scale, 0, &j->pm) != 0)
         j->failed = 1;
     if (!j->text) return;
     j->nlink = tiku_pdf_links(j->doc->pdf, j->page, &j->link);

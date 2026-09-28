@@ -1928,19 +1928,20 @@ rs_finish(rs_t *r)
 }
 
 int
-tiku_pdf_render_size(tiku_pdf_t *doc, int page, double scale, int *w, int *h)
+tiku_pdf_render_size(tiku_pdf_t *doc, int page, double scale, int rotate,
+                     int *w, int *h)
 {
     pdf_mat_t m;
 
     if (doc == NULL || scale <= 0) {
         return -1;
     }
-    return pdf_page_matrix(doc, page, scale, 0, 0, &m, w, h);
+    return pdf_page_matrix(doc, page, scale, rotate, 0, 0, &m, w, h);
 }
 
 int
-tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
-                     int w, int h, tiku_pdf_pixmap_t *out)
+tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int rotate,
+                     int x0, int y0, int w, int h, tiku_pdf_pixmap_t *out)
 {
     rs_t *r;
     pdf_mat_t base;
@@ -1951,7 +1952,8 @@ tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
 
     if (p == NULL || out == NULL || w <= 0 || h <= 0 || scale <= 0 ||
         (long)w * h > 64L * 1024L * 1024L ||
-        pdf_page_matrix(doc, page, scale, x0, y0, &base, &pw, &ph) != 0) {
+        pdf_page_matrix(doc, page, scale, rotate, x0, y0, &base, &pw,
+                        &ph) != 0) {
         return -1;
     }
     pdf_fonts_page(doc);
@@ -1974,14 +1976,15 @@ tiku_pdf_render_rect(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
 }
 
 int
-tiku_pdf_render(tiku_pdf_t *doc, int page, double scale, tiku_pdf_pixmap_t *out)
+tiku_pdf_render(tiku_pdf_t *doc, int page, double scale, int rotate,
+                tiku_pdf_pixmap_t *out)
 {
     int w, h;
 
-    if (tiku_pdf_render_size(doc, page, scale, &w, &h) != 0) {
+    if (tiku_pdf_render_size(doc, page, scale, rotate, &w, &h) != 0) {
         return -1;
     }
-    return tiku_pdf_render_rect(doc, page, scale, 0, 0, w, h, out);
+    return tiku_pdf_render_rect(doc, page, scale, rotate, 0, 0, w, h, out);
 }
 
 void
