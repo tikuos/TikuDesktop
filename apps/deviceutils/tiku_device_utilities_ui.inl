@@ -8,6 +8,14 @@ static tiku_rect_t utility_rect(struct device_utility *p, int x, int y, int w, i
 }
 #include "tiku_device_utilities_registry.inl"
 
+static tiku_rect_t utility_process_rect(struct device_utility *p)
+{ return utility_rect(p, 16, 470, 824, 78); }
+static const char *utility_process_name(void *context, int row)
+{
+    struct device_utility *p = context;
+    return row >= 0 && row < p->metrics.nprocess ? p->metrics.process[row] : "";
+}
+
 /** Register controls before both drawing and dispatching an event. */
 static void utility_controls(struct device_utility *p)
 {
@@ -18,7 +26,14 @@ static void utility_controls(struct device_utility *p)
     tiku_dialog_add(&p->dialog, U_NEXT, utility_rect(p, 164, 42, 136, 30), TIKU_DIALOG_BUTTON, !p->busy);
     tiku_dialog_add(&p->dialog, U_REFRESH, utility_rect(p, 312, 42, 112, 30), TIKU_DIALOG_BUTTON, !p->busy);
     if (!p->mode) {
+        tiku_list_set_count(&p->list, p->metrics.nprocess);
+        tiku_list_scroll_to(&p->list, p->list.top, utility_process_rect(p));
+        tiku_dialog_add(&p->dialog, U_LIST, utility_process_rect(p), TIKU_DIALOG_INPUT, p->metrics.nprocess > 0);
         tiku_dialog_add(&p->dialog, U_PAUSE, utility_rect(p, 436, 42, 136, 30), TIKU_DIALOG_BUTTON, 1);
+        tiku_dialog_add(&p->dialog, U_RECLAIM_CANCEL, utility_rect(p, 544, 360, 136, 28), TIKU_DIALOG_BUTTON,
+            !p->busy && !p->paused && p->metrics.reclaim.available && p->metrics.reclaim.can_cancel);
+        tiku_dialog_add(&p->dialog, U_RECLAIM_RETRY, utility_rect(p, 692, 360, 136, 28), TIKU_DIALOG_BUTTON,
+            !p->busy && !p->paused && p->metrics.reclaim.available && p->metrics.reclaim.can_retry);
     } else {
         tiku_dialog_add(&p->dialog, U_COPY, utility_rect(p, 436, 42, 136, 30), TIKU_DIALOG_BUTTON, !p->busy && p->value[0]);
         tiku_dialog_add(&p->dialog, U_UP, utility_rect(p, 16, 86, 64, 30), TIKU_DIALOG_BUTTON, !p->busy && strcmp(p->path, "/"));
@@ -54,7 +69,7 @@ static void utility_line(struct device_utility *p, tiku_surface_t *s,
 /** Keep units and partial memory accounting explicit beside live graphs. */
 static void utility_monitor_draw(struct device_utility *p, tiku_surface_t *s)
 {
-    const char *labels[] = {"Uptime", "CPU clock", "Process RAM", "Stack headroom", "Processes", "Store used"};
+    const char *labels[] = {"Uptime", "CPU clock", "Process RAM", "Stack free", "Processes", "Store used"};
     double values[] = {p->metrics.uptime, p->metrics.hz / 1000000,
         p->metrics.ram / 1024, p->metrics.stack / 1024,
         p->metrics.processes, p->metrics.store_used / 1024};
@@ -86,10 +101,18 @@ static void utility_monitor_draw(struct device_utility *p, tiku_surface_t *s)
             (p->metrics.store_size - p->metrics.store_used) / 1024);
     else snprintf(capacity, sizeof capacity, "%s | Store occupancy: unavailable.", ram);
     utility_line(p, s, 16, 312, 824, capacity);
-    utility_line(p, s, 16, 340, 824, "PID / process | state | SRAM bytes | queued events (up to 8 processes)");
-    for (int i = 0; i < p->metrics.nprocess; i++)
-        utility_line(p, s, 24, 368 + i * 23, 808, p->metrics.process[i]);
-    if (!p->metrics.nprocess) utility_line(p, s, 24, 368, 808, "Process details unavailable.");
+    utility_reclaim_t *r = &p->metrics.reclaim;
+    tiku_ui_group(s, utility_rect(p, 16, 340, 824, 98), "Memory reconstruction");
+    utility_line(p, s, 28, 362, 504, r->title[0] ? r->title : "Waiting for device status");
+    utility_line(p, s, 28, 389, 800, p->reclaim_confirm ?
+        "Review this device and job. Click Confirm to send; Refresh clears the confirmation." :
+        r->detail[0] ? r->detail : "Requires firmware built with memory reconstruction enabled.");
+    utility_line(p, s, 28, 414, 800, r->basic);
+    utility_line(p, s, 16, 444, 824, "PID / process | state | SRAM | events (up to 8; scroll or use arrow keys)");
+    tiku_fill(s, utility_process_rect(p), TIKU_C_DOC);
+    tiku_list_draw(&p->list, s, utility_process_rect(p), utility_process_name, p);
+    tiku_frame(s, utility_process_rect(p), tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    if (!p->metrics.nprocess) utility_line(p, s, 24, 474, 808, "Process details unavailable.");
 }
 
 /** Registry-style hierarchy, value table and a separate change editor. */
@@ -151,12 +174,16 @@ static void utility_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c, voi
             tiku_field_input_t *in = d->id == U_PATH ? &p->address_input : &p->edit_input;
             tiku_ui_textfield_scroll(s, d->rect, f->text, f->caret,
                                     f->sel_a, f->sel_b, flags, in->scroll);
-        } else if (d->id <= U_CLOSE) tiku_ui_button(s, d->rect, labels[d->id], flags);
+        } else if (d->id == U_RECLAIM_CANCEL || d->id == U_RECLAIM_RETRY)
+            tiku_ui_button(s, d->rect, d->id == U_RECLAIM_CANCEL ?
+                (p->reclaim_confirm == 2 ? "Confirm cancel" : "Cancel request") :
+                (p->reclaim_confirm == 3 ? "Confirm retry" : "Retry recovery"), flags);
+        else if (d->id <= U_CLOSE) tiku_ui_button(s, d->rect, labels[d->id], flags);
     }
     utility_line(p, s, 16, 555, 824, p->status);
     utility_line(p, s, 16, 582, 824, p->mode ?
         "No port scanning, shell commands or automatic writes. Escape closes this window." :
-        "5s refresh after each sample. Process RAM excludes kernel/stack; Store includes metadata and slot slack.");
+        "Telemetry: 5s. Active recovery: 1s. Store usage includes metadata and allocation slack.");
 }
 
 /** Changing target is explicit and drops every old measurement and pending edit. */
@@ -178,6 +205,7 @@ static void utility_target(struct device_utility *p, int use_default)
         strcpy(p->path, "/"); tiku_field_start(&p->address, p->path);
     }
     memset(&p->metrics, 0, sizeof p->metrics);
+    p->reclaim_confirm = 0;
     for (int i = 0; i < 2; i++) tiku_history_init(&p->history[i], p->samples[i], U_HISTORY);
     p->armed = 0; p->writable = 0; p->count = 0; p->value[0] = 0;
     tiku_field_start(&p->edit, ""); utility_request(p, 0);
@@ -199,8 +227,20 @@ static void utility_navigate(struct device_utility *p, int up)
 static void utility_action(struct device_utility *p, int command)
 {
     if (command == U_CLOSE) { device_utility_close(p->app, p->window); return; }
-    if (command == U_PAUSE) { p->paused = !p->paused; return; }
+    if (command == U_PAUSE) { p->paused = !p->paused; p->reclaim_confirm = 0; return; }
     if (p->busy) return;
+    if (!p->mode && (command == U_RECLAIM_CANCEL || command == U_RECLAIM_RETRY)) {
+        utility_reclaim_t *r = &p->metrics.reclaim;
+        int action = command == U_RECLAIM_RETRY ? 3 : 2;
+        if (p->paused || !r->available || !(action == 3 ? r->can_retry : r->can_cancel)) return;
+        if (p->reclaim_confirm == action && !strcmp(p->reclaim_confirm_token, r->token)) {
+            utility_request(p, action); p->reclaim_confirm = 0;
+        } else {
+            p->reclaim_confirm = action;
+            snprintf(p->reclaim_confirm_token, sizeof p->reclaim_confirm_token, "%s", r->token);
+        }
+        return;
+    }
     if (command == U_COPY) {
         int copied = tiku_clipboard_import(p->value, strlen(p->value));
         snprintf(p->status, sizeof p->status, "%s", copied ?
@@ -210,6 +250,7 @@ static void utility_action(struct device_utility *p, int command)
     if (command == U_DEFAULT || command == U_NEXT) utility_target(p, command == U_DEFAULT);
     else if (command == U_REFRESH) {
         p->armed = 0;
+        p->reclaim_confirm = 0;
         if (!p->mode) p->paused = 0;
         else {
             utility_tree_reset(p);
@@ -236,6 +277,17 @@ static int utility_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     if (r.activated != TIKU_DIALOG_NONE) utility_action(p, r.activated);
     int steered = r.taken && ev->type == TIKU_EVENT_KEY_DOWN &&
                   ev->key != TIKU_KEY_RETURN;
+    if (!p->mode) {
+        tiku_rect_t body = utility_process_rect(p);
+        if (ev->type == TIKU_EVENT_WHEEL && registry_holds(body, ev->x, ev->y))
+            tiku_list_scroll_to(&p->list, p->list.top + ev->dy, body);
+        if (ev->type == TIKU_EVENT_POINTER_DOWN) {
+            int row = tiku_list_at(&p->list, body, ev->x, ev->y);
+            if (row >= 0) tiku_list_select_only(&p->list, row);
+        }
+        if (ev->type == TIKU_EVENT_KEY_DOWN && p->dialog.focus == U_LIST && !steered)
+            tiku_list_key(&p->list, ev->key, ev->modifiers, body);
+    }
     if (!p->busy && p->mode) {
         if (!r.taken || ev->type == TIKU_EVENT_POINTER_DOWN ||
             ev->type == TIKU_EVENT_WHEEL ||

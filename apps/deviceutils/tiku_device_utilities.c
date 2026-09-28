@@ -53,7 +53,7 @@ void device_utility_close(utility_app_t *app, tiku_window_t *w);
 
 enum { U_REFRESH = 1, U_DEFAULT, U_NEXT, U_PAUSE, U_UP, U_OPEN,
        U_REVIEW, U_SAVE, U_CANCEL, U_COPY, U_CLOSE, U_PATH, U_VALUE,
-       U_LIST, U_TREE };
+       U_LIST, U_TREE, U_RECLAIM_CANCEL, U_RECLAIM_RETRY };
 enum { U_MONITOR, U_INSPECTOR };
 #define U_ROWS 128
 #define U_TREE_HEIGHT 364
@@ -77,10 +77,15 @@ typedef struct {
     int parent, expanded, loaded;
 } utility_branch_t;
 typedef struct {
+    int available, active, fault, can_cancel, can_retry;
+    char token[32], title[96], detail[192], basic[128];
+} utility_reclaim_t;
+typedef struct {
     double uptime, hz, ram, stack, processes, store_size, store_used, sram;
     unsigned valid;
     char process[8][192];
     int nprocess;
+    utility_reclaim_t reclaim;
 } utility_metrics_t;
 struct device_utility {
     utility_app_t *app;
@@ -106,6 +111,8 @@ struct device_utility {
     utility_job_t *job;
     utility_snapshot_t *cache;
     int preload;
+    int reclaim_confirm;
+    char reclaim_confirm_token[32];
 };
 struct utility_job {
     struct device_utility *owner;
@@ -117,11 +124,12 @@ struct utility_job {
     utility_metrics_t metrics;
     atomic_int cancelled;
     int posted;
-    int preload, limited, reads;
+    int preload, limited, reads, reclaim_only;
     utility_snapshot_t *cache;
 };
 static void utility_request(struct device_utility *p, int write);
 #include "tiku_device_utilities_model.inl"
+#include "tiku_device_utilities_reclaim.inl"
 #include "tiku_device_utilities_cache.inl"
 #include "tiku_device_utilities_tree.inl"
 #include "tiku_device_utilities_io.inl"

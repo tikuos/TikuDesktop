@@ -322,15 +322,17 @@ static void real_catalogue_test(void)
     } else if (!strcmp(st->suites[i].key, "memory-host")) {
         memory++;
         assert(st->suites[i].host_only && !st->suites[i].large);
-        int layout = 0, lending = 0, spans = 0, requests = 0;
+        int layout = 0, reclaim = 0, restart = 0, spans = 0, requests = 0, basic = 0;
         for (int j = st->suites[i].first;
              j < st->suites[i].first + st->suites[i].count; j++) {
             layout += !strcmp(st->leaves[j].id, "layout");
-            lending += !strcmp(st->leaves[j].id, "lending");
+            reclaim += !strcmp(st->leaves[j].id, "reclaim");
+            restart += !strcmp(st->leaves[j].id, "restart");
+            basic += !strcmp(st->leaves[j].id, "basic-reclaim");
             spans += !strcmp(st->leaves[j].id, "spans");
             requests += !strcmp(st->leaves[j].id, "requests");
         }
-        assert(layout == 1 && lending == 1 && spans == 1 && requests == 1);
+        assert(layout == 1 && reclaim == 1 && restart == 1 && spans == 1 && requests == 1 && basic == 1);
     }
     assert(recovery == 1 && memory == 1);
     tiku_bench_entries_build(st);

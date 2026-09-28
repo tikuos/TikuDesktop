@@ -4,6 +4,9 @@
 
 static char name[64] = "alpha";
 static int writes, readonly, failure, mismatch, fixed;
+static const char *reclaim_report, *reclaim_previous = "none";
+static int reclaim_write_failure;
+static char written_path[96], written_token[32];
 static int stat_mock(tiku_backend_t *b, const char *path, tiku_model_t *m)
 {
     (void)b; memset(m, 0, sizeof *m);
@@ -15,6 +18,13 @@ static int read_mock(tiku_backend_t *b, const char *path, void *out, size_t n)
 {
     (void)b; if (failure) return -1;
     const char *s = "42";
+    if (!strncmp(path, "/sys/mem/reclaim/", 17)) {
+        if (!reclaim_report) return -1;
+        s = !strcmp(path, "/sys/mem/reclaim/job") ? reclaim_report :
+            !strcmp(path, "/sys/mem/reclaim/last") ? reclaim_previous :
+            !strcmp(path, "/sys/mem/reclaim/mode") ? "reactive" :
+            "1:4 BASIC gated prepare=3840 recovery=3840 type=callback restarts=0 detail=saving_source";
+    }
     if (!strcmp(path, "/sys/device/name")) s = name;
     if (!strcmp(path, "/sys/cpu/freq_change_mode")) s = fixed ? "fixed" : "live";
     if (!strcmp(path, "/sys/cpu/freq_available")) s = "64000000 128000000";
@@ -25,6 +35,11 @@ static int read_mock(tiku_backend_t *b, const char *path, void *out, size_t n)
 static int write_mock(tiku_backend_t *b, const char *path, const void *in, size_t n, char *err, size_t cap)
 {
     (void)b; (void)err; (void)cap; writes++;
+    if (!strncmp(path, "/sys/mem/reclaim/", 17)) {
+        snprintf(written_path, sizeof written_path, "%s", path);
+        snprintf(written_token, sizeof written_token, "%.*s", (int)n, (const char *)in);
+        return reclaim_write_failure ? -1 : 0;
+    }
     if (!mismatch && !strcmp(path, "/sys/device/name")) snprintf(name, sizeof name, "%.*s", (int)n, (const char *)in);
     return 0;
 }
@@ -54,6 +69,54 @@ static utility_job_t *job(tiku_backend_t *b, const char *path, int write)
     snprintf(j->path, sizeof j->path, "%s", path);
     snprintf(j->before, sizeof j->before, "alpha");
     snprintf(j->input, sizeof j->input, "beta"); return j;
+}
+
+static void reconstruction(tiku_backend_t *b)
+{
+    utility_reclaim_t r;
+    const char *phases[] = {"plan", "prepare", "commit", "restore", "abort"};
+    for (unsigned i = 0; i < sizeof phases / sizeof phases[0]; i++) {
+        char row[192];
+        snprintf(row, sizeof row, "1:42 ticket=2:9 state=pending phase=%s cause=ok owners=0x3 done=0x1 steps=7", phases[i]);
+        assert(utility_reclaim_parse(row, &r, 0) && r.active && !r.fault);
+        assert(r.can_cancel == (strcmp(phases[i], "abort") != 0));
+    }
+    assert(!utility_reclaim_parse("1:4294967296 state=pending phase=prepare cause=ok", &r, 0));
+    assert(!utility_reclaim_parse("1:0 state=pending phase=prepare cause=ok", &r, 0));
+    assert(!utility_reclaim_parse("1:42 state=pending phase=unknown cause=ok", &r, 0));
+    assert(!utility_reclaim_parse("1:42 state=ready phase=prepare cause=ok", &r, 0));
+    assert(utility_reclaim_parse("1:42 state=fault phase=restore cause=detached", &r, 0) && !r.can_retry);
+    assert(utility_reclaim_parse("1:42 state=failed cause=refused steps=9", &r, 1));
+    assert(!r.active && !r.can_cancel && !r.can_retry && strstr(r.title, "Declined"));
+    utility_reclaim_basic("1:1 BASIC available detail=array_budget\n", &r);
+    assert(strstr(r.basic, "checkpoint capacity"));
+
+    reclaim_report = "1:42 ticket=2:9 state=pending phase=prepare cause=ok owners=0x3 done=0x1 steps=7";
+    utility_job_t *j = job(b, "/sys", 0); j->mode = 0;
+    utility_run(j); assert(j->metrics.reclaim.can_cancel && strstr(j->metrics.reclaim.basic, "saving current source")); free(j);
+    int before = writes;
+    j = job(b, "/sys", 2); j->mode = 0; j->reclaim_only = 1;
+    strcpy(j->input, "1:41"); utility_run(j);
+    assert(writes == before && strstr(j->status, "job changed"));
+    strcpy(j->input, "1:42"); readonly = 1; utility_run(j);
+    assert(writes == before && strstr(j->status, "does not allow")); readonly = 0;
+    utility_run(j);
+    assert(writes == ++before && !strcmp(written_path, "/sys/mem/reclaim/cancel") && !strcmp(written_token, "1:42"));
+    assert(strstr(j->status, "Cancellation accepted"));
+    atomic_store(&j->cancelled, 1); utility_run(j); assert(writes == before); free(j);
+    reclaim_report = "1:42 ticket=2:9 state=fault phase=restore cause=owner_fault owners=0x3 done=0x1 steps=12";
+    j = job(b, "/sys", 3); j->mode = 0; j->reclaim_only = 1;
+    strcpy(j->input, "1:42"); utility_run(j);
+    assert(writes == ++before && !strcmp(written_path, "/sys/mem/reclaim/retry"));
+    reclaim_write_failure = 1; utility_run(j);
+    assert(writes == ++before && strstr(j->status, "not confirmed")); reclaim_write_failure = 0; free(j);
+    reclaim_report = "idle"; reclaim_previous = "1:42 state=ready cause=ok steps=15";
+    j = job(b, "/sys", 0); j->mode = 0;
+    utility_run(j); assert(strstr(j->metrics.reclaim.title, "Finished") && !j->metrics.reclaim.can_retry); free(j);
+    reclaim_report = NULL;
+    j = job(b, "/sys", 0); j->mode = 0;
+    utility_run(j); assert(!j->metrics.reclaim.available && !j->metrics.reclaim.can_cancel); free(j);
+    puts("PASS: reconstruction phases, BASIC reasons, stale jobs, permissions, cancel, retry and older firmware");
 }
 int main(void)
 {
@@ -94,6 +157,27 @@ int main(void)
     app->utility[0]->metrics = snapshot;
     snprintf(app->utility[0]->target, 64, "fake-board");
     tiku_workspace_draw(app->desk); assert(!tiku_surface_png(s, "/tmp/tiku-monitor.png"));
+    assert(utility_reclaim_parse("1:42 state=fault phase=restore cause=owner_fault", &app->utility[0]->metrics.reclaim, 0));
+    utility_reclaim_basic("1:1 BASIC gated detail=restore_failed", &app->utility[0]->metrics.reclaim);
+    utility_action(app->utility[0], U_RECLAIM_RETRY);
+    assert(app->utility[0]->reclaim_confirm == 3 && writes == 2);
+    tiku_workspace_draw(app->desk); assert(!tiku_surface_png(s, "/tmp/tiku-monitor-recovery.png"));
+    tiku_font_set_size(16); tiku_workspace_draw(app->desk);
+    assert(!tiku_surface_png(s, "/tmp/tiku-monitor-recovery-large.png"));
+    tiku_font_set_size(12);
+    {
+        struct device_utility *m = app->utility[0];
+        m->metrics.nprocess = 8; utility_controls(m);
+        tiku_rect_t body = utility_process_rect(m);
+        tiku_event_t wheel = {.type = TIKU_EVENT_WHEEL, .x = body.x + 8, .y = body.y + 8, .dy = 8};
+        utility_event(m->window, &wheel, m);
+        assert(m->list.top > 0 && m->list.count == 8);
+        tiku_event_t home = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_HOME};
+        m->dialog.focus = U_LIST;
+        utility_event(m->window, &home, m); assert(m->list.top == 0);
+    }
+    app->utility[0]->reclaim_confirm = 0;
+    app->utility[0]->metrics = snapshot;
     device_utility_open(app, 1); assert(app->utility[1]);
     struct device_utility *p = app->utility[1]; p->writable = 1;
     strcpy(p->path, "/sys/device/name"); strcpy(p->value, "alpha");
@@ -160,6 +244,7 @@ int main(void)
     while (utility_jobs) { (void)tiku_work_collect(); usleep(10000); }
     if (--monitor->refs == 0) free(monitor);
     tiku_workspace_free(app->desk); tiku_surface_free(s); free(app);
+    reconstruction(&b);
     puts("PASS: telemetry, missing data, VFS paths, permissions, edit confirmation, readback, cancellation and close lifetime");
     return 0;
 }

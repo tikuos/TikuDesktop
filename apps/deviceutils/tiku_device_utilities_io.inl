@@ -119,6 +119,61 @@ static void utility_processes(utility_job_t *j)
 }
 
 /** Do not infer CPU utilization or whole-bank RAM usage from unrelated counters. */
+static void utility_reclaim_sample(utility_job_t *j)
+{
+    utility_reclaim_t *r = &j->metrics.reclaim;
+    char text[2048], mode[24];
+    if (!utility_read(j, "/sys/mem/reclaim/job", text, sizeof text) ||
+        !utility_reclaim_parse(text, r, 0)) {
+        memset(r, 0, sizeof *r);
+        strcpy(r->title, "Unavailable");
+        strcpy(r->detail, "This firmware does not report reconstruction, or the device is unreachable.");
+        return;
+    }
+    if (!r->active) {
+        utility_reclaim_t previous;
+        if (utility_read(j, "/sys/mem/reclaim/last", text, sizeof text) &&
+            utility_reclaim_parse(text, &previous, 1)) *r = previous;
+        if (utility_read(j, "/sys/mem/reclaim/mode", mode, sizeof mode) && !strcmp(mode, "off")) {
+            strcpy(r->title, "Disabled");
+            strcpy(r->detail, "Automatic reconstruction is disabled on this device.");
+        }
+    }
+    if (utility_read(j, "/sys/mem/reclaim/owners", text, sizeof text))
+        utility_reclaim_basic(text, r);
+    if (r->can_cancel || r->can_retry) {
+        tiku_model_t m;
+        const char *path = r->can_retry ? "/sys/mem/reclaim/retry" : "/sys/mem/reclaim/cancel";
+        if (!j->backend->ops->stat || j->backend->ops->stat(j->backend, path, &m) != 0 ||
+            !tiku_model_is_writable(&m)) r->can_cancel = r->can_retry = 0;
+    }
+}
+
+/* A confirmation refers to one generation on the captured target. Read again,
+ * check permissions, send once. Transport uncertainty never triggers a retry. */
+static void utility_reclaim_command(utility_job_t *j)
+{
+    utility_reclaim_t current; tiku_model_t m;
+    char text[512], error[128] = "";
+    const char *path = j->write == 3 ? "/sys/mem/reclaim/retry" : "/sys/mem/reclaim/cancel";
+    if (!utility_read(j, "/sys/mem/reclaim/job", text, sizeof text) ||
+        !utility_reclaim_parse(text, &current, 0) || !current.active ||
+        strcmp(current.token, j->input) ||
+        !(j->write == 3 ? current.can_retry : current.can_cancel)) {
+        snprintf(j->status, sizeof j->status, "Not sent: the reconstruction job changed. Refresh and review again."); return;
+    }
+    if (!j->backend->ops->stat || !j->backend->ops->write ||
+        j->backend->ops->stat(j->backend, path, &m) != 0 || !tiku_model_is_writable(&m)) {
+        snprintf(j->status, sizeof j->status, "Not sent: this device does not allow the selected control."); return;
+    }
+    if (utility_cancelled(j)) return;
+    int rc = j->backend->ops->write(j->backend, path, current.token, strlen(current.token), error, sizeof error);
+    snprintf(j->status, sizeof j->status, "%s", rc ?
+        "Command not confirmed. Refresh before trying again; it may have reached the device." :
+        j->write == 3 ? "Recovery retry accepted. Watching device status." :
+        "Cancellation accepted. Any required owner recovery will finish first.");
+}
+
 static void utility_monitor(utility_job_t *j)
 {
     const char *paths[] = {"/sys/uptime", "/sys/cpu/freq", "/sys/mem/used",
@@ -134,6 +189,7 @@ static void utility_monitor(utility_job_t *j)
     if (utility_read(j, "/sys/mem/sram", text, sizeof text) &&
         utility_number(text, &j->metrics.sram)) j->metrics.valid |= 64;
     utility_processes(j);
+    utility_reclaim_sample(j);
     j->ok = j->metrics.valid != 0;
     snprintf(j->status, sizeof j->status, "%s", j->ok ?
         "Sampled from device. Missing readings are unavailable, never zero-filled." :
@@ -220,7 +276,14 @@ static void utility_run(void *ctx)
 {
     utility_job_t *j = ctx; tiku_model_t m;
     if (utility_cancelled(j)) return;
-    if (!j->mode) { utility_monitor(j); return; }
+    if (!j->mode) {
+        if (j->reclaim_only) {
+            snprintf(j->status, sizeof j->status, "Reconstruction status updated; memory readings keep their original sample time.");
+            if (j->write == 2 || j->write == 3) utility_reclaim_command(j);
+            utility_reclaim_sample(j);
+        } else utility_monitor(j);
+        return;
+    }
     if (j->preload) { utility_preload(j); return; }
     snprintf(j->status, sizeof j->status, "Path unavailable or device disconnected.");
     if (!utility_path(j->path) || !j->backend->ops->stat ||
@@ -251,19 +314,27 @@ static void utility_done(void *ctx)
     if (utility_cancelled(j)) return;
     j->completed = 1;
     if (!p->app) return;
-    if (!p->mode && p->paused) {
+    if (!p->mode && p->paused && j->write < 2) {
         snprintf(p->status, sizeof p->status,
             "Paused snapshot. Resume to acquire a new sample.");
         p->app->dirty = 1; return;
     }
-    p->sampled = utility_now(); p->next = p->sampled + 5000000;
+    int64_t now = utility_now();
+    if (!j->reclaim_only) p->sampled = now;
+    p->next = now + (!p->mode && j->metrics.reclaim.active ? 1000000 : 5000000);
     snprintf(p->status, sizeof p->status, "%s", j->status);
     if (!p->mode) {
-        p->metrics = j->metrics;
+        if (j->reclaim_only) p->metrics.reclaim = j->metrics.reclaim;
+        else p->metrics = j->metrics;
+        if (strcmp(p->reclaim_confirm_token, p->metrics.reclaim.token) ||
+            !(p->reclaim_confirm == 3 ? p->metrics.reclaim.can_retry : p->metrics.reclaim.can_cancel))
+            p->reclaim_confirm = 0;
+        if (!j->reclaim_only) {
         tiku_history_push(&p->history[0], p->sampled, p->metrics.ram / 1024,
                           (p->metrics.valid & 4) != 0);
         tiku_history_push(&p->history[1], p->sampled, p->metrics.store_used / 1024,
                           (p->metrics.valid & 32) != 0);
+        }
     } else {
         if (j->preload) { utility_preload_result(p, j); p->app->dirty = 1; return; }
         /* A write that never reached the device read nothing back, and
@@ -328,10 +399,13 @@ static void utility_request(struct device_utility *p, int write)
     if (!j) return;
     atomic_init(&j->cancelled, 0);
     j->owner = p; j->backend = b; j->mode = p->mode; j->write = write;
+    j->reclaim_only = !p->mode && (write >= 2 ||
+        (p->metrics.reclaim.active && utility_now() - p->sampled < 5000000));
     j->preload = !write && p->mode && p->preload;
     j->collapse = p->collapse; p->collapse = 0;
     snprintf(j->path, sizeof j->path, "%s", p->path);
-    snprintf(j->input, sizeof j->input, "%.255s", p->edit.text);
+    snprintf(j->input, sizeof j->input, "%.255s", !p->mode && write >= 2 ?
+             p->reclaim_confirm_token : p->edit.text);
     snprintf(j->before, sizeof j->before, "%s", p->value);
     tiku_work_job_t work = {.run = utility_run, .done = utility_done,
                            .free = utility_free, .ctx = j};
