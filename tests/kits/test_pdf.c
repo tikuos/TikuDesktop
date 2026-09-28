@@ -13,10 +13,9 @@
  * slips of careless writers, which once broke the reader; a fax image
  * as libtiff encodes one; layers on and off; annotations and form
  * fields that store no appearance, drawn as a viewer draws them; mesh
- * shadings.  Then,
- * when TIKU_PDF_CORPUS names a folder, every PDF in it is opened and
- * its first page's text shown, which is how the vendor documents are
- * tried without being checked in.
+ * shadings; knockout groups.  Then, when TIKU_PDF_CORPUS names a
+ * folder, every PDF in it is opened and its first page's text shown,
+ * which is how the vendor documents are tried without being checked in.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -626,6 +625,98 @@ transp_test(void)
           "a widget shows the appearance of the state its AS names");
     check(pixel(&pm, 40, 240) == 0xffffffu && pixel(&pm, 100, 240) == 0xffffffu,
           "hidden annotations and popups are not drawn");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
+/**
+ * @brief Knockout groups (ISO 32000 11.4.8) on a 300-point page, each a
+ *        red and a blue square at half their alpha overlapping: a group
+ *        knocking out, one isolated too, one over green, one that does
+ *        not, one holding a group of its own, and one of opaque squares.
+ */
+static pdfw_t
+knockout_file(void)
+{
+    static const struct { int num; const char *group, *body; } forms[6] = {
+        {10, "/K true", "/Half gs 1 0 0 rg 0 250 40 40 re f "
+                        "0 0 1 rg 20 250 40 40 re f"},
+        {11, "/K true /I true", "/Half gs 1 0 0 rg 100 250 40 40 re f "
+                                "0 0 1 rg 120 250 40 40 re f"},
+        {12, "/K true", "/Half gs 1 0 0 rg 200 250 40 40 re f "
+                        "0 0 1 rg 220 250 40 40 re f"},
+        {13, "", "/Half gs 1 0 0 rg 0 190 40 40 re f "
+                 "0 0 1 rg 20 190 40 40 re f"},
+        {14, "/K true", "/In Do /Half gs 0 1 0 rg 135 190 40 40 re f"},
+        {16, "/K true", "1 0 0 rg 200 190 40 40 re f "
+                        "0 0 1 rg 220 190 40 40 re f"},
+    };
+    const char *content = "/K1 Do /K2 Do 0 1 0 rg 200 250 60 40 re f /K3 Do "
+                          "/P1 Do /N1 Do /O1 Do";
+    const char *inner = "/Half gs 1 0 0 rg 100 190 40 40 re f "
+                        "0 0 1 rg 120 190 40 40 re f";
+    const char *form = "/Type /XObject /Subtype /Form /BBox [0 0 300 300] "
+                       "/Resources << /ExtGState << /Half << /ca 0.5 >> >> "
+                       "/XObject << /In 15 0 R >> >> /Group << /S "
+                       "/Transparency";
+    pdfw_t b = {0};
+    char dict[320];
+    int i;
+
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] "
+               "/Resources << /XObject << /K1 10 0 R /K2 11 0 R /K3 12 0 R "
+               "/P1 13 0 R /N1 14 0 R /O1 16 0 R >> >> /Contents 4 0 R >>");
+    stream(&b, 4, "", content, (long)strlen(content));
+    for (i = 0; i < 6; i++) {
+        snprintf(dict, sizeof dict, "%s %s >>", form, forms[i].group);
+        stream(&b, forms[i].num, dict, forms[i].body,
+               (long)strlen(forms[i].body));
+    }
+    snprintf(dict, sizeof dict, "%s >>", form);
+    stream(&b, 15, dict, inner, (long)strlen(inner));
+    xref(&b, 1, 0);
+    return b;
+}
+
+static void
+knockout_test(void)
+{
+    pdfw_t b = knockout_file();
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc = open_bytes(&b, &err);
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, &pm) == 0 &&
+          pm.w == 300, "a page of knockout groups renders");
+    if (pm.px == NULL) {
+        tiku_pdf_close(doc);
+        free(b.p);
+        return;
+    }
+    check(near(pixel(&pm, 10, 30), 255, 127, 127, 3) &&
+          near(pixel(&pm, 30, 30), 127, 127, 255, 3) &&
+          near(pixel(&pm, 50, 30), 127, 127, 255, 3),
+          "in a knockout group the blue at half hides the red it covers: "
+          "blue at half on the paper");
+    check(near(pixel(&pm, 110, 30), 255, 127, 127, 3) &&
+          near(pixel(&pm, 130, 30), 127, 127, 255, 3),
+          "and in an isolated one alike");
+    check(near(pixel(&pm, 210, 30), 127, 127, 0, 3) &&
+          near(pixel(&pm, 230, 30), 0, 127, 127, 3),
+          "one over green lays the blue at half on the green alone");
+    check(near(pixel(&pm, 30, 90), 127, 63, 191, 3),
+          "a group that does not knock out shows the two together");
+    check(near(pixel(&pm, 110, 90), 255, 127, 127, 3) &&
+          near(pixel(&pm, 128, 90), 127, 63, 191, 3) &&
+          near(pixel(&pm, 150, 90), 127, 255, 127, 3),
+          "a group in a knockout group is one thing: its parts show "
+          "together, and the green after hides the lot");
+    check(pixel(&pm, 210, 90) == 0xff0000u && pixel(&pm, 230, 90) == 0x0000ffu,
+          "opaque paints come out of a knockout group exactly");
     tiku_pdf_pixmap_free(&pm);
     tiku_pdf_close(doc);
     free(b.p);
@@ -1507,6 +1598,7 @@ main(void)
     render_test();
     shade_test();
     transp_test();
+    knockout_test();
     nav_test();
     fax_test();
     oc_test();

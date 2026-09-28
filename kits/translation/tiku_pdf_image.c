@@ -598,7 +598,7 @@ image_pixel(pdf_pix_t *pix, const pdf_img_t *src, const pdf_mat_t *inv,
             const pdf_mask_t *clip, uint32_t fill, int ca, int x, int y)
 {
     double u, v;
-    int sx, sy, a = ca;
+    int sx, sy, a = ca, shape = 255;
     size_t i;
 
     pdf_mat_apply(inv, x + 0.5, y + 0.5, &u, &v);
@@ -619,14 +619,15 @@ image_pixel(pdf_pix_t *pix, const pdf_img_t *src, const pdf_mat_t *inv,
         if (kx < 0 || kx >= clip->w || ky < 0 || ky >= clip->h) {
             return;
         }
-        a = (a * clip->a[(size_t)ky * clip->w + kx] + 127) / 255;
+        shape = clip->a[(size_t)ky * clip->w + kx];
+        a = (a * shape + 127) / 255;
     }
     if (a > 0) {
         pdf_blend(pix, pix->px + (size_t)y * pix->w + x,
                   src->rgb != NULL ? 0xff000000u |
                   (uint32_t)src->rgb[i * 3] << 16 |
                   (uint32_t)src->rgb[i * 3 + 1] << 8 | src->rgb[i * 3 + 2]
-                  : fill, a);
+                  : fill, a, shape);
     }
 }
 

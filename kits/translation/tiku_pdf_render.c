@@ -103,6 +103,7 @@ typedef struct {
     pdf_obj_t  *res;                /* the running stream's resources    */
     pdf_mat_t   pbase;              /* its default space: patterns' base */
     int         nest, stencil;      /* in a cell; an uncoloured one      */
+    pdf_obj_t  *inside;             /* the group whose inside this draws */
     struct { pdf_obj_t *dict; pdf_shade_t *s; } shades[SHADES_KEEP];
     int         nshade;
     tile_t     *tiles[TILES_KEEP];
@@ -495,10 +496,21 @@ state_init(gs_t *g, pdf_mat_t ctm)
     g->nfv = g->nsv = 1;
 }
 
+/** @brief Whether form @p xo is a knockout group (11.4.8): each thing
+ *         in it laid on the group's backdrop, not on the things before. */
+static int
+knockout(rs_t *r, pdf_obj_t *xo)
+{
+    pdf_obj_t *k = pdf_get(r->doc, pdf_get(r->doc, xo, "Group"), "K");
+
+    return k != NULL && k->kind == PDF_BOOL && k->u.b;
+}
+
 /**
  * @brief Form @p xo drawn on its own over a ground of @p bg: in the state
  *        now in force, but for the alpha, blend mode and soft mask a
- *        group starts without (ISO 32000 11.6.6).
+ *        group starts without (ISO 32000 11.6.6); a knockout group's
+ *        things each laid on that ground.
  * @return the page's pixels drawn so, for the caller to free, or NULL.
  */
 static uint32_t *
@@ -524,6 +536,9 @@ offscreen(rs_t *r, pdf_obj_t *xo, uint32_t bg)
     sub->stencil = r->stencil;
     sub->ops = r->ops;
     sub->pbase = r->pbase;
+    sub->inside = xo;
+    sub->pix.knockout = knockout(r, xo);
+    sub->pix.ground = bg;
     form(sub, xo, r->res, 0);
     r->ops = sub->ops;
     return rs_finish(sub);
@@ -646,16 +661,18 @@ group_paint(rs_t *r, pdf_obj_t *xo)
     for (y = 0; y < r->pix.h; y++) {
         for (x = 0; x < r->pix.w; x++) {
             size_t i = (size_t)y * r->pix.w + x;
-            int k = a[i] * ca / 255;
+            int k = a[i] * ca / 255, shape = a[i];
 
             if (k > 0 && clip != NULL && clip->a != NULL) {
-                int cx = x - clip->x0, cy = y - clip->y0;
+                int cx = x - clip->x0, cy = y - clip->y0, c;
 
-                k = cx < 0 || cy < 0 || cx >= clip->w || cy >= clip->h ? 0
-                    : k * clip->a[(size_t)cy * clip->w + cx] / 255;
+                c = cx < 0 || cy < 0 || cx >= clip->w || cy >= clip->h ? 0
+                    : clip->a[(size_t)cy * clip->w + cx];
+                k = k * c / 255;
+                shape = shape * c / 255;
             }
             if (k > 0) {
-                pdf_blend(&r->pix, r->pix.px + i, rgb[i], k);
+                pdf_blend(&r->pix, r->pix.px + i, rgb[i], k, shape);
             }
         }
     }
@@ -925,6 +942,7 @@ paint_tiling(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to,
             double u = (to->d * px - to->c * py) / det - t->x0;
             double v = (to->a * py - to->b * px) / det - t->y0;
             int a = m->a[(size_t)(y - m->y0) * m->w + (x - m->x0)], i, j;
+            int shape;
 
             if (a == 0) continue;
             if (clip != NULL && clip->a != NULL) {
@@ -941,11 +959,12 @@ paint_tiling(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to,
             v *= t->sy;
             i = u > 0 ? (u < t->w ? (int)u : t->w - 1) : 0;    /* NaN: 0 */
             j = v > 0 ? (v < t->h ? (int)v : t->h - 1) : 0;
-            a = a * t->a[(size_t)j * t->w + i] / 255 * ca / 255;
+            shape = a * t->a[(size_t)j * t->w + i] / 255;
+            a = shape * ca / 255;
             if (a > 0) {
                 pdf_blend(&r->pix, r->pix.px + (size_t)y * r->pix.w + x,
                           t->coloured ? t->rgb[(size_t)j * t->w + i] : colour,
-                          a);
+                          a, shape);
             }
         }
     }
@@ -1349,11 +1368,12 @@ form(rs_t *r, pdf_obj_t *xo, pdf_obj_t *res, int depth)
     if (depth >= FORM_DEPTH) {
         return;
     }
-    if (!r->stencil && pdf_is_name(pdf_get(r->doc, pdf_get(r->doc, xo,
-                                                            "Group"), "S"),
-                                   "Transparency") &&
+    if (!r->stencil && xo != r->inside && r->nest < NEST_MAX &&
+        pdf_is_name(pdf_get(r->doc, pdf_get(r->doc, xo, "Group"), "S"),
+                    "Transparency") &&
         (top(r)->falpha < 0.999 || top(r)->smask != NULL ||
-         top(r)->bm != PDF_BM_NORMAL)) {
+         top(r)->bm != PDF_BM_NORMAL || knockout(r, xo) ||
+         r->pix.knockout)) {        /* in a knockout group: one thing */
         group_paint(r, xo);
         return;
     }

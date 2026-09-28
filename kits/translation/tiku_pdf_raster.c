@@ -689,7 +689,7 @@ pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
             continue;
         }
         for (x = 0; x < m->w; x++) {
-            int px = m->x0 + x, a = m->a[(size_t)y * m->w + x];
+            int px = m->x0 + x, a = m->a[(size_t)y * m->w + x], shape;
             uint32_t *d;
 
             if (px < 0 || px >= pix->w || a == 0) {
@@ -703,12 +703,14 @@ pdf_paint(pdf_pix_t *pix, const pdf_mask_t *m, const pdf_mask_t *clip,
                 }
                 a = (a * clip->a[(size_t)cy * clip->w + cx] + 127) / 255;
             }
+            shape = a;
             a = (a * ca + 127) / 255;
             if (a == 0) {
                 continue;
             }
             d = pix->px + (size_t)py * pix->w + px;
-            pdf_blend(pix, d, 0xff000000u | cr << 16 | cg << 8 | cb, a);
+            pdf_blend(pix, d, 0xff000000u | cr << 16 | cg << 8 | cb, a,
+                      shape);
         }
     }
 }
@@ -855,21 +857,35 @@ pdf_blend_mode(const char *name)
 }
 
 void
-pdf_blend(const pdf_pix_t *pix, uint32_t *d, uint32_t colour, int a)
+pdf_blend(const pdf_pix_t *pix, uint32_t *d, uint32_t colour, int a,
+          int shape)
 {
-    int b[3] = { (int)((*d >> 16) & 0xff), (int)((*d >> 8) & 0xff),
-                 (int)(*d & 0xff) };
+    uint32_t under = pix->knockout ? pix->ground : *d;
+    int b[3] = { (int)((under >> 16) & 0xff), (int)((under >> 8) & 0xff),
+                 (int)(under & 0xff) };
     int s[3] = { (int)((colour >> 16) & 0xff), (int)((colour >> 8) & 0xff),
                  (int)(colour & 0xff) };
-    unsigned ua = (unsigned)a, out[3];
+    unsigned ua = (unsigned)a, us = (unsigned)shape, out[3];
     int k;
 
+    if (pix->knockout) {            /* the opacity, apart from the shape */
+        if (shape <= 0) {
+            return;
+        }
+        ua = ((unsigned)a * 255u + us / 2) / us;
+        ua = ua > 255u ? 255u : ua;
+    }
     if (pix->blend != PDF_BM_NORMAL) {
         mix(pix->blend, b, s);
     }
     for (k = 0; k < 3; k++) {
         out[k] = ((unsigned)b[k] * (255u - ua) + (unsigned)s[k] * ua + 127) /
                  255;
+        if (pix->knockout) {        /* in place of what the group had */
+            unsigned was = (*d >> (16 - 8 * k)) & 0xffu;
+
+            out[k] = (was * (255u - us) + out[k] * us + 127) / 255;
+        }
     }
     *d = 0xff000000u | out[0] << 16 | out[1] << 8 | out[2];
 }

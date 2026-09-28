@@ -744,16 +744,17 @@ fill_tri(pdf_pix_t *pix, const pdf_shade_t *s, const float *t,
                                                                y[2])))));
     for (yi = b[1]; yi < b[3]; yi++) {
         for (xi = b[0]; xi < b[2]; xi++) {
-            int a = cover(m, xi, yi);
+            int a = cover(m, xi, yi), shape;
 
             if (a == 0 || !inside(x, y, area, xi + 0.5, yi + 0.5, w) ||
                 (clip != NULL && (a = a * cover(clip, xi, yi) / 255) == 0)) {
                 continue;
             }
+            shape = a;
             a = (a * ca + 127) / 255;
             if (a > 0) {
                 pdf_blend(pix, pix->px + (size_t)yi * pix->w + xi,
-                          blend_at(s, t, w), a);
+                          blend_at(s, t, w), a, shape);
             }
         }
     }
@@ -778,13 +779,14 @@ pdf_shade_paint(pdf_pix_t *pix, const pdf_shade_t *s, const pdf_mat_t *to,
 
         for (y = box[1]; background && s->has_bg && y < box[3]; y++) {
             for (x = box[0]; x < box[2]; x++) {
-                int a = cover(m, x, y);
+                int a = cover(m, x, y), shape;
 
                 a = clip != NULL ? a * cover(clip, x, y) / 255 : a;
+                shape = a;
                 a = (a * ca + 127) / 255;
                 if (a > 0) {        /* a pattern's ground, under the mesh */
                     pdf_blend(pix, pix->px + (size_t)y * pix->w + x, s->bg,
-                              a);
+                              a, shape);
                 }
             }
         }
@@ -799,11 +801,12 @@ pdf_shade_paint(pdf_pix_t *pix, const pdf_shade_t *s, const pdf_mat_t *to,
             double px = x + 0.5 - to->e, py = y + 0.5 - to->f;
             double u = (to->d * px - to->c * py) / det;
             double v = (to->a * py - to->b * px) / det;
-            int a = cover(m, x, y);
+            int a = cover(m, x, y), shape;
             uint32_t colour;
 
             if (a == 0 || (clip != NULL && (a = a * cover(clip, x, y) /
                                                 255) == 0)) continue;
+            shape = a;
             if (!shade_at(s, u, v, &colour)) {
                 /* A pattern's fill shows its Background, or for a mesh
                  * its tone, where the shading itself does not reach. */
@@ -812,7 +815,8 @@ pdf_shade_paint(pdf_pix_t *pix, const pdf_shade_t *s, const pdf_mat_t *to,
             }
             a = (a * ca + 127) / 255;
             if (a > 0 && (colour >> 24) != 0) {
-                pdf_blend(pix, pix->px + (size_t)y * pix->w + x, colour, a);
+                pdf_blend(pix, pix->px + (size_t)y * pix->w + x, colour, a,
+                          shape);
             }
         }
     }

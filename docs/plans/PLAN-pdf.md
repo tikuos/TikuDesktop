@@ -188,7 +188,13 @@ an output that grows.  Nothing else in the kits changes.
    as their references but for ICC colour, which the kit takes by
    component count as it does ICCBased.  A picture too big to hold is
    read without its finest resolutions, as OpenJPEG reduces one.  The
-   arithmetic decoder is JBIG2's, now shared (`tiku_mq`).
+   arithmetic decoder is JBIG2's, now shared (`tiku_mq`).  Knockout
+   groups: each thing in one laid on the group's backdrop and put in
+   place of what the group put down before it, as far as its shape
+   reaches, its opacity apart; a group inside is one thing.  Isolated
+   or not, they come out as the standard composes them, anti-aliased
+   edges too, where poppler knocks out only some; groups nested past
+   four deep are drawn as they are rather than dropped.
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand

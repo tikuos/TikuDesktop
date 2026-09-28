@@ -366,9 +366,16 @@ double pdf_mat_scale(const pdf_mat_t *m);
 int pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int x0, int y0,
                     pdf_mat_t *m, int *w, int *h);
 
-/** @brief A page's pixels, 0xAARRGGBB, and the blend mode paints use on
- *         them now; and a coverage mask over them. */
-typedef struct { int w, h; uint32_t *px; int blend; } pdf_pix_t;
+/** @brief A page's pixels, 0xAARRGGBB, how paints go onto them now; and
+ *         a coverage mask over them. */
+typedef struct {
+    int       w, h;                 /* the pixels across and down        */
+    uint32_t *px;                   /* w * h of them                     */
+    int       blend;                /* the blend mode paints use         */
+    int       knockout;             /* each paint on the ground instead,
+                                       in place of what was put before   */
+    uint32_t  ground;               /* a knockout group's backdrop       */
+} pdf_pix_t;
 typedef struct { int x0, y0, w, h; unsigned char *a; } pdf_mask_t;
 
 /**
@@ -432,9 +439,15 @@ enum { PDF_BM_NORMAL, PDF_BM_MULTIPLY, PDF_BM_SCREEN, PDF_BM_OVERLAY,
        PDF_BM_LUMINOSITY };
 /** @brief The mode named @p name; Normal for a name that is not one. */
 int pdf_blend_mode(const char *name);
-/** @brief @p colour laid over pixel @p d of @p pix with coverage @p a,
- *         0 to 255, through the pixmap's blend mode. */
-void pdf_blend(const pdf_pix_t *pix, uint32_t *d, uint32_t colour, int a);
+/**
+ * @brief @p colour laid over pixel @p d of @p pix with coverage @p a, 0
+ *        to 255, through the pixmap's blend mode.  In a knockout group
+ *        (ISO 32000 11.4.8) it is laid on the group's ground and put in
+ *        place of what was there as far as @p shape, the paint's coverage
+ *        before its opacity.
+ */
+void pdf_blend(const pdf_pix_t *pix, uint32_t *d, uint32_t colour, int a,
+               int shape);
 
 /* Shadings: tiku_pdf_shade.c                                                */
 
