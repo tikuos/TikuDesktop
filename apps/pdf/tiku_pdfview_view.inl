@@ -170,60 +170,104 @@ static void pv_back(tiku_pdfview_t *c)
 
 /* ------------------------------------------------------------- layout  */
 
-/** @brief A toolbar button's label. */
-static const char *pv_tool(int id)
+/** @brief A toolbar button's icon, from the desk's set. */
+static const char *pv_tool_icon(int id)
 {
     switch (id) {
+    case PV_OPEN: return "folder_open";
+    case PV_BACK: return "nav_back";
+    case PV_OUTLINE: return "doc_outline";
+    case PV_THUMBS: return "doc_pages";
+    case PV_SIGS: return "doc_signed";
+    case PV_PREV: return "page_up";
+    case PV_NEXT: return "page_down";
+    case PV_ZOOM_OUT: return "zoom_out";
+    case PV_ZOOM_IN: return "zoom_in";
+    case PV_FIT_WIDTH: return "fit_width";
+    case PV_FIT_PAGE: return "fit_page";
+    case PV_ROTATE_LEFT: return "rotate_left";
+    case PV_ROTATE_RIGHT: return "rotate_right";
+    case PV_FIND_PREV: return "find_prev";
+    case PV_FIND_NEXT: return "find_next";
+    }
+    return "file";
+}
+
+/** @brief What a toolbar button does, as its tip says it: its name, and
+ *         its shortcut when it has one. */
+static const char *pv_tool_tip(int id)
+{
+    switch (id) {
+    case PV_OPEN: return "Open (Ctrl+O)";
+    case PV_BACK: return "Back (Ctrl+[)";
     case PV_OUTLINE: return "Outline";
     case PV_THUMBS: return "Pages";
-    case PV_SIGS: return "Signed";
-    case PV_PREV: return "<";
-    case PV_NEXT: return ">";
-    case PV_ZOOM_OUT: return "-";
-    case PV_ZOOM_IN: return "+";
-    case PV_FIT_WIDTH: return "Width";
-    case PV_FIT_PAGE: return "Page";
-    case PV_FIND_PREV: return "<";
-    case PV_FIND_NEXT: return ">";
+    case PV_SIGS: return "Signatures";
+    case PV_PREV: return "Previous Page";
+    case PV_NEXT: return "Next Page";
+    case PV_ZOOM_OUT: return "Zoom Out (Ctrl+-)";
+    case PV_ZOOM_IN: return "Zoom In (Ctrl++)";
+    case PV_FIT_WIDTH: return "Fit Width";
+    case PV_FIT_PAGE: return "Fit Page";
+    case PV_ROTATE_LEFT: return "Rotate Left (Ctrl+L)";
+    case PV_ROTATE_RIGHT: return "Rotate Right (Ctrl+R)";
+    case PV_FIND_PREV: return "Find Previous (Shift+Ctrl+G)";
+    case PV_FIND_NEXT: return "Find Next (Ctrl+G)";
     }
     return "";
+}
+
+/** @brief A toolbar button's side: square, the Reader's size. */
+static int pv_tool_size(void)
+{
+    int bh = tiku_ui_button_h();
+
+    return bh > 30 ? bh : 30;
 }
 
 /** @brief The find field's width at @p x: 170, or what the row has left
  *         beside its two buttons when that is less but holds a word. */
 static int pv_find_w(tiku_rect_t r, int x)
 {
-    int room = r.x + r.w - 6 - x - 2 * (tiku_ui_button_w(">", 26) + 4);
+    int room = r.x + r.w - 6 - x - 2 * (pv_tool_size() + 2) - 4;
 
     return room < 170 && room >= 80 ? room : 170;
 }
 
-/** @brief The toolbar's controls, wrapped when narrow; @return the row
- *         below them. */
+/** @brief The toolbar: square icon buttons in groups -- the file, the
+ *         side column, the pages, the zoom, the turn, finding -- and the
+ *         two fields among them, wrapped when narrow.  @return the row
+ *         below it. */
 static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
 {
-    static const int ids[] = { PV_OUTLINE, PV_THUMBS, PV_SIGS, PV_PREV,
-        PV_PAGE_FIELD, PV_NEXT, PV_ZOOM_OUT, PV_ZOOM_IN, PV_FIT_WIDTH,
-        PV_FIT_PAGE, PV_FIND_FIELD, PV_FIND_PREV, PV_FIND_NEXT };
-    int bh = tiku_ui_button_h(), x = r.x + 6, y = r.y + 5;
+    static const int ids[] = { PV_OPEN, PV_BACK, PV_OUTLINE, PV_THUMBS,
+        PV_SIGS, PV_PREV, PV_PAGE_FIELD, PV_NEXT, PV_ZOOM_OUT, PV_ZOOM_IN,
+        PV_FIT_WIDTH, PV_FIT_PAGE, PV_ROTATE_LEFT, PV_ROTATE_RIGHT,
+        PV_FIND_FIELD, PV_FIND_PREV, PV_FIND_NEXT };
+    int bh = tiku_ui_button_h(), bw = pv_tool_size(), x = r.x + 6;
+    int y = r.y + 4;
     char of[32];
 
     snprintf(of, sizeof of, "of %d", c->npage);
     for (size_t i = 0; i < sizeof ids / sizeof ids[0]; i++) {
-        int id = ids[i], w = tiku_ui_button_w(pv_tool(id), 26), gap = 4;
+        int id = ids[i], w = bw, field = id == PV_PAGE_FIELD ||
+                                          id == PV_FIND_FIELD;
         if (id == PV_SIGS && !c->nsig) continue;    /* signed ones only */
-        if (id == PV_PAGE_FIELD) w = 46 + 6 + tiku_measure_width(
-                                     TIKU_MEASURE_PLAIN, of);
-        if (id == PV_ZOOM_OUT || id == PV_FIND_FIELD) x += 10;
+        if (id == PV_OUTLINE || id == PV_PREV || id == PV_ZOOM_OUT ||
+            id == PV_ROTATE_LEFT || id == PV_FIND_FIELD) x += 10;
+        if (id == PV_PAGE_FIELD)        /* "of N" beside it, once open */
+            w = c->npage ? 58 + tiku_measure_width(TIKU_MEASURE_PLAIN, of)
+                         : 48;
         if (id == PV_FIND_FIELD) w = pv_find_w(r, x);
-        if (x > r.x + 6 && x + w > r.x + r.w - 6) {
+        if (x > r.x + 16 && x + w > r.x + r.w - 6) {
             x = r.x + 6;
-            y += bh + 5;
+            y += bw + 4;
         }
-        tiku_rect_t box = {x, y, w, bh};
+        tiku_rect_t box = {x, field ? y + (bw - bh) / 2 : y, w,
+                           field ? bh : bw};
         if (id == PV_PAGE_FIELD) {
-            l->page = (tiku_rect_t){x, y, 46, bh};
-            l->of = (tiku_rect_t){x + 52, y, w - 52, bh};
+            l->page = (tiku_rect_t){x + 2, box.y, 46, bh};
+            l->of = (tiku_rect_t){x + 54, box.y, w > 52 ? w - 52 : 0, bh};
             (void)tiku_dialog_add(&c->dialog, id, l->page, TIKU_DIALOG_INPUT,
                                   c->doc != NULL);
         } else if (id == PV_FIND_FIELD) {
@@ -234,9 +278,9 @@ static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
             (void)tiku_dialog_add(&c->dialog, id, box, TIKU_DIALOG_BUTTON,
                                   pv_enabled(c, id));
         }
-        x += w + gap;
+        x += w + (field ? 4 : 2);
     }
-    return y + bh + 5;
+    return y + bw + 4;
 }
 
 /** @brief Where everything goes in content @p r; the pages are laid out
@@ -545,20 +589,79 @@ static int pv_thumbs_key(tiku_pdfview_t *c, const tiku_event_t *ev)
 
 /* -------------------------------------------------------------- paint  */
 
-/** @brief A toolbar button, held down while its mode is on. */
+/**
+ * @brief A toolbar button as the desk's toolbars draw one: its icon on the
+ *        panel, raised under the pointer, sunk while pressed or while its
+ *        mode is on, dimmed when it can do nothing.  A recorded window
+ *        keeps it as a named button, for narration.
+ */
 static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
                       const tiku_dialog_control_t *d)
 {
     unsigned flags = d->enabled ? 0 : TIKU_S_DISABLED;
-    int on = (d->id == PV_OUTLINE && c->side && !c->thumbs && !c->sigs &&
-              c->noutline) || (d->id == PV_THUMBS && c->side && c->thumbs) ||
-             (d->id == PV_SIGS && c->side && c->sigs) ||
-             (d->id == PV_FIT_WIDTH && c->fit == PV_BY_WIDTH) ||
-             (d->id == PV_FIT_PAGE && c->fit == PV_BY_PAGE);
+    int held = tiku_dialog_pressed(&c->dialog, d->id), size = d->rect.h - 6;
+    int on = d->enabled &&          /* a mode shows only where it works */
+             ((d->id == PV_OUTLINE && c->side && !c->thumbs && !c->sigs &&
+               c->noutline) || (d->id == PV_THUMBS && c->side && c->thumbs) ||
+              (d->id == PV_SIGS && c->side && c->sigs) ||
+              (d->id == PV_FIT_WIDTH && c->fit == PV_BY_WIDTH) ||
+              (d->id == PV_FIT_PAGE && c->fit == PV_BY_PAGE));
 
     if (tiku_dialog_focused(&c->dialog, d->id)) flags |= TIKU_S_FOCUS;
-    if (tiku_dialog_pressed(&c->dialog, d->id) || on) flags |= TIKU_S_PRESSED;
-    tiku_ui_button(s, d->rect, pv_tool(d->id), flags);
+    if (held || on) flags |= TIKU_S_PRESSED;
+    if (s->record) {
+        (void)tiku_dl_button(s->record, d->rect, pv_label(d->id), flags);
+        return;
+    }
+    if (held || on) tiku_ui_sunken(s, d->rect, TIKU_C_PANEL);
+    else if (c->hover_tool == d->id && d->enabled) tiku_ui_raised(s, d->rect);
+    if (flags & TIKU_S_FOCUS)
+        tiku_frame(s, tiku_inset(d->rect, 1), TIKU_C_FOCUS);
+    if (size > 24) size = 24;
+    (void)tiku_icon_paint_dim(s, pv_tool_icon(d->id),
+                              d->rect.x + (d->rect.w - size) / 2 + held,
+                              d->rect.y + (d->rect.h - size) / 2 + held, size,
+                              d->enabled ? 0.0f : 0.72f, TIKU_C_PANEL);
+}
+
+/** @brief The tip of the button under the pointer, below it and kept
+ *         inside @p r. */
+static void pv_tool_tip_draw(tiku_pdfview_t *c, tiku_surface_t *s,
+                             tiku_rect_t r)
+{
+    for (int i = 0; i < c->dialog.count && c->hover_tool; i++) {
+        const tiku_dialog_control_t *d = &c->dialog.control[i];
+        const char *text = pv_tool_tip(d->id);
+        tiku_rect_t tip;
+
+        if (d->id != c->hover_tool || d->kind != TIKU_DIALOG_BUTTON ||
+            !*text) continue;
+        tip = tiku_ui_tip_size(text);
+        tip.x = d->rect.x;
+        tip.y = d->rect.y + d->rect.h + 4;
+        if (tip.x + tip.w > r.x + r.w - 4) tip.x = r.x + r.w - 4 - tip.w;
+        tiku_ui_tip(s, tip, text);
+    }
+}
+
+/** @brief The toolbar button under the pointer, lit and tipped; none once
+ *         something is pressed or typed, or the window loses the focus. */
+static void pv_tool_hover(tiku_pdfview_t *c, const tiku_event_t *ev)
+{
+    int tool = 0;
+
+    if (ev->type == TIKU_EVENT_POINTER_MOVE &&
+        c->dialog.capture == TIKU_DIALOG_NONE) {
+        for (int i = 0; i < c->dialog.count; i++) {
+            const tiku_dialog_control_t *d = &c->dialog.control[i];
+            if (d->kind == TIKU_DIALOG_BUTTON && pv_in(d->rect, ev->x, ev->y))
+                tool = d->id;
+        }
+    }
+    if (tool != c->hover_tool) {
+        c->hover_tool = tool;
+        pv_changed(c);
+    }
 }
 
 /** @brief A text field with a hint in it while it is empty; the password
@@ -678,6 +781,7 @@ static void pv_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t r,
     tiku_frame(s, l.canvas, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
     pv_bars(c, s, &l);
     pv_status(c, s, l.status);
+    pv_tool_tip_draw(c, s, r);      /* last: nothing paints over it */
     s->clip = clip;
 }
 

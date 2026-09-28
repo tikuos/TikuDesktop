@@ -18,6 +18,7 @@
 #include "tiku_icons_tiku.h"
 
 #include "tiku_icons_navigation.inl"
+#include "tiku_icons_toolbar.inl"
 #include "tiku_icons_reader.inl"
 #include "tiku_icons_viewer.inl"
 #include "tiku_icons_pdf.inl"
@@ -138,6 +139,19 @@ static const struct {
     TIKU_ICON(nav_back),
     TIKU_ICON(nav_forward),
     TIKU_ICON(nav_reload),
+    TIKU_ICON(page_up),
+    TIKU_ICON(page_down),
+    TIKU_ICON(find_prev),
+    TIKU_ICON(find_next),
+    TIKU_ICON(zoom_in),
+    TIKU_ICON(zoom_out),
+    TIKU_ICON(fit_width),
+    TIKU_ICON(fit_page),
+    TIKU_ICON(rotate_left),
+    TIKU_ICON(rotate_right),
+    TIKU_ICON(doc_outline),
+    TIKU_ICON(doc_pages),
+    TIKU_ICON(doc_signed),
     TIKU_ICON(reader),
     TIKU_ICON(image_viewer),
     TIKU_ICON(pdf_viewer),

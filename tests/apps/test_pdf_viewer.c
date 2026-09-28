@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include "../../apps/pdf/tiku_pdfview.c"
+#include "tiku_icons.h"
 #include "../fixtures/pdf_crypt.inc"
 #include "../fixtures/cms.inc"
 #include "../fixtures/pubsec.inc"
@@ -480,6 +481,72 @@ static void rotation_tests(tiku_pdfview_t *c)
     settle(c);
 }
 
+static void press(tiku_pdfview_t *c, int key);
+
+/** @brief Toolbar button @p id's box, or an empty one. */
+static tiku_rect_t tool_box(tiku_pdfview_t *c, int id)
+{
+    (void)layout(c);
+    for (int i = 0; i < c->dialog.count; i++)
+        if (c->dialog.control[i].id == id &&
+            c->dialog.control[i].kind == TIKU_DIALOG_BUTTON)
+            return c->dialog.control[i].rect;
+    return (tiku_rect_t){0, 0, 0, 0};
+}
+
+/** @brief A checksum of the surface's pixels in @p r. */
+static unsigned long area_sum(const tiku_surface_t *s, tiku_rect_t r)
+{
+    unsigned long h = 5381;
+    for (int y = r.y; y < r.y + r.h; y++)
+        for (int x = r.x; x < r.x + r.w; x++)
+            h = h * 33 + (s->px[(size_t)y * s->w + x] & 0xffffffu);
+    return h;
+}
+
+/** @brief The toolbar: every button an icon from the desk's set, square,
+ *         with a name and a tip; the one under the pointer lit and its tip
+ *         shown below it, until a key is pressed; an icon clicked does what
+ *         its menu row does. */
+static void toolbar_tests(tiku_pdfview_t *c, tiku_surface_t *s)
+{
+    tiku_rect_t zoom, below, turn;
+    unsigned long plain;
+    int buttons = 0, x, y;
+
+    (void)layout(c);
+    for (int i = 0; i < c->dialog.count; i++) {
+        const tiku_dialog_control_t *d = &c->dialog.control[i];
+        if (d->kind != TIKU_DIALOG_BUTTON) continue;
+        assert(tiku_icons_find(pv_tool_icon(d->id)) != NULL);
+        assert(*pv_tool_tip(d->id) && *pv_label(d->id));
+        assert(d->rect.w == d->rect.h && d->rect.w >= 30);
+        buttons++;
+    }
+    assert(buttons == 14 + (c->nsig > 0));  /* Signatures: signed ones */
+    zoom = tool_box(c, PV_ZOOM_IN);
+    below = (tiku_rect_t){zoom.x, zoom.y + zoom.h + 4, 60, 12};
+    tiku_workspace_draw(desk);
+    plain = area_sum(s, below);
+    x = zoom.x + zoom.w / 2;
+    y = zoom.y + zoom.h / 2;
+    tiku_event_t move = {.type = TIKU_EVENT_POINTER_MOVE, .x = x, .y = y};
+    pv_event(c->window, &move, c);
+    tiku_workspace_draw(desk);
+    assert(c->hover_tool == PV_ZOOM_IN && area_sum(s, below) != plain);
+    press(c, TIKU_KEY_SHIFT);
+    tiku_workspace_draw(desk);
+    assert(!c->hover_tool && area_sum(s, below) == plain);
+    turn = tool_box(c, PV_ROTATE_RIGHT);
+    click(c, turn.x + turn.w / 2, turn.y + turn.h / 2);
+    assert(c->turn == 90);
+    turn = tool_box(c, PV_ROTATE_LEFT);
+    click(c, turn.x + turn.w / 2, turn.y + turn.h / 2);
+    assert(c->turn == 0);
+    tiku_dialog_focus(&c->dialog, PV_CANVAS);
+    settle(c);
+}
+
 /** @brief A key pressed in the viewer. */
 static void press(tiku_pdfview_t *c, int key)
 {
@@ -907,6 +974,7 @@ int main(int argc, char **argv)
     selection_tests(c);
     large_copy_test(c);
     field_tests(c);
+    toolbar_tests(c, s);
     rotation_tests(c);
     thumbnail_tests(c, s, file);
     pv_action(c, PV_FIRST);
@@ -942,8 +1010,8 @@ int main(int argc, char **argv)
         unlink(file); unlink(other); unlink(junk); unlink(list);
         rmdir(dir);
     }
-    puts("PDF viewer: open, draw, zoom, turn, outline, links, find, copy, "
-         "thumbnails, passwords, certificates, signatures, places and "
-         "recent documents, close PASS");
+    puts("PDF viewer: open, draw, the toolbar's icons, zoom, turn, outline, "
+         "links, find, copy, thumbnails, passwords, certificates, "
+         "signatures, places and recent documents, close PASS");
     return 0;
 }

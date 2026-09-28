@@ -6,6 +6,9 @@
 #include "tiku_clipboard.h"
 #include "tiku_der.h"
 #include "tiku_dialog.h"
+#include "tiku_dl.h"
+#include "tiku_iconpaint.h"
+#include "tiku_icons_tiku.h"
 #include "tiku_field_event.h"
 #include "tiku_font.h"
 #include "tiku_list.h"
@@ -140,6 +143,7 @@ struct tiku_pdfview {
     char keyfile[TIKU_PATH_MAX];    /* the key file chosen for it, or "" */
     tiku_pdf_signature_t *sig;      /* the shown document's, checked     */
     int nsig, sigs, sig_top;        /* ...; the column shows them; scroll */
+    int hover_tool;                 /* the toolbar button pointed at, or 0 */
     pv_match_t *match;
     int nmatch, cur, searching, searched, search_gen, want_next;
     char query[TIKU_FIELD_MAX];     /* what the matches are of           */
@@ -159,6 +163,7 @@ struct tiku_pdfview {
 };
 
 static void pv_menus(tiku_pdfview_t *c);
+static const char *pv_label(int id);
 static void pv_action(tiku_pdfview_t *c, int id);
 static int pv_enabled(tiku_pdfview_t *c, int id);
 static void pv_zoom_step(tiku_pdfview_t *c, int dir);
@@ -566,6 +571,8 @@ static int pv_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
                   ev->type == TIKU_EVENT_POINTER_UP ||
                   ev->type == TIKU_EVENT_WHEEL;
 
+    if (pointer || ev->type == TIKU_EVENT_KEY_DOWN ||
+        ev->type == TIKU_EVENT_DEACTIVATED) pv_tool_hover(c, ev);
     if (ev->type == TIKU_EVENT_DEACTIVATED) {
         pv_recent_note(c);          /* kept, should the process not be */
         c->pressing = c->selecting = c->vdrag = c->hdrag = 0;
@@ -686,6 +693,7 @@ tiku_pdfview_t *tiku_pdfview_new(tiku_workspace_t *workspace, int *dirty,
     c->fit = PV_BY_WIDTH;
     c->scale = 1;
     c->side = 1;
+    (void)tiku_icons_tiku_register();   /* the toolbar's icons */
     tiku_dialog_init(&c->dialog);
     tiku_list_init(&c->list, 1);
     tiku_field_start(&c->find, "");

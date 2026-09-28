@@ -12,6 +12,31 @@ def style_solid(rgba):
     r, g, b, a = rgba
     return bytes([1, r, g, b, a])
 
+def f24(v):
+    """A float as HVIF's 24-bit one: a sign, six bits of exponent biased
+    by 32, the seventeen highest bits of the mantissa."""
+    if v == 0:
+        return bytes(3)
+    bits = struct.unpack(">I", struct.pack(">f", float(v)))[0]
+    exp = ((bits >> 23) & 0xFF) - 127 + 32
+    if exp < 0:
+        return bytes(3)
+    exp = min(exp, 63)
+    v24 = (bits >> 31) << 23 | exp << 17 | (bits >> 6) & 0x1FFFF
+    return bytes([v24 >> 16 & 0xFF, v24 >> 8 & 0xFF, v24 & 0xFF])
+
+def style_linear(p0, p1, stops):
+    """A linear gradient from icon point p0 to p1, through (offset 0..1,
+    rgba) stops: HVIF's -64..64 span laid along the line between them."""
+    (x0, y0), (x1, y1) = p0, p1
+    a, b = (x1 - x0) / 128.0, (y1 - y0) / 128.0
+    out = bytes([2, 0, 0x02, len(stops)])       # gradient, linear, matrix
+    for v in (a, b, -b, a, (x0 + x1) / 2.0, (y0 + y1) / 2.0):
+        out += f24(v)
+    for off, (r, g, bl, al) in stops:
+        out += bytes([int(round(off * 255)), r, g, bl, al])
+    return out
+
 def path_polygon(points, closed=True):
     flags = 0x08 | (0x02 if closed else 0)   # NO_CURVES | CLOSED
     out = bytes([flags, len(points)])
