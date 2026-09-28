@@ -46,7 +46,7 @@ static const struct {
  *        on the right as x moves on; the AT pixels are read each time.
  */
 static void
-gen_row(jb_mq_t *d, jb_cx_t *gb, const jb_gen_t *g, jb_bm_t *out, long y)
+gen_row(tiku_mq_t *d, tiku_mq_cx_t *gb, const jb_gen_t *g, jb_bm_t *out, long y)
 {
     int t = g->tmpl & 3, k, i, bit;
     unsigned r[3] = {0, 0, 0}, m[3], ctx;
@@ -69,7 +69,7 @@ gen_row(jb_mq_t *d, jb_cx_t *gb, const jb_gen_t *g, jb_bm_t *out, long y)
                    << gen_tmpl[t].atbit[i];
         }
         bit = g->skip != NULL && jb_px(g->skip, x, y) ? 0
-              : jb_mq_bit(d, &gb[ctx]);
+              : tiku_mq_bit(d, &gb[ctx]);
         row[x] = (unsigned char)bit;
         r[0] = ((r[0] << 1) | (unsigned)bit) & m[0];
         r[1] = ((r[1] << 1) |
@@ -82,7 +82,7 @@ gen_row(jb_mq_t *d, jb_cx_t *gb, const jb_gen_t *g, jb_bm_t *out, long y)
 }
 
 int
-jb_generic(jb_mq_t *d, jb_cx_t *gb, const jb_gen_t *g, jb_bm_t *out)
+jb_generic(tiku_mq_t *d, tiku_mq_cx_t *gb, const jb_gen_t *g, jb_bm_t *out)
 {
     int ltp = 0;
     long y;
@@ -91,7 +91,7 @@ jb_generic(jb_mq_t *d, jb_cx_t *gb, const jb_gen_t *g, jb_bm_t *out)
         unsigned char *row = out->px + (size_t)y * (size_t)out->w;
 
         if (g->tpgdon) {
-            ltp ^= jb_mq_bit(d, &gb[gen_tmpl[g->tmpl & 3].sltp]);
+            ltp ^= tiku_mq_bit(d, &gb[gen_tmpl[g->tmpl & 3].sltp]);
             if (ltp) {              /* typical: the row above again */
                 if (y > 0) {
                     memcpy(row, row - out->w, (size_t)out->w);
@@ -102,7 +102,7 @@ jb_generic(jb_mq_t *d, jb_cx_t *gb, const jb_gen_t *g, jb_bm_t *out)
             }
         }
         gen_row(d, gb, g, out, y);
-        if (jb_mq_spent(d)) {
+        if (tiku_mq_spent(d)) {
             return -1;
         }
     }
@@ -194,7 +194,7 @@ ref_plain(const jb_ref_t *r, long x, long y, int *v)
 }
 
 int
-jb_refine(jb_mq_t *d, jb_cx_t *gr, const jb_ref_t *r, jb_bm_t *out)
+jb_refine(tiku_mq_t *d, tiku_mq_cx_t *gr, const jb_ref_t *r, jb_bm_t *out)
 {
     int ltp = 0, v;
     long x, y;
@@ -203,16 +203,16 @@ jb_refine(jb_mq_t *d, jb_cx_t *gr, const jb_ref_t *r, jb_bm_t *out)
         unsigned char *row = out->px + (size_t)y * (size_t)out->w;
 
         if (r->tpgron) {
-            ltp ^= jb_mq_bit(d, &gr[r->tmpl ? 0x080u : 0x100u]);
+            ltp ^= tiku_mq_bit(d, &gr[r->tmpl ? 0x080u : 0x100u]);
         }
         for (x = 0; x < out->w; x++) {
             if (ltp && ref_plain(r, x, y, &v)) {
                 row[x] = (unsigned char)v;  /* typical: as the reference */
                 continue;
             }
-            row[x] = (unsigned char)jb_mq_bit(d, &gr[ref_ctx(r, out, x, y)]);
+            row[x] = (unsigned char)tiku_mq_bit(d, &gr[ref_ctx(r, out, x, y)]);
         }
-        if (jb_mq_spent(d)) {
+        if (tiku_mq_spent(d)) {
             return -1;
         }
     }

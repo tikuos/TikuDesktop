@@ -55,14 +55,14 @@ fnv(const unsigned char *p, long n)
 static void
 mq_test(void)
 {
-    jb_mq_t d;
-    jb_cx_t cx = {0, 0};
+    tiku_mq_t d;
+    tiku_mq_cx_t cx = {0, 0};
     unsigned char got[32] = {0};
     int i;
 
-    jb_mq_init(&d, jb_mq_coded, sizeof jb_mq_coded);
+    tiku_mq_init(&d, jb_mq_coded, sizeof jb_mq_coded);
     for (i = 0; i < 256; i++) {
-        got[i / 8] |= (unsigned char)(jb_mq_bit(&d, &cx) << (7 - i % 8));
+        got[i / 8] |= (unsigned char)(tiku_mq_bit(&d, &cx) << (7 - i % 8));
     }
     check(memcmp(got, jb_mq_plain, sizeof got) == 0,
           "the arithmetic decoder reads T.88's test sequence (H.2)");

@@ -553,9 +553,10 @@ typedef struct {
  * @brief Decode the image @p dict describes: an XObject stream, or with
  *        @p raw an inline image's bytes.
  *
- * What cannot be decoded (a fax, a JPEG 2000, a progressive JPEG)
- * comes back as a grey box of the right size, so the page keeps its
- * layout.  @return 0, or -1 when there is no image to draw.
+ * What cannot be decoded comes back as a grey box of the right size, so
+ * the page keeps its layout; a JPEG 2000 comes at the size it decodes
+ * to, which is smaller when it is too big.  @return 0, or -1 when there
+ * is no image to draw.
  */
 int pdf_image_decode(tiku_pdf_t *doc, pdf_obj_t *dict,
                      const unsigned char *raw, long rawn, pdf_obj_t *res,
@@ -591,6 +592,9 @@ typedef struct pdf_cs {
 /** @brief The colour space @p spec names or defines; @p res answers a
  *        name of the page's own.  NULL for one this cannot use. */
 pdf_cs_t *pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res);
+/** @brief The device space of @p n parts: CMYK for four, RGB for three,
+ *         else Gray. */
+pdf_cs_t *pdf_cs_device(int n);
 void pdf_cs_free(pdf_cs_t *cs);
 /** @brief The device colour for @p v, @p n numbers in @p cs. */
 uint32_t pdf_cs_colour(const pdf_cs_t *cs, const double *v, int n);

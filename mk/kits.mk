@@ -99,10 +99,16 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(HOST)
 TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_fax.c \
+               $(K)/translation/tiku_mq.c \
                $(K)/translation/tiku_jbig2.c \
                $(K)/translation/tiku_jbig2_code.c \
                $(K)/translation/tiku_jbig2_region.c \
                $(K)/translation/tiku_jbig2_text.c \
+               $(K)/translation/tiku_jpx.c \
+               $(K)/translation/tiku_jpx_t1.c \
+               $(K)/translation/tiku_jpx_t2.c \
+               $(K)/translation/tiku_jpx_dwt.c \
+               $(K)/translation/tiku_jpx_jp2.c \
                $(K)/translation/tiku_hvif.c $(K)/translation/tiku_image.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
                $(K)/translation/tiku_icons.c \

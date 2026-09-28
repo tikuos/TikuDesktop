@@ -9,15 +9,17 @@
  * square the CTM places.
  *
  * ISO 32000 8.9: samples of 1 to 16 bits in a colour space, or a
- * one-bit stencil that paints the fill colour.  JPEGs go through the
- * kit's decoder; what it cannot read stays a grey box, which is what a
- * datasheet's logo becomes rather than a hole where a caption points.
+ * one-bit stencil that paints the fill colour.  JPEGs and JPEG 2000s go
+ * through the kit's decoders; what they cannot read stays a grey box,
+ * which is what a datasheet's logo becomes rather than a hole where a
+ * caption points.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_pdf_private.h"
 #include "tiku_jpeg.h"
+#include "tiku_jpx.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -109,6 +111,37 @@ from_jpeg(pdf_img_t *img, const unsigned char *data, long n, int invert)
     return 0;
 }
 
+/** @brief Channel @p k of @p j at eight bits: as coded when it has
+ *         fewer, stretched, unless @p raw keeps them as indices. */
+static unsigned
+jpx_eight(const tiku_jpx_t *j, int k, long i, int raw)
+{
+    unsigned v = j->comp[k][i];
+
+    return j->prec[k] < 8 && !raw ? v * 255u / ((1u << j->prec[k]) - 1u) : v;
+}
+
+/** @brief A JPEG 2000 mask's first channel into @p out, @p w by @p h,
+ *         spread or thinned to that size.  @return 0, or -1. */
+static int
+jpx_grey(const unsigned char *data, long n, int w, int h, unsigned char *out)
+{
+    tiku_jpx_t j;
+    long x, y;
+
+    if (tiku_jpx_decode(data, n, IMG_MAX_PIXELS, &j) != 0) {
+        return -1;
+    }
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            out[y * w + x] = (unsigned char)jpx_eight(
+                &j, 0, (y * j.h / h) * j.w + x * j.w / w, 0);
+        }
+    }
+    tiku_jpx_free(&j);
+    return 0;
+}
+
 /**
  * @brief The samples of @p dict (its own stream, or @p raw) as one
  *        grey per pixel into @p out, sized @p w by @p h: how a soft
@@ -156,7 +189,8 @@ grey_samples(tiku_pdf_t *doc, pdf_obj_t *dict, const unsigned char *raw,
                 memset(out, 255, (size_t)total);
             }
             pdf_image_free(&j);
-        } else {
+        } else if (strcmp(filter, "JPXDecode") != 0 ||
+                   jpx_grey(data, n, *w, *h, out) != 0) {
             memset(out, 255, (size_t)total);    /* unreadable: no mask */
         }
         free(data);
@@ -230,12 +264,111 @@ load_alpha(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_img_t *img, pdf_obj_t *res)
     if (m == NULL) {
         return;
     }
+    if (img->alpha != NULL) {       /* the picture's own, as it asked */
+        free(m);
+        return;
+    }
     if (mw == img->w && mh == img->h) {
         img->alpha = m;
     } else {
         img->alpha = resample(m, mw, mh, img->w, img->h);
         free(m);
     }
+}
+
+/** @brief The device space a JPEG 2000's @p ncol colour channels are
+ *         in, as the file says or by how many there are. */
+static pdf_cs_t *
+jpx_space(const tiku_jpx_t *j, int ncol)
+{
+    int parts = j->space == TIKU_JPX_GRAY ? 1 :
+                j->space == TIKU_JPX_CMYK ? 4 :
+                j->space == TIKU_JPX_SRGB || j->space == TIKU_JPX_SYCC ? 3 :
+                ncol >= 4 ? 4 : ncol >= 3 ? 3 : 1;
+
+    return ncol < 1 ? NULL : pdf_cs_device(parts <= ncol ? parts : 1);
+}
+
+/** @brief @p j's first colour channels through @p cs into @p img's
+ *         RGB.  @return 0, or -1. */
+static int
+jpx_colour(const tiku_jpx_t *j, const pdf_cs_t *cs, pdf_img_t *img)
+{
+    long i, total = (long)j->w * j->h;
+    unsigned char s[TIKU_JPX_COMPS];
+    int k;
+
+    img->rgb = malloc((size_t)total * 3);
+    if (img->rgb == NULL) {
+        return -1;
+    }
+    for (i = 0; i < total; i++) {
+        for (k = 0; k < cs->n && k < TIKU_JPX_COMPS; k++) {
+            s[k] = (unsigned char)jpx_eight(j, k, i, cs->kind == CS_INDEXED);
+        }
+        pdf_cs_sample(cs, s, 8, 0, NULL, img->rgb + i * 3);
+    }
+    return 0;
+}
+
+/** @brief @p j's opacity made @p img's alpha when SMaskInData asks and
+ *         no SMask overrides it (8.9.5.3), the colours taken back out of
+ *         it when they were multiplied by it. */
+static void
+jpx_alpha(tiku_pdf_t *doc, pdf_obj_t *dict, const tiku_jpx_t *j,
+          pdf_img_t *img)
+{
+    int in = pdf_int(pdf_get(doc, dict, "SMaskInData"), 0), k;
+    long i, total = (long)j->w * j->h;
+
+    if (in == 0 || j->alpha < 0 || pdf_get(doc, dict, "SMask") != NULL ||
+        (img->alpha = malloc((size_t)total)) == NULL) {
+        return;
+    }
+    for (i = 0; i < total; i++) {
+        unsigned a = jpx_eight(j, j->alpha, i, 0);
+
+        img->alpha[i] = (unsigned char)a;
+        for (k = 0; (in == 2 || j->premultiplied) && a > 0 && k < 3; k++) {
+            unsigned c = img->rgb[i * 3 + k] * 255u / a;
+
+            img->rgb[i * 3 + k] = (unsigned char)(c > 255 ? 255 : c);
+        }
+    }
+}
+
+/**
+ * @brief A JPEG 2000's pixels into @p img, at the size it decodes to: in
+ *        the dictionary's colour space when the channels can fill it,
+ *        else the file's own, its opacity the alpha when asked (7.4.9).
+ *        One the decoder refuses is a grey box.
+ */
+static int
+from_jpx(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_img_t *img,
+         const unsigned char *data, long n, pdf_obj_t *res)
+{
+    tiku_jpx_t j;
+    pdf_cs_t *cs;
+    int ncol, rc;
+
+    if (tiku_jpx_decode(data, n, IMG_MAX_PIXELS, &j) != 0) {
+        return (long)img->w * img->h > IMG_MAX_PIXELS ? -1 : grey_box(img);
+    }
+    ncol = j.alpha >= 0 ? j.alpha : j.ncomp;
+    cs = pdf_cs_load(doc, key(doc, dict, "ColorSpace", "CS"), res);
+    if (cs == NULL || cs->kind == CS_PATTERN || cs->n > ncol) {
+        pdf_cs_free(cs);
+        cs = jpx_space(&j, ncol);
+    }
+    img->w = j.w;
+    img->h = j.h;
+    rc = cs == NULL ? grey_box(img) : jpx_colour(&j, cs, img);
+    if (rc == 0) {
+        jpx_alpha(doc, dict, &j, img);
+    }
+    pdf_cs_free(cs);
+    tiku_jpx_free(&j);
+    return rc;
 }
 
 /** @brief Samples of any depth in any colour space to RGB triples. */
@@ -285,26 +418,32 @@ pdf_image_decode(tiku_pdf_t *doc, pdf_obj_t *dict, const unsigned char *raw,
     long n = 0;
     const char *filter = NULL;
     pdf_obj_t *im = key(doc, dict, "ImageMask", "IM");
-    int rc;
+    int rc, big;
 
     memset(out, 0, sizeof *out);
     out->w = pdf_int(key(doc, dict, "Width", "W"), 0);
     out->h = pdf_int(key(doc, dict, "Height", "H"), 0);
-    if (out->w <= 0 || out->h <= 0 || (long)out->w * out->h > IMG_MAX_PIXELS) {
+    if (out->w <= 0 || out->h <= 0) {
         return -1;
     }
+    big = (long)out->w * out->h > IMG_MAX_PIXELS;   /* JPX alone copes */
     if (im != NULL && im->kind == PDF_BOOL && im->u.b) {
         int w, h;
 
         out->stencil = 1;
-        out->alpha = grey_samples(doc, dict, raw, rawn, &w, &h, 1, res);
+        out->alpha = big ? NULL : grey_samples(doc, dict, raw, rawn, &w, &h,
+                                               1, res);
         return out->alpha != NULL ? 0 : -1;
     }
     if (raw != NULL ? pdf_filter_bytes(doc, dict, raw, rawn, &data, &n, &filter)
                     : pdf_stream_data(doc, dict, &data, &n, &filter)) {
-        return grey_box(out);
+        return big ? -1 : grey_box(out);
     }
-    if (filter == NULL) {
+    if (filter != NULL && !strcmp(filter, "JPXDecode")) {
+        rc = from_jpx(doc, dict, out, data, n, res);
+    } else if (big) {
+        rc = -1;
+    } else if (filter == NULL) {
         rc = from_samples(doc, dict, out, data, n, res);
     } else if (!strcmp(filter, "DCTDecode")) {
         double dec[8];

@@ -212,8 +212,8 @@ generic(jb_dec_t *jd, jb_seg_t *s)
     jb_rinfo_t ri;
     jb_gen_t g;
     jb_bm_t *b;
-    jb_cx_t *gb;
-    jb_mq_t d;
+    tiku_mq_cx_t *gb;
+    tiku_mq_t d;
     int rc;
 
     memset(&g, 0, sizeof g);
@@ -240,7 +240,7 @@ generic(jb_dec_t *jd, jb_seg_t *s)
     if (g.mmr) {
         rc = jb_generic_mmr(p + at, n - at, b) < 0 ? -1 : 0;
     } else if ((gb = calloc(65536, sizeof *gb)) != NULL) {
-        jb_mq_init(&d, p + at, n - at);
+        tiku_mq_init(&d, p + at, n - at);
         rc = jb_generic(&d, gb, &g, b);
         free(gb);
     } else {
@@ -280,8 +280,8 @@ refinement(jb_dec_t *jd, jb_seg_t *s)
     jb_ref_t r;
     jb_seg_t *from;
     jb_bm_t *b;
-    jb_cx_t *gr;
-    jb_mq_t d;
+    tiku_mq_cx_t *gr;
+    tiku_mq_t d;
     int rc;
 
     memset(&r, 0, sizeof r);
@@ -303,7 +303,7 @@ refinement(jb_dec_t *jd, jb_seg_t *s)
         (gr = calloc(8192, sizeof *gr)) == NULL) {
         return -1;
     }
-    jb_mq_init(&d, p + at, n - at);
+    tiku_mq_init(&d, p + at, n - at);
     rc = jb_refine(&d, gr, &r, b);
     free(gr);
     return jb_place(jd, s, b, &ri) != 0 ? -1 : rc;
@@ -341,8 +341,8 @@ patterns(jb_dec_t *jd, jb_seg_t *s)
     const unsigned char *p = s->data;
     jb_gen_t g;
     jb_bm_t *all;
-    jb_cx_t *gb;
-    jb_mq_t d;
+    tiku_mq_cx_t *gb;
+    tiku_mq_t d;
     long count;
     int rc = -1;
 
@@ -366,7 +366,7 @@ patterns(jb_dec_t *jd, jb_seg_t *s)
     if (g.mmr) {
         rc = jb_generic_mmr(p + 7, s->len - 7, all) < 0 ? -1 : 0;
     } else if ((gb = calloc(65536, sizeof *gb)) != NULL) {
-        jb_mq_init(&d, p + 7, s->len - 7);
+        tiku_mq_init(&d, p + 7, s->len - 7);
         rc = jb_generic(&d, gb, &g, all);
         free(gb);
     }
@@ -384,8 +384,8 @@ greys(jb_dec_t *jd, const unsigned char *p, long n, jb_gen_t *g, int bpp,
 {
     jb_bm_t *plane[32];
     uint32_t *v = calloc((size_t)w * (size_t)h + 1, sizeof *v);
-    jb_cx_t *gb = g->mmr ? NULL : calloc(65536, sizeof *gb);
-    jb_mq_t d;
+    tiku_mq_cx_t *gb = g->mmr ? NULL : calloc(65536, sizeof *gb);
+    tiku_mq_t d;
     long at = 0, used, i;
     int j, ok = v != NULL && (g->mmr || gb != NULL);
 
@@ -398,7 +398,7 @@ greys(jb_dec_t *jd, const unsigned char *p, long n, jb_gen_t *g, int bpp,
     g->at[6] = -2;
     g->at[7] = -2;
     if (!g->mmr) {
-        jb_mq_init(&d, p, n);
+        tiku_mq_init(&d, p, n);
     }
     for (j = bpp - 1; ok && j >= 0; j--) {
         ok = (plane[j] = jb_new(jd, w, h, 0)) != NULL;

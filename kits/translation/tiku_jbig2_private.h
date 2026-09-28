@@ -5,8 +5,8 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_jbig2_private.h - what the JBIG2 decoder's files share: bitmaps
- * of a byte a pixel, the MQ arithmetic decoder and its integer
- * procedures (T.88 Annexes A and E), Huffman tables (Annex B), and the
+ * of a byte a pixel, the integer procedures the MQ arithmetic decoder
+ * (tiku_mq) carries (T.88 Annex A), Huffman tables (Annex B), and the
  * generic and refinement region procedures (6.2, 6.3) the segments of
  * tiku_jbig2.c build on.
  *
@@ -18,30 +18,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "tiku_mq.h"
+
 /** @brief A bitmap, one byte a pixel, 1 black; outside it is white. */
 typedef struct {
     int            w, h;
     unsigned char *px;              /* w * h bytes, 0 or 1              */
 } jb_bm_t;
 
-/** @brief One adaptive context: its probability state and more
- *         probable symbol. */
-typedef struct {
-    unsigned char i, mps;
-} jb_cx_t;
-
-/** @brief The MQ decoder over @p n bytes (T.88 Annex E). */
-typedef struct {
-    const unsigned char *p;         /* the coded bytes                   */
-    long                 n, pos;    /* how many; the one in C's low end  */
-    uint32_t             c, a;      /* the code and interval registers   */
-    int                  ct;        /* bits left before the next byte    */
-    long                 past;      /* bytes of ones fed past the data   */
-} jb_mq_t;
-
 /** @brief An integer procedure's contexts (Annex A.2). */
 typedef struct {
-    jb_cx_t cx[512];                /* by the bits decoded so far        */
+    tiku_mq_cx_t cx[512];                /* by the bits decoded so far        */
 } jb_iax_t;
 
 /** @brief Bits read most significant first, for the Huffman coded. */
@@ -66,17 +53,10 @@ typedef struct {
     jb_line_t *line;                /* in the order codes are given out  */
 } jb_table_t;
 
-/** @brief The MQ decoder begun on @p n bytes (INITDEC, E.3.5). */
-void jb_mq_init(jb_mq_t *d, const unsigned char *p, long n);
-/** @brief One decision in context @p cx. */
-int jb_mq_bit(jb_mq_t *d, jb_cx_t *cx);
-/** @brief Whether the decoder ran far past its data: a stream that
- *         asks for more than it holds, decoded no further. */
-int jb_mq_spent(const jb_mq_t *d);
 /** @brief An integer (A.2).  @return 0 with @p v, 1 for OOB. */
-int jb_int(jb_mq_t *d, jb_iax_t *ia, int32_t *v);
+int jb_int(tiku_mq_t *d, jb_iax_t *ia, int32_t *v);
 /** @brief A symbol ID of @p len bits (A.3), in 1 << @p len contexts. */
-long jb_iaid(jb_mq_t *d, jb_cx_t *cx, int len);
+long jb_iaid(tiku_mq_t *d, tiku_mq_cx_t *cx, int len);
 
 /** @brief The next @p k bits (up to 32).  @return -1 past the end. */
 int jb_bits(jb_bits_t *b, int k, uint32_t *v);
@@ -118,13 +98,13 @@ typedef struct {
 
 /** @brief Decode @p out's pixels arithmetically (6.2.5) in contexts
  *         @p gb (65536).  @return 0, or -1 when the data ran out. */
-int jb_generic(jb_mq_t *d, jb_cx_t *gb, const jb_gen_t *g, jb_bm_t *out);
+int jb_generic(tiku_mq_t *d, tiku_mq_cx_t *gb, const jb_gen_t *g, jb_bm_t *out);
 /** @brief Decode @p out's pixels from MMR data (6.2.6).  @return the
  *         bytes it took, or -1. */
 long jb_generic_mmr(const unsigned char *p, long n, jb_bm_t *out);
 /** @brief Decode @p out against a reference (6.3.5) in contexts @p gr
  *         (8192).  @return 0, or -1 when the data ran out. */
-int jb_refine(jb_mq_t *d, jb_cx_t *gr, const jb_ref_t *r, jb_bm_t *out);
+int jb_refine(tiku_mq_t *d, tiku_mq_cx_t *gr, const jb_ref_t *r, jb_bm_t *out);
 
 /* The segments and the page: tiku_jbig2.c and tiku_jbig2_text.c        */
 
@@ -139,8 +119,8 @@ typedef struct {
     long                 len;
     jb_bm_t            **sym;       /* a symbol dictionary's exports     */
     long                 nsym;
-    jb_cx_t             *gbkeep;    /* its contexts, kept for the next   */
-    jb_cx_t             *grkeep;
+    tiku_mq_cx_t             *gbkeep;    /* its contexts, kept for the next   */
+    tiku_mq_cx_t             *grkeep;
     jb_bm_t            **pat;       /* a pattern dictionary's patterns   */
     long                 npat;
     jb_bm_t             *region;    /* an intermediate region            */
@@ -171,10 +151,10 @@ typedef struct {
 /** @brief Arithmetic decoding shared through a dictionary or region:
  *         the integer procedures, symbol IDs and both context sets. */
 typedef struct {
-    jb_mq_t  mq;                    /* the one decoder they all share    */
+    tiku_mq_t  mq;                    /* the one decoder they all share    */
     jb_iax_t dh, dw, ex, ai, dt, fs, ds, it, ri, rdw, rdh, rdx, rdy;
-    jb_cx_t *id;                    /* 1 << the ID's bits               */
-    jb_cx_t *gb, *gr;               /* 65536 and 8192                   */
+    tiku_mq_cx_t *id;                    /* 1 << the ID's bits               */
+    tiku_mq_cx_t *gb, *gr;               /* 65536 and 8192                   */
 } jb_ar_t;
 
 /** @brief A bitmap the decode keeps until its end; NULL past the

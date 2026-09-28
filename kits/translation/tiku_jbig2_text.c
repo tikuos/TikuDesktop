@@ -214,7 +214,7 @@ refine_sym(jb_dec_t *jd, const text_t *t, jb_ar_t *ar, jb_bits_t *b,
     int32_t rdw, rdh, rdx, rdy, size = 0;
     jb_ref_t r;
     jb_bm_t *ib;
-    jb_mq_t own;
+    tiku_mq_t own;
 
     if (field(t, ar, b, &ar->rdw, t->rdw, &rdw) ||
         field(t, ar, b, &ar->rdh, t->rdh, &rdh) ||
@@ -239,7 +239,7 @@ refine_sym(jb_dec_t *jd, const text_t *t, jb_ar_t *ar, jb_bits_t *b,
         return NULL;
     }
     memset(ar->gr, 0, 8192 * sizeof *ar->gr);
-    jb_mq_init(&own, b->p + b->bit / 8, size);
+    tiku_mq_init(&own, b->p + b->bit / 8, size);
     b->bit += (long)size * 8;
     return jb_refine(&own, ar->gr, &r, ib) == 0 ? ib : NULL;
 }
@@ -346,7 +346,7 @@ text_decode(jb_dec_t *jd, const text_t *t, jb_ar_t *ar, jb_bits_t *b,
         curs = firsts;
         for (;;) {
             if (instance(jd, t, ar, b, reg, &curs, stript) != 0 ||
-                ++done > INST_MAX || (!t->huff && jb_mq_spent(&ar->mq))) {
+                ++done > INST_MAX || (!t->huff && tiku_mq_spent(&ar->mq))) {
                 return -1;
             }
             r = field(t, ar, b, &ar->ds, t->ds, &v);
@@ -520,7 +520,7 @@ text_run(jb_dec_t *jd, const jb_seg_t *s, text_t *t, unsigned hf, long at,
             ar = jb_ar_new(0);      /* its refinements' contexts */
         }
     } else if (!t->huff && (ar = jb_ar_new(t->idlen)) != NULL) {
-        jb_mq_init(&ar->mq, s->data + at, s->len - at);
+        tiku_mq_init(&ar->mq, s->data + at, s->len - at);
     }
     if (ar != NULL) {
         rc = text_decode(jd, t, ar, &b, reg);
@@ -593,7 +593,7 @@ one_refined(const dict_t *d, const text_t *t, jb_ar_t *ar, jb_bits_t *b,
     uint32_t bits = 0;
     long id;
     jb_ref_t r;
-    jb_mq_t own;
+    tiku_mq_t own;
 
     if (d->huff && jb_bits(b, d->idlen, &bits)) {
         return NULL;
@@ -619,7 +619,7 @@ one_refined(const dict_t *d, const text_t *t, jb_ar_t *ar, jb_bits_t *b,
         return NULL;
     }
     memset(ar->gr, 0, 8192 * sizeof *ar->gr);
-    jb_mq_init(&own, b->p + b->bit / 8, size);
+    tiku_mq_init(&own, b->p + b->bit / 8, size);
     b->bit += (long)size * 8;
     return jb_refine(&own, ar->gr, &r, bm) == 0 ? bm : NULL;
 }
@@ -752,7 +752,7 @@ dict_decode(jb_dec_t *jd, dict_t *d, jb_ar_t *ar, jb_bits_t *b)
                 break;
             }
             if (done >= d->nnew || (w += v) < 0 || w > 0xFFFFFF ||
-                (!d->huff && jb_mq_spent(&ar->mq))) {
+                (!d->huff && tiku_mq_spent(&ar->mq))) {
                 r = -1;
                 break;
             }
@@ -914,7 +914,7 @@ jb_symbols(jb_dec_t *jd, jb_seg_t *s)
         if ((f >> 8) & 1) {
             dict_resume(jd, s, ar);
         }
-        jb_mq_init(&ar->mq, p + at, s->len - at);
+        tiku_mq_init(&ar->mq, p + at, s->len - at);
         b.p = p;
         b.n = s->len;
         b.bit = at * 8;

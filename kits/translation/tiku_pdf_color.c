@@ -675,6 +675,13 @@ device_space(const char *name)
 }
 
 pdf_cs_t *
+pdf_cs_device(int n)
+{
+    return device_space(n == 4 ? "DeviceCMYK" : n == 3 ? "DeviceRGB"
+                                                       : "DeviceGray");
+}
+
+pdf_cs_t *
 pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res)
 {
     pdf_cs_t *cs;

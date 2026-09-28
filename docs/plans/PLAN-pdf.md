@@ -176,7 +176,19 @@ an output that grows.  Nothing else in the kits changes.
    reads T.88's own test sequence, Annex H's three pages come out as
    jbig2dec draws them, and jbig2enc's pages of our own paper and a TI
    datasheet as it coded them; streams made here for what no encoder
-   writes are read as jbig2dec or poppler reads them.
+   writes are read as jbig2dec or poppler reads them.  JPEG 2000
+   (`tiku_jpx`), all of Part 1: every progression and its changes,
+   tiles and tile-parts, precincts, the code-block styles, regions of
+   interest, PPM and PPT, both wavelets and both component transforms;
+   JP2's palettes, component maps, channel definitions and sYCC.  An
+   image filter: in the dictionary's colour space or the file's own,
+   its opacity the alpha under SMaskInData, soft masks too.  ISO
+   15444-4's twenty-three class-1 streams decode within their limits,
+   the lossless ones exactly; its profile streams and JP2 files come out
+   as their references but for ICC colour, which the kit takes by
+   component count as it does ICCBased.  A picture too big to hold is
+   read without its finest resolutions, as OpenJPEG reduces one.  The
+   arithmetic decoder is JBIG2's, now shared (`tiku_mq`).
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand
