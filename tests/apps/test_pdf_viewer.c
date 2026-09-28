@@ -6,6 +6,9 @@
 #include <unistd.h>
 #include "../../apps/pdf/tiku_pdfview.c"
 #include "../fixtures/pdf_crypt.inc"
+#include "../fixtures/cms.inc"
+#include "../fixtures/pubsec.inc"
+#include "../fixtures/pdfsig.inc"
 
 #define PAGES 12
 
@@ -127,10 +130,13 @@ static void settle(tiku_pdfview_t *c)
     assert(!"a job never finished");
 }
 
-/** @brief Count the file-chooser requests. */
-static void chosen(void *ctx)
+static int keys_asked;              /* how many of them were for a key */
+
+/** @brief Count the file-chooser requests, and those for a key file. */
+static void chosen(void *ctx, int key)
 {
     (*(int *)ctx)++;
+    keys_asked += key != 0;
 }
 
 /** @brief The content rect's layout, as input and drawing see it. */
@@ -365,6 +371,115 @@ static void field_tests(tiku_pdfview_t *c)
     tiku_dialog_focus(&c->dialog, PV_CANVAS);
 }
 
+/** @brief The canvas point over @p ux, @p uy points of page @p p as it
+ *         is drawn, wherever the view's turn puts them. */
+static void turned_on(tiku_pdfview_t *c, int p, double ux, double uy,
+                      int *x, int *y)
+{
+    tiku_pdf_turn_point(c->pw[p], c->ph[p], c->turn, 0, &ux, &uy);
+    point_on(c, p, ux, uy, x, y);
+}
+
+/** @brief Rotate Right and Left turn every page, a quarter at a time:
+ *         what was drawn turns at once, a page drawn while the view
+ *         turned lands turned, and links, selection, search and the
+ *         outline find their places on the turned pages. */
+static void rotation_tests(tiku_pdfview_t *c)
+{
+    const pv_page_t *pg = &c->pages[0];
+    double fitted, mid;
+    pv_tile_t *t;
+    pv_layout_t l;
+    long h = -1;
+    int x0, y0, x1, y1;
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+
+    pv_action(c, PV_FIRST);
+    settle(c);
+    fitted = c->scale;
+    assert(pv_enabled(c, PV_ROTATE_RIGHT) && c->turn == 0);
+    pv_action(c, PV_ROTATE_RIGHT);
+    t = pv_tile(c, 0, 0);
+    assert(c->turn == 90 && t && t->w > t->h);  /* turned before drawn */
+    settle(c);
+    l = layout(c);
+    assert(fabs(c->scale - (l.canvas.w - 2.0 * PV_MARGIN) / 792) < 1e-9);
+    t = pv_tile(c, 0, 1);
+    assert(t && t->w == pv_page_w(c, 0) && t->h == pv_page_h(c, 0) &&
+           t->w > t->h && pv_current(c) == 0);
+
+    /* The link over "Hello TikuPDF world", where the turn put it. */
+    turned_on(c, 0, 100, 792 - 610, &x0, &y0);
+    tiku_event_t move = {.type = TIKU_EVENT_POINTER_MOVE, .x = x0, .y = y0};
+    pv_event(c->window, &move, c);
+    assert(c->link_at == 0 && strstr(c->hint, "page 10"));
+
+    /* A drag down the turned line selects "Hello". */
+    for (long i = 0; i < pg->nch; i++)
+        if (pg->ch[i].cp == 'H') { h = i; break; }
+    mid = (pg->ch[h].y0 + pg->ch[h].y1) / 2;
+    turned_on(c, 0, pg->ch[h].x0 + 1, mid, &x0, &y0);
+    turned_on(c, 0, pg->ch[h + 4].x1 - 1, mid, &x1, &y1);
+    assert(abs(x0 - x1) < 3 && y1 > y0 + 20);   /* the line runs down */
+    tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                       .x = x0, .y = y0};
+    pv_event(c->window, &ev, c);
+    ev.type = TIKU_EVENT_POINTER_MOVE; ev.x = x1; ev.y = y1;
+    pv_event(c->window, &ev, c);
+    ev.type = TIKU_EVENT_POINTER_UP;
+    pv_event(c->window, &ev, c);
+    pv_action(c, PV_COPY);
+    assert(!strcmp(tiku_clipboard_text(), "Hello"));
+    c->selected = 0;
+
+    /* The second match is on page 5, brought into view turned. */
+    tiku_field_start(&c->find, "TikuPDF");
+    pv_find(c, 1);
+    settle(c);
+    pv_action(c, PV_FIND_NEXT);
+    assert(c->cur == 1 && pv_current(c) == 4);
+    pv_action(c, PV_FIRST);
+    c->query[0] = 0;
+    c->nmatch = 0;
+
+    /* The outline's Ten, then Back; Rotate Left undoes Rotate Right. */
+    pv_action(c, PV_OUTLINE);
+    if (!c->side) pv_action(c, PV_OUTLINE);
+    l = layout(c);
+    tiku_rect_t row = tiku_list_row_rect(&c->list, l.side, 1);
+    click(c, row.x + 60, row.y + row.h / 2);
+    assert(pv_page_at(c, c->vbar.value + PV_MARGIN) == 9);
+    pv_action(c, PV_BACK);
+    pv_action(c, PV_ROTATE_LEFT);
+    settle(c);
+    assert(c->turn == 0 && fabs(c->scale - fitted) < 1e-9);
+
+    /* A page drawn while the view turns lands turned, pixel for pixel
+     * the page drawn turned; Cmd-R turns as the menu does. */
+    pv_action(c, PV_ACTUAL);
+    pv_go(c, 7, 0, 0);
+    tiku_workspace_draw(desk);
+    assert(pv_pending(c, 7));
+    tiku_event_t cmd = {.type = TIKU_EVENT_KEY_DOWN, .key = 'r',
+                        .modifiers = TIKU_MOD_CMD};
+    pv_event(c->window, &cmd, c);
+    assert(c->turn == 90);
+    settle(c);
+    t = pv_tile(c, 7, 1);
+    assert(t && t->w == 792 && t->h == 612);
+    assert(tiku_pdf_render(c->doc->pdf, 7, 1.0, 90, &pm) == 0 &&
+           pm.w == t->w && pm.h == t->h &&
+           !memcmp(pm.px, t->px, (size_t)pm.w * pm.h * sizeof *pm.px));
+    tiku_pdf_pixmap_free(&pm);
+    pv_action(c, PV_ROTATE_RIGHT);
+    pv_action(c, PV_ROTATE_RIGHT);
+    pv_action(c, PV_ROTATE_RIGHT);
+    assert(c->turn == 0);
+    pv_action(c, PV_FIT_WIDTH);
+    pv_action(c, PV_FIRST);
+    settle(c);
+}
+
 /** @brief A key pressed in the viewer. */
 static void press(tiku_pdfview_t *c, int key)
 {
@@ -496,9 +611,264 @@ static void locked_tests(tiku_pdfview_t *c, const char *dir)
     unlink(other);
 }
 
+/** @brief Base64 @p b64 (and @p more after it) written to @p path, with
+ *         the byte at @p at, when it is not negative, made @p to. */
+static void write_b64(const char *path, const char *b64, const char *more,
+                      long at, int to)
+{
+    static const char abc[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    unsigned char *p = malloc(strlen(b64) + (more ? strlen(more) : 0));
+    size_t n = 0;
+    FILE *f = fopen(path, "wb");
+
+    for (int k = 0; k < 2; k++, b64 = more) {
+        unsigned v = 0;
+        int bits = 0;
+        for (; b64 && *b64 && *b64 != '='; b64++) {
+            v = v << 6 | (unsigned)(strchr(abc, *b64) - abc);
+            if ((bits += 6) >= 8) {
+                bits -= 8;
+                p[n++] = (unsigned char)(v >> bits);
+            }
+        }
+    }
+    if (at >= 0) p[at] = (unsigned char)to;
+    assert(p && f && fwrite(p, 1, n, f) == n);
+    fclose(f);
+    free(p);
+}
+
+/** @brief Type @p text into the focused field and press Return. */
+static void type_enter(tiku_pdfview_t *c, tiku_field_t *f, const char *text)
+{
+    tiku_field_start(f, text);
+    enter(c);
+    settle(c);
+}
+
+/** @brief A document sealed to a certificate: its key file asked for at
+ *         once, then its password; a wrong password, a key it was not
+ *         sealed to, and a file that is no key each said so. */
+static void sealed_tests(tiku_pdfview_t *c, const char *dir)
+{
+    char pdf[256], other[256], key[256];
+
+    snprintf(pdf, sizeof pdf, "%s/sealed.pdf", dir);
+    snprintf(other, sizeof other, "%s/other.pdf", dir);
+    snprintf(key, sizeof key, "%s/me.p12", dir);
+    write_b64(pdf, ps_aes256, NULL, -1, 0);
+    write_b64(other, ps_other, NULL, -1, 0);
+    write_b64(key, ck_p12_legacy, NULL, -1, 0);
+    keys_asked = 0;
+    assert(!tiku_pdfview_key(c, key));          /* nothing is waiting */
+    assert(tiku_pdfview_file(c, pdf));
+    settle(c);
+    assert(c->locked && c->sealed && keys_asked == 1 &&
+           strstr(c->status, "sealed to a certificate") &&
+           pv_enabled(c, PV_OPEN_KEY));
+    enter(c);                                   /* Return asks again */
+    assert(keys_asked == 2);
+    assert(tiku_pdfview_key(c, key) && strstr(c->status, "me.p12"));
+    type_enter(c, &c->pass, "wrong");
+    assert(c->locked && c->keyfile[0] && !c->pass.text[0] &&
+           strstr(c->status, "does not open the key file"));
+    type_enter(c, &c->pass, "secret");
+    assert(!c->locked && !c->sealed && c->npage == 1 && c->pages &&
+           !strcmp(c->path, pdf));
+    settle(c);
+    assert(c->pages[0].text && c->pages[0].nch > 10);
+    assert(tiku_pdfview_file(c, other));
+    settle(c);
+    assert(tiku_pdfview_key(c, key));
+    type_enter(c, &c->pass, "secret");
+    assert(c->locked && !c->keyfile[0] &&
+           strstr(c->status, "not one this PDF was sealed to"));
+    assert(tiku_pdfview_key(c, other));         /* a PDF is not a key */
+    type_enter(c, &c->pass, "");
+    assert(c->locked && strstr(c->status, "not a key TikuPDF reads"));
+    tiku_event_t esc = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_ESCAPE};
+    pv_event(c->window, &esc, c);
+    assert(!c->locked && !c->sealed && !pv_enabled(c, PV_OPEN_KEY));
+    unlink(pdf); unlink(other); unlink(key);
+}
+
+/** @brief Signed documents: the Signatures column opens on them, a card a
+ *         signature, its field tinted on the page; a changed one says so. */
+static void signature_tests(tiku_pdfview_t *c, const char *dir)
+{
+    char two[256], bent[256];
+    const char *label;
+    int tone, x, y, back;
+    pv_layout_t l;
+    long at;
+
+    snprintf(two, sizeof two, "%s/signed.pdf", dir);
+    snprintf(bent, sizeof bent, "%s/changed.pdf", dir);
+    write_b64(two, sg_rsa, sg_two, -1, 0);
+    assert(tiku_pdfview_file(c, two));
+    settle(c);
+    l = layout(c);
+    assert(c->nsig == 2 && c->side && c->sigs && l.side.w &&
+           pv_enabled(c, PV_SIGS) && strstr(c->status, "2 signatures"));
+    label = pv_sig_pill(c, 0, &tone);
+    assert(!strcmp(label, "Valid") && tone == TIKU_TONE_PASS);
+    assert(!strcmp(c->sig[1].signer, "Tiku EC Signer"));
+    /* The first field, Author's, tinted green on the page. */
+    point_on(c, 0, (c->sig[0].x0 + c->sig[0].x1) / 2,
+             (c->sig[0].y0 + c->sig[0].y1) / 2, &x, &y);
+    tiku_workspace_draw(desk);
+    assert(c->view[(size_t)(y - l.canvas.y) * c->view_w + (x - l.canvas.x)]
+           != 0xffffffffu);
+    back = c->nback;
+    click(c, l.side.x + 40, l.side.y + 20);     /* the first card */
+    assert(c->nback == back + 1 && pv_current(c) == 0);
+    pv_action(c, PV_OUTLINE);
+    assert(!c->sigs);
+    pv_action(c, PV_SIGS);
+    assert(c->side && c->sigs);
+
+    /* sg_rsa with its page changed after signing, as pdfsig was shown. */
+    write_b64(bent, sg_rsa, NULL, -1, 0);
+    {
+        FILE *f = fopen(bent, "rb");
+        char buf[8192];
+        size_t n = fread(buf, 1, sizeof buf, f);
+        fclose(f);
+        char *hit = memmem(buf, n, "Signed by its author", 20);
+        assert(hit);
+        at = hit - buf + 10;
+    }
+    write_b64(bent, sg_rsa, NULL, at, 'I');
+    assert(tiku_pdfview_file(c, bent));
+    settle(c);
+    label = pv_sig_pill(c, 0, &tone);
+    assert(c->nsig == 1 && !strcmp(label, "Document changed") &&
+           tone == TIKU_TONE_FAIL &&
+           strstr(c->status, "Its signature does not hold"));
+    unlink(two); unlink(bent);
+}
+
+/** @brief File > Open Recent's rows as the window published them: the
+ *         labels under Open Recent, into @p out, one a line. */
+static void recent_menu(tiku_pdfview_t *c, char *out, size_t cap)
+{
+    const tiku_menu_list_t *m = &c->window->menus.menu[0];
+    int i = 0;
+
+    out[0] = 0;
+    while (i < m->nitem && strcmp(m->item[i].label, "Open Recent")) i++;
+    assert(i < m->nitem && m->item[i].level == 0);
+    for (i++; i < m->nitem && m->item[i].level == 1; i++) {
+        strncat(out, m->item[i].separator ? "-" : m->item[i].label,
+                cap - strlen(out) - 2);
+        strcat(out, "\n");
+    }
+}
+
+/** @brief Where each document was left comes back when it opens again,
+ *         turn and zoom too; Open Recent lists the documents, newest first,
+ *         and the empty window does; lines the file should not hold are
+ *         passed over; a document gone is said so; Clear Menu forgets. */
+static void recent_tests(tiku_pdfview_t *c, const char *file,
+                         const char *other, const char *list)
+{
+    char real[PATH_MAX], menu[512], line[1024];
+    tiku_pdfview_t *d;
+    double scale;
+    int dirty = 0, picks = 0;
+    FILE *f;
+
+    assert(realpath(file, real));
+    assert(tiku_pdfview_file(c, file));
+    settle(c);
+    pv_action(c, PV_ZOOM_IN);
+    pv_action(c, PV_ROTATE_RIGHT);
+    layout(c);
+    pv_go(c, 6, 40, 0);
+    settle(c);
+    scale = c->scale;
+    assert(c->fit == PV_FIXED && pv_page_at(c, c->vbar.value) == 6);
+    assert(tiku_pdfview_file(c, other));
+    settle(c);
+    assert(c->turn == 0 && c->fit == PV_BY_WIDTH && pv_current(c) == 0);
+    assert(c->nrecent >= 2 && !strcmp(c->recent[1].path, real) &&
+           c->recent[1].page == 6 && c->recent[1].turn == 90);
+    recent_menu(c, menu, sizeof menu);
+    assert(!strncmp(menu, "second.pdf\ntiku.pdf\n", 20) &&
+           strstr(menu, "-\nClear Menu\n"));
+
+    pv_action(c, PV_RECENT + 1);                /* tiku.pdf, from the menu */
+    settle(c);
+    assert(!strcmp(c->path, real) && c->turn == 90 && c->fit == PV_FIXED);
+    assert(fabs(c->scale - scale) < 0.006 &&
+           pv_page_at(c, c->vbar.value) == 6);
+    f = fopen(list, "r");
+    assert(f && fgets(line, sizeof line, f) &&
+           !strcmp(line, "TikuPDF recent 1\n"));
+    assert(fgets(line, sizeof line, f) && !strncmp(line, "7\t", 2) &&
+           strstr(line, "\t90\t") && strstr(line, real));
+    fclose(f);
+
+    /* Another viewer reads the list as this one left it. */
+    d = tiku_pdfview_new(desk, &dirty, chosen, &picks);
+    assert(d && d->nrecent == c->nrecent &&
+           !strcmp(d->recent[0].path, real) && d->recent[0].page == 6);
+    tiku_pdfview_destroy(d);
+
+    /* What the file should not hold is passed over, not guessed at. */
+    f = fopen(list, "w");
+    assert(f);
+    fprintf(f, "TikuPDF recent 1\njunk\n3\t0\t0\twidth\t45\t/x.pdf\n"
+               "0\t0\t0\twidth\t0\t/x.pdf\n1\t0\t0\tbig\t0\t/x.pdf\n"
+               "1\t0\t0\twidth\t0\trelative.pdf\n"
+               "2\t10.5\t3\t150\t180\t%s\n1\t0\t0\tpage\t0\t/gone.pdf\n",
+            real);
+    fclose(f);
+    d = tiku_pdfview_new(desk, &dirty, chosen, &picks);
+    assert(d && d->nrecent == 2 && d->recent[0].page == 1 &&
+           d->recent[0].fit == PV_FIXED && d->recent[0].scale == 1.5 &&
+           d->recent[0].turn == 180 && d->recent[0].down == 10.5 &&
+           !d->recent[0].gone && d->recent[1].gone);
+    tiku_pdfview_destroy(d);
+
+    /* The empty window lists them; a row opens its document. */
+    tiku_pdfview_close(c);
+    settle(c);
+    tiku_pdfview_open(c);
+    tiku_workspace_draw(desk);
+    assert(!c->doc && c->nrecent >= 2);
+    tiku_rect_t row = pv_recent_row(c, layout(c).canvas, 1);
+    assert(row.w && pv_recent_shown(c, 1) == 1);
+    tiku_event_t move = {.type = TIKU_EVENT_POINTER_MOVE,
+                         .x = row.x + 10, .y = row.y + 4};
+    pv_event(c->window, &move, c);
+    assert(c->recent_hover == 1 && !strcmp(c->hint, c->recent[1].path));
+    click(c, row.x + 10, row.y + 4);
+    settle(c);
+    assert(c->doc && !strcmp(c->path, c->recent[0].path));
+
+    /* A document gone from where it was is said so, and not offered. */
+    snprintf(c->recent[1].path, sizeof c->recent[1].path, "%s.gone", real);
+    c->recent[1].gone = 0;
+    pv_action(c, PV_RECENT + 1);
+    assert(strstr(c->status, "no longer at") && c->recent[1].gone);
+    recent_menu(c, menu, sizeof menu);
+    assert(!strstr(menu, ".gone"));
+
+    pv_action(c, PV_CLEAR_RECENT);
+    assert(c->nrecent == 0 && !pv_enabled(c, PV_CLEAR_RECENT));
+    f = fopen(list, "r");
+    assert(f && fgets(line, sizeof line, f) && !fgets(line, sizeof line, f));
+    fclose(f);
+    recent_menu(c, menu, sizeof menu);
+    assert(!menu[0]);
+}
+
 int main(int argc, char **argv)
 {
     char dir[] = "/tmp/tikupdf-XXXXXX", file[256], junk[256], shot[256];
+    char other[256], list[256];
     pdfw_t b = document();
     int dirty = 0, picks = 0;
     FILE *f;
@@ -506,9 +876,15 @@ int main(int argc, char **argv)
     (void)argv;
     assert(mkdtemp(dir));
     snprintf(file, sizeof file, "%s/tiku.pdf", dir);
+    snprintf(other, sizeof other, "%s/second.pdf", dir);
     snprintf(junk, sizeof junk, "%s/notes.pdf", dir);
     snprintf(shot, sizeof shot, "%s/viewer.png", dir);
+    snprintf(list, sizeof list, "%s/recent", dir);
+    setenv("TIKU_PDF_RECENT", list, 1);         /* never the person's own */
     f = fopen(file, "wb");
+    assert(f && fwrite(b.p, 1, (size_t)b.n, f) == (size_t)b.n);
+    fclose(f);
+    f = fopen(other, "wb");
     assert(f && fwrite(b.p, 1, (size_t)b.n, f) == (size_t)b.n);
     fclose(f);
     free(b.p);
@@ -531,6 +907,7 @@ int main(int argc, char **argv)
     selection_tests(c);
     large_copy_test(c);
     field_tests(c);
+    rotation_tests(c);
     thumbnail_tests(c, s, file);
     pv_action(c, PV_FIRST);
     settle(c);
@@ -545,6 +922,9 @@ int main(int argc, char **argv)
     settle(c);
     assert(strstr(c->status, "not a PDF") && c->npage == PAGES);
     locked_tests(c, dir);
+    sealed_tests(c, dir);
+    signature_tests(c, dir);
+    recent_tests(c, file, other, list);
 
     tiku_pdfview_close(c);
     settle(c);
@@ -558,8 +938,12 @@ int main(int argc, char **argv)
     tiku_workspace_free(tiku_workspace_new(s));
     tiku_surface_free(s);
     if (argc > 1) printf("Preview: %s\n", shot);
-    else { unlink(file); unlink(junk); rmdir(dir); }
-    puts("PDF viewer: open, draw, zoom, outline, links, find, copy, "
-         "thumbnails, passwords, close PASS");
+    else {
+        unlink(file); unlink(other); unlink(junk); unlink(list);
+        rmdir(dir);
+    }
+    puts("PDF viewer: open, draw, zoom, turn, outline, links, find, copy, "
+         "thumbnails, passwords, certificates, signatures, places and "
+         "recent documents, close PASS");
     return 0;
 }

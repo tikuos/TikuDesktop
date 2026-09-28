@@ -10,12 +10,15 @@ typedef struct {
     tiku_window_app_t *host;
     tiku_pdfview_t *viewer;
     int dirty;
+    int key;                        /* the pick asked is for a key file */
 } pdf_app_t;
 
-/** @brief Open... asks the desktop for a file, starting at home. */
-static void choose(void *ctx)
+/** @brief Open... asks the desktop for a file, starting at home: a PDF,
+ *         or the key file a sealed one wants. */
+static void choose(void *ctx, int key)
 {
     pdf_app_t *a = ctx;
+    a->key = key;
     if (a->services.pick)
         a->services.pick(a->services.ctx, tiku_window_app_id(a->host,
             tiku_pdfview_handle(a->viewer)), TIKU_APP_PICK_LOCAL_OPEN,
@@ -82,11 +85,13 @@ static int pick(void *state, uint32_t id, int command)
     return !tiku_pdfview_handle(a->viewer);
 }
 
-/** @brief The file Open... chose. */
+/** @brief The file Open... or Open Key... chose. */
 static void picked(void *state, uint32_t id, const char *path)
 {
     pdf_app_t *a = state; (void)id;
-    if (path) tiku_pdfview_file(a->viewer, path);
+    if (path && a->key) (void)tiku_pdfview_key(a->viewer, path);
+    else if (path) tiku_pdfview_file(a->viewer, path);
+    a->key = 0;
 }
 
 /** @brief The desktop closed the window. */

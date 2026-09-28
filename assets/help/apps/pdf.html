@@ -17,6 +17,20 @@ as a mark of its own, letters come full width, or a space is an odd one.
 The password is used once and not kept. A document whose author does not
 allow its text to be copied can still be read and searched; Copy says
 so instead of copying.</p>
+<p>A PDF sealed to certificates opens only for the people it was sealed
+to, with their own key. TikuPDF asks for your key file at once &#8212; a
+.p12 or .pfx file, or a PEM file, holding the RSA key of your
+certificate &#8212; and then turns the Find field into the key's password
+(just Enter when it has none). <b>File &gt; Open Key...</b> chooses
+another key file. The status line says when the password does not open
+the key, or the key is not one the PDF was sealed to. The key and its
+password are used once and not kept.</p>
+<p>TikuPDF remembers where you left each document &#8212; the page, how
+far down it, the zoom and the turn &#8212; and opens it there again.
+<b>File &gt; Open Recent</b> lists the documents read lately, as does
+the empty window; <b>Clear Menu</b> forgets them and their places. They
+are kept in TikuPDFRecent in your settings folder (~/.config), never in
+the documents.</p>
 <h2 id="view">Reading</h2>
 <ul>
 <li>Pages follow one another; scroll with the mouse wheel, the arrow keys,
@@ -28,6 +42,11 @@ window is resized; <b>Page</b> fits a whole page. <b>+</b> and <b>-</b>
 the actual size.</li>
 <li>Type a page number in the field beside the arrows and press Enter to
 go to it. <b>&lt;</b> and <b>&gt;</b> step a page.</li>
+<li><b>Rotate Right</b> (<b>Ctrl+R</b>) and <b>Rotate Left</b>
+(<b>Ctrl+L</b>), in the View menu, turn every page a quarter at a time,
+for the drawing printed sideways; the status line shows the turn.
+Selecting, finding and links work on the turned pages as on upright
+ones.</li>
 <li>Pages are drawn as you reach them; a page not drawn yet is white, and
 after a zoom the old drawing stands in until the new one is ready.</li>
 </ul>
@@ -55,6 +74,30 @@ the search and run it again.</p>
 <b>Ctrl+A</b> selects the text of the page you are on. The clipboard holds
 16 MB of text, room for the whole of a long document; copying more takes
 the first 16 MB and the status line says so.</p>
+<h2 id="signatures">Signatures</h2>
+<p>A signed document opens with <b>Signed</b> held down: the column beside
+the pages shows each signature, in the order they were made, and the
+signed fields on the pages are tinted by what was found. For each, TikuPDF
+checks that the part of the file it signs is exactly what was signed, by
+the key of the certificate the signature carries, and whether anything
+was added to the file after it.</p>
+<ul>
+<li><b>Valid</b>: nothing it signs has changed. <b>Valid; added to</b>:
+what it signs is intact, but the document was added to after the last
+signature &#8212; a filled-in form, or other changes.</li>
+<li><b>Document changed</b>: what it signs is not what was signed.
+<b>Not valid</b>: the signature is not its certificate's key's.
+<b>Not checked</b>: it is made in a way TikuPDF does not read.</li>
+<li>Each shows who signed, their organisation, when (from a timestamp
+authority when there is one, else the signer's own clock, in UTC), and
+the reason and place they gave. A click goes to the signature's field.</li>
+</ul>
+<p>What is not checked: whether the certificate is who it names. A
+certificate anyone can make says any name; TikuPDF keeps no list of the
+authorities it would trust, and each card says whose certificate it is.
+Signatures by RSA (PKCS#1 and PSS) and ECDSA, in the forms PDFs use
+(adbe.pkcs7.detached, ETSI.CAdES.detached, adbe.pkcs7.sha1,
+adbe.x509.rsa_sha1) and document timestamps, are checked.</p>
 <h2 id="limits">What is not drawn yet</h2>
 <p>Shadings of every kind, repeating patterns, transparency (blend modes,
 soft masks, and groups, knockout ones too), faxed, JBIG2, JPEG 2000 and

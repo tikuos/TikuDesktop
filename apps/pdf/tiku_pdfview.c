@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_pdfview.h"
 #include "tiku_clipboard.h"
+#include "tiku_der.h"
 #include "tiku_dialog.h"
 #include "tiku_field_event.h"
 #include "tiku_font.h"
@@ -16,11 +17,14 @@
 #include "tiku_ui.h"
 #include "tiku_work.h"
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define PV_MARGIN      12           /* around the pages, in pixels      */
 #define PV_GAP         10           /* between two pages                */
@@ -38,12 +42,16 @@
 #define PV_THUMB_W     150          /* a thumbnail's box, in pixels     */
 #define PV_THUMB_H     190
 #define PV_THUMB_KEEP  64           /* thumbnails kept drawn            */
+#define PV_RECENT_KEEP 100          /* documents whose place is kept    */
+#define PV_RECENT_SHOWN 10          /* of those, the ones offered       */
+#define PV_EMPTY_LINES 4            /* the empty window's words, in lines */
 
 enum { PV_OPEN = 1, PV_CLOSE, PV_COPY, PV_SELECT_ALL, PV_FIND, PV_FIND_NEXT,
        PV_FIND_PREV, PV_OUTLINE, PV_ZOOM_IN, PV_ZOOM_OUT, PV_ACTUAL,
        PV_FIT_WIDTH, PV_FIT_PAGE, PV_PREV, PV_NEXT, PV_FIRST, PV_LAST,
-       PV_BACK, PV_MATCH_CASE, PV_WHOLE_WORDS, PV_THUMBS, PV_PAGE_FIELD,
-       PV_FIND_FIELD, PV_CANVAS, PV_SIDE };
+       PV_BACK, PV_MATCH_CASE, PV_WHOLE_WORDS, PV_THUMBS, PV_ROTATE_LEFT,
+       PV_ROTATE_RIGHT, PV_CLEAR_RECENT, PV_OPEN_KEY, PV_SIGS, PV_PAGE_FIELD,
+       PV_FIND_FIELD, PV_CANVAS, PV_SIDE, PV_RECENT = 100 };
 enum { PV_FIXED, PV_BY_WIDTH, PV_BY_PAGE };
 
 /** @brief An open document as its jobs share it. */
@@ -80,6 +88,14 @@ typedef struct {
 /** @brief A place in the text: a page, and a gap between characters. */
 typedef struct { int page; long at; } pv_mark_t;
 
+/** @brief Where a document was left: a page, how far down and across it
+ *         the view stood in its points as shown, the zoom and the turn. */
+typedef struct {
+    char path[TIKU_PATH_MAX];       /* the file, its links resolved      */
+    int page, fit, turn, gone;      /* gone: not where it was when read  */
+    double down, across, scale;     /* scale: for a fixed zoom           */
+} pv_place_t;
+
 /** @brief Where the parts of the window go, from one description. */
 typedef struct {
     tiku_rect_t tools, side, canvas, vbar, hbar, status, page, of, find;
@@ -89,12 +105,13 @@ struct tiku_pdfview {
     tiku_workspace_t *workspace;
     tiku_window_t *window;
     int *dirty, refs, generation, loading;
-    void (*choose)(void *ctx);
+    void (*choose)(void *ctx, int key);
     void *ctx;
     char path[TIKU_PATH_MAX], title[256], status[320], hint[320];
     pv_doc_t *doc;
-    int npage, widest;              /* pages, and the widest one         */
+    int npage, widest;              /* pages, and the widest one shown   */
     float *pw, *ph;                 /* each page as drawn at scale 1     */
+    int turn;                       /* the view's turn: 0, 90, 180, 270  */
     long *top, height, width;       /* the pages laid out at the scale   */
     pv_page_t *pages;
     int ntext;                      /* pages holding their text          */
@@ -119,6 +136,10 @@ struct tiku_pdfview {
     tiku_field_input_t find_in, go_in, pass_in;
     int locked, may_copy;           /* waiting for a password; copying ok */
     char locked_path[TIKU_PATH_MAX];
+    int sealed;                     /* the locked one wants a key file   */
+    char keyfile[TIKU_PATH_MAX];    /* the key file chosen for it, or "" */
+    tiku_pdf_signature_t *sig;      /* the shown document's, checked     */
+    int nsig, sigs, sig_top;        /* ...; the column shows them; scroll */
     pv_match_t *match;
     int nmatch, cur, searching, searched, search_gen, want_next;
     char query[TIKU_FIELD_MAX];     /* what the matches are of           */
@@ -131,6 +152,10 @@ struct tiku_pdfview {
     int nback;
     uint32_t *view;                 /* the canvas, composed each frame   */
     int view_w, view_h;
+    pv_place_t recent[PV_RECENT_KEEP]; /* most recent first              */
+    int nrecent, recent_hover;      /* the empty window's lit row, or -1 */
+    pv_place_t restore;             /* where the new document was left   */
+    int restoring;                  /* until the first layout takes it up */
 };
 
 static void pv_menus(tiku_pdfview_t *c);
@@ -143,6 +168,16 @@ static void pv_marks(tiku_pdfview_t *c, int p, int x, int y);
 static void pv_side_draw(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r);
 static void pv_open_address(tiku_pdfview_t *c, const char *uri);
 static void pv_forget_password(tiku_pdfview_t *c);
+static void pv_menu_add(tiku_pdfview_t *c, tiku_menu_list_t *m, int id,
+                        char sc, unsigned mods, int marked);
+static void pv_recent_note(tiku_pdfview_t *c);
+static void pv_recent_restore(tiku_pdfview_t *c);
+static void pv_recent_apply(tiku_pdfview_t *c);
+static void pv_recent_draw(tiku_pdfview_t *c, tiku_surface_t *s,
+                           tiku_rect_t canvas);
+static int pv_recent_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
+                             tiku_rect_t canvas);
+static int pv_empty_top(const tiku_pdfview_t *c, tiku_rect_t canvas);
 
 /** @brief Something the window shows has changed. */
 static void pv_changed(tiku_pdfview_t *c)
@@ -161,6 +196,26 @@ static void pv_say(tiku_pdfview_t *c, const char *text)
 static int pv_in(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+}
+
+/** @brief Page @p p's width in points as the view shows it: turned. */
+static double pv_pw(const tiku_pdfview_t *c, int p)
+{
+    return c->turn % 180 ? c->ph[p] : c->pw[p];
+}
+
+/** @brief Page @p p's height in points as the view shows it: turned. */
+static double pv_ph(const tiku_pdfview_t *c, int p)
+{
+    return c->turn % 180 ? c->pw[p] : c->ph[p];
+}
+
+/** @brief The widest page as the view shows it, the one Fit Width fits. */
+static void pv_find_widest(tiku_pdfview_t *c)
+{
+    c->widest = 0;
+    for (int p = 1; p < c->npage; p++)
+        if (pv_pw(c, p) > pv_pw(c, c->widest)) c->widest = p;
 }
 
 /** @brief One job or the viewer fewer; the last one closes it. */
@@ -200,14 +255,19 @@ static void pv_forget(tiku_pdfview_t *c)
     }
     free(c->pages); free(c->pw); free(c->ph); free(c->top);
     free(c->folded); free(c->rows); free(c->match);
+    tiku_pdf_signatures_free(c->sig, c->nsig);
+    c->sig = NULL;
+    c->nsig = c->sigs = c->sig_top = 0;
     tiku_pdf_outline_free(c->outline, c->noutline);
     c->pages = NULL; c->pw = c->ph = NULL; c->top = NULL;
     c->folded = NULL; c->rows = NULL; c->match = NULL; c->outline = NULL;
     c->npage = c->noutline = c->nrows = c->nmatch = c->ntext = 0;
     c->inflight = c->searching = c->searched = c->want_next = 0;
     c->selected = c->selecting = c->pressing = c->nback = 0;
+    c->restoring = 0;
+    c->recent_hover = -1;
     c->cur = c->link_page = c->link_at = c->press_page = c->press_link = -1;
-    c->widest = 0;
+    c->widest = c->turn = 0;
     c->height = c->width = 0; c->laid_w = c->laid_h = 0;
     c->laid_scale = 0; c->search_gen++; c->query[0] = 0;
     c->path[0] = c->title[0] = c->hint[0] = 0;
@@ -229,7 +289,9 @@ static void pv_unref(tiku_pdfview_t *c)
 
 #include "tiku_pdfview_jobs.inl"
 #include "tiku_pdfview_view.inl"
+#include "tiku_pdfview_sigs.inl"
 #include "tiku_pdfview_text.inl"
+#include "tiku_pdfview_recent.inl"
 
 /** @brief Menu and control labels, by command. */
 static const char *pv_label(int id)
@@ -238,8 +300,9 @@ static const char *pv_label(int id)
         "Select Page Text", "Find...", "Find Next", "Find Previous",
         "Outline", "Zoom In", "Zoom Out", "Actual Size", "Fit Width",
         "Fit Page", "Previous Page", "Next Page", "First Page", "Last Page",
-        "Back", "Match Case", "Whole Words", "Thumbnails" };
-    return id >= PV_OPEN && id <= PV_THUMBS ? labels[id] : "";
+        "Back", "Match Case", "Whole Words", "Thumbnails", "Rotate Left",
+        "Rotate Right", "Clear Menu", "Open Key...", "Signatures" };
+    return id >= PV_OPEN && id <= PV_SIGS ? labels[id] : "";
 }
 
 /** @brief Whether command @p id can do anything now. */
@@ -249,6 +312,10 @@ static int pv_enabled(tiku_pdfview_t *c, int id)
 
     if (id == PV_OPEN) return c->choose && !c->loading;
     if (id == PV_CLOSE) return 1;
+    if (id == PV_CLEAR_RECENT) return c->nrecent > 0;
+    if (id == PV_OPEN_KEY) return c->locked && c->sealed && c->choose &&
+                                  !c->loading;
+    if (id == PV_SIGS) return c->nsig > 0;
     if (!c->doc) return 0;
     if (id == PV_OUTLINE) return c->noutline > 0;
     if (id == PV_COPY) return c->selected;
@@ -286,7 +353,13 @@ static void pv_action(tiku_pdfview_t *c, int id)
     int page = c->npage ? pv_current(c) : 0;
 
     if (id == PV_OPEN) {
-        if (c->choose && !c->loading) c->choose(c->ctx);
+        if (c->choose && !c->loading) c->choose(c->ctx, 0);
+    } else if (id == PV_OPEN_KEY) {
+        if (pv_enabled(c, PV_OPEN_KEY)) c->choose(c->ctx, 1);
+    } else if (id >= PV_RECENT && id < PV_RECENT + PV_RECENT_KEEP) {
+        pv_recent_open(c, id - PV_RECENT);
+    } else if (id == PV_CLEAR_RECENT) {
+        pv_recent_clear(c);
     } else if (id == PV_CLOSE) {
         tiku_pdfview_close(c);
         return;
@@ -308,17 +381,24 @@ static void pv_action(tiku_pdfview_t *c, int id)
         }
     }
     else if (id == PV_OUTLINE) {
-        c->side = !(c->side && !c->thumbs) && c->noutline > 0;
-        c->thumbs = 0;
+        c->side = !(c->side && !c->thumbs && !c->sigs) && c->noutline > 0;
+        c->thumbs = c->sigs = 0;
     } else if (id == PV_THUMBS) {
         c->side = !(c->side && c->thumbs);
         c->thumbs = c->side;
+        c->sigs = 0;
+    } else if (id == PV_SIGS) {
+        c->side = !(c->side && c->sigs) && c->nsig > 0;
+        c->sigs = c->side;
+        c->thumbs = 0;
     }
     else if (id == PV_ZOOM_IN) pv_zoom_step(c, 1);
     else if (id == PV_ZOOM_OUT) pv_zoom_step(c, -1);
     else if (id == PV_ACTUAL) pv_set_scale(c, PV_FIXED, 1.0);
     else if (id == PV_FIT_WIDTH) pv_set_scale(c, PV_BY_WIDTH, c->scale);
     else if (id == PV_FIT_PAGE) pv_set_scale(c, PV_BY_PAGE, c->scale);
+    else if (id == PV_ROTATE_LEFT) pv_turn(c, 270);
+    else if (id == PV_ROTATE_RIGHT) pv_turn(c, 90);
     else if (id == PV_PREV && page > 0) pv_go(c, page - 1, 0, 0);
     else if (id == PV_NEXT && page + 1 < c->npage) pv_go(c, page + 1, 0, 0);
     else if (id == PV_FIRST) pv_go(c, 0, 0, 0);
@@ -373,6 +453,8 @@ static int pv_command_key(tiku_pdfview_t *c, const tiku_event_t *ev)
     else if (key == '+' || key == '=') pv_action(c, PV_ZOOM_IN);
     else if (key == '-') pv_action(c, PV_ZOOM_OUT);
     else if (key == '0') pv_action(c, PV_ACTUAL);
+    else if (key == 'l') pv_action(c, PV_ROTATE_LEFT);
+    else if (key == 'r') pv_action(c, PV_ROTATE_RIGHT);
     else if (key == '[') pv_action(c, PV_BACK);
     else if (key == TIKU_KEY_UP) pv_action(c, PV_FIRST);
     else if (key == TIKU_KEY_DOWN) pv_action(c, PV_LAST);
@@ -403,8 +485,12 @@ static int pv_field_event(tiku_pdfview_t *c, const tiku_event_t *ev,
     if (!find && c->dialog.focus != PV_PAGE_FIELD) return 0;
     if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_TAB) return 0;
     r = tiku_field_event(f, in, ev, find ? l->find : l->page, 1);
-    if (r == TIKU_FIELD_COMMITTED && find && c->locked) {
-        (void)pv_load(c, c->locked_path, c->pass.text);
+    if (r == TIKU_FIELD_COMMITTED && find && c->locked && c->sealed &&
+        !c->keyfile[0]) {
+        pv_action(c, PV_OPEN_KEY);      /* the key file first */
+    } else if (r == TIKU_FIELD_COMMITTED && find && c->locked) {
+        (void)pv_load_as(c, c->locked_path, c->sealed ? c->keyfile : "",
+                         c->pass.text);
         pv_forget_password(c);
     } else if (r == TIKU_FIELD_COMMITTED && find) {
         pv_find(c, ev->modifiers & TIKU_MOD_SHIFT ? -1 : 1);
@@ -412,7 +498,8 @@ static int pv_field_event(tiku_pdfview_t *c, const tiku_event_t *ev,
         pv_go_typed(c);
     } else if (r == TIKU_FIELD_CANCELLED) {
         if (find && c->locked) {
-            c->locked = 0;
+            c->locked = c->sealed = 0;
+            c->keyfile[0] = 0;
             pv_forget_password(c);
             pv_say(c, "The locked PDF was left closed.");
         }
@@ -480,6 +567,7 @@ static int pv_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
                   ev->type == TIKU_EVENT_WHEEL;
 
     if (ev->type == TIKU_EVENT_DEACTIVATED) {
+        pv_recent_note(c);          /* kept, should the process not be */
         c->pressing = c->selecting = c->vdrag = c->hdrag = 0;
         tiku_scroll_release(&c->vbar);
         tiku_scroll_release(&c->hbar);
@@ -505,6 +593,7 @@ static void pv_window_gone(tiku_window_t *w, void *ctx)
 {
     tiku_pdfview_t *c = ctx;
     (void)w;
+    pv_recent_note(c);
     c->window = NULL;
     c->generation++;
     pv_forget(c);
@@ -548,6 +637,10 @@ static void pv_menus(tiku_pdfview_t *c)
         snprintf(menus.menu[i].title, sizeof menus.menu[i].title, "%s",
                  titles[i]);
     pv_menu_add(c, &menus.menu[0], PV_OPEN, 'o', TIKU_MOD_CMD, 0);
+    if (c->locked && c->sealed) {
+        pv_menu_add(c, &menus.menu[0], PV_OPEN_KEY, 0, 0, 0);
+    }
+    pv_menu_recent(c, &menus.menu[0]);
     pv_menu_add(c, &menus.menu[0], PV_CLOSE, 'w', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[1], PV_COPY, 'c', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[1], PV_SELECT_ALL, 'a', TIKU_MOD_CMD, 0);
@@ -560,6 +653,7 @@ static void pv_menus(tiku_pdfview_t *c)
     pv_menu_add(c, &menus.menu[2], PV_OUTLINE, 0, 0,
                 c->side && !c->thumbs && c->noutline > 0);
     pv_menu_add(c, &menus.menu[2], PV_THUMBS, 0, 0, c->side && c->thumbs);
+    pv_menu_add(c, &menus.menu[2], PV_SIGS, 0, 0, c->side && c->sigs);
     pv_menu_add(c, &menus.menu[2], PV_ZOOM_IN, '+', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[2], PV_ZOOM_OUT, '-', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[2], PV_ACTUAL, '0', TIKU_MOD_CMD,
@@ -567,6 +661,8 @@ static void pv_menus(tiku_pdfview_t *c)
     pv_menu_add(c, &menus.menu[2], PV_FIT_WIDTH, 0, 0,
                 c->fit == PV_BY_WIDTH);
     pv_menu_add(c, &menus.menu[2], PV_FIT_PAGE, 0, 0, c->fit == PV_BY_PAGE);
+    pv_menu_add(c, &menus.menu[2], PV_ROTATE_LEFT, 'l', TIKU_MOD_CMD, 0);
+    pv_menu_add(c, &menus.menu[2], PV_ROTATE_RIGHT, 'r', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[3], PV_PREV, 0, 0, 0);
     pv_menu_add(c, &menus.menu[3], PV_NEXT, 0, 0, 0);
     pv_menu_add(c, &menus.menu[3], PV_FIRST, 0, 0, 0);
@@ -576,7 +672,8 @@ static void pv_menus(tiku_pdfview_t *c)
 }
 
 tiku_pdfview_t *tiku_pdfview_new(tiku_workspace_t *workspace, int *dirty,
-                                 void (*choose)(void *ctx), void *ctx)
+                                 void (*choose)(void *ctx, int key),
+                                 void *ctx)
 {
     tiku_pdfview_t *c = calloc(1, sizeof *c);
 
@@ -597,6 +694,7 @@ tiku_pdfview_t *tiku_pdfview_new(tiku_workspace_t *workspace, int *dirty,
     tiku_field_input_init(&c->go_in);
     pv_forget_password(c);
     pv_forget(c);
+    pv_recent_read(c);
     return c;
 }
 
@@ -636,6 +734,24 @@ void tiku_pdfview_destroy(tiku_pdfview_t *c)
 tiku_window_t *tiku_pdfview_handle(tiku_pdfview_t *c)
 {
     return c ? c->window : NULL;
+}
+
+int tiku_pdfview_key(tiku_pdfview_t *c, const char *keyfile)
+{
+    const char *name;
+    char said[320];
+
+    if (!c || !c->locked || !c->sealed || !keyfile || !*keyfile ||
+        strlen(keyfile) >= sizeof c->keyfile) return 0;
+    snprintf(c->keyfile, sizeof c->keyfile, "%s", keyfile);
+    name = strrchr(keyfile, '/') ? strrchr(keyfile, '/') + 1 : keyfile;
+    pv_forget_password(c);
+    tiku_dialog_focus(&c->dialog, PV_FIND_FIELD);
+    snprintf(said, sizeof said, "Type the password of %.200s and press "
+             "Enter; just Enter when it has none.", name);
+    pv_say(c, said);
+    pv_menus(c);
+    return 1;
 }
 
 const char *tiku_pdfview_path(tiku_pdfview_t *c)

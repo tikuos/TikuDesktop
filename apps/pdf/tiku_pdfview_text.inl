@@ -26,12 +26,24 @@ static void pv_outline_start(tiku_pdfview_t *c)
     pv_outline_rows(c);
 }
 
+/** @brief How far down its page, in points as the view shows it, the
+ *         place @p to leads to lands: turned with the view. */
+static double pv_dest_y(tiku_pdfview_t *c, const tiku_pdf_dest_t *to)
+{
+    double x = to->left, y = to->top;
+
+    tiku_pdf_turn_point(c->pw[to->page], c->ph[to->page], c->turn, 0, &x,
+                        &y);
+    return y;
+}
+
 /** @brief Follow outline entry @p i: its place, or its address. */
 static void pv_outline_open(tiku_pdfview_t *c, int i)
 {
     const tiku_pdf_dest_t *to = &c->outline[i].to;
 
-    if (to->page >= 0) pv_go(c, to->page, to->top, 1);
+    if (to->page >= 0 && to->page < c->npage)
+        pv_go(c, to->page, pv_dest_y(c, to), 1);
     else pv_open_address(c, to->uri);
 }
 
@@ -44,8 +56,9 @@ static int pv_outline_here(tiku_pdfview_t *c)
 
     for (int r = 0; r < c->nrows; r++) {
         const tiku_pdf_dest_t *to = &c->outline[c->rows[r]].to;
-        if (to->page < 0) continue;
-        if (to->page > page || (to->page == page && to->top > y + 1)) break;
+        if (to->page < 0 || to->page >= c->npage) continue;
+        if (to->page > page || (to->page == page && pv_dest_y(c, to) > y + 1))
+            break;
         here = r;
     }
     return here;
@@ -57,6 +70,10 @@ static void pv_side_draw(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r)
 {
     int shown;
 
+    if (c->sigs) {
+        pv_sigs_draw(c, s, r);
+        return;
+    }
     if (c->thumbs) {
         pv_thumbs_draw(c, s, r);
         return;
@@ -100,6 +117,7 @@ static int pv_side_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
     int row;
 
     if (!l->side.w || !pv_in(l->side, ev->x, ev->y)) return 0;
+    if (c->sigs) return pv_sigs_pointer(c, ev, l);
     if (c->thumbs) return pv_thumbs_pointer(c, ev, l);
     if (ev->type == TIKU_EVENT_WHEEL) {
         (void)tiku_list_scroll_to(&c->list, c->list.top + ev->dy, l->side);
@@ -131,6 +149,7 @@ static int pv_side_key(tiku_pdfview_t *c, const tiku_event_t *ev,
     int row = c->list.cursor, i;
 
     if (ev->key == TIKU_KEY_TAB || ev->key == TIKU_KEY_ESCAPE) return 0;
+    if (c->sigs) return pv_sigs_key(c, ev);
     if (c->thumbs) return pv_thumbs_key(c, ev);
     if (row >= 0 && row < c->nrows) {
         i = c->rows[row];
@@ -171,7 +190,8 @@ static void pv_open_address(tiku_pdfview_t *c, const char *uri)
 }
 
 /** @brief The page under canvas point @p x, @p y, and the point on it in
- *         the page's own points.  @return the page, or -1 for none. */
+ *         the page's own points, as drawn: the view's turn taken back.
+ *         @return the page, or -1 for none. */
 static int pv_point(tiku_pdfview_t *c, tiku_rect_t canvas, int x, int y,
                     double *ux, double *uy)
 {
@@ -182,6 +202,7 @@ static int pv_point(tiku_pdfview_t *c, tiku_rect_t canvas, int x, int y,
     p = pv_page_at(c, at);
     *ux = (x - pv_page_x(c, canvas, p)) / c->scale;
     *uy = (at - c->top[p]) / c->scale;
+    tiku_pdf_turn_point(c->pw[p], c->ph[p], c->turn, 1, ux, uy);
     return p;
 }
 
@@ -208,8 +229,8 @@ static void pv_follow(tiku_pdfview_t *c, int p, int i)
     const tiku_pdf_dest_t *to = &c->pages[p].link[i].to;
     char said[64];
 
-    if (to->page >= 0) {
-        pv_go(c, to->page, to->top, 1);
+    if (to->page >= 0 && to->page < c->npage) {
+        pv_go(c, to->page, pv_dest_y(c, to), 1);
         snprintf(said, sizeof said, "Page %d. Ctrl+[ goes back.",
                  to->page + 1);
         pv_say(c, said);
@@ -411,9 +432,10 @@ static void pv_copy(tiku_pdfview_t *c)
 
 /* -------------------------------------------------------------- marks  */
 
-/** @brief Characters @p a up to @p b selected: each line's run of boxes
- *         tinted as one, so neighbours do not overlap into seams. */
-static void pv_tint_run(tiku_pdfview_t *c, int x, int y,
+/** @brief Characters @p a up to @p b of page @p p selected: each line's
+ *         run of boxes tinted as one, so neighbours do not overlap into
+ *         seams. */
+static void pv_tint_run(tiku_pdfview_t *c, int p, int x, int y,
                         const tiku_pdf_char_t *ch, long a, long b)
 {
     float run[4];
@@ -429,11 +451,11 @@ static void pv_tint_run(tiku_pdfview_t *c, int x, int y,
             if (k->y1 > run[3]) run[3] = k->y1;
             continue;
         }
-        if (open) pv_tint_box(c, x, y, run, 0x603d7fe0u);
+        if (open) pv_tint_box(c, p, x, y, run, 0x603d7fe0u);
         run[0] = k->x0; run[1] = k->y0; run[2] = k->x1; run[3] = k->y1;
         open = 1;
     }
-    if (open) pv_tint_box(c, x, y, run, 0x603d7fe0u);
+    if (open) pv_tint_box(c, p, x, y, run, 0x603d7fe0u);
 }
 
 /** @brief What is marked on page @p p where it is shown at @p x, @p y:
@@ -448,20 +470,21 @@ static void pv_marks(tiku_pdfview_t *c, int p, int x, int y)
         if (p >= from.page && p <= to.page) {
             long a = p == from.page ? from.at : 0;
             long b = p == to.page ? to.at : pg->nch;
-            pv_tint_run(c, x, y, pg->ch, a, b < pg->nch ? b : pg->nch);
+            pv_tint_run(c, p, x, y, pg->ch, a, b < pg->nch ? b : pg->nch);
         }
     }
     for (int m = 0; m < c->nmatch; m++) {
         if (c->match[m].page != p) continue;
         for (int r = 0; r < c->match[m].nr; r++)
-            pv_tint_box(c, x, y, c->match[m].r[r], m == c->cur ?
+            pv_tint_box(c, p, x, y, c->match[m].r[r], m == c->cur ?
                         0x90ff8c00u : 0x70ffd400u);
     }
+    pv_sig_marks(c, p, x, y);
     if (c->link_page == p && c->link_at >= 0 && pg->text &&
         c->link_at < pg->nlink) {
         const tiku_pdf_link_t *k = &pg->link[c->link_at];
         float box[4] = { k->x0, k->y0, k->x1, k->y1 };
-        pv_tint_box(c, x, y, box, 0x302a6fdbu);
+        pv_tint_box(c, p, x, y, box, 0x302a6fdbu);
     }
 }
 
@@ -493,11 +516,12 @@ static void pv_show_match(tiku_pdfview_t *c, int m)
 {
     char said[96];
     const pv_match_t *hit = &c->match[m];
-    double y = hit->nr ? hit->r[0][1] : 0;
+    double box[4] = { 0, 0, 0, 0 };
 
+    if (hit->nr) pv_turn_box(c, hit->page, hit->r[0], box);
     c->cur = m;
     if (c->laid_scale) {
-        long at = c->top[hit->page] + (long)(y * c->scale);
+        long at = c->top[hit->page] + (long)(box[1] * c->scale);
         if (at < c->vbar.value || at > c->vbar.value + c->laid_h - 40)
             tiku_scroll_to(&c->vbar, (int)(at - c->laid_h / 3));
     }
@@ -593,6 +617,7 @@ static int pv_canvas_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
 {
     int inside = pv_in(l->canvas, ev->x, ev->y), page;
 
+    if (!c->doc) return pv_recent_pointer(c, ev, l->canvas);
     if (ev->type == TIKU_EVENT_WHEEL && inside && c->doc) {
         if (ev->modifiers & TIKU_MOD_CMD) pv_zoom_step(c, ev->dy < 0 ? 1 : -1);
         else if (ev->modifiers & TIKU_MOD_SHIFT)

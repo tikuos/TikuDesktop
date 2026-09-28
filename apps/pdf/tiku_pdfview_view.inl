@@ -1,17 +1,17 @@
 /* The view: pages one under another at one scale, a canvas composed
  * from the pages drawn so far, and the chrome around it. */
 
-/** @brief Page @p p's width in pixels at the scale shown. */
+/** @brief Page @p p's width in pixels at the scale and turn shown. */
 static int pv_page_w(tiku_pdfview_t *c, int p)
 {
-    int w = (int)(c->pw[p] * c->scale + 0.5);
+    int w = (int)(pv_pw(c, p) * c->scale + 0.5);
     return w > 0 ? w : 1;
 }
 
-/** @brief Page @p p's height in pixels at the scale shown. */
+/** @brief Page @p p's height in pixels at the scale and turn shown. */
 static int pv_page_h(tiku_pdfview_t *c, int p)
 {
-    int h = (int)(c->ph[p] * c->scale + 0.5);
+    int h = (int)(pv_ph(c, p) * c->scale + 0.5);
     return h > 0 ? h : 1;
 }
 
@@ -50,19 +50,20 @@ static double pv_fit_scale(tiku_pdfview_t *c, tiku_rect_t canvas)
     int p = c->laid_scale ? pv_current(c) : 0;
 
     if (c->fit == PV_BY_WIDTH)
-        s = (canvas.w - 2.0 * PV_MARGIN) / c->pw[c->widest];
+        s = (canvas.w - 2.0 * PV_MARGIN) / pv_pw(c, c->widest);
     else if (c->fit == PV_BY_PAGE)
-        s = fmin((canvas.w - 2.0 * PV_MARGIN) / c->pw[p],
-                 (canvas.h - 2.0 * PV_MARGIN) / c->ph[p]);
+        s = fmin((canvas.w - 2.0 * PV_MARGIN) / pv_pw(c, p),
+                 (canvas.h - 2.0 * PV_MARGIN) / pv_ph(c, p));
     return fmax(0.05, fmin(8.0, s));
 }
 
 /** @brief Lay the pages out at the scale @p canvas and the fit give,
- *         keeping the page the view was on where it was. */
+ *         keeping the page the view was on where it was: as far down it
+ *         as it was laid out before, whatever its turn was then. */
 static void pv_relayout(tiku_pdfview_t *c, tiku_rect_t canvas)
 {
     double s, frac = 0;
-    long y = PV_MARGIN, widest = 0;
+    long y = PV_MARGIN, widest = 0, span;
     int page = 0;
 
     if (!c->npage) return;
@@ -71,8 +72,10 @@ static void pv_relayout(tiku_pdfview_t *c, tiku_rect_t canvas)
         fabs(s - c->laid_scale) < 1e-9) return;
     if (c->laid_scale) {
         page = pv_page_at(c, c->vbar.value);
-        frac = (double)(c->vbar.value - c->top[page]) /
-               (pv_page_h(c, page) + PV_GAP);
+        span = (page + 1 < c->npage ? c->top[page + 1]
+                                    : c->height + PV_GAP - PV_MARGIN) -
+               c->top[page];
+        frac = span > 0 ? (double)(c->vbar.value - c->top[page]) / span : 0;
     }
     c->scale = s;
     for (int p = 0; p < c->npage; p++) {
@@ -97,6 +100,29 @@ static void pv_set_scale(tiku_pdfview_t *c, int fit, double scale)
 {
     c->fit = fit;
     if (fit == PV_FIXED) c->scale = fmax(0.25, fmin(4.0, scale));
+    c->laid_w = 0;                  /* lay out again at the next frame */
+    c->selecting = 0;
+    pv_changed(c);
+}
+
+/** @brief Turn the view @p by degrees more (90 or 270).  The pages drawn
+ *         so far turn with it, so they show at once; thumbnails are drawn
+ *         again, and the page in view stays in view. */
+static void pv_turn(tiku_pdfview_t *c, int by)
+{
+    c->turn = (c->turn + by) % 360;
+    for (int i = 0; i < PV_TILES; i++) {
+        pv_tile_t *t = &c->tile[i];
+        if (t->px && pv_turn_pixels(&t->px, &t->w, &t->h, by) != 0)
+            t->page = -1;
+    }
+    for (int i = 0; i < PV_THUMB_KEEP; i++) {
+        if (c->thumb[i].pending) continue;  /* dropped when it lands */
+        free(c->thumb[i].px);
+        memset(&c->thumb[i], 0, sizeof c->thumb[i]);
+        c->thumb[i].page = -1;
+    }
+    pv_find_widest(c);
     c->laid_w = 0;                  /* lay out again at the next frame */
     c->selecting = 0;
     pv_changed(c);
@@ -150,6 +176,7 @@ static const char *pv_tool(int id)
     switch (id) {
     case PV_OUTLINE: return "Outline";
     case PV_THUMBS: return "Pages";
+    case PV_SIGS: return "Signed";
     case PV_PREV: return "<";
     case PV_NEXT: return ">";
     case PV_ZOOM_OUT: return "-";
@@ -168,22 +195,23 @@ static int pv_find_w(tiku_rect_t r, int x)
 {
     int room = r.x + r.w - 6 - x - 2 * (tiku_ui_button_w(">", 26) + 4);
 
-    return room < 170 && room >= 110 ? room : 170;
+    return room < 170 && room >= 80 ? room : 170;
 }
 
 /** @brief The toolbar's controls, wrapped when narrow; @return the row
  *         below them. */
 static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
 {
-    static const int ids[] = { PV_OUTLINE, PV_THUMBS, PV_PREV, PV_PAGE_FIELD,
-        PV_NEXT, PV_ZOOM_OUT, PV_ZOOM_IN, PV_FIT_WIDTH, PV_FIT_PAGE,
-        PV_FIND_FIELD, PV_FIND_PREV, PV_FIND_NEXT };
+    static const int ids[] = { PV_OUTLINE, PV_THUMBS, PV_SIGS, PV_PREV,
+        PV_PAGE_FIELD, PV_NEXT, PV_ZOOM_OUT, PV_ZOOM_IN, PV_FIT_WIDTH,
+        PV_FIT_PAGE, PV_FIND_FIELD, PV_FIND_PREV, PV_FIND_NEXT };
     int bh = tiku_ui_button_h(), x = r.x + 6, y = r.y + 5;
     char of[32];
 
     snprintf(of, sizeof of, "of %d", c->npage);
     for (size_t i = 0; i < sizeof ids / sizeof ids[0]; i++) {
         int id = ids[i], w = tiku_ui_button_w(pv_tool(id), 26), gap = 4;
+        if (id == PV_SIGS && !c->nsig) continue;    /* signed ones only */
         if (id == PV_PAGE_FIELD) w = 46 + 6 + tiku_measure_width(
                                      TIKU_MEASURE_PLAIN, of);
         if (id == PV_ZOOM_OUT || id == PV_FIND_FIELD) x += 10;
@@ -225,7 +253,8 @@ static pv_layout_t pv_layout(tiku_pdfview_t *c, tiku_rect_t r)
     l.status = (tiku_rect_t){r.x + 8, r.y + r.h - fh - 3, r.w - 16, fh};
     tiku_rect_t body = {r.x + 4, below, r.w - 8, l.status.y - 3 - below};
     if (body.h < 1) body.h = 1;
-    if (c->side && (c->thumbs ? c->npage : c->noutline) > 0 &&
+    if (c->side && (c->sigs ? c->nsig : c->thumbs ? c->npage
+                                                  : c->noutline) > 0 &&
         body.w >= 2 * PV_SIDE_W) {
         l.side = (tiku_rect_t){body.x, body.y, PV_SIDE_W, body.h};
         body.x += PV_SIDE_W + 4;
@@ -242,6 +271,7 @@ static pv_layout_t pv_layout(tiku_pdfview_t *c, tiku_rect_t r)
                                    l.canvas.w, PV_BAR};
             pv_relayout(c, l.canvas);
         }
+        pv_recent_apply(c);
     }
     if (l.side.w)
         (void)tiku_dialog_add(&c->dialog, PV_SIDE, l.side, TIKU_DIALOG_INPUT,
@@ -285,17 +315,34 @@ static void pv_tint(tiku_pdfview_t *c, int x, int y, int w, int h,
     }
 }
 
-/** @brief A box in page @p p's points, tinted where the page is shown
- *         at @p px, @p py on the canvas. */
-static void pv_tint_box(tiku_pdfview_t *c, int px, int py, const float *box,
-                        uint32_t argb)
+/** @brief Box @p in of page @p p, in its points as drawn, as the view
+ *         shows it: turned, its corners in order, into @p out. */
+static void pv_turn_box(tiku_pdfview_t *c, int p, const float *in,
+                        double *out)
 {
-    int x0 = px + (int)floor(box[0] * c->scale);
-    int y0 = py + (int)floor(box[1] * c->scale);
-    int x1 = px + (int)ceil(box[2] * c->scale);
-    int y1 = py + (int)ceil(box[3] * c->scale);
+    double x0 = in[0], y0 = in[1], x1 = in[2], y1 = in[3];
 
-    pv_tint(c, x0, y0, x1 - x0, y1 - y0, argb);
+    tiku_pdf_turn_point(c->pw[p], c->ph[p], c->turn, 0, &x0, &y0);
+    tiku_pdf_turn_point(c->pw[p], c->ph[p], c->turn, 0, &x1, &y1);
+    out[0] = fmin(x0, x1);
+    out[1] = fmin(y0, y1);
+    out[2] = fmax(x0, x1);
+    out[3] = fmax(y0, y1);
+}
+
+/** @brief A box in page @p p's points, tinted where the page is shown
+ *         at @p px, @p py on the canvas, turned as the view is. */
+static void pv_tint_box(tiku_pdfview_t *c, int p, int px, int py,
+                        const float *box, uint32_t argb)
+{
+    double r[4];
+    int x0, y0;
+
+    pv_turn_box(c, p, box, r);
+    x0 = px + (int)floor(r[0] * c->scale);
+    y0 = py + (int)floor(r[1] * c->scale);
+    pv_tint(c, x0, y0, px + (int)ceil(r[2] * c->scale) - x0,
+            py + (int)ceil(r[3] * c->scale) - y0, argb);
 }
 
 /** @brief The page drawn nearest the scale shown, when none is at it. */
@@ -409,8 +456,8 @@ static void pv_thumb_draw(tiku_pdfview_t *c, tiku_surface_t *s,
     pv_tile_t *t = pv_thumb(c, p);
     int drawn = t && t->px;
     double sc = pv_thumb_scale(c, p);
-    int w = drawn ? t->w : (int)(c->pw[p] * sc + 0.5);
-    int h = drawn ? t->h : (int)(c->ph[p] * sc + 0.5);
+    int w = drawn ? t->w : (int)(pv_pw(c, p) * sc + 0.5);
+    int h = drawn ? t->h : (int)(pv_ph(c, p) * sc + 0.5);
     int top = r.y + p * pv_thumb_row() - c->thumb_top + 6;
     int x = r.x + (r.w - w) / 2, y = top + (PV_THUMB_H - h) / 2;
     char num[16];
@@ -503,8 +550,9 @@ static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
                       const tiku_dialog_control_t *d)
 {
     unsigned flags = d->enabled ? 0 : TIKU_S_DISABLED;
-    int on = (d->id == PV_OUTLINE && c->side && !c->thumbs &&
+    int on = (d->id == PV_OUTLINE && c->side && !c->thumbs && !c->sigs &&
               c->noutline) || (d->id == PV_THUMBS && c->side && c->thumbs) ||
+             (d->id == PV_SIGS && c->side && c->sigs) ||
              (d->id == PV_FIT_WIDTH && c->fit == PV_BY_WIDTH) ||
              (d->id == PV_FIT_PAGE && c->fit == PV_BY_PAGE);
 
@@ -536,18 +584,21 @@ static void pv_field(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r,
                             tiku_ink(TIKU_INK_FAINT));
 }
 
-/** @brief The empty window says what it is for. */
-static void pv_empty(tiku_surface_t *s, tiku_rect_t r)
+/** @brief The empty window says what it is for, and lists the documents
+ *         read lately. */
+static void pv_empty(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r)
 {
-    int x = r.x + 32, y = r.y + r.h / 3;
+    int x = r.x + 32, y = pv_empty_top(c, r);
 
     tiku_text_line_draw(s, (tiku_rect_t){x, y, r.w - 64, 28}, 1,
                         "Open a PDF", TIKU_C_TEXT);
-    tiku_text_block_draw(s, (tiku_rect_t){x, y + 32, r.w - 64, r.h / 2},
+    tiku_text_block_draw(s, (tiku_rect_t){x, y + 32, r.w - 64,
+                         PV_EMPTY_LINES * (tiku_measure_row_h() + 4)},
         0, "Datasheets, reference manuals and papers: choose Open, or "
         "double-click a PDF in Tracker. Pages are drawn as you reach "
         "them; the outline, links and search work on the text the "
         "document carries.", TIKU_C_TEXT, 4);
+    pv_recent_draw(c, s, r);
 }
 
 /** @brief The scrollbars, as the view stands. */
@@ -576,8 +627,11 @@ static void pv_status(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r)
     int w = 0;
 
     if (c->npage) {
-        snprintf(where, sizeof where, "Page %d of %d   %d%%",
-                 pv_current(c) + 1, c->npage, (int)(c->scale * 100 + 0.5));
+        char turned[16] = "";
+        if (c->turn) snprintf(turned, sizeof turned, "   %d\xc2\xb0", c->turn);
+        snprintf(where, sizeof where, "Page %d of %d   %d%%%s",
+                 pv_current(c) + 1, c->npage, (int)(c->scale * 100 + 0.5),
+                 turned);
         w = tiku_measure_width(TIKU_MEASURE_PLAIN, where) + 8;
         tiku_text_line_draw(s, (tiku_rect_t){r.x + r.w - w, r.y, w, r.h},
                             TIKU_MEASURE_PLAIN, where, TIKU_C_TEXT);
@@ -608,7 +662,9 @@ static void pv_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t r,
     snprintf(of, sizeof of, "of %d", c->npage);
     tiku_text_line_draw(s, l.of, TIKU_MEASURE_PLAIN, c->npage ? of : "",
                         TIKU_C_TEXT);
-    pv_field(c, s, l.find, PV_FIND_FIELD, c->locked ? "Password" : "Find");
+    pv_field(c, s, l.find, PV_FIND_FIELD, !c->locked ? "Find" :
+             !c->sealed ? "Password" : c->keyfile[0] ? "Key's password"
+                                                     : "Key file...");
     if (l.side.w) pv_side_draw(c, s, l.side);
     if (c->npage) {
         pv_compose(c, l.canvas);
@@ -617,7 +673,7 @@ static void pv_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t r,
                          c->view);
     } else {
         tiku_fill(s, l.canvas, TIKU_C_DOC);
-        pv_empty(s, l.canvas);
+        pv_empty(c, s, l.canvas);
     }
     tiku_frame(s, l.canvas, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
     pv_bars(c, s, &l);

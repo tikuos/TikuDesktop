@@ -209,7 +209,32 @@ an output that grows.  Nothing else in the kits changes.
    CPython orders marks added after 3.2 by today's classes.  Revisions
    2 to 4 hash a password in PDFDocEncoding, as the standard asks; for
    all of them the bytes as typed are tried next, as some writers take
-   them.
+   them.  Rotation: the render calls take a turn past the page's own,
+   and `tiku_pdf_turn_point` maps a text box or a link to the turned
+   page and back; turned renders are the unturned page's pixels where
+   the turn puts them, every one.  TikuPDF's Rotate Left and Right turn
+   the pages drawn so far in place and draw the rest turned; selection,
+   search, links and the outline find their places on them.  Where each
+   document was left -- page, how far down and across, zoom, turn --
+   and the documents read lately are kept in TikuPDFRecent in the
+   settings folder, a hundred of them; File > Open Recent and the empty
+   window list them, Clear Menu forgets.  Certificate encryption
+   (Adobe.PubSec, every revision pyHanko writes): the reader's key file
+   -- PKCS#12 by its own schemes or PBES2, or PEM -- opens the envelope
+   holding the seed, RSA v1.5 or OAEP, in AES, triple DES, DES or RC2.
+   Signatures: each one's byte range checked against the CMS or bare RSA
+   signature in its gap, by RSA (v1.5, PSS) or ECDSA on the NIST and
+   Brainpool curves, timestamp tokens too; TikuPDF shows them in a
+   Signatures column.  The support kit gained what that took, each read
+   against another implementation: SHA-1 and streaming SHA-2, HMAC,
+   PBKDF2, AES-192, DES, triple DES and RC2 (`tiku_crypto`), big numbers,
+   RSA and ECDSA (`tiku_pubkey`), DER (`tiku_der`), and certificates,
+   key files and CMS (`tiku_cms`).  Python's cryptography, LibreSSL and
+   pyHanko made every fixture; poppler's pdfsig agrees on each signature
+   it checks.  About 420,000 mutated key files, envelopes, signatures and
+   the PDFs holding them ran clean under AddressSanitizer and UBSan,
+   after the first such run found a certificate's extensions read past
+   a failed step.
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand
@@ -231,6 +256,26 @@ after 2 a page can be seen.
   and draws a page in bands of rows, which costs little on the host and
   makes a board a port rather than a rewrite.  Nothing is built for a
   board in these milestones.
+- **Rotation in the render API** (2026-09-28).  The view's turn is a
+  parameter of `tiku_pdf_render` and its two siblings, applied past the
+  page's own /Rotate; text and links stay in the page's own points and
+  are turned by `tiku_pdf_turn_point`, so the kit owns the one
+  convention.
+- **TikuPDF keeps its own state** (2026-09-28).  One small file in the
+  settings folder (TikuPDFRecent), as TikuReader keeps its bookmarks:
+  not extended attributes on the documents, which would change files
+  people send on and cannot be written on read-only volumes; not a new
+  desktop service, which no second application needs yet.
+- **A key file, not the keychain** (2026-09-28).  A document sealed to
+  certificates opens with a .p12, .pfx or PEM file chosen like a
+  document, its password typed where a PDF's password is: it works the
+  same on every host, needs nothing of the shell, and keys stay in files
+  the person already has.  RSA keys only; an EC key opens no envelope.
+- **Signatures are checked, not trusted** (2026-09-28).  Each is held
+  against the certificate it carries and the bytes it covers; whether
+  that certificate is who it names is left unasked, and each card says
+  so.  Checking a chain needs a list of trusted roots the desk does not
+  keep.
 
 ## 5. What this touches and what it does not
 

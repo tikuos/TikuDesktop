@@ -23,20 +23,25 @@ static void pv_page_size(tiku_pdf_t *pdf, int p, float *w, float *h)
 /** @brief Opening a file: the document and all a view needs up front. */
 typedef struct {
     tiku_pdfview_t *owner;
-    int generation, npage, noutline, may_copy, tried;
+    int generation, npage, noutline, may_copy, tried, nsig;
     tiku_pdf_err_t err;
     char path[TIKU_PATH_MAX], *title, password[TIKU_FIELD_MAX];
+    char keyfile[TIKU_PATH_MAX];    /* a sealed document's key, or ""    */
     tiku_pdf_t *pdf;
     float *pw, *ph;
     tiku_pdf_outline_t *outline;
+    tiku_pdf_signature_t *sig;      /* its signatures, checked here      */
 } pv_load_t;
 
-/** @brief On a worker: open, measure every page, read the outline. */
+/** @brief On a worker: open (with the key file, for a sealed document),
+ *         measure every page, read the outline, check the signatures. */
 static void pv_load_run(void *ctx)
 {
     pv_load_t *j = ctx;
 
-    j->err = tiku_pdf_open_password(j->path, j->password, &j->pdf);
+    j->err = j->keyfile[0]
+             ? tiku_pdf_open_key(j->path, j->keyfile, j->password, &j->pdf)
+             : tiku_pdf_open_password(j->path, j->password, &j->pdf);
     memset(j->password, 0, sizeof j->password);   /* used; not kept */
     if (j->err != TIKU_PDF_OK) return;
     j->may_copy = tiku_pdf_may_copy(j->pdf);
@@ -56,6 +61,7 @@ static void pv_load_run(void *ctx)
     j->noutline = tiku_pdf_outline(j->pdf, &j->outline);
     if (j->noutline < 0) j->noutline = 0;
     j->title = tiku_pdf_title(j->pdf);
+    j->nsig = tiku_pdf_signatures(j->pdf, &j->sig);
 }
 
 /** @brief Why a file did not open, in a person's words. */
@@ -65,6 +71,66 @@ static const char *pv_load_error(tiku_pdf_err_t err)
     if (err == TIKU_PDF_UNSUPPORTED)
         return "That PDF is encrypted in a way TikuPDF does not read.";
     return "That PDF is damaged beyond what TikuPDF can repair.";
+}
+
+/** @brief A document that would not open for want of a password or a
+ *         key: the find field asks for it, masked, and a sealed one's key
+ *         file is asked for first.  @return 0 when @p j is not one. */
+static int pv_load_locked(tiku_pdfview_t *c, pv_load_t *j)
+{
+    int sealed = j->err == TIKU_PDF_CERTIFICATE ||
+                 j->err == TIKU_PDF_KEY_FILE || j->keyfile[0];
+
+    if (j->err != TIKU_PDF_PASSWORD && j->err != TIKU_PDF_CERTIFICATE &&
+        j->err != TIKU_PDF_KEY_FILE) return 0;
+    c->locked = 1;
+    c->sealed = sealed;
+    snprintf(c->locked_path, sizeof c->locked_path, "%s", j->path);
+    pv_forget_password(c);
+    tiku_dialog_focus(&c->dialog, PV_FIND_FIELD);
+    if (!sealed) {
+        pv_say(c, j->tried ? "That password does not open it. Try again, "
+                             "or press Escape." :
+                             "This PDF is locked. Type its password in the "
+                             "field above and press Enter.");
+    } else if (j->err == TIKU_PDF_PASSWORD) {
+        pv_say(c, "That password does not open the key file. Try again, "
+                  "or press Escape.");
+    } else {
+        c->keyfile[0] = 0;
+        pv_say(c, j->err == TIKU_PDF_KEY_FILE ?
+               "That is not a key TikuPDF reads: an RSA key in a .p12, .pfx "
+               "or .pem file. Choose another with File > Open Key..." :
+               j->keyfile[0] ? "That key is not one this PDF was sealed to. "
+               "Choose another with File > Open Key..." :
+               "This PDF is sealed to a certificate. Choose your key file "
+               "(.p12, .pfx or .pem), then type its password.");
+        if (!j->keyfile[0] && c->choose) c->choose(c->ctx, 1);
+    }
+    pv_menus(c);
+    return 1;
+}
+
+/** @brief What the document's signatures say, in a sentence. */
+static void pv_sig_said(const tiku_pdfview_t *c, char *out, size_t cap)
+{
+    int bad = 0, i;
+    const tiku_pdf_signature_t *last = &c->sig[c->nsig - 1];
+
+    for (i = 0; i < c->nsig; i++)
+        bad += c->sig[i].status != TIKU_PDF_SIG_GOOD;
+    if (bad && c->nsig == 1)
+        snprintf(out, cap, " Its signature does not hold: see Signatures.");
+    else if (bad)
+        snprintf(out, cap, " %d of its %d signatures do%s not hold: see "
+                 "Signatures.", bad, c->nsig, bad == 1 ? "es" : "");
+    else if (c->nsig == 1)
+        snprintf(out, cap, " Signed by %.60s%s.", last->signer ?
+                 last->signer : "an unnamed party", last->whole ? "" :
+                 ", and added to since");
+    else
+        snprintf(out, cap, " %d signatures, each holding%s.", c->nsig,
+                 last->whole ? "" : "; added to since the last");
 }
 
 /** @brief On the loop: the old document goes, the new one is shown from
@@ -77,28 +143,19 @@ static void pv_load_done(void *ctx)
     const char *name = strrchr(j->path, '/');
 
     if (j->generation != c->generation || !c->workspace) return;
-    if (j->err == TIKU_PDF_PASSWORD) {
-        /* Locked: the find field asks for its password, masked. */
-        c->locked = 1;
-        snprintf(c->locked_path, sizeof c->locked_path, "%s", j->path);
-        pv_forget_password(c);
-        tiku_dialog_focus(&c->dialog, PV_FIND_FIELD);
-        pv_say(c, j->tried ? "That password does not open it. Try again, "
-                             "or press Escape." :
-                             "This PDF is locked. Type its password in the "
-                             "field above and press Enter.");
-        return;
-    }
+    if (pv_load_locked(c, j)) return;
     if (j->err != TIKU_PDF_OK) {
         pv_say(c, pv_load_error(j->err));
         return;
     }
-    c->locked = 0;
+    c->locked = c->sealed = 0;
+    c->keyfile[0] = 0;
     d = calloc(1, sizeof *d);
     if (!d) {
         pv_say(c, "Not enough memory to open that PDF.");
         return;
     }
+    pv_recent_note(c);              /* where the one shown was left */
     pv_forget(c);
     d->pdf = j->pdf;
     j->pdf = NULL;
@@ -122,8 +179,7 @@ static void pv_load_done(void *ctx)
         pv_say(c, "Not enough memory to show that PDF.");
         return;
     }
-    for (int p = 1; p < c->npage; p++)
-        if (c->pw[p] > c->pw[c->widest]) c->widest = p;
+    pv_find_widest(c);
     pv_outline_start(c);
     snprintf(c->path, sizeof c->path, "%s", j->path);
     snprintf(c->title, sizeof c->title, "%s",
@@ -133,10 +189,21 @@ static void pv_load_done(void *ctx)
                  name ? name + 1 : j->path);
     c->fit = PV_BY_WIDTH;
     c->may_copy = j->may_copy;
-    char said[160];
-    snprintf(said, sizeof said, "%d page%s%s. Drag across text to select "
-             "it; Ctrl+F finds.", c->npage, c->npage == 1 ? "" : "s",
-             c->noutline ? ", with an outline" : "");
+    c->sig = j->sig;
+    c->nsig = j->nsig;
+    j->sig = NULL;
+    j->nsig = 0;
+    if (c->nsig) {                  /* who signed it, shown at once */
+        c->side = c->sigs = 1;
+        c->thumbs = 0;
+    }
+    pv_recent_restore(c);
+    pv_recent_note(c);
+    char said[320], sigs[160] = "";
+    if (c->nsig) pv_sig_said(c, sigs, sizeof sigs);
+    snprintf(said, sizeof said, "%d page%s%s.%s", c->npage,
+             c->npage == 1 ? "" : "s", c->noutline ? ", with an outline" : "",
+             c->nsig ? sigs : " Drag across text to select it; Ctrl+F finds.");
     pv_say(c, said);
     tiku_dialog_focus(&c->dialog, PV_CANVAS);
 }
@@ -151,6 +218,7 @@ static void pv_load_free(void *ctx)
     free(j->pw);
     free(j->ph);
     tiku_pdf_outline_free(j->outline, j->noutline);
+    tiku_pdf_signatures_free(j->sig, j->nsig);
     free(j->title);
     c->loading = 0;
     if (c->workspace) {
@@ -162,8 +230,10 @@ static void pv_load_free(void *ctx)
 }
 
 /** @brief Ask a worker to open @p path, with @p password when it is
- *         locked ("" for none).  One opening at a time. */
-static int pv_load(tiku_pdfview_t *c, const char *path, const char *password)
+ *         locked ("" for none) -- the password of @p keyfile when that is
+ *         given, for a document sealed to certificates.  One at a time. */
+static int pv_load_as(tiku_pdfview_t *c, const char *path,
+                      const char *keyfile, const char *password)
 {
     pv_load_t *j;
     tiku_work_job_t work;
@@ -178,8 +248,9 @@ static int pv_load(tiku_pdfview_t *c, const char *path, const char *password)
     j->owner = c;
     j->generation = c->generation;
     snprintf(j->path, sizeof j->path, "%s", path);
+    snprintf(j->keyfile, sizeof j->keyfile, "%s", keyfile);
     snprintf(j->password, sizeof j->password, "%s", password);
-    j->tried = password[0] != '\0';
+    j->tried = password[0] != '\0' || keyfile[0] != '\0';
     memset(&work, 0, sizeof work);
     work.run = pv_load_run;
     work.done = pv_load_done;
@@ -197,6 +268,13 @@ static int pv_load(tiku_pdfview_t *c, const char *path, const char *password)
     return 1;
 }
 
+/** @brief Ask a worker to open @p path, with @p password when it is
+ *         locked ("" for none).  One opening at a time. */
+static int pv_load(tiku_pdfview_t *c, const char *path, const char *password)
+{
+    return pv_load_as(c, path, "", password);
+}
+
 /* ------------------------------------------------------------ drawing  */
 
 /** @brief Drawing one page, and reading its links and text the first
@@ -205,6 +283,7 @@ typedef struct {
     tiku_pdfview_t *owner;
     pv_doc_t *doc;
     int slot, page, text, nlink, failed;
+    int turn;                       /* the view's turn it is drawn at   */
     double scale;                   /* what the page is drawn at        */
     long nch;
     tiku_pdf_pixmap_t pm;
@@ -217,7 +296,8 @@ static void pv_render_run(void *ctx)
 {
     pv_render_t *j = ctx;
 
-    if (tiku_pdf_render(j->doc->pdf, j->page, j->scale, 0, &j->pm) != 0)
+    if (tiku_pdf_render(j->doc->pdf, j->page, j->scale, j->turn,
+                        &j->pm) != 0)
         j->failed = 1;
     if (!j->text) return;
     j->nlink = tiku_pdf_links(j->doc->pdf, j->page, &j->link);
@@ -253,7 +333,41 @@ static void pv_trim_text(tiku_pdfview_t *c)
     }
 }
 
-/** @brief On the loop: the pixels go to their slot, the text to the page. */
+/** @brief Pixels @p *px, @p *w by @p *h, turned @p by degrees clockwise
+ *         in their own place.  @return 0, or -1 with them let go when
+ *         there is no memory for the turned copy. */
+static int pv_turn_pixels(uint32_t **px, int *w, int *h, int by)
+{
+    int q = (by % 360 + 360) % 360 / 90, wide = *w, high = *h;
+    uint32_t *out;
+
+    if (!q || !*px) return 0;
+    out = malloc((size_t)wide * high * sizeof *out);
+    if (!out) {
+        free(*px);
+        *px = NULL;
+        return -1;
+    }
+    for (int y = 0; y < high; y++) {
+        const uint32_t *row = *px + (size_t)y * wide;
+        for (int x = 0; x < wide; x++) {
+            size_t at = q == 1 ? (size_t)x * high + (high - 1 - y) :
+                        q == 2 ? (size_t)(high - 1 - y) * wide + (wide - 1 - x)
+                               : (size_t)(wide - 1 - x) * high + y;
+            out[at] = row[x];
+        }
+    }
+    free(*px);
+    *px = out;
+    if (q % 2) {
+        *w = high;
+        *h = wide;
+    }
+    return 0;
+}
+
+/** @brief On the loop: the pixels go to their slot, turned to the view
+ *         when it turned while they were drawn; the text to the page. */
 static void pv_render_done(void *ctx)
 {
     pv_render_t *j = ctx;
@@ -266,6 +380,9 @@ static void pv_render_done(void *ctx)
         if (j->failed) {
             t->page = -1;
             c->pages[j->page].failed = 1;
+        } else if (pv_turn_pixels(&j->pm.px, &j->pm.w, &j->pm.h,
+                                  c->turn - j->turn) != 0) {
+            t->page = -1;           /* no room to turn: asked for again */
         } else {
             t->px = j->pm.px;
             t->w = j->pm.w;
@@ -370,6 +487,7 @@ static int pv_request(tiku_pdfview_t *c, int p)
     j->slot = slot;
     j->page = p;
     j->scale = scale;
+    j->turn = c->turn;
     j->text = !c->pages[p].text;
     memset(&work, 0, sizeof work);
     work.run = pv_render_run;
@@ -398,11 +516,11 @@ static int pv_request(tiku_pdfview_t *c, int p)
 
 /* --------------------------------------------------------- thumbnails  */
 
-/** @brief The scale page @p p fits the thumbnail box at. */
+/** @brief The scale page @p p fits the thumbnail box at, turned. */
 static double pv_thumb_scale(tiku_pdfview_t *c, int p)
 {
-    double sx = PV_THUMB_W / (c->pw[p] > 1 ? c->pw[p] : 1);
-    double sy = PV_THUMB_H / (c->ph[p] > 1 ? c->ph[p] : 1);
+    double sx = PV_THUMB_W / fmax(pv_pw(c, p), 1);
+    double sy = PV_THUMB_H / fmax(pv_ph(c, p), 1);
 
     return sx < sy ? sx : sy;
 }
@@ -415,7 +533,8 @@ static pv_tile_t *pv_thumb(tiku_pdfview_t *c, int p)
     return NULL;
 }
 
-/** @brief On the loop: the small page goes to its slot. */
+/** @brief On the loop: the small page goes to its slot, unless the view
+ *         turned while it was drawn: then it is asked for again. */
 static void pv_thumb_done(void *ctx)
 {
     pv_render_t *j = ctx;
@@ -423,6 +542,10 @@ static void pv_thumb_done(void *ctx)
     pv_tile_t *t = &c->thumb[j->slot];
 
     if (!c->workspace || j->doc != c->doc) return;
+    if (j->turn != c->turn && t->pending && t->page == j->page) {
+        t->pending = 0;
+        t->page = -1;
+    }
     if (t->pending && t->page == j->page) {
         t->pending = 0;
         if (j->failed) {
@@ -487,6 +610,7 @@ static int pv_thumb_request(tiku_pdfview_t *c, int p)
     j->slot = slot;
     j->page = p;
     j->scale = pv_thumb_scale(c, p);
+    j->turn = c->turn;
     memset(&work, 0, sizeof work);
     work.run = pv_render_run;       /* the page's pixels, no text */
     work.done = pv_thumb_done;
