@@ -167,7 +167,16 @@ an output that grows.  Nothing else in the kits changes.
    (Hiragino, Songti, Apple SD Gothic; Noto CJK elsewhere), any face of
    a collection.  Poppler reads the fixtures as we do and draws the two
    in a face made here pixel for pixel alike; the corpus's text and
-   drawing are unchanged on every page checked.
+   drawing are unchanged on every page checked.  JBIG2 (`tiku_jbig2`),
+   all of T.88 but the extended templates: generic regions of every
+   template and MMR, symbol dictionaries and text regions arithmetic and
+   Huffman coded (their tables, custom ones, refinement and aggregation),
+   refinement regions, halftones, striped pages; a byte filter, so images
+   and stencils have it through JBIG2Globals.  Its arithmetic decoder
+   reads T.88's own test sequence, Annex H's three pages come out as
+   jbig2dec draws them, and jbig2enc's pages of our own paper and a TI
+   datasheet as it coded them; streams made here for what no encoder
+   writes are read as jbig2dec or poppler reads them.
 
 Milestones 1 and 2 are where the size is: roughly six thousand lines
 between them.  The whole, through milestone 4, is about nine thousand

@@ -9,9 +9,9 @@
  * Flate is nearly every stream in the documents read here; LZW, the
  * two ASCII forms and run lengths are small and old files use them.
  * A predictor (ISO 32000 7.4.4.4) undoes the row filtering PNG-style
- * writers add before compressing.  CCITT fax gives rows of bits, as a
- * one-bit image's samples are; the other image codecs stop the chain,
- * their bytes going to whoever decodes pictures.
+ * writers add before compressing.  CCITT fax and JBIG2 give rows of
+ * bits, as a one-bit image's samples are; the other image codecs stop
+ * the chain, their bytes going to whoever decodes pictures.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,6 +19,7 @@
 #include "tiku_pdf_private.h"
 #include "tiku_fax.h"
 #include "tiku_inflate.h"
+#include "tiku_jbig2.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -346,7 +347,6 @@ image_filter(const char *name)
 {
     if (!strcmp(name, "DCTDecode") || !strcmp(name, "DCT")) return "DCTDecode";
     if (!strcmp(name, "JPXDecode")) return "JPXDecode";
-    if (!strcmp(name, "JBIG2Decode")) return "JBIG2Decode";
     return NULL;
 }
 
@@ -381,6 +381,66 @@ fax(tiku_pdf_t *doc, pdf_obj_t *stream, pdf_obj_t *parm,
     p.byte_align = flag(doc, parm, "EncodedByteAlign", 0);
     p.black_is_1 = flag(doc, parm, "BlackIs1", 0);
     return tiku_fax_decode(in, n, &p, out, PDF_STREAM_MAX);
+}
+
+/** @brief Rows of @p w bits cut or widened to the image's @p iw, and as
+ *         many rows as it has: what a page of another size gives it. */
+static long
+recut(unsigned char **data, long made, int w, int h, int iw, int ih)
+{
+    long rb = (w + 7) / 8, irb = (iw + 7) / 8, y, x;
+    unsigned char *o;
+
+    if (iw <= 0 || ih <= 0 || (iw == w && ih == h)) {
+        return made;
+    }
+    if ((o = malloc((size_t)(irb * ih))) == NULL) {
+        return -1;
+    }
+    memset(o, 0xff, (size_t)(irb * ih));        /* white beyond the page */
+    for (y = 0; y < h && y < ih; y++) {
+        for (x = 0; x < w && x < iw; x++) {
+            if (!((*data)[y * rb + x / 8] & (0x80 >> (x & 7)))) {
+                o[y * irb + x / 8] &= (unsigned char)~(0x80 >> (x & 7));
+            }
+        }
+    }
+    free(*data);
+    *data = o;
+    return irb * ih;
+}
+
+/**
+ * @brief JBIG2Decode (ISO 32000 7.4.7): the page its segments code,
+ *        those of JBIG2Globals first.  JBIG2's 1 is black and a one-bit
+ *        sample's 0 is, so the bits are turned over.
+ */
+static long
+jbig2(tiku_pdf_t *doc, pdf_obj_t *stream, pdf_obj_t *parm,
+      const unsigned char *in, long n, unsigned char **out)
+{
+    pdf_obj_t *gs = pdf_get(doc, parm, "JBIG2Globals");
+    unsigned char *glob = NULL;
+    long gn = 0, made, i;
+    int w = 0, h = 0;
+
+    if (gs != NULL && gs->kind == PDF_STREAM && gs != stream &&
+        doc->nested < 2) {
+        doc->nested++;
+        if (pdf_stream_data(doc, gs, &glob, &gn, NULL) != 0) {
+            glob = NULL;
+            gn = 0;
+        }
+        doc->nested--;
+    }
+    made = tiku_jbig2_decode(glob, gn, in, n, out, PDF_STREAM_MAX, &w, &h);
+    free(glob);
+    for (i = 0; i < made; i++) {
+        (*out)[i] ^= 0xff;
+    }
+    return made < 0 ? -1 : recut(out, made, w, h,
+                                  pdf_int(pdf_get(doc, stream, "Width"), 0),
+                                  pdf_int(pdf_get(doc, stream, "Height"), 0));
 }
 
 int
@@ -482,6 +542,8 @@ pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *stream, const unsigned char *raw,
             next = o.p;
         } else if (!strcmp(name, "CCITTFaxDecode") || !strcmp(name, "CCF")) {
             nextn = fax(doc, stream, parm, cur, curn, &next);
+        } else if (!strcmp(name, "JBIG2Decode")) {
+            nextn = jbig2(doc, stream, parm, cur, curn, &next);
         } else if (!strcmp(name, "Crypt")) {
             continue;               /* Identity: nothing was encrypted */
         } else {

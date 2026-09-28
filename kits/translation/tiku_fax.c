@@ -448,11 +448,21 @@ long
 tiku_fax_decode(const unsigned char *src, long n, const tiku_fax_t *p,
                 unsigned char **out, long omax)
 {
+    return tiku_fax_decode_used(src, n, p, out, omax, NULL);
+}
+
+long
+tiku_fax_decode_used(const unsigned char *src, long n, const tiku_fax_t *p,
+                     unsigned char **out, long omax, long *used)
+{
     fax_t f;
     long made = -1;
 
     if (out != NULL) {
         *out = NULL;
+    }
+    if (used != NULL) {
+        *used = 0;
     }
     if (src == NULL || n < 0 || p == NULL || out == NULL ||
         p->columns <= 0 || p->columns > COLUMNS_MAX) {
@@ -468,6 +478,12 @@ tiku_fax_decode(const unsigned char *src, long n, const tiku_fax_t *p,
     if (f.tab != NULL && f.ref != NULL && f.cur != NULL) {
         f.ref[0] = f.ref[1] = f.ref[2] = f.w;   /* above the first: white */
         made = rows(&f, p, out, omax);
+        if (p->rows > 0 && peek(&f, 24) == 0x001001u) {
+            f.bit += 24;            /* the end of the block, after them */
+        }
+    }
+    if (used != NULL) {
+        *used = (f.bit + 7) / 8 < n ? (f.bit + 7) / 8 : n;
     }
     free(f.tab);
     free(f.ref);

@@ -36,5 +36,10 @@ typedef struct {
  */
 long tiku_fax_decode(const unsigned char *src, long n, const tiku_fax_t *p,
                      unsigned char **out, long omax);
+/** @brief The same, saying in @p used how many bytes the rows took (an
+ *         end of block after them included), for data that goes on. */
+long tiku_fax_decode_used(const unsigned char *src, long n,
+                          const tiku_fax_t *p, unsigned char **out,
+                          long omax, long *used);
 
 #endif /* TIKU_FAX_H_ */

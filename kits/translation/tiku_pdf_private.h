@@ -105,6 +105,7 @@ struct tiku_pdf {
     int            encrypted;
     pdf_crypt_t   *crypt;           /* its key, when it is encrypted     */
     int            depth;           /* resolve() recursion, a cycle guard */
+    int            nested;          /* a filter reading its parameters'  */
     char           fontdir[512];    /* faces to stand in for fonts     */
     tiku_ttf_t    *subst[PDF_SUBST_MAX];    /* the stand-ins opened    */
     char           subst_path[PDF_SUBST_MAX][512];  /* each one's file */
