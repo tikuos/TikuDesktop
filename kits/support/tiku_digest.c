@@ -4,8 +4,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_digest.c - MD5 (RFC 1321) and SHA-256, SHA-384 and SHA-512
- * (FIPS 180-4), from their standards' pseudocode and constants.
+ * tiku_digest.c - MD5 (RFC 1321), SHA-1 and SHA-2 (FIPS 180-4), fed in
+ * pieces or all at once, and the keyed things made of them: HMAC (RFC
+ * 2104) and PBKDF2 (RFC 8018), from their standards' pseudocode.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -192,36 +193,6 @@ sha256_block(uint32_t *h, const unsigned char *p)
     }
 }
 
-void
-tiku_sha256(const void *data, size_t n, unsigned char out[32])
-{
-    uint32_t h[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
-    const unsigned char *p = data;
-    unsigned char last[128];
-    size_t rest = n % 64, tail;
-    uint64_t bits = (uint64_t)n * 8;
-    int i;
-
-    for (; n >= 64; n -= 64, p += 64) {
-        sha256_block(h, p);
-    }
-    memset(last, 0, sizeof last);
-    memcpy(last, p, rest);
-    last[rest] = 0x80;
-    tail = rest < 56 ? 64 : 128;
-    for (i = 0; i < 8; i++) {
-        last[tail - 1 - i] = (unsigned char)(bits >> (8 * i));
-    }
-    sha256_block(h, last);
-    if (tail == 128) {
-        sha256_block(h, last + 64);
-    }
-    for (i = 0; i < 32; i++) {
-        out[i] = (unsigned char)(h[i / 4] >> (24 - 8 * (i % 4)));
-    }
-}
-
 /* ----------------------------------------------------- SHA-384 / 512  */
 
 static const uint64_t sha512_k[80] = {
@@ -300,56 +271,284 @@ sha512_block(uint64_t *h, const unsigned char *p)
     }
 }
 
-/** @brief SHA-512's machine from start words @p h, @p outn bytes out. */
+/* ------------------------------------------------------------ SHA-1  */
+
+/** @brief One 64-byte block into the five words of @p h. */
 static void
-sha512_run(uint64_t *h, const void *data, size_t n, unsigned char *out,
-           int outn)
+sha1_block(uint32_t *h, const unsigned char *p)
 {
-    const unsigned char *p = data;
-    unsigned char last[256];
-    size_t rest = n % 128, tail;
-    uint64_t bits = (uint64_t)n * 8;
+    uint32_t w[80], a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
     int i;
 
-    for (; n >= 128; n -= 128, p += 128) {
-        sha512_block(h, p);
+    for (i = 0; i < 16; i++) {
+        w[i] = (uint32_t)p[4 * i] << 24 | (uint32_t)p[4 * i + 1] << 16 |
+               (uint32_t)p[4 * i + 2] << 8 | (uint32_t)p[4 * i + 3];
     }
-    memset(last, 0, sizeof last);
-    memcpy(last, p, rest);
-    last[rest] = 0x80;
-    tail = rest < 112 ? 128 : 256;
-    for (i = 0; i < 8; i++) {
-        last[tail - 1 - i] = (unsigned char)(bits >> (8 * i));
+    for (i = 16; i < 80; i++) {
+        w[i] = rotl32(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
     }
-    sha512_block(h, last);
-    if (tail == 256) {
-        sha512_block(h, last + 128);
+    for (i = 0; i < 80; i++) {
+        uint32_t f, k, t;
+
+        if (i < 20) {
+            f = (b & c) | (~b & d);
+            k = 0x5a827999;
+        } else if (i < 40) {
+            f = b ^ c ^ d;
+            k = 0x6ed9eba1;
+        } else if (i < 60) {
+            f = (b & c) | (b & d) | (c & d);
+            k = 0x8f1bbcdc;
+        } else {
+            f = b ^ c ^ d;
+            k = 0xca62c1d6;
+        }
+        t = rotl32(a, 5) + f + e + k + w[i];
+        e = d;
+        d = c;
+        c = rotl32(b, 30);
+        b = a;
+        a = t;
     }
-    for (i = 0; i < outn; i++) {
-        out[i] = (unsigned char)(h[i / 8] >> (56 - 8 * (i % 8)));
+    h[0] += a;
+    h[1] += b;
+    h[2] += c;
+    h[3] += d;
+    h[4] += e;
+}
+
+/* ------------------------------------------------------ any of them  */
+
+/** @brief The block @p alg digests at a time, in bytes. */
+static size_t
+block_size(int alg)
+{
+    return alg == TIKU_HASH_SHA384 || alg == TIKU_HASH_SHA512 ? 128 : 64;
+}
+
+size_t
+tiku_hash_init(tiku_hash_t *h, int alg)
+{
+    static const uint32_t w1[5] = { 0x67452301, 0xefcdab89, 0x98badcfe,
+                                    0x10325476, 0xc3d2e1f0 };
+    static const uint32_t w224[8] = { 0xc1059ed8, 0x367cd507, 0x3070dd17,
+        0xf70e5939, 0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4 };
+    static const uint32_t w256[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372,
+        0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+    static const uint64_t d384[8] = {
+        0xcbbb9d5dc1059ed8ULL, 0x629a292a367cd507ULL, 0x9159015a3070dd17ULL,
+        0x152fecd8f70e5939ULL, 0x67332667ffc00b31ULL, 0x8eb44a8768581511ULL,
+        0xdb0c2e0d64f98fa7ULL, 0x47b5481dbefa4fa4ULL };
+    static const uint64_t d512[8] = {
+        0x6a09e667f3bcc908ULL, 0xbb67ae8584caa73bULL, 0x3c6ef372fe94f82bULL,
+        0xa54ff53a5f1d36f1ULL, 0x510e527fade682d1ULL, 0x9b05688c2b3e6c1fULL,
+        0x1f83d9abfb41bd6bULL, 0x5be0cd19137e2179ULL };
+
+    memset(h, 0, sizeof *h);
+    h->alg = alg;
+    switch (alg) {
+    case TIKU_HASH_MD5: tiku_md5_init(&h->md5); return 16;
+    case TIKU_HASH_SHA1: memcpy(h->s.w, w1, sizeof w1); return 20;
+    case TIKU_HASH_SHA224: memcpy(h->s.w, w224, sizeof w224); return 28;
+    case TIKU_HASH_SHA256: memcpy(h->s.w, w256, sizeof w256); return 32;
+    case TIKU_HASH_SHA384: memcpy(h->s.d, d384, sizeof d384); return 48;
+    case TIKU_HASH_SHA512: memcpy(h->s.d, d512, sizeof d512); return 64;
+    }
+    h->alg = 0;
+    return 0;
+}
+
+/** @brief One whole block into @p h's state. */
+static void
+hash_block(tiku_hash_t *h, const unsigned char *p)
+{
+    if (h->alg == TIKU_HASH_SHA1) sha1_block(h->s.w, p);
+    else if (block_size(h->alg) == 64) sha256_block(h->s.w, p);
+    else sha512_block(h->s.d, p);
+}
+
+void
+tiku_hash_update(tiku_hash_t *h, const void *data, size_t n)
+{
+    const unsigned char *p = data;
+    size_t bs = block_size(h->alg);
+
+    if (h->alg == TIKU_HASH_MD5) {
+        tiku_md5_update(&h->md5, data, n);
+        return;
+    }
+    while (h->alg && n > 0) {
+        size_t at = (size_t)(h->n % bs), take = bs - at;
+
+        if (at == 0 && n >= bs) {
+            hash_block(h, p);           /* straight from the caller */
+            take = bs;
+        } else {
+            if (take > n) take = n;
+            memcpy(h->buf + at, p, take);
+            if (at + take == bs) {
+                hash_block(h, h->buf);
+            }
+        }
+        h->n += take;
+        p += take;
+        n -= take;
     }
 }
 
 void
-tiku_sha512(const void *data, size_t n, unsigned char out[64])
+tiku_hash_final(tiku_hash_t *h, unsigned char *out)
 {
-    uint64_t h[8] = {
-        0x6a09e667f3bcc908ULL, 0xbb67ae8584caa73bULL, 0x3c6ef372fe94f82bULL,
-        0xa54ff53a5f1d36f1ULL, 0x510e527fade682d1ULL, 0x9b05688c2b3e6c1fULL,
-        0x1f83d9abfb41bd6bULL, 0x5be0cd19137e2179ULL
-    };
+    static const unsigned char size[] = { 0, 16, 20, 28, 32, 48, 64 };
+    size_t bs = block_size(h->alg), at = (size_t)(h->n % bs), i;
+    uint64_t bits = h->n * 8;
 
-    sha512_run(h, data, n, out, 64);
+    if (h->alg == TIKU_HASH_MD5) {
+        tiku_md5_final(&h->md5, out);
+        return;
+    }
+    if (!h->alg) return;
+    h->buf[at++] = 0x80;
+    if (at > bs - bs / 8) {             /* no room for the length here */
+        memset(h->buf + at, 0, bs - at);
+        hash_block(h, h->buf);
+        at = 0;
+    }
+    memset(h->buf + at, 0, bs - at);
+    for (i = 0; i < 8; i++) {
+        h->buf[bs - 1 - i] = (unsigned char)(bits >> (8 * i));
+    }
+    hash_block(h, h->buf);
+    for (i = 0; i < size[h->alg]; i++) {
+        out[i] = bs == 64
+                 ? (unsigned char)(h->s.w[i / 4] >> (24 - 8 * (i % 4)))
+                 : (unsigned char)(h->s.d[i / 8] >> (56 - 8 * (i % 8)));
+    }
+}
+
+size_t
+tiku_hash(int alg, const void *data, size_t n, unsigned char *out)
+{
+    tiku_hash_t h;
+    size_t len = tiku_hash_init(&h, alg);
+
+    tiku_hash_update(&h, data, n);
+    tiku_hash_final(&h, out);
+    return len;
+}
+
+void
+tiku_sha256(const void *data, size_t n, unsigned char out[32])
+{
+    (void)tiku_hash(TIKU_HASH_SHA256, data, n, out);
 }
 
 void
 tiku_sha384(const void *data, size_t n, unsigned char out[48])
 {
-    uint64_t h[8] = {
-        0xcbbb9d5dc1059ed8ULL, 0x629a292a367cd507ULL, 0x9159015a3070dd17ULL,
-        0x152fecd8f70e5939ULL, 0x67332667ffc00b31ULL, 0x8eb44a8768581511ULL,
-        0xdb0c2e0d64f98fa7ULL, 0x47b5481dbefa4fa4ULL
-    };
+    (void)tiku_hash(TIKU_HASH_SHA384, data, n, out);
+}
 
-    sha512_run(h, data, n, out, 48);
+void
+tiku_sha512(const void *data, size_t n, unsigned char out[64])
+{
+    (void)tiku_hash(TIKU_HASH_SHA512, data, n, out);
+}
+
+/* ------------------------------------------------------ HMAC, PBKDF2  */
+
+size_t
+tiku_hmac_init(tiku_hmac_t *m, int alg, const void *key, size_t n)
+{
+    unsigned char k[128], pad[128];
+    size_t len = tiku_hash_init(&m->inner, alg), bs = block_size(alg), i;
+
+    if (len == 0) {
+        m->outer.alg = 0;
+        return 0;
+    }
+    memset(k, 0, sizeof k);
+    if (n > bs) {
+        tiku_hash_update(&m->inner, key, n);
+        tiku_hash_final(&m->inner, k);
+    } else if (n > 0) {
+        memcpy(k, key, n);
+    }
+    for (i = 0; i < bs; i++) pad[i] = (unsigned char)(k[i] ^ 0x36);
+    (void)tiku_hash_init(&m->inner, alg);
+    tiku_hash_update(&m->inner, pad, bs);
+    for (i = 0; i < bs; i++) pad[i] = (unsigned char)(k[i] ^ 0x5c);
+    (void)tiku_hash_init(&m->outer, alg);
+    tiku_hash_update(&m->outer, pad, bs);
+    return len;
+}
+
+void
+tiku_hmac_update(tiku_hmac_t *m, const void *data, size_t n)
+{
+    tiku_hash_update(&m->inner, data, n);
+}
+
+void
+tiku_hmac_final(tiku_hmac_t *m, unsigned char *out)
+{
+    unsigned char mid[TIKU_HASH_MAX];
+    tiku_hash_t probe;
+    size_t len = tiku_hash_init(&probe, m->inner.alg);
+
+    tiku_hash_final(&m->inner, mid);
+    tiku_hash_update(&m->outer, mid, len);
+    tiku_hash_final(&m->outer, out);
+}
+
+size_t
+tiku_hmac(int alg, const void *key, size_t klen, const void *data, size_t n,
+          unsigned char *out)
+{
+    tiku_hmac_t m;
+    size_t len = tiku_hmac_init(&m, alg, key, klen);
+
+    if (len != 0) {
+        tiku_hmac_update(&m, data, n);
+        tiku_hmac_final(&m, out);
+    }
+    return len;
+}
+
+int
+tiku_pbkdf2(int alg, const void *pw, size_t pwlen, const void *salt,
+            size_t slen, unsigned long rounds, unsigned char *out,
+            size_t outlen)
+{
+    unsigned char u[TIKU_HASH_MAX], t[TIKU_HASH_MAX], be[4];
+    tiku_hmac_t keyed, m;
+    size_t len = tiku_hmac_init(&keyed, alg, pw, pwlen), take, i;
+    uint32_t block;
+    unsigned long r;
+
+    if (len == 0 || rounds == 0) {
+        return -1;
+    }
+    for (block = 1; outlen > 0; block++) {
+        be[0] = (unsigned char)(block >> 24);
+        be[1] = (unsigned char)(block >> 16);
+        be[2] = (unsigned char)(block >> 8);
+        be[3] = (unsigned char)block;
+        m = keyed;
+        tiku_hmac_update(&m, salt, slen);
+        tiku_hmac_update(&m, be, 4);
+        tiku_hmac_final(&m, u);
+        memcpy(t, u, len);
+        for (r = 1; r < rounds; r++) {
+            m = keyed;
+            tiku_hmac_update(&m, u, len);
+            tiku_hmac_final(&m, u);
+            for (i = 0; i < len; i++) t[i] ^= u[i];
+        }
+        take = outlen < len ? outlen : len;
+        memcpy(out, t, take);
+        out += take;
+        outlen -= take;
+    }
+    return 0;
 }

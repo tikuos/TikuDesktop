@@ -54,6 +54,8 @@ SUPPORT     := $(K)/support/tiku_msg.c $(K)/support/tiku_strings.c \
                $(K)/support/tiku_watch.c \
                $(K)/support/tiku_work.c $(K)/support/tiku_digest.c \
                $(K)/support/tiku_cipher.c $(K)/support/tiku_saslprep.c \
+               $(K)/support/tiku_pubkey.c $(K)/support/tiku_der.c \
+               $(K)/support/tiku_cms.c $(K)/support/tiku_keyfile.c \
                $(SYS)
 DEVICE      := $(K)/device/tiku_tx.c $(K)/device/tiku_session.c $(K)/device/tiku_channel.c \
                $(K)/device/tiku_link.c $(K)/device/tiku_link_serial.c \

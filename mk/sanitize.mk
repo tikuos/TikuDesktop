@@ -1,7 +1,8 @@
 # check-sanitize: the readers of files that come from elsewhere -- PDF,
-# CCITT fax, JBIG2, JPEG, JPEG 2000, and the fonts and ciphers a PDF
-# carries -- compiled again under AddressSanitizer and UBSan, and their
-# suites run against them.  The rest of the kits link as they are built.
+# CCITT fax, JBIG2, JPEG, JPEG 2000, the fonts and ciphers a PDF carries,
+# and the key files, certificates and signatures -- compiled again under
+# AddressSanitizer and UBSan, and their suites run against them.  The
+# rest of the kits link as they are built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
 # suite rather than passing unseen.
 #
@@ -17,12 +18,13 @@ SAN_SRCS := $(filter kits/translation/tiku_pdf_%.c %/tiku_inflate.c \
                      $(TRANSLATION)) \
             $(filter %/tiku_ttf.c %/tiku_cff.c %/tiku_type1.c \
                      %/tiku_glyphpath.c,$(INTERFACE)) \
-            $(filter %/tiku_digest.c %/tiku_cipher.c %/tiku_saslprep.c,\
-                     $(SUPPORT))
+            $(filter %/tiku_digest.c %/tiku_cipher.c %/tiku_saslprep.c \
+                     %/tiku_pubkey.c %/tiku_der.c %/tiku_cms.c \
+                     %/tiku_keyfile.c,$(SUPPORT))
 SAN_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_SRCS))
 SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
              test_crypto test_saslprep test_type1 test_cff test_ttf \
-             test_thumb
+             test_thumb test_pubkey test_cms
 
 $(SAN)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)
