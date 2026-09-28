@@ -468,33 +468,43 @@ desktop_board_names_tell(desktop_t *app)
 }
 
 /**
- * @brief Mirror the desk's clipboard to every session when it moves.
+ * @brief Mirror the desk's clipboard to each session that has not had it.
  *
  * The store cannot say who changed it -- a field's Cmd-C deep in the
  * kit, an embedded application's service, a session over the wire --
- * so the shell WATCHES its stamp once a turn and tells the sessions on
- * any change.  Every session's copy is therefore always warm, and a
- * paste out of process never waits on the wire.
+ * so the shell WATCHES its stamp once a turn and tells each session
+ * what it has not heard: a change, or on joining what is already held.
+ * One whose output is too full to take it is told on a later turn, so
+ * every session's copy comes warm, and a paste never waits on the wire.
  */
 void
 clip_mirror(desktop_t *app)
 {
-    static unsigned told;
+    static uint64_t heard[TIKU_REMOTE_SESSIONS];    /* who was told ...   */
+    static unsigned told[TIKU_REMOTE_SESSIONS];     /* ... which version  */
     unsigned now = tiku_clipboard_stamp();
-    tiku_msg_t *m;
+    tiku_msg_t *m = NULL;
     int i;
 
-    if (now == told) {
-        return;
-    }
-    told = now;
-    m = tiku_msg_new(TIKU_MSG_CLIP);
-    if (m == NULL) {
-        return;
-    }
-    (void)tiku_msg_add_string(m, "text", tiku_clipboard_text());
     for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
-        (void)tiku_remote_tell(&app->remote, i, m);
+        const tiku_remote_session_t *s = &app->remote.session[i];
+        int joined = heard[i] != s->generation;
+
+        if (!s->used || (!joined && told[i] == now)) {
+            continue;
+        }
+        if (joined && tiku_clipboard_length() == 0u) {
+            heard[i] = s->generation;   /* nothing held: nothing to say */
+            told[i] = now;
+            continue;
+        }
+        if (m == NULL && (m = tiku_msg_new(TIKU_MSG_CLIP)) != NULL) {
+            (void)tiku_msg_add_string(m, "text", tiku_clipboard_text());
+        }
+        if (m != NULL && tiku_remote_tell(&app->remote, i, m)) {
+            heard[i] = s->generation;
+            told[i] = now;
+        }
     }
     tiku_msg_free(m);
 }

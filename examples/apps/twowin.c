@@ -241,9 +241,9 @@ twowin_event_in(void *state, uint32_t window, const tiku_event_t *event)
         (void)st->services->clip_set(st->services->ctx, said);
         return 0;
     }
-    if (event->key == 'p' && st->services->clip_get != NULL) {
-        (void)st->services->clip_get(st->services->ctx, p->clip,
-                                     sizeof p->clip);
+    if (event->key == 'p' && st->services->clip_text != NULL) {
+        snprintf(p->clip, sizeof p->clip, "%s",
+                 st->services->clip_text(st->services->ctx, NULL));
         record(p);
         return 0;
     }

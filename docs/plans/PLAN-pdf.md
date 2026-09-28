@@ -194,7 +194,13 @@ an output that grows.  Nothing else in the kits changes.
    reaches, its opacity apart; a group inside is one thing.  Isolated
    or not, they come out as the standard composes them, anti-aliased
    edges too, where poppler knocks out only some; groups nested past
-   four deep are drawn as they are rather than dropped.  SASLprep
+   four deep are drawn as they are rather than dropped.  The clipboard
+   past 4 KB: the desk's holds 16 MB, sized to what it holds; each
+   session's copy moves by a stamp, not a comparison each event; the
+   socket takes a clipboard as one message, counted apart from the
+   bound that keeps a stopped application's queue small, and each
+   session hears it when it can; X11 reads a property in pieces and
+   sends INCR both ways.  SASLprep
    (`tiku_saslprep`, in the support kit) for AES-256 passwords: mapped,
    Unicode 3.2's NFKC with Corrigendum 4, what may not appear refused,
    the direction checked, from tables the build bakes out of Python's

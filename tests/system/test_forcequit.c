@@ -60,13 +60,15 @@ static void backpressure(void)
     for (int i = 0; i < 20000; i++) tiku_remote_event(l, &window, &e);
     assert(l->session[0].out_size > 0);
     assert(l->session[0].out_size <= 512u * 1024u);
-    /* Draining in arbitrary chunks still yields complete protocol frames. */
-    unsigned char *bytes = malloc(2u * 1024u * 1024u); assert(bytes);
+    /* Draining in arbitrary chunks still yields complete protocol frames:
+     * what the socket holds (a session's is roomy) and the queue behind. */
+    unsigned char *bytes = malloc(4u * 1024u * 1024u); assert(bytes);
     size_t total = 0;
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 5000 && total + 8192 <= 4u * 1024u * 1024u; i++) {
         ssize_t n = read(pair[1], bytes + total, 8192);
         if (n > 0) total += (size_t)n;
         tiku_remote_poll(l);
+        if (n <= 0 && !l->session[0].out_size) break;  /* all through */
     }
     size_t frame = 8 + 4 + sizeof e;
     assert(!l->session[0].out_size && total && !(total % frame));

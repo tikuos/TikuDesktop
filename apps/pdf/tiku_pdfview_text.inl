@@ -330,14 +330,52 @@ static size_t pv_utf8(char *out, size_t n, size_t cap, uint32_t cp)
     return n + k;
 }
 
-/** @brief The selection's text on the clipboard; it holds 4 KB, so a
- *         longer selection is cut at a character and the status says so. */
+/**
+ * @brief The selection from @p from to @p to as UTF-8 into @p out (room
+ *        for @p room bytes and a NUL), up to the first character that
+ *        does not fit; with @p out NULL, only measured.  @return its
+ *        bytes, and in @p *chars its characters, a newline between pages.
+ */
+static size_t pv_selection_text(const tiku_pdfview_t *c, const pv_mark_t *from,
+                                const pv_mark_t *to, char *out, size_t room,
+                                long *chars)
+{
+    size_t n = 0;
+
+    *chars = 0;
+    for (int p = from->page; p <= to->page; p++) {
+        const pv_page_t *pg = &c->pages[p];
+        long a = p == from->page ? from->at : 0;
+        long b = p == to->page ? to->at : pg->nch;
+
+        for (long i = p > from->page ? -1 : a; i < b; i++) {
+            uint32_t cp;
+            size_t k;
+
+            if (i >= 0 && (!pg->text || i >= pg->nch)) break;
+            cp = i < 0 ? '\n' : pg->ch[i].cp;
+            k = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+            if (out != NULL) {
+                if (n + k > room) return n;
+                (void)pv_utf8(out, n, room + 1, cp);
+            }
+            n += k;
+            (*chars)++;
+        }
+    }
+    return n;
+}
+
+/** @brief The selection's text on the clipboard: all of it, but for
+ *         what passes the clipboard's limit, cut at a character and
+ *         said so. */
 static void pv_copy(tiku_pdfview_t *c)
 {
-    char text[TIKU_CLIPBOARD_MAX], said[160];
+    char *text, said[160];
     pv_mark_t from, to;
-    size_t n = 0;
-    long total = 0;
+    size_t need, n;
+    long total, taken;
+    int ok;
 
     if (!c->selected) {
         pv_say(c, "Drag across text to select it, or choose Select Page "
@@ -350,20 +388,21 @@ static void pv_copy(tiku_pdfview_t *c)
         return;
     }
     pv_range(c, &from, &to);
-    for (int p = from.page; p <= to.page; p++) {
-        const pv_page_t *pg = &c->pages[p];
-        long a = p == from.page ? from.at : 0;
-        long b = p == to.page ? to.at : pg->nch;
-        if (p > from.page) { n = pv_utf8(text, n, sizeof text, '\n'); total++; }
-        for (long i = a; pg->text && i < b && i < pg->nch; i++, total++)
-            n = pv_utf8(text, n, sizeof text, pg->ch[i].cp);
+    need = pv_selection_text(c, &from, &to, NULL, 0, &total);
+    if (need > TIKU_CLIPBOARD_LIMIT) need = TIKU_CLIPBOARD_LIMIT;
+    if ((text = malloc(need + 1)) == NULL) {
+        pv_say(c, "There is not enough memory to copy that text.");
+        return;
     }
+    n = pv_selection_text(c, &from, &to, text, need, &taken);
     text[n] = 0;
-    if (!tiku_clipboard_import(text, n)) {
+    ok = tiku_clipboard_import(text, n);
+    free(text);
+    if (!ok) {
         pv_say(c, "The clipboard would not take that text.");
         return;
     }
-    if ((long)n < total)
+    if (taken < total)
         snprintf(said, sizeof said, "Copied the first %zu bytes: the "
                  "clipboard holds no more.", n);
     else snprintf(said, sizeof said, "Copied %ld characters.", total);

@@ -25,6 +25,7 @@
 #include <signal.h>
 
 #include "tiku_sys.h"
+#include "tiku_clipboard.h"
 #include "tiku_remote.h"
 #include "tiku_event.h"
 #include "tiku_trail.h"
@@ -36,12 +37,24 @@
 /**
  * @brief What the desktop may send DOWN in one message.
  *
- * Frames go the other way, so nothing down here is large: an event, a
- * pick, or a message a shell composed.  A quarter of a megabyte is room
- * for a very talkative one and still a bound, which matters because the
- * client is reading it into a buffer before it has looked at it.
+ * Frames go the other way, so little down here is large: an event, a
+ * pick, or a message a shell composed.  The largest is the clipboard,
+ * mirrored whole to every session, so the bound is its limit and room
+ * for the message around it; a bound still, which matters because the
+ * client reads a message into a buffer of its size before looking.
  */
-#define REMOTE_MAX_DOWN (256u * 1024u)
+#define REMOTE_MAX_DOWN (TIKU_CLIPBOARD_LIMIT + 64u * 1024u)
+
+/**
+ * @brief What a session's output may hold of ordinary messages.
+ *
+ * A stopped application fills it and is then refused, so it is its input
+ * that is dropped, not the desktop's memory that grows.  A message larger
+ * than half of it -- the clipboard -- is counted apart: one is taken when
+ * no other is waiting, and ordinary messages queue behind it to this
+ * bound, so a stopped application holds this and one clipboard at most.
+ */
+#define REMOTE_QUEUE_MAX (512u * 1024u)
 
 /**
  * @brief Pin the authenticated local peer; never trust a client-supplied PID.
@@ -78,6 +91,18 @@ tiku_remote_path(char *out, size_t max)
         return -1;
     }
     return 0;
+}
+
+/** @brief Room in a session's socket for a large message, so a clipboard
+ *         crosses in a few turns rather than a small buffer at a time.
+ *         An fd that is not a socket (a serial line) is left as it is. */
+static void
+roomy(int fd)
+{
+    int size = 1024 * 1024;
+
+    (void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof size);
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof size);
 }
 
 static int
@@ -187,10 +212,20 @@ send_msg(int *fd, uint32_t type, const void *payload, uint32_t n)
 
 static void window_unmap(tiku_remote_window_t *win);
 
+/** @brief @p w bytes of @p s's output written: what of them was the
+ *         large message's taken off what it has waiting. */
+static void large_written(tiku_remote_session_t *s, size_t w)
+{
+    if (!s->out_large) return;
+    if (w <= s->large_at) { s->large_at -= w; return; }
+    w -= s->large_at; s->large_at = 0;
+    s->out_large = w >= s->out_large ? 0 : s->out_large - w;
+}
+
 /** @brief Flush a bounded amount without waiting for a frozen peer. */
 static void session_flush(tiku_remote_session_t *s)
 {
-    size_t budget = 64u * 1024u;
+    size_t budget = 1024u * 1024u;
     while (s->out_sent < s->out_size && budget) {
         size_t n = s->out_size - s->out_sent;
         if (n > budget) n = budget;
@@ -202,10 +237,12 @@ static void session_flush(tiku_remote_session_t *s)
             return;
         }
         s->out_sent += (size_t)sent; budget -= (size_t)sent;
+        large_written(s, (size_t)sent);
     }
     if (s->out_sent == s->out_size) {
         free(s->out); s->out = NULL;
         s->out_sent = s->out_size = 0;
+        s->out_large = s->large_at = 0;
     }
 }
 
@@ -216,8 +253,10 @@ static int session_send(tiku_remote_session_t *s, uint32_t type,
                          const void *payload, uint32_t n)
 {
     session_flush(s);
-    size_t pending = s->out_size - s->out_sent;
-    if (n > REMOTE_MAX_DOWN || pending + 8u + n > 2u * REMOTE_MAX_DOWN)
+    size_t pending = s->out_size - s->out_sent, small = pending - s->out_large;
+    int large = 8u + n > REMOTE_QUEUE_MAX / 2;
+    if (n > REMOTE_MAX_DOWN || (large ? s->out_large != 0 :
+                                small + 8u + n > REMOTE_QUEUE_MAX))
         return 0;
     if (pending && s->out_sent) memmove(s->out, s->out + s->out_sent, pending);
     s->out_sent = 0; s->out_size = pending;
@@ -228,6 +267,7 @@ static int session_send(tiku_remote_session_t *s, uint32_t type,
     memcpy(out + pending + 4, &n, 4);
     if (n) memcpy(out + pending + 8, payload, n);
     s->out_size += 8u + n;
+    if (large) { s->large_at = pending; s->out_large = 8u + n; }
     session_flush(s);
     return 1;
 }
@@ -917,6 +957,7 @@ tiku_remote_adopt(tiku_remote_listener_t *listener, int fd)
             listener->session[i].generation = ++listener->next_generation;
             listener->session[i].owner = listener;
             (void)set_nonblock(fd);
+            roomy(fd);
             return 0;
         }
     }
@@ -944,6 +985,7 @@ tiku_remote_poll(tiku_remote_listener_t *listener)
                 listener->session[i].generation = ++listener->next_generation;
                 listener->session[i].owner = listener;
                 (void)set_nonblock(fd);
+                roomy(fd);
                 fd = -1;
                 break;
             }
@@ -1267,6 +1309,7 @@ tiku_remote_connect_fd(tiku_remote_client_t *client,
     memcpy(payload + 36, &features, 4);
     send_msg(&client->fd, TIKU_RMSG_HELLO, payload, sizeof payload);
     (void)set_nonblock(client->fd);
+    roomy(client->fd);
     return 0;
 }
 

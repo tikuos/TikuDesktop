@@ -428,16 +428,15 @@ embed_svc_clip_set(void *ctx, const char *text)
     return 1;
 }
 
-/** @brief The clipboard's text into @p out.  @return its length. */
-static int
-embed_svc_clip_get(void *ctx, char *out, size_t max)
+/** @brief The clipboard's text, the desk's own, and its stamp. */
+static const char *
+embed_svc_clip_text(void *ctx, unsigned *stamp)
 {
     (void)ctx;
-    if (out == NULL || max == 0u) {
-        return 0;
+    if (stamp != NULL) {
+        *stamp = tiku_clipboard_stamp();
     }
-    snprintf(out, max, "%s", tiku_clipboard_text());
-    return (int)strlen(out);
+    return tiku_clipboard_text();
 }
 
 /** @brief Bring one of this application's windows to the front. */
@@ -753,7 +752,7 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->services.raise_window = embed_svc_raise;
     slot->services.sizeable = embed_svc_sizeable;
     slot->services.clip_set = embed_svc_clip_set;
-    slot->services.clip_get = embed_svc_clip_get;
+    slot->services.clip_text = embed_svc_clip_text;
     slot->services.board_names = embed_svc_board_names;
     slot->services.current_device = embed_svc_current_device;
     slot->services.device_stats = embed_svc_device_stats;

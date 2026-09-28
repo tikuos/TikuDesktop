@@ -198,17 +198,19 @@ int tiku_editor_guarded_action(edit_state_t *st, int command)
 /** Bounded clipboard transfers never silently cut a selection short. */
 static void clipboard_command(edit_state_t *st, int command)
 {
-    char text[TIKU_CLIPBOARD_MAX + 1];
+    char *text;
     if (command == CMD_PASTE) {
-        if (st->services->clip_get &&
-            st->services->clip_get(st->services->ctx, text, sizeof text) > 0) {
+        const char *held = st->services->clip_text
+                           ? st->services->clip_text(st->services->ctx, NULL) : "";
+        if (held[0] && (text = malloc(strlen(held) + 1))) {
             size_t out = 0;
-            for (size_t i = 0; text[i]; i++) {
-                if (text[i] == '\r' && text[i + 1] == '\n') continue;
-                text[out++] = text[i];
+            for (size_t i = 0; held[i]; i++) {
+                if (held[i] == '\r' && held[i + 1] == '\n') continue;
+                text[out++] = held[i];
             }
             text[out] = 0;
             tiku_editor_insert_checked(st, text);
+            free(text);
         }
         return;
     }
@@ -217,15 +219,20 @@ static void clipboard_command(edit_state_t *st, int command)
     size_t needed = (size_t)(y1 - y0);
     for (int y = y0; y <= y1; y++)
         needed += (size_t)((y == y1 ? x1 : st->tv.line[y].len) - (y == y0 ? x0 : 0));
-    if (needed >= TIKU_CLIPBOARD_MAX) {
-        snprintf(st->note, sizeof st->note, "Selection exceeds the desktop clipboard's 4095-byte limit.");
+    if (needed > TIKU_CLIPBOARD_LIMIT) {
+        snprintf(st->note, sizeof st->note, "Selection exceeds the desktop clipboard's %u MB limit.",
+                 TIKU_CLIPBOARD_LIMIT / (1024u * 1024u));
         return;
     }
-    size_t n = tiku_editor_buffer_selected(&st->tv, text, sizeof text);
-    if (n != needed) return;
-    if (n && st->services->clip_set &&
+    if (!(text = malloc(needed + 1))) {
+        snprintf(st->note, sizeof st->note, "Not enough memory to copy the selection.");
+        return;
+    }
+    size_t n = tiku_editor_buffer_selected(&st->tv, text, needed + 1);
+    if (n == needed && n && st->services->clip_set &&
         st->services->clip_set(st->services->ctx, text) >= 0 && command == CMD_CUT)
         tiku_editor_insert_checked(st, "");
+    free(text);
 }
 
 /** Menus expose the same commands and shortcut routes as the keyboard. */
@@ -262,7 +269,7 @@ void tiku_editor_publish(edit_state_t *st)
             if (cmd == CMD_REDO) enabled &= field ?
                 st->field_input[st->find_focus].nredo > 0 : tiku_editor_buffer_can_redo(&st->tv);
             if (cmd == CMD_COPY || cmd == CMD_CUT) enabled &= selected && st->services->clip_set != NULL;
-            if (cmd == CMD_PASTE) enabled &= st->services->clip_get != NULL;
+            if (cmd == CMD_PASTE) enabled &= st->services->clip_text != NULL;
             if (cmd == CMD_OPEN || cmd == CMD_SAVEAS) enabled &= st->services->pick != NULL;
             if (cmd == CMD_REVERT) enabled &= st->path[0] != 0;
             if (cmd == CMD_RUN) enabled &= st->lang == TIKU_SYNTAX_BASIC && !st->running;
@@ -291,10 +298,9 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
     if (st->finding && st->search_active && st->find_focus >= 0 && command >= CMD_UNDO && command <= CMD_ALL) {
         static const unsigned keys[] = {'z', 'y', 'x', 'c', 'v', 'a'};
         unsigned stamp = tiku_clipboard_stamp();
-        if (command == CMD_PASTE && st->services->clip_get) {
-            char clip[TIKU_CLIPBOARD_MAX] = {0};
-            st->services->clip_get(st->services->ctx, clip, sizeof clip);
-            tiku_clipboard_set(clip); stamp = tiku_clipboard_stamp();
+        if (command == CMD_PASTE && st->services->clip_text) {
+            tiku_clipboard_set(st->services->clip_text(st->services->ctx, NULL));
+            stamp = tiku_clipboard_stamp();
         }
         tiku_event_t e = {.type = TIKU_EVENT_KEY_DOWN, .modifiers = TIKU_MOD_CMD,
             .key = keys[command - CMD_UNDO]};

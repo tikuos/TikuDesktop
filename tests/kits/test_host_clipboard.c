@@ -19,6 +19,7 @@ static Atom clip, utf8, incr, prop;
 static const char *payload;
 static size_t length, sent;
 static int mode, active, got_reply;
+static size_t piece = 3;       /* bytes of each INCR piece the peer sends */
 static Window receiver;
 static Atom receive_prop, reply_prop;
 static int64_t now = 10000000;
@@ -40,20 +41,31 @@ static void peer_event(XEvent *e)
             if (mode == CHUNKED) {
                 unsigned long n = length;
                 receiver = q->requestor; receive_prop = q->property; sent = 0; active = 1;
-                if (length >= TIKU_CLIPBOARD_MAX) active = 0;
+                if (length > TIKU_CLIPBOARD_LIMIT) active = 0;
                 XSelectInput(peer, receiver, PropertyChangeMask);
                 XChangeProperty(peer, receiver, receive_prop, incr, 32,
                                  PropModeReplace, (unsigned char *)&n, 1);
-            } else XChangeProperty(peer, q->requestor, q->property,
-                mode == LATIN ? XA_STRING : utf8, 8, PropModeReplace,
-                (const unsigned char *)payload, (int)length);
+            } else {
+                /* A megabyte a request, appended: a property may pass the
+                 * clipboard's limit though no one request could. */
+                const unsigned char *at = (const unsigned char *)payload;
+                size_t left = length;
+                int first = 1;
+                do {
+                    size_t n = left > (1u << 20) ? (1u << 20) : left;
+                    XChangeProperty(peer, q->requestor, q->property,
+                        mode == LATIN ? XA_STRING : utf8, 8,
+                        first ? PropModeReplace : PropModeAppend, at, (int)n);
+                    at += n; left -= n; first = 0;
+                } while (left);
+            }
         }
         XSendEvent(peer, q->requestor, False, 0, &reply);
     } else if (e->type == PropertyNotify && active &&
                e->xproperty.window == receiver && e->xproperty.atom == receive_prop &&
                e->xproperty.state == PropertyDelete) {
         size_t n = length - sent;
-        if (n > 3) n = 3; /* Deliberately split multi-byte UTF-8 characters. */
+        if (n > piece) n = piece; /* 3 splits multi-byte UTF-8 characters. */
         XChangeProperty(peer, receiver, receive_prop, utf8, 8,
                          PropModeReplace, (const unsigned char *)payload + sent, (int)n);
         sent += n;
@@ -113,6 +125,70 @@ static unsigned char *get(tiku_x11_clipboard_t *c, Atom target,
     return data;
 }
 
+/* A conversion the peer takes INCR: the announcement, then each piece
+ * as our side sends it when the last is deleted, to the empty one.
+ * @return the bytes taken into @p out. */
+static size_t get_incr(tiku_x11_clipboard_t *c, Atom target, char *out)
+{
+    Atom type; int format; unsigned long count, after;
+    unsigned char *data = NULL;
+    size_t used = 0;
+    got_reply = 0;
+    XConvertSelection(peer, clip, target, prop, peer_window, CurrentTime);
+    XFlush(peer);
+    for (int i = 0; !got_reply && i < 100; i++) pump(c);
+    assert(got_reply && reply_prop);
+    assert(XGetWindowProperty(peer, peer_window, prop, 0, 1, True,
+        AnyPropertyType, &type, &format, &count, &after, &data) == Success);
+    assert(type == incr && format == 32 && count == 1); XFree(data);
+    for (int i = 0; i < 10000; i++) {
+        pump(c);
+        data = NULL;
+        assert(XGetWindowProperty(peer, peer_window, prop, 0, 1L << 20, False,
+            AnyPropertyType, &type, &format, &count, &after, &data) == Success);
+        if (type == None) continue;
+        assert(type == (target == XA_STRING ? XA_STRING : utf8) && !after);
+        if (count) memcpy(out + used, data, count);
+        used += count;
+        XFree(data);
+        XDeleteProperty(peer, peer_window, prop); XFlush(peer);
+        if (!count) break;
+    }
+    return used;
+}
+
+/* Text too large for one request, served INCR in both encodings; a second
+ * requestor turned away while one takes pieces; a stalled one let go. */
+static void export_test(tiku_x11_clipboard_t *c)
+{
+    size_t n = 3u << 20;
+    char *text = malloc(n + 1), *got = malloc(n + 1);
+    assert(text && got);
+    for (size_t i = 0; i < n; i++) text[i] = (char)('A' + i % 23);
+    text[n] = 0;
+    publish(c, text);
+    assert(get_incr(c, utf8, got) == n && !memcmp(got, text, n));
+    assert(get_incr(c, XA_STRING, got) == n && !memcmp(got, text, n));
+    assert(!c->send.requestor);          /* each ended with its empty piece */
+    Window other = XCreateSimpleWindow(peer, DefaultRootWindow(peer), 0,0,1,1,0,0,0);
+    got_reply = 0;
+    XConvertSelection(peer, clip, utf8, prop, peer_window, CurrentTime);
+    XFlush(peer);
+    for (int i = 0; !got_reply && i < 100; i++) pump(c);
+    assert(got_reply && reply_prop && c->send.requestor == peer_window);
+    got_reply = 0;
+    XConvertSelection(peer, clip, utf8, prop, other, CurrentTime);
+    XFlush(peer);
+    for (int i = 0; !got_reply && i < 100; i++) pump(c);
+    assert(got_reply && !reply_prop);    /* one transfer out at a time */
+    now += 5000001;                      /* the first never reads on */
+    pump(c);
+    assert(!c->send.requestor);
+    XDeleteProperty(peer, peer_window, prop);
+    XDestroyWindow(peer, other); XSync(peer, False);
+    free(text); free(got);
+}
+
 static void protocol_test(Display *d)
 {
     Window w = XCreateSimpleWindow(d, DefaultRootWindow(d), 0,0,1,1,0,0,0);
@@ -132,14 +208,27 @@ static void protocol_test(Display *d)
     assert(fetch(&c) == TIKU_CLIPBOARD_INVALID && !*tiku_clipboard_text());
     owner(NORMAL, "a\0b", 3);
     assert(fetch(&c) == TIKU_CLIPBOARD_INVALID);
-    char large[TIKU_CLIPBOARD_MAX + 2]; memset(large, 'a', sizeof large);
-    owner(NORMAL, large, sizeof large);
+    size_t most = TIKU_CLIPBOARD_LIMIT;
+    char *large = malloc(most + 2); assert(large);
+    for (size_t i = 0; i < most + 2; i++) large[i] = (char)('a' + i % 26);
+    owner(NORMAL, large, most + 1);
     assert(fetch(&c) == TIKU_CLIPBOARD_TOO_LARGE);
-    owner(CHUNKED, large, sizeof large);
+    owner(CHUNKED, large, most + 1);
     assert(fetch(&c) == TIKU_CLIPBOARD_TOO_LARGE);
-    owner(NORMAL, large, TIKU_CLIPBOARD_MAX - 1);
+    owner(NORMAL, large, 5u << 20);    /* read in pieces, one property */
     assert(fetch(&c) == TIKU_CLIPBOARD_OK);
-    assert(strlen(tiku_clipboard_text()) == TIKU_CLIPBOARD_MAX - 1);
+    assert(tiku_clipboard_length() == 5u << 20 &&
+           !memcmp(tiku_clipboard_text(), large, 5u << 20));
+    piece = 64u * 1024u;
+    owner(CHUNKED, large + 1, 3u << 20); /* INCR, in 64 KB pieces */
+    assert(fetch(&c) == TIKU_CLIPBOARD_OK);
+    assert(tiku_clipboard_length() == 3u << 20 &&
+           !memcmp(tiku_clipboard_text(), large + 1, 3u << 20));
+    owner(CHUNKED, large, most);       /* the limit exactly */
+    assert(fetch(&c) == TIKU_CLIPBOARD_OK);
+    assert(tiku_clipboard_length() == most &&
+           !memcmp(tiku_clipboard_text(), large, most));
+    piece = 3;
     /* A refresh nobody asked for keeps its failure to itself: the text
      * that was there stands, and no result is raised at the user. */
     owner(REFUSE, "", 0);
@@ -147,10 +236,11 @@ static void protocol_test(Display *d)
     assert(tiku_x11_clipboard_request(&c, now + 2000000, 0));
     for (int i = 0; c.requestor && i < 1200; i++) pump(&c);
     assert(!c.requestor && c.result == 0);
-    assert(strlen(tiku_clipboard_text()) == TIKU_CLIPBOARD_MAX - 1);
-    memset(large, 0xe9, sizeof large);
-    owner(LATIN, large, 3000);
+    assert(tiku_clipboard_length() == most);
+    memset(large, 0xe9, most / 2 + 1); /* two bytes each once UTF-8 */
+    owner(LATIN, large, most / 2 + 1);
     assert(fetch(&c) == TIKU_CLIPBOARD_TOO_LARGE);
+    free(large);
     owner(NORMAL, "", 0);
     assert(fetch(&c) == TIKU_CLIPBOARD_OK && !*tiku_clipboard_text());
     owner(REFUSE, "", 0);
@@ -182,10 +272,12 @@ static void protocol_test(Display *d)
     assert(data && type == XA_ATOM && format == 32 && count == 5); XFree(data);
     data = get(&c, c.timestamp, &type, &format, &count);
     assert(data && type == XA_INTEGER && format == 32 && count == 1);
-    assert(*(unsigned long *)data == c.acquired); XFree(data);
+    /* Xlib sign-extends a 32-bit item into its long; the time is 32 bits. */
+    assert((uint32_t)*(unsigned long *)data == (uint32_t)c.acquired); XFree(data);
     assert(!get(&c, XInternAtom(d, "image/png", False), &type, &format, &count));
     publish(&c, "\xf0\x9f\x8c\x8d");
     assert(!get(&c, XA_STRING, &type, &format, &count));
+    export_test(&c);
     /* A vanished requestor must not terminate the desktop through Xlib. */
     Window dead = XCreateSimpleWindow(peer, DefaultRootWindow(peer), 0,0,1,1,0,0,0);
     XDestroyWindow(peer, dead); XSync(peer, False);

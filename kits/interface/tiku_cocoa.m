@@ -222,9 +222,11 @@ clipboard_refresh(tiku_host_t *host, int force)
         result = TIKU_CLIPBOARD_OK;
     } else {
         const char *utf8 = [text UTF8String];
-        size_t length = strlen(utf8);
+        size_t length = utf8 != NULL ? strlen(utf8) : 0u;
 
-        if (length >= TIKU_CLIPBOARD_MAX) {
+        if (utf8 == NULL) {
+            result = TIKU_CLIPBOARD_INVALID;   /* not convertible to UTF-8 */
+        } else if (length > TIKU_CLIPBOARD_LIMIT) {
             result = TIKU_CLIPBOARD_TOO_LARGE;
         } else {
             result = tiku_clipboard_import(utf8, length)

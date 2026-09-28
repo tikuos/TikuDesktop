@@ -25,16 +25,24 @@ struct tiku_window_app {
     tiku_surface_t *canvas;
     app_window_t windows[TIKU_WINDOW_MAX];
     unsigned clipboard_stamp;
+    unsigned host_stamp;        /* the services' clipboard, as imported */
+    int host_imported;          /* whether it has been at all */
     uint64_t focused_generation;
 };
 
-/* Import before a user action, then publish only changes made by that action. */
+/* Import before a user action, then publish only changes made by that action.
+ * The host's copy is compared only when its stamp says it moved, so a large
+ * clipboard costs nothing on events that leave it alone. */
 static void clipboard_begin(tiku_window_app_t *a)
 {
-    char text[TIKU_CLIPBOARD_MAX] = {0};
-    if (a->services.clip_get) {
-        a->services.clip_get(a->services.ctx, text, sizeof text);
-        if (strcmp(text, tiku_clipboard_text())) tiku_clipboard_set(text);
+    unsigned stamp = 0;
+    if (a->services.clip_text) {
+        const char *text = a->services.clip_text(a->services.ctx, &stamp);
+        if (!a->host_imported || stamp != a->host_stamp) {
+            if (strcmp(text, tiku_clipboard_text())) tiku_clipboard_set(text);
+            a->host_stamp = stamp;
+            a->host_imported = 1;
+        }
     }
     a->clipboard_stamp = tiku_clipboard_stamp();
 }

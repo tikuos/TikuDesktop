@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "tiku_client.h"
+#include "tiku_clipboard.h"
 #include "tiku_dl.h"
 #include "tiku_remote.h"
 #include "tiku_report.h"
@@ -52,8 +53,10 @@ typedef struct {
      * moment its window is closed, exactly as before. */
     int                       windows;
     /* The desk's clipboard, mirrored: the shell TELLs every change, so
-     * a paste reads from here and never waits on the wire. */
-    char                      clip[4096];
+     * a paste reads from here and never waits on the wire.  Held at its
+     * size (NULL when empty); the stamp moves whenever it does. */
+    char                     *clip;
+    unsigned                  clip_stamp;
     /* The boards the shell has mounted, kept warm the way the clipboard
      * is: a menu asks while it is being drawn. */
     char                      boards[512];
@@ -244,6 +247,29 @@ svc_pick(void *ctx, uint32_t id, int mode, const char *start,
     return sent;
 }
 
+/** @brief The mirror made @p text, cut at TIKU_CLIPBOARD_LIMIT between
+ *         characters as the desk's store cuts it; its stamp moved.  No
+ *         memory for it leaves the mirror empty. */
+static void
+clip_hold(client_ctx_t *c, const char *text)
+{
+    size_t n = (text != NULL) ? strlen(text) : 0u;
+    char *copy;
+
+    if (n > TIKU_CLIPBOARD_LIMIT) {
+        n = TIKU_CLIPBOARD_LIMIT;
+        while (n && ((unsigned char)text[n] & 0xc0) == 0x80) n--;
+    }
+    copy = n != 0u ? malloc(n + 1u) : NULL;
+    if (copy != NULL) {
+        memcpy(copy, text, n);
+        copy[n] = '\0';
+    }
+    free(c->clip);
+    c->clip = copy;
+    c->clip_stamp++;
+}
+
 static int
 svc_clip_set(void *ctx, const char *text)
 {
@@ -253,27 +279,26 @@ svc_clip_set(void *ctx, const char *text)
 
     /* The local copy first: a copy-then-paste inside this application
      * must work even before the shell's echo comes back around. */
-    snprintf(c->clip, sizeof c->clip, "%s", (text != NULL) ? text : "");
+    clip_hold(c, text);
     m = tiku_msg_new(TIKU_MSG_CLIP);
     if (m == NULL) {
         return 0;
     }
-    (void)tiku_msg_add_string(m, "text", (text != NULL) ? text : "");
+    (void)tiku_msg_add_string(m, "text", (c->clip != NULL) ? c->clip : "");
     sent = tiku_remote_say(&c->remote, m);
     tiku_msg_free(m);
     return sent;
 }
 
-static int
-svc_clip_get(void *ctx, char *out, size_t max)
+static const char *
+svc_clip_text(void *ctx, unsigned *stamp)
 {
     client_ctx_t *c = ctx;
 
-    if (out == NULL || max == 0u) {
-        return 0;
+    if (stamp != NULL) {
+        *stamp = c->clip_stamp;
     }
-    snprintf(out, max, "%s", c->clip);
-    return (int)strlen(out);
+    return (c->clip != NULL) ? c->clip : "";
 }
 
 /** @brief The @p which'th field of @p row, up to a tab or its end. */
@@ -583,7 +608,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
     services.configure = svc_configure;
     services.send_message = svc_message;
     services.clip_set = svc_clip_set;
-    services.clip_get = svc_clip_get;
+    services.clip_text = svc_clip_text;
     services.board_names = svc_board_names;
     services.board_run = svc_board_run;
     services.board_input = svc_board_input;
@@ -709,8 +734,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
                         const char *text =
                             tiku_msg_find_string(heard, "text", 0);
 
-                        snprintf(ctx->clip, sizeof ctx->clip, "%s",
-                                 (text != NULL) ? text : "");
+                        clip_hold(ctx, text);
                     }
                     if (tiku_msg_what(heard) == TIKU_MSG_PICKED &&
                         app->picked != NULL) {
@@ -758,6 +782,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
         app->stop(state);
     }
     tiku_remote_disconnect(&ctx->remote);
+    free(ctx->clip);
+    ctx->clip = NULL;
     return result;
 }
 

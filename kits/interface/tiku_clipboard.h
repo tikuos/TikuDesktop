@@ -23,7 +23,10 @@
 
 #include <stddef.h>
 
-#define TIKU_CLIPBOARD_MAX 4096
+/* The most text the clipboard holds, in bytes, its NUL apart: room for
+ * the whole text of a long document.  A bound all the same, since every
+ * application's session keeps a copy of it. */
+#define TIKU_CLIPBOARD_LIMIT (16u * 1024u * 1024u)
 
 /* TIKU_EVENT_CLIPBOARD carries one of these results in event.key. */
 enum { TIKU_CLIPBOARD_OK = 1, TIKU_CLIPBOARD_UNAVAILABLE,
@@ -32,17 +35,24 @@ enum { TIKU_CLIPBOARD_OK = 1, TIKU_CLIPBOARD_UNAVAILABLE,
 /** @brief User-facing transfer result, empty on success. */
 const char *tiku_clipboard_status_text(int status);
 
-/** @brief Put @p text on the clipboard; NULL clears it. */
+/** @brief Put @p text on the clipboard; NULL clears it.  Text past
+ *         TIKU_CLIPBOARD_LIMIT is cut at a character boundary, and text
+ *         there is no memory for leaves the clipboard empty. */
 void tiku_clipboard_set(const char *text);
 
 /** @brief Atomically import a complete UTF-8 string from an external source.
- * Returns 1 on success, 0 for overflow, embedded NUL or malformed UTF-8.
- * Failure leaves both contents and stamp unchanged. No truncation is allowed.
+ * Returns 1 on success, 0 for more than TIKU_CLIPBOARD_LIMIT bytes, embedded
+ * NUL, malformed UTF-8 or no memory.  Failure leaves both contents and stamp
+ * unchanged.  No truncation is allowed.
  */
 int tiku_clipboard_import(const char *text, size_t length);
 
-/** @brief What the clipboard holds -- never NULL, empty when nothing. */
+/** @brief What the clipboard holds -- never NULL, empty when nothing; good
+ *         until the next set() or import(). */
 const char *tiku_clipboard_text(void);
+
+/** @brief How many bytes the clipboard holds, its NUL apart. */
+size_t tiku_clipboard_length(void);
 
 /**
  * @brief A counter that moves on every set().

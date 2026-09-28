@@ -232,6 +232,10 @@ typedef struct tiku_remote_session {
      * stop the desktop's event loop, including its Force Quit controls. */
     unsigned char       *out;
     size_t               out_size, out_sent;
+    /* The one large message waiting in it (a clipboard): its bytes not
+     * yet written, and how far past the unsent start it begins.  The
+     * bound on the rest is kept apart, so input keeps flowing behind it. */
+    size_t               out_large, large_at;
 } tiku_remote_session_t;
 
 typedef struct tiku_remote_listener {
@@ -338,7 +342,7 @@ const uint32_t *tiku_remote_pixels(
 /* The desk's clipboard, both ways: an application SAYs it with "text"
  * to put text on the desk, and the shell TELLs it to every session
  * whenever the clipboard moves, so a session's copy is always warm and
- * clip_get() never waits on the wire. */
+ * clip_text() never waits on the wire. */
 #define TIKU_MSG_CLIP   0x636c6970u   /* 'clip' */
 /* Ask the desktop to open a namespace path with its normal file handler. */
 #define TIKU_MSG_OPENPATH 0x6f706174u /* 'opat', string "path" */

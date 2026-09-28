@@ -4,24 +4,32 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_clipboard.c - the desk's one TEXT clipboard.
+ * tiku_clipboard.c - the desk's one TEXT clipboard, held at the size of
+ * what it holds, up to TIKU_CLIPBOARD_LIMIT.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "tiku_clipboard.h"
 
-static char     held[TIKU_CLIPBOARD_MAX];
+static char    *held;              /* NULL when empty                   */
+static size_t   held_len;          /* its bytes, the NUL apart          */
 static unsigned stamp;
 
 const char *
 tiku_clipboard_status_text(int status)
 {
+    static char too_large[96];
+
     switch (status) {
     case TIKU_CLIPBOARD_OK: return "";
     case TIKU_CLIPBOARD_TOO_LARGE:
-        return "Host clipboard exceeds the 4095-byte text limit.";
+        snprintf(too_large, sizeof too_large, "Host clipboard exceeds the "
+                 "%u MB text limit.", TIKU_CLIPBOARD_LIMIT / (1024u * 1024u));
+        return too_large;
     case TIKU_CLIPBOARD_TIMEOUT:
         return "Host clipboard did not respond. Try copying again.";
     case TIKU_CLIPBOARD_INVALID:
@@ -30,25 +38,43 @@ tiku_clipboard_status_text(int status)
     }
 }
 
+/** @brief The store made @p n bytes of @p text; empty when @p n is 0 or
+ *         there is no memory for it.  @return whether it holds them. */
+static int
+hold(const char *text, size_t n)
+{
+    char *copy = n != 0u ? malloc(n + 1u) : NULL;
+
+    if (copy != NULL) {
+        memcpy(copy, text, n);
+        copy[n] = '\0';
+    }
+    free(held);
+    held = copy;
+    held_len = copy != NULL ? n : 0u;
+    stamp++;
+    return n == 0u || copy != NULL;
+}
+
 void
 tiku_clipboard_set(const char *text)
 {
     size_t n = (text != NULL) ? strlen(text) : 0u;
 
-    if (n >= sizeof held) {
-        n = sizeof held - 1u;
+    if (n > TIKU_CLIPBOARD_LIMIT) {
+        n = TIKU_CLIPBOARD_LIMIT;
         /* A valid UTF-8 string must not end in the middle of a codepoint. */
         while (n && ((unsigned char)text[n] & 0xc0) == 0x80) n--;
     }
-    memmove(held, (text != NULL) ? text : "", n);
-    held[n] = '\0';
-    stamp++;
+    (void)hold(text, n);
 }
 
 int
 tiku_clipboard_import(const char *text, size_t length)
 {
-    if ((!text && length) || length >= sizeof held) return 0;
+    char *copy;
+
+    if ((!text && length) || length > TIKU_CLIPBOARD_LIMIT) return 0;
     for (size_t i = 0; i < length;) {
         unsigned char c = (unsigned char)text[i++];
         unsigned cp, minimum;
@@ -65,8 +91,13 @@ tiku_clipboard_import(const char *text, size_t length)
         }
         if (cp < minimum || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return 0;
     }
-    if (length) memmove(held, text, length);
-    held[length] = 0;
+    if (length == 0u) return hold("", 0u);
+    if ((copy = malloc(length + 1u)) == NULL) return 0;  /* keep what is held */
+    memcpy(copy, text, length);
+    copy[length] = '\0';
+    free(held);
+    held = copy;
+    held_len = length;
     stamp++;
     return 1;
 }
@@ -74,7 +105,13 @@ tiku_clipboard_import(const char *text, size_t length)
 const char *
 tiku_clipboard_text(void)
 {
-    return held;
+    return held != NULL ? held : "";
+}
+
+size_t
+tiku_clipboard_length(void)
+{
+    return held_len;
 }
 
 unsigned

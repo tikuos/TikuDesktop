@@ -5,14 +5,15 @@
 
 static char title_seen[128];
 static uint32_t next_window;
-static char clipboard[TIKU_CLIPBOARD_MAX];
+static char *clipboard;         /* the desk's, as the services hold it */
+static unsigned clipboard_stamp;
 static int picker_count, picker_mode, sizeable_count;
 
 /** Native clipboard and file-panel seams for workflow tests. */
 static int clip_set(void *ctx, const char *text)
-{ (void)ctx; snprintf(clipboard, sizeof clipboard, "%s", text); return 0; }
-static int clip_get(void *ctx, char *out, size_t max)
-{ (void)ctx; snprintf(out, max, "%s", clipboard); return (int)strlen(out); }
+{ (void)ctx; free(clipboard); clipboard = strdup(text); clipboard_stamp++; return 0; }
+static const char *clip_text(void *ctx, unsigned *stamp)
+{ (void)ctx; if (stamp) *stamp = clipboard_stamp; return clipboard ? clipboard : ""; }
 static int pick_file(void *ctx, uint32_t id, int mode, const char *dir, const char *name)
 { (void)ctx; (void)id; (void)dir; (void)name; picker_count++; picker_mode = mode; return 0; }
 static int sizeable(void *ctx, uint32_t id)
@@ -307,8 +308,10 @@ static void workflows(edit_state_t *st, const char *dir)
     char block[502]; memset(block, 'q', 500); block[500] = '\n'; block[501] = 0;
     for (int i = 0; i < 10; i++) assert(tiku_editor_insert_checked(st, block));
     tiku_editor_buffer_select_all(&st->tv);
-    key(st, 'x', TIKU_MOD_CMD);
-    assert(strstr(st->note, "4095") && st->tv.nline == 11 && strlen(clipboard) == 530);
+    key(st, 'x', TIKU_MOD_CMD);             /* 5010 bytes: past the old 4 KB */
+    assert(strlen(clipboard) == 5010 && st->tv.nline == 1);
+    key(st, 'v', TIKU_MOD_CMD);
+    assert(st->tv.nline == 11 && st->tv.line[9].len == 500);
     tiku_editor_buffer_saved(&st->tv);
     assert(!unlink(path) && !unlink(other));
 }
@@ -346,7 +349,7 @@ int main(void)
     assert(!fclose(f));
     tiku_app_services_t services = {.open = window_open, .frame = window_frame,
         .menus = window_menus, .startup_document = path,
-        .clip_set = clip_set, .clip_get = clip_get, .pick = pick_file,
+        .clip_set = clip_set, .clip_text = clip_text, .pick = pick_file,
         .sizeable = sizeable};
     void *state = NULL;
     assert(!tiku_editor_start(&state, &services));

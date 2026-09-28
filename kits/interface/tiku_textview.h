@@ -133,6 +133,10 @@ int tiku_textview_selection(const tiku_textview_t *tv,
 size_t tiku_textview_selected(const tiku_textview_t *tv, char *out,
                               size_t max);
 
+/** @brief The bytes tiku_textview_selected() needs for the whole
+ *         selection, its NUL apart; 0 when nothing is selected. */
+size_t tiku_textview_selected_size(const tiku_textview_t *tv);
+
 /**
  * @brief Type @p text at the caret, newlines breaking lines.
  *

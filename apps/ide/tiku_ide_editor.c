@@ -52,28 +52,37 @@ tiku_ide_edit_of_id(ide_t *st, uint32_t id)
 int
 tiku_ide_edit_clip(ide_t *st, edit_t *e, int command)
 {
-    char text[TIKU_CLIPBOARD_MAX];
+    size_t n = tiku_textview_selected_size(&e->tv);
+    const char *held;
+    char *text;
 
     switch (command) {
     case CMD_COPY:
     case CMD_CUT:
-        if (tiku_textview_selected(&e->tv, text, sizeof text) == 0u) {
+        if (n == 0u) {
             return 0;           /* nothing held: nothing to take */
         }
+        if (n > TIKU_CLIPBOARD_LIMIT || (text = malloc(n + 1u)) == NULL) {
+            snprintf(e->feedback, sizeof e->feedback,
+                     "The selection is more than the clipboard holds.");
+            return 0;
+        }
+        (void)tiku_textview_selected(&e->tv, text, n + 1u);
         if (st->services->clip_set != NULL) {
             (void)st->services->clip_set(st->services->ctx, text);
         }
+        free(text);
         if (command == CMD_CUT) {
             tiku_textview_backspace(&e->tv);
         }
         return 1;
     case CMD_PASTE:
-        if (st->services->clip_get == NULL ||
-            st->services->clip_get(st->services->ctx, text,
-                                   sizeof text) <= 0) {
+        held = st->services->clip_text != NULL
+               ? st->services->clip_text(st->services->ctx, NULL) : "";
+        if (held[0] == '\0') {
             return 0;
         }
-        tiku_textview_insert_text(&e->tv, text);
+        tiku_textview_insert_text(&e->tv, held);
         return 1;
     case CMD_SELALL:
         tiku_textview_select_all(&e->tv);

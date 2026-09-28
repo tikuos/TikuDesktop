@@ -128,7 +128,10 @@ int main(void)
     strcpy(large, "<pre>"); memset(large+5, 'x', 5000); strcpy(large+5005, "</pre>");
     assert(tiku_reader_help_window_html(&c, "Long code", large));
     tiku_workspace_draw(workspace); tiku_clipboard_set("keep");
-    assert(!tiku_reader_help_window_copy(&c, 1) && !strcmp(tiku_clipboard_text(), "keep")); free(large);
+    assert(tiku_reader_help_window_copy(&c, 1));   /* 5000 bytes: past the old 4 KB */
+    size_t xs = 0;
+    for (const char *q = tiku_clipboard_text(); *q; q++) xs += *q == 'x';
+    assert(xs == 5000); free(large);
     snprintf(path, sizeof path, "%s/help/fr", base); assert(!mkdir(path, 0700));
     fixture(path, "index.html", "<h1>Aide française</h1><p>Bonjour.</p>");
     setenv("TIKU_LANG", "fr", 1); assert(tiku_reader_help_window_home(&c));

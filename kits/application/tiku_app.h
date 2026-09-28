@@ -123,14 +123,16 @@ typedef struct tiku_app_services {
      */
     int (*clip_set)(void *ctx, const char *text);
     /**
-     * @brief What the desk's clipboard holds, into @p out.
+     * @brief What the desk's clipboard holds: the host's own copy, never
+     *        NULL, good until the application next returns to its loop.
      *
      * Answered from what the host already knows -- out of process the
      * shell keeps every session's copy in step as the clipboard moves,
-     * so this never waits on a wire.  @return the length written, 0
-     * when the clipboard is empty (or the service is absent).
+     * so this never waits on a wire.  @p stamp, when not NULL, gets a
+     * number that moves whenever the text does, so a caller can tell a
+     * change without comparing up to TIKU_CLIPBOARD_LIMIT bytes.
      */
-    int (*clip_get)(void *ctx, char *out, size_t max);
+    const char *(*clip_text)(void *ctx, unsigned *stamp);
 
     /**
      * @brief The boards the shell has mounted, one name a line.

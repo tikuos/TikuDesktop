@@ -104,10 +104,16 @@ echo_event(void *state, const tiku_event_t *event)
                                    "/devices/lab-board/data");
         }
         if (event->key == 'v') {
-            char text[64];
-            int n = st->services->clip_get(st->services->ctx, text, sizeof text);
-            st->surface->px[0] = n > 0 && !strcmp(text, "fresh host caf\xc3\xa9")
+            const char *text = st->services->clip_text(st->services->ctx, NULL);
+            st->surface->px[0] = !strcmp(text, "fresh host caf\xc3\xa9")
                                 ? 0x00abcdefu : 0x00123456u;
+        }
+        if (event->key == 'l') {        /* the large clipboard, every byte */
+            const char *text = st->services->clip_text(st->services->ctx, NULL);
+            size_t n = strlen(text), k;
+            int ok = n == (5u << 20);
+            for (k = 0; ok && k < n; k++) ok = text[k] == (char)('a' + k % 26);
+            st->surface->px[0] = ok ? 0x00c0ffeeu : 0x00123456u;
         }
         (void)st->services->frame(st->services->ctx, st->id,
                                   st->surface->px, 8, 8);
@@ -242,6 +248,27 @@ main(void)
         const uint32_t *pixels = tiku_remote_pixels(&listener.session[0].win[0]);
         check(pixels && pixels[0] == 0x00abcdefu,
               "a remote app reads fresh UTF-8 text on its first paste");
+    }
+    {
+        /* Past the quarter megabyte a message down was once held to. */
+        size_t n = 5u << 20, k;
+        char *big = malloc(n + 1);
+        for (k = 0; big != NULL && k < n; k++) big[k] = (char)('a' + k % 26);
+        if (big != NULL) big[n] = 0;
+        tiku_msg_t *clip = tiku_msg_new(TIKU_MSG_CLIP);
+        (void)tiku_msg_add_string(clip, "text", big != NULL ? big : "");
+        check(big != NULL && tiku_remote_tell(&listener, 0, clip),
+              "a 5 MB clipboard is queued for the session");
+        tiku_msg_free(clip);
+        free(big);
+        key.key = 'l';
+        tiku_remote_event(&listener, &fake, &key);
+        int64_t took = await_frame(&listener, 2000);
+        printf("         5 MB clipboard, then a key: %d ms\n", (int)took);
+        check(took >= 0, "the app answers the key after the large clipboard");
+        const uint32_t *pixels = tiku_remote_pixels(&listener.session[0].win[0]);
+        check(pixels && pixels[0] == 0x00c0ffeeu,
+              "and reads all 5 MB of it, as they were sent");
     }
     {
         const char *phrase = "A composed phrase: café 日本語";

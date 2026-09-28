@@ -328,6 +328,28 @@ static void selection_tests(tiku_pdfview_t *c)
                     25));
 }
 
+/** @brief Copy takes past the old 4 KB: page 1's text lent six thousand
+ *         e acutes, two bytes each, and all twelve thousand bytes go. */
+static void large_copy_test(tiku_pdfview_t *c)
+{
+    pv_page_t *pg = &c->pages[0];
+    tiku_pdf_char_t *kept = pg->ch, *many = calloc(6000, sizeof *many);
+    long nch = pg->nch;
+    int text = pg->text;
+
+    assert(many != NULL);
+    for (int i = 0; i < 6000; i++) many[i].cp = 0xe9;
+    pg->ch = many; pg->nch = 6000; pg->text = 1;
+    c->anchor = (pv_mark_t){0, 0}; c->focus = (pv_mark_t){0, 6000};
+    c->selected = 1;
+    pv_action(c, PV_COPY);
+    assert(tiku_clipboard_length() == 12000 &&
+           !strncmp(tiku_clipboard_text(), "\xc3\xa9\xc3\xa9", 4) &&
+           strstr(c->status, "Copied 6000 characters"));
+    pg->ch = kept; pg->nch = nch; pg->text = text; c->selected = 0;
+    free(many);
+}
+
 /** @brief The page field goes where it is told, and says when it cannot. */
 static void field_tests(tiku_pdfview_t *c)
 {
@@ -507,6 +529,7 @@ int main(int argc, char **argv)
     navigation_tests(c);
     search_tests(c);
     selection_tests(c);
+    large_copy_test(c);
     field_tests(c);
     thumbnail_tests(c, s, file);
     pv_action(c, PV_FIRST);

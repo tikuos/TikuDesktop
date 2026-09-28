@@ -322,14 +322,11 @@ tiku_ide_search_key(ide_t *st, edit_t *e, const tiku_event_t *ev)
         return;
     }
     if (ev->modifiers & TIKU_MOD_CMD) {
-        char clip[TIKU_FIELD_MAX];
         if (ch == 'a') { key = TIKU_FIELD_SELECT_ALL; }
-        else if (ch == 'v' && st->services->clip_get) {
+        else if (ch == 'v' && st->services->clip_text) {
+            const char *clip = st->services->clip_text(st->services->ctx, NULL);
             int i;
-            clip[0] = '\0';
-            st->services->clip_get(st->services->ctx, clip, sizeof clip);
-            clip[sizeof clip - 1] = '\0';
-            for (i = 0; clip[i]; i++) {
+            for (i = 0; clip[i] && i < TIKU_FIELD_MAX - 1; i++) {
                 if ((unsigned char)clip[i] >= 32 && (unsigned char)clip[i] < 127) {
                     tiku_field_key(field, TIKU_FIELD_CHAR, 0, clip[i]);
                 }

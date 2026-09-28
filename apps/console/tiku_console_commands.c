@@ -27,18 +27,28 @@ void tiku_console_copy_history(console_t *st, int selected)
 {
     if (!st->services->clip_set) return;
     tiku_console_rebuild(st);
-    char out[TIKU_CLIPBOARD_MAX] = ""; size_t used = 0;
+    char *out = NULL; size_t used = 0, room = 0;
     for (int i = 0; i < st->visible; i++) {
         if (selected && !tiku_list_selected(&st->list, i)) continue;
         char line[COLS * 4 + 1]; tiku_console_line_string(&st->lines[st->index[i]], line, sizeof line);
         size_t n = strlen(line);
-        if (used + n + 2 > sizeof out) {
+        if (used + n + 1 > TIKU_CLIPBOARD_LIMIT) {
             snprintf(st->note, sizeof st->note, "Too much text for the clipboard. Narrow Find or copy one selected line.");
-            return;
+            free(out); return;
+        }
+        if (used + n + 2 > room) {           /* the text, its newline, a NUL */
+            size_t want = room ? room * 2 : 4096; char *bigger;
+            while (want < used + n + 2) want *= 2;
+            if (!(bigger = realloc(out, want))) {
+                snprintf(st->note, sizeof st->note, "Not enough memory to copy the history.");
+                free(out); return;
+            }
+            out = bigger; room = want;
         }
         memcpy(out + used, line, n); used += n; out[used++] = '\n'; out[used] = 0;
     }
     if (used) st->services->clip_set(st->services->ctx, out);
+    free(out);
 }
 
 int tiku_console_action(console_t *st, int id)
@@ -100,10 +110,10 @@ int tiku_console_direct_event(console_t *st, const tiku_event_t *ev)
     if (ev->type != TIKU_EVENT_KEY_DOWN || ev->key == TIKU_KEY_TAB) return 0;
     unsigned k = ev->key;
     if ((ev->modifiers & TIKU_MOD_CMD) && (k == 'v' || k == 'V')) {
-        char paste[TIKU_TEXT_INPUT_MAX] = "", plain[TIKU_TEXT_INPUT_MAX] = "";
-        int length = st->services->clip_get ?
-            st->services->clip_get(st->services->ctx, paste, sizeof paste) : 0;
-        if (length < (int)sizeof paste - 1 && tiku_text_input_append(plain, sizeof plain, paste))
+        char plain[TIKU_TEXT_INPUT_MAX] = "";
+        const char *paste = st->services->clip_text ?
+            st->services->clip_text(st->services->ctx, NULL) : "";
+        if (strlen(paste) < sizeof plain - 1 && tiku_text_input_append(plain, sizeof plain, paste))
             tiku_console_queue_bytes(st, plain, strlen(plain));
         else snprintf(st->note, sizeof st->note, "Paste rejected: use one plain-text line without control characters.");
         return 1;

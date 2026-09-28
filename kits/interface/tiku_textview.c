@@ -444,6 +444,27 @@ tiku_textview_selected(const tiku_textview_t *tv, char *out, size_t max)
     return used;
 }
 
+size_t
+tiku_textview_selected_size(const tiku_textview_t *tv)
+{
+    int y0, x0, y1, x1, line;
+    size_t size = 0;
+
+    if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
+        return 0;
+    }
+    for (line = y0; line <= y1; line++) {
+        int len = tv->line[line].len;
+        int c0 = (line == y0) ? x0 : 0;
+        int c1 = (line == y1) ? x1 : len;
+
+        if (c0 > len) { c0 = len; }
+        if (c1 > len) { c1 = len; }
+        size += (size_t)((c1 > c0) ? c1 - c0 : 0) + (line < y1 ? 1u : 0u);
+    }
+    return size;
+}
+
 int tiku_textview_commit(tiku_textview_t *tv, const char *text)
 {
     tiku_text_input_t checked;

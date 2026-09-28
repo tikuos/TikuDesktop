@@ -127,10 +127,9 @@ static int search_event(edit_state_t *st, const tiku_event_t *e)
     /* App services carry the system clipboard; field input uses its kit mirror. */
     unsigned stamp = tiku_clipboard_stamp();
     if (e->type == TIKU_EVENT_KEY_DOWN && (e->modifiers & TIKU_MOD_CMD) &&
-        (e->key == 'v' || e->key == 'V') && st->services->clip_get) {
-        char clip[TIKU_CLIPBOARD_MAX] = {0};
-        st->services->clip_get(st->services->ctx, clip, sizeof clip);
-        tiku_clipboard_set(clip); stamp = tiku_clipboard_stamp();
+        (e->key == 'v' || e->key == 'V') && st->services->clip_text) {
+        tiku_clipboard_set(st->services->clip_text(st->services->ctx, NULL));
+        stamp = tiku_clipboard_stamp();
     }
     int i = st->find_focus;
     tiku_field_result_t result = tiku_field_event(&st->field[i], &st->field_input[i],

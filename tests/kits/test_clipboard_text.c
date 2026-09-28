@@ -1,6 +1,7 @@
 /* Clipboard import boundaries and empty-paste safety.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include "tiku_clipboard.h"
@@ -20,16 +21,20 @@ int main(void)
     assert(tiku_clipboard_stamp() == before);
     assert(tiku_clipboard_import("caf\xc3\xa9\n\xf0\x9f\x8c\x8d", 10));
     assert(!strcmp(tiku_clipboard_text(), "caf\xc3\xa9\n\xf0\x9f\x8c\x8d"));
-    char big[TIKU_CLIPBOARD_MAX + 4];
-    memset(big, 'a', sizeof big); big[sizeof big - 1] = 0;
-    assert(!tiku_clipboard_import(big, TIKU_CLIPBOARD_MAX));
-    assert(tiku_clipboard_import(big, TIKU_CLIPBOARD_MAX - 1));
-    assert(strlen(tiku_clipboard_text()) == TIKU_CLIPBOARD_MAX - 1);
-    big[TIKU_CLIPBOARD_MAX - 2] = '\xc3';
-    big[TIKU_CLIPBOARD_MAX - 1] = '\xa9';
+    size_t limit = TIKU_CLIPBOARD_LIMIT;
+    char *big = malloc(limit + 4);
+    assert(big);
+    memset(big, 'a', limit + 3); big[limit + 3] = 0;
+    assert(!tiku_clipboard_import(big, limit + 1));
+    assert(tiku_clipboard_import(big, limit));
+    assert(strlen(tiku_clipboard_text()) == limit && tiku_clipboard_length() == limit);
+    big[limit - 1] = '\xc3';     /* an e acute the limit would cut in two */
+    big[limit] = '\xa9';
     tiku_clipboard_set(big);
-    assert(strlen(tiku_clipboard_text()) == TIKU_CLIPBOARD_MAX - 2);
+    assert(strlen(tiku_clipboard_text()) == limit - 1);
     tiku_clipboard_set(tiku_clipboard_text()); /* Overlapping source is legal. */
+    assert(tiku_clipboard_length() == limit - 1);
+    free(big);
     assert(tiku_clipboard_import(NULL, 0));
     tiku_field_t field;
     tiku_field_start(&field, "keep selected text");

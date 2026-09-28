@@ -30,12 +30,12 @@ static int open_path(void *ctx, const char *path)
 { (void)ctx; assert(!released); assert(!strcmp(path, "/devices/lab-board/data")); files++; return 1; }
 static int clip_set(void *ctx, const char *value)
 { (void)ctx; return snprintf(clipboard, sizeof clipboard, "%s", value); }
-static int clip_get(void *ctx, char *out, size_t cap)
-{ (void)ctx; return snprintf(out, cap, "%s", clipboard); }
+static const char *clip_text(void *ctx, unsigned *stamp)
+{ (void)ctx; if (stamp) *stamp = 0; return clipboard; }
 static tiku_app_services_t svc = {.open = opened, .close = closed, .frame = frame,
     .board_names = names, .current_device = current, .board_port = port, .board_mcu = mcu,
     .device_stats = stats, .board_release = release, .board_reclaim = returned,
-    .open_path = open_path, .clip_set = clip_set, .clip_get = clip_get};
+    .open_path = open_path, .clip_set = clip_set, .clip_text = clip_text};
 
 static console_t *start(void)
 {
@@ -78,8 +78,8 @@ static void model_test(console_t *st)
     assert(st->count == ROWS);
     tiku_field_start(&st->field[1], "line"); tiku_console_rebuild(st); assert(st->visible == ROWS - 1);
     snprintf(clipboard, sizeof clipboard, "keep clipboard");
-    tiku_console_copy_history(st, 0); assert(!strcmp(clipboard, "keep clipboard"));
-    assert(strstr(st->note, "Too much text"));
+    tiku_console_copy_history(st, 0);   /* every line: past the old 4 KB */
+    assert(strlen(clipboard) == (ROWS - 1) * 5u && !strncmp(clipboard, "line\nline\n", 10));
     tiku_console_message(st, "distinct line"); tiku_field_start(&st->field[1], "distinct");
     tiku_console_copy_history(st, 0); assert(!strcmp(clipboard, "distinct line\n"));
     tiku_field_start(&st->field[1], ""); tiku_console_action(st, CLEAR);
