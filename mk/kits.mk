@@ -102,6 +102,10 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(HOST)
 TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_inflate_stream.c \
+               $(K)/translation/tiku_archive.c \
+               $(K)/translation/tiku_archive_zip.c \
+               $(K)/translation/tiku_archive_tar.c \
+               $(K)/translation/tiku_archive_extract.c \
                $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_fax.c \
                $(K)/translation/tiku_mq.c \
