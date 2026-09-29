@@ -23,7 +23,9 @@ Reader/Help live in `apps/reader/`; Image in `apps/image/`; PDF in
 `apps/pdf/`, drawing through the PDF kit on its own workers; archives in
 `apps/archive/`, read and extracted by the archive kit on its workers;
 TikuDiff in `apps/diff/`, comparing through the support kit's diff on
-its workers; Monitor and VFS Inspector share app-owned code in
+its workers; TikuGrab in `apps/grab/`, which asks the desktop's grab
+service (`TIKU_MSG_GRAB`) for the pictures, since an application cannot
+see the desk; Monitor and VFS Inspector share app-owned code in
 `apps/deviceutils/`.
 None is linked into either shipping shell. Help requests launch Reader in its help-document mode.
 

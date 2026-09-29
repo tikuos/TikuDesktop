@@ -1,0 +1,31 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# TikuGrab from the Applications menu: the whole desk grabbed without
+# TikuGrab in it, then one window alone -- the desktop taking both, since
+# an application cannot see the desk, and saying where each went.
+wait 20
+click 980 40
+wait 4
+menu-pick Applications
+wait 4
+expect-menu TikuGrab
+menu-pick TikuGrab
+wait 30
+expect-title TikuGrab
+note the list offers the whole desk first, and it is chosen
+expect-narrate Whole desk
+key g ctrl
+wait 40
+expect-narrate Saved as tiku-desk-
+shot /tmp/trk_grab_desk.png
+note one window alone: the next row down, the desk's Tracker window
+key Down
+wait 4
+key g ctrl
+wait 40
+expect-narrate Saved as tiku-window-
+shot /tmp/trk_grab_window.png
+key w ctrl
+wait 10
+expect-no-title TikuGrab

@@ -59,6 +59,7 @@ test_image_viewer_LDLIBS := $(X11_LIBS) -lm
 test_pdf_viewer_LDLIBS := $(X11_LIBS) -lm
 test_archive_viewer_LDLIBS := $(X11_LIBS) -lm
 test_diff_viewer_LDLIBS := $(X11_LIBS) -lm
+test_grab_app_LDLIBS := $(X11_LIBS) -lm
 test_image_association_SRCS := $(COMMON) $(POSEVIEW)
 test_image_association_LDLIBS := $(X11_LIBS) -lm
 test_pdf_association_SRCS := $(COMMON) $(POSEVIEW)
