@@ -14,6 +14,7 @@ using the public kits. Desktop controllers and preferences belong in
 | `reader/`, `image/` | TikuReader/Help and TikuImage |
 | `pdf/` | TikuPDF: datasheets, manuals and papers |
 | `archive/` | TikuArchive: ZIP, tar and gzip archives, browsed and extracted |
+| `diff/` | TikuDiff: two files side by side, two folders, two archives |
 | `deviceutils/` | Device Monitor and VFS Inspector |
 | `calculator/` | Ordinary Calculator; stable runtime ID `calc` |
 | `developer-calculator/` | Developer Calculator; stable runtime ID `calculator` |

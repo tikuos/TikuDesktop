@@ -1,0 +1,53 @@
+<h1>TikuDiff</h1>
+<p>Shows what changed between two files, two folders, or the two releases
+two archives hold. Choose <b>Applications &gt; TikuDiff</b>; the window
+stays blank until you give it something to compare.</p>
+<h2 id="files">Two files</h2>
+<p><b>Compare Files...</b> (the two pages, or <b>Ctrl+O</b>) asks for the
+left file and then the right one. They are shown side by side, a line
+facing the line it matches: lines taken away are tinted red on the left,
+lines put in are tinted green on the right, and where a line was changed
+rather than added or removed, both are tinted and the words that differ
+inside it are darker. Where one side has lines the other has not, the
+other side shows an empty band, so the lines below still face each
+other.</p>
+<p>The narrow strip beside the scrollbar maps the whole file: a red mark
+for each place lines were taken away, green for lines put in, amber for
+lines changed. Click it to go there. <b>Next Change</b> and <b>Previous
+Change</b> (the blue arrows, <b>Ctrl+]</b> and <b>Ctrl+[</b>, or N and P)
+move from one change to the next; the change shown has a blue bar beside
+it, and the status line says which it is. Up, Down, Page Up and Page
+Down scroll; Left and Right, or Shift and the wheel, scroll across long
+lines.</p>
+<p><b>View &gt; Ignore Whitespace</b> compares lines as if a run of
+spaces were one space and spaces at the end were not there. A line ending
+in CR LF is always the same as one ending in LF; when the two files end
+their lines differently, the status line says so.</p>
+<h2 id="folders">Two folders, or two archives</h2>
+<p><b>Compare Folders...</b> (the two folders, or <b>Shift+Ctrl+O</b>)
+asks for two folders and lists every file under either: changed, only on
+the left, only on the right, with their sizes. Files that are the same
+are left out of the list until <b>View &gt; Show Identical Files</b> is
+chosen. Double-click a file, or press Return, to see its lines; <b>Back
+to Folders</b> (the green arrow, Escape, or <b>Ctrl+Up</b>) returns to the
+list.</p>
+<p>Choose two ZIP, tar or tar.gz archives with <b>Compare Files...</b>
+and TikuDiff opens them into a folder of its own and compares what they
+hold -- two releases of an SDK, for example. An archive holding only one
+file, as a .gz does, is compared as that file. The folder is removed when
+TikuDiff quits.</p>
+<h2 id="out">Keeping the difference</h2>
+<p><b>Edit &gt; Copy Differences</b> (<b>Ctrl+C</b>) puts the difference
+on the clipboard as a unified diff, the form <code>diff -u</code> writes
+and <code>patch</code> reads; <b>File &gt; Save Differences...</b>
+(<b>Ctrl+S</b>) writes it to a file. For two folders it is every changed
+file's difference in one text, each path beginning with a/ and b/ as
+<code>patch -p1</code> expects, and a file only on one side added or
+taken away whole.</p>
+<p><b>Open Left...</b> and <b>Open Right...</b> replace one side and keep
+the other; <b>Swap Sides</b> turns them round.</p>
+<h2 id="limits">Limits</h2>
+<p>Text is shown in the fixed-width face, a tab as four columns. A file
+over 64 MB, or one holding NUL bytes, is compared byte for byte and only
+said to be the same or different. Files are compared on this computer:
+compare a board's files by copying them here first.</p>

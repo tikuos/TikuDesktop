@@ -96,6 +96,7 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/image/app.manifest \
     $(APPS_D)/pdf/app.manifest \
     $(APPS_D)/archive/app.manifest \
+    $(APPS_D)/diff/app.manifest \
     $(APPS_D)/reader/app.manifest \
     $(APPS_D)/monitor/app.manifest \
     $(APPS_D)/vfs/app.manifest
@@ -279,6 +280,16 @@ $(APPS_D)/archive/TikuArchive.so: $(ARCVIEW_SRC) $(wildcard apps/archive/*.h app
 	$(CC) $(SO_CFLAGS) -o $@ $(ARCVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/archive/app.manifest: apps/archive/archive.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+apps loadable: $(APPS_D)/diff/TikuDiff.so
+DIFFVIEW_SRC := apps/diff/tiku_diffview_app.c apps/diff/tiku_diffview.c
+$(APPS_D)/diff/TikuDiff.so: $(DIFFVIEW_SRC) $(wildcard apps/diff/*.h apps/diff/*.inl) $(PIC_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -o $@ $(DIFFVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+
+$(APPS_D)/diff/app.manifest: apps/diff/diff.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 

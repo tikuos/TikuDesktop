@@ -1,0 +1,44 @@
+# shell: desktop
+# prefs: factory
+# TikuDiff from the Applications menu: blank until asked, then two files
+# chosen in the shell's own panel, left and then right, and compared --
+# the rows drawn by the application's process, the counts in its status.
+wait 20
+click 980 40
+wait 4
+menu-pick Applications
+wait 4
+expect-menu TikuDiff
+menu-pick TikuDiff
+wait 30
+expect-title TikuDiff
+note nothing compared: the window says nothing at all
+shot /tmp/trk_diff_empty.png
+key o ctrl
+wait 30
+note the shell's panel asks for the left file
+expect-title Open
+key Down
+wait 4
+key Return
+wait 30
+note and then, at once, for the right one
+expect-title Open
+key Down
+wait 4
+key Down
+wait 4
+key Return
+wait 40
+expect-no-title Open
+expect-title TikuDiff - one.c : two.c
+expect-narrate 2 lines removed, 4 added
+expect-narrate Change 1 of 3
+shot /tmp/trk_diff_files.png
+note the next change, from the Go menu's shortcut
+key ] ctrl
+wait 8
+expect-narrate Change 2 of 3
+key w ctrl
+wait 10
+expect-no-title TikuDiff

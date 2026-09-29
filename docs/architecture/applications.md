@@ -22,7 +22,9 @@ The BASIC host interpreter is built from the board's interpreter source via
 Reader/Help live in `apps/reader/`; Image in `apps/image/`; PDF in
 `apps/pdf/`, drawing through the PDF kit on its own workers; archives in
 `apps/archive/`, read and extracted by the archive kit on its workers;
-Monitor and VFS Inspector share app-owned code in `apps/deviceutils/`.
+TikuDiff in `apps/diff/`, comparing through the support kit's diff on
+its workers; Monitor and VFS Inspector share app-owned code in
+`apps/deviceutils/`.
 None is linked into either shipping shell. Help requests launch Reader in its help-document mode.
 
 For filenames and internal module boundaries, see the
