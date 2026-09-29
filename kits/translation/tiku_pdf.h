@@ -10,7 +10,9 @@
  * objects in a file with a table saying where each is, and the kinds
  * of document read here -- datasheets, manuals, papers -- use a small
  * part of what the format allows (docs/plans/PLAN-pdf.md).  A page
- * gives its text as lines, or its look as pixels at any scale.
+ * gives its text as lines, or its look as pixels at any scale.  A viewer
+ * ready made on top of this, for any program's window, is tiku_pdf_view.h
+ * (kits/translation/doc/pdf.md compares the two).
  *
  * SPDX-License-Identifier: Apache-2.0
  */

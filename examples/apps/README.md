@@ -12,6 +12,7 @@ as modules through `system/tiku-run`.
 | `sketch.c` | Drag tracking |
 | `twowin.c` | Independent window lifetimes |
 | `sensors.c` | Plots, meters, sparklines and paused snapshots |
+| `pdfpane.c` | A PDF in the program's own window, through the PDF kit's view |
 | `framework/` | Shared descriptor, events, menus and Help |
 
 ## Build and run
@@ -30,6 +31,10 @@ make all
 The application connects to `$HOME/.config/tracker/desk.sock` and retries for
 up to eight seconds. Its menu appears in the global bar while its window is
 focused. The Demos menu discovers module bundles from their manifests.
+
+PDF Pane shows the ready-made PDF view; the
+[PDF guide](../../kits/translation/doc/pdf.md) compares it with drawing
+pages through `tiku_pdf.h` directly, as TikuPDF does.
 
 Sensor Monitor is explicitly simulated; it does not access a device.
 It exercises missing samples, disconnection, automatic/fixed scales, ranges,

@@ -1,0 +1,9 @@
+version=1
+id=pdfpane
+name=PDF Pane
+module=pdfpane.so
+category=demos
+icon=pdf_viewer
+types=
+startup=apps/pdfpane.so
+help=

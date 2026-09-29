@@ -1,0 +1,36 @@
+# shell: desktop
+# prefs: factory
+# PDF Pane, the SDK's example of the kit's PDF view in a program's own
+# window, from the Demos menu: blank until a document is chosen in the
+# shell's panel, then its pages drawn by the view's workers in the
+# example's own process, and the view's words in its status line.
+wait 20
+click 980 40
+wait 4
+menu-pick Demos
+wait 4
+expect-menu PDF Pane
+menu-pick PDF Pane
+wait 30
+expect-title PDF Pane
+note nothing open: the window says nothing at all
+shot /tmp/trk_pdfpane_empty.png
+key o ctrl
+wait 30
+expect-title Open
+key Down
+wait 4
+key Return
+wait 40
+expect-no-title Open
+expect-title PDF Pane - guide.pdf
+expect-narrate 3 pages, with an outline.
+expect-narrate Page 1 of 3
+shot /tmp/trk_pdfpane_open.png
+note the view takes the keys the program hands it
+key End
+wait 10
+expect-narrate Page 3 of 3
+key w ctrl
+wait 10
+expect-no-title PDF Pane

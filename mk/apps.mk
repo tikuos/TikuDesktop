@@ -43,7 +43,7 @@ SO_APPS     := $(APPS_D)/terminal/terminal.so $(APPS_D)/editor/editor.so \
                $(APPS_D)/calc/Calculator.so \
                $(APPS_D)/hex/TikuHex.so $(APPS_D)/notes/TikuNotes.so \
                $(APPS_D)/basic/TikuBasic.so $(APPS_D)/c/TikuC.so
-SO_EXAMPLE_NAMES := hello clock counter sketch twowin sensors
+SO_EXAMPLE_NAMES := hello clock counter sketch twowin sensors pdfpane
 SO_EXAMPLES := $(foreach a,$(SO_EXAMPLE_NAMES),$(APPS_D)/$(a)/$(a).so)
 
 EXAMPLE_NAMES := hello clock counter sketch sensors
@@ -108,6 +108,7 @@ EXAMPLE_MANIFESTS := $(APPS_D)/hello/app.manifest \
     $(APPS_D)/sketch/app.manifest \
     $(APPS_D)/twowin/app.manifest \
     $(APPS_D)/sensors/app.manifest \
+    $(APPS_D)/pdfpane/app.manifest \
     $(APPS_D)/framework-demo/app.manifest
 
 # Migration owns the destination until old generated paths have been moved.
@@ -174,6 +175,10 @@ $(APPS_D)/twowin/app.manifest: examples/apps/twowin.app
 	cp $< $@
 
 $(APPS_D)/sensors/app.manifest: examples/apps/sensors.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+$(APPS_D)/pdfpane/app.manifest: examples/apps/pdfpane.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 
