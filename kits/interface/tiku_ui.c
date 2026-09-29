@@ -127,6 +127,18 @@ tiku_ui_button(tiku_surface_t *s, tiku_rect_t r,
     if (rec) {
         (void)tiku_dl_button(s->record, r, label, state);
     }
+    if (state & TIKU_S_ICON) {      /* the face only; the icon is its own */
+        if (state & TIKU_S_PRESSED) {
+            tiku_ui_sunken(s, r, PANEL);
+        } else if ((state & TIKU_S_HOT) && !(state & TIKU_S_DISABLED)) {
+            tiku_ui_raised(s, r);
+        }
+        if (state & TIKU_S_FOCUS) {
+            tiku_frame(s, tiku_inset(r, 1), TIKU_C_FOCUS);
+        }
+        tiku_gfx_rec_leave(s, rec);
+        return;
+    }
     tiku_rect_t f = r;
     tiku_rgb_t text = (state & TIKU_S_DISABLED)
                            ? tiku_tint(PANEL, 1.30f)

@@ -62,6 +62,12 @@ int tiku_ui_step_w(void);
 #define TIKU_S_DEFAULT   0x04u   /* the window's default button */
 #define TIKU_S_DISABLED  0x08u
 #define TIKU_S_ON        0x10u   /* checkbox/radio value */
+/* A toolbar's icon button: flat, sunk while pressed, raised while HOT
+ * (under the pointer); its label is carried for narration and never
+ * drawn, the icon drawn after it being its face.  Recorded the same, so
+ * an out-of-process toolbar shows its art rather than its words. */
+#define TIKU_S_ICON      0x20u
+#define TIKU_S_HOT       0x40u
 
 /** @brief Fill @p r with the panel grey. */
 void tiku_ui_panel(tiku_surface_t *s, tiku_rect_t r);

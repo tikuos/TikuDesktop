@@ -609,14 +609,9 @@ static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
 
     if (tiku_dialog_focused(&c->dialog, d->id)) flags |= TIKU_S_FOCUS;
     if (held || on) flags |= TIKU_S_PRESSED;
-    if (s->record) {
-        (void)tiku_dl_button(s->record, d->rect, pv_label(d->id), flags);
-        return;
-    }
-    if (held || on) tiku_ui_sunken(s, d->rect, TIKU_C_PANEL);
-    else if (c->hover_tool == d->id && d->enabled) tiku_ui_raised(s, d->rect);
-    if (flags & TIKU_S_FOCUS)
-        tiku_frame(s, tiku_inset(d->rect, 1), TIKU_C_FOCUS);
+    if (c->hover_tool == d->id) flags |= TIKU_S_HOT;
+    /* Its name crosses for narration; its face is the icon after it. */
+    tiku_ui_button(s, d->rect, pv_label(d->id), flags | TIKU_S_ICON);
     if (size > 24) size = 24;
     (void)tiku_icon_paint_dim(s, pv_tool_icon(d->id),
                               d->rect.x + (d->rect.w - size) / 2 + held,
