@@ -468,6 +468,7 @@ typedef struct {
     float  ps[T1_PS_STACK];         /* what othersubrs leave for pop    */
     int    psp;
     float  x, y, sbx, sby, width;
+    float  ox, oy;                  /* where seac puts an accent's origin */
     int    flex;                    /* collecting flex points           */
     float  fx[16];
     int    nflex;
@@ -476,6 +477,14 @@ typedef struct {
 } t1_run_t;
 
 static int run_code(t1_run_t *r, const unsigned char *code, size_t len);
+
+/** @brief A charstring number as an index or a count, or -1 when it is
+ *         past any: casting a float beyond int's range is undefined. */
+static int
+t1_int(float v)
+{
+    return v >= -65536.0f && v <= 65536.0f ? (int)v : -1;
+}
 
 /** @brief Start a contour at (@p x, @p y), or gather a flex point. */
 static void
@@ -523,7 +532,7 @@ static void
 seac(t1_run_t *r, float asb, float adx, float ady, int bchar, int achar)
 {
     const t1_glyph_t *base, *accent;
-    float sbx = r->sbx, x, y;
+    float sbx = r->sbx, width = r->width, x, y;
 
     if (bchar < 0 || bchar > 255 || achar < 0 || achar > 255 ||
         cff_std_encoding[bchar] == 0 || cff_std_encoding[achar] == 0 ||
@@ -540,7 +549,7 @@ seac(t1_run_t *r, float asb, float adx, float ady, int bchar, int achar)
     r->depth++;
     r->sp = 0;
     r->ended = 0;
-    r->x = r->y = 0;
+    r->ox = r->oy = 0;
     run_code(r, base->code, base->len);
     if (r->open) {
         tiku_path_close(r->path);
@@ -548,19 +557,16 @@ seac(t1_run_t *r, float asb, float adx, float ady, int bchar, int achar)
     }
     r->sp = 0;
     r->ended = 0;
-    r->x = sbx - asb + adx;
-    r->y = ady;
-    {
-        /* The accent's own sidebearing is replaced by where it goes. */
-        float ox = r->x, oy = r->y;
-
-        run_code(r, accent->code, accent->len);
-        (void)ox;
-        (void)oy;
-    }
+    /* The accent's hsbw starts it this far along, as FreeType and the
+     * PostScript original place it: past the composite's sidebearing. */
+    r->ox = sbx - asb + adx;
+    r->oy = ady;
+    run_code(r, accent->code, accent->len);
+    r->ox = r->oy = 0;
     r->depth--;
     r->x = x;
     r->y = y;
+    r->width = width;               /* the composite's advance, not theirs */
     r->ended = 1;
 }
 
@@ -576,9 +582,9 @@ othersubr(t1_run_t *r, int which, int nargs)
         r->sp -= nargs;
     } else if (which == 0) {
         /* Seventeen arguments; the fourteen we kept are the reference
-         * point and the two curves' six points. */
+         * point and the two curves' six points: seven rmovetos. */
         r->flex = 0;
-        if (r->nflex >= 16) {
+        if (r->nflex >= 14) {
             t1_curveto(r, r->fx[2], r->fx[3], r->fx[4], r->fx[5], r->fx[6],
                        r->fx[7]);
             t1_curveto(r, r->fx[8], r->fx[9], r->fx[10], r->fx[11],
@@ -615,7 +621,12 @@ op(t1_run_t *r, int v, const unsigned char *code, size_t len, size_t *i)
 
     switch (v) {
     case 13:                        /* hsbw */
-        if (n >= 2) { r->sbx = s[0]; r->width = s[1]; r->x = s[0]; r->y = 0; }
+        if (n >= 2) {
+            r->sbx = s[0];
+            r->width = s[1];
+            r->x = r->ox + s[0];
+            r->y = r->oy;
+        }
         break;
     case 9:                         /* closepath */
         if (r->open) { tiku_path_close(r->path); r->open = 0; }
@@ -677,17 +688,17 @@ op(t1_run_t *r, int v, const unsigned char *code, size_t len, size_t *i)
         int k;
 
         if (n < 1) return 0;
-        k = (int)s[--r->sp];
+        k = t1_int(s[--r->sp]);
         if (k < 0 || k >= r->t->nsubr || r->t->subr[k] == NULL ||
             r->depth >= T1_MAX_DEPTH) {
             return 0;
         }
+        /* Its return ends the subroutine, not the glyph: go on unless it
+         * ended the glyph (endchar, seac) or used up the steps. */
         r->depth++;
-        if (!run_code(r, r->t->subr[k], r->t->subr_len[k])) {
-            return 0;
-        }
+        (void)run_code(r, r->t->subr[k], r->t->subr_len[k]);
         r->depth--;
-        return !r->ended;
+        return !r->ended && r->ops <= T1_MAX_OPS;
     }
     case 11:                        /* return */
         return 0;
@@ -715,14 +726,14 @@ op_escape(t1_run_t *r, int v)
         break;
     case 6:                         /* seac */
         if (n >= 5) {
-            seac(r, s[0], s[1], s[2], (int)s[3], (int)s[4]);
+            seac(r, s[0], s[1], s[2], t1_int(s[3]), t1_int(s[4]));
         }
         r->sp = 0;
         return 0;
     case 7:                         /* sbw */
         if (n >= 4) {
             r->sbx = s[0]; r->sby = s[1]; r->width = s[2];
-            r->x = s[0]; r->y = s[1];
+            r->x = r->ox + s[0]; r->y = r->oy + s[1];
         }
         r->sp = 0;
         break;
@@ -734,7 +745,7 @@ op_escape(t1_run_t *r, int v)
         break;
     case 16:                        /* callothersubr */
         if (n >= 2) {
-            int which = (int)s[n - 1], nargs = (int)s[n - 2];
+            int which = t1_int(s[n - 1]), nargs = t1_int(s[n - 2]);
 
             r->sp -= 2;
             if (nargs < 0 || nargs > r->sp) nargs = r->sp;
