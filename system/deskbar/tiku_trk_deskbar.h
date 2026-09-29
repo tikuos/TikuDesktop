@@ -24,6 +24,7 @@
 #define TIKU_TRK_DB_TEAMS_MAX   8
 #define TIKU_TRK_DB_WINS_MAX   16
 #define TIKU_TRK_DB_TRAY_MAX    8
+#define TIKU_TRK_DB_TRAYICONS_MAX 8
 #define TIKU_TRK_DB_LABEL_MAX  48
 #define TIKU_TRK_DB_MAX_REPLICANT_H 12
 
@@ -89,6 +90,20 @@ typedef struct {
     int             valid;
     int             height;
 } tiku_trk_replicant_t;
+
+/**
+ * @brief An application's own tray item, as the original's replicants are:
+ *        a small icon beside the clock, a few characters of text after it,
+ *        and a tip.  The owner is whatever the shell names the application
+ *        by -- a session's generation -- so a click can be sent back to it.
+ */
+typedef struct {
+    uint64_t        owner;          /* who set it, and who hears a click  */
+    char            id[16];         /* the owner's name for it            */
+    char            icon[48];       /* a name from the desk's icon set    */
+    char            text[8];        /* beside the icon, or ""             */
+    char            tip[TIKU_TRK_DB_LABEL_MAX]; /* said on hover          */
+} tiku_trk_trayicon_t;
 
 /** @brief How many rows the leaf menu holds, and its submenu. */
 #define TIKU_TRK_DB_LEAF_MAX 32
@@ -362,6 +377,8 @@ typedef enum {
     TIKU_TRK_DB_HELP,             /* the desktop's own pages        */
     TIKU_TRK_DB_TOGGLE_REPLICANTS, /* the bar's own: the row flips it */
     TIKU_TRK_DB_FORCE_QUIT,       /* safe local-app termination     */
+    TIKU_TRK_DB_TRAY_ICON,        /* an application's own tray item:
+                                     `owner` set it, `path` is its id */
 } tiku_trk_db_action_t;
 
 typedef struct {
@@ -369,6 +386,7 @@ typedef struct {
     void                *tag;
     int                  team;          /* the row the action names */
     char                 path[TIKU_PATH_MAX];
+    uint64_t             owner;         /* a tray item's owner         */
 } tiku_trk_db_pick_t;
 
 /** @brief A new bar over @p backend, docked right and expanded, or NULL. */
@@ -525,6 +543,37 @@ const char *tiku_trk_deskbar_team_command(const tiku_trk_deskbar_t *db,
 void tiku_trk_deskbar_set_windows(tiku_trk_deskbar_t *db, int team,
                                   const tiku_trk_dbwin_t *wins, int n,
                                   int active);
+
+/**
+ * @brief Set @p owner's tray item @p id: its @p icon, @p text beside it and
+ *        @p tip, added at the end of the icons when new (DB row).  An empty
+ *        icon and text take it away instead.
+ * @return 1 when the tray changed, 0 when nothing did, -1 when the tray is
+ *         full or the item is malformed.
+ */
+int tiku_trk_deskbar_trayicon_set(tiku_trk_deskbar_t *db, uint64_t owner,
+                                  const char *id, const char *icon,
+                                  const char *text, const char *tip);
+
+/** @brief Take @p owner's item @p id away.  @return 1 when it was there. */
+int tiku_trk_deskbar_trayicon_remove(tiku_trk_deskbar_t *db, uint64_t owner,
+                                     const char *id);
+
+/** @brief Keep only the items whose owner is among the @p n in @p owners:
+ *         an application that has gone takes its icons with it.
+ *  @return 1 when any went. */
+int tiku_trk_deskbar_trayicon_keep(tiku_trk_deskbar_t *db,
+                                   const uint64_t *owners, int n);
+
+/** @brief The application icons in the tray.  @return how many, with
+ *         item @p i into @p out when it is one of them (either optional). */
+int tiku_trk_deskbar_trayicons(const tiku_trk_deskbar_t *db, int i,
+                               tiku_trk_trayicon_t *out);
+
+/** @brief Where tray item @p i is drawn and answers the pointer, as the
+ *         bar was last laid out; empty for no such item. */
+tiku_rect_t tiku_trk_deskbar_trayicon_rect(const tiku_trk_deskbar_t *db,
+                                           int i);
 
 /** @brief Add a tray replicant watching @p path. */
 /**

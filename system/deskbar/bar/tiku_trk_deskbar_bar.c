@@ -23,6 +23,7 @@ tiku_trk_deskbar_new(tiku_backend_t *backend)
         db_reset_menu_hots(db);
         db->expander_press = -1;
         db->tip_y = -1;
+        db->trayicon_hot = -1;
         tiku_trk_deskbar_settings_default(&db->settings);
     }
     return db;

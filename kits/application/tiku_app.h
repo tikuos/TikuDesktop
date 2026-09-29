@@ -463,4 +463,19 @@ void tiku_app_instance_stop(tiku_app_instance_t *instance);
 int tiku_app_run(const tiku_app_descriptor_t *descriptor,
                       int argc, char **argv);
 
+/**
+ * @brief The request that sets tray item @p id beside the Deskbar's clock:
+ *        @p icon from the desk's icon set, a few characters of @p text after
+ *        it, and @p tip; no icon and no text take the item away.  A click
+ *        on it comes back to the descriptor's message() as TIKU_MSG_TRAYHIT.
+ * @return the message for the caller to send and free, or NULL.
+ */
+struct tiku_msg *tiku_app_tray_message(const char *id, const char *icon,
+                                       const char *text, const char *tip);
+
+/** @brief The same request, sent through @p services' send_message.
+ *  @return 1 when it went; 0 from a host that takes no such requests. */
+int tiku_app_tray_set(const tiku_app_services_t *services, const char *id,
+                      const char *icon, const char *text, const char *tip);
+
 #endif /* TIKU_APP_H_ */

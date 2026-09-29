@@ -11,6 +11,8 @@
 #include "tiku_trk_deskbar_private.h"
 
 /* Used before they are defined. */
+static void clock_text(const tiku_trk_deskbar_t *db, char *clock,
+                       size_t cap);
 static void fit_label(const tiku_font_t *f, const char *src, int budget,
                       char *out, size_t max);
 void db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
@@ -177,6 +179,39 @@ hover_touch(tiku_trk_deskbar_t *db, tiku_rect_t r)
                            ? tiku_rect_union(db->hover_damage, r) : r;
 }
 
+/**
+ * @brief The application tray icon under @p x, @p y lit, and what it says
+ *        into @p tip with its row into @p tip_y: its tip, or its name for
+ *        itself when it gave none.  Menus own the pointer when open.
+ * @return 1 when a different icon (or none) is lit now.
+ */
+static int
+tray_hover(tiku_trk_deskbar_t *db, int x, int y, char *tip, size_t cap,
+           int *tip_y)
+{
+    int ti = (!db->menu_open && db->win_menu_team < 0 &&
+              !db->clock_menu_open) ? db_trayicon_at(db, x, y) : -1;
+    int changed = ti != db->trayicon_hot;
+
+    if (changed) {
+        if (db->trayicon_hot >= 0) {
+            hover_touch(db, tiku_trk_deskbar_trayicon_rect(db,
+                                db->trayicon_hot));
+        }
+        db->trayicon_hot = ti;
+        if (ti >= 0) {
+            hover_touch(db, tiku_trk_deskbar_trayicon_rect(db, ti));
+        }
+    }
+    if (ti >= 0) {
+        const tiku_trk_trayicon_t *t = &db->trayicons[ti];
+
+        snprintf(tip, cap, "%s", t->tip[0] ? t->tip : t->id);
+        *tip_y = tiku_trk_deskbar_trayicon_rect(db, ti).y;
+    }
+    return changed;
+}
+
 /** @brief The tooltip's box as db_draw_tip() places it, or empty. */
 static tiku_rect_t
 tip_box(const tiku_trk_deskbar_t *db)
@@ -290,8 +325,9 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
          * the whole name.  Menus own the pointer when open. */
         char tip[TIKU_TRK_DB_LABEL_MAX] = "";
         int tip_y = -1;
-
-        if (!db->menu_open && db->win_menu_team < 0 &&
+        /* A tray icon under the pointer says what it is first. */
+        changed |= tray_hover(db, x, y, tip, sizeof tip, &tip_y);
+        if (tip_y < 0 && !db->menu_open && db->win_menu_team < 0 &&
             !db->clock_menu_open && db->settings.show_clock &&
             !db->calendar_open && x >= db->frame.x &&
             x < db->frame.x + db->frame.w &&
@@ -305,7 +341,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             (void)localtime_r(&now, &tmv);
             (void)strftime(tip, sizeof tip, "%A, %B %-e, %Y", &tmv);
             tip_y = db->frame.y + db->frame.h - db_clock_row() - PAD;
-        } else if (!db->menu_open && db->win_menu_team < 0 &&
+        } else if (tip_y < 0 && !db->menu_open && db->win_menu_team < 0 &&
             !db->clock_menu_open && x >= db->frame.x &&
             x < db->frame.x + db->frame.w) {
             int i, ry = db_list_y(db);
@@ -960,8 +996,7 @@ db_draw_switch_strip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
          * in the direction they point (DB-034). */
         int up = 0, down = 0, k;
         int ly = db_list_y(db);
-        int lb = db->frame.y + db->frame.h -
-                 (db->tray_count * TRAY_ROW) -
+        int lb = db->frame.y + db->frame.h - db_tray_h(db) -
                  (db->settings.show_clock ? db_clock_row() : 0) - PAD;
         int cx = db->frame.x + db->frame.w / 2;
 
@@ -1106,51 +1141,113 @@ void
 db_draw_clock(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
               int *y)
 {
+    char clock[64];
+    int cw;
+
     if (tiku_trk_deskbar_vertical(db->dock)) {
         (*y) += SWITCH_ROW;
     }
-    if (db->settings.show_clock) {
-        time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
-        struct tm tmv;
-        char clock[64];
-        char date[32];
-        char time_text[32];
-        char time_fmt[16] = "%H:%M";
-        int cw;
+    if (!db->settings.show_clock) {
+        return;
+    }
+    clock_text(db, clock, sizeof clock);
+    cw = tiku_text_width(f, clock);
+    if (!tiku_trk_deskbar_vertical(db->dock)) {
+        /* Along an edge: inside the bar, after the tray's icons and
+         * before the theme switch, the way the original's tray ends. */
+        tiku_text(s, f, db->frame.x + db->frame.w - (SWITCH_W + 14) -
+                  db_hclock_w(db) + 6, db->frame.y +
+                  (db->frame.h - f->height) / 2 + f->ascent, clock,
+                  TIKU_C_TEXT);
+        return;
+    }
+    tiku_text(s, f, db->frame.x + (db->frame.w - cw) / 2,
+              (*y) + (db_clock_row() - f->height) / 2 + f->ascent,
+              clock, TIKU_C_TEXT);
+}
 
-        (void)localtime_r(&now, &tmv);
-        if (db->settings.show_seconds) {
-            snprintf(time_fmt, sizeof time_fmt, "%%H:%%M:%%S");
-        }
-        if (strftime(date, sizeof date,
-                     db->settings.show_day_of_week ? "%a %e %b" : "%e %b",
-                     &tmv) == 0) {
-            snprintf(date, sizeof date, "%d", tmv.tm_mday);
-        }
-        if (strftime(time_text, sizeof time_text, time_fmt, &tmv) == 0) {
-            snprintf(time_text, sizeof time_text, "%02d:%02d",
-                     tmv.tm_hour, tmv.tm_min);
-        }
-        if (db->settings.show_timezone) {
-            char zone[16];
-            size_t used;
+/** @brief The clock's words: the date, the time and, when asked for, the
+ *         seconds, the weekday and the zone, from the bar's own clock. */
+static void
+clock_text(const tiku_trk_deskbar_t *db, char *clock, size_t cap)
+{
+    time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
+    struct tm tmv;
+    char date[32];
+    char time_text[32];
+    char time_fmt[16] = "%H:%M";
 
-            if (strftime(zone, sizeof zone, "%Z", &tmv) == 0 ||
-                zone[0] == '\0') {
-                snprintf(zone, sizeof zone, "local");
-            }
-            snprintf(clock, sizeof clock, "%s %s", date, time_text);
-            used = strlen(clock);
-            if (used + 1u < sizeof clock) {
-                snprintf(clock + used, sizeof clock - used, " %s", zone);
-            }
-        } else {
-            snprintf(clock, sizeof clock, "%s %s", date, time_text);
+    (void)localtime_r(&now, &tmv);
+    if (db->settings.show_seconds) {
+        snprintf(time_fmt, sizeof time_fmt, "%%H:%%M:%%S");
+    }
+    if (strftime(date, sizeof date,
+                 db->settings.show_day_of_week ? "%a %e %b" : "%e %b",
+                 &tmv) == 0) {
+        snprintf(date, sizeof date, "%d", tmv.tm_mday);
+    }
+    if (strftime(time_text, sizeof time_text, time_fmt, &tmv) == 0) {
+        snprintf(time_text, sizeof time_text, "%02d:%02d",
+                 tmv.tm_hour, tmv.tm_min);
+    }
+    if (db->settings.show_timezone) {
+        char zone[16];
+        size_t used;
+
+        if (strftime(zone, sizeof zone, "%Z", &tmv) == 0 ||
+            zone[0] == '\0') {
+            snprintf(zone, sizeof zone, "local");
         }
-        cw = tiku_text_width(f, clock);
-        tiku_text(s, f, db->frame.x + (db->frame.w - cw) / 2,
-                  (*y) + (db_clock_row() - f->height) / 2 + f->ascent,
-                  clock, TIKU_C_TEXT);
+        snprintf(clock, cap, "%s %s", date, time_text);
+        used = strlen(clock);
+        if (used + 1u < cap) {
+            snprintf(clock + used, cap - used, " %s", zone);
+        }
+    } else {
+        snprintf(clock, cap, "%s %s", date, time_text);
+    }
+}
+
+/** @brief The room the clock takes along an edge, with its margins; none
+ *         down a bar, where it has a row of its own, or when it is off. */
+int
+db_hclock_w(const tiku_trk_deskbar_t *db)
+{
+    char clock[64];
+
+    if (tiku_trk_deskbar_vertical(db->dock) || !db->settings.show_clock) {
+        return 0;
+    }
+    clock_text(db, clock, sizeof clock);
+    return tiku_text_width(tiku_font_plain(), clock) + 12;
+}
+
+/**
+ * @brief the applications' own tray icons, each with its text after it,
+ *        lit under the pointer (the original's replicants)
+ */
+static void
+db_draw_trayicons(tiku_trk_deskbar_t *db, tiku_surface_t *s,
+                  const tiku_font_t *f)
+{
+    for (int i = 0; i < db->trayicon_count; i++) {
+        const tiku_trk_trayicon_t *t = &db->trayicons[i];
+        tiku_rect_t r = tiku_trk_deskbar_trayicon_rect(db, i);
+
+        if (r.w <= 0) {
+            continue;
+        }
+        if (i == db->trayicon_hot) {
+            tiku_fill(s, (tiku_rect_t){ r.x - 2, r.y, r.w + 4, r.h },
+                      tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+        }
+        /* DB-018: an icon the set does not have leaves its slot as it
+         * is; the text, if any, still says what the item is. */
+        (void)tiku_icon_paint(s, t->icon, r.x, r.y + (r.h - 16) / 2, 16);
+        if (t->text[0] != '\0') {
+            tiku_text(s, f, r.x + 19, r.y + (r.h - f->height) / 2 +
+                      f->ascent, t->text, TIKU_C_TEXT);
+        }
     }
 }
 
@@ -1165,14 +1262,24 @@ db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
 
     /* The tray, then the clock beneath it: the original reserves the
      * clock's room in the first row, and stacking it here is the vertical
-     * equivalent. */
-    (*y) = tiku_trk_deskbar_mini(db->dock) ? db->frame.y + db_leaf_row() + PAD
-                                        : db_tray_y(db);
+     * equivalent.  Down a bar it is measured up from the foot, as the
+     * frame and the clock are, so the collapsed dock's application button
+     * sits above it rather than under it. */
+    (*y) = tiku_trk_deskbar_vertical(db->dock) ? db_tray_top(db)
+                                               : db_tray_y(db);
+    if (!tiku_trk_deskbar_vertical(db->dock)) {
+        /* Along an edge the tray is its icons, in the strip; the rows
+         * and their rule are a tall dock's, with nowhere to go here. */
+        db_draw_trayicons(db, s, f);
+        return;
+    }
     tiku_hline(s, db->frame.x + 4, (*y) - 3, db->frame.w - 8,
                     tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     tiku_hline(s, db->frame.x + 4, (*y) - 2, db->frame.w - 8,
                     tiku_tint(TIKU_C_PANEL,
                                    TIKU_LIGHTEN_MAX));
+    db_draw_trayicons(db, s, f);
+    (*y) += db_tray_h(db) - db->tray_count * TRAY_ROW;
     for (i = 0; i < db->tray_count; i++) {
         const tiku_trk_replicant_t *r = &db->tray[i];
         int ty = (*y) + (TRAY_ROW - f->height) / 2 + f->ascent;
@@ -1213,7 +1320,8 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
         int min_w = 24 + tiku_text_width(f, "abcdefgh");
         int max_w = min_w + min_w / 4;
         int left = db->frame.x + 2 + HLEAF_W + 4;
-        int right = db->frame.x + db->frame.w - (SWITCH_W + 14);
+        int right = db->frame.x + db->frame.w - (SWITCH_W + 14) -
+                    db_hclock_w(db) - db_trayicons_w(db);  /* the tray's */
         int avail = right - left;
         int bw = (n > 0) ? avail / n : max_w;
         int bx, i2, k;
@@ -1464,7 +1572,7 @@ db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
          * the clock have taken theirs.  A list longer than that is what
          * makes the bar scrollable (DB-034). */
         int room = s->h - db->top_inset - (db_leaf_row() + PAD) -
-                   (db->tray_count * TRAY_ROW) - SWITCH_ROW -
+                   db_tray_h(db) - SWITCH_ROW -
                    (db->settings.show_clock ? db_clock_row() : 0) - 2 * PAD;
 
         db->overflow = (!tiku_trk_deskbar_mini(db->dock) && (*rows) > room &&
@@ -1488,7 +1596,7 @@ db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
         db->frame.h = db_leaf_row() + PAD + (*rows) + PAD +
                       (tiku_trk_deskbar_mini(db->dock) ? db_team_row() + 2
                                                        : 0) +
-                      db->tray_count * TRAY_ROW + SWITCH_ROW +
+                      db_tray_h(db) + SWITCH_ROW +
                       (db->settings.show_clock ? db_clock_row() : 0) + PAD;
     } else {
         /* Along an edge: the bar spans the screen and is as deep as one

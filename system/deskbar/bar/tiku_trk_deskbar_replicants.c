@@ -384,3 +384,101 @@ tiku_trk_deskbar_replicant_set(tiku_trk_deskbar_t *db, const char *path,
     return 0;
 }
 
+/* ---------------------------------------------- applications' tray icons */
+
+/** @brief The item @p owner calls @p id, or -1. */
+static int
+trayicon_find(const tiku_trk_deskbar_t *db, uint64_t owner, const char *id)
+{
+    for (int i = 0; i < db->trayicon_count; i++) {
+        if (db->trayicons[i].owner == owner &&
+            strcmp(db->trayicons[i].id, id) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int
+tiku_trk_deskbar_trayicon_set(tiku_trk_deskbar_t *db, uint64_t owner,
+                              const char *id, const char *icon,
+                              const char *text, const char *tip)
+{
+    tiku_trk_trayicon_t t;
+    int i;
+
+    if (db == NULL || id == NULL || id[0] == '\0' ||
+        strlen(id) >= sizeof t.id) {
+        return -1;
+    }
+    if ((icon == NULL || icon[0] == '\0') && (text == NULL ||
+                                               text[0] == '\0')) {
+        return tiku_trk_deskbar_trayicon_remove(db, owner, id);
+    }
+    memset(&t, 0, sizeof t);
+    t.owner = owner;
+    snprintf(t.id, sizeof t.id, "%s", id);
+    snprintf(t.icon, sizeof t.icon, "%s", icon != NULL ? icon : "");
+    snprintf(t.text, sizeof t.text, "%s", text != NULL ? text : "");
+    snprintf(t.tip, sizeof t.tip, "%s", tip != NULL ? tip : "");
+    i = trayicon_find(db, owner, id);
+    if (i >= 0) {
+        if (memcmp(&db->trayicons[i], &t, sizeof t) == 0) {
+            return 0;               /* said again, unchanged */
+        }
+        db->trayicons[i] = t;
+        return 1;
+    }
+    if (db->trayicon_count >= TIKU_TRK_DB_TRAYICONS_MAX) {
+        return -1;
+    }
+    db->trayicons[db->trayicon_count++] = t;
+    return 1;
+}
+
+int
+tiku_trk_deskbar_trayicon_remove(tiku_trk_deskbar_t *db, uint64_t owner,
+                                 const char *id)
+{
+    int i = (db != NULL && id != NULL) ? trayicon_find(db, owner, id) : -1;
+
+    if (i < 0) {
+        return 0;
+    }
+    memmove(&db->trayicons[i], &db->trayicons[i + 1],
+            (size_t)(db->trayicon_count - i - 1) * sizeof db->trayicons[0]);
+    db->trayicon_count--;
+    db->trayicon_hot = -1;
+    return 1;
+}
+
+int
+tiku_trk_deskbar_trayicon_keep(tiku_trk_deskbar_t *db,
+                               const uint64_t *owners, int n)
+{
+    int gone = 0;
+
+    for (int i = (db != NULL) ? db->trayicon_count - 1 : -1; i >= 0; i--) {
+        int k;
+
+        for (k = 0; k < n && owners[k] != db->trayicons[i].owner; k++) {}
+        if (k == n) {
+            gone |= tiku_trk_deskbar_trayicon_remove(db,
+                        db->trayicons[i].owner, db->trayicons[i].id);
+        }
+    }
+    return gone;
+}
+
+int
+tiku_trk_deskbar_trayicons(const tiku_trk_deskbar_t *db, int i,
+                           tiku_trk_trayicon_t *out)
+{
+    if (db == NULL) {
+        return 0;
+    }
+    if (out != NULL && i >= 0 && i < db->trayicon_count) {
+        *out = db->trayicons[i];
+    }
+    return db->trayicon_count;
+}

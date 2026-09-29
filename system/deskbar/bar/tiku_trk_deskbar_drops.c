@@ -46,7 +46,7 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
         }
     }
     if (tiku_trk_deskbar_vertical(db->dock) &&
-        y >= f.y + f.h - (db->tray_count * TRAY_ROW) -
+        y >= f.y + f.h - db_tray_h(db) -
             (db->settings.show_clock ? db_clock_row() : 0) - PAD) {
         /* The tray and its clock: a dropped node is a subscription
          * request (DB-038). */

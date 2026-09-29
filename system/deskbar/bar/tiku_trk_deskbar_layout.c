@@ -48,6 +48,120 @@ db_tray_y(const tiku_trk_deskbar_t *db)
     return db_list_y(db) + db_list_rows(db) + PAD;
 }
 
+/** @brief The width tray icon @p t takes: the icon, its text, the gap. */
+static int
+icon_cell_w(const tiku_trk_trayicon_t *t)
+{
+    int w = 16 + ICON_GAP;
+
+    if (t->text[0] != '\0') {
+        w += 3 + tiku_text_width(tiku_font_plain(), t->text);
+    }
+    return w;
+}
+
+/**
+ * @brief Where tray icon @p i goes in a strip starting at @p x0, @p y0 and
+ *        @p w wide: left to right, a new row where the next would not fit.
+ * @return its box (empty for no such icon), and the rows all of them take
+ *         into @p rows when given.
+ */
+static tiku_rect_t
+icon_place(const tiku_trk_deskbar_t *db, int x0, int y0, int w, int i,
+           int *rows)
+{
+    tiku_rect_t at = { 0, 0, 0, 0 };
+    int x = x0, y = y0, n = db->trayicon_count > 0;
+
+    for (int k = 0; k < db->trayicon_count; k++) {
+        int cw = icon_cell_w(&db->trayicons[k]);
+
+        if (x > x0 && x + cw - ICON_GAP > x0 + w) {
+            x = x0;
+            y += ICON_ROW;
+            n++;
+        }
+        if (k == i) {
+            at = (tiku_rect_t){ x, y, cw - ICON_GAP, ICON_ROW };
+        }
+        x += cw;
+    }
+    if (rows != NULL) {
+        *rows = n;
+    }
+    return at;
+}
+
+/** @brief The width all the tray icons take in one row. */
+int
+db_trayicons_w(const tiku_trk_deskbar_t *db)
+{
+    int w = 0;
+
+    for (int k = 0; k < db->trayicon_count; k++) {
+        w += icon_cell_w(&db->trayicons[k]);
+    }
+    return w;
+}
+
+/** @brief The tray's height down a vertical bar: the rows of application
+ *         icons, then a row per replicant.  Along an edge it takes none. */
+int
+db_tray_h(const tiku_trk_deskbar_t *db)
+{
+    int rows = 0;
+
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        (void)icon_place(db, 0, 0, tiku_trk_deskbar_width(db) - 8, -1,
+                         &rows);
+    }
+    return rows * ICON_ROW + db->tray_count * TRAY_ROW;
+}
+
+/** @brief Where the tray starts down a vertical bar, measured up from its
+ *         foot as the frame, the switch and the clock are: under the list,
+ *         or under the collapsed dock's application button. */
+int
+db_tray_top(const tiku_trk_deskbar_t *db)
+{
+    return db->frame.y + db->frame.h - PAD -
+           (db->settings.show_clock ? db_clock_row() : 0) - SWITCH_ROW -
+           db_tray_h(db);
+}
+
+tiku_rect_t
+tiku_trk_deskbar_trayicon_rect(const tiku_trk_deskbar_t *db, int i)
+{
+    tiku_rect_t none = { 0, 0, 0, 0 };
+
+    if (db == NULL || i < 0 || i >= db->trayicon_count ||
+        !tiku_trk_deskbar_shown(db)) {
+        return none;
+    }
+    if (tiku_trk_deskbar_vertical(db->dock)) {
+        return icon_place(db, db->frame.x + 4, db_tray_top(db),
+                          tiku_trk_deskbar_width(db) - 8, i, NULL);
+    }
+    /* Along an edge: one row just short of the clock and the switch. */
+    return icon_place(db, db->frame.x + db->frame.w - (SWITCH_W + 14) -
+                      db_hclock_w(db) - db_trayicons_w(db), db->frame.y +
+                      (db->frame.h - ICON_ROW) / 2, db->frame.w, i, NULL);
+}
+
+/** @brief The tray icon under @p x, @p y, or -1. */
+int
+db_trayicon_at(const tiku_trk_deskbar_t *db, int x, int y)
+{
+    for (int i = 0; i < db->trayicon_count; i++) {
+        tiku_rect_t r = tiku_trk_deskbar_trayicon_rect(db, i);
+
+        if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 tiku_rect_t
 tiku_trk_deskbar_frame(const tiku_trk_deskbar_t *db)
 {

@@ -7,6 +7,8 @@
  * lists its teams; two instances of one application share the row, and
  * the row goes when the last of their windows does.  A click on a row --
  * activate, hide, show, close, quit -- reaches that application alone.
+ * An application's own tray icons live here too: set by its session, gone
+ * with it, and a click on one told to it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -124,6 +126,23 @@ team_sync(desktop_t *app, const team_list_t *lists, int n)
     app->team = tiku_trk_deskbar_find_team(app->deskbar, TRACKER_TEAM);
 }
 
+/** @brief Tray icons whose application has gone taken away with it. */
+static void
+tray_sweep(desktop_t *app)
+{
+    uint64_t live[TIKU_REMOTE_SESSIONS];
+    int n = 0;
+
+    for (int i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        if (app->remote.session[i].used) {
+            live[n++] = app->remote.session[i].generation;
+        }
+    }
+    if (tiku_trk_deskbar_trayicon_keep(app->deskbar, live, n)) {
+        desktop_damage_all(app);
+    }
+}
+
 /**
  * @brief Each window on the desk published under its application's row,
  *        its title less the application's name; the row holding the
@@ -158,6 +177,7 @@ desktop_publish_teams(desktop_t *app)
         }
     }
     team_sync(app, lists, n);
+    tray_sweep(app);
     for (int i = n - 1; i > 0; i--) {   /* no row to be had: Tracker's */
         if (tiku_trk_deskbar_find_team(app->deskbar, lists[i].name) >= 0) {
             continue;
@@ -194,4 +214,53 @@ desktop_team_is_app(desktop_t *app, int team)
     const char *name = tiku_trk_deskbar_team_app(app->deskbar, team);
 
     return name != NULL && strcmp(name, TRACKER_TEAM) != 0;
+}
+
+/** @brief Session @p session's TIKU_MSG_TRAY: its tray item set, or taken
+ *         away when it names no icon and no text. */
+void
+desktop_tray(desktop_t *app, int session, const tiku_msg_t *msg)
+{
+    const tiku_remote_session_t *s;
+
+    if (session < 0 || session >= TIKU_REMOTE_SESSIONS ||
+        !app->remote.session[session].used) {
+        return;
+    }
+    s = &app->remote.session[session];
+    if (tiku_trk_deskbar_trayicon_set(app->deskbar, s->generation,
+            tiku_msg_find_string(msg, "id", 0),
+            tiku_msg_find_string(msg, "icon", 0),
+            tiku_msg_find_string(msg, "text", 0),
+            tiku_msg_find_string(msg, "tip", 0)) > 0) {
+        desktop_damage_all(app);
+    }
+}
+
+/** @brief The session whose generation is @p owner, while it is still the
+ *         one that set a tray item.  @return its index, or -1. */
+int
+desktop_tray_session(desktop_t *app, uint64_t owner)
+{
+    for (int i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
+        if (app->remote.session[i].used &&
+            app->remote.session[i].generation == owner) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** @brief A click on tray item @p id told to @p owner, the session that set
+ *         it, as TIKU_MSG_TRAYHIT; nothing when that session has gone. */
+void
+desktop_tray_hit(desktop_t *app, uint64_t owner, const char *id)
+{
+    int i = desktop_tray_session(app, owner);
+    tiku_msg_t *m = i >= 0 ? tiku_msg_new(TIKU_MSG_TRAYHIT) : NULL;
+
+    if (m != NULL && tiku_msg_add_string(m, "id", id)) {
+        (void)tiku_remote_tell(&app->remote, i, m);
+    }
+    tiku_msg_free(m);
 }

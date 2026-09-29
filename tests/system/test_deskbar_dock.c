@@ -749,9 +749,15 @@ main(void)
         tiku_surface_t *narrow = tiku_surface_new(400, 150,
                                               TIKU_C_BACKDROP);
         tiku_trk_db_pick_t pick;
+        tiku_trk_deskbar_settings_t quiet;
         int i, changed = 0;
         char name[16];
 
+        /* The clock takes its own room at the strip's end; the buttons'
+         * arithmetic below is theirs alone. */
+        tiku_trk_deskbar_settings_default(&quiet);
+        quiet.show_clock = 0;
+        tiku_trk_deskbar_apply_settings(db, &quiet);
         while (tiku_trk_deskbar_team_count(db) > 1) {
             tiku_trk_deskbar_remove_team(db, 1);
         }
@@ -796,6 +802,23 @@ main(void)
             check(pick.what == TIKU_TRK_DB_SHOW_ALL, "DB-033",
                   "and a button answers the same chords the vertical "
                   "rows do");
+        }
+        {
+            tiku_rect_t hf, ti, sw;
+
+            tiku_trk_deskbar_settings_default(&quiet);  /* the clock on */
+            tiku_trk_deskbar_apply_settings(db, &quiet);
+            (void)tiku_trk_deskbar_trayicon_set(db, 1, "t", "application",
+                                                "9", "a tip");
+            tiku_trk_deskbar_draw(db, s);
+            hf = tiku_trk_deskbar_frame(db);
+            ti = tiku_trk_deskbar_trayicon_rect(db, 0);
+            sw = tiku_trk_deskbar_switch_rect(db);
+            check(ti.w > 0 && ti.y >= hf.y && ti.y + ti.h <= hf.y + hf.h &&
+                  ti.x + ti.w < sw.x, "DB-033",
+                  "along an edge an application's tray icon sits in the "
+                  "strip, before the clock and the switch");
+            (void)tiku_trk_deskbar_trayicon_remove(db, 1, "t");
         }
         tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_EXPANDED);
         tiku_surface_free(narrow);

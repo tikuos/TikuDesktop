@@ -3,12 +3,20 @@
  * TikuTracker; the manifest's icon worn; a second instance sharing its
  * row; titles less the application's name; a row gone with its last
  * window; and what a click on a row reaches -- that application's windows,
- * no one else's.  SPDX-License-Identifier: Apache-2.0 */
+ * no one else's.  An application's own tray icons: set, drawn beside the
+ * clock (below the collapsed dock's button too), clicked, said on hover,
+ * taken away, and gone with the application.
+ * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include "../../system/desktop/tiku_trk_desktop_teams.c"
 #include "../../system/desktop/tiku_trk_desktop_deskbar.c"
+#include "../../system/deskbar/bar/tiku_trk_deskbar_private.h"
+#include "tiku_app.h"
 
 static int closes, forcequits;
+
+/** @brief A full frame is the flag, as the other system tests keep it. */
+void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
 /** @brief The shell's window closer, standing in: counted, then gone. */
 void close_window(desktop_t *app, tiku_window_t *w)
@@ -171,6 +179,79 @@ static void gone_test(desktop_t *app)
     (void)team(app, "TikuTracker", 0, NULL);
 }
 
+/** @brief Session 0's TIKU_MSG_TRAY: item "delay" with @p icon and @p text. */
+static void tray_say(desktop_t *app, const char *icon, const char *text)
+{
+    tiku_msg_t *m = tiku_app_tray_message("delay", icon, text,
+                                          "Grabbing in 5: click to cancel");
+
+    assert(m);
+    desktop_tray(app, 0, m);
+    tiku_msg_free(m);
+}
+
+/** @brief An application's own tray icon: set once and not again for the
+ *         same, drawn inside the bar above its clock, clicked, said on
+ *         hover, taken away, and swept away with its session. */
+static void tray_test(desktop_t *app)
+{
+    tiku_trk_db_pick_t pick;
+    tiku_trk_trayicon_t t;
+    tiku_rect_t bar, r;
+    int before;
+
+    app->remote.session[0].used = 1;
+    app->remote.session[0].generation = 7;
+    tiku_trk_deskbar_draw(app->deskbar, app->surf);
+    before = tiku_trk_deskbar_frame(app->deskbar).h;
+    app->dirty = 0;
+    tray_say(app, "grab_timer", "5");
+    assert(app->dirty && tiku_trk_deskbar_trayicons(app->deskbar, 0, &t) ==
+           1 && t.owner == 7 && !strcmp(t.text, "5"));
+    app->dirty = 0;
+    tray_say(app, "grab_timer", "5");
+    assert(!app->dirty);                /* the same said twice: nothing */
+    tiku_trk_deskbar_draw(app->deskbar, app->surf);
+    bar = tiku_trk_deskbar_frame(app->deskbar);
+    r = tiku_trk_deskbar_trayicon_rect(app->deskbar, 0);
+    assert(bar.h == before + ICON_ROW && r.w > 16 && r.x >= bar.x &&
+           r.y > bar.y && r.y + r.h < bar.y + bar.h - db_clock_row());
+    memset(&pick, 0, sizeof pick);
+    assert(tiku_trk_deskbar_click(app->deskbar, r.x + 4, r.y + 8, 0, 1, 1,
+                                  &pick));
+    assert(pick.what == TIKU_TRK_DB_TRAY_ICON && pick.owner == 7 &&
+           !strcmp(pick.path, "delay") &&
+           desktop_tray_session(app, pick.owner) == 0 &&
+           desktop_tray_session(app, 8) < 0);
+    (void)tiku_trk_deskbar_motion(app->deskbar, r.x + 4, r.y + 8);
+    assert(!strcmp(tiku_trk_deskbar_tip(app->deskbar),
+                   "Grabbing in 5: click to cancel"));
+    tray_say(app, "", "");
+    assert(!tiku_trk_deskbar_trayicons(app->deskbar, 0, NULL));
+    tray_say(app, "grab_timer", "3");
+    app->remote.session[0].used = 0;    /* the application has gone */
+    desktop_publish_teams(app);
+    assert(!tiku_trk_deskbar_trayicons(app->deskbar, 0, NULL));
+}
+
+/** @brief Collapsed, the tray sits under the dock's application button
+ *         and the clock under the switch, at the bar's foot. */
+static void mini_test(desktop_t *app)
+{
+    tiku_rect_t bar, r;
+
+    app->remote.session[0].used = 1;
+    tray_say(app, "grab_timer", "3");
+    tiku_trk_deskbar_set_dock(app->deskbar, TIKU_TRK_DB_RIGHT_MINI);
+    tiku_trk_deskbar_draw(app->deskbar, app->surf);
+    bar = tiku_trk_deskbar_frame(app->deskbar);
+    r = tiku_trk_deskbar_trayicon_rect(app->deskbar, 0);
+    assert(r.y >= bar.y + db_leaf_row() + 2 * PAD + db_team_row() + 2 &&
+           db_tray_top(app->deskbar) + db_tray_h(app->deskbar) +
+           SWITCH_ROW + db_clock_row() + PAD == bar.y + bar.h);
+    tiku_trk_deskbar_set_dock(app->deskbar, TIKU_TRK_DB_RIGHT_EXPANDED);
+}
+
 /** @brief Every group, in order, on one desk. */
 int main(void)
 {
@@ -181,6 +262,8 @@ int main(void)
     rows_test(app);
     action_test(app, pdf);
     gone_test(app);
+    tray_test(app);
+    mini_test(app);
     tiku_trk_deskbar_strip_title("TikuPDF", "TikuPDF - ", out, sizeof out);
     assert(!strcmp(out, "TikuPDF - "));     /* nothing after: kept whole */
     tiku_trk_deskbar_free(app->deskbar);
@@ -188,6 +271,7 @@ int main(void)
     tiku_surface_free(app->surf);
     free(app);
     puts("PASS: Deskbar rows per application -- windows sorted, icons "
-         "worn, instances shared, rows gone, clicks reach one application");
+         "worn, instances shared, rows gone, clicks reach one application; "
+         "tray icons set, drawn, clicked, tipped, taken away, swept");
     return 0;
 }

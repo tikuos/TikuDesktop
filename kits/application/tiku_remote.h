@@ -354,6 +354,13 @@ const uint32_t *tiku_remote_pixels(
 #define TIKU_MSG_GRAB    0x67726162u  /* 'grab' */
 #define TIKU_MSG_GRABBED 0x67726264u  /* 'grbd' */
 enum { TIKU_GRAB_LIST = 0, TIKU_GRAB_DESK = 1, TIKU_GRAB_WINDOW = 2 };
+/* An application's own icon beside the Deskbar's clock, as the original's
+ * replicants are.  ASK string "id" (its name for the item, at most 15
+ * bytes), string "icon" (a name from the desk's icon set), string "text"
+ * (a few characters after it) and "tip"; no icon and no text takes it
+ * away.  A click on it comes back as TIKU_MSG_TRAYHIT with its "id". */
+#define TIKU_MSG_TRAY    0x74726179u  /* 'tray' */
+#define TIKU_MSG_TRAYHIT 0x74726869u  /* 'trhi' */
 /* Local image dispatch; the reply acknowledges opening, not decoding. */
 #define TIKU_MSG_IMAGEOPEN 0x696f706eu /* 'iopn', string "path" */
 #define TIKU_MSG_IMAGEOPENED 0x696f7064u /* 'iopd', int32 "accepted" */

@@ -58,6 +58,8 @@
 #define TRAY_PAD       3     /* fTrayPadding                               */
 #define CLOCK_MARGIN  12     /* fClockMargin = fTrayPadding * 4            */
 #define SWITCH_ROW    16     /* the theme switch's own strip of tray        */
+#define ICON_ROW      20     /* a row of applications' tray icons           */
+#define ICON_GAP       6     /* between two of them                         */
 #define SWITCH_W      26     /* the track */
 #define SWITCH_H      12
 
@@ -124,6 +126,10 @@ struct tiku_trk_deskbar {
      * (DB-032). */
     char                 tip[TIKU_TRK_DB_LABEL_MAX];
     int                  tip_y;            /* the row's top, or -1     */
+    /* The applications' own tray icons, in the order they arrived. */
+    tiku_trk_trayicon_t  trayicons[TIKU_TRK_DB_TRAYICONS_MAX];
+    int                  trayicon_count;   /* trayicons[] in use       */
+    int                  trayicon_hot;     /* under the pointer, or -1 */
     /* The horizontal strip's layout, computed at draw time so the click
      * and the drawing read the same numbers (DB-033). */
     int                  hbutton_w;        /* one team button's width  */
@@ -184,6 +190,11 @@ void db_open_sub(tiku_trk_deskbar_t *db, int at);
 int db_list_rows(const tiku_trk_deskbar_t *db);
 int db_list_y(const tiku_trk_deskbar_t *db);
 int db_tray_y(const tiku_trk_deskbar_t *db);
+int db_tray_h(const tiku_trk_deskbar_t *db);
+int db_tray_top(const tiku_trk_deskbar_t *db);
+int db_trayicons_w(const tiku_trk_deskbar_t *db);
+int db_hclock_w(const tiku_trk_deskbar_t *db);
+int db_trayicon_at(const tiku_trk_deskbar_t *db, int x, int y);
 void db_draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s);
 
 /* tiku_trk_deskbar_leaf.c */

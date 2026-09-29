@@ -128,6 +128,10 @@ team_close(desktop_t *app, int team)
 void
 deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
 {
+    if (pick->what == TIKU_TRK_DB_TRAY_ICON) {     /* its owner's to hear */
+        desktop_tray_hit(app, pick->owner, pick->path);
+        return;
+    }
     if (deskbar_pick_system(app, pick)) {
         return;
     }

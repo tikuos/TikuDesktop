@@ -158,6 +158,7 @@ MEDIA       := $(K)/media/tiku_sound.c $(SOUND_HOST) \
                $(K)/media/tiku_score.c $(K)/media/tiku_sound_scores.c \
                $(K)/media/tiku_wav.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
+               $(K)/application/tiku_app_tray.c \
                $(K)/application/tiku_window_app.c \
                $(K)/application/tiku_remote.c \
                $(K)/application/tiku_conduct.c \

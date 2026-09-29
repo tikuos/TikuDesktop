@@ -866,6 +866,9 @@ const char *desktop_window_team(desktop_t *app, tiku_window_t *w);
 void desktop_publish_teams(desktop_t *app);
 int desktop_team_has(desktop_t *app, int team, tiku_window_t *w);
 int desktop_team_is_app(desktop_t *app, int team);
+void desktop_tray(desktop_t *app, int session, const tiku_msg_t *msg);
+int desktop_tray_session(desktop_t *app, uint64_t owner);
+void desktop_tray_hit(desktop_t *app, uint64_t owner, const char *id);
 void set_backdrop_color(void *context, const tiku_trk_color_t *color);
 
 /* tiku_trk_desktop_drivers.c */

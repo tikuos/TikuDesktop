@@ -62,6 +62,21 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     if (!tiku_trk_deskbar_hit(db, x, y)) {
         return 0;
     }
+    {
+        /* An application's own tray icon: the click is its owner's to
+         * hear, whichever way the bar is docked. */
+        int ti = db_trayicon_at(db, x, y);
+
+        if (ti >= 0) {
+            if (button == 1) {
+                pick->what = TIKU_TRK_DB_TRAY_ICON;
+                pick->owner = db->trayicons[ti].owner;
+                snprintf(pick->path, sizeof pick->path, "%s",
+                         db->trayicons[ti].id);
+            }
+            return 1;
+        }
+    }
     if (!tiku_trk_deskbar_vertical(db->dock)) {
         /* The horizontal strip: the leaf keeps its own width, and the
          * rest of the bar is application buttons (DB-033). */
@@ -140,8 +155,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         int astep = ((mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD |
                               TIKU_MOD_OPTION)) != 0u) ? 3 : 1;
         int ly = db_list_y(db);
-        int lb = db->frame.y + db->frame.h -
-                 (db->tray_count * TRAY_ROW) -
+        int lb = db->frame.y + db->frame.h - db_tray_h(db) -
                  (db->settings.show_clock ? db_clock_row() : 0) - PAD;
 
         if (y >= ly && y < ly + 8) {
