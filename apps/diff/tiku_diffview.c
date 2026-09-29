@@ -3,6 +3,7 @@
  * time per window; the window draws the rows the last job built.
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_diffview.h"
+#include "tiku_atomic_file.h"
 #include "tiku_archive.h"
 #include "tiku_attr.h"
 #include "tiku_clipboard.h"
@@ -160,6 +161,7 @@ static void dv_scroll(tiku_diffview_t *c, long top);
 static void dv_hscroll(tiku_diffview_t *c, int by);
 static void dv_pick_change(tiku_diffview_t *c, long row);
 static void dv_patch_run(dv_job_t *j);
+static void dv_rm(int at, const char *name, int depth);
 
 /** @brief Ask for a redraw. */
 static void dv_changed(tiku_diffview_t *c)
@@ -337,26 +339,19 @@ static void dv_land(tiku_diffview_t *c, dv_job_t *j)
  *         clipboard. */
 static void dv_patch_land(tiku_diffview_t *c, const dv_job_t *j)
 {
-    FILE *f;
-
-    if (!j->patch_text || !j->patch_len) {
+    if (j->said[0]) {
+        dv_say(c, j->said);
+    } else if (!j->patch_text || !j->patch_len) {
         dv_say(c, "There are no differences to write.");
     } else if (j->save[0]) {
-        f = fopen(j->save, "wb");
-        if (f && fwrite(j->patch_text, 1, j->patch_len, f) == j->patch_len &&
-            fclose(f) == 0) {
-            snprintf(c->status, sizeof c->status, "The differences are in "
-                     "%s.", dv_leaf(j->save));
-        } else {
-            if (f) fclose(f);
-            snprintf(c->status, sizeof c->status, "Could not write %s.",
-                     dv_leaf(j->save));
-        }
+        snprintf(c->status, sizeof c->status, "The differences are in %s.",
+                 dv_leaf(j->save));
     } else if (j->patch_len > DV_CLIP_MAX) {
         dv_say(c, "Too much for the clipboard: use Save Differences.");
     } else {
-        tiku_clipboard_set(j->patch_text);
-        dv_say(c, "The differences are on the clipboard, as a unified diff.");
+        dv_say(c, tiku_clipboard_import(j->patch_text, j->patch_len)
+               ? "The differences are on the clipboard, as a unified diff."
+               : "Could not copy the differences; the clipboard is unchanged.");
     }
     dv_changed(c);
 }
@@ -371,7 +366,16 @@ static void dv_done(void *ctx)
     j->landed = 1;
     if (j->generation != c->generation || !c->workspace) return;
     if (j->patch) {
+        if (!j->save[0] && dv_stopped(j->progress)) {
+            dv_say(c, "Stopped. No patch was copied.");
+            return;
+        }
         dv_patch_land(c, j);
+        return;
+    }
+    if (dv_stopped(j->progress)) {
+        dv_say(c, "Stopped. The previous comparison is unchanged.");
+        if (j->sub >= 0 && j->sub != c->live) dv_drop_sub(c, j->sub);
         return;
     }
     if (!j->files && !j->folders) {     /* refused: what was, stays */
@@ -410,6 +414,7 @@ static void dv_patch(tiku_diffview_t *c, const char *save)
 
     if (!j || !d || !(j->rels = calloc((size_t)d->n + 1, sizeof *j->rels))) {
         free(j);
+        dv_say(c, "Not enough memory to prepare the patch. Nothing was saved.");
         return;
     }
     j->patch = 1;
@@ -419,7 +424,15 @@ static void dv_patch(tiku_diffview_t *c, const char *save)
     for (long i = 0; i < d->n; i++) {
         if (d->e[i].status == DV_ENT_SAME) continue;
         j->rels[j->nrel].status = d->e[i].status;
-        if (!(j->rels[j->nrel++].rel = strdup(d->e[i].rel))) j->nrel--;
+        if (!(j->rels[j->nrel].rel = strdup(d->e[i].rel))) {
+            for (long k = 0; k < j->nrel; k++) free(j->rels[k].rel);
+            free(j->rels);
+            free(j);
+            dv_say(c, "Not enough memory to prepare the patch. "
+                      "Nothing was saved.");
+            return;
+        }
+        j->nrel++;
     }
     (void)dv_post(c, j, "Writing the differences");
 }
@@ -460,8 +473,9 @@ static void dv_copy(tiku_diffview_t *c)
     } else if (len > (size_t)DV_CLIP_MAX) {
         dv_say(c, "Too much for the clipboard: use Save Differences.");
     } else {
-        tiku_clipboard_set(u);
-        dv_say(c, "The difference is on the clipboard, as a unified diff.");
+        dv_say(c, tiku_clipboard_import(u, len)
+               ? "The difference is on the clipboard, as a unified diff."
+               : "Could not copy the difference; the clipboard is unchanged.");
     }
     free(u);
 }
@@ -470,26 +484,26 @@ static void dv_copy(tiku_diffview_t *c)
  *         a folder list's on a worker. */
 static void dv_save_to(tiku_diffview_t *c, const char *path)
 {
-    size_t len = 0;
-    char *u;
-    FILE *f;
+    dv_job_t *j;
 
+    if (c->busy) {
+        dv_say(c, "Wait for the current operation, then save the differences.");
+        return;
+    }
     if (c->mode == DV_FOLDERS) {
         dv_patch(c, path);
         return;
     }
-    u = dv_unified(c, &len);
-    f = u ? fopen(path, "wb") : NULL;
-    if (f && fwrite(u, 1, len, f) == len && fclose(f) == 0) {
-        snprintf(c->status, sizeof c->status, "The difference is in %s.",
-                 dv_leaf(path));
-    } else {
-        if (f) fclose(f);
-        snprintf(c->status, sizeof c->status, "Could not write %s.",
-                 dv_leaf(path));
+    j = calloc(1, sizeof *j);
+    if (!j || !(j->patch_text = dv_unified(c, &j->patch_len))) {
+        free(j);
+        dv_say(c, "Not enough memory to prepare the patch. Nothing was saved.");
+        return;
     }
-    free(u);
-    dv_changed(c);
+    j->patch = 2;                 /* owned snapshot, only the write remains */
+    j->sub = -1;
+    snprintf(j->save, sizeof j->save, "%s", path);
+    (void)dv_post(c, j, "Saving differences");
 }
 
 /* ----------------------------------------------------------- moving  */
@@ -934,7 +948,6 @@ void tiku_diffview_destroy(tiku_diffview_t *c)
     tiku_diffview_close(c);
     c->generation++;
     if (c->progress) atomic_store(&c->progress->stop, 1);
-    if (c->temp[0]) dv_rm(AT_FDCWD, c->temp, DV_DEPTH + 8);
     c->workspace = NULL;
     c->dirty = NULL;
     memset(&c->host, 0, sizeof c->host);

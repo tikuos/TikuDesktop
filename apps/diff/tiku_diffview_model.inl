@@ -4,7 +4,6 @@
  * A job touches only what it was given; the loop applies what it made. */
 
 #define DV_TEXT_MAX  (64L << 20)        /* a bigger file compares as bytes */
-#define DV_SNIFF     65536              /* bytes looked through for a NUL  */
 #define DV_DEPTH     64                 /* folders deep a walk goes        */
 #define DV_CHUNK     65536
 
@@ -37,9 +36,9 @@ static void dv_folders_free(dv_folders_t *d)
 /** @brief The last part of @p path. */
 static const char *dv_leaf(const char *path)
 {
-    const char *slash = strrchr(path, '/');
+    const char *slash = path ? strrchr(path, '/') : NULL;
 
-    return slash && slash[1] ? slash + 1 : path;
+    return slash && slash[1] ? slash + 1 : path ? path : "empty input";
 }
 
 /** @brief Whether the job has been asked to stop. */
@@ -69,8 +68,9 @@ static int dv_read(const char *path, char **out, size_t *len, int64_t *size)
     if (!(f = fopen(path, "rb"))) return -1;
     *out = malloc((size_t)st.st_size + 1);
     got = *out ? fread(*out, 1, (size_t)st.st_size, f) : 0;
-    fclose(f);
-    if (!*out || got != (size_t)st.st_size) {
+    int bad = ferror(f) || fgetc(f) != EOF;
+    if (fclose(f) != 0) bad = 1;
+    if (!*out || got != (size_t)st.st_size || bad) {
         free(*out);
         *out = NULL;
         return -1;
@@ -90,6 +90,7 @@ static int dv_same_file(const char *x, const char *y, int64_t *sx,
     char *buf;
     FILE *fa = NULL, *fb = NULL;
     int same = -1;
+    int64_t read_bytes = 0;
 
     if (lstat(x, &a) != 0 || lstat(y, &b) != 0) return -1;
     *sx = (int64_t)a.st_size;
@@ -99,9 +100,11 @@ static int dv_same_file(const char *x, const char *y, int64_t *sx,
         ssize_t na = readlink(x, ta, sizeof ta);
         ssize_t nb = readlink(y, tb, sizeof tb);
 
-        return S_ISLNK(a.st_mode) == S_ISLNK(b.st_mode) && na == nb &&
-               na >= 0 && !memcmp(ta, tb, (size_t)na);
+        if (S_ISLNK(a.st_mode) != S_ISLNK(b.st_mode)) return 0;
+        if (na < 0 || nb < 0 || na == sizeof ta || nb == sizeof tb) return -1;
+        return na == nb && !memcmp(ta, tb, (size_t)na);
     }
+    if (!S_ISREG(a.st_mode) || !S_ISREG(b.st_mode)) return -1;
     if (a.st_size != b.st_size) return 0;
     if (!(buf = malloc(2 * DV_CHUNK)) || !(fa = fopen(x, "rb")) ||
         !(fb = fopen(y, "rb"))) goto done;
@@ -110,8 +113,11 @@ static int dv_same_file(const char *x, const char *y, int64_t *sx,
 
         if (fread(buf + DV_CHUNK, 1, DV_CHUNK, fb) != n ||
             memcmp(buf, buf + DV_CHUNK, n)) same = 0;
+        if (ferror(fa) || ferror(fb)) { same = -1; break; }
+        read_bytes += (int64_t)n;
         if (n < DV_CHUNK) break;
     }
+    if (same == 1 && read_bytes != (int64_t)a.st_size) same = -1;
 done:
     if (fa) fclose(fa);
     if (fb) fclose(fb);
@@ -189,7 +195,10 @@ static dv_files_t *dv_files(const char *pa, const char *pb, int space,
     dv_files_t *f = calloc(1, sizeof *f);
     int r[2];
 
-    if (!f) return NULL;
+    if (!f) {
+        snprintf(said, max, "Not enough memory to compare files.");
+        return NULL;
+    }
     r[0] = dv_read(pa, &f->text[0], &f->len[0], &f->size[0]);
     r[1] = dv_read(pb, &f->text[1], &f->len[1], &f->size[1]);
     if (r[0] < 0 || r[1] < 0) {
@@ -199,16 +208,18 @@ static dv_files_t *dv_files(const char *pa, const char *pb, int space,
         return NULL;
     }
     f->binary = r[0] > 0 || r[1] > 0 ||
-                memchr(f->text[0], 0, f->len[0] < DV_SNIFF ? f->len[0]
-                                                           : DV_SNIFF) ||
-                memchr(f->text[1], 0, f->len[1] < DV_SNIFF ? f->len[1]
-                                                           : DV_SNIFF);
+                memchr(f->text[0], 0, f->len[0]) ||
+                memchr(f->text[1], 0, f->len[1]);
     if (f->binary) {
         int64_t sa, sb;
-        f->same = r[0] || r[1] ? (pa && pb && dv_same_file(pa, pb, &sa, &sb)
-                                  == 1)
+        f->same = r[0] || r[1] ? (pa && pb ? dv_same_file(pa, pb, &sa, &sb) : 0)
                                : f->len[0] == f->len[1] &&
                                  !memcmp(f->text[0], f->text[1], f->len[0]);
+        if (f->same < 0) {
+            snprintf(said, max, "Could not read both files completely.");
+            dv_files_free(f);
+            return NULL;
+        }
         return f;
     }
     f->nline[0] = tiku_diff_split(f->text[0], f->len[0], &f->line[0]);
@@ -290,18 +301,26 @@ static int dv_walk(const char *root, dv_list_t *out, const dv_progress_t *p)
         struct dirent *e;
 
         sub = todo.p[--todo.n];
-        snprintf(path, DV_PATH, "%s%s%s", root, *sub ? "/" : "", sub);
-        for (d = opendir(path); d && !bad && (e = readdir(d));) {
+        if (snprintf(path, DV_PATH, "%s%s%s", root, *sub ? "/" : "", sub)
+            >= DV_PATH) {
+            free(sub); bad = 1; break;
+        }
+        d = opendir(path);
+        if (!d) bad = 1;
+        while (d && !bad) {
             struct stat st;
             char *rel = path + DV_PATH;
 
+            errno = 0;
+            e = readdir(d);
+            if (!e) { if (errno) bad = 1; break; }
             if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            snprintf(rel, DV_PATH, "%s%s%s", sub, *sub ? "/" : "",
-                     e->d_name);
-            snprintf(path, DV_PATH, "%s/%s", root, rel);
-            if (lstat(path, &st) != 0) continue;
-            if (S_ISDIR(st.st_mode) && dv_depth(rel) < DV_DEPTH)
-                bad = dv_list_add(&todo, rel) != 0;
+            if (snprintf(rel, DV_PATH, "%s%s%s", sub, *sub ? "/" : "",
+                         e->d_name) >= DV_PATH ||
+                snprintf(path, DV_PATH, "%s/%s", root, rel) >= DV_PATH ||
+                lstat(path, &st) != 0) { bad = 1; break; }
+            if (S_ISDIR(st.st_mode))
+                bad = dv_depth(rel) >= DV_DEPTH || dv_list_add(&todo, rel) != 0;
             else if (S_ISREG(st.st_mode) || S_ISLNK(st.st_mode))
                 bad = dv_list_add(out, rel) != 0;
         }
@@ -311,7 +330,8 @@ static int dv_walk(const char *root, dv_list_t *out, const dv_progress_t *p)
     free(path);
     bad = bad || dv_stopped(p);
     dv_list_free(&todo);
-    if (!bad) qsort(out->p, (size_t)out->n, sizeof *out->p, dv_cmp);
+    if (!bad && out->n > 1)
+        qsort(out->p, (size_t)out->n, sizeof *out->p, dv_cmp);
     return bad ? -1 : 0;
 }
 
@@ -355,9 +375,11 @@ static int dv_join(dv_folders_t *d, const char *ra, const char *rb,
         int cmp = i >= la->n ? 1 : j >= lb->n ? -1 : strcmp(la->p[i], lb->p[j]);
 
         if (cmp < 0) {
+            if (dv_size(ra, la->p[i]) < 0) { free(pa); return -1; }
             dv_entry(d, la->p[i], DV_ENT_LEFT, dv_size(ra, la->p[i]), -1);
             la->p[i++] = NULL;
         } else if (cmp > 0) {
+            if (dv_size(rb, lb->p[j]) < 0) { free(pa); return -1; }
             dv_entry(d, lb->p[j], DV_ENT_RIGHT, -1, dv_size(rb, lb->p[j]));
             lb->p[j++] = NULL;
         } else {
@@ -367,6 +389,7 @@ static int dv_join(dv_folders_t *d, const char *ra, const char *rb,
             snprintf(pa, DV_PATH, "%s/%s", ra, la->p[i]);
             snprintf(pa + DV_PATH, DV_PATH, "%s/%s", rb, lb->p[j]);
             same = dv_same_file(pa, pa + DV_PATH, &sa, &sb);
+            if (same < 0) { free(pa); return -1; }
             dv_entry(d, la->p[i], same == 1 ? DV_ENT_SAME : DV_ENT_CHANGED,
                      sa, sb);
             la->p[i++] = NULL;
@@ -397,7 +420,8 @@ static dv_folders_t *dv_folders(const char *ra, const char *rb,
     dv_list_free(&lb);
     if (!ok) {
         snprintf(said, max, dv_stopped(p) ? "Stopped." :
-                 "Not enough memory to compare the folders.");
+                 "Comparison incomplete: a folder or file could not be read, "
+                 "or a path, depth, or memory limit was reached.");
         dv_folders_free(d);
         return NULL;
     }
@@ -457,8 +481,16 @@ static int dv_side(dv_side_t *s, const char *path, const char *under,
         return -1;
     }
     s->dir = S_ISDIR(st.st_mode);
-    if (s->dir || tiku_archive_open(path, NULL, NULL, &a) != TIKU_ARCHIVE_OK)
-        return 0;
+    if (s->dir) return 0;
+    err = tiku_archive_open(path, dv_extracting, p, &a);
+    if (err == TIKU_ARCHIVE_UNKNOWN) return 0;
+    if (err != TIKU_ARCHIVE_OK || tiku_archive_damaged(a)) {
+        snprintf(said, max, "Could not read archive %s: %s.", dv_leaf(path),
+                 err == TIKU_ARCHIVE_OK ? "damaged listing"
+                                        : tiku_archive_strerror(err));
+        tiku_archive_close(a);
+        return -1;
+    }
     memset(&opt, 0, sizeof opt);
     opt.progress = dv_extracting;
     opt.ctx = p;
@@ -467,8 +499,7 @@ static int dv_side(dv_side_t *s, const char *path, const char *under,
         : tiku_archive_new_folder(under, name, s->root, sizeof s->root) != 0
         ? TIKU_ARCHIVE_WRITE : tiku_archive_extract(a, s->root, &opt);
     tiku_archive_close(a);
-    if (err == TIKU_ARCHIVE_CANCELLED || err == TIKU_ARCHIVE_WRITE ||
-        err == TIKU_ARCHIVE_NOMEM) {
+    if (err != TIKU_ARCHIVE_OK) {
         snprintf(said, max, "Could not extract %s: %s.", dv_leaf(path),
                  tiku_archive_strerror(err));
         return -1;
@@ -506,13 +537,14 @@ static int dv_patch_put(dv_job_t *j, const char *s, size_t n)
 /** @brief One entry of the folder list as a patch's section: its unified
  *         text, a/ and b/ before its path, /dev/null for a side it is not
  *         on; a binary file said to differ. */
-static void dv_patch_one(dv_job_t *j, const dv_rel_t *e, char *pa)
+static int dv_patch_one(dv_job_t *j, const dv_rel_t *e, char *pa)
 {
     char *pb = pa + DV_PATH, *na = pa + 2 * DV_PATH;
     char *nb = pa + 3 * DV_PATH, said[160];
     dv_files_t *f;
     char *u;
     size_t n = 0;
+    int bad = 0;
 
     snprintf(pa, DV_PATH, "%s/%s", j->side[0].root, e->rel);
     snprintf(pb, DV_PATH, "%s/%s", j->side[1].root, e->rel);
@@ -523,20 +555,25 @@ static void dv_patch_one(dv_job_t *j, const dv_rel_t *e, char *pa)
     f = dv_files(e->status == DV_ENT_RIGHT ? NULL : pa,
                  e->status == DV_ENT_LEFT ? NULL : pb, j->space, said,
                  sizeof said);
-    if (!f || f->same) {
+    if (!f) {
+        snprintf(j->said, sizeof j->said, "Patch not saved: %s", said);
+        return -1;
+    }
+    if (f->same) {
         dv_files_free(f);
-        return;
+        return 0;
     }
     if (f->binary) {
         int k = snprintf(said, sizeof said, "Binary files %.60s and %.60s "
                          "differ\n", na, nb);
-        (void)dv_patch_put(j, said, (size_t)k);
+        bad = dv_patch_put(j, said, (size_t)k);
     } else if ((u = tiku_diff_unified(&f->d, f->line[0], f->line[1], na, nb,
                                       3, &n)) != NULL) {
-        (void)dv_patch_put(j, u, n);
+        bad = dv_patch_put(j, u, n);
         free(u);
-    }
+    } else bad = 1;
     dv_files_free(f);
+    return bad ? -1 : 0;
 }
 
 /** @brief Every difference of the folder list as one patch, in the list's
@@ -544,14 +581,35 @@ static void dv_patch_one(dv_job_t *j, const dv_rel_t *e, char *pa)
 static void dv_patch_run(dv_job_t *j)
 {
     char *paths = malloc(4 * DV_PATH);
+    int bad = !paths;
 
     atomic_store(&j->progress->total, j->nrel);
     for (long i = 0; paths && i < j->nrel && !dv_stopped(j->progress); i++) {
-        dv_patch_one(j, &j->rels[i], paths);
+        if (dv_patch_one(j, &j->rels[i], paths) != 0) { bad = 1; break; }
         atomic_fetch_add(&j->progress->done, 1);
     }
     free(paths);
-    if (!j->patch_text) (void)dv_patch_put(j, "", 0);
+    if (dv_stopped(j->progress))
+        snprintf(j->said, sizeof j->said,
+                 "Stopped. No patch was saved or copied.");
+    else if (bad && !j->said[0])
+        snprintf(j->said, sizeof j->said,
+                 "Not enough memory. No patch was saved or copied.");
+}
+
+static int dv_write_patch(FILE *out, void *ctx)
+{
+    dv_job_t *j = ctx;
+    size_t at = 0;
+    while (at < j->patch_len) {
+        size_t n = j->patch_len - at;
+        if (n > DV_CHUNK) n = DV_CHUNK;
+        if (dv_stopped(j->progress) ||
+            fwrite(j->patch_text + at, 1, n, out) != n)
+            return -1;
+        at += n;
+    }
+    return dv_stopped(j->progress) ? -1 : 0;
 }
 
 /* -------------------------------------------------------------- jobs  */
@@ -578,6 +636,8 @@ static void dv_progress_unref(dv_progress_t *p)
 static void dv_unref(tiku_diffview_t *c)
 {
     if (--c->refs > 0) return;
+    /* An extraction worker may still be writing after the window closes. */
+    if (c->temp[0]) dv_rm(AT_FDCWD, c->temp, DV_DEPTH + 8);
     dv_files_free(c->files);
     dv_folders_free(c->folders);
     free(c->shown);
@@ -591,7 +651,15 @@ static void dv_run(void *ctx)
     dv_job_t *j = ctx;
 
     if (j->patch) {
-        dv_patch_run(j);
+        if (j->patch == 1) dv_patch_run(j);
+        if (!j->said[0] && dv_stopped(j->progress))
+            snprintf(j->said, sizeof j->said,
+                     "Stopped. No patch was saved or copied.");
+        if (!j->said[0] && j->save[0] && j->patch_len &&
+            tiku_atomic_file(j->save, dv_write_patch, j) != 0)
+            snprintf(j->said, sizeof j->said,
+                     "Could not save %s. The destination is unchanged.",
+                     dv_leaf(j->save));
         return;
     }
     if (j->rel[0]) {                    /* an entry of the folder list */
@@ -657,7 +725,11 @@ static int dv_post(tiku_diffview_t *c, dv_job_t *j, const char *doing)
     j->generation = c->generation;
     j->space = c->space;
     if (!(j->progress = dv_progress_new(c, doing))) {
+        for (long i = 0; i < j->nrel; i++) free(j->rels[i].rel);
+        free(j->rels);
+        free(j->patch_text);
         free(j);
+        dv_say(c, "Not enough memory to start the operation.");
         return 0;
     }
     c->refs++;

@@ -36,6 +36,11 @@ and TikuDiff opens them into a folder of its own and compares what they
 hold -- two releases of an SDK, for example. An archive holding only one
 file, as a .gz does, is compared as that file. The folder is removed when
 TikuDiff quits.</p>
+<p>A folder comparison must finish completely before its results replace
+the previous comparison. An unreadable file or folder, a damaged archive,
+or an archive entry that cannot be safely extracted stops the comparison
+with an error. Directories deeper than 64 levels and paths longer than
+the supported path buffer are also reported as incomplete.</p>
 <h2 id="out">Keeping the difference</h2>
 <p><b>Edit &gt; Copy Differences</b> (<b>Ctrl+C</b>) puts the difference
 on the clipboard as a unified diff, the form <code>diff -u</code> writes
@@ -44,6 +49,11 @@ and <code>patch</code> reads; <b>File &gt; Save Differences...</b>
 file's difference in one text, each path beginning with a/ and b/ as
 <code>patch -p1</code> expects, and a file only on one side added or
 taken away whole.</p>
+<p>Patch export stops if a source file cannot be read, memory runs out,
+or you cancel. It does not save or copy a partial patch. Saves run in the
+background and replace the destination only after the complete patch
+has been written successfully; a failed write leaves the existing file
+unchanged. Save to a regular file, not a symbolic link.</p>
 <p><b>Open Left...</b> and <b>Open Right...</b> replace one side and keep
 the other; <b>Swap Sides</b> turns them round.</p>
 <h2 id="limits">Limits</h2>

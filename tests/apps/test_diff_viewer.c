@@ -6,7 +6,33 @@
  * as folders and as one file; closing.  SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdatomic.h>
+static atomic_int fail_growth, fail_name, fail_read;
+static void *test_realloc(void *p, size_t n)
+{
+    return atomic_exchange(&fail_growth, 0) ? NULL : realloc(p, n);
+}
+static char *test_strdup(const char *s)
+{
+    return atomic_exchange(&fail_name, 0) ? NULL : strdup(s);
+}
+static size_t test_fread(void *p, size_t n, size_t k, FILE *f)
+{
+    return atomic_load(&fail_read) ? 0 : fread(p, n, k, f);
+}
+static int test_ferror(FILE *f) { return atomic_load(&fail_read) || ferror(f); }
+#define realloc test_realloc
+#define strdup test_strdup
+#define fread test_fread
+#define ferror test_ferror
 #include "../../apps/diff/tiku_diffview.c"
+#undef realloc
+#undef strdup
+#undef fread
+#undef ferror
 #include "tiku_icons.h"
 #include "../fixtures/archive.inc"
 
@@ -184,6 +210,7 @@ static void output_tests(tiku_diffview_t *c)
     assert(asked[TIKU_DIFFVIEW_ASK_SAVE] == 1);
     snprintf(path, sizeof path, "%s/changes.diff", scratch);
     tiku_diffview_picked(c, path);
+    settle(c);
     f = fopen(path, "rb");
     assert(f);
     n = fread(text, 1, sizeof text - 1, f);
@@ -270,11 +297,12 @@ static void patch_tests(tiku_diffview_t *c, const char *left,
     f = fopen(pd, "wb");
     assert(f && fputs(tiku_clipboard_text(), f) >= 0);
     fclose(f);
-    /* A patch(1) that empties a file it is told to delete, rather than
-     * removing it, is still right: empty files are cleared before the
-     * two folders are held side by side. */
+    /* patch implementations differ in removing an emptied file and its
+     * parent directory. Normalize only this fixture's deleted file and
+     * empty directory; do not discard arbitrary empty files. */
     snprintf(cmd, sizeof cmd, "cp -R '%s' '%s' && cd '%s' && patch -s -p1 "
-             "< '%s' > /dev/null && find . -type f -empty -exec rm {} + && "
+             "< '%s' > /dev/null && test ! -s sub/notes.txt && "
+             "rm -f sub/notes.txt && mkdir -p sub && "
              "diff -r '%s' '%s' > /dev/null", left, copy, copy, pd, copy,
              right);
     assert(system(cmd) == 0);
@@ -332,6 +360,78 @@ static void folders(char *left, char *right)
     put_text("R/new.txt", "only on the right\n", NULL);
 }
 
+static void failure_tests(tiku_diffview_t *c, const char *left,
+                          const char *right)
+{
+    char missing[PATH_MAX], path[PATH_MAX], under[PATH_MAX], said[320];
+    dv_progress_t p = {0};
+    dv_list_t list = {0};
+    snprintf(missing, sizeof missing, "%s/missing", scratch);
+    assert(dv_walk(missing, &list, &p) == -1 && list.n == 0);
+    int64_t sa, sb;
+    snprintf(path, sizeof path, "%s/one.c", scratch);
+    atomic_store(&fail_read, 1);
+    assert(dv_same_file(path, path, &sa, &sb) == -1);
+    assert(dv_files(path, path, 0, said, sizeof said) == NULL);
+    atomic_store(&fail_read, 0);
+
+    /* A refused archive entry or broken listing cannot become a valid side. */
+    snprintf(under, sizeof under, "%s/refused", scratch);
+    const char *fixtures_bad[] = {"hostile_zip", "badcrc_zip", "cut_tgz"};
+    for (int i = 0; i < 3; i++) {
+        dv_side_t side = {0};
+        fixture(fixtures_bad[i], "unreadable.archive", path);
+        assert(dv_side(&side, path, under, &p, said, sizeof said) == -1);
+    }
+    /* Excess depth must fail, not quietly omit a subtree. */
+    snprintf(path, sizeof path, "%s/deep", scratch);
+    assert(mkdir(path, 0700) == 0);
+    snprintf(under, sizeof under, "%s", path);
+    for (int i = 0; i <= DV_DEPTH; i++) {
+        strcat(path, "/d"); assert(mkdir(path, 0700) == 0);
+    }
+    assert(dv_walk(under, &list, &p) == -1); dv_list_free(&list);
+
+    compare(c, 1, left, right);
+    atomic_store(&fail_name, 1);
+    dv_patch(c, NULL);
+    assert(!c->busy && strstr(c->status, "Not enough memory"));
+
+    dv_job_t j = {0};
+    dv_rel_t rel = {.rel = "notes.txt", .status = DV_ENT_CHANGED};
+    j.patch = 1; j.progress = &p; j.rels = &rel; j.nrel = 1;
+    snprintf(j.side[0].root, sizeof j.side[0].root, "%s", left);
+    snprintf(j.side[1].root, sizeof j.side[1].root, "%s", right);
+    atomic_store(&fail_growth, 1);
+    dv_run(&j);
+    assert(j.said[0] && !j.patch_text);
+    tiku_clipboard_set("keep clipboard");
+    dv_patch_land(c, &j);
+    assert(!strcmp(tiku_clipboard_text(), "keep clipboard"));
+
+    /* A file can disappear between comparing folders and exporting. */
+    rel.rel = "missing.txt";
+    j.said[0] = '\0';
+    put_text("preserve.diff", "existing patch", j.save);
+    dv_run(&j);
+    assert(strstr(j.said, "Could not read"));
+    FILE *f = fopen(j.save, "rb"); char contents[32] = {0};
+    assert(f && fread(contents, 1, sizeof contents, f) == 14);
+    fclose(f); assert(!strcmp(contents, "existing patch"));
+
+    j.said[0] = '\0';
+    j.patch_text = strdup("partial patch"); j.patch_len = 13; j.patch_cap = 14;
+    atomic_store(&p.stop, 1);
+    dv_run(&j);
+    assert(strstr(j.said, "Stopped"));
+    dv_patch_land(c, &j);
+    assert(!strcmp(tiku_clipboard_text(), "keep clipboard"));
+    f = fopen(j.save, "rb"); memset(contents, 0, sizeof contents);
+    assert(f && fread(contents, 1, sizeof contents, f) == 14);
+    fclose(f); assert(!strcmp(contents, "existing patch"));
+    free(j.patch_text);
+}
+
 /** @brief Every group, in order, on one window; a picture when asked. */
 int main(int argc, char **argv)
 {
@@ -358,6 +458,7 @@ int main(int argc, char **argv)
     folder_tests(c, left, right);
     patch_tests(c, left, right);
     archive_tests(c);
+    failure_tests(c, left, right);
     snprintf(temp, sizeof temp, "%s", c->temp);
     assert(temp[0] && !access(temp, F_OK));
     tiku_diffview_destroy(c);
