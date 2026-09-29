@@ -2,7 +2,8 @@
 # CCITT fax, JBIG2, JPEG, JPEG 2000, the fonts and ciphers a PDF carries,
 # the key files, certificates and signatures, archives, and the lines
 # a diff compares -- compiled again under AddressSanitizer and UBSan, and
-# their suites run against them.  The rest of the kits link as they are built.
+# their suites run against them, the PDF view's with the view compiled into
+# it (so it is not among the objects).  The rest of the kits link as built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
 # suite rather than passing unseen.
 #
@@ -11,13 +12,14 @@
 SAN      := $(BUILD)/sanitize
 SANFLAGS := -O1 -g -fsanitize=address,undefined \
             -fno-sanitize-recover=undefined -fno-omit-frame-pointer
-SAN_SRCS := $(filter kits/translation/tiku_pdf_%.c %/tiku_inflate.c \
+SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
+                     kits/translation/tiku_pdf_%.c %/tiku_inflate.c \
                      %/tiku_inflate_stream.c kits/translation/tiku_archive%.c \
                      %/tiku_diff.c \
                      %/tiku_jpeg.c %/tiku_fax.c %/tiku_fontdir.c \
                      kits/translation/tiku_jbig2%.c %/tiku_mq.c \
                      kits/translation/tiku_jpx%.c,\
-                     $(TRANSLATION)) \
+                     $(TRANSLATION))) \
             $(filter %/tiku_ttf.c %/tiku_cff.c %/tiku_type1.c \
                      %/tiku_glyphpath.c,$(INTERFACE)) \
             $(filter %/tiku_digest.c %/tiku_cipher.c %/tiku_saslprep.c \
@@ -27,7 +29,7 @@ SAN_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_SRCS))
 SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
              test_crypto test_saslprep test_type1 test_cff test_ttf \
              test_thumb test_pubkey test_cms test_pdf_sign test_archive \
-             test_diff
+             test_diff test_pdf_view
 
 $(SAN)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)
