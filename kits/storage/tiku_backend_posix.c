@@ -117,13 +117,21 @@ type_by_name(const char *name)
         { ".png",  "image/png" },      { ".bmp",  "image/bmp" },
         { ".jpg",  "image/jpeg" },     { ".jpeg", "image/jpeg" },
         { ".gif",  "image/gif" },      { ".html", "text/html" },
-        { ".json", "text/json" },      { ".pdf",  "application/pdf" }
+        { ".json", "text/json" },      { ".pdf",  "application/pdf" },
+        { ".zip",  "application/zip" }, { ".tar",  "application/x-tar" },
+        { ".tgz",  "application/x-compressed-tar" },
+        { ".gz",   "application/gzip" }
     };
     const char *dot;
-    size_t i;
+    size_t i, n;
 
     if (name == NULL) {
         return "application/octet-stream";
+    }
+    /* The one name with two dots worth reading: a tar gzipped is a tar. */
+    n = strlen(name);
+    if (n > 7 && strcasecmp(name + n - 7, ".tar.gz") == 0) {
+        return "application/x-compressed-tar";
     }
     dot = strrchr(name, '.');
     if (dot == NULL || dot == name) {

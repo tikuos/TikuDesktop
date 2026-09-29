@@ -284,6 +284,15 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
                              "size,modified");
     (void)tiku_trk_types_add(db, "application/pdf", "PDF document", "file",
                              "size,modified");
+    (void)tiku_trk_types_add(db, "application/zip", "ZIP archive",
+                             "archive_file", "size,modified");
+    (void)tiku_trk_types_add(db, "application/x-tar", "Tar archive",
+                             "archive_file", "size,modified");
+    (void)tiku_trk_types_add(db, "application/x-compressed-tar",
+                             "Compressed tar archive", "archive_file",
+                             "size,modified");
+    (void)tiku_trk_types_add(db, "application/gzip", "Gzip-compressed file",
+                             "archive_file", "size,modified");
     /* A device node's columns are the two only it has. */
     (void)tiku_trk_types_add(db, "tiku-", "Device node", "device",
                              "value,cap,modified");

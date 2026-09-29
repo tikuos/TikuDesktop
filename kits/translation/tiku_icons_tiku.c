@@ -22,6 +22,7 @@
 #include "tiku_icons_reader.inl"
 #include "tiku_icons_viewer.inl"
 #include "tiku_icons_pdf.inl"
+#include "tiku_icons_archive.inl"
 #include "tiku_icons_forcequit.inl"
 #include "tiku_icons_shutdown.inl"
 #include "tiku_icons_calculator.inl"
@@ -152,9 +153,13 @@ static const struct {
     TIKU_ICON(doc_outline),
     TIKU_ICON(doc_pages),
     TIKU_ICON(doc_signed),
+    TIKU_ICON(extract_all),
+    TIKU_ICON(extract_some),
     TIKU_ICON(reader),
     TIKU_ICON(image_viewer),
     TIKU_ICON(pdf_viewer),
+    TIKU_ICON(archive_viewer),
+    TIKU_ICON(archive_file),
     TIKU_ICON(force_quit),
     TIKU_ICON(shutdown),
     TIKU_ICON(calculator),

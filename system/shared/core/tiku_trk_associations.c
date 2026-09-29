@@ -17,7 +17,11 @@ static const char *association_label(const char *type)
         {"image/jpeg", "JPEG image (.jpg, .jpeg)"},
         {"image/bmp", "Bitmap image (.bmp)"},
         {"image/x-ms-bmp", "Windows bitmap"},
-        {"application/pdf", "PDF document (.pdf)"}
+        {"application/pdf", "PDF document (.pdf)"},
+        {"application/zip", "ZIP archive (.zip)"},
+        {"application/x-tar", "Tar archive (.tar)"},
+        {"application/x-compressed-tar", "Compressed tar (.tar.gz, .tgz)"},
+        {"application/gzip", "Gzip-compressed file (.gz)"}
     };
     for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
         if (!strcmp(names[i].type, type)) return names[i].label;

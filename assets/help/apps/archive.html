@@ -1,0 +1,67 @@
+<h1>TikuArchive</h1>
+<p>Opens the archives files arrive in: ZIP archives, tar archives, tar
+archives compressed with gzip (.tar.gz and .tgz), and single files
+compressed with gzip (.gz). Choose <b>Applications &gt; TikuArchive</b>,
+or double-click an archive in Tracker; archives open in TikuArchive
+unless File Associations names another tool. TikuArchive also appears in
+Open With.</p>
+<h2 id="browse">Looking inside</h2>
+<p>An archive opens as a folder does in Tracker's list view: its folders
+first, then its files, with their size, the size they take in the archive
+(Packed) and when they were last changed. Double-click a folder, or press
+Return, to go into it; <b>Enclosing Folder</b> (the green arrow up, or
+Backspace, or <b>Ctrl+Up</b>) goes back out, and each folder named in the
+path bar above the list takes you straight there. Click a column's
+heading to sort by it, and again to turn the order round. Type in the
+Find field to show only the names holding what you type; Escape shows
+them all again. Typing a name's first letters in the list goes to it.</p>
+<p>What TikuArchive finds is said in the status line: the kind of
+archive, how many entries it holds, and how large they are. A tar in gzip
+is read through once to list it, with a gauge in the status line and a
+<b>Stop</b> button beside it. An archive cut short or damaged part way
+shows what came before the damage, and says so.</p>
+<p>Archives made on a Mac often carry a __MACOSX folder and files whose
+names begin with "._": the Finder's notes about the other files. They are
+kept out of the list and out of every extraction; <b>View &gt; Show Mac
+Metadata</b> shows them and takes them too.</p>
+<h2 id="extract">Extracting</h2>
+<ul>
+<li><b>Extract All</b> (the box with the arrow rising from it, or
+<b>Ctrl+E</b>) makes a new folder beside the archive, named after it,
+and puts everything in it. When a folder of that name is already there,
+the new one is called "name 2", "name 3" and so on: nothing already on
+the disk is ever written over.</li>
+<li><b>Extract Selected</b> (the page with the arrow, or
+<b>Shift+Ctrl+E</b>) does the same for the rows chosen, a folder with all
+it holds, as they stand in the folder shown.</li>
+<li><b>Extract All To...</b> and <b>Extract Selected To...</b>, in the
+File menu, ask where the new folder goes and what it is called.</li>
+<li>A gzip-compressed file holds one file; it is put beside the archive
+under its own name, or "name 2" when that name is taken.</li>
+<li><b>Show Extracted in Tracker</b> (the folder at the right of the
+toolbar) opens the folder the last extraction made.</li>
+</ul>
+<p>To open one file from inside an archive, double-click it or press
+Return: it is extracted to a folder of TikuArchive's own and opened in
+its program, as a double-click in Tracker would. That folder is removed
+when TikuArchive quits.</p>
+<h2 id="safety">What is never done</h2>
+<p>An archive's names are a stranger's, so extracting checks each one.
+A name that would climb out of the new folder (with "..") or that holds a
+control character is not made; a name starting at the top of the disk,
+or with a drive letter, is made inside the new folder instead. No link is
+followed while a file is made, so a link in the archive cannot carry a
+later file somewhere else; a link is itself made only when it points
+inside the new folder, and a hard link only to a file the same
+extraction made. Devices and FIFOs are never made, and files are never
+made set-user-ID. Each file's size is checked as it is written, and its
+CRC-32 where the archive carries one; a file that fails is taken away,
+not left half-written. The status line says how many entries were not
+made and why, naming the first. An archive whose entries share their
+data -- the way zip bombs are built -- is not opened at all.</p>
+<h2 id="limits">What is not read yet</h2>
+<p>Archives compressed with xz, bzip2 or zstd, 7-Zip archives and RAR
+archives are recognised and named, but not opened yet. Entries locked
+with a password are listed with "(locked)" and not extracted. Archives
+split over several files are not read. Extracting onto a board's files is
+not supported: extract on this computer, then copy.</p>

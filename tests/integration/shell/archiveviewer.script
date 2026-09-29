@@ -1,0 +1,34 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/archives
+# Archives route to TikuArchive through the real application registry and
+# open in its own process: by a double-click, and by Open with.
+wait 20
+click-row 0
+wait 2
+click-row 0
+wait 40
+expect-title TikuArchive - sdk.zip
+expect-narrate A ZIP archive: 4 entries
+key w ctrl
+wait 8
+expect-no-title TikuArchive
+click-row 1
+wait 2
+click-row 1
+wait 40
+expect-title TikuArchive - TOOLS.TAR.GZ
+expect-narrate gzip-compressed tar archive: 2 entries
+shot /tmp/trk_archive_open.png
+key w ctrl
+wait 8
+click-row 1 3
+wait 4
+menu-pick Open with
+wait 4
+expect-menu TikuArchive (opens this type)
+menu-pick TikuArchive
+wait 40
+expect-title TikuArchive - TOOLS.TAR.GZ
+key w ctrl
+quit
