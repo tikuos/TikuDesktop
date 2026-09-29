@@ -33,6 +33,10 @@ void tiku_md5_init(tiku_md5_t *c);
 void tiku_md5_update(tiku_md5_t *c, const void *data, size_t n);
 void tiku_md5_final(tiku_md5_t *c, unsigned char out[16]);
 
+/** @brief CRC-32 (ISO 3309, as ZIP, gzip and PNG use it) of @p n bytes,
+ *         carried on from @p crc: start from 0, feed it in pieces. */
+uint32_t tiku_crc32(uint32_t crc, const void *data, size_t n);
+
 /** @brief SHA-2 (FIPS 180-4) of @p n bytes at @p data, all at once. */
 void tiku_sha256(const void *data, size_t n, unsigned char out[32]);
 void tiku_sha384(const void *data, size_t n, unsigned char out[48]);

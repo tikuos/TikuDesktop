@@ -8,7 +8,8 @@
  * standards publish: RFC 1321's for MD5, FIPS 180-4's examples for SHA-1
  * and SHA-2, RFC 2202 and 4231 for HMAC, RFC 6070 and 7914 for PBKDF2,
  * FIPS 197 appendix C for AES, FIPS 46's and SP 800-67's for DES and
- * triple DES, RFC 2268's for RC2, and RC4's well-known three.
+ * triple DES, RFC 2268's for RC2, RC4's well-known three, and CRC-32's
+ * check value.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -329,13 +330,29 @@ cipher_tests(void)
     old_cipher_tests();
 }
 
+/** @brief CRC-32's check value, whole and fed in pieces, and nothing. */
+static void
+crc_tests(void)
+{
+    const char *nine = "123456789";
+
+    check(tiku_crc32(0, nine, 9) == 0xcbf43926u, "CR-033",
+          "CRC-32 of 123456789 is its check value cbf43926");
+    check(tiku_crc32(tiku_crc32(0, nine, 4), nine + 4, 5) == 0xcbf43926u,
+          "CR-034", "and the same fed in two pieces");
+    check(tiku_crc32(0, nine, 0) == 0 &&
+          tiku_crc32(0, "The quick brown fox jumps over the lazy dog", 43)
+              == 0x414fa339u, "CR-035", "nothing is 0; the pangram 414fa339");
+}
+
 int
 main(void)
 {
     printf("Digests and ciphers against their standards' vectors\n");
     digest_tests();
     cipher_tests();
+    crc_tests();
     printf("%s\n", fails ? "FAIL" : "PASS: MD5, SHA-1, SHA-2, HMAC, "
-           "PBKDF2, RC4, AES, DES and RC2");
+           "PBKDF2, RC4, AES, DES, RC2 and CRC-32");
     return fails ? 1 : 0;
 }

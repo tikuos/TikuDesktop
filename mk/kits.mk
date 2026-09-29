@@ -100,7 +100,9 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_list_paint.c $(K)/interface/tiku_colors_paint.c \
                $(K)/interface/tiku_window.c \
                $(HOST)
-TRANSLATION := $(K)/translation/tiku_inflate.c $(K)/translation/tiku_jpeg.c \
+TRANSLATION := $(K)/translation/tiku_inflate.c \
+               $(K)/translation/tiku_inflate_stream.c \
+               $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_fax.c \
                $(K)/translation/tiku_mq.c \
                $(K)/translation/tiku_jbig2.c \

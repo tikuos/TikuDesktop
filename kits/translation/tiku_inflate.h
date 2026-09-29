@@ -52,4 +52,39 @@ long tiku_inflate_zlib(const unsigned char *src, long slen,
 long tiku_inflate_alloc(const unsigned char *src, long slen,
                         unsigned char **out, long omax, int zlib);
 
+/* ------------------------------------------------------------------ */
+/* Streams: decoded as they are read, for data too big to hold whole.  */
+
+/** @brief Where a stream's compressed bytes come from: up to @p max into
+ *         @p buf.  @return how many, 0 at the end, -1 for an error. */
+typedef long (*tiku_inflate_fill_t)(void *ctx, unsigned char *buf, long max);
+
+/** @brief A DEFLATE stream being decoded; see tiku_inflate_stream.c. */
+typedef struct tiku_inflater tiku_inflater_t;
+
+#define TIKU_INFLATE_DEFLATE64 1    /* 64 KB window, ZIP method 9      */
+
+/** @brief A decoder asking @p fill for its input as it goes; @p flags
+ *         may name Deflate64.  @return it, or NULL out of memory. */
+tiku_inflater_t *tiku_inflater_new(tiku_inflate_fill_t fill, void *ctx,
+                                   int flags);
+
+/**
+ * @brief Up to @p max decoded bytes into @p out.
+ * @return how many; 0 once the final block has ended; -1 for a stream
+ *         that is malformed, cut short, or whose @c fill failed (bytes
+ *         decoded before that are handed out first).
+ */
+long tiku_inflater_read(tiku_inflater_t *z, unsigned char *out, long max);
+
+/** @brief Whether the final block ended and everything was handed out. */
+int tiku_inflater_done(const tiku_inflater_t *z);
+
+/** @brief Once done, the bytes it read past the stream's end, up to @p max
+ *         of them, taken out of it: a gzip trailer, the next member.
+ *  @return how many. */
+long tiku_inflater_tail(tiku_inflater_t *z, unsigned char *out, long max);
+
+void tiku_inflater_free(tiku_inflater_t *z);
+
 #endif /* TIKU_INFLATE_H_ */
