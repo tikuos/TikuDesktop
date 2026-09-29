@@ -354,6 +354,10 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
     if (mode == TIKU_APP_PICK_SAVE) {
         tiku_trk_panel_window_open_save(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
+    } else if (mode == TIKU_APP_PICK_LOCAL_FOLDER) {
+        /* A folder is the answer: the panel as it asks for one itself. */
+        tiku_trk_panel_window_open(&app->file_panel, &app->pending_pick,
+                                   TIKU_TRK_CMD_APP_PICK, start);
     } else {
         /* On the OPEN road the name is a FILTER: the one file name the
          * asker can accept, every other file greyed out of the offer. */

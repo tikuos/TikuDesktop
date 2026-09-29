@@ -997,8 +997,10 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
         return;
     (void)tiku_msg_find_int32(msg, "window", 0, &window);
     (void)tiku_msg_find_int32(msg, "mode", 0, &mode);
-    if (mode < TIKU_APP_PICK_OPEN || mode > TIKU_APP_PICK_LOCAL_OPEN) return;
-    if (mode == TIKU_APP_PICK_LOCAL_OPEN) {
+    if (mode < TIKU_APP_PICK_OPEN || mode > TIKU_APP_PICK_LOCAL_FOLDER)
+        return;
+    if (mode == TIKU_APP_PICK_LOCAL_OPEN ||
+        mode == TIKU_APP_PICK_LOCAL_FOLDER) {
         if (!local_picker_start(app, start, mapped, sizeof mapped)) {
             snprintf(app->status, sizeof app->status,
                      "No local filesystem is available for this application");
@@ -1012,10 +1014,14 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
     app->pending_pick.generation = app->remote.session[session].generation;
     app->pending_pick.slot = NULL;
     app->pending_pick.window = (uint32_t)window;
-    app->pending_pick.local = mode == TIKU_APP_PICK_LOCAL_OPEN;
+    app->pending_pick.local = mode == TIKU_APP_PICK_LOCAL_OPEN ||
+                              mode == TIKU_APP_PICK_LOCAL_FOLDER;
     if (mode == TIKU_APP_PICK_SAVE)
         tiku_trk_panel_window_open_save(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
+    else if (mode == TIKU_APP_PICK_LOCAL_FOLDER)  /* the panel's own way */
+        tiku_trk_panel_window_open(&app->file_panel, &app->pending_pick,
+                                   TIKU_TRK_CMD_APP_PICK, start);
     else
         tiku_trk_panel_window_open_file(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);

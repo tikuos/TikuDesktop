@@ -288,6 +288,9 @@ typedef struct tiku_app_services {
 #define TIKU_APP_PICK_SAVE 1
 /* Local-only readers receive a host path, not a device namespace path. */
 #define TIKU_APP_PICK_LOCAL_OPEN 2
+/* A local FOLDER: the one chosen, or the one the panel shows, as a host
+ * path.  An older host refuses the mode and never answers. */
+#define TIKU_APP_PICK_LOCAL_FOLDER 3
 
 /**
  * @brief Window roles for place().

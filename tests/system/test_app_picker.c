@@ -4,7 +4,7 @@
 /** @brief The painter is not linked: a full frame is the flag, as before. */
 void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
-static int panels, replies;
+static int panels, folder_panels, replies;
 static char panel_start[TIKU_PATH_MAX], answer[TIKU_PATH_MAX];
 
 void tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *p, void *target,
@@ -13,6 +13,15 @@ void tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *p, void *target,
     (void)p; (void)target; (void)filter;
     assert(command == TIKU_TRK_CMD_APP_PICK);
     panels++; snprintf(panel_start, sizeof panel_start, "%s", start);
+}
+
+/** @brief The folder chooser: the panel's own way of asking. */
+void tiku_trk_panel_window_open(tiku_trk_panel_window_t *p, void *target,
+    int command, const char *start)
+{
+    (void)p; (void)target;
+    assert(command == TIKU_TRK_CMD_APP_PICK);
+    folder_panels++; snprintf(panel_start, sizeof panel_start, "%s", start);
 }
 
 void tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *p, void *target,
@@ -57,9 +66,21 @@ int main(void)
     desktop_remote_pick(app, 0, m);
     deliver_pick(app, NULL);
     assert(replies == 1 && app->pending_pick.kind == 0);
+    /* A local folder: the folder chooser, mapped both ways, as files are. */
+    tiku_msg_t *f = tiku_msg_new(TIKU_MSG_PICK); assert(f);
+    assert(tiku_msg_add_int32(f, "window", 1));
+    assert(tiku_msg_add_int32(f, "mode", TIKU_APP_PICK_LOCAL_FOLDER));
+    assert(tiku_msg_add_string(f, "start", "/tmp"));
+    desktop_remote_pick(app, 0, f);
+    assert(folder_panels == 1 && panels == 4 &&
+           !strcmp(panel_start, "/local/tmp"));
+    deliver_pick(app, "/local/tmp/release-1.3");
+    assert(replies == 2 && !strcmp(answer, "/tmp/release-1.3"));
+    tiku_msg_free(f);
     assert(!tiku_mount_remove(app->backend, "/local"));
     desktop_remote_pick(app, 0, m);
     assert(app->pending_pick.kind == 0 && strstr(app->status, "No local"));
     tiku_msg_free(m); app->backend->ops->close(app->backend); free(app);
-    puts("PASS: local picker namespace mapping, device refusal, cancellation, session reuse");
+    puts("PASS: local picker namespace mapping, local folders, device "
+         "refusal, cancellation, session reuse");
 }
