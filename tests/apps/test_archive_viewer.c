@@ -141,6 +141,21 @@ static int there(const char *path)
     return lstat(path, &st) == 0;
 }
 
+/** @brief Before an archive is open: the window blank, on @p s, and its
+ *         status line saying nothing. */
+static void empty_tests(tiku_arcview_t *c, const tiku_surface_t *s)
+{
+    av_layout_t l = layout(c);
+    tiku_rect_t r = {l.head.x, l.head.y, l.head.w, l.head.h + l.body.h};
+
+    tiku_workspace_draw(desk);
+    assert(!c->node && !c->status[0]);
+    for (int y = r.y + 1; y < r.y + r.h - 1; y++)    /* inside its frame */
+        for (int x = r.x + 1; x < r.x + r.w - 1; x++)
+            assert((s->px[(size_t)y * s->w + x] & 0xffffffu) ==
+                   (TIKU_C_DOC & 0xffffffu));
+}
+
 /** @brief Opening, the rows of the top folder, going in and out. */
 static void browse_tests(tiku_arcview_t *c, const char *zip)
 {
@@ -363,7 +378,7 @@ int main(int argc, char **argv)
     assert(c);
     tiku_arcview_open(c);
     assert(c->window && !c->node && !av_enabled(c, AV_EXTRACT_ALL));
-    tiku_workspace_draw(desk);
+    empty_tests(c, s);
     av_action(c, AV_OPEN);
     assert(picks == 1);
     browse_tests(c, zip);

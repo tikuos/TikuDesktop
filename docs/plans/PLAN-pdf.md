@@ -217,8 +217,8 @@ an output that grows.  Nothing else in the kits changes.
    search, links and the outline find their places on them.  Where each
    document was left -- page, how far down and across, zoom, turn --
    and the documents read lately are kept in TikuPDFRecent in the
-   settings folder, a hundred of them; File > Open Recent and the empty
-   window list them, Clear Menu forgets.  Certificate encryption
+   settings folder, a hundred of them; File > Open Recent lists them
+   (the empty window stays blank), Clear Menu forgets.  Certificate encryption
    (Adobe.PubSec, every revision pyHanko writes): the reader's key file
    -- PKCS#12 by its own schemes or PBES2, or PEM -- opens the envelope
    holding the seed, RSA v1.5 or OAEP, in AES, triple DES, DES or RC2.

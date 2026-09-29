@@ -682,23 +682,6 @@ static void pv_field(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r,
                             tiku_ink(TIKU_INK_FAINT));
 }
 
-/** @brief The empty window says what it is for, and lists the documents
- *         read lately. */
-static void pv_empty(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r)
-{
-    int x = r.x + 32, y = pv_empty_top(c, r);
-
-    tiku_text_line_draw(s, (tiku_rect_t){x, y, r.w - 64, 28}, 1,
-                        "Open a PDF", TIKU_C_TEXT);
-    tiku_text_block_draw(s, (tiku_rect_t){x, y + 32, r.w - 64,
-                         PV_EMPTY_LINES * (tiku_measure_row_h() + 4)},
-        0, "Datasheets, reference manuals and papers: choose Open, or "
-        "double-click a PDF in Tracker. Pages are drawn as you reach "
-        "them; the outline, links and search work on the text the "
-        "document carries.", TIKU_C_TEXT, 4);
-    pv_recent_draw(c, s, r);
-}
-
 /** @brief The scrollbars, as the view stands. */
 static void pv_bars(tiku_pdfview_t *c, tiku_surface_t *s,
                     const pv_layout_t *l)
@@ -770,8 +753,7 @@ static void pv_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t r,
             tiku_picture(s, l.canvas.x, l.canvas.y, c->view_w, c->view_h,
                          c->view);
     } else {
-        tiku_fill(s, l.canvas, TIKU_C_DOC);
-        pv_empty(c, s, l.canvas);
+        tiku_fill(s, l.canvas, TIKU_C_DOC);     /* no document: blank */
     }
     tiku_frame(s, l.canvas, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
     pv_bars(c, s, &l);

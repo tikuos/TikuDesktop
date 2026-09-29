@@ -605,7 +605,7 @@ void tiku_arcview_open(tiku_arcview_t *c)
         if (!c->window) return;
         tiku_window_set_handlers(c->window, av_event, NULL, av_window_gone);
         tiku_window_set_size_controls(c->window, 1, 1);
-        av_say(c, "Open an archive: a ZIP, a tar, or a gzip.");
+        av_say(c, "");              /* an empty window says nothing */
     }
     tiku_workspace_activate(c->workspace, c->window);
     av_menus(c);

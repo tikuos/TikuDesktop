@@ -617,7 +617,7 @@ static int pv_canvas_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
 {
     int inside = pv_in(l->canvas, ev->x, ev->y), page;
 
-    if (!c->doc) return pv_recent_pointer(c, ev, l->canvas);
+    if (!c->doc) return 0;
     if (ev->type == TIKU_EVENT_WHEEL && inside && c->doc) {
         if (ev->modifiers & TIKU_MOD_CMD) pv_zoom_step(c, ev->dy < 0 ? 1 : -1);
         else if (ev->modifiers & TIKU_MOD_SHIFT)

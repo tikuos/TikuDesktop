@@ -47,7 +47,6 @@
 #define PV_THUMB_KEEP  64           /* thumbnails kept drawn            */
 #define PV_RECENT_KEEP 100          /* documents whose place is kept    */
 #define PV_RECENT_SHOWN 10          /* of those, the ones offered       */
-#define PV_EMPTY_LINES 4            /* the empty window's words, in lines */
 
 enum { PV_OPEN = 1, PV_CLOSE, PV_COPY, PV_SELECT_ALL, PV_FIND, PV_FIND_NEXT,
        PV_FIND_PREV, PV_OUTLINE, PV_ZOOM_IN, PV_ZOOM_OUT, PV_ACTUAL,
@@ -157,7 +156,7 @@ struct tiku_pdfview {
     uint32_t *view;                 /* the canvas, composed each frame   */
     int view_w, view_h;
     pv_place_t recent[PV_RECENT_KEEP]; /* most recent first              */
-    int nrecent, recent_hover;      /* the empty window's lit row, or -1 */
+    int nrecent;                    /* how many of those are held        */
     pv_place_t restore;             /* where the new document was left   */
     int restoring;                  /* until the first layout takes it up */
 };
@@ -178,11 +177,6 @@ static void pv_menu_add(tiku_pdfview_t *c, tiku_menu_list_t *m, int id,
 static void pv_recent_note(tiku_pdfview_t *c);
 static void pv_recent_restore(tiku_pdfview_t *c);
 static void pv_recent_apply(tiku_pdfview_t *c);
-static void pv_recent_draw(tiku_pdfview_t *c, tiku_surface_t *s,
-                           tiku_rect_t canvas);
-static int pv_recent_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
-                             tiku_rect_t canvas);
-static int pv_empty_top(const tiku_pdfview_t *c, tiku_rect_t canvas);
 
 /** @brief Something the window shows has changed. */
 static void pv_changed(tiku_pdfview_t *c)
@@ -270,7 +264,6 @@ static void pv_forget(tiku_pdfview_t *c)
     c->inflight = c->searching = c->searched = c->want_next = 0;
     c->selected = c->selecting = c->pressing = c->nback = 0;
     c->restoring = 0;
-    c->recent_hover = -1;
     c->cur = c->link_page = c->link_at = c->press_page = c->press_link = -1;
     c->widest = c->turn = 0;
     c->height = c->width = 0; c->laid_w = c->laid_h = 0;
@@ -715,7 +708,7 @@ void tiku_pdfview_open(tiku_pdfview_t *c)
         if (!c->window) return;
         tiku_window_set_handlers(c->window, pv_event, NULL, pv_window_gone);
         tiku_window_set_size_controls(c->window, 1, 1);
-        pv_say(c, "Open a PDF: a datasheet, a manual or a paper.");
+        pv_say(c, "");              /* an empty window says nothing */
     }
     tiku_workspace_activate(c->workspace, c->window);
     pv_menus(c);

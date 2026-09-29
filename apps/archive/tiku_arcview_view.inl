@@ -307,23 +307,6 @@ static void av_list_draw(tiku_arcview_t *c, tiku_surface_t *s,
     }
 }
 
-/** @brief The empty window says what it is for. */
-static void av_empty(tiku_arcview_t *c, tiku_surface_t *s, tiku_rect_t r)
-{
-    int x = r.x + 32, y = r.y + r.h / 3;
-
-    (void)c;
-    tiku_fill(s, r, TIKU_C_DOC);
-    tiku_text_line_draw(s, (tiku_rect_t){x, y, r.w - 64, 28}, 1,
-                        "Open an archive", TIKU_C_TEXT);
-    tiku_text_block_draw(s, (tiku_rect_t){x, y + 32, r.w - 64,
-                         4 * (tiku_measure_row_h() + 4)}, 0,
-        "ZIP, tar and gzip archives: choose Open, or double-click one in "
-        "Tracker. Its folders open here as Tracker's do; nothing is "
-        "extracted until you ask, and then only into a new folder.",
-        TIKU_C_TEXT, 4);
-}
-
 /** @brief The status line: what was said at the left; at the right the
  *         folder's count, or the running job's gauge and Stop. */
 static void av_status(tiku_arcview_t *c, tiku_surface_t *s,
@@ -386,8 +369,9 @@ static void av_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t r,
                             "Find", tiku_ink(TIKU_INK_FAINT));
     av_crumbs_draw(c, s, l.crumbs);
     if (c->node) av_list_draw(c, s, &l);
-    else av_empty(c, s, (tiku_rect_t){l.head.x, l.head.y, l.head.w,
-                                       l.head.h + l.body.h});
+    else                            /* no archive: the window stays blank */
+        tiku_fill(s, (tiku_rect_t){l.head.x, l.head.y, l.head.w,
+                                   l.head.h + l.body.h}, TIKU_C_DOC);
     tiku_frame(s, (tiku_rect_t){l.head.x, l.head.y, l.head.w + AV_BAR,
                l.head.h + l.body.h}, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
     if (tiku_scroll_max(&c->vbar) > 0) {

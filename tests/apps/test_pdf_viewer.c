@@ -833,12 +833,26 @@ static void recent_menu(tiku_pdfview_t *c, char *out, size_t cap)
     }
 }
 
+/** @brief Whether @p r, inside its frame, is the page colour and nothing
+ *         else on @p s: no words, no list. */
+static int blank(const tiku_surface_t *s, tiku_rect_t r)
+{
+    for (int y = r.y + 1; y < r.y + r.h - 1; y++)
+        for (int x = r.x + 1; x < r.x + r.w - 1; x++)
+            if ((s->px[(size_t)y * s->w + x] & 0xffffffu) !=
+                (TIKU_C_DOC & 0xffffffu))
+                return 0;
+    return 1;
+}
+
 /** @brief Where each document was left comes back when it opens again,
  *         turn and zoom too; Open Recent lists the documents, newest first,
- *         and the empty window does; lines the file should not hold are
- *         passed over; a document gone is said so; Clear Menu forgets. */
-static void recent_tests(tiku_pdfview_t *c, const char *file,
-                         const char *other, const char *list)
+ *         while the empty window on @p s stays blank; lines the file should
+ *         not hold are passed over; a document gone is said so; Clear Menu
+ *         forgets. */
+static void recent_tests(tiku_pdfview_t *c, tiku_surface_t *s,
+                         const char *file, const char *other,
+                         const char *list)
 {
     char real[PATH_MAX], menu[512], line[1024];
     tiku_pdfview_t *d;
@@ -899,21 +913,21 @@ static void recent_tests(tiku_pdfview_t *c, const char *file,
            !d->recent[0].gone && d->recent[1].gone);
     tiku_pdfview_destroy(d);
 
-    /* The empty window lists them; a row opens its document. */
+    /* The empty window stays blank though documents were read: they are
+     * under File > Open Recent, and a click on it opens none of them. */
     tiku_pdfview_close(c);
     settle(c);
     tiku_pdfview_open(c);
-    tiku_workspace_draw(desk);
-    assert(!c->doc && c->nrecent >= 2);
-    tiku_rect_t row = pv_recent_row(c, layout(c).canvas, 1);
-    assert(row.w && pv_recent_shown(c, 1) == 1);
+    tiku_rect_t page = layout(c).canvas;
     tiku_event_t move = {.type = TIKU_EVENT_POINTER_MOVE,
-                         .x = row.x + 10, .y = row.y + 4};
+                         .x = page.x + page.w / 2, .y = page.y + page.h / 2};
     pv_event(c->window, &move, c);
-    assert(c->recent_hover == 1 && !strcmp(c->hint, c->recent[1].path));
-    click(c, row.x + 10, row.y + 4);
+    tiku_workspace_draw(desk);
+    assert(!c->doc && c->nrecent >= 2 && !c->status[0]);
+    assert(blank(s, page));
+    click(c, page.x + 60, page.y + page.h / 2);
     settle(c);
-    assert(c->doc && !strcmp(c->path, c->recent[0].path));
+    assert(!c->doc);
 
     /* A document gone from where it was is said so, and not offered. */
     snprintf(c->recent[1].path, sizeof c->recent[1].path, "%s.gone", real);
@@ -992,7 +1006,7 @@ int main(int argc, char **argv)
     locked_tests(c, dir);
     sealed_tests(c, dir);
     signature_tests(c, dir);
-    recent_tests(c, file, other, list);
+    recent_tests(c, s, file, other, list);
 
     tiku_pdfview_close(c);
     settle(c);
