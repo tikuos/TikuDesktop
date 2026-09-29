@@ -36,7 +36,7 @@
 
 enum { AV_OPEN = 1, AV_CLOSE, AV_UP, AV_EXTRACT_ALL, AV_EXTRACT,
        AV_EXTRACT_TO, AV_OPEN_ENTRY, AV_SHOW, AV_CANCEL, AV_SELECT_ALL,
-       AV_COPY, AV_FIND, AV_METADATA, AV_LIST, AV_FIND_FIELD };
+       AV_COPY, AV_FIND, AV_METADATA, AV_LIST, AV_FIND_FIELD, AV_REPORT };
 enum { AV_BY_NAME, AV_BY_SIZE, AV_BY_PACKED, AV_BY_DATE };
 
 /** @brief A folder or file of the tree an archive's paths make. */
@@ -97,7 +97,7 @@ struct tiku_arcview {
     char doing[64];                 /* what that job is: "Extracting"    */
     long long drawn;                /* the progress last drawn            */
     char made[TIKU_PATH_MAX];       /* the last extraction's folder       */
-    char temp[TIKU_PATH_MAX];       /* where Open puts files, or ""       */
+    char *report;                  /* last extraction's detailed report */
 };
 
 static void av_menus(tiku_arcview_t *c);
@@ -275,6 +275,7 @@ static const char *av_label(tiku_arcview_t *c, int id)
     case AV_COPY: return "Copy Names";
     case AV_FIND: return "Find";
     case AV_METADATA: return "Show Mac Metadata";
+    case AV_REPORT: return "Copy Extraction Report";
     }
     return "";
 }
@@ -286,7 +287,7 @@ static int av_enabled(tiku_arcview_t *c, int id)
                tiku_list_selection_count(&c->list) > 0;
 
     switch (id) {
-    case AV_OPEN: return !c->loading;
+    case AV_OPEN: return !c->loading && !c->busy;
     case AV_CLOSE: return 1;
     case AV_UP: return open && c->cwd != 0;
     case AV_EXTRACT_ALL:
@@ -294,6 +295,7 @@ static int av_enabled(tiku_arcview_t *c, int id)
     case AV_EXTRACT: return some && !c->busy && !c->gz;
     case AV_OPEN_ENTRY: return some && !c->busy;
     case AV_SHOW: return c->made[0] != '\0';
+    case AV_REPORT: return c->report != NULL;
     case AV_CANCEL: return c->progress != NULL;
     case AV_SELECT_ALL:
     case AV_COPY: return open && c->nrows > 0;
@@ -304,7 +306,7 @@ static int av_enabled(tiku_arcview_t *c, int id)
 }
 
 /** @brief The chosen row that opens: a folder goes in, a file is
- *         extracted to a private folder and opened in its program. */
+ *         extracted to a retained folder and opened in its program. */
 static void av_open_row(tiku_arcview_t *c)
 {
     int r = tiku_list_chosen(&c->list), n;
@@ -363,8 +365,12 @@ static void av_action(tiku_arcview_t *c, int id)
         break;
     case AV_CANCEL:
         atomic_store(&c->progress->stop, 1);
-        if (c->arc) (void)tiku_work_cancel(c->arc->key);
         av_say(c, "Stopping...");
+        break;
+    case AV_REPORT:
+        if (tiku_clipboard_import(c->report, strlen(c->report)))
+            av_say(c, "Extraction report copied.");
+        else av_say(c, "Could not copy the extraction report.");
         break;
     case AV_SELECT_ALL: tiku_list_select_all(&c->list); break;
     case AV_COPY: av_copy_names(c); break;
@@ -563,6 +569,7 @@ static void av_menus(tiku_arcview_t *c)
                 TIKU_MOD_CMD | TIKU_MOD_SHIFT, 0);
     av_menu_add(c, &m.menu[0], AV_EXTRACT_TO, 0, 0, 0);
     av_menu_add(c, &m.menu[0], AV_SHOW, 0, 0, 0);
+    av_menu_add(c, &m.menu[0], AV_REPORT, 0, 0, 0);
     av_menu_add(c, &m.menu[0], AV_CANCEL, '.', TIKU_MOD_CMD, 0);
     av_menu_add(c, &m.menu[0], AV_CLOSE, 'w', TIKU_MOD_CMD, 0);
     av_menu_add(c, &m.menu[1], AV_COPY, 'c', TIKU_MOD_CMD, 0);
@@ -617,41 +624,11 @@ void tiku_arcview_close(tiku_arcview_t *c)
     if (c && c->window) tiku_workspace_close(c->workspace, c->window);
 }
 
-/** @brief @p name in folder @p at removed, a folder with all it holds to
- *         @p depth levels down; a link is removed, never followed.  The
- *         POSIX-2008 *at calls, not nftw: glibc hides that behind X/Open. */
-static void av_rm(int at, const char *name, int depth)
-{
-    int fd = openat(at, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW |
-                    O_CLOEXEC);
-    DIR *d = fd >= 0 ? fdopendir(fd) : NULL;
-    struct dirent *e;
-    int pass, left = 1;
-
-    if (!d) {                           /* a file, a link, or gone */
-        if (fd >= 0) close(fd);
-        else (void)unlinkat(at, name, 0);
-        return;
-    }
-    for (pass = 0; pass < 3 && left; pass++) {  /* a folder read while */
-        rewinddir(d);                           /* it shrinks may skip */
-        left = 0;
-        while ((e = readdir(d)) != NULL) {
-            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            left = 1;
-            if (depth > 0) av_rm(dirfd(d), e->d_name, depth - 1);
-        }
-    }
-    closedir(d);
-    (void)unlinkat(at, name, AT_REMOVEDIR);
-}
-
 void tiku_arcview_destroy(tiku_arcview_t *c)
 {
     if (!c) return;
     tiku_arcview_close(c);
     c->generation++;
-    if (c->temp[0]) av_rm(AT_FDCWD, c->temp, 8);
     c->workspace = NULL;
     c->dirty = NULL;
     memset(&c->host, 0, sizeof c->host);

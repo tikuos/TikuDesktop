@@ -47,16 +47,20 @@ static int av_tools_layout(tiku_arcview_t *c, tiku_rect_t r, av_layout_t *l)
     static const int ids[] = { AV_OPEN, AV_UP, AV_EXTRACT_ALL, AV_EXTRACT,
                                AV_SHOW };
     int bw = av_tool_size(), bh = tiku_ui_button_h(), x = r.x + 6;
-    int y = r.y + 4, fw = r.w - 12 - 5 * (bw + 2) - 30;
+    int y = r.y + 4, fw;
 
     for (size_t i = 0; i < sizeof ids / sizeof ids[0]; i++) {
         if (ids[i] == AV_UP || ids[i] == AV_EXTRACT_ALL ||
             ids[i] == AV_SHOW) x += 10;
+        if (x + bw > r.x + r.w - 6) { x = r.x + 6; y += bw + 4; }
         (void)tiku_dialog_add(&c->dialog, ids[i], (tiku_rect_t){x, y, bw, bw},
                               TIKU_DIALOG_BUTTON, av_enabled(c, ids[i]));
         x += bw + 2;
     }
-    fw = fw < AV_FIND_W ? (fw > 60 ? fw : 60) : AV_FIND_W;
+    fw = r.x + r.w - 6 - x - 10;
+    if (fw < 100) { x = r.x + 6; y += bw + 4; fw = r.w - 12; }
+    if (fw > AV_FIND_W) fw = AV_FIND_W;
+    if (fw < 1) fw = 1;
     l->find = (tiku_rect_t){r.x + r.w - 6 - fw, y + (bw - bh) / 2, fw, bh};
     (void)tiku_dialog_add(&c->dialog, AV_FIND_FIELD, l->find,
                           TIKU_DIALOG_INPUT, c->node != NULL);
@@ -89,8 +93,11 @@ static av_layout_t av_layout(tiku_arcview_t *c, tiku_rect_t r)
 
         l.cancel = (tiku_rect_t){l.status.x + l.status.w - cw, l.status.y,
                                  cw, bh};
-        l.gauge = (tiku_rect_t){l.cancel.x - 176, l.status.y +
-                                (bh - 12) / 2, 168, 12};
+        int gw = l.status.w - cw - 8;
+        if (gw > 168) gw = 168;
+        if (gw < 1) gw = 1;
+        l.gauge = (tiku_rect_t){l.cancel.x - gw - 8, l.status.y +
+                                (bh - 12) / 2, gw, 12};
         (void)tiku_dialog_add(&c->dialog, AV_CANCEL, l.cancel,
                               TIKU_DIALOG_BUTTON, 1);
     }
@@ -216,11 +223,19 @@ static void av_crumbs_draw(tiku_arcview_t *c, tiku_surface_t *s,
 }
 
 /** @brief The name column's width in @p body. */
+static int av_columns(tiku_rect_t body)
+{
+    if (body.w >= 160 + 2 * AV_SIZE_W + AV_DATE_W) return 4;
+    if (body.w >= 160 + 2 * AV_SIZE_W) return 3;
+    if (body.w >= 120 + AV_SIZE_W) return 2;
+    return 1;
+}
+
 static int av_name_w(tiku_rect_t body)
 {
-    int w = body.w - 2 * AV_SIZE_W - AV_DATE_W;
-
-    return w > 80 ? w : 80;
+    int n = av_columns(body);
+    return body.w - (n >= 2 ? AV_SIZE_W : 0) -
+           (n >= 3 ? AV_SIZE_W : 0) - (n == 4 ? AV_DATE_W : 0);
 }
 
 /** @brief A time as the list shows it, or a dash for none. */
@@ -271,12 +286,15 @@ static void av_row_draw(tiku_arcview_t *c, tiku_surface_t *s, tiku_rect_t r,
              n->flags & TIKU_ARC_ENCRYPTED ? "  (locked)" : "");
     tiku_text_line_draw(s, (tiku_rect_t){r.x + 26, r.y, nw - 30, r.h},
                         TIKU_MEASURE_PLAIN, text, ink);
+    if (av_columns(r) < 2) return;
     av_bytes_fit(n->dir ? -1 : n->size, AV_SIZE_W - 8, cell, sizeof cell);
     tiku_text_line_draw(s, (tiku_rect_t){r.x + nw, r.y, AV_SIZE_W - 8, r.h},
                         TIKU_MEASURE_PLAIN, cell, ink);
+    if (av_columns(r) < 3) return;
     av_bytes_fit(n->dir ? -1 : n->packed, AV_SIZE_W - 8, cell, sizeof cell);
     tiku_text_line_draw(s, (tiku_rect_t){r.x + nw + AV_SIZE_W, r.y,
                         AV_SIZE_W - 8, r.h}, TIKU_MEASURE_PLAIN, cell, ink);
+    if (av_columns(r) < 4) return;
     av_when(n->mtime, cell, sizeof cell);
     tiku_text_line_draw(s, (tiku_rect_t){r.x + nw + 2 * AV_SIZE_W, r.y,
                         AV_DATE_W - 4, r.h}, TIKU_MEASURE_PLAIN, cell, ink);
@@ -292,7 +310,9 @@ static void av_list_draw(tiku_arcview_t *c, tiku_surface_t *s,
     int top = c->list.top, seen = tiku_list_visible_rows(&c->list, l->body);
     tiku_rect_t clip = s->clip;
 
-    tiku_ui_list_header(s, l->head, cols, widths, 4, c->sort);
+    int columns = av_columns(l->body);
+    tiku_ui_list_header(s, l->head, cols, widths, columns,
+                        c->sort < columns ? c->sort : -1);
     tiku_fill(s, l->body, TIKU_C_DOC);
     tiku_clip_set(s, l->body);      /* inside the window's own clip */
     for (int row = top; row < c->nrows && row <= top + seen; row++)

@@ -34,6 +34,7 @@ static av_progress_t *av_progress_new(tiku_arcview_t *c, const char *doing)
 /** @brief The shown archive let go, and all that was built from it. */
 static void av_forget(tiku_arcview_t *c)
 {
+    if (c->progress) atomic_store(&c->progress->stop, 1);
     av_arc_unref(c->arc);
     c->arc = NULL;
     av_tree_free(c->node, c->nnode);
@@ -42,6 +43,8 @@ static void av_forget(tiku_arcview_t *c)
     free(c->rows);
     c->rows = NULL;
     c->path[0] = c->made[0] = '\0';
+    free(c->report);
+    c->report = NULL;
     c->busy = 0;
     av_progress_unref(c->progress);
     c->progress = NULL;
@@ -374,8 +377,9 @@ static int av_load(tiku_arcview_t *c, const char *path)
     tiku_work_job_t work;
 
     if (!path || !*path || strlen(path) >= TIKU_PATH_MAX) return 0;
-    if (c->loading) {
-        av_say(c, "An archive is still opening. Try again in a moment.");
+    if (c->loading || c->busy) {
+        av_say(c, "An archive operation is still running. "
+                  "Stop it or wait before opening another.");
         return 0;
     }
     if (!(j = calloc(1, sizeof *j))) return 0;
@@ -421,7 +425,24 @@ typedef struct {
     long counts[TIKU_ARCHIVE_NOMEM + 1];    /* entries not made, by why  */
     char first_bad[256];                    /* the first of them          */
     tiku_archive_err_t first_why;
+    char *report;
+    size_t report_len;
+    int report_incomplete;
 } av_extract_t;
+
+/** @brief Keep full paths and reasons, with an explicit bounded-report
+ *         limit. */
+static void av_report_append(av_extract_t *j, const char *path, const char *why)
+{
+    size_t n = strlen(path) + strlen(why) + 4;
+    if (j->report_incomplete) return;
+    if (n > (1u << 20) - j->report_len) { j->report_incomplete = 1; return; }
+    char *more = realloc(j->report, j->report_len + n + 1);
+    if (!more) { j->report_incomplete = 1; return; }
+    j->report = more;
+    j->report_len += (size_t)snprintf(more + j->report_len, n + 1,
+                                     "%s: %s\n", path, why);
+}
 
 /** @brief Extraction's progress, and its Cancel. */
 static int av_extract_progress(void *ctx, int64_t done, int64_t total)
@@ -441,6 +462,7 @@ static void av_extract_report(void *ctx, long entry, tiku_archive_err_t why)
 
     if ((unsigned)why > TIKU_ARCHIVE_NOMEM) return;
     j->counts[why]++;
+    if (e) av_report_append(j, e->path, tiku_archive_strerror(why));
     if (!j->first_bad[0] && why != TIKU_ARCHIVE_REPLACED && e) {
         snprintf(j->first_bad, sizeof j->first_bad, "%s", e->path);
         j->first_why = why;
@@ -452,6 +474,11 @@ static void av_extract_run(void *ctx)
 {
     av_extract_t *j = ctx;
     tiku_archive_extract_t opt;
+
+    if (av_stopped(j, j->progress)) {
+        j->err = TIKU_ARCHIVE_CANCELLED;
+        return;
+    }
 
     if (j->name[0]) {
         if (tiku_archive_new_folder(j->parent, j->name, j->dest,
@@ -481,7 +508,9 @@ static void av_extract_said(const av_extract_t *j, char *out, size_t max)
     folder = folder ? folder + 1 : j->dest;
     for (int k = 1; k <= TIKU_ARCHIVE_NOMEM; k++)
         if (k != TIKU_ARCHIVE_REPLACED) bad += j->counts[k];
-    if (j->err == TIKU_ARCHIVE_CANCELLED)
+    if (j->err == TIKU_ARCHIVE_CANCELLED && !j->dest[0])
+        snprintf(out, max, "Stopped before anything was extracted.");
+    else if (j->err == TIKU_ARCHIVE_CANCELLED)
         snprintf(out, max, "Stopped. What was extracted so far is in "
                  "\"%.120s\".", folder);
     else if (j->err == TIKU_ARCHIVE_WRITE && !j->first_bad[0])
@@ -512,19 +541,28 @@ static void av_extract_done(void *ctx)
 
     j->landed = 1;
     if (j->generation != c->generation || !c->workspace) return;
+    av_extract_said(j, said, sizeof said);
+    free(c->report);
+    size_t cap = strlen(said) + strlen(j->dest) + j->report_len + 200;
+    c->report = malloc(cap);
+    if (c->report)
+        snprintf(c->report, cap, "%s\nDestination: %s\n%s%s", said,
+                 j->dest[0] ? j->dest : "(none)", j->report ? j->report : "",
+                 j->report_incomplete ? "\nReport incomplete: memory or "
+                                        "1 MiB report limit reached.\n" : "");
+    if (j->dest[0]) snprintf(c->made, sizeof c->made, "%s", j->dest);
     if (j->open_after && j->err == TIKU_ARCHIVE_OK) {
         n = snprintf(file, sizeof file, "%s/%s", j->dest, j->leaf);
         if (n > 0 && (size_t)n < sizeof file &&  /* never a cut-off path */
             c->host.open_path && c->host.open_path(c->host.ctx, file))
-            snprintf(said, sizeof said, "Opened %.200s.", j->leaf);
+            snprintf(said, sizeof said, "Opened %.100s. Copy kept in %.100s; "
+                     "edits do not update the archive.", j->leaf, j->dest);
         else
             snprintf(said, sizeof said, "Extracted %.200s, but nothing "
                      "opened it.", j->leaf);
         av_say(c, said);
         return;
     }
-    if (!j->open_after && j->dest[0])
-        snprintf(c->made, sizeof c->made, "%s", j->dest);
     av_extract_said(j, said, sizeof said);
     av_say(c, said);
 }
@@ -547,6 +585,7 @@ static void av_extract_free(void *ctx)
     av_progress_unref(j->progress);
     av_arc_unref(j->arc);
     free(j->which);
+    free(j->report);
     if (c->workspace) {
         av_menus(c);
         av_changed(c);
@@ -660,25 +699,15 @@ static int av_extract(tiku_arcview_t *c, int all, const char *to)
     return av_extract_post(c, j, "Extracting");
 }
 
-/** @brief File @p node extracted alone into a folder of this viewer's own,
- *         then opened in its program.  @return 1 when it started. */
+/** @brief Open a durable extracted copy; never delete another app's
+ *         document. */
 static int av_open_entry(tiku_arcview_t *c, int node)
 {
     av_extract_t *j;
-    const char *tmp = getenv("TMPDIR");
 
     if (c->busy) {
         av_say(c, "An extraction is under way.");
         return 0;
-    }
-    if (!c->temp[0]) {
-        snprintf(c->temp, sizeof c->temp, "%s/TikuArchive-XXXXXX",
-                 tmp && *tmp ? tmp : "/tmp");
-        if (!mkdtemp(c->temp)) {
-            c->temp[0] = '\0';
-            av_say(c, "No private folder could be made to open it in.");
-            return 0;
-        }
     }
     if (!(j = calloc(1, sizeof *j)) ||
         !(j->which = calloc((size_t)tiku_archive_count(c->arc->a), 1))) {
@@ -688,8 +717,15 @@ static int av_open_entry(tiku_arcview_t *c, int node)
     j->which[c->node[node].entry] = 1;
     j->open_after = 1;
     av_node_path(c->node, c->node[node].parent, j->strip, sizeof j->strip);
-    snprintf(j->parent, sizeof j->parent, "%s", c->temp);
-    snprintf(j->name, sizeof j->name, "open");
+    av_archive_dir(c, j->parent, sizeof j->parent);
+    if (access(j->parent, W_OK) != 0) {
+        free(j->which);
+        free(j);
+        av_say(c, "This folder is read-only. Use Extract Selected To..., "
+                  "then open the extracted file.");
+        return 0;
+    }
+    tiku_archive_folder_name(c->path, j->name, sizeof j->name);
     snprintf(j->leaf, sizeof j->leaf, "%s", c->node[node].name);
     av_say(c, "Opening...");
     return av_extract_post(c, j, "Opening");

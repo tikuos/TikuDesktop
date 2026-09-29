@@ -5,7 +5,11 @@
  * toolbar and closing.  SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include <unistd.h>
+#include "tiku_work.h"
+static int audit_post(const tiku_work_job_t *job);
+#define tiku_work_post audit_post
 #include "../../apps/archive/tiku_arcview.c"
+#undef tiku_work_post
 #include "tiku_icons.h"
 #include "tiku_text_input.h"
 #include "../fixtures/archive.inc"
@@ -14,6 +18,27 @@ static tiku_workspace_t *desk;
 static char scratch[PATH_MAX];
 static int picks, saves;            /* the questions put to the person   */
 static char opened[PATH_MAX];       /* the last path handed to open_path */
+static int gate_extraction;
+static atomic_int extraction_written;
+
+/* Hold the worker after writing files, before its result reaches the UI.
+ * This makes cancellation during RUNNING deterministic, without a huge
+ * fixture. */
+static void gated_extract(void *ctx)
+{
+    av_extract_t *j = ctx;
+    av_extract_run(ctx);
+    atomic_store(&extraction_written, 1);
+    while (!atomic_load(&j->progress->stop)) usleep(1000);
+    j->err = TIKU_ARCHIVE_CANCELLED;
+}
+
+static int audit_post(const tiku_work_job_t *job)
+{
+    tiku_work_job_t copy = *job;
+    if (gate_extraction && copy.run == av_extract_run) copy.run = gated_extract;
+    return tiku_work_post(&copy);
+}
 
 /** @brief The Open and Save panels, as counted questions. */
 static void host_pick(void *ctx, int save, const char *start,
@@ -246,8 +271,7 @@ static void extract_tests(tiku_arcview_t *c)
     assert(!strcmp(opened + strlen(opened) - 6, "Chosen"));
 }
 
-/** @brief A file opened from inside: extracted to the viewer's own folder
- *         and handed to its program; that folder gone when the viewer is. */
+/** @brief A file opened from inside is a retained copy, safe to edit. */
 static void open_entry_tests(tiku_arcview_t *c)
 {
     FILE *f;
@@ -256,11 +280,14 @@ static void open_entry_tests(tiku_arcview_t *c)
     tiku_list_select_only(&c->list, row_of(c, "stamped.txt"));
     press(c, TIKU_KEY_RETURN, 0);
     settle(c);
-    assert(strstr(opened, "/TikuArchive-") && strstr(opened, "/stamped.txt"));
+    assert(!strncmp(opened, scratch, strlen(scratch)) &&
+           strstr(opened, "/stamped.txt"));
     assert(strstr(c->status, "Opened stamped.txt"));
     f = fopen(opened, "r");
     assert(f && fgets(line, sizeof line, f) && !strcmp(line, "stamped\n"));
     fclose(f);
+    f = fopen(opened, "w");
+    assert(f && fputs("edited copy\n", f) >= 0 && fclose(f) == 0);
 }
 
 /** @brief Stop before a job starts: nothing made, said so. */
@@ -296,6 +323,57 @@ static void hostile_tests(tiku_arcview_t *c, const char *zip)
     settle(c);
     assert(strstr(c->status, "but 3 not") &&
            strstr(c->status, "reach outside"));
+    assert(c->report && strstr(c->report, "../climb.txt"));
+    av_action(c, AV_REPORT);
+    assert(!strcmp(tiku_clipboard_text(), c->report));
+    for (long i = 0; i < tiku_archive_count(c->arc->a); i++) {
+        const tiku_archive_entry_t *e = tiku_archive_entry(c->arc->a, i);
+        if (e->flags & TIKU_ARC_REFUSED) assert(strstr(c->report, e->path));
+    }
+    av_extract_t bounded = {.report_len = 1u << 20};
+    av_report_append(&bounded, "file", "failure");
+    assert(bounded.report_incomplete && !bounded.report);
+}
+
+static void running_cancel_tests(tiku_arcview_t *c, const char *zip)
+{
+    char dest[PATH_MAX], file[PATH_MAX];
+    assert(tiku_arcview_file(c, zip));
+    settle(c);
+    snprintf(dest, sizeof dest, "%s/cancelled", scratch);
+    snprintf(file, sizeof file, "%s/cancelled/stamped.txt", scratch);
+    atomic_store(&extraction_written, 0);
+    gate_extraction = 1;
+    assert(av_extract(c, 1, dest));
+    for (int i = 0; i < 5000 && !atomic_load(&extraction_written); i++)
+        usleep(1000);
+    assert(atomic_load(&extraction_written) && there(file));
+    assert(!tiku_arcview_file(c, zip)); /* cannot orphan an operation */
+    av_action(c, AV_CANCEL);
+    settle(c);
+    gate_extraction = 0;
+    assert(strstr(c->status, "What was extracted so far"));
+    assert(!strcmp(c->made, dest) && av_enabled(c, AV_SHOW));
+    assert(c->report && strstr(c->report, dest));
+}
+
+static void narrow_tests(tiku_arcview_t *c)
+{
+    for (int width = 180; width <= 760; width += 20) {
+        av_layout_t l = av_layout(c, (tiku_rect_t){0, 0, width, 500});
+        for (int i = 0; i < c->dialog.count; i++) {
+            const tiku_dialog_control_t *a = &c->dialog.control[i];
+            if (a->kind != TIKU_DIALOG_BUTTON) continue;
+            assert(a->rect.x >= 0 && a->rect.x + a->rect.w <= width);
+            assert(a->rect.y + a->rect.h <= l.find.y ||
+                   l.find.y + l.find.h <= a->rect.y ||
+                   a->rect.x + a->rect.w <= l.find.x ||
+                   l.find.x + l.find.w <= a->rect.x);
+        }
+        assert(av_name_w(l.body) > 0);
+        assert(l.find.x >= 0 && l.find.x + l.find.w <= width);
+    }
+    (void)layout(c);
 }
 
 /** @brief A gzip's one file beside the archive, under a new name the
@@ -384,7 +462,9 @@ int main(int argc, char **argv)
     browse_tests(c, zip);
     find_sort_tests(c);
     extract_tests(c);
+    narrow_tests(c);
     open_entry_tests(c);
+    snprintf(temp, sizeof temp, "%s", opened);
     toolbar_tests(c);
     tiku_workspace_draw(desk);
     if (argc > 1) {
@@ -392,17 +472,23 @@ int main(int argc, char **argv)
         assert(tiku_surface_png(s, cmd) == 0);
     }
     stop_tests(c, tgz);
+    running_cancel_tests(c, zip);
     hostile_tests(c, hostile);
     gzip_and_other_tests(c);
-    snprintf(temp, sizeof temp, "%s", c->temp);
 
     tiku_arcview_close(c);
     settle(c);
     assert(!c->window && !c->node);
     tiku_arcview_destroy(c);
+    tiku_workspace_free(desk);
     desk = NULL;
     settle(NULL);
-    assert(!there(temp));           /* the files it opened, gone with it */
+    assert(there(temp));            /* another application's file survives */
+    FILE *saved = fopen(temp, "r");
+    char saved_text[32];
+    assert(saved && fgets(saved_text, sizeof saved_text, saved));
+    assert(!strcmp(saved_text, "edited copy\n"));
+    fclose(saved);
     tiku_workspace_free(tiku_workspace_new(s));
     tiku_surface_free(s);
     snprintf(cmd, sizeof cmd, "rm -rf '%s'", scratch);

@@ -42,9 +42,20 @@ under its own name, or "name 2" when that name is taken.</li>
 toolbar) opens the folder the last extraction made.</li>
 </ul>
 <p>To open one file from inside an archive, double-click it or press
-Return: it is extracted to a folder of TikuArchive's own and opened in
-its program, as a double-click in Tracker would. That folder is removed
-when TikuArchive quits.</p>
+Return. TikuArchive extracts a copy into a new folder beside the archive
+and opens it in its associated application. The copy remains when
+TikuArchive closes, so another application can keep reading or editing it.
+Edits affect the extracted copy, not the archive. Use <b>Show Extracted
+in Tracker</b> to find it. If the archive's folder is read-only, use
+<b>Extract Selected To...</b> first, then open the extracted file.</p>
+<p><b>Stop</b> keeps files that finished extracting and removes the current
+incomplete file. The status reports the output folder when one was created.
+<b>File &gt; Copy Extraction Report</b> copies the destination, outcome,
+and the paths and reasons for skipped, failed, or replaced entries. Paste
+it into the text editor to inspect or save it. Reports are limited to
+1 MiB of entry details; a truncated report is explicitly marked incomplete.</p>
+<p>In a narrow window, toolbar controls wrap and the Modified, Packed,
+then Size columns are hidden to leave room for filenames.</p>
 <h2 id="safety">What is never done</h2>
 <p>An archive's names are a stranger's, so extracting checks each one.
 A name that would climb out of the new folder (with "..") or that holds a

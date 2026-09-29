@@ -373,13 +373,15 @@ gz_trailer(gzip_stream_t *g)
     long i;
 
     if (n < 0) {
+        free(next);
         return -1;
     }
     if (g->pb_len - g->pb_at > PUSHBACK - n) {
         free(next);
         return -1;
     }
-    memcpy(next + n, g->pb + g->pb_at, (size_t)(g->pb_len - g->pb_at));
+    if (g->pb_len > g->pb_at)
+        memcpy(next + n, g->pb + g->pb_at, (size_t)(g->pb_len - g->pb_at));
     g->pb_len = n + g->pb_len - g->pb_at;
     g->pb_at = 0;
     free(g->pb);
