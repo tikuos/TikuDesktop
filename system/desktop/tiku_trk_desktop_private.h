@@ -848,6 +848,13 @@ void desktop_damage_all(desktop_t *app);
 void desktop_frame_report(desktop_t *app, FILE *out);
 void global_bar_status_draw(desktop_t *app, tiku_rect_t strip);
 void desktop_screenshot_tick(desktop_t *app);
+/* Screenshots (tiku_trk_desktop_grab.c): the desk's own, and those an
+ * application asks for over its session. */
+int desktop_shot_path(const char *what, char *out, size_t max);
+int desktop_shot_save(desktop_t *app, int session, const char *what,
+                      uint32_t *px, int w, int h, int alpha);
+void desktop_shot_desk(desktop_t *app);
+void desktop_grab(desktop_t *app, int session, const tiku_msg_t *msg);
 void set_backdrop_color(void *context, const tiku_trk_color_t *color);
 
 /* tiku_trk_desktop_drivers.c */

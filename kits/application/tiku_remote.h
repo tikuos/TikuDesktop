@@ -346,6 +346,13 @@ const uint32_t *tiku_remote_pixels(
 #define TIKU_MSG_CLIP   0x636c6970u   /* 'clip' */
 /* Ask the desktop to open a namespace path with its normal file handler. */
 #define TIKU_MSG_OPENPATH 0x6f706174u /* 'opat', string "path" */
+/* A screenshot, asked of the desktop by an application that cannot see
+ * the desk.  ASK int32 "what" (TIKU_GRAB_*), int64 "id" for a window.
+ * ANSWER int32 "list" and a string "title" and int64 "id" a window; or
+ * string "path", int32 "w" and "h", int64 "size"; or string "error". */
+#define TIKU_MSG_GRAB    0x67726162u  /* 'grab' */
+#define TIKU_MSG_GRABBED 0x67726264u  /* 'grbd' */
+enum { TIKU_GRAB_LIST = 0, TIKU_GRAB_DESK = 1, TIKU_GRAB_WINDOW = 2 };
 /* Local image dispatch; the reply acknowledges opening, not decoding. */
 #define TIKU_MSG_IMAGEOPEN 0x696f706eu /* 'iopn', string "path" */
 #define TIKU_MSG_IMAGEOPENED 0x696f7064u /* 'iopd', int32 "accepted" */

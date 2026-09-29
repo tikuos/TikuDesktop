@@ -88,6 +88,8 @@ test_app_discovery_SRCS := system/shared/core/tiku_trk_launch.c
 test_app_discovery_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_app_picker_CFLAGS := -ffunction-sections -fdata-sections
 test_app_picker_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
+test_grab_service_CFLAGS := -ffunction-sections -fdata-sections
+test_grab_service_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_runner_CFLAGS := -ffunction-sections -fdata-sections
 test_runner_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
 $(BUILD)/tests/test_runner: | $(RUNTIME)/apps/image/TikuImage.so \

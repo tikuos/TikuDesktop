@@ -237,38 +237,14 @@ draw_all(desktop_t *app)
 void
 desktop_screenshot_tick(desktop_t *app)
 {
-    char desk[TIKU_PATH_MAX], dir[TIKU_PATH_MAX], path[TIKU_PATH_MAX];
-    struct tm when;
-    time_t now = time(NULL);
-
     if (!app->shot_pending) {
         return;
     }
     app->shot_pending = 0;
     app->shot_pressed = 0;
     /* A Screenshots folder on the desktop itself, so a shot is where a
-     * person looks for it. */
-    (void)tiku_desktop_dir(desk, sizeof desk);
-    (void)tiku_state_mkparents(desk);
-    (void)mkdir(desk, 0755);
-    snprintf(dir, sizeof dir, "%s/Screenshots", desk);
-    (void)mkdir(dir, 0755);
-    (void)localtime_r(&now, &when);
-    snprintf(path, sizeof path,
-             "%s/tiku-screenshot-%04d%02d%02d-%02d%02d%02d.png", dir,
-             when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
-             when.tm_hour, when.tm_min, when.tm_sec);
-        if (tiku_surface_png(app->surf, path) == 0) {
-        const char *leaf = strrchr(path, '/');
-
-        snprintf(app->status, sizeof app->status,
-                 "screenshot saved to Screenshots/%s",
-                 (leaf != NULL) ? leaf + 1 : path);
-        tiku_trail("screenshot %s", path);
-    } else {
-        snprintf(app->status, sizeof app->status,
-                 "could not save the screenshot");
-    }
+     * person looks for it: compressed on a worker, which says where. */
+    desktop_shot_desk(app);
     desktop_damage_all(app);
 }
 

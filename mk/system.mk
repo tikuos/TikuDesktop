@@ -164,7 +164,8 @@ DESKTOP_SHELL := system/desktop/tiku_trk_desktop.c \
                  system/desktop/tiku_trk_desktop_vfs.c \
                  system/desktop/tiku_trk_desktop_startup.c \
                  system/desktop/tiku_trk_desktop_associations.c \
-                 system/desktop/tiku_trk_desktop_forcequit.c
+                 system/desktop/tiku_trk_desktop_forcequit.c \
+                 system/desktop/tiku_trk_desktop_grab.c
 
 # tiku_trk_deskbar, one composition over the files of one directory.
 DESKBAR := system/deskbar/bar/tiku_trk_deskbar.c \
