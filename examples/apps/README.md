@@ -51,6 +51,14 @@ Apps own surfaces, models and workers; the desktop owns composition, chrome,
 focus and placement. Native controllers can use `tiku_window_app` to publish
 an app-owned workspace without importing desktop internals.
 
+Each application gets its own Deskbar row, wearing the icon its manifest
+names, with its windows under it. It can also put an icon beside the
+Deskbar's clock with `tiku_app_tray_set(services, id, icon, text, tip)`:
+a name from the desk's icon set, a few characters after it, and a tip.
+A click on it arrives at `message()` as `TIKU_MSG_TRAYHIT` with the id.
+No icon and no text take it away, and it goes when the application quits.
+TikuGrab shows its countdown this way.
+
 The historical `TIKU_APP_EMBED`/`TIKU_EXAMPLE_EMBED` build switches select a
 descriptor/module instead of a standalone main; they do **not** authorize
 loading it in the desktop. Even `apps/trusted/` starts a separate process.

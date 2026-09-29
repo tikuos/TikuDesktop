@@ -1,7 +1,8 @@
 /* TikuGrab driven without a desktop, a fake one answering its messages:
  * the blank window and the list it asks for; a window chosen and grabbed;
  * the picture shown, transparency over a checkerboard; Open, Show and
- * Save As; the delay counted down; a refusal said.
+ * Save As; the delay counted down, beside the Deskbar's clock too, and
+ * cancelled by a click there; a refusal said.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include <unistd.h>
@@ -9,7 +10,8 @@
 
 static tiku_workspace_t *desk;
 static tiku_msg_t *asked;           /* the last request to the desktop */
-static int requests, saves;
+static tiku_msg_t *tray;            /* the last tray item it set       */
+static int requests, saves, trays;
 static int refuse_send;
 static char opened[TIKU_PATH_MAX];
 
@@ -27,6 +29,12 @@ static void settle(void)
 static int host_send(void *ctx, const struct tiku_msg *m)
 {
     (void)ctx;
+    if (tiku_msg_what(m) == TIKU_MSG_TRAY) {    /* kept apart, counted */
+        tiku_msg_free(tray);
+        tray = tiku_msg_copy(m);
+        trays++;
+        return 1;
+    }
     tiku_msg_free(asked);
     asked = tiku_msg_copy(m);
     requests++;
@@ -48,6 +56,13 @@ static int host_open(void *ctx, const char *path)
     (void)ctx;
     snprintf(opened, sizeof opened, "%s", path);
     return 1;
+}
+
+/** @brief The countdown's tray text as last set; "" once taken away. */
+static const char *tray_text(void)
+{
+    assert(tray && !strcmp(tiku_msg_find_string(tray, "id", 0), "delay"));
+    return tiku_msg_find_string(tray, "text", 0);
 }
 
 /** @brief What the last request asked for, TIKU_GRAB_*. */
@@ -185,10 +200,17 @@ static void delay_tests(tiku_grabview_t *c)
     requests = 0;
     gb_action(c, GB_GRAB);
     assert(requests == 0 && strstr(c->status, "Grabbing in 5"));
+    assert(trays == 1 && !strcmp(tray_text(), "5") &&
+           !strcmp(tiku_msg_find_string(tray, "icon", 0), "grab_timer"));
     tiku_grabview_tick(c, 12100000);
-    assert(requests == 0 && strstr(c->status, "Grabbing in 3"));
+    assert(requests == 0 && strstr(c->status, "Grabbing in 3") &&
+           !strcmp(tray_text(), "3"));
+    tiku_grabview_tick(c, 12200000);
+    assert(trays == 2);                 /* the same second: not resent */
     tiku_grabview_tick(c, 15000001);
     assert(requests == 1 && last_what() == TIKU_GRAB_DESK && c->waiting);
+    assert(!strcmp(tray_text(), "") &&
+           !strcmp(tiku_msg_find_string(tray, "icon", 0), ""));
     m = tiku_msg_new(TIKU_MSG_GRABBED);
     assert(m && tiku_msg_add_string(m, "error", "That window has closed."));
     assert(tiku_msg_add_int64(m, "request", c->request));
@@ -267,6 +289,24 @@ static void safety_tests(tiku_grabview_t *c, const char *dir, const char *shot)
     gb_preview(c, 23, 17);
 }
 
+/** @brief A countdown cancelled by a click on its tray icon: nothing asked
+ *         of the desktop, the icon taken away, the cancel said as
+ *         Cancel Capture says it. */
+static void cancel_tests(tiku_grabview_t *c)
+{
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_TRAYHIT);
+
+    gb_action(c, GB_GRAB);
+    assert(c->due && !strcmp(tray_text(), "5"));
+    assert(m && tiku_msg_add_string(m, "id", "delay"));
+    tiku_grabview_message(c, m);
+    tiku_msg_free(m);
+    assert(!c->due && strstr(c->status, "Capture cancelled.") &&
+           !strcmp(tray_text(), "") && requests == 1);
+    tiku_grabview_tick(c, 30000000);
+    assert(requests == 1 || last_what() == TIKU_GRAB_LIST);  /* no grab */
+}
+
 /** @brief Every group, in order, on one window. */
 int main(int argc, char **argv)
 {
@@ -298,15 +338,17 @@ int main(int argc, char **argv)
         c->window->frame = old;
     }
     delay_tests(c);
+    cancel_tests(c);
     safety_tests(c, dir, shot);
     tiku_grabview_destroy(c);
     settle();
     tiku_workspace_free(desk);
     tiku_surface_free(s);
     tiku_msg_free(asked);
+    tiku_msg_free(tray);
     snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
     (void)system(cmd);
     puts("TikuGrab: blank, list, grab a window, preview, open, show, save "
-         "as, delay, refusal PASS");
+         "as, delay in the tray, cancelled there, refusal PASS");
     return 0;
 }

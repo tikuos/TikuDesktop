@@ -3,7 +3,8 @@
 # prefs: factory
 # TikuGrab from the Applications menu: the whole desk grabbed without
 # TikuGrab in it, then one window alone -- the desktop taking both, since
-# an application cannot see the desk, and saying where each went.
+# an application cannot see the desk, and saying where each went.  Then a
+# delayed grab, counting down in the Deskbar's tray, cancelled from there.
 wait 20
 click 980 40
 wait 4
@@ -26,6 +27,21 @@ key g ctrl
 wait 40
 expect-narrate Saved as tiku-window-
 shot /tmp/trk_grab_window.png
+note a delayed grab counts down beside the Deskbar's clock, as the
+note application's own tray icon
+click 118 10
+wait 4
+menu-pick 10 Seconds
+wait 4
+key g ctrl
+wait 8
+expect-narrate Grabbing in
+shot /tmp/trk_grab_tray.png
+note a click on that icon is the application's to hear: it cancels
+click 880 154
+wait 8
+expect-narrate Capture cancelled.
+shot /tmp/trk_grab_cancel.png
 key w ctrl
 wait 10
 expect-no-title TikuGrab

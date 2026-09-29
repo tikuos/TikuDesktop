@@ -3,6 +3,7 @@
  * Desktop/Screenshots; this window chooses what, waits out the delay,
  * and shows what came back.  SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_grabview.h"
+#include "tiku_app.h"
 #include "tiku_atomic_file.h"
 #include "tiku_attr.h"
 #include "tiku_dialog.h"
@@ -58,6 +59,7 @@ struct tiku_grabview {
     tiku_scroll_t scroll;
     int dragging;
     int delay, waiting;             /* seconds to wait; an answer owed    */
+    int tray_left;                  /* the seconds the tray shows, or 0   */
     int64_t now, due, asked;        /* the clock; the grab's; the list's  */
     int64_t request, deadline;
     gb_target_t pending;
@@ -142,12 +144,31 @@ static void gb_ask(tiku_grabview_t *c, int what, int64_t id)
     }
 }
 
+/** @brief The countdown beside the Deskbar's clock: the timer and the
+ *         seconds @p left, or taken away at 0; sent only when it changes.
+ *         A click on it comes back as TIKU_MSG_TRAYHIT, and cancels. */
+static void gb_tray(tiku_grabview_t *c, int left)
+{
+    char text[8], tip[48];
+    tiku_msg_t *m;
+
+    if (left == c->tray_left) return;
+    c->tray_left = left;
+    snprintf(text, sizeof text, "%d", left);
+    snprintf(tip, sizeof tip, "Grabbing in %d: click to cancel", left);
+    m = tiku_app_tray_message("delay", left ? "grab_timer" : "",
+                              left ? text : "", left ? tip : "");
+    if (m && c->host.send) (void)c->host.send(c->host.ctx, m);
+    tiku_msg_free(m);
+}
+
 /** @brief The grab itself, of whatever the list has chosen. */
 static void gb_take(tiku_grabview_t *c)
 {
     const gb_target_t *t = &c->pending;
 
     c->due = 0;
+    gb_tray(c, 0);
     c->waiting = 1;
     c->request++;
     c->deadline = c->now + GB_TIMEOUT_US;
@@ -656,10 +677,12 @@ static void gb_action(tiku_grabview_t *c, int id)
         c->due = c->now + (int64_t)c->delay * 1000000;
         snprintf(c->status, sizeof c->status, "Grabbing in %d... (%s)",
                  c->delay, c->pending.title);
+        gb_tray(c, c->delay);
         break;
     case GB_CANCEL:
         c->due = 0;
         c->waiting = 0;
+        gb_tray(c, 0);
         gb_say(c, "Capture cancelled. An already submitted screenshot "
                   "may still be saved by the desktop.");
         break;
@@ -919,6 +942,11 @@ void tiku_grabview_message(tiku_grabview_t *c, const struct tiku_msg *m)
     int64_t request = 0;
     const char *why;
 
+    if (c && m && tiku_msg_what(m) == TIKU_MSG_TRAYHIT && c->due &&
+        (why = tiku_msg_find_string(m, "id", 0)) && !strcmp(why, "delay")) {
+        gb_action(c, GB_CANCEL);    /* the countdown's icon, clicked */
+        return;
+    }
     if (!c || !m || tiku_msg_what(m) != TIKU_MSG_GRABBED) return;
     if (tiku_msg_find_int32(m, "list", 0, &list) == 1 && list) {
         gb_targets(c, m);
@@ -973,6 +1001,7 @@ void tiku_grabview_tick(tiku_grabview_t *c, int64_t now_us)
         left = (int)((c->due - now_us + 999999) / 1000000);
         snprintf(c->status, sizeof c->status, "Grabbing in %d... (%s)",
                  left, c->pending.title);
+        gb_tray(c, left);
         gb_changed(c);
     } else if (!c->waiting && now_us - c->asked >= GB_REFRESH_US) {
         gb_ask(c, TIKU_GRAB_LIST, 0);
