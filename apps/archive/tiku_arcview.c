@@ -18,7 +18,8 @@
 #include "tiku_text_layout_paint.h"
 #include "tiku_ui.h"
 #include "tiku_work.h"
-#include <ftw.h>
+#include <dirent.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -616,13 +617,33 @@ void tiku_arcview_close(tiku_arcview_t *c)
     if (c && c->window) tiku_workspace_close(c->workspace, c->window);
 }
 
-/** @brief One file or folder of the private folder removed. */
-static int av_rm(const char *p, const struct stat *s, int f, struct FTW *w)
+/** @brief @p name in folder @p at removed, a folder with all it holds to
+ *         @p depth levels down; a link is removed, never followed.  The
+ *         POSIX-2008 *at calls, not nftw: glibc hides that behind X/Open. */
+static void av_rm(int at, const char *name, int depth)
 {
-    (void)s;
-    (void)f;
-    (void)w;
-    return remove(p);
+    int fd = openat(at, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW |
+                    O_CLOEXEC);
+    DIR *d = fd >= 0 ? fdopendir(fd) : NULL;
+    struct dirent *e;
+    int pass, left = 1;
+
+    if (!d) {                           /* a file, a link, or gone */
+        if (fd >= 0) close(fd);
+        else (void)unlinkat(at, name, 0);
+        return;
+    }
+    for (pass = 0; pass < 3 && left; pass++) {  /* a folder read while */
+        rewinddir(d);                           /* it shrinks may skip */
+        left = 0;
+        while ((e = readdir(d)) != NULL) {
+            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+            left = 1;
+            if (depth > 0) av_rm(dirfd(d), e->d_name, depth - 1);
+        }
+    }
+    closedir(d);
+    (void)unlinkat(at, name, AT_REMOVEDIR);
 }
 
 void tiku_arcview_destroy(tiku_arcview_t *c)
@@ -630,7 +651,7 @@ void tiku_arcview_destroy(tiku_arcview_t *c)
     if (!c) return;
     tiku_arcview_close(c);
     c->generation++;
-    if (c->temp[0]) (void)nftw(c->temp, av_rm, 16, FTW_DEPTH | FTW_PHYS);
+    if (c->temp[0]) av_rm(AT_FDCWD, c->temp, 8);
     c->workspace = NULL;
     c->dirty = NULL;
     memset(&c->host, 0, sizeof c->host);

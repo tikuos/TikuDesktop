@@ -507,13 +507,15 @@ static void av_extract_done(void *ctx)
 {
     av_extract_t *j = ctx;
     tiku_arcview_t *c = j->owner;
-    char said[400], file[TIKU_PATH_MAX];
+    char said[sizeof c->status], file[TIKU_PATH_MAX];
+    int n;
 
     j->landed = 1;
     if (j->generation != c->generation || !c->workspace) return;
     if (j->open_after && j->err == TIKU_ARCHIVE_OK) {
-        snprintf(file, sizeof file, "%s/%s", j->dest, j->leaf);
-        if (c->host.open_path && c->host.open_path(c->host.ctx, file))
+        n = snprintf(file, sizeof file, "%s/%s", j->dest, j->leaf);
+        if (n > 0 && (size_t)n < sizeof file &&  /* never a cut-off path */
+            c->host.open_path && c->host.open_path(c->host.ctx, file))
             snprintf(said, sizeof said, "Opened %.200s.", j->leaf);
         else
             snprintf(said, sizeof said, "Extracted %.200s, but nothing "
