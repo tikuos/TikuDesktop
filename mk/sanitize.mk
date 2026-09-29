@@ -29,7 +29,25 @@ SAN_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_SRCS))
 SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
              test_crypto test_saslprep test_type1 test_cff test_ttf \
              test_thumb test_pubkey test_cms test_pdf_sign test_archive \
-             test_diff test_pdf_view
+             test_diff test_pdf_view test_atomic_file
+SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
+                 test_grab_app
+SAN_TESTS += $(SAN_APP_TESTS)
+
+# These suites include their viewer sources directly. Rebuild when an
+# implementation fragment changes, not only when the test file changes.
+$(SAN)/tests/apps/test_pdf_viewer.o: $(PDFVIEW_SRC) \
+        $(wildcard apps/pdf/*.h apps/pdf/*.inl)
+$(SAN)/tests/apps/test_archive_viewer.o: $(ARCVIEW_SRC) \
+        $(wildcard apps/archive/*.h apps/archive/*.inl)
+$(SAN)/tests/apps/test_diff_viewer.o: \
+        $(wildcard apps/diff/*.c apps/diff/*.h apps/diff/*.inl)
+$(SAN)/tests/apps/test_grab_app.o: $(wildcard apps/grab/*.c apps/grab/*.h)
+
+$(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
+        $(SAN)/tests/apps/test_%.o $(SAN_OBJS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
+	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
 $(SAN)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)

@@ -10,7 +10,18 @@
 static tiku_workspace_t *desk;
 static tiku_msg_t *asked;           /* the last request to the desktop */
 static int requests, saves;
+static int refuse_send;
 static char opened[TIKU_PATH_MAX];
+
+static void settle(void)
+{
+    for (int i = 0; i < 8000; i++) {
+        (void)tiku_work_collect();
+        if (!tiku_work_busy()) return;
+        usleep(1000);
+    }
+    assert(!"worker did not finish");
+}
 
 /** @brief The desktop's service, standing in: each request kept. */
 static int host_send(void *ctx, const struct tiku_msg *m)
@@ -19,7 +30,7 @@ static int host_send(void *ctx, const struct tiku_msg *m)
     tiku_msg_free(asked);
     asked = tiku_msg_copy(m);
     requests++;
-    return 1;
+    return !refuse_send;
 }
 
 /** @brief The Save panel, as a counted question. */
@@ -123,12 +134,14 @@ static void picture_tests(tiku_grabview_t *c, const tiku_surface_t *s,
         px[i] = (i % 40 < 6 && i / 40 < 4) ? 0 : 0xff2080d0u;
     assert(tiku_png_write(shot, px, 40, 30, 1) == 0);
     assert(m && tiku_msg_add_string(m, "path", shot) &&
+           tiku_msg_add_int64(m, "request", c->request) &&
            tiku_msg_add_int32(m, "w", 40) && tiku_msg_add_int32(m, "h", 30) &&
            tiku_msg_add_int64(m, "size", 321));
     tiku_grabview_message(c, m);
     tiku_msg_free(m);
-    assert(!c->waiting && c->shot.w == 40 && strstr(c->status, "Saved as "
-           "tiku-window-Notes-1.png, 321 B"));
+    settle();
+    assert(!c->waiting && c->picture && c->picture->image.w == 40 &&
+           strstr(c->status, "Saved as tiku-window-Notes-1.png, 321 B"));
     assert(last_what() == TIKU_GRAB_LIST);  /* the titles asked for again */
     tiku_workspace_draw(desk);
     x0 = l.view.x + 8 + (l.view.w - 16 - 40) / 2;
@@ -153,6 +166,7 @@ static void output_tests(tiku_grabview_t *c, const char *dir,
     assert(saves == 1);
     snprintf(copy, sizeof copy, "%s/kept.png", dir);
     tiku_grabview_picked(c, copy);
+    settle();
     assert(strstr(c->status, "A copy is in kept.png"));
     f = fopen(copy, "rb");
     assert(f);
@@ -177,13 +191,84 @@ static void delay_tests(tiku_grabview_t *c)
     assert(requests == 1 && last_what() == TIKU_GRAB_DESK && c->waiting);
     m = tiku_msg_new(TIKU_MSG_GRABBED);
     assert(m && tiku_msg_add_string(m, "error", "That window has closed."));
+    assert(tiku_msg_add_int64(m, "request", c->request));
     tiku_grabview_message(c, m);
     tiku_msg_free(m);
     assert(!c->waiting && !strcmp(c->status, "That window has closed."));
 }
 
+static void safety_tests(tiku_grabview_t *c, const char *dir, const char *shot)
+{
+    struct stat before, after;
+    char alias[512];
+    assert(stat(shot, &before) == 0);
+    assert(gb_copy(shot, shot) == 0 && stat(shot, &after) == 0);
+    assert(before.st_size == after.st_size && before.st_ino == after.st_ino);
+    snprintf(alias, sizeof alias, "%s/alias.png", dir);
+    assert(link(shot, alias) == 0 && gb_copy(shot, alias) == 0);
+    assert(stat(shot, &after) == 0 && before.st_size == after.st_size);
+    /* invalid source never truncates target */
+    assert(gb_copy(dir, shot) == -1);
+    assert(stat(shot, &after) == 0 && before.st_size == after.st_size);
+
+    answer_list(c); c->sel = 1; c->delay = 5;
+    gb_action(c, GB_GRAB);
+    tiku_msg_t *m = tiku_msg_new(TIKU_MSG_GRABBED);
+    assert(m && tiku_msg_add_int32(m, "list", 1));
+    tiku_grabview_message(c, m); tiku_msg_free(m);
+    assert(c->sel == 0); /* pending window remains pinned after refresh */
+    tiku_grabview_tick(c, c->due);
+    int64_t id = 0, old = c->request;
+    assert(last_what() == TIKU_GRAB_WINDOW &&
+           tiku_msg_find_int64(asked, "id", 0, &id) && id == 5);
+    tiku_grabview_tick(c, c->deadline);
+    assert(!c->waiting && gb_enabled(c, GB_GRAB) &&
+           strstr(c->status, "30 seconds"));
+    c->delay = 0; gb_action(c, GB_GRAB);
+    m = tiku_msg_new(TIKU_MSG_GRABBED);
+    assert(m && tiku_msg_add_int64(m, "request", old) &&
+           tiku_msg_add_string(m, "error", "stale reply"));
+    tiku_grabview_message(c, m); tiku_msg_free(m);
+    assert(c->waiting && !strstr(c->status, "stale"));
+    press(c, TIKU_KEY_ESCAPE, 0);
+    assert(!c->waiting && gb_enabled(c, GB_GRAB));
+    c->delay = 5; gb_action(c, GB_GRAB);
+    assert(c->due); press(c, TIKU_KEY_ESCAPE, 0); assert(!c->due);
+
+    gb_layout_t l = gb_layout(c, (tiku_rect_t){0, 0, 180, 300});
+    assert(l.list.x + l.list.w <= 180 && l.view.w >= 0 && l.view.h >= 0);
+    for (int i = 0; i < c->dialog.count; i++) {
+        tiku_rect_t r = c->dialog.control[i].rect;
+        assert(r.x >= 0 && r.x + r.w <= 180);
+    }
+    c->ntarget = GB_TARGETS + 1;
+    for (int i = 1; i < c->ntarget; i++) {
+        c->target[i].id = i;
+        snprintf(c->target[i].title, sizeof c->target[i].title, "Window %d", i);
+    }
+    for (int i = 0; i < GB_TARGETS; i++) press(c, TIKU_KEY_DOWN, 0);
+    assert(c->sel == GB_TARGETS && c->top > 0);
+    l = gb_layout(c, tiku_window_content(c->window));
+    int old_top = c->top;
+    tiku_event_t wheel = {.type = TIKU_EVENT_WHEEL, .x = l.list.x + 4,
+                           .y = l.list.y + 4, .dy = 1};
+    assert(gb_event(c->window, &wheel, c) && c->top < old_top);
+    old_top = c->top;
+    tiku_event_t arrow = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                           .x = l.bar.x + 3, .y = l.bar.y + 3};
+    assert(gb_event(c->window, &arrow, c) && c->top == old_top - 1);
+    arrow.type = TIKU_EVENT_POINTER_UP;
+    assert(gb_event(c->window, &arrow, c) && !c->scroll.tracking);
+    c->delay = 0; refuse_send = 1;
+    gb_action(c, GB_GRAB);
+    assert(!c->waiting && strstr(c->status, "could not be asked"));
+    refuse_send = 0;
+    /* Destroy with a preview outstanding: callbacks must not touch the host. */
+    gb_preview(c, 23, 17);
+}
+
 /** @brief Every group, in order, on one window. */
-int main(void)
+int main(int argc, char **argv)
 {
     int dirty = 0;
     tiku_grabview_host_t host = { host_send, host_save, host_open, NULL };
@@ -201,8 +286,21 @@ int main(void)
     snprintf(shot, sizeof shot, "%s/tiku-window-Notes-1.png", dir);
     picture_tests(c, s, shot);
     output_tests(c, dir, shot);
+    if (argc > 1) {
+        tiku_workspace_draw(desk); settle(); tiku_workspace_draw(desk);
+        assert(tiku_surface_png(s, argv[1]) == 0);
+    }
+    if (argc > 2) {
+        tiku_rect_t old = c->window->frame;
+        c->window->frame.w = 210; c->window->frame.h = 430;
+        tiku_workspace_draw(desk); settle(); tiku_workspace_draw(desk);
+        assert(tiku_surface_png(s, argv[2]) == 0);
+        c->window->frame = old;
+    }
     delay_tests(c);
+    safety_tests(c, dir, shot);
     tiku_grabview_destroy(c);
+    settle();
     tiku_workspace_free(desk);
     tiku_surface_free(s);
     tiku_msg_free(asked);

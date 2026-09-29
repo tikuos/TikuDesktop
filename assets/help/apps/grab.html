@@ -15,6 +15,13 @@ any colour.</p>
 with the timer button or the <b>Delay</b> menu: 3, 5 or 10 seconds. Press
 <b>Grab</b>, open the menu or point at the button, and wait: the status
 line counts down.</p>
+<p>The target is fixed when you press <b>Grab</b>. Selecting another item
+or refreshing the list during the countdown does not change it. If that
+window closes, the capture fails; TikuGrab does not capture the whole desk
+instead. Use <b>Cancel Capture</b> or Escape to cancel the countdown or
+stop waiting. A request already sent to the desktop may still save a PNG
+in Screenshots. After 30 seconds without a reply, you can try again;
+late replies do not replace a newer capture.</p>
 <h2 id="files">Where pictures go</h2>
 <p>Every picture is saved at once as a PNG in the Screenshots folder on
 the desktop, named after what it shows and the time: tiku-desk-...,
@@ -26,3 +33,10 @@ hundred kilobytes, not megabytes.</p>
 (<b>Ctrl+S</b>) keeps a copy somewhere else; <b>Open in TikuImage</b>
 (<b>Ctrl+O</b>) shows it full size; <b>Show in Tracker</b> opens the
 Screenshots folder.</p>
+<p>Preview decoding, resizing, and Save As run in the background. The
+window list supports the scrollbar, mouse wheel, and arrow keys. Narrow
+windows put the list above the preview and wrap the toolbar.</p>
+<p>Save As writes a temporary file first and replaces the destination
+only after writing succeeds. Saving onto the original screenshot, or a
+link to the same file, leaves it unchanged. A symbolic link to a different
+file is refused; choose the actual destination file instead.</p>

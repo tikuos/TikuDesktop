@@ -3,6 +3,7 @@
 #include "tiku_grabview.h"
 #include "tiku_msg.h"
 #include "tiku_window_app.h"
+#include "tiku_work.h"
 #include <stdlib.h>
 
 typedef struct {
@@ -80,6 +81,7 @@ static void tick(void *state, int64_t now)
 {
     grab_app_t *a = state;
     tiku_grabview_tick(a->view, now);
+    (void)tiku_work_collect();
     tiku_window_app_sync(a->host, a->dirty);
     a->dirty = 0;
 }

@@ -20,12 +20,16 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
 
 /** @brief A picture on its way to a file, and who to tell. */
 typedef struct {
     desktop_t *app;
     int session;                    /* who asked; -1, the desktop itself */
     uint64_t generation;            /* that session's, when it asked     */
+    int64_t request;
     uint32_t *px;
     int w, h, alpha, ok;
     long size;
@@ -80,7 +84,7 @@ int desktop_shot_path(const char *what, char *out, size_t max)
                      when.tm_mday, when.tm_hour, when.tm_min, when.tm_sec,
                      k > 1 ? "-" : "", k > 1 ? k : 0);
         if (n < 0 || (size_t)n >= max) return -1;
-        if (stat(out, &st) != 0) return 0;
+        if (lstat(out, &st) != 0) return errno == ENOENT ? 0 : -1;
     }
     return -1;
 }
@@ -88,11 +92,12 @@ int desktop_shot_path(const char *what, char *out, size_t max)
 /** @brief Tell session @p session how its asking went: the file made, or
  *         why none was. */
 static void grab_tell(desktop_t *app, int session, const grab_shot_t *s,
-                      const char *why)
+                      const char *why, int64_t request)
 {
     tiku_msg_t *m = tiku_msg_new(TIKU_MSG_GRABBED);
 
     if (!m) return;
+    (void)tiku_msg_add_int64(m, "request", request);
     if (why) {
         (void)tiku_msg_add_string(m, "error", why);
     } else {
@@ -128,7 +133,7 @@ static void grab_done(void *ctx)
             app->remote.session[s->session].used &&
             app->remote.session[s->session].generation == s->generation)
             grab_tell(app, s->session, s, s->ok ? NULL
-                      : "The screenshot could not be written.");
+                      : "The screenshot could not be written.", s->request);
         return;
     }
     snprintf(app->status, sizeof app->status, s->ok ?
@@ -143,6 +148,7 @@ static void grab_free(void *ctx)
 {
     grab_shot_t *s = ctx;
 
+    if (!s->ok) unlink(s->path);     /* the reserved, failed output only */
     free(s->px);
     free(s);
 }
@@ -152,8 +158,8 @@ static void grab_free(void *ctx)
  *        a worker; @p session told when it lands, or -1 for the desktop's
  *        own status line.  @return 0 when it was posted.
  */
-int desktop_shot_save(desktop_t *app, int session, const char *what,
-                      uint32_t *px, int w, int h, int alpha)
+static int grab_save(desktop_t *app, int session, const char *what,
+                     uint32_t *px, int w, int h, int alpha, int64_t request)
 {
     grab_shot_t *s = calloc(1, sizeof *s);
     tiku_work_job_t job;
@@ -163,6 +169,11 @@ int desktop_shot_save(desktop_t *app, int session, const char *what,
         free(px);
         return -1;
     }
+    /* Reserve the name before queuing: two pending captures cannot choose
+     * the same not-yet-written file. Never truncate an existing capture. */
+    int fd = open(s->path, O_WRONLY | O_CREAT | O_EXCL, 0666);
+    if (fd < 0) { free(s); free(px); return -1; }
+    if (close(fd) != 0) { unlink(s->path); free(s); free(px); return -1; }
     s->app = app;
     s->session = session;
     s->generation = session >= 0 ? app->remote.session[session].generation
@@ -171,6 +182,7 @@ int desktop_shot_save(desktop_t *app, int session, const char *what,
     s->w = w;
     s->h = h;
     s->alpha = alpha;
+    s->request = request;
     memset(&job, 0, sizeof job);
     job.run = grab_run;
     job.done = grab_done;
@@ -178,10 +190,17 @@ int desktop_shot_save(desktop_t *app, int session, const char *what,
     job.ctx = s;
     snprintf(job.key, sizeof job.key, "grab");
     if (tiku_work_post(&job) != 0) {
+        unlink(s->path);
         grab_free(s);
         return -1;
     }
     return 0;
+}
+
+int desktop_shot_save(desktop_t *app, int session, const char *what,
+                      uint32_t *px, int w, int h, int alpha)
+{
+    return grab_save(app, session, what, px, w, h, alpha, 0);
 }
 
 /** @brief @p s's native pixels copied out, or NULL out of memory; its
@@ -349,7 +368,7 @@ void desktop_shot_desk(desktop_t *app)
 void desktop_grab(desktop_t *app, int session, const tiku_msg_t *msg)
 {
     int32_t what = 0;
-    int64_t id = 0;
+    int64_t id = 0, request = 0;
     int w = 0, h = 0;
     uint32_t *px = NULL;
     tiku_window_t *win;
@@ -359,6 +378,7 @@ void desktop_grab(desktop_t *app, int session, const tiku_msg_t *msg)
         !app->remote.session[session].used) return;
     (void)tiku_msg_find_int32(msg, "what", 0, &what);
     (void)tiku_msg_find_int64(msg, "id", 0, &id);
+    (void)tiku_msg_find_int64(msg, "request", 0, &request);
     if (what == TIKU_GRAB_LIST) {
         grab_list(app, session);
         return;
@@ -371,10 +391,11 @@ void desktop_grab(desktop_t *app, int session, const tiku_msg_t *msg)
         memcpy(name, "window-", 7);
         grab_clean(win->title, name + 7, sizeof name - 7);
     } else {
-        grab_tell(app, session, NULL, "That window has closed.");
+        grab_tell(app, session, NULL, "That window has closed.", request);
         return;
     }
-    if (!px || desktop_shot_save(app, session, name, px, w, h,
-                                 what == TIKU_GRAB_WINDOW) != 0)
-        grab_tell(app, session, NULL, "The screenshot could not be taken.");
+    if (!px || grab_save(app, session, name, px, w, h,
+                         what == TIKU_GRAB_WINDOW, request) != 0)
+        grab_tell(app, session, NULL, "The screenshot could not be taken.",
+                  request);
 }

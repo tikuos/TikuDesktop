@@ -66,6 +66,7 @@ STORAGE     := $(K)/storage/tiku_board_basic.c $(K)/storage/tiku_model.c $(K)/st
                $(K)/storage/tiku_vfs_rpc.c $(K)/storage/tiku_config.c \
                $(K)/storage/tiku_config_outbox.c \
                $(K)/storage/tiku_ident.c $(K)/storage/tiku_attr.c \
+               $(K)/storage/tiku_atomic_file.c \
                $(K)/storage/tiku_query.c $(K)/storage/tiku_fs.c \
                $(K)/storage/tiku_backend_posix.c \
                $(K)/storage/tiku_backend_tiku.c $(K)/storage/tiku_notify.c \

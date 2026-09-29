@@ -347,7 +347,8 @@ const uint32_t *tiku_remote_pixels(
 /* Ask the desktop to open a namespace path with its normal file handler. */
 #define TIKU_MSG_OPENPATH 0x6f706174u /* 'opat', string "path" */
 /* A screenshot, asked of the desktop by an application that cannot see
- * the desk.  ASK int32 "what" (TIKU_GRAB_*), int64 "id" for a window.
+ * the desk. ASK int32 "what" (TIKU_GRAB_*), int64 "id" for a window,
+ * and int64 "request" echoed in every capture success/error response.
  * ANSWER int32 "list" and a string "title" and int64 "id" a window; or
  * string "path", int32 "w" and "h", int64 "size"; or string "error". */
 #define TIKU_MSG_GRAB    0x67726162u  /* 'grab' */

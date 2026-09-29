@@ -5,6 +5,8 @@
  * Screenshot through the same writer.  SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include <unistd.h>
+#include <stdatomic.h>
+#include <dirent.h>
 #include "../../system/desktop/tiku_trk_desktop_grab.c"
 
 #define RED  0xffd02020u
@@ -53,6 +55,7 @@ static const tiku_msg_t *ask(desktop_t *app, int what, int64_t id)
     tiku_msg_free(reply);
     reply = NULL;
     assert(m && tiku_msg_add_int32(m, "what", what) &&
+           tiku_msg_add_int64(m, "request", 1234) &&
            tiku_msg_add_int64(m, "id", id));
     desktop_grab(app, 0, m);
     tiku_msg_free(m);
@@ -61,6 +64,11 @@ static const tiku_msg_t *ask(desktop_t *app, int what, int64_t id)
         usleep(1000);
     }
     assert(reply && tiku_msg_what(reply) == TIKU_MSG_GRABBED);
+    if (what != TIKU_GRAB_LIST) {
+        int64_t request = 0;
+        assert(tiku_msg_find_int64(reply, "request", 0, &request) &&
+               request == 1234);
+    }
     return reply;
 }
 
@@ -161,6 +169,45 @@ static void refusal_test(desktop_t *app)
                   "screenshot saved to Screenshots/tiku-screenshot-"));
 }
 
+static atomic_int release_queue;
+static void hold_queue(void *ctx)
+{
+    (void)ctx;
+    for (int i = 0; i < 5000 && !atomic_load(&release_queue); i++) usleep(1000);
+    assert(atomic_load(&release_queue));
+}
+
+static void queued_names_test(desktop_t *app)
+{
+    /* Hold the writer queue so neither capture can create its file yet. */
+    tiku_work_job_t blocker = {.run = hold_queue, .key = "grab"};
+    assert(tiku_work_post(&blocker) == 0);
+    uint32_t *a = malloc(sizeof *a), *b = malloc(sizeof *b);
+    assert(a && b); *a = RED; *b = BLUE;
+    assert(desktop_shot_save(app, -1, "queued", a, 1, 1, 0) == 0);
+    assert(desktop_shot_save(app, -1, "queued", b, 1, 1, 0) == 0);
+    atomic_store(&release_queue, 1);
+    for (int i = 0; i < 5000 && tiku_work_busy(); i++) {
+        tiku_work_collect(); usleep(1000);
+    }
+    assert(!tiku_work_busy());
+    char path[TIKU_PATH_MAX];
+    snprintf(path, sizeof path, "%s/Screenshots", getenv("TIKU_DESKTOP"));
+    DIR *d = opendir(path); struct dirent *e; int count = 0, red = 0, blue = 0;
+    assert(d);
+    while ((e = readdir(d))) {
+        if (strncmp(e->d_name, "tiku-queued-", 12)) continue;
+        snprintf(path, sizeof path, "%s/Screenshots/%s",
+                 getenv("TIKU_DESKTOP"), e->d_name);
+        tiku_image_t im = {0};
+        assert(tiku_image_load(path, &im) == TIKU_IMG_OK &&
+               im.w == 1 && im.h == 1);
+        red += im.px[0] == RED; blue += im.px[0] == BLUE; count++;
+        tiku_image_free(&im);
+    }
+    closedir(d); assert(count == 2 && red == 1 && blue == 1);
+}
+
 /** @brief Every group, in a scratch Desktop of its own. */
 int main(void)
 {
@@ -174,6 +221,7 @@ int main(void)
     desk_test(app);
     window_test(app, under);
     refusal_test(app);
+    queued_names_test(app);
     tiku_msg_free(reply);
     tiku_workspace_free(app->desk);
     tiku_surface_free(app->surf);
