@@ -103,6 +103,8 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(HOST)
 TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_inflate_stream.c \
+               $(K)/translation/tiku_deflate.c \
+               $(K)/translation/tiku_png_write.c \
                $(K)/translation/tiku_archive.c \
                $(K)/translation/tiku_archive_zip.c \
                $(K)/translation/tiku_archive_tar.c \

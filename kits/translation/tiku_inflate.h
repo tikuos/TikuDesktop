@@ -87,4 +87,14 @@ long tiku_inflater_tail(tiku_inflater_t *z, unsigned char *out, long max);
 
 void tiku_inflater_free(tiku_inflater_t *z);
 
+/* ------------------------------------------------------------------ */
+/* Writing: what the readers above read.                               */
+
+/** @brief @p n bytes as a zlib stream (RFC 1950 around RFC 1951): LZ77
+ *         over a 32 KB window, in one block of the fixed codes.
+ *  @return a malloc'd buffer, its length in @p outlen; NULL out of
+ *          memory. */
+unsigned char *tiku_deflate_zlib(const unsigned char *in, size_t n,
+                                 size_t *outlen);
+
 #endif /* TIKU_INFLATE_H_ */

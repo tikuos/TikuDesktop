@@ -61,6 +61,15 @@ tiku_image_err_t tiku_image_decode(const void *bytes, size_t len,
 void tiku_image_free(tiku_image_t *im);
 
 /**
+ * @brief @p w by @p h pixels, 0xAARRGGBB, written to @p path as a PNG:
+ *        RGBA when @p alpha is set, else RGB with the top byte ignored,
+ *        each row filtered the way that leaves least to store.
+ * @return 0, or -1 when it could not be made or written.
+ */
+int tiku_png_write(const char *path, const uint32_t *px, int w, int h,
+                   int alpha);
+
+/**
  * @brief Scale @p src into a @p size square, keeping its aspect ratio.
  *
  * The picture is centred and the margins left fully transparent, so a wide
