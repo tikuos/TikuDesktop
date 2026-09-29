@@ -74,7 +74,7 @@ static const char *pv_load_error(tiku_pdf_err_t err)
 }
 
 /** @brief A document that would not open for want of a password or a
- *         key: the find field asks for it, masked, and a sealed one's key
+ *         key: the password panel asks for it, and a sealed one's key
  *         file is asked for first.  @return 0 when @p j is not one. */
 static int pv_load_locked(tiku_pdfview_t *c, pv_load_t *j)
 {
@@ -87,12 +87,12 @@ static int pv_load_locked(tiku_pdfview_t *c, pv_load_t *j)
     c->sealed = sealed;
     snprintf(c->locked_path, sizeof c->locked_path, "%s", j->path);
     pv_forget_password(c);
-    tiku_dialog_focus(&c->dialog, PV_FIND_FIELD);
+    c->password_focus = 1;
     if (!sealed) {
         pv_say(c, j->tried ? "That password does not open it. Try again, "
                              "or press Escape." :
-                             "This PDF is locked. Type its password in the "
-                             "field above and press Enter.");
+                             "This PDF is locked. Enter its password in the "
+                             "password panel.");
     } else if (j->err == TIKU_PDF_PASSWORD) {
         pv_say(c, "That password does not open the key file. Try again, "
                   "or press Escape.");
@@ -642,6 +642,7 @@ typedef struct {
     tiku_pdfview_t *owner;
     pv_doc_t *doc;
     int gen, from, to, nq, nmatch, cap;
+    int scanned, failed, limited;
     int keep_case, whole;           /* Match Case, Whole Words          */
     uint32_t q[TIKU_FIELD_MAX];
     pv_match_t *match;
@@ -707,6 +708,8 @@ static void pv_search_page(pv_search_t *j, int p, const tiku_pdf_char_t *ch,
     uint32_t *f = malloc((size_t)n * sizeof *f);
     long *at = malloc((size_t)n * sizeof *at), m = 0;
 
+    if (!f || !at) j->failed = 1;
+
     for (long i = 0; f && at && i < n; i++) {
         uint32_t cp = pv_fold(ch[i].cp, j->keep_case);
         if (cp == ' ' && (m == 0 || f[m - 1] == ' ')) continue;
@@ -723,7 +726,7 @@ static void pv_search_page(pv_search_t *j, int p, const tiku_pdf_char_t *ch,
         if (j->nmatch == j->cap) {
             int cap = j->cap ? j->cap * 2 : 32;
             pv_match_t *grown = realloc(j->match, (size_t)cap * sizeof *grown);
-            if (!grown) break;
+            if (!grown) { j->failed = 1; break; }
             j->match = grown;
             j->cap = cap;
         }
@@ -731,7 +734,7 @@ static void pv_search_page(pv_search_t *j, int p, const tiku_pdf_char_t *ch,
         pv_match_boxes(&j->match[j->nmatch], ch, at[i], at[i + j->nq - 1]);
         j->nmatch++;
         i += j->nq - 1;
-        if (j->nmatch >= PV_MATCHES) break;
+        if (j->nmatch >= PV_MATCHES) { j->limited = 1; break; }
     }
     free(f);
     free(at);
@@ -749,13 +752,40 @@ static void pv_search_run(void *ctx)
 
         if (atomic_load(&j->doc->search) != j->gen) return;
         n = tiku_pdf_page_chars(j->doc->pdf, p, &ch);
+        if (n < 0) j->failed = 1;
         if (n > 0) pv_search_page(j, p, ch, n);
         free(ch);
+        if (j->failed || j->limited) break;
+        j->scanned++;
     }
 }
 
 static int pv_search_post(tiku_pdfview_t *c, int from);
 static void pv_find_step(tiku_pdfview_t *c, int dir);
+
+/** @brief Never describe partial results as a complete document search. */
+static void pv_search_status(tiku_pdfview_t *c)
+{
+    char said[320];
+    if (c->search_failed)
+        snprintf(said, sizeof said, "Search incomplete: could not read or "
+                 "search all pages. %d matches retained. "
+                 "Press Enter to retry.", c->nmatch);
+    else if (c->search_limited)
+        snprintf(said, sizeof said, "Showing the first %d matches; "
+                 "result limit reached. Narrow your search.", c->nmatch);
+    else if (c->cur >= 0 && c->cur < c->nmatch)
+        snprintf(said, sizeof said, "Match %d of %d%s.", c->cur + 1,
+                 c->nmatch, c->searching ? " so far" : "");
+    else if (c->searching)
+        snprintf(said, sizeof said, "Searching... %d of %d pages read.",
+                 c->searched, c->npage);
+    else if (c->nmatch)
+        snprintf(said, sizeof said, "%d matches.", c->nmatch);
+    else
+        snprintf(said, sizeof said, "Not found in this document.");
+    pv_say(c, said);
+}
 
 /** @brief On the loop: the stretch's matches join the rest, and the next
  *         stretch is asked for behind any pages waiting to be drawn. */
@@ -763,7 +793,6 @@ static void pv_search_done(void *ctx)
 {
     pv_search_t *j = ctx;
     tiku_pdfview_t *c = j->owner;
-    char said[160];
 
     if (!c->workspace || j->doc != c->doc || j->gen != c->search_gen) return;
     if (j->nmatch > 0) {
@@ -775,25 +804,19 @@ static void pv_search_done(void *ctx)
             memcpy(all + c->nmatch, j->match, (size_t)take * sizeof *all);
             c->match = all;
             c->nmatch += take;
-        }
+        } else c->search_failed = 1;
+        if (take < j->nmatch) c->search_limited = 1;
     }
-    c->searched = j->to;
-    if (c->searched >= c->npage || c->nmatch >= PV_MATCHES ||
-        !pv_search_post(c, c->searched))
-        c->searching = 0;
+    c->search_failed |= j->failed;
+    c->search_limited |= j->limited || c->nmatch >= PV_MATCHES;
+    c->searched = j->from + j->scanned;
+    c->searching = 0;
+    if (!c->search_failed && !c->search_limited && c->searched < c->npage) {
+        c->searching = pv_search_post(c, c->searched);
+        if (!c->searching) c->search_failed = 1;
+    }
     if (c->want_next) pv_find_step(c, c->want_next);
-    else if (c->cur >= 0 && c->cur < c->nmatch) {
-        snprintf(said, sizeof said, "Match %d of %d%s.", c->cur + 1,
-                 c->nmatch, c->searching ? " so far" : "");
-        pv_say(c, said);
-    }
-    if (c->searching && !c->nmatch) {
-        snprintf(said, sizeof said, "Searching... %d of %d pages read.",
-                 c->searched, c->npage);
-        pv_say(c, said);
-    } else if (!c->searching && !c->nmatch) {
-        pv_say(c, "Not found in this document.");
-    }
+    pv_search_status(c);
     pv_changed(c);
 }
 

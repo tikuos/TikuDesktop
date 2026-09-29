@@ -53,7 +53,8 @@ enum { PV_OPEN = 1, PV_CLOSE, PV_COPY, PV_SELECT_ALL, PV_FIND, PV_FIND_NEXT,
        PV_FIT_WIDTH, PV_FIT_PAGE, PV_PREV, PV_NEXT, PV_FIRST, PV_LAST,
        PV_BACK, PV_MATCH_CASE, PV_WHOLE_WORDS, PV_THUMBS, PV_ROTATE_LEFT,
        PV_ROTATE_RIGHT, PV_CLEAR_RECENT, PV_OPEN_KEY, PV_SIGS, PV_PAGE_FIELD,
-       PV_FIND_FIELD, PV_CANVAS, PV_SIDE, PV_RECENT = 100 };
+       PV_FIND_FIELD, PV_CANVAS, PV_SIDE, PV_PASS_FIELD, PV_UNLOCK,
+       PV_CANCEL_UNLOCK, PV_RECENT = 100 };
 enum { PV_FIXED, PV_BY_WIDTH, PV_BY_PAGE };
 
 /** @brief An open document as its jobs share it. */
@@ -101,6 +102,7 @@ typedef struct {
 /** @brief Where the parts of the window go, from one description. */
 typedef struct {
     tiku_rect_t tools, side, canvas, vbar, hbar, status, page, of, find;
+    tiku_rect_t password, password_label;
 } pv_layout_t;
 
 struct tiku_pdfview {
@@ -137,6 +139,7 @@ struct tiku_pdfview {
     tiku_field_t find, go, pass;
     tiku_field_input_t find_in, go_in, pass_in;
     int locked, may_copy;           /* waiting for a password; copying ok */
+    int password_focus;            /* focus after the panel is laid out */
     char locked_path[TIKU_PATH_MAX];
     int sealed;                     /* the locked one wants a key file   */
     char keyfile[TIKU_PATH_MAX];    /* the key file chosen for it, or "" */
@@ -145,6 +148,7 @@ struct tiku_pdfview {
     int hover_tool;                 /* the toolbar button pointed at, or 0 */
     pv_match_t *match;
     int nmatch, cur, searching, searched, search_gen, want_next;
+    int search_limited, search_failed;
     char query[TIKU_FIELD_MAX];     /* what the matches are of           */
     int match_case, whole_words;    /* how the query is compared         */
     pv_mark_t anchor, focus;        /* a selection runs between the two  */
@@ -262,6 +266,7 @@ static void pv_forget(tiku_pdfview_t *c)
     c->folded = NULL; c->rows = NULL; c->match = NULL; c->outline = NULL;
     c->npage = c->noutline = c->nrows = c->nmatch = c->ntext = 0;
     c->inflight = c->searching = c->searched = c->want_next = 0;
+    c->search_limited = c->search_failed = 0;
     c->selected = c->selecting = c->pressing = c->nback = 0;
     c->restoring = 0;
     c->cur = c->link_page = c->link_at = c->press_page = c->press_link = -1;
@@ -294,6 +299,8 @@ static void pv_unref(tiku_pdfview_t *c)
 /** @brief Menu and control labels, by command. */
 static const char *pv_label(int id)
 {
+    if (id == PV_UNLOCK) return "Unlock";
+    if (id == PV_CANCEL_UNLOCK) return "Cancel";
     static const char *const labels[] = { "", "Open...", "Close", "Copy",
         "Select Page Text", "Find...", "Find Next", "Find Previous",
         "Outline", "Zoom In", "Zoom Out", "Actual Size", "Fit Width",
@@ -310,6 +317,8 @@ static int pv_enabled(tiku_pdfview_t *c, int id)
 
     if (id == PV_OPEN) return c->choose && !c->loading;
     if (id == PV_CLOSE) return 1;
+    if (id == PV_UNLOCK || id == PV_CANCEL_UNLOCK)
+        return c->locked && !c->loading;
     if (id == PV_CLEAR_RECENT) return c->nrecent > 0;
     if (id == PV_OPEN_KEY) return c->locked && c->sealed && c->choose &&
                                   !c->loading;
@@ -361,6 +370,19 @@ static void pv_action(tiku_pdfview_t *c, int id)
     } else if (id == PV_CLOSE) {
         tiku_pdfview_close(c);
         return;
+    } else if (id == PV_UNLOCK && c->locked && !c->loading) {
+        if (c->sealed && !c->keyfile[0]) pv_action(c, PV_OPEN_KEY);
+        else {
+            (void)pv_load_as(c, c->locked_path, c->sealed ? c->keyfile : "",
+                             c->pass.text);
+            pv_forget_password(c);
+        }
+    } else if (id == PV_CANCEL_UNLOCK && c->locked && !c->loading) {
+        c->locked = c->sealed = 0;
+        c->keyfile[0] = c->locked_path[0] = 0;
+        pv_forget_password(c);
+        tiku_dialog_focus(&c->dialog, PV_CANVAS);
+        pv_say(c, "The locked PDF was left closed.");
     } else if (!c->doc) {
         return;
     } else if (id == PV_COPY) pv_copy(c);
@@ -434,7 +456,8 @@ static int pv_canvas_key(tiku_pdfview_t *c, const tiku_event_t *ev)
  *         its own copy, paste and select all. */
 static int pv_command_key(tiku_pdfview_t *c, const tiku_event_t *ev)
 {
-    int field = c->dialog.focus == PV_FIND_FIELD ||
+    int field = c->dialog.focus == PV_PASS_FIELD ||
+                c->dialog.focus == PV_FIND_FIELD ||
                 c->dialog.focus == PV_PAGE_FIELD;
     unsigned key = ev->key;
 
@@ -468,39 +491,31 @@ static void pv_forget_password(tiku_pdfview_t *c)
     tiku_field_input_init(&c->pass_in);
 }
 
-/** @brief A key or typed text for the focused field: Return in the find
- *         field searches (or, for a locked document, tries the password
- *         typed there), in the page field goes. */
+/** @brief Return searches, goes to a page, or submits the separate password
+ *         field. */
 static int pv_field_event(tiku_pdfview_t *c, const tiku_event_t *ev,
                           const pv_layout_t *l)
 {
     int find = c->dialog.focus == PV_FIND_FIELD;
-    tiku_field_t *f = find ? (c->locked ? &c->pass : &c->find) : &c->go;
-    tiku_field_input_t *in = find ? (c->locked ? &c->pass_in : &c->find_in)
-                                  : &c->go_in;
+    int password = c->dialog.focus == PV_PASS_FIELD && c->locked;
+    tiku_field_t *f = password ? &c->pass : find ? &c->find : &c->go;
+    tiku_field_input_t *in = password ? &c->pass_in
+                                      : find ? &c->find_in : &c->go_in;
     tiku_field_result_t r;
 
-    if (!find && c->dialog.focus != PV_PAGE_FIELD) return 0;
+    if (!find && !password && c->dialog.focus != PV_PAGE_FIELD) return 0;
+    if (password && c->loading) return 1;
     if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_TAB) return 0;
-    r = tiku_field_event(f, in, ev, find ? l->find : l->page, 1);
-    if (r == TIKU_FIELD_COMMITTED && find && c->locked && c->sealed &&
-        !c->keyfile[0]) {
-        pv_action(c, PV_OPEN_KEY);      /* the key file first */
-    } else if (r == TIKU_FIELD_COMMITTED && find && c->locked) {
-        (void)pv_load_as(c, c->locked_path, c->sealed ? c->keyfile : "",
-                         c->pass.text);
-        pv_forget_password(c);
+    r = tiku_field_event(f, in, ev,
+                         password ? l->password : find ? l->find : l->page, 1);
+    if (r == TIKU_FIELD_COMMITTED && password) {
+        pv_action(c, PV_UNLOCK);
     } else if (r == TIKU_FIELD_COMMITTED && find) {
         pv_find(c, ev->modifiers & TIKU_MOD_SHIFT ? -1 : 1);
     } else if (r == TIKU_FIELD_COMMITTED) {
         pv_go_typed(c);
     } else if (r == TIKU_FIELD_CANCELLED) {
-        if (find && c->locked) {
-            c->locked = c->sealed = 0;
-            c->keyfile[0] = 0;
-            pv_forget_password(c);
-            pv_say(c, "The locked PDF was left closed.");
-        }
+        if (password) pv_action(c, PV_CANCEL_UNLOCK);
         tiku_dialog_focus(&c->dialog, PV_CANVAS);
     } else if (r == TIKU_FIELD_REJECTED) {
         pv_say(c, "That text does not fit the field.");
@@ -537,16 +552,18 @@ static int pv_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
     int down = ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1;
 
     if (down || ev->type == TIKU_EVENT_WHEEL) {
-        if (pv_in(l->find, ev->x, ev->y) || pv_in(l->page, ev->x, ev->y)) {
+        if (pv_in(l->find, ev->x, ev->y) || pv_in(l->page, ev->x, ev->y) ||
+            (c->locked && pv_in(l->password, ev->x, ev->y))) {
             if (down) {
-                tiku_dialog_focus(&c->dialog, pv_in(l->find, ev->x, ev->y)
+                tiku_dialog_focus(&c->dialog, pv_in(l->password, ev->x, ev->y)
+                                  ? PV_PASS_FIELD : pv_in(l->find, ev->x, ev->y)
                                   ? PV_FIND_FIELD : PV_PAGE_FIELD);
                 (void)pv_field_event(c, ev, l);
             }
             return 1;
         }
-    } else if ((c->find_in.dragging || c->go_in.dragging) &&
-               pv_field_event(c, ev, l)) {
+    } else if ((c->find_in.dragging || c->go_in.dragging ||
+                c->pass_in.dragging) && pv_field_event(c, ev, l)) {
         return 1;
     }
     if (pv_side_pointer(c, ev, l)) return 1;
@@ -747,7 +764,7 @@ int tiku_pdfview_key(tiku_pdfview_t *c, const char *keyfile)
     snprintf(c->keyfile, sizeof c->keyfile, "%s", keyfile);
     name = strrchr(keyfile, '/') ? strrchr(keyfile, '/') + 1 : keyfile;
     pv_forget_password(c);
-    tiku_dialog_focus(&c->dialog, PV_FIND_FIELD);
+    c->password_focus = 1;
     snprintf(said, sizeof said, "Type the password of %.200s and press "
              "Enter; just Enter when it has none.", name);
     pv_say(c, said);

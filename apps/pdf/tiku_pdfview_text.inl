@@ -514,7 +514,6 @@ static int pv_query(const char *text, uint32_t *q, int max, int keep_case)
 /** @brief Show match @p m: the view goes to it and the status counts. */
 static void pv_show_match(tiku_pdfview_t *c, int m)
 {
-    char said[96];
     const pv_match_t *hit = &c->match[m];
     double box[4] = { 0, 0, 0, 0 };
 
@@ -525,9 +524,7 @@ static void pv_show_match(tiku_pdfview_t *c, int m)
         if (at < c->vbar.value || at > c->vbar.value + c->laid_h - 40)
             tiku_scroll_to(&c->vbar, (int)(at - c->laid_h / 3));
     }
-    snprintf(said, sizeof said, "Match %d of %d%s.", m + 1, c->nmatch,
-             c->searching ? " so far" : "");
-    pv_say(c, said);
+    pv_search_status(c);
 }
 
 /** @brief The next match in @p dir from where the view is, or from the
@@ -573,7 +570,7 @@ static void pv_find(tiku_pdfview_t *c, int dir)
         pv_say(c, "Type what to find.");
         return;
     }
-    if (strcmp(c->find.text, c->query) == 0) {
+    if (strcmp(c->find.text, c->query) == 0 && !c->search_failed) {
         pv_find_step(c, dir);
         pv_changed(c);
         return;
@@ -583,9 +580,11 @@ static void pv_find(tiku_pdfview_t *c, int dir)
     free(c->match);
     c->match = NULL;
     c->nmatch = c->searched = 0;
+    c->search_failed = c->search_limited = 0;
     c->cur = -1;
     snprintf(c->query, sizeof c->query, "%s", c->find.text);
     c->searching = pv_search_post(c, 0);
+    c->search_failed = !c->searching;
     c->want_next = c->searching ? dir : 0;
     pv_say(c, c->searching ? "Searching..." : "The workers are busy. Try "
                                               "again in a moment.");

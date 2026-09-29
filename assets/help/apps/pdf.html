@@ -13,8 +13,10 @@ and the window never waits on it. If a file cannot be opened the status
 line says why &#8212; not a PDF, or damaged beyond repair &#8212; and the
 document already shown stays.</p>
 <p>Encrypted PDFs open like any other when they need no password, as most
-do. A PDF locked with a password turns the Find field into a Password
-field: type it and press Enter (Escape leaves the PDF closed). A
+do. A PDF locked with a password shows a separate password panel below
+the toolbar. Type the password and press Enter or click <b>Unlock</b>.
+Click <b>Cancel</b>, or press Escape in the password field, to leave it
+closed. The Find field remains separate. A
 password may be in any script, and still matches when an accent is typed
 as a mark of its own, letters come full width, or a space is an odd one.
 The password is used once and not kept. A document whose author does not
@@ -23,8 +25,8 @@ so instead of copying.</p>
 <p>A PDF sealed to certificates opens only for the people it was sealed
 to, with their own key. TikuPDF asks for your key file at once &#8212; a
 .p12 or .pfx file, or a PEM file, holding the RSA key of your
-certificate &#8212; and then turns the Find field into the key's password
-(just Enter when it has none). <b>File &gt; Open Key...</b> chooses
+certificate &#8212; and then asks for the key's password in the password
+panel (just Enter when it has none). <b>File &gt; Open Key...</b> chooses
 another key file. The status line says when the password does not open
 the key, or the key is not one the PDF was sealed to. The key and its
 password are used once and not kept.</p>
@@ -75,7 +77,11 @@ match after where you are is shown as soon as it is found. Enter or
 previous. Case, and the different kinds of space, hyphen and quote a
 typeset page uses, do not matter; a phrase broken over two lines is still
 found. <b>Match Case</b> and <b>Whole Words</b>, in the Edit menu, narrow
-the search and run it again.</p>
+the search and run it again. Search retains up to 5,000 matches; when
+that limit is reached, the status asks you to narrow the search rather
+than claiming the results are complete. A page-reading, memory, or worker
+failure is reported as an incomplete search. Press Enter in Find to retry
+the same query. Existing matches remain available until you retry.</p>
 <p>Drag across text to select it and press <b>Ctrl+C</b> to copy it.
 <b>Ctrl+A</b> selects the text of the page you are on. The clipboard holds
 16 MB of text, room for the whole of a long document; copying more takes
@@ -89,7 +95,8 @@ checks that the part of the file it signs is exactly what was signed, by
 the key of the certificate the signature carries, and whether anything
 was added to the file after it.</p>
 <ul>
-<li><b>Valid</b>: nothing it signs has changed. <b>Valid; added to</b>:
+<li><b>Integrity verified</b>: nothing it signs has changed.
+<b>Intact; added to</b>:
 what it signs is intact, but the document was added to after the last
 signature &#8212; a filled-in form, or other changes.</li>
 <li><b>Document changed</b>: what it signs is not what was signed.
@@ -99,7 +106,8 @@ signature &#8212; a filled-in form, or other changes.</li>
 authority when there is one, else the signer's own clock, in UTC), and
 the reason and place they gave. A click goes to the signature's field.</li>
 </ul>
-<p>What is not checked: whether the certificate is who it names. A
+<p><b>Signer identity is unverified.</b> The integrity result does not
+establish that the signer is who the certificate names. A
 certificate anyone can make says any name; TikuPDF keeps no list of the
 authorities it would trust, and each card says whose certificate it is.
 Signatures by RSA (PKCS#1 and PSS) and ECDSA, in the forms PDFs use

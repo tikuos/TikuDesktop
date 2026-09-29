@@ -11,9 +11,10 @@ static const char *pv_sig_pill(const tiku_pdfview_t *c, int i, int *tone)
 
     *tone = TIKU_TONE_FAIL;
     if (s->status == TIKU_PDF_SIG_GOOD) {
-        /* Added to after the last signature: worth a look, not a fault. */
-        *tone = s->whole || i + 1 < c->nsig ? TIKU_TONE_PASS : TIKU_TONE_WARN;
-        return s->whole || i + 1 < c->nsig ? "Valid" : "Valid; added to";
+        /* Integrity checked, identity unverified: a warning, never a pass. */
+        *tone = TIKU_TONE_WARN;
+        return s->whole || i + 1 < c->nsig ? "Integrity verified"
+                                           : "Intact; added to";
     }
     if (s->status == TIKU_PDF_SIG_CHANGED) return "Document changed";
     if (s->status == TIKU_PDF_SIG_BROKEN) return "Not valid";
@@ -37,11 +38,11 @@ static void pv_sig_note(const tiku_pdfview_t *c, int i, char *out, size_t cap)
     else if (s->status == TIKU_PDF_SIG_CHANGED)
         what = "What it signs has been changed since it was signed.";
     if (s->self_signed || !s->issuer)
-        snprintf(who, sizeof who, "Its certificate vouches for itself: that "
-                 "the signer is who it names is not confirmed.");
+        snprintf(who, sizeof who, "Signer identity unverified. This "
+                 "certificate is self-signed or has no known issuer.");
     else
-        snprintf(who, sizeof who, "Its certificate is from %.120s, which is "
-                 "not checked here.", s->issuer);
+        snprintf(who, sizeof who, "Signer identity unverified. Certificate "
+                 "trust is not checked (issuer: %.100s).", s->issuer);
     snprintf(out, cap, "%s%s %s", what, what == s->why ? "." : "", who);
     if (what == s->why && out[0] >= 'a' && out[0] <= 'z') out[0] -= 32;
 }

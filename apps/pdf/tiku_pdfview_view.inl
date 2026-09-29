@@ -231,7 +231,8 @@ static int pv_find_w(tiku_rect_t r, int x)
 {
     int room = r.x + r.w - 6 - x - 2 * (pv_tool_size() + 2) - 4;
 
-    return room < 170 && room >= 80 ? room : 170;
+    if (room < 80) room = r.w - 12;
+    return room < 170 ? (room > 1 ? room : 1) : 170;
 }
 
 /** @brief The toolbar: square icon buttons in groups -- the file, the
@@ -273,14 +274,40 @@ static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
         } else if (id == PV_FIND_FIELD) {
             l->find = box;
             (void)tiku_dialog_add(&c->dialog, id, box, TIKU_DIALOG_INPUT,
-                                  c->doc != NULL || c->locked);
+                                  c->doc != NULL);
         } else {
             (void)tiku_dialog_add(&c->dialog, id, box, TIKU_DIALOG_BUTTON,
                                   pv_enabled(c, id));
         }
         x += w + (field ? 4 : 2);
     }
-    return y + bw + 4;
+    y += bw + 4;
+    if (c->locked) {
+        int rh = tiku_measure_row_h();
+        l->password_label = (tiku_rect_t){r.x + 8, y, r.w - 16, rh};
+        y += rh + 2;
+        int width = r.w - 16;
+        if (width > 320) width = 320;
+        l->password = (tiku_rect_t){r.x + 8, y, width, bh};
+        (void)tiku_dialog_add(&c->dialog, PV_PASS_FIELD, l->password,
+                              TIKU_DIALOG_INPUT, !c->loading);
+        if (c->password_focus && !c->loading) {
+            tiku_dialog_focus(&c->dialog, PV_PASS_FIELD);
+            c->password_focus = 0;
+        }
+        x = r.x + 8 + width + 8;
+        int uw = tiku_ui_button_w("Unlock", 60),
+            cw = tiku_ui_button_w("Cancel", 60);
+        if (x + uw + cw + 8 > r.x + r.w - 8) { x = r.x + 8; y += bh + 4; }
+        (void)tiku_dialog_add(&c->dialog, PV_UNLOCK,
+                              (tiku_rect_t){x, y, uw, bh},
+                              TIKU_DIALOG_BUTTON, !c->loading);
+        (void)tiku_dialog_add(&c->dialog, PV_CANCEL_UNLOCK,
+                              (tiku_rect_t){x + uw + 8, y, cw, bh},
+                              TIKU_DIALOG_BUTTON, !c->loading);
+        y += bh + 6;
+    }
+    return y;
 }
 
 /** @brief Where everything goes in content @p r; the pages are laid out
@@ -610,6 +637,10 @@ static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
     if (tiku_dialog_focused(&c->dialog, d->id)) flags |= TIKU_S_FOCUS;
     if (held || on) flags |= TIKU_S_PRESSED;
     if (c->hover_tool == d->id) flags |= TIKU_S_HOT;
+    if (d->id == PV_UNLOCK || d->id == PV_CANCEL_UNLOCK) {
+        tiku_ui_button(s, d->rect, pv_label(d->id), flags);
+        return;
+    }
     /* Its name crosses for narration; its face is the icon after it. */
     tiku_ui_button(s, d->rect, pv_label(d->id), flags | TIKU_S_ICON);
     if (size > 24) size = 24;
@@ -664,7 +695,7 @@ static void pv_tool_hover(tiku_pdfview_t *c, const tiku_event_t *ev)
 static void pv_field(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r,
                      int id, const char *hint)
 {
-    int pw = id == PV_FIND_FIELD && c->locked;
+    int pw = id == PV_PASS_FIELD;
     tiku_field_t *f = pw ? &c->pass : id == PV_FIND_FIELD ? &c->find : &c->go;
     tiku_field_input_t *in = pw ? &c->pass_in : id == PV_FIND_FIELD
                                              ? &c->find_in : &c->go_in;
@@ -743,9 +774,17 @@ static void pv_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t r,
     snprintf(of, sizeof of, "of %d", c->npage);
     tiku_text_line_draw(s, l.of, TIKU_MEASURE_PLAIN, c->npage ? of : "",
                         TIKU_C_TEXT);
-    pv_field(c, s, l.find, PV_FIND_FIELD, !c->locked ? "Find" :
-             !c->sealed ? "Password" : c->keyfile[0] ? "Key's password"
-                                                     : "Key file...");
+    pv_field(c, s, l.find, PV_FIND_FIELD, "Find");
+    if (c->locked) {
+        char label[320];
+        const char *name = strrchr(c->locked_path, '/');
+        snprintf(label, sizeof label, "%s: %.240s",
+                 c->sealed ? "Key password" : "Password",
+                 name ? name + 1 : c->locked_path);
+        tiku_text_line_draw(s, l.password_label, TIKU_MEASURE_BOLD, label,
+                            TIKU_C_TEXT);
+        pv_field(c, s, l.password, PV_PASS_FIELD, "Password");
+    }
     if (l.side.w) pv_side_draw(c, s, l.side);
     if (c->npage) {
         pv_compose(c, l.canvas);

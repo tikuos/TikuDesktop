@@ -4,7 +4,31 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include "tiku_work.h"
+static int fail_alloc, fail_realloc, fail_post;
+static void *audit_malloc(size_t size)
+{
+    if (fail_alloc) { fail_alloc = 0; return NULL; }
+    return malloc(size);
+}
+static void *audit_realloc(void *p, size_t size)
+{
+    if (fail_realloc) { fail_realloc = 0; return NULL; }
+    return realloc(p, size);
+}
+static int audit_post(const tiku_work_job_t *job)
+{
+    if (fail_post) { fail_post = 0; return -1; }
+    return tiku_work_post(job);
+}
+#define malloc audit_malloc
+#define realloc audit_realloc
+#define tiku_work_post audit_post
 #include "../../apps/pdf/tiku_pdfview.c"
+#undef malloc
+#undef realloc
+#undef tiku_work_post
 #include "tiku_icons.h"
 #include "../fixtures/pdf_crypt.inc"
 #include "../fixtures/cms.inc"
@@ -640,7 +664,7 @@ static void enter(tiku_pdfview_t *c)
     pv_event(c->window, &ev, c);
 }
 
-/** @brief A locked PDF asks for its password in the find field's place
+/** @brief A locked PDF asks for its password in a separate panel
  *         and forgets it once tried; the author's no-copy is kept. */
 static void locked_tests(tiku_pdfview_t *c, const char *dir)
 {
@@ -655,7 +679,12 @@ static void locked_tests(tiku_pdfview_t *c, const char *dir)
     assert(tiku_pdfview_file(c, path));
     settle(c);
     assert(c->locked && strstr(c->status, "locked") && c->npage == PAGES);
-    assert(c->dialog.focus == PV_FIND_FIELD);
+    assert(c->dialog.focus == PV_PASS_FIELD);
+    pv_layout_t auth = layout(c);
+    assert(auth.password.y >= auth.find.y + auth.find.h);
+    assert(pv_enabled(c, PV_UNLOCK) && pv_enabled(c, PV_CANCEL_UNLOCK));
+    char saved_find[TIKU_FIELD_MAX];
+    snprintf(saved_find, sizeof saved_find, "%s", c->find.text);
     tiku_field_start(&c->pass, "wrong");
     enter(c);
     assert(!c->pass.text[0]);                   /* forgotten once tried */
@@ -665,6 +694,7 @@ static void locked_tests(tiku_pdfview_t *c, const char *dir)
     enter(c);
     settle(c);
     assert(!c->locked && c->npage == 1 && c->may_copy);
+    assert(!strcmp(saved_find, c->find.text));
     assert(c->pages[0].text && c->pages[0].nch > 5);
     assert(tiku_pdfview_file(c, other));
     settle(c);
@@ -674,6 +704,20 @@ static void locked_tests(tiku_pdfview_t *c, const char *dir)
     pv_action(c, PV_COPY);
     assert(!strcmp(tiku_clipboard_text(), "before"));
     assert(strstr(c->status, "does not allow"));
+    assert(tiku_pdfview_file(c, path));
+    settle(c);
+    tiku_field_start(&c->pass, "do not retain me");
+    auth = layout(c);
+    for (int i = 0; i < c->dialog.count; i++) {
+        tiku_dialog_control_t button = c->dialog.control[i];
+        if (button.id == PV_CANCEL_UNLOCK) {
+            click(c, button.rect.x + 4, button.rect.y + 4);
+            break;
+        }
+    }
+    assert(!c->locked && !c->pass.text[0] && !c->keyfile[0]);
+    /* cancelling retains the old document */
+    assert(c->npage == 1 && !c->may_copy);
     unlink(path);
     unlink(other);
 }
@@ -779,7 +823,10 @@ static void signature_tests(tiku_pdfview_t *c, const char *dir)
     assert(c->nsig == 2 && c->side && c->sigs && l.side.w &&
            pv_enabled(c, PV_SIGS) && strstr(c->status, "2 signatures"));
     label = pv_sig_pill(c, 0, &tone);
-    assert(!strcmp(label, "Valid") && tone == TIKU_TONE_PASS);
+    assert(!strcmp(label, "Integrity verified") && tone == TIKU_TONE_WARN);
+    char trust[400];
+    pv_sig_note(c, 0, trust, sizeof trust);
+    assert(strstr(trust, "identity unverified"));
     assert(!strcmp(c->sig[1].signer, "Tiku EC Signer"));
     /* The first field, Author's, tinted green on the page. */
     point_on(c, 0, (c->sig[0].x0 + c->sig[0].x1) / 2,
@@ -946,6 +993,60 @@ static void recent_tests(tiku_pdfview_t *c, tiku_surface_t *s,
     assert(!menu[0]);
 }
 
+static void search_failure_tests(tiku_pdfview_t *viewer)
+{
+    pv_search_t j = {0};
+    tiku_pdfview_t c = {0};
+    pv_doc_t doc = {0};
+    tiku_pdf_char_t *chars = calloc(PV_MATCHES + 1, sizeof *chars);
+    assert(chars);
+    for (int i = 0; i <= PV_MATCHES; i++) chars[i].cp = 'a';
+    j.nq = 1; j.q[0] = 'a';
+    pv_search_page(&j, 0, chars, PV_MATCHES + 1);
+    assert(j.limited && j.nmatch == PV_MATCHES);
+    c.workspace = desk; c.npage = 100; c.cur = -1;
+    j.owner = &c; j.to = 24;
+    pv_search_done(&j);
+    assert(c.search_limited && !c.searching && c.searched == 0);
+    assert(strstr(c.status, "limit reached"));
+    pv_show_match(&c, 0);
+    assert(strstr(c.status, "limit reached"));
+    free(c.match); free(j.match);
+    c.match = NULL; c.nmatch = 0; c.cur = -1;
+    c.search_limited = 0;
+    j = (pv_search_t){.owner = &c, .nq = 1, .q = {'a'}};
+    fail_alloc = 1;
+    pv_search_page(&j, 0, chars, 1);
+    assert(j.failed && !j.nmatch);
+    pv_search_done(&j);
+    assert(c.search_failed && strstr(c.status, "incomplete") &&
+           !strstr(c.status, "Not found"));
+    c.search_failed = 0;
+    j.failed = 0;
+    pv_search_page(&j, 0, chars, 1);
+    fail_realloc = 1;
+    pv_search_done(&j);
+    assert(c.search_failed && c.nmatch == 0);
+    free(j.match);
+    c.search_failed = 0; c.doc = &doc;
+    j = (pv_search_t){.owner = &c, .doc = &doc, .scanned = 24, .to = 24};
+    fail_post = 1;
+    pv_search_done(&j);
+    assert(c.search_failed && !c.searching && c.searched == 24);
+    assert(strstr(c.status, "incomplete"));
+    free(chars);
+
+    viewer->query[0] = 0;
+    tiku_field_start(&viewer->find, "TikuPDF");
+    fail_post = 1;
+    pv_find(viewer, 1);
+    assert(viewer->search_failed && !viewer->searching);
+    /* unchanged query must retry, not step an empty result */
+    pv_find(viewer, 1);
+    settle(viewer);
+    assert(!viewer->search_failed && viewer->nmatch > 0);
+}
+
 int main(int argc, char **argv)
 {
     char dir[] = "/tmp/tikupdf-XXXXXX", file[256], junk[256], shot[256];
@@ -991,6 +1092,7 @@ int main(int argc, char **argv)
     toolbar_tests(c, s);
     rotation_tests(c);
     thumbnail_tests(c, s, file);
+    search_failure_tests(c);
     pv_action(c, PV_FIRST);
     settle(c);
     tiku_field_start(&c->find, "TikuPDF");
@@ -1015,6 +1117,7 @@ int main(int argc, char **argv)
     assert(c->window && !c->doc);
     assert(tiku_pdfview_file(c, file));
     tiku_pdfview_destroy(c);
+    tiku_workspace_free(desk);
     desk = NULL;
     settle(NULL);
     tiku_workspace_free(tiku_workspace_new(s));
