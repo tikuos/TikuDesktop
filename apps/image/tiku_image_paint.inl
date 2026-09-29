@@ -147,18 +147,13 @@ static void image_button(tiku_image_window_t *c, tiku_surface_t *s,
     unsigned flags = d->enabled ? 0 : TIKU_S_DISABLED;
     if (tiku_dialog_focused(&c->dialog, d->id)) flags |= TIKU_S_FOCUS;
     if (tiku_dialog_pressed(&c->dialog, d->id)) flags |= TIKU_S_PRESSED;
-    if (s->record) {
-        (void)tiku_dl_button(s->record, d->rect, image_label(d->id), flags);
-        return;
-    }
     if (d->id == IV_WATCH) {
         tiku_ui_checkbox(s, d->rect, image_tool(d->id), flags |
                          (c->watching ? TIKU_S_ON : 0));
     } else if (d->id == IV_OPEN || d->id == IV_RELOAD) {
-        if (flags & TIKU_S_PRESSED) tiku_ui_sunken(s, d->rect, TIKU_C_PANEL);
-        else if (c->hover == d->id) tiku_ui_raised(s, d->rect);
-        if (flags & TIKU_S_FOCUS)
-            tiku_frame(s, tiku_inset(d->rect, 1), TIKU_C_FOCUS);
+        if (c->hover == d->id) flags |= TIKU_S_HOT;
+        /* Its full name crosses for narration; icon and word are its face. */
+        tiku_ui_button(s, d->rect, image_label(d->id), flags | TIKU_S_ICON);
         tiku_icon_paint_dim(s, d->id == IV_OPEN ? "folder_open" :
             "nav_reload", d->rect.x + 4,
             d->rect.y + (d->rect.h - 18) / 2, 18,

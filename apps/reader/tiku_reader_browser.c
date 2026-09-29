@@ -19,12 +19,9 @@ void tiku_reader_document_button(tiku_reader_help_window_t *c,
         id == HELP_FORWARD || id == HELP_GO ? "nav_forward" :
         id == HELP_HOME ? "folder_open" :
         id == HELP_DONE ? "nav_reload" : "magnifier";
-    /* Preserve labelled native controls for narration/automation. */
-    if (s->record) { (void)tiku_dl_button(s->record, box, label, flags); return; }
-    if (flags & TIKU_S_PRESSED) tiku_ui_sunken(s, box, TIKU_C_PANEL);
-    else if (c->reader && c->reader->hover_tool == id &&
-             !(flags & TIKU_S_DISABLED)) tiku_ui_raised(s, box);
-    if (flags & TIKU_S_FOCUS) tiku_frame(s, tiku_inset(box, 1), TIKU_C_FOCUS);
+    if (c->reader && c->reader->hover_tool == id) flags |= TIKU_S_HOT;
+    /* Its name crosses for narration; its face is the icon after it. */
+    tiku_ui_button(s, box, label, flags | TIKU_S_ICON);
     int shift = (flags & TIKU_S_PRESSED) ? 1 : 0;
     int size = box.h - 6;
     if (size > 28) size = 28;
