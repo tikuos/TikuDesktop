@@ -138,6 +138,10 @@ struct tiku_window {
      * by hand, because it carries nothing to grab; whoever opened it
      * takes it down. */
     int                          plain;
+    /* Left out of the workspace's drawing while set: a screenshot of the
+     * desk without the window that asked for it.  Nothing else about the
+     * window changes; whoever sets it clears it before the next frame. */
+    int                          hidden;
 };
 
 tiku_workspace_t *tiku_workspace_new(
@@ -213,6 +217,14 @@ void tiku_workspace_cache_stats(tiku_workspace_t *workspace,
     uint64_t *draws, uint64_t *hits, size_t *bytes);
 
 void tiku_workspace_draw(tiku_workspace_t *workspace);
+/**
+ * @brief @p window alone -- its tab, frame and content, as the active
+ *        window and without its shadow -- drawn onto @p out where it
+ *        stands on the desk, whatever covers it.  @p out is the size and
+ *        scale of the workspace's own surface.
+ */
+void tiku_workspace_draw_window(tiku_workspace_t *workspace,
+                                tiku_window_t *window, tiku_surface_t *out);
 
 /**
  * @brief Narrate @p window into @p out as the plain lines of

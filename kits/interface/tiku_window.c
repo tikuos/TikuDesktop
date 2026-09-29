@@ -919,7 +919,7 @@ tiku_workspace_draw(tiku_workspace_t *workspace)
          * the clip may still lay something inside it. */
         f.x -= TIKU_WINDOW_SHADOW; f.y -= TIKU_WINDOW_SHADOW;
         f.w += 2 * TIKU_WINDOW_SHADOW; f.h += 2 * TIKU_WINDOW_SHADOW;
-        if (window->open && !window->minimized &&
+        if (window->open && !window->minimized && !window->hidden &&
             f.x < clip.x+clip.w && f.y < clip.y+clip.h &&
             f.x+f.w > clip.x && f.y+f.h > clip.y) {
             draw_window(workspace, window,
@@ -927,6 +927,20 @@ tiku_workspace_draw(tiku_workspace_t *workspace)
         }
     }
     ghosts_draw(workspace);
+}
+
+void
+tiku_workspace_draw_window(tiku_workspace_t *workspace,
+                           tiku_window_t *window, tiku_surface_t *out)
+{
+    tiku_surface_t *shown;
+
+    if (workspace == NULL || window == NULL || out == NULL || !window->open)
+        return;
+    shown = workspace->surface;
+    workspace->surface = out;       /* drawn as it is shown, but there */
+    draw_window_at(workspace, window, 1, 0.0f);
+    workspace->surface = shown;
 }
 
 /**
