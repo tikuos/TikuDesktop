@@ -74,6 +74,7 @@ typedef struct {
     int              pid_count;
     char             command[160];       /* argv[0], for a new instance */
     int              shell;              /* seeded by the shell, kept   */
+    char             icon[64];           /* its own art, or "": generic */
 } tiku_trk_team_t;
 
 /** @brief A tray item: a namespace node rendered as label + value. */
@@ -485,6 +486,33 @@ int tiku_trk_deskbar_prune_teams(tiku_trk_deskbar_t *db, const long *live,
 /** @brief Remove one entry outright, without waiting for the roster. */
 void tiku_trk_deskbar_remove_team(tiku_trk_deskbar_t *db, int team);
 
+/** @brief The entry named @p name, matched without regard to case as
+ *         add_team matches it, without adding one.  @return it, or -1. */
+int tiku_trk_deskbar_find_team(const tiku_trk_deskbar_t *db,
+                               const char *name);
+
+/** @brief The art entry @p team wears: an icon name from the desk's set,
+ *         or NULL or "" for the generic one. */
+void tiku_trk_deskbar_set_team_icon(tiku_trk_deskbar_t *db, int team,
+                                    const char *icon);
+
+/** @brief The name of entry @p team, by the index add_team returned or a
+ *         pick carries (team_name() takes a place in the display order).
+ *  @return it, or NULL for no such entry. */
+const char *tiku_trk_deskbar_team_app(const tiku_trk_deskbar_t *db,
+                                      int team);
+
+/** @brief Entry @p team's windows as last published, into @p wins, and
+ *         whether it holds the focused one, into @p active (either may be
+ *         NULL).  @return how many, 0 for no such entry. */
+int tiku_trk_deskbar_team_windows(const tiku_trk_deskbar_t *db, int team,
+                                  const tiku_trk_dbwin_t **wins, int *active);
+
+/** @brief The icon entry @p team is drawn with: its own, else "folder"
+ *         for this Tracker and "application" for any other. */
+const char *tiku_trk_deskbar_team_icon(const tiku_trk_deskbar_t *db,
+                                       int team);
+
 /** @brief The pids behind entry @p team.  @return how many were written. */
 int tiku_trk_deskbar_team_pids(const tiku_trk_deskbar_t *db, int team,
                                long *out, int max);
@@ -577,8 +605,9 @@ const char *tiku_trk_deskbar_team_name(const tiku_trk_deskbar_t *db, int i);
 /**
  * @brief Strip the owning application's name from a window title.
  *
- * "TikuTracker: /sys" and "/sys - TikuTracker" both become "/sys", which
- * is why the list reads as places rather than as the same word repeated.
+ * "TikuTracker: /sys" and "/sys - TikuTracker" both become "/sys", and
+ * "TikuPDF - guide.pdf" becomes "guide.pdf" under TikuPDF's row: the list
+ * reads as places rather than as the same word repeated.
  */
 void tiku_trk_deskbar_strip_title(const char *app, const char *title,
                                   char *out, size_t max);

@@ -186,6 +186,76 @@ tiku_trk_deskbar_remove_team(tiku_trk_deskbar_t *db, int team)
 }
 
 int
+tiku_trk_deskbar_find_team(const tiku_trk_deskbar_t *db, const char *name)
+{
+    int i;
+
+    if (db == NULL || name == NULL) {
+        return -1;
+    }
+    for (i = 0; i < db->team_count; i++) {
+        if (strcasecmp(db->teams[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+const char *
+tiku_trk_deskbar_team_app(const tiku_trk_deskbar_t *db, int team)
+{
+    if (db == NULL || team < 0 || team >= db->team_count) {
+        return NULL;
+    }
+    return db->teams[team].name;
+}
+
+int
+tiku_trk_deskbar_team_windows(const tiku_trk_deskbar_t *db, int team,
+                              const tiku_trk_dbwin_t **wins, int *active)
+{
+    if (db == NULL || team < 0 || team >= db->team_count) {
+        return 0;
+    }
+    if (wins != NULL) {
+        *wins = db->teams[team].wins;
+    }
+    if (active != NULL) {
+        *active = db->teams[team].active;
+    }
+    return db->teams[team].win_count;
+}
+
+void
+tiku_trk_deskbar_set_team_icon(tiku_trk_deskbar_t *db, int team,
+                               const char *icon)
+{
+    if (db == NULL || team < 0 || team >= db->team_count) {
+        return;
+    }
+    snprintf(db->teams[team].icon, sizeof db->teams[team].icon, "%s",
+             icon != NULL ? icon : "");
+}
+
+const char *
+tiku_trk_deskbar_team_icon(const tiku_trk_deskbar_t *db, int team)
+{
+    const tiku_trk_team_t *t;
+
+    if (db == NULL || team < 0 || team >= db->team_count) {
+        return "application";
+    }
+    t = &db->teams[team];
+    if (t->icon[0] != '\0') {
+        return t->icon;
+    }
+    /* Tracker's own team is the one that can be named without being
+     * told; anything else wears the generic application icon rather
+     * than a blank, so the column never has a hole in it. */
+    return strcmp(t->name, "TikuTracker") == 0 ? "folder" : "application";
+}
+
+int
 tiku_trk_deskbar_prune_teams(tiku_trk_deskbar_t *db, const long *live, int n)
 {
     int i, changed = 0;
@@ -273,10 +343,14 @@ tiku_trk_deskbar_strip_title(const char *app, const char *title, char *out,
         return;
     }
     al = strlen(app);
-    /* "<app>: rest" -> "rest" */
+    /* "<app>: rest" -> "rest", and "<app> - rest", the way the desk's own
+     * applications title a window, -> "rest" */
     if (strncmp(p, app, al) == 0 && p[al] == ':') {
         p += al + 1;
         while (*p == ' ') { p++; }
+    } else if (strncmp(p, app, al) == 0 && strncmp(p + al, " - ", 3) == 0 &&
+               p[al + 3] != '\0') {
+        p += al + 3;
     }
     snprintf(out, max, "%s", p);
     /* "rest - <app>" -> "rest" */

@@ -130,10 +130,16 @@ host programs that have no TikuDesktop application connection.</p>
 
 <h2 id="windows">Application rows and their windows</h2>
 
+<p>Every application has a row of its own, wearing its own icon, and
+every window it opens is listed under it, less the application's name;
+the <b>TikuTracker</b> row holds the desktop's own windows, its folders
+and panels. Two copies of one application share a row, and the row goes
+when the last of their windows closes.</p>
+
 <p>The arrow at a row's right end opens the list of that application's
 windows beneath it, a minimized window marked differently from an open
-one. On an application row a double click brings every window on the
-desktop up, as Show all does, and focuses the top one; Ctrl+click shows
+one. On an application row a double click brings that application's
+windows up, as Show all does, and focuses the top one; Ctrl+click shows
 all, Ctrl+Shift+click hides all, a middle click starts another copy of
 the program, and Ctrl+Alt+Shift+click opens the Force Quit dialog.
 On a window row a click raises the window and restores it if it
@@ -144,8 +150,9 @@ it.</p>
 <b>Hide all</b>, <b>Show all</b>, a rule, and <b>Close all</b>. Hide all
 cannot be chosen while every one of that application's windows is
 already minimized, nor Show all while none of them is. Hide all
-minimizes every window on the desktop, Show all restores them, and Close
-all closes them; closing windows is never a request to quit. An
+minimizes that application's windows, Show all restores them, and Close
+all closes them; closing windows is never a request to quit, though an
+application that ends with its last window, as the desk's own do, ends. An
 application with no window open gets two rows instead: <b>No
 windows</b>, which cannot be chosen, and <b>Force Quit…</b>, which
 opens the application selection dialog. The file manager gets only the first of

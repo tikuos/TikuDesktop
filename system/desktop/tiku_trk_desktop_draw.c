@@ -195,7 +195,7 @@ draw_all(desktop_t *app)
     tiku_fill(app->surf,
                    (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                    app->backdrop_color);
-    tiku_trk_deskbar_publish_workspace(app->deskbar, app->team, app->desk);
+    desktop_publish_teams(app);    /* a row per application */
     /* The clock for what moves on its own -- a window rising as it
      * opens -- and none for a run with nobody to show it to, whose
      * frames must be still for a script to read. */

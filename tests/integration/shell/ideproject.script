@@ -33,8 +33,10 @@ expect-title About TikuBasic
 note asked for again it comes FORWARD rather than doubling.  The
 note project window is reached by its DESKBAR row: the plain About
 note covers its tab, and a click anywhere on a plain About is "read
-note it, done" -- the deskbar is the road that is always clear
-click 930 105
+note it, done" -- the deskbar is the road that is always clear, and the
+note project window is listed under TikuBasic's own row
+shot /tmp/trk_ideproject_deskbar.png
+click 930 151
 wait 10
 expect-title Project
 click 20 8

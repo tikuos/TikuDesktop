@@ -95,6 +95,17 @@ tiku_trk_deskbar_set_menu_icon_painter(tiku_trk_deskbar_t *db,
     }
 }
 
+/** @brief Row @p index of the running-apps menu: that team's icon. */
+static void
+apps_menu_icon(tiku_surface_t *s, int index, int x, int y, int size,
+               void *context)
+{
+    tiku_trk_deskbar_t *db = context;
+
+    (void)tiku_icon_paint(s, tiku_trk_deskbar_team_icon(db,
+                              db->order[index]), x, y, size);
+}
+
 /** @brief The menu's icon slot, handed to the painter the shell registered. */
 static void
 relay_menu_icon(tiku_surface_t *s, int index, int x, int y, int size,
@@ -1230,7 +1241,7 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
             }
             draw_row_bg(s, b, t->active);
             (void)tiku_icon_paint(s,
-                strcmp(t->name, "TikuTracker") == 0 ? "folder" : "application",
+                tiku_trk_deskbar_team_icon(db, db->order[i2]),
                 b.x + 3, b.y + (db_leaf_row() - 16) / 2, 16);
             fit_label(f, t->name, b.w - 16 - 10, label, sizeof label);
             tiku_text(s, f, b.x + 16 + 6,
@@ -1273,14 +1284,12 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
             } else {
                 draw_row_bg(s, row, t->active);
             }
-            /* The application's icon.  Tracker's own team is the one that
-             * can be named; anything else gets the generic application icon
-             * rather than a blank, so the column never has a hole in it. */
-            /* DB-018: when even the generic icon is missing, the slot is
-             * left as it is.  A coloured rectangle where an icon failed
-             * looks like an application whose icon IS a blue square. */
-            (void)tiku_icon_paint(s, strcmp(t->name, "TikuTracker") == 0
-                                         ? "folder" : "application",
+            /* The application's icon: its own, or the generic one
+             * (tiku_trk_deskbar_team_icon).  DB-018: when even that is
+             * missing, the slot is left as it is.  A coloured rectangle
+             * where an icon failed looks like an application whose icon
+             * IS a blue square. */
+            (void)tiku_icon_paint(s, tiku_trk_deskbar_team_icon(db, team),
                                       icon.x, icon.y, icon_size);
 
             if (!db->settings.hide_app_names) {
@@ -1360,7 +1369,12 @@ db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f)
             am.y = ab.y;
             am.x = (db->frame.x > 0) ? db->frame.x - am.w - 2
                                      : db->frame.x + db->frame.w + 2;
-            tiku_ui_menu(s, am, items, n, db->apps_hot);
+            if (db->team_count == 0) {
+                tiku_ui_menu(s, am, items, n, db->apps_hot);
+            } else {                /* each wearing its own icon */
+                tiku_ui_menu_icons(s, am, items, n, db->apps_hot,
+                                   apps_menu_icon, db);
+            }
             if (db->team_count == 0) {
                 /* Disabled the one way this layer says it (DB-004). */
                 tiku_rect_t r = { am.x + 2, am.y + 2, am.w - 4,

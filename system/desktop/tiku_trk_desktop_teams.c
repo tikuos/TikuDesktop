@@ -1,0 +1,197 @@
+/*
+ * tiku_trk_desktop_teams.c -- the Deskbar's applications, a row each.
+ *
+ * Every window on the desk is this shell's own or one an application's
+ * session opened.  Each application gets a row of its own, wearing the
+ * icon its manifest names, with its windows under it, as the original
+ * lists its teams; two instances of one application share the row, and
+ * the row goes when the last of their windows does.  A click on a row --
+ * activate, hide, show, close, quit -- reaches that application alone.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#include "tiku_trk_desktop_private.h"
+
+#include <string.h>
+#include <strings.h>
+
+#define TRACKER_TEAM "TikuTracker"
+
+/** @brief The windows one row will be given, gathered in one pass. */
+typedef struct {
+    char             name[TIKU_TRK_DB_LABEL_MAX];
+    tiku_trk_dbwin_t win[TIKU_TRK_DB_WINS_MAX];
+    int              count;
+} team_list_t;
+
+/**
+ * @brief The application window @p w belongs to, by the name its session
+ *        gave: the row it is listed under.  A window no session holds is
+ *        this shell's own -- folders, panels, the About box.
+ */
+const char *
+desktop_window_team(desktop_t *app, tiku_window_t *w)
+{
+    tiku_remote_session_t *s = tiku_remote_owner(&app->remote, w);
+
+    return (s != NULL && s->name[0] != '\0') ? s->name : TRACKER_TEAM;
+}
+
+/** @brief The icon the installed application called @p name asks for in
+ *         its manifest, or NULL when there is none to be had. */
+static const char *
+team_icon(desktop_t *app, const char *name)
+{
+    for (int i = 0; i < app->apps.count; i++) {
+        const tiku_trk_app_t *a = &app->apps.app[i];
+
+        if (strcasecmp(a->name, name) == 0 && a->icon[0] != '\0') {
+            return a->icon;
+        }
+    }
+    return NULL;
+}
+
+/** @brief The list for @p name among the @p n gathered so far, added
+ *         when it is new and there is room.  @return it, or -1. */
+static int
+team_slot(team_list_t *lists, int *n, const char *name)
+{
+    for (int i = 0; i < *n; i++) {
+        if (strcasecmp(lists[i].name, name) == 0) {
+            return i;
+        }
+    }
+    if (*n >= TIKU_TRK_DB_TEAMS_MAX) {
+        return -1;
+    }
+    snprintf(lists[*n].name, sizeof lists[*n].name, "%s", name);
+    lists[*n].count = 0;
+    return (*n)++;
+}
+
+/** @brief Whether @p name is among the @p n lists gathered this pass. */
+static int
+team_listed(const team_list_t *lists, int n, const char *name)
+{
+    for (int i = 0; i < n; i++) {
+        if (strcasecmp(lists[i].name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief The Deskbar's application rows made to match the lists: a row
+ *        whose application has no window left goes, and one that has just
+ *        opened its first is added, wearing its manifest's icon.
+ */
+static void
+team_sync(desktop_t *app, const team_list_t *lists, int n)
+{
+    for (int i = app->napp_teams - 1; i >= 0; i--) {
+        if (team_listed(lists, n, app->app_teams[i])) {
+            continue;
+        }
+        tiku_trk_deskbar_remove_team(app->deskbar,
+            tiku_trk_deskbar_find_team(app->deskbar, app->app_teams[i]));
+        memmove(app->app_teams[i], app->app_teams[i + 1],
+                (size_t)(app->napp_teams - i - 1) * sizeof app->app_teams[0]);
+        app->napp_teams--;
+    }
+    for (int i = 0; i < n; i++) {
+        int k, team;
+
+        if (strcmp(lists[i].name, TRACKER_TEAM) == 0) {
+            continue;
+        }
+        for (k = 0; k < app->napp_teams &&
+                    strcasecmp(app->app_teams[k], lists[i].name); k++) {}
+        if (k < app->napp_teams || app->napp_teams >= TIKU_TRK_DB_TEAMS_MAX) {
+            continue;
+        }
+        team = tiku_trk_deskbar_add_team(app->deskbar, lists[i].name);
+        if (team < 0) {
+            continue;
+        }
+        tiku_trk_deskbar_set_team_icon(app->deskbar, team,
+                                       team_icon(app, lists[i].name));
+        snprintf(app->app_teams[app->napp_teams++], sizeof app->app_teams[0],
+                 "%.47s", lists[i].name);
+    }
+    /* Rows came and went: this shell's own is found again by name. */
+    app->team = tiku_trk_deskbar_find_team(app->deskbar, TRACKER_TEAM);
+}
+
+/**
+ * @brief Each window on the desk published under its application's row,
+ *        its title less the application's name; the row holding the
+ *        focused window is the active one.  Called with every frame.
+ */
+void
+desktop_publish_teams(desktop_t *app)
+{
+    static team_list_t lists[TIKU_TRK_DB_TEAMS_MAX];
+    tiku_window_t *focused = tiku_workspace_focused(app->desk);
+    int n = 0, active = -1, count = tiku_workspace_count(app->desk);
+
+    (void)team_slot(lists, &n, TRACKER_TEAM);   /* always there, first */
+    for (int i = 0; i < count; i++) {
+        tiku_window_t *w = tiku_workspace_at(app->desk, i);
+        int slot = w != NULL && w->open
+                   ? team_slot(lists, &n, desktop_window_team(app, w)) : -1;
+        tiku_trk_dbwin_t *d;
+
+        if (slot < 0 || lists[slot].count >= TIKU_TRK_DB_WINS_MAX) {
+            continue;
+        }
+        d = &lists[slot].win[lists[slot].count++];
+        memset(d, 0, sizeof *d);
+        tiku_trk_deskbar_strip_title(lists[slot].name, w->title, d->title,
+                                     sizeof d->title);
+        d->state = w->minimized ? TIKU_TRK_DBW_MINIMIZED : TIKU_TRK_DBW_SHOWN;
+        d->current = w == focused;
+        d->tag = w->tag;
+        if (w == focused) {
+            active = slot;
+        }
+    }
+    team_sync(app, lists, n);
+    for (int i = n - 1; i > 0; i--) {   /* no row to be had: Tracker's */
+        if (tiku_trk_deskbar_find_team(app->deskbar, lists[i].name) >= 0) {
+            continue;
+        }
+        for (int k = 0; k < lists[i].count &&
+                        lists[0].count < TIKU_TRK_DB_WINS_MAX; k++) {
+            lists[0].win[lists[0].count++] = lists[i].win[k];
+        }
+        active = active == i ? 0 : active;
+        lists[i].count = 0;
+    }
+    for (int i = 0; i < n; i++) {
+        tiku_trk_deskbar_set_windows(app->deskbar,
+            tiku_trk_deskbar_find_team(app->deskbar, lists[i].name),
+            lists[i].win, lists[i].count, i == active);
+    }
+}
+
+/** @brief Whether window @p w is listed under Deskbar entry @p team. */
+int
+desktop_team_has(desktop_t *app, int team, tiku_window_t *w)
+{
+    const char *name = tiku_trk_deskbar_team_app(app->deskbar, team);
+
+    return w != NULL && name != NULL &&
+           strcasecmp(desktop_window_team(app, w), name) == 0;
+}
+
+/** @brief Whether Deskbar entry @p team is an application's rather than
+ *         this shell's own. */
+int
+desktop_team_is_app(desktop_t *app, int team)
+{
+    const char *name = tiku_trk_deskbar_team_app(app->deskbar, team);
+
+    return name != NULL && strcmp(name, TRACKER_TEAM) != 0;
+}

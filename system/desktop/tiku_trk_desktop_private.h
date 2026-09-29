@@ -198,6 +198,11 @@ typedef struct desktop {
     int                  folder_count;  /* folders[] in use              */
     int                  row_h;         /* a list row, in pixels         */
     int                  team;          /* this shell's own Deskbar team */
+    /* The applications with a Deskbar row of their own, by name: one per
+     * application whose session holds a window (tiku_trk_desktop_teams.c),
+     * so a row can go when the last of its windows does. */
+    char            app_teams[TIKU_TRK_DB_TEAMS_MAX][TIKU_TRK_DB_LABEL_MAX];
+    int                  napp_teams;    /* app_teams[] in use            */
     int                  running;       /* the loop goes on while set    */
     /* Being taken down: the loop runs on so the screen can go under,
      * but nothing a person does reaches anything any more. */
@@ -855,6 +860,12 @@ int desktop_shot_save(desktop_t *app, int session, const char *what,
                       uint32_t *px, int w, int h, int alpha);
 void desktop_shot_desk(desktop_t *app);
 void desktop_grab(desktop_t *app, int session, const tiku_msg_t *msg);
+/* The Deskbar's applications (tiku_trk_desktop_teams.c): a row each, and
+ * what a click on one reaches. */
+const char *desktop_window_team(desktop_t *app, tiku_window_t *w);
+void desktop_publish_teams(desktop_t *app);
+int desktop_team_has(desktop_t *app, int team, tiku_window_t *w);
+int desktop_team_is_app(desktop_t *app, int team);
 void set_backdrop_color(void *context, const tiku_trk_color_t *color);
 
 /* tiku_trk_desktop_drivers.c */

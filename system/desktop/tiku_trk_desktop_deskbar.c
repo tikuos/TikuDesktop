@@ -14,6 +14,9 @@
 
 /* Used before they are defined. */
 int deskbar_pick_clock(desktop_t *app, tiku_trk_db_pick_t *pick);
+static void team_activate(desktop_t *app, int team);
+static void team_launch(desktop_t *app, int team);
+static void team_close(desktop_t *app, int team);
 int deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y);
 int deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick);
 /* End of the forward declarations. */
@@ -56,6 +59,63 @@ paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
         ? tiku_icon_paint_dim(s, icon, x, y, size, 0.55f,
                                   TIKU_C_PANEL)
         : tiku_icon_paint(s, icon, x, y, size);
+}
+
+/** @brief Application @p team to the front: its windows back on the desk,
+ *         the topmost of them focused (DB-019). */
+static void
+team_activate(desktop_t *app, int team)
+{
+    tiku_window_t *top = NULL;
+    int k, m = tiku_workspace_count(app->desk);
+
+    for (k = 0; k < m; k++) {
+        tiku_window_t *ww = tiku_workspace_at(app->desk, k);
+
+        if (desktop_team_has(app, team, ww)) {
+            ww->minimized = 0;
+            top = ww;
+        }
+    }
+    if (top != NULL) {
+        tiku_workspace_activate(app->desk, top);
+    }
+}
+
+/** @brief Another instance of application @p team, the way the Tiku menu
+ *         would start one (DB-021). */
+static void
+team_launch(desktop_t *app, int team)
+{
+    const char *name = tiku_trk_deskbar_team_app(app->deskbar, team);
+
+    for (int i = 0; name != NULL && i < app->apps.count; i++) {
+        if (strcasecmp(app->apps.app[i].name, name) == 0) {
+            (void)tiku_trk_launch_run(&app->apps.app[i], NULL, 0);
+            return;
+        }
+    }
+}
+
+/** @brief Every window of application @p team closed: an application's
+ *         each told, as its own Close would; this shell's taken down. */
+static void
+team_close(desktop_t *app, int team)
+{
+    int shell = !desktop_team_is_app(app, team);
+
+    for (int k = tiku_workspace_count(app->desk) - 1; k >= 0; k--) {
+        tiku_window_t *ww = tiku_workspace_at(app->desk, k);
+
+        if (!desktop_team_has(app, team, ww)) {
+            continue;
+        }
+        if (shell) {
+            tiku_workspace_close(app->desk, ww);
+        } else {
+            close_window(app, ww);
+        }
+    }
 }
 
 /**
@@ -169,25 +229,11 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         t = tiku_workspace_find(app->desk, pick->tag);
         close_window(app, t);
         break;
-    case TIKU_TRK_DB_ACTIVATE_TEAM: {
+    case TIKU_TRK_DB_ACTIVATE_TEAM:
         /* Activating the application: its windows to
          * the front, the top one focused (DB-019). */
-        int k, m = tiku_workspace_count(app->desk);
-
-        for (k = 0; k < m; k++) {
-            tiku_window_t *ww =
-                tiku_workspace_at(app->desk, k);
-            if (ww != NULL) {
-                ww->minimized = 0;
-            }
-        }
-        if (m > 0) {
-            tiku_workspace_activate(app->desk,
-                tiku_workspace_at(app->desk,
-                                       m - 1));
-        }
+        team_activate(app, pick->team);
         break;
-    }
     case TIKU_TRK_DB_LAUNCH_TEAM: {
         /* Middle click: another instance of the same
          * image (DB-021). */
@@ -195,7 +241,9 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
             tiku_trk_deskbar_team_command(app->deskbar,
                                           pick->team);
 
-        if (cmd[0] != '\0') {
+        if (cmd[0] == '\0') {      /* an application's row */
+            team_launch(app, pick->team);
+        } else {
             pid_t child = fork();
 
             if (child == 0) {
@@ -210,36 +258,38 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         break;
     }
     case TIKU_TRK_DB_QUIT_TEAM:
-    case TIKU_TRK_DB_KILL_TEAM: {
+    case TIKU_TRK_DB_KILL_TEAM:
+        /* Quit on an application's own row: its windows asked to close,
+         * the way its own Close would, and it ends with the last. */
+        if (pick->what == TIKU_TRK_DB_QUIT_TEAM &&
+            desktop_team_is_app(app, pick->team)) {
+            team_close(app, pick->team);
+            break;
+        }
         /* Roster names can group unrelated processes, including the shell.
          * Select an authenticated peer and confirm in the native dialog. */
         desktop_forcequit_open(app);
         break;
-    }
     case TIKU_TRK_DB_HIDE_ALL:
     case TIKU_TRK_DB_SHOW_ALL: {
         int k, m = tiku_workspace_count(app->desk);
         for (k = 0; k < m; k++) {
             tiku_window_t *ww =
                 tiku_workspace_at(app->desk, k);
-            if (ww != NULL) {
+            if (desktop_team_has(app, pick->team, ww)) {
                 ww->minimized =
                     (pick->what == TIKU_TRK_DB_HIDE_ALL);
             }
         }
         break;
     }
-    case TIKU_TRK_DB_CLOSE_ALL: {
+    case TIKU_TRK_DB_CLOSE_ALL:
         /* Closing every window of the file manager is a
          * request to close its WINDOWS, never to quit
          * it -- the original makes the same
          * distinction. */
-        while (tiku_workspace_count(app->desk) > 0) {
-            tiku_workspace_close(app->desk,
-                tiku_workspace_at(app->desk, 0));
-        }
+        team_close(app, pick->team);
         break;
-    }
     default:
         return 0;
     }
