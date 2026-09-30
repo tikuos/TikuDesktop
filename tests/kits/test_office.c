@@ -7,7 +7,8 @@
  * test_office.c - Word, OpenDocument and PowerPoint files translated to
  * PDF, held to what the PDF kit reads back: the pages each lays out to
  * and the words on the first, page sizes and turns, links, the outline
- * and the title; a PDF exported beside them.  Hostile files -- cut
+ * and the title, charts drawn from their values; a PDF exported beside
+ * them.  Hostile files -- cut
  * short, not XML, nested past reason, sizes out of all measure, styles
  * based on each other -- are refused or laid out, never a crash or a
  * hang.  Documents come from tests/fixtures/office.inc; faces from the
@@ -285,6 +286,46 @@ detail_tests(void)
     tiku_pdf_close(s);
 }
 
+/* ---------------------------------------------------------------- charts */
+
+/** @brief The colour at fraction @p fx, @p fy across page @p p of @p doc,
+ *         drawn small; 0 when it cannot be drawn. */
+static uint32_t
+colour_at(tiku_pdf_t *doc, int p, double fx, double fy)
+{
+    tiku_pdf_pixmap_t pm;
+    uint32_t c;
+
+    if (doc == NULL || tiku_pdf_render(doc, p, 0.5, 0, &pm) != 0) {
+        return 0;
+    }
+    c = pm.px[(int)(fy * (pm.h - 1)) * pm.w + (int)(fx * (pm.w - 1))];
+    tiku_pdf_pixmap_free(&pm);
+    return c & 0xffffffu;
+}
+
+/** @brief Charts drawn from the values their parts keep; a kind not
+ *         drawn here left as a grey box of its place. */
+static void
+chart_tests(void)
+{
+    tiku_pdf_t *c = translated("pptx_charts");
+    char *pie = c != NULL ? tiku_pdf_page_text(c, 1) : NULL;
+    char *left = c != NULL ? tiku_pdf_page_text(c, 2) : NULL;
+
+    check(pie != NULL && strstr(pie, "Where the time goes") != NULL &&
+          strstr(pie, "Reading") != NULL && strstr(pie, "50%") != NULL,
+          "OF-036", "a pie drawn from its cached values: its title, its "
+          "slices' names in the legend and their shares");
+    check(c != NULL && (left == NULL ||
+                        strstr(left, "Not drawn here") == NULL) &&
+          colour_at(c, 2, 0.5, 0.6) == 0xeeeeeeu, "OF-037",
+          "a chart of a kind not drawn here: a grey box of its place");
+    free(pie);
+    free(left);
+    tiku_pdf_close(c);
+}
+
 /* --------------------------------------------------------------- export */
 
 /** @brief Whether @p path reads back as a PDF of @p pages pages. */
@@ -365,6 +406,7 @@ main(void)
             fixture_test(k);
         }
         detail_tests();
+        chart_tests();
         export_tests();
     } else {
         printf("  [SKIP] no faces on this machine to set text in\n");

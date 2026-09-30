@@ -924,6 +924,177 @@ laughs = ('<?xml version="1.0"?><!DOCTYPE w:document [<!ENTITY a "aaaaaaaa">'
 DOCS.append(Doc("entities", ".docx", "Entities declared to multiply: "
                 "never expanded", docx_with(laughs), -1, []))
 
+# ----------------------------------------------------------------- charts
+
+C_NS = ('xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/'
+        'relationships"')
+C_TYPE = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml"
+C_AXES = ('<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/>'
+          '</c:scaling><c:delete val="0"/><c:axPos val="b"/><c:crossAx '
+          'val="2"/></c:catAx><c:valAx><c:axId val="2"/><c:scaling>'
+          '<c:orientation val="minMax"/></c:scaling><c:delete val="0"/>'
+          '<c:axPos val="l"/><c:majorGridlines/><c:crossAx val="1"/>'
+          '<c:crossBetween val="between"/></c:valAx>')
+
+
+def c_cache(vals):
+    """Values cached as a chart keeps them: words, or numbers."""
+    pts = "".join('<c:pt idx="%d"><c:v>%s</c:v></c:pt>' % (i, v)
+                  for i, v in enumerate(vals))
+    if isinstance(vals[0], str):
+        return ('<c:strRef><c:f>Sheet1!A1</c:f><c:strCache><c:ptCount '
+                'val="%d"/>%s</c:strCache></c:strRef>' % (len(vals), pts))
+    return ('<c:numRef><c:f>Sheet1!B1</c:f><c:numCache><c:formatCode>'
+            'General</c:formatCode><c:ptCount val="%d"/>%s</c:numCache>'
+            '</c:numRef>' % (len(vals), pts))
+
+
+def c_ser(i, name, cats, vals, extra=""):
+    """A series: its name, its categories and its values."""
+    return ('<c:ser><c:idx val="%d"/><c:order val="%d"/><c:tx>%s</c:tx>%s'
+            '<c:cat>%s</c:cat><c:val>%s</c:val></c:ser>'
+            % (i, i, c_cache([name]), extra, c_cache(cats), c_cache(vals)))
+
+
+def c_part(title, plot, legend="b"):
+    """A chart part: a title over a plot area, a legend, 12 pt text."""
+    return (XML + '<c:chartSpace %s><c:chart><c:title><c:tx><c:rich>'
+            '<a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>%s</a:t></a:r></a:p>'
+            '</c:rich></c:tx><c:overlay val="0"/></c:title>'
+            '<c:autoTitleDeleted val="0"/><c:plotArea><c:layout/>%s'
+            '</c:plotArea><c:legend><c:legendPos val="%s"/></c:legend>'
+            '</c:chart><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>'
+            '<a:defRPr sz="1200"/></a:pPr></a:p></c:txPr></c:chartSpace>'
+            % (C_NS, title, plot, legend))
+
+
+C_SHARES = ('<c:dLbls><c:showVal val="0"/><c:showCatName val="0"/>'
+            '<c:showSerName val="0"/><c:showPercent val="1"/></c:dLbls>')
+C_COLUMN = c_part("Quarterly sales", '<c:barChart><c:barDir val="col"/>'
+                  '<c:grouping val="clustered"/>%s%s<c:axId val="1"/>'
+                  '<c:axId val="2"/></c:barChart>%s'
+                  % (c_ser(0, "North", ["Q1", "Q2", "Q3", "Q4"],
+                           [20, 35, 30, 25]),
+                     c_ser(1, "South", ["Q1", "Q2", "Q3", "Q4"],
+                           [15, 22, 28, 32]), C_AXES))
+C_PIE = c_part("Where the time goes", '<c:pieChart><c:varyColors val="1"/>'
+               '%s</c:pieChart>' % c_ser(0, "Hours", ["Reading", "Writing",
+                                                      "Meetings"],
+                                         [4, 2, 2], C_SHARES), "r")
+C_SURFACE = c_part("Not drawn here", '<c:surfaceChart>%s<c:axId val="1"/>'
+                   '<c:axId val="2"/></c:surfaceChart>%s'
+                   % (c_ser(0, "Z", ["a", "b"], [1, 2]), C_AXES))
+
+
+def c_frame(n, rid):
+    """A slide's frame holding chart @p rid, below its title."""
+    return ('<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="%d" '
+            'name="Chart %d"/><p:cNvGraphicFramePr/><p:nvPr/>'
+            '</p:nvGraphicFramePr><p:xfrm><a:off x="1524000" y="1600000"/>'
+            '<a:ext cx="9144000" cy="4800000"/></p:xfrm><a:graphic>'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/'
+            'drawingml/2006/chart"><c:chart %s r:id="%s"/></a:graphicData>'
+            '</a:graphic></p:graphicFrame>' % (50 + n, n, C_NS, rid))
+
+
+def pptx_charts():
+    """Three slides of charts: columns, a pie, a kind not drawn here."""
+    parts = {
+        "_rels/.rels": rels([("rId1", "officeDocument",
+                              "ppt/presentation.xml")]),
+        "ppt/slideMasters/slideMaster1.xml": XML + (
+            '<p:sldMaster %s>%s<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" '
+            'tx2="dk2" accent1="accent1" accent2="accent2" '
+            'accent3="accent3" accent4="accent4" accent5="accent5" '
+            'accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+            '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/>'
+            '</p:sldLayoutIdLst>%s</p:sldMaster>'
+            % (P, tree([sp(0, "title", "Title", "",
+                           (838200, 365125, 10515600, 1325563))]),
+               MASTER_TX)),
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels": rels([
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+            ("rId2", "theme", "../theme/theme1.xml")]),
+        "ppt/slideLayouts/slideLayout1.xml": XML + (
+            '<p:sldLayout %s type="titleOnly">%s</p:sldLayout>'
+            % (P, tree([sp(0, "title", "Title", "")]))),
+        "ppt/slideLayouts/_rels/slideLayout1.xml.rels": rels([
+            ("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")]),
+        "ppt/theme/theme1.xml": THEME}
+    over = [("ppt/presentation.xml", PML + "presentation.main+xml"),
+            ("ppt/slideMasters/slideMaster1.xml", PML + "slideMaster+xml"),
+            ("ppt/slideLayouts/slideLayout1.xml", PML + "slideLayout+xml"),
+            ("ppt/theme/theme1.xml",
+             "application/vnd.openxmlformats-officedocument.theme+xml")]
+    ids, prels = [], [("rId1", "slideMaster",
+                       "slideMasters/slideMaster1.xml")]
+    for n, (title, part) in enumerate([("Sales", C_COLUMN), ("Time", C_PIE),
+                                       ("", C_SURFACE)], 1):
+        parts["ppt/slides/slide%d.xml" % n] = XML + (
+            '<p:sld %s>%s</p:sld>'
+            % (P, tree([sp(0, "title", "Title", para(title) if title
+                           else ""), c_frame(n, "rId2")])))
+        parts["ppt/slides/_rels/slide%d.xml.rels" % n] = rels([
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+            ("rId2", "chart", "../charts/chart%d.xml" % n)])
+        parts["ppt/charts/chart%d.xml" % n] = part
+        over += [("ppt/slides/slide%d.xml" % n, PML + "slide+xml"),
+                 ("ppt/charts/chart%d.xml" % n, C_TYPE)]
+        ids.append('<p:sldId id="%d" r:id="rId%d"/>' % (255 + n, n + 1))
+        prels.append(("rId%d" % (n + 1), "slide", "slides/slide%d.xml" % n))
+    parts["ppt/presentation.xml"] = XML + (
+        '<p:presentation %s><p:sldMasterIdLst><p:sldMasterId '
+        'id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>%s'
+        '</p:sldIdLst><p:sldSz cx="%d" cy="%d"/></p:presentation>'
+        % (P, "".join(ids), EMU_W, EMU_H))
+    parts["ppt/_rels/presentation.xml.rels"] = rels(prels)
+    parts["[Content_Types].xml"] = types(over)
+    return package(parts)
+
+
+def docx_chart():
+    """A Word page with a pie chart in its text."""
+    chart = ('<w:r><w:drawing><wp:inline><wp:extent cx="5486400" '
+             'cy="3200400"/><wp:docPr id="1" name="Chart 1"/><a:graphic>'
+             '<a:graphicData uri="http://schemas.openxmlformats.org/'
+             'drawingml/2006/chart"><c:chart %s r:id="rIdChart"/>'
+             '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+             % C_NS)
+    doc = (XML + '<w:document %s><w:body>%s%s<w:sectPr><w:pgSz w:w="12240" '
+           'w:h="15840"/><w:pgMar w:top="1440" w:right="1440" '
+           'w:bottom="1440" w:left="1440"/></w:sectPr></w:body>'
+           '</w:document>' % (W, wp("A chart in the text"),
+                              wp(None, runs=chart)))
+    return package({
+        "[Content_Types].xml": types([
+            ("word/document.xml", WML + "document.main+xml"),
+            ("word/styles.xml", WML + "styles+xml"),
+            ("word/theme/theme1.xml",
+             "application/vnd.openxmlformats-officedocument.theme+xml"),
+            ("word/charts/chart1.xml", C_TYPE)]),
+        "_rels/.rels": rels([("rId1", "officeDocument",
+                              "word/document.xml")]),
+        "word/_rels/document.xml.rels": rels([
+            ("rIdStyles", "styles", "styles.xml"),
+            ("rIdTheme", "theme", "theme/theme1.xml"),
+            ("rIdChart", "chart", "charts/chart1.xml")]),
+        "word/document.xml": doc, "word/styles.xml": W_STYLES,
+        "word/theme/theme1.xml": THEME,
+        "word/charts/chart1.xml": C_PIE.replace('sz="1200"', 'sz="1000"')})
+
+
+DOCS.append(Doc("pptx_charts", ".pptx", "PowerPoint charts drawn from "
+                "their cached values: columns, a pie, a surface left grey",
+                pptx_charts(), 3,
+                ["Sales", "Quarterly sales", "Q1", "Q4", "North", "South",
+                 "40"]))
+DOCS.append(Doc("docx_chart", ".docx", "A Word page with a pie chart in its "
+                "text", docx_chart(), 1,
+                ["A chart in the text", "Where the time goes", "Reading",
+                 "Meetings", "50%", "25%"]))
+
 # -------------------------------------------------------------------- out
 
 def c_string(text):
