@@ -346,6 +346,8 @@ wordart(of_faces_t *fs, const tiku_xml_node_t *s, const float *box,
     alpha = opacity(tiku_xml_attr(tiku_xml_child(s, "v:fill"), "opacity"));
     run.kind = OF_FRAG_GLYPHS;
     run.face = face;
+    run.bold = fs->face[face].f.bold_synth;     /* a face that has none */
+    run.italic = fs->face[face].f.italic_synth;
     run.size = WA_SIZE;
     run.color = (uint32_t)(alpha * 255 + 0.5f) << 24 | (fill & 0xffffffu);
     run.x = -ink[0];
