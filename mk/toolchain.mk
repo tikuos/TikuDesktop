@@ -78,7 +78,8 @@ RT_LIBS := -lrt
 endif
 
 KIT_INC := -Ikits/support -Ikits/device -Ikits/storage -Ikits/interface \
-           -Ikits/translation -Ikits/application -Ikits/media -I$(BUILD)/generated
+           -Ikits/translation -Ikits/application -Ikits/media -Ikits/editor \
+           -I$(BUILD)/generated
 TRK_INC := -Isystem/shared/core -Isystem/shared/ui -Isystem/shared/ui/commands \
            -Isystem/shared/ui/windows -Isystem/shared/ui/overlays -Isystem/shared/ui/input \
            -Isystem/deskbar -Isystem/shared/shell -Isystem/shared/shell/adapters \

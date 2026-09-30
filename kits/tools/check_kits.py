@@ -41,6 +41,7 @@ ALLOWS = {
     "translation": {"support", "storage", "interface"},
     "application": {"support", "device", "interface"},
     "media":       set(),
+    "editor":      {"support", "interface"},
 }
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.MULTILINE)

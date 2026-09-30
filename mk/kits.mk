@@ -18,7 +18,9 @@
 #   application -> support, device,      apps, windows, messages
 #                  interface
 #   media                                system sounds, a backend behind
+#   editor      -> support, interface    text documents and their editing
 #
+# The editor kit is linked only by what uses it, not through DESK_LIBS.
 # kits/tools/check_kits.py holds that table and fails the build if an
 # include crosses it the wrong way.  The rule is the point of the
 # arrangement: without something checking it, a kit is a folder.
@@ -187,6 +189,13 @@ endif
 MEDIA       := $(K)/media/tiku_sound.c $(SOUND_HOST) \
                $(K)/media/tiku_score.c $(K)/media/tiku_sound_scores.c \
                $(K)/media/tiku_wav.c
+EDITOR      := $(K)/editor/tiku_editdoc.c $(K)/editor/tiku_editdoc_alloc.c \
+               $(K)/editor/tiku_editdoc_utf8.c \
+               $(K)/editor/tiku_editdoc_buffer.c \
+               $(K)/editor/tiku_editdoc_lines.c \
+               $(K)/editor/tiku_editdoc_undo.c \
+               $(K)/editor/tiku_editdoc_anchors.c \
+               $(K)/editor/tiku_editdoc_transaction.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_app_tray.c \
                $(K)/application/tiku_window_app.c \
@@ -229,6 +238,7 @@ LIB_INTERFACE   := $(LIBDIR)/libtiku_interface.a
 LIB_TRANSLATION := $(LIBDIR)/libtiku_translation.a
 LIB_APPLICATION := $(LIBDIR)/libtiku_application.a
 LIB_MEDIA       := $(LIBDIR)/libtiku_media.a
+LIB_EDITOR      := $(LIBDIR)/libtiku_editor.a
 
 # In link order: a linker resolves left to right, so a kit must come
 # before the kits it draws on.  DESK_LIBS is the name every rule in the
@@ -263,9 +273,10 @@ $(eval $(call KIT_RULES,interface,INTERFACE))
 $(eval $(call KIT_RULES,translation,TRANSLATION))
 $(eval $(call KIT_RULES,application,APPLICATION))
 $(eval $(call KIT_RULES,media,MEDIA))
+$(eval $(call KIT_RULES,editor,EDITOR))
 
 .PHONY: kits check-kits
-kits: $(DESK_LIBS) $(PIC_LIBS)
+kits: $(DESK_LIBS) $(PIC_LIBS) $(LIB_EDITOR) $(PICLIB)/libtiku_editor.a
 
 # What keeps a kit a kit.
 check-kits:
