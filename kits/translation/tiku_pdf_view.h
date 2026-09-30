@@ -82,6 +82,22 @@ int tiku_pdf_view_open(tiku_pdf_view_t *v, const char *path,
 int tiku_pdf_view_open_key(tiku_pdf_view_t *v, const char *path,
                            const char *keyfile, const char *password);
 
+/** @brief A file made a PDF, on a worker: its bytes to free(), their
+ *         count in @p len; NULL with why said in @p why, in a person's
+ *         words. */
+typedef unsigned char *(*tiku_pdf_view_translate_fn)(const char *path,
+                                                      size_t *len, char *why,
+                                                      size_t max);
+
+/**
+ * @brief Open @p path as @p translate makes it a PDF -- a Word document,
+ *        slides -- on a worker, as tiku_pdf_view_open() opens a PDF.  Its
+ *        path is the file's own; a failure is said in the translator's
+ *        words.  @return 0 when none was begun.
+ */
+int tiku_pdf_view_open_as(tiku_pdf_view_t *v, const char *path,
+                          tiku_pdf_view_translate_fn translate);
+
 /** @brief The document let go; the view is blank again. */
 void tiku_pdf_view_close(tiku_pdf_view_t *v);
 
@@ -131,6 +147,11 @@ int tiku_pdf_view_back(tiku_pdf_view_t *v);
  *         for TIKU_PDF_VIEW_FIXED (1 is 72 dpi), from 0.25 to 4. */
 void tiku_pdf_view_fit(tiku_pdf_view_t *v, tiku_pdf_view_fit_t fit,
                        double scale);
+
+/** @brief The page in view shown alone, fitted whole and centred on
+ *         black, with no bars: a slide presented (@p on), or the pages
+ *         one under another again.  tiku_pdf_view_go() steps it. */
+void tiku_pdf_view_single(tiku_pdf_view_t *v, int on);
 
 /** @brief One step in (@p dir 1) or out (-1) of the zoom ladder, 25% to
  *         400%; the fit becomes fixed. */

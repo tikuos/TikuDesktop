@@ -28,9 +28,11 @@ static int vw_page_at(const tiku_pdf_view_t *v, long y)
     return lo;
 }
 
-/** @brief The page the view is on: the one across its middle. */
+/** @brief The page the view is on: the one across its middle, or the
+ *         one shown alone. */
 static int vw_current(const tiku_pdf_view_t *v)
 {
+    if (v->single) return v->single_page < v->npage ? v->single_page : 0;
     if (!v->npage || !v->laid_scale) return 0;
     return vw_page_at(v, v->vbar.value + v->laid_h / 2);
 }
@@ -51,7 +53,9 @@ static double vw_fit_scale(const tiku_pdf_view_t *v, tiku_rect_t canvas)
             v->start_page >= 0 && v->start_page < v->npage ? v->start_page
                                                            : 0;
 
-    if (v->fit == TIKU_PDF_VIEW_FIT_WIDTH)
+    if (v->single)
+        s = fmin(canvas.w / vw_pw(v, p), canvas.h / vw_ph(v, p));
+    else if (v->fit == TIKU_PDF_VIEW_FIT_WIDTH)
         s = (canvas.w - 2.0 * VW_MARGIN) / vw_pw(v, v->widest);
     else if (v->fit == TIKU_PDF_VIEW_FIT_PAGE)
         s = fmin((canvas.w - 2.0 * VW_MARGIN) / vw_pw(v, p),
@@ -151,6 +155,11 @@ static void vw_scroll(tiku_pdf_view_t *v, int dx, int dy)
 static void vw_go(tiku_pdf_view_t *v, int p, double y, int remember)
 {
     if (p < 0 || (v->npage && p >= v->npage)) return;
+    if (v->single) {                /* the new page fitted, alone */
+        v->single_page = p;
+        v->laid_w = 0;
+        vw_changed(v);
+    }
     if (!v->laid_scale) {
         v->start_page = p;
         v->start_y = y;
@@ -191,6 +200,11 @@ static vw_layout_t vw_layout(tiku_pdf_view_t *v, tiku_rect_t r)
     vw_layout_t l;
 
     memset(&l, 0, sizeof l);
+    if (v->single) {                /* no bars: the page alone */
+        l.canvas = r;
+        if (v->npage) vw_relayout(v, l.canvas);
+        return l;
+    }
     l.vbar = (tiku_rect_t){r.x + r.w - VW_BAR, r.y, VW_BAR, r.h};
     l.canvas = (tiku_rect_t){r.x, r.y, r.w - VW_BAR, r.h};
     if (l.canvas.w < 1) l.canvas.w = 1;
@@ -332,6 +346,29 @@ static void vw_compose_page(tiku_pdf_view_t *v, tiku_rect_t canvas, int p)
     vw_marks(v, p, x, y);
 }
 
+/** @brief The canvas as one page alone: centred on black, the pages
+ *         either side asked for next. */
+static void vw_compose_single(tiku_pdf_view_t *v, tiku_rect_t canvas)
+{
+    int p = vw_current(v), w = vw_page_w(v, p), h = vw_page_h(v, p);
+    int x = (canvas.w - w) / 2, y = (canvas.h - h) / 2;
+    vw_tile_t *t = vw_tile(v, p, 0);
+
+    for (long i = 0; i < (long)v->view_w * v->view_h; i++)
+        v->view[i] = 0xff000000u;
+    if (t) {
+        t->used = v->frame;
+        vw_blit(v, t, x, y, w, h);
+    } else {
+        vw_tint(v, x, y, w, h, 0xffffffffu);
+    }
+    if (!vw_tile(v, p, 1) && !vw_pending(v, p)) (void)vw_request(v, p);
+    v->pages[p].used = v->frame;
+    for (int n = p - 1; n <= p + 1; n += 2)
+        if (n >= 0 && n < v->npage && !vw_tile(v, n, 1) && !vw_pending(v, n))
+            (void)vw_request(v, n);
+}
+
 /** @brief The canvas: the pages across it, drawn or waiting to be, and
  *         the pages either side asked for next. */
 static void vw_compose(tiku_pdf_view_t *v, tiku_rect_t canvas)
@@ -346,6 +383,10 @@ static void vw_compose(tiku_pdf_view_t *v, tiku_rect_t canvas)
     }
     if (!v->view) return;
     v->frame++;
+    if (v->single) {
+        vw_compose_single(v, canvas);
+        return;
+    }
     for (long i = 0; i < (long)v->view_w * v->view_h; i++)
         v->view[i] = VW_GROUND;
     first = vw_page_at(v, v->vbar.value);
@@ -434,6 +475,10 @@ void tiku_pdf_view_draw(tiku_pdf_view_t *v, tiku_surface_t *s,
     if (v->view)
         tiku_picture(s, l.canvas.x, l.canvas.y, v->view_w, v->view_h,
                      v->view);
+    if (v->single) {
+        s->clip = clip;
+        return;
+    }
     tiku_frame(s, l.canvas, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
     vw_bars(v, s, &l);
     if (l.hbar.w)                   /* the corner the two bars leave */

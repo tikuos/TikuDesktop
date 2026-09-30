@@ -26,20 +26,39 @@ typedef struct {
     int generation, npage, noutline, may_copy, tried;
     tiku_pdf_err_t err;
     char path[VW_PATH], keyfile[VW_PATH], password[256], *title;
+    tiku_pdf_view_translate_fn translate;   /* NULL: the file is a PDF */
+    char why[256];                          /* the translator's refusal */
     tiku_pdf_t *pdf;
     float *pw, *ph;
     tiku_pdf_outline_t *outline;
 } vw_load_t;
 
-/** @brief On a worker: open (with the key file, for a sealed document),
- *         measure every page, read the outline and the title. */
+/** @brief On a worker: the file made a PDF by the translator, or opened
+ *         as one (with the key file, for a sealed document). */
+static void vw_load_open(vw_load_t *j)
+{
+    unsigned char *b;
+    size_t len = 0;
+
+    if (!j->translate) {
+        j->err = j->keyfile[0]
+                 ? tiku_pdf_open_key(j->path, j->keyfile, j->password,
+                                     &j->pdf)
+                 : tiku_pdf_open_password(j->path, j->password, &j->pdf);
+        return;
+    }
+    b = j->translate(j->path, &len, j->why, sizeof j->why);
+    j->err = b ? tiku_pdf_decode(b, len, &j->pdf) : TIKU_PDF_BAD;
+    free(b);
+}
+
+/** @brief On a worker: open, measure every page, read the outline and
+ *         the title. */
 static void vw_load_run(void *ctx)
 {
     vw_load_t *j = ctx;
 
-    j->err = j->keyfile[0]
-             ? tiku_pdf_open_key(j->path, j->keyfile, j->password, &j->pdf)
-             : tiku_pdf_open_password(j->path, j->password, &j->pdf);
+    vw_load_open(j);
     memset(j->password, 0, sizeof j->password);   /* used; not kept */
     if (j->err != TIKU_PDF_OK) return;
     j->may_copy = tiku_pdf_may_copy(j->pdf);
@@ -64,6 +83,7 @@ static void vw_load_run(void *ctx)
 /** @brief Why a file did not open, in a person's words. */
 static const char *vw_load_error(const vw_load_t *j)
 {
+    if (j->why[0]) return j->why;
     switch (j->err) {
     case TIKU_PDF_NOT_PDF: return "That file is not a PDF.";
     case TIKU_PDF_UNSUPPORTED:
@@ -162,9 +182,11 @@ static void vw_load_free(void *ctx)
 }
 
 /** @brief Ask a worker to open @p path with @p password ("" for none):
- *         the password of @p keyfile when that is given.  One at a time. */
+ *         the password of @p keyfile when that is given; made a PDF by
+ *         @p translate when that is given.  One at a time. */
 static int vw_load_as(tiku_pdf_view_t *v, const char *path,
-                      const char *keyfile, const char *password)
+                      const char *keyfile, const char *password,
+                      tiku_pdf_view_translate_fn translate)
 {
     vw_load_t *j;
     tiku_work_job_t work;
@@ -182,6 +204,7 @@ static int vw_load_as(tiku_pdf_view_t *v, const char *path,
     snprintf(j->keyfile, sizeof j->keyfile, "%s", keyfile);
     snprintf(j->password, sizeof j->password, "%s", password);
     j->tried = password[0] != '\0';
+    j->translate = translate;
     memset(&work, 0, sizeof work);
     work.run = vw_load_run;
     work.done = vw_load_done;
@@ -194,7 +217,7 @@ static int vw_load_as(tiku_pdf_view_t *v, const char *path,
         vw_say(v, "The workers are busy. Try again in a moment.");
         return 0;
     }
-    vw_say(v, "Opening...");
+    vw_say(v, translate ? "Laying out its pages..." : "Opening...");
     return 1;
 }
 

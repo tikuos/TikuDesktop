@@ -97,6 +97,7 @@ struct tiku_pdf_view {
     int ntext;                      /* pages holding their text         */
     double scale, laid_scale;
     int fit, laid_w, laid_h;
+    int single, single_page;        /* one page alone, and which        */
     tiku_scroll_t vbar, hbar;
     int vdrag, hdrag;
     vw_tile_t tile[VW_TILES];
@@ -318,14 +319,22 @@ void tiku_pdf_view_free(tiku_pdf_view_t *v)
 int tiku_pdf_view_open(tiku_pdf_view_t *v, const char *path,
                        const char *password)
 {
-    return v && !v->gone && vw_load_as(v, path, "", password ? password : "");
+    return v && !v->gone && vw_load_as(v, path, "", password ? password : "",
+                                       NULL);
 }
 
 int tiku_pdf_view_open_key(tiku_pdf_view_t *v, const char *path,
                            const char *keyfile, const char *password)
 {
     if (!v || v->gone || !keyfile || !*keyfile) return 0;
-    return vw_load_as(v, path, keyfile, password ? password : "");
+    return vw_load_as(v, path, keyfile, password ? password : "", NULL);
+}
+
+int tiku_pdf_view_open_as(tiku_pdf_view_t *v, const char *path,
+                          tiku_pdf_view_translate_fn translate)
+{
+    return v && !v->gone && translate && vw_load_as(v, path, "", "",
+                                                    translate);
 }
 
 void tiku_pdf_view_close(tiku_pdf_view_t *v)
@@ -390,6 +399,14 @@ void tiku_pdf_view_follow(tiku_pdf_view_t *v, const tiku_pdf_dest_t *to)
 int tiku_pdf_view_back(tiku_pdf_view_t *v)
 {
     return v && vw_back(v);
+}
+
+void tiku_pdf_view_single(tiku_pdf_view_t *v, int on)
+{
+    if (!v) return;
+    if (on && !v->single) v->single_page = vw_current(v);
+    v->single = on != 0;
+    vw_set_scale(v, TIKU_PDF_VIEW_FIT_PAGE, v->scale);
 }
 
 void tiku_pdf_view_fit(tiku_pdf_view_t *v, tiku_pdf_view_fit_t fit,
