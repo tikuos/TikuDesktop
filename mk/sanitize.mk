@@ -4,7 +4,9 @@
 # compares, and office documents with the XML they are made of -- compiled
 # again under AddressSanitizer and UBSan, and their suites run against
 # them, the PDF view's with the view compiled into it (so it is not among
-# the objects).  The rest of the kits link as built.
+# the objects).  The editor kit's document engine is compiled the same way,
+# and its suites also run with leak detection on.  The rest of the kits
+# link as built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
 # suite rather than passing unseen.
 #
@@ -27,7 +29,8 @@ SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
                      %/tiku_glyphpath.c,$(INTERFACE)) \
             $(filter %/tiku_digest.c %/tiku_cipher.c %/tiku_saslprep.c \
                      %/tiku_pubkey.c %/tiku_der.c %/tiku_cms.c \
-                     %/tiku_keyfile.c,$(SUPPORT))
+                     %/tiku_keyfile.c,$(SUPPORT)) \
+            $(EDITOR)
 SAN_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_SRCS))
 SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
              test_crypto test_saslprep test_type1 test_cff test_ttf \
@@ -37,6 +40,10 @@ SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
 SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
                  test_grab_app test_office_viewer
 SAN_TESTS += $(SAN_APP_TESTS)
+SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
+                  test_editdoc_history test_editdoc_marks test_editdoc_model \
+                  test_editdoc_faults
+SAN_TESTS += $(SAN_LEAK_TESTS)
 
 # These suites include their viewer sources directly. Rebuild when an
 # implementation fragment changes, not only when the test file changes.
@@ -75,7 +82,9 @@ $(SAN)/test_%: $(SAN)/tests/kits/test_%.o $(SAN_OBJS) $(DESK_LIBS)
 .PHONY: check-sanitize
 check-sanitize: $(addprefix $(SAN)/,$(SAN_TESTS))
 	@for t in $(SAN_TESTS); do \
-	    ASAN_OPTIONS=detect_leaks=0 $(SAN)/$$t > $(SAN)/$$t.log 2>&1 || \
+	    leaks=0; \
+	    case " $(SAN_LEAK_TESTS) " in *" $$t "*) leaks=1;; esac; \
+	    ASAN_OPTIONS=detect_leaks=$$leaks $(SAN)/$$t > $(SAN)/$$t.log 2>&1 || \
 	        { echo "check-sanitize: $$t FAILED"; \
 	          tail -30 $(SAN)/$$t.log; exit 1; }; \
 	    echo "check-sanitize: $$t runs clean"; \

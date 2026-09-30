@@ -224,12 +224,23 @@ test_formrow_LDLIBS := $(X11_LIBS) -lm
 test_gui_CFLAGS := -Itests/fixtures/boardstub -Iboard/gui -Wno-unused-function
 test_deskprefs_SRCS   := system/shared/core/tiku_trk_deskprefs.c system/shared/core/tiku_trk_background.c
 
+# The document engine's suites link the editor kit, which is not one of
+# the seven every test takes.
+test_editdoc_storage_LIBS := $(LIB_EDITOR)
+test_editdoc_lines_LIBS := $(LIB_EDITOR)
+test_editdoc_LIBS := $(LIB_EDITOR)
+test_editdoc_history_LIBS := $(LIB_EDITOR)
+test_editdoc_marks_LIBS := $(LIB_EDITOR)
+test_editdoc_model_LIBS := $(LIB_EDITOR)
+test_editdoc_faults_LIBS := $(LIB_EDITOR)
+
 # The one link rule.  A test's object, the objects of the sources it
-# names, the kits, and its own libraries.
+# names, the kits it asks for before the seven every test takes, and its
+# own libraries.
 .SECONDEXPANSION:
-$(BUILD)/tests/test_%: $$(call objs,$$(test_$$*_FILE)) $$(call objs,$$(test_$$*_SRCS)) $(DESK_LIBS) | $(BUILD)/tests
+$(BUILD)/tests/test_%: $$(call objs,$$(test_$$*_FILE)) $$(call objs,$$(test_$$*_SRCS)) $$(test_$$*_LIBS) $(DESK_LIBS) | $(BUILD)/tests
 	$(CC) $(CFLAGS) -o $@ $(call objs,$(test_$*_FILE)) $(call objs,$(test_$*_SRCS)) \
-	      $(DESK_LIBS) $(LDFLAGS) -lm $(test_$*_LDLIBS)
+	      $(test_$*_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
 .PHONY: tests
 tests: $(TESTBINS)
