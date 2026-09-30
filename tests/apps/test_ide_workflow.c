@@ -341,6 +341,39 @@ static void test_click_then_type(ide_t *st)
     e->surface = NULL;
 }
 
+/** Renumber rewrites a line crowded with branch targets exactly, and
+ *  refuses, changing nothing, a line that would grow past 1023 bytes. */
+static void test_renumber_bounds(void)
+{
+    edit_t e;
+    char line[1100], want[1200];
+    size_t n, m;
+    int i;
+
+    memset(&e, 0, sizeof e);
+    e.w = 620; e.h = 420; e.id = 2; e.tip = -1;
+    e.lang = TIKU_SYNTAX_BASIC;
+    tiku_textview_init(&e.tv);
+    n = (size_t)snprintf(line, sizeof line, "1goto 1");
+    m = (size_t)snprintf(want, sizeof want, "10goto 10");
+    for (i = 0; i < 78; i++) {
+        n += (size_t)snprintf(line + n, sizeof line - n, " goto 1");
+        m += (size_t)snprintf(want + m, sizeof want - m, " goto 10");
+    }
+    assert(n == 553);
+    tiku_textview_set(&e.tv, line);
+    tiku_ide_renumber_basic(&e);
+    assert(!strcmp(tiku_textview_line(&e.tv, 0), want));
+    while (n + 7 <= 1022)
+        n += (size_t)snprintf(line + n, sizeof line - n, " goto 1");
+    tiku_textview_set(&e.tv, line);
+    tiku_ide_renumber_basic(&e);
+    assert(!strcmp(tiku_textview_line(&e.tv, 0), line));
+    assert(!tiku_textview_modified(&e.tv));
+    assert(strstr(e.feedback, "Not renumbered"));
+    tiku_textview_free(&e.tv);
+}
+
 static void test_empty_startup(const tiku_app_services_t *services,
                                const char *snapshot)
 {
@@ -651,6 +684,7 @@ int main(void)
     test_recovery(dir);
     test_ui(st, dir);
     test_click_then_type(st);
+    test_renumber_bounds();
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);

@@ -3,6 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
+/** @brief Renumber's output: only counted while @c p is NULL. */
+typedef struct {
+    char *p;                    /* the text, or NULL while counting     */
+    size_t n;                   /* bytes produced                       */
+    size_t cap;                 /* bytes p can hold                     */
+} renum_out_t;
+
 static int
 renum_is_word(int c);
 static int
@@ -10,8 +17,13 @@ renum_keyword(const char *s);
 static int
 renum_map(int old, const int *olds, const int *news, int n);
 static void
-renum_emit(char *out, size_t *u, const char *s,
+renum_put(renum_out_t *o, const char *s, size_t len);
+static void
+renum_emit(renum_out_t *o, const char *s,
            const int *olds, const int *news, int n);
+static size_t
+renum_lines(edit_t *e, renum_out_t *o, const int *olds, const int *news,
+            int n);
 
 int
 tiku_ide_norm_is_word(int c)
@@ -127,16 +139,27 @@ renum_map(int old, const int *olds, const int *news, int n)
     return old;
 }
 
+/** @brief Add @p len bytes of @p s to @p o; bytes past its room are
+ *         counted but never written. */
+static void
+renum_put(renum_out_t *o, const char *s, size_t len)
+{
+    if (o->p != NULL && o->n <= o->cap && len <= o->cap - o->n) {
+        memcpy(o->p + o->n, s, len);
+    }
+    o->n += len;
+}
+
 /**
  * @brief Copy @p s, rewriting a number after GOTO/GOSUB/THEN/ELSE.
  *
  * A jump has to follow the line it names when the numbers move, or
  * renumbering would quietly break every branch.  Only a number that
- * FOLLOWS one of the branch words is touched; a number sitting in a
- * string or a REM is left as it stands.
+ * follows one of the branch words is touched.  The words are found
+ * anywhere in the line, strings and REM text included.
  */
 static void
-renum_emit(char *out, size_t *u, const char *s,
+renum_emit(renum_out_t *o, const char *s,
            const int *olds, const int *news, int n)
 {
     int prev_word = 0;
@@ -145,11 +168,10 @@ renum_emit(char *out, size_t *u, const char *s,
         int kw = prev_word ? 0 : renum_keyword(s);
 
         if (kw > 0) {
-            memcpy(out + *u, s, (size_t)kw);
-            *u += (size_t)kw;
+            renum_put(o, s, (size_t)kw);
             s += kw;
             while (*s == ' ' || *s == '\t') {
-                out[(*u)++] = *s++;
+                renum_put(o, s++, 1);
             }
             if (*s >= '0' && *s <= '9') {
                 int old = 0;
@@ -162,24 +184,61 @@ renum_emit(char *out, size_t *u, const char *s,
                 }
                 nl = snprintf(nb, sizeof nb, "%d",
                               renum_map(old, olds, news, n));
-                memcpy(out + *u, nb, (size_t)nl);
-                *u += (size_t)nl;
+                renum_put(o, nb, (size_t)nl);
             }
             prev_word = 1;
             continue;
         }
         prev_word = renum_is_word((unsigned char)*s);
-        out[(*u)++] = *s++;
+        renum_put(o, s++, 1);
     }
+}
+
+/** @brief Produce the renumbered text of @p e's lines into @p o.
+ *  @return The length of the longest line produced. */
+static size_t
+renum_lines(edit_t *e, renum_out_t *o, const int *olds, const int *news,
+            int n)
+{
+    int total = tiku_textview_lines(&e->tv), L;
+    size_t longest = 0;
+
+    for (L = 0; L < total; L++) {
+        const char *t = tiku_textview_line(&e->tv, L);
+        size_t start = o->n;
+        int d = 0;
+
+        if (t == NULL) {
+            t = "";
+        }
+        while (t[d] >= '0' && t[d] <= '9') {
+            d++;
+        }
+        if (d > 0) {
+            char nb[16];
+            int nl = snprintf(nb, sizeof nb, "%d",
+                              renum_map(atoi(t), olds, news, n));
+
+            renum_put(o, nb, (size_t)nl);
+        }
+        renum_emit(o, t + d, olds, news, n);
+        if (o->n - start > longest) {
+            longest = o->n - start;
+        }
+        if (L < total - 1) {
+            renum_put(o, "\n", 1);
+        }
+    }
+    return longest;
 }
 
 /**
  * @brief Renumber a BASIC program by tens, branches following.
  *
- * Every line that WEARS a number is given the next ten; every branch to
- * an old number is rewritten to the new one.  The whole rewrite is ONE
- * journal batch, so a single Undo takes it all back -- which is the
- * only thing standing in the way of a person trying it.
+ * Every line that starts with a number is given the next ten, and every
+ * branch to an old number is rewritten to the new one.  The rewrite is
+ * one journal batch, so a single Undo takes it all back.  A result line
+ * that would pass 1023 bytes refuses the whole rewrite, as Replace does.
  */
 void
 tiku_ide_renumber_basic(edit_t *e)
@@ -187,20 +246,16 @@ tiku_ide_renumber_basic(edit_t *e)
     int total = tiku_textview_lines(&e->tv);
     int *olds, *news;
     int nmap = 0, next = 10, L;
-    size_t cap = 64, used = 0;
-    char *out;
+    renum_out_t o = { NULL, 0, 0 };
+    size_t size;
 
     if (total <= 0) {
         return;
     }
     olds = malloc((size_t)total * sizeof *olds);
     news = malloc((size_t)total * sizeof *news);
-    for (L = 0; L < total; L++) {
-        cap += (size_t)tiku_textview_line_len(&e->tv, L) + 16u;
-    }
-    out = malloc(cap);
-    if (olds == NULL || news == NULL || out == NULL) {
-        free(olds); free(news); free(out);
+    if (olds == NULL || news == NULL) {
+        free(olds); free(news);
         return;
     }
     for (L = 0; L < total; L++) {
@@ -213,36 +268,28 @@ tiku_ide_renumber_basic(edit_t *e)
             next += 10;
         }
     }
-    for (L = 0; L < total; L++) {
-        const char *t = tiku_textview_line(&e->tv, L);
-        int d = 0;
-
-        if (t == NULL) {
-            t = "";
-        }
-        while (t[d] >= '0' && t[d] <= '9') {
-            d++;
-        }
-        if (d > 0) {
-            char nb[16];
-            int nl = snprintf(nb, sizeof nb, "%d",
-                              renum_map(atoi(t), olds, news, nmap));
-
-            memcpy(out + used, nb, (size_t)nl);
-            used += (size_t)nl;
-            renum_emit(out, &used, t + d, olds, news, nmap);
-        } else {
-            renum_emit(out, &used, t, olds, news, nmap);
-        }
-        if (L < total - 1) {
-            out[used++] = '\n';
-        }
+    /* Counted first and written second: a branch target can gain several
+     * digits, so no fixed allowance per line bounds the result. */
+    if (renum_lines(e, &o, olds, news, nmap) >= TIKU_TEXTVIEW_LINE_MAX) {
+        snprintf(e->feedback, sizeof e->feedback,
+                 "Not renumbered: a result line would exceed 1023 bytes");
+        free(olds); free(news);
+        return;
     }
-    out[used] = '\0';
+    size = o.n;
+    o.p = malloc(size + 1);
+    if (o.p == NULL) {
+        free(olds); free(news);
+        return;
+    }
+    o.cap = size;
+    o.n = 0;
+    (void)renum_lines(e, &o, olds, news, nmap);
+    o.p[size] = '\0';
     tiku_textview_group_begin(&e->tv);
     tiku_textview_select_all(&e->tv);
-    tiku_textview_insert_text(&e->tv, out);
+    tiku_textview_insert_text(&e->tv, o.p);
     tiku_textview_group_end(&e->tv);
     (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
-    free(olds); free(news); free(out);
+    free(olds); free(news); free(o.p);
 }
