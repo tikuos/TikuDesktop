@@ -1,0 +1,43 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/office
+# Office files route to TikuDoc and TikuSlides through the real application
+# registry and open in their own processes: a Word file and an
+# OpenDocument one laid out on a worker, and slides fitted and presented.
+wait 20
+click-row 0
+wait 2
+click-row 0
+wait 60
+expect-title features.docx - TikuDoc
+expect-narrate 2 pages, with an outline.
+expect-narrate Page 1 of 2
+shot /tmp/trk_office_doc.png
+key w ctrl
+wait 8
+expect-no-title TikuDoc
+click-row 1
+wait 2
+click-row 1
+wait 60
+expect-title ODT features - TikuDoc
+key w ctrl
+wait 8
+click-row 2
+wait 2
+click-row 2
+wait 60
+expect-title talk.pptx - TikuSlides
+expect-narrate Slide 1 of 3
+key p ctrl shift
+wait 8
+shot /tmp/trk_office_present.png
+key Right
+wait 8
+key Escape
+wait 4
+expect-narrate Slide 2 of 3
+key w ctrl
+wait 8
+expect-no-title TikuSlides
+quit

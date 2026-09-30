@@ -96,6 +96,8 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/image/app.manifest \
     $(APPS_D)/pdf/app.manifest \
     $(APPS_D)/archive/app.manifest \
+    $(APPS_D)/doc/app.manifest \
+    $(APPS_D)/slides/app.manifest \
     $(APPS_D)/diff/app.manifest \
     $(APPS_D)/grab/app.manifest \
     $(APPS_D)/reader/app.manifest \
@@ -286,6 +288,27 @@ $(APPS_D)/archive/TikuArchive.so: $(ARCVIEW_SRC) $(wildcard apps/archive/*.h app
 	$(CC) $(SO_CFLAGS) -o $@ $(ARCVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/archive/app.manifest: apps/archive/archive.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+apps loadable: $(APPS_D)/doc/TikuDoc.so $(APPS_D)/slides/TikuSlides.so
+OFFICEVIEW_SRC := apps/office/tiku_officeview.c
+OFFICEVIEW_DEPS := $(wildcard apps/office/*.h apps/office/*.inl)
+DOCVIEW_SRC := apps/doc/tiku_docview_app.c $(OFFICEVIEW_SRC)
+SLIDESVIEW_SRC := apps/slides/tiku_slidesview_app.c $(OFFICEVIEW_SRC)
+$(APPS_D)/doc/TikuDoc.so: $(DOCVIEW_SRC) $(OFFICEVIEW_DEPS) $(PIC_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -Iapps/office -o $@ $(DOCVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+
+$(APPS_D)/slides/TikuSlides.so: $(SLIDESVIEW_SRC) $(OFFICEVIEW_DEPS) $(PIC_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -Iapps/office -o $@ $(SLIDESVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+
+$(APPS_D)/doc/app.manifest: apps/doc/doc.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+$(APPS_D)/slides/app.manifest: apps/slides/slides.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 

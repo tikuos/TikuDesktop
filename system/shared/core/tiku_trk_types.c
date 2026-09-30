@@ -293,6 +293,15 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
                              "size,modified");
     (void)tiku_trk_types_add(db, "application/gzip", "Gzip-compressed file",
                              "archive_file", "size,modified");
+    /* Office files: OOXML's own types outrun a type's room here. */
+    (void)tiku_trk_types_add(db, "application/x-docx", "Word document",
+                             "doc_file", "size,modified");
+    (void)tiku_trk_types_add(db, "application/vnd.oasis.opendocument.text",
+                             "OpenDocument text", "doc_file",
+                             "size,modified");
+    (void)tiku_trk_types_add(db, "application/x-pptx",
+                             "PowerPoint presentation", "slides_file",
+                             "size,modified");
     /* A device node's columns are the two only it has. */
     (void)tiku_trk_types_add(db, "tiku-", "Device node", "device",
                              "value,cap,modified");

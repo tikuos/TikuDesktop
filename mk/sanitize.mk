@@ -35,7 +35,7 @@ SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
              test_diff test_pdf_view test_atomic_file test_xml \
              test_pdf_writer test_office
 SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
-                 test_grab_app
+                 test_grab_app test_office_viewer
 SAN_TESTS += $(SAN_APP_TESTS)
 
 # These suites include their viewer sources directly. Rebuild when an
@@ -47,6 +47,8 @@ $(SAN)/tests/apps/test_archive_viewer.o: $(ARCVIEW_SRC) \
 $(SAN)/tests/apps/test_diff_viewer.o: \
         $(wildcard apps/diff/*.c apps/diff/*.h apps/diff/*.inl)
 $(SAN)/tests/apps/test_grab_app.o: $(wildcard apps/grab/*.c apps/grab/*.h)
+$(SAN)/tests/apps/test_office_viewer.o: \
+        $(wildcard apps/office/*.c apps/office/*.h apps/office/*.inl)
 
 $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
         $(SAN)/tests/apps/test_%.o $(SAN_OBJS) $(DESK_LIBS)

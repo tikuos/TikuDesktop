@@ -28,7 +28,7 @@
 #define TIKU_ICON_COUNT 34
 
 /** @brief How many more TikuOS's own families and a directory may add. */
-#define TIKU_ICON_EXTRA 96
+#define TIKU_ICON_EXTRA 128
 
 /** @brief One named HVIF blob. */
 typedef struct {

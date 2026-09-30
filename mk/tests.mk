@@ -63,6 +63,7 @@ test_pdf_viewer_LDLIBS := $(X11_LIBS) -lm
 test_fontset_LDLIBS := -lpthread
 test_pdf_writer_LDLIBS := -lpthread
 test_office_LDLIBS := -lpthread
+test_office_viewer_LDLIBS := $(X11_LIBS) -lm -lpthread
 test_archive_viewer_LDLIBS := $(X11_LIBS) -lm
 test_diff_viewer_LDLIBS := $(X11_LIBS) -lm
 test_grab_app_LDLIBS := $(X11_LIBS) -lm

@@ -23,6 +23,7 @@
 #include "tiku_icons_viewer.inl"
 #include "tiku_icons_pdf.inl"
 #include "tiku_icons_archive.inl"
+#include "tiku_icons_office.inl"
 #include "tiku_icons_utils.inl"
 #include "tiku_icons_forcequit.inl"
 #include "tiku_icons_shutdown.inl"
@@ -161,6 +162,10 @@ static const struct {
     TIKU_ICON(pdf_viewer),
     TIKU_ICON(archive_viewer),
     TIKU_ICON(archive_file),
+    TIKU_ICON(doc_viewer),
+    TIKU_ICON(doc_file),
+    TIKU_ICON(slides_viewer),
+    TIKU_ICON(slides_file),
     TIKU_ICON(diff_viewer),
     TIKU_ICON(compare_files),
     TIKU_ICON(compare_folders),

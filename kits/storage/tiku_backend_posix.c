@@ -120,7 +120,10 @@ type_by_name(const char *name)
         { ".json", "text/json" },      { ".pdf",  "application/pdf" },
         { ".zip",  "application/zip" }, { ".tar",  "application/x-tar" },
         { ".tgz",  "application/x-compressed-tar" },
-        { ".gz",   "application/gzip" }
+        { ".gz",   "application/gzip" },
+        { ".docx", "application/x-docx" },
+        { ".odt",  "application/vnd.oasis.opendocument.text" },
+        { ".pptx", "application/x-pptx" }
     };
     const char *dot;
     size_t i, n;
