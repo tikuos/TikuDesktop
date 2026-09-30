@@ -299,6 +299,48 @@ static void test_ui(ide_t *st, const char *dir)
     st->msg_surface = NULL;
 }
 
+/** A plain click in a page leaves no selection behind: a later caret
+ *  move selects nothing, and both letters typed land where it was. */
+static void test_click_then_type(ide_t *st)
+{
+    static const char *text = "10 PRINT 42";
+    edit_t *e = &st->edit[0];
+    tiku_event_t ev = { .type = TIKU_EVENT_POINTER_DOWN };
+    char want[64];
+    int line, col;
+
+    memset(e, 0, sizeof *e);            /* test_ui left its find bar open */
+    e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
+    e->lang = TIKU_SYNTAX_BASIC;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    snprintf(e->name, sizeof e->name, "click.bas");
+    tiku_textview_init(&e->tv);
+    tiku_textview_set(&e->tv, "10 PRINT 42\n20 END");
+    ev.x = 60;
+    ev.y = tiku_ide_edit_page_top(e) + 4;
+    tiku_ide_event(st, e->id, &ev);
+    ev.type = TIKU_EVENT_POINTER_UP;
+    tiku_ide_event(st, e->id, &ev);
+    tiku_textview_caret(&e->tv, &line, &col);
+    assert(line == 0 && col > 0 && col < (int)strlen(text));
+    /* No anchor stays behind: moving the caret, as following a message
+     * does, selects nothing. */
+    tiku_textview_place(&e->tv, 1, 0);
+    assert(!tiku_textview_selection(&e->tv, &line, &line, &line, &line));
+    tiku_textview_place(&e->tv, 0, col);
+    ev.type = TIKU_EVENT_KEY_DOWN;
+    ev.key = 'a';
+    tiku_ide_event(st, e->id, &ev);
+    ev.key = 'b';
+    tiku_ide_event(st, e->id, &ev);
+    snprintf(want, sizeof want, "%.*sab%s", col, text, text + col);
+    assert(!strcmp(tiku_textview_line(&e->tv, 0), want));
+    tiku_textview_free(&e->tv);
+    tiku_surface_free(e->surface);
+    e->surface = NULL;
+}
+
 static void test_empty_startup(const tiku_app_services_t *services,
                                const char *snapshot)
 {
@@ -608,6 +650,7 @@ int main(void)
     test_search();
     test_recovery(dir);
     test_ui(st, dir);
+    test_click_then_type(st);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);

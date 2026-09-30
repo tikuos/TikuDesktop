@@ -401,7 +401,14 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
             return 0;
         }
         if (event->type == TIKU_EVENT_POINTER_UP) {
+            int y0, x0, y1, x1;
+
             e->drag_select = 0;
+            /* A press that did not drag leaves no anchor behind, or a
+             * later caret move would select from the click point. */
+            if (!tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1)) {
+                tiku_textview_select_none(&e->tv);
+            }
             return 0;
         }
         if (ch == 0u) {

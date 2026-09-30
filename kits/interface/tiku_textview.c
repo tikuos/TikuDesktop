@@ -675,10 +675,10 @@ caret_clamp(tiku_textview_t *tv)
  * @brief Remove the selected span, caret left where it began.
  *
  * Counted as characters and the newlines between the lines, then taken
- * from the far end by the ordinary backspace -- which already folds a
- * line into the one before it -- so this owns no second copy of that.
- * The flag is dropped FIRST, so the backspace it calls does not see a
- * selection and turn back on itself.
+ * from the far end by the ordinary backspace, which already folds a line
+ * into the one before it.  The flag is dropped first, so that backspace
+ * does not see a selection.  An anchor at the caret encloses nothing and
+ * is dropped too: kept, the edit's own text would become its selection.
  */
 static int
 sel_delete(tiku_textview_t *tv)
@@ -689,6 +689,7 @@ sel_delete(tiku_textview_t *tv)
     char *span;
 
     if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
+        tv->selecting = 0;
         return 0;
     }
     /* A selection endpoint can point past its line after the buffer

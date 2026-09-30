@@ -304,6 +304,33 @@ main(void)
     check(tv.cx <= tiku_textview_line_len(&tv, tv.cy),
           "a stale selection past a shortened line does not run off it");
 
+    /* An anchor set at the caret encloses nothing, as after a click that
+     * does not drag; the edit that follows drops it, so the text it types
+     * never becomes a selection for the next edit to replace. */
+    tiku_textview_set(&tv, "10 PRINT");
+    tiku_textview_place(&tv, 0, 3);
+    tiku_textview_select_none(&tv);
+    tiku_textview_select_begin(&tv);
+    type(&tv, "ab");
+    check(strcmp(tiku_textview_line(&tv, 0), "10 abPRINT") == 0,
+          "typing after an anchor at the caret keeps every character");
+    tiku_textview_place(&tv, 0, 0);
+    tiku_textview_select_none(&tv);
+    tiku_textview_select_begin(&tv);
+    tiku_textview_newline(&tv);
+    type(&tv, "x");
+    check(tiku_textview_lines(&tv) == 2 &&
+          strcmp(tiku_textview_line(&tv, 1), "x10 abPRINT") == 0,
+          "and so does a line break typed after one");
+    tiku_textview_set(&tv, "abc");
+    tiku_textview_place(&tv, 0, 1);
+    tiku_textview_select_begin(&tv);
+    tiku_textview_move(&tv, TIKU_TEXTVIEW_RIGHT);
+    tiku_textview_move(&tv, TIKU_TEXTVIEW_LEFT);
+    type(&tv, "xy");
+    check(strcmp(tiku_textview_line(&tv, 0), "axybc") == 0,
+          "a selection shrunk back to nothing keeps the typing after it");
+
     printf("\n%s\n", fails ? "FAILURES" : "the caret stays in the text");
     return fails ? 1 : 0;
 }
