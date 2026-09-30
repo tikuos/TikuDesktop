@@ -1,0 +1,174 @@
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_pdf_writer.h - pages drawn, written as a PDF.
+ *
+ * A canvas whose paper is a PDF: paths filled and stroked, gradients,
+ * pictures, text in the machine's own faces, links and an outline, on
+ * pages of any size, in points from each page's top left, y downwards.
+ * Faces go in as subsets of the glyphs drawn, their widths and what each
+ * glyph stands for written beside them, so the text is found and copied
+ * as well as seen.  What comes out is the bytes of a whole file.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#ifndef TIKU_PDF_WRITER_H_
+#define TIKU_PDF_WRITER_H_
+
+#include <stddef.h>
+#include <stdint.h>
+
+typedef struct tiku_pdf_writer tiku_pdf_writer_t;
+
+/** @brief How a path is painted; a colour with alpha 0 is not painted. */
+typedef struct {
+    uint32_t      fill, stroke;     /* 0xAARRGGBB                        */
+    double        width;            /* the stroke's, in points           */
+    const double *dash;             /* on, off, on ... in points; NULL   */
+    int           ndash;
+    int           cap, join;        /* PDF's: butt, round, square; miter,
+                                       round, bevel                      */
+    int           evenodd;          /* the even-odd rule, not nonzero    */
+} tiku_pdf_paint_t;
+
+/** @brief One colour along a gradient, from 0 to 1. */
+typedef struct {
+    double   at;
+    uint32_t argb;
+} tiku_pdf_stop_t;
+
+/** @brief A gradient: along a line, or out from a circle to another. */
+typedef struct {
+    int                    radial;
+    double                 x0, y0, x1, y1;  /* the line; the circles' centres */
+    double                 r0, r1;          /* the circles' radii           */
+    const tiku_pdf_stop_t *stop;            /* in order of @c at            */
+    int                    nstop;
+} tiku_pdf_gradient_t;
+
+/** @brief A glyph of a run: which, what it stands for (0 for a second
+ *         glyph of one character), and where it starts along the run. */
+typedef struct {
+    unsigned gid;
+    uint32_t cp;
+    double   x;                     /* points from the run's start       */
+} tiku_pdf_glyph_t;
+
+/** @brief A run of text: one face at one size and colour, its baseline
+ *         starting at (x, y); bold and italic made up when asked. */
+typedef struct {
+    int      font;                  /* from tiku_pdf_writer_font()       */
+    double   size;                  /* points                            */
+    uint32_t argb;
+    int      bold, italic;          /* embolden; slant                   */
+    double   x, y;
+} tiku_pdf_run_t;
+
+/** @brief A writer with no pages.  NULL out of memory. */
+tiku_pdf_writer_t *tiku_pdf_writer_new(void);
+
+/** @brief Let the writer go, and anything not yet finished with it. */
+void tiku_pdf_writer_free(tiku_pdf_writer_t *w);
+
+/** @brief The document's title and author for its Info (UTF-8; NULL for
+ *         none). */
+void tiku_pdf_writer_info(tiku_pdf_writer_t *w, const char *title,
+                          const char *author);
+
+/** @brief A new page, @p width by @p height points, drawn on from now.
+ *  @return its number from 0, or -1 when there is no memory. */
+int tiku_pdf_writer_page(tiku_pdf_writer_t *w, double width, double height);
+
+/** @brief How many pages there are so far. */
+int tiku_pdf_writer_pages(const tiku_pdf_writer_t *w);
+
+/** @brief The drawing state kept, and given back: the transform, the
+ *         clip.  Every save is matched by a restore. */
+void tiku_pdf_writer_save(tiku_pdf_writer_t *w);
+void tiku_pdf_writer_restore(tiku_pdf_writer_t *w);
+
+/** @brief Draw through the matrix [a b c d e f] from now: x' = a x + c y
+ *         + e, y' = b x + d y + f, in the page's points, y down. */
+void tiku_pdf_writer_transform(tiku_pdf_writer_t *w, double a, double b,
+                               double c, double d, double e, double f);
+
+/** @brief The path, built a piece at a time and then painted, clipped to
+ *         or filled with a gradient, which each use up. */
+void tiku_pdf_writer_move(tiku_pdf_writer_t *w, double x, double y);
+void tiku_pdf_writer_line(tiku_pdf_writer_t *w, double x, double y);
+void tiku_pdf_writer_curve(tiku_pdf_writer_t *w, double x1, double y1,
+                           double x2, double y2, double x3, double y3);
+/** @brief The piece of path shut, back to where it began. */
+void tiku_pdf_writer_close(tiku_pdf_writer_t *w);
+/** @brief A rectangle added to the path, shut. */
+void tiku_pdf_writer_rect(tiku_pdf_writer_t *w, double x, double y,
+                          double width, double height);
+
+/** @brief The path filled, stroked, or both, as @p p says. */
+void tiku_pdf_writer_paint(tiku_pdf_writer_t *w, const tiku_pdf_paint_t *p);
+
+/** @brief The path made the clip, until the state is restored. */
+void tiku_pdf_writer_clip(tiku_pdf_writer_t *w, int evenodd);
+
+/** @brief The path filled with @p g.  A gradient's alpha is its stops'
+ *         average: PDF's shadings carry colour, not coverage. */
+void tiku_pdf_writer_gradient(tiku_pdf_writer_t *w,
+                              const tiku_pdf_gradient_t *g);
+
+/**
+ * @brief Face @p index of the TrueType or OpenType file @p path, ready for
+ *        text: it goes in as the glyphs drawn with it, when the file is
+ *        written.  The same face asked again is the same one.
+ * @return its number, or -1 when it cannot be read.
+ */
+int tiku_pdf_writer_font(tiku_pdf_writer_t *w, const char *path, int index);
+
+/** @brief Glyphs @p g, @p n of them, as @p run says. */
+void tiku_pdf_writer_text(tiku_pdf_writer_t *w, const tiku_pdf_run_t *run,
+                          const tiku_pdf_glyph_t *g, int n);
+
+/**
+ * @brief A picture from its file's bytes: a JPEG goes in as it is, PNG
+ *        and BMP as their pixels, alpha kept.  Drawn with
+ *        tiku_pdf_writer_draw() as often as wanted.
+ * @return its number, or -1 when it cannot be read; @p w and @p h (may be
+ *         NULL) are given its size in pixels.
+ */
+int tiku_pdf_writer_image(tiku_pdf_writer_t *w, const void *bytes,
+                          size_t len, int *pw, int *ph);
+
+/** @brief The same from pixels, 0xAARRGGBB, top row first. */
+int tiku_pdf_writer_pixels(tiku_pdf_writer_t *w, const uint32_t *px,
+                           int width, int height);
+
+/** @brief Picture @p image stretched over the box at (@p x, @p y). */
+void tiku_pdf_writer_draw(tiku_pdf_writer_t *w, int image, double x,
+                          double y, double width, double height);
+
+/** @brief A link over the box to @p uri, outside the document. */
+void tiku_pdf_writer_link(tiku_pdf_writer_t *w, double x, double y,
+                          double width, double height, const char *uri);
+
+/** @brief A link over the box to page @p page (from 0), @p top points
+ *         down it; the page may not be drawn yet. */
+void tiku_pdf_writer_jump(tiku_pdf_writer_t *w, double x, double y,
+                          double width, double height, int page,
+                          double top);
+
+/** @brief An outline entry, @p level deep (0 at the top), leading to
+ *         @p page, @p top points down it; entries in reading order. */
+void tiku_pdf_writer_mark(tiku_pdf_writer_t *w, int level, const char *title,
+                          int page, double top);
+
+/**
+ * @brief The file: every page, the faces as subsets, pictures, links and
+ *        outline.  The writer is done with and let go either way.
+ * @return its bytes to free(), with their length in @p len; NULL when
+ *         there was no memory, or no page.
+ */
+unsigned char *tiku_pdf_writer_finish(tiku_pdf_writer_t *w, size_t *len);
+
+#endif /* TIKU_PDF_WRITER_H_ */

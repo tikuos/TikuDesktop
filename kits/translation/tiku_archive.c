@@ -782,7 +782,8 @@ tiku_archive_strerror(tiku_archive_err_t e)
         "its contents do not match their checksum",
         "its name or link would reach outside the folder",
         "the disk refused it", "a later entry has the same name",
-        "cancelled", "there is not enough memory"
+        "cancelled", "there is not enough memory",
+        "it is larger than can be read here"
     };
 
     return (unsigned)e < sizeof what / sizeof what[0] ? what[e] : "failed";

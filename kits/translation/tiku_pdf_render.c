@@ -1177,12 +1177,61 @@ glyph_proc(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm,
     r->tlm = tlm;
 }
 
-/** @brief One glyph's ink: filled, stroked, or both, as the mode says. */
+/**
+ * @brief The band a stroke @p r device pixels either side of a glyph's
+ *        outline covers, from its coverage @p m: @p m grown by @p r less
+ *        @p m shrunk by it.  Each neighbour pulls a pixel toward its own
+ *        coverage as far as the pen reaches it, so a pen of a third of a
+ *        pixel moves an edge a third.  @return a mask to free, with no
+ *        bytes when the pen is too wide or there is no room.
+ */
+static pdf_mask_t
+stroke_band(const pdf_mask_t *m, double r)
+{
+    int k = (int)ceil(r), w = m->w + 2 * k, h = m->h + 2 * k, x, y, i;
+    int side = 2 * k + 1;
+    pdf_mask_t out = { m->x0 - k, m->y0 - k, 0, 0, NULL };
+    float wt[33 * 33];
+
+    if (m->a == NULL || k > 16 || (out.a = malloc((size_t)w * h)) == NULL)
+        return out;
+    for (i = 0; i < side * side; i++) {
+        double d = hypot(i % side - k, i / side - k);
+
+        wt[i] = (float)(r + 1 - d < 0 ? 0 : r + 1 - d > 1 ? 1 : r + 1 - d);
+    }
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            int cx = x - k, cy = y - k;
+            float c = cx >= 0 && cy >= 0 && cx < m->w && cy < m->h
+                      ? m->a[cy * m->w + cx] : 0, hi = c, lo = c;
+
+            for (i = 0; i < side * side; i++) {
+                int sx = cx - k + i % side, sy = cy - k + i / side;
+                float v = sx >= 0 && sy >= 0 && sx < m->w && sy < m->h
+                          ? m->a[sy * m->w + sx] : 0;
+                float to = c + wt[i] * (v - c);
+
+                hi = to > hi ? to : hi;
+                lo = to < lo ? to : lo;
+            }
+            out.a[y * w + x] = (unsigned char)(hi - lo + 0.5f);
+        }
+    }
+    out.w = w;
+    out.h = h;
+    return out;
+}
+
+/** @brief One glyph's ink: filled, stroked, or both, as the mode says.
+ *         A stroke is the band its pen covers, as wide as the line
+ *         width says; a hairline one lies on the glyph's own coverage. */
 static void
 glyph_ink(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm)
 {
-    pdf_mask_t m;
+    pdf_mask_t m, band;
     int mode = g->tmode;
+    double half = g->lw * pdf_mat_scale(&g->ctm) / 2;
 
     if (mode == 3 || mode == 7 || !glyph_cov(r, gf, code, trm, &m)) {
         return;
@@ -1191,7 +1240,9 @@ glyph_ink(rs_t *r, gs_t *g, pdf_gfont_t *gf, long code, const pdf_mat_t *trm)
         paint(r, &m, 0);
     }
     if (mode == 1 || mode == 2 || mode == 5 || mode == 6) {
-        paint(r, &m, 1);            /* stroked text: the outline's fill */
+        band = half >= 0.1 ? stroke_band(&m, half) : (pdf_mask_t){0};
+        paint(r, band.a != NULL ? &band : &m, 1);
+        pdf_mask_free(&band);
     }
 }
 

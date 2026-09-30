@@ -38,6 +38,9 @@ struct tiku_ttf {
     int            num_glyphs;
     int            num_hmetrics;
     int            ascent, descent;
+    int            gap, win_ascent, win_descent;  /* hhea's, OS/2's     */
+    int            under, under_size;             /* post's             */
+    int            strike, strike_size;           /* OS/2's             */
     int            bold;
     char           family[64];
     /* An OpenType file with PostScript outlines keeps them here instead
@@ -790,7 +793,7 @@ tiku_ttf_is_font(const char *path)
 static tiku_ttf_t *
 open_tables(tiku_ttf_t *t, const char *path, unsigned face)
 {
-    size_t dir = 0, head, hhea, maxp, name, cmap, os2;
+    size_t dir = 0, head, hhea, maxp, name, cmap, os2, post;
 
     if (fits(t, 0u, 12u) && memcmp(t->data, "ttcf", 4) == 0) {
         /* A collection: the face asked for, the first unless told; the
@@ -820,6 +823,7 @@ open_tables(tiku_ttf_t *t, const char *path, unsigned face)
     name = table_of(t, dir, "name", NULL);
     cmap = table_of(t, dir, "cmap", NULL);
     os2 = table_of(t, dir, "OS/2", NULL);
+    post = table_of(t, dir, "post", NULL);
     t->hmtx = table_of(t, dir, "hmtx", &t->hmtx_len);
     t->loca = table_of(t, dir, "loca", &t->loca_len);
     t->glyf = table_of(t, dir, "glyf", &t->glyf_len);
@@ -856,6 +860,19 @@ open_tables(tiku_ttf_t *t, const char *path, unsigned face)
     if (t->upem < 16 || t->upem > 16384 || t->num_glyphs <= 0) {
         tiku_ttf_close(t);
         return NULL;
+    }
+    t->gap = rds16(t->data + hhea + 8);
+    if (os2 != 0 && fits(t, os2, 78u)) {
+        t->win_ascent = (int)rd16(t->data + os2 + 74);
+        t->win_descent = (int)rd16(t->data + os2 + 76);
+    }
+    if (os2 != 0 && fits(t, os2, 30u)) {
+        t->strike_size = rds16(t->data + os2 + 26);
+        t->strike = rds16(t->data + os2 + 28);
+    }
+    if (post != 0 && fits(t, post, 12u)) {
+        t->under = rds16(t->data + post + 8);
+        t->under_size = rds16(t->data + post + 10);
     }
     t->os2 = os2;
     if (os2 != 0 && fits(t, os2, 64u)) {
@@ -1027,6 +1044,46 @@ tiku_ttf_metrics(const tiku_ttf_t *ttf, int px, int *ascent,
     }
     if (height != NULL) {
         *height = (int)((float)(ttf->ascent - ttf->descent) * scale + 0.5f);
+    }
+}
+
+void
+tiku_ttf_line(const tiku_ttf_t *ttf, int *ascent, int *height)
+{
+    int up, hhea, win;
+
+    if (ttf == NULL) {
+        return;
+    }
+    up = ttf->ascent > ttf->win_ascent ? ttf->ascent : ttf->win_ascent;
+    hhea = ttf->ascent - ttf->descent + (ttf->gap > 0 ? ttf->gap : 0);
+    win = ttf->win_ascent + ttf->win_descent;
+    if (ascent != NULL) {
+        *ascent = up;
+    }
+    if (height != NULL) {
+        *height = hhea > win ? hhea : win;
+    }
+}
+
+void
+tiku_ttf_lines(const tiku_ttf_t *ttf, int *under, int *under_size,
+               int *strike, int *strike_size)
+{
+    if (ttf == NULL) {
+        return;
+    }
+    if (under != NULL) {
+        *under = ttf->under;
+    }
+    if (under_size != NULL) {
+        *under_size = ttf->under_size;
+    }
+    if (strike != NULL) {
+        *strike = ttf->strike;
+    }
+    if (strike_size != NULL) {
+        *strike_size = ttf->strike_size;
     }
 }
 

@@ -73,6 +73,21 @@ int tiku_ttf_is_font(const char *path);
 void tiku_ttf_metrics(const tiku_ttf_t *ttf, int px,
                            int *ascent, int *height);
 
+/**
+ * @brief A line of the face in font units, as word processors measure one:
+ *        the baseline's depth from its top (hhea's ascent or the Windows
+ *        one, whichever is larger) and a single-spaced line's height (the
+ *        Windows extent, or hhea's with its gap if that is more).  Either
+ *        may be NULL.
+ */
+void tiku_ttf_line(const tiku_ttf_t *ttf, int *ascent, int *height);
+
+/** @brief Where the face draws an underline and a strikeout, in font
+ *         units up from the baseline, and how thick; 0 where it does not
+ *         say.  Any may be NULL. */
+void tiku_ttf_lines(const tiku_ttf_t *ttf, int *under, int *under_size,
+                    int *strike, int *strike_size);
+
 /** @brief One rasterised glyph.  @c cover is w*h bytes of coverage. */
 typedef struct {
     int            adv;

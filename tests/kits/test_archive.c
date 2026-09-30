@@ -686,6 +686,88 @@ broken_tests(void)
     tiku_archive_close(a);
 }
 
+/** @brief Whether every file the manifest of @p name lists reads into
+ *         memory as made: found by its path, its size and CRC. */
+static int
+parts_read(const char *name)
+{
+    char path[PATH_MAX];
+    const char *at = fixtures[fixture(name)].manifest;
+    tiku_archive_t *a = NULL;
+    mline_t m;
+    int ok;
+
+    write_fixture(name, path, sizeof path);
+    ok = tiku_archive_open(path, NULL, NULL, &a) == TIKU_ARCHIVE_OK;
+    while (ok && next_line(&at, &m)) {
+        unsigned char *b = NULL;
+        size_t n = 0;
+        long i = tiku_archive_find(a, m.path);
+
+        if (m.kind != 'f') {
+            continue;
+        }
+        ok = i >= 0 && tiku_archive_read(a, i, 1u << 20, &b, &n) ==
+             TIKU_ARCHIVE_OK && (m.size < 0 || (long long)n == m.size) &&
+             tiku_crc32(0, b, n) == m.crc && b[n] == '\0';
+        if (!ok) {
+            printf("    %s: %s did not read\n", name, m.path);
+        }
+        free(b);
+    }
+    tiku_archive_close(a);
+    return ok;
+}
+
+/** @brief Entries read whole into memory, as a package's parts are:
+ *         found by name, bounded, and checked. */
+static void
+part_tests(void)
+{
+    char path[PATH_MAX];
+    tiku_archive_t *a = NULL;
+    unsigned char *b = (unsigned char *)"";
+    size_t n = 1;
+
+    check(parts_read("zip_features") && parts_read("zip64") &&
+          parts_read("zip_descriptor") && parts_read("tar_pax") &&
+          parts_read("tgz") && parts_read("gz_fields"), "AR-090",
+          "each file read into memory, ZIP, tar and gzip, as made");
+    write_fixture("zip_features", path, sizeof path);
+    (void)tiku_archive_open(path, NULL, NULL, &a);
+    check(tiku_archive_find(a, "DOCS/README.TXT") ==
+          tiku_archive_find(a, "docs/readme.txt") &&
+          tiku_archive_find(a, "docs/readme.txt") >= 0 &&
+          tiku_archive_find(a, "docs/missing.txt") < 0 &&
+          tiku_archive_find(NULL, "x") < 0, "AR-091",
+          "found by path, or by path whatever its case; else -1");
+    check(tiku_archive_read(a, tiku_archive_find(a, "data/big.bin"), 1000,
+                            &b, &n) == TIKU_ARCHIVE_TOO_LARGE &&
+          b == NULL && n == 0, "AR-092",
+          "an entry past the bound is not read at all");
+    check(tiku_archive_read(a, tiku_archive_find(a, "docs"), 1000, &b, &n)
+          == TIKU_ARCHIVE_UNSUPPORTED &&
+          tiku_archive_read(a, 999, 1000, &b, &n) == TIKU_ARCHIVE_MISSING,
+          "AR-093", "a folder, or no such entry, reads nothing");
+    tiku_archive_close(a);
+    write_fixture("badcrc_zip", path, sizeof path);
+    (void)tiku_archive_open(path, NULL, NULL, &a);
+    check(a != NULL && tiku_archive_read(a, 0, 1u << 20, &b, &n) ==
+          TIKU_ARCHIVE_CHECKSUM && b == NULL, "AR-094",
+          "a wrong CRC gives nothing back");
+    tiku_archive_close(a);
+    write_fixture("liar_zip", path, sizeof path);
+    a = NULL;
+    (void)tiku_archive_open(path, NULL, NULL, &a);
+    check(a != NULL && tiku_archive_read(a, 0, 1u << 30, &b, &n) ==
+          TIKU_ARCHIVE_CHECKSUM && b == NULL, "AR-095",
+          "an entry inflating past its stated size is stopped there");
+    tiku_archive_close(a);
+    check(strcmp(tiku_archive_strerror(TIKU_ARCHIVE_TOO_LARGE),
+                 "it is larger than can be read here") == 0, "AR-096",
+          "and too large is said in words");
+}
+
 /** @brief A folder taken off, one entry chosen, a cancel, metadata, and
  *         a gzip's file made beside one of its name. */
 static void
@@ -806,6 +888,7 @@ main(void)
     broken_tests();
     option_tests();
     helper_tests();
+    part_tests();
     snprintf(cmd, sizeof cmd, "rm -rf '%s'", scratch);
     (void)system(cmd);
     printf("%s\n", fails ? "FAIL" : "PASS: ZIP, tar and gzip listed and "

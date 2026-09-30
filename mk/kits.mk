@@ -110,6 +110,8 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_archive_zip.c \
                $(K)/translation/tiku_archive_tar.c \
                $(K)/translation/tiku_archive_extract.c \
+               $(K)/translation/tiku_archive_read.c \
+               $(K)/translation/tiku_xml.c \
                $(K)/translation/tiku_jpeg.c \
                $(K)/translation/tiku_fax.c \
                $(K)/translation/tiku_mq.c \
@@ -127,6 +129,8 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_icons.c \
                $(K)/translation/tiku_icons_tiku.c \
                $(K)/translation/tiku_fontdir.c \
+               $(K)/translation/tiku_fontset.c \
+               $(K)/translation/tiku_fontset_scan.c \
                $(K)/translation/tiku_pdf_lex.c $(K)/translation/tiku_pdf_doc.c \
                $(K)/translation/tiku_pdf_filter.c \
                $(K)/translation/tiku_pdf_page.c \
@@ -144,7 +148,33 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_pdf_oc.c \
                $(K)/translation/tiku_pdf_cmap.c \
                $(K)/translation/tiku_pdf_annot.c \
-               $(K)/translation/tiku_pdf_view.c
+               $(K)/translation/tiku_pdf_view.c \
+               $(K)/translation/tiku_pdf_writer.c \
+               $(K)/translation/tiku_pdf_writer_font.c \
+               $(K)/translation/tiku_pdf_writer_image.c \
+               $(K)/translation/tiku_office.c \
+               $(K)/translation/tiku_office_util.c \
+               $(K)/translation/tiku_office_pkg.c \
+               $(K)/translation/tiku_office_font.c \
+               $(K)/translation/tiku_office_flow.c \
+               $(K)/translation/tiku_office_page.c \
+               $(K)/translation/tiku_office_table.c \
+               $(K)/translation/tiku_office_draw.c \
+               $(K)/translation/tiku_office_docx.c \
+               $(K)/translation/tiku_office_docx_style.c \
+               $(K)/translation/tiku_office_docx_draw.c \
+               $(K)/translation/tiku_office_docx_art.c \
+               $(K)/translation/tiku_office_docx_math.c \
+               $(K)/translation/tiku_office_odt.c \
+               $(K)/translation/tiku_office_odt_style.c \
+               $(K)/translation/tiku_office_odt_table.c \
+               $(K)/translation/tiku_office_dml_color.c \
+               $(K)/translation/tiku_office_dml_geom.c \
+               $(K)/translation/tiku_office_dml_draw.c \
+               $(K)/translation/tiku_office_dml_pic.c \
+               $(K)/translation/tiku_office_pptx.c \
+               $(K)/translation/tiku_office_pptx_text.c \
+               $(K)/translation/tiku_office_pptx_table.c
 # The card, like the machine underneath, is one file per host: the
 # PulseAudio simple API where there is a sound daemon, CoreAudio's audio
 # queue where there is a Mac.  Neither is compiled on the other's host,

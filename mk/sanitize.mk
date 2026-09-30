@@ -1,9 +1,10 @@
 # check-sanitize: the readers of files that come from elsewhere -- PDF,
 # CCITT fax, JBIG2, JPEG, JPEG 2000, the fonts and ciphers a PDF carries,
-# the key files, certificates and signatures, archives, and the lines
-# a diff compares -- compiled again under AddressSanitizer and UBSan, and
-# their suites run against them, the PDF view's with the view compiled into
-# it (so it is not among the objects).  The rest of the kits link as built.
+# the key files, certificates and signatures, archives, the lines a diff
+# compares, and office documents with the XML they are made of -- compiled
+# again under AddressSanitizer and UBSan, and their suites run against
+# them, the PDF view's with the view compiled into it (so it is not among
+# the objects).  The rest of the kits link as built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
 # suite rather than passing unseen.
 #
@@ -18,7 +19,9 @@ SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
                      %/tiku_diff.c \
                      %/tiku_jpeg.c %/tiku_fax.c %/tiku_fontdir.c \
                      kits/translation/tiku_jbig2%.c %/tiku_mq.c \
-                     kits/translation/tiku_jpx%.c,\
+                     kits/translation/tiku_jpx%.c \
+                     kits/translation/tiku_office%.c %/tiku_xml.c \
+                     kits/translation/tiku_fontset%.c,\
                      $(TRANSLATION))) \
             $(filter %/tiku_ttf.c %/tiku_cff.c %/tiku_type1.c \
                      %/tiku_glyphpath.c,$(INTERFACE)) \
@@ -29,7 +32,8 @@ SAN_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_SRCS))
 SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
              test_crypto test_saslprep test_type1 test_cff test_ttf \
              test_thumb test_pubkey test_cms test_pdf_sign test_archive \
-             test_diff test_pdf_view test_atomic_file
+             test_diff test_pdf_view test_atomic_file test_xml \
+             test_pdf_writer test_office
 SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
                  test_grab_app
 SAN_TESTS += $(SAN_APP_TESTS)

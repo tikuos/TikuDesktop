@@ -35,7 +35,8 @@ typedef enum {
     TIKU_ARCHIVE_WRITE,             /* the disk refused a file           */
     TIKU_ARCHIVE_REPLACED,          /* a later entry took its name       */
     TIKU_ARCHIVE_CANCELLED,
-    TIKU_ARCHIVE_NOMEM
+    TIKU_ARCHIVE_NOMEM,
+    TIKU_ARCHIVE_TOO_LARGE          /* an entry past the size asked for  */
 } tiku_archive_err_t;
 
 typedef enum {
@@ -104,6 +105,20 @@ long tiku_archive_count(const tiku_archive_t *a);
 /** @brief Entry @p i, in the archive's order, or NULL past the end. */
 const tiku_archive_entry_t *tiku_archive_entry(const tiku_archive_t *a,
                                                long i);
+
+/** @brief The entry whose path is @p path, as the listing cleaned it:
+ *         the same bytes, else the same but for ASCII case, as a package
+ *         compares its part names.  @return its index, or -1. */
+long tiku_archive_find(const tiku_archive_t *a, const char *path);
+
+/**
+ * @brief Entry @p i's bytes into memory, at most @p max of them, its size
+ *        and CRC checked: a part of a package, read whole.
+ * @return OK with @p out (to free(), a zero byte after its end) and
+ *         @p len; else why not, @p out NULL.
+ */
+tiku_archive_err_t tiku_archive_read(tiku_archive_t *a, long i, size_t max,
+                                     unsigned char **out, size_t *len);
 
 /** @brief A sentence for @p e: "the file is damaged" ... */
 const char *tiku_archive_strerror(tiku_archive_err_t e);
