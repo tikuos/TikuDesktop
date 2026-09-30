@@ -4,8 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_office_pptx_table.c - a slide's graphic frames: tables drawn,
- * anything else a grey box of its size.
+ * tiku_office_pptx_table.c - a slide's graphic frames: tables drawn here,
+ * charts, diagrams and the rest by dml_frame().
  *
  * A table's rows are as tall as they say, or as their tallest cell's
  * text needs.  Each cell takes its fill, borders and the weight and
@@ -374,34 +374,14 @@ table(px_t *x, const tiku_xml_node_t *tbl, const dml_mat_t *m)
 int
 px_frame(px_t *x, const tiku_xml_node_t *frame, const dml_mat_t *m)
 {
-    const tiku_xml_node_t *gd = tiku_xml_path(frame,
-                                              "a:graphic/a:graphicData");
-    const tiku_xml_node_t *tbl = tiku_xml_child(gd, "a:tbl");
+    const tiku_xml_node_t *tbl = tiku_xml_path(frame, "a:graphic/"
+                                               "a:graphicData/a:tbl");
     dml_mat_t fm, none;
-    dml_fill_t f;
-    dml_geom_t g;
     float w, h;
 
+    if (tbl == NULL) {
+        return dml_frame(&x->dml, frame, m);
+    }
     dml_xfrm(tiku_xml_child(frame, "p:xfrm"), m, &fm, &w, &h, &none);
-    if (tbl != NULL) {
-        return table(x, tbl, &fm);
-    }
-    if (tiku_xml_child(gd, "dgm:relIds") != NULL) {
-        int drawn = dml_diagram(&x->dml, gd, &fm);
-
-        if (drawn != 0) {
-            return drawn < 0 ? -1 : 0;
-        }
-    }
-    memset(&f, 0, sizeof f);
-    f.kind = DML_SOLID;
-    f.color = 0xffeeeeeeu;          /* a chart, a diagram: its place */
-    if (w <= 0 || h <= 0) {
-        return 0;                   /* no room: nothing to show */
-    }
-    if (dml_geometry(NULL, w, h, &g) == 0) {
-        dml_paint_fill(&x->dml, &f, &g, &fm, w, h);
-    }
-    dml_geom_free(&g);
-    return 0;
+    return table(x, tbl, &fm);
 }

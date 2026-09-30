@@ -735,6 +735,10 @@ dml_draw(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *m,
     if (is_local(e, "grpSp") || is_local(e, "wgp")) {
         return group(c, e, m);
     }
+    if (is_local(e, "graphicFrame")) {
+        return c->frame != NULL ? c->frame(c->frame_ctx, e, m)
+                                : dml_frame(c, e, m);
+    }
     if (tiku_xml_is(e, "mc:AlternateContent")) {
         const tiku_xml_node_t *alt = tiku_xml_child(e, "mc:Fallback"), *k;
 
@@ -797,6 +801,37 @@ dml_diagram(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m)
     return err != 0 ? -1 : 1;
 }
 
+int
+dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *pm)
+{
+    const tiku_xml_node_t *gd = tiku_xml_path(e, "a:graphic/a:graphicData");
+    dml_mat_t m, none;
+    dml_fill_t f;
+    dml_geom_t g;
+    float w, h;
+    int drawn = 0;
+
+    dml_xfrm(local_child(e, "xfrm"), pm, &m, &w, &h, &none);
+    if (!(w > 0) || !(h > 0)) {
+        return 0;                   /* no room: nothing to show */
+    }
+    if (tiku_xml_child(gd, "c:chart") != NULL) {
+        drawn = dml_chart(c, gd, &m, w, h);
+    } else if (tiku_xml_child(gd, "dgm:relIds") != NULL) {
+        drawn = dml_diagram(c, gd, &m);
+    }
+    if (drawn != 0) {
+        return drawn < 0 ? -1 : 0;
+    }
+    memset(&f, 0, sizeof f);
+    f.kind = DML_SOLID;
+    f.color = 0xffeeeeeeu;          /* what cannot be drawn: its place */
+    if (dml_geometry(NULL, w, h, &g) == 0) {
+        dml_paint_fill(c, &f, &g, &m, w, h);
+    }
+    dml_geom_free(&g);
+    return 0;
+}
 
 void
 dml_done(dml_ctx_t *c)

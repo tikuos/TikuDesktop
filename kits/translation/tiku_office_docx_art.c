@@ -101,7 +101,8 @@ dx_art_wants(const tiku_xml_node_t *gd)
     return tiku_xml_child(gd, "wps:wsp") != NULL ||
            tiku_xml_child(gd, "wpg:wgp") != NULL ||
            tiku_xml_child(gd, "wpc:wpc") != NULL ||
-           tiku_xml_child(gd, "dgm:relIds") != NULL;
+           tiku_xml_child(gd, "dgm:relIds") != NULL ||
+           tiku_xml_child(gd, "c:chart") != NULL;
 }
 
 /* ---------------------------------------------------------- text boxes  */
@@ -394,14 +395,17 @@ canvas(dx_art_t *ax, const tiku_xml_node_t *e, const dml_mat_t *m)
     return err;
 }
 
-/** @brief A diagram (SmartArt) from the drawing Word saved with it; a
- *         grey box of its size when there is none.  @return 0, or -1 out
- *         of memory. */
+/** @brief A diagram (SmartArt) from the drawing Word saved with it, or a
+ *         chart from the values its part keeps; a grey box of its size
+ *         when it cannot be drawn.  @return 0, or -1 out of memory. */
 static int
 diagram(dx_art_t *ax, const tiku_xml_node_t *gd, const dml_mat_t *m)
 {
     dml_fill_t f;
-    int drawn = dml_diagram(&ax->px.dml, gd, m);
+    int drawn = tiku_xml_child(gd, "c:chart") != NULL
+                ? dml_chart(&ax->px.dml, gd, m, ax->px.dml.fit_w,
+                            ax->px.dml.fit_h)
+                : dml_diagram(&ax->px.dml, gd, m);
 
     if (drawn == 0) {
         memset(&f, 0, sizeof f);
@@ -437,9 +441,9 @@ art_draw(of_doc_t *d, of_faces_t *fs, const of_art_t *a, const float *box,
     for (k = tiku_xml_child(a->node, NULL); k != NULL && err == 0;
          k = tiku_xml_next(k, NULL)) {
         err = tiku_xml_is(k, "wpc:wpc") ? canvas(ax, k, &m) :
-              tiku_xml_is(k, "dgm:relIds") ? diagram(ax, a->node, &m)
-                                           : dml_draw(&ax->px.dml, k, &m,
-                                                      NULL);
+              tiku_xml_is(k, "dgm:relIds") || tiku_xml_is(k, "c:chart")
+              ? diagram(ax, a->node, &m) : dml_draw(&ax->px.dml, k, &m,
+                                                    NULL);
     }
     return err;
 }
@@ -484,6 +488,7 @@ art_ctx(dx_t *x)
     (void)dml_theme_load(x->pkg, t != NULL ? t->target : NULL, &ax->theme);
     ax->px.pkg = x->pkg;
     ax->px.dml.pkg = x->pkg;
+    ax->px.dml.text_pt = 10;        /* Word's, for a chart */
     ax->px.dml.theme = &ax->theme;
     ax->px.dml.d = ax->px.d;
     ax->px.dml.text = px_text;

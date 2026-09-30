@@ -8,7 +8,9 @@
  * in the text and floating over it, drawings (tiku_office_docx_art.c
  * draws them), the old VML shapes and text boxes, and tables.  A
  * picture's part is found through the relationships of the part it is
- * in.  A chart becomes a grey box of its size.  A table's cells take
+ * in.  A chart is drawn as a drawing is, from the values its part
+ * keeps; one of a kind not read, a grey box of its size.  A table's
+ * cells take
  * their borders, shading and text from its style, by row and column, as
  * Word's table styles say.
  *
@@ -93,7 +95,8 @@ blip_fill(dx_t *x, const tiku_xml_node_t *fill, float w, float h)
 
 /** @brief What a:graphicData holds: a plain picture into @p im; shapes,
  *         groups, a canvas, a diagram, a picture with more to it, a
- *         drawing in @p f; anything else (a chart) a grey box in @p im.
+ *         drawing in @p f; anything else (a chart of a newer kind) a
+ *         grey box in @p im.
  *  @return 0, or -1 out of memory. */
 static int
 graphic(dx_t *x, const tiku_xml_node_t *gd, float w, float h,

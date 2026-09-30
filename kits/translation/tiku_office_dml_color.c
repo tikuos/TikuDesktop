@@ -296,6 +296,23 @@ dml_color_of(const dml_ctx_t *ctx, const tiku_xml_node_t *e)
 
 /* ------------------------------------------------------------- theme  */
 
+uint32_t
+dml_lum(uint32_t argb, double mod, double off)
+{
+    rgba_t c;
+    double h, s, l;
+
+    c.r = (double)(argb >> 16 & 0xff) / 255;
+    c.g = (double)(argb >> 8 & 0xff) / 255;
+    c.b = (double)(argb & 0xff) / 255;
+    to_hsl(&c, &h, &s, &l);
+    from_hsl(h, s, l * mod + off, &c);
+    return (argb & 0xff000000u) |
+           (uint32_t)(fmin(fmax(c.r, 0), 1) * 255 + 0.5) << 16 |
+           (uint32_t)(fmin(fmax(c.g, 0), 1) * 255 + 0.5) << 8 |
+           (uint32_t)(fmin(fmax(c.b, 0), 1) * 255 + 0.5);
+}
+
 void
 dml_map_read(dml_ctx_t *c, const tiku_xml_node_t *map)
 {

@@ -62,8 +62,8 @@ float px_body(px_t *x, const tiku_xml_node_t *body, const float *box,
 /** @brief Whether a shape has any text to show. */
 int px_has_text(const tiku_xml_node_t *shape);
 
-/** @brief A graphic frame drawn: a table, a diagram from its saved
- *         drawing, else a grey box of its size. */
+/** @brief A graphic frame drawn: a table here, anything else as
+ *         dml_frame() draws it. */
 int px_frame(px_t *x, const tiku_xml_node_t *frame, const dml_mat_t *m);
 
 #endif /* TIKU_OFFICE_PPTX_H_ */

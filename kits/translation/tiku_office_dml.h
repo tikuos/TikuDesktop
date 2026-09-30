@@ -122,6 +122,11 @@ typedef struct {
     struct dml_pic     *pics;       /* pictures given to the writer      */
     int                 npics, piccap;
     int                 depth;      /* groups within groups              */
+    int               (*frame)(void *ctx, const tiku_xml_node_t *e,
+                               const dml_mat_t *m);  /* a graphic frame
+                                       the caller draws itself: a table  */
+    void               *frame_ctx;
+    float               text_pt;    /* a chart's text where it says none */
     float               fit_w, fit_h;  /* what a shape with no place of
                                        its own fills, at the top: Word's */
 } dml_ctx_t;
@@ -139,6 +144,9 @@ void dml_map_read(dml_ctx_t *c, const tiku_xml_node_t *map);
 uint32_t dml_color(const dml_ctx_t *c, const tiku_xml_node_t *parent);
 /** @brief The colour element @p e itself resolved; 0 when it is not one. */
 uint32_t dml_color_of(const dml_ctx_t *c, const tiku_xml_node_t *e);
+/** @brief Colour @p argb with its luminance times @p mod, plus @p off:
+ *         a:lumMod and a:lumOff, as a palette darkens and lightens. */
+uint32_t dml_lum(uint32_t argb, double mod, double off);
 /** @brief A theme font name as a face: "+mj-lt" the headings', "+mn-lt"
  *         the body's, else @p name itself. */
 const char *dml_font(const dml_ctx_t *c, const char *name);
@@ -204,6 +212,18 @@ int dml_draw(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *m,
  * @return 1 when drawn, 0 when it has no drawing, -1 out of memory.
  */
 int dml_diagram(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m);
+/**
+ * @brief A chart in graphic data @p gd drawn through @p m in its frame of
+ *        @p w by @p h points, from the values its part keeps; its text
+ *        the context's text_pt where the part does not say.
+ * @return 1 when drawn, 0 for a chart it cannot draw, -1 out of memory.
+ */
+int dml_chart(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m,
+              float w, float h);
+/** @brief A graphic frame @p e drawn through @p m: a chart from its
+ *         values, a diagram from its saved drawing, else a grey box of
+ *         its place.  @return 0, or -1 out of memory. */
+int dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *m);
 /** @brief The context's own memory given back. */
 void dml_done(dml_ctx_t *c);
 

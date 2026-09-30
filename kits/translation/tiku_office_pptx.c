@@ -127,6 +127,14 @@ background(px_t *x, const tiku_xml_node_t *csld, const char *part)
     return 1;
 }
 
+/** @brief A graphic frame met in a group, as DrawingML hands it back:
+ *         px_frame(). */
+static int
+frame(void *ctx, const tiku_xml_node_t *e, const dml_mat_t *m)
+{
+    return px_frame(ctx, e, m);
+}
+
 /** @brief One element of a shape tree: a graphic frame, or anything
  *         DrawingML draws, a placeholder with what it inherits. */
 static int
@@ -353,6 +361,9 @@ of_pptx_draw(of_pkg_t *pkg, of_faces_t *fs, tiku_pdf_writer_t *w, char *why,
     x->dml.d = x->d;
     x->dml.text = px_text;
     x->dml.text_ctx = x;
+    x->dml.frame = frame;
+    x->dml.frame_ctx = x;
+    x->dml.text_pt = 18;            /* PowerPoint's, for a chart */
     dml_map_read(&x->dml, NULL);
     info(x);
     for (id = tiku_xml_path(root, "p:sldIdLst/p:sldId"); id != NULL &&
