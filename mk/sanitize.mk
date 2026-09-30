@@ -42,7 +42,7 @@ SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
 SAN_TESTS += $(SAN_APP_TESTS)
 SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
-                  test_editdoc_faults
+                  test_editdoc_faults test_editdoc_fixtures
 SAN_TESTS += $(SAN_LEAK_TESTS)
 
 # These suites include their viewer sources directly. Rebuild when an

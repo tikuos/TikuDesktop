@@ -233,6 +233,12 @@ test_editdoc_history_LIBS := $(LIB_EDITOR)
 test_editdoc_marks_LIBS := $(LIB_EDITOR)
 test_editdoc_model_LIBS := $(LIB_EDITOR)
 test_editdoc_faults_LIBS := $(LIB_EDITOR)
+test_editdoc_fixtures_LIBS := $(LIB_EDITOR)
+# The baselines open their fixtures through Editor's and the IDE's own code.
+test_editor_baseline_SRCS := $(EDITOR_SRC)
+test_editor_baseline_LDLIBS := $(X11_LIBS) -lm
+test_ide_baseline_SRCS := $(IDE_SRC)
+test_ide_baseline_LDLIBS := $(X11_LIBS) -lm
 
 # The one link rule.  A test's object, the objects of the sources it
 # names, the kits it asks for before the seven every test takes, and its
