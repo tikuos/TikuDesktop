@@ -78,8 +78,9 @@ solid and gradient fills, lines with dashes and arrowheads, pictures
 cropped and turned, tables, groups, text frames with insets, anchoring
 and autofit.
 
-Shown as a labelled box: charts, SmartArt without its drawing, equations,
-EMF/WMF pictures, embedded objects.  Not attempted: complex-script
+Shown as a labelled box: surface charts and Office 2016's newer chart
+kinds, SmartArt without its drawing, equations, EMF/WMF pictures,
+embedded objects.  Not attempted: complex-script
 shaping (Arabic, Indic), right-to-left reordering, kerning, hyphenation,
 tracked-change markup (the final text is shown), comments, macros.
 
@@ -101,7 +102,8 @@ from their cached values, SmartArt's saved drawings, EMF.
 
 ## 5. Where it stands (2026-09-30)
 
-Milestones 1 to 3 are done; 4 is not begun.
+Milestones 1 to 3 are done; of 4, charts and SmartArt's saved drawings
+are done, .odp and EMF not begun.
 
 - **Kit.**  `tiku_xml`, `tiku_archive_read`, `tiku_fontset`,
   `tiku_pdf_writer` and the `tiku_office*` readers, one entry point
@@ -113,6 +115,14 @@ Milestones 1 to 3 are done; 4 is not begun.
   Word's VML WordArt is drawn, so watermarks show.  OpenDocument text is read with
   its master pages, outline numbering, aligned and older list labels,
   frames, notes and spanned tables.
+- **Charts.**  DrawingML chart parts, in slides and in Word, grouped
+  or not, are drawn from the values they cache (`tiku_office_chart*`):
+  bars (clustered, stacked, to 100 %), lines, areas, pies, doughnuts,
+  scatters, bubbles, radars, stock high-low lines and up-down bars, and
+  combinations on two axes; axes scaled as Excel scales them, number
+  formats and dates, data labels and each point's own, legends, titles,
+  trendlines, display units, the file's own layouts.  3-D kinds are
+  drawn flat; surface charts and chartex kinds stay grey boxes.
 - **View.**  `tiku_pdf_view_open_as()` opens a file through a
   translator on a worker; `tiku_pdf_view_single()` shows one page alone,
   which is how slides are presented.
@@ -124,11 +134,11 @@ Milestones 1 to 3 are done; 4 is not begun.
   .docx and .pptx are typed `application/x-docx` and `application/x-pptx`;
   .odt keeps its own type.
 - **Tests.**  `test_office` (kinds, pages and words, sizes, links,
-  outline, title, export, hostile files) and `test_office_viewer` (the
+  outline, title, charts, export, hostile files) and `test_office_viewer` (the
   apps without a desktop), both also under AddressSanitizer and UBSan;
   the `office` lane opens all three kinds from Tracker and presents.
   Fixtures come from `tests/fixtures/tools/gen_office.py`.
 
-Still boxes or not attempted, as section 3 says: charts, EMF/WMF,
-complex scripts and right-to-left text, tracked-change markup, comments.
-Equations are set on one line.
+Still boxes or not attempted, as section 3 says: surface and chartex
+charts, EMF/WMF, complex scripts and right-to-left text, tracked-change
+markup, comments.  Equations are set on one line.
