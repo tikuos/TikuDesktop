@@ -1,0 +1,47 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# An application that asks again while its own panel is up gets the panel
+# its newer question needs.  Editor keeps one note of which panel it asked
+# for last, so an Open panel left standing under a Save As would otherwise
+# hand Editor a file it then saved over.
+wait 14
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 30
+expect-title Open
+note Save As asked while the Open panel stands turns the panel round
+click-window Edit
+wait 4
+click 60 8
+wait 6
+menu-pick Save As…
+wait 30
+expect-title Save
+expect-no-title Open
+note and Open asked while the Save panel stands turns it back
+click-window Edit
+wait 4
+click 60 8
+wait 6
+menu-pick Open…
+wait 30
+expect-title Open
+expect-no-title Save
+key Escape
+wait 15
+expect-no-title Open
+click-window Edit
+wait 6
+key Escape
+wait 20
+expect-no-title Edit
+quit

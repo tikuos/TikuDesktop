@@ -983,7 +983,25 @@ local_picker_start(desktop_t *app, const char *path, char *out, size_t max)
     return 0;
 }
 
-/** @brief Remember who asked; never answer a reused session. */
+/** @brief Whether the question up is one @p window of @p session put. */
+static int
+pick_is_from(const desktop_t *app, int session, uint32_t window)
+{
+    return app->pending_pick.kind == 2 &&
+           app->pending_pick.session == session &&
+           app->pending_pick.generation ==
+               app->remote.session[session].generation &&
+           app->pending_pick.window == window;
+}
+
+/**
+ * @brief Remember who asked; never answer a reused session.
+ *
+ * One question at a time.  The window whose question is up may put a
+ * newer one, which replaces it: an application keeps one note of what it
+ * asked last, and an answer to the older question would be read as the
+ * newer one's.  Any other ask is refused while the panel is taken.
+ */
 void
 desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
 {
@@ -992,11 +1010,13 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
     const char *name = tiku_msg_find_string(msg, "name", 0);
     char mapped[TIKU_PATH_MAX];
 
-    if (app->pending_pick.kind || session < 0 ||
-        session >= TIKU_REMOTE_SESSIONS || !app->remote.session[session].used)
+    if (session < 0 || session >= TIKU_REMOTE_SESSIONS ||
+        !app->remote.session[session].used)
         return;
     (void)tiku_msg_find_int32(msg, "window", 0, &window);
     (void)tiku_msg_find_int32(msg, "mode", 0, &mode);
+    if (app->pending_pick.kind && !pick_is_from(app, session, (uint32_t)window))
+        return;
     if (mode < TIKU_APP_PICK_OPEN || mode > TIKU_APP_PICK_LOCAL_FOLDER)
         return;
     if (mode == TIKU_APP_PICK_LOCAL_OPEN ||

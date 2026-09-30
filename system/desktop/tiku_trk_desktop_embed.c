@@ -333,9 +333,10 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
  *        panel and answers later.
  *
  * One panel, one question -- the rule the shell already keeps for its
- * own five askers.  A second ask while one is up is refused rather than
- * queued: two answers to one panel is what the rule exists to prevent,
- * and an application told no can ask again.
+ * own five askers.  Another asker is refused while one is up, rather
+ * than queued, and can ask again.  The window whose question is up may
+ * put a newer one, which replaces it, so the answer that comes back is
+ * always to the question that window asked last.
  */
 static int
 embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
@@ -344,7 +345,9 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
     struct desktop_embed *slot = ctx;
     desktop_t *app = slot->app;
 
-    if (app->pending_pick.kind != 0) {
+    if (app->pending_pick.kind != 0 &&
+        !(app->pending_pick.kind == 1 && app->pending_pick.slot == slot &&
+          app->pending_pick.window == id)) {
         return 0;
     }
     app->pending_pick.kind = 1;

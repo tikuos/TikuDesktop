@@ -4,7 +4,7 @@
 /** @brief The painter is not linked: a full frame is the flag, as before. */
 void desktop_damage_all(desktop_t *app) { app->dirty = 1; }
 
-static int panels, folder_panels, replies;
+static int panels, folder_panels, replies, saves;
 static char panel_start[TIKU_PATH_MAX], answer[TIKU_PATH_MAX];
 
 void tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *p, void *target,
@@ -24,9 +24,14 @@ void tiku_trk_panel_window_open(tiku_trk_panel_window_t *p, void *target,
     folder_panels++; snprintf(panel_start, sizeof panel_start, "%s", start);
 }
 
+/** @brief The panel put the saving way. */
 void tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *p, void *target,
     int command, const char *start, const char *name)
-{ (void)p; (void)target; (void)command; (void)start; (void)name; assert(0); }
+{
+    (void)p; (void)target; (void)start; (void)name;
+    assert(command == TIKU_TRK_CMD_APP_PICK);
+    saves++;
+}
 
 int tiku_remote_tell(tiku_remote_listener_t *l, int session, const tiku_msg_t *m)
 {
@@ -80,7 +85,32 @@ int main(void)
     assert(!tiku_mount_remove(app->backend, "/local"));
     desktop_remote_pick(app, 0, m);
     assert(app->pending_pick.kind == 0 && strstr(app->status, "No local"));
+    /* A window asking again while its own question is up replaces that
+     * question, so the answer belongs to the one it asked last; another
+     * session is still refused while the panel is taken. */
+    tiku_msg_t *o = tiku_msg_new(TIKU_MSG_PICK), *s = tiku_msg_new(TIKU_MSG_PICK);
+    assert(o && s);
+    assert(tiku_msg_add_int32(o, "window", 1) &&
+           tiku_msg_add_int32(o, "mode", TIKU_APP_PICK_OPEN) &&
+           tiku_msg_add_string(o, "start", "/data"));
+    assert(tiku_msg_add_int32(s, "window", 1) &&
+           tiku_msg_add_int32(s, "mode", TIKU_APP_PICK_SAVE) &&
+           tiku_msg_add_string(s, "start", "/data") &&
+           tiku_msg_add_string(s, "name", "notes.txt"));
+    desktop_remote_pick(app, 0, o);
+    assert(panels == 5 && app->pending_pick.kind == 2);
+    app->remote.session[1].used = 1;
+    desktop_remote_pick(app, 1, s);
+    assert(saves == 0 && app->pending_pick.session == 0);
+    desktop_remote_pick(app, 0, s);
+    assert(saves == 1 && app->pending_pick.kind == 2 &&
+           app->pending_pick.session == 0);
+    desktop_remote_pick(app, 0, o);
+    assert(panels == 6 && app->pending_pick.kind == 2);
+    deliver_pick(app, "/data/notes.txt");
+    assert(replies == 3 && !strcmp(answer, "/data/notes.txt"));
+    tiku_msg_free(o); tiku_msg_free(s);
     tiku_msg_free(m); app->backend->ops->close(app->backend); free(app);
     puts("PASS: local picker namespace mapping, local folders, device "
-         "refusal, cancellation, session reuse");
+         "refusal, cancellation, session reuse, a window's newer question");
 }

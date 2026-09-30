@@ -1022,7 +1022,10 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
     frame = (tiku_rect_t){ x, y, width, height };
     tiku_field_start(&controller->name, "");
     if (controller->window != NULL && controller->window->open) {
+        /* Asked again while up: the title follows the new question. */
         controller->window->frame = frame;
+        tiku_trk_panel_title(&controller->model, controller->window->title,
+                             sizeof controller->window->title);
         tiku_workspace_activate(controller->workspace,
                                      controller->window);
     } else {
