@@ -16,7 +16,7 @@ migration will change a rule on purpose, the change is listed under
 | ID | Stable name. Tests print it when a check fails |
 | Source | Where the rule comes from: Tiku policy, a Scintilla file, or the application's code today |
 | Rule | The behaviour, in one sentence |
-| State | `done`: implemented, and the named test passes. `baseline`: how the application behaves at `bf1c6b3`; a migration keeps it unless a decision says otherwise. `open`: a difference or defect waiting for a decision |
+| State | `done`: implemented, and the named test passes. `baseline`: how the application behaves now, first recorded at `bf1c6b3`; a migration keeps it unless a decision says otherwise. `open`: a difference or defect waiting for a decision |
 | Test | The test that checks it, as `file:function`, or `none` |
 
 Engine tests are in `tests/kits/`, application tests in `tests/apps/`, and
@@ -144,7 +144,8 @@ These are settled for the engine. The migration rows they affect are marked
 
 ## Editor today
 
-Editor as it behaves at `bf1c6b3`, each row checked against the code.
+Editor as it behaves now, each row checked against the code at `bf1c6b3`
+and updated as fixes land.
 Paths are shortened: `editor/` is `apps/editor/`, a bare `tiku_*.c` file is
 in `kits/interface/`, and `shell/X.script` is
 `tests/integration/shell/X.script`. A test followed by a note in brackets
@@ -273,7 +274,7 @@ changes it or when it records a defect listed under
 | EDR-FILE-028 | editor/tiku_editor_commands.c:tiku_editor_picked; editor/tiku_editor_input.c:answer_question | A file-panel answer that arrives while the unsaved-changes question is open is ignored, and it also erases the question's pending action. A later Discard then only closes the question and a later Save only saves; the New, Open, Revert or Close never happens. | open | none |
 | EDR-FILE-029 | kits/application/tiku_client.c:pump; editor/tiku_editor_app.c:tiku_editor_stop | A desktop shutdown or a lost desktop connection ends the Editor without the unsaved-changes question; only the recovery copy of EDR-FILE-025 keeps the edits. | baseline | none |
 | EDR-FILE-030 | editor/tiku_editor_app.c:tiku_editor_start; editor/tiku_editor_input.c:tiku_editor_closed | The window title is fixed when a window opens: the launch name, or "Edit — Unsaved changes" after a title-bar close. Open, New, Save As and later saves never change it; only the toolbar label follows the document. | baseline | none (scripts check the title only after launch) |
-| EDR-FILE-031 | editor/tiku_editor_commands.c:tiku_editor_file_panel, tiku_editor_picked; system/desktop/tiku_trk_desktop_panels.c:desktop_remote_pick; system/desktop/tiku_trk_desktop_embed.c:embed_svc_pick | The Editor handles every file-panel answer according to its most recent request (it keeps one open-or-save flag), and both TikuDesktop hosts silently drop a second request while a panel is up. So choosing Save As (or Save on an untitled document) while an Open panel is up makes the file then chosen in that Open panel be overwritten with the document, with no replace question. | open | none |
+| EDR-FILE-031 | system/desktop/tiku_trk_desktop_panels.c:desktop_remote_pick; system/desktop/tiku_trk_desktop_embed.c:embed_svc_pick; editor/tiku_editor_commands.c:tiku_editor_file_panel, tiku_editor_picked | A panel request from the window whose panel is up turns that panel to the new question, so Save As chosen while an Open panel is up shows a Save panel, and an answer always belongs to the question asked last; a request from another application is still refused while the panel is up. | baseline | test_app_picker.c:main; shell/pickreplace.script |
 
 ### Limits
 
@@ -319,8 +320,7 @@ changes it or when it records a defect listed under
 
 ## IDE today
 
-TikuBasic and TikuC, both built from `apps/ide/`, as they behave at
-`bf1c6b3`. Paths are shortened as for Editor, with `ide/` for `apps/ide/`.
+TikuBasic and TikuC, both built from `apps/ide/`, recorded the same way. Paths are shortened as for Editor, with `ide/` for `apps/ide/`.
 The IDE edits through the shared text view, whose own rules follow in the
 next section.
 
@@ -351,7 +351,7 @@ next section.
 | IDE-SEL-002 | ide/tiku_ide_events.c:tiku_ide_event | Shift with the arrows, Home/End or PageUp/PageDown extends from a fixed anchor, while the same keys without Shift drop the selection and move from the caret. | baseline | shell/ideselect.script (Shift+End) |
 | IDE-SEL-003 | ide/tiku_ide_editor.c:tiku_ide_edit_clip | Cmd+A or Edit > Select all selects the whole document. | baseline | shell/ideselect.script |
 | IDE-SEL-004 | ide/tiku_ide_editor_view.c:tiku_ide_edit_paint | The selection is filled in the theme's selection colour with its text redrawn in white; every selected line except the last carries a 4 px mark past its selected text for its line break, and an empty selected part is drawn 2 px wide. | baseline | shell/ideselect.script (pixel 336698, colour only) |
-| IDE-SEL-005 | ide/tiku_ide_events.c:tiku_ide_event; tiku_textview.c | A plain click leaves an empty anchor at the click point that no later typing clears. The first character typed after it (or a paste, a commit, or Return's line break) becomes a live selection, and the next edit deletes it. | open | none; no script types twice after a page click |
+| IDE-SEL-005 | ide/tiku_ide_events.c:tiku_ide_event; tiku_textview.c:sel_delete | A press that does not drag leaves no selection anchor once the button comes up, so a later caret move selects nothing and every character typed after a click lands. | baseline | test_ide_workflow.c:test_click_then_type |
 | IDE-SEL-006 | ide/tiku_ide_events.c:tiku_ide_event; tiku_trk_desktop_windows.c | The page does not check the pointer button: a middle or right press places the caret and anchors like a left press. The desk turns only buttons 4 and 5 into wheel events. | baseline | none |
 
 ### Undo and redo
@@ -433,7 +433,7 @@ next section.
 
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
-| IDE-LIM-001 | tiku_textview.c; ide/tiku_ide_search.c:tiku_ide_search_replace; ide/tiku_ide_assist.c:tiku_ide_assist_accept; ide/tiku_ide_language.c:tiku_ide_renumber_basic; ide/tiku_ide_editor.c:tiku_ide_document_fits | A page holds at most 4,000 lines of at most 1023 bytes. Typing and Return past that are silently dropped, paste skips such bytes but still records them, Backspace or Delete joins past it are refused but recorded, and Renumber silently cuts lines that grow past 1023 bytes. Commits (at most 1023 bytes each), completion, Replace, All and loads are refused whole. | baseline | test_text_input.c:documents, transport; test_ide_workflow.c:test_search, test_ui |
+| IDE-LIM-001 | tiku_textview.c; ide/tiku_ide_search.c:tiku_ide_search_replace; ide/tiku_ide_assist.c:tiku_ide_assist_accept; ide/tiku_ide_language.c:tiku_ide_renumber_basic; ide/tiku_ide_editor.c:tiku_ide_document_fits | A page holds at most 4,000 lines of at most 1023 bytes. Typing and Return past that are silently dropped, paste skips such bytes but still records them, and Backspace or Delete joins past it are refused but recorded. Commits (at most 1023 bytes each), completion, Replace, All, Renumber and loads are refused whole. | baseline | test_text_input.c:documents, transport; test_ide_workflow.c:test_search, test_ui, test_renumber_bounds |
 | IDE-LIM-002 | ide/tiku_ide_console.c:tiku_ide_message_take, tiku_ide_console_take; ide/tiku_ide_app.c:tiku_ide_tick | Messages keep the first 200 rows, each cut to 159 bytes, and drop later ones; the console keeps the last 400 lines, each cut to 119 bytes, dropping the oldest. A local run's output line is already cut to 159 bytes before it becomes a row. | baseline | none |
 | IDE-LIM-003 | ide/tiku_ide_events.c:tiku_ide_event | An editor window is at least 360×100; below 320 px of height the find bar and assist panel close, and below 260 px the debug panel closes. | baseline | shell/idenew.script (resize repaint) |
 
@@ -459,9 +459,9 @@ next section.
 | IDE-NUM-003 | ide/tiku_ide_language.c:tiku_ide_renumber_basic; ide/tiku_ide_commands.c:tiku_ide_pick; ide/tiku_ide_events.c:tiku_ide_event | Renumber (Edit > Renumber or the toolbar tool, BASIC pages only, refused on a page being debugged) numbers the lines whose first byte is a digit 10, 20, 30… in physical order, except that a line repeating an earlier number takes that earlier line's new number. Indented numbers are left alone. The whole document is rewritten as one undo step that marks the page modified even when nothing changes, and the caret ends at the end of the document. | baseline | shell/iderenum.script; shell/idetoolbar.script (numbers, the branch, one Undo); the caret and the modified mark: none |
 | IDE-NUM-004 | ide/tiku_ide_language.c:renum_emit, renum_keyword, renum_map | Renumber rewrites only the first number after GOTO, GOSUB, THEN or ELSE, through the old-to-new map. The word may be in any case but must have no letter or digit touching it, and at least one space or tab must separate it from the number, so `GOTO10` is left alone. Unmatched numbers keep their value but lose leading zeros. Strings and REM are not recognised, so a branch word and number inside them are rewritten too. | open | shell/iderenum.script ("goto 23" becomes "goto 30"); shell/idetoolbar.script ("goto 9" becomes "goto 20"); strings, REM and `GOTO10`: none |
 | IDE-NUM-005 | ide/tiku_ide_language.c:renum_map | Lines that share an old number all receive the first such line's new number. | baseline | none |
-| IDE-NUM-006 | ide/tiku_ide_console.c:tiku_ide_message_follow; ide/tiku_ide_events.c:tiku_ide_event; tiku_textview.c:tiku_textview_place, tiku_textview_selection | Following a message moves the caret without dropping the selection anchor. After a held selection, or after any earlier plain click on the page (a click arms the anchor at the caret), the span from that anchor to the target line's start becomes selected, and the next typed character replaces it. | open | none |
-| IDE-NUM-007 | ide/tiku_ide_language.c:tiku_ide_renumber_basic, renum_emit | Renumbering a page whose only line is `1goto 1` followed by 78 copies of ` goto 1` (553 bytes, 79 branch targets) writes the output's closing NUL one byte past its 633-byte buffer. Each extra target on the line adds one more byte of overrun (68 bytes for a full 1022-byte line). | open | none (needs a sanitizer build) |
-| IDE-NUM-008 | ide/tiku_ide_language.c:tiku_ide_renumber_basic; tiku_textview.c:tiku_textview_insert | Renumber never checks the 1023-byte line limit: a line that grows past 1023 bytes is silently cut to its first 1023 bytes, whereas Replace refuses the same case with `Not replaced: a result line would exceed 1023 bytes`. | open | none |
+| IDE-NUM-006 | ide/tiku_ide_console.c:tiku_ide_message_follow; tiku_textview.c:tiku_textview_place, tiku_textview_selection | Following a message moves the caret without dropping a held selection's anchor, so the span from that anchor to the target line's start becomes selected, and the next typed character replaces it. | open | none |
+| IDE-NUM-007 | ide/tiku_ide_language.c:tiku_ide_renumber_basic, renum_lines, renum_put | Renumber counts its output before writing it, so a line holding many GOTO, GOSUB, THEN or ELSE targets is rewritten in full and nothing is written past the buffer. | baseline | test_ide_workflow.c:test_renumber_bounds |
+| IDE-NUM-008 | ide/tiku_ide_language.c:tiku_ide_renumber_basic | When a renumbered line would pass 1023 bytes, Renumber changes nothing and shows `Not renumbered: a result line would exceed 1023 bytes`, as Replace refuses the same case. | baseline | test_ide_workflow.c:test_renumber_bounds |
 
 ### Keyword completion and help
 
@@ -566,7 +566,7 @@ rules hold for every user of the kit.
 | TXV-023 | tiku_textview.c:record | The journal holds 256 entries with no byte budget; when full the oldest is dropped and the save mark moves down with it, becoming unreachable (-1) once its entry is gone. | baseline | none |
 | TXV-024 | tiku_textview.c:tiku_textview_reveal, _scroll_to | reveal() scrolls only as far as needed to show the caret line and reports whether the top changed; scroll_to() clamps the top to [0, nline − rows]. | baseline | test_textview.c:main ("scrolls just enough", "stops at the last screenful") |
 | TXV-025 | tiku_textview.c:caret_clamp, sel_delete, _backspace, _delete, _insert, _newline, _commit | backspace() and delete() first clamp a stale caret into the text, sel_delete() clamps the selection's end line and both columns, and commit() refuses stale ends. insert(), newline() and insert_text() do not clamp the caret. | baseline | test_textview.c:main ("a stale selection past a shortened line does not run off it", Backspace only) |
-| TXV-026 | tiku_textview.c:tiku_textview_selection, sel_delete, tiku_textview_insert | An edit that finds the anchor equal to the caret leaves the anchor held. Once an insert, newline, insert_text or commit moves the caret, the span from the old anchor to the new caret is a live selection, which the next insert, newline, backspace or delete removes. | open | none |
+| TXV-026 | tiku_textview.c:sel_delete | An edit that finds the anchor equal to the caret drops the anchor, so the text the edit inserts never becomes a selection for the next edit to replace. | baseline | test_textview.c:main |
 | TXV-027 | tiku_textview.c:record | A one-byte insert_text() or commit() folds into an adjacent open typing run exactly as a typed character does, and later typing folds into it, whatever undo group either belongs to. | baseline | none |
 | TXV-028 | tiku_textview.c:tiku_textview_insert_text | insert_text() whose text cleans to nothing still deletes a held selection and records an empty insert entry. The view then reads modified, redo history is lost, and the matching Undo only moves the caret. | open | none |
 | TXV-029 | tiku_textview.c:sel_delete, join_previous | sel_delete() removes a multi-line span by backspacing from its end. If any selected line, first to second-last, joined with the text after the span would reach 1024 bytes, the deletion stops at that join, leaving that line and the breaks above it, while the whole span is recorded as deleted. commit() refuses such a span; the other edits do not. | open | none |
@@ -574,16 +574,14 @@ rules hold for every user of the kit.
 
 ## Known defects
 
-Found while recording the rows above, by reading the code; the click defect
-was also reproduced against the kit. None is fixed here: the applications
-are unchanged. Each is decided when its application moves onto the engine,
-or fixed earlier on its own.
+Found while recording the rows above, by reading the code. Each is decided
+when its application moves onto the engine, or fixed earlier on its own; a
+fixed one leaves this list, and its row says what the code does now.
 
 ### Editor
 
 | Row | Defect |
 | --- | --- |
-| EDR-FILE-031 | Choosing Save As while an Open panel is up makes the file then chosen in that Open panel be overwritten with the document, with no replace question. |
 | EDR-FILE-028 | A file-panel answer that arrives while the unsaved-changes question is open erases the question's pending action, so a later Discard or Save never runs the New, Open, Revert or Close. |
 | EDR-UNDO-012 | Replace All on a document of 16 MiB or more is one record over the 32 MiB budget, so it discards every earlier undo record. |
 | EDR-FIND-018 | Redo in a Find field does nothing from the menu or Cmd+Y, although the menu item is enabled and the help page lists Ctrl+Y as Redo. |
@@ -601,8 +599,6 @@ document; in the Find window it closes only that window.
 
 | Row | Defect |
 | --- | --- |
-| IDE-SEL-005 | After a plain click in a page, the first character typed becomes a selection and the next edit replaces it: clicking inside "10 PRINT" and typing "ab" adds only "b". |
-| IDE-NUM-007 | Renumber writes past the end of its output buffer when a line holds many GOTO, GOSUB, THEN or ELSE targets: one byte for a 553-byte line, 68 bytes for a full line. |
 | IDE-CLIP-006 | Paste records bytes it skipped at the 1,023-byte or 4,000-line limit, so Undo then deletes original text after the insertion point. |
 | TXV-011, TXV-012 | A Backspace or Delete join refused at the line limit is still recorded, so Undo inserts a line break that was never removed. |
 | TXV-029 | Deleting a multi-line selection can stop part way at the line limit while the whole span is recorded, and Undo then damages both lines. |
@@ -614,8 +610,7 @@ document; in the Find window it closes only that window.
 | IDE-FIND-001 | Every opening of the find bar empties the Find field, because the field is reset from its own text. |
 | IDE-FIND-011 | Replace with text equal to the query reports one replacement and stays on the same match; All reports a count and changes nothing. |
 | IDE-NUM-004 | Renumber rewrites branch numbers inside strings and REM lines, although its comment says it leaves them, and rewrites only the first target of `GOTO a, b`. |
-| IDE-NUM-006 | Following a message keeps the selection anchor, so the span from an earlier click to the target line becomes selected. |
-| IDE-NUM-008 | Renumber cuts a line that grows past 1,023 bytes without a message, where Replace refuses the same case. |
+| IDE-NUM-006 | Following a message keeps a held selection's anchor, so the span from it to the target line becomes selected. |
 | IDE-VIEW-003 | Past byte 255 of a line, the caret is drawn at the wrong place. |
 | IDE-CLIP-005 | Cmd+A and Cmd+V do nothing in the find bar on X11. |
 | IDE-WIN-005 | Closing the Project window leaves editors that can end up ignoring every event and command. |
