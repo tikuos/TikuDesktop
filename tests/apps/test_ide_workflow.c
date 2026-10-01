@@ -642,6 +642,38 @@ static void test_caret_past_255(ide_t *st)
     e->surface = NULL;
 }
 
+/** Add File ends a project file's unterminated last line before its own
+ *  entry, and a name holding a blank is listed and opened whole. */
+static void test_add_file(ide_t *st, const char *dir)
+{
+    char folder[512], proj[600], added[600], back[256];
+    edit_t *opened;
+    FILE *f;
+    size_t n;
+
+    snprintf(folder, sizeof folder, "%s/addfile", dir);
+    assert(mkdir(folder, 0700) == 0);
+    snprintf(proj, sizeof proj, "%s/project.tiku", folder);
+    file_write(proj, "title T\nfile a.bas", 18);
+    tiku_ide_project_take(st, proj);
+    assert(st->proj.nrow == 1);
+    snprintf(added, sizeof added, "%s/b c.bas", folder);
+    tiku_ide_project_add_file(st, added);
+    f = fopen(proj, "rb");
+    assert(f);
+    n = fread(back, 1, sizeof back - 1, f);
+    back[n] = '\0';
+    fclose(f);
+    assert(!strcmp(back, "title T\nfile a.bas\nfile b c.bas\n"));
+    assert(st->proj.nrow == 2 && !strcmp(st->proj.row[1].name, "b c.bas"));
+    opened = tiku_ide_edit_of_path(st, added);
+    assert(opened != NULL);
+    tiku_ide_edit_drop(st, opened);
+    st->proj_file[0] = '\0';
+    memset(&st->proj, 0, sizeof st->proj);
+    assert(unlink(added) == 0 && unlink(proj) == 0 && rmdir(folder) == 0);
+}
+
 static void test_empty_startup(const tiku_app_services_t *services,
                                const char *snapshot)
 {
@@ -1001,6 +1033,7 @@ int main(void)
     test_find_bar(st);
     test_renumber_targets();
     test_caret_past_255(st);
+    test_add_file(st, dir);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);

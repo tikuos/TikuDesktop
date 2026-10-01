@@ -379,11 +379,15 @@ tiku_ide_project_add_file(ide_t *st, const char *path)
     if (f != NULL) {
         (void)fclose(f);
     }
-    f = fopen(st->proj_file, "a");
+    f = fopen(st->proj_file, "a+");
     if (f == NULL) {
         snprintf(st->note, sizeof st->note, "cannot write the project");
         tiku_ide_project_paint(st);
         return;
+    }
+    /* A last line with no break would run into the new entry. */
+    if (fseek(f, -1L, SEEK_END) == 0 && fgetc(f) != '\n') {
+        (void)fputc('\n', f);
     }
     (void)fprintf(f, "file %s\n", leaf);
     (void)fclose(f);

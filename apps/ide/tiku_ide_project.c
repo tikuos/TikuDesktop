@@ -123,7 +123,8 @@ tiku_ide_project_parse(project_t *pj, const char *text, const char *dir)
         } else if (strcmp(kind, "file") == 0) {
             char at[sizeof row->path];
 
-            (void)word(rest, row->name, sizeof row->name);
+            /* The whole rest of the line, so a name may hold a blank. */
+            (void)tail(rest, row->name, sizeof row->name);
             /* Paths are from the project's own directory, so a project
              * is a FOLDER somebody can move.  Built aside and copied,
              * because the two halves live in the same object. */

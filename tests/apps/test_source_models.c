@@ -21,6 +21,9 @@ static void project_model(void)
     assert(!strcmp(p.target, "host") && p.unknown == 1);
     assert(p.row[0].heading && !p.row[1].heading);
     assert(!strcmp(p.row[1].path, "/tmp/project/main.bas"));
+    assert(tiku_ide_project_parse(&p, "file my program.bas \r\n", "/tmp/project") == 1);
+    assert(!strcmp(p.row[0].name, "my program.bas"));
+    assert(!strcmp(p.row[0].path, "/tmp/project/my program.bas"));
     assert(!tiku_ide_project_parse(&p, NULL, NULL));
     assert(!p.nrow && !strcmp(p.dir, "."));
 }
