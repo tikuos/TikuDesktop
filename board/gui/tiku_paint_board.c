@@ -20,6 +20,7 @@
 #include "tiku_clipboard.h"
 #include "tiku_draw.h"
 #include "tiku_metrics.h"
+#include "tiku_measure.h"
 
 #include <string.h>
 
