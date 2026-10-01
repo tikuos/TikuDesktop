@@ -3,127 +3,99 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
 
-static int word_byte(unsigned char c);
-static int matches(edit_state_t *st, const char *line, const char *p);
-static const char *next_match(edit_state_t *st, const char *line, const char *p);
+static tiku_edit_query_t query(const edit_state_t *st);
+static int count_crlf(void *ctx, const char *bytes, size_t n);
 static void clipboard_command(edit_state_t *st, int command);
 
 /* Editor commands and guarded document transitions.
  * SPDX-License-Identifier: Apache-2.0 */
 
-/** Commit without the old line-size or intermediate undo-buffer restrictions. */
+/** Whether the text differs from what was last loaded or saved. */
+int tiku_editor_modified(const edit_state_t *st)
+{ return tiku_editdoc_modified(st->doc); }
+
+/** A successful edit clears the footer message and drops the actions
+ *  that waited on the text before it: the pending one, and an Open that
+ *  Discard allowed. */
+void tiku_editor_edited(edit_state_t *st)
+{ st->note[0] = 0; st->pending = 0; st->allow_open = 0; }
+
+/** Say why an edit changed nothing. */
+void tiku_editor_refused(edit_state_t *st, tiku_edit_status_t status)
+{
+    snprintf(st->note, sizeof st->note, "%s", status == TIKU_EDIT_LIMIT
+        ? "Cannot apply edit: the document would pass its size limit. Text kept."
+        : "Cannot apply edit: invalid UTF-8 or not enough memory. Text kept.");
+}
+
+/** Replace the selection with @p text as one undo step of its own. */
 int tiku_editor_insert_checked(edit_state_t *st, const char *text)
 {
-    if (!tiku_editor_buffer_replace(&st->tv, text)) {
-        snprintf(st->note, sizeof st->note,
-            "Cannot apply edit: invalid UTF-8 or not enough memory. Text kept.");
-        return 0;
-    }
-    st->note[0] = 0; st->pending = 0; st->allow_open = 0;
-    st->width_dirty = 1;
+    tiku_edit_status_t status = tiku_codeview_insert(st->view, text, strlen(text), 0);
+    if (status != TIKU_EDIT_OK) { tiku_editor_refused(st, status); return 0; }
+    tiku_editor_edited(st);
     return 1;
 }
 
-/** ASCII case folding and UTF-8-safe word boundaries for literal search. */
-static int word_byte(unsigned char c)
-{ return c >= 128 || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'; }
-static int matches(edit_state_t *st, const char *line, const char *p)
+/** The Find field's text under the window's Match case and Whole words. */
+static tiku_edit_query_t query(const edit_state_t *st)
 {
-    size_t n = strlen(st->field[0].text);
-    if (!n) return 0;
-    if (st->match_case ? strncmp(p, st->field[0].text, n) : strncasecmp(p, st->field[0].text, n)) return 0;
-    return !st->whole_word || ((p == line || !word_byte((unsigned char)p[-1])) && !word_byte((unsigned char)p[n]));
+    tiku_edit_query_t q = {st->field[0].text, strlen(st->field[0].text),
+        (st->match_case ? TIKU_EDIT_MATCH_CASE : 0u) |
+        (st->whole_word ? TIKU_EDIT_WHOLE_WORD : 0u)};
+    return q;
 }
-static const char *next_match(edit_state_t *st, const char *line, const char *p)
-{
-    for (; *p; p++) if (((unsigned char)*p & 0xc0) != 0x80 && matches(st, line, p)) return p;
-    return NULL;
-}
-/** Find literal text, wrapping once through the document. */
+
+/** Select the next match, or with @p backward the previous one, wrapping
+ *  once through the document. */
 void tiku_editor_find_match(edit_state_t *st, int backward)
 {
-    const char *query = st->field[0].text;
-    size_t n = strlen(query);
-    if (!n) { snprintf(st->note, sizeof st->note, "Enter text to find."); return; }
-    int cy = st->tv.cy, cx = st->tv.cx, a, b, c, d;
-    if (backward && tiku_editor_buffer_selection(&st->tv, &a, &b, &c, &d)) {
-        cy = a; cx = b;
+    tiku_edit_query_t q = query(st);
+    tiku_codeview_found_t found;
+    if (!q.length) { snprintf(st->note, sizeof st->note, "Enter text to find."); return; }
+    if (tiku_codeview_find(st->view, &q, backward, &found) != TIKU_EDIT_OK) {
+        snprintf(st->note, sizeof st->note, "No matches.");
+        return;
     }
-    int best_y = -1, best_x = -1, wrap_y = -1, wrap_x = -1;
-    for (int y = 0; y < st->tv.nline; y++) {
-        const char *line = tiku_editor_buffer_line(&st->tv, y), *p = line;
-        while ((p = next_match(st, line, p)) != NULL) {
-            int x = (int)(p - line);
-            if (!backward) {
-                if (wrap_y < 0) { wrap_y = y; wrap_x = x; }
-                if (best_y < 0 && (y > cy || (y == cy && x >= cx))) {
-                    best_y = y; best_x = x;
-                }
-            } else {
-                wrap_y = y; wrap_x = x;
-                if (y < cy || (y == cy && x < cx)) { best_y = y; best_x = x; }
-            }
-            p += n;
-        }
-    }
-    int wrapped = best_y < 0;
-    if (wrapped) { best_y = wrap_y; best_x = wrap_x; }
-    if (best_y < 0) { snprintf(st->note, sizeof st->note, "No matches."); return; }
-    tiku_editor_buffer_select_none(&st->tv);
-    tiku_editor_buffer_place(&st->tv, best_y, best_x);
-    tiku_editor_buffer_select_begin(&st->tv);
-    tiku_editor_buffer_place(&st->tv, best_y, best_x + (int)n);
-    tiku_editor_reveal(st);
-    snprintf(st->note, sizeof st->note, "%s", wrapped ? "Search wrapped." : "Match selected.");
+    snprintf(st->note, sizeof st->note, "%s", found.wrapped ? "Search wrapped." : "Match selected.");
 }
 
 /** Replace only a selected exact match; otherwise select the next match. */
 void tiku_editor_replace_match(edit_state_t *st)
 {
-    int y0, x0, y1, x1;
-    size_t n = strlen(st->field[0].text);
-    if (!n) return;
-    if (!tiku_editor_buffer_selection(&st->tv, &y0, &x0, &y1, &x1) || y0 != y1 ||
-        x1 - x0 != (int)n ||
-        !matches(st, tiku_editor_buffer_line(&st->tv, y0), tiku_editor_buffer_line(&st->tv, y0) + x0)) {
-        tiku_editor_find_match(st, 0); return;
-    }
-    if (tiku_editor_insert_checked(st, st->field[1].text)) {
-        tiku_editor_find_match(st, 0);
+    tiku_edit_query_t q = query(st);
+    tiku_codeview_found_t found;
+    const char *with = st->field[1].text;
+    if (!q.length) return;
+    tiku_edit_status_t status = tiku_codeview_replace(st->view, &q, with, strlen(with), &found);
+    if (found.replaced) {
+        tiku_editor_edited(st);
         snprintf(st->note, sizeof st->note, "Replaced one match. Undo is available.");
-    }
+    } else if (status == TIKU_EDIT_OK)
+        snprintf(st->note, sizeof st->note, "%s", found.wrapped ? "Search wrapped." : "Match selected.");
+    else if (status == TIKU_EDIT_NOTHING)
+        snprintf(st->note, sizeof st->note, "No matches.");
+    else tiku_editor_refused(st, status);
 }
 
-/** Replace every match as one record of the matches alone, so the history
- *  before it survives on a large document; the caret stays where it is. */
+/** Replace every match as one undo step; each selection stays on the text
+ *  it was on. */
 void tiku_editor_replace_all(edit_state_t *st)
 {
-    size_t q = strlen(st->field[0].text), count = 0, cap = 0;
-    edit_hit_t *hit = NULL;
-    if (!q) return;
-    for (int y = 0; y < st->tv.nline; y++) {
-        const char *line = tiku_editor_buffer_line(&st->tv, y), *p = line;
-        while ((p = next_match(st, line, p))) {
-            if (count == cap) {
-                edit_hit_t *grown = count < INT_MAX / 2 ?
-                    realloc(hit, (cap = cap ? cap * 2 : 64) * sizeof *hit) : NULL;
-                if (!grown) { free(hit); goto failed; }
-                hit = grown;
-            }
-            hit[count++] = (edit_hit_t){y, (int)(p - line)};
-            p += q;
-        }
+    tiku_edit_query_t q = query(st);
+    tiku_codeview_found_t found;
+    const char *with = st->field[1].text;
+    if (!q.length) return;
+    tiku_edit_status_t status = tiku_codeview_replace_all(st->view, &q, with, strlen(with), &found);
+    if (status == TIKU_EDIT_NOTHING) { snprintf(st->note, sizeof st->note, "No matches."); return; }
+    if (status != TIKU_EDIT_OK) {
+        snprintf(st->note, sizeof st->note,
+                 "Replace All exceeds available memory or the document's size limit. Text kept.");
+        return;
     }
-    if (!count) { snprintf(st->note, sizeof st->note, "No matches."); return; }
-    if (!tiku_editor_buffer_replace_hits(&st->tv, hit, (int)count, q, st->field[1].text)) {
-        free(hit); goto failed;
-    }
-    st->pending = 0; st->allow_open = 0; st->width_dirty = 1;
-    tiku_editor_reveal(st);
-    snprintf(st->note, sizeof st->note, "%zu replacements. Undo restores the original text.", count);
-    return;
-failed:
-    snprintf(st->note, sizeof st->note, "Replace All exceeds available memory or text indexes. Text kept.");
+    tiku_editor_edited(st);
+    snprintf(st->note, sizeof st->note, "%zu replacements. Undo restores the original text.",
+             found.replaced);
 }
 
 /** Open an optional native file panel beside the current document. */
@@ -153,21 +125,27 @@ void tiku_editor_file_panel(edit_state_t *st, int saving)
 int tiku_editor_document_action(edit_state_t *st, int command)
 {
     st->pending = 0;
-    if (command == CMD_QUIT) { tiku_editor_search_close(st); tiku_editor_buffer_saved(&st->tv); return 1; }
+    if (command == CMD_QUIT) {
+        tiku_editor_search_close(st);
+        tiku_editdoc_saved(st->doc, tiku_editdoc_state(st->doc));
+        return 1;
+    }
     if (command == CMD_OPEN) tiku_editor_file_panel(st, 0);
     if (command == CMD_REVERT) {
         char path[512]; snprintf(path, sizeof path, "%s", st->path);
         tiku_editor_read_document(st, path);
     }
     if (command == CMD_NEW) {
-        if (!tiku_editor_buffer_set(&st->tv, "")) {
+        if (tiku_editdoc_load(st->doc, "", 0) != TIKU_EDIT_OK) {
             snprintf(st->note, sizeof st->note, "Not enough memory; document kept.");
             return 0;
         }
-        st->width_dirty = 1;
         st->path[0] = st->note[0] = 0;
-        st->disk_known = st->load_failed = st->bom = st->crlf = st->left = 0;
+        st->disk_known = st->load_failed = st->bom = 0;
+        snprintf(st->newline, sizeof st->newline, "\n");
+        (void)tiku_codeview_set_newline(st->view, st->newline);
         st->lang = TIKU_SYNTAX_NONE;
+        tiku_codeview_set_language(st->view, st->lang);
     }
     return 0;
 }
@@ -175,7 +153,7 @@ int tiku_editor_document_action(edit_state_t *st, int command)
 /** Every destructive UI route uses the same Cancel-first question. */
 int tiku_editor_guarded_action(edit_state_t *st, int command)
 {
-    if (!tiku_editor_buffer_modified(&st->tv)) return tiku_editor_document_action(st, command);
+    if (!tiku_editor_modified(st)) return tiku_editor_document_action(st, command);
     tiku_editor_search_close(st);
     st->pending = command;
     tiku_alert_open(&st->ask, TIKU_ALERT_WARN, command,
@@ -185,44 +163,45 @@ int tiku_editor_guarded_action(edit_state_t *st, int command)
     return 0;
 }
 
+/** Count the CRLF pairs in runs of the document; @p ctx holds the count
+ *  and the run before's last byte. */
+static int count_crlf(void *ctx, const char *bytes, size_t n)
+{
+    int64_t *seen = ctx;
+    for (size_t i = 0; i < n; i++) {
+        seen[0] += bytes[i] == '\n' && seen[1] == '\r';
+        seen[1] = (unsigned char)bytes[i];
+    }
+    return 0;
+}
+
 /** Bounded clipboard transfers never silently cut a selection short. */
 static void clipboard_command(edit_state_t *st, int command)
 {
-    char *text;
+    tiku_edit_pos_t anchor, caret;
+    tiku_edit_status_t status;
     if (command == CMD_PASTE) {
-        const char *held = st->services->clip_text
-                           ? st->services->clip_text(st->services->ctx, NULL) : "";
-        if (held[0] && (text = malloc(strlen(held) + 1))) {
-            size_t out = 0;
-            for (size_t i = 0; held[i]; i++) {
-                if (held[i] == '\r' && held[i + 1] == '\n') continue;
-                text[out++] = held[i];
-            }
-            text[out] = 0;
-            tiku_editor_insert_checked(st, text);
-            free(text);
-        }
+        status = tiku_codeview_paste(st->view);
+        if (status == TIKU_EDIT_OK) tiku_editor_edited(st);
+        else if (status != TIKU_EDIT_NOTHING && status != TIKU_EDIT_INVALID)
+            tiku_editor_refused(st, status);
         return;
     }
-    int y0, x0, y1, x1;
-    if (!tiku_editor_buffer_selection(&st->tv, &y0, &x0, &y1, &x1)) return;
-    size_t needed = (size_t)(y1 - y0);
-    for (int y = y0; y <= y1; y++)
-        needed += (size_t)((y == y1 ? x1 : st->tv.line[y].len) - (y == y0 ? x0 : 0));
-    if (needed > TIKU_CLIPBOARD_LIMIT) {
+    if (tiku_codeview_selection(st->view, &anchor, &caret) != TIKU_EDIT_OK || anchor == caret)
+        return;
+    tiku_edit_range_t r = {anchor < caret ? anchor : caret, anchor < caret ? caret : anchor};
+    int64_t seen[2] = {0, 0};
+    if (r.end - r.start > (int64_t)TIKU_CLIPBOARD_LIMIT)
+        (void)tiku_editdoc_each(st->doc, r, count_crlf, seen);
+    if (r.end - r.start - seen[0] > (int64_t)TIKU_CLIPBOARD_LIMIT) {
         snprintf(st->note, sizeof st->note, "Selection exceeds the desktop clipboard's %u MB limit.",
                  TIKU_CLIPBOARD_LIMIT / (1024u * 1024u));
         return;
     }
-    if (!(text = malloc(needed + 1))) {
+    status = command == CMD_CUT ? tiku_codeview_cut(st->view) : tiku_codeview_copy(st->view);
+    if (status == TIKU_EDIT_NO_MEMORY)
         snprintf(st->note, sizeof st->note, "Not enough memory to copy the selection.");
-        return;
-    }
-    size_t n = tiku_editor_buffer_selected(&st->tv, text, needed + 1);
-    if (n == needed && n && st->services->clip_set &&
-        st->services->clip_set(st->services->ctx, text) >= 0 && command == CMD_CUT)
-        tiku_editor_insert_checked(st, "");
-    free(text);
+    else if (status == TIKU_EDIT_OK && command == CMD_CUT) tiku_editor_edited(st);
 }
 
 /** Menus expose the same commands and shortcut routes as the keyboard. */
@@ -242,8 +221,9 @@ void tiku_editor_publish(edit_state_t *st)
         {CMD_NUMBERS, CMD_SYNTAX, CMD_RUN, CMD_INVISIBLES}};
     const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r "};
     const int counts[] = {6, 6, 6, 4};
-    int a, b, c, d;
-    int selected = tiku_editor_buffer_selection(&st->tv, &a, &b, &c, &d);
+    tiku_edit_pos_t anchor = 0, caret = 0;
+    (void)tiku_codeview_selection(st->view, &anchor, &caret);
+    int selected = anchor != caret;
     int field = st->finding && st->search_active && st->find_focus >= 0;
     if (field) {
         tiku_field_t *f = &st->field[st->find_focus];
@@ -255,9 +235,9 @@ void tiku_editor_publish(edit_state_t *st)
         for (int i = 0; i < counts[m]; i++) {
             int cmd = commands[m][i], enabled = !st->ask.open;
             if (cmd == CMD_UNDO) enabled &= field ?
-                st->field_input[st->find_focus].nundo > 0 : tiku_editor_buffer_can_undo(&st->tv);
+                st->field_input[st->find_focus].nundo > 0 : tiku_editdoc_can_undo(st->doc);
             if (cmd == CMD_REDO) enabled &= field ?
-                st->field_input[st->find_focus].nredo > 0 : tiku_editor_buffer_can_redo(&st->tv);
+                st->field_input[st->find_focus].nredo > 0 : tiku_editdoc_can_redo(st->doc);
             if (cmd == CMD_COPY || cmd == CMD_CUT) enabled &= selected && st->services->clip_set != NULL;
             if (cmd == CMD_PASTE) enabled &= st->services->clip_text != NULL;
             if (cmd == CMD_OPEN || cmd == CMD_SAVEAS) enabled &= st->services->pick != NULL;
@@ -311,10 +291,10 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
         if (!st->path[0]) tiku_editor_file_panel(st, 1); else tiku_editor_save(st);
         break;
     case CMD_SAVEAS: tiku_editor_file_panel(st, 1); break;
-    case CMD_UNDO: tiku_editor_buffer_undo(&st->tv); st->note[0] = 0; st->width_dirty = 1; break;
-    case CMD_REDO: tiku_editor_buffer_redo(&st->tv); st->note[0] = 0; st->width_dirty = 1; break;
+    case CMD_UNDO: (void)tiku_codeview_undo(st->view); st->note[0] = 0; break;
+    case CMD_REDO: (void)tiku_codeview_redo(st->view); st->note[0] = 0; break;
     case CMD_CUT: case CMD_COPY: case CMD_PASTE: clipboard_command(st, command); break;
-    case CMD_ALL: tiku_editor_buffer_select_all(&st->tv); break;
+    case CMD_ALL: (void)tiku_codeview_select_all(st->view); break;
     case CMD_FIND: case CMD_REPLACE: case CMD_GOTO:
         tiku_editor_search_open_window(st, command == CMD_GOTO ? 2 : 1);
         st->find_focus = command == CMD_GOTO ? 2 : 0;
@@ -331,6 +311,7 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
     case CMD_INVISIBLES: st->show_invisibles = !st->show_invisibles; break;
     case CMD_SYNTAX:
         st->lang = st->lang == TIKU_SYNTAX_BASIC ? TIKU_SYNTAX_NONE : TIKU_SYNTAX_BASIC;
+        tiku_codeview_set_language(st->view, st->lang);
         break;
     case CMD_RUN: if (st->lang == TIKU_SYNTAX_BASIC) tiku_editor_run_program(st); break;
     default: return 0;
@@ -356,7 +337,7 @@ void tiku_editor_picked(void *state, uint32_t window, const char *path)
             if (st->services->close) st->services->close(st->services->ctx, st->id);
             return;
         }
-    } else if (tiku_editor_buffer_modified(&st->tv) && !st->allow_open) {
+    } else if (tiku_editor_modified(st) && !st->allow_open) {
         snprintf(st->note, sizeof st->note, "Open cancelled: the document has unsaved edits.");
     } else tiku_editor_read_document(st, path);
     st->allow_open = 0;

@@ -18,13 +18,34 @@ static int same_disk(const struct stat *a, const struct stat *b)
         a->st_ctim.tv_nsec == b->st_ctim.tv_nsec;
 }
 
-/** Build a separate document, retaining a final empty line for a final LF. */
+/** The line break a file uses most, ties going to the one it uses first;
+ *  "\n" for a file with none. */
+static const char *main_break(const char *bytes, size_t n)
+{
+    static const char *const kinds[] = {"\n", "\r\n", "\r"};
+    size_t count[3] = {0, 0, 0}, first[3] = {SIZE_MAX, SIZE_MAX, SIZE_MAX};
+    int best = 0;
+    for (size_t i = 0; i < n; i++) {
+        int kind;
+        if (bytes[i] == '\n') kind = 0;
+        else if (bytes[i] != '\r') continue;
+        else kind = i + 1 < n && bytes[i + 1] == '\n' ? 1 : 2;
+        if (!count[kind]++) first[kind] = i;
+        i += kind == 1;
+    }
+    for (int k = 1; k < 3; k++)
+        if (count[k] > count[best] || (count[k] == count[best] && first[k] < first[best]))
+            best = k;
+    return kinds[best];
+}
+
+/** Load the file's bytes after any BOM as they are; the document is
+ *  replaced only when the whole file is read and accepted. */
 int tiku_editor_read_document(edit_state_t *st, const char *path)
 {
-    int fd = -1, ok = 0, crlf = 0, lf = 0, bom = 0;
+    int fd = -1, ok = 0, bom = 0;
     struct stat info, after;
     char *bytes = NULL;
-    edit_buffer_t *next = NULL;
     const char *error = "Cannot read file; the current document was kept.";
     if (strlen(path) >= sizeof st->path) goto done;
     fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -33,9 +54,8 @@ int tiku_editor_read_document(edit_state_t *st, const char *path)
     if (info.st_size < 0 || (uintmax_t)info.st_size > INT_MAX - 1u) goto done;
     size_t n = (size_t)info.st_size, used = 0;
     bytes = malloc(n + 1);
-    next = calloc(1, sizeof *next);
     error = "Not enough memory; the current document was kept.";
-    if (!bytes || !next) goto done;
+    if (!bytes) goto done;
     error = "Read failed or file changed while reading. Please reopen it.";
     while (used < n) {
         ssize_t got = read(fd, bytes + used, n - used);
@@ -48,34 +68,28 @@ int tiku_editor_read_document(edit_state_t *st, const char *path)
     error = "Not a UTF-8 text file. Use TikuHex for binary data.";
     if (memchr(bytes, 0, n)) goto done;
     bom = n >= 3 && !memcmp(bytes, "\xef\xbb\xbf", 3);
-    size_t out = 0;
-    for (size_t i = bom ? 3 : 0; i < n; i++) {
-        if (bytes[i] == '\r' && i + 1 < n && bytes[i + 1] == '\n') {
-            crlf++; continue;
-        }
-        if (bytes[i] == '\n' && (!i || bytes[i - 1] != '\r')) lf++;
-        bytes[out++] = bytes[i];
+    size_t skip = bom ? 3 : 0;
+    tiku_edit_status_t loaded = tiku_editdoc_load(st->doc, bytes + skip, n - skip);
+    if (loaded != TIKU_EDIT_OK) {
+        error = loaded == TIKU_EDIT_NO_MEMORY
+            ? "Not enough memory; the current document was kept."
+            : loaded == TIKU_EDIT_LIMIT
+            ? "File exceeds this editor's addressable range. Nothing was truncated."
+            : "Invalid UTF-8; the current document was kept.";
+        goto done;
     }
-    bytes[out] = 0;
-    error = "Mixed LF/CRLF endings; normalize them before editing here.";
-    if (crlf && lf) goto done;
-    error = "Invalid UTF-8 or not enough memory; the current document was kept.";
-    if (!tiku_editor_buffer_set(next, bytes)) goto done;
-    tiku_editor_buffer_free(&st->tv);
-    st->tv = *next;
-    free(next); next = NULL;
-    st->crlf = crlf != 0; st->bom = bom;
+    snprintf(st->newline, sizeof st->newline, "%s", main_break(bytes + skip, n - skip));
+    (void)tiku_codeview_set_newline(st->view, st->newline);
+    st->bom = bom;
     st->disk = info; st->disk_known = 1; st->load_failed = 0;
-    st->left = 0;
-    st->width_dirty = 1;
     if (strcmp(st->path, path)) snprintf(st->path, sizeof st->path, "%s", path);
     st->lang = tiku_syntax_of_path(path);
+    tiku_codeview_set_language(st->view, st->lang);
     snprintf(st->note, sizeof st->note, "Opened %zu bytes", n);
     ok = 1;
 done:
     if (!ok) snprintf(st->note, sizeof st->note, "%s", error);
     if (fd >= 0) close(fd);
-    if (next) { tiku_editor_buffer_free(next); free(next); }
     free(bytes);
     return ok;
 }
@@ -89,15 +103,17 @@ void tiku_editor_load(edit_state_t *st)
     if (!tiku_editor_read_document(st, path)) st->load_failed = 1;
 }
 
-/** Serialize exactly, including BOM, newline style and final-newline state. */
+/** Hand one run of the document's bytes to the file; nonzero stops. */
+static int write_run(void *ctx, const char *bytes, size_t n)
+{ return fwrite(bytes, 1, n, ctx) != n; }
+
+/** Serialize exactly: the BOM when the file had one, then every byte. */
 int tiku_editor_write_document(edit_state_t *st, FILE *f)
 {
+    tiku_edit_range_t all = {0, tiku_editdoc_length(st->doc)};
     if (st->bom && fwrite("\xef\xbb\xbf", 1, 3, f) != 3) return 0;
-    for (int i = 0; i < st->tv.nline; i++) {
-        if (i && fputs(st->crlf ? "\r\n" : "\n", f) < 0) return 0;
-        size_t n = (size_t)st->tv.line[i].len;
-        if (n && fwrite(st->tv.line[i].text, 1, n, f) != n) return 0;
-    }
+    if (all.end > 0 && tiku_editdoc_each(st->doc, all, write_run, f) != TIKU_EDIT_OK)
+        return 0;
     return !ferror(f);
 }
 
@@ -128,6 +144,7 @@ int tiku_editor_save_document(edit_state_t *st, const char *path)
         snprintf(st->note, sizeof st->note, "File changed on disk. Reopen it or Save As another file.");
         return 0;
     }
+    uint64_t state = tiku_editdoc_state(st->doc);
     snprintf(temporary, sizeof temporary, "%s.edit-XXXXXX", path);
     fd = mkstemp(temporary);
     if (fd < 0) goto failed;
@@ -148,7 +165,7 @@ int tiku_editor_save_document(edit_state_t *st, const char *path)
     }
     st->disk_known = !stat(path, &st->disk);
     st->load_failed = 0;
-    tiku_editor_buffer_saved(&st->tv);
+    tiku_editdoc_saved(st->doc, state);
     snprintf(st->note, sizeof st->note, "Saved");
     return 1;
 failed:

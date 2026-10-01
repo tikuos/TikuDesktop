@@ -5,6 +5,73 @@
 
 static char edit_path[512];
 
+/** Put the view's selection on the desk clipboard, its line breaks as LF
+ *  whatever the document uses.  @return 0 when the clipboard took it. */
+static int clip_set(void *ctx, const char *text, size_t length)
+{
+    edit_state_t *st = ctx;
+    char *lf = st->services->clip_set ? malloc(length + 1) : NULL;
+    size_t out = 0;
+    int taken;
+    if (!lf) return -1;
+    for (size_t i = 0; i < length; i++) {
+        if (text[i] == '\r' && i + 1 < length && text[i + 1] == '\n') continue;
+        lf[out++] = text[i] == '\r' ? '\n' : text[i];
+    }
+    lf[out] = 0;
+    taken = st->services->clip_set(st->services->ctx, lf) >= 0;
+    free(lf);
+    return taken ? 0 : -1;
+}
+
+/** The desk clipboard's text with each CRLF, CR or LF made the document's
+ *  line break; NULL when it holds nothing or cannot be copied. */
+static const char *clip_text(void *ctx, size_t *length)
+{
+    edit_state_t *st = ctx;
+    const char *held = st->services->clip_text
+                       ? st->services->clip_text(st->services->ctx, NULL) : NULL;
+    size_t breaks = 0, n, wide = strlen(st->newline), out = 0;
+    free(st->paste); st->paste = NULL;
+    if (!held || !held[0]) return NULL;
+    n = strlen(held);
+    for (size_t i = 0; i < n; i++) breaks += held[i] == '\n' || held[i] == '\r';
+    if (breaks > (SIZE_MAX - n - 1) / 2 || !(st->paste = malloc(n + breaks * wide + 1)))
+        return NULL;
+    for (size_t i = 0; i < n; i++) {
+        if (held[i] != '\r' && held[i] != '\n') { st->paste[out++] = held[i]; continue; }
+        i += held[i] == '\r' && held[i + 1] == '\n';
+        memcpy(st->paste + out, st->newline, wide); out += wide;
+    }
+    st->paste[out] = 0;
+    *length = out;
+    return st->paste;
+}
+
+/** Make the document and the view that shows it, with the clipboard the
+ *  services lend.  @return 0, or -1 with nothing kept. */
+static int document_new(edit_state_t *st)
+{
+    tiku_editdoc_limits_t limits = {INT_MAX - 1u, TIKU_EDITDOC_HISTORY_DEFAULT};
+    tiku_codeview_host_t host = {.ctx = st, .clip_set = clip_set, .clip_text = clip_text};
+    if (tiku_editdoc_create(&limits, &st->doc) != TIKU_EDIT_OK) return -1;
+    if (tiku_codeview_create(st->doc, &st->view) != TIKU_EDIT_OK) {
+        tiku_editdoc_release(st->doc); st->doc = NULL; return -1;
+    }
+    tiku_codeview_set_host(st->view, &host);
+    snprintf(st->newline, sizeof st->newline, "\n");
+    tiku_codeview_set_options(st->view, TIKU_CODEVIEW_LINE_NUMBERS);
+    return 0;
+}
+
+/** Free the view, the document and what the clipboard left. */
+static void document_free(edit_state_t *st)
+{
+    tiku_codeview_destroy(st->view); st->view = NULL;
+    tiku_editdoc_release(st->doc); st->doc = NULL;
+    free(st->paste); st->paste = NULL;
+}
+
 int
 tiku_editor_start(void **state, const tiku_app_services_t *services)
 {
@@ -26,14 +93,14 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
         tiku_field_start(&st->field[i], "");
         tiku_field_input_init(&st->field_input[i]);
     }
-    if (!tiku_editor_buffer_init(&st->tv)) { free(st); return -1; }
+    if (document_new(st)) { free(st); return -1; }
     st->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_DOC);
     /* Only worth keeping when something can use it; a NULL one simply
      * means every frame goes over as pixels, which is what happens
      * linked into a desktop anyway. */
     st->dl = (services->present != NULL) ? tiku_dl_new() : NULL;
     if (st->surface == NULL) {
-        tiku_editor_buffer_free(&st->tv);
+        document_free(st);
         tiku_dl_free(st->dl);
         free(st);
         return -1;
@@ -41,7 +108,7 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
     const char *document = services->startup_document;
     if (!document) document = edit_path;
     if (strlen(document) >= sizeof st->path) {
-        tiku_editor_buffer_free(&st->tv);
+        document_free(st);
         tiku_dl_free(st->dl);
         tiku_surface_free(st->surface);
         tiku_surface_free(st->search_surface);
@@ -53,6 +120,7 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
      * menu does.  A file called .bas opens coloured, and everything else
      * opens as what it is -- prose. */
     st->lang = tiku_syntax_of_path(st->path);
+    tiku_codeview_set_language(st->view, st->lang);
     tiku_editor_load(st);
     slash = strrchr(st->path, '/');
     snprintf(title, sizeof title, "%.63s",
@@ -60,7 +128,7 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
              : (st->path[0] != '\0') ? st->path : "Edit");
     st->id = services->open(services->ctx, title, EDIT_W, EDIT_H);
     if (!st->id) {
-        tiku_editor_buffer_free(&st->tv);
+        document_free(st);
         tiku_dl_free(st->dl);
         tiku_surface_free(st->surface);
         tiku_surface_free(st->search_surface);
@@ -89,7 +157,7 @@ tiku_editor_stop(void *state)
         }
         if (st->child_fd >= 0) close(st->child_fd);
         if (st->scratch[0]) unlink(st->scratch);
-        if (tiku_editor_buffer_modified(&st->tv)) {
+        if (tiku_editor_modified(st)) {
             char recovery[] = "/tmp/TikuEdit-recovery-XXXXXX";
             int fd = mkstemp(recovery);
             if (fd >= 0) {
@@ -101,7 +169,7 @@ tiku_editor_stop(void *state)
                 } else close(fd);
             }
         }
-        tiku_editor_buffer_free(&st->tv);
+        document_free(st);
         tiku_dl_free(st->dl);
         tiku_surface_free(st->surface);
         tiku_surface_free(st->search_surface);

@@ -19,9 +19,9 @@ class SourceModuleTests(unittest.TestCase):
         p.write_text(text)
 
     def test_independent_model(self):
-        self.source("apps/editor/tiku_editor_buffer.c",
-                    '#include "tiku_editor_buffer.h"\n')
-        self.source("apps/editor/tiku_editor_buffer.h", '#include <stddef.h>\n')
+        self.source("apps/ide/tiku_ide_project.c",
+                    '#include "tiku_ide_project.h"\n')
+        self.source("apps/ide/tiku_ide_project.h", '#include <stddef.h>\n')
         self.assertEqual(violations(self.root), [])
 
     def test_implementation_include(self):

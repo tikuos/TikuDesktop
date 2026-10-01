@@ -20,7 +20,7 @@ int main(void)
         {"c/TikuC.so", "org.tikuos.tikuc", "TikuC",
          "tiku_ide_project_parse"},
         {"editor/editor.so", "org.tikuos.edit", "Edit",
-         "tiku_editor_buffer_set"},
+         "tiku_editor_read_document"},
         {"reader/TikuReader.so", "reader", "TikuReader",
          "tiku_reader_document"},
         {"bench/Bench.so", "tiku.bench", "Bench",

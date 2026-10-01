@@ -1,4 +1,4 @@
-/* The project, editor buffer and reader document link without window controllers.
+/* The project and reader document link without window controllers.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include <stdio.h>
@@ -7,7 +7,6 @@
 #include <unistd.h>
 
 #include "../../apps/ide/tiku_ide_project.h"
-#include "../../apps/editor/tiku_editor_buffer.h"
 #include "../../apps/reader/tiku_reader_document.h"
 
 /** Project parsing preserves the legacy fields without requiring a device. */
@@ -26,29 +25,6 @@ static void project_model(void)
     assert(!strcmp(p.row[0].path, "/tmp/project/my program.bas"));
     assert(!tiku_ide_project_parse(&p, NULL, NULL));
     assert(!p.nrow && !strcmp(p.dir, "."));
-}
-
-/** UTF-8 and undo semantics belong to the document, not its painter. */
-static void editor_model(void)
-{
-    edit_buffer_t b;
-    char text[128];
-    assert(tiku_editor_buffer_init(&b));
-    assert(tiku_editor_buffer_set(&b, "café\nlast\n"));
-    assert(b.nline == 3);
-    tiku_editor_buffer_saved(&b);
-    tiku_editor_buffer_place(&b, 0, 5);
-    assert(tiku_editor_buffer_replace(&b, "!"));
-    assert(tiku_editor_buffer_modified(&b));
-    assert(tiku_editor_buffer_undo(&b));
-    assert(!tiku_editor_buffer_modified(&b));
-    tiku_editor_buffer_text(&b, text, sizeof text);
-    assert(!strcmp(text, "café\nlast\n"));
-    assert(tiku_editor_buffer_redo(&b));
-    assert(!tiku_editor_buffer_replace(&b, "\xff"));
-    tiku_editor_buffer_text(&b, text, sizeof text);
-    assert(!strcmp(text, "café!\nlast\n"));
-    tiku_editor_buffer_free(&b);
 }
 
 /** Desktop parsing grows beyond embedded limits without any window state. */
@@ -82,8 +58,7 @@ static void reader_model(void)
 int main(void)
 {
     project_model();
-    editor_model();
     reader_model();
-    puts("PASS: separately linked project, editor buffer and reader document models");
+    puts("PASS: separately linked project and reader document models");
     return 0;
 }

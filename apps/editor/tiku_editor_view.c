@@ -7,7 +7,6 @@ static int
 out_pane_h(const edit_state_t *st);
 static void toolbar_paint(edit_state_t *st);
 static void draw_scroll(edit_state_t *st, tiku_scroll_t *bar, tiku_rect_t r, int horiz);
-static void paint_line(edit_state_t *st, int row, int py, tiku_span_t *spans, int ns);
 
 static int
 out_pane_h(const edit_state_t *st)
@@ -20,7 +19,7 @@ out_pane_h(const edit_state_t *st)
     return 7 * (f->height + 2) + 8;
 }
 
-/* Pe-inspired compact native chrome and a viewport-only document painter.
+/* Pe-inspired compact native chrome around the code view.
  * SPDX-License-Identifier: Apache-2.0 */
 
 /** The footer box a message or a tool's label is drawn in, over the
@@ -28,55 +27,40 @@ out_pane_h(const edit_state_t *st)
 tiku_rect_t tiku_editor_note_box(const edit_state_t *st)
 { return (tiku_rect_t){112, st->h - EDIT_FOOT_H + 1, st->w - 129, EDIT_FOOT_H - 1}; }
 
-/** The document never moves when Find is opened in its own window. */
-tiku_rect_t tiku_editor_page(const edit_state_t *st)
+/** Where the code view sits: from the window's left edge to the vertical
+ *  scrollbar, from under the toolbar to the run pane or the footer.  The
+ *  document never moves when Find is opened in its own window. */
+tiku_rect_t tiku_editor_view_box(const edit_state_t *st)
 {
-    int digits = 1;
-    for (int n = st->tv.nline; n >= 10; n /= 10) digits++;
-    int gutter = st->numbers ? 16 + digits * tiku_font_mono_cell(0) : 5;
-    return (tiku_rect_t){gutter, EDIT_TOOL_H + 4, st->w - gutter - 16,
-        st->h - EDIT_TOOL_H - EDIT_FOOT_H - 4 - out_pane_h(st)};
-}
-int tiku_editor_rows_visible_of(const edit_state_t *st)
-{
-    int n = tiku_editor_page(st).h / (tiku_font_mono(0)->height + 2);
-    return n > 0 ? n : 1;
+    return (tiku_rect_t){0, EDIT_TOOL_H + 1, st->w - 15,
+        st->h - EDIT_TOOL_H - EDIT_FOOT_H - 1 - out_pane_h(st)};
 }
 
-/** Iterate one visible glyph, preserving byte offsets and four-cell tab stops. */
-int tiku_editor_glyph_at(const char *text, int at, int x, char glyph[5], int *advance)
+/** The text's page inside the view: its first row's top and line x 0,
+ *  past the line numbers when they are shown. */
+tiku_rect_t tiku_editor_page(const edit_state_t *st)
 {
-    int end = at + 1;
-    if (text[at] == '\t') {
-        glyph[0] = 0;
-        int tab = 4 * tiku_font_mono_cell(0);
-        *advance = tab - x % tab;
-    } else {
-        while (text[end] && ((unsigned char)text[end] & 0xc0) == 0x80) end++;
-        memcpy(glyph, text + at, (size_t)(end - at)); glyph[end - at] = 0;
-        *advance = tiku_text_width(tiku_font_mono(0), glyph);
-    }
-    return end;
+    tiku_rect_t box = tiku_editor_view_box(st);
+    int64_t x, y;
+    if (tiku_codeview_point(st->view, 0, &x, &y) != TIKU_EDIT_OK) x = 5;
+    x += tiku_codeview_left(st->view);
+    return (tiku_rect_t){(int)x, box.y + 3, st->w - (int)x - 16, box.h - 3};
 }
-int tiku_editor_prefix_width(const char *text, int n)
+
+/** Hand the view the window's current box and the View menu's options. */
+void tiku_editor_view_sync(edit_state_t *st)
 {
-    int x = 0;
-    for (int i = 0; i < n && text[i];) {
-        char glyph[5]; int advance;
-        i = tiku_editor_glyph_at(text, i, x, glyph, &advance);
-        if (x > INT_MAX / 2 - advance) return INT_MAX / 2;
-        x += advance;
-    }
-    return x;
+    tiku_codeview_set_bounds(st->view, tiku_editor_view_box(st));
+    tiku_codeview_set_options(st->view,
+        (st->numbers ? TIKU_CODEVIEW_LINE_NUMBERS : 0) |
+        (st->show_invisibles ? TIKU_CODEVIEW_INVISIBLES : 0));
 }
+
+/** Scroll as little as shows the caret, in the box the window has now. */
 void tiku_editor_reveal(edit_state_t *st)
 {
-    tiku_rect_t page = tiku_editor_page(st);
-    tiku_editor_buffer_reveal(&st->tv, tiku_editor_rows_visible_of(st));
-    int x = tiku_editor_prefix_width(tiku_editor_buffer_line(&st->tv, st->tv.cy), st->tv.cx);
-    if (x < st->left) st->left = x;
-    if (x >= st->left + page.w - 4) st->left = x - page.w + 8;
-    if (st->left < 0) st->left = 0;
+    tiku_editor_view_sync(st);
+    tiku_codeview_reveal(st->view);
 }
 
 /** Flat until hovered, with familiar file/folder/save/search symbols. */
@@ -88,9 +72,9 @@ int tiku_editor_tool_enabled(edit_state_t *st, int i)
 {
     if (st->ask.open) return 0;
     if (i == 1) return st->services->pick != NULL;
-    if (i == 2) return tiku_editor_buffer_modified(&st->tv);
-    if (i == 3) return tiku_editor_buffer_can_undo(&st->tv);
-    if (i == 4) return tiku_editor_buffer_can_redo(&st->tv);
+    if (i == 2) return tiku_editor_modified(st);
+    if (i == 3) return tiku_editdoc_can_undo(st->doc);
+    if (i == 4) return tiku_editdoc_can_redo(st->doc);
     return 1;
 }
 static void toolbar_paint(edit_state_t *st)
@@ -122,7 +106,7 @@ static void toolbar_paint(edit_state_t *st)
     tiku_vline(s, 87, 6, 17, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     const char *name = strrchr(st->path, '/'); name = name ? name + 1 : st->path;
     char label[550];
-    snprintf(label, sizeof label, "%s%s", tiku_editor_buffer_modified(&st->tv) ? "* " : "",
+    snprintf(label, sizeof label, "%s%s", tiku_editor_modified(st) ? "* " : "",
              *name ? name : "Untitled");
     tiku_clip_set(s, (tiku_rect_t){187, 2, st->w - 195, 24});
     tiku_text(s, tiku_font_plain(), 191, 8 + tiku_font_plain()->ascent, label, TIKU_C_TEXT);
@@ -198,88 +182,25 @@ static void draw_scroll(edit_state_t *st, tiku_scroll_t *bar, tiku_rect_t r, int
     }
 }
 
-/** Paint glyphs only inside the viewport; long lines never enter fixed text arrays. */
-static void paint_line(edit_state_t *st, int row, int py, tiku_span_t *spans, int ns)
-{
-    const char *text = tiku_editor_buffer_line(&st->tv, row);
-    const tiku_font_t *f = tiku_font_mono(0);
-    tiku_rect_t page = tiku_editor_page(st);
-    int sy, sx, ey, ex, selected = tiku_editor_buffer_selection(&st->tv, &sy, &sx, &ey, &ex);
-    int x = 0, span = 0, limit = ns ? spans[0].len : 0;
-    for (int i = 0; text[i];) {
-        char glyph[5]; int advance, next = tiku_editor_glyph_at(text, i, x, glyph, &advance);
-        if (x > st->left + page.w) break;
-        if (x + advance >= st->left) {
-            while (span < ns && i >= limit) { span++; if (span < ns) limit += spans[span].len; }
-            int chosen = selected && row >= sy && row <= ey &&
-                (row != sy || i >= sx) && (row != ey || i < ex);
-            tiku_rgb_t ink = chosen ? TIKU_C_SELTEXT : span < ns ? tiku_ink(spans[span].ink) : TIKU_C_TEXT;
-            tiku_rect_t cell = {page.x + x - st->left, py, advance, f->height + 2};
-            if (chosen) tiku_fill(st->surface, cell, TIKU_C_SELECT);
-            if (*glyph) tiku_text(st->surface, f, cell.x, py + f->ascent, glyph, ink);
-            if (st->show_invisibles && (text[i] == ' ' || text[i] == '\t')) {
-                tiku_hline(st->surface, cell.x + advance / 2, py + f->height / 2,
-                           text[i] == '\t' ? 3 : 1, tiku_dim(ink, TIKU_C_DOC));
-            }
-        }
-        if (x > INT_MAX / 2 - advance) break;
-        x += advance; i = next;
-    }
-    if (selected && row >= sy && row < ey)
-        tiku_fill(st->surface, (tiku_rect_t){page.x + x - st->left, py, tiku_font_mono_cell(0), f->height + 2}, TIKU_C_SELECT);
-}
-
 void tiku_editor_paint(edit_state_t *st)
 {
     const tiku_font_t *f = tiku_font_mono(0), *small = tiku_font_at(11);
-    int step = f->height + 2, rows = tiku_editor_rows_visible_of(st);
-    tiku_rect_t page = tiku_editor_page(st);
+    int step = f->height + 2;
+    int64_t total, shown, at;
+    tiku_edit_pos_t anchor, caret;
+    tiku_editor_view_sync(st);
+    tiku_rect_t box = tiku_editor_view_box(st);
     if (st->dl) tiku_dl_clear(st->dl);
     st->surface->record = st->dl;
     tiku_fill(st->surface, (tiku_rect_t){0, 0, st->w, st->h}, TIKU_C_PANEL);
-    tiku_fill(st->surface, (tiku_rect_t){0, page.y - 3, st->w - 15, page.h + 3}, TIKU_C_DOC);
-    if (st->numbers) {
-        tiku_fill(st->surface, (tiku_rect_t){0, page.y - 3, page.x - 4, page.h + 3}, TIKU_RGB(245, 245, 244));
-        tiku_vline(st->surface, page.x - 5, page.y - 3, page.h + 3, TIKU_RGB(224, 224, 221));
-    }
-    int cell = tiku_font_mono_cell(0), font_changed = st->measured_cell != cell || st->measured_height != f->height;
-    if (st->width_dirty || font_changed) {
-        st->max_width = 0;
-        for (int y = 0; y < st->tv.nline; y++) {
-            if (font_changed || st->tv.line[y].width < 0)
-                st->tv.line[y].width = tiku_editor_prefix_width(st->tv.line[y].text, st->tv.line[y].len);
-            if (st->tv.line[y].width > st->max_width) st->max_width = st->tv.line[y].width;
-        }
-        st->width_dirty = 0; st->measured_cell = cell; st->measured_height = f->height;
-    }
-    tiku_scroll_set_range(&st->vertical, st->tv.nline, rows);
-    tiku_editor_buffer_scroll_to(&st->tv, st->tv.top, rows);
-    tiku_scroll_to(&st->vertical, st->tv.top);
-    tiku_scroll_set_range(&st->horizontal, st->max_width + 12, page.w);
-    st->left = tiku_scroll_to(&st->horizontal, st->left);
-    tiku_syntax_state_t carry = TIKU_SYNTAX_OPEN;
-    for (int y = st->lang == TIKU_SYNTAX_C ? 0 : st->tv.top;
-         y < st->tv.top + rows && y < st->tv.nline; y++) {
-        tiku_span_t spans[128]; int ns = 0;
-        if (st->lang != TIKU_SYNTAX_NONE)
-            ns = tiku_syntax_spans_on(st->lang, st->tv.line[y].text, carry, &carry, spans, 128);
-        if (y < st->tv.top) continue;
-        int py = page.y + (y - st->tv.top) * step;
-        if (st->numbers) {
-            char number[16]; snprintf(number, sizeof number, "%d", y + 1);
-            tiku_text(st->surface, small, page.x - 10 - tiku_text_width(small, number),
-                py + f->ascent, number, tiku_dim(TIKU_C_TEXT, TIKU_C_DOC));
-        }
-        tiku_clip_set(st->surface, page); paint_line(st, y, py, spans, ns); tiku_clip_reset(st->surface);
-    }
-    if (st->tv.cy >= st->tv.top && st->tv.cy < st->tv.top + rows) {
-        tiku_clip_set(st->surface, page);
-        tiku_vline(st->surface, page.x - st->left +
-            tiku_editor_prefix_width(tiku_editor_buffer_line(&st->tv, st->tv.cy), st->tv.cx),
-            page.y + (st->tv.cy - st->tv.top) * step, step, TIKU_C_TEXT);
-        tiku_clip_reset(st->surface);
-    }
-    draw_scroll(st, &st->vertical, (tiku_rect_t){st->w - 15, page.y - 3, 15, page.h + 3}, 0);
+    tiku_codeview_paint(st->view, st->surface);
+    tiku_codeview_extent(st->view, 0, &total, &shown, &at);
+    tiku_scroll_set_range(&st->vertical, total > INT_MAX ? INT_MAX : (int)total, (int)shown);
+    tiku_scroll_to(&st->vertical, at > INT_MAX ? INT_MAX : (int)at);
+    tiku_codeview_extent(st->view, 1, &total, &shown, &at);
+    tiku_scroll_set_range(&st->horizontal, total > INT_MAX ? INT_MAX : (int)total, (int)shown);
+    tiku_scroll_to(&st->horizontal, at > INT_MAX ? INT_MAX : (int)at);
+    draw_scroll(st, &st->vertical, (tiku_rect_t){st->w - 15, box.y, 15, box.h}, 0);
     int pane_h = out_pane_h(st);
     if (pane_h) {
         tiku_rect_t pane = {0, st->h - EDIT_FOOT_H - pane_h, st->w - 15, pane_h};
@@ -296,9 +217,13 @@ void tiku_editor_paint(edit_state_t *st)
     int footer = st->h - EDIT_FOOT_H;
     tiku_hline(st->surface, 0, footer, st->w, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     char position[96];
-    snprintf(position, sizeof position, "%d : %d", st->tv.cy + 1, st->tv.cx + 1);
+    (void)tiku_codeview_selection(st->view, &anchor, &caret);
+    int64_t line = tiku_editdoc_line_of(st->doc, caret);
+    snprintf(position, sizeof position, "%lld : %lld", (long long)line + 1,
+             (long long)(caret - tiku_editdoc_line_start(st->doc, line)) + 1);
     tiku_text(st->surface, small, 6, footer + 14, position, TIKU_C_TEXT);
-    const char *mode = st->crlf ? "UTF-8  CRLF" : "UTF-8  LF";
+    const char *mode = !strcmp(st->newline, "\r\n") ? "UTF-8  CRLF" :
+                       !strcmp(st->newline, "\r") ? "UTF-8  CR" : "UTF-8  LF";
     tiku_text(st->surface, small, 118, footer + 14, mode, TIKU_C_TEXT);
     draw_scroll(st, &st->horizontal, (tiku_rect_t){208, footer + 2, st->w - 224, 16}, 1);
     if (st->note[0] || st->hover_tool >= 0) {

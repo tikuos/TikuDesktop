@@ -16,8 +16,7 @@ FAMILIES = {"ide": "tiku_ide_", "editor": "tiku_editor_",
 SUFFIXES = {".c", ".h", ".inl", ".m"}
 GENERATED = {"kits/interface/tiku_font_data.h", "kits/translation/tiku_icons.c"}
 INCLUDE = re.compile(r'^\s*#\s*include\s*["<]([^">]+)[">]', re.M)
-MODELS = {"apps/ide/tiku_ide_project.c", "apps/editor/tiku_editor_buffer.c",
-          "apps/reader/tiku_reader_document.c"}
+MODELS = {"apps/ide/tiku_ide_project.c", "apps/reader/tiku_reader_document.c"}
 UI_HEADERS = {"tiku_gfx.h", "tiku_window.h", "tiku_ui.h", "tiku_client.h",
               "tiku_app.h", "tiku_doc_paint.h"}
 

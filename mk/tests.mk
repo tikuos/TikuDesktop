@@ -79,6 +79,8 @@ test_editor_document_LDLIBS := $(X11_LIBS) -lm
 test_editor_resize_LDLIBS := $(X11_LIBS) -lm
 test_editor_document_SRCS := $(EDITOR_SRC)
 test_editor_resize_SRCS := $(EDITOR_SRC)
+test_editor_document_LIBS := $(LIB_EDITOR)
+test_editor_resize_LIBS := $(LIB_EDITOR)
 .SECONDARY: $(call objs,$(EDITOR_SRC) $(IDE_SRC))
 test_tracker_image_LDLIBS := $(X11_LIBS) -lm
 test_tracker_image_SRCS := system/shared/core/tiku_trk_task.c
@@ -169,7 +171,7 @@ test_ide_workflow_SRCS := $(IDE_SRC)
 test_ide_debug_SRCS := $(IDE_SRC)
 $(OBJ)/apps/ide/tiku_ide_app.o: override CFLAGS += -DTIKU_APP_EMBED
 test_source_models_SRCS := apps/ide/tiku_ide_project.c \
-    apps/editor/tiku_editor_buffer.c apps/reader/tiku_reader_document.c
+    apps/reader/tiku_reader_document.c
 test_module_exports_LDLIBS := -ldl
 test_module_exports_CFLAGS := -DTIKU_TEST_APPS=\"$(APPS_D)\"
 $(BUILD)/tests/test_module_exports: | $(APPS_D)/basic/TikuBasic.so \
@@ -247,6 +249,7 @@ test_codeview_speed_LIBS := $(LIB_EDITOR)
 test_codeview_speed_LDLIBS := $(X11_LIBS) -lm
 # The baselines open their fixtures through Editor's and the IDE's own code.
 test_editor_baseline_SRCS := $(EDITOR_SRC)
+test_editor_baseline_LIBS := $(LIB_EDITOR)
 test_editor_baseline_LDLIBS := $(X11_LIBS) -lm
 test_ide_baseline_SRCS := $(IDE_SRC)
 test_ide_baseline_LDLIBS := $(X11_LIBS) -lm

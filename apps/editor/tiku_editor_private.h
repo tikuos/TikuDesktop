@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 #include "tiku_app.h"
-#include "tiku_textview.h"
+#include "tiku_codeview.h"
 #include "tiku_text_input.h"
 #include "tiku_alert.h"
 #include "tiku_client.h"
@@ -30,7 +30,6 @@
 #include "tiku_iconpaint.h"
 #include "tiku_icons_tiku.h"
 
-#include "tiku_editor_buffer.h"
 #include <limits.h>
 
 #define EDIT_W      560
@@ -61,9 +60,18 @@ typedef struct {
      */
     tiku_dl_t                      *dl;
     uint32_t                        id;
-    /* Desktop-sized dynamic document; the legacy shared textview remains
-     * unchanged for other applications with different compatibility needs. */
-    edit_buffer_t                 tv;
+    /* The text, and the view that lays it out, paints it and takes the
+     * caret's keys and the pointer in the page.  The chrome around it,
+     * its scrollbars included, stays the Editor's. */
+    tiku_editdoc_t                 *doc;
+    tiku_codeview_t                *view;
+    /* The line break Return types: the one the file uses most, "\n" for
+     * a new document. */
+    char                            newline[3];
+    /* The clipboard's text as the view is handed it, line breaks turned
+     * into the document's; freed by the next such call or with the
+     * document. */
+    char                           *paste;
     tiku_text_input_t               commit;
     /* The question the close gesture asks while there are unsaved
      * changes.  The kit's own alert, held over this window's content:
@@ -98,13 +106,12 @@ typedef struct {
     int                             child_fd;
     pid_t                           child;
     char                            out_partial[96];
-    int w, h, left, dragging, finding, find_focus, pending;
-    int crlf, bom, load_failed, disk_known, numbers, allow_open;
+    int w, h, finding, find_focus, pending;
+    int bom, load_failed, disk_known, numbers, allow_open;
     struct stat disk;
     tiku_field_t field[3];
     tiku_field_input_t field_input[3];
     tiku_scroll_t vertical, horizontal;
-    int width_dirty, max_width, measured_cell, measured_height;
     tiku_menuset_t last_menus;
     char scratch[64];
     uint32_t search_id;
@@ -146,11 +153,10 @@ int tiku_editor_save_document(edit_state_t *st, const char *path);
 int tiku_editor_save(edit_state_t *st);
 
 /* View. */
+tiku_rect_t tiku_editor_view_box(const edit_state_t *st);
 tiku_rect_t tiku_editor_page(const edit_state_t *st);
 tiku_rect_t tiku_editor_note_box(const edit_state_t *st);
-int tiku_editor_rows_visible_of(const edit_state_t *st);
-int tiku_editor_glyph_at(const char *text, int at, int x, char glyph[5], int *advance);
-int tiku_editor_prefix_width(const char *text, int n);
+void tiku_editor_view_sync(edit_state_t *st);
 void tiku_editor_reveal(edit_state_t *st);
 tiku_rect_t tiku_editor_tool_rect(int i);
 int tiku_editor_tool_enabled(edit_state_t *st, int i);
@@ -162,6 +168,9 @@ void tiku_editor_search_paint(edit_state_t *st);
 void tiku_editor_paint(edit_state_t *st);
 
 /* Commands. */
+int tiku_editor_modified(const edit_state_t *st);
+void tiku_editor_edited(edit_state_t *st);
+void tiku_editor_refused(edit_state_t *st, tiku_edit_status_t status);
 int tiku_editor_insert_checked(edit_state_t *st, const char *text);
 void tiku_editor_find_match(edit_state_t *st, int backward);
 void tiku_editor_replace_match(edit_state_t *st);

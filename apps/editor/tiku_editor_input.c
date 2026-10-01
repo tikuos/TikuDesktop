@@ -5,7 +5,11 @@
 
 static int inside(tiku_rect_t r, int x, int y);
 static int scrollbar_press(tiku_scroll_t *bar, int length, int at);
-static void pointer_caret(edit_state_t *st, const tiku_event_t *e);
+static void scroll_top(edit_state_t *st, int top);
+static void scroll_left(edit_state_t *st, int left);
+static int edit_key(const tiku_event_t *e);
+static int move_key(unsigned key);
+static int view_key(edit_state_t *st, const tiku_event_t *e);
 static int answer_question(edit_state_t *st, const tiku_event_t *e);
 static int search_event(edit_state_t *st, const tiku_event_t *e);
 
@@ -26,26 +30,56 @@ static int scrollbar_press(tiku_scroll_t *bar, int length, int at)
     return tiku_scroll_press(bar, length - 28, at - 14);
 }
 
-/** Place or extend a selection using actual UTF-8 prefix metrics. */
-static void pointer_caret(edit_state_t *st, const tiku_event_t *e)
+/** The scrollbars move the view and never the caret. */
+static void scroll_top(edit_state_t *st, int top)
+{ tiku_codeview_scroll_to(st->view, top, tiku_codeview_left(st->view)); }
+static void scroll_left(edit_state_t *st, int left)
+{ tiku_codeview_scroll_to(st->view, tiku_codeview_top(st->view), left); }
+
+/** Whether @p e is a key the view edits by: text, Return, Tab, Backspace
+ *  or Delete, pressed without Command. */
+static int edit_key(const tiku_event_t *e)
 {
-    tiku_rect_t page = tiku_editor_page(st);
-    int row = (e->y - page.y) / (tiku_font_mono(0)->height + 2);
-    if (e->y < page.y) row = -1;
-    int y = st->tv.top + row;
-    if (y < 0) y = 0;
-    if (y >= st->tv.nline) y = st->tv.nline - 1;
-    const char *text = tiku_editor_buffer_line(&st->tv, y);
-    int x = e->x - page.x + st->left, col = 0, measured = 0;
-    for (int i = 0; i < st->tv.line[y].len;) {
-        char glyph[5]; int width;
-        int next = tiku_editor_glyph_at(text, i, measured, glyph, &width);
-        if (x < measured + width / 2) break;
-        measured += width;
-        col = next; i = next;
+    if (e->modifiers & TIKU_MOD_CMD) return 0;
+    return e->key == TIKU_KEY_RETURN || e->key == TIKU_KEY_TAB ||
+        e->key == TIKU_KEY_BACKSPACE || e->key == TIKU_KEY_DELETE ||
+        e->text[0] != 0 || (e->key >= 32 && e->key < 127);
+}
+
+/** Whether @p key moves the caret by lines, line ends or pages. */
+static int move_key(unsigned key)
+{ return key == TIKU_KEY_UP || key == TIKU_KEY_DOWN || key == TIKU_KEY_HOME ||
+         key == TIKU_KEY_END || key == TIKU_KEY_PAGE_UP || key == TIKU_KEY_PAGE_DOWN; }
+
+/** Hand a key to the view.  The keys it leaves keep what they did before
+ *  it: Option with a line move moves as the key alone does, and Return,
+ *  Tab, Backspace and Delete with any modifier but Command still edit.
+ *  @return 1 when the key edited or moved. */
+static int view_key(edit_state_t *st, const tiku_event_t *e)
+{
+    tiku_event_t plain = *e;
+    tiku_edit_status_t status = TIKU_EDIT_OK;
+    int taken;
+    tiku_editor_view_sync(st);
+    taken = tiku_codeview_event(st->view, e);
+    if (taken) status = tiku_codeview_status(st->view);
+    else if (move_key(e->key) && (e->modifiers & TIKU_MOD_OPTION)) {
+        plain.modifiers &= ~TIKU_MOD_OPTION;
+        taken = tiku_codeview_event(st->view, &plain);
+    } else if (e->key == TIKU_KEY_RETURN || e->key == TIKU_KEY_TAB) {
+        const char *text = e->key == TIKU_KEY_TAB ? "\t" : st->newline;
+        status = tiku_codeview_insert(st->view, text, strlen(text), 1);
+        taken = 1;
+    } else if (e->key == TIKU_KEY_BACKSPACE || e->key == TIKU_KEY_DELETE) {
+        status = tiku_codeview_delete(st->view, e->key == TIKU_KEY_DELETE);
+        if (status == TIKU_EDIT_NOTHING) status = TIKU_EDIT_OK;
+        taken = 1;
     }
-    tiku_editor_buffer_place(&st->tv, y, col);
-    tiku_editor_reveal(st);
+    if (taken && edit_key(e)) {
+        if (status == TIKU_EDIT_OK) tiku_editor_edited(st);
+        else tiku_editor_refused(st, status);
+    }
+    return taken;
 }
 
 /** Save/discard/cancel all continue the exact action originally requested. */
@@ -113,11 +147,13 @@ static int search_event(edit_state_t *st, const tiku_event_t *e)
         if (st->finding == 2) {
             char *end; errno = 0;
             long line = strtol(st->field[2].text, &end, 10);
-            if (errno || end == st->field[2].text || *end || line < 1 || line > st->tv.nline)
-                snprintf(st->note, sizeof st->note, "Enter a line from 1 to %d.", st->tv.nline);
+            int64_t lines = tiku_editdoc_lines(st->doc);
+            if (errno || end == st->field[2].text || *end || line < 1 || line > lines)
+                snprintf(st->note, sizeof st->note, "Enter a line from 1 to %lld.",
+                         (long long)lines);
             else {
-                tiku_editor_buffer_select_none(&st->tv);
-                tiku_editor_buffer_place(&st->tv, (int)line - 1, 0);
+                tiku_edit_pos_t at = tiku_editdoc_line_start(st->doc, line - 1);
+                (void)tiku_codeview_select(st->view, at, at);
                 tiku_editor_search_close(st); tiku_editor_reveal(st);
             }
         } else if (st->find_focus == 1) tiku_editor_replace_match(st);
@@ -174,19 +210,18 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
     if (e->type == TIKU_EVENT_CLOSE) return tiku_editor_pick(st, st->id, CMD_QUIT);
     if (e->type == TIKU_EVENT_EXPOSE) { tiku_editor_paint(st); return 0; }
     if (e->type == TIKU_EVENT_DEACTIVATED) {
-        st->dragging = 0;
         for (int i = 0; i < 3; i++) st->field_input[i].dragging = 0;
         st->hover_tool = st->pressed_tool = -1;
         tiku_scroll_release(&st->vertical); tiku_scroll_release(&st->horizontal);
         tiku_text_input_reset(&st->commit);
+        (void)tiku_codeview_event(st->view, e);
         return 0;
     }
     if (search_event(st, e)) return 0;
-    tiku_rect_t page = tiku_editor_page(st);
+    tiku_rect_t box = tiku_editor_view_box(st);
     if (e->type == TIKU_EVENT_WHEEL) {
-        if (e->modifiers & TIKU_MOD_SHIFT) st->left += e->dy * tiku_font_mono_cell(0);
-        else tiku_editor_buffer_scroll_to(&st->tv, st->tv.top + e->dy, tiku_editor_rows_visible_of(st));
-        st->left += e->dx * tiku_font_mono_cell(0);
+        tiku_editor_view_sync(st);
+        (void)tiku_codeview_event(st->view, e);
         tiku_editor_paint(st); return 0;
     }
     if (e->type == TIKU_EVENT_POINTER_DOWN) {
@@ -195,27 +230,25 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
             if (tiku_editor_tool_enabled(st, i)) st->pressed_tool = i;
             tiku_editor_paint(st); return 0;
         }
-        if (inside((tiku_rect_t){st->w - 15, page.y - 3, 15, page.h + 3}, e->x, e->y)) {
-            st->tv.top = scrollbar_press(&st->vertical, page.h + 3, e->y - page.y + 3);
+        if (inside((tiku_rect_t){st->w - 15, box.y, 15, box.h}, e->x, e->y)) {
+            scroll_top(st, scrollbar_press(&st->vertical, box.h, e->y - box.y));
         } else if ((st->note[0] || st->hover_tool >= 0) &&
                    inside(tiku_editor_note_box(st), e->x, e->y)) {
             st->note[0] = 0; st->hover_tool = -1;   /* uncovers the scrollbar */
         } else if (inside((tiku_rect_t){208, st->h - EDIT_FOOT_H + 2, st->w - 224, 16}, e->x, e->y)) {
-            st->left = scrollbar_press(&st->horizontal, st->w - 224, e->x - 208);
-        } else if (inside(page, e->x, e->y)) {
-            if (e->modifiers & TIKU_MOD_SHIFT) tiku_editor_buffer_select_begin(&st->tv);
-            else tiku_editor_buffer_select_none(&st->tv);
-            pointer_caret(st, e); tiku_editor_buffer_select_begin(&st->tv); st->dragging = 1;
+            scroll_left(st, scrollbar_press(&st->horizontal, st->w - 224, e->x - 208));
+        } else {
+            tiku_editor_view_sync(st);
+            (void)tiku_codeview_event(st->view, e);
         }
         tiku_editor_publish(st); tiku_editor_paint(st); return 0;
     }
     if (e->type == TIKU_EVENT_POINTER_MOVE) {
         if (st->vertical.tracking)
-            st->tv.top = tiku_scroll_drag(&st->vertical, page.h - 25, e->y - page.y - 11);
+            scroll_top(st, tiku_scroll_drag(&st->vertical, box.h - 28, e->y - box.y - 14));
         else if (st->horizontal.tracking)
-            st->left = tiku_scroll_drag(&st->horizontal, st->w - 252, e->x - 222);
-        else if (st->dragging) pointer_caret(st, e);
-        else {
+            scroll_left(st, tiku_scroll_drag(&st->horizontal, st->w - 252, e->x - 222));
+        else if (!tiku_codeview_event(st->view, e)) {
             int hover = -1;
             for (int i = 0; i < 6; i++) if (inside(tiku_editor_tool_rect(i), e->x, e->y)) hover = i;
             if (hover == st->hover_tool) return 0;
@@ -227,9 +260,10 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         int pressed = st->pressed_tool; st->pressed_tool = -1;
         if (pressed >= 0 && inside(tiku_editor_tool_rect(pressed), e->x, e->y) && tiku_editor_tool_enabled(st, pressed))
             return tiku_editor_pick(st, st->id, tool_commands[pressed]);
-        st->dragging = 0;
         tiku_scroll_release(&st->vertical); tiku_scroll_release(&st->horizontal);
-        if (pressed >= 0) tiku_editor_paint(st);
+        int dragged = tiku_codeview_event(st->view, e);
+        if (dragged) tiku_editor_publish(st);
+        if (pressed >= 0 || dragged) tiku_editor_paint(st);
         return 0;
     }
     int commit = tiku_text_input_event(&st->commit, e);
@@ -255,11 +289,8 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         case 'h': cmd = CMD_REPLACE; break; case 'g': cmd = CMD_GOTO; break;
         case 'r': cmd = CMD_RUN; break;
         case ']': cmd = CMD_NEXT; break; case '[': cmd = CMD_PREV; break;
-        case TIKU_KEY_HOME: case TIKU_KEY_END:
-            if (e->modifiers & TIKU_MOD_SHIFT) tiku_editor_buffer_select_begin(&st->tv);
-            else tiku_editor_buffer_select_none(&st->tv);
-            tiku_editor_buffer_place(&st->tv, key == TIKU_KEY_HOME ? 0 : st->tv.nline - 1,
-                               key == TIKU_KEY_HOME ? 0 : INT_MAX);
+        case TIKU_KEY_HOME: case TIKU_KEY_END: case TIKU_KEY_LEFT: case TIKU_KEY_RIGHT:
+            view_key(st, e);
             tiku_editor_reveal(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0;
         }
         return cmd ? tiku_editor_pick(st, st->id, cmd) : 0;
@@ -268,29 +299,7 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         if (st->finding) { tiku_editor_search_close(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0; }
         return tiku_editor_pick(st, st->id, CMD_QUIT);
     }
-    if (key >= TIKU_KEY_UP && key <= TIKU_KEY_PAGE_DOWN) {
-        if (e->modifiers & TIKU_MOD_SHIFT) tiku_editor_buffer_select_begin(&st->tv);
-        else tiku_editor_buffer_select_none(&st->tv);
-        const tiku_textview_move_t moves[] = {TIKU_TEXTVIEW_UP, TIKU_TEXTVIEW_DOWN,
-            TIKU_TEXTVIEW_LEFT, TIKU_TEXTVIEW_RIGHT, TIKU_TEXTVIEW_HOME, TIKU_TEXTVIEW_END};
-        if (key <= TIKU_KEY_END) tiku_editor_buffer_move(&st->tv, moves[key - 1]);
-        else tiku_editor_buffer_place(&st->tv,
-            st->tv.cy + (key == TIKU_KEY_PAGE_UP ? -1 : 1) * tiku_editor_rows_visible_of(st), st->tv.cx);
-    } else if (key == TIKU_KEY_BACKSPACE || key == TIKU_KEY_DELETE) {
-        /* Select the deletion first, so all mutations get the same preflight. */
-        int a, b, c, d;
-        if (!tiku_editor_buffer_selection(&st->tv, &a, &b, &c, &d)) {
-            tiku_editor_buffer_select_begin(&st->tv);
-            tiku_editor_buffer_move(&st->tv, key == TIKU_KEY_BACKSPACE ? TIKU_TEXTVIEW_LEFT : TIKU_TEXTVIEW_RIGHT);
-        }
-        tiku_editor_insert_checked(st, "");
-    } else if (key == TIKU_KEY_RETURN) tiku_editor_insert_checked(st, "\n");
-    else if (key == TIKU_KEY_TAB) tiku_editor_insert_checked(st, "\t");
-    else {
-        char text[2] = {(char)(e->text[0] ? (unsigned char)e->text[0] : e->key), 0};
-        if ((unsigned char)text[0] < 32 || (unsigned char)text[0] >= 127) return 0;
-        tiku_editor_insert_checked(st, text);
-    }
+    if (!view_key(st, e)) return 0;
     tiku_editor_reveal(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0;
 }
 
@@ -324,7 +333,7 @@ void tiku_editor_closed(void *state, uint32_t window)
         tiku_editor_publish(st); return;
     }
     if (window == st->id) tiku_editor_search_close(st);
-    if (window != st->id || !tiku_editor_buffer_modified(&st->tv)) return;
+    if (window != st->id || !tiku_editor_modified(st)) return;
     st->id = st->services->open(st->services->ctx, "Edit — Unsaved changes", st->w, st->h);
     if (!st->id) return;
     memset(&st->last_menus, 0, sizeof st->last_menus);

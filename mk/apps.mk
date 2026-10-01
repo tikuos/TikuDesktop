@@ -231,8 +231,8 @@ $(RUNTIME)/apps/terminal/tiku-term: $(OBJ)/apps/terminal/tiku_term.o \
 EDITOR_SRC := $(filter-out apps/editor/tiku_editor_main.c,$(sort $(wildcard apps/editor/*.c)))
 EDITOR_HEADERS := $(wildcard apps/editor/*.h)
 $(RUNTIME)/apps/editor/tiku-edit: $(call objs,$(EDITOR_SRC)) \
-    $(OBJ)/apps/editor/tiku_editor_main.o $(LIB_RUNTIME) $(LIB_TRANSLATION) \
-    $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
+    $(OBJ)/apps/editor/tiku_editor_main.o $(LIB_EDITOR) $(LIB_RUNTIME) \
+    $(LIB_TRANSLATION) $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm
 
@@ -363,9 +363,11 @@ $(APPS_D)/terminal/terminal.so: apps/terminal/tiku_term.c $(PIC_LIBS) | $(APPS_D
 	@mkdir -p $(dir $@)
 	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
-$(APPS_D)/editor/editor.so: $(EDITOR_SRC) $(EDITOR_HEADERS) $(PIC_LIBS) | $(APPS_D)
+$(APPS_D)/editor/editor.so: $(EDITOR_SRC) $(EDITOR_HEADERS) $(PICLIB)/libtiku_editor.a \
+    $(PIC_LIBS) | $(APPS_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(EDITOR_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(EDITOR_SRC) $(PICLIB)/libtiku_editor.a $(PIC_LIBS) \
+	    $(LDFLAGS) $(X11_LIBS) -lm
 
 $(BUILD)/tests/slowstatvfs.so: tests/fixtures/tools/slowstatvfs.c | $(BUILD)/tests
 	@mkdir -p $(dir $@)
