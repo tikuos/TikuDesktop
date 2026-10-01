@@ -286,14 +286,15 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
         st->search_active = window == st->search_id;
     if (st->ask.open) return 0;
     if (st->finding && st->search_active && st->find_focus >= 0 && command >= CMD_UNDO && command <= CMD_ALL) {
-        static const unsigned keys[] = {'z', 'y', 'x', 'c', 'v', 'a'};
+        /* A field redoes on Cmd+Shift+Z, so Redo is sent as that chord. */
+        static const unsigned keys[] = {'z', 'z', 'x', 'c', 'v', 'a'};
         unsigned stamp = tiku_clipboard_stamp();
         if (command == CMD_PASTE && st->services->clip_text) {
             tiku_clipboard_set(st->services->clip_text(st->services->ctx, NULL));
             stamp = tiku_clipboard_stamp();
         }
-        tiku_event_t e = {.type = TIKU_EVENT_KEY_DOWN, .modifiers = TIKU_MOD_CMD,
-            .key = keys[command - CMD_UNDO]};
+        tiku_event_t e = {.type = TIKU_EVENT_KEY_DOWN, .key = keys[command - CMD_UNDO],
+            .modifiers = TIKU_MOD_CMD | (command == CMD_REDO ? TIKU_MOD_SHIFT : 0)};
         int i = st->find_focus;
         tiku_field_event(&st->field[i], &st->field_input[i], &e, tiku_editor_search_field(st, i), 1);
         if (stamp != tiku_clipboard_stamp() && st->services->clip_set)

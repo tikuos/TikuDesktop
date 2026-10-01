@@ -378,6 +378,42 @@ static void replace_all_history(edit_state_t *st)
     assert(tiku_editor_buffer_set(&st->tv, "")); st->path[0] = 0;
 }
 
+/** A Find field redoes from Edit > Redo and from Cmd+Y, and Copy or Cut
+ *  with nothing selected there leaves the desk clipboard as it was. */
+static void find_field_edits(edit_state_t *st)
+{
+    tiku_editor_pick(st, st->id, CMD_FIND);
+    assert(st->search_id && st->search_active && st->find_focus == 0);
+    tiku_field_start(&st->field[0], "");
+    tiku_field_input_init(&st->field_input[0]);
+    tiku_event_t e = {.type = TIKU_EVENT_KEY_DOWN, .key = 'a', .text = "a"};
+    tiku_editor_event_in(st, st->search_id, &e);
+    e.key = 'b'; strcpy(e.text, "b");
+    tiku_editor_event_in(st, st->search_id, &e);
+    assert(!strcmp(st->field[0].text, "ab"));
+    tiku_editor_pick(st, st->search_id, CMD_UNDO);
+    assert(!strcmp(st->field[0].text, "a"));
+    tiku_editor_pick(st, st->search_id, CMD_REDO);
+    assert(!strcmp(st->field[0].text, "ab"));
+    tiku_event_t chord = {.type = TIKU_EVENT_KEY_DOWN, .key = 'z', .modifiers = TIKU_MOD_CMD};
+    tiku_editor_event_in(st, st->search_id, &chord);
+    assert(!strcmp(st->field[0].text, "a"));
+    chord.key = 'y';
+    tiku_editor_event_in(st, st->search_id, &chord);
+    assert(!strcmp(st->field[0].text, "ab"));
+    clip_set(NULL, "kept");
+    st->field[0].sel_a = st->field[0].sel_b = st->field[0].caret;
+    chord.key = 'c';
+    tiku_editor_event_in(st, st->search_id, &chord);
+    assert(!strcmp(clipboard, "kept"));
+    tiku_editor_pick(st, st->search_id, CMD_COPY);
+    tiku_editor_pick(st, st->search_id, CMD_CUT);
+    assert(!strcmp(clipboard, "kept") && !strcmp(st->field[0].text, "ab"));
+    chord = (tiku_event_t){.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_ESCAPE};
+    tiku_editor_event_in(st, st->search_id, &chord);
+    assert(!st->search_id && !st->finding);
+}
+
 /** @brief Capture the title without opening a real desktop window. */
 static uint32_t window_open(void *ctx, const char *title, int w, int h)
 {
@@ -432,6 +468,7 @@ int main(void)
     toolbar_actions(st);
     panel_during_question(st, dir);
     replace_all_history(st);
+    find_field_edits(st);
     assert(sizeable_count >= 2);
     tiku_editor_buffer_free(&st->tv);
     assert(tiku_editor_insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));

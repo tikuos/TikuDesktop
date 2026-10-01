@@ -168,7 +168,7 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
             k == 'o' ? CMD_OPEN : k == 'n' ? CMD_NEW :
             k == 'w' || k == 'q' ? CMD_QUIT : k == 'f' ? CMD_FIND :
             k == 'h' ? CMD_REPLACE : k == 'g' ? CMD_GOTO :
-            k == ']' ? CMD_NEXT : k == '[' ? CMD_PREV : 0;
+            k == ']' ? CMD_NEXT : k == '[' ? CMD_PREV : k == 'y' ? CMD_REDO : 0;
         if (cmd) return tiku_editor_pick(st, st->search_id, cmd);
     }
     if (e->type == TIKU_EVENT_CLOSE) return tiku_editor_pick(st, st->id, CMD_QUIT);
