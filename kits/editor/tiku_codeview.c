@@ -17,9 +17,9 @@
 
 /** @brief Keep the first row on the text it showed when a change lands
  *         above it, or on the change when the change covers it, carry
- *         the line widths and colouring states across it, and ask the
- *         host to paint again.  A change ends a drag, a held thumb and
- *         the x vertical moves were keeping. */
+ *         the line widths, colouring states and checkpoints across it,
+ *         and ask the host to paint again.  A change ends a drag, a held
+ *         thumb and the x vertical moves were keeping. */
 static void
 heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
 {
@@ -37,11 +37,13 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
         v->left = 0;
         tiku_cv_widths_free(v);
         tiku_cv_style_reset(v);
+        tiku_cv_marks_change(v, 0);
         if (v->host.invalidate != NULL)
             v->host.invalidate(v->host.ctx, v);
         return;
     }
     tiku_edit_change_span(change, 0, &before, &after);
+    tiku_cv_marks_change(v, before.start);
     first = tiku_editdoc_line_of(doc, after.start);
     tiku_edit_change_span(change, change->count - 1, &before, &after);
     delta = change->lines_after - change->lines_before;
@@ -79,6 +81,8 @@ tiku_codeview_create(tiku_editdoc_t *doc, tiku_codeview_t **view)
     v->widest = -1;
     strcpy(v->newline, "\n");
     tiku_text_input_reset(&v->input);
+    tiku_cv_marks_free(v);
+    v->kept_line = -1;
     st = tiku_editdoc_view_attach(doc, &v->view);
     if (st == TIKU_EDIT_OK) {
         st = tiku_editdoc_listen(doc, heard, v, &v->listener);
@@ -104,6 +108,7 @@ tiku_codeview_destroy(tiku_codeview_t *view)
     tiku_editdoc_release(view->doc);
     tiku_cv_widths_free(view);
     tiku_cv_style_free(view);
+    tiku_cv_marks_free(view);
     tiku_ed_free(view);
 }
 

@@ -189,6 +189,7 @@ paint_row(tiku_codeview_t *v, row_t *r, int64_t line)
     tiku_edit_pos_t start = tiku_editdoc_line_start(v->doc, line);
     tiku_edit_pos_t end = tiku_editdoc_line_end(v->doc, line);
     tiku_edit_pos_t next = tiku_editdoc_line_start(v->doc, line + 1);
+    tiku_edit_pos_t upto;
     int64_t width;
 
     if (r->lo < r->hi && r->lo < end && r->hi > start) {
@@ -201,11 +202,17 @@ paint_row(tiku_codeview_t *v, row_t *r, int64_t line)
     r->len = 0;
     r->stopped = 0;
     r->start = start;
-    r->nruns = tiku_cv_style_line(v, line) ? v->nruns : 0;
-    r->runs = v->runs;
+    upto = end;
+    if (end - start >= TIKU_CV_LONG) {
+        tiku_edit_pos_t at = tiku_cv_char_at(v, line, r->right);
+
+        if (at >= 0)
+            upto = at;
+    }
+    r->runs = tiku_cv_style_line(v, line, upto, &r->nruns);
     r->run = 0;
     r->run_end = r->nruns > 0 ? r->runs[0].len : 0;
-    width = tiku_cv_walk(v, line, paint_cell, r);
+    width = tiku_cv_walk_near(v, line, INT64_MAX, r->left, paint_cell, r);
     flush(r);
     if (!r->stopped && next > end && r->lo <= end && r->hi >= next)
         fill_span(r, width, width + tiku_text_advance(r->font, ' '),

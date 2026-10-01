@@ -33,6 +33,29 @@
 #define TIKU_CV_BAR 15
 /* Pixels past the widest line the text may scroll, room for the caret. */
 #define TIKU_CV_SLACK 12
+/* A line of at least TIKU_CV_LONG bytes keeps a checkpoint every
+ * TIKU_CV_MARK bytes, so a walk can start near where it is going, and is
+ * coloured only as far as it is drawn.  TIKU_CV_LONG_LINES such lines keep
+ * checkpoints, the least recently walked given up first. */
+#define TIKU_CV_LONG 4096
+#define TIKU_CV_MARK 2048
+#define TIKU_CV_LONG_LINES 4
+
+/* A place a walk can resume from: a character boundary and its x. */
+typedef struct {
+    tiku_edit_pos_t pos;
+    int64_t x;
+} tiku_cv_mark_t;
+
+/* The checkpoints of one long line, in order from its start. */
+typedef struct {
+    int64_t line;                   /* -1: unused                       */
+    tiku_edit_pos_t start;          /* the line's first byte            */
+    uint32_t key;                   /* the metrics they were taken in   */
+    uint64_t used;                  /* when last walked                 */
+    tiku_cv_mark_t *marks;
+    size_t nmarks, cap;
+} tiku_cv_long_t;
 
 struct tiku_codeview {
     tiku_editdoc_t *doc;            /* referenced while the view lives  */
@@ -79,6 +102,17 @@ struct tiku_codeview {
     tiku_span_t *runs;              /* the coloured runs of a line      */
     size_t nruns, runs_cap;
     int runs_failed;                /* the runs could not all be kept   */
+    tiku_cv_long_t longs[TIKU_CV_LONG_LINES];
+    uint64_t walks;                 /* walks of long lines so far       */
+    tiku_span_t *kept;              /* the runs of the last long line
+                                       coloured, read again unchanged   */
+    size_t nkept, kept_cap;
+    int64_t kept_line;              /* that line, -1 none               */
+    tiku_edit_pos_t kept_start;     /* where it started                 */
+    uint64_t kept_gen;              /* the document's generation then   */
+    int kept_in;                    /* the state it started in          */
+    tiku_syntax_lang_t kept_lang;   /* and the language                 */
+    tiku_edit_pos_t kept_cut;       /* the byte the runs reach to       */
 };
 
 /* What a character of a line is on the screen. */
@@ -114,6 +148,17 @@ int tiku_cv_control_name(unsigned cp, char *name);
  * stopped at, or the line's width; -1 when there is no such line. */
 int64_t tiku_cv_walk(tiku_codeview_t *v, int64_t line, tiku_cv_cell_fn fn,
                      void *ctx);
+/* The same walk started at the line's last checkpoint at or before
+ * @p pos, and at or before line x @p x: every character it skips lies
+ * wholly before both.  Pass INT64_MAX for either that does not matter. */
+int64_t tiku_cv_walk_near(tiku_codeview_t *v, int64_t line,
+                          tiku_edit_pos_t pos, int64_t x, tiku_cv_cell_fn fn,
+                          void *ctx);
+/* Drop what a change starting at @p from leaves wrong: the checkpoints
+ * past it, and every long line it starts before. */
+void tiku_cv_marks_change(tiku_codeview_t *v, tiku_edit_pos_t from);
+/* Free every checkpoint. */
+void tiku_cv_marks_free(tiku_codeview_t *v);
 /* The x of boundary @p pos on @p line, which must hold it. */
 int64_t tiku_cv_x_of(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t pos);
 /* The caret position on @p line nearest the line's own @p x. */
@@ -156,9 +201,13 @@ void tiku_cv_widths_change(tiku_codeview_t *v, int64_t first,
 /* Free the width table. */
 void tiku_cv_widths_free(tiku_codeview_t *v);
 
-/* Gather the coloured runs of @p line in v->runs; 0 when the line is
- * to be drawn in the document's ink alone. */
-int tiku_cv_style_line(tiku_codeview_t *v, int64_t line);
+/* The coloured runs of @p line, @p n of them, or NULL when the line is
+ * to be drawn in the document's ink alone.  A long line's runs may end
+ * before the line does, but not before @p upto, the last byte that will
+ * be drawn, and up to it they colour as the whole line's would.  Valid
+ * until the next call. */
+const tiku_span_t *tiku_cv_style_line(tiku_codeview_t *v, int64_t line,
+                                      tiku_edit_pos_t upto, size_t *n);
 /* Follow a document change, as tiku_cv_widths_change() does. */
 void tiku_cv_style_change(tiku_codeview_t *v, int64_t first,
                           int64_t last_old, int64_t last_new,

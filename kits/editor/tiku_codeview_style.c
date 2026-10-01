@@ -71,6 +71,11 @@ tiku_cv_style_free(tiku_codeview_t *v)
     v->runs = NULL;
     v->nruns = 0;
     v->runs_cap = 0;
+    tiku_ed_free(v->kept);
+    v->kept = NULL;
+    v->nkept = 0;
+    v->kept_cap = 0;
+    v->kept_line = -1;
 }
 
 /** @brief Room for @p n states; 0 when there is none. */
@@ -143,16 +148,17 @@ tiku_cv_style_change(tiku_codeview_t *v, int64_t first, int64_t last_old,
         v->sty_hint = v->sty_valid;
 }
 
-/** @brief @p line copied out with a NUL, or NULL when it cannot be: too
- *         long for the lexers' counts, or no room for the copy. */
+/** @brief @p line copied out up to @p cut with a NUL, or NULL when it
+ *         cannot be: too long for the lexers' counts, or no room for the
+ *         copy. */
 static const char *
-line_text(tiku_codeview_t *v, int64_t line)
+line_upto(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t cut)
 {
     tiku_edit_range_t r;
     size_t n, got = 0;
 
     r.start = tiku_editdoc_line_start(v->doc, line);
-    r.end = tiku_editdoc_line_end(v->doc, line);
+    r.end = cut;
     if (r.start < 0 || r.end < r.start || r.end - r.start >= INT_MAX)
         return NULL;
     n = (size_t)(r.end - r.start);
@@ -169,6 +175,39 @@ line_text(tiku_codeview_t *v, int64_t line)
         TIKU_EDIT_OK)
         return NULL;
     return v->line_buf;
+}
+
+/** @brief The whole of @p line copied out with a NUL. */
+static const char *
+line_text(tiku_codeview_t *v, int64_t line)
+{
+    return line_upto(v, line, tiku_editdoc_line_end(v->doc, line));
+}
+
+/** @brief Where a long line may be cut and still colour every byte up to
+ *         @p upto as the whole line would: past the word that byte is in
+ *         and a few bytes more, for the marks that pair, at a character
+ *         boundary. */
+static tiku_edit_pos_t
+cut_after(tiku_codeview_t *v, tiku_edit_pos_t upto, tiku_edit_pos_t end)
+{
+    tiku_edit_pos_t cut = upto;
+
+    while (cut < end) {
+        int b = tiku_editdoc_byte_at(v->doc, cut);
+
+        if (!(b >= 0x80 || b == '_' || b == '$' ||
+              (b >= '0' && b <= '9') || ((b | 0x20) >= 'a' &&
+                                         (b | 0x20) <= 'z')))
+            break;
+        cut++;
+    }
+    cut += 16;
+    if (cut >= end)
+        return end;
+    while (!tiku_editdoc_is_boundary(v->doc, cut))
+        cut++;
+    return cut;
 }
 
 /** @brief The state @p line starts in, reading forward from the last line
@@ -227,33 +266,81 @@ add_run(void *ctx, tiku_ink_t ink, int len)
     v->nruns++;
 }
 
-int
-tiku_cv_style_line(tiku_codeview_t *v, int64_t line)
+/** @brief Keep the runs just gathered for a long line, trading buffers
+ *         with them, so they are used again while the document does not
+ *         change. */
+static void
+keep_runs(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t start, int in,
+          tiku_edit_pos_t cut)
+{
+    tiku_span_t *swap = v->kept;
+    size_t cap = v->kept_cap;
+
+    v->kept = v->runs;
+    v->kept_cap = v->runs_cap;
+    v->nkept = v->nruns;
+    v->runs = swap;
+    v->runs_cap = cap;
+    v->nruns = 0;
+    v->kept_line = line;
+    v->kept_start = start;
+    v->kept_gen = tiku_editdoc_generation(v->doc);
+    v->kept_in = in;
+    v->kept_lang = v->lang;
+    v->kept_cut = cut;
+}
+
+const tiku_span_t *
+tiku_cv_style_line(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto,
+                   size_t *n)
 {
     tiku_syntax_state_t in = TIKU_SYNTAX_OPEN;
+    tiku_edit_pos_t start = tiku_editdoc_line_start(v->doc, line);
+    tiku_edit_pos_t end = tiku_editdoc_line_end(v->doc, line);
+    int64_t length = end - start;
+    tiku_edit_pos_t cut = end;
     const char *text;
 
+    *n = 0;
     v->nruns = 0;
     if (v->lang == TIKU_SYNTAX_NONE)
-        return 0;
+        return NULL;
     if (v->lang == TIKU_SYNTAX_C) {
         int state;
 
         if (!states_follow(v, tiku_editdoc_lines(v->doc)))
-            return 0;
+            return NULL;
         state = state_at(v, line);
         if (state < 0)
-            return 0;
+            return NULL;
         in = (tiku_syntax_state_t)state;
     }
-    text = line_text(v, line);
+    if (length >= TIKU_CV_LONG) {
+        if (upto < start)
+            upto = start;
+        cut = cut_after(v, upto < end ? upto : end, end);
+        if (v->kept_line == line && v->kept_start == start &&
+            v->kept_lang == v->lang && v->kept_in == (int)in &&
+            v->kept_cut >= cut &&
+            v->kept_gen == tiku_editdoc_generation(v->doc)) {
+            *n = v->nkept;
+            return v->kept;
+        }
+    }
+    text = line_upto(v, line, cut);
     if (text == NULL)
-        return 0;
+        return NULL;
     v->runs_failed = 0;
     tiku_syntax_runs(v->lang, text, in, NULL, add_run, v);
     if (v->runs_failed) {
         v->nruns = 0;
-        return 0;
+        return NULL;
     }
-    return 1;
+    if (length >= TIKU_CV_LONG) {
+        keep_runs(v, line, start, (int)in, cut);
+        *n = v->nkept;
+        return v->kept;
+    }
+    *n = v->nruns;
+    return v->runs;
 }

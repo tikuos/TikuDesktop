@@ -28,7 +28,11 @@ typedef struct {
     tiku_cv_cell_t cell;        /* the character being read             */
     int need;                   /* its bytes still to come              */
     int stopped;                /* fn asked to stop                     */
+    tiku_cv_long_t *keep;       /* checkpoints it adds to, or NULL      */
+    tiku_edit_pos_t mark_at;    /* where the next one may be taken      */
 } walk_t;
+
+static uint32_t metrics_key(const tiku_codeview_t *v);
 
 const tiku_font_t *
 tiku_cv_font(const tiku_codeview_t *v)
@@ -86,6 +90,31 @@ measure(const walk_t *w, tiku_cv_cell_t *c)
         c->adv = 0;
 }
 
+/** @brief Take a checkpoint where the walk stands; with no room for it,
+ *         stop taking them. */
+static void
+keep_mark(walk_t *w)
+{
+    tiku_cv_long_t *e = w->keep;
+
+    if (e->nmarks == e->cap) {
+        size_t cap = e->cap ? e->cap * 2 : 64;
+        tiku_cv_mark_t *grown = cap <= SIZE_MAX / sizeof *grown ?
+            tiku_ed_realloc(e->marks, cap * sizeof *grown) : NULL;
+
+        if (grown == NULL) {
+            w->keep = NULL;
+            return;
+        }
+        e->marks = grown;
+        e->cap = cap;
+    }
+    e->marks[e->nmarks].pos = w->cell.pos;
+    e->marks[e->nmarks].x = w->cell.x;
+    e->nmarks++;
+    w->mark_at = w->cell.pos + TIKU_CV_MARK;
+}
+
 /** @brief Decode one run of the line's bytes, finishing a character the
  *         previous run began, and hand each whole one to the visitor. */
 static int
@@ -116,14 +145,46 @@ walk_bytes(void *ctx, const char *bytes, size_t n)
             }
             c->pos += c->len;
             c->x += c->adv;
+            if (w->keep != NULL && c->pos >= w->mark_at)
+                keep_mark(w);
         }
     }
     return 0;
 }
 
+/** @brief The checkpoints kept for @p line, which spans @p r: found,
+ *         started afresh when the metrics changed, or taken over from the
+ *         line walked least recently. */
+static tiku_cv_long_t *
+long_of(tiku_codeview_t *v, int64_t line, tiku_edit_range_t r)
+{
+    uint32_t key = metrics_key(v);
+    tiku_cv_long_t *e = NULL;
+    int i;
+
+    for (i = 0; i < TIKU_CV_LONG_LINES; i++) {
+        tiku_cv_long_t *k = &v->longs[i];
+
+        if (k->line == line && k->start == r.start) {
+            e = k;
+            break;
+        }
+        if (e == NULL || k->line < 0 || (e->line >= 0 && k->used < e->used))
+            e = k;
+    }
+    if (e->line != line || e->start != r.start || e->key != key) {
+        e->line = line;
+        e->start = r.start;
+        e->key = key;
+        e->nmarks = 0;
+    }
+    e->used = ++v->walks;
+    return e;
+}
+
 int64_t
-tiku_cv_walk(tiku_codeview_t *v, int64_t line, tiku_cv_cell_fn fn,
-             void *ctx)
+tiku_cv_walk_near(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t pos,
+                  int64_t x, tiku_cv_cell_fn fn, void *ctx)
 {
     tiku_edit_range_t r;
     walk_t w;
@@ -138,9 +199,70 @@ tiku_cv_walk(tiku_codeview_t *v, int64_t line, tiku_cv_cell_fn fn,
     w.fn = fn;
     w.ctx = ctx;
     w.cell.pos = r.start;
+    if (r.end - r.start >= TIKU_CV_LONG) {
+        tiku_cv_long_t *e = long_of(v, line, r);
+        size_t lo = 0, hi = e->nmarks;
+
+        while (lo < hi) {
+            size_t mid = lo + (hi - lo) / 2;
+
+            if (e->marks[mid].pos <= pos && e->marks[mid].x <= x)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        if (lo > 0) {
+            w.cell.pos = e->marks[lo - 1].pos;
+            w.cell.x = e->marks[lo - 1].x;
+            r.start = w.cell.pos;
+        }
+        if (lo == e->nmarks) {
+            w.keep = e;
+            w.mark_at = w.cell.pos + TIKU_CV_MARK;
+        }
+    }
     if (r.end > r.start)
         (void)tiku_editdoc_each(v->doc, r, walk_bytes, &w);
     return w.cell.x;
+}
+
+int64_t
+tiku_cv_walk(tiku_codeview_t *v, int64_t line, tiku_cv_cell_fn fn,
+             void *ctx)
+{
+    return tiku_cv_walk_near(v, line, 0, 0, fn, ctx);
+}
+
+void
+tiku_cv_marks_change(tiku_codeview_t *v, tiku_edit_pos_t from)
+{
+    int i;
+
+    for (i = 0; i < TIKU_CV_LONG_LINES; i++) {
+        tiku_cv_long_t *e = &v->longs[i];
+
+        if (e->line < 0)
+            continue;
+        if (from < e->start) {
+            e->line = -1;
+            e->nmarks = 0;
+            continue;
+        }
+        while (e->nmarks > 0 && e->marks[e->nmarks - 1].pos > from)
+            e->nmarks--;
+    }
+}
+
+void
+tiku_cv_marks_free(tiku_codeview_t *v)
+{
+    int i;
+
+    for (i = 0; i < TIKU_CV_LONG_LINES; i++) {
+        tiku_ed_free(v->longs[i].marks);
+        memset(&v->longs[i], 0, sizeof v->longs[i]);
+        v->longs[i].line = -1;
+    }
 }
 
 /** @brief Stop at the character starting at or after a position. */
@@ -153,7 +275,7 @@ reach_pos(void *ctx, const tiku_cv_cell_t *c)
 int64_t
 tiku_cv_x_of(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t pos)
 {
-    return tiku_cv_walk(v, line, reach_pos, &pos);
+    return tiku_cv_walk_near(v, line, pos, INT64_MAX, reach_pos, &pos);
 }
 
 /** @brief A hit test in progress. */
@@ -182,7 +304,7 @@ tiku_cv_pos_at(tiku_codeview_t *v, int64_t line, int64_t x)
 
     h.x = x;
     h.pos = tiku_editdoc_line_end(v->doc, line);
-    (void)tiku_cv_walk(v, line, reach_x, &h);
+    (void)tiku_cv_walk_near(v, line, INT64_MAX, x, reach_x, &h);
     return h.pos;
 }
 
@@ -206,7 +328,7 @@ tiku_cv_char_at(tiku_codeview_t *v, int64_t line, int64_t x)
 
     h.x = x;
     h.pos = -1;
-    (void)tiku_cv_walk(v, line, reach_cell, &h);
+    (void)tiku_cv_walk_near(v, line, INT64_MAX, x, reach_cell, &h);
     return h.pos;
 }
 
@@ -414,7 +536,8 @@ widest_shown(tiku_codeview_t *v)
     int64_t widest = 0;
 
     for (line = v->top; line <= last; line++) {
-        int64_t w = tiku_cv_walk(v, line, NULL, NULL);
+        int64_t w = tiku_cv_walk_near(v, line, INT64_MAX, INT64_MAX, NULL,
+                                      NULL);
 
         if (w > widest)
             widest = w;
@@ -444,7 +567,8 @@ tiku_cv_widest(tiku_codeview_t *v)
         return v->widest;
     for (i = 0; i < lines; i++) {
         if (v->widths[i] < 0)
-            v->widths[i] = tiku_cv_walk(v, i, NULL, NULL);
+            v->widths[i] = tiku_cv_walk_near(v, i, INT64_MAX, INT64_MAX,
+                                             NULL, NULL);
         if (v->widths[i] > widest)
             widest = v->widths[i];
     }
@@ -463,7 +587,7 @@ tiku_codeview_line_width(tiku_codeview_t *view, int64_t line)
 {
     if (view == NULL)
         return -1;
-    return tiku_cv_walk(view, line, NULL, NULL);
+    return tiku_cv_walk_near(view, line, INT64_MAX, INT64_MAX, NULL, NULL);
 }
 
 tiku_edit_status_t

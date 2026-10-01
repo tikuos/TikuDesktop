@@ -405,8 +405,9 @@ c_word_at(const char *p, int len)
     size_t i;
 
     for (i = 0; i < sizeof c_word / sizeof c_word[0]; i++) {
-        if ((int)strlen(c_word[i]) == len &&
-            strncmp(p, c_word[i], (size_t)len) == 0) {
+        if (c_word[i][0] == p[0] &&
+            strncmp(p, c_word[i], (size_t)len) == 0 &&
+            c_word[i][len] == '\0') {
             return 1;
         }
     }
