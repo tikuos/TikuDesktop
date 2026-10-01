@@ -145,14 +145,17 @@ These are settled for the engine. The migration rows they affect are marked
 
 ## Code view
 
-The kit's widget: a view of a document that lays out, paints and hit tests
-its text, and moves its caret and selection. Each view keeps its own
-selection in the document and its own scroll position. These are kit rules;
-Editor and the IDE keep the rules in their own sections until each moves
-onto the view, and any difference is decided then. Two are known: Up and
-Down keep an x where Editor keeps the byte offset (EDR-KEY-005), and Left or
-Right over a selection stop at its edge where Editor moves from the caret
-(EDR-SEL-003).
+The kit's widget: a view of a document that lays out, paints, colours and
+hit tests its text, moves its caret and selection, edits, searches, and
+works with a host's clipboard. Each view keeps its own selection in the
+document and its own scroll position. These are kit rules; Editor and the
+IDE keep the rules in their own sections until each moves onto the view, and
+any difference is decided then. Known ones: Up and Down keep an x where
+Editor keeps the byte offset (EDR-KEY-005); Left or Right over a selection
+stop at its edge where Editor moves from the caret (EDR-SEL-003); typing
+joins into one undo step where Editor records each key (EDR-UNDO-001); and
+Replace All leaves each selection on the text it was on where Editor puts
+the caret back at its line and byte (EDR-FIND-011).
 
 ### Layout
 
@@ -165,15 +168,16 @@ Right over a selection stop at its edge where Editor moves from the caret
 | LAY-005 | Tiku | Rows are the face's height and 2 pixels apart. A hit test takes the row under the point, clamped to the first and last lines. It lands before a character whose left half holds the point and after it from its middle on, as Editor's click does today. Past the end it lands at the line's end, which is before the CR of a CRLF. A hit at each caret position's point lands on that position | done | `test_codeview_layout.c:hits` |
 | LAY-006 | Tiku | A line is never broken or shortened: a line of a million bytes is one row, measured whole, with every position where the text before it puts it | done | `test_codeview_layout.c:long_line` |
 | LAY-007 | Tiku | A new view measures in the interface's monospaced face and follows its size. A face given to the view is used instead, and no face goes back to the monospaced one | done | `test_codeview_layout.c:fonts` |
-| LAY-008 | Tiku | The text starts 5 pixels in and 3 down from the view's bounds, and the bounds show their whole rows, at least one. Scrolling sets the line in the first row and a pixel offset. The first row stops where the last line fills the last whole row, neither goes below 0, and points and hits follow the scroll | done | `test_codeview_layout.c:scrolling` |
+| LAY-008 | Tiku | The text starts 5 pixels in and 3 down from the view's bounds, and the bounds show their whole rows, at least one. Scrolling sets the line in the first row and a pixel offset. The first row stops where the last line fills the last whole row, the text stops 12 pixels past the end of the widest line, neither goes below 0, and points and hits follow the scroll. The extent down is the lines, the whole rows shown and the first row's line; across, the widest line and 12, the text's width shown, and the offset | done | `test_codeview_layout.c:scrolling` |
 | LAY-009 | Tiku | Each view keeps its own selection and scroll position. A change that ends above a view's first row moves the first row by the lines it added or removed, so the same text stays there. A change covering the first row leaves the first row at the change. A load returns every view to the top left | done | `test_codeview_layout.c:two_views` |
 | LAY-010 | Tiku | A view needs a document and holds a reference to it until destroyed; destroying it forgets its selection. A creation that cannot allocate returns `TIKU_EDIT_NO_MEMORY` and holds nothing | done | `test_codeview_layout.c:lifetime` |
+| LAY-011 | Tiku | A line of 4 KiB or more keeps a checkpoint every 2 KiB of it, and walks start from the nearest one before what they look for. A change drops the checkpoints past where it starts, and every one of a line it starts before, so a long line edited before, inside or past them lays out as a view new to it does | done | `test_codeview_layout.c:long_edits` |
 
 ### Painting
 
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
-| PNT-001 | Tiku | Painting fills the bounds with the document ground and draws each line's text in the document ink where the layout puts it, in pieces of at most 256 bytes, which end earlier only where the colour changes or a tab or control character stands. A control character's name is drawn in the ground colour on a box of faint ink | done | `test_codeview_paint.c:text_and_bounds` |
+| PNT-001 | Tiku | Painting fills the text's area, the bounds less the gutter and scrollbars, with the document ground and draws each line's text in the document ink where the layout puts it, in pieces of at most 256 bytes, which end earlier only where the colour changes or a tab or control character stands. A control character's name is drawn in the ground colour on a box of faint ink | done | `test_codeview_paint.c:text_and_bounds` |
 | PNT-002 | Tiku | Painting touches nothing outside the bounds or the clip the surface already has, and leaves that clip in place | done | `test_codeview_paint.c:text_and_bounds` |
 | PNT-003 | Tiku | The selection's ground is drawn behind its text, and the selection ink only over the selected characters. A selected line break shows as a space's width of ground after its line, and a selected control character's box takes the selection colours | done | `test_codeview_paint.c:selection` |
 | PNT-004 | Tiku | A focused view draws its caret as a line of text ink the row's height at the caret's point, after the text at a line's end; an unfocused view draws none. A new view is focused | done | `test_codeview_paint.c:caret` |
@@ -196,8 +200,79 @@ Right over a selection stop at its edge where Editor moves from the caret
 | NAV-007 | Tiku | After a move the view scrolls as little as shows the caret: on a whole row, and at least 4 pixels inside the right edge. Scrolling right leaves it 8 pixels inside, as Editor does today | done | `test_codeview_input.c:select_all_and_reveal` |
 | NAV-008 | Tiku | Button 1 pressed inside the bounds puts the caret at the hit position and starts a drag, which extends from the press until button 1 is released or the window is deactivated. Shift with a press extends from the anchor. Another button, or a press outside the bounds, is not taken. While dragging, a pointer above the view reaches the line above the first row, and one below it the line after the last whole row | done | `test_codeview_input.c:presses` |
 | NAV-009 | Tiku | A press within 400 ms and less than 6 pixels of the last is its next click. Two select the run under the pointer, the line's last run past its end, or the start of an empty line; three select the line with its break; a fourth starts again. Dragging after two or three clicks extends by runs or lines and keeps the first | done | `test_codeview_input.c:clicks` |
-| NAV-010 | Tiku | The view takes only its movement keys and button 1. Letters, Return, Command with letters, Up or Down, Option with Up, Down, Home or End, and key releases are left to the application | done | `test_codeview_input.c:ignored` |
+| NAV-010 | Tiku | The view takes its movement and editing keys and button 1. Command with letters it has no use for, Command with Up or Down, Option with Up, Down, Home, End or Return, Shift with Tab, Escape, the function keys and key releases are left to the application and change nothing | done | `test_codeview_input.c:ignored` |
 | NAV-011 | Tiku | Moving one view leaves another view's selection alone. Any change to the document ends the kept x and a drag in progress | done | `test_codeview_input.c:two_views` |
+
+### Line numbers, scrollbars and whitespace
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| DSP-001 | Tiku | A new view shows no gutter. With line numbers the gutter is 12 pixels and a digit's width in the view's face for each digit of the line count, and the text starts 4 pixels past it, as Editor's does today | done | `test_codeview_display.c:gutter_geometry` |
+| DSP-002 | Tiku | The gutter is shaded a step darker than the document ground, with a rule a further step darker at its right edge. It numbers each shown line from the first row's, in the 11 pixel face, set 6 pixels left of its edge on the text's baseline in the faint ink | done | `test_codeview_display.c:gutter_paint` |
+| DSP-003 | Tiku | With invisibles on, a space shows a 1 pixel dot and a tab a 3 pixel dash in the middle of its cell, in its ink pulled halfway to its ground; without them there is no mark | done | `test_codeview_display.c:invisibles`, `test_codeview_style.c:selection_and_marks` |
+| DSP-004 | Tiku | A vertical scrollbar takes 15 pixels down the right of the bounds and a horizontal one 15 along the foot, with the corner between them in the panel colour, and the text keeps clear of both. Each thumb is placed and sized in thousandths of the scroll, rounded, and a recording carries it where it is drawn | done | `test_codeview_display.c:bars_paint`, `test_dlcontrols.c:main` |
+| DSP-005 | Tiku | Button 1 on an arrow steps a line down or a column across; held, it is drawn pressed, waits 12 ticks and then steps every 4 until it is released or the window deactivates. On the track it pages by what is shown less one step, and on the thumb it drags with the grab kept under the pointer. The caret stays where it is | done | `test_codeview_display.c:bars_input` |
+| DSP-006 | Tiku | The wheel scrolls rows, or columns with Shift or a sideways turn, and leaves the caret | done | `test_codeview_display.c:wheel_and_gutter` |
+| DSP-007 | Tiku | A press in the gutter, or in the corner between the scrollbars, is left to the application | done | `test_codeview_display.c:wheel_and_gutter` |
+| DSP-008 | Tiku | The widest line is kept line by line: a change measures again only the lines it touched, and a change of face, size or tab stops measures every line. With no room for the table, the widest line shown stands in until there is | done | `test_codeview_display.c:widths` |
+
+### Editing and the clipboard
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| EDT-001 | Tiku | A key pressed without Command types the text it brings, or a printable key code when it brings none, over the selection or at the caret; a control character or DEL types nothing. Typing joins into one undo step, and typing over a selection is one step that undo returns with the selection | done | `test_codeview_edit.c:typing` |
+| EDT-002 | Tiku | Return types the view's line break, LF unless it is set to CRLF or CR; any other setting is refused with `TIKU_EDIT_INVALID_TEXT`. Tab types a tab; Shift with Tab is the application's | done | `test_codeview_edit.c:returns_and_tabs` |
+| EDT-003 | Tiku | Backspace and Delete remove the selection, or else one character before or after the caret, a CRLF as one. At an end of the document nothing changes. Presses in a row join into one undo step | done | `test_codeview_edit.c:deleting` |
+| EDT-004 | Tiku | A text-input commit goes in whole, as one undo step. A refused one changes nothing and the view's status is `TIKU_EDIT_INVALID_TEXT`; a key, press or focus change in the middle of one drops it | done | `test_codeview_edit.c:commits` |
+| EDT-005 | Tiku | Every edit to a read-only document is refused with `TIKU_EDIT_READ_ONLY`, which the status reports, and the caret still moves | done | `test_codeview_edit.c:read_only` |
+| EDT-006 | Tiku | Command Z undoes, and Shift Command Z or Command Y redo; with nothing to step the status is `TIKU_EDIT_NOTHING` | done | `test_codeview_edit.c:history` |
+| EDT-007 | Tiku | A caret that an edit would leave between a CR and its LF stands before the CR | done | `test_codeview_edit.c:line_breaks` |
+| CLP-001 | Tiku | Copy offers the selection's bytes to the host's clipboard. With nothing selected nothing is offered, and a view with no clipboard neither copies nor pastes | done | `test_codeview_edit.c:clipboard` |
+| CLP-002 | Tiku | Cut deletes the selection, as one undo step, only when the clipboard took it; otherwise nothing changes and the status is `TIKU_EDIT_LIMIT` | done | `test_codeview_edit.c:clipboard` |
+| CLP-003 | Tiku | Paste replaces the selection with the clipboard's text as one undo step, or changes nothing: for malformed text, a result past the document's limit, or an empty clipboard | done | `test_codeview_edit.c:clipboard` |
+| CLP-004 | Tiku | Command C, X, V and A copy, cut, paste and select all | done | `test_codeview_edit.c:clipboard` |
+| CLP-005 | Tiku | A copy that cannot allocate offers nothing and returns `TIKU_EDIT_NO_MEMORY` | done | `test_codeview_edit.c:host_calls` |
+| HST-001 | Tiku | The host hears of every change to the document, made through any view or by a load, while the document still refuses changes | done | `test_codeview_edit.c:host_calls` |
+
+### Search
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| FND-001 | Tiku | An empty query, or one holding a CR, LF, NUL or malformed UTF-8, is refused with `TIKU_EDIT_INVALID_TEXT`, and a search from outside the text with `TIKU_EDIT_INVALID_RANGE` | done | `test_codeview_find.c:refusals` |
+| FND-002 | editor/tiku_editor_commands.c:next_match | A match lies within one line | done | `test_codeview_find.c:refusals` |
+| FND-003 | editor/tiku_editor_commands.c:matches | Without Match case only ASCII letters fold | done | `test_codeview_find.c:rules` |
+| FND-004 | editor/tiku_editor_commands.c:word_byte | A whole word is neither preceded nor followed by an ASCII letter, a digit, `_` or any byte past ASCII | done | `test_codeview_find.c:rules` |
+| FND-005 | editor/tiku_editor_commands.c:tiku_editor_find_match | Each line is read from its start and a match is taken whole before the next is looked for, so matches never overlap and are the same whichever way a search goes | done | `test_codeview_find.c:rules` |
+| FND-006 | editor/tiku_editor_commands.c:tiku_editor_find_match | Find takes the first match at or after the caret, or backward the last one before the selection's start. With none that way it starts again from the other end and says it wrapped; with none anywhere it returns `TIKU_EDIT_NOTHING` | done | `test_codeview_find.c:rules`, `test_codeview_find.c:view_find` |
+| FND-007 | Tiku | A match across the document's internal gap is found like any other | done | `test_codeview_find.c:gap` |
+| FND-008 | Tiku | Find both ways and Replace All agree with a plain model of these rules on 3,000 random texts, queries and options | done | `test_codeview_find.c:model` |
+| FND-009 | editor/tiku_editor_commands.c:tiku_editor_find_match | A match found from a view is selected from its start to its end and scrolled into view; with no match the selection stays | done | `test_codeview_find.c:view_find` |
+| FND-010 | editor/tiku_editor_commands.c:tiku_editor_replace_match | Replace replaces the selection only when it is exactly one match, as one undo step, and then finds the next | done | `test_codeview_find.c:view_replace` |
+| FND-011 | Tiku | Replace All replaces every match in the document as one undo step, and each view's selection moves with the text it was on. With no match it changes nothing, and a read-only document refuses it whole | done | `test_codeview_find.c:view_replace` |
+| FND-012 | Tiku | Replace All that cannot allocate changes nothing and returns `TIKU_EDIT_NO_MEMORY` | done | `test_codeview_find.c:replace_all_faults` |
+
+### Colouring
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| STY-001 | Tiku | A view coloured as BASIC or C paints each run the syntax kit gives in its ink from the live theme; a language that is not one is no colouring | done | `test_codeview_style.c:colours` |
+| STY-002 | Tiku | Each line's starting C state is kept, and after any change every line is coloured as if read from the top | done | `test_codeview_style.c:model` |
+| STY-003 | Tiku | A change makes the states from its first line unknown. Reading resumes there and stops at the first line past the change that starts in the state it was kept in; a remark left open reads on | done | `test_codeview_style.c:convergence` |
+| STY-004 | Tiku | A line keeps every run however many it has; the syntax kit hands runs over one at a time instead of filling a table of 128 | done | `test_codeview_style.c:many_runs`, `test_syntax.c:main` |
+| STY-005 | Tiku | A line that cannot be coloured for want of memory is drawn whole in the document's ink, and coloured once it can be | done | `test_codeview_style.c:plain_when_short` |
+| STY-006 | Tiku | Selected text is drawn in the selection's ink whatever it means, and a whitespace mark takes its run's ink, faint | done | `test_codeview_style.c:selection_and_marks` |
+| STY-007 | Tiku | A line of 4 KiB or more is read only as far as it is drawn, past the word there and 16 bytes more, and its runs are kept while the document does not change. The colours up to the drawn end are the whole line's | done | `test_codeview_style.c:long_cuts` |
+
+### Hosting and timing
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| HOST-001 | Tiku | A view in an application hosted in process gives frames whose display lists play back to their pixels, and over the desktop transport the desktop shows the same frames, sent as display lists or as pixels | done | `test_codeview_host.c:session` |
+| HOST-002 | Tiku | Typing, UTF-8, moves, selections, a press and drag, and a scrollbar arrow, sent to both hosts, give the same frames | done | `test_codeview_host.c:session` |
+| HOST-003 | Tiku | So do a change of face size, a window smaller than its margins, and a 3840 by 2160 window | done | `test_codeview_host.c:session` |
+| HOST-004 | Tiku | Closing the window ends the hosted application cleanly, and its view and document free everything they held | done | `test_codeview_host.c:session` |
+| PERF-001 | Tiku | Typing, moving, scrolling, searching and Replace All give the right results on a small program, 10 MiB of source, 100,000 short lines and a 1 MiB line, and on 100 MiB when asked for; their times are printed, not judged | done | `test_codeview_speed.c:measure` |
+| PERF-002 | Tiku | Every key sent through the desktop transport brings a frame back | done | `test_codeview_speed.c:transport` |
 
 ## Editor today
 
