@@ -125,9 +125,9 @@ of_story_t *od_story(od_t *x, const tiku_xml_node_t *e);
 
 /* Embedded objects: tiku_office_odt_obj.c */
 
-/** @brief The drawing that shows draw:object @p obj, a chart the reader
- *         draws from its own data; NULL for any other object, shown by
- *         its picture instead. */
+/** @brief The drawing that shows draw:object @p obj: a chart the reader
+ *         draws from its own data, or a formula set from its MathML; NULL
+ *         for any other object, shown by its picture instead. */
 of_art_t *od_object_art(od_t *x, const tiku_xml_node_t *obj);
 
 #endif /* TIKU_OFFICE_ODT_H_ */

@@ -204,13 +204,20 @@ link(const of_layout_t *l, const of_frag_t *g, tiku_pdf_writer_t *w)
     }
 }
 
-/** @brief A drawing its reader draws, over the fragment's box. */
+/** @brief A drawing its reader draws, over the fragment's box; a
+ *         formula set in it, centred. */
 static void
 art(of_doc_t *d, of_faces_t *fs, const of_art_t *a, const of_frag_t *g,
     tiku_pdf_writer_t *w)
 {
+    const of_math_t *m = a->math;
     float box[4];
 
+    if (m != NULL) {
+        of_math_draw(fs, m, g->x + (g->w - m->w) / 2,
+                     g->y + (g->h - m->asc - m->desc) / 2 + m->asc, w);
+        return;
+    }
     box[0] = g->x;
     box[1] = g->y;
     box[2] = g->w;

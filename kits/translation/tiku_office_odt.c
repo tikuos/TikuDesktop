@@ -259,11 +259,18 @@ frame(od_t *x, const tiku_xml_node_t *fr, od_para_t *pp,
 
     h = h > 0 ? h : od_length(tiku_xml_attr(tb, "fo:min-height"), 0);
     if (anchor != NULL && strcmp(anchor, "as-char") == 0 && tb == NULL) {
-        if ((r = object(x, pp, OR_IMAGE, st, link)) == NULL) {
+        of_image_t *im = picture(x, fr, w, h);
+        of_math_t *m = im != NULL && im->art != NULL ? im->art->math : NULL;
+
+        if (im == NULL ||
+            (r = object(x, pp, m != NULL ? OR_MATH : OR_IMAGE, st, link))
+            == NULL) {
             return -1;
         }
-        r->image = picture(x, fr, w, h);
-        return r->image != NULL ? 0 : -1;
+        r->image = m != NULL ? NULL : im;   /* a formula, set in the line */
+        r->math = m;
+        pp->space = 0;              /* a character: a space after it kept */
+        return 0;
     }
     if ((f = of_alloc(&x->d->arena, sizeof *f)) == NULL) {
         return -1;

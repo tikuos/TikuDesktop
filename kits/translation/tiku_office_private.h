@@ -280,6 +280,8 @@ struct of_story {
 typedef struct {
     const void *node;               /* the reader's: its a:graphicData   */
     const char *part;               /* the part it is in, for pictures   */
+    of_math_t  *math;               /* a formula instead, set; drawn
+                                       centred in the box                */
 } of_art_t;
 
 /** @brief A text box within a drawing: its text, where it is set. */

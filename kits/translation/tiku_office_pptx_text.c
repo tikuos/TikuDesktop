@@ -16,6 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "tiku_office_math.h"
 #include "tiku_office_pptx.h"
 
 #include <math.h>
@@ -541,15 +542,97 @@ para_label(const px_t *x, const xp_t *p, int level, float size, xs_t *s,
     out->label_follow = 0;
 }
 
-/** @brief A run of text, a break or a field, as a run of @p runs. */
+/** @brief What an equation's runs' looks are found with. */
+typedef struct {
+    const px_t *x;
+    const xp_t *p;                  /* the paragraph's properties        */
+    const xs_t *s;                  /* the story's colour and scale      */
+} px_tint_t;
+
+/** @brief Math run @p r's look: paragraph @p p's, with its own a:rPr.
+ *         NULL out of memory. */
+static const of_style_t *
+math_look(const px_t *x, const xp_t *p, const xs_t *s,
+          const tiku_xml_node_t *r)
+{
+    xr_t own = p->r;
+
+    read_r(x, tiku_xml_child(r, "a:rPr"), &own);
+    return look(x, &own, s->color, s->scale);
+}
+
+/** @brief Math run @p r's colour: of_omml()'s tint for slides. */
+static uint32_t
+math_tint(void *ctx, const tiku_xml_node_t *r)
+{
+    const px_tint_t *t = ctx;
+    const of_style_t *st = math_look(t->x, t->p, t->s, r);
+
+    return st != NULL ? st->color : 0;
+}
+
+/** @brief An a14:m's equations as runs of @p runs: a paragraph of them
+ *         set apart, each on a line of its own; one alone in the line;
+ *         each sized as its first run is, in the text's colour.
+ *  @return 0, or -1 out of memory. */
+static int
+add_math(const px_t *x, const tiku_xml_node_t *k, const xp_t *p, xs_t *s,
+         of_vec_t *runs)
+{
+    const tiku_xml_node_t *para = tiku_xml_child(k, "m:oMathPara");
+    const tiku_xml_node_t *e = tiku_xml_child(para ? para : k, "m:oMath");
+    px_tint_t t = { x, p, s };
+    const of_style_t *st;
+    of_run_t *run;
+    of_math_t *m;
+    int n = 0;
+
+    for (; e != NULL; e = tiku_xml_next(e, "m:oMath")) {
+        st = of_omml_first(e) != NULL ? math_look(x, p, s, of_omml_first(e))
+                                      : look(x, &p->r, s->color, s->scale);
+        if (st == NULL || of_omml(x->d, e, para != NULL, st->size,
+                                  s->color, math_tint, &t, &m) != 0) {
+            return -1;
+        }
+        if (m != NULL && n++ > 0 && para != NULL) {
+            if ((run = of_vec_push(runs)) == NULL) {
+                return -1;
+            }
+            run->kind = OR_BREAK;   /* each of the paragraph's its line */
+            run->st = st;
+        }
+        if (m != NULL && (run = of_vec_push(runs)) == NULL) {
+            return -1;
+        }
+        if (m != NULL) {
+            run->kind = OR_MATH;
+            run->st = st;
+            run->math = m;
+        }
+    }
+    return 0;
+}
+
+/** @brief A run of text, a break, a field or equations, as runs of
+ *         @p runs; the choice of alternative content made. */
 static int
 add_run(const px_t *x, const tiku_xml_node_t *k, const xp_t *p, xs_t *s,
         of_vec_t *runs)
 {
+    const tiku_xml_node_t *c;
     xr_t r = p->r;
     of_run_t *run;
     char text[4096], num[16];
 
+    if (tiku_xml_is(k, "a14:m")) {
+        return add_math(x, k, p, s, runs);
+    }
+    for (c = tiku_xml_is(k, "mc:AlternateContent") ? tiku_xml_child(
+             of_alternate(k), NULL) : NULL; c; c = tiku_xml_next(c, NULL)) {
+        if (add_run(x, c, p, s, runs) != 0) {
+            return -1;
+        }
+    }
     if (!tiku_xml_is(k, "a:r") && !tiku_xml_is(k, "a:br") &&
         !tiku_xml_is(k, "a:fld")) {
         return 0;
@@ -756,7 +839,8 @@ px_text(void *ctx, const tiku_xml_node_t *shape, const float *box,
     s.scale = b.scale;
     s.lnred = b.lnred;
     x->d->tab = lv[0].set & XP_TABSZ && lv[0].tabsz > 1 ? lv[0].tabsz : 72;
-    if ((st = story(x, own(shape, "txBody"), lv, &s)) == NULL) {
+    if ((st = story(x, own(shape, "txBody"), lv, &s)) == NULL ||
+        of_math_prepare(x->d, x->dml.fs) != 0) {
         return -1;
     }
     return set_story(x, st, &b, box, m, 1) >= 0 ? 0 : -1;
@@ -786,7 +870,8 @@ px_body(px_t *x, const tiku_xml_node_t *body, const float *box,
     b.anchor = anchor;
     b.scale = s.scale = 1;
     s.color = color;
-    if ((st = story(x, body, lv, &s)) == NULL) {
+    if ((st = story(x, body, lv, &s)) == NULL ||
+        of_math_prepare(x->d, x->dml.fs) != 0) {
         return -1;
     }
     return set_story(x, st, &b, box, m, draw);

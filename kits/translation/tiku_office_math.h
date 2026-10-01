@@ -7,9 +7,11 @@
  * tiku_office_math.h - equations as a tree the readers build and the
  * typesetter sets: rows of tokens, fractions, scripts, roots, large
  * operators with their limits, fenced groups, matrices and arrays of
- * equations, accents, bars and braces.  Office Math is read into it by
- * tiku_office_omml.c; tiku_office_math.c sets it as TeX would, with the
- * face and the MATH table of tiku_office_math_font.c, and draws it.
+ * equations, accents, bars and braces.  Office Math (Word's, and
+ * PowerPoint's) is read into it by tiku_office_omml.c, MathML (as
+ * OpenDocument keeps it) by tiku_office_mathml.c; tiku_office_math.c sets
+ * it as TeX would, with the face and the MATH table of
+ * tiku_office_math_font.c, and draws it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -116,6 +118,16 @@ int of_omml(of_doc_t *d, const tiku_xml_node_t *e, int display, float size,
 /** @brief The first math run (m:r) under @p e, whose look its equation
  *         takes; NULL for none. */
 const tiku_xml_node_t *of_omml_first(const tiku_xml_node_t *e);
+
+/* MathML: tiku_office_mathml.c */
+
+/** @brief MathML element @p math (a math element, its prefix any) read
+ *         into an equation registered with @p d: display style when
+ *         @p display, @p size points to its em, ink @p color.  @return 0
+ *         with it in @p out (NULL when it says nothing), or -1 out of
+ *         memory. */
+int of_mathml(of_doc_t *d, const tiku_xml_node_t *math, int display,
+              float size, uint32_t color, of_math_t **out);
 
 /* The face: tiku_office_math_font.c */
 
