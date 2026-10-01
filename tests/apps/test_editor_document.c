@@ -414,6 +414,24 @@ static void find_field_edits(edit_state_t *st)
     assert(!st->search_id && !st->finding);
 }
 
+/** A press on the footer message dismisses it rather than scrolling the
+ *  scrollbar it covers; the next press scrolls. */
+static void footer_message_press(edit_state_t *st)
+{
+    char wide[2001]; memset(wide, 'w', 2000); wide[2000] = 0;
+    assert(tiku_editor_buffer_set(&st->tv, wide));
+    st->left = 0; st->width_dirty = 1; tiku_editor_paint(st);
+    snprintf(st->note, sizeof st->note, "Saved");
+    tiku_event_t press = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = 208 + (st->w - 224) - 7, .y = st->h - EDIT_FOOT_H + 8};
+    tiku_editor_event(st, &press);
+    assert(!st->left && !st->note[0]);
+    tiku_editor_event(st, &press);
+    assert(st->left > 0);
+    tiku_event_t up = press; up.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &up);
+    st->left = 0; assert(tiku_editor_buffer_set(&st->tv, ""));
+}
+
 /** @brief Capture the title without opening a real desktop window. */
 static uint32_t window_open(void *ctx, const char *title, int w, int h)
 {
@@ -469,6 +487,7 @@ int main(void)
     panel_during_question(st, dir);
     replace_all_history(st);
     find_field_edits(st);
+    footer_message_press(st);
     assert(sizeable_count >= 2);
     tiku_editor_buffer_free(&st->tv);
     assert(tiku_editor_insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));

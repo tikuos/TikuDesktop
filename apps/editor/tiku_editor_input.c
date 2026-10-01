@@ -197,6 +197,9 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         }
         if (inside((tiku_rect_t){st->w - 15, page.y - 3, 15, page.h + 3}, e->x, e->y)) {
             st->tv.top = scrollbar_press(&st->vertical, page.h + 3, e->y - page.y + 3);
+        } else if ((st->note[0] || st->hover_tool >= 0) &&
+                   inside(tiku_editor_note_box(st), e->x, e->y)) {
+            st->note[0] = 0; st->hover_tool = -1;   /* uncovers the scrollbar */
         } else if (inside((tiku_rect_t){208, st->h - EDIT_FOOT_H + 2, st->w - 224, 16}, e->x, e->y)) {
             st->left = scrollbar_press(&st->horizontal, st->w - 224, e->x - 208);
         } else if (inside(page, e->x, e->y)) {

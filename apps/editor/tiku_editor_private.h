@@ -147,6 +147,7 @@ int tiku_editor_save(edit_state_t *st);
 
 /* View. */
 tiku_rect_t tiku_editor_page(const edit_state_t *st);
+tiku_rect_t tiku_editor_note_box(const edit_state_t *st);
 int tiku_editor_rows_visible_of(const edit_state_t *st);
 int tiku_editor_glyph_at(const char *text, int at, int x, char glyph[5], int *advance);
 int tiku_editor_prefix_width(const char *text, int n);

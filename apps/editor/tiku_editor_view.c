@@ -23,6 +23,11 @@ out_pane_h(const edit_state_t *st)
 /* Pe-inspired compact native chrome and a viewport-only document painter.
  * SPDX-License-Identifier: Apache-2.0 */
 
+/** The footer box a message or a tool's label is drawn in, over the
+ *  encoding label and the horizontal scrollbar. */
+tiku_rect_t tiku_editor_note_box(const edit_state_t *st)
+{ return (tiku_rect_t){112, st->h - EDIT_FOOT_H + 1, st->w - 129, EDIT_FOOT_H - 1}; }
+
 /** The document never moves when Find is opened in its own window. */
 tiku_rect_t tiku_editor_page(const edit_state_t *st)
 {
@@ -298,7 +303,7 @@ void tiku_editor_paint(edit_state_t *st)
     draw_scroll(st, &st->horizontal, (tiku_rect_t){208, footer + 2, st->w - 224, 16}, 1);
     if (st->note[0] || st->hover_tool >= 0) {
         const char *message = st->hover_tool >= 0 ? tool_labels[st->hover_tool] : st->note;
-        tiku_rect_t box = {112, footer + 1, st->w - 129, EDIT_FOOT_H - 1};
+        tiku_rect_t box = tiku_editor_note_box(st);
         tiku_fill(st->surface, box, TIKU_C_PANEL);
         tiku_clip_set(st->surface, tiku_inset(box, 3));
         tiku_text(st->surface, small, box.x + 5, box.y + 13, message, TIKU_C_TEXT);
