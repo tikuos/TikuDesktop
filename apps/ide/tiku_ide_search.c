@@ -229,6 +229,17 @@ tiku_ide_search_replace(edit_t *e, int all)
         edit_find_run(e); /* First select a match; never replace unrelated text. */
         return;
     }
+    if (!strcmp(e->find.text, e->replacement.text)) {
+        /* Nothing would change.  A selected match is stepped past, so
+         * the next press goes on to the next one. */
+        if (!all) {
+            tiku_textview_select_none(&e->tv);
+            tiku_textview_place(&e->tv, y0, x0 + (int)qn);
+        }
+        snprintf(e->feedback, sizeof e->feedback,
+                 "Nothing changed: Replace text is the same as Find text");
+        return;
+    }
     result = malloc(cap + 1);
     if (!result) { return; }
     for (y = 0; y < tiku_textview_lines(&e->tv); y++) {
@@ -254,7 +265,7 @@ tiku_ide_search_replace(edit_t *e, int all)
         }
     }
     result[used] = '\0';
-    if (count && strcmp(e->find.text, e->replacement.text)) {
+    if (count) {
         tiku_textview_group_begin(&e->tv);
         tiku_textview_select_all(&e->tv);
         tiku_textview_insert_text(&e->tv, result);
@@ -322,8 +333,27 @@ tiku_ide_search_key(ide_t *st, edit_t *e, const tiku_event_t *ev)
         return;
     }
     if (ev->modifiers & TIKU_MOD_CMD) {
-        if (ch == 'a') { key = TIKU_FIELD_SELECT_ALL; }
-        else if (ch == 'v' && st->services->clip_text) {
+        /* A chord is told by its key: on X11 a Ctrl chord's text is a
+         * control byte, not its letter. */
+        unsigned k = ev->key;
+        int from, to;
+
+        if (k >= 'A' && k <= 'Z') { k += 32u; }
+        if (k == 'a') { key = TIKU_FIELD_SELECT_ALL; }
+        else if (k == 'c' || k == 'x') {
+            char taken[TIKU_FIELD_MAX];
+
+            if (!tiku_field_selection(field, &from, &to)) { return; }
+            memcpy(taken, field->text + from, (size_t)(to - from));
+            taken[to - from] = '\0';
+            if (st->services->clip_set) {
+                (void)st->services->clip_set(st->services->ctx, taken);
+            }
+            if (k == 'x') {
+                (void)tiku_field_key(field, TIKU_FIELD_BACKSPACE, 0, 0);
+            }
+            return;
+        } else if (k == 'v' && st->services->clip_text) {
             const char *clip = st->services->clip_text(st->services->ctx, NULL);
             int i;
             for (i = 0; clip[i] && i < TIKU_FIELD_MAX - 1; i++) {

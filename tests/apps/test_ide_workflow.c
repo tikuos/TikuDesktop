@@ -51,6 +51,11 @@ static int save(void *ctx, const char *board, const char *name, const char *text
 }
 static int run(void *ctx, const char *board, const char *text)
 { (void)ctx; (void)board; (void)text; runs++; return 0; }
+static char desk_clip[512];     /* the desk's clipboard, as the services hold it */
+static int clip_set(void *ctx, const char *text)
+{ (void)ctx; snprintf(desk_clip, sizeof desk_clip, "%s", text); return 0; }
+static const char *clip_text(void *ctx, unsigned *stamp)
+{ (void)ctx; if (stamp) { *stamp = 0; } return desk_clip; }
 
 static void file_write(const char *path, const char *text, size_t n)
 {
@@ -483,6 +488,59 @@ static void test_unbound_cmd_chords(ide_t *st)
     e->surface = NULL;
 }
 
+/** The find bar keeps its query when it opens again, moves past a match
+ *  whose replacement is the same text, and reads a chord by its key, as
+ *  X11 sends a control byte for Ctrl+A. */
+static void test_find_bar(ide_t *st)
+{
+    edit_t *e = &st->edit[0];
+    int y0, x0, y1, x1;
+    tiku_event_t ev = { .type = TIKU_EVENT_KEY_DOWN, .key = 'a',
+                        .modifiers = TIKU_MOD_CMD, .text = "\x01" };
+
+    memset(e, 0, sizeof *e);
+    e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
+    e->lang = TIKU_SYNTAX_C;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    tiku_textview_init(&e->tv);
+    tiku_textview_set(&e->tv, "ab ab ab");
+    tiku_ide_search_open(e, 0);
+    tiku_field_start(&e->find, "ab");
+    e->finding = 0;
+    tiku_ide_search_open(e, 0);
+    assert(!strcmp(e->find.text, "ab") && e->find.sel_a == 0 && e->find.sel_b == 2);
+    tiku_field_start(&e->replacement, "ab");
+    tiku_textview_place(&e->tv, 0, 0);
+    tiku_ide_search_replace(e, 0);
+    assert(tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1) && x0 == 0);
+    tiku_ide_search_replace(e, 0);
+    assert(!strstr(e->feedback, "replacement"));
+    tiku_ide_search_replace(e, 0);
+    assert(tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1) && x0 == 3);
+    tiku_ide_search_replace(e, 1);
+    assert(!strstr(e->feedback, "replacement") && !tiku_textview_modified(&e->tv));
+    e->find_focus = 0;
+    tiku_field_start(&e->find, "xy");
+    e->find.sel_a = e->find.sel_b = e->find.caret = 2;
+    tiku_ide_event(st, e->id, &ev);
+    assert(e->find.sel_a == 0 && e->find.sel_b == 2);
+    ev.key = 'c'; snprintf(ev.text, sizeof ev.text, "\x03");
+    tiku_ide_event(st, e->id, &ev);
+    assert(!strcmp(desk_clip, "xy"));
+    ev.key = 'x'; snprintf(ev.text, sizeof ev.text, "\x18");
+    tiku_ide_event(st, e->id, &ev);
+    assert(!strcmp(desk_clip, "xy") && !e->find.text[0]);
+    snprintf(desk_clip, sizeof desk_clip, "pasted");
+    ev.key = 'v'; snprintf(ev.text, sizeof ev.text, "\x16");
+    tiku_ide_event(st, e->id, &ev);
+    assert(!strcmp(e->find.text, "pasted"));
+    e->finding = 0;
+    tiku_textview_free(&e->tv);
+    tiku_surface_free(e->surface);
+    e->surface = NULL;
+}
+
 /** Renumber rewrites a line crowded with branch targets exactly, and
  *  refuses, changing nothing, a line that would grow past 1023 bytes. */
 static void test_renumber_bounds(void)
@@ -791,7 +849,8 @@ int main(void)
     char real[PATH_MAX], label[160];
     tiku_app_services_t services = { .current_device = current,
         .board_names = names, .board_save = save, .board_run = run,
-        .menus = menus, .frame = frame, .open = open_window, .close = close_window };
+        .menus = menus, .frame = frame, .open = open_window, .close = close_window,
+        .clip_set = clip_set, .clip_text = clip_text };
     ide_t *st = calloc(1, sizeof *st);
 
     assert(st && mkdtemp(dir));
@@ -831,6 +890,7 @@ int main(void)
     test_follow_drops_selection(st);
     test_return_at_line_limit(st);
     test_unbound_cmd_chords(st);
+    test_find_bar(st);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);
