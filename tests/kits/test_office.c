@@ -7,8 +7,8 @@
  * test_office.c - Word, OpenDocument and PowerPoint files translated to
  * PDF, held to what the PDF kit reads back: the pages each lays out to
  * and the words on the first, page sizes and turns, links, the outline
- * and the title, charts drawn from their values; a PDF exported beside
- * them.  Hostile files -- cut
+ * and the title, charts drawn from their values, Windows metafiles as
+ * their records say; a PDF exported beside them.  Hostile files -- cut
  * short, not XML, nested past reason, sizes out of all measure, styles
  * based on each other -- are refused or laid out, never a crash or a
  * hang.  Documents come from tests/fixtures/office.inc; faces from the
@@ -304,8 +304,27 @@ colour_at(tiku_pdf_t *doc, int p, double fx, double fy)
     return c & 0xffffffu;
 }
 
-/** @brief Charts drawn from the values their parts keep; a kind not
- *         drawn here left as a grey box of its place. */
+/** @brief How many pixels of page @p p of @p doc, drawn small, are
+ *         colour @p rgb. */
+static int
+pixels_of(tiku_pdf_t *doc, int p, uint32_t rgb)
+{
+    tiku_pdf_pixmap_t pm;
+    int i, n = 0;
+
+    if (doc == NULL || tiku_pdf_render(doc, p, 0.5, 0, &pm) != 0) {
+        return 0;
+    }
+    for (i = 0; i < pm.w * pm.h; i++) {
+        n += (pm.px[i] & 0xffffffu) == rgb;
+    }
+    tiku_pdf_pixmap_free(&pm);
+    return n;
+}
+
+/** @brief Charts drawn from the values their parts keep, DrawingML's
+ *         and OpenDocument's; a kind not drawn here left as a grey box
+ *         of its place. */
 static void
 chart_tests(void)
 {
@@ -324,6 +343,52 @@ chart_tests(void)
     free(pie);
     free(left);
     tiku_pdf_close(c);
+    c = translated("odt_charts");
+    check(pixels_of(c, 0, 0x004586u) > 100 && pixels_of(c, 0, 0xff420eu)
+          > 100 && pixels_of(c, 0, 0x579d1cu) > 100 &&
+          pixels_of(c, 0, 0xffd320u) > 100, "OF-038",
+          "OpenDocument charts drawn from the tables their objects keep: "
+          "each series' columns, each slice, in its own colour");
+    tiku_pdf_close(c);
+}
+
+/* ------------------------------------------------------------ metafiles */
+
+/** @brief Windows metafiles drawn as their records say: an EMF picture
+ *         and an object's WMF picture in Word, embedded objects' kept
+ *         pictures on slides, and broken ones as far as they go. */
+static void
+metafile_tests(void)
+{
+    tiku_pdf_t *w = translated("docx_metafiles");
+    tiku_pdf_t *p = translated("pptx_ole");
+    tiku_pdf_t *b = translated("docx_bad_metafiles");
+    char *text = w != NULL ? tiku_pdf_page_text(w, 0) : NULL;
+
+    check(text != NULL && strstr(text, "Metafile text") != NULL &&
+          pixels_of(w, 0, 0xff0000u) > 100 &&
+          pixels_of(w, 0, 0x00c000u) > 20 &&
+          pixels_of(w, 0, 0xe4e4e4u) < 20, "OF-043",
+          "an EMF picture drawn: its box red, its bitmap green, its text "
+          "words on the page; no grey box in its place");
+    check(text != NULL && strstr(text, "Placeable WMF") != NULL &&
+          pixels_of(w, 0, 0x0000ffu) > 100, "OF-044",
+          "an embedded object's WMF picture drawn: its triangle blue, its "
+          "text words");
+    check(pixels_of(p, 0, 0xff0000u) > 100 &&
+          pixels_of(p, 0, 0xeeeeeeu) < 20, "OF-045",
+          "an object on a slide shown by the picture its frame's fallback "
+          "keeps");
+    check(pixels_of(p, 1, 0x0000ffu) > 100, "OF-046",
+          "and one of Office 2007, by the picture of its VML drawing");
+    check(b != NULL && pixels_of(b, 0, 0xff0000u) > 10 &&
+          pixels_of(b, 0, 0xe4e4e4u) > 10, "OF-047",
+          "broken metafiles drawn as far as they go; one of EMF+ alone a "
+          "grey box");
+    free(text);
+    tiku_pdf_close(w);
+    tiku_pdf_close(p);
+    tiku_pdf_close(b);
 }
 
 /* --------------------------------------------------------------- export */
@@ -407,6 +472,7 @@ main(void)
         }
         detail_tests();
         chart_tests();
+        metafile_tests();
         export_tests();
     } else {
         printf("  [SKIP] no faces on this machine to set text in\n");

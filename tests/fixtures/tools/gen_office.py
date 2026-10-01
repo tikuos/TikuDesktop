@@ -1095,6 +1095,413 @@ DOCS.append(Doc("docx_chart", ".docx", "A Word page with a pie chart in its "
                 ["A chart in the text", "Where the time goes", "Reading",
                  "Meetings", "50%", "25%"]))
 
+# -------------------------------------------------------------- metafiles
+
+def emr(kind, *fields, tail=b""):
+    """One EMF record: its type, 32-bit fields, then bytes padded to 4."""
+    body = struct.pack("<%dI" % len(fields),
+                       *(f & 0xffffffff for f in fields)) + tail
+    body += b"\0" * (-len(body) % 4)
+    return struct.pack("<II", kind, 8 + len(body)) + body
+
+
+def emf_sample(missing_tail=False):
+    """A 400 by 200 pixel EMF: a red box on its left, a blue-edged
+    ellipse, bold text, and a 2 by 2 green bitmap, on a 96 dpi device."""
+    font = struct.pack("<5i8B", -28, 0, 0, 0, 700, 0, 0, 0, 0, 0, 0, 0, 0)
+    font += "Arial".encode("utf-16-le").ljust(64, b"\0")
+    text = "Metafile text".encode("utf-16-le")
+    etext = (struct.pack("<4iiff", 0, 0, 400, 200, 1, 1.0, 1.0) +
+             struct.pack("<2iIIi4iI", 20, 150, len(text) // 2, 76, 0,
+                         0, 0, -1, -1, 0) + text)
+    bmi = struct.pack("<IiiHHIIiiII", 40, 2, 2, 1, 24, 0, 16, 0, 0, 0, 0)
+    bits = (b"\x00\xc0\x00" * 2 + b"\0\0") * 2
+    dib = struct.pack("<4i6i4IIIii", 0, 0, 400, 200, 300, 20, 0, 0, 2, 2,
+                      80, len(bmi), 80 + len(bmi), len(bits), 0, 0x00CC0020,
+                      80, 60) + bmi + bits
+    recs = [emr(39, 1, 0, 0x0000FF, 0), emr(37, 1),
+            emr(38, 2, 0, 1, 0, 0x000000), emr(37, 2),
+            emr(43, 10, 10, 190, 190),
+            emr(38, 3, 0, 6, 0, 0xFF0000), emr(37, 3), emr(37, 0x80000005),
+            emr(42, 210, 20, 290, 100),
+            emr(82, 4, tail=font), emr(37, 4), emr(24, 0x000000),
+            emr(18, 1), emr(84, tail=etext),
+            emr(81, tail=dib),
+            emr(14, 0, 16, 20)]
+    fw, fh = 400 * 33800 // 1280, 200 * 27000 // 1024
+    head = emr(1, 0, 0, 399, 199, 0, 0, fw, fh, 0x464D4520, 0x10000, 0,
+               len(recs) + 1, 5, 0, 0, 0, 1280, 1024, 338, 270, 0, 0, 0,
+               338000, 270000)
+    body = b"".join(recs)
+    head = head[:48] + struct.pack("<I", len(head) + len(body)) + head[52:]
+    data = head + body
+    return data[:len(data) * 2 // 3] if missing_tail else data
+
+
+def wmr(func, *words, tail=b""):
+    """One WMF record: its function, 16-bit parameters, then bytes."""
+    body = struct.pack("<%dh" % len(words), *words) + tail
+    body += b"\0" * (len(body) % 2)
+    return struct.pack("<IH", 3 + len(body) // 2, func) + body
+
+
+def wmf_sample():
+    """A placeable WMF an inch by half an inch: a blue triangle, text."""
+    font = struct.pack("<5h8B", -120, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0)
+    font += b"Arial".ljust(32, b"\0")
+    text = b"Placeable WMF"
+    recs = [wmr(0x020B, 0, 0), wmr(0x020C, 500, 1000),
+            wmr(0x02FC, 0, 0, 0xFF, 0), wmr(0x012D, 0),
+            wmr(0x0324, 3, 50, 450, 450, 50, 850, 450),
+            wmr(0x02FB, tail=font), wmr(0x012D, 1),
+            wmr(0x0209, 0, 0), wmr(0x0102, 1),
+            wmr(0x0521, len(text), tail=text + b"\0" * (len(text) % 2) +
+                struct.pack("<hh", 260, 80)),
+            wmr(0x0000)]
+    body = b"".join(recs)
+    head = struct.pack("<HHHIHIH", 1, 9, 0x300, (18 + len(body)) // 2, 2,
+                       max(len(r) for r in recs) // 2, 0)
+    place = struct.pack("<IH4hHI", 0x9AC6CDD7, 0, 0, 0, 1000, 500, 1000, 0)
+    check = 0
+    for i in range(0, 20, 2):
+        check ^= struct.unpack_from("<H", place, i)[0]
+    return place + struct.pack("<H", check) + head + body
+
+
+def emf_plus_only():
+    """An EMF whose drawing is all in EMF+ comments: nothing for GDI."""
+    plus = struct.pack("<4sHHII", b"EMF+", 0x4001, 0, 28, 16) + b"\0" * 16
+    recs = [emr(70, len(plus), tail=plus), emr(14, 0, 16, 20)]
+    head = emr(1, 0, 0, 99, 99, 0, 0, 2640, 2640, 0x464D4520, 0x10000,
+               0, 3, 1, 0, 0, 0, 1280, 1024, 338, 270)
+    return head + b"".join(recs)
+
+
+def docx_metafiles():
+    """A Word page with an EMF picture in its text and a WMF picture of an
+    embedded object, as Office keeps one for an equation."""
+    pic = ('<w:r><w:drawing><wp:inline><wp:extent cx="3657600" '
+           'cy="1828800"/><wp:docPr id="1" name="Picture 1"/><a:graphic>'
+           '<a:graphicData uri="http://schemas.openxmlformats.org/'
+           'drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="1" '
+           'name="image1.emf"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill>'
+           '<a:blip r:embed="rIdEmf"/><a:stretch><a:fillRect/></a:stretch>'
+           '</pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext '
+           'cx="3657600" cy="1828800"/></a:xfrm><a:prstGeom prst="rect"/>'
+           '</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline>'
+           '</w:drawing></w:r>')
+    ole = ('<w:r><w:object w:dxaOrig="1440" w:dyaOrig="720"><v:shape '
+           'id="_x0000_i1025" type="#_x0000_t75" style="width:144pt;'
+           'height:72pt"><v:imagedata r:id="rIdWmf" o:title=""/></v:shape>'
+           '<o:OLEObject Type="Embed" ProgID="Equation.3" '
+           'ShapeID="_x0000_i1025" DrawAspect="Content" '
+           'ObjectID="_1234567890"/></w:object></w:r>')
+    doc = (XML + '<w:document %s><w:body>%s%s%s<w:sectPr><w:pgSz '
+           'w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" '
+           'w:bottom="1440" w:left="1440"/></w:sectPr></w:body>'
+           '</w:document>' % (W, wp("Pictures Windows draws"),
+                              wp(None, runs=pic), wp(None, runs=ole)))
+    return package({
+        "[Content_Types].xml": types(
+            [("word/document.xml", WML + "document.main+xml"),
+             ("word/styles.xml", WML + "styles+xml")],
+            (("rels", "application/vnd.openxmlformats-package."
+              "relationships+xml"), ("xml", "application/xml"),
+             ("emf", "image/x-emf"), ("wmf", "image/x-wmf"))),
+        "_rels/.rels": rels([("rId1", "officeDocument",
+                              "word/document.xml")]),
+        "word/_rels/document.xml.rels": rels([
+            ("rIdStyles", "styles", "styles.xml"),
+            ("rIdEmf", "image", "media/image1.emf"),
+            ("rIdWmf", "image", "media/image2.wmf")]),
+        "word/document.xml": doc, "word/styles.xml": W_STYLES,
+        "word/media/image1.emf": emf_sample(),
+        "word/media/image2.wmf": wmf_sample()})
+
+
+def ole_frame(n, fallback):
+    """An embedded object's frame on a slide: Office 2010's, its picture
+    in the fallback, or Office 2007's, its picture in the VML drawing."""
+    xfrm = '<p:xfrm><a:off x="1219200" y="1828800"/><a:ext cx="7315200" '\
+           'cy="3657600"/></p:xfrm>'
+    obj = ('<p:oleObj spid="_x0000_s%d" name="Object" r:id="rIdObj" '
+           'imgW="7315200" imgH="3657600" progId="Package">%s</p:oleObj>')
+    pic = ('<p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/>'
+           '<p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip '
+           'r:embed="rIdPic"/><a:stretch><a:fillRect/></a:stretch>'
+           '</p:blipFill><p:spPr><a:prstGeom prst="rect"/></p:spPr></p:pic>')
+    data = (obj % (1025 + n, "<p:embed/>") if not fallback else
+            '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats'
+            '.org/markup-compatibility/2006"><mc:Choice xmlns:v="urn:'
+            'schemas-microsoft-com:vml" Requires="v">%s</mc:Choice>'
+            '<mc:Fallback>%s</mc:Fallback></mc:AlternateContent>'
+            % (obj % (1025 + n, "<p:embed/>"), obj % (1025 + n, pic)))
+    return ('<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="%d" '
+            'name="Object %d"/><p:cNvGraphicFramePr/><p:nvPr/>'
+            '</p:nvGraphicFramePr>%s<a:graphic><a:graphicData uri="http://'
+            'schemas.openxmlformats.org/presentationml/2006/ole">%s'
+            '</a:graphicData></a:graphic></p:graphicFrame>'
+            % (20 + n, n, xfrm, data))
+
+
+VML = ('<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-'
+       'microsoft-com:office:office"><v:shape id="_x0000_s1027" type="#_x0000'
+       '_t75" style="position:absolute;left:96pt;top:144pt;width:576pt;'
+       'height:288pt"><v:imagedata o:relid="rId1" o:title=""/></v:shape>'
+       '</xml>')
+
+
+def pptx_ole():
+    """Two slides of embedded objects shown by the pictures Office keeps:
+    an EMF in the frame's fallback, a WMF in the legacy VML drawing."""
+    parts = {
+        "_rels/.rels": rels([("rId1", "officeDocument",
+                              "ppt/presentation.xml")]),
+        "ppt/slideMasters/slideMaster1.xml": XML + (
+            '<p:sldMaster %s>%s<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" '
+            'tx2="dk2" accent1="accent1" accent2="accent2" '
+            'accent3="accent3" accent4="accent4" accent5="accent5" '
+            'accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+            '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/>'
+            '</p:sldLayoutIdLst>%s</p:sldMaster>'
+            % (P, tree([]), MASTER_TX)),
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels": rels([
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+            ("rId2", "theme", "../theme/theme1.xml")]),
+        "ppt/slideLayouts/slideLayout1.xml": XML + (
+            '<p:sldLayout %s type="blank">%s</p:sldLayout>' % (P, tree([]))),
+        "ppt/slideLayouts/_rels/slideLayout1.xml.rels": rels([
+            ("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")]),
+        "ppt/theme/theme1.xml": THEME,
+        "ppt/slides/slide1.xml": XML + '<p:sld %s>%s</p:sld>'
+        % (P, tree([ole_frame(1, True)])),
+        "ppt/slides/slide2.xml": XML + '<p:sld %s>%s</p:sld>'
+        % (P, tree([ole_frame(2, False)])),
+        "ppt/slides/_rels/slide1.xml.rels": rels([
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+            ("rIdObj", "package", "../embeddings/object1.bin"),
+            ("rIdPic", "image", "../media/image1.emf")]),
+        "ppt/slides/_rels/slide2.xml.rels": rels([
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+            ("rIdObj", "package", "../embeddings/object1.bin"),
+            ("rIdVml", "vmlDrawing", "../drawings/vmlDrawing1.vml")]),
+        "ppt/drawings/vmlDrawing1.vml": VML,
+        "ppt/drawings/_rels/vmlDrawing1.vml.rels": rels([
+            ("rId1", "image", "../media/image2.wmf")]),
+        "ppt/embeddings/object1.bin": b"not an object anyone opens",
+        "ppt/media/image1.emf": emf_sample(),
+        "ppt/media/image2.wmf": wmf_sample(),
+        "ppt/presentation.xml": XML + (
+            '<p:presentation %s><p:sldMasterIdLst><p:sldMasterId '
+            'id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>'
+            '<p:sldId id="256" r:id="rId2"/><p:sldId id="257" r:id="rId3"/>'
+            '</p:sldIdLst><p:sldSz cx="%d" cy="%d"/></p:presentation>'
+            % (P, EMU_W, EMU_H)),
+        "ppt/_rels/presentation.xml.rels": rels([
+            ("rId1", "slideMaster", "slideMasters/slideMaster1.xml"),
+            ("rId2", "slide", "slides/slide1.xml"),
+            ("rId3", "slide", "slides/slide2.xml")])}
+    parts["[Content_Types].xml"] = types(
+        [("ppt/presentation.xml", PML + "presentation.main+xml"),
+         ("ppt/slideMasters/slideMaster1.xml", PML + "slideMaster+xml"),
+         ("ppt/slideLayouts/slideLayout1.xml", PML + "slideLayout+xml"),
+         ("ppt/slides/slide1.xml", PML + "slide+xml"),
+         ("ppt/slides/slide2.xml", PML + "slide+xml"),
+         ("ppt/theme/theme1.xml",
+          "application/vnd.openxmlformats-officedocument.theme+xml")],
+        (("rels", "application/vnd.openxmlformats-package.relationships"
+          "+xml"), ("xml", "application/xml"), ("emf", "image/x-emf"),
+         ("wmf", "image/x-wmf"), ("vml", "application/vnd.openxmlformats-"
+          "officedocument.vmlDrawing"), ("bin", "application/"
+          "octet-stream")))
+    return package(parts)
+
+
+def docx_bad_metafiles():
+    """Metafiles broken every way a record can be, and one of EMF+
+    alone: each laid out as what can be drawn, or a grey box."""
+    huge = bytearray(emf_sample())
+    at = 0
+    while at + 8 <= len(huge):     # counts and sizes past all measure
+        kind, size = struct.unpack_from("<II", huge, at)
+        if kind == 84:
+            struct.pack_into("<I", huge, at + 44, 0x7fffffff)
+        elif kind == 81:
+            struct.pack_into("<ii", huge, at + 48, 0x7ffffff0, 0x7fffffff)
+        at += max(size, 8)
+    loop = bytearray(wmf_sample())
+    struct.pack_into("<I", loop, 40, 0)
+    names = ["cut.emf", "huge.emf", "loop.wmf", "plus.emf"]
+    datas = [emf_sample(True), bytes(huge), bytes(loop), emf_plus_only()]
+    runs = "".join(
+        '<w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="457200"/>'
+        '<wp:docPr id="%d" name="p"/><a:graphic><a:graphicData uri="http://'
+        'schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+        '<pic:nvPicPr><pic:cNvPr id="%d" name="p"/><pic:cNvPicPr/>'
+        '</pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdM%d"/>'
+        '</pic:blipFill><pic:spPr/></pic:pic></a:graphicData></a:graphic>'
+        '</wp:inline></w:drawing></w:r>' % (i + 1, i + 1, i)
+        for i in range(len(names)))
+    doc = (XML + '<w:document %s><w:body>%s%s</w:body></w:document>'
+           % (W, wp("Broken pictures"), wp(None, runs=runs)))
+    parts = {
+        "[Content_Types].xml": types(
+            [("word/document.xml", WML + "document.main+xml")],
+            (("rels", "application/vnd.openxmlformats-package."
+              "relationships+xml"), ("xml", "application/xml"),
+             ("emf", "image/x-emf"), ("wmf", "image/x-wmf"))),
+        "_rels/.rels": rels([("rId1", "officeDocument",
+                              "word/document.xml")]),
+        "word/_rels/document.xml.rels": rels(
+            [("rIdM%d" % i, "image", "media/" + nm)
+             for i, nm in enumerate(names)]),
+        "word/document.xml": doc}
+    for nm, data in zip(names, datas):
+        parts["word/media/" + nm] = data
+    return package(parts)
+
+
+DOCS.append(Doc("docx_metafiles", ".docx", "A Word page with an EMF picture "
+                "and a WMF picture of an embedded object", docx_metafiles(),
+                1, ["Pictures Windows draws", "Metafile text",
+                    "Placeable WMF"]))
+DOCS.append(Doc("pptx_ole", ".pptx", "Embedded objects on slides, shown by "
+                "the pictures Office keeps of them", pptx_ole(), 2,
+                ["Metafile text"]))
+DOCS.append(Doc("docx_bad_metafiles", ".docx", "Metafiles cut short, with "
+                "counts past their records, a record of no size, EMF+ "
+                "alone", docx_bad_metafiles(), -1, []))
+
+# ------------------------------------------------------ OpenDocument charts
+
+CH = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+      'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
+      'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+      'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
+      'xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
+      'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" '
+      'xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" '
+      'xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" '
+      'xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.3"')
+
+
+def ch_style(name, graphic="", chart="", text=""):
+    """A chart's automatic style: graphic, chart and text properties."""
+    return ('<style:style style:name="%s" style:family="chart">%s%s%s'
+            '</style:style>'
+            % (name, '<style:chart-properties %s/>' % chart if chart else "",
+               '<style:graphic-properties %s/>' % graphic if graphic else "",
+               '<style:text-properties %s/>' % text if text else ""))
+
+
+def ch_table(head, rows):
+    """A chart object's own data table: a header row, then a row for each
+    category -- its name, then each series' value."""
+    def cell(v):
+        if isinstance(v, str):
+            return ('<table:table-cell office:value-type="string"><text:p>'
+                    '%s</text:p></table:table-cell>' % v)
+        return ('<table:table-cell office:value-type="float" '
+                'office:value="%s"><text:p>%s</text:p></table:table-cell>'
+                % (v, v))
+    return ('<table:table table:name="local-table"><table:table-header-rows>'
+            '<table:table-row><table:table-cell/>%s</table:table-row>'
+            '</table:table-header-rows><table:table-rows>%s</table:table-rows>'
+            '</table:table>'
+            % ("".join(cell(h) for h in head),
+               "".join("<table:table-row>%s</table:table-row>"
+                       % "".join(cell(v) for v in r) for r in rows)))
+
+
+def odf_chart(cls, title, head, rows, styles, series, plot="", points=""):
+    """A chart object's content.xml: its class, title, legend, axes, the
+    series named by their columns (each with @p points in it), the table
+    they take values from."""
+    n = len(rows)
+    ser = "".join(
+        '<chart:series chart:style-name="s%d" chart:values-cell-range-'
+        'address="local-table.$%s$2:.$%s$%d" chart:label-cell-address='
+        '"local-table.$%s$1" chart:class="%s">%s</chart:series>'
+        % (i, c, c, n + 1, c, cls, points) for i, c in enumerate(series))
+    axes = ('' if cls == "chart:circle" else
+            '<chart:axis chart:dimension="x" chart:name="primary-x">'
+            '<chart:categories table:cell-range-address="local-table.$A$2:'
+            '.$A$%d"/></chart:axis><chart:axis chart:dimension="y" '
+            'chart:name="primary-y"><chart:grid chart:class="major"/>'
+            '</chart:axis>' % (n + 1))
+    cats = ('' if cls != "chart:circle" else
+            '<chart:axis chart:dimension="x" chart:name="primary-x">'
+            '<chart:categories table:cell-range-address="local-table.$A$2:'
+            '.$A$%d"/></chart:axis>' % (n + 1))
+    return (XML + '<office:document-content %s><office:automatic-styles>%s'
+            '</office:automatic-styles><office:body><office:chart>'
+            '<chart:chart svg:width="15cm" svg:height="8cm" chart:class="%s">'
+            '<chart:title><text:p>%s</text:p></chart:title><chart:legend '
+            'chart:legend-position="end"/><chart:plot-area chart:style-name='
+            '"plot"%s>%s%s%s<chart:wall chart:style-name="wall"/>'
+            '</chart:plot-area>%s</chart:chart></office:chart></office:body>'
+            '</office:document-content>'
+            % (CH, styles, cls, title, plot, axes, cats, ser,
+               ch_table(head, rows)))
+
+
+def odt_charts():
+    """OpenDocument text with two charts as embedded objects, drawn from
+    the tables they keep: columns of three series, and a pie."""
+    rows = [["Q1", 10, 20, 15], ["Q2", 30, 25, 5], ["Q3", 20, 35, 25],
+            ["Q4", 40, 30, 20]]
+    bars = odf_chart("chart:bar", "Quarterly sales",
+                     ["North", "South", "West"], rows,
+                     ch_style("s0", 'draw:fill-color="#004586" '
+                              'draw:stroke="none"') +
+                     ch_style("s1", 'draw:fill-color="#ff420e" '
+                              'draw:stroke="none"') +
+                     ch_style("s2", 'draw:fill-color="#579d1c" '
+                              'draw:stroke="none"') +
+                     ch_style("plot") +
+                     ch_style("wall", 'draw:stroke="solid" '
+                              'svg:stroke-color="#b3b3b3" draw:fill="none"'),
+                     ["B", "C", "D"])
+    pie = odf_chart("chart:circle", "Where the hours go", ["Hours"],
+                    [["Reading", 5], ["Writing", 3], ["Meetings", 2]],
+                    ch_style("s0", 'draw:fill-color="#004586"',
+                             'chart:data-label-number="percentage"') +
+                    "".join(ch_style("p%d" % i, 'draw:fill-color="%s"' % c)
+                            for i, c in enumerate(["#004586", "#ff420e",
+                                                   "#ffd320"])),
+                    ["B"], points="".join(
+                        '<chart:data-point chart:style-name="p%d"/>' % i
+                        for i in range(3)))
+    frame = ('<draw:frame draw:name="%s" text:anchor-type="as-char" '
+             'svg:width="15cm" svg:height="8cm"><draw:object xlink:href='
+             '"./%s" xlink:type="simple" xlink:show="embed" '
+             'xlink:actuate="onLoad"/></draw:frame>')
+    content = (XML + '<office:document-content %s><office:body><office:text>'
+               '<text:p>Charts kept as objects</text:p><text:p>%s</text:p>'
+               '<text:p>%s</text:p></office:text></office:body>'
+               '</office:document-content>'
+               % (O, frame % ("Chart 1", "Object 1"),
+                  frame % ("Chart 2", "Object 2")))
+    manifest = (XML + '<manifest:manifest xmlns:manifest="urn:oasis:names:'
+                'tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry '
+                'manifest:full-path="/" manifest:media-type="application/'
+                'vnd.oasis.opendocument.text"/>%s</manifest:manifest>'
+                % "".join('<manifest:file-entry manifest:full-path="Object '
+                          '%d/" manifest:media-type="application/vnd.oasis.'
+                          'opendocument.chart"/>' % i for i in (1, 2)))
+    return package({"mimetype": "application/vnd.oasis.opendocument.text",
+                    "content.xml": content, "styles.xml": O_STYLES,
+                    "META-INF/manifest.xml": manifest,
+                    "Object 1/content.xml": bars,
+                    "Object 2/content.xml": pie}, "mimetype")
+
+
+DOCS.append(Doc("odt_charts", ".odt", "OpenDocument charts drawn from the "
+                "tables their objects keep: columns and a pie", odt_charts(),
+                1, ["Charts kept as objects", "Quarterly sales", "North",
+                    "South", "West", "Q1", "Q4", "Where the hours go",
+                    "Reading", "50%"]))
+
 # -------------------------------------------------------------------- out
 
 def c_string(text):
