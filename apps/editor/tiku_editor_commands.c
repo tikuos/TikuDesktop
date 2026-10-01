@@ -94,42 +94,32 @@ void tiku_editor_replace_match(edit_state_t *st)
     }
 }
 
-/** Build Replace All first, then record it as one reversible transaction. */
+/** Replace every match as one record of the matches alone, so the history
+ *  before it survives on a large document; the caret stays where it is. */
 void tiku_editor_replace_all(edit_state_t *st)
 {
-    size_t q = strlen(st->field[0].text), r = strlen(st->field[1].text);
+    size_t q = strlen(st->field[0].text), count = 0, cap = 0;
+    edit_hit_t *hit = NULL;
     if (!q) return;
-    size_t n = tiku_editor_buffer_text(&st->tv, NULL, 0), count = 0;
-    if (n > INT_MAX - 1u) goto failed;
-    char *source = malloc(n + 1);
-    if (!source) goto failed;
-    source[0] = 0;
-    tiku_editor_buffer_text(&st->tv, source, n + 1);
-    const char *p = source;
-    while ((p = next_match(st, source, p))) { count++; p += q; }
-    if (!count) { free(source); snprintf(st->note, sizeof st->note, "No matches."); return; }
-    if (r > q && count > (INT_MAX - 1u - n) / (r - q)) { free(source); goto failed; }
-    size_t size = r >= q ? n + count * (r - q) : n - count * (q - r);
-    char *result = malloc(size + 1);
-    if (!result) { free(source); goto failed; }
-    size_t out = 0; p = source;
-    const char *hit;
-    while ((hit = next_match(st, source, p))) {
-        size_t before = (size_t)(hit - p);
-        memcpy(result + out, p, before); out += before;
-        memcpy(result + out, st->field[1].text, r); out += r;
-        p = hit + q;
+    for (int y = 0; y < st->tv.nline; y++) {
+        const char *line = tiku_editor_buffer_line(&st->tv, y), *p = line;
+        while ((p = next_match(st, line, p))) {
+            if (count == cap) {
+                edit_hit_t *grown = count < INT_MAX / 2 ?
+                    realloc(hit, (cap = cap ? cap * 2 : 64) * sizeof *hit) : NULL;
+                if (!grown) { free(hit); goto failed; }
+                hit = grown;
+            }
+            hit[count++] = (edit_hit_t){y, (int)(p - line)};
+            p += q;
+        }
     }
-    strcpy(result + out, p);
-    int cy = st->tv.cy, cx = st->tv.cx, ay = st->tv.ay, ax = st->tv.ax, sel = st->tv.selecting;
-    tiku_editor_buffer_select_all(&st->tv);
-    int ok = tiku_editor_insert_checked(st, result);
-    free(source); free(result);
-    if (!ok) {
-        st->tv.cy = cy; st->tv.cx = cx; st->tv.ay = ay; st->tv.ax = ax; st->tv.selecting = sel;
-        return;
+    if (!count) { snprintf(st->note, sizeof st->note, "No matches."); return; }
+    if (!tiku_editor_buffer_replace_hits(&st->tv, hit, (int)count, q, st->field[1].text)) {
+        free(hit); goto failed;
     }
-    tiku_editor_buffer_place(&st->tv, cy, cx); tiku_editor_reveal(st);
+    st->pending = 0; st->allow_open = 0; st->width_dirty = 1;
+    tiku_editor_reveal(st);
     snprintf(st->note, sizeof st->note, "%zu replacements. Undo restores the original text.", count);
     return;
 failed:

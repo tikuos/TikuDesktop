@@ -9,11 +9,19 @@
 #include "tiku_textview.h"
 
 typedef struct { char *text; int len; int width; } edit_line_t;
+typedef struct { int y, x; } edit_hit_t;
+/* One undo record: a range replacement, or a Replace All that keeps each
+ * match's place and text.  For Replace All, y and x are the caret when it
+ * ran, before holds the matched text of every hit and after the
+ * replacement once. */
 typedef struct {
     int y, x, old_y, old_x, new_y, new_x;
     char *before, *after;
     size_t bytes;
     uint64_t previous, revision;
+    edit_hit_t *hit;            /* Replace All: each match, in order */
+    int nhit;                   /* 0 for a range replacement */
+    size_t match;               /* the bytes each hit replaced */
 } edit_change_t;
 typedef struct {
     edit_line_t *line;
@@ -43,6 +51,8 @@ int tiku_editor_buffer_selection(const edit_buffer_t *b, int *y0, int *x0, int *
 size_t tiku_editor_buffer_text(const edit_buffer_t *b, char *out, size_t cap);
 size_t tiku_editor_buffer_selected(const edit_buffer_t *b, char *out, size_t cap);
 int tiku_editor_buffer_replace(edit_buffer_t *b, const char *text);
+int tiku_editor_buffer_replace_hits(edit_buffer_t *b, edit_hit_t *hit, int n,
+                                    size_t match, const char *with);
 int tiku_editor_buffer_undo(edit_buffer_t *b);
 int tiku_editor_buffer_redo(edit_buffer_t *b);
 int tiku_editor_buffer_scroll_to(edit_buffer_t *b, int top, int rows);

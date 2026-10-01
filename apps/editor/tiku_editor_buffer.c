@@ -12,6 +12,8 @@ static size_t edit_buffer_range(const edit_buffer_t *b, int y0, int x0,
 static int edit_buffer_splice(edit_buffer_t *b, int y0, int x0, int y1, int x1,
                               const char *text, int *end_y, int *end_x);
 static void edit_buffer_drop(edit_buffer_t *b, int i);
+static void edit_buffer_push(edit_buffer_t *b, edit_change_t *c);
+static int edit_buffer_hits(edit_buffer_t *b, const edit_change_t *c, int undo);
 
 /** Validate UTF-8 directly, without the small IME-event staging buffer. */
 static int edit_utf8_valid(const char *s, size_t n)
@@ -40,7 +42,7 @@ void tiku_editor_buffer_free(edit_buffer_t *b)
     for (int i = 0; i < b->nline; i++) free(b->line[i].text);
     free(b->line);
     for (int i = 0; i < b->undo_n; i++) {
-        free(b->undo[i].before); free(b->undo[i].after);
+        free(b->undo[i].before); free(b->undo[i].after); free(b->undo[i].hit);
     }
     memset(b, 0, sizeof *b);
 }
@@ -195,7 +197,65 @@ fail:
 static void edit_buffer_drop(edit_buffer_t *b, int i)
 {
     b->history_bytes -= b->undo[i].bytes;
-    free(b->undo[i].before); free(b->undo[i].after);
+    free(b->undo[i].before); free(b->undo[i].after); free(b->undo[i].hit);
+}
+
+/** Record @p c as the newest change.  The redo side goes first, then the
+ *  oldest changes while 256 are held or the total would pass 32 MiB; the
+ *  newest change is kept even when it alone is larger. */
+static void edit_buffer_push(edit_buffer_t *b, edit_change_t *c)
+{
+    for (int i = b->undo_at; i < b->undo_n; i++) edit_buffer_drop(b, i);
+    b->undo_n = b->undo_at;
+    while (b->undo_n && (b->undo_n == 256 || b->history_bytes + c->bytes > 32u * 1024 * 1024)) {
+        edit_buffer_drop(b, 0);
+        memmove(b->undo, b->undo + 1, (size_t)(--b->undo_n) * sizeof *b->undo);
+    }
+    c->revision = ++b->serial; b->revision = c->revision;
+    b->undo[b->undo_n++] = *c; b->undo_at = b->undo_n;
+    b->history_bytes += c->bytes;
+}
+
+/** Swap the text at every hit of a Replace All record: the match for the
+ *  replacement, or back when @p undo is set.  Each line it touches is built
+ *  before any line changes, and the caret returns to where it was when the
+ *  Replace All ran. */
+static int edit_buffer_hits(edit_buffer_t *b, const edit_change_t *c, int undo)
+{
+    long long q = (long long)c->match, r = (long long)strlen(c->after);
+    long long take = undo ? r : q, put = undo ? q : r;
+    int lines = 0, l = 0;
+    for (int k = 0; k < c->nhit; k++) lines += !k || c->hit[k].y != c->hit[k - 1].y;
+    edit_line_t *made = calloc((size_t)lines, sizeof *made);
+    if (!made) return 0;
+    for (int k = 0; k < c->nhit; l++) {
+        int y = c->hit[k].y, end = k;
+        while (end < c->nhit && c->hit[end].y == y) end++;
+        const char *line = b->line[y].text;
+        long long len = b->line[y].len + (end - k) * (put - take), from = 0, at = 0;
+        if (len < 0 || len > INT_MAX - 1 || !(made[l].text = malloc((size_t)len + 1))) goto fail;
+        for (int j = k; j < end; j++) {
+            long long x = c->hit[j].x + (undo ? (j - k) * (r - q) : 0);
+            memcpy(made[l].text + at, line + from, (size_t)(x - from)); at += x - from;
+            memcpy(made[l].text + at, undo ? c->before + (size_t)j * c->match : c->after,
+                   (size_t)put);
+            at += put; from = x + take;
+        }
+        memcpy(made[l].text + at, line + from, (size_t)(b->line[y].len - from));
+        made[l].text[len] = 0; made[l].len = (int)len; made[l].width = -1;
+        k = end;
+    }
+    l = 0;
+    for (int k = 0; k < c->nhit; k++) {
+        if (k && c->hit[k].y == c->hit[k - 1].y) continue;
+        free(b->line[c->hit[k].y].text); b->line[c->hit[k].y] = made[l++];
+    }
+    free(made);
+    b->selecting = 0; tiku_editor_buffer_place(b, c->y, c->x);
+    return 1;
+fail:
+    for (int i = 0; i < lines; i++) free(made[i].text);
+    free(made); return 0;
 }
 
 /** Commit one reversible range replacement, including an empty replacement. */
@@ -218,32 +278,60 @@ int tiku_editor_buffer_replace(edit_buffer_t *b, const char *text)
     if (!edit_buffer_splice(b, y0, x0, y1, x1, text, &c.new_y, &c.new_x)) {
         free(c.before); free(c.after); return 0;
     }
-    for (int i = b->undo_at; i < b->undo_n; i++) edit_buffer_drop(b, i);
-    b->undo_n = b->undo_at;
-    /* A 32 MiB history target retains at least the newest complete edit. */
-    while (b->undo_n && (b->undo_n == 256 || b->history_bytes + c.bytes > 32u * 1024 * 1024)) {
-        edit_buffer_drop(b, 0);
-        memmove(b->undo, b->undo + 1, (size_t)(--b->undo_n) * sizeof *b->undo);
-    }
-    c.revision = ++b->serial; b->revision = c.revision;
-    b->undo[b->undo_n++] = c; b->undo_at = b->undo_n;
-    b->history_bytes += c.bytes;
+    edit_buffer_push(b, &c);
     return 1;
 }
 
-/** Undo and redo use the same atomic splice, never byte-by-byte replay. */
+/** Replace @p match bytes at each of @p n hits by @p with, as one record
+ *  that holds the matches rather than the document.  Hits come in document
+ *  order, each inside one line and none overlapping; on success the record
+ *  keeps @p hit. */
+int tiku_editor_buffer_replace_hits(edit_buffer_t *b, edit_hit_t *hit, int n,
+                                    size_t match, const char *with)
+{
+    size_t r = strlen(with);
+    if (n <= 0 || !match || match > INT_MAX || r > INT_MAX - 1u ||
+        (size_t)n > (SIZE_MAX - r - 2) / (match + sizeof *hit) ||
+        !edit_utf8_valid(with, r) || strchr(with, '\n')) return 0;
+    for (int k = 0; k < n; k++) {
+        int y = hit[k].y;
+        if (y < 0 || y >= b->nline || hit[k].x < 0 ||
+            (size_t)hit[k].x + match > (size_t)b->line[y].len ||
+            (k && (y < hit[k - 1].y || (y == hit[k - 1].y &&
+                   (size_t)hit[k - 1].x + match > (size_t)hit[k].x)))) return 0;
+    }
+    edit_change_t c = {.y = b->cy, .x = b->cx, .hit = hit, .nhit = n, .match = match,
+        .bytes = (size_t)n * (match + sizeof *hit) + r + 2, .previous = b->revision};
+    c.before = malloc((size_t)n * match + 1); c.after = strdup(with);
+    if (!c.before || !c.after) goto fail;
+    for (int k = 0; k < n; k++)
+        memcpy(c.before + (size_t)k * match, b->line[hit[k].y].text + hit[k].x, match);
+    c.before[(size_t)n * match] = 0;
+    if (!edit_buffer_hits(b, &c, 0)) goto fail;
+    edit_buffer_push(b, &c);
+    return 1;
+fail:
+    free(c.before); free(c.after); return 0;
+}
+
+/** Undo and redo use the same atomic splice, never byte-by-byte replay;
+ *  a Replace All record swaps its matches back line by line. */
 int tiku_editor_buffer_undo(edit_buffer_t *b)
 {
     if (!b->undo_at) return 0;
     edit_change_t *c = &b->undo[b->undo_at - 1]; int y, x;
-    if (!edit_buffer_splice(b, c->y, c->x, c->new_y, c->new_x, c->before, &y, &x)) return 0;
+    if (c->nhit ? !edit_buffer_hits(b, c, 1)
+                : !edit_buffer_splice(b, c->y, c->x, c->new_y, c->new_x, c->before, &y, &x))
+        return 0;
     b->undo_at--; b->revision = c->previous; return 1;
 }
 int tiku_editor_buffer_redo(edit_buffer_t *b)
 {
     if (b->undo_at == b->undo_n) return 0;
     edit_change_t *c = &b->undo[b->undo_at]; int y, x;
-    if (!edit_buffer_splice(b, c->y, c->x, c->old_y, c->old_x, c->after, &y, &x)) return 0;
+    if (c->nhit ? !edit_buffer_hits(b, c, 0)
+                : !edit_buffer_splice(b, c->y, c->x, c->old_y, c->old_x, c->after, &y, &x))
+        return 0;
     b->undo_at++; b->revision = c->revision; return 1;
 }
 

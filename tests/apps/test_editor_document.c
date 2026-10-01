@@ -344,6 +344,40 @@ static void panel_during_question(edit_state_t *st, const char *dir)
     assert(!unlink(path));
 }
 
+/** Replace All records its matches rather than the document, so on a large
+ *  document the history before it survives, and undo puts the caret back. */
+static void replace_all_history(edit_state_t *st)
+{
+    size_t size = 17u << 20;
+    char *text = malloc(size + 1); assert(text);
+    for (size_t i = 0; i < size; i++) text[i] = i % 80 == 79 ? '\n' : (char)('a' + i % 7);
+    memcpy(text + 1000, "needle", 6); memcpy(text + size - 1000, "Needle", 6);
+    text[size] = 0;
+    assert(tiku_editor_buffer_set(&st->tv, text));
+    tiku_editor_buffer_place(&st->tv, 0, 0);
+    assert(tiku_editor_insert_checked(st, "first "));
+    tiku_editor_buffer_place(&st->tv, 5, 3);
+    tiku_field_start(&st->field[0], "needle");
+    tiku_field_start(&st->field[1], "pin");
+    st->match_case = 0; st->whole_word = 0;
+    tiku_editor_replace_all(st);
+    assert(strstr(st->note, "2 replacements"));
+    assert(st->tv.history_bytes < 4096 && st->tv.undo_n == 2);
+    assert(st->tv.cy == 5 && st->tv.cx == 3);
+    int last = (int)((size - 1000) / 80);
+    assert(!strncmp(tiku_editor_buffer_line(&st->tv, last) + (size - 1000) % 80, "pin", 3));
+    assert(tiku_editor_buffer_undo(&st->tv) && st->tv.cy == 5 && st->tv.cx == 3);
+    assert(!st->tv.selecting && tiku_editor_buffer_modified(&st->tv));
+    assert(!strncmp(tiku_editor_buffer_line(&st->tv, last) + (size - 1000) % 80, "Needle", 6));
+    assert(tiku_editor_buffer_undo(&st->tv) && !tiku_editor_buffer_modified(&st->tv));
+    assert(!strncmp(tiku_editor_buffer_line(&st->tv, 0), text, 79));
+    assert(tiku_editor_buffer_redo(&st->tv) && tiku_editor_buffer_redo(&st->tv));
+    assert(st->tv.cy == 5 && st->tv.cx == 3);
+    assert(!strncmp(tiku_editor_buffer_line(&st->tv, 12) + 40, "pin", 3));
+    free(text);
+    assert(tiku_editor_buffer_set(&st->tv, "")); st->path[0] = 0;
+}
+
 /** @brief Capture the title without opening a real desktop window. */
 static uint32_t window_open(void *ctx, const char *title, int w, int h)
 {
@@ -397,6 +431,7 @@ int main(void)
     large_documents(st, dir);
     toolbar_actions(st);
     panel_during_question(st, dir);
+    replace_all_history(st);
     assert(sizeable_count >= 2);
     tiku_editor_buffer_free(&st->tv);
     assert(tiku_editor_insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));
