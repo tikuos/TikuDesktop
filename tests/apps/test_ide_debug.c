@@ -36,7 +36,13 @@ int main(void)
     tiku_event_t key = { .type = TIKU_EVENT_KEY_DOWN, .key = 'x', .text = "x" };
 
     if (!binary) { binary = realpath("build/runtime/apps/basic/tiku-basic", NULL); }
-    assert(st && binary && mkdtemp(dir));
+    if (!binary) {
+        /* The local interpreter is built only from a TikuOS checkout. */
+        puts("SKIP: tiku-basic is not built; set TIKUOS= to a TikuOS checkout");
+        free(st);
+        return 0;
+    }
+    assert(st && mkdtemp(dir));
     assert(setenv("TIKU_BASIC", binary, 1) == 0);
     free(binary);
     st->services = &svc; st->proj_id = 1;
