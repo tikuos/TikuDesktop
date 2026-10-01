@@ -113,8 +113,8 @@ span_delete(tiku_textview_t *tv, int y0, int x0, int y1, int x1)
     if (joined == NULL) {
         return 0;
     }
-    memcpy(joined, tv->line[y0].text, (size_t)x0);
-    memcpy(joined + x0, tv->line[y1].text + x1, (size_t)tail);
+    memcpy(joined, tiku_textview_line(tv, y0), (size_t)x0);
+    memcpy(joined + x0, tiku_textview_line(tv, y1) + x1, (size_t)tail);
     joined[x0 + tail] = '\0';
     for (i = y0; i <= y1; i++) {
         free(tv->line[i].text);
@@ -181,6 +181,7 @@ static int
 span_insert(tiku_textview_t *tv, int y, int x, const char *text, int n)
 {
     int breaks = span_breaks(tv, y, x, text, n), i, k = 0, start = 0, seg = 0;
+    const char *old = tiku_textview_line(tv, y);    /* "" for a line not yet held */
     tiku_textview_line_t *made;
 
     if (breaks < 0 ||
@@ -201,9 +202,9 @@ span_insert(tiku_textview_t *tv, int y, int x, const char *text, int n)
             if (t == NULL) {
                 return span_abandon(made, k);
             }
-            memcpy(t, tv->line[y].text, (size_t)head);
+            memcpy(t, old, (size_t)head);
             memcpy(t + head, text + start, (size_t)seg);
-            memcpy(t + head + seg, tv->line[y].text + x, (size_t)end);
+            memcpy(t + head + seg, old + x, (size_t)end);
             t[head + seg + end] = '\0';
             made[k].text = t;
             made[k].len = head + seg + end;
@@ -625,53 +626,47 @@ tiku_textview_selected_size(const tiku_textview_t *tv)
 int tiku_textview_commit(tiku_textview_t *tv, const char *text)
 {
     tiku_text_input_t checked;
-    int y0, x0, y1, x1;
+    int y0, x0, y1, x1, ok;
     if (!tv || !text || !tv->nline ||
         !tiku_text_input_set(&checked, text, strlen(text))) return 0;
     if (!*text) return 1;
     if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
         y0 = y1 = tv->cy; x0 = x1 = tv->cx;
     }
-    /* Stale or mid-codepoint endpoints must not reach byte-based replay. */
+    /* Stale or mid-codepoint ends are refused: the edit and its journal
+     * entry are placed by byte. */
     if (y0 < 0 || y1 < y0 || y1 >= tv->nline || x0 < 0 || x1 < 0 ||
         x0 > tv->line[y0].len || x1 > tv->line[y1].len ||
         (x0 < tv->line[y0].len && ((unsigned char)tv->line[y0].text[x0] & 0xc0) == 0x80) ||
         (x1 < tv->line[y1].len && ((unsigned char)tv->line[y1].text[x1] & 0xc0) == 0x80)) return 0;
-    int length = x0, lines = tv->nline - (y1 - y0);
+    int run = x0, lines = tv->nline - (y1 - y0);
     int tail = tv->line[y1].len - x1;
     /* Everything is measured before anything changes, so a refused commit
-     * leaves the view as it was.  Every selected line but the last must fit
-     * with the text after the selection: for the first line that is the
-     * join the selection's removal makes, and the others are held to it
-     * as well. */
-    for (int y = y0; y < y1; y++)
-        if (tv->line[y].len + tail >= TIKU_TEXTVIEW_LINE_MAX) return 0;
-    /* The text after the selection moves down with each new line as the
-     * text lands, so each segment is measured with it.  Two adjacent new
-     * lines that would not fit as one line are refused too, although
-     * neither the edit nor its undo joins them. */
-    int above = -1;
+     * leaves the view as it was.  The line the selection's removal leaves
+     * must fit, as undo rebuilds it, and so must every line the result
+     * has. */
+    if (x0 + tail >= TIKU_TEXTVIEW_LINE_MAX) return 0;
     for (const char *s = checked.text; *s; s++) {
-        if (*s == '\n') {
-            if (above >= 0 && above + length >= TIKU_TEXTVIEW_LINE_MAX) {
-                return 0;
-            }
-            above = length;
-            lines++; length = 0;
+        if (*s != '\n') {
+            run++;
+        } else if (run >= TIKU_TEXTVIEW_LINE_MAX ||
+                   ++lines > TIKU_TEXTVIEW_LINES_MAX) {
+            return 0;
         } else {
-            length++;
+            run = 0;
         }
-        if (length + tail >= TIKU_TEXTVIEW_LINE_MAX ||
-            lines > TIKU_TEXTVIEW_LINES_MAX) return 0;
     }
-
-    if (above >= 0 && above + length + tail >= TIKU_TEXTVIEW_LINE_MAX) {
-        return 0;
-    }
+    if (run + tail >= TIKU_TEXTVIEW_LINE_MAX) return 0;
+    /* The text goes in whole, so no line of it is measured with the text
+     * after the selection before its own break is made. */
     tiku_textview_group_begin(tv);
-    tiku_textview_insert_text(tv, checked.text);
+    ok = sel_delete(tv) >= 0 &&
+         span_insert(tv, tv->cy, tv->cx, checked.text, (int)checked.length);
+    if (ok) {
+        record(tv, 1, y0, x0, checked.text, (int)checked.length);
+    }
     tiku_textview_group_end(tv);
-    return 1;
+    return ok;
 }
 
 /** @brief The bytes of the character at @p s: its first byte and the

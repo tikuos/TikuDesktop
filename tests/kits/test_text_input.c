@@ -133,14 +133,32 @@ static void documents(void)
     tiku_textview_set(&tv, two);
     tiku_textview_place(&tv, 0, 900); tiku_textview_select_begin(&tv);
     tiku_textview_place(&tv, 1, 900);
-    assert(!tiku_textview_commit(&tv, "é\n")); /* "é" would pass the limit. */
-    assert(!strcmp(tiku_textview_line(&tv, 0), full) && tv.selecting);
-    /* Two adjacent new lines that together pass the limit are refused. */
+    /* Every line the result has fits, and so does the one the selection's
+     * removal leaves, so the commit lands and undoes whole. */
+    assert(tiku_textview_commit(&tv, "é\n"));
+    assert(tv.nline == 2 && tiku_textview_line_len(&tv, 0) == 902 &&
+           tiku_textview_line_len(&tv, 1) == 123);
+    assert(tiku_textview_undo(&tv) && tv.nline == 2);
+    assert(!strcmp(tiku_textview_line(&tv, 0), full) && !tiku_textview_modified(&tv));
+    /* Two adjacent new lines that would not fit as one are no bar. */
     tiku_textview_set(&tv, full);
     tiku_textview_place(&tv, 0, 500);
-    assert(!tiku_textview_commit(&tv, "\nBB"));
-    assert(!strcmp(tiku_textview_line(&tv, 0), full) && tv.nline == 1);
-    assert(!tiku_textview_modified(&tv));
+    assert(tiku_textview_commit(&tv, "\nBB"));
+    assert(tv.nline == 2 && tiku_textview_line_len(&tv, 0) == 500 &&
+           tiku_textview_line_len(&tv, 1) == 525);
+    assert(tiku_textview_undo(&tv) && tv.nline == 1);
+    assert(!strcmp(tiku_textview_line(&tv, 0), full) && !tiku_textview_modified(&tv));
+    assert(tiku_textview_redo(&tv) && tiku_textview_line_len(&tv, 1) == 525);
+    /* The line the selection's removal leaves must still fit, as undo
+     * rebuilds it: a selection of 900 bytes kept on each side is refused. */
+    char wide[2 * TIKU_TEXTVIEW_LINE_MAX + 2];
+    memset(wide, 'a', 1000); wide[1000] = '\n';
+    memset(wide + 1001, 'b', 1000); wide[2001] = 0;
+    tiku_textview_set(&tv, wide);
+    tiku_textview_place(&tv, 0, 900); tiku_textview_select_begin(&tv);
+    tiku_textview_place(&tv, 1, 100);
+    assert(!tiku_textview_commit(&tv, "\n"));
+    assert(tv.nline == 2 && tv.selecting && !tiku_textview_modified(&tv));
     /* One that does fit still lands, and undoes whole. */
     tiku_textview_set(&tv, "short line");
     tiku_textview_place(&tv, 0, 5);
