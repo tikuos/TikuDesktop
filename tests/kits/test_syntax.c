@@ -360,6 +360,38 @@ main(void)
            "a quote never closed ends with its line rather than eating "
            "the next -- the same answer BASIC gives");
 
+    {
+        /* Past a full run table the line is still read for its remarks,
+         * so what it leaves to the next line is right. */
+        static char line[400];
+        tiku_span_t span[128];
+        tiku_syntax_state_t out;
+        int n, total = 0;
+
+        line[0] = '\0';
+        for (int i = 0; i < 70; i++) {
+            strcat(line, "1 ");
+        }
+        strcat(line, "/* open");
+        n = tiku_syntax_spans_on(TIKU_SYNTAX_C, line, TIKU_SYNTAX_OPEN, &out,
+                                 span, 128);
+        check(n == 128 && out == TIKU_SYNTAX_BLOCK,
+              "a remark opened after the run table is full still carries");
+        line[0] = '\0';
+        for (int i = 0; i < 64; i++) {
+            strcat(line, "1 ");
+        }
+        strcat(line, "/* shut */ 1");
+        n = tiku_syntax_spans_on(TIKU_SYNTAX_C, line, TIKU_SYNTAX_OPEN, &out,
+                                 span, 128);
+        check(n == 128 && out == TIKU_SYNTAX_OPEN,
+              "and one that meets the full table and closes carries nothing");
+        for (int i = 0; i < n; i++) {
+            total += span[i].len;
+        }
+        check(total == 128, "the runs that fit cover only their own bytes");
+    }
+
     printf("\n%s\n", fails ? "FAILURES"
                            : "the colours say what the interpreter would");
     return fails ? 1 : 0;

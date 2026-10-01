@@ -178,6 +178,7 @@ typedef struct {
     tiku_span_t *out;
     int          max;
     int          n;
+    int          full;          /* a run was dropped: record no more */
 } spans_t;
 
 /**
@@ -188,6 +189,9 @@ typedef struct {
  * space and every letter would be its own entry and the table would
  * overflow on a line nobody would call complicated.
  *
+ * Once a run has been dropped for want of room, nothing more is recorded,
+ * not even a merge, so the runs held cover only the bytes they were given.
+ *
  * @return nonzero while there is still room to say more.
  */
 static int
@@ -196,12 +200,16 @@ push(spans_t *s, tiku_ink_t ink, int len)
     if (len <= 0) {
         return 1;
     }
+    if (s->full) {
+        return 0;
+    }
     if (s->n > 0 && s->out[s->n - 1].ink == ink) {
         s->out[s->n - 1].len += len;
         return 1;
     }
     if (s->n >= s->max) {
-        return 0;               /* full: the rest of the line is plain */
+        s->full = 1;            /* full: the rest of the line is plain */
+        return 0;
     }
     s->out[s->n].ink = ink;
     s->out[s->n].len = len;
@@ -403,6 +411,7 @@ c_spans(const char *line, tiku_syntax_state_t in,
     s.out = out;
     s.max = max;
     s.n = 0;
+    s.full = 0;
     while (line[i] != '\0') {
         char c = line[i];
 
@@ -420,25 +429,19 @@ c_spans(const char *line, tiku_syntax_state_t in,
                 }
                 run++;
             }
-            if (!push(&s, TIKU_INK_REMARK, run)) {
-                break;
-            }
+            (void)push(&s, TIKU_INK_REMARK, run);
             i += run;
             continue;
         }
         if (c == ' ' || c == '\t') {
-            if (!push(&s, TIKU_INK_PLAIN, 1)) {
-                break;
-            }
+            (void)push(&s, TIKU_INK_PLAIN, 1);
             i++;
             continue;
         }
         if (c == '/' && line[i + 1] == '/') {
             /* To the end of the line, and no further: this is the one
              * remark C does not carry. */
-            if (!push(&s, TIKU_INK_REMARK, (int)strlen(line + i))) {
-                break;
-            }
+            (void)push(&s, TIKU_INK_REMARK, (int)strlen(line + i));
             i += (int)strlen(line + i);
             at_head = 0;
             continue;
@@ -447,9 +450,7 @@ c_spans(const char *line, tiku_syntax_state_t in,
             state = TIKU_SYNTAX_BLOCK;
             at_head = 0;
             i += 2;
-            if (!push(&s, TIKU_INK_REMARK, 2)) {
-                break;
-            }
+            (void)push(&s, TIKU_INK_REMARK, 2);
             continue;
         }
         if (c == '"' || c == '\'') {
@@ -469,9 +470,7 @@ c_spans(const char *line, tiku_syntax_state_t in,
                 }
                 len++;
             }
-            if (!push(&s, TIKU_INK_STR, len)) {
-                break;
-            }
+            (void)push(&s, TIKU_INK_STR, len);
             i += len;
             at_head = 0;
             continue;
@@ -481,9 +480,7 @@ c_spans(const char *line, tiku_syntax_state_t in,
              * underneath it but is reserved all the same. */
             int len = 1 + c_name_at(line + i + 1);
 
-            if (!push(&s, TIKU_INK_WORD, len)) {
-                break;
-            }
+            (void)push(&s, TIKU_INK_WORD, len);
             i += len;
             at_head = 0;
             continue;
@@ -494,9 +491,7 @@ c_spans(const char *line, tiku_syntax_state_t in,
             if (len <= 0) {
                 len = 1;
             }
-            if (!push(&s, TIKU_INK_NUM, len)) {
-                break;
-            }
+            (void)push(&s, TIKU_INK_NUM, len);
             i += len;
             at_head = 0;
             continue;
@@ -505,19 +500,15 @@ c_spans(const char *line, tiku_syntax_state_t in,
             int len = c_name_at(line + i);
 
             if (len > 0) {
-                if (!push(&s, c_word_at(line + i, len) ? TIKU_INK_WORD
+                (void)push(&s, c_word_at(line + i, len) ? TIKU_INK_WORD
                                                        : TIKU_INK_PLAIN,
-                          len)) {
-                    break;
-                }
+                          len);
                 i += len;
                 at_head = 0;
                 continue;
             }
         }
-        if (!push(&s, TIKU_INK_PLAIN, 1)) {
-            break;
-        }
+        (void)push(&s, TIKU_INK_PLAIN, 1);
         i++;
         at_head = 0;
     }
@@ -600,6 +591,7 @@ basic_spans(tiku_syntax_lang_t lang, const char *line, tiku_span_t *out,
     s.out = out;
     s.max = max;
     s.n = 0;
+    s.full = 0;
 
     while (line[i] != '\0') {
         char c = line[i];
