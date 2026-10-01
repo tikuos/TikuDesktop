@@ -547,8 +547,10 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
             case TIKU_KEY_RETURN: {
                 int cy, cx, n;
 
-                tiku_textview_caret(&e->tv, &cy, &cx);
                 tiku_ide_edit_normalize_word(e);   /* the return ends a word */
+                /* Read after a held selection has gone, so the number
+                 * comes from the line the break is made in. */
+                tiku_textview_caret(&e->tv, &cy, &cx);
                 tiku_textview_newline(&e->tv);
                 /* The next line's number, already typed: the numbers
                  * are the language's bookkeeping, and bookkeeping is

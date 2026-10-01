@@ -35,12 +35,11 @@ tiku_ide_norm_is_word(int c)
 /**
  * @brief Uppercase the reserved word the caret just finished, 1982-style.
  *
- * The spelling authority is the CLASSIFIER's -- the same table the
- * colours come from -- so a word is uppercased exactly when it would be
- * painted as reserved, which also means a keyword typed inside a string
- * or a remark is left alone for free.  The rewrite is one journal
- * batch, so a single Undo puts back what the hands typed.  BASIC only:
- * C is not a language of shouted keywords.
+ * The classifier that colours the page decides what is reserved, so a
+ * keyword in a string or a remark is left alone.  A held selection goes
+ * first, as the key that follows would take it, and the word is the one
+ * before where it began.  The rewrite is one journal batch, so a single
+ * Undo puts back what was typed.  BASIC only.
  */
 void
 tiku_ide_edit_normalize_word(edit_t *e)
@@ -52,6 +51,12 @@ tiku_ide_edit_normalize_word(edit_t *e)
 
     if (e->lang != TIKU_SYNTAX_BASIC) {
         return;
+    }
+    if (tiku_textview_selection(&e->tv, NULL, NULL, NULL, NULL)) {
+        tiku_textview_backspace(&e->tv);
+        if (tiku_textview_selection(&e->tv, NULL, NULL, NULL, NULL)) {
+            return;             /* it could not go, so nothing is typed */
+        }
     }
     tiku_textview_caret(&e->tv, &cy, &cx);
     line = tiku_textview_line(&e->tv, cy);

@@ -341,6 +341,51 @@ static void test_click_then_type(ide_t *st)
     e->surface = NULL;
 }
 
+/** Send @p key with @p modifiers to page @p e. */
+static void key_to(ide_t *st, edit_t *e, unsigned key, unsigned modifiers)
+{
+    tiku_event_t ev = { .type = TIKU_EVENT_KEY_DOWN };
+
+    ev.key = key;
+    ev.modifiers = modifiers;
+    tiku_ide_event(st, e->id, &ev);
+}
+
+/** A key that ends a keyword over a held selection replaces the selection
+ *  and nothing else; Return over one numbers from the line it lands on. */
+static void test_keyword_over_selection(ide_t *st)
+{
+    edit_t *e = &st->edit[0];
+
+    memset(e, 0, sizeof *e);
+    e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
+    e->lang = TIKU_SYNTAX_BASIC;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    tiku_textview_init(&e->tv);
+    tiku_textview_set(&e->tv, "print x");
+    key_to(st, e, TIKU_KEY_END, 0);
+    key_to(st, e, TIKU_KEY_LEFT, TIKU_MOD_SHIFT);
+    key_to(st, e, TIKU_KEY_LEFT, TIKU_MOD_SHIFT);
+    key_to(st, e, ' ', 0);
+    assert(!strcmp(tiku_textview_line(&e->tv, 0), "PRINT "));
+    tiku_textview_set(&e->tv, "10 end");
+    key_to(st, e, 'a', TIKU_MOD_CMD);
+    key_to(st, e, ' ', 0);
+    assert(!strcmp(tiku_textview_line(&e->tv, 0), " "));
+    tiku_textview_set(&e->tv, "10 a\n20 b\n30 c\n40 d");
+    key_to(st, e, TIKU_KEY_END, 0);
+    key_to(st, e, TIKU_KEY_DOWN, TIKU_MOD_SHIFT);
+    key_to(st, e, TIKU_KEY_DOWN, TIKU_MOD_SHIFT);
+    key_to(st, e, TIKU_KEY_RETURN, 0);
+    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 a") &&
+           !strcmp(tiku_textview_line(&e->tv, 1), "20 ") &&
+           !strcmp(tiku_textview_line(&e->tv, 2), "40 d"));
+    tiku_textview_free(&e->tv);
+    tiku_surface_free(e->surface);
+    e->surface = NULL;
+}
+
 /** Renumber rewrites a line crowded with branch targets exactly, and
  *  refuses, changing nothing, a line that would grow past 1023 bytes. */
 static void test_renumber_bounds(void)
@@ -685,6 +730,7 @@ int main(void)
     test_ui(st, dir);
     test_click_then_type(st);
     test_renumber_bounds();
+    test_keyword_over_selection(st);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);
