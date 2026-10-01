@@ -4,8 +4,8 @@
 # compares, and office documents with the XML they are made of -- compiled
 # again under AddressSanitizer and UBSan, and their suites run against
 # them, the PDF view's with the view compiled into it (so it is not among
-# the objects).  The editor kit's document engine is compiled the same way,
-# and its suites also run with leak detection on where there is one: Apple's
+# the objects).  The editor kit is compiled the same way, and its suites
+# also run with leak detection on where there is one: Apple's
 # AddressSanitizer refuses detect_leaks, so on a Mac they run as the rest
 # do.  The rest of the kits link as built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
@@ -43,7 +43,9 @@ SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
 SAN_TESTS += $(SAN_APP_TESTS)
 SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
-                  test_editdoc_faults test_editdoc_fixtures
+                  test_editdoc_faults test_editdoc_fixtures \
+                  test_codeview_layout test_codeview_paint \
+                  test_codeview_input
 SAN_TESTS += $(SAN_LEAK_TESTS)
 SAN_LEAKS := $(if $(filter Darwin,$(UNAME_S)),0,1)
 

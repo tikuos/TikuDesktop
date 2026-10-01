@@ -123,6 +123,70 @@ ink_of(const char *text, int scale)
     return count;
 }
 
+/** @brief The code point at @p *p, stepping past it; the text is valid
+ *         UTF-8. */
+static unsigned
+next_cp(const char **p)
+{
+    const unsigned char *s = (const unsigned char *)*p;
+    unsigned cp = *s;
+    int extra = cp < 0x80u ? 0 : cp < 0xE0u ? 1 : cp < 0xF0u ? 2 : 3;
+
+    if (extra)
+        cp &= 0x3Fu >> extra;
+    while (extra-- > 0)
+        cp = (cp << 6) | (*++s & 0x3Fu);
+    *p = (const char *)(s + 1);
+    return cp;
+}
+
+/** @brief The advances of @p text's code points, added up. */
+static int
+advances(const tiku_font_t *f, const char *text)
+{
+    int w = 0;
+
+    while (*text)
+        w += tiku_text_advance(f, next_cp(&text));
+    return w;
+}
+
+/** @brief Whether @p text drawn whole and drawn as two pieces, cut at
+ *         byte @p cut with the second piece placed by the advances of
+ *         the first, leave the same pixels at @p scale. */
+static int
+pieces_match(const tiku_font_t *f, const char *text, size_t cut, int scale)
+{
+    tiku_rgb_t paper = TIKU_RGB(255, 255, 255);
+    tiku_surface_t *whole = tiku_surface_new(140, 30, paper);
+    tiku_surface_t *parts = tiku_surface_new(140, 30, paper);
+    char first[64], second[64];
+    int same = 0;
+
+    if (whole != NULL && parts != NULL && cut < sizeof first &&
+        strlen(text) - cut < sizeof second) {
+        int sc = scale > 1 ? scale : 1;
+
+        if (scale > 1) {
+            (void)tiku_surface_rescale(whole, scale, paper);
+            (void)tiku_surface_rescale(parts, scale, paper);
+        }
+        memcpy(first, text, cut);
+        first[cut] = '\0';
+        strcpy(second, text + cut);
+        tiku_text(whole, f, 3, 20, text, TIKU_RGB(0, 0, 0));
+        tiku_text(parts, f, 3, 20, first, TIKU_RGB(0, 0, 0));
+        tiku_text(parts, f, 3 + advances(f, first), 20, second,
+                  TIKU_RGB(0, 0, 0));
+        same = memcmp(whole->px, parts->px, (size_t)whole->w * whole->h *
+                      (size_t)(sc * sc) * sizeof *whole->px) == 0 &&
+               inked(whole) > 0;
+    }
+    tiku_surface_free(whole);
+    tiku_surface_free(parts);
+    return same;
+}
+
 /** @brief The first of @p paths that is there, or NULL. */
 static const char *
 pick(const char *const *paths, int n)
@@ -426,6 +490,47 @@ main(void)
         tiku_font_use_baked();
         (void)tiku_font_set_family(0);
         (void)tiku_font_set_size(12);
+    }
+
+    /*
+     * Measuring a code point at a time.  An editor lays a line out one
+     * character at a time and draws it in pieces, so the advance it reads
+     * must be the one tiku_text() steps by, for letters the face lacks
+     * and control characters too, and pieces placed by those advances
+     * must leave the pixels the whole string leaves.
+     */
+    {
+        static const char *const samples[] = {
+            "Handgloves 0123", "caf\xc3\xa9 \xce\xb1\xce\xb2\xd0\x96",
+            "a\xe2\x80\xa6z\xe4\xb8\x80", "\x01x\x7f\xc2\x85y"
+        };
+        const tiku_font_t *faces[4];
+        int i, k, sizes_ok = 1, pieces_ok = 1;
+
+        faces[0] = tiku_font_plain();
+        faces[1] = tiku_font_bold();
+        faces[2] = tiku_font_mono(0);
+        faces[3] = tiku_font_at(11);
+        for (k = 0; k < 4; k++) {
+            for (i = 0; i < 4; i++) {
+                if (advances(faces[k], samples[i]) !=
+                    tiku_text_width(faces[k], samples[i]))
+                    sizes_ok = 0;
+            }
+            if (!pieces_match(faces[k], "Hand\xc3\xa9gloves", 4, 1) ||
+                !pieces_match(faces[k], "Hand\xc3\xa9gloves", 6, 1) ||
+                !pieces_match(faces[k], "Hand\xc3\xa9gloves", 6, 2) ||
+                !pieces_match(faces[k], "Wi\xce\xb1\xce\xb2x", 4, 2))
+                pieces_ok = 0;
+        }
+        check(sizes_ok, "LAY-001",
+              "the advances of a text's code points add up to its width, "
+              "in every face, letters the face lacks included");
+        check(pieces_ok, "LAY-001",
+              "and text drawn in pieces placed by those advances leaves "
+              "the pixels of the whole, on a doubled screen too");
+        check(tiku_text_advance(NULL, 'a') == 0, "LAY-001",
+              "no face has no advances");
     }
 
     if (fails > 0) {

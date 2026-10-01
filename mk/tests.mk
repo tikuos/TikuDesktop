@@ -224,8 +224,8 @@ test_formrow_LDLIBS := $(X11_LIBS) -lm
 test_gui_CFLAGS := -Itests/fixtures/boardstub -Iboard/gui -Wno-unused-function
 test_deskprefs_SRCS   := system/shared/core/tiku_trk_deskprefs.c system/shared/core/tiku_trk_background.c
 
-# The document engine's suites link the editor kit, which is not one of
-# the seven every test takes.
+# The editor kit's suites link the kit, which is not one of the seven
+# every test takes.
 test_editdoc_storage_LIBS := $(LIB_EDITOR)
 test_editdoc_lines_LIBS := $(LIB_EDITOR)
 test_editdoc_LIBS := $(LIB_EDITOR)
@@ -234,6 +234,9 @@ test_editdoc_marks_LIBS := $(LIB_EDITOR)
 test_editdoc_model_LIBS := $(LIB_EDITOR)
 test_editdoc_faults_LIBS := $(LIB_EDITOR)
 test_editdoc_fixtures_LIBS := $(LIB_EDITOR)
+test_codeview_layout_LIBS := $(LIB_EDITOR)
+test_codeview_paint_LIBS := $(LIB_EDITOR)
+test_codeview_input_LIBS := $(LIB_EDITOR)
 # The baselines open their fixtures through Editor's and the IDE's own code.
 test_editor_baseline_SRCS := $(EDITOR_SRC)
 test_editor_baseline_LDLIBS := $(X11_LIBS) -lm
