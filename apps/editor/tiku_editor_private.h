@@ -127,7 +127,7 @@ extern const tiku_app_descriptor_t tiku_edit_app;
 #pragma GCC visibility push(hidden)
 
 /* Standalone launch document; the runtime's explicit document takes priority. */
-void tiku_editor_startup_path(const char *path);
+int tiku_editor_startup_path(const char *path);
 
 /* App. */
 int tiku_editor_start(void **state, const tiku_app_services_t *services);

@@ -490,6 +490,11 @@ int main(void)
     assert(!tiku_editor_buffer_modified(&st->tv) && !st->running);
     tiku_editor_stop(state);
     services.startup_document = NULL;
+    /* A command-line path too long to hold is refused, never cut short. */
+    char longpath[600]; memset(longpath, 'p', sizeof longpath - 1);
+    longpath[sizeof longpath - 1] = 0;
+    assert(tiku_editor_startup_path(path));
+    assert(!tiku_editor_startup_path(longpath));
     assert(!tiku_editor_start(&state, &services));
     st = state;
     assert(!st->path[0] && !strcmp(title_seen, "Edit"));

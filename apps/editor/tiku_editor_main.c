@@ -5,6 +5,10 @@
 int
 main(int argc, char **argv)
 {
-    if (argc > 1) tiku_editor_startup_path(argv[1]);
+    if (argc > 1 && !tiku_editor_startup_path(argv[1])) {
+        fprintf(stderr, "tiku-edit: the path is longer than 511 bytes; "
+                        "nothing was opened\n");
+        return 2;
+    }
     return tiku_client_run(&tiku_edit_app);
 }

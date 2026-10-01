@@ -130,8 +130,17 @@ const tiku_app_export_t tiku_app_v1 = {
 };
 #endif
 
-void
+/** Name the document a standalone launch opens.  @return 0, naming none,
+ *  when @p path does not fit; it is never cut short. */
+int
 tiku_editor_startup_path(const char *path)
 {
-    snprintf(edit_path, sizeof edit_path, "%s", path ? path : "");
+    size_t n = path != NULL ? strlen(path) : 0;
+
+    edit_path[0] = '\0';
+    if (n >= sizeof edit_path) {
+        return 0;
+    }
+    memcpy(edit_path, path != NULL ? path : "", n + 1);
+    return 1;
 }
