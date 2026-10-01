@@ -17,6 +17,7 @@
  */
 
 #include "tiku_office_docx.h"
+#include "tiku_office_math.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -33,13 +34,6 @@ typedef struct {
     const of_style_t *st;           /* its look                          */
     const char       *link;         /* and its link                      */
 } dx_para_t;
-
-/** @brief What an equation's pieces are held with. */
-typedef struct {
-    dx_t       *x;
-    dx_para_t  *pp;                 /* the paragraph it is in            */
-    const char *link;               /* the link around it                */
-} dx_math_ctx_t;
 
 static int inline_of(dx_t *x, const tiku_xml_node_t *e, dx_para_t *pp,
                      const char *link);
@@ -466,34 +460,90 @@ run(dx_t *x, const tiku_xml_node_t *r, dx_para_t *pp, const char *link)
     return 0;
 }
 
-/** @brief An equation's piece of text, held as a paragraph's text is. */
-static int
-math_text(void *ctx, const char *s, size_t n, const of_style_t *st)
-{
-    dx_math_ctx_t *c = ctx;
+/** @brief What an equation's runs' looks are found with. */
+typedef struct {
+    dx_t       *x;
+    const char *pstyle;             /* the paragraph's style             */
+} dx_tint_t;
 
-    return text(c->x, c->pp, s, n, st, c->link);
+/** @brief Math run @p r's look: paragraph style @p pstyle's, with its
+ *         own w:rPr.  NULL out of memory. */
+static const of_style_t *
+math_look(dx_t *x, const char *pstyle, const tiku_xml_node_t *r)
+{
+    const tiku_xml_node_t *rpr = tiku_xml_child(r, "w:rPr");
+    dx_rpr_t own;
+
+    memset(&own, 0, sizeof own);
+    dx_rpr_read(x, rpr, &own);
+    return dx_look(x, pstyle, tiku_xml_attr(tiku_xml_child(rpr,
+                   "w:rStyle"), "w:val"), &own);
 }
 
-/** @brief A line's end within an equation array. */
-static int
-math_break(void *ctx)
+/** @brief Math run @p r's colour: of_omml()'s tint for Word. */
+static uint32_t
+math_tint(void *ctx, const tiku_xml_node_t *r)
 {
-    dx_math_ctx_t *c = ctx;
+    const dx_tint_t *t = ctx;
+    const of_style_t *st = math_look(t->x, t->pstyle, r);
 
-    return object(c->x, c->pp, OR_BREAK, c->pp->st != NULL ? c->pp->st
-                  : dx_look(c->x, c->pp->pstyle, NULL, NULL), c->link)
-           ? 0 : -1;
+    return st != NULL ? st->color : 0;
 }
 
-/** @brief An equation, written out along the paragraph's line. */
+/** @brief Equation @p e as one run of the paragraph, in display style
+ *         when set apart, sized as its first run is, in the paragraph's
+ *         colour where it gives none.  @return 0, or -1 out of memory. */
+static int
+equation(dx_t *x, const tiku_xml_node_t *e, int display, dx_para_t *pp,
+         const char *link)
+{
+    const tiku_xml_node_t *first = of_omml_first(e);
+    dx_tint_t t = { x, pp->pstyle };
+    const of_style_t *base = dx_look(x, pp->pstyle, NULL, NULL);
+    const of_style_t *st = first != NULL ? math_look(x, pp->pstyle, first)
+                                         : base;
+    of_math_t *m;
+    of_run_t *r;
+
+    if (st == NULL || base == NULL ||
+        of_omml(x->d, e, display, st->size, base->color, math_tint, &t,
+                &m) != 0) {
+        return -1;
+    }
+    if (m == NULL) {
+        return 0;                   /* an equation saying nothing */
+    }
+    if ((r = object(x, pp, OR_MATH, st, link)) == NULL) {
+        return -1;
+    }
+    r->math = m;
+    return 0;
+}
+
+/** @brief An m:oMath in the text, or an m:oMathPara's equations set
+ *         apart, each on a line of its own.  @return 0, or -1. */
 static int
 math(dx_t *x, const tiku_xml_node_t *e, dx_para_t *pp, const char *link)
 {
-    dx_math_ctx_t c = { x, pp, link };
-    dx_math_out_t out = { math_text, math_break, &c, pp->pstyle };
+    const tiku_xml_node_t *c;
+    const of_style_t *st;
+    int n = 0;
 
-    return dx_math(x, e, &out);
+    if (!tiku_xml_is(e, "m:oMathPara")) {
+        return equation(x, e, 0, pp, link);
+    }
+    for (c = tiku_xml_child(e, "m:oMath"); c != NULL;
+         c = tiku_xml_next(c, "m:oMath")) {
+        st = pp->st != NULL ? pp->st : dx_look(x, pp->pstyle, NULL, NULL);
+        if (n++ > 0 && (st == NULL || object(x, pp, OR_BREAK, st, link)
+                                      == NULL)) {
+            return -1;
+        }
+        if (equation(x, c, 1, pp, link) != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 /** @brief A hyperlink's target: an address its relationship names, or a

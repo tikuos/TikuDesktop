@@ -166,7 +166,10 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_office_docx_style.c \
                $(K)/translation/tiku_office_docx_draw.c \
                $(K)/translation/tiku_office_docx_art.c \
-               $(K)/translation/tiku_office_docx_math.c \
+               $(K)/translation/tiku_office_omml.c \
+               $(K)/translation/tiku_office_math.c \
+               $(K)/translation/tiku_office_math_font.c \
+               $(K)/translation/tiku_office_math_set.c \
                $(K)/translation/tiku_office_odt.c \
                $(K)/translation/tiku_office_odt_style.c \
                $(K)/translation/tiku_office_odt_table.c \

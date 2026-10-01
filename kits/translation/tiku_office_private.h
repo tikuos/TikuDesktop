@@ -172,9 +172,27 @@ typedef struct of_image of_image_t;
 typedef struct of_float of_float_t;
 typedef struct of_story of_story_t;
 struct of_faces;                    /* the faces text is set in, below   */
+struct of_mnode;                    /* an equation's tree: tiku_office_math.h */
+struct of_mitem;                    /* and what draws it, set            */
+
+/** @brief An equation in the text: what it says, and -- once the faces
+ *         are known, by of_math_prepare() -- how it is set. */
+typedef struct of_math {
+    const struct of_mnode *root;    /* the tree its reader built         */
+    unsigned char display;          /* set apart, in display style       */
+    unsigned char set;              /* of_math_prepare() has set it      */
+    float         size;             /* its em, points                    */
+    uint32_t      color;            /* ARGB                              */
+    float         w, asc, desc;     /* set: its extent from its baseline */
+    struct of_mitem *item;          /* and what draws it, from there     */
+    int           nitem;
+    float        *pt;               /* its paths' points: op, x, y       */
+    int           npt;
+    struct of_math *next;           /* the document's next               */
+} of_math_t;
 
 enum { OR_TEXT, OR_TAB, OR_BREAK, OR_PAGE, OR_COLUMN, OR_IMAGE, OR_FLOAT,
-       OR_FIELD, OR_NOTE, OR_MARK };
+       OR_FIELD, OR_NOTE, OR_MARK, OR_MATH };
 
 /* An OR_TAB run's n: 0 goes to the next stop; an absolute tab says where
  * it goes instead -- left, centre or right of the margins, or of the
@@ -192,6 +210,7 @@ typedef struct {
     const char       *link;         /* an address, "#bookmark", or NULL  */
     of_image_t       *image;        /* OR_IMAGE's picture                */
     of_float_t       *flt;          /* OR_FLOAT's box                    */
+    of_math_t        *math;         /* OR_MATH's equation                */
     int               n;            /* OR_FIELD: which; OR_NOTE: which;
                                        OR_TAB: 0 or OF_PTAB()            */
 } of_run_t;
@@ -355,6 +374,7 @@ typedef struct of_doc {
                                     /* a drawing drawn in box: x y w h   */
     void            (*art_free)(void *ctx);  /* what it needs, given back */
     void             *art_ctx;
+    of_math_t        *maths;        /* every equation, to be set         */
 } of_doc_t;
 
 /** @brief A new, empty document.  NULL out of memory. */
@@ -420,7 +440,7 @@ void of_faces_free(of_faces_t *fs);
 /* --------------------------------------------------------------- flow  */
 
 enum { OF_FRAG_GLYPHS, OF_FRAG_IMAGE, OF_FRAG_RECT, OF_FRAG_RULE,
-       OF_FRAG_BOX, OF_FRAG_ART };
+       OF_FRAG_BOX, OF_FRAG_ART, OF_FRAG_MATH };
 
 /** @brief Something to draw, placed: glyphs on a baseline, a picture, a
  *         filled box, a rule, or a float's box. */
@@ -438,6 +458,7 @@ typedef struct {
     int               ng;
     of_image_t       *image;        /* OF_FRAG_IMAGE's                   */
     of_float_t       *flt;          /* OF_FRAG_BOX's and OF_FRAG_ART's   */
+    const of_math_t  *math;         /* OF_FRAG_MATH's, its baseline at y */
     const char       *link;         /* the link over it, or NULL         */
 } of_frag_t;
 
@@ -456,7 +477,7 @@ typedef struct {
 } of_atom_t;
 
 enum { OA_GLYPH, OA_SPACE, OA_TAB, OA_BREAK, OA_PAGE, OA_COLUMN, OA_IMAGE,
-       OA_FLOAT, OA_NOTE, OA_MARK, OA_LABEL };
+       OA_FLOAT, OA_NOTE, OA_MARK, OA_LABEL, OA_MATH };
 
 /** @brief A paragraph measured into atoms, ready to be broken into lines. */
 typedef struct {
@@ -551,6 +572,13 @@ int of_draw(of_doc_t *d, of_faces_t *fs, const of_layout_t *l,
 /** @brief Picture @p im given to the writer, once.  @return its number,
  *         or -1 when it cannot be read. */
 int of_draw_image(of_doc_t *d, of_image_t *im, tiku_pdf_writer_t *w);
+/** @brief Every equation of @p d not yet set, set with the faces @p fs,
+ *         as its reader asked.  @return 0, or -1 out of memory. */
+int of_math_prepare(of_doc_t *d, of_faces_t *fs);
+/** @brief Equation @p m, set, drawn with its baseline starting at
+ *         (@p x, @p y). */
+void of_math_draw(of_faces_t *fs, const of_math_t *m, float x, float y,
+                  tiku_pdf_writer_t *w);
 /** @brief Glyphs @p g with face @p face's font, registered if need be. */
 void of_draw_glyphs(of_faces_t *fs, const of_frag_t *g, float dx, float dy,
                     tiku_pdf_writer_t *w);

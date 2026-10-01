@@ -97,8 +97,9 @@ document(of_pkg_t *pkg, tiku_office_kind_t kind, of_faces_t *fs,
     if (d == NULL) {
         return -1;
     }
+    memset(&lay, 0, sizeof lay);
     d->pkg = pkg;
-    err = of_layout(d, fs, &lay);
+    err = of_math_prepare(d, fs) != 0 ? -1 : of_layout(d, fs, &lay);
     if (err != 0) {
         snprintf(why, max, "%s", lay.npage >= OF_PAGES_MAX
                  ? "That document is longer than can be shown here."

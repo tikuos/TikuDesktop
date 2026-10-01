@@ -219,23 +219,6 @@ int dx_art(dx_t *x, const tiku_xml_node_t *gd, float w, float h,
  *         made from it (more than @p since of them), else freed. */
 void dx_art_keep(dx_t *x, tiku_xml_t *xml, int since);
 
-/* Equations: tiku_office_docx_math.c */
-
-/** @brief Where an equation's pieces go: text in a look, and a line's
- *         end between the lines of an equation array. */
-typedef struct {
-    int       (*text)(void *ctx, const char *s, size_t n,
-                      const of_style_t *st);
-    int       (*brk)(void *ctx);
-    void       *ctx;
-    const char *pstyle;             /* the paragraph's style             */
-} dx_math_out_t;
-
-/** @brief An m:oMath or m:oMathPara written out along a line: scripts
- *         raised and lowered, fractions and roots as a line writes them,
- *         letters slanted as maths sets them.  @return 0, or -1. */
-int dx_math(dx_t *x, const tiku_xml_node_t *e, const dx_math_out_t *out);
-
 /* The body: tiku_office_docx.c */
 
 /** @brief The blocks of @p e (a body, a cell, a header, a text box).

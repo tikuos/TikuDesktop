@@ -180,7 +180,8 @@ safe_link(const char *uri)
 static void
 link(const of_layout_t *l, const of_frag_t *g, tiku_pdf_writer_t *w)
 {
-    float top = g->kind == OF_FRAG_GLYPHS ? g->y - g->size * 0.8f : g->y;
+    float top = g->kind == OF_FRAG_GLYPHS ? g->y - g->size * 0.8f :
+                g->kind == OF_FRAG_MATH ? g->y - g->math->asc : g->y;
     float h = g->kind == OF_FRAG_GLYPHS ? g->size : g->h;
     int i;
 
@@ -246,6 +247,8 @@ of_draw_frag(of_doc_t *d, of_faces_t *fs, const of_frag_t *g, float dx,
         rule(&at, w);
     } else if (g->kind == OF_FRAG_BOX) {
         box(&at, w);
+    } else if (g->kind == OF_FRAG_MATH && g->math != NULL) {
+        of_math_draw(fs, g->math, at.x, at.y, w);
     }
 }
 

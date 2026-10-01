@@ -258,6 +258,16 @@ add_object(of_faces_t *fs, of_flow_t *f, const of_run_t *run, int kind)
             f->atom[f->natom - 2].brk = 1;
         }
     }
+    if (kind == OA_MATH && run->math != NULL) {   /* as set, a line's
+                                                    height at least */
+        a->w = run->math->w;
+        a->asc = fmaxf(a->asc, run->math->asc);
+        a->desc = fmaxf(a->desc, run->math->desc);
+        a->brk = 1;
+        if (f->natom > 1) {
+            f->atom[f->natom - 2].brk = 1;
+        }
+    }
     if (kind == OA_FLOAT || kind == OA_MARK) {
         a->asc = a->desc = 0;
     }
@@ -305,7 +315,7 @@ add_runs(of_faces_t *fs, of_flow_t *f, const of_para_t *p,
     static const signed char kinds[] = {
         [OR_TAB] = OA_TAB, [OR_BREAK] = OA_BREAK, [OR_PAGE] = OA_PAGE,
         [OR_COLUMN] = OA_COLUMN, [OR_IMAGE] = OA_IMAGE,
-        [OR_FLOAT] = OA_FLOAT, [OR_MARK] = OA_MARK };
+        [OR_FLOAT] = OA_FLOAT, [OR_MARK] = OA_MARK, [OR_MATH] = OA_MATH };
     int i, err = 0;
 
     for (i = 0; i < p->nrun && err == 0; i++) {
@@ -814,8 +824,36 @@ backgrounds(const of_flow_t *f, int from, int end, float base,
     return 0;
 }
 
+/** @brief Atom @p i, a picture or an equation, as its fragment on the
+ *         line whose baseline is @p base.  @return 0, or -1. */
+static int
+object_frag(const of_flow_t *f, int i, float base, of_vec_t *frags)
+{
+    const of_atom_t *at = &f->atom[i];
+    const of_math_t *m = at->kind == OA_MATH ? at->run->math : NULL;
+    of_frag_t *g = frag(frags, m != NULL ? OF_FRAG_MATH : OF_FRAG_IMAGE);
+
+    if (g == NULL) {
+        return -1;
+    }
+    g->x = f->x[i];
+    g->link = at->run->link;
+    if (m != NULL) {                /* its own baseline on the line's */
+        g->y = base - at->rise;
+        g->w = m->w;
+        g->h = m->asc + m->desc;
+        g->math = m;
+        return 0;
+    }
+    g->y = base - at->run->image->h - at->rise;
+    g->w = at->run->image->w;
+    g->h = at->run->image->h;
+    g->image = at->run->image;
+    return 0;
+}
+
 /** @brief Every fragment of the line: backgrounds, glyphs a run at a
- *         time with their rules, pictures, and tab leaders. */
+ *         time with their rules, pictures, equations, and tab leaders. */
 static int
 fragments(of_faces_t *fs, const of_flow_t *f, int from, int end, float base,
           of_vec_t *frags, of_arena_t *a)
@@ -825,19 +863,9 @@ fragments(of_faces_t *fs, const of_flow_t *f, int from, int end, float base,
     while (i < end && err == 0) {
         const of_atom_t *at = &f->atom[i];
 
-        if (at->kind == OA_IMAGE && at->run && at->run->image) {
-            of_frag_t *g = frag(frags, OF_FRAG_IMAGE);
-
-            if (g == NULL) {
-                return -1;
-            }
-            g->x = f->x[i];
-            g->y = base - at->run->image->h - at->rise;
-            g->w = at->run->image->w;
-            g->h = at->run->image->h;
-            g->image = at->run->image;
-            g->link = at->run->link;
-            i++;
+        if (at->run != NULL && ((at->kind == OA_IMAGE && at->run->image) ||
+                                (at->kind == OA_MATH && at->run->math))) {
+            err = object_frag(f, i++, base, frags);
             continue;
         }
         if (at->kind == OA_TAB && f->lead[i] && i + 1 <= end) {
