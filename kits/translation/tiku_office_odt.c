@@ -145,18 +145,21 @@ object(od_t *x, od_para_t *pp, int kind, const of_style_t *st,
 
 /* -------------------------------------------------------------- frames  */
 
-/** @brief A frame's picture: its draw:image's part, @p w by @p h; a grey
- *         box when it has none, or one outside the package. */
+/** @brief A frame's picture: its draw:image's part, @p w by @p h -- a
+ *         chart object's drawing instead, when the frame holds one; a
+ *         grey box when it has none, or one outside the package. */
 static of_image_t *
 picture(od_t *x, const tiku_xml_node_t *fr, float w, float h)
 {
     const tiku_xml_node_t *img = tiku_xml_child(fr, "draw:image");
+    const tiku_xml_node_t *obj = tiku_xml_child(fr, "draw:object");
     const char *href = tiku_xml_attr(img, "xlink:href");
     of_image_t *im = of_alloc(&x->d->arena, sizeof *im);
 
     if (im == NULL) {
         return NULL;
     }
+    im->art = obj != NULL ? od_object_art(x, obj) : NULL;
     while (href != NULL && href[0] == '.' && href[1] == '/') {
         href += 2;
     }

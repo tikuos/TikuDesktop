@@ -170,6 +170,7 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_office_odt.c \
                $(K)/translation/tiku_office_odt_style.c \
                $(K)/translation/tiku_office_odt_table.c \
+               $(K)/translation/tiku_office_odt_obj.c \
                $(K)/translation/tiku_office_dml_color.c \
                $(K)/translation/tiku_office_dml_geom.c \
                $(K)/translation/tiku_office_dml_draw.c \
@@ -184,6 +185,7 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_office_chart_table.c \
                $(K)/translation/tiku_office_chart_err.c \
                $(K)/translation/tiku_office_chart_ink.c \
+               $(K)/translation/tiku_office_chart_odf.c \
                $(K)/translation/tiku_office_gdi.c \
                $(K)/translation/tiku_office_gdi_shape.c \
                $(K)/translation/tiku_office_gdi_text.c \

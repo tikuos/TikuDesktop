@@ -963,13 +963,13 @@ ring(pl_t *q, const ch_series_t *s, const pl_arc_t *c)
     for (i = 0; total > 0 && i < s->n; i++) {
         double share = isnan(s->v[i]) ? 0 : fabs(s->v[i]) / total;
 
-        if (share > 0) {
+        if (share > 0) {            /* round the way the chart goes */
             one = *c;
-            one.a0 = a;
-            one.a1 = a + share * 2 * M_PI;
+            one.a0 = q->g->ccw ? a - share * 2 * M_PI : a;
+            one.a1 = q->g->ccw ? a : a + share * 2 * M_PI;
             slice(q, s, i, &one, share);
         }
-        a += share * 2 * M_PI;
+        a += (q->g->ccw ? -share : share) * 2 * M_PI;
     }
 }
 

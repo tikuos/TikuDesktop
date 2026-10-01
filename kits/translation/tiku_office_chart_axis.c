@@ -158,6 +158,10 @@ value_scale(ch_axis_t *a, double mn, double mx, int most)
         mx = mx == 0 ? 1 : mx > 0 ? mx : 0;
     }
     reach(mn, mx, &lo, &hi);
+    if (a->tight && mx > mn) {      /* the data's own reach, a little */
+        lo = mn - (mx - mn) * 0.05; /* room at each end                 */
+        hi = mx + (mx - mn) * 0.05;
+    }
     lo = a->has_min ? a->min : lo;
     hi = a->has_max ? a->max : hi;
     hi = hi > lo ? hi : lo + 1;

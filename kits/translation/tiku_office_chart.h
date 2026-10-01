@@ -8,7 +8,8 @@
  * its values and looks, whatever file it came from -- groups of series
  * of one kind (bars, lines, areas, pies, points), the axes they are
  * measured against, a title and a legend.  DrawingML's chart parts are
- * read in tiku_office_chart_read.c; charts are laid out and drawn in
+ * read in tiku_office_chart_read.c, OpenDocument's chart objects in
+ * tiku_office_chart_odf.c; charts are laid out and drawn in
  * tiku_office_chart.c, their axes in tiku_office_chart_axis.c, their
  * series in tiku_office_chart_plot.c, a radar's in
  * tiku_office_chart_radar.c, trendlines in tiku_office_chart_trend.c,
@@ -155,6 +156,7 @@ typedef struct {
     float        gap, overlap;      /* bars' gap and overlap, percent    */
     float        hole;              /* a doughnut's hole, percent        */
     float        first;             /* a pie's first slice, degrees      */
+    int          ccw;               /* its slices go anticlockwise       */
     int          cat_ax, val_ax;    /* its axes, the chart's; -1 none    */
     int          markers;           /* its series' markers shown         */
     int          lines;             /* a scatter's lines drawn           */
@@ -213,6 +215,8 @@ typedef struct {
     int         crosses;            /* 0 at zero, 1 min, 2 max, 3 at ... */
     double      cross_at;           /* ... this value of the other axis  */
     double      log;                /* its logarithm's base; 0 linear    */
+    int         tight;              /* its automatic bounds keep to the
+                                       data, never reaching for zero     */
     int         date;               /* a date axis: categories by date   */
     int         flat;               /* multi-level categories' groups not
                                        shown                             */
@@ -270,6 +274,9 @@ typedef struct {
     int          has_legend_at;
     float        title_at[2];       /* and the title's top left          */
     int          has_title_at;
+    const uint32_t *palette;        /* series' colours in turn, or NULL:
+                                       the theme's accents               */
+    int          npalette;
     dml_fill_t   bg, plot_bg;       /* the chart's and plot's grounds    */
     dml_line_t   border, plot_border;
     int          has_bg, has_plot_bg, has_border, has_plot_border;
@@ -292,6 +299,20 @@ typedef struct {
  *         groups it has that are drawn here (k->known counts those with
  *         no series too); -1 out of memory. */
 int ch_read_dml(ch_chart_t *k, const tiku_xml_node_t *cs);
+
+/* OpenDocument: tiku_office_chart_odf.c */
+
+/** @brief An embedded chart object's content.xml @p doc read into @p k,
+ *         with the styles of its styles.xml @p styles (may be NULL).
+ *  @return as ch_read_dml(). */
+int ch_read_odf(ch_chart_t *k, const tiku_xml_node_t *doc,
+                const tiku_xml_node_t *styles);
+/** @brief That chart drawn into the frame @p w by @p h through @p m, as
+ *         dml_chart() draws a DrawingML one.  @return 1 drawn, 0 not a
+ *         chart drawn here, -1 out of memory. */
+int ch_draw_odf(dml_ctx_t *c, const tiku_xml_node_t *doc,
+                const tiku_xml_node_t *styles, const dml_mat_t *m, float w,
+                float h);
 
 /* Numbers: tiku_office_chart_num.c */
 

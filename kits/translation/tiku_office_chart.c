@@ -609,3 +609,34 @@ dml_chart(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m,
     tiku_xml_free(x);
     return n < 0 ? -1 : n > 0 ? 1 : 0;
 }
+
+int
+ch_draw_odf(dml_ctx_t *c, const tiku_xml_node_t *doc,
+            const tiku_xml_node_t *styles, const dml_mat_t *m, float w,
+            float h)
+{
+    ch_chart_t *k;
+    int n;
+
+    if (doc == NULL || !(w > 0) || !(h > 0)) {
+        return 0;
+    }
+    if ((k = calloc(1, sizeof *k)) == NULL) {
+        return -1;
+    }
+    k->c = c;
+    k->m = m;
+    k->w = w;
+    k->h = h;
+    k->base.size = c->text_pt;
+    n = ch_read_odf(k, doc, styles);
+    n = n > 0 && axes_begin(k) == 0 ? 0 : n;
+    n = n == 0 && k->known > 0 && k->ngrp == 0 ? 1 : n;   /* empty */
+    if (n > 0) {
+        draw(k);
+    }
+    n = n > 0 && k->mem.bad ? -1 : n;
+    of_arena_free(&k->mem);
+    free(k);
+    return n < 0 ? -1 : n > 0 ? 1 : 0;
+}

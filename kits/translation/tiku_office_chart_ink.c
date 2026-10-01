@@ -374,5 +374,8 @@ ch_palette(ch_chart_t *k, int i)
                               : 0xff4472c4u;
     int round = (i < 0 ? 0 : i / 6) % 4;
 
+    if (k->palette != NULL && k->npalette > 0) {    /* the file's own */
+        return k->palette[(i < 0 ? 0 : i) % k->npalette];
+    }
     return round == 0 ? base : dml_lum(base, mod[round][0], mod[round][1]);
 }

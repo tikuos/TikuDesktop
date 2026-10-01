@@ -7,8 +7,9 @@
  * tiku_office_odt.h - what the OpenDocument reader's parts share: the
  * reader, the named styles of styles.xml and content.xml, and the lists
  * being counted.  Styles, lists and pages are resolved in
- * tiku_office_odt_style.c; the body is read in tiku_office_odt.c and its
- * tables in tiku_office_odt_table.c.
+ * tiku_office_odt_style.c; the body is read in tiku_office_odt.c, its
+ * tables in tiku_office_odt_table.c and its embedded objects in
+ * tiku_office_odt_obj.c.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -121,5 +122,12 @@ int od_table(od_t *x, const tiku_xml_node_t *e, of_table_t *t);
 /** @brief The blocks of @p e (a cell, a text box, a note) as a story.
  *  @return it, or NULL out of memory. */
 of_story_t *od_story(od_t *x, const tiku_xml_node_t *e);
+
+/* Embedded objects: tiku_office_odt_obj.c */
+
+/** @brief The drawing that shows draw:object @p obj, a chart the reader
+ *         draws from its own data; NULL for any other object, shown by
+ *         its picture instead. */
+of_art_t *od_object_art(od_t *x, const tiku_xml_node_t *obj);
 
 #endif /* TIKU_OFFICE_ODT_H_ */
