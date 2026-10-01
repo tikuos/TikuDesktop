@@ -1,8 +1,9 @@
 # Editor behaviour contract
 
 This file lists the observable rules of the editor kit's document engine
-(`kits/editor/`) and of the two applications it will replace the text
-engines of: Editor (`apps/editor/`) and the BASIC/C IDE (`apps/ide/`).
+and code view (`kits/editor/`) and of the two applications it will replace
+the text engines of: Editor (`apps/editor/`) and the BASIC/C IDE
+(`apps/ide/`).
 
 Each row is one rule a test can check. Rows for the applications record how
 they behave today, so a migration can be checked against them. Where a
@@ -19,7 +20,7 @@ migration will change a rule on purpose, the change is listed under
 | State | `done`: implemented, and the named test passes. `baseline`: how the application behaves now, first recorded at `bf1c6b3`; a migration keeps it unless a decision says otherwise. `open`: a difference or defect waiting for a decision |
 | Test | The test that checks it, as `file:function`, or `none` |
 
-Engine tests are in `tests/kits/`, application tests in `tests/apps/`, and
+Kit tests are in `tests/kits/`, application tests in `tests/apps/`, and
 shell scripts in `tests/integration/shell/`. Upstream Scintilla cases
 translated into the engine tests are listed in `kits/editor/UPSTREAM.md`,
 not here.
@@ -141,6 +142,62 @@ These are settled for the engine. The migration rows they affect are marked
 | --- | --- | --- | --- | --- |
 | LINES-CRLF | Scintilla `CellBuffer.cxx` | Every deletion and insertion of up to three bytes on every text of up to four bytes of `a`, CR and LF leaves the line index equal to one counted from the bytes | done | `test_editdoc_lines.c:exhaustive` |
 | MODEL | Tiku | After every operation of 16 seeded runs of 3,000, the text, lines, history, saved state, anchors and selections equal those of a plain model | done | `test_editdoc_model.c:run` |
+
+## Code view
+
+The kit's widget: a view of a document that lays out, paints and hit tests
+its text, and moves its caret and selection. Each view keeps its own
+selection in the document and its own scroll position. These are kit rules;
+Editor and the IDE keep the rules in their own sections until each moves
+onto the view, and any difference is decided then. Two are known: Up and
+Down keep an x where Editor keeps the byte offset (EDR-KEY-005), and Left or
+Right over a selection stop at its edge where Editor moves from the caret
+(EDR-SEL-003).
+
+### Layout
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| LAY-001 | Tiku | The Interface Kit's advance for a code point is the one `tiku_text` steps by: a text's advances add up to its width in every face, letters the face lacks included, and text drawn in pieces placed by those advances leaves the pixels of the whole | done | `test_text.c:main` |
+| LAY-002 | Tiku | A line without tabs or control characters is laid out with the face's own widths: each boundary lies at the width of the text before it, and the line is as wide as the face draws it. A position inside a character or past the end has no point and is refused with `TIKU_EDIT_INVALID_RANGE` | done | `test_codeview_layout.c:widths` |
+| LAY-003 | Tiku | A tab reaches the next stop, counted in columns of a space's width from the start of its own line; a tab already at a stop takes a whole interval. Stops are 4 columns apart unless set from 1 to 32; another setting is refused with `TIKU_EDIT_LIMIT` and the old one kept | done | `test_codeview_layout.c:tabs` |
+| LAY-004 | Tiku | A control character other than tab is one character shown by name: `^A` to `^_` and `^?` for C0 and DEL, `<80>` to `<9F>` for C1. It is as wide as its name and 2 pixels each side | done | `test_codeview_layout.c:controls` |
+| LAY-005 | Tiku | Rows are the face's height and 2 pixels apart. A hit test takes the row under the point, clamped to the first and last lines. It lands before a character whose left half holds the point and after it from its middle on, as Editor's click does today. Past the end it lands at the line's end, which is before the CR of a CRLF. A hit at each caret position's point lands on that position | done | `test_codeview_layout.c:hits` |
+| LAY-006 | Tiku | A line is never broken or shortened: a line of a million bytes is one row, measured whole, with every position where the text before it puts it | done | `test_codeview_layout.c:long_line` |
+| LAY-007 | Tiku | A new view measures in the interface's monospaced face and follows its size. A face given to the view is used instead, and no face goes back to the monospaced one | done | `test_codeview_layout.c:fonts` |
+| LAY-008 | Tiku | The text starts 5 pixels in and 3 down from the view's bounds, and the bounds show their whole rows, at least one. Scrolling sets the line in the first row and a pixel offset. The first row stops where the last line fills the last whole row, neither goes below 0, and points and hits follow the scroll | done | `test_codeview_layout.c:scrolling` |
+| LAY-009 | Tiku | Each view keeps its own selection and scroll position. A change that ends above a view's first row moves the first row by the lines it added or removed, so the same text stays there. A change covering the first row leaves the first row at the change. A load returns every view to the top left | done | `test_codeview_layout.c:two_views` |
+| LAY-010 | Tiku | A view needs a document and holds a reference to it until destroyed; destroying it forgets its selection. A creation that cannot allocate returns `TIKU_EDIT_NO_MEMORY` and holds nothing | done | `test_codeview_layout.c:lifetime` |
+
+### Painting
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| PNT-001 | Tiku | Painting fills the bounds with the document ground and draws each line's text in the document ink where the layout puts it, in pieces of at most 256 bytes, which end earlier only where the colour changes or a tab or control character stands. A control character's name is drawn in the ground colour on a box of faint ink | done | `test_codeview_paint.c:text_and_bounds` |
+| PNT-002 | Tiku | Painting touches nothing outside the bounds or the clip the surface already has, and leaves that clip in place | done | `test_codeview_paint.c:text_and_bounds` |
+| PNT-003 | Tiku | The selection's ground is drawn behind its text, and the selection ink only over the selected characters. A selected line break shows as a space's width of ground after its line, and a selected control character's box takes the selection colours | done | `test_codeview_paint.c:selection` |
+| PNT-004 | Tiku | A focused view draws its caret as a line of text ink the row's height at the caret's point, after the text at a line's end; an unfocused view draws none. A new view is focused | done | `test_codeview_paint.c:caret` |
+| PNT-005 | Tiku | A scrolled view shows the same pixels moved by the scroll | done | `test_codeview_paint.c:scrolling` |
+| PNT-006 | Tiku | The middle of a million-byte line, scrolled to, shows exactly the text there, the same across a piece boundary as drawn whole | done | `test_codeview_paint.c:long_line` |
+| PNT-007 | Tiku | A doubled surface gets the same logical layout, drawn at its scale | done | `test_codeview_paint.c:doubled` |
+| PNT-008 | Tiku | A recording surface carries everything painted: the display list has no misses, and flattened and read back as a wire carries it, it plays to the pixels painted directly | done | `test_codeview_paint.c:recorded` |
+| PNT-009 | Tiku | Bounds smaller than the margins, empty bounds, and bounds hanging off the surface paint only inside themselves | done | `test_codeview_paint.c:small_bounds` |
+
+### Caret and selection
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| NAV-001 | Tiku | Left and Right move one character, a multibyte character or a CRLF counting as one, and stop at the document's ends. Without Shift, Left over a selection stops at its start and Right at its end; with Shift the anchor stays and the caret moves | done | `test_codeview_input.c:characters` |
+| NAV-002 | Tiku | Up and Down move to the row above or below at the x, in pixels, that the first of them started from, kept through shorter lines and tabs until another move or a change to the document. On the first or last line they stay | done | `test_codeview_input.c:rows` |
+| NAV-003 | Tiku | Page Up and Page Down move the caret by the visible whole rows at the kept x and stop at the first and last lines; the view scrolls only as far as shows the caret, as Editor's do today | done | `test_codeview_input.c:pages` |
+| NAV-004 | Tiku | Home and End go to the line's start and to its end before the line break; with Command, to the document's start and end | done | `test_codeview_input.c:ends` |
+| NAV-005 | Scintilla `Document.cxx`, reference | Option or Command with Right moves past one run of word characters, punctuation or line breaks, then past blanks; with Left, back over blanks, then back over one run. Word characters are letters, digits, `_` and every character past ASCII; blanks are spaces, tabs and other control characters | done | `test_codeview_input.c:words` |
+| NAV-006 | Tiku | Select All selects the whole document with the caret at its end, and scrolls to show it | done | `test_codeview_input.c:select_all_and_reveal` |
+| NAV-007 | Tiku | After a move the view scrolls as little as shows the caret: on a whole row, and at least 4 pixels inside the right edge. Scrolling right leaves it 8 pixels inside, as Editor does today | done | `test_codeview_input.c:select_all_and_reveal` |
+| NAV-008 | Tiku | Button 1 pressed inside the bounds puts the caret at the hit position and starts a drag, which extends from the press until button 1 is released or the window is deactivated. Shift with a press extends from the anchor. Another button, or a press outside the bounds, is not taken. While dragging, a pointer above the view reaches the line above the first row, and one below it the line after the last whole row | done | `test_codeview_input.c:presses` |
+| NAV-009 | Tiku | A press within 400 ms and less than 6 pixels of the last is its next click. Two select the run under the pointer, the line's last run past its end, or the start of an empty line; three select the line with its break; a fourth starts again. Dragging after two or three clicks extends by runs or lines and keeps the first | done | `test_codeview_input.c:clicks` |
+| NAV-010 | Tiku | The view takes only its movement keys and button 1. Letters, Return, Command with letters, Up or Down, Option with Up, Down, Home or End, and key releases are left to the application | done | `test_codeview_input.c:ignored` |
+| NAV-011 | Tiku | Moving one view leaves another view's selection alone. Any change to the document ends the kept x and a drag in progress | done | `test_codeview_input.c:two_views` |
 
 ## Editor today
 
