@@ -239,12 +239,14 @@ tiku_ide_edit_load(edit_t *e)
     int ok = whole != NULL;
 
     tiku_textview_init(&e->tv);
+    e->disk_known = e->disk_changed = 0;
     if (f == NULL) {
         tiku_textview_set(&e->tv, "");
         if (errno != ENOENT) { e->load_failed = 1; }
         free(whole);
         return;
     }
+    e->disk_known = fstat(fileno(f), &e->disk) == 0;
     if (whole) {
         got = fread(whole, 1, limit, f);
         whole[got] = '\0';
@@ -270,13 +272,35 @@ tiku_ide_edit_save(edit_t *e)
     struct stat sb;
     mode_t mode = 0600;
 
+    e->disk_changed = 0;
     if (e->load_failed) { return 0; }
     if (lstat(e->path, &sb) == 0) {
         if (!S_ISREG(sb.st_mode)) {
             snprintf(e->feedback, sizeof e->feedback, "Save failed: not a regular file");
             return 0;
         }
+        /* Replacing the file would leave its other names on the old text. */
+        if (sb.st_nlink > 1) {
+            snprintf(e->feedback, sizeof e->feedback,
+                     "Save refused: the file has other hard links");
+            return 0;
+        }
+        if (!(sb.st_mode & 0222) || access(e->path, W_OK) != 0) {
+            snprintf(e->feedback, sizeof e->feedback, "Save refused: the file is read-only");
+            return 0;
+        }
         mode = sb.st_mode & 0777;
+    }
+    if (e->disk_known &&
+        (lstat(e->path, &sb) != 0 || sb.st_dev != e->disk.st_dev ||
+         sb.st_ino != e->disk.st_ino || sb.st_size != e->disk.st_size ||
+         sb.st_mtim.tv_sec != e->disk.st_mtim.tv_sec ||
+         sb.st_mtim.tv_nsec != e->disk.st_mtim.tv_nsec ||
+         sb.st_ctim.tv_sec != e->disk.st_ctim.tv_sec ||
+         sb.st_ctim.tv_nsec != e->disk.st_ctim.tv_nsec)) {
+        e->disk_changed = 1;
+        snprintf(e->feedback, sizeof e->feedback, "Not saved: the file changed on disk");
+        return 0;
     }
     snprintf(temp, sizeof temp, "%s.XXXXXX", e->path);
     fd = mkstemp(temp);
@@ -296,10 +320,44 @@ tiku_ide_edit_save(edit_t *e)
         snprintf(e->feedback, sizeof e->feedback, "Save failed; unsaved work retained");
         return 0;
     }
+    e->disk_known = stat(e->path, &e->disk) == 0;
     tiku_textview_saved(&e->tv);
     (void)tiku_ide_recovery_write(e);
     snprintf(e->feedback, sizeof e->feedback, "Saved");
     return 1;
+}
+
+/**
+ * @brief Save @p e as a person asked to, which is tiku_ide_edit_save()
+ *        except that a file changed on disk since the page read or saved
+ *        it is not refused outright: the Project window asks whether to
+ *        save the page over it, Cancel being the default.
+ *
+ * @return 1 when the page was saved.
+ */
+int
+tiku_ide_edit_save_or_ask(ide_t *st, edit_t *e)
+{
+    char text[256];
+
+    if (tiku_ide_edit_save(e)) {
+        return 1;
+    }
+    if (!e->disk_changed) {
+        return 0;
+    }
+    snprintf(text, sizeof text,
+             "%s changed on disk since this page read it. Save this page over it?",
+             e->name);
+    st->overwrite_editor = e->id;
+    tiku_alert_open(&st->ask, TIKU_ALERT_WARN, CMD_SAVE, text,
+                    "Cancel|Save Over It");
+    st->ask.dflt = 0;
+    if (st->services->raise_window != NULL) {
+        st->services->raise_window(st->services->ctx, st->proj_id);
+    }
+    tiku_ide_project_paint(st);
+    return 0;
 }
 
 /**

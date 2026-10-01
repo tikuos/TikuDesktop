@@ -804,6 +804,117 @@ static void test_project_window_closed(const tiku_app_services_t *services,
     assert(unlink(draft) == 0);
 }
 
+/** Open @p path on a page of @p st, typing @p add at the end of its text. */
+static edit_t *page_with_edit(ide_t *st, const char *path, char add)
+{
+    prow_t row;
+    edit_t *e;
+    const char *leaf = strrchr(path, '/');
+
+    memset(&row, 0, sizeof row);
+    snprintf(row.path, sizeof row.path, "%s", path);
+    snprintf(row.name, sizeof row.name, "%s", leaf ? leaf + 1 : path);
+    tiku_ide_edit_open(st, &row);
+    e = tiku_ide_edit_of_path(st, path);
+    assert(e != NULL && !tiku_textview_modified(&e->tv));
+    tiku_textview_place(&e->tv, 0, tiku_textview_line_len(&e->tv, 0));
+    tiku_textview_insert(&e->tv, add);
+    return e;
+}
+
+/** What @p path holds, NUL-closed, read into @p out. */
+static const char *file_text(const char *path, char *out, size_t max)
+{
+    FILE *f = fopen(path, "rb");
+    size_t n;
+
+    assert(f);
+    n = fread(out, 1, max - 1, f);
+    out[n] = '\0';
+    fclose(f);
+    return out;
+}
+
+/** Save leaves a read-only or hard-linked file alone, and asks before
+ *  saving over a file that changed on disk since the page read it. */
+static void test_safe_save(const tiku_app_services_t *services,
+                           const char *dir)
+{
+    tiku_event_t save = { .type = TIKU_EVENT_KEY_DOWN, .key = 's',
+                          .modifiers = TIKU_MOD_CMD };
+    tiku_event_t esc = { .type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_ESCAPE };
+    tiku_event_t press = { .type = TIKU_EVENT_POINTER_DOWN, .button = 1 };
+    char drafts[600], ro[600], hl[600], alias[600], chg[600], back[64];
+    void *state = NULL;
+    ide_t *fresh;
+    edit_t *e;
+    int x, y, w, h;
+
+    snprintf(drafts, sizeof drafts, "%s/drafts", dir);
+    assert(mkdir(drafts, 0700) == 0);
+    assert(setenv("TIKU_IDE_RECOVERY_DIR", drafts, 1) == 0);
+    assert(tiku_ide_start(&state, services) == 0);
+    fresh = state;
+    tiku_ide_tick(fresh, 1);
+    tiku_ide_event(fresh, fresh->splash_id, &esc);
+    tiku_ide_tick(fresh, SPLASH_US + 2);
+    assert(fresh->proj_id && fresh->proj_surface);
+
+    snprintf(ro, sizeof ro, "%s/ro.bas", dir);
+    file_write(ro, "10 A\n", 5);
+    assert(chmod(ro, 0444) == 0);
+    e = page_with_edit(fresh, ro, 'x');
+    tiku_ide_event(fresh, e->id, &save);
+    assert(strstr(e->feedback, "read-only") && !fresh->ask.open);
+    assert(!strcmp(file_text(ro, back, sizeof back), "10 A\n"));
+    assert(tiku_textview_modified(&e->tv));
+    tiku_textview_saved(&e->tv);
+    tiku_ide_edit_drop(fresh, e);
+    assert(chmod(ro, 0644) == 0 && unlink(ro) == 0);
+
+    snprintf(hl, sizeof hl, "%s/hl.bas", dir);
+    snprintf(alias, sizeof alias, "%s/alias.bas", dir);
+    file_write(hl, "10 A\n", 5);
+    assert(link(hl, alias) == 0);
+    e = page_with_edit(fresh, hl, 'x');
+    tiku_ide_event(fresh, e->id, &save);
+    assert(strstr(e->feedback, "hard link") && !fresh->ask.open);
+    assert(!strcmp(file_text(hl, back, sizeof back), "10 A\n"));
+    tiku_textview_saved(&e->tv);
+    tiku_ide_edit_drop(fresh, e);
+    assert(unlink(hl) == 0 && unlink(alias) == 0);
+
+    snprintf(chg, sizeof chg, "%s/chg.bas", dir);
+    file_write(chg, "10 A\n", 5);
+    e = page_with_edit(fresh, chg, 'x');
+    file_write(chg, "10 EXTERNAL\n", 12);
+    tiku_ide_event(fresh, e->id, &save);
+    assert(fresh->ask.open && strstr(fresh->ask.text, "changed on disk"));
+    assert(!strcmp(file_text(chg, back, sizeof back), "10 EXTERNAL\n"));
+    tiku_ide_event(fresh, fresh->proj_id, &esc);
+    assert(!fresh->ask.open && tiku_textview_modified(&e->tv));
+    assert(!strcmp(file_text(chg, back, sizeof back), "10 EXTERNAL\n"));
+    tiku_ide_event(fresh, e->id, &save);
+    assert(fresh->ask.open);
+    tiku_alert_button_rect(&fresh->ask, 1, fresh->ask_frame.w,
+                           fresh->ask_frame.h, &x, &y, &w, &h);
+    press.x = fresh->ask_frame.x + x + w / 2;
+    press.y = fresh->ask_frame.y + y + h / 2;
+    tiku_ide_event(fresh, fresh->proj_id, &press);
+    press.type = TIKU_EVENT_POINTER_UP;
+    tiku_ide_event(fresh, fresh->proj_id, &press);
+    assert(!fresh->ask.open && !tiku_textview_modified(&e->tv));
+    assert(!strcmp(file_text(chg, back, sizeof back), "10 Ax\n"));
+    tiku_textview_insert(&e->tv, 'y');
+    tiku_ide_event(fresh, e->id, &save);
+    assert(!fresh->ask.open && !tiku_textview_modified(&e->tv));
+    assert(!strcmp(file_text(chg, back, sizeof back), "10 Axy\n"));
+    tiku_ide_edit_drop(fresh, e);
+    tiku_ide_stop(fresh);
+    assert(unlink(chg) == 0 && rmdir(drafts) == 0);
+    unsetenv("TIKU_IDE_RECOVERY_DIR");
+}
+
 static void test_reopen(ide_t *st, const char *dir)
 {
     char recovery[512], lock[680], path[512], snapshot[680];
@@ -1095,6 +1206,7 @@ int main(void)
     test_splash_license();
     test_launch_document(&services, dir);
     test_project_window_closed(&services, dir);
+    test_safe_save(&services, dir);
     assert(rmdir(dir) == 0);
     free(st);
     puts("PASS: upload boundaries/confirmation, target state, replacement/undo, recovery");

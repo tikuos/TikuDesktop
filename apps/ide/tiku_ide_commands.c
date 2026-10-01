@@ -138,7 +138,7 @@ tiku_ide_pick(void *state, uint32_t window, int command)
         break;
     case CMD_SAVE:
         if (e != NULL) {
-            (void)tiku_ide_edit_save(e);
+            (void)tiku_ide_edit_save_or_ask(st, e);
             tiku_ide_edit_paint(st, e);
             tiku_ide_edit_publish(st, e);
             tiku_ide_project_publish(st);

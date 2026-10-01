@@ -139,9 +139,22 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 tiku_textview_saved(&closing->tv);
                 tiku_ide_edit_drop(st, closing);
             } else if (closing && at == 2) {
-                if (tiku_ide_edit_save(closing)) { tiku_ide_edit_drop(st, closing); }
+                if (tiku_ide_edit_save_or_ask(st, closing)) { tiku_ide_edit_drop(st, closing); }
                 else { tiku_ide_edit_paint(st, closing); }
             }
+            tiku_ide_project_paint(st);
+            return 0;
+        }
+        if (tag == CMD_SAVE) {
+            edit_t *page = tiku_ide_edit_of_id(st, st->overwrite_editor);
+
+            if (page != NULL && at == 1) {
+                page->disk_known = 0;   /* saving over it is what was asked */
+                (void)tiku_ide_edit_save(page);
+                tiku_ide_edit_publish(st, page);
+                tiku_ide_project_publish(st);
+            }
+            if (page != NULL) { tiku_ide_edit_paint(st, page); }
             tiku_ide_project_paint(st);
             return 0;
         }
@@ -273,7 +286,7 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
             }
             if (event->x >= save_b.x && event->x < save_b.x + save_b.w &&
                 event->y >= save_b.y && event->y < save_b.y + save_b.h) {
-                (void)tiku_ide_edit_save(e);
+                (void)tiku_ide_edit_save_or_ask(st, e);
                 tiku_ide_edit_paint(st, e);
                 tiku_ide_edit_publish(st, e);
                 tiku_ide_project_publish(st);
@@ -446,7 +459,7 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * Cmd-R runs the page's own program, Cmd-. stops a run --
              * each the key its menu row says. */
             if ((event->modifiers & TIKU_MOD_CMD) && event->key == 's') {
-                (void)tiku_ide_edit_save(e);
+                (void)tiku_ide_edit_save_or_ask(st, e);
                 tiku_ide_edit_paint(st, e);
                 tiku_ide_edit_publish(st, e);
                 tiku_ide_project_publish(st);

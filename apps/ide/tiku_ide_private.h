@@ -171,6 +171,9 @@ typedef struct {
     char                 recovery[640];
     int                  recovery_fd;
     int                  load_failed;
+    struct stat          disk;           /* the file as last read or saved */
+    int                  disk_known;     /* disk holds it */
+    int                  disk_changed;   /* the last save found it changed */
     uint64_t             recovery_stamp;
     int                  recovery_current;
     int                  recovery_blocked;
@@ -290,6 +293,7 @@ typedef struct {
     char                            upload_board[64], upload_name[8];
     char                            upload_program[8192];
     uint32_t                        closing_editor;
+    uint32_t                        overwrite_editor; /* the save-over question's page */
     int                             debugging, debug_paused, debug_pc;
     int                             debug_values, debug_socket, debug_eof;
     tiku_board_basic_t              *local_debug;
@@ -319,6 +323,7 @@ void tiku_ide_window_menu(ide_t *st, tiku_menu_list_t *m);
 void tiku_ide_edit_publish(ide_t *st, edit_t *e);
 void tiku_ide_edit_load(edit_t *e);
 int tiku_ide_edit_save(edit_t *e);
+int tiku_ide_edit_save_or_ask(ide_t *st, edit_t *e);
 void tiku_ide_type_number(tiku_textview_t *tv, int n);
 int tiku_ide_next_number(const tiku_textview_t *tv, int at);
 void tiku_ide_edit_open(ide_t *st, const prow_t *row);
