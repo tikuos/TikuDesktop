@@ -78,9 +78,10 @@ solid and gradient fills, lines with dashes and arrowheads, pictures
 cropped and turned, tables, groups, text frames with insets, anchoring
 and autofit.
 
-Shown as a labelled box: surface charts and Office 2016's newer chart
-kinds, SmartArt without its drawing, equations, EMF/WMF pictures,
-embedded objects.  Not attempted: complex-script
+Shown as a labelled box: surface charts, Office 2016's newer chart
+kinds without the picture Office saves beside them, SmartArt without
+its drawing, pictures drawn only in EMF+, LibreOffice's own metafiles
+(SVM).  Not attempted: complex-script
 shaping (Arabic, Indic), right-to-left reordering, kerning, hyphenation,
 tracked-change markup (the final text is shown), comments, macros.
 
@@ -98,12 +99,12 @@ back with the PDF kit.
 app, its icon, types, help and a lane.
 
 **4 -- Later.**  .odp (the slide renderer with ODF's reader), charts
-from their cached values, SmartArt's saved drawings, EMF.
+from their cached values, SmartArt's saved drawings, EMF and WMF.
 
-## 5. Where it stands (2026-09-30)
+## 5. Where it stands (2026-10-01)
 
-Milestones 1 to 3 are done; of 4, charts and SmartArt's saved drawings
-are done, .odp and EMF not begun.
+Milestones 1 to 3 are done; of 4, charts, SmartArt's saved drawings and
+Windows metafiles are done, .odp not begun.
 
 - **Kit.**  `tiku_xml`, `tiku_archive_read`, `tiku_fontset`,
   `tiku_pdf_writer` and the `tiku_office*` readers, one entry point
@@ -121,8 +122,23 @@ are done, .odp and EMF not begun.
   scatters, bubbles, radars, stock high-low lines and up-down bars, and
   combinations on two axes; axes scaled as Excel scales them, number
   formats and dates, data labels and each point's own, legends, titles,
-  trendlines, display units, the file's own layouts.  3-D kinds are
-  drawn flat; surface charts and chartex kinds stay grey boxes.
+  trendlines with their equations, error bars, data tables, pie and bar
+  of pie, date and multi-level category axes, labels with fields and
+  boxes, display units, theme overrides, the file's own layouts.  3-D
+  kinds are drawn flat; surface charts stay grey boxes, and chartex
+  kinds show what Office saved beside them for older readers.
+  OpenDocument text's chart objects are drawn by the same code, read
+  from the table each object keeps (`tiku_office_chart_odf.c`), in
+  LibreOffice's colours, scales and anticlockwise pies.
+- **Metafiles.**  EMF and WMF pictures -- and so the pictures Office
+  keeps of embedded objects: Equation Editor equations, spreadsheets,
+  a slide's OLE frames by their fallback or legacy VML picture -- are
+  played through a small GDI (`tiku_office_gdi*`, `_emf.c`, `_wmf.c`)
+  into PDF paths, text and images: the window and viewport, world
+  transforms, pens, brushes and hatches, paths and clipping, fonts
+  with their escapement and advances, DIBs with raster operations.
+  EMF+ records are passed over; the GDI ones Office writes beside
+  them are drawn, and a file of EMF+ alone is a grey box.
 - **View.**  `tiku_pdf_view_open_as()` opens a file through a
   translator on a worker; `tiku_pdf_view_single()` shows one page alone,
   which is how slides are presented.
@@ -134,11 +150,13 @@ are done, .odp and EMF not begun.
   .docx and .pptx are typed `application/x-docx` and `application/x-pptx`;
   .odt keeps its own type.
 - **Tests.**  `test_office` (kinds, pages and words, sizes, links,
-  outline, title, charts, export, hostile files) and `test_office_viewer` (the
+  outline, title, charts, metafiles, OLE pictures, ODF charts, export,
+  hostile files) and `test_office_viewer` (the
   apps without a desktop), both also under AddressSanitizer and UBSan;
   the `office` lane opens all three kinds from Tracker and presents.
   Fixtures come from `tests/fixtures/tools/gen_office.py`.
 
-Still boxes or not attempted, as section 3 says: surface and chartex
-charts, EMF/WMF, complex scripts and right-to-left text, tracked-change
-markup, comments.  Equations are set on one line.
+Still boxes or not attempted, as section 3 says: surface charts,
+chartex charts saved without a picture, EMF+ alone, SVM, complex
+scripts and right-to-left text, tracked-change markup, comments, .odp.
+Equations are set on one line.
