@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_codeview.h - an editor document on the screen, and its caret.
+ * tiku_codeview.h - an editor document on the screen, its caret, and the
+ * edits made through it.
  *
  * A view shows one row per line of its document and keeps every byte: a
  * tab reaches the next stop from the start of its line, a control
@@ -34,6 +35,21 @@
 #define TIKU_CODEVIEW_TAB_MAX     32
 
 typedef struct tiku_codeview tiku_codeview_t;
+
+/** @brief What a view asks of whoever hosts it; any member may be NULL,
+ *         and the view then goes without. */
+typedef struct {
+    void *ctx;
+    /** @brief Put @p length bytes of @p text, NUL-terminated, on the
+     *         clipboard.  @return 0 when the clipboard took them. */
+    int (*clip_set)(void *ctx, const char *text, size_t length);
+    /** @brief What the clipboard holds, setting @p length; NULL when it
+     *         holds nothing.  Valid until the host is next called. */
+    const char *(*clip_text)(void *ctx, size_t *length);
+    /** @brief The document changed and the view should be painted again.
+     *         Called while the document refuses changes. */
+    void (*invalidate)(void *ctx, tiku_codeview_t *view);
+} tiku_codeview_host_t;
 
 /** @brief A view of @p doc, with its own selection, an empty caret at 0.
  *         The view holds a reference to the document until it is
@@ -70,6 +86,16 @@ int tiku_codeview_tab_width(const tiku_codeview_t *view);
 #define TIKU_CODEVIEW_INVISIBLES   0x2u  /* a mark in each space and tab */
 #define TIKU_CODEVIEW_VSCROLL      0x4u  /* a scrollbar down the right  */
 #define TIKU_CODEVIEW_HSCROLL      0x8u  /* a scrollbar along the foot  */
+
+/** @brief Use @p host's clipboard and invalidation; NULL uses none.  The
+ *         members are copied. */
+void tiku_codeview_set_host(tiku_codeview_t *view,
+                            const tiku_codeview_host_t *host);
+
+/** @brief The line break Return inserts: "\n", "\r\n" or "\r"; anything
+ *         else is refused with TIKU_EDIT_INVALID_TEXT.  "\n" unless set. */
+tiku_edit_status_t tiku_codeview_set_newline(tiku_codeview_t *view,
+                                             const char *newline);
 
 /** @brief Show what @p options names, and nothing else of them. */
 void tiku_codeview_set_options(tiku_codeview_t *view, unsigned options);
@@ -163,11 +189,47 @@ tiku_edit_status_t tiku_codeview_select_all(tiku_codeview_t *view);
 void tiku_codeview_reveal(tiku_codeview_t *view);
 
 /**
- * @brief Take a key, pointer, wheel or tick event.
+ * @brief Replace the selection with @p length bytes of @p text as one
+ *        undo step, the caret after them, and show the caret.
+ *
+ * With @p typing the step may join the typing before it.  A caret that
+ * would fall between a CR and its LF stands before the CR.  Every
+ * failure leaves the document as it was.
+ */
+tiku_edit_status_t tiku_codeview_insert(tiku_codeview_t *view,
+                                        const char *text, size_t length,
+                                        int typing);
+/** @brief Delete the selection, or else the character before the caret,
+ *         or after it when @p forward, a CRLF as one; presses in a row
+ *         join into one undo step.  With no character on that side
+ *         nothing changes and TIKU_EDIT_NOTHING is returned. */
+tiku_edit_status_t tiku_codeview_delete(tiku_codeview_t *view, int forward);
+/** @brief Step the document's history back or forward and show the
+ *         caret. */
+tiku_edit_status_t tiku_codeview_undo(tiku_codeview_t *view);
+tiku_edit_status_t tiku_codeview_redo(tiku_codeview_t *view);
+/** @brief Put the selection on the host's clipboard.  TIKU_EDIT_NOTHING
+ *         with nothing selected, TIKU_EDIT_INVALID with no clipboard,
+ *         TIKU_EDIT_LIMIT when the clipboard refused the text. */
+tiku_edit_status_t tiku_codeview_copy(tiku_codeview_t *view);
+/** @brief Copy, then delete the selection only when the clipboard took
+ *         it. */
+tiku_edit_status_t tiku_codeview_cut(tiku_codeview_t *view);
+/** @brief Replace the selection with the clipboard's text, whole or not
+ *         at all.  TIKU_EDIT_NOTHING when the clipboard is empty. */
+tiku_edit_status_t tiku_codeview_paste(tiku_codeview_t *view);
+/** @brief Why the edit the last event asked for was not made, or
+ *         TIKU_EDIT_OK when it was made or the event asked for none. */
+tiku_edit_status_t tiku_codeview_status(const tiku_codeview_t *view);
+
+/**
+ * @brief Take a key, text, pointer, wheel or tick event.
  *
  * Moves: the arrows, Home, End, Page Up and Page Down, extending with
  * Shift; Command with Home or End for the document's ends; Option or
- * Command with Left or Right for words.
+ * Command with Left or Right for words.  Edits: the text of a key
+ * pressed without Command, Return, Tab, Backspace, Delete and text-input
+ * commits; Command with C, X, V, A, Z, Shift Z and Y.
  *
  * @note Button 1 in the text puts the caret, Shift extends, two clicks
  *       select a word and three a line, and dragging extends by the same

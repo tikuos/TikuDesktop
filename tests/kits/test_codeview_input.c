@@ -503,14 +503,18 @@ ignored(void)
     memset(&up, 0, sizeof up);
     up.type = TIKU_EVENT_KEY_UP;
     up.key = TIKU_KEY_LEFT;
-    check(key(v, 'a', 0) == 0 && key(v, 'a', TIKU_MOD_CMD) == 0 &&
+    check(key(v, 'q', TIKU_MOD_CMD) == 0 && key(v, 'w', TIKU_MOD_CMD) == 0 &&
           key(v, TIKU_KEY_UP, TIKU_MOD_OPTION) == 0 &&
           key(v, TIKU_KEY_DOWN, TIKU_MOD_CMD) == 0 &&
           key(v, TIKU_KEY_HOME, TIKU_MOD_OPTION) == 0 &&
-          key(v, TIKU_KEY_RETURN, 0) == 0 &&
-          tiku_codeview_event(v, &up) == 0 && is(v, 1, 2), "NAV-010",
-          "a letter, a command, Option with Up or Home, Command with "
-          "Down, Return and key releases are not taken");
+          key(v, TIKU_KEY_ESCAPE, 0) == 0 && key(v, TIKU_KEY_F1, 0) == 0 &&
+          key(v, TIKU_KEY_TAB, TIKU_MOD_SHIFT) == 0 &&
+          key(v, TIKU_KEY_RETURN, TIKU_MOD_OPTION) == 0 &&
+          tiku_codeview_event(v, &up) == 0 && is(v, 1, 2) &&
+          tiku_editdoc_length(tiku_codeview_doc(v)) == 7, "NAV-010",
+          "Command with letters the view has no use for, Option with Up, "
+          "Home or Return, Command with Down, Escape, F1, Shift with Tab "
+          "and key releases are not taken, and change nothing");
     check(tiku_codeview_event(v, NULL) == 0 &&
           tiku_codeview_move(v, (tiku_codeview_move_t)99, 0) ==
           TIKU_EDIT_INVALID && is(v, 1, 2), "NAV-010",

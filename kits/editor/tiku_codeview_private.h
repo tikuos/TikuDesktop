@@ -15,6 +15,7 @@
 #define TIKU_CODEVIEW_PRIVATE_H_
 
 #include "tiku_codeview.h"
+#include "tiku_text_input.h"
 
 /* Pixels between the bounds' left edge and a line's x 0, and between the
  * bounds' top and the first row. */
@@ -62,6 +63,10 @@ struct tiku_codeview {
     int64_t widest;                 /* -1 until found again             */
     int widths_ok;                  /* the table follows the document   */
     uint32_t widths_key;            /* the metrics it was measured in   */
+    tiku_codeview_host_t host;      /* clipboard and invalidation       */
+    char newline[3];                /* what Return inserts              */
+    tiku_edit_status_t status;      /* the last event's edit            */
+    tiku_text_input_t input;        /* a text-input commit arriving     */
 };
 
 /* What a character of a line is on the screen. */
@@ -138,5 +143,10 @@ void tiku_cv_widths_change(tiku_codeview_t *v, int64_t first,
                            int64_t lines);
 /* Free the width table. */
 void tiku_cv_widths_free(tiku_codeview_t *v);
+
+/* An editing key: 1 when the view took it. */
+int tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e);
+/* A text-input event, given what staging made of it. */
+int tiku_cv_edit_commit(tiku_codeview_t *v, int commit);
 
 #endif /* TIKU_CODEVIEW_PRIVATE_H_ */

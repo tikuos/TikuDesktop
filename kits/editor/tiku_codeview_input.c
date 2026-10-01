@@ -6,7 +6,7 @@
  *
  * tiku_codeview_input.c - the caret, the selection and the scroll moved by
  * keys, the pointer, the scrollbars and the wheel, through the same layout
- * the view paints with.
+ * the view paints with; editing keys go on to tiku_codeview_edit.c.
  *
  * Word moves follow the behaviour of Scintilla's Document::NextWordStart
  * (src/Document.cxx, read for reference; no code taken).
@@ -530,13 +530,17 @@ key(tiku_codeview_t *v, const tiku_event_t *e)
 int
 tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e)
 {
-    int across;
+    int across, commit;
 
     if (view == NULL || e == NULL)
         return 0;
+    view->status = TIKU_EDIT_OK;
+    commit = tiku_text_input_event(&view->input, e);
     switch (e->type) {
+    case TIKU_EVENT_TEXT_INPUT:
+        return tiku_cv_edit_commit(view, commit);
     case TIKU_EVENT_KEY_DOWN:
-        return key(view, e);
+        return key(view, e) || tiku_cv_edit_key(view, e);
     case TIKU_EVENT_POINTER_DOWN:
         if (e->button != 1 || !inside(view->bounds, e->x, e->y))
             return 0;
