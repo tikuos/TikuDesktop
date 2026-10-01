@@ -574,6 +574,42 @@ static void test_renumber_bounds(void)
     tiku_textview_free(&e.tv);
 }
 
+/** Renumber follows every target in a GOTO or GOSUB list and the one
+ *  after THEN or ELSE, and leaves quoted text, remarks and DATA alone. */
+static void test_renumber_targets(void)
+{
+    static const char *const before[] = {
+        "100 PRINT \"GOTO 100\"", "200 REM GOTO 100",
+        "300 ON A GOTO 100, 200 , 300", "400 IF A THEN GOTO 100 ELSE 200",
+        "500 PRINT 1: ' GOTO 100", "600 DATA GOTO 100",
+        "700 PRINT \"a\\\"GOTO 100\": GOSUB 700",
+    };
+    static const char *const after[] = {
+        "10 PRINT \"GOTO 100\"", "20 REM GOTO 100",
+        "30 ON A GOTO 10, 20 , 30", "40 IF A THEN GOTO 10 ELSE 20",
+        "50 PRINT 1: ' GOTO 100", "60 DATA GOTO 100",
+        "70 PRINT \"a\\\"GOTO 100\": GOSUB 70",
+    };
+    char text[512];
+    size_t n = 0;
+    edit_t e;
+    int i;
+
+    for (i = 0; i < 7; i++) {
+        n += (size_t)snprintf(text + n, sizeof text - n, "%s\n", before[i]);
+    }
+    memset(&e, 0, sizeof e);
+    e.w = 620; e.h = 420; e.id = 2; e.tip = -1;
+    e.lang = TIKU_SYNTAX_BASIC;
+    tiku_textview_init(&e.tv);
+    tiku_textview_set(&e.tv, text);
+    tiku_ide_renumber_basic(&e);
+    for (i = 0; i < 7; i++) {
+        assert(!strcmp(tiku_textview_line(&e.tv, i), after[i]));
+    }
+    tiku_textview_free(&e.tv);
+}
+
 static void test_empty_startup(const tiku_app_services_t *services,
                                const char *snapshot)
 {
@@ -891,6 +927,7 @@ int main(void)
     test_return_at_line_limit(st);
     test_unbound_cmd_chords(st);
     test_find_bar(st);
+    test_renumber_targets();
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);

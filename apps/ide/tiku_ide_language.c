@@ -13,7 +13,9 @@ typedef struct {
 static int
 renum_is_word(int c);
 static int
-renum_keyword(const char *s);
+renum_keyword(const char *s, int *list);
+static int
+renum_raw(const char *s);
 static int
 renum_map(int old, const int *olds, const int *news, int n);
 static void
@@ -110,12 +112,13 @@ static int
 renum_is_word(int c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9');
+           (c >= '0' && c <= '9') || c == '_';
 }
 
-/** @brief The length of a target keyword starting here, or 0. */
+/** @brief The length of a branch keyword starting here, or 0; @p list is
+ *         set when a comma may bring further targets, as after GOTO. */
 static int
-renum_keyword(const char *s)
+renum_keyword(const char *s, int *list)
 {
     static const char *const K[] = { "goto", "gosub", "then", "else" };
     size_t i;
@@ -124,10 +127,20 @@ renum_keyword(const char *s)
         int n = (int)strlen(K[i]);
 
         if (strncasecmp(s, K[i], (size_t)n) == 0 && !renum_is_word(s[n])) {
+            *list = i < 2;
             return n;
         }
     }
     return 0;
+}
+
+/** @brief Whether REM or DATA starts here, after which the interpreter
+ *         keeps the rest of the line as raw text. */
+static int
+renum_raw(const char *s)
+{
+    return (strncasecmp(s, "rem", 3) == 0 && !renum_is_word(s[3])) ||
+           (strncasecmp(s, "data", 4) == 0 && !renum_is_word(s[4]));
 }
 
 /** @brief The new number an old one maps to, or the old if none. */
@@ -156,12 +169,14 @@ renum_put(renum_out_t *o, const char *s, size_t len)
 }
 
 /**
- * @brief Copy @p s, rewriting a number after GOTO/GOSUB/THEN/ELSE.
+ * @brief Copy @p s, rewriting the line numbers its branches name.
  *
  * A jump has to follow the line it names when the numbers move, or
- * renumbering would quietly break every branch.  Only a number that
- * follows one of the branch words is touched.  The words are found
- * anywhere in the line, strings and REM text included.
+ * renumbering would quietly break every branch.  Every number in the
+ * comma list after GOTO or GOSUB (`ON A GOTO 10, 20`) is rewritten, and
+ * the one after THEN or ELSE.  Quoted text, and the rest of a line after
+ * REM, an apostrophe or DATA, are copied unchanged: the interpreter runs
+ * none of it.
  */
 static void
 renum_emit(renum_out_t *o, const char *s,
@@ -170,19 +185,39 @@ renum_emit(renum_out_t *o, const char *s,
     int prev_word = 0;
 
     while (*s != '\0') {
-        int kw = prev_word ? 0 : renum_keyword(s);
+        int kw, list = 0;
 
+        if (*s == '"') {
+            const char *end = s + 1;
+
+            while (*end != '\0' && *end != '"') {
+                end += (*end == '\\' && end[1] != '\0') ? 2 : 1;
+            }
+            end += (*end == '"');
+            renum_put(o, s, (size_t)(end - s));
+            s = end;
+            prev_word = 0;
+            continue;
+        }
+        if (*s == '\'' || (!prev_word && renum_raw(s))) {
+            renum_put(o, s, strlen(s));
+            return;
+        }
+        kw = prev_word ? 0 : renum_keyword(s, &list);
         if (kw > 0) {
             renum_put(o, s, (size_t)kw);
             s += kw;
-            while (*s == ' ' || *s == '\t') {
-                renum_put(o, s++, 1);
-            }
-            if (*s >= '0' && *s <= '9') {
-                int old = 0;
+            for (;;) {
+                const char *comma;
+                int old = 0, nl;
                 char nb[16];
-                int nl;
 
+                while (*s == ' ' || *s == '\t') {
+                    renum_put(o, s++, 1);
+                }
+                if (*s < '0' || *s > '9') {
+                    break;
+                }
                 while (*s >= '0' && *s <= '9') {
                     old = old * 10 + (*s - '0');
                     s++;
@@ -190,8 +225,15 @@ renum_emit(renum_out_t *o, const char *s,
                 nl = snprintf(nb, sizeof nb, "%d",
                               renum_map(old, olds, news, n));
                 renum_put(o, nb, (size_t)nl);
+                for (comma = s; *comma == ' ' || *comma == '\t'; comma++) {
+                }
+                if (!list || *comma != ',') {
+                    break;
+                }
+                renum_put(o, s, (size_t)(comma - s) + 1u);
+                s = comma + 1;
             }
-            prev_word = 1;
+            prev_word = renum_is_word((unsigned char)s[-1]);
             continue;
         }
         prev_word = renum_is_word((unsigned char)*s);
