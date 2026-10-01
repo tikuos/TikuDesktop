@@ -57,6 +57,8 @@ tiku_field_result_t tiku_field_commit(tiku_field_t *e, const char *text)
  * TEXT clipboard only -- a rename's Cut must never cut the selected
  * files, which is why the file clipboard is a different thing. */
 
+/* With nothing selected there is nothing to copy, and the clipboard keeps
+ * what it holds. */
 static void
 copy_selection(tiku_field_t *e)
 {
@@ -72,20 +74,22 @@ copy_selection(tiku_field_t *e)
         memcpy(taken, e->text + from, n);
         taken[n] = '\0';
         tiku_clipboard_set(taken);
-    } else {
-        tiku_clipboard_set("");
     }
 }
 
 void
 tiku_field_start(tiku_field_t *e, const char *text)
 {
+    char kept[sizeof e->text];
+
     if (e == NULL) {
         return;
     }
+    /* Copied aside first: @p text may be this field's own text. */
+    snprintf(kept, sizeof kept, "%s", (text != NULL) ? text : "");
     memset(e, 0, sizeof *e);
     e->deny = NULL;
-    snprintf(e->text, sizeof e->text, "%s", (text != NULL) ? text : "");
+    memcpy(e->text, kept, sizeof kept);
     e->len = (int)strlen(e->text);
     e->caret = e->len;
     e->sel_a = 0;

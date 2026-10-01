@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tiku_clipboard.h"
 #include "tiku_field.h"
 #include "tiku_trk_select.h"
 
@@ -117,6 +118,16 @@ main(void)
     (void)tiku_field_key(&e, TIKU_FIELD_CUT, 0, 0);
     check(strcmp(e.text, "phaalpha") == 0, "PVK-039",
           "cut removes only the selected text and records it");
+    tiku_clipboard_set("kept");
+    (void)tiku_field_key(&e, TIKU_FIELD_END, 0, 0);
+    (void)tiku_field_key(&e, TIKU_FIELD_COPY, 0, 0);
+    (void)tiku_field_key(&e, TIKU_FIELD_CUT, 0, 0);
+    check(strcmp(tiku_clipboard_text(), "kept") == 0 &&
+          strcmp(e.text, "phaalpha") == 0, "EDR-CLIP-008",
+          "copy and cut with nothing selected leave the clipboard");
+    tiku_field_start(&e, e.text);
+    check(strcmp(e.text, "phaalpha") == 0 && e.sel_a == 0 && e.sel_b == 8,
+          "IDE-FIND-001", "a field restarted on its own text keeps it");
 
     printf("\ncharacters a name cannot contain (MA-046)\n");
     tiku_field_start(&e, "notes");
