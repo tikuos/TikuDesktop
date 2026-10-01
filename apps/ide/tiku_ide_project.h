@@ -3,6 +3,8 @@
 #ifndef TIKU_IDE_PROJECT_H_
 #define TIKU_IDE_PROJECT_H_
 
+#include <stddef.h>
+
 #define IDE_ROWS 64
 
 /** @brief One project entry: a file, or a group's name. */
@@ -24,6 +26,7 @@ typedef struct {
 
 #pragma GCC visibility push(hidden)
 int tiku_ide_project_parse(project_t *pj, const char *text, const char *dir);
+int tiku_ide_project_file_entry(const char *line, char *name, size_t max);
 #pragma GCC visibility pop
 
 #endif /* TIKU_IDE_PROJECT_H_ */

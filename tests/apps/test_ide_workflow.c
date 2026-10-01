@@ -1,5 +1,6 @@
 /* Host regressions for upload preflight, search, recovery and target state. */
 #include <assert.h>
+#include <dirent.h>
 #include <limits.h>
 #include "tiku_dl.h"
 #include "../../apps/ide/tiku_ide_private.h"
@@ -674,6 +675,59 @@ static void test_add_file(ide_t *st, const char *dir)
     assert(unlink(added) == 0 && unlink(proj) == 0 && rmdir(folder) == 0);
 }
 
+/** Remove File keeps every other byte of a project file of any size and
+ *  takes out an entry the way the project reads it, a sub-folder, blanks
+ *  and a CR included, replacing the file whole. */
+static void test_remove_file(ide_t *st, const char *dir)
+{
+    static char text[16384], back[16384];
+    char folder[512], proj[600];
+    size_t n = 0, cut, got;
+    struct dirent *ent;
+    DIR *d;
+    FILE *f;
+    int i, entries = 0;
+
+    snprintf(folder, sizeof folder, "%s/removefile", dir);
+    assert(mkdir(folder, 0700) == 0);
+    snprintf(proj, sizeof proj, "%s/project.tiku", folder);
+    n += (size_t)snprintf(text + n, sizeof text - n, "title Big\nfile a.bas\n");
+    for (i = 0; i < 300; i++) {
+        n += (size_t)snprintf(text + n, sizeof text - n,
+                              "# padding line %03d of a long description\n", i);
+    }
+    n += (size_t)snprintf(text + n, sizeof text - n,
+                          "file sub/b c.bas \r\nfile z.bas\n");
+    assert(n > 8192);
+    file_write(proj, text, n);
+    tiku_ide_project_take(st, proj);
+    assert(st->proj.nrow == 3 && !strcmp(st->proj.row[1].name, "sub/b c.bas"));
+    tiku_list_select_only(&st->tv_list, 0);
+    tiku_ide_project_remove_file(st);
+    cut = strlen("title Big\n");
+    memmove(text + cut, text + cut + strlen("file a.bas\n"), n - cut - strlen("file a.bas\n"));
+    n -= strlen("file a.bas\n");
+    f = fopen(proj, "rb");
+    assert(f);
+    got = fread(back, 1, sizeof back, f);
+    fclose(f);
+    assert(got == n && !memcmp(back, text, n));
+    assert(st->proj.nrow == 2 && !strcmp(st->proj.row[0].name, "sub/b c.bas"));
+    tiku_list_select_only(&st->tv_list, 0);
+    tiku_ide_project_remove_file(st);
+    assert(st->proj.nrow == 1 && !strcmp(st->proj.row[0].name, "z.bas"));
+    d = opendir(folder);
+    assert(d);
+    while ((ent = readdir(d)) != NULL) {
+        entries += ent->d_name[0] != '.';
+    }
+    closedir(d);
+    assert(entries == 1);
+    st->proj_file[0] = '\0';
+    memset(&st->proj, 0, sizeof st->proj);
+    assert(unlink(proj) == 0 && rmdir(folder) == 0);
+}
+
 static void test_empty_startup(const tiku_app_services_t *services,
                                const char *snapshot)
 {
@@ -718,7 +772,7 @@ static void test_project_window_closed(const tiku_app_services_t *services,
 {
     tiku_event_t dismiss = { .type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_ESCAPE };
     void *state = NULL;
-    char draft[600];
+    char draft[sizeof ((ide_t *)0)->edit[0].recovery];
     ide_t *fresh;
     edit_t *e;
 
@@ -1034,6 +1088,7 @@ int main(void)
     test_renumber_targets();
     test_caret_past_255(st);
     test_add_file(st, dir);
+    test_remove_file(st, dir);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);

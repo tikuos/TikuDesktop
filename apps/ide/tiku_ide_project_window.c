@@ -2,11 +2,22 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
+#include "tiku_atomic_file.h"
+
+/** @brief A project file with one line left out, for tiku_atomic_file(). */
+typedef struct {
+    const char *text;
+    size_t      len, cut, resume;   /* the line left out is [cut, resume) */
+} removal_t;
 
 static const char *
 row_name(void *ctx, int row);
 static void
 project_show(ide_t *st);
+static char *
+read_whole(const char *path, size_t *len);
+static int
+write_without(FILE *f, void *ctx);
 
 tiku_rect_t
 tiku_ide_project_body(const ide_t *st)
@@ -402,69 +413,109 @@ tiku_ide_project_add_file(ide_t *st, const char *path)
     }
 }
 
+/** @brief All of the file at @p path, NUL-closed; NULL when it cannot be
+ *         read or memory runs out. */
+static char *
+read_whole(const char *path, size_t *len)
+{
+    FILE *f = fopen(path, "rb");
+    size_t cap = 4096u, n = 0u;
+    char *text = malloc(cap);
+
+    if (f == NULL || text == NULL) {
+        if (f != NULL) { (void)fclose(f); }
+        free(text);
+        return NULL;
+    }
+    for (;;) {
+        size_t got = fread(text + n, 1u, cap - n - 1u, f);
+        char *grown;
+
+        n += got;
+        if (n + 1u < cap) {
+            break;
+        }
+        grown = (cap <= SIZE_MAX / 2u) ? realloc(text, cap * 2u) : NULL;
+        if (grown == NULL) {
+            free(text);
+            (void)fclose(f);
+            return NULL;
+        }
+        text = grown;
+        cap *= 2u;
+    }
+    if (ferror(f)) {
+        free(text);
+        (void)fclose(f);
+        return NULL;
+    }
+    (void)fclose(f);
+    text[n] = '\0';
+    *len = n;
+    return text;
+}
+
+/** @brief Write the project file without its one removed line. */
+static int
+write_without(FILE *f, void *ctx)
+{
+    const removal_t *r = ctx;
+
+    return fwrite(r->text, 1u, r->cut, f) != r->cut ||
+           fwrite(r->text + r->resume, 1u, r->len - r->resume, f) !=
+               r->len - r->resume;
+}
+
 /**
  * @brief Take the SELECTED row out of the project's description.
  *
  * Out of the PROJECT, not off the DISK: the file stays where it is,
- * exactly as BeIDE meant it.  The description is rewritten keeping
- * every line as it stands except the one `file` line being dropped --
- * so the lines this build does not know (a target, a board) ride
- * through untouched, the same promise Add File keeps by appending.
+ * exactly as BeIDE meant it.  The first `file` line naming the row, read
+ * the way the project is read, is the one left out; every other byte
+ * rides through untouched, and the description is replaced whole, so a
+ * failure leaves it as it was.
  */
 void
 tiku_ide_project_remove_file(ide_t *st)
 {
     int row = tiku_list_chosen(&st->tv_list);
-    char whole[8192];
-    char kept[8192];
-    char want[96];
-    size_t used = 0, w = 0;
-    FILE *f;
-    const char *leaf, *slash;
-    char *line;
-    int dropped = 0;
+    removal_t r = { NULL, 0u, 0u, 0u };
+    char *text;
+    size_t at;
 
     if (st->proj_file[0] == '\0' ||
         row < 0 || row >= st->proj.nrow || st->proj.row[row].heading) {
         return;
     }
-    slash = strrchr(st->proj.row[row].path, '/');
-    leaf = (slash != NULL) ? slash + 1 : st->proj.row[row].path;
-    snprintf(want, sizeof want, "file %s", leaf);
-    f = fopen(st->proj_file, "r");
-    if (f == NULL) {
+    text = read_whole(st->proj_file, &r.len);
+    if (text == NULL) {
         return;
     }
-    used = fread(whole, 1u, sizeof whole - 1u, f);
-    (void)fclose(f);
-    whole[used] = '\0';
-    line = whole;
-    while (*line != '\0') {
-        char *nl = strchr(line, '\n');
-        size_t n = (nl != NULL) ? (size_t)(nl - line) + 1u
-                                : strlen(line);
+    for (at = 0u; at < r.len; ) {
+        const char *nl = memchr(text + at, '\n', r.len - at);
+        size_t end = (nl != NULL) ? (size_t)(nl - text) + 1u : r.len;
+        char name[sizeof st->proj.row[0].name];
 
-        if (!dropped && strncmp(line, want, strlen(want)) == 0 &&
-            (line[strlen(want)] == '\n' ||
-             line[strlen(want)] == '\0')) {
-            dropped = 1;        /* the one line being taken out */
-        } else if (w + n < sizeof kept) {
-            memcpy(kept + w, line, n);
-            w += n;
+        if (tiku_ide_project_file_entry(text + at, name, sizeof name) &&
+            strcmp(name, st->proj.row[row].name) == 0) {
+            r.cut = at;
+            r.resume = end;
+            break;
         }
-        line += n;
+        at = end;
     }
-    if (!dropped) {
-        return;
+    if (r.resume == 0u) {
+        free(text);
+        return;                 /* no line names it */
     }
-    f = fopen(st->proj_file, "w");
-    if (f == NULL) {
+    r.text = text;
+    if (tiku_atomic_file(st->proj_file, write_without, &r) != 0) {
         snprintf(st->note, sizeof st->note, "cannot write the project");
         tiku_ide_project_paint(st);
+        free(text);
         return;
     }
-    (void)fwrite(kept, 1u, w, f);
-    (void)fclose(f);
+    free(text);
     tiku_ide_project_take(st, st->proj_file);
 }
 

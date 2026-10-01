@@ -61,6 +61,21 @@ line_end(const char *p)
     return (*p == '\n') ? p + 1 : p;
 }
 
+/** @brief Whether the line at @p line is a `file` entry; its name, read
+ *         as tiku_ide_project_parse() reads it, goes into @p name. */
+int
+tiku_ide_project_file_entry(const char *line, char *name, size_t max)
+{
+    char kind[16];
+    const char *rest = word(line, kind, sizeof kind);
+
+    if (strcmp(kind, "file") != 0) {
+        return 0;
+    }
+    (void)tail(rest, name, max);
+    return 1;
+}
+
 /**
  * @brief Read a project description into @p pj.
  *
