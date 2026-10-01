@@ -313,7 +313,9 @@ cblk_body(jpx_cblk_t *cb, const unsigned char *p, long n, long *pos)
             cb->data = grown;
             cb->cap = cap;
         }
-        memcpy(cb->data + cb->len, p + *pos, (size_t)len);
+        if (len > 0) {
+            memcpy(cb->data + cb->len, p + *pos, (size_t)len);
+        }
         cb->len += len;
         cb->seg[s].len += len;
         *pos += len;
