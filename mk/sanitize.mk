@@ -5,8 +5,9 @@
 # again under AddressSanitizer and UBSan, and their suites run against
 # them, the PDF view's with the view compiled into it (so it is not among
 # the objects).  The editor kit's document engine is compiled the same way,
-# and its suites also run with leak detection on.  The rest of the kits
-# link as built.
+# and its suites also run with leak detection on where there is one: Apple's
+# AddressSanitizer refuses detect_leaks, so on a Mac they run as the rest
+# do.  The rest of the kits link as built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
 # suite rather than passing unseen.
 #
@@ -44,6 +45,14 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
                   test_editdoc_faults test_editdoc_fixtures
 SAN_TESTS += $(SAN_LEAK_TESTS)
+SAN_LEAKS := $(if $(filter Darwin,$(UNAME_S)),0,1)
+
+# The suites' own objects are named here, so make keeps them: left as
+# intermediates, it deleted them after every run, built them all again on
+# the next, and under -j spun in place deciding whether it had to.
+SAN_KIT_TEST_OBJS := $(patsubst %,$(SAN)/tests/kits/%.o,\
+                         $(filter-out $(SAN_APP_TESTS),$(SAN_TESTS)))
+$(SAN_KIT_TEST_OBJS):
 
 # These suites include their viewer sources directly. Rebuild when an
 # implementation fragment changes, not only when the test file changes.
@@ -62,14 +71,17 @@ $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
 	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
+# Each object notes the headers it read (-MMD), so changing one builds it
+# again: a struct grown in a header otherwise left objects laid out the
+# old way, and a suite crashed on them for no fault of the code.
 $(SAN)/kits/%.o: kits/%.c | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SANFLAGS) -Wno-unused-parameter $(KIT_INC) \
-	      -c -o $@ $<
+	      -MMD -MP -c -o $@ $<
 
 $(SAN)/tests/%.o: tests/%.c | prepare-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(TRK_INC) -c -o $@ $<
+	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(TRK_INC) -MMD -MP -c -o $@ $<
 
 $(SAN)/$(K)/support/tiku_saslprep.o: $(GEN_SASLPREP)
 
@@ -83,9 +95,11 @@ $(SAN)/test_%: $(SAN)/tests/kits/test_%.o $(SAN_OBJS) $(DESK_LIBS)
 check-sanitize: $(addprefix $(SAN)/,$(SAN_TESTS))
 	@for t in $(SAN_TESTS); do \
 	    leaks=0; \
-	    case " $(SAN_LEAK_TESTS) " in *" $$t "*) leaks=1;; esac; \
+	    case " $(SAN_LEAK_TESTS) " in *" $$t "*) leaks=$(SAN_LEAKS);; esac; \
 	    ASAN_OPTIONS=detect_leaks=$$leaks $(SAN)/$$t > $(SAN)/$$t.log 2>&1 || \
 	        { echo "check-sanitize: $$t FAILED"; \
 	          tail -30 $(SAN)/$$t.log; exit 1; }; \
 	    echo "check-sanitize: $$t runs clean"; \
 	done
+
+-include $(shell find $(SAN) -name '*.d' -type f 2>/dev/null)
