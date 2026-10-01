@@ -670,6 +670,18 @@ tiku_text_width(const tiku_font_t *f, const char *text)
 }
 
 int
+tiku_text_advance(const tiku_font_t *f, unsigned cp)
+{
+    face_glyph_t g;
+
+    if (f == NULL) {
+        return 0;
+    }
+    (void)face_glyph(f, cp, &g);
+    return g.adv;
+}
+
+int
 tiku_text_height(const tiku_font_t *f)
 {
     return (f != NULL) ? f->height : 0;

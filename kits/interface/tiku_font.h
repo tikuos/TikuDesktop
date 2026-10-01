@@ -156,6 +156,15 @@ int tiku_font_mono_cell(int bold);
 /** @brief Pixel width of @p text. */
 int tiku_text_width(const tiku_font_t *f, const char *text);
 
+/**
+ * @brief How far tiku_text() moves its pen for code point @p cp.
+ *
+ * A letter the face lacks answers the advance drawing it would use, so a
+ * caller that measures text a code point at a time gets the same widths
+ * as tiku_text_width() and the same pen positions as tiku_text().
+ */
+int tiku_text_advance(const tiku_font_t *f, unsigned cp);
+
 /** @brief Line height (ascent + descent). */
 int tiku_text_height(const tiku_font_t *f);
 

@@ -78,8 +78,13 @@ of the same distribution and are covered by `License.txt`.
 
 The remaining kit files are original Tiku code under Apache-2.0:
 `tiku_editdoc.h`, `tiku_editdoc.c`, `tiku_editdoc_transaction.c`,
-`tiku_editdoc_undo.c`, `tiku_editdoc_utf8.c` and `tiku_editdoc_alloc.c`, and
-the tests `test_editdoc_model.c` and `test_editdoc_faults.c`.
+`tiku_editdoc_undo.c`, `tiku_editdoc_utf8.c`, `tiku_editdoc_alloc.c`, and the
+code view's `tiku_codeview.h`, `tiku_codeview_private.h`, `tiku_codeview.c`,
+`tiku_codeview_layout.c`, `tiku_codeview_paint.c` and
+`tiku_codeview_input.c`, and the tests `test_editdoc_model.c`,
+`test_editdoc_faults.c`, `test_codeview_layout.c`, `test_codeview_paint.c`
+and `test_codeview_input.c`. The code view's word moves follow the behaviour
+of `Document::NextWordStart` in `src/Document.cxx`, read as a reference.
 
 **Packaging.** No shipped binary contains this code yet. The kit builds
 `libtiku_editor.a`, `tools/package.py` leaves `.a` files out of packages,
