@@ -24,6 +24,14 @@
 #define TIKU_CV_ROW_GAP 2
 /* Pixels each side of a control character's name, inside its cell. */
 #define TIKU_CV_NAME_PAD 2
+/* The line-number gutter: its pixels besides the digits, its separator
+ * included, and the gap from it to a line's x 0. */
+#define TIKU_CV_GUTTER_PAD 12
+#define TIKU_CV_GUTTER_GAP 4
+/* A scrollbar's thickness. */
+#define TIKU_CV_BAR 15
+/* Pixels past the widest line the text may scroll, room for the caret. */
+#define TIKU_CV_SLACK 12
 
 struct tiku_codeview {
     tiku_editdoc_t *doc;            /* referenced while the view lives  */
@@ -43,6 +51,17 @@ struct tiku_codeview {
     int clicks;                     /* presses counted as one click     */
     int64_t click_at;               /* the last press's time, in us     */
     int click_x, click_y;           /* and where it was                 */
+    unsigned options;               /* TIKU_CODEVIEW_LINE_NUMBERS ...   */
+    int held_bar;                   /* thumb held: 1 vertical, 2 across */
+    int grab;                       /* where in the thumb it was taken  */
+    int arrow_bar;                  /* arrow held: 1 vertical, 2 across */
+    int arrow_dir;                  /* -1 back, +1 on                   */
+    int arrow_pulses;               /* ticks since it was pressed       */
+    int64_t *widths;                /* each line's width, -1 unknown    */
+    int64_t nwidths, widths_cap;    /* entries in use and allocated     */
+    int64_t widest;                 /* -1 until found again             */
+    int widths_ok;                  /* the table follows the document   */
+    uint32_t widths_key;            /* the metrics it was measured in   */
 };
 
 /* What a character of a line is on the screen. */
@@ -89,7 +108,35 @@ tiku_edit_pos_t tiku_cv_char_at(tiku_codeview_t *v, int64_t line, int64_t x);
 /* Where line x 0 and the first row's top are on the surface. */
 int tiku_cv_text_x(const tiku_codeview_t *v);
 int tiku_cv_text_y(const tiku_codeview_t *v);
-/* Bring the scroll position back inside the document. */
+/* The line-number gutter's width, 0 when the numbers are off. */
+int tiku_cv_gutter(const tiku_codeview_t *v);
+/* The text's ground: the bounds less the gutter and the scrollbars. */
+tiku_rect_t tiku_cv_area(const tiku_codeview_t *v);
+/* Pixels of a line the text area shows across. */
+int64_t tiku_cv_text_w(const tiku_codeview_t *v);
+/* A scrollbar's place, empty when the bar is off or the bounds are too
+ * small to hold it. */
+tiku_rect_t tiku_cv_bar(const tiku_codeview_t *v, int horizontal);
+/* Where a bar's thumb is, in thousandths of its travel, and the share of
+ * the bar it fills, in thousandths and at least 50. */
+void tiku_cv_bar_place(tiku_codeview_t *v, int horizontal, int *pos,
+                       int *frac);
+/* Bring the first row back inside the document and the horizontal
+ * position to 0 or more.  The second also stops the text TIKU_CV_SLACK
+ * pixels past the end of the widest line, measuring every line not yet
+ * measured. */
 void tiku_cv_clamp(tiku_codeview_t *v);
+void tiku_cv_clamp_across(tiku_codeview_t *v);
+
+/* The widest line's width, measuring every line not yet measured; with
+ * no room for the table, the widest of the rows shown. */
+int64_t tiku_cv_widest(tiku_codeview_t *v);
+/* Follow a change in the width table: lines @p first to @p last_old
+ * became @p first to @p last_new, @p lines in all. */
+void tiku_cv_widths_change(tiku_codeview_t *v, int64_t first,
+                           int64_t last_old, int64_t last_new,
+                           int64_t lines);
+/* Free the width table. */
+void tiku_cv_widths_free(tiku_codeview_t *v);
 
 #endif /* TIKU_CODEVIEW_PRIVATE_H_ */

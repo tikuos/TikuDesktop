@@ -617,8 +617,7 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
 {
     int rec = tiku_gfx_rec_enter(s);
     int btn = horiz ? r.h : r.w;
-    tiku_rect_t track, thumb;
-    int span, tlen, toff, i;
+    tiku_rect_t thumb;
 
     /* The track a full shade down: one step from the panel read as the
      * panel, and a scrollbar nobody can see is a listing nobody knows
@@ -637,15 +636,11 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
                          can_back, held < 0);
             arrow_button(s, (tiku_rect_t){ r.x + r.w - btn, r.y, btn,
                                                 btn }, 3, can_on, held > 0);
-            track = (tiku_rect_t){ r.x + btn, r.y, r.w - 2 * btn, r.h };
-            span = track.w;
         } else {
             arrow_button(s, (tiku_rect_t){ r.x, r.y, btn, btn }, 0,
                          can_back, held < 0);
             arrow_button(s, (tiku_rect_t){ r.x, r.y + r.h - btn, btn,
                                                 btn }, 1, can_on, held > 0);
-            track = (tiku_rect_t){ r.x, r.y + btn, r.w, r.h - 2 * btn };
-            span = track.h;
         }
     }
     if (frac > 1.0f) { frac = 1.0f; }
@@ -653,15 +648,12 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
     if (rec) {
         /* Twenty-five rectangles said where the thumb happened to be
          * drawn; these two numbers say where the VIEW is, which is the
-         * fact a reader wanted and the far end can draw from. */
-        (void)tiku_dl_scrollbar(s->record, r, (int)(pos * 1000.0f),
-                                (int)(frac * 1000.0f), horiz);
+         * fact a reader wanted and the far end can draw from.  Rounded,
+         * so a caller that hands over thousandths gets them back. */
+        (void)tiku_dl_scrollbar(s->record, r, (int)(pos * 1000.0f + 0.5f),
+                                (int)(frac * 1000.0f + 0.5f), horiz);
     }
-    tlen = (int)((float)span * frac);
-    toff = (int)((float)(span - tlen) * pos);
-    thumb = horiz
-            ? (tiku_rect_t){ track.x + toff, track.y, tlen, track.h }
-            : (tiku_rect_t){ track.x, track.y + toff, track.w, tlen };
+    thumb = tiku_ui_scrollbar_thumb(r, pos, frac, horiz);
 
     {
         /* A pill, a pixel in from the track on each side. */
@@ -677,6 +669,21 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
     }
 
     tiku_gfx_rec_leave(s, rec);
+}
+
+tiku_rect_t
+tiku_ui_scrollbar_thumb(tiku_rect_t r, float pos, float frac, int horiz)
+{
+    int btn = horiz ? r.h : r.w;
+    int span = horiz ? r.w - 2 * btn : r.h - 2 * btn;
+    int tlen, toff;
+
+    if (frac > 1.0f) { frac = 1.0f; }
+    if (frac < 0.05f) { frac = 0.05f; }
+    tlen = (int)((float)span * frac);
+    toff = (int)((float)(span - tlen) * pos);
+    return horiz ? (tiku_rect_t){ r.x + btn + toff, r.y, tlen, r.h }
+                 : (tiku_rect_t){ r.x, r.y + btn + toff, r.w, tlen };
 }
 
 void

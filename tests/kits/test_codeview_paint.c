@@ -286,7 +286,8 @@ scrolling(void)
 {
     tiku_codeview_t *v = view_of("Hello\tworld\n\x01z\nsecond\nthird\n"
                                  "fourth\nfifth\nsixth\n\tseventh\n"
-                                 "eighth\nninth\n");
+                                 "eighth\nninth\nand a last line wide "
+                                 "enough to scroll the others across\n");
     tiku_surface_t *flat = surface(W, H, 1), *moved = surface(W, H, 1);
     int x, y, ok = 1;
 

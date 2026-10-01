@@ -226,6 +226,12 @@ void tiku_ui_tip(tiku_surface_t *s, tiku_rect_t r, const char *text);
 void tiku_ui_scrollbar(tiku_surface_t *s, tiku_rect_t r,
                             float pos, float frac, int horiz);
 
+/** @brief Where tiku_ui_scrollbar() draws the thumb of the bar @p r, for
+ *         a caller hit testing it; the arrows are the squares at the
+ *         ends, as thick as the bar. */
+tiku_rect_t tiku_ui_scrollbar_thumb(tiku_rect_t r, float pos, float frac,
+                                    int horiz);
+
 /**
  * @brief The same bar with one arrow drawn held: @p held is -1 for the
  *        back arrow, +1 for the forward one, 0 for neither.

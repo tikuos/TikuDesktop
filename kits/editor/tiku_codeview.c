@@ -16,8 +16,9 @@
 #include <string.h>
 
 /** @brief Keep the first row on the text it showed when a change lands
- *         above it, or on the change when the change covers it.  A
- *         change ends a drag and the x vertical moves were keeping. */
+ *         above it, or on the change when the change covers it, and
+ *         carry the line widths across it.  A change ends a drag, a
+ *         held thumb and the x vertical moves were keeping. */
 static void
 heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
 {
@@ -27,11 +28,13 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
 
     v->goal = -1;
     v->dragging = 0;
+    v->held_bar = 0;
     if (change->count == 0)
         return;
     if (change->cause == TIKU_EDIT_LOADED) {
         v->top = 0;
         v->left = 0;
+        tiku_cv_widths_free(v);
         return;
     }
     tiku_edit_change_span(change, 0, &before, &after);
@@ -39,6 +42,7 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
     tiku_edit_change_span(change, change->count - 1, &before, &after);
     delta = change->lines_after - change->lines_before;
     last = tiku_editdoc_line_of(doc, after.end) - delta;
+    tiku_cv_widths_change(v, first, last, last + delta, change->lines_after);
     if (last < v->top)
         v->top += delta;
     else if (first < v->top)
@@ -65,6 +69,7 @@ tiku_codeview_create(tiku_editdoc_t *doc, tiku_codeview_t **view)
     v->tab_width = TIKU_CODEVIEW_TAB_DEFAULT;
     v->focused = 1;
     v->goal = -1;
+    v->widest = -1;
     st = tiku_editdoc_view_attach(doc, &v->view);
     if (st == TIKU_EDIT_OK) {
         st = tiku_editdoc_listen(doc, heard, v, &v->listener);
@@ -88,6 +93,7 @@ tiku_codeview_destroy(tiku_codeview_t *view)
     tiku_editdoc_unlisten(view->doc, view->listener);
     tiku_editdoc_view_detach(view->doc, view->view);
     tiku_editdoc_release(view->doc);
+    tiku_cv_widths_free(view);
     tiku_ed_free(view);
 }
 
@@ -171,6 +177,26 @@ tiku_codeview_focused(const tiku_codeview_t *view)
     return view != NULL && view->focused;
 }
 
+void
+tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
+{
+    if (view == NULL)
+        return;
+    view->options = options & (TIKU_CODEVIEW_LINE_NUMBERS |
+                               TIKU_CODEVIEW_INVISIBLES |
+                               TIKU_CODEVIEW_VSCROLL |
+                               TIKU_CODEVIEW_HSCROLL);
+    view->held_bar = 0;
+    view->arrow_bar = 0;
+    tiku_cv_clamp(view);
+}
+
+unsigned
+tiku_codeview_options(const tiku_codeview_t *view)
+{
+    return view != NULL ? view->options : 0;
+}
+
 int
 tiku_codeview_row_height(const tiku_codeview_t *view)
 {
@@ -186,7 +212,7 @@ tiku_codeview_rows_visible(const tiku_codeview_t *view)
 
     if (view == NULL)
         return 0;
-    rows = (int64_t)(view->bounds.h - TIKU_CV_PAD_Y) /
+    rows = (int64_t)(tiku_cv_area(view).h - TIKU_CV_PAD_Y) /
            tiku_codeview_row_height(view);
     return rows > 0 ? rows : 1;
 }
@@ -203,6 +229,17 @@ tiku_cv_clamp(tiku_codeview_t *v)
         v->top = 0;
     if (v->left < 0)
         v->left = 0;
+}
+
+void
+tiku_cv_clamp_across(tiku_codeview_t *v)
+{
+    int64_t most;
+
+    tiku_cv_clamp(v);
+    most = tiku_cv_widest(v) + TIKU_CV_SLACK - tiku_cv_text_w(v);
+    if (v->left > most)
+        v->left = most > 0 ? most : 0;
 }
 
 int64_t
@@ -224,7 +261,7 @@ tiku_codeview_scroll_to(tiku_codeview_t *view, int64_t top, int64_t left)
         return;
     view->top = top;
     view->left = left;
-    tiku_cv_clamp(view);
+    tiku_cv_clamp_across(view);
 }
 
 tiku_edit_status_t

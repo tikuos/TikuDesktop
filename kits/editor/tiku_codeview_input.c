@@ -4,8 +4,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_codeview_input.c - the caret and the selection moved by keys and
- * by the pointer, through the same layout the view paints with.
+ * tiku_codeview_input.c - the caret, the selection and the scroll moved by
+ * keys, the pointer, the scrollbars and the wheel, through the same layout
+ * the view paints with.
  *
  * Word moves follow the behaviour of Scintilla's Document::NextWordStart
  * (src/Document.cxx, read for reference; no code taken).
@@ -14,11 +15,16 @@
  */
 
 #include "tiku_codeview_private.h"
+#include "tiku_ui.h"
 
 /* A second press this soon after the last, and this near it, counts as
  * the same click: the desktop's double-click rule. */
 #define CLICK_US 400000
 #define CLICK_SLOP 6
+/* A held scrollbar arrow waits this many ticks, then steps every few:
+ * the desktop's scrollbar rule. */
+#define ARROW_WAIT 12
+#define ARROW_EVERY 4
 
 /** @brief What a character is, for words: a line break, space (a blank
  *         or a control character), part of a word (letters, digits, '_'
@@ -347,6 +353,137 @@ press(tiku_codeview_t *v, const tiku_event_t *e)
         tiku_codeview_reveal(v);
 }
 
+/** @brief Whether @p x, @p y is inside @p r. */
+static int
+inside(tiku_rect_t r, int x, int y)
+{
+    return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+}
+
+/** @brief One column: a space's width in the view's face. */
+static int64_t
+column(const tiku_codeview_t *v)
+{
+    int w = tiku_text_advance(tiku_cv_font(v), ' ');
+
+    return w > 0 ? w : 1;
+}
+
+/** @brief Scroll by @p delta lines down, or pixels across. */
+static void
+scroll_by(tiku_codeview_t *v, int across, int64_t delta)
+{
+    if (across)
+        tiku_codeview_scroll_to(v, v->top, v->left + delta);
+    else
+        tiku_codeview_scroll_to(v, v->top + delta, v->left);
+}
+
+/** @brief One arrow's step: a line down, a column across. */
+static int64_t
+bar_step(const tiku_codeview_t *v, int across)
+{
+    return across ? column(v) : 1;
+}
+
+/** @brief A page: what is shown, less one step. */
+static int64_t
+bar_page(tiku_codeview_t *v, int across)
+{
+    int64_t page = across ? tiku_cv_text_w(v) - column(v)
+                          : tiku_codeview_rows_visible(v) - 1;
+
+    return page > bar_step(v, across) ? page : bar_step(v, across);
+}
+
+/** @brief Button 1 went down on a scrollbar: an arrow steps and holds,
+ *         the track pages, and the thumb is taken. */
+static void
+bar_press(tiku_codeview_t *v, int across, int x, int y)
+{
+    tiku_rect_t bar = tiku_cv_bar(v, across), thumb;
+    int pos, frac, at, ends, len, start, size;
+
+    tiku_cv_bar_place(v, across, &pos, &frac);
+    thumb = tiku_ui_scrollbar_thumb(bar, (float)pos / 1000.0f,
+                                    (float)frac / 1000.0f, across);
+    at = across ? x - bar.x : y - bar.y;
+    ends = across ? bar.h : bar.w;
+    len = across ? bar.w : bar.h;
+    start = across ? thumb.x - bar.x : thumb.y - bar.y;
+    size = across ? thumb.w : thumb.h;
+    if (at < ends || at >= len - ends) {
+        v->arrow_bar = across + 1;
+        v->arrow_dir = at < ends ? -1 : 1;
+        v->arrow_pulses = 0;
+        scroll_by(v, across, v->arrow_dir * bar_step(v, across));
+    } else if (at >= start && at < start + size) {
+        v->held_bar = across + 1;
+        v->grab = at - start;
+    } else {
+        scroll_by(v, across, (at < start ? -1 : 1) * bar_page(v, across));
+    }
+}
+
+/** @brief The thumb held, the pointer at @p x, @p y: put the thumb's
+ *         start where the pointer's grab says. */
+static void
+bar_drag(tiku_codeview_t *v, int x, int y)
+{
+    int across = v->held_bar - 1;
+    tiku_rect_t bar = tiku_cv_bar(v, across), thumb;
+    int pos, frac, ends, travel, at;
+    int64_t total, visible, value;
+
+    tiku_cv_bar_place(v, across, &pos, &frac);
+    thumb = tiku_ui_scrollbar_thumb(bar, (float)pos / 1000.0f,
+                                    (float)frac / 1000.0f, across);
+    ends = across ? bar.h : bar.w;
+    travel = (across ? bar.w : bar.h) - 2 * ends -
+             (across ? thumb.w : thumb.h);
+    if (travel <= 0)
+        return;
+    at = (across ? x - bar.x : y - bar.y) - ends - v->grab;
+    if (at < 0)
+        at = 0;
+    if (at > travel)
+        at = travel;
+    tiku_codeview_extent(v, across, &total, &visible, &value);
+    value = ((int64_t)at * (total - visible) + travel / 2) / travel;
+    if (across)
+        tiku_codeview_scroll_to(v, v->top, value);
+    else
+        tiku_codeview_scroll_to(v, value, v->left);
+}
+
+/** @brief A tick with an arrow held: step once the wait is over. */
+static int
+arrow_tick(tiku_codeview_t *v)
+{
+    if (v->arrow_bar == 0)
+        return 0;
+    v->arrow_pulses++;
+    if (v->arrow_pulses < ARROW_WAIT ||
+        (v->arrow_pulses - ARROW_WAIT) % ARROW_EVERY != 0)
+        return 0;
+    scroll_by(v, v->arrow_bar - 1,
+              v->arrow_dir * bar_step(v, v->arrow_bar - 1));
+    return 1;
+}
+
+/** @brief The wheel: rows down, or columns across with Shift or a
+ *         sideways turn; the caret stays where it is. */
+static void
+wheel(tiku_codeview_t *v, const tiku_event_t *e)
+{
+    if (e->modifiers & TIKU_MOD_SHIFT)
+        scroll_by(v, 1, (int64_t)e->dy * column(v));
+    else if (e->dy != 0)
+        scroll_by(v, 0, e->dy);
+    if (e->dx != 0)
+        scroll_by(v, 1, (int64_t)e->dx * column(v));
+}
+
 /** @brief A key the view moves by; 0 for any other. */
 static int
 key(tiku_codeview_t *v, const tiku_event_t *e)
@@ -393,31 +530,56 @@ key(tiku_codeview_t *v, const tiku_event_t *e)
 int
 tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e)
 {
-    tiku_rect_t b;
+    int across;
 
     if (view == NULL || e == NULL)
         return 0;
-    b = view->bounds;
     switch (e->type) {
     case TIKU_EVENT_KEY_DOWN:
         return key(view, e);
     case TIKU_EVENT_POINTER_DOWN:
-        if (e->button != 1 || e->x < b.x || e->y < b.y ||
-            e->x >= b.x + b.w || e->y >= b.y + b.h)
+        if (e->button != 1 || !inside(view->bounds, e->x, e->y))
+            return 0;
+        for (across = 0; across < 2; across++) {
+            if (inside(tiku_cv_bar(view, across), e->x, e->y)) {
+                bar_press(view, across, e->x, e->y);
+                return 1;
+            }
+        }
+        if (!inside(tiku_cv_area(view), e->x, e->y))
             return 0;
         press(view, e);
         return 1;
     case TIKU_EVENT_POINTER_MOVE:
     case TIKU_EVENT_POINTER_UP:
-        if (!view->dragging ||
-            (e->type == TIKU_EVENT_POINTER_UP && e->button != 1))
+        if (e->type == TIKU_EVENT_POINTER_UP && e->button != 1)
+            return 0;
+        if (view->held_bar) {
+            bar_drag(view, e->x, e->y);
+            if (e->type == TIKU_EVENT_POINTER_UP)
+                view->held_bar = 0;
+            return 1;
+        }
+        if (view->arrow_bar) {
+            if (e->type == TIKU_EVENT_POINTER_UP)
+                view->arrow_bar = 0;
+            return 1;
+        }
+        if (!view->dragging)
             return 0;
         drag_to(view, e->x, e->y);
         if (e->type == TIKU_EVENT_POINTER_UP)
             view->dragging = 0;
         return 1;
+    case TIKU_EVENT_WHEEL:
+        wheel(view, e);
+        return 1;
+    case TIKU_EVENT_TICK:
+        return arrow_tick(view);
     case TIKU_EVENT_DEACTIVATED:
         view->dragging = 0;
+        view->held_bar = 0;
+        view->arrow_bar = 0;
         return 0;
     default:
         return 0;

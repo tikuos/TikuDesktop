@@ -11,7 +11,9 @@
  */
 
 #include "tiku_codeview_private.h"
+#include "tiku_ui.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* Bytes of text handed to tiku_text() at a time.  A piece ends here or
@@ -33,6 +35,7 @@ typedef struct {
     int64_t piece_x;            /* line x of its first character        */
     tiku_rgb_t ink;             /* its colour                           */
     int stopped;                /* the walk reached the right edge      */
+    int invisibles;             /* mark spaces and tabs                 */
 } row_t;
 
 /** @brief The surface x of line x @p x, which is near the visible part. */
@@ -112,6 +115,19 @@ paint_name(row_t *r, const tiku_cv_cell_t *c, int selected)
               r->y + r->font->ascent, name, ground);
 }
 
+/** @brief A space's dot or a tab's dash, faint, in the middle of its
+ *         cell. */
+static void
+paint_mark(row_t *r, const tiku_cv_cell_t *c, int selected)
+{
+    tiku_rgb_t ground = selected ? TIKU_C_SELECT : TIKU_C_DOC;
+    tiku_rgb_t ink = selected ? TIKU_C_SELTEXT : TIKU_C_TEXT;
+
+    tiku_hline(r->s, surface_x(r, c->x) + c->adv / 2,
+               r->y + r->font->height / 2, c->kind == TIKU_CV_TAB ? 3 : 1,
+               tiku_dim(ink, ground));
+}
+
 /** @brief Paint one character, gathering text into pieces. */
 static int
 paint_cell(void *ctx, const tiku_cv_cell_t *c)
@@ -139,6 +155,8 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
     } else if (c->kind == TIKU_CV_CONTROL) {
         paint_name(r, c, selected);
     }
+    if (r->invisibles && (c->cp == ' ' || c->kind == TIKU_CV_TAB))
+        paint_mark(r, c, selected);
     return 0;
 }
 
@@ -194,30 +212,82 @@ paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows)
     if (line < v->top || line >= v->top + rows)
         return;
     x = tiku_cv_x_of(v, line, caret) - v->left;
-    if (x < 0 || x > v->bounds.w)
+    if (x < 0 || x > tiku_cv_text_w(v))
         return;
     tiku_vline(s, tiku_cv_text_x(v) + (int)x,
                tiku_cv_text_y(v) + (int)(line - v->top) * step, step,
                TIKU_C_TEXT);
 }
 
+/** @brief The gutter: a shaded strip with a rule at its right edge and
+ *         each shown line's number right-aligned a few pixels short of
+ *         the rule, on the text's baseline. */
+static void
+paint_gutter(tiku_codeview_t *v, tiku_surface_t *s, int width,
+             tiku_rect_t area)
+{
+    const tiku_font_t *numbers = tiku_font_at(11);
+    const tiku_font_t *f = tiku_cv_font(v);
+    tiku_rect_t strip = { v->bounds.x, area.y, width, area.h };
+    int64_t line, lines = tiku_editdoc_lines(v->doc);
+    int y = tiku_cv_text_y(v), step = tiku_codeview_row_height(v);
+    char number[24];
+
+    tiku_fill(s, strip, tiku_tint(TIKU_C_DOC, 1.04f));
+    tiku_vline(s, strip.x + width - 1, strip.y, strip.h,
+               tiku_tint(TIKU_C_DOC, 1.12f));
+    for (line = v->top; line < lines && y < area.y + area.h; line++) {
+        snprintf(number, sizeof number, "%lld", (long long)(line + 1));
+        tiku_text(s, numbers,
+                  strip.x + width - 6 - tiku_text_width(numbers, number),
+                  y + f->ascent, number, tiku_ink(TIKU_INK_FAINT));
+        y += step;
+    }
+}
+
+/** @brief A scrollbar placed in thousandths, so a recording carries the
+ *         thumb exactly where it is drawn here; an arrow held down is
+ *         drawn pressed. */
+static void
+paint_bar(tiku_codeview_t *v, tiku_surface_t *s, int horizontal)
+{
+    tiku_rect_t bar = tiku_cv_bar(v, horizontal);
+    int pos, frac;
+
+    if (bar.w <= 0 || bar.h <= 0)
+        return;
+    tiku_cv_bar_place(v, horizontal, &pos, &frac);
+    tiku_ui_scrollbar_held(s, bar, (float)pos / 1000.0f,
+                           (float)frac / 1000.0f, horizontal,
+                           v->arrow_bar == horizontal + 1 ? v->arrow_dir
+                                                          : 0);
+}
+
 void
 tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
 {
-    tiku_rect_t saved, area, text;
+    tiku_rect_t saved, full, area, text;
     tiku_edit_pos_t anchor = 0, caret = 0;
     int64_t lines, rows;
+    int gutter;
     row_t r;
 
     if (view == NULL || s == NULL)
         return;
     saved = s->clip;
-    area = meet(view->bounds, saved);
-    if (area.w <= 0 || area.h <= 0)
+    full = meet(view->bounds, saved);
+    if (full.w <= 0 || full.h <= 0)
         return;
-    tiku_cv_clamp(view);
-    tiku_clip_set(s, area);
-    tiku_fill(s, view->bounds, TIKU_C_DOC);
+    if (view->options & TIKU_CODEVIEW_HSCROLL)
+        tiku_cv_clamp_across(view);
+    else
+        tiku_cv_clamp(view);
+    area = tiku_cv_area(view);
+    gutter = tiku_cv_gutter(view);
+    tiku_clip_set(s, full);
+    tiku_fill(s, area, TIKU_C_DOC);
+    if (gutter > 0)
+        paint_gutter(view, s, gutter, area);
 
     memset(&r, 0, sizeof r);
     r.s = s;
@@ -225,14 +295,15 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
     r.x0 = tiku_cv_text_x(view);
     r.step = tiku_codeview_row_height(view);
     r.left = view->left;
-    r.right = view->left + (view->bounds.x + view->bounds.w - r.x0);
+    r.right = view->left + tiku_cv_text_w(view);
+    r.invisibles = (view->options & TIKU_CODEVIEW_INVISIBLES) != 0;
     (void)tiku_codeview_selection(view, &anchor, &caret);
     r.lo = anchor < caret ? anchor : caret;
     r.hi = anchor < caret ? caret : anchor;
     text.x = r.x0;
-    text.y = view->bounds.y;
-    text.w = view->bounds.x + view->bounds.w - r.x0;
-    text.h = view->bounds.h;
+    text.y = area.y;
+    text.w = (int)tiku_cv_text_w(view);
+    text.h = area.h;
     text = meet(text, saved);
     lines = tiku_editdoc_lines(view->doc);
     rows = 0;
@@ -240,12 +311,22 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
         tiku_clip_set(s, text);
         for (;; rows++) {
             r.y = tiku_cv_text_y(view) + (int)rows * r.step;
-            if (view->top + rows >= lines ||
-                r.y >= view->bounds.y + view->bounds.h)
+            if (view->top + rows >= lines || r.y >= area.y + area.h)
                 break;
             paint_row(view, &r, view->top + rows);
         }
         paint_caret(view, s, rows);
+        tiku_clip_set(s, full);
+    }
+    paint_bar(view, s, 0);
+    paint_bar(view, s, 1);
+    if ((view->options & TIKU_CODEVIEW_VSCROLL) &&
+        (view->options & TIKU_CODEVIEW_HSCROLL)) {
+        tiku_rect_t corner = { view->bounds.x + view->bounds.w - TIKU_CV_BAR,
+                               view->bounds.y + view->bounds.h - TIKU_CV_BAR,
+                               TIKU_CV_BAR, TIKU_CV_BAR };
+
+        tiku_fill(s, corner, TIKU_C_PANEL);
     }
     restore_clip(s, saved);
 }

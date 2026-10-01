@@ -65,6 +65,16 @@ tiku_edit_status_t tiku_codeview_set_tab_width(tiku_codeview_t *view,
                                                int columns);
 int tiku_codeview_tab_width(const tiku_codeview_t *view);
 
+/* What a view shows besides the text; a new view shows none of them. */
+#define TIKU_CODEVIEW_LINE_NUMBERS 0x1u  /* a gutter of line numbers    */
+#define TIKU_CODEVIEW_INVISIBLES   0x2u  /* a mark in each space and tab */
+#define TIKU_CODEVIEW_VSCROLL      0x4u  /* a scrollbar down the right  */
+#define TIKU_CODEVIEW_HSCROLL      0x8u  /* a scrollbar along the foot  */
+
+/** @brief Show what @p options names, and nothing else of them. */
+void tiku_codeview_set_options(tiku_codeview_t *view, unsigned options);
+unsigned tiku_codeview_options(const tiku_codeview_t *view);
+
 /** @brief Whether the caret is drawn; the selection is drawn either
  *         way.  A new view is focused. */
 void tiku_codeview_set_focus(tiku_codeview_t *view, int focused);
@@ -80,10 +90,18 @@ int64_t tiku_codeview_rows_visible(const tiku_codeview_t *view);
 int64_t tiku_codeview_top(const tiku_codeview_t *view);
 int64_t tiku_codeview_left(const tiku_codeview_t *view);
 /** @brief Scroll so @p top is the first row and the text is moved
- *         @p left pixels; the top stops where the last line fills the
- *         last whole row, and neither goes below 0. */
+ *         @p left pixels.  The top stops where the last line fills the
+ *         last whole row, the text stops a little past the end of the
+ *         widest line, and neither goes below 0. */
 void tiku_codeview_scroll_to(tiku_codeview_t *view, int64_t top,
                              int64_t left);
+/** @brief What there is to scroll, for an application drawing its own
+ *         scrollbar: lines down, or pixels across when @p across, with
+ *         @p total in all, @p visible of them shown and the first shown
+ *         at @p value. */
+void tiku_codeview_extent(tiku_codeview_t *view, int across,
+                          int64_t *total, int64_t *visible,
+                          int64_t *value);
 
 /** @brief The width of @p line's text, its line break left out; -1 for
  *         a line that is not there. */
@@ -145,14 +163,16 @@ tiku_edit_status_t tiku_codeview_select_all(tiku_codeview_t *view);
 void tiku_codeview_reveal(tiku_codeview_t *view);
 
 /**
- * @brief Take a key or pointer event.
+ * @brief Take a key, pointer, wheel or tick event.
  *
- * Keys: the arrows, Home, End, Page Up and Page Down, extending with
+ * Moves: the arrows, Home, End, Page Up and Page Down, extending with
  * Shift; Command with Home or End for the document's ends; Option or
- * Command with Left or Right for words.  Button 1 inside the bounds puts
- * the caret, Shift extends, two clicks select a word and three a line,
- * and dragging extends by the same unit.
+ * Command with Left or Right for words.
  *
+ * @note Button 1 in the text puts the caret, Shift extends, two clicks
+ *       select a word and three a line, and dragging extends by the same
+ *       unit; on a scrollbar it steps, pages or drags.  The wheel
+ *       scrolls.
  * @return 1 when the view used the event, 0 when it is the
  *         application's; deactivation ends a drag and still returns 0.
  */

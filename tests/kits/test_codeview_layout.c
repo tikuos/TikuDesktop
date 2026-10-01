@@ -377,17 +377,22 @@ fonts(void)
 static void
 scrolling(void)
 {
-    char text[2000];
+    char *text;
     tiku_editdoc_t *doc;
     tiku_codeview_t *v;
     int i, step;
-    int64_t x, y, x0, y0;
+    int64_t x, y, x0, y0, total, shown, at;
+    int64_t c = tiku_font_mono_cell(0);
     tiku_rect_t tiny = { 0, 0, 3, 2 };
     tiku_rect_t box = { 10, 20, 400, 200 };
 
+    text = malloc(100 * 72 + 1);
+    if (text == NULL)
+        exit(1);
     text[0] = '\0';
     for (i = 0; i < 100; i++)
-        strcat(text, "0123456789\n");
+        strcat(text, "0123456789012345678901234567890123456789"
+                     "012345678901234567890123456789\n");
     doc = doc_of(text);
     v = view_of(doc);
     step = tiku_codeview_row_height(v);
@@ -409,6 +414,17 @@ scrolling(void)
           tiku_codeview_left(v) == 0, "LAY-008",
           "the top stops where the last line fills the last row, and "
           "neither goes below 0");
+    tiku_codeview_scroll_to(v, 0, 1000000);
+    check(tiku_codeview_left(v) == 70 * c + 12 - (400 - 5), "LAY-008",
+          "the text stops 12 pixels past the end of the widest line");
+    tiku_codeview_extent(v, 1, &total, &shown, &at);
+    check(total == 70 * c + 12 && shown == 400 - 5 &&
+          at == tiku_codeview_left(v), "LAY-008",
+          "the extent across is the widest line and 12, the text's width "
+          "shown, and the scroll");
+    tiku_codeview_extent(v, 0, &total, &shown, &at);
+    check(total == 101 && shown == tiku_codeview_rows_visible(v) &&
+          at == 0, "LAY-008", "and down, the lines, the rows and the top");
     tiku_codeview_set_bounds(v, tiny);
     tiku_codeview_scroll_to(v, 1000, 0);
     check(tiku_codeview_rows_visible(v) == 1 &&
@@ -419,6 +435,7 @@ scrolling(void)
           "LAY-008", "growing the box brings the top back");
     tiku_codeview_destroy(v);
     tiku_editdoc_release(doc);
+    free(text);
 }
 
 /** @brief Replace [s, e) with @p text as one transaction. */

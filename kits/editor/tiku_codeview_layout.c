@@ -6,13 +6,16 @@
  *
  * tiku_codeview_layout.c - where a line's characters lie: each one's
  * bytes and its x, measured with the advances tiku_text() draws with, so
- * painting, hit testing and the caret use the same positions.
+ * painting, hit testing and the caret use the same positions.  Also where
+ * the gutter, the text and the scrollbars lie, and each line's width.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_codeview_private.h"
+#include "tiku_editdoc_private.h"
 
+#include <stdint.h>
 #include <string.h>
 
 /** @brief A walk in progress: the character being assembled from the
@@ -208,9 +211,245 @@ tiku_cv_char_at(tiku_codeview_t *v, int64_t line, int64_t x)
 }
 
 int
+tiku_cv_gutter(const tiku_codeview_t *v)
+{
+    int64_t lines;
+    int digits = 1;
+
+    if (!(v->options & TIKU_CODEVIEW_LINE_NUMBERS))
+        return 0;
+    for (lines = tiku_editdoc_lines(v->doc); lines >= 10; lines /= 10)
+        digits++;
+    return TIKU_CV_GUTTER_PAD +
+           digits * tiku_text_advance(tiku_cv_font(v), '0');
+}
+
+tiku_rect_t
+tiku_cv_area(const tiku_codeview_t *v)
+{
+    tiku_rect_t r = v->bounds;
+    int gutter = tiku_cv_gutter(v);
+
+    r.x += gutter;
+    r.w -= gutter;
+    if (v->options & TIKU_CODEVIEW_VSCROLL)
+        r.w -= TIKU_CV_BAR;
+    if (v->options & TIKU_CODEVIEW_HSCROLL)
+        r.h -= TIKU_CV_BAR;
+    if (r.w < 0)
+        r.w = 0;
+    if (r.h < 0)
+        r.h = 0;
+    return r;
+}
+
+int
 tiku_cv_text_x(const tiku_codeview_t *v)
 {
-    return v->bounds.x + TIKU_CV_PAD_X;
+    int gutter = tiku_cv_gutter(v);
+
+    return v->bounds.x +
+           (gutter > 0 ? gutter + TIKU_CV_GUTTER_GAP : TIKU_CV_PAD_X);
+}
+
+int64_t
+tiku_cv_text_w(const tiku_codeview_t *v)
+{
+    tiku_rect_t area = tiku_cv_area(v);
+    int64_t w = (int64_t)area.x + area.w - tiku_cv_text_x(v);
+
+    return w > 0 ? w : 0;
+}
+
+tiku_rect_t
+tiku_cv_bar(const tiku_codeview_t *v, int horizontal)
+{
+    tiku_rect_t r = { 0, 0, 0, 0 };
+    tiku_rect_t b = v->bounds;
+    int down = (v->options & TIKU_CODEVIEW_VSCROLL) != 0;
+    int across = (v->options & TIKU_CODEVIEW_HSCROLL) != 0;
+
+    if (horizontal ? !across : !down)
+        return r;
+    if (horizontal) {
+        r.x = b.x;
+        r.y = b.y + b.h - TIKU_CV_BAR;
+        r.w = b.w - (down ? TIKU_CV_BAR : 0);
+        r.h = TIKU_CV_BAR;
+    } else {
+        r.x = b.x + b.w - TIKU_CV_BAR;
+        r.y = b.y;
+        r.w = TIKU_CV_BAR;
+        r.h = b.h - (across ? TIKU_CV_BAR : 0);
+    }
+    if (r.w <= 0 || r.h <= 0 || b.w < TIKU_CV_BAR || b.h < TIKU_CV_BAR)
+        r.w = r.h = 0;
+    return r;
+}
+
+void
+tiku_codeview_extent(tiku_codeview_t *view, int across, int64_t *total,
+                     int64_t *visible, int64_t *value)
+{
+    int64_t t = 0, shown = 0, at = 0;
+
+    if (view != NULL && across) {
+        t = tiku_cv_widest(view) + TIKU_CV_SLACK;
+        shown = tiku_cv_text_w(view);
+        at = view->left;
+    } else if (view != NULL) {
+        t = tiku_editdoc_lines(view->doc);
+        shown = tiku_codeview_rows_visible(view);
+        at = view->top;
+    }
+    if (total != NULL)
+        *total = t;
+    if (visible != NULL)
+        *visible = shown;
+    if (value != NULL)
+        *value = at;
+}
+
+void
+tiku_cv_bar_place(tiku_codeview_t *v, int horizontal, int *pos, int *frac)
+{
+    int64_t total, visible, value, most;
+
+    tiku_codeview_extent(v, horizontal, &total, &visible, &value);
+    most = total - visible;
+    if (most <= 0 || total <= 0) {
+        *pos = 0;
+        *frac = 1000;
+        return;
+    }
+    if (value > most)
+        value = most;
+    if (value < 0)
+        value = 0;
+    *pos = (int)((value * 1000 + most / 2) / most);
+    *frac = (int)((visible * 1000 + total / 2) / total);
+    if (*frac < 50)
+        *frac = 50;
+    if (*frac > 1000)
+        *frac = 1000;
+}
+
+/** @brief A number for everything a line's width depends on: the face,
+ *         its height and printable advances, and the tab stops. */
+static uint32_t
+metrics_key(const tiku_codeview_t *v)
+{
+    const tiku_font_t *f = tiku_cv_font(v);
+    uint32_t h = 2166136261u;
+    int c;
+
+    h = (h ^ (uint32_t)(uintptr_t)f) * 16777619u;
+    h = (h ^ (uint32_t)f->height) * 16777619u;
+    h = (h ^ (uint32_t)v->tab_width) * 16777619u;
+    for (c = 32; c < 127; c++)
+        h = (h ^ (uint32_t)tiku_text_advance(f, (unsigned)c)) * 16777619u;
+    return h;
+}
+
+void
+tiku_cv_widths_free(tiku_codeview_t *v)
+{
+    tiku_ed_free(v->widths);
+    v->widths = NULL;
+    v->nwidths = 0;
+    v->widths_cap = 0;
+    v->widths_ok = 0;
+    v->widest = -1;
+}
+
+/** @brief Room for @p n entries; 0 when there is none. */
+static int
+widths_room(tiku_codeview_t *v, int64_t n)
+{
+    int64_t cap;
+    int64_t *grown;
+
+    if (n <= v->widths_cap)
+        return 1;
+    cap = n + n / 4 + 16;
+    if (cap < 0 || (uint64_t)cap > SIZE_MAX / sizeof *grown)
+        return 0;
+    grown = tiku_ed_realloc(v->widths, (size_t)cap * sizeof *grown);
+    if (grown == NULL)
+        return 0;
+    v->widths = grown;
+    v->widths_cap = cap;
+    return 1;
+}
+
+void
+tiku_cv_widths_change(tiku_codeview_t *v, int64_t first, int64_t last_old,
+                      int64_t last_new, int64_t lines)
+{
+    int64_t i, tail;
+
+    if (!v->widths_ok)
+        return;
+    if (first < 0 || last_old < first || last_new < first ||
+        v->nwidths != lines - (last_new - last_old) ||
+        last_old >= v->nwidths || !widths_room(v, lines)) {
+        tiku_cv_widths_free(v);
+        return;
+    }
+    tail = v->nwidths - (last_old + 1);
+    if (tail > 0)
+        memmove(&v->widths[last_new + 1], &v->widths[last_old + 1],
+                (size_t)tail * sizeof *v->widths);
+    for (i = first; i <= last_new; i++)
+        v->widths[i] = -1;
+    v->nwidths = lines;
+    v->widest = -1;
+}
+
+/** @brief The widest of the lines the view shows, measured now. */
+static int64_t
+widest_shown(tiku_codeview_t *v)
+{
+    int64_t line, last = v->top + tiku_codeview_rows_visible(v);
+    int64_t widest = 0;
+
+    for (line = v->top; line <= last; line++) {
+        int64_t w = tiku_cv_walk(v, line, NULL, NULL);
+
+        if (w > widest)
+            widest = w;
+    }
+    return widest;
+}
+
+int64_t
+tiku_cv_widest(tiku_codeview_t *v)
+{
+    int64_t lines = tiku_editdoc_lines(v->doc), i, widest = 0;
+    uint32_t key = metrics_key(v);
+
+    if (v->widths_ok && (v->nwidths != lines || v->widths_key != key))
+        tiku_cv_widths_free(v);
+    if (!v->widths_ok) {
+        if (!widths_room(v, lines))
+            return widest_shown(v);
+        for (i = 0; i < lines; i++)
+            v->widths[i] = -1;
+        v->nwidths = lines;
+        v->widths_ok = 1;
+        v->widths_key = key;
+        v->widest = -1;
+    }
+    if (v->widest >= 0)
+        return v->widest;
+    for (i = 0; i < lines; i++) {
+        if (v->widths[i] < 0)
+            v->widths[i] = tiku_cv_walk(v, i, NULL, NULL);
+        if (v->widths[i] > widest)
+            widest = v->widths[i];
+    }
+    v->widest = widest;
+    return widest;
 }
 
 int
