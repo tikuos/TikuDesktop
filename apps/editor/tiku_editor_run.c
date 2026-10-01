@@ -132,21 +132,17 @@ tiku_editor_tick(void *state, int64_t now_us)
         if (n <= 0) {
             break;
         }
-        buf[n] = '\0';
-        {
-            char *p = buf;
+        /* Every byte read is looked at: a NUL is dropped rather than
+         * ending the read, since a line cannot hold one. */
+        for (ssize_t i = 0; i < n; i++) {
+            size_t used = strlen(st->out_partial);
 
-            while (*p != '\0') {
-                size_t used = strlen(st->out_partial);
-
-                if (*p == '\n') {
-                    out_line(st, st->out_partial);
-                    st->out_partial[0] = '\0';
-                } else if (used + 1u < sizeof st->out_partial) {
-                    st->out_partial[used] = *p;
-                    st->out_partial[used + 1u] = '\0';
-                }
-                p++;
+            if (buf[i] == '\n') {
+                out_line(st, st->out_partial);
+                st->out_partial[0] = '\0';
+            } else if (buf[i] != '\0' && used + 1u < sizeof st->out_partial) {
+                st->out_partial[used] = buf[i];
+                st->out_partial[used + 1u] = '\0';
             }
         }
         heard = 1;

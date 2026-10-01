@@ -432,6 +432,20 @@ static void footer_message_press(edit_state_t *st)
     st->left = 0; assert(tiku_editor_buffer_set(&st->tv, ""));
 }
 
+/** A NUL in a run's output is dropped, and the bytes after it are kept. */
+static void run_output_nul(edit_state_t *st)
+{
+    int fds[2]; assert(!pipe(fds));
+    assert(fcntl(fds[0], F_SETFL, O_NONBLOCK) == 0);
+    static const char said[] = "a\0b\nc\n";
+    assert(write(fds[1], said, sizeof said - 1) == (ssize_t)(sizeof said - 1));
+    st->child_fd = fds[0]; st->running = 1; st->out_count = 0; st->out_partial[0] = 0;
+    tiku_editor_tick(st, 0);
+    assert(st->out_count == 2 && !strcmp(st->out[0], "ab") && !strcmp(st->out[1], "c"));
+    st->running = 0; st->child_fd = -1; st->out_count = 0;
+    close(fds[0]); close(fds[1]);
+}
+
 /** @brief Capture the title without opening a real desktop window. */
 static uint32_t window_open(void *ctx, const char *title, int w, int h)
 {
@@ -488,6 +502,7 @@ int main(void)
     replace_all_history(st);
     find_field_edits(st);
     footer_message_press(st);
+    run_output_nul(st);
     assert(sizeable_count >= 2);
     tiku_editor_buffer_free(&st->tv);
     assert(tiku_editor_insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));
