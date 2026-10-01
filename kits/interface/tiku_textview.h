@@ -119,7 +119,9 @@ void tiku_textview_select_all(tiku_textview_t *tv);
  * is held; 0 (and touches nothing) when there is none.  An insert, a
  * newline, a backspace or a delete first REMOVES this span, so typing
  * replaces what is selected -- the behaviour lives here, once, for
- * every editor that uses the view.
+ * every editor that uses the view.  When the line the removal would
+ * leave is past the line limit, the span stays and the edit does
+ * nothing.
  */
 int tiku_textview_selection(const tiku_textview_t *tv,
                             int *y0, int *x0, int *y1, int *x1);
@@ -140,10 +142,10 @@ size_t tiku_textview_selected_size(const tiku_textview_t *tv);
 /**
  * @brief Type @p text at the caret, newlines breaking lines.
  *
- * The first character removes a held selection exactly as a typed key
- * does -- pasting over a selection replaces it -- and the rest lands
- * after it. Text bytes, tabs and line endings are preserved, including
- * UTF-8 bytes, so whole-document edits and undo do not strip file data.
+ * A held selection is removed first, as a typed key removes it; when it
+ * cannot be, nothing lands.  Tabs, CR and UTF-8 bytes are kept and other
+ * control bytes dropped.  A character that would pass the line limits is
+ * skipped whole, and the journal records exactly what landed.
  */
 void tiku_textview_insert_text(tiku_textview_t *tv, const char *text);
 /** @brief Insert one validated UTF-8 commit as one undo group.

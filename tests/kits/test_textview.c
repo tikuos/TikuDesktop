@@ -331,6 +331,100 @@ main(void)
     check(strcmp(tiku_textview_line(&tv, 0), "axybc") == 0,
           "a selection shrunk back to nothing keeps the typing after it");
 
+    /* At the line limits the journal holds exactly what happened, and
+     * undo and redo put back exactly what was there. */
+    {
+        static char full[2 * TIKU_TEXTVIEW_LINE_MAX + 8];
+        static char paste[TIKU_TEXTVIEW_LINE_MAX];
+
+        memset(full, 'x', 1023);
+        strcpy(full + 1023, "\ny");
+        tiku_textview_set(&tv, full);
+        tiku_textview_place(&tv, 0, 0);
+        tiku_textview_insert_text(&tv, "a");
+        tiku_textview_insert_text(&tv, "\x01\x7f");
+        check(tiku_textview_line_len(&tv, 0) == 1023 &&
+              !tiku_textview_modified(&tv) && !tiku_textview_can_undo(&tv),
+              "a paste that lands nothing records nothing");
+        tiku_textview_place(&tv, 1, 0);
+        tiku_textview_backspace(&tv);
+        check(tiku_textview_lines(&tv) == 2 && !tiku_textview_can_undo(&tv),
+              "a Backspace join the limit refuses records nothing");
+        tiku_textview_place(&tv, 0, 1023);
+        tiku_textview_delete(&tv);
+        check(tiku_textview_lines(&tv) == 2 && !tiku_textview_can_undo(&tv),
+              "nor does a refused Delete join");
+
+        memset(full, 'x', 1021);
+        full[1021] = '\0';
+        tiku_textview_set(&tv, full);
+        tiku_textview_place(&tv, 0, 1021);
+        tiku_textview_insert_text(&tv, "\xf0\x9f\x98\x80z");
+        check(tiku_textview_line_len(&tv, 0) == 1022 &&
+              tiku_textview_line(&tv, 0)[1021] == 'z',
+              "a character that does not fit is skipped whole");
+        tiku_textview_undo(&tv);
+        check(tiku_textview_line_len(&tv, 0) == 1021 &&
+              !tiku_textview_modified(&tv),
+              "and undo takes back only what landed");
+
+        memset(full, 'a', 1000);
+        full[1000] = '\n';
+        memset(full + 1001, 'b', 30);
+        full[1031] = '\0';
+        tiku_textview_set(&tv, full);
+        tiku_textview_place(&tv, 0, 501);
+        tiku_textview_select_none(&tv);
+        tiku_textview_select_begin(&tv);
+        tiku_textview_place(&tv, 1, 6);
+        tiku_textview_insert(&tv, 'X');
+        check(tiku_textview_lines(&tv) == 1 &&
+              tiku_textview_line_len(&tv, 0) == 526 &&
+              tiku_textview_line(&tv, 0)[501] == 'X',
+              "a selection is removed whole when the joined line fits");
+        tiku_textview_undo(&tv);
+        tiku_textview_undo(&tv);
+        check(tiku_textview_lines(&tv) == 2 &&
+              tiku_textview_line_len(&tv, 0) == 1000 &&
+              tiku_textview_line_len(&tv, 1) == 30 &&
+              !tiku_textview_modified(&tv),
+              "and undo puts both lines back");
+
+        memset(full + 1001, 'b', 1000);
+        full[2001] = '\0';
+        tiku_textview_set(&tv, full);
+        tiku_textview_place(&tv, 0, 900);
+        tiku_textview_select_none(&tv);
+        tiku_textview_select_begin(&tv);
+        tiku_textview_place(&tv, 1, 100);
+        tiku_textview_insert(&tv, 'X');
+        check(tiku_textview_lines(&tv) == 2 &&
+              tiku_textview_line_len(&tv, 0) == 1000 &&
+              tiku_textview_line_len(&tv, 1) == 1000 &&
+              !tiku_textview_can_undo(&tv),
+              "a selection whose joined line would not fit is refused whole");
+
+        memset(full, 'p', 800);
+        full[800] = '\0';
+        tiku_textview_set(&tv, full);
+        tiku_textview_place(&tv, 0, 800);
+        paste[0] = '\n';
+        memset(paste + 1, 'c', 500);
+        strcpy(paste + 501, "\n");
+        tiku_textview_insert_text(&tv, paste);
+        check(tiku_textview_lines(&tv) == 3 &&
+              tiku_textview_line_len(&tv, 1) == 500,
+              "a long line pasted after a long line");
+        tiku_textview_undo(&tv);
+        check(tiku_textview_lines(&tv) == 1 &&
+              tiku_textview_line_len(&tv, 0) == 800 &&
+              !tiku_textview_modified(&tv), "is undone whole");
+        tiku_textview_redo(&tv);
+        check(tiku_textview_lines(&tv) == 3 &&
+              tiku_textview_line_len(&tv, 1) == 500, "and redone whole");
+        tiku_textview_free(&tv);
+    }
+
     printf("\n%s\n", fails ? "FAILURES" : "the caret stays in the text");
     return fails ? 1 : 0;
 }

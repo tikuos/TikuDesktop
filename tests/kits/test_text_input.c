@@ -133,10 +133,9 @@ static void documents(void)
     tiku_textview_set(&tv, two);
     tiku_textview_place(&tv, 0, 900); tiku_textview_select_begin(&tv);
     tiku_textview_place(&tv, 1, 900);
-    assert(!tiku_textview_commit(&tv, "é\n")); /* Temporary undo join would overflow. */
+    assert(!tiku_textview_commit(&tv, "é\n")); /* "é" would pass the limit. */
     assert(!strcmp(tiku_textview_line(&tv, 0), full) && tv.selecting);
-    /* A newline the COMMIT itself adds makes a pair undo must re-join:
-     * refuse it here rather than leave a replay that stops half way. */
+    /* Two adjacent new lines that together pass the limit are refused. */
     tiku_textview_set(&tv, full);
     tiku_textview_place(&tv, 0, 500);
     assert(!tiku_textview_commit(&tv, "\nBB"));
@@ -149,6 +148,22 @@ static void documents(void)
     assert(tv.nline == 2 && !strcmp(tiku_textview_line(&tv, 1), "BB line"));
     assert(tiku_textview_undo(&tv));
     assert(tv.nline == 1 && !strcmp(tiku_textview_line(&tv, 0), "short line"));
+    /* Undo takes back a commit whose last line would not fit beside the
+     * caret's column, and redo puts it back. */
+    char head[601], lines3[603];
+    memset(head, 'a', 600); head[600] = 0;
+    lines3[0] = '\n'; memset(lines3 + 1, 'b', 100); lines3[101] = '\n';
+    memset(lines3 + 102, 'c', 500); lines3[602] = 0;
+    tiku_textview_set(&tv, head);
+    tiku_textview_place(&tv, 0, 600);
+    assert(tiku_textview_commit(&tv, lines3) && tv.nline == 3);
+    assert(tiku_textview_undo(&tv) && tv.nline == 1);
+    assert(!strcmp(tiku_textview_line(&tv, 0), head));
+    assert(!tiku_textview_modified(&tv));
+    assert(tiku_textview_redo(&tv) && tv.nline == 3);
+    assert(tiku_textview_line_len(&tv, 0) == 600 &&
+           tiku_textview_line_len(&tv, 1) == 100 &&
+           tiku_textview_line_len(&tv, 2) == 500);
     tiku_textview_free(&tv);
     assert(!tv.line[0].text && tv.nline == 1);
     assert(tiku_textview_commit(&tv, "é")); /* Freed model remains reusable. */

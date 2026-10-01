@@ -68,6 +68,163 @@ dupn(const char *src, int n)
     return p;
 }
 
+/** @brief Where @p count bytes from line @p y, column @p x end, a line
+ *         break counting as one byte; the text's end stops the walk. */
+static void
+span_end(const tiku_textview_t *tv, int y, int x, int count, int *ey, int *ex)
+{
+    while (count > 0) {
+        int room = tv->line[y].len - x;
+
+        if (count <= room) {
+            x += count;
+            count = 0;
+        } else if (y + 1 < tv->nline) {
+            count -= room + 1;
+            y++;
+            x = 0;
+        } else {
+            x = tv->line[y].len;
+            count = 0;
+        }
+    }
+    *ey = y;
+    *ex = x;
+}
+
+/**
+ * @brief Remove line @p y0 column @p x0 up to line @p y1 column @p x1 in
+ *        one step, the caret left where the span began.
+ *
+ * The line that remains is built whole, so no line past the limit is
+ * made on the way.  @return 0, changing nothing, when that line would
+ * not fit or cannot be allocated.
+ */
+static int
+span_delete(tiku_textview_t *tv, int y0, int x0, int y1, int x1)
+{
+    int tail = tv->line[y1].len - x1, gone = y1 - y0, i;
+    char *joined;
+
+    if (x0 + tail >= TIKU_TEXTVIEW_LINE_MAX) {
+        return 0;
+    }
+    joined = malloc((size_t)(x0 + tail) + 1u);
+    if (joined == NULL) {
+        return 0;
+    }
+    memcpy(joined, tv->line[y0].text, (size_t)x0);
+    memcpy(joined + x0, tv->line[y1].text + x1, (size_t)tail);
+    joined[x0 + tail] = '\0';
+    for (i = y0; i <= y1; i++) {
+        free(tv->line[i].text);
+    }
+    tv->line[y0].text = joined;
+    tv->line[y0].len = x0 + tail;
+    for (i = y1 + 1; i < tv->nline; i++) {
+        tv->line[i - gone] = tv->line[i];
+    }
+    for (i = tv->nline - gone; i < tv->nline; i++) {
+        memset(&tv->line[i], 0, sizeof tv->line[0]);
+    }
+    tv->nline -= gone;
+    tv->cy = y0;
+    tv->cx = x0;
+    return 1;
+}
+
+/** @brief The line breaks in @p n bytes of @p text put at line @p y,
+ *         column @p x, or -1 when a line they make, or the line count,
+ *         would pass its limit. */
+static int
+span_breaks(const tiku_textview_t *tv, int y, int x, const char *text, int n)
+{
+    int breaks = 0, run = x, i;
+
+    for (i = 0; i < n; i++) {
+        if (text[i] != '\n') {
+            run++;
+        } else if (run >= TIKU_TEXTVIEW_LINE_MAX) {
+            return -1;
+        } else {
+            breaks++;
+            run = 0;
+        }
+    }
+    if (run + tv->line[y].len - x >= TIKU_TEXTVIEW_LINE_MAX ||
+        tv->nline + breaks > TIKU_TEXTVIEW_LINES_MAX) {
+        return -1;
+    }
+    return breaks;
+}
+
+/** @brief Free the first @p k lines of @p made, then @p made; @return 0. */
+static int
+span_abandon(tiku_textview_line_t *made, int k)
+{
+    while (k-- > 0) {
+        free(made[k].text);
+    }
+    free(made);
+    return 0;
+}
+
+/**
+ * @brief Insert @p n bytes of @p text, line breaks included, at line @p y
+ *        column @p x in one step, the caret left after them.
+ *
+ * Every line the insertion makes is built before anything changes, so no
+ * line past the limit is made on the way.  @return 0, changing nothing,
+ * when a line or the line count would not fit or memory runs out.
+ */
+static int
+span_insert(tiku_textview_t *tv, int y, int x, const char *text, int n)
+{
+    int breaks = span_breaks(tv, y, x, text, n), i, k = 0, start = 0, seg = 0;
+    tiku_textview_line_t *made;
+
+    if (breaks < 0 ||
+        (made = calloc((size_t)breaks + 1u, sizeof *made)) == NULL) {
+        return 0;
+    }
+    for (i = 0; k <= breaks; i++) {
+        if (i < n && text[i] != '\n') {
+            continue;
+        }
+        {
+            int head = k == 0 ? x : 0;
+            int end = k == breaks ? tv->line[y].len - x : 0;
+            char *t;
+
+            seg = i - start;
+            t = malloc((size_t)(head + seg + end) + 1u);
+            if (t == NULL) {
+                return span_abandon(made, k);
+            }
+            memcpy(t, tv->line[y].text, (size_t)head);
+            memcpy(t + head, text + start, (size_t)seg);
+            memcpy(t + head + seg, tv->line[y].text + x, (size_t)end);
+            t[head + seg + end] = '\0';
+            made[k].text = t;
+            made[k].len = head + seg + end;
+            k++;
+            start = i + 1;
+        }
+    }
+    free(tv->line[y].text);
+    for (i = tv->nline - 1; i > y; i--) {
+        tv->line[i + breaks] = tv->line[i];
+    }
+    for (k = 0; k <= breaks; k++) {
+        tv->line[y + k] = made[k];
+    }
+    free(made);
+    tv->nline += breaks;
+    tv->cy = y + breaks;
+    tv->cx = breaks ? seg : x + seg;
+    return 1;
+}
+
 /** @brief Empty the journal, freeing every entry's text. */
 static void
 journal_clear(tiku_textview_t *tv)
@@ -482,13 +639,17 @@ int tiku_textview_commit(tiku_textview_t *tv, const char *text)
         (x1 < tv->line[y1].len && ((unsigned char)tv->line[y1].text[x1] & 0xc0) == 0x80)) return 0;
     int length = x0, lines = tv->nline - (y1 - y0);
     int tail = tv->line[y1].len - x1;
-    /* Existing undo replays bytes through temporary joined lines. Reject a
-     * replacement those intermediate lines cannot hold, before any mutation. */
+    /* Everything is measured before anything changes, so a refused commit
+     * leaves the view as it was.  Every selected line but the last must fit
+     * with the text after the selection: for the first line that is the
+     * join the selection's removal makes, and the others are held to it
+     * as well. */
     for (int y = y0; y < y1; y++)
         if (tv->line[y].len + tail >= TIKU_TEXTVIEW_LINE_MAX) return 0;
-    /* And the pairs the commit's own newlines make: undo replays byte by
-     * byte, joining each new line back onto the one above, so a pair whose
-     * sum will not fit leaves a replay that stops half way. */
+    /* The text after the selection moves down with each new line as the
+     * text lands, so each segment is measured with it.  Two adjacent new
+     * lines that would not fit as one line are refused too, although
+     * neither the edit nor its undo joins them. */
     int above = -1;
     for (const char *s = checked.text; *s; s++) {
         if (*s == '\n') {
@@ -513,47 +674,98 @@ int tiku_textview_commit(tiku_textview_t *tv, const char *text)
     return 1;
 }
 
+/** @brief The bytes of the character at @p s: its first byte and the
+ *         continuation bytes after it, four at most. */
+static size_t
+unit_length(const char *s)
+{
+    size_t k = 1;
+
+    if ((unsigned char)s[0] >= 0x80u) {
+        while (k < 4 && ((unsigned char)s[k] & 0xc0u) == 0x80u) {
+            k++;
+        }
+    }
+    return k;
+}
+
+/** @brief Put the @p k-byte character at @p s at the caret, whole or not
+ *         at all; control bytes other than tab and CR, and DEL, never
+ *         land.  @return 1 when it landed. */
+static int
+land_unit(tiku_textview_t *tv, const char *s, size_t k)
+{
+    unsigned char c = (unsigned char)s[0];
+    size_t j;
+
+    if (c == '\n') {
+        int lines = tv->nline;
+
+        tiku_textview_newline(tv);
+        return tv->nline > lines;
+    }
+    if ((c < 32u && c != '\t' && c != '\r') || c == 127u ||
+        tv->line[tv->cy].len + (int)k >= TIKU_TEXTVIEW_LINE_MAX) {
+        return 0;
+    }
+    for (j = 0; j < k; j++) {
+        tiku_textview_insert(tv, s[j]);
+    }
+    return 1;
+}
+
 void
 tiku_textview_insert_text(tiku_textview_t *tv, const char *text)
 {
-    size_t i;
-
+    size_t i, k, n = 0;
     int ol, oc, was_rec;
-    char *clean;
-    size_t n = 0;
+    char *landed;
 
-    if (tv == NULL || text == NULL) {
+    /* A paste over a selection replaces it, and lands nothing when the
+     * selection cannot go. */
+    if (tv == NULL || text == NULL || sel_delete(tv) < 0) {
         return;
     }
-    (void)sel_delete(tv);       /* a paste over a selection replaces it */
     ol = tv->cy;
     oc = tv->cx;
-    /* Cleaned to what a file may hold FIRST, so the journal records
-     * exactly what landed -- undoing a paste then removes just those
-     * characters, not the ones the paste itself dropped. */
-    clean = malloc(strlen(text) + 1u);
-    if (clean == NULL) {
+    landed = malloc(strlen(text) + 1u);
+    if (landed == NULL) {
         return;
     }
-    for (i = 0; text[i] != '\0'; i++) {
-        if (text[i] == '\n' || text[i] == '\t' || text[i] == '\r' ||
-            ((unsigned char)text[i] >= 32u && text[i] != 127)) {
-            clean[n++] = text[i];
-        }
-    }
-    clean[n] = '\0';
+    /* The journal records exactly what landed, so undoing a paste takes
+     * back just those characters and none of the ones it dropped. */
     was_rec = tv->recording;
-    tv->recording = 0;          /* the run lands as ONE journal entry */
-    for (i = 0; i < n; i++) {
-        if (clean[i] == '\n') {
-            tiku_textview_newline(tv);
-        } else {
-            tiku_textview_insert(tv, clean[i]);
+    tv->recording = 0;          /* the run lands as one journal entry */
+    for (i = 0; text[i] != '\0'; i += k) {
+        k = unit_length(text + i);
+        if (land_unit(tv, text + i, k)) {
+            memcpy(landed + n, text + i, k);
+            n += k;
         }
     }
     tv->recording = was_rec;
-    record(tv, 1, ol, oc, clean, (int)n);
-    free(clean);
+    if (n > 0) {
+        record(tv, 1, ol, oc, landed, (int)n);
+    }
+    free(landed);
+}
+
+/** @brief Put journal entry @p e back into the text, inserting its text
+ *         when @p insert is set and removing it otherwise, in one step. */
+static void
+replay(tiku_textview_t *tv, const struct tiku_textview_edit *e, int insert)
+{
+    int ey, ex;
+
+    tiku_textview_place(tv, e->line, e->col);
+    if (insert) {
+        if (e->text != NULL) {  /* a copy that failed puts nothing back */
+            (void)span_insert(tv, tv->cy, tv->cx, e->text, e->len);
+        }
+        return;
+    }
+    span_end(tv, tv->cy, tv->cx, e->len, &ey, &ex);
+    (void)span_delete(tv, tv->cy, tv->cx, ey, ex);
 }
 
 int
@@ -571,16 +783,7 @@ tiku_textview_undo(tiku_textview_t *tv)
         tv->selecting = 0;
         do {
             e = &tv->undo[tv->undo_at - 1];
-            tiku_textview_place(tv, e->line, e->col);
-            if (e->kind == 1) {
-                int k = e->len;     /* inserted: take it back out */
-
-                while (k-- > 0) {
-                    tiku_textview_delete(tv);
-                }
-            } else {
-                tiku_textview_insert_text(tv, e->text);
-            }
+            replay(tv, e, e->kind == 2);
             tv->undo_at--;
         } while (g != 0 && tv->undo_at > 0 &&
                  tv->undo[tv->undo_at - 1].group == g);
@@ -609,16 +812,7 @@ tiku_textview_redo(tiku_textview_t *tv)
         tv->selecting = 0;
         do {
             e = &tv->undo[tv->undo_at];
-            tiku_textview_place(tv, e->line, e->col);
-            if (e->kind == 1) {
-                tiku_textview_insert_text(tv, e->text);
-            } else {
-                int k = e->len;
-
-                while (k-- > 0) {
-                    tiku_textview_delete(tv);
-                }
-            }
+            replay(tv, e, e->kind == 1);
             tv->undo_at++;
         } while (g != 0 && tv->undo_at < tv->undo_n &&
                  tv->undo[tv->undo_at].group == g);
@@ -672,20 +866,18 @@ caret_clamp(tiku_textview_t *tv)
 }
 
 /**
- * @brief Remove the selected span, caret left where it began.
+ * @brief Remove the selected span in one step, caret left where it began.
  *
- * Counted as characters and the newlines between the lines, then taken
- * from the far end by the ordinary backspace, which already folds a line
- * into the one before it.  The flag is dropped first, so that backspace
- * does not see a selection.  An anchor at the caret encloses nothing and
- * is dropped too: kept, the edit's own text would become its selection.
+ * The span is recorded whole, so a single undo restores it.  An anchor at
+ * the caret encloses nothing and is dropped: kept, the edit's own text
+ * would become its selection.  @return 1 when the span went, 0 when there
+ * was none, -1 when the joined line would not fit or memory ran out, and
+ * nothing changed.
  */
 static int
 sel_delete(tiku_textview_t *tv)
 {
-    int y0, x0, y1, x1, count, i;
-
-    int was_rec;
+    int y0, x0, y1, x1, count, used = 0, line;
     char *span;
 
     if (!tiku_textview_selection(tv, &y0, &x0, &y1, &x1)) {
@@ -698,42 +890,35 @@ sel_delete(tiku_textview_t *tv)
         y1 = tv->nline - 1;
         x1 = tv->line[y1].len;
     }
-    if (x0 > tv->line[y0].len) {
-        x0 = tv->line[y0].len;
+    x0 = x0 > tv->line[y0].len ? tv->line[y0].len : x0;
+    x1 = x1 > tv->line[y1].len ? tv->line[y1].len : x1;
+    count = y1 - y0;                    /* the line breaks it crosses */
+    for (line = y0; line <= y1; line++) {
+        count += (line == y1 ? x1 : tv->line[line].len) -
+                 (line == y0 ? x0 : 0);
     }
-    if (x1 > tv->line[y1].len) {
-        x1 = tv->line[y1].len;
-    }
-    if (y0 == y1) {
-        count = x1 - x0;
-    } else {
-        count = tv->line[y0].len - x0;
-        for (i = y0 + 1; i < y1; i++) {
-            count += tv->line[i].len;
-        }
-        count += x1;
-        count += (y1 - y0);     /* the line breaks the span crosses */
-    }
-    /* The span kept whole FIRST, so the journal holds it as one delete
-     * a single undo restores -- rather than the string of backspaces
-     * that actually take it apart below. */
     span = malloc((size_t)count + 1u);
-    if (span != NULL) {
-        (void)tiku_textview_selected(tv, span, (size_t)count + 1u);
+    if (span == NULL) {
+        return -1;
+    }
+    for (line = y0; line <= y1; line++) {
+        int c0 = line == y0 ? x0 : 0;
+        int c1 = line == y1 ? x1 : tv->line[line].len;
+
+        memcpy(span + used, tv->line[line].text + c0, (size_t)(c1 - c0));
+        used += c1 - c0;
+        if (line < y1) {
+            span[used++] = '\n';
+        }
+    }
+    span[used] = '\0';
+    if (!span_delete(tv, y0, x0, y1, x1)) {
+        free(span);
+        return -1;
     }
     tv->selecting = 0;
-    was_rec = tv->recording;
-    tv->recording = 0;
-    tv->cy = y1;
-    tv->cx = x1;
-    while (count-- > 0) {
-        tiku_textview_backspace(tv);
-    }
-    tv->recording = was_rec;
-    if (span != NULL) {
-        record(tv, 2, y0, x0, span, (int)strlen(span));
-        free(span);
-    }
+    record(tv, 2, y0, x0, span, used);
+    free(span);
     return 1;
 }
 
@@ -746,7 +931,11 @@ tiku_textview_insert(tiku_textview_t *tv, char ch)
     if (tv == NULL || tv->nline <= 0) {
         return;
     }
-    (void)sel_delete(tv);       /* typing REPLACES what is selected */
+    /* Typing replaces what is selected, and types nothing when the
+     * selection cannot go. */
+    if (sel_delete(tv) < 0) {
+        return;
+    }
     l = &tv->line[tv->cy];
     if (l->len + 1 >= TIKU_TEXTVIEW_LINE_MAX) {
         return;                 /* a full line refuses rather than truncates */
@@ -774,7 +963,11 @@ tiku_textview_newline(tiku_textview_t *tv)
     if (tv == NULL) {
         return;
     }
-    (void)sel_delete(tv);       /* a return over a selection replaces it */
+    /* A return over a selection replaces it, and breaks nothing when the
+     * selection cannot go. */
+    if (sel_delete(tv) < 0) {
+        return;
+    }
     if (tv->nline + 1 > TIKU_TEXTVIEW_LINES_MAX) {
         return;
     }
@@ -796,8 +989,9 @@ tiku_textview_newline(tiku_textview_t *tv)
     }
 }
 
-/** @brief Fold line @p at into the one before it, caret at the seam. */
-static void
+/** @brief Fold line @p at into the one before it, caret at the seam.
+ *         @return 0, changing nothing, when the joined line would not fit. */
+static int
 join_previous(tiku_textview_t *tv, int at)
 {
     tiku_textview_line_t *prev = &tv->line[at - 1];
@@ -807,7 +1001,7 @@ join_previous(tiku_textview_t *tv, int at)
     int i;
 
     if (seam + cur->len >= TIKU_TEXTVIEW_LINE_MAX) {
-        return;
+        return 0;
     }
     memcpy(buf, tiku_textview_line(tv, at - 1), (size_t)seam);
     memcpy(buf + seam, tiku_textview_line(tv, at), (size_t)cur->len);
@@ -820,6 +1014,7 @@ join_previous(tiku_textview_t *tv, int at)
     tv->nline--;
     tv->cy = at - 1;
     tv->cx = seam;
+    return 1;
 }
 
 void
@@ -851,8 +1046,9 @@ tiku_textview_backspace(tiku_textview_t *tv)
     } else if (tv->cy > 0) {
         int gl = tv->cy - 1, gc = tv->line[tv->cy - 1].len;
 
-        join_previous(tv, tv->cy);
-        record(tv, 2, gl, gc, "\n", 1);
+        if (join_previous(tv, tv->cy)) {
+            record(tv, 2, gl, gc, "\n", 1);
+        }
     }
 }
 
@@ -887,8 +1083,9 @@ tiku_textview_delete(tiku_textview_t *tv)
          * come back to where it already was, which join leaves it. */
         int gl = tv->cy, gc = tv->cx;
 
-        join_previous(tv, tv->cy + 1);
-        record(tv, 2, gl, gc, "\n", 1);
+        if (join_previous(tv, tv->cy + 1)) {
+            record(tv, 2, gl, gc, "\n", 1);
+        }
     }
 }
 
