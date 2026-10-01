@@ -386,6 +386,41 @@ static void test_keyword_over_selection(ide_t *st)
     e->surface = NULL;
 }
 
+/** Following a message drops a held selection before moving the caret,
+ *  so nothing between the selection and the target becomes selected. */
+static void test_follow_drops_selection(ide_t *st)
+{
+    edit_t *e = &st->edit[0];
+    int y0, x0, y1, x1;
+
+    memset(e, 0, sizeof *e);
+    e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
+    e->lang = TIKU_SYNTAX_BASIC;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    snprintf(e->path, sizeof e->path, "/tmp/tiku-follow-test.bas");
+    tiku_textview_init(&e->tv);
+    tiku_textview_set(&e->tv, "10 PRINT 1\n20 PRINT 2\n30 PRINT 3");
+    tiku_textview_place(&e->tv, 0, 3);
+    tiku_textview_select_begin(&e->tv);
+    tiku_textview_place(&e->tv, 0, 8);
+    memset(&st->msg[0], 0, sizeof st->msg[0]);
+    snprintf(st->msg[0].file, sizeof st->msg[0].file, "%s", e->path);
+    st->msg[0].line = 3;
+    st->nmsg = 1;
+    tiku_list_init(&st->msg_list, 1);
+    (void)tiku_list_set_count(&st->msg_list, 1);
+    tiku_list_select_only(&st->msg_list, 0);
+    tiku_ide_message_follow(st);
+    tiku_textview_caret(&e->tv, &y0, &x0);
+    assert(y0 == 2 && x0 == 0);
+    assert(!tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1));
+    st->nmsg = 0;
+    tiku_textview_free(&e->tv);
+    tiku_surface_free(e->surface);
+    e->surface = NULL;
+}
+
 /** Renumber rewrites a line crowded with branch targets exactly, and
  *  refuses, changing nothing, a line that would grow past 1023 bytes. */
 static void test_renumber_bounds(void)
@@ -731,6 +766,7 @@ int main(void)
     test_click_then_type(st);
     test_renumber_bounds();
     test_keyword_over_selection(st);
+    test_follow_drops_selection(st);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);

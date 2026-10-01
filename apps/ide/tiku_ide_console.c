@@ -395,6 +395,9 @@ tiku_ide_message_follow(ide_t *st)
     /* A compiler counted the lines of the file; BASIC named one. */
     at = m->numbered ? tiku_ide_line_of_number(&e->tv, m->line) : m->line - 1;
     if (at >= 0) {
+        /* A held selection is dropped first, as the debugger's pause drops
+         * it, or it would stretch to the line jumped to. */
+        tiku_textview_select_none(&e->tv);
         tiku_textview_place(&e->tv, at, 0);
         /* Placing the caret does not move the PAGE, and a caret below
          * the window is a jump that looks like nothing happening. */
