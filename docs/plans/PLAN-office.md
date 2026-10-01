@@ -72,7 +72,8 @@ Drawn: text in the document's fonts or metric-compatible stand-ins;
 paragraph and character styles; lists; tabs and leaders; tables with
 merged cells, borders and shading; pictures inline and floating;
 headers, footers, page numbers, footnotes; sections with their page
-sizes and columns; hyperlinks and an outline from headings.  In slides:
+sizes and columns; hyperlinks and an outline from headings; equations
+in two dimensions.  In slides:
 backgrounds, the ~40 most used preset shapes and any custom geometry,
 solid and gradient fills, lines with dashes and arrowheads, pictures
 cropped and turned, tables, groups, text frames with insets, anchoring
@@ -139,6 +140,18 @@ Windows metafiles are done, .odp not begun.
   with their escapement and advances, DIBs with raster operations.
   EMF+ records are passed over; the GDI ones Office writes beside
   them are drawn, and a file of EMF+ alone is a grey box.
+- **Equations.**  Office Math, Word's and PowerPoint's
+  (`tiku_office_omml.c`), and the MathML of OpenDocument's formula
+  objects (`tiku_office_mathml.c`) are read into one tree and set in
+  two dimensions as TeX sets them (`tiku_office_math*`): fractions,
+  scripts, roots, large operators with their limits, fences grown to
+  what they hold, matrices and equation arrays, accents, bars and
+  braces.  The OpenType MATH table of Cambria Math or STIX Two Math,
+  where the machine has one, gives the lengths, italic corrections,
+  accent attachments, bigger variants and assembled parts; without one,
+  TeX's lengths in ems and drawn shapes.  Each equation is set before
+  the pages are, as a run of its line, its text found and copied in
+  reading order.
 - **View.**  `tiku_pdf_view_open_as()` opens a file through a
   translator on a worker; `tiku_pdf_view_single()` shows one page alone,
   which is how slides are presented.
@@ -150,13 +163,13 @@ Windows metafiles are done, .odp not begun.
   .docx and .pptx are typed `application/x-docx` and `application/x-pptx`;
   .odt keeps its own type.
 - **Tests.**  `test_office` (kinds, pages and words, sizes, links,
-  outline, title, charts, metafiles, OLE pictures, ODF charts, export,
-  hostile files) and `test_office_viewer` (the
+  outline, title, charts, metafiles, OLE pictures, ODF charts,
+  equations, export, hostile files) and `test_office_viewer` (the
   apps without a desktop), both also under AddressSanitizer and UBSan;
   the `office` lane opens all three kinds from Tracker and presents.
   Fixtures come from `tests/fixtures/tools/gen_office.py`.
 
 Still boxes or not attempted, as section 3 says: surface charts,
 chartex charts saved without a picture, EMF+ alone, SVM, complex
-scripts and right-to-left text, tracked-change markup, comments, .odp.
-Equations are set on one line.
+scripts and right-to-left text (equations among them), tracked-change
+markup, comments, .odp.
