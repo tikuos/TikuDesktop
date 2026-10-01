@@ -316,6 +316,34 @@ static void workflows(edit_state_t *st, const char *dir)
     assert(!unlink(path) && !unlink(other));
 }
 
+/** A panel answer during the unsaved-changes question leaves its action. */
+static void panel_during_question(edit_state_t *st, const char *dir)
+{
+    char path[512]; snprintf(path, sizeof path, "%s/panel.txt", dir);
+    put_file(path, "kept\n");
+    assert(tiku_editor_buffer_set(&st->tv, "")); st->path[0] = 0;
+    /* A Save panel from before New asked is ignored; Discard still runs New. */
+    key(st, 'y', 0); key(st, 's', TIKU_MOD_CMD);
+    assert(picker_mode == TIKU_APP_PICK_SAVE);
+    key(st, 'n', TIKU_MOD_CMD); assert(st->ask.open && st->pending == CMD_NEW);
+    tiku_editor_picked(st, st->id, path);
+    assert(st->ask.open && st->pending == CMD_NEW && !st->path[0]);
+    assert(strstr(st->note, "Save cancelled")); expect_file(path, "kept\n");
+    answer(st, 1);
+    assert(!st->ask.open && !tiku_editor_buffer_modified(&st->tv));
+    assert(st->tv.nline == 1 && !st->tv.line[0].len && !st->note[0]);
+    /* An Open panel answered or cancelled while Close asks leaves Close. */
+    key(st, 'o', TIKU_MOD_CMD); assert(picker_mode == TIKU_APP_PICK_OPEN);
+    key(st, 'y', 0); key(st, 'w', TIKU_MOD_CMD);
+    assert(st->ask.open && st->pending == CMD_QUIT);
+    tiku_editor_picked(st, st->id, ""); assert(!st->note[0]);
+    tiku_editor_picked(st, st->id, path);
+    assert(st->ask.open && st->pending == CMD_QUIT && !st->path[0]);
+    assert(strstr(st->note, "Open cancelled"));
+    assert(answer(st, 1) == 1 && !tiku_editor_buffer_modified(&st->tv));
+    assert(!unlink(path));
+}
+
 /** @brief Capture the title without opening a real desktop window. */
 static uint32_t window_open(void *ctx, const char *title, int w, int h)
 {
@@ -368,6 +396,7 @@ int main(void)
     history_rollover(st);
     large_documents(st, dir);
     toolbar_actions(st);
+    panel_during_question(st, dir);
     assert(sizeable_count >= 2);
     tiku_editor_buffer_free(&st->tv);
     assert(tiku_editor_insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));

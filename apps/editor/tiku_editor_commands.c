@@ -351,7 +351,14 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
 void tiku_editor_picked(void *state, uint32_t window, const char *path)
 {
     edit_state_t *st = state; (void)window;
-    if (!path || !*path || st->ask.open) { st->pending = 0; return; }
+    if (st->ask.open) { /* the question's answer runs the pending action */
+        if (path && *path)
+            snprintf(st->note, sizeof st->note,
+                     "%s cancelled: answer the question first.",
+                     st->pick_save ? "Save" : "Open");
+        tiku_editor_paint(st); return;
+    }
+    if (!path || !*path) { st->pending = 0; return; }
     if (st->pick_save) {
         int pending = st->pending; st->pending = 0;
         if (tiku_editor_save_document(st, path) && pending && tiku_editor_document_action(st, pending)) {
