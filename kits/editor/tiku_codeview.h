@@ -28,6 +28,7 @@
 #include "tiku_editdoc.h"
 #include "tiku_event.h"
 #include "tiku_font.h"
+#include "tiku_syntax.h"
 
 /** @brief Columns between tab stops unless set; a column is the width of
  *         a space in the view's face. */
@@ -81,6 +82,15 @@ const tiku_font_t *tiku_codeview_font(const tiku_codeview_t *view);
 tiku_edit_status_t tiku_codeview_set_tab_width(tiku_codeview_t *view,
                                                int columns);
 int tiku_codeview_tab_width(const tiku_codeview_t *view);
+
+/** @brief Colour the text as @p lang reads it, through the live theme;
+ *         TIKU_SYNTAX_NONE, which a new view has, leaves it all in the
+ *         document's ink.  A C line is coloured from the state the lines
+ *         above it leave, which the view keeps and re-reads only from the
+ *         first line a change could have altered. */
+void tiku_codeview_set_language(tiku_codeview_t *view,
+                                tiku_syntax_lang_t lang);
+tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 
 /* What a view shows besides the text; a new view shows none of them. */
 #define TIKU_CODEVIEW_LINE_NUMBERS 0x1u  /* a gutter of line numbers    */

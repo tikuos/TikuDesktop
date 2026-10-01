@@ -67,6 +67,18 @@ struct tiku_codeview {
     char newline[3];                /* what Return inserts              */
     tiku_edit_status_t status;      /* the last event's edit            */
     tiku_text_input_t input;        /* a text-input commit arriving     */
+    tiku_syntax_lang_t lang;        /* how the text is coloured         */
+    unsigned char *states;          /* each line's starting C state     */
+    int64_t nstates, states_cap;    /* lines it follows, and room       */
+    int64_t sty_valid;              /* states up to here are right      */
+    int64_t sty_hint;               /* and from there up to here are
+                                       old ones that may still be       */
+    int64_t sty_dirty;              /* the last line a change touched   */
+    char *line_buf;                 /* a line copied out, and a NUL     */
+    size_t line_cap;
+    tiku_span_t *runs;              /* the coloured runs of a line      */
+    size_t nruns, runs_cap;
+    int runs_failed;                /* the runs could not all be kept   */
 };
 
 /* What a character of a line is on the screen. */
@@ -143,6 +155,18 @@ void tiku_cv_widths_change(tiku_codeview_t *v, int64_t first,
                            int64_t lines);
 /* Free the width table. */
 void tiku_cv_widths_free(tiku_codeview_t *v);
+
+/* Gather the coloured runs of @p line in v->runs; 0 when the line is
+ * to be drawn in the document's ink alone. */
+int tiku_cv_style_line(tiku_codeview_t *v, int64_t line);
+/* Follow a document change, as tiku_cv_widths_change() does. */
+void tiku_cv_style_change(tiku_codeview_t *v, int64_t first,
+                          int64_t last_old, int64_t last_new,
+                          int64_t lines);
+/* Forget every line's state, as after a load. */
+void tiku_cv_style_reset(tiku_codeview_t *v);
+/* Free what colouring holds. */
+void tiku_cv_style_free(tiku_codeview_t *v);
 
 /* An editing key: 1 when the view took it. */
 int tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e);

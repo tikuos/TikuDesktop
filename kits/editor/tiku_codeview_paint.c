@@ -36,6 +36,11 @@ typedef struct {
     tiku_rgb_t ink;             /* its colour                           */
     int stopped;                /* the walk reached the right edge      */
     int invisibles;             /* mark spaces and tabs                 */
+    tiku_edit_pos_t start;      /* the line's first byte                */
+    const tiku_span_t *runs;    /* its coloured runs; none is plain     */
+    size_t nruns;
+    size_t run;                 /* the run the walk has reached         */
+    int64_t run_end;            /* the line offset where that run ends  */
 } row_t;
 
 /** @brief The surface x of line x @p x, which is near the visible part. */
@@ -115,17 +120,29 @@ paint_name(row_t *r, const tiku_cv_cell_t *c, int selected)
               r->y + r->font->ascent, name, ground);
 }
 
-/** @brief A space's dot or a tab's dash, faint, in the middle of its
- *         cell. */
+/** @brief A space's dot or a tab's dash in the middle of its cell, its
+ *         ink faint against its ground. */
 static void
-paint_mark(row_t *r, const tiku_cv_cell_t *c, int selected)
+paint_mark(row_t *r, const tiku_cv_cell_t *c, int selected, tiku_rgb_t ink)
 {
     tiku_rgb_t ground = selected ? TIKU_C_SELECT : TIKU_C_DOC;
-    tiku_rgb_t ink = selected ? TIKU_C_SELTEXT : TIKU_C_TEXT;
 
     tiku_hline(r->s, surface_x(r, c->x) + c->adv / 2,
                r->y + r->font->height / 2, c->kind == TIKU_CV_TAB ? 3 : 1,
                tiku_dim(ink, ground));
+}
+
+/** @brief The colour of the run holding line offset @p at; the walk asks
+ *         in order, so the run only moves forward. */
+static tiku_rgb_t
+run_ink(row_t *r, int64_t at)
+{
+    while (r->run < r->nruns && at >= r->run_end) {
+        r->run++;
+        if (r->run < r->nruns)
+            r->run_end += r->runs[r->run].len;
+    }
+    return r->run < r->nruns ? tiku_ink(r->runs[r->run].ink) : TIKU_C_TEXT;
 }
 
 /** @brief Paint one character, gathering text into pieces. */
@@ -134,7 +151,10 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
 {
     row_t *r = ctx;
     int selected = c->pos >= r->lo && c->pos < r->hi;
-    tiku_rgb_t ink = selected ? TIKU_C_SELTEXT : TIKU_C_TEXT;
+    tiku_rgb_t ink = run_ink(r, c->pos - r->start);
+
+    if (selected)
+        ink = TIKU_C_SELTEXT;
 
     if (c->x >= r->right) {
         r->stopped = 1;
@@ -156,7 +176,7 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
         paint_name(r, c, selected);
     }
     if (r->invisibles && (c->cp == ' ' || c->kind == TIKU_CV_TAB))
-        paint_mark(r, c, selected);
+        paint_mark(r, c, selected, ink);
     return 0;
 }
 
@@ -180,6 +200,11 @@ paint_row(tiku_codeview_t *v, row_t *r, int64_t line)
     }
     r->len = 0;
     r->stopped = 0;
+    r->start = start;
+    r->nruns = tiku_cv_style_line(v, line) ? v->nruns : 0;
+    r->runs = v->runs;
+    r->run = 0;
+    r->run_end = r->nruns > 0 ? r->runs[0].len : 0;
     width = tiku_cv_walk(v, line, paint_cell, r);
     flush(r);
     if (!r->stopped && next > end && r->lo <= end && r->hi >= next)

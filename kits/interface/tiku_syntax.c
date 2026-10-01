@@ -166,20 +166,45 @@ tiku_syntax_of_path(const char *path)
     return TIKU_SYNTAX_NONE;
 }
 
-static int basic_spans(tiku_syntax_lang_t lang, const char *line,
-                       tiku_span_t *out, int max);
+typedef struct spans spans_t;
+static int basic_spans(spans_t *s, tiku_syntax_lang_t lang,
+                       const char *line);
 
 /*---------------------------------------------------------------------------*/
 /* Telling a line apart                                                      */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Where the run table is being built, and how much room is left. */
-typedef struct {
+/** @brief Where the runs go: a table with the room left in it, or, when
+ *         streaming, a function handed each run once it is whole. */
+struct spans {
     tiku_span_t *out;
     int          max;
     int          n;
     int          full;          /* a run was dropped: record no more */
-} spans_t;
+    int          stream;        /* runs go to fn, and none is dropped */
+    tiku_syntax_run_fn fn;      /* may be NULL: the runs are not wanted */
+    void        *ctx;
+    tiku_span_t  run;           /* the run being gathered for fn      */
+};
+
+/** @brief A sink filling @p out, at most @p max runs. */
+static void
+spans_table(spans_t *s, tiku_span_t *out, int max)
+{
+    memset(s, 0, sizeof *s);
+    s->out = out;
+    s->max = max;
+}
+
+/** @brief Hand the last run gathered to the function, when streaming. */
+static void
+spans_finish(spans_t *s)
+{
+    if (s->stream && s->fn != NULL && s->run.len > 0) {
+        s->fn(s->ctx, s->run.ink, s->run.len);
+    }
+    s->run.len = 0;
+}
 
 /**
  * @brief Add @p len bytes meaning @p ink, merging with the run before it
@@ -198,6 +223,16 @@ static int
 push(spans_t *s, tiku_ink_t ink, int len)
 {
     if (len <= 0) {
+        return 1;
+    }
+    if (s->stream) {
+        if (s->run.len > 0 && s->run.ink == ink) {
+            s->run.len += len;
+            return 1;
+        }
+        spans_finish(s);
+        s->run.ink = ink;
+        s->run.len = len;
         return 1;
     }
     if (s->full) {
@@ -400,18 +435,14 @@ c_name_at(const char *p)
  *         leaves open.
  */
 static int
-c_spans(const char *line, tiku_syntax_state_t in,
-        tiku_syntax_state_t *left, tiku_span_t *out, int max)
+c_spans(spans_t *sink, const char *line, tiku_syntax_state_t in,
+        tiku_syntax_state_t *left)
 {
-    spans_t s;
+    spans_t s = *sink;
     tiku_syntax_state_t state = in;
     int i = 0;
     int at_head = 1;            /* nothing but blanks seen yet */
 
-    s.out = out;
-    s.max = max;
-    s.n = 0;
-    s.full = 0;
     while (line[i] != '\0') {
         char c = line[i];
 
@@ -515,6 +546,8 @@ c_spans(const char *line, tiku_syntax_state_t in,
     if (left != NULL) {
         *left = state;
     }
+    spans_finish(&s);
+    *sink = s;
     return s.n;
 }
 
@@ -559,23 +592,49 @@ tiku_syntax_spans_on(tiku_syntax_lang_t lang, const char *line,
                      tiku_syntax_state_t *out_state, tiku_span_t *out,
                      int max)
 {
+    spans_t s;
+
     if (out_state != NULL) {
         *out_state = TIKU_SYNTAX_OPEN;
     }
     if (line == NULL || out == NULL || max <= 0) {
         return 0;
     }
+    spans_table(&s, out, max);
     if (lang == TIKU_SYNTAX_C) {
-        return c_spans(line, in, out_state, out, max);
+        return c_spans(&s, line, in, out_state);
     }
-    return basic_spans(lang, line, out, max);
+    return basic_spans(&s, lang, line);
+}
+
+void
+tiku_syntax_runs(tiku_syntax_lang_t lang, const char *line,
+                 tiku_syntax_state_t in, tiku_syntax_state_t *out_state,
+                 tiku_syntax_run_fn fn, void *ctx)
+{
+    spans_t s;
+
+    if (out_state != NULL) {
+        *out_state = TIKU_SYNTAX_OPEN;
+    }
+    if (line == NULL) {
+        return;
+    }
+    memset(&s, 0, sizeof s);
+    s.stream = 1;
+    s.fn = fn;
+    s.ctx = ctx;
+    if (lang == TIKU_SYNTAX_C) {
+        (void)c_spans(&s, line, in, out_state);
+    } else {
+        (void)basic_spans(&s, lang, line);
+    }
 }
 
 static int
-basic_spans(tiku_syntax_lang_t lang, const char *line, tiku_span_t *out,
-            int max)
+basic_spans(spans_t *sink, tiku_syntax_lang_t lang, const char *line)
 {
-    spans_t s;
+    spans_t s = *sink;
     int i = 0;
     int data_tail = 0;          /* past DATA: items, not statements     */
     int label_next = 0;         /* past GOTO/GOSUB: a target, not a word */
@@ -584,14 +643,9 @@ basic_spans(tiku_syntax_lang_t lang, const char *line, tiku_span_t *out,
     int at_num = 1;             /* the line's own number may still come  */
     int at_stmt = 1;            /* a statement may begin here            */
 
-    if (line == NULL || out == NULL || max <= 0 ||
-        lang != TIKU_SYNTAX_BASIC) {
+    if (line == NULL || lang != TIKU_SYNTAX_BASIC) {
         return 0;
     }
-    s.out = out;
-    s.max = max;
-    s.n = 0;
-    s.full = 0;
 
     while (line[i] != '\0') {
         char c = line[i];
@@ -794,5 +848,7 @@ basic_spans(tiku_syntax_lang_t lang, const char *line, tiku_span_t *out,
         }
         i++;
     }
+    spans_finish(&s);
+    *sink = s;
     return s.n;
 }

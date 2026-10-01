@@ -81,6 +81,22 @@ int tiku_syntax_spans_on(tiku_syntax_lang_t lang, const char *line,
                          tiku_syntax_state_t *out_state,
                          tiku_span_t *out, int max);
 
+/** @brief One run of @p len bytes meaning @p ink, in line order. */
+typedef void (*tiku_syntax_run_fn)(void *ctx, tiku_ink_t ink, int len);
+
+/**
+ * @brief Tell @p line apart as tiku_syntax_spans_on() does, handing each
+ *        run to @p fn as it is completed instead of filling a table.
+ *
+ * No run is dropped however many a line holds, and adjacent runs that
+ * mean the same thing arrive merged.  @p fn may be NULL, for a caller
+ * that wants only what the line leaves open.
+ */
+void tiku_syntax_runs(tiku_syntax_lang_t lang, const char *line,
+                      tiku_syntax_state_t in,
+                      tiku_syntax_state_t *out_state,
+                      tiku_syntax_run_fn fn, void *ctx);
+
 /**
  * @brief Whether @p name is a word TikuOS BASIC reserves.
  *
