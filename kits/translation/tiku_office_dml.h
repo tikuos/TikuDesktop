@@ -135,6 +135,12 @@ typedef struct {
 
 /** @brief The theme part @p part read.  @return 0, or -1 for none. */
 int dml_theme_load(of_pkg_t *pkg, const char *part, dml_theme_t *t);
+/** @brief Theme @p base with the schemes of override part @p part (a
+ *         chart's a:themeOverride) over it, into @p t, which owns only the
+ *         override.  @return 0, or -1 for none. */
+int dml_theme_override(of_pkg_t *pkg, const char *part,
+                       const dml_theme_t *base, dml_theme_t *t);
+/** @brief A theme's part given back. */
 void dml_theme_free(dml_theme_t *t);
 /** @brief A colour map (p:clrMap, or an override's a:overrideClrMapping)
  *         read into the context; NULL for the usual one. */

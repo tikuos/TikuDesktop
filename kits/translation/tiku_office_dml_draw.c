@@ -740,11 +740,10 @@ dml_draw(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *m,
                                 : dml_frame(c, e, m);
     }
     if (tiku_xml_is(e, "mc:AlternateContent")) {
-        const tiku_xml_node_t *alt = tiku_xml_child(e, "mc:Fallback"), *k;
+        const tiku_xml_node_t *k;
 
-        k = tiku_xml_child(e, "mc:Choice") ? tiku_xml_child(e, "mc:Choice")
-                                           : alt;
-        for (k = tiku_xml_child(k, NULL); k; k = tiku_xml_next(k, NULL)) {
+        for (k = tiku_xml_child(of_alternate(e), NULL); k;
+             k = tiku_xml_next(k, NULL)) {
             if (dml_draw(c, k, m, inherit) != 0) {
                 return -1;
             }
@@ -801,6 +800,26 @@ dml_diagram(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m)
     return err != 0 ? -1 : 1;
 }
 
+/** @brief A chart in a frame drawn through @p m, laid out at the size it
+ *         shows at: a group that shrinks its frame shrinks the chart's
+ *         room, not its words, as PowerPoint lays it out again. */
+static int
+unscaled_chart(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m,
+               float w, float h)
+{
+    double sx = hypot(m->a, m->b), sy = hypot(m->c, m->d);
+    dml_mat_t u = *m;
+
+    if (!(sx > 0) || !(sy > 0)) {
+        return 0;
+    }
+    u.a /= sx;
+    u.b /= sx;
+    u.c /= sy;
+    u.d /= sy;
+    return dml_chart(c, gd, &u, (float)(w * sx), (float)(h * sy));
+}
+
 int
 dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *pm)
 {
@@ -816,7 +835,7 @@ dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *pm)
         return 0;                   /* no room: nothing to show */
     }
     if (tiku_xml_child(gd, "c:chart") != NULL) {
-        drawn = dml_chart(c, gd, &m, w, h);
+        drawn = unscaled_chart(c, gd, &m, w, h);
     } else if (tiku_xml_child(gd, "dgm:relIds") != NULL) {
         drawn = dml_diagram(c, gd, &m);
     }

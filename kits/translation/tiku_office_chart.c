@@ -47,6 +47,29 @@ typedef struct {
 
 /* ------------------------------------------------------------------ axes  */
 
+/** @brief Where each category falls on date axis @p a: its date counted
+ *         in the axis' unit (days, months, years), so that dates missing
+ *         leave their gaps.  None when a category has no date. */
+static void
+dates(ch_chart_t *k, const ch_axis_t *a)
+{
+    int i, ymd[3];
+
+    if (k->catv == NULL || k->nnamed < k->ncat ||
+        (k->catpos = of_alloc(&k->mem, (size_t)k->ncat *
+                              sizeof *k->catpos)) == NULL) {
+        return;
+    }
+    for (i = 0; i < k->ncat; i++) {
+        if (ch_date(k->catv[i], ymd) != 0) {
+            k->catpos = NULL;
+            return;
+        }
+        k->catpos[i] = a->time_unit == 2 ? ymd[0] : a->time_unit == 1
+                       ? ymd[0] * 12.0 + ymd[1] - 1 : floor(k->catv[i]);
+    }
+}
+
 /** @brief Which axes the drawn groups measure by, which way each lies,
  *         and which it crosses.  @return how many groups can be drawn. */
 static int
@@ -89,6 +112,9 @@ axes_begin(ch_chart_t *k)
 
         a->pos = a->horiz ? (a->pos == 't' || a->pos == 'r' ? 't' : 'b')
                           : (a->pos == 'r' || a->pos == 't' ? 'r' : 'l');
+        if (a->used && a->date && k->catpos == NULL) {
+            dates(k, a);
+        }
     }
     return drawn;
 }
@@ -110,6 +136,18 @@ axes_span(ch_chart_t *k, const ch_box_t *p)
             ch_scale(k, &k->ax[i], k->ax[i].horiz ? p->w : p->h);
         }
     }
+}
+
+/** @brief A data table's room, across for its names and down for its
+ *         rows, taken into the room @p room (left top right bottom). */
+static void
+table_room(ch_chart_t *k, float *room)
+{
+    float left, below;
+
+    ch_table_room(k, &left, &below);
+    room[0] = fmaxf(room[0], left);
+    room[3] = fmaxf(room[3], below);
 }
 
 /**
@@ -135,6 +173,7 @@ axes_fit(ch_chart_t *k, ch_box_t *box, int reserve)
 
             room[side] = fmaxf(room[side], ch_axis_room(k, a));
         }
+        table_room(k, room);
         if (!reserve || pass == 2) {
             break;
         }
@@ -335,8 +374,39 @@ legend_flow(ch_chart_t *k, const lg_t *lg, int draw)
     return y - lg->box.y + LG_PAD;
 }
 
-/** @brief The legend's box: where the file puts it, else on its side of
- *         @p outer, which gives up the room unless it lies over it. */
+/** @brief @p outer kept clear of box @p b on side @p side ('l', 'r', 't',
+ *         'b'): its edge on that side moved past the box, if the box
+ *         lies on that side and reaches in further -- one moved to the
+ *         other side is laid over the plot, as Office lays it. */
+static void
+clear_of(char side, const ch_box_t *b, ch_box_t *outer)
+{
+    float right = outer->x + outer->w, bottom = outer->y + outer->h;
+    float mx = b->x + b->w / 2 - (outer->x + outer->w / 2);
+    float my = b->y + b->h / 2 - (outer->y + outer->h / 2);
+
+    if ((side == 'l' && mx >= 0) || (side == 'r' && mx <= 0) ||
+        (side == 't' && my >= 0) || (side == 'b' && my <= 0)) {
+        return;
+    }
+
+    if (side == 'l') {
+        outer->x = fmaxf(outer->x, b->x + b->w + CT_GAP);
+    } else if (side == 't') {
+        outer->y = fmaxf(outer->y, b->y + b->h + CT_GAP);
+    } else if (side == 'b') {
+        bottom = fminf(bottom, b->y - CT_GAP);
+    } else {
+        right = fminf(right, b->x - CT_GAP);
+    }
+    outer->w = fmaxf(right - outer->x, 8);
+    outer->h = fmaxf(bottom - outer->y, 8);
+}
+
+/** @brief The legend's box on its side of @p outer, which gives up the
+ *         room unless the legend lies over it; then moved where the file
+ *         puts it, if it does -- the plot still keeps clear of its side,
+ *         as Office's own layout does. */
 static void
 legend_place(ch_chart_t *k, lg_t *lg, ch_box_t *outer)
 {
@@ -344,14 +414,6 @@ legend_place(ch_chart_t *k, lg_t *lg, ch_box_t *outer)
     int i;
 
     lg->across = k->legend_pos == 't' || k->legend_pos == 'b';
-    if (k->has_legend_at) {
-        lg->box.x = k->legend_at[0] * k->w;
-        lg->box.y = k->legend_at[1] * k->h;
-        lg->box.w = k->legend_at[2] * k->w;
-        lg->box.h = k->legend_at[3] * k->h;
-        lg->across = lg->box.w > lg->box.h * 3;
-        return;
-    }
     for (i = 0; i < lg->n; i++) {
         w = fmaxf(w, lg->e[i].w);
     }
@@ -363,19 +425,69 @@ legend_place(ch_chart_t *k, lg_t *lg, ch_box_t *outer)
     lg->box.h = h;
     lg->box.y = k->legend_pos == 'b' ? outer->y + outer->h - h
                 : lg->across ? outer->y : outer->y + (outer->h - h) / 2;
-    if (k->legend_over) {
-        return;
-    }
-    if (lg->across) {
+    if (!k->legend_over && lg->across) {
         outer->y += k->legend_pos == 't' ? h + CT_GAP : 0;
         outer->h -= h + CT_GAP;
-    } else {
+    } else if (!k->legend_over) {
         outer->x += k->legend_pos == 'l' ? lg->box.w + CT_GAP : 0;
         outer->w -= lg->box.w + CT_GAP;
+    }
+    if (k->has_legend_at) {
+        lg->box.x = k->legend_at[0] * k->w;
+        lg->box.y = k->legend_at[1] * k->h;
+        lg->box.w = k->legend_at[2] * k->w;
+        lg->box.h = k->legend_at[3] * k->h;
+        lg->across = lg->box.w > lg->box.h * 3;
+        if (!k->legend_over) {
+            clear_of(k->legend_pos, &lg->box, outer);
+        }
     }
 }
 
 /* ------------------------------------------------------------------ chart  */
+
+/** @brief What a chart's own colours change of its context, to be put
+ *         back: the theme it overrides, the colour map it maps anew. */
+typedef struct {
+    const dml_theme_t *theme;       /* the context's                     */
+    dml_theme_t        own;         /* the chart's override of it        */
+    int                has_own;
+    unsigned char      map[16];     /* the context's colour map          */
+} ch_look_t;
+
+/** @brief Chart part @p part's own colours taken on: the theme override
+ *         a chart copied from elsewhere keeps, and chart space @p cs's
+ *         colour map; the context's kept in @p save. */
+static void
+look_begin(dml_ctx_t *c, const char *part, const tiku_xml_node_t *cs,
+           ch_look_t *save)
+{
+    const of_rel_t *over = of_pkg_rel_type(c->pkg, part, "themeOverride");
+
+    save->theme = c->theme;
+    save->has_own = 0;
+    memcpy(save->map, c->map, sizeof save->map);
+    if (over != NULL && !over->external && c->theme != NULL &&
+        dml_theme_override(c->pkg, over->target, c->theme,
+                           &save->own) == 0) {
+        save->has_own = 1;
+        c->theme = &save->own;
+    }
+    if (tiku_xml_child(cs, "c:clrMapOvr") != NULL) {
+        dml_map_read(c, tiku_xml_child(cs, "c:clrMapOvr"));
+    }
+}
+
+/** @brief The context's colours given back. */
+static void
+look_end(dml_ctx_t *c, ch_look_t *save)
+{
+    c->theme = save->theme;
+    memcpy(c->map, save->map, sizeof save->map);
+    if (save->has_own) {
+        dml_theme_free(&save->own);
+    }
+}
 
 /** @brief Where the title goes, its middle's top at @p at: where the
  *         file puts it, else the top of @p outer, which gives up the
@@ -446,6 +558,7 @@ draw(ch_chart_t *k)
     ch_grid(k, &plot);
     ch_plot(k, &plot);
     ch_axes(k, &plot);
+    ch_table(k, &plot);
     if (lg != NULL && lg->n > 0) {
         (void)legend_flow(k, lg, 1);
     }
@@ -463,6 +576,7 @@ dml_chart(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m,
     tiku_xml_t *x = rel != NULL && !rel->external
                     ? of_pkg_xml(c->pkg, rel->target) : NULL;
     const char *part = c->part;
+    ch_look_t look;
     ch_chart_t *k;
     int n;
 
@@ -480,12 +594,15 @@ dml_chart(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m,
     k->h = h;
     k->base.size = c->text_pt;
     c->part = rel->target;          /* its pictures are its own */
+    look_begin(c, rel->target, tiku_xml_root(x), &look);
     n = ch_read_dml(k, tiku_xml_root(x));
     n = n > 0 && axes_begin(k) == 0 ? 0 : n;
+    n = n == 0 && k->known > 0 && k->ngrp == 0 ? 1 : n;   /* empty */
     if (n > 0) {
         draw(k);
     }
     n = n > 0 && k->mem.bad ? -1 : n;
+    look_end(c, &look);
     c->part = part;
     of_arena_free(&k->mem);
     free(k);

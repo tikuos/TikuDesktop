@@ -55,20 +55,49 @@ str_of(const tiku_xml_node_t *e, const char *name)
     return tiku_xml_attr(tiku_xml_child(e, name), "val");
 }
 
-/** @brief Whether boolean child @p name of @p e is set: present, and its
- *         val (true when it has none) not false. */
+/** @brief Whether boolean element @p k is set: present, and its val
+ *         (true when it has none) not false. */
 static int
-on(const tiku_xml_node_t *e, const char *name)
+is_on(const tiku_xml_node_t *k)
 {
-    const tiku_xml_node_t *k = tiku_xml_child(e, name);
     const char *v = tiku_xml_attr(k, "val");
 
     return k != NULL && (v == NULL || strcmp(v, "1") == 0 ||
                          strcmp(v, "true") == 0);
 }
 
+/** @brief Whether boolean child @p name of @p e is set. */
+static int
+on(const tiku_xml_node_t *e, const char *name)
+{
+    return is_on(tiku_xml_child(e, name));
+}
+
+/** @brief The element called @p local, whatever its prefix, inside one of
+ *         @p e's extensions (c:extLst/c:ext), or NULL: where later
+ *         versions of Office keep what the first did not have. */
+static const tiku_xml_node_t *
+ext_child(const tiku_xml_node_t *e, const char *local)
+{
+    const tiku_xml_node_t *x, *k;
+
+    for (x = tiku_xml_path(e, "c:extLst/c:ext"); x != NULL;
+         x = tiku_xml_next(x, "c:ext")) {
+        for (k = tiku_xml_child(x, NULL); k != NULL;
+             k = tiku_xml_next(k, NULL)) {
+            const char *colon = strchr(k->name, ':');
+
+            if (strcmp(colon != NULL ? colon + 1 : k->name, local) == 0) {
+                return k;
+            }
+        }
+    }
+    return NULL;
+}
+
 /** @brief The words of a c:rich text body: its runs, a line between its
- *         paragraphs, kept in the chart's memory.  NULL for none. */
+ *         paragraphs and at each break, kept in the chart's memory.
+ *         NULL for none. */
 static const char *
 rich_text(ch_chart_t *k, const tiku_xml_node_t *rich)
 {
@@ -85,11 +114,13 @@ rich_text(ch_chart_t *k, const tiku_xml_node_t *rich)
         }
         for (r = tiku_xml_child(p, NULL); r != NULL;
              r = tiku_xml_next(r, NULL)) {
-            if (tiku_xml_is(r, "a:r") || tiku_xml_is(r, "a:fld")) {
+            if (tiku_xml_is(r, "a:r") || tiku_xml_is(r, "a:fld") ||
+                tiku_xml_is(r, "a:br")) {
                 (void)tiku_xml_text(tiku_xml_child(r, "a:t"), one,
                                     sizeof one);
                 used += (size_t)snprintf(buf + used, sizeof buf - used,
-                                         "%s", one);
+                                         "%s", tiku_xml_is(r, "a:br")
+                                         ? "\n" : one);
                 used = used < sizeof buf ? used : sizeof buf - 1;
             }
         }
@@ -211,27 +242,25 @@ numbers(ch_chart_t *k, const tiku_xml_node_t *e, int *n, char *fmt)
     return v;
 }
 
-/** @brief A string cache's words (c:strRef, c:strLit, the innermost
- *         level of c:multiLvlStrRef).  Their count into @p n; NULL, with
- *         none counted, for a cache of numbers. */
+/** @brief Cache @p c's words: as many as it counts, from the c:pt of
+ *         @p pts (itself, or a level of it), "" where one is missing.
+ *         Their count into @p n; NULL for none. */
 static const char **
-words(ch_chart_t *k, const tiku_xml_node_t *e, int *n)
+cache_words(ch_chart_t *k, const tiku_xml_node_t *c,
+            const tiku_xml_node_t *pts, int *n)
 {
-    const tiku_xml_node_t *c = tiku_xml_path(e, "c:strRef/c:strCache"), *pt;
+    const tiku_xml_node_t *pt;
     char buf[160];
     const char **s;
     int i;
 
-    c = c != NULL ? c : tiku_xml_child(e, "c:strLit");
-    c = c != NULL ? c : tiku_xml_path(e, "c:multiLvlStrRef/"
-                                         "c:multiLvlStrCache");
     *n = count_of(c);
     if (*n == 0 || (s = of_alloc(&k->mem, (size_t)*n * sizeof *s)) == NULL) {
         *n = 0;
         return NULL;
     }
-    c = tiku_xml_is(c, "c:multiLvlStrCache") ? tiku_xml_child(c, "c:lvl") : c;
-    for (pt = tiku_xml_child(c, "c:pt"); pt; pt = tiku_xml_next(pt, "c:pt")) {
+    for (pt = tiku_xml_child(pts, "c:pt"); pt; pt = tiku_xml_next(pt,
+         "c:pt")) {
         int at = index_of(tiku_xml_attr(pt, "idx"), *n);
 
         if (at >= 0 && s[at] == NULL) {
@@ -243,6 +272,35 @@ words(ch_chart_t *k, const tiku_xml_node_t *e, int *n)
         s[i] = s[i] != NULL ? s[i] : "";
     }
     return s;
+}
+
+/** @brief A string cache's words (c:strRef, c:strLit, the innermost
+ *         level of c:multiLvlStrRef).  Their count into @p n; NULL, with
+ *         none counted, for a cache of numbers. */
+static const char **
+words(ch_chart_t *k, const tiku_xml_node_t *e, int *n)
+{
+    const tiku_xml_node_t *c = tiku_xml_path(e, "c:strRef/c:strCache");
+
+    c = c != NULL ? c : tiku_xml_child(e, "c:strLit");
+    c = c != NULL ? c : tiku_xml_path(e, "c:multiLvlStrRef/"
+                                         "c:multiLvlStrCache");
+    return cache_words(k, c, tiku_xml_is(c, "c:multiLvlStrCache")
+                             ? tiku_xml_child(c, "c:lvl") : c, n);
+}
+
+/** @brief An area's edge (the chart's, the plot's), over @p l: only when
+ *         its a:ln @p ln names a colour, as Office leaves one that gives
+ *         only a width undrawn.  @return whether there is one. */
+static int
+edge_read(ch_chart_t *k, const tiku_xml_node_t *ln, dml_line_t *l)
+{
+    if (tiku_xml_child(ln, "a:solidFill") == NULL &&
+        tiku_xml_child(ln, "a:gradFill") == NULL &&
+        tiku_xml_child(ln, "a:pattFill") == NULL) {
+        return 0;
+    }
+    return dml_line(k->c, ln, l) && l->width > 0;
 }
 
 /** @brief A title's words and look: its rich text, or the cell it names
@@ -263,6 +321,35 @@ title_read(ch_chart_t *k, const tiku_xml_node_t *t, ch_font_t *f)
     return cell != NULL && n > 0 && cell[0][0] ? cell[0] : words_of;
 }
 
+/** @brief The outer levels of multi-level categories (two at most): a
+ *         name where each group starts, NULL through the rest of it. */
+static void
+levels(ch_chart_t *k, const tiku_xml_node_t *cat, ch_series_t *s)
+{
+    const tiku_xml_node_t *c = tiku_xml_path(cat, "c:multiLvlStrRef/"
+                                                  "c:multiLvlStrCache");
+    const tiku_xml_node_t *lv = tiku_xml_child(c, "c:lvl"), *pt;
+    char buf[160];
+    int n = count_of(c), at;
+
+    for (lv = tiku_xml_next(lv, "c:lvl"); lv != NULL && s->nouter < 2 &&
+         n > 0; lv = tiku_xml_next(lv, "c:lvl")) {
+        const char **o = of_alloc(&k->mem, (size_t)n * sizeof *o);
+
+        for (pt = tiku_xml_child(lv, "c:pt"); o != NULL && pt != NULL;
+             pt = tiku_xml_next(pt, "c:pt")) {
+            if ((at = index_of(tiku_xml_attr(pt, "idx"), n)) >= 0) {
+                (void)tiku_xml_text(tiku_xml_child(pt, "c:v"), buf,
+                                    sizeof buf);
+                o[at] = of_strdup(&k->mem, buf);
+            }
+        }
+        if (o != NULL) {
+            s->outer[s->nouter++] = o;
+        }
+    }
+}
+
 /** @brief A series' categories: words, or numbers (years, dates) kept as
  *         numbers and written out as their format says. */
 static void
@@ -273,6 +360,7 @@ categories(ch_chart_t *k, const tiku_xml_node_t *cat, ch_series_t *s)
 
     if ((s->cat = words(k, cat, &n)) != NULL) {
         s->cat = n >= s->n ? s->cat : NULL;
+        levels(k, cat, s);
         return;
     }
     s->catv = numbers(k, cat, &n, s->cat_fmt);
@@ -325,6 +413,31 @@ shows(const tiku_xml_node_t *dl, int dflt)
            (on(dl, "c:showSerName") ? CH_LBL_SER : 0);
 }
 
+/** @brief A point's own label's separator, number format and the move
+ *         made to it by hand (a manual layout's offsets). */
+static void
+own_extras(ch_chart_t *k, const tiku_xml_node_t *e, ch_label_t *l)
+{
+    const tiku_xml_node_t *nf = tiku_xml_child(e, "c:numFmt");
+    const tiku_xml_node_t *ml = tiku_xml_path(e, "c:layout/c:manualLayout");
+    const char *linked = tiku_xml_attr(nf, "sourceLinked");
+    char sep[16];
+
+    if (tiku_xml_child(e, "c:separator") != NULL) {
+        (void)tiku_xml_text(tiku_xml_child(e, "c:separator"), sep,
+                            sizeof sep);
+        l->sep = of_strdup(&k->mem, sep);
+    }
+    if (tiku_xml_attr(nf, "formatCode") != NULL &&
+        (linked == NULL || strcmp(linked, "1") != 0)) {
+        l->fmt = of_strdup(&k->mem, tiku_xml_attr(nf, "formatCode"));
+    }
+    if (ml != NULL && str_of(ml, "c:xMode") == NULL) {   /* offsets */
+        l->dx = (float)fmin(fmax(val_of(ml, "c:x", 0), -1), 1);
+        l->dy = (float)fmin(fmax(val_of(ml, "c:y", 0), -1), 1);
+    }
+}
+
 /** @brief The points' own labels of a series' c:dLbls: taken away, put
  *         elsewhere, or in words of their own. */
 static void
@@ -345,10 +458,17 @@ own_labels(ch_chart_t *k, const tiku_xml_node_t *dl, ch_series_t *s)
             continue;
         }
         l->text = rich_text(k, tiku_xml_path(e, "c:tx/c:rich"));
+        l->rich = tiku_xml_path(e, "c:tx/c:rich/a:p/a:fld") != NULL
+                  ? tiku_xml_path(e, "c:tx/c:rich") : NULL;
         l->labels = on(e, "c:delete") ? 0 : shows(e, s->labels);
         l->labels = l->text != NULL && !on(e, "c:delete") && l->labels == 0
                     ? CH_LBL_VAL : l->labels;
         l->at = label_at(str_of(e, "c:dLblPos"), -1);
+        l->sppr = tiku_xml_child(e, "c:spPr");
+        own_extras(k, e, l);
+        l->font = s->lbl_font;
+        txpr_over(k, e, &l->font);
+        rpr_over(k, tiku_xml_path(e, "c:tx/c:rich/a:p/a:r/a:rPr"), &l->font);
         s->nown++;
     }
 }
@@ -368,11 +488,15 @@ labels_read(ch_chart_t *k, const tiku_xml_node_t *dl, ch_series_t *s)
     f = tiku_xml_attr(tiku_xml_child(dl, "c:numFmt"), "formatCode");
     linked = tiku_xml_attr(tiku_xml_child(dl, "c:numFmt"), "sourceLinked");
     if (f != NULL && (linked == NULL || strcmp(linked, "1") != 0)) {
-        snprintf(s->fmt, sizeof s->fmt, "%s", f);
+        s->lbl_fmt = of_strdup(&k->mem, f);
     }
     if (tiku_xml_text(tiku_xml_child(dl, "c:separator"), sep, sizeof sep)) {
         snprintf(s->sep, sizeof s->sep, "%s", sep);
     }
+    s->lbl_sppr = tiku_xml_child(dl, "c:spPr") != NULL
+                  ? tiku_xml_child(dl, "c:spPr") : s->lbl_sppr;
+    s->show_cells = is_on(ext_child(dl, "showDataLabelsRange")) ||
+                    s->show_cells;
     txpr_over(k, dl, &s->lbl_font);
 }
 
@@ -457,6 +581,79 @@ trend_name(ch_chart_t *k, const tiku_xml_node_t *e)
     return buf[0] ? of_strdup(&k->mem, buf) : NULL;
 }
 
+/** @brief A trendline's label: whether it says the equation and R^2,
+ *         its format, its look, where it was moved by hand. */
+static void
+trend_label(ch_chart_t *k, const tiku_xml_node_t *e, ch_trend_t *t)
+{
+    const tiku_xml_node_t *lb = tiku_xml_child(e, "c:trendlineLbl");
+    const tiku_xml_node_t *ml = tiku_xml_path(lb, "c:layout/c:manualLayout");
+    const char *f = tiku_xml_attr(tiku_xml_child(lb, "c:numFmt"),
+                                  "formatCode");
+
+    t->eq = on(e, "c:dispEq");
+    t->r2 = on(e, "c:dispRSqr");
+    t->lbl_fmt = f != NULL && strcmp(f, "General") != 0
+                 ? of_strdup(&k->mem, f) : NULL;
+    t->lbl_font = k->base;
+    txpr_over(k, lb, &t->lbl_font);
+    if (ml != NULL && str_of(ml, "c:xMode") == NULL) {
+        t->lbl_dx = (float)fmin(fmax(val_of(ml, "c:x", 0), -1), 1);
+        t->lbl_dy = (float)fmin(fmax(val_of(ml, "c:y", 0), -1), 1);
+    }
+}
+
+/** @brief A series' error bars (two at most, as x and y): which way,
+ *         which ends, how much, how drawn. */
+static void
+errbars_read(ch_chart_t *k, const tiku_xml_node_t *ser, ch_series_t *s)
+{
+    static const char *const kinds[] = {"fixedVal", "percentage", "stdDev",
+                                        "stdErr", "cust"};
+    const tiku_xml_node_t *e;
+    const char *v;
+    size_t i;
+
+    for (e = tiku_xml_child(ser, "c:errBars"); e != NULL && s->nerr < 2;
+         e = tiku_xml_next(e, "c:errBars")) {
+        ch_err_t *b = &s->err[s->nerr++];
+
+        v = str_of(e, "c:errDir");
+        b->dir = v != NULL && v[0] == 'x' ? 'x' : 'y';
+        v = str_of(e, "c:errBarType");
+        b->type = v == NULL || strcmp(v, "both") == 0 ? CH_EB_BOTH :
+                  strcmp(v, "plus") == 0 ? CH_EB_PLUS : CH_EB_MINUS;
+        v = str_of(e, "c:errValType");
+        for (i = 0; v != NULL && i < sizeof kinds / sizeof kinds[0]; i++) {
+            b->kind = strcmp(v, kinds[i]) == 0 ? (int)i : b->kind;
+        }
+        b->val = fabs(val_of(e, "c:val", 1));
+        b->plus = numbers(k, tiku_xml_child(e, "c:plus"), &b->nplus, NULL);
+        b->minus = numbers(k, tiku_xml_child(e, "c:minus"), &b->nminus, NULL);
+        b->cap = !on(e, "c:noEndCap");
+        b->line.width = 0.75f;
+        b->line.color = 0xff000000u;
+        (void)dml_line(k->c, tiku_xml_path(e, "c:spPr/a:ln"), &b->line);
+        ch_err_stats(s, b);
+    }
+}
+
+/** @brief Whether a series' bars below nought are drawn inverted, and in
+ *         what (white, unless a later Office said). */
+static void
+invert_read(ch_chart_t *k, const tiku_xml_node_t *ser, ch_series_t *s)
+{
+    const tiku_xml_node_t *x = ext_child(ser, "invertSolidFillFmt"), *sp;
+
+    s->invert = on(ser, "c:invertIfNegative");
+    s->invert_fill.kind = DML_SOLID;
+    s->invert_fill.color = 0xffffffffu;
+    for (sp = tiku_xml_child(x, NULL); sp != NULL;
+         sp = tiku_xml_next(sp, NULL)) {
+        (void)dml_fill(k->c, sp, &s->invert_fill);
+    }
+}
+
 /** @brief A series' trendlines: their kind, reach, line and name. */
 static void
 trends_read(ch_chart_t *k, const tiku_xml_node_t *ser, ch_series_t *s)
@@ -492,6 +689,24 @@ trends_read(ch_chart_t *k, const tiku_xml_node_t *ser, ch_series_t *s)
                                &t->line);
         t->name = tiku_xml_child(e, "c:name") != NULL
                   ? trend_name(k, tiku_xml_child(e, "c:name")) : NULL;
+        trend_label(k, e, t);
+    }
+}
+
+/** @brief The words a series' labels take from cells ("value from
+ *         cells"): the cache of its datalabelsRange extension. */
+static void
+cells_read(ch_chart_t *k, const tiku_xml_node_t *ser, ch_series_t *s)
+{
+    const tiku_xml_node_t *r = ext_child(ser, "datalabelsRange"), *c;
+
+    for (c = tiku_xml_child(r, NULL); c != NULL; c = tiku_xml_next(c, NULL)) {
+        const char *colon = strchr(c->name, ':');
+
+        if (strcmp(colon != NULL ? colon + 1 : c->name,
+                   "dlblRangeCache") == 0) {
+            s->cells = cache_words(k, c, c, &s->ncells);
+        }
     }
 }
 
@@ -547,6 +762,9 @@ series_read(ch_chart_t *k, const tiku_xml_node_t *ser, const ch_group_t *g,
     s->explode = s->explode < 0 ? 0 : s->explode > 400 ? 400 : s->explode;
     points_read(k, ser, s);
     trends_read(k, ser, s);
+    cells_read(k, ser, s);
+    errbars_read(k, ser, s);
+    invert_read(k, ser, s);
     labels_read(k, dl, s);
     labels_read(k, tiku_xml_child(ser, "c:dLbls"), s);
     own_labels(k, tiku_xml_child(ser, "c:dLbls"), s);
@@ -631,6 +849,53 @@ group_shape(const tiku_xml_node_t *e, ch_group_t *g)
                       ? 300 : g->bubble_scale;
 }
 
+/** @brief A pie of pie or bar of pie: which points its second plot
+ *         takes, and how big it is. */
+static void
+of_pie_read(ch_chart_t *k, const tiku_xml_node_t *e, ch_group_t *g)
+{
+    const char *type = str_of(e, "c:ofPieType"), *v = str_of(e, "c:splitType");
+    const tiku_xml_node_t *p;
+    int i;
+
+    if (!tiku_xml_is(e, "c:ofPieChart")) {
+        return;
+    }
+    g->of_pie = type != NULL && strcmp(type, "bar") == 0 ? 'b' : 'p';
+    g->split = v == NULL || strcmp(v, "auto") == 0 || strcmp(v, "pos") == 0
+               ? 0 : strcmp(v, "val") == 0 ? 1 : strcmp(v, "percent") == 0
+               ? 2 : 3;
+    g->split_at = val_of(e, "c:splitPos", -1);
+    g->second_size = (float)fmin(fmax(val_of(e, "c:secondPieSize", 75), 5),
+                                 200);
+    g->nsecond = CH_POINTS;
+    g->second = g->split == 3 ? of_alloc(&k->mem, CH_POINTS) : NULL;
+    for (p = tiku_xml_path(e, "c:custSplit/c:secondPiePt"); p != NULL &&
+         g->second != NULL; p = tiku_xml_next(p, "c:secondPiePt")) {
+        if ((i = index_of(tiku_xml_attr(p, "val"), CH_POINTS)) >= 0) {
+            g->second[i] = 1;
+        }
+    }
+}
+
+/** @brief A group's drop lines (from each point down to its axis) and
+ *         series lines (joining stacked bars' tops). */
+static void
+group_lines(ch_chart_t *k, const tiku_xml_node_t *e, ch_group_t *g)
+{
+    const tiku_xml_node_t *dl = tiku_xml_child(e, "c:dropLines");
+    const tiku_xml_node_t *sl = tiku_xml_child(e, "c:serLines");
+
+    g->drop = dl != NULL;
+    g->drop_line.width = 0.75f;
+    g->drop_line.color = 0xff000000u;
+    (void)dml_line(k->c, tiku_xml_path(dl, "c:spPr/a:ln"), &g->drop_line);
+    g->serlines = sl != NULL;
+    g->ser_line.width = 0.75f;
+    g->ser_line.color = 0xff000000u;
+    (void)dml_line(k->c, tiku_xml_path(sl, "c:spPr/a:ln"), &g->ser_line);
+}
+
 /** @brief A line group's high-low lines and up-down bars. */
 static void
 group_bars(ch_chart_t *k, const tiku_xml_node_t *e, ch_group_t *g)
@@ -673,6 +938,8 @@ group_read(ch_chart_t *k, const tiku_xml_node_t *e, ch_group_t *g,
     g->kind = kind_of(e);
     group_shape(e, g);
     group_bars(k, e, g);
+    group_lines(k, e, g);
+    of_pie_read(k, e, g);
     for (s = tiku_xml_child(e, "c:ser"); s; s = tiku_xml_next(s, "c:ser")) {
         n++;
     }
@@ -780,6 +1047,11 @@ axis_read(ch_chart_t *k, const tiku_xml_node_t *e, ch_axis_t *a)
     a->id = strtoul(str_of(e, "c:axId") != NULL ? str_of(e, "c:axId")
                                                 : "0", NULL, 10);
     a->kind = tiku_xml_is(e, "c:valAx") ? CH_VAL_AX : CH_CAT_AX;
+    a->date = tiku_xml_is(e, "c:dateAx");
+    a->flat = on(e, "c:noMultiLvlLbl");
+    v = str_of(e, "c:baseTimeUnit");
+    a->time_unit = v == NULL ? 0 : strcmp(v, "months") == 0 ? 1 :
+                   strcmp(v, "years") == 0 ? 2 : 0;
     a->pos = v != NULL && strchr("bltr", v[0]) ? v[0] : 'b';
     a->deleted = on(e, "c:delete");
     a->reversed = (v = str_of(sc, "c:orientation")) != NULL &&
@@ -872,6 +1144,23 @@ chart_legend(ch_chart_t *k, const tiku_xml_node_t *ch)
     }
 }
 
+/** @brief The plot area's data table, if it has one: which rules it
+ *         draws, whether its series show their keys, its look. */
+static void
+table_read(ch_chart_t *k, const tiku_xml_node_t *dt)
+{
+    k->dtable = dt != NULL;
+    k->dt_horz = on(dt, "c:showHorzBorder");
+    k->dt_vert = on(dt, "c:showVertBorder");
+    k->dt_outline = on(dt, "c:showOutline");
+    k->dt_keys = on(dt, "c:showKeys");
+    k->dt_line.width = 0.75f;
+    k->dt_line.color = 0xffbfbfbfu;
+    (void)dml_line(k->c, tiku_xml_path(dt, "c:spPr/a:ln"), &k->dt_line);
+    k->dt_font = k->base;
+    txpr_over(k, dt, &k->dt_font);
+}
+
 /** @brief The plot area's axes, then its groups: the axes first, as the
  *         groups name them.  @return 0, or -1 out of memory. */
 static int
@@ -887,6 +1176,7 @@ plot_read(ch_chart_t *k, const tiku_xml_node_t *pa)
             axis_read(k, e, &k->ax[k->nax++]);
         }
         n += kind_of(e) >= 0;
+        k->known += kind_of(e) >= 0;
     }
     if (n > 0 && (k->grp = of_alloc(&k->mem, (size_t)n *
                                     sizeof *k->grp)) == NULL) {
@@ -903,12 +1193,13 @@ plot_read(ch_chart_t *k, const tiku_xml_node_t *pa)
         before += k->grp[k->ngrp].nser;
         k->ngrp += k->grp[k->ngrp].nser > 0;
     }
+    table_read(k, tiku_xml_child(pa, "c:dTable"));
     k->has_plot_at = layout_read(pa, k->plot_at, 4, &k->plot_inner);
     k->has_plot_bg = dml_fill(k->c, tiku_xml_child(pa, "c:spPr"),
                               &k->plot_bg);
     k->plot_border.width = 0.75f;
-    k->has_plot_border = dml_line(k->c, tiku_xml_path(pa, "c:spPr/a:ln"),
-                                  &k->plot_border);
+    k->has_plot_border = edge_read(k, tiku_xml_path(pa, "c:spPr/a:ln"),
+                                   &k->plot_border);
     return 0;
 }
 
@@ -927,6 +1218,9 @@ chart_categories(ch_chart_t *k)
             if (k->cat == NULL && r->cat != NULL) {
                 k->cat = r->cat;
                 k->nnamed = r->n;
+                k->outer[0] = r->outer[0];
+                k->outer[1] = r->outer[1];
+                k->nouter = r->nouter;
                 k->catv = r->catv;
                 snprintf(k->cat_fmt, sizeof k->cat_fmt, "%s", r->cat_fmt);
             }
@@ -948,7 +1242,7 @@ ch_read_dml(ch_chart_t *k, const tiku_xml_node_t *cs)
     k->has_bg = dml_fill(k->c, sp, &k->bg);
     k->border.width = 0.75f;
     k->border.color = 0xff000000u;
-    k->has_border = dml_line(k->c, tiku_xml_child(sp, "a:ln"), &k->border);
+    k->has_border = edge_read(k, tiku_xml_child(sp, "a:ln"), &k->border);
     k->blanks = b == NULL || strcmp(b, "gap") == 0 ? 0 :
                 strcmp(b, "zero") == 0 ? 1 : 2;
     if (plot_read(k, tiku_xml_child(ch, "c:plotArea")) != 0) {

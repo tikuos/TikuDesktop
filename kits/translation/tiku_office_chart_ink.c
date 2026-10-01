@@ -294,10 +294,13 @@ ch_close(ch_path_t *p)
 void
 ch_arc(ch_path_t *p, float cx, float cy, float r, double a0, double a1)
 {
-    int n = (int)ceil(fabs(a1 - a0) / (M_PI / 2)), i;
-    double step, k;
+    double turn = fabs(a1 - a0), step, k;
+    int n = isfinite(turn) ? (int)ceil(fmin(turn, 16) / (M_PI / 2)) : 0, i;
     float *f;
 
+    if (n == 0 && !isfinite(turn)) {
+        return;                     /* angles of no number: no arc */
+    }
     n = n < 1 ? 1 : n > 8 ? 8 : n;
     step = (a1 - a0) / n;
     k = 4.0 / 3.0 * tan(step / 4) * r;

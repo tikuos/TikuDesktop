@@ -372,6 +372,10 @@ void of_number(int n, int fmt, char *out, size_t max);
 /** @brief A character of the Symbol or Wingdings fonts as the Unicode
  *         character it looks like: bullets, arrows, Greek. */
 uint32_t of_symbol(const char *font, uint32_t code);
+/** @brief The branch of mc:AlternateContent @p ac read here: the first
+ *         choice that requires only what is read here, else the fallback
+ *         (Office's picture of what it has no older way to say). */
+const tiku_xml_node_t *of_alternate(const tiku_xml_node_t *ac);
 
 /* -------------------------------------------------------------- faces  */
 

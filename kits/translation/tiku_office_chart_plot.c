@@ -23,6 +23,8 @@
 #define PL_LINE_W  2.25f            /* a line series' width, unsaid      */
 #define PL_MK_W    0.75f            /* a marker's outline                */
 #define PL_GAP     3.0f             /* between a point and its label     */
+#define PL_LEAD    8.0f             /* a pie's moved label, past its edge */
+#define PL_SPREAD  256              /* outside labels one pie spreads    */
 
 /** @brief A label noted while its point was drawn. */
 typedef struct {
@@ -31,6 +33,9 @@ typedef struct {
     float    x, y;                  /* where                             */
     int      align, valign;         /* as ch_text takes them             */
     double   pct;                   /* a slice's share, or NAN           */
+    float    ex, ey;                /* the slice's edge it is set outside
+                                       of, to be led from; NAN for none  */
+    int      lead;                  /* a line led to it already          */
 } pl_label_t;
 
 /** @brief The series being drawn: the group, its axes, its stacks. */
@@ -225,6 +230,15 @@ at_of(const ch_series_t *s, int i)
     return l != NULL && l->at >= 0 ? l->at : s->lbl_at;
 }
 
+/** @brief The look point @p i of @p s's label is set in. */
+static const ch_font_t *
+font_of(const ch_series_t *s, int i)
+{
+    const ch_label_t *l = ch_own_label(s, i);
+
+    return l != NULL ? &l->font : &s->lbl_font;
+}
+
 /* ---------------------------------------------------------------- points  */
 
 /** @brief Point @p i of series @p s: NAN where it has none, unless the
@@ -237,24 +251,29 @@ value(const pl_t *q, const ch_series_t *s, int i)
     return isnan(v) && q->k->blanks == 1 ? 0 : v;
 }
 
-/** @brief A label for point @p i of @p s noted at @p x, @p y. */
-static void
+/** @brief A label for point @p i of @p s noted at @p x, @p y.
+ *  @return it, or NULL when there is no room for more. */
+static pl_label_t *
 note(pl_t *q, const ch_series_t *s, int i, float x, float y, int align,
      int valign, double pct)
 {
+    const ch_label_t *own = ch_own_label(s, i);
     pl_label_t *l;
 
     if (q->nlbl >= q->cap) {
-        return;
+        return NULL;
     }
     l = &q->lbl[q->nlbl++];
     l->s = s;
     l->i = i;
-    l->x = x;
-    l->y = y;
+    l->x = x + (own != NULL ? own->dx * q->k->w : 0);
+    l->y = y + (own != NULL ? own->dy * q->k->h : 0);
     l->align = align;
     l->valign = valign;
     l->pct = pct;
+    l->ex = l->ey = NAN;
+    l->lead = 0;
+    return l;
 }
 
 /** @brief The group's stacks emptied, and for one stacked to a hundred
@@ -324,54 +343,138 @@ piled(pl_t *q, const ch_series_t *s, int i, double *under)
     return q->up[i] += v;
 }
 
-/** @brief @p part added to label @p out, after the series' separator
- *         when something is there before it. */
+/** @brief @p part added to label @p out, after separator @p sep when
+ *         something is there before it. */
 static void
-add(const ch_series_t *s, const char *part, char *out, size_t max)
+add(const char *sep, const char *part, char *out, size_t max)
 {
     size_t n = strlen(out);
 
     if (part == NULL || part[0] == '\0') {
         return;
     }
-    snprintf(out + n, max - n, "%s%s", n > 0 ? s->sep : "", part);
+    snprintf(out + n, max - n, "%s%s", n > 0 ? sep : "", part);
 }
 
-/** @brief Label @p l's words: its own, or its series' name, its
- *         category, its value and its share, as it asks. */
+/** @brief Point @p l's category into @p out: a scatter's x, its name,
+ *         or its number. */
+static void
+category(const pl_t *q, const pl_label_t *l, char *out, size_t max)
+{
+    if (l->s->x != NULL) {
+        ch_number(l->s->x[l->i], "General", out, max);
+    } else if (q->k->cat != NULL && l->i < q->k->nnamed) {
+        snprintf(out, max, "%s", q->k->cat[l->i]);
+    } else {
+        snprintf(out, max, "%d", l->i + 1);
+    }
+}
+
+/** @brief Field @p type of point @p l's label into @p out: its value,
+ *         category, series, share or cell.  @return 0 for one not known,
+ *         whose own saved words stand. */
+static int
+field(const pl_t *q, const pl_label_t *l, const char *type, char *out,
+      size_t max)
+{
+    const ch_series_t *s = l->s;
+
+    if (type == NULL) {
+        return 0;
+    }
+    if (strcmp(type, "VALUE") == 0 || strcmp(type, "YVALUE") == 0) {
+        const ch_label_t *own = ch_own_label(s, l->i);
+
+        ch_number(s->v[l->i], own != NULL && own->fmt != NULL ? own->fmt
+                  : s->lbl_fmt != NULL ? s->lbl_fmt : s->fmt, out, max);
+    } else if (strcmp(type, "CATEGORYNAME") == 0 ||
+               strcmp(type, "XVALUE") == 0) {
+        category(q, l, out, max);
+    } else if (strcmp(type, "SERIESNAME") == 0 && s->name != NULL) {
+        snprintf(out, max, "%s", s->name);
+    } else if (strcmp(type, "PERCENTAGE") == 0 && !isnan(l->pct)) {
+        ch_number(l->pct, "0%", out, max);
+    } else if ((strcmp(type, "CELLREF") == 0 ||
+                strcmp(type, "CELLRANGE") == 0) && l->i < s->ncells) {
+        snprintf(out, max, "%s", s->cells[l->i]);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+/** @brief A label's own rich text with its fields filled in for point
+ *         @p l, its paragraphs and breaks as lines, into @p out. */
+static void
+fields_text(const pl_t *q, const pl_label_t *l, const tiku_xml_node_t *rich,
+            char *out, size_t max)
+{
+    const tiku_xml_node_t *p, *r;
+    char part[160];
+    size_t n;
+
+    out[0] = '\0';
+    for (p = tiku_xml_child(rich, "a:p"); p; p = tiku_xml_next(p, "a:p")) {
+        n = strlen(out);
+        snprintf(out + n, max - n, "%s", n > 0 ? "\n" : "");
+        for (r = tiku_xml_child(p, NULL); r; r = tiku_xml_next(r, NULL)) {
+            part[0] = '\0';
+            if (tiku_xml_is(r, "a:br")) {
+                snprintf(part, sizeof part, "\n");
+            } else if (!tiku_xml_is(r, "a:fld") ||
+                       !field(q, l, tiku_xml_attr(r, "type"), part,
+                              sizeof part)) {
+                (void)tiku_xml_text(tiku_xml_child(r, "a:t"), part,
+                                    sizeof part);
+            }
+            n = strlen(out);
+            snprintf(out + n, max - n, "%s", part);
+        }
+    }
+}
+
+/** @brief Label @p l's words: its own (fields filled in), or its cells',
+ *         its series' name, its category, its value and its share, as
+ *         it asks. */
 static void
 label_text(const pl_t *q, const pl_label_t *l, char *out, size_t max)
 {
     const ch_series_t *s = l->s;
     const ch_label_t *own = ch_own_label(s, l->i);
-    int shows = ch_labels_of(s, l->i);
+    const char *sep = own != NULL && own->sep != NULL ? own->sep : s->sep;
+    const char *fmt = own != NULL && own->fmt != NULL ? own->fmt
+                      : s->lbl_fmt;
+    int shows = ch_labels_of(s, l->i), share = fmt != NULL &&
+                (shows & CH_LBL_PCT) && strchr(fmt, '%') != NULL;
     char part[160];
 
     out[0] = '\0';
+    if (own != NULL && own->rich != NULL) {
+        fields_text(q, l, own->rich, out, max);
+        return;
+    }
     if (own != NULL && own->text != NULL) {
         snprintf(out, max, "%s", own->text);
         return;
     }
+    if (s->show_cells && l->i < s->ncells) {
+        add(sep, s->cells[l->i], out, max);
+    }
     if (shows & CH_LBL_SER) {
-        add(s, s->name, out, max);
+        add(sep, s->name, out, max);
     }
     if (shows & CH_LBL_CAT) {
-        if (s->x != NULL) {
-            ch_number(s->x[l->i], "General", part, sizeof part);
-        } else if (q->k->cat != NULL && l->i < q->k->nnamed) {
-            snprintf(part, sizeof part, "%s", q->k->cat[l->i]);
-        } else {
-            snprintf(part, sizeof part, "%d", l->i + 1);
-        }
-        add(s, part, out, max);
+        category(q, l, part, sizeof part);
+        add(sep, part, out, max);
     }
-    if (shows & CH_LBL_VAL) {
-        ch_number(s->v[l->i], s->fmt, part, sizeof part);
-        add(s, part, out, max);
+    if (shows & CH_LBL_VAL) {           /* a percent format is the share's */
+        ch_number(s->v[l->i], fmt != NULL && !share ? fmt : s->fmt, part,
+                  sizeof part);
+        add(sep, part, out, max);
     }
     if ((shows & CH_LBL_PCT) && !isnan(l->pct)) {
-        ch_number(l->pct, "0%", part, sizeof part);
-        add(s, part, out, max);
+        ch_number(l->pct, share ? fmt : "0%", part, sizeof part);
+        add(sep, part, out, max);
     }
 }
 
@@ -409,24 +512,58 @@ bar(pl_t *q, const ch_series_t *s, int i, float lead, float bw)
     dml_fill_t f;
     dml_line_t l;
     ch_box_t box;
+    int e;
 
     if (!bar_span(q, s, i, &from, &to)) {
         return;
     }
-    c = ch_place(q->cat, i) + lead;
+    c = ch_place(q->cat, ch_cat(q->k, i)) + lead;
     a = ch_place(q->val, from);
     b = ch_place(q->val, to);
+    q->pt[3 * i] = fminf(c, c + bw);    /* for its series' lines */
+    q->pt[3 * i + 1] = fmaxf(c, c + bw);
+    q->pt[3 * i + 2] = b;
     box.x = q->g->across ? fminf(a, b) : fminf(c, c + bw);
     box.y = q->g->across ? fminf(c, c + bw) : fminf(a, b);
     box.w = q->g->across ? fabsf(b - a) : fabsf(bw);
     box.h = q->g->across ? fabsf(bw) : fabsf(b - a);
     ch_point_fill(q->k, q->g, s, i, &f);
+    if (s->invert && s->v[i] < 0 && (s->pt_fill == NULL ||
+                                     !(s->pt_has[i] & 1))) {
+        f = s->invert_fill;
+    }
     point_line(q, s, i, &l);
     if (box.w > 0.01f && box.h > 0.01f) {
         ch_rect(q->k, &box, &f, l.width > 0 ? &l : NULL);
     }
+    for (e = 0; e < s->nerr; e++) {
+        if (s->err[e].dir == 'y') {
+            ch_err(q->k, &s->err[e], i, s->v[i], to, c + bw / 2, q->val);
+        }
+    }
     if (ch_labels_of(s, i) != 0) {
         bar_label(q, s, i, &box, a, b);
+    }
+}
+
+/** @brief A stacked series' tops joined, bar to bar, by its group's
+ *         series lines: from the edges and tops its @p n bars noted. */
+static void
+series_lines(pl_t *q, int n)
+{
+    int i;
+
+    for (i = 0; q->g->serlines && stacking(q) && i + 1 < n; i++) {
+        const float *a = q->pt + 3 * i, *b = a + 3;
+
+        if (isnan(a[2]) || isnan(b[2])) {
+            continue;
+        }
+        if (q->g->across) {
+            ch_segment(q->k, a[2], a[1], b[2], b[0], &q->g->ser_line);
+        } else {
+            ch_segment(q->k, a[1], a[2], b[0], b[2], &q->g->ser_line);
+        }
     }
 }
 
@@ -440,7 +577,8 @@ bars(pl_t *q)
     double band = fabs(q->cat->to - q->cat->from) / (q->cat->hi - q->cat->lo);
     double ov = g->overlap / 100, bw = band / (m - (m - 1) * ov + g->gap /
                                                100);
-    float dir = ch_place(q->cat, 1) >= ch_place(q->cat, 0) ? 1 : -1;
+    float dir = ch_place(q->cat, ch_cat(q->k, 1)) >=
+                ch_place(q->cat, ch_cat(q->k, 0)) ? 1 : -1;
 
     for (si = 0; si < g->nser; si++) {
         const ch_series_t *s = &g->ser[si];
@@ -448,8 +586,10 @@ bars(pl_t *q)
                       (m > 1 ? si : 0) * bw * (1 - ov);
 
         for (i = 0; i < s->n; i++) {
+            q->pt[3 * i + 2] = NAN;
             bar(q, s, i, (float)(dir * lead), (float)(dir * bw));
         }
+        series_lines(q, s->n);
     }
 }
 
@@ -521,6 +661,41 @@ point_label(pl_t *q, const ch_series_t *s, int i, float mk)
     }
 }
 
+/** @brief The group's drop lines from each of @p n points in q->pt down
+ *         to where its category axis crosses. */
+static void
+drops(pl_t *q, int n)
+{
+    float base = ch_place(q->val, q->base);
+    int i;
+
+    for (i = 0; q->g->drop && i < n; i++) {
+        if (q->pt[3 * i + 2] != 0) {
+            ch_segment(q->k, q->pt[3 * i], q->pt[3 * i + 1], q->pt[3 * i],
+                       base, &q->g->drop_line);
+        }
+    }
+}
+
+/** @brief Point @p i's error bars: along its value, and a scatter's
+ *         along its x. */
+static void
+point_errs(pl_t *q, const ch_series_t *s, int i)
+{
+    int e;
+
+    for (e = 0; e < s->nerr; e++) {
+        const ch_err_t *b = &s->err[e];
+        double x = s->x != NULL ? s->x[i] : i + 1;
+
+        if (b->dir == 'y') {
+            ch_err(q->k, b, i, s->v[i], s->v[i], q->pt[3 * i], q->val);
+        } else if (q->g->kind == CH_SCATTER) {
+            ch_err(q->k, b, i, x, x, q->pt[3 * i + 1], q->cat);
+        }
+    }
+}
+
 /** @brief A series' line, then its markers and labels, over its @p n
  *         points in q->pt. */
 static void
@@ -531,6 +706,7 @@ series_points(pl_t *q, const ch_series_t *s, int n)
     dml_line_t l;
 
     ch_series_line(q->k, q->g, s, &l);
+    drops(q, n);
     if (l.width > 0) {
         trace(q, s, n, &l);
     }
@@ -546,6 +722,7 @@ series_points(pl_t *q, const ch_series_t *s, int n)
         if (ch_labels_of(s, i) != 0) {
             point_label(q, s, i, mk != CH_MK_NONE ? s->mk_size : 0);
         }
+        point_errs(q, s, i);
     }
 }
 
@@ -558,7 +735,7 @@ hilo(pl_t *q)
 
     for (i = 0; q->g->hilo && i < q->k->ncat; i++) {
         double lo = INFINITY, hi = -INFINITY;
-        float x = ch_place(q->cat, i);
+        float x = ch_place(q->cat, ch_cat(q->k, i));
 
         for (s = 0; s < q->g->nser; s++) {
             double v = value(q, &q->g->ser[s], i);
@@ -594,7 +771,7 @@ updown(pl_t *q)
         }
         ya = ch_place(q->val, a);
         yz = ch_place(q->val, z);
-        b.x = ch_place(q->cat, i) - w / 2;
+        b.x = ch_place(q->cat, ch_cat(q->k, i)) - w / 2;
         b.w = w;
         b.y = fminf(ya, yz);
         b.h = fabsf(yz - ya);
@@ -617,7 +794,7 @@ lines(pl_t *q)
         for (i = 0; i < s->n; i++) {
             double under, v = piled(q, s, i, &under);
 
-            q->pt[3 * i] = ch_place(q->cat, i);
+            q->pt[3 * i] = ch_place(q->cat, ch_cat(q->k, i));
             q->pt[3 * i + 1] = isnan(v) ? 0 : ch_place(q->val, v);
             q->pt[3 * i + 2] = !isnan(v);
         }
@@ -644,7 +821,7 @@ areas(pl_t *q, const ch_box_t *p)
         for (i = 0; i < s->n; i++) {
             double under, v = piled(q, s, i, &under);
 
-            q->pt[3 * i] = ch_place(q->cat, i);
+            q->pt[3 * i] = ch_place(q->cat, ch_cat(q->k, i));
             q->pt[3 * i + 1] = ch_place(q->val, isnan(v) ? under : v);
             q->pt[3 * i + 2] = ch_place(q->val, under);
             if (ch_labels_of(s, i) != 0 && !isnan(v)) {
@@ -664,26 +841,71 @@ areas(pl_t *q, const ch_box_t *p)
         ch_point_fill(q->k, q->g, s, -1, &f);
         ch_series_line(q->k, q->g, s, &l);
         ch_paint(q->k, &path, &f, l.width > 0 ? &l : NULL, p->w, p->h);
+        for (i = 0; q->g->drop && i < s->n; i++) {
+            ch_segment(q->k, q->pt[3 * i], q->pt[3 * i + 1], q->pt[3 * i],
+                       ch_place(q->val, q->base), &q->g->drop_line);
+        }
     }
 }
 
 /* ------------------------------------------------------------------ pies  */
 
-/** @brief A slice's label: inside it, or outside for "outEnd", saying
- *         its @p share of the whole when asked. */
+/** @brief Whether point @p i's label fits inside its slice (its @p share
+ *         of a pie of radius @p r) at three fifths of the way out: its
+ *         words within the slice's width there, not taller than half the
+ *         slice is deep. */
+static int
+fits(const pl_t *q, const ch_series_t *s, int i, double share, float r)
+{
+    char text[512];
+    double half = share * M_PI;
+    float w, h, wide = 1.24f * r * (float)(half >= M_PI / 2 ? 1 : sin(half));
+    pl_label_t l;
+
+    l.s = s;
+    l.i = i;
+    l.pct = share;
+    label_text(q, &l, text, sizeof text);
+    ch_block_size(q->k, font_of(s, i), text, &w, &h);
+    return w <= wide * 0.9f && h <= r * 0.5f;
+}
+
+/** @brief Whether point @p i's label is set outside its slice: asked to
+ *         be, or placed "best" and too big for it. */
+static int
+set_outside(const pl_t *q, const ch_series_t *s, int i, double share,
+            float r)
+{
+    int at = at_of(s, i);
+
+    return at == CH_AT_OUT || (at == -1 && !fits(q, s, i, share, r));
+}
+
+/** @brief A slice's label: inside it, or outside, led from its edge when
+ *         it goes there to fit; saying its @p share of the whole when
+ *         asked. */
 static void
 slice_label(pl_t *q, const ch_series_t *s, int i, const pl_arc_t *c,
             double share)
 {
     double mid = (c->a0 + c->a1) / 2;
-    int at = at_of(s, i), out = at == CH_AT_OUT && c->r0 <= 0;
-    float r = c->r0 > 0 ? (c->r0 + c->r1) / 2 : out ? c->r1 + PL_GAP
+    int at = at_of(s, i), out = c->r0 <= 0 && set_outside(q, s, i, share,
+                                                          c->r1);
+    float r = c->r0 > 0 ? (c->r0 + c->r1) / 2 : out
+            ? c->r1 + PL_GAP + (at == -1 ? PL_LEAD : 0)
             : at == CH_AT_IN ? c->r1 * 0.8f : at == CH_AT_BASE
             ? c->r1 * 0.35f : c->r1 * 0.62f;
+    pl_label_t *l = note(q, s, i, c->cx + r * (float)sin(mid),
+                         c->cy - r * (float)cos(mid),
+                         !out ? 1 : sin(mid) >= 0 ? 0 : 2, 1, share);
 
-    note(q, s, i, c->cx + r * (float)sin(mid), c->cy - r * (float)cos(mid),
-         !out ? 1 : sin(mid) >= 0 ? 0 : 2, !out ? 1 : cos(mid) > 0.7 ? 2
-         : cos(mid) < -0.7 ? 0 : 1, share);
+    if (l != NULL && c->r0 <= 0 && (out || hypotf(l->x - c->cx,
+                                                  l->y - c->cy) > c->r1)) {
+        l->ex = c->cx + c->r1 * (float)sin(mid);    /* led from its edge */
+        l->ey = c->cy - c->r1 * (float)cos(mid);
+        l->lead = at == -1;
+        l->align = l->x >= c->cx ? 0 : 2;
+    }
 }
 
 /** @brief Point @p i of @p s as a slice of @p c, pulled out as it asks. */
@@ -751,11 +973,11 @@ ring(pl_t *q, const ch_series_t *s, const pl_arc_t *c)
     }
 }
 
-/** @brief How far past a pie's edge its labels set outside it reach,
- *         across into @p far[0] and down into @p far[1]: nothing when
- *         none are. */
+/** @brief How far past the edge of a pie of radius @p r its labels set
+ *         outside it reach, across into @p far[0] and down into
+ *         @p far[1]: nothing when none are. */
 static void
-outside(const pl_t *q, const ch_series_t *s, float *far)
+outside(const pl_t *q, const ch_series_t *s, float r, float *far)
 {
     char text[512];
     double total = 0;
@@ -768,37 +990,266 @@ outside(const pl_t *q, const ch_series_t *s, float *far)
         total += isnan(s->v[i]) ? 0 : fabs(s->v[i]);
     }
     for (i = 0; i < s->n; i++) {
-        if (at_of(s, i) != CH_AT_OUT || ch_labels_of(s, i) == 0 ||
-            isnan(s->v[i])) {
+        l.pct = total > 0 ? fabs(s->v[i]) / total : NAN;
+        if (ch_labels_of(s, i) == 0 || isnan(s->v[i]) ||
+            !set_outside(q, s, i, l.pct, r)) {
             continue;
         }
         l.s = s;
         l.i = i;
-        l.pct = total > 0 ? fabs(s->v[i]) / total : NAN;
         label_text(q, &l, text, sizeof text);
-        ch_block_size(q->k, &s->lbl_font, text, &w, &h);
-        far[0] = fmaxf(far[0], w + PL_GAP);
+        ch_block_size(q->k, font_of(s, i), text, &w, &h);
+        far[0] = fmaxf(far[0], w + PL_GAP + PL_LEAD);
         far[1] = fmaxf(far[1], h + PL_GAP);
     }
 }
 
+/** @brief Whether point @p i of @p s goes to a pie of pie's second plot:
+ *         by its position (the last third, unless the file says how
+ *         many), its value, its share of @p total, or the file's list. */
+static int
+in_second(const ch_group_t *g, const ch_series_t *s, int i, double total)
+{
+    double v = isnan(s->v[i]) ? 0 : fabs(s->v[i]);
+    int last = g->split_at >= 1 ? (int)fmin(g->split_at, s->n)
+                                : (s->n + 2) / 3;
+
+    if (g->split == 1 && g->split_at >= 0) {
+        return v < g->split_at;
+    }
+    if (g->split == 2 && g->split_at >= 0) {
+        return total > 0 && v / total * 100 < g->split_at;
+    }
+    if (g->split == 3) {
+        return g->second != NULL && i < g->nsecond && g->second[i];
+    }
+    return i >= s->n - last;
+}
+
+/** @brief The "Other" slice of @p c standing for the second plot's
+ *         points (@p share of the whole), in the colour after the last
+ *         point's, with its label. */
+static void
+other(pl_t *q, const ch_series_t *s, const pl_arc_t *c, double share,
+      double sum)
+{
+    double mid = (c->a0 + c->a1) / 2;
+    char text[160], part[48];
+    dml_fill_t f;
+    dml_line_t l;
+    ch_path_t p;
+
+    ch_path(&p, c->cx - c->r1, c->cy - c->r1, 1, 1);
+    ch_move(&p, c->cx, c->cy);
+    ch_line(&p, c->cx + c->r1 * (float)sin(c->a0),
+            c->cy - c->r1 * (float)cos(c->a0));
+    ch_arc(&p, c->cx, c->cy, c->r1, c->a0, c->a1);
+    ch_close(&p);
+    ch_point_fill(q->k, q->g, s, s->n, &f);
+    ch_series_line(q->k, q->g, s, &l);
+    ch_paint(q->k, &p, &f, l.width > 0 ? &l : NULL, 2 * c->r1, 2 * c->r1);
+    text[0] = '\0';
+    if (s->labels & CH_LBL_CAT) {
+        add(s->sep, "Other", text, sizeof text);
+    }
+    if (s->labels & CH_LBL_VAL) {
+        ch_number(sum, s->lbl_fmt != NULL ? s->lbl_fmt : s->fmt, part,
+                  sizeof part);
+        add(s->sep, part, text, sizeof text);
+    }
+    if (s->labels & CH_LBL_PCT) {
+        ch_number(share, "0%", part, sizeof part);
+        add(s->sep, part, text, sizeof text);
+    }
+    ch_text_block(q->k, &s->lbl_font, text,
+                  c->cx + c->r1 * 0.62f * (float)sin(mid),
+                  c->cy - c->r1 * 0.62f * (float)cos(mid), 1, 1);
+}
+
+/** @brief A bar of pie's second plot: its points stacked in a bar @p w
+ *         wide from @p x, @p h tall about @p cy, each its share of
+ *         @p sum. */
+static void
+second_bar(pl_t *q, const ch_series_t *s, double total, double sum,
+           const float *at)
+{
+    float y = at[1] + at[3] / 2;
+    dml_fill_t f;
+    dml_line_t l;
+    ch_box_t b;
+    int i;
+
+    for (i = 0; sum > 0 && i < s->n; i++) {
+        if (!in_second(q->g, s, i, total) || isnan(s->v[i])) {
+            continue;
+        }
+        b.x = at[0];
+        b.w = at[2];
+        b.h = (float)(fabs(s->v[i]) / sum) * at[3];
+        b.y = y - b.h;
+        y = b.y;
+        ch_point_fill(q->k, q->g, s, i, &f);
+        point_line(q, s, i, &l);
+        ch_rect(q->k, &b, &f, l.width > 0 ? &l : NULL);
+        if (ch_labels_of(s, i) != 0) {
+            note(q, s, i, b.x + b.w / 2, b.y + b.h / 2, 1, 1,
+                 fabs(s->v[i]) / total);
+        }
+    }
+}
+
+/** @brief A pie (@p c) whose points in @p second (1) or not (0) are
+ *         drawn round it from angle @p a, each its share of @p sum, as
+ *         shares of @p total for their labels. */
+static void
+part_ring(pl_t *q, const ch_series_t *s, int second, pl_arc_t *c,
+          double a, double sum, double total)
+{
+    pl_arc_t one;
+    int i;
+
+    for (i = 0; sum > 0 && i < s->n; i++) {
+        double v = isnan(s->v[i]) ? 0 : fabs(s->v[i]);
+
+        if (in_second(q->g, s, i, total) != second || v == 0) {
+            continue;
+        }
+        one = *c;
+        one.a0 = a;
+        one.a1 = a + v / sum * 2 * M_PI;
+        a = one.a1;
+        slice(q, s, i, &one, v / total);
+    }
+}
+
+/** @brief A pie of pie or bar of pie in plot box @p p: the first plot's
+ *         points round a pie, the rest gathered as "Other" facing the
+ *         second plot (a smaller pie, or a bar) that shows them apart,
+ *         the two joined by the group's series lines. */
+static void
+of_pie(pl_t *q, const ch_box_t *p)
+{
+    const ch_series_t *s = &q->g->ser[0];
+    float size = q->g->second_size / 100, r, at[4];
+    double total = 0, sum = 0, half;
+    pl_arc_t c, c2;
+    int i;
+
+    for (i = 0; i < s->n; i++) {
+        total += isnan(s->v[i]) ? 0 : fabs(s->v[i]);
+    }
+    for (i = 0; i < s->n; i++) {
+        sum += in_second(q->g, s, i, total) && !isnan(s->v[i])
+               ? fabs(s->v[i]) : 0;
+    }
+    r = fminf(p->h / 2, p->w / (2.6f + 2 * size)) * 0.9f;
+    c.cx = p->x + (p->w - (2 + 0.6f + 2 * size) * r) / 2 + r;
+    c.cy = p->y + p->h / 2;
+    c.r0 = 0;
+    c.r1 = r;
+    half = total > 0 ? sum / total * M_PI : 0;  /* "Other" faces right */
+    part_ring(q, s, 0, &c, M_PI / 2 + half, total, total);
+    c2 = c;
+    c2.a0 = M_PI / 2 - half;
+    c2.a1 = M_PI / 2 + half;
+    if (sum > 0) {
+        other(q, s, &c2, sum / total, sum);
+    }
+    at[0] = c.cx + r + 0.6f * r;    /* the gap between the two plots */
+    at[1] = c.cy - r * size;
+    at[2] = q->g->of_pie == 'b' ? r * size * 0.7f : 2 * r * size;
+    at[3] = 2 * r * size;
+    if (q->g->of_pie == 'b') {
+        second_bar(q, s, total, sum, at);
+    } else {
+        c2.cx = at[0] + r * size;
+        c2.r1 = r * size;
+        part_ring(q, s, 1, &c2, M_PI / 2 - half, sum, total);
+    }
+    for (i = -1; q->g->serlines && sum > 0 && i <= 1; i += 2) {
+        ch_segment(q->k, c.cx + r * (float)sin(M_PI / 2 - i * half),
+                   c.cy - r * (float)cos(M_PI / 2 - i * half),
+                   q->g->of_pie == 'b' ? at[0] : at[0] + r * size,
+                   c.cy + i * r * size, &q->g->ser_line);
+    }
+}
+
+/** @brief Labels @p on (@p n of them) put in their order down the page. */
+static void
+down_page(pl_label_t **on, int n)
+{
+    pl_label_t *t;
+    int i, j;
+
+    for (i = 1; i < n; i++) {
+        for (j = i; j > 0 && on[j - 1]->y > on[j]->y; j--) {
+            t = on[j];
+            on[j] = on[j - 1];
+            on[j - 1] = t;
+        }
+    }
+}
+
+/** @brief The labels set outside a pie on one side (@p side: 0 its
+ *         right, 2 its left), noted from @p first on, kept from covering
+ *         each other: in their order down the page each is pushed below
+ *         the one above -- one moved by hand stays -- and a line led to
+ *         it from its slice when it moved, or went out to fit. */
+static void
+spread(pl_t *q, int first, int side)
+{
+    static const dml_line_t lead = {.width = 0.75f, .color = 0xffa6a6a6u};
+    pl_label_t *on[PL_SPREAD];
+    char text[512];
+    float w, h, below = -INFINITY, y;
+    int n = 0, i;
+
+    for (i = first; i < q->nlbl && n < PL_SPREAD; i++) {
+        if (!isnan(q->lbl[i].ex) && q->lbl[i].align == side) {
+            on[n++] = &q->lbl[i];
+        }
+    }
+    down_page(on, n);
+    for (i = 0; i < n; i++) {
+        const ch_label_t *own = ch_own_label(on[i]->s, on[i]->i);
+        int moved = own != NULL && (own->dx != 0 || own->dy != 0);
+
+        label_text(q, on[i], text, sizeof text);
+        ch_block_size(q->k, font_of(on[i]->s, on[i]->i), text, &w, &h);
+        y = moved ? on[i]->y : fmaxf(on[i]->y, below + h / 2 + 1);
+        if (moved || on[i]->lead || y - on[i]->y > 2) {
+            ch_segment(q->k, on[i]->ex, on[i]->ey,
+                       on[i]->x + (side == 0 ? -1 : 1), y, &lead);
+        }
+        on[i]->y = y;
+        below = y + h / 2;
+    }
+}
+
 /** @brief A pie (its first series) or a doughnut (a ring for each, the
- *         first innermost), in the middle of plot box @p p, room kept
- *         round a pie for labels set outside it. */
+ *         first innermost), in the middle of plot box @p p: filling it
+ *         when the file sets it by hand, else with room kept round a pie
+ *         for labels set outside it. */
 static void
 pies(pl_t *q, const ch_box_t *p)
 {
     const ch_group_t *g = q->g;
-    int rings = g->kind == CH_DOUGHNUT ? g->nser : 1, si, i;
-    float most = 0, r = fminf(p->w, p->h) / 2 * 0.92f, hole, far[2];
+    int rings = g->kind == CH_DOUGHNUT ? g->nser : 1, si, i, first;
+    float most = 0, r = fminf(p->w, p->h) / 2 *
+                        (q->k->has_plot_at && q->k->plot_inner ? 1 : 0.92f);
+    float far[2], hole;
     pl_arc_t c;
 
-    if (g->kind == CH_PIE) {
-        outside(q, &g->ser[0], far);
+    if (g->of_pie) {
+        of_pie(q, p);
+        return;
+    }
+    if (g->kind == CH_PIE && !q->k->has_plot_at) {  /* labels' room */
+        outside(q, &g->ser[0], r, far);
         r = fmaxf(fminf(r, fminf(p->w / 2 - far[0], p->h / 2 - far[1])),
                   r / 4);
     }
-
+    first = q->nlbl;
     for (si = 0; si < rings; si++) {
         const ch_series_t *s = &g->ser[si];
 
@@ -816,6 +1267,8 @@ pies(pl_t *q, const ch_box_t *p)
         c.r1 = hole + (r - hole) * (si + 1) / rings;
         ring(q, &g->ser[si], &c);
     }
+    spread(q, first, 0);
+    spread(q, first, 2);
 }
 
 /* -------------------------------------------------------------- scatters  */
@@ -958,6 +1411,40 @@ group(pl_t *q, const ch_group_t *g, const ch_box_t *p)
     trends(q, p);
 }
 
+/** @brief Label @p l set: its box (the file's ground and edge for it,
+ *         when it gives them) behind its words, in its own look. */
+static void
+label_draw(ch_chart_t *k, const pl_label_t *l, const char *text)
+{
+    const ch_label_t *own = ch_own_label(l->s, l->i);
+    const tiku_xml_node_t *sp = own != NULL && own->sppr != NULL
+                                ? own->sppr : l->s->lbl_sppr;
+    const ch_font_t *f = font_of(l->s, l->i);
+    dml_fill_t fill;
+    dml_line_t edge;
+    ch_box_t b;
+
+    memset(&edge, 0, sizeof edge);
+    edge.width = 0.75f;
+    if (sp != NULL && text[0] != '\0') {
+        int filled = dml_fill(k->c, sp, &fill) && fill.kind != DML_NOFILL;
+        int edged = tiku_xml_path(sp, "a:ln/a:solidFill") != NULL &&
+                    dml_line(k->c, tiku_xml_child(sp, "a:ln"), &edge) &&
+                    edge.width > 0;
+
+        ch_block_size(k, f, text, &b.w, &b.h);
+        b.x = l->x - (l->align == 1 ? b.w / 2 : l->align == 2 ? b.w : 0) - 2;
+        b.y = l->y - (l->valign == 1 ? b.h / 2 : l->valign == 2 ? b.h : 0)
+              - 1;
+        b.w += 4;
+        b.h += 2;
+        if (filled || edged) {
+            ch_rect(k, &b, filled ? &fill : NULL, edged ? &edge : NULL);
+        }
+    }
+    ch_text_block(k, f, text, l->x, l->y, l->align, l->valign);
+}
+
 /** @brief How many labels the chart's points ask for, at most. */
 static int
 label_count(const ch_chart_t *k)
@@ -1005,7 +1492,6 @@ ch_plot(ch_chart_t *k, const ch_box_t *p)
     }
     for (o = 0; o < q.nlbl; o++) {
         label_text(&q, &q.lbl[o], text, sizeof text);
-        ch_text_block(k, &q.lbl[o].s->lbl_font, text, q.lbl[o].x,
-                      q.lbl[o].y, q.lbl[o].align, q.lbl[o].valign);
+        label_draw(k, &q.lbl[o], text);
     }
 }

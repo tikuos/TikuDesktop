@@ -12,8 +12,8 @@
  * tiku_office_chart.c, their axes in tiku_office_chart_axis.c, their
  * series in tiku_office_chart_plot.c, a radar's in
  * tiku_office_chart_radar.c, trendlines in tiku_office_chart_trend.c,
- * numbers written by tiku_office_chart_num.c; all with the pen of
- * tiku_office_chart_ink.c.
+ * data tables in tiku_office_chart_table.c, numbers written by
+ * tiku_office_chart_num.c; all with the pen of tiku_office_chart_ink.c.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -37,6 +37,16 @@ enum { CH_AT_OUT, CH_AT_IN, CH_AT_CENTRE, CH_AT_BASE, CH_AT_ABOVE,
        CH_AT_BELOW, CH_AT_LEFT, CH_AT_RIGHT };
 enum { CH_TR_LINEAR, CH_TR_EXP, CH_TR_LOG, CH_TR_POLY, CH_TR_POWER,
        CH_TR_AVERAGE };
+enum { CH_EB_BOTH, CH_EB_PLUS, CH_EB_MINUS };
+enum { CH_EV_FIXED, CH_EV_PERCENT, CH_EV_STDDEV, CH_EV_STDERR, CH_EV_CUSTOM };
+
+/** @brief How a chart's words look. */
+typedef struct {
+    char     font[64];              /* a family, or "+mn-lt" and kin     */
+    float    size;                  /* points                            */
+    uint32_t color;                 /* ARGB                              */
+    int      bold, italic;
+} ch_font_t;
 
 /** @brief A trendline fitted to a series' points. */
 typedef struct {
@@ -49,15 +59,28 @@ typedef struct {
     dml_line_t  line;
     int         has_line;
     const char *name;               /* the legend's words, or NULL       */
+    int         eq, r2;             /* its label says its equation, R^2  */
+    float       lbl_dx, lbl_dy;     /* the label moved by hand: fractions
+                                       of the chart across and down      */
+    const char *lbl_fmt;            /* its numbers' format, or NULL      */
+    ch_font_t   lbl_font;
 } ch_trend_t;
 
-/** @brief How a chart's words look. */
+/** @brief A series' error bars along one direction. */
 typedef struct {
-    char     font[64];              /* a family, or "+mn-lt" and kin     */
-    float    size;                  /* points                            */
-    uint32_t color;                 /* ARGB                              */
-    int      bold, italic;
-} ch_font_t;
+    int         dir;                /* 'x' or 'y'                        */
+    int         type;               /* CH_EB_*                           */
+    int         kind;               /* CH_EV_*                           */
+    double      val;                /* a fixed amount, a percent, how many
+                                       deviations                       */
+    double     *plus, *minus;       /* a custom one's amounts, or NULL   */
+    int         nplus, nminus;
+    int         cap;                /* the ends have caps                */
+    dml_line_t  line;
+    double      mean, sd;           /* the series' values' mean and
+                                       standard deviation                */
+    int         count;              /* how many values they are over     */
+} ch_err_t;
 
 /** @brief One point's label as the file sets it apart from its series'. */
 typedef struct {
@@ -65,6 +88,14 @@ typedef struct {
     int         labels;             /* CH_LBL_*; 0: taken away           */
     int         at;                 /* CH_AT_*; -1 its series'           */
     const char *text;               /* words of its own, or NULL         */
+    const tiku_xml_node_t *rich;    /* and their fields, when they have
+                                       some: its value, its category ... */
+    const tiku_xml_node_t *sppr;    /* its box's ground and edge, or NULL */
+    ch_font_t   font;               /* how its words look                */
+    const char *sep;                /* between its parts, or NULL        */
+    const char *fmt;                /* its number's format, or NULL      */
+    float       dx, dy;             /* moved by hand: fractions of the
+                                       chart across and down             */
 } ch_label_t;
 
 /** @brief One series: its name, its values, and how it is drawn. */
@@ -75,6 +106,8 @@ typedef struct {
     double      *v;                 /* their values; NAN where none      */
     double      *x;                 /* a scatter's x values, or NULL     */
     const char **cat;               /* its categories' names, or NULL    */
+    const char **outer[2];          /* and the groups they are in        */
+    int          nouter;
     double      *catv;              /* the same as numbers, or NULL      */
     char         cat_fmt[CH_FMT];   /* and their format                  */
     dml_fill_t   fill;              /* its bars', slices', areas' ground */
@@ -97,10 +130,20 @@ typedef struct {
     ch_font_t    lbl_font;
     ch_label_t  *own;               /* points' own labels, or NULL       */
     int          nown;
+    const tiku_xml_node_t *lbl_sppr;   /* its labels' boxes, or NULL      */
+    const char **cells;             /* words each label takes from its
+                                       cells ("value from cells"), or NULL */
+    int          ncells;
+    int          show_cells;        /* every label says them             */
     ch_trend_t  *trend;             /* trendlines fitted to it           */
     int          ntrend;
+    ch_err_t     err[2];            /* its error bars, x and y           */
+    int          nerr;
+    int          invert;            /* a bar below nought filled ...     */
+    dml_fill_t   invert_fill;       /* ... with this instead             */
     char         sep[8];            /* between a label's parts           */
     char         fmt[CH_FMT];       /* its values' number format         */
+    const char  *lbl_fmt;           /* its labels' own, or NULL          */
 } ch_series_t;
 
 /** @brief Series of one kind drawn together: clustered bars, a pie. */
@@ -124,6 +167,17 @@ typedef struct {
     dml_fill_t   up, down;          /* their grounds                     */
     dml_line_t   updown_line;
     float        bubble_scale;      /* bubbles' size, percent            */
+    int          of_pie;            /* 'p' pie of pie, 'b' bar of pie    */
+    int          split;             /* by 0 position, 1 value, 2 percent,
+                                       3 the file's own list             */
+    double       split_at;          /* the position, value or percent    */
+    unsigned char *second;          /* the file's list: which go there   */
+    int          nsecond;
+    float        second_size;       /* the second plot's, percent        */
+    int          drop;              /* lines dropped from each point     */
+    dml_line_t   drop_line;
+    int          serlines;          /* stacked bars' tops joined         */
+    dml_line_t   ser_line;
     ch_series_t *ser;
     int          nser;
 } ch_group_t;
@@ -159,6 +213,10 @@ typedef struct {
     int         crosses;            /* 0 at zero, 1 min, 2 max, 3 at ... */
     double      cross_at;           /* ... this value of the other axis  */
     double      log;                /* its logarithm's base; 0 linear    */
+    int         date;               /* a date axis: categories by date   */
+    int         flat;               /* multi-level categories' groups not
+                                       shown                             */
+    int         time_unit;          /* in days 0, months 1, years 2      */
     int         lbl_skip;           /* the file's label spacing; 0 none  */
     int         skip;               /* a category label every so many    */
     int         used;               /* a drawn group measures by it      */
@@ -168,6 +226,8 @@ typedef struct {
     float       from, to;           /* where lo and hi fall, in points   */
     float       at;                 /* where its line is drawn           */
     float       turn;               /* its labels' turn, degrees         */
+    float       wrap_w;             /* labels wrapped to this; 0 none    */
+    int         lines;              /* the most lines one then takes     */
     float       room;               /* what its labels and title take    */
 } ch_axis_t;
 
@@ -179,6 +239,8 @@ typedef struct {
     float        w, h;              /* the frame's size                  */
     ch_group_t  *grp;
     int          ngrp;
+    int          known;             /* groups of kinds drawn here, a
+                                       series or none: an empty chart   */
     ch_axis_t    ax[CH_AXES];
     int          nax;
     const char **cat;               /* the categories' names             */
@@ -186,6 +248,11 @@ typedef struct {
     int          ncat;              /* and how many categories           */
     double      *catv;              /* the same as numbers, or NULL      */
     char         cat_fmt[CH_FMT];   /* and their format                  */
+    double      *catpos;            /* each category's place on a date
+                                       axis, in its unit; NULL: in turn  */
+    const char **outer[2];          /* multi-level categories' groups:
+                                       a name where each one starts      */
+    int          nouter;
     int          blanks;            /* a missing point: 0 gap, 1 zero,
                                        2 the line spans it               */
     const char  *title;             /* NULL for none                     */
@@ -207,6 +274,11 @@ typedef struct {
     dml_line_t   border, plot_border;
     int          has_bg, has_plot_bg, has_border, has_plot_border;
     ch_font_t    base;              /* what text is unless it says       */
+    int          dtable;            /* a data table under the plot       */
+    int          dt_horz, dt_vert;  /* its rules between rows, columns   */
+    int          dt_outline, dt_keys;  /* its edge; series' legend keys  */
+    dml_line_t   dt_line;           /* its rules                         */
+    ch_font_t    dt_font;
 } ch_chart_t;
 
 /** @brief A box: left, top, width, height, in the frame's points. */
@@ -217,7 +289,8 @@ typedef struct {
 /* Reading: tiku_office_chart_read.c */
 
 /** @brief DrawingML chart space @p cs read into @p k.  @return how many
- *         groups it has that are drawn here; -1 out of memory. */
+ *         groups it has that are drawn here (k->known counts those with
+ *         no series too); -1 out of memory. */
 int ch_read_dml(ch_chart_t *k, const tiku_xml_node_t *cs);
 
 /* Numbers: tiku_office_chart_num.c */
@@ -226,12 +299,19 @@ int ch_read_dml(ch_chart_t *k, const tiku_xml_node_t *cs);
  *         ("General", "0.0%", "#,##0", a currency's, a date's), into
  *         @p out. */
 void ch_number(double v, const char *fmt, char *out, size_t max);
+/** @brief Serial day @p v as a year, month and day into @p ymd, 1900's
+ *         way.  @return 0, or -1 for one no calendar holds. */
+int ch_date(double v, int *ymd);
 
 /* Axes: tiku_office_chart_axis.c */
 
 /** @brief Axis @p a's scale for what its groups show over @p len points:
  *         the file's bounds where it gives them, else Excel's way. */
 void ch_scale(ch_chart_t *k, ch_axis_t *a, float len);
+/** @brief Category @p i's place along the category axis, in its units:
+ *         @p i itself, or its date on a date axis (fractions kept, for
+ *         the edges between categories). */
+double ch_cat(const ch_chart_t *k, double i);
 /** @brief Where value @p v falls along axis @p a, in the frame's points. */
 float ch_place(const ch_axis_t *a, double v);
 /** @brief The value of axis @p a its partner crosses it at. */
@@ -296,6 +376,29 @@ void ch_trends(ch_chart_t *k, const ch_series_t *s, const ch_axis_t *xa,
  *         else the series' colour, dotted. */
 void ch_trend_line(ch_chart_t *k, const ch_series_t *s, const ch_trend_t *t,
                    dml_line_t *l);
+
+/* Error bars: tiku_office_chart_err.c */
+
+/** @brief The spread a series' values (x values for @p b along x) have,
+ *         for error bars @p b of standard deviations and errors. */
+void ch_err_stats(const ch_series_t *s, ch_err_t *b);
+/** @brief Error bars @p b of point @p i, whose own value is @p v, drawn
+ *         about value @p mid along axis @p a, at @p at (points) across
+ *         it. */
+void ch_err(ch_chart_t *k, const ch_err_t *b, int i, double v, double mid,
+            float at, const ch_axis_t *a);
+
+/* Data tables: tiku_office_chart_table.c */
+
+/** @brief The category axis a data table lies under: a used one across,
+ *         or NULL when the chart has none, or no table. */
+const ch_axis_t *ch_table_axis(const ch_chart_t *k);
+/** @brief The room a data table takes: across, for its names, into
+ *         @p left; down, for its rows, into @p below. */
+void ch_table_room(ch_chart_t *k, float *left, float *below);
+/** @brief The data table drawn under plot box @p p: the categories, then
+ *         a row for each series with its values. */
+void ch_table(ch_chart_t *k, const ch_box_t *p);
 
 /* Radar charts: tiku_office_chart_radar.c */
 

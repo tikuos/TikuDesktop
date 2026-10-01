@@ -188,8 +188,8 @@ ch_scale(ch_chart_t *k, ch_axis_t *a, float len)
 
     if (a->kind == CH_CAT_AX) {
         a->between = a->partner < 0 || k->ax[a->partner].between;
-        a->lo = a->between || n == 1 ? -0.5 : 0;
-        a->hi = a->between || n == 1 ? n - 0.5 : n - 1;
+        a->lo = ch_cat(k, 0) - (a->between || n == 1 ? 0.5 : 0);
+        a->hi = ch_cat(k, n - 1) + (a->between || n == 1 ? 0.5 : 0);
         a->step = 1;
         return;
     }
@@ -214,8 +214,16 @@ ch_scale(ch_chart_t *k, ch_axis_t *a, float len)
         a->max = hi;
     }
     value_scale(a, lo, hi, (int)fmin(fmax(a->horiz ? len / (lh * 4.5f)
-                                                   : len / (lh * 2.2f), 2),
-                                         pct ? 10 : 12));
+                                                   : len / (lh * 1.35f), 2),
+                                         10));      /* as Excel counts */
+}
+
+double
+ch_cat(const ch_chart_t *k, double i)
+{
+    int j = (int)fmin(fmax(floor(i + 0.5), 0), k->ncat - 1);
+
+    return k->catpos != NULL && k->ncat > 0 ? k->catpos[j] + (i - j) : i;
 }
 
 float
@@ -306,6 +314,14 @@ labels(const ch_chart_t *k, const ch_axis_t *a)
     return a->kind == CH_CAT_AX ? k->ncat : ch_intervals(a) + 1;
 }
 
+/** @brief How many rows of groups a category axis across shows under its
+ *         categories: multi-level categories' outer levels. */
+static int
+groups(const ch_chart_t *k, const ch_axis_t *a)
+{
+    return a->kind == CH_CAT_AX && a->horiz && !a->flat ? k->nouter : 0;
+}
+
 /** @brief The widest of axis @p a's labels. */
 static float
 widest(ch_chart_t *k, const ch_axis_t *a)
@@ -322,9 +338,60 @@ widest(ch_chart_t *k, const ch_axis_t *a)
     return w;
 }
 
+/** @brief Label @p s wrapped at its spaces into lines no wider than
+ *         @p width (a word longer stays whole), into @p out.
+ *  @return how many lines; 0 when a word alone is too wide. */
+static int
+wrap(ch_chart_t *k, const ch_font_t *f, const char *s, float width,
+     char *out, size_t max)
+{
+    char line[160], try[160];
+    size_t n = 0;
+    int lines = 1, whole = 1;
+
+    line[0] = out[0] = '\0';
+    while (*s) {
+        size_t w = strcspn(s, " ");
+
+        snprintf(try, sizeof try, "%s%s%.*s", line, line[0] ? " " : "",
+                 (int)w, s);
+        if (line[0] && ch_width(k, f, try) > width) {
+            n += (size_t)snprintf(out + n, max - n, "%s\n", line);
+            n = n < max ? n : max - 1;
+            snprintf(try, sizeof try, "%.*s", (int)w, s);
+            lines++;
+        }
+        whole &= ch_width(k, f, try) <= width || strchr(try, ' ') != NULL;
+        snprintf(line, sizeof line, "%s", try);
+        s += w;
+        s += *s == ' ';
+    }
+    snprintf(out + n, max - n, "%s", line);
+    return whole ? lines : 0;
+}
+
+/** @brief The most lines axis @p a's labels take wrapped at @p width; 0
+ *         when one will not wrap to fit. */
+static int
+wrapped(ch_chart_t *k, const ch_axis_t *a, float width)
+{
+    char buf[160], out[320];
+    int i, most = 1, n;
+
+    for (i = 0; i < labels(k, a); i++) {
+        ch_label(k, a, i, buf, sizeof buf);
+        if ((n = wrap(k, &a->font, buf, width, out, sizeof out)) == 0) {
+            return 0;
+        }
+        most = n > most ? n : most;
+    }
+    return most;
+}
+
 /** @brief A category axis' labels fitted to its categories: across ones
- *         turned when they would touch (unless the file turns them),
- *         then thinned, as upright ones are, until they part. */
+ *         wrapped onto three lines at most, else turned, when they would
+ *         touch (unless the file turns them); then thinned, as upright
+ *         ones are, until they part. */
 static void
 fit(ch_chart_t *k, ch_axis_t *a, float wide)
 {
@@ -334,13 +401,18 @@ fit(ch_chart_t *k, ch_axis_t *a, float wide)
 
     a->turn = a->horiz ? a->turn_file : 0;
     a->skip = auto_skip ? 1 : a->lbl_skip;
-    if (a->horiz && !a->turn_set && wide > band * a->skip * 0.95 &&
-        auto_skip) {
-        a->turn = -45;
+    a->wrap_w = 0;
+    a->lines = 1;
+    if (a->horiz && (!a->turn_set || a->turn_file == 0) &&
+        wide > band * a->skip * 0.95 && auto_skip) {
+        a->lines = wrapped(k, a, (float)band * 0.9f);
+        a->wrap_w = a->lines > 0 && a->lines <= 3 ? (float)band * 0.9f : 0;
+        a->turn = a->wrap_w > 0 || a->turn_set ? 0 : -45;
+        a->lines = a->wrap_w > 0 ? a->lines : 1;
     }
     while (auto_skip && a->skip < k->ncat &&
-           (a->horiz ? (a->turn != 0 ? lh * 1.4 : wide + 4) : lh)
-           > band * a->skip) {
+           (a->horiz ? (a->turn != 0 ? lh * 1.4 : a->wrap_w > 0
+                        ? a->wrap_w : wide + 4) : lh) > band * a->skip) {
         a->skip++;
     }
 }
@@ -354,6 +426,12 @@ ch_axis_room(ch_chart_t *k, ch_axis_t *a)
     if (a->deleted || !a->used) {
         return 0;
     }
+    if (a == ch_table_axis(k)) {    /* a data table's row says them */
+        ch_table_room(k, &wide, &room);
+        a->room = room + (a->title != NULL ? ch_line_h(&a->title_font) +
+                                             AX_GAP : 0);
+        return a->room;
+    }
     if (a->labels != 0) {
         a->skip = a->kind == CH_CAT_AX && a->lbl_skip > 0 ? a->lbl_skip : 1;
         a->turn = a->horiz ? a->turn_file : 0;
@@ -363,7 +441,8 @@ ch_axis_room(ch_chart_t *k, ch_axis_t *a)
         }
         room = !a->horiz ? wide
                : fabsf(sinf(a->turn * (float)M_PI / 180)) * wide +
-                 fabsf(cosf(a->turn * (float)M_PI / 180)) * lh;
+                 fabsf(cosf(a->turn * (float)M_PI / 180)) * lh * a->lines;
+        room += a->horiz ? (lh + AX_GAP) * groups(k, a) : 0;
         room += AX_GAP + (a->tick == 1 || a->tick == 3 ? AX_TICK : 0);
     }
     if (a->title != NULL) {
@@ -381,10 +460,10 @@ ch_axis_room(ch_chart_t *k, ch_axis_t *a)
 /** @brief Where tick @p i of axis @p a falls: between categories, on
  *         them, or at a value. */
 static float
-tick_place(const ch_axis_t *a, int i)
+tick_place(const ch_chart_t *k, const ch_axis_t *a, int i)
 {
     if (a->kind == CH_CAT_AX) {
-        return ch_place(a, a->between ? i - 0.5 : i);
+        return ch_place(a, ch_cat(k, a->between ? i - 0.5 : i));
     }
     return ch_place(a, ch_tick(a, i));
 }
@@ -435,7 +514,7 @@ ch_grid(ch_chart_t *k, const ch_box_t *p)
         const ch_axis_t *a = &k->ax[ai];
 
         for (i = 0; a->used && a->grid && i < ticks(k, a); i++) {
-            float at = tick_place(a, i);
+            float at = tick_place(k, a, i);
 
             if (a->horiz) {
                 ch_segment(k, at, p->y, at, p->y + p->h, &a->grid_line);
@@ -468,7 +547,7 @@ tick_marks(ch_chart_t *k, const ch_axis_t *a, float out)
     int i;
 
     for (i = 0; (in != 0 || o != 0) && i < ticks(k, a); i++) {
-        float t = tick_place(a, i);
+        float t = tick_place(k, a, i);
 
         if (a->horiz) {
             ch_segment(k, t, a->at + in, t, a->at + o, &a->line);
@@ -478,17 +557,41 @@ tick_marks(ch_chart_t *k, const ch_axis_t *a, float out)
     }
 }
 
+/** @brief The groups of outer level @p lv set @p y past line @p at: each
+ *         name centred over its categories, a rule between groups down
+ *         through the rows. */
+static void
+group_row(ch_chart_t *k, const ch_axis_t *a, int lv, float at, float y)
+{
+    const char **o = k->outer[lv];
+    float lh = ch_line_h(&a->font);
+    int i, j;
+
+    for (i = 0; i < k->ncat; i = j) {
+        for (j = i + 1; j < k->ncat && o[j] == NULL; j++) {
+        }
+        if (o[i] != NULL) {
+            ch_text(k, &a->font, o[i], (ch_place(a, ch_cat(k, i - 0.5)) +
+                    ch_place(a, ch_cat(k, j - 0.5))) / 2, y, 1, 0, 0);
+        }
+        ch_segment(k, ch_place(a, ch_cat(k, i - 0.5)), at,
+                   ch_place(a, ch_cat(k, i - 0.5)), y + lh, &a->line);
+    }
+    ch_segment(k, ch_place(a, ch_cat(k, k->ncat - 0.5)), at,
+               ch_place(a, ch_cat(k, k->ncat - 0.5)), y + lh, &a->line);
+}
+
 /** @brief Axis @p a's labels, @p out the way they lie from line @p at. */
 static void
 tick_labels(ch_chart_t *k, const ch_axis_t *a, float at, float out)
 {
     float off = (AX_GAP + (a->tick == 1 || a->tick == 3 ? AX_TICK : 0)) * out;
-    char buf[160];
+    char buf[160], lines[320];
     int i, n = labels(k, a), step = a->skip > 0 ? a->skip : 1;
 
     for (i = 0; a->labels != 0 && i < n; i += step) {
-        float t = a->kind == CH_CAT_AX ? ch_place(a, i)
-                                       : tick_place(a, i);
+        float t = a->kind == CH_CAT_AX ? ch_place(a, ch_cat(k, i))
+                                       : tick_place(k, a, i);
 
         ch_label(k, a, i, buf, sizeof buf);
         if (!a->horiz) {
@@ -497,8 +600,15 @@ tick_labels(ch_chart_t *k, const ch_axis_t *a, float at, float out)
             ch_text(k, &a->font, buf, t, at + off, a->turn < 0 ? 2 : 0, 1,
                     a->turn);
         } else {
-            ch_text(k, &a->font, buf, t, at + off, 1, out < 0 ? 2 : 0, 0);
+            wrap(k, &a->font, buf, a->wrap_w > 0 ? a->wrap_w : 1e9f, lines,
+                 sizeof lines);
+            ch_text_block(k, &a->font, lines, t, at + off, 1,
+                          out < 0 ? 2 : 0);
         }
+    }
+    for (i = 0; out > 0 && i < groups(k, a); i++) {
+        group_row(k, a, i, at, at + off + (ch_line_h(&a->font) + AX_GAP) *
+                  (a->lines + i));
     }
 }
 
@@ -568,7 +678,9 @@ ch_axes(ch_chart_t *k, const ch_box_t *p)
                 ch_segment(k, a->at, a->from, a->at, a->to, &a->line);
             }
         }
-        tick_labels(k, a, label_line(k, a), out);
+        if (a != ch_table_axis(k)) {
+            tick_labels(k, a, label_line(k, a), out);
+        }
         if (a->title != NULL) {
             axis_title(k, a, p);
         } else if (a->units_name != NULL) {

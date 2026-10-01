@@ -328,29 +328,6 @@ note_ref(dx_t *x, const tiku_xml_node_t *c, dx_para_t *pp,
 
 /* --------------------------------------------------------------- runs  */
 
-/** @brief The branch of an mc:AlternateContent this reads: the first
- *         choice needing only what is read here, else the fallback. */
-static const tiku_xml_node_t *
-alternate(const tiku_xml_node_t *ac)
-{
-    static const char *const known[] = {"wps", "wpg", "wp14", "w14", "w15",
-                                        "a14", "w16se", "v"};
-    const tiku_xml_node_t *c;
-    size_t i;
-
-    for (c = tiku_xml_child(ac, "mc:Choice"); c != NULL;
-         c = tiku_xml_next(c, "mc:Choice")) {
-        const char *req = tiku_xml_attr(c, "Requires");
-
-        for (i = 0; req != NULL && i < sizeof known / sizeof known[0]; i++) {
-            if (strcmp(req, known[i]) == 0) {
-                return c;
-            }
-        }
-    }
-    return tiku_xml_child(ac, "mc:Fallback");
-}
-
 /** @brief A w:ptab as an OR_TAB run's n: where it goes, from what, with
  *         what leader; 0 for an ordinary w:tab. */
 static int
@@ -440,7 +417,7 @@ run_child(dx_t *x, const tiku_xml_node_t *c, dx_para_t *pp,
         return text(x, pp, x->mark_text, strlen(x->mark_text), st, link);
     }
     if (tiku_xml_is(c, "mc:AlternateContent")) {
-        const tiku_xml_node_t *k, *alt = alternate(c);
+        const tiku_xml_node_t *k, *alt = of_alternate(c);
 
         for (k = tiku_xml_child(alt, NULL); k; k = tiku_xml_next(k, NULL)) {
             if (run_child(x, k, pp, st, link) != 0) {
@@ -609,7 +586,7 @@ inline_of(dx_t *x, const tiku_xml_node_t *e, dx_para_t *pp, const char *link)
         } else if (tiku_xml_is(c, "w:sdt")) {
             err = inline_of(x, tiku_xml_child(c, "w:sdtContent"), pp, link);
         } else if (tiku_xml_is(c, "mc:AlternateContent")) {
-            err = inline_of(x, alternate(c), pp, link);
+            err = inline_of(x, of_alternate(c), pp, link);
         } else if (tiku_xml_is(c, "w:ins") || tiku_xml_is(c, "w:moveTo") ||
                    tiku_xml_is(c, "w:smartTag") ||
                    tiku_xml_is(c, "w:customXml") || tiku_xml_is(c, "w:dir")
@@ -794,7 +771,7 @@ blocks_of(dx_t *x, const tiku_xml_node_t *e, of_vec_t *blocks,
                    || tiku_xml_is(c, "w:moveTo")) {
             err = blocks_of(x, c, blocks, sects);
         } else if (tiku_xml_is(c, "mc:AlternateContent")) {
-            err = blocks_of(x, alternate(c), blocks, sects);
+            err = blocks_of(x, of_alternate(c), blocks, sects);
         } else if (tiku_xml_is(c, "w:bookmarkStart") &&
                    tiku_xml_attr(c, "w:name") != NULL &&
                    (m = of_vec_push(&x->marks)) != NULL) {

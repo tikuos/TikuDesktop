@@ -20,6 +20,7 @@
 #include "tiku_office_chart.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #define TR_STEPS 64                 /* pieces a fitted curve is drawn in */
@@ -277,6 +278,154 @@ curve(ch_path_t *path, const tr_fit_t *f, double lo, double hi,
     }
 }
 
+/* ----------------------------------------------------------------- label  */
+
+/** @brief Coefficient @p v for a trendline's label, into @p out: in its
+ *         format, else to four places, trailing zeros dropped. */
+static void
+coef(const ch_trend_t *t, double v, char *out, size_t max)
+{
+    size_t n;
+
+    if (t->lbl_fmt != NULL) {
+        ch_number(v, t->lbl_fmt, out, max);
+        return;
+    }
+    snprintf(out, max, "%.4f", fabs(v) < 5e-5 ? 0 : v);
+    n = strlen(out);
+    while (n > 1 && out[n - 1] == '0' && strchr(out, '.') != NULL) {
+        out[--n] = '\0';
+    }
+    if (n > 1 && out[n - 1] == '.') {
+        out[n - 1] = '\0';
+    }
+}
+
+/** @brief R squared of fit @p f over points @p p: over y, or over the
+ *         logarithm of y for exponentials and powers, as Excel takes it. */
+static double
+r_squared(const tr_fit_t *f, const tr_pts_t *p)
+{
+    int ln = f->kind == CH_TR_EXP || f->kind == CH_TR_POWER, i, n = 0;
+    int xs = f->kind == CH_TR_LOG || f->kind == CH_TR_POWER;
+    double mean = 0, all = 0, off = 0, y, e;
+
+    for (i = 0; i < p->n; i++) {
+        if ((!ln || p->y[i] > 0) && (!xs || p->x[i] > 0)) {
+            mean += ln ? log(p->y[i]) : p->y[i];
+            n++;
+        }
+    }
+    mean = n > 0 ? mean / n : 0;
+    for (i = 0; i < p->n; i++) {
+        if ((!ln || p->y[i] > 0) && (!xs || p->x[i] > 0)) {
+            y = ln ? log(p->y[i]) : p->y[i];
+            e = value_at(f, p->x[i]);
+            e = ln ? (e > 0 ? log(e) : y) : e;
+            all += (y - mean) * (y - mean);
+            off += (y - e) * (y - e);
+        }
+    }
+    return all > 0 ? 1 - off / all : 1;
+}
+
+/** @brief A polynomial fit's coefficients in x itself, from those in its
+ *         centred and scaled u = (x - mid) / span, into @p d. */
+static void
+unscale(const tr_fit_t *f, double *d)
+{
+    double binom, pw;
+    int j, m;
+
+    for (m = 0; m < f->terms; m++) {
+        d[m] = 0;
+    }
+    for (j = 0; j < f->terms; j++) {
+        for (m = 0, binom = 1; m <= j; m++) {
+            pw = pow(-f->mid, j - m) / pow(f->span, j);
+            d[m] += f->c[j] * binom * pw;
+            binom = binom * (j - m) / (m + 1);
+        }
+    }
+}
+
+/** @brief A polynomial's equation, highest power first, into @p out. */
+static void
+poly_text(const ch_trend_t *t, const tr_fit_t *f, char *out, size_t max)
+{
+    static const char *const sup[] = {"", "", "\xc2\xb2", "\xc2\xb3",
+                                      "\xe2\x81\xb4", "\xe2\x81\xb5",
+                                      "\xe2\x81\xb6"};
+    double d[TR_TERMS];
+    char c[48];
+    size_t n;
+    int m;
+
+    unscale(f, d);
+    snprintf(out, max, "y =");
+    for (m = f->terms - 1; m >= 0; m--) {
+        n = strlen(out);
+        coef(t, m == f->terms - 1 ? d[m] : fabs(d[m]), c, sizeof c);
+        snprintf(out + n, max - n, "%s%s%s%s", m == f->terms - 1 ? " "
+                 : d[m] < 0 ? " - " : " + ", c, m > 0 ? "x" : "", sup[m]);
+    }
+}
+
+/** @brief A fit's equation, Excel's way, into @p out. */
+static void
+equation(const ch_trend_t *t, const tr_fit_t *f, char *out, size_t max)
+{
+    char a[48], b[48];
+    int neg = f->c[0] < 0;
+
+    if (f->kind == CH_TR_POLY) {
+        poly_text(t, f, out, max);
+        return;
+    }
+    coef(t, f->kind == CH_TR_EXP || f->kind == CH_TR_POWER ? f->c[0]
+            : f->c[1], a, sizeof a);
+    coef(t, f->kind == CH_TR_EXP || f->kind == CH_TR_POWER ? f->c[1]
+            : fabs(f->c[0]), b, sizeof b);
+    if (f->kind == CH_TR_EXP) {
+        snprintf(out, max, "y = %se^(%sx)", a, b);
+    } else if (f->kind == CH_TR_POWER) {
+        snprintf(out, max, "y = %sx^%s", a, b);
+    } else {
+        snprintf(out, max, "y = %s%s %c %s", a, f->kind == CH_TR_LOG
+                 ? "ln(x)" : "x", neg ? '-' : '+', b);
+    }
+}
+
+/** @brief Trendline @p t's label: its equation and R squared, set by the
+ *         end of the curve fitted to @p p (at x @p end), or where it was
+ *         moved by hand. */
+static void
+trend_text(ch_chart_t *k, const ch_trend_t *t, const tr_fit_t *f,
+           const tr_pts_t *p, double end, const ch_axis_t *xa,
+           const ch_axis_t *ya, int across)
+{
+    char text[256], r2[48];
+    float x, y;
+
+    text[0] = '\0';
+    if (t->eq) {
+        equation(t, f, text, sizeof text);
+    }
+    if (t->r2) {
+        snprintf(r2, sizeof r2, "%.4f", r_squared(f, p));
+        snprintf(text + strlen(text), sizeof text - strlen(text),
+                 "%sR\xc2\xb2 = %s", t->eq ? "\n" : "", r2);
+    }
+    place(xa, ya, across, end, value_at(f, end), &x, &y);
+    if (!isfinite(x) || !isfinite(y)) {
+        return;
+    }
+    ch_text_block(k, &t->lbl_font, text, x + t->lbl_dx * k->w,
+                  y - 4 + t->lbl_dy * k->h, 2, 2);
+}
+
+/* ---------------------------------------------------------------- series  */
+
 /** @brief Series @p s's points with both an x and a y, into @p p (its
  *         arrays of @p s->n from @p mem).  @return how many. */
 static int
@@ -327,5 +476,9 @@ ch_trends(ch_chart_t *k, const ch_series_t *s, const ch_axis_t *xa,
         }
         ch_trend_line(k, s, tr, &l);
         ch_paint(k, &path, NULL, &l, 0, 0);
+        if (tr->kind != CH_TR_AVERAGE && (tr->eq || tr->r2) &&
+            fit(tr, &p, &f) == 0) {
+            trend_text(k, tr, &f, &p, hi + tr->fwd, xa, ya, across);
+        }
     }
 }

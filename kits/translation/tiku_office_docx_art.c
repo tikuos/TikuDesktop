@@ -197,10 +197,7 @@ boxes_in(dx_t *x, const tiku_xml_node_t *e, const dml_mat_t *m, float w,
         } else if (tiku_xml_is(k, "wpc:wpc")) {
             err = boxes_in(x, k, m, 0, 0, depth + 1, boxes);
         } else if (tiku_xml_is(k, "mc:AlternateContent")) {
-            const tiku_xml_node_t *ch = tiku_xml_child(k, "mc:Choice");
-
-            err = boxes_in(x, ch != NULL ? ch : tiku_xml_child(k,
-                           "mc:Fallback"), m, w, h, depth, boxes);
+            err = boxes_in(x, of_alternate(k), m, w, h, depth, boxes);
         }
     }
     return err;

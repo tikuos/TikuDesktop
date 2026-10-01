@@ -360,6 +360,21 @@ civil(double v, int *t, long *secs)
     return 0;
 }
 
+int
+ch_date(double v, int *ymd)
+{
+    long secs;
+    int t[4];
+
+    if (civil(v, t, &secs) != 0) {
+        return -1;
+    }
+    ymd[0] = t[0];
+    ymd[1] = t[1];
+    ymd[2] = t[2];
+    return 0;
+}
+
 /** @brief Whether the next date letter after @p s is a second's: an "m"
  *         before it counts minutes. */
 static int

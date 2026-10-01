@@ -181,6 +181,8 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_office_chart_plot.c \
                $(K)/translation/tiku_office_chart_radar.c \
                $(K)/translation/tiku_office_chart_trend.c \
+               $(K)/translation/tiku_office_chart_table.c \
+               $(K)/translation/tiku_office_chart_err.c \
                $(K)/translation/tiku_office_chart_ink.c \
                $(K)/translation/tiku_office_pptx.c \
                $(K)/translation/tiku_office_pptx_text.c \

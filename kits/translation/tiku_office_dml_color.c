@@ -341,31 +341,24 @@ scheme_font(const tiku_xml_node_t *f, const char *kind, char *out,
 {
     const char *v = tiku_xml_attr(tiku_xml_child(f, kind), "typeface");
 
-    snprintf(out, max, "%s", v != NULL ? v : "");
+    if (v != NULL) {
+        snprintf(out, max, "%s", v);
+    }
 }
 
-int
-dml_theme_load(of_pkg_t *pkg, const char *part, dml_theme_t *t)
+/** @brief The colour, font and format schemes under @p elems (a theme's
+ *         a:themeElements, or an override's root) over @p t: each one
+ *         there replaces @p t's own. */
+static void
+theme_read(const tiku_xml_node_t *elems, dml_theme_t *t)
 {
-    static const uint32_t office[DML_COLORS] = {   /* Office's own theme */
-        0xff000000u, 0xffffffffu, 0xff44546au, 0xffe7e6e6u, 0xff4472c4u,
-        0xffed7d31u, 0xffa5a5a5u, 0xffffc000u, 0xff5b9bd5u, 0xff70ad47u,
-        0xff0563c1u, 0xff954f72u};
-    const tiku_xml_node_t *te, *cs, *fs, *fm;
+    const tiku_xml_node_t *cs = tiku_xml_child(elems, "a:clrScheme");
+    const tiku_xml_node_t *fs = tiku_xml_child(elems, "a:fontScheme");
+    const tiku_xml_node_t *fm = tiku_xml_child(elems, "a:fmtScheme");
     dml_ctx_t c;
     int i;
 
-    memset(t, 0, sizeof *t);
-    snprintf(t->major, sizeof t->major, "Calibri Light");
-    snprintf(t->minor, sizeof t->minor, "Calibri");
-    memcpy(t->clr, office, sizeof office);
-    if (part == NULL || (t->xml = of_pkg_xml(pkg, part)) == NULL) {
-        return -1;
-    }
-    t->part = strdup(part);
     memset(&c, 0, sizeof c);
-    te = tiku_xml_child(tiku_xml_root(t->xml), "a:themeElements");
-    cs = tiku_xml_child(te, "a:clrScheme");
     for (i = 0; cs != NULL && i < DML_COLORS; i++) {
         const tiku_xml_node_t *slot = tiku_xml_child(cs, NULL);
 
@@ -376,19 +369,55 @@ dml_theme_load(of_pkg_t *pkg, const char *part, dml_theme_t *t)
             t->clr[i] = dml_color(&c, slot) | 0xff000000u;
         }
     }
-    fs = tiku_xml_child(te, "a:fontScheme");
-    scheme_font(tiku_xml_child(fs, "a:majorFont"), "a:latin", t->major,
-                sizeof t->major);
-    scheme_font(tiku_xml_child(fs, "a:minorFont"), "a:latin", t->minor,
-                sizeof t->minor);
-    scheme_font(tiku_xml_child(fs, "a:majorFont"), "a:ea", t->major_ea,
-                sizeof t->major_ea);
-    scheme_font(tiku_xml_child(fs, "a:minorFont"), "a:ea", t->minor_ea,
-                sizeof t->minor_ea);
-    fm = tiku_xml_child(te, "a:fmtScheme");
-    t->fills = tiku_xml_child(fm, "a:fillStyleLst");
-    t->lines = tiku_xml_child(fm, "a:lnStyleLst");
-    t->bgfills = tiku_xml_child(fm, "a:bgFillStyleLst");
+    if (fs != NULL) {
+        scheme_font(tiku_xml_child(fs, "a:majorFont"), "a:latin", t->major,
+                    sizeof t->major);
+        scheme_font(tiku_xml_child(fs, "a:minorFont"), "a:latin", t->minor,
+                    sizeof t->minor);
+        scheme_font(tiku_xml_child(fs, "a:majorFont"), "a:ea", t->major_ea,
+                    sizeof t->major_ea);
+        scheme_font(tiku_xml_child(fs, "a:minorFont"), "a:ea", t->minor_ea,
+                    sizeof t->minor_ea);
+    }
+    if (fm != NULL) {
+        t->fills = tiku_xml_child(fm, "a:fillStyleLst");
+        t->lines = tiku_xml_child(fm, "a:lnStyleLst");
+        t->bgfills = tiku_xml_child(fm, "a:bgFillStyleLst");
+    }
+}
+
+int
+dml_theme_load(of_pkg_t *pkg, const char *part, dml_theme_t *t)
+{
+    static const uint32_t office[DML_COLORS] = {   /* Office's own theme */
+        0xff000000u, 0xffffffffu, 0xff44546au, 0xffe7e6e6u, 0xff4472c4u,
+        0xffed7d31u, 0xffa5a5a5u, 0xffffc000u, 0xff5b9bd5u, 0xff70ad47u,
+        0xff0563c1u, 0xff954f72u};
+
+    memset(t, 0, sizeof *t);
+    snprintf(t->major, sizeof t->major, "Calibri Light");
+    snprintf(t->minor, sizeof t->minor, "Calibri");
+    memcpy(t->clr, office, sizeof office);
+    if (part == NULL || (t->xml = of_pkg_xml(pkg, part)) == NULL) {
+        return -1;
+    }
+    t->part = strdup(part);
+    theme_read(tiku_xml_child(tiku_xml_root(t->xml), "a:themeElements"), t);
+    return 0;
+}
+
+int
+dml_theme_override(of_pkg_t *pkg, const char *part, const dml_theme_t *base,
+                   dml_theme_t *t)
+{
+    *t = *base;
+    t->xml = NULL;
+    t->part = NULL;
+    if (part == NULL || (t->xml = of_pkg_xml(pkg, part)) == NULL) {
+        return -1;
+    }
+    t->part = strdup(part);
+    theme_read(tiku_xml_root(t->xml), t);
     return 0;
 }
 

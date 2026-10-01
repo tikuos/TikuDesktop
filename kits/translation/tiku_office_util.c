@@ -385,3 +385,44 @@ of_symbol(const char *font, uint32_t code)
     return c < 0x80 ? c : code;
 }
 
+/* ---------------------------------------------------------- choices  */
+
+/** @brief Whether every prefix in @p req (a Requires list, spaces
+ *         between) names a namespace read here. */
+static int
+understood(const char *req)
+{
+    static const char *const known[] = {"wps", "wpg", "wpc", "wp14", "w14",
+                                        "w15", "w16se", "a14", "p14", "p15",
+                                        "c14", "c16", "a16", "v"};
+    size_t i, n;
+
+    while (req != NULL && *req) {
+        req += strspn(req, " ");
+        n = strcspn(req, " ");
+        for (i = 0; n > 0 && i < sizeof known / sizeof known[0]; i++) {
+            if (strlen(known[i]) == n && strncmp(req, known[i], n) == 0) {
+                break;
+            }
+        }
+        if (n > 0 && i == sizeof known / sizeof known[0]) {
+            return 0;
+        }
+        req += n;
+    }
+    return req != NULL;
+}
+
+const tiku_xml_node_t *
+of_alternate(const tiku_xml_node_t *ac)
+{
+    const tiku_xml_node_t *c;
+
+    for (c = tiku_xml_child(ac, "mc:Choice"); c != NULL;
+         c = tiku_xml_next(c, "mc:Choice")) {
+        if (understood(tiku_xml_attr(c, "Requires"))) {
+            return c;
+        }
+    }
+    return tiku_xml_child(ac, "mc:Fallback");
+}
