@@ -118,6 +118,22 @@ same_c(const char *line, tiku_syntax_state_t in, const char *want,
     }
 }
 
+/* Runs gathered from tiku_syntax_runs(). */
+static tiku_span_t got[2048];
+static int got_n;
+
+/** @brief Keep one streamed run. */
+static void
+gather(void *ctx, tiku_ink_t ink, int len)
+{
+    (void)ctx;
+    if (got_n < (int)(sizeof got / sizeof got[0])) {
+        got[got_n].ink = ink;
+        got[got_n].len = len;
+    }
+    got_n++;
+}
+
 static void
 same(const char *line, const char *want, const char *what)
 {
@@ -311,6 +327,9 @@ main(void)
           "and everything else is still prose");
     same_c("int x = 42;", TIKU_SYNTAX_OPEN, "wwwpppppnnp",
            "a word the language reserves, and a number written down");
+    same_c("integer = do_it + int;", TIKU_SYNTAX_OPEN,
+           "ppppppppppppppppppwwwp",
+           "a name that only begins with a keyword is not one");
     same_c("count = total;", TIKU_SYNTAX_OPEN, "pppppppppppppp",
            "a name the language did NOT reserve is the document's own "
            "ink: a table with a library in it would claim `count`");
@@ -390,6 +409,79 @@ main(void)
             total += span[i].len;
         }
         check(total == 128, "the runs that fit cover only their own bytes");
+    }
+
+    printf("\nruns handed over one at a time, none dropped\n");
+    {
+        static const struct {
+            tiku_syntax_lang_t lang;
+            tiku_syntax_state_t in;
+            const char *line;
+        } lines[] = {
+            { TIKU_SYNTAX_BASIC, TIKU_SYNTAX_OPEN,
+              "10 PRINT \"/dev/x\": REM y" },
+            { TIKU_SYNTAX_BASIC, TIKU_SYNTAX_OPEN, "GOTO l1, l2 ' tail" },
+            { TIKU_SYNTAX_C, TIKU_SYNTAX_OPEN, "#define N 0x1F /* open" },
+            { TIKU_SYNTAX_C, TIKU_SYNTAX_BLOCK, "still */ int a = 'c';" },
+            { TIKU_SYNTAX_NONE, TIKU_SYNTAX_OPEN, "prose PRINT 1" },
+        };
+        static char many[2000];
+        int same_runs = 1, k;
+
+        for (k = 0; k < (int)(sizeof lines / sizeof lines[0]); k++) {
+            tiku_span_t table[256];
+            tiku_syntax_state_t s1 = 9, s2 = 9, s3 = 9;
+            int n = tiku_syntax_spans_on(lines[k].lang, lines[k].line,
+                                         lines[k].in, &s1, table, 256);
+
+            got_n = 0;
+            tiku_syntax_runs(lines[k].lang, lines[k].line, lines[k].in, &s2,
+                             gather, NULL);
+            tiku_syntax_runs(lines[k].lang, lines[k].line, lines[k].in, &s3,
+                             NULL, NULL);
+            if (got_n != n || s1 != s2 || s2 != s3) {
+                same_runs = 0;
+            }
+            for (int i = 0; i < n && i < got_n; i++) {
+                if (got[i].ink != table[i].ink || got[i].len != table[i].len)
+                    same_runs = 0;
+            }
+        }
+        check(same_runs, "streamed runs are the table's runs, and the "
+              "state left open is the same with or without a function");
+
+        many[0] = '\0';
+        for (k = 0; k < 300; k++) {
+            strcat(many, "1 a ");
+        }
+        strcat(many, "/* open");
+        {
+            tiku_syntax_state_t left = TIKU_SYNTAX_OPEN;
+            int total = 0;
+
+            got_n = 0;
+            tiku_syntax_runs(TIKU_SYNTAX_C, many, TIKU_SYNTAX_OPEN, &left,
+                             gather, NULL);
+            for (k = 0; k < got_n && k < (int)(sizeof got / sizeof got[0]);
+                 k++) {
+                total += got[k].len;
+            }
+            check(got_n > 128 && got_n <= (int)(sizeof got / sizeof got[0]) &&
+                  total == (int)strlen(many) &&
+                  got[got_n - 1].ink == TIKU_INK_REMARK &&
+                  left == TIKU_SYNTAX_BLOCK,
+                  "a line of more than 128 runs arrives whole, every byte "
+                  "in a run, and what it leaves open is right");
+        }
+        many[0] = '\0';
+        for (k = 0; k < 300; k++) {
+            strcat(many, "1 a ");
+        }
+        got_n = 0;
+        tiku_syntax_runs(TIKU_SYNTAX_BASIC, many, TIKU_SYNTAX_OPEN, NULL,
+                         gather, NULL);
+        check(got_n > 128 && got[got_n - 1].ink != TIKU_INK_REMARK,
+              "BASIC too: past 128 runs nothing goes plain");
     }
 
     printf("\n%s\n", fails ? "FAILURES"

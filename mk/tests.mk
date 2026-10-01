@@ -237,6 +237,14 @@ test_editdoc_fixtures_LIBS := $(LIB_EDITOR)
 test_codeview_layout_LIBS := $(LIB_EDITOR)
 test_codeview_paint_LIBS := $(LIB_EDITOR)
 test_codeview_input_LIBS := $(LIB_EDITOR)
+test_codeview_display_LIBS := $(LIB_EDITOR)
+test_codeview_edit_LIBS := $(LIB_EDITOR)
+test_codeview_find_LIBS := $(LIB_EDITOR)
+test_codeview_style_LIBS := $(LIB_EDITOR)
+test_codeview_host_LIBS := $(LIB_EDITOR)
+test_codeview_host_LDLIBS := $(X11_LIBS) -lm
+test_codeview_speed_LIBS := $(LIB_EDITOR)
+test_codeview_speed_LDLIBS := $(X11_LIBS) -lm
 # The baselines open their fixtures through Editor's and the IDE's own code.
 test_editor_baseline_SRCS := $(EDITOR_SRC)
 test_editor_baseline_LDLIBS := $(X11_LIBS) -lm

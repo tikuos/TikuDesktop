@@ -76,6 +76,38 @@ int main(void){
     RT("tip",   tiku_ui_tip(s,(tiku_rect_t){10,10,160,20},"the whole name"));
     RT("field", tiku_ui_textfield(s,(tiku_rect_t){10,10,200,20},"typed",5,0u));
     RT("scroll",tiku_ui_scrollbar(s,(tiku_rect_t){10,10,15,200},0.3f,0.4f,0));
+    /* A bar placed in thousandths travels as those thousandths, so the
+     * far end draws the thumb exactly where this end did. */
+    RT("scroll at 0.251",
+       tiku_ui_scrollbar(s,(tiku_rect_t){10,10,15,200},251/1000.0f,
+                         506/1000.0f,0));
+    { int pm, kept = 1;
+      for (pm = 0; pm <= 1000; pm++) {
+          tiku_surface_t *s = tiku_surface_new(40, 40, TIKU_C_PANEL);
+          tiku_dl_t *dl = tiku_dl_new();
+          unsigned char wire[1024]; size_t wrote = 0, at = 0;
+          tiku_dl_fact_t fact;
+          s->record = dl;
+          tiku_ui_scrollbar(s, (tiku_rect_t){0,0,15,40}, pm/1000.0f,
+                            (pm < 50 ? 50 : pm)/1000.0f, 0);
+          s->record = NULL;
+          if (!tiku_dl_flatten(dl, wire, sizeof wire, &wrote) ||
+              !tiku_dl_read(wire, wrote, &at, &fact) ||
+              fact.v1 != pm || fact.v2 != (pm < 50 ? 50 : pm))
+              kept = 0;
+          tiku_dl_free(dl); tiku_surface_free(s);
+      }
+      check(kept, "scroll: every thousandth of position and size is "
+                  "recorded as itself"); }
+    { tiku_rect_t bar = {10,10,15,200};
+      tiku_rect_t t = tiku_ui_scrollbar_thumb(bar, 0.5f, 0.25f, 0);
+      tiku_rect_t h = tiku_ui_scrollbar_thumb((tiku_rect_t){10,10,200,15},
+                                              1.0f, 0.5f, 1);
+      check(t.x == 10 && t.w == 15 && t.h == (int)(170 * 0.25f) &&
+            t.y == 10 + 15 + (int)((170 - t.h) * 0.5f) &&
+            h.y == 10 && h.h == 15 && h.w == 85 && h.x + h.w == 10 + 200 - 15,
+            "scroll: the thumb a caller hit tests is the one drawn, between "
+            "the two arrow squares"); }
     { tiku_slider_t sl; tiku_slider_init(&sl,0,100,50,5);
       RT("slider", tiku_slider_draw(&sl,s,(tiku_rect_t){10,10,200,16})); }
     { tiku_tabs_t t; tiku_tabs_init(&t);

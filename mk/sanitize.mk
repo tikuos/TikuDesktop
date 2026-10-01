@@ -45,7 +45,11 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
                   test_editdoc_faults test_editdoc_fixtures \
                   test_codeview_layout test_codeview_paint \
-                  test_codeview_input
+                  test_codeview_input test_codeview_display \
+                  test_codeview_edit test_codeview_find \
+                  test_codeview_style test_codeview_host
+# The timing suite is left out: it times large fixtures, which the
+# sanitizers slow many times over.
 SAN_TESTS += $(SAN_LEAK_TESTS)
 SAN_LEAKS := $(if $(filter Darwin,$(UNAME_S)),0,1)
 

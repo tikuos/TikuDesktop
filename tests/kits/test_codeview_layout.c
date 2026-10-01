@@ -104,6 +104,19 @@ prefix_width(const tiku_font_t *f, const char *s, size_t n)
     return tiku_text_width(f, buf);
 }
 
+/** @brief Replace [s, e) with @p text as one transaction. */
+static void
+put_n(tiku_editdoc_t *doc, int64_t s, int64_t e, const char *text)
+{
+    tiku_edit_replace_t r = { { s, e }, text, strlen(text) };
+    tiku_edit_transaction_t t;
+
+    memset(&t, 0, sizeof t);
+    t.edits = &r;
+    t.count = 1;
+    (void)tiku_editdoc_apply(doc, &t);
+}
+
 /** @brief Text with no tab or control character measures exactly as
  *         the face draws it, at every boundary. */
 static void
@@ -335,6 +348,84 @@ long_line(void)
     check(tiku_codeview_hit(v, (int)x, (int)y0) == 400001, "LAY-006",
           "a hit far along it, scrolled there, lands after the tab");
     tiku_codeview_destroy(v);
+    tiku_editdoc_release(doc);
+    free(s);
+}
+
+/** @brief Whether two views of one document put every sampled position
+ *         of line 0 at the same x and answer the same hits. */
+static int
+agree(tiku_codeview_t *a, tiku_codeview_t *b, size_t n)
+{
+    tiku_editdoc_t *doc = tiku_codeview_doc(a);
+    tiku_edit_pos_t p;
+    int64_t xa, xb, ya, yb;
+
+    if (tiku_codeview_line_width(a, 0) != tiku_codeview_line_width(b, 0))
+        return 0;
+    for (p = 0; p <= (tiku_edit_pos_t)n; p += 997) {
+        tiku_edit_pos_t q = p;
+
+        while (!tiku_editdoc_is_boundary(doc, q))
+            q--;
+        if (tiku_codeview_point(a, q, &xa, &ya) != TIKU_EDIT_OK ||
+            tiku_codeview_point(b, q, &xb, &yb) != TIKU_EDIT_OK ||
+            xa + tiku_codeview_left(a) != xb + tiku_codeview_left(b))
+            return 0;
+        xa += tiku_codeview_left(a);
+        tiku_codeview_scroll_to(a, 0, xa - 20 > 0 ? xa - 20 : 0);
+        tiku_codeview_scroll_to(b, 0, xa - 20 > 0 ? xa - 20 : 0);
+        if (tiku_codeview_hit(a, 40, 25) != tiku_codeview_hit(b, 40, 25))
+            return 0;
+    }
+    return 1;
+}
+
+/** @brief A long line edited before, inside and after the places its
+ *         walks were kept lays out as a view that never walked it does. */
+static void
+long_edits(void)
+{
+    static const char unit[] = "ab\tcd\xc3\xa9 \x01" "efg\t";
+    size_t n = 0, i;
+    char *s = malloc(3000 * sizeof unit);
+    tiku_editdoc_t *doc;
+    tiku_codeview_t *kept, *fresh = NULL;
+    int same = 1;
+    static const struct {
+        int64_t at, cut;
+        const char *text;
+    } edits[] = {
+        { 20000, 0, "xyz" }, { 30000, 5, "" }, { 1000, 0, "\t" },
+        { -1, 0, "end\tmore" }, { 5, 3, "\xce\xbb" }, { 25000, 0, "\x02" },
+    };
+
+    if (s == NULL)
+        exit(1);
+    for (i = 0; i < 3000; i++) {
+        memcpy(s + n, unit, sizeof unit - 1);
+        n += sizeof unit - 1;
+    }
+    doc = doc_of_n(s, n);
+    kept = view_of(doc);
+    for (i = 0; i < sizeof edits / sizeof edits[0]; i++) {
+        tiku_edit_pos_t at = edits[i].at < 0 ? tiku_editdoc_length(doc)
+                                             : edits[i].at;
+
+        (void)agree(kept, kept, (size_t)tiku_editdoc_length(doc));
+        while (!tiku_editdoc_is_boundary(doc, at))
+            at--;
+        put_n(doc, at, at + edits[i].cut, edits[i].text);
+        if (tiku_codeview_create(doc, &fresh) != TIKU_EDIT_OK)
+            exit(1);
+        tiku_codeview_set_bounds(fresh, tiku_codeview_bounds(kept));
+        if (!agree(kept, fresh, (size_t)tiku_editdoc_length(doc)))
+            same = 0;
+        tiku_codeview_destroy(fresh);
+    }
+    check(same, "LAY-011", "after edits before, inside and past the places "
+          "kept along a long line, it lays out as a view new to it does");
+    tiku_codeview_destroy(kept);
     tiku_editdoc_release(doc);
     free(s);
 }
@@ -604,6 +695,7 @@ main(void)
     controls();
     hits();
     long_line();
+    long_edits();
     fonts();
     scrolling();
     two_views();
