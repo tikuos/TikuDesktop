@@ -47,7 +47,8 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_codeview_layout test_codeview_paint \
                   test_codeview_input test_codeview_display \
                   test_codeview_edit test_codeview_find \
-                  test_codeview_style test_codeview_host
+                  test_codeview_style test_codeview_host \
+                  test_editor_document
 # The timing suite is left out: it times large fixtures, which the
 # sanitizers slow many times over.
 SAN_TESTS += $(SAN_LEAK_TESTS)
@@ -57,7 +58,7 @@ SAN_LEAKS := $(if $(filter Darwin,$(UNAME_S)),0,1)
 # intermediates, it deleted them after every run, built them all again on
 # the next, and under -j spun in place deciding whether it had to.
 SAN_KIT_TEST_OBJS := $(patsubst %,$(SAN)/tests/kits/%.o,\
-                         $(filter-out $(SAN_APP_TESTS),$(SAN_TESTS)))
+                         $(filter-out $(SAN_APP_TESTS) test_editor_document,$(SAN_TESTS)))
 $(SAN_KIT_TEST_OBJS):
 
 # These suites include their viewer sources directly. Rebuild when an
@@ -76,6 +77,19 @@ $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
         $(SAN)/tests/apps/test_%.o $(SAN_OBJS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
 	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
+
+# Editor links its own sources, instrumented like the readers.
+SAN_EDITOR_OBJS := $(patsubst %.c,$(SAN)/%.o,$(EDITOR_SRC))
+$(SAN)/tests/apps/test_editor_document.o:
+$(SAN)/test_editor_document: $(SAN)/tests/apps/test_editor_document.o \
+        $(SAN_EDITOR_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_EDITOR_OBJS) $(SAN_OBJS) \
+	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+
+$(SAN)/apps/%.o: apps/%.c | prepare-build
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(SANFLAGS) -Wno-unused-parameter $(KIT_INC) \
+	      -MMD -MP -c -o $@ $<
 
 # Each object notes the headers it read (-MMD), so changing one builds it
 # again: a struct grown in a header otherwise left objects laid out the
