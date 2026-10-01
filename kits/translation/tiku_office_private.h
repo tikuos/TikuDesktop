@@ -279,6 +279,8 @@ struct of_image {
                                        as fractions of the picture       */
     int             pdf;            /* the writer's; -1 not yet, -2 none */
     const of_art_t *art;            /* drawn by its reader instead       */
+    unsigned char  *meta;           /* a metafile, kept to draw each time */
+    size_t          nmeta;
 };
 
 /* What a float's place counts from: the page, the margins' box, the
@@ -552,6 +554,15 @@ int of_draw_image(of_doc_t *d, of_image_t *im, tiku_pdf_writer_t *w);
 /** @brief Glyphs @p g with face @p face's font, registered if need be. */
 void of_draw_glyphs(of_faces_t *fs, const of_frag_t *g, float dx, float dy,
                     tiku_pdf_writer_t *w);
+/** @brief Whether @p b (@p n bytes) is a Windows metafile: 1 an EMF, 2 a
+ *         WMF, 0 neither. */
+int of_metafile_is(const unsigned char *b, size_t n);
+/** @brief Metafile @p b drawn into the box @p x, @p y, @p w by @p h, its
+ *         text in faces @p fs.  @return 0, or -1 when it is not one, or
+ *         holds nothing this can draw. */
+int of_metafile_draw(const unsigned char *b, size_t n, of_faces_t *fs,
+                     tiku_pdf_writer_t *wr, float x, float y, float w,
+                     float h);
 /** @brief One fragment drawn, moved by (@p dx, @p dy): glyphs, a box, a
  *         rule, a picture.  Its link is not drawn: that is the page's. */
 void of_draw_frag(of_doc_t *d, of_faces_t *fs, const of_frag_t *g, float dx,

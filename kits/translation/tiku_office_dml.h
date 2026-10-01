@@ -194,8 +194,12 @@ void dml_paint_line(dml_ctx_t *c, const dml_line_t *l, const dml_geom_t *g,
 void dml_blip(const dml_ctx_t *c, const tiku_xml_node_t *blip,
               dml_blip_t *fx);
 /** @brief A picture part given to the writer, once for each way @p fx
- *         (may be NULL) changes it.  -1 unreadable. */
+ *         (may be NULL) changes it.  -1 unreadable, or a metafile. */
 int dml_picture(dml_ctx_t *c, const char *part, const dml_blip_t *fx);
+/** @brief Part @p part's bytes when dml_picture() found it a metafile,
+ *         their length in @p len; NULL when it was not. */
+const unsigned char *dml_metafile(const dml_ctx_t *c, const char *part,
+                                  size_t *len);
 /** @brief The transform of an a:xfrm within @p parent: its offset, size,
  *         turn and flips, into @p m and its size into @p w, @p h.  For a
  *         group, @p child gets the transform its children's space takes. */

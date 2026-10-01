@@ -10,7 +10,8 @@
  *
  * A picture is read from its package once for each way it is changed.
  * Left as it is, it goes to the writer as its file -- a JPEG untouched;
- * changed, it is decoded, each pixel changed, and given as pixels.
+ * changed, it is decoded, each pixel changed, and given as pixels.  A
+ * Windows metafile is kept as it is, to be drawn wherever it is shown.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,9 +27,11 @@
 
 /** @brief A picture part, what was done to it, the writer's number. */
 struct dml_pic {
-    char       part[256];
-    dml_blip_t fx;
-    int        n;                   /* -1 when it cannot be read         */
+    char           part[256];
+    dml_blip_t     fx;
+    int            n;               /* -1 when it cannot be read         */
+    unsigned char *meta;            /* a metafile's bytes, drawn instead */
+    size_t         nmeta;
 };
 
 /** @brief A per-cent attribute (100000 whole) as a fraction. */
@@ -211,6 +214,38 @@ dml_picture(dml_ctx_t *c, const char *part, const dml_blip_t *fx)
     }
     b = part[0] ? of_pkg_read(c->pkg, part, OF_PART_MAX, &len) : NULL;
     p->n = b != NULL ? changed(c, b, len, fx) : -1;
+    if (p->n < 0 && b != NULL && of_metafile_is(b, len)) {
+        p->meta = b;                /* kept, to be drawn as it says */
+        p->nmeta = len;
+        return -1;
+    }
     free(b);
     return p->n;
+}
+
+const unsigned char *
+dml_metafile(const dml_ctx_t *c, const char *part, size_t *len)
+{
+    int i;
+
+    for (i = 0; i < c->npics; i++) {
+        if (c->pics[i].meta != NULL && strcmp(c->pics[i].part, part) == 0) {
+            *len = c->pics[i].nmeta;
+            return c->pics[i].meta;
+        }
+    }
+    return NULL;
+}
+
+void
+dml_done(dml_ctx_t *c)
+{
+    int i;
+
+    for (i = 0; i < c->npics; i++) {
+        free(c->pics[i].meta);
+    }
+    free(c->pics);
+    c->pics = NULL;
+    c->npics = c->piccap = 0;
 }

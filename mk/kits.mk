@@ -184,6 +184,12 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_office_chart_table.c \
                $(K)/translation/tiku_office_chart_err.c \
                $(K)/translation/tiku_office_chart_ink.c \
+               $(K)/translation/tiku_office_gdi.c \
+               $(K)/translation/tiku_office_gdi_shape.c \
+               $(K)/translation/tiku_office_gdi_text.c \
+               $(K)/translation/tiku_office_gdi_dib.c \
+               $(K)/translation/tiku_office_emf.c \
+               $(K)/translation/tiku_office_wmf.c \
                $(K)/translation/tiku_office_pptx.c \
                $(K)/translation/tiku_office_pptx_text.c \
                $(K)/translation/tiku_office_pptx_table.c

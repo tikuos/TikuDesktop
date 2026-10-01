@@ -8,9 +8,10 @@
  *
  * Each fragment becomes what the writer draws: glyphs in the face's font,
  * registered the first time it is used; pictures read from the package
- * once and cut as the document cuts them; boxes, rules and the text
+ * once and cut as the document cuts them -- a Windows metafile drawn as
+ * its records say, wherever it is shown; boxes, rules and the text
  * boxes' grounds; a drawing is its reader's to draw.  A picture this
- * cannot read -- an EMF, a WMF -- is a grey box where it would be.
+ * cannot read is a grey box where it would be.
  * Links go out only to the web and to mail; a bookmark's link leads to
  * the page it landed on.
  *
@@ -37,6 +38,11 @@ of_draw_image(of_doc_t *d, of_image_t *im, tiku_pdf_writer_t *w)
     }
     bytes = d->pkg ? of_pkg_read(d->pkg, im->part, OF_PART_MAX, &len) : NULL;
     im->pdf = bytes ? tiku_pdf_writer_image(w, bytes, len, NULL, NULL) : -1;
+    if (im->pdf < 0 && bytes != NULL && of_metafile_is(bytes, len) &&
+        (im->meta = of_alloc(&d->arena, len)) != NULL) {
+        memcpy(im->meta, bytes, len);   /* drawn again wherever it is */
+        im->nmeta = len;
+    }
     free(bytes);
     if (im->pdf < 0) {
         im->pdf = -2;
@@ -77,7 +83,8 @@ of_draw_glyphs(of_faces_t *fs, const of_frag_t *g, float dx, float dy,
  *         what is left of it fills the box.  A grey box when it cannot be
  *         read. */
 static void
-picture(of_doc_t *d, const of_frag_t *g, tiku_pdf_writer_t *w)
+picture(of_doc_t *d, of_faces_t *fs, const of_frag_t *g,
+        tiku_pdf_writer_t *w)
 {
     const of_image_t *im = g->image;
     int n = of_draw_image(d, g->image, w);
@@ -85,20 +92,30 @@ picture(of_doc_t *d, const of_frag_t *g, tiku_pdf_writer_t *w)
                im->crop[3];
     tiku_pdf_paint_t paint;
 
-    if (n < 0 || cw <= 0.01f || ch <= 0.01f) {
+    if (cw <= 0.01f || ch <= 0.01f || (n < 0 && im->meta == NULL)) {
+        n = -1;
+    } else {
+        tiku_pdf_writer_save(w);
+        tiku_pdf_writer_rect(w, g->x, g->y, g->w, g->h);
+        tiku_pdf_writer_clip(w, 0);
+        if (n >= 0) {
+            tiku_pdf_writer_draw(w, n, g->x - im->crop[0] * g->w / cw,
+                                 g->y - im->crop[1] * g->h / ch, g->w / cw,
+                                 g->h / ch);
+        } else {
+            n = of_metafile_draw(im->meta, im->nmeta, fs, w,
+                                 g->x - im->crop[0] * g->w / cw,
+                                 g->y - im->crop[1] * g->h / ch, g->w / cw,
+                                 g->h / ch);
+        }
+        tiku_pdf_writer_restore(w);
+    }
+    if (n < 0) {
         memset(&paint, 0, sizeof paint);
         paint.fill = PLACEHOLDER;
         tiku_pdf_writer_rect(w, g->x, g->y, g->w, g->h);
         tiku_pdf_writer_paint(w, &paint);
-        return;
     }
-    tiku_pdf_writer_save(w);
-    tiku_pdf_writer_rect(w, g->x, g->y, g->w, g->h);
-    tiku_pdf_writer_clip(w, 0);
-    tiku_pdf_writer_draw(w, n, g->x - im->crop[0] * g->w / cw,
-                         g->y - im->crop[1] * g->h / ch, g->w / cw,
-                         g->h / ch);
-    tiku_pdf_writer_restore(w);
 }
 
 /** @brief A rule from the fragment's start, across and down its extent,
@@ -220,7 +237,7 @@ of_draw_frag(of_doc_t *d, of_faces_t *fs, const of_frag_t *g, float dx,
     } else if (g->kind == OF_FRAG_ART && g->flt != NULL) {
         art(d, fs, g->flt->art, &at, w);
     } else if (g->kind == OF_FRAG_IMAGE && g->image != NULL) {
-        picture(d, &at, w);
+        picture(d, fs, &at, w);
     } else if (g->kind == OF_FRAG_RECT) {
         fill.fill = g->color;
         tiku_pdf_writer_rect(w, at.x, at.y, g->w, g->h);

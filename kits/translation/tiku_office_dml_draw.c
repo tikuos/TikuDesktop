@@ -378,12 +378,16 @@ picture(dml_ctx_t *c, const dml_fill_t *f, const dml_geom_t *g,
     int n = dml_picture(c, f->picture, &f->fx), i;
     double cw = 1 - f->crop[0] - f->crop[2], ch = 1 - f->crop[1] - f->crop[3];
     tiku_pdf_paint_t p;
+    size_t len = 0;
+
+    const unsigned char *meta = n < 0 ? dml_metafile(c, f->picture, &len)
+                                      : NULL;
 
     tiku_pdf_writer_save(c->w);
     for (i = 0; i < g->nsub; i++) {
         trace(c->w, &g->sub[i], m);
     }
-    if (n < 0 || cw < 0.01 || ch < 0.01) {
+    if ((n < 0 && meta == NULL) || cw < 0.01 || ch < 0.01) {
         memset(&p, 0, sizeof p);
         p.fill = 0xffe4e4e4u;
         tiku_pdf_writer_paint(c->w, &p);
@@ -392,8 +396,18 @@ picture(dml_ctx_t *c, const dml_fill_t *f, const dml_geom_t *g,
     }
     tiku_pdf_writer_clip(c->w, 0);
     tiku_pdf_writer_transform(c->w, m->a, m->b, m->c, m->d, m->e, m->f);
-    tiku_pdf_writer_draw(c->w, n, -f->crop[0] * w / cw, -f->crop[1] * h / ch,
-                         w / cw, h / ch);
+    if (n >= 0) {
+        tiku_pdf_writer_draw(c->w, n, -f->crop[0] * w / cw,
+                             -f->crop[1] * h / ch, w / cw, h / ch);
+    } else if (of_metafile_draw(meta, len, c->fs, c->w,
+                                (float)(-f->crop[0] * w / cw),
+                                (float)(-f->crop[1] * h / ch),
+                                (float)(w / cw), (float)(h / ch)) != 0) {
+        memset(&p, 0, sizeof p);    /* nothing it could draw */
+        p.fill = 0xffe4e4e4u;
+        tiku_pdf_writer_rect(c->w, 0, 0, w, h);
+        tiku_pdf_writer_paint(c->w, &p);
+    }
     tiku_pdf_writer_restore(c->w);
 }
 
@@ -820,6 +834,102 @@ unscaled_chart(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m,
     return dml_chart(c, gd, &u, (float)(w * sx), (float)(h * sy));
 }
 
+/* ---------------------------------------------------------------- OLE  */
+
+/** @brief The p:oleObj under @p gd that keeps a picture of its object,
+ *         looking in each branch of mc:AlternateContent; else the first
+ *         found, or NULL. */
+static const tiku_xml_node_t *
+ole_obj(const tiku_xml_node_t *gd)
+{
+    const tiku_xml_node_t *k, *b, *o, *first = NULL;
+
+    for (k = tiku_xml_child(gd, NULL); k != NULL; k = tiku_xml_next(k, NULL)) {
+        if (is_local(k, "oleObj")) {
+            if (local_child(k, "pic") != NULL) {
+                return k;
+            }
+            first = first != NULL ? first : k;
+        }
+        for (b = tiku_xml_is(k, "mc:AlternateContent") ?
+                 tiku_xml_child(k, NULL) : NULL;
+             b != NULL; b = tiku_xml_next(b, NULL)) {
+            if ((o = local_child(b, "oleObj")) != NULL &&
+                local_child(o, "pic") != NULL) {
+                return o;
+            }
+            first = first != NULL ? first : o;
+        }
+    }
+    return first;
+}
+
+/** @brief The picture part the legacy drawing's VML shape @p spid shows
+ *         (Office 2007's way of keeping an object's picture), into @p out;
+ *         "" when there is none. */
+static void
+vml_picture(const dml_ctx_t *c, const char *spid, char *out, size_t max)
+{
+    const of_rel_t *r = of_pkg_rel_type(c->pkg, c->part, "vmlDrawing");
+    const tiku_xml_node_t *k;
+    const char *id;
+    char vml[256];
+    tiku_xml_t *x;
+
+    out[0] = '\0';
+    if (spid == NULL || r == NULL || r->external) {
+        return;
+    }
+    snprintf(vml, sizeof vml, "%s", r->target);
+    if ((x = of_pkg_xml(c->pkg, vml)) == NULL) {
+        return;
+    }
+    for (k = tiku_xml_child(tiku_xml_root(x), NULL); k != NULL;
+         k = tiku_xml_next(k, NULL)) {
+        id = tiku_xml_attr(k, "o:spid") != NULL ? tiku_xml_attr(k, "o:spid")
+                                                : tiku_xml_attr(k, "id");
+        if (tiku_xml_is(k, "v:shape") && id != NULL && strcmp(id, spid) == 0) {
+            r = of_pkg_rel(c->pkg, vml, tiku_xml_attr(tiku_xml_child(k,
+                                              "v:imagedata"), "o:relid"));
+            if (r != NULL && !r->external) {
+                snprintf(out, max, "%s", r->target);
+            }
+            break;
+        }
+    }
+    tiku_xml_free(x);
+}
+
+/** @brief An embedded object's frame, @p w by @p h through @p m: the
+ *         picture Office keeps of it.  @return 1 when it was drawn. */
+static int
+ole(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m, float w,
+    float h)
+{
+    const tiku_xml_node_t *o = ole_obj(gd);
+    const tiku_xml_node_t *pic = local_child(o, "pic");
+    dml_fill_t f;
+    dml_geom_t g;
+
+    memset(&f, 0, sizeof f);
+    if (o == NULL || (pic != NULL &&
+                      !fill_of(c, local_child(pic, "blipFill"), &f))) {
+        return 0;
+    }
+    if (pic == NULL) {
+        f.kind = DML_PICTURE;
+        vml_picture(c, tiku_xml_attr(o, "spid"), f.picture,
+                    sizeof f.picture);
+    }
+    if (f.kind != DML_PICTURE || f.picture[0] == '\0' ||
+        dml_geometry(NULL, w, h, &g) != 0) {
+        return 0;
+    }
+    picture(c, &f, &g, m, w, h);
+    dml_geom_free(&g);
+    return 1;
+}
+
 int
 dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *pm)
 {
@@ -838,6 +948,8 @@ dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *pm)
         drawn = unscaled_chart(c, gd, &m, w, h);
     } else if (tiku_xml_child(gd, "dgm:relIds") != NULL) {
         drawn = dml_diagram(c, gd, &m);
+    } else {
+        drawn = ole(c, gd, &m, w, h);
     }
     if (drawn != 0) {
         return drawn < 0 ? -1 : 0;
@@ -852,10 +964,3 @@ dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *pm)
     return 0;
 }
 
-void
-dml_done(dml_ctx_t *c)
-{
-    free(c->pics);
-    c->pics = NULL;
-    c->npics = c->piccap = 0;
-}
