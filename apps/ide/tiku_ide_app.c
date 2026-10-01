@@ -295,13 +295,51 @@ tiku_ide_stop(void *state)
     free(st);
 }
 
-/** @brief The runtime took a window; the project keeps the rest. */
+/** @brief The runtime took a window; the project keeps the rest, except
+ *         when the window is the Project window itself. */
 static void
 ide_closed(void *state, uint32_t window)
 {
     ide_t *st = state;
     edit_t *e = tiku_ide_edit_of_id(st, window);
 
+    if (window == st->proj_id && st->proj_surface != NULL) {
+        /* Closing the Project window ends the IDE.  Each page goes the way
+         * a desktop close takes it, a modified one's draft kept, and the
+         * other windows go too, so the last one going stops the
+         * application and no question is left on a window that is gone. */
+        uint32_t *ids[] = { &st->msg_id, &st->con_id, &st->about_id };
+        tiku_surface_t **surfaces[] = { &st->msg_surface, &st->con_surface,
+                                        &st->about_surface };
+        int i;
+
+        tiku_surface_free(st->proj_surface);
+        st->proj_surface = NULL;
+        st->proj_id = 0u;
+        tiku_alert_reset(&st->ask);
+        st->closing_editor = 0u;
+        for (i = 0; i < IDE_EDITS; i++) {
+            edit_t *page = &st->edit[i];
+
+            if (page->surface == NULL) {
+                continue;
+            }
+            tiku_ide_recovery_release(page, 0);
+            tiku_textview_free(&page->tv);
+            st->services->close(st->services->ctx, page->id);
+            tiku_surface_free(page->surface);
+            page->surface = NULL;
+        }
+        for (i = 0; i < 3; i++) {
+            if (*surfaces[i] != NULL) {
+                st->services->close(st->services->ctx, *ids[i]);
+                tiku_surface_free(*surfaces[i]);
+                *surfaces[i] = NULL;
+                *ids[i] = 0u;
+            }
+        }
+        return;
+    }
     if (e != NULL) {
         tiku_ide_recovery_release(e, 0);
         tiku_textview_free(&e->tv);

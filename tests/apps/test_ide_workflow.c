@@ -38,8 +38,10 @@ static uint32_t open_window(void *ctx, const char *title, int w, int h)
     snprintf(last_window, sizeof last_window, "%s", title);
     return (uint32_t)(98 + window_opens);
 }
+static uint32_t closed_id[8];   /* the windows the IDE gave back, in order */
+static int closed_n;
 static void close_window(void *ctx, uint32_t id)
-{ (void)ctx; (void)id; }
+{ (void)ctx; if (closed_n < 8) { closed_id[closed_n] = id; } closed_n++; }
 static int save(void *ctx, const char *board, const char *name, const char *text)
 {
     (void)ctx;
@@ -676,6 +678,46 @@ static void test_empty_startup(const tiku_app_services_t *services,
     }
 }
 
+/** Closing the Project window ends the IDE: each page goes the way a
+ *  desktop close takes it, a modified page's draft kept, and no question
+ *  is left open on a window that is gone. */
+static void test_project_window_closed(const tiku_app_services_t *services,
+                                       const char *dir)
+{
+    tiku_event_t dismiss = { .type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_ESCAPE };
+    void *state = NULL;
+    char draft[600];
+    ide_t *fresh;
+    edit_t *e;
+
+    assert(tiku_ide_start(&state, services) == 0);
+    fresh = state;
+    tiku_ide_tick(fresh, 1);
+    tiku_ide_event(fresh, fresh->splash_id, &dismiss);
+    tiku_ide_tick(fresh, SPLASH_US + 2);
+    assert(fresh->proj_id);
+    e = &fresh->edit[0];
+    e->w = 620; e->h = 420; e->id = 77; e->tip = -1;
+    e->lang = TIKU_SYNTAX_BASIC;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    snprintf(e->path, sizeof e->path, "%s/page.bas", dir);
+    snprintf(e->recovery, sizeof e->recovery, "%s/page.draft", dir);
+    snprintf(draft, sizeof draft, "%s", e->recovery);
+    e->recovery_fd = open(dir, O_RDONLY);
+    assert(e->recovery_fd >= 0);
+    tiku_textview_init(&e->tv);
+    tiku_textview_set(&e->tv, "10 PRINT 1");
+    tiku_textview_place(&e->tv, 0, 10);
+    tiku_textview_insert(&e->tv, '2');
+    closed_n = 0;
+    tiku_ide_app.closed(fresh, fresh->proj_id);
+    assert(!e->surface && closed_n >= 1 && closed_id[0] == 77);
+    assert(access(draft, F_OK) == 0 && !fresh->ask.open && !fresh->proj_id);
+    tiku_ide_stop(fresh);
+    assert(unlink(draft) == 0);
+}
+
 static void test_reopen(ide_t *st, const char *dir)
 {
     char recovery[512], lock[680], path[512], snapshot[680];
@@ -964,6 +1006,7 @@ int main(void)
     test_diagnostics(&services);
     test_splash_license();
     test_launch_document(&services, dir);
+    test_project_window_closed(&services, dir);
     assert(rmdir(dir) == 0);
     free(st);
     puts("PASS: upload boundaries/confirmation, target state, replacement/undo, recovery");
