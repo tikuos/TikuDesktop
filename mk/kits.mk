@@ -222,7 +222,9 @@ EDITOR      := $(K)/editor/tiku_editdoc.c $(K)/editor/tiku_editdoc_alloc.c \
                $(K)/editor/tiku_codeview_layout.c \
                $(K)/editor/tiku_codeview_paint.c \
                $(K)/editor/tiku_codeview_input.c \
-               $(K)/editor/tiku_codeview_edit.c
+               $(K)/editor/tiku_codeview_edit.c \
+               $(K)/editor/tiku_codeview_find.c \
+               $(K)/editor/tiku_edit_search.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_app_tray.c \
                $(K)/application/tiku_window_app.c \

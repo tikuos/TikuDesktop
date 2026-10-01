@@ -5,7 +5,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_codeview.h - an editor document on the screen, its caret, and the
- * edits made through it.
+ * edits and searches made through it.
  *
  * A view shows one row per line of its document and keeps every byte: a
  * tab reaches the next stop from the start of its line, a control
@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 
+#include "tiku_edit_search.h"
 #include "tiku_editdoc.h"
 #include "tiku_event.h"
 #include "tiku_font.h"
@@ -221,6 +222,40 @@ tiku_edit_status_t tiku_codeview_paste(tiku_codeview_t *view);
 /** @brief Why the edit the last event asked for was not made, or
  *         TIKU_EDIT_OK when it was made or the event asked for none. */
 tiku_edit_status_t tiku_codeview_status(const tiku_codeview_t *view);
+
+/** @brief What a search did. */
+typedef struct {
+    size_t replaced;            /* matches replaced                     */
+    int found;                  /* a match is selected now              */
+    int wrapped;                /* it started again from the other end  */
+} tiku_codeview_found_t;
+
+/**
+ * @brief Select the first match at or after the caret, or with
+ *        @p backward the last one before the selection's start, starting
+ *        again from the other end when there is none that way.
+ *
+ * The match is selected from its start to its end and shown.
+ * TIKU_EDIT_NOTHING when there is no match anywhere.  @p out may be NULL.
+ */
+tiku_edit_status_t tiku_codeview_find(tiku_codeview_t *view,
+                                      const tiku_edit_query_t *q,
+                                      int backward,
+                                      tiku_codeview_found_t *out);
+/** @brief Replace the selection with @p length bytes of @p with when it
+ *         is exactly one match, as one undo step, then find the next
+ *         match. */
+tiku_edit_status_t tiku_codeview_replace(tiku_codeview_t *view,
+                                         const tiku_edit_query_t *q,
+                                         const char *with, size_t length,
+                                         tiku_codeview_found_t *out);
+/** @brief Replace every match in the document as one undo step; each
+ *         view's selection moves with the text it was on. */
+tiku_edit_status_t tiku_codeview_replace_all(tiku_codeview_t *view,
+                                             const tiku_edit_query_t *q,
+                                             const char *with,
+                                             size_t length,
+                                             tiku_codeview_found_t *out);
 
 /**
  * @brief Take a key, text, pointer, wheel or tick event.
