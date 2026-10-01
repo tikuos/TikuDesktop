@@ -545,18 +545,21 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 edited = 1;
                 break;
             case TIKU_KEY_RETURN: {
-                int cy, cx, n;
+                int cy, cx, n, lines;
 
                 tiku_ide_edit_normalize_word(e);   /* the return ends a word */
                 /* Read after a held selection has gone, so the number
                  * comes from the line the break is made in. */
                 tiku_textview_caret(&e->tv, &cy, &cx);
+                lines = tiku_textview_lines(&e->tv);
                 tiku_textview_newline(&e->tv);
                 /* The next line's number, already typed: the numbers
                  * are the language's bookkeeping, and bookkeeping is
                  * what a machine is FOR.  A line wearing none offers
-                 * none, so prose in a .bas file is not fought over. */
-                if (e->lang == TIKU_SYNTAX_BASIC) {
+                 * none, so prose in a .bas file is not fought over, and
+                 * a break the page had no room for offers none either. */
+                if (e->lang == TIKU_SYNTAX_BASIC &&
+                    tiku_textview_lines(&e->tv) > lines) {
                     n = tiku_ide_next_number(&e->tv, cy);
                     if (n > 0) {
                         tiku_ide_type_number(&e->tv, n);
@@ -566,7 +569,10 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 break;
             }
             default:
-                if (ch >= 32u && ch < 127u) {
+                /* A Cmd chord is a command; one no binding took above
+                 * types nothing, whatever text it carries. */
+                if (ch >= 32u && ch < 127u &&
+                    !(event->modifiers & TIKU_MOD_CMD)) {
                     /* A non-word character ENDS the word before it, and
                      * a keyword there shouts before the character lands. */
                     if (!tiku_ide_norm_is_word((int)ch)) {

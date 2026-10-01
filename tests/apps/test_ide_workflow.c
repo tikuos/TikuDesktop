@@ -421,6 +421,68 @@ static void test_follow_drops_selection(ide_t *st)
     e->surface = NULL;
 }
 
+/** Return on a page already holding 4,000 lines makes no break, and so
+ *  types no line number into the line it was pressed on. */
+static void test_return_at_line_limit(ide_t *st)
+{
+    edit_t *e = &st->edit[0];
+    size_t cap = 4000u * 8u + 1u, at = 0;
+    char *text = malloc(cap);
+    int i;
+
+    assert(text);
+    for (i = 0; i < 4000; i++) {
+        at += (size_t)snprintf(text + at, cap - at, "%d a\n", 10 * (i % 999 + 1));
+    }
+    memset(e, 0, sizeof *e);
+    e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
+    e->lang = TIKU_SYNTAX_BASIC;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    tiku_textview_init(&e->tv);
+    tiku_textview_set(&e->tv, text);
+    assert(tiku_textview_lines(&e->tv) == 4000);
+    tiku_textview_place(&e->tv, 0, 4);
+    key_to(st, e, TIKU_KEY_RETURN, 0);
+    assert(tiku_textview_lines(&e->tv) == 4000);
+    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 a"));
+    free(text);
+    tiku_textview_free(&e->tv);
+    tiku_surface_free(e->surface);
+    e->surface = NULL;
+}
+
+/** A Cmd chord that no binding takes types nothing, whatever its text. */
+static void test_unbound_cmd_chords(ide_t *st)
+{
+    edit_t *e = &st->edit[0];
+    static const struct { int lang; unsigned key; const char *text; } chord[] = {
+        {TIKU_SYNTAX_BASIC, '1', "1"}, {TIKU_SYNTAX_BASIC, 'e', "e"},
+        {TIKU_SYNTAX_BASIC, 'e', ""}, {TIKU_SYNTAX_C, '.', "."},
+        {TIKU_SYNTAX_C, ' ', " "}, {TIKU_SYNTAX_NONE, '0', "0"},
+    };
+
+    memset(e, 0, sizeof *e);
+    e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    tiku_textview_init(&e->tv);
+    for (size_t i = 0; i < sizeof chord / sizeof chord[0]; i++) {
+        tiku_event_t ev = { .type = TIKU_EVENT_KEY_DOWN, .key = chord[i].key,
+                            .modifiers = TIKU_MOD_CMD };
+
+        e->lang = chord[i].lang;
+        tiku_textview_set(&e->tv, "10 x");
+        tiku_textview_place(&e->tv, 0, 4);
+        snprintf(ev.text, sizeof ev.text, "%s", chord[i].text);
+        tiku_ide_event(st, e->id, &ev);
+        assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 x"));
+    }
+    tiku_textview_free(&e->tv);
+    tiku_surface_free(e->surface);
+    e->surface = NULL;
+}
+
 /** Renumber rewrites a line crowded with branch targets exactly, and
  *  refuses, changing nothing, a line that would grow past 1023 bytes. */
 static void test_renumber_bounds(void)
@@ -767,6 +829,8 @@ int main(void)
     test_renumber_bounds();
     test_keyword_over_selection(st);
     test_follow_drops_selection(st);
+    test_return_at_line_limit(st);
+    test_unbound_cmd_chords(st);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);
