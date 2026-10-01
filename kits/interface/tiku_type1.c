@@ -581,7 +581,7 @@ othersubr(t1_run_t *r, int which, int nargs)
         r->nflex = 0;
         r->sp -= nargs;
     } else if (which == 0) {
-        /* Seventeen arguments; the fourteen we kept are the reference
+        /* Seventeen arguments; the fourteen kept in fx are the reference
          * point and the two curves' six points: seven rmovetos. */
         r->flex = 0;
         if (r->nflex >= 14) {

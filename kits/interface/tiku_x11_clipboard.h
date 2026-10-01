@@ -5,11 +5,11 @@
 #include <stdint.h>
 #include "tiku_clipboard.h"
 
-/* One peer taking our text a piece at a time (ICCCM 2.7.2, INCR). */
+/* One peer taking the clipboard text a piece at a time (ICCCM 2.7.2, INCR). */
 typedef struct {
     Window requestor;           /* None when no transfer is running */
     Atom property, type;        /* where it reads each piece; as what */
-    char *data;                 /* our own copy of what it takes */
+    char *data;                 /* a private copy of what it takes */
     size_t len, sent;           /* its bytes; sent so far */
     int64_t deadline;           /* a peer silent past this is let go */
 } tiku_x11_send_t;

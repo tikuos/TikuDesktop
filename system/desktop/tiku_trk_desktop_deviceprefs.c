@@ -401,7 +401,8 @@ static int dp_estate_line(struct desktop_deviceprefs *p, int section,
           "Protected memory below the stack; not available for allocation.",
           0xB03A48u },
         { "unassigned", "Unassigned",
-          "Primary-bank space not assigned to statics, stack, guard or allocator.",
+          "Primary-bank space not assigned to statics, stack, guard "
+          "or allocator.",
           0x7A7A7Au },
         { "tier", "Tier arena",
           "The allocator's pool for what programs ask for at run time.",
@@ -786,7 +787,8 @@ static const char *dp_held_help(const char *held)
         { "version", "The store is in another format version. 'mkfs' in the "
           "device's shell shows what it holds; 'mkfs --erase-data' formats "
           "it." },
-        { "io", "Store or layout initialization could not be persisted. Restart the device; "
+        { "io", "Store or layout initialization could not be persisted. "
+          "Restart the device; "
           "'layout status' in its shell says whether it stays held." },
         { "entropy-unavailable", "The device could not generate its ownership "
           "identity. Blank memory is untouched. Restart to retry; if this "
@@ -885,7 +887,8 @@ static void dp_run_tier(dp_job_t *j)
                                         "cancel it first." :
                  err[0] ? err : "device unavailable or value rejected");
     }
-    j->write_at = DP_READ;              /* the readback that follows is a read */
+    /* The readback that follows is a read. */
+    j->write_at = DP_READ;
 }
 
 /**
@@ -1029,11 +1032,13 @@ static void dp_run(void *ctx)
             int erase = strstr(j->input, " method=erase") != NULL;
             snprintf(j->status, sizeof j->status, "%s",
                 same && j->layout.pending && j->layout.pending_op == op &&
-                j->layout.pending_value == bytes && j->layout.pending_erase == erase
+                j->layout.pending_value == bytes &&
+                j->layout.pending_erase == erase
                 ? "Staged for the next restart. Restart the device to apply it."
                 : same && !j->layout.pending && j->layout.current == bytes
                 ? "The tier is that size already; no restart change is pending."
-                : "Stage request sent, but the pending change was not confirmed. Refresh to check.");
+                : "Stage request sent, but the pending change was not "
+                  "confirmed. Refresh to check.");
             j->tier_sent = 0;
         }
         /* The tier row is the service's, not its file's first line. */
@@ -1223,7 +1228,8 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
             p->confirm = 0;
             p->tier_request[0] = '\0';
             snprintf(p->status, sizeof p->status,
-                     "Could not prepare the layout request. Refresh and try again.");
+                     "Could not prepare the layout request. "
+                     "Refresh and try again.");
             return;
         }
     }

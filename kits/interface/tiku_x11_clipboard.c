@@ -20,7 +20,7 @@
 
 #define READ_UNITS (64L * 1024L)    /* 32-bit units one property read takes */
 #define SINGLE_MAX 256000u          /* bytes one request carries anywhere */
-#define PIECE      (64u * 1024u)    /* bytes of each INCR piece we send */
+#define PIECE      (64u * 1024u)    /* bytes of each INCR piece sent */
 #define WAIT_US    1000000          /* an import with no progress this long */
 #define SEND_US    5000000          /* a requestor quiet this long is let go */
 

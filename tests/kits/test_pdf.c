@@ -5,17 +5,16 @@
  *
  * test_pdf.c - PDFs built byte by byte, and the ones on this machine.
  *
- * A one-page file with a classic table; the same with its table lying
- * and its Length wrong, so the reader has to find the objects itself;
- * a file with a cross-reference stream and an object stream, packed
- * with a stored DEFLATE block; every byte filter against known input;
- * fonts read through their encoding and through a ToUnicode map; the
- * slips of careless writers, which once broke the reader; a fax image
- * as libtiff encodes one; layers on and off; annotations and form
- * fields that store no appearance, drawn as a viewer draws them; mesh
- * shadings; knockout groups.  Then, when TIKU_PDF_CORPUS names a
- * folder, every PDF in it is opened and its first page's text shown,
- * which is how the vendor documents are tried without being checked in.
+ * A one-page file with a classic table; the same with its table lying and
+ * its Length wrong, so the reader has to find the objects itself; a file
+ * with a cross-reference stream and an object stream, packed with a stored
+ * DEFLATE block; every byte filter against known input; fonts read through
+ * their encoding and through a ToUnicode map; the slips of careless writers;
+ * a fax image as libtiff encodes one; layers on and off; annotations and
+ * form fields that store no appearance, drawn as a viewer draws them; mesh
+ * shadings; knockout groups.  Then, when TIKU_PDF_CORPUS names a folder,
+ * every PDF in it is opened and its first page's text shown, which is how
+ * the vendor documents are tried without being checked in.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

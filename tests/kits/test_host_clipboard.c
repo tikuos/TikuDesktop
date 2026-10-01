@@ -126,7 +126,7 @@ static unsigned char *get(tiku_x11_clipboard_t *c, Atom target,
 }
 
 /* A conversion the peer takes INCR: the announcement, then each piece
- * as our side sends it when the last is deleted, to the empty one.
+ * as the owning side sends it when the last is deleted, to the empty one.
  * @return the bytes taken into @p out. */
 static size_t get_incr(tiku_x11_clipboard_t *c, Atom target, char *out)
 {
