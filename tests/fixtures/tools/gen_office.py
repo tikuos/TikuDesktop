@@ -1502,6 +1502,326 @@ DOCS.append(Doc("odt_charts", ".odt", "OpenDocument charts drawn from the "
                     "South", "West", "Q1", "Q4", "Where the hours go",
                     "Reading", "50%"]))
 
+# -------------------------------------------------------------- equations
+
+M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+MML = 'xmlns="http://www.w3.org/1998/Math/MathML"'
+# Each part a test looks for is in a colour of its own.
+RED, BLUE, GREEN, ORANGE, PURPLE = ("FF0000", "0000FF", "00A000", "FF8000",
+                                    "8000FF")
+TEAL, BROWN, AZURE, OLIVE, MAGENTA = ("00A0A0", "A05000", "0080FF", "A0A000",
+                                      "C000C0")
+FLOATING, SIGMA = "804080", "600060"
+
+
+def m_r(text, color=None, sty=None):
+    """An Office Math run of Word's: its text, colour, style (p upright)."""
+    return ('<m:r>%s<w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria'
+            ' Math"/>%s</w:rPr><m:t>%s</m:t></m:r>'
+            % ('<m:rPr><m:sty m:val="%s"/></m:rPr>' % sty if sty else "",
+               '<w:color w:val="%s"/>' % color if color else "", text))
+
+
+def m_ctrl(color):
+    """An Office Math structure's control properties, Word's: a colour."""
+    return ('<m:ctrlPr><w:rPr><w:color w:val="%s"/></w:rPr></m:ctrlPr>'
+            % color)
+
+
+def m_para(body):
+    """A Word paragraph of one equation set apart."""
+    return ('<w:p><m:oMathPara><m:oMath>%s</m:oMath></m:oMathPara></w:p>'
+            % body)
+
+
+def omml_parts(run, ctrl):
+    """The structures the tests look for, of runs made by @p run and
+    control properties by @p ctrl: a fraction, a sum with its limits, a
+    root, a matrix in brackets, a power -- each part a test looks for in
+    a colour of its own."""
+    return [
+        run("x=") + '<m:f><m:num>%s</m:num><m:den>%s</m:den></m:f>'
+        % (run("a", RED), run("b", BLUE)),
+        '<m:nary><m:naryPr><m:chr m:val="∑"/>%s</m:naryPr><m:sub>%s'
+        '</m:sub><m:sup>%s</m:sup><m:e>%s</m:e></m:nary>'
+        % (ctrl(SIGMA), run("i=1", ORANGE), run("n", PURPLE),
+           run("i", GREEN)),
+        '<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e>%s'
+        '</m:e></m:rad>' % run("x+1", TEAL),
+        '<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val="]"/></m:dPr>'
+        '<m:e><m:m><m:mr><m:e>%s</m:e><m:e>%s</m:e></m:mr><m:mr><m:e>%s'
+        '</m:e><m:e>%s</m:e></m:mr></m:m></m:e></m:d>'
+        % (run("1", BROWN), run("2"), run("3"), run("4", AZURE)),
+        '<m:sSup><m:e>%s</m:e><m:sup>%s</m:sup></m:sSup>'
+        % (run("e", OLIVE), run("x", MAGENTA))]
+
+
+def docx_math():
+    """Word's equations set in two dimensions: the parts the tests look
+    for, then a limit of a function, an equation array, an accent and a
+    brace, and an integral in a line of text."""
+    lim = ('<m:func><m:fName><m:limLow><m:e>%s</m:e><m:lim>%s</m:lim>'
+           '</m:limLow></m:fName><m:e><m:f><m:num>%s%s</m:num><m:den>%s'
+           '</m:den></m:f></m:e></m:func>'
+           % (m_r("lim", sty="p"), m_r("x→0"), m_r("sin", sty="p"),
+              m_r("x"), m_r("x")))
+    arr = ('<m:eqArr><m:e>%s</m:e><m:e>%s</m:e></m:eqArr>'
+           % (m_r("x&amp;=1"), m_r("y+2&amp;=3")))
+    marks = ('<m:acc><m:accPr><m:chr m:val="⃗"/></m:accPr><m:e>%s'
+             '</m:e></m:acc><m:groupChr><m:groupChrPr><m:chr m:val="⏟"'
+             '/></m:groupChrPr><m:e>%s</m:e></m:groupChr>'
+             % (m_r("v"), m_r("a+b+c")))
+    inline = ('<w:p><w:r><w:t xml:space="preserve">The integral </w:t></w:r>'
+              '<m:oMath><m:nary><m:naryPr><m:limLoc m:val="subSup"/>'
+              '</m:naryPr><m:sub>%s</m:sub><m:sup>%s</m:sup><m:e>%s</m:e>'
+              '</m:nary></m:oMath><w:r><w:t xml:space="preserve"> sits in '
+              'its line.</w:t></w:r></w:p>' % (m_r("0"), m_r("1"),
+                                                m_r("f(x)dx")))
+    body = (wp("Equations set in two dimensions") +
+            "".join(m_para(b) for b in omml_parts(m_r, m_ctrl)) +
+            m_para(lim) +
+            m_para(arr) + m_para(marks) + inline)
+    return docx_with(XML + '<w:document %s %s><w:body>%s</w:body>'
+                     '</w:document>' % (W, M, body))
+
+
+DOCS.append(Doc("docx_math", ".docx", "Word's equations set in two "
+                "dimensions: fractions, limits, roots, matrices, arrays, "
+                "accents, an integral in a line", docx_math(), 1,
+                ["Equations set in two dimensions", "lim", "sin",
+                 "sits in its line"]))
+
+
+def mml(body, text_mode=False):
+    """A formula object's parts: its MathML, and settings at 12 points."""
+    return (XML + '<math %s display="block"><semantics><mrow>%s</mrow>'
+            '<annotation encoding="StarMath 5.0">%s</annotation></semantics>'
+            '</math>' % (MML, body, "formula"),
+            XML + '<office:document-settings xmlns:office="urn:oasis:names:'
+            'tc:opendocument:xmlns:office:1.0" xmlns:config="urn:oasis:names'
+            ':tc:opendocument:xmlns:config:1.0"><office:settings>'
+            '<config:config-item-set config:name="ooo:configuration-settings'
+            '"><config:config-item config:name="BaseFontHeight" config:type='
+            '"short">12</config:config-item><config:config-item config:name='
+            '"IsTextMode" config:type="boolean">%s</config:config-item>'
+            '</config:config-item-set></office:settings>'
+            '</office:document-settings>' % ("true" if text_mode else "false"))
+
+
+def odt_objects(formulas, paras):
+    """OpenDocument text whose paragraphs @p paras (a frame's place marked
+    by {N}) show formula objects @p formulas, Object 1 on."""
+    frame = ('<draw:frame draw:name="F%d" text:anchor-type="as-char" '
+             'svg:width="3cm" svg:height="1cm"><draw:object xlink:href="./'
+             'Object %d" xlink:type="simple" xlink:show="embed" '
+             'xlink:actuate="onLoad"/></draw:frame>')
+    body = "".join("<text:p>%s</text:p>" % p.format(*[
+        frame % (n, n) for n in range(1, len(formulas) + 1)])
+        for p in paras)
+    content = (XML + '<office:document-content %s><office:body><office:text>'
+               '%s</office:text></office:body></office:document-content>'
+               % (O, body))
+    parts = {"mimetype": "application/vnd.oasis.opendocument.text",
+             "content.xml": content, "styles.xml": O_STYLES,
+             "META-INF/manifest.xml": XML + (
+                 '<manifest:manifest xmlns:manifest="urn:oasis:names:tc:'
+                 'opendocument:xmlns:manifest:1.0"><manifest:file-entry '
+                 'manifest:full-path="/" manifest:media-type="application/'
+                 'vnd.oasis.opendocument.text"/>%s</manifest:manifest>'
+                 % "".join('<manifest:file-entry manifest:full-path="Object '
+                           '%d/" manifest:media-type="application/vnd.oasis.'
+                           'opendocument.formula"/>' % n
+                           for n in range(1, len(formulas) + 1)))}
+    for n, (math, settings) in enumerate(formulas, 1):
+        parts["Object %d/content.xml" % n] = math
+        parts["Object %d/settings.xml" % n] = settings
+    return package(parts, "mimetype")
+
+
+def odt_math():
+    """OpenDocument's formulas, MathML objects set in their lines as the
+    document's own equations: the parts the tests look for, and one in a
+    frame of its own, centred in it."""
+    floating = ('<draw:frame draw:name="F6" text:anchor-type="paragraph" '
+                'svg:x="1cm" svg:y="0.5cm" svg:width="8cm" svg:height="3cm">'
+                '<draw:object xlink:href="./Object 6" xlink:type="simple" '
+                'xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>')
+    formulas = [
+        mml('<mi>x</mi><mo>=</mo><mfrac><mi mathcolor="#%s">a</mi><mi '
+            'mathcolor="#%s">b</mi></mfrac>' % (RED, BLUE)),
+        mml('<munderover><mo mathcolor="#%s">∑</mo><mrow mathcolor='
+            '"#%s"><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi mathcolor="#%s">'
+            'n</mi></munderover><mi mathcolor="#%s">i</mi>'
+            % (SIGMA, ORANGE, PURPLE, GREEN)),
+        mml('<msqrt><mrow mathcolor="#%s"><mi>x</mi><mo>+</mo><mn>1</mn>'
+            '</mrow></msqrt>' % TEAL),
+        mml('<mrow><mo fence="true" stretchy="true">[</mo><mtable><mtr><mtd>'
+            '<mn mathcolor="#%s">1</mn></mtd><mtd><mn>2</mn></mtd></mtr><mtr>'
+            '<mtd><mn>3</mn></mtd><mtd><mn mathcolor="#%s">4</mn></mtd></mtr>'
+            '</mtable><mo fence="true" stretchy="true">]</mo></mrow>'
+            % (BROWN, AZURE)),
+        mml('<msup><mi mathcolor="#%s">e</mi><mi mathcolor="#%s">x</mi>'
+            '</msup>' % (OLIVE, MAGENTA)),
+        mml('<mstyle mathcolor="#%s"><mi>E</mi><mo>=</mo><mi>m</mi><msup>'
+            '<mi>c</mi><mn>2</mn></msup></mstyle>' % FLOATING)]
+    return odt_objects(formulas, [
+        "Formulas kept as objects", "A fraction {0} in its line.", "{1}",
+        "{2}", "{3}", "{4}", floating + "Floating formula"])
+
+
+DOCS.append(Doc("odt_math", ".odt", "OpenDocument formulas: MathML objects "
+                "set in their lines, and one centred in a frame of its own",
+                odt_math(), 1, ["Formulas kept as objects", "in its line",
+                                "Floating formula"]))
+
+
+def a_r(text, color=None):
+    """An Office Math run of PowerPoint's: its text, its colour."""
+    return ('<m:r><a:rPr lang="en-GB" i="1">%s<a:latin typeface="Cambria '
+            'Math"/></a:rPr><m:t>%s</m:t></m:r>'
+            % ('<a:solidFill><a:srgbClr val="%s"/></a:solidFill>' % color
+               if color else "", text))
+
+
+def a_ctrl(color):
+    """An Office Math structure's control properties, PowerPoint's."""
+    return ('<m:ctrlPr><a:rPr lang="en-GB" i="1"><a:solidFill><a:srgbClr '
+            'val="%s"/></a:solidFill><a:latin typeface="Cambria Math"/>'
+            '</a:rPr></m:ctrlPr>' % color)
+
+
+def pptx_math():
+    """A slide's equations: PowerPoint's Office Math in a text box, its
+    picture kept as the fallback (a grey box here, never shown)."""
+    eq = "".join('<a:p><a:pPr algn="ctr"/><a14:m><m:oMathPara><m:oMath>%s'
+                 '</m:oMath></m:oMathPara></a14:m></a:p>' % b
+                 for b in omml_parts(a_r, a_ctrl)[:2])
+    shape = ('<mc:AlternateContent><mc:Choice Requires="a14">%s</mc:Choice>'
+             '<mc:Fallback>%s</mc:Fallback></mc:AlternateContent>'
+             % (sp(1, None, "Equation", eq, (1219200, 1600200, 9753600,
+                                             4572000)),
+                sp(1, None, "Equation", "", (1219200, 1600200, 9753600,
+                                             4572000),
+                   '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+                   '<a:solidFill><a:srgbClr val="EEEEEE"/></a:solidFill>')))
+    parts = {
+        "_rels/.rels": rels([("rId1", "officeDocument",
+                              "ppt/presentation.xml")]),
+        "ppt/slideMasters/slideMaster1.xml": XML + (
+            '<p:sldMaster %s>%s<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" '
+            'tx2="dk2" accent1="accent1" accent2="accent2" '
+            'accent3="accent3" accent4="accent4" accent5="accent5" '
+            'accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+            '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/>'
+            '</p:sldLayoutIdLst>%s</p:sldMaster>'
+            % (P, tree([sp(0, "title", "Title", "",
+                           (838200, 365125, 10515600, 1325563))]),
+               MASTER_TX)),
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels": rels([
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+            ("rId2", "theme", "../theme/theme1.xml")]),
+        "ppt/slideLayouts/slideLayout1.xml": XML + (
+            '<p:sldLayout %s type="titleOnly">%s</p:sldLayout>'
+            % (P, tree([sp(0, "title", "Title", "")]))),
+        "ppt/slideLayouts/_rels/slideLayout1.xml.rels": rels([
+            ("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")]),
+        "ppt/theme/theme1.xml": THEME,
+        "ppt/slides/slide1.xml": XML + (
+            '<p:sld %s %s xmlns:a14="http://schemas.microsoft.com/office/'
+            'drawing/2010/main" xmlns:mc="http://schemas.openxmlformats.org/'
+            'markup-compatibility/2006">%s</p:sld>'
+            % (P, M, tree([sp(0, "title", "Title",
+                              para("Equations on a slide")), shape]))),
+        "ppt/slides/_rels/slide1.xml.rels": rels([
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")]),
+        "ppt/presentation.xml": XML + (
+            '<p:presentation %s><p:sldMasterIdLst><p:sldMasterId '
+            'id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>'
+            '<p:sldId id="256" r:id="rId2"/></p:sldIdLst><p:sldSz cx="%d" '
+            'cy="%d"/></p:presentation>' % (P, EMU_W, EMU_H)),
+        "ppt/_rels/presentation.xml.rels": rels([
+            ("rId1", "slideMaster", "slideMasters/slideMaster1.xml"),
+            ("rId2", "slide", "slides/slide1.xml")])}
+    parts["[Content_Types].xml"] = types([
+        ("ppt/presentation.xml", PML + "presentation.main+xml"),
+        ("ppt/slideMasters/slideMaster1.xml", PML + "slideMaster+xml"),
+        ("ppt/slideLayouts/slideLayout1.xml", PML + "slideLayout+xml"),
+        ("ppt/slides/slide1.xml", PML + "slide+xml"),
+        ("ppt/theme/theme1.xml",
+         "application/vnd.openxmlformats-officedocument.theme+xml")])
+    return package(parts)
+
+
+DOCS.append(Doc("pptx_math", ".pptx", "PowerPoint's equations in a text "
+                "box, chosen over the picture kept for older readers",
+                pptx_math(), 1, ["Equations on a slide"]))
+
+
+def math_hostile():
+    """Word equations past reason: fractions a hundred and twenty deep (as
+    deep as XML is read), a matrix a hundred square, a delimiter of five
+    thousand parts, an array of three hundred rows, a run of twenty
+    thousand letters, structures with nothing in them, a column count out
+    of all measure."""
+    deep = m_r("x")
+    for _ in range(120):
+        deep = ('<m:f><m:num>%s</m:num><m:den>%s</m:den></m:f>'
+                % (deep, m_r("y")))
+    square = ('<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="2147483647"'
+              '/><m:mcJc m:val="left"/></m:mcPr></m:mc></m:mcs></m:mPr>%s'
+              '</m:m>' % ("<m:mr>%s</m:mr>" % ("<m:e>%s</m:e>" % m_r("1"))
+                          * 100) * 100)
+    small = ('<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="2147483647"'
+             '/></m:mcPr></m:mc></m:mcs></m:mPr><m:mr><m:e>%s</m:e></m:mr>'
+             '</m:m>' % m_r("1"))
+    parts = ("<m:e>%s</m:e>" % m_r("p")) * 5000
+    rows = ("<m:e>%s</m:e>" % m_r("a&amp;=b&amp;c")) * 300
+    empty = ("<m:nary/><m:f/><m:rad/><m:sSubSup/><m:sPre/><m:m/><m:d/>"
+             "<m:eqArr/><m:acc/><m:bar/><m:groupChr/><m:limLow/><m:func/>"
+             "<m:box/><m:phant/><m:d><m:dPr><m:begChr m:val=\"\"/><m:sepChr"
+             " m:val=\"\"/></m:dPr><m:e/><m:e/></m:d>")
+    body = (wp("Equations past reason") + m_para(deep) + m_para(square) +
+            m_para(small) + m_para("<m:d>%s</m:d>" % parts) +
+            m_para("<m:eqArr>%s</m:eqArr>" % rows) +
+            m_para(m_r("x" * 20000)) + m_para(empty))
+    return docx_with(XML + '<w:document %s %s><w:body>%s</w:body>'
+                     '</w:document>' % (W, M, body))
+
+
+DOCS.append(Doc("math_hostile", ".docx", "Word equations nested, wide and "
+                "long past reason: set as far as they go", math_hostile(),
+                -1, []))
+
+
+def odt_math_hostile():
+    """OpenDocument formulas past reason: fractions a hundred and twenty
+    deep, a table a hundred square, spaces of no sensible width, elements
+    missing their parts, scripts by the thousand, a fence of three
+    thousand parts."""
+    deep = "<mi>x</mi>"
+    for _ in range(120):
+        deep = "<mrow><mfrac>%s<mi>y</mi></mfrac></mrow>" % deep
+    square = "<mtable>%s</mtable>" % (
+        "<mtr>%s</mtr>" % ("<mtd><mn>1</mn></mtd>" * 100) * 100)
+    spaces = "".join('<mspace width="%s"/>' % w for w in
+                     ("1e30em", "-1e30em", "nan", "inf", "99999pt", "x"))
+    broken = ("<mfrac/><msub><mi>a</mi></msub><msubsup/><munderover/>"
+              "<mroot/><mover><mi>a</mi></mover><mtable><mtr/></mtable>"
+              "<mfenced open=\"\" close=\"\" separators=\"\"/>"
+              "<mmultiscripts>%s</mmultiscripts>"
+              % ("<mi>a</mi>" + "<mi>b</mi><none/>" * 1000 + "<mprescripts/>"
+                 + "<none/><mi>c</mi>" * 1000))
+    fence = "<mfenced>%s</mfenced>" % ("<mi>p</mi>" * 3000)
+    long = "<mi>%s</mi><mtext>%s</mtext>" % ("&alpha;" * 4000, "w " * 9000)
+    return odt_objects([mml(deep), mml(square), mml(spaces), mml(broken),
+                        mml(fence), mml(long)],
+                       ["Formulas past reason {0}{1}", "{2}{3}", "{4}{5}"])
+
+
+DOCS.append(Doc("odt_math_hostile", ".odt", "OpenDocument formulas nested, "
+                "wide and broken past reason: set as far as they go",
+                odt_math_hostile(), -1, []))
+
 # -------------------------------------------------------------------- out
 
 def c_string(text):

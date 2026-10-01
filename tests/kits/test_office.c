@@ -8,10 +8,10 @@
  * PDF, held to what the PDF kit reads back: the pages each lays out to
  * and the words on the first, page sizes and turns, links, the outline
  * and the title, charts drawn from their values, Windows metafiles as
- * their records say; a PDF exported beside them.  Hostile files -- cut
- * short, not XML, nested past reason, sizes out of all measure, styles
- * based on each other -- are refused or laid out, never a crash or a
- * hang.  Documents come from tests/fixtures/office.inc; faces from the
+ * their records say, equations set in two dimensions; a PDF exported
+ * beside them.  Hostile files -- cut short, not XML, nested past reason,
+ * sizes out of all measure -- are refused or laid out, never a crash or
+ * a hang.  Documents come from tests/fixtures/office.inc; faces from the
  * machine, and without any the translating rows are skipped.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -170,7 +170,8 @@ kind_tests(void)
 /* ---------------------------------------------------------- translation */
 
 /** @brief Fixture @p k translated: refused when it must be, else the
- *         pages it lays out to and the words on the first. */
+ *         pages it lays out to and the words on the first.  Its row is
+ *         OF-010 on; the twenty-first on, OF-060 on. */
 static void
 fixture_test(int k)
 {
@@ -182,7 +183,7 @@ fixture_test(int k)
     clock_t t0 = clock();
     double secs;
 
-    snprintf(row, sizeof row, "OF-%03d", 10 + k);
+    snprintf(row, sizeof row, "OF-%03d", k < 20 ? 10 + k : 40 + k);
     if (place(k, path, sizeof path) == 0) {
         b = tiku_office_pdf(path, &len, why, sizeof why);
     }
@@ -391,6 +392,104 @@ metafile_tests(void)
     tiku_pdf_close(b);
 }
 
+/* ------------------------------------------------------------ equations */
+
+/* The colours the equation fixtures give the parts the tests look for:
+ * gen_office.py's RED ... MAGENTA, FLOATING and SIGMA. */
+enum { C_RED, C_BLUE, C_GREEN, C_ORANGE, C_PURPLE, C_TEAL, C_BROWN,
+       C_AZURE, C_OLIVE, C_MAGENTA, C_FLOAT, C_SIGMA, C_COUNT };
+
+/** @brief Where on page @p p of @p doc, drawn large, the pixels of each
+ *         colour the fixtures' parts take lie: their mean place into
+ *         @p x and @p y, their count into @p n. */
+static void
+places(tiku_pdf_t *doc, int p, double *x, double *y, int *n)
+{
+    static const uint32_t rgb[C_COUNT] = {
+        0xff0000u, 0x0000ffu, 0x00a000u, 0xff8000u, 0x8000ffu, 0x00a0a0u,
+        0xa05000u, 0x0080ffu, 0xa0a000u, 0xc000c0u, 0x804080u,
+        0x600060u};
+    tiku_pdf_pixmap_t pm;
+    int i, k, d;
+
+    memset(n, 0, C_COUNT * sizeof *n);
+    memset(x, 0, C_COUNT * sizeof *x);
+    memset(y, 0, C_COUNT * sizeof *y);
+    if (doc == NULL || tiku_pdf_render(doc, p, 2, 0, &pm) != 0) {
+        return;
+    }
+    for (i = 0; i < pm.w * pm.h; i++) {
+        for (k = 0; k < C_COUNT; k++) {
+            for (d = 0; d < 24 && abs((int)(pm.px[i] >> d & 255) -
+                                      (int)(rgb[k] >> d & 255)) < 24;
+                 d += 8) {}
+            if (d == 24) {          /* each channel near the part's */
+                x[k] += i % pm.w;
+                y[k] += i / pm.w;
+                n[k]++;
+            }
+        }
+    }
+    for (k = 0; k < C_COUNT; k++) {
+        x[k] /= n[k] > 0 ? n[k] : 1;
+        y[k] /= n[k] > 0 ? n[k] : 1;
+    }
+    tiku_pdf_pixmap_free(&pm);
+}
+
+/** @brief Whether page 0 of @p doc sets the fixtures' equations in two
+ *         dimensions: a numerator over its denominator, a sum's limits
+ *         centred over and under it, its body after it; with @p all, a
+ *         radicand, a matrix's corners, a power over its base. */
+static int
+two_dimensions(tiku_pdf_t *doc, int all)
+{
+    double x[C_COUNT], y[C_COUNT];
+    int n[C_COUNT], frac, sum;
+
+    places(doc, 0, x, y, n);
+    frac = n[C_RED] > 20 && n[C_BLUE] > 20 && y[C_RED] < y[C_BLUE] - 6 &&
+           fabs(x[C_RED] - x[C_BLUE]) < 12;
+    sum = n[C_PURPLE] > 5 && n[C_SIGMA] > 20 && n[C_ORANGE] > 5 &&
+          n[C_GREEN] > 5 && y[C_PURPLE] < y[C_SIGMA] &&
+          y[C_SIGMA] < y[C_ORANGE] && fabs(x[C_PURPLE] - x[C_SIGMA]) < 12 &&
+          fabs(x[C_ORANGE] - x[C_SIGMA]) < 12 &&
+          x[C_GREEN] > x[C_SIGMA] + 10;
+    return frac && sum && (!all || (n[C_TEAL] > 20 && n[C_BROWN] > 5 &&
+                                    n[C_AZURE] > 5 && n[C_OLIVE] > 5 &&
+                                    n[C_MAGENTA] > 3 &&
+                                    x[C_BROWN] < x[C_AZURE] - 10 &&
+                                    y[C_BROWN] < y[C_AZURE] - 6 &&
+                                    y[C_MAGENTA] < y[C_OLIVE] - 3 &&
+                                    x[C_MAGENTA] > x[C_OLIVE]));
+}
+
+/** @brief Equations set as TeX sets them, Word's, OpenDocument's and
+ *         PowerPoint's alike: each part where its structure puts it. */
+static void
+math_tests(void)
+{
+    tiku_pdf_t *w = translated("docx_math");
+    tiku_pdf_t *o = translated("odt_math");
+    tiku_pdf_t *p = translated("pptx_math");
+    double x[C_COUNT], y[C_COUNT];
+    int n[C_COUNT];
+
+    check(two_dimensions(w, 1), "OF-048", "Word's equations in two "
+          "dimensions: a numerator over its denominator, limits over and "
+          "under a sum, a matrix's corners, a power over its base");
+    places(o, 0, x, y, n);
+    check(two_dimensions(o, 1) && n[C_FLOAT] > 20, "OF-049",
+          "OpenDocument's formula objects set the same from their MathML; "
+          "a floating one centred in its frame");
+    check(two_dimensions(p, 0) && pixels_of(p, 0, 0xeeeeeeu) < 20,
+          "OF-050", "PowerPoint's equations set in their text box, not "
+          "the picture kept for older readers");
+    tiku_pdf_close(w);
+    tiku_pdf_close(o);
+    tiku_pdf_close(p);
+}
+
 /* --------------------------------------------------------------- export */
 
 /** @brief Whether @p path reads back as a PDF of @p pages pages. */
@@ -473,6 +572,7 @@ main(void)
         detail_tests();
         chart_tests();
         metafile_tests();
+        math_tests();
         export_tests();
     } else {
         printf("  [SKIP] no faces on this machine to set text in\n");
