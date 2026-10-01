@@ -610,6 +610,36 @@ static void test_renumber_targets(void)
     tiku_textview_free(&e.tv);
 }
 
+/** Past byte 255 of a line the caret is still drawn where the text before
+ *  it ends: its whole column on the caret's row is the text colour. */
+static void test_caret_past_255(ide_t *st)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    edit_t *e = &st->edit[0];
+    char line[401];
+    int x, y, top;
+
+    memset(line, 'm', 400); line[400] = '\0';
+    memset(e, 0, sizeof *e);
+    e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
+    e->lang = TIKU_SYNTAX_NONE;
+    e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
+    assert(e->surface);
+    tiku_textview_init(&e->tv);
+    tiku_textview_set(&e->tv, line);
+    tiku_textview_place(&e->tv, 0, 400);
+    tiku_ide_edit_paint(st, e);
+    x = MARGIN - e->scroll_x + tiku_text_width(f, line);
+    top = tiku_ide_edit_page_top(e) + MARGIN;
+    assert(e->scroll_x > 0 && x > MARGIN && x < e->w - PAGE_SB);
+    for (y = top; y < top + f->height + 2; y++) {
+        assert(e->surface->px[y * e->surface->w + x] == TIKU_C_TEXT);
+    }
+    tiku_textview_free(&e->tv);
+    tiku_surface_free(e->surface);
+    e->surface = NULL;
+}
+
 static void test_empty_startup(const tiku_app_services_t *services,
                                const char *snapshot)
 {
@@ -928,6 +958,7 @@ int main(void)
     test_unbound_cmd_chords(st);
     test_find_bar(st);
     test_renumber_targets();
+    test_caret_past_255(st);
     test_reopen(st, dir);
     test_console_errors(&services);
     test_diagnostics(&services);

@@ -15,6 +15,8 @@ static void
 tb_mallet(tiku_surface_t *s, int x);
 static void
 tb_renum(tiku_surface_t *s, int x);
+static int
+caret_width(const edit_t *e, const tiku_font_t *f);
 
 /** @brief What a name says the language is; only the name can say. */
 tiku_syntax_lang_t
@@ -163,6 +165,29 @@ tb_renum(tiku_surface_t *s, int x)
     tiku_pixel(s, x + 17, mid + 3, c);
 }
 
+/** @brief How far the caret's line runs, in @p f, before the caret; the
+ *         one measure the page's slide and the drawn caret share. */
+static int
+caret_width(const edit_t *e, const tiku_font_t *f)
+{
+    char head[TIKU_TEXTVIEW_LINE_MAX];
+    const char *text;
+    int cy, cx, cut;
+
+    tiku_textview_caret(&e->tv, &cy, &cx);
+    text = tiku_textview_line(&e->tv, cy);
+    cut = tiku_textview_line_len(&e->tv, cy);
+    if (cut > cx) {
+        cut = cx;
+    }
+    if (cut < 0) {
+        cut = 0;
+    }
+    memcpy(head, (text != NULL) ? text : "", (size_t)cut);
+    head[cut] = '\0';
+    return tiku_text_width(f, head);
+}
+
 /**
  * @brief Where the PAGE begins: below the toolbar, and below the find
  *        bar when it is open, which drops between them.
@@ -203,19 +228,9 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
          * enough that it stays inside the text area.  Home takes the
          * caret to column zero, whose x is zero, which pulls the slide
          * back to nothing -- so the view comes home on its own. */
-        int cy, cx, cut, caret_x;
-        const char *ct;
         int room = (e->w - PAGE_SB) - MARGIN;
-        char head[TIKU_TEXTVIEW_LINE_MAX];
+        int caret_x = caret_width(e, f);
 
-        tiku_textview_caret(&e->tv, &cy, &cx);
-        ct = tiku_textview_line(&e->tv, cy);
-        cut = tiku_textview_line_len(&e->tv, cy);
-        if (cut > cx) { cut = cx; }
-        if (cut > (int)sizeof head - 1) { cut = (int)sizeof head - 1; }
-        memcpy(head, (ct != NULL) ? ct : "", (size_t)cut);
-        head[cut] = '\0';
-        caret_x = tiku_text_width(f, head);
         if (caret_x - e->scroll_x < 0) {
             e->scroll_x = caret_x;
         }
@@ -420,28 +435,13 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
          * typing will land.  It sits where the text before it ends,
          * which is the only way a proportional face can place it. */
         int cy, cx, row;
-        char head[256];
-        int cut;
 
         tiku_textview_caret(&e->tv, &cy, &cx);
         row = cy - top;
-        cut = cx;
         if (row >= 0 && row < rows) {
-            const char *text = tiku_textview_line(&e->tv, cy);
-            int len = tiku_textview_line_len(&e->tv, cy);
-
-            if (cut > len) {
-                cut = len;
-            }
-            if (cut > (int)sizeof head - 1) {
-                cut = (int)sizeof head - 1;
-            }
-            memcpy(head, (text != NULL) ? text : "", (size_t)cut);
-            head[cut] = '\0';
-            tiku_vline(e->surface,
-                            MARGIN - e->scroll_x + tiku_text_width(f, head),
-                            ptop + MARGIN + row * (f->height + 2),
-                            f->height + 2, TIKU_C_TEXT);
+            tiku_vline(e->surface, MARGIN - e->scroll_x + caret_width(e, f),
+                       ptop + MARGIN + row * (f->height + 2),
+                       f->height + 2, TIKU_C_TEXT);
         }
     }
     {
