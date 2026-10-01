@@ -56,7 +56,7 @@ Documents are limited by allocation success and representable byte/line indexes
 not the former 4,000/1,023 constants. Undo keeps at most 256 complete changes
 and targets 32 MiB of history, retaining the newest whole change even when it
 alone is larger. Out-of-memory failures must leave the document unchanged.
-The desktop-wide clipboard's separate 4,095-byte capacity has not changed.
+The desktop-wide clipboard has a separate limit of 16 MiB.
 
 UTF-8 and consistent LF/CRLF endings are supported. Case-insensitive matching
 folds ASCII letters; full Unicode case folding, grapheme navigation, other

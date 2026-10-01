@@ -78,7 +78,8 @@ prevent recovery. Temporary copies may be removed by the operating system.</p>
 <li>Ctrl+G: Go to Line.</li>
 <li>Home / End: start / end of line. Ctrl+Home / Ctrl+End: document start / end.</li>
 <li>Page Up / Page Down: move a page. Shift extends the selection.</li>
-<li>Ctrl+W / Ctrl+Q or Escape: Close, with an unsaved-change check.</li>
+<li>Ctrl+W / Ctrl+Q or Escape: Close, with an unsaved-change check. In the
+Find or Go to Line window, Ctrl+W and Escape close only that window.</li>
 </ul>
 
 <h2 id="run">Running BASIC text</h2>
@@ -100,7 +101,7 @@ are reported without truncating the current document.</p>
 <p>Undo retains at most 256 complete changes and targets 32 MiB of history,
 keeping at least the newest complete edit even when it alone exceeds that size.
 It does not require adjacent text lines to fit inside a temporary 1 KB buffer.</p>
-<p>The desktop text clipboard holds at most 4,095 bytes. Oversized selections
+<p>The desktop text clipboard holds at most 16 MiB. Larger selections
 are not copied or cut. This is a separate desktop-wide clipboard constraint,
 not a document or line-size limit.
 UTF-8 codepoint navigation is supported; grapheme-cluster navigation,
