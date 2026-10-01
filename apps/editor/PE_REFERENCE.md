@@ -17,17 +17,18 @@ written native TikuDesktop code; it does not copy Pe source or artwork.
   horizontal scrolling on the bottom edge. No permanently expanded search shelf.
 - A separate Find/Replace window, case and whole-word controls, Replace All as
   one undo transaction, and a separate Go to Line window.
-- Dynamic lines and line storage. The earlier 4,000-line, 1,023-byte-per-line
-  and 4 MiB file bounds are removed from Editor. No fixed-size staging arrays
-  are used for document text. Undo uses transactional range splices.
-- Viewport-only text drawing, cached line widths and linear long-line hit
-  testing. Tab expansion affects display, never file bytes. Show Invisibles
-  can mark tabs and spaces.
+- The text is the editor kit's document (`kits/editor/`): a gap buffer with a
+  line index, transactions and byte-budgeted undo. The earlier 4,000-line,
+  1,023-byte-per-line and 4 MiB file bounds are gone, and files keep every
+  byte, line endings and control characters included.
+- The page is the kit's code view: viewport-only drawing, cached line widths,
+  checkpoints for long lines and cached C lexer states. Tab expansion affects
+  display, never file bytes. Show Invisibles can mark tabs and spaces.
+- Double-click words, triple-click lines and word navigation, from the view.
 
-Pe itself uses a gap buffer (`PTextBuffer.h`); our editor uses dynamic line
-storage and range-edit records. Both avoid the old tiny static line buffers,
-but they are different implementations. TikuBasic and other consumers of the
-legacy shared textview have deliberately not been migrated in this change.
+Pe itself also uses a gap buffer (`PTextBuffer.h`); the kit's is written for
+Tiku, adapting Scintilla's storage as `kits/editor/UPSTREAM.md` records. The
+IDE and other consumers of the legacy shared textview have not moved yet.
 
 ## Additional Pe features worth considering
 
@@ -35,7 +36,6 @@ legacy shared textview have deliberately not been migrated in this change.
 | --- | --- | --- |
 | Next | Soft wrapping and per-document tab width | Notes, logs and long configuration lines |
 | Next | Auto-indent, shift lines left/right, comment/uncomment | Everyday BASIC/C/config editing |
-| Next | Double-click words, triple-click lines, word navigation | Faster selection and editing |
 | Next | Bracket matching and function/heading navigation | Navigating device scripts and source files |
 | Next | Regex search and a results list | Logs and structured text |
 | Later | Multi-file/directory search with filters | Finding settings and code across a workspace |
@@ -51,13 +51,12 @@ should follow TikuDesktop's device/VFS access model rather than adding FTP.
 
 ## Remaining boundaries
 
-Documents are limited by allocation success and representable byte/line indexes
-(signed 32-bit coordinates; the loader rejects files above INT_MAX - 1 bytes),
-not the former 4,000/1,023 constants. Undo keeps at most 256 complete changes
-and targets 32 MiB of history, retaining the newest whole change even when it
+Documents are limited by allocation success and the document's size limit,
+INT_MAX - 1 bytes at 64-bit positions, not the former 4,000/1,023 constants.
+Undo targets 32 MiB of history, retaining the newest whole change even when it
 alone is larger. Out-of-memory failures must leave the document unchanged.
 The desktop-wide clipboard has a separate limit of 16 MiB.
 
-UTF-8 and consistent LF/CRLF endings are supported. Case-insensitive matching
-folds ASCII letters; full Unicode case folding, grapheme navigation, other
-encodings, soft wrapping and regex search are not claimed here.
+UTF-8 with any mix of LF, CRLF and CR endings is supported. Case-insensitive
+matching folds ASCII letters; full Unicode case folding, grapheme navigation,
+other encodings, soft wrapping and regex search are not claimed here.

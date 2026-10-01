@@ -9,7 +9,7 @@ desktop commands.
 ## Naming and interfaces
 
 - Use `tiku_<component>_<responsibility>.c`: for example,
-  `tiku_editor_buffer.c` or `tiku_desktop_device_stats.c`.
+  `tiku_editor_file.c` or `tiku_desktop_device_stats.c`.
 - A `.c` file is a separately compiled implementation, not an include fragment.
   Tests include headers and link the same implementation objects.
 - Keep helpers `static` unless another module or focused regression test needs
@@ -30,17 +30,18 @@ is omitted from the table for readability.
 | Component | Modules and responsibilities |
 | --- | --- |
 | `apps/ide/tiku_ide_*` | `project`: project descriptions; `project_window`: project UI and file membership; `editor`: editor windows and file lifecycle; `editor_view`: painting and geometry; `events`/`commands`: input and menu routing; `search`: find/replace and project search; `language`: BASIC normalization/renumbering; `assist`: completion and keyword help; `device`: default target, upload and board callbacks; `run`: local execution/build; `debug`: debugger; `console`: output/diagnostics; `recovery`: private snapshots; `splash`: splash/About; `app`: descriptor and lifecycle |
-| `apps/editor/tiku_editor_*` | `buffer`: dynamic UTF-8 document and undo journal; `file`: lossless reads and atomic saves; `view`: painting/geometry; `commands`: editing and document commands; `input`: pointer/keyboard/window events; `run`: interpreter child/output; `app`: descriptor/lifecycle; `main`: standalone command-line entry |
+| `apps/editor/tiku_editor_*` | the text, its undo and its page are the editor kit's document and code view (`kits/editor/`); `file`: lossless reads and atomic saves; `view`: chrome painting and the code view's box; `commands`: editing and document commands; `input`: pointer/keyboard/window events; `run`: interpreter child/output; `app`: descriptor/lifecycle; `main`: standalone command-line entry |
 | `apps/reader/tiku_reader_*` | `document`: bounded file reads and HTML/Markdown parsing/storage; `reading`: selection/find state; `navigation`: path policy and history; `search`: folder search and outline; `bookmarks`: bookmark storage; `images`: inline image loading; `layout`: geometry and controls; `view`: rendering and reading-tool input; `browser`: document-mode toolbar/address bar; `events`: window/menu routing; `window`: Help/document window lifecycle and generated reports; `app`: desktop-process adapter |
 | `apps/bench/tiku_bench_*` | `catalogue`: registry parsing, eligibility and selection; `device`: target/profile discovery; `runner`: argv validation, asynchronous child processes and port ownership; `results`: output parsing, result records and HTML reports; `settings`: remembered options; `layout`: geometry and controls; `view`: catalogue/results/history painting; `commands`: menus and input; `app`: descriptor/lifecycle |
 | `apps/console/tiku_console_*` | `terminal`: ANSI/UTF-8 parsing, scrollback, filtering and command history; `device`: target discovery, serial I/O, port handoff and recording; `network`: SLIP framing and rootless ICMP diagnostics; `view`: geometry, controls and painting; `commands`: menus, clipboard and keyboard/pointer input; `app`: descriptor/lifecycle |
 | `system/desktop/tiku_desktop_*` (background work) | `device_jobs`: polling, probing, board-run completion, property writes and replicants; `filesystem_jobs`: directory listing, file operations and volumes; `media_jobs`: thumbnails and sound connection; `device_stats`: cached device/memory information |
 | `system/desktop/tiku_desktop_*` (interaction) | `folder_windows`: opening/closing spatial windows and Trash unions; `file_actions`: selection, rename, new entries/templates, destinations and progress; `drop`: drag destinations and icon drops; `navigation`: spring-loaded folder menus and incremental hints; `automation`: add-ons and scripting; `volume_commands`: mount/unmount commands; `commands`: menu dispatch, Open With, layout, query/system actions and press-and-hold menus |
 
-`tiku_ide_project.h`, `tiku_editor_buffer.h` and `tiku_reader_document.h` are
-the narrow model interfaces. They do not import their family-private controller
-headers. Their implementations are tested together without linking any of the
-three apps' window controllers.
+`tiku_ide_project.h` and `tiku_reader_document.h` are the narrow model
+interfaces. They do not import their family-private controller headers. Their
+implementations are tested together without linking either app's window
+controller. Editor's text model is the editor kit's document, which has suites
+of its own.
 
 The IDE is still one shared implementation built twice. `TIKU_IDE_C` applies to
 every C-variant translation unit; BASIC and C do not have separate source forks.

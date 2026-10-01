@@ -10,10 +10,13 @@ file panel. Failed loads leave the current document untouched. BASIC and C
 files receive syntax colouring based on their extension.</p>
 <p>Resize or maximize the window to fit your work. Click to place the caret,
 drag to select, or hold Shift while clicking or pressing navigation keys.
+Double-click selects a word and triple-click a line; dragging after them
+extends by words or lines. Up and Down keep the caret's column across tabs.
 The mouse wheel scrolls vertically; Shift+wheel scrolls horizontally.
 Both scrollbars have end arrows, draggable thumbs and clickable page tracks.
 <b>View → Line Numbers</b> toggles the gutter. Tabs display at four-column stops;
-<b>Show Invisibles</b> marks spaces and tabs without changing file contents.</p>
+<b>Show Invisibles</b> marks spaces and tabs without changing file contents.
+Control characters are shown by name, such as <code>^L</code> for a form feed.</p>
 <p>The Pe-inspired toolbar has small New, Open, Save, Undo, Redo and Find icons,
 followed by the filename and an unsaved-change star. Hover over an icon to see
 its action and shortcut in the bottom status pane. The caret's line and byte
@@ -24,8 +27,10 @@ temporary messages share this bottom edge, leaving the document uncluttered.</p>
 <p>The <b>Edit</b> menu offers Undo, Redo, Cut, Copy, Paste and Select All.
 Clipboard text is shared with other desktop applications. In a search field,
 these commands act on that field rather than on the document. In the document,
-pastes and replacements are single undo operations. Undoing back to the last
-save clears the modified star.</p>
+pastes and replacements are single undo operations, and so is a run of typing.
+Undo puts back the selection you had before the change. Undoing back to the
+last save clears the modified star. Copied text uses LF line breaks; pasted
+text takes the document's line breaks.</p>
 <p><b>Search → Find…</b> opens a separate Find and Replace window, without
 resizing or covering the text inside the editor. Search is literal. Match case
 and Whole words control matching; case-insensitive matching folds ASCII letters.
@@ -43,8 +48,10 @@ cancels. Regular expressions, multi-file search and soft wrapping are not yet pr
 <h2 id="saving">Saving safely</h2>
 <p><b>Save</b> writes to the current file. For an unnamed document it opens
 Save As automatically. <b>Save As…</b> writes to a chosen path and changes the
-document's name only after success. Empty files, UTF-8 BOMs, tabs, LF/CRLF endings,
-and the presence or absence of a final newline are preserved.</p>
+document's name only after success. Every byte is kept: empty files, UTF-8 BOMs,
+tabs, control characters, LF, CRLF, CR and mixed line endings, and the presence
+or absence of a final newline. Return inserts the line break the file uses
+most.</p>
 <p>A save writes and flushes a temporary file in the same directory before
 replacing the destination. Failed writes keep the existing file and leave
 the document modified. Permission bits of an existing file are retained.
@@ -77,6 +84,7 @@ prevent recovery. Temporary copies may be removed by the operating system.</p>
 <li>Ctrl+] / Ctrl+[: Find next / previous.</li>
 <li>Ctrl+G: Go to Line.</li>
 <li>Home / End: start / end of line. Ctrl+Home / Ctrl+End: document start / end.</li>
+<li>Alt+Left / Alt+Right or Ctrl+Left / Ctrl+Right: previous / next word.</li>
 <li>Page Up / Page Down: move a page. Shift extends the selection.</li>
 <li>Ctrl+W / Ctrl+Q or Escape: Close, with an unsaved-change check. In the
 Find or Go to Line window, Ctrl+W and Escape close only that window.</li>
@@ -91,16 +99,15 @@ Closing the editor terminates a run it still owns.
 Use TikuBasic for project development and board uploads.</p>
 
 <h2 id="limits">Supported text and limits</h2>
-<p>Editor now uses dynamically allocated text lines and transactional undo.
-The old 31,999-byte, 4 MiB, 4,000-line and 1,023-byte-per-line limits are gone.
-Very long lines are drawn only across the visible viewport. Limits now come
-from allocation success and representable indexes (signed 32-bit coordinates;
-the loader rejects inputs larger than INT_MAX - 1 bytes). Allocation failures,
-binary data, invalid UTF-8, bare carriage returns or mixed LF/CRLF endings
-are reported without truncating the current document.</p>
-<p>Undo retains at most 256 complete changes and targets 32 MiB of history,
-keeping at least the newest complete edit even when it alone exceeds that size.
-It does not require adjacent text lines to fit inside a temporary 1 KB buffer.</p>
+<p>Editor holds its text in the editor kit's document and draws it with the
+kit's code view. There is no limit on lines or line length; a document holds
+up to 2 GiB less two bytes if memory allows. Very long lines are drawn only
+across the visible viewport, and C colouring is kept line by line, so large
+files stay quick to edit. Allocation failures, binary data (a NUL byte) and
+invalid UTF-8 are reported without changing the current document.</p>
+<p>Undo keeps up to 32 MiB of history per document, dropping the oldest
+changes first and keeping at least the newest one even when it alone is
+larger.</p>
 <p>The desktop text clipboard holds at most 16 MiB. Larger selections
 are not copied or cut. This is a separate desktop-wide clipboard constraint,
 not a document or line-size limit.
