@@ -332,6 +332,7 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         case '/': cmd = CMD_COMMENT; break;
         case 'd': cmd = shift ? 0 : CMD_DUPLICATE; break;
         case 'k': cmd = shift ? CMD_DELETE_LINES : 0; break;
+        case 'l': cmd = shift ? CMD_LINE_ENDS : 0; break;
         case 'm': cmd = shift ? CMD_SELECT_BRACKET : CMD_BRACKET; break;
         case TIKU_KEY_UP: cmd = shift ? CMD_LINES_UP : 0; break;
         case TIKU_KEY_DOWN: cmd = shift ? CMD_LINES_DOWN : 0; break;
@@ -345,6 +346,11 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
     }
     if (key == TIKU_KEY_ESCAPE) {
         if (st->finding) { tiku_editor_search_close(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0; }
+        /* Several carets go back to the main one before Escape closes. */
+        tiku_editor_view_sync(st);
+        if (tiku_codeview_keep_main(st->view) == TIKU_EDIT_OK) {
+            tiku_editor_reveal(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0;
+        }
         return tiku_editor_pick(st, st->id, CMD_QUIT);
     }
     if (!view_key(st, e)) return 0;

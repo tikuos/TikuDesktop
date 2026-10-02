@@ -1,0 +1,63 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Several carets, end to end: Select All, then Text > Carets to Line Ends
+# puts a caret at the end of each line; one typed x lands on all three
+# lines, Escape goes back to one caret without closing the window, and one
+# Undo takes all three away.  The pixels are glyph pixels of the x on the
+# first and third rows, ground, ink while typed and ground after Undo, and
+# the carets' own pixels at those rows' ends.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 40
+expect-title Open
+click 400 200
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Edit
+wait 25
+key a ctrl
+wait 6
+click 256 8
+wait 6
+expect-menu Carets to Line Ends
+menu-pick Carets to Line Ends
+wait 20
+shot /tmp/tiku-editor-carets-placed.png
+note a caret at the end of each line, and no x yet
+expect-pixel 280 150 000000
+expect-pixel 296 188 000000
+expect-pixel 282 149 ffffff
+expect-pixel 298 187 ffffff
+key x
+wait 20
+shot /tmp/tiku-editor-carets-typed.png
+note one key typed an x at the end of the first and the third line alike
+expect-pixel 282 149 131313
+expect-pixel 298 187 131313
+key Escape
+wait 20
+shot /tmp/tiku-editor-carets-escaped.png
+note Escape keeps the last line's caret alone and leaves the window open
+expect-title Edit
+expect-pixel 288 150 ffffff
+expect-pixel 304 188 000000
+key z ctrl
+wait 20
+shot /tmp/tiku-editor-carets-undone.png
+note one Undo takes every x away and gives the three carets back
+expect-pixel 282 149 ffffff
+expect-pixel 298 187 ffffff
+expect-pixel 280 150 000000
+quit

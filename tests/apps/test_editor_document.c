@@ -766,7 +766,7 @@ static void text_menu(edit_state_t *st)
     key(st, '}', 0); assert(!strcmp(line(st, 1), "}"));
     tiku_editor_publish(st);
     assert(st->last_menus.nmenu == 5 && !strcmp(text->title, "Text") &&
-           text->nitem == 13);
+           text->nitem == 14);
     assert(text->item[2].command == CMD_COMMENT && text->item[2].sc == '/' &&
            text->item[2].enabled && text->item[3].sc == 'd');
     assert(text->item[6].command == CMD_DELETE_LINES &&
@@ -967,6 +967,70 @@ static void split_panes(edit_state_t *st)
     assert(set_text(st, ""));
 }
 
+/** A press through Editor's own event path at position @p pos, with
+ *  @p mods; @p type says down, move or up. */
+static void press_at(edit_state_t *st, tiku_event_type_t type,
+                     tiku_edit_pos_t pos, unsigned mods)
+{
+    int64_t x = 0, y = 0;
+    assert(tiku_codeview_point(st->view, pos, &x, &y) == TIKU_EDIT_OK);
+    tiku_event_t e = {.type = type, .button = 1, .x = (int)x + 1,
+        .y = (int)y + tiku_codeview_row_height(st->view) / 2,
+        .modifiers = mods};
+    tiku_editor_event(st, &e);
+}
+
+/** Text > Carets to Line Ends (Cmd+Shift+L) puts a caret at each line's
+ *  end; a key types at every caret as one undo step; Escape keeps the
+ *  main caret instead of closing; a Command press adds a caret and an
+ *  Option drag selects a rectangle. */
+static void carets(edit_state_t *st)
+{
+    const tiku_menu_list_t *text = &st->last_menus.menu[4];
+    tiku_edit_selection_t s[8];
+    size_t main = 9;
+    assert(set_text(st, "one\ntwo\nthree\n"));
+    tiku_editor_publish(st); tiku_editor_paint(st);
+    assert(text->nitem == 14 && text->item[13].command == CMD_LINE_ENDS &&
+           text->item[13].sc == 'l' &&
+           text->item[13].mods == (TIKU_MOD_CMD | TIKU_MOD_SHIFT) &&
+           !strcmp(text->item[13].label, "Carets to Line Ends"));
+    assert(tiku_codeview_select(st->view, 1, 14) == TIKU_EDIT_OK);
+    key(st, 'l', TIKU_MOD_CMD | TIKU_MOD_SHIFT);
+    assert(tiku_codeview_selections(st->view, s, 8, &main) == 3 &&
+           main == 2 && s[0].caret == 3 && s[1].caret == 7 &&
+           s[2].caret == 13);
+    key(st, '!', 0);
+    assert(!strcmp(line(st, 0), "one!") && !strcmp(line(st, 1), "two!") &&
+           !strcmp(line(st, 2), "three!") && tiku_editor_modified(st));
+    key(st, TIKU_KEY_ESCAPE, 0);
+    assert(tiku_codeview_selections(st->view, NULL, 0, NULL) == 1 &&
+           !st->ask.open && st->pending == 0);
+    assert(undo(st) && !strcmp(line(st, 0), "one") &&
+           !strcmp(line(st, 2), "three") &&
+           tiku_codeview_selections(st->view, NULL, 0, NULL) == 3);
+    assert(tiku_codeview_select(st->view, 0, 7) == TIKU_EDIT_OK);
+    tiku_editor_pick(st, st->id, CMD_LINE_ENDS);
+    assert(tiku_codeview_selections(st->view, s, 8, &main) == 2 &&
+           s[0].caret == 3 && s[1].caret == 7);
+    place(st, 0, 0);
+    press_at(st, TIKU_EVENT_POINTER_DOWN, 5, TIKU_MOD_CMD);
+    press_at(st, TIKU_EVENT_POINTER_UP, 5, TIKU_MOD_CMD);
+    assert(tiku_codeview_selections(st->view, s, 8, &main) == 2 &&
+           main == 1 && s[0].caret == 0 && s[1].caret == 5);
+    press_at(st, TIKU_EVENT_POINTER_DOWN, 1, TIKU_MOD_OPTION);
+    press_at(st, TIKU_EVENT_POINTER_MOVE, 10, TIKU_MOD_OPTION);
+    press_at(st, TIKU_EVENT_POINTER_UP, 10, TIKU_MOD_OPTION);
+    assert(tiku_codeview_selections(st->view, s, 8, &main) == 3 &&
+           main == 2 && s[0].anchor == 1 && s[0].caret == 2 &&
+           s[1].anchor == 5 && s[2].caret == 10);
+    key(st, 'X', 0);
+    assert(!strcmp(line(st, 0), "oXe") && !strcmp(line(st, 1), "tXo") &&
+           !strcmp(line(st, 2), "tXree"));
+    assert(undo(st) && !strcmp(line(st, 1), "two"));
+    assert(set_text(st, ""));
+}
+
 /** The Text menu's Fold and Unfold fold the region the caret is in and
  *  unfold its line, by menu and by Cmd+Shift+[ and ]; Fold All and Unfold
  *  All take every region; a press on the fold column's box folds. */
@@ -1047,6 +1111,7 @@ int main(void)
     wrap_lines(st);
     split_panes(st);
     folds(st);
+    carets(st);
     undo_roundtrips(st);
     history_rollover(st);
     large_documents(st, dir);
