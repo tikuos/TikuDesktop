@@ -170,10 +170,11 @@ These are settled for the engine. The migration rows they affect are marked
     clipboard change every selection as one transaction, and undo gives the
     whole set back; other commands act on the main one and drop the rest. A
     Command press adds a caret, an Option drag selects a rectangle by drawn
-    columns, and Escape keeps the main one. This qualifies EDT-001 and
-    EDR-KEY-001 (a step with several selections joins no typing) and FLD-005
-    (every selection leaves a folded region), and Editor's Text menu gains
-    Carets to Line Ends (SEL, CAR and EDR-CARET rows).
+    columns, and Escape keeps the main one. Typing on at every caret joins
+    one undo step, as at one caret, and rows up and down keep each caret's
+    x. This qualifies FLD-005 (every selection leaves a folded region), and
+    Editor's Text menu gains Carets to Line Ends (SEL, CAR and EDR-CARET
+    rows).
 
 ## Document engine
 
@@ -252,7 +253,7 @@ These are settled for the engine. The migration rows they affect are marked
 | SEL-002 | Tiku | They read back in order of their starts. Two that overlap become one, as do a caret and a selection or caret it touches; two selections that only touch stay two. The one made with the main one is main and faces its way, a main caret taking the other's way, and a caret touching two joins the earlier | done | `test_editdoc_selections.c:merging`, `model` |
 | SEL-003 | Scintilla `Selection.cxx` | Every selection moves through an edit as MRK-006 and MRK-007 move the main one, and those an edit brings together become one by SEL-002 | done | `test_editdoc_selections.c:editing`, `model` |
 | SEL-004 | Tiku | A transaction from a view may set the view's selections after it, in the coordinates after, merged by SEL-002; one with a selection that will not be at caret positions, or a main one past them, is refused whole. Without them the edit moves the view's selections, and an anchor and caret leave that one alone | done | `test_editdoc_selections.c:transactions` |
-| SEL-005 | Tiku | Undo gives back every selection the view had before a step and redo every one after it, those the step only moved included; a step that has or leaves several selections joins no typing before or after it | done | `test_editdoc_selections.c:history` |
+| SEL-005 | Tiku | Undo gives back every selection the view had before a step and redo every one after it, those the step only moved included. Typing that goes on where the last typing step stopped, at every place it changed, joins that step, as one caret's typing does (EDT-001); undo then gives back the selections the first step began with | done | `test_editdoc_selections.c:history` |
 | SEL-006 | Tiku | Each view keeps its own selections, and a view attached where one was detached starts with one caret at 0 | done | `test_editdoc_selections.c:views` |
 | SEL-007 | Tiku | With no room for a view's selections or a step's record of them, setting them, a transaction, undo and redo are refused with `TIKU_EDIT_NO_MEMORY` and nothing changes; no commit allocates | done | `test_editdoc_faults.c:main` |
 
@@ -491,9 +492,9 @@ section until it moves onto the view, and any difference is decided then.
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
 | CAR-001 | Tiku | `tiku_codeview_selections()`, `tiku_codeview_select_many()` and `tiku_codeview_add_selection()` read and set the view's selections (SEL rows); one added is the main one, and `tiku_codeview_select()` keeps one alone | done | `test_codeview_carets.c:setting` |
-| CAR-002 | Tiku | With several selections a typed key or a text-input commit replaces each; Backspace and Delete, with Command a word, delete at each caret; Return breaks at each with its own line's indentation, a level more after an opener, moving no closer down; Tab types a level over each. Each is one transaction that leaves a caret after each change, none between a CR and its LF, and carets that meet become one | done | `test_codeview_carets.c:editing` |
+| CAR-002 | Tiku | With several selections a typed key or a text-input commit replaces each; Backspace and Delete, with Command a word, delete at each caret; Return breaks at each with its own line's indentation, a level more after an opener, and a closer after a caret goes to a line of its own unless another caret stands before it; Tab types a level over each. Each is one transaction that leaves a caret after each change, none between a CR and its LF, and carets that meet become one; keys typed on at every caret are one undo step (SEL-005) | done | `test_codeview_carets.c:editing` |
 | CAR-003 | Tiku | Copy offers the selections' text in order with the view's line break between each two, carets left out, and nothing when all are carets; Cut removes them, the carets staying; Paste gives each selection one line of the text when it has as many lines as there are selections, else all of it | done | `test_codeview_carets.c:clipboard` |
-| CAR-004 | Tiku | Every move key moves every selection, with Shift growing each; rows up and down keep the main one's x, each other one going from its own. Escape keeps the main one alone, and is left to the application when there is one | done | `test_codeview_carets.c:moves` |
+| CAR-004 | Tiku | Every move key moves every selection, with Shift growing each; rows up and down keep each caret's x from the first of them, past short lines. Escape keeps the main one alone, and is left to the application when there is one | done | `test_codeview_carets.c:moves` |
 | CAR-005 | Tiku | A press with Command adds a caret there as the main one, or takes away the selection there when there are several, and a drag from it selects without touching the others. A press with Option and a drag select a rectangle: on each text row from the press's to the pointer's, from the place nearest the press's x to the place nearest the pointer's, a tab by its drawn width and a short row to its end, the pointer's row main; folded lines and annotation rows take none | done | `test_codeview_carets.c:gestures` |
 | CAR-006 | Tiku | Every selection is filled and every caret drawn, on the rows they fall in | done | `test_codeview_carets.c:painting` |
 | CAR-007 | Tiku | `tiku_codeview_carets_to_line_ends()` puts a caret at the end of each line the main selection touches, a selection ending at a line's start leaving that line out, the last one main | done | `test_codeview_carets.c:line_ends` |
@@ -705,8 +706,8 @@ changes it or when it records a defect listed under
 
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
-| EDR-CARET-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | Text > Carets to Line Ends (Cmd+Shift+L) puts a caret at the end of each line the selection touches (CAR-007); typing, deleting and the clipboard then act at every caret, one undo step each (CAR-002, CAR-003) | done | test_editor_document.c:carets; shell/carets.script |
-| EDR-CARET-002 | editor/tiku_editor_input.c:tiku_editor_event, pointer_down | Escape with several carets keeps the main one (CAR-004) and closes nothing; a Command press and an Option drag in a pane add carets and select rectangles (CAR-005) | done | test_editor_document.c:carets |
+| EDR-CARET-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | Text > Carets to Line Ends (Cmd+Shift+L) puts a caret at the end of each line the selection touches (CAR-007); typing, deleting and the clipboard then act at every caret, a run of typing one undo step (CAR-002, CAR-003) | done | test_editor_document.c:carets; shell/carets.script |
+| EDR-CARET-002 | editor/tiku_editor_input.c:tiku_editor_event, pointer_down | Escape with several carets keeps the main one (CAR-004) and closes nothing; a Command press and an Option drag in a pane add carets and select rectangles (CAR-005) | done | test_editor_document.c:carets; shell/carets.script |
 
 ### Running BASIC
 

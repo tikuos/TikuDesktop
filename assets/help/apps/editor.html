@@ -82,7 +82,8 @@ selects a rectangle: the same columns on every line between, as the text is
 drawn, so a tab counts as its width and a short line is selected to its end.
 <b>Carets to Line Ends</b> (Ctrl+Shift+L) in the <b>Text</b> menu puts a caret
 at the end of each selected line. Typing, Backspace, Delete, Return, Tab and the
-arrow keys then act at every caret, and one Undo takes back the whole change.
+arrow keys then act at every caret, each caret keeping its own column on Up
+and Down, and one Undo takes back a run of typing at all of them.
 Copy joins the selected pieces with line breaks; pasting as many lines as there
 are carets puts one line at each. The other Text commands act on the main
 caret alone: the one added last, or for a rectangle the line the drag ended
