@@ -69,6 +69,7 @@ years, so each header quotes its own source's line.
 | | `src/CellBuffer.cxx` | Copyright 1998-2001 by Neil Hodgson |
 | `kits/editor/tiku_editdoc_anchors.c` | `src/Selection.cxx`, the edit-position rule only | Copyright 2009 by Neil Hodgson |
 | `kits/editor/tiku_editdoc_private.h` | structure layouts from `SplitVector.h` and `Partitioning.h` | Copyright 1998-2007 by Neil Hodgson |
+| `kits/editor/tiku_codeview_rows.c` | `src/ContractionState.cxx`, display lines over line heights | Copyright 1998-2007 by Neil Hodgson |
 | `tests/kits/test_editdoc_storage.c` | cases from `testSplitVector.cxx`, `testPartitioning.cxx`; `Partitioning::Check` | Neil Hodgson |
 | `tests/kits/test_editdoc_lines.c` | cases from `testCellBuffer.cxx` | Neil Hodgson |
 | `tests/kits/test_editdoc_history.c` | cases from `testCellBuffer.cxx`, `testDocument.cxx` | Neil Hodgson |
@@ -88,11 +89,11 @@ search's `tiku_edit_search.h` and `tiku_edit_search.c`, the line markers'
 `tiku_codeview_layout.c`, `tiku_codeview_paint.c`, `tiku_codeview_input.c`,
 `tiku_codeview_edit.c`, `tiku_codeview_find.c`, `tiku_codeview_style.c`,
 `tiku_codeview_assist.c`, `tiku_codeview_lines.c`,
-`tiku_codeview_brace.c`, `tiku_codeview_rows.c`, whose rows are kept in
-the partition `tiku_editdoc_lines.c` adapts, and `tiku_codeview_notes.c`;
-the document's indicators and annotations in `tiku_edit_notes.c`; and the
-tests `test_editdoc_model.c`, `test_editdoc_faults.c`,
-`test_editdoc_notes.c` and every `test_codeview_*.c`. The code view's word
+`tiku_codeview_brace.c`, `tiku_codeview_notes.c` and
+`tiku_codeview_folds.c`; the document's indicators and annotations in
+`tiku_edit_notes.c`; and the tests `test_editdoc_model.c`,
+`test_editdoc_faults.c`, `test_editdoc_notes.c` and every
+`test_codeview_*.c`. The code view's word
 moves follow the behaviour of `Document::NextWordStart` in
 `src/Document.cxx`, and where a line marker goes when lines are added or
 removed follows `LineVector::InsertLine` in `src/CellBuffer.cxx` and
@@ -188,6 +189,30 @@ Changed:
 - Each view owns its own selection. Anchors, views and listeners are Tiku
   code.
 
+### Hidden lines: `tiku_codeview_rows.c` from `ContractionState.cxx`
+
+Kept:
+
+- Each line has a height in rows, and a line inside a folded region has
+  none.
+- The rows are a partition over the lines, so finding a line's first row
+  is a read and finding the line of a row is the partition's binary search.
+- Hiding or showing a line takes its height out of the partition or puts
+  it back, and a new height changes the partition by the difference.
+- Nothing is kept while every line is one row: the partition is made when
+  lines wrap, annotations are shown or a line is folded, and dropped when
+  none is.
+
+Changed:
+
+- Whether a line is hidden, and whether it heads a folded region, are a
+  byte per line, not run styles; heights live only in the partition.
+- Heights are counted when first needed: a line not yet counted keeps its
+  last count, and a changed line takes one row until it is counted.
+- Each view owns its rows. Fold regions are read from the lines' text by
+  the rules (`tiku_codeview_folds.c`), not kept as fold levels.
+- Fold display texts are not kept; a folded line shows a fixed mark.
+
 ### Reference only
 
 - `UndoHistory` informed which typing joins into one undo step and how the
@@ -215,8 +240,8 @@ file first.
 | Feature | Reason |
 | --- | --- |
 | Style bytes, `RunStyles`, `Decoration` | Colouring stays with `tiku_syntax`; indicators are Tiku code (`tiku_edit_notes.c`), kept as positions |
-| `PerLine` levels, states, annotations | Fold levels come with folding; annotations and line markers are Tiku code (`tiku_edit_notes.c`, `tiku_edit_decorations.c`) |
-| `ContractionState`, `SparseVector`, `UniqueString` | They come with folding |
+| `PerLine` levels, states, annotations | Fold regions are read from the text by the rules; annotations and line markers are Tiku code (`tiku_edit_notes.c`, `tiku_edit_decorations.c`) |
+| `SparseVector`, `UniqueString` | Fold display texts are not kept |
 | UTF-16 and UTF-32 character indexes | No consumer; positions are byte offsets |
 | `ChangeHistory` | Not needed for save state |
 | Undo collection switch, container actions, nested groups, tentative undo | A command builds one transaction; there is no preedit history |

@@ -30,6 +30,8 @@
  * included, and the gap from it to a line's x 0. */
 #define TIKU_CV_GUTTER_PAD 12
 #define TIKU_CV_GUTTER_GAP 4
+/* The fold column's width, at the gutter's right edge. */
+#define TIKU_CV_FOLD_W 12
 /* A scrollbar's thickness. */
 #define TIKU_CV_BAR 15
 /* Pixels past the widest line the text may scroll, room for the caret. */
@@ -58,6 +60,11 @@ typedef struct {
                                        from the line's start, and its x */
     size_t nrows, cap;              /* rows kept, and room for them     */
 } tiku_cv_wrap_t;
+
+/* A line's fold state: inside a folded region, so it has no rows, and
+ * heading one. */
+#define TIKU_CV_HIDDEN 0x1u
+#define TIKU_CV_FOLDED 0x2u
 
 /* One row of a line. */
 typedef struct {
@@ -169,8 +176,11 @@ struct tiku_codeview {
     tiku_ed_lines_t row_map;        /* each line's first row, kept while
                                        lines wrap                       */
     unsigned char *row_known;       /* each line's rows counted         */
+    unsigned char *row_fold;        /* each line's TIKU_CV_HIDDEN and
+                                       TIKU_CV_FOLDED                   */
+    int64_t folds;                  /* lines heading a folded region    */
     int64_t row_lines;              /* lines the map follows, 0: none   */
-    int64_t row_cap;                /* room in row_known                */
+    int64_t row_cap;                /* room in row_known and row_fold   */
     int64_t row_width;              /* the width the rows break at      */
     uint32_t row_key;               /* and the metrics                  */
     int64_t unknown_from;           /* no line before it is uncounted   */
@@ -236,18 +246,30 @@ tiku_edit_pos_t tiku_cv_pos_at(tiku_codeview_t *v, int64_t line, int64_t x);
  * or -1 past the line's end. */
 tiku_edit_pos_t tiku_cv_char_at(tiku_codeview_t *v, int64_t line, int64_t x);
 
-/* Rows (tiku_codeview_rows.c).  Without the wrap option or annotations
- * each line is one row and nothing is kept; with them a line's text
- * breaks into rows at the text's width, its annotations' rows follow
- * them, and the rows are counted when they are first needed.  A line not
- * yet counted keeps its last count, or one row.  Positions and x are the
- * line's own; a row's x0 is subtracted where it is drawn. */
-/* Whether rows are kept: lines wrap, or annotations are shown. */
+/* Rows (tiku_codeview_rows.c).  Without the wrap option, annotations or
+ * folds each line is one row and nothing is kept; with them a line's
+ * text breaks into rows at the text's width, its annotations' rows follow
+ * them, a line in a folded region has none, and the rows are counted
+ * when they are first needed.  A line not yet counted keeps its last
+ * count, or one row.  Positions and x are the line's own; a row's x0 is
+ * subtracted where it is drawn. */
+/* Whether rows are kept: lines wrap, annotations are shown or lines are
+ * folded. */
 int tiku_cv_rows_kept(const tiku_codeview_t *v);
 /* Whether lines break into rows at the text's width now. */
 int tiku_cv_wraps(const tiku_codeview_t *v);
 /* The rows of @p line's text, counted now. */
 int64_t tiku_cv_text_rows(tiku_codeview_t *v, int64_t line);
+/* The first line from @p line on, or with @p back from it back, that is
+ * not inside a folded region; -1 when there is none. */
+int64_t tiku_cv_shown_line(const tiku_codeview_t *v, int64_t line,
+                           int back);
+/* Hide lines @p first to @p last, or with @p show show them, setting
+ * their rows; lines hidden or shown already are left as they are. */
+void tiku_cv_rows_hide(tiku_codeview_t *v, int64_t first, int64_t last,
+                       int show);
+/* Make sure rows are kept, as folding needs; 0 when there is no room. */
+int tiku_cv_rows_keep(tiku_codeview_t *v);
 /* Bring the rows in line with the options, width and metrics, keep the
  * first row inside the document, and count the lines shown. */
 void tiku_cv_rows_ready(tiku_codeview_t *v);
@@ -368,6 +390,21 @@ tiku_edit_pos_t tiku_cv_word_right(const tiku_codeview_t *v,
 const tiku_codeview_rules_t *tiku_cv_rules(const tiku_codeview_t *v);
 int tiku_cv_type_closer(tiku_codeview_t *v, const char *text);
 
+/* A line's colouring read a byte at a time (tiku_codeview_brace.c). */
+typedef struct {
+    const tiku_span_t *runs;        /* the line's coloured runs         */
+    size_t n;                       /* how many                         */
+    size_t i;                       /* the run the last offset fell in  */
+    int64_t start;                  /* where that run starts            */
+} tiku_cv_inks_t;
+/* The colouring of @p line, from its first byte through @p upto, valid
+ * until a line is coloured again. */
+tiku_cv_inks_t tiku_cv_inks(tiku_codeview_t *v, int64_t line,
+                            tiku_edit_pos_t upto);
+/* Whether the line's byte at offset @p at is code, not in quotes or a
+ * remark; past the runs it is. */
+int tiku_cv_code_at(tiku_cv_inks_t *k, int64_t at);
+
 /* Brackets (tiku_codeview_brace.c): the bracket by the caret and its
  * match, found again only after a change or a caret move. */
 tiku_edit_pos_t tiku_cv_brace(tiku_codeview_t *v, tiku_edit_pos_t *match);
@@ -389,6 +426,22 @@ void tiku_cv_marks_paint(tiku_codeview_t *v, tiku_surface_t *s,
 /* Annotation row @p w drawn at surface row @p y. */
 void tiku_cv_annotation_paint(tiku_codeview_t *v, tiku_surface_t *s,
                               const tiku_cv_row_t *w, int y);
+
+/* Folds (tiku_codeview_folds.c): whether @p line heads a region, read
+ * from its own text. */
+int tiku_cv_fold_head(tiku_codeview_t *v, int64_t line);
+/* Unfold the regions @p line is folded in. */
+void tiku_cv_fold_reveal(tiku_codeview_t *v, int64_t line);
+/* Follow a change to lines @p first to @p last: what it touched, and the
+ * folded lines next to it, are shown. */
+void tiku_cv_fold_changed(tiku_codeview_t *v, int64_t first, int64_t last);
+/* The fold column's box for @p line, at surface row @p y. */
+void tiku_cv_folds_paint(tiku_codeview_t *v, tiku_surface_t *s, int64_t line,
+                         int y);
+/* The mark after a folded line's text, at surface @p x, @p y. */
+void tiku_cv_fold_mark(tiku_codeview_t *v, tiku_surface_t *s, int x, int y);
+/* A press of @p e in the fold column: 1 when it was there. */
+int tiku_cv_folds_press(tiku_codeview_t *v, const tiku_event_t *e);
 
 /* Lists and tips (tiku_codeview_assist.c): an event they take, the check
  * after any event that a tip still belongs with the caret, painting them

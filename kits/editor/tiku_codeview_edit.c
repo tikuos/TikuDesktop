@@ -261,9 +261,18 @@ command_key(tiku_codeview_t *v, const tiku_event_t *e)
     if ((e->modifiers & TIKU_MOD_OPTION) &&
         (k == '/' || k == 'd' || k == 'k' || k == 'm' || k == TIKU_KEY_UP ||
          k == TIKU_KEY_DOWN || k == TIKU_KEY_BACKSPACE ||
-         k == TIKU_KEY_DELETE))
+         k == TIKU_KEY_DELETE || k == '[' || k == ']' || k == '{' ||
+         k == '}'))
         return 0;
     switch (k) {
+    case '[':
+    case ']':
+    case '{':
+    case '}':
+        if (!shift && k != '{' && k != '}')
+            return 0;
+        v->status = quiet(tiku_codeview_fold_at(v, k == ']' || k == '}'));
+        return 1;
     case '/':
         v->status = quiet(tiku_codeview_toggle_comment(v));
         return 1;

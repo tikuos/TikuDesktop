@@ -55,6 +55,7 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
     tiku_cv_widths_change(v, first, last, last + delta, change->lines_after);
     tiku_cv_rows_change(v, first, last, last + delta, change->lines_after);
     tiku_cv_style_change(v, first, last, last + delta, change->lines_after);
+    tiku_cv_fold_changed(v, first, last + delta);
     if (last < v->top) {
         v->top += delta;
     } else if (first < v->top) {
@@ -240,7 +241,8 @@ tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
                                TIKU_CODEVIEW_HSCROLL |
                                TIKU_CODEVIEW_BRACES |
                                TIKU_CODEVIEW_WRAP |
-                               TIKU_CODEVIEW_ANNOTATIONS);
+                               TIKU_CODEVIEW_ANNOTATIONS |
+                               TIKU_CODEVIEW_FOLDS);
     view->held_bar = 0;
     view->arrow_bar = 0;
     tiku_cv_clamp(view);

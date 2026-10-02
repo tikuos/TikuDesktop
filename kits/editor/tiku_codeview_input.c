@@ -151,6 +151,7 @@ tiku_codeview_reveal(tiku_codeview_t *view)
         tiku_codeview_selection(view, &anchor, &caret) != TIKU_EDIT_OK)
         return;
     tiku_cv_rows_ready(view);
+    tiku_cv_fold_reveal(view, tiku_editdoc_line_of(view->doc, caret));
     x = caret_x(view, caret, &r);
     rows = tiku_codeview_rows_visible(view);
     row = tiku_cv_shown_row(view, r.line, r.sub);
@@ -591,6 +592,8 @@ dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
                 return 1;
             }
         }
+        if (tiku_cv_folds_press(view, e))
+            return 1;
         if (!inside(tiku_cv_area(view), e->x, e->y))
             return 0;
         press(view, e);

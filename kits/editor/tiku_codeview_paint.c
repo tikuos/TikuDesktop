@@ -219,6 +219,8 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
     r->run_end = r->nruns > 0 ? r->runs[0].len : 0;
     width = tiku_cv_walk_near(v, w->line, INT64_MAX, r->left, paint_cell, r);
     flush(r);
+    if (w->last && tiku_codeview_folded(v, w->line))
+        tiku_cv_fold_mark(v, r->s, surface_x(r, width), r->y);
     if (w->last && !r->stopped && next > end && r->lo <= end &&
         r->hi >= next)
         fill_span(r, width, width + tiku_text_advance(r->font, ' '),
@@ -274,7 +276,7 @@ paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows)
         return;
     tiku_cv_row_of(v, caret, caret == v->upstream, &r);
     row = tiku_cv_shown_row(v, r.line, r.sub);
-    if (row < 0 || row >= rows)
+    if (row < 0 || row >= rows || !tiku_codeview_shown(v, r.line))
         return;
     x = tiku_cv_x_of(v, r.line, caret) - r.x0 - v->left;
     if (tiku_cv_wraps(v) && x >= tiku_cv_text_w(v))
@@ -285,9 +287,10 @@ paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows)
                tiku_cv_text_y(v) + (int)row * step, step, TIKU_C_TEXT);
 }
 
-/** @brief The gutter: a shaded strip with a rule at its right edge and
- *         each shown line's number right-aligned a few pixels short of
- *         the rule, on the baseline of the line's first row. */
+/** @brief The gutter: a shaded strip with a rule at its right edge, each
+ *         shown line's number right-aligned a few pixels short of the
+ *         rule or the fold column, on the baseline of the line's first
+ *         row, and the fold column's boxes. */
 static void
 paint_gutter(tiku_codeview_t *v, tiku_surface_t *s, int width,
              tiku_rect_t area)
@@ -297,18 +300,22 @@ paint_gutter(tiku_codeview_t *v, tiku_surface_t *s, int width,
     tiku_rect_t strip = { v->bounds.x, area.y, width, area.h };
     int64_t line = v->top, sub = v->top_sub;
     int y = tiku_cv_text_y(v), step = tiku_codeview_row_height(v);
+    int right = strip.x + width -
+                (v->options & TIKU_CODEVIEW_FOLDS ? TIKU_CV_FOLD_W : 0);
     char number[24];
 
     tiku_fill(s, strip, tiku_tint(TIKU_C_DOC, 1.04f));
     tiku_vline(s, strip.x + width - 1, strip.y, strip.h,
                tiku_tint(TIKU_C_DOC, 1.12f));
     for (; y < area.y + area.h; y += step) {
-        if (sub == 0) {
+        if (sub == 0 && (v->options & TIKU_CODEVIEW_LINE_NUMBERS)) {
             snprintf(number, sizeof number, "%lld", (long long)(line + 1));
             tiku_text(s, numbers,
-                      strip.x + width - 6 - tiku_text_width(numbers, number),
+                      right - 6 - tiku_text_width(numbers, number),
                       y + f->ascent, number, tiku_ink(TIKU_INK_FAINT));
         }
+        if (sub == 0)
+            tiku_cv_folds_paint(v, s, line, y);
         if (tiku_cv_rows_step(v, &line, &sub, 1) == 0)
             break;
     }

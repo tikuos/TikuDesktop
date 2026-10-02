@@ -20,14 +20,18 @@
 #include <stdio.h>
 #include <string.h>
 
+static const char *const basic_blocks[] = {
+    "FOR", "NEXT", "WHILE", "WEND", "REPEAT", "UNTIL", "SUB", "ENDSUB",
+    "THEN", "ENDIF", NULL
+};
 static const tiku_codeview_rules_t c_rules = {
-    "//", NULL, 0, "{", "}", "()[]{}"
+    "//", NULL, 0, "{", "}", "()[]{}", NULL
 };
 static const tiku_codeview_rules_t basic_rules = {
-    "REM", "'", 1, NULL, NULL, "()[]{}"
+    "REM", "'", 1, NULL, NULL, "()[]{}", basic_blocks
 };
 static const tiku_codeview_rules_t prose_rules = {
-    NULL, NULL, 0, NULL, NULL, "()[]{}"
+    NULL, NULL, 0, NULL, NULL, "()[]{}", NULL
 };
 
 /* A level of indentation made of spaces, at most TIKU_CODEVIEW_TAB_MAX. */

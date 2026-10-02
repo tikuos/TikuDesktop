@@ -334,13 +334,14 @@ int
 tiku_cv_gutter(const tiku_codeview_t *v)
 {
     int64_t lines;
-    int digits = 1;
+    int digits = 1, folds = v->options & TIKU_CODEVIEW_FOLDS ?
+                            TIKU_CV_FOLD_W : 0;
 
     if (!(v->options & TIKU_CODEVIEW_LINE_NUMBERS))
-        return 0;
+        return folds;
     for (lines = tiku_editdoc_lines(v->doc); lines >= 10; lines /= 10)
         digits++;
-    return TIKU_CV_GUTTER_PAD +
+    return TIKU_CV_GUTTER_PAD + folds +
            digits * tiku_text_advance(tiku_cv_font(v), '0');
 }
 

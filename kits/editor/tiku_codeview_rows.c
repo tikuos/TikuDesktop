@@ -4,12 +4,16 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_codeview_rows.c - lines broken into rows at the text's width, and
- * the rows of the annotations under them: where a line's rows start, how
- * many each line has, and each line's first row, kept in the partition
- * the document keeps its lines in.
+ * tiku_codeview_rows.c - lines broken into rows at the text's width, the
+ * rows of the annotations under them, and folded lines taking none: where
+ * a line's rows start, how many each line has, and each line's first row,
+ * kept in the partition the document keeps its lines in.
  *
- * SPDX-License-Identifier: Apache-2.0
+ * Lines hidden by folding have no rows, as display lines are counted in
+ * Scintilla 5.6.7 src/ContractionState.cxx, Copyright 1998-2007 by Neil
+ * Hodgson; see LICENSE.Scintilla and UPSTREAM.md for what changed.
+ *
+ * SPDX-License-Identifier: Apache-2.0 AND LicenseRef-Scintilla
  */
 
 #include "tiku_codeview_private.h"
@@ -186,9 +190,13 @@ measure(tiku_codeview_t *v, int64_t line, int keep, tiku_cv_wrap_t **kept)
     w.opp = -1;
     w.rows = 1;
     w.keep = keep;
-    if (w.width > 0)
-        (void)tiku_cv_walk_near(v, line, 0, 0, wrap_cell, &w);
-    rows = w.rows + tiku_cv_ann_rows(v, line);
+    if (v->row_fold[line] & TIKU_CV_HIDDEN) {
+        rows = 0;
+    } else {
+        if (w.width > 0)
+            (void)tiku_cv_walk_near(v, line, 0, 0, wrap_cell, &w);
+        rows = w.rows + tiku_cv_ann_rows(v, line);
+    }
     old = mapped(v, line);
     if (rows != old)
         tiku_ed_lines_shift(&v->row_map, line, rows - old);
@@ -317,19 +325,37 @@ tiku_cv_row_pos_at(tiku_codeview_t *v, const tiku_cv_row_t *r, int64_t x,
 }
 
 int64_t
+tiku_cv_shown_line(const tiku_codeview_t *v, int64_t line, int back)
+{
+    int64_t lines = tiku_cv_rows_kept(v) ? v->row_lines : 0;
+
+    while (line >= 0 && line < lines &&
+           (v->row_fold[line] & TIKU_CV_HIDDEN))
+        line += back ? -1 : 1;
+    if (line < 0 || line >= tiku_editdoc_lines(v->doc))
+        return -1;
+    return line;
+}
+
+int64_t
 tiku_cv_rows_step(tiku_codeview_t *v, int64_t *line, int64_t *sub,
                   int64_t n)
 {
-    int64_t moved = 0, lines = tiku_editdoc_lines(v->doc);
-    int64_t rows = tiku_cv_line_rows(v, *line);
+    int64_t moved = 0, next, rows;
 
+    if (tiku_cv_shown_line(v, *line, 0) != *line) {
+        next = tiku_cv_shown_line(v, *line, 1);
+        *line = next >= 0 ? next : 0;
+        *sub = 0;
+    }
+    rows = tiku_cv_line_rows(v, *line);
     if (*sub >= rows)
         *sub = rows - 1;
     if (*sub < 0)
         *sub = 0;
     while (n > 0) {
-        rows = tiku_cv_line_rows(v, *line);
-        if (*sub + n < rows || *line + 1 >= lines) {
+        next = *sub + n < rows ? -1 : tiku_cv_shown_line(v, *line + 1, 0);
+        if (next < 0) {
             if (*sub + n >= rows)
                 n = rows - 1 - *sub;
             *sub += n;
@@ -337,11 +363,13 @@ tiku_cv_rows_step(tiku_codeview_t *v, int64_t *line, int64_t *sub,
         }
         moved += rows - *sub;
         n -= rows - *sub;
-        (*line)++;
+        *line = next;
         *sub = 0;
+        rows = tiku_cv_line_rows(v, next);
     }
     while (n < 0) {
-        if (*sub + n >= 0 || *line == 0) {
+        next = *sub + n >= 0 ? -1 : tiku_cv_shown_line(v, *line - 1, 1);
+        if (next < 0) {
             if (*sub + n < 0)
                 n = -*sub;
             *sub += n;
@@ -349,8 +377,8 @@ tiku_cv_rows_step(tiku_codeview_t *v, int64_t *line, int64_t *sub,
         }
         moved += *sub + 1;
         n += *sub + 1;
-        (*line)--;
-        *sub = tiku_cv_line_rows(v, *line) - 1;
+        *line = next;
+        *sub = tiku_cv_line_rows(v, next) - 1;
     }
     return moved;
 }
@@ -406,10 +434,13 @@ tiku_cv_rows_free(tiku_codeview_t *v)
     if (v->row_lines > 0)
         tiku_ed_lines_free(&v->row_map);
     tiku_ed_free(v->row_known);
+    tiku_ed_free(v->row_fold);
     v->row_known = NULL;
+    v->row_fold = NULL;
     v->row_lines = 0;
     v->row_cap = 0;
     v->unknown_from = 0;
+    v->folds = 0;
     for (i = 0; i < TIKU_CV_WRAPS; i++) {
         tiku_ed_free(v->wraps[i].rows);
         memset(&v->wraps[i], 0, sizeof v->wraps[i]);
@@ -436,8 +467,8 @@ one_rows(tiku_codeview_t *v, int64_t line, int64_t n)
     }
 }
 
-/** @brief Room in the counted flags for @p n lines; 0 when there is
- *         none. */
+/** @brief Room in the counted and fold flags for @p n lines; 0 when
+ *         there is none. */
 static int
 known_room(tiku_codeview_t *v, int64_t n)
 {
@@ -453,6 +484,10 @@ known_room(tiku_codeview_t *v, int64_t n)
     if (grown == NULL)
         return 0;
     v->row_known = grown;
+    grown = tiku_ed_realloc(v->row_fold, (size_t)cap);
+    if (grown == NULL)
+        return 0;
+    v->row_fold = grown;
     v->row_cap = cap;
     return 1;
 }
@@ -475,6 +510,7 @@ build(tiku_codeview_t *v)
     tiku_ed_lines_shift(&v->row_map, 0, lines);
     one_rows(v, 1, lines - 1);
     memset(v->row_known, 0, (size_t)lines);
+    memset(v->row_fold, 0, (size_t)lines);
     v->row_lines = lines;
     v->unknown_from = 0;
     return 1;
@@ -512,13 +548,42 @@ tiku_cv_rows_change(tiku_codeview_t *v, int64_t first, int64_t last_old,
         tiku_ed_lines_shift(&v->row_map, first, last_new - first + 1 - was);
         one_rows(v, first + 1, last_new - first);
     }
-    if (v->row_lines > last_old + 1)
+    /* The changed lines are shown and unfolded: nothing edited is left
+     * out of sight. */
+    for (i = first; i <= last_old; i++)
+        v->folds -= (v->row_fold[i] & TIKU_CV_FOLDED) != 0;
+    if (v->row_lines > last_old + 1) {
         memmove(&v->row_known[last_new + 1], &v->row_known[last_old + 1],
                 (size_t)(v->row_lines - (last_old + 1)));
+        memmove(&v->row_fold[last_new + 1], &v->row_fold[last_old + 1],
+                (size_t)(v->row_lines - (last_old + 1)));
+    }
     memset(&v->row_known[first], 0, (size_t)(last_new - first + 1));
+    memset(&v->row_fold[first], 0, (size_t)(last_new - first + 1));
     v->row_lines = lines;
     if (v->unknown_from > first)
         v->unknown_from = first;
+}
+
+void
+tiku_cv_rows_hide(tiku_codeview_t *v, int64_t first, int64_t last, int show)
+{
+    int64_t line;
+
+    for (line = first; tiku_cv_rows_kept(v) && line <= last; line++) {
+        int hidden = (v->row_fold[line] & TIKU_CV_HIDDEN) != 0;
+
+        if (hidden == !show)
+            continue;
+        if (show) {
+            v->row_fold[line] &= (unsigned char)~TIKU_CV_HIDDEN;
+            (void)measure(v, line, 0, NULL);
+        } else {
+            tiku_ed_lines_shift(&v->row_map, line, -mapped(v, line));
+            v->row_fold[line] |= TIKU_CV_HIDDEN;
+            v->row_known[line] = 1;
+        }
+    }
 }
 
 /** @brief The first line not yet counted, or the line count. */
@@ -553,6 +618,16 @@ count_some(tiku_codeview_t *v, int64_t budget)
 }
 
 int
+tiku_cv_rows_keep(tiku_codeview_t *v)
+{
+    v->folds++;
+    tiku_cv_rows_ready(v);
+    if (v->folds > 0)
+        v->folds--;
+    return tiku_cv_rows_kept(v);
+}
+
+int
 tiku_cv_rows_tick(tiku_codeview_t *v, int64_t budget)
 {
     return tiku_cv_rows_kept(v) && count_some(v, budget);
@@ -565,16 +640,21 @@ tiku_codeview_wrapping(tiku_codeview_t *view)
            first_unknown(view) < view->row_lines;
 }
 
-/** @brief Keep the first row inside the document, no further down than
- *         where the last row is shown in the last whole row, and the text
- *         unscrolled across while it wraps; count the lines shown. */
+/** @brief Keep the first row inside the document, on a shown line no
+ *         further down than where the last row is shown in the last whole
+ *         row, and the text unscrolled across while it wraps; count the
+ *         lines shown. */
 static void
 clamp_rows(tiku_codeview_t *v)
 {
-    int64_t line = v->row_lines - 1, sub, shown;
+    int64_t line = tiku_cv_shown_line(v, v->row_lines - 1, 1), sub, shown;
 
     if (v->row_width > 0 || v->left < 0)
         v->left = 0;
+    if (tiku_cv_shown_line(v, v->top, 0) != v->top) {
+        v->top = tiku_cv_shown_line(v, v->top, 1);
+        v->top_sub = 0;
+    }
     sub = tiku_cv_line_rows(v, line) - 1;
     (void)tiku_cv_rows_step(v, &line, &sub,
                             1 - tiku_codeview_rows_visible(v));
@@ -589,8 +669,9 @@ clamp_rows(tiku_codeview_t *v)
     if (v->top_sub >= tiku_cv_line_rows(v, v->top))
         v->top_sub = tiku_cv_line_rows(v, v->top) - 1;
     shown = tiku_cv_line_rows(v, v->top) - v->top_sub;
-    for (line = v->top + 1; line < v->row_lines &&
-         shown <= tiku_codeview_rows_visible(v); line++)
+    for (line = tiku_cv_shown_line(v, v->top + 1, 0);
+         line >= 0 && shown <= tiku_codeview_rows_visible(v);
+         line = tiku_cv_shown_line(v, line + 1, 0))
         shown += tiku_cv_line_rows(v, line);
 }
 
@@ -604,7 +685,7 @@ tiku_cv_rows_ready(tiku_codeview_t *v)
     uint32_t key;
     int i;
 
-    if (width < 1 && !shown) {
+    if (width < 1 && !shown && v->folds == 0) {
         if (tiku_cv_rows_kept(v))
             tiku_cv_rows_free(v);
         v->top_sub = 0;

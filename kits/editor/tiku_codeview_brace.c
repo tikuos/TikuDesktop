@@ -16,18 +16,8 @@
 
 #include <string.h>
 
-/** @brief A walk through a line's colouring runs, in either direction. */
-typedef struct {
-    const tiku_span_t *runs;
-    size_t n;
-    size_t i;                   /* the run the last offset fell in      */
-    int64_t start;              /* where that run starts                */
-} inks_t;
-
-/** @brief Whether the line's byte at offset @p at is code, not in quotes
- *         or a remark; past the runs it is. */
-static int
-code_at(inks_t *k, int64_t at)
+int
+tiku_cv_code_at(tiku_cv_inks_t *k, int64_t at)
 {
     while (k->i < k->n && at >= k->start + k->runs[k->i].len) {
         k->start += k->runs[k->i].len;
@@ -43,11 +33,10 @@ code_at(inks_t *k, int64_t at)
            k->runs[k->i].ink != TIKU_INK_REMARK;
 }
 
-/** @brief The colouring of @p line, from its first byte through @p upto. */
-static inks_t
-inks_of(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto)
+tiku_cv_inks_t
+tiku_cv_inks(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto)
 {
-    inks_t k;
+    tiku_cv_inks_t k;
 
     memset(&k, 0, sizeof k);
     k.runs = tiku_cv_style_line(v, line, upto, &k.n);
@@ -76,7 +65,7 @@ scan(tiku_codeview_t *v, tiku_edit_pos_t from, int forward, int same,
         return -1;
     line = tiku_editdoc_line_of(v->doc, from);
     for (;;) {
-        inks_t k = { NULL, 0, 0, 0 };
+        tiku_cv_inks_t k = { NULL, 0, 0, 0 };
         int coloured = 0;
 
         s = tiku_editdoc_line_start(v->doc, line);
@@ -90,10 +79,10 @@ scan(tiku_codeview_t *v, tiku_edit_pos_t from, int forward, int same,
             if (b != same && b != want)
                 continue;
             if (!coloured) {
-                k = inks_of(v, line, e);
+                k = tiku_cv_inks(v, line, e);
                 coloured = 1;
             }
-            if (!code_at(&k, p - s))
+            if (!tiku_cv_code_at(&k, p - s))
                 continue;
             if (b == same)
                 depth++;
@@ -133,7 +122,7 @@ bracket_at(tiku_codeview_t *v, const tiku_codeview_rules_t *r,
            tiku_edit_pos_t pos, int *index)
 {
     int64_t line;
-    inks_t k;
+    tiku_cv_inks_t k;
 
     if (pos < 0 || pos >= tiku_editdoc_length(v->doc))
         return 0;
@@ -141,8 +130,8 @@ bracket_at(tiku_codeview_t *v, const tiku_codeview_rules_t *r,
     if (*index < 0)
         return 0;
     line = tiku_editdoc_line_of(v->doc, pos);
-    k = inks_of(v, line, pos + 1);
-    return code_at(&k, pos - tiku_editdoc_line_start(v->doc, line));
+    k = tiku_cv_inks(v, line, pos + 1);
+    return tiku_cv_code_at(&k, pos - tiku_editdoc_line_start(v->doc, line));
 }
 
 tiku_edit_pos_t
@@ -246,7 +235,7 @@ box(tiku_codeview_t *v, tiku_surface_t *s, tiku_edit_pos_t pos,
 
     tiku_cv_row_of(v, pos, 0, &w);
     row = tiku_cv_shown_row(v, w.line, w.sub);
-    if (row < 0 || row >= rows)
+    if (row < 0 || row >= rows || !tiku_codeview_shown(v, w.line))
         return;
     x0 = tiku_cv_x_of(v, w.line, pos) - w.x0 - v->left;
     x1 = tiku_cv_x_of(v, w.line, pos + 1) - w.x0 - v->left;

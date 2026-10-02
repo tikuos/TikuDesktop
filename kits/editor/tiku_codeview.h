@@ -104,6 +104,7 @@ tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
                                             text's width                */
 #define TIKU_CODEVIEW_ANNOTATIONS  0x40u /* the document's annotations,
                                             rows under their lines      */
+#define TIKU_CODEVIEW_FOLDS        0x80u /* a fold column in the gutter */
 
 /**
  * @brief How a language is edited: how a line is commented, what opens
@@ -124,11 +125,14 @@ typedef struct {
                                    these opens a level                  */
     const char *closes;         /* closers that end one                 */
     const char *brackets;       /* pairs, each opener then its closer   */
+    const char *const *blocks;  /* words opening and closing a block, in
+                                   pairs and then NULL; NULL: none      */
 } tiku_codeview_rules_t;
 
 /** @brief The rules of @p lang: C comments with "//" and opens a level
- *         after "{"; BASIC comments with "REM" after a line's number;
- *         prose has no comments.  All of them pair (), [] and {}. */
+ *         after "{"; BASIC comments with "REM" after a line's number and
+ *         has FOR, WHILE, REPEAT, SUB and THEN blocks; prose has no
+ *         comments.  All of them pair (), [] and {}. */
 const tiku_codeview_rules_t *tiku_codeview_rules_for(tiku_syntax_lang_t lang);
 /** @brief Edit by @p rules, copied, whose strings must outlive the view;
  *         NULL follows the view's language, as a new view does. */
@@ -442,6 +446,36 @@ tiku_edit_status_t tiku_codeview_set_mark(tiku_codeview_t *view,
 tiku_edit_status_t tiku_codeview_goto_indicator(tiku_codeview_t *view,
                                                 uint32_t kinds,
                                                 int backward);
+
+/**
+ * @brief The last line of the region @p line heads, or -1 for none.
+ *
+ * A region is told by the rules: a line leaving an opener of a level open
+ * heads the lines up to the one before its closer's line; with blocks, a
+ * line opening a block heads them up to the one before its closer; with
+ * neither, a line heads the lines after it indented further.
+ */
+int64_t tiku_codeview_fold_end(tiku_codeview_t *view, int64_t line);
+/**
+ * @brief Fold the region @p line heads in this view, or with @p open
+ *        unfold it, showing its lines but a folded region's inside it.
+ *
+ * A selection reaching into what is folded becomes the caret at the end
+ * of @p line; a line in a folded region unfolds unseen, its lines shown
+ * with that region's.  TIKU_EDIT_NOTHING when there is nothing to do.
+ */
+tiku_edit_status_t tiku_codeview_fold(tiku_codeview_t *view, int64_t line,
+                                      int open);
+/** @brief Fold the region the caret's line heads or is in, the innermost,
+ *         or with @p open unfold the caret's line. */
+tiku_edit_status_t tiku_codeview_fold_at(tiku_codeview_t *view, int open);
+/** @brief Fold every region, the inner ones first, or with @p open
+ *         unfold them all. */
+tiku_edit_status_t tiku_codeview_fold_all(tiku_codeview_t *view, int open);
+/** @brief Whether @p line heads a folded region, and whether it is shown,
+ *         in no folded region. */
+int tiku_codeview_folded(const tiku_codeview_t *view, int64_t line);
+int tiku_codeview_shown(const tiku_codeview_t *view, int64_t line);
 
 /** @brief Fill the rows of lines marked @p kind with @p color, behind
  *         their text and selection; a higher kind's fill covers a lower
