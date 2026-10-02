@@ -45,6 +45,20 @@ occurrence in this document as a single undoable operation.</p>
 <p><b>Go to Line…</b> accepts a line number; Return navigates there and Escape
 cancels. Regular expressions, multi-file search and soft wrapping are not yet provided.</p>
 
+<h2 id="text">Working with lines</h2>
+<p>Return keeps the indentation of the line it breaks. In a C file it adds a
+level after a line ending in <code>{</code>, and a <code>}</code> typed at the
+start of a line goes back to the indentation of the line that opened it.
+Tab with a selection over several lines indents them; Shift+Tab takes a level
+off. With Alt, Tab and Return type a plain tab and line break.</p>
+<p>The <b>Text</b> menu holds Indent Lines, Unindent Lines, Toggle Comment,
+Duplicate Lines, Move Lines Up and Down, Delete Lines, and Go to or Select to
+Matching Bracket. They act on every line the selection touches. Toggle Comment
+uses <code>//</code> in C and puts <code>REM</code> after a BASIC line's number;
+plain text has no comment. The bracket next to the caret and its match are
+marked, and a bracket with no match is marked in red. Brackets inside quotes
+or comments are not counted.</p>
+
 <h2 id="saving">Saving safely</h2>
 <p><b>Save</b> writes to the current file. For an unnamed document it opens
 Save As automatically. <b>Save As…</b> writes to a chosen path and changes the
@@ -83,6 +97,10 @@ prevent recovery. Temporary copies may be removed by the operating system.</p>
 <li>Ctrl+F / Ctrl+H: Find / Replace.</li>
 <li>Ctrl+] / Ctrl+[: Find next / previous.</li>
 <li>Ctrl+G: Go to Line.</li>
+<li>Ctrl+/: Toggle Comment. Ctrl+D: Duplicate Lines. Ctrl+Shift+K: Delete Lines.</li>
+<li>Ctrl+Shift+Up / Ctrl+Shift+Down: move the lines up or down.</li>
+<li>Ctrl+M / Ctrl+Shift+M: go to or select to the matching bracket.</li>
+<li>Ctrl+Backspace / Ctrl+Delete: delete the previous or next word.</li>
 <li>Home / End: start / end of line. Ctrl+Home / Ctrl+End: document start / end.</li>
 <li>Alt+Left / Alt+Right or Ctrl+Left / Ctrl+Right: previous / next word.</li>
 <li>Page Up / Page Down: move a page. Shift extends the selection.</li>
