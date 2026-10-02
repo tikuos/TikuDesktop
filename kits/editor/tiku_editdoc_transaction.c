@@ -23,6 +23,8 @@ typedef struct {
     char *payload;              /* the merged payload, when joining     */
     size_t payload_len;         /* its bytes                            */
     tiku_ed_piece_t piece;      /* the merged piece, when joining       */
+    tiku_edit_selection_t main; /* the main selection after, when the
+                                   transaction sets several             */
 } prepared_t;
 
 /** @brief The byte at @p pos, 0 outside. */
@@ -222,6 +224,64 @@ commit_pieces(tiku_editdoc_t *doc, const tiku_ed_record_t *r, int inverse)
     tiku_ed_marks_snap(doc);
 }
 
+/** @brief Whether the selections @p t sets will all be at caret
+ *         positions after @p r. */
+static int
+selects_carets(const tiku_editdoc_t *doc, const tiku_edit_transaction_t *t,
+               const tiku_ed_record_t *r, int64_t length)
+{
+    size_t i;
+
+    if (t->nselections == 0)
+        return caret_after(doc, r, t->anchor, length) &&
+               caret_after(doc, r, t->caret, length);
+    for (i = 0; i < t->nselections; i++)
+        if (!caret_after(doc, r, t->selections[i].anchor, length) ||
+            !caret_after(doc, r, t->selections[i].caret, length))
+            return 0;
+    return 1;
+}
+
+/**
+ * @brief Keep the view's other selections in the record, with room for
+ *        those after: the transaction's own, merged, or as many as the
+ *        view has now, which mapping only brings together.
+ *
+ * The view gets room for them too, so the commit allocates nothing.
+ */
+static tiku_edit_status_t
+keep_selections(prepared_t *w, const tiku_edit_transaction_t *t)
+{
+    tiku_ed_record_t *r = &w->record;
+    tiku_ed_view_t *v = w->view;
+    tiku_edit_selection_t *out;
+    size_t after = !t->select ? v->nmore :
+                   t->nselections > 0 ? t->nselections - 1 : 0, i, k = 0;
+
+    r->nbefore = v->nmore;
+    if (r->nbefore + after == 0)
+        return TIKU_EDIT_OK;
+    if (after > SIZE_MAX / sizeof *r->more - r->nbefore)
+        return TIKU_EDIT_LIMIT;
+    r->more = tiku_ed_alloc((r->nbefore + after) * sizeof *r->more);
+    if (!r->more)
+        return TIKU_EDIT_NO_MEMORY;
+    if (r->nbefore)
+        memcpy(r->more, v->more, r->nbefore * sizeof *r->more);
+    if (t->select && t->nselections > 0) {
+        out = r->more + r->nbefore;
+        for (i = 0; i < t->nselections; i++)
+            if (i != t->main)
+                out[k++] = t->selections[i];
+        tiku_ed_selections_sort(out, k);
+        w->main = t->selections[t->main];
+        tiku_ed_selections_merge(&w->main, out, &k);
+        after = k;
+    }
+    r->nafter = after;
+    return tiku_ed_view_room(v, after) ? TIKU_EDIT_OK : TIKU_EDIT_NO_MEMORY;
+}
+
 /** @brief Everything that can fail, done before the commit. */
 static tiku_edit_status_t
 prepare(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t, prepared_t *w)
@@ -239,6 +299,9 @@ prepare(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t, prepared_t *w)
     } else if (t->select) {
         return TIKU_EDIT_INVALID;
     }
+    if (t->select && t->nselections > 0 &&
+        (!t->selections || t->main >= t->nselections))
+        return TIKU_EDIT_INVALID;
     st = check_edits(doc, t, &count, &removed, &added);
     if (st != TIKU_EDIT_OK)
         return st;
@@ -246,8 +309,7 @@ prepare(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t, prepared_t *w)
     if (st != TIKU_EDIT_OK)
         return st;
     length = (int64_t)(doc->text.bytes.length - removed + added);
-    if (t->select && (!caret_after(doc, &w->record, t->anchor, length) ||
-                      !caret_after(doc, &w->record, t->caret, length))) {
+    if (t->select && !selects_carets(doc, t, &w->record, length)) {
         tiku_ed_record_free(&w->record);
         return TIKU_EDIT_INVALID_RANGE;
     }
@@ -257,6 +319,11 @@ prepare(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t, prepared_t *w)
     if (w->view) {
         w->record.before_anchor = w->view->anchor;
         w->record.before_caret = w->view->caret;
+        st = keep_selections(w, t);
+        if (st != TIKU_EDIT_OK) {
+            tiku_ed_record_free(&w->record);
+            return st;
+        }
     }
     if ((t->flags & TIKU_EDIT_TYPING) && count == 1) {
         const tiku_ed_piece_t *p = &w->record.pieces[0];
@@ -277,6 +344,25 @@ prepare(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t, prepared_t *w)
         return TIKU_EDIT_NO_MEMORY;
     }
     return TIKU_EDIT_OK;
+}
+
+/** @brief Give view @p v the selections @p t sets, prepared in @p w. */
+static void
+set_selections(tiku_ed_view_t *v, const prepared_t *w,
+               const tiku_edit_transaction_t *t)
+{
+    if (t->nselections == 0) {
+        v->anchor = t->anchor;
+        v->caret = t->caret;
+        v->nmore = 0;
+        return;
+    }
+    v->anchor = w->main.anchor;
+    v->caret = w->main.caret;
+    if (w->record.nafter)
+        memcpy(v->more, w->record.more + w->record.nbefore,
+               w->record.nafter * sizeof *v->more);
+    v->nmore = w->record.nafter;
 }
 
 /** @brief Tell listeners about a committed change of @p r. */
@@ -308,7 +394,10 @@ select_only(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t,
 {
     tiku_edit_status_t st = TIKU_EDIT_OK;
 
-    if (t->select)
+    if (t->select && t->nselections > 0)
+        st = tiku_editdoc_view_select_many(doc, t->view, t->selections,
+                                           t->nselections, t->main);
+    else if (t->select)
         st = tiku_editdoc_view_select(doc, t->view, t->anchor, t->caret);
     tiku_ed_free(w->payload);
     tiku_ed_record_free(&w->record);
@@ -344,13 +433,15 @@ tiku_editdoc_apply(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t)
     lines = tiku_ed_lines_count(&doc->text.lines);
     tiku_ed_commit_begin();
     commit_pieces(doc, &w.record, 0);
-    if (w.view && t->select) {
-        w.view->anchor = t->anchor;
-        w.view->caret = t->caret;
-    }
+    if (w.view && t->select)
+        set_selections(w.view, &w, t);
     if (w.view) {
         w.record.after_anchor = w.view->anchor;
         w.record.after_caret = w.view->caret;
+        if (w.view->nmore)
+            memcpy(w.record.more + w.record.nbefore, w.view->more,
+                   w.view->nmore * sizeof *w.view->more);
+        w.record.nafter = w.view->nmore;
     }
     if (w.join) {
         old = tiku_ed_history_replace_last(h, w.payload, w.payload_len,
@@ -385,6 +476,7 @@ step(tiku_editdoc_t *doc, int back)
     tiku_ed_view_t *v;
     uint64_t generation;
     int64_t lines;
+    size_t n;
 
     if (!doc)
         return TIKU_EDIT_INVALID;
@@ -396,17 +488,22 @@ step(tiku_editdoc_t *doc, int back)
     if (back ? h->current == 0 : h->current == h->count)
         return TIKU_EDIT_NOTHING;
     r = &h->records[back ? h->current - 1 : h->current];
-    if (!reserve_for(doc, r, back))
+    v = tiku_ed_view_get(doc, r->view);
+    n = back ? r->nbefore : r->nafter;
+    if ((v && !tiku_ed_view_room(v, n)) || !reserve_for(doc, r, back))
         return TIKU_EDIT_NO_MEMORY;
 
     generation = doc->generation;
     lines = tiku_ed_lines_count(&doc->text.lines);
     tiku_ed_commit_begin();
     commit_pieces(doc, r, back);
-    v = tiku_ed_view_get(doc, r->view);
     if (v) {
         v->anchor = back ? r->before_anchor : r->after_anchor;
         v->caret = back ? r->before_caret : r->after_caret;
+        if (n)
+            memcpy(v->more, r->more + (back ? 0 : r->nbefore),
+                   n * sizeof *v->more);
+        v->nmore = n;
     }
     h->current += back ? -1 : 1;
     h->open = 0;

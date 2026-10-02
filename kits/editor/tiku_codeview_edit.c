@@ -110,6 +110,8 @@ tiku_codeview_insert(tiku_codeview_t *view, const char *text, size_t length,
     st = ordered(view, &lo, &hi);
     if (st != TIKU_EDIT_OK)
         return st;
+    if (tiku_cv_many(view))
+        return tiku_cv_insert_each(view, text, length, typing);
     if (lo == hi && length == 0)
         return TIKU_EDIT_OK;
     return tiku_cv_replace(view, lo, hi, text, length, typing);
@@ -126,6 +128,8 @@ tiku_codeview_delete(tiku_codeview_t *view, int forward)
     st = ordered(view, &lo, &hi);
     if (st != TIKU_EDIT_OK)
         return st;
+    if (tiku_cv_many(view))
+        return tiku_cv_delete_each(view, forward, 0);
     if (lo < hi)
         return tiku_cv_replace(view, lo, hi, NULL, 0, 0);
     if (forward)
@@ -178,6 +182,8 @@ tiku_codeview_copy(tiku_codeview_t *view)
     st = ordered(view, &lo, &hi);
     if (st != TIKU_EDIT_OK)
         return st;
+    if (tiku_cv_many(view))
+        return tiku_cv_copy_each(view);
     if (lo == hi)
         return TIKU_EDIT_NOTHING;
     if ((uint64_t)(hi - lo) >= (uint64_t)SIZE_MAX)
@@ -204,6 +210,9 @@ tiku_codeview_cut(tiku_codeview_t *view)
 
     if (st != TIKU_EDIT_OK)
         return st;
+    /* Every selection goes; a caret among them stays where it is. */
+    if (tiku_cv_many(view))
+        return tiku_cv_insert_each(view, NULL, 0, 0);
     return tiku_codeview_delete(view, 0);
 }
 
@@ -218,6 +227,8 @@ tiku_codeview_paste(tiku_codeview_t *view)
     text = view->host.clip_text(view->host.ctx, &n);
     if (text == NULL || n == 0)
         return TIKU_EDIT_NOTHING;
+    if (tiku_cv_many(view))
+        return tiku_cv_paste_each(view, text, n);
     return tiku_codeview_insert(view, text, n, 0);
 }
 
@@ -325,8 +336,8 @@ command_key(tiku_codeview_t *v, const tiku_event_t *e)
     }
 }
 
-/** @brief Tab: the lines a selection spans indented a level, or else a
- *         level typed over the selection or at the caret. */
+/** @brief Tab: the lines one selection spans indented a level, or else
+ *         a level typed over each selection, as a key types. */
 static tiku_edit_status_t
 tab(tiku_codeview_t *v)
 {
@@ -336,7 +347,8 @@ tab(tiku_codeview_t *v)
         return TIKU_EDIT_INVALID;
     lo = anchor < caret ? anchor : caret;
     hi = anchor < caret ? caret : anchor;
-    if (tiku_editdoc_line_of(v->doc, lo) < tiku_editdoc_line_of(v->doc, hi))
+    if (tiku_editdoc_line_of(v->doc, lo) < tiku_editdoc_line_of(v->doc, hi) &&
+        !tiku_cv_many(v))
         return tiku_codeview_indent(v, 0);
     if (v->indent_spaces > 0)
         return tiku_codeview_insert(v, "                                ",

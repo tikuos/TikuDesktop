@@ -85,6 +85,10 @@ typedef struct {
     int64_t before_caret;       /* ... its moving end                   */
     int64_t after_anchor;       /* the selection after                  */
     int64_t after_caret;        /* ... its moving end                   */
+    tiku_edit_selection_t *more; /* that view's other selections:
+                                   nbefore before, then nafter after    */
+    size_t nbefore;             /* other selections before              */
+    size_t nafter;              /* and after                            */
     int typed;                  /* TIKU_ED_TYPED_*                      */
     size_t cost;                /* what it charges the history budget   */
 } tiku_ed_record_t;
@@ -111,10 +115,14 @@ typedef struct {
     uint8_t right;              /* moves past text inserted at it       */
 } tiku_ed_anchor_t;
 
-/* A registered view's selection. */
+/* A registered view's selections: the main one, and the others in order
+ * of their starts, kept apart from each other and from it. */
 typedef struct {
-    int64_t anchor;             /* the selection's fixed end            */
+    int64_t anchor;             /* the main selection's fixed end       */
     int64_t caret;              /* its moving end                       */
+    tiku_edit_selection_t *more; /* the others, nmore of them           */
+    size_t nmore;               /* selections in more                   */
+    size_t more_cap;            /* room in more                         */
     uint32_t generation;        /* bumped when the slot is freed        */
     uint8_t live;               /* attached                             */
 } tiku_ed_view_t;
@@ -290,7 +298,8 @@ int tiku_ed_history_reserve(tiku_ed_history_t *h);
 void tiku_ed_history_push(tiku_ed_history_t *h, tiku_ed_record_t *r);
 void tiku_ed_history_prune(tiku_ed_history_t *h);
 void tiku_ed_history_clear(tiku_ed_history_t *h);
-/* Whether @p r, a one-piece typing record from @p view, joins the last. */
+/* Whether @p r, a one-piece typing record from @p view, joins the last;
+ * records that keep other selections never join. */
 int tiku_ed_history_joins(const tiku_ed_history_t *h,
                           const tiku_ed_record_t *r);
 /* The last record and @p r merged into a new payload and piece; allocates
@@ -315,6 +324,16 @@ void tiku_ed_dispatch(tiku_editdoc_t *doc, const tiku_edit_change_t *change);
 /* The live view a handle names, or NULL. */
 tiku_ed_view_t *tiku_ed_view_get(const tiku_editdoc_t *doc,
                                  tiku_edit_view_t view);
+/* Room in @p v for @p n other selections; 0 when there is none.  Never
+ * changes what the view has selected. */
+int tiku_ed_view_room(tiku_ed_view_t *v, size_t n);
+/* Put @p n selections in order of their starts. */
+void tiku_ed_selections_sort(tiku_edit_selection_t *more, size_t n);
+/* Merge the @p *n selections in @p more, in order of their starts, with
+ * each other and with @p main by the rule tiku_editdoc_view_select_many()
+ * states; @p *n becomes how many are left.  No allocation. */
+void tiku_ed_selections_merge(tiku_edit_selection_t *main,
+                              tiku_edit_selection_t *more, size_t *n);
 
 /* Line markers (tiku_edit_decorations.c).  map() moves each one through
  * a replacement of [s, e) by n bytes, as tiku_ed_marks_map() does the

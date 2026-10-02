@@ -74,10 +74,27 @@ after_insert(int64_t p, int64_t s, int64_t n, int starts)
     return p > s ? p + n : p;
 }
 
+/** @brief A selection through a replacement of [s, e) by n bytes: a
+ *         deletion then an insertion, its start and end decided afresh
+ *         between them, as upstream sees the two notifications. */
+static void
+map_selection(int64_t *anchor, int64_t *caret, int64_t s, int64_t e,
+              int64_t n)
+{
+    int caret_starts, anchor_starts;
+
+    *anchor = after_delete(*anchor, s, e);
+    *caret = after_delete(*caret, s, e);
+    caret_starts = *caret < *anchor;
+    anchor_starts = *anchor < *caret;
+    *anchor = after_insert(*anchor, s, n, anchor_starts);
+    *caret = after_insert(*caret, s, n, caret_starts);
+}
+
 void
 tiku_ed_marks_map(tiku_editdoc_t *doc, int64_t s, int64_t e, int64_t n)
 {
-    size_t i;
+    size_t i, k;
 
     for (i = 0; i < doc->nanchors; i++) {
         tiku_ed_anchor_t *a = &doc->anchors[i];
@@ -87,19 +104,12 @@ tiku_ed_marks_map(tiku_editdoc_t *doc, int64_t s, int64_t e, int64_t n)
     }
     for (i = 0; i < doc->nviews; i++) {
         tiku_ed_view_t *v = &doc->views[i];
-        int caret_starts, anchor_starts;
 
         if (!v->live)
             continue;
-        /* A replacement is a deletion then an insertion, the selection's
-         * start and end decided afresh between them, as upstream sees
-         * the two notifications. */
-        v->anchor = after_delete(v->anchor, s, e);
-        v->caret = after_delete(v->caret, s, e);
-        caret_starts = v->caret < v->anchor;
-        anchor_starts = v->anchor < v->caret;
-        v->anchor = after_insert(v->anchor, s, n, anchor_starts);
-        v->caret = after_insert(v->caret, s, n, caret_starts);
+        map_selection(&v->anchor, &v->caret, s, e, n);
+        for (k = 0; k < v->nmore; k++)
+            map_selection(&v->more[k].anchor, &v->more[k].caret, s, e, n);
     }
     tiku_ed_markers_map(doc, s, e, n);
     tiku_ed_notes_map(doc, s, e, n);
@@ -118,18 +128,117 @@ snap(const tiku_editdoc_t *doc, int64_t p)
     return p;
 }
 
+/** @brief Where selection @p s starts. */
+static int64_t
+lo_of(const tiku_edit_selection_t *s)
+{
+    return s->anchor < s->caret ? s->anchor : s->caret;
+}
+
+/** @brief Where selection @p s ends. */
+static int64_t
+hi_of(const tiku_edit_selection_t *s)
+{
+    return s->anchor < s->caret ? s->caret : s->anchor;
+}
+
+/** @brief Whether @p b, starting no earlier than @p a, becomes one with
+ *         it: they overlap, or one is a caret touching the other. */
+static int
+joins(const tiku_edit_selection_t *a, const tiku_edit_selection_t *b)
+{
+    if (a->anchor == a->caret || b->anchor == b->caret)
+        return lo_of(b) <= hi_of(a);
+    return lo_of(b) < hi_of(a);
+}
+
+/** @brief @p a grown over @p b, facing the way it does, or @p b's way
+ *         when it is a caret. */
+static void
+take_in(tiku_edit_selection_t *a, const tiku_edit_selection_t *b)
+{
+    int64_t lo = lo_of(a) < lo_of(b) ? lo_of(a) : lo_of(b);
+    int64_t hi = hi_of(a) > hi_of(b) ? hi_of(a) : hi_of(b);
+    int back = a->anchor != a->caret ? a->caret < a->anchor
+                                     : b->caret < b->anchor;
+
+    a->anchor = back ? hi : lo;
+    a->caret = back ? lo : hi;
+}
+
+/** @brief Whether @p a comes before @p b: by start, then by end. */
+static int
+before(const tiku_edit_selection_t *a, const tiku_edit_selection_t *b)
+{
+    return lo_of(a) != lo_of(b) ? lo_of(a) < lo_of(b) : hi_of(a) <= hi_of(b);
+}
+
+void
+tiku_ed_selections_merge(tiku_edit_selection_t *main,
+                         tiku_edit_selection_t *more, size_t *n)
+{
+    tiku_edit_selection_t cur, next;
+    size_t i = 0, kept = 0;
+    int have = 0, cur_main = 0, main_read = 0, next_main;
+
+    /* One sweep in order of starts, the main one read in its place; what
+     * is written back never passes what has been read. */
+    for (;;) {
+        if (!main_read && (i == *n || before(main, &more[i]))) {
+            next = *main;
+            next_main = main_read = 1;
+        } else if (i < *n) {
+            next = more[i++];
+            next_main = 0;
+        } else {
+            break;
+        }
+        if (have && joins(&cur, &next)) {
+            if (next_main) {
+                take_in(&next, &cur);
+                cur = next;
+            } else {
+                take_in(&cur, &next);
+            }
+            cur_main |= next_main;
+            continue;
+        }
+        if (have && cur_main)
+            *main = cur;
+        else if (have)
+            more[kept++] = cur;
+        cur = next;
+        cur_main = next_main;
+        have = 1;
+    }
+    if (cur_main)
+        *main = cur;
+    else
+        more[kept++] = cur;
+    *n = kept;
+}
+
 void
 tiku_ed_marks_snap(tiku_editdoc_t *doc)
 {
-    size_t i;
+    size_t i, k;
 
     for (i = 0; i < doc->nviews; i++) {
         tiku_ed_view_t *v = &doc->views[i];
+        tiku_edit_selection_t main;
 
-        if (v->live) {
-            v->anchor = snap(doc, v->anchor);
-            v->caret = snap(doc, v->caret);
+        if (!v->live)
+            continue;
+        main.anchor = snap(doc, v->anchor);
+        main.caret = snap(doc, v->caret);
+        for (k = 0; k < v->nmore; k++) {
+            v->more[k].anchor = snap(doc, v->more[k].anchor);
+            v->more[k].caret = snap(doc, v->more[k].caret);
         }
+        /* Mapping keeps them in order, but can bring them together. */
+        tiku_ed_selections_merge(&main, v->more, &v->nmore);
+        v->anchor = main.anchor;
+        v->caret = main.caret;
     }
     tiku_ed_markers_settle(doc);
     tiku_ed_notes_settle(doc);
@@ -138,6 +247,10 @@ tiku_ed_marks_snap(tiku_editdoc_t *doc)
 void
 tiku_ed_marks_free(tiku_editdoc_t *doc)
 {
+    size_t i;
+
+    for (i = 0; i < doc->nviews; i++)
+        tiku_ed_free(doc->views[i].more);
     tiku_ed_free(doc->anchors);
     tiku_ed_free(doc->views);
     tiku_ed_free(doc->listeners);
@@ -156,6 +269,25 @@ tiku_ed_view_get(const tiku_editdoc_t *doc, tiku_edit_view_t view)
         return NULL;
     v = &doc->views[view.slot - 1];
     return v->live && v->generation == view.generation ? v : NULL;
+}
+
+int
+tiku_ed_view_room(tiku_ed_view_t *v, size_t n)
+{
+    tiku_edit_selection_t *grown;
+    size_t cap;
+
+    if (n <= v->more_cap)
+        return 1;
+    if (n > (SIZE_MAX / sizeof *grown - 4) / 2)
+        return 0;
+    cap = n + n / 2 + 4;
+    grown = tiku_ed_realloc(v->more, cap * sizeof *grown);
+    if (!grown)
+        return 0;
+    v->more = grown;
+    v->more_cap = cap;
+    return 1;
 }
 
 /** @brief The live anchor a handle names, or NULL. */
@@ -263,6 +395,9 @@ tiku_editdoc_view_detach(tiku_editdoc_t *doc, tiku_edit_view_t view)
     if (v) {
         v->live = 0;
         v->generation = next_generation(v->generation);
+        tiku_ed_free(v->more);
+        v->more = NULL;
+        v->nmore = v->more_cap = 0;
     }
 }
 
@@ -279,12 +414,23 @@ tiku_editdoc_view_selection(const tiku_editdoc_t *doc, tiku_edit_view_t view,
     return TIKU_EDIT_OK;
 }
 
+/** @brief End @p view's typing step, when it is typing. */
+static void
+end_typing(tiku_editdoc_t *doc, tiku_edit_view_t view)
+{
+    tiku_ed_history_t *h = &doc->history;
+
+    if (h->open && h->current > 0 &&
+        h->records[h->current - 1].view.slot == view.slot &&
+        h->records[h->current - 1].view.generation == view.generation)
+        h->open = 0;
+}
+
 tiku_edit_status_t
 tiku_editdoc_view_select(tiku_editdoc_t *doc, tiku_edit_view_t view,
                          tiku_edit_pos_t anchor, tiku_edit_pos_t caret)
 {
     tiku_ed_view_t *v = tiku_ed_view_get(doc, view);
-    tiku_ed_history_t *h;
 
     if (!v)
         return TIKU_EDIT_INVALID;
@@ -293,12 +439,77 @@ tiku_editdoc_view_select(tiku_editdoc_t *doc, tiku_edit_view_t view,
         return TIKU_EDIT_INVALID_RANGE;
     v->anchor = anchor;
     v->caret = caret;
-    h = &doc->history;
-    if (h->open && h->current > 0 &&
-        h->records[h->current - 1].view.slot == view.slot &&
-        h->records[h->current - 1].view.generation == view.generation)
-        h->open = 0;
+    v->nmore = 0;
+    end_typing(doc, view);
     return TIKU_EDIT_OK;
+}
+
+void
+tiku_ed_selections_sort(tiku_edit_selection_t *more, size_t n)
+{
+    size_t i, j;
+
+    /* By insertion, allocating nothing; quick for what is nearly in
+     * order. */
+    for (i = 1; i < n; i++) {
+        tiku_edit_selection_t t = more[i];
+
+        for (j = i; j > 0 && !before(&more[j - 1], &t); j--)
+            more[j] = more[j - 1];
+        more[j] = t;
+    }
+}
+
+tiku_edit_status_t
+tiku_editdoc_view_select_many(tiku_editdoc_t *doc, tiku_edit_view_t view,
+                              const tiku_edit_selection_t *selections,
+                              size_t count, size_t main)
+{
+    tiku_ed_view_t *v = tiku_ed_view_get(doc, view);
+    tiku_edit_selection_t m;
+    size_t i, k = 0;
+
+    if (!v || !selections || count == 0 || main >= count)
+        return TIKU_EDIT_INVALID;
+    for (i = 0; i < count; i++)
+        if (!tiku_editdoc_is_caret(doc, selections[i].anchor) ||
+            !tiku_editdoc_is_caret(doc, selections[i].caret))
+            return TIKU_EDIT_INVALID_RANGE;
+    if (!tiku_ed_view_room(v, count - 1))
+        return TIKU_EDIT_NO_MEMORY;
+    for (i = 0; i < count; i++)
+        if (i != main)
+            v->more[k++] = selections[i];
+    tiku_ed_selections_sort(v->more, k);
+    m = selections[main];
+    tiku_ed_selections_merge(&m, v->more, &k);
+    v->anchor = m.anchor;
+    v->caret = m.caret;
+    v->nmore = k;
+    end_typing(doc, view);
+    return TIKU_EDIT_OK;
+}
+
+size_t
+tiku_editdoc_view_selections(const tiku_editdoc_t *doc, tiku_edit_view_t view,
+                             tiku_edit_selection_t *out, size_t cap,
+                             size_t *main)
+{
+    const tiku_ed_view_t *v = tiku_ed_view_get(doc, view);
+    tiku_edit_selection_t m;
+    size_t i, at = 0;
+
+    if (!v)
+        return 0;
+    m.anchor = v->anchor;
+    m.caret = v->caret;
+    while (at < v->nmore && lo_of(&v->more[at]) < lo_of(&m))
+        at++;
+    for (i = 0; out && i < cap && i <= v->nmore; i++)
+        out[i] = i < at ? v->more[i] : i == at ? m : v->more[i - 1];
+    if (main)
+        *main = at;
+    return v->nmore + 1;
 }
 
 tiku_edit_status_t

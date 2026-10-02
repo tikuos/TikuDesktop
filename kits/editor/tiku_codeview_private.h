@@ -192,6 +192,16 @@ struct tiku_codeview {
     tiku_codeview_mark_t marks[TIKU_EDIT_INDICATOR_KINDS]; /* how each
                                        kind of indicator is drawn       */
     tiku_rgb_t mark_colors[TIKU_EDIT_INDICATOR_KINDS]; /* and in what   */
+    tiku_edit_selection_t *sels;    /* the selections read in order     */
+    size_t sels_cap;                /* room in sels                     */
+    tiku_edit_selection_t sel_one;  /* the main one, read when there is
+                                       no room for them all             */
+    int rect;                       /* the drag makes a rectangle       */
+    int64_t rect_x;                 /* the press's x on its row         */
+    int64_t rect_line, rect_sub;    /* and its row                      */
+    tiku_edit_selection_t *held;    /* the selections a Command press
+                                       added one to, and room for it    */
+    size_t nheld;                   /* how many it added to             */
 };
 
 /* What a character of a line is on the screen. */
@@ -426,6 +436,58 @@ void tiku_cv_marks_paint(tiku_codeview_t *v, tiku_surface_t *s,
 /* Annotation row @p w drawn at surface row @p y. */
 void tiku_cv_annotation_paint(tiku_codeview_t *v, tiku_surface_t *s,
                               const tiku_cv_row_t *w, int y);
+
+/* One selection's change in a change across all of them: [start, end)
+ * replaced by @c length bytes of @c text, the selection becoming a caret
+ * @c caret bytes into the new text. */
+typedef struct {
+    tiku_edit_pos_t start;          /* the bytes replaced               */
+    tiku_edit_pos_t end;
+    const char *text;               /* what replaces them               */
+    size_t length;
+    size_t caret;                   /* the caret's place in it          */
+} tiku_cv_piece_t;
+
+/* Several selections (tiku_codeview_carets.c).  Whether the view has more
+ * than one. */
+int tiku_cv_many(const tiku_codeview_t *v);
+/* The view's selections in order, read into a buffer the view keeps until
+ * the next call: @p n of them, the main one at @p main; the main one alone
+ * when there is no room. */
+const tiku_edit_selection_t *tiku_cv_selections(tiku_codeview_t *v,
+                                                size_t *n, size_t *main);
+/* Apply @p n pieces, one for each selection in order, as one transaction
+ * leaving a caret in each, the one at @p main the main one, and show it. */
+tiku_edit_status_t tiku_cv_apply_pieces(tiku_codeview_t *v,
+                                        const tiku_cv_piece_t *p, size_t n,
+                                        size_t main, int typing);
+/* Type @p length bytes of @p text over every selection. */
+tiku_edit_status_t tiku_cv_insert_each(tiku_codeview_t *v, const char *text,
+                                       size_t length, int typing);
+/* Delete every selection, or at each caret the character, or with
+ * @p words the word, before it or with @p forward after it; of two or
+ * more carets one at least has something to take. */
+tiku_edit_status_t tiku_cv_delete_each(tiku_codeview_t *v, int forward,
+                                       int words);
+/* Paste @p text over every selection: one line each when it has as many
+ * lines as there are selections, else all of it each. */
+tiku_edit_status_t tiku_cv_paste_each(tiku_codeview_t *v, const char *text,
+                                      size_t length);
+/* Offer the selections' text to the clipboard in order, a line break
+ * between each two; TIKU_EDIT_NOTHING when none holds any. */
+tiku_edit_status_t tiku_cv_copy_each(tiku_codeview_t *v);
+/* Select the rectangle from the press's row and x to row @p sub of
+ * @p line at row x @p x: on each text row between, from the place nearest
+ * the one x to the place nearest the other, the pointer's row main. */
+tiku_edit_status_t tiku_cv_rectangle(tiku_codeview_t *v, int64_t line,
+                                     int64_t sub, int64_t x);
+/* A Command press at @p pos: take away the selection there, when there
+ * are several, or else add a caret there as the main one. */
+tiku_edit_status_t tiku_cv_add_press(tiku_codeview_t *v, tiku_edit_pos_t pos);
+/* The selection a Command press added, dragged to @p anchor, @p caret. */
+tiku_edit_status_t tiku_cv_add_drag(tiku_codeview_t *v,
+                                    tiku_edit_pos_t anchor,
+                                    tiku_edit_pos_t caret);
 
 /* Folds (tiku_codeview_folds.c): whether @p line heads a region, read
  * from its own text. */

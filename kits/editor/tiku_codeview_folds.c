@@ -259,23 +259,45 @@ tiku_codeview_shown(const tiku_codeview_t *view, int64_t line)
            tiku_cv_shown_line(view, line, 0) == line;
 }
 
-/** @brief Keep the caret out of lines @p first to @p last, now folded:
- *         a selection reaching into them becomes the caret at the end of
- *         the line heading them. */
+/** @brief Whether either end of selection @p s is on lines @p first to
+ *         @p last. */
+static int
+reaches(const tiku_codeview_t *v, const tiku_edit_selection_t *s,
+        int64_t first, int64_t last)
+{
+    int64_t a = tiku_editdoc_line_of(v->doc, s->anchor);
+    int64_t c = tiku_editdoc_line_of(v->doc, s->caret);
+
+    return (a >= first && a <= last) || (c >= first && c <= last);
+}
+
+/** @brief Keep the carets out of lines @p first to @p last, now folded:
+ *         each selection reaching into them becomes the caret at the end
+ *         of the line heading them. */
 static void
 caret_out(tiku_codeview_t *v, int64_t first, int64_t last)
 {
-    tiku_edit_pos_t anchor, caret, end;
-    int64_t a, c;
+    size_t n, main, i, in = 0;
+    const tiku_edit_selection_t *s = tiku_cv_selections(v, &n, &main);
+    tiku_edit_pos_t end = tiku_editdoc_line_end(v->doc, first - 1);
+    tiku_edit_selection_t *to;
 
-    if (tiku_codeview_selection(v, &anchor, &caret) != TIKU_EDIT_OK)
+    for (i = 0; i < n; i++)
+        in += reaches(v, &s[i], first, last);
+    if (in == 0)
         return;
-    a = tiku_editdoc_line_of(v->doc, anchor);
-    c = tiku_editdoc_line_of(v->doc, caret);
-    if ((a < first || a > last) && (c < first || c > last))
+    to = tiku_ed_alloc(n * sizeof *to);
+    if (to == NULL) {
+        (void)tiku_codeview_select(v, end, end);
         return;
-    end = tiku_editdoc_line_end(v->doc, first - 1);
-    (void)tiku_codeview_select(v, end, end);
+    }
+    for (i = 0; i < n; i++) {
+        to[i] = s[i];
+        if (reaches(v, &s[i], first, last))
+            to[i].anchor = to[i].caret = end;
+    }
+    (void)tiku_codeview_select_many(v, to, n, main);
+    tiku_ed_free(to);
 }
 
 /** @brief Fold the region @p line heads, which is shown. */

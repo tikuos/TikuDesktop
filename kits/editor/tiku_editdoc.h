@@ -28,6 +28,13 @@ typedef struct {
     tiku_edit_pos_t end;        /* one past the last byte               */
 } tiku_edit_range_t;
 
+/** @brief One of a view's selections: the end that stays and the end the
+ *         caret is at; equal ends are a caret alone. */
+typedef struct {
+    tiku_edit_pos_t anchor;     /* the fixed end                        */
+    tiku_edit_pos_t caret;      /* the moving end                       */
+} tiku_edit_selection_t;
+
 /** @brief Why a call did nothing; every failure leaves the document as
  *         it was. */
 typedef enum {
@@ -108,6 +115,12 @@ typedef struct {
     tiku_edit_pos_t caret;              /* the selection's moving end   */
     unsigned flags;                     /* TIKU_EDIT_TYPING             */
     uint64_t generation;                /* expected; 0 accepts any      */
+    const tiku_edit_selection_t *selections; /* with select, the view's
+                                           selections after instead of
+                                           anchor and caret, in the
+                                           coordinates after            */
+    size_t nselections;                 /* 0: anchor and caret alone    */
+    size_t main;                        /* the main one of them         */
 } tiku_edit_transaction_t;
 
 /** @brief What a change was. */
@@ -225,7 +238,7 @@ int tiku_editdoc_read_only(const tiku_editdoc_t *doc);
 tiku_edit_status_t tiku_editdoc_apply(tiku_editdoc_t *doc,
                                       const tiku_edit_transaction_t *t);
 /** @brief Step the history back or forward one transaction, restoring
- *         the selection of the view it came from while it is attached. */
+ *         the selections of the view it came from while it is attached. */
 tiku_edit_status_t tiku_editdoc_undo(tiku_editdoc_t *doc);
 tiku_edit_status_t tiku_editdoc_redo(tiku_editdoc_t *doc);
 int tiku_editdoc_can_undo(const tiku_editdoc_t *doc);
@@ -261,12 +274,31 @@ tiku_edit_status_t tiku_editdoc_view_selection(const tiku_editdoc_t *doc,
                                                tiku_edit_view_t view,
                                                tiku_edit_pos_t *anchor,
                                                tiku_edit_pos_t *caret);
-/** @brief Set a selection at caret positions; setting the selection of
- *         the view that is typing ends its typing step. */
+/** @brief Set a selection at caret positions, the view's only one;
+ *         setting the selection of the view that is typing ends its typing
+ *         step. */
 tiku_edit_status_t tiku_editdoc_view_select(tiku_editdoc_t *doc,
                                             tiku_edit_view_t view,
                                             tiku_edit_pos_t anchor,
                                             tiku_edit_pos_t caret);
+/**
+ * @brief Set a view's selections, @p count of them at caret positions;
+ *        the one at @p main is the selection the one-selection calls use.
+ *
+ * Kept in order by their starts.  Two that overlap, or a caret touching
+ * another selection, become one, the main one if either was; two
+ * selections that only touch stay two.  Edits keep them so.
+ */
+tiku_edit_status_t tiku_editdoc_view_select_many(
+    tiku_editdoc_t *doc, tiku_edit_view_t view,
+    const tiku_edit_selection_t *selections, size_t count, size_t main);
+/** @brief A view's selections in order: how many, up to @p cap of them in
+ *         @p out, and the main one's place in @p main; 0 when the view is
+ *         not attached. */
+size_t tiku_editdoc_view_selections(const tiku_editdoc_t *doc,
+                                    tiku_edit_view_t view,
+                                    tiku_edit_selection_t *out, size_t cap,
+                                    size_t *main);
 
 /** @brief Call @p fn after every committed change. */
 tiku_edit_status_t tiku_editdoc_listen(tiku_editdoc_t *doc,

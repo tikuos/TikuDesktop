@@ -223,10 +223,34 @@ tiku_edit_pos_t tiku_codeview_hit(tiku_codeview_t *view, int x, int y);
 tiku_edit_status_t tiku_codeview_selection(const tiku_codeview_t *view,
                                            tiku_edit_pos_t *anchor,
                                            tiku_edit_pos_t *caret);
-/** @brief Select from @p anchor to @p caret, both caret positions. */
+/** @brief Select from @p anchor to @p caret, both caret positions, the
+ *         view's only selection. */
 tiku_edit_status_t tiku_codeview_select(tiku_codeview_t *view,
                                         tiku_edit_pos_t anchor,
                                         tiku_edit_pos_t caret);
+/** @brief The view's selections in order: how many, up to @p cap of them
+ *         in @p out, and the main one's place in @p main.  The main one
+ *         is the one tiku_codeview_selection() reads. */
+size_t tiku_codeview_selections(const tiku_codeview_t *view,
+                                tiku_edit_selection_t *out, size_t cap,
+                                size_t *main);
+/** @brief Set @p count selections, the one at @p main the main one,
+ *         merged as tiku_editdoc_view_select_many() merges them. */
+tiku_edit_status_t tiku_codeview_select_many(
+    tiku_codeview_t *view, const tiku_edit_selection_t *selections,
+    size_t count, size_t main);
+/** @brief Add a selection and make it the main one; one it meets
+ *         joins it. */
+tiku_edit_status_t tiku_codeview_add_selection(tiku_codeview_t *view,
+                                               tiku_edit_pos_t anchor,
+                                               tiku_edit_pos_t caret);
+/** @brief Keep only the main selection; TIKU_EDIT_NOTHING when it is
+ *         the only one. */
+tiku_edit_status_t tiku_codeview_keep_main(tiku_codeview_t *view);
+/** @brief A caret at the end of each line the main selection touches, a
+ *         selection ending at a line's start leaving that line out; the
+ *         last line's caret is the main one. */
+tiku_edit_status_t tiku_codeview_carets_to_line_ends(tiku_codeview_t *view);
 
 /** @brief Where a caret move goes. */
 typedef enum {
@@ -246,14 +270,14 @@ typedef enum {
 } tiku_codeview_move_t;
 
 /**
- * @brief Move the caret, then scroll as little as shows it.
+ * @brief Move every caret, then scroll as little as shows the main one.
  *
- * With @p extend the anchor stays and the selection follows the caret;
- * without it the selection becomes the caret alone, and a character move
- * over a selection stops at its edge.  Rows up and down keep the x from
- * the row's start the first of them had, until another move or a change.
- * A caret where a row breaks shows at the next row's start, unless End,
- * a row move or a press past the row's end put it at that end.
+ * With @p extend each anchor stays and its selection follows the caret;
+ * without it each becomes its caret, a character move over a selection
+ * stopping at its edge.  Rows up and down keep the main caret's x from its
+ * row's start until another move or a change, the others going from their
+ * own.  A caret where a row breaks shows at the next row's start, unless
+ * End, a row move or a press past the row's end put it at that end.
  */
 tiku_edit_status_t tiku_codeview_move(tiku_codeview_t *view,
                                       tiku_codeview_move_t move, int extend);
@@ -265,29 +289,31 @@ tiku_edit_status_t tiku_codeview_select_all(tiku_codeview_t *view);
 void tiku_codeview_reveal(tiku_codeview_t *view);
 
 /**
- * @brief Replace the selection with @p length bytes of @p text as one
- *        undo step, the caret after them, and show the caret.
+ * @brief Replace the selection, or each of several, with @p length bytes
+ *        of @p text as one undo step, a caret after each, and show the
+ *        main caret.
  *
- * With @p typing the step may join the typing before it.  A caret that
- * would fall between a CR and its LF stands before the CR.  Every
- * failure leaves the document as it was.
+ * With @p typing one selection's step may join the typing before it.  A
+ * caret that would fall between a CR and its LF stands before the CR.
+ * Every failure leaves the document as it was.
  */
 tiku_edit_status_t tiku_codeview_insert(tiku_codeview_t *view,
                                         const char *text, size_t length,
                                         int typing);
 /** @brief Delete the selection, or else the character before the caret,
- *         or after it when @p forward, a CRLF as one; presses in a row
- *         join into one undo step.  With no character on that side
- *         nothing changes and TIKU_EDIT_NOTHING is returned. */
+ *         or after it when @p forward, a CRLF as one, at every selection
+ *         as one step; one selection's presses in a row join into one undo
+ *         step.  With no character on that side nothing changes and
+ *         TIKU_EDIT_NOTHING is returned. */
 tiku_edit_status_t tiku_codeview_delete(tiku_codeview_t *view, int forward);
 /**
- * @brief Replace the selection with the view's line break and the
- *        indentation of the line the selection starts on, up to it.
+ * @brief Replace each selection with the view's line break and the
+ *        indentation of its line, up to it, one level more after a line
+ *        whose code ends with an opener of the rules.
  *
- * After a line whose code ends with an opener of the rules the new line
- * is indented one level more, and a closer that followed the selection
- * goes to a line of its own at the old indentation.  One undo step,
- * joining the typing before it, the caret at the end of the indentation.
+ * With one selection a closer that followed it goes to a line of its own
+ * at the old indentation.  One undo step, a caret at the end of each
+ * indentation, joining the typing before it when there is one selection.
  */
 tiku_edit_status_t tiku_codeview_newline(tiku_codeview_t *view);
 /**
@@ -325,7 +351,7 @@ tiku_edit_status_t tiku_codeview_move_lines(tiku_codeview_t *view,
 tiku_edit_status_t tiku_codeview_delete_lines(tiku_codeview_t *view);
 /** @brief Delete the selection, or else back to where a word move left
  *         would go, or with @p forward on to where a word move right
- *         would, as one undo step. */
+ *         would, at every selection, as one undo step. */
 tiku_edit_status_t tiku_codeview_delete_word(tiku_codeview_t *view,
                                              int forward);
 /**
@@ -352,15 +378,18 @@ tiku_edit_status_t tiku_codeview_goto_bracket(tiku_codeview_t *view,
  *         caret. */
 tiku_edit_status_t tiku_codeview_undo(tiku_codeview_t *view);
 tiku_edit_status_t tiku_codeview_redo(tiku_codeview_t *view);
-/** @brief Put the selection on the host's clipboard.  TIKU_EDIT_NOTHING
+/** @brief Put the selection on the host's clipboard, several in order
+ *         with the view's line break between each two.  TIKU_EDIT_NOTHING
  *         with nothing selected, TIKU_EDIT_INVALID with no clipboard,
  *         TIKU_EDIT_LIMIT when the clipboard refused the text. */
 tiku_edit_status_t tiku_codeview_copy(tiku_codeview_t *view);
-/** @brief Copy, then delete the selection only when the clipboard took
- *         it. */
+/** @brief Copy, then delete what is selected only when the clipboard
+ *         took it; carets among several selections stay. */
 tiku_edit_status_t tiku_codeview_cut(tiku_codeview_t *view);
 /** @brief Replace the selection with the clipboard's text, whole or not
- *         at all.  TIKU_EDIT_NOTHING when the clipboard is empty. */
+ *         at all; several selections take one line each when it has as
+ *         many lines, else all of it.  TIKU_EDIT_NOTHING when the
+ *         clipboard is empty. */
 tiku_edit_status_t tiku_codeview_paste(tiku_codeview_t *view);
 /** @brief Why the edit the last event asked for was not made, or
  *         TIKU_EDIT_OK when it was made or the event asked for none. */

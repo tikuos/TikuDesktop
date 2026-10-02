@@ -448,6 +448,55 @@ newline_text(const tiku_codeview_t *v, tiku_edit_pos_t from,
     return text;
 }
 
+/** @brief Return's piece for selection @p s: the view's line break and
+ *         the indentation of its line up to it, a level more after an
+ *         opener, in text the caller frees; 0 when there is no memory. */
+static int
+newline_piece(tiku_codeview_t *v, const tiku_edit_selection_t *s,
+              tiku_cv_piece_t *p)
+{
+    tiku_edit_pos_t lo = s->anchor < s->caret ? s->anchor : s->caret;
+    tiku_edit_pos_t start, ind = indent_end(v, lo, &start);
+    const char *level = NULL;
+    size_t depth = 0, len = 0;
+
+    if (opens_level(v, tiku_cv_rules(v), tiku_editdoc_line_of(v->doc, lo),
+                    lo))
+        depth = unit(v, &level);
+    p->text = newline_text(v, start, ind, level, depth, 0, &len);
+    p->start = lo;
+    p->end = s->anchor < s->caret ? s->caret : s->anchor;
+    p->length = p->caret = len;
+    return p->text != NULL;
+}
+
+/** @brief Return at every selection, each with its own line's
+ *         indentation; with several, no closer is moved down. */
+static tiku_edit_status_t
+newline_each(tiku_codeview_t *v)
+{
+    size_t n, main, i;
+    const tiku_edit_selection_t *s = tiku_cv_selections(v, &n, &main);
+    tiku_edit_status_t st = TIKU_EDIT_OK;
+    tiku_cv_piece_t *p;
+
+    if (n > SIZE_MAX / sizeof *p)
+        return TIKU_EDIT_LIMIT;
+    p = tiku_ed_alloc(n * sizeof *p);
+    if (p == NULL)
+        return TIKU_EDIT_NO_MEMORY;
+    memset(p, 0, n * sizeof *p);
+    for (i = 0; i < n && st == TIKU_EDIT_OK; i++)
+        if (!newline_piece(v, &s[i], &p[i]))
+            st = TIKU_EDIT_NO_MEMORY;
+    if (st == TIKU_EDIT_OK)
+        st = tiku_cv_apply_pieces(v, p, n, main, 1);
+    for (i = 0; i < n; i++)
+        tiku_ed_free((char *)p[i].text);
+    tiku_ed_free(p);
+    return st;
+}
+
 tiku_edit_status_t
 tiku_codeview_newline(tiku_codeview_t *view)
 {
@@ -459,6 +508,8 @@ tiku_codeview_newline(tiku_codeview_t *view)
 
     if (ordered(view, &lo, &hi) != TIKU_EDIT_OK)
         return TIKU_EDIT_INVALID;
+    if (tiku_cv_many(view))
+        return newline_each(view);
     ind = indent_end(view, lo, &start);
     if (opens_level(view, tiku_cv_rules(view),
                     tiku_editdoc_line_of(view->doc, lo), lo)) {
@@ -519,7 +570,7 @@ tiku_cv_type_closer(tiku_codeview_t *v, const char *text)
     size_t n;
 
     if (r->closes == NULL || text[0] == '\0' || text[1] != '\0' ||
-        strchr(r->closes, text[0]) == NULL ||
+        tiku_cv_many(v) || strchr(r->closes, text[0]) == NULL ||
         ordered(v, &lo, &hi) != TIKU_EDIT_OK || lo != hi ||
         indent_end(v, lo, &start) != lo ||
         !opener_indent(v, start, text[0], &from, &to) ||
@@ -889,6 +940,8 @@ tiku_codeview_delete_word(tiku_codeview_t *view, int forward)
 
     if (ordered(view, &lo, &hi) != TIKU_EDIT_OK)
         return TIKU_EDIT_INVALID;
+    if (tiku_cv_many(view))
+        return tiku_cv_delete_each(view, forward, 1);
     if (lo < hi)
         return tiku_cv_replace(view, lo, hi, NULL, 0, 0);
     if (forward)

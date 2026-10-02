@@ -220,23 +220,17 @@ end(tiku_codeview_t *v, tiku_edit_pos_t caret, int *upstream)
     return *upstream ? r.end : tiku_editdoc_line_end(v->doc, r.line);
 }
 
-tiku_edit_status_t
-tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
-                   int extend)
+/** @brief Where @p move takes the caret of the selection from @p anchor
+ *         to @p caret, rows up and down at the x kept in the view's goal;
+ *         @p up set when it lands at a row's end; -1 for no such move. */
+static tiku_edit_pos_t
+moved(tiku_codeview_t *view, tiku_codeview_move_t move,
+      tiku_edit_pos_t anchor, tiku_edit_pos_t caret, int extend, int *up)
 {
-    tiku_edit_pos_t anchor, caret, lo, hi;
-    tiku_edit_status_t st;
-    int64_t goal = -1;
-    int up = 0;
+    tiku_edit_pos_t lo = anchor < caret ? anchor : caret;
+    tiku_edit_pos_t hi = anchor < caret ? caret : anchor;
 
-    if (view == NULL)
-        return TIKU_EDIT_INVALID;
-    st = tiku_codeview_selection(view, &anchor, &caret);
-    if (st != TIKU_EDIT_OK)
-        return st;
-    tiku_cv_rows_ready(view);
-    lo = anchor < caret ? anchor : caret;
-    hi = anchor < caret ? caret : anchor;
+    *up = 0;
     switch (move) {
     case TIKU_CODEVIEW_CHAR_LEFT:
         caret = !extend && lo < hi ? lo : tiku_editdoc_prev(view->doc, caret);
@@ -259,15 +253,14 @@ tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
                        tiku_codeview_rows_visible(view);
 
         caret = vertical(view, caret, move == TIKU_CODEVIEW_LINE_UP ||
-                         move == TIKU_CODEVIEW_PAGE_UP ? -rows : rows, &up);
-        goal = view->goal;
+                         move == TIKU_CODEVIEW_PAGE_UP ? -rows : rows, up);
         break;
     }
     case TIKU_CODEVIEW_LINE_START:
         caret = home(view, caret);
         break;
     case TIKU_CODEVIEW_LINE_END:
-        caret = end(view, caret, &up);
+        caret = end(view, caret, up);
         break;
     case TIKU_CODEVIEW_DOC_START:
         caret = 0;
@@ -276,11 +269,78 @@ tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
         caret = tiku_editdoc_length(view->doc);
         break;
     default:
-        return TIKU_EDIT_INVALID;
+        return -1;
     }
+    return caret;
+}
+
+/** @brief Whether @p move keeps the x rows up and down go to. */
+static int
+keeps_goal(tiku_codeview_move_t move)
+{
+    return move == TIKU_CODEVIEW_LINE_UP || move == TIKU_CODEVIEW_LINE_DOWN ||
+           move == TIKU_CODEVIEW_PAGE_UP || move == TIKU_CODEVIEW_PAGE_DOWN;
+}
+
+/** @brief @p move for every selection; the main one keeps the view's x,
+ *         each other one starts from its own. */
+static tiku_edit_status_t
+move_each(tiku_codeview_t *view, tiku_codeview_move_t move, int extend)
+{
+    size_t n, main, i;
+    const tiku_edit_selection_t *s = tiku_cv_selections(view, &n, &main);
+    tiku_edit_selection_t *to = tiku_ed_alloc(n * sizeof *to);
+    int64_t goal = view->goal, main_goal = -1;
+    tiku_edit_status_t st = TIKU_EDIT_OK;
+    int up = 0, main_up = 0;
+
+    if (to == NULL)
+        return TIKU_EDIT_NO_MEMORY;
+    for (i = 0; i < n && st == TIKU_EDIT_OK; i++) {
+        view->goal = i == main ? goal : -1;
+        to[i].caret = moved(view, move, s[i].anchor, s[i].caret, extend, &up);
+        to[i].anchor = extend ? s[i].anchor : to[i].caret;
+        if (to[i].caret < 0)
+            st = TIKU_EDIT_INVALID;
+        if (i == main) {
+            main_goal = view->goal;
+            main_up = up;
+        }
+    }
+    if (st == TIKU_EDIT_OK)
+        st = tiku_editdoc_view_select_many(view->doc, view->view, to, n,
+                                           main);
+    view->goal = keeps_goal(move) ? main_goal : -1;
+    view->upstream = main_up ? to[main].caret : -1;
+    tiku_ed_free(to);
+    if (st == TIKU_EDIT_OK)
+        tiku_codeview_reveal(view);
+    return st;
+}
+
+tiku_edit_status_t
+tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
+                   int extend)
+{
+    tiku_edit_pos_t anchor, caret;
+    tiku_edit_status_t st;
+    int up = 0;
+
+    if (view == NULL)
+        return TIKU_EDIT_INVALID;
+    st = tiku_codeview_selection(view, &anchor, &caret);
+    if (st != TIKU_EDIT_OK)
+        return st;
+    tiku_cv_rows_ready(view);
+    if (tiku_cv_many(view))
+        return move_each(view, move, extend);
+    caret = moved(view, move, anchor, caret, extend, &up);
+    if (caret < 0)
+        return TIKU_EDIT_INVALID;
     st = tiku_editdoc_view_select(view->doc, view->view,
                                   extend ? anchor : caret, caret);
-    view->goal = goal;
+    if (!keeps_goal(move))
+        view->goal = -1;
     view->upstream = up ? caret : -1;
     if (st == TIKU_EDIT_OK)
         tiku_codeview_reveal(view);
@@ -330,6 +390,17 @@ drag_to(tiku_codeview_t *v, int x, int y)
 
     tiku_cv_rows_ready(v);
     row_under(v, y, &row);
+    if (v->rect) {
+        if (tiku_cv_rectangle(v, row.line, row.sub, lx) == TIKU_EDIT_OK)
+            tiku_codeview_reveal(v);
+        return;
+    }
+    if (v->held != NULL) {
+        caret = tiku_cv_row_pos_at(v, &row, lx, &up);
+        if (tiku_cv_add_drag(v, v->pressed.start, caret) == TIKU_EDIT_OK)
+            tiku_codeview_reveal(v);
+        return;
+    }
     if (v->unit == 1) {
         if (tiku_codeview_selection(v, &anchor, &caret) != TIKU_EDIT_OK)
             return;
@@ -354,6 +425,50 @@ drag_to(tiku_codeview_t *v, int x, int y)
     }
 }
 
+/** @brief A press with Option starts a rectangle at the row under it,
+ *         one with Command adds a caret there or takes away the one of
+ *         several selections there; @return 0 for a press with neither. */
+static int
+press_adding(tiku_codeview_t *v, const tiku_event_t *e, int64_t lx)
+{
+    tiku_cv_row_t row;
+    tiku_edit_pos_t at;
+    int up;
+
+    if (!(e->modifiers & (TIKU_MOD_OPTION | TIKU_MOD_CMD)))
+        return 0;
+    v->clicks = 0;
+    v->goal = -1;
+    v->dragging = 1;
+    v->unit = 1;
+    tiku_cv_rows_ready(v);
+    row_under(v, e->y, &row);
+    if (e->modifiers & TIKU_MOD_OPTION) {
+        v->rect = 1;
+        v->rect_x = lx;
+        v->rect_line = row.line;
+        v->rect_sub = row.sub;
+        (void)tiku_cv_rectangle(v, row.line, row.sub, lx);
+    } else {
+        at = tiku_cv_row_pos_at(v, &row, lx, &up);
+        v->pressed.start = v->pressed.end = at;
+        (void)tiku_cv_add_press(v, at);
+    }
+    tiku_codeview_reveal(v);
+    return 1;
+}
+
+/** @brief The press is over: no rectangle, no selection being added. */
+static void
+release(tiku_codeview_t *v)
+{
+    v->dragging = 0;
+    v->rect = 0;
+    tiku_ed_free(v->held);
+    v->held = NULL;
+    v->nheld = 0;
+}
+
 /** @brief Button 1 went down at the event's point. */
 static void
 press(tiku_codeview_t *v, const tiku_event_t *e)
@@ -362,6 +477,10 @@ press(tiku_codeview_t *v, const tiku_event_t *e)
     tiku_edit_pos_t anchor, caret, was;
     int shift = (e->modifiers & TIKU_MOD_SHIFT) != 0, up = 0;
     tiku_cv_row_t row;
+
+    release(v);
+    if (press_adding(v, e, lx))
+        return;
 
     if (!shift && v->clicks > 0 && v->clicks < 3 &&
         e->time_us - v->click_at < CLICK_US &&
@@ -582,6 +701,8 @@ dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
     case TIKU_EVENT_TEXT_INPUT:
         return tiku_cv_edit_commit(view, commit);
     case TIKU_EVENT_KEY_DOWN:
+        if (e->key == TIKU_KEY_ESCAPE && e->modifiers == 0)
+            return tiku_codeview_keep_main(view) == TIKU_EDIT_OK;
         return key(view, e) || tiku_cv_edit_key(view, e);
     case TIKU_EVENT_POINTER_DOWN:
         if (e->button != 1 || !inside(view->bounds, e->x, e->y))
@@ -617,7 +738,7 @@ dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
             return 0;
         drag_to(view, e->x, e->y);
         if (e->type == TIKU_EVENT_POINTER_UP)
-            view->dragging = 0;
+            release(view);
         return 1;
     case TIKU_EVENT_WHEEL:
         wheel(view, e);
@@ -625,7 +746,7 @@ dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
     case TIKU_EVENT_TICK:
         return arrow_tick(view) | tiku_cv_rows_tick(view, TICK_BYTES);
     case TIKU_EVENT_DEACTIVATED:
-        view->dragging = 0;
+        release(view);
         view->held_bar = 0;
         view->arrow_bar = 0;
         return 0;

@@ -122,6 +122,8 @@ tiku_codeview_destroy(tiku_codeview_t *view)
     tiku_cv_rows_free(view);
     tiku_cv_style_free(view);
     tiku_cv_marks_free(view);
+    tiku_ed_free(view->sels);
+    tiku_ed_free(view->held);
     tiku_ed_free(view);
 }
 

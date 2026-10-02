@@ -160,7 +160,8 @@ collect(void *ctx, const char *bytes, size_t n)
 {
     reader_t *r = ctx;
     tiku_edit_replace_t e = { { 0, 0 }, "x", 1 };
-    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0 };
+    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0, NULL, 0,
+                                  0 };
 
     memcpy(r->text + r->n, bytes, n);
     r->n += n;
@@ -178,7 +179,8 @@ reading(void)
     size_t n = 0;
     tiku_edit_range_t r = { 0, 11 }, bad = { 5, 3 }, out = { 0, 12 };
     tiku_edit_replace_t e = { { 5, 5 }, ",", 1 };
-    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0 };
+    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0, NULL, 0,
+                                  0 };
     reader_t rd;
 
     check(tiku_editdoc_read(doc, r, buf, sizeof buf, &n) == TIKU_EDIT_SHORT &&
@@ -211,7 +213,8 @@ limits(void)
     tiku_editdoc_limits_t lim = { 8, 0 };
     tiku_editdoc_t *doc = NULL;
     tiku_edit_replace_t e = { { 0, 0 }, "12345", 5 };
-    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0 };
+    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0, NULL, 0,
+                                  0 };
 
     check(tiku_editdoc_create(&lim, &doc) == TIKU_EDIT_OK, "DOC-008",
           "create with a limit");
@@ -281,7 +284,8 @@ read_only(void)
 {
     tiku_editdoc_t *doc = doc_of("abc");
     tiku_edit_replace_t e = { { 1, 2 }, "X", 1 };
-    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0 };
+    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0, NULL, 0,
+                                  0 };
 
     check(tiku_editdoc_apply(doc, &t) == TIKU_EDIT_OK, "DOC-010", "an edit");
     tiku_editdoc_set_read_only(doc, 1);
@@ -309,7 +313,8 @@ snapshots(void)
     tiku_editdoc_t *doc = doc_of("one\ntwo");
     tiku_edit_snapshot_t snap;
     tiku_edit_replace_t e = { { 0, 3 }, "1", 1 };
-    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0 };
+    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0, NULL, 0,
+                                  0 };
 
     check(tiku_editdoc_snapshot(doc, &snap) == TIKU_EDIT_OK &&
           snap.length == 7 && !strcmp(snap.text, "one\ntwo") &&
@@ -335,7 +340,8 @@ loading(void)
     tiku_edit_view_t view;
     tiku_edit_pos_t pos, anchor, caret;
     tiku_edit_replace_t e = { { 3, 3 }, "d", 1 };
-    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0 };
+    tiku_edit_transaction_t t = { &e, 1, { 0, 0 }, 0, 0, 0, 0, 0, NULL, 0,
+                                  0 };
     uint64_t generation;
 
     check(tiku_editdoc_apply(doc, &t) == TIKU_EDIT_OK &&

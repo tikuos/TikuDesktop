@@ -30,7 +30,10 @@ typedef struct {
     int64_t left;               /* line x at the text's left edge       */
     int64_t right;              /* line x past which nothing shows      */
     tiku_edit_pos_t stop;       /* the row's end, where the walk stops  */
-    tiku_edit_pos_t lo, hi;     /* the selection, in order              */
+    const tiku_edit_selection_t *sels; /* the selections, in order      */
+    size_t nsels;
+    size_t at;                  /* the first not ended before the cell
+                                   the walk is at                       */
     char piece[PIECE_MAX + 5];  /* text waiting to be drawn, and a NUL  */
     size_t len;                 /* its bytes                            */
     int64_t piece_x;            /* line x of its first character        */
@@ -49,6 +52,38 @@ static int
 surface_x(const row_t *r, int64_t x)
 {
     return r->x0 + (int)(x - r->left);
+}
+
+/** @brief Where selection @p s starts. */
+static tiku_edit_pos_t
+sel_lo(const tiku_edit_selection_t *s)
+{
+    return s->anchor < s->caret ? s->anchor : s->caret;
+}
+
+/** @brief Where selection @p s ends. */
+static tiku_edit_pos_t
+sel_hi(const tiku_edit_selection_t *s)
+{
+    return s->anchor < s->caret ? s->caret : s->anchor;
+}
+
+/** @brief The first selection that ends after @p pos; they are apart,
+ *         so their ends are in order as their starts are. */
+static size_t
+first_after(const row_t *r, tiku_edit_pos_t pos)
+{
+    size_t lo = 0, hi = r->nsels;
+
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+
+        if (sel_hi(&r->sels[mid]) <= pos)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
 }
 
 /** @brief The part of @p a inside @p b. */
@@ -151,11 +186,14 @@ static int
 paint_cell(void *ctx, const tiku_cv_cell_t *c)
 {
     row_t *r = ctx;
-    int selected = c->pos >= r->lo && c->pos < r->hi;
     tiku_rgb_t ink = run_ink(r, c->pos - r->start);
+    int selected;
 
     if (c->pos >= r->stop)
         return 1;
+    while (r->at < r->nsels && sel_hi(&r->sels[r->at]) <= c->pos)
+        r->at++;
+    selected = r->at < r->nsels && sel_lo(&r->sels[r->at]) <= c->pos;
     if (selected)
         ink = TIKU_C_SELTEXT;
     if (c->x >= r->right) {
@@ -182,7 +220,7 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
     return 0;
 }
 
-/** @brief Paint row @p w in the row @p r is set up for: the selection's
+/** @brief Paint row @p w in the row @p r is set up for: the selections'
  *         ground first, the indicators' marks, then the text over them,
  *         then on a line's last row a selected line break as one space's
  *         width after the text. */
@@ -191,18 +229,20 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
 {
     tiku_edit_pos_t end = tiku_editdoc_line_end(v->doc, w->line);
     tiku_edit_pos_t next = tiku_editdoc_line_start(v->doc, w->line + 1);
-    tiku_edit_pos_t upto = w->end;
+    tiku_edit_pos_t upto = w->end, a, b;
     int64_t width;
+    size_t k;
 
     r->left = v->left + w->x0;
     r->right = r->left + tiku_cv_text_w(v);
     r->stop = w->end;
-    if (r->lo < r->hi && r->lo < w->end && r->hi > w->start) {
-        tiku_edit_pos_t a = r->lo > w->start ? r->lo : w->start;
-        tiku_edit_pos_t b = r->hi < w->end ? r->hi : w->end;
-
-        fill_span(r, tiku_cv_x_of(v, w->line, a),
-                  tiku_cv_x_of(v, w->line, b), TIKU_C_SELECT);
+    r->at = first_after(r, w->start);
+    for (k = r->at; k < r->nsels && sel_lo(&r->sels[k]) < w->end; k++) {
+        a = sel_lo(&r->sels[k]) > w->start ? sel_lo(&r->sels[k]) : w->start;
+        b = sel_hi(&r->sels[k]) < w->end ? sel_hi(&r->sels[k]) : w->end;
+        if (a < b)
+            fill_span(r, tiku_cv_x_of(v, w->line, a),
+                      tiku_cv_x_of(v, w->line, b), TIKU_C_SELECT);
     }
     tiku_cv_marks_paint(v, r->s, w, r->y);
     r->len = 0;
@@ -221,8 +261,9 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
     flush(r);
     if (w->last && tiku_codeview_folded(v, w->line))
         tiku_cv_fold_mark(v, r->s, surface_x(r, width), r->y);
-    if (w->last && !r->stopped && next > end && r->lo <= end &&
-        r->hi >= next)
+    k = first_after(r, end);
+    if (w->last && !r->stopped && next > end && k < r->nsels &&
+        sel_lo(&r->sels[k]) <= end && sel_hi(&r->sels[k]) >= next)
         fill_span(r, width, width + tiku_text_advance(r->font, ' '),
                   TIKU_C_SELECT);
 }
@@ -261,19 +302,16 @@ restore_clip(tiku_surface_t *s, tiku_rect_t saved)
         tiku_clip_set(s, saved);
 }
 
-/** @brief The caret: a line the row's height at its x, kept inside the
+/** @brief A caret: a line the row's height at its x, kept inside the
  *         text when blanks a row ends with pass its width. */
 static void
-paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows)
+paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows,
+            tiku_edit_pos_t caret)
 {
-    tiku_edit_pos_t anchor, caret;
     tiku_cv_row_t r;
     int64_t row, x;
     int step = tiku_codeview_row_height(v);
 
-    if (!v->focused ||
-        tiku_codeview_selection(v, &anchor, &caret) != TIKU_EDIT_OK)
-        return;
     tiku_cv_row_of(v, caret, caret == v->upstream, &r);
     row = tiku_cv_shown_row(v, r.line, r.sub);
     if (row < 0 || row >= rows || !tiku_codeview_shown(v, r.line))
@@ -376,7 +414,7 @@ void
 tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
 {
     tiku_rect_t saved, full, area, text;
-    tiku_edit_pos_t anchor = 0, caret = 0;
+    size_t main, k;
     int64_t rows;
     int gutter;
     row_t r;
@@ -408,9 +446,7 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
     r.x0 = tiku_cv_text_x(view);
     r.step = tiku_codeview_row_height(view);
     r.invisibles = (view->options & TIKU_CODEVIEW_INVISIBLES) != 0;
-    (void)tiku_codeview_selection(view, &anchor, &caret);
-    r.lo = anchor < caret ? anchor : caret;
-    r.hi = anchor < caret ? caret : anchor;
+    r.sels = tiku_cv_selections(view, &r.nsels, &main);
     text.x = r.x0;
     text.y = area.y;
     text.w = (int)tiku_cv_text_w(view);
@@ -419,7 +455,8 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
     if (text.w > 0 && text.h > 0) {
         tiku_clip_set(s, text);
         rows = paint_rows(view, &r, area);
-        paint_caret(view, s, rows);
+        for (k = 0; view->focused && k < r.nsels; k++)
+            paint_caret(view, s, rows, r.sels[k].caret);
         tiku_clip_set(s, full);
     }
     tiku_clip_set(s, meet(area, full));

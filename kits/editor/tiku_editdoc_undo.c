@@ -19,7 +19,8 @@
 static size_t
 record_cost(const tiku_ed_record_t *r)
 {
-    return sizeof *r + r->npieces * sizeof *r->pieces + r->payload_len;
+    return sizeof *r + r->npieces * sizeof *r->pieces + r->payload_len +
+           (r->nbefore + r->nafter) * sizeof *r->more;
 }
 
 void
@@ -37,6 +38,7 @@ tiku_ed_record_free(tiku_ed_record_t *r)
 {
     tiku_ed_free(r->pieces);
     tiku_ed_free(r->payload);
+    tiku_ed_free(r->more);
     memset(r, 0, sizeof *r);
 }
 
@@ -134,7 +136,8 @@ tiku_ed_history_joins(const tiku_ed_history_t *h, const tiku_ed_record_t *r)
         return 0;
     last = &h->records[h->current - 1];
     if (r->typed == TIKU_ED_TYPED_NONE || r->typed != last->typed ||
-        r->npieces != 1 || last->npieces != 1 ||
+        r->npieces != 1 || last->npieces != 1 || r->nbefore || r->nafter ||
+        last->nbefore || last->nafter ||
         r->view.slot != last->view.slot ||
         r->view.generation != last->view.generation ||
         last->state_after == h->saved_state)
