@@ -109,6 +109,7 @@ tiku_ide_search_project(ide_t *st, edit_t *e)
     temp = calloc(1, sizeof *temp);
     if (!temp) { return; }
     st->nmsg = 0;
+    st->msg_problems = 0;
     for (i = 0; i < st->proj.nrow && st->nmsg < IDE_MSGS; i++) {
         edit_t *source;
         int64_t y;

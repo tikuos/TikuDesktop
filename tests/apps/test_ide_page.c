@@ -641,6 +641,74 @@ static void line_commands(ide_t *st)
     unpage(st, e);
 }
 
+/** What a run or build says about a line shows on its page: the name at
+ *  the column underlined, by kind, and the words under the line; Next
+ *  and Previous problem go round them, a new run clears them, search
+ *  hits are not problems, and a BASIC line is found by its number. */
+static void problems(ide_t *st)
+{
+    static const char text[] = "int f(void)\n{\n    return nope;\n}\n";
+    edit_t *e = page(st, "bad.c", text, sizeof text - 1);
+    tiku_edit_range_t r;
+    tiku_edit_pos_t lo, hi;
+    unsigned kind = 9;
+    char said[700];
+
+    st->nmsg = 0; st->msg_problems = 1; st->child_numbered = 0;
+    snprintf(said, sizeof said, "%s:3:12: error: use of undeclared "
+             "identifier 'nope'", e->path);
+    tiku_ide_message_take(st, said);
+    snprintf(said, sizeof said, "%s:1:5: warning: f is unused", e->path);
+    tiku_ide_message_take(st, said);
+    tiku_ide_messages_show(st);
+    assert(tiku_codeview_options(e->view) & TIKU_CODEVIEW_ANNOTATIONS);
+    assert(tiku_editdoc_indicator_next(e->doc, -1, 0x7, 0, &r, &kind) ==
+           TIKU_EDIT_OK && r.start == 4 && r.end == 5 && kind == 1);
+    assert(tiku_editdoc_indicator_next(e->doc, 4, 0x7, 0, &r, &kind) ==
+           TIKU_EDIT_OK && r.start == 25 && r.end == 29 && kind == 0);
+    assert(!strcmp(tiku_editdoc_annotation(e->doc, 2, 0, &kind),
+                   "error: use of undeclared identifier 'nope'") &&
+           kind == 0 && tiku_ide_problems_any(e));
+    tiku_ide_place(e, 0, 0);
+    key(st, e, '\'', TIKU_MOD_CMD, NULL);
+    selection(e, &lo, &hi); assert(lo == 4 && hi == 5);
+    key(st, e, '\'', TIKU_MOD_CMD, NULL);
+    selection(e, &lo, &hi); assert(lo == 25 && hi == 29);
+    key(st, e, '\'', TIKU_MOD_CMD | TIKU_MOD_SHIFT, NULL);
+    selection(e, &lo, &hi); assert(lo == 4 && hi == 5);
+    tiku_ide_pick(st, e->id, CMD_PREV_PROBLEM);
+    selection(e, &lo, &hi); assert(lo == 25 && hi == 29);
+    /* A page opened after the build gets the build's problems. */
+    unpage(st, e);
+    e = page(st, "bad.c", text, sizeof text - 1);
+    assert(tiku_ide_problems_any(e) &&
+           tiku_editdoc_annotations(e->doc, NULL) == 2);
+    /* The next run starts clean; search hits draw nothing. */
+    st->nmsg = 0; st->msg_problems = 1;
+    tiku_ide_problems_show(st);
+    assert(!tiku_ide_problems_any(e) &&
+           tiku_editdoc_annotations(e->doc, NULL) == 0);
+    st->msg_problems = 0;
+    tiku_ide_message_take(st, said);
+    tiku_ide_messages_show(st);
+    assert(!tiku_ide_problems_any(e));
+    unpage(st, e);
+    e = page(st, "p.bas", "10 PRINT 1\n20 PRNT 2\n", 21);
+    st->nmsg = 0; st->msg_problems = 1; st->child_numbered = 1;
+    snprintf(st->child_file, sizeof st->child_file, "%s", e->path);
+    tiku_ide_message_take(st, "? syntax");
+    tiku_ide_message_take(st, "at line 20");
+    tiku_ide_messages_show(st);
+    assert(tiku_editdoc_indicator_next(e->doc, -1, 0x7, 0, &r, &kind) ==
+           TIKU_EDIT_OK && r.start == 11 && r.end == 20 && kind == 0);
+    assert(!strcmp(tiku_editdoc_annotation(e->doc, 1, 0, NULL),
+                   "? syntax, at line 20"));
+    st->nmsg = 0;
+    tiku_ide_problems_show(st);
+    st->msg_problems = 0;
+    unpage(st, e);
+}
+
 int main(void)
 {
     char drafts[600];
@@ -661,12 +729,13 @@ int main(void)
     caret_rules(st);
     clipboard(st);
     line_commands(st);
+    problems(st);
     tiku_surface_free(st->proj_surface);
     tiku_surface_free(st->msg_surface);
     tiku_surface_free(st->con_surface);
     free(st);
     puts("PASS: kept bytes, BASIC limits at the run, breakpoint markers, "
          "the paused line, renumber edits, completion and help, caret and "
-         "clipboard rules, line commands");
+         "clipboard rules, line commands, problems");
     return 0;
 }

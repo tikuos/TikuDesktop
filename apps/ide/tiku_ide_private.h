@@ -151,6 +151,8 @@ enum {
 #define CMD_DEBUG_PANEL 33
 #define CMD_CLEARBREAKS 34
 #define CMD_COMMENT  35
+#define CMD_NEXT_PROBLEM 36
+#define CMD_PREV_PROBLEM 37
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /* The line marker a breakpoint is, and how many lines may hold one. */
@@ -216,6 +218,7 @@ typedef struct {
     char text[160];
     char file[512];             /* empty when it names nowhere */
     int  line;                  /* the line, or 0 for none */
+    int  col;                   /* the byte column, or 0 for none */
     /* WHAT the line counts.  A compiler counts the lines of the file; a
      * BASIC program's lines wear their own numbers and are not in file
      * order at all.  Getting this wrong lands the caret somewhere
@@ -301,6 +304,9 @@ typedef struct {
     char                            child_file[512];
     char                            partial[160];
     int                             child_numbered; /* a BASIC run */
+    int                             msg_problems; /* the messages are a
+                                                     run's or build's,
+                                                     not search hits */
     int64_t                         run_from;   /* when it started */
     int64_t                         stop_asked; /* a board stop, unanswered */
     int64_t                         recovery_at;
@@ -417,6 +423,13 @@ void tiku_ide_console_publish(ide_t *st);
 void tiku_ide_console_open(ide_t *st, const char *file, const char *board);
 void tiku_ide_message_follow(ide_t *st);
 void tiku_ide_messages_show(ide_t *st);
+
+/* Problems. */
+void tiku_ide_problems_style(edit_t *e);
+void tiku_ide_problems_page(ide_t *st, edit_t *e);
+void tiku_ide_problems_show(ide_t *st);
+int tiku_ide_problems_any(const edit_t *e);
+int tiku_ide_problems_go(ide_t *st, edit_t *e, int backward);
 
 /* Run. */
 void tiku_ide_run_stop(ide_t *st, const char *why);

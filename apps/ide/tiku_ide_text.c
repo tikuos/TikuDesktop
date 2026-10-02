@@ -108,7 +108,9 @@ tiku_ide_text_new(edit_t *e)
     tiku_codeview_set_host(e->view, &host);
     tiku_codeview_set_font(e->view, tiku_font_plain());
     tiku_codeview_set_language(e->view, e->lang);
-    tiku_codeview_set_options(e->view, TIKU_CODEVIEW_BRACES);
+    tiku_codeview_set_options(e->view, TIKU_CODEVIEW_BRACES |
+                              TIKU_CODEVIEW_ANNOTATIONS);
+    tiku_ide_problems_style(e);
     (void)tiku_codeview_set_marker_fill(e->view, IDE_MARK_BREAK, BREAK_FILL);
     tiku_codeview_set_execution_fill(e->view, EXEC_FILL);
     snprintf(e->newline, sizeof e->newline, "\n");

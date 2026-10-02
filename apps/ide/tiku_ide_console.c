@@ -193,16 +193,17 @@ tiku_ide_message_take(ide_t *st, const char *line)
      */
     {
         const char *colon = strchr(line, ':');
-        unsigned at = 0u;
+        unsigned at = 0u, col = 0u;
 
         if (colon != NULL && colon != line &&
-            sscanf(colon + 1, "%u", &at) == 1 && at > 0u) {
+            sscanf(colon + 1, "%u:%u", &at, &col) >= 1 && at > 0u) {
             size_t len = (size_t)(colon - line);
 
             if (len < sizeof m->file) {
                 memcpy(m->file, line, len);
                 m->file[len] = '\0';
                 m->line = (int)at;
+                m->col = (int)col;
             }
         }
     }
@@ -430,4 +431,5 @@ tiku_ide_messages_show(ide_t *st)
     }
     tiku_ide_messages_paint(st);
     tiku_ide_messages_publish(st);
+    tiku_ide_problems_show(st);
 }

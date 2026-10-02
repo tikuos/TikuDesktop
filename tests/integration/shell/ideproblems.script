@@ -1,0 +1,52 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: idebuild
+# A build's complaint shown where it is: the compiler names a line and a
+# column, and the page underlines the name there and shows the words under
+# the line.
+wait 25
+click 980 30
+wait 4
+menu-pick Programming
+wait 4
+menu-pick TikuBasic
+wait 150
+expect-title Project
+click 71 8
+wait 8
+menu-pick Open Project…
+wait 40
+expect-title Open
+click 400 220
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Project
+wait 8
+click 71 8
+wait 8
+expect-menu Build for host
+menu-pick Build for host
+wait 200
+expect-title Messages
+click 71 8
+wait 8
+expect-menu Go to line 4
+menu-pick Go to line 4
+wait 120
+expect-title bad.c
+shot /tmp/tiku-ide-problems.png
+note the name the compiler pointed at is underlined: the error's wavy
+note red line, whose rises and falls alternate every 2 pixels, and under
+note it the note's straight blue one, both ending with the name
+expect-pixel 238 381 cb3030
+expect-pixel 240 381 ffffff
+expect-pixel 238 382 286ec8
+expect-pixel 300 381 ffffff
+note and what the compiler said is shown under the line, the error on
+note a red band and the note on a blue one
+expect-pixel 700 390 e59797
+expect-pixel 760 401 93b6e3
+quit

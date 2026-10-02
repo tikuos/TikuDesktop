@@ -84,8 +84,10 @@ tiku_ide_run_file_on_board(ide_t *st, const char *path, const char *board)
     st->child_numbered = 1;          /* BASIC names its own lines */
     st->child_fd = -1;               /* nothing of ours to read   */
     st->nmsg = 0;
+    st->msg_problems = 1;
     st->partial[0] = '\0';
     (void)tiku_list_set_count(&st->msg_list, 0);
+    tiku_ide_problems_show(st);
     if (!st->services->board_run(st->services->ctx, st->board, program)) {
         st->board[0] = '\0';
         snprintf(st->note, sizeof st->note, "the board would not take it");

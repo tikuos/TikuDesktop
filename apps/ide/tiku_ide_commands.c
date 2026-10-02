@@ -88,6 +88,10 @@ tiku_ide_pick(void *state, uint32_t window, int command)
     if (e != NULL && command == CMD_COMMENT) {
         return toggle_comment(st, e);
     }
+    if (e != NULL && (command == CMD_NEXT_PROBLEM ||
+                      command == CMD_PREV_PROBLEM)) {
+        return tiku_ide_problems_go(st, e, command == CMD_PREV_PROBLEM);
+    }
     if (e != NULL && command == CMD_RENUM) {
         tiku_ide_renumber_basic(e);
         tiku_ide_edit_paint(st, e);

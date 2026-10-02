@@ -273,6 +273,8 @@ tiku_ide_debug_start(ide_t *st, edit_t *e)
     st->running = st->debugging = 1;
     st->debug_paused = st->debug_pc = st->debug_values = 0;
     st->asking = st->saving = st->nmsg = 0;
+    st->msg_problems = 1;
+    tiku_ide_problems_show(st);
     st->child_numbered = 1; st->run_from = 0;
     st->stop_asked = 0;
     st->debug_state = tiku_editdoc_state(e->doc);

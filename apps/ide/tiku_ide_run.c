@@ -145,11 +145,13 @@ tiku_ide_run_file(ide_t *st, const char *path)
     st->run_from = 0;           /* the first tick says when */
     st->stop_asked = 0;
     st->nmsg = 0;
+    st->msg_problems = 1;
     st->partial[0] = '\0';
     /* No window yet: a run that says nothing has nothing to show, and
      * a message window standing empty is furniture. */
     (void)tiku_list_set_count(&st->msg_list, 0);
     tiku_ide_messages_paint(st);
+    tiku_ide_problems_show(st);
 }
 
 /**
@@ -183,9 +185,11 @@ tiku_ide_build_project(ide_t *st)
         return;
     }
     st->nmsg = 0;
+    st->msg_problems = 1;
     st->partial[0] = '\0';
     st->child_numbered = 0;     /* a compiler counts the file's lines */
     (void)tiku_list_set_count(&st->msg_list, 0);
+    tiku_ide_problems_show(st);
     if (st->proj.target[0] == '\0') {
         tiku_ide_message_take(st, "? this project does not say what it is for");
         tiku_ide_messages_show(st);

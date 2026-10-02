@@ -96,6 +96,13 @@ page_key(ide_t *st, edit_t *e, const tiku_event_t *event, unsigned ch)
     if ((event->modifiers & TIKU_MOD_CMD) && event->key == '/') {
         return tiku_ide_pick(st, e->id, CMD_COMMENT);
     }
+    if ((event->modifiers & TIKU_MOD_CMD) &&
+        (event->key == '\'' || event->key == '"')) {
+        return tiku_ide_pick(st, e->id,
+                             (event->modifiers & TIKU_MOD_SHIFT) ||
+                             event->key == '"' ? CMD_PREV_PROBLEM
+                                               : CMD_NEXT_PROBLEM);
+    }
     /* The desk's editing keys, Cmd X/C/V/A and Cmd-Z / Cmd-Shift-Z for
      * undo and redo, are caught before typing, so their letters are never
      * typed. */

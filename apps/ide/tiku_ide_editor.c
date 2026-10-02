@@ -190,6 +190,10 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
          TIKU_MOD_CMD, 1);
     tiku_ide_mrow(&menus.menu[1], "Find in project", CMD_PROJECT_FIND, 0, 0u,
          st->proj.nrow > 0 && !st->running);
+    tiku_ide_mrow(&menus.menu[1], "Next problem", CMD_NEXT_PROBLEM, '\'',
+         TIKU_MOD_CMD, tiku_ide_problems_any(e));
+    tiku_ide_mrow(&menus.menu[1], "Previous problem", CMD_PREV_PROBLEM, '\'',
+         TIKU_MOD_CMD | TIKU_MOD_SHIFT, tiku_ide_problems_any(e));
     msep(&menus.menu[1]);
     tiku_ide_mrow(&menus.menu[1], "Toggle comment", CMD_COMMENT, '/',
          TIKU_MOD_CMD, !tiku_ide_debug_locked(st, e));
@@ -499,6 +503,7 @@ tiku_ide_edit_open(ide_t *st, const prow_t *row)
         tiku_ide_project_paint(st);
         return;
     }
+    tiku_ide_problems_page(st, e);
     tiku_ide_edit_paint(st, e);
     tiku_ide_edit_publish(st, e);
     if (st->services->sizeable != NULL) {
