@@ -156,6 +156,14 @@ These are settled for the engine. The migration rows they affect are marked
     the next. The IDE shows what a run or build says about a line this way,
     in place of the Messages window alone (IND, ANN, IMK, ANV and
     IDE-DIAG rows).
+20. **A view folds regions the rules tell.** A line leaving a brace open,
+    opening a BASIC block or followed by lines indented further heads a
+    region, read from the text each time. Each view folds and unfolds on
+    its own: a folded region's lines take no rows, the caret is kept out of
+    them, and whatever puts the caret in them unfolds them. An edit shows
+    the lines it touched and the folded lines next to it. This qualifies
+    DSP-001 and DSP-007 (the fold column), and Editor's Text menu gains the
+    fold commands (FLD rows, EDR-FOLD rows).
 
 ## Document engine
 
@@ -319,13 +327,13 @@ section until it moves onto the view, and any difference is decided then.
 
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
-| DSP-001 | Tiku | A new view shows no gutter. With line numbers the gutter is 12 pixels and a digit's width in the view's face for each digit of the line count, and the text starts 4 pixels past it, as Editor's does today | done | `test_codeview_display.c:gutter_geometry` |
+| DSP-001 | Tiku | A new view shows no gutter; the fold column adds 12 pixels to it (FLD-010). With line numbers the gutter is 12 pixels and a digit's width in the view's face for each digit of the line count, and the text starts 4 pixels past it, as Editor's does today | done | `test_codeview_display.c:gutter_geometry` |
 | DSP-002 | Tiku | The gutter is shaded a step darker than the document ground, with a rule a further step darker at its right edge. It numbers each shown line from the first row's, on the line's first row (WRP-007), in the 11 pixel face, set 6 pixels left of its edge on the text's baseline in the faint ink | done | `test_codeview_display.c:gutter_paint` |
 | DSP-003 | Tiku | With invisibles on, a space shows a 1 pixel dot and a tab a 3 pixel dash in the middle of its cell, in its ink pulled halfway to its ground; without them there is no mark | done | `test_codeview_display.c:invisibles`, `test_codeview_style.c:selection_and_marks` |
 | DSP-004 | Tiku | A vertical scrollbar takes 15 pixels down the right of the bounds and a horizontal one 15 along the foot, with the corner between them in the panel colour, and the text keeps clear of both. Each thumb is placed and sized in thousandths of the scroll, rounded, and a recording carries it where it is drawn | done | `test_codeview_display.c:bars_paint`, `test_dlcontrols.c:main` |
 | DSP-005 | Tiku | Button 1 on an arrow steps a line down or a column across; held, it is drawn pressed, waits 12 ticks and then steps every 4 until it is released or the window deactivates. On the track it pages by what is shown less one step, and on the thumb it drags with the grab kept under the pointer. The caret stays where it is | done | `test_codeview_display.c:bars_input` |
 | DSP-006 | Tiku | The wheel scrolls rows, or columns with Shift or a sideways turn, and leaves the caret | done | `test_codeview_display.c:wheel_and_gutter` |
-| DSP-007 | Tiku | A press in the gutter, or in the corner between the scrollbars, is left to the application | done | `test_codeview_display.c:wheel_and_gutter` |
+| DSP-007 | Tiku | A press in the gutter, but in the fold column (FLD-010), or in the corner between the scrollbars, is left to the application | done | `test_codeview_display.c:wheel_and_gutter` |
 | DSP-008 | Tiku | The widest line is kept line by line: a change measures again only the lines it touched, and a change of face, size or tab stops measures every line. With no room for the table, the widest line shown stands in until there is | done | `test_codeview_display.c:widths` |
 
 ### Editing and the clipboard
@@ -439,6 +447,23 @@ section until it moves onto the view, and any difference is decided then.
 | ANV-003 | Tiku | Up, Down and the page keys pass over annotation rows, down to the next line's first row or up to the annotated line's last; a press or hit on an annotation row lands at its line's end | done | `test_codeview_notes.c:caret_moves` |
 | ANV-004 | Tiku | Annotation rows follow annotations added and removed, move with their lines through edits, and come after the rows a wrapped line's text takes | done | `test_codeview_notes.c:row_updates` |
 
+### Folding
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| FLD-001 | Tiku | With brackets of levels in the rules, a line leaving one open heads the lines up to the one before the line that closes it; brackets in quotes or remarks do not count, a line closing one and opening another ends one region and heads the next, and one never closed heads none | done | `test_codeview_folds.c:regions` |
+| FLD-002 | Tiku | With block words in the rules, a line heads a region when an opener starts one of its statements or THEN ends its code, up to the line before the closer's; a block closed on its own line, words in quotes or remarks, and a block with nothing between head none | done | `test_codeview_folds.c:regions` |
+| FLD-003 | Tiku | With neither, a line heads the lines after it indented further, blank lines among them, those at the end left out | done | `test_codeview_folds.c:regions` |
+| FLD-004 | Scintilla `ContractionState.cxx`, adapted | Folding a region in a view takes its lines out of the rows; unfolding shows them, but the lines of a folded region inside it, and a line inside a folded region unfolds unseen, its lines shown with that region's. A line heading nothing, folded twice or unfolded twice has nothing to do | done | `test_codeview_folds.c:folding` |
+| FLD-005 | Tiku | Row moves go past folded lines, and a selection reaching into a region as it folds becomes the caret at the end of the line heading it | done | `test_codeview_folds.c:folding` |
+| FLD-006 | Tiku | Showing a caret in folded lines, as a search, a move or a selection shown does, unfolds the regions it is in; until then the caret is not drawn | done | `test_codeview_folds.c:revealing` |
+| FLD-007 | Tiku | Fold All folds every region, the inner ones first, and Unfold All shows every line | done | `test_codeview_folds.c:all` |
+| FLD-008 | Tiku | Lines put in or taken out elsewhere move folds with their lines, and lines put in are not folded. An edit to a folded line, or anywhere inside folded lines, shows every line of the region they were in and unfolds it, other folds kept, whether or not lines wrap. Once nothing is folded, wrapped or annotated, the view keeps no rows to count, however many lines are put in (WRP-009) | done | `test_codeview_folds.c:edits` |
+| FLD-009 | Tiku | Each view folds on its own | done | `test_codeview_folds.c:two_views` |
+| FLD-010 | Tiku | With `TIKU_CODEVIEW_FOLDS` the gutter ends in a 12-pixel fold column with a box on each line heading a region, a minus in it while unfolded and a plus while folded; a folded line's text is followed by a mark. A press on a box folds or unfolds the region; a press elsewhere in the column is taken and does nothing | done | `test_codeview_folds.c:column` |
+| FLD-011 | Tiku | Command with Shift and [ folds the innermost region the caret is in, and with ] unfolds the caret's line; without Shift they are left to the application | done | `test_codeview_folds.c:keys` |
+| FLD-012 | Tiku | A folded line takes none of its rows, wrapped or annotated | done | `test_codeview_folds.c:with_rows` |
+
 ### Hosting and timing
 
 | ID | Source | Rule | State | Test |
@@ -485,7 +510,7 @@ changes it or when it records a defect listed under
 
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
-| EDR-TEXT-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | The Text menu holds Indent Lines, Unindent Lines, Toggle Comment (Cmd+/), Duplicate Lines (Cmd+D), Move Lines Up, Move Lines Down, Delete Lines (Cmd+Shift+K), Go to Matching Bracket (Cmd+M) and Select to Matching Bracket (Cmd+Shift+M), each the view's command (LNC, BRC rows); Toggle Comment is disabled when the language has no comment | done | test_editor_document.c:text_menu |
+| EDR-TEXT-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | The Text menu holds Indent Lines, Unindent Lines, Toggle Comment (Cmd+/), Duplicate Lines (Cmd+D), Move Lines Up, Move Lines Down, Delete Lines (Cmd+Shift+K), Go to Matching Bracket (Cmd+M), Select to Matching Bracket (Cmd+Shift+M), Fold, Unfold, Fold All and Unfold All (EDR-FOLD-002), each the view's command (LNC, BRC, FLD rows); Toggle Comment is disabled when the language has no comment | done | test_editor_document.c:text_menu |
 | EDR-TEXT-002 | editor/tiku_editor_commands.c:text_command | A Text command that changes the text clears the footer message like any edit; one that changes nothing leaves it, and a refusal says why | done | test_editor_document.c:text_menu (the clear) |
 | EDR-TEXT-003 | editor/tiku_editor_view.c:tiku_editor_view_sync | The bracket by the caret and its match are marked in every document (BRC-004) | done | test_editor_document.c:editor_rows (the option); the marking: test_codeview_lines.c:bracket_paint |
 
@@ -633,6 +658,13 @@ changes it or when it records a defect listed under
 | EDR-SPLIT-003 | editor/tiku_editor_input.c:pointer_down; editor/tiku_editor_view.c:tiku_editor_focus_pane | A press in a pane gives it the keys: its caret is drawn and the other's is not, and keys, Find, Replace, Go to Line, the Edit and Text menus, the horizontal scrollbar and the footer's line and column follow it. | done | test_editor_document.c:split_panes; shell/split.script |
 | EDR-SPLIT-004 | editor/tiku_editor_view.c:tiku_editor_pane_box, tiku_editor_divider; editor/tiku_editor_input.c:tiku_editor_event | The divider is a 6 px bar across the window between the panes. Dragging it moves the boundary with the grab kept under the pointer, and each pane keeps at least 40 px, also when the window or the run pane changes the page's height. | done | test_editor_document.c:split_panes |
 | EDR-SPLIT-005 | editor/tiku_editor_input.c:tiku_editor_event, pane_at, pointer_down | The wheel scrolls the pane under the pointer, and each pane's scrollbar moves only that pane; neither moves a caret. | done | test_editor_document.c:split_panes |
+
+### Folding
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| EDR-FOLD-001 | editor/tiku_editor_view.c:tiku_editor_view_sync; kits/editor/tiku_codeview_folds.c | The page shows a fold column at the gutter's edge (FLD-010) in each pane | done | test_editor_document.c:folds; shell/fold.script |
+| EDR-FOLD-002 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | The Text menu's Fold (Cmd+Shift+[) folds the region the caret is in, Unfold (Cmd+Shift+]) unfolds the caret's line, and Fold All and Unfold All take every region of the pane with the keys (FLD-007, FLD-011); Cmd+[ and Cmd+] stay Find Previous and Find Next | done | test_editor_document.c:folds |
 
 ### Running BASIC
 
