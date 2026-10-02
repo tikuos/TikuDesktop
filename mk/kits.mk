@@ -229,8 +229,10 @@ EDITOR      := $(K)/editor/tiku_editdoc.c $(K)/editor/tiku_editdoc_alloc.c \
                $(K)/editor/tiku_codeview_lines.c \
                $(K)/editor/tiku_codeview_brace.c \
                $(K)/editor/tiku_codeview_rows.c \
+               $(K)/editor/tiku_codeview_notes.c \
                $(K)/editor/tiku_edit_search.c \
-               $(K)/editor/tiku_edit_decorations.c
+               $(K)/editor/tiku_edit_decorations.c \
+               $(K)/editor/tiku_edit_notes.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_app_tray.c \
                $(K)/application/tiku_window_app.c \

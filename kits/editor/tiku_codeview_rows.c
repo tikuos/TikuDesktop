@@ -4,9 +4,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_codeview_rows.c - lines broken into rows at the text's width:
- * where a line's rows start, how many each line has, and each line's
- * first row, kept in the partition the document keeps its lines in.
+ * tiku_codeview_rows.c - lines broken into rows at the text's width, and
+ * the rows of the annotations under them: where a line's rows start, how
+ * many each line has, and each line's first row, kept in the partition
+ * the document keeps its lines in.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,19 +40,26 @@ typedef struct {
 } wrap_walk_t;
 
 int
-tiku_cv_wraps(const tiku_codeview_t *v)
+tiku_cv_rows_kept(const tiku_codeview_t *v)
 {
     return v->row_lines > 0;
 }
 
-/** @brief The pixels a row holds: the text's width less a margin the
- *         caret fits in, or 0 when there is none to wrap at. */
+int
+tiku_cv_wraps(const tiku_codeview_t *v)
+{
+    return v->row_lines > 0 && v->row_width > 0;
+}
+
+/** @brief The pixels a row holds with the wrap option on: the text's
+ *         width less a margin the caret fits in; 0 when lines do not wrap
+ *         or there is no room to wrap them in. */
 static int64_t
 break_width(const tiku_codeview_t *v)
 {
     int64_t w = tiku_cv_text_w(v) - TIKU_CV_PAD_X;
 
-    return w > 0 ? w : 0;
+    return v->options & TIKU_CODEVIEW_WRAP && w > 0 ? w : 0;
 }
 
 /** @brief Add a row start to @p e; 0 when there is no room. */
@@ -159,14 +167,15 @@ mapped(const tiku_codeview_t *v, int64_t line)
            tiku_ed_lines_start(&v->row_map, line);
 }
 
-/** @brief Count @p line's rows and put the count in the map; with
- *         @p keep, a line of more than one row also keeps where they
- *         start, in the entry returned.  @return the count. */
+/** @brief Count @p line's rows, its text's and its annotations', and put
+ *         the count in the map; with @p keep, a line whose text takes more
+ *         than one row also keeps where they start, in the entry
+ *         returned.  @return the count. */
 static int64_t
 measure(tiku_codeview_t *v, int64_t line, int keep, tiku_cv_wrap_t **kept)
 {
     wrap_walk_t w;
-    int64_t old;
+    int64_t old, rows;
 
     memset(&w, 0, sizeof w);
     w.v = v;
@@ -177,26 +186,36 @@ measure(tiku_codeview_t *v, int64_t line, int keep, tiku_cv_wrap_t **kept)
     w.opp = -1;
     w.rows = 1;
     w.keep = keep;
-    (void)tiku_cv_walk_near(v, line, 0, 0, wrap_cell, &w);
+    if (w.width > 0)
+        (void)tiku_cv_walk_near(v, line, 0, 0, wrap_cell, &w);
+    rows = w.rows + tiku_cv_ann_rows(v, line);
     old = mapped(v, line);
-    if (w.rows != old)
-        tiku_ed_lines_shift(&v->row_map, line, w.rows - old);
+    if (rows != old)
+        tiku_ed_lines_shift(&v->row_map, line, rows - old);
     v->row_known[line] = 1;
     if (line == v->unknown_from)
         v->unknown_from++;
     if (kept != NULL)
         *kept = w.entry;
-    return w.rows;
+    return rows;
 }
 
 int64_t
 tiku_cv_line_rows(tiku_codeview_t *v, int64_t line)
 {
-    if (!tiku_cv_wraps(v) || line < 0 || line >= v->row_lines)
+    if (!tiku_cv_rows_kept(v) || line < 0 || line >= v->row_lines)
         return 1;
     if (!v->row_known[line])
         return measure(v, line, 1, NULL);
     return mapped(v, line);
+}
+
+int64_t
+tiku_cv_text_rows(tiku_codeview_t *v, int64_t line)
+{
+    int64_t rows = tiku_cv_line_rows(v, line) - tiku_cv_ann_rows(v, line);
+
+    return rows > 0 ? rows : 1;
 }
 
 /** @brief Where the rows of @p line, which has more than one, start:
@@ -223,7 +242,7 @@ void
 tiku_cv_row(tiku_codeview_t *v, int64_t line, int64_t sub,
             tiku_cv_row_t *out)
 {
-    int64_t rows = tiku_cv_line_rows(v, line);
+    int64_t rows = tiku_cv_text_rows(v, line);
     tiku_cv_wrap_t *e = rows > 1 ? wrap_of(v, line, rows) : NULL;
 
     out->line = line;
@@ -231,6 +250,13 @@ tiku_cv_row(tiku_codeview_t *v, int64_t line, int64_t sub,
     out->end = tiku_editdoc_line_end(v->doc, line);
     out->x0 = 0;
     out->last = 1;
+    out->ann = -1;
+    if (sub >= rows && sub < tiku_cv_line_rows(v, line)) {
+        out->sub = sub;
+        out->ann = sub - rows;
+        out->start = out->end;
+        return;
+    }
     if (sub >= rows)
         sub = rows - 1;
     if (sub < 0)
@@ -255,7 +281,7 @@ tiku_cv_row_of(tiku_codeview_t *v, tiku_edit_pos_t pos, int upstream,
                tiku_cv_row_t *out)
 {
     int64_t line = tiku_editdoc_line_of(v->doc, pos);
-    int64_t rows = tiku_cv_line_rows(v, line), sub = 0;
+    int64_t rows = tiku_cv_text_rows(v, line), sub = 0;
     tiku_cv_wrap_t *e = rows > 1 ? wrap_of(v, line, rows) : NULL;
     tiku_edit_pos_t off = pos - tiku_editdoc_line_start(v->doc, line);
     size_t lo = 0, hi;
@@ -332,13 +358,13 @@ tiku_cv_rows_step(tiku_codeview_t *v, int64_t *line, int64_t *sub,
 int64_t
 tiku_cv_line_row(const tiku_codeview_t *v, int64_t line)
 {
-    return tiku_cv_wraps(v) ? tiku_ed_lines_start(&v->row_map, line) : line;
+    return tiku_cv_rows_kept(v) ? tiku_ed_lines_start(&v->row_map, line) : line;
 }
 
 int64_t
 tiku_cv_rows_total(const tiku_codeview_t *v)
 {
-    return tiku_cv_wraps(v) ? tiku_ed_lines_start(&v->row_map, v->row_lines)
+    return tiku_cv_rows_kept(v) ? tiku_ed_lines_start(&v->row_map, v->row_lines)
                             : tiku_editdoc_lines(v->doc);
 }
 
@@ -357,7 +383,7 @@ tiku_cv_set_top_row(tiku_codeview_t *v, int64_t row)
         row = total - 1;
     if (row < 0)
         row = 0;
-    if (!tiku_cv_wraps(v)) {
+    if (!tiku_cv_rows_kept(v)) {
         v->top = row;
         v->top_sub = 0;
         return;
@@ -461,7 +487,7 @@ tiku_cv_rows_change(tiku_codeview_t *v, int64_t first, int64_t last_old,
     int64_t delta = last_new - last_old, was, i;
     int k;
 
-    if (!tiku_cv_wraps(v))
+    if (!tiku_cv_rows_kept(v))
         return;
     if (first < 0 || last_old < first || last_new < first ||
         last_old >= v->row_lines || v->row_lines != lines - delta ||
@@ -529,25 +555,26 @@ count_some(tiku_codeview_t *v, int64_t budget)
 int
 tiku_cv_rows_tick(tiku_codeview_t *v, int64_t budget)
 {
-    return tiku_cv_wraps(v) && count_some(v, budget);
+    return tiku_cv_rows_kept(v) && count_some(v, budget);
 }
 
 int
 tiku_codeview_wrapping(tiku_codeview_t *view)
 {
-    return view != NULL && tiku_cv_wraps(view) &&
+    return view != NULL && tiku_cv_rows_kept(view) &&
            first_unknown(view) < view->row_lines;
 }
 
 /** @brief Keep the first row inside the document, no further down than
- *         where the last row is shown in the last whole row, and count
- *         the lines shown. */
+ *         where the last row is shown in the last whole row, and the text
+ *         unscrolled across while it wraps; count the lines shown. */
 static void
 clamp_rows(tiku_codeview_t *v)
 {
     int64_t line = v->row_lines - 1, sub, shown;
 
-    v->left = 0;
+    if (v->row_width > 0 || v->left < 0)
+        v->left = 0;
     sub = tiku_cv_line_rows(v, line) - 1;
     (void)tiku_cv_rows_step(v, &line, &sub,
                             1 - tiku_codeview_rows_visible(v));
@@ -570,26 +597,30 @@ clamp_rows(tiku_codeview_t *v)
 void
 tiku_cv_rows_ready(tiku_codeview_t *v)
 {
-    int64_t width = v->options & TIKU_CODEVIEW_WRAP ? break_width(v) : 0;
+    int64_t width = break_width(v);
+    uint64_t serial = 0;
+    int shown = (v->options & TIKU_CODEVIEW_ANNOTATIONS) &&
+                tiku_editdoc_annotations(v->doc, &serial) > 0;
     uint32_t key;
     int i;
 
-    if (width < 1) {
-        if (tiku_cv_wraps(v))
+    if (width < 1 && !shown) {
+        if (tiku_cv_rows_kept(v))
             tiku_cv_rows_free(v);
         v->top_sub = 0;
         return;
     }
     key = tiku_cv_metrics_key(v);
-    if (tiku_cv_wraps(v) && v->row_lines != tiku_editdoc_lines(v->doc))
+    if (tiku_cv_rows_kept(v) && v->row_lines != tiku_editdoc_lines(v->doc))
         tiku_cv_rows_free(v);
-    if (!tiku_cv_wraps(v)) {
+    if (!tiku_cv_rows_kept(v)) {
         if (!build(v)) {
             v->top_sub = 0;
             return;
         }
         v->top_sub = 0;
-    } else if (v->row_width == width && v->row_key == key) {
+    } else if (v->row_width == width && v->row_key == key &&
+               v->ann_shown == shown && v->ann_serial == serial) {
         clamp_rows(v);
         (void)count_some(v, READY_BYTES);
         return;
@@ -600,6 +631,8 @@ tiku_cv_rows_ready(tiku_codeview_t *v)
         v->wraps[i].line = -1;
     v->row_width = width;
     v->row_key = key;
+    v->ann_shown = shown;
+    v->ann_serial = serial;
     clamp_rows(v);
     (void)count_some(v, READY_BYTES);
 }

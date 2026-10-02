@@ -4,12 +4,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_edit_decorations.h - marks a document keeps on its lines: line
- * markers, which follow their lines through edits, and the execution
- * line, which a change makes stale instead of moving.
+ * tiku_edit_decorations.h - marks a document keeps on its text: line
+ * markers and annotations, which follow their lines through edits,
+ * indicators, which follow a range of text, and the execution line, which
+ * a change makes stale instead of moving.
  *
- * What a kind of marker means, and which line a runtime stopped at, are
- * the application's to decide; the document keeps them on its text.
+ * What a kind of mark means, and which line a runtime stopped at, are the
+ * application's to decide; the document keeps them on its text.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -77,5 +78,81 @@ void tiku_editdoc_execution_clear(tiku_editdoc_t *doc);
  *         TIKU_EDIT_NOTHING, @p line -1, when none is set. */
 tiku_edit_status_t tiku_editdoc_execution(const tiku_editdoc_t *doc,
                                           int64_t *line);
+
+/** @brief Kinds of indicator and annotation; kind k is bit k of a set. */
+#define TIKU_EDIT_INDICATOR_KINDS 8
+
+/** @brief An indicator on a range of text, valid until it is removed. */
+typedef struct {
+    uint32_t slot;              /* index + 1; 0 is none                 */
+    uint32_t generation;        /* the slot's life it belongs to        */
+} tiku_edit_indicator_t;
+
+/**
+ * @brief Mark the text in @p range, which must hold some, with @p kind,
+ *        from 0 to TIKU_EDIT_INDICATOR_KINDS - 1.
+ *
+ * The range follows its text: text put in inside it widens it, text put
+ * in at either end stays outside, and an edit that takes all of its text
+ * removes it.  Undo does not bring it back, and a load removes every
+ * indicator.  @p indicator may be NULL.
+ */
+tiku_edit_status_t tiku_editdoc_indicator_add(tiku_editdoc_t *doc,
+                                              tiku_edit_range_t range,
+                                              unsigned kind,
+                                              tiku_edit_indicator_t *indicator);
+/** @brief Where @p indicator is now; TIKU_EDIT_NOTHING once it is gone. */
+tiku_edit_status_t tiku_editdoc_indicator_range(const tiku_editdoc_t *doc,
+                                                tiku_edit_indicator_t indicator,
+                                                tiku_edit_range_t *range);
+/** @brief Remove @p indicator; its handle stops working. */
+void tiku_editdoc_indicator_remove(tiku_editdoc_t *doc,
+                                   tiku_edit_indicator_t indicator);
+/** @brief Remove every indicator of @p kinds.  @return how many. */
+size_t tiku_editdoc_indicators_clear(tiku_editdoc_t *doc, uint32_t kinds);
+/**
+ * @brief The indicator of @p kinds starting first after @p pos, or with
+ *        @p backward starting last before it, in @p range and @p kind,
+ *        either of which may be NULL.
+ *
+ * Indicators starting at the same place are taken widest first.
+ * @return TIKU_EDIT_NOTHING when there is none that way.
+ */
+tiku_edit_status_t tiku_editdoc_indicator_next(const tiku_editdoc_t *doc,
+                                               tiku_edit_pos_t pos,
+                                               uint32_t kinds, int backward,
+                                               tiku_edit_range_t *range,
+                                               unsigned *kind);
+/** @brief Called for an indicator; nonzero stops the visit. */
+typedef int (*tiku_edit_indicator_fn)(void *ctx, tiku_edit_range_t range,
+                                      unsigned kind);
+/** @brief Call @p fn for each indicator of @p kinds that overlaps
+ *         @p span, in no set order. */
+void tiku_editdoc_indicators_each(const tiku_editdoc_t *doc,
+                                  tiku_edit_range_t span, uint32_t kinds,
+                                  tiku_edit_indicator_fn fn, void *ctx);
+
+/**
+ * @brief Show @p text under @p line as an annotation of @p kind, after
+ *        any the line has; NULL or "" adds none.
+ *
+ * Each LF in @p text starts another row.  An annotation follows its line
+ * as a marker does and is removed by a load, not by undo.
+ */
+tiku_edit_status_t tiku_editdoc_annotation_add(tiku_editdoc_t *doc,
+                                               int64_t line,
+                                               const char *text,
+                                               unsigned kind);
+/** @brief The @p index'th annotation under @p line, from 0, and its kind;
+ *         NULL past the last. */
+const char *tiku_editdoc_annotation(const tiku_editdoc_t *doc, int64_t line,
+                                    size_t index, unsigned *kind);
+/** @brief Remove the annotations of @p kinds under @p line, or under
+ *         every line when @p line is -1.  @return how many. */
+size_t tiku_editdoc_annotations_clear(tiku_editdoc_t *doc, int64_t line,
+                                      uint32_t kinds);
+/** @brief How many annotations the document has, and a number that
+ *         changes whenever one is added or removed. */
+size_t tiku_editdoc_annotations(const tiku_editdoc_t *doc, uint64_t *serial);
 
 #endif /* TIKU_EDIT_DECORATIONS_H_ */

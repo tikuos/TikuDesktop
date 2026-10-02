@@ -67,7 +67,9 @@ typedef struct {
     tiku_edit_pos_t end;            /* the next row's first byte, or the
                                        line's end                       */
     int64_t x0;                     /* line x of its first byte         */
-    int last;                       /* the line's last row              */
+    int last;                       /* the line's last row of text      */
+    int64_t ann;                    /* -1 a row of text, else the row of
+                                       the line's annotations it shows  */
 } tiku_cv_row_t;
 
 /* The checkpoints of one long line, in order from its start. */
@@ -174,6 +176,12 @@ struct tiku_codeview {
     int64_t unknown_from;           /* no line before it is uncounted   */
     tiku_cv_wrap_t wraps[TIKU_CV_WRAPS]; /* rows of lines that wrap     */
     uint64_t wrap_uses;             /* asks of the wraps so far         */
+    int ann_shown;                  /* annotations add rows             */
+    uint64_t ann_serial;            /* the annotations they were counted
+                                       for                              */
+    tiku_codeview_mark_t marks[TIKU_EDIT_INDICATOR_KINDS]; /* how each
+                                       kind of indicator is drawn       */
+    tiku_rgb_t mark_colors[TIKU_EDIT_INDICATOR_KINDS]; /* and in what   */
 };
 
 /* What a character of a line is on the screen. */
@@ -228,13 +236,18 @@ tiku_edit_pos_t tiku_cv_pos_at(tiku_codeview_t *v, int64_t line, int64_t x);
  * or -1 past the line's end. */
 tiku_edit_pos_t tiku_cv_char_at(tiku_codeview_t *v, int64_t line, int64_t x);
 
-/* Rows (tiku_codeview_rows.c).  Without the wrap option each line is one
- * row and nothing is kept; with it a line's rows break at the text's
- * width and are counted when they are first needed.  A line not yet
- * counted keeps its last count, or one row.  Positions and x are the
+/* Rows (tiku_codeview_rows.c).  Without the wrap option or annotations
+ * each line is one row and nothing is kept; with them a line's text
+ * breaks into rows at the text's width, its annotations' rows follow
+ * them, and the rows are counted when they are first needed.  A line not
+ * yet counted keeps its last count, or one row.  Positions and x are the
  * line's own; a row's x0 is subtracted where it is drawn. */
-/* Whether lines wrap now: the option is on and the map is kept. */
+/* Whether rows are kept: lines wrap, or annotations are shown. */
+int tiku_cv_rows_kept(const tiku_codeview_t *v);
+/* Whether lines break into rows at the text's width now. */
 int tiku_cv_wraps(const tiku_codeview_t *v);
+/* The rows of @p line's text, counted now. */
+int64_t tiku_cv_text_rows(tiku_codeview_t *v, int64_t line);
 /* Bring the rows in line with the options, width and metrics, keep the
  * first row inside the document, and count the lines shown. */
 void tiku_cv_rows_ready(tiku_codeview_t *v);
@@ -365,6 +378,17 @@ tiku_edit_pos_t tiku_cv_open_before(tiku_codeview_t *v, tiku_edit_pos_t pos,
 /* Paint the pair behind the text of the first @p rows rows shown. */
 void tiku_cv_brace_paint(tiku_codeview_t *v, tiku_surface_t *s,
                          int64_t rows);
+
+/* Indicators and annotations (tiku_codeview_notes.c): the rows the
+ * annotations under @p line take while they are shown. */
+int64_t tiku_cv_ann_rows(const tiku_codeview_t *v, int64_t line);
+/* The marks of the indicators over row @p w, drawn behind its text at
+ * surface row @p y. */
+void tiku_cv_marks_paint(tiku_codeview_t *v, tiku_surface_t *s,
+                         const tiku_cv_row_t *w, int y);
+/* Annotation row @p w drawn at surface row @p y. */
+void tiku_cv_annotation_paint(tiku_codeview_t *v, tiku_surface_t *s,
+                              const tiku_cv_row_t *w, int y);
 
 /* Lists and tips (tiku_codeview_assist.c): an event they take, the check
  * after any event that a tip still belongs with the caret, painting them

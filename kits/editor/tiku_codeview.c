@@ -239,7 +239,8 @@ tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
                                TIKU_CODEVIEW_VSCROLL |
                                TIKU_CODEVIEW_HSCROLL |
                                TIKU_CODEVIEW_BRACES |
-                               TIKU_CODEVIEW_WRAP);
+                               TIKU_CODEVIEW_WRAP |
+                               TIKU_CODEVIEW_ANNOTATIONS);
     view->held_bar = 0;
     view->arrow_bar = 0;
     tiku_cv_clamp(view);
@@ -278,7 +279,7 @@ tiku_cv_clamp(tiku_codeview_t *v)
                    tiku_codeview_rows_visible(v);
 
     tiku_cv_rows_ready(v);
-    if (tiku_cv_wraps(v))
+    if (tiku_cv_rows_kept(v))
         return;
     if (v->top > last)
         v->top = last;

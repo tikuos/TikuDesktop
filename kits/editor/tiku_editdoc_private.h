@@ -128,6 +128,24 @@ typedef struct {
     uint8_t kind;               /* 0 to TIKU_EDIT_MARKER_KINDS - 1      */
 } tiku_ed_marker_t;
 
+/* An indicator: a range of text with a kind. */
+typedef struct {
+    int64_t start, end;         /* the range, start before end          */
+    uint32_t generation;        /* bumped when the slot is taken or
+                                   freed                                */
+    uint8_t live;               /* in use                               */
+    uint8_t kind;               /* 0 to TIKU_EDIT_INDICATOR_KINDS - 1   */
+} tiku_ed_indicator_t;
+
+/* An annotation: text shown under a line, kept at its line's start as a
+ * marker is. */
+typedef struct {
+    int64_t pos;                /* where its line starts                */
+    char *text;                 /* what it says, NUL-terminated         */
+    uint8_t live;               /* in use                               */
+    uint8_t kind;               /* 0 to TIKU_EDIT_INDICATOR_KINDS - 1   */
+} tiku_ed_annotation_t;
+
 /* A registered listener. */
 typedef struct {
     tiku_edit_listen_fn fn;     /* what to call                         */
@@ -155,6 +173,12 @@ struct tiku_editdoc {
     size_t nlisteners;          /* listener slots allocated             */
     tiku_ed_marker_t *markers;  /* nmarkers slots                       */
     size_t nmarkers;            /* marker slots allocated               */
+    tiku_ed_indicator_t *indicators; /* nindicators slots               */
+    size_t nindicators;         /* indicator slots allocated            */
+    tiku_ed_annotation_t *annotations; /* nannotations slots            */
+    size_t nannotations;        /* annotation slots allocated           */
+    uint64_t annotation_serial; /* raised when an annotation is set or
+                                   removed                              */
     int64_t exec_line;          /* where a runtime stopped, -1 none     */
     uint64_t exec_state;        /* the history state it was set for     */
     tiku_ed_piece_t loaded;     /* the one span a load reports          */
@@ -300,5 +324,14 @@ void tiku_ed_markers_map(tiku_editdoc_t *doc, int64_t s, int64_t e, int64_t n);
 void tiku_ed_markers_settle(tiku_editdoc_t *doc);
 void tiku_ed_markers_drop(tiku_editdoc_t *doc);
 void tiku_ed_markers_free(tiku_editdoc_t *doc);
+
+/* Indicators and annotations (tiku_edit_notes.c), kept as line markers
+ * are: map() through one replacement, settle() after a transaction,
+ * drop() on a load and free() with the document.  map() never allocates
+ * and leaves an emptied indicator for settle() to remove. */
+void tiku_ed_notes_map(tiku_editdoc_t *doc, int64_t s, int64_t e, int64_t n);
+void tiku_ed_notes_settle(tiku_editdoc_t *doc);
+void tiku_ed_notes_drop(tiku_editdoc_t *doc);
+void tiku_ed_notes_free(tiku_editdoc_t *doc);
 
 #endif /* TIKU_EDITDOC_PRIVATE_H_ */

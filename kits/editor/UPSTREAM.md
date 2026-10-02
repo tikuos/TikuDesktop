@@ -88,10 +88,11 @@ search's `tiku_edit_search.h` and `tiku_edit_search.c`, the line markers'
 `tiku_codeview_layout.c`, `tiku_codeview_paint.c`, `tiku_codeview_input.c`,
 `tiku_codeview_edit.c`, `tiku_codeview_find.c`, `tiku_codeview_style.c`,
 `tiku_codeview_assist.c`, `tiku_codeview_lines.c`,
-`tiku_codeview_brace.c` and `tiku_codeview_rows.c`, whose rows are kept in
-the partition `tiku_editdoc_lines.c` adapts; and the tests
-`test_editdoc_model.c`, `test_editdoc_faults.c` and every
-`test_codeview_*.c`. The code view's word
+`tiku_codeview_brace.c`, `tiku_codeview_rows.c`, whose rows are kept in
+the partition `tiku_editdoc_lines.c` adapts, and `tiku_codeview_notes.c`;
+the document's indicators and annotations in `tiku_edit_notes.c`; and the
+tests `test_editdoc_model.c`, `test_editdoc_faults.c`,
+`test_editdoc_notes.c` and every `test_codeview_*.c`. The code view's word
 moves follow the behaviour of `Document::NextWordStart` in
 `src/Document.cxx`, and where a line marker goes when lines are added or
 removed follows `LineVector::InsertLine` in `src/CellBuffer.cxx` and
@@ -213,8 +214,8 @@ file first.
 
 | Feature | Reason |
 | --- | --- |
-| Style bytes, `RunStyles`, `Decoration` | Colouring stays with `tiku_syntax`; indicators come with a later consumer |
-| `PerLine` levels, states, annotations | They come with folding and annotations; line markers are Tiku code (`tiku_edit_decorations.c`) |
+| Style bytes, `RunStyles`, `Decoration` | Colouring stays with `tiku_syntax`; indicators are Tiku code (`tiku_edit_notes.c`), kept as positions |
+| `PerLine` levels, states, annotations | Fold levels come with folding; annotations and line markers are Tiku code (`tiku_edit_notes.c`, `tiku_edit_decorations.c`) |
 | `ContractionState`, `SparseVector`, `UniqueString` | They come with folding |
 | UTF-16 and UTF-32 character indexes | No consumer; positions are byte offsets |
 | `ChangeHistory` | Not needed for save state |

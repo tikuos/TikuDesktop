@@ -183,8 +183,9 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
 }
 
 /** @brief Paint row @p w in the row @p r is set up for: the selection's
- *         ground first, then the text over it, then on a line's last row
- *         a selected line break as one space's width after the text. */
+ *         ground first, the indicators' marks, then the text over them,
+ *         then on a line's last row a selected line break as one space's
+ *         width after the text. */
 static void
 paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
 {
@@ -203,6 +204,7 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
         fill_span(r, tiku_cv_x_of(v, w->line, a),
                   tiku_cv_x_of(v, w->line, b), TIKU_C_SELECT);
     }
+    tiku_cv_marks_paint(v, r->s, w, r->y);
     r->len = 0;
     r->stopped = 0;
     r->start = tiku_editdoc_line_start(v->doc, w->line);
@@ -224,7 +226,7 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
 }
 
 /** @brief Paint the rows from the first shown down to the foot of
- *         @p area; @return how many were painted. */
+ *         @p area, text and annotations; @return how many were painted. */
 static int64_t
 paint_rows(tiku_codeview_t *v, row_t *r, tiku_rect_t area)
 {
@@ -236,7 +238,10 @@ paint_rows(tiku_codeview_t *v, row_t *r, tiku_rect_t area)
         if (r->y >= area.y + area.h)
             break;
         tiku_cv_row(v, line, sub, &w);
-        paint_row(v, r, &w);
+        if (w.ann >= 0)
+            tiku_cv_annotation_paint(v, r->s, &w, r->y);
+        else
+            paint_row(v, r, &w);
         rows++;
         if (tiku_cv_rows_step(v, &line, &sub, 1) == 0)
             break;
@@ -309,9 +314,9 @@ paint_gutter(tiku_codeview_t *v, tiku_surface_t *s, int width,
     }
 }
 
-/** @brief The rows of marked lines filled with their kinds' colours, the
- *         highest kind's on top, and the execution line's over them
- *         while it is current. */
+/** @brief The rows of marked lines' text filled with their kinds'
+ *         colours, the highest kind's on top, and the execution line's
+ *         over them while it is current. */
 static void
 paint_fills(tiku_codeview_t *v, tiku_surface_t *s, tiku_rect_t area)
 {
@@ -328,10 +333,11 @@ paint_fills(tiku_codeview_t *v, tiku_surface_t *s, tiku_rect_t area)
                          v->fill_kinds : 0;
         tiku_rect_t row = { area.x, y, area.w, step };
         int kind = TIKU_EDIT_MARKER_KINDS - 1;
+        int text = sub < tiku_cv_text_rows(v, line);
 
-        if (line == exec) {
+        if (text && line == exec) {
             tiku_fill(s, row, v->exec_fill);
-        } else if (kinds != 0) {
+        } else if (text && kinds != 0) {
             while (!(kinds & ((uint32_t)1 << kind)))
                 kind--;
             tiku_fill(s, row, v->fills[kind]);

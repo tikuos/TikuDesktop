@@ -64,6 +64,7 @@ tiku_editdoc_release(tiku_editdoc_t *doc)
     tiku_ed_history_free(&doc->history);
     tiku_ed_marks_free(doc);
     tiku_ed_markers_free(doc);
+    tiku_ed_notes_free(doc);
     tiku_ed_free(doc);
 }
 
@@ -100,6 +101,7 @@ tiku_editdoc_load(tiku_editdoc_t *doc, const char *text, size_t length)
     old = doc->text;
     doc->text = fresh;
     tiku_ed_markers_drop(doc);
+    tiku_ed_notes_drop(doc);
     tiku_ed_marks_map(doc, 0, old_length, (int64_t)length);
     tiku_ed_marks_snap(doc);
     tiku_ed_history_clear(&doc->history);

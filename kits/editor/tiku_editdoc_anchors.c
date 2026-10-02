@@ -102,6 +102,7 @@ tiku_ed_marks_map(tiku_editdoc_t *doc, int64_t s, int64_t e, int64_t n)
         v->caret = after_insert(v->caret, s, n, caret_starts);
     }
     tiku_ed_markers_map(doc, s, e, n);
+    tiku_ed_notes_map(doc, s, e, n);
 }
 
 /** @brief @p p moved back to the CR when it sits between a CR and an LF;
@@ -131,6 +132,7 @@ tiku_ed_marks_snap(tiku_editdoc_t *doc)
         }
     }
     tiku_ed_markers_settle(doc);
+    tiku_ed_notes_settle(doc);
 }
 
 void

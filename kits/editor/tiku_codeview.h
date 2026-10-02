@@ -102,6 +102,8 @@ tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
                                             its match marked            */
 #define TIKU_CODEVIEW_WRAP         0x20u /* lines broken into rows at the
                                             text's width                */
+#define TIKU_CODEVIEW_ANNOTATIONS  0x40u /* the document's annotations,
+                                            rows under their lines      */
 
 /**
  * @brief How a language is edited: how a line is commented, what opens
@@ -412,6 +414,34 @@ tiku_edit_status_t tiku_codeview_replace_all(tiku_codeview_t *view,
  *         application's; deactivation ends a drag and still returns 0.
  */
 int tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e);
+
+/** @brief How the document's indicators of one kind are drawn. */
+typedef enum {
+    TIKU_CODEVIEW_MARK_NONE = 0,    /* not drawn, as in a new view      */
+    TIKU_CODEVIEW_MARK_SQUIGGLE,    /* a wavy line under the text       */
+    TIKU_CODEVIEW_MARK_LINE,        /* a straight line under it         */
+    TIKU_CODEVIEW_MARK_BOX          /* a frame round it                 */
+} tiku_codeview_mark_t;
+
+/**
+ * @brief Draw indicators of @p kind, from 0 to TIKU_EDIT_INDICATOR_KINDS
+ *        - 1, as @p style in @p color, and that kind's annotations on a
+ *        ground of @p color pulled halfway to the page's.
+ *
+ * Indicators are drawn under the text's ink; an annotation of a kind
+ * with no style set has the panel's ground.
+ */
+tiku_edit_status_t tiku_codeview_set_mark(tiku_codeview_t *view,
+                                          unsigned kind,
+                                          tiku_codeview_mark_t style,
+                                          tiku_rgb_t color);
+/** @brief Select the next indicator of @p kinds after the selection's
+ *         start, or with @p backward the one before it, starting again
+ *         from the other end when there is none that way, and show it.
+ *         TIKU_EDIT_NOTHING when there is none at all. */
+tiku_edit_status_t tiku_codeview_goto_indicator(tiku_codeview_t *view,
+                                                uint32_t kinds,
+                                                int backward);
 
 /** @brief Fill the rows of lines marked @p kind with @p color, behind
  *         their text and selection; a higher kind's fill covers a lower
