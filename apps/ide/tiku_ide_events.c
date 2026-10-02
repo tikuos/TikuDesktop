@@ -93,6 +93,9 @@ page_key(ide_t *st, edit_t *e, const tiku_event_t *event, unsigned ch)
         tiku_ide_edit_paint(st, e);
         return 0;
     }
+    if ((event->modifiers & TIKU_MOD_CMD) && event->key == '/') {
+        return tiku_ide_pick(st, e->id, CMD_COMMENT);
+    }
     /* The desk's editing keys, Cmd X/C/V/A and Cmd-Z / Cmd-Shift-Z for
      * undo and redo, are caught before typing, so their letters are never
      * typed. */
@@ -140,7 +143,11 @@ page_key(ide_t *st, edit_t *e, const tiku_event_t *event, unsigned ch)
             n = tiku_ide_next_number(e, line);
         }
         snprintf(text, sizeof text, n > 0 ? "%s%d " : "%s", e->newline, n);
-        (void)tiku_codeview_insert(e->view, text, strlen(text), 1);
+        if (e->lang == TIKU_SYNTAX_C) {
+            (void)tiku_codeview_newline(e->view);   /* C keeps its levels */
+        } else {
+            (void)tiku_codeview_insert(e->view, text, strlen(text), 1);
+        }
         edited = 1;
     } else if (event->key == TIKU_KEY_BACKSPACE ||
                event->key == TIKU_KEY_DELETE) {

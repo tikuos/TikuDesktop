@@ -616,6 +616,31 @@ static void clipboard(ide_t *st)
     unpage(st, e);
 }
 
+/** A C page keeps its levels on Return and a closer goes back to its
+ *  opener's indentation; Toggle comment uses "//" in C and REM after the
+ *  number in BASIC; pages mark the bracket by the caret. */
+static void line_commands(ide_t *st)
+{
+    edit_t *e = page(st, "levels.c", "int f(void) {", 13);
+
+    assert(tiku_codeview_options(e->view) & TIKU_CODEVIEW_BRACES);
+    tiku_ide_place(e, 0, 13);
+    key(st, e, TIKU_KEY_RETURN, 0, NULL);
+    assert(holds(e, "int f(void) {\n\t", 15));
+    key(st, e, '}', 0, "}");
+    assert(holds(e, "int f(void) {\n}", 15));
+    key(st, e, '/', TIKU_MOD_CMD, NULL);
+    assert(holds(e, "int f(void) {\n// }", 18));
+    unpage(st, e);
+    e = page(st, "rem.bas", "10 PRINT 1\n20 END", 17);
+    assert(tiku_codeview_select(e->view, 0, 17) == TIKU_EDIT_OK);
+    tiku_ide_pick(st, e->id, CMD_COMMENT);
+    assert(holds(e, "10 REM PRINT 1\n20 REM END", 25));
+    key(st, e, '/', TIKU_MOD_CMD, NULL);
+    assert(holds(e, "10 PRINT 1\n20 END", 17));
+    unpage(st, e);
+}
+
 int main(void)
 {
     char drafts[600];
@@ -635,12 +660,13 @@ int main(void)
     find_by_number(st);
     caret_rules(st);
     clipboard(st);
+    line_commands(st);
     tiku_surface_free(st->proj_surface);
     tiku_surface_free(st->msg_surface);
     tiku_surface_free(st->con_surface);
     free(st);
     puts("PASS: kept bytes, BASIC limits at the run, breakpoint markers, "
          "the paused line, renumber edits, completion and help, caret and "
-         "clipboard rules");
+         "clipboard rules, line commands");
     return 0;
 }

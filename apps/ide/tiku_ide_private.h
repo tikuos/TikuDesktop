@@ -150,6 +150,7 @@ enum {
 #define CMD_DEBUG_CONT 32
 #define CMD_DEBUG_PANEL 33
 #define CMD_CLEARBREAKS 34
+#define CMD_COMMENT  35
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
 /* The line marker a breakpoint is, and how many lines may hold one. */

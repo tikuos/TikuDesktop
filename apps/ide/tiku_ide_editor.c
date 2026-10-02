@@ -190,6 +190,9 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
          TIKU_MOD_CMD, 1);
     tiku_ide_mrow(&menus.menu[1], "Find in project", CMD_PROJECT_FIND, 0, 0u,
          st->proj.nrow > 0 && !st->running);
+    msep(&menus.menu[1]);
+    tiku_ide_mrow(&menus.menu[1], "Toggle comment", CMD_COMMENT, '/',
+         TIKU_MOD_CMD, !tiku_ide_debug_locked(st, e));
     if (e->lang == TIKU_SYNTAX_BASIC) {
         /* The tidy that renumbers by tens, for the language whose
          * lines wear their numbers. */

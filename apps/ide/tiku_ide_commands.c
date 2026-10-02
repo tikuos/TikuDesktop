@@ -3,6 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
+/** @brief Toggle comment on page @p e: "//" on C lines and REM after the
+ *         number on BASIC ones. */
+static int
+toggle_comment(ide_t *st, edit_t *e)
+{
+    if (tiku_codeview_toggle_comment(e->view) == TIKU_EDIT_OK) {
+        tiku_ide_edit_reveal(e);
+        tiku_ide_edit_publish(st, e);
+        tiku_ide_project_publish(st);
+    }
+    tiku_ide_edit_paint(st, e);
+    return 0;
+}
+
 int
 tiku_ide_pick(void *state, uint32_t window, int command)
 {
@@ -70,6 +84,9 @@ tiku_ide_pick(void *state, uint32_t window, int command)
         tiku_ide_search_open(e, command == CMD_REPLACE);
         tiku_ide_edit_paint(st, e);
         return 0;
+    }
+    if (e != NULL && command == CMD_COMMENT) {
+        return toggle_comment(st, e);
     }
     if (e != NULL && command == CMD_RENUM) {
         tiku_ide_renumber_basic(e);
