@@ -4,9 +4,11 @@
 # Several carets, end to end: Select All, then Text > Carets to Line Ends
 # puts a caret at the end of each line; one typed x lands on all three
 # lines, Escape goes back to one caret without closing the window, and one
-# Undo takes all three away.  The pixels are glyph pixels of the x on the
-# first and third rows, ground, ink while typed and ground after Undo, and
-# the carets' own pixels at those rows' ends.
+# Undo takes all three away.  Then a Command click adds a caret at the end
+# of the third line, so one typed y lands on the first and third lines
+# only, and an Option drag down the first column selects its three
+# letters, which one typed q replaces.  The pixels are glyph pixels of
+# the letters typed and the carets' own pixels at the rows' ends.
 wait 25
 click 980 30
 wait 4
@@ -60,4 +62,29 @@ note one Undo takes every x away and gives the three carets back
 expect-pixel 282 149 ffffff
 expect-pixel 298 187 ffffff
 expect-pixel 280 150 000000
+click 290 150
+wait 6
+click 310 188 1 ctrl
+wait 6
+key y
+wait 20
+shot /tmp/tiku-editor-carets-clicked.png
+note a Command click added a caret: the y is on the first and third lines
+expect-pixel 284 153 161616
+expect-pixel 300 191 161616
+expect-pixel 284 172 ffffff
+expect-pixel 257 170 ffffff
+press 257 150 1 alt
+wait 3
+move 266 188 1 alt
+wait 3
+release 266 188 1 alt
+wait 6
+key q
+wait 20
+shot /tmp/tiku-editor-carets-rectangle.png
+note an Option drag selected the first column: a q starts every line
+expect-pixel 257 170 0b0b0b
+expect-pixel 257 189 0b0b0b
+expect-pixel 262 175 575757
 quit
