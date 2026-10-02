@@ -28,7 +28,8 @@ written native TikuDesktop code; it does not copy Pe source or artwork.
 
 Pe itself also uses a gap buffer (`PTextBuffer.h`); the kit's is written for
 Tiku, adapting Scintilla's storage as `kits/editor/UPSTREAM.md` records. The
-IDE and other consumers of the legacy shared textview have not moved yet.
+BASIC/C IDE uses the same document and view; Notes keeps the older shared text
+view.
 
 ## Additional Pe features worth considering
 

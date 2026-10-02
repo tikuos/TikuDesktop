@@ -54,9 +54,26 @@ unsaved work has <i>(changed)</i> beside its name.</p>
 <b>Stop</b>, <b>Undo</b>, <b>Redo</b>, <b>Find</b> and
 <b>Renumber</b>. A C file's toolbar is <b>Save</b>, <b>Build</b>,
 <b>Undo</b>, <b>Redo</b> and <b>Find</b>: Stop and Renumber belong to
-BASIC. A new BASIC file opens with line 10 already typed. Renumber
-counts the numbered lines by tens again and
-rewrites every branch to follow, as one undoable change.</p>
+BASIC. A new BASIC file opens with line 10 already typed, and Return
+types the next line's number. Renumber counts the numbered lines by tens
+again and rewrites every branch to follow, as one undoable change; only
+the numbers that change are rewritten, so the caret and the breakpoints
+stay on their lines.</p>
+
+<p>An editor page holds a file of any length and keeps its bytes as they
+are: its line endings, tabs and any control characters, which are shown
+by name. Return types the line break the file uses most, and Save ends a
+last line that has none with one. Double-click selects a word and
+triple-click a line; Alt or Ctrl with Left or Right moves by words.
+Copied text uses LF line breaks, and pasted text takes the file's. A run
+of typing, a Return and its line number included, is one undo step.</p>
+
+<p><b>Complete keyword</b> (Ctrl+Space) and <b>Keyword help</b> (Ctrl+K)
+in the Edit menu show the keywords that start with the word at the caret
+in a list under it, with a tip beside it giving the chosen keyword's
+syntax, a description and an example. While completing, Up and Down
+choose, Return or Tab puts the keyword in and Escape closes; in help, a
+click on a keyword shows its help.</p>
 
 <h2 id="where">Where a program runs</h2>
 
@@ -86,8 +103,15 @@ what was typed.</p>
 that fails stops the run, and the note line says the source could not
 be saved.</p>
 
-<p>The saved file is then read whole. Three things are refused before
-any of it reaches a board, so a part of a program is never sent:</p>
+<p>The editor holds text that BASIC cannot take, so the saved program is
+checked before it runs, here or on a board, and before it is saved on a
+board or debugged. It is refused, naming the line, when a line holds a
+control character other than a tab, when a line is longer than the 159
+bytes BASIC reads, or when more than 143 bytes follow a line's
+number.</p>
+
+<p>For a board the saved file is also read whole, and three things are
+refused before any of it is sent, so a part of a program never is:</p>
 
 <ul>
 <li>more than 8191 bytes, which is <i>Upload too large (maximum 8191
@@ -97,7 +121,7 @@ bytes)</i></li>
 </ul>
 
 <p>A board's firmware has limits of its own and can refuse a program
-that passes all three.</p>
+that passes these checks.</p>
 
 <h2 id="save">Save on a board</h2>
 
@@ -134,11 +158,10 @@ changes field, <b>Return</b> finds the next match, or replaces the
 selected one when the caret is in the replacement field, and
 <b>Escape</b> closes the bar.</p>
 
-<p>Replace changes the selected match, so a first press selects one.
-All replaces every match in the file as a single undoable change. An
-empty replacement deletes what was found. A replacement that would
-leave a line longer than 1023 bytes is refused whole and nothing in the
-file changes.</p>
+<p>Replace changes the selected match and selects the next one, so a
+first press selects one. All replaces every match in the file as a
+single undoable change. An empty replacement deletes what was
+found.</p>
 
 <p><b>Edit &gt; Find in project</b> looks for the Find field's text
 through every file the project names, reading an open editor's unsaved

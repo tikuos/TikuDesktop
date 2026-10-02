@@ -4,9 +4,16 @@
   default board in TikuDesktop's Devices menu. No default means **This computer**;
   a disconnected named default never falls back to local execution. An active
   run continues to display its original board if the desktop default changes.
-- Run saves the source first. Failed saves block execution. Uploads larger than
-  8,191 bytes, embedded NULs, and read failures are rejected without sending a
-  partial program. Firmware may impose additional limits and can reject a program.
+- The editor keeps a file's bytes: line endings, tabs and control characters
+  load and save as they are, and Save ends an unended last line with the file's
+  own line break. There is no line or line count limit.
+- Run saves the source first. Failed saves block execution. A program holding a
+  control character other than tab, a line longer than the 159 bytes BASIC
+  reads, or more than 143 bytes after a line's number is refused, naming the
+  line, before a local run, a board run, a board save or a debug run. Uploads
+  larger than 8,191 bytes, embedded NULs, and read failures are rejected without
+  sending a partial program. Firmware may impose additional limits and can
+  reject a program.
 - Device-run errors stay in the console with their line numbers; finishing a run
   does not open a duplicate Messages window. Messages is used as a fallback if
   no console is available.
@@ -22,9 +29,9 @@
 Open **Edit > Find and Replace** (the desktop Command modifier + H), or use the
 Find toolbar button. Searches are literal and case-sensitive, within one line.
 Tab switches fields; Enter finds the next match or replaces the selected match
-when the replacement field is focused. Empty replacement text deletes a match.
-**All** replaces every match in the current file as one undoable operation.
-Oversized result lines are rejected before any change. Escape/Close hides the bar.
+and selects the next one when the replacement field is focused. Empty
+replacement text deletes a match. **All** replaces every match in the current
+file as one undoable operation. Escape/Close hides the bar.
 The ordinary Find command retains BASIC line-number lookup; replacement uses
 literal text, including numbers.
 
@@ -55,19 +62,24 @@ checkpoint; this is not a replacement for backups or a power-loss guarantee.
 ## Keyword assistance
 
 In a BASIC editor, use **Edit > Complete keyword** (Command + Space) on a
-prefix. Up/Down selects a suggestion; Enter/Tab or clicking inserts it as one
-undoable edit. Completion does not insert into comments or quoted strings.
-**Edit > Keyword help** (Command + K) shows reference information for the word
-at the caret. Common keywords include syntax and examples; not every keyword
-has detailed help yet. Escape closes either panel. Firmware feature availability
-can differ by board.
+prefix. A list of matching keywords opens under the word, with a tip beside it.
+Up/Down selects a suggestion; Enter/Tab or clicking inserts it as one undoable
+edit. Completion does not insert into comments or quoted strings.
+**Edit > Keyword help** (Command + K) shows the same list for the word at the
+caret, and the tip gives the chosen keyword's syntax, a description and an
+example; clicking a keyword shows its help. Not every keyword has detailed help
+yet. Escape closes the list and the tip. Firmware feature availability can
+differ by board.
 
 ## BASIC debugger
 
 The BASIC editor's **Debug** menu provides:
 
 - **Start debugging** (Command + D), initially paused before the first line.
-- **Toggle breakpoint at caret** (Command + B), up to 16 numbered lines.
+- **Toggle breakpoint at caret** (Command + B), up to 16 numbered lines. A
+  breakpoint marks its line and follows it through edits and Renumber; when
+  debugging starts, each marked line must still have a number and be the last
+  line with it, and that number is where the run pauses.
 - **Step line** (Command + J) and **Continue** (Command + G).
 - **Stop** (Command + period), also available in the debugger panel.
 
@@ -81,7 +93,8 @@ colon-separated statements, not one individual statement.
 Debugging uses the desktop's default board, or the local BASIC interpreter when
 there is no default. A board requires firmware supporting `DEBUG` protocol v1;
 older firmware is rejected before RUN. The source must use numbered BASIC lines.
-Source editing stays locked during debugging. Watches refresh at pauses and at
+Source editing stays locked during debugging, and the green row is shown only
+while the source is the text the run was given. Watches refresh at pauses and at
 completion; there is no arbitrary pause command while running. Breakpoints and
 watch configuration are currently session-only.
 
@@ -94,11 +107,11 @@ board before starting another run. This timeout does not prove the board stopped
 From `applications`:
 
 ```sh
-make build/tests/test_ide_workflow build/tests/test_ide_default build/tests/test_textview
+make build/tests/test_ide_workflow build/tests/test_ide_page build/tests/test_ide_default
 make build/runtime/apps/basic/tiku-basic build/tests/test_ide_debug build/tests/test_ide_deadboard
 build/tests/test_ide_workflow
+build/tests/test_ide_page
 build/tests/test_ide_default
-build/tests/test_textview
 build/tests/test_ide_debug
 build/tests/test_ide_deadboard
 python3 apps/basichost/test_debug.py
