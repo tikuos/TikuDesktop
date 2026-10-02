@@ -816,7 +816,7 @@ static void wrap_lines(edit_state_t *st)
     text[2000] = 0;
     assert(set_text(st, text));
     tiku_editor_publish(st); tiku_editor_paint(st);
-    assert(view->nitem == 5 && view->item[4].command == CMD_WRAP &&
+    assert(view->nitem == 6 && view->item[4].command == CMD_WRAP &&
            !strcmp(view->item[4].label, "Wrap Lines") &&
            view->item[4].enabled && !view->item[4].marked);
     assert(tiku_scroll_max(&st->horizontal) > 0);
@@ -845,6 +845,124 @@ static void wrap_lines(edit_state_t *st)
            !(tiku_codeview_options(st->view) & TIKU_CODEVIEW_WRAP) &&
            tiku_scroll_max(&st->horizontal) > 0);
     free(text);
+    assert(set_text(st, ""));
+}
+
+/** The surface row @p y of pane @p pane's caret, or -1 when it is not
+ *  drawn there. */
+static int64_t caret_row_y(edit_state_t *st, int pane)
+{
+    tiku_edit_pos_t anchor, caret;
+    int64_t x, y;
+    assert(tiku_codeview_selection(st->panes[pane], &anchor, &caret) == TIKU_EDIT_OK);
+    if (tiku_codeview_point(st->panes[pane], caret, &x, &y) != TIKU_EDIT_OK) return -1;
+    return y;
+}
+
+/** View > Split Pane: two panes of the one document, each with its own
+ *  caret, scroll and scrollbar; a press gives a pane the keys, the
+ *  divider shares the height, the wheel scrolls the pane under it, and
+ *  taking the item again keeps the pane with the keys. */
+static void split_panes(edit_state_t *st)
+{
+    const tiku_menu_list_t *view = &st->last_menus.menu[3];
+    char *text = malloc(200 * 6 + 1);
+    tiku_rect_t upper, lower, divider;
+    tiku_edit_pos_t anchor, caret;
+    int64_t y, x;
+    assert(text); text[0] = 0;
+    for (int i = 0; i < 200; i++) strcat(text, "line\n");
+    assert(set_text(st, text)); free(text);
+    place(st, 50, 2); tiku_editor_reveal(st);
+    tiku_editor_publish(st);
+    assert(view->item[5].command == CMD_SPLIT &&
+           !strcmp(view->item[5].label, "Split Pane") &&
+           view->item[5].enabled && !view->item[5].marked && !st->panes[1]);
+    tiku_editor_pick(st, st->id, CMD_SPLIT);
+    assert(st->panes[1] && st->view == st->panes[0] && view->item[5].marked);
+    upper = tiku_editor_pane_box(st, 0); lower = tiku_editor_pane_box(st, 1);
+    divider = tiku_editor_divider(st);
+    assert(divider.y == upper.y + upper.h && divider.h == EDIT_SPLIT_GAP &&
+           lower.y == divider.y + divider.h &&
+           lower.y + lower.h == tiku_editor_view_box(st).y + tiku_editor_view_box(st).h &&
+           upper.h - lower.h <= 1 && lower.h - upper.h <= 1);
+    assert(tiku_codeview_selection(st->panes[1], &anchor, &caret) == TIKU_EDIT_OK &&
+           caret == pos_of(st, 50, 2) && caret_row_y(st, 1) >= lower.y &&
+           caret_row_y(st, 1) < lower.y + lower.h);
+    assert(tiku_codeview_focused(st->panes[0]) && !tiku_codeview_focused(st->panes[1]));
+    /* Typing goes to the pane with the keys and shows in both; the other
+     * pane's caret stays on its text. */
+    place(st, 0, 0);
+    commit_text(st, "top ");
+    assert(!strcmp(line(st, 0), "top line"));
+    assert(tiku_codeview_selection(st->panes[1], &anchor, &caret) == TIKU_EDIT_OK &&
+           caret == pos_of(st, 50, 2));
+    /* A press in the lower pane gives it the keys. */
+    tiku_event_t press = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = 80, .y = lower.y + 5, .time_us = 50000000};
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &press);
+    assert(st->pane == 1 && st->view == st->panes[1] &&
+           tiku_codeview_focused(st->panes[1]) && !tiku_codeview_focused(st->panes[0]));
+    caret_at(st, &y, &x);
+    assert(y == tiku_codeview_top(st->panes[1]) && y > 0);
+    /* Undo in either pane steps the one history; each caret stays on its
+     * text. */
+    int64_t lower_line = y, lower_col = x;
+    key(st, 'z', TIKU_MOD_CMD);
+    assert(!strcmp(line(st, 0), "line"));
+    caret_at(st, &y, &x); assert(y == lower_line && x == lower_col);
+    key(st, 'z', TIKU_MOD_CMD | TIKU_MOD_SHIFT);
+    assert(!strcmp(line(st, 0), "top line"));
+    key(st, TIKU_KEY_HOME, TIKU_MOD_CMD);
+    caret_at(st, &y, &x); assert(y == 0 && x == 0);
+    assert(tiku_codeview_selection(st->panes[0], &anchor, &caret) == TIKU_EDIT_OK &&
+           caret == 4);
+    /* The divider shares the height; each pane keeps its least. */
+    press = (tiku_event_t){.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = 200, .y = divider.y + 2};
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_MOVE; press.y = upper.y + 60 + 2;
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &press);
+    assert(tiku_editor_pane_box(st, 0).h == 60 && st->pane == 1);
+    press = (tiku_event_t){.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = 200, .y = tiku_editor_divider(st).y + 1};
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_MOVE; press.y = 0;
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &press);
+    assert(tiku_editor_pane_box(st, 0).h == EDIT_PANE_MIN);
+    press = (tiku_event_t){.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = 200, .y = tiku_editor_divider(st).y + 1};
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_MOVE; press.y = st->h;
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &press);
+    assert(tiku_editor_pane_box(st, 1).h == EDIT_PANE_MIN);
+    st->split_at = 60;
+    /* The wheel and a scrollbar arrow move the pane under them alone. */
+    tiku_codeview_scroll_to(st->panes[0], 0, 0);
+    tiku_codeview_scroll_to(st->panes[1], 0, 0);
+    tiku_event_t wheel = {.type = TIKU_EVENT_WHEEL, .dy = 3,
+        .x = 100, .y = tiku_editor_pane_box(st, 1).y + 10};
+    tiku_editor_event(st, &wheel);
+    assert(tiku_codeview_top(st->panes[1]) == 3 && tiku_codeview_top(st->panes[0]) == 0);
+    upper = tiku_editor_pane_box(st, 0);
+    press = (tiku_event_t){.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = st->w - 8, .y = upper.y + upper.h - 7};
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &press);
+    assert(tiku_codeview_top(st->panes[0]) == 1 && tiku_codeview_top(st->panes[1]) == 3 &&
+           st->pane == 1);
+    /* Taken again, the pane with the keys stays, with its place. */
+    place(st, 5, 1);
+    tiku_editor_pick(st, st->id, CMD_SPLIT);
+    assert(!st->panes[1] && st->view == st->panes[0] && st->pane == 0 &&
+           !view->item[5].marked && tiku_codeview_top(st->view) == 3 &&
+           tiku_codeview_focused(st->view));
+    caret_at(st, &y, &x); assert(y == 5 && x == 1);
+    assert(tiku_editor_pane_box(st, 0).h == tiku_editor_view_box(st).h);
     assert(set_text(st, ""));
 }
 
@@ -884,6 +1002,7 @@ int main(void)
     editor_rows(st);
     text_menu(st);
     wrap_lines(st);
+    split_panes(st);
     undo_roundtrips(st);
     history_rollover(st);
     large_documents(st, dir);

@@ -49,7 +49,7 @@ enum { CMD_NEW = 8, CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE,
        CMD_NUMBERS, CMD_REPLACE_ALL, CMD_INVISIBLES, CMD_INDENT,
        CMD_UNINDENT, CMD_COMMENT, CMD_DUPLICATE, CMD_LINES_UP,
        CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET,
-       CMD_WORD_BACK, CMD_WORD_ON, CMD_WRAP };
+       CMD_WORD_BACK, CMD_WORD_ON, CMD_WRAP, CMD_SPLIT };
 
 typedef struct {
     const tiku_app_services_t *services;
@@ -68,6 +68,14 @@ typedef struct {
      * its scrollbars included, stays the Editor's. */
     tiku_editdoc_t                 *doc;
     tiku_codeview_t                *view;
+    /* The page's panes: the upper one and, while it is split, the lower,
+     * each a view of doc with its own caret and scroll; view is the one
+     * that has the keys, panes[pane]. */
+    tiku_codeview_t                *panes[2];
+    int                             pane;
+    int                             split_at;   /* the upper pane's height */
+    int                             split_grab; /* where the divider is
+                                                   held from; -1 not held */
     /* The line break Return types: the one the file uses most, "\n" for
      * a new document. */
     char                            newline[3];
@@ -115,6 +123,7 @@ typedef struct {
     tiku_field_t field[3];
     tiku_field_input_t field_input[3];
     tiku_scroll_t vertical, horizontal;
+    tiku_scroll_t lower;            /* the lower pane's vertical bar   */
     tiku_menuset_t last_menus;
     char scratch[64];
     uint32_t search_id;
@@ -128,6 +137,9 @@ typedef struct {
 
 #define EDIT_TOOL_H 29
 #define EDIT_FOOT_H 20
+/* The divider between split panes, and the least height a pane keeps. */
+#define EDIT_SPLIT_GAP 6
+#define EDIT_PANE_MIN 40
 #define SEARCH_W 480
 #define SEARCH_H 166
 
@@ -142,6 +154,7 @@ int tiku_editor_startup_path(const char *path);
 /* App. */
 int tiku_editor_start(void **state, const tiku_app_services_t *services);
 void tiku_editor_stop(void *state);
+int tiku_editor_split(edit_state_t *st);
 
 /* Run. */
 void tiku_editor_run_program(edit_state_t *st);
@@ -157,6 +170,9 @@ int tiku_editor_save(edit_state_t *st);
 
 /* View. */
 tiku_rect_t tiku_editor_view_box(const edit_state_t *st);
+tiku_rect_t tiku_editor_pane_box(const edit_state_t *st, int pane);
+tiku_rect_t tiku_editor_divider(const edit_state_t *st);
+void tiku_editor_focus_pane(edit_state_t *st, int pane);
 tiku_rect_t tiku_editor_page(const edit_state_t *st);
 tiku_rect_t tiku_editor_note_box(const edit_state_t *st);
 void tiku_editor_view_sync(edit_state_t *st);

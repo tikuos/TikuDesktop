@@ -5,7 +5,9 @@
 
 static int inside(tiku_rect_t r, int x, int y);
 static int scrollbar_press(tiku_scroll_t *bar, int length, int at);
-static void scroll_top(edit_state_t *st, int top);
+static void scroll_top(edit_state_t *st, int pane, int top);
+static int pane_at(const edit_state_t *st, int x, int y);
+static int pointer_down(edit_state_t *st, const tiku_event_t *e);
 static void scroll_left(edit_state_t *st, int left);
 static int edit_key(const tiku_event_t *e);
 static int move_key(unsigned key);
@@ -30,9 +32,50 @@ static int scrollbar_press(tiku_scroll_t *bar, int length, int at)
     return tiku_scroll_press(bar, length - 28, at - 14);
 }
 
-/** The scrollbars move the view and never the caret. */
-static void scroll_top(edit_state_t *st, int top)
-{ tiku_codeview_scroll_to(st->view, top, tiku_codeview_left(st->view)); }
+/** The scrollbars move a pane and never the caret. */
+static void scroll_top(edit_state_t *st, int pane, int top)
+{ tiku_codeview_scroll_to(st->panes[pane], top, tiku_codeview_left(st->panes[pane])); }
+
+/** The pane holding @p x, @p y with its scrollbar, or -1 for none. */
+static int pane_at(const edit_state_t *st, int x, int y)
+{
+    for (int i = 0; i < 2 && st->panes[i]; i++) {
+        tiku_rect_t box = tiku_editor_pane_box(st, i);
+        box.w += 15;
+        if (inside(box, x, y)) return i;
+    }
+    return -1;
+}
+
+/** Button 1 down: a tool, a pane's scrollbar, the divider, the message
+ *  over the footer, the horizontal scrollbar, or a pane, which takes the
+ *  keys and the press.  @return 1 when a tool was pressed. */
+static int pointer_down(edit_state_t *st, const tiku_event_t *e)
+{
+    int pane = pane_at(st, e->x, e->y);
+    tiku_rect_t divider = tiku_editor_divider(st);
+    for (int i = 0; i < 6; i++) if (inside(tiku_editor_tool_rect(i), e->x, e->y)) {
+        if (tiku_editor_tool_enabled(st, i)) st->pressed_tool = i;
+        return 1;
+    }
+    if (pane >= 0 && e->x >= st->w - 15) {
+        tiku_rect_t box = tiku_editor_pane_box(st, pane);
+        scroll_top(st, pane, scrollbar_press(pane ? &st->lower : &st->vertical,
+                                              box.h, e->y - box.y));
+    } else if (inside(divider, e->x, e->y)) {
+        st->split_grab = e->y - divider.y;
+    } else if ((st->note[0] || st->hover_tool >= 0) &&
+               inside(tiku_editor_note_box(st), e->x, e->y)) {
+        st->note[0] = 0; st->hover_tool = -1;   /* uncovers the scrollbar */
+    } else if (inside((tiku_rect_t){208, st->h - EDIT_FOOT_H + 2, st->w - 224, 16}, e->x, e->y)) {
+        scroll_left(st, scrollbar_press(&st->horizontal, st->w - 224, e->x - 208));
+    } else {
+        if (pane >= 0) tiku_editor_focus_pane(st, pane);
+        tiku_editor_view_sync(st);
+        (void)tiku_codeview_event(st->view, e);
+    }
+    return 0;
+}
 static void scroll_left(edit_state_t *st, int left)
 { tiku_codeview_scroll_to(st->view, tiku_codeview_top(st->view), left); }
 
@@ -213,39 +256,31 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         for (int i = 0; i < 3; i++) st->field_input[i].dragging = 0;
         st->hover_tool = st->pressed_tool = -1;
         tiku_scroll_release(&st->vertical); tiku_scroll_release(&st->horizontal);
+        tiku_scroll_release(&st->lower); st->split_grab = -1;
         tiku_text_input_reset(&st->commit);
-        (void)tiku_codeview_event(st->view, e);
+        for (int i = 0; i < 2 && st->panes[i]; i++) (void)tiku_codeview_event(st->panes[i], e);
         return 0;
     }
     if (search_event(st, e)) return 0;
-    tiku_rect_t box = tiku_editor_view_box(st);
     if (e->type == TIKU_EVENT_WHEEL) {
+        int pane = pane_at(st, e->x, e->y);
         tiku_editor_view_sync(st);
-        (void)tiku_codeview_event(st->view, e);
+        (void)tiku_codeview_event(st->panes[pane >= 0 ? pane : st->pane], e);
         tiku_editor_paint(st); return 0;
     }
     if (e->type == TIKU_EVENT_POINTER_DOWN) {
         tiku_text_input_reset(&st->commit);
-        for (int i = 0; i < 6; i++) if (inside(tiku_editor_tool_rect(i), e->x, e->y)) {
-            if (tiku_editor_tool_enabled(st, i)) st->pressed_tool = i;
-            tiku_editor_paint(st); return 0;
-        }
-        if (inside((tiku_rect_t){st->w - 15, box.y, 15, box.h}, e->x, e->y)) {
-            scroll_top(st, scrollbar_press(&st->vertical, box.h, e->y - box.y));
-        } else if ((st->note[0] || st->hover_tool >= 0) &&
-                   inside(tiku_editor_note_box(st), e->x, e->y)) {
-            st->note[0] = 0; st->hover_tool = -1;   /* uncovers the scrollbar */
-        } else if (inside((tiku_rect_t){208, st->h - EDIT_FOOT_H + 2, st->w - 224, 16}, e->x, e->y)) {
-            scroll_left(st, scrollbar_press(&st->horizontal, st->w - 224, e->x - 208));
-        } else {
-            tiku_editor_view_sync(st);
-            (void)tiku_codeview_event(st->view, e);
-        }
+        if (pointer_down(st, e)) { tiku_editor_paint(st); return 0; }
         tiku_editor_publish(st); tiku_editor_paint(st); return 0;
     }
     if (e->type == TIKU_EVENT_POINTER_MOVE) {
-        if (st->vertical.tracking)
-            scroll_top(st, tiku_scroll_drag(&st->vertical, box.h - 28, e->y - box.y - 14));
+        tiku_rect_t upper = tiku_editor_pane_box(st, 0), lower = tiku_editor_pane_box(st, 1);
+        if (st->split_grab >= 0)
+            st->split_at = e->y - st->split_grab - upper.y;
+        else if (st->vertical.tracking)
+            scroll_top(st, 0, tiku_scroll_drag(&st->vertical, upper.h - 28, e->y - upper.y - 14));
+        else if (st->lower.tracking)
+            scroll_top(st, 1, tiku_scroll_drag(&st->lower, lower.h - 28, e->y - lower.y - 14));
         else if (st->horizontal.tracking)
             scroll_left(st, tiku_scroll_drag(&st->horizontal, st->w - 252, e->x - 222));
         else if (!tiku_codeview_event(st->view, e)) {
@@ -261,9 +296,12 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         if (pressed >= 0 && inside(tiku_editor_tool_rect(pressed), e->x, e->y) && tiku_editor_tool_enabled(st, pressed))
             return tiku_editor_pick(st, st->id, tool_commands[pressed]);
         tiku_scroll_release(&st->vertical); tiku_scroll_release(&st->horizontal);
+        tiku_scroll_release(&st->lower);
+        int held = st->split_grab >= 0;
+        st->split_grab = -1;
         int dragged = tiku_codeview_event(st->view, e);
         if (dragged) tiku_editor_publish(st);
-        if (pressed >= 0 || dragged) tiku_editor_paint(st);
+        if (pressed >= 0 || dragged || held) tiku_editor_paint(st);
         return 0;
     }
     int commit = tiku_text_input_event(&st->commit, e);

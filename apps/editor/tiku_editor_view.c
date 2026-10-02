@@ -36,6 +36,43 @@ tiku_rect_t tiku_editor_view_box(const edit_state_t *st)
         st->h - EDIT_TOOL_H - EDIT_FOOT_H - 1 - out_pane_h(st)};
 }
 
+/** The upper pane's height while split, so each pane keeps its least. */
+static int upper_h(const edit_state_t *st)
+{
+    int most = tiku_editor_view_box(st).h - EDIT_SPLIT_GAP - EDIT_PANE_MIN;
+    int h = st->split_at < most ? st->split_at : most;
+    return h > EDIT_PANE_MIN ? h : EDIT_PANE_MIN;
+}
+
+/** Where pane @p pane sits: the whole view box, or while split the part
+ *  above the divider or below it. */
+tiku_rect_t tiku_editor_pane_box(const edit_state_t *st, int pane)
+{
+    tiku_rect_t box = tiku_editor_view_box(st);
+    int top = upper_h(st);
+    if (!st->panes[1]) return box;
+    if (pane == 0) { box.h = top; return box; }
+    box.y += top + EDIT_SPLIT_GAP; box.h -= top + EDIT_SPLIT_GAP;
+    if (box.h < 0) box.h = 0;
+    return box;
+}
+
+/** The divider across the window between split panes; empty unsplit. */
+tiku_rect_t tiku_editor_divider(const edit_state_t *st)
+{
+    tiku_rect_t box = tiku_editor_view_box(st);
+    if (!st->panes[1]) return (tiku_rect_t){0, 0, 0, 0};
+    return (tiku_rect_t){box.x, box.y + upper_h(st), st->w, EDIT_SPLIT_GAP};
+}
+
+/** Give pane @p pane the keys: its caret is drawn and the other's not. */
+void tiku_editor_focus_pane(edit_state_t *st, int pane)
+{
+    if (pane < 0 || pane > 1 || !st->panes[pane]) return;
+    st->pane = pane; st->view = st->panes[pane];
+    tiku_editor_view_sync(st);
+}
+
 /** The text's page inside the view: its first row's top and line x 0,
  *  past the line numbers when they are shown. */
 tiku_rect_t tiku_editor_page(const edit_state_t *st)
@@ -47,14 +84,21 @@ tiku_rect_t tiku_editor_page(const edit_state_t *st)
     return (tiku_rect_t){(int)x, box.y + 3, st->w - (int)x - 16, box.h - 3};
 }
 
-/** Hand the view the window's current box and the View menu's options. */
+/** Hand each pane its box, the View menu's options, the document's
+ *  language and line break, and whether it has the keys. */
 void tiku_editor_view_sync(edit_state_t *st)
 {
-    tiku_codeview_set_bounds(st->view, tiku_editor_view_box(st));
-    tiku_codeview_set_options(st->view, TIKU_CODEVIEW_BRACES |
+    unsigned options = TIKU_CODEVIEW_BRACES |
         (st->numbers ? TIKU_CODEVIEW_LINE_NUMBERS : 0) |
         (st->show_invisibles ? TIKU_CODEVIEW_INVISIBLES : 0) |
-        (st->wrap ? TIKU_CODEVIEW_WRAP : 0));
+        (st->wrap ? TIKU_CODEVIEW_WRAP : 0);
+    for (int i = 0; i < 2 && st->panes[i]; i++) {
+        tiku_codeview_set_bounds(st->panes[i], tiku_editor_pane_box(st, i));
+        tiku_codeview_set_options(st->panes[i], options);
+        tiku_codeview_set_language(st->panes[i], st->lang);
+        (void)tiku_codeview_set_newline(st->panes[i], st->newline);
+        tiku_codeview_set_focus(st->panes[i], i == st->pane);
+    }
 }
 
 /** Scroll as little as shows the caret, in the box the window has now. */
@@ -183,25 +227,43 @@ static void draw_scroll(edit_state_t *st, tiku_scroll_t *bar, tiku_rect_t r, int
     }
 }
 
+/** The panes, each with its vertical scrollbar beside it, and while split
+ *  the divider between them; the horizontal scrollbar follows the pane
+ *  with the keys. */
+static void paint_panes(edit_state_t *st)
+{
+    int64_t total, shown, at;
+    for (int i = 0; i < 2 && st->panes[i]; i++) {
+        tiku_rect_t box = tiku_editor_pane_box(st, i);
+        tiku_scroll_t *bar = i ? &st->lower : &st->vertical;
+        tiku_codeview_paint(st->panes[i], st->surface);
+        tiku_codeview_extent(st->panes[i], 0, &total, &shown, &at);
+        tiku_scroll_set_range(bar, total > INT_MAX ? INT_MAX : (int)total, (int)shown);
+        tiku_scroll_to(bar, at > INT_MAX ? INT_MAX : (int)at);
+        draw_scroll(st, bar, (tiku_rect_t){st->w - 15, box.y, 15, box.h}, 0);
+    }
+    if (st->panes[1]) {
+        tiku_rect_t d = tiku_editor_divider(st);
+        tiku_rgb_t rule = tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2);
+        tiku_fill(st->surface, d, TIKU_C_PANEL);
+        tiku_hline(st->surface, d.x, d.y, d.w, rule);
+        tiku_hline(st->surface, d.x, d.y + d.h - 1, d.w, rule);
+    }
+    tiku_codeview_extent(st->view, 1, &total, &shown, &at);
+    tiku_scroll_set_range(&st->horizontal, total > INT_MAX ? INT_MAX : (int)total, (int)shown);
+    tiku_scroll_to(&st->horizontal, at > INT_MAX ? INT_MAX : (int)at);
+}
+
 void tiku_editor_paint(edit_state_t *st)
 {
     const tiku_font_t *f = tiku_font_mono(0), *small = tiku_font_at(11);
     int step = f->height + 2;
-    int64_t total, shown, at;
     tiku_edit_pos_t anchor, caret;
     tiku_editor_view_sync(st);
-    tiku_rect_t box = tiku_editor_view_box(st);
     if (st->dl) tiku_dl_clear(st->dl);
     st->surface->record = st->dl;
     tiku_fill(st->surface, (tiku_rect_t){0, 0, st->w, st->h}, TIKU_C_PANEL);
-    tiku_codeview_paint(st->view, st->surface);
-    tiku_codeview_extent(st->view, 0, &total, &shown, &at);
-    tiku_scroll_set_range(&st->vertical, total > INT_MAX ? INT_MAX : (int)total, (int)shown);
-    tiku_scroll_to(&st->vertical, at > INT_MAX ? INT_MAX : (int)at);
-    tiku_codeview_extent(st->view, 1, &total, &shown, &at);
-    tiku_scroll_set_range(&st->horizontal, total > INT_MAX ? INT_MAX : (int)total, (int)shown);
-    tiku_scroll_to(&st->horizontal, at > INT_MAX ? INT_MAX : (int)at);
-    draw_scroll(st, &st->vertical, (tiku_rect_t){st->w - 15, box.y, 15, box.h}, 0);
+    paint_panes(st);
     int pane_h = out_pane_h(st);
     if (pane_h) {
         tiku_rect_t pane = {0, st->h - EDIT_FOOT_H - pane_h, st->w - 15, pane_h};

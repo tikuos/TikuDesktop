@@ -116,10 +116,12 @@ tiku_editor_tick(void *state, int64_t now_us)
     tiku_event_t count = {.type = TIKU_EVENT_TICK};
     char buf[256];
     ssize_t n;
-    int heard = 0;
+    int heard = 0, counted = 0;
 
-    if (st && tiku_codeview_wrapping(st->view) &&
-        tiku_codeview_event(st->view, &count))
+    for (int i = 0; st && i < 2 && st->panes[i]; i++)
+        if (tiku_codeview_wrapping(st->panes[i]))
+            counted |= tiku_codeview_event(st->panes[i], &count);
+    if (counted)
         tiku_editor_paint(st);
     if (st && strcmp(st->note, st->last_note)) {
         snprintf(st->last_note, sizeof st->last_note, "%s", st->note);

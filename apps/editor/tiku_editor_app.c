@@ -48,28 +48,63 @@ static const char *clip_text(void *ctx, size_t *length)
     return st->paste;
 }
 
-/** Make the document and the view that shows it, with the clipboard the
- *  services lend.  @return 0, or -1 with nothing kept. */
+/** A view of the document with the clipboard the services lend; NULL
+ *  when none could be made. */
+static tiku_codeview_t *pane_new(edit_state_t *st)
+{
+    tiku_codeview_host_t host = {.ctx = st, .clip_set = clip_set, .clip_text = clip_text};
+    tiku_codeview_t *view = NULL;
+    if (tiku_codeview_create(st->doc, &view) != TIKU_EDIT_OK) return NULL;
+    tiku_codeview_set_host(view, &host);
+    tiku_codeview_set_options(view, TIKU_CODEVIEW_LINE_NUMBERS);
+    return view;
+}
+
+/** Make the document and the view that shows it.  @return 0, or -1 with
+ *  nothing kept. */
 static int document_new(edit_state_t *st)
 {
     tiku_editdoc_limits_t limits = {INT_MAX - 1u, TIKU_EDITDOC_HISTORY_DEFAULT};
-    tiku_codeview_host_t host = {.ctx = st, .clip_set = clip_set, .clip_text = clip_text};
     if (tiku_editdoc_create(&limits, &st->doc) != TIKU_EDIT_OK) return -1;
-    if (tiku_codeview_create(st->doc, &st->view) != TIKU_EDIT_OK) {
-        tiku_editdoc_release(st->doc); st->doc = NULL; return -1;
-    }
-    tiku_codeview_set_host(st->view, &host);
+    st->view = st->panes[0] = pane_new(st);
+    if (!st->view) { tiku_editdoc_release(st->doc); st->doc = NULL; return -1; }
     snprintf(st->newline, sizeof st->newline, "\n");
-    tiku_codeview_set_options(st->view, TIKU_CODEVIEW_LINE_NUMBERS);
+    st->split_grab = -1;
     return 0;
 }
 
-/** Free the view, the document and what the clipboard left. */
+/** Free the panes, the document and what the clipboard left. */
 static void document_free(edit_state_t *st)
 {
-    tiku_codeview_destroy(st->view); st->view = NULL;
+    tiku_codeview_destroy(st->panes[1]); st->panes[1] = NULL;
+    tiku_codeview_destroy(st->panes[0]); st->panes[0] = st->view = NULL;
     tiku_editdoc_release(st->doc); st->doc = NULL;
     free(st->paste); st->paste = NULL;
+}
+
+/** Split the page: a lower pane at the caret and first row of the pane
+ *  with the keys, the divider halfway; or, split already, keep only the
+ *  pane with the keys.  @return 0, or -1 when no pane could be made. */
+int tiku_editor_split(edit_state_t *st)
+{
+    tiku_edit_pos_t anchor = 0, caret = 0;
+    tiku_codeview_t *lower;
+    if (st->panes[1]) {
+        tiku_codeview_destroy(st->panes[!st->pane]);
+        st->panes[0] = st->view; st->panes[1] = NULL;
+        st->pane = 0; st->split_grab = -1;
+        tiku_editor_view_sync(st);
+        return 0;
+    }
+    if (!(lower = pane_new(st))) return -1;
+    (void)tiku_codeview_selection(st->view, &anchor, &caret);
+    (void)tiku_codeview_select(lower, anchor, caret);
+    st->panes[1] = lower;
+    st->split_at = (tiku_editor_view_box(st).h - EDIT_SPLIT_GAP) / 2;
+    tiku_editor_view_sync(st);
+    tiku_codeview_scroll_to(lower, tiku_codeview_top(st->view), tiku_codeview_left(st->view));
+    tiku_codeview_reveal(st->view); tiku_codeview_reveal(lower);
+    return 0;
 }
 
 int
@@ -88,6 +123,7 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
     st->hover_tool = st->pressed_tool = -1; st->match_case = 1;
     tiku_icons_tiku_register();
     tiku_scroll_init(&st->vertical, 1);
+    tiku_scroll_init(&st->lower, 1);
     tiku_scroll_init(&st->horizontal, tiku_font_mono_cell(0));
     for (int i = 0; i < 3; i++) {
         tiku_field_start(&st->field[i], "");
