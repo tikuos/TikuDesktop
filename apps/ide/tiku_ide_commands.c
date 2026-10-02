@@ -18,8 +18,12 @@ tiku_ide_pick(void *state, uint32_t window, int command)
             command == CMD_DEBUG_STEP || command == CMD_DEBUG_CONT) {
             tiku_ide_debug_show(e);
             if (command == CMD_DEBUG) { tiku_ide_debug_start(st, e); }
-            if (command == CMD_BREAKPOINT && !st->running) { tiku_ide_debug_break(e); }
-            if (command == CMD_CLEARBREAKS && !st->running) { memset(e->breaks, 0, sizeof e->breaks); }
+            if (command == CMD_BREAKPOINT && !st->running) {
+                tiku_ide_debug_break(e);
+            }
+            if (command == CMD_CLEARBREAKS && !st->running) {
+                tiku_ide_debug_clear(e);
+            }
             if (tiku_ide_debug_locked(st, e) && (command == CMD_DEBUG_STEP || command == CMD_DEBUG_CONT)) {
                 tiku_ide_debug_command(st, command == CMD_DEBUG_STEP ? "DEBUG STEP" : "DEBUG CONT");
             }
@@ -78,7 +82,7 @@ tiku_ide_pick(void *state, uint32_t window, int command)
                       command == CMD_PASTE || command == CMD_SELALL ||
                       command == CMD_UNDO || command == CMD_REDO)) {
         if (tiku_ide_edit_clip(st, e, command)) {
-            (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+            tiku_ide_edit_reveal(e);
             tiku_ide_edit_paint(st, e);
             if (command != CMD_COPY && command != CMD_SELALL) {
                 tiku_ide_edit_publish(st, e);
@@ -164,7 +168,7 @@ tiku_ide_pick(void *state, uint32_t window, int command)
              * while showing another is how a person debugs a program
              * they are not looking at. */
             if (open_now != NULL &&
-                tiku_textview_modified(&open_now->tv)) {
+                tiku_editdoc_modified(open_now->doc)) {
                 (void)tiku_ide_edit_save(open_now);
                 tiku_ide_edit_paint(st, open_now);
                 tiku_ide_edit_publish(st, open_now);
@@ -182,7 +186,7 @@ tiku_ide_pick(void *state, uint32_t window, int command)
             edit_t *open_now = tiku_ide_edit_of_path(st, st->proj.row[row].path);
 
             if (open_now != NULL &&
-                tiku_textview_modified(&open_now->tv)) {
+                tiku_editdoc_modified(open_now->doc)) {
                 (void)tiku_ide_edit_save(open_now);
                 tiku_ide_edit_paint(st, open_now);
                 tiku_ide_edit_publish(st, open_now);

@@ -71,40 +71,46 @@ recovery_dir(char *out, size_t max)
            sb.st_uid == getuid() && !(sb.st_mode & 0077);
 }
 
-/** Atomic private writes; a failed checkpoint leaves the last one intact. */
+/** @brief Write a run of the page's bytes to the FILE @p ctx. */
+static int
+draft_run(void *ctx, const char *bytes, size_t n)
+{
+    return fwrite(bytes, 1, n, ctx) != n;
+}
+
+/** Atomic private writes; a failed checkpoint leaves the last one intact.
+ *  The draft is the page's path on a line, then every byte of its text. */
 int
 tiku_ide_recovery_write(edit_t *e)
 {
     char temp[680];
     FILE *f;
-    int fd, i, ok;
-    uint64_t stamp = 14695981039346656037ULL;
+    int fd, ok;
+    uint64_t state;
 
     if (!e->recovery[0] || e->recovery_fd < 0 || e->recovery_blocked) { return 0; }
-    if (!tiku_textview_modified(&e->tv)) {
+    if (!tiku_editdoc_modified(e->doc)) {
         e->recovery_current = 0;
         return unlink(e->recovery) == 0 || errno == ENOENT;
     }
-    for (i = 0; i < tiku_textview_lines(&e->tv); i++) {
-        const unsigned char *p = (const unsigned char *)tiku_textview_line(&e->tv, i);
-        for (; *p; p++) { stamp = (stamp ^ *p) * 1099511628211ULL; }
-        stamp = (stamp ^ '\n') * 1099511628211ULL;
-    }
-    if (e->recovery_current && stamp == e->recovery_stamp) { return 1; }
+    state = tiku_editdoc_state(e->doc);
+    if (e->recovery_current && state == e->recovery_state) { return 1; }
     snprintf(temp, sizeof temp, "%s.XXXXXX", e->recovery);
     fd = mkstemp(temp);
     if (fd < 0) { return 0; }
     f = fdopen(fd, "w");
     if (!f) { close(fd); unlink(temp); return 0; }
     ok = fprintf(f, "%s\n", e->path) >= 0;
-    for (i = 0; i < tiku_textview_lines(&e->tv); i++) {
-        if (fprintf(f, "%s\n",
-                    tiku_textview_line(&e->tv, i)) < 0) { ok = 0; }
+    {
+        tiku_edit_range_t all = { 0, tiku_editdoc_length(e->doc) };
+
+        if (tiku_editdoc_each(e->doc, all, draft_run, f) != TIKU_EDIT_OK ||
+            ferror(f)) { ok = 0; }
     }
     if (fflush(f) != 0 || fsync(fd) != 0) { ok = 0; }
     if (fclose(f) != 0) { ok = 0; }
     if (ok && rename(temp, e->recovery) == 0) {
-        e->recovery_stamp = stamp;
+        e->recovery_state = state;
         e->recovery_current = 1;
         return 1;
     }
@@ -112,36 +118,52 @@ tiku_ide_recovery_write(edit_t *e)
     return 0;
 }
 
+/** Restore the draft over the page, which then reads modified; a draft
+ *  for another path, or one the page cannot hold, is kept unread. */
 void
 tiku_ide_recovery_restore(edit_t *e)
 {
     char path[512];
-    size_t limit = TIKU_TEXTVIEW_LINES_MAX * TIKU_TEXTVIEW_LINE_MAX;
-    char *text = malloc(limit + 1);
+    char *text = NULL;
     int fd = open(e->recovery, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     FILE *f = fd < 0 ? NULL : fdopen(fd, "r");
-    size_t n;
+    size_t n = 0, cap = 0;
 
-    if (!f || !text) {
-        if (!text || (fd < 0 && errno != ENOENT) || (fd >= 0 && !f)) {
+    if (!f) {
+        if ((fd < 0 && errno != ENOENT) || (fd >= 0 && !f)) {
             e->recovery_blocked = 1;
         }
-        if (f) { fclose(f); } else if (fd >= 0) { close(fd); }
-        free(text);
+        if (fd >= 0) { close(fd); }
         return;
     }
     e->recovery_blocked = 1;
     if (!fgets(path, sizeof path, f)) { goto done; }
     path[strcspn(path, "\n")] = '\0';
     if (strcmp(path, e->path)) { goto done; }
-    n = fread(text, 1, limit, f);
-    if (ferror(f) || n == limit || memchr(text, '\0', n)) { goto done; }
-    text[n] = '\0';
-    if (!tiku_ide_document_fits(text)) { goto done; }
-    tiku_textview_set(&e->tv, text);
+    for (;;) {
+        size_t got;
+
+        if (n == cap) {
+            char *grown;
+
+            if (cap > (size_t)INT_MAX ||
+                (grown = realloc(text, cap ? cap * 2 : 65536)) == NULL) {
+                goto done;
+            }
+            text = grown;
+            cap = cap ? cap * 2 : 65536;
+        }
+        got = fread(text + n, 1, cap - n, f);
+        n += got;
+        if (got == 0) { break; }
+    }
+    if (ferror(f) || (n > 0 && memchr(text, '\0', n))) { goto done; }
+    if (tiku_ide_text_load(e, text != NULL ? text : "", n) != TIKU_EDIT_OK) {
+        goto done;
+    }
+    tiku_editdoc_saved(e->doc, 0);
     e->recovery_blocked = 0;
     e->load_failed = 0;
-    e->tv.saved_at = -1;
     snprintf(e->feedback, sizeof e->feedback,
              "Recovered unsaved work — review, then Save. Original unchanged.");
 done:

@@ -30,27 +30,94 @@ void
 tiku_ide_debug_show(edit_t *e)
 {
     e->debug_show = 1;
-    e->assist_open = e->finding = 0;
+    tiku_ide_assist_close(e);
+    e->finding = 0;
     if (!e->watches.active) { tiku_field_start(&e->watches, "A,B,C"); }
 }
 
+/** @brief How many lines hold a breakpoint. */
+static int
+debug_breaks(const edit_t *e)
+{
+    int64_t line = tiku_editdoc_markers_next(e->doc, 0, 1u << IDE_MARK_BREAK);
+    int n = 0;
+
+    for (; line >= 0; line = tiku_editdoc_markers_next(e->doc, line + 1,
+                                                      1u << IDE_MARK_BREAK)) {
+        n++;
+    }
+    return n;
+}
+
+/**
+ * @brief Toggle a breakpoint on the caret's line, which must start with a
+ *        BASIC number from 1 to 65533.
+ *
+ * The breakpoint marks the line and follows it through edits; which
+ * BASIC line it stops at is read when debugging starts.
+ */
 void
 tiku_ide_debug_break(edit_t *e)
 {
-    int y, x, i, empty = -1;
-    long line;
-    const char *p;
-    char *end;
-    tiku_textview_caret(&e->tv, &y, &x);
-    p = tiku_textview_line(&e->tv, y);
-    line = strtol(p, &end, 10);
-    if (p == end || line <= 0 || line >= 65534) { return; }
-    for (i = 0; i < 16; i++) {
-        if (e->breaks[i] == line) { e->breaks[i] = 0; return; }
-        if (!e->breaks[i]) { empty = i; }
+    int64_t y;
+    long number;
+
+    (void)tiku_ide_caret(e, &y, NULL);
+    number = tiku_ide_line_number(e, y, 1);
+    if (number <= 0 || number >= 65534) { return; }
+    if (tiku_editdoc_markers_on(e->doc, y) & (1u << IDE_MARK_BREAK)) {
+        (void)tiku_editdoc_markers_clear(e->doc, y, 1u << IDE_MARK_BREAK);
+    } else if (debug_breaks(e) >= IDE_BREAKS) {
+        snprintf(e->feedback, sizeof e->feedback, "Maximum 16 breakpoints");
+    } else {
+        (void)tiku_editdoc_marker_add(e->doc, y, IDE_MARK_BREAK, NULL);
     }
-    if (empty >= 0) { e->breaks[empty] = (uint16_t)line; }
-    else { snprintf(e->feedback, sizeof e->feedback, "Maximum 16 breakpoints"); }
+}
+
+/** @brief Take every breakpoint off the page. */
+void
+tiku_ide_debug_clear(edit_t *e)
+{
+    (void)tiku_editdoc_markers_clear(e->doc, -1, 1u << IDE_MARK_BREAK);
+}
+
+/**
+ * @brief The DEBUG BREAK lines for the page's breakpoints, in @p out.
+ *
+ * Each marked line must still start with a BASIC number, and be the
+ * last line wearing it, the one the interpreter keeps; otherwise the
+ * page says which line and @return 0.
+ */
+static int
+debug_break_lines(edit_t *e, char *out, size_t max)
+{
+    int64_t line = tiku_editdoc_markers_next(e->doc, 0, 1u << IDE_MARK_BREAK);
+    size_t used = 0;
+
+    out[0] = '\0';
+    for (; line >= 0; line = tiku_editdoc_markers_next(e->doc, line + 1,
+                                                      1u << IDE_MARK_BREAK)) {
+        long number = tiku_ide_line_number(e, line, 1);
+
+        if (number <= 0 || number >= 65534) {
+            snprintf(e->feedback, sizeof e->feedback,
+                     "Breakpoint on line %lld has no BASIC number; "
+                     "clear breakpoints first",
+                     (long long)line + 1);
+            return 0;
+        }
+        if (tiku_ide_line_of_number(e, number) != line) {
+            snprintf(e->feedback, sizeof e->feedback,
+                     "Breakpoint on line %lld is not run: "
+                     "a later line is also %ld",
+                     (long long)line + 1, number);
+            return 0;
+        }
+        if (used + 24 >= max) { return 0; }
+        used += (size_t)snprintf(out + used, max - used, "DEBUG BREAK %ld\n",
+                                 number);
+    }
+    return 1;
 }
 
 /** Watch names only: eight scalars, seven letters/digits/underscores plus $. */
@@ -144,45 +211,46 @@ debug_local_start(ide_t *st, const char *program, const char *path)
 void
 tiku_ide_debug_start(ide_t *st, edit_t *e)
 {
-    char program[8192], source[8192], watches[256], board[64];
+    char program[8192], source[8192], watches[256], board[64], breaks[512];
     size_t used;
-    int i;
+    int64_t i;
     if (st->running || e->lang != TIKU_SYNTAX_BASIC) { return; }
     tiku_ide_debug_show(e);
     if (!debug_watch_setup(e, watches, sizeof watches)) {
         snprintf(e->feedback, sizeof e->feedback, "Watch up to 8 scalar names (7 characters plus $)");
         return;
     }
-    for (i = 0; i < e->tv.nline; i++) {
-        const char *p = tiku_textview_line(&e->tv, i);
-        char *end;
+    for (i = 0; i < tiku_editdoc_lines(e->doc); i++) {
+        size_t len = 0;
+        char *text = tiku_ide_line_dup(e, i, &len), *end;
+        const char *p = text;
         long n;
+
+        if (text == NULL) { return; }
         while (*p == ' ' || *p == '\t') { p++; }
-        if (!*p) { continue; }
+        if (!*p) { free(text); continue; }
         n = strtol(p, &end, 10);
-        if (end == p || n <= 0 || n >= 65534) {
+        if (end == p || n <= 0 || n >= 65534 || !(*p >= '0' && *p <= '9')) {
             snprintf(e->feedback, sizeof e->feedback, "Debug requires numbered BASIC source lines");
+            free(text);
             return;
         }
         while (*end == ' ' || *end == '\t') { end++; }
-        if (strlen(end) >= 144) {
+        if (strlen(end) > IDE_BASIC_BODY) {
             snprintf(e->feedback, sizeof e->feedback, "Debug source line %ld exceeds the portable 143-byte body limit", n);
+            free(text);
             return;
         }
+        free(text);
     }
     if (!tiku_ide_edit_save(e) || !tiku_ide_upload_read(st, e->path, source, sizeof source)) { return; }
-    used = (size_t)snprintf(program, sizeof program, "DEBUG ON\n%s", watches);
-    for (i = 0; i < 16; i++) {
-        if (e->breaks[i]) {
-            if (tiku_ide_line_of_number(&e->tv, e->breaks[i]) < 0) {
-                snprintf(e->feedback, sizeof e->feedback,
-                         "Breakpoint line %u no longer exists; clear breakpoints first", e->breaks[i]);
-                return;
-            }
-            used += (size_t)snprintf(program + used, sizeof program - used,
-                                     "DEBUG BREAK %u\n", e->breaks[i]);
-        }
+    if (!tiku_ide_basic_fits(st, source, strlen(source))) {
+        snprintf(e->feedback, sizeof e->feedback, "%s", st->note);
+        return;
     }
+    if (!debug_break_lines(e, breaks, sizeof breaks)) { return; }
+    used = (size_t)snprintf(program, sizeof program, "DEBUG ON\n%s%s",
+                            watches, breaks);
     if (used + strlen(source) >= sizeof program) {
         snprintf(e->feedback, sizeof e->feedback, "Program plus debug setup exceeds 8191 bytes");
         return;
@@ -207,7 +275,13 @@ tiku_ide_debug_start(ide_t *st, edit_t *e)
     st->asking = st->saving = st->nmsg = 0;
     st->child_numbered = 1; st->run_from = 0;
     st->stop_asked = 0;
-    tiku_textview_select_none(&e->tv);
+    st->debug_state = tiku_editdoc_state(e->doc);
+    tiku_ide_edit_lock(st, e);
+    {
+        tiku_edit_pos_t caret = tiku_ide_caret(e, NULL, NULL);
+
+        (void)tiku_codeview_select(e->view, caret, caret);
+    }
     memset(e->watch_value, 0, sizeof e->watch_value);
     snprintf(e->feedback, sizeof e->feedback, "Starting debugger; source is read-only until stopped");
     tiku_ide_console_open(st, e->path, board[0] ? board : "This computer");
@@ -265,17 +339,34 @@ tiku_ide_debug_line(ide_t *st, const char *line)
         if (e) { memset(e->watch_value, 0, sizeof e->watch_value); }
     } else if (!strcmp(line, "[TDBG READY]")) {
         st->debug_paused = st->debug_pc != 0;
-        if (e) {
-            int y = tiku_ide_line_of_number(&e->tv, st->debug_pc);
-            tiku_textview_select_none(&e->tv);
-            if (y >= 0) { tiku_textview_place(&e->tv, y, 0); }
-            tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+        if (e && tiku_editdoc_state(e->doc) != st->debug_state) {
+            /* The run was given other text than the page holds now: its
+             * line numbers would point at the wrong lines. */
+            tiku_editdoc_execution_clear(e->doc);
+            snprintf(e->feedback, sizeof e->feedback,
+                     "Paused before BASIC line %d; "
+                     "the source changed since the run started",
+                     st->debug_pc);
+        } else if (e) {
+            int64_t y = st->debug_pc ?
+                tiku_ide_line_of_number(e, st->debug_pc) : -1;
+            tiku_edit_pos_t caret = tiku_ide_caret(e, NULL, NULL);
+
+            tiku_editdoc_execution_clear(e->doc);
+            if (y >= 0) {
+                (void)tiku_editdoc_execution_set(e->doc, y);
+                tiku_ide_place(e, y, 0);
+            } else {
+                (void)tiku_codeview_select(e->view, caret, caret);
+            }
+            tiku_ide_edit_reveal(e);
             snprintf(e->feedback, sizeof e->feedback, st->debug_pc ?
                      "Paused before BASIC line %d (green). Source locked." :
                      "Debugger finished at line %d", st->debug_pc);
         }
     } else if (!strcmp(line, "[TDBG RUNNING]")) {
         st->debug_paused = 0;
+        if (e) { tiku_editdoc_execution_clear(e->doc); }
     } else if (!strncmp(line, "[TDBG ERROR ", 12)) {
         if (e) { snprintf(e->feedback, sizeof e->feedback, "Debugger: %.100s", line + 6); }
     } else if (e && st->debug_values < 8 &&

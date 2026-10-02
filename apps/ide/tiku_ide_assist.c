@@ -6,11 +6,12 @@
 static int
 assist_word(int ch);
 static int
-assist_context(edit_t *e, char *word, size_t max);
-static void
-assist_refresh(edit_t *e);
+assist_quoted(const char *text, int x);
 static int
-assist_text(edit_t *e, int x, int y, int width, const char *text);
+assist_context(edit_t *e, tiku_edit_range_t *word, char *prefix,
+               size_t max);
+static void
+assist_show(edit_t *e);
 
 /* Editor assistance shares its completion vocabulary with syntax colouring. */
 typedef struct { const char *word, *syntax, *detail, *example; } basic_help_t;
@@ -67,50 +68,122 @@ assist_word(int ch)
            (ch >= '0' && ch <= '9') || ch == '_' || ch == '$';
 }
 
-/** Do not offer code completions inside a quoted string or comment. */
+/** @brief Whether byte @p x of a BASIC line's @p text lies inside a
+ *         quoted string or a remark. */
 static int
-assist_context(edit_t *e, char *word, size_t max)
+assist_quoted(const char *text, int x)
 {
-    int y, x, a, b, i, pos = 0, n;
-    const char *line;
-    tiku_span_t spans[128];
-    tiku_textview_caret(&e->tv, &y, &x);
-    line = tiku_textview_line(&e->tv, y);
-    n = tiku_syntax_spans_on(TIKU_SYNTAX_BASIC, line, TIKU_SYNTAX_OPEN,
-                              NULL, spans, 128);
+    tiku_span_t spans[256];
+    int i, n, pos = 0;
+
+    n = tiku_syntax_spans_on(TIKU_SYNTAX_BASIC, text, TIKU_SYNTAX_OPEN,
+                             NULL, spans, (int)(sizeof spans /
+                                                sizeof spans[0]));
     for (i = 0; i < n; i++) {
         if (x > pos && x <= pos + spans[i].len &&
-            (spans[i].ink == TIKU_INK_STR || spans[i].ink == TIKU_INK_REMARK)) {
-            word[0] = '\0'; return 0;
+            (spans[i].ink == TIKU_INK_STR ||
+             spans[i].ink == TIKU_INK_REMARK)) {
+            return 1;
         }
         pos += spans[i].len;
     }
+    return 0;
+}
+
+/**
+ * @brief The word around the caret: letters, digits, "_" and "$".
+ *
+ * Its range goes in @p word and, in @p prefix, the part before the caret
+ * for completion or the whole word for help.  Inside a quoted string or
+ * a remark there is no word: @return 0 there, with an empty range at the
+ * caret.
+ */
+static int
+assist_context(edit_t *e, tiku_edit_range_t *word, char *prefix,
+               size_t max)
+{
+    tiku_edit_pos_t start = 0;
+    char text[IDE_CARET_TEXT];
+    size_t got = 0;
+    int n, x, a, b;
+
+    word->start = word->end = tiku_ide_caret(e, NULL, NULL);
+    prefix[0] = '\0';
+    x = tiku_ide_caret_text(e, text, &start, &got);
+    if (x < 0 || assist_quoted(text, x)) {
+        return 0;
+    }
     a = b = x;
-    while (a > 0 && assist_word((unsigned char)line[a - 1])) { a--; }
-    while (line[b] && assist_word((unsigned char)line[b])) { b++; }
-    e->assist_y = y; e->assist_x0 = a; e->assist_x1 = b;
+    while (a > 0 && assist_word((unsigned char)text[a - 1])) { a--; }
+    while (b < (int)got && assist_word((unsigned char)text[b])) { b++; }
+    word->start = start + a;
+    word->end = start + b;
     n = e->assist_open == 2 ? x - a : b - a;
     if ((size_t)n >= max) { n = (int)max - 1; }
-    memcpy(word, line + a, (size_t)n); word[n] = '\0';
+    memcpy(prefix, text + a, (size_t)n);
+    prefix[n] = '\0';
     return 1;
 }
 
+/**
+ * @brief Offer the keywords that start with the caret's word, as a list
+ *        at the word, with the chosen one's help in a tip beside it.
+ *
+ * The choice goes back to the first keyword when the word changes.  In
+ * completion the list puts the chosen keyword over the whole word.
+ */
 static void
-assist_refresh(edit_t *e)
+assist_show(edit_t *e)
 {
-    char prefix[32];
-    const char *word;
+    const char *words[192], *word;
+    tiku_codeview_list_t list;
+    tiku_edit_range_t range;
+    char prefix[32], tip[512];
+    const basic_help_t *help = NULL;
+    size_t used;
     int i;
-    if (!assist_context(e, prefix, sizeof prefix)) { e->assist_n = 0; return; }
-    if (strcmp(prefix, e->assist_prefix)) { e->assist_at = 0; }
-    snprintf(e->assist_prefix, sizeof e->assist_prefix, "%s", prefix);
+
     e->assist_n = 0;
-    for (i = 0; (word = tiku_syntax_basic_keyword(i)) != NULL; i++) {
-        if (!strncasecmp(word, prefix, strlen(prefix)) && e->assist_n < 192) {
-            e->assist_match[e->assist_n++] = i;
+    if (assist_context(e, &range, prefix, sizeof prefix)) {
+        for (i = 0; (word = tiku_syntax_basic_keyword(i)) != NULL; i++) {
+            if (!strncasecmp(word, prefix, strlen(prefix)) &&
+                e->assist_n < 192) {
+                words[e->assist_n] = word;
+                e->assist_match[e->assist_n++] = i;
+            }
         }
     }
-    if (e->assist_at >= e->assist_n) { e->assist_at = 0; }
+    if (strcmp(prefix, e->assist_prefix)) { e->assist_at = 0; }
+    snprintf(e->assist_prefix, sizeof e->assist_prefix, "%s", prefix);
+    if (e->assist_at >= (size_t)e->assist_n) { e->assist_at = 0; }
+    memset(&list, 0, sizeof list);
+    list.range = range;
+    list.items = words;
+    list.count = (size_t)e->assist_n;
+    list.current = e->assist_at;
+    list.inserts = e->assist_open == 2;
+    (void)tiku_codeview_list_show(e->view, &list);
+    word = e->assist_n ? words[e->assist_at] : NULL;
+    for (i = 0; word && i < (int)(sizeof basic_help / sizeof basic_help[0]);
+         i++) {
+        if (!strcmp(word, basic_help[i].word)) { help = &basic_help[i]; break; }
+    }
+    if (help) {
+        used = (size_t)snprintf(tip, sizeof tip, "%s\n%s\n%s", help->syntax,
+                                help->detail, help->example);
+    } else {
+        used = (size_t)snprintf(tip, sizeof tip, "%s", word ?
+            "BASIC keyword. Detailed help is not yet available for this word." :
+            "Place the caret on a keyword, or type a prefix for completion.");
+    }
+    if (used < sizeof tip) {
+        snprintf(tip + used, sizeof tip - used, "\n%s", e->assist_open == 2 ?
+                 "Arrows: choose   Enter: insert   Esc: close   "
+                 "Firmware features vary" :
+                 "Click a keyword for help   Esc: close   "
+                 "Firmware features vary");
+    }
+    (void)tiku_codeview_tip_show(e->view, range.start, tip);
 }
 
 void
@@ -120,112 +193,65 @@ tiku_ide_assist_open(edit_t *e, int complete)
     e->finding = 0;
     e->assist_open = complete ? 2 : 1;
     e->assist_at = 0;
-    assist_refresh(e);
+    e->assist_prefix[0] = '\0';
+    assist_show(e);
 }
 
-/** Draw wrapped reference text within the assistance panel, never over buttons. */
-static int
-assist_text(edit_t *e, int x, int y, int width, const char *text)
-{
-    const tiku_font_t *f = tiku_font_plain();
-    int end = SEARCH_TOP + ASSIST_H - 18;
-    while (*text && y < end) {
-        char line[160];
-        size_t n = 0, space = 0;
-        while (text[n] && n + 1 < sizeof line) {
-            line[n] = text[n]; line[n + 1] = '\0';
-            if (tiku_text_width(f, line) > width) { break; }
-            if (text[n] == ' ') { space = n; }
-            n++;
-        }
-        if (!n) { break; }
-        if (text[n] && space) { n = space; }
-        line[n] = '\0';
-        tiku_text(e->surface, f, x, y + f->ascent, line, TIKU_C_TEXT);
-        y += f->height + 2;
-        text += n;
-        while (*text == ' ') { text++; }
-    }
-    return y;
-}
-
+/** @brief Put the list and the tip away. */
 void
-tiku_ide_assist_paint(edit_t *e)
+tiku_ide_assist_close(edit_t *e)
 {
-    const tiku_font_t *f = tiku_font_plain();
-    tiku_rect_t panel = { 0, SEARCH_TOP, e->w, ASSIST_H };
-    const char *word;
-    int i, y = SEARCH_TOP + 5, first;
-    const basic_help_t *help = NULL;
-
-    assist_refresh(e);
-    tiku_fill(e->surface, panel, TIKU_C_PANEL);
-    first = e->assist_at / 5 * 5;
-    for (i = first; i < e->assist_n && i < first + 5; i++) {
-        tiku_rect_t row = { 6, y, 118, 19 };
-        word = tiku_syntax_basic_keyword(e->assist_match[i]);
-        tiku_ui_button(e->surface, row, word, i == e->assist_at ? TIKU_S_PRESSED : 0);
-        y += 20;
+    e->assist_open = 0;
+    if (e->view != NULL) {
+        tiku_codeview_list_hide(e->view);
+        tiku_codeview_tip_hide(e->view);
     }
-    word = e->assist_n ? tiku_syntax_basic_keyword(e->assist_match[e->assist_at]) : NULL;
-    for (i = 0; word && i < (int)(sizeof basic_help / sizeof basic_help[0]); i++) {
-        if (!strcmp(word, basic_help[i].word)) { help = &basic_help[i]; break; }
-    }
-    y = SEARCH_TOP + 5;
-    if (help) {
-        y = assist_text(e, 134, y, e->w - 142, help->syntax);
-        y = assist_text(e, 134, y + 3, e->w - 142, help->detail);
-        assist_text(e, 134, y + 3, e->w - 142, help->example);
-    } else {
-        assist_text(e, 134, y, e->w - 142, word ?
-            "BASIC keyword. Detailed help is not yet available for this word." :
-            "Place the caret on a keyword, or type a prefix for completion.");
-    }
-    tiku_text(e->surface, f, 6, SEARCH_TOP + ASSIST_H - 4,
-              e->assist_open == 2 ?
-              "Arrows: choose   Enter: insert   Esc: close   Firmware features vary" :
-              "Click a keyword for help   Esc: close   Firmware features vary",
-              TIKU_C_TEXT);
 }
 
+/**
+ * @brief Offer again for where the caret is now.
+ *
+ * A list the view has put away, by putting its word in or on Escape, ends
+ * the assistance.
+ */
+void
+tiku_ide_assist_sync(edit_t *e)
+{
+    size_t current = 0;
+
+    if (!e->assist_open) { return; }
+    if (!tiku_codeview_list_shown(e->view, &current)) {
+        tiku_ide_assist_close(e);
+        return;
+    }
+    e->assist_at = current;
+    assist_show(e);
+}
+
+/** @brief Put the chosen keyword over the word, as one undo step. */
 void
 tiku_ide_assist_accept(edit_t *e)
 {
-    const char *word;
     if (!e->assist_n) { return; }
-    word = tiku_syntax_basic_keyword(e->assist_match[e->assist_at]);
-    if (e->tv.line[e->assist_y].len - (e->assist_x1 - e->assist_x0) +
-        (int)strlen(word) >= TIKU_TEXTVIEW_LINE_MAX) { return; }
-    tiku_textview_group_begin(&e->tv);
-    tiku_ide_edit_select_span(e, e->assist_y, e->assist_x0, e->assist_x1);
-    tiku_textview_insert_text(&e->tv, word);
-    tiku_textview_group_end(&e->tv);
-    e->assist_open = 0;
+    tiku_ide_assist_sync(e);
+    if (tiku_codeview_list_insert(e->view) == TIKU_EDIT_OK) {
+        tiku_ide_assist_close(e);
+    }
 }
 
+/** @brief Escape, and the list's own keys in completion; presses on the
+ *         list and the tip reach the view with the page's. */
 int
 tiku_ide_assist_event(edit_t *e, const tiku_event_t *event)
 {
-    if (!e->assist_open) { return 0; }
-    assist_refresh(e);
-    if (event->type == TIKU_EVENT_POINTER_DOWN && event->y >= SEARCH_TOP &&
-        event->y < SEARCH_TOP + ASSIST_H) {
-        int at = e->assist_at / 5 * 5 + (event->y - SEARCH_TOP - 5) / 20;
-        if (event->x >= 6 && event->x < 124 && at >= 0 && at < e->assist_n) {
-            e->assist_at = at;
-            if (e->assist_open == 2) { tiku_ide_assist_accept(e); }
-        }
-        return 1;
-    }
-    if (event->type != TIKU_EVENT_KEY_DOWN) { return 0; }
-    if (event->key == TIKU_KEY_ESCAPE) { e->assist_open = 0; return 1; }
-    if (e->assist_open != 2) { return 0; }
-    if (event->key == TIKU_KEY_RETURN || event->key == TIKU_KEY_TAB) {
-        tiku_ide_assist_accept(e); return 1;
-    }
-    if (event->key == TIKU_KEY_UP || event->key == TIKU_KEY_DOWN) {
-        int step = event->key == TIKU_KEY_UP ? -1 : 1;
-        if (e->assist_n) { e->assist_at = (e->assist_at + e->assist_n + step) % e->assist_n; }
+    if (!e->assist_open || event->type != TIKU_EVENT_KEY_DOWN) { return 0; }
+    if (event->key == TIKU_KEY_ESCAPE) { tiku_ide_assist_close(e); return 1; }
+    if (e->assist_open != 2 || (event->modifiers & TIKU_MOD_CMD)) { return 0; }
+    if (event->key == TIKU_KEY_UP || event->key == TIKU_KEY_DOWN ||
+        event->key == TIKU_KEY_RETURN || event->key == TIKU_KEY_TAB) {
+        tiku_ide_assist_sync(e);
+        (void)tiku_codeview_event(e->view, event);
+        tiku_ide_assist_sync(e);
         return 1;
     }
     return 0;

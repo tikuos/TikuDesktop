@@ -41,58 +41,40 @@ tiku_ide_edit_of_id(ide_t *st, uint32_t id)
 }
 
 /**
- * @brief Cut, copy or paste at this editor, over the DESK's clipboard.
+ * @brief Cut, copy or paste at this editor, over the desk's clipboard,
+ *        or select all, undo or redo.
  *
- * Copy puts the selection on the desk; cut is a copy and then the one
- * backspace that removes a held selection; paste types what the desk
- * holds, replacing a selection the way any typing does.  All three
- * through the services, so the same page behaves the same hosted in
- * the shell or across the wire.
+ * Through the services, so the same page behaves the same hosted in the
+ * shell or across the wire.  Cut deletes only what the clipboard took.
+ *
+ * @return 1 when the command did something.
  */
 int
 tiku_ide_edit_clip(ide_t *st, edit_t *e, int command)
 {
-    size_t n = tiku_textview_selected_size(&e->tv);
-    const char *held;
-    char *text;
+    tiku_edit_status_t done;
 
+    (void)st;
     switch (command) {
     case CMD_COPY:
     case CMD_CUT:
-        if (n == 0u) {
-            return 0;           /* nothing held: nothing to take */
-        }
-        if (n > TIKU_CLIPBOARD_LIMIT || (text = malloc(n + 1u)) == NULL) {
+        done = command == CMD_CUT ? tiku_codeview_cut(e->view)
+                                  : tiku_codeview_copy(e->view);
+        if (done == TIKU_EDIT_LIMIT || done == TIKU_EDIT_INVALID) {
             snprintf(e->feedback, sizeof e->feedback,
                      "The selection is more than the clipboard holds.");
-            return 0;
         }
-        (void)tiku_textview_selected(&e->tv, text, n + 1u);
-        if (st->services->clip_set != NULL) {
-            (void)st->services->clip_set(st->services->ctx, text);
-        }
-        free(text);
-        if (command == CMD_CUT) {
-            tiku_textview_backspace(&e->tv);
-        }
-        return 1;
+        return done == TIKU_EDIT_OK;
     case CMD_PASTE:
-        held = st->services->clip_text != NULL
-               ? st->services->clip_text(st->services->ctx, NULL) : "";
-        if (held[0] == '\0') {
-            return 0;
-        }
-        tiku_textview_insert_text(&e->tv, held);
-        return 1;
+        return tiku_codeview_paste(e->view) == TIKU_EDIT_OK;
     case CMD_SELALL:
-        tiku_textview_select_all(&e->tv);
-        return 1;
+        return tiku_codeview_select_all(e->view) == TIKU_EDIT_OK;
     case CMD_UNDO:
         e->feedback[0] = '\0';
-        return tiku_textview_undo(&e->tv);
+        return tiku_codeview_undo(e->view) == TIKU_EDIT_OK;
     case CMD_REDO:
         e->feedback[0] = '\0';
-        return tiku_textview_redo(&e->tv);
+        return tiku_codeview_redo(e->view) == TIKU_EDIT_OK;
     default:
         return 0;
     }
@@ -153,7 +135,7 @@ tiku_ide_window_menu(ide_t *st, tiku_menu_list_t *m)
          * looking for where their unsaved work is should find it in the
          * list of windows rather than by opening each one. */
         snprintf(row, sizeof row, "%s%s", e->name,
-                 tiku_textview_modified(&e->tv) ? " (changed)" : "");
+                 tiku_editdoc_modified(e->doc) ? " (changed)" : "");
         tiku_ide_mrow(m, row, CMD_WINDOW + i, 0, 0u, 1);
         n++;
     }
@@ -175,7 +157,7 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
     snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "File");
     snprintf(row, sizeof row, "Save %s", e->name);
     tiku_ide_mrow(&menus.menu[0], row, CMD_SAVE, 's', TIKU_MOD_CMD,
-         tiku_textview_modified(&e->tv));
+         tiku_editdoc_modified(e->doc));
     if (e->lang == TIKU_SYNTAX_BASIC) {
         char dest[64];
 
@@ -194,9 +176,9 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
     /* Edit: the desk's editing rows, grouped, each wearing its key. */
     snprintf(menus.menu[1].title, sizeof menus.menu[1].title, "Edit");
     tiku_ide_mrow(&menus.menu[1], "Undo", CMD_UNDO, 'z', TIKU_MOD_CMD,
-         tiku_textview_can_undo(&e->tv));
+         tiku_editdoc_can_undo(e->doc));
     tiku_ide_mrow(&menus.menu[1], "Redo", CMD_REDO, 'z',
-         TIKU_MOD_CMD | TIKU_MOD_SHIFT, tiku_textview_can_redo(&e->tv));
+         TIKU_MOD_CMD | TIKU_MOD_SHIFT, tiku_editdoc_can_redo(e->doc));
     msep(&menus.menu[1]);
     tiku_ide_mrow(&menus.menu[1], "Cut", CMD_CUT, 'x', TIKU_MOD_CMD, 1);
     tiku_ide_mrow(&menus.menu[1], "Copy", CMD_COPY, 'c', TIKU_MOD_CMD, 1);
@@ -228,49 +210,83 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
     (void)st->services->menus(st->services->ctx, e->id, &menus);
 }
 
-/** @brief Read @p e's file in.  A missing file is an empty one. */
+/**
+ * @brief Read @p e's file in, every byte as it is.  A missing file is an
+ *        empty page.
+ *
+ * A NUL byte, malformed UTF-8, a file the page cannot hold or a read that
+ * fails leaves an empty page whose saving and running are blocked.
+ */
 void
 tiku_ide_edit_load(edit_t *e)
 {
-    size_t limit = TIKU_TEXTVIEW_LINES_MAX * TIKU_TEXTVIEW_LINE_MAX;
-    char *whole = malloc(limit + 1);
-    FILE *f = fopen(e->path, "r");
-    size_t got = 0;
-    int ok = whole != NULL;
+    FILE *f;
+    char *whole = NULL;
+    size_t got = 0, cap = 0;
+    int ok = 1;
 
-    tiku_textview_init(&e->tv);
     e->disk_known = e->disk_changed = 0;
+    if (!tiku_ide_text_new(e)) {
+        e->load_failed = 1;
+        return;
+    }
+    (void)tiku_ide_text_load(e, "", 0);
+    f = fopen(e->path, "rb");
     if (f == NULL) {
-        tiku_textview_set(&e->tv, "");
         if (errno != ENOENT) { e->load_failed = 1; }
-        free(whole);
         return;
     }
     e->disk_known = fstat(fileno(f), &e->disk) == 0;
-    if (whole) {
-        got = fread(whole, 1, limit, f);
-        whole[got] = '\0';
-        ok = !ferror(f) && got < limit && !memchr(whole, '\0', got) &&
-             tiku_ide_document_fits(whole);
+    for (;;) {
+        size_t n;
+
+        if (got == cap) {
+            char *grown;
+
+            if (cap > (size_t)INT_MAX ||
+                (grown = realloc(whole, cap ? cap * 2 : 65536)) == NULL) {
+                ok = 0;
+                break;
+            }
+            whole = grown;
+            cap = cap ? cap * 2 : 65536;
+        }
+        n = fread(whole + got, 1, cap - got, f);
+        got += n;
+        if (n == 0) {
+            break;
+        }
     }
+    if (ferror(f)) { ok = 0; }
     if (fclose(f) != 0) { ok = 0; }
-    if (ok) { tiku_textview_set(&e->tv, whole); }
-    else {
-        e->load_failed = 1;
-        snprintf(e->feedback, sizeof e->feedback,
-                 "File could not be loaded safely; saving and running are blocked");
+    if (ok && (got == 0 || memchr(whole, '\0', got) == NULL) &&
+        tiku_ide_text_load(e, whole, got) == TIKU_EDIT_OK) {
+        free(whole);
+        return;
     }
     free(whole);
+    (void)tiku_ide_text_load(e, "", 0);
+    e->load_failed = 1;
+    snprintf(e->feedback, sizeof e->feedback,
+             "File could not be loaded safely; saving and running are blocked");
+}
+
+/** @brief Write a run of the page's bytes to the FILE @p ctx. */
+static int
+write_run(void *ctx, const char *bytes, size_t n)
+{
+    return fwrite(bytes, 1, n, ctx) != n;
 }
 
 int
 tiku_ide_edit_save(edit_t *e)
 {
     FILE *f;
-    int i, fd, ok = 1;
+    int fd, ok = 1;
     char temp[560];
     struct stat sb;
     mode_t mode = 0600;
+    uint64_t state = tiku_editdoc_state(e->doc);
 
     e->disk_changed = 0;
     if (e->load_failed) { return 0; }
@@ -310,8 +326,17 @@ tiku_ide_edit_save(edit_t *e)
         snprintf(e->feedback, sizeof e->feedback, "Save failed: %s", strerror(errno));
         return 0;
     }
-    for (i = 0; i < tiku_textview_lines(&e->tv); i++) {
-        if (fprintf(f, "%s\n", tiku_textview_line(&e->tv, i)) < 0) { ok = 0; }
+    {
+        /* Every byte as it is, and the file's line break after a last
+         * line that has none: both BASIC runners read a program line by
+         * line, and would join RUN onto an unended last line. */
+        tiku_edit_range_t all = { 0, tiku_editdoc_length(e->doc) };
+        int last = tiku_editdoc_byte_at(e->doc, all.end - 1);
+
+        if (tiku_editdoc_each(e->doc, all, write_run, f) != TIKU_EDIT_OK ||
+            ferror(f)) { ok = 0; }
+        if (last != '\n' && last != '\r' &&
+            fputs(e->newline, f) == EOF) { ok = 0; }
     }
     if (fchmod(fd, mode) != 0 || fflush(f) != 0 || fsync(fd) != 0) { ok = 0; }
     if (fclose(f) != 0) { ok = 0; }
@@ -321,7 +346,7 @@ tiku_ide_edit_save(edit_t *e)
         return 0;
     }
     e->disk_known = stat(e->path, &e->disk) == 0;
-    tiku_textview_saved(&e->tv);
+    tiku_editdoc_saved(e->doc, state);
     (void)tiku_ide_recovery_write(e);
     snprintf(e->feedback, sizeof e->feedback, "Saved");
     return 1;
@@ -361,22 +386,7 @@ tiku_ide_edit_save_or_ask(ide_t *st, edit_t *e)
 }
 
 /**
- * @brief Put the digits of a line number, and its blank, into @p tv.
- */
-void
-tiku_ide_type_number(tiku_textview_t *tv, int n)
-{
-    char digits[16];
-    int i;
-
-    snprintf(digits, sizeof digits, "%d ", n);
-    for (i = 0; digits[i] != '\0'; i++) {
-        tiku_textview_insert(tv, digits[i]);
-    }
-}
-
-/**
- * @brief The number the line AFTER line @p at should wear.
+ * @brief The number the line after @p line should wear.
  *
  * The interpreter's own habit: count by tens, so a line can always be
  * put between two others later.  A line wearing no number offers none.
@@ -384,20 +394,11 @@ tiku_ide_type_number(tiku_textview_t *tv, int n)
  * @return the next number, or 0 for none.
  */
 int
-tiku_ide_next_number(const tiku_textview_t *tv, int at)
+tiku_ide_next_number(const edit_t *e, int64_t line)
 {
-    const char *p = tiku_textview_line(tv, at);
-    long n;
-    char *end;
+    long n = tiku_ide_line_number(e, line, 1);
 
-    if (p == NULL) {
-        return 0;
-    }
-    while (*p == ' ' || *p == '\t') {
-        p++;
-    }
-    n = strtol(p, &end, 10);
-    return (end != p && n > 0 && n < 99990) ? (int)n + 10 : 0;
+    return (n > 0 && n < 99990) ? (int)n + 10 : 0;
 }
 
 /**
@@ -443,44 +444,52 @@ tiku_ide_edit_open(ide_t *st, const prow_t *row)
     }
     snprintf(e->name, sizeof e->name, "%s", row->name);
     e->lang = tiku_ide_lang_of(e->name);
+    e->services = st->services;
     tiku_ide_edit_load(e);
+    if (e->view == NULL) {
+        snprintf(st->note, sizeof st->note, "no room for another window");
+        tiku_ide_project_paint(st);
+        return;
+    }
     tiku_ide_recovery_open(e);
     if (e->lang == TIKU_SYNTAX_BASIC) {
         /* A program is CONTINUED, not reread from the top: the caret
-         * lands at the end of the last line, so the first Return is
-         * already the next numbered line. */
-        int last = tiku_textview_lines(&e->tv) - 1;
+         * lands at the end of the last line that has text, before a
+         * final line break, so the first Return is already the next
+         * numbered line. */
+        int64_t last = tiku_editdoc_lines(e->doc) - 1;
 
-        tiku_textview_place(&e->tv, last,
-                            tiku_textview_line_len(&e->tv, last));
+        if (last > 0 && tiku_editdoc_line_start(e->doc, last) ==
+                        tiku_editdoc_length(e->doc)) {
+            last--;
+        }
+        tiku_ide_place(e, last, INT64_MAX);
     }
-    if (e->lang == TIKU_SYNTAX_BASIC &&
-        !tiku_textview_modified(&e->tv) && !e->load_failed &&
-        tiku_textview_lines(&e->tv) <= 1 &&
-        tiku_textview_line_len(&e->tv, 0) == 0) {
+    if (e->lang == TIKU_SYNTAX_BASIC && !tiku_editdoc_modified(e->doc) &&
+        !e->load_failed && tiku_editdoc_length(e->doc) == 0) {
         /* A fresh page of BASIC begins where every line of it must:
          * with a number.  Counted by tens, the interpreter's own
          * habit, so a line can always be put between two others. */
-        tiku_ide_type_number(&e->tv, 10);
-        tiku_textview_saved(&e->tv);    /* offered, not yet work */
+        (void)tiku_ide_replace(e, 0, 0, "10 ", 3, 0);
+        tiku_editdoc_saved(e->doc, tiku_editdoc_state(e->doc));
     }
     e->w = EDIT_W;
     e->h = EDIT_H;
     /* The caret was placed at the end of a file that may run past a
      * screenful; bring the page to it, so opening a long program does
      * not begin with the caret lost below the bottom edge. */
-    (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+    tiku_ide_edit_reveal(e);
     e->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_PANEL);
     if (e->surface == NULL) {
         tiku_ide_recovery_release(e, 0);
-        tiku_textview_free(&e->tv);
+        tiku_ide_text_free(e);
         return;
     }
     e->id = st->services->open(st->services->ctx, e->name, EDIT_W,
                                EDIT_H);
     if (e->id == 0u) {
         tiku_ide_recovery_release(e, 0);
-        tiku_textview_free(&e->tv);
+        tiku_ide_text_free(e);
         tiku_surface_free(e->surface);
         e->surface = NULL;
         snprintf(st->note, sizeof st->note, "no room for another window");
@@ -508,7 +517,7 @@ tiku_ide_edit_drop(ide_t *st, edit_t *e)
         tiku_ide_edit_paint(st, e);
         return;
     }
-    if (tiku_textview_modified(&e->tv)) {
+    if (tiku_editdoc_modified(e->doc)) {
         char text[256];
         snprintf(text, sizeof text, "Save changes to %s before closing?", e->name);
         st->closing_editor = e->id;
@@ -521,7 +530,7 @@ tiku_ide_edit_drop(ide_t *st, edit_t *e)
         return;
     }
     tiku_ide_recovery_release(e, 0);
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     st->services->close(st->services->ctx, e->id);
     tiku_surface_free(e->surface);
     e->surface = NULL;
@@ -535,22 +544,4 @@ tiku_ide_edit_drop(ide_t *st, edit_t *e)
             tiku_ide_edit_publish(st, &st->edit[i]);
         }
     }
-}
-
-int
-tiku_ide_document_fits(const char *text)
-{
-    int lines = 1, col = 0;
-
-    for (; *text; text++) {
-        unsigned char ch = (unsigned char)*text;
-        if ((ch < 32 && ch != '\n' && ch != '\r' && ch != '\t') || ch == 127) {
-            return 0;
-        }
-        if (*text == '\n') { col = 0; if (text[1]) { lines++; } }
-        else { col++; }
-        if (lines > TIKU_TEXTVIEW_LINES_MAX ||
-            col >= TIKU_TEXTVIEW_LINE_MAX) { return 0; }
-    }
-    return 1;
 }

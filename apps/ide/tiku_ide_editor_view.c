@@ -15,8 +15,6 @@ static void
 tb_mallet(tiku_surface_t *s, int x);
 static void
 tb_renum(tiku_surface_t *s, int x);
-static int
-caret_width(const edit_t *e, const tiku_font_t *f);
 
 /** @brief What a name says the language is; only the name can say. */
 tiku_syntax_lang_t
@@ -165,29 +163,6 @@ tb_renum(tiku_surface_t *s, int x)
     tiku_pixel(s, x + 17, mid + 3, c);
 }
 
-/** @brief How far the caret's line runs, in @p f, before the caret; the
- *         one measure the page's slide and the drawn caret share. */
-static int
-caret_width(const edit_t *e, const tiku_font_t *f)
-{
-    char head[TIKU_TEXTVIEW_LINE_MAX];
-    const char *text;
-    int cy, cx, cut;
-
-    tiku_textview_caret(&e->tv, &cy, &cx);
-    text = tiku_textview_line(&e->tv, cy);
-    cut = tiku_textview_line_len(&e->tv, cy);
-    if (cut > cx) {
-        cut = cx;
-    }
-    if (cut < 0) {
-        cut = 0;
-    }
-    memcpy(head, (text != NULL) ? text : "", (size_t)cut);
-    head[cut] = '\0';
-    return tiku_text_width(f, head);
-}
-
 /**
  * @brief Where the PAGE begins: below the toolbar, and below the find
  *        bar when it is open, which drops between them.
@@ -195,14 +170,56 @@ caret_width(const edit_t *e, const tiku_font_t *f)
 int
 tiku_ide_edit_page_top(const edit_t *e)
 {
-    return SEARCH_TOP + (e->finding ? FIND_H * 3 : 0) +
-           (e->assist_open ? ASSIST_H : 0);
+    return SEARCH_TOP + (e->finding ? FIND_H * 3 : 0);
 }
 
 int
 tiku_ide_edit_page_bottom(const edit_t *e)
 {
     return e->h - STRIP_H - (e->debug_show ? DEBUG_H : 0);
+}
+
+/**
+ * @brief Put the page's view where the page is: its text MARGIN pixels in
+ *        from the window's left and the page's top, its right edge at the
+ *        page's scrollbar.
+ *
+ * The view keeps 5 pixels before a line and 3 above the first row, so
+ * its bounds start a pixel in and 3 down.
+ */
+void
+tiku_ide_edit_bounds(edit_t *e)
+{
+    int top = tiku_ide_edit_page_top(e);
+    tiku_rect_t r = { MARGIN - 5, top + MARGIN - 3, e->w - PAGE_SB - 1,
+                      tiku_ide_edit_page_bottom(e) - top - (MARGIN - 3) };
+
+    tiku_codeview_set_bounds(e->view, r);
+}
+
+/** @brief Scroll the page as little as shows the caret. */
+void
+tiku_ide_edit_reveal(edit_t *e)
+{
+    tiku_ide_edit_bounds(e);
+    tiku_codeview_reveal(e->view);
+}
+
+/**
+ * @brief Hold the page to the debug run it is the source of.
+ *
+ * While a debug run holds it the document refuses every change, and the
+ * line it is paused before stays marked only while the run is paused.
+ */
+void
+tiku_ide_edit_lock(ide_t *st, edit_t *e)
+{
+    int locked = tiku_ide_debug_locked(st, e);
+
+    tiku_editdoc_set_read_only(e->doc, locked);
+    if (!locked || !st->debug_paused) {
+        tiku_editdoc_execution_clear(e->doc);
+    }
 }
 
 void
@@ -213,54 +230,15 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     tiku_rect_t bar = { 0, 0, e->w, TOOLBAR_H };
     tiku_rect_t page = { 0, ptop, e->w, tiku_ide_edit_page_bottom(e) - ptop };
     tiku_rect_t strip = { 0, e->h - STRIP_H, e->w, STRIP_H };
-    int rows = (tiku_ide_edit_page_bottom(e) - ptop - MARGIN) / (f->height + 2);
-    tiku_syntax_state_t carry = TIKU_SYNTAX_OPEN;
-    int top = tiku_textview_top(&e->tv);
-    int i;
-    char where[160];
+    char where[256];
 
-    if (e->surface == NULL) {
+    if (e->surface == NULL || e->view == NULL) {
         return;
     }
-    {
-        /* The page follows the caret sideways on a line longer than the
-         * window: the caret's own x is measured, and the slide kept just
-         * enough that it stays inside the text area.  Home takes the
-         * caret to column zero, whose x is zero, which pulls the slide
-         * back to nothing -- so the view comes home on its own. */
-        int room = (e->w - PAGE_SB) - MARGIN;
-        int caret_x = caret_width(e, f);
-
-        if (caret_x - e->scroll_x < 0) {
-            e->scroll_x = caret_x;
-        }
-        if (room > 16 && caret_x - e->scroll_x > room - 8) {
-            e->scroll_x = caret_x - (room - 8);
-        }
-        if (e->scroll_x < 0) {
-            e->scroll_x = 0;
-        }
-    }
-    /*
-     * C carries a remark between lines, so the first line SHOWN cannot
-     * be told apart on its own: the walk starts at the document's own
-     * beginning, where the state is known, and comes forward.  Nothing
-     * is cached, because a cache of this would have to be invalidated
-     * by every edit and the arithmetic of that is worth more than the
-     * walk -- a document is bounded, and a window is redrawn by hand.
-     */
-    if (e->lang == TIKU_SYNTAX_C) {
-        tiku_span_t span[64];
-
-        for (i = 0; i < top; i++) {
-            const char *text = tiku_textview_line(&e->tv, i);
-
-            if (text == NULL) {
-                break;
-            }
-            (void)tiku_syntax_spans_on(e->lang, text, carry, &carry, span,
-                                       (int)(sizeof span / sizeof span[0]));
-        }
+    tiku_ide_edit_lock(st, e);
+    tiku_ide_edit_bounds(e);
+    if (e->assist_open) {
+        tiku_ide_assist_sync(e);
     }
     /* The toolbar: the two gestures a person reaches for while a hand
      * is on the mouse, as PICTURES -- a toolbar of worded buttons is a
@@ -300,10 +278,8 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     {
         /* Undo, redo and find join the reach: the edits a hand on the
          * mouse wants most, beside Save and Run. */
-        tb_arrow(e->surface, TB_UNDO.x, 1,
-                 tiku_textview_can_undo(&e->tv));
-        tb_arrow(e->surface, TB_REDO.x, 0,
-                 tiku_textview_can_redo(&e->tv));
+        tb_arrow(e->surface, TB_UNDO.x, 1, tiku_editdoc_can_undo(e->doc));
+        tb_arrow(e->surface, TB_REDO.x, 0, tiku_editdoc_can_redo(e->doc));
         tb_glass(e->surface, TB_FIND.x);
     }
     if (e->lang == TIKU_SYNTAX_BASIC) {
@@ -343,116 +319,23 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
                           e->find.sel_a, e->find.sel_b, 0u);
         tiku_ide_search_paint(e);
     }
+    /* The page: sunken, and the view inside its two-pixel rim, which
+     * clips the view's fills and pop-ups to the rim's inside. */
     tiku_ui_sunken(e->surface, page, TIKU_C_DOC);
-    if (e->assist_open) { tiku_ide_assist_paint(e); }
     if (e->debug_show) { tiku_ide_debug_paint(st, e); }
-    for (i = 0; i < rows; i++) {
-        int line = top + i;
-        const char *text = tiku_textview_line(&e->tv, line);
-        int y = ptop + MARGIN + i * (f->height + 2);
-
-        if (text == NULL) {
-            break;
-        }
-        if (e->lang == TIKU_SYNTAX_BASIC) {
-            unsigned number = (unsigned)strtoul(text, NULL, 10);
-            int b, marked = 0;
-            for (b = 0; b < 16; b++) { marked |= number && e->breaks[b] == number; }
-            if (marked) {
-                tiku_rect_t r = { 2, y, e->w - PAGE_SB - 3, f->height + 2 };
-                tiku_fill(e->surface, r, TIKU_RGB(255, 222, 222));
-            }
-            if (st->debugging && st->debug_paused &&
-                !strcmp(st->child_file, e->path) && number == (unsigned)st->debug_pc) {
-                tiku_rect_t r = { 2, y, e->w - PAGE_SB - 3, f->height + 2 };
-                tiku_fill(e->surface, r, TIKU_RGB(211, 238, 185));
-            }
-        }
-        if (e->lang != TIKU_SYNTAX_NONE) {
-            tiku_span_t span[64];
-            int n = tiku_syntax_spans_on(e->lang, text, carry, &carry,
-                                      span,
-                                      (int)(sizeof span / sizeof span[0]));
-
-            (void)tiku_ui_text_spans(e->surface, f, MARGIN - e->scroll_x, y + f->ascent,
-                                     text, span, n);
-        } else {
-            tiku_text(e->surface, f, MARGIN - e->scroll_x, y + f->ascent, text,
-                           TIKU_C_TEXT);
-        }
-    }
-    {
-        /* The selection's ground, behind the text it covers: the blue
-         * the panels and lists give a chosen thing, and the text on it
-         * turned white so it reads.  A line wholly inside the span
-         * carries a nib past its end, so the line break it holds is
-         * shown to be part of what is selected. */
-        int sy0, sx0, sy1, sx1;
-
-        if (tiku_textview_selection(&e->tv, &sy0, &sx0, &sy1, &sx1)) {
-            for (i = 0; i < rows; i++) {
-                int line = top + i;
-                const char *text;
-                int len, c0, c1, px0, px1, y;
-                char head[TIKU_TEXTVIEW_LINE_MAX];
-                tiku_rect_t selr;
-
-                if (line < sy0 || line > sy1) {
-                    continue;
-                }
-                text = tiku_textview_line(&e->tv, line);
-                if (text == NULL) {
-                    continue;
-                }
-                len = tiku_textview_line_len(&e->tv, line);
-                c0 = (line == sy0) ? sx0 : 0;
-                c1 = (line == sy1) ? sx1 : len;
-                if (c0 > len) { c0 = len; }
-                if (c1 > len) { c1 = len; }
-                memcpy(head, text, (size_t)c0);
-                head[c0] = '\0';
-                px0 = MARGIN - e->scroll_x + tiku_text_width(f, head);
-                memcpy(head, text, (size_t)c1);
-                head[c1] = '\0';
-                px1 = MARGIN - e->scroll_x + tiku_text_width(f, head);
-                y = ptop + MARGIN + i * (f->height + 2);
-                selr = (tiku_rect_t){ px0, y,
-                                      (px1 > px0) ? px1 - px0 : 2,
-                                      f->height + 2 };
-                if (line < sy1) {
-                    selr.w += 4;    /* the line break, shown as taken */
-                }
-                tiku_fill(e->surface, selr, TIKU_C_SELECT);
-                tiku_clip_set(e->surface, selr);
-                tiku_text(e->surface, f, MARGIN - e->scroll_x, y + f->ascent, text,
-                               TIKU_C_SELTEXT);
-                tiku_clip_reset(e->surface);
-            }
-        }
-    }
-    {
-        /* The caret, without which a person cannot know where their
-         * typing will land.  It sits where the text before it ends,
-         * which is the only way a proportional face can place it. */
-        int cy, cx, row;
-
-        tiku_textview_caret(&e->tv, &cy, &cx);
-        row = cy - top;
-        if (row >= 0 && row < rows) {
-            tiku_vline(e->surface, MARGIN - e->scroll_x + caret_width(e, f),
-                       ptop + MARGIN + row * (f->height + 2),
-                       f->height + 2, TIKU_C_TEXT);
-        }
-    }
+    tiku_clip_set(e->surface, (tiku_rect_t){ 2, ptop + 2, e->w - 4,
+                                             page.h - 4 });
+    tiku_codeview_paint(e->view, e->surface);
+    tiku_clip_reset(e->surface);
     {
         /* The same scrollbar the folder windows and the panels wear,
          * in a gutter of its own at the page's right: a listing longer
          * than the window SAYS so, rather than hiding its own tail. */
-        int total = tiku_textview_lines(&e->tv);
+        int64_t total, rows, top;
 
+        tiku_codeview_extent(e->view, 0, &total, &rows, &top);
         if (total > rows && rows > 0) {
-            tiku_rect_t sb = { e->w - PAGE_SB, ptop, PAGE_SB,
-                               tiku_ide_edit_page_bottom(e) - ptop };
+            tiku_rect_t sb = { e->w - PAGE_SB, ptop, PAGE_SB, page.h };
 
             tiku_ui_scrollbar(e->surface, sb,
                 (float)top / (float)(total - rows),
@@ -464,23 +347,23 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
         /* The strip says where the caret is -- the line and column an
          * editor is always asked -- and, for a BASIC line wearing its
          * number, the NUMBER the interpreter will name it by. */
-        int cy, cx, num = 0;
-        const char *cline;
-        char bas[24];
+        int64_t cy, cx;
+        long num = 0;
+        char bas[32];
 
-        tiku_textview_caret(&e->tv, &cy, &cx);
-        cline = tiku_textview_line(&e->tv, cy);
+        (void)tiku_ide_caret(e, &cy, &cx);
         bas[0] = '\0';
-        if (e->lang == TIKU_SYNTAX_BASIC && cline != NULL) {
-            num = atoi(cline);
+        if (e->lang == TIKU_SYNTAX_BASIC) {
+            num = tiku_ide_line_number(e, cy, 1);
         }
         if (num > 0) {
-            snprintf(bas, sizeof bas, "   [%d]", num);
+            snprintf(bas, sizeof bas, "   [%ld]", num);
         }
-        snprintf(where, sizeof where, "%s%s   line %d, col %d%s   %d lines",
-                 e->name,
-                 tiku_textview_modified(&e->tv) ? " (changed)" : "",
-                 cy + 1, cx + 1, bas, tiku_textview_lines(&e->tv));
+        snprintf(where, sizeof where,
+                 "%s%s   line %lld, col %lld%s   %lld lines", e->name,
+                 tiku_editdoc_modified(e->doc) ? " (changed)" : "",
+                 (long long)cy + 1, (long long)cx + 1, bas,
+                 (long long)tiku_editdoc_lines(e->doc));
     }
     tiku_text(e->surface, f, MARGIN,
                    strip.y + (STRIP_H - f->height) / 2 + f->ascent,
@@ -505,68 +388,4 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     }
     (void)st->services->frame(st->services->ctx, e->id, e->surface->px,
                               e->w, e->h);
-}
-
-/** @brief How many text rows the page shows at this window's height. */
-int
-tiku_ide_edit_rows(const edit_t *e)
-{
-    const tiku_font_t *f = tiku_font_plain();
-
-    int rows = (tiku_ide_edit_page_bottom(e) - tiku_ide_edit_page_top(e) - MARGIN) / (f->height + 2);
-    return rows > 0 ? rows : 1;
-}
-
-/**
- * @brief Put the caret under the pointer.
- *
- * The row is which screenful line the y falls on, offset by the line
- * the page starts at; the column is found the way the caret is PAINTED
- * -- by measuring the prefix through the proportional face and taking
- * the character edge the x is nearest -- so the caret lands exactly
- * where it will be drawn, never a glyph off.
- */
-void
-tiku_ide_edit_place_from_xy(edit_t *e, int x, int y)
-{
-    const tiku_font_t *f = tiku_font_plain();
-    int rows = tiku_ide_edit_rows(e);
-    int top = tiku_textview_top(&e->tv);
-    int nline = tiku_textview_lines(&e->tv);
-    int row = (y - tiku_ide_edit_page_top(e) - MARGIN) / (f->height + 2);
-    int line, len, col, k, prevw;
-    const char *text;
-    char head[TIKU_TEXTVIEW_LINE_MAX];
-
-    if (row < 0) {
-        row = 0;
-    }
-    if (row >= rows) {
-        row = rows - 1;
-    }
-    line = top + row;
-    if (line >= nline) {
-        line = nline - 1;
-    }
-    if (line < 0) {
-        line = 0;
-    }
-    text = tiku_textview_line(&e->tv, line);
-    len = tiku_textview_line_len(&e->tv, line);
-    col = len;
-    prevw = MARGIN - e->scroll_x;
-    for (k = 0; k <= len && k < (int)sizeof head - 1; k++) {
-        int w;
-
-        memcpy(head, (text != NULL) ? text : "", (size_t)k);
-        head[k] = '\0';
-        w = MARGIN - e->scroll_x + tiku_text_width(f, head);
-        if (w >= x) {
-            /* Between edge k-1 and k: the nearer edge wins. */
-            col = (k > 0 && (x - prevw) > (w - x)) ? k : (k > 0 ? k - 1 : 0);
-            break;
-        }
-        prevw = w;
-    }
-    tiku_textview_place(&e->tv, line, col);
 }

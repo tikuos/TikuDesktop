@@ -216,27 +216,16 @@ tiku_ide_message_take(ide_t *st, const char *line)
  *
  * @return the line, or -1 when the file has no such number.
  */
-int
-tiku_ide_line_of_number(const tiku_textview_t *tv, int want)
+int64_t
+tiku_ide_line_of_number(const edit_t *e, long want)
 {
-    int i, found = -1;
+    int64_t i, found = -1, lines = tiku_editdoc_lines(e->doc);
 
-    for (i = 0; i < tiku_textview_lines(tv); i++) {
-        const char *p = tiku_textview_line(tv, i);
-        long got;
-        char *end;
-
-        if (p == NULL) {
-            break;
-        }
-        while (*p == ' ' || *p == '\t') {
-            p++;
-        }
-        got = strtol(p, &end, 10);
-        if (end != p && got == (long)want) {
-            /* The LAST of them: storing a line REPLACES one already
-             * numbered the same, so a file with the number twice ran
-             * the second and the first was never in the program. */
+    for (i = 0; i < lines; i++) {
+        /* The LAST of them: storing a line REPLACES one already
+         * numbered the same, so a file with the number twice ran the
+         * second and the first was never in the program. */
+        if (tiku_ide_line_number(e, i, 1) == want) {
             found = i;
         }
     }
@@ -365,7 +354,7 @@ tiku_ide_message_follow(ide_t *st)
     int row = tiku_list_chosen(&st->msg_list);
     const msg_t *m;
     edit_t *e;
-    int at;
+    int64_t at;
 
     if (row < 0 || row >= st->nmsg) {
         return;
@@ -393,15 +382,14 @@ tiku_ide_message_follow(ide_t *st)
         return;
     }
     /* A compiler counted the lines of the file; BASIC named one. */
-    at = m->numbered ? tiku_ide_line_of_number(&e->tv, m->line) : m->line - 1;
+    at = m->numbered ? tiku_ide_line_of_number(e, m->line) : m->line - 1;
     if (at >= 0) {
-        /* A held selection is dropped first, as the debugger's pause drops
-         * it, or it would stretch to the line jumped to. */
-        tiku_textview_select_none(&e->tv);
-        tiku_textview_place(&e->tv, at, 0);
-        /* Placing the caret does not move the PAGE, and a caret below
-         * the window is a jump that looks like nothing happening. */
-        (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+        /* The caret goes to the line's start with nothing selected, or
+         * a held selection would stretch to the line jumped to.  Placing
+         * the caret does not move the page, and a caret below the window
+         * is a jump that looks like nothing happening. */
+        tiku_ide_place(e, at, 0);
+        tiku_ide_edit_reveal(e);
         tiku_ide_edit_paint(st, e);
     }
     if (st->services->raise_window != NULL) {

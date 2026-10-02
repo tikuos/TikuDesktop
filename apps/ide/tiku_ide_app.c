@@ -284,7 +284,7 @@ tiku_ide_stop(void *state)
     }
     for (i = 0; i < IDE_EDITS; i++) {
         tiku_ide_recovery_release(&st->edit[i], 0);
-        tiku_textview_free(&st->edit[i].tv);
+        tiku_ide_text_free(&st->edit[i]);
         tiku_surface_free(st->edit[i].surface);
     }
     tiku_surface_free(st->msg_surface);
@@ -325,7 +325,7 @@ ide_closed(void *state, uint32_t window)
                 continue;
             }
             tiku_ide_recovery_release(page, 0);
-            tiku_textview_free(&page->tv);
+            tiku_ide_text_free(page);
             st->services->close(st->services->ctx, page->id);
             tiku_surface_free(page->surface);
             page->surface = NULL;
@@ -342,7 +342,7 @@ ide_closed(void *state, uint32_t window)
     }
     if (e != NULL) {
         tiku_ide_recovery_release(e, 0);
-        tiku_textview_free(&e->tv);
+        tiku_ide_text_free(e);
         tiku_surface_free(e->surface);
         e->surface = NULL;
         tiku_ide_project_paint(st);

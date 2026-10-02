@@ -3,12 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-/** @brief Renumber's output: only counted while @c p is NULL. */
+/** @brief One number Renumber rewrites: where it is, and its new
+ *         digits. */
 typedef struct {
-    char *p;                    /* the text, or NULL while counting     */
-    size_t n;                   /* bytes produced                       */
-    size_t cap;                 /* bytes p can hold                     */
-} renum_out_t;
+    int64_t start, end;         /* the digits in the document           */
+    char text[24];              /* what replaces them                   */
+} renum_edit_t;
+
+/** @brief Renumber's map and the edits it collects. */
+typedef struct {
+    long *olds, *news;          /* old number -> new, in line order     */
+    int n;
+    renum_edit_t *edits;
+    size_t count, cap;
+    int failed;                 /* an edit could not be kept            */
+} renum_t;
 
 static int
 renum_is_word(int c);
@@ -16,16 +25,12 @@ static int
 renum_keyword(const char *s, int *list);
 static int
 renum_raw(const char *s);
-static int
-renum_map(int old, const int *olds, const int *news, int n);
+static long
+renum_map(const renum_t *r, long old);
 static void
-renum_put(renum_out_t *o, const char *s, size_t len);
+renum_number(renum_t *r, int64_t at, const char *digits, size_t n);
 static void
-renum_emit(renum_out_t *o, const char *s,
-           const int *olds, const int *news, int n);
-static size_t
-renum_lines(edit_t *e, renum_out_t *o, const int *olds, const int *news,
-            int n);
+renum_scan(renum_t *r, const char *s, int64_t at);
 
 int
 tiku_ide_norm_is_word(int c)
@@ -35,77 +40,97 @@ tiku_ide_norm_is_word(int c)
 }
 
 /**
+ * @brief The run of @p text that holds byte @p at, when it is a reserved
+ *        word: @return its length, with its start in @p from; 0 when it
+ *        is not.
+ *
+ * The classifier already tells a keyword in a string or a remark from one
+ * in the code.
+ */
+static int
+norm_reserved(const char *text, int at, int *from)
+{
+    tiku_span_t span[256];
+    int i, n, off = 0;
+
+    n = tiku_syntax_spans(TIKU_SYNTAX_BASIC, text, span,
+                          (int)(sizeof span / sizeof span[0]));
+    for (i = 0; i < n; i++) {
+        if (at >= off && at < off + span[i].len) {
+            *from = off;
+            return span[i].ink == TIKU_INK_WORD ? span[i].len : 0;
+        }
+        off += span[i].len;
+    }
+    return 0;
+}
+
+/**
  * @brief Uppercase the reserved word the caret just finished, 1982-style.
  *
  * The classifier that colours the page decides what is reserved, so a
  * keyword in a string or a remark is left alone.  A held selection goes
  * first, as the key that follows would take it, and the word is the one
- * before where it began.  The rewrite is one journal batch, so a single
- * Undo puts back what was typed.  BASIC only.
+ * before where it began.  The rewrite is one undo step, so a single Undo
+ * puts back what was typed.  BASIC only.
  */
 void
 tiku_ide_edit_normalize_word(edit_t *e)
 {
-    int cy, cx, s, i, off, ink = -1, span_s = -1, span_len = 0, n;
-    const char *line;
-    tiku_span_t span[64];
-    char up[64];
+    tiku_edit_pos_t anchor, caret, start = 0;
+    char text[IDE_CARET_TEXT], up[64];
+    size_t got = 0;
+    int i, cx, span_s = 0, span_len;
 
-    if (e->lang != TIKU_SYNTAX_BASIC) {
+    if (e->lang != TIKU_SYNTAX_BASIC ||
+        tiku_codeview_selection(e->view, &anchor, &caret) != TIKU_EDIT_OK) {
         return;
     }
-    if (tiku_textview_selection(&e->tv, NULL, NULL, NULL, NULL)) {
-        tiku_textview_backspace(&e->tv);
-        if (tiku_textview_selection(&e->tv, NULL, NULL, NULL, NULL)) {
+    if (anchor != caret) {
+        (void)tiku_codeview_delete(e->view, 0);
+        if (tiku_codeview_selection(e->view, &anchor, &caret) !=
+                TIKU_EDIT_OK || anchor != caret) {
             return;             /* it could not go, so nothing is typed */
         }
     }
-    tiku_textview_caret(&e->tv, &cy, &cx);
-    line = tiku_textview_line(&e->tv, cy);
-    if (line == NULL || cx <= 0 || !tiku_ide_norm_is_word((unsigned char)line[cx - 1])) {
+    /* The line up to the end of the word the caret is in: what lies
+     * further right cannot change how that word is read. */
+    cx = tiku_ide_caret_text(e, text, &start, &got);
+    if (cx <= 0 || !tiku_ide_norm_is_word((unsigned char)text[cx - 1])) {
         return;                 /* no word just ended here */
     }
-    s = cx;
-    while (s > 0 && tiku_ide_norm_is_word((unsigned char)line[s - 1])) {
-        s--;
+    for (i = cx; i < (int)got &&
+                 tiku_ide_norm_is_word((unsigned char)text[i]); i++) {
     }
-    /* Which run the finished word falls in: only a RESERVED word is
-     * touched, and the classifier already knows a keyword in a string
-     * from one in the code. */
-    n = tiku_syntax_spans(TIKU_SYNTAX_BASIC, line, span,
-                          (int)(sizeof span / sizeof span[0]));
-    for (i = 0, off = 0; i < n; i++) {
-        if (cx - 1 >= off && cx - 1 < off + span[i].len) {
-            ink = span[i].ink;
-            span_s = off;
-            span_len = span[i].len;
-            break;
-        }
-        off += span[i].len;
-    }
-    if (ink != TIKU_INK_WORD || span_len <= 0 ||
-        span_len >= (int)sizeof up) {
+    text[i] = '\0';
+    span_len = norm_reserved(text, cx - 1, &span_s);
+    if (span_len <= 0 || span_len >= (int)sizeof up) {
         return;
     }
     for (i = 0; i < span_len; i++) {
-        char c = line[span_s + i];
+        char c = text[span_s + i];
 
         up[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
     }
-    up[span_len] = '\0';
-    if (memcmp(up, line + span_s, (size_t)span_len) == 0) {
+    if (memcmp(up, text + span_s, (size_t)span_len) == 0) {
         return;                 /* already shouting: nothing to do */
     }
-    /* One batch: the word out, the word back in upper -- a single Undo
-     * away from exactly what was typed. */
-    tiku_textview_group_begin(&e->tv);
-    tiku_textview_place(&e->tv, cy, span_s + span_len);
-    for (i = 0; i < span_len; i++) {
-        tiku_textview_backspace(&e->tv);
+    {
+        /* One step: the word in upper case over itself, the caret where
+         * it stood, since case does not change a word's length. */
+        tiku_edit_replace_t edit = { { start + span_s,
+                                       start + span_s + span_len },
+                                     up, (size_t)span_len };
+        tiku_edit_transaction_t t;
+
+        memset(&t, 0, sizeof t);
+        t.edits = &edit;
+        t.count = 1;
+        t.view = tiku_codeview_doc_view(e->view);
+        t.select = 1;
+        t.anchor = t.caret = caret;
+        (void)tiku_editdoc_apply(e->doc, &t);
     }
-    tiku_textview_insert_text(&e->tv, up);
-    tiku_textview_group_end(&e->tv);
-    tiku_textview_place(&e->tv, cy, cx);   /* case is length: caret stands */
 }
 
 static int
@@ -143,45 +168,74 @@ renum_raw(const char *s)
            (strncasecmp(s, "data", 4) == 0 && !renum_is_word(s[4]));
 }
 
-/** @brief The new number an old one maps to, or the old if none. */
-static int
-renum_map(int old, const int *olds, const int *news, int n)
+/** @brief The new number an old one maps to, or the old if none: the
+ *         first line wearing it gives the number. */
+static long
+renum_map(const renum_t *r, long old)
 {
     int i;
 
-    for (i = 0; i < n; i++) {
-        if (olds[i] == old) {
-            return news[i];
+    for (i = 0; i < r->n; i++) {
+        if (r->olds[i] == old) {
+            return r->news[i];
         }
     }
     return old;
 }
 
-/** @brief Add @p len bytes of @p s to @p o; bytes past its room are
- *         counted but never written. */
+/** @brief Keep an edit of the @p n digits at @p at to the number they map
+ *         to, when its digits differ: a mapped number, or an unmapped one
+ *         losing its leading zeros.  A number too long to read is left. */
 static void
-renum_put(renum_out_t *o, const char *s, size_t len)
+renum_number(renum_t *r, int64_t at, const char *digits, size_t n)
 {
-    if (o->p != NULL && o->n <= o->cap && len <= o->cap - o->n) {
-        memcpy(o->p + o->n, s, len);
+    renum_edit_t *edit;
+    long old = 0;
+    size_t i;
+    int len;
+    char nb[24];
+
+    if (n > 9) {
+        return;
     }
-    o->n += len;
+    for (i = 0; i < n; i++) {
+        old = old * 10 + (digits[i] - '0');
+    }
+    len = snprintf(nb, sizeof nb, "%ld", renum_map(r, old));
+    if ((size_t)len == n && memcmp(nb, digits, n) == 0) {
+        return;
+    }
+    if (r->count == r->cap) {
+        size_t cap = r->cap ? r->cap * 2 : 64;
+        renum_edit_t *grown = realloc(r->edits, cap * sizeof *grown);
+
+        if (grown == NULL) {
+            r->failed = 1;
+            return;
+        }
+        r->edits = grown;
+        r->cap = cap;
+    }
+    edit = &r->edits[r->count++];
+    edit->start = at;
+    edit->end = at + (int64_t)n;
+    memcpy(edit->text, nb, (size_t)len + 1);
 }
 
 /**
- * @brief Copy @p s, rewriting the line numbers its branches name.
+ * @brief Find the line numbers the branches in @p s name, @p s starting
+ *        at document position @p at.
  *
  * A jump has to follow the line it names when the numbers move, or
  * renumbering would quietly break every branch.  Every number in the
- * comma list after GOTO or GOSUB (`ON A GOTO 10, 20`) is rewritten, and
- * the one after THEN or ELSE.  Quoted text, and the rest of a line after
- * REM, an apostrophe or DATA, are copied unchanged: the interpreter runs
- * none of it.
+ * comma list after GOTO or GOSUB (`ON A GOTO 10, 20`) counts, and the one
+ * after THEN or ELSE.  Quoted text, and the rest of a line after REM, an
+ * apostrophe or DATA, are left alone: the interpreter runs none of it.
  */
 static void
-renum_emit(renum_out_t *o, const char *s,
-           const int *olds, const int *news, int n)
+renum_scan(renum_t *r, const char *s, int64_t at)
 {
+    const char *base = s;
     int prev_word = 0;
 
     while (*s != '\0') {
@@ -193,150 +247,122 @@ renum_emit(renum_out_t *o, const char *s,
             while (*end != '\0' && *end != '"') {
                 end += (*end == '\\' && end[1] != '\0') ? 2 : 1;
             }
-            end += (*end == '"');
-            renum_put(o, s, (size_t)(end - s));
-            s = end;
+            s = end + (*end == '"');
             prev_word = 0;
             continue;
         }
         if (*s == '\'' || (!prev_word && renum_raw(s))) {
-            renum_put(o, s, strlen(s));
             return;
         }
         kw = prev_word ? 0 : renum_keyword(s, &list);
         if (kw > 0) {
-            renum_put(o, s, (size_t)kw);
             s += kw;
             for (;;) {
-                const char *comma;
-                int old = 0, nl;
-                char nb[16];
+                const char *comma, *digits;
 
                 while (*s == ' ' || *s == '\t') {
-                    renum_put(o, s++, 1);
+                    s++;
                 }
                 if (*s < '0' || *s > '9') {
                     break;
                 }
+                digits = s;
                 while (*s >= '0' && *s <= '9') {
-                    old = old * 10 + (*s - '0');
                     s++;
                 }
-                nl = snprintf(nb, sizeof nb, "%d",
-                              renum_map(old, olds, news, n));
-                renum_put(o, nb, (size_t)nl);
+                renum_number(r, at + (digits - base), digits,
+                             (size_t)(s - digits));
                 for (comma = s; *comma == ' ' || *comma == '\t'; comma++) {
                 }
                 if (!list || *comma != ',') {
                     break;
                 }
-                renum_put(o, s, (size_t)(comma - s) + 1u);
                 s = comma + 1;
             }
             prev_word = renum_is_word((unsigned char)s[-1]);
             continue;
         }
         prev_word = renum_is_word((unsigned char)*s);
-        renum_put(o, s++, 1);
+        s++;
     }
-}
-
-/** @brief Produce the renumbered text of @p e's lines into @p o.
- *  @return The length of the longest line produced. */
-static size_t
-renum_lines(edit_t *e, renum_out_t *o, const int *olds, const int *news,
-            int n)
-{
-    int total = tiku_textview_lines(&e->tv), L;
-    size_t longest = 0;
-
-    for (L = 0; L < total; L++) {
-        const char *t = tiku_textview_line(&e->tv, L);
-        size_t start = o->n;
-        int d = 0;
-
-        if (t == NULL) {
-            t = "";
-        }
-        while (t[d] >= '0' && t[d] <= '9') {
-            d++;
-        }
-        if (d > 0) {
-            char nb[16];
-            int nl = snprintf(nb, sizeof nb, "%d",
-                              renum_map(atoi(t), olds, news, n));
-
-            renum_put(o, nb, (size_t)nl);
-        }
-        renum_emit(o, t + d, olds, news, n);
-        if (o->n - start > longest) {
-            longest = o->n - start;
-        }
-        if (L < total - 1) {
-            renum_put(o, "\n", 1);
-        }
-    }
-    return longest;
 }
 
 /**
  * @brief Renumber a BASIC program by tens, branches following.
  *
- * Every line that starts with a number is given the next ten, and every
- * branch to an old number is rewritten to the new one.  The rewrite is
- * one journal batch, so a single Undo takes it all back.  A result line
- * that would pass 1023 bytes refuses the whole rewrite, as Replace does.
+ * Every line that starts with a digit is given the next ten, lines
+ * sharing a number the first one's, and every branch to an old number is
+ * rewritten to the new one.  Only digits that change are replaced, in one
+ * undo step, so the caret, the selection and the breakpoints stay on the
+ * lines they were on; a program already in tens changes nothing.
  */
 void
 tiku_ide_renumber_basic(edit_t *e)
 {
-    int total = tiku_textview_lines(&e->tv);
-    int *olds, *news;
-    int nmap = 0, next = 10, L;
-    renum_out_t o = { NULL, 0, 0 };
-    size_t size;
+    int64_t total = tiku_editdoc_lines(e->doc), line;
+    renum_t r;
+    long next = 10;
 
-    if (total <= 0) {
+    memset(&r, 0, sizeof r);
+    r.olds = malloc((size_t)total * sizeof *r.olds);
+    r.news = malloc((size_t)total * sizeof *r.news);
+    if (r.olds == NULL || r.news == NULL) {
+        free(r.olds);
+        free(r.news);
         return;
     }
-    olds = malloc((size_t)total * sizeof *olds);
-    news = malloc((size_t)total * sizeof *news);
-    if (olds == NULL || news == NULL) {
-        free(olds); free(news);
-        return;
-    }
-    for (L = 0; L < total; L++) {
-        const char *t = tiku_textview_line(&e->tv, L);
+    for (line = 0; line < total; line++) {
+        tiku_edit_pos_t at = tiku_editdoc_line_start(e->doc, line);
+        int b = tiku_editdoc_byte_at(e->doc, at);
 
-        if (t != NULL && t[0] >= '0' && t[0] <= '9') {
-            olds[nmap] = atoi(t);
-            news[nmap] = next;
-            nmap++;
+        if (b >= '0' && b <= '9' &&
+            at < tiku_editdoc_line_end(e->doc, line)) {
+            r.olds[r.n] = tiku_ide_line_number(e, line, 0);
+            r.news[r.n++] = next;
             next += 10;
         }
     }
-    /* Counted first and written second: a branch target can gain several
-     * digits, so no fixed allowance per line bounds the result. */
-    if (renum_lines(e, &o, olds, news, nmap) >= TIKU_TEXTVIEW_LINE_MAX) {
-        snprintf(e->feedback, sizeof e->feedback,
-                 "Not renumbered: a result line would exceed 1023 bytes");
-        free(olds); free(news);
-        return;
+    for (line = 0; line < total && !r.failed; line++) {
+        size_t len = 0, d = 0;
+        char *text = tiku_ide_line_dup(e, line, &len);
+        int64_t at = tiku_editdoc_line_start(e->doc, line);
+
+        if (text == NULL) {
+            r.failed = 1;
+            break;
+        }
+        while (d < len && text[d] >= '0' && text[d] <= '9') {
+            d++;
+        }
+        if (d > 0) {
+            renum_number(&r, at, text, d);
+        }
+        renum_scan(&r, text + d, at + (int64_t)d);
+        free(text);
     }
-    size = o.n;
-    o.p = malloc(size + 1);
-    if (o.p == NULL) {
-        free(olds); free(news);
-        return;
+    if (!r.failed && r.count > 0) {
+        tiku_edit_replace_t *edits = malloc(r.count * sizeof *edits);
+        tiku_edit_transaction_t t;
+        size_t i;
+
+        if (edits != NULL) {
+            for (i = 0; i < r.count; i++) {
+                edits[i].range.start = r.edits[i].start;
+                edits[i].range.end = r.edits[i].end;
+                edits[i].text = r.edits[i].text;
+                edits[i].length = strlen(r.edits[i].text);
+            }
+            memset(&t, 0, sizeof t);
+            t.edits = edits;
+            t.count = r.count;
+            t.view = tiku_codeview_doc_view(e->view);
+            if (tiku_editdoc_apply(e->doc, &t) == TIKU_EDIT_OK) {
+                tiku_ide_edit_reveal(e);
+            }
+            free(edits);
+        }
     }
-    o.cap = size;
-    o.n = 0;
-    (void)renum_lines(e, &o, olds, news, nmap);
-    o.p[size] = '\0';
-    tiku_textview_group_begin(&e->tv);
-    tiku_textview_select_all(&e->tv);
-    tiku_textview_insert_text(&e->tv, o.p);
-    tiku_textview_group_end(&e->tv);
-    (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
-    free(olds); free(news); free(o.p);
+    free(r.edits);
+    free(r.olds);
+    free(r.news);
 }

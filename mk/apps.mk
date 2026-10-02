@@ -411,15 +411,19 @@ $(APPS_D)/console/TikuConsole.so: $(CONSOLE_SRC) $(CONSOLE_HEADERS) $(PIC_LIBS) 
 
 IDE_SRC := $(sort $(wildcard apps/ide/*.c))
 IDE_HEADERS := $(wildcard apps/ide/*.h)
-$(APPS_D)/basic/TikuBasic.so: $(IDE_SRC) $(IDE_HEADERS) $(PIC_LIBS) | $(PROG_D)
+$(APPS_D)/basic/TikuBasic.so: $(IDE_SRC) $(IDE_HEADERS) $(PICLIB)/libtiku_editor.a \
+                              $(PIC_LIBS) | $(PROG_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(IDE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -o $@ $(IDE_SRC) $(PICLIB)/libtiku_editor.a $(PIC_LIBS) \
+	      $(LDFLAGS) $(X11_LIBS) -lm
 
 # The same source wearing its other name: what differs is what it puts
 # forward, and a copy would only learn to disagree.
-$(APPS_D)/c/TikuC.so: $(IDE_SRC) $(IDE_HEADERS) $(PIC_LIBS) | $(PROG_D)
+$(APPS_D)/c/TikuC.so: $(IDE_SRC) $(IDE_HEADERS) $(PICLIB)/libtiku_editor.a \
+                      $(PIC_LIBS) | $(PROG_D)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $(IDE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $(IDE_SRC) $(PICLIB)/libtiku_editor.a \
+	      $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 define EXAMPLE_SO_RULE
 $(APPS_D)/$(1)/$(1).so: examples/apps/$(1).c $(PIC_LIBS)

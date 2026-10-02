@@ -169,6 +169,10 @@ test_ide_default_SRCS := $(IDE_SRC)
 test_ide_deadboard_SRCS := $(IDE_SRC)
 test_ide_workflow_SRCS := $(IDE_SRC)
 test_ide_debug_SRCS := $(IDE_SRC)
+test_ide_default_LIBS := $(LIB_EDITOR)
+test_ide_deadboard_LIBS := $(LIB_EDITOR)
+test_ide_workflow_LIBS := $(LIB_EDITOR)
+test_ide_debug_LIBS := $(LIB_EDITOR)
 $(OBJ)/apps/ide/tiku_ide_app.o: override CFLAGS += -DTIKU_APP_EMBED
 test_source_models_SRCS := apps/ide/tiku_ide_project.c \
     apps/reader/tiku_reader_document.c
@@ -254,6 +258,7 @@ test_editor_baseline_SRCS := $(EDITOR_SRC)
 test_editor_baseline_LIBS := $(LIB_EDITOR)
 test_editor_baseline_LDLIBS := $(X11_LIBS) -lm
 test_ide_baseline_SRCS := $(IDE_SRC)
+test_ide_baseline_LIBS := $(LIB_EDITOR)
 test_ide_baseline_LDLIBS := $(X11_LIBS) -lm
 
 # The one link rule.  A test's object, the objects of the sources it

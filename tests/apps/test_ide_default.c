@@ -39,7 +39,7 @@ int main(void)
     st->edit[0].id = 2;
     st->edit[0].lang = TIKU_SYNTAX_BASIC;
     st->edit[0].surface = tiku_surface_new(1, 1, 0);
-    tiku_textview_init(&st->edit[0].tv);
+    assert(tiku_ide_text_new(&st->edit[0]));
     snprintf(st->edit[0].name, sizeof st->edit[0].name, "main.bas");
     snprintf(st->proj.board, sizeof st->proj.board, "legacy-board");
     assert(!tiku_ide_dest_board(st, dest, sizeof dest));
@@ -66,6 +66,7 @@ int main(void)
     services.current_device = NULL;
     assert(!tiku_ide_dest_board(st, dest, sizeof dest));
     tiku_surface_free(st->edit[0].surface);
+    tiku_ide_text_free(&st->edit[0]);
     free(st);
     puts("PASS: desktop defaults, legacy projects, menu refresh"
          " and active-run isolation");

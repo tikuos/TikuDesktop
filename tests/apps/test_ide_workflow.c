@@ -60,6 +60,69 @@ static int clip_set(void *ctx, const char *text)
 static const char *clip_text(void *ctx, unsigned *stamp)
 { (void)ctx; if (stamp) { *stamp = 0; } return desk_clip; }
 
+/* Line @p line of the page, in a buffer the next call reuses. */
+static const char *line_of(const edit_t *e, int64_t line)
+{
+    static char *held;
+
+    free(held);
+    held = tiku_ide_line_dup(e, line, NULL);
+    return held != NULL ? held : "";
+}
+
+/* Whether line @p line of the page reads @p want. */
+static int line_is(const edit_t *e, int64_t line, const char *want)
+{
+    return strcmp(line_of(e, line), want) == 0;
+}
+
+/* The page holding @p text, as a load leaves it: no history, saved. */
+static void set_text(edit_t *e, const char *text)
+{
+    assert(tiku_ide_text_load(e, text, strlen(text)) == TIKU_EDIT_OK);
+}
+
+/* The page's whole text into @p out. */
+static void text_of(const edit_t *e, char *out, size_t max)
+{
+    tiku_edit_range_t all = { 0, tiku_editdoc_length(e->doc) };
+    size_t n = 0;
+
+    assert(tiku_editdoc_read(e->doc, all, out, max, &n) == TIKU_EDIT_OK);
+}
+
+/* Whether the caret stands alone at byte @p column of line @p line. */
+static int caret_at(const edit_t *e, int64_t line, int64_t column)
+{
+    tiku_edit_pos_t anchor = -1, caret = -2;
+    int64_t y, x;
+
+    (void)tiku_codeview_selection(e->view, &anchor, &caret);
+    (void)tiku_ide_caret(e, &y, &x);
+    return anchor == caret && y == line && x == column;
+}
+
+/* Whether the page holds a selection, and where it starts. */
+static int selection_at(const edit_t *e, int64_t *line, int64_t *column)
+{
+    tiku_edit_pos_t anchor = 0, caret = 0, lo;
+    int64_t y;
+
+    (void)tiku_codeview_selection(e->view, &anchor, &caret);
+    lo = anchor < caret ? anchor : caret;
+    y = tiku_editdoc_line_of(e->doc, lo);
+    if (line != NULL) { *line = y; }
+    if (column != NULL) { *column = lo - tiku_editdoc_line_start(e->doc, y); }
+    return anchor != caret;
+}
+
+/* Type @p text at the caret, as one key does. */
+static void type_text(edit_t *e, const char *text)
+{
+    assert(tiku_codeview_insert(e->view, text, strlen(text), 1) ==
+           TIKU_EDIT_OK);
+}
+
 static void file_write(const char *path, const char *text, size_t n)
 {
     FILE *f = fopen(path, "wb");
@@ -111,46 +174,50 @@ static void test_upload(ide_t *st, const char *dir)
 static void test_search(void)
 {
     edit_t *e = calloc(1, sizeof *e);
-    char original[4096], actual[4096];
+    char original[4096], actual[4096], wide[1300];
     int i;
 
     assert(e);
     e->w = 620; e->h = 420;
     e->lang = TIKU_SYNTAX_BASIC;
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 PRINT 10\n20 PRINT 10\n\tREM café");
-    tiku_textview_text(&e->tv, original, sizeof original);
+    set_text(e, "10 PRINT 10\n20 PRINT 10\n\tREM café");
+    text_of(e, original, sizeof original);
     tiku_ide_search_open(e, 1);
     tiku_field_start(&e->find, "10");
     tiku_field_start(&e->replacement, "100");
     tiku_ide_search_replace(e, 0); /* Select only first. */
-    assert(!tiku_textview_modified(&e->tv));
+    assert(!tiku_editdoc_modified(e->doc));
     tiku_ide_search_replace(e, 1);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "100 PRINT 100"));
-    assert(!strcmp(tiku_textview_line(&e->tv, 2), "\tREM café"));
-    assert(tiku_textview_undo(&e->tv));
-    tiku_textview_text(&e->tv, actual, sizeof actual);
+    assert(line_is(e, 0, "100 PRINT 100"));
+    assert(line_is(e, 2, "\tREM café"));
+    assert(tiku_codeview_undo(e->view) == TIKU_EDIT_OK);
+    text_of(e, actual, sizeof actual);
     assert(!strcmp(actual, original));
-    assert(tiku_textview_redo(&e->tv));
+    assert(tiku_codeview_redo(e->view) == TIKU_EDIT_OK);
     tiku_field_start(&e->find, "100");
     tiku_field_start(&e->replacement, "");
     tiku_ide_search_replace(e, 1);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), " PRINT "));
-    assert(tiku_textview_undo(&e->tv));
+    assert(line_is(e, 0, " PRINT "));
+    assert(tiku_codeview_undo(e->view) == TIKU_EDIT_OK);
     for (i = 0; i < 600; i++) { original[i] = 'a'; }
     original[600] = '\0';
-    tiku_textview_set(&e->tv, original);
+    set_text(e, original);
     tiku_field_start(&e->find, "a");
     tiku_field_start(&e->replacement, "aa");
+    /* No line is too long for the page: All doubles the 600 bytes. */
     tiku_ide_search_replace(e, 1);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), original));
-    assert(!tiku_textview_modified(&e->tv));
+    memset(wide, 'a', 1200);
+    wide[1200] = '\0';
+    assert(line_is(e, 0, wide) && tiku_editdoc_modified(e->doc));
+    assert(strstr(e->feedback, "600 replacements"));
+    assert(tiku_codeview_undo(e->view) == TIKU_EDIT_OK);
+    assert(line_is(e, 0, original) && !tiku_editdoc_modified(e->doc));
     tiku_field_start(&e->replacement, "b");
-    tiku_ide_search_replace(e, 1); /* More matches than the undo journal's capacity. */
-    assert(tiku_textview_line(&e->tv, 0)[599] == 'b');
-    assert(tiku_textview_undo(&e->tv));
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), original));
-    tiku_textview_free(&e->tv);
+    tiku_ide_search_replace(e, 1); /* 600 matches, one undo step. */
+    assert(line_of(e, 0)[599] == 'b');
+    assert(tiku_codeview_undo(e->view) == TIKU_EDIT_OK);
+    assert(line_is(e, 0, original));
+    tiku_ide_text_free(e);
     free(e);
 }
 
@@ -167,34 +234,35 @@ static void test_recovery(const char *dir)
     e->recovery_fd = open(dir, O_RDONLY);
     assert(e->recovery_fd >= 0);
     file_write(e->path, "10 END\n", 7);
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 PRINT 42");
-    e->tv.saved_at = -1;
+    set_text(e, "10 PRINT 42");
+    tiku_editdoc_saved(e->doc, 0);
     assert(tiku_ide_recovery_write(e));
     f = fopen(e->path, "r");
     assert(f && fgets(original, sizeof original, f));
     fclose(f);
     assert(!strcmp(original, "10 END\n"));
-    tiku_textview_set(&e->tv, "10 END");
+    set_text(e, "10 END");
     tiku_ide_recovery_restore(e);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 42"));
-    assert(tiku_textview_modified(&e->tv));
+    assert(line_is(e, 0, "10 PRINT 42"));
+    assert(tiku_editdoc_modified(e->doc));
     assert(strstr(e->feedback, "Recovered"));
     assert(tiku_ide_edit_save(e));
     assert(access(draft, F_OK) != 0);
-    assert(!tiku_textview_modified(&e->tv));
-    tiku_textview_select_all(&e->tv);
-    tiku_textview_insert_text(&e->tv, "10 END\n");
+    assert(!tiku_editdoc_modified(e->doc));
+    assert(tiku_codeview_select_all(e->view) == TIKU_EDIT_OK);
+    type_text(e, "10 END\r\n");
     assert(tiku_ide_recovery_write(e));
-    tiku_textview_set(&e->tv, "other text");
+    set_text(e, "other text");
     tiku_ide_recovery_restore(e);
-    assert(tiku_textview_lines(&e->tv) == 2); /* Preserve a blank final line. */
-    tiku_textview_insert_text(&e->tv, "abc");
+    /* The draft gives back every byte, the final CRLF included. */
+    text_of(e, original, sizeof original);
+    assert(!strcmp(original, "10 END\r\n") && tiku_editdoc_lines(e->doc) == 2);
+    type_text(e, "abc");
     assert(tiku_ide_recovery_write(e));
     tiku_ide_recovery_release(e, 1);
     assert(access(draft, F_OK) != 0);
     unlink(e->path);
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     free(e);
 }
 
@@ -207,25 +275,27 @@ static void test_ui(ide_t *st, const char *dir)
 
     e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
     e->lang = TIKU_SYNTAX_BASIC;
+    e->services = st->services;
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
     snprintf(e->name, sizeof e->name, "sensor.bas");
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 PRINT \"Temperature\"\n20 PRINT 42\n30 END");
+    set_text(e, "10 PRINT \"Temperature\"\n20 PRINT 42\n30 END");
     {
         tiku_text_input_t input;
         tiku_event_t text;
         const char *phrase = "REM café 日本語";
-        tiku_textview_select_all(&e->tv);
+        assert(tiku_codeview_select_all(e->view) == TIKU_EDIT_OK);
         assert(tiku_text_input_set(&input, phrase, strlen(phrase)));
         while (tiku_text_input_next(&input, &text)) {
             tiku_ide_event(st, e->id, &text);
-            if (!(text.button & TIKU_TEXT_END)) assert(strstr(tiku_textview_line(&e->tv, 0), "Temperature"));
+            if (!(text.button & TIKU_TEXT_END)) {
+                assert(strstr(line_of(e, 0), "Temperature"));
+            }
         }
-        assert(!strcmp(tiku_textview_line(&e->tv, 0), phrase) && runs == previous_runs);
-        assert(tiku_textview_undo(&e->tv));
-        assert(strstr(tiku_textview_line(&e->tv, 0), "Temperature"));
-        tiku_textview_select_none(&e->tv);
+        assert(line_is(e, 0, phrase) && runs == previous_runs);
+        assert(tiku_codeview_undo(e->view) == TIKU_EDIT_OK);
+        assert(strstr(line_of(e, 0), "Temperature"));
+        tiku_ide_place(e, 0, 0);
         tiku_ide_search_open(e, 0);
         assert(tiku_text_input_set(&input, "café", 5));
         while (tiku_text_input_next(&input, &text)) tiku_ide_event(st, e->id, &text);
@@ -241,9 +311,9 @@ static void test_ui(ide_t *st, const char *dir)
     ev.x = tiku_ide_search_button(2).x + 8;
     ev.y = tiku_ide_search_button(2).y + 8;
     tiku_ide_event(st, e->id, &ev);
-    assert(strstr(tiku_textview_line(&e->tv, 0), "REM"));
+    assert(strstr(line_of(e, 0), "REM"));
     assert(tiku_ide_pick(st, e->id, CMD_UNDO) == 0);
-    assert(strstr(tiku_textview_line(&e->tv, 0), "PRINT"));
+    assert(strstr(line_of(e, 0), "PRINT"));
     snprintf(st->proj.row[0].path, sizeof st->proj.row[0].path, "%s/open.bas", dir);
     snprintf(e->path, sizeof e->path, "%s", st->proj.row[0].path);
     snprintf(st->proj.row[0].name, sizeof st->proj.row[0].name, "open.bas");
@@ -273,24 +343,34 @@ static void test_ui(ide_t *st, const char *dir)
     unlink(missing);
     snprintf(missing, sizeof missing, "%s/missing/source.bas", dir);
     snprintf(e->path, sizeof e->path, "%s", missing);
-    tiku_textview_insert_text(&e->tv, "x");
+    type_text(e, "x");
     selected = "board-a";
     tiku_ide_run_file_where(st, e->path);
     assert(runs == previous_runs);
     assert(strstr(st->note, "cancelled"));
     snprintf(e->path, sizeof e->path, "%s/oversized.bas", dir);
     {
+        /* A line far past what BASIC reads opens and edits; the run is
+         * what refuses it. */
         char long_line[1100];
         memset(long_line, 'x', sizeof long_line);
         file_write(e->path, long_line, sizeof long_line);
-        tiku_textview_free(&e->tv);
+        tiku_ide_edit_load(e);
+        assert(!e->load_failed && strlen(line_of(e, 0)) == sizeof long_line);
+        tiku_ide_run_file_where(st, e->path);
+        assert(runs == previous_runs &&
+               strstr(st->note, "159 bytes BASIC reads"));
+        assert(strstr(e->feedback, "Line 1 is longer"));
+        /* A file the page cannot hold blocks saving and running. */
+        file_write(e->path, "10 PRINT \xff\n", 11);
         tiku_ide_edit_load(e);
         assert(e->load_failed && !tiku_ide_edit_save(e));
+        assert(tiku_editdoc_length(e->doc) == 0);
         tiku_ide_run_file_where(st, e->path);
-        assert(runs == previous_runs);
+        assert(runs == previous_runs && strstr(st->note, "cancelled"));
         unlink(e->path);
         e->load_failed = 0;
-        tiku_textview_insert_text(&e->tv, "10 END");
+        type_text(e, "10 END");
     }
     tiku_ide_edit_drop(st, e);
     assert(e->surface && st->ask.open && st->ask.tag == CMD_QUIT);
@@ -298,7 +378,7 @@ static void test_ui(ide_t *st, const char *dir)
     ev.key = TIKU_KEY_ESCAPE;
     tiku_ide_event(st, st->proj_id, &ev);
     assert(e->surface && !st->ask.open);
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
     tiku_surface_free(st->proj_surface);
@@ -313,9 +393,9 @@ static void test_click_then_type(ide_t *st)
 {
     static const char *text = "10 PRINT 42";
     edit_t *e = &st->edit[0];
-    tiku_event_t ev = { .type = TIKU_EVENT_POINTER_DOWN };
+    tiku_event_t ev = { .type = TIKU_EVENT_POINTER_DOWN, .button = 1 };
     char want[64];
-    int line, col;
+    int64_t line, col;
 
     memset(e, 0, sizeof *e);            /* test_ui left its find bar open */
     e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
@@ -323,28 +403,28 @@ static void test_click_then_type(ide_t *st)
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
     snprintf(e->name, sizeof e->name, "click.bas");
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 PRINT 42\n20 END");
+    set_text(e, "10 PRINT 42\n20 END");
     ev.x = 60;
-    ev.y = tiku_ide_edit_page_top(e) + 4;
+    ev.y = tiku_ide_edit_page_top(e) + 8;
     tiku_ide_event(st, e->id, &ev);
     ev.type = TIKU_EVENT_POINTER_UP;
     tiku_ide_event(st, e->id, &ev);
-    tiku_textview_caret(&e->tv, &line, &col);
+    (void)tiku_ide_caret(e, &line, &col);
     assert(line == 0 && col > 0 && col < (int)strlen(text));
-    /* No anchor stays behind: moving the caret, as following a message
-     * does, selects nothing. */
-    tiku_textview_place(&e->tv, 1, 0);
-    assert(!tiku_textview_selection(&e->tv, &line, &line, &line, &line));
-    tiku_textview_place(&e->tv, 0, col);
+    /* A click leaves no selection: moving the caret, as following a
+     * message does, selects nothing. */
+    assert(!selection_at(e, NULL, NULL));
+    tiku_ide_place(e, 1, 0);
+    assert(!selection_at(e, NULL, NULL));
+    tiku_ide_place(e, 0, col);
     ev.type = TIKU_EVENT_KEY_DOWN;
     ev.key = 'a';
     tiku_ide_event(st, e->id, &ev);
     ev.key = 'b';
     tiku_ide_event(st, e->id, &ev);
-    snprintf(want, sizeof want, "%.*sab%s", col, text, text + col);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), want));
-    tiku_textview_free(&e->tv);
+    snprintf(want, sizeof want, "%.*sab%s", (int)col, text, text + col);
+    assert(line_is(e, 0, want));
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
 }
@@ -370,26 +450,24 @@ static void test_keyword_over_selection(ide_t *st)
     e->lang = TIKU_SYNTAX_BASIC;
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "print x");
+    set_text(e, "print x");
     key_to(st, e, TIKU_KEY_END, 0);
     key_to(st, e, TIKU_KEY_LEFT, TIKU_MOD_SHIFT);
     key_to(st, e, TIKU_KEY_LEFT, TIKU_MOD_SHIFT);
     key_to(st, e, ' ', 0);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "PRINT "));
-    tiku_textview_set(&e->tv, "10 end");
+    assert(line_is(e, 0, "PRINT "));
+    set_text(e, "10 end");
     key_to(st, e, 'a', TIKU_MOD_CMD);
     key_to(st, e, ' ', 0);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), " "));
-    tiku_textview_set(&e->tv, "10 a\n20 b\n30 c\n40 d");
+    assert(line_is(e, 0, " "));
+    set_text(e, "10 a\n20 b\n30 c\n40 d");
     key_to(st, e, TIKU_KEY_END, 0);
     key_to(st, e, TIKU_KEY_DOWN, TIKU_MOD_SHIFT);
     key_to(st, e, TIKU_KEY_DOWN, TIKU_MOD_SHIFT);
     key_to(st, e, TIKU_KEY_RETURN, 0);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 a") &&
-           !strcmp(tiku_textview_line(&e->tv, 1), "20 ") &&
-           !strcmp(tiku_textview_line(&e->tv, 2), "40 d"));
-    tiku_textview_free(&e->tv);
+    assert(line_is(e, 0, "10 a") && line_is(e, 1, "20 ") &&
+           line_is(e, 2, "40 d"));
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
 }
@@ -399,7 +477,6 @@ static void test_keyword_over_selection(ide_t *st)
 static void test_follow_drops_selection(ide_t *st)
 {
     edit_t *e = &st->edit[0];
-    int y0, x0, y1, x1;
 
     memset(e, 0, sizeof *e);
     e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
@@ -407,11 +484,8 @@ static void test_follow_drops_selection(ide_t *st)
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
     snprintf(e->path, sizeof e->path, "/tmp/tiku-follow-test.bas");
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 PRINT 1\n20 PRINT 2\n30 PRINT 3");
-    tiku_textview_place(&e->tv, 0, 3);
-    tiku_textview_select_begin(&e->tv);
-    tiku_textview_place(&e->tv, 0, 8);
+    set_text(e, "10 PRINT 1\n20 PRINT 2\n30 PRINT 3");
+    assert(tiku_codeview_select(e->view, 3, 8) == TIKU_EDIT_OK);
     memset(&st->msg[0], 0, sizeof st->msg[0]);
     snprintf(st->msg[0].file, sizeof st->msg[0].file, "%s", e->path);
     st->msg[0].line = 3;
@@ -420,18 +494,17 @@ static void test_follow_drops_selection(ide_t *st)
     (void)tiku_list_set_count(&st->msg_list, 1);
     tiku_list_select_only(&st->msg_list, 0);
     tiku_ide_message_follow(st);
-    tiku_textview_caret(&e->tv, &y0, &x0);
-    assert(y0 == 2 && x0 == 0);
-    assert(!tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1));
+    assert(caret_at(e, 2, 0));
+    assert(!selection_at(e, NULL, NULL));
     st->nmsg = 0;
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
 }
 
-/** Return on a page already holding 4,000 lines makes no break, and so
- *  types no line number into the line it was pressed on. */
-static void test_return_at_line_limit(ide_t *st)
+/** Return on a page of 4,000 lines makes the break and its number, as on
+ *  any page; a break the document refuses types no number either. */
+static void test_return_makes_the_break(ide_t *st)
 {
     edit_t *e = &st->edit[0];
     size_t cap = 4000u * 8u + 1u, at = 0;
@@ -447,15 +520,27 @@ static void test_return_at_line_limit(ide_t *st)
     e->lang = TIKU_SYNTAX_BASIC;
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, text);
-    assert(tiku_textview_lines(&e->tv) == 4000);
-    tiku_textview_place(&e->tv, 0, 4);
+    set_text(e, text);
+    assert(tiku_editdoc_lines(e->doc) == 4001);
+    tiku_ide_place(e, 0, 4);
     key_to(st, e, TIKU_KEY_RETURN, 0);
-    assert(tiku_textview_lines(&e->tv) == 4000);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 a"));
+    assert(tiku_editdoc_lines(e->doc) == 4002);
+    assert(line_is(e, 0, "10 a") && line_is(e, 1, "20 ") && caret_at(e, 1, 3));
+    /* A held page refuses the break, and so types no number. */
+    st->running = st->debugging = 1;
+    snprintf(st->child_file, sizeof st->child_file, "%s", e->path);
+    tiku_ide_place(e, 0, 4);
+    key_to(st, e, TIKU_KEY_RETURN, 0);
+    tiku_ide_edit_lock(st, e);
+    assert(tiku_editdoc_read_only(e->doc));
+    assert(tiku_codeview_insert(e->view, "\n", 1, 1) == TIKU_EDIT_READ_ONLY);
+    assert(tiku_editdoc_lines(e->doc) == 4002 && line_is(e, 0, "10 a"));
+    st->running = st->debugging = 0;
+    st->child_file[0] = '\0';
+    tiku_ide_edit_lock(st, e);
+    assert(!tiku_editdoc_read_only(e->doc));
     free(text);
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
 }
@@ -474,19 +559,18 @@ static void test_unbound_cmd_chords(ide_t *st)
     e->w = 620; e->h = 420; e->id = 2; e->tip = -1;
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
-    tiku_textview_init(&e->tv);
     for (size_t i = 0; i < sizeof chord / sizeof chord[0]; i++) {
         tiku_event_t ev = { .type = TIKU_EVENT_KEY_DOWN, .key = chord[i].key,
                             .modifiers = TIKU_MOD_CMD };
 
         e->lang = chord[i].lang;
-        tiku_textview_set(&e->tv, "10 x");
-        tiku_textview_place(&e->tv, 0, 4);
+        set_text(e, "10 x");
+        tiku_ide_place(e, 0, 4);
         snprintf(ev.text, sizeof ev.text, "%s", chord[i].text);
         tiku_ide_event(st, e->id, &ev);
-        assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 x"));
+        assert(line_is(e, 0, "10 x"));
     }
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
 }
@@ -497,7 +581,7 @@ static void test_unbound_cmd_chords(ide_t *st)
 static void test_find_bar(ide_t *st)
 {
     edit_t *e = &st->edit[0];
-    int y0, x0, y1, x1;
+    int64_t x0;
     tiku_event_t ev = { .type = TIKU_EVENT_KEY_DOWN, .key = 'a',
                         .modifiers = TIKU_MOD_CMD, .text = "\x01" };
 
@@ -506,23 +590,23 @@ static void test_find_bar(ide_t *st)
     e->lang = TIKU_SYNTAX_C;
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "ab ab ab");
+    set_text(e, "ab ab ab");
     tiku_ide_search_open(e, 0);
     tiku_field_start(&e->find, "ab");
     e->finding = 0;
     tiku_ide_search_open(e, 0);
     assert(!strcmp(e->find.text, "ab") && e->find.sel_a == 0 && e->find.sel_b == 2);
     tiku_field_start(&e->replacement, "ab");
-    tiku_textview_place(&e->tv, 0, 0);
+    tiku_ide_place(e, 0, 0);
     tiku_ide_search_replace(e, 0);
-    assert(tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1) && x0 == 0);
+    assert(selection_at(e, NULL, &x0) && x0 == 0);
     tiku_ide_search_replace(e, 0);
     assert(!strstr(e->feedback, "replacement"));
     tiku_ide_search_replace(e, 0);
-    assert(tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1) && x0 == 3);
+    assert(selection_at(e, NULL, &x0) && x0 == 3);
     tiku_ide_search_replace(e, 1);
-    assert(!strstr(e->feedback, "replacement") && !tiku_textview_modified(&e->tv));
+    assert(!strstr(e->feedback, "replacement") &&
+           !tiku_editdoc_modified(e->doc));
     e->find_focus = 0;
     tiku_field_start(&e->find, "xy");
     e->find.sel_a = e->find.sel_b = e->find.caret = 2;
@@ -539,24 +623,24 @@ static void test_find_bar(ide_t *st)
     tiku_ide_event(st, e->id, &ev);
     assert(!strcmp(e->find.text, "pasted"));
     e->finding = 0;
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
 }
 
-/** Renumber rewrites a line crowded with branch targets exactly, and
- *  refuses, changing nothing, a line that would grow past 1023 bytes. */
+/** Renumber rewrites a line crowded with branch targets exactly, and a
+ *  line far longer than BASIC keeps is rewritten too: the page has no
+ *  line limit, the run boundary has. */
 static void test_renumber_bounds(void)
 {
     edit_t e;
-    char line[1100], want[1200];
+    char line[1300], want[1400];
     size_t n, m;
     int i;
 
     memset(&e, 0, sizeof e);
     e.w = 620; e.h = 420; e.id = 2; e.tip = -1;
     e.lang = TIKU_SYNTAX_BASIC;
-    tiku_textview_init(&e.tv);
     n = (size_t)snprintf(line, sizeof line, "1goto 1");
     m = (size_t)snprintf(want, sizeof want, "10goto 10");
     for (i = 0; i < 78; i++) {
@@ -564,17 +648,19 @@ static void test_renumber_bounds(void)
         m += (size_t)snprintf(want + m, sizeof want - m, " goto 10");
     }
     assert(n == 553);
-    tiku_textview_set(&e.tv, line);
+    set_text(&e, line);
     tiku_ide_renumber_basic(&e);
-    assert(!strcmp(tiku_textview_line(&e.tv, 0), want));
-    while (n + 7 <= 1022)
+    assert(line_is(&e, 0, want));
+    while (n + 7 <= 1200) {
         n += (size_t)snprintf(line + n, sizeof line - n, " goto 1");
-    tiku_textview_set(&e.tv, line);
+        m += (size_t)snprintf(want + m, sizeof want - m, " goto 10");
+    }
+    set_text(&e, line);
     tiku_ide_renumber_basic(&e);
-    assert(!strcmp(tiku_textview_line(&e.tv, 0), line));
-    assert(!tiku_textview_modified(&e.tv));
-    assert(strstr(e.feedback, "Not renumbered"));
-    tiku_textview_free(&e.tv);
+    assert(line_is(&e, 0, want) && strlen(want) > 1300 - 100);
+    assert(tiku_editdoc_modified(e.doc));
+    assert(tiku_codeview_undo(e.view) == TIKU_EDIT_OK && line_is(&e, 0, line));
+    tiku_ide_text_free(&e);
 }
 
 /** Renumber follows every target in a GOTO or GOSUB list and the one
@@ -604,23 +690,23 @@ static void test_renumber_targets(void)
     memset(&e, 0, sizeof e);
     e.w = 620; e.h = 420; e.id = 2; e.tip = -1;
     e.lang = TIKU_SYNTAX_BASIC;
-    tiku_textview_init(&e.tv);
-    tiku_textview_set(&e.tv, text);
+    set_text(&e, text);
     tiku_ide_renumber_basic(&e);
     for (i = 0; i < 7; i++) {
-        assert(!strcmp(tiku_textview_line(&e.tv, i), after[i]));
+        assert(line_is(&e, i, after[i]));
     }
-    tiku_textview_free(&e.tv);
+    tiku_ide_text_free(&e);
 }
 
 /** Past byte 255 of a line the caret is still drawn where the text before
- *  it ends: its whole column on the caret's row is the text colour. */
+ *  it ends, the page slid left to show it: its whole column on the
+ *  caret's row is the text colour. */
 static void test_caret_past_255(ide_t *st)
 {
     const tiku_font_t *f = tiku_font_plain();
     edit_t *e = &st->edit[0];
     char line[401];
-    int x, y, top;
+    int64_t x, y, row;
 
     memset(line, 'm', 400); line[400] = '\0';
     memset(e, 0, sizeof *e);
@@ -628,17 +714,19 @@ static void test_caret_past_255(ide_t *st)
     e->lang = TIKU_SYNTAX_NONE;
     e->surface = tiku_surface_new(e->w, e->h, TIKU_C_PANEL);
     assert(e->surface);
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, line);
-    tiku_textview_place(&e->tv, 0, 400);
+    set_text(e, line);
+    tiku_ide_place(e, 0, 400);
+    tiku_ide_edit_reveal(e);
     tiku_ide_edit_paint(st, e);
-    x = MARGIN - e->scroll_x + tiku_text_width(f, line);
-    top = tiku_ide_edit_page_top(e) + MARGIN;
-    assert(e->scroll_x > 0 && x > MARGIN && x < e->w - PAGE_SB);
-    for (y = top; y < top + f->height + 2; y++) {
-        assert(e->surface->px[y * e->surface->w + x] == TIKU_C_TEXT);
+    assert(tiku_codeview_point(e->view, 400, &x, &y) == TIKU_EDIT_OK);
+    assert(tiku_codeview_left(e->view) > 0 && x > MARGIN && x < e->w - PAGE_SB);
+    assert(x == MARGIN + tiku_text_width(f, line) -
+                tiku_codeview_left(e->view));
+    assert(y == tiku_ide_edit_page_top(e) + MARGIN);
+    for (row = y; row < y + f->height + 2; row++) {
+        assert(e->surface->px[row * e->surface->w + x] == TIKU_C_TEXT);
     }
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;
 }
@@ -792,10 +880,9 @@ static void test_project_window_closed(const tiku_app_services_t *services,
     snprintf(draft, sizeof draft, "%s", e->recovery);
     e->recovery_fd = open(dir, O_RDONLY);
     assert(e->recovery_fd >= 0);
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 PRINT 1");
-    tiku_textview_place(&e->tv, 0, 10);
-    tiku_textview_insert(&e->tv, '2');
+    set_text(e, "10 PRINT 1");
+    tiku_ide_place(e, 0, 10);
+    type_text(e, "2");
     closed_n = 0;
     tiku_ide_app.closed(fresh, fresh->proj_id);
     assert(!e->surface && closed_n >= 1 && closed_id[0] == 77);
@@ -816,9 +903,13 @@ static edit_t *page_with_edit(ide_t *st, const char *path, char add)
     snprintf(row.name, sizeof row.name, "%s", leaf ? leaf + 1 : path);
     tiku_ide_edit_open(st, &row);
     e = tiku_ide_edit_of_path(st, path);
-    assert(e != NULL && !tiku_textview_modified(&e->tv));
-    tiku_textview_place(&e->tv, 0, tiku_textview_line_len(&e->tv, 0));
-    tiku_textview_insert(&e->tv, add);
+    assert(e != NULL && !tiku_editdoc_modified(e->doc));
+    tiku_ide_place(e, 0, INT64_MAX);
+    {
+        char one[2] = { add, '\0' };
+
+        type_text(e, one);
+    }
     return e;
 }
 
@@ -867,8 +958,8 @@ static void test_safe_save(const tiku_app_services_t *services,
     tiku_ide_event(fresh, e->id, &save);
     assert(strstr(e->feedback, "read-only") && !fresh->ask.open);
     assert(!strcmp(file_text(ro, back, sizeof back), "10 A\n"));
-    assert(tiku_textview_modified(&e->tv));
-    tiku_textview_saved(&e->tv);
+    assert(tiku_editdoc_modified(e->doc));
+    tiku_editdoc_saved(e->doc, tiku_editdoc_state(e->doc));
     tiku_ide_edit_drop(fresh, e);
     assert(chmod(ro, 0644) == 0 && unlink(ro) == 0);
 
@@ -880,7 +971,7 @@ static void test_safe_save(const tiku_app_services_t *services,
     tiku_ide_event(fresh, e->id, &save);
     assert(strstr(e->feedback, "hard link") && !fresh->ask.open);
     assert(!strcmp(file_text(hl, back, sizeof back), "10 A\n"));
-    tiku_textview_saved(&e->tv);
+    tiku_editdoc_saved(e->doc, tiku_editdoc_state(e->doc));
     tiku_ide_edit_drop(fresh, e);
     assert(unlink(hl) == 0 && unlink(alias) == 0);
 
@@ -892,7 +983,7 @@ static void test_safe_save(const tiku_app_services_t *services,
     assert(fresh->ask.open && strstr(fresh->ask.text, "changed on disk"));
     assert(!strcmp(file_text(chg, back, sizeof back), "10 EXTERNAL\n"));
     tiku_ide_event(fresh, fresh->proj_id, &esc);
-    assert(!fresh->ask.open && tiku_textview_modified(&e->tv));
+    assert(!fresh->ask.open && tiku_editdoc_modified(e->doc));
     assert(!strcmp(file_text(chg, back, sizeof back), "10 EXTERNAL\n"));
     tiku_ide_event(fresh, e->id, &save);
     assert(fresh->ask.open);
@@ -903,11 +994,11 @@ static void test_safe_save(const tiku_app_services_t *services,
     tiku_ide_event(fresh, fresh->proj_id, &press);
     press.type = TIKU_EVENT_POINTER_UP;
     tiku_ide_event(fresh, fresh->proj_id, &press);
-    assert(!fresh->ask.open && !tiku_textview_modified(&e->tv));
+    assert(!fresh->ask.open && !tiku_editdoc_modified(e->doc));
     assert(!strcmp(file_text(chg, back, sizeof back), "10 Ax\n"));
-    tiku_textview_insert(&e->tv, 'y');
+    type_text(e, "y");
     tiku_ide_event(fresh, e->id, &save);
-    assert(!fresh->ask.open && !tiku_textview_modified(&e->tv));
+    assert(!fresh->ask.open && !tiku_editdoc_modified(e->doc));
     assert(!strcmp(file_text(chg, back, sizeof back), "10 Axy\n"));
     tiku_ide_edit_drop(fresh, e);
     tiku_ide_stop(fresh);
@@ -932,8 +1023,8 @@ static void test_reopen(ide_t *st, const char *dir)
     tiku_ide_edit_load(first);
     tiku_ide_recovery_open(first);
     assert(first->recovery_fd >= 0);
-    tiku_textview_place(&first->tv, 0, 6);
-    tiku_textview_insert_text(&first->tv, " ' unsaved");
+    tiku_ide_place(first, 0, 6);
+    type_text(first, " ' unsaved");
     assert(tiku_ide_recovery_write(first));
     snprintf(snapshot, sizeof snapshot, "%s", first->recovery);
     snprintf(lock, sizeof lock, "%s.lock", first->recovery);
@@ -948,8 +1039,8 @@ static void test_reopen(ide_t *st, const char *dir)
     tiku_ide_pick(st, st->proj_id, CMD_RECOVER);
     restored = tiku_ide_edit_of_path(st, path);
     assert(restored && strstr(restored->feedback, "Recovered"));
-    assert(tiku_textview_modified(&restored->tv));
-    assert(strstr(tiku_textview_line(&restored->tv, 0), "unsaved"));
+    assert(tiku_editdoc_modified(restored->doc));
+    assert(strstr(line_of(restored, 0), "unsaved"));
     f = fopen(path, "r");
     assert(f && fgets(disk, sizeof disk, f));
     fclose(f);
@@ -960,11 +1051,11 @@ static void test_reopen(ide_t *st, const char *dir)
     assert(!tiku_ide_recovery_write(restored));
     assert(access(restored->recovery, F_OK) == 0);
     tiku_ide_recovery_release(restored, 1);
-    tiku_textview_free(&restored->tv);
+    tiku_ide_text_free(restored);
     tiku_surface_free(restored->surface);
     restored->surface = NULL;
-    tiku_textview_free(&first->tv);
-    tiku_textview_free(&other->tv);
+    tiku_ide_text_free(first);
+    tiku_ide_text_free(other);
     free(first); free(other);
     unlink(lock);
     unlink(path);
@@ -1127,8 +1218,8 @@ static void test_launch_document(tiku_app_services_t *services, const char *dir)
     assert(!tiku_ide_start(&state, services));
     ide_t *opened = state;
     edit_t *e = tiku_ide_edit_of_path(opened, source);
-    assert(e && !e->load_failed && !tiku_textview_modified(&e->tv));
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 9876"));
+    assert(e && !e->load_failed && !tiku_editdoc_modified(e->doc));
+    assert(line_is(e, 0, "10 PRINT 9876"));
     assert(!opened->proj_file[0] && !opened->running);
     tiku_ide_stop(opened);
     services->startup_document = manifest;
@@ -1193,7 +1284,7 @@ int main(void)
     test_renumber_bounds();
     test_keyword_over_selection(st);
     test_follow_drops_selection(st);
-    test_return_at_line_limit(st);
+    test_return_makes_the_break(st);
     test_unbound_cmd_chords(st);
     test_find_bar(st);
     test_renumber_targets();

@@ -96,6 +96,13 @@ tiku_ide_run_file(ide_t *st, const char *path)
         tiku_ide_project_paint(st);
         return;
     }
+    if (!tiku_ide_basic_file_fits(st, path)) {
+        edit_t *e = tiku_ide_edit_of_path(st, path);
+
+        if (e) { snprintf(e->feedback, sizeof e->feedback, "%s", st->note); }
+        tiku_ide_project_paint(st);
+        return;
+    }
     snprintf(st->child_file, sizeof st->child_file, "%s", path);
     snprintf(box, sizeof box, "%s", path);
     slash = strrchr(box, '/');

@@ -12,6 +12,33 @@ static uint32_t opened(void *ctx, const char *title, int w, int h)
 { (void)ctx; (void)title; (void)w; (void)h; return 3; }
 static void closed(void *ctx, uint32_t id) { (void)ctx; (void)id; }
 
+/* Whether line @p line of the page reads @p want. */
+static int line_is(const edit_t *e, int64_t line, const char *want)
+{
+    char *text = tiku_ide_line_dup(e, line, NULL);
+    int same = text != NULL && strcmp(text, want) == 0;
+
+    free(text);
+    return same;
+}
+
+/* The page holding @p text, the caret at byte @p column of line 0. */
+static void set_text(edit_t *e, const char *text, int64_t line, int64_t column)
+{
+    assert(tiku_ide_text_load(e, text, strlen(text)) == TIKU_EDIT_OK);
+    tiku_ide_place(e, line, column);
+}
+
+/* The keyword the list has chosen. */
+static const char *chosen(const edit_t *e)
+{
+    size_t current = 0;
+
+    if (!tiku_codeview_list_shown(e->view, &current) || !e->assist_n)
+        return NULL;
+    return tiku_syntax_basic_keyword(e->assist_match[current]);
+}
+
 static void until_paused(ide_t *st, int pc)
 {
     int ticks;
@@ -52,29 +79,26 @@ int main(void)
     assert(e->surface);
     snprintf(e->path, sizeof e->path, "%s/program.bas", dir);
     snprintf(e->name, sizeof e->name, "program.bas");
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 pri");
-    tiku_textview_place(&e->tv, 0, 6);
+    set_text(e, "10 pri", 0, 6);
     tiku_ide_assist_open(e, 1);
-    assert(e->assist_n == 1);
-    assert(!strcmp(tiku_syntax_basic_keyword(e->assist_match[0]), "PRINT"));
+    assert(e->assist_n == 1 && chosen(e) && !strcmp(chosen(e), "PRINT"));
+    assert(tiku_codeview_tip_shown(e->view));
     tiku_ide_edit_paint(st, e);
     assert(tiku_surface_png(e->surface, "/tmp/tikubasic-completion.png") == 0);
     tiku_ide_assist_accept(e);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT"));
-    assert(tiku_textview_undo(&e->tv));
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 pri"));
-    tiku_textview_set(&e->tv, "10 REM pri");
-    tiku_textview_place(&e->tv, 0, 10);
+    assert(line_is(e, 0, "10 PRINT") && !e->assist_open);
+    assert(!tiku_codeview_list_shown(e->view, NULL));
+    assert(tiku_codeview_undo(e->view) == TIKU_EDIT_OK);
+    assert(line_is(e, 0, "10 pri"));
+    set_text(e, "10 REM pri", 0, 10);
     tiku_ide_assist_open(e, 1);
     assert(!e->assist_n);
-    tiku_textview_set(&e->tv, "10 PRINT \"pri\"");
-    tiku_textview_place(&e->tv, 0, 12);
+    set_text(e, "10 PRINT \"pri\"", 0, 12);
     tiku_ide_assist_open(e, 1);
     assert(!e->assist_n);
-    tiku_textview_set(&e->tv,
-        "10 A=1\n20 TEMP=42:A$=\"hello\":A=A+2\n30 PRINT A\n40 END");
-    tiku_textview_place(&e->tv, 2, 0);
+    tiku_ide_assist_close(e);
+    set_text(e, "10 A=1\n20 TEMP=42:A$=\"hello\":A=A+2\n30 PRINT A\n40 END",
+             2, 0);
     tiku_ide_debug_break(e);
     tiku_ide_debug_show(e);
     tiku_field_start(&e->watches, "A,TEMP,A$");
@@ -86,9 +110,9 @@ int main(void)
     assert(!strcmp(e->watch_value[0], "A = 0"));
     assert(!strcmp(e->watch_value[1], "TEMP = <not defined>"));
     tiku_ide_event(st, e->id, &key);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 A=1"));
+    assert(line_is(e, 0, "10 A=1"));
     tiku_ide_pick(st, e->id, CMD_RENUM);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 A=1"));
+    assert(line_is(e, 0, "10 A=1"));
     tiku_ide_debug_command(st, "DEBUG STEP");
     until_paused(st, 20);
     assert(!strcmp(e->watch_value[0], "A = 1"));
@@ -108,7 +132,7 @@ int main(void)
     assert(frames > 0);
     unlink(e->path);
     assert(rmdir(dir) == 0);
-    tiku_textview_free(&e->tv);
+    tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     tiku_surface_free(st->con_surface);
     free(st);

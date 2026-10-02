@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <signal.h>
@@ -33,7 +34,7 @@
 #include "tiku_syntax.h"
 #include "tiku_clipboard.h"
 #include "tiku_field.h"
-#include "tiku_textview.h"
+#include "tiku_codeview.h"
 #include "tiku_text_input.h"
 #include "tiku_board_basic.h"
 #include "tiku_ui.h"
@@ -66,7 +67,6 @@
 #define FIND_H     26   /* the find bar, dropped under the toolbar */
 #define TARGET_H   24
 #define SEARCH_TOP (TOOLBAR_H + TARGET_H)
-#define ASSIST_H 126
 #define DEBUG_H 134
 #define MARGIN     6
 
@@ -152,17 +152,32 @@ enum {
 #define CMD_CLEARBREAKS 34
 #define CMD_WINDOW   64         /* +i: the i'th editor of the Window menu */
 
+/* The line marker a breakpoint is, and how many lines may hold one. */
+#define IDE_MARK_BREAK 0
+#define IDE_BREAKS     16
+/* What the BASIC interpreter takes of a program line: the bytes it reads
+ * of a line, and the bytes after the line's number that it keeps. */
+#define IDE_BASIC_LINE 159
+#define IDE_BASIC_BODY 143
+/* The bytes tiku_ide_caret_text() reads of the caret's line. */
+#define IDE_CARET_TEXT 512
+
 /** @brief One editor window: its file, its text, and its window. */
 typedef struct {
     uint32_t             id;
     tiku_surface_t *surface;    /* NULL when the seat is free */
     int                  w, h;       /* the window's CURRENT content */
-    tiku_textview_t tv;
+    const tiku_app_services_t *services; /* the clipboard the page uses */
+    tiku_editdoc_t      *doc;            /* the page's text */
+    tiku_codeview_t     *view;           /* and its view, which holds it */
+    char                 newline[3];     /* the line break the file uses most */
+    char                *paste;          /* the clipboard's text made ready to
+                                            paste, freed by the next paste or
+                                            with the text */
     tiku_text_input_t commit;
     tiku_syntax_lang_t   lang;
     char                 path[512];
     char                 name[64];
-    int                  drag_select;   /* a press began on the page */
     int                  finding;        /* the find bar is open */
     tiku_field_t         find;           /* what is being searched for */
     tiku_field_t         replacement;
@@ -174,18 +189,17 @@ typedef struct {
     struct stat          disk;           /* the file as last read or saved */
     int                  disk_known;     /* disk holds it */
     int                  disk_changed;   /* the last save found it changed */
-    uint64_t             recovery_stamp;
+    uint64_t             recovery_state; /* the text the draft holds */
     int                  recovery_current;
     int                  recovery_blocked;
-    int                  assist_open, assist_at, assist_n;
+    int                  assist_open;    /* 1 keyword help, 2 completion */
+    int                  assist_n;       /* the keywords offered */
     int                  assist_match[192];
+    size_t               assist_at;      /* the one chosen */
     char                 assist_prefix[32];
-    int                  assist_y, assist_x0, assist_x1;
     int                  debug_show, watch_focus;
-    uint16_t             breaks[16];
     tiku_field_t         watches;
     char                 watch_value[8][112];
-    int                  scroll_x;       /* the page slid left, for long lines */
     int                  tip;            /* the toolbar tool under the pointer, -1 none */
 } edit_t;
 
@@ -296,6 +310,8 @@ typedef struct {
     uint32_t                        overwrite_editor; /* the save-over question's page */
     int                             debugging, debug_paused, debug_pc;
     int                             debug_values, debug_socket, debug_eof;
+    uint64_t                        debug_state;    /* the source text the
+                                                       debug run was given */
     tiku_board_basic_t              *local_debug;
 } ide_t;
 
@@ -305,14 +321,30 @@ extern const tiku_app_descriptor_t tiku_ide_app;
 
 #pragma GCC visibility push(hidden)
 
+/* Text. */
+int tiku_ide_text_new(edit_t *e);
+void tiku_ide_text_free(edit_t *e);
+tiku_edit_status_t tiku_ide_text_load(edit_t *e, const char *text, size_t n);
+char *tiku_ide_line_dup(const edit_t *e, int64_t line, size_t *length);
+long tiku_ide_line_number(const edit_t *e, int64_t line, int blanks);
+int tiku_ide_caret_text(const edit_t *e, char *text,
+                        tiku_edit_pos_t *start, size_t *got);
+tiku_edit_pos_t tiku_ide_caret(const edit_t *e, int64_t *line,
+                               int64_t *column);
+void tiku_ide_place(edit_t *e, int64_t line, int64_t column);
+tiku_edit_status_t tiku_ide_replace(edit_t *e, tiku_edit_pos_t start,
+                                    tiku_edit_pos_t end, const char *text,
+                                    size_t n, int typing);
+
 /* Editor view. */
 tiku_syntax_lang_t tiku_ide_lang_of(const char *name);
 int tiku_ide_tb_tool_at(const edit_t *e, int x, int y);
 int tiku_ide_edit_page_top(const edit_t *e);
 int tiku_ide_edit_page_bottom(const edit_t *e);
+void tiku_ide_edit_bounds(edit_t *e);
+void tiku_ide_edit_reveal(edit_t *e);
+void tiku_ide_edit_lock(ide_t *st, edit_t *e);
 void tiku_ide_edit_paint(ide_t *st, edit_t *e);
-int tiku_ide_edit_rows(const edit_t *e);
-void tiku_ide_edit_place_from_xy(edit_t *e, int x, int y);
 
 /* Editor. */
 edit_t * tiku_ide_edit_of_path(ide_t *st, const char *path);
@@ -324,14 +356,11 @@ void tiku_ide_edit_publish(ide_t *st, edit_t *e);
 void tiku_ide_edit_load(edit_t *e);
 int tiku_ide_edit_save(edit_t *e);
 int tiku_ide_edit_save_or_ask(ide_t *st, edit_t *e);
-void tiku_ide_type_number(tiku_textview_t *tv, int n);
-int tiku_ide_next_number(const tiku_textview_t *tv, int at);
+int tiku_ide_next_number(const edit_t *e, int64_t line);
 void tiku_ide_edit_open(ide_t *st, const prow_t *row);
 void tiku_ide_edit_drop(ide_t *st, edit_t *e);
-int tiku_ide_document_fits(const char *text);
 
 /* Search. */
-void tiku_ide_edit_select_span(edit_t *e, int y, int x0, int x1);
 void tiku_ide_search_project(ide_t *st, edit_t *e);
 void tiku_ide_search_open(edit_t *e, int replacing);
 tiku_rect_t tiku_ide_search_button(int i);
@@ -339,6 +368,8 @@ void tiku_ide_search_paint(edit_t *e);
 void tiku_ide_search_replace(edit_t *e, int all);
 int tiku_ide_search_pointer(edit_t *e, int x, int y);
 void tiku_ide_search_key(ide_t *st, edit_t *e, const tiku_event_t *ev);
+void tiku_ide_edit_select(edit_t *e, tiku_edit_pos_t anchor,
+                          tiku_edit_pos_t caret);
 
 /* Language. */
 int tiku_ide_norm_is_word(int c);
@@ -370,13 +401,15 @@ int tiku_ide_board_connected(ide_t *st, const char *board);
 void tiku_ide_target_text(ide_t *st, char *out, size_t max);
 void tiku_ide_target_paint(ide_t *st, edit_t *e);
 int tiku_ide_upload_read(ide_t *st, const char *path, char *out, size_t max);
+int tiku_ide_basic_fits(ide_t *st, const char *text, size_t n);
+int tiku_ide_basic_file_fits(ide_t *st, const char *path);
 
 /* Console. */
 void tiku_ide_messages_paint(ide_t *st);
 void tiku_ide_messages_publish(ide_t *st);
 void tiku_ide_messages_open(ide_t *st);
 void tiku_ide_message_take(ide_t *st, const char *line);
-int tiku_ide_line_of_number(const tiku_textview_t *tv, int want);
+int64_t tiku_ide_line_of_number(const edit_t *e, long want);
 void tiku_ide_console_take(ide_t *st, const char *line, int dim);
 void tiku_ide_console_paint(ide_t *st);
 void tiku_ide_console_publish(ide_t *st);
@@ -419,7 +452,8 @@ void tiku_ide_splash_drop(ide_t *st);
 
 /* Assist. */
 void tiku_ide_assist_open(edit_t *e, int complete);
-void tiku_ide_assist_paint(edit_t *e);
+void tiku_ide_assist_close(edit_t *e);
+void tiku_ide_assist_sync(edit_t *e);
 void tiku_ide_assist_accept(edit_t *e);
 int tiku_ide_assist_event(edit_t *e, const tiku_event_t *event);
 
@@ -427,6 +461,7 @@ int tiku_ide_assist_event(edit_t *e, const tiku_event_t *event);
 int tiku_ide_debug_locked(ide_t *st, edit_t *e);
 void tiku_ide_debug_show(edit_t *e);
 void tiku_ide_debug_break(edit_t *e);
+void tiku_ide_debug_clear(edit_t *e);
 void tiku_ide_debug_start(ide_t *st, edit_t *e);
 void tiku_ide_debug_command(ide_t *st, const char *command);
 int tiku_ide_debug_line(ide_t *st, const char *line);

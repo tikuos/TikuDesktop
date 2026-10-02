@@ -29,7 +29,7 @@ tiku_ide_run_file_where(ide_t *st, const char *path)
 
     if (st->running) { return; }
     if (e && (e->load_failed ||
-        (tiku_textview_modified(&e->tv) && !tiku_ide_edit_save(e)))) {
+        (tiku_editdoc_modified(e->doc) && !tiku_ide_edit_save(e)))) {
         snprintf(st->note, sizeof st->note, "Run cancelled: source could not be saved");
         tiku_ide_project_paint(st);
         return;
@@ -71,7 +71,8 @@ tiku_ide_run_file_on_board(ide_t *st, const char *path, const char *board)
         tiku_ide_project_paint(st);
         return;
     }
-    if (!tiku_ide_upload_read(st, path, program, sizeof program)) {
+    if (!tiku_ide_upload_read(st, path, program, sizeof program) ||
+        !tiku_ide_basic_fits(st, program, strlen(program))) {
         edit_t *e = tiku_ide_edit_of_path(st, path);
         if (e) { snprintf(e->feedback, sizeof e->feedback, "%s", st->note); }
         tiku_ide_project_paint(st);
@@ -122,7 +123,7 @@ tiku_ide_save_file_on_board(ide_t *st, const char *path)
     }
     if (st->ask.open) { return; }
     if (e && (e->load_failed ||
-        (tiku_textview_modified(&e->tv) && !tiku_ide_edit_save(e)))) {
+        (tiku_editdoc_modified(e->doc) && !tiku_ide_edit_save(e)))) {
         snprintf(st->note, sizeof st->note, "Upload cancelled: source save failed");
         tiku_ide_project_paint(st);
         return;
@@ -153,7 +154,11 @@ tiku_ide_save_file_on_board(ide_t *st, const char *path)
         tiku_ide_project_paint(st);
         return;
     }
-    if (!tiku_ide_upload_read(st, path, st->upload_program, sizeof st->upload_program)) {
+    if (!tiku_ide_upload_read(st, path, st->upload_program,
+                              sizeof st->upload_program) ||
+        !tiku_ide_basic_fits(st, st->upload_program,
+                             strlen(st->upload_program))) {
+        if (e) { snprintf(e->feedback, sizeof e->feedback, "%s", st->note); }
         tiku_ide_project_paint(st);
         return;
     }
@@ -422,4 +427,114 @@ tiku_ide_upload_read(ide_t *st, const char *path, char *out, size_t max)
     }
     out[n] = '\0';
     return 1;
+}
+
+/** @brief Where a scan of a program's line has got to. */
+typedef struct {
+    long line;                  /* the line, counted from 1             */
+    size_t len;                 /* its bytes so far                     */
+    size_t body;                /* its bytes after a number and blanks  */
+    int at;                     /* 0 start, 1 blanks, 2 number, 3 blanks
+                                   after it, 4 body, 5 unnumbered       */
+    int cr;                     /* the last byte was a CR               */
+} basic_scan_t;
+
+/** @brief Scan @p n bytes of a program, @p s keeping its place across
+ *         calls.  @return 0, with the reason in the note, at the first
+ *         byte BASIC would take differently from the page. */
+static int
+basic_scan(ide_t *st, basic_scan_t *s, const char *bytes, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)bytes[i];
+
+        if (c == '\n' && s->cr) {
+            s->cr = 0;
+            continue;
+        }
+        s->cr = c == '\r';
+        if (c == '\n' || c == '\r') {
+            s->line++;
+            s->len = s->body = 0;
+            s->at = 0;
+            continue;
+        }
+        if ((c < 32 && c != '\t') || c == 127) {
+            snprintf(st->note, sizeof st->note,
+                     "Line %ld holds a control character (^%c) "
+                     "BASIC cannot take",
+                     s->line, c == 127 ? '?' : c + 64);
+            return 0;
+        }
+        if (++s->len > IDE_BASIC_LINE) {
+            snprintf(st->note, sizeof st->note,
+                     "Line %ld is longer than the %d bytes BASIC reads",
+                     s->line, IDE_BASIC_LINE);
+            return 0;
+        }
+        if (c == ' ' || c == '\t') {
+            s->at = s->at == 0 ? 1 : s->at == 2 ? 3 : s->at;
+        } else if (c >= '0' && c <= '9' && s->at <= 2) {
+            s->at = 2;
+        } else if (s->at < 4) {
+            s->at = s->at >= 2 ? 4 : 5;
+        }
+        if (s->at == 4 && ++s->body > IDE_BASIC_BODY) {
+            snprintf(st->note, sizeof st->note,
+                     "Line %ld has more than the %d bytes BASIC keeps "
+                     "after its number",
+                     s->line, IDE_BASIC_BODY);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/**
+ * @brief Whether BASIC takes the @p n bytes of @p text as the page has
+ *        them: no control character but tab, CR and LF, no line longer
+ *        than it reads, and no more after a line's number than it keeps.
+ *
+ * The page holds any text; this is checked where a program leaves it,
+ * for a run, a board save or a debug run.  @return 0 with the reason in
+ * the note.
+ */
+int
+tiku_ide_basic_fits(ide_t *st, const char *text, size_t n)
+{
+    basic_scan_t s;
+
+    memset(&s, 0, sizeof s);
+    s.line = 1;
+    return basic_scan(st, &s, text, n);
+}
+
+/** @brief tiku_ide_basic_fits() over the file at @p path, read in
+ *         pieces. */
+int
+tiku_ide_basic_file_fits(ide_t *st, const char *path)
+{
+    char chunk[4096];
+    basic_scan_t s;
+    FILE *f = fopen(path, "rb");
+    size_t n;
+    int ok = 1;
+
+    if (f == NULL) {
+        snprintf(st->note, sizeof st->note, "Cannot read the program");
+        return 0;
+    }
+    memset(&s, 0, sizeof s);
+    s.line = 1;
+    while (ok && (n = fread(chunk, 1, sizeof chunk, f)) > 0) {
+        ok = basic_scan(st, &s, chunk, n);
+    }
+    if (ok && ferror(f)) {
+        snprintf(st->note, sizeof st->note, "Program read failed");
+        ok = 0;
+    }
+    fclose(f);
+    return ok;
 }

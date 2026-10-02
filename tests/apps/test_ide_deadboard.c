@@ -13,6 +13,16 @@ static void closed(void *ctx, uint32_t id) { (void)ctx; (void)id; }
 /* The board took the ask and was never heard from again. */
 static int dead_stop(void *ctx) { (void)ctx; stops++; return 0; }
 
+/* Whether line @p line of the page reads @p want. */
+static int line_is(const edit_t *e, int64_t line, const char *want)
+{
+    char *text = tiku_ide_line_dup(e, line, NULL);
+    int same = text != NULL && strcmp(text, want) == 0;
+
+    free(text);
+    return same;
+}
+
 int main(void)
 {
     tiku_app_services_t svc = { .frame = frame, .menus = menus,
@@ -33,8 +43,7 @@ int main(void)
     assert(e->surface);
     snprintf(e->path, sizeof e->path, "/tmp/tikubasic-dead.bas");
     snprintf(e->name, sizeof e->name, "dead.bas");
-    tiku_textview_init(&e->tv);
-    tiku_textview_set(&e->tv, "10 PRINT 1");
+    assert(tiku_ide_text_load(e, "10 PRINT 1", 10) == TIKU_EDIT_OK);
 
     /* A run is under way on a board, with the source locked to it. */
     st->running = 1;
@@ -43,7 +52,7 @@ int main(void)
     snprintf(st->child_file, sizeof st->child_file, "%s", e->path);
     assert(tiku_ide_debug_locked(st, e));
     (void)tiku_ide_event(st, e->id, &key);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 1"));
+    assert(line_is(e, 0, "10 PRINT 1"));
 
     /* Stop is asked; the board says nothing at all. */
     tiku_ide_run_stop(st, "? the run was stopped by hand");
@@ -60,8 +69,10 @@ int main(void)
     assert(!tiku_ide_debug_locked(st, e));
     assert(strstr(e->feedback, "did not answer") != NULL);
     (void)tiku_ide_event(st, e->id, &key);
-    assert(!strcmp(tiku_textview_line(&e->tv, 0), "10 PRINT 1x") ||
-           strchr(tiku_textview_line(&e->tv, 0), 'x') != NULL);
+    assert(line_is(e, 0, "x10 PRINT 1"));
+    tiku_ide_text_free(e);
+    tiku_surface_free(e->surface);
+    free(st);
     puts("PASS: a board that never answers Stop gives the page back");
     return 0;
 }

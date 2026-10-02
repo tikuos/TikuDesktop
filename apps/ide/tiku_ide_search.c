@@ -3,65 +3,30 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static int
-find_forward(const tiku_textview_t *tv, const char *q,
-             int sy, int sx, int *oy, int *ox);
+static tiku_edit_query_t
+query_of(const edit_t *e);
 static void
 edit_find_run(edit_t *e);
 
-/**
- * @brief The first hit of @p q at or after (sy,sx), wrapping once.
- *
- * Single-line matches -- a find is one line's worth of text -- swept
- * from the caret to the end and then, if nothing, from the top back to
- * the caret, so the second Return after the last hit lands on the
- * first.  @return 1 and the place, 0 for no hit.
- */
-static int
-find_forward(const tiku_textview_t *tv, const char *q,
-             int sy, int sx, int *oy, int *ox)
+/** @brief The find field as a literal, case-sensitive query. */
+static tiku_edit_query_t
+query_of(const edit_t *e)
 {
-    int qlen = (int)strlen(q);
-    int total = tiku_textview_lines(tv);
-    int L, i;
+    tiku_edit_query_t q;
 
-    if (qlen == 0) {
-        return 0;
-    }
-    for (L = sy; L < total; L++) {
-        const char *t = tiku_textview_line(tv, L);
-        int ll = tiku_textview_line_len(tv, L);
-        int start = (L == sy) ? sx : 0;
-
-        for (i = start; i + qlen <= ll; i++) {
-            if (memcmp(t + i, q, (size_t)qlen) == 0) {
-                *oy = L; *ox = i; return 1;
-            }
-        }
-    }
-    for (L = 0; L <= sy && L < total; L++) {
-        const char *t = tiku_textview_line(tv, L);
-        int ll = tiku_textview_line_len(tv, L);
-        int limit = (L == sy) ? sx : ll;
-
-        for (i = 0; i + qlen <= ll && i < limit; i++) {
-            if (memcmp(t + i, q, (size_t)qlen) == 0) {
-                *oy = L; *ox = i; return 1;
-            }
-        }
-    }
-    return 0;
+    q.text = e->find.text;
+    q.length = strlen(e->find.text);
+    q.flags = TIKU_EDIT_MATCH_CASE;
+    return q;
 }
 
-/** @brief Select the span [ (y,x0) , (y,x1) ] and bring it into view. */
+/** @brief Select from @p anchor to @p caret and bring the caret into
+ *         view. */
 void
-tiku_ide_edit_select_span(edit_t *e, int y, int x0, int x1)
+tiku_ide_edit_select(edit_t *e, tiku_edit_pos_t anchor, tiku_edit_pos_t caret)
 {
-    tiku_textview_place(&e->tv, y, x0);
-    tiku_textview_select_none(&e->tv);
-    tiku_textview_select_begin(&e->tv);
-    tiku_textview_place(&e->tv, y, x1);
-    (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+    (void)tiku_codeview_select(e->view, anchor, caret);
+    tiku_ide_edit_reveal(e);
 }
 
 /**
@@ -77,40 +42,51 @@ static void
 edit_find_run(edit_t *e)
 {
     const char *q = e->find.text;
-    int cy, cx, hy, hx;
+    tiku_edit_query_t query;
+    tiku_codeview_found_t found;
+    tiku_edit_pos_t anchor = 0, caret = 0;
 
     if (q[0] == '\0') {
         return;
     }
     if (e->lang == TIKU_SYNTAX_BASIC && !e->replacing) {
-        int alldig = 1, i;
+        size_t n = strlen(q), i;
+        int alldig = n < 32;
 
         for (i = 0; q[i] != '\0'; i++) {
             if (q[i] < '0' || q[i] > '9') { alldig = 0; break; }
         }
         if (alldig) {
-            int total = tiku_textview_lines(&e->tv);
-            int L, n = (int)strlen(q);
+            int64_t total = tiku_editdoc_lines(e->doc), L;
 
             for (L = 0; L < total; L++) {
-                const char *t = tiku_textview_line(&e->tv, L);
-                int d = 0;
+                tiku_edit_range_t r;
+                char head[34];
+                size_t got = 0;
 
-                while (t[d] >= '0' && t[d] <= '9') {
-                    d++;
+                r.start = tiku_editdoc_line_start(e->doc, L);
+                r.end = tiku_editdoc_line_end(e->doc, L);
+                if (r.end - r.start > (int64_t)n + 1) {
+                    r.end = r.start + (int64_t)n + 1;
                 }
-                if (d == n && memcmp(t, q, (size_t)n) == 0) {
-                    tiku_ide_edit_select_span(e, L, 0, d);
+                if (tiku_editdoc_read(e->doc, r, head, sizeof head, &got) ==
+                        TIKU_EDIT_OK && got >= n && memcmp(head, q, n) == 0 &&
+                    (got == n || head[n] < '0' || head[n] > '9')) {
+                    tiku_ide_edit_select(e, r.start, r.start + (int64_t)n);
                     return;
                 }
             }
             /* no line wears it: fall through and find it as text */
         }
     }
-    tiku_textview_caret(&e->tv, &cy, &cx);
-    if (find_forward(&e->tv, q, cy, cx, &hy, &hx)) {
-        tiku_ide_edit_select_span(e, hy, hx, hx + (int)strlen(q));
-        snprintf(e->feedback, sizeof e->feedback, "Match at line %d", hy + 1);
+    query = query_of(e);
+    if (tiku_codeview_find(e->view, &query, 0, &found) == TIKU_EDIT_OK &&
+        found.found &&
+        tiku_codeview_selection(e->view, &anchor, &caret) == TIKU_EDIT_OK) {
+        tiku_ide_edit_reveal(e);
+        snprintf(e->feedback, sizeof e->feedback, "Match at line %lld",
+                 (long long)tiku_editdoc_line_of(e->doc, anchor < caret
+                                                         ? anchor : caret) + 1);
     } else {
         snprintf(e->feedback, sizeof e->feedback, "No matches");
     }
@@ -135,7 +111,7 @@ tiku_ide_search_project(ide_t *st, edit_t *e)
     st->nmsg = 0;
     for (i = 0; i < st->proj.nrow && st->nmsg < IDE_MSGS; i++) {
         edit_t *source;
-        int y;
+        int64_t y;
 
         if (st->proj.row[i].heading) { continue; }
         source = tiku_ide_edit_of_path(st, st->proj.row[i].path);
@@ -146,19 +122,26 @@ tiku_ide_search_project(ide_t *st, edit_t *e)
             source = temp;
         }
         if (source->load_failed) { skipped++; }
-        for (y = 0; !source->load_failed && y < source->tv.nline &&
+        for (y = 0; !source->load_failed &&
+                    y < tiku_editdoc_lines(source->doc) &&
                     st->nmsg < IDE_MSGS; y++) {
-            const char *line = tiku_textview_line(&source->tv, y);
+            char *line = tiku_ide_line_dup(source, y, NULL), name[49];
             msg_t *m;
-            if (!strstr(line, e->find.text)) { continue; }
+
+            if (line == NULL || !strstr(line, e->find.text)) {
+                free(line);
+                continue;
+            }
+            snprintf(name, sizeof name, "%s", st->proj.row[i].name);
             m = &st->msg[st->nmsg++];
             memset(m, 0, sizeof *m);
             snprintf(m->file, sizeof m->file, "%s", source->path);
-            m->line = y + 1;
-            snprintf(m->text, sizeof m->text, "%.48s:%d: %.90s",
-                     st->proj.row[i].name, y + 1, line);
+            m->line = (int)y + 1;
+            snprintf(m->text, sizeof m->text, "%s:%d: %.90s", name, m->line,
+                     line);
+            free(line);
         }
-        if (source == temp) { tiku_textview_free(&temp->tv); }
+        if (source == temp) { tiku_ide_text_free(temp); }
     }
     free(temp);
     snprintf(e->feedback, sizeof e->feedback,
@@ -173,7 +156,7 @@ tiku_ide_search_project(ide_t *st, edit_t *e)
 void
 tiku_ide_search_open(edit_t *e, int replacing)
 {
-    e->assist_open = 0;
+    tiku_ide_assist_close(e);
     e->finding = 1;
     e->replacing = replacing;
     e->find_focus = 0;
@@ -211,21 +194,25 @@ tiku_ide_search_paint(edit_t *e)
     }
 }
 
-/** Build the result first so a line-length failure cannot partly replace it. */
+/** @brief Replace the selected match and select the next one, or with
+ *         @p all every match as one undo step, each selection kept on
+ *         its text. */
 void
 tiku_ide_search_replace(edit_t *e, int all)
 {
-    size_t qn = strlen(e->find.text), rn = strlen(e->replacement.text);
-    size_t cap = TIKU_TEXTVIEW_LINES_MAX * TIKU_TEXTVIEW_LINE_MAX;
-    char *result;
-    size_t used = 0;
-    int y, count = 0, y0 = -1, x0 = 0, y1, x1;
+    tiku_edit_query_t q = query_of(e);
+    tiku_codeview_found_t found;
+    tiku_edit_range_t selected;
+    tiku_edit_pos_t anchor = 0, caret = 0;
+    size_t rn = strlen(e->replacement.text);
+    int count;
 
     e->replacing = 1;
-    if (!qn) { return; }
-    if (!all && (!tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1) ||
-        y0 != y1 || x1 - x0 != (int)qn ||
-        memcmp(tiku_textview_line(&e->tv, y0) + x0, e->find.text, qn))) {
+    if (!q.length) { return; }
+    (void)tiku_codeview_selection(e->view, &anchor, &caret);
+    selected.start = anchor < caret ? anchor : caret;
+    selected.end = anchor < caret ? caret : anchor;
+    if (!all && !tiku_edit_is_match(e->doc, &q, selected)) {
         edit_find_run(e); /* First select a match; never replace unrelated text. */
         return;
     }
@@ -233,47 +220,21 @@ tiku_ide_search_replace(edit_t *e, int all)
         /* Nothing would change.  A selected match is stepped past, so
          * the next press goes on to the next one. */
         if (!all) {
-            tiku_textview_select_none(&e->tv);
-            tiku_textview_place(&e->tv, y0, x0 + (int)qn);
+            (void)tiku_codeview_select(e->view, selected.end, selected.end);
         }
         snprintf(e->feedback, sizeof e->feedback,
                  "Nothing changed: Replace text is the same as Find text");
         return;
     }
-    result = malloc(cap + 1);
-    if (!result) { return; }
-    for (y = 0; y < tiku_textview_lines(&e->tv); y++) {
-        const char *line = tiku_textview_line(&e->tv, y);
-        size_t x = 0, start = used;
-
-        if (y) { result[used++] = '\n'; start++; }
-        while (line[x]) {
-            int match = (all || (y == y0 && x == (size_t)x0)) &&
-                        strncmp(line + x, e->find.text, qn) == 0;
-            size_t n = match ? rn : 1;
-
-            if (used - start + n >= TIKU_TEXTVIEW_LINE_MAX) {
-                snprintf(e->feedback, sizeof e->feedback,
-                         "Not replaced: a result line would exceed 1023 bytes");
-                free(result);
-                return;
-            }
-            memcpy(result + used, match ? e->replacement.text : line + x, n);
-            used += n;
-            x += match ? qn : 1;
-            count += match;
-        }
+    if (all) {
+        (void)tiku_codeview_replace_all(e->view, &q, e->replacement.text, rn,
+                                        &found);
+    } else {
+        (void)tiku_codeview_replace(e->view, &q, e->replacement.text, rn,
+                                    &found);
     }
-    result[used] = '\0';
-    if (count) {
-        tiku_textview_group_begin(&e->tv);
-        tiku_textview_select_all(&e->tv);
-        tiku_textview_insert_text(&e->tv, result);
-        tiku_textview_group_end(&e->tv);
-        if (!all) { tiku_textview_place(&e->tv, y0, x0 + (int)rn); }
-        tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
-    }
-    free(result);
+    tiku_ide_edit_reveal(e);
+    count = (int)found.replaced;
     snprintf(e->feedback, sizeof e->feedback, "%d replacement%s%s", count,
              count == 1 ? "" : "s", all ? " in this file (Undo available)" : "");
 }

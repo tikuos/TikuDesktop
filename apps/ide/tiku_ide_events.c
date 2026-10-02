@@ -20,7 +20,7 @@ tiku_ide_unsaved(const ide_t *st, char *out, size_t max)
     for (i = 0; i < IDE_EDITS; i++) {
         const edit_t *e = &st->edit[i];
 
-        if (e->surface == NULL || !tiku_textview_modified(&e->tv)) {
+        if (e->surface == NULL || !tiku_editdoc_modified(e->doc)) {
             continue;
         }
         used += (size_t)snprintf(out + used, (used < max) ? max - used : 0u,
@@ -28,6 +28,154 @@ tiku_ide_unsaved(const ide_t *st, char *out, size_t max)
         n++;
     }
     return n;
+}
+
+/** @brief Whether @p key moves the caret. */
+static int
+move_key(unsigned key)
+{
+    return key >= TIKU_KEY_UP && key <= TIKU_KEY_PAGE_DOWN;
+}
+
+/**
+ * @brief A key on a page that no panel or tool took: the find bar's while
+ *        it is open, else the page's Command keys, moves and edits.
+ *
+ * Moves, Backspace, Delete and typed text are the view's.  Return is the
+ * page's, for BASIC's line numbers; Tab inserts nothing.
+ */
+static int
+page_key(ide_t *st, edit_t *e, const tiku_event_t *event, unsigned ch)
+{
+    int edited = 0;
+    uint64_t generation = tiku_editdoc_generation(e->doc);
+
+    if (e->finding) {
+        if (event->type != TIKU_EVENT_KEY_DOWN) { return 0; }
+        tiku_ide_search_key(st, e, event);
+        tiku_ide_edit_paint(st, e);
+        tiku_ide_edit_publish(st, e);
+        return 0;
+    }
+    /* Cmd-F opens the find bar, which then has the keys. */
+    if ((event->modifiers & TIKU_MOD_CMD) &&
+        (event->key == 'f' || event->key == 'h')) {
+        tiku_ide_search_open(e, event->key == 'h');
+        tiku_ide_edit_paint(st, e);
+        return 0;
+    }
+    /* The file keys: Cmd-S saves, Cmd-W closes THIS window, Cmd-R runs
+     * the page's own program, Cmd-. stops a run -- each the key its menu
+     * row says. */
+    if ((event->modifiers & TIKU_MOD_CMD) && event->key == 's') {
+        (void)tiku_ide_edit_save_or_ask(st, e);
+        tiku_ide_edit_paint(st, e);
+        tiku_ide_edit_publish(st, e);
+        tiku_ide_project_publish(st);
+        return 0;
+    }
+    if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'w') {
+        tiku_ide_edit_drop(st, e);
+        return 0;
+    }
+    if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'r' &&
+        e->lang == TIKU_SYNTAX_BASIC) {
+        (void)tiku_ide_edit_save(e);
+        tiku_ide_run_file_where(st, e->path);
+        tiku_ide_edit_paint(st, e);
+        tiku_ide_edit_publish(st, e);
+        tiku_ide_project_publish(st);
+        return 0;
+    }
+    if ((event->modifiers & TIKU_MOD_CMD) && event->key == '.' &&
+        e->lang == TIKU_SYNTAX_BASIC) {
+        tiku_ide_run_stop(st, "? the run was stopped by hand");
+        tiku_ide_edit_paint(st, e);
+        return 0;
+    }
+    /* The desk's editing keys, Cmd X/C/V/A and Cmd-Z / Cmd-Shift-Z for
+     * undo and redo, are caught before typing, so their letters are never
+     * typed. */
+    if ((event->modifiers & TIKU_MOD_CMD) &&
+        (event->key == 'x' || event->key == 'c' || event->key == 'v' ||
+         event->key == 'a' || event->key == 'z')) {
+        int cmd = (event->key == 'x') ? CMD_CUT
+                : (event->key == 'c') ? CMD_COPY
+                : (event->key == 'v') ? CMD_PASTE
+                : (event->key == 'a') ? CMD_SELALL
+                : ((event->modifiers & TIKU_MOD_SHIFT) ? CMD_REDO : CMD_UNDO);
+        int did = tiku_ide_edit_clip(st, e, cmd);
+
+        if (did && cmd != CMD_COPY && cmd != CMD_SELALL) {
+            tiku_ide_edit_reveal(e);
+            tiku_ide_edit_publish(st, e);
+            tiku_ide_project_publish(st);
+        }
+        tiku_ide_edit_paint(st, e);
+        return 0;
+    }
+    if (move_key(event->key)) {
+        /* The view's moves; a modifier it has no move for is dropped, so
+         * Option with Up, or Command with a page key, moves as the key
+         * alone does. */
+        if (!tiku_codeview_event(e->view, event)) {
+            tiku_event_t plain = *event;
+
+            plain.modifiers &= TIKU_MOD_SHIFT;
+            (void)tiku_codeview_event(e->view, &plain);
+        }
+    } else if (event->key == TIKU_KEY_RETURN) {
+        /* A BASIC line's next number is typed with the break, read from
+         * the line the break is made in once a held selection has gone;
+         * a line wearing none offers none, so prose in a .bas file is
+         * left alone. */
+        char text[24];
+        int n = 0;
+
+        tiku_ide_edit_normalize_word(e);   /* the return ends a word */
+        if (e->lang == TIKU_SYNTAX_BASIC) {
+            int64_t line;
+
+            (void)tiku_ide_caret(e, &line, NULL);
+            n = tiku_ide_next_number(e, line);
+        }
+        snprintf(text, sizeof text, n > 0 ? "%s%d " : "%s", e->newline, n);
+        (void)tiku_codeview_insert(e->view, text, strlen(text), 1);
+        edited = 1;
+    } else if (event->key == TIKU_KEY_BACKSPACE ||
+               event->key == TIKU_KEY_DELETE) {
+        (void)tiku_codeview_delete(e->view, event->key == TIKU_KEY_DELETE);
+        edited = 1;
+    } else if (event->key == TIKU_KEY_TAB ||
+               (event->modifiers & TIKU_MOD_CMD) || ch < 32u || ch == 127u) {
+        return 0;               /* not the page's key */
+    } else {
+        /* A non-word character ENDS the word before it, and a keyword
+         * there shouts before the character lands. */
+        if (ch < 128u && !tiku_ide_norm_is_word((int)ch)) {
+            tiku_ide_edit_normalize_word(e);
+        }
+        if (event->text[0] != '\0') {
+            (void)tiku_codeview_event(e->view, event);
+        } else {
+            char one[2] = { (char)ch, '\0' };
+
+            (void)tiku_codeview_insert(e->view, one, 1, 1);
+        }
+        edited = 1;
+    }
+    /* The caret is followed after EVERY move, so typing at the bottom of
+     * a long file never runs off the page edge. */
+    tiku_ide_edit_reveal(e);
+    if (edited) {
+        e->feedback[0] = '\0';
+    }
+    tiku_ide_edit_paint(st, e);
+    if (edited || tiku_editdoc_generation(e->doc) != generation) {
+        tiku_ide_edit_publish(st, e);
+        tiku_ide_project_publish(st);   /* the mark follows the document */
+    }
+    return 0;
 }
 
 int
@@ -38,20 +186,31 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
 
     if (e != NULL) {
         int result = tiku_text_input_event(&e->commit, event);
+        tiku_ide_edit_lock(st, e);
+        tiku_ide_edit_bounds(e);
         if (event->type == TIKU_EVENT_TEXT_INPUT) {
+            int field = e->finding || e->watch_focus;
+
             if ((tiku_ide_debug_locked(st, e) && !e->watch_focus) || st->ask.open) return 0;
+            /* A commit to the page is staged by the view, which is given
+             * every piece of it; the page's own staging says how the
+             * transfer went. */
+            if (!field) {
+                (void)tiku_codeview_event(e->view, event);
+            }
             if (result == TIKU_TEXT_REJECTED) {
                 snprintf(e->feedback, sizeof e->feedback, "Text input is invalid or too long.");
             } else if (result == TIKU_TEXT_COMPLETE) {
                 int accepted;
-                if (e->finding || e->watch_focus) {
-                    tiku_field_t *field = e->finding
+                if (field) {
+                    tiku_field_t *f = e->finding
                         ? (e->find_focus ? &e->replacement : &e->find) : &e->watches;
-                    accepted = tiku_field_commit(field, e->commit.text) != TIKU_FIELD_REJECTED;
+                    accepted = tiku_field_commit(f, e->commit.text) !=
+                               TIKU_FIELD_REJECTED;
                 } else {
-                    e->assist_open = 0;
-                    accepted = tiku_textview_commit(&e->tv, e->commit.text);
-                    (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+                    tiku_ide_assist_close(e);
+                    accepted = tiku_codeview_status(e->view) == TIKU_EDIT_OK;
+                    tiku_ide_edit_reveal(e);
                 }
                 snprintf(e->feedback, sizeof e->feedback, "%s",
                          accepted ? "" : "Text does not fit this field or line.");
@@ -136,7 +295,8 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
             edit_t *closing = tiku_ide_edit_of_id(st, st->closing_editor);
             if (closing && at == 1) {
                 tiku_ide_recovery_release(closing, 1);
-                tiku_textview_saved(&closing->tv);
+                tiku_editdoc_saved(closing->doc,
+                                   tiku_editdoc_state(closing->doc));
                 tiku_ide_edit_drop(st, closing);
             } else if (closing && at == 2) {
                 if (tiku_ide_edit_save_or_ask(st, closing)) { tiku_ide_edit_drop(st, closing); }
@@ -227,7 +387,7 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
                                                       TIKU_C_PANEL);
 
         if (grown != NULL) {
-            if (h < 320) { e->assist_open = e->finding = 0; }
+            if (h < 320) { tiku_ide_assist_close(e); e->finding = 0; }
             if (h < 260) { e->debug_show = e->watch_focus = 0; }
             tiku_surface_free(e->surface);
             e->surface = grown;
@@ -241,10 +401,7 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
         /* The wheel scrolls the page and leaves the caret where it is,
          * the way the scrollbar's track does: a person reading ahead
          * has not moved where they type. */
-        int rows = tiku_ide_edit_rows(e);
-        int top = tiku_textview_top(&e->tv);
-
-        (void)tiku_textview_scroll_to(&e->tv, top + event->dy, rows);
+        (void)tiku_codeview_event(e->view, event);
         tiku_ide_edit_paint(st, e);
         return 0;
     }
@@ -277,6 +434,7 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
         if (event->type == TIKU_EVENT_POINTER_DOWN) {
             tiku_rect_t save_b = TB_SAVE;
             tiku_rect_t run_b = TB_RUN;
+            uint64_t generation = tiku_editdoc_generation(e->doc);
 
             if (tiku_ide_search_pointer(e, event->x, event->y)) {
                 tiku_ide_edit_paint(st, e);
@@ -318,7 +476,7 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
 
                 if (hit_u || hit_r) {
                     if (tiku_ide_edit_clip(st, e, hit_u ? CMD_UNDO : CMD_REDO)) {
-                        (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+                        tiku_ide_edit_reveal(e);
                         tiku_ide_edit_paint(st, e);
                         tiku_ide_edit_publish(st, e);
                         tiku_ide_project_publish(st);
@@ -366,29 +524,31 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
              * person looking elsewhere has not moved where they type. */
             if (event->x >= e->w - PAGE_SB &&
                 event->y >= tiku_ide_edit_page_top(e) && event->y < tiku_ide_edit_page_bottom(e)) {
-                int rows = tiku_ide_edit_rows(e);
-                int top = tiku_textview_top(&e->tv);
+                int64_t rows = tiku_codeview_rows_visible(e->view);
+                int64_t top = tiku_codeview_top(e->view);
                 int ptop = tiku_ide_edit_page_top(e);
                 int mid = ptop + (tiku_ide_edit_page_bottom(e) - ptop) / 2;
-                int step = (rows > 1) ? rows - 1 : 1;
+                int64_t step = (rows > 1) ? rows - 1 : 1;
 
-                (void)tiku_textview_scroll_to(&e->tv,
-                    top + ((event->y < mid) ? -step : step), rows);
+                tiku_codeview_scroll_to(e->view,
+                    top + ((event->y < mid) ? -step : step),
+                    tiku_codeview_left(e->view));
                 tiku_ide_edit_paint(st, e);
                 return 0;
             }
-            /* Not a button or the bar: the page itself, so the caret
-             * goes where the pointer is.  The press ANCHORS a selection
-             * there -- a drag from here grows it, and a click that does
-             * not move leaves anchor and caret together, which is none. */
+            /* Not a button or the bar: the page itself, where the view
+             * puts the caret, selects words and lines and starts a drag,
+             * and a shown list or tip takes the presses on it. */
             if (event->x < e->w - PAGE_SB &&
-                event->y >= tiku_ide_edit_page_top(e) && event->y < tiku_ide_edit_page_bottom(e)) {
-                tiku_ide_edit_place_from_xy(e, event->x, event->y);
-                tiku_textview_select_none(&e->tv);
-                tiku_textview_select_begin(&e->tv);
-                e->drag_select = 1;
-                (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+                event->y >= tiku_ide_edit_page_top(e) &&
+                event->y < tiku_ide_edit_page_bottom(e) &&
+                tiku_codeview_event(e->view, event)) {
                 tiku_ide_edit_paint(st, e);
+                if (tiku_codeview_status(e->view) == TIKU_EDIT_OK &&
+                    tiku_editdoc_generation(e->doc) != generation) {
+                    tiku_ide_edit_publish(st, e);
+                    tiku_ide_project_publish(st);
+                }
             }
             return 0;
         }
@@ -403,212 +563,25 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 tiku_ide_edit_paint(st, e);
             }
             /* A drag from a page press extends the selection to the
-             * pointer; a move with no such press is not ours. */
-            if (e->drag_select &&
-                event->x < e->w - PAGE_SB &&
-                event->y >= tiku_ide_edit_page_top(e) && event->y < tiku_ide_edit_page_bottom(e)) {
-                tiku_ide_edit_place_from_xy(e, event->x, event->y);
-                (void)tiku_textview_reveal(&e->tv, tiku_ide_edit_rows(e));
+             * pointer; a move with no such press is not the view's. */
+            if (tiku_codeview_event(e->view, event)) {
                 tiku_ide_edit_paint(st, e);
             }
             return 0;
         }
         if (event->type == TIKU_EVENT_POINTER_UP) {
-            int y0, x0, y1, x1;
-
-            e->drag_select = 0;
-            /* A press that did not drag leaves no anchor behind, or a
-             * later caret move would select from the click point. */
-            if (!tiku_textview_selection(&e->tv, &y0, &x0, &y1, &x1)) {
-                tiku_textview_select_none(&e->tv);
+            if (tiku_codeview_event(e->view, event)) {
+                tiku_ide_edit_paint(st, e);
             }
             return 0;
         }
         if (ch == 0u) {
             ch = event->key;
         }
-        if (e->finding) {
-            if (event->type != TIKU_EVENT_KEY_DOWN) { return 0; }
-            tiku_ide_search_key(st, e, event);
-            tiku_ide_edit_paint(st, e);
-            tiku_ide_edit_publish(st, e);
+        if (event->type != TIKU_EVENT_KEY_DOWN) {
             return 0;
         }
-        {
-            int rows = tiku_ide_edit_rows(e);
-            int edited = 0;
-            int shift = (event->modifiers & TIKU_MOD_SHIFT) != 0;
-            int is_move =
-                event->key == TIKU_KEY_LEFT ||
-                event->key == TIKU_KEY_RIGHT ||
-                event->key == TIKU_KEY_UP ||
-                event->key == TIKU_KEY_DOWN ||
-                event->key == TIKU_KEY_HOME ||
-                event->key == TIKU_KEY_END ||
-                event->key == TIKU_KEY_PAGE_UP ||
-                event->key == TIKU_KEY_PAGE_DOWN;
-
-            /* Cmd-F opens the find bar, which then has the keys. */
-            if ((event->modifiers & TIKU_MOD_CMD) &&
-                (event->key == 'f' || event->key == 'h')) {
-                tiku_ide_search_open(e, event->key == 'h');
-                tiku_ide_edit_paint(st, e);
-                return 0;
-            }
-            /* The file keys: Cmd-S saves, Cmd-W closes THIS window,
-             * Cmd-R runs the page's own program, Cmd-. stops a run --
-             * each the key its menu row says. */
-            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 's') {
-                (void)tiku_ide_edit_save_or_ask(st, e);
-                tiku_ide_edit_paint(st, e);
-                tiku_ide_edit_publish(st, e);
-                tiku_ide_project_publish(st);
-                return 0;
-            }
-            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'w') {
-                tiku_ide_edit_drop(st, e);
-                return 0;
-            }
-            if ((event->modifiers & TIKU_MOD_CMD) && event->key == 'r' &&
-                e->lang == TIKU_SYNTAX_BASIC) {
-                (void)tiku_ide_edit_save(e);
-                tiku_ide_run_file_where(st, e->path);
-                tiku_ide_edit_paint(st, e);
-                tiku_ide_edit_publish(st, e);
-                tiku_ide_project_publish(st);
-                return 0;
-            }
-            if ((event->modifiers & TIKU_MOD_CMD) && event->key == '.' &&
-                e->lang == TIKU_SYNTAX_BASIC) {
-                tiku_ide_run_stop(st, "? the run was stopped by hand");
-                tiku_ide_edit_paint(st, e);
-                return 0;
-            }
-            /* The desk's editing keys -- Cmd X/C/V/A, and Cmd-Z /
-             * Cmd-Shift-Z for undo and redo -- caught before the
-             * switch, so their letters are never typed. */
-            if ((event->modifiers & TIKU_MOD_CMD) &&
-                (event->key == 'x' || event->key == 'c' ||
-                 event->key == 'v' || event->key == 'a' ||
-                 event->key == 'z')) {
-                int cmd = (event->key == 'x') ? CMD_CUT
-                        : (event->key == 'c') ? CMD_COPY
-                        : (event->key == 'v') ? CMD_PASTE
-                        : (event->key == 'a') ? CMD_SELALL
-                        : ((event->modifiers & TIKU_MOD_SHIFT)
-                               ? CMD_REDO : CMD_UNDO);
-                int did = tiku_ide_edit_clip(st, e, cmd);
-
-                if (did && cmd != CMD_COPY && cmd != CMD_SELALL) {
-                    (void)tiku_textview_reveal(&e->tv, rows);
-                    tiku_ide_edit_publish(st, e);
-                    tiku_ide_project_publish(st);
-                }
-                tiku_ide_edit_paint(st, e);
-                return 0;
-            }
-            /* A move with Shift GROWS the selection from where it was
-             * anchored; a move without lets any selection go.  The
-             * editing keys need no such care -- the view removes a
-             * selection before it inserts, breaks or rubs out. */
-            if (is_move) {
-                if (shift) {
-                    tiku_textview_select_begin(&e->tv);
-                } else {
-                    tiku_textview_select_none(&e->tv);
-                }
-            }
-
-            switch (event->key) {
-            case TIKU_KEY_LEFT:
-                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_LEFT);
-                break;
-            case TIKU_KEY_RIGHT:
-                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_RIGHT);
-                break;
-            case TIKU_KEY_UP:
-                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_UP);
-                break;
-            case TIKU_KEY_DOWN:
-                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_DOWN);
-                break;
-            case TIKU_KEY_HOME:
-                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_HOME);
-                break;
-            case TIKU_KEY_END:
-                tiku_textview_move(&e->tv, TIKU_TEXTVIEW_END);
-                break;
-            case TIKU_KEY_PAGE_UP:
-            case TIKU_KEY_PAGE_DOWN: {
-                /* A screenful, the caret keeping its column where the
-                 * line it lands on is long enough to hold it. */
-                int cy, cx;
-
-                tiku_textview_caret(&e->tv, &cy, &cx);
-                cy += (event->key == TIKU_KEY_PAGE_UP) ? -rows : rows;
-                tiku_textview_place(&e->tv, cy, cx);
-                break;
-            }
-            case TIKU_KEY_DELETE:
-                tiku_textview_delete(&e->tv);
-                edited = 1;
-                break;
-            case TIKU_KEY_BACKSPACE:
-                tiku_textview_backspace(&e->tv);
-                edited = 1;
-                break;
-            case TIKU_KEY_RETURN: {
-                int cy, cx, n, lines;
-
-                tiku_ide_edit_normalize_word(e);   /* the return ends a word */
-                /* Read after a held selection has gone, so the number
-                 * comes from the line the break is made in. */
-                tiku_textview_caret(&e->tv, &cy, &cx);
-                lines = tiku_textview_lines(&e->tv);
-                tiku_textview_newline(&e->tv);
-                /* The next line's number, already typed: the numbers
-                 * are the language's bookkeeping, and bookkeeping is
-                 * what a machine is FOR.  A line wearing none offers
-                 * none, so prose in a .bas file is not fought over, and
-                 * a break the page had no room for offers none either. */
-                if (e->lang == TIKU_SYNTAX_BASIC &&
-                    tiku_textview_lines(&e->tv) > lines) {
-                    n = tiku_ide_next_number(&e->tv, cy);
-                    if (n > 0) {
-                        tiku_ide_type_number(&e->tv, n);
-                    }
-                }
-                edited = 1;
-                break;
-            }
-            default:
-                /* A Cmd chord is a command; one no binding took above
-                 * types nothing, whatever text it carries. */
-                if (ch >= 32u && ch < 127u &&
-                    !(event->modifiers & TIKU_MOD_CMD)) {
-                    /* A non-word character ENDS the word before it, and
-                     * a keyword there shouts before the character lands. */
-                    if (!tiku_ide_norm_is_word((int)ch)) {
-                        tiku_ide_edit_normalize_word(e);
-                    }
-                    tiku_textview_insert(&e->tv, (char)ch);
-                    edited = 1;
-                } else {
-                    return 0;   /* not the editor's key */
-                }
-                break;
-            }
-            /* The caret is followed after EVERY move, so typing at the
-             * bottom of a long file never runs off the page edge. */
-            (void)tiku_textview_reveal(&e->tv, rows);
-            tiku_ide_edit_paint(st, e);
-            if (edited) {
-                e->feedback[0] = '\0';
-                tiku_ide_edit_publish(st, e);
-                tiku_ide_project_publish(st);   /* the mark follows the document */
-            }
-            return 0;
-        }
+        return page_key(st, e, event, ch);
     }
         if (window == st->con_id && st->con_surface != NULL) {
         if (event->type == TIKU_EVENT_WHEEL) {
