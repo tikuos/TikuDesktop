@@ -207,20 +207,25 @@ static void clipboard_command(edit_state_t *st, int command)
 /** Menus expose the same commands and shortcut routes as the keyboard. */
 void tiku_editor_publish(edit_state_t *st)
 {
-    tiku_menuset_t menus = {0}; menus.nmenu = 4;
-    const char *titles[] = {"File", "Edit", "Search", "View"};
-    const char *labels[][7] = {
+    tiku_menuset_t menus = {0}; menus.nmenu = 5;
+    const char *titles[] = {"File", "Edit", "Search", "View", "Text"};
+    const char *labels[][9] = {
         {"New", "Open…", "Save", "Save As…", "Revert", "Close"},
         {"Undo", "Redo", "Cut", "Copy", "Paste", "Select All"},
         {"Find…", "Find Next", "Find Previous", "Replace…", "Go to Line…", "Replace All"},
-        {"Line Numbers", "Colour as BASIC", "Run", "Show Invisibles"}};
-    const int commands[][7] = {
+        {"Line Numbers", "Colour as BASIC", "Run", "Show Invisibles"},
+        {"Indent Lines", "Unindent Lines", "Toggle Comment", "Duplicate Lines",
+         "Move Lines Up", "Move Lines Down", "Delete Lines",
+         "Go to Matching Bracket", "Select to Matching Bracket"}};
+    const int commands[][9] = {
         {CMD_NEW, CMD_OPEN, CMD_SAVE, CMD_SAVEAS, CMD_REVERT, CMD_QUIT},
         {CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE, CMD_ALL},
         {CMD_FIND, CMD_NEXT, CMD_PREV, CMD_REPLACE, CMD_GOTO, CMD_REPLACE_ALL},
-        {CMD_NUMBERS, CMD_SYNTAX, CMD_RUN, CMD_INVISIBLES}};
-    const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r "};
-    const int counts[] = {6, 6, 6, 4};
+        {CMD_NUMBERS, CMD_SYNTAX, CMD_RUN, CMD_INVISIBLES},
+        {CMD_INDENT, CMD_UNINDENT, CMD_COMMENT, CMD_DUPLICATE, CMD_LINES_UP,
+         CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET}};
+    const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r ", "  /d  kmm"};
+    const int counts[] = {6, 6, 6, 4, 9};
     tiku_edit_pos_t anchor = 0, caret = 0;
     (void)tiku_codeview_selection(st->view, &anchor, &caret);
     int selected = anchor != caret;
@@ -229,7 +234,7 @@ void tiku_editor_publish(edit_state_t *st)
         tiku_field_t *f = &st->field[st->find_focus];
         selected = f->sel_a != f->sel_b;
     }
-    for (int m = 0; m < 4; m++) {
+    for (int m = 0; m < 5; m++) {
         snprintf(menus.menu[m].title, sizeof menus.menu[m].title, "%s", titles[m]);
         menus.menu[m].nitem = counts[m];
         for (int i = 0; i < counts[m]; i++) {
@@ -243,10 +248,14 @@ void tiku_editor_publish(edit_state_t *st)
             if (cmd == CMD_OPEN || cmd == CMD_SAVEAS) enabled &= st->services->pick != NULL;
             if (cmd == CMD_REVERT) enabled &= st->path[0] != 0;
             if (cmd == CMD_RUN) enabled &= st->lang == TIKU_SYNTAX_BASIC && !st->running;
+            if (cmd == CMD_COMMENT)
+                enabled &= tiku_codeview_rules(st->view)->comment != NULL;
             snprintf(menus.menu[m].item[i].label, sizeof menus.menu[m].item[i].label, "%s", labels[m][i]);
             menus.menu[m].item[i].command = cmd;
             menus.menu[m].item[i].enabled = enabled;
             menus.menu[m].item[i].sc = keys[m][i] == ' ' ? 0 : keys[m][i];
+            if (cmd == CMD_DELETE_LINES || cmd == CMD_SELECT_BRACKET)
+                menus.menu[m].item[i].mods = TIKU_MOD_CMD | TIKU_MOD_SHIFT;
             menus.menu[m].item[i].marked = cmd == CMD_NUMBERS ? st->numbers :
                 cmd == CMD_SYNTAX ? st->lang == TIKU_SYNTAX_BASIC :
                 cmd == CMD_INVISIBLES ? st->show_invisibles : 0;
@@ -256,6 +265,14 @@ void tiku_editor_publish(edit_state_t *st)
         st->services->menus(st->services->ctx, st->id, &menus) >= 0)
         st->last_menus = menus;
     if (st->search_id) st->services->menus(st->services->ctx, st->search_id, &menus);
+}
+
+/** Report what a Text command did: an edit clears the note, a refusal
+ *  says why, and nothing to do says nothing. */
+static void text_command(edit_state_t *st, tiku_edit_status_t status)
+{
+    if (status == TIKU_EDIT_OK) tiku_editor_edited(st);
+    else if (status != TIKU_EDIT_NOTHING) tiku_editor_refused(st, status);
 }
 
 /** Dispatch commands once; menu actions and key bindings cannot diverge. */
@@ -314,6 +331,28 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
         tiku_codeview_set_language(st->view, st->lang);
         break;
     case CMD_RUN: if (st->lang == TIKU_SYNTAX_BASIC) tiku_editor_run_program(st); break;
+    case CMD_INDENT: case CMD_UNINDENT:
+        text_command(st, tiku_codeview_indent(st->view,
+                                              command == CMD_UNINDENT));
+        break;
+    case CMD_COMMENT:
+        text_command(st, tiku_codeview_toggle_comment(st->view)); break;
+    case CMD_DUPLICATE:
+        text_command(st, tiku_codeview_duplicate_lines(st->view)); break;
+    case CMD_LINES_UP: case CMD_LINES_DOWN:
+        text_command(st, tiku_codeview_move_lines(st->view,
+                                                  command == CMD_LINES_DOWN));
+        break;
+    case CMD_DELETE_LINES:
+        text_command(st, tiku_codeview_delete_lines(st->view)); break;
+    case CMD_WORD_BACK: case CMD_WORD_ON:
+        text_command(st, tiku_codeview_delete_word(st->view,
+                                                   command == CMD_WORD_ON));
+        break;
+    case CMD_BRACKET: case CMD_SELECT_BRACKET:
+        (void)tiku_codeview_goto_bracket(st->view,
+                                         command == CMD_SELECT_BRACKET);
+        break;
     default: return 0;
     }
     tiku_editor_reveal(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0;

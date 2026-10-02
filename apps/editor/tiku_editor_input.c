@@ -277,7 +277,7 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
     unsigned key = e->key;
     if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
     if (e->modifiers & TIKU_MOD_CMD) {
-        int cmd = 0;
+        int cmd = 0, shift = (e->modifiers & TIKU_MOD_SHIFT) != 0;
         switch (key) {
         case 'n': cmd = CMD_NEW; break; case 'o': cmd = CMD_OPEN; break;
         case 's': cmd = e->modifiers & TIKU_MOD_SHIFT ? CMD_SAVEAS : CMD_SAVE; break;
@@ -289,6 +289,14 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         case 'h': cmd = CMD_REPLACE; break; case 'g': cmd = CMD_GOTO; break;
         case 'r': cmd = CMD_RUN; break;
         case ']': cmd = CMD_NEXT; break; case '[': cmd = CMD_PREV; break;
+        case '/': cmd = CMD_COMMENT; break;
+        case 'd': cmd = shift ? 0 : CMD_DUPLICATE; break;
+        case 'k': cmd = shift ? CMD_DELETE_LINES : 0; break;
+        case 'm': cmd = shift ? CMD_SELECT_BRACKET : CMD_BRACKET; break;
+        case TIKU_KEY_UP: cmd = shift ? CMD_LINES_UP : 0; break;
+        case TIKU_KEY_DOWN: cmd = shift ? CMD_LINES_DOWN : 0; break;
+        case TIKU_KEY_BACKSPACE: cmd = CMD_WORD_BACK; break;
+        case TIKU_KEY_DELETE: cmd = CMD_WORD_ON; break;
         case TIKU_KEY_HOME: case TIKU_KEY_END: case TIKU_KEY_LEFT: case TIKU_KEY_RIGHT:
             view_key(st, e);
             tiku_editor_reveal(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0;

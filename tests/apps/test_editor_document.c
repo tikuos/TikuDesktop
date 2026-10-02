@@ -724,7 +724,8 @@ static void editor_rows(edit_state_t *st)
     tiku_editor_pick(st, st->id, CMD_NUMBERS);
     assert(!(tiku_codeview_options(st->view) & TIKU_CODEVIEW_LINE_NUMBERS));
     tiku_editor_pick(st, st->id, CMD_INVISIBLES); tiku_editor_pick(st, st->id, CMD_NUMBERS);
-    assert(tiku_codeview_options(st->view) == TIKU_CODEVIEW_LINE_NUMBERS);
+    assert(tiku_codeview_options(st->view) ==
+           (TIKU_CODEVIEW_LINE_NUMBERS | TIKU_CODEVIEW_BRACES));
     assert(set_text(st, ""));
 }
 
@@ -748,6 +749,56 @@ static int window_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 {
     (void)ctx; (void)id; (void)set;
     return 0;
+}
+
+/** The Text menu: its rows and shortcuts, and its commands by key and by
+ *  menu through the view's line commands; Return keeps the indentation
+ *  and a C closer goes back to its opener's. */
+static void text_menu(edit_state_t *st)
+{
+    const tiku_menu_list_t *text = &st->last_menus.menu[4];
+    int64_t y, x;
+    st->lang = TIKU_SYNTAX_C; tiku_codeview_set_language(st->view, st->lang);
+    assert(set_text(st, "int f() {"));
+    place(st, 0, 9); key(st, TIKU_KEY_RETURN, 0);
+    assert(lines(st) == 2 && !strcmp(line(st, 1), "\t"));
+    key(st, '}', 0); assert(!strcmp(line(st, 1), "}"));
+    tiku_editor_publish(st);
+    assert(st->last_menus.nmenu == 5 && !strcmp(text->title, "Text") &&
+           text->nitem == 9);
+    assert(text->item[2].command == CMD_COMMENT && text->item[2].sc == '/' &&
+           text->item[2].enabled && text->item[3].sc == 'd');
+    assert(text->item[6].command == CMD_DELETE_LINES &&
+           text->item[6].sc == 'k' &&
+           text->item[6].mods == (TIKU_MOD_CMD | TIKU_MOD_SHIFT));
+    assert(set_text(st, "a();\nb();"));
+    place(st, 0, 0); key(st, '/', TIKU_MOD_CMD);
+    assert(!strcmp(line(st, 0), "// a();"));
+    snprintf(st->note, sizeof st->note, "Saved");
+    tiku_editor_pick(st, st->id, CMD_COMMENT);
+    assert(!strcmp(line(st, 0), "a();") && !st->note[0]);
+    key(st, 'd', TIKU_MOD_CMD);
+    assert(lines(st) == 3 && !strcmp(line(st, 1), "a();"));
+    key(st, TIKU_KEY_DOWN, TIKU_MOD_CMD | TIKU_MOD_SHIFT);
+    assert(!strcmp(line(st, 1), "b();") && !strcmp(line(st, 2), "a();"));
+    tiku_editor_pick(st, st->id, CMD_LINES_UP);
+    assert(!strcmp(line(st, 1), "a();") && !strcmp(line(st, 2), "b();"));
+    key(st, 'k', TIKU_MOD_CMD | TIKU_MOD_SHIFT);
+    assert(lines(st) == 2 && !strcmp(line(st, 1), "b();"));
+    tiku_editor_pick(st, st->id, CMD_INDENT);
+    assert(!strcmp(line(st, 1), "\tb();"));
+    tiku_editor_pick(st, st->id, CMD_UNINDENT);
+    assert(!strcmp(line(st, 1), "b();"));
+    assert(set_text(st, "f(alpha)"));
+    place(st, 0, 2); key(st, 'm', TIKU_MOD_CMD);
+    caret_at(st, &y, &x); assert(x == 8);
+    tiku_editor_pick(st, st->id, CMD_SELECT_BRACKET);
+    assert(selected(st, 8, 1));
+    place(st, 0, 7); key(st, TIKU_KEY_BACKSPACE, TIKU_MOD_CMD);
+    assert(!strcmp(line(st, 0), "f()"));
+    st->lang = TIKU_SYNTAX_NONE; tiku_codeview_set_language(st->view, st->lang);
+    tiku_editor_publish(st); assert(!text->item[2].enabled);
+    key(st, '/', TIKU_MOD_CMD); assert(!strcmp(line(st, 0), "f()"));
 }
 
 /** @brief A launch argument loads its contents, never a remembered document. */
@@ -784,6 +835,7 @@ int main(void)
     kept_bytes(st, dir);
     caret_rules(st);
     editor_rows(st);
+    text_menu(st);
     undo_roundtrips(st);
     history_rollover(st);
     large_documents(st, dir);
