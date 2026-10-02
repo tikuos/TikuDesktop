@@ -96,7 +96,8 @@ typedef struct {
     uint64_t state;             /* the history state                    */
     int modified, undo, redo;   /* the flags                            */
     tiku_edit_pos_t anchor;     /* the watched anchor                   */
-    tiku_edit_pos_t sel[2];     /* the watched selection                */
+    tiku_edit_selection_t sel[8]; /* the watched view's selections      */
+    size_t nsel, main;          /* how many, and the main one           */
     int heard;                  /* notifications so far                 */
 } seen_t;
 
@@ -132,7 +133,8 @@ look(tiku_editdoc_t *doc, seen_t *s)
     s->undo = tiku_editdoc_can_undo(doc);
     s->redo = tiku_editdoc_can_redo(doc);
     tiku_editdoc_anchor_pos(doc, watched_anchor, &s->anchor);
-    tiku_editdoc_view_selection(doc, watched_view, &s->sel[0], &s->sel[1]);
+    s->nsel = tiku_editdoc_view_selections(doc, watched_view, s->sel, 8,
+                                           &s->main);
     s->heard = heard;
 }
 
@@ -245,6 +247,53 @@ op_replace_all(tiku_editdoc_t *doc)
     return tiku_editdoc_apply(doc, &t);
 }
 
+/** @brief Four selections at the first caret positions, the view's room
+ *         for them grown. */
+static tiku_edit_status_t
+op_select_many(tiku_editdoc_t *doc)
+{
+    tiku_edit_selection_t s[4];
+    tiku_edit_pos_t pos = 0;
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        s[i].anchor = pos;
+        pos = tiku_editdoc_next(doc, tiku_editdoc_next(doc, pos));
+        s[i].caret = i % 2 ? pos : s[i].anchor;
+        pos = tiku_editdoc_next(doc, pos);
+    }
+    return tiku_editdoc_view_select_many(doc, watched_view, s, 4, 2);
+}
+
+/** @brief Typing at five carets a caret position apart, setting five
+ *         after it. */
+static tiku_edit_status_t
+op_type_many(tiku_editdoc_t *doc)
+{
+    tiku_edit_replace_t r[5];
+    tiku_edit_selection_t after[5];
+    tiku_edit_transaction_t t;
+    tiku_edit_pos_t pos = 0;
+    int i;
+
+    for (i = 0; i < 5; i++) {
+        r[i].range.start = r[i].range.end = pos;
+        r[i].text = "m";
+        r[i].length = 1;
+        after[i].anchor = after[i].caret = pos + i + 1;
+        pos = tiku_editdoc_next(doc, pos);
+    }
+    memset(&t, 0, sizeof t);
+    t.edits = r;
+    t.count = 5;
+    t.view = watched_view;
+    t.select = 1;
+    t.selections = after;
+    t.nselections = 5;
+    t.main = 4;
+    return tiku_editdoc_apply(doc, &t);
+}
+
 /** @brief Undo and redo. */
 static tiku_edit_status_t
 op_undo(tiku_editdoc_t *doc)
@@ -351,6 +400,13 @@ main(void)
     injected += sweep(doc, op_undo, "HIS-UNDO");
     injected += sweep(doc, op_redo, "HIS-REDO");
     injected += sweep(doc, op_snapshot, "DOC-011");
+    injected += sweep(doc, op_select_many, "SEL-007");
+    injected += sweep(doc, op_type_many, "SEL-007");
+    type_at = 0;
+    injected += sweep(doc, op_type, "SEL-007");
+    injected += sweep(doc, op_undo, "SEL-007");
+    injected += sweep(doc, op_undo, "SEL-007");
+    injected += sweep(doc, op_redo, "SEL-007");
     for (i = 0; i < 6; i++) {
         injected += sweep(doc, op_anchor, "MRK-005");
         injected += sweep(doc, op_view, "MRK-008");
