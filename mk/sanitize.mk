@@ -49,7 +49,7 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_codeview_input test_codeview_display \
                   test_codeview_edit test_codeview_find \
                   test_codeview_style test_codeview_host \
-                  test_editor_document
+                  test_editor_document test_ide_workflow test_ide_page
 # The timing suite is left out: it times large fixtures, which the
 # sanitizers slow many times over.
 SAN_TESTS += $(SAN_LEAK_TESTS)
@@ -59,7 +59,8 @@ SAN_LEAKS := $(if $(filter Darwin,$(UNAME_S)),0,1)
 # intermediates, it deleted them after every run, built them all again on
 # the next, and under -j spun in place deciding whether it had to.
 SAN_KIT_TEST_OBJS := $(patsubst %,$(SAN)/tests/kits/%.o,\
-                         $(filter-out $(SAN_APP_TESTS) test_editor_document,$(SAN_TESTS)))
+                         $(filter-out $(SAN_APP_TESTS) test_editor_document \
+                                      test_ide_workflow test_ide_page,$(SAN_TESTS)))
 $(SAN_KIT_TEST_OBJS):
 
 # These suites include their viewer sources directly. Rebuild when an
@@ -85,6 +86,15 @@ $(SAN)/tests/apps/test_editor_document.o:
 $(SAN)/test_editor_document: $(SAN)/tests/apps/test_editor_document.o \
         $(SAN_EDITOR_OBJS) $(SAN_OBJS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_EDITOR_OBJS) $(SAN_OBJS) \
+	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+
+# The IDE suites link the IDE's sources the same way.
+SAN_IDE_OBJS := $(patsubst %.c,$(SAN)/%.o,$(IDE_SRC))
+$(SAN)/apps/ide/tiku_ide_app.o: override CFLAGS += -DTIKU_APP_EMBED
+$(SAN)/tests/apps/test_ide_workflow.o $(SAN)/tests/apps/test_ide_page.o:
+$(SAN)/test_ide_workflow $(SAN)/test_ide_page: $(SAN)/test_%: \
+        $(SAN)/tests/apps/test_%.o $(SAN_IDE_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_IDE_OBJS) $(SAN_OBJS) \
 	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 
 $(SAN)/apps/%.o: apps/%.c | prepare-build

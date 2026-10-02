@@ -258,6 +258,9 @@ test_editor_baseline_SRCS := $(EDITOR_SRC)
 test_editor_baseline_LIBS := $(LIB_EDITOR)
 test_editor_baseline_LDLIBS := $(X11_LIBS) -lm
 test_ide_baseline_SRCS := $(IDE_SRC)
+test_ide_page_SRCS := $(IDE_SRC)
+test_ide_page_LIBS := $(LIB_EDITOR)
+test_ide_page_LDLIBS := $(X11_LIBS) -lm
 test_ide_baseline_LIBS := $(LIB_EDITOR)
 test_ide_baseline_LDLIBS := $(X11_LIBS) -lm
 
