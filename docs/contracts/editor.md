@@ -164,6 +164,16 @@ These are settled for the engine. The migration rows they affect are marked
     the lines it touched and the folded lines next to it. This qualifies
     DSP-001 and DSP-007 (the fold column), and Editor's Text menu gains the
     fold commands (FLD rows, EDR-FOLD rows).
+21. **A view can hold several selections.** The document keeps each view's
+    selections in order, those that overlap merged, one of them the main one
+    the one-selection calls read. Typing, deleting, Return, Tab and the
+    clipboard change every selection as one transaction, and undo gives the
+    whole set back; other commands act on the main one and drop the rest. A
+    Command press adds a caret, an Option drag selects a rectangle by drawn
+    columns, and Escape keeps the main one. This qualifies EDT-001 and
+    EDR-KEY-001 (a step with several selections joins no typing) and FLD-005
+    (every selection leaves a folded region), and Editor's Text menu gains
+    Carets to Line Ends (SEL, CAR and EDR-CARET rows).
 
 ## Document engine
 
@@ -233,6 +243,18 @@ These are settled for the engine. The migration rows they affect are marked
 | MRK-010 | Tiku | While listeners are being told, edits, undo, redo and loads are refused with `TIKU_EDIT_BUSY`; selections and anchors may be set | done | `test_editdoc_marks.c:listeners` |
 | MRK-011 | Tiku | A listener removed while listeners are told is not called; one added hears the next change, not the current one, even when the table grows | done | `test_editdoc_marks.c:listeners`, `test_editdoc_marks.c:listener_added_later` |
 | MRK-012 | Tiku | When a listener releases the last reference, the document is freed after the notification ends | done | `test_editdoc_marks.c:listeners` |
+
+### Several selections
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| SEL-001 | Tiku | A view's selections are set together at caret positions, one of them the main one that `tiku_editdoc_view_selection()` reads, and setting one selection keeps it alone. A view not attached, none given, a main one past them, or an end outside the text or between a CR and its LF is refused and nothing changes; setting them ends the view's typing step | done | `test_editdoc_selections.c:setting` |
+| SEL-002 | Tiku | They read back in order of their starts. Two that overlap become one, as do a caret and a selection or caret it touches; two selections that only touch stay two. The one made with the main one is main and faces its way, a main caret taking the other's way, and a caret touching two joins the earlier | done | `test_editdoc_selections.c:merging`, `model` |
+| SEL-003 | Scintilla `Selection.cxx` | Every selection moves through an edit as MRK-006 and MRK-007 move the main one, and those an edit brings together become one by SEL-002 | done | `test_editdoc_selections.c:editing`, `model` |
+| SEL-004 | Tiku | A transaction from a view may set the view's selections after it, in the coordinates after, merged by SEL-002; one with a selection that will not be at caret positions, or a main one past them, is refused whole. Without them the edit moves the view's selections, and an anchor and caret leave that one alone | done | `test_editdoc_selections.c:transactions` |
+| SEL-005 | Tiku | Undo gives back every selection the view had before a step and redo every one after it, those the step only moved included; a step that has or leaves several selections joins no typing before or after it | done | `test_editdoc_selections.c:history` |
+| SEL-006 | Tiku | Each view keeps its own selections, and a view attached where one was detached starts with one caret at 0 | done | `test_editdoc_selections.c:views` |
+| SEL-007 | Tiku | With no room for a view's selections or a step's record of them, setting them, a transaction, undo and redo are refused with `TIKU_EDIT_NO_MEMORY` and nothing changes; no commit allocates | done | `test_editdoc_faults.c:main` |
 
 ### Line markers and the execution line
 
@@ -455,7 +477,7 @@ section until it moves onto the view, and any difference is decided then.
 | FLD-002 | Tiku | With block words in the rules, a line heads a region when an opener starts one of its statements or THEN ends its code, up to the line before the closer's; a block closed on its own line, words in quotes or remarks, and a block with nothing between head none | done | `test_codeview_folds.c:regions` |
 | FLD-003 | Tiku | With neither, a line heads the lines after it indented further, blank lines among them, those at the end left out | done | `test_codeview_folds.c:regions` |
 | FLD-004 | Scintilla `ContractionState.cxx`, adapted | Folding a region in a view takes its lines out of the rows; unfolding shows them, but the lines of a folded region inside it, and a line inside a folded region unfolds unseen, its lines shown with that region's. A line heading nothing, folded twice or unfolded twice has nothing to do | done | `test_codeview_folds.c:folding` |
-| FLD-005 | Tiku | Row moves go past folded lines, and a selection reaching into a region as it folds becomes the caret at the end of the line heading it | done | `test_codeview_folds.c:folding` |
+| FLD-005 | Tiku | Row moves go past folded lines, and each selection reaching into a region as it folds becomes the caret at the end of the line heading it | done | `test_codeview_folds.c:folding`, `test_codeview_carets.c:line_ends` |
 | FLD-006 | Tiku | Showing a caret in folded lines, as a search, a move or a selection shown does, unfolds the regions it is in; until then the caret is not drawn | done | `test_codeview_folds.c:revealing` |
 | FLD-007 | Tiku | Fold All folds every region, the inner ones first, and Unfold All shows every line | done | `test_codeview_folds.c:all` |
 | FLD-008 | Tiku | Lines put in or taken out elsewhere move folds with their lines, and lines put in are not folded. An edit to a folded line, or anywhere inside folded lines, shows every line of the region they were in and unfolds it, other folds kept, whether or not lines wrap. Once nothing is folded, wrapped or annotated, the view keeps no rows to count, however many lines are put in (WRP-009) | done | `test_codeview_folds.c:edits` |
@@ -463,6 +485,19 @@ section until it moves onto the view, and any difference is decided then.
 | FLD-010 | Tiku | With `TIKU_CODEVIEW_FOLDS` the gutter ends in a 12-pixel fold column with a box on each line heading a region, a minus in it while unfolded and a plus while folded; a folded line's text is followed by a mark. A press on a box folds or unfolds the region; a press elsewhere in the column is taken and does nothing | done | `test_codeview_folds.c:column` |
 | FLD-011 | Tiku | Command with Shift and [ folds the innermost region the caret is in, and with ] unfolds the caret's line; without Shift they are left to the application | done | `test_codeview_folds.c:keys` |
 | FLD-012 | Tiku | A folded line takes none of its rows, wrapped or annotated | done | `test_codeview_folds.c:with_rows` |
+
+### Several carets
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| CAR-001 | Tiku | `tiku_codeview_selections()`, `tiku_codeview_select_many()` and `tiku_codeview_add_selection()` read and set the view's selections (SEL rows); one added is the main one, and `tiku_codeview_select()` keeps one alone | done | `test_codeview_carets.c:setting` |
+| CAR-002 | Tiku | With several selections a typed key or a text-input commit replaces each; Backspace and Delete, with Command a word, delete at each caret; Return breaks at each with its own line's indentation, a level more after an opener, moving no closer down; Tab types a level over each. Each is one transaction that leaves a caret after each change, none between a CR and its LF, and carets that meet become one | done | `test_codeview_carets.c:editing` |
+| CAR-003 | Tiku | Copy offers the selections' text in order with the view's line break between each two, carets left out, and nothing when all are carets; Cut removes them, the carets staying; Paste gives each selection one line of the text when it has as many lines as there are selections, else all of it | done | `test_codeview_carets.c:clipboard` |
+| CAR-004 | Tiku | Every move key moves every selection, with Shift growing each; rows up and down keep the main one's x, each other one going from its own. Escape keeps the main one alone, and is left to the application when there is one | done | `test_codeview_carets.c:moves` |
+| CAR-005 | Tiku | A press with Command adds a caret there as the main one, or takes away the selection there when there are several, and a drag from it selects without touching the others. A press with Option and a drag select a rectangle: on each text row from the press's to the pointer's, from the place nearest the press's x to the place nearest the pointer's, a tab by its drawn width and a short row to its end, the pointer's row main; folded lines and annotation rows take none | done | `test_codeview_carets.c:gestures` |
+| CAR-006 | Tiku | Every selection is filled and every caret drawn, on the rows they fall in | done | `test_codeview_carets.c:painting` |
+| CAR-007 | Tiku | `tiku_codeview_carets_to_line_ends()` puts a caret at the end of each line the main selection touches, a selection ending at a line's start leaving that line out, the last one main | done | `test_codeview_carets.c:line_ends` |
+| CAR-008 | Tiku | The commands of one selection (line commands, comments, indenting lines, brackets, search and lists of words) act on the main one and drop the others; undo gives them back | done | `test_codeview_carets.c:others` |
 
 ### Hosting and timing
 
@@ -510,7 +545,7 @@ changes it or when it records a defect listed under
 
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
-| EDR-TEXT-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | The Text menu holds Indent Lines, Unindent Lines, Toggle Comment (Cmd+/), Duplicate Lines (Cmd+D), Move Lines Up, Move Lines Down, Delete Lines (Cmd+Shift+K), Go to Matching Bracket (Cmd+M), Select to Matching Bracket (Cmd+Shift+M), Fold, Unfold, Fold All and Unfold All (EDR-FOLD-002), each the view's command (LNC, BRC, FLD rows); Toggle Comment is disabled when the language has no comment | done | test_editor_document.c:text_menu |
+| EDR-TEXT-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | The Text menu holds Indent Lines, Unindent Lines, Toggle Comment (Cmd+/), Duplicate Lines (Cmd+D), Move Lines Up, Move Lines Down, Delete Lines (Cmd+Shift+K), Go to Matching Bracket (Cmd+M), Select to Matching Bracket (Cmd+Shift+M), Fold, Unfold, Fold All and Unfold All (EDR-FOLD-002), and Carets to Line Ends (Cmd+Shift+L, EDR-CARET-001), each the view's command (LNC, BRC, FLD, CAR rows); Toggle Comment is disabled when the language has no comment | done | test_editor_document.c:text_menu |
 | EDR-TEXT-002 | editor/tiku_editor_commands.c:text_command | A Text command that changes the text clears the footer message like any edit; one that changes nothing leaves it, and a refusal says why | done | test_editor_document.c:text_menu (the clear) |
 | EDR-TEXT-003 | editor/tiku_editor_view.c:tiku_editor_view_sync | The bracket by the caret and its match are marked in every document (BRC-004) | done | test_editor_document.c:editor_rows (the option); the marking: test_codeview_lines.c:bracket_paint |
 
@@ -665,6 +700,13 @@ changes it or when it records a defect listed under
 | --- | --- | --- | --- | --- |
 | EDR-FOLD-001 | editor/tiku_editor_view.c:tiku_editor_view_sync; kits/editor/tiku_codeview_folds.c | The page shows a fold column at the gutter's edge (FLD-010) in each pane | done | test_editor_document.c:folds; shell/fold.script |
 | EDR-FOLD-002 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | The Text menu's Fold (Cmd+Shift+[) folds the region the caret is in, Unfold (Cmd+Shift+]) unfolds the caret's line, and Fold All and Unfold All take every region of the pane with the keys (FLD-007, FLD-011); Cmd+[ and Cmd+] stay Find Previous and Find Next | done | test_editor_document.c:folds |
+
+### Several carets
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| EDR-CARET-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | Text > Carets to Line Ends (Cmd+Shift+L) puts a caret at the end of each line the selection touches (CAR-007); typing, deleting and the clipboard then act at every caret, one undo step each (CAR-002, CAR-003) | done | test_editor_document.c:carets; shell/carets.script |
+| EDR-CARET-002 | editor/tiku_editor_input.c:tiku_editor_event, pointer_down | Escape with several carets keeps the main one (CAR-004) and closes nothing; a Command press and an Option drag in a pane add carets and select rectangles (CAR-005) | done | test_editor_document.c:carets |
 
 ### Running BASIC
 

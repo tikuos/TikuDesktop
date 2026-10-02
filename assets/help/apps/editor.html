@@ -76,6 +76,17 @@ uses <code>//</code> in C and puts <code>REM</code> after a BASIC line's number;
 plain text has no comment. The bracket next to the caret and its match are
 marked, and a bracket with no match is marked in red. Brackets inside quotes
 or comments are not counted.</p>
+<p>The document can have several carets at once. Ctrl+click adds a caret, or
+removes one you click on; drag after the click to select from it. Alt+drag
+selects a rectangle: the same columns on every line between, as the text is
+drawn, so a tab counts as its width and a short line is selected to its end.
+<b>Carets to Line Ends</b> (Ctrl+Shift+L) in the <b>Text</b> menu puts a caret
+at the end of each selected line. Typing, Backspace, Delete, Return, Tab and the
+arrow keys then act at every caret, and one Undo takes back the whole change.
+Copy joins the selected pieces with line breaks; pasting as many lines as there
+are carets puts one line at each. The other Text commands act on the main
+caret alone: the one added last, or for a rectangle the line the drag ended
+on. Escape goes back to the main caret alone.</p>
 
 <h2 id="saving">Saving safely</h2>
 <p><b>Save</b> writes to the current file. For an unnamed document it opens
@@ -118,12 +129,15 @@ prevent recovery. Temporary copies may be removed by the operating system.</p>
 <li>Ctrl+/: Toggle Comment. Ctrl+D: Duplicate Lines. Ctrl+Shift+K: Delete Lines.</li>
 <li>Ctrl+Shift+Up / Ctrl+Shift+Down: move the lines up or down.</li>
 <li>Ctrl+M / Ctrl+Shift+M: go to or select to the matching bracket.</li>
+<li>Ctrl+Shift+L: a caret at the end of each selected line. Ctrl+click adds a
+caret; Alt+drag selects a rectangle; Escape keeps one caret.</li>
 <li>Ctrl+Backspace / Ctrl+Delete: delete the previous or next word.</li>
 <li>Home / End: start / end of line. Ctrl+Home / Ctrl+End: document start / end.</li>
 <li>Alt+Left / Alt+Right or Ctrl+Left / Ctrl+Right: previous / next word.</li>
 <li>Page Up / Page Down: move a page. Shift extends the selection.</li>
-<li>Ctrl+W / Ctrl+Q or Escape: Close, with an unsaved-change check. In the
-Find or Go to Line window, Ctrl+W and Escape close only that window.</li>
+<li>Ctrl+W / Ctrl+Q or Escape: Close, with an unsaved-change check. With
+several carets, Escape first keeps one. In the Find or Go to Line window,
+Ctrl+W and Escape close only that window.</li>
 </ul>
 
 <h2 id="run">Running BASIC text</h2>
