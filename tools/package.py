@@ -20,6 +20,11 @@ LAUNCHERS = ('TikuDesktop', 'tiku-desk')
 RESOURCE_DIRS = ('system', 'applications', 'sounds', 'help', 'strings')
 HELPERS = {'basic': ('tiku-basic',), 'editor': ('tiku-edit',),
            'terminal': ('tiku-term',)}
+# Licence notices a bundle carries for code its module links: the editor
+# kit adapts Scintilla, whose licence asks for its notice to go with it.
+NOTICES = {'basic': ('LICENSE.Scintilla',), 'c': ('LICENSE.Scintilla',),
+           'editor': ('LICENSE.Scintilla',)}
+NOTICE_SOURCES = {'LICENSE.Scintilla': 'kits/editor/LICENSE.Scintilla'}
 
 
 def manifests(root=ROOT):
@@ -104,6 +109,8 @@ def package(root=ROOT):
             for helper in HELPERS.get(app_id, ()):
                 if (source / helper).is_file():
                     shutil.copy2(source / helper, bundle / helper)
+            for notice in NOTICES.get(app_id, ()):
+                shutil.copy2(root / NOTICE_SOURCES[notice], bundle / notice)
         resources(stage / 'assets', root)
         launchers(stage, root)
         (stage / '.tiku-package.json').write_text(
@@ -142,9 +149,14 @@ def validate(package_root, inventory, root=ROOT):
             raise RuntimeError('Missing packaged module: ' + module)
         if (bundle / 'app.manifest').read_bytes() != manifest.read_bytes():
             raise RuntimeError('Stale packaged manifest: ' + app_id)
-        allowed = {'app.manifest', module, *HELPERS.get(app_id, ())}
+        allowed = {'app.manifest', module, *HELPERS.get(app_id, ()),
+                   *NOTICES.get(app_id, ())}
         if {path.name for path in bundle.iterdir()} - allowed:
             raise RuntimeError('Unexpected file in application bundle: ' + app_id)
+        for notice in NOTICES.get(app_id, ()):
+            if (not (bundle / notice).is_file() or (bundle / notice).read_bytes()
+                    != (root / NOTICE_SOURCES[notice]).read_bytes()):
+                raise RuntimeError('Missing licence notice in application bundle: ' + app_id)
     for name in RESOURCE_DIRS:
         source = root / 'assets' / name
         if not source.is_dir() or not (package_root / 'assets' / name).is_dir():

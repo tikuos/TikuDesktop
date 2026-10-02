@@ -51,6 +51,7 @@ class LayoutTests(unittest.TestCase):
         self.write('build/runtime/apps/editor/Editor.so')
         self.write('build/runtime/apps/editor/tiku-edit', executable=True)
         self.write('build/runtime/apps/editor/test_unwanted.c')
+        self.write('kits/editor/LICENSE.Scintilla', 'Scintilla licence\n')
         self.write('build/runtime/apps/stale/app.manifest',
                    'id=stale\nmodule=Stale.so\ncategory=applications\n')
         self.write('build/runtime/apps/stale/Stale.so')
@@ -165,6 +166,9 @@ class LayoutTests(unittest.TestCase):
                          ['editor'])
         self.assertFalse((destination / 'apps/editor/test_unwanted.c').exists())
         self.assertTrue((destination / 'apps/editor/tiku-edit').is_file())
+        self.assertEqual(
+            (destination / 'apps/editor/LICENSE.Scintilla').read_text(),
+            'Scintilla licence\n')
         self.write('dist/TikuDesktop/stale-file.txt')
         package.package(self.root)
         self.assertFalse((destination / 'stale-file.txt').exists())
@@ -209,6 +213,18 @@ class LayoutTests(unittest.TestCase):
         package.package(self.root)
         (self.root / 'dist/TikuDesktop/assets/strings/en.xml').unlink()
         with self.assertRaises(RuntimeError):
+            package.check(self.root)
+
+    def test_package_check_rejects_missing_or_changed_notice(self):
+        """A bundle linking the editor kit carries its licence unchanged."""
+        self.fixture()
+        package.package(self.root)
+        notice = self.root / 'dist/TikuDesktop/apps/editor/LICENSE.Scintilla'
+        notice.unlink()
+        with self.assertRaisesRegex(RuntimeError, 'licence notice'):
+            package.check(self.root)
+        notice.write_text('another licence\n')
+        with self.assertRaisesRegex(RuntimeError, 'licence notice'):
             package.check(self.root)
 
     def test_package_check_rejects_unlisted_bundle(self):

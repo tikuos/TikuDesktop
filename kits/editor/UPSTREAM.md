@@ -94,11 +94,11 @@ moves follow the behaviour of `Document::NextWordStart` in
 removed follows `LineVector::InsertLine` in `src/CellBuffer.cxx` and
 `LineMarkers` in `src/PerLine.cxx`, all read as references.
 
-**Packaging.** No shipped binary contains this code yet. The kit builds
-`libtiku_editor.a`, `tools/package.py` leaves `.a` files out of packages,
-and no application links the library. The first application to link it
-must also carry the full `LICENSE.Scintilla` in its bundle. An About window
-may link to it but does not replace it.
+**Packaging.** Editor, TikuBasic and TikuC link the kit. `tools/package.py`
+copies the full `LICENSE.Scintilla` into each of their bundles, refuses a
+package where one is missing or differs, and leaves `.a` files out of
+packages. An About window may link to the licence but does not replace
+it.
 
 ## What was adapted
 
