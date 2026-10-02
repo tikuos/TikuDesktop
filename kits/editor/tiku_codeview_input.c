@@ -527,15 +527,13 @@ key(tiku_codeview_t *v, const tiku_event_t *e)
     return 1;
 }
 
-int
-tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e)
+/** @brief An event the view's text, scrollbars and caret take, with
+ *         @p commit what staging made of it. */
+static int
+dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
 {
-    int across, commit;
+    int across;
 
-    if (view == NULL || e == NULL)
-        return 0;
-    view->status = TIKU_EDIT_OK;
-    commit = tiku_text_input_event(&view->input, e);
     switch (e->type) {
     case TIKU_EVENT_TEXT_INPUT:
         return tiku_cv_edit_commit(view, commit);
@@ -588,4 +586,18 @@ tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e)
     default:
         return 0;
     }
+}
+
+int
+tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e)
+{
+    int commit, taken;
+
+    if (view == NULL || e == NULL)
+        return 0;
+    view->status = TIKU_EDIT_OK;
+    commit = tiku_text_input_event(&view->input, e);
+    taken = tiku_cv_assist_event(view, e) || dispatch(view, e, commit);
+    tiku_cv_assist_follow(view);
+    return taken;
 }

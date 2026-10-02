@@ -33,6 +33,7 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
     if (change->count == 0)
         return;
     if (change->cause == TIKU_EDIT_LOADED) {
+        tiku_cv_assist_free(v);
         v->top = 0;
         v->left = 0;
         tiku_cv_widths_free(v);
@@ -80,6 +81,7 @@ tiku_codeview_create(tiku_editdoc_t *doc, tiku_codeview_t **view)
     v->goal = -1;
     v->widest = -1;
     strcpy(v->newline, "\n");
+    v->exec_fill = TIKU_RGB(211, 238, 185);
     tiku_text_input_reset(&v->input);
     tiku_cv_marks_free(v);
     v->kept_line = -1;
@@ -103,6 +105,7 @@ tiku_codeview_destroy(tiku_codeview_t *view)
 {
     if (view == NULL)
         return;
+    tiku_cv_assist_free(view);
     tiku_editdoc_unlisten(view->doc, view->listener);
     tiku_editdoc_view_detach(view->doc, view->view);
     tiku_editdoc_release(view->doc);
@@ -190,6 +193,31 @@ int
 tiku_codeview_focused(const tiku_codeview_t *view)
 {
     return view != NULL && view->focused;
+}
+
+tiku_edit_status_t
+tiku_codeview_set_marker_fill(tiku_codeview_t *view, unsigned kind,
+                              tiku_rgb_t color)
+{
+    if (view == NULL || kind >= TIKU_EDIT_MARKER_KINDS)
+        return TIKU_EDIT_INVALID;
+    view->fills[kind] = color;
+    view->fill_kinds |= (uint32_t)1 << kind;
+    return TIKU_EDIT_OK;
+}
+
+void
+tiku_codeview_clear_marker_fill(tiku_codeview_t *view, unsigned kind)
+{
+    if (view != NULL && kind < TIKU_EDIT_MARKER_KINDS)
+        view->fill_kinds &= ~((uint32_t)1 << kind);
+}
+
+void
+tiku_codeview_set_execution_fill(tiku_codeview_t *view, tiku_rgb_t color)
+{
+    if (view != NULL)
+        view->exec_fill = color;
 }
 
 void

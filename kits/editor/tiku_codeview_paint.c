@@ -277,6 +277,37 @@ paint_gutter(tiku_codeview_t *v, tiku_surface_t *s, int width,
     }
 }
 
+/** @brief The rows of marked lines filled with their kinds' colours, the
+ *         highest kind's on top, and the execution line's over them
+ *         while it is current. */
+static void
+paint_fills(tiku_codeview_t *v, tiku_surface_t *s, tiku_rect_t area)
+{
+    int64_t line, exec, lines = tiku_editdoc_lines(v->doc);
+    int y = tiku_cv_text_y(v), step = tiku_codeview_row_height(v);
+
+    if (tiku_editdoc_execution(v->doc, &exec) != TIKU_EDIT_OK)
+        exec = -1;
+    if (v->fill_kinds == 0 && exec < 0)
+        return;
+    for (line = v->top; line < lines && y < area.y + area.h; line++) {
+        uint32_t kinds = v->fill_kinds ?
+                         tiku_editdoc_markers_on(v->doc, line) &
+                         v->fill_kinds : 0;
+        tiku_rect_t row = { area.x, y, area.w, step };
+        int kind = TIKU_EDIT_MARKER_KINDS - 1;
+
+        if (line == exec) {
+            tiku_fill(s, row, v->exec_fill);
+        } else if (kinds != 0) {
+            while (!(kinds & ((uint32_t)1 << kind)))
+                kind--;
+            tiku_fill(s, row, v->fills[kind]);
+        }
+        y += step;
+    }
+}
+
 /** @brief A scrollbar placed in thousandths, so a recording carries the
  *         thumb exactly where it is drawn here; an arrow held down is
  *         drawn pressed. */
@@ -320,6 +351,9 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
     tiku_fill(s, area, TIKU_C_DOC);
     if (gutter > 0)
         paint_gutter(view, s, gutter, area);
+    tiku_clip_set(s, meet(area, full));
+    paint_fills(view, s, area);
+    tiku_clip_set(s, full);
 
     memset(&r, 0, sizeof r);
     r.s = s;
@@ -350,6 +384,9 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
         paint_caret(view, s, rows);
         tiku_clip_set(s, full);
     }
+    tiku_clip_set(s, meet(area, full));
+    tiku_cv_assist_paint(view, s);
+    tiku_clip_set(s, full);
     paint_bar(view, s, 0);
     paint_bar(view, s, 1);
     if ((view->options & TIKU_CODEVIEW_VSCROLL) &&

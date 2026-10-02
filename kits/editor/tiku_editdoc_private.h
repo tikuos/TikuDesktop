@@ -119,6 +119,15 @@ typedef struct {
     uint8_t live;               /* attached                             */
 } tiku_ed_view_t;
 
+/* A line marker: it sits at its line's start. */
+typedef struct {
+    int64_t pos;                /* where its line starts                */
+    uint32_t generation;        /* bumped when the slot is taken or
+                                   freed                                */
+    uint8_t live;               /* in use                               */
+    uint8_t kind;               /* 0 to TIKU_EDIT_MARKER_KINDS - 1      */
+} tiku_ed_marker_t;
+
 /* A registered listener. */
 typedef struct {
     tiku_edit_listen_fn fn;     /* what to call                         */
@@ -144,6 +153,10 @@ struct tiku_editdoc {
     size_t nviews;              /* view slots allocated                 */
     tiku_ed_listener_t *listeners; /* nlisteners slots                  */
     size_t nlisteners;          /* listener slots allocated             */
+    tiku_ed_marker_t *markers;  /* nmarkers slots                       */
+    size_t nmarkers;            /* marker slots allocated               */
+    int64_t exec_line;          /* where a runtime stopped, -1 none     */
+    uint64_t exec_state;        /* the history state it was set for     */
     tiku_ed_piece_t loaded;     /* the one span a load reports          */
 };
 
@@ -268,8 +281,9 @@ char *tiku_ed_history_replace_last(tiku_ed_history_t *h, char *payload,
                                    const tiku_ed_piece_t *piece);
 
 /* Anchors, views and listeners (tiku_editdoc_anchors.c).  map() moves
- * every anchor and selection through one replacement of [s, e) by n
- * bytes; snap() moves selection ends out of the middle of a CRLF. */
+ * every anchor, selection and line marker through one replacement of
+ * [s, e) by n bytes; snap() moves selection ends out of the middle of a
+ * CRLF and settles line markers at their lines' starts. */
 void tiku_ed_marks_map(tiku_editdoc_t *doc, int64_t s, int64_t e, int64_t n);
 void tiku_ed_marks_snap(tiku_editdoc_t *doc);
 void tiku_ed_marks_free(tiku_editdoc_t *doc);
@@ -277,5 +291,14 @@ void tiku_ed_dispatch(tiku_editdoc_t *doc, const tiku_edit_change_t *change);
 /* The live view a handle names, or NULL. */
 tiku_ed_view_t *tiku_ed_view_get(const tiku_editdoc_t *doc,
                                  tiku_edit_view_t view);
+
+/* Line markers (tiku_edit_decorations.c).  map() moves each one through
+ * a replacement of [s, e) by n bytes, as tiku_ed_marks_map() does the
+ * anchors; settle() puts each back at the start of the line it is on;
+ * drop() removes them all, keeping the table; free() lets the table go. */
+void tiku_ed_markers_map(tiku_editdoc_t *doc, int64_t s, int64_t e, int64_t n);
+void tiku_ed_markers_settle(tiku_editdoc_t *doc);
+void tiku_ed_markers_drop(tiku_editdoc_t *doc);
+void tiku_ed_markers_free(tiku_editdoc_t *doc);
 
 #endif /* TIKU_EDITDOC_PRIVATE_H_ */

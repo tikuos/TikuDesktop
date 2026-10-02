@@ -39,11 +39,13 @@ typedef enum {
                                    overlapping                          */
     TIKU_EDIT_READ_ONLY,        /* the document refuses changes         */
     TIKU_EDIT_STALE,            /* the expected generation is not
-                                   the document's                       */
+                                   the document's, or the execution
+                                   line was set for other text          */
     TIKU_EDIT_LIMIT,            /* a configured size, or the arithmetic */
     TIKU_EDIT_NO_MEMORY,        /* an allocation failed                 */
     TIKU_EDIT_BUSY,             /* asked during a notification or read  */
-    TIKU_EDIT_NOTHING,          /* no step to undo or redo              */
+    TIKU_EDIT_NOTHING,          /* no step to undo or redo, or no
+                                   execution line                       */
     TIKU_EDIT_SHORT             /* the buffer is too small; nothing
                                    was written                          */
 } tiku_edit_status_t;
@@ -207,9 +209,11 @@ tiku_edit_pos_t tiku_editdoc_prev(const tiku_editdoc_t *doc,
 /** @brief Raised by every committed change, undo, redo and load. */
 uint64_t tiku_editdoc_generation(const tiku_editdoc_t *doc);
 /** @brief The history state of the text now; equal states hold equal
- *         text, and a state is never reused. */
+ *         text, a state is never reused, and 0 is never one. */
 uint64_t tiku_editdoc_state(const tiku_editdoc_t *doc);
-/** @brief Record that the text of @p state is what the file holds. */
+/** @brief Record that the text of @p state is what the file holds; 0
+ *         records that no state does, so the text reads modified until
+ *         the next save. */
 void tiku_editdoc_saved(tiku_editdoc_t *doc, uint64_t state);
 /** @brief Whether the text now differs from the state last saved. */
 int tiku_editdoc_modified(const tiku_editdoc_t *doc);

@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 
+#include "tiku_edit_decorations.h"
 #include "tiku_edit_search.h"
 #include "tiku_editdoc.h"
 #include "tiku_event.h"
@@ -284,6 +285,69 @@ tiku_edit_status_t tiku_codeview_replace_all(tiku_codeview_t *view,
  *         application's; deactivation ends a drag and still returns 0.
  */
 int tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e);
+
+/** @brief Fill the rows of lines marked @p kind with @p color, behind
+ *         their text and selection; a higher kind's fill covers a lower
+ *         one's.  A new view fills no kind. */
+tiku_edit_status_t tiku_codeview_set_marker_fill(tiku_codeview_t *view,
+                                                 unsigned kind,
+                                                 tiku_rgb_t color);
+/** @brief Stop filling the rows of lines marked @p kind. */
+void tiku_codeview_clear_marker_fill(tiku_codeview_t *view, unsigned kind);
+/** @brief Fill the row of the document's execution line with @p color,
+ *         over any marker's fill, while the line is current; a new view
+ *         fills it light green. */
+void tiku_codeview_set_execution_fill(tiku_codeview_t *view,
+                                      tiku_rgb_t color);
+
+/** @brief Words offered for a range of the text. */
+typedef struct {
+    tiku_edit_range_t range;    /* what the chosen word replaces        */
+    const char *const *items;   /* count words, copied when shown       */
+    size_t count;
+    size_t current;             /* the word chosen first                */
+    int inserts;                /* keys and clicks put the chosen word
+                                   in; 0: a click only chooses one      */
+} tiku_codeview_list_t;
+
+/**
+ * @brief Show @p list in a box under the row of its range's start, or
+ *        over it when only there is room, five words at a time, instead
+ *        of any list shown before.
+ *
+ * The range follows edits.  While the list is shown, Escape hides it and
+ * any tip, and a press on a word chooses it.  A list that inserts also
+ * takes Up and Down, which move the choice round, and Return and Tab,
+ * which put the chosen word in; with no words it still takes them and
+ * changes nothing.
+ */
+tiku_edit_status_t tiku_codeview_list_show(tiku_codeview_t *view,
+                                           const tiku_codeview_list_t *list);
+/** @brief Hide the list. */
+void tiku_codeview_list_hide(tiku_codeview_t *view);
+/** @brief Whether a list is shown, with the chosen word's index in
+ *         @p current, which may be NULL. */
+int tiku_codeview_list_shown(const tiku_codeview_t *view, size_t *current);
+/** @brief Replace the list's range with the chosen word as one undo step,
+ *         the caret after it, then hide the list.  TIKU_EDIT_NOTHING when
+ *         there is no list or no word. */
+tiku_edit_status_t tiku_codeview_list_insert(tiku_codeview_t *view);
+
+/**
+ * @brief Show @p text in a tip by the row of @p pos, beside a shown list
+ *        or else under or over the row, instead of any tip shown before.
+ *
+ * Lines break at each LF and wrap at 320 pixels.  The tip goes on
+ * Escape, on a load, and when an event leaves the caret before @p pos or
+ * on another line; a press on it does nothing else.
+ */
+tiku_edit_status_t tiku_codeview_tip_show(tiku_codeview_t *view,
+                                          tiku_edit_pos_t pos,
+                                          const char *text);
+/** @brief Hide the tip. */
+void tiku_codeview_tip_hide(tiku_codeview_t *view);
+/** @brief Whether a tip is shown. */
+int tiku_codeview_tip_shown(const tiku_codeview_t *view);
 
 /** @brief Paint the view into its bounds on @p s, within the clip @p s
  *         already has, which is restored afterwards.  Everything drawn

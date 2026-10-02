@@ -35,6 +35,7 @@ tiku_editdoc_create(const tiku_editdoc_limits_t *limits, tiku_editdoc_t **doc)
     }
     d->refs = 1;
     d->generation = 1;
+    d->exec_line = -1;
     d->max_bytes = TIKU_EDITDOC_MAX_BYTES_DEFAULT;
     if (limits && limits->max_bytes)
         d->max_bytes = limits->max_bytes;
@@ -62,6 +63,7 @@ tiku_editdoc_release(tiku_editdoc_t *doc)
     tiku_ed_text_free(&doc->text);
     tiku_ed_history_free(&doc->history);
     tiku_ed_marks_free(doc);
+    tiku_ed_markers_free(doc);
     tiku_ed_free(doc);
 }
 
@@ -97,6 +99,7 @@ tiku_editdoc_load(tiku_editdoc_t *doc, const char *text, size_t length)
     old_lines = tiku_ed_lines_count(&doc->text.lines);
     old = doc->text;
     doc->text = fresh;
+    tiku_ed_markers_drop(doc);
     tiku_ed_marks_map(doc, 0, old_length, (int64_t)length);
     tiku_ed_marks_snap(doc);
     tiku_ed_history_clear(&doc->history);

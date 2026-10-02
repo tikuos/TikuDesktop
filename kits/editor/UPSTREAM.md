@@ -37,6 +37,7 @@ The files used, by SHA-256:
 | `src/Document.cxx` | reference | `6f10517c7d4acd94b70d210aa789373fa0c55fd7f0e14df9a43b4af622a8bd96` |
 | `src/Document.h` | reference | `729715fd2c812d9b55e86a81572d4d8c59cbe794d86129ccc899b417133b5353` |
 | `src/UniConversion.cxx` | reference | `161bbfe3fa0fbe140f92e9924fc6981f7ae9e16bc13e5033433b4c1882911254` |
+| `src/PerLine.cxx` | reference | `138fbde84c8539ae57ff33e6f305ba5f73bb048c39c0736c87ab8f663171170b` |
 | `test/unit/testSplitVector.cxx` | cases translated | `8682380e28cf1af81f64b600bcec89d5f3c781f79334e559791574e14344f27d` |
 | `test/unit/testPartitioning.cxx` | cases translated | `6cdaf9de08b92733f06278cef596f8aba28b95608034ef7ce96d1045c2f5dba4` |
 | `test/unit/testCellBuffer.cxx` | cases translated | `2be0be0e1721cf2d5d801349ac67c24a4b8a81e5cd0a1608177757e90dc26fcc` |
@@ -79,13 +80,17 @@ of the same distribution and are covered by `License.txt`.
 The remaining kit files are original Tiku code under Apache-2.0:
 `tiku_editdoc.h`, `tiku_editdoc.c`, `tiku_editdoc_transaction.c`,
 `tiku_editdoc_undo.c`, `tiku_editdoc_utf8.c`, `tiku_editdoc_alloc.c`, the
-search's `tiku_edit_search.h` and `tiku_edit_search.c`, and the code view's
+search's `tiku_edit_search.h` and `tiku_edit_search.c`, the line markers'
+`tiku_edit_decorations.h` and `tiku_edit_decorations.c`, and the code view's
 `tiku_codeview.h`, `tiku_codeview_private.h`, `tiku_codeview.c`,
 `tiku_codeview_layout.c`, `tiku_codeview_paint.c`, `tiku_codeview_input.c`,
-`tiku_codeview_edit.c`, `tiku_codeview_find.c` and `tiku_codeview_style.c`;
-and the tests `test_editdoc_model.c`, `test_editdoc_faults.c` and every
-`test_codeview_*.c`. The code view's word moves follow the behaviour of
-`Document::NextWordStart` in `src/Document.cxx`, read as a reference.
+`tiku_codeview_edit.c`, `tiku_codeview_find.c`, `tiku_codeview_style.c` and
+`tiku_codeview_assist.c`; and the tests `test_editdoc_model.c`,
+`test_editdoc_faults.c` and every `test_codeview_*.c`. The code view's word
+moves follow the behaviour of `Document::NextWordStart` in
+`src/Document.cxx`, and where a line marker goes when lines are added or
+removed follows `LineVector::InsertLine` in `src/CellBuffer.cxx` and
+`LineMarkers` in `src/PerLine.cxx`, all read as references.
 
 **Packaging.** No shipped binary contains this code yet. The kit builds
 `libtiku_editor.a`, `tools/package.py` leaves `.a` files out of packages,
@@ -190,6 +195,11 @@ Changed:
 - `UniConversion` was compared with the UTF-8 validator, which is Tiku's
   own. It refuses NUL, overlong forms, surrogates and anything above
   U+10FFFF. It accepts noncharacters, which upstream flags.
+- `PerLine`'s `LineMarkers` and `CellBuffer`'s `LineVector::InsertLine`
+  informed where a line marker goes: lines inserted at a marked line's
+  start push the marker down with the line's text, and a removed line's
+  markers join the line before. The markers are Tiku code, kept as
+  positions at their lines' starts and moved with each replacement.
 
 ## Left out
 
@@ -199,7 +209,7 @@ file first.
 | Feature | Reason |
 | --- | --- |
 | Style bytes, `RunStyles`, `Decoration` | Colouring stays with `tiku_syntax`; indicators come with a later consumer |
-| `PerLine` markers, levels, states, annotations | They come with the IDE markers and annotations |
+| `PerLine` levels, states, annotations | They come with folding and annotations; line markers are Tiku code (`tiku_edit_decorations.c`) |
 | `ContractionState`, `SparseVector`, `UniqueString` | They come with folding |
 | UTF-16 and UTF-32 character indexes | No consumer; positions are byte offsets |
 | `ChangeHistory` | Not needed for save state |

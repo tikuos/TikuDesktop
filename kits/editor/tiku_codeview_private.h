@@ -113,6 +113,20 @@ struct tiku_codeview {
     int kept_in;                    /* the state it started in          */
     tiku_syntax_lang_t kept_lang;   /* and the language                 */
     tiku_edit_pos_t kept_cut;       /* the byte the runs reach to       */
+    uint32_t fill_kinds;            /* marker kinds whose rows are
+                                       filled                           */
+    tiku_rgb_t fills[TIKU_EDIT_MARKER_KINDS]; /* and their colours      */
+    tiku_rgb_t exec_fill;           /* the execution line's fill        */
+    int list_shown;                 /* a list of words is shown         */
+    int list_inserts;               /* its keys and clicks insert       */
+    char **list_items;              /* its words, in one allocation     */
+    size_t list_count;              /* how many                         */
+    size_t list_current;            /* the one chosen                   */
+    tiku_edit_anchor_t list_start;  /* the range the word replaces      */
+    tiku_edit_anchor_t list_end;
+    int tip_shown;                  /* a tip is shown                   */
+    char *tip_text;                 /* what it says                     */
+    tiku_edit_anchor_t tip_at;      /* where it was shown               */
 };
 
 /* What a character of a line is on the screen. */
@@ -219,6 +233,14 @@ void tiku_cv_style_free(tiku_codeview_t *v);
 
 /* An editing key: 1 when the view took it. */
 int tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e);
+
+/* Lists and tips (tiku_codeview_assist.c): an event they take, the check
+ * after any event that a tip still belongs with the caret, painting them
+ * over the text, and freeing them. */
+int tiku_cv_assist_event(tiku_codeview_t *v, const tiku_event_t *e);
+void tiku_cv_assist_follow(tiku_codeview_t *v);
+void tiku_cv_assist_paint(tiku_codeview_t *v, tiku_surface_t *s);
+void tiku_cv_assist_free(tiku_codeview_t *v);
 /* A text-input event, given what staging made of it. */
 int tiku_cv_edit_commit(tiku_codeview_t *v, int commit);
 
