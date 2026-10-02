@@ -87,9 +87,11 @@ search's `tiku_edit_search.h` and `tiku_edit_search.c`, the line markers'
 `tiku_codeview.h`, `tiku_codeview_private.h`, `tiku_codeview.c`,
 `tiku_codeview_layout.c`, `tiku_codeview_paint.c`, `tiku_codeview_input.c`,
 `tiku_codeview_edit.c`, `tiku_codeview_find.c`, `tiku_codeview_style.c`,
-`tiku_codeview_assist.c`, `tiku_codeview_lines.c` and
-`tiku_codeview_brace.c`; and the tests `test_editdoc_model.c`,
-`test_editdoc_faults.c` and every `test_codeview_*.c`. The code view's word
+`tiku_codeview_assist.c`, `tiku_codeview_lines.c`,
+`tiku_codeview_brace.c` and `tiku_codeview_rows.c`, whose rows are kept in
+the partition `tiku_editdoc_lines.c` adapts; and the tests
+`test_editdoc_model.c`, `test_editdoc_faults.c` and every
+`test_codeview_*.c`. The code view's word
 moves follow the behaviour of `Document::NextWordStart` in
 `src/Document.cxx`, and where a line marker goes when lines are added or
 removed follows `LineVector::InsertLine` in `src/CellBuffer.cxx` and

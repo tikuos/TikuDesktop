@@ -15,6 +15,7 @@
 #define TIKU_CODEVIEW_PRIVATE_H_
 
 #include "tiku_codeview.h"
+#include "tiku_editdoc_private.h"
 #include "tiku_text_input.h"
 
 /* Pixels between the bounds' left edge and a line's x 0, and between the
@@ -46,6 +47,28 @@ typedef struct {
     tiku_edit_pos_t pos;
     int64_t x;
 } tiku_cv_mark_t;
+
+/* Where the rows of a line that wraps start, kept for the TIKU_CV_WRAPS
+ * lines of more than one row asked for last. */
+#define TIKU_CV_WRAPS 64
+typedef struct {
+    int64_t line;                   /* -1: unused                       */
+    uint64_t used;                  /* when last asked for              */
+    tiku_cv_mark_t *rows;           /* each row's first byte, counted
+                                       from the line's start, and its x */
+    size_t nrows, cap;              /* rows kept, and room for them     */
+} tiku_cv_wrap_t;
+
+/* One row of a line. */
+typedef struct {
+    int64_t line;                   /* the line it shows                */
+    int64_t sub;                    /* its place among the line's rows  */
+    tiku_edit_pos_t start;          /* its first byte                   */
+    tiku_edit_pos_t end;            /* the next row's first byte, or the
+                                       line's end                       */
+    int64_t x0;                     /* line x of its first byte         */
+    int last;                       /* the line's last row              */
+} tiku_cv_row_t;
 
 /* The checkpoints of one long line, in order from its start. */
 typedef struct {
@@ -136,6 +159,21 @@ struct tiku_codeview {
     const void *brace_rules;        /* and the rules                    */
     tiku_edit_pos_t brace_at;       /* the bracket, -1 none             */
     tiku_edit_pos_t brace_match;    /* its match, -1 none, -2 too far   */
+    int64_t top_sub;                /* rows of the top line above the
+                                       first row shown                  */
+    tiku_edit_pos_t upstream;       /* a caret here, at the end of a row,
+                                       shows on that row and not at the
+                                       next one's start; -1 none        */
+    tiku_ed_lines_t row_map;        /* each line's first row, kept while
+                                       lines wrap                       */
+    unsigned char *row_known;       /* each line's rows counted         */
+    int64_t row_lines;              /* lines the map follows, 0: none   */
+    int64_t row_cap;                /* room in row_known                */
+    int64_t row_width;              /* the width the rows break at      */
+    uint32_t row_key;               /* and the metrics                  */
+    int64_t unknown_from;           /* no line before it is uncounted   */
+    tiku_cv_wrap_t wraps[TIKU_CV_WRAPS]; /* rows of lines that wrap     */
+    uint64_t wrap_uses;             /* asks of the wraps so far         */
 };
 
 /* What a character of a line is on the screen. */
@@ -189,6 +227,60 @@ tiku_edit_pos_t tiku_cv_pos_at(tiku_codeview_t *v, int64_t line, int64_t x);
 /* The first byte of the character on @p line under the line's own @p x,
  * or -1 past the line's end. */
 tiku_edit_pos_t tiku_cv_char_at(tiku_codeview_t *v, int64_t line, int64_t x);
+
+/* Rows (tiku_codeview_rows.c).  Without the wrap option each line is one
+ * row and nothing is kept; with it a line's rows break at the text's
+ * width and are counted when they are first needed.  A line not yet
+ * counted keeps its last count, or one row.  Positions and x are the
+ * line's own; a row's x0 is subtracted where it is drawn. */
+/* Whether lines wrap now: the option is on and the map is kept. */
+int tiku_cv_wraps(const tiku_codeview_t *v);
+/* Bring the rows in line with the options, width and metrics, keep the
+ * first row inside the document, and count the lines shown. */
+void tiku_cv_rows_ready(tiku_codeview_t *v);
+/* Rows in all. */
+int64_t tiku_cv_rows_total(const tiku_codeview_t *v);
+/* The index of @p line's first row. */
+int64_t tiku_cv_line_row(const tiku_codeview_t *v, int64_t line);
+/* The rows @p line has, counted now. */
+int64_t tiku_cv_line_rows(tiku_codeview_t *v, int64_t line);
+/* Row @p sub of @p line, which must have it. */
+void tiku_cv_row(tiku_codeview_t *v, int64_t line, int64_t sub,
+                 tiku_cv_row_t *out);
+/* The row holding @p pos; a position where a row breaks is on the next
+ * row, or with @p upstream at the end of the row it ends. */
+void tiku_cv_row_of(tiku_codeview_t *v, tiku_edit_pos_t pos, int upstream,
+                    tiku_cv_row_t *out);
+/* Move (@p line, @p sub) @p n rows on, or back when @p n is negative,
+ * stopping at the document's ends; @return the rows moved. */
+int64_t tiku_cv_rows_step(tiku_codeview_t *v, int64_t *line, int64_t *sub,
+                          int64_t n);
+/* The index of the first row shown. */
+int64_t tiku_cv_top_row(const tiku_codeview_t *v);
+/* Make the row at index @p row the first shown. */
+void tiku_cv_set_top_row(tiku_codeview_t *v, int64_t row);
+/* Rows from the first shown to row @p sub of @p line, negative above it;
+ * the lines between are taken as counted. */
+int64_t tiku_cv_shown_row(const tiku_codeview_t *v, int64_t line,
+                          int64_t sub);
+/* The caret position on row @p r nearest the row's own @p x, setting
+ * @p upstream when it is the end of a row that is not the line's last. */
+tiku_edit_pos_t tiku_cv_row_pos_at(tiku_codeview_t *v,
+                                   const tiku_cv_row_t *r, int64_t x,
+                                   int *upstream);
+/* The row under surface @p y, the document's first or last row past its
+ * ends; @return its place among the rows shown. */
+int64_t tiku_cv_row_under(tiku_codeview_t *v, int64_t y, tiku_cv_row_t *r);
+/* Follow a change in the rows, as tiku_cv_widths_change() does. */
+void tiku_cv_rows_change(tiku_codeview_t *v, int64_t first,
+                         int64_t last_old, int64_t last_new, int64_t lines);
+/* Count lines not yet counted, @p budget bytes of them at most; whether
+ * any were counted. */
+int tiku_cv_rows_tick(tiku_codeview_t *v, int64_t budget);
+/* Free the rows. */
+void tiku_cv_rows_free(tiku_codeview_t *v);
+/* A number for everything a line's width depends on. */
+uint32_t tiku_cv_metrics_key(const tiku_codeview_t *v);
 
 /* Where line x 0 and the first row's top are on the surface. */
 int tiku_cv_text_x(const tiku_codeview_t *v);

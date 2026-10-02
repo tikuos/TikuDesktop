@@ -25,6 +25,8 @@
  * the desktop's scrollbar rule. */
 #define ARROW_WAIT 12
 #define ARROW_EVERY 4
+/* Bytes of lines a tick counts the rows of while lines wrap. */
+#define TICK_BYTES ((int64_t)1 << 20)
 
 /** @brief What a character is, for words: a line break, space (a blank
  *         or a control character), part of a word (letters, digits, '_'
@@ -100,22 +102,22 @@ run_around(const tiku_codeview_t *v, tiku_edit_pos_t pos)
     return r;
 }
 
-/** @brief The run under the line's own @p x on @p line: past the end,
- *         the line's last run; an empty line gives its start. */
+/** @brief The run under the row's own @p x on @p row: past its end, its
+ *         last run; an empty row gives its start. */
 static tiku_edit_range_t
-run_under(tiku_codeview_t *v, int64_t line, int64_t x)
+run_under(tiku_codeview_t *v, const tiku_cv_row_t *row, int64_t x)
 {
-    tiku_edit_pos_t start = tiku_editdoc_line_start(v->doc, line);
-    tiku_edit_pos_t end = tiku_editdoc_line_end(v->doc, line);
-    tiku_edit_pos_t at = tiku_cv_char_at(v, line, x);
+    tiku_edit_pos_t at = tiku_cv_char_at(v, row->line, row->x0 + x);
     tiku_edit_range_t r;
 
-    if (at < 0 && end > start)
-        at = tiku_editdoc_prev(v->doc, end);
-    if (at < 0) {
-        r.start = r.end = start;
+    if (row->end <= row->start) {
+        r.start = r.end = row->start;
         return r;
     }
+    if (at < 0 || at >= row->end)
+        at = tiku_editdoc_prev(v->doc, row->end);
+    else if (at < row->start)
+        at = row->start;
     return run_around(v, at);
 }
 
@@ -130,29 +132,34 @@ line_around(const tiku_codeview_t *v, int64_t line)
     return r;
 }
 
-/** @brief The line x of the caret on its line. */
+/** @brief The caret's row, @p r, and its x from the row's start. */
 static int64_t
-caret_x(tiku_codeview_t *v, tiku_edit_pos_t caret)
+caret_x(tiku_codeview_t *v, tiku_edit_pos_t caret, tiku_cv_row_t *r)
 {
-    return tiku_cv_x_of(v, tiku_editdoc_line_of(v->doc, caret), caret);
+    tiku_cv_row_of(v, caret, caret == v->upstream, r);
+    return tiku_cv_x_of(v, r->line, caret) - r->x0;
 }
 
 void
 tiku_codeview_reveal(tiku_codeview_t *view)
 {
     tiku_edit_pos_t anchor, caret;
-    int64_t line, rows, x, width;
+    int64_t row, rows, x, width;
+    tiku_cv_row_t r;
 
     if (view == NULL ||
         tiku_codeview_selection(view, &anchor, &caret) != TIKU_EDIT_OK)
         return;
-    line = tiku_editdoc_line_of(view->doc, caret);
+    tiku_cv_rows_ready(view);
+    x = caret_x(view, caret, &r);
     rows = tiku_codeview_rows_visible(view);
-    if (line < view->top)
-        view->top = line;
-    else if (line >= view->top + rows)
-        view->top = line - rows + 1;
-    x = caret_x(view, caret);
+    row = tiku_cv_shown_row(view, r.line, r.sub);
+    if (row < 0 || row >= rows) {
+        view->top = r.line;
+        view->top_sub = r.sub;
+    }
+    if (row >= rows)
+        (void)tiku_cv_rows_step(view, &view->top, &view->top_sub, 1 - rows);
     width = view->bounds.w - TIKU_CV_PAD_X;
     if (x < view->left)
         view->left = x;
@@ -163,20 +170,45 @@ tiku_codeview_reveal(tiku_codeview_t *view)
     tiku_cv_clamp(view);
 }
 
-/** @brief The caret one row up or down by @p rows, at the kept x. */
+/** @brief The caret @p rows rows up or down, at the x kept from the
+ *         rows' starts; @p upstream says it lands at a row's end. */
 static tiku_edit_pos_t
-vertical(tiku_codeview_t *v, tiku_edit_pos_t caret, int64_t rows)
+vertical(tiku_codeview_t *v, tiku_edit_pos_t caret, int64_t rows,
+         int *upstream)
 {
-    int64_t line = tiku_editdoc_line_of(v->doc, caret) + rows;
-    int64_t last = tiku_editdoc_lines(v->doc) - 1;
+    tiku_cv_row_t r;
+    int64_t x = caret_x(v, caret, &r), line = r.line, sub = r.sub;
 
     if (v->goal < 0)
-        v->goal = caret_x(v, caret);
-    if (line < 0)
-        line = 0;
-    if (line > last)
-        line = last;
-    return tiku_cv_pos_at(v, line, v->goal);
+        v->goal = x;
+    (void)tiku_cv_rows_step(v, &line, &sub, rows);
+    tiku_cv_row(v, line, sub, &r);
+    return tiku_cv_row_pos_at(v, &r, v->goal, upstream);
+}
+
+/** @brief Where Home goes: the start of the caret's row, or of its line
+ *         when the caret is there already. */
+static tiku_edit_pos_t
+home(tiku_codeview_t *v, tiku_edit_pos_t caret)
+{
+    tiku_cv_row_t r;
+
+    tiku_cv_row_of(v, caret, caret == v->upstream, &r);
+    return caret != r.start ? r.start :
+           tiku_editdoc_line_start(v->doc, r.line);
+}
+
+/** @brief Where End goes: the end of the caret's row, shown on it, or of
+ *         its line when the row is the line's last or the caret is at its
+ *         end already; @p upstream says it stays on the row. */
+static tiku_edit_pos_t
+end(tiku_codeview_t *v, tiku_edit_pos_t caret, int *upstream)
+{
+    tiku_cv_row_t r;
+
+    tiku_cv_row_of(v, caret, caret == v->upstream, &r);
+    *upstream = !r.last && caret != r.end;
+    return *upstream ? r.end : tiku_editdoc_line_end(v->doc, r.line);
 }
 
 tiku_edit_status_t
@@ -185,17 +217,17 @@ tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
 {
     tiku_edit_pos_t anchor, caret, lo, hi;
     tiku_edit_status_t st;
-    int64_t line, goal;
+    int64_t goal = -1;
+    int up = 0;
 
     if (view == NULL)
         return TIKU_EDIT_INVALID;
     st = tiku_codeview_selection(view, &anchor, &caret);
     if (st != TIKU_EDIT_OK)
         return st;
+    tiku_cv_rows_ready(view);
     lo = anchor < caret ? anchor : caret;
     hi = anchor < caret ? caret : anchor;
-    line = tiku_editdoc_line_of(view->doc, caret);
-    goal = -1;
     switch (move) {
     case TIKU_CODEVIEW_CHAR_LEFT:
         caret = !extend && lo < hi ? lo : tiku_editdoc_prev(view->doc, caret);
@@ -218,15 +250,15 @@ tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
                        tiku_codeview_rows_visible(view);
 
         caret = vertical(view, caret, move == TIKU_CODEVIEW_LINE_UP ||
-                         move == TIKU_CODEVIEW_PAGE_UP ? -rows : rows);
+                         move == TIKU_CODEVIEW_PAGE_UP ? -rows : rows, &up);
         goal = view->goal;
         break;
     }
     case TIKU_CODEVIEW_LINE_START:
-        caret = tiku_editdoc_line_start(view->doc, line);
+        caret = home(view, caret);
         break;
     case TIKU_CODEVIEW_LINE_END:
-        caret = tiku_editdoc_line_end(view->doc, line);
+        caret = end(view, caret, &up);
         break;
     case TIKU_CODEVIEW_DOC_START:
         caret = 0;
@@ -240,6 +272,7 @@ tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
     st = tiku_editdoc_view_select(view->doc, view->view,
                                   extend ? anchor : caret, caret);
     view->goal = goal;
+    view->upstream = up ? caret : -1;
     if (st == TIKU_EDIT_OK)
         tiku_codeview_reveal(view);
     return st;
@@ -258,26 +291,21 @@ tiku_codeview_select_all(tiku_codeview_t *view)
     return st;
 }
 
-/** @brief The line under the pointer, one row past either end of the
- *         visible rows at most, so a drag outside the view scrolls a
- *         line at a time. */
-static int64_t
-line_under(tiku_codeview_t *v, int y)
+/** @brief The row under the pointer, one row past either end of the
+ *         visible rows at most, so a drag outside the view scrolls a row
+ *         at a time. */
+static void
+row_under(tiku_codeview_t *v, int y, tiku_cv_row_t *r)
 {
-    int64_t step = tiku_codeview_row_height(v);
     int64_t row = (int64_t)y - tiku_cv_text_y(v);
     int64_t rows = tiku_codeview_rows_visible(v);
-    int64_t line, lines = tiku_editdoc_lines(v->doc);
+    int64_t line = v->top, sub = v->top_sub;
 
-    row = row >= 0 ? row / step : -1;
+    row = row >= 0 ? row / tiku_codeview_row_height(v) : -1;
     if (row > rows)
         row = rows;
-    line = v->top + row;
-    if (line < 0)
-        line = 0;
-    if (line >= lines)
-        line = lines - 1;
-    return line;
+    (void)tiku_cv_rows_step(v, &line, &sub, row);
+    tiku_cv_row(v, line, sub, r);
 }
 
 /** @brief The selection a drag gives with the pointer at @p x, @p y:
@@ -285,17 +313,20 @@ line_under(tiku_codeview_t *v, int y)
 static void
 drag_to(tiku_codeview_t *v, int x, int y)
 {
-    int64_t line = line_under(v, y);
     int64_t lx = (int64_t)x - tiku_cv_text_x(v) + v->left;
     tiku_edit_pos_t anchor, caret;
     tiku_edit_range_t r;
+    tiku_cv_row_t row;
+    int up = 0;
 
+    tiku_cv_rows_ready(v);
+    row_under(v, y, &row);
     if (v->unit == 1) {
         if (tiku_codeview_selection(v, &anchor, &caret) != TIKU_EDIT_OK)
             return;
-        caret = tiku_cv_pos_at(v, line, lx);
+        caret = tiku_cv_row_pos_at(v, &row, lx, &up);
     } else {
-        r = v->unit == 2 ? run_under(v, line, lx) : line_around(v, line);
+        r = v->unit == 2 ? run_under(v, &row, lx) : line_around(v, row.line);
         if (r.start < v->pressed.start) {
             anchor = v->pressed.end;
             caret = r.start;
@@ -308,18 +339,20 @@ drag_to(tiku_codeview_t *v, int x, int y)
         }
     }
     if (tiku_editdoc_view_select(v->doc, v->view, anchor, caret) ==
-        TIKU_EDIT_OK)
+        TIKU_EDIT_OK) {
+        v->upstream = up ? caret : -1;
         tiku_codeview_reveal(v);
+    }
 }
 
 /** @brief Button 1 went down at the event's point. */
 static void
 press(tiku_codeview_t *v, const tiku_event_t *e)
 {
-    int64_t line = line_under(v, e->y);
     int64_t lx = (int64_t)e->x - tiku_cv_text_x(v) + v->left;
     tiku_edit_pos_t anchor, caret, was;
-    int shift = (e->modifiers & TIKU_MOD_SHIFT) != 0;
+    int shift = (e->modifiers & TIKU_MOD_SHIFT) != 0, up = 0;
+    tiku_cv_row_t row;
 
     if (!shift && v->clicks > 0 && v->clicks < 3 &&
         e->time_us - v->click_at < CLICK_US &&
@@ -334,21 +367,25 @@ press(tiku_codeview_t *v, const tiku_event_t *e)
     v->goal = -1;
     v->dragging = 1;
     v->unit = v->clicks;
+    tiku_cv_rows_ready(v);
+    row_under(v, e->y, &row);
     if (v->clicks == 1) {
-        caret = tiku_cv_pos_at(v, line, lx);
+        caret = tiku_cv_row_pos_at(v, &row, lx, &up);
         if (!shift ||
             tiku_codeview_selection(v, &anchor, &was) != TIKU_EDIT_OK)
             anchor = caret;
         v->pressed.start = v->pressed.end = caret;
     } else {
-        v->pressed = v->clicks == 2 ? run_under(v, line, lx) :
-                                      line_around(v, line);
+        v->pressed = v->clicks == 2 ? run_under(v, &row, lx) :
+                                      line_around(v, row.line);
         anchor = v->pressed.start;
         caret = v->pressed.end;
     }
     if (tiku_editdoc_view_select(v->doc, v->view, anchor, caret) ==
-        TIKU_EDIT_OK)
+        TIKU_EDIT_OK) {
+        v->upstream = up ? caret : -1;
         tiku_codeview_reveal(v);
+    }
 }
 
 /** @brief Whether @p x, @p y is inside @p r. */
@@ -372,9 +409,9 @@ static void
 scroll_by(tiku_codeview_t *v, int across, int64_t delta)
 {
     if (across)
-        tiku_codeview_scroll_to(v, v->top, v->left + delta);
+        tiku_codeview_scroll_to(v, tiku_cv_top_row(v), v->left + delta);
     else
-        tiku_codeview_scroll_to(v, v->top + delta, v->left);
+        tiku_codeview_scroll_to(v, tiku_cv_top_row(v) + delta, v->left);
 }
 
 /** @brief One arrow's step: a line down, a column across. */
@@ -449,7 +486,7 @@ bar_drag(tiku_codeview_t *v, int x, int y)
     tiku_codeview_extent(v, across, &total, &visible, &value);
     value = ((int64_t)at * (total - visible) + travel / 2) / travel;
     if (across)
-        tiku_codeview_scroll_to(v, v->top, value);
+        tiku_codeview_scroll_to(v, tiku_cv_top_row(v), value);
     else
         tiku_codeview_scroll_to(v, value, v->left);
 }
@@ -575,7 +612,7 @@ dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
         wheel(view, e);
         return 1;
     case TIKU_EVENT_TICK:
-        return arrow_tick(view);
+        return arrow_tick(view) | tiku_cv_rows_tick(view, TICK_BYTES);
     case TIKU_EVENT_DEACTIVATED:
         view->dragging = 0;
         view->held_bar = 0;

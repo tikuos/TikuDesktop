@@ -239,18 +239,21 @@ static void
 box(tiku_codeview_t *v, tiku_surface_t *s, tiku_edit_pos_t pos,
     int64_t rows, tiku_rgb_t colour)
 {
-    int64_t line = tiku_editdoc_line_of(v->doc, pos), x0, x1;
+    int64_t row, x0, x1;
     int step = tiku_codeview_row_height(v);
+    tiku_cv_row_t w;
     tiku_rect_t r;
 
-    if (line < v->top || line >= v->top + rows)
+    tiku_cv_row_of(v, pos, 0, &w);
+    row = tiku_cv_shown_row(v, w.line, w.sub);
+    if (row < 0 || row >= rows)
         return;
-    x0 = tiku_cv_x_of(v, line, pos) - v->left;
-    x1 = tiku_cv_x_of(v, line, pos + 1) - v->left;
+    x0 = tiku_cv_x_of(v, w.line, pos) - w.x0 - v->left;
+    x1 = tiku_cv_x_of(v, w.line, pos + 1) - w.x0 - v->left;
     if (x1 <= 0 || x0 > tiku_cv_text_w(v))
         return;
     r.x = tiku_cv_text_x(v) + (int)x0;
-    r.y = tiku_cv_text_y(v) + (int)(line - v->top) * step;
+    r.y = tiku_cv_text_y(v) + (int)row * step;
     r.w = (int)(x1 - x0);
     r.h = step;
     tiku_fill(s, r, colour);

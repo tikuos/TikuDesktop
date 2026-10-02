@@ -44,11 +44,12 @@ inside(tiku_rect_t r, int x, int y)
 static int
 shown_point(tiku_codeview_t *v, tiku_edit_pos_t pos, int64_t *x, int64_t *y)
 {
-    int64_t line = tiku_editdoc_line_of(v->doc, pos);
+    int64_t top = tiku_cv_text_y(v);
 
-    if (line < v->top || line > v->top + tiku_codeview_rows_visible(v))
+    if (tiku_codeview_point(v, pos, x, y) != TIKU_EDIT_OK || *y < top)
         return 0;
-    return tiku_codeview_point(v, pos, x, y) == TIKU_EDIT_OK;
+    return (*y - top) / tiku_codeview_row_height(v) <=
+           tiku_codeview_rows_visible(v);
 }
 
 /** @brief The width a tip's lines wrap at in the view's area now. */

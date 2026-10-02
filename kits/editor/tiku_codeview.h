@@ -7,11 +7,11 @@
  * tiku_codeview.h - an editor document on the screen, its caret, and the
  * edits and searches made through it.
  *
- * A view shows one row per line of its document and keeps every byte: a
- * tab reaches the next stop from the start of its line, a control
- * character is shown by name, and the caret may stop between any two
- * characters.  Painting, hit testing and caret moves read that one
- * layout.  Each view
+ * A view shows each line of its document on a row, or with the wrap
+ * option on as many rows as its width takes, and keeps every byte: a tab
+ * reaches the next stop from the start of its line, a control character
+ * is shown by name, and the caret may stop between any two characters.
+ * Painting, hit testing and caret moves read that one layout.  Each view
  * keeps its own selection and scroll position.  Positions are byte
  * offsets; x and y are pixels on the surface the view is painted on, and
  * a line's own x starts at 0 where its first character begins.
@@ -100,6 +100,8 @@ tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 #define TIKU_CODEVIEW_HSCROLL      0x8u  /* a scrollbar along the foot  */
 #define TIKU_CODEVIEW_BRACES       0x10u /* the bracket by the caret and
                                             its match marked            */
+#define TIKU_CODEVIEW_WRAP         0x20u /* lines broken into rows at the
+                                            text's width                */
 
 /**
  * @brief How a language is edited: how a line is commented, what opens
@@ -154,6 +156,18 @@ tiku_edit_status_t tiku_codeview_set_newline(tiku_codeview_t *view,
 void tiku_codeview_set_options(tiku_codeview_t *view, unsigned options);
 unsigned tiku_codeview_options(const tiku_codeview_t *view);
 
+/**
+ * @brief Whether lines that wrap are still to be counted.
+ *
+ * With TIKU_CODEVIEW_WRAP a row breaks after the last blank that fits, or
+ * else before the character that would pass the text's width, and keeps
+ * at least one character; blanks past the width stay on their row.  The
+ * rows shown are counted at once, and up to 256 KB of the other lines
+ * each time the view is laid out; a tick event counts more.  A line not
+ * yet counted takes its last count, or one row, in the scroll range.
+ */
+int tiku_codeview_wrapping(tiku_codeview_t *view);
+
 /** @brief Whether the caret is drawn; the selection is drawn either
  *         way.  A new view is focused. */
 void tiku_codeview_set_focus(tiku_codeview_t *view, int focused);
@@ -164,18 +178,19 @@ int tiku_codeview_row_height(const tiku_codeview_t *view);
 /** @brief Whole rows the bounds show, at least 1. */
 int64_t tiku_codeview_rows_visible(const tiku_codeview_t *view);
 
-/** @brief The line shown in the first row, and how far the text is
- *         scrolled left, in pixels. */
+/** @brief The first row shown, which is a line's index unless lines
+ *         wrap, and how far the text is scrolled left, in pixels. */
 int64_t tiku_codeview_top(const tiku_codeview_t *view);
 int64_t tiku_codeview_left(const tiku_codeview_t *view);
-/** @brief Scroll so @p top is the first row and the text is moved
- *         @p left pixels.  The top stops where the last line fills the
+/** @brief Scroll so row @p top is the first shown and the text is moved
+ *         @p left pixels.  The top stops where the last row fills the
  *         last whole row, the text stops a little past the end of the
- *         widest line, and neither goes below 0. */
+ *         widest line, and neither goes below 0.  Wrapped lines are never
+ *         scrolled across. */
 void tiku_codeview_scroll_to(tiku_codeview_t *view, int64_t top,
                              int64_t left);
 /** @brief What there is to scroll, for an application drawing its own
- *         scrollbar: lines down, or pixels across when @p across, with
+ *         scrollbar: rows down, or pixels across when @p across, with
  *         @p total in all, @p visible of them shown and the first shown
  *         at @p value. */
 void tiku_codeview_extent(tiku_codeview_t *view, int across,
@@ -193,9 +208,9 @@ tiku_edit_status_t tiku_codeview_point(tiku_codeview_t *view,
                                        tiku_edit_pos_t pos, int64_t *x,
                                        int64_t *y);
 /** @brief The caret position nearest the surface point @p x, @p y: on
- *         the row under @p y, clamped to the first and last lines, before
+ *         the row under @p y, clamped to the first and last rows, before
  *         a character whose left half holds @p x and after one whose
- *         right half does; past the line's end, its end. */
+ *         right half does; past the row's end, its end. */
 tiku_edit_pos_t tiku_codeview_hit(tiku_codeview_t *view, int x, int y);
 
 /** @brief The view's selection; equal ends are an empty caret. */
@@ -217,8 +232,9 @@ typedef enum {
     TIKU_CODEVIEW_LINE_DOWN,        /* the row below, at the same x     */
     TIKU_CODEVIEW_PAGE_UP,          /* the visible rows up              */
     TIKU_CODEVIEW_PAGE_DOWN,        /* the visible rows down            */
-    TIKU_CODEVIEW_LINE_START,
-    TIKU_CODEVIEW_LINE_END,         /* before the line break            */
+    TIKU_CODEVIEW_LINE_START,       /* the row's start, then the line's */
+    TIKU_CODEVIEW_LINE_END,         /* the row's end, then the line's,
+                                       before its line break            */
     TIKU_CODEVIEW_DOC_START,
     TIKU_CODEVIEW_DOC_END
 } tiku_codeview_move_t;
@@ -228,9 +244,10 @@ typedef enum {
  *
  * With @p extend the anchor stays and the selection follows the caret;
  * without it the selection becomes the caret alone, and a character move
- * over a selection stops at the selection's edge.  The rows up and down
- * keep the x the first of them started from until another move or a
- * change to the document.
+ * over a selection stops at its edge.  Rows up and down keep the x from
+ * the row's start the first of them had, until another move or a change.
+ * A caret where a row breaks shows at the next row's start, unless End,
+ * a row move or a press past the row's end put it at that end.
  */
 tiku_edit_status_t tiku_codeview_move(tiku_codeview_t *view,
                                       tiku_codeview_move_t move, int extend);

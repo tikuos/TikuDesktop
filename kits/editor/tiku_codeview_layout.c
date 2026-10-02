@@ -32,8 +32,6 @@ typedef struct {
     tiku_edit_pos_t mark_at;    /* where the next one may be taken      */
 } walk_t;
 
-static uint32_t metrics_key(const tiku_codeview_t *v);
-
 const tiku_font_t *
 tiku_cv_font(const tiku_codeview_t *v)
 {
@@ -158,7 +156,7 @@ walk_bytes(void *ctx, const char *bytes, size_t n)
 static tiku_cv_long_t *
 long_of(tiku_codeview_t *v, int64_t line, tiku_edit_range_t r)
 {
-    uint32_t key = metrics_key(v);
+    uint32_t key = tiku_cv_metrics_key(v);
     tiku_cv_long_t *e = NULL;
     int i;
 
@@ -415,14 +413,16 @@ tiku_codeview_extent(tiku_codeview_t *view, int across, int64_t *total,
 {
     int64_t t = 0, shown = 0, at = 0;
 
+    if (view != NULL)
+        tiku_cv_rows_ready(view);
     if (view != NULL && across) {
-        t = tiku_cv_widest(view) + TIKU_CV_SLACK;
         shown = tiku_cv_text_w(view);
+        t = tiku_cv_wraps(view) ? shown : tiku_cv_widest(view) + TIKU_CV_SLACK;
         at = view->left;
     } else if (view != NULL) {
-        t = tiku_editdoc_lines(view->doc);
+        t = tiku_cv_rows_total(view);
         shown = tiku_codeview_rows_visible(view);
-        at = view->top;
+        at = tiku_cv_top_row(view);
     }
     if (total != NULL)
         *total = t;
@@ -456,10 +456,8 @@ tiku_cv_bar_place(tiku_codeview_t *v, int horizontal, int *pos, int *frac)
         *frac = 1000;
 }
 
-/** @brief A number for everything a line's width depends on: the face,
- *         its height and printable advances, and the tab stops. */
-static uint32_t
-metrics_key(const tiku_codeview_t *v)
+uint32_t
+tiku_cv_metrics_key(const tiku_codeview_t *v)
 {
     const tiku_font_t *f = tiku_cv_font(v);
     uint32_t h = 2166136261u;
@@ -549,7 +547,7 @@ int64_t
 tiku_cv_widest(tiku_codeview_t *v)
 {
     int64_t lines = tiku_editdoc_lines(v->doc), i, widest = 0;
-    uint32_t key = metrics_key(v);
+    uint32_t key = tiku_cv_metrics_key(v);
 
     if (v->widths_ok && (v->nwidths != lines || v->widths_key != key))
         tiku_cv_widths_free(v);
@@ -594,41 +592,52 @@ tiku_edit_status_t
 tiku_codeview_point(tiku_codeview_t *view, tiku_edit_pos_t pos, int64_t *x,
                     int64_t *y)
 {
-    int64_t line;
+    tiku_edit_pos_t anchor, caret;
+    tiku_cv_row_t r;
 
     if (view == NULL)
         return TIKU_EDIT_INVALID;
     if (!tiku_editdoc_is_boundary(view->doc, pos))
         return TIKU_EDIT_INVALID_RANGE;
-    line = tiku_editdoc_line_of(view->doc, pos);
-    if (pos > tiku_editdoc_line_end(view->doc, line))
-        pos = tiku_editdoc_line_end(view->doc, line);
+    tiku_cv_rows_ready(view);
+    if (tiku_codeview_selection(view, &anchor, &caret) != TIKU_EDIT_OK)
+        caret = -1;
+    tiku_cv_row_of(view, pos, pos == caret && pos == view->upstream, &r);
+    if (pos > r.end)
+        pos = r.end;
     if (x != NULL)
-        *x = tiku_cv_text_x(view) + tiku_cv_x_of(view, line, pos) -
-             view->left;
+        *x = tiku_cv_text_x(view) + tiku_cv_x_of(view, r.line, pos) -
+             r.x0 - view->left;
     if (y != NULL)
-        *y = tiku_cv_text_y(view) +
-             (line - view->top) * tiku_codeview_row_height(view);
+        *y = tiku_cv_text_y(view) + tiku_cv_shown_row(view, r.line, r.sub) *
+             tiku_codeview_row_height(view);
     return TIKU_EDIT_OK;
+}
+
+int64_t
+tiku_cv_row_under(tiku_codeview_t *v, int64_t y, tiku_cv_row_t *r)
+{
+    int64_t line = v->top, sub = v->top_sub, step, row;
+
+    step = tiku_codeview_row_height(v);
+    row = y - tiku_cv_text_y(v);
+    row = row >= 0 ? row / step : -((-row + step - 1) / step);
+    (void)tiku_cv_rows_step(v, &line, &sub, row);
+    tiku_cv_row(v, line, sub, r);
+    return row;
 }
 
 tiku_edit_pos_t
 tiku_codeview_hit(tiku_codeview_t *view, int x, int y)
 {
-    int64_t row, line, lines;
-    int step;
+    tiku_cv_row_t r;
+    int upstream;
 
     if (view == NULL)
         return -1;
-    step = tiku_codeview_row_height(view);
-    row = (int64_t)y - tiku_cv_text_y(view);
-    row = row >= 0 ? row / step : -((-row + step - 1) / step);
-    lines = tiku_editdoc_lines(view->doc);
-    line = view->top + row;
-    if (line < 0)
-        line = 0;
-    if (line >= lines)
-        line = lines - 1;
-    return tiku_cv_pos_at(view, line,
-                          (int64_t)x - tiku_cv_text_x(view) + view->left);
+    tiku_cv_rows_ready(view);
+    (void)tiku_cv_row_under(view, y, &r);
+    return tiku_cv_row_pos_at(view, &r,
+                              (int64_t)x - tiku_cv_text_x(view) + view->left,
+                              &upstream);
 }

@@ -17,9 +17,9 @@
 
 /** @brief Keep the first row on the text it showed when a change lands
  *         above it, or on the change when the change covers it, carry
- *         the line widths, colouring states and checkpoints across it,
- *         and ask the host to paint again.  A change ends a drag, a held
- *         thumb and the x vertical moves were keeping. */
+ *         the line widths, rows, colouring states and checkpoints across
+ *         it, and ask the host to paint again.  A change ends a drag, a
+ *         held thumb and the x vertical moves were keeping. */
 static void
 heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
 {
@@ -28,6 +28,7 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
     int64_t first, last, delta;
 
     v->goal = -1;
+    v->upstream = -1;
     v->dragging = 0;
     v->held_bar = 0;
     if (change->count == 0)
@@ -35,8 +36,10 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
     if (change->cause == TIKU_EDIT_LOADED) {
         tiku_cv_assist_free(v);
         v->top = 0;
+        v->top_sub = 0;
         v->left = 0;
         tiku_cv_widths_free(v);
+        tiku_cv_rows_free(v);
         tiku_cv_style_reset(v);
         tiku_cv_marks_change(v, 0);
         if (v->host.invalidate != NULL)
@@ -50,11 +53,14 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
     delta = change->lines_after - change->lines_before;
     last = tiku_editdoc_line_of(doc, after.end) - delta;
     tiku_cv_widths_change(v, first, last, last + delta, change->lines_after);
+    tiku_cv_rows_change(v, first, last, last + delta, change->lines_after);
     tiku_cv_style_change(v, first, last, last + delta, change->lines_after);
-    if (last < v->top)
+    if (last < v->top) {
         v->top += delta;
-    else if (first < v->top)
+    } else if (first < v->top) {
         v->top = first;
+        v->top_sub = 0;
+    }
     tiku_cv_clamp(v);
     if (v->host.invalidate != NULL)
         v->host.invalidate(v->host.ctx, v);
@@ -79,11 +85,13 @@ tiku_codeview_create(tiku_editdoc_t *doc, tiku_codeview_t **view)
     v->tab_width = TIKU_CODEVIEW_TAB_DEFAULT;
     v->focused = 1;
     v->goal = -1;
+    v->upstream = -1;
     v->widest = -1;
     strcpy(v->newline, "\n");
     v->exec_fill = TIKU_RGB(211, 238, 185);
     tiku_text_input_reset(&v->input);
     tiku_cv_marks_free(v);
+    tiku_cv_rows_free(v);
     v->kept_line = -1;
     st = tiku_editdoc_view_attach(doc, &v->view);
     if (st == TIKU_EDIT_OK) {
@@ -110,6 +118,7 @@ tiku_codeview_destroy(tiku_codeview_t *view)
     tiku_editdoc_view_detach(view->doc, view->view);
     tiku_editdoc_release(view->doc);
     tiku_cv_widths_free(view);
+    tiku_cv_rows_free(view);
     tiku_cv_style_free(view);
     tiku_cv_marks_free(view);
     tiku_ed_free(view);
@@ -229,7 +238,8 @@ tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
                                TIKU_CODEVIEW_INVISIBLES |
                                TIKU_CODEVIEW_VSCROLL |
                                TIKU_CODEVIEW_HSCROLL |
-                               TIKU_CODEVIEW_BRACES);
+                               TIKU_CODEVIEW_BRACES |
+                               TIKU_CODEVIEW_WRAP);
     view->held_bar = 0;
     view->arrow_bar = 0;
     tiku_cv_clamp(view);
@@ -267,6 +277,9 @@ tiku_cv_clamp(tiku_codeview_t *v)
     int64_t last = tiku_editdoc_lines(v->doc) -
                    tiku_codeview_rows_visible(v);
 
+    tiku_cv_rows_ready(v);
+    if (tiku_cv_wraps(v))
+        return;
     if (v->top > last)
         v->top = last;
     if (v->top < 0)
@@ -281,6 +294,8 @@ tiku_cv_clamp_across(tiku_codeview_t *v)
     int64_t most;
 
     tiku_cv_clamp(v);
+    if (tiku_cv_wraps(v))
+        return;
     most = tiku_cv_widest(v) + TIKU_CV_SLACK - tiku_cv_text_w(v);
     if (v->left > most)
         v->left = most > 0 ? most : 0;
@@ -289,7 +304,7 @@ tiku_cv_clamp_across(tiku_codeview_t *v)
 int64_t
 tiku_codeview_top(const tiku_codeview_t *view)
 {
-    return view != NULL ? view->top : 0;
+    return view != NULL ? tiku_cv_top_row(view) : 0;
 }
 
 int64_t
@@ -303,7 +318,8 @@ tiku_codeview_scroll_to(tiku_codeview_t *view, int64_t top, int64_t left)
 {
     if (view == NULL)
         return;
-    view->top = top;
+    tiku_cv_rows_ready(view);
+    tiku_cv_set_top_row(view, top);
     view->left = left;
     tiku_cv_clamp_across(view);
 }
@@ -324,5 +340,6 @@ tiku_codeview_select(tiku_codeview_t *view, tiku_edit_pos_t anchor,
     if (view == NULL)
         return TIKU_EDIT_INVALID;
     view->goal = -1;
+    view->upstream = -1;
     return tiku_editdoc_view_select(view->doc, view->view, anchor, caret);
 }
