@@ -44,6 +44,7 @@ SAN_TESTS += $(SAN_APP_TESTS)
 SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
                   test_editdoc_faults test_editdoc_fixtures \
+                  test_editdoc_decorations test_codeview_assist \
                   test_codeview_layout test_codeview_paint \
                   test_codeview_input test_codeview_display \
                   test_codeview_edit test_codeview_find \

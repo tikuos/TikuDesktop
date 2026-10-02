@@ -44,6 +44,7 @@ The files used, by SHA-256:
 | `test/unit/testSelection.cxx` | cases translated | `c277296cb5d4ae4a1643d7609f9e8f43edcf837bf7e59735e4daaf58d81aad2b` |
 | `test/unit/testDocument.cxx` | cases translated | `356dd0d972743ba19b51f099be19eb0c6fea0a171c38083817770575442c2d7c` |
 | `test/unit/testUniConversion.cxx` | cases translated | `48abb7a5005f6878ca5bcebd41c190011657366925032a3b3669fa0d33c0694f` |
+| `test/unit/testPerLine.cxx` | cases translated | `af1b379394df719245d7af8c52399d7a90294dc5ebad0fda10623e72fc04d566` |
 
 "Reference" means the file was read to understand behaviour and no code was
 taken from it.
@@ -72,6 +73,7 @@ years, so each header quotes its own source's line.
 | `tests/kits/test_editdoc_lines.c` | cases from `testCellBuffer.cxx` | Neil Hodgson |
 | `tests/kits/test_editdoc_history.c` | cases from `testCellBuffer.cxx`, `testDocument.cxx` | Neil Hodgson |
 | `tests/kits/test_editdoc_marks.c` | a case from `testSelection.cxx` | Neil Hodgson |
+| `tests/kits/test_editdoc_decorations.c` | the `LineMarkers` cases from `testPerLine.cxx` | Neil Hodgson |
 | `tests/kits/test_editdoc.c` | cases from `testDocument.cxx`, `testCellBuffer.cxx`, `testUniConversion.cxx` | Neil Hodgson |
 
 The upstream test files carry no copyright line of their own. They are part
@@ -399,7 +401,8 @@ Contiguous Backward, and Delete Contiguous Forward.
 | SafeSegment / Short, ASCII, UTF-8, UTF-8 Character Fragments, UTF-8 Combining Characters | Deferred | | Splitting long lines for layout, with the editing widget |
 | SafeSegment / DBCS Shift-JIS | Excluded | | DBCS |
 | DiscardLastCombinedCharacter / all 8 sections | Deferred | | The same layout splitting |
-| PerLine / LineMarkers | Deferred | | IDE markers |
+| PerLine / LineMarkers / Initial, AddDelete, MarkerNext | Adapted | `test_editdoc_decorations.c:upstream_line_markers` | Marker numbers are kinds and markers are added to lines of a document; the per-line handle and number queries (`HandleFromLine`, `NumberFromLine`) have no counterpart |
+| PerLine / LineMarkers / MergeMarkers, InsertRemoveLine | Adapted | Same | Lines are joined, inserted and removed as edits of the text, which is how markers meet them here |
 | PerLine / LineAnnotation | Deferred | | Annotations |
 
 In the DocumentUndo cases, one undo still restores the whole joined step
@@ -443,7 +446,7 @@ one by one when the module is adapted.
 | `testContractionState.cxx` | Deferred | Folding |
 | `testDecoration.cxx` | Deferred | Diagnostic underlines |
 | `testGeometry.cxx` | Excluded | Geometry is Tiku code |
-| `testPerLine.cxx` | Deferred | IDE markers, annotations, fold levels |
+| `testPerLine.cxx` | Adapted, Deferred | `LineMarkers` adapted; annotations and fold levels wait for their features |
 | `testRESearch.cxx` | Excluded | Regex is a separate later decision |
 | `testRunStyles.cxx` | Deferred | Indicators |
 | `testSparseVector.cxx` | Deferred | Folding |
