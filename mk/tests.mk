@@ -251,6 +251,7 @@ test_codeview_style_LIBS := $(LIB_EDITOR)
 test_codeview_host_LIBS := $(LIB_EDITOR)
 test_codeview_assist_LIBS := $(LIB_EDITOR)
 test_codeview_lines_LIBS := $(LIB_EDITOR)
+test_codeview_wrap_LIBS := $(LIB_EDITOR)
 test_codeview_host_LDLIBS := $(X11_LIBS) -lm
 test_codeview_speed_LIBS := $(LIB_EDITOR)
 test_codeview_speed_LDLIBS := $(X11_LIBS) -lm
