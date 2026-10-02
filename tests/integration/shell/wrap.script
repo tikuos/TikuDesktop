@@ -1,0 +1,54 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Wrap Lines, end to end: a line far wider than the window is shown on
+# the rows below it once the View menu says so, and on one row again
+# when it is taken off.  The pixel below is a glyph pixel on the second
+# row, asserted as the page's ground first, as ink while lines wrap and
+# as ground again, so what is proven is the change.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 40
+expect-title Open
+click 400 200
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Edit
+wait 25
+shot /tmp/tiku-editor-wrap-off.png
+note unwrapped, the second row holds the short line and nothing past it
+expect-pixel 319 167 ffffff
+click 212 8
+wait 6
+expect-menu Wrap Lines
+menu-pick Wrap Lines
+wait 25
+shot /tmp/tiku-editor-wrap-on.png
+note wrapped, the long line goes on in the second row
+expect-pixel 319 167 080808
+click 212 8
+wait 6
+expect-menu Wrap Lines
+menu-pick Wrap Lines
+wait 25
+shot /tmp/tiku-editor-wrap-again.png
+note and taken off, the second row is the short line again
+expect-pixel 319 167 ffffff
+note put the editor away rather than leave it standing
+click-window Edit
+wait 6
+key Escape
+wait 30
+expect-no-title Edit
+quit

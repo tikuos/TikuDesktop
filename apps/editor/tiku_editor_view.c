@@ -53,7 +53,8 @@ void tiku_editor_view_sync(edit_state_t *st)
     tiku_codeview_set_bounds(st->view, tiku_editor_view_box(st));
     tiku_codeview_set_options(st->view, TIKU_CODEVIEW_BRACES |
         (st->numbers ? TIKU_CODEVIEW_LINE_NUMBERS : 0) |
-        (st->show_invisibles ? TIKU_CODEVIEW_INVISIBLES : 0));
+        (st->show_invisibles ? TIKU_CODEVIEW_INVISIBLES : 0) |
+        (st->wrap ? TIKU_CODEVIEW_WRAP : 0));
 }
 
 /** Scroll as little as shows the caret, in the box the window has now. */

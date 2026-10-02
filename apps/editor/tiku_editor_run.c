@@ -107,15 +107,20 @@ tiku_editor_run_program(edit_state_t *st)
     snprintf(st->note, sizeof st->note, "running");
 }
 
-/** @brief Hear what the run has said since the last frame. */
+/** @brief Count the rows of lines still to be wrapped, and hear what the
+ *         run has said since the last frame. */
 void
 tiku_editor_tick(void *state, int64_t now_us)
 {
     edit_state_t *st = state;
+    tiku_event_t count = {.type = TIKU_EVENT_TICK};
     char buf[256];
     ssize_t n;
     int heard = 0;
 
+    if (st && tiku_codeview_wrapping(st->view) &&
+        tiku_codeview_event(st->view, &count))
+        tiku_editor_paint(st);
     if (st && strcmp(st->note, st->last_note)) {
         snprintf(st->last_note, sizeof st->last_note, "%s", st->note);
         st->note_until = now_us + 8000000;

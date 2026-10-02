@@ -49,7 +49,7 @@ enum { CMD_NEW = 8, CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE,
        CMD_NUMBERS, CMD_REPLACE_ALL, CMD_INVISIBLES, CMD_INDENT,
        CMD_UNINDENT, CMD_COMMENT, CMD_DUPLICATE, CMD_LINES_UP,
        CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET,
-       CMD_WORD_BACK, CMD_WORD_ON };
+       CMD_WORD_BACK, CMD_WORD_ON, CMD_WRAP };
 
 typedef struct {
     const tiku_app_services_t *services;
@@ -119,7 +119,7 @@ typedef struct {
     char scratch[64];
     uint32_t search_id;
     tiku_surface_t *search_surface;
-    int search_active, hover_tool, pressed_tool, show_invisibles;
+    int search_active, hover_tool, pressed_tool, show_invisibles, wrap;
     int match_case, whole_word;
     char last_note[128];
     int64_t note_until;

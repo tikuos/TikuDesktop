@@ -801,6 +801,53 @@ static void text_menu(edit_state_t *st)
     key(st, '/', TIKU_MOD_CMD); assert(!strcmp(line(st, 0), "f()"));
 }
 
+/** View > Wrap Lines breaks lines at the page's width: marked while on,
+ *  nothing to scroll across, End stopping at a row's end before the
+ *  line's, and the window's tick counting the rows of a long document. */
+static void wrap_lines(edit_state_t *st)
+{
+    const tiku_menu_list_t *view = &st->last_menus.menu[3];
+    size_t big = 70000 * 30;
+    char *text = malloc(big + 1);
+    int64_t total, shown, at, y, x;
+    int i;
+    assert(text);
+    for (i = 0; i < 400; i++) memcpy(text + 5 * i, "word ", 5);
+    text[2000] = 0;
+    assert(set_text(st, text));
+    tiku_editor_publish(st); tiku_editor_paint(st);
+    assert(view->nitem == 5 && view->item[4].command == CMD_WRAP &&
+           !strcmp(view->item[4].label, "Wrap Lines") &&
+           view->item[4].enabled && !view->item[4].marked);
+    assert(tiku_scroll_max(&st->horizontal) > 0);
+    tiku_editor_pick(st, st->id, CMD_WRAP);
+    assert(view->item[4].marked &&
+           (tiku_codeview_options(st->view) & TIKU_CODEVIEW_WRAP));
+    tiku_codeview_extent(st->view, 0, &total, &shown, &at);
+    assert(tiku_scroll_max(&st->horizontal) == 0 && total > 10);
+    place(st, 0, 0); key(st, TIKU_KEY_END, 0);
+    caret_at(st, &y, &x); assert(y == 0 && x > 0 && x < 2000);
+    key(st, TIKU_KEY_END, 0); caret_at(st, &y, &x); assert(x == 2000);
+    for (i = 0; i < 70000; i++)
+        memcpy(text + 30 * i, "word word word word word word\n", 30);
+    text[big] = 0;
+    assert(set_text(st, text));
+    tiku_editor_paint(st);
+    assert(tiku_codeview_wrapping(st->view));
+    for (i = 0; i < 50 && tiku_codeview_wrapping(st->view); i++)
+        tiku_editor_tick(st, 0);
+    assert(!tiku_codeview_wrapping(st->view));
+    for (i = 0; i < 400; i++) memcpy(text + 5 * i, "word ", 5);
+    text[2000] = 0;
+    assert(set_text(st, text));
+    tiku_editor_pick(st, st->id, CMD_WRAP);
+    assert(!view->item[4].marked &&
+           !(tiku_codeview_options(st->view) & TIKU_CODEVIEW_WRAP) &&
+           tiku_scroll_max(&st->horizontal) > 0);
+    free(text);
+    assert(set_text(st, ""));
+}
+
 /** @brief A launch argument loads its contents, never a remembered document. */
 int main(void)
 {
@@ -836,6 +883,7 @@ int main(void)
     caret_rules(st);
     editor_rows(st);
     text_menu(st);
+    wrap_lines(st);
     undo_roundtrips(st);
     history_rollover(st);
     large_documents(st, dir);
