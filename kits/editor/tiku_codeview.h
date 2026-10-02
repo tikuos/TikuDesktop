@@ -98,6 +98,47 @@ tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 #define TIKU_CODEVIEW_INVISIBLES   0x2u  /* a mark in each space and tab */
 #define TIKU_CODEVIEW_VSCROLL      0x4u  /* a scrollbar down the right  */
 #define TIKU_CODEVIEW_HSCROLL      0x8u  /* a scrollbar along the foot  */
+#define TIKU_CODEVIEW_BRACES       0x10u /* the bracket by the caret and
+                                            its match marked            */
+
+/**
+ * @brief How a language is edited: how a line is commented, what opens
+ *        and closes a level of indentation, and which brackets pair.
+ *
+ * Markers are compared without regard to ASCII case.  A closer typed as
+ * the first character of a line, after its indentation, takes the
+ * indentation of the line holding its opener.
+ */
+typedef struct {
+    const char *comment;        /* a line comment's opening, inserted
+                                   with a space after it; NULL: none    */
+    const char *comment_alt;    /* also read as a comment's opening
+                                   when removing one; NULL: none        */
+    int numbered;               /* a line may start with a number, and
+                                   its comment goes after it            */
+    const char *opens;          /* a line whose code ends with one of
+                                   these opens a level                  */
+    const char *closes;         /* closers that end one                 */
+    const char *brackets;       /* pairs, each opener then its closer   */
+} tiku_codeview_rules_t;
+
+/** @brief The rules of @p lang: C comments with "//" and opens a level
+ *         after "{"; BASIC comments with "REM" after a line's number;
+ *         prose has no comments.  All of them pair (), [] and {}. */
+const tiku_codeview_rules_t *tiku_codeview_rules_for(tiku_syntax_lang_t lang);
+/** @brief Edit by @p rules, copied, whose strings must outlive the view;
+ *         NULL follows the view's language, as a new view does. */
+void tiku_codeview_set_rules(tiku_codeview_t *view,
+                             const tiku_codeview_rules_t *rules);
+/** @brief The rules the view edits by. */
+const tiku_codeview_rules_t *tiku_codeview_rules(const tiku_codeview_t *view);
+/** @brief Indent by @p spaces spaces a level, from 1 to
+ *         TIKU_CODEVIEW_TAB_MAX, or by a tab with 0, as a new view does;
+ *         anything else is refused and the setting kept. */
+tiku_edit_status_t tiku_codeview_set_indent(tiku_codeview_t *view,
+                                            int spaces);
+/** @brief Spaces a level of indentation, 0 for a tab. */
+int tiku_codeview_indent_spaces(const tiku_codeview_t *view);
 
 /** @brief Use @p host's clipboard and invalidation; NULL uses none.  The
  *         members are copied. */
@@ -216,6 +257,74 @@ tiku_edit_status_t tiku_codeview_insert(tiku_codeview_t *view,
  *         join into one undo step.  With no character on that side
  *         nothing changes and TIKU_EDIT_NOTHING is returned. */
 tiku_edit_status_t tiku_codeview_delete(tiku_codeview_t *view, int forward);
+/**
+ * @brief Replace the selection with the view's line break and the
+ *        indentation of the line the selection starts on, up to it.
+ *
+ * After a line whose code ends with an opener of the rules the new line
+ * is indented one level more, and a closer that followed the selection
+ * goes to a line of its own at the old indentation.  One undo step,
+ * joining the typing before it, the caret at the end of the indentation.
+ */
+tiku_edit_status_t tiku_codeview_newline(tiku_codeview_t *view);
+/**
+ * @brief Indent the lines the selection touches by one level, or with
+ *        @p out unindent them: one tab or up to a level of spaces off
+ *        the front of each.
+ *
+ * A selection that ends at the start of a line leaves that line out.
+ * Over several lines, empty lines are left as they are and the whole
+ * lines end selected.  TIKU_EDIT_NOTHING when nothing would change.
+ */
+tiku_edit_status_t tiku_codeview_indent(tiku_codeview_t *view, int out);
+/**
+ * @brief Comment the lines the selection touches, or uncomment them when
+ *        every one holding text is commented already.
+ *
+ * The comment goes before the text at the least indentation among the
+ * lines, or after a line's number by numbered rules; blank lines are left
+ * as they are.  TIKU_EDIT_NOTHING when the rules have no comment or no
+ * line holds text.
+ */
+tiku_edit_status_t tiku_codeview_toggle_comment(tiku_codeview_t *view);
+/** @brief Copy the lines the selection touches below them, and select
+ *         the copy of what was selected. */
+tiku_edit_status_t tiku_codeview_duplicate_lines(tiku_codeview_t *view);
+/** @brief Swap the lines the selection touches with the line above, or
+ *         with @p down the line below; the selection moves with them and
+ *         a last line keeps no line break.  TIKU_EDIT_NOTHING at the
+ *         document's first or last line. */
+tiku_edit_status_t tiku_codeview_move_lines(tiku_codeview_t *view,
+                                            int down);
+/** @brief Delete the lines the selection touches with their line breaks,
+ *         or the last lines with the break before them; the caret goes
+ *         to where they began. */
+tiku_edit_status_t tiku_codeview_delete_lines(tiku_codeview_t *view);
+/** @brief Delete the selection, or else back to where a word move left
+ *         would go, or with @p forward on to where a word move right
+ *         would, as one undo step. */
+tiku_edit_status_t tiku_codeview_delete_word(tiku_codeview_t *view,
+                                             int forward);
+/**
+ * @brief The bracket of the view's rules next to the caret, the one
+ *        before it first, and in @p match the bracket it pairs with.
+ *
+ * Brackets inside quotes or remarks are not counted, and the search for
+ * the match stops TIKU_CODEVIEW_BRACE_SCAN bytes away.  @return the
+ * bracket's position, or -1 when there is none or the caret holds a
+ * selection; @p match is -1 when no bracket pairs with it, and -2 when
+ * the search stopped before finding out.
+ */
+tiku_edit_pos_t tiku_codeview_bracket(tiku_codeview_t *view,
+                                      tiku_edit_pos_t *match);
+/** @brief Put the caret on the other side of the matching bracket, or
+ *         with @p extend select from the bracket through its match.
+ *         TIKU_EDIT_NOTHING when the caret is by no paired bracket. */
+tiku_edit_status_t tiku_codeview_goto_bracket(tiku_codeview_t *view,
+                                              int extend);
+/** @brief Bytes the bracket search reads before giving up. */
+#define TIKU_CODEVIEW_BRACE_SCAN ((tiku_edit_pos_t)1 << 20)
+
 /** @brief Step the document's history back or forward and show the
  *         caret. */
 tiku_edit_status_t tiku_codeview_undo(tiku_codeview_t *view);
@@ -271,11 +380,12 @@ tiku_edit_status_t tiku_codeview_replace_all(tiku_codeview_t *view,
 /**
  * @brief Take a key, text, pointer, wheel or tick event.
  *
- * Moves: the arrows, Home, End, Page Up and Page Down, extending with
- * Shift; Command with Home or End for the document's ends; Option or
- * Command with Left or Right for words.  Edits: the text of a key
- * pressed without Command, Return, Tab, Backspace, Delete and text-input
- * commits; Command with C, X, V, A, Z, Shift Z and Y.
+ * Moves: the arrows, Home, End and the page keys, with Shift extending;
+ * Command with Home or End, Option or Command with Left or Right.  Edits:
+ * typed text, Return, Tab, Shift Tab, Backspace, Delete and text-input
+ * commits; Command with C, X, V, A, Z, Shift Z and Y, and the line
+ * commands' keys: / D, Shift K, Shift Up, Shift Down, M, Shift M, and
+ * Backspace or Delete for a word.
  *
  * @note Button 1 in the text puts the caret, Shift extends, two clicks
  *       select a word and three a line, and dragging extends by the same

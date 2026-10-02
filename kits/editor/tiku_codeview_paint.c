@@ -353,6 +353,7 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
         paint_gutter(view, s, gutter, area);
     tiku_clip_set(s, meet(area, full));
     paint_fills(view, s, area);
+    tiku_cv_brace_paint(view, s, tiku_codeview_rows_visible(view) + 1);
     tiku_clip_set(s, full);
 
     memset(&r, 0, sizeof r);

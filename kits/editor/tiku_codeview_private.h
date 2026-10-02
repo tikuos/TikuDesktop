@@ -127,6 +127,15 @@ struct tiku_codeview {
     int tip_shown;                  /* a tip is shown                   */
     char *tip_text;                 /* what it says                     */
     tiku_edit_anchor_t tip_at;      /* where it was shown               */
+    tiku_codeview_rules_t rules;    /* the application's own rules      */
+    int own_rules;                  /* use them, not the language's     */
+    int indent_spaces;              /* spaces a level; 0 a tab          */
+    uint64_t brace_gen;             /* the generation the bracket by the
+                                       caret was found in, 0 none       */
+    tiku_edit_pos_t brace_caret;    /* the caret it was found for       */
+    const void *brace_rules;        /* and the rules                    */
+    tiku_edit_pos_t brace_at;       /* the bracket, -1 none             */
+    tiku_edit_pos_t brace_match;    /* its match, -1 none, -2 too far   */
 };
 
 /* What a character of a line is on the screen. */
@@ -233,6 +242,37 @@ void tiku_cv_style_free(tiku_codeview_t *v);
 
 /* An editing key: 1 when the view took it. */
 int tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e);
+/* Replace [@p lo, @p hi) with @p length bytes of @p text as one undo
+ * step, joining typing when @p typing, the caret after the text (before a
+ * CR the text leaves against an LF), and show it. */
+tiku_edit_status_t tiku_cv_replace(tiku_codeview_t *v, tiku_edit_pos_t lo,
+                                   tiku_edit_pos_t hi, const char *text,
+                                   size_t length, int typing);
+/* Where a word move goes from @p pos: left, back over blanks and then
+ * over one run of word characters, punctuation or line breaks; right, on
+ * over one run and then over blanks. */
+tiku_edit_pos_t tiku_cv_word_left(const tiku_codeview_t *v,
+                                  tiku_edit_pos_t pos);
+/* The same to the right. */
+tiku_edit_pos_t tiku_cv_word_right(const tiku_codeview_t *v,
+                                   tiku_edit_pos_t pos);
+
+/* Line commands (tiku_codeview_lines.c): the rules in force, and typing
+ * @p text with a closer typed first on its line taking its opener's
+ * indentation; 0 when @p text is no such closer and nothing was done. */
+const tiku_codeview_rules_t *tiku_cv_rules(const tiku_codeview_t *v);
+int tiku_cv_type_closer(tiku_codeview_t *v, const char *text);
+
+/* Brackets (tiku_codeview_brace.c): the bracket by the caret and its
+ * match, found again only after a change or a caret move. */
+tiku_edit_pos_t tiku_cv_brace(tiku_codeview_t *v, tiku_edit_pos_t *match);
+/* The opener @p closer pairs with that is still open before @p pos; -1
+ * for none and -2 when the search gave up. */
+tiku_edit_pos_t tiku_cv_open_before(tiku_codeview_t *v, tiku_edit_pos_t pos,
+                                    char closer);
+/* Paint the pair behind the text of the first @p rows rows shown. */
+void tiku_cv_brace_paint(tiku_codeview_t *v, tiku_surface_t *s,
+                         int64_t rows);
 
 /* Lists and tips (tiku_codeview_assist.c): an event they take, the check
  * after any event that a tip still belongs with the caret, painting them

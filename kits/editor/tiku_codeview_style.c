@@ -42,6 +42,7 @@ tiku_codeview_language(const tiku_codeview_t *view)
 void
 tiku_cv_style_reset(tiku_codeview_t *v)
 {
+    v->brace_gen = 0;
     v->sty_valid = 0;
     v->sty_hint = 0;
     v->sty_dirty = -1;

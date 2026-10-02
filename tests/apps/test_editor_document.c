@@ -636,9 +636,14 @@ static void editor_rows(edit_state_t *st)
     commit_text(st, "\tnaïve\nnew");
     assert(!strcmp(line(st, 0), "alpha\tnaïve") && !strcmp(line(st, 1), "new beta"));
     key(st, 'z', TIKU_MOD_CMD); assert(!strcmp(line(st, 0), "alpha beta"));
-    place(st, 0, 0); key(st, TIKU_KEY_TAB, 0); key(st, TIKU_KEY_TAB, TIKU_MOD_SHIFT);
+    /* Shift+Tab takes a level off; Option keeps Tab and Return plain. */
+    place(st, 0, 0); key(st, TIKU_KEY_TAB, 0);
+    assert(!strcmp(line(st, 0), "\talpha beta"));
+    key(st, TIKU_KEY_TAB, TIKU_MOD_SHIFT);
+    assert(!strcmp(line(st, 0), "alpha beta"));
+    key(st, TIKU_KEY_TAB, TIKU_MOD_OPTION);
     key(st, TIKU_KEY_RETURN, TIKU_MOD_OPTION);
-    assert(!strcmp(line(st, 0), "\t\t") && !strcmp(line(st, 1), "alpha beta"));
+    assert(!strcmp(line(st, 0), "\t") && !strcmp(line(st, 1), "alpha beta"));
     assert(set_text(st, "ab\ncd"));
     place(st, 1, 0); key(st, TIKU_KEY_BACKSPACE, 0); key(st, TIKU_KEY_BACKSPACE, 0);
     assert(!strcmp(line(st, 0), "acd"));

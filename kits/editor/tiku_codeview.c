@@ -228,7 +228,8 @@ tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
     view->options = options & (TIKU_CODEVIEW_LINE_NUMBERS |
                                TIKU_CODEVIEW_INVISIBLES |
                                TIKU_CODEVIEW_VSCROLL |
-                               TIKU_CODEVIEW_HSCROLL);
+                               TIKU_CODEVIEW_HSCROLL |
+                               TIKU_CODEVIEW_BRACES);
     view->held_bar = 0;
     view->arrow_bar = 0;
     tiku_cv_clamp(view);

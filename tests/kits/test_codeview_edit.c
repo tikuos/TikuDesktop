@@ -195,7 +195,8 @@ typing(void)
     tiku_codeview_destroy(v);
 }
 
-/** @brief Return types the view's line break, Tab a tab. */
+/** @brief Return types the view's line break, Tab a tab, and Shift
+ *         with Tab takes it off again. */
 static void
 returns_and_tabs(void)
 {
@@ -216,8 +217,9 @@ returns_and_tabs(void)
           "only LF, CRLF or CR may be set");
     press(v, TIKU_KEY_TAB, 0, NULL);
     check(holds(v, "a\n\r\n\tb") && press(v, TIKU_KEY_TAB, TIKU_MOD_SHIFT,
-                                          NULL) == 0, "EDT-002",
-          "Tab types a tab; Shift with Tab is the application's");
+                                          NULL) == 1 &&
+          holds(v, "a\n\r\nb"), "EDT-002",
+          "Tab types a tab; Shift with Tab takes it off again");
     tiku_codeview_destroy(v);
 }
 

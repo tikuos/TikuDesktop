@@ -56,9 +56,8 @@ run_before(const tiku_codeview_t *v, tiku_edit_pos_t pos)
     return pos > 0 ? run_at(v, tiku_editdoc_prev(v->doc, pos)) : RUN_NONE;
 }
 
-/** @brief Past one run of the kind at @p pos, then past blanks. */
-static tiku_edit_pos_t
-word_right(const tiku_codeview_t *v, tiku_edit_pos_t pos)
+tiku_edit_pos_t
+tiku_cv_word_right(const tiku_codeview_t *v, tiku_edit_pos_t pos)
 {
     tiku_edit_pos_t end = tiku_editdoc_length(v->doc);
     int kind = run_at(v, pos);
@@ -70,9 +69,8 @@ word_right(const tiku_codeview_t *v, tiku_edit_pos_t pos)
     return pos;
 }
 
-/** @brief Back over blanks, then back over one run. */
-static tiku_edit_pos_t
-word_left(const tiku_codeview_t *v, tiku_edit_pos_t pos)
+tiku_edit_pos_t
+tiku_cv_word_left(const tiku_codeview_t *v, tiku_edit_pos_t pos)
 {
     int kind;
 
@@ -206,10 +204,10 @@ tiku_codeview_move(tiku_codeview_t *view, tiku_codeview_move_t move,
         caret = !extend && lo < hi ? hi : tiku_editdoc_next(view->doc, caret);
         break;
     case TIKU_CODEVIEW_WORD_LEFT:
-        caret = word_left(view, caret);
+        caret = tiku_cv_word_left(view, caret);
         break;
     case TIKU_CODEVIEW_WORD_RIGHT:
-        caret = word_right(view, caret);
+        caret = tiku_cv_word_right(view, caret);
         break;
     case TIKU_CODEVIEW_LINE_UP:
     case TIKU_CODEVIEW_LINE_DOWN:

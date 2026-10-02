@@ -61,11 +61,9 @@ ordered(const tiku_codeview_t *v, tiku_edit_pos_t *lo, tiku_edit_pos_t *hi)
     return TIKU_EDIT_OK;
 }
 
-/** @brief Replace [@p lo, @p hi) with @p text and put the caret after
- *         it, or before a CR the replacement leaves against an LF. */
-static tiku_edit_status_t
-replace(tiku_codeview_t *v, tiku_edit_pos_t lo, tiku_edit_pos_t hi,
-        const char *text, size_t length, int typing)
+tiku_edit_status_t
+tiku_cv_replace(tiku_codeview_t *v, tiku_edit_pos_t lo, tiku_edit_pos_t hi,
+                const char *text, size_t length, int typing)
 {
     tiku_edit_replace_t r;
     tiku_edit_transaction_t t;
@@ -114,7 +112,7 @@ tiku_codeview_insert(tiku_codeview_t *view, const char *text, size_t length,
         return st;
     if (lo == hi && length == 0)
         return TIKU_EDIT_OK;
-    return replace(view, lo, hi, text, length, typing);
+    return tiku_cv_replace(view, lo, hi, text, length, typing);
 }
 
 tiku_edit_status_t
@@ -129,14 +127,14 @@ tiku_codeview_delete(tiku_codeview_t *view, int forward)
     if (st != TIKU_EDIT_OK)
         return st;
     if (lo < hi)
-        return replace(view, lo, hi, NULL, 0, 0);
+        return tiku_cv_replace(view, lo, hi, NULL, 0, 0);
     if (forward)
         hi = tiku_editdoc_next(view->doc, lo);
     else
         lo = tiku_editdoc_prev(view->doc, hi);
     if (lo == hi)
         return TIKU_EDIT_NOTHING;
-    return replace(view, lo, hi, NULL, 0, 1);
+    return tiku_cv_replace(view, lo, hi, NULL, 0, 1);
 }
 
 tiku_edit_status_t
@@ -243,6 +241,14 @@ typed(const tiku_event_t *e, char *one)
     return NULL;
 }
 
+/** @brief A command's status as an event leaves it: nothing to do is
+ *         not a refusal. */
+static tiku_edit_status_t
+quiet(tiku_edit_status_t st)
+{
+    return st == TIKU_EDIT_NOTHING ? TIKU_EDIT_OK : st;
+}
+
 /** @brief A Command chord the view edits by; 0 for any other. */
 static int
 command_key(tiku_codeview_t *v, const tiku_event_t *e)
@@ -252,7 +258,41 @@ command_key(tiku_codeview_t *v, const tiku_event_t *e)
 
     if (k >= 'A' && k <= 'Z')
         k += 'a' - 'A';
+    if ((e->modifiers & TIKU_MOD_OPTION) &&
+        (k == '/' || k == 'd' || k == 'k' || k == 'm' || k == TIKU_KEY_UP ||
+         k == TIKU_KEY_DOWN || k == TIKU_KEY_BACKSPACE ||
+         k == TIKU_KEY_DELETE))
+        return 0;
     switch (k) {
+    case '/':
+        v->status = quiet(tiku_codeview_toggle_comment(v));
+        return 1;
+    case 'd':
+        if (shift)
+            return 0;
+        v->status = tiku_codeview_duplicate_lines(v);
+        return 1;
+    case 'k':
+        if (!shift)
+            return 0;
+        v->status = quiet(tiku_codeview_delete_lines(v));
+        return 1;
+    case 'm':
+        v->status = quiet(tiku_codeview_goto_bracket(v, shift));
+        return 1;
+    case TIKU_KEY_UP:
+    case TIKU_KEY_DOWN:
+        if (!shift)
+            return 0;
+        v->status = quiet(tiku_codeview_move_lines(v, k == TIKU_KEY_DOWN));
+        return 1;
+    case TIKU_KEY_BACKSPACE:
+    case TIKU_KEY_DELETE:
+        if (shift)
+            return 0;
+        v->status = quiet(tiku_codeview_delete_word(v,
+                                                    k == TIKU_KEY_DELETE));
+        return 1;
     case 'c':
         v->status = tiku_codeview_copy(v);
         return 1;
@@ -276,6 +316,25 @@ command_key(tiku_codeview_t *v, const tiku_event_t *e)
     }
 }
 
+/** @brief Tab: the lines a selection spans indented a level, or else a
+ *         level typed over the selection or at the caret. */
+static tiku_edit_status_t
+tab(tiku_codeview_t *v)
+{
+    tiku_edit_pos_t anchor, caret, lo, hi;
+
+    if (tiku_codeview_selection(v, &anchor, &caret) != TIKU_EDIT_OK)
+        return TIKU_EDIT_INVALID;
+    lo = anchor < caret ? anchor : caret;
+    hi = anchor < caret ? caret : anchor;
+    if (tiku_editdoc_line_of(v->doc, lo) < tiku_editdoc_line_of(v->doc, hi))
+        return tiku_codeview_indent(v, 0);
+    if (v->indent_spaces > 0)
+        return tiku_codeview_insert(v, "                                ",
+                                    (size_t)v->indent_spaces, 1);
+    return tiku_codeview_insert(v, "\t", 1, 1);
+}
+
 int
 tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e)
 {
@@ -287,15 +346,18 @@ tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e)
         return command_key(v, e);
     switch (e->key) {
     case TIKU_KEY_RETURN:
-        if (!plain)
-            return 0;
-        v->status = tiku_codeview_insert(v, v->newline, strlen(v->newline),
-                                         1);
-        return 1;
-    case TIKU_KEY_TAB:
         if (!plain || (e->modifiers & TIKU_MOD_SHIFT))
             return 0;
-        v->status = tiku_codeview_insert(v, "\t", 1, 1);
+        v->status = tiku_codeview_newline(v);
+        return 1;
+    case TIKU_KEY_TAB:
+        if (!plain)
+            return 0;
+        if (e->modifiers & TIKU_MOD_SHIFT) {
+            v->status = quiet(tiku_codeview_indent(v, 1));
+            return 1;
+        }
+        v->status = tab(v);
         return 1;
     case TIKU_KEY_BACKSPACE:
     case TIKU_KEY_DELETE:
@@ -313,6 +375,8 @@ tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e)
     text = typed(e, one);
     if (text == NULL)
         return 0;
+    if (tiku_cv_type_closer(v, text))
+        return 1;
     v->status = tiku_codeview_insert(v, text, strnlen(text, sizeof e->text),
                                      1);
     return 1;
