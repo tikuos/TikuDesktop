@@ -20,9 +20,7 @@ typedef struct {
     tiku_ed_record_t record;    /* its pieces and payload, owned        */
     tiku_ed_view_t *view;       /* the view it came from, or NULL       */
     int join;                   /* merges into the last record          */
-    char *payload;              /* the merged payload, when joining     */
-    size_t payload_len;         /* its bytes                            */
-    tiku_ed_piece_t piece;      /* the merged piece, when joining       */
+    tiku_ed_record_t merged;    /* the last record with it, when joining */
     tiku_edit_selection_t main; /* the main selection after, when the
                                    transaction sets several             */
 } prepared_t;
@@ -42,6 +40,25 @@ one_step(const char *bytes, int64_t n)
     if (n == 2 && bytes[0] == '\r' && bytes[1] == '\n')
         return 1;
     return n >= 1 && tiku_ed_utf8_length((unsigned char)bytes[0]) == n;
+}
+
+/** @brief The kind of typing step @p r is: an insertion at every piece,
+ *         one caret step deleted at every piece, or neither. */
+static int
+typed_kind(const tiku_ed_record_t *r)
+{
+    int insert = 1, del = 1;
+    size_t j;
+
+    for (j = 0; j < r->npieces; j++) {
+        const tiku_ed_piece_t *p = &r->pieces[j];
+
+        insert &= p->added > 0;
+        del &= p->added == 0 &&
+               one_step(r->payload + p->removed_at, p->removed);
+    }
+    return insert ? TIKU_ED_TYPED_INSERT
+                  : del ? TIKU_ED_TYPED_DELETE : TIKU_ED_TYPED_NONE;
 }
 
 /** @brief Check the replacements: in the text, on character boundaries,
@@ -325,21 +342,14 @@ prepare(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t, prepared_t *w)
             return st;
         }
     }
-    if ((t->flags & TIKU_EDIT_TYPING) && count == 1) {
-        const tiku_ed_piece_t *p = &w->record.pieces[0];
-
-        if (p->added > 0)
-            w->record.typed = TIKU_ED_TYPED_INSERT;
-        else if (one_step(w->record.payload + p->removed_at, p->removed))
-            w->record.typed = TIKU_ED_TYPED_DELETE;
-    }
+    if (t->flags & TIKU_EDIT_TYPING)
+        w->record.typed = typed_kind(&w->record);
     w->join = tiku_ed_history_joins(&doc->history, &w->record);
     if ((w->join && !tiku_ed_history_merge(&doc->history, &w->record,
-                                           &w->payload, &w->payload_len,
-                                           &w->piece)) ||
+                                           w->record.nafter, &w->merged)) ||
         (!w->join && !tiku_ed_history_reserve(&doc->history)) ||
         !reserve_for(doc, &w->record, 0)) {
-        tiku_ed_free(w->payload);
+        tiku_ed_record_free(&w->merged);
         tiku_ed_record_free(&w->record);
         return TIKU_EDIT_NO_MEMORY;
     }
@@ -399,7 +409,7 @@ select_only(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t,
                                            t->nselections, t->main);
     else if (t->select)
         st = tiku_editdoc_view_select(doc, t->view, t->anchor, t->caret);
-    tiku_ed_free(w->payload);
+    tiku_ed_record_free(&w->merged);
     tiku_ed_record_free(&w->record);
     return st;
 }
@@ -409,7 +419,6 @@ tiku_editdoc_apply(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t)
 {
     prepared_t w;
     tiku_ed_history_t *h;
-    char *old = NULL;
     uint64_t generation;
     int64_t lines;
     tiku_edit_status_t st;
@@ -444,8 +453,11 @@ tiku_editdoc_apply(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t)
         w.record.nafter = w.view->nmore;
     }
     if (w.join) {
-        old = tiku_ed_history_replace_last(h, w.payload, w.payload_len,
-                                           &w.piece);
+        if (w.view && w.view->nmore)
+            memcpy(w.merged.more + w.merged.nbefore, w.view->more,
+                   w.view->nmore * sizeof *w.view->more);
+        w.merged.nafter = w.view ? w.view->nmore : 0;
+        tiku_ed_history_replace_last(h, &w.merged);
         h->records[h->current - 1].after_anchor = w.record.after_anchor;
         h->records[h->current - 1].after_caret = w.record.after_caret;
     } else {
@@ -457,7 +469,7 @@ tiku_editdoc_apply(tiku_editdoc_t *doc, const tiku_edit_transaction_t *t)
     doc->generation++;
     tiku_ed_commit_end();
 
-    tiku_ed_free(old);
+    tiku_ed_record_free(&w.merged);
     tiku_ed_history_prune(h);
     announce(doc, TIKU_EDIT_EDITED,
              w.join ? &w.record : &h->records[h->current - 1],

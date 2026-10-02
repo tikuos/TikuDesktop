@@ -450,34 +450,43 @@ newline_text(const tiku_codeview_t *v, tiku_edit_pos_t from,
 
 /** @brief Return's piece for selection @p s: the view's line break and
  *         the indentation of its line up to it, a level more after an
- *         opener, in text the caller frees; 0 when there is no memory. */
+ *         opener, a closer after it moved to a line of its own when it
+ *         stands before @p limit; in text the caller frees, 0 when there
+ *         is no memory. */
 static int
 newline_piece(tiku_codeview_t *v, const tiku_edit_selection_t *s,
-              tiku_cv_piece_t *p)
+              tiku_edit_pos_t limit, tiku_cv_piece_t *p)
 {
     tiku_edit_pos_t lo = s->anchor < s->caret ? s->anchor : s->caret;
-    tiku_edit_pos_t start, ind = indent_end(v, lo, &start);
+    tiku_edit_pos_t hi = s->anchor < s->caret ? s->caret : s->anchor;
+    tiku_edit_pos_t start, ind = indent_end(v, lo, &start), closer = -1;
     const char *level = NULL;
     size_t depth = 0, len = 0;
 
     if (opens_level(v, tiku_cv_rules(v), tiku_editdoc_line_of(v->doc, lo),
-                    lo))
+                    lo)) {
         depth = unit(v, &level);
-    p->text = newline_text(v, start, ind, level, depth, 0, &len);
+        closer = closer_after(v, tiku_cv_rules(v), hi);
+        if (closer >= limit)
+            closer = -1;
+    }
+    p->text = newline_text(v, start, ind, level, depth, closer >= 0, &len);
     p->start = lo;
-    p->end = s->anchor < s->caret ? s->caret : s->anchor;
-    p->length = p->caret = len;
+    p->end = closer >= 0 ? closer : hi;
+    p->length = len;
+    p->caret = strlen(v->newline) + (size_t)(ind - start) + depth;
     return p->text != NULL;
 }
 
 /** @brief Return at every selection, each with its own line's
- *         indentation; with several, no closer is moved down. */
+ *         indentation; a closer reaching the next selection stays. */
 static tiku_edit_status_t
 newline_each(tiku_codeview_t *v)
 {
     size_t n, main, i;
     const tiku_edit_selection_t *s = tiku_cv_selections(v, &n, &main);
     tiku_edit_status_t st = TIKU_EDIT_OK;
+    tiku_edit_pos_t limit;
     tiku_cv_piece_t *p;
 
     if (n > SIZE_MAX / sizeof *p)
@@ -486,9 +495,14 @@ newline_each(tiku_codeview_t *v)
     if (p == NULL)
         return TIKU_EDIT_NO_MEMORY;
     memset(p, 0, n * sizeof *p);
-    for (i = 0; i < n && st == TIKU_EDIT_OK; i++)
-        if (!newline_piece(v, &s[i], &p[i]))
+    for (i = 0; i < n && st == TIKU_EDIT_OK; i++) {
+        limit = INT64_MAX;
+        if (i + 1 < n)
+            limit = s[i + 1].anchor < s[i + 1].caret ? s[i + 1].anchor
+                                                     : s[i + 1].caret;
+        if (!newline_piece(v, &s[i], limit, &p[i]))
             st = TIKU_EDIT_NO_MEMORY;
+    }
     if (st == TIKU_EDIT_OK)
         st = tiku_cv_apply_pieces(v, p, n, main, 1);
     for (i = 0; i < n; i++)

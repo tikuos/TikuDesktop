@@ -130,81 +130,136 @@ int
 tiku_ed_history_joins(const tiku_ed_history_t *h, const tiku_ed_record_t *r)
 {
     const tiku_ed_record_t *last;
-    const tiku_ed_piece_t *p, *q;
+    size_t j;
+    int back = 1, on = 1;
 
     if (!h->open || h->current == 0 || h->current != h->count)
         return 0;
     last = &h->records[h->current - 1];
     if (r->typed == TIKU_ED_TYPED_NONE || r->typed != last->typed ||
-        r->npieces != 1 || last->npieces != 1 || r->nbefore || r->nafter ||
-        last->nbefore || last->nafter ||
+        r->npieces != last->npieces || r->npieces == 0 ||
         r->view.slot != last->view.slot ||
         r->view.generation != last->view.generation ||
         last->state_after == h->saved_state)
         return 0;
-    p = &last->pieces[0];
-    q = &r->pieces[0];
-    if (r->typed == TIKU_ED_TYPED_INSERT)
-        /* Insertions join only immediately after the last one. */
-        return q->removed == 0 && q->pre == p->post + p->added;
-    /* Backspace ends where the last deletion was, Delete starts there. */
-    return q->pre + q->removed == p->post || q->pre == p->post;
+    for (j = 0; j < r->npieces; j++) {
+        const tiku_ed_piece_t *p = &last->pieces[j], *q = &r->pieces[j];
+
+        /* Insertions join only right after the last ones; Backspace ends
+         * where the last deletion was, Delete starts there, at every
+         * caret alike. */
+        if (r->typed == TIKU_ED_TYPED_INSERT &&
+            (q->removed != 0 || q->pre != p->post + p->added))
+            return 0;
+        back &= q->pre + q->removed == p->post;
+        on &= q->pre == p->post;
+    }
+    return r->typed == TIKU_ED_TYPED_INSERT || back || on;
+}
+
+/** @brief Piece @p j of the last record and of @p r merged into @p o, a
+ *         Backspace when @p back, their bytes copied to @p out from @p off;
+ *         @p shift holds what @p r's earlier pieces moved later text.
+ *         @return where the bytes end. */
+static size_t
+merge_piece(const tiku_ed_record_t *last, const tiku_ed_record_t *r,
+            size_t j, int back, char *out, size_t off, int64_t *shift,
+            tiku_ed_piece_t *o)
+{
+    const tiku_ed_piece_t *p = &last->pieces[j], *q = &r->pieces[j];
+    const char *pr = last->payload + p->removed_at;
+    const char *pa = last->payload + p->added_at;
+    const char *qr = r->payload + q->removed_at;
+    const char *qa = r->payload + q->added_at;
+
+    *o = *p;
+    o->removed_at = off;
+    if (r->typed == TIKU_ED_TYPED_INSERT) {
+        /* removed, added, then the new added bytes. */
+        memcpy(out + off, pr, (size_t)p->removed);
+        off += (size_t)p->removed;
+        o->added_at = off;
+        memcpy(out + off, pa, (size_t)p->added);
+        memcpy(out + off + p->added, qa, (size_t)q->added);
+        off += (size_t)(p->added + q->added);
+        o->added = p->added + q->added;
+        o->post = p->post + *shift;
+        *shift += q->added;
+        return off;
+    }
+    if (back) {
+        /* Backspace: the new bytes come first. */
+        memcpy(out + off, qr, (size_t)q->removed);
+        memcpy(out + off + q->removed, pr, (size_t)p->removed);
+        o->pre = p->pre - q->removed;
+        o->post = p->post - q->removed - *shift;
+    } else {
+        /* Delete: the new bytes follow. */
+        memcpy(out + off, pr, (size_t)p->removed);
+        memcpy(out + off + p->removed, qr, (size_t)q->removed);
+        o->post = p->post - *shift;
+    }
+    off += (size_t)(p->removed + q->removed);
+    o->removed = p->removed + q->removed;
+    o->added_at = off;
+    *shift += q->removed;
+    return off;
 }
 
 int
 tiku_ed_history_merge(const tiku_ed_history_t *h, const tiku_ed_record_t *r,
-                      char **payload, size_t *payload_len,
-                      tiku_ed_piece_t *piece)
+                      size_t after, tiku_ed_record_t *m)
 {
     const tiku_ed_record_t *last = &h->records[h->current - 1];
-    const tiku_ed_piece_t *p = &last->pieces[0], *q = &r->pieces[0];
-    const char *old = last->payload, *add = r->payload;
-    size_t len = last->payload_len, extra = r->payload_len;
-    char *out;
+    size_t len = last->payload_len, extra = r->payload_len, j, off = 0;
+    int back = r->typed == TIKU_ED_TYPED_DELETE &&
+               r->pieces[0].pre + r->pieces[0].removed == last->pieces[0].post;
+    int64_t shift = 0;
 
-    if (extra > SIZE_MAX - len)
+    memset(m, 0, sizeof *m);
+    if (extra > SIZE_MAX - len || last->nbefore > SIZE_MAX / sizeof *m->more -
+                                                    after)
         return 0;
-    out = tiku_ed_alloc(len + extra ? len + extra : 1);
-    if (!out)
+    m->pieces = tiku_ed_alloc(r->npieces * sizeof *m->pieces);
+    m->payload = tiku_ed_alloc(len + extra ? len + extra : 1);
+    if (last->nbefore + after)
+        m->more = tiku_ed_alloc((last->nbefore + after) * sizeof *m->more);
+    if (!m->pieces || !m->payload || (last->nbefore + after && !m->more)) {
+        tiku_ed_record_free(m);
         return 0;
-    *piece = *p;
-    if (r->typed == TIKU_ED_TYPED_INSERT) {
-        /* removed, added, then the new added bytes. */
-        memcpy(out, old, len);
-        memcpy(out + len, add + q->added_at, (size_t)q->added);
-        piece->added = p->added + q->added;
-    } else if (q->pre + q->removed == p->post) {
-        /* Backspace: the new bytes come first. */
-        memcpy(out, add + q->removed_at, (size_t)q->removed);
-        memcpy(out + q->removed, old, len);
-        piece->pre = piece->post = q->pre;
-        piece->removed = p->removed + q->removed;
-    } else {
-        /* Delete: the new bytes follow. */
-        memcpy(out, old, len);
-        memcpy(out + len, add + q->removed_at, (size_t)q->removed);
-        piece->removed = p->removed + q->removed;
     }
-    piece->removed_at = 0;
-    piece->added_at = (size_t)piece->removed;
-    *payload = out;
-    *payload_len = len + extra;
+    for (j = 0; j < r->npieces; j++)
+        off = merge_piece(last, r, j, back, m->payload, off, &shift,
+                          &m->pieces[j]);
+    m->npieces = r->npieces;
+    m->payload_len = len + extra;
+    if (last->nbefore)
+        memcpy(m->more, last->more, last->nbefore * sizeof *m->more);
+    m->nbefore = last->nbefore;
     return 1;
 }
 
-char *
-tiku_ed_history_replace_last(tiku_ed_history_t *h, char *payload,
-                             size_t payload_len, const tiku_ed_piece_t *piece)
+void
+tiku_ed_history_replace_last(tiku_ed_history_t *h, tiku_ed_record_t *m)
 {
     tiku_ed_record_t *last = &h->records[h->current - 1];
-    char *old = last->payload;
+    tiku_ed_piece_t *pieces = last->pieces;
+    char *payload = last->payload;
+    tiku_edit_selection_t *more = last->more;
 
     h->cost -= last->cost;
-    last->pieces[0] = *piece;
-    last->payload = payload;
-    last->payload_len = payload_len;
+    last->pieces = m->pieces;
+    last->npieces = m->npieces;
+    last->payload = m->payload;
+    last->payload_len = m->payload_len;
+    last->more = m->more;
+    last->nbefore = m->nbefore;
+    last->nafter = m->nafter;
     last->state_after = h->next_state++;
     last->cost = record_cost(last);
     h->cost += last->cost;
-    return old;
+    memset(m, 0, sizeof *m);
+    m->pieces = pieces;
+    m->payload = payload;
+    m->more = more;
 }

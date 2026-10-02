@@ -298,20 +298,19 @@ int tiku_ed_history_reserve(tiku_ed_history_t *h);
 void tiku_ed_history_push(tiku_ed_history_t *h, tiku_ed_record_t *r);
 void tiku_ed_history_prune(tiku_ed_history_t *h);
 void tiku_ed_history_clear(tiku_ed_history_t *h);
-/* Whether @p r, a one-piece typing record from @p view, joins the last;
- * records that keep other selections never join. */
+/* Whether @p r, a typing record from @p view, joins the last: as many
+ * pieces, each going on where the last record's piece in its place
+ * stopped. */
 int tiku_ed_history_joins(const tiku_ed_history_t *h,
                           const tiku_ed_record_t *r);
-/* The last record and @p r merged into a new payload and piece; allocates
- * and leaves the last record as it was. */
+/* The last record and @p r merged into @p m: pieces, payload, and room for
+ * the last record's selections before, copied, and @p after selections
+ * after; allocates and leaves the last record as it was. */
 int tiku_ed_history_merge(const tiku_ed_history_t *h, const tiku_ed_record_t *r,
-                          char **payload, size_t *payload_len,
-                          tiku_ed_piece_t *piece);
-/* Give the last record a merge's contents; returns the old payload for
- * the caller to free.  No allocation. */
-char *tiku_ed_history_replace_last(tiku_ed_history_t *h, char *payload,
-                                   size_t payload_len,
-                                   const tiku_ed_piece_t *piece);
+                          size_t after, tiku_ed_record_t *m);
+/* Give the last record @p m's pieces, payload and selections; the old ones
+ * come back in @p m for the caller to free.  No allocation. */
+void tiku_ed_history_replace_last(tiku_ed_history_t *h, tiku_ed_record_t *m);
 
 /* Anchors, views and listeners (tiku_editdoc_anchors.c).  map() moves
  * every anchor, selection and line marker through one replacement of

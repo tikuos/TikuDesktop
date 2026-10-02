@@ -233,6 +233,12 @@ editing(void)
     type(v, "XY");
     check(reads(v, "XYne\nXYwo\nthree"), "CAR-002",
           "typing replaces every selection");
+    check(tiku_codeview_undo(v) == TIKU_EDIT_OK &&
+          reads(v, "one\ntwo\nthree") &&
+          has(v, (const int64_t[]){ 0, 1, 4, 5 }, 2, 0) &&
+          tiku_codeview_redo(v) == TIKU_EDIT_OK &&
+          has(v, (const int64_t[]){ 2, 2, 7, 7 }, 2, 0), "CAR-002",
+          "keys typed on at every caret are one undo step, as at one");
     (void)key(v, TIKU_KEY_BACKSPACE, 0);
     check(reads(v, "Xne\nXwo\nthree") &&
           has(v, (const int64_t[]){ 1, 1, 5, 5 }, 2, 0), "CAR-002",
@@ -273,6 +279,24 @@ editing(void)
     (void)key(v, TIKU_KEY_RETURN, 0);
     check(reads(v, "a {\n\t\nb {\n\t"), "CAR-002",
           "Return after an opener indents a level more at each");
+    tiku_codeview_destroy(v);
+
+    v = view_in("a {}\nb {  }");
+    tiku_codeview_set_language(v, TIKU_SYNTAX_C);
+    (void)set(v, (const int64_t[]){ 3, 3, 8, 8 }, 2, 1);
+    (void)key(v, TIKU_KEY_RETURN, 0);
+    check(reads(v, "a {\n\t\n}\nb {\n\t\n}") &&
+          has(v, (const int64_t[]){ 5, 5, 13, 13 }, 2, 1), "CAR-002",
+          "a closer after a caret goes to a line of its own at each");
+    tiku_codeview_destroy(v);
+
+    v = view_in("a {  }");
+    tiku_codeview_set_language(v, TIKU_SYNTAX_C);
+    (void)set(v, (const int64_t[]){ 3, 3, 5, 5 }, 2, 0);
+    (void)key(v, TIKU_KEY_RETURN, 0);
+    check(reads(v, "a {\n\t  \n\t\n}") &&
+          has(v, (const int64_t[]){ 5, 5, 9, 9 }, 2, 0), "CAR-002",
+          "a closer another caret stands before is left to that caret");
     tiku_codeview_destroy(v);
 
     v = view_in("a\rX\nb\rY\nc");
@@ -347,6 +371,18 @@ moves(void)
     (void)key(v, TIKU_KEY_DOWN, 0);
     check(has(v, (const int64_t[]){ 18, 18, 32, 32 }, 2, 0), "CAR-004",
           "another caret moves from its own x, not the main one's");
+    (void)set(v, (const int64_t[]){ 1, 1, 6, 6 }, 2, 0);
+    (void)key(v, TIKU_KEY_DOWN, 0);
+    (void)key(v, TIKU_KEY_DOWN, 0);
+    check(has(v, (const int64_t[]){ 13, 13, 18, 18 }, 2, 0), "CAR-004",
+          "past a short line each caret comes back to its own x");
+    (void)set(v, (const int64_t[]){ 1, 1, 6, 6 }, 2, 0);
+    (void)key(v, TIKU_KEY_DOWN, 0);
+    (void)key(v, TIKU_KEY_LEFT, 0);
+    (void)key(v, TIKU_KEY_RIGHT, 0);
+    (void)key(v, TIKU_KEY_DOWN, 0);
+    check(has(v, (const int64_t[]){ 13, 13, 14, 14 }, 2, 0), "CAR-004",
+          "another move drops the x kept, even back at the same place");
     (void)set(v, (const int64_t[]){ 2, 2, 14, 14 }, 2, 1);
     (void)key(v, TIKU_KEY_HOME, TIKU_MOD_CMD);
     check(has(v, (const int64_t[]){ 0, 0 }, 1, 0), "CAR-004",

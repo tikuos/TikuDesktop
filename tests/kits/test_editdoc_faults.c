@@ -266,7 +266,7 @@ op_select_many(tiku_editdoc_t *doc)
 }
 
 /** @brief Typing at five carets a caret position apart, setting five
- *         after it. */
+ *         after it, as one typing step. */
 static tiku_edit_status_t
 op_type_many(tiku_editdoc_t *doc)
 {
@@ -291,6 +291,38 @@ op_type_many(tiku_editdoc_t *doc)
     t.selections = after;
     t.nselections = 5;
     t.main = 4;
+    t.flags = TIKU_EDIT_TYPING;
+    return tiku_editdoc_apply(doc, &t);
+}
+
+/** @brief Typing at every caret of the watched view, going on where the
+ *         typing before stopped, so the step joins it. */
+static tiku_edit_status_t
+op_type_carets(tiku_editdoc_t *doc)
+{
+    tiku_edit_selection_t s[8], after[8];
+    tiku_edit_replace_t r[8];
+    tiku_edit_transaction_t t;
+    size_t n, main = 0, i;
+
+    n = tiku_editdoc_view_selections(doc, watched_view, s, 8, &main);
+    if (n > 8)
+        n = 8;
+    for (i = 0; i < n; i++) {
+        r[i].range.start = r[i].range.end = s[i].caret;
+        r[i].text = "m";
+        r[i].length = 1;
+        after[i].anchor = after[i].caret = s[i].caret + (int64_t)i + 1;
+    }
+    memset(&t, 0, sizeof t);
+    t.edits = r;
+    t.count = n;
+    t.view = watched_view;
+    t.select = 1;
+    t.selections = after;
+    t.nselections = n;
+    t.main = main;
+    t.flags = TIKU_EDIT_TYPING;
     return tiku_editdoc_apply(doc, &t);
 }
 
@@ -402,6 +434,7 @@ main(void)
     injected += sweep(doc, op_snapshot, "DOC-011");
     injected += sweep(doc, op_select_many, "SEL-007");
     injected += sweep(doc, op_type_many, "SEL-007");
+    injected += sweep(doc, op_type_carets, "SEL-007");    /* joins it */
     type_at = 0;
     injected += sweep(doc, op_type, "SEL-007");
     injected += sweep(doc, op_undo, "SEL-007");

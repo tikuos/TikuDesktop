@@ -79,6 +79,12 @@ typedef struct {
                                        the line's annotations it shows  */
 } tiku_cv_row_t;
 
+/* The x a caret keeps on rows up and down, by where the caret is. */
+typedef struct {
+    tiku_edit_pos_t at;             /* the caret                        */
+    int64_t x;                      /* its x from its row's start       */
+} tiku_cv_goal_t;
+
 /* The checkpoints of one long line, in order from its start. */
 typedef struct {
     int64_t line;                   /* -1: unused                       */
@@ -202,6 +208,10 @@ struct tiku_codeview {
     tiku_edit_selection_t *held;    /* the selections a Command press
                                        added one to, and room for it    */
     size_t nheld;                   /* how many it added to             */
+    tiku_cv_goal_t *goals;          /* each caret's x on rows up and
+                                       down, as the last such move left
+                                       them; used while goal is kept    */
+    size_t ngoals, goals_cap;       /* how many, and room               */
 };
 
 /* What a character of a line is on the screen. */

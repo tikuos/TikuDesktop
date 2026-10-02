@@ -17,6 +17,8 @@
 #include "tiku_codeview_private.h"
 #include "tiku_ui.h"
 
+#include <string.h>
+
 /* A second press this soon after the last, and this near it, counts as
  * the same click: the desktop's double-click rule. */
 #define CLICK_US 400000
@@ -282,37 +284,104 @@ keeps_goal(tiku_codeview_move_t move)
            move == TIKU_CODEVIEW_PAGE_UP || move == TIKU_CODEVIEW_PAGE_DOWN;
 }
 
-/** @brief @p move for every selection; the main one keeps the view's x,
- *         each other one starts from its own. */
+/** @brief The x kept for the caret at @p at, or else @p other. */
+static int64_t
+goal_of(const tiku_codeview_t *v, tiku_edit_pos_t at, int64_t other)
+{
+    size_t lo = 0, hi = v->ngoals;
+
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+
+        if (v->goals[mid].at < at)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo < v->ngoals && v->goals[lo].at == at ? v->goals[lo].x : other;
+}
+
+/**
+ * @brief Keep the @p n carets' x in @p g; none kept when there is no room.
+ *
+ * Rows up and down leave the carets in order, but where the first or last
+ * row holds one back and another lands before it there; that one is not
+ * found again and goes from its own x, which is the x it landed at.  Of
+ * carets that met, the first one's x is found.
+ */
+static void
+keep_goals(tiku_codeview_t *v, const tiku_cv_goal_t *g, size_t n)
+{
+    if (n > v->goals_cap) {
+        tiku_cv_goal_t *grown = n <= SIZE_MAX / sizeof *grown ?
+                                tiku_ed_realloc(v->goals, n * sizeof *grown)
+                                : NULL;
+
+        v->ngoals = 0;
+        if (grown == NULL)
+            return;
+        v->goals = grown;
+        v->goals_cap = n;
+    }
+    memcpy(v->goals, g, n * sizeof *g);
+    v->ngoals = n;
+}
+
+/** @brief @p move for selection @p s, its rows up and down going to x
+ *         @p x, or its own when -1, into @p to, the x kept in @p g;
+ *         @return 0 for no such move. */
+static int
+move_one(tiku_codeview_t *v, tiku_codeview_move_t move, int extend,
+         const tiku_edit_selection_t *s, int64_t x, int *up,
+         tiku_edit_selection_t *to, tiku_cv_goal_t *g)
+{
+    v->goal = x;
+    to->caret = moved(v, move, s->anchor, s->caret, extend, up);
+    to->anchor = extend ? s->anchor : to->caret;
+    g->at = to->caret;
+    g->x = v->goal;
+    return to->caret >= 0;
+}
+
+/** @brief @p move for every selection; rows up and down keep each caret's
+ *         x from the first of them, the main one's in the view's goal. */
 static tiku_edit_status_t
 move_each(tiku_codeview_t *view, tiku_codeview_move_t move, int extend)
 {
     size_t n, main, i;
     const tiku_edit_selection_t *s = tiku_cv_selections(view, &n, &main);
     tiku_edit_selection_t *to = tiku_ed_alloc(n * sizeof *to);
-    int64_t goal = view->goal, main_goal = -1;
+    tiku_cv_goal_t *g = tiku_ed_alloc(n * sizeof *g);
+    int64_t goal = view->goal;
     tiku_edit_status_t st = TIKU_EDIT_OK;
     int up = 0, main_up = 0;
 
-    if (to == NULL)
+    if (to == NULL || g == NULL) {
+        tiku_ed_free(to);
+        tiku_ed_free(g);
         return TIKU_EDIT_NO_MEMORY;
+    }
+    /* The carets' x hold only while the main one's is kept: any other
+     * move, a selection set or an edit drops it. */
+    if (goal < 0)
+        view->ngoals = 0;
     for (i = 0; i < n && st == TIKU_EDIT_OK; i++) {
-        view->goal = i == main ? goal : -1;
-        to[i].caret = moved(view, move, s[i].anchor, s[i].caret, extend, &up);
-        to[i].anchor = extend ? s[i].anchor : to[i].caret;
-        if (to[i].caret < 0)
+        if (!move_one(view, move, extend, &s[i],
+                      goal_of(view, s[i].caret, i == main ? goal : -1), &up,
+                      &to[i], &g[i]))
             st = TIKU_EDIT_INVALID;
-        if (i == main) {
-            main_goal = view->goal;
+        if (i == main)
             main_up = up;
-        }
     }
     if (st == TIKU_EDIT_OK)
         st = tiku_editdoc_view_select_many(view->doc, view->view, to, n,
                                            main);
-    view->goal = keeps_goal(move) ? main_goal : -1;
+    view->goal = keeps_goal(move) && st == TIKU_EDIT_OK ? g[main].x : -1;
+    if (view->goal >= 0)
+        keep_goals(view, g, n);
     view->upstream = main_up ? to[main].caret : -1;
     tiku_ed_free(to);
+    tiku_ed_free(g);
     if (st == TIKU_EDIT_OK)
         tiku_codeview_reveal(view);
     return st;

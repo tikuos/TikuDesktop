@@ -342,14 +342,46 @@ transactions(void)
     tiku_editdoc_release(doc);
 }
 
-/** @brief Undo gives back the selections before a step, redo those
- *         after; steps keeping other selections join no typing. */
+/** @brief Delete the character before each of @p n positions from view
+ *         @p v, as Backspace at a caret there does, the carets after it. */
+static tiku_edit_status_t
+back_at(tiku_editdoc_t *doc, tiku_edit_view_t v, const int64_t *at, size_t n,
+        size_t main)
+{
+    tiku_edit_replace_t r[8];
+    tiku_edit_selection_t after[8];
+    tiku_edit_transaction_t t;
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        r[i].range.start = at[i] - 1;
+        r[i].range.end = at[i];
+        r[i].text = NULL;
+        r[i].length = 0;
+        after[i].anchor = after[i].caret = at[i] - 1 - (int64_t)i;
+    }
+    memset(&t, 0, sizeof t);
+    t.edits = r;
+    t.count = n;
+    t.view = v;
+    t.select = 1;
+    t.selections = after;
+    t.nselections = n;
+    t.main = main;
+    t.flags = TIKU_EDIT_TYPING;
+    return tiku_editdoc_apply(doc, &t);
+}
+
+/** @brief Undo gives back the selections before a step, redo those after;
+ *         typing on at every caret joins one step, as at one caret. */
 static void
 history(void)
 {
     tiku_edit_view_t v;
     tiku_editdoc_t *doc = doc_of("one two three", &v);
     static const int64_t at[] = { 3, 7 }, again[] = { 4, 9 };
+    static const int64_t apart[] = { 5, 12 }, words[] = { 3, 7 };
+    static const int64_t more[] = { 2, 5 }, one[] = { 1 }, aside[] = { 2, 4 };
     tiku_edit_selection_t two[2] = { { 2, 2 }, { 0, 0 } };
     tiku_edit_replace_t r = { { 0, 0 }, "#", 1 };
     tiku_edit_transaction_t t;
@@ -359,48 +391,52 @@ history(void)
     (void)type_at(doc, v, again, 2, 1, "?");
     check(reads(doc, "one!? two!? three") &&
           tiku_editdoc_undo(doc) == TIKU_EDIT_OK &&
-          reads(doc, "one! two! three") &&
-          holds(doc, v, (const int64_t[]){ 4, 4, 9, 9 }, 2, 1), "SEL-005",
-          "typing at several carets joins no step before it");
-    check(tiku_editdoc_undo(doc) == TIKU_EDIT_OK &&
           reads(doc, "one two three") &&
           holds(doc, v, (const int64_t[]){ 3, 3, 7, 7 }, 2, 1), "SEL-005",
-          "undo gives back every selection before the step");
+          "typing on at every caret joins one step, undone with every "
+          "selection it began with");
     check(tiku_editdoc_redo(doc) == TIKU_EDIT_OK &&
-          holds(doc, v, (const int64_t[]){ 4, 4, 9, 9 }, 2, 1), "SEL-005",
-          "redo every one after it");
+          reads(doc, "one!? two!? three") &&
+          holds(doc, v, (const int64_t[]){ 5, 5, 11, 11 }, 2, 1), "SEL-005",
+          "redo gives back the text and every selection after it");
+    check(type_at(doc, v, apart, 2, 1, "-") == TIKU_EDIT_OK &&
+          reads(doc, "one!?- two!? -three") &&
+          tiku_editdoc_undo(doc) == TIKU_EDIT_OK &&
+          reads(doc, "one!? two!? three"), "SEL-005",
+          "typing not going on at every caret starts its own step");
     memset(&t, 0, sizeof t);
     t.edits = &r;
     t.count = 1;
     t.view = v;
     check(tiku_editdoc_apply(doc, &t) == TIKU_EDIT_OK &&
-          holds(doc, v, (const int64_t[]){ 5, 5, 10, 10 }, 2, 1) &&
+          holds(doc, v, (const int64_t[]){ 6, 6, 12, 12 }, 2, 1) &&
           tiku_editdoc_undo(doc) == TIKU_EDIT_OK &&
           tiku_editdoc_redo(doc) == TIKU_EDIT_OK &&
-          holds(doc, v, (const int64_t[]){ 5, 5, 10, 10 }, 2, 1), "SEL-005",
+          holds(doc, v, (const int64_t[]){ 6, 6, 12, 12 }, 2, 1), "SEL-005",
           "redo gives back the ones a step only moved");
-    (void)tiku_editdoc_undo(doc);
-    memset(&t, 0, sizeof t);
-    t.edits = &r;
-    t.count = 1;
-    t.view = v;
-    t.select = 1;
-    t.anchor = t.caret = 1;
-    t.flags = TIKU_EDIT_TYPING;
-    check(tiku_editdoc_apply(doc, &t) == TIKU_EDIT_OK &&
-          holds(doc, v, (const int64_t[]){ 1, 1 }, 1, 0), "SEL-005",
-          "a step ending with one selection");
-    r.range.start = r.range.end = 1;
-    t.anchor = t.caret = 2;
-    check(tiku_editdoc_apply(doc, &t) == TIKU_EDIT_OK &&
-          reads(doc, "##one! two! three") &&
-          tiku_editdoc_undo(doc) == TIKU_EDIT_OK && reads(doc, "#one! two! "
-                                                            "three") &&
-          tiku_editdoc_undo(doc) == TIKU_EDIT_OK &&
-          holds(doc, v, (const int64_t[]){ 4, 4, 9, 9 }, 2, 1), "SEL-005",
-          "typing after a step that had several selections starts its own, "
-          "and undoing that one gives them back");
     tiku_editdoc_release(doc);
+
+    doc = doc_of("abc def", &v);
+    (void)set(doc, v, (const int64_t[]){ 3, 3, 7, 7 }, 2, 0);
+    (void)back_at(doc, v, words, 2, 0);
+    (void)back_at(doc, v, more, 2, 0);
+    check(reads(doc, "a d") && tiku_editdoc_undo(doc) == TIKU_EDIT_OK &&
+          reads(doc, "abc def") &&
+          holds(doc, v, (const int64_t[]){ 3, 3, 7, 7 }, 2, 0), "SEL-005",
+          "Backspace on at every caret joins one step too");
+    (void)tiku_editdoc_redo(doc);
+    check(back_at(doc, v, one, 1, 0) == TIKU_EDIT_OK && reads(doc, " d") &&
+          tiku_editdoc_undo(doc) == TIKU_EDIT_OK && reads(doc, "a d"),
+          "SEL-005", "at fewer carets it starts its own step");
+    tiku_editdoc_release(doc);
+    doc = doc_of("abc def", &v);
+    (void)set(doc, v, (const int64_t[]){ 3, 3, 7, 7 }, 2, 0);
+    (void)back_at(doc, v, words, 2, 0);
+    check(back_at(doc, v, aside, 2, 0) == TIKU_EDIT_OK && reads(doc, "a e") &&
+          tiku_editdoc_undo(doc) == TIKU_EDIT_OK && reads(doc, "ab de"),
+          "SEL-005", "and so does one not going on at every caret");
+    tiku_editdoc_release(doc);
+
     doc = doc_of("", &v);
     memset(&t, 0, sizeof t);
     t.edits = &r;
@@ -415,10 +451,12 @@ history(void)
     t.selections = two;
     t.nselections = 2;
     check(tiku_editdoc_apply(doc, &t) == TIKU_EDIT_OK && reads(doc, "##") &&
-          tiku_editdoc_undo(doc) == TIKU_EDIT_OK && reads(doc, "#") &&
+          tiku_editdoc_undo(doc) == TIKU_EDIT_OK && reads(doc, "") &&
+          holds(doc, v, (const int64_t[]){ 0, 0 }, 1, 0) &&
           tiku_editdoc_redo(doc) == TIKU_EDIT_OK &&
           holds(doc, v, (const int64_t[]){ 0, 0, 2, 2 }, 2, 1), "SEL-005",
-          "typing that leaves several selections joins no step before it");
+          "a step joining one that kept one selection gives that back on "
+          "undo and its own on redo");
     tiku_editdoc_release(doc);
 }
 

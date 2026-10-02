@@ -274,10 +274,10 @@ typedef enum {
  *
  * With @p extend each anchor stays and its selection follows the caret;
  * without it each becomes its caret, a character move over a selection
- * stopping at its edge.  Rows up and down keep the main caret's x from its
- * row's start until another move or a change, the others going from their
- * own.  A caret where a row breaks shows at the next row's start, unless
- * End, a row move or a press past the row's end put it at that end.
+ * stopping at its edge.  Rows up and down keep each caret's x from its
+ * row's start until another move or a change.  A caret where a row breaks
+ * shows at the next row's start, unless End, a row move or a press past
+ * the row's end put it at that end.
  */
 tiku_edit_status_t tiku_codeview_move(tiku_codeview_t *view,
                                       tiku_codeview_move_t move, int extend);
@@ -293,27 +293,28 @@ void tiku_codeview_reveal(tiku_codeview_t *view);
  *        of @p text as one undo step, a caret after each, and show the
  *        main caret.
  *
- * With @p typing one selection's step may join the typing before it.  A
- * caret that would fall between a CR and its LF stands before the CR.
- * Every failure leaves the document as it was.
+ * With @p typing the step may join the typing before it, going on where
+ * that stopped at every caret.  A caret that would fall between a CR and
+ * its LF stands before the CR.  Every failure leaves the document as it
+ * was.
  */
 tiku_edit_status_t tiku_codeview_insert(tiku_codeview_t *view,
                                         const char *text, size_t length,
                                         int typing);
 /** @brief Delete the selection, or else the character before the caret,
  *         or after it when @p forward, a CRLF as one, at every selection
- *         as one step; one selection's presses in a row join into one undo
- *         step.  With no character on that side nothing changes and
- *         TIKU_EDIT_NOTHING is returned. */
+ *         as one step; presses in a row join into one undo step.  With no
+ *         character on that side nothing changes and TIKU_EDIT_NOTHING is
+ *         returned. */
 tiku_edit_status_t tiku_codeview_delete(tiku_codeview_t *view, int forward);
 /**
  * @brief Replace each selection with the view's line break and the
  *        indentation of its line, up to it, one level more after a line
  *        whose code ends with an opener of the rules.
  *
- * With one selection a closer that followed it goes to a line of its own
- * at the old indentation.  One undo step, a caret at the end of each
- * indentation, joining the typing before it when there is one selection.
+ * A closer that followed a selection goes to a line of its own at the old
+ * indentation, unless another selection stands before it.  One undo step
+ * joining the typing before it, a caret at the end of each indentation.
  */
 tiku_edit_status_t tiku_codeview_newline(tiku_codeview_t *view);
 /**
