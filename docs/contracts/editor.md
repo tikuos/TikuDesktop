@@ -148,6 +148,14 @@ These are settled for the engine. The migration rows they affect are marked
     press in a pane gives it the keys, and the commands and the footer
     follow that pane. Taken again, the pane with the keys stays
     (EDR-SPLIT rows, EDR-MENU-001).
+19. **Problems are shown on the text.** A document keeps indicators over
+    ranges of text and annotations under lines, each of a kind the
+    application gives a meaning to. A view draws a kind's indicators with
+    a wavy or straight line or a frame, shows annotations as rows under
+    their line that the caret passes over, and goes from one indicator to
+    the next. The IDE shows what a run or build says about a line this way,
+    in place of the Messages window alone (IND, ANN, IMK, ANV and
+    IDE-DIAG rows).
 
 ## Document engine
 
@@ -232,6 +240,18 @@ These are settled for the engine. The migration rows they affect are marked
 | EXE-001 | Tiku | The execution line is set for a line inside the text and reported current; none set is `TIKU_EDIT_NOTHING` with line -1; a line outside, or no document, is refused | done | `test_editdoc_decorations.c:execution` |
 | EXE-002 | Tiku | Any edit, undo or redo that leaves other text makes the mark stale, reported with its line and never moved; undo or redo back to the text it was set for makes it current again; a load makes it stale even when the text is the same | done | `test_editdoc_decorations.c:execution` |
 | EXE-003 | Tiku | A read-only document takes the mark, and clearing removes it | done | `test_editdoc_decorations.c:execution` |
+
+### Indicators and annotations
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| IND-001 | Tiku | An indicator of a kind from 0 to 7 is added over a range of the text that holds at least one character and starts and ends at character boundaries; anything else is refused and nothing kept. Its handle reads its range until it is removed, and a handle of a removed indicator stays dead when its slot is reused. With no room an indicator or annotation is refused with `TIKU_EDIT_NO_MEMORY` and nothing changes | done | `test_editdoc_notes.c:adding`, `no_room` |
+| IND-002 | Tiku | A range follows its text: text put in inside it widens it, text put in at either end stays outside, and a cut shortens it; an edit that takes all of its text removes it. Neither end stands between a CR and its LF. Undo and redo move it with their text; a load removes it. Through random replacements every range is where a separate model puts it, and no change allocates while it is committed | done | `test_editdoc_notes.c:following`, `random_edits` |
+| IND-003 | Tiku | The next indicator of some kinds after a place starts nearest after it, the widest first among those starting together; back before it, the one starting last before it; `TIKU_EDIT_NOTHING` when there is none that way | done | `test_editdoc_notes.c:searching` |
+| IND-004 | Tiku | A visit calls back for each indicator of some kinds overlapping a span, stopping when told; ranges that only touch the span are not visited. Clearing some kinds removes their indicators and no others | done | `test_editdoc_notes.c:searching` |
+| ANN-001 | Tiku | An annotation of a kind from 0 to 7 is added under a line with its text, after any the line has; no text adds none, and a line, kind or text that is not valid is refused. A line's annotations read back in order with their kinds | done | `test_editdoc_notes.c:annotations`, `no_room` |
+| ANN-002 | Tiku | Annotations follow their line as markers do (LMK-003 to LMK-005) | done | `test_editdoc_notes.c:annotations` |
+| ANN-003 | Tiku | Annotations are counted, and a serial changes whenever one is added or removed but not on an edit; they are cleared by line and kind or everywhere, and a load removes them | done | `test_editdoc_notes.c:annotations` |
 
 ### Independent checks
 
@@ -406,6 +426,18 @@ section until it moves onto the view, and any difference is decided then.
 | WRP-009 | Tiku | The rows shown are counted when shown, and up to 256 KB of other lines each time the view is laid out. A tick counts 1 MB more and is taken while it counts, and `tiku_codeview_wrapping()` says whether any line is left. A line not yet counted takes its last count, or one row | done | `test_codeview_wrap.c:counting` |
 | WRP-010 | Tiku | A change of width, face, size or tab stops breaks every line again | done | `test_codeview_wrap.c:metrics` |
 | WRP-011 | Tiku | With no width to break at, or no room for the rows, each line is one row until there is | done | `test_codeview_wrap.c:unwrapped` |
+
+### Marks and annotation rows
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| IMK-001 | Tiku | `tiku_codeview_set_mark()` draws a kind's indicators under their text: a wavy line going up and down every 2 pixels, a straight line, or a frame round the cells, in the kind's colour and nowhere outside the range; a kind with no style is not drawn, and a kind or style that is not there is refused | done | `test_codeview_notes.c:styles` |
+| IMK-002 | Tiku | A mark over a row break is drawn on both rows where each draws the text | done | `test_codeview_notes.c:wrapped_marks` |
+| IMK-003 | Tiku | `tiku_codeview_goto_indicator()` selects the next indicator of some kinds after the selection's start, or the one before it, starting again from the other end, and shows it; with none nothing changes and `TIKU_EDIT_NOTHING` is returned | done | `test_codeview_notes.c:going` |
+| ANV-001 | Tiku | With `TIKU_CODEVIEW_ANNOTATIONS` each annotation takes a row under its line, and one more for each LF in it, after the line's text rows; without the option they take none. The rows count in the scroll range, and the gutter numbers text rows only | done | `test_codeview_notes.c:annotation_rows` |
+| ANV-002 | Tiku | An annotation row shows its text 4 pixels in on its kind's colour pulled halfway to the page, or the panel colour for a kind with no style; a marked line's fill covers its text rows only | done | `test_codeview_notes.c:annotation_rows`, `fills` |
+| ANV-003 | Tiku | Up, Down and the page keys pass over annotation rows, down to the next line's first row or up to the annotated line's last; a press or hit on an annotation row lands at its line's end | done | `test_codeview_notes.c:caret_moves` |
+| ANV-004 | Tiku | Annotation rows follow annotations added and removed, move with their lines through edits, and come after the rows a wrapped line's text takes | done | `test_codeview_notes.c:row_updates` |
 
 ### Hosting and timing
 
@@ -633,7 +665,7 @@ the code at `bf1c6b3`; those the move onto the kit changed follow decisions
 | IDE-KEY-006 | ide/tiku_ide_events.c:page_key; kits/editor/tiku_codeview_edit.c:tiku_codeview_delete | Backspace and Delete, with any modifier, remove a held selection, otherwise one character before or after the caret, a CRLF as one, joining lines at a line start or end; presses in a row join into one undo step. No join is too long. | done | test_ide_page.c:breakpoints (Backspace over a selection), basic_limits (Backspace); shell/ideedit.script (Delete) |
 | IDE-KEY-007 | ide/tiku_ide_events.c:page_key; kits/editor/tiku_codeview_input.c:key, tiku_codeview_move | Left and Right move one character, a CRLF as one, and over a selection stop at its edge; Up and Down keep the x the first of them started from; Home and End go to the line's start and end, and Cmd+Home and Cmd+End to the document's; Option or Cmd with Left or Right move by words; Page Up and Page Down move by the visible rows keeping the x (decision 11). Cmd with Up, Down or a page key, and Option with Up, Down, Home, End or a page key, move as the key alone does. The view follows the caret after every key. | done | test_ide_page.c:caret_rules (Cmd+Right, Cmd+Down, Option+Up, Cmd+End); shell/ideedit.script |
 | IDE-KEY-008 | ide/tiku_ide_events.c:tiku_ide_event; ide/tiku_ide_search.c:tiku_ide_search_key; ide/tiku_ide_assist.c:tiku_ide_assist_event; ide/tiku_ide_debug.c:tiku_ide_debug_event | Escape in the page does nothing unless the find bar, the completion list or keyword help, or the watch field has the keys; each of those closes on Escape, a list together with its tip. | done | test_ide_page.c:assistance (Escape closes the list and its tip); shell/idefind.script (Escape closes the bar) |
-| IDE-KEY-009 | ide/tiku_ide_events.c:tiku_ide_event, page_key; ide/tiku_ide_commands.c:tiku_ide_pick; ide/tiku_ide_editor.c:tiku_ide_edit_publish | Cmd keys: F Find, H Find and Replace, S Save, W Close, X/C/V Cut/Copy/Paste, A Select all, Z Undo, Shift+Z Redo. BASIC pages add R Run, . Stop, D Start debugging, B Toggle breakpoint, J Step, G Continue, K Keyword help and Space Complete; both add / Toggle comment (IDE-TEXT-001). D, B, J and G also open the debug panel, and J and G act only during that page's debug run. Shift matters only with Z, and Cmd with an arrow, Home, End or a page key moves as IDE-KEY-007 says. There is no Cmd+Y and no Go to Line. | done | test_ide_page.c:caret_rules, kept_bytes (Z, Shift+Z, S); shell/idemenu.script (S, W); shell/ideundo.script (Z, Shift+Z); shell/ideclip.script (C, V); shell/ideselect.script (A); shell/idefind.script (F) |
+| IDE-KEY-009 | ide/tiku_ide_events.c:tiku_ide_event, page_key; ide/tiku_ide_commands.c:tiku_ide_pick; ide/tiku_ide_editor.c:tiku_ide_edit_publish | Cmd keys: F Find, H Find and Replace, S Save, W Close, X/C/V Cut/Copy/Paste, A Select all, Z Undo, Shift+Z Redo. BASIC pages add R Run, . Stop, D Start debugging, B Toggle breakpoint, J Step, G Continue, K Keyword help and Space Complete; both add / Toggle comment (IDE-TEXT-001), ' Next problem and Shift+' Previous problem (IDE-DIAG-003). D, B, J and G also open the debug panel, and J and G act only during that page's debug run. Shift matters only with Z, and Cmd with an arrow, Home, End or a page key moves as IDE-KEY-007 says. There is no Cmd+Y and no Go to Line. | done | test_ide_page.c:caret_rules, kept_bytes (Z, Shift+Z, S); shell/idemenu.script (S, W); shell/ideundo.script (Z, Shift+Z); shell/ideclip.script (C, V); shell/ideselect.script (A); shell/idefind.script (F) |
 | IDE-KEY-010 | ide/tiku_ide_events.c:tiku_ide_event; ide/tiku_ide_commands.c:tiku_ide_pick | While the find bar is open every key goes to the bar (Cmd+A, Cmd+C, Cmd+X and Cmd+V act on its field, IDE-CLIP-005), so page shortcuts such as Cmd+S, Cmd+W, Cmd+Z and Cmd+F do nothing until it closes. The BASIC Cmd+D/B/J/G/K/Space shortcuts still act, and menu items and toolbar tools still act on the page. | baseline | none |
 | IDE-KEY-011 | ide/tiku_ide_events.c:tiku_ide_event | While the project window's question is open, editor windows ignore all input. | baseline | none |
 | IDE-KEY-012 | ide/tiku_ide_language.c:tiku_ide_edit_normalize_word; kits/editor/tiku_codeview_edit.c:tiku_codeview_delete | On a BASIC page, typing an ASCII non-word character or pressing Return with a selection held first removes the selection as its own undo step. A lower-case reserved word just before where the selection began is then upper-cased as IDE-KEY-004 describes, and the key lands. When the selection cannot be removed, on a page its debug run holds, nothing changes. | done | test_ide_workflow.c:test_keyword_over_selection ("print x" with " x" selected, then Space, gives "PRINT "; Select all over "10 end", then Space, gives " ") |
@@ -646,6 +678,14 @@ the code at `bf1c6b3`; those the move onto the kit changed follow decisions
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
 | IDE-TEXT-001 | ide/tiku_ide_editor.c:tiku_ide_edit_publish; ide/tiku_ide_commands.c:tiku_ide_pick; ide/tiku_ide_events.c:page_key; ide/tiku_ide_text.c:tiku_ide_text_new | The Edit menu's Toggle comment (Cmd+/) comments or uncomments the touched lines, "//" on a C page and REM after the number on a BASIC one (LNC-006, LNC-007), disabled while a debug run holds the page; a "}" typed first on a C line takes its opener's indentation (LNC-003); pages mark the bracket by the caret (BRC-004) | done | test_ide_page.c:line_commands |
+
+### Problems
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| IDE-DIAG-001 | ide/tiku_ide_problems.c:tiku_ide_problems_show, apply; ide/tiku_ide_console.c:tiku_ide_message_take | Each message of a run or build that names a line of an open page underlines on that page the name at the message's column, or the character there, and for BASIC and messages without a column the line's text past its indentation; its words, without the place a compiler puts first, are an annotation under the line. A message saying "warning" first is a warning, "note" a note, anything else an error: errors are wavy and red, warnings wavy and orange, notes a straight blue line. A page opened later gets its own | done | test_ide_page.c:problems |
+| IDE-DIAG-002 | ide/tiku_ide_run.c, tiku_ide_debug.c, tiku_ide_device.c, tiku_ide_search.c | Each run, build or debug run clears the problems of the one before from every page; Find in project's hits are not problems and leave the pages alone. Problems follow edits (IND-002, ANN-002) | done | test_ide_page.c:problems |
+| IDE-DIAG-003 | ide/tiku_ide_editor.c:tiku_ide_edit_publish; ide/tiku_ide_events.c:page_key; ide/tiku_ide_problems.c:tiku_ide_problems_go | The Edit menu's Next problem (Cmd+') and Previous problem (Cmd+Shift+') select the next or previous underlined problem on the page, round its ends (IMK-003); they are disabled while the page shows none | done | test_ide_page.c:problems; shell/ideundo.script, shell/iderenum.script (the menu's rows) |
 
 ### Selection
 
