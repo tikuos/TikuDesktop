@@ -28,7 +28,7 @@ click-window Edit
 wait 25
 shot /tmp/tiku-editor-wrap-off.png
 note unwrapped, the second row holds the short line and nothing past it
-expect-pixel 319 167 ffffff
+expect-pixel 331 167 ffffff
 click 212 8
 wait 6
 expect-menu Wrap Lines
@@ -36,7 +36,7 @@ menu-pick Wrap Lines
 wait 25
 shot /tmp/tiku-editor-wrap-on.png
 note wrapped, the long line goes on in the second row
-expect-pixel 319 167 080808
+expect-pixel 331 167 080808
 click 212 8
 wait 6
 expect-menu Wrap Lines
@@ -44,7 +44,7 @@ menu-pick Wrap Lines
 wait 25
 shot /tmp/tiku-editor-wrap-again.png
 note and taken off, the second row is the short line again
-expect-pixel 319 167 ffffff
+expect-pixel 331 167 ffffff
 note put the editor away rather than leave it standing
 click-window Edit
 wait 6

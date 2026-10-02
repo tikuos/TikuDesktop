@@ -22,7 +22,7 @@ wait 6
 shot /tmp/tiku-editor-split-one.png
 note one pane: the bar's place and the lower half are the page's ground
 expect-pixel 500 313 ffffff
-expect-pixel 245 325 ffffff
+expect-pixel 257 325 ffffff
 click 212 8
 wait 6
 expect-menu Split Pane
@@ -32,9 +32,9 @@ shot /tmp/tiku-editor-split-two.png
 note split: the bar across the page, the text again in the lower pane,
 note and the caret drawn in the upper pane only, which keeps the keys
 expect-pixel 500 313 d8d8d8
-expect-pixel 245 325 232323
-expect-pixel 260 150 000000
-expect-pixel 260 328 ffffff
+expect-pixel 257 325 232323
+expect-pixel 272 150 000000
+expect-pixel 272 328 ffffff
 note a press in the lower pane gives it the keys; what it types shows in
 note both panes, and now only the lower pane draws its caret
 click 300 400
@@ -42,10 +42,10 @@ wait 6
 key X
 wait 12
 shot /tmp/tiku-editor-split-typed.png
-expect-pixel 264 326 1a1a1a
-expect-pixel 264 148 1a1a1a
-expect-pixel 268 328 000000
-expect-pixel 260 150 ffffff
+expect-pixel 276 326 1a1a1a
+expect-pixel 276 148 1a1a1a
+expect-pixel 280 328 000000
+expect-pixel 272 150 ffffff
 click 212 8
 wait 6
 expect-menu Split Pane
@@ -54,7 +54,7 @@ wait 20
 shot /tmp/tiku-editor-split-back.png
 note one pane again: the bar is gone and the text stays
 expect-pixel 500 313 ffffff
-expect-pixel 264 148 1a1a1a
+expect-pixel 276 148 1a1a1a
 note put the editor away: it asks about the unsaved text, and Discard
 note closes it
 click-window Edit

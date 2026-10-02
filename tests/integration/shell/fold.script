@@ -1,0 +1,55 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Folding, end to end: the box beside a line that opens a block folds the
+# block away, the lines after it move up, and the box unfolds it again;
+# Text > Fold folds the block the caret is in.  The first pixel is a
+# glyph pixel of the second row's text, one(); while the block is shown;
+# the second is the upright of the plus the box shows while it is folded.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 40
+expect-title Open
+click 400 200
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Edit
+wait 25
+shot /tmp/tiku-editor-fold-open.png
+note unfolded, the second row holds one(); and the box a minus
+expect-pixel 291 167 080808
+expect-pixel 245 149 ffffff
+click 245 151
+wait 25
+shot /tmp/tiku-editor-fold-folded.png
+note folded, the second row holds the closing brace and the box a plus
+expect-pixel 291 167 ffffff
+expect-pixel 245 149 7f7f7f
+click 245 151
+wait 25
+note unfolded again
+expect-pixel 291 167 080808
+expect-pixel 245 149 ffffff
+click 300 170
+wait 6
+click 256 8
+wait 6
+expect-menu Fold
+menu-pick Fold
+wait 25
+shot /tmp/tiku-editor-fold-menu.png
+note Text > Fold with the caret in the block folds it
+expect-pixel 291 167 ffffff
+expect-pixel 245 149 7f7f7f
+quit

@@ -725,7 +725,8 @@ static void editor_rows(edit_state_t *st)
     assert(!(tiku_codeview_options(st->view) & TIKU_CODEVIEW_LINE_NUMBERS));
     tiku_editor_pick(st, st->id, CMD_INVISIBLES); tiku_editor_pick(st, st->id, CMD_NUMBERS);
     assert(tiku_codeview_options(st->view) ==
-           (TIKU_CODEVIEW_LINE_NUMBERS | TIKU_CODEVIEW_BRACES));
+           (TIKU_CODEVIEW_LINE_NUMBERS | TIKU_CODEVIEW_BRACES |
+            TIKU_CODEVIEW_FOLDS));
     assert(set_text(st, ""));
 }
 
@@ -765,7 +766,7 @@ static void text_menu(edit_state_t *st)
     key(st, '}', 0); assert(!strcmp(line(st, 1), "}"));
     tiku_editor_publish(st);
     assert(st->last_menus.nmenu == 5 && !strcmp(text->title, "Text") &&
-           text->nitem == 9);
+           text->nitem == 13);
     assert(text->item[2].command == CMD_COMMENT && text->item[2].sc == '/' &&
            text->item[2].enabled && text->item[3].sc == 'd');
     assert(text->item[6].command == CMD_DELETE_LINES &&
@@ -966,6 +967,48 @@ static void split_panes(edit_state_t *st)
     assert(set_text(st, ""));
 }
 
+/** The Text menu's Fold and Unfold fold the region the caret is in and
+ *  unfold its line, by menu and by Cmd+Shift+[ and ]; Fold All and Unfold
+ *  All take every region; a press on the fold column's box folds. */
+static void folds(edit_state_t *st)
+{
+    const tiku_menu_list_t *text = &st->last_menus.menu[4];
+    tiku_rect_t box;
+    int64_t y, x;
+    st->lang = TIKU_SYNTAX_C; tiku_codeview_set_language(st->view, st->lang);
+    assert(set_text(st, "int f(void) {\n\ta();\n\tb();\n}\nint g;\n"));
+    tiku_editor_publish(st); tiku_editor_paint(st);
+    assert(text->item[9].command == CMD_FOLD && text->item[9].sc == '[' &&
+           text->item[9].mods == (TIKU_MOD_CMD | TIKU_MOD_SHIFT) &&
+           !strcmp(text->item[9].label, "Fold") &&
+           text->item[10].command == CMD_UNFOLD && text->item[10].sc == ']' &&
+           text->item[11].command == CMD_FOLD_ALL &&
+           text->item[12].command == CMD_UNFOLD_ALL);
+    place(st, 1, 1); key(st, '[', TIKU_MOD_CMD | TIKU_MOD_SHIFT);
+    assert(tiku_codeview_folded(st->view, 0) &&
+           !tiku_codeview_shown(st->view, 1) && !tiku_codeview_shown(st->view, 2));
+    caret_at(st, &y, &x); assert(y == 0);
+    key(st, ']', TIKU_MOD_CMD | TIKU_MOD_SHIFT);
+    assert(!tiku_codeview_folded(st->view, 0) && tiku_codeview_shown(st->view, 1));
+    key(st, '[', TIKU_MOD_CMD);
+    assert(!tiku_codeview_folded(st->view, 0));
+    tiku_editor_pick(st, st->id, CMD_FOLD_ALL);
+    assert(tiku_codeview_folded(st->view, 0));
+    tiku_editor_pick(st, st->id, CMD_UNFOLD_ALL);
+    assert(!tiku_codeview_folded(st->view, 0) && tiku_codeview_shown(st->view, 2));
+    /* The fold column ends 4 pixels before the text starts. */
+    box = tiku_editor_pane_box(st, 0);
+    assert(tiku_codeview_point(st->view, 0, &x, NULL) == TIKU_EDIT_OK);
+    tiku_event_t press = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = (int)x - 10, .y = box.y + 3 + tiku_codeview_row_height(st->view) / 2};
+    tiku_editor_event(st, &press);
+    press.type = TIKU_EVENT_POINTER_UP; tiku_editor_event(st, &press);
+    assert(tiku_codeview_folded(st->view, 0));
+    tiku_editor_pick(st, st->id, CMD_UNFOLD_ALL);
+    st->lang = TIKU_SYNTAX_NONE; tiku_codeview_set_language(st->view, st->lang);
+    assert(set_text(st, ""));
+}
+
 /** @brief A launch argument loads its contents, never a remembered document. */
 int main(void)
 {
@@ -1003,6 +1046,7 @@ int main(void)
     text_menu(st);
     wrap_lines(st);
     split_panes(st);
+    folds(st);
     undo_roundtrips(st);
     history_rollover(st);
     large_documents(st, dir);

@@ -209,7 +209,7 @@ void tiku_editor_publish(edit_state_t *st)
 {
     tiku_menuset_t menus = {0}; menus.nmenu = 5;
     const char *titles[] = {"File", "Edit", "Search", "View", "Text"};
-    const char *labels[][9] = {
+    const char *labels[][13] = {
         {"New", "Open…", "Save", "Save As…", "Revert", "Close"},
         {"Undo", "Redo", "Cut", "Copy", "Paste", "Select All"},
         {"Find…", "Find Next", "Find Previous", "Replace…", "Go to Line…", "Replace All"},
@@ -217,17 +217,20 @@ void tiku_editor_publish(edit_state_t *st)
          "Wrap Lines", "Split Pane"},
         {"Indent Lines", "Unindent Lines", "Toggle Comment", "Duplicate Lines",
          "Move Lines Up", "Move Lines Down", "Delete Lines",
-         "Go to Matching Bracket", "Select to Matching Bracket"}};
-    const int commands[][9] = {
+         "Go to Matching Bracket", "Select to Matching Bracket", "Fold",
+         "Unfold", "Fold All", "Unfold All"}};
+    const int commands[][13] = {
         {CMD_NEW, CMD_OPEN, CMD_SAVE, CMD_SAVEAS, CMD_REVERT, CMD_QUIT},
         {CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE, CMD_ALL},
         {CMD_FIND, CMD_NEXT, CMD_PREV, CMD_REPLACE, CMD_GOTO, CMD_REPLACE_ALL},
         {CMD_NUMBERS, CMD_SYNTAX, CMD_RUN, CMD_INVISIBLES, CMD_WRAP,
          CMD_SPLIT},
         {CMD_INDENT, CMD_UNINDENT, CMD_COMMENT, CMD_DUPLICATE, CMD_LINES_UP,
-         CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET}};
-    const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r   ", "  /d  kmm"};
-    const int counts[] = {6, 6, 6, 6, 9};
+         CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET,
+         CMD_FOLD, CMD_UNFOLD, CMD_FOLD_ALL, CMD_UNFOLD_ALL}};
+    const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r   ",
+                          "  /d  kmm[]  "};
+    const int counts[] = {6, 6, 6, 6, 13};
     tiku_edit_pos_t anchor = 0, caret = 0;
     (void)tiku_codeview_selection(st->view, &anchor, &caret);
     int selected = anchor != caret;
@@ -256,7 +259,8 @@ void tiku_editor_publish(edit_state_t *st)
             menus.menu[m].item[i].command = cmd;
             menus.menu[m].item[i].enabled = enabled;
             menus.menu[m].item[i].sc = keys[m][i] == ' ' ? 0 : keys[m][i];
-            if (cmd == CMD_DELETE_LINES || cmd == CMD_SELECT_BRACKET)
+            if (cmd == CMD_DELETE_LINES || cmd == CMD_SELECT_BRACKET ||
+                cmd == CMD_FOLD || cmd == CMD_UNFOLD)
                 menus.menu[m].item[i].mods = TIKU_MOD_CMD | TIKU_MOD_SHIFT;
             menus.menu[m].item[i].marked = cmd == CMD_NUMBERS ? st->numbers :
                 cmd == CMD_SYNTAX ? st->lang == TIKU_SYNTAX_BASIC :
@@ -357,6 +361,11 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
     case CMD_WORD_BACK: case CMD_WORD_ON:
         text_command(st, tiku_codeview_delete_word(st->view,
                                                    command == CMD_WORD_ON));
+        break;
+    case CMD_FOLD: case CMD_UNFOLD:
+        (void)tiku_codeview_fold_at(st->view, command == CMD_UNFOLD); break;
+    case CMD_FOLD_ALL: case CMD_UNFOLD_ALL:
+        (void)tiku_codeview_fold_all(st->view, command == CMD_UNFOLD_ALL);
         break;
     case CMD_BRACKET: case CMD_SELECT_BRACKET:
         (void)tiku_codeview_goto_bracket(st->view,

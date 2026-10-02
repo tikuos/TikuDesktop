@@ -36,12 +36,12 @@ wait 25
 shot /tmp/tiku-editor-ccolour.png
 note inside the remark: the words are what the machine ignores, however
 note much they look like a language
-expect-pixel 263 167 607060
+expect-pixel 275 167 607060
 note and outside it, two lines down, the very same word is a word the
 note language reserves
-expect-pixel 263 205 0000b0
+expect-pixel 275 205 0000b0
 note neither is the other, which is the whole of what carrying means
-expect-pixel 263 167 607060
+expect-pixel 275 167 607060
 note put the editor away rather than leave it standing
 key Escape
 wait 30

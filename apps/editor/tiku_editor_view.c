@@ -88,7 +88,7 @@ tiku_rect_t tiku_editor_page(const edit_state_t *st)
  *  language and line break, and whether it has the keys. */
 void tiku_editor_view_sync(edit_state_t *st)
 {
-    unsigned options = TIKU_CODEVIEW_BRACES |
+    unsigned options = TIKU_CODEVIEW_BRACES | TIKU_CODEVIEW_FOLDS |
         (st->numbers ? TIKU_CODEVIEW_LINE_NUMBERS : 0) |
         (st->show_invisibles ? TIKU_CODEVIEW_INVISIBLES : 0) |
         (st->wrap ? TIKU_CODEVIEW_WRAP : 0);

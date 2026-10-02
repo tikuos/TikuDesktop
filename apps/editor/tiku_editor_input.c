@@ -326,7 +326,9 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         case 'a': cmd = CMD_ALL; break; case 'f': cmd = CMD_FIND; break;
         case 'h': cmd = CMD_REPLACE; break; case 'g': cmd = CMD_GOTO; break;
         case 'r': cmd = CMD_RUN; break;
-        case ']': cmd = CMD_NEXT; break; case '[': cmd = CMD_PREV; break;
+        case ']': cmd = shift ? CMD_UNFOLD : CMD_NEXT; break;
+        case '[': cmd = shift ? CMD_FOLD : CMD_PREV; break;
+        case '}': cmd = CMD_UNFOLD; break; case '{': cmd = CMD_FOLD; break;
         case '/': cmd = CMD_COMMENT; break;
         case 'd': cmd = shift ? 0 : CMD_DUPLICATE; break;
         case 'k': cmd = shift ? CMD_DELETE_LINES : 0; break;
