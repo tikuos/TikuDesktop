@@ -47,7 +47,7 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_decorations test_editdoc_notes \
                   test_codeview_assist \
                   test_codeview_lines test_codeview_wrap \
-                  test_codeview_notes \
+                  test_codeview_notes test_codeview_folds \
                   test_codeview_layout test_codeview_paint \
                   test_codeview_input test_codeview_display \
                   test_codeview_edit test_codeview_find \
