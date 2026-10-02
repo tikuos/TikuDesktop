@@ -16,7 +16,11 @@ The mouse wheel scrolls vertically; Shift+wheel scrolls horizontally.
 Both scrollbars have end arrows, draggable thumbs and clickable page tracks.
 <b>View → Line Numbers</b> toggles the gutter. Tabs display at four-column stops;
 <b>Show Invisibles</b> marks spaces and tabs without changing file contents.
-Control characters are shown by name, such as <code>^L</code> for a form feed.</p>
+Control characters are shown by name, such as <code>^L</code> for a form feed.
+<b>Wrap Lines</b> breaks long lines at the window's width, after a space or tab
+where it can; nothing is added to the file. While lines wrap, Home and End go to the
+start and end of the row first and of the line when pressed again, and Up and
+Down move a row at a time.</p>
 <p>The Pe-inspired toolbar has small New, Open, Save, Undo, Redo and Find icons,
 followed by the filename and an unsaved-change star. Hover over an icon to see
 its action and shortcut in the bottom status pane. The caret's line and byte
@@ -43,7 +47,7 @@ Tab changes fields and Escape closes the Find window. Click the document to
 resume editing without closing Find. Replace All changes every matching
 occurrence in this document as a single undoable operation.</p>
 <p><b>Go to Line…</b> accepts a line number; Return navigates there and Escape
-cancels. Regular expressions, multi-file search and soft wrapping are not yet provided.</p>
+cancels. Regular expressions and multi-file search are not yet provided.</p>
 
 <h2 id="text">Working with lines</h2>
 <p>Return keeps the indentation of the line it breaks. In a C file it adds a
