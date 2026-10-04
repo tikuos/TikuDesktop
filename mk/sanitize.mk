@@ -5,7 +5,7 @@
 # again under AddressSanitizer and UBSan, and their suites run against
 # them, the PDF view's with the view compiled into it (so it is not among
 # the objects).  The editor kit is compiled the same way, and its suites
-# also run with leak detection on where there is one: Apple's
+# and Reader's also run with leak detection on where there is one: Apple's
 # AddressSanitizer refuses detect_leaks, so on a Mac they run as the rest
 # do.  The rest of the kits link as built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
@@ -41,6 +41,10 @@ SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
 SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
                  test_grab_app test_office_viewer test_sdr
 SAN_TESTS += $(SAN_APP_TESTS)
+# Reader's suites link its modules; its folder search counts references
+# by hand, so they are among the leak-checked suites below.
+SAN_READER_TESTS := test_document_reader test_help_reader test_reader_large \
+                    test_reader_reliability test_reader_search_faults
 SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
                   test_editdoc_faults test_editdoc_fixtures \
@@ -57,7 +61,8 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_codeview_style test_codeview_extensions \
                   test_codeview_regex test_codeview_advanced \
                   test_codeview_tools test_codeview_host \
-                  test_editor_document test_ide_workflow test_ide_page
+                  test_editor_document test_ide_workflow test_ide_page \
+                  $(SAN_READER_TESTS) test_reader_allocations
 # The timing suite is left out: it times large fixtures, which the
 # sanitizers slow many times over.
 SAN_TESTS += $(SAN_LEAK_TESTS)
@@ -67,7 +72,9 @@ SAN_LEAKS := $(if $(filter Darwin,$(UNAME_S)),0,1)
 # intermediates, it deleted them after every run, built them all again on
 # the next, and under -j spun in place deciding whether it had to.
 SAN_KIT_TEST_OBJS := $(patsubst %,$(SAN)/tests/kits/%.o,\
-                         $(filter-out $(SAN_APP_TESTS) test_editor_document \
+                         $(filter-out $(SAN_APP_TESTS) $(SAN_READER_TESTS) \
+                                      test_reader_allocations \
+                                      test_editor_document \
                                       test_ide_workflow test_ide_page,$(SAN_TESTS)))
 $(SAN_KIT_TEST_OBJS):
 
@@ -88,6 +95,28 @@ $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
         $(SAN)/tests/apps/test_%.o $(SAN_OBJS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
 	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
+
+# Reader's controllers, document parser and image decoder are instrumented too.
+SAN_READER_KIT_SRCS := kits/interface/tiku_doc.c \
+                       kits/interface/tiku_doc_paint.c \
+                       kits/interface/tiku_markdown.c \
+                       kits/translation/tiku_image.c
+SAN_READER_KIT_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_READER_KIT_SRCS))
+SAN_READER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(READER_CORE_SRC))
+$(addprefix $(SAN)/,$(SAN_READER_TESTS)): $(SAN)/test_%: \
+        $(SAN)/tests/apps/test_%.o $(SAN_READER_OBJS) $(SAN_READER_KIT_OBJS) \
+        $(SAN_OBJS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< \
+	      $(SAN_READER_OBJS) $(SAN_READER_KIT_OBJS) \
+	      $(SAN_OBJS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+# The allocation suite links the document model alone.
+SAN_READER_MODEL_OBJS := $(SAN)/apps/reader/tiku_reader_document.o
+$(SAN)/test_reader_allocations: $(SAN)/tests/apps/test_reader_allocations.o \
+        $(SAN_READER_MODEL_OBJS) $(SAN_READER_KIT_OBJS) $(SAN_OBJS) \
+        $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_READER_MODEL_OBJS) \
+	      $(SAN_READER_KIT_OBJS) $(SAN_OBJS) $(DESK_LIBS) $(LDFLAGS) -lm \
+	      $(X11_LIBS)
 
 # Editor links its own sources, instrumented like the readers.
 SAN_EDITOR_OBJS := $(patsubst %.c,$(SAN)/%.o,$(EDITOR_SRC))
