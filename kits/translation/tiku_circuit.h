@@ -90,6 +90,22 @@ tiku_circuit_err_t tiku_circuit_kicad(const void *data, size_t bytes,
     const tiku_circuit_import_t *options, tiku_circuit_t **out,
     tiku_circuit_diagnostic_t *diag);
 
+/**
+ * @brief Read the explicit-decimal subset of an XNC/Excellon drill file:
+ *        holes, slots and routes.
+ *
+ * Nonzero coordinates need a decimal point unless the file declares
+ * KiCad's decimal FORMAT comment; ambiguous fixed-point input is refused.
+ * The source origin is kept; scene units are millimetres with y down.
+ *
+ * @param options  cancellation only; the font is not used; may be NULL
+ * @return TIKU_CIRCUIT_OK with @p out set, or why not with @p out
+ *         untouched and @p diag (which may be NULL) filled in
+ */
+tiku_circuit_err_t tiku_circuit_drill(const void *data, size_t bytes,
+    const tiku_circuit_import_t *options, tiku_circuit_t **out,
+    tiku_circuit_diagnostic_t *diag);
+
 /** @brief The import's warning about what the preview approximates or
  *         leaves out, or an empty string; borrowed until release. */
 const char *tiku_circuit_warning(const tiku_circuit_t *doc);

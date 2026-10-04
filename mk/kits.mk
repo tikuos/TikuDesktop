@@ -121,6 +121,9 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_circuit_kicad_labels.c \
                $(K)/translation/tiku_circuit_kicad_global.c \
                $(K)/translation/tiku_circuit_project.c \
+               $(K)/translation/tiku_circuit_drill.c \
+               $(K)/translation/tiku_circuit_drill_attributes.c \
+               $(K)/translation/tiku_circuit_drill_geometry.c \
                $(K)/translation/tiku_circuit_artwork.c \
                $(K)/translation/tiku_circuit_stack.c \
                $(K)/translation/tiku_circuit_stack_render.c \
