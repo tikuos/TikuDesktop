@@ -48,7 +48,7 @@ interface, not a generic writer for every VFS command or file.
 | Date and time | `/sys/time` | Syncs Unix seconds from the host clock; displayed in UTC. Uses the firmware RTC persistence implementation. Requires `sys` capability. |
 | Cryptography | `/sys/crypto/mode` | `auto` or `sw`, when the Nordic crypto surface exists. Runtime setting. |
 | Radio transmit power | `/sys/radio/txpower` | Signed integer dBm. Firmware validates exact silicon-supported steps and radio ownership. Runtime setting. |
-| Idle sleep mode | `/sys/power/mode` | Read-only. Firmware deliberately excludes a setter because sleep changes can stop console reception. |
+| Idle sleep mode | `/sys/power/mode` | Read-only here. Firmware with `/sys/power/policy` sets the mode through that node or the shell's `sleep` command; a mode that stops console input needs `allow-console-loss`. |
 
 Other writable surfaces have different operational semantics and are not exposed
 as ordinary preferences:

@@ -63,7 +63,8 @@ static const struct {
       "Enter dBm. The device validates supported levels. Resets at reboot.",
             1, SEC_RADIO },
     { "Idle sleep mode", "/sys/power/mode",
-      "Reported by the device; changing it is not supported through VFS.", 0,
+      "Reported by the device. Firmware with /sys/power/policy changes it "
+      "there; this window only shows it.", 0,
       SEC_POWER },
     { "External PSRAM", "/sys/psram/state",
       "Up brings the external RAM online and attaches its tier; Down "
