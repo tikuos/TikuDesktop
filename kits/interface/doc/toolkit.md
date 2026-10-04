@@ -69,3 +69,18 @@ cannot drift apart unnoticed.
 The font rasteriser, the icon renderer, theming and the file panel are
 the drawing end's, by design: the board says what to draw in a few
 hundred bytes and never carries the machinery that turns it into pixels.
+
+### Short interaction animations
+
+`tiku_motion.h` supplies desktop-side timing, an expanding icon outline,
+and popup fade helpers. It does not own an event loop or delay an action.
+Start a `tiku_motion_t` with a monotonic microsecond timestamp, then call
+`tiku_motion_progress()` when drawing. A zero timestamp disables motion;
+completion, cancellation, or a backwards timestamp makes the state idle.
+
+Repaint the underlying content before drawing an outline. Request another
+frame only while `motion.active` is true, and include the old outline bounds
+when replacing or cancelling it. The final repaint removes the previous
+outline. `tiku_motion_outline_bounds()` includes its maximum expansion.
+Popup fades capture only the intersection of the popup and the repaint
+clip. If capture fails, the menu still draws and accepts input immediately.

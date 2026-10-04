@@ -27,7 +27,7 @@ SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
                      kits/translation/tiku_fontset%.c,\
                      $(TRANSLATION))) \
             $(filter %/tiku_ttf.c %/tiku_cff.c %/tiku_type1.c \
-                     %/tiku_glyphpath.c,$(INTERFACE)) \
+                     %/tiku_glyphpath.c %/tiku_motion.c,$(INTERFACE)) \
             $(filter %/tiku_digest.c %/tiku_cipher.c %/tiku_saslprep.c \
                      %/tiku_pubkey.c %/tiku_der.c %/tiku_cms.c \
                      %/tiku_keyfile.c,$(SUPPORT)) \

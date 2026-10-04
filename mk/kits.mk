@@ -80,7 +80,7 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_glyphpath.c $(K)/interface/tiku_cff.c \
                $(K)/interface/tiku_type1.c \
                $(K)/interface/tiku_ui.c $(K)/interface/tiku_dl.c \
-               $(K)/interface/tiku_logo.c \
+               $(K)/interface/tiku_logo.c $(K)/interface/tiku_motion.c \
                $(K)/interface/tiku_scroll.c $(K)/interface/tiku_field.c \
                $(K)/interface/tiku_field_event.c $(K)/interface/tiku_dialog.c $(K)/interface/tiku_press.c \
                $(K)/interface/tiku_text_input.c \
