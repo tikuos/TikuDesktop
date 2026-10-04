@@ -24,6 +24,7 @@
 #include "tiku_trk_gfx_dep.h"
 #include "tiku_strings.h"
 #include "tiku_host.h"
+#include "tiku_motion.h"
 #include "tiku_trk_application.h"
 #include "tiku_attr.h"
 #include "tiku_trk_drag.h"
@@ -70,6 +71,9 @@ typedef struct {
     int                  row_h;      /* a list row in pixels, from the face */
     int                  running;    /* 0 once quitting was asked for      */
     int                  dirty;      /* a frame is owed                    */
+    int                  reduce_motion; /* the settings file's ReduceMotion */
+    tiku_motion_t        activation_motion; /* the opened pose's outline   */
+    tiku_rect_t          activation_rect;   /* the pose it grows out of    */
     /* rubber band and icon drag */
     int                  band_active;
     int                  band_x0, band_y0, band_x1, band_y1;
@@ -243,6 +247,7 @@ void browser_image_detach(app_t *app);
 /* tiku_trk_app_navigate.c */
 int browser_navigate_to(app_t *a, const char *path, int record);
 void browser_begin_location(app_t *a);
+void browser_draw_activation(app_t *a);
 void browser_end_location(app_t *a, int apply);
 void browser_navigate_back(app_t *a);
 void browser_navigate_forward(app_t *a);

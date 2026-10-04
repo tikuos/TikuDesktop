@@ -1118,13 +1118,12 @@ BPose::DrawBar draws a shadowed frame of width 7/32 of the icon (minimum 4px) at
 **PORT:** The volume model supplies the numbers and the fill is computed from them; below a twentieth free the used part takes the warning colour instead of being drawn beside it, which is what makes a nearly-full volume read at a glance.  A volume that will not say its size shows an EMPTY bar, not a full one -- guessing full would warn about every device whose driver has no free-space call.  
 **PORT:** A mount point is now a VOLUME rather than a folder that happens to sit where one is, and carries its capacity as facts the store read -- so a listing of a dozen volumes is a dozen rows and not a dozen statvfs calls.  The bar is drawn along the bottom of the icon and the used part takes the warning colour below a twentieth free.  
 *Shell: desktop*  
-#### PVL-073 · polish · done
+#### PVL-073 · polish · differs
 **Opening an item plays a short expanding-rectangle animation over the item.**  
 DrawOpenAnimation strokes seven concentric pairs of inverted mixed-colour rects outward from the pose rect's centre with a 10 ms snooze per step, drawn in list mode over CalcPoseRectList(clickedPose, index, firstColumnOnly=true) and in icon mode over the pose rect.  
 `PoseView.cpp` → `BPoseView::DrawOpenAnimation / BPoseView::OpenSelectionCommon`  
-**PORT:** Both clauses landed with PVS-013's close: `tiku_trk_poseview_open_anim_rect` answers with the measured first column's slice in list mode and the clicked pose's picture cell in the icon modes, so the expanding rectangles play out of the right box everywhere a mouse open happens.  
-*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_open_anim_rect; tests/test_poseview.c PVS-013 block (mutation-tested)*  
-**PORT:** As PVS-013: the list-mode animation is exact in count, step and timing; the icon-mode case and the measured first-column rect are not there.
+**PORT:** A mouse open plays a 170 ms outline that grows and fades without sleeping, in both shells, and the open goes ahead at once rather than after seven inverted rectangles.  `tiku_trk_poseview_open_anim_rect` answers with the measured first column's slice in list mode and the clicked pose's picture cell, at the configured icon size, in the icon modes.  Reduce motion turns it off, and selecting a pose does not start it.  See PVS-013.  
+*src/ui/tiku_trk_poseview.c:tiku_trk_poseview_open_anim_rect; tests/test_poseview.c PVS-013 block; tests/system/test_frames.c; tests/system/test_tracker_motion.c*
 
 #### PVL-074 · polish · differs
 **A volume pose showing a space bar is repainted by invalidation rather than drawn directly, so the bar never smears.**  
@@ -1459,11 +1458,11 @@ Option adds "nodeRefsToClose" (the parent node_ref) per ref, suppressed on Deskt
 **PORT:** The two browsing regimes are the port's two FRONT-ENDS -- one core, two shells, the design the plan set down -- rather than one window flipping a SingleWindowBrowse setting.  Each regime is complete in its own shell; only the runtime mode switch between them is absent, deliberately: on TikuOS the shells are separate binaries by construction.  Option-open closing the source window holds in the spatial shell; the suppression rules the setting carried are the browser's whole way of being.  
 *src/shell/tiku_trk_desktop.c:1844-1851 (open_folder + Mod1Mask -> close_window); src/shell/tiku_trk_app.c:739-753 open_selection (unconditional switch_dir); grep for any single-window setting across src/ returns nothing*
 
-#### PVS-013 · polish · done
+#### PVS-013 · polish · differs
 **Opening from a double-click plays a zoom animation of expanding inverted rectangles out of the clicked pose.**  
 7 iterations, B_OP_INVERT mixed-colors rects growing by 2 px, snooze(10000) per step; only drawn when a pose was actually clicked (not for keyboard open).  
 `PoseView.cpp` → `BPoseView::DrawOpenAnimation`  
-**PORT:** Seven inverted rectangles, 10 ms apart, growing 2 px, only on a mouse open.  The rectangle is the right one now: `tiku_trk_poseview_open_anim_rect` answers with the row's slice of the MEASURED first column in list mode, and with the clicked pose's picture cell in the icon modes -- so icon mode plays the animation out of the icon, as the source draws it.  
+**PORT:** A mouse open starts a 170 ms outline in both shells and the open goes ahead at once.  The outline grows by at most 8 px and fades without sleeping or holding up input.  `tiku_trk_poseview_open_anim_rect` gives the measured first column's slice in list mode and the icon at its configured size in the icon modes.  Reduce motion turns it off.  Timing, cancellation, HiDPI clipping, the frame it leaves and the icon size are covered by `test_motion`, `test_frames`, `test_tracker_motion` and `test_poseview`.  
 *src/ui/tiku_trk_poseview.c:tiku_trk_poseview_open_anim_rect; src/shell/tiku_trk_app.c (the double-click open); tests/test_poseview.c PVS-013 block (mutation-tested)*
 
 #### PVS-014 · important · done

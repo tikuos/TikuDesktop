@@ -51,7 +51,7 @@ browser_sync_navigator_preference(app_t *a, int force)
 {
     struct stat st;
     int present, visible = 1, hide_dotfiles = 0;
-    int folders_first = 1, filter = 0;
+    int folders_first = 1, filter = 0, reduce_motion = 0;
     int64_t now = tiku_trk_now();
     time_t mtime = 0;
     off_t size = 0;
@@ -79,6 +79,7 @@ browser_sync_navigator_preference(app_t *a, int force)
         hide_dotfiles = tiku_trk_prefs_get(&prefs, "HideDotFiles") != 0;
         folders_first = tiku_trk_prefs_get(&prefs, "SortFolderNamesFirst") != 0;
         filter = tiku_trk_prefs_get(&prefs, "TypeAheadFiltering") != 0;
+        reduce_motion = tiku_trk_prefs_get(&prefs, "ReduceMotion") != 0;
         dark = tiku_trk_prefs_get(&prefs, "DarkMode");
         if (dark < 0 || dark > 2) {
             dark = 0;
@@ -96,6 +97,10 @@ browser_sync_navigator_preference(app_t *a, int force)
     a->prefs_present = present;
     a->prefs_mtime = mtime;
     a->prefs_size = size;
+    if (a->reduce_motion != reduce_motion) {
+        a->reduce_motion = reduce_motion;
+        a->dirty = 1;
+    }
     if (visible != a->show_nav) {
         a->show_nav = visible;
         tiku_trk_poseview_set_visible_rows(a->view, browser_visible_rows(a));

@@ -12,31 +12,47 @@
 #include "tiku_trk_app_private.h"
 
 /**
- * @brief The expanding-rectangle animation over a pose being opened.
+ * @brief Start the outline over a pose being opened (PVS-013, PVL-073).
  *
- * Seven steps, ten milliseconds apart, growing two pixels each time and
- * inverted so no colour has to be chosen or restored (PVS-013, PVL-073).
- * Drawn only for a MOUSE open: a keyboard open has no clicked rectangle to
- * grow out of.
+ * Only a mouse open has a clicked rectangle to grow out of.  The open
+ * goes ahead at once; the loop's frames draw the outline, through
+ * browser_draw_activation().  Without a window, or with Reduce motion on,
+ * none starts.
  */
 void
 browser_open_animation(app_t *a, tiku_rect_t from)
 {
-    int k;
+    int64_t now = (a->host != NULL && !a->reduce_motion) ? tiku_trk_now()
+                                                         : 0;
 
-    for (k = 0; k < 7; k++) {
-        tiku_rect_t r = from;
+    a->activation_rect = from;
+    tiku_motion_start(&a->activation_motion, now, TIKU_MOTION_ICON_US);
+    a->dirty = 1;
+}
 
-        r.x -= 2 * k;
-        r.y -= 2 * k;
-        r.w += 4 * k;
-        r.h += 4 * k;
-        tiku_invert_frame(a->surf, r);
-        browser_blit(a);
-        usleep(10000);
-        tiku_invert_frame(a->surf, r);   /* inversion undoes itself */
+/**
+ * @brief Draw the opened pose's outline over a finished frame, clipped
+ *        to the list, and owe the next frame while it runs.
+ */
+void
+browser_draw_activation(app_t *a)
+{
+    float progress;
+
+    if (!a->activation_motion.active) {
+        return;
     }
-    browser_blit(a);
+    /* Turning Reduce motion on while it runs passes a zero time, which
+     * retires the outline on this frame. */
+    progress = tiku_motion_progress(&a->activation_motion,
+                                    (a->host != NULL && !a->reduce_motion)
+                                        ? tiku_trk_now() : 0);
+    tiku_clip_set(a->surf, browser_list_rect(a));
+    tiku_motion_outline(a->surf, a->activation_rect, progress);
+    tiku_clip_reset(a->surf);
+    if (a->activation_motion.active) {
+        a->dirty = 1;
+    }
 }
 
 /**

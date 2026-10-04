@@ -94,6 +94,7 @@ browser_turn_end(app_t *app, const browser_options_t *o, browser_loop_t *lp)
     }
     if (app->dirty) {
         browser_draw(app);
+        browser_draw_activation(app);
         browser_blit(app);
         if (o->shot != NULL && lp->shot_at_us > 0 &&
             tiku_trk_now() >= lp->shot_at_us) {
@@ -717,6 +718,13 @@ browser_press_icons(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
                 click_flags, now);
             tiku_trk_poseview_click_at(app->view, idx, lx, ly, mods);
             if (twice) {
+                tiku_rect_t from;
+                if (tiku_trk_poseview_open_anim_rect(app->view, idx, app->row_h,
+                        &from.x, &from.y, &from.w, &from.h)) {
+                    from.x += lr.x;
+                    from.y += lr.y;
+                    browser_open_animation(app, from);
+                }
                 browser_open_selection(app);
             } else {
                 /* A press on an icon begins a move; the drag

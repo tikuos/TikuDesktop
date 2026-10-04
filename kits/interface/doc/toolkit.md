@@ -84,3 +84,10 @@ when replacing or cancelling it. The final repaint removes the previous
 outline. `tiku_motion_outline_bounds()` includes its maximum expansion.
 Popup fades capture only the intersection of the popup and the repaint
 clip. If capture fails, the menu still draws and accepts input immediately.
+
+TikuDesktop and TikuTracker play a 170 ms outline when an icon is opened,
+and TikuDesktop fades its menus in over 100 ms. Selection alone does not
+animate. **Settings > TikuDesktop preferences > Reduce motion** turns these
+effects and the workspace's window transitions off, and keeps hover
+highlights and pressed controls. They are drawn on the desktop side: a
+board's display list carries none of them.
