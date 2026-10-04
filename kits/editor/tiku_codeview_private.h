@@ -65,6 +65,10 @@ typedef struct {
  * them are the application's to define. */
 #define TIKU_CV_INKS (TIKU_INK_LINK + 1)
 
+/* Room for the extra keys a list of words is put in by: every printable
+ * ASCII character, and a NUL. */
+#define TIKU_CV_ACCEPT 96
+
 /* A line's fold state: inside a folded region, so it has no rows, and
  * heading one. */
 #define TIKU_CV_HIDDEN 0x1u
@@ -202,6 +206,17 @@ struct tiku_codeview {
     tiku_edit_range_t hot_press;    /* that one                         */
     int list_shown;                 /* a list of words is shown         */
     int list_inserts;               /* its keys and clicks insert       */
+    tiku_codeview_completion_item_t *completion_items; /* a rich list's
+                                       items, then their indices and
+                                       text, in one allocation; NULL:
+                                       a list of words                  */
+    size_t *completion_indices;     /* each item's index among the
+                                       host's items                     */
+    unsigned completion_rows;       /* words shown at once, 0: five     */
+    char completion_accept[TIKU_CV_ACCEPT]; /* other keys that put the
+                                       chosen word in                   */
+    int completion_accepted;        /* a word was put in, not yet read  */
+    size_t completion_result;       /* its index in the host's items    */
     char **list_items;              /* its words, in one allocation     */
     size_t list_count;              /* how many                         */
     size_t list_current;            /* the one chosen                   */
@@ -209,6 +224,11 @@ struct tiku_codeview {
     tiku_edit_anchor_t list_end;
     int tip_shown;                  /* a tip is shown                   */
     char *tip_text;                 /* what it says                     */
+    tiku_edit_range_t tip_highlight; /* the bytes of it highlighted     */
+    tiku_edit_range_t *tip_arguments; /* a signature's arguments in it;
+                                       NULL: a plain tip                */
+    size_t tip_argument_count;      /* how many                         */
+    size_t tip_argument;            /* the one the caret is in          */
     tiku_edit_anchor_t tip_at;      /* where it was shown               */
     tiku_codeview_rules_t rules;    /* the application's own rules      */
     int own_rules;                  /* use them, not the language's     */
@@ -603,7 +623,13 @@ int tiku_cv_assist_event(tiku_codeview_t *v, const tiku_event_t *e);
 void tiku_cv_assist_follow(tiku_codeview_t *v);
 void tiku_cv_assist_paint(tiku_codeview_t *v, tiku_surface_t *s);
 void tiku_cv_assist_free(tiku_codeview_t *v);
-/* A text-input event, given what staging made of it. */
+/* A signature's tip (tiku_codeview_completion.c) after the caret moved:
+ * the argument the caret is in highlighted, or the tip hidden when the
+ * caret has left the call. */
+void tiku_cv_signature_follow(tiku_codeview_t *v);
+/* A text-input event, given what staging made of it: typed, or when it
+ * is one of the extra keys of a list that inserts, the chosen word put
+ * in. */
 int tiku_cv_edit_commit(tiku_codeview_t *v, int commit);
 
 #endif /* TIKU_CODEVIEW_PRIVATE_H_ */

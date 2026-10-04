@@ -32,11 +32,50 @@ row_h(void)
     return tiku_font_plain()->height + 4;
 }
 
+/** @brief The words the list shows at a time: a rich list's own count,
+ *         or LIST_ROWS. */
+static size_t
+list_rows(const tiku_codeview_t *v)
+{
+    return v->completion_rows > 0 ? v->completion_rows : LIST_ROWS;
+}
+
+/** @brief The width the list's word @p i takes: a rich list's kind, label
+ *         and detail, or the word alone. */
+static int
+word_width(const tiku_codeview_t *v, const tiku_font_t *f, size_t i)
+{
+    const tiku_codeview_completion_item_t *item;
+
+    if (v->completion_items == NULL)
+        return tiku_text_width(f, v->list_items[i]);
+    item = &v->completion_items[i];
+    return 20 + tiku_text_width(f, item->label) + 12 +
+           tiku_text_width(f, item->detail);
+}
+
 /** @brief Whether @p x, @p y is inside @p r. */
 static int
 inside(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+}
+
+/** @brief The part of @p a inside @p b, empty when they do not meet. */
+static tiku_rect_t
+meet_rect(tiku_rect_t a, tiku_rect_t b)
+{
+    int x0 = a.x > b.x ? a.x : b.x;
+    int y0 = a.y > b.y ? a.y : b.y;
+    int x1 = a.x + a.w < b.x + b.w ? a.x + a.w : b.x + b.w;
+    int y1 = a.y + a.h < b.y + b.h ? a.y + a.h : b.y + b.h;
+    tiku_rect_t r;
+
+    r.x = x0;
+    r.y = y0;
+    r.w = x1 > x0 ? x1 - x0 : 0;
+    r.h = y1 > y0 ? y1 - y0 : 0;
+    return r;
 }
 
 /** @brief Where the caret at @p pos is drawn, when its row is one of
@@ -100,19 +139,21 @@ list_box(tiku_codeview_t *v, size_t *first)
             TIKU_EDIT_OK ||
         !shown_point(v, start, &x, &y))
         return r;
-    rows = v->list_count < LIST_ROWS ? v->list_count : LIST_ROWS;
+    rows = v->list_count < list_rows(v) ? v->list_count : list_rows(v);
     for (i = 0; i < v->list_count; i++) {
-        int w = tiku_text_width(f, v->list_items[i]);
+        int w = word_width(v, f, i);
 
         if (w > widest)
             widest = w;
     }
     r.w = widest + 10 < LIST_LEAST ? LIST_LEAST : widest + 10;
+    if (v->completion_items != NULL && r.w > tiku_cv_area(v).w)
+        r.w = tiku_cv_area(v).w;
     r.h = (int)rows * row_h() + 2;
     r.x = (int)(x - 5);
     place(&r, y, tiku_codeview_row_height(v), tiku_cv_area(v));
     if (first != NULL)
-        *first = v->list_current - v->list_current % LIST_ROWS;
+        *first = v->list_current - v->list_current % list_rows(v);
     return r;
 }
 
@@ -238,13 +279,18 @@ tip_box(tiku_codeview_t *v)
     return r;
 }
 
-/** @brief Free the list's words and its range. */
+/** @brief Free the list's words, a rich list's items and its range. */
 static void
 list_drop(tiku_codeview_t *v)
 {
     tiku_editdoc_anchor_destroy(v->doc, v->list_start);
     tiku_editdoc_anchor_destroy(v->doc, v->list_end);
     tiku_ed_free(v->list_items);
+    tiku_ed_free(v->completion_items);
+    v->completion_items = NULL;
+    v->completion_indices = NULL;
+    v->completion_rows = 0;
+    v->completion_accept[0] = '\0';
     v->list_items = NULL;
     v->list_count = v->list_current = 0;
     v->list_shown = 0;
@@ -310,6 +356,7 @@ tiku_codeview_list_show(tiku_codeview_t *view,
     view->list_end = end;
     view->list_inserts = list->inserts != 0;
     view->list_shown = 1;
+    view->completion_accepted = 0;
     return TIKU_EDIT_OK;
 }
 
@@ -357,6 +404,11 @@ tiku_codeview_list_insert(tiku_codeview_t *view)
     t.anchor = t.caret = start + (tiku_edit_pos_t)edit.length;
     st = tiku_editdoc_apply(view->doc, &t);
     if (st == TIKU_EDIT_OK) {
+        if (view->completion_items != NULL) {
+            view->completion_result =
+                view->completion_indices[view->list_current];
+            view->completion_accepted = 1;
+        }
         list_drop(view);
         tiku_codeview_reveal(view);
     }
@@ -392,6 +444,8 @@ tiku_codeview_tip_show(tiku_codeview_t *view, tiku_edit_pos_t pos,
     view->tip_text = copy;
     view->tip_at = at;
     view->tip_shown = 1;
+    view->tip_highlight.start = 0;
+    view->tip_highlight.end = 0;
     return TIKU_EDIT_OK;
 }
 
@@ -402,6 +456,9 @@ tiku_codeview_tip_hide(tiku_codeview_t *view)
         return;
     tiku_editdoc_anchor_destroy(view->doc, view->tip_at);
     tiku_ed_free(view->tip_text);
+    tiku_ed_free(view->tip_arguments);
+    view->tip_arguments = NULL;
+    view->tip_argument_count = 0;
     view->tip_text = NULL;
     view->tip_shown = 0;
 }
@@ -410,6 +467,16 @@ int
 tiku_codeview_tip_shown(const tiku_codeview_t *view)
 {
     return view != NULL && view->tip_shown;
+}
+
+/** @brief Whether @p e is one of the extra keys that put the chosen word
+ *         of a rich list in: a printable ASCII character the list names,
+ *         typed without Option. */
+static int
+accept_key(const tiku_codeview_t *v, const tiku_event_t *e)
+{
+    return !(e->modifiers & TIKU_MOD_OPTION) && e->key >= ' ' &&
+           e->key <= '~' && strchr(v->completion_accept, (int)e->key);
 }
 
 int
@@ -436,7 +503,8 @@ tiku_cv_assist_event(tiku_codeview_t *v, const tiku_event_t *e)
             v->list_current = (v->list_current + 1) % v->list_count;
         if (e->key == TIKU_KEY_UP || e->key == TIKU_KEY_DOWN)
             return 1;
-        if (e->key == TIKU_KEY_RETURN || e->key == TIKU_KEY_TAB) {
+        if (e->key == TIKU_KEY_RETURN || e->key == TIKU_KEY_TAB ||
+            accept_key(v, e)) {
             if (v->list_count > 0)
                 v->status = tiku_codeview_list_insert(v);
             return 1;
@@ -449,7 +517,7 @@ tiku_cv_assist_event(tiku_codeview_t *v, const tiku_event_t *e)
     if (inside(r, e->x, e->y)) {
         int row = (e->y - r.y - 1) / row_h();
 
-        if (e->y > r.y && row < LIST_ROWS &&
+        if (e->y > r.y && row < (int)list_rows(v) &&
             first + (size_t)row < v->list_count) {
             v->list_current = first + (size_t)row;
             if (v->list_inserts)
@@ -467,6 +535,10 @@ tiku_cv_assist_follow(tiku_codeview_t *v)
 
     if (!v->tip_shown)
         return;
+    if (v->tip_arguments != NULL) {
+        tiku_cv_signature_follow(v);
+        return;
+    }
     if (tiku_editdoc_anchor_pos(v->doc, v->tip_at, &at) != TIKU_EDIT_OK ||
         tiku_codeview_selection(v, &anchor, &caret) != TIKU_EDIT_OK ||
         caret < at ||
@@ -475,25 +547,85 @@ tiku_cv_assist_follow(tiku_codeview_t *v)
         tiku_codeview_tip_hide(v);
 }
 
-/* The surface a tip is drawn on and the tip's box. */
+/* The surface a tip is drawn on, the tip's box and its view. */
 typedef struct {
     tiku_surface_t *s;
     tiku_rect_t box;
+    tiku_codeview_t *view;
 } tip_paint_t;
 
-/** @brief Draw @p n bytes of @p text as line @p index of the tip. */
+/** @brief Draw bytes @p a to @p b of @p text, a tip's line drawn at
+ *         @p x, @p y, highlighted: on the selection's ground, in its
+ *         ink. */
+static void
+highlight_part(tip_paint_t *p, const char *text, size_t a, size_t b, int x,
+               int y)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    char part[TIP_LINE];
+    tiku_rect_t ground;
+
+    memcpy(part, text, a);
+    part[a] = '\0';
+    x += tiku_text_width(f, part);
+    memcpy(part, text + a, b - a);
+    part[b - a] = '\0';
+    ground.x = x;
+    ground.y = y;
+    ground.w = tiku_text_width(f, part);
+    ground.h = f->height;
+    tiku_fill(p->s, ground, TIKU_C_SELECT);
+    tiku_text(p->s, f, x, y + f->ascent, part, TIKU_C_SELTEXT);
+}
+
+/** @brief Draw @p n bytes of @p text as line @p index of the tip, the
+ *         part of it the tip's highlight covers highlighted. */
 static void
 tip_line(void *ctx, const char *text, size_t n, int index)
 {
     const tiku_font_t *f = tiku_font_plain();
     tip_paint_t *p = ctx;
+    tiku_edit_range_t h = p->view->tip_highlight;
+    tiku_edit_pos_t at = text - p->view->tip_text;
+    tiku_edit_pos_t a = h.start > at ? h.start - at : 0;
+    tiku_edit_pos_t b = h.end - at < (tiku_edit_pos_t)n ? h.end - at
+                                                        : (tiku_edit_pos_t)n;
+    int y = p->box.y + 3 + index * (f->height + 2);
     char line[TIP_LINE];
 
     memcpy(line, text, n);
     line[n] = '\0';
-    tiku_text(p->s, f, p->box.x + 6,
-              p->box.y + 3 + f->ascent + index * (f->height + 2), line,
-              TIKU_C_TEXT);
+    tiku_text(p->s, f, p->box.x + 6, y + f->ascent, line, TIKU_C_TEXT);
+    if (a < b && a >= 0 && b > 0)
+        highlight_part(p, text, (size_t)a, (size_t)b, p->box.x + 6, y);
+}
+
+/** @brief Draw the rich list's item @p item in the list's row @p row,
+ *         chosen or not: its kind's letter in a box, its label, and its
+ *         detail faint after it, cut to the row. */
+static void
+paint_item(tiku_surface_t *s, tiku_rect_t row,
+           const tiku_codeview_completion_item_t *item, int chosen)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    tiku_rgb_t ink = chosen ? TIKU_C_SELTEXT : TIKU_C_TEXT;
+    char badge[2];
+    int baseline = row.y + 2 + f->ascent;
+    tiku_rect_t saved = s->clip, box;
+
+    badge[0] = ".fvTk"[item->kind];
+    badge[1] = '\0';
+    tiku_clip_set(s, meet_rect(row, saved));
+    box.x = row.x + 3;
+    box.y = row.y + 2;
+    box.w = 14;
+    box.h = row.h - 4;
+    tiku_frame(s, box, ink);
+    tiku_text(s, f, row.x + 6, baseline, badge, ink);
+    tiku_text(s, f, row.x + 22, baseline, item->label, ink);
+    tiku_text(s, f, row.x + 34 + tiku_text_width(f, item->label), baseline,
+              item->detail, chosen ? ink : tiku_ink(TIKU_INK_FAINT));
+    tiku_clip_set(s, saved);
 }
 
 void
@@ -503,17 +635,25 @@ tiku_cv_assist_paint(tiku_codeview_t *v, tiku_surface_t *s)
     size_t first, i;
     int widest;
 
+    if (v->tip_arguments != NULL)
+        tiku_cv_signature_follow(v);
     r = list_box(v, &first);
     if (r.w > 0) {
         tiku_rect_t rest = { r.x + 1, r.y + 1, r.w - 2, r.h - 2 };
 
         tiku_fill(s, rest, TIKU_C_DOC);
-        for (i = first; i < v->list_count && i < first + LIST_ROWS; i++) {
+        for (i = first; i < v->list_count && i < first + list_rows(v);
+             i++) {
             tiku_rect_t row = { r.x + 1, r.y + 1 + (int)(i - first) * row_h(),
                                 r.w - 2, row_h() };
+            int chosen = i == v->list_current;
 
-            tiku_ui_list_row(s, row, v->list_items[i],
-                             i == v->list_current);
+            if (v->completion_items == NULL) {
+                tiku_ui_list_row(s, row, v->list_items[i], chosen);
+            } else {
+                tiku_ui_list_row(s, row, "", chosen);
+                paint_item(s, row, &v->completion_items[i], chosen);
+            }
         }
         tiku_frame(s, r, TIKU_C_TEXT);
     }
@@ -523,6 +663,7 @@ tiku_cv_assist_paint(tiku_codeview_t *v, tiku_surface_t *s)
 
         p.s = s;
         p.box = r;
+        p.view = v;
         tiku_fill(s, r, TIKU_C_NOTE);
         tiku_frame(s, r, TIKU_C_TEXT);
         (void)wrap(v->tip_text, tip_width(v), tip_line, &p, &widest);

@@ -411,7 +411,11 @@ tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e)
 int
 tiku_cv_edit_commit(tiku_codeview_t *v, int commit)
 {
-    if (commit == TIKU_TEXT_COMPLETE)
+    if (commit == TIKU_TEXT_COMPLETE && v->list_shown && v->list_inserts &&
+        v->input.length == 1 && v->input.text[0] != '\0' &&
+        strchr(v->completion_accept, v->input.text[0]) != NULL)
+        v->status = tiku_codeview_list_insert(v);
+    else if (commit == TIKU_TEXT_COMPLETE)
         v->status = tiku_codeview_insert(v, v->input.text,
                                          (size_t)v->input.length, 0);
     else if (commit == TIKU_TEXT_REJECTED)

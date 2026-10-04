@@ -825,6 +825,66 @@ int tiku_codeview_list_shown(const tiku_codeview_t *view, size_t *current);
  *         there is no list or no word. */
 tiku_edit_status_t tiku_codeview_list_insert(tiku_codeview_t *view);
 
+/** @brief What a word in a rich list is, shown by a letter in a box
+ *         before it: ".", "f", "v", "T" and "k" in this order. */
+typedef enum {
+    TIKU_COMPLETION_TEXT,
+    TIKU_COMPLETION_FUNCTION,
+    TIKU_COMPLETION_VARIABLE,
+    TIKU_COMPLETION_TYPE,
+    TIKU_COMPLETION_KEYWORD
+} tiku_completion_kind_t;
+/** @brief A word offered in a rich list. */
+typedef struct {
+    const char *label;          /* what the list shows: one line of
+                                   UTF-8, not empty                     */
+    const char *text;           /* what is put in; NULL: the label      */
+    const char *detail;         /* one line shown after the label;
+                                   NULL: none                           */
+    tiku_completion_kind_t kind;
+} tiku_codeview_completion_item_t;
+/* How a rich list's words are offered. */
+#define TIKU_COMPLETION_SORT        1u /* sorted by their labels          */
+#define TIKU_COMPLETION_IGNORE_CASE 2u /* ASCII case aside, in the prefix
+                                          and the sorting               */
+/** @brief A rich list of words offered for a range of the text. */
+typedef struct {
+    tiku_edit_range_t range;    /* what the chosen word replaces        */
+    const tiku_codeview_completion_item_t *items; /* count words,
+                                   copied when shown                    */
+    size_t count;
+    const char *prefix;         /* only labels starting with it are
+                                   offered; NULL: all                   */
+    unsigned flags;             /* TIKU_COMPLETION_SORT, _IGNORE_CASE   */
+    unsigned rows;              /* words shown at once, up to 20; 0: 5  */
+    const char *accept;         /* printable ASCII keys that also put
+                                   the chosen word in, untyped; NULL:
+                                   none                                 */
+    size_t current;             /* the index in items chosen first; one
+                                   not offered: the first offered       */
+} tiku_codeview_completion_t;
+/**
+ * @brief Offer @p list's words whose labels start with its prefix,
+ *        sorted when it asks, in a list that inserts, instead of any list
+ *        shown before.
+ *
+ * Up and Down choose, and Return, Tab or one of the accept keys puts the
+ * chosen word's text over the range as one undo step, the key itself not
+ * typed.  With no word offered the list shown is hidden and
+ * TIKU_EDIT_NOTHING returned; a label or detail that is not one line of
+ * UTF-8 is refused with TIKU_EDIT_INVALID_TEXT, and a list refused or
+ * not copied leaves the one shown as it was.
+ */
+tiku_edit_status_t tiku_codeview_complete(
+    tiku_codeview_t *view, const tiku_codeview_completion_t *list);
+/** @brief The index in the host's items of the word chosen in the rich
+ *         list shown, or SIZE_MAX with none shown. */
+size_t tiku_codeview_completion_selected(const tiku_codeview_t *view);
+/** @brief Whether a rich list's word was put in since this was last
+ *         asked, with its index in the host's items in @p index, which
+ *         may be NULL. */
+int tiku_codeview_completion_result(tiku_codeview_t *view, size_t *index);
+
 /**
  * @brief Show @p text in a tip by the row of @p pos, beside a shown list
  *        or else under or over the row, instead of any tip shown before.
@@ -840,6 +900,27 @@ tiku_edit_status_t tiku_codeview_tip_show(tiku_codeview_t *view,
 void tiku_codeview_tip_hide(tiku_codeview_t *view);
 /** @brief Whether a tip is shown. */
 int tiku_codeview_tip_shown(const tiku_codeview_t *view);
+/** @brief Highlight the bytes @p range of the tip's text, or none with an
+ *         empty range; a range outside the text or not on its character
+ *         boundaries is refused with TIKU_EDIT_INVALID_RANGE. */
+tiku_edit_status_t tiku_codeview_tip_highlight(tiku_codeview_t *view,
+                                               tiku_edit_range_t range);
+/**
+ * @brief Show @p signature, copied, in a tip for the call whose "(" is at
+ *        @p open, with the bytes of each of its @p count arguments, in
+ *        order, in @p arguments, copied.
+ *
+ * As the caret moves the argument it is in is highlighted, counted by the
+ * commas outside nested brackets, strings and remarks.  The tip goes when
+ * the caret leaves the call, or is more than TIKU_CODEVIEW_BRACE_SCAN
+ * bytes past its "(".
+ */
+tiku_edit_status_t tiku_codeview_signature_show(
+    tiku_codeview_t *view, tiku_edit_pos_t open, const char *signature,
+    const tiku_edit_range_t *arguments, size_t count);
+/** @brief The argument the caret is in, in the signature's tip shown, or
+ *         SIZE_MAX with none shown. */
+size_t tiku_codeview_signature_argument(const tiku_codeview_t *view);
 
 /** @brief Paint the view into its bounds on @p s, within the clip @p s
  *         already has, which is restored afterwards.  Everything drawn
