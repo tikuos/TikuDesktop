@@ -75,6 +75,18 @@ tiku_circuit_err_t tiku_circuit_project_open(const char *root,
     const tiku_circuit_resolver_t *resolver, tiku_circuit_project_t **out,
     tiku_circuit_diagnostic_t *diagnostic);
 
+/**
+ * @brief Decode every sheet of a self-contained EAGLE XML schematic.
+ *
+ * @p path labels the source; nothing is read through it.  Unsupported
+ * content on any sheet refuses the whole project.
+ *
+ * @return OK, or why not with @p out untouched
+ */
+tiku_circuit_err_t tiku_circuit_eagle(const void *data, size_t bytes,
+    const char *path, const tiku_circuit_import_t *options,
+    tiku_circuit_project_t **out, tiku_circuit_diagnostic_t *diagnostic);
+
 /** @brief Let @p project go, with its holds on the scenes; NULL is
  *         allowed. */
 void tiku_circuit_project_free(tiku_circuit_project_t *project);

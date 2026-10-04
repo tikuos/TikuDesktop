@@ -130,6 +130,11 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_circuit_job.c \
                $(K)/translation/tiku_circuit_job_json.c \
                $(K)/translation/tiku_circuit_gerber.c \
+               $(K)/translation/tiku_circuit_eagle.c \
+               $(K)/translation/tiku_circuit_eagle_xml.c \
+               $(K)/translation/tiku_circuit_eagle_graphics.c \
+               $(K)/translation/tiku_circuit_eagle_frame.c \
+               $(K)/translation/tiku_circuit_eagle_instances.c \
                $(K)/translation/tiku_circuit_clone.c \
                $(K)/translation/tiku_circuit_contour.c \
                $(K)/translation/tiku_circuit_gerber_macro.c \
