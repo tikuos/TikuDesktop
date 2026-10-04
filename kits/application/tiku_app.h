@@ -478,4 +478,16 @@ struct tiku_msg *tiku_app_tray_message(const char *id, const char *icon,
 int tiku_app_tray_set(const tiku_app_services_t *services, const char *id,
                       const char *icon, const char *text, const char *tip);
 
+/**
+ * @brief The request that shows the pointer as @p shape (TIKU_CURSOR_*)
+ *        over window @p window's content, until asked again.
+ * @return the message for the caller to send and free, or NULL.
+ */
+struct tiku_msg *tiku_app_cursor_message(uint32_t window, int shape);
+
+/** @brief The same request, sent through @p services' send_message.
+ *  @return 1 when it went; 0 from a host that takes no such requests. */
+int tiku_app_cursor_set(const tiku_app_services_t *services, uint32_t window,
+                        int shape);
+
 #endif /* TIKU_APP_H_ */

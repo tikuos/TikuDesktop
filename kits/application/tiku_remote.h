@@ -361,6 +361,11 @@ enum { TIKU_GRAB_LIST = 0, TIKU_GRAB_DESK = 1, TIKU_GRAB_WINDOW = 2 };
  * away.  A click on it comes back as TIKU_MSG_TRAYHIT with its "id". */
 #define TIKU_MSG_TRAY    0x74726179u  /* 'tray' */
 #define TIKU_MSG_TRAYHIT 0x74726869u  /* 'trhi' */
+/* The pointer shape a window's content asks for, as the window's own
+ * hover finds it.  ASK int32 "window" and int32 "shape" (TIKU_CURSOR_*);
+ * the desktop shows it while the pointer is over that content and keeps
+ * it until asked again or the window goes. */
+#define TIKU_MSG_CURSOR  0x63757273u  /* 'curs' */
 /* Local image dispatch; the reply acknowledges opening, not decoding. */
 #define TIKU_MSG_IMAGEOPEN 0x696f706eu /* 'iopn', string "path" */
 #define TIKU_MSG_IMAGEOPENED 0x696f7064u /* 'iopd', int32 "accepted" */

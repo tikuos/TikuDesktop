@@ -131,6 +131,7 @@ TRACKER_SRC := $(COMMON) system/shared/shell/tiku_trk_addon.c \
 # The desktop shell itself, one composition over several files.
 DESKTOP_SHELL := system/desktop/tiku_trk_desktop.c \
                  system/desktop/tiku_trk_desktop_events.c \
+                 system/desktop/tiku_trk_desktop_cursor.c \
                  system/desktop/tiku_trk_desktop_lifecycle.c \
                  system/desktop/tiku_trk_desktop_apps.c \
                  system/desktop/tiku_trk_desktop_draw.c \

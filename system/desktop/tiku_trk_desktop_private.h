@@ -869,6 +869,10 @@ int desktop_team_is_app(desktop_t *app, int team);
 void desktop_tray(desktop_t *app, int session, const tiku_msg_t *msg);
 int desktop_tray_session(desktop_t *app, uint64_t owner);
 void desktop_tray_hit(desktop_t *app, uint64_t owner, const char *id);
+/* The pointer's shape (tiku_trk_desktop_cursor.c): chosen for what is
+ * under @p x, @p y, and a window's content asking for one. */
+void desktop_pointer_says(desktop_t *app, int x, int y);
+void desktop_cursor(desktop_t *app, int session, const tiku_msg_t *msg);
 void set_backdrop_color(void *context, const tiku_trk_color_t *color);
 
 /* tiku_trk_desktop_drivers.c */

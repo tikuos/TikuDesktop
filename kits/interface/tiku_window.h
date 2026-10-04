@@ -142,6 +142,10 @@ struct tiku_window {
      * desk without the window that asked for it.  Nothing else about the
      * window changes; whoever sets it clears it before the next frame. */
     int                          hidden;
+    /* The pointer shape its content asks for, TIKU_CURSOR_*: shown while
+     * the pointer is over the content and nothing of the desktop's own is
+     * in hand.  0, the arrow, until asked. */
+    int                          cursor;
 };
 
 tiku_workspace_t *tiku_workspace_new(

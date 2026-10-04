@@ -84,38 +84,6 @@ desktop_pointer_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 }
 
 /**
- * @brief The pointer says what is under it: a window's corner grip
- *        offers the diagonal resize, anything else the arrow.  Only
- *        while nothing is being tracked, and only for the front
- *        window -- a click on another is spent activating it.
- */
-static void
-pointer_says(desktop_t *app, int x, int y)
-{
-    tiku_window_t *under = NULL;
-    int want = TIKU_CURSOR_ARROW;
-
-    if (app->host == NULL) {
-        return;
-    }
-    if (app->resize_track != NULL) {
-        /* A corner in hand keeps the arrow whatever is under the
-         * pointer: a window that will not shrink past its least size
-         * leaves the hand inside it, still resizing. */
-        want = TIKU_CURSOR_RESIZE_DIAG;
-    } else if (!tiku_trk_drag_active(&app->drag) && app->popup == NULL &&
-        tiku_workspace_hit(app->desk, x, y, &under) == TIKU_HIT_RESIZE &&
-        under != NULL && under == tiku_workspace_focused(app->desk) &&
-        under->resizable) {
-        want = TIKU_CURSOR_RESIZE_DIAG;
-    }
-    if (want != app->cursor_kind) {
-        app->cursor_kind = want;
-        tiku_host_set_cursor(app->host, want);
-    }
-}
-
-/**
  * @brief The pointer moved: where it is now, what the cursor says, and the
  *        surfaces' own tracking.
  */
@@ -127,7 +95,7 @@ desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
     (void)lp;
     app->ptr_x = ev->x;
     app->ptr_y = ev->y;
-    pointer_says(app, ev->x, ev->y);
+    desktop_pointer_says(app, ev->x, ev->y);
     deliver(app, ev);
     if (app->qdrag_on) {
         /* The icon in flight: where it was and where it is, nothing else. */
@@ -143,7 +111,8 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
     (void)lp;
     deliver(app, ev);
-    pointer_says(app, ev->x, ev->y);   /* the corner let go: the arrow back */
+    /* The corner let go: the arrow back. */
+    desktop_pointer_says(app, ev->x, ev->y);
 }
 
 /**

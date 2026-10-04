@@ -158,6 +158,17 @@ conduct_chrome(desktop_t *app, const char *name, char *out, size_t max)
         }
         return 1;
     }
+    if (strcmp(name, "cursor") == 0) {
+        /* The pointer shape shown, by name. */
+        static const char *const names[] = {
+            "arrow", "text", "resize-h", "resize-v", "resize-diag", "hand"
+        };
+
+        snprintf(out, max, "%s", (app->cursor_kind >= 0 &&
+                                  app->cursor_kind <= TIKU_CURSOR_HAND)
+                                     ? names[app->cursor_kind] : "");
+        return 1;
+    }
     if (strcmp(name, "menu-bottom") == 0) {
         /* Where the Deskbar's leaf menu ends: a lane about the rows'
          * height reads this and not a pixel below the last row. */

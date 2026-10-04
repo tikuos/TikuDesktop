@@ -297,6 +297,8 @@ remote_hear(desktop_t *app)
                 desktop_grab(app, i, m);
             if (tiku_msg_what(m) == TIKU_MSG_TRAY)
                 desktop_tray(app, i, m);
+            if (tiku_msg_what(m) == TIKU_MSG_CURSOR)
+                desktop_cursor(app, i, m);
             if (tiku_msg_what(m) == TIKU_MSG_BOARDRUN) {
                 const char *board = tiku_msg_find_string(m, "board", 0);
                 const char *prog = tiku_msg_find_string(m, "program", 0);

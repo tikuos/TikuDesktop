@@ -238,6 +238,7 @@ EDITOR      := $(K)/editor/tiku_editdoc.c $(K)/editor/tiku_editdoc_alloc.c \
                $(K)/editor/tiku_edit_notes.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \
                $(K)/application/tiku_app_tray.c \
+               $(K)/application/tiku_app_cursor.c \
                $(K)/application/tiku_window_app.c \
                $(K)/application/tiku_remote.c \
                $(K)/application/tiku_conduct.c \
