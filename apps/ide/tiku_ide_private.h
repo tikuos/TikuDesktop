@@ -204,6 +204,7 @@ typedef struct {
     tiku_field_t         watches;
     char                 watch_value[8][112];
     int                  tip;            /* the toolbar tool under the pointer, -1 none */
+    int                  cursor;         /* the pointer shape last asked for */
 } edit_t;
 
 /**

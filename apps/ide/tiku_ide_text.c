@@ -77,19 +77,77 @@ clip_text(void *ctx, size_t *length)
     return e->paste;
 }
 
+/** @brief The first line a BASIC jump to the @p n bytes of @p target
+ *         lands on, or -1 when none does. */
+static int64_t
+jump_line(const edit_t *e, const char *target, size_t n)
+{
+    int64_t line, lines = tiku_editdoc_lines(e->doc);
+    char head[96];
+    tiku_edit_range_t r;
+    size_t got = 0;
+
+    for (line = 0; line < lines; line++) {
+        r.start = tiku_editdoc_line_start(e->doc, line);
+        r.end = tiku_editdoc_line_end(e->doc, line);
+        if (r.end - r.start > (int64_t)sizeof head - 1) {
+            r.end = r.start + (int64_t)sizeof head - 1;
+        }
+        if (tiku_editdoc_read(e->doc, r, head, sizeof head, &got) ==
+                TIKU_EDIT_OK &&
+            tiku_syntax_basic_names(head, target, n)) {
+            return line;
+        }
+    }
+    return -1;
+}
+
+/**
+ * @brief A Command click on a jump target: the caret goes to the start of
+ *        the line it names, a BASIC line number or a label heading a line,
+ *        or the page says there is none.
+ */
+static void
+hotspot(void *ctx, tiku_codeview_t *view, tiku_edit_range_t range,
+        unsigned modifiers)
+{
+    edit_t *e = ctx;
+    char target[64];
+    size_t n = 0;
+    int64_t line;
+
+    (void)view;
+    (void)modifiers;
+    if (range.end - range.start >= (int64_t)sizeof target ||
+        tiku_editdoc_read(e->doc, range, target, sizeof target, &n) !=
+            TIKU_EDIT_OK) {
+        return;
+    }
+    line = jump_line(e, target, n);
+    if (line < 0) {
+        snprintf(e->feedback, sizeof e->feedback,
+                 "No line %s in this program.", target);
+        return;
+    }
+    tiku_ide_place(e, line, 0);
+    tiku_ide_edit_reveal(e);
+    e->feedback[0] = '\0';
+}
+
 /**
  * @brief Give the page an empty document and a view of it, in the
  *        proportional face, coloured by the page's language.
  *
- * The view holds the document; the page's pointer to it lives as long as
- * the view does.  @return 1, or 0 with neither made.
+ * Jump targets are underlined, and a Command click on one goes to its
+ * line.  The view holds the document; the page's pointer to it lives as
+ * long as the view does.  @return 1, or 0 with neither made.
  */
 int
 tiku_ide_text_new(edit_t *e)
 {
     tiku_editdoc_limits_t limits = { INT_MAX - 1u,
                                      TIKU_EDITDOC_HISTORY_DEFAULT };
-    tiku_codeview_host_t host = { e, clip_set, clip_text, NULL, NULL };
+    tiku_codeview_host_t host = { e, clip_set, clip_text, NULL, hotspot };
     tiku_editdoc_t *doc = NULL;
 
     if (e->view != NULL) {
@@ -110,6 +168,10 @@ tiku_ide_text_new(edit_t *e)
     tiku_codeview_set_language(e->view, e->lang);
     tiku_codeview_set_options(e->view, TIKU_CODEVIEW_BRACES |
                               TIKU_CODEVIEW_ANNOTATIONS);
+    (void)tiku_codeview_set_ink_style(e->view, TIKU_INK_LINK,
+                                      TIKU_CODEVIEW_UNDERLINE |
+                                      TIKU_CODEVIEW_HOTSPOT);
+    tiku_codeview_set_hotspot_keys(e->view, TIKU_MOD_CMD);
     tiku_ide_problems_style(e);
     (void)tiku_codeview_set_marker_fill(e->view, IDE_MARK_BREAK, BREAK_FILL);
     tiku_codeview_set_execution_fill(e->view, EXEC_FILL);

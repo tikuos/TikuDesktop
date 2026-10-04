@@ -5,8 +5,8 @@
  * lines and are checked against BASIC numbers when a debug run starts; the
  * paused line is marked only for the text the run was given; Renumber
  * edits only the numbers it changes; completion and keyword help are a
- * list and a tip at the caret; and the page keeps the view's caret and
- * clipboard rules.
+ * list and a tip at the caret; the page keeps the view's caret and
+ * clipboard rules; and a Command click on a jump target goes to its line.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0
@@ -15,6 +15,9 @@
 #include <assert.h>
 
 #include "../../apps/ide/tiku_ide_private.h"
+#include "tiku_host.h"
+#include "tiku_msg.h"
+#include "tiku_remote.h"
 
 static const char *selected = "";
 static int runs, refuse_clip;
@@ -58,11 +61,26 @@ static int clip_set(void *ctx, const char *text)
 static const char *clip_text(void *ctx, unsigned *stamp)
 { (void)ctx; if (stamp) { *stamp = 0; } return desk_clip; }
 
+/* The pointer shape last asked for. */
+static int shape_asked = -1;
+static int send_message(void *ctx, const struct tiku_msg *m)
+{
+    int32_t shape = -1;
+
+    (void)ctx;
+    if (tiku_msg_what(m) == TIKU_MSG_CURSOR &&
+        tiku_msg_find_int32(m, "shape", 0, &shape)) {
+        shape_asked = shape;
+    }
+    return 1;
+}
+
 static tiku_app_services_t services = {
     .current_device = current, .board_names = names, .board_run = run,
     .board_save = save, .board_input = input, .menus = menus,
     .frame = frame, .open = opened,
-    .close = closed, .clip_set = clip_set, .clip_text = clip_text
+    .close = closed, .clip_set = clip_set, .clip_text = clip_text,
+    .send_message = send_message
 };
 static char dir[] = "/tmp/tikuide-page-XXXXXX";
 
@@ -709,6 +727,79 @@ static void problems(ide_t *st)
     unpage(st, e);
 }
 
+/* A pointer event over the middle of the character at @p pos. */
+static void point(ide_t *st, edit_t *e, tiku_event_type_t type,
+                  tiku_edit_pos_t pos, unsigned mods)
+{
+    tiku_event_t ev;
+    int64_t x = 0, y = 0, x1 = 0, y1 = 0;
+
+    assert(tiku_codeview_point(e->view, pos, &x, &y) == TIKU_EDIT_OK);
+    assert(tiku_codeview_point(e->view, pos + 1, &x1, &y1) == TIKU_EDIT_OK);
+    memset(&ev, 0, sizeof ev);
+    ev.type = type;
+    ev.button = type == TIKU_EVENT_POINTER_MOVE ? 0 : 1;
+    ev.x = (int)(x + x1) / 2;
+    ev.y = (int)y + tiku_codeview_row_height(e->view) / 2;
+    ev.modifiers = mods;
+    (void)tiku_ide_event(st, e->id, &ev);
+}
+
+/* Jump targets on a BASIC page are underlined and live under Command:
+ * the pointer a hand over one, a click going to the line it names, a
+ * number or a label, or the page saying there is none; a plain click
+ * puts the caret as ever, and Command alone changes nothing but the
+ * pointer. */
+static void jumps(ide_t *st)
+{
+    static const char text[] = "10 GOSUB 30\n20 GOTO 99\n30 GOTO loop\n"
+                               "40 loop: END\n";
+    edit_t *e = page(st, "jumps.bas", text, sizeof text - 1);
+    tiku_edit_pos_t lo, hi;
+    tiku_event_t ev;
+
+    assert(tiku_codeview_ink_style(e->view, TIKU_INK_LINK) ==
+           (TIKU_CODEVIEW_UNDERLINE | TIKU_CODEVIEW_HOTSPOT));
+    tiku_ide_edit_paint(st, e);
+    point(st, e, TIKU_EVENT_POINTER_MOVE, 9, 0);
+    assert(!tiku_codeview_hotspot(e->view, NULL) &&
+           e->cursor == TIKU_CURSOR_ARROW);
+    point(st, e, TIKU_EVENT_POINTER_MOVE, 9, TIKU_MOD_CMD);
+    assert(tiku_codeview_hotspot(e->view, NULL) &&
+           e->cursor == TIKU_CURSOR_HAND && shape_asked == TIKU_CURSOR_HAND);
+    point(st, e, TIKU_EVENT_POINTER_DOWN, 9, TIKU_MOD_CMD);
+    point(st, e, TIKU_EVENT_POINTER_UP, 9, TIKU_MOD_CMD);
+    selection(e, &lo, &hi);
+    assert(lo == 23 && hi == 23);               /* "30 GOTO loop" */
+    point(st, e, TIKU_EVENT_POINTER_DOWN, 32, TIKU_MOD_CMD);
+    point(st, e, TIKU_EVENT_POINTER_UP, 32, TIKU_MOD_CMD);
+    selection(e, &lo, &hi);
+    assert(lo == 36 && hi == 36);               /* "40 loop: END" */
+    point(st, e, TIKU_EVENT_POINTER_DOWN, 20, TIKU_MOD_CMD);
+    point(st, e, TIKU_EVENT_POINTER_UP, 20, TIKU_MOD_CMD);
+    selection(e, &lo, &hi);
+    assert(lo == 36 && !strcmp(e->feedback, "No line 99 in this program."));
+    point(st, e, TIKU_EVENT_POINTER_DOWN, 9, 0);
+    point(st, e, TIKU_EVENT_POINTER_UP, 9, 0);
+    selection(e, &lo, &hi);
+    assert(lo == hi && lo >= 9 && lo <= 10);    /* a plain click edits */
+    point(st, e, TIKU_EVENT_POINTER_MOVE, 9, 0);
+    assert(e->cursor == TIKU_CURSOR_ARROW);
+    memset(&ev, 0, sizeof ev);
+    ev.type = TIKU_EVENT_KEY_DOWN;
+    ev.key = TIKU_KEY_CMD;
+    (void)tiku_ide_event(st, e->id, &ev);
+    assert(e->cursor == TIKU_CURSOR_HAND && shape_asked == TIKU_CURSOR_HAND);
+    selection(e, &lo, &hi);
+    assert(lo == hi && lo >= 9 && lo <= 10);    /* nothing moved */
+    ev.type = TIKU_EVENT_KEY_UP;
+    ev.modifiers = TIKU_MOD_CMD;
+    (void)tiku_ide_event(st, e->id, &ev);
+    assert(e->cursor == TIKU_CURSOR_ARROW && shape_asked == TIKU_CURSOR_ARROW);
+    assert(holds(e, text, sizeof text - 1));
+    unpage(st, e);
+}
+
 int main(void)
 {
     char drafts[600];
@@ -730,12 +821,13 @@ int main(void)
     clipboard(st);
     line_commands(st);
     problems(st);
+    jumps(st);
     tiku_surface_free(st->proj_surface);
     tiku_surface_free(st->msg_surface);
     tiku_surface_free(st->con_surface);
     free(st);
     puts("PASS: kept bytes, BASIC limits at the run, breakpoint markers, "
          "the paused line, renumber edits, completion and help, caret and "
-         "clipboard rules, line commands, problems");
+         "clipboard rules, line commands, problems, jump targets");
     return 0;
 }

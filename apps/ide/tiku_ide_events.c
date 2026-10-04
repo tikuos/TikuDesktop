@@ -37,6 +37,14 @@ move_key(unsigned key)
     return key >= TIKU_KEY_UP && key <= TIKU_KEY_PAGE_DOWN;
 }
 
+/** @brief Whether @p key is a modifier key: Command, Shift or Option. */
+static int
+modifier_key(unsigned key)
+{
+    return key == TIKU_KEY_CMD || key == TIKU_KEY_SHIFT ||
+           key == TIKU_KEY_OPTION;
+}
+
 /**
  * @brief A key on a page that no panel or tool took: the find bar's while
  *        it is open, else the page's Command keys, moves and edits.
@@ -243,6 +251,7 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
         }
     }
     if (event->type != TIKU_EVENT_KEY_DOWN &&
+        !(event->type == TIKU_EVENT_KEY_UP && modifier_key(event->key)) &&
         event->type != TIKU_EVENT_POINTER_DOWN &&
         event->type != TIKU_EVENT_POINTER_MOVE &&
         event->type != TIKU_EVENT_POINTER_UP &&
@@ -425,6 +434,15 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
 
         if (tiku_ide_debug_event(st, e, event)) {
             tiku_ide_edit_paint(st, e); tiku_ide_edit_publish(st, e); tiku_ide_project_publish(st);
+            return 0;
+        }
+        if ((event->type == TIKU_EVENT_KEY_DOWN ||
+             event->type == TIKU_EVENT_KEY_UP) && modifier_key(event->key)) {
+            /* A modifier alone may make the jump target under the
+             * pointer live or not; nothing moves. */
+            if (tiku_codeview_event(e->view, event)) {
+                tiku_ide_edit_paint(st, e);
+            }
             return 0;
         }
         if (event->type == TIKU_EVENT_KEY_DOWN && (event->modifiers & TIKU_MOD_CMD)) {

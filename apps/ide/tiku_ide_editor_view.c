@@ -2,6 +2,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
+#include "tiku_host.h"
 
 static void
 tb_arrow(tiku_surface_t *s, int x, int back, int on);
@@ -231,6 +232,7 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     tiku_rect_t page = { 0, ptop, e->w, tiku_ide_edit_page_bottom(e) - ptop };
     tiku_rect_t strip = { 0, e->h - STRIP_H, e->w, STRIP_H };
     char where[256];
+    int shape;
 
     if (e->surface == NULL || e->view == NULL) {
         return;
@@ -388,4 +390,12 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     }
     (void)st->services->frame(st->services->ctx, e->id, e->surface->px,
                               e->w, e->h);
+    /* The pointer is a hand while it is over a jump target a click would
+     * follow. */
+    shape = tiku_codeview_hotspot(e->view, NULL) ? TIKU_CURSOR_HAND
+                                                 : TIKU_CURSOR_ARROW;
+    if (shape != e->cursor &&
+        tiku_app_cursor_set(st->services, e->id, shape)) {
+        e->cursor = shape;
+    }
 }
