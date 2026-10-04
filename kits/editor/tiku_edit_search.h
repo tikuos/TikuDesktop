@@ -4,12 +4,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_edit_search.h - finding literal text in an editor document.
+ * tiku_edit_search.h - literal and regex search in an editor document.
  *
  * A match lies within one line.  Each line is read from its start, left
  * to right, and a match is taken whole before the next is looked for, so
  * matches never overlap and the same ones are found whichever way a
- * search goes.  Without TIKU_EDIT_MATCH_CASE only ASCII letters fold.
+ * search goes.  Without TIKU_EDIT_MATCH_CASE a literal search folds only
+ * ASCII letters, and a regular expression folds as its locale does.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,13 +27,23 @@
 /* A match is neither preceded nor followed by a word byte: an ASCII
  * letter, a digit, '_' or any byte past ASCII. */
 #define TIKU_EDIT_WHOLE_WORD 0x2u
+/* The query is a POSIX extended regular expression, matched within each
+ * line in a UTF-8 locale of the kit's own; the process's locale is left
+ * as it is.  An empty match is found once, and the next search starts a
+ * character past it.  A replacement puts in group n for $n, n one digit,
+ * or for ${n}, n up to 31, a dollar for $$, and a line feed, CR, tab or
+ * backslash for \n, \r, \t or \\.  PCRE syntax, such as \d, lookaround
+ * and lazy repeats, is not understood, and a search runs to its end
+ * before it returns. */
+#define TIKU_EDIT_REGEX 0x4u
 
 /** @brief What to look for: valid UTF-8, not empty, with no NUL, CR or
  *         LF; anything else is refused with TIKU_EDIT_INVALID_TEXT. */
 typedef struct {
     const char *text;
     size_t length;
-    unsigned flags;             /* TIKU_EDIT_MATCH_CASE, _WHOLE_WORD  */
+    unsigned flags;             /* TIKU_EDIT_MATCH_CASE, _WHOLE_WORD,
+                                   _REGEX                               */
 } tiku_edit_query_t;
 
 /**

@@ -128,6 +128,7 @@ tiku_codeview_destroy(tiku_codeview_t *view)
     tiku_ed_free(view->held);
     tiku_ed_free(view->goals);
     tiku_ed_free(view->bindings);
+    tiku_ed_free(view->zero_pattern);
     tiku_ed_free(view->fold_levels);
     tiku_ed_free(view);
 }

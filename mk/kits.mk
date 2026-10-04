@@ -237,6 +237,7 @@ EDITOR      := $(K)/editor/tiku_editdoc.c $(K)/editor/tiku_editdoc_alloc.c \
                $(K)/editor/tiku_codeview_carets.c \
                $(K)/editor/tiku_codeview_hotspots.c \
                $(K)/editor/tiku_edit_search.c \
+               $(K)/editor/tiku_edit_regex.c \
                $(K)/editor/tiku_edit_decorations.c \
                $(K)/editor/tiku_edit_notes.c
 APPLICATION := $(K)/application/tiku_app.c $(K)/application/tiku_app_load.c \

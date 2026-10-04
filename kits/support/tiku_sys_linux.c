@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <locale.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -31,6 +32,39 @@
 #include <sys/syscall.h>
 #include <ucontext.h>
 #include <unistd.h>
+
+/* The UTF-8 locales tried for reading text, in order: C.UTF-8 orders
+ * characters by code point, and en_US.UTF-8 stands in where the host has
+ * no C.UTF-8. */
+static const char *const utf8_locales[] = { "C.UTF-8", "en_US.UTF-8" };
+
+void *
+tiku_sys_locale_utf8(void)
+{
+    locale_t locale = (locale_t)0;
+    size_t i;
+
+    for (i = 0; locale == (locale_t)0 &&
+                i < sizeof utf8_locales / sizeof utf8_locales[0]; i++) {
+        locale = newlocale(LC_CTYPE_MASK | LC_COLLATE_MASK, utf8_locales[i],
+                           (locale_t)0);
+    }
+    return locale;
+}
+
+void *
+tiku_sys_locale_use(void *locale)
+{
+    return uselocale((locale_t)locale);
+}
+
+void
+tiku_sys_locale_free(void *locale)
+{
+    if (locale != NULL) {
+        freelocale((locale_t)locale);
+    }
+}
 
 int tiku_sys_sync_file(int fd)
 {

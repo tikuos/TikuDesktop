@@ -139,6 +139,12 @@ struct tiku_codeview {
     int lexing;                     /* it is running                    */
     tiku_codeview_binding_t *bindings; /* the host's keys, its own copy */
     size_t nbindings;               /* how many                         */
+    char *zero_pattern;             /* the query of the empty match Find
+                                       selected last, or NULL           */
+    unsigned zero_flags;            /* and its flags                    */
+    uint64_t zero_generation;       /* the document's generation then   */
+    uint64_t zero_selection;        /* and the selection's serial       */
+    tiku_edit_pos_t zero_position;  /* where the match is               */
     int observed;                   /* changes were polled for          */
     uint64_t seen_doc;              /* the generation at the last poll  */
     uint64_t seen_selection;        /* the selection's serial then      */

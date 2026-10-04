@@ -53,8 +53,10 @@ typedef enum {
     TIKU_EDIT_BUSY,             /* asked during a notification or read  */
     TIKU_EDIT_NOTHING,          /* no step to undo or redo, or no
                                    execution line                       */
-    TIKU_EDIT_SHORT             /* the buffer is too small; nothing
+    TIKU_EDIT_SHORT,            /* the buffer is too small; nothing
                                    was written                          */
+    TIKU_EDIT_BAD_PATTERN,      /* invalid regular expression           */
+    TIKU_EDIT_BAD_REPLACEMENT   /* invalid capture reference or escape  */
 } tiku_edit_status_t;
 
 /** @brief The document's limits; zero takes the default. */

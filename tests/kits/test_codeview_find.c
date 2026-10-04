@@ -504,6 +504,39 @@ replace_all_faults(void)
     tiku_editdoc_release(doc);
 }
 
+/** @brief Search uses the ordered main range, not its direction or any
+ *         unrelated secondary selections. */
+static void
+multiple_and_reversed(void)
+{
+    tiku_editdoc_t *doc = doc_of("cat dog cat");
+    tiku_codeview_t *v = NULL;
+    tiku_edit_query_t q = query("cat", 0);
+    tiku_codeview_found_t found;
+    tiku_edit_selection_t selections[] = {{0, 3}, {4, 7}};
+    tiku_edit_pos_t anchor, caret;
+
+    check(tiku_codeview_create(doc, &v) == TIKU_EDIT_OK,
+          "FND-013", "create view");
+    (void)tiku_codeview_select(v, 3, 0);
+    check(tiku_codeview_find(v, &q, 0, &found) == TIKU_EDIT_OK &&
+          tiku_codeview_selection(v, &anchor, &caret) == TIKU_EDIT_OK &&
+          anchor == 8 && caret == 11, "FND-013",
+          "Find Next skips the current match selected backwards");
+    (void)tiku_codeview_select_many(v, selections, 2, 0);
+    check(tiku_codeview_replace(v, &q, "fox", 3, &found) == TIKU_EDIT_OK &&
+          holds(doc, "fox dog cat") && found.replaced == 1, "FND-013",
+          "Replace changes only the matching main selection");
+    check(tiku_codeview_undo(v) == TIKU_EDIT_OK &&
+          holds(doc, "cat dog cat") &&
+          tiku_codeview_selections(v, selections, 2, NULL) == 2 &&
+          selections[0].anchor == 0 && selections[0].caret == 3 &&
+          selections[1].anchor == 4 && selections[1].caret == 7,
+          "FND-013", "undo restores both original selections");
+    tiku_codeview_destroy(v);
+    tiku_editdoc_release(doc);
+}
+
 int
 main(void)
 {
@@ -515,6 +548,7 @@ main(void)
     model();
     view_find();
     view_replace();
+    multiple_and_reversed();
     replace_all_faults();
     printf("%s\n", fails ? "FAIL: code view search" :
            "PASS: code view search -- refusals, case, whole words, no "

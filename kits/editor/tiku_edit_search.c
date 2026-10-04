@@ -12,6 +12,7 @@
 
 #include "tiku_edit_search.h"
 #include "tiku_editdoc_private.h"
+#include "tiku_edit_regex.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -182,10 +183,13 @@ tiku_edit_find(tiku_editdoc_t *doc, const tiku_edit_query_t *q,
                tiku_edit_pos_t from, int backward, tiku_edit_range_t *match,
                int *wrapped)
 {
-    tiku_edit_status_t st = query_ok(doc, q);
+    tiku_edit_status_t st;
     int64_t line, first, lines;
     pick_t p;
 
+    if (q != NULL && (q->flags & TIKU_EDIT_REGEX))
+        return tiku_ed_regex_find(doc, q, from, backward, match, wrapped);
+    st = query_ok(doc, q);
     if (st != TIKU_EDIT_OK)
         return st;
     if (match == NULL || !tiku_editdoc_is_boundary(doc, from))
@@ -226,8 +230,17 @@ int
 tiku_edit_is_match(tiku_editdoc_t *doc, const tiku_edit_query_t *q,
                    tiku_edit_range_t range)
 {
+    char *text = NULL;
+    size_t n;
     scan_t s;
 
+    if (q != NULL && (q->flags & TIKU_EDIT_REGEX)) {
+        if (tiku_ed_regex_expand(doc, q, range, NULL, 0, &text, &n) !=
+            TIKU_EDIT_OK)
+            return 0;
+        tiku_ed_free(text);
+        return 1;
+    }
     if (query_ok(doc, q) != TIKU_EDIT_OK || range.start < 0 ||
         range.end - range.start != (tiku_edit_pos_t)q->length ||
         range.end > tiku_editdoc_length(doc))
@@ -277,13 +290,16 @@ tiku_edit_replace_all(tiku_editdoc_t *doc, const tiku_edit_query_t *q,
                       const char *with, size_t length,
                       tiku_edit_view_t view, size_t *count)
 {
-    tiku_edit_status_t st = query_ok(doc, q);
+    tiku_edit_status_t st;
     tiku_edit_replace_t *edits;
     tiku_edit_transaction_t t;
     gather_t g;
     int64_t line, lines;
     size_t i;
 
+    if (q != NULL && (q->flags & TIKU_EDIT_REGEX))
+        return tiku_ed_regex_replace_all(doc, q, with, length, view, count);
+    st = query_ok(doc, q);
     if (count != NULL)
         *count = 0;
     if (st != TIKU_EDIT_OK)

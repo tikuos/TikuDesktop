@@ -658,9 +658,9 @@ typedef struct {
 } tiku_codeview_found_t;
 
 /**
- * @brief Select the first match at or after the caret, or with
- *        @p backward the last one before the selection's start, starting
- *        again from the other end when there is none that way.
+ * @brief Select the first match at or after the main selection's end, or
+ *        with @p backward the last one before its start, starting again
+ *        from the other end when there is none that way.
  *
  * The match is selected from its start to its end and shown.
  * TIKU_EDIT_NOTHING when there is no match anywhere.  @p out may be NULL.
@@ -669,9 +669,15 @@ tiku_edit_status_t tiku_codeview_find(tiku_codeview_t *view,
                                       const tiku_edit_query_t *q,
                                       int backward,
                                       tiku_codeview_found_t *out);
-/** @brief Replace the selection with @p length bytes of @p with when it
- *         is exactly one match, as one undo step, then find the next
- *         match. */
+/**
+ * @brief Replace the main selection with @p length bytes of @p with when
+ *        it is exactly one match, as one undo step, then find the next.
+ *
+ * The other selections are let go, and come back on undo.  A regex's
+ * groups are put into its replacement as TIKU_EDIT_REGEX says, and an
+ * empty selection is a match only when it is the empty match the last
+ * Find selected.
+ */
 tiku_edit_status_t tiku_codeview_replace(tiku_codeview_t *view,
                                          const tiku_edit_query_t *q,
                                          const char *with, size_t length,

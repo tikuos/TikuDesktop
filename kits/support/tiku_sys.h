@@ -20,6 +20,24 @@
 
 #include <stddef.h>
 
+/**
+ * @brief A UTF-8 locale of the caller's own, for reading characters and
+ *        ordering them, or NULL when the host has none; the process's
+ *        and the thread's locales are left as they are.
+ *
+ * C.UTF-8 is taken where the host has it, ordering characters by code
+ * point, and en_US.UTF-8 where it does not; there a bracket range in a
+ * regular expression may follow that locale's order of letters instead.
+ */
+void *tiku_sys_locale_utf8(void);
+/** @brief Make @p locale the calling thread's, or with NULL only ask, and
+ *         return the thread's locale before. */
+void *tiku_sys_locale_use(void *locale);
+/** @brief Free a locale tiku_sys_locale_utf8() made; NULL is ignored.
+ *  @note Put the thread's locale back first; a locale
+ *        tiku_sys_locale_use() returned is not the caller's to free. */
+void tiku_sys_locale_free(void *locale);
+
 /** @brief Flush an open regular file, including the host's drive-cache barrier.
  * Returns 0 on success, -1 on failure. Call after syncing changed parent
  * directories too; visibility alone does not establish durable publication. */
