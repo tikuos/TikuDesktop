@@ -496,6 +496,7 @@ static void assistance(ide_t *st)
 
     key(st, e, ' ', TIKU_MOD_CMD, " ");
     assert(e->assist_open == 2 && e->assist_n == 7);
+    assert(tiku_codeview_completion_selected(e->view) == 0);
     assert(tiku_codeview_list_shown(e->view, &current) && current == 0);
     assert(tiku_codeview_tip_shown(e->view));
     key(st, e, TIKU_KEY_DOWN, 0, NULL);
@@ -544,6 +545,18 @@ static void assistance(ide_t *st)
     assert(e->finding && !e->assist_open &&
            !tiku_codeview_list_shown(e->view, NULL));
     e->finding = 0;
+    unpage(st, e);
+    const char *call = "10 PRINT MID$(\"a,b\", MIN(1,2), 3)";
+    e = page(st, "signature.bas", call, strlen(call));
+    tiku_ide_place(e, 0, (int)(strstr(call, "MIN") - call));
+    key(st, e, 'k', TIKU_MOD_CMD, "k");
+    assert(e->assist_open == 3 && !tiku_codeview_list_shown(e->view, NULL));
+    assert(tiku_codeview_signature_argument(e->view) == 1);
+    tiku_ide_place(e, 0, (int)(strstr(call, "3)") - call));
+    tiku_ide_edit_paint(st, e);
+    assert(tiku_codeview_signature_argument(e->view) == 2);
+    key(st, e, TIKU_KEY_ESCAPE, 0, NULL);
+    assert(!e->assist_open && !tiku_codeview_tip_shown(e->view));
     unpage(st, e);
 }
 

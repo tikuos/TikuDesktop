@@ -195,7 +195,8 @@ typedef struct {
     uint64_t             recovery_state; /* the text the draft holds */
     int                  recovery_current;
     int                  recovery_blocked;
-    int                  assist_open;    /* 1 keyword help, 2 completion */
+    int                  assist_open;    /* 1 keyword help, 2 completion,
+                                            3 a call's signature tip */
     int                  assist_n;       /* the keywords offered */
     int                  assist_match[192];
     size_t               assist_at;      /* the one chosen */

@@ -61,11 +61,62 @@ static const basic_help_t basic_help[] = {
     {"TRACE", "TRACE ON | OFF", "Print each executed line; graphical Debug adds stepping.", "TRACE ON"},
 };
 
+/* Brackets of a line followed to find the call around the caret, and the
+ * most arguments its signature's tip marks. */
+#define ASSIST_DEPTH 64
+#define ASSIST_ARGS 16
+
 static int
 assist_word(int ch)
 {
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
            (ch >= '0' && ch <= '9') || ch == '_' || ch == '$';
+}
+
+/** @brief The help for keyword @p word, or NULL when the table has
+ *         none. */
+static const basic_help_t *
+assist_help(const char *word)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof basic_help / sizeof basic_help[0]; i++) {
+        if (!strcmp(word, basic_help[i].word)) { return &basic_help[i]; }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Offer the @p n keywords of @p words for @p range in a list that
+ *        inserts, each with its syntax beside it.
+ *
+ * A keyword whose syntax has brackets is marked as a function, any other
+ * as a keyword; one the help table lacks reads "BASIC keyword".
+ */
+static void
+assist_complete(edit_t *e, const char **words, int n,
+                tiku_edit_range_t range)
+{
+    tiku_codeview_completion_item_t
+        items[sizeof e->assist_match / sizeof e->assist_match[0]];
+    tiku_codeview_completion_t rich;
+    const basic_help_t *help;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        help = assist_help(words[i]);
+        memset(&items[i], 0, sizeof items[i]);
+        items[i].label = words[i];
+        items[i].detail = help ? help->syntax : "BASIC keyword";
+        items[i].kind = help && strchr(help->syntax, '(') ?
+                        TIKU_COMPLETION_FUNCTION : TIKU_COMPLETION_KEYWORD;
+    }
+    memset(&rich, 0, sizeof rich);
+    rich.range = range;
+    rich.items = items;
+    rich.count = (size_t)n;
+    rich.current = e->assist_at;
+    (void)tiku_codeview_complete(e->view, &rich);
 }
 
 /** @brief Whether byte @p x of a BASIC line's @p text lies inside a
@@ -162,7 +213,11 @@ assist_show(edit_t *e)
     list.count = (size_t)e->assist_n;
     list.current = e->assist_at;
     list.inserts = e->assist_open == 2;
-    (void)tiku_codeview_list_show(e->view, &list);
+    if (e->assist_open == 2 && e->assist_n > 0) {
+        assist_complete(e, words, e->assist_n, range);
+    } else {
+        (void)tiku_codeview_list_show(e->view, &list);
+    }
     word = e->assist_n ? words[e->assist_at] : NULL;
     for (i = 0; word && i < (int)(sizeof basic_help / sizeof basic_help[0]);
          i++) {
@@ -186,11 +241,103 @@ assist_show(edit_t *e)
     (void)tiku_codeview_tip_show(e->view, range.start, tip);
 }
 
+/** @brief The help for the function whose name ends just before the
+ *         bracket at byte @p open of the line @p text, blanks aside, or
+ *         NULL when the table has none whose syntax takes brackets. */
+static const basic_help_t *
+assist_call(const char *text, int open)
+{
+    int end = open, begin;
+    size_t i, n;
+
+    while (end > 0 && (text[end - 1] == ' ' || text[end - 1] == '\t')) {
+        end--;
+    }
+    begin = end;
+    while (begin > 0 && assist_word((unsigned char)text[begin - 1])) {
+        begin--;
+    }
+    n = (size_t)(end - begin);
+    for (i = 0; i < sizeof basic_help / sizeof basic_help[0]; i++) {
+        if (strlen(basic_help[i].word) == n &&
+            !strncasecmp(text + begin, basic_help[i].word, n) &&
+            strchr(basic_help[i].syntax, '(') != NULL) {
+            return &basic_help[i];
+        }
+    }
+    return NULL;
+}
+
+/** @brief The bytes of each argument between the brackets of @p syntax,
+ *         at most @p max of them, into @p args; @return how many. */
+static size_t
+assist_arguments(const char *syntax, tiku_edit_range_t *args, size_t max)
+{
+    const char *a = strchr(syntax, '('), *b, *comma;
+    size_t count = 0;
+
+    b = a != NULL ? strchr(a + 1, ')') : NULL;
+    if (b == NULL) { return 0; }
+    for (a++; a < b && count < max; a = comma + 1) {
+        comma = strchr(a, ',');
+        if (comma == NULL || comma > b) { comma = b; }
+        while (a < comma && *a == ' ') { a++; }
+        args[count].start = a - syntax;
+        args[count].end = comma - syntax;
+        count++;
+    }
+    return count;
+}
+
+/**
+ * @brief For Keyword help: show the signature of the innermost call
+ *        around the caret whose function the help table knows, the
+ *        argument the caret is in marked; 0 when there is none.
+ *
+ * Brackets inside strings and remarks are not counted.
+ */
+static int
+assist_signature(edit_t *e)
+{
+    char text[IDE_CARET_TEXT];
+    tiku_edit_range_t args[ASSIST_ARGS];
+    const basic_help_t *help;
+    tiku_edit_pos_t start;
+    size_t got, count;
+    int opens[ASSIST_DEPTH], depth = 0, i;
+    int caret = tiku_ide_caret_text(e, text, &start, &got);
+
+    if (caret < 0) { return 0; }
+    for (i = 0; i < caret; i++) {
+        if (assist_quoted(text, i + 1)) { continue; }
+        if (text[i] == '(') {
+            if (depth == ASSIST_DEPTH) { return 0; }
+            opens[depth++] = i;
+        } else if (text[i] == ')' && depth > 0) {
+            depth--;
+        }
+    }
+    while (depth > 0) {
+        i = opens[--depth];
+        help = assist_call(text, i);
+        count = help ? assist_arguments(help->syntax, args, ASSIST_ARGS) : 0;
+        if (count > 0 &&
+            tiku_codeview_signature_show(e->view, start + i, help->syntax,
+                                         args, count) == TIKU_EDIT_OK) {
+            tiku_codeview_list_hide(e->view);
+            e->assist_open = 3;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void
 tiku_ide_assist_open(edit_t *e, int complete)
 {
     if (e->lang != TIKU_SYNTAX_BASIC) { return; }
     e->finding = 0;
+    if (!complete && assist_signature(e)) { return; }
     e->assist_open = complete ? 2 : 1;
     e->assist_at = 0;
     e->assist_prefix[0] = '\0';
@@ -220,6 +367,10 @@ tiku_ide_assist_sync(edit_t *e)
     size_t current = 0;
 
     if (!e->assist_open) { return; }
+    if (e->assist_open == 3) {
+        if (!tiku_codeview_tip_shown(e->view)) { e->assist_open = 0; }
+        return;
+    }
     if (!tiku_codeview_list_shown(e->view, &current)) {
         tiku_ide_assist_close(e);
         return;
