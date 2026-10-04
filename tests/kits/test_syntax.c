@@ -55,7 +55,8 @@ classify(const char *line)
                : span[i].ink == TIKU_INK_NUM    ? 'n'
                : span[i].ink == TIKU_INK_STR    ? 's'
                : span[i].ink == TIKU_INK_REMARK ? 'r'
-               : span[i].ink == TIKU_INK_PATH   ? 'a' : 'p';
+               : span[i].ink == TIKU_INK_PATH   ? 'a'
+               : span[i].ink == TIKU_INK_LINK   ? 'l' : 'p';
         int k;
 
         for (k = 0; k < span[i].len && at < sizeof map - 1u; k++) {
@@ -223,14 +224,15 @@ main(void)
          "an ampersand that starts no literal is punctuation");
 
     printf("\nwhat follows a word can change what the word after it means\n");
-    same("GOTO done", "wwwwppppp",
-         "the target of a GOTO is a label the interpreter reads raw, so "
-         "it keeps plain ink even if it were spelled like a keyword");
-    same("GOTO end", "wwwwpppp",
+    same("GOTO done", "wwwwpllll",
+         "the target of a GOTO is a label the interpreter reads raw, a "
+         "place to go: it takes the link ink, not the keyword's");
+    same("GOTO end", "wwwwplll",
          "and that holds when the label IS spelled like a keyword");
-    same("GOTO l1, l2", "wwwwppppppp",
+    same("GOSUB sub1", "wwwwwpllll", "so is the target of a GOSUB");
+    same("GOTO l1, l2", "wwwwpllppll",
          "a comma after a target brings another target");
-    same("IF A THEN GOTO L1 ELSE PRINT", "wwpppwwwwpwwwwppppwwwwpwwwww",
+    same("IF A THEN GOTO L1 ELSE PRINT", "wwpppwwwwpwwwwpllpwwwwpwwwww",
          "but only a comma does: the ELSE after a target is still the "
          "keyword it is");
     same("DATA PRINT, 1, END", "wwwwpppppppppppppp",
@@ -274,11 +276,36 @@ main(void)
          "a label may follow a line number: the number names the line "
          "and the label names the body");
     same("IF A THEN GOTO 100 ELSE PRINT 2",
-         "wwpppwwwwpwwwwpnnnpwwwwpwwwwwpn",
-         "a NUMBER may be the jump target too, and the word after it is "
-         "the keyword it is -- the target context is spent either way");
-    same("GOTO 100, 200", "wwwwpnnnppnnn",
+         "wwpppwwwwpwwwwplllpwwwwpwwwwwpn",
+         "a NUMBER may be the jump target too, in the link ink, and the "
+         "word after it is the keyword it is -- the target context is "
+         "spent either way");
+    same("GOTO 100, 200", "wwwwplllpplll",
          "and a comma after a numeric target still brings another");
+
+    printf("\nwhere a jump lands\n");
+    check(tiku_syntax_basic_names("100 PRINT 1", "100", 3) &&
+          tiku_syntax_basic_names("  0100 END", "100", 3) &&
+          tiku_syntax_basic_names("100 PRINT 1", "0100", 4),
+          "a number lands on the line it names, by its value");
+    check(!tiku_syntax_basic_names("1000 PRINT", "100", 3) &&
+          !tiku_syntax_basic_names("10 PRINT", "100", 3) &&
+          !tiku_syntax_basic_names("PRINT 100", "100", 3) &&
+          !tiku_syntax_basic_names("100 PRINT", "10x", 3),
+          "and on no other: a longer or shorter number, a number in the "
+          "body, a target that is not all digits");
+    check(tiku_syntax_basic_names("loop: PRINT", "loop", 4) &&
+          tiku_syntax_basic_names("20 loop: PRINT", "loop", 4) &&
+          tiku_syntax_basic_names("\tloop:", "loop", 4),
+          "a name lands on the line its label heads, after a number too");
+    check(!tiku_syntax_basic_names("Loop: PRINT", "loop", 4) &&
+          !tiku_syntax_basic_names("loopy: PRINT", "loop", 4) &&
+          !tiku_syntax_basic_names("PRINT loop:", "loop", 4) &&
+          !tiku_syntax_basic_names("l: PRINT", "l", 1) &&
+          !tiku_syntax_basic_names("loop: PRINT", "loop", 0),
+          "case counts, the whole label must match, it must head the "
+          "line, a one-letter name is no label, and nothing names "
+          "nothing");
 
     printf("\nthe answer is well formed however odd the line is\n");
     {

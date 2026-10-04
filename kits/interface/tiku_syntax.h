@@ -108,6 +108,17 @@ void tiku_syntax_runs(tiku_syntax_lang_t lang, const char *line,
 int tiku_syntax_basic_word(const char *name);
 
 /**
+ * @brief Whether a BASIC jump to the @p len bytes of @p target lands on
+ *        @p line, NUL-terminated.
+ *
+ * A number names the line that starts with that number, by its value; a
+ * name, the line whose head is that label, its case kept as the
+ * interpreter keeps it.
+ */
+int tiku_syntax_basic_names(const char *line, const char *target,
+                            size_t len);
+
+/**
  * @brief The language a file called @p path is written in.
  *
  * By its suffix, because that is the only thing a name can honestly

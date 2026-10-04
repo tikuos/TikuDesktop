@@ -381,6 +381,57 @@ label_at(const char *p)
     return (i >= 2 && p[i] == ':') ? i + 1 : 0;
 }
 
+/** @brief How many decimal digits start @p p. */
+static size_t
+digits_at(const char *p)
+{
+    size_t n = 0;
+
+    while (is_digit((unsigned char)p[n])) {
+        n++;
+    }
+    return n;
+}
+
+int
+tiku_syntax_basic_names(const char *line, const char *target, size_t len)
+{
+    const char *p = line;
+    size_t n, want;
+    int label;
+
+    if (line == NULL || target == NULL || len == 0u) {
+        return 0;
+    }
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    n = digits_at(p);
+    if (is_digit((unsigned char)target[0])) {
+        /* A number names a line by its value: 0100 is line 100. */
+        want = digits_at(target);
+        if (want != len) {
+            return 0;
+        }
+        while (want > 1u && *target == '0') {
+            target++;
+            want--;
+        }
+        while (n > 1u && *p == '0') {
+            p++;
+            n--;
+        }
+        return n == want && memcmp(p, target, n) == 0;
+    }
+    p += n;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    label = label_at(p);
+    return label > 0 && (size_t)label - 1u == len &&
+           memcmp(p, target, len) == 0;
+}
+
 /*---------------------------------------------------------------------------*/
 /* C                                                                         */
 /*---------------------------------------------------------------------------*/
@@ -759,7 +810,9 @@ basic_spans(spans_t *sink, tiku_syntax_lang_t lang, const char *line)
         }
         len = number_at(line + i);
         if (len > 0) {
-            if (!push(&s, TIKU_INK_NUM, len)) {
+            /* A number a GOTO or GOSUB names is a line to go to, and
+             * reads as the link it is. */
+            if (!push(&s, label_next ? TIKU_INK_LINK : TIKU_INK_NUM, len)) {
                 break;
             }
             if (label_next) {
@@ -802,7 +855,8 @@ basic_spans(spans_t *sink, tiku_syntax_lang_t lang, const char *line)
                 (void)push(&s, TIKU_INK_REMARK, (int)strlen(line + i));
                 break;
             }
-            if (!push(&s, is_word ? TIKU_INK_WORD : TIKU_INK_PLAIN, len)) {
+            if (!push(&s, label_next ? TIKU_INK_LINK :
+                          is_word ? TIKU_INK_WORD : TIKU_INK_PLAIN, len)) {
                 break;
             }
             if (label_next) {
