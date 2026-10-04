@@ -11,6 +11,7 @@
 - [Tracker and desktop guides](guides/tracker/): preferences, readers, device utilities and scripting.
 - [Tracker behavior contract](contracts/tracker.md): the executable feature/fidelity checklist.
 - [Editor behaviour contract](contracts/editor.md): the editor kit's document engine and the Editor and IDE rules it must keep.
+- [Editor kit embedding guide](../kits/editor/README.md): using the document and view in text and programming editors.
 - [Tests](../tests/README.md) and [examples](../examples/README.md).
 
 Public-kit documentation stays beside each kit under `kits/`; application
