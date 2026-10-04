@@ -22,6 +22,7 @@
 #include "tiku_cff.h"
 #include "tiku_ttf.h"
 #include "tiku_type1.h"
+#include "tiku_vector_raster.h"
 
 /* The file as a whole, and any one decoded stream. */
 #define PDF_FILE_MAX    (256L * 1024L * 1024L)
@@ -352,10 +353,11 @@ uint32_t pdf_glyph_unicode(const char *name);
 
 /* The text of a page: tiku_pdf_text.c holds tiku_pdf_page_text()          */
 
-/* Drawing: tiku_pdf_raster.c fills and strokes, tiku_pdf_render.c reads   */
+/* Drawing: tiku_vector_raster.c fills and strokes, tiku_pdf_raster.c        */
+/* paints, and tiku_pdf_render.c runs a page through them                    */
 
 /** @brief A matrix as PDF writes one: [a b c d e f], row vectors. */
-typedef struct { double a, b, c, d, e, f; } pdf_mat_t;
+typedef tiku_vector_mat_t pdf_mat_t;
 
 /** @brief @p m then @p n, as "cm" composes them; and one from its six. */
 pdf_mat_t pdf_mat_mul(pdf_mat_t m, pdf_mat_t n);
@@ -387,7 +389,7 @@ typedef struct {
                                        in place of what was put before   */
     uint32_t  ground;               /* a knockout group's backdrop       */
 } pdf_pix_t;
-typedef struct { int x0, y0, w, h; unsigned char *a; } pdf_mask_t;
+typedef tiku_vector_mask_t pdf_mask_t;
 
 /**
  * @brief A path flattened to straight pieces in device space.
@@ -395,18 +397,16 @@ typedef struct { int x0, y0, w, h; unsigned char *a; } pdf_mask_t;
  * Subpaths are runs of points; a closed one is marked, and an open one
  * is closed when it is filled, as PDF fills it.
  */
-typedef struct {
-    float *pt;                      /* x, y pairs                        */
-    int    n, cap;                  /* points, room                      */
-    int   *start;                   /* where each subpath begins         */
-    int   *closed;                  /* per subpath                       */
-    int    nsub, subcap;
-    float  cx, cy;                  /* the current point                 */
-    float  sx, sy;                  /* the subpath's first point         */
-    int    failed;
-} pdf_path_t;
+typedef tiku_vector_path_t pdf_path_t;
 
-/** @brief A path's life: made empty, emptied again, given back. */
+/** @brief The points one path holds; one more fails it, and the path is
+ *         then neither filled nor stroked. */
+#define PDF_POINTS_MAX  (1 << 21)
+/** @brief The dash entries a stroke reads; any past these are not read. */
+#define PDF_DASH_MAX    16
+
+/** @brief A path's life: made empty, holding up to PDF_POINTS_MAX
+ *         points; emptied again; given back. */
 void pdf_path_init(pdf_path_t *p);
 void pdf_path_clear(pdf_path_t *p);
 void pdf_path_free(pdf_path_t *p);
@@ -429,7 +429,14 @@ int pdf_path_bounds(const pdf_path_t *p, int w, int h, int *x0, int *y0,
  */
 pdf_mask_t pdf_path_fill(const pdf_path_t *p, int evenodd, int x0, int y0,
                          int w, int h);
-/** @brief The outline of stroking @p p, as a path to fill nonzero. */
+/**
+ * @brief The outline of stroking @p p, as a path to fill nonzero.
+ *
+ * Whatever the line state holds is drawn: a width, dash entry or miter
+ * limit below zero or not a number counts as zero, an infinite one as the
+ * largest a double holds, and a phase that is not finite as zero.  So
+ * "-1 w" draws the thinnest line and "[3 -1] 0 d" a nearly solid one.
+ */
 void pdf_path_stroke(const pdf_path_t *p, double width, int cap, int join,
                      double miter, const double *dash, int ndash,
                      double phase, pdf_path_t *out);
