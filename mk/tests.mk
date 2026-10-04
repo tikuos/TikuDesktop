@@ -46,6 +46,11 @@ test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) system/deskbar/tiku_tr
 test_deskbar_hover_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_motion_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_motion_LDLIBS := $(X11_LIBS) -lm
+# The browser's outline against the Tracker shell as it is linked, less
+# the launcher for its main.
+test_tracker_motion_SRCS := $(SCRIPT_ENGINE_TRACKER) $(filter-out \
+    system/shared/shell/tiku_trk_launcher.c,$(TRACKER_SRC))
+test_tracker_motion_LDLIBS := $(X11_LIBS) -lm
 test_deskbar_hover_LDLIBS := $(X11_LIBS) -lm
 test_deskbar_teams_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_teams_CFLAGS := -ffunction-sections -fdata-sections

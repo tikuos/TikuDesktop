@@ -158,6 +158,28 @@ $(SAN)/tests/%.o: tests/%.c | prepare-build
 
 $(SAN)/$(K)/support/tiku_saslprep.o: $(GEN_SASLPREP)
 
+# The Deskbar's suites and the Tracker outline's, with the shell sources
+# they link instrumented too.  Each is a target of its own, built and run
+# by name (make build/sanitize/test_deskbar_motion); check-sanitize does not
+# run them.
+SAN_DESKBAR_OBJS := $(patsubst %.c,$(SAN)/%.o,$(test_deskbar_dock_SRCS))
+SAN_TRACKER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(test_tracker_motion_SRCS))
+$(addprefix $(SAN)/,test_deskbar_dock test_deskbar_hover \
+                    test_deskbar_motion): $(SAN)/test_%: \
+        $(SAN)/tests/system/test_%.o $(SAN_DESKBAR_OBJS) $(SAN_OBJS) \
+        $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_DESKBAR_OBJS) $(SAN_OBJS) \
+	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+$(SAN)/test_tracker_motion: $(SAN)/tests/system/test_tracker_motion.o \
+        $(SAN_TRACKER_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_TRACKER_OBJS) $(SAN_OBJS) \
+	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+
+$(SAN)/system/%.o: system/%.c | prepare-build
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(SANFLAGS) -Wno-unused-parameter $(KIT_INC) $(TRK_INC) \
+	      -MMD -MP -c -o $@ $<
+
 # The instrumented readers come first, so the kits' own copies of them
 # are never taken from the archives.
 $(SAN)/test_%: $(SAN)/tests/kits/test_%.o $(SAN_OBJS) $(DESK_LIBS)
