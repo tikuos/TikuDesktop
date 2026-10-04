@@ -77,7 +77,7 @@ tiku_reader_layout(tiku_reader_help_window_t *owner, tiku_rect_t c)
 void tiku_reader_settle(tiku_reader_help_window_t *c)
 {
     if (!c->doc || c->laid_for <= 0) return;
-    (void)tiku_doc_layout(c->doc, c->laid_for);
+    tiku_reader_document_layout(&c->doc, c->laid_for);
     tiku_scroll_set_range(&c->bar, tiku_doc_height(c->doc), c->page_h);
 }
 
@@ -94,7 +94,7 @@ void tiku_reader_refit(tiku_reader_help_window_t *c, help_layout_t l)
     /* Asked every time: laying out is free when neither the width nor
      * the text size has moved, and a size that moved without the width
      * would otherwise keep the geometry of the size before it. */
-    (void)tiku_doc_layout(c->doc, l.page.w);
+    tiku_reader_document_layout(&c->doc, l.page.w);
     tiku_scroll_set_range(&c->bar, tiku_doc_height(c->doc), l.page.h);
     if (had && changed)
         tiku_scroll_to(&c->bar, tiku_doc_place_y(c->doc, place));

@@ -17,6 +17,8 @@ void tiku_reader_doc_free(tiku_doc_t *doc);
 tiku_doc_t *tiku_reader_document(const char *name, const char *source);
 /* Parse without font measurement; safe for independent background searches. */
 tiku_doc_t *tiku_reader_document_text(const char *name, const char *source);
+/* Grow layout tables within the desktop budget without rereading the file. */
+void tiku_reader_document_layout(tiku_doc_t **doc, int width);
 char *tiku_reader_source(const char *path, const char **why);
 
 /* The allocator the parser and the folder search draw from: the C library's

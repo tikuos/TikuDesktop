@@ -123,6 +123,51 @@ tiku_doc_t *tiku_reader_document_text(const char *name, const char *source)
     return reader_document(name, source, 0);
 }
 
+/** @brief Rebind parsed tables only after all replacement storage is ready. */
+static tiku_doc_t *reader_grow_layout(const tiku_doc_t *old)
+{
+    tiku_doc_limits_t limits = old->limits;
+    if (old->full & TIKU_DOC_FULL_LINES) limits.lines *= 2;
+    if (old->full & TIKU_DOC_FULL_PIECES) limits.pieces *= 2;
+    size_t bytes = tiku_doc_storage_size(&limits);
+    if (!bytes || bytes > TIKU_READER_MEMORY_MAX) return NULL;
+    tiku_doc_t *doc = tiku_reader_calloc(1, sizeof *doc);
+    void *storage = tiku_reader_malloc(bytes);
+    if (!doc || !storage ||
+        !tiku_doc_init_storage(doc, &limits, storage, bytes)) {
+        free(doc); free(storage); return NULL;
+    }
+    /* Indices, rather than pointers into the old arrays, identify every run,
+     * heading, link and selection. Those indices stay unchanged. */
+#define COPY_TABLE(member, count) do { \
+    doc->count = old->count; \
+    memcpy(doc->member, old->member, \
+           (size_t)old->count * sizeof *old->member); \
+} while (0)
+    COPY_TABLE(text, ntext); COPY_TABLE(block, nblock); COPY_TABLE(run, nrun);
+    COPY_TABLE(link, nlink); COPY_TABLE(anchor, nanchor);
+    COPY_TABLE(image, nimage);
+#undef COPY_TABLE
+    doc->title = old->title;
+    doc->full = old->full;
+    doc->image_fn = old->image_fn; doc->image_ctx = old->image_ctx;
+    return doc;
+}
+
+void tiku_reader_document_layout(tiku_doc_t **current, int width)
+{
+    for (;;) {
+        tiku_doc_t *doc = *current;
+        (void)tiku_doc_layout(doc, width);
+        if (!(doc->full & (TIKU_DOC_FULL_LINES | TIKU_DOC_FULL_PIECES))) return;
+        tiku_doc_t *grown = reader_grow_layout(doc);
+        /* Without room to grow, the page keeps its capacity notice. */
+        if (!grown) return;
+        *current = grown;
+        tiku_reader_doc_free(doc);
+    }
+}
+
 /** @brief Read complete regular files; refuse oversize/change rather than cut. */
 char *tiku_reader_source(const char *path, const char **why)
 {
@@ -147,7 +192,7 @@ char *tiku_reader_source(const char *path, const char **why)
     size_t n = fread(source, 1, cap, f);
     int extra = fgetc(f), bad = ferror(f);
     fclose(f);
-    if (bad || extra != EOF || memchr(source, 0, n)) {
+    if (bad || n != cap || extra != EOF || memchr(source, 0, n)) {
         *why = "Document changed during reading, or contains binary data; nothing was replaced.";
         free(source); return NULL;
     }
