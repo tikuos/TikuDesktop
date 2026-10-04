@@ -106,6 +106,26 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(HOST)
 TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_vector_raster.c \
+               $(K)/translation/tiku_circuit_doc.c \
+               $(K)/translation/tiku_circuit_scene.c \
+               $(K)/translation/tiku_circuit_render.c \
+               $(K)/translation/tiku_circuit_geometry.c \
+               $(K)/translation/tiku_circuit_text.c \
+               $(K)/translation/tiku_circuit_sexpr.c \
+               $(K)/translation/tiku_circuit_kicad.c \
+               $(K)/translation/tiku_circuit_kicad_graphics.c \
+               $(K)/translation/tiku_circuit_kicad_symbols.c \
+               $(K)/translation/tiku_circuit_kicad_text.c \
+               $(K)/translation/tiku_circuit_kicad_instances.c \
+               $(K)/translation/tiku_circuit_kicad_sheets.c \
+               $(K)/translation/tiku_circuit_kicad_labels.c \
+               $(K)/translation/tiku_circuit_kicad_global.c \
+               $(K)/translation/tiku_circuit_project.c \
+               $(K)/translation/tiku_circuit_artwork.c \
+               $(K)/translation/tiku_circuit_stack.c \
+               $(K)/translation/tiku_circuit_stack_render.c \
+               $(K)/translation/tiku_circuit_clone.c \
+               $(K)/translation/tiku_circuit_contour.c \
                $(K)/translation/tiku_inflate_stream.c \
                $(K)/translation/tiku_deflate.c \
                $(K)/translation/tiku_png_write.c \
