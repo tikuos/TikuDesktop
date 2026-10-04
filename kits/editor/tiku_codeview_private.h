@@ -155,6 +155,8 @@ struct tiku_codeview {
                                        filled                           */
     tiku_rgb_t fills[TIKU_EDIT_MARKER_KINDS]; /* and their colours      */
     tiku_rgb_t exec_fill;           /* the execution line's fill        */
+    tiku_rgb_t caret_fill;          /* the caret line's fill, when set  */
+    int caret_fill_set;             /* 0: the theme's note colour       */
     int list_shown;                 /* a list of words is shown         */
     int list_inserts;               /* its keys and clicks insert       */
     char **list_items;              /* its words, in one allocation     */

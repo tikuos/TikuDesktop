@@ -234,6 +234,15 @@ tiku_codeview_set_execution_fill(tiku_codeview_t *view, tiku_rgb_t color)
 }
 
 void
+tiku_codeview_set_caret_line_fill(tiku_codeview_t *view, tiku_rgb_t color)
+{
+    if (view == NULL)
+        return;
+    view->caret_fill = color;
+    view->caret_fill_set = 1;
+}
+
+void
 tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
 {
     if (view == NULL)
@@ -245,7 +254,9 @@ tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
                                TIKU_CODEVIEW_BRACES |
                                TIKU_CODEVIEW_WRAP |
                                TIKU_CODEVIEW_ANNOTATIONS |
-                               TIKU_CODEVIEW_FOLDS);
+                               TIKU_CODEVIEW_FOLDS |
+                               TIKU_CODEVIEW_CARET_LINE |
+                               TIKU_CODEVIEW_BLOCK_CARET);
     view->held_bar = 0;
     view->arrow_bar = 0;
     tiku_cv_clamp(view);

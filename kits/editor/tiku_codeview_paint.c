@@ -302,15 +302,69 @@ restore_clip(tiku_surface_t *s, tiku_rect_t saved)
         tiku_clip_set(s, saved);
 }
 
-/** @brief A caret: a line the row's height at its x, kept inside the
- *         text when blanks a row ends with pass its width. */
+/** @brief The cell a block caret covers, found by a walk. */
+typedef struct {
+    tiku_edit_pos_t at;             /* the caret                        */
+    tiku_cv_cell_t cell;            /* the cell starting there          */
+    int found;
+} block_t;
+
+/** @brief Stop at the cell starting at the caret. */
+static int
+block_cell(void *ctx, const tiku_cv_cell_t *c)
+{
+    block_t *b = ctx;
+
+    if (c->pos < b->at)
+        return 0;
+    if (c->pos == b->at) {
+        b->cell = *c;
+        b->found = 1;
+    }
+    return 1;
+}
+
+/** @brief A block caret at surface @p x, @p y on row @p r: the cell after
+ *         @p caret filled with the text's ink and its character drawn
+ *         over it in the ground's, or a space's width where the row
+ *         ends. */
+static void
+paint_block(tiku_codeview_t *v, tiku_surface_t *s, const tiku_cv_row_t *r,
+            tiku_edit_pos_t caret, int x, int y)
+{
+    const tiku_font_t *f = tiku_cv_font(v);
+    tiku_rect_t box = { x, y, tiku_text_advance(f, ' '),
+                        tiku_codeview_row_height(v) };
+    char name[5];
+    block_t b;
+
+    memset(&b, 0, sizeof b);
+    b.at = caret;
+    if (caret < r->end)
+        (void)tiku_cv_walk_near(v, r->line, caret, INT64_MAX, block_cell,
+                                &b);
+    if (b.found)
+        box.w = b.cell.adv;
+    tiku_fill(s, box, TIKU_C_TEXT);
+    if (b.found && b.cell.kind == TIKU_CV_GLYPH) {
+        tiku_text(s, f, x, y + f->ascent, b.cell.bytes, TIKU_C_DOC);
+    } else if (b.found && b.cell.kind == TIKU_CV_CONTROL) {
+        (void)tiku_cv_control_name(b.cell.cp, name);
+        tiku_text(s, f, x + TIKU_CV_NAME_PAD, y + f->ascent, name,
+                  TIKU_C_DOC);
+    }
+}
+
+/** @brief A caret: a line the row's height at its x, or a block with
+ *         TIKU_CODEVIEW_BLOCK_CARET, kept inside the text when blanks a
+ *         row ends with pass its width. */
 static void
 paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows,
             tiku_edit_pos_t caret)
 {
     tiku_cv_row_t r;
     int64_t row, x;
-    int step = tiku_codeview_row_height(v);
+    int step = tiku_codeview_row_height(v), sx, sy;
 
     tiku_cv_row_of(v, caret, caret == v->upstream, &r);
     row = tiku_cv_shown_row(v, r.line, r.sub);
@@ -321,8 +375,12 @@ paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows,
         x = tiku_cv_text_w(v) - 1;
     if (x < 0 || x > tiku_cv_text_w(v))
         return;
-    tiku_vline(s, tiku_cv_text_x(v) + (int)x,
-               tiku_cv_text_y(v) + (int)row * step, step, TIKU_C_TEXT);
+    sx = tiku_cv_text_x(v) + (int)x;
+    sy = tiku_cv_text_y(v) + (int)row * step;
+    if (v->options & TIKU_CODEVIEW_BLOCK_CARET)
+        paint_block(v, s, &r, caret, sx, sy);
+    else
+        tiku_vline(s, sx, sy, step, TIKU_C_TEXT);
 }
 
 /** @brief The gutter: a shaded strip with a rule at its right edge, each
@@ -359,18 +417,33 @@ paint_gutter(tiku_codeview_t *v, tiku_surface_t *s, int width,
     }
 }
 
+/** @brief The line the caret line's fill goes on: the main caret's while
+ *         TIKU_CODEVIEW_CARET_LINE is shown and the view focused, else
+ *         -1. */
+static int64_t
+caret_line(tiku_codeview_t *v)
+{
+    tiku_edit_pos_t anchor, caret;
+
+    if (!(v->options & TIKU_CODEVIEW_CARET_LINE) || !v->focused ||
+        tiku_codeview_selection(v, &anchor, &caret) != TIKU_EDIT_OK)
+        return -1;
+    return tiku_editdoc_line_of(v->doc, caret);
+}
+
 /** @brief The rows of marked lines' text filled with their kinds'
- *         colours, the highest kind's on top, and the execution line's
- *         over them while it is current. */
+ *         colours, the highest kind's on top, the execution line's over
+ *         them while it is current, and the caret line's under both. */
 static void
 paint_fills(tiku_codeview_t *v, tiku_surface_t *s, tiku_rect_t area)
 {
-    int64_t line = v->top, sub = v->top_sub, exec;
+    int64_t line = v->top, sub = v->top_sub, exec, mine = caret_line(v);
     int y = tiku_cv_text_y(v), step = tiku_codeview_row_height(v);
+    tiku_rgb_t own = v->caret_fill_set ? v->caret_fill : TIKU_C_NOTE;
 
     if (tiku_editdoc_execution(v->doc, &exec) != TIKU_EDIT_OK)
         exec = -1;
-    if (v->fill_kinds == 0 && exec < 0)
+    if (v->fill_kinds == 0 && exec < 0 && mine < 0)
         return;
     for (; y < area.y + area.h; y += step) {
         uint32_t kinds = v->fill_kinds ?
@@ -386,6 +459,8 @@ paint_fills(tiku_codeview_t *v, tiku_surface_t *s, tiku_rect_t area)
             while (!(kinds & ((uint32_t)1 << kind)))
                 kind--;
             tiku_fill(s, row, v->fills[kind]);
+        } else if (text && line == mine) {
+            tiku_fill(s, row, own);
         }
         if (tiku_cv_rows_step(v, &line, &sub, 1) == 0)
             break;

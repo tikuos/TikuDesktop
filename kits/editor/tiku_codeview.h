@@ -105,6 +105,10 @@ tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 #define TIKU_CODEVIEW_ANNOTATIONS  0x40u /* the document's annotations,
                                             rows under their lines      */
 #define TIKU_CODEVIEW_FOLDS        0x80u /* a fold column in the gutter */
+#define TIKU_CODEVIEW_CARET_LINE   0x100u /* the main caret's line filled
+                                             while the view is focused  */
+#define TIKU_CODEVIEW_BLOCK_CARET  0x200u /* each caret a block over the
+                                             character after it         */
 
 /**
  * @brief How a language is edited: how a line is commented, what opens
@@ -520,6 +524,16 @@ void tiku_codeview_clear_marker_fill(tiku_codeview_t *view, unsigned kind);
  *         fills it light green. */
 void tiku_codeview_set_execution_fill(tiku_codeview_t *view,
                                       tiku_rgb_t color);
+/**
+ * @brief Fill the text rows of the main caret's line with @p color while
+ *        TIKU_CODEVIEW_CARET_LINE is shown and the view is focused.
+ *
+ * The fill is the lowest: a marker's fill and the execution line's cover
+ * it.  Until this is called the theme's note colour is used, read each
+ * time the view is painted.
+ */
+void tiku_codeview_set_caret_line_fill(tiku_codeview_t *view,
+                                       tiku_rgb_t color);
 
 /** @brief Words offered for a range of the text. */
 typedef struct {
