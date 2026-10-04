@@ -66,7 +66,8 @@ clip_text(void *ctx, size_t *length)
     return clip;
 }
 
-static const tiku_codeview_host_t host = { NULL, clip_set, clip_text, NULL };
+static const tiku_codeview_host_t host = { NULL, clip_set, clip_text, NULL,
+                                           NULL };
 
 /** @brief A view of a new document holding @p s; the view holds the only
  *         reference. */

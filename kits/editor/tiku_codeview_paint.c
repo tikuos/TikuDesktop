@@ -53,6 +53,8 @@ typedef struct {
     int under;                  /* an underline is being gathered       */
     int64_t under_x, under_end; /* the line x it runs from, and to      */
     tiku_rgb_t under_ink;       /* its colour                           */
+    tiku_edit_range_t hot;      /* the live hotspot under the pointer,
+                                   underlined; empty for none           */
 } row_t;
 
 _Static_assert(TIKU_CODEVIEW_BOLD == TIKU_FONT_BOLD &&
@@ -297,7 +299,9 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
     }
     if (c->x + c->adv <= r->left)
         return 0;
-    underline_cell(r, c, (style & TIKU_CODEVIEW_UNDERLINE) != 0, ink);
+    underline_cell(r, c, (style & TIKU_CODEVIEW_UNDERLINE) ||
+                         (c->pos >= r->hot.start && c->pos < r->hot.end),
+                   ink);
     if (c->kind == TIKU_CV_GLYPH) {
         gather(r, c, r->cuts[style & 3u], ink);
     } else {
@@ -635,6 +639,8 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
     r.invisibles = (view->options & TIKU_CODEVIEW_INVISIBLES) != 0;
     r.styles = view->ink_styles;
     cuts_of(r.font, r.cuts);
+    if (!tiku_cv_hot_shown(view, &r.hot))
+        r.hot.start = r.hot.end = 0;
     r.sels = tiku_cv_selections(view, &r.nsels, &main);
     text.x = r.x0;
     text.y = area.y;

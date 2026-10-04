@@ -161,6 +161,14 @@ struct tiku_codeview {
     tiku_rgb_t caret_fill;          /* the caret line's fill, when set  */
     int caret_fill_set;             /* 0: the theme's note colour       */
     unsigned ink_styles[TIKU_CV_INKS]; /* TIKU_CODEVIEW_BOLD ... by ink */
+    unsigned hot_keys;              /* the modifiers hotspots need      */
+    int hot_seen;                   /* the pointer has been seen        */
+    int hot_x, hot_y;               /* where, last                      */
+    unsigned hot_mods;              /* and the modifiers held then      */
+    int hot_shown;                  /* a live hotspot is under it       */
+    tiku_edit_range_t hot;          /* that hotspot                     */
+    int hot_pressed;                /* button 1 went down on one        */
+    tiku_edit_range_t hot_press;    /* that one                         */
     int list_shown;                 /* a list of words is shown         */
     int list_inserts;               /* its keys and clicks insert       */
     char **list_items;              /* its words, in one allocation     */
@@ -520,6 +528,17 @@ void tiku_cv_folds_paint(tiku_codeview_t *v, tiku_surface_t *s, int64_t line,
 void tiku_cv_fold_mark(tiku_codeview_t *v, tiku_surface_t *s, int x, int y);
 /* A press of @p e in the fold column: 1 when it was there. */
 int tiku_cv_folds_press(tiku_codeview_t *v, const tiku_event_t *e);
+
+/* Hotspots (tiku_codeview_hotspots.c): an event they take, the pointer's
+ * moves and the modifier keys followed on the way; forgetting the one
+ * shown after a change; and the one shown, for painting. */
+int tiku_cv_hot_event(tiku_codeview_t *v, const tiku_event_t *e);
+void tiku_cv_hot_forget(tiku_codeview_t *v);
+/* Find the hotspot under the pointer again after event @p e: where it was
+ * last seen when the wheel moved the text under it, and where a drag let
+ * go. */
+void tiku_cv_hot_after(tiku_codeview_t *v, const tiku_event_t *e);
+int tiku_cv_hot_shown(const tiku_codeview_t *v, tiku_edit_range_t *range);
 
 /* Lists and tips (tiku_codeview_assist.c): an event they take, the check
  * after any event that a tip still belongs with the caret, painting them

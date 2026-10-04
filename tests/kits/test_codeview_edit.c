@@ -71,7 +71,7 @@ invalidate(void *ctx, tiku_codeview_t *view)
 }
 
 static const tiku_codeview_host_t host = { NULL, clip_set, clip_text,
-                                           invalidate };
+                                           invalidate, NULL };
 
 /** @brief A view of a new document holding @p s, with the test's host. */
 static tiku_codeview_t *

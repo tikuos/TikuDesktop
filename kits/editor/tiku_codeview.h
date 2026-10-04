@@ -52,6 +52,10 @@ typedef struct {
     /** @brief The document changed and the view should be painted again.
      *         Called while the document refuses changes. */
     void (*invalidate)(void *ctx, tiku_codeview_t *view);
+    /** @brief Button 1 went down and came up on the live hotspot
+     *         @p range with @p modifiers held. */
+    void (*hotspot)(void *ctx, tiku_codeview_t *view,
+                    tiku_edit_range_t range, unsigned modifiers);
 } tiku_codeview_host_t;
 
 /** @brief A view of @p doc, with its own selection, an empty caret at 0.
@@ -115,6 +119,7 @@ tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 #define TIKU_CODEVIEW_BOLD      0x1u  /* in the face's bold cut           */
 #define TIKU_CODEVIEW_ITALIC    0x2u  /* in its italic cut                */
 #define TIKU_CODEVIEW_UNDERLINE 0x4u  /* with a line under it             */
+#define TIKU_CODEVIEW_HOTSPOT   0x8u  /* a hotspot: see below             */
 
 /**
  * @brief Draw text the colouring gives @p ink with @p style, the flags
@@ -132,6 +137,25 @@ tiku_edit_status_t tiku_codeview_set_ink_style(tiku_codeview_t *view,
 /** @brief The style @p ink is drawn with, 0 for an ink that is not one. */
 unsigned tiku_codeview_ink_style(const tiku_codeview_t *view,
                                  tiku_ink_t ink);
+
+/**
+ * @brief Make hotspots live only while exactly @p modifiers are held, Caps
+ *        Lock aside; a new view needs none.
+ *
+ * A hotspot is a run of one ink whose style has TIKU_CODEVIEW_HOTSPOT,
+ * within a line.  While the pointer is over a live one it is underlined;
+ * a press on it is its own, the selection staying, and a release over the
+ * same hotspot calls the host's hotspot().  The pointer and these keys
+ * are followed through the view's events; a change to the document, a
+ * style set or deactivation ends the hotspot shown and a press on one.
+ */
+void tiku_codeview_set_hotspot_keys(tiku_codeview_t *view,
+                                    unsigned modifiers);
+/** @brief Whether a live hotspot is under the pointer, with its range in
+ *         @p range, which may be NULL; an application shows the pointer
+ *         as a hand while there is one. */
+int tiku_codeview_hotspot(const tiku_codeview_t *view,
+                          tiku_edit_range_t *range);
 
 /**
  * @brief How a language is edited: how a line is commented, what opens

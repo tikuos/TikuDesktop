@@ -89,7 +89,7 @@ tiku_ide_text_new(edit_t *e)
 {
     tiku_editdoc_limits_t limits = { INT_MAX - 1u,
                                      TIKU_EDITDOC_HISTORY_DEFAULT };
-    tiku_codeview_host_t host = { e, clip_set, clip_text, NULL };
+    tiku_codeview_host_t host = { e, clip_set, clip_text, NULL, NULL };
     tiku_editdoc_t *doc = NULL;
 
     if (e->view != NULL) {

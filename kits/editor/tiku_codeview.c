@@ -19,7 +19,8 @@
  *         above it, or on the change when the change covers it, carry
  *         the line widths, rows, colouring states and checkpoints across
  *         it, and ask the host to paint again.  A change ends a drag, a
- *         held thumb and the x vertical moves were keeping. */
+ *         held thumb, the x vertical moves were keeping and the hotspot
+ *         shown under the pointer. */
 static void
 heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
 {
@@ -31,6 +32,7 @@ heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
     v->upstream = -1;
     v->dragging = 0;
     v->held_bar = 0;
+    tiku_cv_hot_forget(v);
     if (change->count == 0)
         return;
     if (change->cause == TIKU_EDIT_LOADED) {
@@ -247,12 +249,13 @@ tiku_codeview_set_ink_style(tiku_codeview_t *view, tiku_ink_t ink,
                             unsigned style)
 {
     const unsigned known = TIKU_CODEVIEW_BOLD | TIKU_CODEVIEW_ITALIC |
-                           TIKU_CODEVIEW_UNDERLINE;
+                           TIKU_CODEVIEW_UNDERLINE | TIKU_CODEVIEW_HOTSPOT;
 
     if (view == NULL || (unsigned)ink >= TIKU_CV_INKS ||
         (style & ~known) != 0)
         return TIKU_EDIT_INVALID;
     view->ink_styles[ink] = style;
+    tiku_cv_hot_forget(view);
     return TIKU_EDIT_OK;
 }
 

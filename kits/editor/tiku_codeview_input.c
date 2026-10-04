@@ -833,7 +833,9 @@ tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e)
         return 0;
     view->status = TIKU_EDIT_OK;
     commit = tiku_text_input_event(&view->input, e);
-    taken = tiku_cv_assist_event(view, e) || dispatch(view, e, commit);
+    taken = tiku_cv_assist_event(view, e) || tiku_cv_hot_event(view, e) ||
+            dispatch(view, e, commit);
     tiku_cv_assist_follow(view);
+    tiku_cv_hot_after(view, e);
     return taken;
 }
