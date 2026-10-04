@@ -259,6 +259,7 @@ test_codeview_folds_LIBS := $(LIB_EDITOR)
 test_codeview_carets_LIBS := $(LIB_EDITOR)
 test_codeview_caretlook_LIBS := $(LIB_EDITOR)
 test_codeview_inkstyles_LIBS := $(LIB_EDITOR)
+test_codeview_hotspots_LIBS := $(LIB_EDITOR)
 test_codeview_host_LDLIBS := $(X11_LIBS) -lm
 test_codeview_speed_LIBS := $(LIB_EDITOR)
 test_codeview_speed_LDLIBS := $(X11_LIBS) -lm
