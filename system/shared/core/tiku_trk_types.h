@@ -20,7 +20,7 @@
 #include "tiku_model.h"
 #include "tiku_trk_view_defs.h"
 
-#define TIKU_TRK_TYPES_MAX       24
+#define TIKU_TRK_TYPES_MAX       40
 #define TIKU_TRK_TYPE_COLS_MAX    6
 #define TIKU_TRK_TYPE_DESC_MAX   48
 
