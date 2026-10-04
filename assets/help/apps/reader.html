@@ -22,11 +22,33 @@ directories and heading anchors. Web links and file URLs are not opened.</p>
 <p>Find or Ctrl+F opens a search bar below the document. Escape or its close
 button hides the bar. Enter and Shift+Enter move between
 matches; Ctrl+G and Ctrl+Shift+G do the same. Search folder scans the current
-document's folder and subfolders when explicitly requested.</p>
+document's folder and subfolders when explicitly requested. It runs in the
+background, so you can keep reading. Results appear as each group of documents
+finishes; the status line reports progress. Choose <b>Edit &gt; Stop Search</b>
+to cancel, or click Stop Search in the Find bar. Choosing <b>Edit &gt; Search
+folder</b> during a search starts a new one for the words in the Find bar.
+Completed results remain available through <b>View &gt; Search Results</b>,
+including after you open a result or switch to Outline. An incomplete search
+is identified in the status line rather than reported as a complete set of
+results.</p>
 <p>View &gt; Outline follows headings. View &gt; Bookmarks remembers local
 filenames and reading positions across launches; Ctrl+D toggles a bookmark.
+Changes from separate Reader windows are combined. If another window is
+saving bookmarks at that moment, nothing changes and the status line asks
+you to try again. If bookmarks cannot be saved, for example because the
+settings folder is read-only, changes are kept in that window until it
+closes, and the status line says so.
 Select text and use Ctrl+C, or choose Edit &gt; Copy code for an example
 without running it. The Edit menu also provides Copy link and Search folder.</p>
+<h2 id="text">Text size and reading width</h2>
+<p>Choose <b>View &gt; Larger Text</b> or <b>Smaller Text</b> (Ctrl+Plus and
+Ctrl+Minus) to change this window's document text. The available sizes are
+10, 12, 14 and 16 pixels. <b>Default Text Size</b> (Ctrl+0) follows the desktop
+font setting again. Toolbar text and other applications are unchanged.</p>
+<p><b>View &gt; Comfortable Reading Width</b> centres a column no wider than
+720 pixels in a wide window. Choose it again to use the full width. Text size
+and reading width apply to this Reader window and are not saved across
+launches.</p>
 <h2 id="reload">Changes on disk</h2>
 <p>Reload or Ctrl+R reads the latest saved version without adding a history
 entry. If the file is missing or unreadable, the current display is kept.</p>
@@ -37,8 +59,17 @@ stylesheets and network requests are not executed. Images are allowed only
 inside the displayed document's directory or its subdirectories.</p>
 <p>Files up to 8 MiB are read completely, using document-sized memory buffers.
 Larger, binary or over-budget files are refused and the current page is kept.
-Renderer tables have a 64 MiB budget per document; unusually complex or narrow
-layouts can still display a capacity notice. Folder search examines at most
-128 documents, four directory levels and 32 MiB of source text.
+Renderer tables grow when you narrow the window or enlarge the text, within
+a 64 MiB budget per document. A capacity notice appears when the layout needs
+more than that budget or than memory allows, or when a document nests
+elements more than 16 levels deep. Folder search examines at most
+128 documents, four directory levels, 8,192 directory entries and 32 MiB of
+source text.
 Bookmarks are limited to 32 and are separate from Help bookmarks.</p>
+<p>Images are decoded when they are first drawn. The reader keeps at most
+16 MiB of decoded pixels and decodes an older image again when you scroll
+back to it. A page's image records have a separate 1 MiB budget. Each image
+must be at most 4 MiB on disk, no wider or taller than 2,048 pixels, and no
+larger than 1,048,576 pixels in total. Reload the document to retry an image
+that was missing or could not be decoded.</p>
 <p><a href="markdown.md">Markdown support</a> · <a href="index.html">Help contents</a></p>

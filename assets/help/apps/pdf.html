@@ -36,6 +36,15 @@ far down it, the zoom and the turn &#8212; and opens it there again.
 <b>Clear Menu</b> forgets them and their places. They
 are kept in TikuPDFRecent in your settings folder (~/.config), never in
 the documents.</p>
+<p>Use <b>Bookmarks &gt; Bookmark This Page</b> or <b>Ctrl+D</b> to save a page
+explicitly. The Bookmarks menu lists saved pages for the current PDF. Selecting
+one restores its position, zoom and rotation. Use the same command on a
+bookmarked page to remove it. Up to 24 bookmarks are kept across documents in
+TikuPDFBookmarks in your settings folder; edits from separate viewer windows are
+combined. If another window is saving bookmarks at that moment, nothing
+changes and the status line asks you to try again. If bookmarks cannot be
+saved, changes are kept in that window until it closes, and the status line
+says so. These bookmarks do not modify the PDF or its outline.</p>
 <h2 id="view">Reading</h2>
 <ul>
 <li>Pages follow one another; scroll with the mouse wheel, the arrow keys,
@@ -56,6 +65,9 @@ Selecting, finding and links work on the turned pages as on upright
 ones.</li>
 <li>Pages are drawn as you reach them; a page not drawn yet is white, and
 after a zoom the old drawing stands in until the new one is ready.</li>
+<li>If a page could not be rendered, choose <b>View &gt; Retry Failed Pages</b>.
+Failed pages are retried as they come into view, without closing the document
+or losing your place.</li>
 </ul>
 <h2 id="outline">Outline, pages and links</h2>
 <p><b>Outline</b> shows the document's own table of contents beside the
