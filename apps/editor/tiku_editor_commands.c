@@ -214,7 +214,7 @@ void tiku_editor_publish(edit_state_t *st)
         {"Undo", "Redo", "Cut", "Copy", "Paste", "Select All"},
         {"Find…", "Find Next", "Find Previous", "Replace…", "Go to Line…", "Replace All"},
         {"Line Numbers", "Colour as BASIC", "Run", "Show Invisibles",
-         "Wrap Lines", "Split Pane"},
+         "Wrap Lines", "Split Pane", "Highlight Caret Line", "Block Caret"},
         {"Indent Lines", "Unindent Lines", "Toggle Comment", "Duplicate Lines",
          "Move Lines Up", "Move Lines Down", "Delete Lines",
          "Go to Matching Bracket", "Select to Matching Bracket", "Fold",
@@ -224,13 +224,13 @@ void tiku_editor_publish(edit_state_t *st)
         {CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE, CMD_ALL},
         {CMD_FIND, CMD_NEXT, CMD_PREV, CMD_REPLACE, CMD_GOTO, CMD_REPLACE_ALL},
         {CMD_NUMBERS, CMD_SYNTAX, CMD_RUN, CMD_INVISIBLES, CMD_WRAP,
-         CMD_SPLIT},
+         CMD_SPLIT, CMD_CARET_LINE, CMD_BLOCK_CARET},
         {CMD_INDENT, CMD_UNINDENT, CMD_COMMENT, CMD_DUPLICATE, CMD_LINES_UP,
          CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET,
          CMD_FOLD, CMD_UNFOLD, CMD_FOLD_ALL, CMD_UNFOLD_ALL, CMD_LINE_ENDS}};
-    const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r   ",
+    const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r     ",
                           "  /d  kmm[]  l"};
-    const int counts[] = {6, 6, 6, 6, 14};
+    const int counts[] = {6, 6, 6, 8, 14};
     tiku_edit_pos_t anchor = 0, caret = 0;
     (void)tiku_codeview_selection(st->view, &anchor, &caret);
     int selected = anchor != caret;
@@ -266,6 +266,8 @@ void tiku_editor_publish(edit_state_t *st)
                 cmd == CMD_SYNTAX ? st->lang == TIKU_SYNTAX_BASIC :
                 cmd == CMD_INVISIBLES ? st->show_invisibles :
                 cmd == CMD_WRAP ? st->wrap :
+                cmd == CMD_CARET_LINE ? st->caret_line :
+                cmd == CMD_BLOCK_CARET ? st->block_caret :
                 cmd == CMD_SPLIT ? st->panes[1] != NULL : 0;
         }
     }
@@ -335,6 +337,8 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
     case CMD_NUMBERS: st->numbers = !st->numbers; break;
     case CMD_INVISIBLES: st->show_invisibles = !st->show_invisibles; break;
     case CMD_WRAP: st->wrap = !st->wrap; break;
+    case CMD_CARET_LINE: st->caret_line = !st->caret_line; break;
+    case CMD_BLOCK_CARET: st->block_caret = !st->block_caret; break;
     case CMD_SPLIT:
         if (tiku_editor_split(st))
             snprintf(st->note, sizeof st->note, "Not enough memory to split the page.");

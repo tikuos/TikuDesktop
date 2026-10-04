@@ -817,7 +817,7 @@ static void wrap_lines(edit_state_t *st)
     text[2000] = 0;
     assert(set_text(st, text));
     tiku_editor_publish(st); tiku_editor_paint(st);
-    assert(view->nitem == 6 && view->item[4].command == CMD_WRAP &&
+    assert(view->nitem == 8 && view->item[4].command == CMD_WRAP &&
            !strcmp(view->item[4].label, "Wrap Lines") &&
            view->item[4].enabled && !view->item[4].marked);
     assert(tiku_scroll_max(&st->horizontal) > 0);
@@ -1031,6 +1031,52 @@ static void carets(edit_state_t *st)
     assert(set_text(st, ""));
 }
 
+/** View > Highlight Caret Line and Block Caret, off by default, reach
+ *  each pane, and the caret's line is filled on the window. */
+static void caret_looks(edit_state_t *st)
+{
+    const tiku_menu_list_t *view = &st->last_menus.menu[3];
+    const unsigned both = TIKU_CODEVIEW_CARET_LINE | TIKU_CODEVIEW_BLOCK_CARET;
+    tiku_rect_t box = tiku_editor_view_box(st);
+    int64_t x, y;
+    assert(set_text(st, "one\ntwo\nthree"));
+    tiku_editor_publish(st); tiku_editor_paint(st);
+    assert(view->nitem == 8 && view->item[6].command == CMD_CARET_LINE &&
+           !strcmp(view->item[6].label, "Highlight Caret Line") &&
+           view->item[6].enabled && !view->item[6].marked &&
+           view->item[7].command == CMD_BLOCK_CARET &&
+           !strcmp(view->item[7].label, "Block Caret") &&
+           view->item[7].enabled && !view->item[7].marked);
+    assert(!(tiku_codeview_options(st->view) & both));
+    place(st, 1, 1);
+    tiku_editor_pick(st, st->id, CMD_CARET_LINE);
+    assert(view->item[6].marked && !view->item[7].marked &&
+           (tiku_codeview_options(st->view) & both) ==
+           TIKU_CODEVIEW_CARET_LINE);
+    assert(tiku_codeview_point(st->view, 5, &x, &y) == TIKU_EDIT_OK);
+    assert((tiku_peek(st->surface, box.x + box.w - 20, (int)y + 2) &
+            0xffffffu) == (TIKU_C_NOTE & 0xffffffu));
+    assert((tiku_peek(st->surface, box.x + box.w - 20, (int)y - 4) &
+            0xffffffu) == (TIKU_C_DOC & 0xffffffu));
+    tiku_editor_pick(st, st->id, CMD_BLOCK_CARET);
+    assert(view->item[7].marked &&
+           (tiku_codeview_options(st->view) & both) == both);
+    assert((tiku_peek(st->surface, (int)x + 1, (int)y + 1) & 0xffffffu) ==
+           (TIKU_C_TEXT & 0xffffffu));
+    tiku_editor_pick(st, st->id, CMD_SPLIT);
+    assert(st->panes[1] &&
+           (tiku_codeview_options(st->panes[0]) & both) == both &&
+           (tiku_codeview_options(st->panes[1]) & both) == both);
+    tiku_editor_pick(st, st->id, CMD_CARET_LINE);
+    tiku_editor_pick(st, st->id, CMD_BLOCK_CARET);
+    assert(!view->item[6].marked && !view->item[7].marked &&
+           !(tiku_codeview_options(st->panes[0]) & both) &&
+           !(tiku_codeview_options(st->panes[1]) & both));
+    tiku_editor_pick(st, st->id, CMD_SPLIT);
+    assert(!st->panes[1]);
+    assert(set_text(st, ""));
+}
+
 /** The Text menu's Fold and Unfold fold the region the caret is in and
  *  unfold its line, by menu and by Cmd+Shift+[ and ]; Fold All and Unfold
  *  All take every region; a press on the fold column's box folds. */
@@ -1110,6 +1156,7 @@ int main(void)
     text_menu(st);
     wrap_lines(st);
     split_panes(st);
+    caret_looks(st);
     folds(st);
     carets(st);
     undo_roundtrips(st);

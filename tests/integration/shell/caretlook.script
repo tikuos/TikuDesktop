@@ -1,0 +1,72 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# View > Highlight Caret Line and View > Block Caret, end to end.  A click
+# puts the caret in the second line; with Highlight Caret Line the blank
+# part of that row turns the theme's note colour while the first row
+# stays white, and with Block Caret the character after the caret sits on
+# a block of text ink.  Each pixel is asserted before the item is taken
+# too, so what is proven is the change.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 40
+expect-title Open
+click 400 200
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Edit
+wait 25
+click 282 172 1
+wait 10
+shot /tmp/tiku-editor-looks-off.png
+note the second row's blank and the character after the caret, plain
+expect-pixel 400 172 ffffff
+expect-pixel 286 162 ffffff
+click 212 8
+wait 6
+expect-menu Highlight Caret Line
+menu-pick Highlight Caret Line
+wait 25
+shot /tmp/tiku-editor-looks-line.png
+note the caret's row is filled and the first row is not
+expect-pixel 400 172 ffffc8
+expect-pixel 400 153 ffffff
+expect-pixel 286 162 ffffc8
+click 212 8
+wait 6
+expect-menu Block Caret
+menu-pick Block Caret
+wait 25
+shot /tmp/tiku-editor-looks-block.png
+note the character after the caret stands on a block
+expect-pixel 286 162 000000
+click 212 8
+wait 6
+menu-pick Highlight Caret Line
+wait 6
+click 212 8
+wait 6
+menu-pick Block Caret
+wait 25
+shot /tmp/tiku-editor-looks-again.png
+note both taken off, the row and the character are plain again
+expect-pixel 400 172 ffffff
+expect-pixel 286 162 ffffff
+note put the editor away rather than leave it standing
+click-window Edit
+wait 6
+key Escape
+wait 30
+expect-no-title Edit
+quit

@@ -50,7 +50,8 @@ enum { CMD_NEW = 8, CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE,
        CMD_UNINDENT, CMD_COMMENT, CMD_DUPLICATE, CMD_LINES_UP,
        CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET,
        CMD_WORD_BACK, CMD_WORD_ON, CMD_WRAP, CMD_SPLIT, CMD_FOLD,
-       CMD_UNFOLD, CMD_FOLD_ALL, CMD_UNFOLD_ALL, CMD_LINE_ENDS };
+       CMD_UNFOLD, CMD_FOLD_ALL, CMD_UNFOLD_ALL, CMD_LINE_ENDS,
+       CMD_CARET_LINE, CMD_BLOCK_CARET };
 
 typedef struct {
     const tiku_app_services_t *services;
@@ -130,6 +131,7 @@ typedef struct {
     uint32_t search_id;
     tiku_surface_t *search_surface;
     int search_active, hover_tool, pressed_tool, show_invisibles, wrap;
+    int caret_line, block_caret;
     int match_case, whole_word;
     char last_note[128];
     int64_t note_until;
