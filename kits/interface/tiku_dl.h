@@ -34,16 +34,19 @@
 /**
  * @brief Which face a piece of text is in; the far end resolves it.
  *
- * Four names, and then the ladder: any value past these is a PLAIN face
+ * Six names, and then the ladder: any value past these is a PLAIN face
  * at that many pixels, which works because the smallest face is ten.  So
  * a status line set at eleven arrives at eleven rather than in whatever
- * the body size happens to be.
+ * the body size happens to be.  A player that knows only the first four
+ * draws the two italic names as the plain face at the smallest size.
  */
 typedef enum {
     TIKU_DL_PLAIN = 0,
     TIKU_DL_BOLD  = 1,
     TIKU_DL_MONO  = 2,
-    TIKU_DL_MONO_BOLD = 3
+    TIKU_DL_MONO_BOLD = 3,
+    TIKU_DL_MONO_ITALIC = 4,
+    TIKU_DL_MONO_BOLD_ITALIC = 5
 } tiku_dl_face_t;
 
 typedef struct tiku_dl tiku_dl_t;

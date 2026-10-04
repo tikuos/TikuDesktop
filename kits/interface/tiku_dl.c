@@ -849,9 +849,14 @@ face_of(unsigned char id)
     case TIKU_DL_BOLD:      return tiku_font_bold();
     case TIKU_DL_MONO:      return tiku_font_mono(0);
     case TIKU_DL_MONO_BOLD: return tiku_font_mono(1);
+    case TIKU_DL_MONO_ITALIC:
+        return tiku_font_styled(tiku_font_mono(0), TIKU_FONT_ITALIC);
+    case TIKU_DL_MONO_BOLD_ITALIC:
+        return tiku_font_styled(tiku_font_mono(0),
+                                TIKU_FONT_BOLD | TIKU_FONT_ITALIC);
     case TIKU_DL_PLAIN:     return tiku_font_plain();
     default:
-        /* Past the four, the byte IS the size: the ladder starts at ten,
+        /* Past the six, the byte IS the size: the ladder starts at ten,
          * so the two meanings cannot be confused. */
         return tiku_font_at((int)id);
     }

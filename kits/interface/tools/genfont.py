@@ -53,6 +53,24 @@ MONO_BOLD = [
     "/usr/share/fonts/google-noto/NotoSansMono-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
 ]
+# The slanted cuts of the same families, in the same order: the one baked
+# is the one whose regular cut MONO found, so the letters of a run in
+# italic are the same design as the letters around it.  Noto Sans Mono
+# has no italic, and None says so.
+MONO_ITALIC = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Oblique.ttf",
+    "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono-Oblique.ttf",
+    "/usr/share/fonts/adwaita-mono-fonts/AdwaitaMono-Italic.ttf",
+    None,
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Italic.ttf",
+]
+MONO_BOLD_ITALIC = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-BoldOblique.ttf",
+    "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono-BoldOblique.ttf",
+    "/usr/share/fonts/adwaita-mono-fonts/AdwaitaMono-BoldItalic.ttf",
+    None,
+    "/usr/share/fonts/truetype/liberation/LiberationMono-BoldItalic.ttf",
+]
 # The other interface families the picker offers.  Both were chosen for
 # their metrics: at 10/12/14/16 px each sits within a pixel of DejaVu Sans,
 # so the layout computed against the reference face survives the switch.
@@ -119,6 +137,17 @@ def pick(paths):
     for p in paths:
         if os.path.exists(p):
             return p
+    raise SystemExit("genfont: no candidate font found")
+
+
+def pick_cut(regular, cut):
+    """The entry of @p cut beside the first of @p regular that exists."""
+    import os
+    for i, p in enumerate(regular):
+        if os.path.exists(p):
+            if cut[i] is None or not os.path.exists(cut[i]):
+                raise SystemExit("genfont: no such cut of %s" % p)
+            return cut[i]
     raise SystemExit("genfont: no candidate font found")
 
 
@@ -232,6 +261,14 @@ def main():
         render(pick(MONO_BOLD), "monobold%d" % px, out, size=px,
                last=mono_last,
                forced_adv=[cell // 2] * (mono_last - FIRST + 1))
+        # On the same grid: a style changes how a letter is drawn, never
+        # where it stands.
+        render(pick_cut(MONO, MONO_ITALIC), "monoitalic%d" % px, out,
+               size=px, last=mono_last,
+               forced_adv=[cell // 2] * (mono_last - FIRST + 1))
+        render(pick_cut(MONO, MONO_BOLD_ITALIC), "monobolditalic%d" % px,
+               out, size=px, last=mono_last,
+               forced_adv=[cell // 2] * (mono_last - FIRST + 1))
     out.write("/* The fixed-advance faces, smallest first. */\n")
     out.write("static const int mono_sizes[] = { %s };\n"
               % ", ".join(str(px) for px in MONO_SIZES))
@@ -241,6 +278,13 @@ def main():
     out.write("static const tiku_font_t *const monobold_faces[] = {\n"
               "    %s\n};\n"
               % ", ".join("&monobold%d_font" % px for px in MONO_SIZES))
+    out.write("static const tiku_font_t *const monoitalic_faces[] = {\n"
+              "    %s\n};\n"
+              % ", ".join("&monoitalic%d_font" % px for px in MONO_SIZES))
+    out.write("static const tiku_font_t *const monobolditalic_faces[] = {\n"
+              "    %s\n};\n"
+              % ", ".join("&monobolditalic%d_font" % px
+                          for px in MONO_SIZES))
 
     out.write("/* Every size, smallest first, for the runtime picker. */\n")
     out.write("static const int face_sizes[] = { %s };\n"

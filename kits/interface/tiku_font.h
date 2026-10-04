@@ -153,6 +153,20 @@ const tiku_font_t *tiku_font_mono(int bold);
 /** @brief The advance every glyph of the mono face has. */
 int tiku_font_mono_cell(int bold);
 
+/* The cuts tiku_font_styled() is asked for. */
+#define TIKU_FONT_BOLD   0x1u
+#define TIKU_FONT_ITALIC 0x2u
+
+/**
+ * @brief The cut of @p f's family and size in @p style, or NULL when the
+ *        toolkit has none.
+ *
+ * Every baked face and the pair in force have a bold cut; only the mono
+ * faces have italic ones, on the same advance as their upright cut.
+ * @p style 0 is the upright regular cut.
+ */
+const tiku_font_t *tiku_font_styled(const tiku_font_t *f, unsigned style);
+
 /** @brief Pixel width of @p text. */
 int tiku_text_width(const tiku_font_t *f, const char *text);
 
