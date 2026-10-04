@@ -47,6 +47,22 @@ typedef struct {
 } tiku_edit_query_t;
 
 /**
+ * @brief The matches lying wholly inside @p scope, in order: at most
+ *        @p capacity of them in @p matches, how many in @p count, and
+ *        @p truncated set when there are more.
+ *
+ * Matches are found as tiku_edit_find() finds them, in one pass, and the
+ * document and its selections are left as they are.  After an error
+ * @p count is 0 and what @p matches holds is not to be read.
+ */
+tiku_edit_status_t tiku_edit_collect(tiku_editdoc_t *doc,
+                                     const tiku_edit_query_t *query,
+                                     tiku_edit_range_t scope,
+                                     tiku_edit_range_t *matches,
+                                     size_t capacity, size_t *count,
+                                     int *truncated);
+
+/**
  * @brief The first match starting at or after @p from, or with
  *        @p backward the last one starting before it.
  *

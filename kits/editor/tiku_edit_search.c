@@ -149,6 +149,71 @@ scan_line(tiku_editdoc_t *doc, const tiku_edit_query_t *q, int64_t line,
     return s.stopped;
 }
 
+/** @brief Matches gathered inside a range, up to a capacity. */
+typedef struct {
+    tiku_edit_range_t scope;    /* the range they lie in                */
+    tiku_edit_range_t *matches; /* where they go                        */
+    size_t capacity;            /* room there                           */
+    size_t count;               /* how many went                        */
+    int truncated;              /* there were more                      */
+} collect_t;
+
+/** @brief Keep a match that lies inside the scope; stop when there is no
+ *         room for it. */
+static int
+collect_match(void *ctx, tiku_edit_range_t match)
+{
+    collect_t *c = ctx;
+
+    if (match.start < c->scope.start || match.end > c->scope.end)
+        return 0;
+    if (c->count == c->capacity) {
+        c->truncated = 1;
+        return 1;
+    }
+    c->matches[c->count++] = match;
+    return 0;
+}
+
+tiku_edit_status_t
+tiku_edit_collect(tiku_editdoc_t *doc, const tiku_edit_query_t *q,
+                  tiku_edit_range_t scope, tiku_edit_range_t *matches,
+                  size_t capacity, size_t *count, int *truncated)
+{
+    tiku_edit_status_t st;
+    int64_t line, last;
+    collect_t c;
+
+    if (count != NULL)
+        *count = 0;
+    if (truncated != NULL)
+        *truncated = 0;
+    if (count == NULL || truncated == NULL ||
+        (capacity > 0 && matches == NULL))
+        return TIKU_EDIT_INVALID;
+    st = query_ok(doc, q);
+    if (st != TIKU_EDIT_OK)
+        return st;
+    if (scope.start > scope.end ||
+        !tiku_editdoc_is_boundary(doc, scope.start) ||
+        !tiku_editdoc_is_boundary(doc, scope.end))
+        return TIKU_EDIT_INVALID_RANGE;
+    if (q->flags & TIKU_EDIT_REGEX)
+        return tiku_ed_regex_collect(doc, q, scope, matches, capacity,
+                                     count, truncated);
+    memset(&c, 0, sizeof c);
+    c.scope = scope;
+    c.matches = matches;
+    c.capacity = capacity;
+    last = tiku_editdoc_line_of(doc, scope.end);
+    for (line = tiku_editdoc_line_of(doc, scope.start);
+         line <= last && !c.truncated; line++)
+        (void)scan_line(doc, q, line, collect_match, &c);
+    *count = c.count;
+    *truncated = c.truncated;
+    return TIKU_EDIT_OK;
+}
+
 /** @brief A search for one match before or after a position. */
 typedef struct {
     tiku_edit_pos_t limit;      /* at or after it, or before it         */

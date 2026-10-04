@@ -625,6 +625,26 @@ tiku_edit_status_t tiku_codeview_move_lines(tiku_codeview_t *view,
  *         or the last lines with the break before them; the caret goes
  *         to where they began. */
 tiku_edit_status_t tiku_codeview_delete_lines(tiku_codeview_t *view);
+/** @brief A change tiku_codeview_transform() makes. */
+typedef enum {
+    TIKU_CODEVIEW_TRIM_TRAILING,    /* blanks at lines' ends taken out  */
+    TIKU_CODEVIEW_INDENT_TO_SPACES, /* indentation made of spaces       */
+    TIKU_CODEVIEW_INDENT_TO_TABS,   /* and of tabs, then spaces         */
+    TIKU_CODEVIEW_UPPER_ASCII,      /* ASCII letters to upper case      */
+    TIKU_CODEVIEW_LOWER_ASCII,      /* and to lower case                */
+    TIKU_CODEVIEW_SORT_LINES        /* lines in the order of their bytes */
+} tiku_codeview_transform_t;
+/**
+ * @brief Make @p operation's change as one undo step.
+ *
+ * A change of case acts on the main selection, and is TIKU_EDIT_NOTHING
+ * when it is empty; the others act on the whole lines it touches, one it
+ * ends at the start of left out, or on the whole document when it is
+ * empty.  Lines sort stably, by their bytes.  The line breaks stay as
+ * they are, and TIKU_EDIT_NOTHING is returned when nothing would change.
+ */
+tiku_edit_status_t tiku_codeview_transform(tiku_codeview_t *view,
+                                           tiku_codeview_transform_t operation);
 /** @brief Delete the selection, or else back to where a word move left
  *         would go, or with @p forward on to where a word move right
  *         would, at every selection, as one undo step. */

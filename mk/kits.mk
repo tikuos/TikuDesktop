@@ -232,6 +232,7 @@ EDITOR      := $(K)/editor/tiku_editdoc.c $(K)/editor/tiku_editdoc_alloc.c \
                $(K)/editor/tiku_codeview_assist.c \
                $(K)/editor/tiku_codeview_completion.c \
                $(K)/editor/tiku_codeview_lines.c \
+               $(K)/editor/tiku_codeview_transform.c \
                $(K)/editor/tiku_codeview_brace.c \
                $(K)/editor/tiku_codeview_rows.c \
                $(K)/editor/tiku_codeview_notes.c \
