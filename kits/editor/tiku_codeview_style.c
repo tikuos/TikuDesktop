@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_codeview_style.c - colouring through tiku_syntax.  A line of C is
+ * tiku_codeview_style.c - colouring through tiku_syntax or the
+ * application's lexer.  A line of C, or of a lexer that carries state, is
  * read from the state the lines above it leave, so each line's starting
  * state is kept; a change makes the states below it unknown, and reading
  * resumes from the first unknown line and stops once a line past the
@@ -30,6 +31,8 @@ tiku_codeview_set_language(tiku_codeview_t *view, tiku_syntax_lang_t lang)
     if (view->lang != lang) {
         tiku_cv_hot_forget(view);
         view->lang = lang;
+        if (view->fold_levels != NULL)
+            (void)tiku_codeview_set_fold_levels(view, NULL, 0, 0);
         tiku_cv_style_reset(view);
     }
 }
@@ -48,7 +51,9 @@ tiku_cv_style_reset(tiku_codeview_t *v)
     v->sty_hint = 0;
     v->sty_dirty = -1;
     if (v->states != NULL && v->nstates > 0)
-        v->states[0] = TIKU_SYNTAX_OPEN;
+        v->states[0] = v->lexer.line != NULL ? v->lexer.initial_state
+                                             : TIKU_SYNTAX_OPEN;
+    v->kept_line = -1;
 }
 
 /** @brief Drop the state table; colouring starts again from line 0. */
@@ -85,16 +90,20 @@ static int
 states_room(tiku_codeview_t *v, int64_t n)
 {
     int64_t cap;
-    unsigned char *grown;
+    uint32_t *grown;
 
     if (n <= v->states_cap)
         return 1;
     cap = n + n / 4 + 16;
-    if (cap < 0 || (uint64_t)cap > SIZE_MAX)
+    if (cap < 0 || (uint64_t)cap > SIZE_MAX / sizeof *grown) {
+        v->lexer_status = TIKU_EDIT_LIMIT;
         return 0;
-    grown = tiku_ed_realloc(v->states, (size_t)cap);
-    if (grown == NULL)
+    }
+    grown = tiku_ed_realloc(v->states, (size_t)cap * sizeof *grown);
+    if (grown == NULL) {
+        v->lexer_status = TIKU_EDIT_NO_MEMORY;
         return 0;
+    }
     v->states = grown;
     v->states_cap = cap;
     return 1;
@@ -132,7 +141,7 @@ tiku_cv_style_change(tiku_codeview_t *v, int64_t first, int64_t last_old,
     tail = v->nstates - (last_old + 1);
     if (tail > 0)
         memmove(&v->states[last_new + 1], &v->states[last_old + 1],
-                (size_t)tail);
+                (size_t)tail * sizeof *v->states);
     v->nstates = lines;
     if (v->sty_hint > last_old)
         v->sty_hint += delta;
@@ -161,15 +170,19 @@ line_upto(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t cut)
 
     r.start = tiku_editdoc_line_start(v->doc, line);
     r.end = cut;
-    if (r.start < 0 || r.end < r.start || r.end - r.start >= INT_MAX)
+    if (r.start < 0 || r.end < r.start || r.end - r.start >= INT_MAX) {
+        v->lexer_status = TIKU_EDIT_LIMIT;
         return NULL;
+    }
     n = (size_t)(r.end - r.start);
     if (n + 1 > v->line_cap) {
         size_t cap = n + 1 + n / 4 + 64;
         char *grown = tiku_ed_realloc(v->line_buf, cap);
 
-        if (grown == NULL)
+        if (grown == NULL) {
+            v->lexer_status = TIKU_EDIT_NO_MEMORY;
             return NULL;
+        }
         v->line_buf = grown;
         v->line_cap = cap;
     }
@@ -212,31 +225,34 @@ cut_after(tiku_codeview_t *v, tiku_edit_pos_t upto, tiku_edit_pos_t end)
     return cut;
 }
 
-/** @brief The state @p line starts in, reading forward from the last line
- *         known; -1 when a line on the way cannot be read. */
+/** @brief Put the state @p line starts in into @p state, reading forward
+ *         from the last line known; 0 when a line on the way cannot be
+ *         read or coloured. */
 static int
-state_at(tiku_codeview_t *v, int64_t line)
+state_at(tiku_codeview_t *v, int64_t line, uint32_t *state)
 {
     while (v->sty_valid < line) {
         int64_t j = v->sty_valid;
         const char *text = line_text(v, j);
-        tiku_syntax_state_t left = TIKU_SYNTAX_OPEN;
+        uint32_t left = 0;
 
         if (text == NULL)
-            return -1;
-        tiku_syntax_runs(v->lang, text, v->states[j], &left, NULL, NULL);
+            return 0;
+        if (!tiku_cv_lex(v, text, v->states[j], &left, NULL, NULL))
+            return 0;
         if (j + 1 > v->sty_dirty && j + 1 <= v->sty_hint &&
-            v->states[j + 1] == (unsigned char)left) {
+            v->states[j + 1] == left) {
             v->sty_valid = v->sty_hint;
             v->sty_dirty = -1;
         } else {
-            v->states[j + 1] = (unsigned char)left;
+            v->states[j + 1] = left;
             v->sty_valid = j + 1;
             if (v->sty_hint < v->sty_valid)
                 v->sty_hint = v->sty_valid;
         }
     }
-    return v->states[line];
+    *state = v->states[line];
+    return 1;
 }
 
 /** @brief Keep one run of the line being coloured. */
@@ -247,6 +263,10 @@ add_run(void *ctx, tiku_ink_t ink, int len)
 
     if (v->runs_failed)
         return;
+    if (v->nruns > 0 && v->runs[v->nruns - 1].ink == ink) {
+        v->runs[v->nruns - 1].len += len;
+        return;
+    }
     if (v->nruns == v->runs_cap) {
         size_t cap = v->runs_cap ? v->runs_cap * 2 : 32;
         tiku_span_t *grown;
@@ -272,8 +292,8 @@ add_run(void *ctx, tiku_ink_t ink, int len)
  *         with them, so they are used again while the document does not
  *         change. */
 static void
-keep_runs(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t start, int in,
-          tiku_edit_pos_t cut)
+keep_runs(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t start,
+          uint32_t in, tiku_edit_pos_t cut)
 {
     tiku_span_t *swap = v->kept;
     size_t cap = v->kept_cap;
@@ -296,7 +316,8 @@ const tiku_span_t *
 tiku_cv_style_line(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto,
                    size_t *n)
 {
-    tiku_syntax_state_t in = TIKU_SYNTAX_OPEN;
+    uint32_t in = v->lexer.line != NULL ? v->lexer.initial_state
+                                        : TIKU_SYNTAX_OPEN;
     tiku_edit_pos_t start = tiku_editdoc_line_start(v->doc, line);
     tiku_edit_pos_t end = tiku_editdoc_line_end(v->doc, line);
     int64_t length = end - start;
@@ -304,27 +325,28 @@ tiku_cv_style_line(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto,
     const char *text;
 
     *n = 0;
-    v->nruns = 0;
-    if (v->lang == TIKU_SYNTAX_NONE)
+    if (v->lexing || start < 0 || end < start)
         return NULL;
-    if (v->lang == TIKU_SYNTAX_C) {
-        int state;
-
+    v->nruns = 0;
+    if (v->lang == TIKU_SYNTAX_NONE && v->lexer.line == NULL)
+        return NULL;
+    if (v->lexer.line != NULL ? v->lexer.stateful
+                              : v->lang == TIKU_SYNTAX_C) {
         if (!states_follow(v, tiku_editdoc_lines(v->doc)))
             return NULL;
-        state = state_at(v, line);
-        if (state < 0)
+        if (!state_at(v, line, &in))
             return NULL;
-        in = (tiku_syntax_state_t)state;
     }
     if (length >= TIKU_CV_LONG) {
         if (upto < start)
             upto = start;
-        cut = cut_after(v, upto < end ? upto : end, end);
+        if (v->lexer.line == NULL)
+            cut = cut_after(v, upto < end ? upto : end, end);
         if (v->kept_line == line && v->kept_start == start &&
-            v->kept_lang == v->lang && v->kept_in == (int)in &&
+            v->kept_lang == v->lang && v->kept_in == in &&
             v->kept_cut >= cut &&
             v->kept_gen == tiku_editdoc_generation(v->doc)) {
+            v->lexer_status = TIKU_EDIT_OK;
             *n = v->nkept;
             return v->kept;
         }
@@ -333,13 +355,16 @@ tiku_cv_style_line(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto,
     if (text == NULL)
         return NULL;
     v->runs_failed = 0;
-    tiku_syntax_runs(v->lang, text, in, NULL, add_run, v);
+    if (!tiku_cv_lex(v, text, in, NULL, add_run, v))
+        v->runs_failed = 1;
     if (v->runs_failed) {
+        if (v->lexer_status == TIKU_EDIT_OK)
+            v->lexer_status = TIKU_EDIT_NO_MEMORY;
         v->nruns = 0;
         return NULL;
     }
     if (length >= TIKU_CV_LONG) {
-        keep_runs(v, line, start, (int)in, cut);
+        keep_runs(v, line, start, in, cut);
         *n = v->nkept;
         return v->kept;
     }

@@ -19,6 +19,8 @@
 int
 tiku_cv_code_at(tiku_cv_inks_t *k, int64_t at)
 {
+    tiku_ink_t role;
+
     while (k->i < k->n && at >= k->start + k->runs[k->i].len) {
         k->start += k->runs[k->i].len;
         k->i++;
@@ -29,8 +31,8 @@ tiku_cv_code_at(tiku_cv_inks_t *k, int64_t at)
     }
     if (k->i >= k->n || at < k->start)
         return 1;
-    return k->runs[k->i].ink != TIKU_INK_STR &&
-           k->runs[k->i].ink != TIKU_INK_REMARK;
+    role = tiku_cv_style_role(k->view, k->runs[k->i].ink);
+    return role != TIKU_INK_STR && role != TIKU_INK_REMARK;
 }
 
 tiku_cv_inks_t
@@ -39,6 +41,7 @@ tiku_cv_inks(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto)
     tiku_cv_inks_t k;
 
     memset(&k, 0, sizeof k);
+    k.view = v;
     k.runs = tiku_cv_style_line(v, line, upto, &k.n);
     if (k.runs == NULL)
         k.n = 0;
@@ -65,7 +68,7 @@ scan(tiku_codeview_t *v, tiku_edit_pos_t from, int forward, int same,
         return -1;
     line = tiku_editdoc_line_of(v->doc, from);
     for (;;) {
-        tiku_cv_inks_t k = { NULL, 0, 0, 0 };
+        tiku_cv_inks_t k = {0};
         int coloured = 0;
 
         s = tiku_editdoc_line_start(v->doc, line);

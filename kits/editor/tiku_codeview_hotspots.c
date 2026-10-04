@@ -49,13 +49,13 @@ tiku_cv_hot_forget(tiku_codeview_t *v)
     v->hot_pressed = 0;
 }
 
-/** @brief Whether any ink's style makes a hotspot. */
+/** @brief Whether any style ID's flags make a hotspot. */
 static int
 any_hotspots(const tiku_codeview_t *v)
 {
     int i;
 
-    for (i = 0; i < TIKU_CV_INKS; i++) {
+    for (i = 0; i < (int)TIKU_CODEVIEW_STYLE_COUNT; i++) {
         if (v->ink_styles[i] & TIKU_CODEVIEW_HOTSPOT)
             return 1;
     }
@@ -110,7 +110,7 @@ hotspot_at(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t pos,
     for (i = 0; i < n && at >= from + runs[i].len; i++)
         from += runs[i].len;
     ink = i < n ? runs[i].ink : TIKU_INK_PLAIN;
-    if ((unsigned)ink >= TIKU_CV_INKS ||
+    if ((unsigned)ink >= TIKU_CODEVIEW_STYLE_COUNT ||
         !(v->ink_styles[ink] & TIKU_CODEVIEW_HOTSPOT))
         return 0;
     out->start = start + from;

@@ -225,6 +225,8 @@ EDITOR      := $(K)/editor/tiku_editdoc.c $(K)/editor/tiku_editdoc_alloc.c \
                $(K)/editor/tiku_codeview_edit.c \
                $(K)/editor/tiku_codeview_find.c \
                $(K)/editor/tiku_codeview_style.c \
+               $(K)/editor/tiku_codeview_lexer.c \
+               $(K)/editor/tiku_codeview_languages.c \
                $(K)/editor/tiku_codeview_assist.c \
                $(K)/editor/tiku_codeview_lines.c \
                $(K)/editor/tiku_codeview_brace.c \

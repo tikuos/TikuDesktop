@@ -369,7 +369,8 @@ opens_level(tiku_codeview_t *v, const tiku_codeview_rules_t *r,
     runs = tiku_cv_style_line(v, line, pos, &n);
     for (p = pos; p > start; p--) {
         int b = tiku_editdoc_byte_at(v->doc, p - 1);
-        tiku_ink_t ink = ink_at(runs, n, p - 1 - start);
+        tiku_ink_t ink = tiku_cv_style_role(v,
+                                            ink_at(runs, n, p - 1 - start));
 
         if (blank(b) || ink == TIKU_INK_REMARK)
             continue;

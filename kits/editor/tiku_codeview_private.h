@@ -61,7 +61,8 @@ typedef struct {
     size_t nrows, cap;              /* rows kept, and room for them     */
 } tiku_cv_wrap_t;
 
-/* The inks a style can be set for, TIKU_INK_PLAIN to TIKU_INK_LINK. */
+/* The built-in inks, TIKU_INK_PLAIN to TIKU_INK_LINK; the style IDs past
+ * them are the application's to define. */
 #define TIKU_CV_INKS (TIKU_INK_LINK + 1)
 
 /* A line's fold state: inside a folded region, so it has no rows, and
@@ -132,7 +133,11 @@ struct tiku_codeview {
     tiku_edit_status_t status;      /* the last event's edit            */
     tiku_text_input_t input;        /* a text-input commit arriving     */
     tiku_syntax_lang_t lang;        /* how the text is coloured         */
-    unsigned char *states;          /* each line's starting C state     */
+    tiku_codeview_lexer_t lexer;    /* the application's lexer; its line
+                                       NULL: the language's             */
+    tiku_edit_status_t lexer_status; /* what its last call came to      */
+    int lexing;                     /* it is running                    */
+    uint32_t *states;               /* each line's starting lexer state */
     int64_t nstates, states_cap;    /* lines it follows, and room       */
     int64_t sty_valid;              /* states up to here are right      */
     int64_t sty_hint;               /* and from there up to here are
@@ -151,7 +156,7 @@ struct tiku_codeview {
     int64_t kept_line;              /* that line, -1 none               */
     tiku_edit_pos_t kept_start;     /* where it started                 */
     uint64_t kept_gen;              /* the document's generation then   */
-    int kept_in;                    /* the state it started in          */
+    uint32_t kept_in;               /* the state it started in          */
     tiku_syntax_lang_t kept_lang;   /* and the language                 */
     tiku_edit_pos_t kept_cut;       /* the byte the runs reach to       */
     uint32_t fill_kinds;            /* marker kinds whose rows are
@@ -160,7 +165,16 @@ struct tiku_codeview {
     tiku_rgb_t exec_fill;           /* the execution line's fill        */
     tiku_rgb_t caret_fill;          /* the caret line's fill, when set  */
     int caret_fill_set;             /* 0: the theme's note colour       */
-    unsigned ink_styles[TIKU_CV_INKS]; /* TIKU_CODEVIEW_BOLD ... by ink */
+    unsigned ink_styles[TIKU_CODEVIEW_STYLE_COUNT]; /* each style ID's
+                                       TIKU_CODEVIEW_BOLD ...           */
+    tiku_codeview_style_t style_defs[TIKU_CODEVIEW_STYLE_COUNT]; /* its
+                                       definition, when it has one      */
+    unsigned char style_defined[TIKU_CODEVIEW_STYLE_COUNT]; /* has one  */
+    uint32_t *fold_levels;          /* the parser's levels, a line each;
+                                       NULL: the rules fold             */
+    size_t fold_level_count;        /* how many                         */
+    uint64_t fold_generation;       /* the generation they are for      */
+    int json_folds;                 /* read from the text as JSON       */
     unsigned hot_keys;              /* the modifiers hotspots need      */
     int hot_seen;                   /* the pointer has been seen        */
     int hot_x, hot_y;               /* where, last                      */
@@ -400,6 +414,18 @@ void tiku_cv_style_change(tiku_codeview_t *v, int64_t first,
 void tiku_cv_style_reset(tiku_codeview_t *v);
 /* Free what colouring holds. */
 void tiku_cv_style_free(tiku_codeview_t *v);
+/* Colour one line, @p text, from state @p in, the state it leaves going in
+ * @p out when that is not NULL (tiku_codeview_lexer.c): by the
+ * application's lexer, its runs checked before they reach @p emit, or
+ * else by the language.  0 when the application's lexer cannot run now,
+ * fails or breaks its rules; lexer_status says why. */
+int tiku_cv_lex(tiku_codeview_t *v, const char *text, uint32_t in,
+                uint32_t *out, tiku_syntax_run_fn emit, void *ctx);
+/* Styles (tiku_codeview_languages.c): the built-in ink style @p id stands
+ * for, which tells code from strings and remarks, and the colour it is
+ * drawn in. */
+tiku_ink_t tiku_cv_style_role(const tiku_codeview_t *v, unsigned id);
+tiku_rgb_t tiku_cv_style_color(const tiku_codeview_t *v, unsigned id);
 
 /* An editing key: 1 when the view took it. */
 int tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e);
@@ -427,6 +453,7 @@ int tiku_cv_type_closer(tiku_codeview_t *v, const char *text);
 /* A line's colouring read a byte at a time (tiku_codeview_brace.c). */
 typedef struct {
     const tiku_span_t *runs;        /* the line's coloured runs         */
+    const tiku_codeview_t *view;    /* the view, for its styles' roles  */
     size_t n;                       /* how many                         */
     size_t i;                       /* the run the last offset fell in  */
     int64_t start;                  /* where that run starts            */
@@ -515,8 +542,16 @@ tiku_edit_status_t tiku_cv_add_drag(tiku_codeview_t *v,
                                     tiku_edit_pos_t caret);
 
 /* Folds (tiku_codeview_folds.c): whether @p line heads a region, read
- * from its own text. */
+ * from its own text or from the parser's levels; while the levels are
+ * stale only a line heading a folded region heads one. */
 int tiku_cv_fold_head(tiku_codeview_t *v, int64_t line);
+/* The last line of the region @p line heads by the parser's levels
+ * (tiku_codeview_languages.c), -1 for none or while they are stale. */
+int64_t tiku_cv_supplied_fold(const tiku_codeview_t *v, int64_t line);
+/* After the parser's levels are set or removed, keep each folded region
+ * whose line heads one by the levels or rules now in force folded, over
+ * the lines they give it, and unfold the rest. */
+void tiku_cv_folds_refit(tiku_codeview_t *v);
 /* Unfold the regions @p line is folded in. */
 void tiku_cv_fold_reveal(tiku_codeview_t *v, int64_t line);
 /* Follow a change to lines @p first to @p last: what it touched, and the

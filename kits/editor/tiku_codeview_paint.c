@@ -24,6 +24,7 @@
 /** @brief One row being painted. */
 typedef struct {
     tiku_surface_t *s;
+    tiku_codeview_t *view;      /* the view, for its styles             */
     const tiku_font_t *font;
     int x0;                     /* surface x of line x 0, unscrolled   */
     int y;                      /* the row's top                        */
@@ -272,7 +273,7 @@ run_ink(row_t *r, int64_t at)
 static unsigned
 style_of(const unsigned *styles, tiku_ink_t ink)
 {
-    return (unsigned)ink < TIKU_CV_INKS ? styles[ink] : 0;
+    return (unsigned)ink < TIKU_CODEVIEW_STYLE_COUNT ? styles[ink] : 0;
 }
 
 /** @brief Paint one character, gathering text into pieces and underlines
@@ -283,7 +284,7 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
     row_t *r = ctx;
     tiku_ink_t which = run_ink(r, c->pos - r->start);
     unsigned style = style_of(r->styles, which);
-    tiku_rgb_t ink = tiku_ink(which);
+    tiku_rgb_t ink = tiku_cv_style_color(r->view, which);
     int selected;
 
     if (c->pos >= r->stop)
@@ -314,10 +315,46 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
     return 0;
 }
 
-/** @brief Paint row @p w in the row @p r is set up for: the selections'
- *         ground first, the indicators' marks, then the text over them,
- *         then on a line's last row a selected line break as one space's
- *         width after the text. */
+/** @brief Fill one character's cell with its style's own background, when
+ *         it has one; the walk paints them before the selections and the
+ *         indicators' marks, which are drawn over them. */
+static int
+background_cell(void *ctx, const tiku_cv_cell_t *c)
+{
+    row_t *r = ctx;
+    const tiku_codeview_t *v = r->view;
+    unsigned id;
+
+    if (c->pos >= r->stop || c->x >= r->right)
+        return 1;
+    if (c->x + c->adv <= r->left)
+        return 0;
+    id = (unsigned)run_ink(r, c->pos - r->start);
+    if (id < TIKU_CODEVIEW_STYLE_COUNT && v->style_defined[id] &&
+        (v->style_defs[id].colors & TIKU_CODEVIEW_STYLE_BACK))
+        fill_span(r, c->x, c->x + c->adv, v->style_defs[id].background);
+    return 0;
+}
+
+/** @brief Whether any style the view defines has a background of its
+ *         own. */
+static int
+any_backgrounds(const tiku_codeview_t *v)
+{
+    unsigned id;
+
+    for (id = 0; id < TIKU_CODEVIEW_STYLE_COUNT; id++)
+        if (v->style_defined[id] &&
+            (v->style_defs[id].colors & TIKU_CODEVIEW_STYLE_BACK))
+            return 1;
+    return 0;
+}
+
+/** @brief Paint row @p w in the row @p r is set up for: the styles'
+ *         backgrounds first, the ruler and indentation guides, the
+ *         selections' ground, the indicators' marks, then the text over
+ *         them, then on a line's last row a selected line break as one
+ *         space's width after the text. */
 static void
 paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
 {
@@ -330,6 +367,19 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
     r->left = v->left + w->x0;
     r->right = r->left + tiku_cv_text_w(v);
     r->stop = w->end;
+    r->start = tiku_editdoc_line_start(v->doc, w->line);
+    if (!tiku_cv_wraps(v) && end - r->start >= TIKU_CV_LONG) {
+        tiku_edit_pos_t at = tiku_cv_char_at(v, w->line, r->right);
+
+        if (at >= 0)
+            upto = at;
+    }
+    r->runs = tiku_cv_style_line(v, w->line, upto, &r->nruns);
+    r->run = 0;
+    r->run_end = r->nruns > 0 ? r->runs[0].len : 0;
+    if (any_backgrounds(v))
+        (void)tiku_cv_walk_near(v, w->line, INT64_MAX, r->left,
+                                background_cell, r);
     r->at = first_after(r, w->start);
     for (k = r->at; k < r->nsels && sel_lo(&r->sels[k]) < w->end; k++) {
         a = sel_lo(&r->sels[k]) > w->start ? sel_lo(&r->sels[k]) : w->start;
@@ -342,14 +392,6 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
     r->len = 0;
     r->under = 0;
     r->stopped = 0;
-    r->start = tiku_editdoc_line_start(v->doc, w->line);
-    if (!tiku_cv_wraps(v) && end - r->start >= TIKU_CV_LONG) {
-        tiku_edit_pos_t at = tiku_cv_char_at(v, w->line, r->right);
-
-        if (at >= 0)
-            upto = at;
-    }
-    r->runs = tiku_cv_style_line(v, w->line, upto, &r->nruns);
     r->run = 0;
     r->run_end = r->nruns > 0 ? r->runs[0].len : 0;
     width = tiku_cv_walk_near(v, w->line, INT64_MAX, r->left, paint_cell, r);
@@ -633,6 +675,7 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
 
     memset(&r, 0, sizeof r);
     r.s = s;
+    r.view = view;
     r.font = tiku_cv_font(view);
     r.x0 = tiku_cv_text_x(view);
     r.step = tiku_codeview_row_height(view);

@@ -4,9 +4,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_codeview_folds.c - regions the rules say a line heads, folded and
- * unfolded in one view, the caret kept out of what is folded and what it
- * goes to shown, and the fold column beside the line numbers.
+ * tiku_codeview_folds.c - regions the rules or a parser's levels say a
+ * line heads, folded and unfolded in one view, the caret kept out of what
+ * is folded and what it goes to shown, and the fold column beside the
+ * line numbers.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -207,6 +208,8 @@ tiku_codeview_fold_end(tiku_codeview_t *view, int64_t line)
 
     if (view == NULL || line < 0 || line >= tiku_editdoc_lines(view->doc))
         return -1;
+    if (view->fold_levels != NULL)
+        return tiku_cv_supplied_fold(view, line);
     r = tiku_cv_rules(view);
     if (r->blocks == NULL && (r->opens == NULL || r->closes == NULL))
         return indent_end(view, line);
@@ -233,6 +236,11 @@ tiku_cv_fold_head(tiku_codeview_t *v, int64_t line)
     int64_t next, lines = tiku_editdoc_lines(v->doc);
     depth_t d;
 
+    if (v->fold_levels != NULL)
+        return tiku_codeview_folded(v, line) ||
+               (v->fold_generation == tiku_editdoc_generation(v->doc) &&
+                line >= 0 && (uint64_t)line < v->fold_level_count &&
+                (v->fold_levels[line] & TIKU_CODEVIEW_FOLD_HEADER) != 0);
     if (r->blocks != NULL || (r->opens != NULL && r->closes != NULL)) {
         d = depth_of(v, r, line);
         return d.net > d.dip;
@@ -389,6 +397,43 @@ tiku_codeview_fold_all(tiku_codeview_t *view, int open)
         tiku_cv_rows_hide(view, 0, view->row_lines - 1, 1);
     tiku_cv_clamp(view);
     return any ? TIKU_EDIT_OK : TIKU_EDIT_NOTHING;
+}
+
+/** @brief Whether @p line, which headed a folded region, heads one still,
+ *         and where it ends in @p end. */
+static int
+heads_still(tiku_codeview_t *v, int64_t line, int64_t *end)
+{
+    *end = tiku_cv_fold_head(v, line) ? tiku_codeview_fold_end(v, line) : -1;
+    return *end > line;
+}
+
+void
+tiku_cv_folds_refit(tiku_codeview_t *v)
+{
+    int64_t line, end, until = -1;
+
+    if (!tiku_cv_rows_kept(v) || v->folds == 0)
+        return;
+    for (line = 0; line < v->row_lines; line++) {
+        int folded = (v->row_fold[line] & TIKU_CV_FOLDED) != 0;
+
+        if (folded) {
+            v->row_fold[line] &= (unsigned char)~TIKU_CV_FOLDED;
+            v->folds--;
+        }
+        tiku_cv_rows_hide(v, line, line, line > until);
+        if (!folded || !heads_still(v, line, &end))
+            continue;
+        if (line <= until ? end > until
+                          : caret_out(v, line + 1, end) != TIKU_EDIT_OK)
+            continue;
+        v->row_fold[line] |= TIKU_CV_FOLDED;
+        v->folds++;
+        if (line > until)
+            until = end;
+    }
+    tiku_cv_clamp(v);
 }
 
 /** @brief The line of the region the caret is in: the caret's own line

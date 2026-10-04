@@ -97,6 +97,54 @@ void tiku_codeview_set_language(tiku_codeview_t *view,
                                 tiku_syntax_lang_t lang);
 tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 
+/**
+ * @brief A lexer an application colours a view with.
+ *
+ * line() is given one line, @p length bytes of UTF-8 at @p text with a
+ * NUL after them and the line break left out, and the state it starts
+ * in, @p in.  It puts the state the line leaves in @p out and, when
+ * @p emit is not NULL, hands it runs that cover the line in order, each
+ * of at least one byte and ending on a character boundary, in a built-in
+ * ink or a style ID the application has defined.
+ *
+ * @note line() runs on the UI thread while the view colours a line; it
+ *       may not keep @p text or @p emit, change the document, or call
+ *       the view.
+ */
+typedef struct {
+    void *ctx;                  /* handed to line()                     */
+    uint32_t initial_state;     /* the state the first line starts in   */
+    int stateful;               /* each line starts in the state the
+                                   line above left; 0: initial_state    */
+    tiku_edit_status_t (*line)(void *ctx, const char *text, size_t length,
+                               uint32_t in, uint32_t *out,
+                               tiku_syntax_run_fn emit, void *emit_ctx);
+} tiku_codeview_lexer_t;
+
+/**
+ * @brief Colour the view with @p lexer, copied, instead of by its
+ *        language, or with NULL by the language again.
+ *
+ * The language still gives the rules lines are edited and folded by.  A
+ * line whose runs break the lexer's rules, or that the lexer fails on, is
+ * drawn plain.  Setting the lexer set already changes nothing; setting
+ * another clears a table of fold levels.
+ *
+ * @note ctx must outlive the lexer's time in the view; after its contents
+ *       change, call tiku_codeview_lexer_changed().
+ */
+tiku_edit_status_t tiku_codeview_set_lexer(tiku_codeview_t *view,
+                                           const tiku_codeview_lexer_t *lexer);
+/** @brief Colour every line again, its lexer's ctx having changed. */
+void tiku_codeview_lexer_changed(tiku_codeview_t *view);
+/** @brief What colouring the last line came to: TIKU_EDIT_OK, the
+ *         lexer's own error, TIKU_EDIT_INVALID_RANGE for runs that broke
+ *         its rules, or why the line or its runs could not be kept. */
+tiku_edit_status_t tiku_codeview_lexer_status(const tiku_codeview_t *view);
+/** @brief A lexer for JSON that colours strings, numbers, and true, false
+ *         and null, without checking that the text is JSON. */
+const tiku_codeview_lexer_t *tiku_codeview_json_lexer(void);
+
 /* What a view shows besides the text; a new view shows none of them. */
 #define TIKU_CODEVIEW_LINE_NUMBERS 0x1u  /* a gutter of line numbers    */
 #define TIKU_CODEVIEW_INVISIBLES   0x2u  /* a mark in each space and tab */
@@ -138,6 +186,71 @@ tiku_edit_status_t tiku_codeview_set_ink_style(tiku_codeview_t *view,
 unsigned tiku_codeview_ink_style(const tiku_codeview_t *view,
                                  tiku_ink_t ink);
 
+/* Style IDs past the built-in inks, which a lexer's runs may be given in,
+ * cast to tiku_ink_t, once the application has defined them; there are
+ * TIKU_CODEVIEW_STYLE_COUNT IDs, the inks among them. */
+#define TIKU_CODEVIEW_STYLE_FIRST (TIKU_INK_LINK + 1u)
+#define TIKU_CODEVIEW_STYLE_COUNT 64u
+/* The colours a style sets itself instead of taking its role's. */
+#define TIKU_CODEVIEW_STYLE_FORE 1u     /* the text's                     */
+#define TIKU_CODEVIEW_STYLE_BACK 2u     /* the ground behind it           */
+/** @brief How text of one style ID is drawn. */
+typedef struct {
+    tiku_ink_t role;            /* the built-in ink it stands for: its
+                                   colour unless set, and whether it is
+                                   code, a string or a remark           */
+    unsigned flags;             /* TIKU_CODEVIEW_BOLD ... HOTSPOT       */
+    unsigned colors;            /* TIKU_CODEVIEW_STYLE_FORE and _BACK   */
+    tiku_rgb_t foreground;      /* the colours it sets                  */
+    tiku_rgb_t background;
+} tiku_codeview_style_t;
+/**
+ * @brief Draw text of style @p id as @p style, copied, or with NULL
+ *        undefine an ID past the inks and draw an ink as at first.
+ *
+ * Every style keeps the view's face size and cell widths.  An ID past the
+ * last, a role that is not a built-in ink, or a flag or colour there is
+ * not is refused with TIKU_EDIT_INVALID, and the style set before stays.
+ */
+tiku_edit_status_t tiku_codeview_set_style(tiku_codeview_t *view,
+                                           unsigned id,
+                                           const tiku_codeview_style_t *style);
+/** @brief The style @p id is drawn with, in @p style; TIKU_EDIT_NOTHING
+ *         for an ID past the inks that is not defined. */
+tiku_edit_status_t tiku_codeview_get_style(const tiku_codeview_t *view,
+                                           unsigned id,
+                                           tiku_codeview_style_t *style);
+
+/* A line's fold level, from the application's parser: its depth in the
+ * low 16 bits, and this flag when it heads a region, the lines after it
+ * that are deeper. */
+#define TIKU_CODEVIEW_FOLD_HEADER 0x10000u
+/**
+ * @brief Fold by @p count levels, copied, one for each line of the
+ *        document at @p generation, instead of by the rules; NULL with
+ *        @p count 0 folds by the rules again.
+ *
+ * A table for another generation is refused with TIKU_EDIT_STALE, one
+ * whose count is not the document's lines, or with a header no deeper
+ * line follows, with TIKU_EDIT_INVALID_RANGE, and other bits with
+ * TIKU_EDIT_INVALID; a refused table changes nothing.  A folded region
+ * stays folded while its line still heads one, over the lines the new
+ * table or the rules give it; the others unfold.
+ *
+ * @note An edit makes the table stale: a folded region the edit leaves
+ *       alone stays folded and can be unfolded, but nothing can be folded
+ *       until a table for the new generation is set.  Call on the UI
+ *       thread.
+ */
+tiku_edit_status_t tiku_codeview_set_fold_levels(tiku_codeview_t *view,
+                                                 const uint32_t *levels,
+                                                 size_t count,
+                                                 uint64_t generation);
+/** @brief Fold by the brackets of the text read as JSON, read again only
+ *         after the document changes; brackets in strings are not
+ *         counted, and the text is not checked to be JSON. */
+tiku_edit_status_t tiku_codeview_json_folds(tiku_codeview_t *view);
+
 /**
  * @brief Make hotspots live only while exactly @p modifiers are held, Caps
  *        Lock aside; a new view needs none.
@@ -145,9 +258,9 @@ unsigned tiku_codeview_ink_style(const tiku_codeview_t *view,
  * A hotspot is a run of one ink whose style has TIKU_CODEVIEW_HOTSPOT,
  * within a line.  While the pointer is over a live one it is underlined;
  * a press on it is its own, the selection staying, and a release over the
- * same hotspot calls the host's hotspot().  The pointer and these keys
- * are followed through the view's events; a change to the document, a
- * style set or deactivation ends the hotspot shown and a press on one.
+ * same hotspot calls the host's hotspot().  The view follows the pointer
+ * and keys through its events; a change of document, language, lexer,
+ * keys or style, or deactivation, ends the hotspot shown and a press on one.
  */
 void tiku_codeview_set_hotspot_keys(tiku_codeview_t *view,
                                     unsigned modifiers);
