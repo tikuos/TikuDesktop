@@ -448,6 +448,7 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
                               int sel_b, unsigned state, int scroll_px)
 {
     int rec = tiku_gfx_rec_enter(s);
+    tiku_rect_t saved_clip = s->clip;
 
     if (rec) {
         /* What the field SAYS and whether it is focused or disabled --
@@ -465,7 +466,23 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
     if (state & TIKU_S_FOCUS) {
         tiku_frame(s, r, TIKU_C_FOCUS);
     }
-    tiku_clip_set(s, tiku_inset(r, 2));
+    /* The text is clipped to the field's inside, within whatever clip the
+     * caller set; that clip is put back when the field is drawn. */
+    tiku_rect_t inner = tiku_inset(r, 2);
+    int right = inner.x + inner.w < saved_clip.x + saved_clip.w
+                    ? inner.x + inner.w : saved_clip.x + saved_clip.w;
+    int bottom = inner.y + inner.h < saved_clip.y + saved_clip.h
+                    ? inner.y + inner.h : saved_clip.y + saved_clip.h;
+
+    if (inner.x < saved_clip.x) {
+        inner.x = saved_clip.x;
+    }
+    if (inner.y < saved_clip.y) {
+        inner.y = saved_clip.y;
+    }
+    inner.w = right > inner.x ? right - inner.x : 0;
+    inner.h = bottom > inner.y ? bottom - inner.y : 0;
+    tiku_clip_set(s, inner);
     if (text != NULL) {
         int lo = (sel_a < sel_b) ? sel_a : sel_b;
         int hi = (sel_a < sel_b) ? sel_b : sel_a;
@@ -490,7 +507,7 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
                             r.y + 3, r.h - 6, TIKU_C_TEXT);
         }
     }
-    tiku_clip_reset(s);
+    tiku_clip_set(s, saved_clip);
     tiku_gfx_rec_leave(s, rec);
 }
 
