@@ -310,10 +310,25 @@ static const char *pv_label(int id)
     return id >= PV_OPEN && id <= PV_SIGS ? labels[id] : "";
 }
 
+/** @brief Clipboard commands follow keyboard focus, including empty viewers. */
+static tiku_field_t *pv_copy_field(tiku_pdfview_t *c)
+{
+    if (c->dialog.focus == PV_FIND_FIELD) return &c->find;
+    if (c->dialog.focus == PV_PAGE_FIELD) return &c->go;
+    /* Password text must not be exposed through the menu. */
+    return NULL;
+}
+
 /** @brief Whether command @p id can do anything now. */
 static int pv_enabled(tiku_pdfview_t *c, int id)
 {
     int page = c->npage ? pv_current(c) : 0;
+
+    if (id == PV_COPY) {
+        tiku_field_t *field = pv_copy_field(c);
+        if (field) return field->sel_a != field->sel_b;
+        if (c->dialog.focus == PV_PASS_FIELD) return 0;
+    }
 
     if (id == PV_OPEN) return c->choose && !c->loading;
     if (id == PV_CLOSE) return 1;
@@ -359,7 +374,11 @@ static void pv_action(tiku_pdfview_t *c, int id)
 {
     int page = c->npage ? pv_current(c) : 0;
 
-    if (id == PV_OPEN) {
+    if (id == PV_COPY && pv_copy_field(c)) {
+        tiku_field_key(pv_copy_field(c), TIKU_FIELD_COPY, 0, 0);
+    } else if (id == PV_COPY && c->dialog.focus == PV_PASS_FIELD) {
+        return;
+    } else if (id == PV_OPEN) {
         if (c->choose && !c->loading) c->choose(c->ctx, 0);
     } else if (id == PV_OPEN_KEY) {
         if (pv_enabled(c, PV_OPEN_KEY)) c->choose(c->ctx, 1);

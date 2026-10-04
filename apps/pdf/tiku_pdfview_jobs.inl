@@ -148,15 +148,26 @@ static void pv_load_done(void *ctx)
         pv_say(c, pv_load_error(j->err));
         return;
     }
-    c->locked = c->sealed = 0;
-    c->keyfile[0] = 0;
     d = calloc(1, sizeof *d);
     if (!d) {
         pv_say(c, "Not enough memory to open that PDF.");
         return;
     }
+    /* Prepare every fallible allocation before releasing the current page. */
+    pv_page_t *pages = calloc((size_t)j->npage, sizeof *pages);
+    long *top = calloc((size_t)j->npage, sizeof *top);
+    unsigned char *folded = calloc((size_t)j->noutline + 1, 1);
+    int *rows = calloc((size_t)j->noutline + 1, sizeof *rows);
+    if (!pages || !top || !folded || !rows) {
+        free(pages); free(top); free(folded); free(rows); free(d);
+        pv_say(c, "Not enough memory to show that PDF; "
+               "the current document is unchanged.");
+        return;
+    }
     pv_recent_note(c);              /* where the one shown was left */
     pv_forget(c);
+    c->locked = c->sealed = 0;
+    c->keyfile[0] = 0;
     d->pdf = j->pdf;
     j->pdf = NULL;
     d->refs = 1;
@@ -170,15 +181,10 @@ static void pv_load_done(void *ctx)
     c->noutline = j->noutline;
     j->pw = j->ph = NULL;
     j->outline = NULL;
-    c->pages = calloc((size_t)c->npage, sizeof *c->pages);
-    c->top = calloc((size_t)c->npage, sizeof *c->top);
-    c->folded = calloc((size_t)c->noutline + 1, 1);
-    c->rows = calloc((size_t)c->noutline + 1, sizeof *c->rows);
-    if (!c->pages || !c->top || !c->folded || !c->rows) {
-        pv_forget(c);
-        pv_say(c, "Not enough memory to show that PDF.");
-        return;
-    }
+    c->pages = pages;
+    c->top = top;
+    c->folded = folded;
+    c->rows = rows;
     pv_find_widest(c);
     pv_outline_start(c);
     snprintf(c->path, sizeof c->path, "%s", j->path);
