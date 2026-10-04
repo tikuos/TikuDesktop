@@ -88,6 +88,7 @@ struct help_reader {
     char search_query[TIKU_FIELD_MAX]; /* what they were searched for    */
     struct reader_search *search;   /* the search running, or NULL       */
     int nrows, nmarks, limited, follow_outline;
+    int marks_session;              /* bookmarks unsaved, kept here only */
     size_t search_bytes;          /* aggregate source budget for one search */
     unsigned char *folded;
     char hovered[1024];             /* the link under the pointer        */
