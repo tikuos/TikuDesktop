@@ -238,14 +238,10 @@ tiku_alert_draw(tiku_alert_t *a, tiku_surface_t *s, tiku_rect_t frame)
     if (a == NULL || s == NULL || !a->open) {
         return;
     }
-    /* A modal window, not a floating slab: the same dark frame and
-     * bevel every window body wears -- BeOS had no borderless windows,
-     * and neither does this one. */
+    /* The two-ring border the menus wear, then a bevel just inside it:
+     * all three rings lie within the frame. */
     tiku_fill(s, frame, TIKU_C_PANEL);
-    tiku_frame(s, frame, tiku_tint(TIKU_C_PANEL, 1.40f));
-    tiku_bevel(s, tiku_inset(frame, 1),
-        tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_MAX),
-        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_ui_popup_border(s, frame);
     tiku_bevel(s, tiku_inset(frame, 2),
         tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_1),
         tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));

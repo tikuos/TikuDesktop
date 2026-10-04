@@ -1,8 +1,7 @@
 # shell: desktop
 # home: fixture
-# A dialog is a WINDOW: the dark frame and bevel every window body wears,
-# and R5 buttons -- the default one in its ring.  BeOS had no borderless
-# windows, and neither does this one.
+# An alert wears the two-ring border the menus wear, a light bevel just
+# inside it, and R5 buttons -- the default one in its ring.
 wait 10
 press 900 20 1
 wait 2
@@ -10,9 +9,10 @@ release 900 20 1
 wait 4
 menu-pick Shut down
 wait 5
-note the alert's own dark border, with the light bevel just inside it
-expect-pixel 290 250 828282
-expect-pixel 291 250 ffffff
+note the alert's two dark rings, with the light bevel just inside them
+expect-pixel 290 250 363636
+expect-pixel 291 250 363636
+expect-pixel 292 250 dcdcdc
 note the warning wears its icon: the yellow disc and its exclamation,
 note on the grey stripe BAlert lays them on
 expect-pixel 310 212 ffcb00

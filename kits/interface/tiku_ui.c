@@ -88,6 +88,18 @@ tiku_ui_raised(tiku_surface_t *s, tiku_rect_t r)
 }
 
 void
+tiku_ui_popup_border(tiku_surface_t *s, tiku_rect_t r)
+{
+    /* Three parts text to one part panel: dark in the light and no-hue
+     * themes, light in the dark one, where a darkened panel is barely
+     * apart from the panel itself. */
+    tiku_rgb_t edge = tiku_dim(TIKU_C_TEXT, tiku_dim(TIKU_C_TEXT, PANEL));
+
+    tiku_frame(s, r, edge);
+    tiku_frame(s, tiku_inset(r, 1), edge);
+}
+
+void
 tiku_ui_sunken(tiku_surface_t *s, tiku_rect_t r,
                     tiku_rgb_t face)
 {
@@ -728,8 +740,7 @@ tiku_ui_menu_icons(tiku_surface_t *s, tiku_rect_t r,
     int i;
 
     tiku_fill(s, r, PANEL);
-    tiku_bevel(s, r, WHITE(), SHADOW());
-    tiku_frame(s, r, FRAME());
+    tiku_ui_popup_border(s, r);
     for (i = 0; i < n; i++) {
         tiku_rect_t row = { r.x + 2, r.y + 2 + i * rowh, r.w - 4, rowh };
         int on = (i == hot);

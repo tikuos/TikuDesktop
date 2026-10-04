@@ -72,6 +72,15 @@ int tiku_ui_step_w(void);
 /** @brief Fill @p r with the panel grey. */
 void tiku_ui_panel(tiku_surface_t *s, tiku_rect_t r);
 
+/**
+ * @brief A menu's or alert's two-pixel border, in a shade that stands
+ *        out from the panel in every theme.
+ *
+ * Drawn just inside @p r and nowhere else, so the popup keeps the hit
+ * tests and damage of @p r; the inside is left as it was.
+ */
+void tiku_ui_popup_border(tiku_surface_t *s, tiku_rect_t r);
+
 /** @brief A raised panel-coloured face with the standard bevel pair. */
 void tiku_ui_raised(tiku_surface_t *s, tiku_rect_t r);
 
