@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_window_app.h"
 #include "tiku_vfs_rpc.h"
+#include "tiku_attr.h"
 #include "tiku_font.h"
 #include "tiku_ui.h"
 #include "tiku_icons_tiku.h"
@@ -62,7 +63,7 @@ typedef struct utility_job utility_job_t;
 static int utility_jobs;
 typedef struct {
     char name[128];
-    int directory, readable, writable;
+    int directory, readable, writable, autoread;
     int sampled;
     char data[128];
 } utility_entry_t;

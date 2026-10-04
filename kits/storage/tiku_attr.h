@@ -79,6 +79,32 @@ typedef struct {
 int tiku_desc_parse(const char *meta, tiku_desc_t *out);
 
 /**
+ * @brief The read policy a node's metadata states.
+ *
+ * Revision-4 metadata ends a typed descriptor with ";read=<policy>" and,
+ * for a node whose value is private, ";secret".  Only "read=poll" says a
+ * read leaves the board as it was.
+ *
+ * @return 1 for read=poll; 0 for any other policy, a secret node or an
+ *         extension this build does not recognise; -1 for no policy.
+ * @note Read permission alone does not make a read safe to make unasked.
+ */
+int tiku_attr_read_policy(const char *meta);
+
+/**
+ * @brief Whether a node may be read without the user asking for it.
+ *
+ * The metadata's read policy decides when there is one.  Without one, the
+ * nodes known to change the board when read are refused by name.
+ *
+ * @param meta The node's metadata, or NULL
+ * @param path Its path on the board: below the mount point, not the
+ *             desktop's /devices/<name> path
+ * @return 1 when a read may be made unasked, 0 when not
+ */
+int tiku_attr_autoread(const char *meta, const char *path);
+
+/**
  * @brief Format @p raw for display, by what the descriptor says it means.
  *
  * The text a cell too narrow to hold it is fitted by the caller's own

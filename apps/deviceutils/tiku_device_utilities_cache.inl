@@ -39,12 +39,14 @@ static void utility_cache_store(struct device_utility *p, utility_job_t *j)
     memcpy(s->entries, j->entries, sizeof s->entries);
 }
 
-/** Audited observational endpoints only: no devices, event drains or commands. */
-static int utility_autoread(const char *path)
+/** Metadata decides when it has a read policy.  Without one, only audited
+ * observational endpoints, and none that tiku_attr_autoread() refuses:
+ * no devices, event drains or commands. */
+static int utility_autoread(int policy, const char *path)
 {
     static const char *const safe[] = {
         "/sys/version", "/sys/uptime", "/sys/time", "/sys/boot_count",
-        "/sys/last_reset", "/sys/cold_boots", "/sys/device/name",
+        "/sys/last_reset", "/sys/device/name",
         "/sys/device/id", "/sys/device/uid", "/sys/device/mcu",
         "/sys/device/version", "/sys/cpu/freq", "/sys/cpu/freq_available",
         "/sys/cpu/freq_target", "/sys/cpu/freq_change_mode",
@@ -54,6 +56,8 @@ static int utility_autoread(const char *path)
         "/sys/mem/nvm_map", "/sys/sched/idle", "/sys/crypto/mode",
         "/sys/crypto/ops", "/sys/crypto/pk", "/proc/count"
     };
+    if (policy >= 0) return policy;
+    if (!tiku_attr_autoread(NULL, path)) return 0;
     for (size_t i = 0; i < sizeof safe / sizeof *safe; i++)
         if (!strcmp(path, safe[i])) return 1;
     if (strncmp(path, "/proc/", 6)) return 0;

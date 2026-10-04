@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_poseview.h"
+#include "tiku_mount.h"
 #include "tiku_gfx.h"
 #include "tiku_trk_frame.h"
 #include "tiku_trk_task.h"
@@ -100,6 +101,7 @@ rm_tree(const char *dir)
 
 static tiku_backend_t *real_backend;
 static int slow_reads;
+static int slow_oversized_read;
 
 /** @brief Ten milliseconds a read, which is a FAST device. */
 static int
@@ -109,6 +111,7 @@ slow_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
 
     (void)b;
     slow_reads++;
+    if (slow_oversized_read) { return (int)max + 1; }
     ts.tv_sec = 0;
     ts.tv_nsec = 10L * 1000000L;
     (void)nanosleep(&ts, NULL);
@@ -1888,6 +1891,111 @@ main(void)
               "already present");
         tiku_trk_poseview_free(mail);
         tiku_store_free(layouts);
+    }
+
+    printf("\nVFS automatic reads respect endpoint policy\n");
+    {
+        static const char *const blocked[] = {
+            "str,none,cached,cheap;read=sample",
+            "str,none,cached,cheap;read=effect",
+            "str,none,cached,cheap;read=consume",
+            "str,none,cached,cheap;read=unknown",
+            "str,none,cached,cheap;read=none",
+            "str,none,cached,cheap;read=poll;secret",
+            "str,none,cached,cheap;read=poll;secr"
+        };
+        static const char *const legacy[] = {
+            "/dev/console", "/dev/i2c/scan", "/sys/vfs/events",
+            "/sys/cold_boots"
+        };
+        tiku_trk_poseview_t *policy_v =
+            tiku_trk_poseview_new(&slow_backend, dir);
+        tiku_trk_pose_t *p = tiku_trk_poseview_at(policy_v, 0);
+        size_t i;
+
+        check(p != NULL, "VFS", "the policy test has a readable file row");
+        if (p != NULL) {
+            slow_reads = 0;
+            snprintf(p->model.facts.meta, sizeof p->model.facts.meta,
+                     "str,none,cached,cheap;read=poll");
+            (void)tiku_trk_poseview_refresh_values(policy_v, 0, 1);
+            check(slow_reads == 1, "VFS", "passive values are refreshed");
+
+            for (i = 0; i < sizeof blocked / sizeof blocked[0]; i++) {
+                snprintf(p->model.facts.meta, sizeof p->model.facts.meta,
+                         "%s", blocked[i]);
+                slow_reads = 0;
+                (void)tiku_trk_poseview_refresh_values(policy_v, 0, 1);
+                check(slow_reads == 0, "VFS", blocked[i]);
+            }
+
+            snprintf(p->model.facts.meta, sizeof p->model.facts.meta,
+                     "str,none,cached,cheap;read=poll");
+            slow_oversized_read = 1;
+            p->value_valid = 0;
+            check(tiku_trk_poseview_refresh_values(policy_v, 0, 1) == 0 &&
+                  !p->value_valid, "VFS",
+                  "an oversized backend result is rejected");
+            slow_oversized_read = 0;
+
+            snprintf(p->model.facts.meta, sizeof p->model.facts.meta, "-");
+            for (i = 0; i < sizeof legacy / sizeof legacy[0]; i++) {
+                snprintf(p->model.path, sizeof p->model.path, "%s",
+                         legacy[i]);
+                slow_reads = 0;
+                (void)tiku_trk_poseview_refresh_values(policy_v, 0, 1);
+                check(slow_reads == 0, "VFS", legacy[i]);
+            }
+            /* A stated policy outranks the names, as in Device Utilities. */
+            snprintf(p->model.facts.meta, sizeof p->model.facts.meta,
+                     "u32,s,cached,free;read=poll");
+            slow_reads = 0;
+            (void)tiku_trk_poseview_refresh_values(policy_v, 0, 1);
+            check(slow_reads == 1, "VFS",
+                  "a node stated read=poll is read whatever its name");
+        }
+        tiku_trk_poseview_free(policy_v);
+    }
+
+    printf("\na board's nodes are named below its mount point\n");
+    {
+        /* TikuDesktop mounts a board at /devices/<name>, and the nodes that
+         * change the board when read are refused there too. */
+        static const char *const acts[] = {
+            "/dev/console", "/dev/i2c/scan", "/sys/vfs/events",
+            "/sys/cold_boots"
+        };
+        tiku_backend_t *ns = tiku_mount_open();
+        tiku_trk_poseview_t *mv = NULL;
+        tiku_trk_pose_t *p = NULL;
+        char at[TIKU_PATH_MAX];
+        size_t i;
+
+        if (ns != NULL &&
+            tiku_mount_add(ns, "/devices/tiku", &slow_backend, 0) == 0) {
+            snprintf(at, sizeof at, "/devices/tiku%s", dir);
+            mv = tiku_trk_poseview_new(ns, at);
+            p = tiku_trk_poseview_at(mv, 0);
+        }
+        check(p != NULL, "VFS", "a board's folder lists under /devices");
+        if (p != NULL) {
+            snprintf(p->model.facts.meta, sizeof p->model.facts.meta, "-");
+            for (i = 0; i < sizeof acts / sizeof acts[0]; i++) {
+                snprintf(p->model.path, sizeof p->model.path,
+                         "/devices/tiku%s", acts[i]);
+                slow_reads = 0;
+                (void)tiku_trk_poseview_refresh_values(mv, 0, 1);
+                check(slow_reads == 0, "VFS", p->model.path);
+            }
+            snprintf(p->model.path, sizeof p->model.path,
+                     "/devices/tiku/sys/uptime");
+            slow_reads = 0;
+            (void)tiku_trk_poseview_refresh_values(mv, 0, 1);
+            check(slow_reads == 1, "VFS",
+                  "and any other readable node under the mount is read");
+        }
+        tiku_trk_poseview_free(mv);
+        tiku_backend_close(ns);
     }
 
     printf("\na tick costs what it was given, whatever the store does\n");

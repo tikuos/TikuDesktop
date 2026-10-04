@@ -30,10 +30,12 @@ static void listing(struct device_utility *p, const char *path,
 }
 
 static int preload_reads, preload_lists, preload_fail, preload_wide;
+static int preload_policy, data_lists;
 static utility_job_t *cancel_during_read;
 static int preload_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
 {
     (void)b; preload_lists++;
+    if (!strcmp(path, "/data")) data_lists++;
     if (preload_fail && !strcmp(path, "/sys/cpu")) return -1;
     const char *root[] = {"/sys", "/dev", "/data"};
     const char *sys[] = {"/cpu", "uptime", "time", "reboot", "unknown"};
@@ -52,6 +54,12 @@ static int preload_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, v
             snprintf(m.name, sizeof m.name, "%s", names[i] + (names[i][0] == '/'));
         }
         m.facts.perm = !strcmp(m.name, "time") || !strcmp(m.name, "reboot") ? TIKU_P_WRITE : TIKU_P_READ;
+        if (preload_policy) {
+            if (!strcmp(m.name, "value"))
+                strcpy(m.facts.meta, "u32,count,cached,free;read=poll");
+            if (!strcmp(m.name, "uptime"))
+                strcpy(m.facts.meta, "u32,s,cached,free;read=consume");
+        }
         if (fn(&m, ctx)) break;
     }
     return count;
@@ -60,31 +68,71 @@ static int preload_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, v
 static int preload_read(tiku_backend_t *b, const char *path, void *out, size_t cap)
 {
     (void)b; preload_reads++;
-    assert(utility_autoread(path) && strcmp(path, "/sys/time"));
+    assert(utility_autoread(-1, path) ||
+           (preload_policy && strstr(path, "/value")));
+    assert(strcmp(path, "/sys/time"));
+    assert(!preload_policy || strcmp(path, "/sys/uptime"));
     if (cancel_during_read) atomic_store(&cancel_during_read->cancelled, 1);
     if (!strcmp(path, "/sys/cpu/freq_available")) return -1;
     return snprintf(out, cap, "64000000\n");
 }
 
+/** Every path is a readable directory, for a branch opened by hand. */
+static int preload_stat(tiku_backend_t *b, const char *path, tiku_model_t *m)
+{
+    (void)b; memset(m, 0, sizeof *m);
+    snprintf(m->path, sizeof m->path, "%s", path);
+    m->kind = TIKU_KIND_DIRECTORY; m->facts.perm = TIKU_P_READ;
+    return 0;
+}
+
 static void test_preload(struct device_utility *p)
 {
-    const tiku_backend_ops_t ops = {.list=preload_list, .read=preload_read};
+    const tiku_backend_ops_t ops = {.list=preload_list, .read=preload_read,
+                                    .stat=preload_stat};
     tiku_backend_t b = {.ops=&ops};
     utility_job_t *j = calloc(1, sizeof *j); assert(j);
     j->backend = &b; j->mode = j->preload = 1; j->owner = p;
     utility_tree_reset(p); strcpy(p->path, "/");
     utility_run(j);
-    assert(preload_lists == 5 && preload_reads == 4 && !j->limited);
+    /* /data is in the tree but its files are listed only when opened. */
+    assert(!data_lists);
+    assert(preload_lists == 4 && preload_reads == 4 && !j->limited);
     utility_done(j);
     assert(!j->cache && p->cache && !strcmp(p->path, "/sys"));
     assert(find_branch(p, "/sys/cpu") >= 0 && find_branch(p, "/data") >= 0);
+    assert(!utility_cache_show(p, "/data"));
     assert(p->entries[0].sampled == 1 && !p->entries[1].sampled);
     assert(utility_cache_show(p, "/sys/cpu"));
-    assert(p->count == 3 && p->entries[0].sampled == 1 && p->entries[1].sampled == -1);
-    assert(!p->writable && !p->value[0] && preload_reads == 4 && preload_lists == 5);
+    assert(p->count == 3 && p->entries[0].sampled == 1 &&
+           p->entries[1].sampled == -1);
+    assert(!p->writable && !p->value[0] && preload_reads == 4 &&
+           preload_lists == 4);
     assert(utility_cache_show(p, "/dev") && !p->entries[0].sampled);
-    assert(!utility_autoread("/sys/vfs/events") && !utility_autoread("/sys/reboot"));
-    assert(utility_autoread("/proc/12/events") && !utility_autoread("/proc/12/kill"));
+    utility_job_t *open = calloc(1, sizeof *open); assert(open);
+    open->backend = &b; open->mode = 1; strcpy(open->path, "/data");
+    utility_run(open); free(open);
+    assert(data_lists == 1);
+    /* Without a read policy, the audited list, and never a node the pose
+     * view refuses as well; a policy decides either way. */
+    const char *acts[] = {"/sys/vfs/events", "/sys/cold_boots",
+                          "/dev/console", "/dev/i2c/scan"};
+    for (int i = 0; i < 4; i++)
+        assert(!utility_autoread(-1, acts[i]) &&
+               !tiku_attr_autoread(NULL, acts[i]) &&
+               utility_autoread(1, acts[i]));
+    assert(!utility_autoread(-1, "/sys/reboot"));
+    assert(utility_autoread(-1, "/proc/12/events"));
+    assert(!utility_autoread(-1, "/proc/12/kill"));
+    assert(utility_autoread(-1, "/sys/uptime") &&
+           !utility_autoread(0, "/sys/uptime"));
+    preload_policy = 1;
+    int policy_before = preload_reads;
+    /* Metadata enables /dev/value and blocks uptime; /data stays unread. */
+    utility_run(j);
+    assert(preload_reads == policy_before + 4 && data_lists == 1);
+    utility_cache_free(j->cache); j->cache = NULL;
+    preload_policy = 0;
     utility_action(p, U_REFRESH);
     assert(!p->cache && p->preload && !p->count && !p->writable);
     preload_fail = 1; utility_run(j); utility_done(j);

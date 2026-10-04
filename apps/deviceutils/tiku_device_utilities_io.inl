@@ -35,6 +35,9 @@ static int utility_entry(const tiku_model_t *m, void *ctx)
     e->directory = tiku_model_is_container(m);
     e->readable = (m->facts.perm & TIKU_P_READ) != 0;
     e->writable = tiku_model_is_writable(m);
+    /* The node's read policy, -1 when its metadata states none; the
+     * policy outranks the audited list in utility_autoread(). */
+    e->autoread = tiku_attr_read_policy(m->facts.meta);
     return 0;
 }
 
@@ -46,7 +49,7 @@ static void utility_directory_values(utility_job_t *j, int64_t deadline)
         int n = snprintf(path, sizeof path, "%s%s%s", j->path,
             strcmp(j->path, "/") ? "/" : "", e->name);
         if (e->directory || !e->readable || n >= (int)sizeof path ||
-            !utility_autoread(path)) continue;
+            !utility_autoread(e->autoread, path)) continue;
         if (j->reads >= 256 || utility_now() >= deadline) {
             j->limited = 1; break;
         }
@@ -66,6 +69,10 @@ static void utility_preload(utility_job_t *j)
     int64_t deadline = utility_now() + 30000000;
     for (utility_snapshot_t *s = j->cache; s && !utility_cancelled(j); s = s->next) {
         if (utility_now() >= deadline) { j->limited = 1; break; }
+        /* /data contains user files, not capability metadata. Listing it can
+         * mount/provision storage on first use. Show the folder in the tree,
+         * but only enumerate its contents when the user opens it explicitly. */
+        if (!strcmp(s->path, "/data")) continue;
         strcpy(j->path, s->path); j->count = j->truncated = 0;
         memset(j->entries, 0, sizeof j->entries);
         s->ok = j->backend->ops->list &&

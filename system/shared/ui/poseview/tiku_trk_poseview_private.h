@@ -17,6 +17,7 @@
 /* split: tag pv */
 
 #include "tiku_trk_poseview.h"
+#include "tiku_mount.h"
 #include "tiku_strings.h"
 #include "tiku_trk_frame.h"
 #include "tiku_state.h"

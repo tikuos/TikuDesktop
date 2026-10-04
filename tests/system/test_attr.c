@@ -85,6 +85,45 @@ main(void)
         check(tiku_desc_parse("u32,count,cached,free,0..100", &d) == 1 &&
               d.has_range && d.lo == 0 && d.hi == 100,
               "an optional lo..hi range is picked up");
+        check(tiku_desc_parse("u32,count,cached,free,0..100;read=poll",
+                              &d) == 1 &&
+              d.has_range && d.hi == 100 && !strcmp(d.cost, "free"),
+              "revision-4 read policy preserves the range and cost");
+        check(tiku_desc_parse("str,,cached,free;read=consume", &d) == 1 &&
+              !strcmp(d.cost, "free") && !d.has_range,
+              "read policy is not part of the cost field");
+        check(tiku_attr_read_policy("u32,count,cached,free;read=poll") == 1,
+              "passive counters can be refreshed automatically");
+        check(tiku_attr_read_policy("str,,cached,free;read=consume") == 0 &&
+              tiku_attr_read_policy("str,,live,bus;read=effect") == 0 &&
+              tiku_attr_read_policy("u32,adc,live,periph;read=sample") == 0,
+              "streams, commands and live samples need explicit reads");
+        check(tiku_attr_read_policy("str,,cached,free;read=poll;secret") == 0 &&
+              tiku_attr_read_policy("str,,cached,free;secret;read=poll") == 0,
+              "secret wins regardless of metadata order");
+        check(tiku_attr_read_policy("str,,cached,free;read=polluted") == 0 &&
+              tiku_attr_read_policy("str,,cached,free;read=") == 0 &&
+              tiku_attr_read_policy(
+                  "str,,cached,free;read=poll;read=consume") == 0 &&
+              tiku_attr_read_policy("str,,cached,free;read=poll;secr") == 0,
+              "unknown, truncated and conflicting policies fail closed");
+        check(tiku_attr_read_policy(NULL) == -1 &&
+              tiku_attr_read_policy("-") == -1 &&
+              tiku_attr_read_policy("u32,count,cached,free") == -1,
+              "legacy metadata remains identifiable");
+        check(!tiku_attr_autoread("-", "/sys/cold_boots") &&
+              !tiku_attr_autoread(NULL, "/dev/console") &&
+              !tiku_attr_autoread("-", "/dev/i2c/scan") &&
+              !tiku_attr_autoread("-", "/sys/vfs/events") &&
+              tiku_attr_autoread("-", "/sys/uptime"),
+              "without a policy, only nodes that act when read are refused");
+        check(tiku_attr_autoread("u32,s,cached,free;read=poll",
+                                 "/sys/cold_boots") &&
+              !tiku_attr_autoread("u32,s,cached,free;read=effect",
+                                  "/sys/uptime"),
+              "a stated policy decides whatever the node's name");
+        check(!tiku_attr_autoread("-", NULL),
+              "a node with no path is not read unasked");
     }
 
     printf("\nformatting: the descriptor is what makes a reading readable\n");

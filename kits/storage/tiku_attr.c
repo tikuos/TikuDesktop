@@ -17,13 +17,16 @@
 #include <strings.h>
 #include <time.h>
 
-/** @brief Copy one comma-separated field, stopping at ',' or end. */
+/**
+ * @brief Copy one comma-separated field, stopping at ',', at the ';' that
+ *        starts the read policy, or at the end.
+ */
 static const char *
 field(const char *p, char *out, size_t max)
 {
     size_t n = 0;
 
-    while (*p != '\0' && *p != ',') {
+    while (*p != '\0' && *p != ',' && *p != ';') {
         if (n + 1u < max) {
             out[n++] = *p;
         }
@@ -71,7 +74,7 @@ tiku_desc_parse(const char *meta, tiku_desc_t *out)
     p = field(p, out->cost, sizeof out->cost);
 
     /* The range is optional and comes last as "lo..hi". */
-    if (*p != '\0') {
+    if (*p != '\0' && *p != ';') {
         char rng[32];
         char *dots;
 
@@ -82,6 +85,67 @@ tiku_desc_parse(const char *meta, tiku_desc_t *out)
             out->lo = strtol(rng, NULL, 0);
             out->hi = strtol(dots + 2, NULL, 0);
             out->has_range = 1;
+        }
+    }
+    return 1;
+}
+
+int
+tiku_attr_read_policy(const char *meta)
+{
+    const char *p = meta;
+    int result = -1;
+
+    if (p == NULL) {
+        return -1;
+    }
+    while ((p = strchr(p, ';')) != NULL) {
+        const char *end;
+        size_t n;
+
+        p++;
+        end = strchr(p, ';');
+        n = (end != NULL) ? (size_t)(end - p) : strlen(p);
+        if (n >= 6 && strncmp(p, "secret", 6) == 0) {
+            return 0;
+        }
+        if (n >= 5 && strncmp(p, "read=", 5) == 0) {
+            if (n != 9 || strncmp(p, "read=poll", 9) != 0) {
+                return 0;
+            }
+            result = 1;
+        } else {
+            /* An extension this build does not know, or one cut short,
+             * may restrict reading: the node stays listed, unread. */
+            return 0;
+        }
+    }
+    return result;
+}
+
+int
+tiku_attr_autoread(const char *meta, const char *path)
+{
+    /* Nodes whose read changes the board: the console hands over the
+     * bytes waiting on the UART, the scan addresses every I2C device,
+     * the event queue is drained, and /sys/cold_boots writes the time
+     * it reports back to non-volatile memory. */
+    static const char *const acts[] = {
+        "/dev/console", "/dev/i2c/scan", "/sys/vfs/events",
+        "/sys/cold_boots"
+    };
+    int policy = tiku_attr_read_policy(meta);
+    size_t i;
+
+    if (policy >= 0) {
+        return policy;
+    }
+    if (path == NULL) {
+        return 0;
+    }
+    for (i = 0; i < sizeof acts / sizeof acts[0]; i++) {
+        if (strcmp(path, acts[i]) == 0) {
+            return 0;
         }
     }
     return 1;

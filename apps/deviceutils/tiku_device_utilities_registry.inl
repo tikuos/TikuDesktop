@@ -65,7 +65,7 @@ static void registry_values_draw(struct device_utility *p, tiku_surface_t *s)
         snprintf(path, sizeof path, "%s%s%s", p->folder,
             strcmp(p->folder, "/") ? "/" : "", e->name);
         const char *pending = !e->readable ? "—" :
-            utility_autoread(path) ? "Not read" : "Manual read";
+            utility_autoread(e->autoread, path) ? "Not read" : "Manual read";
         const char *values[] = {e->name, "Endpoint", e->writable ?
             e->readable ? "R/W" : "Write-only" : e->readable ? "Read-only" : "No access",
             e->sampled > 0 ? e->data : e->sampled < 0 ? "Unavailable" : pending};

@@ -83,6 +83,7 @@ refresh_one(tiku_trk_poseview_t *v, int i)
     {
         tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
         char buf[256];
+        char local[TIKU_PATH_MAX];
         int len;
 
         if (p == NULL || tiku_model_is_container(&p->model)) {
@@ -91,9 +92,16 @@ refresh_one(tiku_trk_poseview_t *v, int i)
         if (!(p->model.facts.perm & TIKU_P_READ)) {
             return 0;
         }
+        /* A board mounted at /devices/<name> names its nodes from its own
+         * root, so the policy is asked about the path below the mount. */
+        if (tiku_backend_serving(v->backend, p->model.path, local,
+                                 sizeof local) == NULL ||
+            !tiku_attr_autoread(p->model.facts.meta, local)) {
+            return 0;
+        }
         len = v->backend->ops->read(v->backend, p->model.path, buf,
                                     sizeof buf - 1);
-        if (len < 0) {
+        if (len < 0 || (size_t)len >= sizeof buf) {
             return 0;
         }
         buf[len] = '\0';
