@@ -44,7 +44,8 @@ SAN_TESTS += $(SAN_APP_TESTS)
 # Reader's suites link its modules; its folder search counts references
 # by hand, so they are among the leak-checked suites below.
 SAN_READER_TESTS := test_document_reader test_help_reader test_reader_large \
-                    test_reader_reliability test_reader_search_faults
+                    test_reader_reliability test_reader_search_faults \
+                    test_marker
 SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
                   test_editdoc_faults test_editdoc_fixtures \
@@ -103,10 +104,13 @@ SAN_READER_KIT_SRCS := kits/interface/tiku_doc.c \
                        kits/translation/tiku_image.c
 SAN_READER_KIT_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_READER_KIT_SRCS))
 SAN_READER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(READER_CORE_SRC))
+SAN_MARKER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(MARKER_SRC))
+$(SAN)/test_marker: $(SAN_MARKER_OBJS)
 $(addprefix $(SAN)/,$(SAN_READER_TESTS)): $(SAN)/test_%: \
         $(SAN)/tests/apps/test_%.o $(SAN_READER_OBJS) $(SAN_READER_KIT_OBJS) \
         $(SAN_OBJS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< \
+	      $(if $(filter test_marker,$(@F)),$(SAN_MARKER_OBJS)) \
 	      $(SAN_READER_OBJS) $(SAN_READER_KIT_OBJS) \
 	      $(SAN_OBJS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 # The allocation suite links the document model alone.

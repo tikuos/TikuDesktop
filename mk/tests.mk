@@ -54,13 +54,15 @@ test_fontprefs_SRCS   := system/deskbar/tiku_trk_deskbar_prefs.c system/deskbar/
 test_help_window_SRCS := $(READER_CORE_SRC)
 test_help_reader_SRCS := $(READER_CORE_SRC)
 test_document_reader_SRCS := $(READER_CORE_SRC)
+test_marker_SRCS := $(READER_CORE_SRC) $(MARKER_SRC)
+test_marker_LDLIBS := $(X11_LIBS) -lm
 test_reader_large_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_LDLIBS := $(X11_LIBS) -lm
 test_reader_search_faults_SRCS := $(READER_CORE_SRC)
 test_reader_search_faults_LDLIBS := $(X11_LIBS) -lm
 test_reader_allocations_SRCS := apps/reader/tiku_reader_document.c
-.SECONDARY: $(call objs,$(READER_CORE_SRC))
+.SECONDARY: $(call objs,$(READER_CORE_SRC) $(MARKER_SRC))
 test_help_window_LDLIBS := $(X11_LIBS) -lm
 test_vfs_rpc_LDLIBS := -pthread
 test_help_reader_LDLIBS := $(X11_LIBS) -lm
