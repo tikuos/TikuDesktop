@@ -12,6 +12,7 @@ using the public kits. Desktop controllers and preferences belong in
 | `basichost/` | Optional host build of the firmware BASIC interpreter |
 | `bench/`, `console/` | TikuBench and TikuConsole |
 | `reader/`, `image/` | TikuReader/Help and TikuImage |
+| `marker/` | TikuMarker: Markdown documents, read with the Reader's modules |
 | `pdf/` | TikuPDF: datasheets, manuals and papers |
 | `archive/` | TikuArchive: ZIP, tar and gzip archives, browsed and extracted |
 | `diff/` | TikuDiff: two files side by side, two folders, two archives |

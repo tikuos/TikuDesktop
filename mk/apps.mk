@@ -102,6 +102,7 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/grab/app.manifest \
     $(APPS_D)/sdr/app.manifest \
     $(APPS_D)/reader/app.manifest \
+    $(APPS_D)/marker/app.manifest \
     $(APPS_D)/monitor/app.manifest \
     $(APPS_D)/vfs/app.manifest
 
@@ -352,6 +353,18 @@ $(APPS_D)/reader/TikuReader.so: $(READER_SRC) $(READER_HEADERS) $(PIC_LIBS)
 	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/reader/app.manifest: apps/reader/reader.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+apps loadable: $(APPS_D)/marker/TikuMarker.so
+MARKER_SRC := apps/marker/tiku_marker_app.c
+$(APPS_D)/marker/TikuMarker.so: $(MARKER_SRC) apps/marker/tiku_marker.h \
+        $(READER_CORE_SRC) $(READER_HEADERS) $(PIC_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -fvisibility=hidden -o $@ $(MARKER_SRC) \
+	      $(READER_CORE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+
+$(APPS_D)/marker/app.manifest: apps/marker/marker.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 

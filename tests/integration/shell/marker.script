@@ -1,0 +1,59 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/markdown
+# .MD and .MARKDOWN files open in TikuMarker's own process by a
+# double-click, where Find, Reload and F1 Help work; the Applications
+# menu starts it on its welcome page.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 60
+expect-title TikuMarker
+expect-narrate Marker document
+expect-no-title TikuReader
+key f ctrl
+key s
+key e
+key n
+key s
+key o
+key r
+key Return
+wait 8
+expect-narrate Match 1 of 1
+key Escape
+key r ctrl
+wait 8
+expect-narrate Reloaded from disk
+shot /tmp/trk_marker_document.png
+key F1
+wait 20
+expect-title Help
+expect-narrate TikuMarker reads Markdown files
+key w ctrl
+wait 10
+click-window TikuMarker
+key w ctrl
+wait 10
+expect-no-title TikuMarker
+click-window markdown
+click-row 1
+wait 2
+click-row 1
+wait 60
+expect-title TikuMarker
+expect-narrate Another Markdown document
+key w ctrl
+wait 10
+click 980 40
+wait 4
+menu-pick Applications
+wait 4
+expect-menu TikuMarker
+menu-pick TikuMarker
+wait 30
+expect-title TikuMarker
+expect-narrate Read Markdown documents, notes and project guides
+key w ctrl
+quit

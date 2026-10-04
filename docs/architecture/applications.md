@@ -19,8 +19,10 @@ binaries are not part of the desktop shell. The boundary is enforced by
 TikuBasic and TikuC share the app-owned IDE code in `apps/ide/`.
 The BASIC host interpreter is built from the board's interpreter source via
 `apps/basichost/` and belongs to the BASIC bundle, not the system.
-Reader/Help live in `apps/reader/`; Image in `apps/image/`; PDF in
-`apps/pdf/`, drawing through the PDF kit on its own workers; archives in
+Reader/Help live in `apps/reader/`; TikuMarker in `apps/marker/`, a
+Markdown viewer that links the Reader's modules with an identity of its own
+(name, icon, welcome and Help pages, bookmark file); Image in `apps/image/`;
+PDF in `apps/pdf/`, drawing through the PDF kit on its own workers; archives in
 `apps/archive/`, read and extracted by the archive kit on its workers;
 TikuDiff in `apps/diff/`, comparing through the support kit's diff on
 its workers; TikuGrab in `apps/grab/`, which asks the desktop's grab

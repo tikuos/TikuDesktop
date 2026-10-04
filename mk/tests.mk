@@ -190,6 +190,7 @@ test_module_exports_LDLIBS := -ldl
 test_module_exports_CFLAGS := -DTIKU_TEST_APPS=\"$(APPS_D)\"
 $(BUILD)/tests/test_module_exports: | $(APPS_D)/basic/TikuBasic.so \
     $(APPS_D)/c/TikuC.so $(APPS_D)/editor/editor.so $(APPS_D)/reader/TikuReader.so \
+    $(APPS_D)/marker/TikuMarker.so \
     $(APPS_D)/bench/Bench.so $(APPS_D)/console/TikuConsole.so
 test_deviceprefs_LDLIBS := $(X11_LIBS) -lm
 test_calculator_LDLIBS := $(X11_LIBS) -lm

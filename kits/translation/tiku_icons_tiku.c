@@ -20,6 +20,7 @@
 #include "tiku_icons_navigation.inl"
 #include "tiku_icons_toolbar.inl"
 #include "tiku_icons_reader.inl"
+#include "tiku_icons_marker.inl"
 #include "tiku_icons_viewer.inl"
 #include "tiku_icons_pdf.inl"
 #include "tiku_icons_archive.inl"
@@ -159,6 +160,7 @@ static const struct {
     TIKU_ICON(extract_all),
     TIKU_ICON(extract_some),
     TIKU_ICON(reader),
+    TIKU_ICON(marker),
     TIKU_ICON(image_viewer),
     TIKU_ICON(pdf_viewer),
     TIKU_ICON(archive_viewer),
