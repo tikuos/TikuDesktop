@@ -220,10 +220,11 @@ tiku_trk_db_dock_t tiku_trk_deskbar_dock_at(int x, int y, int sw, int sh,
                                             tiku_trk_db_dock_t now);
 
 /** @brief The width (or height, when horizontal) the user has set. */
-/* How many programs a shell may offer in the leaf menu.  The table is
- * shared by every group, so a shipped tree that fills it drops whichever
- * group is scanned last -- today that is Programming. */
-#define TIKU_TRK_DB_APPS_MAX 24
+/* How many programs a shell may offer in the leaf menu, in one table
+ * shared by every group: no fewer than the launch registry's
+ * TIKU_TRK_APP_MAX, which tiku_trk_desktop_apps.c asserts.  One group's
+ * submenu shows at most TIKU_TRK_DB_SUB_MAX of them. */
+#define TIKU_TRK_DB_APPS_MAX 64
 
 #define TIKU_TRK_DB_MIN_W 134
 #define TIKU_TRK_DB_MAX_W 320

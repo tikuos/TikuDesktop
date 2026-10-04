@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_deskbar.h"
+#include "tiku_trk_launch.h"
 #include "tiku_trk_input.h"
 #include "tiku_trk_deskbar_prefs.h"
 
@@ -1022,6 +1023,29 @@ main(void)
         tiku_trk_deskbar_close_calendar(db);
         tiku_surface_free(low);
         tiku_trk_deskbar_draw(db, s);
+    }
+
+    printf("\nall application groups share enough catalogue slots\n");
+    {
+        tiku_trk_deskbar_t *catalogue = tiku_trk_deskbar_new(NULL);
+        int accepted = 0;
+        for (int i = 0; i < TIKU_TRK_APP_MAX; i++) {
+            char label[32];
+            snprintf(label, sizeof label, "Application %02d", i);
+            accepted += tiku_trk_deskbar_add_app_in(catalogue,
+                i % 2 ? TIKU_TRK_DB_GROUP_APPS : TIKU_TRK_DB_GROUP_DEMOS,
+                label, "/fixture/app.so", "marker");
+        }
+        check(accepted == TIKU_TRK_APP_MAX, "catalogue",
+              "every launch-registry slot fits, across groups");
+        for (int i = accepted; i < TIKU_TRK_DB_APPS_MAX; i++) {
+            (void)tiku_trk_deskbar_add_app(catalogue, "More",
+                                           "/fixture/more.so", "");
+        }
+        check(!tiku_trk_deskbar_add_app(catalogue, "Overflow",
+                                        "/fixture/extra.so", ""),
+              "catalogue", "a full catalogue refuses an extra entry");
+        tiku_trk_deskbar_free(catalogue);
     }
 
     tiku_trk_deskbar_free(db);

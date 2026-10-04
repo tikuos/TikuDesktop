@@ -445,6 +445,10 @@ find_help_dir(const char *argv0, char *out, size_t max)
     return 0;
 }
 
+/* The leaf menu's table holds as many programs as the launch registry. */
+_Static_assert(TIKU_TRK_DB_APPS_MAX >= TIKU_TRK_APP_MAX,
+               "the Deskbar's program table is smaller than the registry");
+
 /** @brief Register metadata without loading the module into the desktop. */
 static void offer_bundle(desktop_t *app, const char *dir,
                          const char *runner, const tiku_manifest_t *m)
