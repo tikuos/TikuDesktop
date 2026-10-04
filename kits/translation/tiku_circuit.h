@@ -106,6 +106,19 @@ tiku_circuit_err_t tiku_circuit_drill(const void *data, size_t bytes,
     const tiku_circuit_import_t *options, tiku_circuit_t **out,
     tiku_circuit_diagnostic_t *diag);
 
+/**
+ * @brief Decode one Gerber artwork layer: the command subset doc/circuit.md
+ *        lists, not arbitrary RS-274X.
+ *
+ * The scene keeps the layer's dark and clear operations in order, so it
+ * is drawn through tiku_circuit_render() as a whole.
+ *
+ * @return as tiku_circuit_drill(): @p out untouched on failure
+ */
+tiku_circuit_err_t tiku_circuit_gerber(const void *data, size_t bytes,
+    const tiku_circuit_import_t *options, tiku_circuit_t **out,
+    tiku_circuit_diagnostic_t *diag);
+
 /** @brief The import's warning about what the preview approximates or
  *         leaves out, or an empty string; borrowed until release. */
 const char *tiku_circuit_warning(const tiku_circuit_t *doc);

@@ -127,8 +127,16 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_circuit_artwork.c \
                $(K)/translation/tiku_circuit_stack.c \
                $(K)/translation/tiku_circuit_stack_render.c \
+               $(K)/translation/tiku_circuit_gerber.c \
                $(K)/translation/tiku_circuit_clone.c \
                $(K)/translation/tiku_circuit_contour.c \
+               $(K)/translation/tiku_circuit_gerber_macro.c \
+               $(K)/translation/tiku_circuit_gerber_primitive.c \
+               $(K)/translation/tiku_circuit_gerber_repeat.c \
+               $(K)/translation/tiku_circuit_gerber_aperture.c \
+               $(K)/translation/tiku_circuit_gerber_arc.c \
+               $(K)/translation/tiku_circuit_gerber_attributes.c \
+               $(K)/translation/tiku_circuit_gerber_region.c \
                $(K)/translation/tiku_inflate_stream.c \
                $(K)/translation/tiku_deflate.c \
                $(K)/translation/tiku_png_write.c \
