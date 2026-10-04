@@ -77,7 +77,8 @@ void tiku_reader_init(tiku_reader_help_window_t *c)
 void tiku_reader_images_clear(struct help_reader *r)
 {
     for (int i = 0; i < r->nimages; i++) tiku_image_free(&r->images[i].image);
-    r->nimages = 0;
+    free(r->images); r->images = NULL;
+    r->nimages = r->image_cap = 0; r->image_bytes = r->image_clock = 0;
 }
 
 /** @brief Flatten visible runs, retaining offsets for search and selection. */

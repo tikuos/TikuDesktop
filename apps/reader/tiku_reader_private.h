@@ -55,7 +55,18 @@ typedef struct {
 
 #define HELP_ROWS 128
 #define HELP_REPORTS 8
+#define HELP_IMAGE_BYTES (16u * 1024u * 1024u)   /* decoded pixels kept */
+#define HELP_IMAGE_METADATA (1u * 1024u * 1024u) /* the image records   */
 typedef struct { char page[TIKU_PATH_MAX], title[128], snippet[160]; int block, level, children; } help_row_t;
+/** @brief An image a page names: its file, its size and its pixels. */
+typedef struct {
+    char src[TIKU_PATH_MAX];        /* as the page names it              */
+    char path[TIKU_PATH_MAX];       /* the file it resolved to           */
+    tiku_image_t image;             /* decoded pixels; none until drawn  */
+    int width, height;              /* from the file's header            */
+    int failed;                     /* refused or undecodable            */
+    unsigned long used;             /* image_clock when last drawn       */
+} help_image_t;
 struct help_reader {
     char *text;                     /* the page's text, flattened        */
     int *starts, length, a, b, dragging, block;
@@ -81,8 +92,10 @@ struct help_reader {
     unsigned char *folded;
     char hovered[1024];             /* the link under the pointer        */
     struct { char name[32]; char *html; } reports[HELP_REPORTS];
-    struct { char src[256]; tiku_image_t image; } images[8];
-    int nimages;
+    help_image_t *images;           /* the page's images, in order met   */
+    int nimages, image_cap;         /* held; room for                    */
+    size_t image_bytes;             /* decoded pixels held, in bytes     */
+    unsigned long image_clock;      /* counts drawings, for eviction     */
     tiku_surface_t *surface;
 };
 

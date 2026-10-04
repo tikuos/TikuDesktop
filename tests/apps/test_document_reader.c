@@ -373,7 +373,11 @@ int main(void)
     tiku_workspace_draw(workspace);
     assert(!strcmp(tiku_doc_title(c.doc), "Details") && c.nback == 1);
     assert(!strstr(c.reader->text, "hidden script"));
-    assert(c.reader->nimages == 1 && c.reader->images[0].image.w == 20);
+    /* The image was decoded: its pixels are the fixture's red. */
+    const tiku_image_t *pixel = &c.reader->images[0].image;
+    assert(c.reader->nimages == 1 && pixel->px && pixel->w == 20 &&
+           pixel->h == 8 &&
+           (pixel->px[0] & 0xFFFFFFu) == TIKU_RGB(200, 10, 20));
     assert(tiku_reader_help_window_go(&c, "../notes.MD#example") == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace);
     assert(!strcmp(tiku_doc_title(c.doc), "Notes"));

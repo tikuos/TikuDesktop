@@ -9,6 +9,14 @@ static void fixture(const char *root, const char *name, const char *html)
     FILE *f = fopen(path, "w"); assert(f); fputs(html, f); fclose(f);
 }
 
+/** @brief Whether image @p i was decoded: the 20x8 red fixture's pixels. */
+static int decoded(const struct help_reader *r, int i)
+{
+    const tiku_image_t *im = &r->images[i].image;
+    return im->px && im->w == 20 && im->h == 8 &&
+           (im->px[0] & 0xFFFFFFu) == TIKU_RGB(200, 10, 20);
+}
+
 static void press(tiku_reader_help_window_t *c, unsigned key, unsigned modifiers)
 {
     tiku_event_t e = {.type=TIKU_EVENT_KEY_DOWN, .key=key, .modifiers=modifiers};
@@ -25,7 +33,7 @@ static void markdown(tiku_reader_help_window_t *c, const char *root, tiku_worksp
     assert(tiku_reader_help_window_go(c, "guide.MD#example") == TIKU_READER_HELP_PAGE);
     tiku_workspace_draw(workspace);
     assert(!strcmp(tiku_doc_title(c->doc), "Markdown guide"));
-    assert(c->reader->nimages == 1 && c->reader->images[0].image.w == 20);
+    assert(c->reader->nimages == 1 && decoded(c->reader, 0));
     assert(tiku_doc_anchor_y(c->doc, "example") >= 0);
     assert(tiku_reader_help_window_copy(c, 1));
     assert(!strcmp(tiku_clipboard_text(), "PRINT \"café <&>\"\nEND\n"));
@@ -73,7 +81,7 @@ int main(void)
     tiku_reader_help_window_t c;
     tiku_reader_help_window_init(&c, workspace, root, 1000, 760, &dirty);
     tiku_reader_help_window_open(&c); tiku_workspace_draw(workspace);
-    assert(c.reader && c.reader->nimages == 1 && c.reader->images[0].image.w == 20);
+    assert(c.reader && c.reader->nimages == 1 && decoded(c.reader, 0));
     assert(tiku_reader_help_window_find(&c, "clock frequency", 0));
     assert(c.reader->matches == 2); int first = c.reader->match;
     assert(tiku_reader_help_window_find(&c, "clock frequency", 0) && c.reader->match > first);
