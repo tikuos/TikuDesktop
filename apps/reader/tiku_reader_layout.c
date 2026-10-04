@@ -77,7 +77,9 @@ tiku_reader_layout(tiku_reader_help_window_t *owner, tiku_rect_t c)
 void tiku_reader_settle(tiku_reader_help_window_t *c)
 {
     if (!c->doc || c->laid_for <= 0) return;
+    int font = tiku_reader_font_begin(c);
     tiku_reader_document_layout(&c->doc, c->laid_for);
+    tiku_reader_font_end(font);
     tiku_scroll_set_range(&c->bar, tiku_doc_height(c->doc), c->page_h);
 }
 
@@ -85,6 +87,7 @@ void tiku_reader_settle(tiku_reader_help_window_t *c)
 void tiku_reader_refit(tiku_reader_help_window_t *c, help_layout_t l)
 {
     if (!c->doc) return;
+    int font = tiku_reader_font_begin(c);
     tiku_doc_place_t place = tiku_doc_place(c->doc, c->bar.value);
     int had = tiku_doc_laid(c->doc);
     int changed = c->doc->laid_width != l.page.w ||
@@ -106,6 +109,7 @@ void tiku_reader_refit(tiku_reader_help_window_t *c, help_layout_t l)
         else tiku_reader_say(c, tiku_str("help.no_such_place"));
         c->anchor[0] = 0;
     }
+    tiku_reader_font_end(font);
 }
 
 /** @brief Register what can be pressed, and what may take the keyboard. */
@@ -229,6 +233,11 @@ static help_layout_t document_layout(tiku_reader_help_window_t *c, tiku_rect_t b
     if (l.paper.h < 24) l.paper.h = 24;
     l.page = (tiku_rect_t){l.paper.x + 10, l.paper.y + 8,
         l.paper.w - HELP_BAR - 20, l.paper.h - 16};
+    if (c->reader && c->reader->reading_width &&
+        l.page.w > c->reader->reading_width) {
+        l.page.x += (l.page.w - c->reader->reading_width) / 2;
+        l.page.w = c->reader->reading_width;
+    }
     l.bar = (tiku_rect_t){l.paper.x + l.paper.w - HELP_BAR - 1,
         l.paper.y + 1, HELP_BAR, l.paper.h - 2};
     return l;

@@ -76,16 +76,34 @@ void tiku_reader_document_menus(tiku_reader_help_window_t *c)
     if (c->reader) {
         tiku_menu_list_t *edit = &set.menu[1], *view = &set.menu[2];
         tiku_menu_entry_t *stop = &edit->item[edit->nitem++];
-        tiku_menu_entry_t *item = &view->item[view->nitem++];
         *stop = (tiku_menu_entry_t){.command = HELP_CANCEL_SEARCH,
                                     .enabled = c->reader->search != NULL};
         snprintf(stop->label, sizeof stop->label, "%s",
                  tiku_str("reader.stop_search"));
-        *item = (tiku_menu_entry_t){.command = HELP_RESULTS,
-            .enabled = c->reader->search_query[0] != 0,
-            .marked = c->reader->side == 2};
-        snprintf(item->label, sizeof item->label, "%s",
-                 tiku_str("reader.search_results"));
+        const char *extra[] = {"reader.search_results", "reader.text_larger",
+                               "reader.text_smaller", "reader.text_default",
+                               "reader.reading_width"};
+        const int commands[] = {HELP_RESULTS, HELP_TEXT_LARGER,
+                                HELP_TEXT_SMALLER, HELP_TEXT_RESET,
+                                HELP_READING_WIDTH};
+        const char keys[] = {0, '+', '-', '0', 0};
+        int size = c->reader->text_size ? c->reader->text_size :
+                                          tiku_font_size();
+        for (int i = 0; i < 5; i++) {
+            tiku_menu_entry_t *item = &view->item[view->nitem++];
+            snprintf(item->label, sizeof item->label, "%s",
+                     tiku_str(extra[i]));
+            item->command = commands[i]; item->enabled = 1;
+            item->sc = keys[i]; item->mods = keys[i] ? TIKU_MOD_CMD : 0;
+            if (i == 0) {
+                item->enabled = c->reader->search_query[0] != 0;
+                item->marked = c->reader->side == 2;
+            }
+            if (i == 1) item->enabled = size < 16;
+            if (i == 2) item->enabled = size > 10;
+            if (i == 3) item->marked = c->reader->text_size == 0;
+            if (i == 4) item->marked = c->reader->reading_width != 0;
+        }
     }
     tiku_window_publish_menus(c->window, &set, tiku_reader_document_menu_pick, c);
 }
@@ -108,6 +126,12 @@ int tiku_reader_window_event(tiku_window_t *window, const tiku_event_t *ev, void
     }
     if (c->document_mode && ev->type == TIKU_EVENT_KEY_DOWN) {
         int cmd = (ev->modifiers & TIKU_MOD_CMD) != 0;
+        if (cmd && (ev->key == '+' || ev->key == '=' || ev->key == '-' ||
+                    ev->key == '0')) {
+            invoke(c, ev->key == '-' ? HELP_TEXT_SMALLER :
+                      ev->key == '0' ? HELP_TEXT_RESET : HELP_TEXT_LARGER);
+            return 1;
+        }
         if (cmd && (ev->key == 'o' || ev->key == 'O')) {
             invoke(c, HELP_HOME); return 1;
         }

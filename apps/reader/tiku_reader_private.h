@@ -36,7 +36,8 @@ enum { HELP_BACK = 1, HELP_FORWARD, HELP_HOME, HELP_DONE, HELP_PAGE,
        HELP_FIND, HELP_PREV, HELP_NEXT, HELP_SEARCH, HELP_COPY, HELP_CODE,
        HELP_OUTLINE, HELP_BOOKMARK, HELP_BOOKMARKS, HELP_LINK, HELP_SIDE,
        HELP_LOCATION, HELP_GO, HELP_FIND_CLOSE, HELP_FIND_TOGGLE,
-       HELP_CANCEL_SEARCH, HELP_RESULTS };
+       HELP_CANCEL_SEARCH, HELP_RESULTS, HELP_TEXT_LARGER, HELP_TEXT_SMALLER,
+       HELP_TEXT_RESET, HELP_READING_WIDTH };
 _Static_assert(HELP_PAGE == TIKU_READER_HELP_CONTROL_PAGE,
                "the page's control id is named in the header");
 
@@ -66,6 +67,7 @@ struct help_reader {
     tiku_field_t location;          /* the Location field                */
     tiku_field_input_t location_input; /* its scroll and drag            */
     int find_visible, location_dirty;
+    int text_size, reading_width; /* zero follows desktop size / full width */
     int hover_tool;
     tiku_rect_t zoom_frame;         /* the frame the last maximize set   */
     tiku_list_t list;               /* the sidebar's rows                */
@@ -95,6 +97,9 @@ void tiku_reader_settle(tiku_reader_help_window_t *c);
 void tiku_reader_refit(tiku_reader_help_window_t *c, help_layout_t l);
 void tiku_reader_controls(tiku_reader_help_window_t *c, help_layout_t l);
 void tiku_reader_reveal(tiku_reader_help_window_t *c, help_layout_t l);
+int tiku_reader_font_begin(tiku_reader_help_window_t *c);
+void tiku_reader_font_end(int previous);
+int tiku_reader_typography(tiku_reader_help_window_t *c, int command);
 
 /* Navigation. */
 int tiku_reader_page_read(tiku_reader_help_window_t *c, const char *name);

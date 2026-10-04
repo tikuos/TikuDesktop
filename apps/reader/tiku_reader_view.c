@@ -71,11 +71,16 @@ void tiku_reader_draw(tiku_window_t *window, tiku_surface_t *s,
         how.image = tiku_reader_image_draw;
         how.image_ctx = c;
         if (c->reader) c->reader->surface = s;
+        int font = tiku_reader_font_begin(c);
+        /* Display-list faces of the default size are read at the desktop's
+         * size, so a page drawn at another size takes the pixel path. */
+        if (tiku_font_size() != font) tiku_gfx_rec_miss(s);
         if (l.page.x < s->clip.x+s->clip.w &&
             l.page.y < s->clip.y+s->clip.h &&
             l.page.x+l.page.w > s->clip.x &&
             l.page.y+l.page.h > s->clip.y)
             tiku_doc_draw_marked(s, c->doc, l.page, &how, reader_mark, c);
+        tiku_reader_font_end(font);
         if (tiku_scroll_max(&c->bar) > 0 && tiku_doc_height(c->doc) > 0) {
             pos = (float)c->bar.value / (float)tiku_scroll_max(&c->bar);
             frac = (float)l.page.h / (float)tiku_doc_height(c->doc);
@@ -137,7 +142,7 @@ static void reader_mark(void *ctx, tiku_surface_t *s, int piece, tiku_rect_t box
 }
 
 /** @brief The same glyph widths decide selection and its highlight. */
-static int reader_offset(tiku_reader_help_window_t *c, int x, int y)
+static int reader_offset_at_size(tiku_reader_help_window_t *c, int x, int y)
 {
     struct help_reader *r = c->reader;
     int line = tiku_doc_line_at(c->doc, y);
@@ -156,6 +161,15 @@ static int reader_offset(tiku_reader_help_window_t *c, int x, int y)
         r->block = ln->block; return at+n;
     }
     return -1;
+}
+
+/** @brief The text offset at (@p x, @p y), measured at the page's size. */
+static int reader_offset(tiku_reader_help_window_t *c, int x, int y)
+{
+    int font = tiku_reader_font_begin(c);
+    int offset = reader_offset_at_size(c, x, y);
+    tiku_reader_font_end(font);
+    return offset;
 }
 
 /** @brief Sidebars reuse the kit list, including its keyboard and wheel behavior. */
@@ -256,6 +270,7 @@ void tiku_reader_side_open(tiku_reader_help_window_t *c)
 int tiku_reader_action(tiku_reader_help_window_t *c, int command)
 {
     struct help_reader *r = c->reader; if (!r) return 0;
+    if (tiku_reader_typography(c, command)) return 1;
     switch (command) {
     case HELP_PREV: case HELP_NEXT: tiku_reader_help_window_find(c, r->query.text, command == HELP_PREV); break;
     case HELP_SEARCH: tiku_reader_search(c); break;

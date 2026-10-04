@@ -273,7 +273,8 @@ int tiku_reader_document_event(tiku_reader_help_window_t *c, const tiku_event_t 
         /* Navigation accelerators are not text-editing commands. */
         if (ev->key == 'o' || ev->key == 'O' ||
             ev->key == 'r' || ev->key == 'R' ||
-            ev->key == 'd' || ev->key == 'g') return 0;
+            ev->key == 'd' || ev->key == 'g' || ev->key == '+' ||
+            ev->key == '=' || ev->key == '-' || ev->key == '0') return 0;
     }
     if (key && (ev->modifiers & TIKU_MOD_OPTION) &&
         (ev->key == TIKU_KEY_LEFT || ev->key == TIKU_KEY_RIGHT)) return 0;

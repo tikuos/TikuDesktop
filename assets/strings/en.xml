@@ -20,6 +20,10 @@
   <string name="reader.search_folder">Search folder</string>
   <string name="reader.stop_search">Stop Search</string>
   <string name="reader.search_results">Search Results</string>
+  <string name="reader.text_larger">Larger Text</string>
+  <string name="reader.text_smaller">Smaller Text</string>
+  <string name="reader.text_default">Default Text Size</string>
+  <string name="reader.reading_width">Comfortable Reading Width</string>
   <string name="reader.location">Location:</string>
   <string name="reader.location_focus">Location…</string>
   <string name="reader.go">Go</string>
