@@ -380,6 +380,7 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
     if (any_backgrounds(v))
         (void)tiku_cv_walk_near(v, w->line, INT64_MAX, r->left,
                                 background_cell, r);
+    tiku_cv_guides_paint(v, r->s, w, r->y);
     r->at = first_after(r, w->start);
     for (k = r->at; k < r->nsels && sel_lo(&r->sels[k]) < w->end; k++) {
         a = sel_lo(&r->sels[k]) > w->start ? sel_lo(&r->sels[k]) : w->start;

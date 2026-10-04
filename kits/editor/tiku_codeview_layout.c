@@ -35,6 +35,9 @@ typedef struct {
 const tiku_font_t *
 tiku_cv_font(const tiku_codeview_t *v)
 {
+    /* A zoomed view steps from the size tiku_font_mono() picks. */
+    if (v->zoom != 0)
+        return tiku_font_mono_at(tiku_font_mono_px() + 2 * v->zoom, 0);
     return v->font != NULL ? v->font : tiku_font_mono(0);
 }
 

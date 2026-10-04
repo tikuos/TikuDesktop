@@ -81,6 +81,25 @@ tiku_rect_t tiku_codeview_bounds(const tiku_codeview_t *view);
  *         interface's monospaced face. */
 void tiku_codeview_set_font(tiku_codeview_t *view, const tiku_font_t *font);
 const tiku_font_t *tiku_codeview_font(const tiku_codeview_t *view);
+/**
+ * @brief Draw the monospaced face @p steps steps of two pixels bigger,
+ *        from -2 to 4; 0 draws it at the size the interface picks.
+ *
+ * The desktop's font preferences, the text and the selections are left
+ * as they are.  A step past the range is refused with TIKU_EDIT_LIMIT,
+ * and any but 0 while the view has a face of its own with
+ * TIKU_EDIT_INVALID; setting a face puts the zoom back to 0.
+ */
+tiku_edit_status_t tiku_codeview_set_zoom(tiku_codeview_t *view, int steps);
+/** @brief The steps the monospaced face is zoomed by. */
+int tiku_codeview_zoom(const tiku_codeview_t *view);
+/** @brief Draw a ruler down the text at column @p column, counted in
+ *         widths of the face's space, or none with 0; a column past 10000
+ *         is refused with TIKU_EDIT_LIMIT. */
+tiku_edit_status_t tiku_codeview_set_ruler(tiku_codeview_t *view,
+                                           unsigned column);
+/** @brief The ruler's column, 0 for none. */
+unsigned tiku_codeview_ruler(const tiku_codeview_t *view);
 
 /** @brief Columns between tab stops, from 1 to TIKU_CODEVIEW_TAB_MAX;
  *         anything else is refused and the setting kept. */
@@ -161,6 +180,8 @@ const tiku_codeview_lexer_t *tiku_codeview_json_lexer(void);
                                              while the view is focused  */
 #define TIKU_CODEVIEW_BLOCK_CARET  0x200u /* each caret a block over the
                                              character after it         */
+#define TIKU_CODEVIEW_INDENT_GUIDES 0x400u /* a dotted guide at each level
+                                              of a line's indentation   */
 
 /* How text of one ink is drawn besides its colour; a new view draws every
  * ink plain. */

@@ -109,6 +109,8 @@ struct tiku_codeview {
     tiku_edit_listener_t listener;  /* told of every change             */
     const tiku_font_t *font;        /* NULL: the monospaced face        */
     int tab_width;                  /* columns between tab stops        */
+    int zoom;                       /* two-pixel steps of the mono face */
+    unsigned ruler;                 /* the ruler's column, 0 none       */
     int focused;                    /* draw the caret                   */
     tiku_rect_t bounds;             /* on the surface                   */
     int64_t top;                    /* line in the first row            */
@@ -516,6 +518,12 @@ tiku_edit_pos_t tiku_cv_open_before(tiku_codeview_t *v, tiku_edit_pos_t pos,
 /* Paint the pair behind the text of the first @p rows rows shown. */
 void tiku_cv_brace_paint(tiku_codeview_t *v, tiku_surface_t *s,
                          int64_t rows);
+
+/* Guides (tiku_codeview_guides.c): the ruler, and with
+ * TIKU_CODEVIEW_INDENT_GUIDES the guides in the indentation of row @p w,
+ * painted behind its text at surface row @p y. */
+void tiku_cv_guides_paint(tiku_codeview_t *v, tiku_surface_t *s,
+                          const tiku_cv_row_t *w, int y);
 
 /* Indicators and annotations (tiku_codeview_notes.c): the rows the
  * annotations under @p line take while they are shown. */

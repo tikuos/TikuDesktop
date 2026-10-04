@@ -174,6 +174,7 @@ tiku_codeview_set_font(tiku_codeview_t *view, const tiku_font_t *font)
     if (view == NULL)
         return;
     view->font = font;
+    view->zoom = 0;
     tiku_cv_clamp(view);
 }
 
@@ -284,7 +285,8 @@ tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
                                TIKU_CODEVIEW_ANNOTATIONS |
                                TIKU_CODEVIEW_FOLDS |
                                TIKU_CODEVIEW_CARET_LINE |
-                               TIKU_CODEVIEW_BLOCK_CARET);
+                               TIKU_CODEVIEW_BLOCK_CARET |
+                               TIKU_CODEVIEW_INDENT_GUIDES);
     view->held_bar = 0;
     view->arrow_bar = 0;
     tiku_cv_clamp(view);
