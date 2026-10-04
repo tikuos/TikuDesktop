@@ -166,7 +166,8 @@ void tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
 /* The menu bar                                                              */
 /*---------------------------------------------------------------------------*/
 
-#define TIKU_MENUBAR_MAX 6
+/* Six application menus plus the desktop's system and Devices menus. */
+#define TIKU_MENUBAR_MAX 8
 
 typedef struct {
     tiku_menu_t *menu[TIKU_MENUBAR_MAX];
