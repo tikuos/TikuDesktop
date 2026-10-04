@@ -37,7 +37,7 @@ def main():
         ["make", "-s", "--no-print-directory", "print-shell-sources"], cwd=ROOT, text=True)
     errors = violations(ROOT, output.split())
     forbidden = re.compile(r'\b_?(?:tiku_app_load|tiku_reader_\w+|tiku_image_window_\w+|'
-                           r'device_utilit\w+|desktop_utilit\w+|tiku_demo_app)\b')
+                           r'tiku_circuitview_\w+|device_utilit\w+|desktop_utilit\w+|tiku_demo_app)\b')
     # The product desktop, and the Tracker where it now lives: the
     # harness's development flavour, the only one built.
     for name, place in (("TikuDesktop", "build/runtime/system"),

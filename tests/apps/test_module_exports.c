@@ -25,6 +25,8 @@ int main(void)
          "tiku_reader_app_start"},
         {"marker/TikuMarker.so", "marker", "TikuMarker",
          "tiku_reader_app_start"},
+        {"circuit/TikuCircuit.so", "circuit", "TikuCircuit",
+         "tiku_circuitview_open"},
         {"bench/Bench.so", "tiku.bench", "Bench",
          "tiku_bench_command_build"},
         {"console/TikuConsole.so", "tiku.console", "TikuConsole",
@@ -50,7 +52,7 @@ int main(void)
     }
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++)
         assert(!dlclose(handles[i]));
-    puts("PASS: BASIC, C, Editor, Reader, Marker, Bench and Console keep "
-         "their ABI, IDs and private seams");
+    puts("PASS: BASIC, C, Editor, Reader, Marker, Circuit, Bench and "
+         "Console keep their ABI, IDs and private seams");
     return 0;
 }

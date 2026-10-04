@@ -12,7 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 FAMILIES = {"ide": "tiku_ide_", "editor": "tiku_editor_",
             "reader": "tiku_reader_", "bench": "tiku_bench_",
-            "console": "tiku_console_"}
+            "console": "tiku_console_", "circuit": "tiku_circuit_"}
 SUFFIXES = {".c", ".h", ".inl", ".m"}
 GENERATED = {"kits/interface/tiku_font_data.h", "kits/translation/tiku_icons.c"}
 INCLUDE = re.compile(r'^\s*#\s*include\s*["<]([^">]+)[">]', re.M)

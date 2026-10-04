@@ -1,0 +1,83 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/formats
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title TikuCircuit
+expect-narrate a-eagle.SCH
+expect-narrate EAGLE XML preview
+shot /tmp/trk_circuit_eagle_components.png
+key f ctrl
+key D
+key A
+key T
+key A
+key Return
+wait 25
+expect-narrate DATA[0..7]
+key r ctrl
+wait 100
+expect-narrate Sheet 2
+expect-narrate EAGLE XML preview
+expect-same-as-redraw
+shot /tmp/trk_circuit_eagle.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+click-window formats
+click-row 1
+wait 2
+click-row 1
+wait 100
+expect-title TikuCircuit
+expect-narrate b-macros.gbr
+key f ctrl
+key D
+key 1
+key 0
+key Return
+wait 25
+expect-narrate isolated macro flash
+click 113 8     # Edit
+wait 8
+menu-pick Copy Selection Details
+wait 8
+expect-narrate Selection details copied
+key r ctrl
+wait 100
+expect-narrate Gerber preview
+expect-same-as-redraw
+shot /tmp/trk_circuit_macros.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+click-window formats
+click-row 2
+wait 2
+click-row 2
+wait 100
+expect-title TikuCircuit
+expect-narrate c-repeats.gbr
+expect-narrate Gerber preview
+expect-same-as-redraw
+shot /tmp/trk_circuit_repeats.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+click-window formats
+click-row 3
+wait 2
+click-row 3
+wait 100
+expect-title TikuCircuit
+expect-narrate d-cutins.gbr
+expect-narrate Gerber preview
+expect-same-as-redraw
+shot /tmp/trk_circuit_cutins.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+quit

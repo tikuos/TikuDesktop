@@ -273,6 +273,11 @@
   <string name="kind.trash">Trash</string>
   <string name="kind.application">Application</string>
   <string name="kind.text_file">Text file</string>
+  <string name="kind.schematic">KiCad schematic</string>
+  <string name="kind.drill">Drill drawing</string>
+  <string name="kind.gerber">Gerber artwork</string>
+  <string name="kind.gerberjob">Gerber job</string>
+  <string name="kind.eagleschematic">Schematic (.sch)</string>
   <string name="kind.image">Image</string>
   <string name="kind.audio">Audio</string>
   <string name="kind.video">Video</string>

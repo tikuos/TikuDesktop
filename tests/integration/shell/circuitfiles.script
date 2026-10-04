@@ -1,0 +1,54 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/circuits
+# Tracker routes a mixed-case modern schematic to the separate circuit app.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title TikuCircuit
+expect-narrate a-labels.KICAD_SCH
+expect-narrate Selection Details
+expect-narrate substitute font
+key f ctrl
+key u
+key 1
+key Return
+wait 30
+expect-narrate Component: U1
+expect-narrate Reference: U1
+shot /tmp/trk_circuit_details.png
+click 113 8     # Edit
+wait 8
+menu-pick Copy Selection Details
+wait 8
+expect-narrate Selection details copied
+click 155 8     # View
+wait 8
+menu-pick Show Selection Details
+wait 20
+expect-no-narrate Selection Details
+expect-same-as-redraw
+click 155 8     # View
+wait 8
+menu-pick Show Selection Details
+wait 20
+expect-narrate Selection Details
+key r ctrl
+wait 80
+expect-narrate Sheet 1 of 1
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+click-window circuits
+click-row 1
+wait 2
+click-row 1
+wait 100
+expect-title TikuCircuit
+expect-narrate b-properties.kicad_sch
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+quit

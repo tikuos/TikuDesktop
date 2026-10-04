@@ -103,6 +103,7 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/sdr/app.manifest \
     $(APPS_D)/reader/app.manifest \
     $(APPS_D)/marker/app.manifest \
+    $(APPS_D)/circuit/app.manifest \
     $(APPS_D)/monitor/app.manifest \
     $(APPS_D)/vfs/app.manifest
 
@@ -353,6 +354,18 @@ $(APPS_D)/reader/TikuReader.so: $(READER_SRC) $(READER_HEADERS) $(PIC_LIBS)
 	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/reader/app.manifest: apps/reader/reader.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+apps loadable: $(APPS_D)/circuit/TikuCircuit.so
+CIRCUIT_SRC := $(sort $(wildcard apps/circuit/*.c))
+$(APPS_D)/circuit/TikuCircuit.so: $(CIRCUIT_SRC) $(wildcard apps/circuit/*.h) \
+        $(PIC_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -fvisibility=hidden -o $@ $(CIRCUIT_SRC) $(PIC_LIBS) \
+	      $(LDFLAGS) $(X11_LIBS) -lm
+
+$(APPS_D)/circuit/app.manifest: apps/circuit/circuit.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 

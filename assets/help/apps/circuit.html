@@ -1,0 +1,193 @@
+<h1>TikuCircuit</h1>
+<p>A read-only viewer for electronics drawings: KiCad schematics
+(.kicad_sch) with their linked sheets, EAGLE XML schematics (.sch), Gerber
+artwork layers, decimal-coordinate drill files (.drl, .xnc, .xln) and
+Gerber jobs (.gbrjob). Choose <b>Programming &gt; TikuCircuit</b> in the
+Deskbar, or double-click one of these files in Tracker; they open in
+TikuCircuit unless File Associations names another handler. The contents
+are checked on opening; legacy binary EAGLE and legacy KiCad .sch files
+need converting in a compatible CAD application.</p>
+<h2 id="menus">The menus</h2>
+<ul>
+<li><b>File</b>: Open..., Open Gerber Job..., Reload, Open Example, Clear
+Drawing and Close.</li>
+<li><b>Edit</b>: Copy Selection Details, Find... and Find Next.</li>
+<li><b>View</b>: Fit Drawing, Zoom In, Zoom Out, Cancel, Show Sheets (Show
+Layers for a layer stack), Previous Sheet, Next Sheet and Show Selection
+Details.</li>
+<li><b>Layers</b>: Add Layer..., Layer Visible, Raise Layer, Lower Layer,
+Next Layer Colour, Cycle Layer Opacity and Remove Layer.</li>
+</ul>
+<p>The shortcuts are shown beside the commands: Ctrl+O, Ctrl+R, Ctrl+W,
+Ctrl+C, Ctrl+F, Ctrl+G, Ctrl+[ and Ctrl+] (Command on macOS), and +, -
+and 0 on their own for Zoom In, Zoom Out and Fit Drawing.</p>
+<h2 id="open">Open a schematic</h2>
+<p>Choose File &gt; Open, or press Ctrl+O, and select a local root
+.kicad_sch file. The reader uses embedded symbol definitions and reads
+linked sheets within the root file's directory tree. It does not download
+libraries or execute scripts. Links outside that tree, symlinks, absolute
+paths and environment-variable paths are refused. Use File &gt; Reload to
+read changes saved by your CAD application. Cancelling the file panel
+leaves the window as it was.</p>
+<p>Open and Reload run in the background. The existing drawing stays
+visible until both the replacement and its first view are ready. A root
+import failure reports the reason and, where available, its line and
+column, and does not replace the previous drawing. Opening a project with
+an unreadable or unsupported child shows an incomplete-preview warning and
+marks that sheet with !; selecting it shows the error instead of a
+drawing. Reload rejects any replacement with an unavailable sheet and
+keeps the previous project visible; File &gt; Open of the same file opens
+it as any file is opened. TikuCircuit does not write to the files it
+opens.</p>
+<h2 id="eagle">EAGLE schematics</h2>
+<p>Open an XML .sch file to browse its sheets, search component values and
+net names, and inspect parts, gates, pins and package-pad connections.
+Embedded libraries are used; no external library or DTD is loaded.
+Rotation, mirroring, detached attributes, ordinary labels and curved wires
+are supported. Text, colours and frame spacing use the viewer's theme, not
+exact EAGLE typography.</p>
+<p>The supported subset excludes boards, binary files, hierarchical
+modules, active assembly variants, generated cross-reference labels,
+dimensions, dashed wires and curved or hatched polygons. Unsupported
+drawings produce an error without replacing the current document. This is
+not an electrical check.</p>
+<h2 id="drill">Open a drill drawing</h2>
+<p>Choose File &gt; Open to select a .drl, .xnc or .xln file. The viewer
+supports declared metric/inch units, round holes, straight slots and
+circular routes of at most 180 degrees with an explicit A radius. It
+preserves the source origin; it does not align files automatically. All
+displayed distances are millimetres.</p>
+<p>Click a hole or route to inspect its tool, diameter, source position and
+declared attributes. Find accepts a tool name such as T01. Copy Selection
+Details, pan, zoom, Fit and Reload work as they do for schematics. No font
+is needed.</p>
+<p>This is a subset of XNC/Excellon, not a machine controller. Export
+absolute coordinates with decimal points. Ambiguous integer coordinates,
+zero suppression, incremental positioning, repeats and unsupported
+commands are refused with an error; the current drawing stays visible. The
+reader also recognizes KiCad's explicit decimal FORMAT declaration. Holes
+and slots are shown without copper or board outlines. Plating is reported
+only when declared by the file. Do not use this preview to verify
+manufacturing output.</p>
+<h2 id="gerber">Open a Gerber layer</h2>
+<p>Open a .gbr, .ger, .gbrx or common Gerber layer file such as .gtl. The
+viewer supports standard circular, rectangular, obround and polygon pads,
+circular holes, aperture macros, step-and-repeat blocks, solid round
+tracks, G75 arcs and region contours including curves and validated
+cut-ins for holes. Small radius differences from coordinate rounding are
+supported within a bounded tolerance. Dark and clear operations are
+applied in order. A hole in a pad is transparent; it does not erase an
+earlier object. The source origin is retained.</p>
+<p>Click visible artwork or use Find with an aperture name such as D10.
+Selection Details shows polarity, aperture dimensions, positions and
+attributes. Copy Selection Details includes fields below the visible part
+of the panel. File-function and polarity attributes are reported as
+declared; the filename is not used to guess them. A FilePolarity attribute
+does not invert the displayed canvas.</p>
+<p>Opening another file replaces the view only after success. Nonidentity
+aperture transforms, aperture blocks, self-crossing or invalid cut-in
+regions, large arc-radius discrepancies and other unsupported commands
+cause an explicit error and leave the previous drawing available. No
+scripts or machine commands are executed. This is an inspection preview,
+not manufacturing verification.</p>
+<p>Macros support circles, vectors, rectangles, outlines, polygons,
+thermals and moirés, with bounded variables and arithmetic. A macro's clear
+primitives affect that flash only. Repeat blocks preserve dark/clear order
+and require an explicit closing SR command. Expanded drawings that exceed
+memory or geometry limits are refused rather than truncated.</p>
+<h2 id="layers">Combine layers and drills</h2>
+<p>Open an artwork or drill file, then use Layers &gt; Add Layer. Each
+addition goes to the front. The Layers list runs front to back. Click a
+row to select it, or its checkbox to show or hide it; clicking an object
+in the drawing selects its layer too. The Layers menu can raise, lower,
+recolour, change opacity or remove the selected layer. Opacity cycles
+through 100%, 75%, 50% and 25%. Hidden layers are excluded from Find,
+picking and Fit. If the window no longer shows a layer stack when the file
+is chosen, nothing is added and the status line says why.</p>
+<p>All files share their original coordinates, converted to millimetres.
+There is no automatic alignment or bottom-layer mirroring. Clear
+operations affect only their own layer; transparent areas reveal the
+layers behind them. Drills are coloured overlays and do not remove copper.
+Keep them at the front.</p>
+<h2 id="job">Open a Gerber job</h2>
+<p>Open a .gbrjob file through Tracker or File &gt; Open Gerber Job. The
+viewer loads the listed Gerber, XNC and NC files within the job directory
+tree. It does not follow symlinks or paths outside that tree. Listed order
+becomes display order; it is not a verified physical stack-up. Declared
+job metadata is shown in the details panel when you select a layer row.
+FilePolarity does not invert the canvas. Other job sections are not
+interpreted.</p>
+<p>Missing or unsupported layers stay listed with ! and an error. A
+persistent warning identifies an incomplete stack. Reload rereads the
+current list and preserves your order, colours, opacity and visibility. If
+any layer fails, the previous stack remains. Reopen the job to pick up
+changes to its file list. These display settings are not saved between
+sessions. A stack supports at most 32 layers and a job file at most 1 MiB.
+Allocation, budget and cancellation failures do not replace the current
+drawing.</p>
+<h2 id="sheets">Browse sheets</h2>
+<p>The sheet list shows each occurrence of a child schematic separately,
+with its own component references and unit selection. Click a row to read
+it. Tab can focus the list; use arrows, Home, End and Page Up/Down, or its
+scrollbar. View &gt; Show Sheets toggles the list. Narrow windows hide it
+automatically.</p>
+<p>View &gt; Previous Sheet and Next Sheet also work with the list hidden.
+Their shortcuts are Ctrl+[ and Ctrl+]. Reload keeps the selected sheet
+instance when it still exists. Open the project root rather than a child
+file whose references depend on its parent.</p>
+<h2 id="find">Read and find</h2>
+<p>Click a symbol, pin, label or wire to inspect it. Selection Details shows
+component references, values, the embedded library, unit, position,
+rotation, mirroring, do-not-populate status, BOM/PCB flags, footprint and
+datasheet text. Selecting a pin also shows its number, name and electrical
+type. Missing optional properties are labelled Not specified. Datasheet
+text is not opened as a link.</p>
+<p>Scroll the details with the wheel or scrollbar. Click inside the panel
+or focus it with Tab to use arrows, Home, End and Page Up/Down. Copy
+Details copies the whole selection description, including lines below the
+visible area. Ctrl+C copies details when Find is not focused; in Find, it
+copies selected search text. View &gt; Show Selection Details toggles the
+panel. Small windows hide it to leave space for the drawing; Edit &gt; Copy
+Selection Details still works.</p>
+<p>Press Ctrl+F to focus Find, enter a reference such as R1, a value or
+label, and press Enter. Find Next repeats across loaded sheets, switching
+the active sheet when needed, and wraps. Unavailable sheets cannot be
+searched. Search ignores ASCII letter case. Parts with several drawing
+primitives can have several matching objects; this is not electrical net
+tracing.</p>
+<p>Drag to pan. The mouse wheel zooms about the pointer. Use + and - to
+zoom, the arrow keys to pan, and 0 or F to fit the drawing. These
+single-key shortcuts do not interfere with typing in Find. Escape or
+Cancel stops background work. You can resize, maximise or close the window
+while work is running. A window larger than the viewer draws in one image
+(4,194,304 pixels) shows the drawing drawn at that size and scaled to fill
+the window.</p>
+<h2 id="example">Try the drawing engine</h2>
+<p>Choose File &gt; Open Example. The example is a small authored RC
+circuit, not an imported CAD file. Click a wire or component to see its
+name and value. Clear Drawing returns to the empty window. An ordinary
+launch does not restore a document.</p>
+<h2 id="limits">Current limits</h2>
+<p>The reader handles embedded symbol units, cardinal rotations and
+mirroring, common pin styles, wires, buses, junctions, no-connect markers,
+local and global labels, text, rectangles, circles, polylines and unfilled
+circular arcs. KiCad 7's 20230121 format has authored comparison fixtures.
+Other accepted modern revisions carry an additional untested-version
+warning. Global labels support input, output, bidirectional, tri-state and
+passive tags. Do-not-populate components have a grey body and red
+cross.</p>
+<p>Every imported schematic displays a persistent preview warning: text
+uses a substitute system font, colours use the viewer's theme, and the
+page frame is omitted. This is not a pixel-identical KiCad renderer.
+Unsupported drawing features, including images, coloured sheet
+backgrounds, dashed strokes, overbars and visible text variables, cause an
+explicit refusal for that sheet. Legacy root-level symbol instance tables
+are not supported; try resaving with KiCad 7 or later. Hidden
+intersheet-reference properties are accepted, but visible generated
+intersheet references cannot yet be resolved. Global-label widths follow
+the substitute font rather than KiCad's font.</p>
+<p>Files are limited to 8 MiB and scenes to 4,096 drawing objects. A
+project can contain at most 64 sheet instances and 16 child levels,
+subject to a 64 MiB import accounting budget. Limit errors leave the
+previous drawing available. This preview is for inspection, not
+manufacturing or electrical verification.</p>

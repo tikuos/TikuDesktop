@@ -1,0 +1,101 @@
+# shell: desktop
+# prefs: factory
+# Single-sheet and hierarchical imports, native commands and safe close.
+wait 15
+click 980 30
+wait 20
+menu-pick Programming
+wait 20
+expect-menu TikuCircuit
+menu-pick TikuCircuit
+wait 150
+expect-title TikuCircuit
+expect-narrate Open a KiCad schematic
+key o ctrl
+wait 20
+expect-title Open
+key Down
+key Return
+wait 120
+expect-no-title Open
+expect-narrate a-circuit.kicad_sch
+expect-narrate substitute font
+key f ctrl
+key r
+key 1
+key Return
+wait 30
+expect-narrate Match selected
+expect-narrate R1
+shot /tmp/trk_circuit_imported.png
+key r ctrl
+wait 80
+expect-narrate Sheet 1 of 1
+key o ctrl
+wait 20
+key Down
+key Down
+key Return
+wait 140
+expect-no-title Open
+expect-narrate Sheets (3)
+expect-narrate Channel A
+expect-narrate Channel B
+shot /tmp/trk_circuit_hierarchy.png
+key f ctrl
+key r
+key 2
+key Return
+wait 40
+expect-narrate R2
+expect-narrate Match selected
+shot /tmp/trk_circuit_channel_b.png
+key [ ctrl
+wait 30
+expect-narrate Sheet 2 of 3
+expect-narrate Channel A
+key ] ctrl
+wait 30
+expect-narrate Sheet 3 of 3
+key r ctrl
+wait 100
+expect-narrate Sheet 3 of 3
+click 60 8      # File
+wait 20
+menu-pick Open Example
+wait 30
+expect-narrate Example circuit
+note the real title-tab control maximizes and restores the hosted window
+expect-window-at 100 43
+click 216 52
+wait 40
+expect-window-at 0 21
+shot /tmp/trk_circuit_maximized.png
+click 116 32
+wait 40
+expect-window-at 100 43
+click 120 150
+key +
+wait 12
+key 0
+wait 12
+shot /tmp/trk_circuit_example.png
+note shrink the live viewport with the real window resize grip
+press 895 587
+move 475 427
+release 475 427
+wait 40
+expect-narrate Example circuit
+expect-same-as-redraw
+shot /tmp/trk_circuit_narrow.png
+key F1
+wait 20
+expect-title Help
+expect-narrate TikuCircuit
+key w ctrl
+wait 10
+click-window TikuCircuit
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+quit

@@ -1,0 +1,47 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/artwork
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title TikuCircuit
+expect-narrate a-artwork.GBR
+expect-narrate Gerber preview
+expect-no-narrate substitute font
+key f ctrl
+key d
+key 1
+key 0
+key Return
+wait 25
+expect-narrate Aperture: D10
+expect-narrate Operation polarity: dark
+click 113 8     # Edit
+wait 8
+menu-pick Copy Selection Details
+wait 8
+expect-narrate Selection details copied
+key r ctrl
+wait 80
+expect-narrate Read-only drawing
+expect-narrate Gerber preview
+expect-same-as-redraw
+shot /tmp/trk_circuit_artwork.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+click-window artwork
+click-row 1
+wait 2
+click-row 1
+wait 100
+expect-title TikuCircuit
+expect-narrate b-polarity.gtl
+expect-narrate Gerber preview
+shot /tmp/trk_circuit_polarity.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+quit

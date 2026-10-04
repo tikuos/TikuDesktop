@@ -1,0 +1,46 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/drills
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title TikuCircuit
+expect-narrate a-drills.DRL
+expect-narrate Drill preview
+expect-no-narrate substitute font
+key f ctrl
+key t
+key 0
+key 1
+key Return
+wait 25
+expect-narrate Tool: T01
+expect-narrate Diameter: 1 mm
+click 113 8     # Edit
+wait 8
+menu-pick Copy Selection Details
+wait 8
+expect-narrate Selection details copied
+key r ctrl
+wait 80
+expect-narrate Read-only drawing
+expect-narrate Drill preview
+expect-same-as-redraw
+shot /tmp/trk_circuit_drill.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+click-window drills
+click-row 1
+wait 2
+click-row 1
+wait 100
+expect-title TikuCircuit
+expect-narrate b-routes.xnc
+expect-narrate Drill preview
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+quit

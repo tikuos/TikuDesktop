@@ -230,6 +230,11 @@
   <string name="kind.trash">Corbeille</string>
   <string name="kind.application">Application</string>
   <string name="kind.text_file">Fichier texte</string>
+  <string name="kind.schematic">Schéma KiCad</string>
+  <string name="kind.drill">Plan de perçage</string>
+  <string name="kind.gerber">Typon Gerber</string>
+  <string name="kind.gerberjob">Tâche Gerber</string>
+  <string name="kind.eagleschematic">Schéma (.sch)</string>
   <string name="kind.image">Image</string>
   <string name="kind.audio">Audio</string>
   <string name="kind.video">Vidéo</string>

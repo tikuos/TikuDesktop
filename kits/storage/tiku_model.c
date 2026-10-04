@@ -102,6 +102,11 @@ static const struct {
     { "application/x-vnd.be-query",     "kind.query",         "query" },
     { "application/x-vnd.be-trash",     "kind.trash",         "trash_empty" },
     { "application/x-vnd.be-app",       "kind.application",   "application" },
+    { "application/x-kicad-schematic",  "kind.schematic",     "circuit" },
+    { "application/x-excellon",         "kind.drill",         "circuit" },
+    { "application/x-gerber",           "kind.gerber",        "circuit" },
+    { "application/x-gerber-job",       "kind.gerberjob",     "circuit" },
+    { "application/x-schematic",        "kind.eagleschematic", "circuit" },
     /* No bare "application/" row: it would claim octet-stream, which is a
      * generic blob and not a program.  A real executable is recognised by
      * its permission bits before this table is consulted. */

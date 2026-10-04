@@ -3,8 +3,8 @@
 Directory ownership and compilation boundaries are separate concerns. An app
 belongs under `apps/`, but its parser, window and device operations should also
 be identifiable without opening a large file. The migrated families are the
-shared BASIC/C IDE, Editor, Reader, Bench, Console, desktop background jobs and
-desktop commands.
+shared BASIC/C IDE, Editor, Reader, Bench, Console, TikuCircuit, desktop
+background jobs and desktop commands.
 
 ## Naming and interfaces
 
@@ -34,6 +34,7 @@ is omitted from the table for readability.
 | `apps/reader/tiku_reader_*` | `document`: bounded file reads and HTML/Markdown parsing/storage; `reading`: selection/find state; `navigation`: path policy and history; `search`: folder search and outline; `bookmarks`: bookmark storage; `images`: inline image loading; `layout`: geometry and controls; `view`: rendering and reading-tool input; `browser`: document-mode toolbar/address bar; `events`: window/menu routing; `window`: Help/document window lifecycle and generated reports; `typography`: text size and reading width; `app_host`: the desktop-process lifecycle TikuReader, Help and TikuMarker share; `app`: TikuReader's descriptor |
 | `apps/bench/tiku_bench_*` | `catalogue`: registry parsing, eligibility and selection; `device`: target/profile discovery; `runner`: argv validation, asynchronous child processes and port ownership; `results`: output parsing, result records and HTML reports; `settings`: remembered options; `layout`: geometry and controls; `view`: catalogue/results/history painting; `commands`: menus and input; `app`: descriptor/lifecycle |
 | `apps/console/tiku_console_*` | `terminal`: ANSI/UTF-8 parsing, scrollback, filtering and command history; `device`: target discovery, serial I/O, port handoff and recording; `network`: SLIP framing and rootless ICMP diagnostics; `view`: geometry, controls and painting; `commands`: menus, clipboard and keyboard/pointer input; `app`: descriptor/lifecycle |
+| `apps/circuit/tiku_circuit_*` | functions are named `tiku_circuitview_*`, apart from the circuit kit's `tiku_circuit_*`; `window`: lifetime, status line and the references jobs hold; `canvas`: layout, drawing, pan, zoom and selection; `commands`: labels, enabled states, menus and the one action path; `details`: Selection Details; `sheets`: the sheet or layer list and Find Next; `layers`: the Layers menu; `files`: imports on workers and the file picker's answers; `layer_files`: a stack's files read for Add Layer and Reload; `jobs`: renders, no larger than the kit renders at once; `source`: the confined resolver for linked files; `app`: descriptor/lifecycle |
 | `system/desktop/tiku_desktop_*` (background work) | `device_jobs`: polling, probing, board-run completion, property writes and replicants; `filesystem_jobs`: directory listing, file operations and volumes; `media_jobs`: thumbnails and sound connection; `device_stats`: cached device/memory information |
 | `system/desktop/tiku_desktop_*` (interaction) | `folder_windows`: opening/closing spatial windows and Trash unions; `file_actions`: selection, rename, new entries/templates, destinations and progress; `drop`: drag destinations and icon drops; `navigation`: spring-loaded folder menus and incremental hints; `automation`: add-ons and scripting; `volume_commands`: mount/unmount commands; `commands`: menu dispatch, Open With, layout, query/system actions and press-and-hold menus |
 
@@ -79,7 +80,7 @@ make test                       # existing regressions plus model/ABI checks
 rejects implementation includes and `.inl` files in the migrated app families,
 tests that include those implementations, and model-to-window dependencies.
 `test_source_models` checks the narrow model interfaces. `test_module_exports`
-loads the seven production app bundles, checks their IDs/descriptors and verifies
+loads the eight production app bundles, checks their IDs/descriptors and verifies
 that private functions are not dynamically exported. Bench's runner fixtures
 and Console's PTY/SLIP tests run without a physical device.
 

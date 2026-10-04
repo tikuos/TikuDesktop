@@ -1,0 +1,68 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/layers
+wait 25
+# Sorted names: artwork, drills, partial, polarity, stack.
+click-row 4
+wait 2
+click-row 4
+wait 120
+expect-title TikuCircuit
+expect-narrate stack.gbrjob
+expect-narrate Layers (3)
+expect-narrate Shared source origin
+expect-narrate Plated,1,2,PTH
+shot /tmp/trk_circuit_layers.png
+click 204 8     # Layers
+wait 8
+expect-menu Layer Visible
+menu-pick Cycle Layer Opacity
+wait 30
+expect-narrate opacity 75%
+click 204 8     # Layers
+wait 8
+menu-pick Layer Visible
+wait 30
+expect-narrate hidden
+click 204 8     # Layers
+wait 8
+menu-pick Layer Visible
+wait 30
+click 204 8     # Layers
+wait 8
+menu-pick Lower Layer
+wait 30
+expect-narrate Layer 2/3
+key r ctrl
+wait 100
+expect-narrate opacity 75%
+expect-narrate Layer 2/3
+key f ctrl
+key d
+key 1
+key 0
+key Return
+wait 25
+expect-narrate Aperture: D10
+expect-same-as-redraw
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+click-window layers
+click-row 2
+wait 2
+click-row 2
+wait 100
+expect-title TikuCircuit
+expect-narrate incomplete: unavailable layers
+key ] ctrl
+wait 20
+expect-narrate Unavailable
+key r ctrl
+wait 100
+expect-narrate Previous drawing is still displayed
+shot /tmp/trk_circuit_partial_job.png
+key w ctrl
+wait 10
+expect-no-title TikuCircuit
+quit
