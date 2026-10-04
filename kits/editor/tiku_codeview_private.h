@@ -137,6 +137,17 @@ struct tiku_codeview {
                                        NULL: the language's             */
     tiku_edit_status_t lexer_status; /* what its last call came to      */
     int lexing;                     /* it is running                    */
+    tiku_codeview_binding_t *bindings; /* the host's keys, its own copy */
+    size_t nbindings;               /* how many                         */
+    int observed;                   /* changes were polled for          */
+    uint64_t seen_doc;              /* the generation at the last poll  */
+    uint64_t seen_selection;        /* the selection's serial then      */
+    int seen_modified;              /* the document modified then       */
+    int seen_read_only;             /* and read-only                    */
+    int64_t seen_top, seen_sub;     /* the first row shown then         */
+    int64_t seen_left;              /* and the scroll across            */
+    uint32_t seen_commands;         /* the commands enabled, a bit each */
+    tiku_edit_status_t seen_status; /* and the last event's edit        */
     uint32_t *states;               /* each line's starting lexer state */
     int64_t nstates, states_cap;    /* lines it follows, and room       */
     int64_t sty_valid;              /* states up to here are right      */
@@ -429,6 +440,9 @@ tiku_rgb_t tiku_cv_style_color(const tiku_codeview_t *v, unsigned id);
 
 /* An editing key: 1 when the view took it. */
 int tiku_cv_edit_key(tiku_codeview_t *v, const tiku_event_t *e);
+/* A key the host bound (tiku_codeview_commands.c): -1 when it is bound to
+ * nothing, 0 when it is left to the host, and 1 when its command ran. */
+int tiku_cv_binding_event(tiku_codeview_t *v, const tiku_event_t *e);
 /* Replace [@p lo, @p hi) with @p length bytes of @p text as one undo
  * step, joining typing when @p typing, the caret after the text (before a
  * CR the text leaves against an LF), and show it. */

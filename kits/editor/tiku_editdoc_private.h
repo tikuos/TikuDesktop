@@ -123,6 +123,7 @@ typedef struct {
     tiku_edit_selection_t *more; /* the others, nmore of them           */
     size_t nmore;               /* selections in more                   */
     size_t more_cap;            /* room in more                         */
+    uint64_t selection_serial;  /* explicit selection updates           */
     uint32_t generation;        /* bumped when the slot is freed        */
     uint8_t live;               /* attached                             */
 } tiku_ed_view_t;

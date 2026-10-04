@@ -436,6 +436,93 @@ typedef enum {
     TIKU_CODEVIEW_DOC_END
 } tiku_codeview_move_t;
 
+/** @brief A command of the view's by name, for menus and for keys the
+ *         host binds: each runs the call named beside it. */
+typedef enum {
+    TIKU_CODEVIEW_CMD_PASS = 0,     /* none: a bound key left to the host */
+    TIKU_CODEVIEW_CMD_IGNORE,       /* none: a bound key taken          */
+    TIKU_CODEVIEW_CMD_UNDO,         /* tiku_codeview_undo()             */
+    TIKU_CODEVIEW_CMD_REDO,         /* tiku_codeview_redo()             */
+    TIKU_CODEVIEW_CMD_COPY,         /* tiku_codeview_copy()             */
+    TIKU_CODEVIEW_CMD_CUT,          /* tiku_codeview_cut()              */
+    TIKU_CODEVIEW_CMD_PASTE,        /* tiku_codeview_paste()            */
+    TIKU_CODEVIEW_CMD_SELECT_ALL,   /* tiku_codeview_select_all()       */
+    TIKU_CODEVIEW_CMD_NEWLINE,      /* tiku_codeview_newline()          */
+    TIKU_CODEVIEW_CMD_BACKSPACE,    /* tiku_codeview_delete(), back     */
+    TIKU_CODEVIEW_CMD_DELETE,       /* and forward                      */
+    TIKU_CODEVIEW_CMD_INDENT,       /* tiku_codeview_indent(), in       */
+    TIKU_CODEVIEW_CMD_UNINDENT,     /* and out                          */
+    TIKU_CODEVIEW_CMD_COMMENT,      /* tiku_codeview_toggle_comment()   */
+    TIKU_CODEVIEW_CMD_DUPLICATE,    /* tiku_codeview_duplicate_lines()  */
+    TIKU_CODEVIEW_CMD_DELETE_LINES, /* tiku_codeview_delete_lines()     */
+    TIKU_CODEVIEW_CMD_FOLD,         /* tiku_codeview_fold_at(), folding */
+    TIKU_CODEVIEW_CMD_UNFOLD,       /* and unfolding                    */
+    TIKU_CODEVIEW_CMD_LINE_ENDS,    /* a caret at each line's end, by
+                                       tiku_codeview_carets_to_line_ends() */
+    TIKU_CODEVIEW_CMD_KEEP_MAIN,    /* tiku_codeview_keep_main()        */
+    TIKU_CODEVIEW_CMD_MOVE          /* tiku_codeview_move()             */
+} tiku_codeview_command_t;
+
+/** @brief A key the host binds to a command in place of what the view
+ *         does with it. */
+typedef struct {
+    unsigned key;               /* TIKU_KEY_... or a character          */
+    unsigned modifiers;         /* held exactly, Caps Lock aside        */
+    tiku_codeview_command_t command; /* what the key runs               */
+    tiku_codeview_move_t move;  /* for TIKU_CODEVIEW_CMD_MOVE, where    */
+    int extend;                 /* and whether the selection extends    */
+} tiku_codeview_binding_t;
+
+/**
+ * @brief Bind @p count keys, copied, instead of the keys bound before;
+ *        NULL with @p count 0 binds none.
+ *
+ * A bound key runs its command, and the other keys do what they did.  A
+ * letter binds in either case.  A key bound twice, or a command or move
+ * there is not, is refused with TIKU_EDIT_INVALID, and a refused table
+ * leaves the one bound before.  A shown list of words takes its keys
+ * first, and committed text is never taken as a key.
+ */
+tiku_edit_status_t tiku_codeview_set_bindings(
+    tiku_codeview_t *view, const tiku_codeview_binding_t *bindings,
+    size_t count);
+/** @brief Whether @p command may run now, by the document's read-only
+ *         state and history, the selections and the host's clipboard; it
+ *         may still find nothing to do.  Allocates nothing. */
+int tiku_codeview_command_enabled(const tiku_codeview_t *view,
+                                  tiku_codeview_command_t command);
+/** @brief Run @p command, with @p move and @p extend for
+ *         TIKU_CODEVIEW_CMD_MOVE, its result kept for
+ *         tiku_codeview_status(). */
+tiku_edit_status_t tiku_codeview_execute(tiku_codeview_t *view,
+                                         tiku_codeview_command_t command,
+                                         tiku_codeview_move_t move,
+                                         int extend);
+
+/* What tiku_codeview_changes() says has changed. */
+#define TIKU_CODEVIEW_CHANGE_DOCUMENT  0x01u /* the text, or whether it is
+                                                modified or read-only    */
+#define TIKU_CODEVIEW_CHANGE_SELECTION 0x02u /* the selections, or an
+                                                edit that may move them  */
+#define TIKU_CODEVIEW_CHANGE_SCROLL    0x04u /* the first row shown, or
+                                                the scroll across        */
+#define TIKU_CODEVIEW_CHANGE_COMMANDS  0x08u /* the commands enabled     */
+#define TIKU_CODEVIEW_CHANGE_STATUS    0x10u /* tiku_codeview_status()   */
+#define TIKU_CODEVIEW_CHANGE_ALL       0x1fu
+/**
+ * @brief What has changed in the view since it was last asked, the
+ *        flags above, all of them the first time; 0 for NULL.
+ *
+ * Several changes between two asks set a flag once, and a scroll, command
+ * or status that changed and changed back sets none.  The flags are for
+ * menus and status bars: after setting a style, a decoration, a fold or
+ * an option the host still paints again.  Allocates nothing.
+ *
+ * @note Ask from one place, after an event or on a tick, not from a lexer
+ *       or a document listener.
+ */
+unsigned tiku_codeview_changes(tiku_codeview_t *view);
+
 /**
  * @brief Move every caret, then scroll as little as shows the main one.
  *

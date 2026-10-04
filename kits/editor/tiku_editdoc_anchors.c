@@ -437,6 +437,8 @@ tiku_editdoc_view_select(tiku_editdoc_t *doc, tiku_edit_view_t view,
     if (!tiku_editdoc_is_caret(doc, anchor) ||
         !tiku_editdoc_is_caret(doc, caret))
         return TIKU_EDIT_INVALID_RANGE;
+    if (v->anchor != anchor || v->caret != caret || v->nmore)
+        v->selection_serial++;
     v->anchor = anchor;
     v->caret = caret;
     v->nmore = 0;
@@ -486,6 +488,7 @@ tiku_editdoc_view_select_many(tiku_editdoc_t *doc, tiku_edit_view_t view,
     v->anchor = m.anchor;
     v->caret = m.caret;
     v->nmore = k;
+    v->selection_serial++;
     end_typing(doc, view);
     return TIKU_EDIT_OK;
 }

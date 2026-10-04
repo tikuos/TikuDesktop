@@ -827,14 +827,18 @@ dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
 int
 tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e)
 {
-    int commit, taken;
+    int commit, taken, bound;
 
     if (view == NULL || e == NULL)
         return 0;
     view->status = TIKU_EDIT_OK;
     commit = tiku_text_input_event(&view->input, e);
-    taken = tiku_cv_assist_event(view, e) || tiku_cv_hot_event(view, e) ||
-            dispatch(view, e, commit);
+    taken = tiku_cv_assist_event(view, e);
+    if (!taken) {
+        bound = tiku_cv_binding_event(view, e);
+        taken = bound >= 0 ? bound :
+                tiku_cv_hot_event(view, e) || dispatch(view, e, commit);
+    }
     tiku_cv_assist_follow(view);
     tiku_cv_hot_after(view, e);
     return taken;
