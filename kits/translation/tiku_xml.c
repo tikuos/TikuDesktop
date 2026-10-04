@@ -104,10 +104,40 @@ struct tiku_xml {
     char *buf;                      /* the bytes, decoded where they lie */
     xml_pool_t *pool;               /* names and attribute lists         */
     xml_block_t *blocks;            /* the nodes                         */
-    tiku_xml_node_t *root;
+    tiku_xml_node_t *root;          /* the document's element            */
     const char **names;             /* each name once: open addressing   */
-    size_t nnames, cap;
+    size_t nnames, cap;             /* names kept, and the table's size  */
+    /* A bounded parse's limits: NULL when there are none, and once the
+     * parse has ended. */
+    const tiku_xml_limits_t *limits;
+    size_t charged;                 /* bytes counted against limits      */
+    size_t nodes;                   /* nodes taken, against limits       */
+    tiku_xml_status_t status;       /* why the parse failed, once it has */
+    const char *limit;              /* the limit it hit, said in why     */
 };
+
+/** @brief A bounded parse stopped by the limit @p what: it fails
+ *         TIKU_XML_LIMIT, its why naming @p what. */
+static void
+over_limit(tiku_xml_t *doc, const char *what)
+{
+    doc->status = TIKU_XML_LIMIT;
+    doc->limit = what;
+}
+
+/** @brief Count @p n bytes about to be allocated against a bounded
+ *         parse's budget.  @return 1, or 0 when they would exceed it, the
+ *         parse then failing TIKU_XML_LIMIT. */
+static int
+xml_room(tiku_xml_t *d, size_t n)
+{
+    if (d->limits && n > d->limits->bytes - d->charged) {
+        over_limit(d, "XML allocation budget exceeded");
+        return 0;
+    }
+    d->charged += n;
+    return 1;
+}
 
 /** @brief A namespace in scope: the prefix a file wrote (empty for the
  *         default) and the one it is given here, or NULL for unknown. */
@@ -153,6 +183,9 @@ pool_take(tiku_xml_t *doc, size_t n)
     if (b == NULL || b->used + n > b->cap) {
         size_t cap = n > XML_POOL ? n : XML_POOL;
 
+        if (!xml_room(doc, sizeof *b + cap)) {
+            return NULL;
+        }
         b = malloc(sizeof *b + cap);
         if (b == NULL) {
             return NULL;
@@ -174,7 +207,15 @@ node_take(tiku_xml_t *doc)
     xml_block_t *b = doc->blocks;
     tiku_xml_node_t *n;
 
+    if (doc->limits && doc->nodes == doc->limits->nodes) {
+        over_limit(doc, "XML node limit exceeded");
+        return NULL;
+    }
+    doc->nodes++;
     if (b == NULL || b->used == XML_NODES) {
+        if (!xml_room(doc, sizeof *b)) {
+            return NULL;
+        }
         b = malloc(sizeof *b);
         if (b == NULL) {
             return NULL;
@@ -205,8 +246,12 @@ static int
 names_grow(tiku_xml_t *doc)
 {
     size_t cap = doc->cap ? doc->cap * 2 : 256, i;
-    const char **t = calloc(cap, sizeof *t);
+    const char **t;
 
+    if (!xml_room(doc, cap * sizeof(const char *))) {
+        return -1;
+    }
+    t = calloc(cap, sizeof *t);
     if (t == NULL) {
         return -1;
     }
@@ -236,6 +281,10 @@ intern(tiku_xml_t *doc, const char *a, size_t an, const char *b, size_t bn)
     char *s;
 
     if (n >= sizeof key) {
+        if (doc->limits) {
+            over_limit(doc, "XML name length limit exceeded");
+            return NULL;
+        }
         n = sizeof key - 1;         /* a name longer is cut, not refused */
         bn = n > an ? n - an : 0;
         an = n - bn;
@@ -526,13 +575,21 @@ decode(char *s, char *e)
 
 /* ------------------------------------------------------------- parsing   */
 
-/** @brief Stop with @p what, on the line @p where is on.  @return NULL. */
+/** @brief Stop with @p what, on the line @p where is on; a limit the
+ *         parse hit is said in its place.  @return NULL. */
 static void *
 fail(xml_parse_t *x, const char *where, const char *what)
 {
     const char *s;
     int line = 1;
 
+    if (!x->doc->status) {
+        x->doc->status = !strcmp(what, "out of memory") ? TIKU_XML_NOMEM
+                                                         : TIKU_XML_BAD;
+    }
+    if (x->doc->status == TIKU_XML_LIMIT && x->doc->limit != NULL) {
+        what = x->doc->limit;
+    }
     for (s = x->doc->buf; s < where && s < x->end; s++) {
         line += *s == '\n';
     }
@@ -580,8 +637,10 @@ resolve(const xml_parse_t *x, const char *pfx, size_t plen, int *found)
         return "xml";
     }
     for (i = x->nbind - 1; i >= 0; i--) {
-        if (x->bind[i].plen == plen && memcmp(x->bind[i].pfx, pfx, plen) == 0)
+        if (x->bind[i].plen == plen &&
+            memcmp(x->bind[i].pfx, pfx, plen) == 0) {
             return x->bind[i].canon;
+        }
     }
     *found = 0;
     return NULL;
@@ -636,8 +695,12 @@ bind(xml_parse_t *x, const xml_att_t *a)
 
     if (x->nbind == x->bindcap) {
         int cap = x->bindcap ? x->bindcap * 2 : 32;
-        xml_bind_t *g = realloc(x->bind, (size_t)cap * sizeof *g);
+        xml_bind_t *g;
 
+        if (!xml_room(x->doc, (size_t)cap * sizeof(xml_bind_t))) {
+            return -1;
+        }
+        g = realloc(x->bind, (size_t)cap * sizeof *g);
         if (g == NULL) {
             return -1;
         }
@@ -711,6 +774,23 @@ read_attrs(xml_parse_t *x, char *p, int *n)
         p = memchr(p, q, (size_t)(x->end - p));
         if (p == NULL) {
             return fail(x, v, "an attribute's value does not end");
+        }
+        if (x->doc->limits) {
+            int i;
+
+            if (memchr(v, '<', (size_t)(p - v))) {
+                return fail(x, v, "unescaped less-than in attribute");
+            }
+            if (*n == XML_ATTRS) {
+                over_limit(x->doc, "too many attributes");
+                return fail(x, v, "too many attributes");
+            }
+            for (i = 0; i < *n; i++) {
+                if (x->att[i].qlen == x->att[*n].qlen &&
+                    !memcmp(x->att[i].qn, qn, x->att[i].qlen)) {
+                    return fail(x, qn, "duplicate attribute");
+                }
+            }
         }
         decode(v, p++);
         if (*n < XML_ATTRS) {
@@ -959,6 +1039,12 @@ parse(xml_parse_t *x)
     while (p != NULL && p < x->end) {
         char *s = p;
 
+        if (x->doc->limits && x->doc->limits->cancel &&
+            x->doc->limits->cancel(x->doc->limits->ctx)) {
+            x->doc->status = TIKU_XML_CANCELLED;
+            (void)fail(x, p, "cancelled");
+            return -1;
+        }
         x->p = p;
         if (at(x, p) == '<') {
             p = markup(x, p);
@@ -971,6 +1057,16 @@ parse(xml_parse_t *x)
         if (x->cur != NULL && text_node(x, s, p, 0) != 0) {
             (void)fail(x, s, "out of memory");
             return -1;
+        }
+        if (x->cur == NULL && x->doc->limits) {
+            char *q;
+
+            for (q = s; q < p; q++) {
+                if (!space(*q)) {
+                    (void)fail(x, q, "text outside the root element");
+                    return -1;
+                }
+            }
         }
         x->p = p;
         x->lt = p < x->end;         /* decoding wrote its end over '<' */
@@ -992,12 +1088,44 @@ parse(xml_parse_t *x)
 /* ------------------------------------------------------------ the API   */
 
 tiku_xml_t *
-tiku_xml_parse(const void *bytes, size_t len, char *why, size_t max)
+tiku_xml_parse_limited(const void *bytes, size_t len,
+                       const tiku_xml_limits_t *limits,
+                       tiku_xml_status_t *status, char *why, size_t max)
 {
     xml_parse_t x;
     size_t n = 0;
-    tiku_xml_t *doc = calloc(1, sizeof *doc);
+    tiku_xml_t *doc;
 
+    if (bytes == NULL) {
+        if (status) {
+            *status = TIKU_XML_BAD;
+        }
+        if (why != NULL && max > 0) {
+            snprintf(why, max, "no bytes");
+        }
+        return NULL;
+    }
+    if (status) {
+        *status = TIKU_XML_NOMEM;
+    }
+    doc = calloc(1, sizeof *doc);
+    /* The copy of the bytes is charged at three times their length,
+     * more than it takes made UTF-8 from any encoding read here. */
+    if (doc) {
+        doc->limits = limits;
+        if (len > (SIZE_MAX - 1) / 3 ||
+            !xml_room(doc, sizeof *doc + XML_ATTRS * sizeof(xml_att_t)) ||
+            !xml_room(doc, len * 3 + 1)) {
+            if (status) {
+                *status = TIKU_XML_LIMIT;
+            }
+            if (why && max) {
+                snprintf(why, max, "XML allocation budget exceeded");
+            }
+            free(doc);
+            return NULL;
+        }
+    }
     memset(&x, 0, sizeof x);
     x.why = why;
     x.max = max;
@@ -1005,10 +1133,10 @@ tiku_xml_parse(const void *bytes, size_t len, char *why, size_t max)
         why[0] = '\0';
     }
     x.att = malloc(XML_ATTRS * sizeof *x.att);
-    if (doc == NULL || x.att == NULL || bytes == NULL ||
+    if (doc == NULL || x.att == NULL ||
         (doc->buf = utf8_copy(bytes, len, &n)) == NULL) {
         if (why != NULL && max > 0) {
-            snprintf(why, max, "%s", bytes ? "out of memory" : "no bytes");
+            snprintf(why, max, "out of memory");
         }
         free(x.att);
         tiku_xml_free(doc);
@@ -1018,6 +1146,9 @@ tiku_xml_parse(const void *bytes, size_t len, char *why, size_t max)
     x.p = doc->buf;
     x.end = doc->buf + n;
     if (parse(&x) != 0) {
+        if (status) {
+            *status = doc->status ? doc->status : TIKU_XML_BAD;
+        }
         free(x.att);
         free(x.bind);
         tiku_xml_free(doc);
@@ -1025,7 +1156,17 @@ tiku_xml_parse(const void *bytes, size_t len, char *why, size_t max)
     }
     free(x.att);
     free(x.bind);
+    doc->limits = NULL;             /* the caller's: not kept past here */
+    if (status) {
+        *status = TIKU_XML_OK;
+    }
     return doc;
+}
+
+tiku_xml_t *
+tiku_xml_parse(const void *bytes, size_t len, char *why, size_t max)
+{
+    return tiku_xml_parse_limited(bytes, len, NULL, NULL, why, max);
 }
 
 void

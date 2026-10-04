@@ -26,6 +26,53 @@
 typedef struct tiku_xml tiku_xml_t;
 typedef struct tiku_xml_node tiku_xml_node_t;
 
+/** @brief How tiku_xml_parse_limited() ended. */
+typedef enum {
+    TIKU_XML_OK,                    /* read: the tree is returned        */
+    TIKU_XML_BAD,                   /* not XML this reads, or no bytes   */
+    TIKU_XML_NOMEM,                 /* memory ran short                  */
+    TIKU_XML_LIMIT,                 /* a bound in the limits, or one on
+                                       a bounded parse's attributes or
+                                       name lengths, was hit             */
+    TIKU_XML_CANCELLED              /* the cancel callback said stop     */
+} tiku_xml_status_t;
+
+/** @brief The bounds a limited parse keeps. */
+typedef struct {
+    /* The bytes the parse may allocate, counted before each allocation;
+     * the parse's copy of the input counts as three times its length. */
+    size_t bytes;
+    size_t nodes;                   /* elements and runs of text at most;
+                                       0 refuses every document          */
+    int  (*cancel)(void *);         /* asked with ctx before each piece
+                                       of markup and run of text:
+                                       nonzero stops the parse; NULL for
+                                       none                              */
+    void  *ctx;                     /* what cancel is handed             */
+} tiku_xml_limits_t;
+
+/**
+ * @brief tiku_xml_parse(), kept within @p limits and saying how it ended.
+ *
+ * A bounded parse is stricter: it refuses a '<' written in an attribute
+ * value, an attribute named twice on one tag, more than 512 attributes on
+ * a tag, text other than white space outside the root element, and a name
+ * of 512 bytes or more with its prefix, which tiku_xml_parse() would cut.
+ *
+ * @param bytes   the XML, as tiku_xml_parse() reads it
+ * @param len     its length in bytes
+ * @param limits  the bounds, read during the call only; NULL keeps none
+ *                and reads as tiku_xml_parse() does
+ * @param status  set to how the parse ended; may be NULL
+ * @param why     as tiku_xml_parse() fills it, a bound hit named there
+ * @param max     @p why's size
+ * @return the tree, or NULL with @p status and @p why saying why
+ */
+tiku_xml_t *tiku_xml_parse_limited(const void *bytes, size_t len,
+                                   const tiku_xml_limits_t *limits,
+                                   tiku_xml_status_t *status, char *why,
+                                   size_t max);
+
 /** @brief An element, or a run of text between tags.  Read-only. */
 struct tiku_xml_node {
     const char      *name;          /* "w:p"; NULL for text              */

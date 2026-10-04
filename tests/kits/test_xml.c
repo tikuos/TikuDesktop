@@ -269,6 +269,50 @@ broken_tests(void)
           == NULL, "XM-052", "no bytes, and NULL nodes, answered");
 }
 
+/**
+ * @brief A bounded parse that hits a bound fails TIKU_XML_LIMIT and says
+ *        which bound in why; one given no bytes fails TIKU_XML_BAD.
+ */
+static void
+limit_tests(void)
+{
+    static const struct {
+        size_t bytes, nodes;        /* the bounds                       */
+        const char *why;            /* what why must then say           */
+    } hit[] = {
+        {1u << 20, 1, "line 1: XML node limit exceeded"},
+        {1u << 20, 64, "line 1: XML name length limit exceeded"},
+        {20000, 64, "line 1: XML allocation budget exceeded"},
+    };
+    char doc[700], why[128];
+    tiku_xml_limits_t limits = {0, 0, NULL, NULL};
+    tiku_xml_status_t status;
+    size_t i;
+    int ok = 1;
+
+    for (i = 0; i < sizeof hit / sizeof hit[0]; i++) {
+        tiku_xml_t *x;
+
+        /* Two elements, the second's name 600 bytes long. */
+        snprintf(doc, sizeof doc, "<a><b%0599d/></a>", 0);
+        limits.bytes = hit[i].bytes;
+        limits.nodes = hit[i].nodes;
+        x = tiku_xml_parse_limited(doc, strlen(doc), &limits, &status, why,
+                                   sizeof why);
+        if (x != NULL || status != TIKU_XML_LIMIT ||
+            strcmp(why, hit[i].why) != 0) {
+            printf("    bound %zu -> %s\n", i, x ? "parsed" : why);
+            ok = 0;
+        }
+        tiku_xml_free(x);
+    }
+    check(ok, "XM-070", "a bound hit is named in why, not called a "
+          "shortage of memory");
+    check(tiku_xml_parse_limited(NULL, 0, NULL, &status, why, sizeof why)
+          == NULL && status == TIKU_XML_BAD && strcmp(why, "no bytes") == 0,
+          "XM-071", "no bytes is a bad document, not a shortage of memory");
+}
+
 /** @brief The next of a fixed stream of numbers, below @p n. */
 static unsigned
 next(unsigned n)
@@ -343,6 +387,7 @@ main(void)
     text_tests();
     encoding_tests();
     broken_tests();
+    limit_tests();
     load_tests();
     printf("%s\n", fails ? "FAIL" : "PASS: XML read into trees, namespaces "
            "fixed, nothing but the five entities expanded");
