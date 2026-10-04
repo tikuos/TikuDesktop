@@ -54,7 +54,9 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_codeview_layout test_codeview_paint \
                   test_codeview_input test_codeview_display \
                   test_codeview_edit test_codeview_find \
-                  test_codeview_style test_codeview_host \
+                  test_codeview_style test_codeview_extensions \
+                  test_codeview_regex test_codeview_advanced \
+                  test_codeview_tools test_codeview_host \
                   test_editor_document test_ide_workflow test_ide_page
 # The timing suite is left out: it times large fixtures, which the
 # sanitizers slow many times over.
