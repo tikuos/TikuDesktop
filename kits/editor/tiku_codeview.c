@@ -242,6 +242,28 @@ tiku_codeview_set_caret_line_fill(tiku_codeview_t *view, tiku_rgb_t color)
     view->caret_fill_set = 1;
 }
 
+tiku_edit_status_t
+tiku_codeview_set_ink_style(tiku_codeview_t *view, tiku_ink_t ink,
+                            unsigned style)
+{
+    const unsigned known = TIKU_CODEVIEW_BOLD | TIKU_CODEVIEW_ITALIC |
+                           TIKU_CODEVIEW_UNDERLINE;
+
+    if (view == NULL || (unsigned)ink >= TIKU_CV_INKS ||
+        (style & ~known) != 0)
+        return TIKU_EDIT_INVALID;
+    view->ink_styles[ink] = style;
+    return TIKU_EDIT_OK;
+}
+
+unsigned
+tiku_codeview_ink_style(const tiku_codeview_t *view, tiku_ink_t ink)
+{
+    if (view == NULL || (unsigned)ink >= TIKU_CV_INKS)
+        return 0;
+    return view->ink_styles[ink];
+}
+
 void
 tiku_codeview_set_options(tiku_codeview_t *view, unsigned options)
 {

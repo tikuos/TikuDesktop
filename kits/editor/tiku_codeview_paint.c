@@ -17,7 +17,8 @@
 #include <string.h>
 
 /* Bytes of text handed to tiku_text() at a time.  A piece ends here or
- * where the colour changes; it is never a place where a line breaks. */
+ * where the colour or the face changes; it is never a place where a line
+ * breaks. */
 #define PIECE_MAX 256
 
 /** @brief One row being painted. */
@@ -38,6 +39,7 @@ typedef struct {
     size_t len;                 /* its bytes                            */
     int64_t piece_x;            /* line x of its first character        */
     tiku_rgb_t ink;             /* its colour                           */
+    const tiku_font_t *face;    /* and its face                         */
     int stopped;                /* the walk reached the right edge      */
     int invisibles;             /* mark spaces and tabs                 */
     tiku_edit_pos_t start;      /* the line's first byte                */
@@ -45,7 +47,17 @@ typedef struct {
     size_t nruns;
     size_t run;                 /* the run the walk has reached         */
     int64_t run_end;            /* the line offset where that run ends  */
+    const unsigned *styles;     /* the view's style of each ink         */
+    const tiku_font_t *cuts[4]; /* the face in each cut, by the style's
+                                   TIKU_CODEVIEW_BOLD and ITALIC        */
+    int under;                  /* an underline is being gathered       */
+    int64_t under_x, under_end; /* the line x it runs from, and to      */
+    tiku_rgb_t under_ink;       /* its colour                           */
 } row_t;
+
+_Static_assert(TIKU_CODEVIEW_BOLD == TIKU_FONT_BOLD &&
+               TIKU_CODEVIEW_ITALIC == TIKU_FONT_ITALIC,
+               "a style's cut flags are the font kit's");
 
 /** @brief The surface x of line x @p x, which is near the visible part. */
 static int
@@ -131,9 +143,82 @@ flush(row_t *r)
     if (r->len == 0)
         return;
     r->piece[r->len] = '\0';
-    tiku_text(r->s, r->font, surface_x(r, r->piece_x),
+    tiku_text(r->s, r->face, surface_x(r, r->piece_x),
               r->y + r->font->ascent, r->piece, r->ink);
     r->len = 0;
+}
+
+/** @brief @p f in each cut a style can ask for, as near as the kit has:
+ *         without italic where there is none, then as @p f.  A bold face
+ *         stays bold in every cut. */
+static void
+cuts_of(const tiku_font_t *f, const tiku_font_t *cuts[4])
+{
+    unsigned base = tiku_font_styled(f, TIKU_FONT_BOLD) == f ?
+                    TIKU_FONT_BOLD : 0;
+    unsigned style;
+
+    for (style = 0; style < 4; style++) {
+        unsigned want = style | base;
+        const tiku_font_t *c = want != 0 ? tiku_font_styled(f, want) : NULL;
+
+        if (c == NULL && (want & TIKU_FONT_ITALIC))
+            c = tiku_font_styled(f, want & ~TIKU_FONT_ITALIC);
+        cuts[style] = c != NULL ? c : f;
+    }
+}
+
+/** @brief Add glyph @p c to the piece in @p face and @p ink, starting a
+ *         new piece where either changes.  A glyph @p face draws at
+ *         another width than the view's face measured is drawn alone, at
+ *         its own place. */
+static void
+gather(row_t *r, const tiku_cv_cell_t *c, const tiku_font_t *face,
+       tiku_rgb_t ink)
+{
+    int alone = face != r->font && tiku_text_advance(face, c->cp) != c->adv;
+
+    if (r->len > 0 && (ink != r->ink || face != r->face || alone ||
+                       r->len + (size_t)c->len > PIECE_MAX))
+        flush(r);
+    if (r->len == 0) {
+        r->piece_x = c->x;
+        r->ink = ink;
+        r->face = face;
+    }
+    memcpy(r->piece + r->len, c->bytes, (size_t)c->len);
+    r->len += (size_t)c->len;
+    if (alone)
+        flush(r);
+}
+
+/** @brief Draw the underline gathered so far a pixel under the baseline,
+ *         in the colour of the text above it. */
+static void
+underline_flush(row_t *r)
+{
+    if (!r->under)
+        return;
+    tiku_hline(r->s, surface_x(r, r->under_x), r->y + r->font->ascent + 1,
+               (int)(r->under_end - r->under_x), r->under_ink);
+    r->under = 0;
+}
+
+/** @brief Gather cell @p c into the underline in @p ink when @p on; one
+ *         that is not, or another colour, ends the one gathered. */
+static void
+underline_cell(row_t *r, const tiku_cv_cell_t *c, int on, tiku_rgb_t ink)
+{
+    if (r->under && (!on || ink != r->under_ink || c->x != r->under_end))
+        underline_flush(r);
+    if (!on)
+        return;
+    if (!r->under) {
+        r->under = 1;
+        r->under_x = c->x;
+        r->under_ink = ink;
+    }
+    r->under_end = c->x + c->adv;
 }
 
 /** @brief A control character: its name, light on a dark box. */
@@ -168,9 +253,9 @@ paint_mark(row_t *r, const tiku_cv_cell_t *c, int selected, tiku_rgb_t ink)
                tiku_dim(ink, ground));
 }
 
-/** @brief The colour of the run holding line offset @p at; the walk asks
- *         in order, so the run only moves forward. */
-static tiku_rgb_t
+/** @brief The ink of the run holding line offset @p at, plain past the
+ *         runs; the walk asks in order, so the run only moves forward. */
+static tiku_ink_t
 run_ink(row_t *r, int64_t at)
 {
     while (r->run < r->nruns && at >= r->run_end) {
@@ -178,15 +263,25 @@ run_ink(row_t *r, int64_t at)
         if (r->run < r->nruns)
             r->run_end += r->runs[r->run].len;
     }
-    return r->run < r->nruns ? tiku_ink(r->runs[r->run].ink) : TIKU_C_TEXT;
+    return r->run < r->nruns ? r->runs[r->run].ink : TIKU_INK_PLAIN;
 }
 
-/** @brief Paint one character, gathering text into pieces. */
+/** @brief The style the view draws @p ink with. */
+static unsigned
+style_of(const unsigned *styles, tiku_ink_t ink)
+{
+    return (unsigned)ink < TIKU_CV_INKS ? styles[ink] : 0;
+}
+
+/** @brief Paint one character, gathering text into pieces and underlines
+ *         into lines. */
 static int
 paint_cell(void *ctx, const tiku_cv_cell_t *c)
 {
     row_t *r = ctx;
-    tiku_rgb_t ink = run_ink(r, c->pos - r->start);
+    tiku_ink_t which = run_ink(r, c->pos - r->start);
+    unsigned style = style_of(r->styles, which);
+    tiku_rgb_t ink = tiku_ink(which);
     int selected;
 
     if (c->pos >= r->stop)
@@ -202,18 +297,13 @@ paint_cell(void *ctx, const tiku_cv_cell_t *c)
     }
     if (c->x + c->adv <= r->left)
         return 0;
-    if (r->len > 0 && (c->kind != TIKU_CV_GLYPH || ink != r->ink ||
-                       r->len + (size_t)c->len > PIECE_MAX))
-        flush(r);
+    underline_cell(r, c, (style & TIKU_CODEVIEW_UNDERLINE) != 0, ink);
     if (c->kind == TIKU_CV_GLYPH) {
-        if (r->len == 0) {
-            r->piece_x = c->x;
-            r->ink = ink;
-        }
-        memcpy(r->piece + r->len, c->bytes, (size_t)c->len);
-        r->len += (size_t)c->len;
-    } else if (c->kind == TIKU_CV_CONTROL) {
-        paint_name(r, c, selected);
+        gather(r, c, r->cuts[style & 3u], ink);
+    } else {
+        flush(r);
+        if (c->kind == TIKU_CV_CONTROL)
+            paint_name(r, c, selected);
     }
     if (r->invisibles && (c->cp == ' ' || c->kind == TIKU_CV_TAB))
         paint_mark(r, c, selected, ink);
@@ -246,6 +336,7 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
     }
     tiku_cv_marks_paint(v, r->s, w, r->y);
     r->len = 0;
+    r->under = 0;
     r->stopped = 0;
     r->start = tiku_editdoc_line_start(v->doc, w->line);
     if (!tiku_cv_wraps(v) && end - r->start >= TIKU_CV_LONG) {
@@ -258,6 +349,7 @@ paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
     r->run = 0;
     r->run_end = r->nruns > 0 ? r->runs[0].len : 0;
     width = tiku_cv_walk_near(v, w->line, INT64_MAX, r->left, paint_cell, r);
+    underline_flush(r);
     flush(r);
     if (w->last && tiku_codeview_folded(v, w->line))
         tiku_cv_fold_mark(v, r->s, surface_x(r, width), r->y);
@@ -324,13 +416,32 @@ block_cell(void *ctx, const tiku_cv_cell_t *c)
     return 1;
 }
 
+/** @brief The face the character at @p pos on @p line is drawn in: the
+ *         cut of @p cuts its ink's style asks for. */
+static const tiku_font_t *
+face_at(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t pos,
+        const tiku_font_t *const *cuts)
+{
+    int64_t at = pos - tiku_editdoc_line_start(v->doc, line), end = 0;
+    size_t n = 0, i;
+    const tiku_span_t *runs = tiku_cv_style_line(v, line, pos, &n);
+
+    for (i = 0; runs != NULL && i < n; i++) {
+        end += runs[i].len;
+        if (at < end)
+            return cuts[style_of(v->ink_styles, runs[i].ink) & 3u];
+    }
+    return cuts[style_of(v->ink_styles, TIKU_INK_PLAIN) & 3u];
+}
+
 /** @brief A block caret at surface @p x, @p y on row @p r: the cell after
  *         @p caret filled with the text's ink and its character drawn
- *         over it in the ground's, or a space's width where the row
- *         ends. */
+ *         over it in the ground's, in its own cut, or a space's width
+ *         where the row ends. */
 static void
 paint_block(tiku_codeview_t *v, tiku_surface_t *s, const tiku_cv_row_t *r,
-            tiku_edit_pos_t caret, int x, int y)
+            tiku_edit_pos_t caret, int x, int y,
+            const tiku_font_t *const *cuts)
 {
     const tiku_font_t *f = tiku_cv_font(v);
     tiku_rect_t box = { x, y, tiku_text_advance(f, ' '),
@@ -347,7 +458,8 @@ paint_block(tiku_codeview_t *v, tiku_surface_t *s, const tiku_cv_row_t *r,
         box.w = b.cell.adv;
     tiku_fill(s, box, TIKU_C_TEXT);
     if (b.found && b.cell.kind == TIKU_CV_GLYPH) {
-        tiku_text(s, f, x, y + f->ascent, b.cell.bytes, TIKU_C_DOC);
+        tiku_text(s, face_at(v, r->line, caret, cuts), x, y + f->ascent,
+                  b.cell.bytes, TIKU_C_DOC);
     } else if (b.found && b.cell.kind == TIKU_CV_CONTROL) {
         (void)tiku_cv_control_name(b.cell.cp, name);
         tiku_text(s, f, x + TIKU_CV_NAME_PAD, y + f->ascent, name,
@@ -360,7 +472,7 @@ paint_block(tiku_codeview_t *v, tiku_surface_t *s, const tiku_cv_row_t *r,
  *         row ends with pass its width. */
 static void
 paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows,
-            tiku_edit_pos_t caret)
+            tiku_edit_pos_t caret, const tiku_font_t *const *cuts)
 {
     tiku_cv_row_t r;
     int64_t row, x;
@@ -378,7 +490,7 @@ paint_caret(tiku_codeview_t *v, tiku_surface_t *s, int64_t rows,
     sx = tiku_cv_text_x(v) + (int)x;
     sy = tiku_cv_text_y(v) + (int)row * step;
     if (v->options & TIKU_CODEVIEW_BLOCK_CARET)
-        paint_block(v, s, &r, caret, sx, sy);
+        paint_block(v, s, &r, caret, sx, sy, cuts);
     else
         tiku_vline(s, sx, sy, step, TIKU_C_TEXT);
 }
@@ -521,6 +633,8 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
     r.x0 = tiku_cv_text_x(view);
     r.step = tiku_codeview_row_height(view);
     r.invisibles = (view->options & TIKU_CODEVIEW_INVISIBLES) != 0;
+    r.styles = view->ink_styles;
+    cuts_of(r.font, r.cuts);
     r.sels = tiku_cv_selections(view, &r.nsels, &main);
     text.x = r.x0;
     text.y = area.y;
@@ -531,7 +645,7 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
         tiku_clip_set(s, text);
         rows = paint_rows(view, &r, area);
         for (k = 0; view->focused && k < r.nsels; k++)
-            paint_caret(view, s, rows, r.sels[k].caret);
+            paint_caret(view, s, rows, r.sels[k].caret, r.cuts);
         tiku_clip_set(s, full);
     }
     tiku_clip_set(s, meet(area, full));

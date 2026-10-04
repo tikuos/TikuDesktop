@@ -110,6 +110,29 @@ tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 #define TIKU_CODEVIEW_BLOCK_CARET  0x200u /* each caret a block over the
                                              character after it         */
 
+/* How text of one ink is drawn besides its colour; a new view draws every
+ * ink plain. */
+#define TIKU_CODEVIEW_BOLD      0x1u  /* in the face's bold cut           */
+#define TIKU_CODEVIEW_ITALIC    0x2u  /* in its italic cut                */
+#define TIKU_CODEVIEW_UNDERLINE 0x4u  /* with a line under it             */
+
+/**
+ * @brief Draw text the colouring gives @p ink with @p style, the flags
+ *        above, or with 0 plain.
+ *
+ * A style changes how a character is drawn, never where: it keeps the
+ * place the view's face gives it.  A face without the cut asked for drops
+ * italic first, then bold; only the monospaced faces have italic cuts.
+ * Text with no colouring is TIKU_INK_PLAIN's.  An ink past TIKU_INK_LINK
+ * or another flag is refused with TIKU_EDIT_INVALID.
+ */
+tiku_edit_status_t tiku_codeview_set_ink_style(tiku_codeview_t *view,
+                                               tiku_ink_t ink,
+                                               unsigned style);
+/** @brief The style @p ink is drawn with, 0 for an ink that is not one. */
+unsigned tiku_codeview_ink_style(const tiku_codeview_t *view,
+                                 tiku_ink_t ink);
+
 /**
  * @brief How a language is edited: how a line is commented, what opens
  *        and closes a level of indentation, and which brackets pair.

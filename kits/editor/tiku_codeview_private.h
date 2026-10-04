@@ -61,6 +61,9 @@ typedef struct {
     size_t nrows, cap;              /* rows kept, and room for them     */
 } tiku_cv_wrap_t;
 
+/* The inks a style can be set for, TIKU_INK_PLAIN to TIKU_INK_LINK. */
+#define TIKU_CV_INKS (TIKU_INK_LINK + 1)
+
 /* A line's fold state: inside a folded region, so it has no rows, and
  * heading one. */
 #define TIKU_CV_HIDDEN 0x1u
@@ -157,6 +160,7 @@ struct tiku_codeview {
     tiku_rgb_t exec_fill;           /* the execution line's fill        */
     tiku_rgb_t caret_fill;          /* the caret line's fill, when set  */
     int caret_fill_set;             /* 0: the theme's note colour       */
+    unsigned ink_styles[TIKU_CV_INKS]; /* TIKU_CODEVIEW_BOLD ... by ink */
     int list_shown;                 /* a list of words is shown         */
     int list_inserts;               /* its keys and clicks insert       */
     char **list_items;              /* its words, in one allocation     */
