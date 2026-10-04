@@ -77,4 +77,16 @@ int tiku_circuit_stack_incomplete(const tiku_circuit_t *stack);
  *         nothing about the physical layer. */
 uint32_t tiku_circuit_layer_colour(size_t index);
 
+/** @brief Open a Gerber job: read its FilesAttributes through @p resolver
+ *         and stack the files in the job's order.  A file that cannot be
+ *         read or decoded, one over its own limits included, stays as an
+ *         unavailable entry.  Allocation failure, cancellation and the
+ *         job's 64 MiB read and scene budgets fail the whole job, leaving
+ *         *out untouched; @p diag then reads "<path>[, line N]: <message>".
+ *         The resolver keeps reads confined. */
+tiku_circuit_err_t tiku_circuit_job_open(const char *root,
+    const tiku_circuit_import_t *options,
+    const tiku_circuit_resolver_t *resolver, tiku_circuit_t **out,
+    tiku_circuit_diagnostic_t *diag);
+
 #endif

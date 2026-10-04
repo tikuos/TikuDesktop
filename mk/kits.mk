@@ -127,6 +127,8 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_circuit_artwork.c \
                $(K)/translation/tiku_circuit_stack.c \
                $(K)/translation/tiku_circuit_stack_render.c \
+               $(K)/translation/tiku_circuit_job.c \
+               $(K)/translation/tiku_circuit_job_json.c \
                $(K)/translation/tiku_circuit_gerber.c \
                $(K)/translation/tiku_circuit_clone.c \
                $(K)/translation/tiku_circuit_contour.c \
