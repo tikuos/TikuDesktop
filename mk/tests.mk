@@ -63,6 +63,14 @@ test_help_reader_SRCS := $(READER_CORE_SRC)
 test_document_reader_SRCS := $(READER_CORE_SRC)
 test_marker_SRCS := $(READER_CORE_SRC) $(MARKER_SRC)
 test_marker_LDLIBS := $(X11_LIBS) -lm
+# The rasteriser's fault suite links its own copy of the vector
+# rasteriser, built to take the suite's failing allocator.
+$(OBJ)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
+        kits/translation/tiku_vector_raster.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -DTIKU_VECTOR_TEST_ALLOC -MMD -MP -c -o $@ $<
+$(BUILD)/tests/test_vector_faults: $(OBJ)/tests/fixtures/vector_faults.o
+test_vector_faults_LIBS := $(OBJ)/tests/fixtures/vector_faults.o
 test_reader_large_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_LDLIBS := $(X11_LIBS) -lm

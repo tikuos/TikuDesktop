@@ -1,13 +1,14 @@
 # check-sanitize: the readers of files that come from elsewhere -- PDF,
 # CCITT fax, JBIG2, JPEG, JPEG 2000, the fonts and ciphers a PDF carries,
 # the key files, certificates and signatures, archives, the lines a diff
-# compares, and office documents with the XML they are made of -- compiled
-# again under AddressSanitizer and UBSan, and their suites run against
-# them, the PDF view's with the view compiled into it (so it is not among
-# the objects).  The editor kit is compiled the same way, and its suites
-# and Reader's also run with leak detection on where there is one: Apple's
-# AddressSanitizer refuses detect_leaks, so on a Mac they run as the rest
-# do.  The rest of the kits link as built.
+# compares, office documents with the XML they are made of, and the
+# vector rasteriser PDF pages draw through -- compiled again under
+# AddressSanitizer and UBSan, and their suites run against them, the
+# PDF view's with the view compiled into it (so it is not among the
+# objects).  The editor kit is compiled the same way, and its suites,
+# Reader's and the rasteriser's also run with leak detection on where
+# there is one: Apple's AddressSanitizer refuses detect_leaks, so on a
+# Mac they run as the rest do.  The rest of the kits link as built.
 # A read past a buffer, or arithmetic C leaves undefined, then stops its
 # suite rather than passing unseen.
 #
@@ -18,6 +19,7 @@ SANFLAGS := -O1 -g -fsanitize=address,undefined \
             -fno-sanitize-recover=undefined -fno-omit-frame-pointer
 SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
                      kits/translation/tiku_pdf_%.c %/tiku_inflate.c \
+                     %/tiku_vector_raster.c \
                      %/tiku_inflate_stream.c kits/translation/tiku_archive%.c \
                      %/tiku_diff.c \
                      %/tiku_jpeg.c %/tiku_fax.c %/tiku_fontdir.c \
@@ -63,7 +65,8 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_codeview_regex test_codeview_advanced \
                   test_codeview_tools test_codeview_host \
                   test_editor_document test_ide_workflow test_ide_page \
-                  $(SAN_READER_TESTS) test_reader_allocations
+                  $(SAN_READER_TESTS) test_reader_allocations \
+                  test_vector_faults
 # The timing suite is left out: it times large fixtures, which the
 # sanitizers slow many times over.
 SAN_TESTS += $(SAN_LEAK_TESTS)
@@ -97,7 +100,19 @@ $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
 	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
-# Reader's controllers, document parser and image decoder are instrumented too.
+# The rasteriser's fault suite takes its own copy of the rasteriser,
+# built for its failing allocator as in tests.mk.
+$(SAN)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
+        kits/translation/tiku_vector_raster.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) -DTIKU_VECTOR_TEST_ALLOC \
+	      -MMD -MP -c -o $@ $<
+$(SAN)/test_vector_faults: $(SAN)/tests/kits/test_vector_faults.o \
+        $(SAN)/tests/fixtures/vector_faults.o $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
+# Reader's controllers, document parser and image decoder are instrumented
+# too.
 SAN_READER_KIT_SRCS := kits/interface/tiku_doc.c \
                        kits/interface/tiku_doc_paint.c \
                        kits/interface/tiku_markdown.c \
