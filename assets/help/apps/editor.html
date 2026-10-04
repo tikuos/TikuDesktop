@@ -7,7 +7,11 @@ starts empty; it never restores an unrelated project.</p>
 <h2 id="opening">Opening and navigating</h2>
 <p><b>File → New</b> starts an empty document; <b>Open…</b> uses the desktop's
 file panel. Failed loads leave the current document untouched. BASIC and C
-files receive syntax colouring based on their extension.</p>
+files receive syntax colouring based on their extension: reserved words are
+bold, remarks italic, and the line number or label a BASIC <code>GOTO</code>
+or <code>GOSUB</code> names is underlined. Hold Ctrl over such a target and
+the pointer becomes a hand; Ctrl-click it to put the caret at the start of
+the line it names. A plain click places the caret as usual.</p>
 <p>Resize or maximize the window to fit your work. Click to place the caret,
 drag to select, or hold Shift while clicking or pressing navigation keys.
 Double-click selects a word and triple-click a line; dragging after them
@@ -26,6 +30,9 @@ other. Each pane has its own caret, selection and scrollbar, and an edit in
 one shows in the other at once. Click in a pane to type there, and drag the
 bar between the panes to share the height. Choose Split Pane again to keep
 only the pane you are working in.</p>
+<p><b>View → Highlight Caret Line</b> shades the line the caret is on, and
+<b>View → Block Caret</b> draws the caret as a block over the character
+after it. Both are off until chosen and apply to both panes.</p>
 <p>A line that opens a block can be folded away: in C a line ending in
 <code>{</code>, in BASIC a line starting <code>FOR</code>, <code>WHILE</code>,
 <code>REPEAT</code> or <code>SUB</code> or ending in <code>THEN</code>, and in

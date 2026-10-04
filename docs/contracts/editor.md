@@ -175,6 +175,36 @@ These are settled for the engine. The migration rows they affect are marked
     x. This qualifies FLD-005 (every selection leaves a folded region), and
     Editor's Text menu gains Carets to Line Ends (SEL, CAR and EDR-CARET
     rows).
+22. **A view can mark the caret's line and draw a block caret.** With the
+    caret-line option the text rows of the main caret's line are filled in
+    the theme's note colour while the view has the keys, under marker
+    fills, the execution line, the selection and the text, so a paused line
+    stays green under the caret (Scintilla lets the caret line win). With
+    the block-caret option each caret is a block over the character after
+    it, as Scintilla's `CARETSTYLE_BLOCK_AFTER` draws it. This qualifies
+    PNT-004, and Editor's View menu gains Highlight Caret Line and Block
+    Caret (CLN, BLK and EDR-VIEW-019 rows).
+23. **A view styles text by its ink.** Each ink can be drawn bold, italic,
+    underlined, or as a hotspot. A style changes the cut a character is
+    drawn in, never its place: layout stays in the view's face, and a
+    letter whose cut is wider is drawn alone at its place. The monospaced
+    faces gain italic and bold italic cuts on the same advance, named 4 and
+    5 in display lists; the proportional faces have no italic cut and draw
+    italic upright. Editor draws reserved words bold and remarks italic;
+    the IDE, in the proportional face, keeps them upright (FNT, INK and
+    EDR-VIEW-020 rows).
+24. **A hotspot is a run of text a click follows.** A run of one ink whose
+    style is a hotspot is live while the view's hotspot keys are held: under
+    the pointer it is underlined, a press on it is its own and leaves the
+    selection, and a release over it tells the host. An application shows
+    the hand over a live one by asking the desktop (`TIKU_MSG_CURSOR`).
+    Editor and the IDE take Command as the key, so a plain click still
+    edits. This qualifies NAV-010 (HOT, EDR-JUMP and IDE-VIEW-009 rows).
+25. **BASIC jump targets are links.** A number or name after GOTO or GOSUB,
+    or after a comma that follows one, takes the link ink instead of the
+    number ink or the document's; in Editor and the IDE it is underlined,
+    and a Command click on it goes to the start of the line it names, by
+    number or by label. This changes EDR-VIEW-014.
 
 ## Document engine
 
@@ -320,10 +350,10 @@ section until it moves onto the view, and any difference is decided then.
 
 | ID | Source | Rule | State | Test |
 | --- | --- | --- | --- | --- |
-| PNT-001 | Tiku | Painting fills the text's area, the bounds less the gutter and scrollbars, with the document ground and draws each line's text in the document ink where the layout puts it, in pieces of at most 256 bytes, which end earlier only where the colour changes or a tab or control character stands. A control character's name is drawn in the ground colour on a box of faint ink | done | `test_codeview_paint.c:text_and_bounds` |
+| PNT-001 | Tiku | Painting fills the text's area, the bounds less the gutter and scrollbars, with the document ground and draws each line's text in the document ink where the layout puts it, in pieces of at most 256 bytes, which end earlier only where the colour or the cut changes (INK rows) or a tab or control character stands. A control character's name is drawn in the ground colour on a box of faint ink | done | `test_codeview_paint.c:text_and_bounds` |
 | PNT-002 | Tiku | Painting touches nothing outside the bounds or the clip the surface already has, and leaves that clip in place | done | `test_codeview_paint.c:text_and_bounds` |
 | PNT-003 | Tiku | The selection's ground is drawn behind its text, and the selection ink only over the selected characters. A selected line break shows as a space's width of ground after its line, and a selected control character's box takes the selection colours | done | `test_codeview_paint.c:selection` |
-| PNT-004 | Tiku | A focused view draws its caret as a line of text ink the row's height at the caret's point, after the text at a line's end; an unfocused view draws none. A new view is focused | done | `test_codeview_paint.c:caret` |
+| PNT-004 | Tiku | A focused view draws its caret as a line of text ink the row's height at the caret's point, after the text at a line's end, or as a block with TIKU_CODEVIEW_BLOCK_CARET (BLK rows); an unfocused view draws none. A new view is focused | done | `test_codeview_paint.c:caret` |
 | PNT-005 | Tiku | A scrolled view shows the same pixels moved by the scroll | done | `test_codeview_paint.c:scrolling` |
 | PNT-006 | Tiku | The middle of a million-byte line, scrolled to, shows exactly the text there, the same across a piece boundary as drawn whole | done | `test_codeview_paint.c:long_line` |
 | PNT-007 | Tiku | A doubled surface gets the same logical layout, drawn at its scale | done | `test_codeview_paint.c:doubled` |
@@ -343,7 +373,7 @@ section until it moves onto the view, and any difference is decided then.
 | NAV-007 | Tiku | After a move the view scrolls as little as shows the caret: on a whole row, and at least 4 pixels inside the right edge. Scrolling right leaves it 8 pixels inside, as Editor does today | done | `test_codeview_input.c:select_all_and_reveal` |
 | NAV-008 | Tiku | Button 1 pressed inside the bounds puts the caret at the hit position and starts a drag, which extends from the press until button 1 is released or the window is deactivated. Shift with a press extends from the anchor. Another button, or a press outside the bounds, is not taken. While dragging, a pointer above the view reaches the line above the first row, and one below it the line after the last whole row | done | `test_codeview_input.c:presses` |
 | NAV-009 | Tiku | A press within 400 ms and less than 6 pixels of the last is its next click. Two select the run under the pointer, the line's last run past its end, or the start of an empty line; three select the line with its break; a fourth starts again. Dragging after two or three clicks extends by runs or lines and keeps the first | done | `test_codeview_input.c:clicks` |
-| NAV-010 | Tiku | The view takes its movement and editing keys and button 1. Command with letters it has no use for, Command with Up or Down, Option with Up, Down, Home, End, Tab or Return, Escape, the function keys and key releases are left to the application and change nothing | done | `test_codeview_input.c:ignored` |
+| NAV-010 | Tiku | The view takes its movement and editing keys and button 1. Command with letters it has no use for, Command with Up or Down, Option with Up, Down, Home, End, Tab or Return, Escape, the function keys and key releases are left to the application and change nothing, except a modifier key that makes a hotspot under the pointer live or not (HOT-002) | done | `test_codeview_input.c:ignored` |
 | NAV-011 | Tiku | Moving one view leaves another view's selection alone. Any change to the document ends the kept x and a drag in progress | done | `test_codeview_input.c:two_views` |
 
 ### Line numbers, scrollbars and whitespace
@@ -500,6 +530,43 @@ section until it moves onto the view, and any difference is decided then.
 | CAR-007 | Tiku | `tiku_codeview_carets_to_line_ends()` puts a caret at the end of each line the main selection touches, a selection ending at a line's start leaving that line out, the last one main | done | `test_codeview_carets.c:line_ends` |
 | CAR-008 | Tiku | The commands of one selection (line commands, comments, indenting lines, brackets, search and lists of words) act on the main one and drop the others; undo gives them back | done | `test_codeview_carets.c:others` |
 
+### Caret line and block caret
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| CLN-001 | Scintilla `SCI_SETCARETLINEVISIBLE` | With TIKU_CODEVIEW_CARET_LINE and the keys, the main caret's line is filled across the text's area, the whole row, in the theme's note colour read at each paint, under the selection and the text; the gutter, other lines, a view without the keys and a view without the option are left as they are | done | `test_codeview_caretlook.c:caret_line` |
+| CLN-002 | Tiku | `tiku_codeview_set_caret_line_fill()` sets the fill's colour, and a marker's fill or the execution line's covers it (decision 22) | done | `test_codeview_caretlook.c:caret_line_fills` |
+| CLN-003 | Scintilla, main caret only | Of several carets only the main one's line is filled, and the fill follows it; a wrapped line is filled on every row of its text and not on its annotation's rows | done | `test_codeview_caretlook.c:caret_line_rows` |
+| BLK-001 | Scintilla `CARETSTYLE_BLOCK_AFTER` | With TIKU_CODEVIEW_BLOCK_CARET a focused view draws each caret as a block the row's height and the character's width over the character after it, in the text's ink, that character drawn over it in the ground's colour; with a selection it stands at the caret; an unfocused view draws none; a recording carries it and plays back the same | done | `test_codeview_caretlook.c:block_glyph` |
+| BLK-002 | Tiku | A tab's block is the tab's drawn width, a control character's is its name's cell with the name over it, and at a line's end or the document's end the block is a space's width | done | `test_codeview_caretlook.c:block_widths` |
+| BLK-003 | Tiku | Every caret has its block; a caret where a row breaks covers the next row's first character, and one shown at the row's end (End, a row move) stands a space wide there | done | `test_codeview_caretlook.c:block_rows` |
+
+### Text styles
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| FNT-001 | Tiku | `tiku_font_styled()` gives each mono face, at both sizes, its bold, italic and bold italic cut, and every cut reaches every other | done | `test_fontstyles.c:mono_cuts` |
+| FNT-002 | Tiku, metric reference | Each cut of a mono face has the upright cut's height, ascent and the advance of every Latin-1 character | done | `test_fontstyles.c:mono_metrics` |
+| FNT-003 | Tiku | The face in force and the baked proportional faces at every size reach their bold cut and back; none has an italic cut; a face the kit does not know, or a style flag it does not, has none | done | `test_fontstyles.c:proportional_cuts` |
+| FNT-004 | Tiku | Italic letters are not the upright ones; a recording names the italic cuts (faces 4 and 5) with no miss, and plays back to the same pixels | done | `test_fontstyles.c:italic_drawn` |
+| INK-001 | Scintilla `SCI_STYLESETBOLD`, `ITALIC`, `UNDERLINE`, `HOTSPOT` | `tiku_codeview_set_ink_style()` sets an ink's style, read back by `tiku_codeview_ink_style()`; a new view draws every ink plain; an ink past TIKU_INK_LINK or a flag that is none of them is refused and the style kept | done | `test_codeview_inkstyles.c:setting` |
+| INK-002 | Tiku | Bold, italic and bold italic runs are drawn in those cuts of the view's face, each character where the face puts it; text no language colours takes the plain ink's style | done | `test_codeview_inkstyles.c:cuts` |
+| INK-003 | Scintilla `SCI_STYLESETUNDERLINE` | An underline runs one pixel under the baseline under every character of its ink, blanks included, in the text's colour, and in the selection's ink under selected text | done | `test_codeview_inkstyles.c:underlines` |
+| INK-004 | Tiku | Selected text keeps its cut, in the selection's ink, and the character a block caret stands over is drawn in its cut | done | `test_codeview_inkstyles.c:selected_and_block` |
+| INK-005 | Tiku | A cut whose letters are wider than the face's draws each letter alone at the face's place for it, and a face with no italic cut draws italic text upright | done | `test_codeview_inkstyles.c:proportional` |
+| INK-006 | Tiku | A styled view's recording has no misses and plays back to the pixels painted | done | `test_codeview_inkstyles.c:recorded` |
+
+### Hotspots
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| HOT-001 | Scintilla `SCI_STYLESETHOTSPOT` | The hotspot under the pointer is the run with the hotspot style holding the character there; there is none over another ink, past a line's end or below the last line; text no language colours is one plain run; a move that changes the hotspot shown is taken | done | `test_codeview_hotspots.c:under_pointer`, `plain_text` |
+| HOT-002 | Tiku | Hotspots are live only while exactly the keys `tiku_codeview_set_hotspot_keys()` set are held, Caps Lock aside; a modifier key going down or up where the pointer was last seen is taken when it changes the hotspot shown and left to the application when it does not | done | `test_codeview_hotspots.c:keys` |
+| HOT-003 | Scintilla `SCN_HOTSPOTCLICK` | A press on a live hotspot is its own: the selection stays, a move off it ends it, and a release over the same hotspot calls the host's `hotspot()` with its range and the keys held; a press without the keys places the caret as any press does, a drag from it over a live hotspot selects as any drag does, and where it lets go the hotspot under the pointer shows | done | `test_codeview_hotspots.c:clicking` |
+| HOT-004 | Scintilla, active hotspot underline | The hotspot shown is underlined end to end in its ink, and nothing else is | done | `test_codeview_hotspots.c:painting` |
+| HOT-005 | Tiku | A change to the document, a style set or deactivation ends the hotspot shown, and the next move finds it again; a wheel scroll finds the one under the pointer anew | done | `test_codeview_hotspots.c:ending` |
+| HOT-006 | Tiku | An application's `TIKU_MSG_CURSOR` sets the pointer's shape over one of its own windows' content, shown at once when the pointer is there; the front window's corner grip still offers the resize, and a tab, the desk or an open menu the arrow; a request for another session's window, a shape there is not or no window is let go | done | `test_desk_cursor.c:main` |
+
 ### Hosting and timing
 
 | ID | Source | Rule | State | Test |
@@ -538,9 +605,9 @@ changes it or when it records a defect listed under
 | EDR-KEY-009 | editor/tiku_editor_input.c:tiku_editor_event | Cmd shortcuts, case-insensitive: N New, O Open, S Save, Shift+S Save As, W or Q Close, Z Undo, Shift+Z or Y Redo, X Cut, C Copy, V Paste, A Select All, F Find, H Replace, G Go to Line, R Run, ] Find Next, [ Find Previous, / Toggle Comment, D Duplicate Lines, Shift+K Delete Lines, M and Shift+M Go to or Select to Matching Bracket, Shift+Up and Shift+Down Move Lines, Backspace and Delete a word (EDR-TEXT-001); Cmd with Home, End, Left or Right moves the caret (EDR-KEY-005, EDR-KEY-006); any other Cmd key does nothing and is not typed. | done | test_editor_document.c:workflows (c, x, z, y, h, g, w, o, n, s, v; Home and End); shell/editorfeatures.script (h, s, a, c, x, z, w); test_editor_resize.c:main (Cmd+W quits the out-of-process Editor); "any other Cmd key": none |
 | EDR-KEY-010 | editor/tiku_editor_input.c:tiku_editor_event; tiku_text_input.c:tiku_text_input_event | A pointer press with a button above 1 is ignored entirely and leaves a partly received text commit in place; in the document window, outside the unsaved-changes question, any other pointer press, any key press or activation discards it, and deactivation of either window discards it too. | baseline | none (kit: test_text_input.c:transport checks deactivation) |
 | EDR-KEY-011 | editor/tiku_editor_commands.c:tiku_editor_edited; editor/tiku_editor_input.c:view_key | A successful edit (typing, Return, Tab, a commit, Backspace, Delete, paste, cut, Replace, Replace All) clears the footer message, even a Backspace or Delete with nothing to remove, while navigation, Copy and Select All leave it. | done | test_editor_document.c:editor_rows |
-| EDR-MENU-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_app.c:tiku_editor_start | Menus are File (New n, Open… o, Save s, Save As…, Revert, Close w), Edit (Undo z, Redo y, Cut x, Copy c, Paste v, Select All a), Search (Find… f, Find Next ], Find Previous [, Replace… h, Go to Line… g, Replace All), View (Line Numbers, Colour as BASIC, Run r, Show Invisibles, Wrap Lines, Split Pane) and Text (EDR-TEXT-001); the five View toggles are marked only while on (Line Numbers starts on, Show Invisibles, Wrap Lines and Split Pane off, Colour as BASIC while the language is BASIC), the same menus go to the Find window while it is open, and menu items, keys and tools all dispatch through tiku_editor_pick. | baseline | shell/syntax.script ("Colour as BASIC"), shell/pickfile.script ("Open…"), shell/runbas.script ("Run") (labels only) |
+| EDR-MENU-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_app.c:tiku_editor_start | Menus are File (New n, Open… o, Save s, Save As…, Revert, Close w), Edit (Undo z, Redo y, Cut x, Copy c, Paste v, Select All a), Search (Find… f, Find Next ], Find Previous [, Replace… h, Go to Line… g, Replace All), View (Line Numbers, Colour as BASIC, Run r, Show Invisibles, Wrap Lines, Split Pane, Highlight Caret Line, Block Caret) and Text (EDR-TEXT-001); the seven View toggles are marked only while on (Line Numbers starts on, Show Invisibles, Wrap Lines, Split Pane, Highlight Caret Line and Block Caret off, Colour as BASIC while the language is BASIC), the same menus go to the Find window while it is open, and menu items, keys and tools all dispatch through tiku_editor_pick. | baseline | shell/syntax.script ("Colour as BASIC"), shell/pickfile.script ("Open…"), shell/runbas.script ("Run") (labels only) |
 | EDR-MENU-002 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_view.c:tiku_editor_tool_enabled | While the unsaved-changes question is open, every menu item and tool is disabled and commands are ignored; Open and Save As need a file-panel service, Revert needs a path, Cut and Copy need a selection and a clipboard-write service, and Paste needs a clipboard-read service. | baseline | none |
-| EDR-MENU-003 | editor/tiku_editor_commands.c:tiku_editor_publish; editor/tiku_editor_view.c:tiku_editor_tool_enabled | Outside the question, New, Save, Close, Select All, Find…, Find Next, Find Previous, Replace…, Go to Line…, Replace All and the five View toggles are always enabled (Save with no changes, Find Next with an empty query), while the toolbar's Save tool needs unsaved changes and its Open tool a file-panel service. | baseline | none |
+| EDR-MENU-003 | editor/tiku_editor_commands.c:tiku_editor_publish; editor/tiku_editor_view.c:tiku_editor_tool_enabled | Outside the question, New, Save, Close, Select All, Find…, Find Next, Find Previous, Replace…, Go to Line…, Replace All and the seven View toggles are always enabled (Save with no changes, Find Next with an empty query), while the toolbar's Save tool needs unsaved changes and its Open tool a file-panel service. | baseline | none |
 
 ### Text menu
 
@@ -679,11 +746,13 @@ changes it or when it records a defect listed under
 | EDR-VIEW-011 | editor/tiku_editor_run.c:tiku_editor_tick; editor/tiku_editor_commands.c:tiku_editor_insert_checked, tiku_editor_pick, tiku_editor_document_action | A footer message clears 8 s after the first tick that sees its text; setting the same text again does not restart the timer. A message also clears at once on any successful edit, Undo, Redo, New, or opening Find, Replace or Go to Line. Toolbar hover labels are not timed. | baseline | none |
 | EDR-VIEW-012 | editor/tiku_editor_app.c:tiku_editor_start; editor/tiku_editor_file.c:tiku_editor_read_document, tiku_editor_save_document; editor/tiku_editor_commands.c:tiku_editor_pick, tiku_editor_document_action; tiku_syntax.c:tiku_syntax_of_path | A name ending ".bas" is BASIC and one ending ".c" or ".h" is C (any case; anything else is plain). The language is set from the name at launch, on every successful Open or Revert, and on Save As to another name; New sets none. View > Colour as BASIC switches between BASIC and none, and a C document becomes BASIC. Every run of a line is coloured, however many. | done | test_syntax.c:main (name rules); test_editor_document.c:kept_bytes (a .bas name, the menu toggle); shell/pickfile.script (a .bas opened through the panel arrives BASIC-coloured); shell/ccolour.script (a .c file arrives C-coloured) |
 | EDR-VIEW-013 | kits/editor/tiku_codeview_style.c:state_at, tiku_cv_style_change | Each line's starting C state is kept; after an edit the states are read again from the first line the edit could change until a line starts in its kept state, so no repaint reads from line 0 again (STY-002, STY-003). | done | test_codeview_style.c:model, convergence; shell/ccolour.script (a block remark opened on an earlier line colours a later one) |
-| EDR-VIEW-014 | tiku_syntax.c:basic_spans, number_at, string_at, label_at | BASIC colouring: the interpreter's keywords (any case, whole word, "$" kept only where the table has it) and "?" take the keyword colour. The line's leading number is faint. A label at the line head is plain. A name used as a GOTO or GOSUB target (or after a comma that follows one) is plain even when spelled like a keyword, but a numeric target takes the number colour. Strings honour backslash escapes and run to the line end if unclosed. A string whose text starts with "/" has its body in the path colour and its quotes in the string colour. REM or ' where a statement may begin makes the rest of the line a remark. Numbers are decimal (optional fraction), 0x, 0b, &H or &B. After DATA, everything except quoted items is plain to the end of the line. | baseline | test_syntax.c:main (all but "?" and GOSUB); shell/pickfile.script (faint line number and keyword colour in the Editor) |
+| EDR-VIEW-014 | tiku_syntax.c:basic_spans, number_at, string_at, label_at | BASIC colouring: the interpreter's keywords (any case, whole word, "$" kept only where the table has it) and "?" take the keyword colour. The line's leading number is faint. A label at the line head is plain. A name or number used as a GOTO or GOSUB target (or after a comma that follows one) takes the link colour, even when spelled like a keyword (decision 25). Strings honour backslash escapes and run to the line end if unclosed. A string whose text starts with "/" has its body in the path colour and its quotes in the string colour. REM or ' where a statement may begin makes the rest of the line a remark. Numbers are decimal (optional fraction), 0x, 0b, &H or &B. After DATA, everything except quoted items is plain to the end of the line. | done | test_syntax.c:main (all but "?"); shell/pickfile.script (faint line number and keyword colour in the Editor); shell/jumps.script (a target's link colour) |
 | EDR-VIEW-015 | tiku_syntax.c:c_spans, c_word_at, number_at | C colouring covers the C11 keywords except _Imaginary (case-sensitive), numbers that start with a digit (decimal with optional fraction, 0x or 0b, with no suffix or exponent), string and character literals with backslash escapes that end at the line end if unclosed, // remarks, /* */ remarks carried to later lines, and, at the line head, a "#" together with the name directly after it in the keyword colour. | baseline | test_syntax.c:main; shell/ccolour.script |
 | EDR-VIEW-016 | editor/tiku_editor_view.c:tiku_editor_paint, tiku_editor_note_box; editor/tiku_editor_input.c:tiku_editor_event | While a footer message or a toolbar hover label is shown, a panel-coloured box from x = 112 to 17 px short of the right edge covers the `UTF-8  LF` or `UTF-8  CRLF` label and the horizontal scrollbar. A press in that box clears the message and shows the scrollbar without scrolling; the next press scrolls. | baseline | test_editor_document.c:footer_message_press |
 | EDR-VIEW-017 | tiku_syntax.c:tiku_syntax_runs; kits/editor/tiku_codeview_style.c:tiku_cv_style_line | Every run of a C line is painted, however many it has, and a /* or */ anywhere in it opens or closes the remark carried to the lines below (STY-004). | done | test_codeview_style.c:many_runs; test_syntax.c:main |
 | EDR-VIEW-018 | editor/tiku_editor_commands.c:tiku_editor_pick; editor/tiku_editor_view.c:tiku_editor_view_sync; editor/tiku_editor_run.c:tiku_editor_tick | View > Wrap Lines, off by default, wraps the page's lines at its width (WRP rows): the item is marked while on, the horizontal scrollbar has nothing to scroll, and the window's tick counts the rows of lines not yet counted and paints when it did (decision 17). | done | test_editor_document.c:wrap_lines; shell/wrap.script |
+| EDR-VIEW-019 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_view.c:tiku_editor_view_sync | View > Highlight Caret Line and View > Block Caret, off by default and marked while on, reach every pane: the caret's line is filled in the theme's note colour and the caret is a block (CLN, BLK rows, decision 22). | done | test_editor_document.c:caret_looks; shell/caretlook.script |
+| EDR-VIEW-020 | editor/tiku_editor_app.c:pane_new | A coloured page draws reserved words in the bold cut, remarks in the italic cut and jump targets underlined (INK rows, decision 23). | done | test_editor_document.c:jumps; shell/jumps.script (the underline) |
 
 ### Split pane
 
@@ -708,6 +777,12 @@ changes it or when it records a defect listed under
 | --- | --- | --- | --- | --- |
 | EDR-CARET-001 | editor/tiku_editor_commands.c:tiku_editor_publish, tiku_editor_pick; editor/tiku_editor_input.c:tiku_editor_event | Text > Carets to Line Ends (Cmd+Shift+L) puts a caret at the end of each line the selection touches (CAR-007); typing, deleting and the clipboard then act at every caret, a run of typing one undo step (CAR-002, CAR-003) | done | test_editor_document.c:carets; shell/carets.script |
 | EDR-CARET-002 | editor/tiku_editor_input.c:tiku_editor_event, pointer_down | Escape with several carets keeps the main one (CAR-004) and closes nothing; a Command press and an Option drag in a pane add carets and select rectangles (CAR-005) | done | test_editor_document.c:carets; shell/carets.script |
+
+### Jump targets
+
+| ID | Source | Rule | State | Test |
+| --- | --- | --- | --- | --- |
+| EDR-JUMP-001 | editor/tiku_editor_app.c:pane_new, hotspot; editor/tiku_editor_commands.c:tiku_editor_follow; editor/tiku_editor_view.c:tiku_editor_paint; editor/tiku_editor_input.c:tiku_editor_event | With Command held, a jump target under the pointer is live (HOT rows) and the window asks for the hand, the arrow again once it is not; a Command click on one puts the caret at the start of the line it names, by number or by label, in that pane, or says `No line N in this program.`; Command alone moves nothing, and a plain click places the caret (decision 25). | done | test_editor_document.c:jumps; shell/jumps.script |
 
 ### Running BASIC
 
@@ -868,6 +943,7 @@ the code at `bf1c6b3`; those the move onto the kit changed follow decisions
 | IDE-VIEW-006 | ide/tiku_ide_editor_view.c:tiku_ide_edit_paint, tiku_ide_tb_tool_at, tb_tool_name | The toolbar is Save, Run, Stop, Undo, Redo, Find and Renumber on BASIC pages; Save, Build, Undo, Redo and Find on C pages; and Save, Undo, Redo and Find on other pages. Stop is red while the IDE has any run active, and Undo and Redo are dark only when available. Hovering a tool shows its name ("Save", "Run", "Stop", "Undo", "Redo", "Find", "Renumber" or "Build") in a tip, and the line below the toolbar shows the run target (IDE-DEV-006). | baseline | shell/idetoolbar.script |
 | IDE-VIEW-007 | kits/editor/tiku_codeview_style.c | BASIC and C pages are coloured by the code view (STY rows): C keeps each line's starting state and reads again only from the first line a change could alter, with no limit on the runs of a line. | done | shell/idepath.script (path colour); kit level: test_codeview_style.c |
 | IDE-VIEW-008 | ide/tiku_ide_commands.c:tiku_ide_pick; ide/tiku_ide_events.c:page_key; kits/editor/tiku_codeview_input.c:tiku_codeview_select_all | Edit > Select all and Cmd+A both select the whole document and show the caret at its end. | done | test_ide_workflow.c:test_keyword_over_selection (Cmd+A) |
+| IDE-VIEW-009 | ide/tiku_ide_text.c:tiku_ide_text_new, hotspot; ide/tiku_ide_editor_view.c:tiku_ide_edit_paint; ide/tiku_ide_events.c:tiku_ide_event | A BASIC page underlines jump targets and follows them as Editor does (EDR-JUMP-001): with Command held the pointer is a hand over one, a Command click puts the caret at the start of the line it names or says `No line N in this program.`, and Command alone moves nothing. Reserved words and remarks stay upright: the page's proportional face has no italic cut, and its bold is wider (decision 23). | done | test_ide_page.c:jumps |
 
 ### BASIC line numbers
 
