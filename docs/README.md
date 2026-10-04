@@ -12,6 +12,8 @@
 - [Tracker behavior contract](contracts/tracker.md): the executable feature/fidelity checklist.
 - [Editor behaviour contract](contracts/editor.md): the editor kit's document engine and the Editor and IDE rules it must keep.
 - [Editor kit embedding guide](../kits/editor/README.md): using the document and view in text and programming editors.
+- [TikuCircuit](../apps/circuit/README.md): opening schematics, Gerber artwork, drill files and Gerber jobs; sheets, layers, Find and Selection Details.
+- [Circuit kit guide](../kits/translation/doc/circuit.md): the KiCad, EAGLE, Gerber, drill and job readers, layer stacks and rendering, for embedding.
 - [Tests](../tests/README.md) and [examples](../examples/README.md).
 
 Public-kit documentation stays beside each kit under `kits/`; application
