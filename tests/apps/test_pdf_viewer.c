@@ -6,7 +6,12 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include "tiku_work.h"
-static int fail_alloc, fail_realloc, fail_post;
+static int fail_alloc, fail_realloc, fail_post, fail_calloc;
+static void *audit_calloc(size_t count, size_t size)
+{
+    if (fail_calloc && !--fail_calloc) return NULL;
+    return calloc(count, size);
+}
 static void *audit_malloc(size_t size)
 {
     if (fail_alloc) { fail_alloc = 0; return NULL; }
@@ -23,10 +28,12 @@ static int audit_post(const tiku_work_job_t *job)
     return tiku_work_post(job);
 }
 #define malloc audit_malloc
+#define calloc audit_calloc
 #define realloc audit_realloc
 #define tiku_work_post audit_post
 #include "../../apps/pdf/tiku_pdfview.c"
 #undef malloc
+#undef calloc
 #undef realloc
 #undef tiku_work_post
 #include "tiku_icons.h"
@@ -1047,10 +1054,128 @@ static void search_failure_tests(tiku_pdfview_t *viewer)
     assert(!viewer->search_failed && viewer->nmatch > 0);
 }
 
+static void reliability_tests(tiku_pdfview_t *c, const char *file)
+{
+    assert(tiku_pdfview_file(c, file)); settle(c);
+    pv_action(c, PV_NEXT); settle(c);
+    pv_doc_t *before = c->doc;
+    int page = pv_current(c), scroll = c->vbar.value;
+    for (int fail = 1; fail <= 5; fail++) {
+        pv_load_t job = {.owner=c, .generation=c->generation};
+        snprintf(job.path, sizeof job.path, "%s", file);
+        pv_load_run(&job); assert(job.err == TIKU_PDF_OK);
+        fail_calloc = fail; pv_load_done(&job); assert(!fail_calloc);
+        assert(c->doc == before && c->npage == PAGES);
+        assert(pv_current(c) == page && c->vbar.value == scroll);
+        assert(!strcmp(c->path, file) &&
+               strstr(c->status, "Not enough memory"));
+        tiku_pdf_close(job.pdf); free(job.pw); free(job.ph);
+        tiku_pdf_outline_free(job.outline, job.noutline);
+        tiku_pdf_signatures_free(job.sig, job.nsig); free(job.title);
+    }
+    c->selected = 0;
+    tiku_field_start(&c->find, "selected query");
+    tiku_field_key(&c->find, TIKU_FIELD_SELECT_ALL, 0, 0);
+    tiku_dialog_focus(&c->dialog, PV_FIND_FIELD);
+    assert(pv_enabled(c, PV_COPY));
+    pv_menu_pick(c->window, PV_COPY, c);
+    assert(!strcmp(tiku_clipboard_text(), "selected query"));
+    c->dialog.focus = PV_PASS_FIELD; /* password panel's focus state */
+    assert(!pv_enabled(c, PV_COPY));
+    tiku_dialog_focus(&c->dialog, PV_CANVAS);
+
+    int dirty = 0;
+    tiku_pdfview_t *other = tiku_pdfview_new(desk, &dirty, NULL, NULL);
+    assert(other && tiku_pdfview_file(other, file)); settle(other);
+    pv_go(c, 0, 0, 0); settle(c);
+    pv_action(c, PV_BOOKMARK);
+    assert(c->nbookmarks == 1 && c->bookmarks[0].page == 0);
+    pv_set_scale(other, PV_FIXED, 1.25); pv_turn(other, 90); settle(other);
+    pv_go(other, 2, 100, 0); settle(other);
+    pv_action(other, PV_BOOKMARK);
+    assert(other->nbookmarks == 2); /* merge a stale window's addition */
+    assert(pv_bookmarks_read(c) && c->nbookmarks == 2);
+    pv_action(c, PV_BOOKMARK_GO+1); settle(c);
+    assert(pv_current(c) == 2);
+    assert(c->turn == 90 && c->fit == PV_FIXED && fabs(c->scale-1.25) < 1e-9);
+    pv_action(c, PV_BOOKMARK); assert(c->nbookmarks == 1);
+    assert(pv_bookmarks_read(other) && other->nbookmarks == 1);
+    tiku_pdfview_destroy(other); settle(c);
+
+    /* A failed render can be retried without reopening the document. */
+    int p = PAGES-1;
+    c->pages[p].failed = 1;
+    assert(pv_enabled(c, PV_RETRY) && !pv_request(c, p));
+    pv_action(c, PV_RETRY);
+    assert(!c->pages[p].failed && !pv_enabled(c, PV_RETRY));
+    pv_go(c, p, 0, 0); settle(c);
+    assert(pv_tile(c, p, 1));
+}
+
+/** @brief Bookmarks the file cannot take stay in the window for the rest
+ *         of the session; a lock another window holds changes nothing. */
+static void bookmark_fallback_tests(const char *dir, const char *file,
+                                    const char *bookmarks)
+{
+    char lock[300], missing[300], folder[300], kept[320], kept_lock[330];
+    int dirty = 0;
+
+    /* Another window holds the lock: busy, and the list stays. */
+    snprintf(lock, sizeof lock, "%s.lock", bookmarks);
+    int held = open(lock, O_RDWR | O_CREAT, 0600);
+    assert(held >= 0 && !flock(held, LOCK_EX));
+    tiku_pdfview_t *v = tiku_pdfview_new(desk, &dirty, NULL, NULL);
+    assert(v && tiku_pdfview_file(v, file)); settle(v);
+    int before = v->nbookmarks;
+    pv_go(v, 3, 0, 0); settle(v);
+    pv_action(v, PV_BOOKMARK);
+    assert(strstr(v->status, "busy") && v->nbookmarks == before);
+    close(held);
+    tiku_pdfview_destroy(v); settle(NULL);
+
+    /* No folder for the file: kept here, across later changes. */
+    snprintf(missing, sizeof missing, "%s/missing/bookmarks", dir);
+    setenv("TIKU_PDF_BOOKMARKS", missing, 1);
+    v = tiku_pdfview_new(desk, &dirty, NULL, NULL);
+    assert(v && tiku_pdfview_file(v, file)); settle(v);
+    pv_go(v, 1, 0, 0); settle(v);
+    pv_action(v, PV_BOOKMARK);
+    assert(v->nbookmarks == 1 && strstr(v->status, "session only"));
+    pv_go(v, 2, 0, 0); settle(v);
+    pv_action(v, PV_BOOKMARK);
+    assert(v->nbookmarks == 2 && strstr(v->status, "session only"));
+    assert(access(missing, F_OK));
+    tiku_pdfview_destroy(v); settle(NULL);
+
+    /* The lock is taken but saving fails: the next change keeps it. */
+    snprintf(folder, sizeof folder, "%s/readonly", dir);
+    snprintf(kept, sizeof kept, "%s/bookmarks", folder);
+    snprintf(kept_lock, sizeof kept_lock, "%s.lock", kept);
+    assert(!mkdir(folder, 0700));
+    setenv("TIKU_PDF_BOOKMARKS", kept, 1);
+    v = tiku_pdfview_new(desk, &dirty, NULL, NULL);
+    assert(v && tiku_pdfview_file(v, file)); settle(v);
+    pv_go(v, 1, 0, 0); settle(v);
+    pv_action(v, PV_BOOKMARK);
+    assert(v->nbookmarks == 1 && !v->bookmarks_session);
+    assert(!chmod(folder, 0500));
+    pv_go(v, 2, 0, 0); settle(v);
+    pv_action(v, PV_BOOKMARK);
+    assert(v->nbookmarks == 2 && strstr(v->status, "saving bookmarks failed"));
+    pv_go(v, 4, 0, 0); settle(v);
+    pv_action(v, PV_BOOKMARK);
+    assert(v->nbookmarks == 3 && strstr(v->status, "session only"));
+    assert(!chmod(folder, 0700));
+    assert(pv_bookmarks_read(v) && v->nbookmarks == 1); /* the file's one */
+    tiku_pdfview_destroy(v); settle(NULL);
+    assert(!unlink(kept) && !unlink(kept_lock) && !rmdir(folder));
+    setenv("TIKU_PDF_BOOKMARKS", bookmarks, 1);
+}
+
 int main(int argc, char **argv)
 {
     char dir[] = "/tmp/tikupdf-XXXXXX", file[256], junk[256], shot[256];
-    char other[256], list[256];
+    char other[256], list[256], bookmarks[256], bookmark_lock[272];
     pdfw_t b = document();
     int dirty = 0, picks = 0;
     FILE *f;
@@ -1063,6 +1188,9 @@ int main(int argc, char **argv)
     snprintf(shot, sizeof shot, "%s/viewer.png", dir);
     snprintf(list, sizeof list, "%s/recent", dir);
     setenv("TIKU_PDF_RECENT", list, 1);         /* never the person's own */
+    snprintf(bookmarks, sizeof bookmarks, "%s/bookmarks", dir);
+    snprintf(bookmark_lock, sizeof bookmark_lock, "%s.lock", bookmarks);
+    setenv("TIKU_PDF_BOOKMARKS", bookmarks, 1);
     f = fopen(file, "wb");
     assert(f && fwrite(b.p, 1, (size_t)b.n, f) == (size_t)b.n);
     fclose(f);
@@ -1109,6 +1237,8 @@ int main(int argc, char **argv)
     sealed_tests(c, dir);
     signature_tests(c, dir);
     recent_tests(c, s, file, other, list);
+    reliability_tests(c, file);
+    bookmark_fallback_tests(dir, file, bookmarks);
 
     tiku_pdfview_close(c);
     settle(c);
@@ -1125,6 +1255,7 @@ int main(int argc, char **argv)
     if (argc > 1) printf("Preview: %s\n", shot);
     else {
         unlink(file); unlink(other); unlink(junk); unlink(list);
+        unlink(bookmarks); unlink(bookmark_lock);
         rmdir(dir);
     }
     puts("PDF viewer: open, draw, the toolbar's icons, zoom, turn, outline, "
