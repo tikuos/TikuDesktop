@@ -1,0 +1,24 @@
+M48
+; Exported from the authored drill-board.kicad_pcb; volatile date removed.
+; FORMAT={-:-/ absolute / metric / decimal}
+; #@! TF.GenerationSoftware,Kicad,Pcbnew,7.0.11
+; #@! TF.FileFunction,MixedPlating,1,2
+FMAT,2
+METRIC
+; #@! TA.AperFunction,Plated,PTH,ComponentDrill
+T1C1.000
+; #@! TA.AperFunction,Plated,PTH,ComponentDrill
+T2C1.500
+%
+G90
+G05
+T1
+X10.0Y-10.0
+T2
+X20.0Y-10.0
+T1
+X10.0Y-19.0G85X10.0Y-21.0
+G05
+X19.293Y-19.293G85X20.707Y-20.707
+G05
+M30

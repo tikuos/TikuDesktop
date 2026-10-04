@@ -1,0 +1,29 @@
+(kicad_sch (version 20230121) (generator tikucircuit_test)
+  (uuid 66666666-6666-4666-8666-666666666666) (paper "A4")
+  (lib_symbols
+    (symbol "Fixture:R" (pin_names hide) (pin_numbers hide)
+      (in_bom yes) (on_board yes)
+      (property "Reference" "R" (at 0 0 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "R" (at 0 0 0) (effects (font (size 1.27 1.27))))
+      (symbol "R_1_1"
+        (rectangle (start -3 -1) (end 3 1)
+          (stroke (width 0.1524) (type default)) (fill (type none))))
+      (symbol "R_2_1"
+        (circle (center 0 0) (radius 2)
+          (stroke (width 0.1524) (type default)) (fill (type none))))))
+  (symbol (lib_id "Fixture:R") (at 50 40 0) (unit 1)
+    (in_bom yes) (on_board yes)
+    (uuid 77777777-7777-4777-8777-777777777777)
+    (property "Reference" "R1" (at 50 36 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "10k" (at 50 44 0) (effects (font (size 1.27 1.27))))
+    (instances (project "hierarchy"
+      (path "/11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222"
+        (reference "R1") (unit 1))
+      (path "/11111111-1111-4111-8111-111111111111/33333333-3333-4333-8333-333333333333"
+        (reference "R2") (unit 2)))))
+  (hierarchical_label "IN" (shape input) (at 35 40 0)
+    (effects (font (size 1.27 1.27)) (justify left))
+    (uuid 88888888-8888-4888-8888-888888888888))
+  (hierarchical_label "OUT" (shape output) (at 65 40 180)
+    (effects (font (size 1.27 1.27)) (justify right))
+    (uuid 99999999-9999-4999-8999-999999999999)))

@@ -1,0 +1,9 @@
+{
+  "Header": {"GenerationSoftware": {"Vendor": "TikuCircuit tests", "Application": "authored fixture", "Version": "1"}},
+  "GeneralSpecs": {"LayerNumber": 2, "BoardThickness": 1.6},
+  "FilesAttributes": [
+    {"Path": "drills.drl", "FileFunction": "Plated,1,2,PTH", "FileFormat": "NC"},
+    {"Path": "artwork.gbr", "FileFunction": "Copper,L1,Top", "FilePolarity": "Positive", "FileFormat": "Gerber"},
+    {"Path": "polarity.gbr", "FileFunction": "Copper,L2,Bot", "FilePolarity": "Positive", "FileFormat": "Gerber"}
+  ]
+}

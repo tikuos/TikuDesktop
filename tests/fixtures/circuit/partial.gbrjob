@@ -1,0 +1,5 @@
+{"FilesAttributes":[
+  {"Path":"artwork.gbr","FileFunction":"Copper,L1,Top"},
+  {"Path":"missing-layer.gbr","FileFunction":"Copper,L2,Bot"},
+  {"Path":"../outside.gbr","FileFunction":"Other"}
+]}

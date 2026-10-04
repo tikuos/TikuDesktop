@@ -1,0 +1,6 @@
+G04 Repeat full dark-clear block, Y first, then X*
+%FSLAX24Y24*%%MOMM*%%ADD10C,4*%%ADD11C,2*%
+%SRX2Y3I3J3*%
+%LPD*%D10*X50000Y-150000D03*
+%LPC*%D11*X50000Y-150000D03*
+%SR*%M02*

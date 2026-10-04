@@ -63,14 +63,26 @@ test_help_reader_SRCS := $(READER_CORE_SRC)
 test_document_reader_SRCS := $(READER_CORE_SRC)
 test_marker_SRCS := $(READER_CORE_SRC) $(MARKER_SRC)
 test_marker_LDLIBS := $(X11_LIBS) -lm
-# The rasteriser's fault suite links its own copy of the vector
-# rasteriser, built to take the suite's failing allocator.
+# The fault suites link their own copies of the vector rasteriser and of
+# the circuit importers, built to take the suites' failing allocator.
 $(OBJ)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
         kits/translation/tiku_vector_raster.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(KIT_INC) -DTIKU_VECTOR_TEST_ALLOC -MMD -MP -c -o $@ $<
 $(BUILD)/tests/test_vector_faults: $(OBJ)/tests/fixtures/vector_faults.o
 test_vector_faults_LIBS := $(OBJ)/tests/fixtures/vector_faults.o
+CIRCUIT_FAULT_SRCS := $(filter kits/translation/tiku_circuit%.c,\
+                               $(TRANSLATION)) kits/translation/tiku_xml.c
+CIRCUIT_FAULT_OBJS := $(patsubst kits/translation/%.c,\
+                          $(OBJ)/tests/fixtures/circuit_faults/%.o,\
+                          $(CIRCUIT_FAULT_SRCS))
+$(OBJ)/tests/fixtures/circuit_faults/%.o: kits/translation/%.c \
+        tests/fixtures/circuit_alloc.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -include tests/fixtures/circuit_alloc.h \
+	      -MMD -MP -c -o $@ $<
+$(BUILD)/tests/test_circuit_faults: $(CIRCUIT_FAULT_OBJS)
+test_circuit_faults_LIBS := $(CIRCUIT_FAULT_OBJS)
 test_reader_large_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_LDLIBS := $(X11_LIBS) -lm

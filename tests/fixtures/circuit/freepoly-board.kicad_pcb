@@ -1,0 +1,23 @@
+(kicad_pcb (version 20221018) (generator tikucircuit_test)
+  (general (thickness 1.6))
+  (paper "A4")
+  (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (44 "Edge.Cuts" user))
+  (setup (pad_to_mask_clearance 0))
+  (net 0 "")
+  (footprint "Fixture:FreePoly" (layer "F.Cu") (at 0 0)
+    (attr smd)
+    (pad "1" smd custom (at 10 10) (size 0.5 0.5) (layers "F.Cu")
+      (options (clearance outline) (anchor rect))
+      (primitives
+        (gr_poly
+          (pts (xy 1 0) (xy 0.5 -0.75) (xy -0.5 -0.75) (xy -0.5 0.75) (xy 0.5 0.75))
+          (width 0) (fill yes)))
+      (net 0 ""))
+    (pad "2" smd custom (at 20 10 90) (size 0.5 0.5) (layers "F.Cu")
+      (options (clearance outline) (anchor rect))
+      (primitives
+        (gr_poly
+          (pts (xy 1 0) (xy 0.5 -0.75) (xy -0.5 -0.75) (xy -0.5 0.75) (xy 0.5 0.75))
+          (width 0) (fill yes)))
+      (net 0 "")))
+)
