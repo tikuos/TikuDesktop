@@ -18,6 +18,7 @@ tiku_trk_deskbar_new(tiku_backend_t *backend)
 
     if (db != NULL) {
         db->backend = backend;
+        db->pointer_x = db->pointer_y = -1;
         db->dock = TIKU_TRK_DB_RIGHT_EXPANDED;
         db->win_menu_team = -1;
         db_reset_menu_hots(db);

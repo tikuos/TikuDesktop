@@ -96,6 +96,9 @@ struct tiku_trk_deskbar {
     int                  autoraise; /* raised over windows on hover    */
     int                  show_replicants;   /* the tray is drawn at all */
     int                  pointer_on;  /* the pointer is over the bar    */
+    int                  pointer_x;   /* last pointer x; -1 when away   */
+    int                  pointer_y;   /* last pointer y; -1 when away   */
+    int                  leaf_hover;  /* pointer over the TikuOS button */
     int                  scroll;      /* first application row shown    */
     int                  overflow;    /* the list ran past the tray     */
     int                  menu_open;     /* the leaf menu is showing     */
@@ -171,6 +174,12 @@ struct menu_icon_relay {
     tiku_trk_deskbar_t       *db;       /* holds the painter and its ctx */
     const tiku_trk_db_item_t *items;    /* the menu's rows, by index     */
 };
+
+/**
+ * @brief The TikuOS button's rectangle: where it is painted, where the
+ *        pointer hovers it, and what a change of hover repaints.
+ */
+tiku_rect_t db_leaf_button_rect(const tiku_trk_deskbar_t *db);
 
 /* Shared across the family: defined in one file, used in another. */
 

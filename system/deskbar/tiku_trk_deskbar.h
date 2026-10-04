@@ -413,7 +413,7 @@ int tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
                                  size_t max);
 
 /**
- * @brief Let each open little menu's hot row follow the pointer.
+ * @brief Update the TikuOS button hover and each open menu's hot row.
  *
  * @return Nonzero when a highlight moved, so the caller knows to paint.
  */

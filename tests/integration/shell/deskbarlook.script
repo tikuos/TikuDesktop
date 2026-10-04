@@ -1,0 +1,35 @@
+# shell: desktop
+# The TikuOS button's hover tint and the menu's and alert's two-ring
+# borders; the shutdown alert is cancelled, not accepted.
+wait 15
+move 600 400
+wait 3
+expect-pixel 992 6 ffcb00
+move 980 16
+wait 3
+expect-pixel 992 6 ffda47
+expect-same-as-redraw
+move 980 17
+wait 3
+expect-pixel 992 6 ffda47
+move 600 400
+wait 3
+expect-pixel 992 6 ffcb00
+expect-same-as-redraw
+click 980 16
+wait 5
+expect-pixel 688 36 363636
+expect-pixel 689 37 363636
+shot /tmp/trk_deskbar_outline.png
+expect-same-as-redraw
+menu-pick Shut down
+wait 5
+expect-alert Shut down
+expect-pixel 290 183 363636
+expect-pixel 291 184 363636
+shot /tmp/trk_shutdown_outline.png
+expect-same-as-redraw
+key Escape
+wait 4
+expect-file /tmp/trk_script/a.txt
+quit

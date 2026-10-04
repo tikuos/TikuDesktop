@@ -87,6 +87,29 @@ db_leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
     return m;
 }
 
+tiku_rect_t
+db_leaf_button_rect(const tiku_trk_deskbar_t *db)
+{
+    tiku_rect_t r;
+
+    r.x = db->frame.x + 2;
+    r.y = db->frame.y + 2;
+    r.w = tiku_trk_deskbar_vertical(db->dock) ? db->frame.w - 4 : HLEAF_W;
+    r.h = db_leaf_row();
+    return r;
+}
+
+/** @brief Whether the last pointer position is over the shown button. */
+static int
+leaf_button_hovered(const tiku_trk_deskbar_t *db)
+{
+    tiku_rect_t r = db_leaf_button_rect(db);
+
+    return tiku_trk_deskbar_shown(db) && r.w > 0 && r.h > 0 &&
+           db->pointer_x >= r.x && db->pointer_x < r.x + r.w &&
+           db->pointer_y >= r.y && db->pointer_y < r.y + r.h;
+}
+
 void
 tiku_trk_deskbar_set_menu_icon_painter(tiku_trk_deskbar_t *db,
                                        tiku_trk_db_icon_fn fn, void *context)
@@ -248,6 +271,13 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
 
     if (db == NULL) {
         return 0;
+    }
+    db->pointer_x = x;
+    db->pointer_y = y;
+    if (leaf_button_hovered(db) != db->leaf_hover) {
+        db->leaf_hover = !db->leaf_hover;
+        hover_touch(db, db_leaf_button_rect(db));
+        changed = 1;
     }
     rowh = font->height + 6;
     if (db->menu_open) {
@@ -1500,6 +1530,7 @@ db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f)
 
 #define LEAF_HELD      1.22f    /* the face while the menu is out */
 #define LEAF_HELD_EDGE 1.55f    /* its near edges, in shadow then */
+#define LEAF_HOVER     0.72f    /* the face under the pointer     */
 
 /**
  * @brief the leaf, the one control that is not a list item
@@ -1515,13 +1546,16 @@ db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
      * and right, the way a pressed button's does.  A click on it is
      * seen at once, and the pop back says the menu has gone. */
     int down = db->menu_open;
+    tiku_rgb_t face;
 
-    (*leaf) = (tiku_rect_t){ db->frame.x + 2, db->frame.y + 2,
-                               tiku_trk_deskbar_vertical(db->dock)
-                                   ? db->frame.w - 4 : HLEAF_W,
-                               db_leaf_row() };
-    tiku_fill(s, (*leaf), down ? tiku_tint(TIKU_C_TAB, LEAF_HELD)
-                               : TIKU_C_TAB);
+    (*leaf) = db_leaf_button_rect(db);
+    /* The button moves when a hidden bar comes back or the bar changes
+     * edge, so the hover is worked out again from the last pointer. */
+    db->leaf_hover = leaf_button_hovered(db);
+    face = down             ? tiku_tint(TIKU_C_TAB, LEAF_HELD)
+         : db->leaf_hover   ? tiku_tint(TIKU_C_TAB, LEAF_HOVER)
+         :                    TIKU_C_TAB;
+    tiku_fill(s, (*leaf), face);
     tiku_frame(s, (*leaf), dark);
     tiku_bevel(s, tiku_inset((*leaf), 1),
                     tiku_tint(TIKU_C_TAB, down ? LEAF_HELD_EDGE
@@ -1556,7 +1590,7 @@ db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
         label.x += mark + 8 + down;
         label.y += down;
         label.w -= mark + 8;
-        (void)tiku_text_centered(s, fb, label, "TikuOS", TIKU_C_TEXT);
+        (void)tiku_text_centered(s, fb, label, "TikuOS", TIKU_C_TABTEXT);
     }
 }
 

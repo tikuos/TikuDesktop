@@ -251,6 +251,57 @@ static void pressed_look(tiku_surface_t *s)
     tiku_trk_deskbar_free(db);
 }
 
+/** @brief Hover is immediate, unlike the pressed look, and repaints only
+ *         the button. */
+static void button_hover(tiku_surface_t *s, int dock)
+{
+    tiku_trk_deskbar_t *db = tiku_trk_deskbar_new(NULL); assert(db);
+    tiku_trk_deskbar_set_dock(db, dock);
+    tiku_trk_deskbar_draw(db, s);
+    tiku_rect_t r = db_leaf_button_rect(db);
+    int x = r.x + r.w - 5, y = r.y + 4;
+    tiku_rgb_t normal = tiku_peek(s, x, y);
+    assert(normal == TIKU_C_TAB && !db->leaf_hover);
+    assert(tiku_trk_deskbar_motion(db, x, y));
+    tiku_rect_t damage = tiku_trk_deskbar_hover_area(db);
+    assert(damage.x == r.x && damage.y == r.y &&
+           damage.w == r.w && damage.h == r.h);
+    assert(db->leaf_hover && !db->menu_open);
+    tiku_trk_deskbar_draw(db, s);
+    tiku_rgb_t over = tiku_peek(s, x, y);
+    assert(over != normal && over == tiku_tint(TIKU_C_TAB, 0.72f));
+    assert(!tiku_trk_deskbar_motion(db, x - 1, y + 1));
+    assert(!tiku_trk_deskbar_hover_area(db).w); /* no repaint for jitter */
+    tiku_trk_deskbar_open_menu(db);
+    tiku_trk_deskbar_draw(db, s);
+    tiku_rgb_t down = tiku_peek(s, x, y);
+    assert(down != normal && down != over);
+    tiku_trk_deskbar_close_menu(db);
+    tiku_trk_deskbar_draw(db, s);
+    assert(tiku_peek(s, x, y) == over);
+    assert(tiku_trk_deskbar_motion(db, -1, -1)); /* native pointer leave */
+    tiku_trk_deskbar_draw(db, s);
+    assert(!db->leaf_hover && tiku_peek(s, x, y) == normal);
+    assert(!tiku_trk_deskbar_motion(db, -1, -1));
+    /* An auto-hidden bar drops the hover, and takes it again once the
+     * pointer has come in from the edge. */
+    if (tiku_trk_deskbar_vertical(dock)) {
+        tiku_trk_deskbar_set_autohide(db, 1);
+        (void)tiku_trk_deskbar_pointer(db, -1, -1);
+        tiku_trk_deskbar_draw(db, s);
+        assert(!db->leaf_hover);
+        int edge_x = r.x < s->w / 2 ? 0 : s->w - 1;
+        (void)tiku_trk_deskbar_motion(db, edge_x, y);
+        (void)tiku_trk_deskbar_pointer(db, edge_x, y);
+        tiku_trk_deskbar_draw(db, s);
+        (void)tiku_trk_deskbar_motion(db, x, y);
+        (void)tiku_trk_deskbar_pointer(db, x, y);
+        tiku_trk_deskbar_draw(db, s);
+        assert(db->leaf_hover && tiku_peek(s, x, y) == over);
+    }
+    tiku_trk_deskbar_free(db);
+}
+
 int main(void)
 {
     tiku_surface_t *s = tiku_surface_new(1000,680,0); assert(s);
@@ -258,8 +309,19 @@ int main(void)
     tracking(s,TIKU_TRK_DB_LEFT_EXPANDED);
     cancellation(s); categories(s); empty_folder(s); hover_area(s);
     pressed_look(s); hot_label(s);
+    const tiku_theme_t *themes[] = {NULL, tiku_theme_dark(), tiku_theme_mono()};
+    for (int theme = 0; theme < 3; theme++) {
+        tiku_theme_set(themes[theme]);
+        for (int size = 12; size <= 16; size += 4) {
+            tiku_font_set_size(size);
+            for (int dock = 0; dock < TIKU_TRK_DB_DOCKS; dock++)
+                button_hover(s, dock);
+        }
+    }
+    tiku_theme_set(NULL);
+    tiku_font_set_size(12);
     tiku_surface_free(s);
     puts("PASS: Deskbar hover delay, switching, cancellation, clicks, safety "
-         "and the hot row by label");
+         "and button hover across docks, themes and font sizes");
     return 0;
 }
