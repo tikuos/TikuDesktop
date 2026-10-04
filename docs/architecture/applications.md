@@ -25,8 +25,9 @@ Reader/Help live in `apps/reader/`; Image in `apps/image/`; PDF in
 TikuDiff in `apps/diff/`, comparing through the support kit's diff on
 its workers; TikuGrab in `apps/grab/`, which asks the desktop's grab
 service (`TIKU_MSG_GRAB`) for the pictures, since an application cannot
-see the desk; Monitor and VFS Inspector share app-owned code in
-`apps/deviceutils/`.
+see the desk; TikuSDR in `apps/sdr/`, which borrows a board's serial
+port as TikuConsole does and draws the spectra the board computes;
+Monitor and VFS Inspector share app-owned code in `apps/deviceutils/`.
 None is linked into either shipping shell. Help requests launch Reader in its help-document mode.
 
 For filenames and internal module boundaries, see the

@@ -1,0 +1,21 @@
+# shell: desktop
+# prefs: factory
+# setup: sdrlog
+# open: /tmp/trk_home/recordings
+# A TikuSDR recording double-clicked in Tracker opens in TikuSDR, through
+# the real application registry and in its own process, and plays at once:
+# no board is needed to look at what one heard.
+wait 20
+click-row 0
+wait 2
+click-row 0
+wait 150
+expect-title TikuSDR
+shot /tmp/trk_sdrlog_open.png
+wait 300
+shot /tmp/trk_sdrlog_end.png
+click-window TikuSDR
+key Escape
+wait 20
+expect-no-title TikuSDR
+quit

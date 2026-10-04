@@ -302,6 +302,9 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
     (void)tiku_trk_types_add(db, "application/x-pptx",
                              "PowerPoint presentation", "slides_file",
                              "size,modified");
+    /* A radio's spectra over time, as TikuSDR recorded them. */
+    (void)tiku_trk_types_add(db, "application/x-tikusdr", "TikuSDR recording",
+                             "sdr_file", "size,modified");
     /* A device node's columns are the two only it has. */
     (void)tiku_trk_types_add(db, "tiku-", "Device node", "device",
                              "value,cap,modified");

@@ -16,6 +16,7 @@ using the public kits. Desktop controllers and preferences belong in
 | `archive/` | TikuArchive: ZIP, tar and gzip archives, browsed and extracted |
 | `diff/` | TikuDiff: two files side by side, two folders, two archives |
 | `grab/` | TikuGrab: a window, or the whole desk, as a picture |
+| `sdr/` | TikuSDR: what an ESP32-C61's radio hears, as a spectrum |
 | `deviceutils/` | Device Monitor and VFS Inspector |
 | `calculator/` | Ordinary Calculator; stable runtime ID `calc` |
 | `developer-calculator/` | Developer Calculator; stable runtime ID `calculator` |

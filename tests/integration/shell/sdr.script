@@ -1,0 +1,109 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: sdr
+# board: only
+# mount: /devices/board1
+# TikuSDR on a board whose firmware has the receiver (an ESP32-C61 built
+# with TIKU_DRV_SDR_ESP_ENABLE=1): Connect borrows the board and spectra
+# arrive, Band stitches the 2.4 GHz band, Record writes it through the
+# Save panel, Disconnect gives the board back, Open Recording plays the
+# file again, and the File menu exports it as CSV and as a picture.
+wait 60
+click 980 30
+wait 10
+menu-pick Device Tools
+wait 10
+menu-pick TikuSDR
+wait 200
+expect-title TikuSDR
+click-window TikuSDR
+click 71 8
+wait 8
+menu-pick Connect
+wait 800
+shot /tmp/trk_sdr_live.png
+click 71 8
+wait 8
+menu-pick Band
+wait 300
+note Record: the Save panel offers a name, and "rec" replaces it
+click 114 8
+wait 8
+shot /tmp/trk_sdr_filemenu.png
+menu-pick Record…
+wait 30
+expect-title Save
+key r
+key e
+key c
+key Return
+wait 300
+shot /tmp/trk_sdr_band.png
+expect-file /tmp/trk_home/rec
+expect-file-has /tmp/trk_home/rec TikuSDR recording 1
+expect-file-has /tmp/trk_home/rec VIEW band
+expect-file-has /tmp/trk_home/rec SPEC 2404 40000000
+expect-file-has /tmp/trk_home/rec SWEEP 6
+click-window TikuSDR
+click 71 8
+wait 8
+menu-pick Live
+wait 200
+click 114 8
+wait 8
+menu-pick Stop Recording
+wait 20
+click 71 8
+wait 8
+menu-pick Disconnect
+wait 400
+note Open Recording: the panel starts where the recording was saved
+click 114 8
+wait 8
+menu-pick Open Recording…
+wait 30
+expect-title Open
+key Down
+key Return
+wait 150
+shot /tmp/trk_sdr_play.png
+wait 700
+shot /tmp/trk_sdr_end.png
+note Export CSV: the recording on screen, all of it
+click-window TikuSDR
+click 114 8
+wait 8
+menu-pick Export CSV…
+wait 30
+expect-title Save
+key s
+key p
+key e
+key c
+key Return
+wait 100
+expect-file /tmp/trk_home/spec
+expect-file-has /tmp/trk_home/spec time_s,freq_mhz,db
+expect-file-has /tmp/trk_home/spec ,2396.00000,
+note Save Picture: what lies below the toolbar, as a PNG
+click-window TikuSDR
+click 114 8
+wait 8
+menu-pick Save Picture…
+wait 30
+expect-title Save
+key p
+key i
+key c
+key Return
+wait 50
+expect-file /tmp/trk_home/pic
+expect-file-has /tmp/trk_home/pic PNG
+click-window TikuSDR
+click 71 8
+wait 8
+menu-pick Quit
+wait 30
+expect-no-title TikuSDR
+quit

@@ -39,7 +39,7 @@ SAN_TESTS := test_pdf test_pdf_crypt test_pdf_cjk test_fax test_jbig2 test_jpx \
              test_diff test_pdf_view test_atomic_file test_xml \
              test_pdf_writer test_office
 SAN_APP_TESTS := test_pdf_viewer test_archive_viewer test_diff_viewer \
-                 test_grab_app test_office_viewer
+                 test_grab_app test_office_viewer test_sdr
 SAN_TESTS += $(SAN_APP_TESTS)
 SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_editdoc_history test_editdoc_marks test_editdoc_model \
@@ -80,6 +80,7 @@ $(SAN)/tests/apps/test_diff_viewer.o: \
 $(SAN)/tests/apps/test_grab_app.o: $(wildcard apps/grab/*.c apps/grab/*.h)
 $(SAN)/tests/apps/test_office_viewer.o: \
         $(wildcard apps/office/*.c apps/office/*.h apps/office/*.inl)
+$(SAN)/tests/apps/test_sdr.o: $(wildcard apps/sdr/*.c apps/sdr/*.h)
 
 $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
         $(SAN)/tests/apps/test_%.o $(SAN_OBJS) $(DESK_LIBS)

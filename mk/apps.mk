@@ -100,6 +100,7 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/slides/app.manifest \
     $(APPS_D)/diff/app.manifest \
     $(APPS_D)/grab/app.manifest \
+    $(APPS_D)/sdr/app.manifest \
     $(APPS_D)/reader/app.manifest \
     $(APPS_D)/monitor/app.manifest \
     $(APPS_D)/vfs/app.manifest
@@ -329,6 +330,15 @@ $(APPS_D)/grab/TikuGrab.so: $(GRABVIEW_SRC) $(wildcard apps/grab/*.h) $(PIC_LIBS
 	$(CC) $(SO_CFLAGS) -o $@ $(GRABVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/grab/app.manifest: apps/grab/grab.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+apps loadable: $(APPS_D)/sdr/TikuSDR.so
+SDR_SRC := $(sort $(wildcard apps/sdr/*.c))
+$(APPS_D)/sdr/TikuSDR.so: $(SDR_SRC) $(wildcard apps/sdr/*.h) $(PIC_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(SO_CFLAGS) -o $@ $(SDR_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+$(APPS_D)/sdr/app.manifest: apps/sdr/sdr.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 

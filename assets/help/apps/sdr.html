@@ -1,0 +1,104 @@
+<h1>TikuSDR</h1>
+
+<p>TikuSDR shows what a board&#8217;s radio hears: a live spectrum and,
+beneath it, a waterfall of the spectra that came before. It is opened
+from <b>Device Tools</b> in the Deskbar leaf. The board does the
+listening and the arithmetic itself; TikuSDR draws what it sends, can
+record it to a file and play it back, and exports spectra for a
+spreadsheet or a script.</p>
+
+<p>It needs an ESP32-C61 whose firmware has the receiver built in
+(<code>TIKU_DRV_SDR_ESP_ENABLE=1</code> beside the Wi-Fi driver).</p>
+
+<h2 id="connect">Connect</h2>
+
+<p><b>Connect</b> asks the desktop to let go of the chosen board and
+opens its serial port, as TikuConsole does. The board lends its receiver
+a block of memory and brings its radio up; spectra start arriving within
+a second. <b>Disconnect</b>, or closing the window, gives the board back.
+While TikuSDR holds the board, its files and mount are away.</p>
+
+<p>The board is chosen in the <b>Device</b> menu, from those the desktop
+has mounted. Connecting a board is done from the desktop&#8217;s
+<b>Devices</b> menu.</p>
+
+<h2 id="views">Live and Band</h2>
+
+<p><b>Live</b> shows 40&#160;MHz around one frequency in 256 bins, about
+ten spectra a second. The receiver&#8217;s filter is flat over the middle
+24&#160;MHz; the shaded edges are its roll-off, not the air. The
+receiver&#8217;s own leakage at the tuned frequency is no signal, so the
+few bins on it show their neighbours&#8217; level. Tune with
+<b>-5&#160;MHz</b> and <b>+5&#160;MHz</b>, the arrow keys (one megahertz,
+five with Shift), the scroll wheel, or the <b>Tune</b> menu&#8217;s Wi-Fi
+and BLE channels.</p>
+
+<p><b>Band</b> shows the whole 2.4&#160;GHz band, 2396 to 2492&#160;MHz,
+stitched from six slices, about five sweeps a second. Each slice is heard
+at its own automatic gain, so its noise floor is levelled to a common one
+before the slices are joined: in Band, a level is a height above the
+floor around it. Click anywhere in the band to tune Live there.</p>
+
+<h2 id="reading">Reading it</h2>
+
+<p>The bright trace is the average of recent spectra (<b>Average</b> in
+the SDR menu); the amber trace holds each frequency&#8217;s peak while
+<b>Peak</b> is held down, until <b>Clear</b> in the SDR menu. Beneath the
+plot are the band&#8217;s channel plans: Wi-Fi
+channels 1 to 13, BLE&#8217;s advertising channels 37, 38 and 39 (also
+dashed in the plot), and 802.15.4 channels 11 to 26. Point at the plot or
+the waterfall to read a frequency&#8217;s level and the channels it falls
+in.</p>
+
+<p>Levels are the board&#8217;s own decibels, not calibrated to the air,
+and the receiver&#8217;s automatic gain moves them; compare shapes and
+neighbours rather than absolute numbers. Wi-Fi frames are bursts twenty
+megahertz wide; BLE advertising and 802.15.4 are narrow, two megahertz.</p>
+
+<h2 id="record">Recording and playing back</h2>
+
+<p>The <b>File</b> menu holds what reaches a file: recordings, CSV and
+pictures.</p>
+
+<p><b>Record</b>, while a board is connected, asks where to save and then
+writes every spectrum the board sends, with its time, until <b>Record</b>
+is pressed again, the board is disconnected or the window closes. The
+status line shows how long and how large the recording has grown, about
+20 to 30&#160;MB an hour. The name offered is the board&#8217;s and the
+minute it began, ending in <code>.sdrlog</code>.</p>
+
+<p><b>Open Recording&#8230;</b> plays a recording back at the pace it was
+made, through the same spectrum and waterfall. While it
+plays, the view is the recording&#8217;s own, so tuning is off;
+<b>Pause</b>, <b>Peak</b>, <b>Average</b> and <b>Clear</b> work as they do
+live, and <b>Connect</b> goes back to the board. A silence longer than two
+seconds, such as the live view paused while recording, plays in half a
+second. A recording double-clicked in Tracker opens in TikuSDR and plays
+at once.</p>
+
+<p>A recording is plain text, so a script can read it too. Each line after
+its header is the time in seconds since the start, then what the board
+sent: <code>SPEC</code> with the centre in megahertz, the sample rate, the
+gain step, the number of bins, and two hex digits a bin from the lowest
+frequency up, in half-decibels; <code>SWEEP</code> where a sweep of the
+band ends; and <code>VIEW</code> where the window changed between Live and
+Band.</p>
+
+<h2 id="export">CSV and pictures</h2>
+
+<p><b>Export CSV&#8230;</b> writes spectra as rows of three columns, the
+time in seconds, the frequency in megahertz and the level in decibels,
+for a spreadsheet or a script. With a recording on screen it writes the
+whole recording, a line of its progress in the status line as it goes;
+otherwise it writes the spectra the waterfall holds, timed from the
+oldest. A minute of Live is about 150&#160;000 rows.</p>
+
+<p><b>Save Picture&#8230;</b> saves the spectrum, the channel plans, the
+waterfall and the status line, everything below the toolbar, as a PNG.</p>
+
+<h2 id="keys">Keys</h2>
+
+<p><b>Space</b> pauses and resumes, <b>B</b> shows the band,
+<b>L</b> returns to Live, <b>P</b> toggles the peak hold, <b>C</b> clears
+the peaks and the average, <b>R</b> starts and stops a recording, and
+<b>Escape</b> closes the window.</p>

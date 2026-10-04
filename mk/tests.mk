@@ -77,6 +77,8 @@ test_archive_association_SRCS := $(COMMON) $(POSEVIEW)
 test_archive_association_LDLIBS := $(X11_LIBS) -lm
 test_document_association_SRCS := $(COMMON) $(POSEVIEW)
 test_document_association_LDLIBS := $(X11_LIBS) -lm
+test_sdr_association_SRCS := $(COMMON) $(POSEVIEW)
+test_sdr_association_LDLIBS := $(X11_LIBS) -lm
 test_editor_document_LDLIBS := $(X11_LIBS) -lm
 test_editor_resize_LDLIBS := $(X11_LIBS) -lm
 test_editor_document_SRCS := $(EDITOR_SRC)
@@ -163,6 +165,7 @@ test_ide_workflow_LDLIBS := $(X11_LIBS) -lm
 test_sensor_LDLIBS := $(X11_LIBS) -lm
 test_bench_LDLIBS := $(X11_LIBS) -lm
 test_console_LDLIBS := $(X11_LIBS) -lm
+test_sdr_LDLIBS := $(X11_LIBS) -lm
 test_bench_SRCS := $(BENCH_SRC)
 test_console_SRCS := $(CONSOLE_SRC)
 .SECONDARY: $(call objs,$(BENCH_SRC) $(CONSOLE_SRC))

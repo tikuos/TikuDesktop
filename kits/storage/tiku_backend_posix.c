@@ -123,7 +123,8 @@ type_by_name(const char *name)
         { ".gz",   "application/gzip" },
         { ".docx", "application/x-docx" },
         { ".odt",  "application/vnd.oasis.opendocument.text" },
-        { ".pptx", "application/x-pptx" }
+        { ".pptx", "application/x-pptx" },
+        { ".sdrlog", "application/x-tikusdr" }
     };
     const char *dot;
     size_t i, n;
