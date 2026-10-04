@@ -12,13 +12,20 @@ bold, remarks italic, and the line number or label a BASIC <code>GOTO</code>
 or <code>GOSUB</code> names is underlined. Hold Ctrl over such a target and
 the pointer becomes a hand; Ctrl-click it to put the caret at the start of
 the line it names. A plain click places the caret as usual.</p>
+<p>JSON files also receive syntax colouring: strings, numbers, and the
+<code>true</code>, <code>false</code>, and <code>null</code> literals are
+highlighted. Colouring is not validation; invalid or incomplete JSON can
+still be edited. The <b>Language</b> menu lets you choose Automatic, Plain
+Text, BASIC, C or JSON. Automatic uses the file extension; Plain Text turns
+colouring off even for a source file. New and opening another file reset
+this choice to Automatic; Revert keeps it.</p>
 <p>Resize or maximize the window to fit your work. Click to place the caret,
 drag to select, or hold Shift while clicking or pressing navigation keys.
 Double-click selects a word and triple-click a line; dragging after them
 extends by words or lines. Up and Down keep the caret's column across tabs.
 The mouse wheel scrolls vertically; Shift+wheel scrolls horizontally.
 Both scrollbars have end arrows, draggable thumbs and clickable page tracks.
-<b>View → Line Numbers</b> toggles the gutter. Tabs display at four-column stops;
+<b>View → Line Numbers</b> toggles the gutter. Tabs initially display at four-column stops;
 <b>Show Invisibles</b> marks spaces and tabs without changing file contents.
 Control characters are shown by name, such as <code>^L</code> for a form feed.
 <b>Wrap Lines</b> breaks long lines at the window's width, after a space or tab
@@ -33,6 +40,29 @@ only the pane you are working in.</p>
 <p><b>View → Highlight Caret Line</b> shades the line the caret is on, and
 <b>View → Block Caret</b> draws the caret as a block over the character
 after it. Both are off until chosen and apply to both panes.</p>
+<p><b>View → Indentation Guides</b> draws dotted guides in leading whitespace.
+<b>80-column Ruler</b> marks a column without changing the text.
+<b>Zoom In</b>, <b>Zoom Out</b> and <b>Reset Zoom</b> change only the active
+pane's text size. Use Ctrl+=, Ctrl+- and Ctrl+0, or Command on macOS.
+View menu choices apply to this window only; Preferences sets the defaults
+new windows start with.</p>
+<p><b>View → Preferences…</b> (Ctrl+, or Command+, on macOS) sets tab width,
+indentation, ruler column, zoom, syntax colours and display defaults. It
+opens on the saved defaults, not on this window's View menu choices.
+Use the minus and plus buttons to adjust numbers. An indentation value of
+zero inserts tabs; a positive value inserts that many spaces. The Muted and
+Strong syntax colours are the desktop theme's own colours with less or more
+saturation, so they suit light and dark themes alike.
+Save writes your defaults for new Editor windows and applies them to this
+window, View menu choices included. Cancel leaves the current settings
+unchanged. Defaults resets the panel's values; choose Save to keep them.
+Preferences do not change the desktop font or other applications.</p>
+<p>Preferences are kept in <code>TikuEditorPreferences</code> in the folder
+<code>XDG_CONFIG_HOME</code> names, or in <code>~/.config</code> when that
+variable is unset or not an absolute path. If the file is a symbolic link,
+Save replaces the file it points to and keeps the link. If the file was
+saved but its folder could not be synced to disk, the settings are applied
+and a message at the bottom of the window says so.</p>
 <p>A line that opens a block can be folded away: in C a line ending in
 <code>{</code>, in BASIC a line starting <code>FOR</code>, <code>WHILE</code>,
 <code>REPEAT</code> or <code>SUB</code> or ending in <code>THEN</code>, and in
@@ -42,6 +72,9 @@ its number, or use <b>Fold</b> (Ctrl+Shift+[) and <b>Unfold</b>
 take every block. A folded line shows a box with a plus and ends in
 <code>...</code>. Searching, Go to Line and moving into folded lines unfold
 them, and each pane folds on its own.</p>
+<p>JSON objects and arrays also fold, using their braces and brackets rather
+than indentation. Braces inside strings do not start a fold. Editing JSON
+reveals folded text while the editor refreshes the fold regions.</p>
 <p>The Pe-inspired toolbar has small New, Open, Save, Undo, Redo and Find icons,
 followed by the filename and an unsaved-change star. Hover over an icon to see
 its action and shortcut in the bottom status pane. The caret's line and byte
@@ -49,6 +82,15 @@ column sit beside the horizontal scrollbar. Encoding, line endings and
 temporary messages share this bottom edge, leaving the document uncluttered.</p>
 
 <h2 id="menu">Editing tools</h2>
+<p>Right-click inside the document for common edit and search commands.
+Opening this menu keeps your selection. Escape dismisses it.</p>
+<p>The <b>Text</b> menu also trims trailing spaces and tabs, converts leading
+indentation to spaces or tabs, sorts lines, and changes ASCII letter case.
+Case conversion uses the main selection. The other cleanup commands use
+the selected lines, or the whole document when nothing is selected.
+Sort is case-sensitive and compares UTF-8 bytes, not language-specific
+alphabetical order. These commands preserve line endings and can each be
+undone in one step.</p>
 <p>The <b>Edit</b> menu offers Undo, Redo, Cut, Copy, Paste and Select All.
 Clipboard text is shared with other desktop applications. In a search field,
 these commands act on that field rather than on the document. In the document,
@@ -57,8 +99,9 @@ Undo puts back the selection you had before the change. Undoing back to the
 last save clears the modified star. Copied text uses LF line breaks; pasted
 text takes the document's line breaks.</p>
 <p><b>Search → Find…</b> opens a separate Find and Replace window, without
-resizing or covering the text inside the editor. Search is literal. Match case
-and Whole words control matching; case-insensitive matching folds ASCII letters.
+resizing or covering the text inside the editor. Search is literal by default.
+Match case and Whole words control matching; case-insensitive literal matching
+folds ASCII letters.
 Next and Previous wrap through the document; matches are selected in place.
 Replace changes only a selected match, then finds
 the next one. If the selection is not a match, Replace first finds one without
@@ -67,8 +110,28 @@ Shift+Enter for the previous match, or Enter in Replace to replace one.
 Tab changes fields and Escape closes the Find window. Click the document to
 resume editing without closing Find. Replace All changes every matching
 occurrence in this document as a single undoable operation.</p>
+<p>Find shows a live match count and outlines matches in the document.
+It marks up to 1,000 matches and tells you when more exist. For files larger
+than 2 MiB, live counts are disabled; Next and Previous still search the file.
+Invalid patterns are explained in the Find window. <b>Search → Select All
+Matches</b> selects matching text for simultaneous editing, returning focus
+to the document. It refuses more than 1,000 matches rather than selecting
+only part of them. Zero-width regex matches count too, but have no outline.</p>
+<p>Select <b>Regular expression</b> to search for patterns. For example,
+find <code>([a-z]+)=([0-9]+)</code> and replace with <code>$2:$1</code> to
+change <code>sensor=42</code> to <code>42:sensor</code>. Parentheses capture
+groups; <code>$0</code> inserts the whole match and <code>$$</code> inserts
+a dollar sign. Replacement escapes <code>\n</code>, <code>\r</code>,
+<code>\t</code> and <code>\\</code> insert a newline, carriage return, tab
+and backslash. Invalid patterns or replacement groups are reported without
+changing the document.</p>
+<p>Patterns use POSIX extended syntax: use <code>[0-9]</code> for digits,
+not <code>\d</code>. Matches do not cross line breaks. <code>^</code> and
+<code>$</code> match each line's start and end. Lookaround and lazy matching
+are not supported. The editor waits for a search to finish, so a complex
+pattern or a large file can make it pause.</p>
 <p><b>Go to Line…</b> accepts a line number; Return navigates there and Escape
-cancels. Regular expressions and multi-file search are not yet provided.</p>
+cancels. Multi-file search is not provided in Editor.</p>
 
 <h2 id="text">Working with lines</h2>
 <p>Return keeps the indentation of the line it breaks. In a C file it adds a

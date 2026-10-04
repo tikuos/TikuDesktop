@@ -83,6 +83,12 @@ in a list under it, with a tip beside it giving the chosen keyword's
 syntax, a description and an example. While completing, Up and Down
 choose, Return or Tab puts the keyword in and Escape closes; in help, a
 click on a keyword shows its help.</p>
+<p>Completion rows include a kind badge and syntax where available.
+Inside a recognised built-in function call, <b>Keyword help</b> shows the
+function's parameters and highlights the one at the caret. For example,
+in <code>MID$(A$, 2, 3)</code>, it highlights <code>start</code> while the
+caret is in the second argument. Commas inside strings or nested calls
+do not count as separators for the outer call. Escape closes the tip.</p>
 
 <h2 id="where">Where a program runs</h2>
 
