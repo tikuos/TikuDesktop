@@ -265,11 +265,16 @@ tiku_codeview_list_show(tiku_codeview_t *view,
         !tiku_editdoc_is_boundary(view->doc, list->range.start) ||
         !tiku_editdoc_is_boundary(view->doc, list->range.end))
         return TIKU_EDIT_INVALID_RANGE;
+    if (list->count > SIZE_MAX / sizeof *items)
+        return TIKU_EDIT_LIMIT;
     words = list->count * sizeof *items;
     bytes = words;
     for (i = 0; i < list->count; i++) {
-        size_t n = strlen(list->items[i]) + 1;
+        size_t n;
 
+        if (list->items[i] == NULL)
+            return TIKU_EDIT_INVALID;
+        n = strlen(list->items[i]) + 1;
         if (bytes > SIZE_MAX - n)
             return TIKU_EDIT_LIMIT;
         bytes += n;
@@ -372,6 +377,8 @@ tiku_codeview_tip_show(tiku_codeview_t *view, tiku_edit_pos_t pos,
     if (!tiku_editdoc_is_boundary(view->doc, pos))
         return TIKU_EDIT_INVALID_RANGE;
     n = strlen(text) + 1;
+    if (!tiku_ed_utf8_valid(text, n - 1))
+        return TIKU_EDIT_INVALID_TEXT;
     copy = tiku_ed_alloc(n);
     if (copy == NULL)
         return TIKU_EDIT_NO_MEMORY;

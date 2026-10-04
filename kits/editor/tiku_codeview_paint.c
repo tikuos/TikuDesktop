@@ -642,6 +642,14 @@ tiku_codeview_paint(tiku_codeview_t *view, tiku_surface_t *s)
     if (!tiku_cv_hot_shown(view, &r.hot))
         r.hot.start = r.hot.end = 0;
     r.sels = tiku_cv_selections(view, &r.nsels, &main);
+    if (r.sels == NULL) {
+        /* With no room to read them all, the main selection is painted
+         * alone. */
+        (void)tiku_codeview_selection(view, &view->sel_one.anchor,
+                                      &view->sel_one.caret);
+        r.sels = &view->sel_one;
+        r.nsels = 1;
+    }
     text.x = r.x0;
     text.y = area.y;
     text.w = (int)tiku_cv_text_w(view);

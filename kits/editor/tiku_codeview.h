@@ -274,6 +274,9 @@ tiku_edit_pos_t tiku_codeview_hit(tiku_codeview_t *view, int x, int y);
 tiku_edit_status_t tiku_codeview_selection(const tiku_codeview_t *view,
                                            tiku_edit_pos_t *anchor,
                                            tiku_edit_pos_t *caret);
+/** @brief Whether any of the view's selections holds text, the main one
+ *         or another; 0 for NULL.  Allocates nothing. */
+int tiku_codeview_has_selection(const tiku_codeview_t *view);
 /** @brief Select from @p anchor to @p caret, both caret positions, the
  *         view's only selection. */
 tiku_edit_status_t tiku_codeview_select(tiku_codeview_t *view,
@@ -601,7 +604,8 @@ typedef struct {
  * any tip, and a press on a word chooses it.  A list that inserts also
  * takes Up and Down, which move the choice round, and Return and Tab,
  * which put the chosen word in; with no words it still takes them and
- * changes nothing.
+ * changes nothing.  A NULL word is refused with TIKU_EDIT_INVALID, and a
+ * count too big to copy with TIKU_EDIT_LIMIT, the list shown staying.
  */
 tiku_edit_status_t tiku_codeview_list_show(tiku_codeview_t *view,
                                            const tiku_codeview_list_t *list);

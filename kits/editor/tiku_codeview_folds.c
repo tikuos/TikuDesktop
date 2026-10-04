@@ -271,33 +271,36 @@ reaches(const tiku_codeview_t *v, const tiku_edit_selection_t *s,
     return (a >= first && a <= last) || (c >= first && c <= last);
 }
 
-/** @brief Keep the carets out of lines @p first to @p last, now folded:
+/** @brief Keep the carets out of lines @p first to @p last before folding:
  *         each selection reaching into them becomes the caret at the end
- *         of the line heading them. */
-static void
+ *         of the line heading them; with no room for that, none moves and
+ *         TIKU_EDIT_NO_MEMORY is returned. */
+static tiku_edit_status_t
 caret_out(tiku_codeview_t *v, int64_t first, int64_t last)
 {
     size_t n, main, i, in = 0;
     const tiku_edit_selection_t *s = tiku_cv_selections(v, &n, &main);
     tiku_edit_pos_t end = tiku_editdoc_line_end(v->doc, first - 1);
     tiku_edit_selection_t *to;
+    tiku_edit_status_t st;
 
+    if (s == NULL)
+        return TIKU_EDIT_NO_MEMORY;
     for (i = 0; i < n; i++)
         in += reaches(v, &s[i], first, last);
     if (in == 0)
-        return;
+        return TIKU_EDIT_OK;
     to = tiku_ed_alloc(n * sizeof *to);
-    if (to == NULL) {
-        (void)tiku_codeview_select(v, end, end);
-        return;
-    }
+    if (to == NULL)
+        return TIKU_EDIT_NO_MEMORY;
     for (i = 0; i < n; i++) {
         to[i] = s[i];
         if (reaches(v, &s[i], first, last))
             to[i].anchor = to[i].caret = end;
     }
-    (void)tiku_codeview_select_many(v, to, n, main);
+    st = tiku_codeview_select_many(v, to, n, main);
     tiku_ed_free(to);
+    return st;
 }
 
 /** @brief Fold the region @p line heads, which is shown. */
@@ -305,6 +308,7 @@ static tiku_edit_status_t
 fold(tiku_codeview_t *v, int64_t line)
 {
     int64_t end;
+    tiku_edit_status_t st;
 
     if (!tiku_codeview_shown(v, line) || tiku_codeview_folded(v, line))
         return TIKU_EDIT_NOTHING;
@@ -313,10 +317,12 @@ fold(tiku_codeview_t *v, int64_t line)
         return TIKU_EDIT_NOTHING;
     if (!tiku_cv_rows_keep(v))
         return TIKU_EDIT_NO_MEMORY;
+    st = caret_out(v, line + 1, end);
+    if (st != TIKU_EDIT_OK)
+        return st;
     v->row_fold[line] |= TIKU_CV_FOLDED;
     v->folds++;
     tiku_cv_rows_hide(v, line + 1, end, 0);
-    caret_out(v, line + 1, end);
     return TIKU_EDIT_OK;
 }
 

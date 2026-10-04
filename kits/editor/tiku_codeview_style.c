@@ -28,6 +28,7 @@ tiku_codeview_set_language(tiku_codeview_t *view, tiku_syntax_lang_t lang)
     if (lang != TIKU_SYNTAX_BASIC && lang != TIKU_SYNTAX_C)
         lang = TIKU_SYNTAX_NONE;
     if (view->lang != lang) {
+        tiku_cv_hot_forget(view);
         view->lang = lang;
         tiku_cv_style_reset(view);
     }

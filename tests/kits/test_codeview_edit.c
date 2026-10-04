@@ -312,6 +312,7 @@ read_only(void)
 {
     tiku_codeview_t *v = view_of("ab");
     tiku_editdoc_t *doc = tiku_codeview_doc(v);
+    int sets;
 
     strcpy(clip, "zz");
     clip_len = 2;
@@ -320,6 +321,12 @@ read_only(void)
           tiku_codeview_status(v) == TIKU_EDIT_READ_ONLY && holds(v, "ab"),
           "EDT-005", "typing into a read-only document is refused");
     tiku_codeview_select(v, 0, 1);
+    sets = clip_sets;
+    check(press(v, 'x', TIKU_MOD_CMD, NULL) == 1 &&
+          tiku_codeview_status(v) == TIKU_EDIT_READ_ONLY &&
+          clip_sets == sets && !strcmp(clip, "zz") && holds(v, "ab"),
+          "EDT-005", "Cut in a read-only document leaves the text and the "
+          "clipboard");
     check(press(v, 'v', TIKU_MOD_CMD, NULL) == 1 &&
           tiku_codeview_status(v) == TIKU_EDIT_READ_ONLY &&
           press(v, TIKU_KEY_DELETE, 0, NULL) == 1 &&

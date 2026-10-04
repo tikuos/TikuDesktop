@@ -655,6 +655,35 @@ recorded(void)
     tiku_codeview_destroy(v);
 }
 
+/** @brief A list with a NULL word, or too many words to copy, is
+ *         refused before it is read, and the list shown stays. */
+static void
+invalid_list(void)
+{
+    tiku_codeview_t *v = view_of("PR");
+    const char *items[] = { "PRINT", NULL };
+    tiku_codeview_list_t list;
+
+    memset(&list, 0, sizeof list);
+    list.range.end = 2;
+    list.items = items;
+    list.count = 1;
+    list.inserts = 1;
+    check(tiku_codeview_list_show(v, &list) == TIKU_EDIT_OK,
+          "LST-005", "a list is shown");
+    list.count = 2;
+    check(tiku_codeview_list_show(v, &list) == TIKU_EDIT_INVALID &&
+          tiku_codeview_list_shown(v, NULL), "LST-005",
+          "a NULL word is refused, the list shown staying");
+    list.count = SIZE_MAX / sizeof *items + 1;
+    check(tiku_codeview_list_show(v, &list) == TIKU_EDIT_LIMIT,
+          "LST-005", "a count too big to copy is refused before the words "
+          "are read");
+    check(tiku_codeview_list_insert(v) == TIKU_EDIT_OK && holds(v, "PRINT"),
+          "LST-005", "the list shown still puts its word in");
+    tiku_codeview_destroy(v);
+}
+
 int
 main(void)
 {
@@ -666,6 +695,7 @@ main(void)
     tips();
     memory();
     recorded();
+    invalid_list();
     printf("%s\n", fails ? "FAIL: code view assist" :
            "PASS: code view assist -- marker and execution fills, lists "
            "of words, tips, and the keys and presses they take");

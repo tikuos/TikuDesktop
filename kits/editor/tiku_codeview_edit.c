@@ -206,8 +206,13 @@ tiku_codeview_copy(tiku_codeview_t *view)
 tiku_edit_status_t
 tiku_codeview_cut(tiku_codeview_t *view)
 {
-    tiku_edit_status_t st = tiku_codeview_copy(view);
+    tiku_edit_status_t st;
 
+    if (view == NULL)
+        return TIKU_EDIT_INVALID;
+    if (tiku_editdoc_read_only(view->doc))
+        return TIKU_EDIT_READ_ONLY;
+    st = tiku_codeview_copy(view);
     if (st != TIKU_EDIT_OK)
         return st;
     /* Every selection goes; a caret among them stays where it is. */

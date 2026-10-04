@@ -489,6 +489,8 @@ newline_each(tiku_codeview_t *v)
     tiku_edit_pos_t limit;
     tiku_cv_piece_t *p;
 
+    if (s == NULL)
+        return TIKU_EDIT_NO_MEMORY;
     if (n > SIZE_MAX / sizeof *p)
         return TIKU_EDIT_LIMIT;
     p = tiku_ed_alloc(n * sizeof *p);

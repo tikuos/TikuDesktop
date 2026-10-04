@@ -214,8 +214,8 @@ struct tiku_codeview {
     tiku_rgb_t mark_colors[TIKU_EDIT_INDICATOR_KINDS]; /* and in what   */
     tiku_edit_selection_t *sels;    /* the selections read in order     */
     size_t sels_cap;                /* room in sels                     */
-    tiku_edit_selection_t sel_one;  /* the main one, read when there is
-                                       no room for them all             */
+    tiku_edit_selection_t sel_one;  /* the main one, painted alone when
+                                       there is no room for them all    */
     int rect;                       /* the drag makes a rectangle       */
     int64_t rect_x;                 /* the press's x on its row         */
     int64_t rect_line, rect_sub;    /* and its row                      */
@@ -476,8 +476,9 @@ typedef struct {
  * than one. */
 int tiku_cv_many(const tiku_codeview_t *v);
 /* The view's selections in order, read into a buffer the view keeps until
- * the next call: @p n of them, the main one at @p main; the main one alone
- * when there is no room. */
+ * the next call: @p n of them, the main one at @p main; NULL, @p n 0,
+ * when there is no room for them, and a command then changes nothing and
+ * returns TIKU_EDIT_NO_MEMORY. */
 const tiku_edit_selection_t *tiku_cv_selections(tiku_codeview_t *v,
                                                 size_t *n, size_t *main);
 /* Apply @p n pieces, one for each selection in order, as one transaction

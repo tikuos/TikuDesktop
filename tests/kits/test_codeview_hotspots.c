@@ -366,6 +366,28 @@ ending(void)
     tiku_codeview_destroy(v);
 }
 
+/** @brief A change of language ends the hotspot shown, and setting the
+ *         keys ends a press, even set back before the release. */
+static void
+configuration_ends_press(void)
+{
+    tiku_codeview_t *v = view_of(program);
+    int before = clicks;
+
+    (void)pointer(v, TIKU_EVENT_POINTER_MOVE, 0, 10, 0);
+    tiku_codeview_set_language(v, TIKU_SYNTAX_NONE);
+    check(shown(v, -1, 0), "HOT-007",
+          "changing language immediately clears the old hotspot");
+    tiku_codeview_set_language(v, TIKU_SYNTAX_BASIC);
+    (void)pointer(v, TIKU_EVENT_POINTER_DOWN, 0, 10, 0);
+    tiku_codeview_set_hotspot_keys(v, TIKU_MOD_CMD);
+    tiku_codeview_set_hotspot_keys(v, 0);
+    (void)pointer(v, TIKU_EVENT_POINTER_UP, 0, 10, 0);
+    check(clicks == before, "HOT-007",
+          "changing hotspot keys cancels an in-progress activation");
+    tiku_codeview_destroy(v);
+}
+
 int
 main(void)
 {
@@ -378,6 +400,7 @@ main(void)
     clicking();
     painting();
     ending();
+    configuration_ends_press();
     printf("%s\n", fails ? "FAIL: code view hotspots" :
            "PASS: code view hotspots -- runs under the pointer, the keys "
            "that make them live, clicks told to the host, underlines, "

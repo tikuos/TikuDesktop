@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "tiku_codeview.h"
+#include "tiku_editdoc_private.h"
 #include "tiku_ui.h"
 
 static int fails;
@@ -541,6 +542,118 @@ others(void)
     tiku_codeview_destroy(v);
 }
 
+/* Allocations until the one that fails, counting it; 0 fails none. */
+static int fail_next;
+
+/** @brief An allocation that fails when fail_next counts down to it. */
+static void *
+fault_alloc(size_t n)
+{
+    if (fail_next > 0 && --fail_next == 0)
+        return NULL;
+    return malloc(n);
+}
+
+/** @brief The same for growing. */
+static void *
+fault_realloc(void *p, size_t n)
+{
+    if (fail_next > 0 && --fail_next == 0)
+        return NULL;
+    return realloc(p, n);
+}
+
+/** @brief A command over two selections that cannot copy them changes
+ *         nothing, the clipboard included, rather than acting on the
+ *         main selection alone. */
+static void
+selection_allocation_failure(void)
+{
+    tiku_ed_allocator_t hooks = { fault_alloc, fault_realloc, free };
+    int op;
+
+    for (op = 0; op < 8; op++) {
+        tiku_codeview_t *v = view_in("one two three");
+        tiku_edit_status_t st = TIKU_EDIT_OK;
+        const int64_t pairs[] = { 0, 3, 4, 7 };
+        uint64_t generation = tiku_editdoc_generation(tiku_codeview_doc(v));
+
+        (void)set(v, pairs, 2, 1);
+        check(tiku_codeview_has_selection(v), "CAR-009",
+              "nonempty selections are reported without a copied array");
+        strcpy(clip, "old clipboard");
+        clip_len = strlen(clip);
+        clip_sets = 0;
+        fail_next = 1;
+        tiku_ed_test_allocator(&hooks);
+        switch (op) {
+        case 0:
+            st = tiku_codeview_insert(v, "X", 1, 0);
+            break;
+        case 1:
+            st = tiku_codeview_delete(v, 0);
+            break;
+        case 2:
+            st = tiku_codeview_copy(v);
+            break;
+        case 3:
+            st = tiku_codeview_cut(v);
+            break;
+        case 4:
+            st = tiku_codeview_paste(v);
+            break;
+        case 5:
+            st = tiku_codeview_newline(v);
+            break;
+        case 6:
+            st = tiku_codeview_move(v, TIKU_CODEVIEW_CHAR_RIGHT, 0);
+            break;
+        default:
+            st = tiku_codeview_add_selection(v, 8, 13);
+            break;
+        }
+        tiku_ed_test_allocator(NULL);
+        check(st == TIKU_EDIT_NO_MEMORY && reads(v, "one two three") &&
+              has(v, pairs, 2, 1) && clip_sets == 0 &&
+              !strcmp(clip, "old clipboard") &&
+              tiku_editdoc_generation(tiku_codeview_doc(v)) == generation &&
+              !tiku_editdoc_can_undo(tiku_codeview_doc(v)), "CAR-009",
+              "a command that cannot copy the selections changes nothing");
+        tiku_codeview_destroy(v);
+    }
+}
+
+/** @brief A fold that cannot move the carets out of its lines leaves
+ *         every caret and every line where it was. */
+static void
+folding_allocation_failure(void)
+{
+    tiku_ed_allocator_t hooks = { fault_alloc, fault_realloc, free };
+    const int64_t pairs[] = { 6, 6, 10, 10, 12, 12 };
+    int attempt;
+
+    for (attempt = 1; attempt <= 2; attempt++) {
+        tiku_codeview_t *v = view_in("a {\n  b\n  c\n}");
+        tiku_edit_status_t st;
+
+        tiku_codeview_set_language(v, TIKU_SYNTAX_C);
+        /* Folding once first makes the rows, so the allocations that fail
+         * are the ones moving the carets. */
+        check(tiku_codeview_fold(v, 0, 0) == TIKU_EDIT_OK &&
+              tiku_codeview_fold(v, 0, 1) == TIKU_EDIT_OK,
+              "CAR-009", "fold fixture prepared");
+        (void)set(v, pairs, 3, 2);
+        fail_next = attempt;
+        tiku_ed_test_allocator(&hooks);
+        st = tiku_codeview_fold(v, 0, 0);
+        tiku_ed_test_allocator(NULL);
+        check(st == TIKU_EDIT_NO_MEMORY && has(v, pairs, 3, 2) &&
+              !tiku_codeview_folded(v, 0) && tiku_codeview_shown(v, 1),
+              "CAR-009", "failed fold keeps all carets and lines visible");
+        tiku_codeview_destroy(v);
+    }
+}
+
 int
 main(void)
 {
@@ -552,6 +665,8 @@ main(void)
     painting();
     line_ends();
     others();
+    selection_allocation_failure();
+    folding_allocation_failure();
     if (fails) {
         printf("FAIL: %d checks\n", fails);
         return 1;

@@ -17,6 +17,22 @@
 
 #include <string.h>
 
+int
+tiku_codeview_has_selection(const tiku_codeview_t *view)
+{
+    const tiku_ed_view_t *v;
+    size_t i;
+
+    if (view == NULL || (v = tiku_ed_view_get(view->doc, view->view)) == NULL)
+        return 0;
+    if (v->anchor != v->caret)
+        return 1;
+    for (i = 0; i < v->nmore; i++)
+        if (v->more[i].anchor != v->more[i].caret)
+            return 1;
+    return 0;
+}
+
 size_t
 tiku_codeview_selections(const tiku_codeview_t *view,
                          tiku_edit_selection_t *out, size_t cap, size_t *main)
@@ -62,12 +78,9 @@ tiku_cv_selections(tiku_codeview_t *v, size_t *n, size_t *main)
         }
     }
     if (count == 0 || count > v->sels_cap) {
-        *n = 1;
+        *n = 0;
         *main = 0;
-        if (tiku_editdoc_view_selection(v->doc, v->view, &v->sel_one.anchor,
-                                        &v->sel_one.caret) != TIKU_EDIT_OK)
-            v->sel_one.anchor = v->sel_one.caret = 0;
-        return &v->sel_one;
+        return NULL;
     }
     *n = tiku_editdoc_view_selections(v->doc, v->view, v->sels, v->sels_cap,
                                       main);
@@ -83,7 +96,7 @@ plus_one(tiku_codeview_t *v, tiku_edit_selection_t one, size_t *n)
     const tiku_edit_selection_t *s = tiku_cv_selections(v, &count, &main);
     tiku_edit_selection_t *all;
 
-    if (count >= SIZE_MAX / sizeof *all)
+    if (s == NULL || count >= SIZE_MAX / sizeof *all)
         return NULL;
     all = tiku_ed_alloc((count + 1) * sizeof *all);
     if (all == NULL)
@@ -266,7 +279,7 @@ pieces_of(tiku_codeview_t *v, size_t *n, size_t *main)
     tiku_cv_piece_t *p;
     size_t i;
 
-    if (*n > SIZE_MAX / sizeof *p)
+    if (s == NULL || *n > SIZE_MAX / sizeof *p)
         return NULL;
     p = tiku_ed_alloc(*n * sizeof *p);
     if (p == NULL)
@@ -434,6 +447,8 @@ tiku_cv_copy_each(tiku_codeview_t *v)
     char *text;
     int taken;
 
+    if (s == NULL)
+        return TIKU_EDIT_NO_MEMORY;
     total = joined_size(s, n, strlen(v->newline));
     if (total == 0)
         return TIKU_EDIT_NOTHING;
@@ -499,6 +514,8 @@ tiku_cv_add_press(tiku_codeview_t *v, tiku_edit_pos_t pos)
     const tiku_edit_selection_t *s = tiku_cv_selections(v, &n, &main);
     tiku_edit_selection_t one;
 
+    if (s == NULL)
+        return TIKU_EDIT_NO_MEMORY;
     tiku_ed_free(v->held);
     v->held = NULL;
     v->nheld = 0;

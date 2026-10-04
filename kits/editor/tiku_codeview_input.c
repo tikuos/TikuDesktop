@@ -356,7 +356,7 @@ move_each(tiku_codeview_t *view, tiku_codeview_move_t move, int extend)
     tiku_edit_status_t st = TIKU_EDIT_OK;
     int up = 0, main_up = 0;
 
-    if (to == NULL || g == NULL) {
+    if (s == NULL || to == NULL || g == NULL) {
         tiku_ed_free(to);
         tiku_ed_free(g);
         return TIKU_EDIT_NO_MEMORY;

@@ -23,7 +23,7 @@ tiku_codeview_set_hotspot_keys(tiku_codeview_t *view, unsigned modifiers)
     if (view == NULL)
         return;
     view->hot_keys = modifiers & ~TIKU_MOD_CAPS;
-    view->hot_shown = 0;
+    tiku_cv_hot_forget(view);
 }
 
 int
