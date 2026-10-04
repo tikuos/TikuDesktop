@@ -169,8 +169,11 @@ static void reader_tools_draw(tiku_reader_help_window_t *c, tiku_surface_t *s, h
         if (d->id <= HELP_FIND || d->id >= HELP_SIDE) continue;
         unsigned flags = tiku_dialog_focused(&c->dialog, d->id) ? TIKU_S_FOCUS : 0;
         if (tiku_dialog_pressed(&c->dialog, d->id)) flags |= TIKU_S_PRESSED;
-        tiku_ui_button(s, d->rect, tiku_str(c->document_mode && d->id == HELP_SEARCH ?
-                       "reader.search_folder" : labels[d->id]), flags);
+        const char *label = labels[d->id];
+        if (d->id == HELP_SEARCH && r->search) label = "reader.stop_search";
+        else if (d->id == HELP_SEARCH && c->document_mode)
+            label = "reader.search_folder";
+        tiku_ui_button(s, d->rect, tiku_str(label), flags);
     }
     if (l.find.w) {
         int focused = c->dialog.focus == HELP_FIND;
@@ -243,7 +246,8 @@ void tiku_reader_side_open(tiku_reader_help_window_t *c)
     if (mode == 1) tiku_scroll_to(&c->bar, c->doc->block[row.block].y);
     else if (c->document_mode ? tiku_reader_document_window_file(c, row.page) :
              tiku_reader_help_window_go(c, row.page) == TIKU_READER_HELP_PAGE) {
-        if (mode == 2) (void)tiku_reader_help_window_find(c, r->query.text, 0);
+        if (mode == 2)
+            (void)tiku_reader_help_window_find(c, r->search_query, 0);
         else tiku_scroll_to(&c->bar, tiku_doc_place_y(c->doc, (tiku_doc_place_t){row.block,0}));
     }
 }
@@ -255,6 +259,8 @@ int tiku_reader_action(tiku_reader_help_window_t *c, int command)
     switch (command) {
     case HELP_PREV: case HELP_NEXT: tiku_reader_help_window_find(c, r->query.text, command == HELP_PREV); break;
     case HELP_SEARCH: tiku_reader_search(c); break;
+    case HELP_CANCEL_SEARCH: tiku_reader_search_cancel(c); break;
+    case HELP_RESULTS: tiku_reader_search_results(c); break;
     case HELP_COPY: tiku_reader_help_window_copy(c, 0); break;
     case HELP_CODE: tiku_reader_help_window_copy(c, 1); break;
     case HELP_OUTLINE: r->side = r->side == 1 ? 0 : 1; r->list.top = 0; r->follow_outline = 1; break;

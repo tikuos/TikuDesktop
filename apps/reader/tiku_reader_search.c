@@ -1,43 +1,121 @@
-/* tiku_reader_search.c -- search.
+/* tiku_reader_search.c -- folder search on workers, and the outline.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
 
-static void reader_search_page(tiku_reader_help_window_t *c, const char *name);
-static void reader_search_dir(tiku_reader_help_window_t *c, const char *prefix, int depth, int *files);
+/* A folder search runs on workers.  Each job parses its own pages and uses
+ * no font or layout state; results reach the window only through the done
+ * callbacks, which run on the loop. */
+typedef struct reader_search {
+    /* The window, read on the loop only; NULL once cancelled or finished. */
+    tiku_reader_help_window_t *owner;
+    int refs;                       /* the window's and each queued job's */
+    int mode, discovered, nfiles, scanned, nrows, limited;
+    size_t bytes;
+    char root[TIKU_PATH_MAX], query[TIKU_FIELD_MAX], key[TIKU_WORK_KEY];
+    char files[HELP_ROWS][TIKU_PATH_MAX];
+    help_row_t rows[HELP_ROWS];
+} reader_search_t;
 
-/** @brief Search one page's decoded words, never HTML markup or filenames alone. */
-static void reader_search_page(tiku_reader_help_window_t *c, const char *name)
+static int search_post(reader_search_t *j);
+
+/** @brief How a search queues work: tiku_work_post unless a test set one. */
+static int (*search_post_fn)(const tiku_work_job_t *job) = tiku_work_post;
+
+void tiku_reader_test_post(int (*post)(const tiku_work_job_t *job))
 {
-    struct help_reader *r = c->reader;
-    if (r->nrows >= HELP_ROWS) { r->limited = 1; return; }
-    char path[TIKU_PATH_MAX];
-    if (c->document_mode) {
-        char candidate[TIKU_PATH_MAX];
-        if (snprintf(candidate, sizeof candidate, "%s/%s", c->root, name) >=
-            (int)sizeof candidate || !tiku_reader_document_path(candidate, path, sizeof path)) return;
-    } else if (!tiku_reader_path(c, name, path, sizeof path)) return;
-    struct stat st;
-    if (stat(path, &st) || st.st_size < 0) { r->limited = 1; return; }
-    if ((uint64_t)st.st_size > 32u * 1024u * 1024u - r->search_bytes) {
-        r->limited = 1; return;
+    search_post_fn = post ? post : tiku_work_post;
+}
+
+/** @brief Drop one reference; the last one frees the search. */
+static void search_unref(reader_search_t *j)
+{
+    if (!--j->refs) {
+        free(j);
     }
-    r->search_bytes += (size_t)st.st_size;
+}
+
+/** @brief Discovery is bounded by files, depth and total directory entries. */
+static void search_dir(reader_search_t *j, const char *prefix, int depth,
+                       int *entries)
+{
+    char path[TIKU_PATH_MAX];
+    if (depth > 4 || j->nfiles >= HELP_ROWS) { j->limited = 1; return; }
+    if (snprintf(path, sizeof path, "%s/%s", j->root, prefix) >=
+        (int)sizeof path) {
+        j->limited = 1; return;
+    }
+    DIR *dir = opendir(path);
+    if (!dir) { j->limited = 1; return; }
+    struct dirent *entry;
+    while (!tiku_work_cancelled(j) && (entry = readdir(dir))) {
+        if (++*entries > 8192 || j->nfiles >= HELP_ROWS) {
+            j->limited = 1; break;
+        }
+        if (entry->d_name[0] == '.') continue;
+        char name[TIKU_PATH_MAX]; struct stat st;
+        if (snprintf(name, sizeof name, "%s%s%s", prefix, *prefix ? "/" : "",
+                     entry->d_name) >= (int)sizeof name ||
+            snprintf(path, sizeof path, "%s/%s", j->root, name) >=
+            (int)sizeof path) {
+            j->limited = 1; continue;
+        }
+        if (lstat(path, &st) || S_ISLNK(st.st_mode)) continue;
+        if (S_ISDIR(st.st_mode)) {
+            /* Two-letter folders at Help's top are its locale bundles. */
+            if (!j->mode && !*prefix && strlen(entry->d_name) == 2) continue;
+            search_dir(j, name, depth + 1, entries);
+        } else if (S_ISREG(st.st_mode) &&
+                   tiku_reader_document_file_supported(name)) {
+            snprintf(j->files[j->nfiles++], TIKU_PATH_MAX, "%s", name);
+        }
+    }
+    closedir(dir);
+}
+
+/** @brief One independently parsed document; no window or font access. */
+static void search_page(reader_search_t *j, const char *name)
+{
+    char path[TIKU_PATH_MAX];
+    /* Reuse Help's confinement/localization policy on a private controller. */
+    tiku_reader_help_window_t source = {.document_mode = j->mode};
+    snprintf(source.root, sizeof source.root, "%s", j->root);
+    if (j->mode) {
+        char candidate[TIKU_PATH_MAX];
+        if (snprintf(candidate, sizeof candidate, "%s/%s", j->root, name) >=
+            (int)sizeof candidate ||
+            !tiku_reader_document_path(candidate, path, sizeof path)) {
+            j->limited = 1; return;
+        }
+    } else if (!tiku_reader_path(&source, name, path, sizeof path)) {
+        j->limited = 1; return;
+    }
+    struct stat st;
+    if (stat(path, &st) || st.st_size < 0 ||
+        (uint64_t)st.st_size > 32u * 1024u * 1024u - j->bytes) {
+        j->limited = 1; return;
+    }
     const char *why;
     char *text = tiku_reader_source(path, &why);
-    if (!text) { r->limited = 1; return; }
-    tiku_doc_t *doc = tiku_reader_document(name, text);
+    if (!text) { j->limited = 1; return; }
+    size_t bytes = strlen(text);
+    if (bytes > 32u * 1024u * 1024u - j->bytes) {
+        free(text); j->limited = 1; return;
+    }
+    j->bytes += bytes;
+    if (tiku_work_cancelled(j)) { free(text); return; }
+    tiku_doc_t *doc = tiku_reader_document_text(name, text);
     free(text);
-    if (!doc) { r->limited = 1; return; }
+    if (!doc) { j->limited = 1; return; }
     size_t cap = (size_t)doc->ntext + doc->nblock + 1;
     char *plain = malloc(cap);
-    if (!plain) { r->limited = 1; tiku_reader_doc_free(doc); return; }
-    if (doc->full & (TIKU_DOC_FULL_TEXT | TIKU_DOC_FULL_BLOCKS | TIKU_DOC_FULL_RUNS)) r->limited = 1;
+    if (!plain) { j->limited = 1; tiku_reader_doc_free(doc); return; }
     tiku_reader_text(doc, plain, cap, NULL);
     for (int i = 0; plain[i]; i++) {
-        if (!tiku_reader_match(plain + i, r->query.text)) continue;
-        help_row_t *row = &r->rows[r->nrows++]; memset(row, 0, sizeof *row);
-        snprintf(row->page, sizeof row->page, "%s", c->document_mode ? path : name);
+        if (!(i % 4096) && tiku_work_cancelled(j)) break;
+        if (!tiku_reader_match(plain + i, j->query)) continue;
+        help_row_t *row = &j->rows[j->nrows++];
+        snprintf(row->page, sizeof row->page, "%s", j->mode ? path : name);
         snprintf(row->title, sizeof row->title, "%.127s", tiku_doc_title(doc) ? tiku_doc_title(doc) : name);
         snprintf(row->snippet, sizeof row->snippet, "%.150s", plain + i);
         for (char *p = row->snippet; *p; p++) if (*p == '\n' || *p == '\t') *p = ' ';
@@ -46,42 +124,138 @@ static void reader_search_page(tiku_reader_help_window_t *c, const char *name)
     free(plain); tiku_reader_doc_free(doc);
 }
 
-/** @brief Walk at most 128 regular help files; do not follow directory symlinks. */
-static void reader_search_dir(tiku_reader_help_window_t *c, const char *prefix, int depth, int *files)
+/** @brief A worker's turn: walk the folder first, then four files a turn. */
+static void search_run(void *ctx)
 {
-    char path[TIKU_PATH_MAX + 256];
-    if (depth > 4 || *files >= HELP_ROWS) { c->reader->limited = 1; return; }
-    snprintf(path, sizeof path, "%s/%s", c->root, prefix);
-    DIR *dir = opendir(path); if (!dir) return;
-    struct dirent *entry;
-    while (*files < HELP_ROWS && (entry = readdir(dir))) {
-        char name[256]; struct stat st;
-        if (entry->d_name[0] == '.') continue;
-        int n = snprintf(name, sizeof name, "%s%s%s", prefix, *prefix ? "/" : "", entry->d_name);
-        if (n >= (int)sizeof name) { c->reader->limited = 1; continue; }
-        snprintf(path, sizeof path, "%s/%s", c->root, name);
-        if (lstat(path, &st) || S_ISLNK(st.st_mode)) continue;
-        if (S_ISDIR(st.st_mode)) {
-            if (!c->document_mode && !*prefix && strlen(entry->d_name) == 2) continue; /* locale bundles */
-            reader_search_dir(c, name, depth + 1, files);
-        } else if (S_ISREG(st.st_mode) && tiku_reader_document_file_supported(name)) {
-            (*files)++; reader_search_page(c, name);
-        }
+    reader_search_t *j = ctx;
+    if (!j->discovered) {
+        int entries = 0;
+        search_dir(j, "", 0, &entries);
+        j->discovered = 1;
+        return; /* Publish discovery before scanning the first batch. */
     }
-    if (*files >= HELP_ROWS) c->reader->limited = 1;
-    closedir(dir);
+    int end = j->scanned + 4;
+    if (end > j->nfiles) end = j->nfiles;
+    while (j->scanned < end && !tiku_work_cancelled(j)) {
+        search_page(j, j->files[j->scanned]);
+        j->scanned++;
+    }
 }
 
-/** @brief Result rows preserve the source page and show a short matching context. */
+/** @brief Show the latest search's results in the sidebar. */
+void tiku_reader_search_results(tiku_reader_help_window_t *c)
+{
+    struct help_reader *r = c->reader;
+    if (!r) return;
+    r->side = 2;
+    r->nrows = r->nresults;
+    memcpy(r->rows, r->results, (size_t)r->nrows * sizeof *r->rows);
+    tiku_list_set_count(&r->list, r->nrows);
+    if (c->dirty) *c->dirty = 1;
+}
+
+/** @brief On the loop: publish a turn's results, then queue the next turn,
+ *         or release the window's reference when the search is over. */
+static void search_done(void *ctx)
+{
+    reader_search_t *j = ctx;
+    tiku_reader_help_window_t *c = j->owner;
+    if (!c) return;
+    struct help_reader *r = c->reader;
+    r->nresults = j->nrows; r->limited = j->limited;
+    r->search_bytes = j->bytes;
+    memcpy(r->results, j->rows, (size_t)j->nrows * sizeof *j->rows);
+    if (r->side == 2) tiku_reader_search_results(c);
+    int more = j->scanned < j->nfiles;
+    snprintf(c->status, sizeof c->status,
+             "%s%d/%d documents; %d matching pages%s.",
+             more ? "Searching: " : "Searched ", j->scanned, j->nfiles,
+             j->nrows,
+             j->limited ? " (incomplete: search limit or read failure)" : "");
+    /* Once posted, the worker may change the result fields immediately. */
+    if (more && !search_post(j)) {
+        more = 0; r->limited = 1;
+        tiku_reader_say(c, "Search incomplete: workers are busy. "
+                        "Completed results remain available.");
+    }
+    if (!more) {
+        r->search = NULL;
+        j->owner = NULL;
+        /* The window's reference goes; this job's goes in search_free. */
+        search_unref(j);
+    }
+    if (c->dirty) *c->dirty = 1;
+}
+
+/** @brief Release a finished or cancelled job's reference. */
+static void search_free(void *ctx)
+{
+    search_unref(ctx);
+}
+
+/** @brief Queue the search's next turn; the job holds a reference until
+ *         its free callback.  @return 1 when queued, 0 when refused. */
+static int search_post(reader_search_t *j)
+{
+    tiku_work_job_t work = {.run = search_run, .done = search_done,
+                            .free = search_free, .ctx = j};
+    snprintf(work.key, sizeof work.key, "%s", j->key);
+    j->refs++;
+    if (!search_post_fn(&work)) {
+        return 1;
+    }
+    search_unref(j);
+    return 0;
+}
+
+/** @brief Stop the running search; the results found so far stay. */
+void tiku_reader_search_cancel(tiku_reader_help_window_t *c)
+{
+    struct help_reader *r = c->reader;
+    if (!r || !r->search) return;
+    reader_search_t *j = r->search;
+    r->search = NULL; j->owner = NULL;
+    tiku_work_cancel(j->key);
+    search_unref(j);
+    tiku_reader_say(c, "Search cancelled; completed results remain available.");
+    if (c->dirty) *c->dirty = 1;
+}
+
+/** @brief Start a folder search on the workers, replacing a running one.
+ *         Result rows keep the source page and a short matching context. */
 void tiku_reader_search(tiku_reader_help_window_t *c)
 {
-    struct help_reader *r = c->reader; if (!r || !r->query.text[0]) { tiku_reader_say(c, "Enter words to search for."); return; }
-    if (!c->root[0]) { tiku_reader_say(c, "Open a document before searching its folder."); return; }
-    r->nrows = r->limited = 0; r->side = 2; r->search_bytes = 0;
-    int files = 0; reader_search_dir(c, "", 0, &files);
-    tiku_list_set_count(&r->list, r->nrows); r->list.top = 0;
-    tiku_list_select_only(&r->list, r->nrows ? 0 : -1);
-    snprintf(c->status, sizeof c->status, "%d matching pages%s.", r->nrows, r->limited ? " (search limit reached)" : "");
+    struct help_reader *r = c->reader;
+    if (!r || !r->query.text[0]) {
+        tiku_reader_say(c, "Enter words to search for.");
+        return;
+    }
+    if (!c->root[0]) {
+        tiku_reader_say(c, "Open a document before searching its folder.");
+        return;
+    }
+    tiku_reader_search_cancel(c);
+    reader_search_t *j = tiku_reader_calloc(1, sizeof *j);
+    if (!j) {
+        tiku_reader_say(c, "Not enough memory to start a search.");
+        return;
+    }
+    j->owner = c; j->refs = 1; j->mode = c->document_mode;
+    snprintf(j->root, sizeof j->root, "%s", c->root);
+    snprintf(j->query, sizeof j->query, "%s", r->query.text);
+    snprintf(j->key, sizeof j->key, "reader-search:%p", (void *)j);
+    if (!search_post(j)) {
+        search_unref(j);
+        tiku_reader_say(c, "Search workers are busy. Try again.");
+        return;
+    }
+    r->search = j;
+    r->nresults = r->limited = 0; r->search_bytes = 0;
+    snprintf(r->search_query, sizeof r->search_query, "%s", j->query);
+    r->list.top = 0;
+    tiku_reader_search_results(c);
+    tiku_reader_say(c, "Looking for documents... "
+                    "Choose Stop Search to cancel.");
 }
 
 /** @brief Build the outline from headings, not a second hard-coded contents list. */

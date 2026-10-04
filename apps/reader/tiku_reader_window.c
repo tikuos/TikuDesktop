@@ -26,6 +26,18 @@ static const tiku_reader_profile_t reader_profile = {
         "Reload reads your latest saved changes.</p>"
 };
 
+/** @brief Native close buttons and programmatic Close share worker cleanup. */
+static void reader_window_gone(tiku_window_t *window, void *ctx)
+{
+    tiku_reader_help_window_t *c = ctx;
+    (void)window;
+    tiku_reader_search_cancel(c);
+    tiku_scroll_release(&c->bar);
+    c->window = NULL;
+    tiku_dialog_init(&c->dialog);
+    if (c->dirty) *c->dirty = 1;
+}
+
 void tiku_reader_help_window_init(tiku_reader_help_window_t *c,
                                tiku_workspace_t *workspace,
                                const char *root, int screen_w, int screen_h,
@@ -132,7 +144,8 @@ void tiku_reader_help_window_open(tiku_reader_help_window_t *c)
                                                        tiku_str("title.help"),
                                     frame, tiku_reader_draw, c, NULL);
     if (c->window) {
-        tiku_window_set_handlers(c->window, tiku_reader_window_event, NULL, NULL);
+        tiku_window_set_handlers(c->window, tiku_reader_window_event, NULL,
+                                 reader_window_gone);
         if (c->document_mode) tiku_reader_document_menus(c);
     }
     if (c->dirty) *c->dirty = 1;
@@ -140,6 +153,7 @@ void tiku_reader_help_window_open(tiku_reader_help_window_t *c)
 
 void tiku_reader_help_window_close(tiku_reader_help_window_t *c)
 {
+    tiku_reader_search_cancel(c);
     tiku_scroll_release(&c->bar);
     if (c->window && c->window->open) {
         tiku_workspace_close(c->workspace, c->window);
@@ -227,7 +241,6 @@ int tiku_reader_document_window_file(tiku_reader_help_window_t *c, const char *p
     c->nforward = 0;
     tiku_reader_say(c, "");
     tiku_reader_help_window_open(c);
-    if (c->reader && c->reader->side == 2) c->reader->side = 1;
     if (c->dirty) *c->dirty = 1;
     return 1;
 }

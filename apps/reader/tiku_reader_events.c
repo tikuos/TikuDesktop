@@ -73,6 +73,20 @@ void tiku_reader_document_menus(tiku_reader_help_window_t *c)
                 item->marked = c->reader->side == 3;
         }
     }
+    if (c->reader) {
+        tiku_menu_list_t *edit = &set.menu[1], *view = &set.menu[2];
+        tiku_menu_entry_t *stop = &edit->item[edit->nitem++];
+        tiku_menu_entry_t *item = &view->item[view->nitem++];
+        *stop = (tiku_menu_entry_t){.command = HELP_CANCEL_SEARCH,
+                                    .enabled = c->reader->search != NULL};
+        snprintf(stop->label, sizeof stop->label, "%s",
+                 tiku_str("reader.stop_search"));
+        *item = (tiku_menu_entry_t){.command = HELP_RESULTS,
+            .enabled = c->reader->search_query[0] != 0,
+            .marked = c->reader->side == 2};
+        snprintf(item->label, sizeof item->label, "%s",
+                 tiku_str("reader.search_results"));
+    }
     tiku_window_publish_menus(c->window, &set, tiku_reader_document_menu_pick, c);
 }
 
@@ -163,6 +177,9 @@ int tiku_reader_window_event(tiku_window_t *window, const tiku_event_t *ev, void
     if (!taken) {
         r = tiku_dialog_event(&c->dialog, ev);
         if (r.activated != TIKU_DIALOG_NONE) {
+            /* The search button reads Stop Search while a search runs. */
+            if (r.activated == HELP_SEARCH && c->reader && c->reader->search)
+                r.activated = HELP_CANCEL_SEARCH;
             invoke(c, r.activated);
             if (c->dirty) *c->dirty = 1;
             return 1;

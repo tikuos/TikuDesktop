@@ -3,6 +3,7 @@
 #include <limits.h>
 #include "tiku_icons.h"
 #include "../../apps/reader/tiku_reader_private.h"
+#include "../fixtures/reader_wait.h"
 
 static int requests;
 
@@ -396,6 +397,7 @@ int main(void)
     assert(!strcmp(tiku_doc_title(c.doc), "Details")); /* literal # in saved path */
     assert(tiku_reader_help_window_go(&c, "../notes.MD") == TIKU_READER_HELP_PAGE);
     tiku_field_start(&c.reader->query, "Shared words"); tiku_reader_search(&c);
+    reader_wait(&c);
     assert(c.reader->nrows == 3);
     for (int i = 0; i < c.reader->nrows; i++) assert(c.reader->rows[i].page[0] == '/');
     int back = c.nback;

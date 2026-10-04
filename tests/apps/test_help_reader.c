@@ -1,6 +1,7 @@
 /* Native reader tools, local resources and generated documents; no network. */
 #include <assert.h>
 #include "../../apps/reader/tiku_reader_private.h"
+#include "../fixtures/reader_wait.h"
 
 static void fixture(const char *root, const char *name, const char *html)
 {
@@ -31,7 +32,7 @@ static void markdown(tiku_reader_help_window_t *c, const char *root, tiku_worksp
     assert(tiku_reader_help_window_find(c, "clock frequency", 0));
     tiku_reader_action(c, HELP_OUTLINE); tiku_workspace_draw(workspace);
     assert(c->reader->nrows == 2);
-    tiku_reader_search(c); assert(c->reader->nrows == 4);
+    tiku_reader_search(c); reader_wait(c); assert(c->reader->nrows == 4);
     int found = 0;
     for (int i = 0; i < c->reader->nrows; i++)
         if (!strcmp(c->reader->rows[i].page, "guide.MD")) found++;
@@ -105,6 +106,7 @@ int main(void)
     assert(c.reader->matches == 1 && !strcmp(c.reader->query.text, "café"));
     press(&c, 'g', TIKU_MOD_CMD); assert(c.reader->matches == 1);
     tiku_field_start(&c.reader->query, "clock frequency"); tiku_reader_search(&c);
+    reader_wait(&c);
     assert(c.reader->nrows == 2 && c.reader->rows[0].snippet[0]);
     tiku_reader_action(&c, HELP_OUTLINE); tiku_workspace_draw(workspace);
     assert(c.reader->nrows == 2);

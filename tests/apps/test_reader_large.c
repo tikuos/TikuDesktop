@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include "../../apps/reader/tiku_reader_private.h"
+#include "../fixtures/reader_wait.h"
 
 /** @brief Generate over a megabyte of Markdown with a unique tail and anchor. */
 static void large_markdown(const char *path)
@@ -78,6 +79,7 @@ int main(void)
     assert(tiku_reader_document_window_reload(&c)); tiku_workspace_draw(workspace);
     assert(c.nback == back && tiku_doc_place(c.doc, c.bar.value).block == at.block);
     tiku_field_start(&c.reader->query, "FINAL_NEEDLE"); tiku_reader_search(&c);
+    reader_wait(&c);
     assert(c.reader->nrows == 1 && !c.reader->limited);
     assert(strstr(c.reader->rows[0].snippet, "FINAL_NEEDLE"));
     snprintf(huge, sizeof huge, "%s/oversize.md", base);

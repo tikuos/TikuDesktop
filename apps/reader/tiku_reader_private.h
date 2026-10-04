@@ -25,6 +25,7 @@
 #include "tiku_iconpaint.h"
 #include "tiku_icons_tiku.h"
 #include "tiku_dl.h"
+#include "tiku_work.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -34,7 +35,8 @@
 enum { HELP_BACK = 1, HELP_FORWARD, HELP_HOME, HELP_DONE, HELP_PAGE,
        HELP_FIND, HELP_PREV, HELP_NEXT, HELP_SEARCH, HELP_COPY, HELP_CODE,
        HELP_OUTLINE, HELP_BOOKMARK, HELP_BOOKMARKS, HELP_LINK, HELP_SIDE,
-       HELP_LOCATION, HELP_GO, HELP_FIND_CLOSE, HELP_FIND_TOGGLE };
+       HELP_LOCATION, HELP_GO, HELP_FIND_CLOSE, HELP_FIND_TOGGLE,
+       HELP_CANCEL_SEARCH, HELP_RESULTS };
 _Static_assert(HELP_PAGE == TIKU_READER_HELP_CONTROL_PAGE,
                "the page's control id is named in the header");
 
@@ -68,6 +70,10 @@ struct help_reader {
     tiku_rect_t zoom_frame;         /* the frame the last maximize set   */
     tiku_list_t list;               /* the sidebar's rows                */
     help_row_t rows[HELP_ROWS], marks[32];
+    help_row_t results[HELP_ROWS];  /* the latest folder search's rows   */
+    int nresults;                   /* how many of those                 */
+    char search_query[TIKU_FIELD_MAX]; /* what they were searched for    */
+    struct reader_search *search;   /* the search running, or NULL       */
     int nrows, nmarks, limited, follow_outline;
     size_t search_bytes;          /* aggregate source budget for one search */
     unsigned char *folded;
@@ -139,7 +145,12 @@ int tiku_reader_match(const char *text, const char *query);
 
 /* Search. */
 void tiku_reader_search(tiku_reader_help_window_t *c);
+void tiku_reader_search_cancel(tiku_reader_help_window_t *c);
+void tiku_reader_search_results(tiku_reader_help_window_t *c);
 void tiku_reader_outline(tiku_reader_help_window_t *c);
+/* Substitute how a search queues work, for a test; NULL restores
+ * tiku_work_post. */
+void tiku_reader_test_post(int (*post)(const tiku_work_job_t *job));
 
 #pragma GCC visibility pop
 

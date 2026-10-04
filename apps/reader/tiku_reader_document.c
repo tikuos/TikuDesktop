@@ -14,6 +14,29 @@
 
 static int reader_parse(tiku_doc_t *doc, const char *name, const char *source);
 
+/** @brief The allocator in force: the C library's unless a test set one. */
+static tiku_reader_allocator_t hooks = { malloc, calloc };
+
+void tiku_reader_test_allocator(const tiku_reader_allocator_t *allocator)
+{
+    if (allocator) {
+        hooks = *allocator;
+    } else {
+        hooks.malloc_fn = malloc;
+        hooks.calloc_fn = calloc;
+    }
+}
+
+void *tiku_reader_malloc(size_t n)
+{
+    return hooks.malloc_fn(n);
+}
+
+void *tiku_reader_calloc(size_t n, size_t size)
+{
+    return hooks.calloc_fn(n, size);
+}
+
 /** @brief File suffix selects the format; report bodies remain HTML. */
 int tiku_reader_markdown(const char *name)
 {
@@ -27,7 +50,7 @@ static int reader_parse(tiku_doc_t *doc, const char *name, const char *source)
     if (!tiku_reader_markdown(name)) { tiku_doc_read(doc, source); return 1; }
     size_t cap = tiku_markdown_html_size(source);
     if (!cap || cap > TIKU_READER_MEMORY_MAX) return 0;
-    char *html = malloc(cap);
+    char *html = tiku_reader_malloc(cap);
     if (!html) return 0;
     int ok = tiku_markdown_html(html, cap, source);
     if (ok) tiku_doc_read(doc, html);
@@ -44,7 +67,8 @@ void tiku_reader_doc_free(tiku_doc_t *doc)
 }
 
 /** @brief Parse with document-sized tables, growing only caps actually filled. */
-tiku_doc_t *tiku_reader_document(const char *name, const char *source)
+static tiku_doc_t *reader_document(const char *name, const char *source,
+                                   int layout)
 {
     size_t n = strlen(source);
     tiku_doc_limits_t l = {
@@ -53,7 +77,7 @@ tiku_doc_t *tiku_reader_document(const char *name, const char *source)
         (int)(n / 16 + 2048), (int)(n / 128 + 256),
         (int)(n / 256 + 64), (int)(n / 1024 + 32)
     };
-    tiku_doc_t *doc = calloc(1, sizeof *doc);
+    tiku_doc_t *doc = tiku_reader_calloc(1, sizeof *doc);
     if (!doc) return NULL;
     tiku_doc_init(doc);
     /* Small documents continue to use the embedded-size inline buffers. */
@@ -62,7 +86,7 @@ tiku_doc_t *tiku_reader_document(const char *name, const char *source)
         if (!small) {
             size_t size = tiku_doc_storage_size(&l);
             if (!size || size > TIKU_READER_MEMORY_MAX) break;
-            void *memory = malloc(size);
+            void *memory = tiku_reader_malloc(size);
             if (!memory) break;
             free(doc->storage);
             if (!tiku_doc_init_storage(doc, &l, memory, size)) {
@@ -70,7 +94,7 @@ tiku_doc_t *tiku_reader_document(const char *name, const char *source)
             }
         }
         if (!reader_parse(doc, name, source)) break;
-        (void)tiku_doc_layout(doc, 256);
+        if (layout) (void)tiku_doc_layout(doc, 256);
         unsigned full = doc->full & (TIKU_DOC_FULL_TEXT | TIKU_DOC_FULL_BLOCKS |
             TIKU_DOC_FULL_RUNS | TIKU_DOC_FULL_LINKS | TIKU_DOC_FULL_ANCHORS |
             TIKU_DOC_FULL_IMAGES | TIKU_DOC_FULL_LINES | TIKU_DOC_FULL_PIECES);
@@ -89,6 +113,16 @@ tiku_doc_t *tiku_reader_document(const char *name, const char *source)
     return NULL;
 }
 
+tiku_doc_t *tiku_reader_document(const char *name, const char *source)
+{
+    return reader_document(name, source, 1);
+}
+
+tiku_doc_t *tiku_reader_document_text(const char *name, const char *source)
+{
+    return reader_document(name, source, 0);
+}
+
 /** @brief Read complete regular files; refuse oversize/change rather than cut. */
 char *tiku_reader_source(const char *path, const char **why)
 {
@@ -104,7 +138,7 @@ char *tiku_reader_source(const char *path, const char **why)
         close(fd); return NULL;
     }
     size_t cap = (size_t)st.st_size;
-    char *source = malloc(cap + 1);
+    char *source = tiku_reader_malloc(cap + 1);
     FILE *f = fdopen(fd, "rb");
     if (!f || !source) {
         if (f) fclose(f); else close(fd);
