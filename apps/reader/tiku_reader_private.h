@@ -54,24 +54,24 @@ typedef struct {
 #define HELP_REPORTS 8
 typedef struct { char page[TIKU_PATH_MAX], title[128], snippet[160]; int block, level, children; } help_row_t;
 struct help_reader {
-    char *text;
+    char *text;                     /* the page's text, flattened        */
     int *starts, length, a, b, dragging, block;
-    size_t text_cap;
+    size_t text_cap;                /* bytes text holds                  */
     int starts_cap, folded_cap;
     int match, match_len, matches, side, report_id;
-    tiku_field_t query;
-    tiku_field_input_t input;
-    tiku_field_t location;
-    tiku_field_input_t location_input;
+    tiku_field_t query;             /* the Find field                    */
+    tiku_field_input_t input;       /* its scroll and drag               */
+    tiku_field_t location;          /* the Location field                */
+    tiku_field_input_t location_input; /* its scroll and drag            */
     int find_visible, location_dirty;
     int hover_tool;
-    tiku_rect_t zoom_frame;
-    tiku_list_t list;
+    tiku_rect_t zoom_frame;         /* the frame the last maximize set   */
+    tiku_list_t list;               /* the sidebar's rows                */
     help_row_t rows[HELP_ROWS], marks[32];
     int nrows, nmarks, limited, follow_outline;
     size_t search_bytes;          /* aggregate source budget for one search */
     unsigned char *folded;
-    char hovered[1024];
+    char hovered[1024];             /* the link under the pointer        */
     struct { char name[32]; char *html; } reports[HELP_REPORTS];
     struct { char src[256]; tiku_image_t image; } images[8];
     int nimages;

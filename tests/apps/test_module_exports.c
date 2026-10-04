@@ -22,7 +22,7 @@ int main(void)
         {"editor/editor.so", "org.tikuos.edit", "Edit",
          "tiku_editor_read_document"},
         {"reader/TikuReader.so", "reader", "TikuReader",
-         "tiku_reader_document"},
+         "tiku_reader_app_start"},
         {"bench/Bench.so", "tiku.bench", "Bench",
          "tiku_bench_command_build"},
         {"console/TikuConsole.so", "tiku.console", "TikuConsole",

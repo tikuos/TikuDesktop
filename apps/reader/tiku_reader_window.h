@@ -63,6 +63,22 @@ typedef struct {
     tiku_doc_place_t place;
 } tiku_reader_help_position_t;
 
+/**
+ * @brief The identity an application gives the shared document viewer.
+ *
+ * A NULL profile selects TikuReader's.  A profile changes neither Help's
+ * root confinement nor the document safety limits.
+ * @note The caller keeps the profile and its strings for as long as any
+ *       window uses them.
+ */
+typedef struct {
+    const char *name, *icon;        /* window title; status-line icon    */
+    const char *bookmark_env;       /* variable naming the bookmark file */
+    const char *bookmark_file;      /* its name in the settings folder   */
+    const char *welcome_html;       /* shown before a document is open   */
+    const char *help_page;          /* the app's page in Help            */
+} tiku_reader_profile_t;
+
 typedef struct {
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
@@ -95,6 +111,7 @@ typedef struct {
     void *opener_ctx;
     struct help_reader *reader;
     int document_mode;             /* local documents, separate from Help */
+    const tiku_reader_profile_t *profile;
     void (*choose_file)(void *ctx); /* explicit native Open-file request */
     void *choose_ctx;
 } tiku_reader_help_window_t;
@@ -103,6 +120,11 @@ typedef struct {
 void tiku_reader_document_window_init(tiku_reader_help_window_t *c,
     tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
     void (*choose_file)(void *ctx), void *ctx);
+/** @brief Initialize a document viewer with an app-specific identity. */
+void tiku_reader_document_window_init_profile(tiku_reader_help_window_t *c,
+    tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
+    void (*choose_file)(void *ctx), void *ctx,
+    const tiku_reader_profile_t *profile);
 /** @brief Read a literal local filename, retaining history on failure. */
 int tiku_reader_document_window_file(tiku_reader_help_window_t *c, const char *path);
 /** @brief Reload, retaining logical position and navigation history. */

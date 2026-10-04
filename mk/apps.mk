@@ -348,7 +348,8 @@ READER_HEADERS := $(wildcard apps/reader/*.h)
 READER_CORE_SRC := $(filter-out apps/reader/tiku_reader_app.c,$(READER_SRC))
 $(APPS_D)/reader/TikuReader.so: $(READER_SRC) $(READER_HEADERS) $(PIC_LIBS)
 	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(READER_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
+	$(CC) $(SO_CFLAGS) -fvisibility=hidden -o $@ $(READER_SRC) $(PIC_LIBS) \
+	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/reader/app.manifest: apps/reader/reader.app
 	@mkdir -p $(dir $@)

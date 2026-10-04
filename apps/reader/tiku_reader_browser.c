@@ -165,7 +165,8 @@ static void document_location_open(tiku_reader_help_window_t *c)
     char path[TIKU_PATH_MAX];
     if (!*text || strstr(text, "://") || !strncmp(text, "//", 2) ||
         (*text != '/' && strchr(text, ':'))) {
-        tiku_reader_say(c, "Enter a local document path. TikuReader does not open web addresses.");
+        tiku_reader_say(c, "Enter a local document path. "
+                        "This viewer does not open web addresses.");
         tiku_dialog_focus(&c->dialog, HELP_LOCATION); return;
     }
     int n = *text == '/' ? snprintf(path, sizeof path, "%s", text) :
@@ -238,7 +239,7 @@ void tiku_reader_document_chrome(tiku_reader_help_window_t *c, tiku_surface_t *s
     }
     tiku_hline(s, l.paper.x, l.status.y-3, l.paper.w,
                 tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));
-    (void)tiku_icon_paint(s, "reader", l.status.x-22,
+    (void)tiku_icon_paint(s, c->profile->icon, l.status.x-22,
                           l.status.y+(l.status.h-16)/2, 16);
 }
 

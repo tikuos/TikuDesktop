@@ -5,12 +5,34 @@
 
 static void reader_title(char *out, size_t cap, const char *title);
 
+/** @brief TikuReader's identity, the one a NULL profile selects. */
+static const tiku_reader_profile_t reader_profile = {
+    .name = "TikuReader", .icon = "reader",
+    .bookmark_env = "TIKU_READER_BOOKMARKS",
+    .bookmark_file = "TikuReaderBookmarks",
+    .help_page = "apps/reader.html",
+    .welcome_html = "<h1>TikuReader</h1>"
+        "<p>A quiet place to read local documents.</p>"
+        "<h2>Open a document</h2><p>Choose Open or press Ctrl+O "
+        "to browse Markdown "
+        "(.md, .markdown) and HTML (.html, .htm) files.</p>"
+        "<h2>Find your way</h2><p>Follow local links, move Back "
+        "and Forward, or show Outline and Bookmarks from View. "
+        "Ctrl+L selects the Location bar. Find opens a search bar "
+        "below the page; Escape hides it. Edit &gt; Search folder "
+        "looks through documents beside this one.</p>"
+        "<h2>Read safely</h2><p>Documents are read-only. "
+        "Scripts, forms and web requests are not run. "
+        "Reload reads your latest saved changes.</p>"
+};
+
 void tiku_reader_help_window_init(tiku_reader_help_window_t *c,
                                tiku_workspace_t *workspace,
                                const char *root, int screen_w, int screen_h,
                                int *dirty)
 {
     memset(c, 0, sizeof *c);
+    c->profile = &reader_profile;
     c->workspace = workspace;
     c->screen_w = screen_w;
     c->screen_h = screen_h;
@@ -80,19 +102,7 @@ void tiku_reader_help_window_open(tiku_reader_help_window_t *c)
         c->doc = calloc(1, sizeof *c->doc);
         if (c->doc) {
             tiku_doc_init(c->doc);
-            tiku_doc_read(c->doc, "<h1>TikuReader</h1>"
-                "<p>A quiet place to read local documents.</p>"
-                "<h2>Open a document</h2><p>Choose Open or press Ctrl+O "
-                "to browse Markdown "
-                "(.md, .markdown) and HTML (.html, .htm) files.</p>"
-                "<h2>Find your way</h2><p>Follow local links, move Back "
-                "and Forward, or show Outline and Bookmarks from View. "
-                "Ctrl+L selects the Location bar. Find opens a search bar "
-                "below the page; Escape hides it. Edit &gt; Search folder "
-                "looks through documents beside this one.</p>"
-                "<h2>Read safely</h2><p>Documents are read-only. "
-                "Scripts, forms and web requests are not run. "
-                "Reload reads your latest saved changes.</p>");
+            tiku_doc_read(c->doc, c->profile->welcome_html);
             tiku_reader_loaded(c);
         }
     } else if (!c->document_mode && !tiku_reader_page_read(c, "index.html")) {
@@ -118,7 +128,7 @@ void tiku_reader_help_window_open(tiku_reader_help_window_t *c)
     if (frame.x < 0) frame.x = 0;
     if (frame.y < 0) frame.y = 0;
     c->window = tiku_workspace_open(c->workspace,
-                                    c->document_mode ? "TikuReader" :
+                                    c->document_mode ? c->profile->name :
                                                        tiku_str("title.help"),
                                     frame, tiku_reader_draw, c, NULL);
     if (c->window) {
@@ -160,8 +170,18 @@ void tiku_reader_document_window_init(tiku_reader_help_window_t *c,
     tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
     void (*choose_file)(void *ctx), void *ctx)
 {
+    tiku_reader_document_window_init_profile(c, workspace, screen_w, screen_h,
+                                           dirty, choose_file, ctx, NULL);
+}
+
+void tiku_reader_document_window_init_profile(tiku_reader_help_window_t *c,
+    tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
+    void (*choose_file)(void *ctx), void *ctx,
+    const tiku_reader_profile_t *profile)
+{
     tiku_reader_help_window_init(c, workspace, "", screen_w, screen_h, dirty);
     c->document_mode = 1;
+    if (profile) c->profile = profile;
     (void)tiku_icons_tiku_register();
     c->choose_file = choose_file; c->choose_ctx = ctx;
     if (c->reader) {
