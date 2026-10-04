@@ -447,7 +447,9 @@ session(const char *how)
         check(ok, "HOST-003", what);
         snprintf(what, sizeof what, "%s: the last frame went as %s", how,
                  pixels_only ? "pixels" : "a list");
-        check(desk.session[0].win[0].list_fresh == !pixels_only, "HOST-001",
+        /* The window holds a list only when one came: list_fresh is set
+         * by a frame of copied pixels too. */
+        check((desk.session[0].win[0].list != NULL) == !pixels_only, "HOST-001",
               what);
 
         e = key('w', TIKU_MOD_CMD, NULL);
