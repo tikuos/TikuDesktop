@@ -11,7 +11,12 @@ The header is committed, and it lives in the interface kit next to the
 tiku_font.c that includes it, not in the samples under src/ here, so the
 redirect reaches across into the kits tree.
 
-Run: tools/genfont.py > ../kits/interface/tiku_font_data.h
+Run from the applications tree:
+    kits/interface/tools/genfont.py > kits/interface/tiku_font_data.h
+--preserve OLD copies every face OLD already holds, byte for byte, and
+renders only the faces it lacks, so coverage does not move with the Pillow
+and FreeType versions.  Write to another file than OLD.  A fresh mono face
+must come from the same font file as its cut's preserved faces.
 
 Authors: Ambuj Varshney <ambuj@tiku-os.org>
 """
@@ -19,6 +24,12 @@ Authors: Ambuj Varshney <ambuj@tiku-os.org>
 import sys
 from PIL import Image, ImageDraw, ImageFont
 import hashlib
+import argparse
+import re
+
+PRESERVED = {}
+# The font file each preserved face was rendered from, by face name.
+PRESERVED_FROM = {}
 
 
 def generator_stamp():
@@ -37,8 +48,8 @@ BOLD = [
     "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 ]
-# The terminal draws on a grid, so it needs a face whose advance is the
-# same for every glyph.  Nothing else in the interface uses it.
+# The grid views -- the terminal, the code view, hex and diff -- need a
+# face whose advance is the same for every glyph.
 MONO = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf",
@@ -93,7 +104,7 @@ UIMONO_BOLD = [
     "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
 ]
 
-MONO_SIZES = (13, 15)
+MONO_SIZES = (9, 11, 13, 15, 17, 19, 21, 23)
 SIZE = 12
 # The 1x faces carry Latin-1, so a file called "caf\u00e9" draws its own name;
 # the 2x faces stay ASCII and the renderer falls back to the 1x glyph
@@ -151,8 +162,37 @@ def pick_cut(regular, cut):
     raise SystemExit("genfont: no candidate font found")
 
 
+def same_family(cut, px, path):
+    """Refuse to render @p cut at @p px from another file than the cut's
+    preserved faces came from, so one size ladder never mixes designs."""
+    name = "%s%d" % (cut, px)
+    if name in PRESERVED:
+        return
+    base = path.rsplit("/", 1)[-1]
+    for other, source in sorted(PRESERVED_FROM.items()):
+        if re.fullmatch(cut + r"\d+", other) and source != base:
+            raise SystemExit("genfont: %s would come from %s, but the "
+                             "preserved %s came from %s"
+                             % (name, base, other, source))
+
+
 def render(path, name, out, size=SIZE, forced_adv=None, hi=None,
-           last=LAST):
+           last=LAST, metrics=None, cell=None):
+    """Write face @p name from @p path; return its advances.
+
+    forced_adv holds the 1x face's advances, doubled for its 2x face; cell
+    gives every glyph one advance, for a grid face; metrics sets the height
+    and ascent, so a cut sits on its regular face's lines."""
+    if name in PRESERVED:
+        block = PRESERVED[name]
+        # Older generated headers omit the trailing dynamic-source field.
+        initializer = re.search(r"_font = \{\n([^\n]*)", block).group(1)
+        if initializer.count(",") == 6:
+            block = re.sub(r"(_font = \{\n[^\n]*)(\n\};)", r"\1, NULL\2",
+                           block)
+        out.write(block + "\n\n")
+        return [int(advance) for advance in
+                re.findall(r"^    \{\d+,(-?\d+),", block, re.M)]
     font = ImageFont.truetype(path, size)
     asc, desc = font.getmetrics()
     height = asc + desc
@@ -166,7 +206,9 @@ def render(path, name, out, size=SIZE, forced_adv=None, hi=None,
                            "ox": 0, "oy": 0, "off": len(blob)})
             blob.append(0)
             continue
-        if forced_adv is not None:
+        if cell is not None:
+            adv = cell
+        elif forced_adv is not None:
             # The 2x face advances exactly twice the 1x face, so text at
             # scale 2 fills precisely the layout the 1x metrics promised.
             adv = forced_adv[cp - FIRST] * 2
@@ -201,14 +243,31 @@ def render(path, name, out, size=SIZE, forced_adv=None, hi=None,
     for i in range(0, len(blob), 24):
         out.write("    " + ",".join(str(b) for b in blob[i:i + 24]) + ",\n")
     out.write("};\n")
+    if metrics is not None:
+        height, asc = metrics
     out.write("static const tiku_font_t %s_font = {\n"
-              "    %s_glyphs, %s_bits, %d, %d, %d, %d, %s\n};\n\n"
+              "    %s_glyphs, %s_bits, %d, %d, %d, %d, %s, NULL\n};\n\n"
               % (name, name, name, len(glyphs), height, asc, FIRST,
                  ("&%s_font" % hi) if hi else "NULL"))
     return [g["adv"] for g in glyphs]
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--preserve", metavar="OLD",
+                        help="copy the faces OLD holds; render the rest")
+    args = parser.parse_args()
+    if args.preserve:
+        with open(args.preserve) as source:
+            previous = source.read()
+        pattern = (r"/\* (\w+): (\S+) at [^\n]* \*/\n"
+                   r"static const tiku_glyph_t .*?"
+                   r"static const tiku_font_t \1_font = \{\n[^\n]*\n\};")
+        for match in re.finditer(pattern, previous, re.S):
+            PRESERVED[match.group(1)] = match.group(0)
+            PRESERVED_FROM[match.group(1)] = match.group(2)
+        if not PRESERVED:
+            parser.error("--preserve contains no generated faces")
     out = sys.stdout
     out.write("/*\n"
               " * TikuOS kits -- the foundation TikuDesktop and TikuTracker\n"
@@ -249,26 +308,35 @@ def main():
             render(pick(bold), bold_name, out, size=px, hi=hi_bold)
     for px in MONO_SIZES:
         # One advance for every glyph, taken from a character that has
-        # nothing narrow about it, so the grid is exact.
+        # nothing narrow about it, so the grid is exact.  A size already
+        # baked keeps the cell and the lines of its regular face.
         probe = ImageFont.truetype(pick(MONO), px)
         cell = int(round(probe.getlength("M")))
+        metrics = (sum(probe.getmetrics()), probe.getmetrics()[0])
+        preserved = PRESERVED.get("mono%d" % px)
+        if preserved:
+            fields = re.search(r"_font = \{\n([^\n]*)",
+                               preserved).group(1).split(",")
+            metrics = (int(fields[3]), int(fields[4]))
+            cell = int(re.search(r"^    \{77,(\d+),", preserved,
+                                 re.M).group(1))
         # The terminal's grid stays at Latin-1: it is a fixed cell per
         # letter, and a person reads a device's files through the
         # PROPORTIONAL face, which is the one that reaches wider.
         mono_last = 0xFF
-        render(pick(MONO), "mono%d" % px, out, size=px, last=mono_last,
-               forced_adv=[cell // 2] * (mono_last - FIRST + 1))
-        render(pick(MONO_BOLD), "monobold%d" % px, out, size=px,
-               last=mono_last,
-               forced_adv=[cell // 2] * (mono_last - FIRST + 1))
-        # On the same grid: a style changes how a letter is drawn, never
-        # where it stands.
-        render(pick_cut(MONO, MONO_ITALIC), "monoitalic%d" % px, out,
-               size=px, last=mono_last,
-               forced_adv=[cell // 2] * (mono_last - FIRST + 1))
-        render(pick_cut(MONO, MONO_BOLD_ITALIC), "monobolditalic%d" % px,
-               out, size=px, last=mono_last,
-               forced_adv=[cell // 2] * (mono_last - FIRST + 1))
+        for cut, path in (("mono", pick(MONO)),
+                          ("monobold", pick(MONO_BOLD))):
+            same_family(cut, px, path)
+            render(path, "%s%d" % (cut, px), out, size=px, last=mono_last,
+                   cell=cell)
+        # On the same grid and lines: a style changes how a letter is
+        # drawn, never where it stands.
+        for cut, path in (("monoitalic", pick_cut(MONO, MONO_ITALIC)),
+                          ("monobolditalic",
+                           pick_cut(MONO, MONO_BOLD_ITALIC))):
+            same_family(cut, px, path)
+            render(path, "%s%d" % (cut, px), out, size=px, last=mono_last,
+                   metrics=metrics, cell=cell)
     out.write("/* The fixed-advance faces, smallest first. */\n")
     out.write("static const int mono_sizes[] = { %s };\n"
               % ", ".join(str(px) for px in MONO_SIZES))

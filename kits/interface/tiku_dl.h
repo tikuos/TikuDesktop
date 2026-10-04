@@ -34,11 +34,14 @@
 /**
  * @brief Which face a piece of text is in; the far end resolves it.
  *
- * Six names, and then the ladder: any value past these is a PLAIN face
- * at that many pixels, which works because the smallest face is ten.  So
- * a status line set at eleven arrives at eleven rather than in whatever
- * the body size happens to be.  A player that knows only the first four
- * draws the two italic names as the plain face at the smallest size.
+ * Six names, then sizes.  From TIKU_DL_MONO_SIZED an ID names a baked mono
+ * face: 4 times its size's place in the ladder plus its cut (regular, bold,
+ * italic, bold italic).  Any other value past the six is a plain face at
+ * that many pixels; the ladder starts at ten, so a status line set at eleven
+ * arrives at eleven.  A player that knows only the first four draws the
+ * italic names in the smallest plain face.
+ * @note A player without the sized mono IDs draws them as plain faces, so
+ *       an application and the desktop are rebuilt together.
  */
 typedef enum {
     TIKU_DL_PLAIN = 0,
@@ -46,7 +49,8 @@ typedef enum {
     TIKU_DL_MONO  = 2,
     TIKU_DL_MONO_BOLD = 3,
     TIKU_DL_MONO_ITALIC = 4,
-    TIKU_DL_MONO_BOLD_ITALIC = 5
+    TIKU_DL_MONO_BOLD_ITALIC = 5,
+    TIKU_DL_MONO_SIZED = 64     /**< First ID naming a mono size and cut */
 } tiku_dl_face_t;
 
 typedef struct tiku_dl tiku_dl_t;

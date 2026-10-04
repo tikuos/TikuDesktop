@@ -494,18 +494,30 @@ tiku_font_at(int px)
     return plain_faces[current_family][rung];
 }
 
-const tiku_font_t *
-tiku_font_mono(int bold)
+int
+tiku_font_mono_px(void)
 {
     /* Follows the interface size the user chose: the bigger the rest of
      * the desktop is, the bigger a terminal's characters are. */
-    int i, best = 0, n = (int)(sizeof mono_sizes / sizeof mono_sizes[0]);
-
     if (current_size == 0) {
         (void)tiku_font_set_size(12);
     }
+    return current_size >= 14 ? 15 : 13;
+}
+
+const tiku_font_t *
+tiku_font_mono(int bold)
+{
+    return tiku_font_mono_at(tiku_font_mono_px(), bold);
+}
+
+const tiku_font_t *
+tiku_font_mono_at(int px, int bold)
+{
+    int i, best = 0, n = (int)(sizeof mono_sizes / sizeof mono_sizes[0]);
+
     for (i = 1; i < n; i++) {
-        if (current_size >= mono_sizes[i] - 1) {
+        if (px >= mono_sizes[i]) {
             best = i;
         }
     }
@@ -517,6 +529,10 @@ tiku_font_mono_cell(int bold)
 {
     return tiku_text_width(tiku_font_mono(bold), "M");
 }
+
+/** The mono cuts, numbered as their TIKU_FONT_* bits: regular, bold,
+ *  italic, bold italic. */
+#define MONO_CUTS  4u
 
 /** @brief Rung @p i's mono face in the cut @p style names. */
 static const tiku_font_t *
@@ -760,12 +776,12 @@ blend(tiku_surface_t *s, int sc, int x, int y, tiku_rgb_t c,
 /**
  * @brief How a stream names the face @p f, or -1 when it cannot.
  *
- * One byte, two meanings that cannot be confused because the ladder
- * starts at ten: 0 to 5 are the six faces the interface is drawn in at
- * whatever size that is, and anything larger is a plain face at that
- * many pixels, which is how a status line set at eleven says so.  -1 is
- * a face this cannot name, one read from a dropped file; the caller
- * marks the list incomplete rather than guessing at the letters.
+ * One byte: 0 to 5 are the six faces the interface is drawn in at whatever
+ * size that is, TIKU_DL_MONO_SIZED onward is a mono face at its own size,
+ * and any other larger value is a plain face at that many pixels, which is
+ * how a status line set at eleven says so.  -1 is a face this cannot name,
+ * one read from a dropped file; the caller marks the list incomplete rather
+ * than guessing at the letters.
  */
 static int
 face_id(const tiku_font_t *f)
@@ -791,6 +807,15 @@ face_id(const tiku_font_t *f)
     if (f == tiku_font_plain()) {
         return TIKU_DL_PLAIN;
     }
+    for (i = 0; i < (int)(sizeof mono_sizes / sizeof mono_sizes[0]); i++) {
+        unsigned style;
+
+        for (style = 0; style < MONO_CUTS; style++) {
+            if (f == mono_cut(i, style)) {
+                return TIKU_DL_MONO_SIZED + i * (int)MONO_CUTS + (int)style;
+            }
+        }
+    }
     for (i = 0; i < SIZE_COUNT; i++) {
         if (face_sizes[i] > TIKU_DL_MONO_BOLD_ITALIC &&
             tiku_font_at(face_sizes[i]) == f) {
@@ -798,6 +823,18 @@ face_id(const tiku_font_t *f)
         }
     }
     return -1;
+}
+
+const tiku_font_t *
+tiku_font_mono_stream(unsigned id)
+{
+    unsigned n = (unsigned)(sizeof mono_sizes / sizeof mono_sizes[0]);
+
+    if (id < TIKU_DL_MONO_SIZED || id >= TIKU_DL_MONO_SIZED + MONO_CUTS * n) {
+        return NULL;
+    }
+    id -= TIKU_DL_MONO_SIZED;
+    return mono_cut((int)(id / MONO_CUTS), id % MONO_CUTS);
 }
 
 void

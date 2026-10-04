@@ -143,12 +143,40 @@ const tiku_font_t *tiku_font_at(int px);
 /**
  * @brief A face whose every glyph advances the same width.
  *
- * For a terminal grid and nothing else: the interface is laid out
- * against the proportional face above, and mixing the two breaks it.
+ * For grid views such as the terminal and the code view: the interface is
+ * laid out against the proportional face above, and mixing the two breaks
+ * it.  Its size follows the desktop's font size.
  *
  * @param bold Nonzero for the heavier face.
  */
 const tiku_font_t *tiku_font_mono(int bold);
+
+/**
+ * @brief The pixel size of the face tiku_font_mono() gives now.
+ *
+ * @return 13 below desktop font size 14, else 15
+ */
+int tiku_font_mono_px(void);
+
+/**
+ * @brief The baked mono face at @p px, or the nearest smaller one.
+ *
+ * The ladder runs from 9 to 23 pixels in odd steps, and a size under 9
+ * takes the 9.  The desktop's font size plays no part, and the face
+ * travels through a display list at its own size.
+ *
+ * @param px   Wanted size in pixels
+ * @param bold Nonzero for the heavier face.
+ */
+const tiku_font_t *tiku_font_mono_at(int px, int bold);
+
+/**
+ * @brief The mono face a display-list face ID from TIKU_DL_MONO_SIZED
+ *        names, or NULL for any other ID.
+ *
+ * @param id A face ID read from a display list
+ */
+const tiku_font_t *tiku_font_mono_stream(unsigned id);
 
 /** @brief The advance every glyph of the mono face has. */
 int tiku_font_mono_cell(int bold);

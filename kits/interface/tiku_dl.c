@@ -856,8 +856,11 @@ face_of(unsigned char id)
                                 TIKU_FONT_BOLD | TIKU_FONT_ITALIC);
     case TIKU_DL_PLAIN:     return tiku_font_plain();
     default:
-        /* Past the six, the byte IS the size: the ladder starts at ten,
-         * so the two meanings cannot be confused. */
+        /* Past the six, a sized mono face, else the byte is the size of a
+         * plain face: the ladder starts at ten. */
+        if (tiku_font_mono_stream(id) != NULL) {
+            return tiku_font_mono_stream(id);
+        }
         return tiku_font_at((int)id);
     }
 }
