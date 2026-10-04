@@ -317,6 +317,8 @@ tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db)
          * to invent coordinates for a button whose position is layout's
          * business (DB-011). */
         db_build_leaf(db);         /* from disk, every time (DB-005) */
+        db->menu_seen = 0;
+        db->sub_seen = -1;
         db->menu_open = 1;
         db_reset_menu_hots(db);
         db->win_menu_team = -1;

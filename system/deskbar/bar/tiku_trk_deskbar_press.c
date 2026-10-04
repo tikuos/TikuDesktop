@@ -81,9 +81,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         /* The horizontal strip: the leaf keeps its own width, and the
          * rest of the bar is application buttons (DB-033). */
         if (x < db->frame.x + 2 + HLEAF_W) {
-            db_build_leaf(db);
-            db->menu_open = 1;
-            db_reset_menu_hots(db);
+            tiku_trk_deskbar_open_menu(db);
             return 1;
         }
         if (x >= db->frame.x + db->frame.w - SWITCH_W - 10) {
@@ -119,9 +117,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         return 1;
     }
     if (y < db->frame.y + db_leaf_row() + 2) {
-        db_build_leaf(db);         /* from disk, every time (DB-005) */
-        db->menu_open = 1;
-        db_reset_menu_hots(db);
+        tiku_trk_deskbar_open_menu(db);
         return 1;
     }
     if (tiku_trk_deskbar_mini(db->dock) &&

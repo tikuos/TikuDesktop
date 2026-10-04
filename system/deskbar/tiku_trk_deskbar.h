@@ -668,6 +668,11 @@ tiku_rect_t tiku_trk_deskbar_frame(const tiku_trk_deskbar_t *db);
 /** @brief Draw the whole bar onto @p s, laying its frame out first. */
 void tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s);
 
+/** @brief Frame time in microseconds; zero disables animation. */
+void tiku_trk_deskbar_set_now(tiku_trk_deskbar_t *db, int64_t now);
+/** @brief Region needing another frame, or an empty rectangle when idle. */
+tiku_rect_t tiku_trk_deskbar_motion_damage(const tiku_trk_deskbar_t *db);
+
 /** @brief Whether the point is inside the bar's frame. */
 int tiku_trk_deskbar_hit(const tiku_trk_deskbar_t *db, int x, int y);
 

@@ -21,14 +21,14 @@ expect-pixel 60 300 10c810
 note scaled stretches the corner over an eighth of the screen
 expect-pixel 100 120 c81010
 note tiled repeats the small picture instead, so the same point is field
-click 350 395
+click 350 383
 wait 12
 expect-pixel 100 120 10c810
 note a press outside the row changes nothing.  It used to change the
 note laying: the rows were bounded on y alone, so a click anywhere at
 note that height -- including where nothing is drawn -- laid the
 note wallpaper out again.  The rows are asked for whole now.
-click 300 373
+click 300 361
 wait 12
 expect-pixel 100 120 10c810
 shot /tmp/trk_deskprefs_shot.png
@@ -44,4 +44,28 @@ note and the - beside it takes them back again
 click 580 440
 wait 10
 expect-icon-at photos 29 20
+note Reduce motion applies immediately and survives closing this window
+expect-pixel 312 466 ffffff
+click 370 466
+wait 4
+expect-pixel 312 466 000000
+expect-same-as-redraw
+key w ctrl
+wait 3
+click 980 20
+wait 3
+menu-pick Settings
+wait 3
+menu-pick TikuDesktop preferences
+wait 5
+expect-pixel 312 466 000000
+note Defaults restores motion and Revert restores the reduced-motion baseline
+click 350 509
+wait 4
+expect-pixel 312 466 ffffff
+click 470 509
+wait 4
+expect-pixel 312 466 000000
+expect-same-as-redraw
+shot /tmp/trk_motion_preferences.png
 quit

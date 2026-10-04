@@ -110,7 +110,8 @@ static int
 same(const tiku_trk_deskprefs_values_t *a,
      const tiku_trk_deskprefs_values_t *b)
 {
-    if (a->icon_size != b->icon_size || a->have_bg != b->have_bg ||
+    if (a->reduce_motion != b->reduce_motion ||
+        a->icon_size != b->icon_size || a->have_bg != b->have_bg ||
         a->bg.mode != b->bg.mode) {
         return 0;
     }

@@ -32,6 +32,7 @@
 #include "tiku_attr.h"
 #include "tiku_logo.h"
 #include "tiku_host.h"
+#include "tiku_motion.h"
 #include "tiku_text_input.h"
 #include "tiku_trk_application.h"
 #include "tiku_trk_clip.h"
@@ -458,6 +459,8 @@ typedef struct desktop {
     /* A menu fades in: which popup was seen last, and since when. */
     const tiku_menu_t *popup_seen, *popup_sub_seen;
     int64_t              popup_since, popup_sub_since;
+    tiku_motion_t        activation_motion; /* the opened icon's outline */
+    tiku_rect_t          activation_rect;   /* the icon it grows out of  */
     /* One cascade origin shared by every window that opens without a
      * remembered position, advanced per window and reset when it runs off
      * the screen -- not a modulo, which would silently stack the sixth

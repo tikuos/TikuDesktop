@@ -705,6 +705,7 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
 
     db->sub_count = 0;
     db->sub_of = -1;
+    db->sub_seen = -1;
     db->sub_hot = -1;
     db->sub_pending = -1;
     if (at < 0 || at >= db->leaf_count) {
@@ -906,6 +907,13 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
     if (db == NULL || s == NULL) {
         return;
     }
+    db->motion_damage = (tiku_rect_t){ 0, 0, 0, 0 };
+    if (!db->menu_open) {
+        db->menu_seen = 0;
+        db->sub_seen = -1;
+        db->menu_motion.active = 0;
+        db->sub_motion.active = 0;
+    }
     team_h = (db->settings.icon_size + 4 > db_team_row())
                  ? db->settings.icon_size + 4 : db_team_row();
     db->screen_h = s->h;
@@ -934,6 +942,22 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
     db_draw_switch_strip(db, s);
     db_draw_tip(db, s);
     db_draw_calendar(db, s, f, fb, dark);
+}
+
+void
+tiku_trk_deskbar_set_now(tiku_trk_deskbar_t *db, int64_t now)
+{
+    if (db != NULL) {
+        db->motion_now = now;
+    }
+}
+
+tiku_rect_t
+tiku_trk_deskbar_motion_damage(const tiku_trk_deskbar_t *db)
+{
+    tiku_rect_t none = { 0, 0, 0, 0 };
+
+    return (db != NULL) ? db->motion_damage : none;
 }
 
 /**
@@ -1108,7 +1132,17 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
         const char *items[TIKU_TRK_DB_LEAF_MAX];
         int rowh = f->height + 6;
         tiku_rect_t m = db_leaf_menu_rect(db, rowh, db->leaf_count);
+        tiku_rect_t captured = { 0, 0, 0, 0 };
+        tiku_surface_t *under;
+        float progress;
 
+        if (!db->menu_seen) {
+            tiku_motion_start(&db->menu_motion, db->motion_now,
+                              TIKU_MOTION_MENU_US);
+            db->menu_seen = 1;
+        }
+        progress = tiku_motion_progress(&db->menu_motion, db->motion_now);
+        under = tiku_motion_fade_begin(s, m, progress, &captured);
         for (i = 0; i < db->leaf_count; i++) {
             items[i] = (db->leaf[i].kind == TIKU_TRK_DB_ITEM_SEP)
                            ? "-" : db->leaf[i].label;
@@ -1144,10 +1178,21 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                     TIKU_C_TEXT);
             }
         }
+        tiku_motion_fade_end(s, under, captured, progress);
+        if (db->menu_motion.active) {
+            db->motion_damage = m;
+        }
         if (db->sub_of >= 0 && db->sub_count > 0) {
             const char *sitems[TIKU_TRK_DB_SUB_MAX];
             tiku_rect_t sm = db_sub_menu_rect(db, m, rowh);
 
+            if (db->sub_seen != db->sub_of) {
+                tiku_motion_start(&db->sub_motion, db->motion_now,
+                                  TIKU_MOTION_MENU_US);
+                db->sub_seen = db->sub_of;
+            }
+            progress = tiku_motion_progress(&db->sub_motion, db->motion_now);
+            under = tiku_motion_fade_begin(s, sm, progress, &captured);
             for (i = 0; i < db->sub_count; i++) {
                 sitems[i] = db->sub[i].label;
             }
@@ -1160,6 +1205,14 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
             } else {
                 tiku_ui_menu(s, sm, sitems, db->sub_count, db->sub_hot);
             }
+            tiku_motion_fade_end(s, under, captured, progress);
+            if (db->sub_motion.active) {
+                db->motion_damage = db->motion_damage.w > 0
+                    ? tiku_rect_union(db->motion_damage, sm) : sm;
+            }
+        } else {
+            db->sub_seen = -1;
+            db->sub_motion.active = 0;
         }
     }
 }

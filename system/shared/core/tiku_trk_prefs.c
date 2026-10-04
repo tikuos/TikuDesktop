@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_prefs.h"
+#include "tiku_atomic_file.h"
 #include "tiku_strings.h"
 #include "tiku_state.h"
 
@@ -95,7 +96,10 @@ static const tiku_trk_pref_t table[] = {
     /* The device the Devices menu was current on, remembered by name and
      * by the port that reconnects it.  No control of their own. */
     { "CurrentDevice",           T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
-    { "CurrentDevicePort",       T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" }
+    { "CurrentDevicePort",       T, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
+    /* When off, icons, menus and windows animate as they open.  Its tick
+     * box is in the TikuDesktop preferences window, not on a page here. */
+    { "ReduceMotion",            B, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" }
 };
 
 #define NPREF ((int)(sizeof table / sizeof table[0]))
@@ -341,20 +345,13 @@ tiku_trk_prefs_load(tiku_trk_prefs_t *p, const char *path)
     return 0;
 }
 
-int
-tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
+/** @brief The file's lines for @p context's settings, into @p f. */
+static int
+write_lines(FILE *f, void *context)
 {
-    FILE *f;
+    const tiku_trk_prefs_t *p = context;
     int i;
 
-    if (p == NULL || path == NULL) {
-        return -1;
-    }
-    (void)tiku_state_mkparents(path);
-    f = fopen(path, "w");
-    if (f == NULL) {
-        return -1;
-    }
     for (i = 0; i < p->n; i++) {
         const tiku_trk_pref_t *pr = &p->pref[i];
 
@@ -386,7 +383,27 @@ tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
     for (i = 0; i < p->nunknown; i++) {
         fprintf(f, "%s\n", p->unknown[i]);
     }
-    return (fclose(f) == 0) ? 0 : -1;
+    return 0;
+}
+
+int
+tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
+{
+    char *target;
+    int rc;
+
+    if (p == NULL || path == NULL) {
+        return -1;
+    }
+    (void)tiku_state_mkparents(path);
+    /* Replaced whole rather than rewritten in place: TikuTracker reads the
+     * file within a tenth of a second of a change, and a half-written one
+     * reads as the defaults.  A file kept as a link is replaced where it
+     * points. */
+    target = realpath(path, NULL);
+    rc = tiku_atomic_file((target != NULL) ? target : path, write_lines, p);
+    free(target);
+    return rc;
 }
 
 void

@@ -67,11 +67,12 @@ the first three; <b>Disk mount</b> is never put back to a default.</p>
 
 <h2 id="desktop">TikuDesktop preferences</h2>
 
-<p>This window sets the picture behind the Desktop and the size of the
-icons on it. The six-row list begins with <b>No picture</b>; the rest are
-the picture files in the Desktop folder and in the wallpapers folder beside
-it, read each time the window opens. While neither folder holds one the
-list says <b>Drop a picture in the Desktop to offer it here</b>.</p>
+<p>This window sets the picture behind the Desktop, the size of the icons
+on it, and whether the desktop animates, with <b>Reduce motion</b>. The
+six-row list begins with <b>No picture</b>; the rest are the picture files
+in the Desktop folder and in the wallpapers folder beside it, read each
+time the window opens. While neither folder holds one the list says
+<b>Drop a picture in the Desktop to offer it here</b>.</p>
 
 <p>Under <b>How it is laid</b> are <b>At its own corner</b>,
 <b>Centred</b>, <b>Scaled to fit</b> and <b>Tiled</b>; they take a click
@@ -80,6 +81,19 @@ through 32, 40, 48, 64, 96 and 128 px, and the ends stop rather than wrap.
 Every choice reaches the Desktop and is written at once, and
 <b>Defaults</b> and <b>Revert</b> work as they do in the Deskbar
 window.</p>
+
+<p><b>Reduce motion</b> turns off the outline that grows from an
+opened icon, in TikuDesktop and in TikuTracker, and TikuDesktop's menu
+fades and its window opening, closing and minimizing animations. Hover
+highlights and pressed-button feedback remain visible. The setting applies immediately and is saved in
+<code>~/.config/TrackerSettings</code> as <code>ReduceMotion on</code>.
+Defaults turns motion back on; Revert restores the setting from when this
+preferences window opened.</p>
+
+<p>With motion enabled, opening an icon shows a short expanding outline
+(170 milliseconds). Menus fade in over 100 milliseconds, but accept clicks
+immediately. Selecting an icon without opening it does not show the
+outline.</p>
 
 <h2 id="fonts">Fonts</h2>
 

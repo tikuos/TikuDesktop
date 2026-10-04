@@ -99,6 +99,18 @@ main(void)
     check(!tiku_trk_deskprefs_defaultable(&prefs) &&
           !tiku_trk_deskprefs_revertable(&prefs), "DEV-009",
           "so neither Defaults nor Revert has anything to do");
+    check(!prefs.value.reduce_motion, "MOTION", "motion is enabled by default");
+    prefs.value.reduce_motion = 1;
+    check(tiku_trk_deskprefs_defaultable(&prefs) &&
+          tiku_trk_deskprefs_revertable(&prefs), "MOTION",
+          "Reduce motion participates in Defaults and Revert");
+    tiku_trk_deskprefs_mark_opened(&prefs);
+    tiku_trk_deskprefs_defaults(&prefs);
+    check(!prefs.value.reduce_motion, "MOTION", "Defaults enables motion");
+    tiku_trk_deskprefs_revert(&prefs);
+    check(prefs.value.reduce_motion, "MOTION",
+          "Revert restores reduced motion");
+    tiku_trk_deskprefs_init(&prefs);
 
     tiku_trk_deskprefs_set_picture(&prefs, "/tmp/whatever.bmp");
     check(tiku_trk_deskprefs_defaultable(&prefs) &&

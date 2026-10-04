@@ -14,6 +14,7 @@
 #include "tiku_window.h"
 #include "tiku_trk_deskprefs.h"
 #include "tiku_trk_desktop_view.h"
+#include "tiku_trk_prefs.h"
 
 #define TIKU_TRK_DESK_PREFS_W 430
 
@@ -24,6 +25,8 @@ typedef struct {
     tiku_window_t           *window;
     tiku_trk_desktop_view_t      *desktop_view;
     tiku_store_t             *store;
+    tiku_trk_prefs_t         *shared_prefs;   /* where ReduceMotion lives */
+    char                     shared_prefs_path[TIKU_PATH_MAX]; /* its file */
     int                           screen_w;
     int                           screen_h;
     int                          *dirty;
@@ -40,6 +43,13 @@ void tiku_trk_desktop_prefs_window_init(
     tiku_trk_desktop_prefs_window_t *controller,
     tiku_workspace_t *workspace, tiku_trk_desktop_view_t *desktop_view,
     tiku_store_t *store, int screen_w, int screen_h, int *dirty);
+/**
+ * @brief Give the window the settings Reduce motion lives in and the file
+ *        they are saved to; until then its tick box is greyed.
+ */
+void tiku_trk_desktop_prefs_window_bind_settings(
+    tiku_trk_desktop_prefs_window_t *controller,
+    tiku_trk_prefs_t *prefs, const char *path);
 /** @brief Close the window if open; nothing else is held. */
 void tiku_trk_desktop_prefs_window_destroy(
     tiku_trk_desktop_prefs_window_t *controller);

@@ -88,7 +88,14 @@ int tiku_trk_prefs_control_enabled(const tiku_trk_prefs_t *p,
 /** @brief Read the settings file; missing is not an error. */
 int tiku_trk_prefs_load(tiku_trk_prefs_t *p, const char *path);
 
-/** @brief Write it, booleans as on/off and colours as 0x%08x (TS-045). */
+/**
+ * @brief Write it, booleans as on/off and colours as 0x%08x (TS-045).
+ *
+ * The file is replaced whole, so a reader sees the old settings or the
+ * new ones and never a part of either.
+ *
+ * @return 0, or -1 on failure.
+ */
 int tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path);
 
 /** @brief Take the current values as the revert baseline (TS-059). */

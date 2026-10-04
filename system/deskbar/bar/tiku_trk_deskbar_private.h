@@ -23,6 +23,7 @@
 #include "tiku_iconpaint.h"
 #include "tiku_strings.h"
 #include "tiku_trk_input.h"
+#include "tiku_motion.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,6 +103,14 @@ struct tiku_trk_deskbar {
     int                  scroll;      /* first application row shown    */
     int                  overflow;    /* the list ran past the tray     */
     int                  menu_open;     /* the leaf menu is showing     */
+    int64_t              motion_now;    /* frame time, us; 0: no fades  */
+    int                  menu_seen;     /* the menu's fade has started  */
+    int                  sub_seen;      /* leaf row whose submenu fade
+                                         * has started, or -1           */
+    tiku_motion_t        menu_motion;   /* the leaf menu's fade         */
+    tiku_motion_t        sub_motion;    /* the submenu's fade           */
+    tiku_rect_t          motion_damage; /* where a fade still owes a
+                                         * frame, or empty              */
     int                  calendar_open; /* the calendar popup is showing */
     int                  clock_menu_open;   /* the clock's menu is showing */
     int                  calendar_year;     /* the month the calendar    */

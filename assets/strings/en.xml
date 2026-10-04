@@ -106,6 +106,7 @@
   <string name="prefs.desktop.mode.centred">Centred</string>
   <string name="prefs.desktop.mode.scaled">Scaled to fit</string>
   <string name="prefs.desktop.mode.tiled">Tiled</string>
+  <string name="prefs.desktop.reduce_motion">Reduce motion</string>
 
   <!-- Help window. -->
   <string name="title.help">Help</string>

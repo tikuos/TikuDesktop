@@ -11,12 +11,107 @@
 /** @brief Main's file is not linked; nothing here has folders to sync. */
 void sync_folder_preferences(desktop_t *app) { (void)app; }
 
+/** @brief How many pixels of @p at on @p s differ from @p before. */
+static int changed_pixels(const tiku_surface_t *s,
+                          const tiku_surface_t *before, tiku_rect_t at)
+{
+    int n = 0;
+    for (int y = 0; y < at.h; y++)
+        for (int x = 0; x < at.w; x++)
+            n += tiku_peek(s, at.x + x, at.y + y) !=
+                 tiku_peek(before, x, y);
+    return n;
+}
+
+/** @brief Press and release the first button at @p x, @p y. */
+static void preference_click(tiku_window_t *window, int x, int y)
+{
+    tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN,
+                       .button = 1, .x = x, .y = y};
+    assert(tiku_window_send(window, &ev));
+    ev.type = TIKU_EVENT_POINTER_UP;
+    assert(tiku_window_send(window, &ev));
+}
+
+/** @brief Reduce motion: its tick box, Defaults, Revert and the file. */
+static void motion_preference(desktop_t *app)
+{
+    tiku_trk_desktop_prefs_window_t controller;
+    char dir[] = "/tmp/tiku-motion-prefs-XXXXXX", path[256];
+    assert(mkdtemp(dir));
+    snprintf(path, sizeof path, "%s/TrackerSettings", dir);
+    tiku_trk_prefs_set(prefs_model(app), "ReduceMotion", 0);
+    tiku_trk_desktop_prefs_window_init(&controller, app->desk, NULL, NULL,
+                                      1000, 680, &app->dirty);
+    tiku_trk_desktop_prefs_window_bind_settings(&controller,
+                                                prefs_model(app), path);
+    /* Don't scan the user's Desktop or wallpapers in this unit fixture. */
+    snprintf(controller.node, sizeof controller.node, "%s", dir);
+    snprintf(controller.pictures_dir, sizeof controller.pictures_dir,
+             "%s", dir);
+    for (int size = 12; size <= 16; size += 4) {
+        tiku_font_set_size(size);
+        tiku_trk_desktop_prefs_window_open(&controller);
+        assert(controller.window);
+        tiku_rect_t content = tiku_window_content(controller.window);
+        tiku_rect_t frame = controller.window->frame;
+        int button_y = frame.h - tiku_window_tab_h() -
+            TIKU_WINDOW_BORDER - tiku_ui_button_h() - 16;
+        int motion_y = button_y - 18 - tiku_ui_row_h();
+        int icon_y = motion_y - 12 - tiku_ui_button_h();
+        int plus_x = content.x + content.w - 16 - tiku_ui_step_w() / 2;
+        assert(frame.y >= 0 && frame.y + frame.h <= 680);
+        assert(motion_y > 0 && motion_y + tiku_ui_row_h() < button_y);
+        assert(!controller.model.value.reduce_motion);
+        preference_click(controller.window, content.x + 24,
+                         content.y + motion_y + 8);
+        assert(controller.model.value.reduce_motion &&
+               tiku_trk_prefs_get(prefs_model(app), "ReduceMotion"));
+        tiku_trk_prefs_t saved;
+        tiku_trk_prefs_init(&saved);
+        assert(!tiku_trk_prefs_load(&saved, path));
+        assert(tiku_trk_prefs_get(&saved, "ReduceMotion"));
+        tiku_trk_prefs_free(&saved);
+        /* A click that leaves Reduce motion as it was writes no settings:
+         * the icon size's plus steps the size and nothing else. */
+        assert(!unlink(path));
+        preference_click(controller.window, plus_x,
+                         content.y + icon_y + tiku_ui_button_h() / 2);
+        assert(controller.model.value.icon_size > 32);
+        assert(access(path, F_OK) != 0);
+        /* Revert is the second button; actions happen on release. */
+        int revert_x = content.x + 16 +
+            tiku_ui_button_w(tiku_str("button.defaults"), 112) + 10;
+        preference_click(controller.window, revert_x + 12,
+                         content.y + button_y + 8);
+        assert(!tiku_trk_prefs_get(prefs_model(app), "ReduceMotion"));
+        assert(!access(path, F_OK));
+        preference_click(controller.window, content.x + 24,
+                         content.y + motion_y + 8);
+        tiku_trk_desktop_prefs_window_close(&controller);
+        tiku_trk_desktop_prefs_window_open(&controller);
+        /* Opening again reads the setting back. */
+        assert(controller.model.value.reduce_motion);
+        content = tiku_window_content(controller.window);
+        preference_click(controller.window, content.x + 24,
+                         content.y + button_y + 8);
+        assert(!controller.model.value.reduce_motion &&
+               !tiku_trk_prefs_get(prefs_model(app), "ReduceMotion"));
+        tiku_trk_desktop_prefs_window_close(&controller);
+    }
+    tiku_font_set_size(12);
+    tiku_trk_desktop_prefs_window_destroy(&controller);
+    assert(!unlink(path));
+    assert(!rmdir(dir));
+}
+
 int main(void)
 {
     desktop_t *app = calloc(1, sizeof *app); assert(app);
     app->surf = tiku_surface_new(640, 480, TIKU_C_PANEL); assert(app->surf);
     app->desk = tiku_workspace_new(app->surf); assert(app->desk);
     app->deskbar = tiku_trk_deskbar_new(NULL); assert(app->deskbar);
+    tiku_trk_prefs_init(prefs_model(app));
     /* The bar answers through the responder list, as on the real desk. */
     desktop_responders_attach(app);
     app->remote.fd = -1;
@@ -68,6 +163,10 @@ int main(void)
         assert(damage.w > 0 && damage.w < app->surf->w / 2);
         assert(damage.x <= menu.x && damage.x + damage.w >= menu.x + menu.w);
         draw_all(app);
+        assert(app->dirty == 2); /* the menu's entrance owns a bounded frame */
+        assert(app->damage.w < app->surf->w);
+        app->deskbar->menu_motion.since -= TIKU_MOTION_MENU_US;
+        draw_all(app);
         assert(!app->dirty);
         /* A driver hears the row by its label, and hears nothing once
          * the pointer has left; the other chrome nouns answer too. */
@@ -85,6 +184,68 @@ int main(void)
         assert(conduct_text(app, "minimized", said, sizeof said) &&
                said[0] == 0);
     }
+    {
+        /* The outline is drawn while it runs; its end leaves the desk as
+         * it was and asks for no further frame. */
+        tiku_rect_t icon = {100, 100, 32, 32};
+        tiku_rect_t reach = tiku_motion_outline_bounds(icon);
+        tiku_surface_t *before;
+
+        tiku_trk_deskbar_close_menu(app->deskbar);
+        app->dirty = 1; draw_all(app);
+        before = tiku_grab(app->surf, reach); assert(before);
+        app->activation_rect = icon;
+        tiku_motion_start(&app->activation_motion, tiku_trk_now(),
+                          TIKU_MOTION_ICON_US);
+        desktop_damage(app, reach);
+        draw_all(app);
+        assert(app->activation_motion.active && app->dirty == 2);
+        assert(app->damage.w < 100 && app->damage.h < 100);
+        assert(changed_pixels(app->surf, before, reach) > 0);
+        app->activation_motion.since -= TIKU_MOTION_ICON_US;
+        draw_all(app);
+        assert(!app->activation_motion.active && !app->dirty);
+        assert(changed_pixels(app->surf, before, reach) == 0);
+        tiku_surface_free(before);
+
+        tiku_motion_start(&app->activation_motion, tiku_trk_now(),
+                          TIKU_MOTION_ICON_US);
+        tiku_trk_deskbar_open_menu(app->deskbar);
+        app->dirty = 1; draw_all(app);
+        assert(app->dirty);
+        tiku_trk_prefs_set(prefs_model(app), "ReduceMotion", 1);
+        app->dirty = 1; draw_all(app);
+        assert(!app->activation_motion.active && !app->dirty);
+        assert(!tiku_workspace_animating(app->desk));
+        assert(!tiku_trk_deskbar_motion_damage(app->deskbar).w);
+        w = tiku_workspace_open(app->desk, "Still",
+                                (tiku_rect_t){30, 30, 200, 160},
+                                NULL, NULL, NULL);
+        assert(w);
+        app->dirty = 1; draw_all(app);
+        assert(!tiku_workspace_animating(app->desk) && !app->dirty);
+        tiku_workspace_close(app->desk, w);
+        app->dirty = 1; draw_all(app);
+        assert(!tiku_workspace_animating(app->desk) && !app->dirty);
+    }
+    {
+        /* Ordinary popups share the same bounded fade and preference. */
+        tiku_menu_t menu = {0};
+        tiku_rect_t frame = {80, 70, 180, 48};
+        assert(tiku_menu_add(&menu, "Open", 1, 0, 0, 1) >= 0);
+        tiku_trk_prefs_set(prefs_model(app), "ReduceMotion", 0);
+        tiku_clip_damage(app->surf, NULL);
+        app->dirty = 0;
+        draw_popup_menu(app, &menu, frame, tiku_trk_now());
+        assert(app->dirty == 2 && app->damage.w < app->surf->w);
+        app->dirty = 0;
+        draw_popup_menu(app, &menu, frame,
+                        tiku_trk_now() - TIKU_MOTION_MENU_US);
+        assert(!app->dirty);
+        tiku_trk_prefs_set(prefs_model(app), "ReduceMotion", 1);
+        draw_popup_menu(app, &menu, frame, tiku_trk_now());
+        assert(!app->dirty);
+    }
     /* The documents TikuTracker hands over, by name in either case. */
     assert(desktop_remote_document("/tmp/notes.txt") &&
            desktop_remote_document("/tmp/README.md") &&
@@ -96,6 +257,8 @@ int main(void)
     assert(!desktop_remote_document("/tmp/run.sh") &&
            !desktop_remote_document("/tmp/markdown") &&
            !desktop_remote_document(NULL));
+    motion_preference(app);
+    tiku_trk_prefs_free(prefs_model(app));
     tiku_trk_deskbar_free(app->deskbar);
     tiku_workspace_free(app->desk); tiku_surface_free(app->surf); free(app);
     puts("PASS: a frame in the middle of an animation asks for the next one, "

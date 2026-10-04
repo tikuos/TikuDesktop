@@ -199,7 +199,10 @@ draw_all(desktop_t *app)
     /* The clock for what moves on its own -- a window rising as it
      * opens -- and none for a run with nobody to show it to, whose
      * frames must be still for a script to read. */
-    tiku_workspace_set_now(app->desk, (app->host != NULL) ? started : 0);
+    int motion = app->host != NULL &&
+        !tiku_trk_prefs_get(prefs_model(app), "ReduceMotion");
+    tiku_workspace_set_now(app->desk, motion ? started : 0);
+    tiku_trk_deskbar_set_now(app->deskbar, motion ? started : 0);
     if (!tiku_trk_deskbar_raised(app->deskbar)) {
         /* Under the windows: with auto-raise on, a window may cover the
          * bar until the user reaches for it.  Draw order IS the z-order
@@ -215,6 +218,8 @@ draw_all(desktop_t *app)
          * full frame here is the whole screen for every step of a ghost. */
         desktop_damage(app, tiku_workspace_motion(app->desk));
     }
+    /* A Deskbar menu still fading in asks for its own rectangle again. */
+    desktop_damage(app, tiku_trk_deskbar_motion_damage(app->deskbar));
     tiku_trk_responders_paint(&app->responders, app->surf);
     desktop_draw_strip_drag(app);
     desktop_draw_drag(app);
@@ -407,11 +412,25 @@ desktop_draw_splash(desktop_t *app)
 }
 
 /**
- * @brief the query drag and the navigation menus
+ * @brief the opened icon's outline, the query drag and the navigation menus
  */
 void
 desktop_draw_overlays(desktop_t *app)
 {
+    if (app->activation_motion.active) {
+        /* Turning Reduce motion on while it runs passes a zero time, which
+         * retires it on this frame. */
+        int enabled = app->host != NULL &&
+                      !tiku_trk_prefs_get(prefs_model(app), "ReduceMotion");
+        float progress = tiku_motion_progress(&app->activation_motion,
+                                              enabled ? tiku_trk_now() : 0);
+
+        tiku_motion_outline(app->surf, app->activation_rect, progress);
+        if (app->activation_motion.active) {
+            desktop_damage(app,
+                tiku_motion_outline_bounds(app->activation_rect));
+        }
+    }
     if (app->qdrag_on) {
         /* The query icon in flight (Q-034), riding under the pointer. */
         (void)tiku_icon_paint(app->surf, "query", app->ptr_x - 16,
@@ -427,43 +446,36 @@ desktop_draw_overlays(desktop_t *app)
     tiku_trk_status_overlay_draw(&app->status_overlay);
 }
 
-#define MENU_FADE_US 90000
-#define MENU_SLIDE_PX 4
+#define MENU_FADE_US TIKU_MOTION_MENU_US
 
 /**
- * @brief One menu, fading in and settling down over its first moment.
+ * @brief One menu, fading in where it stands, so its rows take clicks
+ *        from the first frame.
  *
- * The desk under it is taken first and blended back over the drawn
- * menu at one minus the time, which is a fade with the painter none
- * the wiser; the card is drawn a few pixels high and comes down.  With
- * no window to show it to, a menu is simply there, for a script.
+ * With no window to show it to, or with Reduce motion on, the menu is
+ * drawn as it ends.
  */
 static void
 draw_popup_menu(desktop_t *app, tiku_menu_t *menu, tiku_rect_t frame,
                 int64_t since)
 {
     int64_t age = tiku_trk_now() - since;
-    tiku_rect_t reach = { frame.x - 12, frame.y - 12 - MENU_SLIDE_PX,
-                          frame.w + 24, frame.h + 24 + MENU_SLIDE_PX };
+    tiku_rect_t reach = { frame.x - 12, frame.y - 12,
+                          frame.w + 24, frame.h + 24 };
+    tiku_rect_t captured = {0};
     tiku_surface_t *under;
-    float t, u;
+    float t;
 
-    if (app->host == NULL || age < 0 || age >= MENU_FADE_US) {
+    if (app->host == NULL || age < 0 || age >= MENU_FADE_US ||
+        tiku_trk_prefs_get(prefs_model(app), "ReduceMotion")) {
         tiku_menu_draw(menu, app->surf, frame);
         return;
     }
     t = (float)age / (float)MENU_FADE_US;
-    u = 1.0f - t;
-    t = 1.0f - u * u * u;
-    under = tiku_grab(app->surf, reach);
-    frame.y -= (int)((1.0f - t) * MENU_SLIDE_PX + 0.5f);
+    under = tiku_motion_fade_begin(app->surf, reach, t, &captured);
     tiku_menu_draw(menu, app->surf, frame);
-    if (under != NULL) {
-        tiku_blend(app->surf, reach.x < 0 ? 0 : reach.x,
-                   reach.y < 0 ? 0 : reach.y, under, 1.0f - t);
-        tiku_surface_free(under);
-    }
-    desktop_damage_all(app);             /* the next frame moves it again */
+    tiku_motion_fade_end(app->surf, under, captured, t);
+    desktop_damage(app, reach);
 }
 
 /**
@@ -709,5 +721,4 @@ desktop_draw_strip_drag(desktop_t *app)
         }
     }
 }
-
 

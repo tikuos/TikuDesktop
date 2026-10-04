@@ -1712,6 +1712,12 @@ main(void)
                       x == px && y == py && w == 32 && h == 32,
                       "PVS-013",
                       "in icon mode it is the clicked pose's picture cell");
+                tiku_trk_poseview_set_icon_size(av, 96);
+                tiku_trk_poseview_pose_location(av, p, &px, &py);
+                check(tiku_trk_poseview_open_anim_rect(av, 0, 20, &x, &y,
+                        &w, &h) && x == px && y == py && w == 96 && h == 96,
+                      "PVS-013",
+                      "activation outline follows the actual icon size");
             }
             check(tiku_trk_poseview_open_anim_rect(av, 999, 20, &x, &y, &w,
                                                    &h) == 0,

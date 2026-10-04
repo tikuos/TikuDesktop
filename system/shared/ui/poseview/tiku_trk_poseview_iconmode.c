@@ -299,7 +299,7 @@ tiku_trk_poseview_open_anim_rect(const tiku_trk_poseview_t *v, int row,
     }
     p = v->filtering ? &v->poses[v->filtered[row]] : &v->poses[row];
     if (v->mode != TIKU_TRK_MODE_LIST) {
-        int cell = (v->mode == TIKU_TRK_MODE_MINI) ? 16 : 32;
+        int cell = (v->mode == TIKU_TRK_MODE_MINI) ? 16 : v->icon_size;
         int px = 0;
         int py = 0;
 

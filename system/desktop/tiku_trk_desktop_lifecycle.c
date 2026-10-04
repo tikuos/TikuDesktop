@@ -702,6 +702,8 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         tiku_trk_prefs_window_init(&app->prefs_window, app->desk,
             DESK_W, DESK_H, path, &app->dirty,
             &alert_model(app)->open);
+        tiku_trk_desktop_prefs_window_bind_settings(&app->desktop_prefs_window,
+                                                    prefs_model(app), path);
         tiku_trk_sounds_window_init(&app->sounds_window, app->desk,
             prefs_model(app), path, DESK_W, DESK_H, &app->dirty,
             sound_choose, app);

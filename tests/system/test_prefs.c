@@ -10,6 +10,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "tiku_trk_prefs.h"
 
@@ -56,6 +58,10 @@ main(void)
           "and a name nobody registered is not a setting");
 
     printf("\nthe file (TS-045, TS-062)\n");
+    check(tiku_trk_prefs_find(&p, "ReduceMotion") != NULL &&
+          !tiku_trk_prefs_get(&p, "ReduceMotion"), "MOTION",
+          "Reduce motion is registered, defaulting to off");
+    tiku_trk_prefs_set(&p, "ReduceMotion", 1);
     tiku_trk_prefs_set(&p, "HideDotFiles", 1);
     tiku_trk_prefs_set(&p, "ShowNavigator", 1);
     tiku_trk_prefs_set(&p, "SingleWindowBrowse", 0);
@@ -79,6 +85,54 @@ main(void)
         check(strstr(buf, "UsedSpaceColor 0x11223344") != NULL, "TS-045",
               "and colours as 0x%08x");
     }
+    {   /* Replaced whole, never rewritten in place: a Tracker that opened
+         * the old file reads all of it, and the name then holds the new. */
+        FILE *old = fopen(path, "r");
+        struct stat was, now;
+        char buf[4096];
+        size_t n;
+
+        check(old != NULL && stat(path, &was) == 0, "TS-045",
+              "the saved file is there to be read");
+        tiku_trk_prefs_set(&p, "HideDotFiles", 0);
+        check(tiku_trk_prefs_save(&p, path) == 0 &&
+              stat(path, &now) == 0 && now.st_ino != was.st_ino,
+              "TS-045", "a save puts a new file in place of the old one");
+        n = (old != NULL) ? fread(buf, 1, sizeof buf - 1u, old) : 0u;
+        buf[n] = '\0';
+        check(strstr(buf, "HideDotFiles on") != NULL, "TS-045",
+              "while a reader of the old one still has all of it");
+        if (old != NULL) { (void)fclose(old); }
+        tiku_trk_prefs_set(&p, "HideDotFiles", 1);
+        (void)tiku_trk_prefs_save(&p, path);
+    }
+    {   /* A settings file kept as a link stays a link to it. */
+        const char *target = "/tmp/trk_prefs_target";
+        const char *link = "/tmp/trk_prefs_link";
+        struct stat st;
+        FILE *f;
+        char buf[4096];
+        size_t n = 0u;
+
+        (void)unlink(link);
+        (void)unlink(target);
+        f = fopen(target, "w");
+        if (f != NULL) { (void)fclose(f); }
+        check(f != NULL && symlink(target, link) == 0 &&
+              tiku_trk_prefs_save(&p, link) == 0 &&
+              lstat(link, &st) == 0 && S_ISLNK(st.st_mode), "TS-045",
+              "saving through a link leaves the link in place");
+        f = fopen(target, "r");
+        if (f != NULL) {
+            n = fread(buf, 1, sizeof buf - 1u, f);
+            (void)fclose(f);
+        }
+        buf[n] = '\0';
+        check(strstr(buf, "HideDotFiles on") != NULL, "TS-045",
+              "and writes the file it points to");
+        (void)unlink(link);
+        (void)unlink(target);
+    }
     {   /* A setting this build does not know must survive a round trip:
          * an older or newer Tracker's file is not ours to empty. */
         FILE *f = fopen(path, "a");
@@ -92,6 +146,8 @@ main(void)
         check(tiku_trk_prefs_load(&p, path) == 0, "TS-045", "it loads back");
         check(tiku_trk_prefs_get(&p, "HideDotFiles") == 1, "TS-051",
               "with the values it was given");
+        check(tiku_trk_prefs_get(&p, "ReduceMotion") == 1, "MOTION",
+              "Reduce motion survives saving and reloading");
         check(tiku_trk_prefs_get(&p, "UsedSpaceColor") ==
               (int32_t)0x11223344, "TS-054", "colours included");
         check(p.nunknown == 1, "TS-062",

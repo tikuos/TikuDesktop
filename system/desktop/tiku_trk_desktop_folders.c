@@ -267,6 +267,33 @@ row_opened(desktop_t *app, folder_t *fl, tiku_window_t *w, int row,
     if (p == NULL) {
         return;
     }
+    if (app->host != NULL &&
+        !tiku_trk_prefs_get(prefs_model(app), "ReduceMotion")) {
+        tiku_rect_t from, content = tiku_trk_folder_window_content(fl);
+        int ox = 0, oy = 0;
+
+        if (tiku_trk_poseview_open_anim_rect(fl->view, row, app->row_h,
+                &from.x, &from.y, &from.w, &from.h)) {
+            tiku_trk_poseview_origin(fl->view, &ox, &oy);
+            from.x += content.x;
+            from.y += content.y;
+            if (tiku_trk_poseview_mode(fl->view) != TIKU_TRK_MODE_LIST) {
+                from.x += 2 - ox;
+                from.y += 2 - oy;
+            } else {
+                from.x -= tiku_trk_poseview_hscroll(fl->view);
+            }
+            /* An outline still running is replaced, and its ring erased. */
+            if (app->activation_motion.active) {
+                desktop_damage(app,
+                    tiku_motion_outline_bounds(app->activation_rect));
+            }
+            app->activation_rect = from;
+            tiku_motion_start(&app->activation_motion, tiku_trk_now(),
+                              TIKU_MOTION_ICON_US);
+            desktop_damage(app, tiku_motion_outline_bounds(from));
+        }
+    }
     if (tiku_trk_folder_window_column_at(fl, ev->x) == TIKU_TRK_COL_PATH ||
         (!tiku_model_is_container(&p->model) &&
          tiku_trk_poseview_is_query(fl->view))) {

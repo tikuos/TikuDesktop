@@ -32,6 +32,9 @@ typedef struct {
     tiku_trk_bg_t bg;
     int           have_bg;
     int           icon_size;
+    /* Reduce motion: kept in the settings file, not the Desktop's record,
+     * and here so Defaults and Revert cover it. */
+    int           reduce_motion;
 } tiku_trk_deskprefs_values_t;
 
 typedef struct {
@@ -42,7 +45,8 @@ typedef struct {
 /** @brief The size at rung @p i, or 0 past the end. */
 int tiku_trk_deskprefs_icon_step(int i);
 
-/** @brief What an undressed Desktop is: no picture, scaled, 32 px icons. */
+/** @brief What an undressed Desktop is: no picture, scaled, 32 px icons,
+ *         and motion on. */
 void tiku_trk_deskprefs_default(tiku_trk_deskprefs_values_t *values);
 /** @brief Start at the defaults, and take those as the opened values. */
 void tiku_trk_deskprefs_init(tiku_trk_deskprefs_t *prefs);

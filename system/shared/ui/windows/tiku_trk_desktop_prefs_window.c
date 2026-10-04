@@ -38,7 +38,21 @@ static int list_y(void)  { return tiku_font_bold()->height + 27; }
 static int mode_y(void)  { return list_y() + LIST_ROWS * row_h() +
                                   row_h() + 12; }
 static int icon_y(void)  { return mode_y() + 4 * row_h() + row_h() + 4; }
-static int button_y(void){ return icon_y() + tiku_ui_button_h() + 18; }
+static int motion_y(void){ return icon_y() + tiku_ui_button_h() + 12; }
+static int button_y(void){ return motion_y() + row_h() + 18; }
+
+/** @brief The Reduce motion tick box's row, in @p content's space. */
+static tiku_rect_t
+motion_rect(tiku_rect_t content)
+{
+    tiku_rect_t r;
+
+    r.x = content.x + PAD;
+    r.y = content.y + motion_y();
+    r.w = content.w - 2 * PAD;
+    r.h = row_h();
+    return r;
+}
 
 /** @brief The tick-box beside a laying mode. */
 static int box_side(void)
@@ -195,6 +209,18 @@ apply(tiku_trk_desktop_prefs_window_t *controller)
                                   controller->node);
 
     (void)tiku_store_flush(controller->store);
+    /* Only a change to Reduce motion writes the settings file, which every
+     * running Tracker then reads again. */
+    if (controller->shared_prefs != NULL &&
+        (tiku_trk_prefs_get(controller->shared_prefs, "ReduceMotion") != 0) !=
+            (controller->model.value.reduce_motion != 0)) {
+        tiku_trk_prefs_set(controller->shared_prefs, "ReduceMotion",
+                           controller->model.value.reduce_motion != 0);
+        if (controller->shared_prefs_path[0] != '\0') {
+            (void)tiku_trk_prefs_save(controller->shared_prefs,
+                                      controller->shared_prefs_path);
+        }
+    }
     if (desk != NULL && desk->view != NULL) {
         tiku_trk_poseview_set_icon_size(desk->view,
                                         controller->model.value.icon_size);
@@ -318,6 +344,11 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                                       TIKU_C_TEXT);
     }
 
+    tiku_ui_checkbox(surface, motion_rect(content),
+        tiku_str("prefs.desktop.reduce_motion"),
+        (v->reduce_motion ? TIKU_S_ON : 0u) |
+        (controller->shared_prefs ? 0u : TIKU_S_DISABLED));
+
     tiku_ui_button(surface, defaults_rect(content),
                         tiku_str("button.defaults"),
                         (tiku_trk_deskprefs_defaultable(&controller->model)
@@ -388,6 +419,13 @@ event(tiku_window_t *window, const tiku_event_t *event,
         !inside(content, event->x, event->y)) {
         return 0;
     }
+    if (event->button == 1u && controller->shared_prefs != NULL &&
+        inside(motion_rect(content), event->x, event->y)) {
+        controller->model.value.reduce_motion =
+            !controller->model.value.reduce_motion;
+        apply(controller);
+        return 1;
+    }
     if (y >= list_y() && y < list_y() + LIST_ROWS * row_h() &&
         x >= PAD && x < content.w - PAD) {
         int row = (y - list_y() - 1) / row_h();
@@ -451,6 +489,17 @@ tiku_trk_desktop_prefs_window_init(
 }
 
 void
+tiku_trk_desktop_prefs_window_bind_settings(
+    tiku_trk_desktop_prefs_window_t *controller,
+    tiku_trk_prefs_t *prefs, const char *path)
+{
+    controller->shared_prefs = prefs;
+    snprintf(controller->shared_prefs_path,
+             sizeof controller->shared_prefs_path, "%s",
+             (path != NULL) ? path : "");
+}
+
+void
 tiku_trk_desktop_prefs_window_close(
     tiku_trk_desktop_prefs_window_t *controller)
 {
@@ -490,6 +539,8 @@ tiku_trk_desktop_prefs_window_open(
         controller->node,
         (desk != NULL && desk->view != NULL)
             ? tiku_trk_poseview_icon_size(desk->view) : 0);
+    controller->model.value.reduce_motion =
+        tiku_trk_prefs_get(controller->shared_prefs, "ReduceMotion") != 0;
     dirs[0] = controller->node;
     dirs[1] = controller->pictures_dir;
     (void)tiku_trk_deskprefs_pictures(&controller->pictures, dirs, 2);
