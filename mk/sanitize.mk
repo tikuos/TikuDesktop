@@ -73,7 +73,7 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_circuit_faults test_circuit_drill \
                   test_circuit_gerber test_circuit_stack \
                   test_circuit_job test_circuit_eagle \
-                  test_circuit_gerber_extended
+                  test_circuit_gerber_extended test_circuit_viewer
 # The timing suite is left out: it times large fixtures, which the
 # sanitizers slow many times over.
 SAN_TESTS += $(SAN_LEAK_TESTS)
@@ -86,7 +86,8 @@ SAN_KIT_TEST_OBJS := $(patsubst %,$(SAN)/tests/kits/%.o,\
                          $(filter-out $(SAN_APP_TESTS) $(SAN_READER_TESTS) \
                                       test_reader_allocations \
                                       test_editor_document \
-                                      test_ide_workflow test_ide_page,$(SAN_TESTS)))
+                                      test_ide_workflow test_ide_page \
+                                      test_circuit_viewer,$(SAN_TESTS)))
 $(SAN_KIT_TEST_OBJS):
 
 # These suites include their viewer sources directly. Rebuild when an
@@ -107,8 +108,14 @@ $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
 	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
-# The fault suites take their own copies of the rasteriser and the
-# importers, built for their failing allocator as in tests.mk.
+# TikuCircuit's suite links the app's sources, instrumented too; the
+# fault suites take their own copies of the rasteriser and the importers,
+# built for their failing allocator as in tests.mk.
+SAN_CIRCUIT_OBJS := $(patsubst %.c,$(SAN)/%.o,$(CIRCUIT_SRC))
+$(SAN)/test_circuit_viewer: $(SAN)/tests/apps/test_circuit_viewer.o \
+        $(SAN_CIRCUIT_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_CIRCUIT_OBJS) $(SAN_OBJS) \
+	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 $(SAN)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
         kits/translation/tiku_vector_raster.h
 	@mkdir -p $(dir $@)

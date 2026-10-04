@@ -63,6 +63,9 @@ test_help_reader_SRCS := $(READER_CORE_SRC)
 test_document_reader_SRCS := $(READER_CORE_SRC)
 test_marker_SRCS := $(READER_CORE_SRC) $(MARKER_SRC)
 test_marker_LDLIBS := $(X11_LIBS) -lm
+test_circuit_viewer_SRCS := $(CIRCUIT_SRC)
+test_circuit_viewer_LDLIBS := $(X11_LIBS) -lm
+.SECONDARY: $(call objs,$(CIRCUIT_SRC))
 # The fault suites link their own copies of the vector rasteriser and of
 # the circuit importers, built to take the suites' failing allocator.
 $(OBJ)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
@@ -107,6 +110,9 @@ test_image_association_SRCS := $(COMMON) $(POSEVIEW)
 test_image_association_LDLIBS := $(X11_LIBS) -lm
 test_pdf_association_SRCS := $(COMMON) $(POSEVIEW)
 test_pdf_association_LDLIBS := $(X11_LIBS) -lm
+test_circuit_association_SRCS := $(COMMON) $(POSEVIEW) \
+    system/shared/ui/commands/tiku_trk_launch_controller.c
+test_circuit_association_LDLIBS := $(X11_LIBS) -lm
 test_archive_association_SRCS := $(COMMON) $(POSEVIEW)
 test_archive_association_LDLIBS := $(X11_LIBS) -lm
 test_document_association_SRCS := $(COMMON) $(POSEVIEW)
