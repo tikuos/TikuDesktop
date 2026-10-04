@@ -59,6 +59,27 @@ tiku_trk_addons_rebind(tiku_trk_addons_t *a, const char *settings)
     return changed;
 }
 
+/** @brief Whether @p type is one of the comma-separated types in @p list. */
+static int
+listed(const char *list, const char *type)
+{
+    size_t n = strlen(type);
+
+    while (*list != '\0') {
+        const char *comma = strchr(list, ',');
+        size_t len = (comma != NULL) ? (size_t)(comma - list) : strlen(list);
+
+        if (len == n && strncmp(list, type, n) == 0) {
+            return 1;
+        }
+        list += len;
+        if (*list == ',') {
+            list++;
+        }
+    }
+    return 0;
+}
+
 int
 tiku_trk_addons_accepts(const tiku_trk_addon_t *a, const char *const *types,
                         int ntypes)
@@ -67,7 +88,7 @@ tiku_trk_addons_accepts(const tiku_trk_addon_t *a, const char *const *types,
     if (a == NULL) return 0;
     if (a->generic) return 1;
     for (i = 0; i < ntypes; i++) {
-        if (types[i] != NULL && strcmp(a->type, types[i]) == 0) return 1;
+        if (types[i] != NULL && listed(a->type, types[i])) return 1;
     }
     return 0;
 }

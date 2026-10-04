@@ -64,10 +64,14 @@ static void browser_image_free(void *ctx)
     free(ctx);
 }
 
-/** @brief Files use desktop associations; no device text reads occur. */
+/** @brief Files use desktop associations; no device text reads occur.
+ * The documents are the ones TikuDesktop's desktop_remote_document()
+ * accepts by name: text, Markdown, HTML, BASIC and projects. */
 int browser_open_image(app_t *app, const tiku_model_t *model)
 {
     int document = !strcmp(model->type, "text/plain") ||
+        !strcmp(model->type, "text/markdown") ||
+        !strcmp(model->type, "text/html") ||
         !strcmp(model->type, "text/x-basic") ||
         !strcmp(model->type, "application/x-tiku-project");
     if (!document && strcmp(model->type, "image/png") &&

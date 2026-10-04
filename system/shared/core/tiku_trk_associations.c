@@ -10,7 +10,9 @@
 static const char *association_label(const char *type)
 {
     static const struct { const char *type, *label; } names[] = {
-        {"text/plain", "Plain text (.txt, .md)"},
+        {"text/plain", "Plain text (.txt)"},
+        {"text/markdown", "Markdown document (.md, .markdown)"},
+        {"text/html", "HTML document (.html, .htm)"},
         {"text/x-basic", "BASIC source (.bas)"},
         {"application/x-tiku-project", "Tiku project (.tiku)"},
         {"image/png", "PNG image (.png)"},

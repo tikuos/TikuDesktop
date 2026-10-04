@@ -64,8 +64,9 @@ int main(void)
     assert(app->image_job && browser_open_image(app, &model));
     serve(listener, model.path, 0);
     assert(!app->image_job && strstr(app->status, "Opening image on"));
-    const char *types[] = {"text/plain", "text/x-basic", "application/x-tiku-project"};
-    for (int i = 0; i < 3; i++) {
+    const char *types[] = {"text/plain", "text/markdown", "text/html",
+                           "text/x-basic", "application/x-tiku-project"};
+    for (int i = 0; i < 5; i++) {
         snprintf(model.type, sizeof model.type, "%s", types[i]);
         listener_start(listener);
         assert(browser_open_image(app, &model));

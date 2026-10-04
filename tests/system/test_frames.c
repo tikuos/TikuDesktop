@@ -85,6 +85,17 @@ int main(void)
         assert(conduct_text(app, "minimized", said, sizeof said) &&
                said[0] == 0);
     }
+    /* The documents TikuTracker hands over, by name in either case. */
+    assert(desktop_remote_document("/tmp/notes.txt") &&
+           desktop_remote_document("/tmp/README.md") &&
+           desktop_remote_document("/tmp/GUIDE.MARKDOWN") &&
+           desktop_remote_document("/tmp/index.html") &&
+           desktop_remote_document("/tmp/page.HTM") &&
+           desktop_remote_document("/tmp/main.bas") &&
+           desktop_remote_document("/tmp/demo.tiku"));
+    assert(!desktop_remote_document("/tmp/run.sh") &&
+           !desktop_remote_document("/tmp/markdown") &&
+           !desktop_remote_document(NULL));
     tiku_trk_deskbar_free(app->deskbar);
     tiku_workspace_free(app->desk); tiku_surface_free(app->surf); free(app);
     puts("PASS: a frame in the middle of an animation asks for the next one, "

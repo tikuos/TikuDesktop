@@ -33,11 +33,15 @@ int main(int argc, char **argv)
     int basic = tiku_trk_launch_add_document(&apps, "TikuBasic", "/tiku-run",
         "/apps/programming/TikuBasic.so", "text/x-basic,application/x-tiku-project");
     int editor = tiku_trk_launch_add_document(&apps, "Editor", "/tiku-run",
-        "/apps/editor.so", "text/plain");
+        "/apps/editor.so", "text/plain,text/");
     assert(basic == 0 && editor == 1);
     assert(tiku_trk_launch_add_document(&apps, "Editor", "/tiku-run",
         "/apps/editor.so", "text/plain") == editor && apps.count == 2);
     tiku_trk_launch_add(&apps, "Alternative", "/bin/true", "text/x-basic,text/plain");
+    int reader = tiku_trk_launch_add_document(&apps, "TikuReader", "/tiku-run",
+        "/apps/reader/TikuReader.so", "text/html,text/markdown");
+    int marker = tiku_trk_launch_add_document(&apps, "TikuMarker", "/tiku-run",
+        "/apps/marker/TikuMarker.so", "text/markdown");
     tiku_store_t *store = tiku_store_memory_open();
     tiku_backend_t *backend = tiku_backend_posix_open();
     assert(store && backend);
@@ -46,23 +50,37 @@ int main(int argc, char **argv)
     tiku_trk_launch_controller_init(&controller, &apps, store, status,
                                     sizeof status, NULL, &opens);
     controller.open_document = document_open;
-    const char *names[] = {"main.bas", "MAIN.BAS", "project.tiku", "project.TIKU",
-                          "notes.txt", "NOTES.TXT"};
-    for (int i = 0; i < 6; i++) {
+    const char *names[] = {"main.bas", "MAIN.BAS", "project.tiku",
+                           "project.TIKU", "notes.txt", "NOTES.TXT",
+                           "readme.md", "README.MD", "guide.markdown",
+                           "GUIDE.MARKDOWN", "index.html", "INDEX.HTM"};
+    for (int i = 0; i < 12; i++) {
         snprintf(path, sizeof path, "%s/%s", dir, names[i]);
         FILE *f = fopen(path, "w"); assert(f && !fclose(f));
         tiku_model_t model;
         assert(!backend->ops->stat(backend, path, &model));
         const tiku_trk_app_t *app = tiku_trk_launch_controller_handler(&controller, &model);
-        assert(app == &apps.app[i < 4 ? basic : editor]);
+        int want = i < 4 ? basic : i < 6 ? editor : i < 10 ? marker : reader;
+        assert(app == &apps.app[want]);
+        if (i >= 6 && i < 10) assert(!strcmp(model.type, "text/markdown"));
         const char *paths[] = {path, "/tmp/another literal;name.bas"};
         assert(tiku_trk_launch_controller_run(&controller, app, paths, 2));
         assert(!strcmp(last_path, paths[1]));
         assert(tiku_trk_launch_run(app, paths, 2) == TIKU_TRK_LAUNCH_NOTHING);
         assert(!unlink(path));
     }
-    assert(opens == 12);
+    assert(opens == 24);
     tiku_model_t model = {0};
+    snprintf(model.type, sizeof model.type, "text/markdown");
+    tiku_trk_launch_set_preferred(store, model.type, "TikuReader");
+    assert(tiku_trk_launch_controller_handler(&controller, &model) ==
+           &apps.app[reader]);
+    tiku_trk_launch_set_preferred(store, model.type, "Editor");
+    assert(tiku_trk_launch_controller_handler(&controller, &model) ==
+           &apps.app[editor]);
+    tiku_trk_launch_set_preferred(store, model.type, "");
+    assert(tiku_trk_launch_controller_handler(&controller, &model) ==
+           &apps.app[marker]);
     snprintf(model.type, sizeof model.type, "text/x-basic");
     tiku_trk_launch_set_preferred(store, model.type, "Alternative");
     assert(!strcmp(tiku_trk_launch_controller_handler(&controller, &model)->name,
@@ -88,6 +106,7 @@ int main(int argc, char **argv)
     assert(!unlink(capture.module) && !rmdir(dir));
     tiku_store_free(store);
     tiku_backend_close(backend);
-    puts("PASS: BASIC/project/text associations, overrides, batches and literal argv");
+    puts("PASS: BASIC/project/text/Markdown/HTML associations, overrides, "
+         "batches and literal argv");
     return 0;
 }

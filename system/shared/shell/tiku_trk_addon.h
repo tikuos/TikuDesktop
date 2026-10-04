@@ -33,8 +33,9 @@ typedef int (*tiku_trk_addon_invoke_fn)(const tiku_trk_addon_t *addon,
 /** @brief An empty add-on table. */
 void tiku_trk_addons_init(tiku_trk_addons_t *addons);
 /**
- * @brief Add an add-on that handles @p type ("*" for any) with shortcut
- *        @p key.  @return its index, -1 when the table is full.
+ * @brief Add an add-on that handles @p type, a comma-separated list of
+ *        types or "*" for any, with shortcut @p key.  @return its index,
+ *        -1 when the table is full.
  */
 int tiku_trk_addons_register(tiku_trk_addons_t *addons, const char *name,
                              const char *command, const char *type, char key);
@@ -43,7 +44,8 @@ int tiku_trk_addons_register(tiku_trk_addons_t *addons, const char *name,
  *        "name=key" per line.  @return how many were rebound.
  */
 int tiku_trk_addons_rebind(tiku_trk_addons_t *addons, const char *settings);
-/** @brief Whether @p addon handles any of the @p ntypes @p types. */
+/** @brief Whether @p addon handles any of the @p ntypes @p types: a generic
+ *         one handles all, another the types its list names. */
 int tiku_trk_addons_accepts(const tiku_trk_addon_t *addon,
                             const char *const *types, int ntypes);
 /**
@@ -71,10 +73,11 @@ int tiku_trk_addons_shortcut(const tiku_trk_addons_t *addons, char key,
  * @brief Refresh the externally discovered add-ons from @p dir (CW-038).
  *
  * Executable regular files register as external add-ons named after
- * themselves; a sidecar named "<file>.types" declares the type its first
- * line holds, and without one the add-on is generic.  Compiled-in entries
- * are left alone; what an earlier discovery found is replaced, so a
- * removed add-on leaves the menu (AW-023).
+ * themselves; a sidecar named "<file>.types" declares the type, or the
+ * comma-separated types, its first line holds, and without one the add-on
+ * is generic.  Compiled-in entries are left alone; what an earlier
+ * discovery found is replaced, so a removed add-on leaves the menu
+ * (AW-023).
  *
  * @return How many were found.
  */

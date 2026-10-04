@@ -231,15 +231,32 @@ static void remote_image_open(desktop_t *app, int session, tiku_msg_t *m)
     }
 }
 
+int desktop_remote_document(const char *path)
+{
+    /* The names tiku_backend_posix.c types as the documents TikuTracker
+     * forwards in browser_open_image(). */
+    static const char *const known[] = {
+        ".bas", ".tiku", ".txt", ".md", ".markdown", ".html", ".htm"
+    };
+    const char *ext = (path != NULL) ? strrchr(path, '.') : NULL;
+
+    if (ext == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < sizeof known / sizeof known[0]; i++) {
+        if (!strcasecmp(ext, known[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /** @brief Dispatch requested local documents through associations. */
 static void remote_document_open(desktop_t *app, int session, tiku_msg_t *m)
 {
     const char *path = tiku_msg_find_string(m, "path", 0);
-    const char *ext = path ? strrchr(path, '.') : NULL;
-    int supported = ext && (!strcasecmp(ext, ".bas") ||
-        !strcasecmp(ext, ".tiku") || !strcasecmp(ext, ".txt") ||
-        !strcasecmp(ext, ".md"));
-    int ok = supported && desktop_document_local(app, path);
+    int ok = desktop_remote_document(path) &&
+        desktop_document_local(app, path);
     tiku_msg_t *reply = tiku_msg_new(TIKU_MSG_DOCUMENTOPENED);
     if (reply) {
         (void)tiku_msg_add_int32(reply, "accepted", ok);

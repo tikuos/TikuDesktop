@@ -687,6 +687,13 @@ void channels_attach(desktop_t *app);
  */
 int  channel_attach(desktop_t *app, int slot);
 
+/**
+ * @brief Whether a remote client such as TikuTracker may have the desktop
+ *        open @p path, judged by its name: a text, Markdown, HTML, BASIC
+ *        or project document.
+ */
+int desktop_remote_document(const char *path);
+
 /** @brief Preferences remain shared data; their window owns the lifetime. */
 static inline tiku_trk_prefs_t *
 prefs_model(desktop_t *app)

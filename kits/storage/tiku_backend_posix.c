@@ -109,7 +109,8 @@ static const char *
 type_by_name(const char *name)
 {
     static const struct { const char *ext, *type; } kByExt[] = {
-        { ".txt",  "text/plain" },     { ".md",   "text/plain" },
+        { ".txt",  "text/plain" },     { ".md",   "text/markdown" },
+        { ".markdown", "text/markdown" },
         { ".bas",  "text/x-basic" },
         { ".tiku", "application/x-tiku-project" },
         { ".c",    "text/x-source" },  { ".h",    "text/x-source" },
@@ -117,6 +118,7 @@ type_by_name(const char *name)
         { ".png",  "image/png" },      { ".bmp",  "image/bmp" },
         { ".jpg",  "image/jpeg" },     { ".jpeg", "image/jpeg" },
         { ".gif",  "image/gif" },      { ".html", "text/html" },
+        { ".htm",  "text/html" },
         { ".json", "text/json" },      { ".pdf",  "application/pdf" },
         { ".zip",  "application/zip" }, { ".tar",  "application/x-tar" },
         { ".tgz",  "application/x-compressed-tar" },

@@ -653,7 +653,7 @@ boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp
     (void)tiku_trk_addons_register(&app->addons, "Open in Tracker", "",
                                    "inode/directory", 'o');
     (void)tiku_trk_addons_register(&app->addons, "Open with Editor", "",
-                                   "text/plain", 'e');
+                                   "text/plain,text/markdown", 'e');
     (void)tiku_trk_addons_register(&app->addons, "Inspect", "", "*", 'i');
     {
         const char *home = getenv("HOME");

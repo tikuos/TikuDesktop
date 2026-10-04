@@ -20,6 +20,21 @@ int main(void) {
     if (!tiku_trk_addons_invoke(&a, 1001, 1000, invoke, &a) || !invoked) return 1;
     if (tiku_trk_addons_shortcut(&a, 'x', 0x3u, 1000) != 1001) return 1;
     if (tiku_trk_addons_shortcut(&a, 'x', 0x2u, 1000) >= 0) return 1;
+    {   /* A list of types: the desktop's Open with Editor takes plain
+         * text and Markdown, and only those, whole. */
+        tiku_trk_addons_t l;
+        const char *md[] = {"text/markdown"}, *html[] = {"text/html"};
+        const char *part[] = {"text/mark"};
+        const char *both[] = {"text/html", "text/plain"};
+        tiku_trk_addons_init(&l);
+        tiku_trk_addons_register(&l, "Open with Editor", "",
+                                 "text/plain,text/markdown", 'e');
+        if (!tiku_trk_addons_accepts(&l.item[0], types, 1) ||
+            !tiku_trk_addons_accepts(&l.item[0], md, 1) ||
+            !tiku_trk_addons_accepts(&l.item[0], both, 2)) return 1;
+        if (tiku_trk_addons_accepts(&l.item[0], html, 1) ||
+            tiku_trk_addons_accepts(&l.item[0], part, 1)) return 1;
+    }
     {   /* Discovery: an add-ons directory of executables (CW-038).  A
          * fixture of its own, so every gate can be asked. */
         char dir[] = "/tmp/trk_addons_test";
