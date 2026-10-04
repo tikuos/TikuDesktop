@@ -277,6 +277,35 @@ void tiku_editor_publish(edit_state_t *st)
     if (st->search_id) st->services->menus(st->services->ctx, st->search_id, &menus);
 }
 
+/** A jump target followed: the caret goes to the start of the line it
+ *  names, a BASIC line number or a label heading a line, in the pane it
+ *  was clicked in; a target no line has is said in the footer. */
+void tiku_editor_follow(edit_state_t *st, tiku_codeview_t *view,
+                        tiku_edit_range_t target)
+{
+    char name[64], head[96];
+    size_t n = 0, got = 0;
+    int64_t lines = tiku_editdoc_lines(st->doc);
+    if (target.end - target.start >= (int64_t)sizeof name ||
+        tiku_editdoc_read(st->doc, target, name, sizeof name, &n) !=
+            TIKU_EDIT_OK)
+        return;
+    for (int64_t line = 0; line < lines; line++) {
+        tiku_edit_range_t r = {tiku_editdoc_line_start(st->doc, line),
+                               tiku_editdoc_line_end(st->doc, line)};
+        if (r.end - r.start > (int64_t)sizeof head - 1)
+            r.end = r.start + (int64_t)sizeof head - 1;
+        if (tiku_editdoc_read(st->doc, r, head, sizeof head, &got) ==
+                TIKU_EDIT_OK && tiku_syntax_basic_names(head, name, n)) {
+            (void)tiku_codeview_select(view, r.start, r.start);
+            tiku_codeview_reveal(view);
+            st->note[0] = 0;
+            return;
+        }
+    }
+    snprintf(st->note, sizeof st->note, "No line %s in this program.", name);
+}
+
 /** Report what a Text command did: an edit clears the note, a refusal
  *  says why, and nothing to do says nothing. */
 static void text_command(edit_state_t *st, tiku_edit_status_t status)

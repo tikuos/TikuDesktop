@@ -304,6 +304,15 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         if (pressed >= 0 || dragged || held) tiku_editor_paint(st);
         return 0;
     }
+    if ((e->type == TIKU_EVENT_KEY_DOWN || e->type == TIKU_EVENT_KEY_UP) &&
+        (e->key == TIKU_KEY_CMD || e->key == TIKU_KEY_SHIFT ||
+         e->key == TIKU_KEY_OPTION)) {
+        /* A modifier alone may make the jump target under the pointer
+         * live or not; nothing moves. */
+        tiku_editor_view_sync(st);
+        if (tiku_codeview_event(st->view, e)) tiku_editor_paint(st);
+        return 0;
+    }
     int commit = tiku_text_input_event(&st->commit, e);
     if (e->type == TIKU_EVENT_TEXT_INPUT) {
         if (commit == TIKU_TEXT_COMPLETE) tiku_editor_insert_checked(st, st->commit.text);

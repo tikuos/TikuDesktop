@@ -1,0 +1,55 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# Jump targets in Editor, end to end.  A BASIC file's GOTO target is
+# underlined in the link ink; with Command held over it the desktop shows
+# the hand, without it the arrow, and a Command click puts the caret at
+# the start of the line the target names.  The caret's pixel there is
+# asserted clear before the click, so what is proven is the jump.
+wait 25
+click 980 30
+wait 4
+menu-pick Applications
+wait 4
+menu-pick Editor
+wait 90
+expect-title Edit
+click 60 8
+wait 6
+menu-pick Open…
+wait 40
+expect-title Open
+click 400 200
+wait 6
+click 675 413
+wait 60
+expect-no-title Open
+click-window Edit
+wait 25
+shot /tmp/tiku-editor-jumps-open.png
+note the target 40 is underlined in the link ink, and no caret on line 40
+expect-pixel 321 156 336698
+expect-pixel 256 203 ffffff
+expect-said cursor arrow
+move 323 150 0 ctrl
+wait 12
+note with Command held over the target the pointer is a hand
+expect-said cursor hand
+move 323 150 0
+wait 12
+note and without it the arrow
+expect-said cursor arrow
+move 323 150 0 ctrl
+wait 12
+click 323 150 1 ctrl
+wait 25
+shot /tmp/tiku-editor-jumps-followed.png
+note the caret stands at the start of the line 40 names
+expect-pixel 256 203 000000
+note put the editor away rather than leave it standing
+click-window Edit
+wait 6
+key Escape
+wait 30
+expect-no-title Edit
+quit

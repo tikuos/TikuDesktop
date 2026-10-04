@@ -2,6 +2,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
+#include "tiku_host.h"
 
 static int
 out_pane_h(const edit_state_t *st);
@@ -308,4 +309,11 @@ void tiku_editor_paint(edit_state_t *st)
     if (st->services->present) st->services->present(st->services->ctx, st->id, st->dl, st->surface->px, st->w, st->h);
     else st->services->frame(st->services->ctx, st->id, st->surface->px, st->w, st->h);
     tiku_editor_search_paint(st);
+    /* The pointer is a hand while it is over a jump target a click would
+     * follow. */
+    int shape = tiku_codeview_hotspot(st->view, NULL) ? TIKU_CURSOR_HAND
+                                                      : TIKU_CURSOR_ARROW;
+    if (shape != st->cursor &&
+        tiku_app_cursor_set(st->services, st->id, shape))
+        st->cursor = shape;
 }

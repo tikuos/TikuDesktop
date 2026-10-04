@@ -132,6 +132,7 @@ typedef struct {
     tiku_surface_t *search_surface;
     int search_active, hover_tool, pressed_tool, show_invisibles, wrap;
     int caret_line, block_caret;
+    int cursor;                     /* the pointer shape last asked for */
     int match_case, whole_word;
     char last_note[128];
     int64_t note_until;
@@ -180,6 +181,8 @@ tiku_rect_t tiku_editor_page(const edit_state_t *st);
 tiku_rect_t tiku_editor_note_box(const edit_state_t *st);
 void tiku_editor_view_sync(edit_state_t *st);
 void tiku_editor_reveal(edit_state_t *st);
+void tiku_editor_follow(edit_state_t *st, tiku_codeview_t *view,
+                        tiku_edit_range_t target);
 tiku_rect_t tiku_editor_tool_rect(int i);
 int tiku_editor_tool_enabled(edit_state_t *st, int i);
 tiku_rect_t tiku_editor_search_field(const edit_state_t *st, int i);

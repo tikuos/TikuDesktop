@@ -48,15 +48,34 @@ static const char *clip_text(void *ctx, size_t *length)
     return st->paste;
 }
 
+/** A Command click on a jump target in pane @p view goes to its line. */
+static void hotspot(void *ctx, tiku_codeview_t *view, tiku_edit_range_t range,
+                    unsigned modifiers)
+{
+    (void)modifiers;
+    tiku_editor_follow(ctx, view, range);
+}
+
 /** A view of the document with the clipboard the services lend; NULL
- *  when none could be made. */
+ *  when none could be made.  Coloured code shows reserved words bold,
+ *  remarks italic and jump targets underlined, a Command click on one
+ *  going to its line. */
 static tiku_codeview_t *pane_new(edit_state_t *st)
 {
-    tiku_codeview_host_t host = {.ctx = st, .clip_set = clip_set, .clip_text = clip_text};
+    tiku_codeview_host_t host = {.ctx = st, .clip_set = clip_set,
+                                 .clip_text = clip_text, .hotspot = hotspot};
     tiku_codeview_t *view = NULL;
     if (tiku_codeview_create(st->doc, &view) != TIKU_EDIT_OK) return NULL;
     tiku_codeview_set_host(view, &host);
     tiku_codeview_set_options(view, TIKU_CODEVIEW_LINE_NUMBERS);
+    (void)tiku_codeview_set_ink_style(view, TIKU_INK_WORD,
+                                      TIKU_CODEVIEW_BOLD);
+    (void)tiku_codeview_set_ink_style(view, TIKU_INK_REMARK,
+                                      TIKU_CODEVIEW_ITALIC);
+    (void)tiku_codeview_set_ink_style(view, TIKU_INK_LINK,
+                                      TIKU_CODEVIEW_UNDERLINE |
+                                      TIKU_CODEVIEW_HOTSPOT);
+    tiku_codeview_set_hotspot_keys(view, TIKU_MOD_CMD);
     return view;
 }
 

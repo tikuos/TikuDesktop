@@ -2,12 +2,16 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include "../../apps/editor/tiku_editor_private.h"
+#include "tiku_host.h"
+#include "tiku_msg.h"
+#include "tiku_remote.h"
 
 static char title_seen[128];
 static uint32_t next_window;
 static char *clipboard;         /* the desk's, as the services hold it */
 static unsigned clipboard_stamp;
 static int picker_count, picker_mode, sizeable_count;
+static int shape_asked = -1, shapes_sent;  /* the last TIKU_MSG_CURSOR */
 
 /** Native clipboard and file-panel seams for workflow tests. */
 static int clip_set(void *ctx, const char *text)
@@ -752,6 +756,19 @@ static int window_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
     return 0;
 }
 
+/** @brief The headless host keeps the pointer shape asked for. */
+static int send_message(void *ctx, const struct tiku_msg *m)
+{
+    int32_t shape = -1;
+    (void)ctx;
+    if (tiku_msg_what(m) == TIKU_MSG_CURSOR &&
+        tiku_msg_find_int32(m, "shape", 0, &shape)) {
+        shape_asked = shape;
+        shapes_sent++;
+    }
+    return 1;
+}
+
 /** The Text menu: its rows and shortcuts, and its commands by key and by
  *  menu through the view's line commands; Return keeps the indentation
  *  and a C closer goes back to its opener's. */
@@ -1077,6 +1094,81 @@ static void caret_looks(edit_state_t *st)
     assert(set_text(st, ""));
 }
 
+/** A pointer event over the middle of the character at @p pos. */
+static void point_at(edit_state_t *st, tiku_event_type_t type,
+                     tiku_edit_pos_t pos, unsigned mods)
+{
+    int64_t x = 0, y = 0;
+    assert(tiku_codeview_point(st->view, pos, &x, &y) == TIKU_EDIT_OK);
+    tiku_event_t e = {.type = type,
+        .button = type == TIKU_EVENT_POINTER_MOVE ? 0 : 1,
+        .x = (int)x + tiku_font_mono_cell(0) / 2,
+        .y = (int)y + tiku_codeview_row_height(st->view) / 2,
+        .modifiers = mods};
+    tiku_editor_event(st, &e);
+}
+
+/** Coloured BASIC shows reserved words bold, remarks italic and jump
+ *  targets underlined; with Command held a target under the pointer is
+ *  live, the pointer a hand, and a click on it goes to the line it
+ *  names, a number or a label, or says there is none. */
+static void jumps(edit_state_t *st)
+{
+    const char *program = "10 GOTO 30\n20 GOTO 99\n30 GOSUB done\n40 END\n"
+                          "done: RETURN\n";
+    tiku_edit_pos_t anchor, caret;
+    assert(set_text(st, program));
+    tiku_editor_pick(st, st->id, CMD_SYNTAX);
+    assert(st->lang == TIKU_SYNTAX_BASIC);
+    assert(tiku_codeview_ink_style(st->view, TIKU_INK_WORD) ==
+           TIKU_CODEVIEW_BOLD &&
+           tiku_codeview_ink_style(st->view, TIKU_INK_REMARK) ==
+           TIKU_CODEVIEW_ITALIC &&
+           tiku_codeview_ink_style(st->view, TIKU_INK_LINK) ==
+           (TIKU_CODEVIEW_UNDERLINE | TIKU_CODEVIEW_HOTSPOT));
+    place(st, 0, 0);
+    tiku_editor_paint(st);
+    point_at(st, TIKU_EVENT_POINTER_MOVE, 8, 0);
+    assert(!tiku_codeview_hotspot(st->view, NULL) &&
+           st->cursor == TIKU_CURSOR_ARROW);
+    point_at(st, TIKU_EVENT_POINTER_MOVE, 8, TIKU_MOD_CMD);
+    assert(tiku_codeview_hotspot(st->view, NULL) &&
+           st->cursor == TIKU_CURSOR_HAND && shape_asked == TIKU_CURSOR_HAND);
+    point_at(st, TIKU_EVENT_POINTER_DOWN, 8, TIKU_MOD_CMD);
+    point_at(st, TIKU_EVENT_POINTER_UP, 8, TIKU_MOD_CMD);
+    assert(tiku_codeview_selection(st->view, &anchor, &caret) == TIKU_EDIT_OK &&
+           anchor == 22 && caret == 22);           /* "30 GOSUB done" */
+    point_at(st, TIKU_EVENT_POINTER_DOWN, 32, TIKU_MOD_CMD);
+    point_at(st, TIKU_EVENT_POINTER_UP, 32, TIKU_MOD_CMD);
+    assert(tiku_codeview_selection(st->view, &anchor, &caret) == TIKU_EDIT_OK &&
+           anchor == 43 && caret == 43);           /* "done: RETURN" */
+    point_at(st, TIKU_EVENT_POINTER_DOWN, 19, TIKU_MOD_CMD);
+    point_at(st, TIKU_EVENT_POINTER_UP, 19, TIKU_MOD_CMD);
+    assert(tiku_codeview_selection(st->view, &anchor, &caret) == TIKU_EDIT_OK &&
+           caret == 43 && !strcmp(st->note, "No line 99 in this program."));
+    point_at(st, TIKU_EVENT_POINTER_DOWN, 8, 0);
+    point_at(st, TIKU_EVENT_POINTER_UP, 8, 0);
+    assert(tiku_codeview_selection(st->view, &anchor, &caret) == TIKU_EDIT_OK &&
+           caret >= 8 && caret <= 9);              /* a plain click edits */
+    point_at(st, TIKU_EVENT_POINTER_MOVE, 8, 0);
+    assert(st->cursor == TIKU_CURSOR_ARROW);
+    int sent = shapes_sent;
+    tiku_event_t cmd = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_CMD};
+    tiku_editor_event(st, &cmd);
+    assert(tiku_codeview_hotspot(st->view, NULL) &&
+           st->cursor == TIKU_CURSOR_HAND && shapes_sent == sent + 1);
+    assert(tiku_codeview_selection(st->view, &anchor, &caret) == TIKU_EDIT_OK &&
+           caret >= 8 && caret <= 9);              /* nothing moved */
+    cmd.type = TIKU_EVENT_KEY_UP; cmd.modifiers = TIKU_MOD_CMD;
+    tiku_editor_event(st, &cmd);
+    assert(!tiku_codeview_hotspot(st->view, NULL) &&
+           st->cursor == TIKU_CURSOR_ARROW &&
+           shape_asked == TIKU_CURSOR_ARROW);
+    tiku_editor_pick(st, st->id, CMD_SYNTAX);
+    assert(st->lang == TIKU_SYNTAX_NONE);
+    assert(set_text(st, ""));
+}
+
 /** The Text menu's Fold and Unfold fold the region the caret is in and
  *  unfold its line, by menu and by Cmd+Shift+[ and ]; Fold All and Unfold
  *  All take every region; a press on the fold column's box folds. */
@@ -1131,7 +1223,7 @@ int main(void)
     tiku_app_services_t services = {.open = window_open, .frame = window_frame,
         .menus = window_menus, .startup_document = path,
         .clip_set = clip_set, .clip_text = clip_text, .pick = pick_file,
-        .sizeable = sizeable};
+        .sizeable = sizeable, .send_message = send_message};
     void *state = NULL;
     assert(!tiku_editor_start(&state, &services));
     edit_state_t *st = state;
@@ -1157,6 +1249,7 @@ int main(void)
     wrap_lines(st);
     split_panes(st);
     caret_looks(st);
+    jumps(st);
     folds(st);
     carets(st);
     undo_roundtrips(st);
