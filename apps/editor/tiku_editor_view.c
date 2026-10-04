@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
 #include "tiku_host.h"
+#include <strings.h>
+
+/* The outline live search draws round each match. */
+#define MATCH_OUTLINE TIKU_RGB(175, 125, 20)
 
 static int
 out_pane_h(const edit_state_t *st);
@@ -86,21 +90,41 @@ tiku_rect_t tiku_editor_page(const edit_state_t *st)
 }
 
 /** Hand each pane its box, the View menu's options, the document's
- *  language and line break, and whether it has the keys. */
+ *  language, colours and line break, and whether it has the keys.  JSON
+ *  is coloured and folded when chosen, or under Automatic for a name
+ *  ending ".json" in any case. */
 void tiku_editor_view_sync(edit_state_t *st)
 {
+    const char *ext = strrchr(st->path, '.');
+    int json = st->language_mode == EDIT_LANG_JSON ||
+               (st->language_mode == EDIT_LANG_AUTO &&
+                st->lang == TIKU_SYNTAX_NONE && ext != NULL &&
+                !strcasecmp(ext, ".json"));
+    const tiku_codeview_lexer_t *lexer = json ? tiku_codeview_json_lexer()
+                                              : NULL;
     unsigned options = TIKU_CODEVIEW_BRACES | TIKU_CODEVIEW_FOLDS |
         (st->numbers ? TIKU_CODEVIEW_LINE_NUMBERS : 0) |
         (st->show_invisibles ? TIKU_CODEVIEW_INVISIBLES : 0) |
         (st->wrap ? TIKU_CODEVIEW_WRAP : 0) |
         (st->caret_line ? TIKU_CODEVIEW_CARET_LINE : 0) |
-        (st->block_caret ? TIKU_CODEVIEW_BLOCK_CARET : 0);
+        (st->block_caret ? TIKU_CODEVIEW_BLOCK_CARET : 0) |
+        (st->indent_guides ? TIKU_CODEVIEW_INDENT_GUIDES : 0);
     for (int i = 0; i < 2 && st->panes[i]; i++) {
-        tiku_codeview_set_bounds(st->panes[i], tiku_editor_pane_box(st, i));
-        tiku_codeview_set_options(st->panes[i], options);
-        tiku_codeview_set_language(st->panes[i], st->lang);
-        (void)tiku_codeview_set_newline(st->panes[i], st->newline);
-        tiku_codeview_set_focus(st->panes[i], i == st->pane);
+        tiku_codeview_t *pane = st->panes[i];
+
+        tiku_codeview_set_bounds(pane, tiku_editor_pane_box(st, i));
+        tiku_codeview_set_options(pane, options);
+        tiku_codeview_set_language(pane, st->lang);
+        (void)tiku_codeview_set_lexer(pane, lexer);
+        if (lexer)
+            (void)tiku_codeview_json_folds(pane);
+        (void)tiku_codeview_set_ruler(pane, st->ruler ?
+                                      (unsigned)st->preferences.column : 0u);
+        (void)tiku_codeview_set_mark(pane, EDIT_SEARCH_KIND,
+                                     TIKU_CODEVIEW_MARK_BOX, MATCH_OUTLINE);
+        tiku_editor_preferences_colours(pane, st->preferences.colors);
+        (void)tiku_codeview_set_newline(pane, st->newline);
+        tiku_codeview_set_focus(pane, i == st->pane);
     }
 }
 
@@ -116,13 +140,18 @@ tiku_rect_t tiku_editor_tool_rect(int i)
 { return (tiku_rect_t){4 + 27 * i + (i >= 3 ? 7 : 0), 2, 25, 25}; }
 static const char *tool_labels[] = {"New (Ctrl+N)", "Open (Ctrl+O)", "Save (Ctrl+S)",
     "Undo (Ctrl+Z)", "Redo (Ctrl+Y)", "Find / Replace (Ctrl+F)"};
+/** Whether tool @p i can be pressed: none while the question is open,
+ *  Open with a file panel, Save with unsaved changes, and Undo and Redo
+ *  as the view's own commands allow. */
 int tiku_editor_tool_enabled(edit_state_t *st, int i)
 {
     if (st->ask.open) return 0;
     if (i == 1) return st->services->pick != NULL;
     if (i == 2) return tiku_editor_modified(st);
-    if (i == 3) return tiku_editdoc_can_undo(st->doc);
-    if (i == 4) return tiku_editdoc_can_redo(st->doc);
+    if (i == 3)
+        return tiku_codeview_command_enabled(st->view, TIKU_CODEVIEW_CMD_UNDO);
+    if (i == 4)
+        return tiku_codeview_command_enabled(st->view, TIKU_CODEVIEW_CMD_REDO);
     return 1;
 }
 static void toolbar_paint(edit_state_t *st)
@@ -166,8 +195,10 @@ tiku_rect_t tiku_editor_search_field(const edit_state_t *st, int i)
 { (void)st; return (tiku_rect_t){84, 12 + (i == 1 ? 32 : 0), SEARCH_W - 100, 25}; }
 tiku_rect_t tiku_editor_search_button(int i)
 { return (tiku_rect_t){12 + 92 * i, 126, 86, 25}; }
+/** Close the Find or Go to Line window and drop the match outlines. */
 void tiku_editor_search_close(edit_state_t *st)
 {
+    tiku_editor_search_clear(st);
     uint32_t id = st->search_id;
     st->search_id = 0; st->finding = 0; st->find_focus = -1; st->search_active = 0;
     if (id && st->services->close) st->services->close(st->services->ctx, id);
@@ -183,6 +214,8 @@ void tiku_editor_search_open_window(edit_state_t *st, int mode)
     if (!st->search_id) { st->finding = 0; st->search_active = 0; }
     else if (st->services->raise_window) st->services->raise_window(st->services->ctx, st->search_id);
 }
+/** Paint the Find window, its count line under the buttons, or the Go
+ *  to Line window. */
 void tiku_editor_search_paint(edit_state_t *st)
 {
     if (!st->search_id || !st->search_surface) return;
@@ -202,6 +235,11 @@ void tiku_editor_search_paint(edit_state_t *st)
     if (st->finding == 1) {
         tiku_ui_checkbox(s, (tiku_rect_t){84, 80, 150, 22}, "Match case", st->match_case ? TIKU_S_ON : 0);
         tiku_ui_checkbox(s, (tiku_rect_t){250, 80, 160, 22}, "Whole words", st->whole_word ? TIKU_S_ON : 0);
+        tiku_ui_checkbox(s, (tiku_rect_t){84, 103, 180, 20},
+                         "Regular expression", st->regex ? TIKU_S_ON : 0);
+        if (st->regex)
+            tiku_text(s, tiku_font_at(10), 276, 118,
+                      "Replace groups: $1, $2", TIKU_C_TEXT);
         const char *labels[] = {"Previous", "Find next", "Replace", "Replace all", "Done"};
         for (int i = 0; i < 5; i++) tiku_ui_button(s, tiku_editor_search_button(i), labels[i], 0);
     } else {
@@ -209,6 +247,9 @@ void tiku_editor_search_paint(edit_state_t *st)
         tiku_ui_button(s, tiku_editor_search_button(3), "Go", TIKU_S_DEFAULT);
         tiku_ui_button(s, tiku_editor_search_button(4), "Cancel", 0);
     }
+    if (st->finding == 1)
+        tiku_text(s, tiku_font_at(10), 12, 177, st->search_message,
+                  TIKU_C_TEXT);
     st->services->frame(st->services->ctx, st->search_id, s->px, SEARCH_W, SEARCH_H);
 }
 
@@ -232,10 +273,12 @@ static void draw_scroll(edit_state_t *st, tiku_scroll_t *bar, tiku_rect_t r, int
 
 /** The panes, each with its vertical scrollbar beside it, and while split
  *  the divider between them; the horizontal scrollbar follows the pane
- *  with the keys. */
+ *  with the keys, an arrow stepping one character of that pane's face as
+ *  zoomed. */
 static void paint_panes(edit_state_t *st)
 {
     int64_t total, shown, at;
+    int cell;
     for (int i = 0; i < 2 && st->panes[i]; i++) {
         tiku_rect_t box = tiku_editor_pane_box(st, i);
         tiku_scroll_t *bar = i ? &st->lower : &st->vertical;
@@ -252,13 +295,21 @@ static void paint_panes(edit_state_t *st)
         tiku_hline(st->surface, d.x, d.y, d.w, rule);
         tiku_hline(st->surface, d.x, d.y + d.h - 1, d.w, rule);
     }
+    cell = tiku_text_advance(tiku_codeview_font(st->view), ' ');
+    if (cell > 0)
+        st->horizontal.step = cell;
     tiku_codeview_extent(st->view, 1, &total, &shown, &at);
     tiku_scroll_set_range(&st->horizontal, total > INT_MAX ? INT_MAX : (int)total, (int)shown);
     tiku_scroll_to(&st->horizontal, at > INT_MAX ? INT_MAX : (int)at);
 }
 
+/** Paint the document window and the Find window.  The panes' changes
+ *  up to this frame are taken in here, so the tick repaints only for
+ *  later ones; document and command changes among them leave the menus
+ *  due for publishing. */
 void tiku_editor_paint(edit_state_t *st)
 {
+    tiku_editor_search_refresh(st);
     const tiku_font_t *f = tiku_font_mono(0), *small = tiku_font_at(11);
     int step = f->height + 2;
     tiku_edit_pos_t anchor, caret;
@@ -267,6 +318,11 @@ void tiku_editor_paint(edit_state_t *st)
     st->surface->record = st->dl;
     tiku_fill(st->surface, (tiku_rect_t){0, 0, st->w, st->h}, TIKU_C_PANEL);
     paint_panes(st);
+    for (int i = 0; i < 2 && st->panes[i]; i++) {
+        st->menus_due |= tiku_codeview_changes(st->panes[i]) &
+                         (TIKU_CODEVIEW_CHANGE_DOCUMENT |
+                          TIKU_CODEVIEW_CHANGE_COMMANDS);
+    }
     int pane_h = out_pane_h(st);
     if (pane_h) {
         tiku_rect_t pane = {0, st->h - EDIT_FOOT_H - pane_h, st->w - 15, pane_h};
@@ -305,6 +361,8 @@ void tiku_editor_paint(edit_state_t *st)
         st->ask_frame = (tiku_rect_t){(st->w - w) / 2, (st->h - h) / 3, w, h};
         tiku_alert_draw(&st->ask, st->surface, st->ask_frame);
     }
+    if (st->context_open)
+        tiku_menu_draw(&st->context, st->surface, st->context_frame);
     st->surface->record = NULL;
     if (st->services->present) st->services->present(st->services->ctx, st->id, st->dl, st->surface->px, st->w, st->h);
     else st->services->frame(st->services->ctx, st->id, st->surface->px, st->w, st->h);

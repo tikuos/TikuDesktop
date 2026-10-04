@@ -1,0 +1,84 @@
+# shell: desktop
+# prefs: factory
+# setup: documentassociation
+# open: /tmp/trk_home/documents
+# rm: ~/.config/TikuEditorPreferences
+# The View menu's guides, ruler and zoom through the remote Editor. Font
+# sizes travel to the desktop player; view changes must not alter saved
+# bytes. The pixels were read from the desktop's screenshots at each zoom
+# step, with the window's content at 220,109.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 90
+expect-title a-notes.TXT
+click 212 8
+wait 6
+expect-menu Indentation Guides
+menu-pick Indentation Guides
+wait 8
+click 212 8
+wait 6
+expect-menu 80-column Ruler
+menu-pick 80-column Ruler
+wait 8
+note at the text's own size the first two are blank and the third is
+note the stem of the l in "Second line"
+expect-pixel 352 150 ffffff
+expect-pixel 324 176 ffffff
+expect-pixel 315 170 000000
+click 212 8
+wait 6
+expect-menu Zoom In
+menu-pick Zoom In
+wait 12
+note one step larger, the second line's letters reach 324,176
+expect-pixel 324 176 000000
+expect-pixel 352 150 ffffff
+key = ctrl
+wait 12
+shot /tmp/tiku-editor-zoomed.png
+note Ctrl+= makes it two steps, and the first line reaches 352,150
+expect-pixel 352 150 000000
+key End ctrl
+key x
+key z ctrl
+key s ctrl
+wait 12
+expect-file-has /tmp/trk_home/documents/a-notes.TXT Sensor notes
+expect-file-has /tmp/trk_home/documents/a-notes.TXT Second line
+expect-file-lacks /tmp/trk_home/documents/a-notes.TXT x
+click 212 8
+wait 6
+expect-menu Reset Zoom
+menu-pick Reset Zoom
+wait 12
+note back at its own size the text leaves 352,150 again
+expect-pixel 352 150 ffffff
+expect-pixel 315 170 000000
+key - ctrl
+wait 12
+shot /tmp/tiku-editor-zoom-small.png
+note a step smaller, the text leaves 315,170
+expect-pixel 315 170 ffffff
+key - ctrl
+wait 12
+note and a second step brings column 80's ruler into the window
+expect-pixel 653 159 bfbfbf
+click 212 8
+wait 6
+expect-menu 80-column Ruler
+menu-pick 80-column Ruler
+wait 12
+note with the ruler off its line is gone
+expect-pixel 653 159 ffffff
+key 0 ctrl
+wait 12
+shot /tmp/tiku-editor-zoom-reset.png
+note Ctrl+0 puts the text back at its own size
+expect-pixel 315 170 000000
+key w ctrl
+wait 15
+expect-no-title a-notes.TXT
+quit

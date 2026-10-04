@@ -1,6 +1,7 @@
 # shell: desktop
 # home: fixture
 # prefs: factory
+# rm: ~/.config/TikuEditorPreferences
 # A line of a program, coloured by what its parts MEAN -- end to end,
 # through the application the person actually types into.
 #
@@ -39,34 +40,25 @@ wait 3
 key A
 wait 12
 shot /tmp/tiku-editor-plain.png
-note until it is asked, the editor holds prose: every byte is the
-note document's own ink, because a name that says nothing about the
-note language is not a reason to colour anything
+note an unnamed document is plain text: every byte is the document's ink
 expect-pixel 267 145 080808
 expect-pixel 299 145 000000
-note the editor offers the choice by name, and the row says which way
-note it goes -- a published row is a label and a command, and a
-note checkmark would have to be invented in the wire as well
-click 212 8
+note the Language menu, right of Text on the bar, names the language
+click 314 8
 wait 6
-expect-menu Colour as BASIC
-menu-pick Colour as BASIC
+expect-menu BASIC
+menu-pick BASIC
 wait 20
 shot /tmp/tiku-editor-syntax.png
-note now the line number stands back: ordinary ink pulled halfway to
-note the page, which is the one derivation that survives a dark table
+note as BASIC the line number is faint: ordinary ink halfway to the page
 expect-pixel 267 145 838383
-note and PRINT wears the shade the theme names for a word the
-note language reserves -- taken from the interpreter's own table
+note and PRINT takes the theme's ink for a reserved word
 expect-pixel 299 145 0000b0
-note the row keeps ONE name and wears a mark while it holds, rather
-note than renaming itself into what would read as a second command
-click 212 8
+note Plain Text from the same menu puts both back to the document's ink
+click 314 8
 wait 6
-expect-menu Colour as BASIC
-note and taking it again puts both stretches back to the document's own
-note ink -- the claim a one-way toggle cannot make
-menu-pick Colour as BASIC
+expect-menu Plain Text
+menu-pick Plain Text
 wait 20
 expect-pixel 267 145 080808
 expect-pixel 299 145 000000

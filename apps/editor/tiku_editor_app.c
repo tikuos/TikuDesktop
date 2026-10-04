@@ -76,6 +76,10 @@ static tiku_codeview_t *pane_new(edit_state_t *st)
                                       TIKU_CODEVIEW_UNDERLINE |
                                       TIKU_CODEVIEW_HOTSPOT);
     tiku_codeview_set_hotspot_keys(view, TIKU_MOD_CMD);
+    /* The first pane is made before the defaults are read and is given
+     * them then; a later one takes them here. */
+    if (st->preferences.tab)
+        tiku_editor_preferences_pane(view, &st->preferences);
     return view;
 }
 
@@ -101,9 +105,9 @@ static void document_free(edit_state_t *st)
     free(st->paste); st->paste = NULL;
 }
 
-/** Split the page: a lower pane at the caret and first row of the pane
- *  with the keys, the divider halfway; or, split already, keep only the
- *  pane with the keys.  @return 0, or -1 when no pane could be made. */
+/** Split the page: a lower pane at the caret, first row and zoom of the
+ *  pane with the keys, the divider halfway; or, split already, keep only
+ *  the pane with the keys.  @return 0, or -1 when no pane could be made. */
 int tiku_editor_split(edit_state_t *st)
 {
     tiku_edit_pos_t anchor = 0, caret = 0;
@@ -116,6 +120,7 @@ int tiku_editor_split(edit_state_t *st)
         return 0;
     }
     if (!(lower = pane_new(st))) return -1;
+    tiku_codeview_set_zoom(lower, tiku_codeview_zoom(st->view));
     (void)tiku_codeview_selection(st->view, &anchor, &caret);
     (void)tiku_codeview_select(lower, anchor, caret);
     st->panes[1] = lower;
@@ -149,6 +154,7 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
         tiku_field_input_init(&st->field_input[i]);
     }
     if (document_new(st)) { free(st); return -1; }
+    tiku_editor_preferences_load(st);
     st->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_DOC);
     /* Only worth keeping when something can use it; a NULL one simply
      * means every frame goes over as pixels, which is what happens
@@ -167,6 +173,7 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
         tiku_dl_free(st->dl);
         tiku_surface_free(st->surface);
         tiku_surface_free(st->search_surface);
+        tiku_surface_free(st->prefs_surface);
         free(st);
         return -1;
     }
@@ -206,6 +213,7 @@ tiku_editor_stop(void *state)
     edit_state_t *st = state;
 
     if (st != NULL) {
+        tiku_editor_preferences_close(st);
         if (st->running && st->child > 0) {
             kill(st->child, SIGKILL);
             while (waitpid(st->child, NULL, 0) < 0 && errno == EINTR) {}
@@ -228,6 +236,7 @@ tiku_editor_stop(void *state)
         tiku_dl_free(st->dl);
         tiku_surface_free(st->surface);
         tiku_surface_free(st->search_surface);
+        tiku_surface_free(st->prefs_surface);
         free(st);
     }
 }

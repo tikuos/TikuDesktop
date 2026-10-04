@@ -25,6 +25,13 @@ void tiku_editor_refused(edit_state_t *st, tiku_edit_status_t status)
 {
     snprintf(st->note, sizeof st->note, "%s", status == TIKU_EDIT_LIMIT
         ? "Cannot apply edit: the document would pass its size limit. Text kept."
+        : status == TIKU_EDIT_READ_ONLY
+        ? "This document is read-only. Text kept."
+        : status == TIKU_EDIT_BAD_PATTERN
+        ? "Invalid regular expression. Text kept."
+        : status == TIKU_EDIT_BAD_REPLACEMENT
+        ? "Invalid replacement: use $1, ${2}, $$ or \\n, \\t, \\\\. "
+          "Text kept."
         : "Cannot apply edit: invalid UTF-8 or not enough memory. Text kept.");
 }
 
@@ -37,12 +44,14 @@ int tiku_editor_insert_checked(edit_state_t *st, const char *text)
     return 1;
 }
 
-/** The Find field's text under the window's Match case and Whole words. */
+/** The Find field's text under the window's Match case, Whole words and
+ *  Regular expression. */
 static tiku_edit_query_t query(const edit_state_t *st)
 {
     tiku_edit_query_t q = {st->field[0].text, strlen(st->field[0].text),
         (st->match_case ? TIKU_EDIT_MATCH_CASE : 0u) |
-        (st->whole_word ? TIKU_EDIT_WHOLE_WORD : 0u)};
+        (st->whole_word ? TIKU_EDIT_WHOLE_WORD : 0u) |
+        (st->regex ? TIKU_EDIT_REGEX : 0u)};
     return q;
 }
 
@@ -53,7 +62,13 @@ void tiku_editor_find_match(edit_state_t *st, int backward)
     tiku_edit_query_t q = query(st);
     tiku_codeview_found_t found;
     if (!q.length) { snprintf(st->note, sizeof st->note, "Enter text to find."); return; }
-    if (tiku_codeview_find(st->view, &q, backward, &found) != TIKU_EDIT_OK) {
+    tiku_edit_status_t status = tiku_codeview_find(st->view, &q, backward,
+                                                   &found);
+    if (status != TIKU_EDIT_OK && status != TIKU_EDIT_NOTHING) {
+        tiku_editor_refused(st, status);
+        return;
+    }
+    if (status != TIKU_EDIT_OK) {
         snprintf(st->note, sizeof st->note, "No matches.");
         return;
     }
@@ -88,6 +103,11 @@ void tiku_editor_replace_all(edit_state_t *st)
     if (!q.length) return;
     tiku_edit_status_t status = tiku_codeview_replace_all(st->view, &q, with, strlen(with), &found);
     if (status == TIKU_EDIT_NOTHING) { snprintf(st->note, sizeof st->note, "No matches."); return; }
+    if (status == TIKU_EDIT_BAD_PATTERN ||
+        status == TIKU_EDIT_BAD_REPLACEMENT) {
+        tiku_editor_refused(st, status);
+        return;
+    }
     if (status != TIKU_EDIT_OK) {
         snprintf(st->note, sizeof st->note,
                  "Replace All exceeds available memory or the document's size limit. Text kept.");
@@ -127,6 +147,7 @@ int tiku_editor_document_action(edit_state_t *st, int command)
     st->pending = 0;
     if (command == CMD_QUIT) {
         tiku_editor_search_close(st);
+        tiku_editor_preferences_close(st);
         tiku_editdoc_saved(st->doc, tiku_editdoc_state(st->doc));
         return 1;
     }
@@ -145,6 +166,7 @@ int tiku_editor_document_action(edit_state_t *st, int command)
         snprintf(st->newline, sizeof st->newline, "\n");
         (void)tiku_codeview_set_newline(st->view, st->newline);
         st->lang = TIKU_SYNTAX_NONE;
+        st->language_mode = EDIT_LANG_AUTO;
         tiku_codeview_set_language(st->view, st->lang);
     }
     return 0;
@@ -181,13 +203,14 @@ static void clipboard_command(edit_state_t *st, int command)
     tiku_edit_pos_t anchor, caret;
     tiku_edit_status_t status;
     if (command == CMD_PASTE) {
-        status = tiku_codeview_paste(st->view);
+        status = tiku_codeview_execute(st->view, TIKU_CODEVIEW_CMD_PASTE, 0, 0);
         if (status == TIKU_EDIT_OK) tiku_editor_edited(st);
         else if (status != TIKU_EDIT_NOTHING && status != TIKU_EDIT_INVALID)
             tiku_editor_refused(st, status);
         return;
     }
-    if (tiku_codeview_selection(st->view, &anchor, &caret) != TIKU_EDIT_OK || anchor == caret)
+    if (!tiku_codeview_has_selection(st->view) ||
+        tiku_codeview_selection(st->view, &anchor, &caret) != TIKU_EDIT_OK)
         return;
     tiku_edit_range_t r = {anchor < caret ? anchor : caret, anchor < caret ? caret : anchor};
     int64_t seen[2] = {0, 0};
@@ -198,83 +221,174 @@ static void clipboard_command(edit_state_t *st, int command)
                  TIKU_CLIPBOARD_LIMIT / (1024u * 1024u));
         return;
     }
-    status = command == CMD_CUT ? tiku_codeview_cut(st->view) : tiku_codeview_copy(st->view);
+    status = tiku_codeview_execute(st->view, command == CMD_CUT ?
+        TIKU_CODEVIEW_CMD_CUT : TIKU_CODEVIEW_CMD_COPY, 0, 0);
     if (status == TIKU_EDIT_NO_MEMORY)
         snprintf(st->note, sizeof st->note, "Not enough memory to copy the selection.");
+    else if (status == TIKU_EDIT_LIMIT)
+        snprintf(st->note, sizeof st->note, "%s",
+                 "Clipboard refused the selected text. Nothing was removed.");
     else if (status == TIKU_EDIT_OK && command == CMD_CUT) tiku_editor_edited(st);
+}
+
+/** Whether @p view's main selection holds text: what case conversion
+ *  acts on, whatever the other selections hold. */
+static int main_selected(const tiku_codeview_t *view)
+{
+    tiku_edit_pos_t anchor = 0, caret = 0;
+
+    return tiku_codeview_selection(view, &anchor, &caret) == TIKU_EDIT_OK &&
+           anchor != caret;
+}
+
+/** Whether menu command @p cmd can run now.  @p field says a Find window
+ *  field has the keys, and @p selected whether the text with the keys has
+ *  a selection. */
+static int command_enabled(const edit_state_t *st, int cmd, int field,
+                           int selected)
+{
+    const tiku_codeview_t *v = st->view;
+    int writable = !tiku_editdoc_read_only(st->doc);
+
+    if (st->ask.open) {
+        return 0;
+    }
+    switch (cmd) {
+    case CMD_UNDO:
+        return field ? st->field_input[st->find_focus].nundo > 0
+               : tiku_codeview_command_enabled(v, TIKU_CODEVIEW_CMD_UNDO);
+    case CMD_REDO:
+        return field ? st->field_input[st->find_focus].nredo > 0
+               : tiku_codeview_command_enabled(v, TIKU_CODEVIEW_CMD_REDO);
+    case CMD_COPY:
+        return selected && st->services->clip_set != NULL;
+    case CMD_CUT:
+        return selected && st->services->clip_set != NULL &&
+               (field ||
+                tiku_codeview_command_enabled(v, TIKU_CODEVIEW_CMD_CUT));
+    case CMD_PASTE:
+        return st->services->clip_text != NULL &&
+               (field ||
+                tiku_codeview_command_enabled(v, TIKU_CODEVIEW_CMD_PASTE));
+    case CMD_OPEN: case CMD_SAVEAS:
+        return st->services->pick != NULL;
+    case CMD_REVERT:
+        return st->path[0] != 0;
+    case CMD_RUN:
+        return st->lang == TIKU_SYNTAX_BASIC && !st->running;
+    case CMD_COMMENT:
+        return tiku_codeview_command_enabled(v, TIKU_CODEVIEW_CMD_COMMENT);
+    case CMD_ZOOM_IN:
+        return tiku_codeview_zoom(v) < EDIT_ZOOM_MAX;
+    case CMD_ZOOM_OUT:
+        return tiku_codeview_zoom(v) > EDIT_ZOOM_MIN;
+    case CMD_ZOOM_RESET:
+        return tiku_codeview_zoom(v) != 0;
+    case CMD_UPPER: case CMD_LOWER:
+        return writable && main_selected(v);
+    case CMD_TRIM: case CMD_SPACES: case CMD_TABS: case CMD_SORT:
+        return writable;
+    case CMD_SELECT_MATCHES:
+        return st->field[0].text[0] != 0;
+    default:
+        return 1;
+    }
+}
+
+/** Whether menu row @p cmd wears a mark: a View switch that is on, Split
+ *  Pane while split, or the Language menu's choice. */
+static int command_marked(const edit_state_t *st, int cmd)
+{
+    switch (cmd) {
+    case CMD_NUMBERS: return st->numbers;
+    case CMD_INVISIBLES: return st->show_invisibles;
+    case CMD_WRAP: return st->wrap;
+    case CMD_CARET_LINE: return st->caret_line;
+    case CMD_BLOCK_CARET: return st->block_caret;
+    case CMD_INDENT_GUIDES: return st->indent_guides;
+    case CMD_RULER: return st->ruler;
+    case CMD_SPLIT: return st->panes[1] != NULL;
+    default:
+        return cmd >= CMD_LANG_AUTO && cmd <= CMD_LANG_JSON &&
+               st->language_mode == cmd - CMD_LANG_AUTO;
+    }
 }
 
 /** Menus expose the same commands and shortcut routes as the keyboard. */
 void tiku_editor_publish(edit_state_t *st)
 {
-    tiku_menuset_t menus = {0}; menus.nmenu = 5;
-    const char *titles[] = {"File", "Edit", "Search", "View", "Text"};
-    const char *labels[][14] = {
+    static const char *const titles[] = {"File", "Edit", "Search", "View",
+                                         "Text", "Language"};
+    static const char *const labels[][20] = {
         {"New", "Open…", "Save", "Save As…", "Revert", "Close"},
         {"Undo", "Redo", "Cut", "Copy", "Paste", "Select All"},
-        {"Find…", "Find Next", "Find Previous", "Replace…", "Go to Line…", "Replace All"},
-        {"Line Numbers", "Colour as BASIC", "Run", "Show Invisibles",
-         "Wrap Lines", "Split Pane", "Highlight Caret Line", "Block Caret"},
+        {"Find…", "Find Next", "Find Previous", "Replace…", "Go to Line…",
+         "Replace All", "Select All Matches"},
+        {"Line Numbers", "Preferences…", "Run", "Show Invisibles",
+         "Wrap Lines", "Split Pane", "Highlight Caret Line", "Block Caret",
+         "Indentation Guides", "80-column Ruler", "Zoom In", "Zoom Out",
+         "Reset Zoom"},
         {"Indent Lines", "Unindent Lines", "Toggle Comment", "Duplicate Lines",
          "Move Lines Up", "Move Lines Down", "Delete Lines",
          "Go to Matching Bracket", "Select to Matching Bracket", "Fold",
-         "Unfold", "Fold All", "Unfold All", "Carets to Line Ends"}};
-    const int commands[][14] = {
+         "Unfold", "Fold All", "Unfold All", "Carets to Line Ends",
+         "Trim Trailing Whitespace", "Indentation to Spaces",
+         "Indentation to Tabs", "Uppercase (ASCII)", "Lowercase (ASCII)",
+         "Sort Lines"},
+        {"Automatic", "Plain Text", "BASIC", "C", "JSON"}};
+    static const int commands[][20] = {
         {CMD_NEW, CMD_OPEN, CMD_SAVE, CMD_SAVEAS, CMD_REVERT, CMD_QUIT},
         {CMD_UNDO, CMD_REDO, CMD_CUT, CMD_COPY, CMD_PASTE, CMD_ALL},
-        {CMD_FIND, CMD_NEXT, CMD_PREV, CMD_REPLACE, CMD_GOTO, CMD_REPLACE_ALL},
-        {CMD_NUMBERS, CMD_SYNTAX, CMD_RUN, CMD_INVISIBLES, CMD_WRAP,
-         CMD_SPLIT, CMD_CARET_LINE, CMD_BLOCK_CARET},
+        {CMD_FIND, CMD_NEXT, CMD_PREV, CMD_REPLACE, CMD_GOTO,
+         CMD_REPLACE_ALL, CMD_SELECT_MATCHES},
+        {CMD_NUMBERS, CMD_PREFS, CMD_RUN, CMD_INVISIBLES, CMD_WRAP,
+         CMD_SPLIT, CMD_CARET_LINE, CMD_BLOCK_CARET, CMD_INDENT_GUIDES,
+         CMD_RULER, CMD_ZOOM_IN, CMD_ZOOM_OUT, CMD_ZOOM_RESET},
         {CMD_INDENT, CMD_UNINDENT, CMD_COMMENT, CMD_DUPLICATE, CMD_LINES_UP,
          CMD_LINES_DOWN, CMD_DELETE_LINES, CMD_BRACKET, CMD_SELECT_BRACKET,
-         CMD_FOLD, CMD_UNFOLD, CMD_FOLD_ALL, CMD_UNFOLD_ALL, CMD_LINE_ENDS}};
-    const char *keys[] = {"nos  w", "zyxcva", "f][hg ", "  r     ",
-                          "  /d  kmm[]  l"};
-    const int counts[] = {6, 6, 6, 8, 14};
-    tiku_edit_pos_t anchor = 0, caret = 0;
-    (void)tiku_codeview_selection(st->view, &anchor, &caret);
-    int selected = anchor != caret;
+         CMD_FOLD, CMD_UNFOLD, CMD_FOLD_ALL, CMD_UNFOLD_ALL, CMD_LINE_ENDS,
+         CMD_TRIM, CMD_SPACES, CMD_TABS, CMD_UPPER, CMD_LOWER, CMD_SORT},
+        {CMD_LANG_AUTO, CMD_LANG_TEXT, CMD_LANG_BASIC, CMD_LANG_C,
+         CMD_LANG_JSON}};
+    static const char *const keys[] = {"nos  w", "zyxcva", "f][hg  ",
+                                       " ,r       =-0",
+                                       "  /d  kmm[]  l      ", "     "};
+    static const int counts[] = {6, 6, 7, 13, 20, 5};
+    tiku_menuset_t menus = {0};
     int field = st->finding && st->search_active && st->find_focus >= 0;
+    int selected = tiku_codeview_has_selection(st->view);
     if (field) {
         tiku_field_t *f = &st->field[st->find_focus];
         selected = f->sel_a != f->sel_b;
     }
-    for (int m = 0; m < 5; m++) {
-        snprintf(menus.menu[m].title, sizeof menus.menu[m].title, "%s", titles[m]);
+    menus.nmenu = (int)(sizeof counts / sizeof counts[0]);
+    for (int m = 0; m < menus.nmenu; m++) {
+        snprintf(menus.menu[m].title, sizeof menus.menu[m].title, "%s",
+                 titles[m]);
         menus.menu[m].nitem = counts[m];
         for (int i = 0; i < counts[m]; i++) {
-            int cmd = commands[m][i], enabled = !st->ask.open;
-            if (cmd == CMD_UNDO) enabled &= field ?
-                st->field_input[st->find_focus].nundo > 0 : tiku_editdoc_can_undo(st->doc);
-            if (cmd == CMD_REDO) enabled &= field ?
-                st->field_input[st->find_focus].nredo > 0 : tiku_editdoc_can_redo(st->doc);
-            if (cmd == CMD_COPY || cmd == CMD_CUT) enabled &= selected && st->services->clip_set != NULL;
-            if (cmd == CMD_PASTE) enabled &= st->services->clip_text != NULL;
-            if (cmd == CMD_OPEN || cmd == CMD_SAVEAS) enabled &= st->services->pick != NULL;
-            if (cmd == CMD_REVERT) enabled &= st->path[0] != 0;
-            if (cmd == CMD_RUN) enabled &= st->lang == TIKU_SYNTAX_BASIC && !st->running;
-            if (cmd == CMD_COMMENT)
-                enabled &= tiku_codeview_rules(st->view)->comment != NULL;
-            snprintf(menus.menu[m].item[i].label, sizeof menus.menu[m].item[i].label, "%s", labels[m][i]);
-            menus.menu[m].item[i].command = cmd;
-            menus.menu[m].item[i].enabled = enabled;
-            menus.menu[m].item[i].sc = keys[m][i] == ' ' ? 0 : keys[m][i];
+            tiku_menu_entry_t *item = &menus.menu[m].item[i];
+            int cmd = commands[m][i];
+            if (cmd == CMD_RULER)
+                snprintf(item->label, sizeof item->label, "%d-column Ruler",
+                         st->preferences.column);
+            else
+                snprintf(item->label, sizeof item->label, "%s", labels[m][i]);
+            item->command = cmd;
+            item->enabled = command_enabled(st, cmd, field, selected);
+            item->sc = keys[m][i] == ' ' ? 0 : keys[m][i];
             if (cmd == CMD_DELETE_LINES || cmd == CMD_SELECT_BRACKET ||
                 cmd == CMD_FOLD || cmd == CMD_UNFOLD || cmd == CMD_LINE_ENDS)
-                menus.menu[m].item[i].mods = TIKU_MOD_CMD | TIKU_MOD_SHIFT;
-            menus.menu[m].item[i].marked = cmd == CMD_NUMBERS ? st->numbers :
-                cmd == CMD_SYNTAX ? st->lang == TIKU_SYNTAX_BASIC :
-                cmd == CMD_INVISIBLES ? st->show_invisibles :
-                cmd == CMD_WRAP ? st->wrap :
-                cmd == CMD_CARET_LINE ? st->caret_line :
-                cmd == CMD_BLOCK_CARET ? st->block_caret :
-                cmd == CMD_SPLIT ? st->panes[1] != NULL : 0;
+                item->mods = TIKU_MOD_CMD | TIKU_MOD_SHIFT;
+            item->marked = command_marked(st, cmd);
         }
     }
     if (memcmp(&menus, &st->last_menus, sizeof menus) &&
         st->services->menus(st->services->ctx, st->id, &menus) >= 0)
         st->last_menus = menus;
-    if (st->search_id) st->services->menus(st->services->ctx, st->search_id, &menus);
+    if (st->search_id)
+        st->services->menus(st->services->ctx, st->search_id, &menus);
+    st->menus_due = 0;
 }
 
 /** A jump target followed: the caret goes to the start of the line it
@@ -314,10 +428,30 @@ static void text_command(edit_state_t *st, tiku_edit_status_t status)
     else if (status != TIKU_EDIT_NOTHING) tiku_editor_refused(st, status);
 }
 
+/** Run code view command @p command, reported as a Text command. */
+static void view_command(edit_state_t *st, tiku_codeview_command_t command)
+{
+    text_command(st, tiku_codeview_execute(st->view, command, 0, 0));
+}
+
+/** Take Language menu choice @p mode: Automatic goes by the file's name,
+ *  BASIC and C colour as those languages, and Plain Text and JSON as no
+ *  built-in one, JSON through the view's JSON lexer. */
+static void language_choice(edit_state_t *st, int mode)
+{
+    st->language_mode = mode;
+    st->lang = mode == EDIT_LANG_BASIC ? TIKU_SYNTAX_BASIC
+             : mode == EDIT_LANG_C ? TIKU_SYNTAX_C
+             : mode == EDIT_LANG_AUTO ? tiku_syntax_of_path(st->path)
+             : TIKU_SYNTAX_NONE;
+}
+
 /** Dispatch commands once; menu actions and key bindings cannot diverge. */
 int tiku_editor_pick(void *state, uint32_t window, int command)
 {
     edit_state_t *st = state;
+    st->context_open = 0;
+    if (window && window == st->prefs_id) return 0;
     if (window == st->id || (window && window == st->search_id))
         st->search_active = window == st->search_id;
     if (st->ask.open) return 0;
@@ -340,6 +474,17 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
     st->pending = 0;
     st->allow_open = 0;
     switch (command) {
+    case CMD_PREFS: tiku_editor_preferences_open(st); break;
+    case CMD_LANG_AUTO: case CMD_LANG_TEXT: case CMD_LANG_BASIC:
+    case CMD_LANG_C: case CMD_LANG_JSON:
+        language_choice(st, command - CMD_LANG_AUTO);
+        break;
+    case CMD_TRIM: case CMD_SPACES: case CMD_TABS: case CMD_UPPER:
+    case CMD_LOWER: case CMD_SORT:
+        text_command(st, tiku_codeview_transform(st->view,
+            (tiku_codeview_transform_t)(command - CMD_TRIM)));
+        break;
+    case CMD_SELECT_MATCHES: tiku_editor_select_matches(st); break;
     case CMD_NEW: case CMD_OPEN: case CMD_REVERT: case CMD_QUIT:
         if (tiku_editor_guarded_action(st, command)) return 1;
         break;
@@ -347,10 +492,16 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
         if (!st->path[0]) tiku_editor_file_panel(st, 1); else tiku_editor_save(st);
         break;
     case CMD_SAVEAS: tiku_editor_file_panel(st, 1); break;
-    case CMD_UNDO: (void)tiku_codeview_undo(st->view); st->note[0] = 0; break;
-    case CMD_REDO: (void)tiku_codeview_redo(st->view); st->note[0] = 0; break;
+    case CMD_UNDO: case CMD_REDO:
+        (void)tiku_codeview_execute(st->view, command == CMD_UNDO ?
+            TIKU_CODEVIEW_CMD_UNDO : TIKU_CODEVIEW_CMD_REDO, 0, 0);
+        st->note[0] = 0;
+        break;
     case CMD_CUT: case CMD_COPY: case CMD_PASTE: clipboard_command(st, command); break;
-    case CMD_ALL: (void)tiku_codeview_select_all(st->view); break;
+    case CMD_ALL:
+        (void)tiku_codeview_execute(st->view, TIKU_CODEVIEW_CMD_SELECT_ALL,
+                                    0, 0);
+        break;
     case CMD_FIND: case CMD_REPLACE: case CMD_GOTO:
         tiku_editor_search_open_window(st, command == CMD_GOTO ? 2 : 1);
         st->find_focus = command == CMD_GOTO ? 2 : 0;
@@ -368,29 +519,36 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
     case CMD_WRAP: st->wrap = !st->wrap; break;
     case CMD_CARET_LINE: st->caret_line = !st->caret_line; break;
     case CMD_BLOCK_CARET: st->block_caret = !st->block_caret; break;
+    case CMD_INDENT_GUIDES: st->indent_guides = !st->indent_guides; break;
+    case CMD_RULER: st->ruler = !st->ruler; break;
+    case CMD_ZOOM_IN: case CMD_ZOOM_OUT: case CMD_ZOOM_RESET:
+        (void)tiku_codeview_set_zoom(st->view, command == CMD_ZOOM_RESET ? 0 :
+            tiku_codeview_zoom(st->view) + (command == CMD_ZOOM_IN ? 1 : -1));
+        break;
     case CMD_SPLIT:
         if (tiku_editor_split(st))
             snprintf(st->note, sizeof st->note, "Not enough memory to split the page.");
         break;
     case CMD_SYNTAX:
         st->lang = st->lang == TIKU_SYNTAX_BASIC ? TIKU_SYNTAX_NONE : TIKU_SYNTAX_BASIC;
+        st->language_mode = st->lang == TIKU_SYNTAX_BASIC ? EDIT_LANG_BASIC
+                                                          : EDIT_LANG_TEXT;
         tiku_codeview_set_language(st->view, st->lang);
         break;
     case CMD_RUN: if (st->lang == TIKU_SYNTAX_BASIC) tiku_editor_run_program(st); break;
     case CMD_INDENT: case CMD_UNINDENT:
-        text_command(st, tiku_codeview_indent(st->view,
-                                              command == CMD_UNINDENT));
+        view_command(st, command == CMD_UNINDENT ? TIKU_CODEVIEW_CMD_UNINDENT
+                                                 : TIKU_CODEVIEW_CMD_INDENT);
         break;
-    case CMD_COMMENT:
-        text_command(st, tiku_codeview_toggle_comment(st->view)); break;
-    case CMD_DUPLICATE:
-        text_command(st, tiku_codeview_duplicate_lines(st->view)); break;
+    case CMD_COMMENT: view_command(st, TIKU_CODEVIEW_CMD_COMMENT); break;
+    case CMD_DUPLICATE: view_command(st, TIKU_CODEVIEW_CMD_DUPLICATE); break;
     case CMD_LINES_UP: case CMD_LINES_DOWN:
         text_command(st, tiku_codeview_move_lines(st->view,
                                                   command == CMD_LINES_DOWN));
         break;
     case CMD_DELETE_LINES:
-        text_command(st, tiku_codeview_delete_lines(st->view)); break;
+        view_command(st, TIKU_CODEVIEW_CMD_DELETE_LINES);
+        break;
     case CMD_WORD_BACK: case CMD_WORD_ON:
         text_command(st, tiku_codeview_delete_word(st->view,
                                                    command == CMD_WORD_ON));

@@ -82,8 +82,14 @@ int tiku_editor_read_document(edit_state_t *st, const char *path)
     (void)tiku_codeview_set_newline(st->view, st->newline);
     st->bom = bom;
     st->disk = info; st->disk_known = 1; st->load_failed = 0;
-    if (strcmp(st->path, path)) snprintf(st->path, sizeof st->path, "%s", path);
-    st->lang = tiku_syntax_of_path(path);
+    /* Another file goes back to Automatic; the same one read again, as
+     * Revert does, keeps the Language menu's choice. */
+    if (strcmp(st->path, path)) {
+        snprintf(st->path, sizeof st->path, "%s", path);
+        st->language_mode = EDIT_LANG_AUTO;
+    }
+    if (st->language_mode == EDIT_LANG_AUTO)
+        st->lang = tiku_syntax_of_path(path);
     tiku_codeview_set_language(st->view, st->lang);
     snprintf(st->note, sizeof st->note, "Opened %zu bytes", n);
     ok = 1;
@@ -161,7 +167,8 @@ int tiku_editor_save_document(edit_state_t *st, const char *path)
     }
     if (!original) {
         snprintf(st->path, sizeof st->path, "%s", path);
-        st->lang = tiku_syntax_of_path(path);
+        if (st->language_mode == EDIT_LANG_AUTO)
+            st->lang = tiku_syntax_of_path(path);
     }
     st->disk_known = !stat(path, &st->disk);
     st->load_failed = 0;

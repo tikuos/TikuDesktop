@@ -5,6 +5,7 @@
 #include "tiku_host.h"
 #include "tiku_msg.h"
 #include "tiku_remote.h"
+#include "tiku_codeview_private.h"
 
 static char title_seen[128];
 static uint32_t next_window;
@@ -571,12 +572,15 @@ static void kept_bytes(edit_state_t *st, const char *dir)
     text = text_of(st); assert(!strcmp(text, "x\r\ny\r\nz\r\nw")); free(text);
     tiku_editdoc_saved(st->doc, tiku_editdoc_state(st->doc));
     assert(!unlink(path));
-    /* The name says the language, and View > Colour as BASIC changes it. */
+    /* The name says the language, and Language > Plain Text overrides it
+     * until Automatic goes back to the name. */
     snprintf(path, sizeof path, "%s/prog.bas", dir);
     put_file(path, "10 PRINT 1\n"); assert(tiku_editor_read_document(st, path));
     assert(tiku_codeview_language(st->view) == TIKU_SYNTAX_BASIC);
-    tiku_editor_pick(st, st->id, CMD_SYNTAX);
+    tiku_editor_pick(st, st->id, CMD_LANG_TEXT);
     assert(tiku_codeview_language(st->view) == TIKU_SYNTAX_NONE);
+    tiku_editor_pick(st, st->id, CMD_LANG_AUTO);
+    assert(tiku_codeview_language(st->view) == TIKU_SYNTAX_BASIC);
     assert(!unlink(path));
 }
 
@@ -742,10 +746,15 @@ static uint32_t window_open(void *ctx, const char *title, int w, int h)
     return ++next_window;
 }
 
-/** @brief The headless host accepts the frame. */
+static uint32_t counted_window; /* the window whose frames are counted */
+static int frames_counted;      /* how many frames it has been sent    */
+
+/** @brief The headless host accepts the frame, counting those sent to
+ *         the window a test watches. */
 static int window_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
-    (void)ctx; (void)id; (void)px; (void)w; (void)h;
+    (void)ctx; (void)px; (void)w; (void)h;
+    if (counted_window && id == counted_window) frames_counted++;
     return 0;
 }
 
@@ -782,8 +791,8 @@ static void text_menu(edit_state_t *st)
     assert(lines(st) == 2 && !strcmp(line(st, 1), "\t"));
     key(st, '}', 0); assert(!strcmp(line(st, 1), "}"));
     tiku_editor_publish(st);
-    assert(st->last_menus.nmenu == 5 && !strcmp(text->title, "Text") &&
-           text->nitem == 14);
+    assert(st->last_menus.nmenu == 6 && !strcmp(text->title, "Text") &&
+           text->nitem == 20);
     assert(text->item[2].command == CMD_COMMENT && text->item[2].sc == '/' &&
            text->item[2].enabled && text->item[3].sc == 'd');
     assert(text->item[6].command == CMD_DELETE_LINES &&
@@ -834,7 +843,7 @@ static void wrap_lines(edit_state_t *st)
     text[2000] = 0;
     assert(set_text(st, text));
     tiku_editor_publish(st); tiku_editor_paint(st);
-    assert(view->nitem == 8 && view->item[4].command == CMD_WRAP &&
+    assert(view->nitem == 13 && view->item[4].command == CMD_WRAP &&
            !strcmp(view->item[4].label, "Wrap Lines") &&
            view->item[4].enabled && !view->item[4].marked);
     assert(tiku_scroll_max(&st->horizontal) > 0);
@@ -1008,7 +1017,7 @@ static void carets(edit_state_t *st)
     size_t main = 9;
     assert(set_text(st, "one\ntwo\nthree\n"));
     tiku_editor_publish(st); tiku_editor_paint(st);
-    assert(text->nitem == 14 && text->item[13].command == CMD_LINE_ENDS &&
+    assert(text->nitem == 20 && text->item[13].command == CMD_LINE_ENDS &&
            text->item[13].sc == 'l' &&
            text->item[13].mods == (TIKU_MOD_CMD | TIKU_MOD_SHIFT) &&
            !strcmp(text->item[13].label, "Carets to Line Ends"));
@@ -1058,7 +1067,7 @@ static void caret_looks(edit_state_t *st)
     int64_t x, y;
     assert(set_text(st, "one\ntwo\nthree"));
     tiku_editor_publish(st); tiku_editor_paint(st);
-    assert(view->nitem == 8 && view->item[6].command == CMD_CARET_LINE &&
+    assert(view->nitem == 13 && view->item[6].command == CMD_CARET_LINE &&
            !strcmp(view->item[6].label, "Highlight Caret Line") &&
            view->item[6].enabled && !view->item[6].marked &&
            view->item[7].command == CMD_BLOCK_CARET &&
@@ -1211,9 +1220,568 @@ static void folds(edit_state_t *st)
     assert(set_text(st, ""));
 }
 
+/** A non-main selection can be copied and cut even when the main one is
+ *  an empty caret. The menu and keyboard must agree. */
+static void secondary_clipboard(edit_state_t *st)
+{
+    const tiku_edit_selection_t selections[] = {{0, 3}, {7, 7}};
+    assert(set_text(st, "one two"));
+    assert(tiku_codeview_select_many(st->view, selections, 2, 1) ==
+           TIKU_EDIT_OK);
+    tiku_editor_publish(st);
+    assert(st->last_menus.menu[1].item[2].enabled &&
+           st->last_menus.menu[1].item[3].enabled);
+    key(st, 'c', TIKU_MOD_CMD);
+    assert(clipboard && !strcmp(clipboard, "one"));
+    tiku_editor_pick(st, st->id, CMD_CUT);
+    assert(!strcmp(line(st, 0), " two"));
+    assert(undo(st) && !strcmp(line(st, 0), "one two") &&
+           tiku_codeview_selections(st->view, NULL, 0, NULL) == 2);
+    assert(set_text(st, ""));
+}
+
+/** JSON highlighting follows the path in both split panes. */
+static void json_provider(edit_state_t *st)
+{
+    char old_path[sizeof st->path];
+    tiku_syntax_lang_t old_lang = st->lang;
+    strcpy(old_path, st->path);
+    assert(set_text(st, "{\"answer\":42}"));
+    strcpy(st->path, "/tmp/example.JSON"); st->lang = TIKU_SYNTAX_NONE;
+    if (!st->panes[1]) assert(!tiku_editor_split(st));
+    tiku_editor_view_sync(st);
+    for (int i = 0; i < 2; i++) {
+        size_t n; int number = 0;
+        const tiku_span_t *runs = tiku_cv_style_line(st->panes[i], 0, 0, &n);
+        assert(runs &&
+               tiku_codeview_lexer_status(st->panes[i]) == TIKU_EDIT_OK);
+        for (size_t j = 0; j < n; j++) number |= runs[j].ink == TIKU_INK_NUM;
+        assert(number);
+    }
+    strcpy(st->path, "/tmp/example.txt");
+    tiku_editor_view_sync(st);
+    for (int i = 0; i < 2; i++) {
+        size_t n;
+        assert(!tiku_cv_style_line(st->panes[i], 0, 0, &n));
+    }
+    assert(!tiku_editor_split(st));
+    strcpy(st->path, old_path); st->lang = old_lang;
+    tiku_editor_view_sync(st);
+}
+
+/** Find's Regular expression box, Replace All with capture groups and
+ *  its undo, and the View menu's guides, ruler and zoom reaching the
+ *  view. */
+static void advanced_controls(edit_state_t *st)
+{
+    assert(set_text(st, "a=12\nb=34\n"));
+    tiku_editor_pick(st, st->id, CMD_FIND);
+    tiku_event_t toggle = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                           .x = 95, .y = 111};
+    (void)tiku_editor_event_in(st, st->search_id, &toggle);
+    assert(st->regex);
+    tiku_field_start(&st->field[0], "([a-z])=([0-9]+)");
+    tiku_field_start(&st->field[1], "$2:$1");
+    tiku_editor_pick(st, st->id, CMD_REPLACE_ALL);
+    assert(!strcmp(line(st, 0), "12:a") && !strcmp(line(st, 1), "34:b"));
+    assert(tiku_codeview_undo(st->view) == TIKU_EDIT_OK);
+    assert(!strcmp(line(st, 0), "a=12"));
+    (void)tiku_editor_event_in(st, st->search_id, &toggle);
+    assert(!st->regex);
+    tiku_editor_search_close(st);
+    tiku_editor_pick(st, st->id, CMD_INDENT_GUIDES);
+    tiku_editor_pick(st, st->id, CMD_RULER);
+    assert(tiku_codeview_options(st->view) & TIKU_CODEVIEW_INDENT_GUIDES);
+    assert(tiku_codeview_ruler(st->view) == 80);
+    tiku_editor_pick(st, st->id, CMD_ZOOM_IN);
+    assert(tiku_codeview_zoom(st->view) == 1);
+    tiku_editor_pick(st, st->id, CMD_ZOOM_RESET);
+    assert(tiku_codeview_zoom(st->view) == 0);
+    tiku_editor_pick(st, st->id, CMD_INDENT_GUIDES);
+    tiku_editor_pick(st, st->id, CMD_RULER);
+}
+
+/** Send key @p code to the Preferences window. */
+static void pref_key(edit_state_t *st, unsigned code)
+{
+    tiku_event_t e = {.type = TIKU_EVENT_KEY_DOWN, .key = code};
+    tiku_editor_event_in(st, st->prefs_id, &e);
+}
+
+/** Preferences: the steppers by press and by key, Escape writing
+ *  nothing, Save writing and applying, a split pane and a new window
+ *  taking the saved values, malformed files read as the defaults, and a
+ *  folder refused as the file to save. */
+static void preferences_window(edit_state_t *st, const char *dir)
+{
+    char path[512];
+    tiku_codeview_style_t style;
+    void *fresh = NULL;
+    int font;
+
+    snprintf(path, sizeof path, "%s/preferences", dir);
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", path, 1));
+    tiku_editor_pick(st, st->id, CMD_PREFS);
+    assert(st->prefs_id);
+    tiku_event_t plus = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                         .x = 510, .y = 64};
+    tiku_editor_event_in(st, st->prefs_id, &plus);
+    assert(st->pref_draft.tab == 5);
+    pref_key(st, TIKU_KEY_LEFT);
+    assert(st->pref_draft.tab == 4);
+    pref_key(st, TIKU_KEY_RIGHT);
+    assert(st->pref_draft.tab == 5 && st->view->tab_width == 4);
+    pref_key(st, TIKU_KEY_ESCAPE);
+    assert(!st->prefs_id && st->view->tab_width == 4);
+    assert(access(path, F_OK));             /* Cancel writes nothing */
+    tiku_editor_preferences_open(st);
+    st->pref_draft.tab = 8;
+    st->pref_draft.indent = 2;
+    st->pref_draft.column = 100;
+    st->pref_draft.zoom = 1;
+    st->pref_draft.colors = 2;
+    st->pref_draft.guides = 1;
+    st->pref_focus = 14;
+    pref_key(st, TIKU_KEY_LEFT);
+    assert(st->prefs_id);                   /* Left on Save does not save */
+    pref_key(st, TIKU_KEY_RETURN);
+    assert(!st->prefs_id && st->view->tab_width == 8);
+    assert(st->preferences.column == 100 && tiku_codeview_zoom(st->view) == 1);
+    assert(!tiku_editor_split(st));
+    assert(st->panes[1]->tab_width == 8 &&
+           tiku_codeview_zoom(st->panes[1]) == 1);
+    assert(tiku_codeview_get_style(st->panes[1], TIKU_INK_WORD, &style) ==
+           TIKU_EDIT_OK);
+    assert(style.colors & TIKU_CODEVIEW_STYLE_FORE);
+    assert(!tiku_editor_split(st));
+    tiku_editor_preferences_load(st);
+    assert(st->preferences.tab == 8 && st->preferences.indent == 2);
+    assert(!tiku_editor_start(&fresh, st->services));
+    assert(((edit_state_t *)fresh)->preferences.tab == 8);
+    tiku_editor_stop(fresh);
+    tiku_editor_preferences_open(st);
+    tiku_editor_preferences_paint(st);
+    assert(!tiku_surface_png(st->prefs_surface,
+                             "/tmp/tiku-editor-preferences.png"));
+    font = tiku_font_size();
+    tiku_font_set_size(16);
+    tiku_editor_preferences_paint(st);
+    assert(!tiku_surface_png(st->prefs_surface,
+                             "/tmp/tiku-editor-preferences-large.png"));
+    tiku_font_set_size(font);
+    tiku_editor_preferences_close(st);
+    put_file(path, "TikuEditorPreferences 1\n"
+                   "99999999999999999999999999999 0 80 0 0 1 0 0 0 0 0 0\n");
+    tiku_editor_preferences_load(st);
+    assert(st->preferences.tab == 4);
+    put_file(path, "TikuEditorPreferences 1\n8 0 80 0 0 1 0 0 0 0 0 0 junk\n");
+    tiku_editor_preferences_load(st);
+    assert(st->preferences.tab == 4);
+    assert(!unlink(path));
+    /* A folder is not a file to save to. */
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", dir, 1));
+    tiku_editor_preferences_open(st);
+    st->pref_draft.tab = 9;
+    pref_key(st, TIKU_KEY_RETURN);
+    assert(st->prefs_id && st->pref_message[0] && st->preferences.tab == 4);
+    pref_key(st, TIKU_KEY_ESCAPE);
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", "", 1));
+}
+
+/** The Language menu: JSON and Plain Text colour or leave the text, C
+ *  names its language, Save As keeps a named language, and Automatic
+ *  goes back to the file's name. */
+static void language_menu(edit_state_t *st, const char *dir)
+{
+    char path[512];
+    size_t n;
+
+    assert(set_text(st, "{\"sample\": 12}\n"));
+    tiku_editor_pick(st, st->id, CMD_LANG_JSON);
+    assert(tiku_cv_style_line(st->view, 0, strlen(line(st, 0)), &n) && n);
+    tiku_editor_pick(st, st->id, CMD_LANG_TEXT);
+    assert(!tiku_cv_style_line(st->view, 0, strlen(line(st, 0)), &n));
+    tiku_editor_pick(st, st->id, CMD_LANG_C);
+    assert(st->lang == TIKU_SYNTAX_C);
+    snprintf(path, sizeof path, "%s/manual-language.txt", dir);
+    assert(tiku_editor_save_document(st, path));
+    assert(st->lang == TIKU_SYNTAX_C && st->language_mode == EDIT_LANG_C);
+    assert(!unlink(path));
+    tiku_editor_pick(st, st->id, CMD_LANG_AUTO);
+    assert(st->language_mode == EDIT_LANG_AUTO);
+}
+
+/** Find's live count and outlines, Select All Matches, and the context
+ *  menu that keeps the selection, greys what cannot run and goes on
+ *  Escape, close and resize. */
+static void live_search(edit_state_t *st)
+{
+    tiku_event_t close = {.type = TIKU_EVENT_CLOSE};
+
+    assert(set_text(st, "one two one\n"));
+    st->regex = st->whole_word = st->match_case = 0;
+    tiku_editor_pick(st, st->id, CMD_FIND);
+    tiku_field_start(&st->field[0], "one");
+    tiku_editor_paint(st);
+    assert(st->match_count == 2 && strstr(st->search_message, "2 matches"));
+    tiku_editor_find_match(st, 0);
+    tiku_editor_paint(st);
+    assert(strstr(st->search_message, "of 2"));
+    tiku_editor_pick(st, st->id, CMD_SELECT_MATCHES);
+    assert(tiku_codeview_selections(st->view, NULL, 0, NULL) == 2);
+    tiku_editor_context_open(st, 80, 80);
+    assert(st->context_open &&
+           tiku_codeview_selections(st->view, NULL, 0, NULL) == 2);
+    tiku_editor_paint(st);
+    assert(!tiku_surface_png(st->surface, "/tmp/tiku-editor-context.png"));
+    key(st, TIKU_KEY_ESCAPE, 0);
+    assert(!st->context_open);
+    tiku_editor_context_open(st, 80, 80);
+    assert(!tiku_editor_context_event(st, &close) && !st->context_open);
+    tiku_editor_context_open(st, 80, 80);
+    tiku_event_t resize = {.type = TIKU_EVENT_RESIZE, .width = st->w,
+                           .height = st->h};
+    tiku_editor_event(st, &resize);
+    assert(!st->context_open);
+    tiku_editdoc_set_read_only(st->doc, 1);
+    tiku_editor_context_open(st, 80, 80);
+    for (int i = 0; i < st->context.count; i++) {
+        if (st->context.item[i].command == CMD_TRIM ||
+            st->context.item[i].command == CMD_CUT)
+            assert(!st->context.item[i].enabled);
+    }
+    key(st, TIKU_KEY_ESCAPE, 0);
+    tiku_editdoc_set_read_only(st->doc, 0);
+    st->regex = 1;
+    tiku_field_start(&st->field[0], "[");
+    tiku_editor_paint(st);
+    assert(!st->match_count && strstr(st->search_message, "Invalid"));
+    tiku_field_start(&st->field[0], "two");
+    tiku_editor_paint(st);
+    assert(st->match_count == 1 && !strstr(st->search_message, "Invalid"));
+    assert(set_text(st, "two two"));
+    tiku_editor_paint(st);
+    assert(st->match_count == 2);
+    tiku_field_start(&st->field[0], "missing");
+    tiku_editor_paint(st);
+    assert(!st->match_count && !strcmp(st->search_message, "0 matches"));
+    tiku_editor_search_close(st);
+    assert(!st->match_count && !st->search_generation);
+}
+
+/** Live search marks at most EDIT_SEARCH_MAX matches and Select All
+ *  Matches refuses more; above 2 MiB there is no live count. */
+static void search_limits(edit_state_t *st)
+{
+    char many[2201], *large;
+
+    for (int i = 0; i < 1100; i++) {
+        many[i * 2] = 'x';
+        many[i * 2 + 1] = ' ';
+    }
+    many[2200] = 0;
+    assert(set_text(st, many));
+    st->regex = 0;
+    tiku_editor_pick(st, st->id, CMD_FIND);
+    tiku_field_start(&st->field[0], "x");
+    tiku_editor_paint(st);
+    assert(st->match_count == EDIT_SEARCH_MAX && st->match_truncated);
+    assert(strstr(st->search_message, "More than 1000 matches"));
+    tiku_codeview_select(st->view, 0, 0);
+    tiku_editor_pick(st, st->id, CMD_SELECT_MATCHES);
+    assert(strstr(st->note, "Too many") &&
+           tiku_codeview_selections(st->view, NULL, 0, NULL) == 1);
+    large = malloc(2 * 1024 * 1024 + 2);
+    assert(large);
+    memset(large, 'a', 2 * 1024 * 1024 + 1);
+    large[2 * 1024 * 1024 + 1] = 0;
+    assert(set_text(st, large));
+    free(large);
+    tiku_editor_paint(st);
+    assert(!st->match_count && strstr(st->search_message, "2 MiB"));
+    tiku_editor_search_close(st);
+    st->regex = 0;
+}
+
+/** Text > Trim Trailing Whitespace is one undo step, and the menu bar
+ *  holds the system menu, six application menus and Devices. */
+static void text_cleanup(edit_state_t *st)
+{
+    tiku_menubar_t bar = {0};
+    tiku_menu_t menu = {0};
+
+    assert(set_text(st, "b  \na \n"));
+    tiku_editor_pick(st, st->id, CMD_TRIM);
+    assert(!strcmp(line(st, 0), "b"));
+    assert(tiku_codeview_undo(st->view) == TIKU_EDIT_OK &&
+           !strcmp(line(st, 0), "b  "));
+    for (int i = 0; i < 8; i++)
+        assert(tiku_menubar_add(&bar, &menu) >= 0);
+    assert(bar.count == 8);
+}
+
+/** An edit through the window's own event path is painted once: the
+ *  tick after it paints nothing, and repaints only for a change made
+ *  after the last frame. */
+static void tick_paints_once(edit_state_t *st)
+{
+    int before;
+
+    assert(set_text(st, "alpha beta\n"));
+    place(st, 0, 0);
+    st->note[0] = st->last_note[0] = 0;
+    tiku_editor_paint(st);
+    tiku_editor_tick(st, 0);
+    counted_window = st->id;
+    before = frames_counted;
+    key(st, 'x', 0);
+    assert(frames_counted == before + 1 && !strcmp(line(st, 0), "xalpha beta"));
+    tiku_editor_tick(st, 0);
+    assert(frames_counted == before + 1);
+    assert(tiku_codeview_select(st->view, 0, 5) == TIKU_EDIT_OK);
+    tiku_editor_tick(st, 0);
+    assert(frames_counted == before + 2);
+    tiku_editor_tick(st, 0);
+    assert(frames_counted == before + 2);
+    counted_window = 0;
+    assert(set_text(st, ""));
+}
+
+/** The horizontal scrollbar's arrow steps one character of the face the
+ *  pane is zoomed to. */
+static void zoomed_scroll_step(edit_state_t *st)
+{
+    char wide[2001];
+    int cell;
+
+    memset(wide, 'w', 2000);
+    wide[2000] = 0;
+    assert(set_text(st, wide));
+    tiku_codeview_scroll_to(st->view, 0, 0);
+    tiku_editor_pick(st, st->id, CMD_ZOOM_IN);
+    tiku_editor_pick(st, st->id, CMD_ZOOM_IN);
+    cell = tiku_text_advance(tiku_codeview_font(st->view), ' ');
+    assert(tiku_codeview_zoom(st->view) == 2 &&
+           cell != tiku_font_mono_cell(0));
+    st->note[0] = 0;
+    st->hover_tool = -1;
+    tiku_editor_paint(st);
+    tiku_event_t press = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .x = 208 + (st->w - 224) - 7, .y = st->h - EDIT_FOOT_H + 8};
+    tiku_event_t up = press;
+    up.type = TIKU_EVENT_POINTER_UP;
+    tiku_editor_event(st, &press);
+    tiku_editor_event(st, &up);
+    assert(tiku_codeview_left(st->view) == cell);
+    tiku_editor_pick(st, st->id, CMD_ZOOM_RESET);
+    tiku_codeview_scroll_to(st->view, 0, 0);
+    assert(set_text(st, ""));
+}
+
+/** Uppercase and Lowercase change the main selection, so they are
+ *  offered only while it holds text, whatever the others hold. */
+static void case_needs_main_selection(edit_state_t *st)
+{
+    const tiku_menu_list_t *text = &st->last_menus.menu[4];
+    const tiku_edit_selection_t two[] = {{0, 3}, {7, 7}};
+
+    assert(set_text(st, "one two"));
+    assert(tiku_codeview_select_many(st->view, two, 2, 1) == TIKU_EDIT_OK);
+    tiku_editor_publish(st);
+    assert(text->item[17].command == CMD_UPPER &&
+           text->item[18].command == CMD_LOWER);
+    assert(!text->item[17].enabled && !text->item[18].enabled);
+    tiku_editor_pick(st, st->id, CMD_UPPER);
+    assert(!strcmp(line(st, 0), "one two"));
+    assert(tiku_codeview_select_many(st->view, two, 2, 0) == TIKU_EDIT_OK);
+    tiku_editor_publish(st);
+    assert(text->item[17].enabled && text->item[18].enabled);
+    tiku_editor_pick(st, st->id, CMD_UPPER);
+    assert(!strcmp(line(st, 0), "ONE two"));
+    assert(undo(st) && !strcmp(line(st, 0), "one two"));
+    assert(set_text(st, ""));
+}
+
+/** Revert reads the same file again and keeps a language named on the
+ *  Language menu; opening another file goes back to Automatic. */
+static void revert_keeps_language(edit_state_t *st, const char *dir)
+{
+    char path[512], other[512];
+
+    snprintf(path, sizeof path, "%s/revert.txt", dir);
+    snprintf(other, sizeof other, "%s/other.txt", dir);
+    put_file(path, "10 PRINT 1\n");
+    put_file(other, "20 END\n");
+    assert(tiku_editor_read_document(st, path));
+    assert(st->lang == TIKU_SYNTAX_NONE);
+    tiku_editor_pick(st, st->id, CMD_LANG_BASIC);
+    assert(tiku_codeview_language(st->view) == TIKU_SYNTAX_BASIC);
+    tiku_editor_pick(st, st->id, CMD_REVERT);
+    assert(st->language_mode == EDIT_LANG_BASIC &&
+           st->lang == TIKU_SYNTAX_BASIC &&
+           tiku_codeview_language(st->view) == TIKU_SYNTAX_BASIC);
+    assert(tiku_editor_read_document(st, other));
+    tiku_editor_reveal(st);
+    assert(st->language_mode == EDIT_LANG_AUTO &&
+           st->lang == TIKU_SYNTAX_NONE &&
+           tiku_codeview_language(st->view) == TIKU_SYNTAX_NONE);
+    assert(!unlink(path) && !unlink(other));
+    st->path[0] = 0;
+    assert(set_text(st, ""));
+}
+
+/** Preferences opens on the saved defaults, not on the window's View
+ *  switches and zoom of the moment, so Save keeps those out of the file;
+ *  Save then gives the window the saved values. */
+static void preferences_seed(edit_state_t *st, const char *dir)
+{
+    char path[512];
+
+    snprintf(path, sizeof path, "%s/seed-preferences", dir);
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", path, 1));
+    tiku_editor_preferences_load(st);
+    tiku_editor_pick(st, st->id, CMD_WRAP);
+    tiku_editor_pick(st, st->id, CMD_ZOOM_IN);
+    assert(st->wrap && tiku_codeview_zoom(st->view) == 1);
+    tiku_editor_preferences_open(st);
+    assert(st->prefs_id && !st->pref_draft.wrap && !st->pref_draft.zoom);
+    st->pref_draft.tab = 6;
+    pref_key(st, TIKU_KEY_RETURN);
+    assert(!st->prefs_id);
+    expect_file(path, "TikuEditorPreferences 1\n6 0 80 0 0\n1 0 0 0 0 0 0\n");
+    assert(!st->wrap && !tiku_codeview_zoom(st->view));
+    assert(!unlink(path));
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", "", 1));
+    tiku_editor_preferences_load(st);
+}
+
+/** Save tab width @p tab from the Preferences window. */
+static void save_tab(edit_state_t *st, int tab)
+{
+    tiku_editor_preferences_open(st);
+    st->pref_draft.tab = tab;
+    pref_key(st, TIKU_KEY_RETURN);
+}
+
+/** Where preferences are kept: a relative XDG_CONFIG_HOME is passed over
+ *  for ~/.config, a symbolic link is saved through to its file, and a
+ *  save whose folder cannot be synced is applied with that noted. */
+static void preferences_places(edit_state_t *st, const char *dir)
+{
+    char home[512], path[600], link[512], locked[512];
+    char *old_home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
+    struct stat info;
+    int fd;
+
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", "", 1));
+    tiku_editor_preferences_load(st);
+    snprintf(home, sizeof home, "%s/home", dir);
+    snprintf(path, sizeof path, "%s/.config/TikuEditorPreferences", home);
+    assert(!mkdir(home, 0700) && !unsetenv("TIKU_EDITOR_PREFERENCES"));
+    assert(!setenv("HOME", home, 1));
+    assert(!setenv("XDG_CONFIG_HOME", "relative/config", 1));
+    save_tab(st, 7);
+    assert(!st->prefs_id && st->preferences.tab == 7);
+    expect_file(path, "TikuEditorPreferences 1\n7 0 80 0 0\n1 0 0 0 0 0 0\n");
+    assert(!unlink(path));
+    snprintf(path, sizeof path, "%s/.config", home);
+    assert(!rmdir(path) && !rmdir(home));
+    assert(!unsetenv("XDG_CONFIG_HOME"));
+    assert(old_home ? !setenv("HOME", old_home, 1) : !unsetenv("HOME"));
+    free(old_home);
+
+    snprintf(path, sizeof path, "%s/linked-preferences", dir);
+    snprintf(link, sizeof link, "%s/preferences-link", dir);
+    put_file(path, "TikuEditorPreferences 1\n4 0 80 0 0\n1 0 0 0 0 0 0\n");
+    assert(!symlink(path, link));
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", link, 1));
+    save_tab(st, 3);
+    assert(!st->prefs_id && st->preferences.tab == 3);
+    assert(!lstat(link, &info) && S_ISLNK(info.st_mode));
+    expect_file(path, "TikuEditorPreferences 1\n3 0 80 0 0\n1 0 0 0 0 0 0\n");
+    assert(!unlink(link) && !unlink(path));
+
+    /* A folder that can be written but not read: the rename lands and
+     * only the sync that follows it fails.  Root reads every folder, so
+     * there the case cannot be made. */
+    snprintf(locked, sizeof locked, "%s/locked", dir);
+    snprintf(path, sizeof path, "%s/preferences", locked);
+    assert(!mkdir(locked, 0700) && !chmod(locked, 0300));
+    fd = open(locked, O_RDONLY | O_DIRECTORY);
+    if (fd < 0) {
+        assert(!setenv("TIKU_EDITOR_PREFERENCES", path, 1));
+        st->note[0] = 0;
+        save_tab(st, 9);
+        assert(!st->prefs_id && st->preferences.tab == 9);
+        assert(strstr(st->note, "could not be synced"));
+        expect_file(path,
+                    "TikuEditorPreferences 1\n9 0 80 0 0\n1 0 0 0 0 0 0\n");
+        assert(!unlink(path));
+    } else {
+        close(fd);
+    }
+    assert(!chmod(locked, 0700) && !rmdir(locked));
+    assert(!setenv("TIKU_EDITOR_PREFERENCES", "", 1));
+    tiku_editor_preferences_load(st);
+    st->note[0] = 0;
+}
+
+/** Whether every code ink stands at least a quarter of the range away
+ *  from the page in lightness, as Rec. 601 grey. */
+static int inks_stand_out(edit_state_t *st)
+{
+    static const tiku_ink_t roles[] = {TIKU_INK_WORD, TIKU_INK_STR,
+                                       TIKU_INK_NUM, TIKU_INK_REMARK};
+    int page = (int)(tiku_grey(TIKU_C_DOC) & 0xFFu);
+
+    for (size_t k = 0; k < sizeof roles / sizeof roles[0]; k++) {
+        tiku_codeview_style_t style;
+        int ink;
+
+        assert(tiku_codeview_get_style(st->view, roles[k], &style) ==
+               TIKU_EDIT_OK && (style.colors & TIKU_CODEVIEW_STYLE_FORE));
+        ink = (int)(tiku_grey(style.foreground) & 0xFFu);
+        if (abs(ink - page) < 64)
+            return 0;
+    }
+    return 1;
+}
+
+/** The Muted and Strong colour presets are made from the live theme's
+ *  code inks, so they stand out from the page on the dark theme too and
+ *  follow a change of theme. */
+static void preset_colours(edit_state_t *st)
+{
+    editor_preferences_t p = st->preferences;
+    tiku_codeview_style_t style;
+    tiku_rgb_t word;
+
+    assert(set_text(st, "10 PRINT 1\n"));
+    for (p.colors = 1; p.colors <= 2; p.colors++) {
+        tiku_editor_preferences_apply(st, &p);
+        tiku_theme_set(tiku_theme_dark());
+        tiku_editor_view_sync(st);
+        assert(inks_stand_out(st));
+        tiku_theme_set(NULL);
+        tiku_editor_view_sync(st);
+        assert(inks_stand_out(st));
+    }
+    word = tiku_ink(TIKU_INK_WORD);
+    p.colors = 1;
+    tiku_editor_preferences_apply(st, &p);
+    assert(tiku_codeview_get_style(st->view, TIKU_INK_WORD, &style) ==
+           TIKU_EDIT_OK && style.foreground == tiku_dim(word, tiku_grey(word)));
+    p.colors = 0;
+    tiku_editor_preferences_apply(st, &p);
+    assert(tiku_codeview_get_style(st->view, TIKU_INK_WORD, &style) ==
+           TIKU_EDIT_OK && !(style.colors & TIKU_CODEVIEW_STYLE_FORE));
+    assert(set_text(st, ""));
+}
+
 /** @brief A launch argument loads its contents, never a remembered document. */
 int main(void)
 {
+    assert(!setenv("TIKU_EDITOR_PREFERENCES","",1));
     char dir[] = "/tmp/tiku-editor-document-XXXXXX", path[512];
     assert(mkdtemp(dir));
     snprintf(path, sizeof path, "%s/notes literal;name.TXT", dir);
@@ -1252,6 +1820,7 @@ int main(void)
     jumps(st);
     folds(st);
     carets(st);
+    secondary_clipboard(st);
     undo_roundtrips(st);
     history_rollover(st);
     large_documents(st, dir);
@@ -1261,6 +1830,20 @@ int main(void)
     find_field_edits(st);
     footer_message_press(st);
     run_output_nul(st);
+    json_provider(st);
+    advanced_controls(st);
+    preferences_window(st, dir);
+    language_menu(st, dir);
+    live_search(st);
+    search_limits(st);
+    text_cleanup(st);
+    tick_paints_once(st);
+    zoomed_scroll_step(st);
+    case_needs_main_selection(st);
+    revert_keeps_language(st, dir);
+    preferences_seed(st, dir);
+    preferences_places(st, dir);
+    preset_colours(st);
     assert(sizeable_count >= 2);
     assert(set_text(st, ""));
     assert(tiku_editor_insert_checked(st, "Sensor capture notes\n\nSample interval: 250 ms\nTemperature: 24.8 C\nHumidity: 48 percent\n\nNext steps\n\tCheck the calibration values\n\tExport the next capture\n"));

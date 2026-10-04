@@ -169,6 +169,12 @@ static int search_event(edit_state_t *st, const tiku_event_t *e)
         if (st->finding == 1 && inside((tiku_rect_t){250, 80, 160, 22}, e->x, e->y)) {
             st->whole_word = !st->whole_word; tiku_editor_paint(st); return 1;
         }
+        if (st->finding == 1 &&
+            inside((tiku_rect_t){84, 103, 180, 20}, e->x, e->y)) {
+            st->regex = !st->regex;
+            tiku_editor_paint(st);
+            return 1;
+        }
         if (st->finding == 1) for (int i = 0; i < 5; i++) {
             if (!inside(tiku_editor_search_button(i), e->x, e->y)) continue;
             if (i == 0 || i == 1) tiku_editor_find_match(st, i == 0);
@@ -227,6 +233,7 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
 {
     edit_state_t *st = state;
     if (e->type == TIKU_EVENT_RESIZE) {
+        st->context_open = 0;
         int w = e->width < 480 ? 480 : e->width;
         int h = e->height < 260 ? 260 : e->height;
         if (w > 8192 || h > 8192) return 0;
@@ -238,7 +245,18 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         return 0;
     }
     if (st->ask.open) return answer_question(st, e);
-    if (e->type == TIKU_EVENT_POINTER_DOWN && e->button > 1) return 0;
+    if (st->context_open && tiku_editor_context_event(st, e)) return 0;
+    if (e->type == TIKU_EVENT_POINTER_DOWN && e->button > 1) {
+        /* Button 3 over a pane opens the context menu there unless the
+         * Find window has the keys; other buttons do nothing. */
+        int pane = pane_at(st, e->x, e->y);
+        if (e->button == 3 && pane >= 0 && !st->search_active) {
+            tiku_editor_focus_pane(st, pane);
+            tiku_editor_context_open(st, e->x, e->y);
+            tiku_editor_paint(st);
+        }
+        return 0;
+    }
     /* Document commands remain available while a search field has focus. */
     if (st->finding && st->search_active && st->find_focus >= 0 && e->type == TIKU_EVENT_KEY_DOWN &&
         (e->modifiers & TIKU_MOD_CMD)) {
@@ -333,6 +351,10 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         case 'y': cmd = CMD_REDO; break; case 'x': cmd = CMD_CUT; break;
         case 'c': cmd = CMD_COPY; break; case 'v': cmd = CMD_PASTE; break;
         case 'a': cmd = CMD_ALL; break; case 'f': cmd = CMD_FIND; break;
+        case '=': case '+': cmd = CMD_ZOOM_IN; break;
+        case '-': cmd = CMD_ZOOM_OUT; break;
+        case '0': cmd = CMD_ZOOM_RESET; break;
+        case ',': cmd = CMD_PREFS; break;
         case 'h': cmd = CMD_REPLACE; break; case 'g': cmd = CMD_GOTO; break;
         case 'r': cmd = CMD_RUN; break;
         case ']': cmd = shift ? CMD_UNFOLD : CMD_NEXT; break;
@@ -370,6 +392,8 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
 int tiku_editor_event_in(void *state, uint32_t window, const tiku_event_t *e)
 {
     edit_state_t *st = state;
+    if (window && window == st->prefs_id)
+        return tiku_editor_preferences_event(st, e);
     if (window != st->id && window != st->search_id) return 0;
     /* Background repaint/resize does not change the active editing target. */
     if (e->type == TIKU_EVENT_RESIZE || e->type == TIKU_EVENT_EXPOSE) {
@@ -391,11 +415,19 @@ int tiku_editor_event_in(void *state, uint32_t window, const tiku_event_t *e)
 void tiku_editor_closed(void *state, uint32_t window)
 {
     edit_state_t *st = state;
+    if (window == st->prefs_id) {
+        st->prefs_id = 0;
+        return;
+    }
     if (window == st->search_id) {
+        tiku_editor_search_clear(st);
         st->search_id = 0; st->finding = 0; st->find_focus = -1; st->search_active = 0;
         tiku_editor_publish(st); return;
     }
-    if (window == st->id) tiku_editor_search_close(st);
+    if (window == st->id) {
+        tiku_editor_search_close(st);
+        tiku_editor_preferences_close(st);
+    }
     if (window != st->id || !tiku_editor_modified(st)) return;
     st->id = st->services->open(st->services->ctx, "Edit — Unsaved changes", st->w, st->h);
     if (!st->id) return;

@@ -107,21 +107,32 @@ tiku_editor_run_program(edit_state_t *st)
     snprintf(st->note, sizeof st->note, "running");
 }
 
-/** @brief Count the rows of lines still to be wrapped, and hear what the
- *         run has said since the last frame. */
+/** @brief Count the rows of lines still to be wrapped, repaint for what
+ *         the panes changed after the last frame, publish the menus when
+ *         the document or its commands changed, and hear what the run has
+ *         said since the last frame. */
 void
 tiku_editor_tick(void *state, int64_t now_us)
 {
+    const unsigned menu_changes = TIKU_CODEVIEW_CHANGE_DOCUMENT |
+                                  TIKU_CODEVIEW_CHANGE_COMMANDS;
     edit_state_t *st = state;
     tiku_event_t count = {.type = TIKU_EVENT_TICK};
     char buf[256];
     ssize_t n;
     int heard = 0, counted = 0;
+    unsigned changes = 0;
 
     for (int i = 0; st && i < 2 && st->panes[i]; i++)
         if (tiku_codeview_wrapping(st->panes[i]))
             counted |= tiku_codeview_event(st->panes[i], &count);
-    if (counted)
+    /* A paint takes in the panes' changes, so these came after the last
+     * frame. */
+    for (int i = 0; st && i < 2 && st->panes[i]; i++)
+        changes |= tiku_codeview_changes(st->panes[i]);
+    if (st && ((changes | st->menus_due) & menu_changes))
+        tiku_editor_publish(st);
+    if (counted || changes)
         tiku_editor_paint(st);
     if (st && strcmp(st->note, st->last_note)) {
         snprintf(st->last_note, sizeof st->last_note, "%s", st->note);

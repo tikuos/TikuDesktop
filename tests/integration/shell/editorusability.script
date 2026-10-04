@@ -1,0 +1,95 @@
+# shell: desktop
+# prefs: factory
+# setup: documentassociation
+# open: /tmp/trk_home/documents
+# rm: ~/.config/TikuEditorPreferences
+# Saved defaults, the Language menu and Find's live search through the
+# real app transport. The pixels were read from the Editor painted
+# in-process at the position the desktop gives its first window, content
+# at 220,109.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 90
+expect-title a-notes.TXT
+key , ctrl
+wait 15
+expect-title Editor Preferences
+key Right
+key Return
+wait 15
+expect-no-title Editor Preferences
+note Right took the tab width from 4 to 5 and Return saved it
+expect-file-has /tmp/trk_home/.config/TikuEditorPreferences TikuEditorPreferences 1
+expect-file-has /tmp/trk_home/.config/TikuEditorPreferences 5 0 80 0 0
+key , ctrl
+wait 15
+expect-title Editor Preferences
+shot /tmp/tiku-editor-preferences-desktop.png
+key Escape
+wait 10
+click-window a-notes.TXT
+wait 6
+note a number typed at the start for the Language menu to colour
+key 1
+key 2
+key space
+wait 10
+note a .TXT name colours nothing: the 1 is the document's ink
+expect-pixel 260 150 2b2b2b
+click 314 8
+wait 6
+expect-menu Automatic
+expect-menu JSON
+menu-pick JSON
+wait 10
+note as JSON the 1 is a number, in the theme's ink for numbers
+expect-pixel 260 150 2b887a
+click 314 8
+wait 6
+expect-menu Plain Text
+menu-pick Plain Text
+wait 10
+expect-pixel 260 150 2b2b2b
+key f ctrl
+wait 10
+key n
+key o
+key t
+key e
+key s
+wait 10
+shot /tmp/tiku-editor-live-search-desktop.png
+note the live search outlines the one match in the document
+expect-pixel 345 142 af7d14
+key Escape
+wait 10
+note closing Find takes the outline away
+expect-pixel 345 142 ffffff
+click-window a-notes.TXT
+wait 6
+key s ctrl
+wait 10
+expect-file-has /tmp/trk_home/documents/a-notes.TXT 12 Sensor notes
+expect-file-has /tmp/trk_home/documents/a-notes.TXT Second line
+note Defaults then Save put the first run's defaults back for later scripts
+key , ctrl
+wait 15
+expect-title Editor Preferences
+key Tab shift
+key Tab shift
+key Tab shift
+key Return
+key Tab
+key Tab
+key Return
+wait 15
+expect-no-title Editor Preferences
+expect-file-has /tmp/trk_home/.config/TikuEditorPreferences 4 0 80 0 0
+click-window a-notes.TXT
+wait 6
+key w ctrl
+wait 15
+expect-no-title a-notes.TXT
+quit

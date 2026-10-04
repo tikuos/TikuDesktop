@@ -311,7 +311,8 @@ for s in "$here"/*.script; do
                # And the settings, for the same reason: a script that
                # turns a setting off leaves it off for every script after
                # it, including its own next run.
-               rm -f "$deskhome/.config/TrackerSettings" ;;
+               rm -f "$deskhome/.config/TrackerSettings" \
+                     "$deskhome/.config/TikuEditorPreferences" ;;
         esac
         # A script that says "# work: home" gets its fixture under $HOME
         # instead of /tmp.  It matters for anything about the Trash: the
