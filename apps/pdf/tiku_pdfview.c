@@ -27,6 +27,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/file.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <unistd.h>
 
 #define PV_MARGIN      12           /* around the pages, in pixels      */
@@ -47,6 +50,7 @@
 #define PV_THUMB_KEEP  64           /* thumbnails kept drawn            */
 #define PV_RECENT_KEEP 100          /* documents whose place is kept    */
 #define PV_RECENT_SHOWN 10          /* of those, the ones offered       */
+#define PV_BOOKMARK_KEEP 24         /* every entry fits the native menu */
 
 enum { PV_OPEN = 1, PV_CLOSE, PV_COPY, PV_SELECT_ALL, PV_FIND, PV_FIND_NEXT,
        PV_FIND_PREV, PV_OUTLINE, PV_ZOOM_IN, PV_ZOOM_OUT, PV_ACTUAL,
@@ -54,7 +58,8 @@ enum { PV_OPEN = 1, PV_CLOSE, PV_COPY, PV_SELECT_ALL, PV_FIND, PV_FIND_NEXT,
        PV_BACK, PV_MATCH_CASE, PV_WHOLE_WORDS, PV_THUMBS, PV_ROTATE_LEFT,
        PV_ROTATE_RIGHT, PV_CLEAR_RECENT, PV_OPEN_KEY, PV_SIGS, PV_PAGE_FIELD,
        PV_FIND_FIELD, PV_CANVAS, PV_SIDE, PV_PASS_FIELD, PV_UNLOCK,
-       PV_CANCEL_UNLOCK, PV_RECENT = 100 };
+       PV_CANCEL_UNLOCK, PV_RETRY, PV_BOOKMARK, PV_RECENT = 100,
+       PV_BOOKMARK_GO = 300 };
 enum { PV_FIXED, PV_BY_WIDTH, PV_BY_PAGE };
 
 /** @brief An open document as its jobs share it. */
@@ -163,6 +168,9 @@ struct tiku_pdfview {
     int nrecent;                    /* how many of those are held        */
     pv_place_t restore;             /* where the new document was left   */
     int restoring;                  /* until the first layout takes it up */
+    pv_place_t bookmarks[PV_BOOKMARK_KEEP]; /* pages the person marked */
+    int nbookmarks;                 /* how many of those are held        */
+    int bookmarks_session;          /* unsaved: kept in this window only */
 };
 
 static void pv_menus(tiku_pdfview_t *c);
@@ -295,10 +303,13 @@ static void pv_unref(tiku_pdfview_t *c)
 #include "tiku_pdfview_sigs.inl"
 #include "tiku_pdfview_text.inl"
 #include "tiku_pdfview_recent.inl"
+#include "tiku_pdfview_bookmarks.inl"
 
 /** @brief Menu and control labels, by command. */
 static const char *pv_label(int id)
 {
+    if (id == PV_RETRY) return "Retry Failed Pages";
+    if (id == PV_BOOKMARK) return "Bookmark This Page";
     if (id == PV_UNLOCK) return "Unlock";
     if (id == PV_CANCEL_UNLOCK) return "Cancel";
     static const char *const labels[] = { "", "Open...", "Close", "Copy",
@@ -339,6 +350,10 @@ static int pv_enabled(tiku_pdfview_t *c, int id)
                                   !c->loading;
     if (id == PV_SIGS) return c->nsig > 0;
     if (!c->doc) return 0;
+    if (id == PV_RETRY) {
+        for (int p = 0; p < c->npage; p++) if (c->pages[p].failed) return 1;
+        return 0;
+    }
     if (id == PV_OUTLINE) return c->noutline > 0;
     if (id == PV_COPY) return c->selected;
     if (id == PV_FIND_NEXT || id == PV_FIND_PREV)
@@ -382,6 +397,8 @@ static void pv_action(tiku_pdfview_t *c, int id)
         if (c->choose && !c->loading) c->choose(c->ctx, 0);
     } else if (id == PV_OPEN_KEY) {
         if (pv_enabled(c, PV_OPEN_KEY)) c->choose(c->ctx, 1);
+    } else if (id >= PV_BOOKMARK_GO && id < PV_BOOKMARK_GO + PV_BOOKMARK_KEEP) {
+        pv_bookmark_go(c, id - PV_BOOKMARK_GO);
     } else if (id >= PV_RECENT && id < PV_RECENT + PV_RECENT_KEEP) {
         pv_recent_open(c, id - PV_RECENT);
     } else if (id == PV_CLEAR_RECENT) {
@@ -404,6 +421,11 @@ static void pv_action(tiku_pdfview_t *c, int id)
         pv_say(c, "The locked PDF was left closed.");
     } else if (!c->doc) {
         return;
+    } else if (id == PV_BOOKMARK) {
+        pv_bookmark_toggle(c);
+    } else if (id == PV_RETRY) {
+        for (int p = 0; p < c->npage; p++) c->pages[p].failed = 0;
+        pv_say(c, "Retrying failed pages as they come into view.");
     } else if (id == PV_COPY) pv_copy(c);
     else if (id == PV_SELECT_ALL) pv_select_page(c, page);
     else if (id == PV_FIND) {
@@ -488,6 +510,7 @@ static int pv_command_key(tiku_pdfview_t *c, const tiku_event_t *ev)
     else if (key == 'c') pv_action(c, PV_COPY);
     else if (key == 'a') pv_action(c, PV_SELECT_ALL);
     else if (key == 'f') pv_action(c, PV_FIND);
+    else if (key == 'd') pv_action(c, PV_BOOKMARK);
     else if (key == 'g') pv_action(c, ev->modifiers & TIKU_MOD_SHIFT ?
                                       PV_FIND_PREV : PV_FIND_NEXT);
     else if (key == '+' || key == '=') pv_action(c, PV_ZOOM_IN);
@@ -664,12 +687,13 @@ static void pv_menu_add(tiku_pdfview_t *c, tiku_menu_list_t *m, int id,
 static void pv_menus(tiku_pdfview_t *c)
 {
     tiku_menuset_t menus;
-    static const char *const titles[] = { "File", "Edit", "View", "Go" };
+    static const char *const titles[] = { "File", "Edit", "View", "Go",
+                                          "Bookmarks" };
 
     if (!c->window) return;
     memset(&menus, 0, sizeof menus);
-    menus.nmenu = 4;
-    for (int i = 0; i < 4; i++)
+    menus.nmenu = 5;
+    for (int i = 0; i < 5; i++)
         snprintf(menus.menu[i].title, sizeof menus.menu[i].title, "%s",
                  titles[i]);
     pv_menu_add(c, &menus.menu[0], PV_OPEN, 'o', TIKU_MOD_CMD, 0);
@@ -699,11 +723,13 @@ static void pv_menus(tiku_pdfview_t *c)
     pv_menu_add(c, &menus.menu[2], PV_FIT_PAGE, 0, 0, c->fit == PV_BY_PAGE);
     pv_menu_add(c, &menus.menu[2], PV_ROTATE_LEFT, 'l', TIKU_MOD_CMD, 0);
     pv_menu_add(c, &menus.menu[2], PV_ROTATE_RIGHT, 'r', TIKU_MOD_CMD, 0);
+    pv_menu_add(c, &menus.menu[2], PV_RETRY, 0, 0, 0);
     pv_menu_add(c, &menus.menu[3], PV_PREV, 0, 0, 0);
     pv_menu_add(c, &menus.menu[3], PV_NEXT, 0, 0, 0);
     pv_menu_add(c, &menus.menu[3], PV_FIRST, 0, 0, 0);
     pv_menu_add(c, &menus.menu[3], PV_LAST, 0, 0, 0);
     pv_menu_add(c, &menus.menu[3], PV_BACK, '[', TIKU_MOD_CMD, 0);
+    pv_bookmark_menu(c, &menus.menu[4]);
     tiku_window_publish_menus(c->window, &menus, pv_menu_pick, c);
 }
 
@@ -732,6 +758,7 @@ tiku_pdfview_t *tiku_pdfview_new(tiku_workspace_t *workspace, int *dirty,
     pv_forget_password(c);
     pv_forget(c);
     pv_recent_read(c);
+    pv_bookmarks_read(c);
     return c;
 }
 
