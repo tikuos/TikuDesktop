@@ -1,4 +1,7 @@
-/* Per-document presentation settings. No source geometry or file list is saved.
+/* tiku_circuit_preferences.c -- Save View Settings: a document's units,
+ * panels and each layer's colour, opacity and visibility, kept in a file
+ * named by a hash of its path and applied when it is opened again.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_circuit_window_private.h"
 #include "tiku_atomic_file.h"
@@ -10,17 +13,21 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* Private, versioned local cache, fixed-width fields and bounded strings.
- * No pointers, structs from the circuit kit, or external paths to load. */
+/** @brief One layer's saved look.  Its root and path are matched against
+ *         the open stack's layers and never opened. */
 typedef struct {
     char root[CV_PATH_MAX], path[CV_PATH_MAX];
     uint32_t colour, opacity, visible;
 } saved_layer_t;
+/** @brief The settings file's record, in fixed-width fields: "TCVIEW1",
+ *         the document's real path, the units, the panels and the
+ *         layers. */
 typedef struct {
     char magic[8], path[CV_PATH_MAX];
     uint32_t units, sheets, details, count;
     saved_layer_t layer[TIKU_CIRCUIT_LAYERS_MAX];
 } saved_view_t;
+/** @brief One save: the record and where it goes. */
 typedef struct {
     tiku_circuitview_t *owner;
     saved_view_t data;
@@ -36,7 +43,9 @@ void tiku_circuitview_settings(tiku_circuitview_t *v, const char *directory)
         snprintf(v->settings_dir,sizeof v->settings_dir,"%s",directory);
 }
 
-/** @brief Name a local cache by canonical source path; verify the key on read. */
+/** @brief The settings file for @p path, <directory>/<hash>.view, the hash
+ *         of its real path, which goes into @p canonical for a reader to
+ *         check.  @return 1, or 0 when there is none. */
 static int filename(const char *directory, const char *path, char *out,
                     size_t cap, char *canonical)
 {
@@ -52,7 +61,8 @@ static int filename(const char *directory, const char *path, char *out,
     return n>0 && (size_t)n<cap;
 }
 
-/** @brief Create missing configuration directories, refusing non-directories. */
+/** @brief Make each missing folder of @p path; a part that exists and is
+ *         not a folder fails it.  @return 1 when all are folders. */
 static int directories(char *path)
 {
     for(char *p=path+1;;p++) if(*p=='/' || !*p) {
@@ -62,7 +72,7 @@ static int directories(char *path)
         *p=c; if(!ok) return 0; if(!c) return 1;
     }
 }
-/** @brief Write the complete bounded settings record to the temporary file. */
+/** @brief Write the record to @p f for tiku_atomic_file(). */
 static int produce(FILE *f,void *ctx)
 {
     save_job_t *j=ctx;
@@ -76,7 +86,8 @@ static void run(void *ctx)
     if(filename(j->directory,j->data.path,j->destination,sizeof j->destination,j->data.path) &&
        directories(j->directory)) j->result=tiku_atomic_file(j->destination,produce,j);
 }
-/** @brief Report the result without changing the document or its settings. */
+/** @brief On the loop: say in the status line whether the settings were
+ *         saved. */
 static void done(void *ctx)
 {
     save_job_t *j=ctx;

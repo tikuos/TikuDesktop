@@ -1,10 +1,13 @@
-/* TikuImage owns its document, workers and UI in its own process.
+/* tiku_image_app.c -- TikuImage's descriptor: the viewer's window, run in
+ * its own process by tiku-run, asking the desktop for the images it opens.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_image_window.h"
 #include "tiku_window_app.h"
 #include "tiku_work.h"
 #include <stdlib.h>
 
+/** @brief The running application: the desktop's calls and the viewer. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
@@ -12,6 +15,8 @@ typedef struct {
     int dirty;
 } image_app_t;
 
+/** @brief Ask the desktop's file panel for a local image, starting at
+ *         home. */
 static void choose(void *ctx)
 {
     image_app_t *a = ctx;
@@ -21,6 +26,7 @@ static void choose(void *ctx)
             getenv("HOME"), NULL);
 }
 
+/** @brief Open the window, on the document the app was started with. */
 static int start(void **state, const tiku_app_services_t *services)
 {
     image_app_t *a = calloc(1, sizeof *a);
@@ -41,6 +47,7 @@ static int start(void **state, const tiku_app_services_t *services)
     return -1;
 }
 
+/** @brief Let the viewer go; a read in flight finishes on its own. */
 static void stop(void *state)
 {
     image_app_t *a = state;
@@ -49,6 +56,8 @@ static void stop(void *state)
     free(a);
 }
 
+/** @brief Each turn: finished reads land, the refresh runs, and the
+ *         window is published. */
 static void tick(void *state, int64_t now)
 {
     image_app_t *a = state;
@@ -58,6 +67,7 @@ static void tick(void *state, int64_t now)
     a->dirty = 0;
 }
 
+/** @brief Input for the window; the app ends when the window has gone. */
 static int event(void *state, uint32_t id, const tiku_event_t *ev)
 {
     image_app_t *a = state;
@@ -66,6 +76,7 @@ static int event(void *state, uint32_t id, const tiku_event_t *ev)
     return !tiku_image_window_handle(a->viewer);
 }
 
+/** @brief A menu pick; the app ends when the window has gone. */
 static int pick(void *state, uint32_t id, int command)
 {
     image_app_t *a = state;
@@ -74,12 +85,14 @@ static int pick(void *state, uint32_t id, int command)
     return !tiku_image_window_handle(a->viewer);
 }
 
+/** @brief The image the file panel chose. */
 static void picked(void *state, uint32_t id, const char *path)
 {
     image_app_t *a = state; (void)id;
     if (path) tiku_image_window_file(a->viewer, path);
 }
 
+/** @brief The desktop closed the window. */
 static void closed(void *state, uint32_t id)
 {
     image_app_t *a = state;
@@ -91,6 +104,7 @@ static const tiku_app_descriptor_t descriptor = {
     .event_in = event, .tick = tick, .pick = pick, .picked = picked,
     .closed = closed
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

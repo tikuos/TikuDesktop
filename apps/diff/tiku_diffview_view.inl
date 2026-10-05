@@ -1,7 +1,9 @@
-/* The window: a toolbar of icon buttons, the two sides' names, then two
- * panes of lines side by side or the folders' list, a map of where the
- * changes are beside the scrollbar, and the status line -- with a gauge
- * and Stop while a job runs.  Nothing compared: the window is blank. */
+/* tiku_diffview_view.inl -- part of tiku_diffview.c: the window's layout,
+ * painting and pointer input: a toolbar of icon buttons, the two sides'
+ * names, two panes of lines or the folders' list, a map of the changes
+ * beside the scrollbar, and the status line with its gauge and Stop.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #define DV_SIZE_W   90              /* the folder list's size columns     */
 #define DV_STATE_W  96              /* and its status column              */
@@ -36,7 +38,8 @@ static const char *dv_tool_tip(int id)
     return "";
 }
 
-/** @brief A toolbar button's side: square, the Reader's size. */
+/** @brief A toolbar button's side: square, the button height but at
+ *         least 30 pixels. */
 static int dv_tool_size(void)
 {
     int bh = tiku_ui_button_h();
@@ -69,7 +72,8 @@ static long dv_total(const tiku_diffview_t *c)
     return c->mode == DV_FOLDERS ? c->nshown : 0;
 }
 
-/** @brief How many digits the larger file's last line number takes. */
+/** @brief How many digits the larger file's last line number takes, at
+ *         least three. */
 static int dv_digits(const tiku_diffview_t *c)
 {
     long n = c->files ? (c->files->nline[0] > c->files->nline[1]
@@ -134,7 +138,8 @@ static dv_layout_t dv_layout(tiku_diffview_t *c, tiku_rect_t r)
 
 /* -------------------------------------------------------------- paint  */
 
-/** @brief @p b over @p a, @p pct in a hundred of it; @p a's top byte. */
+/** @brief @p b mixed over @p a at @p pct percent, keeping @p a's top
+ *         byte. */
 static tiku_rgb_t dv_mix(tiku_rgb_t a, tiku_rgb_t b, int pct)
 {
     tiku_rgb_t out = a & 0xff000000u;
@@ -255,8 +260,8 @@ static int dv_in_ranges(const long *rng, int n, long i)
 
 /**
  * @brief Line @p l at @p r, from column @p c->hoff, tabs to DV_TAB
- *        columns and marks shown as '?': the ranges given lit behind it
- *        in @p word, a stretch at a time, then the text.
+ *        columns and control characters shown as '?': the ranges given
+ *        lit behind it in @p word, a stretch at a time, then the text.
  */
 static void dv_text(tiku_diffview_t *c, const dv_paint_t *p, tiku_rect_t r,
                     const tiku_diff_line_t *l, const long *rng, int nrng,
@@ -378,7 +383,7 @@ static void dv_map_draw(tiku_diffview_t *c, const dv_paint_t *p)
                    tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
 }
 
-/** @brief A size as the folder list shows it, a dash for none. */
+/** @brief The width of @p text in the list's face, for fitting sizes. */
 static int dv_measure(const char *text, void *ctx)
 {
     (void)ctx;

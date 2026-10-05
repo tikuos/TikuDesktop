@@ -1,4 +1,6 @@
-/* tiku_reader_window.c -- window.
+/* tiku_reader_window.c -- a viewer window's life: opening it for Help or a
+ * document, closing it, reading a local document into it, Reload, the
+ * zoom box, generated reports, and TikuReader's own profile.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -26,7 +28,8 @@ static const tiku_reader_profile_t reader_profile = {
         "Reload reads your latest saved changes.</p>"
 };
 
-/** @brief Native close buttons and programmatic Close share worker cleanup. */
+/** @brief The window went away, by its close box or by Close: the folder
+ *         search stops and nothing points at the window. */
 static void reader_window_gone(tiku_window_t *window, void *ctx)
 {
     tiku_reader_help_window_t *c = ctx;
@@ -95,8 +98,8 @@ void tiku_reader_help_window_open_page(tiku_reader_help_window_t *c,
     tiku_reader_help_window_open(c);
     if (page != NULL && *page && c->window != NULL) {
         if (tiku_reader_help_window_go(c, page) == TIKU_READER_HELP_PAGE) {
-            /* Opened ON the page, not at the contents by way of it:
-             * there is nowhere behind, and Contents is the way home. */
+            /* Opened on the page itself: the window starts with no
+             * history. */
             c->nback = c->nforward = 0;
         }
     }
@@ -118,8 +121,8 @@ void tiku_reader_help_window_open(tiku_reader_help_window_t *c)
             tiku_reader_loaded(c);
         }
     } else if (!c->document_mode && !tiku_reader_page_read(c, "index.html")) {
-        /* No folder, or no page in it: the window still opens and says
-         * so, since a Help that does nothing at all is worse. */
+        /* No folder, or no page in it: the window still opens, and says
+         * so. */
         if (!c->doc) {
             c->doc = calloc(1, sizeof *c->doc);
             if (c->doc) tiku_doc_init(c->doc);
@@ -176,10 +179,6 @@ void tiku_reader_help_window_destroy(tiku_reader_help_window_t *c)
     }
 }
 
-/* TikuReader shares rendering and reading tools, but not Help's navigation policy. */
-
-
-/** @brief Document bookmarks have their own persistent namespace. */
 void tiku_reader_document_window_init(tiku_reader_help_window_t *c,
     tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
     void (*choose_file)(void *ctx), void *ctx)
@@ -204,7 +203,6 @@ void tiku_reader_document_window_init_profile(tiku_reader_help_window_t *c,
     }
 }
 
-/** @brief Maximize within the desk's usable area; second click restores exactly. */
 int tiku_reader_document_window_zoom(tiku_reader_help_window_t *c, tiku_rect_t area)
 {
     if (!c || !c->document_mode || !c->reader || !c->window ||
@@ -224,7 +222,6 @@ int tiku_reader_document_window_zoom(tiku_reader_help_window_t *c, tiku_rect_t a
     return 1;
 }
 
-/** @brief Open is transactional: a failed read leaves page and history intact. */
 int tiku_reader_document_window_file(tiku_reader_help_window_t *c, const char *path)
 {
     if (!c || !c->document_mode) return 0;
@@ -245,7 +242,6 @@ int tiku_reader_document_window_file(tiku_reader_help_window_t *c, const char *p
     return 1;
 }
 
-/** @brief Reload restores a logical location without creating a history entry. */
 int tiku_reader_document_window_reload(tiku_reader_help_window_t *c)
 {
     if (!c || !c->document_mode || c->page[0] != '/') return 0;
@@ -262,7 +258,8 @@ int tiku_reader_document_window_reload(tiku_reader_help_window_t *c)
     if (c->dirty) *c->dirty = 1;
     return 1;
 }
-/** @brief Escape a report title; report bodies use the documented HTML dialect. */
+/** @brief @p title, "Report" when NULL, into @p out with &, < and >
+ *         escaped and control characters dropped. */
 static void reader_title(char *out, size_t cap, const char *title)
 {
     size_t n = 0;

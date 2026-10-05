@@ -1,10 +1,15 @@
-/* View-only measurements in scene coordinates. No geometry is modified.
+/* tiku_circuit_measure.c -- Measure Distance: two points picked on the
+ * canvas, kept in scene millimetres, their distance in the chosen unit,
+ * and the marks drawn over the view; the drawing itself is not changed.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_circuit_window_private.h"
 #include <math.h>
 #include <stdio.h>
 
-/* Clip before stepping: measurements may be far outside a zoomed view. */
+/** @brief Draw a one-pixel line from (@p x, @p y) to (@p ex, @p ey),
+ *         clipped to the surface's clip before it is stepped, since its
+ *         ends may lie far outside a zoomed view. */
 static void line(tiku_surface_t *s, double x, double y, double ex, double ey)
 {
     double dx=ex-x, dy=ey-y, lo=0, hi=1;

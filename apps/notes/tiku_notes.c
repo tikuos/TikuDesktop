@@ -1,21 +1,8 @@
-/*
- * TikuTracker -- the file manager for TikuOS.
- *
+/* tiku_notes.c -- Sticky Notes: small coloured windows on the desk, each
+ * a few lines of text, some marked important.  Each note is a window of
+ * its own and a text file of its own, under a one-line head.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- *
- * tiku_notes.c - sticky notes: small coloured windows a person leaves on
- * the desk, each holding a few lines, some marked as the ones that matter.
- *
- * A separate application, like every application here: it runs in its
- * own process and reaches the desk only through the services every
- * application is given.  Each note is a window of its own, so the desk
- * places, stacks and raises notes as it does any window, and a note is
- * its own file on disk -- a few lines of text under a one-line head that
- * says its colour and whether it is important -- so what a person wrote
- * is there after the desk has been restarted, and readable by anything.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include <dirent.h>
 #include <stdio.h>
@@ -38,7 +25,7 @@
 #define NOTE_MIN_H  80
 #define MARGIN      8
 #define SAVE_AFTER_US 500000    /* half a second of quiet, then the file */
-#define DOUBLE_CLICK_US 400000  /* the desk's own interval               */
+#define DOUBLE_CLICK_US 400000  /* as TIKU_TRK_DOUBLE_CLICK_US           */
 
 /* The commands a note's menus carry; the Notes menu counts on from here. */
 #define CMD_NEW        1
@@ -57,7 +44,8 @@ static const struct { const char *name; tiku_rgb_t face; } PAPERS[] = {
 };
 #define NPAPERS ((int)(sizeof PAPERS / sizeof PAPERS[0]))
 
-/** @brief One note: its text, its paper, whether it matters, its window. */
+/** @brief One note: its text, its paper, whether it is important, its
+ *         window and its file. */
 typedef struct {
     int               used;
     uint32_t          id;           /* window, 0 while closed          */
@@ -72,9 +60,10 @@ typedef struct {
     int               dirty;        /* the file lags the text          */
     int64_t           clicked_at;   /* the last press, for a double    */
     int               click_line, click_col, clicks;
-    int               dragging;     /* the hand is down in the text    */
+    int               dragging;     /* a selection drag is under way   */
 } note_t;
 
+/** @brief The application: the notes folder and a slot for each note. */
 typedef struct {
     const tiku_app_services_t *services;
     char    dir[512];               /* the notes folder                */
@@ -89,8 +78,9 @@ typedef struct {
 /**
  * @brief The folder the notes are kept in, made if it is not there.
  *
- * TIKU_NOTES names it outright, which is how a test keeps its notes out
- * of a person's; otherwise it is the usual place under the home.
+ * The environment variable TIKU_NOTES names it; without it, it is
+ * ~/.local/share/notes.
+ * @return 0, or -1 when there is no folder to use.
  */
 static int
 notes_dir(char *out, size_t max)
@@ -218,7 +208,8 @@ note_load(note_t *n, const char *path)
 /* Drawing                                                                   */
 /*---------------------------------------------------------------------------*/
 
-/** @brief The first line of the text, which is what the tab shows. */
+/** @brief The title the tab and the Notes menu show: the first line, or
+ *         "Note" when it is blank, after "! " for an important note. */
 static void
 note_title(const note_t *n, char *out, size_t max)
 {
@@ -251,7 +242,6 @@ note_paint(notes_t *st, note_t *n)
     (void)tiku_textview_reveal(&n->tv, rows);
     top = tiku_textview_top(&n->tv);
     tiku_fill(n->surface, all, face);
-    /* A darker rule down the left, the way the paper is glued on. */
     tiku_vline(n->surface, 0, 0, n->h, tiku_tint(face, TIKU_DARKEN_2));
     for (i = 0; i < rows; i++) {
         const char *line = tiku_textview_line(&n->tv, top + i);
@@ -275,8 +265,8 @@ note_paint(notes_t *st, note_t *n)
                    MARGIN + (cy - top) * f->height, f->height, ink);
     }
     if (n->important) {
-        /* The corner folded down: a note that matters wears a dark
-         * triangle at its top right, readable across the desk. */
+        /* An important note has a dark triangle in its top right
+         * corner. */
         int s = 14, k;
 
         for (k = 0; k < s; k++) {
@@ -297,9 +287,8 @@ static note_t *note_of(notes_t *st, uint32_t id);
 /**
  * @brief This note's menus: what to do with it, and every note there is.
  *
- * The Notes menu is how the ones that matter are followed: the important
- * notes come first, each row raises that note, and the row a person is
- * looking at is the one that is disabled.
+ * The Notes menu lists every open note, the important ones first; each
+ * row raises its note, and this note's own row is disabled.
  */
 static void
 note_publish(notes_t *st, note_t *n)
@@ -374,6 +363,7 @@ note_publish(notes_t *st, note_t *n)
 /* Notes coming and going                                                    */
 /*---------------------------------------------------------------------------*/
 
+/** @brief The note whose window is @p id, or NULL. */
 static note_t *
 note_of(notes_t *st, uint32_t id)
 {
@@ -485,7 +475,8 @@ note_drop(notes_t *st, note_t *n, int remove_file)
     n->used = 0;
 }
 
-/** @brief Every other open note republishes: the Notes menu names them all. */
+/** @brief Republish every open note's menus, since each Notes menu lists
+ *         them all. */
 static void
 notes_republish(notes_t *st)
 {
@@ -502,6 +493,8 @@ notes_republish(notes_t *st)
 /* The application                                                           */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Open every note the folder holds, in name order, or one new
+ *         note when it holds none. */
 static int
 notes_start(void **state, const tiku_app_services_t *services)
 {
@@ -518,7 +511,8 @@ notes_start(void **state, const tiku_app_services_t *services)
         free(st);
         return -1;
     }
-    /* Every note the folder holds comes back, in name order. */
+    /* The notes the folder holds come back, NOTES_MAX at most, in name
+     * order. */
     d = opendir(st->dir);
     if (d != NULL) {
         char names[NOTES_MAX][64];
@@ -533,7 +527,7 @@ notes_start(void **state, const tiku_app_services_t *services)
             }
         }
         (void)closedir(d);
-        for (i = 1; i < count; i++) {          /* small, so an insertion sort */
+        for (i = 1; i < count; i++) {          /* insertion sort, by name */
             char key[64];
 
             snprintf(key, sizeof key, "%s", names[i]);
@@ -571,6 +565,7 @@ notes_start(void **state, const tiku_app_services_t *services)
     return 0;
 }
 
+/** @brief Close every note, saving what is unsaved. */
 static void
 notes_stop(void *state)
 {
@@ -606,7 +601,7 @@ note_locate(note_t *n, int x, int y, int *line_out, int *col_out)
     text = tiku_textview_line(&n->tv, line);
     len = (text != NULL) ? (int)strlen(text) : 0;
     if (len > (int)sizeof head - 1) { len = (int)sizeof head - 1; }
-    /* The column whose left edge the pointer is nearest to. */
+    /* The column of the glyph under the pointer. */
     while (col < len) {
         memcpy(head, text, (size_t)(col + 1));
         head[col + 1] = '\0';
@@ -618,7 +613,8 @@ note_locate(note_t *n, int x, int y, int *line_out, int *col_out)
     return 1;
 }
 
-/** @brief A byte a word is made of: a letter, a digit, or beyond ASCII. */
+/** @brief A byte a word is made of: a letter, a digit, '_', or a byte
+ *         beyond ASCII. */
 static int
 word_byte(unsigned char c)
 {
@@ -637,12 +633,12 @@ note_select_span(note_t *n, int line, int from, int to)
 }
 
 /**
- * @brief The hand comes down in the text.
+ * @brief A press in the text.
  *
- * One click places the caret and arms a drag; a second within the
- * desk's interval on the same spot takes the word under it, a third
- * the line; with Shift held the caret's old place stays the anchor,
- * so the selection grows to the click.
+ * One click places the caret and arms a drag; a second within
+ * DOUBLE_CLICK_US on the same spot takes the word under it, a third the
+ * line; with Shift held the caret's old place stays the anchor, so the
+ * selection grows to the click.
  */
 static void
 note_press(note_t *n, const tiku_event_t *ev)
@@ -669,7 +665,7 @@ note_press(note_t *n, const tiku_event_t *ev)
         to = col;
         while (from > 0 && word_byte((unsigned char)text[from - 1])) { from--; }
         while (to < len && word_byte((unsigned char)text[to])) { to++; }
-        if (from == to) {          /* a gap: the run of it, as fields do */
+        if (from == to) {          /* on a gap: the run of non-word bytes */
             while (from > 0 && !word_byte((unsigned char)text[from - 1])) {
                 from--;
             }
@@ -691,7 +687,7 @@ note_press(note_t *n, const tiku_event_t *ev)
     n->dragging = 1;
 }
 
-/** @brief The hand moves while down: the selection follows it. */
+/** @brief A drag in the text: the selection follows the pointer. */
 static int
 note_drag(note_t *n, int x, int y)
 {
@@ -705,7 +701,9 @@ note_drag(note_t *n, int x, int y)
     return 1;
 }
 
-/** @brief A key typed into a note: the same keys the editor answers. */
+/** @brief A key typed into a note: Ctrl+A selects all; the arrows, Home
+ *         and End move, Shift extending the selection; Delete, Backspace,
+ *         Return and printable characters edit.  @return 1 when taken. */
 static int
 note_key(note_t *n, const tiku_event_t *ev)
 {
@@ -747,6 +745,9 @@ note_key(note_t *n, const tiku_event_t *ev)
     return 1;
 }
 
+/** @brief A note window's event: a resize, the pointer, keys and composed
+ *         text; Ctrl+N makes a new note.  The title follows the first
+ *         line as it is typed. */
 static int
 notes_event_in(void *state, uint32_t window, const tiku_event_t *ev)
 {
@@ -784,7 +785,7 @@ notes_event_in(void *state, uint32_t window, const tiku_event_t *ev)
         }
         changed = note_key(n, ev);
     } else if (ev->type == TIKU_EVENT_TEXT_INPUT) {
-        /* Composed text -- an input method's -- lands whole. */
+        /* Text an input method composed is inserted whole. */
         int r = tiku_text_input_event(&n->commit, ev);
 
         if (r == TIKU_TEXT_COMPLETE && n->commit.text[0] != '\0') {
@@ -809,18 +810,18 @@ notes_event_in(void *state, uint32_t window, const tiku_event_t *ev)
             }
         }
     }
-    return 0;                   /* nonzero would be the end of the app */
+    return 0;                   /* nonzero ends the app */
 }
 
+/** @brief Each turn: save every note left unedited for SAVE_AFTER_US. */
 static void
 notes_tick(void *state, int64_t now_us)
 {
     notes_t *st = state;
     int i;
 
-    /* Written after half a second's quiet, not on every letter: a note
-     * is small, but a file that is rewritten on every keystroke is a disk
-     * that is never still. */
+    /* A note is written after half a second without edits, not on every
+     * keystroke. */
     for (i = 0; i < NOTES_MAX; i++) {
         note_t *n = &st->note[i];
 
@@ -831,6 +832,7 @@ notes_tick(void *state, int64_t now_us)
     }
 }
 
+/** @brief A menu pick from a note's window.  @return 1 for Quit. */
 static int
 notes_pick(void *state, uint32_t window, int command)
 {
@@ -841,7 +843,7 @@ notes_pick(void *state, uint32_t window, int command)
         return 0;
     }
     if (command == CMD_QUIT) {
-        return 1;               /* the one answer that ends the app */
+        return 1;               /* 1 ends the app */
     }
     if (command == CMD_NEW) {
         if (note_new(st, n->paper) != NULL) { notes_republish(st); }
@@ -899,6 +901,8 @@ notes_closed(void *state, uint32_t window)
     notes_republish(st);
 }
 
+/** @brief Sticky Notes' descriptor: exported to a loader, or run by
+ *         main(). */
 const tiku_app_descriptor_t tiku_notes_app = {
     .id = "org.tikuos.notes",
     .name = "Sticky Notes",
@@ -911,13 +915,14 @@ const tiku_app_descriptor_t tiku_notes_app = {
 };
 
 #ifdef TIKU_APP_SO
-/* The one symbol a loader looks for; see tiku_app.h. */
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t), &tiku_notes_app
 };
 #endif
 
 #ifndef TIKU_APP_EMBED
+/** @brief Run Sticky Notes as a client of the desktop. */
 int
 main(void)
 {

@@ -1,7 +1,7 @@
-/* tiku_sdr_tape.c -- TikuSDR's recordings: every line the board sends,
- * written with its time, played back at the pace it was made, and spectra
- * exported as CSV.  A recording is plain text with its format at its head,
- * so a script reads one as easily as this window does.
+/* tiku_sdr_tape.c -- TikuSDR's recordings: the board's SPEC and SWEEP
+ * lines and the window's views, written with their times, played back at
+ * the pace they were made, and spectra exported as CSV.  A recording is
+ * plain text, its format described in comment lines at its head.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <errno.h>
@@ -16,13 +16,15 @@
 #include "tiku_sdr.h"
 
 #define TAPE_MAGIC   "# TikuSDR recording"
-#define TAPE_TAIL    8192           /* read for the last time it holds   */
-#define TAPE_LONGEST 100000000L     /* seconds: a later time is no time  */
+#define TAPE_TAIL    8192           /* a recording's last bytes, read
+                                       for its length                   */
+#define TAPE_LONGEST 100000000L     /* seconds; a line timed later is
+                                       skipped                          */
 #define GAP_MAX      2.0            /* seconds: a longer silence is cut  */
 #define GAP_LEFT     0.5            /* ... down to this                  */
 #define PLAY_BURST   64             /* lines played in one tick, at most */
 #define CSV_LINES    2000           /* a recording's lines read a tick   */
-#define CSV_ROWS     16384          /* ... or rows written, the fewer    */
+#define CSV_ROWS     16384          /* ... or rows written, whichever first */
 #define CSV_HEAD     "time_s,freq_mhz,db\n"
 
 /* What a recording's lines mean, said at its head. */
@@ -88,8 +90,8 @@ void sdr_tape_name(const sdr_t *st, const char *ext, char *out, size_t max)
         if (*c == '/' || *c == ':') *c = '-';
 }
 
-/** @brief A new file at @p path, or a file emptied, for writing.
- *         @return NULL with errno set when it cannot be. */
+/** @brief Open @p path for writing, made or emptied.
+ *  @return the file, or NULL with errno set. */
 static FILE *create(const char *path)
 {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
@@ -99,7 +101,8 @@ static FILE *create(const char *path)
     return f;
 }
 
-/** @brief The head: what this is, whose, when, and what its lines mean. */
+/** @brief Write the recording's head: what it is, whose, when, and what
+ *         its lines mean. */
 static void rec_head(sdr_t *st)
 {
     sdr_rec_t *r = &st->rec;
@@ -149,7 +152,8 @@ void sdr_rec_line(sdr_t *st, const char *line, int frame)
     int n;
 
     if (!r->file) return;
-    /* Seconds written by hand, so no locale turns the point into a comma. */
+    /* Seconds formatted from integers: the point is '.' in every
+     * locale. */
     n = fprintf(r->file, "%lld.%03lld %s\n", ms / 1000, ms % 1000, line);
     if (n < 0 || fflush(r->file) != 0) {
         r->failed = 1;
@@ -191,9 +195,9 @@ void sdr_rec_stop(sdr_t *st)
     st->dirty = 1;
 }
 
-/** @brief The time "12.345" at @p s, in seconds, whatever the locale, and
- *         under three years, so microseconds of it fit any clock.
- *         @return what follows it, or NULL when there is none. */
+/** @brief Read the time "12.345" at @p s, in seconds, with '.' in every
+ *         locale, at most TAPE_LONGEST seconds (a little over three years).
+ *  @return what follows it, or NULL when there is none. */
 static const char *read_time(const char *s, double *at)
 {
     char *end;
@@ -221,7 +225,8 @@ static const char *tape_words(const char *line, double *at)
     return rest;
 }
 
-/** @brief The last time a recording holds, read from its tail. */
+/** @brief The last time a recording holds, read from its last TAPE_TAIL
+ *         bytes; the file's position is kept. */
 static double last_time(FILE *f)
 {
     char line[SDR_LINE];
@@ -231,7 +236,7 @@ static double last_time(FILE *f)
     if (here < 0 || fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 0)
         return 0.0;
     if (fseek(f, size > TAPE_TAIL ? size - TAPE_TAIL : 0, SEEK_SET) == 0) {
-        if (size > TAPE_TAIL) (void)fgets(line, sizeof line, f);  /* a part */
+        if (size > TAPE_TAIL) (void)fgets(line, sizeof line, f);  /* partial */
         while (fgets(line, sizeof line, f))
             if (tape_words(line, &at) && at > last) last = at;
     }
@@ -239,8 +244,9 @@ static double last_time(FILE *f)
     return last;
 }
 
-/** @brief A header line kept for the status: the board's name, and the
- *         minute the recording began. */
+/** @brief Add to p->from, which the note shows while the recording plays,
+ *         the board's name or the minute the recording began, when header
+ *         line @p line gives one. */
 static void head_line(sdr_play_t *p, const char *line)
 {
     size_t n = strlen(p->from), word;
@@ -254,9 +260,10 @@ static void head_line(sdr_play_t *p, const char *line)
                  line + 9);
 }
 
-/** @brief The next line of @p f this window plays: its words moved to the
- *         front of @p line, its time in @p at, and the header lines on the
- *         way handed to @p p when there is one.  @return 0 at the end. */
+/** @brief Read the next line of @p f this window plays: its words moved to
+ *         the front of @p line and its time in @p at; header lines on the
+ *         way go to head_line() when @p p is not NULL.
+ *         @return 1 with a line, 0 at the end. */
 static int tape_read(FILE *f, char *line, size_t max, double *at,
                      sdr_play_t *p)
 {
@@ -279,8 +286,10 @@ static int tape_read(FILE *f, char *line, size_t max, double *at,
     return 0;
 }
 
-/** @brief One recorded line into @p m, as the board's own line would go.
- *         @return 1 when it finished a spectrum. */
+/** @brief Apply one recorded line to @p m: a VIEW line sets the view
+ *         (VIEW band and VIEW live come from older recordings); SPEC and
+ *         SWEEP go as the board's own lines do.
+ *  @return 1 when it finished a frame. */
 static int tape_apply(sdr_model_t *m, const char *line)
 {
     char a[24], b[24];
@@ -304,10 +313,11 @@ static int tape_apply(sdr_model_t *m, const char *line)
     return sdr_model_line(m, line) == 1;
 }
 
-/** @brief A recording opened for reading, past its first line, which must
- *         say what it is; @p one_max the widest view one spectrum showed
- *         when it was made: 40 MHz in version 1, else 24.  @return NULL
- *         with the reason in the note. */
+/** @brief Open a recording for reading, past its first line, which must
+ *         begin with TAPE_MAGIC; set @p one_max to the widest view one
+ *         spectrum showed when it was made: SDR_ONE_V1 for version 1 or no
+ *         version, else SDR_LIVE_SPAN.  @return the file, or NULL with the
+ *         reason in the note. */
 static FILE *tape_open(sdr_t *st, const char *path, double *one_max)
 {
     char head[64];
@@ -332,8 +342,10 @@ static FILE *tape_open(sdr_t *st, const char *path, double *one_max)
     return f;
 }
 
-/** @brief The next line worth playing, held until its time comes; a long
- *         silence is cut short, so playing never seems to stall. */
+/** @brief Read the next playable line into p->line, ready when there is
+ *         one, to play when its time comes: a line timed before the last
+ *         is skipped, and a silence over GAP_MAX seconds is cut to
+ *         GAP_LEFT. */
 static void next_line(sdr_play_t *p)
 {
     double at;
@@ -382,7 +394,8 @@ int sdr_play_start(sdr_t *st, const char *path)
     return 0;
 }
 
-/** @brief One line of a recording, as if the board had just sent it. */
+/** @brief Apply one line of a recording to the model at the line's own
+ *         time, counting a finished frame toward the rate shown. */
 static void play_line(sdr_t *st, const char *line)
 {
     st->model.clock = st->play.at;
@@ -419,12 +432,13 @@ void sdr_play_stop(sdr_t *st)
     fclose(st->play.file);
     st->play.file = NULL;
     st->play.ready = 0;
-    st->model.one_max = SDR_LIVE_SPAN;  /* the next view the board's way */
+    st->model.one_max = SDR_LIVE_SPAN;  /* the board's limit again */
     st->dirty = 1;
 }
 
-/** @brief @p v with @p places decimals and a point, whatever the locale
- *         (the desktop takes its locale from the environment). */
+/** @brief @p v with @p places decimals and a '.' point in every locale:
+ *         printf's %f follows the locale, which the desktop takes from the
+ *         environment. */
 static void fixed(char *out, size_t max, double v, int places)
 {
     long long scale = 1, q;
@@ -451,7 +465,8 @@ static long csv_frame(FILE *out, const sdr_model_t *m, double t,
     return m->n;
 }
 
-/** @brief The waterfall's spectra, oldest first, timed from the first.
+/** @brief Write the spectra the spectrogram holds, oldest first, timed
+ *         from the first, at its half-decibel steps from 0 to 127.5 dB.
  *         @return the rows written, or -1. */
 static long csv_held(const sdr_model_t *m, FILE *out)
 {
@@ -469,7 +484,8 @@ static long csv_held(const sdr_model_t *m, FILE *out)
     return rows;
 }
 
-/** @brief The export closed, and what it became said. */
+/** @brief Close the export and say in the note what it became, or that it
+ *         could not be written whole when @p failed. */
 static void csv_done(sdr_t *st, int failed)
 {
     sdr_csv_t *x = &st->csv;

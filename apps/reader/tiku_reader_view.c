@@ -1,4 +1,6 @@
-/* tiku_reader_view.c -- view.
+/* tiku_reader_view.c -- a viewer window painted: the toolbar, the page and
+ * its highlights, the side list; and the reading tools' input and the
+ * commands behind them.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -95,9 +97,9 @@ void tiku_reader_draw(tiku_window_t *window, tiku_surface_t *s,
     if (c->document_mode) tiku_reader_document_tip(c, s, content);
 }
 
-/* Shared native controls surround the page; no HTML forms or script execution. */
-
-/** @brief Measure one bounded prefix at an already validated UTF-8 boundary. */
+/** @brief The width in face @p face of the first @p n bytes of @p text,
+ *         cut to TIKU_TEXT_LINE_MAX.
+ *  @note @p n is at a UTF-8 character boundary. */
 static int reader_width(int face, const char *text, int n)
 {
     char part[TIKU_TEXT_LINE_MAX];
@@ -107,7 +109,8 @@ static int reader_width(int face, const char *text, int n)
     return tiku_measure_width(face, part);
 }
 
-/** @brief Highlight only the selected or matched bytes inside this painted piece. */
+/** @brief Highlight the flattened-text range from @p a to @p b where it
+ *         falls in @p piece, framed when @p active. */
 static void reader_range(tiku_reader_help_window_t *c, tiku_surface_t *s,
                          int piece, tiku_rect_t box, int a, int b, int active)
 {
@@ -124,7 +127,8 @@ static void reader_range(tiku_reader_help_window_t *c, tiku_surface_t *s,
     if (active) tiku_frame(s, box, TIKU_C_FOCUS);
 }
 
-/** @brief Search highlights span inline markup; selection takes visual precedence. */
+/** @brief A painted piece's highlights: every Find match that touches it,
+ *         the current one framed, then the selection over them. */
 static void reader_mark(void *ctx, tiku_surface_t *s, int piece, tiku_rect_t box)
 {
     tiku_reader_help_window_t *c = ctx; struct help_reader *r = c->reader;
@@ -141,7 +145,9 @@ static void reader_mark(void *ctx, tiku_surface_t *s, int piece, tiku_rect_t box
                  r->a < r->b ? r->b : r->a, 1);
 }
 
-/** @brief The same glyph widths decide selection and its highlight. */
+/** @brief The flattened-text offset at (@p x, @p y) of the page, measured
+ *         with the widths the highlight uses; its line's block becomes the
+ *         selected one.  @return -1 between lines. */
 static int reader_offset_at_size(tiku_reader_help_window_t *c, int x, int y)
 {
     struct help_reader *r = c->reader;
@@ -172,7 +178,8 @@ static int reader_offset(tiku_reader_help_window_t *c, int x, int y)
     return offset;
 }
 
-/** @brief Sidebars reuse the kit list, including its keyboard and wheel behavior. */
+/** @brief Draw the reading tools: their buttons, the Find field, and the
+ *         side list of outline, search results or bookmarks. */
 static void reader_tools_draw(tiku_reader_help_window_t *c, tiku_surface_t *s, help_layout_t l)
 {
     struct help_reader *r = c->reader; if (!r) return;
@@ -238,8 +245,8 @@ static void reader_tools_draw(tiku_reader_help_window_t *c, tiku_surface_t *s, h
  * @brief Whether an outline row still names a block of the page shown.
  *
  * The rows are rebuilt while drawing, so between a page arriving and the
- * next frame they still hold the last page's block numbers -- and the
- * fold flags are reallocated with the page, and can be smaller.
+ * next frame they still hold the last page's block numbers; and the fold
+ * flags are made again with the page, and can be smaller.
  */
 static int reader_row_live(const tiku_reader_help_window_t *c, int row)
 {
@@ -250,7 +257,10 @@ static int reader_row_live(const tiku_reader_help_window_t *c, int row)
            r->rows[row].block < r->folded_cap;
 }
 
-/** @brief Activate a result without losing the selected source during navigation. */
+/** @brief Open the side list's chosen row: an outline row scrolls to its
+ *         heading; a result or a bookmark opens its page, then finds the
+ *         words searched for or scrolls to the block.  The row is copied
+ *         first, since opening a page rebuilds the list. */
 void tiku_reader_side_open(tiku_reader_help_window_t *c)
 {
     struct help_reader *r = c->reader;
@@ -266,7 +276,8 @@ void tiku_reader_side_open(tiku_reader_help_window_t *c)
     }
 }
 
-/** @brief Toolbar commands share their implementation with keyboard shortcuts. */
+/** @brief Carry out a reading tools' command, from a button, menu or key.
+ *  @return 1 when @p command was one. */
 int tiku_reader_action(tiku_reader_help_window_t *c, int command)
 {
     struct help_reader *r = c->reader; if (!r) return 0;
@@ -291,7 +302,9 @@ int tiku_reader_action(tiku_reader_help_window_t *c, int command)
     return 1;
 }
 
-/** @brief Search input and selection are native events, including UTF-8 commits. */
+/** @brief The reading tools' input: Ctrl+F, Ctrl+G, the Find field,
+ *         Ctrl+C, Ctrl+A and Ctrl+D, the side list, and selecting the page's
+ *         text with the pointer.  @return 1 when taken. */
 int tiku_reader_tools_event(tiku_reader_help_window_t *c, const tiku_event_t *ev, help_layout_t l)
 {
     struct help_reader *r = c->reader; if (!r) return 0;

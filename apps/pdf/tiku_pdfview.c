@@ -1,6 +1,8 @@
-/* TikuPDF: a document viewer over the PDF kit.  Every read of a document
- * is a worker's, one at a time per document; the window only draws what
- * came back, so a 1,400-page datasheet scrolls while pages are drawn.
+/* tiku_pdfview.c -- TikuPDF's viewer: its state, commands, keys, menus
+ * and API.  Every read of a document runs on a worker, one at a time per
+ * document, and the window draws what has come back, so it scrolls while
+ * pages are still being drawn.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_pdfview.h"
 #include "tiku_clipboard.h"
@@ -34,7 +36,7 @@
 
 #define PV_MARGIN      12           /* around the pages, in pixels      */
 #define PV_GAP         10           /* between two pages                */
-#define PV_SIDE_W      220          /* the outline's column             */
+#define PV_SIDE_W      220          /* the side column's width          */
 #define PV_BAR         15           /* a scrollbar's width              */
 #define PV_TILES       48           /* pages kept drawn                 */
 #define PV_PIXELS      (24L << 20)  /* the pixels those may hold        */
@@ -149,7 +151,7 @@ struct tiku_pdfview {
     int sealed;                     /* the locked one wants a key file   */
     char keyfile[TIKU_PATH_MAX];    /* the key file chosen for it, or "" */
     tiku_pdf_signature_t *sig;      /* the shown document's, checked     */
-    int nsig, sigs, sig_top;        /* ...; the column shows them; scroll */
+    int nsig, sigs, sig_top;        /* how many; shown; the column's scroll */
     int hover_tool;                 /* the toolbar button pointed at, or 0 */
     pv_match_t *match;
     int nmatch, cur, searching, searched, search_gen, want_next;
@@ -203,7 +205,8 @@ static void pv_say(tiku_pdfview_t *c, const char *text)
     pv_changed(c);
 }
 
-/** @brief The same half-open rectangle rule for every hit. */
+/** @brief Whether (@p x, @p y) lies in @p r, its right and bottom edges
+ *         outside. */
 static int pv_in(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
@@ -229,7 +232,7 @@ static void pv_find_widest(tiku_pdfview_t *c)
         if (pv_pw(c, p) > pv_pw(c, c->widest)) c->widest = p;
 }
 
-/** @brief One job or the viewer fewer; the last one closes it. */
+/** @brief Drop a hold on the shared document; the last one closes it. */
 static void pv_doc_unref(pv_doc_t *d)
 {
     if (d && --d->refs == 0) {
@@ -238,8 +241,8 @@ static void pv_doc_unref(pv_doc_t *d)
     }
 }
 
-/** @brief Everything the shown document brought, given back; the view
- *         is left empty.  Jobs still queued for it are cancelled. */
+/** @brief Free everything the shown document brought and leave the view
+ *         empty; jobs still queued for it are cancelled. */
 static void pv_forget(tiku_pdfview_t *c)
 {
     if (c->doc) {
@@ -289,7 +292,7 @@ static void pv_forget(tiku_pdfview_t *c)
     tiku_scroll_init(&c->hbar, PV_LINE);
 }
 
-/** @brief Release the viewer after the last queued job retires. */
+/** @brief Drop a hold on the viewer; the last one frees it. */
 static void pv_unref(tiku_pdfview_t *c)
 {
     if (--c->refs) return;
@@ -321,12 +324,12 @@ static const char *pv_label(int id)
     return id >= PV_OPEN && id <= PV_SIGS ? labels[id] : "";
 }
 
-/** @brief Clipboard commands follow keyboard focus, including empty viewers. */
+/** @brief The text field Copy acts on: the find or page field when it has
+ *         the focus, else NULL; the password field is never one. */
 static tiku_field_t *pv_copy_field(tiku_pdfview_t *c)
 {
     if (c->dialog.focus == PV_FIND_FIELD) return &c->find;
     if (c->dialog.focus == PV_PAGE_FIELD) return &c->go;
-    /* Password text must not be exposed through the menu. */
     return NULL;
 }
 
@@ -384,7 +387,7 @@ static void pv_zoom_step(tiku_pdfview_t *c, int dir)
     pv_set_scale(c, PV_FIXED, to);
 }
 
-/** @brief Every button, menu row and shortcut ends here. */
+/** @brief Carry out command @p id, from a button, a menu row or a key. */
 static void pv_action(tiku_pdfview_t *c, int id)
 {
     int page = c->npage ? pv_current(c) : 0;
@@ -436,7 +439,7 @@ static void pv_action(tiku_pdfview_t *c, int id)
     else if (id == PV_MATCH_CASE || id == PV_WHOLE_WORDS) {
         if (id == PV_MATCH_CASE) c->match_case = !c->match_case;
         else c->whole_words = !c->whole_words;
-        if (c->query[0]) {          /* the matches were of the other way */
+        if (c->query[0]) {          /* search again with the new setting */
             c->query[0] = '\0';
             pv_find(c, 1);
         }
@@ -493,8 +496,8 @@ static int pv_canvas_key(tiku_pdfview_t *c, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief Command keys, whatever has the focus, unless a field wants
- *         its own copy, paste and select all. */
+/** @brief Command keys, whatever has the focus, unless a field wants its
+ *         own cut, copy, paste, undo and select all. */
 static int pv_command_key(tiku_pdfview_t *c, const tiku_event_t *ev)
 {
     int field = c->dialog.focus == PV_PASS_FIELD ||
@@ -525,7 +528,7 @@ static int pv_command_key(tiku_pdfview_t *c, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief The password field emptied, the password gone from memory. */
+/** @brief Empty the password field, zeroing the password in memory. */
 static void pv_forget_password(tiku_pdfview_t *c)
 {
     memset(c->pass.text, 0, sizeof c->pass.text);
@@ -533,8 +536,9 @@ static void pv_forget_password(tiku_pdfview_t *c)
     tiku_field_input_init(&c->pass_in);
 }
 
-/** @brief Return searches, goes to a page, or submits the separate password
- *         field. */
+/** @brief Input for the focused field: Return finds in the find field,
+ *         goes to the page typed in the page field, or unlocks with the
+ *         password; Escape leaves the field. */
 static int pv_field_event(tiku_pdfview_t *c, const tiku_event_t *ev,
                           const pv_layout_t *l)
 {
@@ -586,8 +590,8 @@ static int pv_key(tiku_pdfview_t *c, const tiku_event_t *ev,
     return 0;
 }
 
-/** @brief Pointer input for the fields, outline, bars and canvas; the
- *         toolbar buttons are the dialog's. */
+/** @brief Pointer input for the fields, the side column, the scrollbars
+ *         and the canvas; the toolbar buttons are the dialog's. */
 static int pv_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
                       const pv_layout_t *l)
 {
@@ -613,7 +617,10 @@ static int pv_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
     return pv_canvas_pointer(c, ev, l);
 }
 
-/** @brief Every window event: keys, then pointer areas, then buttons. */
+/** @brief Every window event.  Keys come first; a press goes to the
+ *         dialog's buttons, then to the fields, side column, scrollbars and
+ *         canvas; the dialog takes the rest and carries out a button's
+ *         command when it is released. */
 static int pv_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     tiku_pdfview_t *c = ctx;
@@ -626,7 +633,7 @@ static int pv_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     if (pointer || ev->type == TIKU_EVENT_KEY_DOWN ||
         ev->type == TIKU_EVENT_DEACTIVATED) pv_tool_hover(c, ev);
     if (ev->type == TIKU_EVENT_DEACTIVATED) {
-        pv_recent_note(c);          /* kept, should the process not be */
+        pv_recent_note(c);          /* the place saved here and on close */
         c->pressing = c->selecting = c->vdrag = c->hdrag = 0;
         tiku_scroll_release(&c->vbar);
         tiku_scroll_release(&c->hbar);
@@ -659,7 +666,7 @@ static void pv_window_gone(tiku_window_t *w, void *ctx)
     pv_changed(c);
 }
 
-/** @brief Published menus hand their picks to the one action path. */
+/** @brief A menu pick, carried out as its command. */
 static void pv_menu_pick(tiku_window_t *w, int id, void *ctx)
 {
     (void)w;
@@ -683,7 +690,8 @@ static void pv_menu_add(tiku_pdfview_t *c, tiku_menu_list_t *m, int id,
     e->marked = (unsigned char)marked;
 }
 
-/** @brief File, Edit, View and Go, as the controls stand. */
+/** @brief Publish the File, Edit, View, Go and Bookmarks menus, each item
+ *         enabled and marked as the viewer now stands. */
 static void pv_menus(tiku_pdfview_t *c)
 {
     tiku_menuset_t menus;

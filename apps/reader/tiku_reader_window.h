@@ -1,18 +1,8 @@
-/*
- * TikuReader -- documents and Help for TikuDesktop.
- *
+/* tiku_reader_window.h -- the viewer window TikuReader, Help and
+ * TikuMarker share: a tiku_doc page put on the screen, and where its links
+ * go among files, help pages and the desktop's namespace.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- *
- * tiku_reader_window.h - Help and local documents, read in a window.
- *
- * A page is a tiku_doc; this is what puts one on the screen and what
- * decides where a link goes.  The deciding is here rather than in the
- * kit because it is about files and mounts, which a kit may not know:
- * a name reaches a place in the page, a file name reaches a sibling
- * page, and a device path is handed back to the desktop to open.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+ * SPDX-License-Identifier: Apache-2.0 */
 #ifndef TIKU_READER_WINDOW_H_
 #define TIKU_READER_WINDOW_H_
 
@@ -24,40 +14,41 @@
 #include "tiku_window.h"
 
 /**
- * @brief The page itself, as a control the keyboard can be put on.
- *
- * Named here because a caller that wants the reading keys rather than
- * the buttons has to say so, and a number copied out of the .c is a
- * number that will go stale.
+ * @brief The page's control id: a caller focuses it to give the page, and
+ *        its reading keys, the keyboard.
  */
 #define TIKU_READER_HELP_CONTROL_PAGE 5
 
-/** @brief How far back a reader may step. */
+/** @brief How many pages the back and forward histories each hold. */
 #define TIKU_READER_HELP_HISTORY 16
-/** @brief The largest page this window will read in. */
+/** @brief The largest report tiku_reader_help_window_html() takes. */
 #define TIKU_READER_HELP_PAGE_MAX TIKU_DOC_TEXT_MAX
-/** @brief Desktop file safety ceiling, independent of embedded text storage. */
+/** @brief The largest document file read, apart from the kit's own
+ *         limits. */
 #define TIKU_READER_READER_FILE_MAX TIKU_READER_FILE_MAX
-/** @brief Maximum table storage for one desktop document. */
+/** @brief The most memory one document's tables may take. */
 #define TIKU_READER_READER_MEMORY_MAX TIKU_READER_MEMORY_MAX
 
 /** @brief Where a link went. */
 typedef enum {
     TIKU_READER_HELP_NOWHERE = 0,  /* refused, and the status says why   */
     TIKU_READER_HELP_ANCHOR,       /* a place in the page now shown      */
-    TIKU_READER_HELP_PAGE,         /* another page of the help folder    */
+    TIKU_READER_HELP_PAGE,         /* another page: of the help folder,  */
+                                   /* or a document opened in its place  */
     TIKU_READER_HELP_NAMESPACE     /* a path, handed to the opener       */
 } tiku_reader_help_where_t;
 
 /**
- * @brief Open a non-help path through the app's desktop-service callback.
+ * @brief Open a path that is not a page, through the desktop's services.
  *
- * @return nonzero when the place was there and was opened; zero leaves
- *         the window to say that it was not, rather than a link that
- *         looks followed and did nothing.
+ * @return nonzero when the place was there and was opened; zero, and the
+ *         window says it could not be opened.
  */
 typedef int (*tiku_reader_help_open_fn)(void *ctx, const char *path);
 
+/** @brief A reading position: the scroll offset, the size the page was
+ *         laid out at, and the place in the page, for when the size has
+ *         changed by the time it is returned to. */
 typedef struct {
     int pixel, width, height;
     tiku_doc_place_t place;
@@ -79,6 +70,8 @@ typedef struct {
     const char *help_page;          /* the app's page in Help            */
 } tiku_reader_profile_t;
 
+/** @brief A viewer window, Help or a document: its page, history, chrome
+ *         and reading state. */
 typedef struct {
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
@@ -87,8 +80,8 @@ typedef struct {
     tiku_rect_t       hover_damage;
     int               screen_w, screen_h;
     /*
-     * The page and optional larger tables live on the heap rather than
-     * inside the app's by-value window controller.
+     * The page and its tables are on the heap, outside this structure,
+     * which the app holds by value.
      */
     tiku_doc_t       *doc;
     tiku_scroll_t     bar;
@@ -97,7 +90,8 @@ typedef struct {
     int               laid_for;         /* the width the page was laid for */
     int               page_h;           /* and the height it is read in    */
     char              root[TIKU_PATH_MAX];
-    char              page[TIKU_PATH_MAX];  /* under the root              */
+    char              page[TIKU_PATH_MAX];  /* under the root, or a        */
+                                            /* document's absolute path    */
     char              status[256];
     char              wanted[TIKU_PATH_MAX];/* the last path handed over    */
     char              anchor[128];      /* a place to reach once laid out  */
@@ -116,31 +110,44 @@ typedef struct {
     void *choose_ctx;
 } tiku_reader_help_window_t;
 
-/** @brief An independent Markdown/HTML reader, initially without a file. */
+/** @brief Make @p c a TikuReader document window with no file open; its
+ *         bookmarks are kept apart from Help's. */
 void tiku_reader_document_window_init(tiku_reader_help_window_t *c,
     tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
     void (*choose_file)(void *ctx), void *ctx);
-/** @brief Initialize a document viewer with an app-specific identity. */
+/** @brief Make @p c a document window under an application's identity;
+ *         a NULL @p profile is TikuReader's. */
 void tiku_reader_document_window_init_profile(tiku_reader_help_window_t *c,
     tiku_workspace_t *workspace, int screen_w, int screen_h, int *dirty,
     void (*choose_file)(void *ctx), void *ctx,
     const tiku_reader_profile_t *profile);
-/** @brief Read a literal local filename, retaining history on failure. */
+/** @brief Read the local file @p path into the window and open it; a
+ *         failed read keeps the page shown and the history as they were,
+ *         and says why.  @return 1 when it was read. */
 int tiku_reader_document_window_file(tiku_reader_help_window_t *c, const char *path);
-/** @brief Reload, retaining logical position and navigation history. */
+/** @brief Read the shown document again, back at the place it was read
+ *         to and without a history entry; a failed read keeps what is
+ *         shown.  @return 1 when reloaded. */
 int tiku_reader_document_window_reload(tiku_reader_help_window_t *c);
-/** @brief Toggle maximize/restore inside the desktop's usable frame area. */
+/** @brief Maximize the window within @p area, the desk's usable area, or
+ *         restore the frame it had before.  @return 1 when it changed. */
 int tiku_reader_document_window_zoom(tiku_reader_help_window_t *c, tiku_rect_t area);
-/** @brief Whether the suffix names a supported local markup document. */
+/** @brief Whether @p path's suffix, in any case, is one Open and document
+ *         links accept: .md, .markdown, .html or .htm. */
 int tiku_reader_document_file_supported(const char *path);
 
-/** @brief Open a bounded generated document, without writing a help file. */
+/** @brief Show generated HTML under @p title as a page of its own, kept
+ *         among the last few reports and never written to a file.
+ *  @return 1 when it is shown. */
 int tiku_reader_help_window_html(tiku_reader_help_window_t *c,
                             const char *title, const char *html);
-/** @brief Find decoded page text; backwards selects the preceding match. */
+/** @brief Find @p query in the page's text, the next match or with
+ *         @p backwards the one before.  @return 1 when there is one. */
 int tiku_reader_help_window_find(tiku_reader_help_window_t *c,
                             const char *query, int backwards);
-/** @brief Copy selected text, or the code block at the reading position. */
+/** @brief Copy the selection, or with @p code the code block selected or
+ *         in view; a range too large for the clipboard is refused whole.
+ *  @return 1 when copied. */
 int tiku_reader_help_window_copy(tiku_reader_help_window_t *c, int code);
 
 /** @brief Empty, with @p root the folder the pages are read from. */
@@ -153,15 +160,17 @@ void tiku_reader_help_window_init(tiku_reader_help_window_t *c,
 void tiku_reader_help_window_opener(tiku_reader_help_window_t *c,
                                  tiku_reader_help_open_fn fn, void *ctx);
 
-/** @brief Show the help folder's own first page, or say there is none. */
+/** @brief Open the window, or raise it when open: Help shows the folder's
+ *         first page, or says there is none; a document window with nothing
+ *         read shows its welcome page. */
 void tiku_reader_help_window_open(tiku_reader_help_window_t *c);
 
 /**
  * @brief Show @p page of the help folder, opening the window for it.
  *
- * The contents page is read first, so a window opened this way still
- * knows the folder it is reading and says the same thing about a page
- * that is not there.
+ * The window opens on the folder's contents page first, then goes to
+ * @p page as a link would; a page that is not there is reported in the
+ * status line.
  */
 void tiku_reader_help_window_open_page(tiku_reader_help_window_t *c,
                                     const char *page);
@@ -172,29 +181,38 @@ int tiku_reader_help_window_ready(const tiku_reader_help_window_t *c);
 /**
  * @brief Follow @p href from the page now shown.
  *
- * A name beginning '#' is a place in this page; a plain file name is a
- * page beside it, refused if it climbs out of the help folder; a path
- * beginning '/' or "tiku:" is handed to the opener; anything else,
- * including a web address, is refused and said in the status line.
+ * '#name' is a place in this page.  In Help, a plain file name is a page
+ * beside it, refused if it climbs out of the help folder; a path beginning
+ * '/' or "tiku:" goes to the opener; a web or mail address is refused.  In
+ * a document window, a relative or absolute path to a local Markdown or
+ * HTML file opens it here; anything else is refused.  A refusal is said in
+ * the status line.
  */
 tiku_reader_help_where_t tiku_reader_help_window_go(tiku_reader_help_window_t *c,
                                               const char *href);
 
-/** @brief Step back, and forward again.  @return 1 when it moved. */
+/** @brief Step back to the page before, at the place it was left.
+ *  @return 1 when it moved. */
 int tiku_reader_help_window_back(tiku_reader_help_window_t *c);
+/** @brief Step forward again after a step back.  @return 1 when it moved. */
 int tiku_reader_help_window_forward(tiku_reader_help_window_t *c);
 
-/** @brief The folder's own first page.  @return 1 when it opened. */
+/** @brief Help: back to the folder's first page; a document window asks
+ *         for a file to open instead.  @return 1 when it did. */
 int tiku_reader_help_window_home(tiku_reader_help_window_t *c);
 
-/** @brief What the window last said, and the page it is showing. */
+/** @brief What the window last said in its status line. */
 const char *tiku_reader_help_window_status(const tiku_reader_help_window_t *c);
+/** @brief The page shown: its name under the root, or a document's path. */
 const char *tiku_reader_help_window_page(const tiku_reader_help_window_t *c);
 /** @brief The path last handed to the opener. */
 const char *tiku_reader_help_window_wanted(const tiku_reader_help_window_t *c);
 
+/** @brief Close the window, stopping a folder search; the page is kept. */
 void tiku_reader_help_window_close(tiku_reader_help_window_t *c);
+/** @brief Close the window and free the page and the reading state. */
 void tiku_reader_help_window_destroy(tiku_reader_help_window_t *c);
+/** @brief The window, or NULL while it is closed. */
 tiku_window_t *tiku_reader_help_window_handle(tiku_reader_help_window_t *c);
 
 #endif /* TIKU_READER_WINDOW_H_ */

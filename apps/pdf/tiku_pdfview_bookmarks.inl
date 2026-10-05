@@ -1,5 +1,8 @@
-/* User page bookmarks, distinct from the PDF's outline and automatic recents.
- * Preferences are updated under a stable lock and replaced atomically. */
+/* tiku_pdfview_bookmarks.inl -- part of tiku_pdfview.c: the pages the
+ * person bookmarks, kept in a small file in the settings folder, which is
+ * changed under a lock and replaced whole; and the Bookmarks menu.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 /** @brief Where the bookmarks are kept: $TIKU_PDF_BOOKMARKS (empty keeps
  *         none), else TikuPDFBookmarks in $XDG_CONFIG_HOME or ~/.config,
@@ -68,8 +71,8 @@ static int pv_bookmarks_write(tiku_pdfview_t *c, const char *path)
 
 /**
  * @brief Take the lock beside @p path if it is free: it is tried once, not
- *        waited for.  The lock is a stable sibling rather than the inode
- *        the atomic rename replaces.
+ *        waited for.  The lock is a sibling file, @p path ".lock", which
+ *        the rename that replaces the bookmark file leaves in place.
  * @return the lock's descriptor; -1 when it cannot be opened or taken,
  *         so the file cannot be written; -2 when another window holds it.
  */

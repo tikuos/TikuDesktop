@@ -1,8 +1,9 @@
-/* Recent documents, and where each was left: one small file of TikuPDF's
- * own in the person's settings folder, most recent first, and nothing
- * written into the documents themselves.  A place is a page, how far down
- * and across it the view stood, the zoom and the turn; the first few
- * documents are the File menu's Open Recent and the empty window's list. */
+/* tiku_pdfview_recent.inl -- part of tiku_pdfview.c: recent documents and
+ * where each was left (a page, how far down and across it, the zoom and the
+ * turn), kept most recent first in a small file in the settings folder; the
+ * first few are the File menu's Open Recent.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #define PV_RECENT_MAGIC "TikuPDF recent 1"
 
@@ -68,8 +69,8 @@ static int pv_place_read(char *line, pv_place_t *r)
     return 1;
 }
 
-/** @brief Read the list as it was left; lines that do not parse are
- *         passed over, never guessed at. */
+/** @brief Read the list from the file; lines that do not parse are
+ *         skipped. */
 static void pv_recent_read(tiku_pdfview_t *c)
 {
     char file[TIKU_PATH_MAX], line[TIKU_PATH_MAX + 128];
@@ -86,7 +87,8 @@ static void pv_recent_read(tiku_pdfview_t *c)
     fclose(f);
 }
 
-/** @brief Write the list in place of the file: whole, or not at all. */
+/** @brief Replace the file with the list through a temporary file renamed
+ *         over it; a failed write leaves the old file. */
 static void pv_recent_write(tiku_pdfview_t *c)
 {
     char file[TIKU_PATH_MAX], temp[TIKU_PATH_MAX + 16], zoom[16];
@@ -260,7 +262,7 @@ static void pv_recent_label(const tiku_pdfview_t *c, int i, char *out,
     } else {
         snprintf(out, cap, "%s", name);
     }
-    n = strlen(out);                /* never a character cut in two */
+    n = strlen(out);                /* a character cut in two goes */
     if (n == cap - 1) {
         while (n && ((unsigned char)out[n - 1] & 0xc0) == 0x80) n--;
         if (n && (unsigned char)out[n - 1] >= 0xc0) n--;

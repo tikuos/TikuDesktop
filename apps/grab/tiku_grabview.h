@@ -1,5 +1,6 @@
-/* TikuGrab: a window, or the whole desk, as a picture -- taken by the
- * desktop, which is the one that can see it, and shown here.
+/* tiku_grabview.h -- TikuGrab's window: a window, or the whole desk, as a
+ * picture, taken by the desktop's grab service and shown here.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #ifndef TIKU_GRABVIEW_H_
 #define TIKU_GRABVIEW_H_
@@ -8,6 +9,8 @@
 #include "tiku_window.h"
 
 struct tiku_msg;
+/** @brief The window's state: what can be grabbed, the delay, the last
+ *         picture. */
 typedef struct tiku_grabview tiku_grabview_t;
 
 /** @brief What the window asks of the application around it. */
@@ -18,7 +21,9 @@ typedef struct {
     /* Where to keep a copy, put to the person, starting at @p start and
      * offering @p name; the answer comes to tiku_grabview_picked(). */
     void (*ask_save)(void *ctx, const char *start, const char *name);
-    /* @p path opened as a double-click in Tracker would. */
+    /* Open @p path as the desktop opens a double-clicked item: a folder
+     * as a window, a document in its program.  @return nonzero when it
+     * was. */
     int (*open_path)(void *ctx, const char *path);
     void *ctx;
 } tiku_grabview_host_t;

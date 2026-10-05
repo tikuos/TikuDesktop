@@ -1,8 +1,11 @@
-/* The window: a toolbar of icon buttons, a path bar, the folder's rows
- * under column headers as Tracker lists them, and the status line, with
- * a gauge and Stop while a job runs. */
+/* tiku_arcview_view.inl -- part of tiku_arcview.c: the window's layout,
+ * painting and pointer input: a toolbar of icon buttons and the find
+ * field, a path bar, the folder's rows under column headers, and the
+ * status line, with a gauge and Stop while a job runs.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-#define AV_SIZE_W   86              /* the Size and Packed columns       */
+#define AV_SIZE_W   86              /* the Size and Packed columns, each */
 #define AV_DATE_W   136             /* Modified                          */
 #define AV_FIND_W   170
 
@@ -32,7 +35,8 @@ static const char *av_tool_tip(int id)
     return "";
 }
 
-/** @brief A toolbar button's side: square, the Reader's size. */
+/** @brief A toolbar button's side: square, the button height but at
+ *         least 30 pixels. */
 static int av_tool_size(void)
 {
     int bh = tiku_ui_button_h();
@@ -114,7 +118,7 @@ static av_layout_t av_layout(tiku_arcview_t *c, tiku_rect_t r)
 
 /** @brief A toolbar button as the desk's toolbars draw one: its icon,
  *         raised under the pointer, sunk while pressed, dimmed when it can
- *         do nothing; a recorded window keeps it as a named button. */
+ *         do nothing; Stop is a worded button in the status line. */
 static void av_button(tiku_arcview_t *c, tiku_surface_t *s,
                       const tiku_dialog_control_t *d)
 {
@@ -128,7 +132,7 @@ static void av_button(tiku_arcview_t *c, tiku_surface_t *s,
     if (tiku_dialog_focused(&c->dialog, d->id)) flags |= TIKU_S_FOCUS;
     if (held) flags |= TIKU_S_PRESSED;
     if (c->hover_tool == d->id) flags |= TIKU_S_HOT;
-    /* Its name crosses for narration; its face is the icon after it. */
+    /* The label is for narration and is not drawn; the icon is the face. */
     tiku_ui_button(s, d->rect, av_label(c, d->id), flags | TIKU_S_ICON);
     if (size > 24) size = 24;
     (void)tiku_icon_paint_dim(s, av_tool_icon(d->id),
@@ -200,8 +204,8 @@ static int av_crumbs(const tiku_arcview_t *c, tiku_rect_t r, int *nodes,
     return n;
 }
 
-/** @brief The path bar: the archive, then each folder down to this one,
- *         the last in plain ink, the others ones a click goes back to. */
+/** @brief The path bar: the archive, then each folder down to the one
+ *         shown; the last in plain ink, the others faint. */
 static void av_crumbs_draw(tiku_arcview_t *c, tiku_surface_t *s,
                            tiku_rect_t r)
 {
@@ -222,7 +226,8 @@ static void av_crumbs_draw(tiku_arcview_t *c, tiku_surface_t *s,
     }
 }
 
-/** @brief The name column's width in @p body. */
+/** @brief How many columns fit in @p body: Name, then Size, Packed and
+ *         Modified as the width allows. */
 static int av_columns(tiku_rect_t body)
 {
     if (body.w >= 160 + 2 * AV_SIZE_W + AV_DATE_W) return 4;
@@ -231,6 +236,8 @@ static int av_columns(tiku_rect_t body)
     return 1;
 }
 
+/** @brief The Name column's width in @p body: what the other columns
+ *         that fit leave. */
 static int av_name_w(tiku_rect_t body)
 {
     int n = av_columns(body);
@@ -251,7 +258,8 @@ static void av_when(int64_t t, char *out, size_t max)
     strftime(out, max, "%Y-%m-%d %H:%M", &tm);
 }
 
-/** @brief The icon a row's node takes: a folder, a link, text, or a file. */
+/** @brief The icon a row's node takes: a folder, a text file, an
+ *         archive, or a file, by the name's extension. */
 static const char *av_row_icon(const av_node_t *n)
 {
     const char *dot = strrchr(n->name, '.');
@@ -267,7 +275,8 @@ static const char *av_row_icon(const av_node_t *n)
 }
 
 /** @brief One row: its icon and name, then Size, Packed and Modified;
- *         a refused name in the danger ink, an unreadable one faint. */
+ *         a refused name in the danger ink, an unreadable or encrypted
+ *         one faint. */
 static void av_row_draw(tiku_arcview_t *c, tiku_surface_t *s, tiku_rect_t r,
                         int row)
 {
@@ -344,7 +353,8 @@ static void av_status(tiku_arcview_t *c, tiku_surface_t *s,
                                              : 0.0f);
         w = r.x + r.w - l->gauge.x + 8;
     } else if (c->node) {
-        if (c->nrows < c->all_rows)         /* found, or past the list's */
+        /* narrowed by Find, or more than the list holds */
+        if (c->nrows < c->all_rows)
             snprintf(where, sizeof where, "%d of %d items shown", c->nrows,
                      c->all_rows);
         else
@@ -427,7 +437,8 @@ static int av_bar_pointer(tiku_arcview_t *c, const tiku_event_t *ev,
     return 1;
 }
 
-/** @brief A press on the column headers: that column sorts, or turns. */
+/** @brief A press on the column headers: that column sorts, or the
+ *         sorted one reverses. */
 static int av_head_pointer(tiku_arcview_t *c, const tiku_event_t *ev,
                            const av_layout_t *l)
 {

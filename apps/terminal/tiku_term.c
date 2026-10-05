@@ -1,16 +1,7 @@
-/*
- * TikuDesktop -- graphical interface to TikuOS devices.
- *
+/* tiku_term.c -- Terminal: a shell on a pty of its own, written into an
+ * 80x24 grid of cells by a VT100-subset parser, with a scrollback.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- *
- * tiku_term.c - a terminal, as one application descriptor.
- *
- * A shell on a pty writes into a grid of cells, each carrying a
- * character and how it is drawn.  The parser is a VT100 subset: enough
- * for a line editor, a pager and a full-screen editor to behave.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+ * SPDX-License-Identifier: Apache-2.0 */
 #define _XOPEN_SOURCE 700
 #define _DEFAULT_SOURCE 1
 #define _GNU_SOURCE 1
@@ -46,6 +37,7 @@
 #define CMD_RESET 2
 #define CMD_QUIT  3
 
+/** @brief One cell of the grid: its character, inks and attributes. */
 typedef struct {
     char          ch;
     unsigned char fg;           /* 0-7 ANSI, 8 = the default ink   */
@@ -53,14 +45,16 @@ typedef struct {
     unsigned char attr;
 } cell_t;
 
+/** @brief Where the parser stands in the shell's output. */
 typedef enum {
     SCAN_TEXT = 0,
     SCAN_ESC,
     SCAN_CSI,
     SCAN_OSC,
-    SCAN_SKIP                   /* one byte of a two-byte sequence */
+    SCAN_SKIP                   /* the one byte left of a sequence */
 } scan_t;
 
+/** @brief The running terminal: its window, shell, grid and parser. */
 typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t            *surface;
@@ -92,13 +86,14 @@ typedef struct {
     tiku_text_input_t                commit;
 } term_state_t;
 
-/* The ANSI eight, then the eight bright ones the bold attribute picks. */
+/* The ANSI eight colours. */
 static const tiku_rgb_t kAnsi[8] = {
     TIKU_RGB(0, 0, 0),       TIKU_RGB(178, 24, 24),
     TIKU_RGB(24, 154, 24),   TIKU_RGB(160, 132, 0),
     TIKU_RGB(40, 90, 190),   TIKU_RGB(160, 60, 170),
     TIKU_RGB(0, 150, 160),   TIKU_RGB(190, 190, 190)
 };
+/* Their bright forms, which a bold ink is drawn in. */
 static const tiku_rgb_t kBright[8] = {
     TIKU_RGB(110, 110, 110), TIKU_RGB(230, 60, 60),
     TIKU_RGB(50, 200, 50),   TIKU_RGB(210, 180, 20),
@@ -106,18 +101,22 @@ static const tiku_rgb_t kBright[8] = {
     TIKU_RGB(40, 200, 210),  TIKU_RGB(255, 255, 255)
 };
 
+/** @brief The window's width: the grid's columns and the margins. */
 static int
 width_px(const term_state_t *st)
 {
     return COLS * st->cell_w + 2 * MARGIN;
 }
 
+/** @brief The window's height: the grid's rows, the margins and the
+ *         status strip. */
 static int
 height_px(const term_state_t *st)
 {
     return ROWS * st->cell_h + 2 * MARGIN + STRIP_H;
 }
 
+/** @brief An empty cell in the current colours. */
 static cell_t
 blank_of(const term_state_t *st)
 {
@@ -130,6 +129,7 @@ blank_of(const term_state_t *st)
     return c;
 }
 
+/** @brief Blank screen row @p r. */
 static void
 row_blank(term_state_t *st, int r)
 {
@@ -140,6 +140,7 @@ row_blank(term_state_t *st, int r)
     }
 }
 
+/** @brief Blank the screen and put the cursor home. */
 static void
 grid_clear(term_state_t *st)
 {
@@ -168,13 +169,14 @@ remember(term_state_t *st, const cell_t *row)
     }
 }
 
+/** @brief Scroll the scroll region up a row, blanking its last. */
 static void
 scroll_region_up(term_state_t *st)
 {
     int r;
 
-    /* Only a scroll of the WHOLE screen is history; one inside a region
-     * belongs to whatever drew the region and is not the user's past. */
+    /* Only a scroll of the whole screen enters the scrollback; a scroll
+     * inside a region belongs to the program that drew the region. */
     if (st->top == 0 && st->bottom == ROWS - 1) {
         remember(st, st->cell[0]);
     }
@@ -184,6 +186,7 @@ scroll_region_up(term_state_t *st)
     row_blank(st, st->bottom);
 }
 
+/** @brief Scroll the scroll region down a row, blanking its first. */
 static void
 scroll_region_down(term_state_t *st)
 {
@@ -195,6 +198,8 @@ scroll_region_down(term_state_t *st)
     row_blank(st, st->top);
 }
 
+/** @brief Move the cursor down a row; at the region's bottom the region
+ *         scrolls instead. */
 static void
 newline(term_state_t *st)
 {
@@ -206,6 +211,8 @@ newline(term_state_t *st)
     }
 }
 
+/** @brief Put @p ch at the cursor in the current colours and move on; a
+ *         wrap held at the last column happens first. */
 static void
 put_printable(term_state_t *st, char ch)
 {
@@ -221,15 +228,17 @@ put_printable(term_state_t *st, char ch)
     c->bg = st->bg;
     c->attr = st->attr;
     if (st->col + 1 >= COLS) {
-        /* Held at the last column: a character there does not wrap until
-         * the NEXT one arrives, which is what stops a line that exactly
-         * fills the width from leaving a blank row behind it. */
+        /* Held at the last column: a character there wraps only when the
+         * next one arrives, so a line that exactly fills the width leaves
+         * no blank row behind it. */
         st->wrap_next = 1;
     } else {
         st->col++;
     }
 }
 
+/** @brief Parameter @p i of the sequence, or @p fallback when it was not
+ *         given. */
 static int
 param_or(const term_state_t *st, int i, int fallback)
 {
@@ -239,6 +248,7 @@ param_or(const term_state_t *st, int i, int fallback)
     return st->param[i];
 }
 
+/** @brief Blank row @p r's cells @p from to @p to, inclusive. */
 static void
 erase_cells(term_state_t *st, int r, int from, int to)
 {
@@ -249,6 +259,8 @@ erase_cells(term_state_t *st, int r, int from, int to)
     }
 }
 
+/** @brief SGR: set the colours and attributes the parameters name; no
+ *         parameter resets them. */
 static void
 select_graphics(term_state_t *st)
 {
@@ -471,12 +483,13 @@ feed(term_state_t *st, unsigned char ch)
             return;
         }
         if (ch == '(' || ch == ')' || ch == '#' || ch == '%') {
-            st->scan = SCAN_SKIP;   /* a charset select: not ours */
+            st->scan = SCAN_SKIP;   /* a charset or line size: skipped */
             return;
         }
         if (ch == 'M') {
-            /* Reverse index: the one cursor motion that arrives without
-             * a bracket, and a pager scrolling backwards uses it. */
+            /* Reverse index, which a pager scrolling backwards uses.
+             * ESC c resets; any other escape without a bracket, ESC 7 and
+             * ESC 8 among them, is ignored. */
             if (st->row == st->top) {
                 scroll_region_down(st);
             } else if (st->row > 0) {
@@ -563,7 +576,7 @@ feed(term_state_t *st, unsigned char ch)
         }
         return;
     case 0x07:
-        return;                 /* the bell has nowhere to ring */
+        return;                 /* the bell is not sounded */
     default:
         break;
     }
@@ -572,6 +585,8 @@ feed(term_state_t *st, unsigned char ch)
     }
 }
 
+/** @brief The colour of palette entry @p index: above 7, the default ink
+ *         or paper; a bold ink is the bright form. */
 static tiku_rgb_t
 ink_of(unsigned char index, unsigned char attr, int is_bg)
 {
@@ -596,6 +611,8 @@ row_at(const term_state_t *st, int r)
     return st->cell[r - st->view];
 }
 
+/** @brief Draw the grid, live or scrolled back, the cursor and the status
+ *         strip, and hand the frame to the desktop. */
 static void
 paint(term_state_t *st)
 {
@@ -679,6 +696,7 @@ paint(term_state_t *st)
     st->dirty = 0;
 }
 
+/** @brief Publish the Terminal menu: Clear, Reset and Quit. */
 static void
 publish(term_state_t *st)
 {
@@ -704,10 +722,10 @@ publish(term_state_t *st)
 }
 
 /**
- * @brief Start a shell on a pty of its own.
- *
- * @note The child gets the pty as its controlling terminal, or nothing
- *       started from it would have job control.
+ * @brief Start $SHELL (else /bin/sh) as an interactive shell on a pty of
+ *        its own, in a new session with the pty as its controlling
+ *        terminal, which job control needs.
+ * @return 0, or -1 when the pty or the fork fails.
  */
 static int
 start_shell(term_state_t *st)
@@ -748,9 +766,8 @@ start_shell(term_state_t *st)
         if (slave > 2) {
             (void)close(slave);
         }
-        /* Claiming vt100 is a promise about the sequences handled above:
-         * cursor addressing, erase, colour and a scroll region.  A
-         * larger claim would invite sequences that arrive as rubbish. */
+        /* Programs run here are told TERM=vt100 and send what that
+         * terminfo entry names; feed() is to handle all of it. */
         (void)setenv("TERM", "vt100", 1);
         if (shell == NULL || shell[0] == '\0') {
             shell = "/bin/sh";
@@ -766,13 +783,14 @@ start_shell(term_state_t *st)
     return 0;
 }
 
+/** @brief Write @p n bytes to the shell while it is alive. */
 static void
 send_bytes(term_state_t *st, const char *bytes, size_t n)
 {
     if (st->alive) {
         (void)write(st->master, bytes, n);
-        /* Typing returns to the live screen: a keystroke aimed at a
-         * shell the user cannot see would go somewhere invisible. */
+        /* Typing returns the view to the live screen, where what is
+         * typed shows. */
         if (st->view != 0) {
             st->view = 0;
             st->dirty = 1;
@@ -780,6 +798,8 @@ send_bytes(term_state_t *st, const char *bytes, size_t n)
     }
 }
 
+/** @brief Open the window and start the shell; when none starts, the
+ *         screen says so. */
 static int
 term_start(void **state, const tiku_app_services_t *services)
 {
@@ -795,8 +815,8 @@ term_start(void **state, const tiku_app_services_t *services)
     st->top = 0;
     st->bottom = ROWS - 1;
     st->cursor_on = 1;
-    /* Every glyph of this face advances the same width, so a column IS
-     * that width and the grid is exact. */
+    /* Every glyph of the mono face advances the same width, so a column
+     * is that width. */
     st->cell_w = tiku_font_mono_cell(0);
     st->cell_h = tiku_font_mono(0)->height + 1;
     st->surface = tiku_surface_new(width_px(st), height_px(st),
@@ -825,6 +845,7 @@ term_start(void **state, const tiku_app_services_t *services)
     return 0;
 }
 
+/** @brief Hang up the shell and free the window. */
 static void
 term_stop(void *state)
 {
@@ -844,6 +865,8 @@ term_stop(void *state)
     free(st);
 }
 
+/** @brief Each turn: feed the shell's output to the parser, notice when
+ *         the shell has ended, and repaint when anything changed. */
 static void
 term_tick(void *state, int64_t now_us)
 {
@@ -897,6 +920,8 @@ scroll_view(term_state_t *st, int by)
     paint(st);
 }
 
+/** @brief Typed text and keys go to the shell as the bytes a terminal
+ *         sends; Shift with Page Up or Page Down scrolls the history. */
 static int
 term_event(void *state, const tiku_event_t *event)
 {
@@ -913,8 +938,8 @@ term_event(void *state, const tiku_event_t *event)
     if (event->type != TIKU_EVENT_KEY_DOWN) {
         return 0;
     }
-    /* Shift with a paging key looks at history rather than reaching the
-     * shell, which is what a terminal has always done with it. */
+    /* Shift with a paging key scrolls the history and is not sent to the
+     * shell. */
     if ((event->modifiers & TIKU_MOD_SHIFT) != 0u) {
         if (event->key == TIKU_KEY_PAGE_UP) {
             scroll_view(st, ROWS - 1);
@@ -926,8 +951,8 @@ term_event(void *state, const tiku_event_t *event)
         }
     }
     if ((event->modifiers & TIKU_MOD_CMD) != 0u) {
-        /* Every control code, not a chosen few: the letter's place in
-         * the alphabet IS the code, which is why Ctrl+C is 3. */
+        /* Ctrl with a letter sends its control code, the letter's place
+         * in the alphabet (Ctrl+C is 3); other Ctrl keys send nothing. */
         unsigned k = event->key;
 
         if (k >= 'a' && k <= 'z') {
@@ -956,8 +981,8 @@ term_event(void *state, const tiku_event_t *event)
         one = 0x1b;
         send_bytes(st, &one, 1u);
         return 0;
-    /* The sequences a line editor listens for: without them there is no
-     * history, and no cursor at all in a full-screen editor. */
+    /* The sequences line editors and full-screen editors read the arrow
+     * and editing keys from. */
     case TIKU_KEY_UP:
         seq = "\x1b[A";
         break;
@@ -986,9 +1011,9 @@ term_event(void *state, const tiku_event_t *event)
         seq = "\x1b[6~";
         break;
     default: {
-        /* The typed CHARACTER rides in text; the key is the folded
-         * keysym shortcuts match on, and the fold loses the case that
-         * Shift put there. */
+        /* The typed character is in the event's text; its key is the
+         * case-folded keysym that shortcuts match, which has lost the
+         * case Shift gave it. */
         unsigned ch = (unsigned char)event->text[0];
 
         if (ch == 0u) {
@@ -1005,6 +1030,7 @@ term_event(void *state, const tiku_event_t *event)
     return 0;
 }
 
+/** @brief A menu pick: Clear, Reset, or Quit.  @return 1 to quit. */
 static int
 term_pick(void *state, uint32_t window, int command)
 {
@@ -1019,8 +1045,9 @@ term_pick(void *state, uint32_t window, int command)
         paint(st);
         break;
     case CMD_RESET:
-        /* What a wedged screen needs: attributes, region and parser back
-         * where they started, without ending the shell. */
+        /* Colours, attributes, scroll region, parser, cursor and view go
+         * back to where they started, and the screen is cleared; the
+         * shell keeps running. */
         st->fg = 8u;
         st->bg = 8u;
         st->attr = 0u;
@@ -1038,6 +1065,7 @@ term_pick(void *state, uint32_t window, int command)
     return 0;
 }
 
+/** @brief Terminal's descriptor: exported to a loader, or run by main(). */
 const tiku_app_descriptor_t tiku_term_app = {
     .id = "org.tikuos.terminal",
     .name = "Terminal",
@@ -1049,7 +1077,7 @@ const tiku_app_descriptor_t tiku_term_app = {
 };
 
 #ifdef TIKU_APP_SO
-/* The one symbol a loader looks for; see tiku_app.h. */
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t),
     &tiku_term_app
@@ -1057,6 +1085,7 @@ const tiku_app_export_t tiku_app_v1 = {
 #endif
 
 #ifndef TIKU_APP_EMBED
+/** @brief Run Terminal as a client of the desktop. */
 int
 main(void)
 {

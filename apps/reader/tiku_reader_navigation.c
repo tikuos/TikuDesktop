@@ -1,4 +1,6 @@
-/* tiku_reader_navigation.c -- navigation.
+/* tiku_reader_navigation.c -- where a link goes and how the window moves:
+ * reading a page, the back and forward stacks, Help's link rules and a
+ * document window's, and the files each may read.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -25,7 +27,10 @@ static int name_is_safe(const char *name)
     return 1;
 }
 
-/** @brief Read a page of the help folder.  @return 1 when it was there. */
+/** @brief Read page @p name into the window: a generated report
+ *         ("@report<n>"), a page of the help folder, or in a document
+ *         window a local file's absolute path, whose folder becomes the
+ *         root.  @return 1 when it was read. */
 int tiku_reader_page_read(tiku_reader_help_window_t *c, const char *name)
 {
     char path[TIKU_PATH_MAX];
@@ -71,11 +76,10 @@ int tiku_reader_page_read(tiku_reader_help_window_t *c, const char *name)
 }
 
 /**
- * @brief Put @p page and @p at on the way back.
- *
- * Called only once a read has succeeded: a history committed before the
- * page it names is there drops an entry whenever the read fails, and
- * the oldest one whenever the stack is full.
+ * @brief Put @p page and @p at on the way back; a full stack drops its
+ *        oldest entry.
+ * @note Call only once the read of the new page has succeeded, so a failed
+ *       read leaves the history as it was.
  */
 void tiku_reader_back_push(tiku_reader_help_window_t *c, const char *page,
                       tiku_reader_help_position_t at)
@@ -109,7 +113,7 @@ static void forward_push(tiku_reader_help_window_t *c, const char *page,
     c->nforward = slot + 1;
 }
 
-/** @brief What the window tells the reader, in its own line. */
+/** @brief Put @p what in the status line. */
 void tiku_reader_say(tiku_reader_help_window_t *c, const char *what)
 {
     snprintf(c->status, sizeof c->status, "%s", what ? what : "");
@@ -156,8 +160,8 @@ tiku_reader_help_where_t tiku_reader_help_window_go(tiku_reader_help_window_t *c
         const char *path = href[0] == '/' ? href : href + 5;
 
         if (path[0] != '/') {
-            /* The desk opens a place in the namespace, which starts at
-             * its root; anything else it would drop without a word. */
+            /* The desk opens only places in the namespace, which start
+             * at its root, and drops any other path without a message. */
             tiku_reader_say(c, tiku_str("help.not_a_place"));
             return TIKU_READER_HELP_NOWHERE;
         }
@@ -170,8 +174,7 @@ tiku_reader_help_where_t tiku_reader_help_window_go(tiku_reader_help_window_t *c
         return TIKU_READER_HELP_NAMESPACE;
     }
     if (strstr(href, "://") || !strncmp(href, "mailto:", 7)) {
-        /* There is no browser here, and a help page that pretended
-         * otherwise would leave a reader waiting for a window. */
+        /* There is no browser to hand a web or mail address to. */
         tiku_reader_say(c, tiku_str("help.not_followed"));
         return TIKU_READER_HELP_NOWHERE;
     }
@@ -218,14 +221,14 @@ int tiku_reader_help_window_home(tiku_reader_help_window_t *c)
         return 0;
     }
     tiku_reader_back_push(c, from, was);
-    /* A move forward from here would be to a page the reader never came
-     * back through. */
+    /* Home starts a new path: the forward history is cleared. */
     c->nforward = 0;
     tiku_reader_say(c, "");
     return 1;
 }
 
-/** @brief Step to @p page at @p to, banking where it came from. */
+/** @brief Step to @p page at @p to, putting where it came from on the
+ *         other stack: forward when @p back, else back. */
 static int step(tiku_reader_help_window_t *c, const char *page,
                 tiku_reader_help_position_t to, int back)
 {
@@ -234,9 +237,8 @@ static int step(tiku_reader_help_window_t *c, const char *page,
 
     snprintf(from, sizeof from, "%s", c->page);
     if (strcmp(page, c->page) && !tiku_reader_page_read(c, page)) {
-        /* Nothing has been taken off either stack yet, so a page that
-         * has gone missing since it was read costs the reader nothing
-         * but the step. */
+        /* Neither stack has changed at this point, so a page gone missing
+         * since it was read leaves both as they were. */
         return 0;
     }
     if (back) forward_push(c, from, was);
@@ -268,9 +270,6 @@ int tiku_reader_help_window_forward(tiku_reader_help_window_t *c)
     return 1;
 }
 
-/* Local-document policy: explicit file navigation, confined automatic images. */
-
-/** @brief Formats accepted by Open and by document links, case-insensitively. */
 int tiku_reader_document_file_supported(const char *path)
 {
     if (!path) return 0;
@@ -279,7 +278,9 @@ int tiku_reader_document_file_supported(const char *path)
         (!strcasecmp(ext, ".html") || !strcasecmp(ext, ".htm")));
 }
 
-/** @brief Only regular local markup files can replace the current document. */
+/** @brief The real path of @p name, an absolute path to a regular
+ *         Markdown or HTML file, into @p out.  @return 1, or 0 for
+ *         anything else. */
 int tiku_reader_document_path(const char *name, char *out, size_t cap)
 {
     struct stat st;
@@ -315,7 +316,10 @@ static int document_unescape(const char *src, size_t len, char *out, size_t cap)
     return 1;
 }
 
-/** @brief Relative links use the current page's directory, never the help root. */
+/** @brief Resolve link @p href from a document: a path relative to the
+ *         shown document's folder, or an absolute one, to a supported local
+ *         file, its #anchor decoded into @p anchor; anything with a scheme
+ *         is refused.  @return 1 when it resolved. */
 static int document_link(tiku_reader_help_window_t *c, const char *href,
                          char *path, size_t cap, char *anchor, size_t acap)
 {
@@ -333,7 +337,8 @@ static int document_link(tiku_reader_help_window_t *c, const char *href,
     return n < (int)sizeof candidate && tiku_reader_document_path(candidate, path, cap);
 }
 
-/** @brief Images may resolve only beneath the displayed document's directory. */
+/** @brief Resolve image @p name beneath the shown document's folder; one
+ *         that leads outside it is refused.  @return 1 when it resolved. */
 static int document_image_path(tiku_reader_help_window_t *c, const char *name,
                                char *out, size_t cap)
 {
@@ -350,7 +355,8 @@ static int document_image_path(tiku_reader_help_window_t *c, const char *name,
     return !strncmp(c->root, out, len) &&
         (len == 1 || out[len] == '/') && !stat(out, &st) && S_ISREG(st.st_mode);
 }
-/** @brief Canonicalize without assuming the OS PATH_MAX equals the kit's cap. */
+/** @brief The real path of @p path into @p out, refused when it does not
+ *         fit @p cap.  @return 1, or 0. */
 int tiku_reader_realpath(const char *path, char *out, size_t cap)
 {
     char *resolved = realpath(path, NULL); if (!resolved) return 0;
@@ -359,7 +365,11 @@ int tiku_reader_realpath(const char *path, char *out, size_t cap)
     free(resolved); return ok;
 }
 
-/** @brief Localized pages fall back individually; symlinks cannot escape root. */
+/** @brief The file a Help page name stands for: in the help folder's
+ *         locale subfolder (TIKU_LANG, else LANG) when it has the page, else
+ *         in the folder itself; one that resolves outside the folder is
+ *         refused.  In a document window, an image beside the document.
+ *  @return 1 when found. */
 int tiku_reader_path(tiku_reader_help_window_t *c, const char *name,
                        char *out, size_t cap)
 {

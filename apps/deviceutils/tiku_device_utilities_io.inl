@@ -1,10 +1,17 @@
-/* Bounded jobs: explicit VFS navigation and periodic read-only monitoring. */
+/* tiku_device_utilities_io.inl -- part of tiku_device_utilities.c: the
+ * worker jobs (the monitor's samples and reclaim commands, the inspector's
+ * reads, preload and checked writes) and their results on the loop.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** Closing one window cancels only its work, not other clients of the mount. */
+/** @brief Whether the job was cancelled: its window closed, or the work
+ *         queue cancelled it. */
 static int utility_cancelled(utility_job_t *j)
 { return atomic_load(&j->cancelled) || tiku_work_cancelled(j); }
 
-/** Refuse truncated values, embedded NUL and non-text data. */
+/** @brief Read @p path's value as text into @p out, line ends trimmed.
+ *  @return 1, or 0 for a failed or cancelled read, a value that fills
+ *          @p out, or bytes that are not text. */
 static int utility_read(utility_job_t *j, const char *path, char *out, size_t cap)
 {
     out[0] = 0;
@@ -21,7 +28,10 @@ static int utility_read(utility_job_t *j, const char *path, char *out, size_t ca
     return 1;
 }
 
-/** Copy directory metadata without invoking endpoint read handlers. */
+/** @brief A listing callback: add the node @p m describes to the job's
+ *         entries from its metadata, reading no value.  A name that is
+ *         empty, "." or "..", too long or holds '/' is skipped; past U_ROWS
+ *         the listing is marked truncated.  @return 1 to stop. */
 static int utility_entry(const tiku_model_t *m, void *ctx)
 {
     utility_job_t *j = ctx;
@@ -35,13 +45,15 @@ static int utility_entry(const tiku_model_t *m, void *ctx)
     e->directory = tiku_model_is_container(m);
     e->readable = (m->facts.perm & TIKU_P_READ) != 0;
     e->writable = tiku_model_is_writable(m);
-    /* The node's read policy, -1 when its metadata states none; the
-     * policy outranks the audited list in utility_autoread(). */
+    /* The node's read policy, -1 when its metadata states none;
+     * utility_autoread() follows a policy before its own list. */
     e->autoread = tiku_attr_read_policy(m->facts.meta);
     return 0;
 }
 
-/** Populate observational values; permissions alone do not imply safe reads. */
+/** @brief Read the values of the listing that may be read without asking
+ *         (utility_autoread()), at most 256 reads a job and until
+ *         @p deadline; past either the job is marked limited. */
 static void utility_directory_values(utility_job_t *j, int64_t deadline)
 {
     for (int i = 0; i < j->count && !utility_cancelled(j); i++) {
@@ -59,7 +71,9 @@ static void utility_directory_values(utility_job_t *j, int64_t deadline)
     }
 }
 
-/** Breadth-first discovery is bounded, cancellable, and entirely off the UI loop. */
+/** @brief On a worker: list the board breadth first from the root, every
+ *         folder but /data, reading the values that may be read without
+ *         asking; at most U_ROWS folders and 30 seconds. */
 static void utility_preload(utility_job_t *j)
 {
     utility_snapshot_t *tail = calloc(1, sizeof *tail);
@@ -69,9 +83,9 @@ static void utility_preload(utility_job_t *j)
     int64_t deadline = utility_now() + 30000000;
     for (utility_snapshot_t *s = j->cache; s && !utility_cancelled(j); s = s->next) {
         if (utility_now() >= deadline) { j->limited = 1; break; }
-        /* /data contains user files, not capability metadata. Listing it can
-         * mount/provision storage on first use. Show the folder in the tree,
-         * but only enumerate its contents when the user opens it explicitly. */
+        /* /data holds the person's files, and listing it can provision
+         * the store on first use: its folder shows in the tree, and is
+         * listed only when it is opened. */
         if (!strcmp(s->path, "/data")) continue;
         strcpy(j->path, s->path); j->count = j->truncated = 0;
         memset(j->entries, 0, sizeof j->entries);
@@ -101,7 +115,9 @@ static void utility_preload(utility_job_t *j)
         "Unqueried endpoints require an explicit read; Refresh reloads the snapshot.");
 }
 
-/** Read only actual process directories; a missing field remains unavailable. */
+/** @brief Read up to eight processes from /proc: each numbered folder's
+ *         name, state, RAM and events, a field that cannot be read shown
+ *         as Unavailable. */
 static void utility_processes(utility_job_t *j)
 {
     if (utility_cancelled(j) || !j->backend->ops->list ||
@@ -125,7 +141,11 @@ static void utility_processes(utility_job_t *j)
     }
 }
 
-/** Do not infer CPU utilization or whole-bank RAM usage from unrelated counters. */
+/** @brief Read the board's reconstruction job into the metrics: the
+ *         running job, or when none runs the last one and whether the mode
+ *         is off; the BASIC owner's line; Cancel and Retry stay offered only
+ *         when the board lets that control be written.  A job report that
+ *         cannot be read or parsed shows Unavailable. */
 static void utility_reclaim_sample(utility_job_t *j)
 {
     utility_reclaim_t *r = &j->metrics.reclaim;
@@ -156,8 +176,9 @@ static void utility_reclaim_sample(utility_job_t *j)
     }
 }
 
-/* A confirmation refers to one generation on the captured target. Read again,
- * check permissions, send once. Transport uncertainty never triggers a retry. */
+/** @brief Send the confirmed Cancel (j->write 2) or Retry (3): only when
+ *         the job read again is the one confirmed and the control can be
+ *         written; it is sent once and not retried. */
 static void utility_reclaim_command(utility_job_t *j)
 {
     utility_reclaim_t current; tiku_model_t m;
@@ -181,6 +202,10 @@ static void utility_reclaim_command(utility_job_t *j)
         "Cancellation accepted. Any required owner recovery will finish first.");
 }
 
+/** @brief Sample the board: uptime, clock, RAM used, stack headroom,
+ *         process count, the store's use and SRAM, each set in valid only
+ *         when the board reported it; then the processes and the reclaim
+ *         job.  ok is set when any reading was read. */
 static void utility_monitor(utility_job_t *j)
 {
     const char *paths[] = {"/sys/uptime", "/sys/cpu/freq", "/sys/mem/used",
@@ -203,7 +228,11 @@ static void utility_monitor(utility_job_t *j)
         "No telemetry available: device may be disconnected, busy or unsupported.");
 }
 
-/** Validate syntax locally, then re-read clock capabilities immediately before writing. */
+/** @brief Whether the job's value suits its setting: a device name of at
+ *         most 31 letters, digits, - and _; crypto mode auto or sw; radio
+ *         power -100 to 30 dBm; a time up to 2^32 - 1; or a CPU target that
+ *         freq_available lists, read now, when freq_change_mode is live or
+ *         reboot.  A value holding a tab or line end is refused. */
 static int utility_validate(utility_job_t *j)
 {
     double n;
@@ -234,7 +263,10 @@ static int utility_validate(utility_job_t *j)
     return 0;
 }
 
-/** Compare the reviewed value, check permissions again, write once, then verify. */
+/** @brief Write the reviewed value, when the setting can still be written,
+ *         the value is valid and the current value is still the one
+ *         reviewed (the clock within five minutes); then read it back.
+ *  @return 1 when the write was sent and its value read back. */
 static int utility_write(utility_job_t *j, const tiku_model_t *m)
 {
     char current[2048], error[128] = "";
@@ -278,7 +310,9 @@ static int utility_write(utility_job_t *j, const tiku_model_t *m)
     return 1;
 }
 
-/** Inspect one path; a writable flag is not the panel's edit policy. */
+/** @brief The worker: for the monitor a sample, or only the reclaim panel
+ *         after a reclaim command; for the inspector a preload, or one path
+ *         read or written. */
 static void utility_run(void *ctx)
 {
     utility_job_t *j = ctx; tiku_model_t m;
@@ -314,7 +348,9 @@ static void utility_run(void *ctx)
     } else snprintf(j->status, sizeof j->status, "Write-only endpoint. Command endpoints cannot be edited here.");
 }
 
-/** Publish only this controller's completed result, never another target's stale data. */
+/** @brief On the loop: apply a finished job's result to its window,
+ *         unless it was cancelled or the window has gone; a paused monitor
+ *         keeps its sample. */
 static void utility_done(void *ctx)
 {
     utility_job_t *j = ctx; struct device_utility *p = j->owner;
@@ -344,8 +380,8 @@ static void utility_done(void *ctx)
         }
     } else {
         if (j->preload) { utility_preload_result(p, j); p->app->dirty = 1; return; }
-        /* A write that never reached the device read nothing back, and
-         * its empty result would mark a live endpoint unavailable. */
+        /* A failed write read nothing back: the value and the listing
+         * shown stay as they were. */
         if (!j->write || j->ok) {
             utility_registry_result(p, j);
             if (j->directory) utility_cache_store(p, j);
@@ -361,7 +397,10 @@ static void utility_done(void *ctx)
     p->app->dirty = 1;
 }
 
-/** Cancelled jobs cannot leave old values looking live or writable. */
+/** @brief On the loop, after done or in its place: free the job and
+ *         release the utility.  When the job did not complete, its window's
+ *         readings, value and tree are cleared and its status says the
+ *         device disconnected. */
 static void utility_free(void *ctx)
 {
     utility_job_t *j = ctx; struct device_utility *p = j->owner;
@@ -381,7 +420,11 @@ static void utility_free(void *ctx)
     free(j);
 }
 
-/** Resolve through the desktop and serialize with all other work on this mount. */
+/** @brief Post the window's next job: a read, or with @p write 1 a write
+ *         and with 2 or 3 a reclaim Cancel or Retry, through a VFS proxy for
+ *         its board and keyed to that board.  Nothing while a job runs; a
+ *         folder in the cache is shown with no job; with no board the
+ *         window is emptied. */
 static void utility_request(struct device_utility *p, int write)
 {
     if (p->busy) return;

@@ -9,7 +9,8 @@
 
 #include "tiku_sdr.h"
 
-#define FOLLOW_DB 0.5f              /* a rise worth following a peak to */
+/* The least rise, in dB, that moves a marker following a peak. */
+#define FOLLOW_DB 0.5f
 
 const float *sdr_mark_trace(const sdr_model_t *m, int k)
 {
@@ -61,9 +62,9 @@ int sdr_marks_out(const sdr_model_t *m)
     return 0;
 }
 
-/** @brief The top of the highest ground within @p reach bins of @p b, the
- *         middle of its flat top; @p b itself when nothing there is
- *         higher, so a flat floor holds a marker still. */
+/** @brief The highest bin within @p reach bins of @p b, moved to the
+ *         middle of its flat top; @p b itself when no bin there is
+ *         higher. */
 static int climb(const float *v, int n, int b, int reach)
 {
     int lo = b - reach < 0 ? 0 : b - reach;
@@ -88,8 +89,8 @@ static int taken(const sdr_model_t *m, int k, int b)
     return 0;
 }
 
-/** @brief The bin nearest the view's middle no marker but @p k stands
- *         on, or -1. */
+/** @brief The bin nearest the view's middle with no marker but @p k
+ *         within a bin of it, or -1. */
 static int middle_free(const sdr_model_t *m, int k)
 {
     int c = m->n / 2;
@@ -115,7 +116,8 @@ int sdr_mark_peak(sdr_model_t *m, int k, int how)
         if (how == SDR_TO_HIGHEST) {
             if (pick < 0 || v[b] > v[pick]) pick = b;
         } else if (how == SDR_TO_NEXT) {
-            /* Below the marker in level, the leftmost of a tie after it. */
+            /* The highest peak lower than the marker, or as high and to
+             * its right; of equal ones, the leftmost. */
             if ((v[b] < v[at] || (v[b] == v[at] && b > at)) &&
                 (pick < 0 || v[b] > v[pick])) pick = b;
         } else if (how == SDR_TO_LEFT) {
@@ -144,7 +146,7 @@ void sdr_mark_on(sdr_model_t *m, int k)
     for (int i = 0; i < count; i++)
         if (!taken(m, k, bins[i]) && (pick < 0 || v[bins[i]] > v[pick]))
             pick = bins[i];
-    if (pick < 0) pick = middle_free(m, k);     /* every peak has one */
+    if (pick < 0) pick = middle_free(m, k);     /* no free peak */
     if (pick < 0) pick = m->n / 2;
     m->mark[k].on = 1;
     m->mark[k].mhz = sdr_model_freq(m, pick);
@@ -178,8 +180,8 @@ void sdr_mark_follow(sdr_model_t *m)
         int b = sdr_mark_bin(m, k), top;
 
         if (b < 0 || k == m->mark_held) continue;
-        /* A drift of a few bins a frame is kept up with; ground barely
-         * higher than where it stands does not move it. */
+        /* Each frame it looks 3 + n/64 bins either way, and moves only to
+         * a level at least FOLLOW_DB over the one it is on. */
         top = climb(v, m->n, b, 3 + m->n / 64);
         if (v[top] - v[b] >= FOLLOW_DB)
             m->mark[k].mhz = sdr_model_freq(m, top);

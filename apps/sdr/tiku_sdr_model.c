@@ -1,8 +1,8 @@
-/* tiku_sdr_model.c -- TikuSDR's model: a view's range and how the board
- * is asked for it, the board's SPEC lines taken in, slices stitched into
- * one band, what each trace type keeps of them, the graticule's scale, the
- * spectrogram, and the channel plans of the 2.4 GHz band.  No window and
- * no device.
+/* tiku_sdr_model.c -- TikuSDR's model: a view's range and the command
+ * that asks the board for it, the board's SPEC and SWEEP lines read, a
+ * sweep's slices stitched into one trace, what each trace type keeps, the
+ * graticule's scale, the spectrogram's rows, and the channel plans of the
+ * 2.4 GHz band.  No window and no device.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <math.h>
@@ -12,20 +12,24 @@
 
 #include "tiku_sdr.h"
 
-/* A sweep's slice keeps 8.2 MHz either side of its centre, so neighbours
- * overlap rather than gap, in 312.5 kHz bins (40 MS/s in 128); one heard
- * at the AGC's gain has its noise floor moved to 40 dB. */
+/* A sweep's slice keeps 8.2 MHz either side of its centre, so slices
+ * 16 MHz apart overlap by 0.4 MHz; its bins are 312.5 kHz (40 MS/s in
+ * 128).  A slice heard at the AGC's gain has its noise floor moved to
+ * BAND_FLOOR dB. */
 #define SLICE_HALF_MHZ 8.2
 #define SLICE_BIN_MHZ  0.3125
 #define BAND_FLOOR     40.0f
 
-/* A line heard at a held gain is raised by the steps it was held below the
- * board's own hold, a step being about a decibel: whatever gain heard
- * them, lines read alike, and a sweep's slices need no levelling. */
+/* The gain step the board holds unless a capture clips.  A line heard at
+ * a held gain is raised by the steps it was held below GAIN_REF, a step
+ * being about a decibel, so lines at any held gain read on one scale and
+ * the slices of a sweep heard at held gains are not levelled. */
 #define GAIN_REF       60
 
-/* The rate codes the board takes, by what one spectrum spans, in MHz.
- * Below 40 MS/s the whole of it is flat; at 40 the middle 24 MHz. */
+/* The span of one spectrum at each rate code the board takes, in MHz,
+ * which is also the sample rate in MS/s; one_spectrum() uses codes 1 to
+ * RATE_NARROWEST.  Below 40 MS/s all of the span is flat; at 40, the
+ * middle 24 MHz. */
 static const double rate_mhz[] = {80.0, 40.0, 20.0, 10.0, 8.0, 4.0};
 #define RATE_NARROWEST 5
 
@@ -69,9 +73,10 @@ void sdr_range_fit(double *start, double *stop)
     *stop = round(b * 1000.0) / 1000.0;
 }
 
-/** @brief One spectrum: tuned to the whole MHz nearest the centre, at the
- *         narrowest rate that holds the view, 40 MS/s holding any up to
- *         40 MHz; the view is the bins of it inside start to stop. */
+/** @brief Set up one spectrum of 256 points: tuned to the whole MHz
+ *         nearest the centre, at the narrowest rate whose span holds the
+ *         view about that tune, else 40 MS/s; the trace is the bins inside
+ *         start to stop. */
 static void one_spectrum(sdr_model_t *m)
 {
     double centre = (m->start + m->stop) / 2, span = m->stop - m->start;
@@ -93,10 +98,11 @@ static void one_spectrum(sdr_model_t *m)
     m->lo_mhz = m->tune + (m->k0 - m->nfft / 2) * bin;
 }
 
-/** @brief A sweep: 40 MS/s slices 16 MHz apart from the first whose kept
- *         middle reaches the start; one running past the board's top moves
- *         down whole.  The trace's bins are the slices' own, or wider, a
- *         trace holding SDR_BINS at most. */
+/** @brief Set up a sweep: 40 MS/s slices SDR_SLICE_STEP MHz apart, from
+ *         the first whose kept middle reaches the start; a sweep whose last
+ *         slice would pass SDR_TUNE_HI moves down whole.  The trace's bins
+ *         are the slices' own, or wider when the span needs more than
+ *         SDR_BINS of them. */
 static void slices(sdr_model_t *m)
 {
     double span = m->stop - m->start;
@@ -218,7 +224,8 @@ int sdr_model_bin(const sdr_model_t *m, double mhz)
     return (j < 0 || j >= m->n) ? -1 : (int)j;
 }
 
-/** @brief Two hex digits at @p s, or -1. */
+/** @brief The byte that two lowercase hex digits at @p s give, or -1 for
+ *         anything else. */
 static int hex2(const char *s)
 {
     int v = 0;
@@ -233,9 +240,10 @@ static int hex2(const char *s)
     return v;
 }
 
-/** @brief A finished frame: the average, the highest and the lowest kept
- *         from it, a spectrogram row, and markers kept on the peaks they
- *         follow. */
+/** @brief Finish a frame: fold it into the average, where it weighs
+ *         1/avg_count, and into the max and min holds; the first frame of a
+ *         view sets all three.  Then add a spectrogram row and move the
+ *         markers that follow peaks. */
 static void frame_done(sdr_model_t *m)
 {
     float a = 1.0f / (float)(m->avg_count > 1 ? m->avg_count : 1);
@@ -273,10 +281,11 @@ static float lift(const sdr_model_t *m)
     return m->held ? (float)(GAIN_REF - m->gain) : 0.0f;
 }
 
-/** @brief One slice of a band sweep into its place, keeping the middle,
- *         where the receiver's filter is flat.  A slice heard at a held gain
- *         is lifted as any line is; one heard at the AGC's own has its noise
- *         floor (a fifth of the way up its values) moved to a common one. */
+/** @brief Put one slice of a sweep in its place, keeping its middle,
+ *         where the receiver's filter is flat; a trace bin keeps the
+ *         highest level that falls in it this sweep.  A slice heard at a
+ *         held gain is lifted as any line is; one heard at the AGC's gain
+ *         has its noise floor, its 20th percentile, moved to BAND_FLOOR. */
 static void band_slice(sdr_model_t *m, int centre, double bin,
                        const unsigned char *v, int n)
 {
@@ -303,7 +312,8 @@ static void band_slice(sdr_model_t *m, int centre, double bin,
 }
 
 /** @brief The receiver's own leakage at its centre is no signal: the three
- *         bins on it take their neighbours' mean. */
+ *         bins on it take the mean of the bins three either side of the
+ *         centre.  A spectrum under 16 bins is left alone. */
 static void dc_patch(unsigned char *v, int n)
 {
     int c = n / 2, mean;
@@ -327,8 +337,8 @@ int sdr_model_line(sdr_model_t *m, const char *line)
         if (!m->sweep) return 0;
         memset(m->seen, 0, sizeof m->seen);
         m->got = 0;
-        /* A sweep begun before this view, or one short of a slice, leaves
-         * part of the range unheard: no frame of it. */
+        /* A sweep that began before this view, or that missed a slice,
+         * left part of the range unheard and makes no frame. */
         if (!whole) return 0;
         frame_done(m);
         return 1;
@@ -342,7 +352,8 @@ int sdr_model_line(sdr_model_t *m, const char *line)
         if (b < 0) return -1;
         v[k] = (unsigned char)b;
     }
-    /* A line asked for by an older view is dropped, not drawn crooked. */
+    /* A line at another rate or size was asked for by an earlier view:
+     * it is dropped. */
     if (hz != lround(rate_mhz[m->rate] * 1e6) || n != m->nfft) return 0;
     dc_patch(v, n);
     m->gain = gain;
@@ -384,12 +395,13 @@ void sdr_model_scale(sdr_model_t *m)
         if (sorted[m->n - 1] > hi) hi = sorted[m->n - 1];
         shown = 1;
     }
-    if (!shown) return;                 /* nothing drawn: the scale stays */
+    if (!shown) return;                 /* every trace off: the scale stays */
     top = ceilf((hi + 3.0f) / 10.0f) * 10.0f;
     need = top - lo + 6.0f;
     for (int i = 0; i < 4; i++)
         if (divs[i] * SDR_DIVS >= need) { div = divs[i]; break; }
-    /* Wider at once; narrower, or a lower top, only with room to spare. */
+    /* A wider division or a higher top applies at once; a narrower
+     * division or a lower top only with room to spare. */
     if (m->spectra <= 1 || div > m->div ||
         (div < m->div && need <= div * SDR_DIVS * 0.8f))
         m->div = div;
@@ -403,7 +415,7 @@ void sdr_model_scale(sdr_model_t *m)
 
 tiku_rgb_t sdr_palette(float t)
 {
-    /* An analyser's spectrogram: navy, blue, cyan, green, yellow, red. */
+    /* The colours from 0 to 1: navy, blue, cyan, green, yellow, red. */
     static const unsigned char stop[6][3] = {
         {0, 0, 96}, {0, 40, 255}, {0, 210, 255}, {40, 220, 40},
         {255, 230, 0}, {230, 20, 20}

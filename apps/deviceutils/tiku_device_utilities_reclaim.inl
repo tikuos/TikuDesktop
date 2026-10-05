@@ -1,5 +1,12 @@
-/* Device-reported phases, never an invented percentage. No transport or writes
- * in this parser. Unknown/malformed firmware reports disable all controls. */
+/* tiku_device_utilities_reclaim.inl -- part of tiku_device_utilities.c:
+ * parsing the board's reports on its memory reconstruction job (the job,
+ * the last job and the owners under /sys/mem/reclaim) into the titles and
+ * sentences the monitor shows.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
+
+/** @brief The value of the word "@p key=value" in @p text, into @p out.
+ *  @return 1, or 0 when it is absent, empty or too long. */
 static int utility_reclaim_field(const char *text, const char *key, char *out, size_t cap)
 {
     size_t k = strlen(key);
@@ -14,6 +21,8 @@ static int utility_reclaim_field(const char *text, const char *key, char *out, s
     }
     return 0;
 }
+/** @brief The job's token at the start of @p text, "1:" and a nonzero
+ *         32-bit number, into @p out.  @return 1, or 0. */
 static int utility_reclaim_token(const char *text, char *out, size_t cap)
 {
     size_t n = strcspn(text, " \t\r\n"); uint32_t v = 0;
@@ -26,6 +35,7 @@ static int utility_reclaim_token(const char *text, char *out, size_t cap)
     if (!v) return 0;
     memcpy(out, text, n); out[n] = 0; return 1;
 }
+/** @brief The sentence for a job's cause, or NULL for an unknown one. */
 static const char *utility_reclaim_cause(const char *cause)
 {
     static const char *pairs[][2] = {
@@ -47,6 +57,9 @@ static const char *utility_reclaim_cause(const char *cause)
         if (!strcmp(cause, pairs[i][0])) return pairs[i][1];
     return NULL;
 }
+/** @brief Parse a job report into @p r: "idle", or a token with a state
+ *         and cause, and the phase of a running job; with @p last, the end
+ *         of the last job.  @return 1, or 0 when it does not parse. */
 static int utility_reclaim_parse(const char *text, utility_reclaim_t *r, int last)
 {
     char state[24], phase[24], cause[24];
@@ -83,6 +96,8 @@ static int utility_reclaim_parse(const char *text, utility_reclaim_t *r, int las
     }
     r->available = 1; return 1;
 }
+/** @brief The BASIC owner's line of the owners report, as a sentence in
+ *         r->basic. */
 static void utility_reclaim_basic(const char *text, utility_reclaim_t *r)
 {
     static const char *pairs[][2] = {

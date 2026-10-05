@@ -16,9 +16,10 @@ typedef struct {
     int dirty;                      /* the window wants another frame */
 } circuit_app_t;
 
-/** @brief Ask the desktop's file panel for a local file, starting at home;
- *         when the panel cannot be put up the ask is forgotten and the
- *         status line says so. */
+/** @brief Ask the desktop's file panel, starting at home, for a local
+ *         file to open, or for Export View as PNG... a place to save
+ *         circuit-view.png; when the panel cannot be put up the ask is
+ *         forgotten and the status line says so. */
 static void choose(void *ctx)
 {
     circuit_app_t *a = ctx;
@@ -146,6 +147,7 @@ static const tiku_app_descriptor_t descriptor = {
     .tick = tick, .event_in = event, .pick = pick, .picked = picked,
     .closed = closed
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 __attribute__((visibility("default"))) const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

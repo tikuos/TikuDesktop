@@ -7,10 +7,11 @@
 
 #include "tiku_window.h"
 
+/** @brief The viewer: its window, the document shown and its jobs. */
 typedef struct tiku_circuitview tiku_circuitview_t;
 
 /**
- * @brief An empty viewer on the UI thread; no window is opened yet.
+ * @brief An empty viewer, made on the UI thread; it opens no window.
  *
  * @param workspace  Where the window opens; borrowed
  * @param dirty      Set whenever the window wants redrawing; borrowed
@@ -41,13 +42,16 @@ void tiku_circuitview_tick(tiku_circuitview_t *viewer);
 void tiku_circuitview_note(tiku_circuitview_t *viewer,
                            const char *text);
 /** @brief The application's file picker, asked by Open..., Open Gerber
- *         Job... and Add Layer...; NULL disables them. */
+ *         Job..., Add Layer... and Export View as PNG...; NULL disables
+ *         them. */
 void tiku_circuitview_picker(tiku_circuitview_t *viewer,
                              void (*choose)(void *), void *ctx);
-/** Whether the current picker request is Export PNG (otherwise Open). */
+/** @brief Whether the ask in flight is Export View as PNG..., which wants
+ *         a place to save; every other ask wants a file to open. */
 int tiku_circuitview_picking_export(const tiku_circuitview_t *viewer);
-/** Enable per-document view settings in a caller-owned configuration directory.
- * Does not open a document or create a file. NULL disables persistence. */
+/** @brief Keep per-document view settings in @p directory, an absolute
+ *         path the caller owns; NULL, or a path that is not absolute or
+ *         too long, turns them off.  It opens nothing and makes no file. */
 void tiku_circuitview_settings(tiku_circuitview_t *viewer, const char *directory);
 /**
  * @brief Open @p path read-only on a worker.
@@ -59,9 +63,10 @@ void tiku_circuitview_settings(tiku_circuitview_t *viewer, const char *directory
 void tiku_circuitview_file(tiku_circuitview_t *viewer,
                            const char *path);
 /**
- * @brief The file chosen for the last ask, used as the command that asked
- *        meant it while it still can be: Open opens it, Open Gerber Job
- *        opens it as a job, Add Layer adds it to the stack shown.  NULL
+ * @brief The file chosen for the last ask, used for the command that
+ *        asked: Open opens it, Open Gerber Job opens it as a job, Add
+ *        Layer adds it to the stack shown (refused, with a note, when there
+ *        is no room or no stack), Export writes the PNG there.  NULL or ""
  *        forgets the ask.
  *
  * @note The desktop does not answer a cancelled panel, so an ask may get

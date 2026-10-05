@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
 
-/* A folder search runs on workers.  Each job parses its own pages and uses
- * no font or layout state; results reach the window only through the done
- * callbacks, which run on the loop. */
+/** @brief A folder search, shared by its jobs on the workers.  Each job
+ *         parses its own pages and uses no font or layout state; results
+ *         reach the window only through the done callbacks, on the loop. */
 typedef struct reader_search {
     /* The window, read on the loop only; NULL once cancelled or finished. */
     tiku_reader_help_window_t *owner;
@@ -35,7 +35,10 @@ static void search_unref(reader_search_t *j)
     }
 }
 
-/** @brief Discovery is bounded by files, depth and total directory entries. */
+/** @brief Collect the Markdown and HTML files under @p prefix of the
+ *         search's folder, skipping hidden names, links and Help's locale
+ *         folders: at most HELP_ROWS files, four folders deep and 8192
+ *         entries, past which the search is marked limited. */
 static void search_dir(reader_search_t *j, const char *prefix, int depth,
                        int *entries)
 {
@@ -73,11 +76,13 @@ static void search_dir(reader_search_t *j, const char *prefix, int depth,
     closedir(dir);
 }
 
-/** @brief One independently parsed document; no window or font access. */
+/** @brief Search one file: read it within the search's 32 MiB budget,
+ *         parse it without laying out, and add a row for its first match. */
 static void search_page(reader_search_t *j, const char *name)
 {
     char path[TIKU_PATH_MAX];
-    /* Reuse Help's confinement/localization policy on a private controller. */
+    /* A stand-in window, so tiku_reader_path() applies Help's confinement
+     * and locale rules. */
     tiku_reader_help_window_t source = {.document_mode = j->mode};
     snprintf(source.root, sizeof source.root, "%s", j->root);
     if (j->mode) {
@@ -258,7 +263,8 @@ void tiku_reader_search(tiku_reader_help_window_t *c)
                     "Choose Stop Search to cancel.");
 }
 
-/** @brief Build the outline from headings, not a second hard-coded contents list. */
+/** @brief Build the outline from the page's H1 to H3 headings, leaving out
+ *         those under a folded heading. */
 void tiku_reader_outline(tiku_reader_help_window_t *c)
 {
     struct help_reader *r = c->reader; if (!r || !c->doc) return;

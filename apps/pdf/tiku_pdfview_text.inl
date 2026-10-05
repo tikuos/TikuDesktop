@@ -1,5 +1,8 @@
-/* What the document says: its outline, its links, its text to find and
- * to select, all read by the jobs and kept here. */
+/* tiku_pdfview_text.inl -- part of tiku_pdfview.c: what the document
+ * says, read by the jobs and kept here: the outline and the side column,
+ * links, selecting and copying text, finding, and the pointer on the pages.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 /* ------------------------------------------------------------ outline  */
 
@@ -14,8 +17,9 @@ static void pv_outline_rows(tiku_pdfview_t *c)
     (void)tiku_list_set_count(&c->list, c->nrows);
 }
 
-/** @brief Folded as the document keeps its outline: a closed entry, or
- *         one below the top when the whole would not fit the list. */
+/** @brief Fold the outline as the document keeps it: an entry with
+ *         entries under it is folded when the document marks it closed, or
+ *         when the whole outline would not fit the list. */
 static void pv_outline_start(tiku_pdfview_t *c)
 {
     for (int i = 0; i < c->noutline; i++)
@@ -26,8 +30,8 @@ static void pv_outline_start(tiku_pdfview_t *c)
     pv_outline_rows(c);
 }
 
-/** @brief How far down its page, in points as the view shows it, the
- *         place @p to leads to lands: turned with the view. */
+/** @brief How far below its page's top destination @p to lies, in points,
+ *         with the page turned as the view shows it. */
 static double pv_dest_y(tiku_pdfview_t *c, const tiku_pdf_dest_t *to)
 {
     double x = to->left, y = to->top;
@@ -64,8 +68,9 @@ static int pv_outline_here(tiku_pdfview_t *c)
     return here;
 }
 
-/** @brief The outline column; the row for where the view is marked
- *         unless the list has the keyboard. */
+/** @brief The side column: the signatures or the thumbnails when shown,
+ *         else the outline, its row for where the view is marked unless
+ *         the list has the keyboard. */
 static void pv_side_draw(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r)
 {
     int shown;
@@ -110,7 +115,9 @@ static void pv_side_draw(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r)
     }
 }
 
-/** @brief A click on the outline: its sign folds, its title follows. */
+/** @brief Pointer input for the side column: the signatures and the
+ *         thumbnails take their own; on the outline the wheel scrolls, and
+ *         a click on an entry's sign folds it, on its title follows it. */
 static int pv_side_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
                            const pv_layout_t *l)
 {
@@ -142,7 +149,9 @@ static int pv_side_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
     return 1;
 }
 
-/** @brief Keys for the outline: arrows move and fold, Return follows. */
+/** @brief Keys for the side column: the signatures and the thumbnails
+ *         take their own; on the outline the arrows move and fold, Return
+ *         follows. */
 static int pv_side_key(tiku_pdfview_t *c, const tiku_event_t *ev,
                        const pv_layout_t *l)
 {
@@ -172,8 +181,8 @@ static int pv_side_key(tiku_pdfview_t *c, const tiku_event_t *ev,
 
 /* -------------------------------------------------------------- links  */
 
-/** @brief An address a link gives: there is no browser to hand it to, so
- *         it goes on the clipboard and the status line says so. */
+/** @brief Put the address a link gives on the clipboard and say so in
+ *         the status line; no browser is opened. */
 static void pv_open_address(tiku_pdfview_t *c, const char *uri)
 {
     char said[320];
@@ -206,8 +215,8 @@ static int pv_point(tiku_pdfview_t *c, tiku_rect_t canvas, int x, int y,
     return p;
 }
 
-/** @brief The link under canvas point @p x, @p y into @p page; -1 when
- *         there is none, or the page's links are not read yet. */
+/** @brief The link under canvas point @p x, @p y, its page into @p page;
+ *         -1 when there is none, or while the page's links are unread. */
 static int pv_link_at(tiku_pdfview_t *c, tiku_rect_t canvas, int x, int y,
                       int *page)
 {
@@ -272,7 +281,7 @@ static int pv_before(pv_mark_t a, pv_mark_t b)
 
 /** @brief The gap between characters nearest canvas point @p x, @p y:
  *         the nearest character's either side, as its middle falls.
- *         @return 0 when the page's text is not read yet. */
+ *         @return 0 while the page's text is unread. */
 static int pv_mark_at(tiku_pdfview_t *c, tiku_rect_t canvas, int x, int y,
                       pv_mark_t *m)
 {
@@ -387,9 +396,9 @@ static size_t pv_selection_text(const tiku_pdfview_t *c, const pv_mark_t *from,
     return n;
 }
 
-/** @brief The selection's text on the clipboard: all of it, but for
- *         what passes the clipboard's limit, cut at a character and
- *         said so. */
+/** @brief Copy the selection's text to the clipboard, cut at a character
+ *         when it passes the clipboard's limit, and say so; refused when
+ *         the document does not allow copying. */
 static void pv_copy(tiku_pdfview_t *c)
 {
     char *text, said[160];
@@ -459,7 +468,8 @@ static void pv_tint_run(tiku_pdfview_t *c, int p, int x, int y,
 }
 
 /** @brief What is marked on page @p p where it is shown at @p x, @p y:
- *         the selection, what a search found, the link under the pointer. */
+ *         the selection, the search's matches, the signature fields and the
+ *         link under the pointer. */
 static void pv_marks(tiku_pdfview_t *c, int p, int x, int y)
 {
     const pv_page_t *pg = &c->pages[p];
@@ -610,7 +620,7 @@ static void pv_go_typed(tiku_pdfview_t *c)
 /* ------------------------------------------------------------- canvas  */
 
 /** @brief The pointer on the pages: the wheel scrolls (and zooms with
- *         Command), a click follows a link, a drag selects text. */
+ *         Ctrl), a click follows a link, a drag selects text. */
 static int pv_canvas_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
                              const pv_layout_t *l)
 {

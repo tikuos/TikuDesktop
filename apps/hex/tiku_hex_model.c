@@ -1,4 +1,6 @@
-/* Bounds, exact bytes, change detection and atomic saves.
+/* tiku_hex_model.c -- TikuHex's document: loading a file, byte changes
+ * with undo and redo, find, and saves.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_hex_model.h"
 #include <ctype.h>
@@ -9,11 +11,12 @@
 #include <string.h>
 #include <unistd.h>
 
-/** A failure never swaps the current document or truncates its original. */
+/** @brief Put @p text in m->error.  @return 0. */
 static int hex_error(hex_model_t *m, const char *text)
 { snprintf(m->error, sizeof m->error, "%s", text); return 0; }
 
-/** Read all requested bytes, including NULs, tolerating interrupted reads. */
+/** @brief Read @p n bytes from @p fd, retrying an interrupted read.
+ *  @return 1 when all were read. */
 static int hex_read(int fd, unsigned char *bytes, size_t n)
 {
     while (n) {
@@ -25,11 +28,9 @@ static int hex_read(int fd, unsigned char *bytes, size_t n)
     return 1;
 }
 
-/** Release document allocations without retaining stale editor history. */
 void hex_free(hex_model_t *m)
 { free(m->bytes); free(m->original); memset(m, 0, sizeof *m); }
 
-/** Reject streams, device nodes, oversized files and unstable reads. */
 int hex_load(hex_model_t *m, const char *path)
 {
     struct stat before, after;
@@ -63,7 +64,8 @@ int hex_load(hex_model_t *m, const char *path)
     return 1;
 }
 
-/** Incremental dirty count remains exact through undo and save boundaries. */
+/** @brief Set the byte at @p at, keep the count of bytes that differ from
+ *         the file's, and move the cursor there. */
 static void hex_set(hex_model_t *m, size_t at, unsigned char byte)
 {
     m->changed -= m->bytes[at] != m->original[at];
@@ -72,7 +74,6 @@ static void hex_set(hex_model_t *m, size_t at, unsigned char byte)
     m->cursor = at;
 }
 
-/** One complete hex pair or ASCII key is one undoable byte replacement. */
 int hex_replace(hex_model_t *m, size_t at, unsigned char byte)
 {
     if (at >= m->size || m->bytes[at] == byte) return 0;
@@ -86,7 +87,6 @@ int hex_replace(hex_model_t *m, size_t at, unsigned char byte)
     hex_set(m, at, byte); return 1;
 }
 
-/** Undo is bounded and never changes the buffer length. */
 int hex_undo(hex_model_t *m, int redo)
 {
     if (redo ? m->position >= m->used : !m->position) return 0;
@@ -94,7 +94,6 @@ int hex_undo(hex_model_t *m, int redo)
     hex_set(m, c.at, redo ? c.after : c.before); return 1;
 }
 
-/** Accept explicit 0x hexadecimal or unsigned decimal offsets only. */
 int hex_offset(const char *text, size_t size, size_t *offset)
 {
     if (!text || !*text || *text == '-' || *text == '+' || isspace((unsigned char)*text)) return 0;
@@ -105,7 +104,6 @@ int hex_offset(const char *text, size_t size, size_t *offset)
     *offset = (size_t)n; return 1;
 }
 
-/** Convert strict pairs; spaces separate bytes, never half a byte. */
 int hex_pattern(const char *text, unsigned char *bytes, size_t *size)
 {
     size_t n = 0; int high = -1;
@@ -123,7 +121,6 @@ int hex_pattern(const char *text, unsigned char *bytes, size_t *size)
     *size = n; return 1;
 }
 
-/** Find next, wrapping once; patterns cannot cross the end of the file. */
 int hex_find(hex_model_t *m, const unsigned char *pattern, size_t size)
 {
     if (!size || size > m->size) return 0;
@@ -135,7 +132,8 @@ int hex_find(hex_model_t *m, const unsigned char *pattern, size_t size)
     return 0;
 }
 
-/** Compare the actual disk bytes, not just timestamps, before replacement. */
+/** @brief Whether @p path is still the file that was read: one link, the
+ *         same device, inode, size and times, and the same bytes. */
 static int hex_unchanged(hex_model_t *m, const char *path)
 {
     struct stat st;
@@ -157,7 +155,6 @@ static int hex_unchanged(hex_model_t *m, const char *path)
     close(fd); return ok;
 }
 
-/** Stage bytes in the destination directory; existing unrelated files survive. */
 int hex_save(hex_model_t *m, const char *path)
 {
     char temp[560]; struct stat st;

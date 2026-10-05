@@ -5,6 +5,7 @@
 #define TIKU_MARKER_H_
 #include "../reader/tiku_reader_app_host.h"
 
-/* TikuMarker's name, icon, welcome page, Help page and bookmark file. */
+/** @brief TikuMarker's name, icon, welcome page, Help page and bookmark
+ *         file, for the shared viewer. */
 extern const tiku_reader_profile_t tiku_marker_profile;
 #endif

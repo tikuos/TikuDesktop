@@ -1,6 +1,11 @@
-/* Bounded snapshot jobs; only completion callbacks touch UI-owned state. */
+/* tiku_image_io.inl -- part of tiku_image_window.c: reading and decoding
+ * an image on a worker, one at a time; only the done and free callbacks,
+ * on the loop, touch the viewer.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** @brief Detect both rewritten and atomically replaced snapshot files. */
+/** @brief Whether two stats are of one unchanged file: device, inode, size
+ *         and times equal, so a rewritten or a replaced file differs. */
 static int image_same_file(const struct stat *a, const struct stat *b)
 {
     return a->st_dev == b->st_dev && a->st_ino == b->st_ino &&
@@ -11,7 +16,9 @@ static int image_same_file(const struct stat *a, const struct stat *b)
         a->st_ctim.tv_nsec == b->st_ctim.tv_nsec;
 }
 
-/** @brief Reject directories, FIFOs and excessive sizes before allocation. */
+/** @brief Read j->path whole into j->data: a regular file of at most
+ *         TIKU_IMAGE_BYTES_MAX bytes that does not change while it is read;
+ *         a watch of an unchanged file reads nothing.  @return 1, or 0. */
 static int image_read_file(image_job_t *j)
 {
     int fd = open(j->path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -39,7 +46,8 @@ fail:
     close(fd); return 0;
 }
 
-/** @brief Snapshot reading and decoding never run in an event callback. */
+/** @brief On a worker: read the file, unless the bytes were handed in,
+ *         and decode them; j->error says why when it fails. */
 static void image_job_run(void *ctx)
 {
     image_job_t *j = ctx;
@@ -60,7 +68,9 @@ static void image_job_run(void *ctx)
     }
 }
 
-/** @brief Commit complete frames, preserving view on same-file refresh. */
+/** @brief On the loop: show the decoded image, keeping the view when the
+ *         same image comes back at its size; on failure keep the image
+ *         shown, stop watching and say why. */
 static void image_job_done(void *ctx)
 {
     image_job_t *j = ctx;
@@ -90,7 +100,8 @@ static void image_job_done(void *ctx)
     }
 }
 
-/** @brief Completion and cancellation release the same owned buffers. */
+/** @brief After done, or instead of it: free the job and drop its hold on
+ *         the viewer. */
 static void image_job_free(void *ctx)
 {
     image_job_t *j = ctx;
@@ -104,7 +115,9 @@ static void image_job_free(void *ctx)
     image_unref(c);
 }
 
-/** @brief One request in flight; copy producer buffers before returning. */
+/** @brief Read and decode @p source on a worker: the file it names, or
+ *         @p len bytes of @p data, copied now.  One at a time.
+ *  @return 1 when queued. */
 static int image_request(tiku_image_window_t *c, const char *source,
                           const void *data, size_t len, int watch)
 {

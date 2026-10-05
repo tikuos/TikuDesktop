@@ -1,4 +1,7 @@
-/* Developer Calculator: exact unsigned words, bit fields and byte checksums.
+/* tiku_calculator.c -- Developer Calculator: an unsigned 8- to 64-bit
+ * word in four bases with a grid of its bits, a bit-range extraction, and
+ * CRC-32 and CRC-16 checksums of text or hex bytes.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <inttypes.h>
 #include <stdio.h>
@@ -14,6 +17,8 @@
 #define CALC_H 650
 enum { C_BASE = 1, C_WIDTH, C_SWAP, C_COPY, C_CRCMODE, C_CRCCOPY, C_CLOSE,
        C_FIELD = 20, C_BIT = 100 };
+/** @brief The running application: its window, the four fields, and the
+ *         value, the word width and the results they give. */
 typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t *surface;
@@ -27,7 +32,8 @@ typedef struct {
 } calculator_t;
 #include "tiku_calculator_model.inl"
 
-/** Fixed classic sections keep the full 64-bit binary result in view. */
+/** @brief The rectangle of field @p i: the value, the high and low bit of
+ *         the extraction, and the CRC input. */
 static tiku_rect_t calc_field_rect(int i)
 {
     const tiku_rect_t rects[] = {{16, 54, 784, 30}, {114, 386, 64, 30},
@@ -35,11 +41,13 @@ static tiku_rect_t calc_field_rect(int i)
     return rects[i];
 }
 
-/** All 64 bits have separately addressable, keyboard reachable native buttons. */
+/** @brief The button of bit @p bit: sixteen to a row, the highest bits
+ *         first. */
 static tiku_rect_t calc_bit_rect(int bit)
 { return (tiku_rect_t){16 + (15 - bit % 16) * 49, 206 + (3 - bit / 16) * 40, 45, 32}; }
 
-/** Recompute exact representations, extraction and CRCs from the current fields. */
+/** @brief Recompute the value's four forms, the bit extraction and the
+ *         checksums from the fields. */
 static void calc_update(calculator_t *p)
 {
     p->valid = calc_parse(p->fields[0].text, (unsigned)p->base, p->width, &p->value);
@@ -64,7 +72,9 @@ static void calc_update(calculator_t *p)
         n, calc_crc32(bytes, n), (unsigned)calc_crc16(bytes, n));
 }
 
-/** Reflect parsed state in availability; invalid inputs never enable bit operations. */
+/** @brief Rebuild the window's controls: Swap, Copy and the bit buttons
+ *         are enabled only for a valid value, and a bit only inside the
+ *         word. */
 static void calc_controls(calculator_t *p)
 {
     tiku_dialog_begin(&p->dialog, TIKU_DIALOG_NONE, C_CLOSE);
@@ -82,11 +92,13 @@ static void calc_controls(calculator_t *p)
     tiku_dialog_end(&p->dialog);
 }
 
-/** Draw clipped plain text with the user's current font. */
+/** @brief Draw @p text in the plain face, clipped to @p width. */
 static void calc_line(calculator_t *p, int x, int y, int width, const char *text)
 { tiku_text_line_draw(p->surface, (tiku_rect_t){x, y, width, 26}, TIKU_MEASURE_PLAIN, text, TIKU_C_TEXT); }
 
-/** One compact utility window; no modal errors and no floating-point conversion. */
+/** @brief Recompute and paint the window: the value's forms, the bit
+ *         grid, the extraction, the checksums and the status line, then
+ *         hand the frame to the desktop. */
 static void calc_paint(calculator_t *p)
 {
     calc_update(p); calc_controls(p);
@@ -131,14 +143,15 @@ static void calc_paint(calculator_t *p)
     p->services->frame(p->services->ctx, p->id, p->surface->px, CALC_W, CALC_H);
 }
 
-/** Preserve the exact number when changing radix or toggling a bit. */
+/** @brief Put @p value in the value field, written in the current base. */
 static void calc_set(calculator_t *p, uint64_t value)
 {
     char text[65]; calc_format(value, (unsigned)p->base, text);
     tiku_field_start(&p->fields[0], text); tiku_field_input_init(&p->inputs[0]);
 }
 
-/** Copy is explicit, and narrowing never silently discards high bits. */
+/** @brief Carry out a button or menu command; the word is not narrowed
+ *         while the value does not fit it.  @return 1 to close. */
 static int calc_action(calculator_t *p, int command)
 {
     if (command == C_CLOSE) return 1;
@@ -168,14 +181,16 @@ static int calc_action(calculator_t *p, int command)
     calc_paint(p); return 0;
 }
 
-/** Whether a field is extending a selection under the held pointer. */
+/** @brief Whether a field is extending a selection under the held
+ *         pointer. */
 static int calc_dragging(const calculator_t *p)
 {
     for (int i = 0; i < 4; i++) if (p->inputs[i].dragging) return 1;
     return 0;
 }
 
-/** Rich fields share clipboard, selection and committed-text handling with other apps. */
+/** @brief Every window event: the dialog's controls first, then the four
+ *         fields; a bare hover draws nothing.  @return 1 to close. */
 static int calc_event(void *state, const tiku_event_t *ev)
 {
     calculator_t *p = state;
@@ -187,8 +202,9 @@ static int calc_event(void *state, const tiku_event_t *ev)
     calc_controls(p);
     tiku_dialog_result_t r = tiku_dialog_event(&p->dialog, ev);
     if (r.activated != TIKU_DIALOG_NONE && calc_action(p, r.activated)) return 1;
-    /* A key the panel took is a focus move, not text: Tab carries its
-     * own character, which the field it lands in refuses. */
+    /* A key the dialog took, other than Return, moved the focus and does
+     * not reach the fields: Tab carries a character, which the field it
+     * lands on refuses. */
     int steered = r.taken && ev->type == TIKU_EVENT_KEY_DOWN &&
                   ev->key != TIKU_KEY_RETURN;
     for (int i = 0; !steered && i < 4; i++)
@@ -198,7 +214,8 @@ static int calc_event(void *state, const tiku_event_t *ev)
     calc_paint(p); return 0;
 }
 
-/** Publish the utility's own close action in the desktop menu bar. */
+/** @brief Open the window on a 32-bit word in base 16, publish its
+ *         Calculator menu, and focus the value field. */
 static int calc_start(void **state, const tiku_app_services_t *services)
 {
     calculator_t *p = calloc(1, sizeof *p); if (!p) return -1;
@@ -223,19 +240,22 @@ static int calc_start(void **state, const tiku_app_services_t *services)
     *state = p; return 0;
 }
 
-/** Release only this app's allocations. */
+/** @brief Free the window's surface and the state. */
 static void calc_stop(void *state)
 { calculator_t *p = state; tiku_surface_free(p->surface); free(p); }
 
-/** Menu and button picks share the same action policy. */
+/** @brief A menu pick, carried out as a button's command. */
 static int calc_pick(void *state, uint32_t window, int command)
 { (void)window; return calc_action(state, command); }
 
+/** @brief Developer Calculator's descriptor, which the export below
+ *         hands on. */
 const tiku_app_descriptor_t tiku_calculator_app = {
     .id = "tiku.calculator", .name = "Developer Calculator", .start = calc_start,
     .stop = calc_stop, .event = calc_event, .pick = calc_pick
 };
 #ifdef TIKU_APP_SO
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t), &tiku_calculator_app
 };

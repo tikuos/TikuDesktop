@@ -39,6 +39,9 @@ static uint32_t next_colour(uint32_t colour)
     return tiku_circuit_layer_colour(i + 1);
 }
 
+/** @brief Show a new stack made from @p layers, row @p selected chosen;
+ *         with @p named, the front layer's path becomes the document's.
+ *  @return 1, or 0 with the error said when the stack cannot be made. */
 static int publish(tiku_circuitview_t *v, tiku_circuit_layer_t *layers,
                    size_t count, size_t selected, int named)
 {

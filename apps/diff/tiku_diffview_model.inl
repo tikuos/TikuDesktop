@@ -1,7 +1,9 @@
-/* The comparing: files read and diffed, folders walked, archives
- * extracted into a private folder -- all on a worker, one job at a time
- * per window -- and the rows the window draws, built from the answer.
- * A job touches only what it was given; the loop applies what it made. */
+/* tiku_diffview_model.inl -- part of tiku_diffview.c: the comparing.
+ * Files are read and diffed, folders walked and archives extracted into a
+ * private folder on a worker, one job at a time per window; a job touches
+ * only what it was given, and the loop applies what it made.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #define DV_TEXT_MAX  (64L << 20)        /* a bigger file compares as bytes */
 #define DV_DEPTH     64                 /* folders deep a walk goes        */
@@ -9,7 +11,7 @@
 
 /* ------------------------------------------------------------ models  */
 
-/** @brief What two files' comparison holds let go. */
+/** @brief Free two files' comparison. */
 static void dv_files_free(dv_files_t *f)
 {
     if (!f) return;
@@ -24,7 +26,7 @@ static void dv_files_free(dv_files_t *f)
     free(f);
 }
 
-/** @brief What two folders' comparison holds let go. */
+/** @brief Free two folders' comparison. */
 static void dv_folders_free(dv_folders_t *d)
 {
     if (!d) return;
@@ -33,7 +35,7 @@ static void dv_folders_free(dv_folders_t *d)
     free(d);
 }
 
-/** @brief The last part of @p path. */
+/** @brief The last part of @p path; "empty input" for NULL. */
 static const char *dv_leaf(const char *path)
 {
     const char *slash = path ? strrchr(path, '/') : NULL;
@@ -80,8 +82,8 @@ static int dv_read(const char *path, char **out, size_t *len, int64_t *size)
     return 0;
 }
 
-/** @brief Whether @p x and @p y hold the same bytes -- two links, the
- *         same target -- their sizes into @p sx and @p sy.
+/** @brief Whether @p x and @p y hold the same bytes, or are two links
+ *         to the same target; their sizes into @p sx and @p sy.
  *  @return 1 the same, 0 not, -1 when either could not be read. */
 static int dv_same_file(const char *x, const char *y, int64_t *sx,
                         int64_t *sy)
@@ -185,9 +187,9 @@ static int dv_rows(dv_files_t *f)
 }
 
 /**
- * @brief Files @p pa and @p pb compared -- either may be NULL, a file
- *        that is not there -- as lines when both are text, else as
- *        bytes.  @return the comparison, or NULL with why in @p said.
+ * @brief Files @p pa and @p pb compared, either NULL for a file that is
+ *        not there: as lines when both are text, else as bytes.
+ * @return the comparison, or NULL with why in @p said.
  */
 static dv_files_t *dv_files(const char *pa, const char *pb, int space,
                             char *said, size_t max)
@@ -261,7 +263,7 @@ static int dv_list_add(dv_list_t *l, const char *s)
     return 0;
 }
 
-/** @brief @p l's paths let go. */
+/** @brief Free @p l's paths. */
 static void dv_list_free(dv_list_t *l)
 {
     for (long i = 0; i < l->n; i++) free(l->p[i]);
@@ -285,10 +287,11 @@ static int dv_depth(const char *rel)
 }
 
 /**
- * @brief Every file and link under @p root, as paths from it, sorted:
- *        folders read from a list rather than by recursion, so a deep
- *        tree costs heap, not a worker's stack; links are not followed.
- * @return 0, -1 out of memory or stopped.
+ * @brief Every file and link under @p root, as paths from it, sorted;
+ *        links are not followed.  Folders wait in a heap list, so the
+ *        walk's stack use does not grow with the tree's depth.
+ * @return 0, or -1 when stopped, out of memory, deeper than DV_DEPTH,
+ *         or when a folder or a path could not be read.
  */
 static int dv_walk(const char *root, dv_list_t *out, const dv_progress_t *p)
 {
@@ -361,8 +364,9 @@ static int64_t dv_size(const char *root, const char *rel)
 /**
  * @brief The paths of @p la and @p lb, both sorted, joined in order:
  *        under one side only, or under both and then compared byte for
- *        byte.  The lists' strings pass to the entries.  @return 0, or
- *        -1 stopped.
+ *        byte.  The lists' strings pass to the entries.
+ * @return 0, or -1 when stopped, out of memory, or a file could not be
+ *         read.
  */
 static int dv_join(dv_folders_t *d, const char *ra, const char *rb,
                    dv_list_t *la, dv_list_t *lb, dv_progress_t *p)
@@ -460,8 +464,8 @@ static int dv_extracting(void *ctx, int64_t done, int64_t total)
 
 /**
  * @brief Side @p s for @p path: a folder, a file, or an archive
- *        extracted under @p under and taken as the folder it made -- or as
- *        its one file, when it holds only that.
+ *        extracted under @p under and taken as the folder it made, or as
+ *        its one file when it holds only that.
  * @return 0, or -1 with why in @p said.
  */
 static int dv_side(dv_side_t *s, const char *path, const char *under,
@@ -506,7 +510,7 @@ static int dv_side(dv_side_t *s, const char *path, const char *under,
     }
     s->archive = 1;
     s->dir = 1;
-    if (dv_only_file(s->root, name, sizeof name)) {  /* a gzip's one file */
+    if (dv_only_file(s->root, name, sizeof name)) {  /* as a gzip holds */
         snprintf(s->root, sizeof s->root, "%s", name);
         s->dir = 0;
     }
@@ -597,6 +601,8 @@ static void dv_patch_run(dv_job_t *j)
                  "Not enough memory. No patch was saved or copied.");
 }
 
+/** @brief Write the patch text to @p out for tiku_atomic_file(), a chunk
+ *         at a time.  @return 0, or -1 on a short write or when stopped. */
 static int dv_write_patch(FILE *out, void *ctx)
 {
     dv_job_t *j = ctx;
@@ -614,7 +620,8 @@ static int dv_write_patch(FILE *out, void *ctx)
 
 /* -------------------------------------------------------------- jobs  */
 
-/** @brief A new progress, held by the viewer and the job about to run. */
+/** @brief A new progress, held by the viewer and the job about to run;
+ *         @p doing names the job. */
 static dv_progress_t *dv_progress_new(tiku_diffview_t *c, const char *doing)
 {
     dv_progress_t *p = calloc(1, sizeof *p);

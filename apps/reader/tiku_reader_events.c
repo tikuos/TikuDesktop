@@ -1,4 +1,6 @@
-/* tiku_reader_events.c -- events.
+/* tiku_reader_events.c -- a viewer window's input and menus: commands from
+ * buttons, menus and keys, the reading keys, and the pointer on the page
+ * and its scrollbar.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -22,7 +24,7 @@ static void invoke(tiku_reader_help_window_t *c, int command)
     }
 }
 
-/** @brief Published native menus use the very same toolbar commands. */
+/** @brief A menu pick: Close (100), Find, or a toolbar command. */
 void tiku_reader_document_menu_pick(tiku_window_t *w, int command, void *ctx)
 {
     tiku_reader_help_window_t *c = ctx;
@@ -33,7 +35,8 @@ void tiku_reader_document_menu_pick(tiku_window_t *w, int command, void *ctx)
     if (c->dirty) *c->dirty = 1;
 }
 
-/** @brief Reflect history and reload availability in the desktop menu. */
+/** @brief Publish the File, Edit and View menus, each item enabled and
+ *         marked as the window now stands. */
 void tiku_reader_document_menus(tiku_reader_help_window_t *c)
 {
     if (!c->window) return;
@@ -108,7 +111,10 @@ void tiku_reader_document_menus(tiku_reader_help_window_t *c)
     tiku_window_publish_menus(c->window, &set, tiku_reader_document_menu_pick, c);
 }
 
-/** @brief Keys the page answers first, then the panel's own controls. */
+/** @brief Every window event: a document window's Location field and
+ *         shortcuts first, then the reading tools, the reading keys, the
+ *         dialog's buttons, the wheel, and presses on the scrollbar and on
+ *         the page's links.  @return 1 when taken. */
 int tiku_reader_window_event(tiku_window_t *window, const tiku_event_t *ev, void *ctx)
 {
     tiku_reader_help_window_t *c = ctx;

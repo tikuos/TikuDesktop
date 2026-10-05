@@ -1,4 +1,6 @@
-/* tiku_reader_reading.c -- reading.
+/* tiku_reader_reading.c -- the reading state behind a page: its text
+ * flattened for Find, selection and Copy, a page replaced only once that
+ * state fits it, and Find and Copy themselves.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -6,7 +8,9 @@
 static int reader_reserve(struct help_reader *r, size_t text, int runs, int blocks);
 static void reader_reveal(tiku_reader_help_window_t *c, int offset);
 
-/** @brief Reserve matching search/selection/outline storage before page commit. */
+/** @brief Make the flattened text, run starts and outline folds at least
+ *         the sizes given; the old buffers stay when new ones cannot be
+ *         had.  @return 1 when they are big enough. */
 static int reader_reserve(struct help_reader *r, size_t text, int runs, int blocks)
 {
     if (!r) return 1;
@@ -24,7 +28,9 @@ static int reader_reserve(struct help_reader *r, size_t text, int runs, int bloc
     return 1;
 }
 
-/** @brief The old page survives both parser and reading-tool allocation failure. */
+/** @brief Parse @p source as page @p name and put it in the window once
+ *         the reading state fits it; on any failure the old page stays and
+ *         the status says why.  @return 1 when it was replaced. */
 int tiku_reader_replace(tiku_reader_help_window_t *c, const char *name,
                            const char *source)
 {
@@ -44,7 +50,8 @@ int tiku_reader_replace(tiku_reader_help_window_t *c, const char *name,
     return 1;
 }
 
-/** @brief Capture the logical reading location before another page replaces it. */
+/** @brief The reading position now, taken before another page replaces
+ *         this one. */
 tiku_reader_help_position_t tiku_reader_position(tiku_reader_help_window_t *c)
 {
     tiku_reader_help_position_t at = {.pixel = c->bar.value};
@@ -55,7 +62,9 @@ tiku_reader_help_position_t tiku_reader_position(tiku_reader_help_window_t *c)
     return at;
 }
 
-/** @brief Optional tools fail closed when memory is unavailable. */
+/** @brief Make the window's reading state: Find, the Location field, the
+ *         side list and the bookmarks.  Without the memory the window has
+ *         none, and the tools that need it do nothing. */
 void tiku_reader_init(tiku_reader_help_window_t *c)
 {
     c->reader = calloc(1, sizeof *c->reader);
@@ -73,7 +82,7 @@ void tiku_reader_init(tiku_reader_help_window_t *c)
     tiku_reader_bookmarks_load(c);
 }
 
-/** @brief Free per-page images while retaining history and bookmarks. */
+/** @brief Free a page's images and their pixels. */
 void tiku_reader_images_clear(struct help_reader *r)
 {
     for (int i = 0; i < r->nimages; i++) tiku_image_free(&r->images[i].image);
@@ -81,7 +90,8 @@ void tiku_reader_images_clear(struct help_reader *r)
     r->nimages = r->image_cap = 0; r->image_bytes = r->image_clock = 0;
 }
 
-/** @brief Flatten visible runs, retaining offsets for search and selection. */
+/** @brief Flatten @p d's text into @p out, a newline after each block,
+ *         and each run's offset into @p starts.  @return the length. */
 int tiku_reader_text(const tiku_doc_t *d, char *out, size_t cap, int *starts)
 {
     size_t n = 0;
@@ -98,7 +108,8 @@ int tiku_reader_text(const tiku_doc_t *d, char *out, size_t cap, int *starts)
     out[n] = 0; return (int)n;
 }
 
-/** @brief One new page invalidates selection, image pixels and match positions. */
+/** @brief A new page is in: its text flattened, and the selection,
+ *         matches, images and folds of the last one cleared. */
 void tiku_reader_loaded(tiku_reader_help_window_t *c)
 {
     struct help_reader *r = c->reader; if (!r) return;
@@ -112,7 +123,8 @@ void tiku_reader_loaded(tiku_reader_help_window_t *c)
     tiku_doc_images(c->doc, tiku_reader_image_size, c);
 }
 
-/** @brief ASCII case-insensitive, with exact UTF-8 matching for other scripts. */
+/** @brief Whether @p text starts with @p query: ASCII letters match in
+ *         either case, every other byte exactly. */
 int tiku_reader_match(const char *text, const char *query)
 {
     while (*query) {
@@ -122,7 +134,8 @@ int tiku_reader_match(const char *text, const char *query)
     return 1;
 }
 
-/** @brief Scroll an indexed text offset into view without relying on pixels. */
+/** @brief Scroll the piece holding flattened-text offset @p offset to the
+ *         top of the view. */
 static void reader_reveal(tiku_reader_help_window_t *c, int offset)
 {
     struct help_reader *r = c->reader;
@@ -160,7 +173,6 @@ int tiku_reader_help_window_find(tiku_reader_help_window_t *c, const char *query
     return chosen >= 0;
 }
 
-/** @brief Copy only whole accepted text; the clipboard refuses oversized ranges. */
 int tiku_reader_help_window_copy(tiku_reader_help_window_t *c, int code)
 {
     struct help_reader *r = c->reader; if (!r || !c->doc) return 0;

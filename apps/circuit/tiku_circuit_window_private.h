@@ -35,7 +35,7 @@ enum {
     CIRCUIT_FIT,            /* View > Fit Drawing */
     CIRCUIT_OUT,            /* View > Zoom Out */
     CIRCUIT_IN,             /* View > Zoom In */
-    CIRCUIT_CANCEL,         /* stop the render and the import in flight */
+    CIRCUIT_CANCEL,         /* stop the render, import and export */
     CIRCUIT_CLOSE,          /* File > Close */
     CIRCUIT_EMPTY,          /* File > Clear Drawing */
     CIRCUIT_OPEN,           /* File > Open... */
@@ -57,8 +57,12 @@ enum {
     CIRCUIT_LAYER_COLOUR,   /* give it the palette's next colour */
     CIRCUIT_LAYER_OPACITY,  /* give it the next opacity step */
     CIRCUIT_LAYER_REMOVE,   /* take it off the stack */
+    /* Tools > Measure Distance, Clear Measurement, Copy Measurement */
     CIRCUIT_MEASURE, CIRCUIT_MEASURE_CLEAR, CIRCUIT_MEASURE_COPY,
+    /* Tools > Millimetres, Inches, Mils: the unit measurements are in */
     CIRCUIT_UNIT_MM, CIRCUIT_UNIT_INCH, CIRCUIT_UNIT_MIL,
+    /* File > Export View as PNG...; Layers > Layer Appearance..., Isolate
+     * Layer, Show All Layers; File > Save View Settings */
     CIRCUIT_EXPORT, CIRCUIT_LAYER_STYLE, CIRCUIT_LAYER_ISOLATE,
     CIRCUIT_LAYER_SHOW_ALL, CIRCUIT_SAVE_VIEW
 };
@@ -81,108 +85,126 @@ static inline tiku_rect_t cv_intersect(tiku_rect_t a, tiku_rect_t b)
                          bottom > y ? bottom - y : 0};
 }
 
+/** @brief The window's state; only the UI thread touches it. */
 struct tiku_circuitview {
-    tiku_workspace_t *workspace;    /* borrowed until destroy */
-    tiku_window_t *window;          /* NULL once the window has closed */
-    int *dirty;                     /* the application's redraw flag */
-    int refs;                       /* the owner and each job; UI thread */
-    int busy;                       /* a render is in flight */
-    int needs_render;               /* the newest view waits for one */
-    int fit;                        /* refit the drawing when resized */
-    int dragging;                   /* a press on the canvas is held */
-    int dragged;                    /* it has moved: a pan, not a click */
-    int drag_x;                     /* the pointer at the last pan step */
-    int drag_y;                     /* the same, down */
-    int hover;                      /* the control under the pointer */
-    uint64_t generation;            /* moves with every change of view */
-    uint64_t rendered_generation;   /* the generation image was made for */
-    size_t selected;                /* object index, or SIZE_MAX */
-    tiku_circuit_t *document;       /* the shown scene; one reference */
-    tiku_circuit_view_t view;       /* world to canvas pixels */
-    tiku_circuit_view_t cached_view; /* the view image was rendered at:
+    tiku_workspace_t *workspace;    /**< borrowed until destroy */
+    tiku_window_t *window;          /**< NULL once the window has closed */
+    int *dirty;                     /**< the application's redraw flag */
+    int refs;                       /**< the owner and each job; UI thread */
+    int busy;                       /**< a render is in flight */
+    int needs_render;               /**< the newest view waits for one */
+    int fit;                        /**< refit the drawing when resized */
+    int dragging;                   /**< a press on the canvas is held */
+    int dragged;                    /**< it has moved: a pan, not a click */
+    int drag_x;                     /**< the pointer at the last pan step */
+    int drag_y;                     /**< the same, down */
+    int hover;                      /**< the control under the pointer */
+    uint64_t generation;            /**< moves with every change of view */
+    uint64_t rendered_generation;   /**< the generation image was made for */
+    size_t selected;                /**< object index, or SIZE_MAX */
+    tiku_circuit_t *document;       /**< the shown scene; one reference */
+    tiku_circuit_view_t view;       /**< world to canvas pixels */
+    tiku_circuit_view_t cached_view; /**< the view image was rendered at:
                                         view's, or the same scaled down */
-    tiku_image_t image;             /* the last view rendered */
-    tiku_rect_t canvas;             /* where the drawing is shown */
-    tiku_rect_t area;               /* the canvas before Selection Details
+    tiku_image_t image;             /**< the last view rendered */
+    tiku_rect_t canvas;             /**< where the drawing is shown */
+    tiku_rect_t area;               /**< the canvas before Selection Details
                                        and the list take their share */
-    tiku_rect_t details;            /* the status lines under the canvas */
-    tiku_dialog_t dialog;           /* the controls' focus, press and keys */
-    char key[TIKU_WORK_KEY];        /* the render jobs' work key */
-    char status[CV_STATUS_MAX];     /* the status line: the last result */
-    void (*choose)(void *);         /* asks for a file; NULL for none */
-    void *choose_ctx;               /* choose()'s argument */
-    int loading;                    /* an import is in flight */
-    int needs_load;                 /* requested waits for the next turn */
-    uint64_t load_generation;       /* moves with every import asked */
-    char load_key[TIKU_WORK_KEY];   /* the import jobs' work key */
-    char path[CV_PATH_MAX];         /* the shown document's file, or "" */
-    char requested[CV_PATH_MAX];    /* the file to import next */
-    tiku_field_t query;             /* the Find text */
-    tiku_field_input_t query_input; /* the Find field's pointer and scroll */
-    tiku_rect_t find_rect;          /* the Find field */
-    tiku_circuit_project_t *project; /* a schematic's sheets, or NULL */
-    size_t sheet;                   /* the shown sheet, or selected layer */
-    tiku_list_t sheets;             /* the list's rows, selection and keys */
-    tiku_rect_t navigator;          /* the sheet or layer list, or empty */
-    tiku_rect_t sheet_rows;         /* the list's rows */
-    int show_sheets;                /* View > Show Sheets */
-    tiku_scroll_t sheet_scroll;     /* the list's scrollbar */
-    tiku_rect_t sheet_bar;          /* where that is, or empty */
-    int show_details;               /* View > Show Selection Details */
-    tiku_rect_t inspector;          /* Selection Details, or empty */
-    tiku_rect_t inspect_rows;       /* its text */
-    tiku_rect_t inspect_bar;        /* its scrollbar, or empty */
-    tiku_scroll_t inspect_scroll;   /* that scrollbar's state */
-    char inspect_text[CV_INSPECT_MAX]; /* the details shown, copied */
-    int picker_action;              /* the command the last ask for a file
+    tiku_rect_t details;            /**< the status lines under the canvas */
+    tiku_dialog_t dialog;           /**< the controls' focus, press and keys */
+    char key[TIKU_WORK_KEY];        /**< the render jobs' work key */
+    char status[CV_STATUS_MAX];     /**< the status line: the last result */
+    void (*choose)(void *);         /**< asks for a file; NULL for none */
+    void *choose_ctx;               /**< choose()'s argument */
+    int loading;                    /**< an import is in flight */
+    int needs_load;                 /**< requested waits for the next turn */
+    uint64_t load_generation;       /**< moves with every import asked */
+    char load_key[TIKU_WORK_KEY];   /**< the import jobs' work key */
+    char path[CV_PATH_MAX];         /**< the shown document's file, or "" */
+    char requested[CV_PATH_MAX];    /**< the file to import next */
+    tiku_field_t query;             /**< the Find text */
+    tiku_field_input_t query_input; /**< the Find field's pointer and scroll */
+    tiku_rect_t find_rect;          /**< the Find field */
+    tiku_circuit_project_t *project; /**< a schematic's sheets, or NULL */
+    size_t sheet;                   /**< the shown sheet, or selected layer */
+    tiku_list_t sheets;             /**< the list's rows, selection and keys */
+    tiku_rect_t navigator;          /**< the sheet or layer list, or empty */
+    tiku_rect_t sheet_rows;         /**< the list's rows */
+    int show_sheets;                /**< View > Show Sheets */
+    tiku_scroll_t sheet_scroll;     /**< the list's scrollbar */
+    tiku_rect_t sheet_bar;          /**< where that is, or empty */
+    int show_details;               /**< View > Show Selection Details */
+    tiku_rect_t inspector;          /**< Selection Details, or empty */
+    tiku_rect_t inspect_rows;       /**< its text */
+    tiku_rect_t inspect_bar;        /**< its scrollbar, or empty */
+    tiku_scroll_t inspect_scroll;   /**< that scrollbar's state */
+    char inspect_text[CV_INSPECT_MAX]; /**< the details shown, copied */
+    int picker_action;              /**< the command the last ask for a file
                                        was for, or 0 once answered */
-    int load_action;                /* the command that asked for
+    int load_action;                /**< the command that asked for
                                        requested, or 0 for an open from
                                        outside the window */
-    int measure;                   /* measurement mode rather than drag-pan */
-    int measure_points;            /* zero, one preview point, or two */
-    int cursor_valid;              /* pointer currently inside the canvas */
-    int units;                     /* 0: mm, 1: inches, 2: mils */
-    double measure_x[2], measure_y[2]; /* endpoints in scene millimetres */
-    double cursor_x, cursor_y;     /* last pointer position in scene units */
-    int style_open;                /* modal layer appearance panel */
-    size_t style_layer;            /* layer the panel was opened for */
-    uint64_t style_generation;     /* import generation at panel opening */
-    uint64_t picker_generation;    /* view generation at export request */
-    tiku_dialog_t style_dialog;    /* appearance panel controls and focus */
-    tiku_colors_t palette;         /* suggested display colours */
-    tiku_slider_t opacity;         /* opacity, in whole percentages */
-    tiku_field_t colour_text, opacity_text; /* unapplied appearance values */
-    tiku_field_input_t colour_input, opacity_input; /* field interaction */
-    tiku_rect_t style_rect, palette_rect, opacity_rect; /* panel geometry */
-    char style_error[128];         /* inline validation message */
-    int exporting, saving_view;    /* workers holding a viewer reference */
-    char export_key[TIKU_WORK_KEY]; /* export cancellation key */
-    char settings_dir[CV_PATH_MAX]; /* host-provided directory; empty off */
+    int measure;                   /**< measuring: a click picks a point */
+    int measure_points;            /**< zero, one preview point, or two */
+    int cursor_valid;              /**< pointer currently inside the canvas */
+    int units;                     /**< 0: mm, 1: inches, 2: mils */
+    double measure_x[2], measure_y[2]; /**< endpoints in scene millimetres */
+    double cursor_x, cursor_y;     /**< last pointer position in scene units */
+    int style_open;                /**< modal layer appearance panel */
+    size_t style_layer;            /**< layer the panel was opened for */
+    uint64_t style_generation;     /**< import generation at panel opening */
+    uint64_t picker_generation;    /**< view generation at export request */
+    tiku_dialog_t style_dialog;    /**< appearance panel controls and focus */
+    tiku_colors_t palette;         /**< suggested display colours */
+    tiku_slider_t opacity;         /**< opacity, in whole percentages */
+    tiku_field_t colour_text, opacity_text; /**< unapplied appearance values */
+    tiku_field_input_t colour_input, opacity_input; /**< field interaction */
+    tiku_rect_t style_rect, palette_rect, opacity_rect; /**< panel geometry */
+    char style_error[128];         /**< inline validation message */
+    int exporting, saving_view;    /**< workers holding a viewer reference */
+    char export_key[TIKU_WORK_KEY]; /**< export cancellation key */
+    char settings_dir[CV_PATH_MAX]; /**< host-provided directory; empty off */
 };
 
-/** @brief Forget endpoints and dismiss a panel tied to the old document. */
+/** @brief Forget the measurement's points and the pointer, and close the
+ *         Layer Appearance panel. */
 void cv_measure_reset(tiku_circuitview_t *v);
-/** @brief Track the pointer and accept measurement clicks; return if handled. */
+/** @brief While measuring, track the pointer in scene units and take a
+ *         click as a point; a click after two starts again.
+ *  @return 1 when it took a click. */
 int cv_measure_event(tiku_circuitview_t *v, const tiku_event_t *e);
-/** @brief Format distance, signed deltas, or the next-step instruction. */
+/** @brief The measuring status text: the distance and signed deltas in
+ *         the chosen unit, the pointer's position, or how to measure. */
 void cv_measure_text(const tiku_circuitview_t *v, char *out, size_t size);
 /** @brief Draw clipped measurement marks over a viewport or export image. */
 void cv_measure_draw(const tiku_circuitview_t *v, tiku_surface_t *s,
                      tiku_rect_t canvas, const tiku_circuit_view_t *view);
-/** @brief Edit the selected layer's appearance without changing its scene. */
+/** @brief Open Layer Appearance on the selected layer, its fields filled
+ *         from the layer's colour and opacity. */
 void cv_style_open(tiku_circuitview_t *v);
 /** @brief Paint the appearance panel over the normal window content. */
 void cv_style_draw(tiku_circuitview_t *v, tiku_surface_t *s);
-/** @brief Consume input while the appearance panel is open. */
+/** @brief Take every event while the panel is open: its fields, palette,
+ *         slider and buttons; Apply checks the values and restyles the
+ *         layer.  @return 1 while the panel is open. */
 int cv_style_event(tiku_circuitview_t *v, const tiku_event_t *e);
-/** @brief Publish a copy with new RGB/opacity; return nonzero on success. */
+/** @brief Restyle the selected layer: a new stack in which it has
+ *         @p colour (RGB) and @p opacity (0-255).  @return 1 when made. */
 int cv_layer_style(tiku_circuitview_t *v, uint32_t colour, unsigned opacity);
-/** @brief Snapshot the completed viewport, then atomically export on a worker. */
+/** @brief Export View as PNG to @p path: the rendered view with its
+ *         measurement and a caption, written on a worker; refused when the
+ *         view changed since the ask or the name does not end in .png. */
 void cv_export(tiku_circuitview_t *v, const char *path);
-/** @brief Snapshot presentation settings and save them on a worker. */
+/** @brief Save the document's units, panels and layer looks on a worker. */
 void cv_save_view(tiku_circuitview_t *v);
-/* Worker-only preference loading; only current layer descriptors are changed. */
+/**
+ * @brief Apply the settings saved for @p path to *@p document: each saved
+ *        layer found in the stack takes its colour, opacity and visibility
+ *        and its saved place in the order; units and panels are set.  A
+ *        missing or invalid settings file changes nothing.
+ * @return TIKU_CIRCUIT_OK, or the error making the new stack
+ * @note Runs on a worker, inside the import.
+ */
 tiku_circuit_err_t cv_restore_view(const char *directory, const char *path,
     tiku_circuit_t **document, int *units, int *sheets, int *details);
 
@@ -232,18 +254,20 @@ size_t tiku_circuitview_rows(const tiku_circuitview_t *v);
 /** @brief Whether the shown drawing is a layer stack with room for one more
  *         layer: what Add Layer needs. */
 int tiku_circuitview_layer_room(const tiku_circuitview_t *v);
-/** @brief Apply a Layers command to the selected layer by building a new
+/** @brief Apply a Layers command, to the selected layer or, for Isolate
+ *         Layer and Show All Layers, to every layer, by building a new
  *         stack from changed copies of the layer descriptors. */
 void tiku_circuitview_layers_action(tiku_circuitview_t *v, int command);
 /**
  * @brief Read the files of the layer stack @p base again into a new stack,
  *        or with @p add, read @p path into a new layer at its front.
  *
- * Runs on a worker.  Each layer keeps its descriptor: visibility, colour,
- * opacity and declared format.  One file that cannot be read fails the
- * whole stack, and @p diag names it; so does a @p base that is no stack
- * or one already full.
+ * Each layer keeps its descriptor: visibility, colour, opacity and
+ * declared format.  One file that cannot be read fails the whole stack,
+ * and @p diag names it; so does a @p base that is no stack or one already
+ * full.
  * @return TIKU_CIRCUIT_OK with the stack in @p out, or the first error
+ * @note Call on a worker: it reads files.
  */
 tiku_circuit_err_t tiku_circuitview_layer_load(const tiku_circuit_t *base,
     int add, const char *path, const tiku_circuit_import_t *options,

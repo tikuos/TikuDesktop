@@ -29,8 +29,8 @@ tiku_circuit_resolver_t tiku_circuitview_local_resolver(
 /** @brief Let the held directory go; @p local can be used again. */
 void tiku_circuitview_local_close(tiku_circuitview_local_t *local);
 /**
- * @brief Read a font the host chose from the system's fonts, not a path
- *        a document names.
+ * @brief Read the font file at @p path, which the host chose from the
+ *        system's fonts.
  *
  * @return TIKU_CIRCUIT_OK with @p data, which the caller frees, and its
  *         size in @p bytes; or the error, with nothing to free

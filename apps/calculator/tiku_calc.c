@@ -1,4 +1,6 @@
-/* Calculator: the four operations on a keypad, nothing else.
+/* tiku_calc.c -- Calculator: a pocket calculator's keypad in one window,
+ * with the four operations, percent, negate and backspace.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,15 +14,18 @@
 #define CALC_H 342
 #define CALC_KEY 100            /* a keypad button's id is CALC_KEY + its key */
 enum { C_CLOSE = 1, C_COPY };
+/** @brief The arithmetic's state, as the keys leave it. */
 typedef struct {
     double acc;                 /* the running result                  */
     char   entry[24];           /* what the display shows              */
     int    op;                  /* the pending operator, 0 for none    */
     int    fresh;               /* the next digit starts a new entry   */
-    int    error;               /* divided by zero: only C answers     */
+    int    error;               /* a division by zero or an overflow:  */
+                                /* only C answers                      */
 } calc_model_t;
 #include "tiku_calc_model.inl"
 
+/** @brief The running application: its window, keypad and arithmetic. */
 typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t *surface;
@@ -104,7 +109,8 @@ static int calc_action(calc_t *p, int command)
     return 0;
 }
 
-/** @brief Typed keys reach the keypad: digits, operators, Return, Backspace, Escape. */
+/** @brief Typed keys reach the keypad: digits, operators, Return,
+ *         Backspace and Escape. */
 static int calc_typed(calc_t *p, const tiku_event_t *ev)
 {
     char key = 0;
@@ -176,7 +182,7 @@ static int calc_start(void **state, const tiku_app_services_t *services)
     return 0;
 }
 
-/** @brief Release only this app's allocations. */
+/** @brief Free the window's surface and the state. */
 static void calc_stop(void *state)
 {
     calc_t *p = state;
@@ -192,11 +198,13 @@ static int calc_pick(void *state, uint32_t window, int command)
     return calc_action(state, command);
 }
 
+/** @brief Calculator's descriptor, which the export below hands on. */
 const tiku_app_descriptor_t tiku_calc_app = {
     .id = "tiku.calc", .name = "Calculator", .start = calc_start,
     .stop = calc_stop, .event = calc_event, .pick = calc_pick
 };
 #ifdef TIKU_APP_SO
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t), &tiku_calc_app
 };

@@ -1,4 +1,5 @@
-/* TikuHex: a native, overwrite-only binary editor.
+/* tiku_hex.c -- TikuHex: an overwrite-only binary editor, a hex and ASCII
+ * grid with offset and byte-pattern fields; a file's length never changes.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_hex_model.h"
@@ -16,6 +17,7 @@
 enum { H_OPEN = 1, H_SAVE, H_SAVEAS, H_MODE, H_UNDO, H_REDO, H_INPUT,
        H_COPY, H_GO, H_FIND, H_PREV, H_NEXT, H_CLOSE, H_CANCEL, H_DISCARD,
        H_OFFSET = 30, H_PATTERN, H_GRID };
+/** @brief The running editor: its window, document, controls and modes. */
 typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t *surface;
@@ -30,15 +32,15 @@ typedef struct {
     char status[192];
 } hex_app_t;
 
-/** Editor coordinates are derived from the actual monospace metrics. */
+/** @brief The byte grid's rectangle: HEX_ROWS rows of the mono face. */
 static tiku_rect_t hex_grid(hex_app_t *p)
 { return (tiku_rect_t){12, 116, p->width - 24, HEX_ROWS * p->row + 8}; }
 
-/** Offset and search are ordinary native fields, with shared clipboard input. */
+/** @brief The rectangle of the offset field (0) or the find field (1). */
 static tiku_rect_t hex_field(int i)
 { return i ? (tiku_rect_t){375, 58, 270, 28} : (tiku_rect_t){72, 58, 140, 28}; }
 
-/** Bring the caret into the visible page without ever stepping beyond EOF. */
+/** @brief Scroll so the cursor's row is in view. */
 static void hex_reveal(hex_app_t *p)
 {
     size_t row = p->model.cursor / 16;
@@ -46,7 +48,9 @@ static void hex_reveal(hex_app_t *p)
     if (row >= p->top + HEX_ROWS) p->top = row - HEX_ROWS + 1;
 }
 
-/** Register hit targets on every paint/event, including empty-file states. */
+/** @brief Rebuild the window's controls, each enabled as the document
+ *         stands; while the unsaved-edits question is open only Save and
+ *         the question's two buttons are. */
 static void hex_controls(hex_app_t *p)
 {
     tiku_dialog_begin(&p->dialog, TIKU_DIALOG_NONE, H_CANCEL);
@@ -78,7 +82,7 @@ static void hex_controls(hex_app_t *p)
     tiku_dialog_end(&p->dialog);
 }
 
-/** Menus use the same guarded commands as toolbar controls. */
+/** @brief Publish the File menu: Open..., Save, Save As... and Close. */
 static void hex_menus(hex_app_t *p)
 {
     tiku_menuset_t menus = {0}; menus.nmenu = 1;
@@ -96,11 +100,13 @@ static void hex_menus(hex_app_t *p)
     p->services->menus(p->services->ctx, p->id, &menus);
 }
 
-/** Clip messages and filenames to their panel, not into adjacent controls. */
+/** @brief Draw @p text in the plain face, clipped to @p r. */
 static void hex_line(hex_app_t *p, tiku_rect_t r, const char *text)
 { tiku_text_line_draw(p->surface, r, TIKU_MEASURE_PLAIN, text, TIKU_C_TEXT); }
 
-/** Interpret a few bytes at the caret without unaligned memory accesses. */
+/** @brief The bytes at the cursor read as values: its bits, and 16- and
+ *         32-bit little- and big-endian integers, built a byte at a time;
+ *         nothing when the window is too narrow. */
 static void hex_inspect(hex_app_t *p, int x, int y)
 {
     if (p->width - x < 148 || !p->model.size) return;
@@ -126,7 +132,9 @@ static void hex_inspect(hex_app_t *p, int x, int y)
     }
 }
 
-/** Sixteen-byte rows show both representations and highlight changed bytes. */
+/** @brief Draw the grid: sixteen bytes a row in hex and ASCII, the
+ *         cursor's byte selected and changed bytes underlined; then the
+ *         values at the cursor. */
 static void hex_bytes(hex_app_t *p)
 {
     tiku_rect_t g = hex_grid(p);
@@ -172,8 +180,9 @@ static void hex_bytes(hex_app_t *p)
         tiku_frame(p->surface, tiku_inset(g, 2), TIKU_C_FOCUS);
 }
 
-/** The one foot line: the question while it stands, and a refused Save
- * with it, since the question alone reads as though nothing happened. */
+/** @brief The foot line: while the unsaved-edits question stands, the
+ *         question, or why a Save it led to failed; else the status or the
+ *         path. */
 static const char *hex_foot(hex_app_t *p)
 {
     if (p->pending && p->save_failed) return p->status;
@@ -182,7 +191,8 @@ static const char *hex_foot(hex_app_t *p)
     return p->status[0] ? p->status : p->model.path;
 }
 
-/** A compact native toolbar and a status strip, with no error popups. */
+/** @brief Draw the window: toolbar, fields, grid and status lines; then
+ *         hand the frame to the desktop and publish the menu. */
 static void hex_paint(hex_app_t *p)
 {
     hex_controls(p);
@@ -226,7 +236,8 @@ static void hex_paint(hex_app_t *p)
     hex_menus(p);
 }
 
-/** All open paths enter a read-only buffer; failed loads keep the old one. */
+/** @brief Open @p path read-only; a failed load keeps the document shown
+ *         and puts the reason in the status line. */
 static void hex_open_file(hex_app_t *p, const char *path)
 {
     if (hex_load(&p->model, path)) {
@@ -235,7 +246,9 @@ static void hex_open_file(hex_app_t *p, const char *path)
     } else snprintf(p->status, sizeof p->status, "%s", p->model.error);
 }
 
-/** Save only by explicit action; failed saves retain the buffer and question. */
+/** @brief Carry out @p command.  Open and Close with edits unsaved ask
+ *         first: Save, Keep editing or Discard edits; a failed Save keeps
+ *         the edits and the question.  @return 1 to close the app. */
 static int hex_action(hex_app_t *p, int command)
 {
     if ((command == H_OPEN || command == H_CLOSE) && p->model.changed) {
@@ -292,7 +305,9 @@ static int hex_action(hex_app_t *p, int command)
     return 0;
 }
 
-/** Arrow/page navigation and two-nibble replacement cannot insert or delete. */
+/** @brief A key on the grid: the arrows, Page Up, Page Down, Home and End
+ *         move the cursor; while editing, a printable character or two hex
+ *         digits replace the byte and move on. */
 static void hex_key(hex_app_t *p, const tiku_event_t *e)
 {
     if (!p->model.size) return;
@@ -327,7 +342,8 @@ static void hex_key(hex_app_t *p, const tiku_event_t *e)
     hex_reveal(p);
 }
 
-/** Hit-test each byte using the same monospace cells used by the painter. */
+/** @brief A click on the grid: the byte under it becomes the cursor, and
+ *         the side clicked sets the input to hex or ASCII. */
 static void hex_pointer(hex_app_t *p, const tiku_event_t *e)
 {
     tiku_rect_t g = hex_grid(p);
@@ -343,7 +359,10 @@ static void hex_pointer(hex_app_t *p, const tiku_event_t *e)
     if (at < p->model.size) { p->model.cursor = at; p->high = -1; }
 }
 
-/** No unrecognised command-modified key is ever treated as binary input. */
+/** @brief Every window event: Ctrl shortcuts, the controls, the pointer
+ *         and wheel on the grid, the two fields, then keys on the grid; a
+ *         Ctrl key that is not a shortcut never reaches the grid.
+ *  @return 1 to close. */
 static int hex_event(void *state, const tiku_event_t *e)
 {
     hex_app_t *p = state;
@@ -383,7 +402,9 @@ static int hex_event(void *state, const tiku_event_t *e)
     hex_paint(p); return 0;
 }
 
-/** File picker cancellation is silent; successful choices preserve bytes. */
+/** @brief The file panel's answer: Save As writes the bytes there; Open
+ *         opens it unless edits were made meanwhile; a cancel does
+ *         nothing. */
 static void hex_picked(void *state, uint32_t window, const char *path)
 {
     hex_app_t *p = state; (void)window;
@@ -396,7 +417,8 @@ static void hex_picked(void *state, uint32_t window, const char *path)
     hex_paint(p);
 }
 
-/** The runtime already closed the frame; preserve dirty edits in a new one. */
+/** @brief The desktop closed the window: with edits unsaved, a new window
+ *         opens on them, asking the unsaved-edits question. */
 static void hex_closed(void *state, uint32_t window)
 {
     hex_app_t *p = state;
@@ -405,7 +427,8 @@ static void hex_closed(void *state, uint32_t window)
     p->pending = H_CLOSE; hex_paint(p);
 }
 
-/** Start empty, or load exactly the explicit document supplied by Tracker. */
+/** @brief Open the window, empty or on the document the app was started
+ *         with, read-only. */
 static int hex_start(void **state, const tiku_app_services_t *services)
 {
     hex_app_t *p = calloc(1, sizeof *p); if (!p) return -1;
@@ -425,7 +448,9 @@ static int hex_start(void **state, const tiku_app_services_t *services)
     hex_paint(p); *state = p; return 0;
 }
 
-/** A lost desktop connection leaves a private recovery copy, not a disk edit. */
+/** @brief Free the editor.  Unsaved bytes are first written to a new
+ *         /tmp/TikuHex-recovery-* file, named on stderr; the document's own
+ *         file is not touched. */
 static void hex_stop(void *state)
 {
     hex_app_t *p = state;
@@ -448,16 +473,19 @@ static void hex_stop(void *state)
     hex_free(&p->model); tiku_surface_free(p->surface); free(p);
 }
 
-/** Menu picks and toolbar buttons use the same save/close guards. */
+/** @brief A menu pick, carried out as a button's command.
+ *  @return 1 to close. */
 static int hex_pick(void *state, uint32_t window, int command)
 { (void)window; hex_app_t *p = state; int done = hex_action(p, command); hex_paint(p); return done; }
 
+/** @brief TikuHex's descriptor, which the export below hands on. */
 const tiku_app_descriptor_t tiku_hex_app = {
     .id = "org.tikuos.hex", .name = "TikuHex", .start = hex_start,
     .stop = hex_stop, .event = hex_event, .pick = hex_pick,
     .picked = hex_picked, .closed = hex_closed
 };
 #ifdef TIKU_APP_SO
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t), &tiku_hex_app
 };

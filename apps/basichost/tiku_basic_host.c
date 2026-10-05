@@ -1,22 +1,8 @@
-/*
- * TikuOS -- Simple. Ubiquitous. Intelligence, Everywhere.
- *
+/* tiku_basic_host.c -- tiku-basic, the board's BASIC interpreter run on
+ * the host: tiku_basic.c compiled unchanged and given the kernel it
+ * expects from libc, with a sandbox folder as its VFS.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- *
- * tiku_basic_host.c - the TikuOS BASIC interpreter, run on the host.
- *
- * The same interpreter a board runs, tiku_basic.c compiled unchanged
- * with every peripheral gated off, given the kernel it expects from
- * libc: the console is stdin/stdout, the clock the wall clock, the VFS
- * a sandbox directory, so a program's VFSWRITE lands in a real file.
- * The desktop's editor runs a program by running this, so what the
- * editor shows is what a board would do.  Usage is
- * `tiku-basic <program.bas> [sandbox-dir]`: the program is fed to the
- * interpreter's own REPL a line at a time, then RUN, then the mode is
- * pumped until the program ends; output is stdout.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+ * SPDX-License-Identifier: Apache-2.0 */
 #define _POSIX_C_SOURCE 200809L
 #include <stdarg.h>
 #include <stdio.h>
@@ -38,9 +24,10 @@
 /* Nonzero once the prompt has come back after RUN: the program ended. */
 static int host_prompted;
 
-/* Nonzero once the program has said anything: the newlines the line
- * editor echoes BEFORE that are the feeding, not the output. */
+/* Nonzero once the program has printed something; a bare newline before
+ * that comes from feeding the program in, and is dropped. */
 static int host_spoke;
+/* --interactive: stdin streams to the REPL; set once stdin has ended. */
 static int host_stream, host_eof;
 
 void
@@ -53,10 +40,9 @@ tiku_basic_host_printf(const char *fmt, ...)
     (void)vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
     if (host_stream) { fputs(buf, stdout); fflush(stdout); return; }
-    /* The prompt and the banner are the REPL talking to a person at a
-     * keyboard; a batch run has neither, and an editor's output pane
-     * wants what the PROGRAM said.  The prompt still MEANS something --
-     * it is how the harness hears that the program finished. */
+    /* A batch run prints only what the program says: the REPL's prompt
+     * and banner are dropped, and the prompt's return marks the end of
+     * the program. */
     if (strcmp(buf, "ok> ") == 0) {
         host_prompted = 1;
         return;
@@ -71,9 +57,11 @@ tiku_basic_host_printf(const char *fmt, ...)
     fputs(buf, stdout);
 }
 
+/* tiku_clock.h declares this too; it is defined below. */
 unsigned long
 tiku_clock_seconds(void);
 
+/** @brief The clock in milliseconds, from the monotonic wall clock. */
 uint32_t
 tiku_clock_time(void)
 {
@@ -83,14 +71,16 @@ tiku_clock_time(void)
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
+/** @brief Whole seconds of tiku_clock_time(). */
 unsigned long
 tiku_clock_seconds(void)
 {
     return (unsigned long)(tiku_clock_time() / 1000u);
 }
 
-/* The console: a batch run never has keys waiting, and INPUT answers
- * end-of-file rather than hanging a build machine. */
+/* The console.  A batch run has no keys waiting, and INPUT is to answer
+ * end-of-file there.  With --interactive stdin is the keyboard, and its
+ * end arrives as Ctrl-C (3), which releases a waiting INPUT. */
 #include <poll.h>
 #include <unistd.h>
 int tiku_shell_io_rx_ready(void)
@@ -119,12 +109,16 @@ int tiku_shell_process(const char *line) { (void)line; return 0; }
 
 #include <kernel/memory/tiku_mem.h>
 
+/** @brief Nothing to set up: arenas take their memory from the heap. */
 tiku_mem_err_t
 tiku_tier_init(void)
 {
     return TIKU_MEM_OK;
 }
 
+/** @brief An arena of @p size bytes from posix_memalign(), aligned as
+ *         @p options asks and at least to a pointer; of the flags only
+ *         TIKU_MEM_ALLOW_EXTERNAL is accepted. */
 tiku_mem_err_t
 tiku_mem_arena_create(tiku_arena_t *arena, tiku_mem_arch_size_t size,
                       const tiku_mem_request_t *options)
@@ -147,6 +141,8 @@ tiku_mem_arena_create(tiku_arena_t *arena, tiku_mem_arch_size_t size,
     return TIKU_MEM_OK;
 }
 
+/** @brief @p size bytes from @p arena, rounded up to a pointer's
+ *         alignment; NULL, counted as a failure, when they do not fit. */
 void *
 tiku_arena_alloc(tiku_arena_t *arena, tiku_mem_arch_size_t size)
 {
@@ -172,6 +168,7 @@ tiku_arena_alloc(tiku_arena_t *arena, tiku_mem_arch_size_t size)
     return p;
 }
 
+/** @brief Empty @p arena; its buffer is kept. */
 tiku_mem_err_t
 tiku_arena_reset(tiku_arena_t *arena)
 {
@@ -183,11 +180,15 @@ tiku_arena_reset(tiku_arena_t *arena)
     return TIKU_MEM_OK;
 }
 
-/* The persist store: volatile on the host, exactly as the config's own
- * comment promises -- a run is a run, and durability is the board's. */
+/* The persist store is volatile on the host, as tiku_basic_config.h says
+ * of a build without an NVM region: a run keeps nothing for the next. */
+
+/** @brief Nothing to unlock on the host.  @return 0. */
 uint16_t tiku_mpu_unlock_nvm(void) { return 0; }
+/** @brief Nothing to lock on the host. */
 void tiku_mpu_lock_nvm(uint16_t saved) { (void)saved; }
 
+/** @brief Nothing to set up: the store keeps nothing. */
 tiku_mem_err_t
 tiku_persist_init(tiku_persist_store_t *store)
 {
@@ -195,6 +196,7 @@ tiku_persist_init(tiku_persist_store_t *store)
     return TIKU_MEM_OK;
 }
 
+/** @brief Accept @p key, keeping nothing for it. */
 tiku_mem_err_t
 tiku_persist_register(tiku_persist_store_t *store, const char *key,
                       uint8_t *fram_buf, tiku_mem_arch_size_t capacity)
@@ -206,6 +208,8 @@ tiku_persist_register(tiku_persist_store_t *store, const char *key,
     return TIKU_MEM_OK;
 }
 
+/** @brief Nothing saved under any key, as on a fresh boot.
+ *  @return TIKU_MEM_ERR_INVALID, with @p out_len 0. */
 tiku_mem_err_t
 tiku_persist_read(tiku_persist_store_t *store, const char *key,
                   uint8_t *buf, tiku_mem_arch_size_t buf_size,
@@ -221,6 +225,7 @@ tiku_persist_read(tiku_persist_store_t *store, const char *key,
     return TIKU_MEM_ERR_INVALID;    /* nothing saved: a fresh boot */
 }
 
+/** @brief Accept a write and keep nothing.  @return TIKU_MEM_OK. */
 tiku_mem_err_t
 tiku_persist_write(tiku_persist_store_t *store, const char *key,
                    const uint8_t *data, tiku_mem_arch_size_t data_len)
@@ -236,6 +241,7 @@ tiku_persist_write(tiku_persist_store_t *store, const char *key,
 /* The VFS, as a sandbox directory                                           */
 /*---------------------------------------------------------------------------*/
 
+/* The sandbox folder VFS paths name files in: argv[2], or ".". */
 static char vfs_root[512] = ".";
 
 /** @brief The sandbox file a VFS path names.  Absolute paths keep their
@@ -247,17 +253,19 @@ vfs_at(const char *path, char *out, size_t max)
              (path != NULL && path[0] == '/') ? path + 1 : path);
 }
 
+/** @brief "ok" for 0, "no such node" for anything else. */
 const char *
 tiku_vfs_strerror(int status)
 {
     return (status == 0) ? "ok" : "no such node";
 }
 
+/** @brief A marker node when @p path names a file in the sandbox, else
+ *         NULL.  The host has no node table: the marker has no handlers,
+ *         so ON CHANGE polls the file. */
 const tiku_vfs_node_t *
 tiku_vfs_resolve(const char *path)
 {
-    /* The host tree has no node table; a path that names a real file
-     * resolves to a marker, which is all the interpreter asks of it. */
     static tiku_vfs_node_t here;
     char at[600];
     struct stat sb;
@@ -266,6 +274,8 @@ tiku_vfs_resolve(const char *path)
     return (stat(at, &sb) == 0) ? &here : NULL;
 }
 
+/** @brief The sandbox file @p path names, read into @p buf and ended
+ *         with a NUL.  @return the bytes read, or -1. */
 int
 tiku_vfs_read(const char *path, char *buf, size_t max)
 {
@@ -286,6 +296,8 @@ tiku_vfs_read(const char *path, char *buf, size_t max)
     return (int)n;
 }
 
+/** @brief Replace the sandbox file @p path names with @p len bytes of
+ *         @p data.  @return 0, or -1. */
 int
 tiku_vfs_write(const char *path, const char *data, size_t len)
 {
@@ -304,6 +316,8 @@ tiku_vfs_write(const char *path, const char *data, size_t len)
     return (fclose(f) == 0) ? 0 : -1;
 }
 
+/** @brief List nothing: the host's VFS has no directories to walk.
+ *  @return 0. */
 int
 tiku_vfs_list(const char *path, tiku_vfs_list_fn callback, void *ctx)
 {
@@ -313,25 +327,37 @@ tiku_vfs_list(const char *path, tiku_vfs_list_fn callback, void *ctx)
     return 0;
 }
 
+/** @brief Refuse: the host keeps no watches.  @return -1. */
 int8_t
 tiku_vfs_watch(const char *path, struct tiku_process *p)
 {
     (void)path;
     (void)p;
-    return -1;                  /* a batch run outlives no watches */
+    return -1;
 }
 
 struct tiku_tfs;
+/** @brief No durable /data store on the host.  @return NULL. */
 struct tiku_tfs *
 tiku_vfs_tree_data_store(void)
 {
-    return NULL;                /* no durable store: SAVE is the file */
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
 /* The run                                                                   */
 /*---------------------------------------------------------------------------*/
 
+/**
+ * @brief Run a program, or the REPL.
+ *
+ * `tiku-basic <program.bas> [sandbox-dir]` feeds the program to the
+ * interpreter's REPL a line at a time, types RUN, and pumps the mode until
+ * the program ends, printing its output.  `tiku-basic --interactive
+ * [sandbox-dir]` streams stdin to the REPL and all its output to stdout.
+ * @return 0; 2 on a usage or read error; 3 when the program was stopped
+ *         at the tick guard.
+ */
 int
 main(int argc, char **argv)
 {
@@ -366,9 +392,9 @@ main(int argc, char **argv)
         return 2;
     }
     tiku_basic_mode_enter();
-    /* Each line through the interpreter's own front door, exactly as
-     * typing it would go -- numbered lines store, and nothing here
-     * re-implements what a line means. */
+    /* Each line goes through the interpreter's own line input, as typing
+     * it would: numbered lines are stored, and nothing here interprets a
+     * line itself. */
     while (fgets(line, sizeof line, f) != NULL) {
         char *p = line;
 
@@ -385,12 +411,8 @@ main(int argc, char **argv)
     tiku_basic_mode_feed_char('U');
     tiku_basic_mode_feed_char('N');
     tiku_basic_mode_feed_char('\n');
-    /*
-     * Pump until the program ends.  BOUNDED, because a program is a
-     * loop somebody may have written wrong, and a build machine must
-     * see it FAIL rather than sit in it: ~30 seconds of batches at the
-     * mode's own pace is more BASIC than any test needs.
-     */
+    /* Pump until the program ends, for at most 3,000,000 ticks: a program
+     * that never ends is stopped, and the run exits with status 3. */
     for (guard = 0; guard < 3000000 && tiku_basic_mode_active() &&
                     !host_prompted; guard++) {
         tiku_basic_mode_tick();

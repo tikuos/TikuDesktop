@@ -1,4 +1,6 @@
-/* tiku_reader_images.c -- images.
+/* tiku_reader_images.c -- a page's local images: their sizes read from the
+ * file's header, their pixels decoded when drawn, within a budget that lets
+ * go of the least recently drawn.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -6,9 +8,9 @@
 static int reader_image_allowed(const char *path, int *wide, int *high);
 static int reader_image_index(tiku_reader_help_window_t *c, const char *src);
 
-/* Local images only. Decode after bounded dimensions and file-size checks. */
-
-/** @brief Read image dimensions before allocating decoded pixels. */
+/** @brief Whether @p path is a PNG, BMP or JPEG of at most 4 MiB whose
+ *         header gives a size within 2048 by 2048 and one megapixel; the
+ *         size into @p wide and @p high, read before any pixels are. */
 static int reader_image_allowed(const char *path, int *wide, int *high)
 {
     struct stat st; unsigned char h[32]; unsigned w = 0, height = 0;
@@ -44,7 +46,9 @@ static int reader_image_allowed(const char *path, int *wide, int *high)
            (unsigned long)w * height <= 1024 * 1024;
 }
 
-/** @brief Resolve local image paths inside the selected help bundle. */
+/** @brief The index of the image @p src names, entered the first time
+ *         with its resolved path and size, or marked failed when it cannot
+ *         be shown.  @return -1 when there is no room for it. */
 static int reader_image_index(tiku_reader_help_window_t *c, const char *src)
 {
     struct help_reader *r = c->reader; if (!r) return -1;
@@ -94,8 +98,9 @@ static tiku_image_t *reader_image_pixels(tiku_reader_help_window_t *c, int i)
     entry->used = ++r->image_clock;
     if (!entry->image.px) {
         char path[TIKU_PATH_MAX]; int width = 0, height = 0;
-        /* An evicted image may have changed since layout. Recheck confinement
-         * and dimensions before loading its pixels again. */
+        /* An evicted image may have changed on disk since layout: its
+         * confinement and size are checked again before its pixels are
+         * loaded. */
         if (!tiku_reader_path(c, entry->src, path, sizeof path) ||
             !reader_image_allowed(path, &width, &height) ||
             width != entry->width || height != entry->height) {
@@ -115,7 +120,9 @@ static tiku_image_t *reader_image_pixels(tiku_reader_help_window_t *c, int i)
     return &entry->image;
 }
 
-/** @brief Keep aspect ratio and fit the paper; never enlarge small images. */
+/** @brief The size image @p src is laid out at: its own, scaled down to
+ *         fit the page's width with its aspect kept, never enlarged.
+ *  @return 0 when it cannot be shown. */
 int tiku_reader_image_size(void *ctx, const char *src, int *w, int *h)
 {
     tiku_reader_help_window_t *c = ctx;
@@ -128,7 +135,8 @@ int tiku_reader_image_size(void *ctx, const char *src, int *w, int *h)
     return 1;
 }
 
-/** @brief Draw bounded image pixels through the toolkit and preserve clipping. */
+/** @brief Draw image @p src scaled into @p where and blended over the page,
+ *         within the clip; a frame and a note when it cannot be shown. */
 void tiku_reader_image_draw(void *ctx, const char *src, tiku_rect_t where)
 {
     tiku_reader_help_window_t *c = ctx; struct help_reader *r = c->reader;

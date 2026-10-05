@@ -1,10 +1,13 @@
-/* TikuPDF: datasheets, manuals and papers, drawn by the PDF kit.
+/* tiku_pdfview.h -- TikuPDF's viewer: datasheets, manuals and papers,
+ * drawn by the PDF kit.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #ifndef TIKU_PDFVIEW_H_
 #define TIKU_PDFVIEW_H_
 
 #include "tiku_window.h"
 
+/** @brief The viewer: its window, the document shown and its jobs. */
 typedef struct tiku_pdfview tiku_pdfview_t;
 
 /** @brief An empty viewer; choosing a file stays the application's:

@@ -1,6 +1,6 @@
 /* tiku_circuit_source.c -- the import resolver: the chosen file, and the
- * files it links within its directory, read without following symlinks.
- * No network address, expansion or absolute link is accepted.
+ * files it links within its directory, which are opened without following
+ * symlinks.  No network address, expansion or absolute link is accepted.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_circuit_source.h"

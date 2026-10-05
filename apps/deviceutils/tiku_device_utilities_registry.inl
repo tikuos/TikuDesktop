@@ -1,20 +1,25 @@
-/* Registry-style split view; explicit selection reads only one endpoint. */
+/* tiku_device_utilities_registry.inl -- part of tiku_device_utilities.c:
+ * the inspector's two panes, the folder tree and the values of the folder
+ * chosen, drawn and driven; a value is read when it is chosen.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** Bounded rectangles shared by custom tree/table painters and input. */
+/** @brief The tree pane; drawing and input both use it. */
 static tiku_rect_t registry_tree_rect(struct device_utility *p)
 { return utility_rect(p, 16, 158, 248, U_TREE_HEIGHT); }
+/** @brief The values pane; drawing and input both use it. */
 static tiku_rect_t registry_values_rect(struct device_utility *p)
 { return utility_rect(p, 280, 158, 560, 142); }
 
-/** Point in rectangle, so a wheel turn moves the pane under the pointer. */
+/** @brief Whether (@p x, @p y) lies in @p r. */
 static int registry_holds(tiku_rect_t r, int x, int y)
 { return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h; }
 
-/** Clip every cell so a long name or value cannot overwrite another column. */
+/** @brief Draw @p text clipped to cell @p r. */
 static void registry_cell(tiku_surface_t *s, tiku_rect_t r, const char *text, tiku_rgb_t ink)
 { tiku_text_line_draw(s, r, TIKU_MEASURE_PLAIN, text, ink); }
 
-/** Depth follows directory parents, not the length of their names. */
+/** @brief How many folders lie above @p node, at most 20. */
 static int registry_depth(struct device_utility *p, int node)
 {
     int depth = 0;
@@ -24,7 +29,8 @@ static int registry_depth(struct device_utility *p, int node)
     return depth;
 }
 
-/** A persistent directory tree with disclosure buttons and native selection. */
+/** @brief Draw the tree: each folder indented by its depth with a + or -
+ *         before it, the root named by the board. */
 static void registry_tree_draw(struct device_utility *p, tiku_surface_t *s)
 {
     tiku_rect_t body = registry_tree_rect(p);
@@ -46,7 +52,10 @@ static void registry_tree_draw(struct device_utility *p, tiku_surface_t *s)
     tiku_frame(s, body, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
 }
 
-/** Show Name, Type, Access and Data; unqueried values are never invented. */
+/** @brief Draw the values pane: Name, Type, Access and Data for each value
+ *         of the folder.  Data is the value read, Unavailable when the read
+ *         failed, else Not read for one read unasked, Manual read for one
+ *         read only when chosen, and a dash for one that cannot be read. */
 static void registry_values_draw(struct device_utility *p, tiku_surface_t *s)
 {
     const int x[] = {0, 154, 240, 332, 560};
@@ -78,7 +87,9 @@ static void registry_values_draw(struct device_utility *p, tiku_surface_t *s)
     tiku_frame(s, body, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
 }
 
-/** Directory navigation clears the old snapshot before publishing a new path. */
+/** @brief Go to @p path, trailing slashes dropped: the value rows and the
+ *         editor are emptied and the path is read.  A path utility_path()
+ *         refuses is not taken, and the status says why. */
 static void registry_go(struct device_utility *p, const char *path)
 {
     char copy[256];
@@ -94,7 +105,8 @@ static void registry_go(struct device_utility *p, const char *path)
     utility_request(p, 0);
 }
 
-/** Move selection and invalidate the old editor before requesting another value. */
+/** @brief Make the chosen value row the path shown, emptying the editor.
+ *  @return 1 when it did. */
 static int registry_select_value(struct device_utility *p)
 {
     int row = p->list.cursor;
@@ -110,13 +122,15 @@ static int registry_select_value(struct device_utility *p)
     tiku_field_start(&p->edit, ""); return 1;
 }
 
-/** Reading one value keeps its siblings and the expanded branch in place. */
+/** @brief Read the chosen value row. */
 static void registry_read_value(struct device_utility *p)
 {
     if (registry_select_value(p)) utility_request(p, 0);
 }
 
-/** Select or collapse one branch; expansion fetches only its direct children. */
+/** @brief Select @p node: with @p toggle on an open folder, fold it, and
+ *         read it unless it is the folder shown; otherwise open it and read
+ *         it.  Nothing while a job runs. */
 static void registry_branch(struct device_utility *p, int node, int toggle)
 {
     if (p->busy || node < 0 || node >= U_ROWS || !p->tree[node].path[0]) return;
@@ -132,7 +146,12 @@ static void registry_branch(struct device_utility *p, int node, int toggle)
     registry_go(p, p->tree[node].path);
 }
 
-/** Independent scrolling and familiar Left/Right tree navigation. */
+/** @brief Input for the two panes; the wheel scrolls the one under the
+ *         pointer.  On the tree a click on the +/- folds or opens, on the
+ *         name opens; Left folds or goes up, Right opens or goes to the
+ *         first child, Return opens, and moving the selection opens.  On the
+ *         values a click or Return reads; moving the selection only
+ *         chooses.  @return 1 when taken. */
 static int registry_event(struct device_utility *p, const tiku_event_t *ev)
 {
     tiku_rect_t tree = registry_tree_rect(p), values = registry_values_rect(p);

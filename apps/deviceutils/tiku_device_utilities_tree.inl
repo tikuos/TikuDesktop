@@ -1,6 +1,11 @@
-/* Lazy registry tree: directories are branches, endpoints remain value rows. */
+/* tiku_device_utilities_tree.inl -- part of tiku_device_utilities.c: the
+ * inspector's folder tree, built from the folders read so far, and how a
+ * read, a cached listing or the preload fills the tree and value rows.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** Expand visible branches in lexical order, retaining stable node indices. */
+/** @brief Add @p node's row, then, when it is open, its children's rows in
+ *         path order; at most U_ROWS rows. */
 static void utility_tree_walk(struct device_utility *p, int node)
 {
     if (p->tree_count >= U_ROWS) return;
@@ -19,7 +24,8 @@ static void utility_tree_walk(struct device_utility *p, int node)
     for (int i = 0; i < count; i++) utility_tree_walk(p, children[i]);
 }
 
-/** Keep selection on its nearest visible ancestor after collapsing a branch. */
+/** @brief Rebuild the tree's rows; the selection moves to its nearest
+ *         shown ancestor when a fold hid it. */
 static void utility_tree_rows(struct device_utility *p)
 {
     p->tree_count = 0; utility_tree_walk(p, 0);
@@ -35,7 +41,8 @@ static void utility_tree_rows(struct device_utility *p)
     tiku_list_reveal(&p->tree_list, (tiku_rect_t){0, 0, 248, U_TREE_HEIGHT});
 }
 
-/** Changing device drops all cached hierarchy and values from the former target. */
+/** @brief Empty the tree and the cache back to the root; the inspector's
+ *         next read is a preload. */
 static void utility_tree_reset(struct device_utility *p)
 {
     utility_cache_free(p->cache); p->cache = NULL;
@@ -48,7 +55,10 @@ static void utility_tree_reset(struct device_utility *p)
     utility_tree_rows(p);
 }
 
-/** Add ancestors for typed paths too, without inventing unqueried children. */
+/** @brief The node of @p path, trailing slashes ignored, made along with
+ *         any missing ancestors; each ancestor is opened, and a full tree
+ *         sets tree_full.
+ *  @return the node, 0 for the root, -1 for a bad path or a full tree. */
 static int utility_tree_ensure(struct device_utility *p, const char *path)
 {
     if (!utility_path(path)) return -1;
@@ -79,19 +89,20 @@ static int utility_tree_ensure(struct device_utility *p, const char *path)
     }
 }
 
-/** Remove an absent branch together with all cached descendants. */
+/** @brief Remove @p node, its descendants and their cached listings; a
+ *         selection among them moves to the parent. */
 static void utility_tree_drop(struct device_utility *p, int node)
 {
     for (int i = 1; i < U_ROWS; i++)
         if (p->tree[i].path[0] && p->tree[i].parent == node) utility_tree_drop(p, i);
     if (p->tree_selected == node) p->tree_selected = p->tree[node].parent;
-    /* The snapshot goes with the branch: a directory the device has just
-     * said is gone must not be reachable again from the cache. */
     utility_cache_forget(p, p->tree[node].path);
     memset(&p->tree[node], 0, sizeof p->tree[node]);
 }
 
-/** Merge a complete directory snapshot without losing other expanded branches. */
+/** @brief Merge job @p j's listing into the tree: a whole listing drops
+ *         the folders gone from it, each folder in it gets a node, and the
+ *         folder is selected and opens unless j->collapse. */
 static void utility_tree_merge(struct device_utility *p, utility_job_t *j)
 {
     p->tree_full = 0;
@@ -114,11 +125,13 @@ static void utility_tree_merge(struct device_utility *p, utility_job_t *j)
     p->tree_selected = parent; utility_tree_rows(p);
 }
 
-/** A value read updates its row, keeping sibling values and the directory tree. */
+/** @brief Apply a read to the inspector: a folder's listing fills the
+ *         tree and the value rows; a value read updates its row and its
+ *         cached listing. */
 static void utility_registry_result(struct device_utility *p, utility_job_t *j)
 {
-    /* Answered again for this result: a full tree is what THIS path met,
-     * not a flag the next value read inherits and reports as its own. */
+    /* Cleared for each result: tree_full reports only this result's
+     * merge. */
     p->tree_full = 0;
     if (j->directory && j->ok) {
         utility_tree_merge(p, j);
@@ -129,8 +142,8 @@ static void utility_registry_result(struct device_utility *p, utility_job_t *j)
         tiku_list_set_count(&p->list, p->count); p->list.top = 0;
         tiku_list_select_only(&p->list, p->count ? 0 : -1);
     } else if (!j->directory && j->found) {
-        /* A path the device does not have gets no branch: the tree says
-         * what the device answered for, not what was typed at it. */
+        /* Only a value the board found has its folder added to the
+         * tree. */
         char parent[256]; snprintf(parent, sizeof parent, "%s", j->path);
         char *slash = strrchr(parent, '/');
         if (slash) *slash = 0;
@@ -162,7 +175,9 @@ static void utility_registry_result(struct device_utility *p, utility_job_t *j)
         "Tree cache full (128 branches). Use an exact path or reselect the device to clear it.");
 }
 
-/** Display a cached directory instantly, but require a fresh read before editing. */
+/** @brief Show @p path's cached listing as the folder shown, with nothing
+ *         to edit.
+ *  @return 1, or 0 when the cache holds no successful listing of @p path. */
 static int utility_cache_show(struct device_utility *p, const char *path)
 {
     utility_snapshot_t *s = utility_cache_find(p->cache, path);
@@ -182,7 +197,9 @@ static int utility_cache_show(struct device_utility *p, const char *path)
     return 1;
 }
 
-/** Publish a whole-device snapshot atomically; select useful system values first. */
+/** @brief Take the preload's listings, build the tree from them, and show
+ *         the folder shown before (/sys for the root), its parent, or the
+ *         root. */
 static void utility_preload_result(struct device_utility *p, utility_job_t *j)
 {
     utility_cache_free(p->cache); p->cache = j->cache; j->cache = NULL;

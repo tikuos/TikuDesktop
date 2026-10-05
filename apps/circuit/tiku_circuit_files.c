@@ -22,8 +22,8 @@ typedef struct {
     int reload;                     /* Reload of the shown project */
     int layers;                     /* Add Layer, or Reload of a stack */
     int action;                     /* the command that asked, or 0 */
-    char settings_dir[CV_PATH_MAX];
-    int units, sheets, details;
+    char settings_dir[CV_PATH_MAX]; /* saved view settings, or "" */
+    int units, sheets, details;     /* their values; -1 for none */
     tiku_circuit_t *base;           /* the stack added to or reread */
     char *instance;                 /* for a reload, the shown sheet's
                                        instance, to show it again */
@@ -49,9 +49,10 @@ static int cancelled(void *ctx)
  *
  * Add Layer and a stack's Reload read the stack's files; otherwise the
  * content decides: a Gerber job, a KiCad or EAGLE schematic, or one Gerber
- * or drill file, which becomes a stack of one layer.  The first view is
- * the canvas the document will be shown in, narrower by the list when the
- * document has more than one sheet or layer.
+ * or drill file, which becomes a stack of one layer.  Saved view settings
+ * apply, except for Reload and Add Layer.  The first view is the canvas
+ * the document will be shown in, narrower by the list when the document
+ * has more than one sheet or layer.
  */
 static void run(void *ctx)
 {
@@ -137,7 +138,8 @@ static void run(void *ctx)
     if (!schematic) {
         goto render;
     }
-    /* The font is the host's choice, not a path inside the schematic. */
+    /* The font comes from the host's font set; no path the schematic
+     * names is read for it. */
     const char *families[] = {"DejaVu Sans", "Liberation Sans", "Arial"};
     for (size_t i = 0; i < sizeof families / sizeof *families && !font;
          i++) {

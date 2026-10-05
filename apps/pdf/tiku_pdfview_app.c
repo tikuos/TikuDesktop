@@ -1,10 +1,14 @@
-/* TikuPDF owns its documents, workers and window in its own process.
+/* tiku_pdfview_app.c -- TikuPDF's descriptor: the viewer's window, run in
+ * its own process by tiku-run, asking the desktop for the documents and
+ * key files it opens.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_pdfview.h"
 #include "tiku_window_app.h"
 #include "tiku_work.h"
 #include <stdlib.h>
 
+/** @brief The running application: the desktop's calls and the viewer. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
@@ -106,6 +110,7 @@ static const tiku_app_descriptor_t descriptor = {
     .event_in = event, .tick = tick, .pick = pick, .picked = picked,
     .closed = closed
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

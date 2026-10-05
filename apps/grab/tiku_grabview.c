@@ -1,7 +1,8 @@
-/* TikuGrab: the desk, or one of its windows, as a picture.  The desktop
- * takes it -- it is the one that can see the desk -- and writes it into
- * Desktop/Screenshots; this window chooses what, waits out the delay,
- * and shows what came back.  SPDX-License-Identifier: Apache-2.0 */
+/* tiku_grabview.c -- TikuGrab's window: the desk or one of its windows is
+ * chosen, the delay waited out, and the desktop asked; it takes the
+ * picture into Desktop/Screenshots, and the window shows it.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_grabview.h"
 #include "tiku_app.h"
 #include "tiku_atomic_file.h"
@@ -27,13 +28,14 @@
 #define GB_LIST_W     230           /* its width                          */
 #define GB_REFRESH_US 1500000       /* the list asked for again this often */
 #define GB_CHECK      8             /* the checkerboard behind a picture  */
-#define GB_TIMEOUT_US 30000000
+#define GB_TIMEOUT_US 30000000     /* how long an answer is waited for   */
 
 enum { GB_GRAB = 1, GB_DELAY, GB_OPEN, GB_SHOW, GB_SAVE, GB_CLOSE,
        GB_DELAY_NONE, GB_DELAY_3, GB_DELAY_5, GB_DELAY_10, GB_LIST, GB_CANCEL };
 
-/* Pixels are immutable while a preview worker holds them. References are
- * acquired and released only on the event loop. */
+/** @brief A grabbed picture, shared with preview workers by count; its
+ *         pixels do not change while a worker holds it, and the count
+ *         changes only on the loop. */
 typedef struct { int refs; tiku_image_t image; } gb_picture_t;
 
 /** @brief Something to grab: the desk (id 0), or a window by its id. */
@@ -48,6 +50,7 @@ typedef struct {
     int rh;
 } gb_layout_t;
 
+/** @brief The window's state; only the loop touches it. */
 struct tiku_grabview {
     tiku_workspace_t *workspace;
     tiku_window_t *window;
@@ -60,11 +63,16 @@ struct tiku_grabview {
     int dragging;
     int delay, waiting;             /* seconds to wait; an answer owed    */
     int tray_left;                  /* the seconds the tray shows, or 0   */
-    int64_t now, due, asked;        /* the clock; the grab's; the list's  */
+    /* the clock; when the delayed grab is taken, or 0; when the window
+     * list was last asked for */
+    int64_t now, due, asked;
+    /* the number of the last grab asked, which its answer carries; when
+     * that answer is overdue */
     int64_t request, deadline;
+    /* the target chosen when Grab was pressed */
     gb_target_t pending;
     char path[TIKU_PATH_MAX];       /* the last picture's file, or ""     */
-    char save_source[TIKU_PATH_MAX];
+    char save_source[TIKU_PATH_MAX]; /* the picture Save As... copies    */
     long long size;
     gb_picture_t *picture;
     uint32_t *view;                 /* it, fitted to the preview          */
@@ -73,6 +81,8 @@ struct tiku_grabview {
     tiku_dialog_t dialog;
 };
 
+/** @brief A worker job: the picture fitted to the preview, or a copy
+ *         saved for Save As.... */
 typedef struct {
     tiku_grabview_t *owner;
     int generation, save, ok;
@@ -162,7 +172,7 @@ static void gb_tray(tiku_grabview_t *c, int left)
     tiku_msg_free(m);
 }
 
-/** @brief The grab itself, of whatever the list has chosen. */
+/** @brief The grab itself, of the target chosen when Grab was pressed. */
 static void gb_take(tiku_grabview_t *c)
 {
     const gb_target_t *t = &c->pending;
@@ -330,6 +340,8 @@ static int gb_copy(const char *from, const char *to)
     return result;
 }
 
+/** @brief Drop a hold on the window's state; the last frees it and the
+ *         picture. */
 static void gb_unref(tiku_grabview_t *c)
 {
     if (--c->refs) return;
@@ -341,6 +353,8 @@ static void gb_unref(tiku_grabview_t *c)
     free(c);
 }
 
+/** @brief On a worker: copy the picture's file for Save As..., or load
+ *         the picture and fit it to the preview. */
 static void gb_run(void *ctx)
 {
     gb_job_t *j = ctx;
@@ -356,6 +370,8 @@ static void gb_run(void *ctx)
             (j->view || j->fit_w < 8 || j->fit_h < 8);
 }
 
+/** @brief On the loop: say where the copy went, or show the fitted
+ *         preview unless a newer one was asked for. */
 static void gb_done(void *ctx)
 {
     gb_job_t *j = ctx;
@@ -381,6 +397,7 @@ static void gb_done(void *ctx)
     gb_changed(c);
 }
 
+/** @brief After done, or instead of it: free the job and drop its hold. */
 static void gb_free(void *ctx)
 {
     gb_job_t *j = ctx;
@@ -394,6 +411,8 @@ static void gb_free(void *ctx)
     free(j);
 }
 
+/** @brief Post @p j; a new preview cancels the one queued before it.
+ *  @return 1 when queued. */
 static int gb_post(tiku_grabview_t *c, gb_job_t *j)
 {
     tiku_work_job_t work = {.run = gb_run, .done = gb_done, .free = gb_free,
@@ -408,6 +427,8 @@ static int gb_post(tiku_grabview_t *c, gb_job_t *j)
     return 0;
 }
 
+/** @brief Ask a worker for the picture fitted into @p w by @p h, loading
+ *         it the first time. */
 static void gb_preview(tiku_grabview_t *c, int w, int h)
 {
     gb_job_t *j = calloc(1, sizeof *j);
@@ -467,7 +488,8 @@ static int gb_enabled(const tiku_grabview_t *c, int id)
     return 1;
 }
 
-/** @brief A command's words, for its menu item and a reader. */
+/** @brief A command's label, for its menu item and its button's
+ *         narration. */
 static const char *gb_label(int id)
 {
     switch (id) {
@@ -761,8 +783,9 @@ static void gb_hover(tiku_grabview_t *c, const tiku_event_t *ev)
     }
 }
 
-/** @brief Every window event: keys, a press on the list, then the
- *         toolbar's buttons. */
+/** @brief Every window event: activation asks for the list again; then
+ *         keys, the list's scrollbar, wheel and presses, and the toolbar's
+ *         buttons. */
 static int gb_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     tiku_grabview_t *c = ctx;
@@ -820,7 +843,7 @@ list_input:
     return r.taken;
 }
 
-/** @brief The native window went away. */
+/** @brief The window went away: forget it, and any grab due or awaited. */
 static void gb_window_gone(tiku_window_t *w, void *ctx)
 {
     tiku_grabview_t *c = ctx;
@@ -832,7 +855,7 @@ static void gb_window_gone(tiku_window_t *w, void *ctx)
     gb_changed(c);
 }
 
-/** @brief Published menus hand their picks to the one action path. */
+/** @brief A menu pick, carried out as its command. */
 static void gb_menu_pick(tiku_window_t *w, int id, void *ctx)
 {
     (void)w;
@@ -856,7 +879,8 @@ static void gb_menu_add(tiku_grabview_t *c, tiku_menu_list_t *m, int id,
     e->marked = (unsigned char)marked;
 }
 
-/** @brief File and Delay, as the controls stand. */
+/** @brief Publish the File and Delay menus, each item enabled and marked
+ *         as the window now stands. */
 static void gb_menus(tiku_grabview_t *c)
 {
     tiku_menuset_t m;

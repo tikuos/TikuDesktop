@@ -1,4 +1,7 @@
-/* Export a current, labelled inspection preview, never the CAD source.
+/* tiku_circuit_export.c -- Export View as PNG...: the rendered view, its
+ * measurement and a caption marking it an inspection preview, written on a
+ * worker; an existing file is replaced only when it is a PNG.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_circuit_window_private.h"
 #include "tiku_atomic_file.h"
@@ -13,6 +16,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/** @brief One export: the picture to write and where. */
 typedef struct {
     tiku_circuitview_t *owner;
     tiku_surface_t *surface;
@@ -23,7 +27,8 @@ typedef struct {
 int tiku_circuitview_picking_export(const tiku_circuitview_t *v)
 { return v && v->picker_action==CIRCUIT_EXPORT; }
 
-/** @brief Encode the snapshot; cancellation prevents replacement. */
+/** @brief Write the picture to @p f as PNG for tiku_atomic_file(); a
+ *         cancel returns -1, which leaves the destination as it was. */
 static int produce(FILE *f,void *ctx)
 {
     export_job_t *j=ctx; tiku_surface_t *s=j->surface;
@@ -31,12 +36,13 @@ static int produce(FILE *f,void *ctx)
     int result=tiku_png_write_stream(f,s->px,s->w,s->h,0);
     return tiku_work_cancelled(j) ? -1 : result;
 }
-/** @brief Validate the destination and atomically write it on the worker. */
+/** @brief On the worker: check the destination, then write the picture
+ *         through tiku_atomic_file(). */
 static void run(void *ctx)
 {
     export_job_t *j=ctx; j->result=-1;
-    /* Only replace PNGs. This also protects CAD inputs with misleading
-     * extensions, relative paths, hard links or linked-sheet aliases. */
+    /* An existing file is replaced only when it starts with the PNG
+     * signature, whatever its name or the path or link that reaches it. */
     int fd=open(j->path,O_RDONLY|O_NONBLOCK|O_NOFOLLOW);
     if(fd>=0) {
         struct stat st;

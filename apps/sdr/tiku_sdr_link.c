@@ -1,6 +1,6 @@
 /* tiku_sdr_link.c -- TikuSDR's link: the board borrowed from the desktop,
- * its console spoken a line at a time from the tick (never a blocking
- * read, so closing the window cannot strand a thread), and given back.
+ * its console written and read a line at a time from the tick, with no
+ * blocking read, and the board given back.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <ctype.h>
@@ -24,8 +24,8 @@
 #define DRAIN_US      100000
 #define READ_MAX       32768
 
-/** @brief Whether @p text names an ESP32-C61, whatever its case, dashes
- *         and underscores: "ESP32-C61" and "esp32c61" alike. */
+/** @brief Whether @p text begins with ESP32-C61, ignoring case, dashes and
+ *         underscores: "ESP32-C61" and "esp32c61" alike. */
 static int receiver_part(const char *text)
 {
     const char *want = "esp32c61";
@@ -64,8 +64,8 @@ int sdr_targets(sdr_t *st)
         char mcu[48] = "";
 
         if (sv->board_mcu) sv->board_mcu(sv->ctx, p, mcu, sizeof mcu);
-        /* The die says what a board is; one whose die never said is
-         * judged by its name. */
+        /* The MCU the board reported decides; a board that reported
+         * none is judged by its name. */
         if (!receiver_part(*mcu ? mcu : p) || n + strlen(p) + 2 > sizeof fit)
             continue;
         n += (size_t)snprintf(fit + n, sizeof fit - n, "%s\n", p);
@@ -86,7 +86,10 @@ int sdr_targets(sdr_t *st)
     return known;
 }
 
-/** @brief Write all of @p text and a return; the line is short. */
+/** @brief Write @p text and a return to the board, in at most 50 tries;
+ *         the command is then pending.
+ *  @note @p text is at most 94 bytes: the line is built in a 96-byte
+ *        buffer. */
 static void send_line(sdr_t *st, const char *text)
 {
     char line[96];
@@ -101,9 +104,10 @@ static void send_line(sdr_t *st, const char *text)
     st->sent_at = st->now;
 }
 
-/** @brief The board goes back to the desktop, the port closed first and
- *         a recording with it: what it became waits beside the note, which
- *         keeps saying why the board went. */
+/** @brief Give the board back to the desktop: a recording is stopped
+ *         (st->saved says what it became; the note keeps saying why the
+ *         board went), the port is closed, and the desktop is asked to
+ *         reclaim the board. */
 static void reclaim(sdr_t *st)
 {
     const tiku_app_services_t *sv = st->services;
@@ -130,8 +134,9 @@ static void reclaim(sdr_t *st)
     st->dirty = 1;
 }
 
-/** @brief The board's port, opened raw at 115200 now the desktop has let
- *         go of it; a return asks for a prompt. */
+/** @brief Open the board's port raw at 115200, once the desktop has let go
+ *         of it, and send a return to ask for a prompt; a port that will
+ *         not open is given back. */
 static void serial_open(sdr_t *st)
 {
     struct termios t;
@@ -187,7 +192,7 @@ int sdr_connect(sdr_t *st)
     }
     sdr_play_stop(st);
     st->closing = 0;
-    st->shown[0] = '\0';                /* the board's, from now on */
+    st->shown[0] = '\0';                /* the board's spectra from now on */
     st->state = SDR_RELEASING;
     st->deadline = st->now + RELEASE_US;
     snprintf(st->note, sizeof st->note,
@@ -210,8 +215,8 @@ void sdr_disconnect(sdr_t *st)
     snprintf(st->note, sizeof st->note, "Returning %s to the desktop...",
              st->board);
     if (st->state == SDR_RUNNING) {
-        /* The board gives its capture bank back, then its prompt; the port
-         * closes on that prompt, or when it does not come. */
+        /* The board answers "SDR stopped" and then its prompt; the port
+         * closes on that prompt, or when STOP_US passes without it. */
         send_line(st, "sdr stop");
         st->state = SDR_STOPPING;
         st->stopped = 0;
@@ -227,8 +232,8 @@ void sdr_disconnect_now(sdr_t *st)
     int queued = 0;
 
     if (st->fd >= 0 && st->state == SDR_RUNNING) {
-        /* The window is going: tell the board, wait a little for the line
-         * to leave (never for ever), and give the board back. */
+        /* Tell the board to stop and wait up to DRAIN_US for the line to
+         * leave; the board is given back below. */
         send_line(st, "sdr stop");
         for (int64_t t = 0; t < DRAIN_US; t += 5000) {
             if (ioctl(st->fd, TIOCOUTQ, &queued) != 0 || queued == 0) break;
@@ -244,7 +249,8 @@ void sdr_board_said(void *state, int what, const char *text)
     sdr_t *st = state;
 
     if (what == TIKU_APP_BOARD_CURRENT) {
-        sdr_targets(st);                /* the names came with it */
+        /* The new current device may be a board just mounted. */
+        sdr_targets(st);
         if (st->state == SDR_IDLE && text && listed(st->names, text))
             snprintf(st->board, sizeof st->board, "%s", text);
     } else if ((what == TIKU_APP_BOARD_RELEASED ||
@@ -267,13 +273,17 @@ void sdr_board_said(void *state, int what, const char *text)
     st->dirty = 1;
 }
 
-/** @brief One whole line from the board. */
+/** @brief Act on one whole line from the board: SDR ready or an error
+ *         while starting, SDR stopped while stopping; while running, a
+ *         SPEC or SWEEP line goes to the model and the recording, and an
+ *         ERR line to the note. */
 static void take_line(sdr_t *st, const char *line)
 {
     if (st->state == SDR_STARTING) {
         if (!strncmp(line, "SDR ready", 9)) {
             st->state = SDR_RUNNING;
-            /* A recording's rule for one spectrum gives way to the board's. */
+            /* Fit the view again with one_max at SDR_LIVE_SPAN: one set while
+             * a version 1 recording played can be one spectrum 40 MHz wide. */
             sdr_model_range(&st->model, st->model.start, st->model.stop);
             st->model.spectra = 0;
             st->rate_at = st->now;
@@ -307,7 +317,8 @@ static void take_line(sdr_t *st, const char *line)
     }
 }
 
-/** @brief A prompt: the command before it has finished. */
+/** @brief A prompt ends the command before it: after SDR stopped the
+ *         board is given back; while opening, sdr start is sent. */
 static void take_prompt(sdr_t *st)
 {
     st->pending = 0;
@@ -322,7 +333,7 @@ static void take_prompt(sdr_t *st)
     }
 }
 
-/** @brief Whether @p hay's first @p n bytes hold "tikuOS" (memmem is GNU). */
+/** @brief Whether @p hay's first @p n bytes hold "tikuOS". */
 static int has_prompt_word(const char *hay, size_t n)
 {
     for (size_t i = 0; i + 6 <= n; i++)
@@ -330,7 +341,9 @@ static int has_prompt_word(const char *hay, size_t n)
     return 0;
 }
 
-/** @brief Split what arrived into lines; a trailing prompt ends a command. */
+/** @brief Add what arrived to the buffer and act on each whole line; a
+ *         prompt ("tikuOS ... > ") left at the end ends a command.  Bytes
+ *         that would overflow the buffer drop what it held. */
 static void take_bytes(sdr_t *st, const char *bytes, size_t n)
 {
     size_t start = 0;
@@ -354,7 +367,9 @@ static void take_bytes(sdr_t *st, const char *bytes, size_t n)
     }
 }
 
-/** @brief Deadlines for each waiting state. */
+/** @brief Give up on a state waited in past its deadline: the desktop's
+ *         handoff goes idle; opening, starting or stopping, or a command
+ *         unanswered for ANSWER_US while running, give the board back. */
 static void deadlines(sdr_t *st)
 {
     if ((st->state == SDR_RELEASING || st->state == SDR_RECLAIMING) &&

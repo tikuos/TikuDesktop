@@ -1,4 +1,6 @@
-/* tiku_reader_private.h -- Reader controller state and internal interfaces.
+/* tiku_reader_private.h -- the viewer family's own declarations: the
+ * window's control ids, its layout, the reading state behind the page, and
+ * the calls the family's files make to one another.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #ifndef TIKU_READER_PRIVATE_H_
@@ -47,9 +49,15 @@ _Static_assert(HELP_PAGE == TIKU_READER_HELP_CONTROL_PAGE,
 
 /** @brief Where the parts of the window go, from one description. */
 typedef struct {
+    /** the toolbar's four buttons, the title, the paper around the page,
+     *  the page, its scrollbar and the status line */
     tiku_rect_t back, forward, home, done, title, paper, page, bar, status;
+    /** the Find field and its buttons, and the reading tools' buttons */
     tiku_rect_t find, prev, next, search, copy, code, outline, bookmark;
+    /** the Bookmarks and Copy Link buttons, and the side list */
     tiku_rect_t bookmarks, link, side;
+    /** a document window's Location field, its label and Go button, and
+     *  the Find bar's close button and the Find toggle */
     tiku_rect_t location, location_label, go, find_close, find_toggle;
 } help_layout_t;
 
@@ -57,47 +65,61 @@ typedef struct {
 #define HELP_REPORTS 8
 #define HELP_IMAGE_BYTES (16u * 1024u * 1024u)   /* decoded pixels kept */
 #define HELP_IMAGE_METADATA (1u * 1024u * 1024u) /* the image records   */
+/** @brief A row of the side list: the page it opens, its title and a
+ *         result's matching snippet; the block it names, a heading's level,
+ *         and whether headings nest under it. */
 typedef struct { char page[TIKU_PATH_MAX], title[128], snippet[160]; int block, level, children; } help_row_t;
 /** @brief An image a page names: its file, its size and its pixels. */
 typedef struct {
-    char src[TIKU_PATH_MAX];        /* as the page names it              */
-    char path[TIKU_PATH_MAX];       /* the file it resolved to           */
-    tiku_image_t image;             /* decoded pixels; none until drawn  */
-    int width, height;              /* from the file's header            */
-    int failed;                     /* refused or undecodable            */
-    unsigned long used;             /* image_clock when last drawn       */
+    char src[TIKU_PATH_MAX];        /**< as the page names it            */
+    char path[TIKU_PATH_MAX];       /**< the file it resolved to         */
+    tiku_image_t image;             /**< decoded pixels; none until drawn */
+    int width, height;              /**< from the file's header          */
+    int failed;                     /**< refused or undecodable          */
+    unsigned long used;             /**< image_clock when last drawn     */
 } help_image_t;
+/** @brief The reading state behind a window's page. */
 struct help_reader {
-    char *text;                     /* the page's text, flattened        */
+    char *text;                     /**< the page's text, flattened      */
+    /** each run's offset into text; text's length; the selection's two
+     *  ends; a selection drag under way; the block last pointed into */
     int *starts, length, a, b, dragging, block;
-    size_t text_cap;                /* bytes text holds                  */
-    int starts_cap, folded_cap;
+    size_t text_cap;                /**< bytes text holds                */
+    int starts_cap, folded_cap;     /**< entries starts and folded hold  */
+    /** the current Find match's offset, -1 for none; the query's length;
+     *  the matches; the side list shown: 0 none, 1 outline, 2 search
+     *  results, 3 bookmarks; the reports made so far */
     int match, match_len, matches, side, report_id;
-    tiku_field_t query;             /* the Find field                    */
-    tiku_field_input_t input;       /* its scroll and drag               */
-    tiku_field_t location;          /* the Location field                */
-    tiku_field_input_t location_input; /* its scroll and drag            */
-    int find_visible, location_dirty;
-    int text_size, reading_width; /* zero follows desktop size / full width */
-    int hover_tool;
-    tiku_rect_t zoom_frame;         /* the frame the last maximize set   */
-    tiku_list_t list;               /* the sidebar's rows                */
-    help_row_t rows[HELP_ROWS], marks[32];
-    help_row_t results[HELP_ROWS];  /* the latest folder search's rows   */
-    int nresults;                   /* how many of those                 */
-    char search_query[TIKU_FIELD_MAX]; /* what they were searched for    */
-    struct reader_search *search;   /* the search running, or NULL       */
+    tiku_field_t query;             /**< the Find field                  */
+    tiku_field_input_t input;       /**< its scroll and drag             */
+    tiku_field_t location;          /**< the Location field              */
+    tiku_field_input_t location_input; /**< its scroll and drag          */
+    int find_visible, location_dirty; /**< Find bar shown; Location edited */
+    /** text size and reading width in pixels; 0 is the desktop's size and
+     *  the full width */
+    int text_size, reading_width;
+    int hover_tool;                 /**< toolbar control under the pointer */
+    tiku_rect_t zoom_frame;         /**< the frame the last maximize set */
+    tiku_list_t list;               /**< the side list                   */
+    help_row_t rows[HELP_ROWS], marks[32]; /**< its rows; the bookmarks  */
+    help_row_t results[HELP_ROWS];  /**< the latest folder search's rows */
+    int nresults;                   /**< how many of those               */
+    char search_query[TIKU_FIELD_MAX]; /**< what they were searched for  */
+    struct reader_search *search;   /**< the search running, or NULL     */
+    /** rows and bookmarks held; the last search stopped at a limit; the
+     *  outline's choice follows the scroll on the next draw */
     int nrows, nmarks, limited, follow_outline;
-    int marks_session;              /* bookmarks unsaved, kept here only */
-    size_t search_bytes;          /* aggregate source budget for one search */
-    unsigned char *folded;
-    char hovered[1024];             /* the link under the pointer        */
+    int marks_session;              /**< bookmarks unsaved, kept here only */
+    size_t search_bytes;            /**< bytes the latest search read    */
+    unsigned char *folded;          /**< per block: its heading folded   */
+    char hovered[1024];             /**< the link under the pointer      */
+    /** generated reports: a name, "@report<n>", and the HTML shown */
     struct { char name[32]; char *html; } reports[HELP_REPORTS];
-    help_image_t *images;           /* the page's images, in order met   */
-    int nimages, image_cap;         /* held; room for                    */
-    size_t image_bytes;             /* decoded pixels held, in bytes     */
-    unsigned long image_clock;      /* counts drawings, for eviction     */
-    tiku_surface_t *surface;
+    help_image_t *images;           /**< the page's images, in order met */
+    int nimages, image_cap;         /**< held; room for                  */
+    size_t image_bytes;             /**< decoded pixels held, in bytes   */
+    unsigned long image_clock;      /**< counts drawings, for eviction   */
+    tiku_surface_t *surface;        /**< what the page is being drawn on */
 };
 
 
@@ -167,8 +189,8 @@ void tiku_reader_search(tiku_reader_help_window_t *c);
 void tiku_reader_search_cancel(tiku_reader_help_window_t *c);
 void tiku_reader_search_results(tiku_reader_help_window_t *c);
 void tiku_reader_outline(tiku_reader_help_window_t *c);
-/* Substitute how a search queues work, for a test; NULL restores
- * tiku_work_post. */
+/** @brief Substitute how a search queues work, for a test; NULL restores
+ *         tiku_work_post. */
 void tiku_reader_test_post(int (*post)(const tiku_work_job_t *job));
 
 #pragma GCC visibility pop

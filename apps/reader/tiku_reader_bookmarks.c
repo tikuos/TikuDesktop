@@ -1,4 +1,6 @@
-/* tiku_reader_bookmarks.c -- bookmarks.
+/* tiku_reader_bookmarks.c -- bookmarks: a page and a block each, kept in
+ * a small text file for each profile, or each help folder, and written only
+ * when one is added or removed.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -15,15 +17,16 @@ static int reader_bookmarks_read(tiku_reader_help_window_t *c,
 static int reader_bookmarks_save(tiku_reader_help_window_t *c,
                                  const char *path);
 
-/* Persistent, bundle-scoped bookmarks. Files are written only on explicit edits. */
-
 /** @brief The variable that names this window's bookmark file. */
 static const char *reader_bookmark_env(const tiku_reader_help_window_t *c)
 {
     return c->document_mode ? c->profile->bookmark_env : "TIKU_HELP_BOOKMARKS";
 }
 
-/** @brief Keep bookmarks for different documentation bundles separate. */
+/** @brief The bookmark file: the one the variable names when it is set;
+ *         else, under XDG_CONFIG_HOME or ~/.config, the profile's file for
+ *         a document window and one file per help folder for Help.
+ *  @return 1, or 0 when there is none. */
 static int reader_bookmark_path(tiku_reader_help_window_t *c, char *out, size_t cap)
 {
     const char *custom = getenv(reader_bookmark_env(c));
@@ -44,9 +47,9 @@ static int reader_bookmark_path(tiku_reader_help_window_t *c, char *out, size_t 
 
 /**
  * @brief Take the lock beside @p path if it is free: it is tried once, not
- *        waited for.  The lock is a stable sibling rather than the inode
- *        the atomic rename replaces; the default location's settings
- *        folder is made first.
+ *        waited for.  The lock is a sibling file, @p path ".lock", which
+ *        the rename that replaces the bookmark file leaves in place; the
+ *        default location's settings folder is made first.
  * @return the lock's descriptor; -1 when it cannot be opened or taken,
  *         so the file cannot be written; -2 when another window holds it.
  */
@@ -85,7 +88,8 @@ static int reader_bookmark_find(const struct help_reader *r, const char *page,
     return -1;
 }
 
-/** @brief Load a bounded text file without changing any files on window startup. */
+/** @brief Read the window's bookmark file into its list, at most 32
+ *         rows; nothing is written. */
 void tiku_reader_bookmarks_load(tiku_reader_help_window_t *c)
 {
     char path[TIKU_PATH_MAX];
@@ -128,7 +132,9 @@ static int reader_bookmarks_read(tiku_reader_help_window_t *c,
     return ok;
 }
 
-/** @brief Replace atomically; a failed save leaves the previous file intact. */
+/** @brief Write the list to @p path through a temporary file renamed
+ *         over it, so a failed save leaves the old file as it was.
+ *  @return 1 when saved. */
 static int reader_bookmarks_save(tiku_reader_help_window_t *c,
                                  const char *path)
 {
@@ -151,7 +157,9 @@ static int reader_bookmarks_save(tiku_reader_help_window_t *c,
     }
     return 1;
 }
-/** @brief A bookmark is a logical block, not a font-dependent pixel offset. */
+/** @brief Toggle a bookmark on the block at the top of the view: added
+ *         when there is none, removed when there is.  A bookmark names a
+ *         block, which stays the same when the text size changes. */
 void tiku_reader_bookmark(tiku_reader_help_window_t *c)
 {
     struct help_reader *r = c->reader; if (!r || !c->doc) return;

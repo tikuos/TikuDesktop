@@ -1,6 +1,7 @@
-/* TikuDiff: what changed between two files, two folders, or the two
- * releases two archives hold.  Every read is a worker's, one job at a
- * time per window; the window draws the rows the last job built.
+/* tiku_diffview.c -- TikuDiff's viewer: what changed between two files,
+ * two folders, or what two archives hold; its commands, keys, menus and
+ * the API.  Every read runs on a worker, one job at a time per window.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_diffview.h"
 #include "tiku_atomic_file.h"
@@ -29,10 +30,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define DV_PATH       4096          /* a path under a temporary folder     */
+#define DV_PATH       4096          /* a path, one under the temporary     */
+                                    /* folder included                     */
 #define DV_BAR        15            /* the scrollbar's width               */
 #define DV_MAP        10            /* the change map beside it            */
-#define DV_DOUBLE_US  450000        /* two clicks this close: an opening   */
+#define DV_DOUBLE_US  450000        /* two clicks this close open a row    */
 #define DV_TAB        4             /* the columns a tab stands for        */
 #define DV_CLIP_MAX   (16L << 20)   /* what the desk's clipboard holds     */
 
@@ -62,7 +64,8 @@ typedef struct {
     tiku_diff_t d;
     dv_row_t *row;
     long nrow;
-    long *change, *end, nchange;    /* each change's first and last rows */
+    long *change, *end, nchange;    /* each change's first row, and the  */
+                                    /* row after its last                */
     int binary, same, endings;      /* bytes only; alike; CRLF and LF    */
 } dv_files_t;
 
@@ -303,7 +306,9 @@ static void dv_summary(tiku_diffview_t *c)
     dv_changed(c);
 }
 
-/** @brief What a job made, taken into the window. */
+/** @brief What a job made, taken into the window: an entry's files, or
+ *         a new comparison in place of the old, whose extracted folder
+ *         is removed. */
 static void dv_land(tiku_diffview_t *c, dv_job_t *j)
 {
     if (j->rel[0]) {                    /* a file of the folder list */
@@ -480,8 +485,9 @@ static void dv_copy(tiku_diffview_t *c)
     free(u);
 }
 
-/** @brief The difference written to @p path: the files shown at once,
- *         a folder list's on a worker. */
+/** @brief The difference written to @p path on a worker: the files
+ *         shown, their text made now; or the folder list's, made on the
+ *         worker too. */
 static void dv_save_to(tiku_diffview_t *c, const char *path)
 {
     dv_job_t *j;
@@ -519,7 +525,8 @@ static void dv_scroll(tiku_diffview_t *c, long top)
     dv_changed(c);
 }
 
-/** @brief The columns scrolled across by @p by, never before the first. */
+/** @brief The columns scrolled across by @p by, kept between the first
+ *         and the 4000th. */
 static void dv_hscroll(tiku_diffview_t *c, int by)
 {
     c->hoff += by;
@@ -529,7 +536,8 @@ static void dv_hscroll(tiku_diffview_t *c, int by)
 }
 
 /** @brief The change holding @p row, or the next one after it, made the
- *         one shown -- in sight, a few rows above it. */
+ *         one shown; when it is not wholly in sight it is scrolled to,
+ *         a few rows below the top. */
 static void dv_pick_change(tiku_diffview_t *c, long row)
 {
     const dv_files_t *f = c->files;
@@ -583,7 +591,8 @@ static void dv_back(tiku_diffview_t *c)
 
 /* ----------------------------------------------------------- actions  */
 
-/** @brief A command's words, for its menu item and a reader. */
+/** @brief A command's label, for its menu item and its button's
+ *         narration. */
 static const char *dv_label(tiku_diffview_t *c, int id)
 {
     (void)c;
@@ -666,7 +675,8 @@ static void dv_ask(tiku_diffview_t *c, int asking, int what, const char *start,
     if (c->host.pick) c->host.pick(c->host.ctx, what, dir, name);
 }
 
-/** @brief The same two sides compared again, as the options now say. */
+/** @brief The same two sides compared again as the options now say,
+ *         or swapped with @p swap. */
 static void dv_again(tiku_diffview_t *c, int swap)
 {
     char left[DV_PATH], right[DV_PATH];
@@ -792,8 +802,10 @@ static int dv_body_key(tiku_diffview_t *c, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief Every window event: keys, then the scrollbar, map and rows, then
- *         the toolbar's buttons. */
+/** @brief Every window event.  Keys come first; a press goes to the
+ *         dialog's buttons, then to the scrollbar, map and rows; the dialog
+ *         takes the rest and carries out a button's command when it is
+ *         released. */
 static int dv_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     tiku_diffview_t *c = ctx;
@@ -847,7 +859,7 @@ static void dv_window_gone(tiku_window_t *w, void *ctx)
     dv_changed(c);
 }
 
-/** @brief Published menus hand their picks to the one action path. */
+/** @brief A menu pick, carried out as its command. */
 static void dv_menu_pick(tiku_window_t *w, int id, void *ctx)
 {
     (void)w;
@@ -871,7 +883,8 @@ static void dv_menu_add(tiku_diffview_t *c, tiku_menu_list_t *m, int id,
     e->marked = (unsigned char)marked;
 }
 
-/** @brief File, Edit, View and Go, as the controls stand. */
+/** @brief Publish the File, Edit, View and Go menus, each item enabled
+ *         as its command is now. */
 static void dv_menus(tiku_diffview_t *c)
 {
     static const char *const titles[] = { "File", "Edit", "View", "Go" };

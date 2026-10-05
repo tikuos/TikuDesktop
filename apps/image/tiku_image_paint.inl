@@ -1,6 +1,11 @@
-/* Native controls and a viewport-sized cache, independent of zoom size. */
+/* tiku_image_paint.inl -- part of tiku_image_window.c: the toolbar's
+ * layout and labels, the view's zoom, turn and pan, and painting through a
+ * cache the size of the view.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** @brief Descriptive menu and automation labels. */
+/** @brief Command @p id's full label: its menu item, its button's
+ *         narration, and the status line while it is pointed at. */
 static const char *image_label(int id)
 {
     static const char *labels[] = { "", "Open Image...", "Reload Image",
@@ -9,7 +14,7 @@ static const char *image_label(int id)
     return id >= IV_OPEN && id <= IV_CLOSE ? labels[id] : "";
 }
 
-/** @brief Short labels remain readable on small classic desktop controls. */
+/** @brief Command @p id's short label, on its toolbar button. */
 static const char *image_tool(int id)
 {
     static const char *labels[] = { "", "Open", "Reload", "Fit", "1:1",
@@ -17,7 +22,8 @@ static const char *image_tool(int id)
     return id >= IV_OPEN && id <= IV_WATCH ? labels[id] : "";
 }
 
-/** @brief Never offer a reload for an in-memory snapshot or an absent image. */
+/** @brief Whether command @p id can act now: Reload and Watch need a file,
+ *         the view's commands an image. */
 static int image_enabled(tiku_image_window_t *c, int id)
 {
     if (id == IV_CLOSE) return 1;
@@ -27,7 +33,9 @@ static int image_enabled(tiku_image_window_t *c, int id)
     return c->image.px != NULL;
 }
 
-/** @brief Wrap narrow toolbars; draw and input share this layout. */
+/** @brief Lay out the toolbar, wrapping when narrow, and the view under
+ *         it; drawing and input both use it.  A new view size drops the
+ *         cache. */
 static void image_layout(tiku_image_window_t *c, tiku_rect_t r)
 {
     int bh = tiku_ui_button_h(), x = r.x + 6, y = r.y + 5;
@@ -55,19 +63,20 @@ static void image_layout(tiku_image_window_t *c, tiku_rect_t r)
     c->viewport = view;
 }
 
-/** @brief Rotations leave the original pixels unchanged. */
+/** @brief The image's width as turned. */
 static int image_width(tiku_image_window_t *c)
 {
     return c->rotation & 1 ? c->image.h : c->image.w;
 }
 
-/** @brief The rotated height is used consistently for fit, pan and paint. */
+/** @brief The image's height as turned. */
 static int image_height(tiku_image_window_t *c)
 {
     return c->rotation & 1 ? c->image.w : c->image.h;
 }
 
-/** @brief Fit preserves aspect ratio and follows window resizing. */
+/** @brief The zoom shown: the one set, or with Fit the largest that shows
+ *         the whole image, at most 16. */
 static double image_zoom(tiku_image_window_t *c)
 {
     if (!c->image.px) return 1;
@@ -76,7 +85,7 @@ static double image_zoom(tiku_image_window_t *c)
                            (double)c->viewport.h / image_height(c)));
 }
 
-/** @brief Read a rotated source pixel without allocating another full image. */
+/** @brief The source pixel at (@p x, @p y) of the turned image. */
 static uint32_t image_pixel(tiku_image_window_t *c, int x, int y)
 {
     int sx = x, sy = y;
@@ -88,7 +97,8 @@ static uint32_t image_pixel(tiku_image_window_t *c, int x, int y)
     return c->image.px[(size_t)sy * c->image.w + sx];
 }
 
-/** @brief Composite transparency on a neutral checker, never theme-tinted. */
+/** @brief @p pixel blended by its alpha over grey @p bg, a square of the
+ *         checkerboard behind transparency. */
 static uint32_t image_over(uint32_t pixel, unsigned bg)
 {
     unsigned a = pixel >> 24, b = 255 - a;
@@ -98,7 +108,8 @@ static uint32_t image_over(uint32_t pixel, unsigned bg)
     return 0xff000000u | (r << 16) | (g << 8) | v;
 }
 
-/** @brief Clamp pan so the image cannot get lost beyond the canvas edges. */
+/** @brief Limit the pan: an image larger than the view keeps covering it,
+ *         and a smaller one stays centred. */
 static void image_clamp(tiku_image_window_t *c, double zoom)
 {
     double x = fmax(0, (image_width(c) * zoom - c->viewport.w) / 2);
@@ -107,7 +118,8 @@ static void image_clamp(tiku_image_window_t *c, double zoom)
     c->pan_y = fmax(-y, fmin(y, c->pan_y));
 }
 
-/** @brief Render only visible pixels, even at 1600% zoom. */
+/** @brief Fill the cache with the view's pixels at the zoom, turn and pan;
+ *         a valid cache is kept.  @return 0 when it cannot be had. */
 static int image_render(tiku_image_window_t *c)
 {
     if (c->cache_valid) return 1;
@@ -140,7 +152,8 @@ static int image_render(tiku_image_window_t *c)
     return 1;
 }
 
-/** @brief Compact icon/text controls use native focus and release semantics. */
+/** @brief Draw toolbar button @p d: Watch as a checkbox, Open and Reload
+ *         as an icon and their short label, the others as worded buttons. */
 static void image_button(tiku_image_window_t *c, tiku_surface_t *s,
                           const tiku_dialog_control_t *d)
 {
@@ -152,7 +165,8 @@ static void image_button(tiku_image_window_t *c, tiku_surface_t *s,
                          (c->watching ? TIKU_S_ON : 0));
     } else if (d->id == IV_OPEN || d->id == IV_RELOAD) {
         if (c->hover == d->id) flags |= TIKU_S_HOT;
-        /* Its full name crosses for narration; icon and word are its face. */
+        /* The full label is for narration and is not drawn; the icon and
+         * the short label are the face. */
         tiku_ui_button(s, d->rect, image_label(d->id), flags | TIKU_S_ICON);
         tiku_icon_paint_dim(s, d->id == IV_OPEN ? "folder_open" :
             "nav_reload", d->rect.x + 4,
@@ -164,7 +178,7 @@ static void image_button(tiku_image_window_t *c, tiku_surface_t *s,
     } else tiku_ui_button(s, d->rect, image_tool(d->id), flags);
 }
 
-/** @brief A useful empty state explains formats and the snapshot workflow. */
+/** @brief The empty view: what can be opened, and what Watch 2s does. */
 static void image_empty(tiku_surface_t *s, tiku_rect_t r)
 {
     int x = r.x + 24, y = r.y + r.h / 3;
@@ -178,7 +192,8 @@ static void image_empty(tiku_surface_t *s, tiku_rect_t r)
         "it does not start or connect a camera.", TIKU_C_TEXT, 4);
 }
 
-/** @brief Cached pixels survive chrome-only redraws and moving the window. */
+/** @brief Draw the window: the toolbar, the view from its cache, and the
+ *         two status lines. */
 static void image_draw(tiku_window_t *w, tiku_surface_t *s,
                         tiku_rect_t r, void *ctx)
 {

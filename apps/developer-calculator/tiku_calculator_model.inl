@@ -1,10 +1,16 @@
-/* Fixed-width unsigned arithmetic and explicitly named CRC variants. */
+/* tiku_calculator_model.inl -- part of tiku_calculator.c: fixed-width
+ * unsigned arithmetic, base conversion, and the two named CRC variants.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** A full-width mask avoids shifting by the width of uint64_t. */
+/** @brief The mask of a @p width-bit word; 64 bits gives all ones without
+ *         shifting by 64. */
 static uint64_t calc_mask(int width)
 { return width == 64 ? UINT64_MAX : (UINT64_C(1) << width) - 1; }
 
-/** Parse a whole unsigned value in the chosen radix, rejecting any overflow. */
+/** @brief Parse @p text as an unsigned @p width-bit value in @p base, an
+ *         optional 0x or 0b prefix allowed.  @return 1, or 0 for empty,
+ *         malformed or too large a value. */
 static int calc_parse(const char *text, unsigned base, int width, uint64_t *out)
 {
     uint64_t value = 0, limit = calc_mask(width);
@@ -22,7 +28,7 @@ static int calc_parse(const char *text, unsigned base, int width, uint64_t *out)
     *out = value; return 1;
 }
 
-/** Render a numeric value without signed conversion or floating-point rounding. */
+/** @brief Write @p value in @p base into @p out, which holds 65 bytes. */
 static void calc_format(uint64_t value, unsigned base, char *out)
 {
     const char *digits = "0123456789ABCDEF"; char reversed[65]; int n = 0;
@@ -31,7 +37,8 @@ static void calc_format(uint64_t value, unsigned base, char *out)
     out[n] = 0;
 }
 
-/** Reverse only the selected word's bytes; bit ordering inside a byte is unchanged. */
+/** @brief @p value with the bytes of its @p width-bit word reversed; the
+ *         bits inside a byte keep their order. */
 static uint64_t calc_swap(uint64_t value, int width)
 {
     uint64_t out = 0;
@@ -39,11 +46,12 @@ static uint64_t calc_swap(uint64_t value, int width)
     return out;
 }
 
-/** Extract an inclusive bit range without undefined shifts for bits 63:0. */
+/** @brief Bits @p high down to @p low of @p value, inclusive. */
 static uint64_t calc_extract(uint64_t value, unsigned high, unsigned low)
 { return (value >> low) & calc_mask((int)(high - low + 1)); }
 
-/** CRC-32/ISO-HDLC: reflected 0x04C11DB7, init/xorout FFFFFFFF. */
+/** @brief CRC-32/ISO-HDLC of @p n bytes: reflected 0x04C11DB7, init and
+ *         xorout FFFFFFFF. */
 static uint32_t calc_crc32(const unsigned char *data, size_t n)
 {
     uint32_t crc = UINT32_MAX;
@@ -54,7 +62,8 @@ static uint32_t calc_crc32(const unsigned char *data, size_t n)
     return crc ^ UINT32_MAX;
 }
 
-/** CRC-16/CCITT-FALSE: poly 1021, init FFFF, no reflection or final XOR. */
+/** @brief CRC-16/CCITT-FALSE of @p n bytes: poly 1021, init FFFF, no
+ *         reflection or final XOR. */
 static uint16_t calc_crc16(const unsigned char *data, size_t n)
 {
     uint16_t crc = 0xFFFF;
@@ -65,7 +74,9 @@ static uint16_t calc_crc16(const unsigned char *data, size_t n)
     return crc;
 }
 
-/** Hex bytes permit whitespace between bytes, never an odd nibble or silent truncation. */
+/** @brief Hex byte pairs into @p out, spaces or tabs allowed between
+ *         bytes.  @return 1, or 0 for a lone nibble or a non-hex
+ *         character. */
 static int calc_bytes(const char *text, unsigned char *out, size_t *n)
 {
     int high = -1; *n = 0;

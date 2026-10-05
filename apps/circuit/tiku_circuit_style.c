@@ -1,4 +1,7 @@
-/* Native layer appearance panel, scoped to the selected layer snapshot.
+/* tiku_circuit_style.c -- Layer Appearance...: a panel over the window
+ * that sets the selected layer's colour and opacity, by hex value or
+ * palette, and by number or slider.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_circuit_window_private.h"
 #include "tiku_colors_paint.h"
@@ -8,9 +11,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+/* The panel's control ids, above the window's command numbers. */
 enum { COLOUR=1001, OPACITY, PALETTE, SLIDER, APPLY, DISMISS };
 
-/** @brief Rebuild panel geometry and tab order for the current font/window. */
+/** @brief Lay the panel out for the window as it is now, its controls in
+ *         tab order. */
 static void layout(tiku_circuitview_t *v)
 {
     tiku_rect_t r=tiku_window_content(v->window);
@@ -84,6 +89,7 @@ void cv_style_draw(tiku_circuitview_t *v,tiku_surface_t *s)
     tiku_text_line_draw(s,(tiku_rect_t){title.x,v->opacity_rect.y+v->opacity_rect.h+4,title.w,tiku_ui_button_h()},0,v->style_error,0xff993322);
 }
 
+/** @brief Write the slider's value into the opacity field. */
 static void opacity_text(tiku_circuitview_t *v)
 { char s[16]; snprintf(s,sizeof s,"%d",v->opacity.value); tiku_field_start(&v->opacity_text,s); }
 

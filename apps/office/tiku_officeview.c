@@ -1,9 +1,8 @@
-/* TikuDoc and TikuSlides: an office file shown as the pages it lays out
- * to.  The office kit makes it a PDF on a worker and the PDF kit's view
- * shows that: scrolled, zoomed, searched, its text copied, its links
- * followed.  Export writes the same PDF beside the file.  Slides fit the
- * window a slide at a time, and are presented: the window given to one
- * slide, the keys and a click stepping through them.
+/* tiku_officeview.c -- the viewer behind TikuDoc and TikuSlides: the
+ * office kit lays a file out as a PDF on a worker, and the PDF kit's view
+ * shows it; Export as PDF... writes that PDF where the Save panel says.
+ * Slides fit a slide to the window, and Present gives the window to one.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_officeview.h"
 #include "tiku_dialog.h"
@@ -28,6 +27,7 @@ enum { OV_OPEN = 1, OV_EXPORT, OV_CLOSE, OV_COPY, OV_SELECT, OV_FIND,
        OV_ZOOM_IN, OV_ZOOM_OUT, OV_PRESENT, OV_PREV, OV_NEXT, OV_FIRST,
        OV_LAST, OV_BACK, OV_OUTLINE, OV_FIND_FIELD, OV_VIEW, OV_SIDE };
 
+/** @brief The viewer's state; only the loop touches it. */
 struct tiku_officeview {
     tiku_workspace_t      *workspace;
     tiku_window_t         *window;
@@ -64,8 +64,8 @@ static void ov_changed(tiku_officeview_t *c)
     if (c->dirty) *c->dirty = 1;
 }
 
-/** @brief The viewer given back once the application and every job have
- *         let it go. */
+/** @brief Drop a hold on the viewer; the last one frees it and its
+ *         view. */
 static void ov_unref(tiku_officeview_t *c)
 {
     if (--c->refs > 0) return;
@@ -188,7 +188,8 @@ static void ov_export_done(void *ctx)
         snprintf(c->said, sizeof c->said, "%s", j->why);
 }
 
-/** @brief After done, or instead of it: the viewer let go. */
+/** @brief After done, or instead of it: free the job and drop its hold on
+ *         the viewer. */
 static void ov_export_free(void *ctx)
 {
     ov_export_t *j = ctx;
@@ -231,8 +232,10 @@ static void ov_view_changed(void *ctx)
     if (c->workspace) ov_changed(c);
 }
 
-/** @brief An opening has ended: the file shown, titled and fitted; or,
- *         when it could not be, the one before it kept and why said. */
+/** @brief The view finished an opening.  On success the file is shown and
+ *         titled, its outline listed, and slides fitted to the page; on
+ *         failure the document before it stays, a running presentation
+ *         ends, and the view's status says why. */
 static void ov_view_opened(void *ctx, tiku_pdf_err_t err)
 {
     tiku_officeview_t *c = ctx;
@@ -259,7 +262,7 @@ static void ov_view_opened(void *ctx, tiku_pdf_err_t err)
 
 /* ---------------------------------------------------------- commands  */
 
-/** @brief The document's pages from @p page, as far as they go. */
+/** @brief Go to page @p page, kept within the document. */
 static void ov_go(tiku_officeview_t *c, int page)
 {
     int n = tiku_pdf_view_pages(c->view);
@@ -268,7 +271,7 @@ static void ov_go(tiku_officeview_t *c, int page)
     tiku_pdf_view_go(c->view, page < 0 ? 0 : page >= n ? n - 1 : page);
 }
 
-/** @brief Slides presented, one to the window, or no longer. */
+/** @brief Present the slides, one to the window, or with @p on 0 stop. */
 static void ov_present(tiku_officeview_t *c, int on)
 {
     c->presenting = on && ov_open_now(c) && c->kind.slides;
@@ -287,7 +290,8 @@ static void ov_find(tiku_officeview_t *c, int dir)
     (void)tiku_pdf_view_find(c->view, c->find.text, dir, 0);
 }
 
-/** @brief Every menu row, toolbar button and shortcut ends here. */
+/** @brief Carry out command @p id, from a menu row, a toolbar button or a
+ *         key. */
 static void ov_action(tiku_officeview_t *c, int id)
 {
     tiku_pdf_view_t *v = c->view;
@@ -327,7 +331,7 @@ static void ov_action(tiku_officeview_t *c, int id)
 
 /* ------------------------------------------------------------- menus  */
 
-/** @brief Published menus hand their picks to the one action path. */
+/** @brief A menu pick, carried out as its command. */
 static void ov_menu_pick(tiku_window_t *w, int id, void *ctx)
 {
     (void)w;
@@ -351,7 +355,8 @@ static void ov_menu_add(tiku_officeview_t *c, tiku_menu_list_t *m, int id,
     e->marked = (unsigned char)(marked != 0);
 }
 
-/** @brief File, Edit, View and Go, as the view stands. */
+/** @brief Publish the File, Edit, View and Go menus, each item enabled and
+ *         marked as the view stands. */
 static void ov_menus(tiku_officeview_t *c)
 {
     static const char *const titles[] = { "File", "Edit", "View", "Go" };

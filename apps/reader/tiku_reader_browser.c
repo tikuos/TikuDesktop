@@ -1,4 +1,6 @@
-/* tiku_reader_browser.c -- browser.
+/* tiku_reader_browser.c -- a document window's browser chrome: its icon
+ * buttons and their tips, the Location field, which opens local files
+ * only, and the Find bar's buttons.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
@@ -8,9 +10,8 @@ static tiku_rect_t document_tip_rect(tiku_reader_help_window_t *c,
                                      int tool, tiku_rect_t content);
 static void document_location_open(tiku_reader_help_window_t *c);
 
-/* Native, offline browser controls. Never hand an address to a shell or URL opener. */
-
-/** @brief Real vector artwork on small, normally flat toolbar controls. */
+/** @brief A toolbar button drawn as its icon, lit under the pointer;
+ *         @p label goes with it for narration. */
 void tiku_reader_document_button(tiku_reader_help_window_t *c,
                             tiku_surface_t *s, tiku_rect_t box,
                             const char *label, int id, unsigned flags)
@@ -20,7 +21,7 @@ void tiku_reader_document_button(tiku_reader_help_window_t *c,
         id == HELP_HOME ? "folder_open" :
         id == HELP_DONE ? "nav_reload" : "magnifier";
     if (c->reader && c->reader->hover_tool == id) flags |= TIKU_S_HOT;
-    /* Its name crosses for narration; its face is the icon after it. */
+    /* The label is for narration and is not drawn; the icon is the face. */
     tiku_ui_button(s, box, label, flags | TIKU_S_ICON);
     int shift = (flags & TIKU_S_PRESSED) ? 1 : 0;
     int size = box.h - 6;
@@ -30,7 +31,8 @@ void tiku_reader_document_button(tiku_reader_help_window_t *c,
         flags & TIKU_S_DISABLED ? 0.72f : 0.0f, TIKU_C_PANEL);
 }
 
-/** @brief Icon-only controls retain discoverable names and shortcuts. */
+/** @brief The tip of toolbar control @p id: its name and shortcut, or ""
+ *         for a control without one. */
 static const char *document_tool_label(int id)
 {
     switch (id) {
@@ -45,7 +47,8 @@ static const char *document_tool_label(int id)
     }
 }
 
-/** @brief The status strip names the document, without duplicating its address. */
+/** @brief The document's name for the status line: its title, or else its
+ *         file name. */
 const char *tiku_reader_document_caption(tiku_reader_help_window_t *c)
 {
     const char *title = c->doc ? tiku_doc_title(c->doc) : NULL;
@@ -54,7 +57,9 @@ const char *tiku_reader_document_caption(tiku_reader_help_window_t *c)
     return slash ? slash+1 : "";
 }
 
-/** @brief The same footprint is used for drawing and hover invalidation. */
+/** @brief Where control @p tool's tip goes in @p content: below it, or
+ *         above when there is no room; empty when it has none.  Drawing
+ *         and the hover damage both use it. */
 static tiku_rect_t document_tip_rect(tiku_reader_help_window_t *c,
                                      int tool, tiku_rect_t content)
 {
@@ -74,7 +79,8 @@ static tiku_rect_t document_tip_rect(tiku_reader_help_window_t *c,
     return (tiku_rect_t){0};
 }
 
-/** @brief Tips are painted last, so the document cannot paint over them. */
+/** @brief Paint the tip of the toolbar control under the pointer; it is
+ *         drawn last, so nothing paints over it. */
 void tiku_reader_document_tip(tiku_reader_help_window_t *c, tiku_surface_t *s,
                          tiku_rect_t content)
 {
@@ -84,7 +90,9 @@ void tiku_reader_document_tip(tiku_reader_help_window_t *c, tiku_surface_t *s,
                                document_tool_label(c->reader->hover_tool));
 }
 
-/** @brief Idle movement changes only tool chrome or a link's status text. */
+/** @brief A pointer move with nothing held: note the toolbar control and
+ *         the link under the pointer, damaging only what changed.
+ *  @return 1 when it was such a move. */
 int tiku_reader_document_hover(tiku_reader_help_window_t *c,
                            const tiku_event_t *ev, help_layout_t l)
 {
@@ -128,7 +136,8 @@ int tiku_reader_document_hover(tiku_reader_help_window_t *c,
     return 1;
 }
 
-/** @brief Keep complete paths; a long path edits its literal basename instead. */
+/** @brief Put the shown document's path in the Location field; its file
+ *         name when the path is too long for the field. */
 void tiku_reader_document_location_sync(tiku_reader_help_window_t *c)
 {
     struct help_reader *r = c->reader;
@@ -138,14 +147,16 @@ void tiku_reader_document_location_sync(tiku_reader_help_window_t *c)
         const char *slash = strrchr(text, '/');
         text = slash ? slash + 1 : "";
     }
-    /* Never start an editor over a silently truncated filename. */
+    /* A name too long for the field leaves the field empty. */
     if (strlen(text) >= TIKU_FIELD_MAX) text = "";
     tiku_field_start(&r->location, text);
     tiku_field_input_init(&r->location_input);
     r->location_dirty = 0;
 }
 
-/** @brief Showing Find updates registration before assigning keyboard focus. */
+/** @brief Show or hide the Find bar, with the keyboard on it or back on
+ *         the page; the controls are rebuilt first, so the focus goes to a
+ *         control that exists. */
 void tiku_reader_document_find(tiku_reader_help_window_t *c, int visible)
 {
     if (!c->reader || !c->window) return;
@@ -156,7 +167,9 @@ void tiku_reader_document_find(tiku_reader_help_window_t *c, int visible)
     if (c->dirty) *c->dirty = 1;
 }
 
-/** @brief Enter/Go opens literal absolute or current-folder-relative filenames. */
+/** @brief Open what the Location field holds: an absolute path, or one
+ *         relative to the shown document's folder; a web address is
+ *         refused. */
 static void document_location_open(tiku_reader_help_window_t *c)
 {
     struct help_reader *r = c->reader;
@@ -181,7 +194,8 @@ static void document_location_open(tiku_reader_help_window_t *c)
     } else tiku_dialog_focus(&c->dialog, HELP_LOCATION);
 }
 
-/** @brief Address and Find toolbar commands have the same keyboard paths. */
+/** @brief Carry out a Location or Find command, from a button or a key.
+ *  @return 1 when @p id was one. */
 int tiku_reader_document_action(tiku_reader_help_window_t *c, int id)
 {
     if (!c->reader) return 0;
@@ -207,7 +221,8 @@ int tiku_reader_document_action(tiku_reader_help_window_t *c, int id)
     return 1;
 }
 
-/** @brief Draw the native address field and the two compact chrome actions. */
+/** @brief Draw the Location field, the buttons beside it and on the Find
+ *         bar, the rule over the status line and the profile's icon. */
 void tiku_reader_document_chrome(tiku_reader_help_window_t *c, tiku_surface_t *s,
                             help_layout_t l)
 {
@@ -243,7 +258,9 @@ void tiku_reader_document_chrome(tiku_reader_help_window_t *c, tiku_surface_t *s
                           l.status.y+(l.status.h-16)/2, 16);
 }
 
-/** @brief Address input consumes editing keys before document navigation. */
+/** @brief A document window's own input, before the page's: the tool
+ *         hover, Ctrl+L and Ctrl+F, Escape out of the Location field or
+ *         Find, and the Location field's editing.  @return 1 when taken. */
 int tiku_reader_document_event(tiku_reader_help_window_t *c, const tiku_event_t *ev,
                            help_layout_t l)
 {

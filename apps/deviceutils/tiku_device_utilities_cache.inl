@@ -1,19 +1,23 @@
-/* Device-local directory snapshots; never authorize writes from cached data. */
+/* tiku_device_utilities_cache.inl -- part of tiku_device_utilities.c:
+ * the folder listings kept from earlier reads, and which values a listing
+ * reads without asking.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** Release both completed and partially acquired directory snapshots. */
+/** @brief Free a list of listings. */
 static void utility_cache_free(utility_snapshot_t *s)
 {
     while (s) { utility_snapshot_t *next = s->next; free(s); s = next; }
 }
 
-/** Match an exact directory, never a prefix from another branch. */
+/** @brief The listing of exactly @p path, or NULL. */
 static utility_snapshot_t *utility_cache_find(utility_snapshot_t *s, const char *path)
 {
     for (; s; s = s->next) if (!strcmp(s->path, path)) return s;
     return NULL;
 }
 
-/** Forget one directory, so a branch the device dropped cannot be reopened. */
+/** @brief Drop @p path's listing from the cache. */
 static void utility_cache_forget(struct device_utility *p, const char *path)
 {
     for (utility_snapshot_t **at = &p->cache; *at; at = &(*at)->next)
@@ -23,7 +27,8 @@ static void utility_cache_forget(struct device_utility *p, const char *path)
         }
 }
 
-/** Cache a refreshed directory, bounded independently of the visible tree. */
+/** @brief Keep job @p j's listing of its path, in place of an older one;
+ *         at most U_ROWS listings are kept. */
 static void utility_cache_store(struct device_utility *p, utility_job_t *j)
 {
     utility_snapshot_t *s = utility_cache_find(p->cache, j->path);
@@ -39,9 +44,9 @@ static void utility_cache_store(struct device_utility *p, utility_job_t *j)
     memcpy(s->entries, j->entries, sizeof s->entries);
 }
 
-/** Metadata decides when it has a read policy.  Without one, only audited
- * observational endpoints, and none that tiku_attr_autoread() refuses:
- * no devices, event drains or commands. */
+/** @brief Whether @p path may be read without asking: as @p policy says
+ *         when the board's metadata gives one; else only the listed /sys
+ *         and /proc values, and none tiku_attr_autoread() refuses. */
 static int utility_autoread(int policy, const char *path)
 {
     static const char *const safe[] = {

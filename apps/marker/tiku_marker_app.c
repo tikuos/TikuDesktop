@@ -1,4 +1,5 @@
-/* tiku_marker_app.c -- TikuMarker, a read-only Markdown viewer.
+/* tiku_marker_app.c -- TikuMarker, a read-only Markdown viewer: the
+ * reader's document window started under TikuMarker's profile.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_marker.h"
@@ -37,6 +38,7 @@ static const tiku_app_descriptor_t descriptor = {
     .tick = tiku_reader_app_tick, .pick = tiku_reader_app_pick,
     .picked = tiku_reader_app_picked, .closed = tiku_reader_app_closed
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 __attribute__((visibility("default"))) const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

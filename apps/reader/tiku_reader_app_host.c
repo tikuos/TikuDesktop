@@ -1,4 +1,5 @@
-/* tiku_reader_app_host.c -- app lifecycle for TikuReader, Help and TikuMarker.
+/* tiku_reader_app_host.c -- the application calls TikuReader, Help and
+ * TikuMarker share, around one viewer window.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_app_host.h"
@@ -7,6 +8,7 @@
 #include "tiku_work.h"
 #include <stdlib.h>
 
+/** @brief The running application: the desktop's calls and the window. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
@@ -14,7 +16,8 @@ typedef struct {
     int dirty;
 } reader_app_t;
 
-/** @brief Ask the desktop's picker for a document, from the current folder. */
+/** @brief Ask the desktop's file panel for a document, starting in the
+ *         shown document's folder, or at home. */
 static void choose(void *ctx)
 {
     reader_app_t *a = ctx;

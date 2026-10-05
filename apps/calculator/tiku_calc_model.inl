@@ -1,7 +1,11 @@
-/* The arithmetic of a plain calculator: an entry, a pending operation and
- * a result, driven one key at a time. */
+/* tiku_calc_model.inl -- part of tiku_calc.c: the arithmetic of a plain
+ * calculator, an entry, a pending operation and a result, driven one key
+ * at a time.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** @brief Write a result the way a pocket calculator shows it. */
+/** @brief Write @p v with twelve significant digits and an unsigned zero;
+ *         "Error" past 1e300 or for no number. */
 static void calc_show(double v, char *out, size_t max)
 {
     if (v != v || v > 1e300 || v < -1e300) { snprintf(out, max, "Error"); return; }
@@ -9,7 +13,8 @@ static void calc_show(double v, char *out, size_t max)
     snprintf(out, max, "%.12g", v);
 }
 
-/** @brief Fold the pending operation into the accumulator with the entry. */
+/** @brief Fold the pending operation into the accumulator with the
+ *         entry; a division by zero or an overflow sets the error. */
 static void calc_apply(calc_model_t *m)
 {
     double rhs = strtod(m->entry, NULL);
@@ -37,8 +42,8 @@ static void calc_clear(calc_model_t *m)
 
 /**
  * @brief One key: a digit, a point, an operator, equals, C, backspace (b),
- *        negate (n) or percent (%).  Operators bind left to right, as a
- *        pocket calculator's do.  After an error only C answers.
+ *        negate (n) or percent (%).  Operators apply left to right,
+ *        without precedence.  After an error only C answers.
  */
 static void calc_key(calc_model_t *m, char key)
 {

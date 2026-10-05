@@ -1,8 +1,11 @@
-/* Jobs: everything that reads an archive, one job at a time for each
- * archive (they share its key); only their done callbacks touch the
- * viewer, and only while it still shows what they were asked about. */
+/* tiku_arcview_jobs.inl -- part of tiku_arcview.c: the worker jobs that
+ * open an archive and extract from it.  Jobs on one archive share its key
+ * and run one at a time; a done callback applies its result only while
+ * the viewer still shows what the job was asked about.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** @brief The archive let go once the viewer and its jobs have. */
+/** @brief Drop a hold on the shared archive; the last one closes it. */
 static void av_arc_unref(av_arc_t *d)
 {
     if (d && --d->refs == 0) {
@@ -11,13 +14,14 @@ static void av_arc_unref(av_arc_t *d)
     }
 }
 
-/** @brief A job's progress let go once both sides have. */
+/** @brief Drop a hold on a job's progress; the last one frees it. */
 static void av_progress_unref(av_progress_t *p)
 {
     if (p && --p->refs == 0) free(p);
 }
 
-/** @brief A new progress, held by the viewer and its job. */
+/** @brief A new progress, held by the viewer and its job, in place of
+ *         the viewer's last one; @p doing names the job. */
 static av_progress_t *av_progress_new(tiku_arcview_t *c, const char *doing)
 {
     av_progress_t *p = calloc(1, sizeof *p);
@@ -31,7 +35,8 @@ static av_progress_t *av_progress_new(tiku_arcview_t *c, const char *doing)
     return p;
 }
 
-/** @brief The shown archive let go, and all that was built from it. */
+/** @brief Let go of the shown archive and all that was built from it;
+ *         a running job is asked to stop. */
 static void av_forget(tiku_arcview_t *c)
 {
     if (c->progress) atomic_store(&c->progress->stop, 1);
@@ -51,7 +56,7 @@ static void av_forget(tiku_arcview_t *c)
     (void)tiku_list_set_count(&c->list, 0);
 }
 
-/** @brief The viewer let go once the application and its jobs have. */
+/** @brief Drop a hold on the viewer; the last one frees it. */
 static void av_unref(tiku_arcview_t *c)
 {
     if (--c->refs == 0) {
@@ -60,7 +65,8 @@ static void av_unref(tiku_arcview_t *c)
     }
 }
 
-/** @brief A job's own stop: Cancel pressed, or the job cancelled. */
+/** @brief Whether a job should stop: Stop pressed, or the job
+ *         cancelled. */
 static int av_stopped(const void *job, av_progress_t *p)
 {
     return tiku_work_cancelled(job) || atomic_load(&p->stop);
@@ -236,7 +242,7 @@ typedef struct {
     av_progress_t *progress;
 } av_load_t;
 
-/** @brief Listing's progress, and its Cancel. */
+/** @brief Listing's progress; nonzero asks the kit to stop. */
 static int av_load_progress(void *ctx, int64_t done, int64_t total)
 {
     av_load_t *j = ctx;
@@ -288,7 +294,7 @@ static void av_bytes_fit(int64_t n, int width, char *out, size_t max)
     (void)tiku_attr_size_fit(n, width, av_measure, NULL, out, max);
 }
 
-/** @brief A size as Tracker writes one, room aside. */
+/** @brief A size as Tracker writes one, with no width limit. */
 static void av_bytes(int64_t n, char *out, size_t max)
 {
     av_bytes_fit(n, 10000, out, max);
@@ -430,8 +436,8 @@ typedef struct {
     int report_incomplete;
 } av_extract_t;
 
-/** @brief Keep full paths and reasons, with an explicit bounded-report
- *         limit. */
+/** @brief Add "path: why" to the job's report.  Past 1 MiB, or out of
+ *         memory, the report is marked incomplete and takes no more. */
 static void av_report_append(av_extract_t *j, const char *path, const char *why)
 {
     size_t n = strlen(path) + strlen(why) + 4;
@@ -444,7 +450,7 @@ static void av_report_append(av_extract_t *j, const char *path, const char *why)
                                      "%s: %s\n", path, why);
 }
 
-/** @brief Extraction's progress, and its Cancel. */
+/** @brief Extraction's progress; nonzero asks the kit to stop. */
 static int av_extract_progress(void *ctx, int64_t done, int64_t total)
 {
     av_extract_t *j = ctx;
@@ -454,7 +460,8 @@ static int av_extract_progress(void *ctx, int64_t done, int64_t total)
     return av_stopped(j, j->progress);
 }
 
-/** @brief An entry not made: counted, the first one named. */
+/** @brief An entry not made: counted by why and added to the report;
+ *         the first that is not a replaced duplicate is kept by name. */
 static void av_extract_report(void *ctx, long entry, tiku_archive_err_t why)
 {
     av_extract_t *j = ctx;
@@ -553,7 +560,7 @@ static void av_extract_done(void *ctx)
     if (j->dest[0]) snprintf(c->made, sizeof c->made, "%s", j->dest);
     if (j->open_after && j->err == TIKU_ARCHIVE_OK) {
         n = snprintf(file, sizeof file, "%s/%s", j->dest, j->leaf);
-        if (n > 0 && (size_t)n < sizeof file &&  /* never a cut-off path */
+        if (n > 0 && (size_t)n < sizeof file &&  /* not a cut-off path */
             c->host.open_path && c->host.open_path(c->host.ctx, file))
             snprintf(said, sizeof said, "Opened %.100s. Copy kept in %.100s; "
                      "edits do not update the archive.", j->leaf, j->dest);
@@ -594,8 +601,8 @@ static void av_extract_free(void *ctx)
     free(j);
 }
 
-/** @brief Post @p j, held by the archive and the viewer.  @return 1 when
- *         it went. */
+/** @brief Post @p j under the archive's key, holding the archive and the
+ *         viewer.  @return 1 when it was queued. */
 static int av_extract_post(tiku_arcview_t *c, av_extract_t *j,
                            const char *doing)
 {
@@ -654,8 +661,9 @@ static void av_ask_where(tiku_arcview_t *c)
 /**
  * @brief Extract everything (@p all) or the rows chosen into a new folder:
  *        at @p to, the Save panel's answer, or beside the archive under
- *        its name.  A gzip's one file goes beside it, under a new name
- *        when its own is taken.  @return 1 when it started.
+ *        its name, asking where when that folder cannot be written.  A
+ *        gzip's one file goes beside it, under a new name when its own is
+ *        taken.  @return 1 when it started.
  */
 static int av_extract(tiku_arcview_t *c, int all, const char *to)
 {
@@ -699,8 +707,9 @@ static int av_extract(tiku_arcview_t *c, int all, const char *to)
     return av_extract_post(c, j, "Extracting");
 }
 
-/** @brief Open a durable extracted copy; never delete another app's
- *         document. */
+/** @brief Extract node @p node's entry into a new folder beside the
+ *         archive and open it in its program.  The copy is kept: the
+ *         program it was handed to may still have it open. */
 static int av_open_entry(tiku_arcview_t *c, int node)
 {
     av_extract_t *j;

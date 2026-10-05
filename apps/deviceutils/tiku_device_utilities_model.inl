@@ -1,6 +1,11 @@
-/* Parsing and edit policy are independent of windows and the transport. */
+/* tiku_device_utilities_model.inl -- part of tiku_device_utilities.c:
+ * parsing a board's values, checking paths, the settings the inspector
+ * edits, and the help it shows for an endpoint.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** Accept a complete unsigned scalar, never partial, signed or overflowing input. */
+/** @brief Parse @p text as a whole unsigned decimal number up to 2^53 - 1,
+ *         trailing line ends allowed.  @return 1, or 0 for anything else. */
 static int utility_number(const char *text, double *value)
 {
     char *end;
@@ -12,7 +17,9 @@ static int utility_number(const char *text, double *value)
     *value = (double)n; return 1;
 }
 
-/** Stay in an absolute device namespace; reject traversal and control bytes. */
+/** @brief Whether @p path is absolute and under 256 bytes, with no "."
+ *         or ".." part, no empty part but a trailing one, and no control
+ *         character. */
 static int utility_path(const char *path)
 {
     if (!path || path[0] != '/' || strlen(path) >= 256) return 0;
@@ -31,7 +38,8 @@ static int utility_path(const char *path)
     return 1;
 }
 
-/** Only audited configuration endpoints get an editor, not arbitrary commands. */
+/** @brief Whether @p path is a setting the inspector edits: the device
+ *         name, CPU frequency target, crypto mode, radio power or clock. */
 static int utility_editable(const char *path)
 {
     return !strcmp(path, "/sys/device/name") ||
@@ -40,7 +48,8 @@ static int utility_editable(const char *path)
         !strcmp(path, "/sys/radio/txpower") || !strcmp(path, "/sys/time");
 }
 
-/** Explain semantics without guessing at unknown endpoint units or side effects. */
+/** @brief A sentence on what @p path holds, for the inspector; a general
+ *         one for an endpoint it does not list. */
 static const char *utility_help(const char *path)
 {
     if (!strcmp(path, "/sys/device/name"))
@@ -64,7 +73,9 @@ static const char *utility_help(const char *path)
     return "Device-defined endpoint. Reads can access hardware. Only audited settings can be edited here.";
 }
 
-/** Extract Store occupancy only when the firmware supplies both size and used. */
+/** @brief The store's size and use from the store line of an NVM map,
+ *         into @p m, when the line gives both and used is no more than
+ *         size. */
 static void utility_store(const char *text, utility_metrics_t *m)
 {
     const char *line = text;

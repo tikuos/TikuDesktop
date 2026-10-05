@@ -1,4 +1,5 @@
-/* tiku_reader_document.c -- document.
+/* tiku_reader_document.c -- a local document read whole and parsed into a
+ * page whose tables start sized to it and grow as it fills them.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_document.h"
@@ -37,14 +38,15 @@ void *tiku_reader_calloc(size_t n, size_t size)
     return hooks.calloc_fn(n, size);
 }
 
-/** @brief File suffix selects the format; report bodies remain HTML. */
 int tiku_reader_markdown(const char *name)
 {
     const char *ext = strrchr(name, '.');
     return ext && (!strcasecmp(ext, ".md") || !strcasecmp(ext, ".markdown"));
 }
 
-/** @brief Search and display use exactly the same bounded source conversion. */
+/** @brief Parse @p source into @p doc, Markdown converted to HTML first
+ *         within TIKU_READER_MEMORY_MAX.  The page and the folder search
+ *         both parse through here.  @return 1, or 0 when it failed. */
 static int reader_parse(tiku_doc_t *doc, const char *name, const char *source)
 {
     if (!tiku_reader_markdown(name)) { tiku_doc_read(doc, source); return 1; }
@@ -57,16 +59,16 @@ static int reader_parse(tiku_doc_t *doc, const char *name, const char *source)
     free(html); return ok;
 }
 
-/* Desktop policy owns allocations; the shared document engine stays bounded. */
-
-/** @brief Release a desktop page and its optional caller-owned tables. */
 void tiku_reader_doc_free(tiku_doc_t *doc)
 {
     if (doc) free(doc->storage);
     free(doc);
 }
 
-/** @brief Parse with document-sized tables, growing only caps actually filled. */
+/** @brief Parse @p source into a new page, its tables sized from its
+ *         length; each table that fills is doubled and the parse run
+ *         again, for at most 16 passes.  @p layout lays it out at a nominal
+ *         width too.  @return the page, or NULL. */
 static tiku_doc_t *reader_document(const char *name, const char *source,
                                    int layout)
 {
@@ -80,7 +82,7 @@ static tiku_doc_t *reader_document(const char *name, const char *source,
     tiku_doc_t *doc = tiku_reader_calloc(1, sizeof *doc);
     if (!doc) return NULL;
     tiku_doc_init(doc);
-    /* Small documents continue to use the embedded-size inline buffers. */
+    /* A small document is tried first in the kit's inline buffers. */
     int small = n < TIKU_DOC_TEXT_MAX / 2;
     for (int pass = 0; pass < 16; pass++) {
         if (!small) {
@@ -123,7 +125,10 @@ tiku_doc_t *tiku_reader_document_text(const char *name, const char *source)
     return reader_document(name, source, 0);
 }
 
-/** @brief Rebind parsed tables only after all replacement storage is ready. */
+/** @brief A copy of @p old's text, blocks, runs, links, anchors and images
+ *         in new storage, with twice the room in each of its line and
+ *         piece tables that the last layout filled; @p old is unchanged.
+ *  @return the copy, or NULL. */
 static tiku_doc_t *reader_grow_layout(const tiku_doc_t *old)
 {
     tiku_doc_limits_t limits = old->limits;
@@ -137,8 +142,8 @@ static tiku_doc_t *reader_grow_layout(const tiku_doc_t *old)
         !tiku_doc_init_storage(doc, &limits, storage, bytes)) {
         free(doc); free(storage); return NULL;
     }
-    /* Indices, rather than pointers into the old arrays, identify every run,
-     * heading, link and selection. Those indices stay unchanged. */
+    /* Runs, headings, links and the selection are named by index into
+     * these tables, and the copy keeps every index. */
 #define COPY_TABLE(member, count) do { \
     doc->count = old->count; \
     memcpy(doc->member, old->member, \
@@ -168,7 +173,6 @@ void tiku_reader_document_layout(tiku_doc_t **current, int width)
     }
 }
 
-/** @brief Read complete regular files; refuse oversize/change rather than cut. */
 char *tiku_reader_source(const char *path, const char **why)
 {
     struct stat st;

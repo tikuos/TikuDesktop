@@ -1,5 +1,7 @@
-/* TikuSlides: PowerPoint presentations shown a slide at a time, and
- * presented.  The viewer is apps/office's.
+/* tiku_slidesview_app.c -- TikuSlides: PowerPoint presentations shown a
+ * slide at a time, and presented, by the office viewer's descriptor in
+ * apps/office.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_officeview.h"
 

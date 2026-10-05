@@ -1,13 +1,14 @@
-/* TikuDoc and TikuSlides: a Word, OpenDocument or PowerPoint file shown as
- * the pages it lays out to, and exported as a PDF.  The two applications
- * are this viewer under two names: a document is read a page's width at
- * a time, slides a slide at a time, and presented.
+/* tiku_officeview.h -- the viewer behind TikuDoc and TikuSlides: a Word,
+ * OpenDocument or PowerPoint file shown as the pages it lays out to, and
+ * exported as a PDF; TikuSlides fits a slide at a time, and presents.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #ifndef TIKU_OFFICEVIEW_H_
 #define TIKU_OFFICEVIEW_H_
 
 #include "tiku_window.h"
 
+/** @brief The viewer: its window, the file shown and its jobs. */
 typedef struct tiku_officeview tiku_officeview_t;
 
 /** @brief Which of the two applications the viewer is. */

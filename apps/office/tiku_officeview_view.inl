@@ -1,7 +1,9 @@
-/* The window: a toolbar of icon buttons and the find field, the outline
- * down the left, the pages, and a status line under them; presenting,
- * the one slide and nothing else.  An empty window shows nothing and
- * says nothing. */
+/* tiku_officeview_view.inl -- part of tiku_officeview.c: the window's
+ * layout, painting and input: a toolbar of icon buttons and the find field,
+ * the outline down the left, the pages and a status line; presenting, the
+ * one slide and nothing else.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #define OV_FIND_W 170               /* the find field, at most           */
 #define OV_INDENT 14                /* an outline level's step in        */
@@ -47,7 +49,8 @@ static const char *ov_tool_tip(const tiku_officeview_t *c, int id)
     return "";
 }
 
-/** @brief A toolbar button's side: square, as the other viewers'. */
+/** @brief A toolbar button's side: square, the button height but at
+ *         least 30 pixels. */
 static int ov_tool_size(void)
 {
     int bh = tiku_ui_button_h();
@@ -128,7 +131,7 @@ static int ov_in(tiku_rect_t r, int x, int y)
 
 /** @brief A toolbar button as the desk's toolbars draw one: its icon,
  *         raised under the pointer, sunk while pressed, dimmed when it can
- *         do nothing; its name crosses for narration. */
+ *         do nothing; its label is for narration and is not drawn. */
 static void ov_button(tiku_officeview_t *c, tiku_surface_t *s,
                       const tiku_dialog_control_t *d)
 {
@@ -443,8 +446,9 @@ static int ov_for_view(tiku_officeview_t *c, const tiku_event_t *ev,
     }
 }
 
-/** @brief Every window event: presenting keys, command keys, the find
- *         field, the pages, then the toolbar and the focus's travels. */
+/** @brief Every window event: while presenting, keys and the pointer step
+ *         through the slides; else command keys, the find field, the
+ *         outline, the pages, then the toolbar and Tab. */
 static int ov_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     tiku_officeview_t *c = ctx;
@@ -456,7 +460,7 @@ static int ov_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
                           ev->type == TIKU_EVENT_POINTER_DOWN ||
                           ev->type == TIKU_EVENT_POINTER_MOVE ||
                           ev->type == TIKU_EVENT_POINTER_UP)) {
-        ov_title(c);                /* the slide's: nothing else to touch */
+        ov_title(c);
         ov_changed(c);
         return 1;
     }

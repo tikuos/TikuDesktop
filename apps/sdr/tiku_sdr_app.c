@@ -17,8 +17,9 @@ static const char *const type_name[SDR_T_TYPES] = {
     "Off", "Clear & Write", "Average", "Max Hold", "Min Hold"
 };
 
-/** @brief The Tune menu's rows: Wi-Fi's channels, then BLE's advertising;
- *         none while a recording says what is shown. */
+/** @brief Fill the Tune menu: Wi-Fi channels 1 to 13, then BLE's three
+ *         advertising channels, each disabled while Live is (a recording
+ *         playing, or the alert up). */
 static int tune_rows(const sdr_t *st, tiku_menu_list_t *menu)
 {
     static const int ble[3][2] = {{37, 2402}, {38, 2426}, {39, 2480}};
@@ -41,7 +42,9 @@ static int tune_rows(const sdr_t *st, tiku_menu_list_t *menu)
     return n;
 }
 
-/** @brief The Device menu: the mounted boards, the chosen one marked. */
+/** @brief Fill the Device menu with the mounted ESP32-C61s, the chosen one
+ *         marked, each enabled only while the link is idle and no alert is
+ *         up. */
 static int device_rows(sdr_t *st, tiku_menu_list_t *menu)
 {
     char names[sizeof st->names], *save = NULL;
@@ -61,8 +64,10 @@ static int device_rows(sdr_t *st, tiku_menu_list_t *menu)
     return n;
 }
 
-/** @brief A command's words in a menu, where they say more than on the
- *         panel: the traces, their types and the markers by name. */
+/** @brief Write @p command's words for a menu: the traces, the trace types
+ *         and the markers by name; the menus' own words for the file
+ *         commands, Clear, the marker commands and Channel Plans; and
+ *         sdr_label()'s for the rest. */
 static void menu_label(const sdr_t *st, int command, char *out, size_t max)
 {
     const char *t = NULL;
@@ -91,8 +96,9 @@ static void menu_label(const sdr_t *st, int command, char *out, size_t max)
     if (t) snprintf(out, max, "%s", t);
 }
 
-/** @brief Whether @p command's menu row shows a mark: the view shown, the
- *         trace and marker the panel sets, a type, a setting that is on. */
+/** @brief Whether command @p c's menu row shows a mark: the type of the
+ *         trace being set, the trace and the marker being set, Live while
+ *         the view is one spectrum, and a setting that is on. */
 static int menu_marked(const sdr_t *st, int c)
 {
     const sdr_model_t *m = &st->model;
@@ -110,8 +116,9 @@ static int menu_marked(const sdr_t *st, int c)
            (c == CMD_PLANS && st->plans_on);
 }
 
-/** @brief One menu of @p commands, 0 a separator, each with its words,
- *         whether it can be used now, and whether it is on. */
+/** @brief Fill @p menu, titled @p title, from @p commands, 0 being a
+ *         separator: each row's words, whether it can be used now, its
+ *         mark, and Cmd-Q for Quit.  @return the number of rows. */
 static int menu_rows(const sdr_t *st, tiku_menu_list_t *menu,
                      const char *title, const int *commands, int count)
 {
@@ -130,8 +137,9 @@ static int menu_rows(const sdr_t *st, tiku_menu_list_t *menu,
 }
 
 /** @brief What the menus show, folded into one number: what can be used
- *         and what is on.  The tick publishes them again when it changes,
- *         since the board and the files move on between commands. */
+ *         and what is on.  sdr_tick() publishes the menus again when it
+ *         changes, which covers changes the board and the files make
+ *         between commands. */
 static unsigned menu_state(const sdr_t *st)
 {
     const sdr_model_t *m = &st->model;
@@ -153,8 +161,9 @@ static unsigned menu_state(const sdr_t *st)
     return v;
 }
 
-/** @brief Menus follow the panel: the receiver's, files -- recordings, CSV
- *         and pictures -- the traces, the markers, tuning and the boards. */
+/** @brief Publish the menus: SDR, File (recordings, CSV and pictures),
+ *         Trace, Marker, Tune, and Device while an ESP32-C61 is mounted;
+ *         nothing while the window is not open. */
 static void publish(sdr_t *st)
 {
     static const int sdr[] = {CMD_ABOUT, 0, CMD_CONNECT, 0, CMD_LIVE, 0,
@@ -175,7 +184,7 @@ static void publish(sdr_t *st)
                                  CMD_MARK_CLEAR};
     tiku_menuset_t set;
 
-    if (!st->id) return;                /* the splash still stands */
+    if (!st->id) return;                /* the window is not open */
     memset(&set, 0, sizeof set);
     set.nmenu = 6;
     set.menu[0].nitem = menu_rows(st, &set.menu[0], "SDR", sdr,
@@ -193,10 +202,10 @@ static void publish(sdr_t *st)
     st->services->menus(st->services->ctx, st->id, &set);
 }
 
-/** @brief A new view, @p start to @p stop fitted, the traces and the
- *         spectrogram started afresh and written into a recording, and
- *         kept as the last of its kind, live or wide; the same view again
- *         is left alone, and a recording being played keeps its own. */
+/** @brief Show @p start to @p stop, fitted: the traces and the spectrogram
+ *         start afresh, a recording being made notes the view, and the view
+ *         is kept as the last of its kind, live or wide.  Nothing while a
+ *         recording plays, or when the fitted view is the one shown. */
 static void show(sdr_t *st, double start, double stop)
 {
     if (st->play.file) return;
@@ -212,13 +221,13 @@ static void show(sdr_t *st, double start, double stop)
     st->dirty = 1;
 }
 
-/** @brief @p span MHz about @p mhz. */
+/** @brief Show @p span MHz about @p mhz. */
 static void centre_at(sdr_t *st, double mhz, double span)
 {
     show(st, mhz - span / 2, mhz + span / 2);
 }
 
-/** @brief The view moved by @p mhz, its span kept. */
+/** @brief Move the view by @p mhz, its span kept. */
 static void shift(sdr_t *st, double mhz)
 {
     show(st, st->model.start + mhz, st->model.stop + mhz);
@@ -238,8 +247,8 @@ static int editing(const sdr_t *st)
     return i >= 0 && i < SDR_FIELDS ? i : -1;
 }
 
-/** @brief Field @p i opened over what it says, all of it selected, so the
- *         first key typed replaces it. */
+/** @brief Start editing field @p i on its value, all of it selected, so
+ *         the first key typed replaces it. */
 static void field_open(sdr_t *st, int i)
 {
     char t[32];
@@ -249,7 +258,8 @@ static void field_open(sdr_t *st, int i)
     tiku_field_input_init(&st->input[i]);
 }
 
-/** @brief Trace @p t made type @p type; a hold begun afresh, from now. */
+/** @brief Make trace @p t show @p type; switching to Max Hold or Min Hold
+ *         starts that hold again from the latest spectrum. */
 static void set_type(sdr_t *st, int t, int type)
 {
     sdr_model_t *m = &st->model;
@@ -262,11 +272,12 @@ static void set_type(sdr_t *st, int t, int type)
     m->type[t] = type;
 }
 
-/** @brief What was typed in field @p i, applied.  Center or Span keep the
- *         other of the two, Start or Stop the other end -- or the span,
- *         when the end typed passes it; the count is 1 to 100 spectra; the
- *         marker stands where its frequency is typed.  What is not one is
- *         said, and the field shows what is so again. */
+/** @brief Apply what was typed in field @p i.  Center keeps the span and
+ *         Span the centre; Start keeps the stop and Stop the start, unless
+ *         the value passes it, when the span is kept.  The average's count
+ *         takes 1 to 100, and the marker moves to the frequency typed.  A
+ *         value refused is reported in the note.  The field then shows its
+ *         value again, all selected. */
 static void field_apply(sdr_t *st, int i)
 {
     sdr_model_t *m = &st->model;
@@ -308,9 +319,10 @@ static void field_apply(sdr_t *st, int i)
     field_open(st, i);                  /* the value as fitted, selected */
 }
 
-/** @brief The desktop's file panel: where a recording, a CSV or a
- *         picture goes, or which recording to play.  It starts where the
- *         last file was; the answer comes to sdr_picked(). */
+/** @brief Open the desktop's file panel for @p command: where a recording,
+ *         a CSV or a picture goes, or which recording to play.  It opens in
+ *         the last file's folder, else $HOME; the answer comes to
+ *         sdr_picked(). */
 static void ask(sdr_t *st, int command)
 {
     static const char *const ext[] = {".sdrlog", ".csv", ".png"};
@@ -340,8 +352,10 @@ static void ask(sdr_t *st, int command)
     }
 }
 
-/** @brief Record: ask where, or stop.  Open Recording: ask which, or close
- *         the one playing. */
+/** @brief Record: ask where while the board runs, or stop.  Open
+ *         Recording: ask which while the link is idle, or close the one
+ *         playing.  Export CSV and Save Picture: ask where, when they can
+ *         be used. */
 static void tape(sdr_t *st, int command)
 {
     if (command == CMD_RECORD && st->rec.file) {
@@ -360,10 +374,10 @@ static void tape(sdr_t *st, int command)
     }
 }
 
-/** @brief Say, over the window, that no radio is connected: the receiver
- *         is an ESP32-C61's, lent by the desktop.  Its one answer, OK, by
- *         hand, Return or Escape, closes TikuSDR with it: opened without a
- *         radio, it has nothing to show. */
+/** @brief Open the alert, over the window, that no radio is connected and
+ *         that TikuSDR takes an ESP32-C61 through the Devices menu.  Its
+ *         one button, OK, clicked or taken by Return or Escape, closes
+ *         TikuSDR. */
 static void missing(sdr_t *st)
 {
     tiku_alert_open(&st->alert, TIKU_ALERT_STOP, 0,
@@ -373,9 +387,10 @@ static void missing(sdr_t *st)
     st->dirty = 1;
 }
 
-/** @brief The selected marker out or in, following peaks or not, moved,
- *         made the view's centre; all of them in.  What could not be done
- *         is said. */
+/** @brief Act on a marker command: turn the selected marker on or off,
+ *         switch Track, move the marker to a peak or centre the view on it,
+ *         or turn every marker off.  A peak move that finds no peak says so
+ *         in the note. */
 static void mark(sdr_t *st, int command)
 {
     static const char *const way[] = {"", "lower than", "left of",
@@ -392,7 +407,7 @@ static void mark(sdr_t *st, int command)
     } else if (command == CMD_MARK_CLEAR) {
         for (int i = 0; i < SDR_MARKERS; i++) sdr_mark_off(m, i);
     } else if (!m->mark[k].on || !m->fresh) {
-        return;                         /* nothing out to move */
+        return;                         /* no marker on, or no frame */
     } else if (command == CMD_MARK_CENTER) {
         centre_at(st, m->mark[k].mhz, m->stop - m->start);
     } else {
@@ -405,7 +420,9 @@ static void mark(sdr_t *st, int command)
     }
 }
 
-/** @brief One command, from the panel, a menu or a key. */
+/** @brief Carry out @p command, from the panel, a menu or a key, then
+ *         publish the menus and paint; nothing but Quit while the alert is
+ *         up.  @return 1 for Quit, else 0. */
 static int sdr_pick(void *state, uint32_t window, int command)
 {
     sdr_t *st = state;
@@ -448,7 +465,8 @@ static int sdr_pick(void *state, uint32_t window, int command)
              command == CMD_EXPORT || command == CMD_PICTURE)
         tape(st, command);
     else if (command >= CMD_TUNE && command < CMD_CHOICE)
-        /* A channel: a span narrower than a sweep is kept about it. */
+        /* A channel: the view's span about it, or SDR_LIVE_SPAN in place
+         * of a sweep. */
         centre_at(st, 2400 + command - CMD_TUNE,
                   m->sweep ? SDR_LIVE_SPAN : m->stop - m->start);
     else if (command >= CMD_BOARD && st->state == SDR_IDLE) {
@@ -465,8 +483,9 @@ static int sdr_pick(void *state, uint32_t window, int command)
     return 0;
 }
 
-/** @brief A drop-down list's answer: the trace or marker the panel sets,
- *         a trace's type, or the trace the selected marker reads. */
+/** @brief Apply list @p c's new selection: the trace or marker the panel
+ *         sets, the type of the trace being set, or the trace the selected
+ *         marker reads. */
 static void chose(sdr_t *st, int c)
 {
     int v = st->choice[c].selected;
@@ -486,15 +505,17 @@ static int bin_at(const sdr_model_t *m, tiku_rect_t plot, int x)
 }
 
 /** @brief Whether a press at (@p x, @p y) is one markers take: on the
- *         graticule, with a marker out over a spectrum. */
+ *         graticule, with a marker on and a frame shown. */
 static int marking(const sdr_t *st, tiku_rect_t plot, int x, int y)
 {
     return sdr_marks_out(&st->model) && st->model.fresh &&
            inside(plot, x, y);
 }
 
-/** @brief What lies under the pointer, or nothing when it is elsewhere:
- *         the frequency, each trace's level there, its channels. */
+/** @brief Set the hover text for the pointer at (@p x, @p y) over the
+ *         graticule or the spectrogram: the frequency, each trace's level
+ *         there and the channels it is in, and in a sweep that a click
+ *         tunes there.  Empty elsewhere, or before the first frame. */
 static void hover(sdr_t *st, int x, int y)
 {
     static const char *const kind[SDR_T_TYPES] = {"", "", "avg ", "max ",
@@ -527,7 +548,10 @@ static void hover(sdr_t *st, int x, int y)
                                                   : "");
 }
 
-/** @brief Keys tune and toggle; the panel takes its own. */
+/** @brief The window's keys: Left and Right move the view 1 MHz, 5 with
+ *         Shift; 1 to 4 select a marker; Space, l, p, a, r, c, m, n, k, [,
+ *         ], w, Delete and Backspace run their commands through sdr_pick().
+ *         @return 1 when the key was taken. */
 static int keys(sdr_t *st, const tiku_event_t *ev)
 {
     int step = (ev->modifiers & TIKU_MOD_SHIFT) ? 5 : 1;
@@ -552,8 +576,9 @@ static int keys(sdr_t *st, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief A press markers take: the marker within a few pixels of it, or
- *         else the selected one, out there now and held by the pointer. */
+/** @brief Take a press on the graticule at column @p x: the marker within
+ *         6 pixels of it, or else the selected one, is selected, put there
+ *         and held by the pointer. */
 static void grab(sdr_t *st, tiku_rect_t plot, int x)
 {
     sdr_model_t *m = &st->model;
@@ -573,11 +598,12 @@ static void grab(sdr_t *st, tiku_rect_t plot, int x)
     sdr_mark_at(m, k, sdr_model_freq(m, at), 0);
 }
 
-/** @brief The pointer: with a marker out, a press on the graticule grabs
- *         one and drags it, and letting go puts it on the peak there; in
- *         a sweep, a press on the spectrogram -- or the graticule, with no
- *         marker out -- sees 40 MHz about there.  The wheel steps one
- *         spectrum's view. */
+/** @brief The pointer.  With a marker on, a press on the graticule takes a
+ *         marker and drags it, and the release, while markers follow
+ *         peaks, puts it on the top of the peak there.  In a sweep, a press
+ *         on the spectrogram, or on the graticule with no marker on, shows
+ *         SDR_LIVE_SPAN about that whole MHz.  The wheel moves a
+ *         one-spectrum view 1 MHz, and a move sets the hover text. */
 static void pointer(sdr_t *st, const tiku_event_t *ev)
 {
     tiku_rect_t plot, fall;
@@ -610,9 +636,9 @@ static void pointer(sdr_t *st, const tiku_event_t *ev)
     st->dirty = 1;
 }
 
-/** @brief The panel's lists take the event first: an open one all of it,
- *         a shut one a press on it or keys while it has the focus.
- *         @return 1 when one took it. */
+/** @brief Offer @p ev to the panel's lists: an open list takes every
+ *         event, a closed one a press on it or keys while it has the focus,
+ *         and a new selection is applied.  @return 1 when a list took it. */
 static int lists(sdr_t *st, const tiku_event_t *ev)
 {
     tiku_rect_t screen = {0, 0, st->w, st->h};
@@ -636,8 +662,8 @@ static int lists(sdr_t *st, const tiku_event_t *ev)
     return 0;
 }
 
-/** @brief The alert answered, by key or by hand: its OK ends TikuSDR.
- *         @return 1 when TikuSDR is done. */
+/** @brief Pass @p ev to the alert, a key or the pointer; its OK ends
+ *         TikuSDR.  @return 1 when OK was chosen. */
 static int answer(sdr_t *st, const tiku_event_t *ev)
 {
     tiku_rect_t f = sdr_alert_rect(st);
@@ -653,13 +679,16 @@ static int answer(sdr_t *st, const tiku_event_t *ev)
         at = tiku_alert_release(&st->alert, f.w, f.h, x, y);
         redraw = 1;
     }
-    if (at >= 0) return 1;              /* OK: the window goes with it */
+    if (at >= 0) return 1;              /* OK: TikuSDR ends */
     if (redraw) sdr_paint(st);
     return 0;
 }
 
-/** @brief Input: an alert first, then the panel's lists, its other
- *         controls and fields, keys and the pointer. */
+/** @brief Input in the main window: close, and a resize above 600 by 560;
+ *         while the alert is up it takes the rest.  Otherwise the lists,
+ *         then Escape (which leaves a field, or else closes TikuSDR), the
+ *         other controls and the fields, the keys and the pointer.
+ *         @return 1 when TikuSDR is done. */
 static int sdr_event(void *state, const tiku_event_t *ev)
 {
     sdr_t *st = state;
@@ -681,7 +710,7 @@ static int sdr_event(void *state, const tiku_event_t *ev)
     sdr_controls(st);
     was = editing(st);
     if (lists(st, ev)) {
-        if (was >= 0) {                 /* what was typed stands */
+        if (was >= 0) {                 /* what was typed is applied */
             st->dialog.focus = TIKU_DIALOG_NONE;
             field_apply(st, was);
         }
@@ -690,7 +719,7 @@ static int sdr_event(void *state, const tiku_event_t *ev)
     }
     if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_ESCAPE) {
         if (was < 0) return 1;
-        st->dialog.focus = TIKU_DIALOG_NONE;    /* the typing given up */
+        st->dialog.focus = TIKU_DIALOG_NONE;    /* what was typed is dropped */
         sdr_paint(st);
         return 0;
     }
@@ -702,7 +731,7 @@ static int sdr_event(void *state, const tiku_event_t *ev)
     if (was >= 0 && editing(st) != was) field_apply(st, was);
     if (editing(st) >= 0 && editing(st) != was) {
         field_open(st, editing(st));
-        if (ev->type == TIKU_EVENT_POINTER_DOWN) {  /* it selects it all */
+        if (ev->type == TIKU_EVENT_POINTER_DOWN) {  /* all left selected */
             sdr_paint(st);
             return 0;
         }
@@ -729,9 +758,10 @@ static int sdr_event(void *state, const tiku_event_t *ev)
     return 0;
 }
 
-/** @brief Input in one of TikuSDR's windows: a key or a click sends the
- *         splash away, as one closes the About box (Escape and Return too);
- *         the window's own goes to sdr_event(). */
+/** @brief Input in one of TikuSDR's windows: any key or press closes the
+ *         splash; a press, Escape, Return or a close event closes the About
+ *         box; the main window's input goes to sdr_event().
+ *         @return 1 when TikuSDR is done. */
 static int sdr_event_in(void *state, uint32_t window, const tiku_event_t *ev)
 {
     sdr_t *st = state;
@@ -751,8 +781,9 @@ static int sdr_event_in(void *state, uint32_t window, const tiku_event_t *ev)
     return window == st->id ? sdr_event(st, ev) : 0;
 }
 
-/** @brief A window the runtime took.  The window takes the About box with
- *         it, so the last of them going ends TikuSDR. */
+/** @brief Forget window @p window, which the host closed: the splash, the
+ *         About box, or the main window, which closes the About box too.
+ *         The host ends TikuSDR when its last window has closed. */
 static void sdr_closed(void *state, uint32_t window)
 {
     sdr_t *st = state;
@@ -770,10 +801,10 @@ static void sdr_closed(void *state, uint32_t window)
     }
 }
 
-/** @brief The boards again.  The first time the desktop has said which it
- *         has, an ESP32-C61 among them is borrowed, once, and none is said
- *         over the window; one connected while that is said is borrowed,
- *         the alert gone. */
+/** @brief Read the boards again.  The first time the desktop has listed
+ *         them, an ESP32-C61 among them is borrowed, or the alert says
+ *         there is none; one that appears while the alert is up is
+ *         borrowed and the alert closed. */
 static void look(sdr_t *st)
 {
     if (!sdr_targets(st)) return;
@@ -781,20 +812,23 @@ static void look(sdr_t *st)
         missing(st);
     } else if ((st->looking || st->alert.open) && *st->names) {
         tiku_alert_reset(&st->alert);
-        (void)sdr_connect(st);          /* one try: a refusal is said */
+        (void)sdr_connect(st);          /* one try; the note says why not */
     }
     st->looking = 0;
 }
 
-/** @brief The link's work and a throttled repaint.  The boards are looked
- *         at every second, and every tick while one is awaited. */
+/** @brief Each tick: the splash, and with the window open, the boards
+ *         read every NAMES_US (every tick before the first look and while
+ *         the alert is up), the link, playing and exporting, the menus
+ *         published again when what they show changed, and a repaint at
+ *         most every REPAINT_US. */
 static void sdr_tick(void *state, int64_t now_us)
 {
     sdr_t *st = state;
 
     st->now = now_us;
     sdr_splash_tick(st, now_us);
-    if (!st->id) return;                /* nothing is begun under the splash */
+    if (!st->id) return;                /* no window: nothing else runs */
     if (st->looking || st->alert.open || now_us - st->names_at >= NAMES_US) {
         char before[sizeof st->names];
         snprintf(before, sizeof before, "%s", st->names);
@@ -812,9 +846,10 @@ static void sdr_tick(void *state, int64_t now_us)
     }
 }
 
-/** @brief The file panel's answer: where to record or export, or what to
- *         play.  It may come long after the asking, so the board's state is
- *         checked again here. */
+/** @brief The file panel's answer: where to record, export or save the
+ *         picture, or what to play; its folder is kept for the next panel.
+ *         It can come long after the asking: the board's state is checked
+ *         again here. */
 static void sdr_picked(void *state, uint32_t window, const char *path)
 {
     sdr_t *st = state;
@@ -845,7 +880,8 @@ static void sdr_picked(void *state, uint32_t window, const char *path)
     sdr_paint(st);
 }
 
-/** @brief Board news: the link's handoff and the desktop's current device. */
+/** @brief Act on what the desktop says about boards, through
+ *         sdr_board_said(), then publish the menus and paint. */
 static void sdr_board_news(void *state, int what, const char *text)
 {
     sdr_t *st = state;
@@ -855,8 +891,8 @@ static void sdr_board_news(void *state, int what, const char *text)
     sdr_paint(st);
 }
 
-/** @brief The panel's lists and what they hold: three traces, each type,
- *         four markers. */
+/** @brief Fill the panel's lists: the traces, for the trace being set and
+ *         for the marker's trace, the trace types, and the markers. */
 static void lists_init(sdr_t *st)
 {
     char t[16];
@@ -887,11 +923,13 @@ int sdr_window_open(sdr_t *st)
     return 0;
 }
 
-/** @brief The model and the boards, nothing touched yet, and the splash:
- *         the window opens as it leaves.  A recording it was opened with,
- *         from Tracker, opens the window at once and plays; else the tick
- *         borrows an ESP32-C61 once the window is up and the desktop has
- *         said which boards it has, or says there is none. */
+/** @brief Make TikuSDR's state and open the splash, after which the window
+ *         opens, or the window at once when the splash cannot be opened; no
+ *         board is borrowed here.  Started with a recording, it skips the
+ *         splash and plays the recording.  Otherwise the tick borrows an
+ *         ESP32-C61 once the window is open and the desktop has listed its
+ *         boards, or opens the alert that there is none.
+ *         @return 0, or -1 when memory or a window could not be had. */
 static int sdr_start(void **state, const tiku_app_services_t *services)
 {
     sdr_t *st = calloc(1, sizeof *st);
@@ -908,7 +946,7 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     sdr_model_init(&st->model);
     st->live_view[0] = st->model.start;    /* it opens live */
     st->live_view[1] = st->model.stop;
-    st->wide_view[0] = SDR_BAND_START;     /* and goes wide to the band */
+    st->wide_view[0] = SDR_BAND_START;     /* Live's first wide view */
     st->wide_view[1] = SDR_BAND_STOP;
     tiku_dialog_init(&st->dialog);
     lists_init(st);
@@ -928,7 +966,8 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     return -1;
 }
 
-/** @brief The board given back, if it was taken, and everything freed. */
+/** @brief Stop recording, playing and exporting, give the board back if
+ *         it was taken, and free everything. */
 static void sdr_stop(void *state)
 {
     sdr_t *st = state;
@@ -945,6 +984,8 @@ static void sdr_stop(void *state)
     free(st);
 }
 
+/** @brief TikuSDR's descriptor; a loadable build exports it as
+ *         tiku_app_v1. */
 const tiku_app_descriptor_t tiku_sdr_app = {
     .id = "sdr", .name = "TikuSDR",
     .start = sdr_start, .stop = sdr_stop, .event = sdr_event,
@@ -953,6 +994,7 @@ const tiku_app_descriptor_t tiku_sdr_app = {
     .board_said = sdr_board_news
 };
 #ifdef TIKU_APP_SO
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t), &tiku_sdr_app
 };

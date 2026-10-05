@@ -1,13 +1,16 @@
-/* The application around the office viewer, in its own process: its
- * window, the workers that lay files out, and the panels it asks with.
- * Included by each application's file, which names it first:
- * OV_APP_ID, OV_APP_NAME, OV_APP_SLIDES and OV_APP_HELP. */
+/* tiku_officeview_app.inl -- the descriptor TikuDoc and TikuSlides share:
+ * the office viewer's window, run in its own process by tiku-run.  Each
+ * application's file defines OV_APP_ID, OV_APP_NAME, OV_APP_SLIDES and
+ * OV_APP_HELP, then includes this.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_app.h"
 #include "tiku_window_app.h"
 #include "tiku_work.h"
 #include <stdlib.h>
 #include <string.h>
 
+/** @brief The running application: the desktop's calls and the viewer. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
@@ -127,6 +130,7 @@ static const tiku_app_descriptor_t descriptor = {
     .stop = ov_app_stop, .event_in = ov_app_event, .tick = ov_app_tick,
     .pick = ov_app_pick, .picked = ov_app_picked, .closed = ov_app_closed
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

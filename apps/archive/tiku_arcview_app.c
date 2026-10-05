@@ -1,4 +1,7 @@
-/* TikuArchive owns its archives, workers and window in its own process.
+/* tiku_arcview_app.c -- TikuArchive's descriptor: the viewer's window,
+ * run in its own process by tiku-run, asking the desktop for the archives
+ * it opens and the folders it extracts into.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_arcview.h"
 #include "tiku_window_app.h"
@@ -6,12 +9,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/** @brief The running application: the desktop's calls and the viewer. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
     tiku_arcview_t *viewer;
     int dirty;
-    int asking;                     /* 1: a file to open; 2: where to put */
+    int asking;                     /* 1: a file to open; 2: a folder to */
+                                    /* extract into                      */
 } arc_app_t;
 
 /** @brief Open... asks for a host file; Extract To... for a new folder's
@@ -28,7 +33,9 @@ static void pick(void *ctx, int save, const char *start, const char *name)
         start, name);
 }
 
-/** @brief A path opened as a double-click in Tracker opens it. */
+/** @brief Open @p path through the desktop's open_path(): a folder as a
+ *         window, a document in its program.  @return 0 when the desktop
+ *         has no such service or did not open it. */
 static int open_path(void *ctx, const char *path)
 {
     arc_app_t *a = ctx;
@@ -126,6 +133,7 @@ static const tiku_app_descriptor_t descriptor = {
     .event_in = event, .tick = tick, .pick = menu_pick, .picked = picked,
     .closed = closed
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

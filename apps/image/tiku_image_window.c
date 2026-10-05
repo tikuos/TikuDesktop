@@ -1,4 +1,7 @@
-/* TikuImage: native image viewing, with no acquisition on the UI thread.
+/* tiku_image_window.c -- TikuImage's viewer: an image read and decoded on
+ * a worker, shown fitted, zoomed, panned or turned, its file read again
+ * every two seconds while Watch is on.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_image_window.h"
 #include "tiku_dialog.h"
@@ -24,6 +27,7 @@
 enum { IV_OPEN = 1, IV_RELOAD, IV_FIT, IV_ACTUAL, IV_OUT, IV_IN,
        IV_ROTATE, IV_WATCH, IV_CLOSE };
 typedef struct image_job image_job_t;
+/** @brief The viewer's state; only the loop touches it. */
 struct tiku_image_window {
     tiku_workspace_t *workspace;
     tiku_window_t *window;
@@ -40,6 +44,8 @@ struct tiku_image_window {
     void (*choose)(void *ctx);
     void *ctx;
 };
+/** @brief One read and decode on a worker: what was asked, and what came
+ *         back. */
 struct image_job {
     tiku_image_window_t *owner;
     int generation, same, unchanged, watch;
@@ -53,13 +59,14 @@ struct image_job {
 static void image_menus(tiku_image_window_t *c);
 static void image_action(tiku_image_window_t *c, int id);
 
-/** @brief The same half-open rectangle rule for toolbar and canvas hits. */
+/** @brief Whether (@p x, @p y) lies in @p r, its right and bottom edges
+ *         outside. */
 static int image_contains(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 }
 
-/** @brief Invalidate only image transforms, never decode on paint. */
+/** @brief The view changed: drop the drawn cache and ask for a redraw. */
 static void image_changed(tiku_image_window_t *c)
 {
     c->cache_valid = 0;
@@ -73,7 +80,8 @@ void tiku_image_window_note(tiku_image_window_t *c, const char *text)
     if (c->dirty) *c->dirty = 1;
 }
 
-/** @brief Release state after the last queued decode retires. */
+/** @brief Drop a hold on the viewer; the last one frees it and its
+ *         images. */
 static void image_unref(tiku_image_window_t *c)
 {
     if (--c->refs) return;
@@ -85,7 +93,8 @@ static void image_unref(tiku_image_window_t *c)
 #include "tiku_image_io.inl"
 #include "tiku_image_paint.inl"
 
-/** @brief Zoom around the current pixel inspection position. */
+/** @brief Set the zoom to @p scale, kept between 1/16 and 16, and scale
+ *         the pan with it so the view's centre stays; Fit goes off. */
 static void image_scale(tiku_image_window_t *c, double scale)
 {
     double old = image_zoom(c);
@@ -96,7 +105,7 @@ static void image_scale(tiku_image_window_t *c, double scale)
     image_changed(c);
 }
 
-/** @brief All buttons, menus and shortcuts share one action path. */
+/** @brief Carry out command @p id, from a button, a menu or a key. */
 static void image_action(tiku_image_window_t *c, int id)
 {
     if (id == IV_OPEN) {
@@ -124,7 +133,9 @@ static void image_action(tiku_image_window_t *c, int id)
     image_menus(c);
 }
 
-/** @brief Keyboard shortcuts do not require clicking the canvas first. */
+/** @brief The window's keys: Ctrl+O, Ctrl+R and Ctrl+W; + and - zoom,
+ *         0 or f fits, 1 is actual size, r turns, the arrows pan.
+ *  @return 1 when taken. */
 static int image_key(tiku_image_window_t *c, const tiku_event_t *ev)
 {
     unsigned key = ev->key;
@@ -147,7 +158,9 @@ static int image_key(tiku_image_window_t *c, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief Pointer navigation is clipped to the canvas; drags retain capture. */
+/** @brief Every window event: keys first, then the wheel and drags on the
+ *         image, the toolbar's hover, and the dialog's buttons.
+ *  @return 1 when taken. */
 static int image_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     tiku_image_window_t *c = ctx;
@@ -191,7 +204,8 @@ static int image_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     return r.taken;
 }
 
-/** @brief Native window destruction never leaves a dangling handle. */
+/** @brief The window went away: forget it and the image, and stop the
+ *         refresh. */
 static void image_window_gone(tiku_window_t *w, void *ctx)
 {
     tiku_image_window_t *c = ctx;
@@ -203,13 +217,14 @@ static void image_window_gone(tiku_window_t *w, void *ctx)
     image_changed(c);
 }
 
-/** @brief Handle published native application menus. */
+/** @brief A menu pick, carried out as its command. */
 static void image_menu_pick(tiku_window_t *w, int id, void *ctx)
 {
     (void)w; image_action(ctx, id);
 }
 
-/** @brief File and View menus mirror toolbar availability. */
+/** @brief Publish the File and View menus, each item enabled as its
+ *         button is. */
 static void image_menus(tiku_image_window_t *c)
 {
     if (!c->window) return;

@@ -1,4 +1,7 @@
-/* TikuDiff owns its comparisons, workers and window in its own process.
+/* tiku_diffview_app.c -- TikuDiff's descriptor: the viewer's window, run
+ * in its own process by tiku-run, asking the desktop for the files and
+ * folders it compares and where a patch is saved.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_diffview.h"
 #include "tiku_window_app.h"
@@ -6,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/** @brief The running application: the desktop's calls and the viewer. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
@@ -13,8 +17,8 @@ typedef struct {
     int dirty;
 } diff_app_t;
 
-/** @brief A question for the shell's panel: a host file or folder to
- *         compare, or where to save the differences. */
+/** @brief A question for the desktop's file panel: a local file or
+ *         folder to compare, or where to save the differences. */
 static void pick(void *ctx, int what, const char *start, const char *name)
 {
     diff_app_t *a = ctx;
@@ -27,7 +31,9 @@ static void pick(void *ctx, int what, const char *start, const char *name)
         tiku_diffview_handle(a->viewer)), mode, start, name);
 }
 
-/** @brief A path opened as a double-click in Tracker opens it. */
+/** @brief Open @p path through the desktop's open_path(): a folder as a
+ *         window, a document in its program.  @return 0 when the desktop
+ *         has no such service or did not open it. */
 static int open_path(void *ctx, const char *path)
 {
     diff_app_t *a = ctx;
@@ -127,6 +133,7 @@ static const tiku_app_descriptor_t descriptor = {
     .event_in = event, .tick = tick, .pick = menu_pick, .picked = picked,
     .closed = closed
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

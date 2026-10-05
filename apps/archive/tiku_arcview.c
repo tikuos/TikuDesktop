@@ -1,6 +1,7 @@
-/* TikuArchive: an archive's folders browsed as Tracker's are, and its
- * files extracted.  Every read of an archive is a worker's, one at a time
- * per archive; the window draws the folder tree its opening job built.
+/* tiku_arcview.c -- TikuArchive's viewer: the folder tree an archive's
+ * paths make, listed as Tracker lists a folder, its commands, keys and
+ * menus.  Every read of the archive runs on a worker.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_arcview.h"
 #include "tiku_archive.h"
@@ -31,7 +32,7 @@
 #include <unistd.h>
 
 #define AV_BAR          15          /* the scrollbar's width             */
-#define AV_DOUBLE_US    450000      /* two clicks this close: an opening  */
+#define AV_DOUBLE_US    450000      /* two clicks this close open a row  */
 #define AV_REPORTED     4           /* names a report lists              */
 
 enum { AV_OPEN = 1, AV_CLOSE, AV_UP, AV_EXTRACT_ALL, AV_EXTRACT,
@@ -43,12 +44,13 @@ enum { AV_BY_NAME, AV_BY_SIZE, AV_BY_PACKED, AV_BY_DATE };
 typedef struct {
     char    *name;                  /* this part of the path             */
     int      parent;                /* its folder's node, -1 the root's  */
-    long     entry;                 /* its entry, -1 for a folder only   */
-                                    /* the paths under it imply          */
+    long     entry;                 /* its entry; -1 for a folder that   */
+                                    /* only the paths under it imply     */
     int      dir;
     int      first, next;           /* its first child, its next sibling */
     int      count;                 /* a folder: what is directly in it  */
-    int64_t  size, packed, mtime;   /* a folder: its contents', summed   */
+    int64_t  size, packed, mtime;   /* a folder's size and packed: its   */
+                                    /* contents' summed, -1 if unknown   */
     unsigned flags;                 /* the entry's, TIKU_ARC_*           */
 } av_node_t;
 
@@ -62,7 +64,7 @@ typedef struct {
 /** @brief How far a job has got: its worker writes, the loop reads. */
 typedef struct {
     atomic_llong done, total;
-    atomic_int stop;                /* Cancel pressed                    */
+    atomic_int stop;                /* Stop pressed                      */
     int refs;                       /* the viewer and the job; loop only */
 } av_progress_t;
 
@@ -130,14 +132,14 @@ static int av_in(tiku_rect_t r, int x, int y)
 
 /* ------------------------------------------------------------- tree  */
 
-/** @brief The nodes let go. */
+/** @brief Free @p n nodes and their names. */
 static void av_tree_free(av_node_t *node, int n)
 {
     for (int i = 0; node && i < n; i++) free(node[i].name);
     free(node);
 }
 
-/** @brief @p node's path inside the archive, "" for the root. */
+/** @brief Node @p i's path inside the archive, "" for the root. */
 static void av_node_path(const av_node_t *node, int i, char *out, size_t max)
 {
     char tmp[TIKU_PATH_MAX];
@@ -161,7 +163,8 @@ static int av_metadata(const av_node_t *node, int i)
 /* The viewer qsort sorts for: its comparison has no context argument. */
 static const tiku_arcview_t *av_sorting;
 
-/** @brief qsort's order for two rows, as the sorted column says. */
+/** @brief qsort's order for two rows: folders first, then the sorted
+ *         column with ties broken by name, reversed when descending. */
 static int av_row_cmp(const void *x, const void *y)
 {
     const tiku_arcview_t *c = av_sorting;
@@ -178,7 +181,7 @@ static int av_row_cmp(const void *x, const void *y)
     return c->desc ? -r : r;
 }
 
-/** @brief Whether @p name holds the find field's text, case aside. */
+/** @brief Whether @p name holds the find field's text, ignoring case. */
 static int av_matches(const tiku_arcview_t *c, const char *name)
 {
     const char *want = c->find.text;
@@ -212,7 +215,8 @@ static void av_rows(tiku_arcview_t *c)
     c->all_rows = all;
 }
 
-/** @brief Go into folder @p node, nothing chosen, as Tracker opens one. */
+/** @brief Go into folder @p node, with nothing chosen and the list
+ *         scrolled to its top; a @p node that is not a folder is ignored. */
 static void av_enter(tiku_arcview_t *c, int node)
 {
     if (!c->node || node < 0 || node >= c->nnode || !c->node[node].dir)
@@ -255,7 +259,8 @@ static unsigned char *av_which(tiku_arcview_t *c, int all, long count)
 
 /* ----------------------------------------------------------- actions  */
 
-/** @brief A command's words, for its menu item and a reader. */
+/** @brief A command's label, for its menu item and its button's
+ *         narration. */
 static const char *av_label(tiku_arcview_t *c, int id)
 {
     int some = c->node && tiku_list_selection_count(&c->list) > 0;
@@ -305,8 +310,8 @@ static int av_enabled(tiku_arcview_t *c, int id)
     return 0;
 }
 
-/** @brief The chosen row that opens: a folder goes in, a file is
- *         extracted to a retained folder and opened in its program. */
+/** @brief Open the chosen row: a folder goes in, a file is extracted
+ *         to a folder that is kept and opened in its program. */
 static void av_open_row(tiku_arcview_t *c)
 {
     int r = tiku_list_chosen(&c->list), n;
@@ -387,7 +392,7 @@ static void av_action(tiku_arcview_t *c, int id)
 /* ------------------------------------------------------------- keys  */
 
 /** @brief Command keys, whatever has the focus, unless the find field
- *         wants its own copy, paste and select all. */
+ *         wants its own cut, copy, paste, undo and select all. */
 static int av_command_key(tiku_arcview_t *c, const tiku_event_t *ev)
 {
     int field = c->dialog.focus == AV_FIND_FIELD;
@@ -438,7 +443,7 @@ static int av_field_event(tiku_arcview_t *c, const tiku_event_t *ev,
            ev->type == TIKU_EVENT_TEXT_INPUT || r != TIKU_FIELD_IGNORED;
 }
 
-/** @brief The name of row @p row, for spelling a way to it. */
+/** @brief The name of row @p row, for type-ahead selection. */
 static const char *av_row_name(void *ctx, int row)
 {
     tiku_arcview_t *c = ctx;
@@ -446,7 +451,8 @@ static const char *av_row_name(void *ctx, int row)
     return row >= 0 && row < c->nrows ? c->node[c->rows[row]].name : "";
 }
 
-/** @brief Keys for the list: moving, opening, going up, spelling. */
+/** @brief Keys for the list: moving, opening, going up, type-ahead;
+ *         Escape empties the find field. */
 static int av_list_key(tiku_arcview_t *c, const tiku_event_t *ev,
                        const av_layout_t *l)
 {
@@ -479,8 +485,10 @@ static int av_key(tiku_arcview_t *c, const tiku_event_t *ev,
     return 0;
 }
 
-/** @brief Every window event: keys, then the fields, rows and bars, then
- *         the toolbar's buttons. */
+/** @brief Every window event.  Keys come first; a press goes to the
+ *         dialog's buttons, then to the find field, path bar, headers,
+ *         scrollbar and rows; the dialog takes the rest and carries out
+ *         a button's command when it is released. */
 static int av_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     tiku_arcview_t *c = ctx;
@@ -528,7 +536,7 @@ static void av_window_gone(tiku_window_t *w, void *ctx)
     av_changed(c);
 }
 
-/** @brief Published menus hand their picks to the one action path. */
+/** @brief A menu pick, carried out as its command. */
 static void av_menu_pick(tiku_window_t *w, int id, void *ctx)
 {
     (void)w;
@@ -552,7 +560,8 @@ static void av_menu_add(tiku_arcview_t *c, tiku_menu_list_t *m, int id,
     e->marked = (unsigned char)marked;
 }
 
-/** @brief File, Edit, View and Go, as the controls stand. */
+/** @brief Publish the File, Edit, View and Go menus, each item enabled
+ *         as its command is now. */
 static void av_menus(tiku_arcview_t *c)
 {
     static const char *const titles[] = { "File", "Edit", "View", "Go" };

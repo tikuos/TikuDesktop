@@ -1,4 +1,5 @@
-/* tiku_reader_app_host.h -- the app lifecycle the document viewers share.
+/* tiku_reader_app_host.h -- the application calls TikuReader, Help and
+ * TikuMarker share: start, stop, tick, input, menus and file picks.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #ifndef TIKU_READER_APP_HOST_H_
@@ -10,9 +11,10 @@
  * @brief Start a viewer's process: its window, menus and Help page.
  *
  * A NULL @p profile starts TikuReader: a startup message from a Help
- * request opens Help on the page it names, and any other start opens a
- * document window.  A profile opens a document window with that
- * application's name, icon, welcome page, Help page and bookmarks.
+ * request opens Help on the page or the generated HTML it carries, and any
+ * other start opens a document window.  A profile opens a document window
+ * with that application's name, icon, welcome page, Help page and
+ * bookmarks.
  * @return 0, or -1 when the window could not be made.
  */
 int tiku_reader_app_start(void **state, const tiku_app_services_t *services,

@@ -1,6 +1,8 @@
-/* The Signatures column: each signature on the document as a card -- its
- * verdict first, then who signed and when, why and where, and what that
- * verdict does and does not say -- a click going to its field. */
+/* tiku_pdfview_sigs.inl -- part of tiku_pdfview.c: the Signatures column,
+ * a card per signature: its verdict, who signed and when, why and where,
+ * and what the verdict does and does not say; a click goes to its field.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #define PV_SIG_NOTE 4               /* lines a card's note may take      */
 
@@ -11,7 +13,7 @@ static const char *pv_sig_pill(const tiku_pdfview_t *c, int i, int *tone)
 
     *tone = TIKU_TONE_FAIL;
     if (s->status == TIKU_PDF_SIG_GOOD) {
-        /* Integrity checked, identity unverified: a warning, never a pass. */
+        /* Integrity checked, identity unverified: the warning tone. */
         *tone = TIKU_TONE_WARN;
         return s->whole || i + 1 < c->nsig ? "Integrity verified"
                                            : "Intact; added to";
@@ -82,8 +84,8 @@ static int pv_sig_head(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r,
     return 3 * rh + 6;
 }
 
-/** @brief Card @p i's facts at @p y -- organisation, when, why, where,
- *         and whose timestamp -- then its note, drawn or measured.
+/** @brief Card @p i's facts at @p y (organisation, when, why, where and
+ *         whose timestamp), then its note, drawn or measured.
  *         @return their height. */
 static int pv_sig_body(tiku_pdfview_t *c, tiku_surface_t *s, tiku_rect_t r,
                        int i, int y)
@@ -178,7 +180,7 @@ static int pv_sigs_pointer(tiku_pdfview_t *c, const tiku_event_t *ev,
     return 1;
 }
 
-/** @brief Keys for the column: up and down scroll it. */
+/** @brief Keys for the column: up and down scroll it, Home to its top. */
 static int pv_sigs_key(tiku_pdfview_t *c, const tiku_event_t *ev)
 {
     if (ev->key == TIKU_KEY_UP) c->sig_top -= PV_LINE;

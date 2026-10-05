@@ -1,11 +1,13 @@
-/* tiku_reader_layout.c -- layout.
+/* tiku_reader_layout.c -- where a viewer window's parts go, for Help and
+ * for a document window, and the page laid out for the room it has.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
 
 static help_layout_t document_layout(tiku_reader_help_window_t *c, tiku_rect_t box);
 
-/** @brief One geometry, read by the drawing and by the hit testing. */
+/** @brief Where the window's parts go in content @p c; the drawing and
+ *         the hit testing both read it. */
 help_layout_t
 tiku_reader_layout(tiku_reader_help_window_t *owner, tiku_rect_t c)
 {
@@ -54,8 +56,8 @@ tiku_reader_layout(tiku_reader_help_window_t *owner, tiku_rect_t c)
             l.paper.y += 104; l.paper.h -= 104;
         }
     }
-    /* A window dragged small enough would give the paper a negative
-     * size, and every rectangle inside it one too. */
+    /* The paper is kept at least 40 by 24, so no rectangle inside it has
+     * a negative size when the window is dragged small. */
     if (l.paper.w < 40) l.paper.w = 40;
     if (l.paper.h < 24) l.paper.h = 24;
     l.page = (tiku_rect_t){l.paper.x + 3, l.paper.y + 3,
@@ -68,11 +70,10 @@ tiku_reader_layout(tiku_reader_help_window_t *owner, tiku_rect_t c)
 }
 
 /**
- * @brief Lay the page out again for the room it already had.
- *
- * A scroll restored before the page is laid out is clamped to the page
- * that came before it, so stepping back would land at the foot of a
- * short page instead of the paragraph it left.
+ * @brief Lay the page out again for the room it already had, and set the
+ *        scroll range from it.
+ * @note A restored scroll position is clamped to the range, so it is
+ *       restored after this call.
  */
 void tiku_reader_settle(tiku_reader_help_window_t *c)
 {
@@ -94,9 +95,9 @@ void tiku_reader_refit(tiku_reader_help_window_t *c, help_layout_t l)
         c->doc->laid_height != tiku_measure_height(TIKU_MEASURE_PLAIN);
     c->page_h = l.page.h;
     c->laid_for = l.page.w;
-    /* Asked every time: laying out is free when neither the width nor
-     * the text size has moved, and a size that moved without the width
-     * would otherwise keep the geometry of the size before it. */
+    /* Laid out every time: tiku_doc_layout() returns at once when neither
+     * the width nor the text size has changed, and a text size that
+     * changed alone needs the new geometry. */
     tiku_reader_document_layout(&c->doc, l.page.w);
     tiku_scroll_set_range(&c->bar, tiku_doc_height(c->doc), l.page.h);
     if (had && changed)
@@ -171,9 +172,10 @@ void tiku_reader_reveal(tiku_reader_help_window_t *c, help_layout_t l)
     }
 }
 
-/* Compact browser chrome belongs to TikuReader, not bundled Help. */
-
-/** @brief Compact icons and address share a row, wrapping on narrow windows. */
+/** @brief A document window's parts: the icon buttons and the Location
+ *         field on one row, the field below on a narrow window; the Find
+ *         bar over the status line when shown; and the page, narrowed to
+ *         the reading width when one is set.  Help has none of these. */
 static help_layout_t document_layout(tiku_reader_help_window_t *c, tiku_rect_t box)
 {
     help_layout_t l = {0};

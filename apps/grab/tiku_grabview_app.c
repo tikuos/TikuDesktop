@@ -1,11 +1,14 @@
-/* TikuGrab in its own process: its window, and its questions to the
- * desktop, which takes the pictures.  SPDX-License-Identifier: Apache-2.0 */
+/* tiku_grabview_app.c -- TikuGrab's descriptor: its window, run in its own
+ * process by tiku-run, and its requests to the desktop's grab service.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_grabview.h"
 #include "tiku_msg.h"
 #include "tiku_window_app.h"
 #include "tiku_work.h"
 #include <stdlib.h>
 
+/** @brief The running application: the desktop's calls and the window. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
@@ -13,7 +16,9 @@ typedef struct {
     int dirty;
 } grab_app_t;
 
-/** @brief A request to the desktop's grab service, down the session. */
+/** @brief Send @p msg to the desktop over the session: a grab request, or
+ *         the countdown shown in the Deskbar's tray.
+ *  @return 1 when it was sent, 0 when not. */
 static int send(void *ctx, const struct tiku_msg *msg)
 {
     grab_app_t *a = ctx;
@@ -22,7 +27,8 @@ static int send(void *ctx, const struct tiku_msg *msg)
            a->services.send_message(a->services.ctx, msg);
 }
 
-/** @brief Save As...: the shell's Save panel, a copy's place and name. */
+/** @brief Save As...: the desktop's Save panel asks where a copy goes and
+ *         what it is called. */
 static void ask_save(void *ctx, const char *start, const char *name)
 {
     grab_app_t *a = ctx;
@@ -32,7 +38,9 @@ static void ask_save(void *ctx, const char *start, const char *name)
             tiku_grabview_handle(a->view)), TIKU_APP_PICK_SAVE, start, name);
 }
 
-/** @brief A path opened as a double-click in Tracker opens it. */
+/** @brief Open @p path through the desktop's open_path(): a folder as a
+ *         window, a document in its program.  @return 0 when the desktop
+ *         has no such service or did not open it. */
 static int open_path(void *ctx, const char *path)
 {
     grab_app_t *a = ctx;
@@ -67,7 +75,8 @@ static int start(void **state, const tiku_app_services_t *services)
     return -1;
 }
 
-/** @brief Let everything go. */
+/** @brief Destroy the window and free the application; a job still
+ *         running keeps the window's state until it ends. */
 static void stop(void *state)
 {
     grab_app_t *a = state;
@@ -133,6 +142,7 @@ static const tiku_app_descriptor_t descriptor = {
     .event_in = event, .tick = tick, .pick = menu_pick, .picked = picked,
     .closed = closed, .message = message
 };
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &descriptor
 };

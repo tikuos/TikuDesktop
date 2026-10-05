@@ -1,6 +1,9 @@
-/* Jobs: everything that reads a document, one job at a time for each
- * document (they share its key), and only their done callbacks touch
- * the viewer. */
+/* tiku_pdfview_jobs.inl -- part of tiku_pdfview.c: the worker jobs that
+ * open a document, draw its pages and thumbnails, and search it.  Jobs on
+ * an open document share its key and run one at a time; only their done
+ * and free callbacks, which run on the loop, touch the viewer.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 /** @brief Page @p p's size as drawn at scale 1: rotation applied. */
 static void pv_page_size(tiku_pdf_t *pdf, int p, float *w, float *h)
@@ -64,7 +67,7 @@ static void pv_load_run(void *ctx)
     j->nsig = tiku_pdf_signatures(j->pdf, &j->sig);
 }
 
-/** @brief Why a file did not open, in a person's words. */
+/** @brief Why a file did not open, as a sentence for the status line. */
 static const char *pv_load_error(tiku_pdf_err_t err)
 {
     if (err == TIKU_PDF_NOT_PDF) return "That file is not a PDF.";
@@ -133,8 +136,9 @@ static void pv_sig_said(const tiku_pdfview_t *c, char *out, size_t cap)
                  last->whole ? "" : "; added to since the last");
 }
 
-/** @brief On the loop: the old document goes, the new one is shown from
- *         its first page, fitted to the window's width. */
+/** @brief On the loop: the old document's place is noted and it goes;
+ *         the new one is shown where it was last left, or from its first
+ *         page fitted to the width, with Signatures open when signed. */
 static void pv_load_done(void *ctx)
 {
     pv_load_t *j = ctx;
@@ -153,7 +157,8 @@ static void pv_load_done(void *ctx)
         pv_say(c, "Not enough memory to open that PDF.");
         return;
     }
-    /* Prepare every fallible allocation before releasing the current page. */
+    /* Every allocation that can fail is made before the current document
+     * is released. */
     pv_page_t *pages = calloc((size_t)j->npage, sizeof *pages);
     long *top = calloc((size_t)j->npage, sizeof *top);
     unsigned char *folded = calloc((size_t)j->noutline + 1, 1);
@@ -236,8 +241,8 @@ static void pv_load_free(void *ctx)
 }
 
 /** @brief Ask a worker to open @p path, with @p password when it is
- *         locked ("" for none) -- the password of @p keyfile when that is
- *         given, for a document sealed to certificates.  One at a time. */
+ *         locked ("" for none); for a document sealed to certificates,
+ *         @p keyfile and the key file's password.  One opening at a time. */
 static int pv_load_as(tiku_pdfview_t *c, const char *path,
                       const char *keyfile, const char *password)
 {
@@ -698,7 +703,9 @@ static void pv_match_boxes(pv_match_t *m, const tiku_pdf_char_t *ch, long a,
     }
 }
 
-/** @brief Whether @p cp belongs to a word: a letter or digit (or _). */
+/** @brief Whether @p cp belongs to a word: an ASCII letter, digit or '_',
+ *         or a character from U+00C0 on other than the multiplication and
+ *         division signs. */
 static int pv_wordy(uint32_t cp)
 {
     return cp < 0x80 ? isalnum((int)cp) || cp == '_'
@@ -769,7 +776,8 @@ static void pv_search_run(void *ctx)
 static int pv_search_post(tiku_pdfview_t *c, int from);
 static void pv_find_step(tiku_pdfview_t *c, int dir);
 
-/** @brief Never describe partial results as a complete document search. */
+/** @brief Put how the search stands in the status line; a search that
+ *         failed or reached the match limit is called incomplete. */
 static void pv_search_status(tiku_pdfview_t *c)
 {
     char said[320];
@@ -826,7 +834,7 @@ static void pv_search_done(void *ctx)
     pv_changed(c);
 }
 
-/** @brief After done or a cancel. */
+/** @brief After done, or instead of it: free the job. */
 static void pv_search_free(void *ctx)
 {
     pv_search_t *j = ctx;

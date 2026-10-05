@@ -1,8 +1,10 @@
 /* tiku_sdr_view.c -- TikuSDR's window, laid out as a spectrum analyser: a
  * panel of settings at the left in sections (Frequency, Traces, Markers,
  * Display), the spectrogram with its colour scale, the spectrum on a
- * graticule annotated with its scale and range, and a bar at the foot for
- * recording, pausing and what is happening.  Painting only; no device.
+ * graticule annotated with its scale and range, and a bar at the foot with
+ * Record, Pause and the status line.  Also where each control is, which
+ * commands can be used and their words, and the picture saved as a PNG.
+ * No device.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <math.h>
@@ -36,13 +38,13 @@
 #define HEAD_H     20               /* a section's bar                  */
 #define ROW_H      24
 #define CTL_H      22               /* a field, list or button in a row */
-#define AREA_X     (PANEL_X + PANEL_W + 10)  /* the instrument's edge   */
+#define AREA_X     (PANEL_X + PANEL_W + 10)  /* the display area's left edge */
 #define AXIS_W     52               /* the level scale, left of the grid */
 #define BAR_H      30               /* the bar at the window's foot     */
 #define NOTE_H     16               /* an annotation row                */
 #define RULER      12               /* a channel plan's row             */
 
-/* The trace inks, by trace: black, red, blue -- an analyser's on white. */
+/* The traces' colours, by trace: black, red and blue, on white. */
 static const tiku_rgb_t trace_ink[SDR_TRACES] = {
     TIKU_RGB(16, 16, 16), TIKU_RGB(210, 50, 40), TIKU_RGB(30, 100, 210)
 };
@@ -192,9 +194,9 @@ int sdr_enabled(const sdr_t *st, int command)
     if (st->alert.open) return command == CMD_QUIT;
     if (command == CMD_FIELD + SDR_F_MARK) return out;
     if (command >= CMD_FIELD && command < CMD_FIELD + SDR_F_AVG)
-        return !st->play.file;          /* a recording says what is shown */
+        return !st->play.file;          /* a recording playing sets the view */
     switch (command) {
-    case CMD_CONNECT:                   /* Disconnect, or a radio there */
+    case CMD_CONNECT:                   /* idle: Connect; else Disconnect */
         return st->state == SDR_IDLE ? st->names[0] != '\0' :
                                        st->state < SDR_STOPPING;
     case CMD_LIVE: return !st->play.file;
@@ -212,7 +214,8 @@ int sdr_enabled(const sdr_t *st, int command)
     }
 }
 
-/** @brief The lists show what they set, unless one is open in the hand. */
+/** @brief Set each list that is not open to show what it sets, and enable
+ *         the lists as sdr_enabled() says. */
 static void sync_choices(sdr_t *st)
 {
     const sdr_model_t *m = &st->model;
@@ -228,9 +231,10 @@ static void sync_choices(sdr_t *st)
 
 void sdr_controls(sdr_t *st)
 {
-    /* The bar's buttons first, so the focus the dialog seats by itself
-     * rests on Pause -- Space then pauses -- and never in a field; then
-     * each section down, in the order Tab takes them. */
+    /* The bar's buttons come first: a focus the dialog places itself goes
+     * to the first enabled control, Pause, so Space pauses and keys are
+     * not typed into a field.  Then each section from the top, in the
+     * order Tab takes them. */
     static const struct { int id; tiku_dialog_kind_t kind; } ctl[] = {
         {CMD_PAUSE, TIKU_DIALOG_BUTTON}, {CMD_RECORD, TIKU_DIALOG_BUTTON},
         {CMD_FIELD + SDR_F_CENTER, TIKU_DIALOG_INPUT},
@@ -310,8 +314,8 @@ static void trace(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m,
     }
 }
 
-/** @brief @p t at @p x, its baseline the middle of a row at @p y: left of
- *         @p x with @p align -1, centred on it with 0, right of it with 1. */
+/** @brief Draw @p t, centred in the NOTE_H row at @p y: ending at @p x
+ *         with @p align -1, centred on it with 0, starting at it with 1. */
 static void note(tiku_surface_t *s, int x, int y, int align, const char *t,
                  tiku_rgb_t ink)
 {
@@ -399,7 +403,8 @@ static void marker_lines(tiku_surface_t *s, tiku_rect_t r,
 }
 
 /** @brief Each marker as a numbered pointer down onto its trace, kept
- *         inside the graticule; the selected one darkest. */
+ *         inside the graticule; the selected one in MARK_INK, the others
+ *         in MARK_DIM. */
 static void marker_pointers(tiku_surface_t *s, tiku_rect_t r,
                             const sdr_model_t *m)
 {
@@ -444,8 +449,11 @@ static void readout(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
                   which[i] == m->mark_sel ? MARK_INK : NOTE_INK);
 }
 
-/** @brief What the frame says above and below the graticule: the scale,
- *         how fine and how fast; the range; which trace is which. */
+/** @brief Write the frame's notes.  Above the graticule: the reference
+ *         level and dB a division, the resolution bandwidth and the rate,
+ *         the gain and which trace is which.  Below it: the start, centre,
+ *         stop and span, the points, and the frames a second while the
+ *         board runs or a recording plays. */
 static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
 {
     const sdr_model_t *m = &st->model;
@@ -503,9 +511,10 @@ static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
     }
 }
 
-/** @brief The spectrum's frame: white, the graticule in it, its notes,
- *         the receiver's flat zone, BLE's advertising channels with the
- *         plans, then the traces and the markers. */
+/** @brief The spectrum's frame: white, with the graticule and its notes;
+ *         once a frame is in, a 40 MS/s spectrum shaded outside its flat
+ *         middle, BLE's advertising channels and the channel plans when
+ *         shown, then the traces and the markers. */
 static void spectrum(sdr_t *st, tiku_rect_t r)
 {
     const sdr_model_t *m = &st->model;
@@ -558,7 +567,7 @@ static void spectrogram(sdr_t *st, tiku_rect_t r)
     tiku_rgb_t lut[256];
 
     if (r.w <= 0 || r.h <= 0) return;
-    for (int y = 0; y < r.h; y++)       /* the scale: hot at the top */
+    for (int y = 0; y < r.h; y++)       /* the scale: highest at the top */
         tiku_hline(st->surface, r.x - 22, r.y + y, 12,
                    sdr_palette(1.0f - (float)y / (float)(r.h - 1)));
     tiku_frame(st->surface, (tiku_rect_t){r.x - 23, r.y - 1, 14, r.h + 2},
@@ -594,7 +603,7 @@ static void section_bar(tiku_surface_t *s, int sec)
               tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     tiku_hline(s, PANEL_X, y + HEAD_H - 1, PANEL_W,
                tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
-    for (int i = 0; i < 4; i++)         /* a small open triangle */
+    for (int i = 0; i < 4; i++)         /* a small triangle, point down */
         tiku_hline(s, PANEL_X + 5 + i, y + 8 + i, 7 - 2 * i, DIM_INK);
     tiku_text(s, f, PANEL_X + 17, y + (HEAD_H - f->height) / 2 + f->ascent,
               section[sec].name, TIKU_C_TEXT);
@@ -620,8 +629,8 @@ static void panel_paint(sdr_t *st)
     }
 }
 
-/** @brief A field: while it is being typed in, what is typed, with its
- *         caret; else what it says of the window now. */
+/** @brief Draw field @p i: while it has the focus, the text being typed,
+ *         with its caret; otherwise its current value. */
 static void field(sdr_t *st, int i, tiku_rect_t r, unsigned flags)
 {
     char t[32];
@@ -665,8 +674,9 @@ static void glyph(sdr_t *st, int id, tiku_rect_t r, unsigned flags)
     }
 }
 
-/** @brief Live: its light green while the view is caught whole, grey
- *         while it is swept, beside its word, the two centred together. */
+/** @brief Draw the Live button: a round light, green while the view is
+ *         one spectrum and grey while it is swept, before the word, the
+ *         two centred together. */
 static void live_button(sdr_t *st, tiku_rect_t r, unsigned flags)
 {
     const tiku_font_t *f = tiku_font_plain();
@@ -685,7 +695,7 @@ static void live_button(sdr_t *st, tiku_rect_t r, unsigned flags)
 }
 
 /** @brief The panel's controls and the bar's buttons, each in its state:
- *         a checkbox or switch on while what it says is. */
+ *         a checkbox or switch is on while its setting is. */
 static void controls(sdr_t *st)
 {
     const sdr_model_t *m = &st->model;
@@ -738,8 +748,9 @@ static void tape_progress(const sdr_t *st, char *out, size_t max)
     }
 }
 
-/** @brief The bar's line: what is under the pointer, or else what happened
- *         last and how a recording is going. */
+/** @brief The bar's line: what is under the pointer, or else the note,
+ *         with how a recording is going, or beside it what the last
+ *         recording became. */
 static void status(sdr_t *st)
 {
     char t[400], progress[64];
@@ -767,7 +778,7 @@ void sdr_paint(sdr_t *st)
 {
     tiku_rect_t plot, fall, screen = {0, 0, st->w, st->h};
 
-    if (!st->id) return;                /* the splash still stands */
+    if (!st->id) return;                /* the window is not open */
     sdr_layout(st, &plot, &fall);
     sdr_controls(st);
     sdr_model_scale(&st->model);
@@ -795,7 +806,7 @@ int sdr_picture(sdr_t *st, const char *path)
     tiku_surface_t *pic;
     int sc, rc;
 
-    st->hover[0] = '\0';                /* the pointer is no part of it */
+    st->hover[0] = '\0';                /* no hover text in the picture */
     sdr_paint(st);
     sdr_layout(st, &plot, &fall);
     area = (tiku_rect_t){AREA_X, 2, st->w - AREA_X - 4, st->h - BAR_H - 4};

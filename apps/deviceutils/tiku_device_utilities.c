@@ -1,5 +1,7 @@
-/* Device Monitor and VFS Inspector access devices through the desktop broker.
- * App workers use RPC proxies; the desktop retains physical backend ownership.
+/* tiku_device_utilities.c -- Device Monitor and VFS Inspector: a board's
+ * readings and its VFS tree, read through the desktop, which owns the link
+ * to the board; the app's workers ask through a VFS proxy.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_window_app.h"
 #include "tiku_vfs_rpc.h"
@@ -16,6 +18,8 @@
 #include <time.h>
 
 struct device_utility;
+/** @brief The running application: the desktop's calls, the window host
+ *         and its utilities. */
 typedef struct {
     tiku_app_services_t services;
     tiku_window_app_t *host;
@@ -26,6 +30,7 @@ typedef struct {
     int dirty;
 } utility_app_t;
 
+/** @brief The monotonic clock in microseconds. */
 static int64_t utility_now(void)
 {
     struct timespec t;
@@ -33,6 +38,8 @@ static int64_t utility_now(void)
     return (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
 }
 
+/** @brief The desktop's board names, one a line, into @p out.
+ *  @return the service's answer, 0 when the desktop gives none. */
 static int utility_board_names(utility_app_t *a, char *out, size_t max)
 {
     return a->services.board_names ?
@@ -61,26 +68,35 @@ enum { U_MONITOR, U_INSPECTOR };
 #define U_HISTORY 120
 typedef struct utility_job utility_job_t;
 static int utility_jobs;
+/** @brief A node of a listing: its name, kind and access, its read policy,
+ *         and its value: sampled is 1 when read, -1 when the read failed,
+ *         0 when not read. */
 typedef struct {
     char name[128];
     int directory, readable, writable, autoread;
     int sampled;
     char data[128];
 } utility_entry_t;
+/** @brief A folder's listing as last read, kept in a list for the tree. */
 typedef struct utility_snapshot {
     struct utility_snapshot *next;
     char path[256];
     int count, truncated, ok;
     utility_entry_t entries[U_ROWS];
 } utility_snapshot_t;
+/** @brief A folder in the tree: its path, its parent's node, whether it is
+ *         open and whether it has been read. */
 typedef struct {
     char path[256];
     int parent, expanded, loaded;
 } utility_branch_t;
+/** @brief The board's reconstruction job as last reported. */
 typedef struct {
     int available, active, fault, can_cancel, can_retry;
     char token[32], title[96], detail[192], basic[128];
 } utility_reclaim_t;
+/** @brief One sample of the board's readings; valid has a bit for each one
+ *         read. */
 typedef struct {
     double uptime, hz, ram, stack, processes, store_size, store_used, sram;
     unsigned valid;
@@ -88,6 +104,8 @@ typedef struct {
     int nprocess;
     utility_reclaim_t reclaim;
 } utility_metrics_t;
+/** @brief One utility window: its board, readings or tree, fields and
+ *         worker. */
 struct device_utility {
     utility_app_t *app;
     tiku_backend_t *backend;
@@ -115,6 +133,8 @@ struct device_utility {
     int reclaim_confirm;
     char reclaim_confirm_token[32];
 };
+/** @brief One worker job: a sample, a reclaim command, a read or write, or
+ *         the inspector's preload. */
 struct utility_job {
     struct device_utility *owner;
     tiku_backend_t *backend;
@@ -136,7 +156,7 @@ static void utility_request(struct device_utility *p, int write);
 #include "tiku_device_utilities_io.inl"
 #include "tiku_device_utilities_ui.inl"
 
-/** Identify app-owned utility windows, retaining proxy ownership. */
+/** @brief Whether @p w is one of this app's utility windows. */
 int device_utility_owns(utility_app_t *app, tiku_window_t *w)
 {
     for (int i = 0; i < 2; i++)
@@ -144,7 +164,9 @@ int device_utility_owns(utility_app_t *app, tiku_window_t *w)
     return 0;
 }
 
-/** Detach on close; a pending worker retains its own reference. */
+/** @brief Close utility window @p w: its job is cancelled and the proxy's
+ *         requests dropped; a running job keeps the utility until it
+ *         ends. */
 void device_utility_close(utility_app_t *app, tiku_window_t *w)
 {
     for (int i = 0; i < 2; i++) {
@@ -160,16 +182,16 @@ void device_utility_close(utility_app_t *app, tiku_window_t *w)
     }
 }
 
-/** Detach app windows and drain or cancel their outstanding proxy requests. */
+/** @brief Close every utility window, then wait up to five seconds for
+ *         running jobs to finish. */
 void device_utilities_destroy(utility_app_t *app)
 {
     for (int i = 0; i < 2; i++)
         if (app->utility[i])
             device_utility_close(app, app->utility[i]->window);
-    /* Backend and callbacks stay alive until queued reads retire, and
-     * the wait has the same five-second ceiling quitting gives a copy:
-     * a board that stopped answering mid-read must not hold the way
-     * out. */
+    /* Running jobs hold the backend; their done and free run here, in
+     * tiku_work_collect().  The wait ends after five seconds, also when a
+     * board has stopped answering in the middle of a read. */
     int64_t until = utility_now() + 5000000;
     while (utility_jobs && utility_now() < until) {
         (void)tiku_work_collect();
@@ -177,7 +199,9 @@ void device_utilities_destroy(utility_app_t *app)
     }
 }
 
-/** Capture the default once; later default changes never retarget it. */
+/** @brief Open utility @p mode (0 Device Monitor, 1 VFS Inspector) on the
+ *         current board, or raise it; it keeps that board when the
+ *         desktop's current board changes. */
 void device_utility_open(utility_app_t *app, int mode)
 {
     if (mode < 0 || mode > 1) return;
@@ -209,7 +233,8 @@ void device_utility_open(utility_app_t *app, int mode)
     utility_request(p, 0); app->dirty = 1;
 }
 
-/** Poll open, unpaused monitors; one request per window at a time. */
+/** @brief Each turn: every five seconds, sample each open, unpaused
+ *         Device Monitor that is not already reading. */
 void device_utilities_tick(utility_app_t *app)
 {
     int64_t now = utility_now();
@@ -219,6 +244,6 @@ void device_utilities_tick(utility_app_t *app)
         p->next = now + 5000000;
         if (i || p->paused) continue;
         utility_request(p, 0);
-        app->dirty = 1;         /* the sample age moves with the sample */
+        app->dirty = 1;         /* the title shows the sample's age */
     }
 }

@@ -14,7 +14,7 @@ enum {
     CV_MENU_EDIT,           /* copying and finding */
     CV_MENU_VIEW,           /* fit, zoom and the panels */
     CV_MENU_LAYERS,         /* the layer stack's commands */
-    CV_MENU_TOOLS,
+    CV_MENU_TOOLS,          /* measuring and its units */
     CV_MENUS                /* how many there are */
 };
 

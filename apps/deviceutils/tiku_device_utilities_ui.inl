@@ -1,6 +1,11 @@
-/* Classic grouped panels with one geometry for pointer and keyboard controls. */
+/* tiku_device_utilities_ui.inl -- part of tiku_device_utilities.c: both
+ * utilities' controls, painting and input: the monitor's readings, graphs
+ * and reclaim panel; the inspector's panes, editor and review.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
-/** Translate a content-relative rectangle to the shell window's coordinates. */
+/** @brief A rectangle given in the content's coordinates, in the
+ *         window's. */
 static tiku_rect_t utility_rect(struct device_utility *p, int x, int y, int w, int h)
 {
     tiku_rect_t c = tiku_window_content(p->window);
@@ -8,15 +13,18 @@ static tiku_rect_t utility_rect(struct device_utility *p, int x, int y, int w, i
 }
 #include "tiku_device_utilities_registry.inl"
 
+/** @brief The monitor's process list. */
 static tiku_rect_t utility_process_rect(struct device_utility *p)
 { return utility_rect(p, 16, 470, 824, 78); }
+/** @brief Process row @p row's text for the list; "" past the end. */
 static const char *utility_process_name(void *context, int row)
 {
     struct device_utility *p = context;
     return row >= 0 && row < p->metrics.nprocess ? p->metrics.process[row] : "";
 }
 
-/** Register controls before both drawing and dispatching an event. */
+/** @brief Rebuild the window's controls and which of them are enabled;
+ *         utility_draw() and utility_event() call it first. */
 static void utility_controls(struct device_utility *p)
 {
     int held = p->dialog.focus, ring = p->dialog.keyboard;
@@ -50,15 +58,16 @@ static void utility_controls(struct device_utility *p)
         tiku_dialog_add(&p->dialog, U_CANCEL, utility_rect(p, 658, 494, 182, 30), TIKU_DIALOG_BUTTON, p->armed && !p->busy);
     }
     tiku_dialog_end(&p->dialog);
-    /* A read greys every control for as long as it takes, and Done is
-     * the one left enabled: the ring stays where the hand put it, or a
-     * five-second sample moves it under the next Space. */
+    /* While a job runs only Done stays enabled (in the monitor Pause and
+     * the process list too).  tiku_dialog_end() moves the focus off a
+     * disabled control to an enabled one, often Done, which Space then
+     * presses; here the focus and ring are put back where they were. */
     if (p->busy && held != TIKU_DIALOG_NONE) {
         p->dialog.focus = held; p->dialog.keyboard = ring;
     }
 }
 
-/** One clipped line for labels and scalars. */
+/** @brief Draw @p text on one line at (@p x, @p y), clipped to @p width. */
 static void utility_line(struct device_utility *p, tiku_surface_t *s,
                          int x, int y, int width, const char *text)
 {
@@ -66,7 +75,9 @@ static void utility_line(struct device_utility *p, tiku_surface_t *s,
                        TIKU_MEASURE_PLAIN, text, TIKU_C_TEXT);
 }
 
-/** Keep units and partial memory accounting explicit beside live graphs. */
+/** @brief Draw the monitor: six readings with their units, or Unavailable;
+ *         the RAM and store graphs over the last ten minutes; SRAM and
+ *         store use; the reclaim panel; and the processes. */
 static void utility_monitor_draw(struct device_utility *p, tiku_surface_t *s)
 {
     const char *labels[] = {"Uptime", "CPU clock", "Process RAM", "Stack free", "Processes", "Store used"};
@@ -115,7 +126,8 @@ static void utility_monitor_draw(struct device_utility *p, tiku_surface_t *s)
     if (!p->metrics.nprocess) utility_line(p, s, 24, 474, 808, "Process details unavailable.");
 }
 
-/** Registry-style hierarchy, value table and a separate change editor. */
+/** @brief Draw the inspector: its two panes, the chosen path's value and
+ *         help, and the editor with its review line. */
 static void utility_inspector_draw(struct device_utility *p, tiku_surface_t *s)
 {
     utility_line(p, s, 16, 130, 248, "Device namespace");
@@ -126,8 +138,8 @@ static void utility_inspector_draw(struct device_utility *p, tiku_surface_t *s)
         "Select a value" : leaf ? leaf + 1 : p->path, p->writable ?
         utility_editable(p->path) ? "Editable setting" : "Writable; edits restricted" :
         "Read-only / unavailable",
-        /* Said wherever the rows came from: a cached listing that was cut
-         * at 128 looks exactly like a directory that holds 128. */
+        /* Set for a listing cut at 128 entries, read now or taken from
+         * the cache. */
         p->truncated ? " | first 128 entries shown" : "");
     utility_line(p, s, 280, 308, 560, detail);
     tiku_rect_t paper = utility_rect(p, 280, 340, 560, 54);
@@ -146,7 +158,8 @@ static void utility_inspector_draw(struct device_utility *p, tiku_surface_t *s)
         "Tree: +/- expands or collapses. Values: click to read; arrows select, Enter reads. Edits require review.");
 }
 
-/** Shared dialog painting preserves focus, disabled and release-to-activate states. */
+/** @brief Draw the window: the board line, the utility's body, the
+ *         controls and the status lines. */
 static void utility_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c, void *ctx)
 {
     struct device_utility *p = ctx; (void)w;
@@ -186,7 +199,9 @@ static void utility_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c, voi
         "Telemetry: 5s. Active recovery: 1s. Store usage includes metadata and allocation slack.");
 }
 
-/** Changing target is explicit and drops every old measurement and pending edit. */
+/** @brief Point the utility at the desktop's current board, with
+ *         @p use_default, or the next board listed; every reading, cached
+ *         listing and edit of the last board is dropped, then it reads. */
 static void utility_target(struct device_utility *p, int use_default)
 {
     char names[1024], chosen[64] = "", *save; int next = 0;
@@ -211,7 +226,8 @@ static void utility_target(struct device_utility *p, int use_default)
     tiku_field_start(&p->edit, ""); utility_request(p, 0);
 }
 
-/** Address navigation is separate from reading a selected value row. */
+/** @brief Go to the path typed in the address field, or with @p up to the
+ *         folder above the path shown. */
 static void utility_navigate(struct device_utility *p, int up)
 {
     char path[256]; snprintf(path, sizeof path, "%s", p->address.text);
@@ -223,7 +239,10 @@ static void utility_navigate(struct device_utility *p, int up)
     registry_go(p, path);
 }
 
-/** Actions are gated again, so keyboard and programmatic picks obey the same policy. */
+/** @brief Carry out @p command.  Done and Pause always run; the others
+ *         not while a job runs, and each checks again that it may run.  A
+ *         reclaim Cancel or Retry asks for confirmation on its first press
+ *         and is sent on a second press for the same job. */
 static void utility_action(struct device_utility *p, int command)
 {
     if (command == U_CLOSE) { device_utility_close(p->app, p->window); return; }
@@ -267,7 +286,9 @@ static void utility_action(struct device_utility *p, int command)
     }
 }
 
-/** Native fields, list navigation and captured pointer release share a single dispatcher. */
+/** @brief Every window event: the dialog's controls, then the monitor's
+ *         process list, or the inspector's panes and its two fields.
+ *  @return 1. */
 static int utility_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     struct device_utility *p = ctx; (void)w;
@@ -294,8 +315,9 @@ static int utility_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
             (ev->type == TIKU_EVENT_KEY_DOWN &&
              ev->key == TIKU_KEY_RETURN &&
              r.activated == TIKU_DIALOG_NONE)) (void)registry_event(p, ev);
-        /* A key the panel took is a focus move, not text: Tab carries
-         * its own character, which the field it lands in refuses. */
+        /* A key the dialog took, other than Return, moved the focus and
+         * does not reach the fields: Tab carries a character, which the
+         * field it lands on refuses. */
         for (int i = 0; !steered && i < 2; i++) {
             if (!i && p->armed) continue;
             if (i && (!p->writable || p->armed || !utility_editable(p->path))) continue;

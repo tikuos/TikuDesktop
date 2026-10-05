@@ -1,5 +1,8 @@
-/* The view: pages one under another at one scale, a canvas composed
- * from the pages drawn so far, and the chrome around it. */
+/* tiku_pdfview_view.inl -- part of tiku_pdfview.c: the view: pages laid
+ * out one under another at one scale, the canvas composed from the pages
+ * drawn so far, the thumbnails, the toolbar and the status line.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ * SPDX-License-Identifier: Apache-2.0 */
 
 /** @brief Page @p p's width in pixels at the scale and turn shown. */
 static int pv_page_w(tiku_pdfview_t *c, int p)
@@ -217,7 +220,8 @@ static const char *pv_tool_tip(int id)
     return "";
 }
 
-/** @brief A toolbar button's side: square, the Reader's size. */
+/** @brief A toolbar button's side: square, the button height but at
+ *         least 30 pixels. */
 static int pv_tool_size(void)
 {
     int bh = tiku_ui_button_h();
@@ -225,8 +229,9 @@ static int pv_tool_size(void)
     return bh > 30 ? bh : 30;
 }
 
-/** @brief The find field's width at @p x: 170, or what the row has left
- *         beside its two buttons when that is less but holds a word. */
+/** @brief The find field's width at @p x: what the row has left beside
+ *         its two buttons, at most 170; the row's whole width when under 80
+ *         is left. */
 static int pv_find_w(tiku_rect_t r, int x)
 {
     int room = r.x + r.w - 6 - x - 2 * (pv_tool_size() + 2) - 4;
@@ -235,10 +240,10 @@ static int pv_find_w(tiku_rect_t r, int x)
     return room < 170 ? (room > 1 ? room : 1) : 170;
 }
 
-/** @brief The toolbar: square icon buttons in groups -- the file, the
- *         side column, the pages, the zoom, the turn, finding -- and the
- *         two fields among them, wrapped when narrow.  @return the row
- *         below it. */
+/** @brief The toolbar: square icon buttons in groups (the file, the side
+ *         column, the pages, the zoom, the turn, finding) with the page and
+ *         find fields among them, wrapped when narrow; while a document is
+ *         locked, the password panel under them.  @return the row below. */
 static int pv_tools_layout(tiku_pdfview_t *c, tiku_rect_t r, pv_layout_t *l)
 {
     static const int ids[] = { PV_OPEN, PV_BACK, PV_OUTLINE, PV_THUMBS,
@@ -416,7 +421,8 @@ static void pv_tint_box(tiku_pdfview_t *c, int p, int px, int py,
             py + (int)ceil(r[3] * c->scale) - y0, argb);
 }
 
-/** @brief The page drawn nearest the scale shown, when none is at it. */
+/** @brief Page @p p's drawn tile at the scale shown; without @p exact,
+ *         the one nearest that scale when none is at it.  NULL for none. */
 static pv_tile_t *pv_tile(tiku_pdfview_t *c, int p, int exact)
 {
     pv_tile_t *best = NULL;
@@ -520,7 +526,7 @@ static int pv_thumb_row(void)
 }
 
 /** @brief Thumbnail @p p in its row of column @p r, asked for when not
- *         drawn yet; @p here marks the page in view. */
+ *         drawn; @p here marks the page in view. */
 static void pv_thumb_draw(tiku_pdfview_t *c, tiku_surface_t *s,
                           tiku_rect_t r, int p, int here)
 {
@@ -619,8 +625,8 @@ static int pv_thumbs_key(tiku_pdfview_t *c, const tiku_event_t *ev)
 /**
  * @brief A toolbar button as the desk's toolbars draw one: its icon on the
  *        panel, raised under the pointer, sunk while pressed or while its
- *        mode is on, dimmed when it can do nothing.  A recorded window
- *        keeps it as a named button, for narration.
+ *        mode is on, dimmed when it can do nothing; Unlock and Cancel are
+ *        worded buttons.
  */
 static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
                       const tiku_dialog_control_t *d)
@@ -641,7 +647,7 @@ static void pv_button(tiku_pdfview_t *c, tiku_surface_t *s,
         tiku_ui_button(s, d->rect, pv_label(d->id), flags);
         return;
     }
-    /* Its name crosses for narration; its face is the icon after it. */
+    /* The label is for narration and is not drawn; the icon is the face. */
     tiku_ui_button(s, d->rect, pv_label(d->id), flags | TIKU_S_ICON);
     if (size > 24) size = 24;
     (void)tiku_icon_paint_dim(s, pv_tool_icon(d->id),
