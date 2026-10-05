@@ -467,7 +467,7 @@ static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
         snprintf(t, sizeof t, "%g MS/s", m->bin_mhz * m->nfft);
     note(s, cx, top + NOTE_H, 0, t, DIM_INK);
     if (m->fresh) {
-        snprintf(t, sizeof t, "Gain %d", m->gain);
+        snprintf(t, sizeof t, m->held ? "Gain %d" : "Gain %d auto", m->gain);
         note(s, right, top, -1, t, NOTE_INK);
     }
     /* Each trace that is on, in its ink: 1 Avg 4, 2 Max. */

@@ -223,6 +223,52 @@ static void spec_line(char *out, size_t max, int centre, int n, int base,
     spec_at(out, max, centre, 40000000, n, base, at, peak);
 }
 
+/** @brief A SPEC line of @p n bins of @p base, heard at gain index @p gain
+ *         the board held. */
+static void held_line(char *out, size_t max, int centre, int n, int base,
+                      int gain)
+{
+    int k = snprintf(out, max, "SPEC %d 40000000 %d %d ", centre, gain, n);
+
+    for (int j = 0; j < n; j++)
+        k += snprintf(out + k, max - (size_t)k, "%02x", base);
+    snprintf(out + k, max - (size_t)k, " held");
+}
+
+/** @brief Held lines: raised by the steps their gain was held below the
+ *         board's hold, and a held sweep's slices joined as heard -- a
+ *         slice one wide signal fills keeps its height. */
+static void held_tests(void)
+{
+    sdr_model_t m;
+    char line[1200];
+
+    sdr_model_init(&m);
+    held_line(line, sizeof line, 2437, 256, 100, 60);
+    assert(sdr_model_line(&m, line) == 1);
+    assert(m.held && m.gain == 60 && m.db[0] == 50.0f);
+    held_line(line, sizeof line, 2437, 256, 100, 44);       /* it clipped */
+    assert(sdr_model_line(&m, line) == 1);
+    assert(m.held && m.gain == 44 && m.db[0] == 66.0f);
+    spec_line(line, sizeof line, 2437, 256, 100, -1, 0);    /* the AGC's */
+    assert(sdr_model_line(&m, line) == 1);
+    assert(!m.held && m.gain == 76 && m.db[0] == 50.0f);
+
+    sdr_model_range(&m, SDR_BAND_START, SDR_BAND_STOP);
+    for (int c = m.first; c <= m.last; c += SDR_SLICE_STEP) {
+        /* Slice 2436 filled by a wide signal 30 dB over the rest; 2468
+         * clipped at the hold, taken again 16 steps lower. */
+        held_line(line, sizeof line, c, 128, c == 2436 ? 140 :
+                  c == 2468 ? 48 : 80, c == 2468 ? 44 : 60);
+        assert(sdr_model_line(&m, line) == 0);
+    }
+    assert(sdr_model_line(&m, "SWEEP 6") == 1);
+    assert(m.db[sdr_model_bin(&m, 2436.0)] == 70.0f);
+    assert(m.db[sdr_model_bin(&m, 2404.0)] == 40.0f);
+    assert(m.db[sdr_model_bin(&m, 2468.0)] == 40.0f);
+    for (int j = 0; j < m.n; j++) assert(m.db[j] >= 40.0f);  /* no gaps */
+}
+
 /** @brief Lines, the model's way: parsing, stale tunings, the band. */
 static void model_tests(void)
 {
@@ -1280,6 +1326,7 @@ int main(void)
     int64_t now = 0;
 
     model_tests();
+    held_tests();
     range_tests();
     marker_tests();
     scale_tests();

@@ -107,7 +107,8 @@ typedef struct {
     int    k0;                      /* one spectrum: its first bin shown */
     int    first, last;             /* a sweep: its slices' centres    */
     uint64_t got;                   /* a sweep: slices heard since SWEEP */
-    int    gain;
+    int    gain;                    /* the latest line's gain index    */
+    int    held;                    /* ... held by the board, not the AGC's */
     int    n;                       /* bins in the trace               */
     double lo_mhz, bin_mhz;         /* bin 0's centre, the spacing     */
     float  db[SDR_BINS], avg[SDR_BINS], peak[SDR_BINS], low[SDR_BINS];

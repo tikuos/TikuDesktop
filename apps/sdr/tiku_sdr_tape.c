@@ -28,9 +28,10 @@
 /* What a recording's lines mean, said at its head. */
 static const char *const format[] = {
     "# Each line below: seconds since the start, then what the board sent.",
-    "#   SPEC <centre MHz> <sample rate Hz> <gain> <bins> <hex>: one",
-    "#     spectrum, a byte a bin from the lowest frequency, in half-",
-    "#     decibels (uncalibrated: compare levels within one recording)",
+    "#   SPEC <centre MHz> <sample rate Hz> <gain> <bins> <hex>[ held]:",
+    "#     one spectrum, a byte a bin from the lowest frequency, in half-",
+    "#     decibels (uncalibrated: compare levels within one recording);",
+    "#     held: at a gain index the board held, a step about a decibel",
     "#   SWEEP <slices>: the band's slices since the last SWEEP are one",
     "#   VIEW range <start MHz> <stop MHz>: what the window showed from",
     "#     here on: one spectrum up to 24 MHz wide, else a sweep (in",

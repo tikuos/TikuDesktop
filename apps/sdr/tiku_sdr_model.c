@@ -13,11 +13,16 @@
 #include "tiku_sdr.h"
 
 /* A sweep's slice keeps 8.2 MHz either side of its centre, so neighbours
- * overlap rather than gap, in 312.5 kHz bins (40 MS/s in 128), and its
- * noise floor is moved to 40 dB. */
+ * overlap rather than gap, in 312.5 kHz bins (40 MS/s in 128); one heard
+ * at the AGC's gain has its noise floor moved to 40 dB. */
 #define SLICE_HALF_MHZ 8.2
 #define SLICE_BIN_MHZ  0.3125
 #define BAND_FLOOR     40.0f
+
+/* A line heard at a held gain is raised by the steps it was held below the
+ * board's own hold, a step being about a decibel: whatever gain heard
+ * them, lines read alike, and a sweep's slices need no levelling. */
+#define GAIN_REF       60
 
 /* The rate codes the board takes, by what one spectrum spans, in MHz.
  * Below 40 MS/s the whole of it is flat; at 40 the middle 24 MHz. */
@@ -261,22 +266,31 @@ static int by_byte(const void *a, const void *b)
     return *(const unsigned char *)a - *(const unsigned char *)b;
 }
 
+/** @brief What the latest line's levels are raised by: a held gain's
+ *         steps below GAIN_REF, or nothing for the AGC's. */
+static float lift(const sdr_model_t *m)
+{
+    return m->held ? (float)(GAIN_REF - m->gain) : 0.0f;
+}
+
 /** @brief One slice of a band sweep into its place, keeping the middle,
- *         where the receiver's filter is flat.  Each slice is heard at its
- *         own automatic gain, so its noise floor (a fifth of the way up its
- *         values) is moved to a common one: the band reads as one. */
+ *         where the receiver's filter is flat.  A slice heard at a held gain
+ *         is lifted as any line is; one heard at the AGC's own has its noise
+ *         floor (a fifth of the way up its values) moved to a common one. */
 static void band_slice(sdr_model_t *m, int centre, double bin,
                        const unsigned char *v, int n)
 {
     unsigned char sorted[SDR_BINS];
     int kept = 0;
-    float shift;
+    float shift = lift(m);
 
     for (int k = 0; k < n; k++)
         if (fabs((k - n / 2) * bin) < SLICE_HALF_MHZ) sorted[kept++] = v[k];
     if (!kept) return;
-    qsort(sorted, (size_t)kept, 1, by_byte);
-    shift = BAND_FLOOR - sorted[kept / 5] / 2.0f;
+    if (!m->held) {
+        qsort(sorted, (size_t)kept, 1, by_byte);
+        shift = BAND_FLOOR - sorted[kept / 5] / 2.0f;
+    }
     for (int k = 0; k < n; k++) {
         double f = centre + (k - n / 2) * bin;
         int j = sdr_model_bin(m, f);
@@ -332,6 +346,7 @@ int sdr_model_line(sdr_model_t *m, const char *line)
     if (hz != lround(rate_mhz[m->rate] * 1e6) || n != m->nfft) return 0;
     dc_patch(v, n);
     m->gain = gain;
+    m->held = !strncmp(line + at + 2 * n, " held", 5);
     if (m->sweep) {
         if (centre >= m->first && centre <= m->last &&
             (centre - m->first) % SDR_SLICE_STEP == 0)
@@ -340,7 +355,7 @@ int sdr_model_line(sdr_model_t *m, const char *line)
         return 0;
     }
     if (centre != m->tune) return 0;
-    for (int j = 0; j < m->n; j++) m->db[j] = v[m->k0 + j] / 2.0f;
+    for (int j = 0; j < m->n; j++) m->db[j] = v[m->k0 + j] / 2.0f + lift(m);
     frame_done(m);
     return 1;
 }
