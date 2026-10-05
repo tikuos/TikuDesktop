@@ -640,6 +640,54 @@ tiku_ui_pill(tiku_surface_t *s, tiku_rect_t r, const char *label, int tone)
               TIKU_C_SELTEXT);
 }
 
+/* A switch's track: twice as wide as it is tall, at most the row it sits
+ * in, so the knob it carries reads as round. */
+#define SWITCH_H  18
+#define SWITCH_W  34
+
+int
+tiku_ui_switch_w(const char *label)
+{
+    return tiku_text_width(tiku_font_plain(), label != NULL ? label : "") +
+           8 + SWITCH_W;
+}
+
+void
+tiku_ui_switch(tiku_surface_t *s, tiku_rect_t r, const char *label,
+               unsigned state)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    int h = r.h < SWITCH_H ? r.h : SWITCH_H;
+    tiku_rect_t t = { r.x + r.w - SWITCH_W, r.y + (r.h - h) / 2, SWITCH_W,
+                      h };
+    tiku_rect_t k = { 0, t.y + 2, h - 4, h - 4 };
+    int dim = (state & TIKU_S_DISABLED) != 0;
+    tiku_rgb_t ground = (state & TIKU_S_ON) ? TIKU_C_SELECT : DARK();
+
+    if (s == NULL || r.w <= 0 || r.h <= 0) {
+        return;
+    }
+    if (state & TIKU_S_PRESSED) {
+        ground = tiku_tint(ground, TIKU_DARKEN_4);
+    }
+    if (dim) {
+        ground = tiku_tint(PANEL, 1.20f);
+    }
+    tiku_fill_round(s, t, h / 2, TIKU_CORNER_ALL, ground);
+    k.x = (state & TIKU_S_ON) ? t.x + t.w - 2 - k.w : t.x + 2;
+    tiku_fill_round(s, k, k.w / 2, TIKU_CORNER_ALL,
+                    dim ? LIGHT() : WHITE());
+    if (state & TIKU_S_FOCUS) {
+        tiku_frame_round(s, (tiku_rect_t){ t.x - 2, t.y - 2, t.w + 4,
+                                           t.h + 4 }, h / 2 + 2,
+                         TIKU_CORNER_ALL, TIKU_C_FOCUS);
+    }
+    if (label != NULL && label[0] != '\0') {
+        tiku_text(s, f, r.x, r.y + (r.h - f->height) / 2 + f->ascent, label,
+                  dim ? tiku_tint(PANEL, 1.30f) : TIKU_C_TEXT);
+    }
+}
+
 void
 tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
                        float pos, float frac, int horiz, int held)

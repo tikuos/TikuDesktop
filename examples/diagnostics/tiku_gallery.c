@@ -94,6 +94,22 @@ gallery(tiku_surface_t *s)
                           "Live update", TIKU_S_NORMAL);
     tiku_ui_checkbox(s, (tiku_rect_t){ c.x + 260, y, 120, 16 },
                           "Focused", TIKU_S_FOCUS | TIKU_S_ON);
+    /* Switches beside them: on, off and disabled, then a focused one. */
+    {
+        static const char *const SW[] = { "Waterfall", "Overlay", "Disabled",
+                                          "Focused" };
+        static const unsigned SWS[] = { TIKU_S_ON, TIKU_S_NORMAL,
+                                        TIKU_S_DISABLED,
+                                        TIKU_S_FOCUS | TIKU_S_ON };
+        int k;
+
+        for (k = 0; k < 4; k++) {
+            tiku_ui_switch(s, (tiku_rect_t){ c.x + 400 + (k % 3) * 108,
+                                             y + (k / 3) * 22 - 2,
+                                             tiku_ui_switch_w(SW[k]), 20 },
+                           SW[k], SWS[k]);
+        }
+    }
     y += 22;
     tiku_ui_radio(s, (tiku_rect_t){ c.x, y, 100, 16 },
                        "Icon view", TIKU_S_ON);

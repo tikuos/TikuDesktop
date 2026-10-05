@@ -213,6 +213,20 @@ int tiku_ui_pill_w(const char *label);
 void tiku_ui_pill(tiku_surface_t *s, tiku_rect_t r, const char *label,
                   int tone);
 
+/** @brief How wide a switch labelled @p label needs to be. */
+int tiku_ui_switch_w(const char *label);
+
+/**
+ * @brief A switch: a setting that takes effect the moment it is flipped.
+ *
+ * The label at the left of @p r, then a rounded track with a round knob:
+ * at the right on the selection colour with TIKU_S_ON, at the left on grey
+ * without.  TIKU_S_PRESSED, TIKU_S_DISABLED and TIKU_S_FOCUS as a
+ * checkbox wears them; the whole of @p r is the thing pressed.
+ */
+void tiku_ui_switch(tiku_surface_t *s, tiku_rect_t r, const char *label,
+                    unsigned state);
+
 /**
  * @brief How wide and tall a tip saying @p text needs to be.
  *
