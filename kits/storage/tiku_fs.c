@@ -1244,7 +1244,8 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
  *
  * Best effort, as the original's delete loop is: one child that will not go
  * does not abandon the rest, because leaving a half-deleted tree AND
- * reporting failure is worse than removing what can be removed.
+ * reporting failure is worse than removing what can be removed.  A symbolic
+ * link is removed itself; what it points at is not entered.
  *
  * @return 0 when the top-level item went.
  */
@@ -1255,7 +1256,7 @@ remove_tree(const char *path)
     DIR *d;
     struct dirent *e;
 
-    if (stat(path, &st) != 0) {
+    if (lstat(path, &st) != 0) {
         return -1;
     }
     if (!S_ISDIR(st.st_mode)) {

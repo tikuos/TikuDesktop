@@ -951,6 +951,55 @@ main(void)
                   "copying a symbolic link copies the link itself, not a "
                   "snapshot of what it points at");
         }
+
+        /* Removing a link removes the link: undoing the copy of a link to
+         * a folder, and the source side of a move across volumes, both
+         * delete a link and must leave the folder it points at whole. */
+        {
+            char dir[600], keep[700], lnk[600], out[600], err[256];
+            const char *other = second_volume(A);
+            struct stat st;
+
+            snprintf(dir, sizeof dir, "%s/pointed", A);
+            (void)mkdir(dir, 0755);
+            snprintf(keep, sizeof keep, "%s/keep.txt", dir);
+            put(keep, "K");
+            snprintf(lnk, sizeof lnk, "%s/dirpointer", A);
+            (void)remove(lnk);
+            if (symlink(dir, lnk) != 0) { check(0, "FS-032", "symlink"); }
+            sel[0] = lnk;
+            (void)tiku_fs_copy(fs, sel, 1, B, TIKU_CONFLICT_REPLACE);
+            run_to_end(fs);
+            snprintf(out, sizeof out, "%s/dirpointer", B);
+            check(lstat(out, &st) == 0 && S_ISLNK(st.st_mode), "FS-032",
+                  "a link to a folder is copied as a link");
+            check(tiku_fs_undo(fs, err, sizeof err) >= 1 &&
+                  lstat(out, &st) != 0, "FS-032",
+                  "undoing that copy removes the copied link");
+            check(there(keep), "FS-032",
+                  "and the folder it pointed at keeps its files");
+
+            if (other == NULL) {
+                printf("  [SKIP] %-8s moving a link across volumes: this "
+                       "host offers only one volume\n", "FS-032");
+            } else {
+                char far[600], moved[700];
+
+                snprintf(far, sizeof far, "%s/trk_links_%d", other,
+                         (int)getpid());
+                (void)mkdir(far, 0755);
+                (void)tiku_fs_move(fs, sel, 1, far, TIKU_CONFLICT_REPLACE);
+                run_to_end(fs);
+                snprintf(moved, sizeof moved, "%s/dirpointer", far);
+                check(lstat(moved, &st) == 0 && S_ISLNK(st.st_mode) &&
+                      lstat(lnk, &st) != 0, "FS-032",
+                      "a link moved across volumes arrives as a link");
+                check(there(keep), "FS-032",
+                      "and the folder it points at keeps its files");
+                (void)unlink(moved);
+                (void)rmdir(far);
+            }
+        }
     }
 
     /* --- a copy keeps mode and modification time (FS-031) --------------- */
