@@ -70,6 +70,12 @@ STORAGE     := $(K)/storage/tiku_board_basic.c $(K)/storage/tiku_model.c $(K)/st
                $(K)/storage/tiku_ident.c $(K)/storage/tiku_attr.c \
                $(K)/storage/tiku_atomic_file.c \
                $(K)/storage/tiku_query.c $(K)/storage/tiku_fs.c \
+               $(K)/storage/tiku_fs_engine.c $(K)/storage/tiku_fs_names.c \
+               $(K)/storage/tiku_fs_drop.c $(K)/storage/tiku_fs_undo.c \
+               $(K)/storage/tiku_fs_queue.c $(K)/storage/tiku_fs_bytes.c \
+               $(K)/storage/tiku_fs_tree.c $(K)/storage/tiku_fs_refusals.c \
+               $(K)/storage/tiku_fs_step.c $(K)/storage/tiku_fs_trash.c \
+               $(K)/storage/tiku_fs_text.c $(K)/storage/tiku_fs_create.c \
                $(K)/storage/tiku_backend_posix.c \
                $(K)/storage/tiku_backend_tiku.c $(K)/storage/tiku_notify.c \
                $(K)/storage/tiku_vdir.c $(K)/storage/tiku_volume.c \
