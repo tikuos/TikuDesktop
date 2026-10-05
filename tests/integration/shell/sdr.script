@@ -5,10 +5,10 @@
 # board: only
 # mount: /devices/board1
 # TikuSDR on a board whose firmware has the receiver (an ESP32-C61 built
-# with TIKU_DRV_SDR_ESP_ENABLE=1): Connect borrows the board and spectra
-# arrive, Band stitches the 2.4 GHz band, Record writes it through the
-# Save panel, Disconnect gives the board back, Open Recording plays the
-# file again, and the File menu exports it as CSV and as a picture.
+# with TIKU_DRV_SDR_ESP_ENABLE=1): opening it borrows the board and spectra
+# arrive with nothing pressed, Band stitches the 2.4 GHz band, Record writes
+# it through the Save panel, Disconnect gives the board back, Open Recording
+# plays the file again, and the File menu exports it as CSV and a picture.
 wait 60
 click 980 30
 wait 10
@@ -17,12 +17,9 @@ wait 10
 menu-pick TikuSDR
 wait 200
 expect-title TikuSDR
-click-window TikuSDR
-click 71 8
-wait 8
-menu-pick Connect
 wait 800
 shot /tmp/trk_sdr_live.png
+click-window TikuSDR
 click 71 8
 wait 8
 menu-pick Band

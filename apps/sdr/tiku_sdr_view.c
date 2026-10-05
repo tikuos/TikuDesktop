@@ -72,7 +72,9 @@ int sdr_enabled(const sdr_t *st, int command)
 {
     if (st->alert.open) return command == CMD_QUIT;
     switch (command) {
-    case CMD_CONNECT: return st->state < SDR_STOPPING;
+    case CMD_CONNECT:                   /* Disconnect, or a radio there */
+        return st->state == SDR_IDLE ? st->names[0] != '\0' :
+                                       st->state < SDR_STOPPING;
     case CMD_LIVE: case CMD_BAND: case CMD_DOWN: case CMD_UP:
         return !st->play.file;
     case CMD_RECORD: return st->state == SDR_RUNNING || st->rec.file;
@@ -87,15 +89,18 @@ int sdr_enabled(const sdr_t *st, int command)
 void sdr_controls(sdr_t *st)
 {
     /* Narrow enough to end clear of the Deskbar, in the desk's top right
-     * corner, where the window opens. */
-    static const int width[SDR_BUTTONS] = {100, 60, 60, 72, 72, 64, 76, 100};
+     * corner, where the window opens.  No Connect: the radio is borrowed
+     * as the window opens, and the SDR menu keeps Connect. */
+    static const int width[SDR_BUTTONS] = {60, 60, 72, 72, 64, 76, 100};
     int x = 16;
 
     tiku_dialog_begin(&st->dialog, TIKU_DIALOG_NONE, CMD_QUIT);
     for (int i = 0; i < SDR_BUTTONS; i++) {
-        if (i == CMD_UP - 1) x += 112;          /* room for the tuning */
-        tiku_dialog_add(&st->dialog, i + 1, (tiku_rect_t){x, 10, width[i], 28},
-                        TIKU_DIALOG_BUTTON, sdr_enabled(st, i + 1));
+        int id = CMD_LIVE + i;
+
+        if (id == CMD_UP) x += 112;             /* room for the tuning */
+        tiku_dialog_add(&st->dialog, id, (tiku_rect_t){x, 10, width[i], 28},
+                        TIKU_DIALOG_BUTTON, sdr_enabled(st, id));
         x += width[i] + 8;
     }
     tiku_dialog_end(&st->dialog);
@@ -290,7 +295,7 @@ static void record_dot(sdr_t *st, tiku_rect_t r, unsigned flags)
 static void toolbar(sdr_t *st)
 {
     char t[48];
-    tiku_rect_t up = st->dialog.control[CMD_UP - 1].rect;
+    tiku_rect_t up = st->dialog.control[CMD_UP - CMD_LIVE].rect;
 
     for (int i = 0; i < st->dialog.count; i++) {
         int id = st->dialog.control[i].id;

@@ -203,15 +203,16 @@ static void tape(sdr_t *st, int command)
     }
 }
 
-/** @brief Say, over the window, that no ESP32 is connected: the receiver
- *         is an ESP32-C61's radio, lent by the desktop.  Escape quits, as
- *         it does in the window; Return keeps the window for recordings. */
+/** @brief Say, over the window, that no radio is connected: the receiver
+ *         is an ESP32-C61's, lent by the desktop.  Its one answer, OK, by
+ *         hand, Return or Escape, closes TikuSDR with it: opened without a
+ *         radio, it has nothing to show. */
 static void missing(sdr_t *st)
 {
     tiku_alert_open(&st->alert, TIKU_ALERT_STOP, 0,
-                    "No ESP32 is detected. TikuSDR listens through an "
-                    "ESP32-C61's radio. Connect one through the Devices "
-                    "menu.", "Quit|OK");
+                    "No software-defined radio detected. TikuSDR currently "
+                    "supports the ESP32-C61 as its SDR. Please connect one "
+                    "through the Devices menu.", "OK");
     st->dirty = 1;
 }
 
@@ -226,7 +227,9 @@ static int sdr_pick(void *state, uint32_t window, int command)
     if (st->alert.open) return 0;       /* the alert is answered first */
     if (command == CMD_CONNECT) {
         if (st->state != SDR_IDLE) sdr_disconnect(st);
-        else if (sdr_connect(st) < 0) missing(st);
+        else if (sdr_connect(st) < 0)   /* gone since the menu was drawn */
+            snprintf(st->note, sizeof st->note,
+                     "No software-defined radio is connected.");
     } else if (command == CMD_LIVE && m->mode != SDR_LIVE) tune(st, m->centre);
     else if (command == CMD_BAND && m->mode != SDR_BAND)
         show(st, SDR_BAND, m->centre);
@@ -316,8 +319,8 @@ static void pointer(sdr_t *st, const tiku_event_t *ev)
     st->dirty = 1;
 }
 
-/** @brief The alert answered, by key or by hand: Quit ends TikuSDR, and OK
- *         leaves the window.  @return 1 when TikuSDR is done. */
+/** @brief The alert answered, by key or by hand: its OK ends TikuSDR.
+ *         @return 1 when TikuSDR is done. */
 static int answer(sdr_t *st, const tiku_event_t *ev)
 {
     tiku_rect_t f = sdr_alert_rect(st);
@@ -333,12 +336,7 @@ static int answer(sdr_t *st, const tiku_event_t *ev)
         at = tiku_alert_release(&st->alert, f.w, f.h, x, y);
         redraw = 1;
     }
-    if (at == 0) return 1;              /* Quit, the first button */
-    if (at > 0) {
-        tiku_alert_reset(&st->alert);
-        publish(st);
-        redraw = 1;
-    }
+    if (at >= 0) return 1;              /* OK: the window goes with it */
     if (redraw) sdr_paint(st);
     return 0;
 }
@@ -374,27 +372,23 @@ static int sdr_event(void *state, const tiku_event_t *ev)
 }
 
 /** @brief The boards again.  The first time the desktop has said which it
- *         has and none is an ESP32-C61, that is said over the window; the
- *         alert goes by itself once one is connected. */
+ *         has, an ESP32-C61 among them is borrowed, once, and none is said
+ *         over the window; one connected while that is said is borrowed,
+ *         the alert gone. */
 static void look(sdr_t *st)
 {
-    int known = sdr_targets(st);
-
-    if (st->looking && known) {
-        st->looking = 0;
-        if (!*st->names) missing(st);
-    } else if (st->alert.open && *st->names) {
+    if (!sdr_targets(st)) return;
+    if (st->looking && !*st->names) {
+        missing(st);
+    } else if ((st->looking || st->alert.open) && *st->names) {
         tiku_alert_reset(&st->alert);
-        snprintf(st->note, sizeof st->note,
-                 "%s is connected. Choose Connect to start the receiver.",
-                 st->board);
-        st->dirty = 1;
+        (void)sdr_connect(st);          /* one try: a refusal is said */
     }
+    st->looking = 0;
 }
 
 /** @brief The link's work and a throttled repaint.  The boards are looked
- *         at every second, and every tick while an answer about them is
- *         awaited. */
+ *         at every second, and every tick while one is awaited. */
 static void sdr_tick(void *state, int64_t now_us)
 {
     sdr_t *st = state;
@@ -462,8 +456,8 @@ static void sdr_board_news(void *state, int what, const char *text)
 
 /** @brief A window, the model, and the boards: nothing touched yet.  A
  *         recording it was opened with, from Tracker, plays at once and
- *         needs no board; else the boards are looked at for an ESP32-C61
- *         as soon as the desktop has said which it has. */
+ *         needs no board; else the tick borrows an ESP32-C61 as soon as
+ *         the desktop has said which boards it has, or says there is none. */
 static int sdr_start(void **state, const tiku_app_services_t *services)
 {
     sdr_t *st = calloc(1, sizeof *st);
@@ -485,7 +479,7 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
         (void)sdr_play_start(st, services->startup_document);
     else
         st->looking = 1;
-    look(st);
+    (void)sdr_targets(st);
     publish(st);
     sdr_paint(st);
     *state = st;

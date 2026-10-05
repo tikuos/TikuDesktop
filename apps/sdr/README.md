@@ -14,16 +14,20 @@ spectrum; TikuSDR keeps, stitches and draws them.
 - Beneath the plot: Wi-Fi channels 1-13, BLE's advertising channels 37-39
   and 802.15.4 channels 11-26.  Hover for a frequency's level and channels.
 
-Connect borrows the board from the desktop, as TikuConsole does, and gives
-it back on Disconnect or when the window closes.  Levels are the board's
-own decibels: uncalibrated, and moved by its automatic gain.
+TikuSDR borrows the board from the desktop as soon as it opens, as
+TikuConsole does, and gives it back when the window closes; there is no
+Connect button, and the SDR menu's Disconnect and Connect give it back and
+borrow it again.  Levels are the board's own decibels: uncalibrated, and
+moved by its automatic gain.
 
 Only ESP32-C61s are offered, as their die says.  With none connected
-through the desktop's Devices menu, TikuSDR says "No ESP32 is detected"
-over its window as soon as the desktop has said which boards it has (out
-of process that is a turn after start, so `board_names` answers -1 until
-then), and again on Connect; the alert goes once one is connected.  A
-recording opened from Tracker needs no board and is not interrupted.
+through the desktop's Devices menu, TikuSDR says "No software-defined
+radio detected" over its window as soon as the desktop has said which
+boards it has (out of process that is a turn after start, so
+`board_names` answers -1 until then); its one button, OK, closes TikuSDR,
+and one connected while it is up is borrowed instead.  Connect is offered
+only while one is connected, and a recording opened from Tracker needs no
+board.
 
 The **File** menu: **Record** writes every line the board sends, with its
 time, to a plain text `.sdrlog` file (about 20-30 MB an hour); **Open

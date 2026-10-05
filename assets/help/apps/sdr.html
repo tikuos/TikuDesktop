@@ -12,22 +12,26 @@ spreadsheet or a script.</p>
 
 <h2 id="connect">Connect</h2>
 
-<p><b>Connect</b> asks the desktop to let go of the chosen board and
-opens its serial port, as TikuConsole does. The board lends its receiver
-a block of memory and brings its radio up; spectra start arriving within
-a second. <b>Disconnect</b>, or closing the window, gives the board back.
-While TikuSDR holds the board, its files and mount are away.</p>
+<p>TikuSDR is opened once an ESP32-C61 is connected through the
+desktop&#8217;s <b>Devices</b> menu, and it borrows the board as soon as
+it opens: the desktop lets go of it, TikuSDR opens its serial port, as
+TikuConsole does, and the board lends its receiver a block of memory and
+brings its radio up; spectra start arriving within a second or two.
+Closing the window gives the board back. While TikuSDR holds the board,
+its files and mount are away.</p>
 
-<p>The board is chosen in the <b>Device</b> menu, from the ESP32-C61s the
-desktop has mounted; other boards are not offered. Connecting a board is
-done from the desktop&#8217;s <b>Devices</b> menu.</p>
+<p><b>Disconnect</b> in the <b>SDR</b> menu gives the board back without
+closing the window, to play a recording, and <b>Connect</b>, offered while
+an ESP32-C61 is connected, borrows it again. The board is chosen in the
+<b>Device</b> menu, from the ESP32-C61s the desktop has mounted; other
+boards are not offered.</p>
 
-<p>Opened with none connected, TikuSDR says <b>No ESP32 is detected</b>
-over its window at once, and so does <b>Connect</b> while none is there.
-<b>OK</b> keeps the window, for recordings or a board connected
-afterwards; <b>Quit</b>, or Escape, closes it. The message goes by itself
-once an ESP32-C61 is connected. A recording opened from Tracker needs no
-board, and no message is shown.</p>
+<p>Opened with none connected, TikuSDR says <b>No software-defined radio
+detected</b> over its window at once. Its one button, <b>OK</b>, or Return
+or Escape, closes TikuSDR: connect the radio through the <b>Devices</b>
+menu, then open TikuSDR again. One connected while the message is up is
+borrowed at once, the message gone. A recording opened from Tracker needs
+no board, and no message is shown.</p>
 
 <h2 id="views">Live and Band</h2>
 
@@ -74,11 +78,12 @@ status line shows how long and how large the recording has grown, about
 20 to 30&#160;MB an hour. The name offered is the board&#8217;s and the
 minute it began, ending in <code>.sdrlog</code>.</p>
 
-<p><b>Open Recording&#8230;</b> plays a recording back at the pace it was
-made, through the same spectrum and waterfall. While it
-plays, the view is the recording&#8217;s own, so tuning is off;
-<b>Pause</b>, <b>Peak</b>, <b>Average</b> and <b>Clear</b> work as they do
-live, and <b>Connect</b> goes back to the board. A silence longer than two
+<p><b>Open Recording&#8230;</b>, with the board given back by
+<b>Disconnect</b>, plays a recording back at the pace it was made, through
+the same spectrum and waterfall. While it plays, the view is the
+recording&#8217;s own, so tuning is off; <b>Pause</b>, <b>Peak</b>,
+<b>Average</b> and <b>Clear</b> work as they do live, and <b>Connect</b>
+goes back to the board. A silence longer than two
 seconds, such as the live view paused while recording, plays in half a
 second. A recording double-clicked in Tracker opens in TikuSDR and plays
 at once.</p>

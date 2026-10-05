@@ -43,13 +43,14 @@ enum {
 
 /* Commands: buttons, menus and keys share them. */
 enum {
-    CMD_CONNECT = 1, CMD_LIVE, CMD_BAND, CMD_DOWN, CMD_UP, CMD_PEAK,
+    CMD_CONNECT = 1,                /* the SDR menu's alone             */
+    CMD_LIVE, CMD_BAND, CMD_DOWN, CMD_UP, CMD_PEAK,
     CMD_PAUSE, CMD_RECORD,          /* the toolbar's, in its order      */
     CMD_CLEAR, CMD_AVERAGE, CMD_QUIT, CMD_REPLAY, CMD_EXPORT, CMD_PICTURE,
     CMD_TUNE = 100,                 /* + MHz offset from 2400: Tune menu */
     CMD_BOARD = 300                 /* + index: Device menu             */
 };
-#define SDR_BUTTONS CMD_RECORD
+#define SDR_BUTTONS (CMD_RECORD - CMD_LIVE + 1)
 
 /** @brief What is on screen: the latest trace, its average and peaks, and
  *         the waterfall's history, every value in decibels. */
@@ -226,8 +227,8 @@ void sdr_paint(sdr_t *st);
 /** @brief The words for @p command, on a button or in a menu. */
 const char *sdr_label(const sdr_t *st, int command);
 /** @brief Whether @p command can be used now: a recording being played
- *         says what is shown, only a running board records, and an alert
- *         holds everything but Quit. */
+ *         says what is shown, only a running board records, Connect wants
+ *         a radio there, and an alert holds everything but Quit. */
 int  sdr_enabled(const sdr_t *st, int command);
 /** @brief The window below its toolbar, as a PNG at @p path.  @return 0,
  *         or -1 with the reason in the note. */

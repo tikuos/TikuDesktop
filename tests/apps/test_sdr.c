@@ -18,7 +18,7 @@
 
 #define PROMPT "\r\ntikuOS:/> "
 
-static char slave_path[128];
+static char slave_path[128], lent[64];      /* the board last let go */
 static int frames, released, reclaimed, menus_seen;
 static const uint32_t *last_px;
 static int asked_mode = -1;                 /* the file panel last asked */
@@ -104,11 +104,12 @@ static int current_named(void *ctx, char *out, size_t max)
     return (int)strlen(out);
 }
 
-/** @brief The board's port: the pseudo-terminal's far end. */
+/** @brief A board's port: the pseudo-terminal's far end, which only the
+ *         board the desktop says it let go of ever opens. */
 static int port(void *ctx, const char *board, char *out, size_t max)
 {
     (void)ctx;
-    assert(!strcmp(board, "c61"));
+    (void)board;
     snprintf(out, max, "%s", slave_path);
     return 1;
 }
@@ -122,20 +123,20 @@ static int mcu(void *ctx, const char *board, char *out, size_t max)
     return 1;
 }
 
-/** @brief The board let go, counted. */
+/** @brief A board let go, counted and named. */
 static int release(void *ctx, const char *board)
 {
     (void)ctx;
-    assert(!strcmp(board, "c61"));
+    snprintf(lent, sizeof lent, "%s", board);
     released++;
     return 1;
 }
 
-/** @brief The board taken back, counted. */
+/** @brief The board taken back, the one that was lent, counted. */
 static int reclaim_board(void *ctx, const char *board)
 {
     (void)ctx;
-    assert(!strcmp(board, "c61"));
+    assert(!strcmp(board, lent));
     reclaimed++;
     return 1;
 }
@@ -418,23 +419,47 @@ static void replay(sdr_t *st, int64_t *now, const char *dir)
 }
 
 /** @brief A recording double-clicked in Tracker: TikuSDR starts with it
- *         and plays it. */
+ *         and plays it, needing no board and borrowing none connected
+ *         meanwhile; the desktop's current device is followed only to an
+ *         ESP32-C61. */
 static void opened_with(const tiku_app_services_t *services, const char *dir)
 {
     tiku_app_services_t with = *services;
     char path[512];
     void *state = NULL;
     sdr_t *st;
+    int64_t now = 0;
+    int before = released;
 
     snprintf(path, sizeof path, "%s/rec.sdrlog", dir);
     with.startup_document = path;
-    with.board_names = names_told;          /* no board at all: none needed */
-    told = "";
+    with.board_names = names_told;
+    with.board_mcu = mcu_named;
+    with.current_device = current_named;
+    told = "";                              /* no board at all: none needed */
     assert(tiku_sdr_app.start(&state, &with) == 0);
     st = state;
     assert(st->play.file && !strcmp(st->shown, path));
     assert(!strncmp(st->note, "Playing rec.sdrlog (c61, 20", 27));
+    ticks(st, &now, 1);
     assert(!st->looking && !st->alert.open);
+    /* No radio: Connect is offered greyed, and asked anyway it says so in
+     * the status line, the recording left on screen. */
+    assert(offered(CMD_CONNECT) == 0);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0);
+    assert(!st->alert.open && st->play.file && released == before &&
+           !strcmp(st->note, "No software-defined radio is connected."));
+    told = "esp32-c61\nesp32-c61-2\nnrf54l15\n";
+    tiku_sdr_app.board_said(st, TIKU_APP_BOARD_CURRENT, "nrf54l15");
+    assert(!strcmp(st->board, "esp32-c61"));
+    tiku_sdr_app.board_said(st, TIKU_APP_BOARD_CURRENT, "esp32-c61-2");
+    assert(!strcmp(st->board, "esp32-c61-2"));
+    assert(!strcmp(last_menus.menu[3].title, "Device") &&
+           last_menus.menu[3].nitem == 2 && last_menus.menu[3].item[1].marked &&
+           last_menus.menu[3].item[0].enabled);
+    ticks(st, &now, 20);
+    assert(st->state == SDR_IDLE && released == before);
+    assert(offered(CMD_CONNECT) == 1);      /* there now, for the asking */
     tiku_sdr_app.stop(st);
     told = NULL;
 }
@@ -510,11 +535,11 @@ static int click_alert(sdr_t *st, int button, int off)
 }
 
 /** @brief No ESP32-C61 among the boards: nothing said until the desktop
- *         has said which boards it has, then an alert with the stop icon;
- *         only Quit works under it, Escape and its Quit end TikuSDR,
- *         Return and OK leave the window; Connect says it again without
- *         borrowing anything, and it goes once an ESP32-C61 is connected,
- *         which the desktop's current device can then choose among. */
+ *         has said which boards it has, then an alert with the stop icon
+ *         and one button over a toolbar with no Connect; only Quit works
+ *         under it, and OK, by hand, Return or Escape, ends TikuSDR, a
+ *         press taken off OK answering nothing; a radio connected while it
+ *         is up is borrowed, the alert gone. */
 static void no_esp32(const tiku_app_services_t *services)
 {
     tiku_app_services_t without = *services;
@@ -523,7 +548,7 @@ static void no_esp32(const tiku_app_services_t *services)
     void *state = NULL;
     sdr_t *st;
     int64_t now = 0;
-    int lent = released;
+    int before = released;
 
     assert(receiver_part("ESP32-C61") && receiver_part("esp32c61"));
     assert(receiver_part("esp32-c61-ttyUSB1") && receiver_part("ESP32_C61"));
@@ -543,17 +568,20 @@ static void no_esp32(const tiku_app_services_t *services)
     told = "nrf54l15\n";            /* said: a board, but not one with it */
     ticks(st, &now, 1);
     assert(!st->looking && st->alert.open && st->alert.kind == TIKU_ALERT_STOP);
-    assert(!strncmp(st->alert.text, "No ESP32 is detected. ", 22));
-    assert(strstr(st->alert.text, "ESP32-C61") &&
-           strstr(st->alert.text, "Devices"));
-    assert(st->alert.nbutton == 2 && !strcmp(st->alert.button[0], "Quit") &&
-           !strcmp(st->alert.button[1], "OK") && st->alert.dflt == 1);
-    assert(!st->names[0] && !st->board[0]);
+    assert(!strncmp(st->alert.text, "No software-defined radio detected. ",
+                    36));
+    assert(strstr(st->alert.text, "supports the ESP32-C61 as its SDR. ") &&
+           strstr(st->alert.text, "through the Devices menu."));
+    assert(st->alert.nbutton == 1 && !strcmp(st->alert.button[0], "OK") &&
+           st->alert.dflt == 0 && st->alert.cancel == 0);
+    assert(!st->names[0] && !st->board[0] && released == before);
     assert(offered(CMD_CONNECT) == 0 && offered(CMD_REPLAY) == 0 &&
            offered(CMD_QUIT) == 1 && !sdr_enabled(st, CMD_LIVE));
     assert(!strcmp(last_menus.menu[last_menus.nmenu - 1].title, "Tune"));
     assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0 &&
            st->model.mode == SDR_LIVE && st->alert.open);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0 &&
+           released == before && st->alert.open);
     sdr_paint(st);
     assert(tiku_surface_png(st->surface, "build/tests/test_sdr_alert.png") == 0 ||
            tiku_surface_png(st->surface, "test_sdr_alert.png") == 0);
@@ -563,41 +591,43 @@ static void no_esp32(const tiku_app_services_t *services)
         assert(tiku_peek(st->surface, f.x + 3 + 26 - 10, f.y + 36) ==
                TIKU_C_DANGER);
     }
+    /* The toolbar starts at Live: Connect is the SDR menu's alone. */
+    assert(st->dialog.count == SDR_BUTTONS &&
+           st->dialog.control[0].id == CMD_LIVE &&
+           st->dialog.control[0].rect.x == 16);
+    for (int i = 0; i < st->dialog.count; i++)
+        assert(st->dialog.control[i].id != CMD_CONNECT);
 
-    assert(tiku_sdr_app.event(st, &esc) == 1);              /* Quit */
-    assert(tiku_sdr_app.event(st, &ret) == 0 && !st->alert.open);
-    assert(offered(CMD_CONNECT) == 1 && offered(CMD_REPLAY) == 1);
-    assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0);
-    assert(st->alert.open && released == lent && st->state == SDR_IDLE);
-    assert(click_alert(st, 1, 60) == 0 && st->alert.open);  /* taken back */
-    assert(click_alert(st, 0, 0) == 1);                     /* Quit */
-    assert(click_alert(st, 1, 0) == 0 && !st->alert.open);  /* OK */
-    assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0 && st->alert.open);
+    /* Every answer is OK, and OK ends TikuSDR; a press taken off it does
+     * not.  The alert stays up behind each, the client ending the app. */
+    assert(tiku_sdr_app.event(st, &ret) == 1 && st->alert.open);
+    assert(tiku_sdr_app.event(st, &esc) == 1 && st->alert.open);
+    assert(click_alert(st, 0, 60) == 0 && st->alert.open);  /* taken back */
+    assert(click_alert(st, 0, 0) == 1);                     /* OK */
 
-    /* One connected through Devices: the alert goes, and it is chosen. */
+    /* One connected through Devices while it is up: borrowed by itself. */
     told = "esp32-c61\nnrf54l15\n";
     ticks(st, &now, 1);
     assert(!st->alert.open && !strcmp(st->names, "esp32-c61\n") &&
            !strcmp(st->board, "esp32-c61"));
-    assert(!strcmp(st->note, "esp32-c61 is connected. "
-                             "Choose Connect to start the receiver."));
-    assert(offered(CMD_CONNECT) == 1 && offered(CMD_BOARD) == 1);
-    /* A second: the Device menu lists the two, the nRF never; the
-     * current device is followed only to one of them. */
-    told = "esp32-c61\nesp32-c61-2\nnrf54l15\n";
-    tiku_sdr_app.board_said(st, TIKU_APP_BOARD_CURRENT, "nrf54l15");
-    assert(!strcmp(st->board, "esp32-c61"));
-    tiku_sdr_app.board_said(st, TIKU_APP_BOARD_CURRENT, "esp32-c61-2");
-    assert(!strcmp(st->board, "esp32-c61-2"));
-    assert(!strcmp(last_menus.menu[3].title, "Device") &&
-           last_menus.menu[3].nitem == 2 && last_menus.menu[3].item[1].marked);
+    assert(st->state == SDR_RELEASING && released == before + 1 &&
+           !strcmp(lent, "esp32-c61"));
     tiku_sdr_app.stop(st);
 
-    /* Started with the current device an ESP32-C61 among two: that one. */
-    current = "esp32-c61-2";
+    /* Two connected while it is up: the desktop's current device is the
+     * one borrowed, and the Device menu lists the two, the nRF never. */
+    told = "nrf54l15\n";
     assert(tiku_sdr_app.start(&state, &without) == 0);
     st = state;
-    assert(!st->looking && !st->alert.open && !strcmp(st->board, "esp32-c61-2"));
+    ticks(st, &now, 1);
+    assert(st->alert.open && released == before + 1);
+    told = "esp32-c61\nesp32-c61-2\nnrf54l15\n";
+    current = "esp32-c61-2";
+    ticks(st, &now, 1);
+    assert(!st->alert.open && st->state == SDR_RELEASING &&
+           !strcmp(lent, "esp32-c61-2") && released == before + 2);
+    assert(!strcmp(last_menus.menu[3].title, "Device") &&
+           last_menus.menu[3].nitem == 2 && last_menus.menu[3].item[1].marked);
     tiku_sdr_app.stop(st);
     current = "";
     told = NULL;
@@ -625,17 +655,19 @@ int main(void)
     assert(!ptsname_r(master, slave_path, sizeof slave_path));
 
     no_esp32(&services);
+    released = 0;
     assert(tiku_sdr_app.start(&state, &services) == 0 && state);
     st = state;
     assert(frames >= 1 && menus_seen >= 1 && !strcmp(st->board, "c61"));
     assert(st->state == SDR_IDLE && st->note[0] == '\0');    /* nothing said */
-    assert(!st->looking && !st->alert.open);    /* an ESP32-C61 is there */
+    assert(st->looking && !st->alert.open && !released);  /* nothing touched */
     assert(!sdr_enabled(st, CMD_EXPORT) && !sdr_enabled(st, CMD_PICTURE));
     assert(offered(CMD_RECORD) == 0 && offered(CMD_EXPORT) == 0);
     assert(!strcmp(last_menus.menu[1].title, "File"));
 
-    assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0);
-    assert(st->state == SDR_RELEASING && released == 1);
+    ticks(st, &now, 1);             /* an ESP32-C61 there: borrowed */
+    assert(!st->looking && !st->alert.open);
+    assert(st->state == SDR_RELEASING && released == 1 && !strcmp(lent, "c61"));
     sdr_board_said(st, TIKU_APP_BOARD_RELEASED, "another");
     assert(st->state == SDR_RELEASING);
     tiku_sdr_app.board_said(st, TIKU_APP_BOARD_RELEASED, "c61");
