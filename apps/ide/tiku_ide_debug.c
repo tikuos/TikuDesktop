@@ -1,31 +1,30 @@
-/* tiku_ide_debug.c -- debug.
+/* tiku_ide_debug.c -- the BASIC line debugger: breakpoints, watches and
+ * the [TDBG] protocol, carried by the BASIC run and input stream to the
+ * default device or a local tiku-basic.  It opens no serial port of its
+ * own; a watch names a variable.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static int
-debug_watch_setup(edit_t *e, char *out, size_t max);
-static int
-debug_send(void *ctx, const void *bytes, size_t n);
-static int
-debug_recv(void *ctx, void *bytes, size_t max);
-static int
-debug_local_start(ide_t *st, const char *program, const char *path);
-static void
-debug_value(char *out, size_t max, const char *line);
-static void
-debug_local_line(const char *line, void *ctx);
-static tiku_rect_t
-debug_button(const edit_t *e, int i);
+static int debug_watch_setup(edit_t *e, char *out, size_t max);
+static int debug_send(void *ctx, const void *bytes, size_t n);
+static int debug_recv(void *ctx, void *bytes, size_t max);
+static int debug_local_start(ide_t *st, const char *program,
+                             const char *path);
+static void debug_value(char *out, size_t max, const char *line);
+static void debug_local_line(const char *line, void *ctx);
+static tiku_rect_t debug_button(const edit_t *e, int i);
 
-/* A line debugger carried by the existing BASIC run/input stream.
- * No extra serial owner and no evaluated watch expressions. */
+/** @brief Whether page @p e is the source of the running debug run, which
+ *         keeps it read-only. */
 int
 tiku_ide_debug_locked(ide_t *st, edit_t *e)
 {
     return st->running && st->debugging && !strcmp(st->child_file, e->path);
 }
 
+/** @brief Show the debug panel on page @p e, closing the keyword list and
+ *         the find bar; the watch field starts as "A,B,C". */
 void
 tiku_ide_debug_show(edit_t *e)
 {
@@ -84,8 +83,8 @@ tiku_ide_debug_clear(edit_t *e)
 /**
  * @brief The DEBUG BREAK lines for the page's breakpoints, in @p out.
  *
- * Each marked line must still start with a BASIC number, and be the
- * last line wearing it, the one the interpreter keeps; otherwise the
+ * Each marked line must still start with a BASIC number and be the last
+ * line with that number, the one the interpreter keeps; otherwise the
  * page says which line and @return 0.
  */
 static int
@@ -120,7 +119,15 @@ debug_break_lines(edit_t *e, char *out, size_t max)
     return 1;
 }
 
-/** Watch names only: eight scalars, seven letters/digits/underscores plus $. */
+/**
+ * @brief The DEBUG WATCH lines for the watch field's names, in @p out.
+ *
+ * A name is a letter and then letters, digits or underscores, at most
+ * seven in all, with an optional final $; at most eight names, and CLEAR
+ * is refused.
+ *
+ * @return 0 when a name is not valid or @p out is too small.
+ */
 static int
 debug_watch_setup(edit_t *e, char *out, size_t max)
 {
@@ -153,6 +160,8 @@ debug_watch_setup(edit_t *e, char *out, size_t max)
     return 1;
 }
 
+/** @brief Send @p n bytes to the local interpreter.  @return 0 when all
+ *         of them went, else -1. */
 static int
 debug_send(void *ctx, const void *bytes, size_t n)
 {
@@ -161,6 +170,9 @@ debug_send(void *ctx, const void *bytes, size_t n)
     return sent == (ssize_t)n ? 0 : -1;
 }
 
+/** @brief Read what the local interpreter wrote, without waiting; a
+ *         closed or failed socket sets debug_eof.  @return the bytes
+ *         read, or 0. */
 static int
 debug_recv(void *ctx, void *bytes, size_t max)
 {
@@ -172,6 +184,9 @@ debug_recv(void *ctx, void *bytes, size_t max)
     return n > 0 ? (int)n : 0;
 }
 
+/** @brief Start tiku-basic --interactive on a socket pair, with the file's
+ *         folder as its sandbox, and hand it @p program.  @return 0 when
+ *         it could not start. */
 static int
 debug_local_start(ide_t *st, const char *program, const char *path)
 {
@@ -208,6 +223,15 @@ debug_local_start(ide_t *st, const char *program, const char *path)
     return 1;
 }
 
+/**
+ * @brief Start a debug run of page @p e on the default device, or on a
+ *        local tiku-basic when there is none.
+ *
+ * The page is saved and checked first: every line numbered, no line body
+ * over IDE_BASIC_BODY, the watch names and the breakpoints valid.  The
+ * program goes with DEBUG ON, WATCH and BREAK lines ahead of it; the page
+ * stays read-only while the run goes, and the console shows its output.
+ */
 void
 tiku_ide_debug_start(ide_t *st, edit_t *e)
 {
@@ -289,6 +313,8 @@ tiku_ide_debug_start(ide_t *st, edit_t *e)
     tiku_ide_console_open(st, e->path, board[0] ? board : "This computer");
 }
 
+/** @brief Send a debugger command such as DEBUG STEP or DEBUG CONT while
+ *         the run is paused; a step or continue marks it running. */
 void
 tiku_ide_debug_command(ide_t *st, const char *command)
 {
@@ -301,6 +327,9 @@ tiku_ide_debug_command(ide_t *st, const char *command)
     }
 }
 
+/** @brief A [TDBG VAR], [TDBG MISSING] or [TDBG STR] line as "NAME =
+ *         value" in @p out; a string's hex bytes are decoded, and bytes
+ *         that do not print are shown as \xHH. */
 static void
 debug_value(char *out, size_t max, const char *line)
 {
@@ -329,7 +358,9 @@ debug_value(char *out, size_t max, const char *line)
     }
 }
 
-/** Protocol lines are handled only for an explicit debug run. Strings are hex. */
+/** @brief Take one [TDBG ...] protocol line of a debug run: paused, ready,
+ *         running, an error, or a watch value.  @return 0 when no debug
+ *         run is going or the line is not a protocol line. */
 int
 tiku_ide_debug_line(ide_t *st, const char *line)
 {
@@ -382,6 +413,8 @@ tiku_ide_debug_line(ide_t *st, const char *line)
     return 1;
 }
 
+/** @brief A line the local interpreter printed: a protocol line goes to
+ *         tiku_ide_debug_line(), any other line to the console. */
 static void
 debug_local_line(const char *line, void *ctx)
 {
@@ -389,6 +422,8 @@ debug_local_line(const char *line, void *ctx)
     if (!tiku_ide_debug_line(st, line)) { tiku_ide_console_take(st, line, 0); }
 }
 
+/** @brief End the debugging state, stopping the local interpreter when
+ *         there is one. */
 void
 tiku_ide_debug_cleanup(ide_t *st)
 {
@@ -400,6 +435,8 @@ tiku_ide_debug_cleanup(ide_t *st)
     st->debugging = st->debug_paused = 0;
 }
 
+/** @brief Pump the local debug run: pass its output on, take up its INPUT
+ *         prompt, and end the run when the interpreter stops. */
 void
 tiku_ide_debug_tick(ide_t *st)
 {
@@ -427,6 +464,8 @@ tiku_ide_debug_tick(ide_t *st)
     tiku_ide_console_paint(st);
 }
 
+/** @brief The rectangle of debug-panel button @p i: Start, Step,
+ *         Continue, Stop, Break and Hide, left to right. */
 static tiku_rect_t
 debug_button(const edit_t *e, int i)
 {
@@ -434,6 +473,8 @@ debug_button(const edit_t *e, int i)
     return (tiku_rect_t){ 6 + w * i, tiku_ide_edit_page_bottom(e) + 4, w - 3, 23 };
 }
 
+/** @brief Paint the debug panel under page @p e: its buttons, the watch
+ *         field and up to eight watch values. */
 void
 tiku_ide_debug_paint(ide_t *st, edit_t *e)
 {
@@ -466,6 +507,8 @@ tiku_ide_debug_paint(ide_t *st, edit_t *e)
     }
 }
 
+/** @brief A press on page @p e's debug panel, or a key for its watch
+ *         field.  @return 1 when the panel took the event. */
 int
 tiku_ide_debug_event(ide_t *st, edit_t *e, const tiku_event_t *event)
 {

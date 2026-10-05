@@ -3,17 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static const char *
-compiler_for(const char *target);
+static const char * compiler_for(const char *target);
 
 /**
- * @brief The compiler a target is built with.
+ * @brief The compiler that builds for @p target, or NULL when the table
+ *        does not name it.
  *
- * The names the tree's own Makefile already detects, so a project says
- * what it is FOR and the toolchain follows from that rather than from
- * a path somebody typed.  A target this build has never heard of gets
- * no compiler and is told so; a compiler that is not installed says so
- * itself, through the same road every other failure takes.
+ * The names are TIKU_PLATFORM values of the TikuOS Makefile; esp32c61 has
+ * no entry.  A compiler that is not installed shows up as a "cannot run"
+ * message from the build.
  */
 static const char *
 compiler_for(const char *target)
@@ -38,11 +36,11 @@ compiler_for(const char *target)
 }
 
 /**
- * @brief End a run by hand: the same road the time bound takes.
+ * @brief Stop the run: a local one is killed and @p why is added to the
+ *        messages; a board is asked to stop; a local debug run ends.
  *
- * A program waiting on INPUT, or printing for ever, is somebody's to
- * stop NOW rather than when the bound gives up on it; the message says
- * which way it ended.
+ * Stop calls this, and so does tiku_ide_tick() when a local run passes
+ * IDE_RUN_LIMIT_US.
  */
 void
 tiku_ide_run_stop(ide_t *st, const char *why)
@@ -56,16 +54,16 @@ tiku_ide_run_stop(ide_t *st, const char *why)
         return;
     }
     if (st->board[0] != '\0') {
-        /* Somebody else's program: asked to stop, not killed.  A kill
-         * here would signal this process's own group -- there is no
-         * child, so st->child is nobody. */
+        /* A board run is asked to stop, not killed: there is no child,
+         * and kill() with st->child of 0 would signal this process's
+         * own group. */
         if (st->services->board_stop != NULL) {
             (void)st->services->board_stop(st->services->ctx);
         }
-        /* The shell says when it has stopped -- unless the board is
-         * gone, and then nobody ever will: the tick lets the run go
-         * here after the grace below, so Stop always ends in a page
-         * that can be edited again. */
+        /* The shell reports when the run has stopped, but a board that
+         * is gone never answers: tiku_ide_tick() releases the run
+         * IDE_BOARD_STOP_US after the stop is dated, so the page can be
+         * edited again. */
         if (st->stop_asked == 0) {
             st->stop_asked = -1;        /* the next tick dates it */
         }
@@ -83,6 +81,13 @@ tiku_ide_run_stop(ide_t *st, const char *why)
     }
 }
 
+/**
+ * @brief Run the BASIC file at @p path on this machine with tiku-basic;
+ *        tiku_ide_tick() reads its output from a pipe.
+ *
+ * The file's folder, or /tmp, is the interpreter's VFS sandbox.  Refused
+ * while a run is going or when the file does not fit BASIC's lines.
+ */
 void
 tiku_ide_run_file(ide_t *st, const char *path)
 {
@@ -111,8 +116,9 @@ tiku_ide_run_file(ide_t *st, const char *path)
     } else {
         snprintf(box, sizeof box, "/tmp");
     }
-    /* ABSOLUTE, because a runner starts an application in the person's
-     * home rather than wherever the desktop was built. */
+    /* TIKU_BASIC, when set, must be an absolute path, since a runner
+     * starts the application in the person's home directory; without
+     * it, tiku-basic is looked up on PATH. */
     tool = getenv("TIKU_BASIC");
     if (tool == NULL || tool[0] == '\0') {
         tool = "tiku-basic";
@@ -132,8 +138,8 @@ tiku_ide_run_file(ide_t *st, const char *path)
         (void)close(fds[0]);
         (void)close(fds[1]);
         (void)execlp(tool, tool, path, box, (char *)NULL);
-        /* A tool that is not installed says so through the same pipe
-         * everything else does, and becomes a message like any other. */
+        /* A tool that cannot be run is reported through the pipe, as a
+         * message. */
         fprintf(stderr, "cannot run %s\n", tool);
         _exit(127);
     }
@@ -147,21 +153,19 @@ tiku_ide_run_file(ide_t *st, const char *path)
     st->nmsg = 0;
     st->msg_problems = 1;
     st->partial[0] = '\0';
-    /* No window yet: a run that says nothing has nothing to show, and
-     * a message window standing empty is furniture. */
+    /* tiku_ide_messages_show() opens the Messages window once there are
+     * messages. */
     (void)tiku_list_set_count(&st->msg_list, 0);
     tiku_ide_messages_paint(st);
     tiku_ide_problems_show(st);
 }
 
 /**
- * @brief Ask the compiler the project's target names whether its C is
- *        good, and say whatever it says.
+ * @brief Check the project's .c files with its target's compiler
+ *        (-fsyntax-only) and show what the compiler says.
  *
- * What BUILD means, today: the check, not the image.  Making an image
- * for a board needs a toolchain for that board, and a project asking
- * for one this machine has not got is told so rather than shown a
- * silence it could mistake for success.
+ * Build makes no image.  A project with no target, a target with no
+ * compiler here, or no .c files gets a message saying so instead.
  */
 void
 tiku_ide_build_project(ide_t *st)
@@ -169,7 +173,7 @@ tiku_ide_build_project(ide_t *st)
     const char *cc;
 
 #ifdef TIKU_IDE_C
-    /* No target line means this machine: the check is the point. */
+    /* TikuC builds for host when the project names no target. */
     if (st->proj.target[0] == '\0') {
         snprintf(st->proj.target, sizeof st->proj.target, "host");
     }

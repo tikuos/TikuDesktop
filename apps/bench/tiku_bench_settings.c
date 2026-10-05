@@ -1,4 +1,6 @@
-/* tiku_bench_settings.c -- settings.
+/* tiku_bench_settings.c -- the run options kept between sessions: one
+ * key=value file with the GTK frontend's keys, read once at start and
+ * written whenever the options differ from what was written.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
@@ -6,9 +8,8 @@
 static void settings_path(bench_t *st);
 static void settings_line(bench_t *st, char *line);
 
-/* The run options remembered between sessions: one key=value file under
- * the user's config directory, the keys the GTK frontend's own. Read once
- * at start, written whenever the options differ from what was written. */
+/** Set st->settings to the options file: $TIKU_BENCH_SETTINGS, else
+ *  ~/.config/tikubench-desktop/settings; empty with neither. */
 static void settings_path(bench_t *st)
 {
     const char *env = getenv("TIKU_BENCH_SETTINGS"), *home = getenv("HOME");
@@ -20,7 +21,8 @@ static void settings_path(bench_t *st)
              "%.400s/.config/tikubench-desktop/settings", home);
 }
 
-/** The options as the file spells them; the same text decides a rewrite. */
+/** The options as the file spells them, into @p out; the file is
+ *  rewritten when this text differs from st->saved. */
 void tiku_bench_settings_text(const bench_t *st, char *out, size_t cap)
 {
     snprintf(out, cap,
@@ -35,7 +37,8 @@ void tiku_bench_settings_text(const bench_t *st, char *out, size_t cap)
              st->epattern.selected < 0 ? 0 : st->epattern.selected);
 }
 
-/** Write the options when they changed; the directory is made on the way. */
+/** Write the options when they changed, making the file's directory and
+ *  its parent when missing. */
 void tiku_bench_settings_flush(bench_t *st)
 {
     char text[sizeof st->saved], dir[sizeof st->settings];
@@ -56,7 +59,8 @@ void tiku_bench_settings_flush(bench_t *st)
     if (fclose(f) == 0) snprintf(st->saved, sizeof st->saved, "%s", text);
 }
 
-/** One line of the file: a known key sets its option, the rest is skipped. */
+/** Take one line of the file: a known key sets its option, and any other
+ *  line is skipped. */
 static void settings_line(bench_t *st, char *line)
 {
     char *eq = strchr(line, '='), *nl = strchr(line, '\n');
@@ -86,7 +90,7 @@ static void settings_line(bench_t *st, char *line)
     }
 }
 
-/** Read the file at start; a missing file is the defaults, nothing more. */
+/** Read the options file; with no file the defaults stand. */
 void tiku_bench_settings_load(bench_t *st)
 {
     char line[TIKU_FIELD_MAX + 32];

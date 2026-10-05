@@ -1,4 +1,6 @@
-/* tiku_console_device.c -- device.
+/* tiku_console_device.c -- choosing a board, handing its port over and
+ * back, and the serial I/O itself: the port opened raw by this process,
+ * with no shell subprocess, port scanning or root privileges.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_console_private.h"
@@ -6,7 +8,8 @@
 static speed_t baud_speed(const char *text);
 static void serial_open(console_t *st);
 
-/** A warm desktop record, captured before requesting exclusive serial access. */
+/** Read the chosen board's port, MCU and stats, which the desktop answers
+ *  from its record of the mounted board. */
 void tiku_console_target_capture(console_t *st)
 {
     st->port[0] = st->mcu[0] = st->stats[0] = 0;
@@ -18,6 +21,9 @@ void tiku_console_target_capture(console_t *st)
         st->services->device_stats(st->services->ctx, st->board, st->stats, sizeof st->stats);
 }
 
+/** A board was chosen: read its record, set the baud to 9600 for an
+ *  MSP430 and 115200 otherwise, and clear the command line and its
+ *  history. */
 void tiku_console_target_changed(console_t *st)
 {
     tiku_console_target_capture(st);
@@ -26,6 +32,9 @@ void tiku_console_target_changed(console_t *st)
     st->nhistory = st->history_at = 0;
 }
 
+/** Read the mounted boards into the device dropdown and select the board
+ *  chosen before, else the desktop's default device.  An unchanged list
+ *  is not rebuilt. */
 void tiku_console_targets_refresh(console_t *st)
 {
     char names[1024] = "", preferred[64] = "";
@@ -42,20 +51,20 @@ void tiku_console_targets_refresh(console_t *st)
         int i = tiku_choice_add(&st->targets, p, 1);
         if (!strcmp(p, preferred)) found = i;
     }
-    /* tiku_choice_add takes the first board when nothing is chosen yet, so
-     * a preferred board that is no longer here must clear it again: the
-     * list is offered, but no other board is picked on the user's behalf. */
+    /* tiku_choice_add() selects the first board added; the selection is
+     * set here instead, to the preferred board or to none. */
     st->targets.selected = found;
-    /* Keep a vanished target's identity, so a later refresh cannot silently
-     * choose another board. An initial host default requires a user choice. */
+    /* With no board chosen before, a selected default device becomes the
+     * chosen board.  A chosen board that is gone keeps its name in
+     * st->board, so it is selected again when it returns. */
     if (st->targets.selected >= 0 && strcmp(st->board, preferred)) {
         snprintf(st->board, sizeof st->board, "%s", preferred); tiku_console_target_changed(st);
     }
     st->dirty = 1;
 }
 
-
-/* Exclusive serial I/O. No shell subprocess, port scanning or root privileges. */
+/** The termios speed for the baud rate in @p text, or 0 when it is not
+ *  one of the eight rates offered. */
 static speed_t baud_speed(const char *text)
 {
     const int rates[] = {9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600};
@@ -66,7 +75,8 @@ static speed_t baud_speed(const char *text)
     return 0;
 }
 
-/** Enqueue atomically; never transmit the first half of a rejected paste. */
+/** Queue @p n bytes for the board, all or none: when they do not fit,
+ *  nothing is queued and the note says so.  @return 1 when queued. */
 int tiku_console_queue_bytes(console_t *st, const void *bytes, size_t n)
 {
     if (st->state != ACTIVE || !n) return 0;
@@ -80,6 +90,8 @@ int tiku_console_queue_bytes(console_t *st, const void *bytes, size_t n)
     st->follow = 1; st->dirty = 1; return 1;
 }
 
+/** Open the board's /data folder in the desktop's file manager, or copy
+ *  its path when the desktop cannot open it. */
 void tiku_console_files_open(console_t *st)
 {
     char path[160]; snprintf(path, sizeof path, "/devices/%s/data", st->board);
@@ -90,6 +102,8 @@ void tiku_console_files_open(console_t *st)
     } else snprintf(st->note, sizeof st->note, "File browser requested. Open console again when finished with files.");
 }
 
+/** Close the serial port and ask the desktop to take the board back,
+ *  waiting up to 15 s; a refusal is reported in the note. */
 void tiku_console_reclaim(console_t *st)
 {
     if (st->fd >= 0) { close(st->fd); st->fd = -1; }
@@ -103,6 +117,8 @@ void tiku_console_reclaim(console_t *st)
     st->dirty = 1;
 }
 
+/** Open the released board's port raw at the chosen baud and start the
+ *  console; when that fails, hand the board back. */
 static void serial_open(console_t *st)
 {
     struct termios t;
@@ -126,7 +142,10 @@ static void serial_open(console_t *st)
     snprintf(st->note, sizeof st->note, "Cannot open console: %s. Returning device to desktop.", strerror(error));
 }
 
-/** Capture BEFORE release; UART settings never change on the desktop's fd. */
+/** Open the console: read the board's record while it is still mounted,
+ *  then ask the desktop to release the board; serial_open() opens the
+ *  port when the release is reported.  The desktop's own descriptor for
+ *  the port keeps its settings. */
 void tiku_console_begin(console_t *st)
 {
     if (st->state != IDLE || st->targets.selected < 0 || !*st->board) return;
@@ -143,6 +162,8 @@ void tiku_console_begin(console_t *st)
     }
 }
 
+/** Take the shell's report on the board: released (open the port),
+ *  returned, or a failed handoff. */
 void tiku_console_board_said(void *state, int what, const char *value)
 {
     console_t *st = state;
@@ -163,12 +184,14 @@ void tiku_console_board_said(void *state, int what, const char *value)
     st->dirty = 1;
 }
 
-/** At most 32 KiB per tick, partial writes retained, unplug reported explicitly. */
+/** Pump the serial port: write what is queued, keeping what a partial
+ *  write leaves, and read up to 32 KiB.  A lost device or failed I/O is
+ *  reported in the console and the board handed back. */
 void tiku_console_io_poll(console_t *st)
 {
     if (st->state != ACTIVE || st->fd < 0) return;
-    /* A frame nobody closed is abandoned, so one stray END before an
-     * ordinary letter cannot swallow everything the board says after it. */
+    /* A frame left open for FRAME_TTL_US is dropped, so a stray END byte
+     * cannot hide the board's output after it. */
     if ((st->gui_frame || st->slip_state) &&
         st->now - st->frame_at > FRAME_TTL_US) {
         st->gui_frame = 0;
@@ -204,6 +227,8 @@ void tiku_console_io_poll(console_t *st)
     if (st->log) fflush(st->log);
 }
 
+/** Start recording received bytes to a private file in /tmp, or stop
+ *  recording. */
 void tiku_console_record_toggle(console_t *st)
 {
     if (st->log) { fclose(st->log); st->log = NULL; return; }

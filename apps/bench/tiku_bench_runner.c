@@ -1,4 +1,6 @@
-/* tiku_bench_runner.c -- runner.
+/* tiku_bench_runner.c -- running tikubench: the argv for each queued
+ * suite, the child process and its output read without blocking, and
+ * handing the board's port over and back.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
@@ -6,16 +8,16 @@
 static int argument(command_t *c, const char *word);
 static void job_finish(bench_t *st);
 
-/* Asynchronous runner, bounded output and explicit device-port ownership. */
-
-
+/** Append @p word to @p c's argv; 0 when argv is full. */
 static int argument(command_t *c, const char *word)
 {
     if (c->argc >= 127) return 0;
     c->argv[c->argc++] = (char *)word; c->argv[c->argc] = NULL; return 1;
 }
 
-/** argv only: neither checkout paths nor user fields are evaluated by a shell. */
+/** Build the tikubench argv for @p job into @p c; no shell reads it, so
+ *  paths and field text pass as they are.  @return 0 when the port, the
+ *  baud or a make variable is not valid. */
 int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c)
 {
     memset(c, 0, sizeof *c);
@@ -40,8 +42,9 @@ int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c)
         argument(c, "--baud"); argument(c, st->field[1].text);
     }
     if (*job->only) { argument(c, "--only"); argument(c, job->only); }
-    /* The runner refuses a destructive leaf without this, and it is
-     * given only for the run the person just agreed to. */
+    /* tikubench refuses a selected destructive leaf without this flag,
+     * which is given only when this run's destructive question was
+     * allowed. */
     if (job->destructive && st->allow_destructive)
         argument(c, "--allow-destructive");
     if (st->large) { argument(c, "--make-var"); argument(c, "MEMORY_MODEL=large"); }
@@ -60,7 +63,7 @@ int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c)
         argument(c, "--make-var"); argument(c, "TIKU_KIT_EPAPER_ENABLE=1");
     }
     {
-        /* The ePaper presets ride in the same extra-cflags argument as
+        /* The ePaper presets go in the same --extra-cflags argument as
          * the free-text flags, ahead of them, as the GTK frontend sends
          * them: a panel by its value, a pattern by its index. */
         static const int panel_value[] = {1, 2};
@@ -84,12 +87,11 @@ int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c)
 }
 
 /**
- * @brief The first queued job whose options do not build, or -1.
+ * @brief The first queued job whose argv cannot be built, or -1.
  *
- * A host-only job reads neither the port, the baud nor the make
- * variables, so checking only the head of a queue that leads with one
- * carries a bad option into the batch, where it aborts after the board
- * has already been released.
+ * Every job is checked: a host-only job reads neither the port, the baud
+ * nor the make variables, so a bad option shows only in a later job,
+ * whose run would stop after the board was released.
  */
 int tiku_bench_queue_first_invalid(bench_t *st, command_t *c)
 {
@@ -100,6 +102,9 @@ int tiku_bench_queue_first_invalid(bench_t *st, command_t *c)
 
 
 
+/** Start @p argv in the TikuBench checkout in a process group of its own,
+ *  its output on a pipe and its input on a socket.  @return 0 when it
+ *  could not start. */
 int tiku_bench_process_spawn(bench_t *st, char *const argv[])
 {
     int out[2], input[2];
@@ -125,6 +130,8 @@ int tiku_bench_process_spawn(bench_t *st, char *const argv[])
     return 1;
 }
 
+/** Start reading the catalogue with gui/tb_meta.py; nothing starts while
+ *  a run or another reader goes, or the window is closing. */
 void tiku_bench_metadata_start(bench_t *st)
 {
     if (st->busy || st->child || st->closing) return;
@@ -137,6 +144,9 @@ void tiku_bench_metadata_start(bench_t *st)
     st->dirty = 1;
 }
 
+/** End a run that had the board released, or whose release failed or
+ *  timed out: settle the rows not done, close the log, set the note and
+ *  ask for the board back. */
 void tiku_bench_release_finish(bench_t *st)
 {
     if (st->fw.step == FWS_PREVIEW || st->fw.step == FWS_FLASH) {
@@ -174,6 +184,8 @@ void tiku_bench_reclaim(bench_t *st)
     st->dirty = 1;
 }
 
+/** Start the next queued suite, or finish the run when the queue is done
+ *  or stopped; during a firmware step, start the firmware runner. */
 void tiku_bench_run_next(bench_t *st)
 {
     if (st->fw.step == FWS_PREVIEW || st->fw.step == FWS_FLASH) {
@@ -196,6 +208,8 @@ void tiku_bench_run_next(bench_t *st)
     for (int i = 0; i < command.argc; i++) tiku_bench_log_line(st, command.argv[i], 0);
 }
 
+/** The current suite's runner has exited: settle its rows, add a failed
+ *  row for a bad exit or missing results, and start the next suite. */
 static void job_finish(bench_t *st)
 {
     int bad = !WIFEXITED(st->exit_status) || WEXITSTATUS(st->exit_status) != 0;
@@ -220,7 +234,10 @@ static void job_finish(bench_t *st)
     tiku_bench_run_next(st);
 }
 
-/** Bound each tick's I/O, preserve final unterminated lines, and reap exit status. */
+/** Pump the runner: send pending console input, read up to 64 KiB of
+ *  output as lines, and once the child has exited and its output ended,
+ *  finish the catalogue read, the firmware step or the suite.  A last
+ *  line with no newline is still taken. */
 void tiku_bench_process_poll(bench_t *st)
 {
     if (st->child <= 0) return;
@@ -254,7 +271,8 @@ void tiku_bench_process_poll(bench_t *st)
         pid_t got = waitpid(st->child, &st->exit_status, WNOHANG);
         if (got == st->child) {
             st->reaped = 1;
-            /* Owned helpers must not outlive their suite and keep the port. */
+            /* Kill the rest of the process group, so no helper outlives
+             * its suite and keeps the port. */
             (void)kill(-st->child, SIGKILL);
         }
     }
@@ -281,6 +299,9 @@ void tiku_bench_process_poll(bench_t *st)
     else job_finish(st);
 }
 
+/** Stop the run: interrupt the runner's process group, which the tick
+ *  kills 2 s later, or end a released run that has no runner.  A flash
+ *  that has started is left to finish. */
 void tiku_bench_stop_run(bench_t *st)
 {
     if (st->fw.step == FWS_FLASH && !strcmp(st->fw.stage[FW_FLASH], "start")) {
@@ -294,7 +315,10 @@ void tiku_bench_stop_run(bench_t *st)
     st->dirty = 1;
 }
 
-/** The user has confirmed the captured target, mode and selected queue. */
+/** Start the run the question was answered for: check the board is still
+ *  the one asked about, plan the result rows, open a private log, and
+ *  ask the desktop to release the board unless every suite is
+ *  host-only. */
 void tiku_bench_run_confirmed(bench_t *st)
 {
     char port[256] = "", mcu[64] = "";

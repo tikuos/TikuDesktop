@@ -1,11 +1,15 @@
-/* tiku_bench_app.c -- app.
+/* tiku_bench_app.c -- Bench's descriptor, its start and stop, the periodic
+ * tick, and the shell's reports on the board it hands over and back.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
 
 static int bench_pick(void *state, uint32_t window, int command);
 
-/** Pump bounded process output without blocking the desktop. */
+/** Periodic work: pump the runner's output and the Firmware tab, kill a
+ *  stopped runner 2 s after Stop, time out a board handoff, poll the
+ *  board list every second, repaint when needed, and close once nothing
+ *  is running. */
 void tiku_bench_tick(void *state, int64_t now_us)
 {
     bench_t *st = state;
@@ -37,7 +41,9 @@ void tiku_bench_tick(void *state, int64_t now_us)
         st->services->close(st->services->ctx, st->id);
 }
 
-/** Never launch until the shell has acknowledged exclusive port ownership. */
+/** Take the shell's report on the board: released (start the queue),
+ *  reclaimed, or a failed handoff.  A run starts only once the shell has
+ *  released the board's port to Bench. */
 void tiku_bench_board_said(void *state, int what, const char *text)
 {
     bench_t *st = state;
@@ -60,9 +66,14 @@ void tiku_bench_board_said(void *state, int what, const char *text)
     }
     st->dirty = 1;
 }
+/** A menu pick: run @p command as tiku_bench_action() does. */
 static int bench_pick(void *state, uint32_t window, int command)
 { (void)window; return tiku_bench_action(state, command); }
 
+/** Start Bench: open its window at BW x BH, load the remembered options,
+ *  choose the board and the tab a startup message names, and start
+ *  reading the catalogue.  @return 0, or -1 when the state, surface or
+ *  window cannot be made. */
 int tiku_bench_start(void **state, const tiku_app_services_t *services)
 {
     bench_t *st = calloc(1, sizeof *st);
@@ -86,8 +97,9 @@ int tiku_bench_start(void **state, const tiku_app_services_t *services)
         tiku_tabs_add(&st->tabs, tabs[i]); tiku_list_init(&st->list[i], 1);
     }
     tiku_dialog_init(&st->dialog); tiku_choice_init(&st->target);
-    /* The ePaper presets, the GTK frontend's own tables: a panel's value
-     * is what EPAPER_KIT_PANEL takes, a pattern's index is its value. */
+    /* The ePaper presets, as the GTK frontend lists them: a panel's
+     * EPAPER_KIT_PANEL value is its index plus one, and a pattern's
+     * value is its index. */
     tiku_choice_init(&st->epanel); tiku_choice_init(&st->epattern);
     tiku_choice_add(&st->epanel, "E2370JS0C1 - 3.70\" BWR", 1);
     tiku_choice_add(&st->epanel, "E2266KS0C1 - 2.66\" BW", 1);
@@ -111,14 +123,16 @@ int tiku_bench_start(void **state, const tiku_app_services_t *services)
     }
     tiku_bench_targets_refresh(st);
     tiku_bench_metadata_start(st);
-    /* Where the options stand now is the file's baseline: nothing is
-     * written until the user moves one. */
+    /* The options as loaded are the saved text, so the settings file is
+     * written only after an option changes. */
     tiku_bench_settings_text(st, st->saved, sizeof st->saved);
     tiku_bench_paint(st); tiku_bench_publish(st); *state = st;
     return 0;
 }
 
-/** Shutdown cannot hand the serial port back while test descendants own it. */
+/** Stop Bench: kill the runner's process group and reap it, so no test
+ *  process keeps the serial port, save the options, and ask for a
+ *  released board back. */
 void tiku_bench_stop(void *state)
 {
     bench_t *st = state;
@@ -135,12 +149,14 @@ void tiku_bench_stop(void *state)
         st->services->board_reclaim(st->services->ctx, st->target_name);
     tiku_surface_free(st->surface); free(st);
 }
+
 const tiku_app_descriptor_t tiku_bench_app = {
     .id = "tiku.bench", .name = "Bench", .start = tiku_bench_start,
     .stop = tiku_bench_stop, .tick = tiku_bench_tick, .pick = bench_pick,
     .event_in = tiku_bench_event, .board_said = tiku_bench_board_said
 };
 #ifdef TIKU_APP_SO
+/** The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t), &tiku_bench_app
 };

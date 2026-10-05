@@ -1,11 +1,14 @@
-/* tiku_ide_console.c -- console.
+/* tiku_ide_console.c -- the Messages window, where a run's or build's
+ * output becomes rows that can name a file and line, and the console
+ * of a board run.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static const char *
-msg_name(void *ctx, int row);
+static const char * msg_name(void *ctx, int row);
 
+/** @brief The text of message @p row, for the list painter; NULL past
+ *         the last. */
 static const char *
 msg_name(void *ctx, int row)
 {
@@ -14,6 +17,8 @@ msg_name(void *ctx, int row)
     return (row >= 0 && row < st->nmsg) ? st->msg[row].text : NULL;
 }
 
+/** @brief Paint the Messages window: the list, and under it the run's
+ *         state or a waiting program's prompt and answer field. */
 void
 tiku_ide_messages_paint(ide_t *st)
 {
@@ -33,8 +38,8 @@ tiku_ide_messages_paint(ide_t *st)
                    msg_name, st);
         tiku_fill(st->msg_surface, strip, TIKU_C_PANEL);
     if (st->asking) {
-        /* The program is waiting for a person: its own prompt as the
-         * label, the answer typed beside it, Return to send it. */
+        /* A program waiting at INPUT: its prompt as the label and the
+         * answer field beside it; Return sends the answer. */
         int lw = tiku_text_width(f, st->ask_prompt);
         tiku_rect_t fld = { MARGIN + lw + 6, strip.y + 3,
                             st->msg_w - (MARGIN + lw + 6) - MARGIN,
@@ -56,12 +61,9 @@ tiku_ide_messages_paint(ide_t *st)
                               st->msg_surface->px, st->msg_w, st->msg_h);
 }
 
-/**
- * @brief The message window's menus.
- *
- * One row, and it is the gesture the window exists for: take me to
- * where this was about.
- */
+/** @brief Publish the Messages window's one menu item: "Go to line N"
+ *         when the chosen message names a line, otherwise a disabled
+ *         row saying it names none. */
 void
 tiku_ide_messages_publish(ide_t *st)
 {
@@ -87,7 +89,8 @@ tiku_ide_messages_publish(ide_t *st)
     (void)st->services->menus(st->services->ctx, st->msg_id, &menus);
 }
 
-/** @brief Make the message window when there is first something to say. */
+/** @brief Open the Messages window unless it is open; when the desktop
+ *         refuses the window, the Project window's note says so. */
 void
 tiku_ide_messages_open(ide_t *st)
 {
@@ -114,13 +117,12 @@ tiku_ide_messages_open(ide_t *st)
 }
 
 /**
- * @brief Take one line a run said.
+ * @brief Add one line of a run's or build's output to the messages.
  *
- * The interpreter names where an error was on the line after saying
- * what it was, "? syntax" then "at line 20"; the two become one row,
- * since a row that is only a number is one nobody can act on.  The
- * annotation is folded only onto a row that was an error, the one place
- * the interpreter puts it, so a program printing those words keeps them.
+ * BASIC reports an error's place on the next line: "? syntax", then
+ * "at line 20".  An "at line" line is folded onto the row before it only
+ * when that row holds "? ", so a program that prints those words keeps
+ * them.  A compiler names the file and line at the head of its row.
  */
 void
 tiku_ide_message_take(ide_t *st, const char *line)
@@ -149,19 +151,16 @@ tiku_ide_message_take(ide_t *st, const char *line)
         return;
     }
     /*
-     * Under each complaint a compiler quotes the source and points at
-     * it, as a numbered gutter and a row of carets:
+     * Under each diagnostic, GCC and Clang quote the source line as a
+     * numbered gutter and a row of carets:
      *
      *     bad.c:4:12: error: use of undeclared identifier 'nope'
      *         4 |     return nope;
      *           |            ^~~~
      *
-     * Both of them do, in the same shape.  Neither is a thing SAID --
-     * they are the line the row above already names, and following that
-     * row opens the file there and shows it in full.  As rows they are
-     * furniture a person can select and get nowhere from, so they are
-     * folded away and the complaint stands alone.  Only for a compiler:
-     * a BASIC program printing a bar of its own keeps it.
+     * The row above already names that line, so for a compiler these
+     * rows are dropped.  A BASIC program's output that looks like them
+     * is kept.
      */
     if (!st->child_numbered) {
         const char *p = line;
@@ -186,10 +185,9 @@ tiku_ide_message_take(ide_t *st, const char *line)
         return;                 /* BASIC says where on its own line */
     }
     /*
-     * A compiler says where at the HEAD of what it says --
-     * "file.c:12:5: error: ..." -- so the place and the words arrive
-     * together and there is nothing to fold.  The file is taken as
-     * written: a compiler asked about a path answers about that path.
+     * A compiler puts the place first, "file.c:12:5: error: ...", so the
+     * file, line and column are read from this row.  The file is kept as
+     * written, since the compiler names the path it was given.
      */
     {
         const char *colon = strchr(line, ':');
@@ -210,12 +208,10 @@ tiku_ide_message_take(ide_t *st, const char *line)
 }
 
 /**
- * @brief Which text line holds the program's line @p want.
+ * @brief The text line that holds BASIC line number @p want, found by
+ *        reading the number each line starts with.
  *
- * A BASIC line WEARS its number, so the file itself says where the
- * interpreter meant -- there is no table to keep in step.
- *
- * @return the line, or -1 when the file has no such number.
+ * @return the line, or -1 when no line has that number.
  */
 int64_t
 tiku_ide_line_of_number(const edit_t *e, long want)
@@ -223,9 +219,9 @@ tiku_ide_line_of_number(const edit_t *e, long want)
     int64_t i, found = -1, lines = tiku_editdoc_lines(e->doc);
 
     for (i = 0; i < lines; i++) {
-        /* The LAST of them: storing a line REPLACES one already
-         * numbered the same, so a file with the number twice ran the
-         * second and the first was never in the program. */
+        /* The last match: the interpreter keeps the last line stored
+         * under a number, so when a file repeats a number, the later
+         * line is the one that ran. */
         if (tiku_ide_line_number(e, i, 1) == want) {
             found = i;
         }
@@ -233,7 +229,8 @@ tiku_ide_line_of_number(const edit_t *e, long want)
     return found;
 }
 
-/** @brief One line onto the console, the oldest dropped when full. */
+/** @brief Add one line to the console, dropping the oldest when it is
+ *         full; @p dim marks the console's own remarks. */
 void
 tiku_ide_console_take(ide_t *st, const char *line, int dim)
 {
@@ -248,7 +245,7 @@ tiku_ide_console_take(ide_t *st, const char *line, int dim)
     st->con_top = -1;               /* new output shows the tail */
 }
 
-/** @brief Paint the console and hand the frame over. */
+/** @brief Paint the console and send its frame to the desktop. */
 void
 tiku_ide_console_paint(ide_t *st)
 {
@@ -275,8 +272,8 @@ tiku_ide_console_paint(ide_t *st)
     }
     tiku_fill(st->con_surface, strip, 0x202020u);
     if (st->asking) {
-        /* The program wants a line: its prompt, and the answer typed
-         * after it, Return to send. */
+        /* A program waiting at INPUT: its prompt and the answer after
+         * it; Return sends the answer. */
         int lw = tiku_text_width(f, st->ask_prompt);
         tiku_rect_t fld = { MARGIN + lw + 6, strip.y + 3,
                             st->con_w - (MARGIN + lw + 6) - MARGIN,
@@ -297,7 +294,8 @@ tiku_ide_console_paint(ide_t *st)
                               st->con_surface->px, st->con_w, st->con_h);
 }
 
-/** @brief The console's one menu: stop the run. */
+/** @brief Publish the console's one menu: Stop, enabled while the run
+ *         goes. */
 void
 tiku_ide_console_publish(ide_t *st)
 {
@@ -362,7 +360,7 @@ tiku_ide_message_follow(ide_t *st)
     }
     m = &st->msg[row];
     if (m->line <= 0 || m->file[0] == '\0') {
-        return;             /* a message about nowhere leads nowhere */
+        return;
     }
     e = tiku_ide_edit_of_path(st, m->file);
     if (e == NULL) {
@@ -382,13 +380,12 @@ tiku_ide_message_follow(ide_t *st)
     if (e == NULL) {
         return;
     }
-    /* A compiler counted the lines of the file; BASIC named one. */
+    /* A compiler counts the file's lines; BASIC gives a line number. */
     at = m->numbered ? tiku_ide_line_of_number(e, m->line) : m->line - 1;
     if (at >= 0) {
-        /* The caret goes to the line's start with nothing selected, or
-         * a held selection would stretch to the line jumped to.  Placing
-         * the caret does not move the page, and a caret below the window
-         * is a jump that looks like nothing happening. */
+        /* The caret goes to the line's start with nothing selected;
+         * placing it does not scroll, so the page is then scrolled to
+         * it. */
         tiku_ide_place(e, at, 0);
         tiku_ide_edit_reveal(e);
         tiku_ide_edit_paint(st, e);
@@ -398,26 +395,23 @@ tiku_ide_message_follow(ide_t *st)
     }
 }
 
+/** @brief Show the messages: open the window once there are any, choose
+ *         the first row that names a line when none is chosen, and mark
+ *         the problems on the pages. */
 void
 tiku_ide_messages_show(ide_t *st)
 {
     if (st->nmsg > 0) {
-        tiku_ide_messages_open(st);      /* now there is something to put in it */
+        tiku_ide_messages_open(st);
     }
     if (st->msg_surface == NULL) {
         return;
     }
     (void)tiku_list_set_count(&st->msg_list, st->nmsg);
     /*
-     * Opened on the first row that names a place.  What a person wants
-     * from a build that failed is the first error, ready to be gone to,
-     * and it is never the first ROW: one compiler says which function it
-     * was in before saying anything went wrong, another counts up the
-     * errors after.  Choosing by what a row IS rather than where it sits
-     * is also the only way to say this that holds for both.
-     *
-     * Only when nothing is chosen, so a second look at the same list
-     * keeps whatever the person was reading.
+     * When no row is chosen, the first row that names a line is chosen;
+     * a build's output can open with a row that names none, such as
+     * GCC's "In function" row.  A row already chosen stays chosen.
      */
     if (tiku_list_chosen(&st->msg_list) < 0) {
         int i;

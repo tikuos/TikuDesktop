@@ -1,12 +1,11 @@
-/* tiku_ide_search.c -- search.
+/* tiku_ide_search.c -- the page's find and replace bar, BASIC line-number
+ * lookup, and Find in project.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static tiku_edit_query_t
-query_of(const edit_t *e);
-static void
-edit_find_run(edit_t *e);
+static tiku_edit_query_t query_of(const edit_t *e);
+static void edit_find_run(edit_t *e);
 
 /** @brief The find field as a literal, case-sensitive query. */
 static tiku_edit_query_t
@@ -30,13 +29,12 @@ tiku_ide_edit_select(edit_t *e, tiku_edit_pos_t anchor, tiku_edit_pos_t caret)
 }
 
 /**
- * @brief Run the find field: a hit becomes the selection.
+ * @brief Find the find field's text after the selection, wrapping; the
+ *        match becomes the selection, so Return goes from match to match.
  *
- * For a BASIC file a search that is ALL DIGITS is first tried as a
- * line NUMBER -- the caret goes to that line and its number is
- * selected -- and only if no line wears it is it looked for as text.
- * Everything else is text, found forward from the caret with a wrap,
- * so Return walks the hits.
+ * In a BASIC file with replace closed, a query of digits only is first
+ * taken as a line number, and the number of the line that starts with
+ * it is selected.  When no line starts with it, it is found as text.
  */
 static void
 edit_find_run(edit_t *e)
@@ -76,7 +74,7 @@ edit_find_run(edit_t *e)
                     return;
                 }
             }
-            /* no line wears it: fall through and find it as text */
+            /* no line starts with it: find it as text */
         }
     }
     query = query_of(e);
@@ -92,7 +90,10 @@ edit_find_run(edit_t *e)
     }
 }
 
-/** Project search uses unsaved editor text where available. */
+/** @brief Find the find field's text in every file of the project and
+ *         list each matching line in the Messages window.  An open page
+ *         is searched with its unsaved text; an unreadable file is
+ *         skipped and counted. */
 void
 tiku_ide_search_project(ide_t *st, edit_t *e)
 {
@@ -153,7 +154,9 @@ tiku_ide_search_project(ide_t *st, edit_t *e)
     else { tiku_ide_messages_paint(st); }
 }
 
-/* Literal, case-sensitive search. Replacement never interprets BASIC numbers. */
+/** @brief Open the find bar on page @p e, the replace field in use when
+ *         @p replacing.  The search is literal and case-sensitive; with
+ *         replace in use, digits are not taken as a line number. */
 void
 tiku_ide_search_open(edit_t *e, int replacing)
 {
@@ -161,8 +164,7 @@ tiku_ide_search_open(edit_t *e, int replacing)
     e->finding = 1;
     e->replacing = replacing;
     e->find_focus = 0;
-    /* The last query is kept but SELECTED, so a new one typed over it
-     * replaces rather than appends to it. */
+    /* The last query is kept, selected, so typing replaces it. */
     tiku_field_start(&e->find, e->find.text);
     e->find.active = e->replacement.active = 1;
     e->find.editable = e->replacement.editable = 1;
@@ -170,12 +172,16 @@ tiku_ide_search_open(edit_t *e, int replacing)
              "Case-sensitive text • Enter: next • Tab: change field • Esc: close");
 }
 
+/** @brief The rectangle of find-bar button @p i: Next, Replace, All and
+ *         Close, left to right. */
 tiku_rect_t
 tiku_ide_search_button(int i)
 {
     return (tiku_rect_t){ 6 + i * 86, SEARCH_TOP + FIND_H * 2 + 2, 80, 22 };
 }
 
+/** @brief Paint the find bar's Replace row and its four buttons; the Find
+ *         row is painted with the page. */
 void
 tiku_ide_search_paint(edit_t *e)
 {
@@ -196,8 +202,7 @@ tiku_ide_search_paint(edit_t *e)
 }
 
 /** @brief Replace the selected match and select the next one, or with
- *         @p all every match as one undo step, each selection kept on
- *         its text. */
+ *         @p all replace every match as one undo step. */
 void
 tiku_ide_search_replace(edit_t *e, int all)
 {
@@ -214,7 +219,9 @@ tiku_ide_search_replace(edit_t *e, int all)
     selected.start = anchor < caret ? anchor : caret;
     selected.end = anchor < caret ? caret : anchor;
     if (!all && !tiku_edit_is_match(e->doc, &q, selected)) {
-        edit_find_run(e); /* First select a match; never replace unrelated text. */
+        /* Select a match first; text that is not a match is not
+         * replaced. */
+        edit_find_run(e);
         return;
     }
     if (!strcmp(e->find.text, e->replacement.text)) {
@@ -240,6 +247,9 @@ tiku_ide_search_replace(edit_t *e, int all)
              count == 1 ? "" : "s", all ? " in this file (Undo available)" : "");
 }
 
+/** @brief A press in the find bar: in a field it places the caret and
+ *         focuses that field; on a button it runs Next, Replace, All or
+ *         Close.  @return 1 when the press was in the find bar. */
 int
 tiku_ide_search_pointer(edit_t *e, int x, int y)
 {
@@ -275,6 +285,9 @@ tiku_ide_search_pointer(edit_t *e, int x, int y)
     return 1;
 }
 
+/** @brief A key for the find bar: Escape closes it, Tab changes field,
+ *         Return finds the next match or replaces, Command chords select,
+ *         cut, copy and paste, and other keys edit the focused field. */
 void
 tiku_ide_search_key(ide_t *st, edit_t *e, const tiku_event_t *ev)
 {

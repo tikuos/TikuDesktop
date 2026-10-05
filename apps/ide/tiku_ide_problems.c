@@ -112,9 +112,8 @@ apply(ide_t *st, edit_t *e)
     }
 }
 
-/** @brief Draw problems on page @p e: errors and warnings with a wavy
- *         line, notes with a straight one, and their words under the
- *         line. */
+/** @brief Set how page @p e marks problems: errors and warnings with a
+ *         wavy underline, notes with a straight one. */
 void
 tiku_ide_problems_style(edit_t *e)
 {
@@ -129,8 +128,9 @@ tiku_ide_problems_style(edit_t *e)
                                  TIKU_RGB(40, 110, 200));
 }
 
-/** @brief Put what the last run or build said onto page @p e, which has
- *         none of it yet. */
+/** @brief Mark the last run's or build's problems on page @p e.
+ *  @note The page must carry no problem marks: marks are added, not
+ *        replaced; tiku_ide_problems_show() clears them first. */
 void
 tiku_ide_problems_page(ide_t *st, edit_t *e)
 {
@@ -138,9 +138,8 @@ tiku_ide_problems_page(ide_t *st, edit_t *e)
         apply(st, e);
 }
 
-/** @brief Show the messages of the last run or build on every open page,
- *         in place of what they showed before.  Search hits are not
- *         problems and leave the pages alone. */
+/** @brief Mark the last run's or build's problems on every open page,
+ *         replacing the marks there.  Search hits are not marked. */
 void
 tiku_ide_problems_show(ide_t *st)
 {

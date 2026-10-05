@@ -1,4 +1,5 @@
-/* tiku_editor_private.h -- Editor controller state and internal interfaces.
+/* tiku_editor_private.h -- the Editor family's shared state, sizes,
+ * command ids and internal functions.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #ifndef TIKU_EDITOR_PRIVATE_H_
@@ -33,11 +34,12 @@
 
 #include <limits.h>
 
-#define EDIT_W      560
-#define EDIT_H      400
-#define STRIP_H     20
-#define MARGIN      6
+#define EDIT_W      560         /**< the window's opening width */
+#define EDIT_H      400         /**< and height */
+#define STRIP_H     20          /**< not used */
+#define MARGIN      6           /**< not used */
 
+/* Menu command ids. */
 #define CMD_SAVE   1
 #define CMD_REVERT 2
 #define CMD_QUIT   3
@@ -67,46 +69,43 @@ enum { EDIT_LANG_AUTO, EDIT_LANG_TEXT, EDIT_LANG_BASIC, EDIT_LANG_C,
 /* The defaults Preferences saves: the settings each pane takes, then
  * the View switches a window starts with, each 0 or 1. */
 typedef struct {
-    int tab;            /* columns between tab stops, 1 to 32            */
-    int indent;         /* spaces an indent inserts; 0 inserts a tab     */
-    int column;         /* the column ruler's column, 1 to 240           */
-    int zoom;           /* the panes' zoom, -2 to 4                      */
-    int colors;         /* code inks: 0 the theme's, 1 Muted, 2 Strong   */
-    int numbers, wrap, guides, ruler;       /* View switches             */
-    int invisibles, caret_line, block_caret;
+    int tab;            /**< columns between tab stops, 1 to 32          */
+    int indent;         /**< spaces an indent inserts; 0 inserts a tab   */
+    int column;         /**< the column ruler's column, 1 to 240         */
+    int zoom;           /**< the panes' zoom, -2 to 4                    */
+    int colors;         /**< code inks: 0 the theme's, 1 Muted, 2 Strong */
+    int numbers, wrap, guides, ruler;       /**< View switches           */
+    int invisibles, caret_line, block_caret;    /**< View switches       */
 } editor_preferences_t;
 #define EDIT_SEARCH_MAX 1000    /* matches live search marks at most */
 #define EDIT_SEARCH_KIND 7      /* the indicator kind that marks them */
 #define EDIT_ZOOM_MIN (-2)      /* the least zoom the code view takes */
 #define EDIT_ZOOM_MAX 4         /* and the most                       */
-#define EDIT_PREF_W 560
-#define EDIT_PREF_H 438
+#define EDIT_PREF_W 560         /**< the Preferences window's width */
+#define EDIT_PREF_H 438         /**< and height */
 
+/** @brief The Editor's state: the document, its panes, the window, the
+ *         Find and Preferences windows, and a run. */
 typedef struct {
-    const tiku_app_services_t *services;
-    tiku_surface_t            *surface;
-    /*
-     * What the painting below wrote down as it went.  The editor does not
-     * paint twice for it: the surface records while it is drawn into, so
-     * there is one painting path and a stream cannot come to disagree
-     * with the picture.  NULL when the services this is running against
-     * have no use for one -- linked into a desktop, they do not.
-     */
+    const tiku_app_services_t *services;    /**< the desktop's calls */
+    tiku_surface_t            *surface;     /**< the window's pixels */
+    /** the display list the surface records into while it is painted,
+     *  sent with each frame; NULL when the host has no present() */
     tiku_dl_t                      *dl;
-    uint32_t                        id;
+    uint32_t                        id;     /**< the document window */
     /* The text, and the view that lays it out, paints it and takes the
-     * caret's keys and the pointer in the page.  The chrome around it,
-     * its scrollbars included, stays the Editor's. */
-    tiku_editdoc_t                 *doc;
-    tiku_codeview_t                *view;
+     * keys and the pointer in the page; the scrollbars and the rest of
+     * the window are the Editor's. */
+    tiku_editdoc_t                 *doc;    /**< the text */
+    tiku_codeview_t                *view;   /**< the pane with the keys */
     /* The page's panes: the upper one and, while it is split, the lower,
      * each a view of doc with its own caret and scroll; view is the one
      * that has the keys, panes[pane]. */
     tiku_codeview_t                *panes[2];
-    int                             pane;
-    int                             split_at;   /* the upper pane's height */
-    int                             split_grab; /* where the divider is
-                                                   held from; -1 not held */
+    int                             pane;       /**< the pane with the keys */
+    int                             split_at;   /**< the upper pane's height */
+    /** where the divider is held, from its top; -1 when it is not held */
+    int                             split_grab;
     /* The line break Return types: the one the file uses most, "\n" for
      * a new document. */
     char                            newline[3];
@@ -114,98 +113,96 @@ typedef struct {
      * into the document's; freed by the next such call or with the
      * document. */
     char                           *paste;
-    tiku_text_input_t               commit;
-    /* The question the close gesture asks while there are unsaved
-     * changes.  The kit's own alert, held over this window's content:
-     * an application no longer needs a shell to be able to ask. */
+    tiku_text_input_t               commit;     /**< stages typed text */
+    /* The unsaved-changes question, the kit's alert drawn over this
+     * window. */
     tiku_alert_t                    ask;
-    tiku_rect_t                     ask_frame;
-    int                             saved_shown;
-    char                            path[512];
-    char                            note[128];
-    /*
-     * Which language the document is written in, or none.  Taken from
-     * the file's name when it is opened and offered on the menu after
-     * that, because the name is the only thing that can honestly say --
-     * and because an editor started with nothing (which is how the
-     * desktop starts this one) has no name to go on and the person does.
-     */
+    tiku_rect_t                     ask_frame;  /**< where it is drawn */
+    int                             saved_shown;    /**< not used */
+    char                            path[512];  /**< the file; empty for none */
+    char                            note[128];  /**< the footer message */
+    /* The document's language: from the file's name when it is read
+     * (.bas BASIC, .c and .h C, else none), then as the Language menu
+     * sets it. */
     tiku_syntax_lang_t              lang;
-    /* Which question the shell's panel is answering, when it answers:
-     * the ask is not remembered by the panel and the answer arrives
-     * later, so what to DO with a path is remembered here. */
+    /* The file panel's question, 1 Save or 0 Open; its answer comes later,
+     * to tiku_editor_picked(). */
     int                             pick_save;
-    /*
-     * What the last run said, and the run itself while it lives.  The
-     * program runs in the interpreter a BOARD runs -- tiku-basic, the
-     * kernel's own engine compiled for the host -- as a child on the
-     * far end of a pipe, the way the terminal next door holds its
-     * shell.  The pane exists while there are lines to show.
-     */
-    char                            out[48][96];
-    int                             out_count;
-    int                             running;
-    int                             child_fd;
-    pid_t                           child;
-    char                            out_partial[96];
+    /* The run: the last lines tiku-basic printed, read from a pipe; the
+     * run pane shows while a run goes or has output. */
+    char                            out[48][96];    /**< the output lines */
+    int                             out_count;  /**< lines held */
+    int                             running;    /**< a run goes */
+    int                             child_fd;   /**< the pipe; -1 for none */
+    pid_t                           child;      /**< tiku-basic's process */
+    char                            out_partial[96];    /**< an unended line */
+    /** the window's size; the Find window's mode (0 closed, 1 Find, 2 Go
+     *  to Line) and its focused field, -1 for none; the command waiting on
+     *  the unsaved-changes question */
     int w, h, finding, find_focus, pending;
+    /** the file had a BOM; it failed to load; disk holds its state; line
+     *  numbers are shown; an Open that Discard allowed */
     int bom, load_failed, disk_known, numbers, allow_open;
-    struct stat disk;
-    tiku_field_t field[3];
-    tiku_field_input_t field_input[3];
-    tiku_scroll_t vertical, horizontal;
-    tiku_scroll_t lower;            /* the lower pane's vertical bar   */
-    tiku_menuset_t last_menus;
-    char scratch[64];
-    uint32_t search_id;
-    tiku_surface_t *search_surface;
+    struct stat disk;               /**< the file as last read or saved */
+    tiku_field_t field[3];          /**< Find, Replace and Go to Line */
+    tiku_field_input_t field_input[3];  /**< their input state */
+    tiku_scroll_t vertical, horizontal; /**< the upper pane's bar; the
+                                             horizontal bar */
+    tiku_scroll_t lower;            /**< the lower pane's vertical bar */
+    tiku_menuset_t last_menus;      /**< the menus last published */
+    char scratch[64];               /**< an unnamed run's file; empty none */
+    uint32_t search_id;             /**< the Find window, or 0 */
+    tiku_surface_t *search_surface; /**< what it is painted on */
+    /** the Find window has the keys; the toolbar tool hovered and the one
+     *  pressed, -1 for none; View: Show Invisibles, Wrap Lines */
     int search_active, hover_tool, pressed_tool, show_invisibles, wrap;
-    int caret_line, block_caret;
-    int cursor;                     /* the pointer shape last asked for */
-    int match_case, whole_word, regex;  /* the Find window's checkboxes */
-    int indent_guides, ruler;       /* View > Indentation Guides, Ruler */
-    int language_mode;              /* the Language menu's EDIT_LANG_*  */
+    int caret_line, block_caret;    /**< View: Highlight Caret Line, Block
+                                         Caret */
+    int cursor;                     /**< the pointer shape last asked for */
+    int match_case, whole_word, regex;  /**< the Find window's checkboxes */
+    int indent_guides, ruler;       /**< View > Indentation Guides, Ruler */
+    int language_mode;              /**< the Language menu's EDIT_LANG_* */
     /* The saved defaults, and the copy the Preferences window edits
      * until Save or Cancel. */
     editor_preferences_t preferences, pref_draft;
-    uint32_t prefs_id;              /* the Preferences window, or 0     */
-    tiku_surface_t *prefs_surface;  /* what that window is painted on   */
-    int pref_focus;                 /* its control that has the keys    */
-    char pref_message[120];         /* its status line; empty for help  */
-    tiku_menu_t context;            /* the right-click menu             */
-    tiku_rect_t context_frame;      /* where that menu is drawn         */
-    int context_open;               /* whether it is showing            */
+    uint32_t prefs_id;              /**< the Preferences window, or 0 */
+    tiku_surface_t *prefs_surface;  /**< what that window is painted on */
+    int pref_focus;                 /**< its control that has the keys */
+    char pref_message[120];         /**< its status line; empty for help */
+    tiku_menu_t context;            /**< the right-click menu */
+    tiku_rect_t context_frame;      /**< where that menu is drawn */
+    int context_open;               /**< whether it is showing */
     /* Live search for the Find window's query: the matches marked, at
      * most EDIT_SEARCH_MAX of them, and what they were found for. */
     tiku_edit_range_t matches[EDIT_SEARCH_MAX];
-    size_t match_count;             /* how many are marked              */
-    int match_truncated;            /* more matched than were marked    */
-    uint64_t search_generation;     /* the document generation searched */
-    unsigned search_flags;          /* the TIKU_EDIT_* flags searched   */
-    char search_text[1024];         /* the query searched               */
-    char search_message[128];       /* the count line Find shows        */
-    /* Document and command changes a paint took in that no publish has
-     * followed yet; the tick publishes the menus for them. */
+    size_t match_count;             /**< how many are marked */
+    int match_truncated;            /**< more matched than were marked */
+    uint64_t search_generation;     /**< the document generation searched */
+    unsigned search_flags;          /**< the TIKU_EDIT_* flags searched */
+    char search_text[1024];         /**< the query searched */
+    char search_message[128];       /**< the count line Find shows */
+    /* Document and command changes a paint took in since the menus were
+     * last published; the tick publishes the menus for them. */
     unsigned menus_due;
-    char last_note[128];
-    int64_t note_until;
+    char last_note[128];            /**< the note the 8 s clock is for */
+    int64_t note_until;             /**< when that note is cleared */
 } edit_state_t;
 
 
-#define EDIT_TOOL_H 29
-#define EDIT_FOOT_H 20
+#define EDIT_TOOL_H 29                  /**< the toolbar's height */
+#define EDIT_FOOT_H 20                  /**< the footer's height */
 /* The divider between split panes, and the least height a pane keeps. */
 #define EDIT_SPLIT_GAP 6
 #define EDIT_PANE_MIN 40
-#define SEARCH_W 480
-#define SEARCH_H 196
+#define SEARCH_W 480                    /**< the Find window's width */
+#define SEARCH_H 196                    /**< and height */
 
+/** @brief The Editor's descriptor. */
 extern const tiku_app_descriptor_t tiku_edit_app;
 
 
 #pragma GCC visibility push(hidden)
 
-/* Standalone launch document; the runtime's explicit document takes priority. */
 int tiku_editor_startup_path(const char *path);
 
 /* App. */

@@ -1,4 +1,5 @@
-/* tiku_ide_commands.c -- commands.
+/* tiku_ide_commands.c -- the menu commands of every IDE window, and the
+ * answers to the desktop's file panel.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
@@ -17,6 +18,15 @@ toggle_comment(ide_t *st, edit_t *e)
     return 0;
 }
 
+/**
+ * @brief Carry out menu command @p command, picked in window @p window.
+ *
+ * Nothing is done while a question is open, nor, on a page a debug run
+ * holds, for a command that would change it.
+ *
+ * @return 1 when the application is done: Close Project with nothing
+ *         unsaved; otherwise 0.
+ */
 int
 tiku_ide_pick(void *state, uint32_t window, int command)
 {
@@ -65,8 +75,7 @@ tiku_ide_pick(void *state, uint32_t window, int command)
     }
     if (e != NULL && command == CMD_RUN &&
         e->lang == TIKU_SYNTAX_BASIC) {
-        /* Run, asked ON a page: THIS file, not whichever row the
-         * project window happens to hold selected. */
+        /* Run from a page runs that page's file. */
                 (void)tiku_ide_edit_save(e);
         tiku_ide_run_file_where(st, e->path);
         tiku_ide_edit_paint(st, e);
@@ -116,8 +125,8 @@ tiku_ide_pick(void *state, uint32_t window, int command)
     case CMD_OPEN:
         if (st->services->pick != NULL) {
             st->asked = ASK_OPEN;
-            /* Only a project DESCRIPTION answers this question, and
-             * the panel says so: every other file shows greyed. */
+            /* The panel takes only a file named project.tiku; other
+             * files show greyed. */
             (void)st->services->pick(st->services->ctx, st->proj_id,
                                      TIKU_APP_PICK_OPEN, NULL,
                                      "project.tiku");
@@ -129,8 +138,8 @@ tiku_ide_pick(void *state, uint32_t window, int command)
     case CMD_NEWPROJ:
         if (st->services->pick != NULL) {
             st->asked = ASK_NEWPROJ;
-            /* The shell's own Save panel names the place and the file;
-             * the offered name is the one the opener looks for. */
+            /* The Save panel offers "untitled"; the name chosen becomes
+             * a folder, which tiku_ide_project_create() fills. */
             (void)st->services->pick(st->services->ctx, st->proj_id,
                                      TIKU_APP_PICK_SAVE, NULL,
                                      "untitled");
@@ -184,10 +193,8 @@ tiku_ide_pick(void *state, uint32_t window, int command)
             !st->proj.row[row].heading) {
             edit_t *open_now = tiku_ide_edit_of_path(st, st->proj.row[row].path);
 
-            /* What is RUN is what is on disk, so a window holding
-             * changes is saved first -- running the last saved copy
-             * while showing another is how a person debugs a program
-             * they are not looking at. */
+            /* A run reads the file on disk, so a page holding changes
+             * to it is saved first. */
             if (open_now != NULL &&
                 tiku_editdoc_modified(open_now->doc)) {
                 (void)tiku_ide_edit_save(open_now);
@@ -232,7 +239,7 @@ tiku_ide_pick(void *state, uint32_t window, int command)
         char names[192];
 
         if (tiku_ide_unsaved(st, names, sizeof names) == 0) {
-            return 1;           /* nothing at stake: closing is closing */
+            return 1;           /* nothing unsaved: close without asking */
         }
         {
             char says[320];
@@ -257,6 +264,9 @@ tiku_ide_pick(void *state, uint32_t window, int command)
     return 0;
 }
 
+/** @brief Take the file panel's answer to the question st->asked names:
+ *         make a project, add a file, open a file in a page, or open a
+ *         project. */
 void
 tiku_ide_picked(void *state, uint32_t window, const char *path)
 {
@@ -274,8 +284,8 @@ tiku_ide_picked(void *state, uint32_t window, const char *path)
         tiku_ide_project_add_file(st, path);
         break;
     case ASK_EDIT: {
-        /* An editor on the file, wherever it lives: opening is not
-         * adding, and a file already open comes forward. */
+        /* The file opens in a page wherever it is, without being added
+         * to the project; a file already open is raised. */
         prow_t want;
         const char *slash = strrchr(path, '/');
 

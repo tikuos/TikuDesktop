@@ -1,8 +1,10 @@
-/* tiku_console_commands.c -- commands.
+/* tiku_console_commands.c -- TikuConsole's menus and commands, typing
+ * straight to the board, and the routing of the window's events.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_console_private.h"
 
+/** Publish the Console and View menus. */
 void tiku_console_publish(console_t *st)
 {
     tiku_menuset_t menus = {0}; menus.nmenu = 2;
@@ -23,6 +25,8 @@ void tiku_console_publish(console_t *st)
     if (st->services->menus) st->services->menus(st->services->ctx, st->id, &menus);
 }
 
+/** Copy the console's lines that pass the Find filter, or with @p selected
+ *  only the selected ones, to the clipboard. */
 void tiku_console_copy_history(console_t *st, int selected)
 {
     if (!st->services->clip_set) return;
@@ -51,6 +55,10 @@ void tiku_console_copy_history(console_t *st, int selected)
     free(out);
 }
 
+/** Run command @p id: a tab, opening or returning the console, Files,
+ *  sending the command line, Break, the view and recording commands, and
+ *  the Network and Device tabs' commands.  A disabled command does
+ *  nothing.  @return 0. */
 int tiku_console_action(console_t *st, int id)
 {
     if (id >= 100 && id < 103) {
@@ -95,7 +103,10 @@ int tiku_console_action(console_t *st, int id)
     st->dirty = 1; return 0;
 }
 
-/** Direct typing is confined to the output pane; editing fields never hits a board. */
+/** Send a key typed in the output pane straight to the board: text,
+ *  Return, Backspace, Escape and the arrows as ANSI sequences; Cmd-V
+ *  pastes one line, Cmd-C sends Break, and Cmd with another letter its
+ *  control byte.  @return 1 when the key was taken. */
 int tiku_console_direct_event(console_t *st, const tiku_event_t *ev)
 {
     int tr = tiku_text_input_event(&st->direct_commit, ev);
@@ -137,6 +148,10 @@ int tiku_console_direct_event(console_t *st, const tiku_event_t *ev)
     return 1;
 }
 
+/** Route an event in the TikuConsole window: a close, the device
+ *  dropdown, direct typing, the history keys, the list, the controls and
+ *  the fields.  @return 1 when the window may close; a close while the
+ *  board is out asks for it back first. */
 int tiku_console_event(void *state, uint32_t window, const tiku_event_t *ev)
 {
     console_t *st = state; (void)window;

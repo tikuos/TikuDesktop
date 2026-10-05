@@ -13,25 +13,22 @@ typedef struct {
 /** @brief Renumber's map and the edits it collects. */
 typedef struct {
     long *olds, *news;          /* old number -> new, in line order     */
-    int n;
-    renum_edit_t *edits;
-    size_t count, cap;
+    int n;                      /* entries in olds and news             */
+    renum_edit_t *edits;        /* the edits collected                  */
+    size_t count, cap;          /* edits used, and room for             */
     int failed;                 /* an edit could not be kept            */
 } renum_t;
 
-static int
-renum_is_word(int c);
-static int
-renum_keyword(const char *s, int *list);
-static int
-renum_raw(const char *s);
-static long
-renum_map(const renum_t *r, long old);
-static void
-renum_number(renum_t *r, int64_t at, const char *digits, size_t n);
-static void
-renum_scan(renum_t *r, const char *s, int64_t at);
+static int renum_is_word(int c);
+static int renum_keyword(const char *s, int *list);
+static int renum_raw(const char *s);
+static long renum_map(const renum_t *r, long old);
+static void renum_number(renum_t *r, int64_t at, const char *digits,
+                         size_t n);
+static void renum_scan(renum_t *r, const char *s, int64_t at);
 
+/** @brief Whether @p c can be part of a word keyword capitals apply to: a
+ *         letter, a digit or "$". */
 int
 tiku_ide_norm_is_word(int c)
 {
@@ -44,8 +41,8 @@ tiku_ide_norm_is_word(int c)
  *        word: @return its length, with its start in @p from; 0 when it
  *        is not.
  *
- * The classifier already tells a keyword in a string or a remark from one
- * in the code.
+ * The syntax classifier does not mark a keyword inside a string or a
+ * remark as reserved.
  */
 static int
 norm_reserved(const char *text, int at, int *from)
@@ -66,7 +63,7 @@ norm_reserved(const char *text, int at, int *from)
 }
 
 /**
- * @brief Uppercase the reserved word the caret just finished, 1982-style.
+ * @brief Put the reserved word the caret just finished in capitals.
  *
  * The classifier that colours the page decides what is reserved, so a
  * keyword in a string or a remark is left alone.  A held selection goes
@@ -113,7 +110,7 @@ tiku_ide_edit_normalize_word(edit_t *e)
         up[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
     }
     if (memcmp(up, text + span_s, (size_t)span_len) == 0) {
-        return;                 /* already shouting: nothing to do */
+        return;                 /* already in capitals */
     }
     {
         /* One step: the word in upper case over itself, the caret where
@@ -133,6 +130,8 @@ tiku_ide_edit_normalize_word(edit_t *e)
     }
 }
 
+/** @brief Whether @p c can be part of a BASIC word when renumbering: a
+ *         letter, a digit or "_". */
 static int
 renum_is_word(int c)
 {
@@ -168,8 +167,8 @@ renum_raw(const char *s)
            (strncasecmp(s, "data", 4) == 0 && !renum_is_word(s[4]));
 }
 
-/** @brief The new number an old one maps to, or the old if none: the
- *         first line wearing it gives the number. */
+/** @brief The new number an old one maps to, or the old if none; when
+ *         several lines have the number, the first of them gives it. */
 static long
 renum_map(const renum_t *r, long old)
 {
@@ -223,14 +222,13 @@ renum_number(renum_t *r, int64_t at, const char *digits, size_t n)
 }
 
 /**
- * @brief Find the line numbers the branches in @p s name, @p s starting
- *        at document position @p at.
+ * @brief Queue edits for the line numbers the branches in @p s name, @p s
+ *        starting at document position @p at.
  *
- * A jump has to follow the line it names when the numbers move, or
- * renumbering would quietly break every branch.  Every number in the
- * comma list after GOTO or GOSUB (`ON A GOTO 10, 20`) counts, and the one
- * after THEN or ELSE.  Quoted text, and the rest of a line after REM, an
- * apostrophe or DATA, are left alone: the interpreter runs none of it.
+ * Every number in the comma list after GOTO or GOSUB (`ON A GOTO 10, 20`)
+ * counts, and the one after THEN or ELSE.  Quoted text, and the rest of a
+ * line after REM, an apostrophe or DATA, are skipped: the interpreter
+ * runs none of it.
  */
 static void
 renum_scan(renum_t *r, const char *s, int64_t at)
@@ -290,11 +288,12 @@ renum_scan(renum_t *r, const char *s, int64_t at)
 /**
  * @brief Renumber a BASIC program by tens, branches following.
  *
- * Every line that starts with a digit is given the next ten, lines
- * sharing a number the first one's, and every branch to an old number is
- * rewritten to the new one.  Only digits that change are replaced, in one
- * undo step, so the caret, the selection and the breakpoints stay on the
- * lines they were on; a program already in tens changes nothing.
+ * Every line that starts with a digit gets the next multiple of ten, and
+ * every branch to an old number is rewritten to the new one; a number
+ * several lines share maps to the first of them.  Only digits that change
+ * are replaced, in one undo step, so the caret, the selection and the
+ * breakpoints stay on their lines; a program numbered 10, 20, 30 and on
+ * changes nothing.
  */
 void
 tiku_ide_renumber_basic(edit_t *e)

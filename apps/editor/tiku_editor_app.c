@@ -131,6 +131,10 @@ int tiku_editor_split(edit_state_t *st)
     return 0;
 }
 
+/** Start the Editor: make the document and its view, load the
+ *  preferences, read the startup document or the launch path, and open
+ *  the window, titled with the file's name.  @return 0, or -1 when
+ *  something cannot be made or the path does not fit. */
 int
 tiku_editor_start(void **state, const tiku_app_services_t *services)
 {
@@ -156,9 +160,8 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
     if (document_new(st)) { free(st); return -1; }
     tiku_editor_preferences_load(st);
     st->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_DOC);
-    /* Only worth keeping when something can use it; a NULL one simply
-     * means every frame goes over as pixels, which is what happens
-     * linked into a desktop anyway. */
+    /* A display list is kept only for a host that can present one; with
+     * none, every frame goes over as pixels. */
     st->dl = (services->present != NULL) ? tiku_dl_new() : NULL;
     if (st->surface == NULL) {
         document_free(st);
@@ -178,9 +181,9 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
         return -1;
     }
     snprintf(st->path, sizeof st->path, "%s", document);
-    /* The name decides, once, before anything is drawn; after that the
-     * menu does.  A file called .bas opens coloured, and everything else
-     * opens as what it is -- prose. */
+    /* The file name sets the language before anything is drawn: .bas
+     * BASIC, .c and .h C, anything else none; after that the Language
+     * menu does. */
     st->lang = tiku_syntax_of_path(st->path);
     tiku_codeview_set_language(st->view, st->lang);
     tiku_editor_load(st);
@@ -207,6 +210,9 @@ tiku_editor_start(void **state, const tiku_app_services_t *services)
     return 0;
 }
 
+/** Stop the Editor: close Preferences, kill a running program, remove its
+ *  scratch file, write unsaved text to a recovery file in /tmp (its path
+ *  goes to stderr), and free everything. */
 void
 tiku_editor_stop(void *state)
 {
@@ -255,15 +261,16 @@ const tiku_app_descriptor_t tiku_edit_app = {
 };
 
 #ifdef TIKU_APP_SO
-/* The one symbol a loader looks for; see tiku_app.h. */
+/** The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t),
     &tiku_edit_app
 };
 #endif
 
-/** Name the document a standalone launch opens.  @return 0, naming none,
- *  when @p path does not fit; it is never cut short. */
+/** Name the document a standalone launch opens; a startup document the
+ *  host gives is opened instead.  @return 0, naming none, when @p path
+ *  does not fit; it is never cut short. */
 int
 tiku_editor_startup_path(const char *path)
 {

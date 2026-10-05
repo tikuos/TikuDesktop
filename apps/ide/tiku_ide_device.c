@@ -4,9 +4,12 @@
 #include "tiku_ide_private.h"
 
 /**
- * @brief Use the desktop's default device for every new run and save.
- * Legacy project board entries remain on disk but do not override it.
- * A named device is never silently replaced with a local run.
+ * @brief Put the desktop's default device into @p out: where every new
+ *        run and board save goes.
+ *
+ * A project file's `board` line is not consulted.
+ *
+ * @return nonzero when there is a default device; 0 means this machine.
  */
 int
 tiku_ide_dest_board(ide_t *st, char *out, size_t max)
@@ -19,7 +22,12 @@ tiku_ide_dest_board(ide_t *st, char *out, size_t max)
 }
 
 /**
- * @brief Run @p path on the desktop default device, or this machine.
+ * @brief Run @p path on the desktop's default device, or on this machine
+ *        when there is none.
+ *
+ * A page holding changes to the file is saved first, and the run is
+ * cancelled when it cannot be.  When the default device is disconnected,
+ * the run is refused.
  */
 void
 tiku_ide_run_file_where(ide_t *st, const char *path)
@@ -43,12 +51,12 @@ tiku_ide_run_file_where(ide_t *st, const char *path)
 }
 
 /**
- * @brief Run the file at @p path on a board the shell has mounted.
+ * @brief Run the file at @p path on @p board through the shell, and open
+ *        the console for it.
  *
- * No child and no pipe: the shell owns the board and the run, and what
- * the program prints arrives as board_said().  Everything downstream --
- * the message rows, the folded error, the caret -- is the same road a
- * run on this machine takes, because a board's interpreter IS this one.
+ * There is no child and no pipe: the shell runs the program, and each
+ * line it prints arrives through tiku_ide_board_said(), which passes it
+ * to tiku_ide_message_take().
  */
 void
 tiku_ide_run_file_on_board(ide_t *st, const char *path, const char *board)
@@ -82,7 +90,7 @@ tiku_ide_run_file_on_board(ide_t *st, const char *path, const char *board)
             snprintf(st->child_file, sizeof st->child_file, "%s", path);
     snprintf(st->board, sizeof st->board, "%s", board);
     st->child_numbered = 1;          /* BASIC names its own lines */
-    st->child_fd = -1;               /* nothing of ours to read   */
+    st->child_fd = -1;               /* no pipe: see board_said   */
     st->nmsg = 0;
     st->msg_problems = 1;
     st->partial[0] = '\0';
@@ -102,12 +110,12 @@ tiku_ide_run_file_on_board(ide_t *st, const char *path, const char *board)
 }
 
 /**
- * @brief Keep the file at @p path on the first board, under its own name.
+ * @brief Ask to keep the file at @p path on the default device under its
+ *        own name; tiku_ide_upload_confirm() sends it once confirmed.
  *
- * The slot is the file's name without its extension, cut to the seven
- * characters the board allows; the board shows it as /data/<name>.bas.
- * The line is held while it goes, exactly as for a run, so Run and Save
- * are offered again only when the shell says it is done.
+ * The name is the file's without its extension, cut to seven characters,
+ * which must be letters, digits or underscores; the board keeps it as
+ * /data/<name>.bas.  A page holding changes is saved first.
  */
 void
 tiku_ide_save_file_on_board(ide_t *st, const char *path)
@@ -181,7 +189,9 @@ tiku_ide_save_file_on_board(ide_t *st, const char *path)
     tiku_ide_project_paint(st);
 }
 
-/** The confirmation owns an immutable program and device, not the new default. */
+/** @brief Save the program the question was asked about on the device it
+ *         named, even if the default device has changed since.  No run or
+ *         save starts until the shell reports how the save went. */
 void
 tiku_ide_upload_confirm(ide_t *st)
 {
@@ -209,10 +219,10 @@ tiku_ide_upload_confirm(ide_t *st)
 }
 
 /**
- * @brief Let a board run go on this side when the board never answered.
+ * @brief Release a board run whose Stop the board never answered.
  *
- * The program may well still be running out there; what ends here is
- * this application's hold on the page, which a Stop must always lift.
+ * The program may still be running on the board; this clears only the
+ * IDE's running state, so the page can be edited again.
  */
 void
 tiku_ide_board_run_released(ide_t *st)
@@ -237,6 +247,13 @@ tiku_ide_board_run_released(ide_t *st)
     tiku_ide_project_publish(st);
 }
 
+/**
+ * @brief Take a report from the shell: a new default device, a line the
+ *        board printed, a request for input, or the end of a run or save.
+ *
+ * Printed lines go to the messages and the console; the end of a save
+ * goes to the Project window's note.
+ */
 void
 tiku_ide_board_said(void *state, int what, const char *text)
 {
@@ -275,14 +292,14 @@ tiku_ide_board_said(void *state, int what, const char *text)
         return;
     }
     if (what == TIKU_APP_BOARD_ASKS) {
-        /* The program wants a line.  The window it asks in is the one
-         * its output goes to, made now if nothing has been printed yet. */
+        /* The program wants a line.  It asks in the console when that is
+         * open, otherwise in the Messages window, opened now if need be. */
         st->asking = 1;
         snprintf(st->ask_prompt, sizeof st->ask_prompt, "%s",
                  (text != NULL) ? text : "? ");
                 tiku_field_start(&st->answer, "");
         if (st->con_surface != NULL) {
-            /* The console is where the program is: it asks there. */
+            /* The console is open: the program asks there. */
             tiku_ide_console_paint(st);
             if (st->services->raise_window != NULL) {
                 (void)st->services->raise_window(st->services->ctx,
@@ -314,8 +331,7 @@ tiku_ide_board_said(void *state, int what, const char *text)
         }
     }
     if (what == TIKU_APP_BOARD_SAVED || st->saving) {
-        /* A save says where it went, not in a message window: nothing
-         * was printed, and a window for nothing is furniture. */
+        /* A save is reported in the Project window's note. */
         if (what == TIKU_APP_BOARD_SAVED) {
             snprintf(st->note, sizeof st->note, "kept on %s as %s",
                      st->board, (text != NULL) ? text : "");
@@ -343,13 +359,15 @@ tiku_ide_board_said(void *state, int what, const char *text)
         tiku_ide_console_paint(st);
         tiku_ide_console_publish(st);
     } else {
-        /* The console already contains the errors and their line numbers.
-         * Use Messages only as a fallback when no console is available. */
+        /* The console already holds the errors and their line numbers;
+         * the Messages window is shown only when there is no console. */
         tiku_ide_messages_show(st);
     }
     tiku_ide_project_publish(st);
 }
 
+/** @brief Whether @p board is among the boards the desktop has connected;
+ *         1 when the desktop cannot say. */
 int
 tiku_ide_board_connected(ide_t *st, const char *board)
 {
@@ -357,7 +375,7 @@ tiku_ide_board_connected(ide_t *st, const char *board)
     size_t n = strlen(board);
 
     if (st->services->board_names == NULL) {
-        return 1; /* Older hosts do not expose connection state. */
+        return 1; /* this host cannot report connections */
     }
     names[0] = '\0';
     (void)st->services->board_names(st->services->ctx, names, sizeof names);
@@ -373,6 +391,8 @@ tiku_ide_board_connected(ide_t *st, const char *board)
     return 0;
 }
 
+/** @brief The target strip's text: what is running and where, or where
+ *         Run will go and whether that device is ready. */
 void
 tiku_ide_target_text(ide_t *st, char *out, size_t max)
 {
@@ -390,6 +410,8 @@ tiku_ide_target_text(ide_t *st, char *out, size_t max)
     }
 }
 
+/** @brief Paint the target strip under page @p e's toolbar, its text cut
+ *         to the window's width. */
 void
 tiku_ide_target_paint(ide_t *st, edit_t *e)
 {
@@ -405,7 +427,9 @@ tiku_ide_target_paint(ide_t *st, edit_t *e)
     tiku_text(e->surface, f, 6, r.y + f->ascent + 4, label, TIKU_C_TEXT);
 }
 
-/** Reject, never truncate, data that the board service cannot carry. */
+/** @brief Read the program at @p path into @p out for the board.  A file
+ *         too large for @p out, or holding a NUL byte, is refused.
+ *         @return 0 with the reason in the note. */
 int
 tiku_ide_upload_read(ide_t *st, const char *path, char *out, size_t max)
 {

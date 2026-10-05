@@ -1,4 +1,6 @@
-/* tiku_bench_catalogue.c -- catalogue.
+/* tiku_bench_catalogue.c -- the test catalogue read from tikubench's
+ * metadata (boards, suites, their leaves, history and benchmarks), the
+ * suite list built from it, and the run queue built from the selection.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
@@ -7,7 +9,8 @@ static void meta_copy(bench_t *st, char *out, size_t cap, const char *value);
 static int contains(const char *text, const char *needle);
 static int group_of(bench_t *st, const char *name);
 
-/* Registry/profile model shared by the live UI and display-free regressions. */
+/** Whether the comma-separated list @p csv holds @p word; "*" and "any"
+ *  hold every word, and no list holds an empty one. */
 int tiku_bench_csv_has(const char *csv, const char *word)
 {
     if (!strcmp(csv, "*") || !strcmp(csv, "any")) return 1;
@@ -23,7 +26,8 @@ int tiku_bench_csv_has(const char *csv, const char *word)
     return 0;
 }
 
-/** Prefer the explicit checkout, otherwise resolve beside applications/build. */
+/** Find the TikuBench checkout: $TIKU_BENCH, else TikuBench beside the
+ *  applications tree this program runs from, else ~/tikuOS/TikuBench. */
 void tiku_bench_locate_bench(bench_t *st)
 {
     const char *env = getenv("TIKU_BENCH");
@@ -41,12 +45,17 @@ void tiku_bench_locate_bench(bench_t *st)
              getenv("HOME") ? getenv("HOME") : ".");
 }
 
-/** Oversized metadata is an error, not a silently incomplete test catalogue. */
+/** Copy a metadata field into @p out; a field too long for @p out marks
+ *  the catalogue bad. */
 static void meta_copy(bench_t *st, char *out, size_t cap, const char *value)
 {
     if (snprintf(out, cap, "%s", value) >= (int)cap) st->metadata_bad = 1;
 }
 #define MC(dst, src) meta_copy(st, dst, sizeof(dst), src)
+/** Take one line of catalogue metadata, a tab-separated row whose first
+ *  field is its kind: B a board, S a suite, C one of the last suite's
+ *  cases, H a history record, M a benchmark.  A B, S or C row that is
+ *  malformed or does not fit marks the catalogue bad. */
 void tiku_bench_metadata_line(bench_t *st, char *line)
 {
     char *f[10]; int n = 0;
@@ -87,6 +96,7 @@ void tiku_bench_metadata_line(bench_t *st, char *line)
 }
 #undef MC
 
+/** Unselect every suite and every leaf. */
 void tiku_bench_clear_selection(bench_t *st)
 {
     for (int i = 0; i < st->nsuite; i++) st->suites[i].selected = 0;
@@ -95,15 +105,23 @@ void tiku_bench_clear_selection(bench_t *st)
 
 
 
+/** Whether suite @p s can run: a host-only suite always can; any other
+ *  needs a known board whose MCU it lists and, when it is large and the
+ *  board an MSP430, the large memory model. */
 int tiku_bench_suite_supported(const bench_t *st, const suite_t *s)
 {
     return s->host_only || (st->supported && tiku_bench_csv_has(s->boards, st->mcu) &&
         !(s->large && !strncmp(st->mcu, "msp430", 6) && !st->large));
 }
+/** Whether leaf @p l runs under the board's profile: its profiles list
+ *  holds it, or with @p full the list of profiles whose full run
+ *  includes it. */
 int tiku_bench_leaf_supported(const bench_t *st, const leaf_t *l, int full)
 { return tiku_bench_csv_has(full ? l->full : l->profiles, st->profile); }
 
-/** Unsupported leaves stay visible and explain their canonical exclusion. */
+/** Why leaf @p l does not run under the board's profile, from its reasons
+ *  list into @p out, or a general line when the list names no reason
+ *  for the profile. */
 const char *tiku_bench_leaf_reason(const bench_t *st, const leaf_t *l, char *out, size_t cap)
 {
     size_t n = strlen(st->profile);
@@ -119,6 +137,8 @@ const char *tiku_bench_leaf_reason(const bench_t *st, const leaf_t *l, char *out
     return "Not available in this profile";
 }
 
+/** Whether @p needle occurs in @p text, ignoring case; an empty needle
+ *  always does. */
 static int contains(const char *text, const char *needle)
 {
     if (!*needle) return 1;
@@ -143,11 +163,12 @@ static int group_of(bench_t *st, const char *name)
 }
 
 /**
- * The suite list as rows: a heading for each group in the catalogue's
- * own order, then the group's suites and, under an expanded suite, its
- * leaves.  A filter shows every group with a match and opens the suites
- * in it; a folded group keeps only its heading.  Headings are marked on
- * the list so the cursor and the checks pass over them.
+ * Build the suite list's rows: a heading for each group, in the order the
+ * catalogue first names them, then the group's suites and, under an
+ * expanded suite, its leaves.  A filter shows every group with a match
+ * and opens the suites in it; a folded group keeps only its heading.
+ * Headings are marked on the list so the cursor and the checks pass over
+ * them.
  */
 void tiku_bench_entries_build(bench_t *st)
 {
@@ -189,7 +210,8 @@ void tiku_bench_entries_build(bench_t *st)
     }
 }
 
-/** The rows of the Did not run tab: every leaf the active profile excludes. */
+/** Count the Did not run tab's rows: every leaf the board's profile
+ *  excludes. */
 void tiku_bench_notrun_build(bench_t *st)
 {
     int n = 0;
@@ -198,6 +220,10 @@ void tiku_bench_notrun_build(bench_t *st)
     tiku_list_set_count(&st->list[TAB_NOTRUN], n);
 }
 
+/** Act on suite-list row @p row: a heading folds or opens its group;
+ *  with @p expand a suite opens or closes; otherwise a suite or leaf the
+ *  board can run is selected or unselected.  Nothing happens while a run
+ *  goes or the catalogue loads. */
 void tiku_bench_toggle_entry(bench_t *st, int row, int expand)
 {
     if (st->busy || st->loading || row < 0 || row >= st->nentry) return;
@@ -217,7 +243,9 @@ void tiku_bench_toggle_entry(bench_t *st, int row, int expand)
     }
 }
 
-/** Build an immutable queue. Full-suite selection never expands into --only. */
+/** Build the run queue from the selection: a job for each runnable suite
+ *  that is selected whole, or that has selected leaves, which go in its
+ *  --only list.  @return whether there is a job. */
 int tiku_bench_queue_build(bench_t *st)
 {
     st->njob = st->job = 0;
@@ -253,7 +281,8 @@ int tiku_bench_queue_destructive(const bench_t *st)
     return n;
 }
 
-/** A host-only queue must not disconnect a board, even if one is selected. */
+/** Whether a queued suite needs the board; when every suite is host-only
+ *  the board is not released. */
 int tiku_bench_queue_needs_device(const bench_t *st)
 {
     for (int i = 0; i < st->njob; i++)

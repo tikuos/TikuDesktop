@@ -1,14 +1,14 @@
-/* tiku_editor_file.c -- lossless document reads and atomic saves.
+/* tiku_editor_file.c -- reading a document whole, every byte kept and
+ * within its size limit, and saving it atomically through a file in the
+ * same directory.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
 
 static int same_disk(const struct stat *a, const struct stat *b);
 
-/* Lossless, bounded text loading and same-directory atomic saves.
- * SPDX-License-Identifier: Apache-2.0 */
-
-/** Compare the identity and modification stamp observed when loading. */
+/** Whether @p a and @p b are the same file unchanged: device, inode, size,
+ *  and modification and change times. */
 static int same_disk(const struct stat *a, const struct stat *b)
 {
     return a->st_dev == b->st_dev && a->st_ino == b->st_ino &&
@@ -40,7 +40,8 @@ static const char *main_break(const char *bytes, size_t n)
 }
 
 /** Load the file's bytes after any BOM as they are; the document is
- *  replaced only when the whole file is read and accepted. */
+ *  replaced only when the whole file is read and accepted.  @return 1
+ *  when read; 0 with the reason in the note and the document kept. */
 int tiku_editor_read_document(edit_state_t *st, const char *path)
 {
     int fd = -1, ok = 0, bom = 0;
@@ -100,7 +101,8 @@ done:
     return ok;
 }
 
-/** Empty launches stay empty; a failed launch cannot overwrite its source. */
+/** Read the launch document, when one is named; when it cannot be read,
+ *  the load is marked failed, so a save to its own path is refused. */
 void tiku_editor_load(edit_state_t *st)
 {
     if (!st->path[0]) return;
@@ -113,7 +115,8 @@ void tiku_editor_load(edit_state_t *st)
 static int write_run(void *ctx, const char *bytes, size_t n)
 { return fwrite(bytes, 1, n, ctx) != n; }
 
-/** Serialize exactly: the BOM when the file had one, then every byte. */
+/** Write the document to @p f: the BOM when the file had one, then every
+ *  byte.  @return 0 when a write failed. */
 int tiku_editor_write_document(edit_state_t *st, FILE *f)
 {
     tiku_edit_range_t all = {0, tiku_editdoc_length(st->doc)};
@@ -123,7 +126,11 @@ int tiku_editor_write_document(edit_state_t *st, FILE *f)
     return !ferror(f);
 }
 
-/** Replace only after a complete flushed write; never follow an output link. */
+/** Save to @p path through a temporary file in its folder, renamed over
+ *  it once written and synced.  A symbolic or hard link, a read-only
+ *  file, a file changed on disk since it was read, and a source that
+ *  failed to load are refused.  @return 1 when saved; 0 with the reason
+ *  in the note. */
 int tiku_editor_save_document(edit_state_t *st, const char *path)
 {
     struct stat before, after;

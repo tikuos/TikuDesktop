@@ -1,12 +1,15 @@
-/* tiku_ide_recovery.c -- recovery.
+/* tiku_ide_recovery.c -- drafts of unsaved pages: written atomically to a
+ * private per-user directory, one lock per draft, and restored when the
+ * file is opened again or by Recover unsaved files.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static int
-recovery_dir(char *out, size_t max);
+static int recovery_dir(char *out, size_t max);
 
-/** Reopen private snapshots; originals are never changed by recovery. */
+/** @brief Recover unsaved files: open a page for each draft that no other
+ *         instance holds and no open page already has.  The files
+ *         themselves are not changed. */
 void
 tiku_ide_recovery_scan(ide_t *st)
 {
@@ -51,6 +54,10 @@ tiku_ide_recovery_scan(ide_t *st)
     closedir(d);
 }
 
+/** @brief The recovery directory in @p out: $TIKU_IDE_RECOVERY_DIR when it
+ *         is absolute, else ~/.<APP_NAME>-recovery, made when missing.
+ *         @return 0 unless it is a directory this user owns that grants
+ *         nobody else access. */
 static int
 recovery_dir(char *out, size_t max)
 {
@@ -78,8 +85,16 @@ draft_run(void *ctx, const char *bytes, size_t n)
     return fwrite(bytes, 1, n, ctx) != n;
 }
 
-/** Atomic private writes; a failed checkpoint leaves the last one intact.
- *  The draft is the page's path on a line, then every byte of its text. */
+/**
+ * @brief Write page @p e's draft: its path on a line, then every byte of
+ *        its text, through a temporary file renamed into place.
+ *
+ * A failed write leaves the last draft as it was.  An unmodified page's
+ * draft is removed instead.
+ *
+ * @return 1 when the draft matches the page; 0 when it could not be
+ *         written, or the page has no draft.
+ */
 int
 tiku_ide_recovery_write(edit_t *e)
 {
@@ -118,8 +133,9 @@ tiku_ide_recovery_write(edit_t *e)
     return 0;
 }
 
-/** Restore the draft over the page, which then reads modified; a draft
- *  for another path, or one the page cannot hold, is kept unread. */
+/** @brief Load page @p e's draft over its text, which then reads as
+ *         modified.  A draft for another path, or one the page cannot
+ *         hold, is kept and no draft is written over it. */
 void
 tiku_ide_recovery_restore(edit_t *e)
 {
@@ -175,6 +191,12 @@ done:
     free(text);
 }
 
+/**
+ * @brief Take page @p e's draft: make e->path absolute, name the draft
+ *        by a hash of the path, lock it, and restore it when there is one.
+ *
+ * A draft another instance has locked leaves the page without recovery.
+ */
 void
 tiku_ide_recovery_open(edit_t *e)
 {
@@ -208,6 +230,9 @@ tiku_ide_recovery_open(edit_t *e)
     tiku_ide_recovery_restore(e);
 }
 
+/** @brief Let page @p e's draft go: deleted with @p discard, otherwise
+ *         written, which deletes it when the page is unmodified; its lock
+ *         file goes either way. */
 void
 tiku_ide_recovery_release(edit_t *e, int discard)
 {

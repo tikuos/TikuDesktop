@@ -1,4 +1,6 @@
-/* tiku_editor_view.c -- view.
+/* tiku_editor_view.c -- the Editor's window around the code view: where
+ * the panes, toolbar and footer go, the Find and Go to Line window, and
+ * painting.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
@@ -8,24 +10,22 @@
 /* The outline live search draws round each match. */
 #define MATCH_OUTLINE TIKU_RGB(175, 125, 20)
 
-static int
-out_pane_h(const edit_state_t *st);
+static int out_pane_h(const edit_state_t *st);
 static void toolbar_paint(edit_state_t *st);
 static void draw_scroll(edit_state_t *st, tiku_scroll_t *bar, tiku_rect_t r, int horiz);
 
+/** The run pane's height: 0 while there is no run and no output, else
+ *  room for seven lines. */
 static int
 out_pane_h(const edit_state_t *st)
 {
     const tiku_font_t *f = tiku_font_plain();
 
     if (st == NULL || (st->out_count == 0 && !st->running)) {
-        return 0;               /* no run yet: the page is all editor */
+        return 0;
     }
     return 7 * (f->height + 2) + 8;
 }
-
-/* Pe-inspired compact native chrome around the code view.
- * SPDX-License-Identifier: Apache-2.0 */
 
 /** The footer box a message or a tool's label is drawn in, over the
  *  encoding label and the horizontal scrollbar. */
@@ -33,8 +33,7 @@ tiku_rect_t tiku_editor_note_box(const edit_state_t *st)
 { return (tiku_rect_t){112, st->h - EDIT_FOOT_H + 1, st->w - 129, EDIT_FOOT_H - 1}; }
 
 /** Where the code view sits: from the window's left edge to the vertical
- *  scrollbar, from under the toolbar to the run pane or the footer.  The
- *  document never moves when Find is opened in its own window. */
+ *  scrollbar, from under the toolbar to the run pane or the footer. */
 tiku_rect_t tiku_editor_view_box(const edit_state_t *st)
 {
     return (tiku_rect_t){0, EDIT_TOOL_H + 1, st->w - 15,
@@ -135,9 +134,11 @@ void tiku_editor_reveal(edit_state_t *st)
     tiku_codeview_reveal(st->view);
 }
 
-/** Flat until hovered, with familiar file/folder/save/search symbols. */
+/** The rectangle of toolbar tool @p i: New, Open, Save, Undo, Redo and
+ *  Find, left to right. */
 tiku_rect_t tiku_editor_tool_rect(int i)
 { return (tiku_rect_t){4 + 27 * i + (i >= 3 ? 7 : 0), 2, 25, 25}; }
+/* Each tool's label, shown in the footer while it is hovered. */
 static const char *tool_labels[] = {"New (Ctrl+N)", "Open (Ctrl+O)", "Save (Ctrl+S)",
     "Undo (Ctrl+Z)", "Redo (Ctrl+Y)", "Find / Replace (Ctrl+F)"};
 /** Whether tool @p i can be pressed: none while the question is open,
@@ -154,6 +155,9 @@ int tiku_editor_tool_enabled(edit_state_t *st, int i)
         return tiku_codeview_command_enabled(st->view, TIKU_CODEVIEW_CMD_REDO);
     return 1;
 }
+/** Paint the toolbar: each tool flat until hovered (a file, a folder, a
+ *  disk, two arrows and a magnifier), then the document's name, with a
+ *  "* " in front while it holds unsaved changes. */
 static void toolbar_paint(edit_state_t *st)
 {
     tiku_surface_t *s = st->surface;
@@ -191,8 +195,11 @@ static void toolbar_paint(edit_state_t *st)
     tiku_hline(s, 0, EDIT_TOOL_H - 1, st->w, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
 }
 
+/** The rectangle of the Find window's field @p i: 0 Find, 1 Replace, 2
+ *  the Go to Line field. */
 tiku_rect_t tiku_editor_search_field(const edit_state_t *st, int i)
 { (void)st; return (tiku_rect_t){84, 12 + (i == 1 ? 32 : 0), SEARCH_W - 100, 25}; }
+/** The rectangle of the Find window's button @p i, left to right. */
 tiku_rect_t tiku_editor_search_button(int i)
 { return (tiku_rect_t){12 + 92 * i, 126, 86, 25}; }
 /** Close the Find or Go to Line window and drop the match outlines. */
@@ -203,6 +210,8 @@ void tiku_editor_search_close(edit_state_t *st)
     st->search_id = 0; st->finding = 0; st->find_focus = -1; st->search_active = 0;
     if (id && st->services->close) st->services->close(st->services->ctx, id);
 }
+/** Open the Find and Replace window (@p mode 1) or the Go to Line window
+ *  (2), or raise it; one open in the other mode is closed first. */
 void tiku_editor_search_open_window(edit_state_t *st, int mode)
 {
     if (st->search_id && mode != st->finding) tiku_editor_search_close(st);
@@ -253,7 +262,8 @@ void tiku_editor_search_paint(edit_state_t *st)
     st->services->frame(st->services->ctx, st->search_id, s->px, SEARCH_W, SEARCH_H);
 }
 
-/** Ordinary scrollbar: end arrows, page track and grippable thumb. */
+/** Draw scrollbar @p bar in @p r, across with @p horiz: its end arrows,
+ *  the track and the thumb. */
 static void draw_scroll(edit_state_t *st, tiku_scroll_t *bar, tiku_rect_t r, int horiz)
 {
     int length = (horiz ? r.w : r.h) - 28, pos, thick;
@@ -335,7 +345,8 @@ void tiku_editor_paint(edit_state_t *st)
         tiku_clip_reset(st->surface);
     }
     toolbar_paint(st);
-    /* Caret pane shares the bottom edge with horizontal scrolling, as in Pe. */
+    /* The footer: the caret's line and column, the line-break label and
+     * the horizontal scrollbar. */
     int footer = st->h - EDIT_FOOT_H;
     tiku_hline(st->surface, 0, footer, st->w, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     char position[96];

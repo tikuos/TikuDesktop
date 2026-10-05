@@ -1,14 +1,13 @@
-/* tiku_bench_firmware.c -- the Firmware tab.
+/* tiku_bench_firmware.c -- the Firmware tab, a front end over `tikubench
+ * firmware --events tsv`.  The tool owns the options (the Makefile's
+ * own), the build, the flash and the checks around flashing; this tab
+ * asks it, shows its answers and hands it the board.  Nothing here builds
+ * or flashes by itself.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
 
-/* A front end over `tikubench firmware --events tsv`.  The tool owns the
- * options (the Makefile's own), the build, the flash and the checks that
- * make flashing safe; this tab asks it, shows what it says, and hands it
- * the board.  Nothing here builds or flashes by itself. */
-
-#define FW_FIELDS 40
+#define FW_FIELDS 40            /* the most fields read from a record */
 #define FW_COPY(dst, src) snprintf(dst, sizeof(dst), "%s", src)
 enum { QUERY_PRESETS = 1, QUERY_OPTIONS };
 static const char *const stage_name[FW_NSTAGE] = {
@@ -23,9 +22,10 @@ static int arg(command_t *c, const char *word)
 }
 
 /**
- * @brief One row of what the desktop keeps about the board.
- * @return 1 with the row, 0 when the board has none, -1 when nothing is
- *         kept about it yet.
+ * @brief The value of row @p label of the desktop's device stats for the
+ *        chosen board, into @p out.
+ * @return 1 with the value, 0 when the stats have no such row, -1 when
+ *         there are no stats for the board.
  */
 static int stat_row(const bench_t *st, const char *label, char *out,
                     size_t cap)
@@ -58,7 +58,9 @@ static const fw_preset_t *fw_selected(const bench_t *st)
     return i >= 0 && i < st->fw.npreset ? &st->fw.preset[i] : NULL;
 }
 
-/** The --set words: the options changed here, then the Extra field's. */
+/** Add the --set words to @p c: the options changed in the list, then,
+ *  with @p extra, the Extra field's NAME=VALUE words.  @return 0 when a
+ *  word is malformed or there are too many. */
 static int fw_sets(bench_t *st, command_t *c, int extra)
 {
     for (int i = 0; i < st->fw.nset; i++) {
@@ -82,7 +84,9 @@ static int fw_sets(bench_t *st, command_t *c, int extra)
     return 1;
 }
 
-/** argv for one `tikubench firmware` action; 0 when it cannot be said. */
+/** Build the argv of one `tikubench firmware` action into @p c.  @return 0
+ *  when the MCU, the board, a preset, the port or an Extra word it needs
+ *  is missing or bad. */
 static int fw_command(bench_t *st, const char *action, command_t *c)
 {
     const char *base[] = {"python3", "-u", "-m", "tikubench", "firmware",
@@ -91,8 +95,8 @@ static int fw_command(bench_t *st, const char *action, command_t *c)
     for (size_t i = 0; i < sizeof base / sizeof base[0]; i++)
         arg(c, base[i]);
     if (!strcmp(action, "presets")) {
-        /* The die's name, and the board the image says it was built
-         * for, name the board without opening its port. */
+        /* The MCU, and the board the running image was built for,
+         * identify the board without opening its port. */
         if (!*st->mcu) return 0;
         arg(c, "--mcu"); arg(c, st->mcu);
         if (stat_row(st, "board", c->words[c->nword],
@@ -115,7 +119,8 @@ static int fw_command(bench_t *st, const char *action, command_t *c)
     return 1;
 }
 
-/** Forget what the last run said: its steps, preview and states. */
+/** Clear what the last firmware run reported: its steps, preview, image
+ *  and status. */
 static void fw_stages_clear(bench_t *st)
 {
     for (int i = 0; i < FW_NSTAGE; i++)
@@ -124,15 +129,16 @@ static void fw_stages_clear(bench_t *st)
     st->fw.status[0] = '\0'; st->fw.ok = 0;
 }
 
-/** Ask the tool for the presets or the options; the board stays ours. */
+/** Ask tikubench for the presets or the options; the board is not
+ *  released for this. */
 static void fw_query(bench_t *st, int which)
 {
     command_t c;
     if (!fw_command(st, which == QUERY_PRESETS ? "presets" : "options", &c))
         return;
     if (which == QUERY_PRESETS) {
-        /* The changes made here outlive the asking unless the answer
-         * names another board (tiku_bench_fw_line). */
+        /* The options changed in the list are kept unless the answer
+         * names another board (tiku_bench_fw_line()). */
         const fw_preset_t *was = fw_selected(st);
         if (was) FW_COPY(st->fw.keep, was->key);
         st->fw.npreset = st->fw.noption = st->fw.nrow = 0;
@@ -166,8 +172,8 @@ void tiku_bench_fw_poll(bench_t *st)
     (void)stat_row(st, "board", osb, sizeof osb);
     snprintf(key, sizeof key, "%.60s|%.180s|%.60s", mcu, port, osb);
     if (strcmp(key, st->fw.asked)) {
-        /* Another board, or the same one answering differently: ask
-         * again, once, whatever the answer. */
+        /* The board, its port or its running image changed: ask again,
+         * once, whatever the answer. */
         snprintf(st->fw.asked, sizeof st->fw.asked, "%s", key);
         if (strcmp(mcu, st->mcu) || strcmp(port, st->port))
             tiku_bench_target_capture(st);
@@ -225,7 +231,8 @@ static void fw_rows(bench_t *st)
     tiku_list_set_count(&st->list[TAB_FIRMWARE], fw->nrow);
 }
 
-/** A step began or ended: kept for the pills, logged, and noted. */
+/** Take a stage record: keep the step's state for the pills, log it and
+ *  put it in the note. */
 static void fw_stage(bench_t *st, char **f, int n)
 {
     const char *name = fw_get(f, n, "stage"), *state = fw_get(f, n, "state");
@@ -258,8 +265,8 @@ void tiku_bench_fw_line(bench_t *st, char *line)
     fw_t *fw = &st->fw;
     char *f[FW_FIELDS];
     if (!fw_is_record(line)) {
-        /* Python or make speaking for itself, which is how a failure
-         * that never reached the tool is seen. */
+        /* Not a record: Python's or make's own output, such as an error
+         * raised before the tool ran; it goes to the log. */
         if (*line) tiku_bench_log_line(st, line, 1);
         return;
     }
@@ -312,7 +319,8 @@ void tiku_bench_fw_line(bench_t *st, char *line)
     st->dirty = 1;
 }
 
-/** A private log for one handoff, as a test run keeps one. */
+/** Open a private log file for one firmware handoff.  @return 0 when it
+ *  cannot be made. */
 static int fw_log_open(bench_t *st)
 {
     char pattern[] = "/tmp/tikubench-desktop-XXXXXX";
@@ -388,7 +396,7 @@ void tiku_bench_fw_spawn(bench_t *st)
     st->dirty = 1;
 }
 
-/** The install question, the preview in it, Cancel first. */
+/** Ask whether to install, quoting the preview; Cancel is the default. */
 static void fw_ask(bench_t *st)
 {
     const fw_preset_t *p = fw_selected(st);

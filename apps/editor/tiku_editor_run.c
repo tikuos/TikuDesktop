@@ -3,16 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
 
-static void
-out_line(edit_state_t *st, const char *line);
+static void out_line(edit_state_t *st, const char *line);
 
 /** @brief Append one finished line of the child's output to the pane. */
 static void
 out_line(edit_state_t *st, const char *line)
 {
     if (st->out_count >= (int)(sizeof st->out / sizeof st->out[0])) {
-        /* Full: the oldest line goes, because the newest is the one a
-         * person watching a run is waiting for. */
+        /* Full: the oldest line is dropped. */
         memmove(st->out[0], st->out[1],
                 sizeof st->out - sizeof st->out[0]);
         st->out_count--;
@@ -22,14 +20,13 @@ out_line(edit_state_t *st, const char *line)
 }
 
 /**
- * @brief Run the document in the interpreter a board runs.
+ * @brief Run the document with tiku-basic, the interpreter a board runs;
+ *        tiku_editor_tick() reads its output from a pipe.
  *
- * The text is written to its file first (or a scratch one when it has
- * no name yet), because the interpreter reads a FILE -- what runs is
- * what would run tomorrow, not a copy that only ever existed in this
- * window.  The sandbox the program's VFS lands in is the file's own
- * folder: a program that writes /led writes beside its source, where
- * its author can look at it.
+ * tiku-basic reads a file, so the document is saved first, or written to
+ * a scratch file in /tmp when it has no name.  The program's VFS sandbox
+ * is the file's folder, so a program that writes /led writes beside its
+ * source.
  */
 void
 tiku_editor_run_program(edit_state_t *st)
@@ -94,7 +91,7 @@ tiku_editor_run_program(edit_state_t *st)
         (void)close(fds[0]);
         (void)close(fds[1]);
         (void)execlp(tool, tool, file, box, (char *)NULL);
-        /* Reached only when the interpreter is not there to run. */
+        /* Reached only when the interpreter cannot be run. */
         fprintf(stderr, "cannot run %s\n", tool);
         _exit(127);
     }
@@ -107,10 +104,10 @@ tiku_editor_run_program(edit_state_t *st)
     snprintf(st->note, sizeof st->note, "running");
 }
 
-/** @brief Count the rows of lines still to be wrapped, repaint for what
- *         the panes changed after the last frame, publish the menus when
- *         the document or its commands changed, and hear what the run has
- *         said since the last frame. */
+/** @brief Periodic work: count the rows of lines still to be wrapped,
+ *         repaint for what the panes changed since the last frame,
+ *         publish the menus when the document or its commands changed,
+ *         clear a footer note after 8 s, and read the run's output. */
 void
 tiku_editor_tick(void *state, int64_t now_us)
 {
@@ -150,8 +147,7 @@ tiku_editor_tick(void *state, int64_t now_us)
         if (n <= 0) {
             break;
         }
-        /* Every byte read is looked at: a NUL is dropped rather than
-         * ending the read, since a line cannot hold one. */
+        /* A NUL byte is dropped: a line cannot hold one. */
         for (ssize_t i = 0; i < n; i++) {
             size_t used = strlen(st->out_partial);
 
@@ -166,8 +162,8 @@ tiku_editor_tick(void *state, int64_t now_us)
         heard = 1;
     }
     if (n == 0) {
-        /* The pipe closed: the run is over, and its verdict is worth a
-         * line of its own. */
+        /* The pipe closed: keep the last partial line; once the child is
+         * reaped, the note says how the run ended. */
         int status = 0;
 
         if (st->out_partial[0] != '\0') {
@@ -175,7 +171,7 @@ tiku_editor_tick(void *state, int64_t now_us)
             st->out_partial[0] = '\0';
         }
         pid_t ended = waitpid(st->child, &status, WNOHANG);
-        if (!ended) return;  /* Closed stdout is not necessarily process exit. */
+        if (!ended) return;  /* the child may still be running */
         st->running = 0;
         (void)close(st->child_fd);
         st->child_fd = -1;

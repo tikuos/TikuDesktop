@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static void
-msep(tiku_menu_list_t *m);
+static void msep(tiku_menu_list_t *m);
 
 /** @brief The editor holding @p path, or NULL. */
 edit_t *
@@ -41,11 +40,11 @@ tiku_ide_edit_of_id(ide_t *st, uint32_t id)
 }
 
 /**
- * @brief Cut, copy or paste at this editor, over the desk's clipboard,
+ * @brief Cut, copy or paste at page @p e through the desk's clipboard,
  *        or select all, undo or redo.
  *
- * Through the services, so the same page behaves the same hosted in the
- * shell or across the wire.  Cut deletes only what the clipboard took.
+ * The clipboard is reached through the desktop's services.  Cut deletes
+ * only what the clipboard took.
  *
  * @return 1 when the command did something.
  */
@@ -80,7 +79,8 @@ tiku_ide_edit_clip(ide_t *st, edit_t *e, int command)
     }
 }
 
-/** @brief Append one row: the label, its command, and the KEY it says. */
+/** @brief Append a menu row: its label, command, shortcut key with its
+ *         modifiers, and whether it is enabled.  A full menu takes none. */
 void
 tiku_ide_mrow(tiku_menu_list_t *m, const char *label, int command,
      char sc, unsigned mods, int enabled)
@@ -99,7 +99,7 @@ tiku_ide_mrow(tiku_menu_list_t *m, const char *label, int command,
     m->nitem++;
 }
 
-/** @brief A line between the groups, the way the desk's menus keep them. */
+/** @brief Append a separator row; a full menu takes none. */
 static void
 msep(tiku_menu_list_t *m)
 {
@@ -111,13 +111,8 @@ msep(tiku_menu_list_t *m)
     m->nitem++;
 }
 
-/**
- * @brief The Window menu, the same on EVERY window of the program.
- *
- * A person in one editor reaches the other from where they are; making
- * them return to the project window first was a detour every proving
- * script had memorised, which is how a missing road shows itself.
- */
+/** @brief Fill the Window menu that every IDE window carries: a row per
+ *         open page, marked "(changed)" when it holds unsaved changes. */
 void
 tiku_ide_window_menu(ide_t *st, tiku_menu_list_t *m)
 {
@@ -131,9 +126,6 @@ tiku_ide_window_menu(ide_t *st, tiku_menu_list_t *m)
         if (e->surface == NULL) {
             continue;
         }
-        /* The mark is the DOCUMENT's, not the window's: a person
-         * looking for where their unsaved work is should find it in the
-         * list of windows rather than by opening each one. */
         snprintf(row, sizeof row, "%s%s", e->name,
                  tiku_editdoc_modified(e->doc) ? " (changed)" : "");
         tiku_ide_mrow(m, row, CMD_WINDOW + i, 0, 0u, 1);
@@ -144,6 +136,8 @@ tiku_ide_window_menu(ide_t *st, tiku_menu_list_t *m)
     }
 }
 
+/** @brief Publish page @p e's menus: File, Edit and Window, and for BASIC
+ *         a Debug menu. */
 void
 tiku_ide_edit_publish(ide_t *st, edit_t *e)
 {
@@ -152,8 +146,8 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
 
     memset(&menus, 0, sizeof menus);
     menus.nmenu = 3;
-    /* File: the page's own file, its run, and its leaving -- each row
-     * saying the key that is the same gesture. */
+    /* File: save the page, run it and stop the run (BASIC), close the
+     * page; each row with its shortcut. */
     snprintf(menus.menu[0].title, sizeof menus.menu[0].title, "File");
     snprintf(row, sizeof row, "Save %s", e->name);
     tiku_ide_mrow(&menus.menu[0], row, CMD_SAVE, 's', TIKU_MOD_CMD,
@@ -173,7 +167,7 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
     msep(&menus.menu[0]);
     snprintf(row, sizeof row, "Close %s", e->name);
     tiku_ide_mrow(&menus.menu[0], row, CMD_QUIT, 'w', TIKU_MOD_CMD, 1);
-    /* Edit: the desk's editing rows, grouped, each wearing its key. */
+    /* Edit: the editing rows, grouped, each with its shortcut. */
     snprintf(menus.menu[1].title, sizeof menus.menu[1].title, "Edit");
     tiku_ide_mrow(&menus.menu[1], "Undo", CMD_UNDO, 'z', TIKU_MOD_CMD,
          tiku_editdoc_can_undo(e->doc));
@@ -198,8 +192,7 @@ tiku_ide_edit_publish(ide_t *st, edit_t *e)
     tiku_ide_mrow(&menus.menu[1], "Toggle comment", CMD_COMMENT, '/',
          TIKU_MOD_CMD, !tiku_ide_debug_locked(st, e));
     if (e->lang == TIKU_SYNTAX_BASIC) {
-        /* The tidy that renumbers by tens, for the language whose
-         * lines wear their numbers. */
+        /* Renumber by tens, for BASIC's numbered lines. */
         tiku_ide_mrow(&menus.menu[1], "Renumber", CMD_RENUM, 0, 0u, 1);
         tiku_ide_mrow(&menus.menu[1], "Complete keyword", CMD_COMPLETE, ' ', TIKU_MOD_CMD, !tiku_ide_debug_locked(st, e));
         tiku_ide_mrow(&menus.menu[1], "Keyword help", CMD_HELPWORD, 'k', TIKU_MOD_CMD, 1);
@@ -285,6 +278,16 @@ write_run(void *ctx, const char *bytes, size_t n)
     return fwrite(bytes, 1, n, ctx) != n;
 }
 
+/**
+ * @brief Save page @p e over its file, through a temporary file renamed
+ *        into place.
+ *
+ * Refused when the page failed to load; when the file is not a regular
+ * file, has other hard links or is read-only; or when it changed on disk
+ * since the page read or saved it, which sets e->disk_changed.
+ *
+ * @return 1 when saved; 0 with the reason in the page's feedback.
+ */
 int
 tiku_ide_edit_save(edit_t *e)
 {
@@ -360,10 +363,9 @@ tiku_ide_edit_save(edit_t *e)
 }
 
 /**
- * @brief Save @p e as a person asked to, which is tiku_ide_edit_save()
- *        except that a file changed on disk since the page read or saved
- *        it is not refused outright: the Project window asks whether to
- *        save the page over it, Cancel being the default.
+ * @brief Save page @p e; when its file changed on disk since the page
+ *        read or saved it, ask on the Project window whether to save
+ *        over it, Cancel being the default.
  *
  * @return 1 when the page was saved.
  */
@@ -393,12 +395,10 @@ tiku_ide_edit_save_or_ask(ide_t *st, edit_t *e)
 }
 
 /**
- * @brief The number the line after @p line should wear.
+ * @brief The number for the line after @p line: its number plus ten.
  *
- * The interpreter's own habit: count by tens, so a line can always be
- * put between two others later.  A line wearing no number offers none.
- *
- * @return the next number, or 0 for none.
+ * @return the next number, or 0 when @p line has no number or one of
+ *         99990 or more.
  */
 int
 tiku_ide_next_number(const edit_t *e, int64_t line)
@@ -408,13 +408,8 @@ tiku_ide_next_number(const edit_t *e, int64_t line)
     return (n > 0 && n < 99990) ? (int)n + 10 : 0;
 }
 
-/**
- * @brief Open @p row's file, or bring its window forward.
- *
- * A file already open is RAISED: opening it twice would give a person
- * two windows onto one document, and whichever they typed into last
- * would be the one the other quietly forgot.
- */
+/** @brief Open @p row's file in an editor page, or raise its page when
+ *         the file is already open, so a file never has two pages. */
 void
 tiku_ide_edit_open(ide_t *st, const prow_t *row)
 {
@@ -460,9 +455,8 @@ tiku_ide_edit_open(ide_t *st, const prow_t *row)
     }
     tiku_ide_recovery_open(e);
     if (e->lang == TIKU_SYNTAX_BASIC) {
-        /* A program is CONTINUED, not reread from the top: the caret
-         * lands at the end of the last line that has text, before a
-         * final line break, so the first Return is already the next
+        /* The caret goes to the end of the last line with text, before
+         * a final line break, so the first Return starts the next
          * numbered line. */
         int64_t last = tiku_editdoc_lines(e->doc) - 1;
 
@@ -474,17 +468,14 @@ tiku_ide_edit_open(ide_t *st, const prow_t *row)
     }
     if (e->lang == TIKU_SYNTAX_BASIC && !tiku_editdoc_modified(e->doc) &&
         !e->load_failed && tiku_editdoc_length(e->doc) == 0) {
-        /* A fresh page of BASIC begins where every line of it must:
-         * with a number.  Counted by tens, the interpreter's own
-         * habit, so a line can always be put between two others. */
+        /* An empty BASIC page starts with line number 10. */
         (void)tiku_ide_replace(e, 0, 0, "10 ", 3, 0);
         tiku_editdoc_saved(e->doc, tiku_editdoc_state(e->doc));
     }
     e->w = EDIT_W;
     e->h = EDIT_H;
-    /* The caret was placed at the end of a file that may run past a
-     * screenful; bring the page to it, so opening a long program does
-     * not begin with the caret lost below the bottom edge. */
+    /* The caret may be past the first screenful: scroll the page to
+     * show it. */
     tiku_ide_edit_reveal(e);
     e->surface = tiku_surface_new(EDIT_W, EDIT_H, TIKU_C_PANEL);
     if (e->surface == NULL) {
@@ -507,14 +498,14 @@ tiku_ide_edit_open(ide_t *st, const prow_t *row)
     tiku_ide_edit_paint(st, e);
     tiku_ide_edit_publish(st, e);
     if (st->services->sizeable != NULL) {
-        /* An editor's page is the one window a person grows. */
         (void)st->services->sizeable(st->services->ctx, e->id);
     }
-    tiku_ide_project_paint(st);          /* the Window menu grew */
+    tiku_ide_project_paint(st);          /* the Window menu lists it */
     tiku_ide_project_publish(st);
 }
 
-/** @brief Let one editor go; the project window stays. */
+/** @brief Close page @p e, first asking whether to save it when it holds
+ *         changes; refused while a debug run uses the page. */
 void
 tiku_ide_edit_drop(ide_t *st, edit_t *e)
 {
@@ -544,9 +535,8 @@ tiku_ide_edit_drop(ide_t *st, edit_t *e)
     e->surface = NULL;
     tiku_ide_project_paint(st);
     tiku_ide_project_publish(st);
-    /* Every surviving editor's Window menu named the one that left:
-     * republished, or the stale row would offer a window that is not
-     * there to raise. */
+    /* The other pages' Window menus still list the closed page:
+     * republish them. */
     for (i = 0; i < IDE_EDITS; i++) {
         if (st->edit[i].surface != NULL) {
             tiku_ide_edit_publish(st, &st->edit[i]);

@@ -1,15 +1,14 @@
-/* tiku_ide_splash.c -- splash.
+/* tiku_ide_splash.c -- the splash window, the About box, the person's
+ * banner art and the licence notice TikuBasic shows.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
 /**
- * @brief The banner the person chose, when they chose one.
+ * @brief Load the person's banner: ~/.config/<APP_NAME>/splash.bmp, or
+ *        splash.png when the BMP does not load.
  *
- * The picture is looked for where the desktop already keeps a person's
- * replacements -- ~/.config/<name>/splash.bmp (or .png) -- so choosing
- * a banner is putting a file there, the same gesture that replaces an
- * icon.  A picture that will not load is simply not worn.
+ * @return the picture, or NULL when there is none.
  */
 tiku_surface_t *
 tiku_ide_splash_art_load(void)
@@ -41,7 +40,9 @@ tiku_ide_splash_art_load(void)
     return NULL;
 }
 
-/** @brief This program's splash screen: its name, and the words that are true. */
+/** @brief Paint the splash onto @p sf: with a @p status, the name and the
+ *         status line, and in TikuBasic the licence notice; with none,
+ *         the About box's name, credit lines and version. */
 void
 tiku_ide_announce_paint_art(tiku_surface_t *sf, const char *status,
                    const tiku_surface_t *art)
@@ -57,8 +58,8 @@ tiku_ide_announce_paint_art(tiku_surface_t *sf, const char *status,
     };
 
     if (status != NULL) {
-        /* Keep the art, title and startup status; TikuBasic uses the
-         * lower space for a quiet license notice rather than credits. */
+        /* The art, title and status line; TikuBasic adds the licence
+         * notice under them. */
         tiku_splash_paint(sf, APP_NAME, NULL, 0, NULL, status, art);
 #ifndef TIKU_IDE_C
         tiku_splash_license(sf);
@@ -70,13 +71,8 @@ tiku_ide_announce_paint_art(tiku_surface_t *sf, const char *status,
                            "TikuOS 0.06", status, art);
 }
 
-/**
- * @brief The About box: the announcement again, for as long as it is
- *        wanted this time.
- *
- * Asked for while already standing, it comes FORWARD rather than
- * doubling -- the same rule every window of this application keeps.
- */
+/** @brief Open the About box, which stays until it is closed, or raise it
+ *         when it is open. */
 void
 tiku_ide_about_open(ide_t *st)
 {
@@ -110,6 +106,7 @@ tiku_ide_about_open(ide_t *st)
     }
 }
 
+/** @brief Close the About box, if it is open. */
 void
 tiku_ide_about_drop(ide_t *st)
 {
@@ -121,7 +118,8 @@ tiku_ide_about_drop(ide_t *st)
     st->about_surface = NULL;
 }
 
-/** @brief Let the splash go, whoever asked. */
+/** @brief Close the splash and open the Project window, unless that is
+ *         already open.  Does nothing when no splash is open. */
 void
 tiku_ide_splash_drop(ide_t *st)
 {
@@ -131,9 +129,8 @@ tiku_ide_splash_drop(ide_t *st)
     st->services->close(st->services->ctx, st->splash_id);
     tiku_surface_free(st->splash_surface);
     st->splash_surface = NULL;
-    /* The splash leaving is the project window arriving: its session
-     * row frees first, so the project stands exactly where it would
-     * have without the announcement. */
+    /* The splash's window closes before the Project window opens, so
+     * the Project window takes the window slot the splash held. */
     if (st->proj_id == 0u) {
         st->proj_id = st->services->open(st->services->ctx, "Project",
                                          IDE_W, IDE_H);

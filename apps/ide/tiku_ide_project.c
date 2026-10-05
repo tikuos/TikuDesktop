@@ -5,10 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *
-tail(const char *p, char *out, size_t max);
-static const char *
-line_end(const char *p);
+static const char * tail(const char *p, char *out, size_t max);
+static const char * line_end(const char *p);
 
 /** @brief Take the next blank-separated word of @p p into @p out. */
 static const char *
@@ -52,6 +50,8 @@ tail(const char *p, char *out, size_t max)
     return p;
 }
 
+/** @brief The start of the line after the one @p p is on, or the end of
+ *         the text. */
 static const char *
 line_end(const char *p)
 {
@@ -61,8 +61,6 @@ line_end(const char *p)
     return (*p == '\n') ? p + 1 : p;
 }
 
-/** @brief Whether the line at @p line is a `file` entry; its name, read
- *         as tiku_ide_project_parse() reads it, goes into @p name. */
 int
 tiku_ide_project_file_entry(const char *line, char *name, size_t max)
 {
@@ -76,16 +74,6 @@ tiku_ide_project_file_entry(const char *line, char *name, size_t max)
     return 1;
 }
 
-/**
- * @brief Read a project description into @p pj.
- *
- * A line this build does not know is skipped and counted rather than
- * refusing the project: the lines a BUILD will need were written before
- * anything here could act on them, and a project that opens showing
- * what it can is worth more than one that refuses to open at all.
- *
- * @return the number of rows read.
- */
 int
 tiku_ide_project_parse(project_t *pj, const char *text, const char *dir)
 {
@@ -111,16 +99,14 @@ tiku_ide_project_parse(project_t *pj, const char *text, const char *dir)
             continue;
         }
                 if (strcmp(kind, "board") == 0) {
-            /* WHICH board this project's programs go to, remembered
-             * across openings the way the target is. */
+            /* Kept in pj->board, which the IDE does not use: runs and
+             * saves go to the desktop's default device. */
             (void)word(rest, pj->board, sizeof pj->board);
             p = line_end(p);
             continue;
         }
         if (strcmp(kind, "target") == 0) {
-            /* What the program is FOR.  It was an unknown line until
-             * something could act on it, which is exactly what the
-             * skipping rule is for. */
+            /* The build target, which tiku_ide_build_project() reads. */
             (void)word(rest, pj->target, sizeof pj->target);
             p = line_end(p);
             continue;
@@ -140,9 +126,8 @@ tiku_ide_project_parse(project_t *pj, const char *text, const char *dir)
 
             /* The whole rest of the line, so a name may hold a blank. */
             (void)tail(rest, row->name, sizeof row->name);
-            /* Paths are from the project's own directory, so a project
-             * is a FOLDER somebody can move.  Built aside and copied,
-             * because the two halves live in the same object. */
+            /* A file's path is the project's directory joined with its
+             * name. */
             snprintf(at, sizeof at, "%s/%s", pj->dir, row->name);
             snprintf(row->path, sizeof row->path, "%s", at);
         } else {

@@ -3,15 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static void
-ide_closed(void *state, uint32_t window);
+static void ide_closed(void *state, uint32_t window);
 
 /**
- * @brief Pump the run.
+ * @brief Periodic work: recovery drafts, the splash, and the run.
  *
- * Called wherever this application is hosted -- linked in, or on the
- * far end of the desk socket -- which is what lets a project run a
- * program from a process of its own.
+ * Every 2 s, brings each open page's recovery draft up to date; repaints
+ * the windows when the target strip's text changes; steps the splash's
+ * status line and closes the splash after SPLASH_US; reads a local run's
+ * output into the messages and stops the run after IDE_RUN_LIMIT_US; and
+ * releases a board run IDE_BOARD_STOP_US after an unanswered Stop.
  */
 void
 tiku_ide_tick(void *state, int64_t now_us)
@@ -24,8 +25,9 @@ tiku_ide_tick(void *state, int64_t now_us)
     if (st == NULL) {
         return;
     }
-    /* Start with an empty Project window. Recover drafts only when the
-     * user opens their source file or chooses Recover unsaved files. */
+    /* Every 2 s, bring each open page's recovery draft up to date and
+     * repaint the page; when the target strip's text changes, repaint
+     * the Project window and the pages. */
     {
         char status[160];
         int i, checkpoint = now_us - st->recovery_at >= 2000000;
@@ -48,11 +50,8 @@ tiku_ide_tick(void *state, int64_t now_us)
         if (checkpoint) { st->recovery_at = now_us; }
     }
     if (st->splash_surface != NULL) {
-        /* The splash leaves on its own: an announcement is not a door
-         * somebody should have to close.  While it stands, the status
-         * line along its bottom says what is being gathered -- which is
-         * what those splash screens were FOR, and the one part of them that
-         * was never decoration. */
+        /* The splash closes after SPLASH_US; until then its status line
+         * shows three fixed labels in turn, a third of SPLASH_US each. */
         static const char *const STAGE[] = {
 #ifdef TIKU_IDE_C
             "finding the compilers…",
@@ -92,10 +91,12 @@ tiku_ide_tick(void *state, int64_t now_us)
     if (st->run_from == 0) {
         st->run_from = now_us;
     }
-    /* A run on a board has no child and no pipe: the shell owns it and
-     * tells us, so there is nothing to read here.  Reading anyway gets
-     * EBADF from the closed descriptor, which the loop below reads as a
-     * finished run -- the run ended before it had said anything. */
+    /* A board run has no child and no pipe: the shell owns it and reports
+     * through tiku_ide_board_said(), so nothing is read here.  A read
+     * would get EBADF from the closed descriptor, which the loop below
+     * takes for a finished run.  A Stop the board has not answered is
+     * timed from here, and the run is released IDE_BOARD_STOP_US after
+     * it. */
     if (st->board[0] != '\0') {
         if (st->stop_asked == -1) {
             st->stop_asked = now_us;
@@ -105,13 +106,8 @@ tiku_ide_tick(void *state, int64_t now_us)
         }
         return;
     }
-    /*
-     * BOUNDED, because a program is something somebody may have written
-     * wrong: the interpreter stops its own endless loops, but a program
-     * waiting for INPUT waits for a person who is not there, and an
-     * application that sat on that would say "running…" until it was
-     * killed.
-     */
+    /* A local run gets no input from the IDE; it is stopped after
+     * IDE_RUN_LIMIT_US. */
     if (now_us - st->run_from > IDE_RUN_LIMIT_US) {
         tiku_ide_run_stop(st, "? the run was stopped: it did not finish");
         return;
@@ -157,10 +153,8 @@ tiku_ide_tick(void *state, int64_t now_us)
         (void)close(st->child_fd);
         st->child_fd = -1;
         heard = 1;
-        /* The run is OVER: what it said comes forward, or a build
-         * pressed while the messages stood buried behind the page
-         * looks like nothing happening.  Once, at the end -- never on
-         * the chunks in between, which would fight the person's hands. */
+        /* When the run ends, the Messages window is raised if it holds
+         * a message. */
         if (st->nmsg > 0 && st->services->raise_window != NULL) {
             (void)st->services->raise_window(st->services->ctx,
                                              st->msg_id);
@@ -171,6 +165,15 @@ tiku_ide_tick(void *state, int64_t now_us)
     }
 }
 
+/**
+ * @brief Start the application: open the splash, or the Project window
+ *        when there is no splash, then the startup document if any.
+ *
+ * A startup document ending in .tiku opens as the project; any other
+ * opens in an editor page.
+ *
+ * @return 0, or -1 when the state or the Project surface cannot be made.
+ */
 int
 tiku_ide_start(void **state, const tiku_app_services_t *services)
 {
@@ -196,11 +199,8 @@ tiku_ide_start(void **state, const tiku_app_services_t *services)
         free(st);
         return -1;
     }
-    /* The announcement first, ALONE: the project window arrives when
-     * the splash leaves (splash_drop), so what a person sees is a
-     * sequence rather than a pile -- and the splash's session row
-     * frees before the project takes one, so every window stands where
-     * it would have without the announcement. */
+    /* Only the splash opens here; tiku_ide_splash_drop() opens the
+     * Project window when the splash closes. */
     st->splash_art = tiku_ide_splash_art_load();
     st->splash_surface = tiku_surface_new(SPLASH_W, SPLASH_H,
                                                TIKU_C_PANEL);
@@ -223,7 +223,7 @@ tiku_ide_start(void **state, const tiku_app_services_t *services)
         }
     }
     if (st->splash_surface == NULL) {
-        /* No announcement to wait for: the project arrives now. */
+        /* No splash: the Project window opens now. */
         st->proj_id = services->open(services->ctx, "Project", IDE_W,
                                      IDE_H);
         tiku_ide_project_sizeable(st);
@@ -256,6 +256,8 @@ tiku_ide_start(void **state, const tiku_app_services_t *services)
     return 0;
 }
 
+/** @brief Stop the application: end a run on the board or this machine,
+ *         write each modified page's recovery draft, and free everything. */
 void
 tiku_ide_stop(void *state)
 {
@@ -267,16 +269,14 @@ tiku_ide_stop(void *state)
     }
     if (st->local_debug) { tiku_ide_debug_cleanup(st); st->running = 0; }
     if (st->running && st->board[0] != '\0') {
-        /* A board program left running goes to the interpreter's INPUT
-         * with nobody to answer, and the board's console then goes
-         * silent until it is power-cycled.  Stop it before the app closes. */
+        /* A board program left running can wait at INPUT with nobody to
+         * answer, and the board's console then stays silent until the
+         * board is power-cycled; the run is stopped first. */
         if (st->services->board_stop != NULL) {
             (void)st->services->board_stop(st->services->ctx);
         }
         st->running = 0;
     } else if (st->running) {
-        /* A host run outliving the application it was started from is a
-         * program nobody is listening to. */
         (void)kill(st->child, SIGTERM);
         (void)waitpid(st->child, NULL, 0);
         (void)close(st->child_fd);
@@ -295,8 +295,8 @@ tiku_ide_stop(void *state)
     free(st);
 }
 
-/** @brief The runtime took a window; the project keeps the rest, except
- *         when the window is the Project window itself. */
+/** @brief The desktop closed @p window: free what it showed.  Closing the
+ *         Project window closes every other window too. */
 static void
 ide_closed(void *state, uint32_t window)
 {
@@ -304,10 +304,10 @@ ide_closed(void *state, uint32_t window)
     edit_t *e = tiku_ide_edit_of_id(st, window);
 
     if (window == st->proj_id && st->proj_surface != NULL) {
-        /* Closing the Project window ends the IDE.  Each page goes the way
-         * a desktop close takes it, a modified one's draft kept, and the
-         * other windows go too, so the last one going stops the
-         * application and no question is left on a window that is gone. */
+        /* Closing the Project window ends the IDE: each page closes as on
+         * a desktop close, a modified page keeping its draft; the
+         * Messages, console and About windows close, and any open
+         * question is dropped. */
         uint32_t *ids[] = { &st->msg_id, &st->con_id, &st->about_id };
         tiku_surface_t **surfaces[] = { &st->msg_surface, &st->con_surface,
                                         &st->about_surface };
@@ -386,7 +386,7 @@ const tiku_app_descriptor_t tiku_ide_app = {
 };
 
 #ifdef TIKU_APP_SO
-/* The one symbol a loader looks for; see tiku_app.h. */
+/** @brief The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t),
     &tiku_ide_app
@@ -394,6 +394,7 @@ const tiku_app_export_t tiku_app_v1 = {
 #endif
 
 #ifndef TIKU_APP_EMBED
+/** @brief Run the IDE as a program of its own, a client of the desktop. */
 int
 main(void)
 {

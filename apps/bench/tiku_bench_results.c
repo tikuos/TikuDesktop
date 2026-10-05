@@ -1,4 +1,5 @@
-/* tiku_bench_results.c -- results.
+/* tiku_bench_results.c -- the run's log, the result rows read from
+ * tikubench's output markers, and the HTML report of them.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
@@ -6,6 +7,8 @@
 static void result_end(bench_t *st, const char *id, int pass, int fail, int harness);
 static void report_escape(char *out, size_t cap, const char *in);
 
+/** Add a line to the log ring, which keeps the last 256, and to the log
+ *  file; @p output marks a line the Output tab shows. */
 void tiku_bench_log_line(bench_t *st, const char *text, int output)
 {
     logline_t *l = &st->logs[st->log_head];
@@ -16,6 +19,8 @@ void tiku_bench_log_line(bench_t *st, const char *text, int output)
     st->dirty = 1;
 }
 
+/** Add a pending result row for @p id in job @p job.  @return the row, or
+ *  NULL when the table is full, which marks the run failed. */
 result_t *tiku_bench_result_add(bench_t *st, int job, const char *id)
 {
     if (st->nresult == NR) { st->batch_failed = 1; return NULL; }
@@ -25,6 +30,8 @@ result_t *tiku_bench_result_add(bench_t *st, int job, const char *id)
     return r;
 }
 
+/** Add a pending row for each leaf the queue runs: a job's --only leaves,
+ *  or the leaves of the full run; a suite with none gets one row. */
 void tiku_bench_plan_build(bench_t *st)
 {
     st->nresult = 0;
@@ -40,7 +47,9 @@ void tiku_bench_plan_build(bench_t *st)
     }
 }
 
-/** Host validation may revise a firmware-green row, rather than add a second. */
+/** Settle the current job's result row for @p id with its counts, adding
+ *  the row when it is missing; a later verdict for the same id, such as
+ *  the host's validation after the firmware's, replaces the row's. */
 static void result_end(bench_t *st, const char *id, int pass, int fail, int harness)
 {
     result_t *r = NULL;
@@ -56,6 +65,10 @@ static void result_end(bench_t *st, const char *id, int pass, int fail, int harn
     st->dirty = 1;
 }
 
+/** Take one line of the runner's output: catalogue metadata while it
+ *  loads, a firmware record during a firmware step, otherwise a log line
+ *  whose markers ([TC:RUN], [TC:END], [TS:END], [FAIL], [WARN] and the
+ *  [[HITL:...]] prompts) update the results and the prompt. */
 void tiku_bench_consume_line(bench_t *st, char *line)
 {
     if (st->loading) { tiku_bench_metadata_line(st, line); return; }
@@ -117,7 +130,8 @@ void tiku_bench_consume_line(bench_t *st, char *line)
         result_t *r = tiku_bench_result_add(st, st->job, clean);
         if (r) { r->done = r->skip = 1; snprintf(r->text, sizeof r->text, "WARN %.240s", clean); }
     }
-    /* Suites without enumerated leaves still need evidence of actual tests. */
+    /* A suite with no listed leaves counts its [PASS] lines on its one
+     * row. */
     const suite_t *s = &st->suites[st->jobs[st->job].suite];
     if (!s->count && (strstr(clean, "[PASS]") || strstr(clean, "[T:P:"))) {
         for (int i = 0; i < st->nresult; i++) if (st->results[i].job == st->job &&
@@ -128,9 +142,8 @@ void tiku_bench_consume_line(bench_t *st, char *line)
     }
 }
 
-/* A user-requested snapshot, never another test run or hardware operation. */
-
-/** @brief Device text is data, not executable document markup. */
+/** @brief Copy @p in to @p out with &, < and > escaped for HTML and
+ *         control characters other than tab and newline dropped. */
 static void report_escape(char *out, size_t cap, const char *in)
 {
     size_t n = 0;
@@ -142,7 +155,9 @@ static void report_escape(char *out, size_t cap, const char *in)
     out[n] = 0;
 }
 
-/** @brief The Help reader owns the report copy after this call returns. */
+/** @brief Open the result rows as an HTML page in the Help reader: a
+ *         snapshot, which starts no run and touches no board.  The
+ *         reader keeps its own copy of the page. */
 void tiku_bench_report_open(bench_t *st)
 {
     if (!st->services->help_html) { snprintf(st->note, sizeof st->note, "This desktop does not support report pages."); return; }

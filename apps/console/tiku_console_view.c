@@ -1,4 +1,5 @@
-/* tiku_console_view.c -- view.
+/* tiku_console_view.c -- TikuConsole's layout, its controls and their
+ * labels, and painting the Console, Network and Device tabs.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_console_private.h"
@@ -11,22 +12,26 @@ static tiku_rgb_t glyph_ink(const glyph_t *g);
 static void console_draw(console_t *st);
 static void device_draw(console_t *st);
 
-/* One native window; shared focus, choices, fields, lists and sensor chart. */
 const tiku_rect_t TIKU_CONSOLE_TARGET_RECT = {88, 12, 280, 28};
 const tiku_rect_t TIKU_CONSOLE_TABS_RECT = {16, 52, 928, 28};
 const tiku_rect_t TIKU_CONSOLE_BODY = {16, 140, 928, 354};
 
+/** The rectangle of field @p i: 0 the command line, 1 Find, 2 the baud,
+ *  3 the address to ping, 4 the number of probes. */
 static tiku_rect_t field_rect(int i)
 {
     const tiku_rect_t r[] = {{110, 546, 688, 30}, {72, 94, 362, 28},
         {100, 114, 170, 28}, {126, 102, 230, 28}, {448, 102, 70, 28}};
     return r[i];
 }
+/** Draw @p s on one line in @p r, plain or @p bold, cut short with an
+ *  ellipsis when it does not fit. */
 static void text(console_t *st, tiku_rect_t r, const char *s, int bold)
 {
     tiku_text_line_draw(st->surface, r,
         bold ? TIKU_MEASURE_BOLD : TIKU_MEASURE_PLAIN, s, TIKU_C_TEXT);
 }
+/** The label of control or command @p id. */
 const char *tiku_console_label(const console_t *st, int id)
 {
     switch (id) {
@@ -45,6 +50,7 @@ const char *tiku_console_label(const console_t *st, int id)
     }
 }
 
+/** Whether control or command @p id can be used in the console's state. */
 int tiku_console_enabled(const console_t *st, int id)
 {
     if (id == START) return st->state == IDLE && st->targets.selected >= 0;
@@ -60,9 +66,11 @@ int tiku_console_enabled(const console_t *st, int id)
     return 1;
 }
 
+/** Add button @p id at @p r, enabled as tiku_console_enabled() says. */
 static void add_button(console_t *st, int id, tiku_rect_t r)
 { tiku_dialog_add(&st->dialog, id, r, TIKU_DIALOG_BUTTON, tiku_console_enabled(st, id)); }
 
+/** Lay out the window's controls for the current tab. */
 void tiku_console_controls(console_t *st)
 {
     st->targets.enabled = st->state == IDLE;
@@ -100,6 +108,7 @@ void tiku_console_controls(console_t *st)
     tiku_dialog_end(&st->dialog);
 }
 
+/** Draw the controls tiku_console_controls() laid out. */
 static void controls_draw(console_t *st)
 {
     for (int i = 0; i < st->dialog.count; i++) {
@@ -120,6 +129,8 @@ static void controls_draw(console_t *st)
     }
 }
 
+/** The colour of glyph @p g: one of eight inks for ANSI colours 0 to 15,
+ *  the text colour for the default ink. */
 static tiku_rgb_t glyph_ink(const glyph_t *g)
 {
     const tiku_rgb_t colours[] = {TIKU_RGB(60,60,60), TIKU_RGB(178,35,35),
@@ -128,6 +139,8 @@ static tiku_rgb_t glyph_ink(const glyph_t *g)
     return g->ink < 16 ? colours[g->ink % 8] : TIKU_C_TEXT;
 }
 
+/** Draw the Console tab's lines that pass the Find filter, each glyph in
+ *  its ink and weight, and the line on how input works. */
 static void console_draw(console_t *st)
 {
     tiku_console_rebuild(st);
@@ -152,6 +165,8 @@ static void console_draw(console_t *st)
         "Command mode: Enter sends one line; Up/Down recalls history. Scroll to pause following.", 0);
 }
 
+/** Draw the Device tab: the board's MCU and port, and its stats as the
+ *  desktop last had them. */
 static void device_draw(console_t *st)
 {
     text(st, (tiku_rect_t){16, 90, 928, 22}, "Serial settings and device snapshot", 1);
@@ -161,9 +176,8 @@ static void device_draw(console_t *st)
     char stats[4096]; memcpy(stats, st->stats, sizeof stats);
     char *save = NULL; int y = 200;
     if (!*stats) {
-        /* The snapshot comes from a service only the in-process host
-         * offers: say the tab is empty for that reason rather than
-         * leaving a blank page that reads as a board with nothing. */
+        /* The snapshot comes from device_stats, which only the
+         * in-process host offers; with no snapshot the tab says why. */
         text(st, (tiku_rect_t){32, y, 896, 24},
              st->services->device_stats
                  ? "No snapshot yet; the desk is still asking the board."
@@ -182,6 +196,7 @@ static void device_draw(console_t *st)
     text(st, (tiku_rect_t){16, 576, 928, 24}, "Baud affects this console session only; it does not reconfigure device firmware.", 0);
 }
 
+/** Paint the window and send the frame to the desktop. */
 void tiku_console_paint(console_t *st)
 {
     tiku_console_controls(st);

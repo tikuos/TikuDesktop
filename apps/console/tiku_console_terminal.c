@@ -1,4 +1,6 @@
-/* tiku_console_terminal.c -- terminal.
+/* tiku_console_terminal.c -- the console's lines and the decoder that
+ * fills them: UTF-8 text with ANSI colour, bold and line editing, decoded
+ * across reads; and the command history.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_console_private.h"
@@ -7,10 +9,11 @@ static void next_line(console_t *st);
 static void put_glyph(console_t *st, const char *value);
 static void ansi_end(console_t *st, int final);
 
-/* Bounded UTF-8 console history. ANSI styling is incremental across reads. */
+/** The line being written: the newest in the ring. */
 line_t *tiku_console_last_line(console_t *st)
 { return &st->lines[(st->head + st->count - 1) % ROWS]; }
 
+/** Start a new line, dropping the oldest when the ring of ROWS is full. */
 static void next_line(console_t *st)
 {
     if (st->count == ROWS) st->head = (st->head + 1) % ROWS;
@@ -18,6 +21,8 @@ static void next_line(console_t *st)
     memset(tiku_console_last_line(st), 0, sizeof(line_t)); st->column = 0;
 }
 
+/** Put one glyph at the cursor in the current ink and weight, starting a
+ *  new line at COLS. */
 static void put_glyph(console_t *st, const char *value)
 {
     if (st->column == COLS) next_line(st);
@@ -28,7 +33,9 @@ static void put_glyph(console_t *st, const char *value)
     if (l->length < st->column) l->length = st->column;
 }
 
-/** Only bounded SGR and line-editing commands; not a full-screen VT emulator. */
+/** Carry out the CSI sequence ending in @p final: colours and bold (m),
+ *  erase in line (K), and moving the cursor's column (G, D, C).  Any
+ *  other sequence is ignored. */
 static void ansi_end(console_t *st, int final)
 {
     line_t *l = tiku_console_last_line(st);
@@ -42,8 +49,8 @@ static void ansi_end(console_t *st, int final)
         else if (n >= 30 && n <= 37) st->ink = n - 30;
         else if (n >= 90 && n <= 97) st->ink = n - 90 + 8;
         else if (n == 38 || n == 48) {
-            /* Unsupported extended colours must not turn RGB components
-             * into unrelated SGR commands. */
+            /* An extended colour (38 or 48) is skipped with its
+             * arguments, so they are not read as other SGR codes. */
             if (i + 1 < st->nparam) i += st->param[i + 1] == 2 ? 4 : 2;
         }
     }
@@ -60,6 +67,8 @@ static void ansi_end(console_t *st, int final)
     if (final == 'C') { st->column += p ? p : 1; if (st->column >= COLS) st->column = COLS - 1; }
 }
 
+/** Feed one byte of text from the board to the decoder: CSI and OSC
+ *  sequences, UTF-8, control characters and printable text. */
 void tiku_console_text_byte(console_t *st, unsigned char ch)
 {
     if (st->scan == 3 || st->scan == 4) {
@@ -106,6 +115,7 @@ void tiku_console_text_byte(console_t *st, unsigned char ch)
     st->dirty = 1;
 }
 
+/** The text of line @p l into @p out, a blank for each empty cell. */
 void tiku_console_line_string(const line_t *l, char *out, size_t cap)
 {
     size_t n = 0;
@@ -117,6 +127,8 @@ void tiku_console_line_string(const line_t *l, char *out, size_t cap)
     out[n] = 0;
 }
 
+/** Whether @p needle occurs in @p text, ignoring case; an empty needle
+ *  always does. */
 int tiku_console_contains(const char *text, const char *needle)
 {
     if (!*needle) return 1;
@@ -129,6 +141,7 @@ int tiku_console_contains(const char *text, const char *needle)
     return 0;
 }
 
+/** Rebuild the list of lines that pass the Find filter. */
 void tiku_console_rebuild(console_t *st)
 {
     st->visible = 0;
@@ -140,6 +153,7 @@ void tiku_console_rebuild(console_t *st)
     tiku_list_set_count(&st->list, st->visible);
 }
 
+/** Add @p value to the console as a line of its own. */
 void tiku_console_message(console_t *st, const char *value)
 {
     if (tiku_console_last_line(st)->length) next_line(st);
@@ -147,7 +161,9 @@ void tiku_console_message(console_t *st, const char *value)
     next_line(st); st->dirty = 1;
 }
 
-/** Keep history local to a target; never replay a previous device's command. */
+/** Add @p command to the history of the last 32 commands, unless it
+ *  repeats the newest.  tiku_console_target_changed() clears the history
+ *  when another board is chosen. */
 void tiku_console_history_add(console_t *st, const char *command)
 {
     if (st->nhistory && !strcmp(st->history[st->nhistory - 1], command)) return;
@@ -158,6 +174,8 @@ void tiku_console_history_add(console_t *st, const char *command)
     st->history_at = st->nhistory; st->draft[0] = 0;
 }
 
+/** Move through the command history by @p by; the line being typed is
+ *  kept as a draft to come back to. */
 void tiku_console_history_move(console_t *st, int by)
 {
     if (st->history_at == st->nhistory)

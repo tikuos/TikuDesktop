@@ -4,34 +4,23 @@
 #include "tiku_ide_private.h"
 #include "tiku_host.h"
 
-static void
-tb_arrow(tiku_surface_t *s, int x, int back, int on);
-static void
-tb_glass(tiku_surface_t *s, int x);
-static const char *
-tb_tool_name(const edit_t *e, int tool);
-static void
-tb_stop(tiku_surface_t *s, int x, int on);
-static void
-tb_mallet(tiku_surface_t *s, int x);
-static void
-tb_renum(tiku_surface_t *s, int x);
+static void tb_arrow(tiku_surface_t *s, int x, int back, int on);
+static void tb_glass(tiku_surface_t *s, int x);
+static const char * tb_tool_name(const edit_t *e, int tool);
+static void tb_stop(tiku_surface_t *s, int x, int on);
+static void tb_mallet(tiku_surface_t *s, int x);
+static void tb_renum(tiku_surface_t *s, int x);
 
-/** @brief What a name says the language is; only the name can say. */
+/** @brief The language the file name @p name implies; the file's text is
+ *         not looked at. */
 tiku_syntax_lang_t
 tiku_ide_lang_of(const char *name)
 {
     return tiku_syntax_of_path(name);
 }
 
-/**
- * @brief Draw the toolbar's own icons -- pictures, like the run arrow,
- *        because a worded button is a second menu.
- *
- * Undo and redo are curved arrows, back and forward, DIMMED when there
- * is nothing to take back or put again; find is a glass.  Drawn from
- * the same lines the rest of the window is, so they carry no baked art.
- */
+/** @brief Draw the undo arrow (@p back) or the redo arrow at @p x, grey
+ *         when @p on is 0. */
 static void
 tb_arrow(tiku_surface_t *s, int x, int back, int on)
 {
@@ -40,8 +29,7 @@ tb_arrow(tiku_surface_t *s, int x, int back, int on)
     int hx = back ? x + 7 : x + 16;     /* the arrowhead's tip */
     int dir = back ? 1 : -1;
 
-    /* the shaft, and a hook rising at the tail so it reads as a RETURN
-     * rather than a plain move */
+    /* the shaft, with a hook rising at the tail */
     tiku_hline(s, x + 7, mid, 10, c);
     tiku_vline(s, back ? x + 16 : x + 7, mid - 4, 5, c);
     tiku_hline(s, back ? x + 13 : x + 7, mid - 4, 4, c);
@@ -52,6 +40,7 @@ tb_arrow(tiku_surface_t *s, int x, int back, int on)
     tiku_pixel(s, hx + dir * 2, mid + 1, c);
 }
 
+/** @brief Draw the Find tool's magnifying glass at @p x. */
 static void
 tb_glass(tiku_surface_t *s, int x)
 {
@@ -75,10 +64,11 @@ tb_glass(tiku_surface_t *s, int x)
 }
 
 /**
- * @brief Which toolbar tool sits at @p x,@p y for this page, or -1.
+ * @brief Which toolbar tool sits at @p x,@p y on this page, or -1; a tool
+ *        the page's language does not have is -1.
  *
- * One table for the pointer and the tip, so a tool cannot be named
- * without being hittable or hit without wearing a name.
+ * @note R[] repeats the TB_* rectangles of tiku_ide_private.h, which the
+ *       press handler also tests; the two must match.
  */
 int
 tiku_ide_tb_tool_at(const edit_t *e, int x, int y)
@@ -110,7 +100,7 @@ tiku_ide_tb_tool_at(const edit_t *e, int x, int y)
     return -1;
 }
 
-/** @brief The name a hovered tool wears on its tip. */
+/** @brief The name on a hovered tool's tip. */
 static const char *
 tb_tool_name(const edit_t *e, int tool)
 {
@@ -124,7 +114,7 @@ tb_tool_name(const edit_t *e, int tool)
     return (tool >= 0 && tool < 7) ? N[tool] : "";
 }
 
-/** @brief The stop square, red while a run is there to stop. */
+/** @brief Draw the Stop tool's square at @p x, red when @p on. */
 static void
 tb_stop(tiku_surface_t *s, int x, int on)
 {
@@ -134,7 +124,7 @@ tb_stop(tiku_surface_t *s, int x, int on)
                         : TIKU_RGB(178, 178, 178));
 }
 
-/** @brief The build mallet: a head and a handle, from the lines available. */
+/** @brief Draw the Build tool's mallet at @p x: a head and a handle. */
 static void
 tb_mallet(tiku_surface_t *s, int x)
 {
@@ -148,7 +138,7 @@ tb_mallet(tiku_surface_t *s, int x)
     (void)i;
 }
 
-/** @brief Renumber: the ten every line is counted by, and an arrow on. */
+/** @brief Draw the Renumber tool at @p x: "10" and an arrow. */
 static void
 tb_renum(tiku_surface_t *s, int x)
 {
@@ -164,16 +154,16 @@ tb_renum(tiku_surface_t *s, int x)
     tiku_pixel(s, x + 17, mid + 3, c);
 }
 
-/**
- * @brief Where the PAGE begins: below the toolbar, and below the find
- *        bar when it is open, which drops between them.
- */
+/** @brief The y the page begins at: below the toolbar and the target
+ *         strip, and below the find bar when it is open. */
 int
 tiku_ide_edit_page_top(const edit_t *e)
 {
     return SEARCH_TOP + (e->finding ? FIND_H * 3 : 0);
 }
 
+/** @brief The y the page ends at: above the status strip, and above the
+ *         debug panel when it is shown. */
 int
 tiku_ide_edit_page_bottom(const edit_t *e)
 {
@@ -207,10 +197,10 @@ tiku_ide_edit_reveal(edit_t *e)
 }
 
 /**
- * @brief Hold the page to the debug run it is the source of.
+ * @brief Make page @p e read-only while it is the source of a debug run.
  *
- * While a debug run holds it the document refuses every change, and the
- * line it is paused before stays marked only while the run is paused.
+ * The mark on the line the run is paused before is cleared unless that
+ * run is paused.
  */
 void
 tiku_ide_edit_lock(ide_t *st, edit_t *e)
@@ -223,6 +213,8 @@ tiku_ide_edit_lock(ide_t *st, edit_t *e)
     }
 }
 
+/** @brief Paint page @p e, toolbar to status strip, with any tip, and
+ *         hand the frame to the desktop. */
 void
 tiku_ide_edit_paint(ide_t *st, edit_t *e)
 {
@@ -242,9 +234,8 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     if (e->assist_open) {
         tiku_ide_assist_sync(e);
     }
-    /* The toolbar: the two gestures a person reaches for while a hand
-     * is on the mouse, as PICTURES -- a toolbar of worded buttons is a
-     * second menu, and the reach was the point. */
+    /* The toolbar: Save, Run or Build, Stop, Undo, Redo, Find and
+     * Renumber, drawn as icons, with the target strip under it. */
     tiku_fill(e->surface, bar, TIKU_C_PANEL);
     tiku_ide_target_paint(st, e);
     {
@@ -254,8 +245,7 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
                                   TB_ICON);
     }
     if (e->lang == TIKU_SYNTAX_BASIC) {
-        /* The run arrow, drawn rather than baked: rows of the triangle
-         * every player has worn since tape. */
+        /* The run arrow: a green triangle drawn row by row. */
         tiku_rect_t rn = TB_RUN;
         tiku_rgb_t go = TIKU_RGB(52, 140, 62);
         int i;
@@ -270,37 +260,34 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
         }
     }
     if (e->lang == TIKU_SYNTAX_BASIC) {
-        /* Stop stands beside Run, red only while something runs. */
+        /* Stop, red while a run goes. */
         tb_stop(e->surface, TB_STOP.x, st->running);
     }
     if (e->lang == TIKU_SYNTAX_C) {
-        /* The C page's run is a BUILD: the mallet where the arrow is. */
+        /* On a C page the Run tool is Build, drawn as a mallet. */
         tb_mallet(e->surface, TB_RUN.x);
     }
     {
-        /* Undo, redo and find join the reach: the edits a hand on the
-         * mouse wants most, beside Save and Run. */
+        /* Undo and redo, grey when there is nothing to undo or redo,
+         * and Find. */
         tb_arrow(e->surface, TB_UNDO.x, 1, tiku_editdoc_can_undo(e->doc));
         tb_arrow(e->surface, TB_REDO.x, 0, tiku_editdoc_can_redo(e->doc));
         tb_glass(e->surface, TB_FIND.x);
     }
     if (e->lang == TIKU_SYNTAX_BASIC) {
-        /* The tidy that renumbers by tens, for the language whose
-         * lines wear their numbers. */
+        /* Renumber, for BASIC's numbered lines. */
         tb_renum(e->surface, TB_RENUM.x);
     }
     {
-        /* A thin rule under the tools, so the bar reads as furniture
-         * rather than as the top of the page. */
+        /* A rule under the toolbar. */
         tiku_hline(e->surface, 0, TOOLBAR_H - 1, e->w,
                         tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     }
     if (e->finding) {
-        /* The find bar, dropped between the toolbar and the page: a
-         * word to look for, Return to walk the hits, Escape to put it
-         * away.  For a BASIC file, a number typed here goes to that
-         * LINE -- the label says so, because the language's lines wear
-         * their numbers and "find 250" reads two ways. */
+        /* The find bar, three rows between the target strip and the
+         * page: Return goes to the next match, Escape closes it.  In a
+         * BASIC file with replace closed, a number typed here goes to
+         * that line, so the label reads "Find / line:". */
         tiku_rect_t fbar = { 0, SEARCH_TOP, e->w, FIND_H * 3 };
         tiku_rect_t fld;
         const char *label = (e->lang == TIKU_SYNTAX_BASIC && !e->replacing)
@@ -330,9 +317,8 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     tiku_codeview_paint(e->view, e->surface);
     tiku_clip_reset(e->surface);
     {
-        /* The same scrollbar the folder windows and the panels wear,
-         * in a gutter of its own at the page's right: a listing longer
-         * than the window SAYS so, rather than hiding its own tail. */
+        /* The kit's scrollbar, in a gutter at the page's right, shown
+         * when the listing is longer than the window. */
         int64_t total, rows, top;
 
         tiku_codeview_extent(e->view, 0, &total, &rows, &top);
@@ -346,9 +332,8 @@ tiku_ide_edit_paint(ide_t *st, edit_t *e)
     }
     tiku_fill(e->surface, strip, TIKU_C_PANEL);
     {
-        /* The strip says where the caret is -- the line and column an
-         * editor is always asked -- and, for a BASIC line wearing its
-         * number, the NUMBER the interpreter will name it by. */
+        /* The strip shows the caret's line and column and, on a
+         * numbered BASIC line, its line number. */
         int64_t cy, cx;
         long num = 0;
         char bas[32];

@@ -1,4 +1,6 @@
-/* tiku_bench_view.c -- view.
+/* tiku_bench_view.c -- painting Bench: the cards, the count pills, the
+ * tabbed views and their rows, the status lines, and any open dropdown
+ * or question.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
@@ -10,6 +12,9 @@ static void history_card(bench_t *st, tiku_rect_t in);
 static void pills(bench_t *st, int *done);
 static void cards(bench_t *st);
 
+/** The text of row @p row of the current tab's list, for the list
+ *  painter; NULL past the last.  Built text sits in a static buffer that
+ *  the next call reuses. */
 const char *tiku_bench_details_row(void *ctx, int row)
 {
     bench_t *st = ctx; static char out[512]; int tab = st->tabs.current;
@@ -69,6 +74,8 @@ const char *tiku_bench_details_row(void *ctx, int row)
     return out;
 }
 
+/** Set each tab's row count, and keep Output and Console at their last
+ *  line while following. */
 static void detail_counts(bench_t *st)
 {
     for (int tab = TAB_RESULTS; tab < TAB_COUNT; tab++) {
@@ -88,7 +95,9 @@ static void detail_counts(bench_t *st)
     }
 }
 
-/** Native checkboxes and disclosure controls, with readable disabled rows. */
+/** Draw the Suites tab's visible rows: a group heading with a fold arrow,
+ *  a suite or leaf with a disclosure arrow, a checkbox and its text.  A
+ *  row that cannot run is dimmed, a destructive leaf red. */
 static void browser_draw(bench_t *st, tiku_rect_t body)
 {
     tiku_list_t *l = &st->list[TAB_SUITES];
@@ -97,8 +106,8 @@ static void browser_draw(bench_t *st, tiku_rect_t body)
         entry_t e = st->entries[i];
         tiku_rect_t row = tiku_list_row_rect(l, body, i);
         if (e.suite < 0) {
-            /* A group's heading: the card's title bar, with how many
-             * suites it holds and a fold triangle. */
+            /* A group's heading: a title bar with the group's name, how
+             * many suites it holds, and a fold arrow. */
             const group_t *g = &st->groups[e.group];
             char title[96];
             snprintf(title, sizeof title, "%s (%d)", g->name, g->count);
@@ -130,12 +139,13 @@ static void browser_draw(bench_t *st, tiku_rect_t body)
         else snprintf(value, sizeof value, "%s | %s | %s", s->group, s->key, s->name);
         tiku_rgb_t ink = focus ? TIKU_C_SELTEXT : ok ? TIKU_C_TEXT : tiku_dim(TIKU_C_TEXT, TIKU_C_DOC);
         if (leaf && ok && !focus && !strcmp(leaf->kind, "destructive"))
-            ink = TIKU_C_DANGER;    /* it may erase the store: said in red */
+            ink = TIKU_C_DANGER;    /* it may erase the store */
         tiku_text_line_draw(st->surface, (tiku_rect_t){row.x + 52, row.y, row.w - 56, row.h},
                             leaf ? TIKU_MEASURE_PLAIN : TIKU_MEASURE_BOLD, value, ink);
     }
 }
 
+/** Draw the Results tab's visible rows, failures in red. */
 static void results_draw(bench_t *st, tiku_rect_t body)
 {
     tiku_list_t *l = &st->list[TAB_RESULTS]; int visible = tiku_list_visible_rows(l, body);
@@ -150,11 +160,11 @@ static void results_draw(bench_t *st, tiku_rect_t body)
 }
 
 /**
- * The verdict for the active profile, the GTK frontend's rule: the
- * latest full kernel run decides -- none is UNPROVEN, one older than a
- * day is STALE, else Fresh -- and the benchmark records fold into one
- * performance word, a regression outranking a suspect outranking an
- * invalid, pass only when every metric passes.
+ * The verdict for the board's profile, by the GTK frontend's rule, into
+ * @p out: the latest full kernel run decides (none is UNPROVEN, one older
+ * than a day is STALE, else Fresh).  The benchmark records give one
+ * performance word into @p perf: regression over suspect over invalid,
+ * pass only when every metric passes, and unproven with no records.
  */
 const char *tiku_bench_history_verdict(const bench_t *st, char *out, size_t cap,
                                    char *perf, size_t perf_cap)
@@ -212,7 +222,9 @@ static void history_card(bench_t *st, tiku_rect_t in)
     tiku_bench_text(st, (tiku_rect_t){in.x, y, in.w, 15}, perf, 0);
 }
 
-/** The three counts over the views, coloured once there is a run. */
+/** Draw the passed, failed and didn't-run counts over the views, each
+ *  coloured when it is not zero, and the run's state; @p done gets the
+ *  number of settled rows. */
 static void pills(bench_t *st, int *done)
 {
     int pass = 0, fail = 0, skip = 0, x = RX;
@@ -266,6 +278,7 @@ static void cards(bench_t *st)
     tiku_bench_text(st, (tiku_rect_t){in.x, in.y + 26, 56, 22}, "CFLAGS", 0);
 }
 
+/** Paint the whole window and send the frame to the desktop. */
 void tiku_bench_paint(bench_t *st)
 {
     int done;

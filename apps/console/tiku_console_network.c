@@ -1,12 +1,14 @@
-/* tiku_console_network.c -- network.
+/* tiku_console_network.c -- ping over SLIP on the console's wire, as
+ * tikuConsole/tcon/packets.py does it, with no TUN interface, route,
+ * firewall rule or NAT bridge; and the decoder that splits the wire into
+ * text, IPv4 packets and window frames.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_console_private.h"
 
 static unsigned get16(const unsigned char *p);
 
-/* The same rootless ICMP-over-SLIP workflow as tikuConsole/tcon/packets.py.
- * This does not create a TUN interface, route, firewall rule or NAT bridge. */
+/** The Internet checksum (RFC 1071) of the @p n bytes at @p p. */
 unsigned tiku_console_checksum(const unsigned char *p, size_t n)
 {
     unsigned sum = 0;
@@ -15,11 +17,16 @@ unsigned tiku_console_checksum(const unsigned char *p, size_t n)
     while (sum >> 16) sum = (sum & 65535u) + (sum >> 16);
     return (~sum) & 65535u;
 }
+/** Store @p n at @p p as two bytes, big-endian. */
 void tiku_console_put16(unsigned char *p, unsigned n)
 { p[0] = (unsigned char)(n >> 8); p[1] = (unsigned char)n; }
+/** The big-endian 16-bit value at @p p. */
 static unsigned get16(const unsigned char *p)
 { return ((unsigned)p[0] << 8) | p[1]; }
 
+/** SLIP-encode the @p n bytes at @p p into @p out, between END bytes, with
+ *  END and ESC escaped.  @return the bytes written, or 0 when @p out is
+ *  too small. */
 size_t tiku_console_slip_encode(const unsigned char *p, size_t n, unsigned char *out, size_t cap)
 {
     size_t used = 0;
@@ -34,6 +41,8 @@ size_t tiku_console_slip_encode(const unsigned char *p, size_t n, unsigned char 
     out[used++] = 0xc0; return used;
 }
 
+/** Put the ping's counts, loss and round-trip times in the Network tab's
+ *  note. */
 void tiku_console_ping_summary(console_t *st)
 {
     int lost = st->ping_sent ? 100 * (st->ping_sent - st->ping_received) / st->ping_sent : 0;
@@ -45,7 +54,10 @@ void tiku_console_ping_summary(console_t *st)
     st->dirty = 1;
 }
 
-/** Validate lengths, fragmentation, addresses, checksums and duplicate replies. */
+/** Take an IPv4 packet from the board.  An echo reply to the running ping,
+ *  checked for its lengths, fragmentation, addresses, checksums and
+ *  repeats, is counted with its round-trip time; any other packet is
+ *  dropped. */
 void tiku_console_ip_packet(console_t *st, const unsigned char *p, size_t n)
 {
     if (!st->ping_active || n < 28 || p[0] >> 4 != 4 || p[9] != 1) return;
@@ -67,12 +79,11 @@ void tiku_console_ip_packet(console_t *st, const unsigned char *p, size_t n)
     tiku_console_message(st, msg); tiku_console_ping_summary(st);
 }
 
-/* Text, IP packets and window frames share one wire, by the console's own
- * rules: an END is a delimiter, never a toggle; the byte after an END names
- * the channel -- 0xf1 a window frame, 0x4n an IPv4 packet -- or is text; and
- * a frame left open longer than FRAME_TTL_US is abandoned, so a stray END
- * before an ordinary letter cannot swallow the session's output. */
-
+/** Take one byte from the wire, which carries text, IPv4 packets and
+ *  window frames.  An END (0xc0) closes any open frame, and the byte
+ *  after an END names the channel (0xf1 a window frame, 0x4n an IPv4
+ *  packet) or is text.  tiku_console_io_poll() drops a frame left open
+ *  longer than FRAME_TTL_US. */
 void tiku_console_wire_byte(console_t *st, unsigned char b)
 {
     if (st->gui_frame) {
@@ -106,6 +117,9 @@ void tiku_console_wire_byte(console_t *st, unsigned char b)
     tiku_console_text_byte(st, b);
 }
 
+/** Start a ping of the Network tab's address with its count of probes,
+ *  1 to 100: turn SLIP on at the board, then tiku_console_ping_tick()
+ *  sends the probes. */
 void tiku_console_ping_start(console_t *st)
 {
     if (st->state != ACTIVE || st->ping_active) return;
@@ -126,7 +140,9 @@ void tiku_console_ping_start(console_t *st)
     tiku_console_ping_summary(st);
 }
 
-/** A bounded train, then two seconds for replies; loss never becomes zero RTT. */
+/** Send the next probe a second after the last, once the output queue is
+ *  empty; after the last probe, wait 2 s for replies, then finish with
+ *  the summary.  An unanswered probe adds no round-trip time. */
 void tiku_console_ping_tick(console_t *st)
 {
     if (!st->ping_active || st->now < st->ping_next || st->out_at < st->out_n) return;

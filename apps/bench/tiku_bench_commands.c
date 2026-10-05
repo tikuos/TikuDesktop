@@ -1,8 +1,11 @@
-/* tiku_bench_commands.c -- commands.
+/* tiku_bench_commands.c -- Bench's menus, the commands that menus, buttons
+ * and keys run, and the routing of the window's events.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
 
+/** Publish the Bench and View menus, each row enabled for the window's
+ *  state. */
 void tiku_bench_publish(bench_t *st)
 {
     tiku_menuset_t m = {0}; m.nmenu = 1;
@@ -53,6 +56,9 @@ void tiku_bench_ask_run(bench_t *st)
     st->confirm.dflt = 0; st->confirm_button = -1;
 }
 
+/** Run @p command from a menu, a button or a key.  Nothing runs while a
+ *  question is open, and the selection and option commands only while
+ *  the window is editable.  @return 0. */
 int tiku_bench_action(bench_t *st, int command)
 {
     if (st->confirm.open) return 0;
@@ -106,8 +112,9 @@ int tiku_bench_action(bench_t *st, int command)
             snprintf(st->note, sizeof st->note, "Invalid run options: check baud, port and KEY=VALUE tokens.");
             tiku_dialog_focus(&st->dialog, F_BAUD); st->dialog.keyboard = 1;
         } else {
-            /* Consent is per run: a destructive selection is asked about
-             * on its own, before the run's question, Cancel first. */
+            /* A queue with destructive leaves gets its own question,
+             * Cancel first, before the run's; the answer holds for this
+             * run only. */
             int destructive = tiku_bench_queue_destructive(st);
             st->allow_destructive = 0;
             if (destructive) {
@@ -152,6 +159,10 @@ int tiku_bench_action(bench_t *st, int command)
     st->dirty = 1; return 0;
 }
 
+/** Route an event in the Bench window: a close, a resize, the open
+ *  question, the lists, the dropdowns, the fields and the buttons.
+ *  @return 1 when the window may close; a close during a run stops the
+ *  run and the window closes when it ends. */
 int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
 {
     bench_t *st = state; (void)window;
@@ -160,8 +171,8 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         return 1;
     }
     if (ev->type == TIKU_EVENT_RESIZE) {
-        /* The corner moved: the views take the room, never less than
-         * the window opened with, and the next frame is at that size. */
+        /* A resize gives the window a surface of the new size, at least
+         * BW x BH; the views grow with it. */
         int w = ev->width < BW ? BW : ev->width;
         int h = ev->height < BH ? BH : ev->height;
         if (w != st->w || h != st->h) {
@@ -190,8 +201,8 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
         if (chosen >= 0) {
             int tag = st->confirm.tag;
             tiku_alert_reset(&st->confirm);
-            /* Either answer settles the install question: the board is
-             * the tool's until one does. */
+            /* Either answer settles the install question; until then
+             * the board stays released to the firmware tool. */
             if (tag == FW_CONFIRM) tiku_bench_fw_confirmed(st, chosen == 1);
             else if (chosen == 1 && tag == RUN_DESTRUCTIVE) {
                 st->allow_destructive = 1;
@@ -222,8 +233,8 @@ int tiku_bench_event(void *state, uint32_t window, const tiku_event_t *ev)
     tiku_choice_result_t cr = tiku_choice_event(&st->target, ev, tiku_bench_target_rect(),
         tiku_bench_screen_rect(st), st->dialog.focus == TARGET);
     if (cr == TIKU_CHOICE_IGNORED && st->epaper && tiku_bench_editable(st)) {
-        /* The presets take the event the same way the device does; a
-         * change is a change of argv, nothing else. */
+        /* The ePaper preset dropdowns; a change only changes the
+         * runner's arguments. */
         tiku_choice_result_t pr = tiku_choice_event(&st->epanel, ev,
             tiku_bench_preset_rect(0), tiku_bench_screen_rect(st),
             st->dialog.focus == PANEL);

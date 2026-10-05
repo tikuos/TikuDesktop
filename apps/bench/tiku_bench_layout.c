@@ -1,4 +1,6 @@
-/* tiku_bench_layout.c -- layout.
+/* tiku_bench_layout.c -- Bench's geometry, the GTK window's layout at the
+ * desktop's size: a column of cards about the board and the run beside
+ * the tabbed views; and the dialog controls laid out and drawn on it.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_bench_private.h"
@@ -7,11 +9,11 @@ static tiku_rect_t card_in(tiku_rect_t r);
 static const char *button_label(int id);
 static int toggle_value(const bench_t *st, int id);
 
-/* The desktop-kit frontend: the GTK window's shape at the desktop's size,
- * a column of cards about the board and the run beside the tabbed views. */
 const tiku_rect_t TIKU_BENCH_ALERT_RECT = {200, 196, 560, 220};
+/** The tab strip, across the views' column. */
 tiku_rect_t tiku_bench_tabs_rect(const bench_t *st)
 { return (tiku_rect_t){RX, 52, RW, 28}; }
+/** The whole window, the bounds a dropdown may open in. */
 tiku_rect_t tiku_bench_screen_rect(const bench_t *st)
 { return (tiku_rect_t){0, 0, st->w, st->h}; }
 /* The cards, top to bottom, and the two buttons under them. */
@@ -30,17 +32,23 @@ static tiku_rect_t card_in(tiku_rect_t r)
     int top = tiku_font_plain()->height + 4;
     return (tiku_rect_t){r.x + 8, r.y + top, r.w - 16, r.h - top - 8};
 }
+/** The device dropdown, at the top of the Device card. */
 tiku_rect_t tiku_bench_target_rect(void)
 {
     tiku_rect_t in = card_in(TIKU_BENCH_CARD_DEVICE);
     return (tiku_rect_t){in.x, in.y, in.w, 24};
 }
+/** The ePaper card's panel dropdown, or with @p pattern its pattern
+ *  dropdown. */
 tiku_rect_t tiku_bench_preset_rect(int pattern)
 {
     tiku_rect_t in = card_in(TIKU_BENCH_CARD_EPAPER);
     return (tiku_rect_t){in.x + 58, in.y + (pattern ? 26 : 0), in.w - 58, 22};
 }
-/* The views' bottom edge moves with the window; the cards do not. */
+/** Field @p i's rectangle: 0 the suite filter, 1 the baud, 2 the make
+ *  variables, 3 the compiler flags, 4 the console input, 5 the firmware
+ *  variables.  The console input and the firmware variables move with
+ *  the window's foot; the other fields stay put. */
 tiku_rect_t tiku_bench_field_rect(const bench_t *st, int i)
 {
     tiku_rect_t in;
@@ -55,6 +63,7 @@ tiku_rect_t tiku_bench_field_rect(const bench_t *st, int i)
     in = card_in(TIKU_BENCH_CARD_MAKE);
     return (tiku_rect_t){in.x + 58, in.y + (i == 3 ? 26 : 0), in.w - 58, 22};
 }
+/** The list of tab @p tab, which grows with the window. */
 tiku_rect_t tiku_bench_list_rect(const bench_t *st, int tab)
 {
     if (tab == TAB_SUITES) return (tiku_rect_t){RX, 122, RW, st->h - 220};
@@ -64,12 +73,15 @@ tiku_rect_t tiku_bench_list_rect(const bench_t *st, int tab)
     if (tab == TAB_FIRMWARE) return (tiku_rect_t){RX, 148, RW, st->h - 352};
     return (tiku_rect_t){RX, 90, RW, st->h - 150};
 }
+/** Draw @p value on one line in @p r, plain or @p bold, cut short with an
+ *  ellipsis when it does not fit. */
 void tiku_bench_text(bench_t *st, tiku_rect_t r, const char *value, int bold)
 {
     tiku_text_line_draw(st->surface, r, bold ? TIKU_MEASURE_BOLD : TIKU_MEASURE_PLAIN,
                         value, TIKU_C_TEXT);
 }
 
+/** How many suites and leaves are selected. */
 int tiku_bench_selected_count(const bench_t *st)
 {
     int n = 0;
@@ -77,9 +89,13 @@ int tiku_bench_selected_count(const bench_t *st)
     for (int i = 0; i < st->nleaf; i++) n += st->leaves[i].selected;
     return n;
 }
+/** Whether the options and the selection can change: no run, no
+ *  catalogue load and no open question. */
 int tiku_bench_editable(const bench_t *st)
 { return !st->busy && !st->loading && !st->confirm.open; }
 
+/** Lay out the window's dialog controls for the current tab, each
+ *  enabled for the window's state. */
 void tiku_bench_controls(bench_t *st)
 {
     int edit = tiku_bench_editable(st), tab = st->tabs.current;
@@ -129,8 +145,8 @@ void tiku_bench_controls(bench_t *st)
                         (tiku_rect_t){RX + 108, st->h - 84, 110, 24},
                         TIKU_DIALOG_BUTTON, ready);
     }
-    /* The cards: the connection, the build mode, the options, the ePaper
-     * presets and the make fields, always in reach. */
+    /* The cards' controls, on every tab: the baud, the build mode, the
+     * options, the ePaper presets and the make fields. */
     tiku_dialog_add(&st->dialog, F_BAUD, tiku_bench_field_rect(st, 1), TIKU_DIALOG_INPUT,
                     edit && !st->usb);
     in = card_in(TIKU_BENCH_CARD_MODE);
@@ -161,8 +177,8 @@ void tiku_bench_controls(bench_t *st)
     tiku_dialog_add(&st->dialog, RUN, RUN_RECT, TIKU_DIALOG_BUTTON,
                     edit && !st->child && st->metadata_ok &&
                     tiku_bench_selected_count(st));
-    /* Not while the part is being written: a flash cut short leaves it
-     * half-programmed, so that step always runs to its end. */
+    /* Stop is off while the part is being written: a flash cut short
+     * leaves it half-programmed. */
     tiku_dialog_add(&st->dialog, STOP, STOP_RECT, TIKU_DIALOG_BUTTON,
                     (st->busy || st->loading) && !st->reclaiming &&
                     !(st->fw.step == FWS_FLASH &&
@@ -170,6 +186,7 @@ void tiku_bench_controls(bench_t *st)
     tiku_dialog_end(&st->dialog);
 }
 
+/** The label of control @p id. */
 static const char *button_label(int id)
 {
     switch (id) {
@@ -185,6 +202,7 @@ static const char *button_label(int id)
     default: return "";
     }
 }
+/** Whether toggle @p id is on. */
 static int toggle_value(const bench_t *st, int id)
 {
     return id == FLASH ? st->flash : id == MONITOR ? !st->flash :
@@ -192,6 +210,8 @@ static int toggle_value(const bench_t *st, int id)
            id == PK ? st->pk : st->epaper;
 }
 
+/** Draw the controls tiku_bench_controls() laid out, each by its kind and
+ *  as focused, pressed or disabled. */
 void tiku_bench_controls_draw(bench_t *st)
 {
     for (int i = 0; i < st->dialog.count; i++) {

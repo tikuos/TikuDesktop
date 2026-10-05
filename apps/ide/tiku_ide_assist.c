@@ -1,19 +1,18 @@
-/* tiku_ide_assist.c -- assist.
+/* tiku_ide_assist.c -- BASIC keyword help, keyword completion and
+ * call-signature tips for a page.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
 
-static int
-assist_word(int ch);
-static int
-assist_quoted(const char *text, int x);
-static int
-assist_context(edit_t *e, tiku_edit_range_t *word, char *prefix,
-               size_t max);
-static void
-assist_show(edit_t *e);
+static int assist_word(int ch);
+static int assist_quoted(const char *text, int x);
+static int assist_context(edit_t *e, tiku_edit_range_t *word, char *prefix,
+                          size_t max);
+static void assist_show(edit_t *e);
 
-/* Editor assistance shares its completion vocabulary with syntax colouring. */
+/** @brief Help for one BASIC keyword: its syntax, what it does, and an
+ *         example.  Completion offers the syntax kit's keywords; this
+ *         table holds the help for those it lists. */
 typedef struct { const char *word, *syntax, *detail, *example; } basic_help_t;
 static const basic_help_t basic_help[] = {
     {"PRINT", "PRINT expression [; expression ...]", "Print values. A trailing semicolon keeps the line open.", "10 PRINT \"Value: \"; A"},
@@ -61,11 +60,14 @@ static const basic_help_t basic_help[] = {
     {"TRACE", "TRACE ON | OFF", "Print each executed line; graphical Debug adds stepping.", "TRACE ON"},
 };
 
-/* Brackets of a line followed to find the call around the caret, and the
- * most arguments its signature's tip marks. */
+/* ASSIST_DEPTH: the deepest bracket nesting tracked before the caret on its
+ * line to find the call around it; deeper, no signature is shown.
+ * ASSIST_ARGS: the most arguments a signature tip marks. */
 #define ASSIST_DEPTH 64
 #define ASSIST_ARGS 16
 
+/** @brief Whether @p ch can be part of a BASIC word: a letter, a digit,
+ *         "_" or "$". */
 static int
 assist_word(int ch)
 {
@@ -332,6 +334,9 @@ assist_signature(edit_t *e)
     return 0;
 }
 
+/** @brief Open keyword help, or with @p complete keyword completion, on a
+ *         BASIC page.  Help with the caret in a call the table knows shows
+ *         the call's signature instead. */
 void
 tiku_ide_assist_open(edit_t *e, int complete)
 {
@@ -390,8 +395,10 @@ tiku_ide_assist_accept(edit_t *e)
     }
 }
 
-/** @brief Escape, and the list's own keys in completion; presses on the
- *         list and the tip reach the view with the page's. */
+/** @brief Take a key for the open assist: Escape closes it, and in
+ *         completion the arrows, Return and Tab work the list.  Presses
+ *         on the list and the tip reach the view with the page's.
+ *         @return 1 when the key was taken. */
 int
 tiku_ide_assist_event(edit_t *e, const tiku_event_t *event)
 {

@@ -1,4 +1,6 @@
-/* tiku_editor_commands.c -- commands.
+/* tiku_editor_commands.c -- the Editor's commands and menus: Find and
+ * Replace, the clipboard, the Language and Text menus, and New, Open,
+ * Revert and Close, which wait on the unsaved-changes question.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
@@ -7,16 +9,13 @@ static tiku_edit_query_t query(const edit_state_t *st);
 static int count_crlf(void *ctx, const char *bytes, size_t n);
 static void clipboard_command(edit_state_t *st, int command);
 
-/* Editor commands and guarded document transitions.
- * SPDX-License-Identifier: Apache-2.0 */
-
 /** Whether the text differs from what was last loaded or saved. */
 int tiku_editor_modified(const edit_state_t *st)
 { return tiku_editdoc_modified(st->doc); }
 
-/** A successful edit clears the footer message and drops the actions
- *  that waited on the text before it: the pending one, and an Open that
- *  Discard allowed. */
+/** Note a successful edit: clear the footer message and drop the actions
+ *  that waited on the text before it, the pending command and an Open
+ *  that Discard allowed. */
 void tiku_editor_edited(edit_state_t *st)
 { st->note[0] = 0; st->pending = 0; st->allow_open = 0; }
 
@@ -118,7 +117,9 @@ void tiku_editor_replace_all(edit_state_t *st)
              found.replaced);
 }
 
-/** Open an optional native file panel beside the current document. */
+/** Ask the desktop's file panel for a file to open, or with @p saving for
+ *  a name to save as, starting in the document's folder; with no panel
+ *  the note says so. */
 void tiku_editor_file_panel(edit_state_t *st, int saving)
 {
     if (!st->services->pick) {
@@ -141,7 +142,10 @@ void tiku_editor_file_panel(edit_state_t *st, int saving)
     }
 }
 
-/** Execute a document transition only after its unsaved-change guard. */
+/** Run New, Open, Revert or Close (CMD_QUIT).  @return 1 when the window
+ *  is to close.
+ *  @note Call it through tiku_editor_guarded_action() unless the changes
+ *        were saved or discarded. */
 int tiku_editor_document_action(edit_state_t *st, int command)
 {
     st->pending = 0;
@@ -172,7 +176,9 @@ int tiku_editor_document_action(edit_state_t *st, int command)
     return 0;
 }
 
-/** Every destructive UI route uses the same Cancel-first question. */
+/** Run New, Open, Revert or Close at once when nothing is unsaved;
+ *  otherwise ask Cancel, Discard or Save, Cancel the default, and keep
+ *  the command pending.  @return 1 when the window is to close. */
 int tiku_editor_guarded_action(edit_state_t *st, int command)
 {
     if (!tiku_editor_modified(st)) return tiku_editor_document_action(st, command);
@@ -197,7 +203,9 @@ static int count_crlf(void *ctx, const char *bytes, size_t n)
     return 0;
 }
 
-/** Bounded clipboard transfers never silently cut a selection short. */
+/** Cut, copy or paste through the view.  A selection over the
+ *  clipboard's limit, a CRLF counted as one byte, is not copied, and the
+ *  note says so. */
 static void clipboard_command(edit_state_t *st, int command)
 {
     tiku_edit_pos_t anchor, caret;
@@ -314,7 +322,9 @@ static int command_marked(const edit_state_t *st, int cmd)
     }
 }
 
-/** Menus expose the same commands and shortcut routes as the keyboard. */
+/** Publish the File, Edit, Search, View, Text and Language menus, with
+ *  their shortcuts, enabled rows and marks, when they changed; the Find
+ *  window gets them too. */
 void tiku_editor_publish(edit_state_t *st)
 {
     static const char *const titles[] = {"File", "Edit", "Search", "View",
@@ -446,7 +456,9 @@ static void language_choice(edit_state_t *st, int mode)
              : TIKU_SYNTAX_NONE;
 }
 
-/** Dispatch commands once; menu actions and key bindings cannot diverge. */
+/** Run menu command @p command, picked in @p window or sent by a key.
+ *  With a Find window field focused, the editing commands go to the
+ *  field.  @return 1 when the window is to close. */
 int tiku_editor_pick(void *state, uint32_t window, int command)
 {
     edit_state_t *st = state;
@@ -571,7 +583,9 @@ int tiku_editor_pick(void *state, uint32_t window, int command)
     tiku_editor_reveal(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0;
 }
 
-/** File-panel answers never replace a document edited while the panel was open. */
+/** Take the file panel's answer: save to the path, then run a pending
+ *  command; or open the path, unless the document holds unsaved edits
+ *  that Discard did not allow. */
 void tiku_editor_picked(void *state, uint32_t window, const char *path)
 {
     edit_state_t *st = state; (void)window;

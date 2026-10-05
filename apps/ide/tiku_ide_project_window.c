@@ -1,4 +1,6 @@
-/* tiku_ide_project_window.c -- project window.
+/* tiku_ide_project_window.c -- the Project window: the list of a
+ * project's groups and files, its menus, and making, opening and
+ * changing the project description.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_ide_private.h"
@@ -6,19 +8,17 @@
 
 /** @brief A project file with one line left out, for tiku_atomic_file(). */
 typedef struct {
-    const char *text;
+    const char *text;               /* the whole description */
     size_t      len, cut, resume;   /* the line left out is [cut, resume) */
 } removal_t;
 
-static const char *
-row_name(void *ctx, int row);
-static void
-project_show(ide_t *st);
-static char *
-read_whole(const char *path, size_t *len);
-static int
-write_without(FILE *f, void *ctx);
+static const char * row_name(void *ctx, int row);
+static void project_show(ide_t *st);
+static char * read_whole(const char *path, size_t *len);
+static int write_without(FILE *f, void *ctx);
 
+/** @brief The Project window's list box: the window less its margins and
+ *         the status strip. */
 tiku_rect_t
 tiku_ide_project_body(const ide_t *st)
 {
@@ -28,17 +28,16 @@ tiku_ide_project_body(const ide_t *st)
     return r;
 }
 
-/* The rows sit INSIDE the sunken box, clear of its bevel: a row's
- * white fill drawn at the box edge would erase the border under it, and
- * the heading would look like it spilled onto the grey. */
+/** @brief Where the rows are drawn: the list box inset by 2, clear of its
+ *         bevel, so a row's fill does not paint over the box's border. */
 tiku_rect_t
 tiku_ide_project_list_area(const ide_t *st)
 {
     return tiku_inset(tiku_ide_project_body(st), 2);
 }
 
-/** @brief A window of ours that grows: the project's list, the console
- *         and the messages all show more with more room. */
+/** @brief Ask the desktop to let window @p id be resized, when the
+ *         desktop offers that. */
 void
 tiku_ide_window_sizeable(ide_t *st, uint32_t id)
 {
@@ -47,12 +46,15 @@ tiku_ide_window_sizeable(ide_t *st, uint32_t id)
     }
 }
 
+/** @brief Let the Project window be resized. */
 void
 tiku_ide_project_sizeable(ide_t *st)
 {
     tiku_ide_window_sizeable(st, st->proj_id);
 }
 
+/** @brief The name of project row @p row, for the list painter; NULL past
+ *         the last. */
 static const char *
 row_name(void *ctx, int row)
 {
@@ -62,6 +64,8 @@ row_name(void *ctx, int row)
                                              : NULL;
 }
 
+/** @brief Paint the Project window: the list, the status strip and any
+ *         open question.  Nothing is painted before the window opens. */
 void
 tiku_ide_project_paint(ide_t *st)
 {
@@ -87,8 +91,8 @@ tiku_ide_project_paint(ide_t *st)
         snprintf(says, sizeof says,
                  "no project open -- the Project menu starts one");
     } else {
-        /* FILES, not rows: a group's name is furniture, and a project
-         * holding one heading and nothing under it is empty. */
+        /* Files are counted, not rows: a project with headings and no
+         * files is empty. */
         int files = 0;
         int i;
 
@@ -125,13 +129,8 @@ tiku_ide_project_paint(ide_t *st)
                               st->proj_surface->px, st->proj_w, st->proj_h);
 }
 
-/**
- * @brief The project window's menus, the Window menu among them.
- *
- * A row per open editor, marked when what it holds is unsaved -- so the
- * one place that lists the windows is also the one place that says
- * which of them has work in it.
- */
+/** @brief Publish the Project window's menus: Project, File, and the
+ *         Window menu, which lists the open pages. */
 void
 tiku_ide_project_publish(ide_t *st)
 {
@@ -144,8 +143,8 @@ tiku_ide_project_publish(ide_t *st)
              sizeof menus.menu[0].item[0].label, APP_ABOUT);
     menus.menu[0].item[0].command = CMD_ABOUT;
     menus.menu[0].item[0].enabled = 1;
-    /* The groups a person reads at a glance: what this IS, then the
-     * projects, then the work, then the leaving. */
+    /* The Project menu's groups: About; New, Open and Recover; Run,
+     * Save on the device and Build; Close Project. */
     menus.menu[0].item[1].separator = 1;
     snprintf(menus.menu[0].item[2].label,
              sizeof menus.menu[0].item[2].label, "New Project…");
@@ -165,11 +164,9 @@ tiku_ide_project_publish(ide_t *st)
     mrow++;
 #ifndef TIKU_IDE_C
     {
-        /* Run is offered for the row the list is standing on, and only
-         * when its NAME says the interpreter would know what to do
-         * with it -- the same thing the editor's own Run asks.  TikuC
-         * does not offer it: nothing here runs a C program yet, and a
-         * row that could never be taken is furniture. */
+        /* Run is offered for the chosen row, enabled when
+         * tiku_ide_lang_of() takes its name for BASIC.  TikuC has no Run
+         * row: it only builds. */
         int row = tiku_list_chosen(&st->tv_list);
         int can = (row >= 0 && row < st->proj.nrow &&
                    !st->proj.row[row].heading &&
@@ -207,8 +204,8 @@ tiku_ide_project_publish(ide_t *st)
                     (unsigned char)(st->proj.nrow > 0 && !st->running);
             }
             if (st->running) {
-                /* A run started from here has to be stoppable from here:
-                 * the editor's Stop is on a window this run never opened. */
+                /* Stop, while a run goes: a run started from this menu
+                 * may have no page open. */
                 mrow++;
                 snprintf(menus.menu[0].item[mrow].label,
                          sizeof menus.menu[0].item[mrow].label, "Stop");
@@ -219,15 +216,10 @@ tiku_ide_project_publish(ide_t *st)
         mrow++;
     }
 #endif
-    /* Build names what it is FOR, because that is the decision the
-     * project already made and the one a person needs to see before
-     * they trust what comes back. */
+    /* Build names its target.  TikuBasic shows it only when the project
+     * names a target; TikuC always shows it, and builds for host when
+     * the project names none. */
     {
-        /* BASIC first: Build appears only when a project SAYS what it
-         * is being built for.  A menu offering a road nobody asked for
-         * is a generic tool wearing a focused name.  TikuC builds by
-         * DEFAULT -- asking the compiler is what it is here for -- and
-         * a project naming no target is asked about on this machine. */
         int at = mrow;
 
 #ifndef TIKU_IDE_C
@@ -253,18 +245,16 @@ tiku_ide_project_publish(ide_t *st)
     }
     }
 
-    /* The two roads a file takes INTO a project, in a menu of their
-     * own: File is where hands look for files, and Project is about
-     * the project.  Neither road means anything without a project for
-     * it to land in, and the rows say so by dimming. */
+    /* File: New File… and Add File… put a file in the project, so they
+     * are enabled only while a project is open. */
     snprintf(menus.menu[1].title, sizeof menus.menu[1].title, "File");
     snprintf(menus.menu[1].item[0].label,
              sizeof menus.menu[1].item[0].label, "New File…");
     menus.menu[1].item[0].command = CMD_NEWFILE;
     menus.menu[1].item[0].enabled =
         (unsigned char)(st->proj_file[0] != '\0');
-    /* Open File… asks for no project at all: an editor on the file,
-     * and nothing written anywhere.  Reading is not joining. */
+    /* Open File… needs no project: it opens the file in a page and adds
+     * it to nothing. */
     snprintf(menus.menu[1].item[1].label,
              sizeof menus.menu[1].item[1].label, "Open File…");
     menus.menu[1].item[1].command = CMD_OPENFILE;
@@ -276,9 +266,8 @@ tiku_ide_project_publish(ide_t *st)
         (unsigned char)(st->proj_file[0] != '\0');
     menus.menu[1].item[3].separator = 1;
     {
-        /* The road OUT that Add File… promised a partner for: the
-         * selected row leaves the DESCRIPTION and only that -- the
-         * file stays on the disk, exactly as BeIDE meant it. */
+        /* Remove File takes the chosen row out of the description;
+         * the file stays on disk. */
         int row = tiku_list_chosen(&st->tv_list);
 
         snprintf(menus.menu[1].item[4].label,
@@ -295,7 +284,8 @@ tiku_ide_project_publish(ide_t *st)
     (void)st->services->menus(st->services->ctx, st->proj_id, &menus);
 }
 
-/** @brief Show @p pj: the rows, with the groups among them as headings. */
+/** @brief Show st->proj in the list, groups as headings, with a note when
+ *         lines of the description were skipped. */
 static void
 project_show(ide_t *st)
 {
@@ -316,7 +306,7 @@ project_show(ide_t *st)
     tiku_ide_project_publish(st);
 }
 
-/** @brief Open what the person picked in the shell's panel. */
+/** @brief Read the project description at @p path and show it. */
 void
 tiku_ide_project_take(ide_t *st, const char *path)
 {
@@ -342,8 +332,8 @@ tiku_ide_project_take(ide_t *st, const char *path)
         snprintf(dir, sizeof dir, ".");
     }
     (void)tiku_ide_project_parse(&st->proj, whole, dir);
-    /* Copied ASIDE first: a caller may hand this the very buffer it is
-     * about to be written into, and printf over itself is nothing. */
+    /* A caller may pass st->proj_file itself; the copy is skipped then,
+     * since snprintf() onto its own source is undefined. */
         if (path != st->proj_file) {
         snprintf(st->proj_file, sizeof st->proj_file, "%s", path);
     }
@@ -351,11 +341,12 @@ tiku_ide_project_take(ide_t *st, const char *path)
 }
 
 /**
- * @brief Put @p path into the project, making the file when it is new.
+ * @brief Add @p path to the project, creating the file when it is new,
+ *        and open it.
  *
- * The description is APPENDED to, never rewritten: a rewrite from what
- * this build parsed would silently drop every line it did not know,
- * which is exactly the forward road the skipping rule keeps open.
+ * A `file` line is appended to the description, which is not rewritten,
+ * so lines this build does not parse are kept.  A file already listed is
+ * opened; a file outside the project's folder is refused.
  */
 void
 tiku_ide_project_add_file(ide_t *st, const char *path)
@@ -368,9 +359,8 @@ tiku_ide_project_add_file(ide_t *st, const char *path)
     if (st->proj_file[0] == '\0') {
         return;                 /* no project to put it in */
     }
-    /* Inside the project's own folder, because the description names
-     * its files RELATIVELY -- a project is a folder somebody can move,
-     * and a file outside it would be left behind. */
+    /* The file must be inside the project's folder: the description
+     * names files relative to it, so the folder moves with its files. */
     if (strncmp(path, st->proj.dir, dirlen) != 0 ||
         path[dirlen] != '/') {
         snprintf(st->note, sizeof st->note,
@@ -383,7 +373,7 @@ tiku_ide_project_add_file(ide_t *st, const char *path)
         if (!st->proj.row[i].heading &&
             strcmp(st->proj.row[i].path, path) == 0) {
             tiku_ide_edit_open(st, &st->proj.row[i]);
-            return;             /* already listed: adding means opening */
+            return;             /* already listed: open it */
         }
     }
     f = fopen(path, "a");       /* made when new, kept when not */
@@ -467,13 +457,12 @@ write_without(FILE *f, void *ctx)
 }
 
 /**
- * @brief Take the SELECTED row out of the project's description.
+ * @brief Remove the chosen row's `file` line from the description; the
+ *        file stays on disk.
  *
- * Out of the PROJECT, not off the DISK: the file stays where it is,
- * exactly as BeIDE meant it.  The first `file` line naming the row, read
- * the way the project is read, is the one left out; every other byte
- * rides through untouched, and the description is replaced whole, so a
- * failure leaves it as it was.
+ * The first `file` line naming the row, read as the parser reads it, is
+ * left out and every other byte is kept.  The description is replaced
+ * whole by tiku_atomic_file(), so a failed write leaves it as it was.
  */
 void
 tiku_ide_project_remove_file(ide_t *st)
@@ -520,14 +509,12 @@ tiku_ide_project_remove_file(ide_t *st)
 }
 
 /**
- * @brief Make a project where the person said, and open it.
+ * @brief Make a project at @p path and open it.
  *
- * A project IS a folder: the name the person typed becomes a folder of
- * that name, holding the description and the program's first source
- * file -- which opens, because a person who just made a project is
- * there to write it.  A name that already means something is OPENED
- * rather than emptied: an existing description as itself, an existing
- * folder by the description inside it.
+ * The path becomes a folder holding project.tiku and APP_MAIN_FILE, and
+ * the main file opens in a page.  An existing file at @p path is opened
+ * as a description, and an existing folder by its project.tiku; neither
+ * is emptied, and project.tiku is written only when it is missing.
  */
 void
 tiku_ide_project_create(ide_t *st, const char *path)
@@ -540,7 +527,7 @@ tiku_ide_project_create(ide_t *st, const char *path)
 
     leaf = (leaf != NULL) ? leaf + 1 : path;
     if (stat(path, &sb) == 0 && !S_ISDIR(sb.st_mode)) {
-        /* An existing FILE: the person picked a description itself. */
+        /* An existing file is taken as the description. */
         tiku_ide_project_take(st, path);
         return;
     }
@@ -579,7 +566,8 @@ tiku_ide_project_create(ide_t *st, const char *path)
     }
 }
 
-/** @brief Open whatever row the list is standing on. */
+/** @brief Open the chosen row's file in a page; a heading opens
+ *         nothing. */
 void
 tiku_ide_open_chosen(ide_t *st)
 {

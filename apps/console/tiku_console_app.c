@@ -1,11 +1,14 @@
-/* tiku_console_app.c -- app.
+/* tiku_console_app.c -- TikuConsole's descriptor, its start and stop, and
+ * the periodic tick.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_console_private.h"
 
 static int console_pick(void *state, uint32_t window, int command);
 
-/** Start with no serial I/O; the person explicitly opens the selected console. */
+/** Start TikuConsole: open its window with the Console, Network and
+ *  Device tabs.  No port is opened until Open console.  @return 0, or -1
+ *  when the state, surface or window cannot be made. */
 int tiku_console_start(void **state, const tiku_app_services_t *services)
 {
     console_t *st = calloc(1, sizeof *st);
@@ -40,7 +43,8 @@ int tiku_console_start(void **state, const tiku_app_services_t *services)
     tiku_console_paint(st); tiku_console_publish(st); *state = st; return 0;
 }
 
-/** Close this application's descriptor before the desktop takes the wire. */
+/** Stop TikuConsole: close the serial port and the recording, then ask the
+ *  desktop to take back a board it released. */
 void tiku_console_stop(void *state)
 {
     console_t *st = state;
@@ -52,7 +56,9 @@ void tiku_console_stop(void *state)
     tiku_surface_free(st->surface); free(st);
 }
 
-/** Bounded serial work on each beat; no loops waiting for a device response. */
+/** Periodic work: pump the serial port and the ping, time out a board
+ *  handoff, read the board list every second while idle, repaint when
+ *  needed, and close once the board is back. */
 void tiku_console_tick(void *state, int64_t now)
 {
     console_t *st = state; st->now = now;
@@ -70,6 +76,7 @@ void tiku_console_tick(void *state, int64_t now)
     if (st->dirty) { tiku_console_paint(st); tiku_console_publish(st); st->dirty = 0; }
     if (st->closing && st->state == IDLE) st->services->close(st->services->ctx, st->id);
 }
+/** A menu pick: run @p command as tiku_console_action() does. */
 static int console_pick(void *state, uint32_t window, int command)
 { (void)window; return tiku_console_action(state, command); }
 const tiku_app_descriptor_t tiku_console_app = {
@@ -78,6 +85,7 @@ const tiku_app_descriptor_t tiku_console_app = {
     .event_in = tiku_console_event, .board_said = tiku_console_board_said
 };
 #ifdef TIKU_APP_SO
+/** The one symbol a loader looks for; see tiku_app.h. */
 const tiku_app_export_t tiku_app_v1 = {
     TIKU_APP_ABI, (uint32_t)sizeof(tiku_app_descriptor_t), &tiku_console_app
 };

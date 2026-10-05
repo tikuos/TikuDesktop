@@ -1,4 +1,6 @@
-/* tiku_editor_input.c -- input.
+/* tiku_editor_input.c -- the Editor's input: the pointer and the keys,
+ * the unsaved-changes question, the Find window's fields, and the
+ * windows' close.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
@@ -17,14 +19,13 @@ static int search_event(edit_state_t *st, const tiku_event_t *e);
 
 static const int tool_commands[] = {CMD_NEW, CMD_OPEN, CMD_SAVE, CMD_UNDO, CMD_REDO, CMD_FIND};
 
-/* Pointer, keyboard and close routes for the editor.
- * SPDX-License-Identifier: Apache-2.0 */
-
-/** Half-open rectangles are shared by rendering and hit testing. */
+/** Whether @p x,@p y lies in @p r, its right and bottom edges excluded. */
 static int inside(tiku_rect_t r, int x, int y)
 { return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h; }
 
-/** End arrows and track clicks use the painter's exact geometry. */
+/** The scroll value a press at @p at gives on a bar @p length long: its
+ *  14-pixel end arrows step, and the track between them is pressed as
+ *  tiku_scroll_press() takes it. */
 static int scrollbar_press(tiku_scroll_t *bar, int length, int at)
 {
     if (at < 14) return tiku_scroll_to(bar, bar->value - bar->step);
@@ -32,7 +33,7 @@ static int scrollbar_press(tiku_scroll_t *bar, int length, int at)
     return tiku_scroll_press(bar, length - 28, at - 14);
 }
 
-/** The scrollbars move a pane and never the caret. */
+/** Scroll pane @p pane to row @p top, leaving the caret where it is. */
 static void scroll_top(edit_state_t *st, int pane, int top)
 { tiku_codeview_scroll_to(st->panes[pane], top, tiku_codeview_left(st->panes[pane])); }
 
@@ -76,6 +77,8 @@ static int pointer_down(edit_state_t *st, const tiku_event_t *e)
     }
     return 0;
 }
+/** Scroll the pane with the keys to @p left across, leaving the caret
+ *  where it is. */
 static void scroll_left(edit_state_t *st, int left)
 { tiku_codeview_scroll_to(st->view, tiku_codeview_top(st->view), left); }
 
@@ -94,9 +97,9 @@ static int move_key(unsigned key)
 { return key == TIKU_KEY_UP || key == TIKU_KEY_DOWN || key == TIKU_KEY_HOME ||
          key == TIKU_KEY_END || key == TIKU_KEY_PAGE_UP || key == TIKU_KEY_PAGE_DOWN; }
 
-/** Hand a key to the view.  The keys it leaves keep what they did before
- *  it: Option with a line move moves as the key alone does, and Return,
- *  Tab, Backspace and Delete with any modifier but Command still edit.
+/** Hand a key to the view.  Of the keys the view does not take, Option
+ *  with a line move moves as the key alone does, and Return, Tab,
+ *  Backspace and Delete with any modifier but Command still edit.
  *  @return 1 when the key edited or moved. */
 static int view_key(edit_state_t *st, const tiku_event_t *e)
 {
@@ -125,7 +128,10 @@ static int view_key(edit_state_t *st, const tiku_event_t *e)
     return taken;
 }
 
-/** Save/discard/cancel all continue the exact action originally requested. */
+/** Answer the unsaved-changes question from a key or a press: Discard
+ *  runs the pending command; Save saves, through the file panel when the
+ *  document has no name, then runs it; Cancel drops it.  @return 1 when
+ *  the window is to close. */
 static int answer_question(edit_state_t *st, const tiku_event_t *e)
 {
     int at = -1;
@@ -147,7 +153,9 @@ static int answer_question(edit_state_t *st, const tiku_event_t *e)
     tiku_editor_publish(st); tiku_editor_paint(st); return 0;
 }
 
-/** Search accepts ordinary native field input and explicit navigation keys. */
+/** Take an event for the Find window: its buttons and checkboxes,
+ *  Escape, Tab, Return (find, replace or go to the line) and editing in
+ *  the focused field.  @return 1 when the window took it. */
 static int search_event(edit_state_t *st, const tiku_event_t *e)
 {
     if (!st->finding || !st->search_active) return 0;
@@ -209,7 +217,8 @@ static int search_event(edit_state_t *st, const tiku_event_t *e)
         else tiku_editor_find_match(st, (e->modifiers & TIKU_MOD_SHIFT) != 0);
         tiku_editor_publish(st); tiku_editor_paint(st); return 1;
     }
-    /* App services carry the system clipboard; field input uses its kit mirror. */
+    /* The desktop's clipboard comes through the services; the field
+     * edits the kit's clipboard, synced with it around the edit. */
     unsigned stamp = tiku_clipboard_stamp();
     if (e->type == TIKU_EVENT_KEY_DOWN && (e->modifiers & TIKU_MOD_CMD) &&
         (e->key == 'v' || e->key == 'V') && st->services->clip_text) {
@@ -224,11 +233,14 @@ static int search_event(edit_state_t *st, const tiku_event_t *e)
     if (result == TIKU_FIELD_REJECTED)
         snprintf(st->note, sizeof st->note, "Text does not fit this field.");
     if (result != TIKU_FIELD_IGNORED) { tiku_editor_publish(st); tiku_editor_paint(st); }
-    /* Auxiliary-window coordinates must never reach document hit testing. */
+    /* An event for the Find window does not reach the document. */
     return 1;
 }
 
-/** Input respects modal questions, fields, scrollbars, then document editing. */
+/** Route an event for the document window: a resize, the open question,
+ *  the context menu, the Find window's fields and Command keys, the
+ *  pointer, then keys for the document.  @return 1 when the window is to
+ *  close. */
 int tiku_editor_event(void *state, const tiku_event_t *e)
 {
     edit_state_t *st = state;
@@ -257,7 +269,8 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
         }
         return 0;
     }
-    /* Document commands remain available while a search field has focus. */
+    /* With a Find window field focused, the document's Command keys
+     * still work. */
     if (st->finding && st->search_active && st->find_focus >= 0 && e->type == TIKU_EVENT_KEY_DOWN &&
         (e->modifiers & TIKU_MOD_CMD)) {
         unsigned k = e->key >= 'A' && e->key <= 'Z' ? e->key + 32 : e->key;
@@ -388,14 +401,15 @@ int tiku_editor_event(void *state, const tiku_event_t *e)
     tiku_editor_reveal(st); tiku_editor_publish(st); tiku_editor_paint(st); return 0;
 }
 
-/** Route the auxiliary Find window without ever treating its text as a document edit. */
+/** Route an event by window: Preferences, the Find window or the document
+ *  window.  @return 1 when the document window is to close. */
 int tiku_editor_event_in(void *state, uint32_t window, const tiku_event_t *e)
 {
     edit_state_t *st = state;
     if (window && window == st->prefs_id)
         return tiku_editor_preferences_event(st, e);
     if (window != st->id && window != st->search_id) return 0;
-    /* Background repaint/resize does not change the active editing target. */
+    /* A resize or expose does not change which window has the keys. */
     if (e->type == TIKU_EVENT_RESIZE || e->type == TIKU_EVENT_EXPOSE) {
         if (window == st->search_id) { tiku_editor_search_paint(st); return 0; }
         return tiku_editor_event(st, e);
@@ -411,7 +425,8 @@ int tiku_editor_event_in(void *state, uint32_t window, const tiku_event_t *e)
     return tiku_editor_event(st, e);
 }
 
-/** The runtime has already removed the frame; reopen dirty buffers to ask. */
+/** The desktop closed @p window.  A document window closed with unsaved
+ *  changes is opened again to ask whether to save them. */
 void tiku_editor_closed(void *state, uint32_t window)
 {
     edit_state_t *st = state;

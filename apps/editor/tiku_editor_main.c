@@ -1,7 +1,12 @@
-/* Standalone Editor entry point; modules and tests use the app descriptor.
+/* tiku_editor_main.c -- main() for running the Editor as a program of its
+ * own; modules and tests use its descriptor, tiku_edit_app.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_editor_private.h"
 
+/** @brief Run the Editor as a client of the desktop, opening the file
+ *         named on the command line.  @return 2 when the path is too
+ *         long, else what tiku_client_run() returns. */
 int
 main(int argc, char **argv)
 {
