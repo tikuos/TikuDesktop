@@ -5,7 +5,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_editdoc_anchors.c - positions that follow the text: anchors, each
- * view's selection, and the listeners told of every change.
+ * view's selections, and the listeners told of every change.
  *
  * The selection rule is adapted from Scintilla 5.6.7 src/Selection.cxx,
  * Copyright 2009 by Neil Hodgson; see LICENSE.Scintilla and UPSTREAM.md.
@@ -54,8 +54,8 @@ map_anchor(int64_t p, int right, int64_t s, int64_t e, int64_t n)
     return p - (e - s) + n;
 }
 
-/** @brief A selection end through a deletion of [s, e); upstream
- *         SelectionPosition::MoveForInsertDelete, deleting. */
+/** @brief A selection end through a deletion of [s, e): one after @p s up
+ *         to @p e goes to @p s, one past @p e moves back with the text. */
 static int64_t
 after_delete(int64_t p, int64_t s, int64_t e)
 {
@@ -76,7 +76,7 @@ after_insert(int64_t p, int64_t s, int64_t n, int starts)
 
 /** @brief A selection through a replacement of [s, e) by n bytes: a
  *         deletion then an insertion, its start and end decided afresh
- *         between them, as upstream sees the two notifications. */
+ *         between them. */
 static void
 map_selection(int64_t *anchor, int64_t *caret, int64_t s, int64_t e,
               int64_t n)
@@ -451,8 +451,8 @@ tiku_ed_selections_sort(tiku_edit_selection_t *more, size_t n)
 {
     size_t i, j;
 
-    /* By insertion, allocating nothing; quick for what is nearly in
-     * order. */
+    /* An insertion sort, allocating nothing: linear on input nearly in
+     * order, quadratic at worst. */
     for (i = 1; i < n; i++) {
         tiku_edit_selection_t t = more[i];
 

@@ -8,10 +8,6 @@
  * moved with each replacement, and the execution line pinned to a
  * history state.
  *
- * Where a marker goes when lines are added or removed follows Scintilla
- * 5.6.7 src/CellBuffer.cxx and src/PerLine.cxx (read for reference; no
- * code taken).
- *
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -52,7 +48,7 @@ marker_line(const tiku_editdoc_t *doc, const tiku_ed_marker_t *m)
  *
  * Text put in at its line's start pushes it along with the line's text.
  * When the replaced range takes its line's start, the line break before
- * it went, and it goes to where the range starts.
+ * it is gone, and the marker goes to where the range starts.
  */
 static int64_t
 map_marker(int64_t p, int64_t s, int64_t e, int64_t n)

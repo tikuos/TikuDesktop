@@ -108,7 +108,9 @@ tiku_codeview_command_enabled(const tiku_codeview_t *view,
     }
 }
 
-/** @brief Run one of the commands that edit lines, @p command. */
+/** @brief Run @p command, one of the edits from TIKU_CODEVIEW_CMD_NEWLINE
+ *         to TIKU_CODEVIEW_CMD_DELETE_LINES; TIKU_EDIT_INVALID for any
+ *         other. */
 static tiku_edit_status_t
 run_lines(tiku_codeview_t *v, tiku_codeview_command_t command)
 {

@@ -228,7 +228,8 @@ tiku_cv_apply_pieces(tiku_codeview_t *v, const tiku_cv_piece_t *p, size_t n,
     for (i = 0; i < n; i++) {
         tiku_edit_pos_t c = p[i].start + delta + (tiku_edit_pos_t)p[i].caret;
 
-        /* A caret is never put between a CR and its LF. */
+        /* A caret that would fall between a CR and its LF goes before the
+         * CR. */
         if (byte_before(v, p, i) == '\r' && byte_after(v, p, n, i) == '\n')
             c--;
         r[i].range.start = p[i].start;
@@ -269,9 +270,9 @@ hi_of(const tiku_edit_selection_t *s)
     return s->anchor < s->caret ? s->caret : s->anchor;
 }
 
-/** @brief The view's selections as pieces, each replacing its selection
- *         with nothing yet, in an array the caller frees; NULL when there
- *         is no room. */
+/** @brief The view's selections as pieces with no text, each replacing
+ *         its selection, in an array the caller frees; NULL when there is
+ *         no room. */
 static tiku_cv_piece_t *
 pieces_of(tiku_codeview_t *v, size_t *n, size_t *main)
 {
@@ -328,7 +329,7 @@ tiku_cv_delete_each(tiku_codeview_t *v, int forward, int words)
         else if (p[i].start == p[i].end)
             p[i].start = words ? tiku_cv_word_left(v, p[i].end)
                                : tiku_editdoc_prev(v->doc, p[i].end);
-        /* A word delete may reach the selection beside it. */
+        /* A delete stops where the piece before it ends. */
         if (i > 0 && p[i].start < p[i - 1].end)
             p[i].start = p[i - 1].end;
         if (p[i].end < p[i].start)

@@ -12,8 +12,8 @@
  * are numbered by their content first, so the search compares integers,
  * and a line found on one side only is set aside before it starts.  Past
  * a bounded number of steps a split settles for the furthest point either
- * search reached: a huge, wholly different pair answers promptly with a
- * correct script that may not be the shortest, and says so.
+ * search reached; the script is then correct but may not be the shortest,
+ * and the diff's shortest is 0.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,8 +24,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief One line, borrowed from the caller's text: its LF included when
- *         it has one, so a last line without is a different line. */
+/** @brief One line, borrowed from the caller's text, its LF included
+ *         when it has one: a last line without an LF differs from the
+ *         same text with one. */
 typedef struct {
     const char *text;
     size_t      len;
@@ -49,7 +50,7 @@ typedef struct {
     tiku_diff_run_t *run;
     long nrun;
     long removed, added;    /* lines, over all the runs               */
-    int  shortest;          /* 0 when the step bound cut a search     */
+    int  shortest;          /* 0 when a bound cut the search short    */
 } tiku_diff_t;
 
 #define TIKU_DIFF_SPACE 0x1     /* whitespace changes are not changes */
@@ -67,12 +68,14 @@ int tiku_diff_lines(const tiku_diff_line_t *a, long na,
                     const tiku_diff_line_t *b, long nb, int flags,
                     tiku_diff_t *out);
 
-/** @brief The same for two arrays of numbers: a line's words, anything
- *         already numbered.  @return 0, or -1 out of memory. */
+/** @brief As tiku_diff_lines() for two arrays of numbers, such as a
+ *         line's words once numbered; of the flags only TIKU_DIFF_EXACT
+ *         applies.  @return 0, or -1 out of memory. */
 int tiku_diff_ints(const uint32_t *a, long na, const uint32_t *b, long nb,
                    int flags, tiku_diff_t *out);
 
-/** @brief Give back what a diff holds; @p d may be empty or zeroed. */
+/** @brief Give back what a diff holds; @p d may be NULL, empty or
+ *         zeroed. */
 void tiku_diff_free(tiku_diff_t *d);
 
 /**

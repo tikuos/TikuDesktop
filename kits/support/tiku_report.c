@@ -1,14 +1,16 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_report.c - what a program was doing when it was killed.
  *
- * Everything a handler would have to compose is composed BEFORE the
- * fault: the path, the header, the program's name.  What is left for
- * the signal itself is opening a file and writing bytes, which is all
- * a handler may safely do.
+ * The report's paths, its header and the program's name are composed
+ * when the handlers are installed.  On a fault the handler first writes
+ * the report with async-signal-safe calls only, then appends a backtrace
+ * from backtrace() and backtrace_symbols_fd(), which are not
+ * async-signal-safe: a fault there loses the backtrace, not the report.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -42,26 +44,24 @@ static char  report_path[PATH_ROOM];
 static char  latest_path[PATH_ROOM];
 static char  stall_path[PATH_ROOM];
 static char  latest_stall[PATH_ROOM];
-static char  header[512];           /* program, pid, when it started */
+static char  header[512];           /* program, start time, pid, build */
 static char  folder_path[PATH_ROOM / 2];
 static char  program_name[64];
 static pid_t armed;
 static volatile sig_atomic_t asked;
-static void *frames[FRAMES];        /* filled in the handler; never freed */
+static void *frames[FRAMES];        /* the last backtrace taken */
 /*
- * The instruction that faulted, taken from the signal's own context.
- * An array of one because it is printed through backtrace_symbols_fd(),
- * which names it the same way it names the frames below it.
+ * The instruction that faulted, from the signal's context: an array of
+ * one, for backtrace_symbols_fd() to name as it names the frames.
  */
 static void *fault_pc[1];
 static uintptr_t fault_address;
 static int fault_code;
-/* The handler runs HERE, not on the stack that faulted: a crash that IS
- * the stack running out would otherwise fault the handler too, and
- * leave no report -- which is the most a report is for. */
+/* The stack the fault handler runs on (sigaltstack), so that it runs
+ * after a stack overflow too. */
 static char  alt_stack[64 * 1024];
 
-/** @brief The signals worth a report: the ones nothing recovers from. */
+/** @brief The signals the fault handler takes. */
 static const int FATAL[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT };
 
 /** @brief Digits of @p v into @p out, and where the text now ends. */
@@ -95,7 +95,7 @@ put_str(char *out, size_t at, const char *s)
     return at;
 }
 
-/** @brief The name of @p sig, since a number is a thing to look up. */
+/** @brief The name of @p sig, or "signal" for one not listed here. */
 static const char *
 named(int sig)
 {
@@ -111,7 +111,8 @@ named(int sig)
     }
 }
 
-/** @brief Hex addresses without printf, allocation or loader locks. */
+/** @brief @p v in hex after "0x" into @p out, and where the text now
+ *         ends; it calls no library function. */
 static size_t put_hex(char *out, size_t at, uintptr_t v)
 {
     char digits[2 * sizeof v]; size_t n = 0;
@@ -121,7 +122,11 @@ static size_t put_hex(char *out, size_t at, uintptr_t v)
     return at;
 }
 
-/** @brief Symbolization is best effort, after the basic report is durable. */
+/**
+ * @brief Append to @p fd the faulting instruction and @p depth frames of
+ *        frames[], named by backtrace_symbols_fd().
+ * @note Not async-signal-safe: called once the report is written.
+ */
 static void write_stack(int fd, int depth)
 {
     const char label[] = "\nsymbolized stack (best effort):\n";
@@ -135,10 +140,12 @@ static void write_stack(int fd, int depth)
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief Write the whole report to @p path.
+ * @brief Write a report to @p path: the header, @p why with @p num and
+ *        @p unit when @p unit is not NULL, the trail's last line, where
+ *        the fault was, then the whole trail.
  *
- * A negative depth writes only the signal-safe baseline. Optional
- * symbolization follows it, never precedes it. The caller supplies @p why.
+ * With @p depth 0 or more the stack follows, from frames[]; a negative
+ * @p depth leaves it out, and what is left is async-signal-safe.
  */
 static void
 write_report(const char *path, const char *why, long num, const char *unit,
@@ -160,7 +167,7 @@ write_report(const char *path, const char *why, long num, const char *unit,
         (void)!write(fd, line, at);
     }
     at = put_str(line, 0u, "stopped by: ");
-    /* Callers may supply a long explanation; leave room for numeric fields. */
+    /* At most 120 bytes of @p why, so the numbers after it fit. */
     for (size_t i = 0; why && why[i] && i < 120; i++) line[at++] = why[i];
     if (unit != NULL) {
         at = put_str(line, at, " (");
@@ -173,12 +180,15 @@ write_report(const char *path, const char *why, long num, const char *unit,
     line[at++] = '\n';
     (void)!write(fd, line, at);
 
-        /* The last thing it did, at the top: a reader opening this wants
-     * that before forty frames of where it was standing. */
+    /* The trail's last line comes first, ahead of where the fault was
+     * and the stack. */
     at = put_str(line, 0u, "the last thing it did:\n");
     (void)!write(fd, line, at);
     tiku_trail_write_last(fd);
 
+    /* The faulting instruction, from the signal context: on arm64 a
+     * function that only stores keeps no frame pointer, and backtrace()
+     * leaves its frame out. */
     at = put_str(line, 0u, "\nwhere it was:\n");
     at = put_str(line, at, "instruction: ");
     at = put_hex(line, at, (uintptr_t)fault_pc[0]);
@@ -187,10 +197,6 @@ write_report(const char *path, const char *why, long num, const char *unit,
     at = put_str(line, at, "\nsignal code: ");
     at = put_num(line, at, fault_code); line[at++] = '\n';
     (void)!write(fd, line, at);
-    /* The faulting instruction first, and from the context rather than
-     * from the walk: a function that only stores keeps no frame pointer
-     * on arm64, so the walk steps from the trampoline straight to the
-     * caller and the frame a reader most wants is the one missing. */
     at = put_str(line, 0u, "\nwhat it was doing:\n");
     (void)!write(fd, line, at);
     tiku_trail_write(fd);
@@ -198,7 +204,8 @@ write_report(const char *path, const char *why, long num, const char *unit,
     (void)close(fd);
 }
 
-/** @brief The fault itself: write it down, then die as it would have. */
+/** @brief The fault handler: write the report, append the backtrace,
+ *         then raise @p sig again under its default action. */
 static void
 took_signal(int sig, siginfo_t *info, void *context)
 {
@@ -207,7 +214,8 @@ took_signal(int sig, siginfo_t *info, void *context)
     fault_address = info ? (uintptr_t)info->si_addr : 0;
     fault_code = info ? info->si_code : 0;
     fault_pc[0] = tiku_sys_fault_pc(context);
-    /* A damaged stack/unwinder must not prevent even a minimal report. */
+    /* The report is written before backtrace() runs: a fault in the
+     * unwinder leaves it in place. */
     write_report(report_path, named(sig), sig, "", -1);
     write_report(latest_path, named(sig), sig, "", -1);
     depth = backtrace(frames, FRAMES);
@@ -216,8 +224,8 @@ took_signal(int sig, siginfo_t *info, void *context)
         int fd = open(paths[i], O_WRONLY | O_APPEND | O_CLOEXEC | O_NOFOLLOW);
         if (fd >= 0) { write_stack(fd, depth); close(fd); }
     }
-    /* And on, as though nothing had caught it: a core for whoever wants
-     * one, and a parent that is told what killed this. */
+    /* Raised again under the default action: a core is dumped where
+     * cores are enabled, and the parent sees the signal. */
     (void)signal(sig, SIG_DFL);
     (void)raise(sig);
 }
@@ -279,7 +287,7 @@ tiku_report_install(const char *program, const char *dir)
     for (char *p = program_name; *p; p++)
         if (*p == '/' || *p == '\\' || (unsigned char)*p < 32) *p = '_';
 
-    /* The name is settled now, while formatting is still allowed. */
+    /* The names and the header are formatted now, outside any handler. */
     (void)localtime_r(&now, &when);
     snprintf(report_path, sizeof report_path,
              "%s/crash-%04d%02d%02d-%02d%02d%02d-%s-%ld.txt", folder,
@@ -301,8 +309,8 @@ tiku_report_install(const char *program, const char *dir)
              when.tm_year + 1900, when.tm_mon + 1, when.tm_mday,
              when.tm_hour, when.tm_min, when.tm_sec, (long)getpid());
 
-        /* The unwinder loads what it needs on its first use; asked once
-     * here, so the fault's own backtrace allocates nothing. */
+    /* The unwinder loads what it needs on its first use; calling it once
+     * here keeps the fault's own backtrace from allocating. */
     (void)backtrace(frames, FRAMES);
 
     {
@@ -318,10 +326,11 @@ tiku_report_install(const char *program, const char *dir)
 
         memset(&sa, 0, sizeof sa);
         sa.sa_sigaction = took_signal;
-        /* ONSTACK so a stack-overflow crash is caught; RESETHAND so a
-         * fault INSIDE the handler dies rather than looping; NODEFER so
-         * the re-raise below reaches the default action at once; SIGINFO
-         * for the context, which is where the faulting address is. */
+        /* ONSTACK so a stack overflow is caught; RESETHAND so a fault
+         * inside the handler kills the process; NODEFER so the handler's
+         * raise() reaches the default action at once; SIGINFO for the
+         * faulting address, and the context that holds the faulting
+         * instruction. */
         sa.sa_flags = SA_RESETHAND | SA_NODEFER | SA_ONSTACK | SA_SIGINFO;
         (void)sigemptyset(&sa.sa_mask);
         (void)sigaction(FATAL[i], &sa, NULL);
@@ -356,8 +365,6 @@ tiku_report_stall(long ms, int with_stack)
     if (!armed) {
         return;
     }
-    /* Only the stuck thread's own stack says anything: a watchdog's
-     * would be a picture of the watchdog waiting. */
     if (with_stack) {
         depth = backtrace(frames, FRAMES);
     }
@@ -433,6 +440,7 @@ int tiku_report_child(const char *program, long pid, int sig, int status,
 /* ON DEMAND                                                                 */
 /*---------------------------------------------------------------------------*/
 
+/** @brief The SIGUSR2 handler: set the flag tiku_report_asked() reads. */
 static void
 was_asked(int sig)
 {
@@ -497,7 +505,7 @@ tiku_report_write(const char *why, void (*snapshot)(FILE *, void *),
     snprintf(latest, sizeof latest, "%s/latest-report.txt", folder_path);
     (void)unlink(latest);
     if (symlink(out, latest) != 0) {
-        latest[0] = '\0';           /* the file stands on its own */
+        latest[0] = '\0';           /* the report stays, with no link */
     }
     return 0;
 }
@@ -536,8 +544,7 @@ tiku_report_list(char out[][512], int max)
             strstr(e->d_name, ".txt") == NULL) {
             continue;
         }
-        /* By the moment in the name, newest first: a copied file keeps
-         * its account but not its time. */
+        /* Newest first, by the time in the name. */
         report_stamp(e->d_name, stamp, sizeof stamp);
         for (i = 0; i < n && strcmp(when[i], stamp) >= 0; i++) {
         }

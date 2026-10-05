@@ -26,10 +26,10 @@ typedef struct {
     tiku_cv_cell_fn fn;
     void *ctx;
     tiku_cv_cell_t cell;        /* the character being read             */
-    int need;                   /* its bytes still to come              */
+    int need;                   /* bytes of cell still to come          */
     int stopped;                /* fn asked to stop                     */
     tiku_cv_long_t *keep;       /* checkpoints it adds to, or NULL      */
-    tiku_edit_pos_t mark_at;    /* where the next one may be taken      */
+    tiku_edit_pos_t mark_at;    /* where the next checkpoint may go     */
 } walk_t;
 
 const tiku_font_t *

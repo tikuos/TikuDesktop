@@ -60,8 +60,9 @@ blank(int c)
 /** @brief A line read as the flags see it, a byte at a time. */
 typedef struct {
     const unsigned char *p;
-    size_t i, end;              /* the bytes before any LF and CR    */
-    int lf, flags;              /* an LF still to come               */
+    size_t i, end;              /* the next byte, and where the text
+                                   compared ends                     */
+    int lf, flags;              /* an LF still to come; the flags    */
 } reader_t;
 
 /** @brief @p r set to read @p l: the LF kept for last, a CR before it
@@ -286,7 +287,7 @@ settle(const myers_t *m, const box_t *s, long *xm, long *ym)
 }
 
 /** @brief Where a shortest path from (xl, yl) to (xh, yh) crosses its
- *         middle -- or, past the bound, where a search got furthest. */
+ *         middle, or past the bound where a search got furthest. */
 static void
 split(myers_t *m, long xl, long xh, long yl, long yh, long *xm, long *ym)
 {
@@ -310,7 +311,9 @@ split(myers_t *m, long xl, long xh, long yl, long yh, long *xm, long *ym)
 
 /** @brief Mark what changed between x[xl..xh) and y[yl..yh): the common
  *         ends taken off, then a split at the middle snake and each half
- *         done alike; a range with no split worth making is all changed. */
+ *         done alike.  A range DIFF_DEPTH splits deep, or whose split
+ *         point falls outside it or on (xl, yl) or (xh, yh), is all
+ *         changed. */
 static void
 compare(myers_t *m, long xl, long xh, long yl, long yh, int depth)
 {
@@ -332,7 +335,7 @@ compare(myers_t *m, long xl, long xh, long yl, long yh, int depth)
     while (yl < yh) m->ins[yl++] = 1;
 }
 
-/** @brief The whole number nearest below the square root of @p n. */
+/** @brief The square root of @p n, rounded down. */
 static long
 isqrt(long n)
 {
@@ -421,9 +424,9 @@ shift(tiku_diff_t *d, long k, int dir)
 }
 
 /**
- * @brief A lone removal or addition slid along lines equal at its two
- *        ends -- any place there is as correct -- to end on a blank line
- *        where it can, as a person would draw it; else as low as it goes.
+ * @brief A lone removal or addition slid along the lines equal at its two
+ *        ends, where any place is as correct, to end on a blank line
+ *        where it can; else as low as it goes.
  */
 static void
 slide(tiku_diff_t *d, const uint32_t *id, long na,

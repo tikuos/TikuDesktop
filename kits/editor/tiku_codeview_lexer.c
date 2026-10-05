@@ -60,7 +60,7 @@ tiku_codeview_lexer_status(const tiku_codeview_t *view)
 typedef struct {
     tiku_codeview_t *view;      /* the view coloured                    */
     const char *text;           /* the line                             */
-    size_t length;              /* its bytes                            */
+    size_t length;              /* the line's bytes                     */
     size_t at;                  /* the bytes the runs cover so far      */
     int invalid;                /* a run broke the rules                */
     tiku_syntax_run_fn emit;    /* where the runs go, and its context   */

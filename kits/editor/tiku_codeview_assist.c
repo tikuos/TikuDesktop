@@ -25,7 +25,7 @@
 /* Bytes of one drawn line of a tip, and a NUL. */
 #define TIP_LINE 512
 
-/** @brief A list row's height: the interface face and a little air. */
+/** @brief A list row's height: the interface face's height and 4 pixels. */
 static int
 row_h(void)
 {
@@ -184,7 +184,8 @@ fit(const tiku_font_t *f, const char *s, size_t n, int width)
     return at;
 }
 
-/** @brief One wrapped line of a tip: where it starts and its bytes. */
+/** @brief Takes one wrapped line of a tip: its @p n bytes at @p s, and its
+ *         index among the tip's lines. */
 typedef void (*line_fn)(void *ctx, const char *s, size_t n, int index);
 
 /** @brief Break @p text at each LF, then at the last space that keeps a

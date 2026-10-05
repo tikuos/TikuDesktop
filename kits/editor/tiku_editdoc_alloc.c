@@ -4,8 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_editdoc_alloc.c - the engine's allocations, in one place so tests
- * can fail any of them and can see one made inside a commit.
+ * tiku_editdoc_alloc.c - the engine's allocations, through one allocator a
+ * test can replace, with a count of those made inside a commit.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

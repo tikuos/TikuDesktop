@@ -50,11 +50,11 @@ tiku_cv_inks(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t upto)
 
 /**
  * @brief Scan from @p from, forward or back, for the @p want that pairs
- *        with a bracket of kind @p same just behind the scan's start.
+ *        with a bracket of kind @p same right behind the scan's start.
  *
  * Each @p same met on the way must be closed first.  @return the
- * position, -1 at the document's end, -2 once TIKU_CODEVIEW_BRACE_SCAN
- * bytes have been read.
+ * position, -1 past either end of the document, -2 once
+ * TIKU_CODEVIEW_BRACE_SCAN bytes have been read.
  */
 static tiku_edit_pos_t
 scan(tiku_codeview_t *v, tiku_edit_pos_t from, int forward, int same,

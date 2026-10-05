@@ -1,12 +1,13 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_trail.h - what this program was doing, kept in a ring.
  *
- * Always on and never written down: a fixed ring in memory, so the last
- * thing a program did is there to be read when it stops doing anything.
+ * The last TIKU_TRAIL_LINES lines a program wrote, in a fixed ring in
+ * memory; the crash and stall reports print them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,16 +17,19 @@
 
 #include <stddef.h>
 
-/* Enough to hold the run-up to a failure without being a log: a turn of
- * the desk's loop writes a handful of lines, and 512 is minutes of them. */
+/* The lines the ring holds, and the bytes of each with its NUL; a longer
+ * line is cut. */
 #define TIKU_TRAIL_LINES 512
 #define TIKU_TRAIL_LINE  112
 
 /**
- * @brief Write one line into the ring, as printf would.
+ * @brief Format one line into the ring, as printf() would, after the
+ *        milliseconds since the first line.
  *
- * Formatted HERE rather than when it is read, so that reading it needs
- * nothing but write() -- which is what a signal handler has.
+ * The line is formatted here; writing the ring out needs only write().
+ *
+ * @note The ring takes no lock: lines written from two threads at once
+ *       can be lost or mixed.
  */
 void tiku_trail(const char *fmt, ...);
 
@@ -36,10 +40,9 @@ void tiku_trail(const char *fmt, ...);
 int tiku_trail_read(char *out, size_t max);
 
 /**
- * @brief The same, but only lines holding @p needle (NULL for all).
- *
- * A ring is longer than any one reader's room, so a reader that knows
- * what it is asking about says so rather than being handed the end.
+ * @brief As tiku_trail_read(), but only the lines holding @p needle;
+ *        NULL or "" takes every line.
+ * @return the bytes written.
  */
 int tiku_trail_find(const char *needle, char *out, size_t max);
 
@@ -51,10 +54,9 @@ int tiku_trail_find(const char *needle, char *out, size_t max);
 void tiku_trail_write(int fd);
 
 /**
- * @brief The newest line alone, to @p fd.
+ * @brief The newest line alone, to @p fd; nothing before the first line.
  *
- * What a program was doing at the end is the first thing a reader
- * wants, so it goes where it is seen first.  Async-signal-safe.
+ * Async-signal-safe.
  */
 void tiku_trail_write_last(int fd);
 

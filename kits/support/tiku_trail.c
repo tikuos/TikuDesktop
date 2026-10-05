@@ -1,12 +1,13 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_trail.c - what this program was doing, kept in a ring.
  *
- * One process, one ring: a program that stops -- by crashing, or by not
- * coming back from a turn -- has the last of what it did still here.
+ * One ring per process, a static table of lines, which the crash and
+ * stall reports print.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,7 +25,7 @@
 /*---------------------------------------------------------------------------*/
 
 static char          ring[TIKU_TRAIL_LINES][TIKU_TRAIL_LINE];
-static unsigned long written;            /* lines ever, so the ring's age */
+static unsigned long written;            /* lines ever written */
 static long          began_ms;
 
 /** @brief Milliseconds since the first line, which starts the clock. */
@@ -59,7 +60,8 @@ tiku_trail(const char *fmt, ...)
     written++;
 }
 
-/** @brief The oldest line still held, as an index into the ring. */
+/** @brief The number of the oldest line still held; its slot is that
+ *         number modulo TIKU_TRAIL_LINES. */
 static unsigned long
 oldest(void)
 {
@@ -67,7 +69,8 @@ oldest(void)
                ? written - TIKU_TRAIL_LINES : 0uL;
 }
 
-/** @brief Whether @p line is one this reader asked for. */
+/** @brief Whether @p line holds @p needle; a NULL or empty @p needle
+ *         takes every line. */
 static int
 wanted(const char *line, const char *needle)
 {
@@ -85,15 +88,15 @@ tiku_trail_find(const char *needle, char *out, size_t max)
         return 0;
     }
     out[0] = '\0';
-    /* Backwards from the newest until the room runs out, so what is kept
-     * is the run-up to whatever is being asked about. */
+    /* Count back from the newest line until @p out is full, so that the
+     * newest lines are the ones kept. */
     for (i = written; i > first; i--) {
         const char *line = ring[(i - 1uL) % TIKU_TRAIL_LINES];
 
         if (!wanted(line, needle)) {
             continue;
         }
-                /* The newline, and room for the NUL that ends the whole. */
+        /* The newline, and room for the NUL that ends the whole. */
         if (used + strlen(line) + 2u > max) {
             first = i;
             break;

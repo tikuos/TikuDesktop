@@ -6,8 +6,8 @@
  *
  * tiku_sys_darwin.c - the machine underneath, as Darwin describes it.
  *
- * The twin of tiku_sys_linux.c; the Makefile compiles one of the two
- * and the rest of the tree never learns which.
+ * The Darwin definitions of tiku_sys.h; mk/kits.mk compiles this file
+ * or tiku_sys_linux.c.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -87,17 +87,14 @@ tiku_sys_fault_pc(const void *context)
         return NULL;
     }
 #if defined(__arm64__) || defined(__aarch64__)
-    /* Through the accessor, not the field: an arm64e pointer carries an
-     * authentication code in its top bits and printing it raw would name
-     * an address the binary does not contain. */
+    /* The accessor strips the pointer-authentication code an arm64e pc
+     * carries in its top bits. */
     return (void *)(uintptr_t)
         __darwin_arm_thread_state64_get_pc(uc->uc_mcontext->__ss);
 #elif defined(__x86_64__)
     return (void *)(uintptr_t)uc->uc_mcontext->__ss.__rip;
 #else
-    /* An architecture nobody has run this on yet: the frame walk still
-     * writes what it can, and one line of the report is missing rather
-     * than the report. */
+    /* Another architecture: no program counter. */
     return NULL;
 #endif
 }
@@ -113,8 +110,8 @@ tiku_sys_processes(void (*fn)(const tiku_sys_process_t *process, void *ctx),
     if (fn == NULL) {
         return -1;
     }
-    /* Asked for the room first, and taken at that size: the list is
-     * bytes, not entries, which is the one thing easy to get wrong. */
+    /* proc_listpids() counts in bytes: the first call gives the size,
+     * the second fills a buffer of it. */
     bytes = proc_listpids(PROC_ALL_PIDS, 0, NULL, 0);
     if (bytes <= 0) {
         return -1;
@@ -138,15 +135,13 @@ tiku_sys_processes(void (*fn)(const tiku_sys_process_t *process, void *ctx),
         if (pids[i] <= 0) {
             continue;
         }
-        /* The short form: the owner and the name in one call, where the
-         * long one would read the whole task. */
+        /* The short form gives the owner and the name in one call. */
         if (proc_pidinfo(pids[i], PROC_PIDT_SHORTBSDINFO, 0, &brief,
                          sizeof brief) != (int)sizeof brief ||
             brief.pbsi_uid != me) {
             continue;
         }
-        /* No image is this host's kernel thread: nothing to activate,
-         * nothing to name. */
+        /* A process with no executable path is a kernel thread here. */
         if (proc_pidpath(pids[i], command, sizeof command) <= 0) {
             continue;
         }
@@ -180,10 +175,8 @@ tiku_sys_memory(long *total_kb, long *avail_kb)
     }
     if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
                           (host_info64_t)&vm, &count) == KERN_SUCCESS) {
-        /* Free, inactive and purgeable: what a program could still be
-         * given, which is what MemAvailable means on the other host --
-         * not the free count alone, which on a machine that has been up
-         * a while is always small and always alarming. */
+        /* Free, inactive and purgeable pages, the nearest to Linux's
+         * MemAvailable. */
         uint64_t pages = (uint64_t)vm.free_count +
                          (uint64_t)vm.inactive_count +
                          (uint64_t)vm.purgeable_count;
@@ -218,8 +211,8 @@ tiku_sys_self_path(char *out, size_t max)
         out[0] = '\0';
         return -1;
     }
-    /* Resolved, because what comes back is the path as it was invoked and
-     * a caller climbing it wants the one on the disk. */
+    /* _NSGetExecutablePath() gives the path as it was invoked; realpath()
+     * resolves it to the file on the disk. */
     if (realpath(raw, real) != NULL) {
         snprintf(out, max, "%s", real);
     } else {
@@ -237,18 +230,16 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
     int index = 0;
 
     /*
-     * What backtrace_symbols_fd() writes here is already the symbol --
-     * the number, the image, the address, then the name and its offset --
-     * so nothing has to be looked up.  The image is worth keeping only
-     * when the frame is not this program's own.
+     * backtrace_symbols_fd() writes the frame's number, image and address,
+     * then the symbol and its offset.  The image is printed only when the
+     * frame is not this program's own.
      */
     if (sscanf(raw, "%d %63s %31s %159[^\n]", &index, image, address,
                symbol) != 4) {
         snprintf(out, max, "%.100s", raw);
         return;
     }
-    /* Asked once: a report is read a frame at a time and the answer
-     * cannot change under a running program. */
+    /* The program's own path, asked for once and kept. */
     if (self[0] == '\0' && tiku_sys_self_path(self, sizeof self) != 0) {
         self[0] = '\1';        /* asked, and it would not say */
     }
@@ -262,23 +253,17 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
 }
 
 /*
- * What is pinned, and what makes it that process rather than that
- * number.  There is no pidfd here: a kqueue watching NOTE_EXIT gives a
- * descriptor with the right shape -- close-on-exec, the caller's to
- * close -- but the event it carries fires once and is then gone, so it
- * cannot be asked twice whether the process is still there.  The START
- * TIME can: the system hands out a pid again but never with the same
- * microsecond, so a pid whose start time still matches is the same
- * process and one whose does not is somebody else's.
- *
- * Small and fixed: this serves a dialog listing what a person may stop,
- * and a person cannot pick from thousands.
+ * The pinned processes.  A handle is a kqueue watching the process's
+ * exit, close-on-exec and the caller's to close.  The process is known by
+ * its pid and its start time, which a later process given the same pid
+ * does not share.  A slot is freed only by tiku_sys_process_kill(), not by
+ * closing the handle.
  */
 #define PINNED_MAX 64
 
 static struct {
     int       handle;           /* the kqueue, and what the caller holds */
-    pid_t     pid;
+    pid_t     pid;              /* the process pinned */
     long long started;          /* microseconds, from the process itself */
 } pinned[PINNED_MAX];
 
@@ -313,8 +298,7 @@ tiku_sys_process_pin(int fd, long *pid)
     if (getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &peer, &psize) != 0) {
         return -1;
     }
-    /* Never init, never the caller, never another user's: the dialog
-     * this serves can stop a program for good. */
+    /* Refuse init, this process, and another user's process. */
     if (cred.cr_version != XUCRED_VERSION || cred.cr_uid != geteuid() ||
         peer <= 1 || peer == getpid()) {
         errno = EPERM;
@@ -336,8 +320,7 @@ tiku_sys_process_pin(int fd, long *pid)
     if (kq < 0) {
         return -1;
     }
-    /* Refused for a process that has already gone, which is the one
-     * answer worth having from this: the row is stale. */
+    /* kevent() refuses a process that has already exited. */
     EV_SET(&watch, (uintptr_t)peer, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
     if (kevent(kq, &watch, 1, NULL, 0, NULL) != 0 ||
         fcntl(kq, F_SETFD, FD_CLOEXEC) < 0) {
@@ -367,15 +350,14 @@ tiku_sys_process_kill(int handle)
         }
     }
     if (i == PINNED_MAX) {
-        /* Not one of ours: a copy of a descriptor, or a number that was
-         * never a pin.  Nothing is promised about it, so nothing is
-         * killed on its word. */
+        /* A handle this file did not issue, such as a copy of one:
+         * nothing is killed. */
         errno = ESRCH;
         return -1;
     }
     if (began(pinned[i].pid) != pinned[i].started) {
-        /* Gone, or gone and the number handed to somebody else.  Either
-         * way the process a person chose is not there to stop. */
+        /* The pinned process has exited, and its pid may now name
+         * another. */
         pinned[i].handle = 0;
         errno = ESRCH;
         return -1;
@@ -391,30 +373,19 @@ int
 tiku_sys_reserve(int fd, long long bytes)
 {
     /* Nothing to do: a shared memory object here is given its pages when
-     * it is sized, so a mapping that was made is a mapping that can be
-     * written.  Said out loud rather than left absent, because "this
-     * host does not need it" and "nobody thought about it" look the same
-     * from the call site. */
+     * it is sized, so a mapping that was made can be written. */
     (void)fd;
     (void)bytes;
     return 0;
 }
 
-/**
- * @brief Run an open serial line at exactly @p baud.
- *
- * Darwin's termios names no rate above 230400, so tcsetattr either
- * fails for a faster board or leaves the line running at something
- * else; the driver is told directly instead.  It must be told last:
- * IOSSIOSPEED sets a rate the termios structure has no constant for,
- * and any later tcsetattr writes that structure back over it.  This is
- * the end of configuring a port, never the middle.
- */
 int
 tiku_sys_serial_speed(int fd, int baud)
 {
     speed_t rate = (speed_t)baud;
 
+    /* IOSSIOSPEED sets a rate termios has no constant for; a later
+     * tcsetattr() writes the termios rate back over it. */
     if (fd < 0 || baud <= 0) {
         errno = EINVAL;
         return -1;
@@ -425,19 +396,14 @@ tiku_sys_serial_speed(int fd, int baud)
     return 0;
 }
 
-/**
- * @brief The serial ports a board could be on the other end of.
- *
- * Darwin has no by-id directory: the driver puts "tty.NAME" and
- * "cu.NAME" in /dev, and only the cu node can be offered, since tty
- * blocks until a carrier a listening board never asserts.  The cu nodes
- * are chosen by driver name: usbmodem is Apple's CDC class driver, and
- * usbserial, SLAB and wch are the bridges the kits use.  An exclusion
- * list would offer the Bluetooth port, which pairs when opened.
- */
 int
 tiku_sys_serial_ports(char out[][256], int max)
 {
+    /* The cu.NAME nodes in /dev whose name holds a driver in WHICH:
+     * usbmodem is Apple's CDC driver, the rest are serial bridges.  A
+     * tty.NAME node is left out, since opening it waits for a carrier a
+     * board never asserts; so is the Bluetooth port, which pairs when
+     * opened. */
     static const char *const WHICH[] = {
         "usbmodem", "usbserial", "SLAB", "wch", "UART"
     };

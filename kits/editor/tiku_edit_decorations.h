@@ -7,7 +7,7 @@
  * tiku_edit_decorations.h - marks a document keeps on its text: line
  * markers and annotations, which follow their lines through edits,
  * indicators, which follow a range of text, and the execution line, which
- * a change makes stale instead of moving.
+ * never moves and is current only for the text it was set for.
  *
  * What a kind of mark means, and which line a runtime stopped at, are the
  * application's to decide; the document keeps them on its text.
@@ -136,8 +136,10 @@ void tiku_editdoc_indicators_each(const tiku_editdoc_t *doc,
  * @brief Show @p text under @p line as an annotation of @p kind, after
  *        any the line has; NULL or "" adds none.
  *
- * Each LF in @p text starts another row.  An annotation follows its line
- * as a marker does and is removed by a load, not by undo.
+ * Each LF in @p text starts another row.  An annotation follows its
+ * line's text: text inserted at the start of the line carries it along,
+ * and an edit that removes the line break before its line moves it to
+ * the line the edit starts on.  A load removes it; undo does not.
  */
 tiku_edit_status_t tiku_editdoc_annotation_add(tiku_editdoc_t *doc,
                                                int64_t line,

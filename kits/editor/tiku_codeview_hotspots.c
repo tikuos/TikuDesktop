@@ -6,15 +6,16 @@
  *
  * tiku_codeview_hotspots.c - runs of text a click follows: which one is
  * under the pointer while the hotspot keys are held, and a press and
- * release on it handed to the host instead of moving the caret.
+ * release on it handed to the host, the caret left where it is.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_codeview_private.h"
 
-/* Bytes past the pointer's character a long line is coloured to, to find
- * where the hotspot under it ends. */
+/* The bytes past the pointer's character that a long line's colouring
+ * must reach, to find where the hotspot under the pointer ends; a hotspot
+ * that runs further may be cut short. */
 #define HOT_REACH 256
 
 void
@@ -90,10 +91,10 @@ char_under(tiku_codeview_t *v, int x, int y, int64_t *line)
 }
 
 /** @brief The hotspot holding @p pos on @p line, into @p out: the run
- *         round it, when its ink's style makes hotspots.  The colourer
- *         joins neighbouring runs of one ink, so a run is the whole of
- *         its ink there; text past the runs, or on a line with none, is a
- *         plain run of its own. */
+ *         round it, when its ink's style makes hotspots.
+ *         tiku_cv_style_line() joins neighbouring runs of one ink, so a
+ *         run is the whole of its ink there; text past the runs, or on a
+ *         line with none, is a plain run of its own. */
 static int
 hotspot_at(tiku_codeview_t *v, int64_t line, tiku_edit_pos_t pos,
            tiku_edit_range_t *out)
@@ -164,8 +165,9 @@ modifier_of(unsigned key)
     }
 }
 
-/** @brief A modifier key went down or up where the pointer was last seen;
- *         @return whether what is shown changed. */
+/** @brief Find the live hotspot again where the pointer was last seen,
+ *         with modifier key @p e gone down or up; @return whether what is
+ *         shown changed. */
 static int
 modifier_key(tiku_codeview_t *v, const tiku_event_t *e)
 {
@@ -178,8 +180,8 @@ modifier_key(tiku_codeview_t *v, const tiku_event_t *e)
     return note(v, v->hot_x, v->hot_y, mods);
 }
 
-/** @brief Button 1 came up: the host hears of a click when it is over the
- *         hotspot it went down on. */
+/** @brief Button 1 came up: call the host's hotspot() when the pointer is
+ *         over the hotspot the press went down on. */
 static void
 release(tiku_codeview_t *v, const tiku_event_t *e)
 {

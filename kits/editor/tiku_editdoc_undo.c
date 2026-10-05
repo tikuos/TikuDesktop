@@ -4,8 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_editdoc_undo.c - the history of transactions: redo branches,
- * joined typing, saved state and a byte budget kept by whole steps.
+ * tiku_editdoc_undo.c - the history of transactions: undo and redo,
+ * joined typing, the saved state and a byte budget kept by whole steps.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

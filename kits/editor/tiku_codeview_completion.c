@@ -80,9 +80,10 @@ single_line(const char *s)
            strpbrk(s, "\r\n\t") == NULL;
 }
 
-/** @brief Whether @p list may be offered in @p v: its range on character
- *         boundaries, its flags and rows ones there are, and its prefix
- *         and extra keys text it can use. */
+/** @brief TIKU_EDIT_OK when @p list may be offered in @p v, else why not:
+ *         its range must be on character boundaries, its flags and rows
+ *         ones there are, its prefix one line of UTF-8, and its extra keys
+ *         fewer than TIKU_CV_ACCEPT printable ASCII characters. */
 static tiku_edit_status_t
 list_ok(const tiku_codeview_t *v, const tiku_codeview_completion_t *list)
 {

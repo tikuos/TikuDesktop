@@ -6,8 +6,8 @@
  *
  * tiku_keyfile.c - key files read: PKCS#12 (RFC 7292), its MAC checked
  * and its bags walked, each shrouded one opened by PKCS#12's own password
- * schemes or by PBES2 (RFC 8018); and PEM's PKCS#8 and PKCS#1.  The key
- * is kept with the certificate whose public key is its own.
+ * schemes or by PBES2 (RFC 8018); and PKCS#8 and PKCS#1, as DER or PEM.
+ * The key is kept with the certificate whose public key is its own.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,7 +39,7 @@
 /** @brief What reading a file gathers. */
 typedef struct {
     const char    *password;
-    int            none;            /* the password is "none at all"     */
+    int            none;            /* an empty password is no bytes     */
     unsigned char *key;             /* the first private key, owned      */
     size_t         key_len;
     int            rsa1;            /* it is PKCS#1, not PKCS#8          */
@@ -174,9 +174,11 @@ p12_kdf(int alg, const unsigned char *pw, size_t pwlen,
 /**
  * @brief PKCS#12's password scheme @p which (1 to 6: RC4 128 and 40 bits,
  *        three and two-key triple DES, RC2 128 and 40 bits), with its
- *        parameters @p params, opening @p data in place.
+ *        parameters @p params and @p g's password, opening @p data in
+ *        place.
  * @return the plaintext's length, -1 for a password that does not open
- *         it, -2 for parameters that are not.
+ *         it, -2 for parameters that are not.  With RC4 a wrong password
+ *         returns @p n bytes too: there is no padding to check.
  */
 static long
 p12_open(int which, const tiku_der_t *params, const gather_t *g,
@@ -343,7 +345,8 @@ keep_key(gather_t *g, const unsigned char *p, size_t n, int rsa1)
     g->rsa1 = rsa1;
 }
 
-/** @brief Keep a copy of certificate @p p, @p n bytes, in @p g. */
+/** @brief Keep a copy of certificate @p p, @p n bytes, in @p g; one past
+ *         KEY_CERTS is dropped. */
 static void
 keep_cert(gather_t *g, const unsigned char *p, size_t n)
 {
@@ -382,7 +385,7 @@ static void safe_contents(gather_t *g, const unsigned char *p, size_t n,
                           int depth);
 
 /** @brief One SafeBag @p bag: a key, a shrouded key, a certificate, or
- *         safe contents again. */
+ *         nested safe contents. */
 static void
 safe_bag(gather_t *g, const tiku_der_t *bag, int depth)
 {
@@ -425,7 +428,7 @@ safe_contents(gather_t *g, const unsigned char *p, size_t n, int depth)
     tiku_der_t all, bag;
 
     if (tiku_der_read(p, n, &all) != 0) {
-        g->wrong = 1;               /* what a wrong password leaves */
+        g->wrong = 1;               /* not DER: a wrong password's output */
         return;
     }
     tiku_der_enter(&all, &c);
@@ -550,7 +553,8 @@ pfx_read(const tiku_der_t *pfx, gather_t *g)
         (n = tiku_der_octets(&e, &safe)) < 0) return TIKU_KEY_BAD;
     if (tiku_der_take(&c, TIKU_DER_SEQUENCE, &mac) == 0) {
         held = mac_holds(&mac, g, safe, (size_t)n);
-        if (held == 0 && g->password[0] == 0) {     /* "no password" */
+        /* An empty password may mean no password bytes at all. */
+        if (held == 0 && g->password[0] == 0) {
             g->none = 1;
             if ((held = mac_holds(&mac, g, safe, (size_t)n)) != 1) g->none = 0;
         }
@@ -571,7 +575,8 @@ pfx_read(const tiku_der_t *pfx, gather_t *g)
 
 /* ----------------------------------------------------------------- PEM  */
 
-/** @brief Base64 @p s up to @p end into @p out.  @return the bytes. */
+/** @brief Base64 @p s, up to @p end or its first '=', into @p out;
+ *         characters outside the alphabet are skipped.  @return the bytes. */
 static size_t
 base64(const char *s, const char *end, unsigned char *out)
 {
@@ -595,7 +600,9 @@ base64(const char *s, const char *end, unsigned char *out)
     return n;
 }
 
-/** @brief One PEM block, labelled @p label, of @p n decoded bytes. */
+/** @brief One PEM block, labelled @p label, of @p n decoded bytes; a
+ *         @p sealed one, under OpenSSL's legacy PEM encryption, only marks
+ *         @p g as holding what this does not read. */
 static void
 pem_block(gather_t *g, const char *label, const unsigned char *p, size_t n,
           int sealed)
@@ -630,7 +637,8 @@ pem_read(const char *s, size_t n, gather_t *g)
         snprintf(label, sizeof label, "%.*s", (int)(len < 39 ? len : 39), head);
         body += 5;
         if ((der = malloc((size_t)(end - body))) != NULL) {
-            /* OpenSSL's own old sealing, headers before the base64 */
+            /* OpenSSL's legacy PEM encryption: a Proc-Type header
+             * before the base64. */
             const char *proc = strstr(body, "Proc-Type:");
             int sealed = proc != NULL && proc < end;
 
@@ -734,7 +742,8 @@ tiku_key_read(const void *data, size_t n, const char *password,
     if (data == NULL || n == 0) return TIKU_KEY_BAD;
     if (tiku_der_read(data, n, &e) == 0 && tiku_der_is(&e, TIKU_DER_SEQUENCE)) {
         if ((status = pfx_read(&e, &g)) == TIKU_KEY_BAD) {
-            tiku_der_cursor_t c;    /* a bare PKCS#8 or PKCS#1 key */
+            /* A bare PKCS#8 key, encrypted or not, or a PKCS#1 key. */
+            tiku_der_cursor_t c;
             tiku_der_t first, second;
 
             tiku_der_enter(&e, &c);

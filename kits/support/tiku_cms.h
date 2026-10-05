@@ -5,14 +5,14 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_cms.h - what keys and signatures travel in: key files (PKCS#12,
- * RFC 7292; PKCS#8, RFC 5958 and 8018, as DER or PEM), X.509 certificates
- * (RFC 5280), and CMS (RFC 5652): envelopes opened with a key file's key,
- * and signatures checked against the certificate they carry, dated by
- * the timestamp tokens (RFC 3161) they may carry too.
+ * RFC 7292; PKCS#8, RFC 5958 and 8018, and PKCS#1, as DER or PEM), X.509
+ * certificates (RFC 5280), and CMS (RFC 5652): envelopes opened with a
+ * key file's key, and signatures checked against the certificate they
+ * carry, dated by the timestamp tokens (RFC 3161) they may carry too.
  *
- * A signature that checks says the content is what the key in its
- * certificate signed.  Whether the certificate is who it names is a
- * question of trust, and nothing here answers it.
+ * TIKU_SIG_GOOD means the content is what the key in the signer's
+ * certificate signed; nothing here checks whether that certificate is
+ * trusted.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,15 +24,17 @@
 
 /* ----------------------------------------------------------- key files  */
 
-/** @brief Why a key file did not open. */
+/** @brief How tiku_key_read() ended: TIKU_KEY_OK, or why the file did
+ *         not open. */
 enum { TIKU_KEY_OK = 0, TIKU_KEY_PASSWORD, TIKU_KEY_BAD,
        TIKU_KEY_UNSUPPORTED };
 
+/** @brief A private key read from a key file, with its certificate. */
 typedef struct tiku_key tiku_key_t;
 
 /**
- * @brief Read a key file -- PKCS#12 (.p12, .pfx), or PEM holding PKCS#8
- *        (encrypted or not) or PKCS#1 -- unlocked by @p password (UTF-8).
+ * @brief Read a key file: PKCS#12 (.p12, .pfx), or PKCS#8 (encrypted or
+ *        not) or PKCS#1, as DER or PEM, unlocked by @p password (UTF-8).
  * @return TIKU_KEY_OK with @p out set; TIKU_KEY_PASSWORD when the password
  *         does not open it; TIKU_KEY_BAD for what is not a key file;
  *         TIKU_KEY_UNSUPPORTED for a key or cipher this does not read.
@@ -40,16 +42,17 @@ typedef struct tiku_key tiku_key_t;
 int tiku_key_read(const void *data, size_t n, const char *password,
                   tiku_key_t **out);
 
-/** @brief Let the key go, its numbers wiped first. */
+/** @brief Wipe the key's numbers and free it; NULL is ignored. */
 void tiku_key_free(tiku_key_t *key);
 
 /** @brief The name on the key's certificate, "" when the file has none. */
 const char *tiku_key_name(const tiku_key_t *key);
 
 /**
- * @brief What CMS EnvelopedData @p der says, opened with @p key: by the
- *        recipient named as the key's certificate, else by trying each
- *        RSA recipient.  Triple DES, RC2, DES and AES content.
+ * @brief The content of CMS EnvelopedData @p der, opened with @p key: by
+ *        the recipient whose id names the key's certificate, else by
+ *        trying the other RSA recipients in turn.  The content may be
+ *        sealed with triple DES, RC2, DES or AES.
  * @return the content's length with @p out to free(), or -1 when the key
  *         is not one it was sealed to, or it is not an envelope.
  */
@@ -60,15 +63,16 @@ long tiku_cms_open(const tiku_key_t *key, const unsigned char *der,
 
 /** @brief What a certificate says of itself, as a person reads it. */
 typedef struct {
-    char    subject[160];           /* its common name, else the name    */
+    char    subject[160];           /* common name, else org, unit, email */
     char    org[160];               /* its organisation, "" for none     */
     char    email[96];
-    char    issuer[160];            /* the issuer's common name          */
+    char    issuer[160];            /* common name, else org, unit, email */
     int64_t not_before, not_after;  /* seconds since 1970, UTC           */
     int     self_signed;            /* issuer and subject are one name   */
 } tiku_cert_info_t;
 
-/** @brief Read the DER certificate @p der.  @return 0, or -1. */
+/** @brief Read what the DER certificate @p der says of itself into
+ *         @p out.  @return 0, or -1 with @p out zeroed. */
 int tiku_cert_info(const unsigned char *der, size_t n,
                    tiku_cert_info_t *out);
 
@@ -77,8 +81,8 @@ int tiku_cert_info(const unsigned char *der, size_t n,
 /** @brief How a signature stands. */
 enum { TIKU_SIG_GOOD = 1,           /* what the certificate's key signed */
        TIKU_SIG_CHANGED,            /* the content is not what was signed */
-       TIKU_SIG_BROKEN,             /* not the certificate's key's       */
-       TIKU_SIG_UNCHECKED };        /* in a form this does not check     */
+       TIKU_SIG_BROKEN,             /* malformed, or not by its key      */
+       TIKU_SIG_UNCHECKED };        /* could not be checked              */
 
 /** @brief One run of the content a signature covers. */
 typedef struct {
@@ -96,24 +100,26 @@ typedef struct {
     int              stamp;         /* TIKU_SIG_* of a timestamp, 0 none */
     int64_t          stamped_at;    /* the time it gives                 */
     char             stamp_by[160]; /* the authority that gave it        */
-    int              timestamp;     /* the signature IS a timestamp      */
-    unsigned char    econtent[64];  /* what it holds, if a little        */
-    size_t           econtent_len;
+    int              timestamp;     /* the signature is a timestamp token */
+    unsigned char    econtent[64];  /* the content it holds, if it fits  */
+    size_t           econtent_len;  /* bytes in econtent                 */
 } tiku_cms_sig_t;
 
 /**
  * @brief Check CMS SignedData @p der, whose content is the @p npieces
  *        runs of @p content (detached), or, with none, the content it
- *        holds: copied to econtent when a digest's size.  A timestamp
- *        token is checked as one: its imprint against @p content.
+ *        holds.  A timestamp token is checked as one: its imprint against
+ *        @p content.  Content it holds that fits in econtent is copied
+ *        there.
  * @return @p out->status.
  */
 int tiku_cms_verify(const unsigned char *der, size_t n,
                     const tiku_piece_t *content, int npieces,
                     tiku_cms_sig_t *out);
 
-/** @brief Check a bare RSA signature @p sig of the @p alg digest of
- *         @p content by the DER certificate @p cert.  @return the status. */
+/** @brief Check a bare RSA signature @p sig (PKCS#1 v1.5) of the @p alg
+ *         digest of @p content by the DER certificate @p cert.
+ *         @return the status. */
 int tiku_cms_verify_raw(const unsigned char *cert, size_t certlen,
                         const unsigned char *sig, size_t siglen, int alg,
                         const tiku_piece_t *content, int npieces,

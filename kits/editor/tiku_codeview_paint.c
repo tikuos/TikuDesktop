@@ -16,9 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Bytes of text handed to tiku_text() at a time.  A piece ends here or
- * where the colour or the face changes; it is never a place where a line
- * breaks. */
+/* The most bytes of text handed to tiku_text() at once; a longer run in
+ * one colour and face is drawn as several pieces. */
 #define PIECE_MAX 256
 
 /** @brief One row being painted. */
@@ -34,26 +33,27 @@ typedef struct {
     tiku_edit_pos_t stop;       /* the row's end, where the walk stops  */
     const tiku_edit_selection_t *sels; /* the selections, in order      */
     size_t nsels;
-    size_t at;                  /* the first not ended before the cell
-                                   the walk is at                       */
+    size_t at;                  /* the first of sels not ended
+                                   before the walk's cell               */
     char piece[PIECE_MAX + 5];  /* text waiting to be drawn, and a NUL  */
-    size_t len;                 /* its bytes                            */
-    int64_t piece_x;            /* line x of its first character        */
-    tiku_rgb_t ink;             /* its colour                           */
-    const tiku_font_t *face;    /* and its face                         */
+    size_t len;                 /* bytes in piece                       */
+    int64_t piece_x;            /* line x of piece's first character    */
+    tiku_rgb_t ink;             /* piece's colour                       */
+    const tiku_font_t *face;    /* piece's face                         */
     int stopped;                /* the walk reached the right edge      */
     int invisibles;             /* mark spaces and tabs                 */
     tiku_edit_pos_t start;      /* the line's first byte                */
-    const tiku_span_t *runs;    /* its coloured runs; none is plain     */
+    const tiku_span_t *runs;    /* the line's runs, or NULL: plain      */
     size_t nruns;
     size_t run;                 /* the run the walk has reached         */
-    int64_t run_end;            /* the line offset where that run ends  */
+    int64_t run_end;            /* line offset where runs[run] ends     */
     const unsigned *styles;     /* the view's style of each ink         */
     const tiku_font_t *cuts[4]; /* the face in each cut, by the style's
                                    TIKU_CODEVIEW_BOLD and ITALIC        */
     int under;                  /* an underline is being gathered       */
-    int64_t under_x, under_end; /* the line x it runs from, and to      */
-    tiku_rgb_t under_ink;       /* its colour                           */
+    int64_t under_x, under_end; /* line x the underline runs from,
+                                   and to                               */
+    tiku_rgb_t under_ink;       /* the underline's colour               */
     tiku_edit_range_t hot;      /* the live hotspot under the pointer,
                                    underlined; empty for none           */
 } row_t;
@@ -224,7 +224,8 @@ underline_cell(row_t *r, const tiku_cv_cell_t *c, int on, tiku_rgb_t ink)
     r->under_end = c->x + c->adv;
 }
 
-/** @brief A control character: its name, light on a dark box. */
+/** @brief A control character: its name in the ground's colour on a box
+ *         halfway between the ground and the ink. */
 static void
 paint_name(row_t *r, const tiku_cv_cell_t *c, int selected)
 {
@@ -353,8 +354,8 @@ any_backgrounds(const tiku_codeview_t *v)
 /** @brief Paint row @p w in the row @p r is set up for: the styles'
  *         backgrounds first, the ruler and indentation guides, the
  *         selections' ground, the indicators' marks, then the text over
- *         them, then on a line's last row a selected line break as one
- *         space's width after the text. */
+ *         them, and on a line's last row a folded line's mark and a
+ *         selected line break as one space's width after the text. */
 static void
 paint_row(tiku_codeview_t *v, row_t *r, const tiku_cv_row_t *w)
 {
@@ -444,7 +445,7 @@ restore_clip(tiku_surface_t *s, tiku_rect_t saved)
 /** @brief The cell a block caret covers, found by a walk. */
 typedef struct {
     tiku_edit_pos_t at;             /* the caret                        */
-    tiku_cv_cell_t cell;            /* the cell starting there          */
+    tiku_cv_cell_t cell;            /* the cell starting at the caret   */
     int found;
 } block_t;
 
@@ -590,9 +591,10 @@ caret_line(tiku_codeview_t *v)
     return tiku_editdoc_line_of(v->doc, caret);
 }
 
-/** @brief The rows of marked lines' text filled with their kinds'
- *         colours, the highest kind's on top, the execution line's over
- *         them while it is current, and the caret line's under both. */
+/** @brief Fill the text rows of the execution line, of marked lines and
+ *         of the caret line, one colour a row: the execution line's while
+ *         it is current, else the highest filled marker kind's, else the
+ *         caret line's. */
 static void
 paint_fills(tiku_codeview_t *v, tiku_surface_t *s, tiku_rect_t area)
 {
@@ -626,9 +628,9 @@ paint_fills(tiku_codeview_t *v, tiku_surface_t *s, tiku_rect_t area)
     }
 }
 
-/** @brief A scrollbar placed in thousandths, so a recording carries the
- *         thumb exactly where it is drawn here; an arrow held down is
- *         drawn pressed. */
+/** @brief A scrollbar, its thumb placed in thousandths so a recording
+ *         carries it where it is drawn here; an arrow held down is drawn
+ *         pressed. */
 static void
 paint_bar(tiku_codeview_t *v, tiku_surface_t *s, int horizontal)
 {

@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief The universal tags read here, and the class of the others. */
+/** @brief The universal tags read here. */
 enum { TIKU_DER_BOOLEAN = 1, TIKU_DER_INTEGER = 2, TIKU_DER_BITS = 3,
        TIKU_DER_OCTETS = 4, TIKU_DER_NULL = 5, TIKU_DER_OID = 6,
        TIKU_DER_UTF8 = 12, TIKU_DER_SEQUENCE = 16, TIKU_DER_SET = 17,
@@ -28,7 +28,8 @@ enum { TIKU_DER_BOOLEAN = 1, TIKU_DER_INTEGER = 2, TIKU_DER_BITS = 3,
 
 /** @brief One element: what it is, its contents, and all of it. */
 typedef struct {
-    int                  cls;       /* 0 universal, 2 context-specific  */
+    int                  cls;       /* 0 universal, 1 application,
+                                       2 context-specific, 3 private    */
     int                  cons;      /* constructed                      */
     unsigned             tag;
     const unsigned char *body;      /* the contents                     */
@@ -53,11 +54,12 @@ int tiku_der_read(const unsigned char *p, size_t n, tiku_der_t *e);
 void tiku_der_enter(const tiku_der_t *e, tiku_der_cursor_t *c);
 
 /** @brief The next element under @p c.  @return 0, or -1 at the end or at
- *         what does not parse, @p e zeroed. */
+ *         what does not parse, @p e zeroed and @p c left at its end. */
 int tiku_der_next(tiku_der_cursor_t *c, tiku_der_t *e);
 
 /** @brief The next element, which must be universal @p tag, or context
- *         [@p tag] when @p tag is 0x80 more.  @return 0, or -1. */
+ *         [@p tag - 0x80] for a @p tag of 0x80 and up.  @return 0, or -1;
+ *         the element is taken whatever its tag. */
 int tiku_der_take(tiku_der_cursor_t *c, unsigned tag, tiku_der_t *e);
 
 /** @brief Whether @p e is universal @p tag, or context [@p tag - 0x80]. */
@@ -66,8 +68,8 @@ int tiku_der_is(const tiku_der_t *e, unsigned tag);
 /** @brief Whether @p e is the object identifier @p dotted. */
 int tiku_der_oid(const tiku_der_t *e, const char *dotted);
 
-/** @brief Which of @p n dotted identifiers @p e is.  @return its index,
- *         or -1. */
+/** @brief Which of the @p n dotted identifiers @p e is; a NULL entry
+ *         matches nothing.  @return its index, or -1. */
 int tiku_der_oid_in(const tiku_der_t *e, const char *const *dotted, int n);
 
 /** @brief A string's bytes, joined when BER cut it in pieces.
@@ -77,7 +79,7 @@ long tiku_der_octets(const tiku_der_t *e, unsigned char **out);
 /** @brief An INTEGER that fits a long.  @return 0, or -1. */
 int tiku_der_int(const tiku_der_t *e, long *v);
 
-/** @brief An INTEGER's magnitude: its bytes, the sign's zero skipped.
+/** @brief An INTEGER's magnitude: its bytes, leading zeros skipped.
  *         @return 0, or -1 for a negative or empty one. */
 int tiku_der_uint(const tiku_der_t *e, const unsigned char **b, size_t *n);
 

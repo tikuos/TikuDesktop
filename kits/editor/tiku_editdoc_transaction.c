@@ -15,12 +15,14 @@
 
 #include <string.h>
 
-/** @brief A transaction checked, copied and paid for, waiting to commit. */
+/** @brief A transaction checked and copied, with everything its commit
+ *         needs allocated. */
 typedef struct {
     tiku_ed_record_t record;    /* its pieces and payload, owned        */
     tiku_ed_view_t *view;       /* the view it came from, or NULL       */
     int join;                   /* merges into the last record          */
-    tiku_ed_record_t merged;    /* the last record with it, when joining */
+    tiku_ed_record_t merged;    /* the last record merged with this one,
+                                   when joining                         */
     tiku_edit_selection_t main; /* the main selection after, when the
                                    transaction sets several             */
 } prepared_t;
@@ -62,8 +64,8 @@ typed_kind(const tiku_ed_record_t *r)
 }
 
 /** @brief Check the replacements: in the text, on character boundaries,
- *         valid text, ascending and apart.  Counts the ones that change
- *         something, and the bytes they remove and add. */
+ *         valid text, ascending and not overlapping.  Counts the ones
+ *         that change something, and the bytes they remove and add. */
 static tiku_edit_status_t
 check_edits(const tiku_editdoc_t *doc, const tiku_edit_transaction_t *t,
             size_t *count, uint64_t *removed, uint64_t *added)
@@ -220,8 +222,8 @@ reserve_for(tiku_editdoc_t *doc, const tiku_ed_record_t *r, int inverse)
 }
 
 /** @brief Apply @p r's pieces from the last to the first, so each one's
- *         coordinates still hold, moving anchors and selections with the
- *         text.  Never allocates. */
+ *         coordinates still hold, moving anchors, selections, markers,
+ *         indicators and annotations with the text.  Never allocates. */
 static void
 commit_pieces(tiku_editdoc_t *doc, const tiku_ed_record_t *r, int inverse)
 {
@@ -262,7 +264,7 @@ selects_carets(const tiku_editdoc_t *doc, const tiku_edit_transaction_t *t,
 /**
  * @brief Keep the view's other selections in the record, with room for
  *        those after: the transaction's own, merged, or as many as the
- *        view has now, which mapping only brings together.
+ *        view has now, which mapping can only reduce.
  *
  * The view gets room for them too, so the commit allocates nothing.
  */

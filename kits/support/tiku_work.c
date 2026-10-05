@@ -1,5 +1,6 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -56,7 +57,9 @@ now_ms(void)
     return t.tv_sec * 1000L + t.tv_nsec / 1000000L;
 }
 
-/** @brief Whether a job with @p key is running now.  Lock held. */
+/** @brief Whether a job with @p key is running now; never for an empty
+ *         key.
+ *  @note Call with the lock held. */
 static int
 key_running(const char *key)
 {
@@ -75,10 +78,12 @@ key_running(const char *key)
 }
 
 /**
- * @brief The oldest QUEUED slot a worker may take, or -1.  Lock held.
+ * @brief The oldest QUEUED slot a worker may take, cancelled or with no
+ *        job of its key running; -1 when there is none.
  *
- * Oldest by order, not by index: a slot freed early and refilled would
- * otherwise jump the queue.
+ * Oldest by the order posted: a freed slot is refilled by a later post,
+ * so a slot's index does not give its order.
+ * @note Call with the lock held.
  */
 static int
 next_runnable(void)
@@ -103,6 +108,8 @@ next_runnable(void)
 /* THE WORKERS                                                               */
 /*---------------------------------------------------------------------------*/
 
+/** @brief A worker thread: take the oldest runnable slot, run its job
+ *         without the lock, mark it FINISHED, and wait for the next. */
 static void *
 working(void *ignored)
 {
@@ -137,7 +144,9 @@ working(void *ignored)
     return NULL;
 }
 
-/** @brief Start the pool, once.  Lock held. */
+/** @brief Start WORKERS detached worker threads and mark the pool
+ *         started.
+ *  @note Call with the lock held. */
 static void
 start_workers(void)
 {

@@ -174,8 +174,8 @@ tiku_editdoc_each(tiku_editdoc_t *doc, tiku_edit_range_t range,
         return TIKU_EDIT_INVALID;
     if (!range_ok(doc, range))
         return TIKU_EDIT_INVALID_RANGE;
-    /* The bytes handed out point into the buffer: no change until the
-     * reader returns. */
+    /* The bytes handed out point into the buffer, so the document refuses
+     * changes until the reader returns. */
     doc->busy++;
     tiku_ed_bytes_each(&doc->text.bytes, (ptrdiff_t)range.start,
                        (ptrdiff_t)(range.end - range.start), fn, ctx);

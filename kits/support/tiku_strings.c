@@ -4,13 +4,11 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_strings.c - the words the interface is made of (see header).
+ * tiku_strings.c - the words the interface is made of.
  *
- * The reader is a small one: an XML file is a stack of
- * <string name="key">value</string>, and that is all of the format it
- * knows.  The files are dropped in a folder, which is to say they come
- * from anywhere, so every read is bounds-checked against the file's end
- * the way the font readers are -- a translation must never be a way in.
+ * The parser knows one shape of XML, a run of
+ * <string name="key">value</string> among comments, and nothing else of
+ * the format.  Every read is bounds-checked against the end of the file.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,7 +23,7 @@
  * into build/generated/. Entries are sorted by key for binary search. */
 #include "tiku_strings_default.h"
 
-#define STR_MAX_FILE   (1 << 20)    /* a catalogue past a megabyte is not one */
+#define STR_MAX_FILE   (1 << 20)    /* a larger catalogue is not read */
 #define STR_MAX_VALUE  4096
 
 /* A translation loaded over the baked English: its entries win. */
@@ -39,7 +37,9 @@ static int g_over_count;
 static int g_over_cap;
 static char g_lang[16] = "en";
 
-/* --------------------------------------------------------------- lookup */
+/*---------------------------------------------------------------------------*/
+/* LOOKUP                                                                    */
+/*---------------------------------------------------------------------------*/
 
 /** @brief Compare a key against a baked entry, for bsearch. */
 static int
@@ -98,8 +98,6 @@ tiku_str(const char *key)
     if (v != NULL) {
         return v;
     }
-    /* Nobody has this line.  Its name is worse than the words, but far
-     * better than a blank: a person can see what is missing and add it. */
     return key;
 }
 
@@ -109,16 +107,15 @@ tiku_strings_builtin_count(void)
     return tiku_str_default_count;
 }
 
-/* ------------------------------------------------------------- the file */
+/*---------------------------------------------------------------------------*/
+/* THE FILE                                                                  */
+/*---------------------------------------------------------------------------*/
 
 /**
  * @brief The sequence of conversions in @p fmt, e.g. "ds" for "%d of %s".
  *
- * A translation is passed to snprintf as a FORMAT where the English was;
- * if it does not carry the same conversions, in the same order, it could
- * read arguments that are not there.  So the signature is compared before
- * a translation is let in, and a mismatch keeps the English (which the
- * code was written against) rather than the translator's guess.
+ * A translated line is used as a printf format with the English line's
+ * arguments; put() lets it in only when the two sequences match.
  */
 static void
 format_sig(const char *fmt, char *out, size_t max)
@@ -136,7 +133,8 @@ format_sig(const char *fmt, char *out, size_t max)
                 fmt++;
                 continue;
             }
-            /* skip flags, width, precision, length -- keep the conversion */
+            /* past the flags, width, precision and length to the
+             * conversion */
             while (*fmt != '\0' && strchr("-+ #0123456789.*hlLqjzt", *fmt)) {
                 fmt++;
             }
@@ -158,22 +156,23 @@ format_ok(const char *key, const char *value)
     char a[32], b[32];
 
     if (en == NULL) {
-        return 1;               /* a key with no English to disagree with */
+        return 1;               /* no English line to compare with */
     }
     format_sig(en, a, sizeof a);
     format_sig(value, b, sizeof b);
     return strcmp(a, b) == 0;
 }
 
-/** @brief Put @p key -> @p value into the override table, replacing. */
+/** @brief Put @p key -> @p value into the override table, replacing;
+ *         takes both strings, and frees them when it refuses the line. */
 static void
 put(char *key, char *value)
 {
     int i;
 
     if (!format_ok(key, value)) {
-        /* A translation that would misread its arguments is no better
-         * than the English it fails to replace: keep the English. */
+        /* Its conversions differ from the English line's: keep the
+         * English. */
         free(key);
         free(value);
         return;
@@ -212,11 +211,12 @@ entry_cmp(const void *a, const void *b)
 }
 
 /**
- * @brief One XML entity, written into @p out.  @return bytes written.
+ * @brief Decode the XML entity at @p p, just past its '&' and before
+ *        @p end, into @p out as UTF-8, and set @p after past its ';'.
  *
- * @p p points just past the '&'; on return @p end_out points past the ';'.
- * An unknown entity is left as it was, '&' and all, rather than
- * dropped -- a translator's stray ampersand should show, not vanish.
+ * An unknown or unterminated entity gives the '&' alone, with @p after
+ * at @p p, so the text after it is kept as it was.
+ * @return the bytes written.
  */
 static int
 entity(const char *p, const char *end, char *out, const char **after)
@@ -264,8 +264,7 @@ entity(const char *p, const char *end, char *out, const char **after)
         return 1;
     }
     *after = semi + 1;
-    /* The code point as UTF-8, which is what the rest of the interface
-     * draws: a translation is bytes on the way to the font. */
+    /* The code point, as UTF-8. */
     if (cp < 0x80u) {
         out[0] = (char)cp;
         return 1;
@@ -321,13 +320,12 @@ is_space(char c)
 }
 
 /**
- * @brief The value of attribute @p name inside the tag [p,tagend).
+ * @brief The value of attribute @p name inside the tag [p,tagend),
+ *        decoded into a fresh string; NULL when there is none.
  *
- * A proper walk, attribute by attribute: read a NAME, an '=', a quoted
- * VALUE, and match only when the WHOLE name equals @p name.  Anything
- * else -- the letters of @p name inside another attribute's value, an
- * attribute called something-name, a value whose quote never closes --
- * is stepped over rather than mistaken for the one wanted.
+ * Walks the attributes one by one, name, '=' and quoted value, and takes
+ * only one whose whole name is @p name.  A value with no quotes, or one
+ * whose quote never closes, makes the tag malformed: NULL.
  */
 static char *
 attr(const char *p, const char *tagend, const char *name)
@@ -347,7 +345,7 @@ attr(const char *p, const char *tagend, const char *name)
         }
         ne = p;
         if (ne == ns) {
-            p++;                /* a stray '=' or '/' : step past it, on */
+            p++;                /* a stray '=' or '/': step past it */
             continue;
         }
         while (p < tagend && is_space(*p)) {
@@ -382,7 +380,8 @@ attr(const char *p, const char *tagend, const char *name)
     return NULL;
 }
 
-/** @brief Parse @p text as a catalogue.  @return how many lines it held. */
+/** @brief Parse @p text as a catalogue into the override table.
+ *  @return how many lines it held, counting any put() refused. */
 static int
 parse(const char *text, size_t len)
 {
@@ -455,7 +454,7 @@ tiku_strings_load_file(const char *path)
     }
     f = fopen(path, "rb");
     if (f == NULL) {
-        return 0;               /* no file is not an error: English stands */
+        return 0;               /* no such file: nothing loaded */
     }
     if (fseek(f, 0L, SEEK_END) != 0 || (size = ftell(f)) <= 0 ||
         size > STR_MAX_FILE || fseek(f, 0L, SEEK_SET) != 0) {
@@ -474,7 +473,9 @@ tiku_strings_load_file(const char *path)
     return n;
 }
 
-/* --------------------------------------------------------------- init */
+/*---------------------------------------------------------------------------*/
+/* INIT                                                                      */
+/*---------------------------------------------------------------------------*/
 
 void
 tiku_strings_reset(void)
@@ -492,7 +493,8 @@ tiku_strings_reset(void)
     snprintf(g_lang, sizeof g_lang, "%s", "en");
 }
 
-/** @brief The two-letter language out of a locale like "fr_FR.UTF-8". */
+/** @brief The language out of a locale such as "fr_FR.UTF-8": what comes
+ *         before its '_' or '.'; @p out is left alone for NULL. */
 static void
 short_lang(const char *locale, char *out, size_t max)
 {
@@ -529,11 +531,12 @@ tiku_strings_init(const char *dir, const char *lang)
     }
     if (chosen[0] == '\0' || strcmp(chosen, "en") == 0 ||
         strcmp(chosen, "C") == 0 || strcmp(chosen, "POSIX") == 0) {
-        return "en";           /* the baked English is already the answer */
+        return "en";           /* English: nothing to load */
     }
 
-    /* Where the catalogues live: told, then the resource dir, then the
-     * user's own config, then alongside the system's. */
+    /* Where the catalogues are looked for: @p dir, $TIKU_STRINGS, the
+     * user's ~/.config/tracker/strings, then the system's
+     * /usr/share/tiku-tracker/strings. */
     home = getenv("HOME");
     if (dir != NULL && dir[0] != '\0') {
         snprintf(path, sizeof path, "%s/%s.xml", dir, chosen);

@@ -257,15 +257,17 @@ typed(const tiku_event_t *e, char *one)
     return NULL;
 }
 
-/** @brief A command's status as an event leaves it: nothing to do is
- *         not a refusal. */
+/** @brief A command's status as an event leaves it: TIKU_EDIT_NOTHING
+ *         becomes TIKU_EDIT_OK. */
 static tiku_edit_status_t
 quiet(tiku_edit_status_t st)
 {
     return st == TIKU_EDIT_NOTHING ? TIKU_EDIT_OK : st;
 }
 
-/** @brief A Command chord the view edits by; 0 for any other. */
+/** @brief Run the Command chord @p e, its result kept as the view's
+ *         status, when it is one the view takes; 0 for any other, and for
+ *         a line, bracket, fold or word chord with Option held. */
 static int
 command_key(tiku_codeview_t *v, const tiku_event_t *e)
 {

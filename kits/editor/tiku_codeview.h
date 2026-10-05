@@ -37,6 +37,8 @@
 /** @brief The widest tab stop interval accepted, in columns. */
 #define TIKU_CODEVIEW_TAB_MAX     32
 
+/** @brief A view of an editor document, with its own selections, scroll
+ *         and folds; opaque. */
 typedef struct tiku_codeview tiku_codeview_t;
 
 /** @brief What a view asks of whoever hosts it; any member may be NULL,
@@ -75,11 +77,14 @@ tiku_edit_view_t tiku_codeview_doc_view(const tiku_codeview_t *view);
 /** @brief Where the view is painted; the text starts a small margin
  *         inside. */
 void tiku_codeview_set_bounds(tiku_codeview_t *view, tiku_rect_t bounds);
+/** @brief Where the view is painted. */
 tiku_rect_t tiku_codeview_bounds(const tiku_codeview_t *view);
 
 /** @brief The face text is measured and drawn in; NULL follows the
  *         interface's monospaced face. */
 void tiku_codeview_set_font(tiku_codeview_t *view, const tiku_font_t *font);
+/** @brief The face text is drawn in: the one set, or else the monospaced
+ *         face at the view's zoom. */
 const tiku_font_t *tiku_codeview_font(const tiku_codeview_t *view);
 /**
  * @brief Draw the monospaced face @p steps steps of two pixels bigger,
@@ -105,6 +110,7 @@ unsigned tiku_codeview_ruler(const tiku_codeview_t *view);
  *         anything else is refused and the setting kept. */
 tiku_edit_status_t tiku_codeview_set_tab_width(tiku_codeview_t *view,
                                                int columns);
+/** @brief Columns between tab stops. */
 int tiku_codeview_tab_width(const tiku_codeview_t *view);
 
 /** @brief Colour the text as @p lang reads it, through the live theme;
@@ -114,6 +120,7 @@ int tiku_codeview_tab_width(const tiku_codeview_t *view);
  *         first line a change could have altered. */
 void tiku_codeview_set_language(tiku_codeview_t *view,
                                 tiku_syntax_lang_t lang);
+/** @brief The language set, TIKU_SYNTAX_NONE in a new view. */
 tiku_syntax_lang_t tiku_codeview_language(const tiku_codeview_t *view);
 
 /**
@@ -144,10 +151,11 @@ typedef struct {
  * @brief Colour the view with @p lexer, copied, instead of by its
  *        language, or with NULL by the language again.
  *
- * The language still gives the rules lines are edited and folded by.  A
- * line whose runs break the lexer's rules, or that the lexer fails on, is
- * drawn plain.  Setting the lexer set already changes nothing; setting
- * another clears a table of fold levels.
+ * The lexer changes only the colours: lines are edited and folded by the
+ * rules tiku_codeview_rules() returns.  A line whose runs break the
+ * lexer's rules, or that the lexer fails on, is drawn plain.  Setting the
+ * lexer set already changes nothing; setting another clears a table of
+ * fold levels.
  *
  * @note ctx must outlive the lexer's time in the view; after its contents
  *       change, call tiku_codeview_lexer_changed().
@@ -186,13 +194,14 @@ const tiku_codeview_lexer_t *tiku_codeview_json_lexer(void);
 /* How text of one ink is drawn besides its colour; a new view draws every
  * ink plain. */
 #define TIKU_CODEVIEW_BOLD      0x1u  /* in the face's bold cut           */
-#define TIKU_CODEVIEW_ITALIC    0x2u  /* in its italic cut                */
-#define TIKU_CODEVIEW_UNDERLINE 0x4u  /* with a line under it             */
-#define TIKU_CODEVIEW_HOTSPOT   0x8u  /* a hotspot: see below             */
+#define TIKU_CODEVIEW_ITALIC    0x2u  /* in the face's italic cut         */
+#define TIKU_CODEVIEW_UNDERLINE 0x4u  /* with a line under the text       */
+#define TIKU_CODEVIEW_HOTSPOT   0x8u  /* a hotspot: clicks go to the host */
 
 /**
- * @brief Draw text the colouring gives @p ink with @p style, the flags
- *        above, or with 0 plain.
+ * @brief Draw text the colouring gives @p ink with @p style, a set of
+ *        TIKU_CODEVIEW_BOLD, _ITALIC, _UNDERLINE and _HOTSPOT, or with 0
+ *        plain.
  *
  * A style changes how a character is drawn, never where: it keeps the
  * place the view's face gives it.  A face without the cut asked for drops
@@ -213,8 +222,8 @@ unsigned tiku_codeview_ink_style(const tiku_codeview_t *view,
 #define TIKU_CODEVIEW_STYLE_FIRST (TIKU_INK_LINK + 1u)
 #define TIKU_CODEVIEW_STYLE_COUNT 64u
 /* The colours a style sets itself instead of taking its role's. */
-#define TIKU_CODEVIEW_STYLE_FORE 1u     /* the text's                     */
-#define TIKU_CODEVIEW_STYLE_BACK 2u     /* the ground behind it           */
+#define TIKU_CODEVIEW_STYLE_FORE 1u     /* the text's colour              */
+#define TIKU_CODEVIEW_STYLE_BACK 2u     /* the colour behind the text     */
 /** @brief How text of one style ID is drawn. */
 typedef struct {
     tiku_ink_t role;            /* the built-in ink it stands for: its
@@ -222,8 +231,8 @@ typedef struct {
                                    code, a string or a remark           */
     unsigned flags;             /* TIKU_CODEVIEW_BOLD ... HOTSPOT       */
     unsigned colors;            /* TIKU_CODEVIEW_STYLE_FORE and _BACK   */
-    tiku_rgb_t foreground;      /* the colours it sets                  */
-    tiku_rgb_t background;
+    tiku_rgb_t foreground;      /* the text's colour, if colors has _FORE */
+    tiku_rgb_t background;      /* the ground's colour, if colors has _BACK */
 } tiku_codeview_style_t;
 /**
  * @brief Draw text of style @p id as @p style, copied, or with NULL
@@ -278,7 +287,7 @@ tiku_edit_status_t tiku_codeview_json_folds(tiku_codeview_t *view);
  *
  * A hotspot is a run of one ink whose style has TIKU_CODEVIEW_HOTSPOT,
  * within a line.  While the pointer is over a live one it is underlined;
- * a press on it is its own, the selection staying, and a release over the
+ * a press on it leaves the selection as it is, and a release over the
  * same hotspot calls the host's hotspot().  The view follows the pointer
  * and keys through its events; a change of document, language, lexer,
  * keys or style, or deactivation, ends the hotspot shown and a press on one.
@@ -319,8 +328,13 @@ typedef struct {
  *         has FOR, WHILE, REPEAT, SUB and THEN blocks; prose has no
  *         comments.  All of them pair (), [] and {}. */
 const tiku_codeview_rules_t *tiku_codeview_rules_for(tiku_syntax_lang_t lang);
-/** @brief Edit by @p rules, copied, whose strings must outlive the view;
- *         NULL follows the view's language, as a new view does. */
+/**
+ * @brief Edit by @p rules, copied; NULL follows the view's language, as a
+ *        new view does.
+ *
+ * @note The strings the rules point to are not copied and must outlive
+ *       the view.
+ */
 void tiku_codeview_set_rules(tiku_codeview_t *view,
                              const tiku_codeview_rules_t *rules);
 /** @brief The rules the view edits by. */
@@ -333,8 +347,8 @@ tiku_edit_status_t tiku_codeview_set_indent(tiku_codeview_t *view,
 /** @brief Spaces a level of indentation, 0 for a tab. */
 int tiku_codeview_indent_spaces(const tiku_codeview_t *view);
 
-/** @brief Use @p host's clipboard and invalidation; NULL uses none.  The
- *         members are copied. */
+/** @brief Use @p host's clipboard, invalidation and hotspot calls; NULL
+ *         uses none.  The members are copied. */
 void tiku_codeview_set_host(tiku_codeview_t *view,
                             const tiku_codeview_host_t *host);
 
@@ -345,10 +359,13 @@ tiku_edit_status_t tiku_codeview_set_newline(tiku_codeview_t *view,
 
 /** @brief Show what @p options names, and nothing else of them. */
 void tiku_codeview_set_options(tiku_codeview_t *view, unsigned options);
+/** @brief The options the view shows. */
 unsigned tiku_codeview_options(const tiku_codeview_t *view);
 
 /**
- * @brief Whether lines that wrap are still to be counted.
+ * @brief Whether some lines' rows are still to be counted; rows are
+ *        counted while lines wrap, annotations are shown or lines are
+ *        folded.
  *
  * With TIKU_CODEVIEW_WRAP a row breaks after the last blank that fits, or
  * else before the character that would pass the text's width, and keeps
@@ -362,6 +379,7 @@ int tiku_codeview_wrapping(tiku_codeview_t *view);
 /** @brief Whether the caret is drawn; the selection is drawn either
  *         way.  A new view is focused. */
 void tiku_codeview_set_focus(tiku_codeview_t *view, int focused);
+/** @brief Whether the view is focused, its caret drawn. */
 int tiku_codeview_focused(const tiku_codeview_t *view);
 
 /** @brief Pixels from one row's top to the next. */
@@ -370,8 +388,9 @@ int tiku_codeview_row_height(const tiku_codeview_t *view);
 int64_t tiku_codeview_rows_visible(const tiku_codeview_t *view);
 
 /** @brief The first row shown, which is a line's index unless lines
- *         wrap, and how far the text is scrolled left, in pixels. */
+ *         wrap, annotations are shown or lines are folded. */
 int64_t tiku_codeview_top(const tiku_codeview_t *view);
+/** @brief How far the text is scrolled left, in pixels. */
 int64_t tiku_codeview_left(const tiku_codeview_t *view);
 /** @brief Scroll so row @p top is the first shown and the text is moved
  *         @p left pixels.  The top stops where the last row fills the
@@ -458,7 +477,7 @@ typedef enum {
 } tiku_codeview_move_t;
 
 /** @brief A command of the view's by name, for menus and for keys the
- *         host binds: each runs the call named beside it. */
+ *         host binds; tiku_codeview_execute() runs it. */
 typedef enum {
     TIKU_CODEVIEW_CMD_PASS = 0,     /* none: a bound key left to the host */
     TIKU_CODEVIEW_CMD_IGNORE,       /* none: a bound key taken          */
@@ -470,14 +489,14 @@ typedef enum {
     TIKU_CODEVIEW_CMD_SELECT_ALL,   /* tiku_codeview_select_all()       */
     TIKU_CODEVIEW_CMD_NEWLINE,      /* tiku_codeview_newline()          */
     TIKU_CODEVIEW_CMD_BACKSPACE,    /* tiku_codeview_delete(), back     */
-    TIKU_CODEVIEW_CMD_DELETE,       /* and forward                      */
+    TIKU_CODEVIEW_CMD_DELETE,       /* tiku_codeview_delete(), forward  */
     TIKU_CODEVIEW_CMD_INDENT,       /* tiku_codeview_indent(), in       */
-    TIKU_CODEVIEW_CMD_UNINDENT,     /* and out                          */
+    TIKU_CODEVIEW_CMD_UNINDENT,     /* tiku_codeview_indent(), out      */
     TIKU_CODEVIEW_CMD_COMMENT,      /* tiku_codeview_toggle_comment()   */
     TIKU_CODEVIEW_CMD_DUPLICATE,    /* tiku_codeview_duplicate_lines()  */
     TIKU_CODEVIEW_CMD_DELETE_LINES, /* tiku_codeview_delete_lines()     */
     TIKU_CODEVIEW_CMD_FOLD,         /* tiku_codeview_fold_at(), folding */
-    TIKU_CODEVIEW_CMD_UNFOLD,       /* and unfolding                    */
+    TIKU_CODEVIEW_CMD_UNFOLD,       /* tiku_codeview_fold_at(), unfolding */
     TIKU_CODEVIEW_CMD_LINE_ENDS,    /* a caret at each line's end, by
                                        tiku_codeview_carets_to_line_ends() */
     TIKU_CODEVIEW_CMD_KEEP_MAIN,    /* tiku_codeview_keep_main()        */
@@ -491,7 +510,7 @@ typedef struct {
     unsigned modifiers;         /* held exactly, Caps Lock aside        */
     tiku_codeview_command_t command; /* what the key runs               */
     tiku_codeview_move_t move;  /* for TIKU_CODEVIEW_CMD_MOVE, where    */
-    int extend;                 /* and whether the selection extends    */
+    int extend;                 /* the move extends the selection       */
 } tiku_codeview_binding_t;
 
 /**
@@ -508,8 +527,9 @@ tiku_edit_status_t tiku_codeview_set_bindings(
     tiku_codeview_t *view, const tiku_codeview_binding_t *bindings,
     size_t count);
 /** @brief Whether @p command may run now, by the document's read-only
- *         state and history, the selections and the host's clipboard; it
- *         may still find nothing to do.  Allocates nothing. */
+ *         state and history, the selections, the rules and the host's
+ *         clipboard; running it may find nothing to do.  Allocates
+ *         nothing. */
 int tiku_codeview_command_enabled(const tiku_codeview_t *view,
                                   tiku_codeview_command_t command);
 /** @brief Run @p command, with @p move and @p extend for
@@ -531,16 +551,16 @@ tiku_edit_status_t tiku_codeview_execute(tiku_codeview_t *view,
 #define TIKU_CODEVIEW_CHANGE_STATUS    0x10u /* tiku_codeview_status()   */
 #define TIKU_CODEVIEW_CHANGE_ALL       0x1fu
 /**
- * @brief What has changed in the view since it was last asked, the
- *        flags above, all of them the first time; 0 for NULL.
+ * @brief What has changed in the view since it was last asked, as
+ *        TIKU_CODEVIEW_CHANGE_ flags, all of them the first time; 0 for
+ *        NULL.
  *
  * Several changes between two asks set a flag once, and a scroll, command
- * or status that changed and changed back sets none.  The flags are for
- * menus and status bars: after setting a style, a decoration, a fold or
- * an option the host still paints again.  Allocates nothing.
+ * or status that changed and changed back sets none.  Allocates nothing.
  *
  * @note Ask from one place, after an event or on a tick, not from a lexer
- *       or a document listener.
+ *       or a document listener.  Setting a style, a decoration, a fold or
+ *       an option need not set a flag; paint the view again after one.
  */
 unsigned tiku_codeview_changes(tiku_codeview_t *view);
 
@@ -559,8 +579,8 @@ tiku_edit_status_t tiku_codeview_move(tiku_codeview_t *view,
 /** @brief Select the whole document, the caret at its end, and show it. */
 tiku_edit_status_t tiku_codeview_select_all(tiku_codeview_t *view);
 /** @brief Scroll as little as shows the caret on a whole row and at
- *         least 4 pixels inside the right edge; scrolling right leaves
- *         it 8 pixels inside. */
+ *         least 4 pixels inside the right edge, unfolding the regions
+ *         that hide it; scrolling right leaves it 8 pixels inside. */
 void tiku_codeview_reveal(tiku_codeview_t *view);
 
 /**
@@ -629,9 +649,9 @@ tiku_edit_status_t tiku_codeview_delete_lines(tiku_codeview_t *view);
 typedef enum {
     TIKU_CODEVIEW_TRIM_TRAILING,    /* blanks at lines' ends taken out  */
     TIKU_CODEVIEW_INDENT_TO_SPACES, /* indentation made of spaces       */
-    TIKU_CODEVIEW_INDENT_TO_TABS,   /* and of tabs, then spaces         */
+    TIKU_CODEVIEW_INDENT_TO_TABS,   /* indentation of tabs, then spaces */
     TIKU_CODEVIEW_UPPER_ASCII,      /* ASCII letters to upper case      */
-    TIKU_CODEVIEW_LOWER_ASCII,      /* and to lower case                */
+    TIKU_CODEVIEW_LOWER_ASCII,      /* ASCII letters to lower case      */
     TIKU_CODEVIEW_SORT_LINES        /* lines in the order of their bytes */
 } tiku_codeview_transform_t;
 /**
@@ -670,9 +690,9 @@ tiku_edit_status_t tiku_codeview_goto_bracket(tiku_codeview_t *view,
 /** @brief Bytes the bracket search reads before giving up. */
 #define TIKU_CODEVIEW_BRACE_SCAN ((tiku_edit_pos_t)1 << 20)
 
-/** @brief Step the document's history back or forward and show the
- *         caret. */
+/** @brief Step the document's history back and show the caret. */
 tiku_edit_status_t tiku_codeview_undo(tiku_codeview_t *view);
+/** @brief Step the document's history forward and show the caret. */
 tiku_edit_status_t tiku_codeview_redo(tiku_codeview_t *view);
 /** @brief Put the selection on the host's clipboard, several in order
  *         with the view's line break between each two.  TIKU_EDIT_NOTHING
@@ -687,15 +707,16 @@ tiku_edit_status_t tiku_codeview_cut(tiku_codeview_t *view);
  *         many lines, else all of it.  TIKU_EDIT_NOTHING when the
  *         clipboard is empty. */
 tiku_edit_status_t tiku_codeview_paste(tiku_codeview_t *view);
-/** @brief Why the edit the last event asked for was not made, or
- *         TIKU_EDIT_OK when it was made or the event asked for none. */
+/** @brief Why the edit the last event or tiku_codeview_execute() asked
+ *         for was not made, or TIKU_EDIT_OK when it was made or none was
+ *         asked for. */
 tiku_edit_status_t tiku_codeview_status(const tiku_codeview_t *view);
 
 /** @brief What a search did. */
 typedef struct {
     size_t replaced;            /* matches replaced                     */
     int found;                  /* a match is selected now              */
-    int wrapped;                /* it started again from the other end  */
+    int wrapped;                /* the search went on from the other end */
 } tiku_codeview_found_t;
 
 /**
@@ -731,22 +752,40 @@ tiku_edit_status_t tiku_codeview_replace_all(tiku_codeview_t *view,
                                              size_t length,
                                              tiku_codeview_found_t *out);
 
+/*
+ * The keys and presses tiku_codeview_event() takes:
+ *
+ *   moves     the arrows, Home, End and the page keys, Shift extending;
+ *             Command with Home or End to the document's ends, and
+ *             Option or Command with Left or Right by words
+ *   edits     typed text, text-input commits, Return, Tab, Shift Tab,
+ *             Backspace and Delete; Command with C, X, V, A, Z, Shift Z
+ *             and Y, and with Backspace or Delete a word
+ *   lines     Command with / to comment, D to duplicate, Shift K to
+ *             delete, and Shift Up or Shift Down to move
+ *   brackets  Command with M to the matching bracket, and with Shift M
+ *             selecting through it
+ *   folds     Command with Shift [ or Shift ] to fold or unfold where
+ *             the caret is
+ *   Escape    with no modifier, keeps only the main selection
+ *   button 1  in the text puts the caret, Shift extends, two clicks
+ *             select a word and three a line, and a drag extends by the
+ *             same unit; with Option it drags a rectangle, with Command
+ *             it adds a caret or takes one of several away; in the fold
+ *             column it folds or unfolds; on a scrollbar it steps, pages
+ *             or drags the thumb
+ *   wheel     scrolls by rows, or across with Shift or a sideways turn
+ */
+
 /**
  * @brief Take a key, text, pointer, wheel or tick event.
  *
- * Moves: the arrows, Home, End and the page keys, with Shift extending;
- * Command with Home or End, Option or Command with Left or Right.  Edits:
- * typed text, Return, Tab, Shift Tab, Backspace, Delete and text-input
- * commits; Command with C, X, V, A, Z, Shift Z and Y, and the line
- * commands' keys: / D, Shift K, Shift Up, Shift Down, M, Shift M, and
- * Backspace or Delete for a word.
+ * A shown list or tip has the event first, then a key bound to a command,
+ * then a live hotspot.  A tick repeats a held scrollbar arrow and counts
+ * the rows of lines not yet counted.
  *
- * @note Button 1 in the text puts the caret, Shift extends, two clicks
- *       select a word and three a line, and dragging extends by the same
- *       unit; on a scrollbar it steps, pages or drags.  The wheel
- *       scrolls.
  * @return 1 when the view used the event, 0 when it is the
- *         application's; deactivation ends a drag and still returns 0.
+ *         application's; deactivation ends a drag and returns 0.
  */
 int tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e);
 
@@ -754,8 +793,8 @@ int tiku_codeview_event(tiku_codeview_t *view, const tiku_event_t *e);
 typedef enum {
     TIKU_CODEVIEW_MARK_NONE = 0,    /* not drawn, as in a new view      */
     TIKU_CODEVIEW_MARK_SQUIGGLE,    /* a wavy line under the text       */
-    TIKU_CODEVIEW_MARK_LINE,        /* a straight line under it         */
-    TIKU_CODEVIEW_MARK_BOX          /* a frame round it                 */
+    TIKU_CODEVIEW_MARK_LINE,        /* a straight line under the text   */
+    TIKU_CODEVIEW_MARK_BOX          /* a frame round the text           */
 } tiku_codeview_mark_t;
 
 /**
@@ -781,10 +820,11 @@ tiku_edit_status_t tiku_codeview_goto_indicator(tiku_codeview_t *view,
 /**
  * @brief The last line of the region @p line heads, or -1 for none.
  *
- * A region is told by the rules: a line leaving an opener of a level open
- * heads the lines up to the one before its closer's line; with blocks, a
- * line opening a block heads them up to the one before its closer; with
- * neither, a line heads the lines after it indented further.
+ * A region is told by the fold levels set, or else by the rules: a line
+ * leaving an opener of a level open heads the lines up to the one before
+ * its closer's line; with blocks, a line opening a block heads them up to
+ * the one before its closer; with neither, a line heads the lines after
+ * it indented further.
  */
 int64_t tiku_codeview_fold_end(tiku_codeview_t *view, int64_t line);
 /**
@@ -803,9 +843,9 @@ tiku_edit_status_t tiku_codeview_fold_at(tiku_codeview_t *view, int open);
 /** @brief Fold every region, the inner ones first, or with @p open
  *         unfold them all. */
 tiku_edit_status_t tiku_codeview_fold_all(tiku_codeview_t *view, int open);
-/** @brief Whether @p line heads a folded region, and whether it is shown,
- *         in no folded region. */
+/** @brief Whether @p line heads a folded region. */
 int tiku_codeview_folded(const tiku_codeview_t *view, int64_t line);
+/** @brief Whether @p line is shown, in no folded region. */
 int tiku_codeview_shown(const tiku_codeview_t *view, int64_t line);
 
 /** @brief Fill the rows of lines marked @p kind with @p color, behind
@@ -816,9 +856,9 @@ tiku_edit_status_t tiku_codeview_set_marker_fill(tiku_codeview_t *view,
                                                  tiku_rgb_t color);
 /** @brief Stop filling the rows of lines marked @p kind. */
 void tiku_codeview_clear_marker_fill(tiku_codeview_t *view, unsigned kind);
-/** @brief Fill the row of the document's execution line with @p color,
- *         over any marker's fill, while the line is current; a new view
- *         fills it light green. */
+/** @brief Fill the text rows of the document's execution line with
+ *         @p color, over any marker's fill, while the line is current; a
+ *         new view fills them light green. */
 void tiku_codeview_set_execution_fill(tiku_codeview_t *view,
                                       tiku_rgb_t color);
 /**
@@ -850,9 +890,9 @@ typedef struct {
  * The range follows edits.  While the list is shown, Escape hides it and
  * any tip, and a press on a word chooses it.  A list that inserts also
  * takes Up and Down, which move the choice round, and Return and Tab,
- * which put the chosen word in; with no words it still takes them and
- * changes nothing.  A NULL word is refused with TIKU_EDIT_INVALID, and a
- * count too big to copy with TIKU_EDIT_LIMIT, the list shown staying.
+ * which put the chosen word in; with no words it takes them and changes
+ * nothing.  A NULL word is refused with TIKU_EDIT_INVALID, and a count
+ * too big to copy with TIKU_EDIT_LIMIT, the list shown staying.
  */
 tiku_edit_status_t tiku_codeview_list_show(tiku_codeview_t *view,
                                            const tiku_codeview_list_t *list);
@@ -922,17 +962,18 @@ tiku_edit_status_t tiku_codeview_complete(
  *         list shown, or SIZE_MAX with none shown. */
 size_t tiku_codeview_completion_selected(const tiku_codeview_t *view);
 /** @brief Whether a rich list's word was put in since this was last
- *         asked, with its index in the host's items in @p index, which
- *         may be NULL. */
+ *         asked, with no list shown after it; its index in the host's
+ *         items goes in @p index, which may be NULL. */
 int tiku_codeview_completion_result(tiku_codeview_t *view, size_t *index);
 
 /**
  * @brief Show @p text in a tip by the row of @p pos, beside a shown list
  *        or else under or over the row, instead of any tip shown before.
  *
- * Lines break at each LF and wrap at 320 pixels.  The tip goes on
- * Escape, on a load, and when an event leaves the caret before @p pos or
- * on another line; a press on it does nothing else.
+ * Lines break at each LF and wrap at 320 pixels, or less in a narrower
+ * view.  The tip goes on Escape, on a load, and when an event leaves the
+ * caret before @p pos or on another line; a press on it does nothing
+ * else.
  */
 tiku_edit_status_t tiku_codeview_tip_show(tiku_codeview_t *view,
                                           tiku_edit_pos_t pos,

@@ -5,8 +5,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_edit_notes.c - indicators, ranges of text kept through each
- * replacement, and annotations, text kept at a line's start as the line
- * markers are.
+ * replacement, and annotations, text kept at the start of a line.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,7 +23,8 @@ next_generation(uint32_t generation)
 }
 
 /** @brief Where a range end at @p p goes when [s, e) becomes n bytes:
- *         a start stays after new text at it, an end before. */
+ *         a start (@p starts) stays after new text put in at it, an end
+ *         before. */
 static int64_t
 map_end(int64_t p, int starts, int64_t s, int64_t e, int64_t n)
 {
@@ -35,8 +35,9 @@ map_end(int64_t p, int starts, int64_t s, int64_t e, int64_t n)
     return p - (e - s) + n;
 }
 
-/** @brief Where an annotation at line start @p p goes, as a marker does:
- *         text put in at its line's start pushes it along. */
+/** @brief Where an annotation at line start @p p goes when [s, e) becomes
+ *         n bytes: one at @p s moves past the new text, one after @p s up
+ *         to @p e moves to @p s. */
 static int64_t
 map_line(int64_t p, int64_t s, int64_t e, int64_t n)
 {
@@ -79,7 +80,8 @@ inside_crlf(const tiku_editdoc_t *doc, int64_t p)
            tiku_ed_bytes_at(b, (ptrdiff_t)p) == '\n';
 }
 
-/** @brief Free annotation @p a's text and its slot. */
+/** @brief Free annotation @p a's text and its slot, and raise the
+ *         annotation serial. */
 static void
 annotation_drop(tiku_editdoc_t *doc, tiku_ed_annotation_t *a)
 {
@@ -263,8 +265,9 @@ tiku_editdoc_indicators_clear(tiku_editdoc_t *doc, uint32_t kinds)
     return removed;
 }
 
-/** @brief Whether @p d comes before @p best going @p backward from where
- *         the search started: the nearer start, then the wider range. */
+/** @brief Whether @p d is taken over @p best in a search forward, or with
+ *         @p backward back: the start nearer the search's position, then
+ *         the wider range. */
 static int
 nearer(const tiku_ed_indicator_t *d, const tiku_ed_indicator_t *best,
        int backward)

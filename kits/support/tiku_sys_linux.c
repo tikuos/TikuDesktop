@@ -6,8 +6,8 @@
  *
  * tiku_sys_linux.c - the machine underneath, as Linux describes it.
  *
- * The twin of tiku_sys_darwin.c; the Makefile compiles one of the two
- * and the rest of the tree never learns which.
+ * The Linux definitions of tiku_sys.h; mk/kits.mk compiles this file or
+ * tiku_sys_darwin.c.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -88,9 +88,7 @@ tiku_sys_fault_pc(const void *context)
 #elif defined(__arm__)
     return (void *)(uintptr_t)uc->uc_mcontext.arm_pc;
 #else
-    /* An architecture nobody has run this on yet: the frame walk still
-     * writes what it can, and one line of the report is missing rather
-     * than the report. */
+    /* Another architecture: no program counter. */
     return NULL;
 #endif
 }
@@ -124,8 +122,7 @@ tiku_sys_processes(void (*fn)(const tiku_sys_process_t *process, void *ctx),
             stat(path, &owner) != 0 || owner.st_uid != me) {
             continue;
         }
-        /* An empty command line denotes a kernel thread, which has no
-         * image or windows for a person to activate. */
+        /* An empty command line is a kernel thread's. */
         if (snprintf(path, sizeof path, "/proc/%s/cmdline",
                      entry->d_name) < 0) {
             continue;
@@ -139,12 +136,8 @@ tiku_sys_processes(void (*fn)(const tiku_sys_process_t *process, void *ctx),
         if (length == 0u) {
             continue;
         }
-        /* The IMAGE, not argv[0]: a program started by a relative name
-         * is remembered by that name in its command line, and a caller
-         * handed it cannot find the file.  /proc/<pid>/exe answers for
-         * a process of this user's own, which is the only kind offered
-         * here; one that has gone since the directory was read has no
-         * row worth offering. */
+        /* The executable's path, from /proc/<pid>/exe; a process that
+         * has exited since the directory was read is skipped. */
         if (snprintf(path, sizeof path, "/proc/%s/exe", entry->d_name) < 0) {
             continue;
         }
@@ -244,8 +237,9 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
 
     self = (self != NULL) ? self + 1 : raw;
     (void)sscanf(self, "%63[^(]", leaf);
-    /* An offset into this build, which only a symboliser can name; a
-     * library's own symbol stands as it is. */
+    /* An offset into TikuDesktop is named by addr2line, against the
+     * running program's image; a symbol a library frame already has is
+     * printed as it is. */
     if (paren != NULL && paren[1] == '+' &&
         strcmp(leaf, "TikuDesktop") == 0) {
         char image[512], cmd[700], line[160];
@@ -266,8 +260,8 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
             }
             line[strcspn(line, "\n")] = '\0';
             if (strncmp(line, "??", 2) == 0) {
-                /* An offset this build does not have: the report is an
-                 * earlier build's, and only its own binary could say. */
+                /* addr2line does not know the offset: the report is an
+                 * earlier build's. */
                 snprintf(out, max, "an earlier build's %.*s",
                          (int)strcspn(paren + 1, ")"), paren + 1);
             } else {
@@ -302,8 +296,7 @@ tiku_sys_process_pin(int fd, long *pid)
     if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &size) != 0) {
         return -1;
     }
-    /* Never init, never the caller, never another user's: the dialog
-     * this serves can stop a program for good. */
+    /* Refuse init, this process, and another user's process. */
     if (size != sizeof cred || cred.uid != geteuid() ||
         cred.pid <= 1 || cred.pid == getpid()) {
         errno = EPERM;
@@ -325,8 +318,7 @@ tiku_sys_process_pin(int fd, long *pid)
     }
     return handle;
 #else
-    /* A kernel without SO_PEERPIDFD cannot hold a process, and holding
-     * the NUMBER would be the bug this exists to avoid. */
+    /* Built without SO_PEERPIDFD: nothing is pinned. */
     (void)fd;
     (void)pid;
     errno = ENOTSUP;
@@ -349,39 +341,27 @@ tiku_sys_process_kill(int handle)
 int
 tiku_sys_reserve(int fd, long long bytes)
 {
-    /* A sparse tmpfs mapping can succeed then SIGBUS on the first write;
-     * this is the call that says so now instead. */
+    /* A mapping over a sparse tmpfs file can be made and then raise
+     * SIGBUS on the first write; posix_fallocate() refuses up front. */
     return posix_fallocate(fd, 0, (off_t)bytes);
 }
 
-/**
- * @brief Run an open serial line at exactly @p baud.
- *
- * Nothing to do here and nothing that can be done.  Linux names every
- * rate this tree offers as a termios constant, so the ordinary call
- * already set it and this is only reached when a rate was asked for
- * that the line itself refused -- which no second way would change.
- */
 int
 tiku_sys_serial_speed(int fd, int baud)
 {
+    /* Every rate the tree uses has a termios constant here: there is
+     * nothing more to try. */
     (void)fd;
     (void)baud;
     return -1;
 }
 
-/**
- * @brief The serial ports a board could be on the other end of.
- *
- * udev writes a directory of stable names, and the name carries the
- * probe: J-Link (Nordic/Ambiq/Renesas kits), CDC (Pico), FTDI (the
- * FR5994 rig), TikuOS (a board whose console is its OWN USB port, the
- * LM20 native-USB build -- the probe is off the console path there, so
- * the port carries the device's name).
- */
 int
 tiku_sys_serial_ports(char out[][256], int max)
 {
+    /* udev's stable names carry the probe or board: a J-Link, a CDC
+     * device, an FT232 bridge, a Pico, or a board whose own USB port
+     * carries its console under the TikuOS name. */
     static const char *dir = "/dev/serial/by-id";
     DIR *d = opendir(dir);
     struct dirent *e;
@@ -401,8 +381,7 @@ tiku_sys_serial_ports(char out[][256], int max)
             strstr(e->d_name, "Pico")   == NULL) {
             continue;
         }
-        /* by-id names run long; a truncated path would open the wrong
-         * device or nothing, so drop the entry instead. */
+        /* A path too long for out[] is skipped, not cut. */
         if (strlen(dir) + strlen(e->d_name) + 2u > 256u) {
             continue;
         }

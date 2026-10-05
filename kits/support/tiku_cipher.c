@@ -5,10 +5,10 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_cipher.c - RC4; AES with 128, 192 and 256-bit keys (FIPS 197),
- * a byte at a time with no tables but the S-box, which each key
- * computes for itself: nothing shared between the threads that use it;
- * DES and triple DES (FIPS 46-3, SP 800-67), and RC2 (RFC 2268), for the
- * key files and envelopes that still use them.
+ * a byte at a time, with the S-box and its inverse computed into each
+ * key's context, so no table is shared between threads; DES and triple
+ * DES (FIPS 46-3, SP 800-67); and RC2 (RFC 2268), which some key files
+ * and envelopes are sealed with.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -78,8 +78,9 @@ gmul(unsigned char a, unsigned char b)
     return p;
 }
 
-/** @brief The S-box and its inverse, from the field: 3 generates it, the
- *         inverse is found alongside, and the affine map is applied. */
+/** @brief Compute the S-box and its inverse into @p c: walk the field by
+ *         powers of 3, keep each power's multiplicative inverse, and put
+ *         that inverse through the affine map. */
 static void
 sboxes(tiku_aes_t *c)
 {
@@ -380,8 +381,8 @@ des_f(uint32_t r, uint64_t k)
     return (uint32_t)permute(out, des_p, 32, 32);
 }
 
-/** @brief One block through one key, forwards or (with @p back) the round
- *         keys the other way. */
+/** @brief One block through one key's sixteen rounds; with @p back the
+ *         round keys run in reverse order, which deciphers. */
 static uint64_t
 des_block(const uint64_t *rk, uint64_t in, int back)
 {
@@ -510,7 +511,7 @@ tiku_rc2_init(tiku_rc2_t *c, const unsigned char *key, size_t n, int bits)
     return 0;
 }
 
-/** @brief @p x turned left by @p n bits, as 16. */
+/** @brief @p x turned left by @p n bits, as a 16-bit value. */
 static uint16_t
 rotl16(uint16_t x, int n)
 {

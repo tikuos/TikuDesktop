@@ -33,14 +33,14 @@ typedef struct {
     tiku_edit_pos_t line_start; /* the line's first byte                */
     int64_t width;              /* pixels a row holds                   */
     tiku_edit_pos_t row_start;  /* the row being filled                 */
-    int64_t x0;                 /* and its x                            */
-    tiku_edit_pos_t opp;        /* where it may break, -1 nowhere yet   */
-    int64_t opp_x;              /* and the x there                      */
+    int64_t x0;                 /* line x at row_start                  */
+    tiku_edit_pos_t opp;        /* where the row may break, or -1       */
+    int64_t opp_x;              /* line x at opp                        */
     int blank;                  /* the last character was a blank       */
     int64_t rows;               /* rows started                         */
-    int keep;                   /* keep where they start                */
-    tiku_cv_wrap_t *entry;      /* where they are kept, once a second
-                                   row starts                           */
+    int keep;                   /* keep where the rows start            */
+    tiku_cv_wrap_t *entry;      /* where the row starts are kept,
+                                   once a second row starts             */
 } wrap_walk_t;
 
 int
@@ -115,9 +115,9 @@ take_entry(tiku_codeview_t *v, int64_t line)
     return e;
 }
 
-/** @brief Start a row at @p pos, @p x; the rows are kept from the second
- *         on when the walk keeps them, and no longer once there is no
- *         room. */
+/** @brief Start a row at @p pos, @p x.  A walk that keeps rows starts
+ *         keeping them, the first included, when the second starts, and
+ *         stops once there is no room. */
 static void
 new_row(wrap_walk_t *w, tiku_edit_pos_t pos, int64_t x)
 {
@@ -173,8 +173,8 @@ mapped(const tiku_codeview_t *v, int64_t line)
 
 /** @brief Count @p line's rows, its text's and its annotations', and put
  *         the count in the map; with @p keep, a line whose text takes more
- *         than one row also keeps where they start, in the entry
- *         returned.  @return the count. */
+ *         than one row also keeps where they start, in the entry put in
+ *         @p kept.  @return the count. */
 static int64_t
 measure(tiku_codeview_t *v, int64_t line, int keep, tiku_cv_wrap_t **kept)
 {
@@ -538,8 +538,8 @@ tiku_cv_rows_change(tiku_codeview_t *v, int64_t first, int64_t last_old,
         else if (v->wraps[k].line > last_old)
             v->wraps[k].line += delta;
     }
-    /* The changed lines keep the rows they had between them until they
-     * are counted: all on the first, or one each when there are more. */
+    /* Until they are counted, one changed line keeps the rows the changed
+     * lines had between them, and several get one row each. */
     was = tiku_ed_lines_start(&v->row_map, last_old + 1) -
           tiku_ed_lines_start(&v->row_map, first);
     for (i = last_old; i > first; i--)
@@ -548,8 +548,7 @@ tiku_cv_rows_change(tiku_codeview_t *v, int64_t first, int64_t last_old,
         tiku_ed_lines_shift(&v->row_map, first, last_new - first + 1 - was);
         one_rows(v, first + 1, last_new - first);
     }
-    /* The changed lines are shown and unfolded: nothing edited is left
-     * out of sight. */
+    /* The changed lines are shown and unfolded. */
     for (i = first; i <= last_old; i++)
         v->folds -= (v->row_fold[i] & TIKU_CV_FOLDED) != 0;
     if (v->row_lines > last_old + 1) {
@@ -643,7 +642,7 @@ tiku_codeview_wrapping(tiku_codeview_t *view)
 /** @brief Keep the first row inside the document, on a shown line no
  *         further down than where the last row is shown in the last whole
  *         row, and the text unscrolled across while it wraps; count the
- *         lines shown. */
+ *         rows of the lines shown. */
 static void
 clamp_rows(tiku_codeview_t *v)
 {

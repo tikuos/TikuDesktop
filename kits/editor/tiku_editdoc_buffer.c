@@ -23,7 +23,7 @@
 #define INITIAL_GROW   8        /* the first growth step, in elements   */
 
 /** @brief Move the gap of a buffer of @p elem-byte elements so it starts
- *         at @p pos; upstream GapTo. */
+ *         at @p pos. */
 static void
 gap_to(void *body, ptrdiff_t *part1, ptrdiff_t gap, ptrdiff_t pos, size_t elem)
 {
@@ -43,9 +43,9 @@ gap_to(void *body, ptrdiff_t *part1, ptrdiff_t gap, ptrdiff_t pos, size_t elem)
     *part1 = pos;
 }
 
-/** @brief The capacity a buffer grows to for @p extra more elements, the
- *         growth step doubled as the buffer grows; upstream RoomFor.
- *         @return 0 when the arithmetic would overflow. */
+/** @brief The capacity a buffer grows to for @p extra more elements and
+ *         a growth step, the step doubled while it is under a sixth of
+ *         the capacity.  @return 0 when the arithmetic would overflow. */
 static ptrdiff_t
 grown_size(ptrdiff_t capacity, ptrdiff_t extra, ptrdiff_t *grow, size_t elem)
 {
@@ -118,8 +118,8 @@ tiku_ed_bytes_delete(tiku_ed_bytes_t *b, ptrdiff_t pos, ptrdiff_t n)
     if (n <= 0 || pos < 0 || n > b->length - pos)
         return;
     if (pos == 0 && n == b->length) {
-        /* Upstream frees the storage here; keeping it lets a commit that
-         * empties the text refill it without allocating. */
+        /* The storage is kept, so a commit that empties the text can
+         * refill it without allocating. */
         b->length = 0;
         b->part1 = 0;
         b->gap = b->capacity;
@@ -282,8 +282,7 @@ tiku_ed_starts_add(tiku_ed_starts_t *v, ptrdiff_t start, ptrdiff_t end,
 
     if (start < 0 || end > v->length || start >= end)
         return;
-    /* The run before the gap, then the run after it; upstream
-     * Partitioning::RangeAddDelta. */
+    /* The run before the gap, then the run after it. */
     first = v->part1 < end ? v->part1 : end;
     for (; i < first; i++)
         v->body[i] += delta;

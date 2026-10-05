@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BN_LIMBS 264                /* 8448 bits: 8192 and room over     */
+#define BN_LIMBS 264                /* 8448 bits: 8192 and 8 limbs more  */
 
 /** @brief A number: limbs low first, the top one not zero. */
 typedef struct {
@@ -63,7 +63,7 @@ bn_copy(bn_t *r, const bn_t *a)
 }
 
 /** @brief @p len big-endian bytes as a number.  @return 0, or -1 when it
- *         has more limbs than a number holds. */
+ *         takes more than BN_LIMBS - 4 limbs. */
 static int
 bn_read(bn_t *a, const unsigned char *b, size_t len)
 {
@@ -110,7 +110,7 @@ bn_write(const bn_t *a, unsigned char *b, size_t len)
     return 0;
 }
 
-/** @brief @p hex, digits only, as a number. */
+/** @brief @p hex, lower-case hex digits and nothing else, as a number. */
 static void
 bn_hex(bn_t *a, const char *hex)
 {
@@ -254,8 +254,9 @@ bn_mul(bn_t *r, const bn_t *a, const bn_t *b)
     return 0;
 }
 
-/** @brief @p r = @p a mod @p m, bit by bit: for the few plain reductions
- *         a key needs.  @p m is not zero; @p r may be @p a. */
+/** @brief @p r = @p a mod @p m, one bit of @p a at a time; @p r may be
+ *         @p a.
+ *  @note @p m must not be zero. */
 static void
 bn_mod(bn_t *r, const bn_t *a, const bn_t *m)
 {
@@ -284,7 +285,7 @@ bn_mod(bn_t *r, const bn_t *a, const bn_t *m)
 /* --------------------------------------------------------- Montgomery  */
 
 /** @brief Montgomery products modulo @p m.  @return 0, or -1 for an even
- *         or empty modulus. */
+ *         or empty modulus, or one over BN_LIMBS - 4 limbs. */
 static int
 mont_init(mont_t *M, const bn_t *m)
 {
@@ -347,7 +348,7 @@ mont_mul(const mont_t *M, bn_t *r, const bn_t *a, const bn_t *b)
     r->n = n + 1;
     memcpy(r->d, t, (size_t)(n + 1) * sizeof t[0]);
     bn_trim(r);
-    if (bn_cmp(r, &M->m) >= 0) {    /* below twice the modulus: once */
+    if (bn_cmp(r, &M->m) >= 0) {    /* r < 2m, so one subtraction */
         bn_sub(r, r, &M->m);
     }
 }
@@ -381,15 +382,16 @@ mont_exp(const mont_t *M, bn_t *r, const bn_t *a, const bn_t *e)
         }
     }
     mont_mul(M, r, &t[16], &one);       /* out of R */
-    memset(t, 0, 17 * sizeof *t);       /* a private exponent's traces */
+    memset(t, 0, 17 * sizeof *t);       /* a private power's working values */
     free(t);
     return 0;
 }
 
 /* ---------------------------------------------------------------- RSA  */
 
-/** @brief The key's modulus and its length in bytes, for a key this reads.
- *         @return the length, or 0. */
+/** @brief The key's modulus into @p n.  @return its length in bytes, or
+ *         0 for one missing, even, or outside 512 to TIKU_RSA_MAX_BITS
+ *         bits. */
 static size_t
 rsa_modulus(const tiku_rsa_key_t *key, bn_t *n)
 {
@@ -403,7 +405,7 @@ rsa_modulus(const tiku_rsa_key_t *key, bn_t *n)
     return k;
 }
 
-/** @brief @p x to the power @p e mod @p n.  @return 0, or -1. */
+/** @brief @p r = @p x to the power @p e mod @p n.  @return 0, or -1. */
 static int
 power_mod(bn_t *r, const bn_t *x, const tiku_num_t *e, const bn_t *n)
 {
@@ -441,7 +443,7 @@ rsa_crt(const tiku_rsa_key_t *k, const bn_t *c, bn_t *m)
         ok = ok && power_mod(&b[4], &b[5], &k->dq, &b[1]) == 0;
     }
     if (ok) {
-        bn_mod(&b[5], &b[4], &b[0]);    /* m2 within p, to take away */
+        bn_mod(&b[5], &b[4], &b[0]);    /* m2 mod p, to subtract */
         if (bn_cmp(&b[3], &b[5]) < 0) {
             ok = bn_add(&b[3], &b[3], &b[0]) == 0;
         }
@@ -482,8 +484,8 @@ rsa_private(const tiku_rsa_key_t *key, const unsigned char *in, size_t inlen,
 }
 
 /** @brief The key's public power of the signature @p sig, as the @p k
- *         bytes of @p em; a signature short of @p k bytes, as a careless
- *         signer writes one, is read as its number.  @return 0, or -1. */
+ *         bytes of @p em; a signature shorter than @p k bytes, its leading
+ *         zeros left off, is read as its number.  @return 0, or -1. */
 static int
 rsa_public(const tiku_rsa_key_t *key, const unsigned char *sig, size_t siglen,
            unsigned char *em, size_t k)
@@ -617,9 +619,10 @@ tiku_rsa_verify(const tiku_rsa_key_t *key, int alg,
 }
 
 /**
- * @brief EMSA-PSS's encoded message @p em, the modulus @p bits long and
- *        @p k bytes in all, unmasked with MGF1 over @p mgf (RFC 8017 9.1.2
- *        steps 3-10): its data block ending where H begins.
+ * @brief EMSA-PSS's encoded message @p em: @p bits bits, one fewer than
+ *        the modulus has, in its @p k bytes, unmasked with MGF1 over
+ *        @p mgf (RFC 8017 9.1.2 steps 3-10): its data block ending where
+ *        H begins.
  * @return where the salt starts, with its length in @p salt_len and the
  *         block's end in @p db; or -1 for an encoding that is not one.
  */
@@ -793,7 +796,7 @@ typedef struct {
     mont_t f;                       /* the field                         */
     bn_t   a, b, n;                 /* a, b as aR, bR; the group order   */
     int    bytes;                   /* a field element's bytes           */
-    pt_t   g, q, acc, sum;          /* the base, the key, two at work    */
+    pt_t   g, q, acc, sum;          /* G, the key, a running sum, G + Q  */
     bn_t   t[14];                   /* the formulas' working numbers     */
 } ec_t;
 
@@ -1027,7 +1030,8 @@ ec_ready(ec_t *c, int id)
     return 0;
 }
 
-/** @brief @p r = @p a @p b mod the group order. */
+/** @brief @p r = @p a @p b mod the group order.  @return 0, or -1 when
+ *         the product would not fit. */
 static int
 order_mul(ec_t *c, bn_t *r, const bn_t *a, const bn_t *b)
 {
@@ -1056,7 +1060,7 @@ tiku_ecdsa_verify(int curve, const unsigned char *q, size_t qlen,
         mont_init(order, &c->n) != 0) {
         goto done;
     }
-    shift = (int)dlen * 8 - bn_bits(&c->n);  /* e: the leftmost bits */
+    shift = (int)dlen * 8 - bn_bits(&c->n);  /* e: as many top bits as n has */
     if (shift > 0) {
         bn_shr(&b[2], shift);
     }

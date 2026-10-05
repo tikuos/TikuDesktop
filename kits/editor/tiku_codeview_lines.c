@@ -338,7 +338,7 @@ ordered(const tiku_codeview_t *v, tiku_edit_pos_t *lo, tiku_edit_pos_t *hi)
     return TIKU_EDIT_OK;
 }
 
-/** @brief The ink of byte @p at of @p line's colouring @p runs, @p n of
+/** @brief The ink of byte @p at of a line's colouring @p runs, @p n of
  *         them; past them, plain. */
 static tiku_ink_t
 ink_at(const tiku_span_t *runs, size_t n, int64_t at)
@@ -722,8 +722,8 @@ comment_point(const tiku_codeview_t *v, const tiku_codeview_rules_t *r,
 #define SOME_TEXT   0x1     /* a line holds text                        */
 #define ALL_MARKED  0x2     /* every line holding text is commented      */
 
-/** @brief Which of lines @p first to @p last hold text and whether all of
- *         those are commented; the least indentation among them in
+/** @brief Whether any of lines @p first to @p last hold text and whether
+ *         all of those are commented; the least indentation among them in
  *         @p least. */
 static int
 comment_scan(const tiku_codeview_t *v, const tiku_codeview_rules_t *r,

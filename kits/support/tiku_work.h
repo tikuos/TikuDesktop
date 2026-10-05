@@ -1,15 +1,15 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_work.h - workers for anything that waits.
  *
- * The loop is the one owner of the desk's state.  A job is what it
- * hands to a worker: self-contained, touching nothing it was not given,
- * returning a result the loop applies on its next turn.  The kit is two
- * rings -- requests in, results out -- and a few threads that take from
- * the one and put on the other.
+ * The loop thread posts a job; a worker thread runs it with nothing but
+ * what its context holds; the loop collects the finished job on a later
+ * turn and applies its result.  The jobs wait in one fixed table, from
+ * which a small pool of worker threads takes them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,18 +19,17 @@
 
 #include <stddef.h>
 
-#define TIKU_WORK_KEY 48                  /* room for a key, with its end */
+#define TIKU_WORK_KEY 48                  /* a key's bytes, with its NUL */
 
 /**
  * @brief One piece of work.
  *
- * @c run is called on a worker with @c ctx, and may take as long as it
- * likes; it must touch nothing but what @c ctx holds.  @c done is called
- * on the loop, from tiku_work_collect(), once @c run has returned; it is
- * not called for a job cancelled first.  @c free is called on the loop
- * after @c done, or instead of it, and may be NULL.  Jobs sharing a
- * @c key run one at a time, in the order posted; an empty key runs
- * beside anything.
+ * @c run is called on a worker thread with @c ctx; it may block, and
+ * touches nothing but what @c ctx holds.  @c done is called on the loop,
+ * from tiku_work_collect(), after @c run returns, unless the job was
+ * cancelled; @c free is called there after @c done, or in its place.
+ * Either may be NULL.  Jobs sharing a @c key run one at a time, in the
+ * order posted; a job with an empty key runs beside anything.
  */
 typedef struct tiku_work_job {
     void (*run)(void *ctx);
@@ -41,30 +40,35 @@ typedef struct tiku_work_job {
 } tiku_work_job_t;
 
 /**
- * @brief Hand @p job to a worker.  Loop thread only.
- * @return 0 when queued; -1 when the ring is full or the job has no run.
+ * @brief Copy @p job into the table for a worker, starting the workers on
+ *        the first call; a key is cut to TIKU_WORK_KEY - 1 bytes.
+ * @return 0 when queued; -1 when the table is full or the job has no run.
+ * @note Loop thread only.
  */
 int tiku_work_post(const tiku_work_job_t *job);
 
 /**
  * @brief Run @c done, then @c free, for every job finished since last
- *        time.  Loop thread only; called once a turn.
+ *        time, and free its slot.
  *
- * Takes what is finished at entry: a job posted from a @c done here is
- * collected next turn, not looped on.
+ * Takes the jobs finished at entry; a job posted from a @c done here is
+ * collected by a later call.
  * @return how many were collected.
+ * @note Loop thread only; call it once a turn.
  */
 int tiku_work_collect(void);
 
 /**
- * @brief Cancel every job under @p key.  A job not yet started never
- *        runs; one running sees tiku_work_cancelled() say so and may
- *        stop early.  Neither has its @c done called.
+ * @brief Cancel every queued or running job under @p key.  A job not yet
+ *        started never runs; one running sees tiku_work_cancelled() say
+ *        so and may stop early.  Neither has its @c done called.
  * @return how many were marked.
  */
 int tiku_work_cancel(const char *key);
 
-/** @brief For a running job: whether it was cancelled.  Any thread. */
+/** @brief Whether the running job whose context is @p ctx was
+ *         cancelled; 0 when no running job has it.
+ *  @note Any thread. */
 int tiku_work_cancelled(const void *ctx);
 
 /** @brief Jobs posted and not yet collected. */

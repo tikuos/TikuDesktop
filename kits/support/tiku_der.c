@@ -17,7 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DER_DEPTH 32                /* indefinite lengths within others */
+/* How deep indefinite lengths, and strings cut in pieces, may nest. */
+#define DER_DEPTH 32
 
 /** @brief The element at @p p, @p depth deep in indefinite ones. */
 static int
@@ -80,7 +81,7 @@ tiku_der_read(const unsigned char *p, size_t n, tiku_der_t *e)
     tiku_der_t t;
 
     if (p == NULL || der_read(p, n, &t, 0) != 0) {
-        memset(e, 0, sizeof *e);    /* nothing half-read left to trust */
+        memset(e, 0, sizeof *e);
         return -1;
     }
     *e = t;
@@ -256,7 +257,8 @@ tiku_der_uint(const tiku_der_t *e, const unsigned char **b, size_t *n)
 }
 
 /** @brief Code point @p cp as UTF-8 onto @p out at @p *at, if it fits;
- *         a control character as a space. */
+ *         a control character as a space, a surrogate or a code point
+ *         past U+10FFFF as U+FFFD. */
 static void
 put_utf8(char *out, size_t cap, size_t *at, unsigned long cp)
 {

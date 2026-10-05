@@ -33,9 +33,9 @@ found_empty(const tiku_codeview_t *v, const tiku_edit_query_t *q,
            memcmp(v->zero_pattern, q->text, q->length) == 0;
 }
 
-/** @brief Note the match Find selected at @p at: @p pattern, the query's
- *         text when the match is empty or else NULL, kept with what tells
- *         the same match again. */
+/** @brief Note the match Find selected at @p at, with the query's flags,
+ *         the document's generation and the selection's serial; @p pattern
+ *         is the query's text when the match is empty, else NULL. */
 static void
 remember(tiku_codeview_t *v, const tiku_edit_query_t *q, char *pattern,
          tiku_edit_pos_t at)
@@ -49,9 +49,9 @@ remember(tiku_codeview_t *v, const tiku_edit_query_t *q, char *pattern,
 }
 
 /** @brief Find as tiku_codeview_find() does; a forward regex search from
- *         an empty selection starts a character on, so as not to find the
- *         same empty match again, when it is the one the last Find
- *         selected or with @p skip. */
+ *         an empty selection starts a character on, past that empty
+ *         match, when it is the one the last Find selected or with
+ *         @p skip. */
 static tiku_edit_status_t
 find_next(tiku_codeview_t *view, const tiku_edit_query_t *q, int backward,
           int skip, tiku_codeview_found_t *out)

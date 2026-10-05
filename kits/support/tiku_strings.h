@@ -6,14 +6,10 @@
  *
  * tiku_strings.h - the words the interface is made of.
  *
- * Every line a person reads is named rather than written in the code, so
- * the words can be changed without a compiler and translated without
- * touching a source file.  A key -- "menu.about" -- stands for a line;
- * the lines themselves live in strings/<lang>.xml, and the English is
- * baked in as well so the interface has words even with no file at all.
- *
- * The device can now draw Greek, Cyrillic and CJK (see the font work),
- * so a translation is a thing a reader actually sees, not just stores.
+ * A key such as "menu.about" names a line the interface shows.  The
+ * English lines are compiled in from assets/strings/en.xml; a translation
+ * is read at run time from <lang>.xml, and any line it lacks stays in
+ * English.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,23 +19,31 @@
 /**
  * @brief The line named @p key, in the language in force.
  *
- * Never NULL: a key with no translation falls back to the baked English,
- * and a key nobody has defined at all falls back to the key itself, so a
- * missing string is visible rather than a blank.
+ * Never NULL: a key with no translation gives the baked English, a key
+ * with no English either gives the key itself, and a NULL key gives "".
  */
 const char *tiku_str(const char *key);
 
 /**
- * @brief Load the translation for @p lang from @p dir, if there is one.
+ * @brief Forget any translation, then load <lang>.xml for @p lang from
+ *        the first place that has it: @p dir, $TIKU_STRINGS,
+ *        ~/.config/tracker/strings, /usr/share/tiku-tracker/strings.
  *
- * @param dir  Where the .xml files are; NULL asks the usual places.
- * @param lang The language, e.g. "fr"; NULL reads it from the environment
- *             ($TIKU_LANG, else $LANG).
- * @return the language actually in force ("en" when nothing was loaded).
+ * @param dir  Where the .xml files are; NULL or "" for the places after.
+ * @param lang The language, e.g. "fr" or "fr_FR.UTF-8"; NULL or "" reads
+ *             it from $TIKU_LANG, else $LANG.  "en", "C" and "POSIX"
+ *             load nothing.
+ * @return the language in force ("en" when nothing was loaded).
  */
 const char *tiku_strings_init(const char *dir, const char *lang);
 
-/** @brief Read one .xml catalogue over the current one.  @return count. */
+/**
+ * @brief Read the .xml catalogue at @p path over the loaded lines; a line
+ *        replaces the one with its key, unless its printf conversions
+ *        differ from the English line's.
+ * @return the lines the file held, the refused ones counted too; 0 when
+ *         it could not be read.
+ */
 int tiku_strings_load_file(const char *path);
 
 /** @brief Forget any loaded translation, back to the baked English. */

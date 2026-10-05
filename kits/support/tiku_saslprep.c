@@ -4,14 +4,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_saslprep.c - SASLprep (RFC 4013) over the tables gensaslprep.py
- * bakes from Unicode 3.2: map, normalize as NFKC (decompose, put each
- * starter's marks in order, compose), prohibit, and check directions
- * (RFC 3454 section 6).
+ * tiku_saslprep.c - SASLprep (RFC 4013) over the tables that
+ * kits/support/tools/gensaslprep.py bakes from Unicode 3.2 at build time:
+ * map, normalize as NFKC (decompose, put each starter's marks in order,
+ * compose), prohibit, and check directions (RFC 3454 section 6).
  *
  * Hangul syllables come apart and together by rule (UAX 15), the rest
- * by table.  A password is short, so each character is looked up as it
- * comes, and nothing is kept between calls.
+ * by table.  Each character is looked up by binary search as it comes,
+ * and nothing is kept between calls.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,7 +25,7 @@
 #include "tiku_saslprep_tables.h"
 
 #define IN_MAX   1024               /* code points a password may have   */
-#define GROW_MAX 18                 /* the most one becomes under NFKD   */
+#define GROW_MAX 18                 /* the most code points one has in NFKD */
 
 /* Hangul syllables by rule (Unicode 3.2, section 3.12). */
 #define S_BASE  0xAC00u
@@ -189,7 +189,7 @@ nfkc(const uint32_t *cp, long n, uint32_t *out)
     for (i = 0; i < n; i++) {
         len += decompose(cp[i], out + len);
     }
-    for (i = 1; i < len; i++) {     /* insertion: stable, starters fixed */
+    for (i = 1; i < len; i++) {     /* stable insertion sort; starters stay */
         uint32_t c = out[i];
         int cc = ccc(c);
 

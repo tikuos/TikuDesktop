@@ -311,7 +311,8 @@ caret_out(tiku_codeview_t *v, int64_t first, int64_t last)
     return st;
 }
 
-/** @brief Fold the region @p line heads, which is shown. */
+/** @brief Fold the region @p line heads; TIKU_EDIT_NOTHING when the line
+ *         is hidden, folded already or heads none. */
 static tiku_edit_status_t
 fold(tiku_codeview_t *v, int64_t line)
 {
@@ -436,9 +437,10 @@ tiku_cv_folds_refit(tiku_codeview_t *v)
     tiku_cv_clamp(v);
 }
 
-/** @brief The line of the region the caret is in: the caret's own line
- *         when it heads one, else the nearest line above heading one that
- *         reaches it; -1 for none. */
+/** @brief The line heading the innermost region @p line is in: @p line
+ *         itself when it heads one, else the nearest shown line above
+ *         whose region reaches it; -1 for none.  The search stops at a
+ *         head more than 4096 lines up whose region does not reach it. */
 static int64_t
 region_at(tiku_codeview_t *v, int64_t line)
 {

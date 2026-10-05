@@ -52,9 +52,10 @@ close_regex(regex_scan_t *r)
 }
 
 /** @brief Compile @p q into @p r for @p doc in the UTF-8 locale.  A query
- *         the literal search would refuse is refused the same way, a
- *         pattern that does not compile with TIKU_EDIT_BAD_PATTERN, and
- *         on a host with no UTF-8 locale any with TIKU_EDIT_INVALID. */
+ *         the literal search in tiku_edit_search.c would refuse is refused
+ *         the same way, a pattern that does not compile with
+ *         TIKU_EDIT_BAD_PATTERN, and on a host with no UTF-8 locale any
+ *         with TIKU_EDIT_INVALID. */
 static tiku_edit_status_t
 open_regex(regex_scan_t *r, tiku_editdoc_t *doc, const tiku_edit_query_t *q)
 {
@@ -277,10 +278,11 @@ tiku_ed_regex_collect(tiku_editdoc_t *doc, const tiku_edit_query_t *q,
 
 /** @brief A search for one match before or after a position. */
 typedef struct {
-    tiku_edit_pos_t from;       /* at or after it, or before it         */
-    int backward;               /* which of the two                     */
+    tiku_edit_pos_t from;       /* the position searched from           */
+    int backward;               /* nonzero: the last match before from;
+                                   0: the first at or after it          */
     int found;                  /* a match is kept                      */
-    tiku_edit_range_t match;    /* the one kept                         */
+    tiku_edit_range_t match;    /* the match kept                       */
 } pick_t;
 
 /** @brief Keep the first match starting at or after the position, or the
@@ -452,12 +454,12 @@ expand(const regex_scan_t *r, const char *text, const regmatch_t *m,
 typedef struct {
     regex_scan_t *scan;         /* the query compiled                   */
     const char *with;           /* the replacement asked for            */
-    size_t length;              /* its bytes                            */
+    size_t length;              /* bytes in with                        */
     tiku_edit_replace_t *edits; /* each match's replacement             */
-    size_t count;               /* how many                             */
-    size_t capacity;            /* room                                 */
+    size_t count;               /* replacements in edits                */
+    size_t capacity;            /* room in edits                        */
     int only_one;               /* only the match wanted is replaced    */
-    tiku_edit_range_t wanted;   /* that match                           */
+    tiku_edit_range_t wanted;   /* the match wanted, with only_one      */
 } replacements_t;
 
 /** @brief Room in @p g for one replacement more. */

@@ -1,11 +1,20 @@
-/* Application bundle metadata, deliberately independent of the app loader.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_manifest.c - reading an application bundle's manifest.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_manifest.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 
-/* Names used as identities and local filenames cannot escape a bundle. */
+/** @brief Whether @p s can name a file in the bundle without leaving it:
+ *         letters, digits, '.', '_' and '-', and neither "." nor "..". */
 static int identifier(const char *s)
 {
     if (!*s || !strcmp(s, ".") || !strcmp(s, "..")) return 0;
@@ -14,10 +23,10 @@ static int identifier(const char *s)
     return 1;
 }
 
-/* Parse into a temporary object: failure never publishes partial metadata. */
 int tiku_manifest_read(const char *path, tiku_manifest_t *out,
                        char *error, size_t max)
 {
+    /* Read into a copy, so a refused file leaves @p out as it was. */
     tiku_manifest_t m = {0};
     struct field { const char *key; char *dst; size_t cap; } fields[] = {
         {"id", m.id, sizeof m.id}, {"name", m.name, sizeof m.name},

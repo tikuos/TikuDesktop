@@ -78,10 +78,10 @@ tiku_codeview_get_style(const tiku_codeview_t *view, unsigned id,
     return TIKU_EDIT_OK;
 }
 
-/** @brief Whether @p count levels can be folded by in the document at
- *         @p generation: one for each line, with no bits but the depth
- *         and the header flag, and each header followed by a deeper
- *         line. */
+/** @brief TIKU_EDIT_OK when @p count levels can be folded by in the
+ *         document at @p generation: one for each line, with no bits but
+ *         the depth and the header flag, and each header followed by a
+ *         deeper line; else the status saying which does not hold. */
 static tiku_edit_status_t
 levels_ok(const tiku_codeview_t *v, const uint32_t *levels, size_t count,
           uint64_t generation)

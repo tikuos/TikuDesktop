@@ -216,8 +216,9 @@ tiku_edit_collect(tiku_editdoc_t *doc, const tiku_edit_query_t *q,
 
 /** @brief A search for one match before or after a position. */
 typedef struct {
-    tiku_edit_pos_t limit;      /* at or after it, or before it         */
-    int before;                 /* which of the two                     */
+    tiku_edit_pos_t limit;      /* the position searched from           */
+    int before;                 /* nonzero: the last match before limit;
+                                   0: the first at or after it          */
     int found;
     tiku_edit_range_t match;
 } pick_t;

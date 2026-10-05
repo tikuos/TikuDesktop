@@ -4,9 +4,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_codeview_guides.c - aids drawn behind the text that change none
- * of it: a ruler at a column, dotted guides at each level of a line's
- * indentation, and the zoom of the view's monospaced face.
+ * tiku_codeview_guides.c - a ruler at a column and dotted guides at each
+ * level of a line's indentation, drawn behind the text, and the zoom of
+ * the view's monospaced face.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

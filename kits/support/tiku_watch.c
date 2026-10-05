@@ -1,14 +1,15 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_watch.c - noticing that a turn has not ended.
  *
- * The watching thread touches one counter and nothing else.  What it
- * does when the count stops moving is ASK the stuck thread to write the
- * report, by a signal: the stack worth having is the stuck one's, and
- * the trail is then read by the thread that writes it.
+ * The watcher thread reads the beat count.  When it stops moving the
+ * watcher sends SIGUSR1 to the loop thread, whose handler writes the
+ * stall report with that thread's stack; when no answer comes, the
+ * watcher writes the report itself, without a stack.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,9 +31,8 @@
 #define LOOK_EVERY_MS   250
 #define ANSWER_WITHIN_MS 1000
 
-/* Volatile because two threads read it and one writes it; a counter is
- * all they share, and a count that is one turn stale is still a count
- * that moved. */
+/* Shared by the loop thread, its SIGUSR1 handler and the watcher thread
+ * without a lock; volatile, so each read goes to memory. */
 static volatile unsigned long beats;
 static volatile int           answered;
 static volatile long          quiet_ms;
@@ -45,7 +45,8 @@ static int       refused;
 static long      last_beat_ms;      /* loop thread only */
 static volatile long longest_ms;
 
-/** @brief On the stuck thread: write what it is in the middle of. */
+/** @brief The SIGUSR1 handler, on the loop thread: write the stall
+ *         report with this thread's stack, and say it answered. */
 static void
 asked_to_say(int sig)
 {
@@ -54,7 +55,7 @@ asked_to_say(int sig)
     answered = 1;
 }
 
-/** @brief Sleep @p ms, whatever else is going on. */
+/** @brief Sleep @p ms; a signal handled on this thread ends it early. */
 static void
 rest(long ms)
 {
@@ -66,11 +67,12 @@ rest(long ms)
 }
 
 /**
- * @brief The watcher: count, and when the count stops, ask.
+ * @brief The watcher thread: look at the beat count every LOOK_EVERY_MS,
+ *        and when it has not moved for after_ms, have a stall report
+ *        written.
  *
- * It never ends anything.  A scan that takes six seconds is a stall to
- * write down, not a program to kill -- and a shell killed by its own
- * watchdog would lose the very thing somebody wanted to read.
+ * The report is written again at 30 s and 120 s of quiet, then every
+ * 120 s.  The watcher never stops the program.
  */
 static void *
 watching(void *ignored)
@@ -94,14 +96,13 @@ watching(void *ignored)
         }
         quiet_ms = quiet;
         answered = 0;
-        /* Asking cuts short a sleep the stuck thread was in -- a
-         * nanosleep is never resumed after a handler, whatever the
-         * handler asked for.  A loop that waits must expect that. */
+        /* The signal cuts short a nanosleep() the loop thread is in,
+         * SA_RESTART or not. */
         (void)pthread_kill(turning, SIGUSR1);
         {
-            /* A thread deep in something the kernel will not interrupt
-             * cannot answer; after a moment the watcher writes what it
-             * has, which is the trail without a stack. */
+            /* A thread in a wait the kernel will not interrupt cannot
+             * answer: after ANSWER_WITHIN_MS the watcher writes the
+             * report itself, with the trail and no stack. */
             long waited = 0L;
 
             while (!answered && waited < ANSWER_WITHIN_MS) {
@@ -113,8 +114,6 @@ watching(void *ignored)
             }
         }
         stalls++;
-        /* Said again as it goes on, so a long stall leaves a record of
-         * being long rather than one of being five seconds. */
         say_at = (say_at < 30000L) ? 30000L
                : (say_at < 120000L) ? 120000L : quiet + 120000L;
     }

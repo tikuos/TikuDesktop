@@ -8,9 +8,6 @@
  * keys, the pointer, the scrollbars and the wheel, through the same layout
  * the view paints with; editing keys go on to tiku_codeview_edit.c.
  *
- * Word moves follow the behaviour of Scintilla's Document::NextWordStart
- * (src/Document.cxx, read for reference; no code taken).
- *
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -27,12 +24,12 @@
  * the desktop's scrollbar rule. */
 #define ARROW_WAIT 12
 #define ARROW_EVERY 4
-/* Bytes of lines a tick counts the rows of while lines wrap. */
+/* Bytes of lines a tick counts the rows of while rows are kept. */
 #define TICK_BYTES ((int64_t)1 << 20)
 
 /** @brief What a character is, for words: a line break, space (a blank
- *         or a control character), part of a word (letters, digits, '_'
- *         and everything past ASCII), or punctuation. */
+ *         or an ASCII control character), part of a word (ASCII letters,
+ *         digits, '_' and every byte past ASCII), or punctuation. */
 enum { RUN_NONE, RUN_BREAK, RUN_SPACE, RUN_WORD, RUN_PUNCT };
 
 /** @brief The run kind of the character starting at @p pos. */
@@ -304,10 +301,10 @@ goal_of(const tiku_codeview_t *v, tiku_edit_pos_t at, int64_t other)
 /**
  * @brief Keep the @p n carets' x in @p g; none kept when there is no room.
  *
- * Rows up and down leave the carets in order, but where the first or last
- * row holds one back and another lands before it there; that one is not
- * found again and goes from its own x, which is the x it landed at.  Of
- * carets that met, the first one's x is found.
+ * Rows up and down leave the carets in order, except where the first or
+ * last row holds a caret back and another lands before it on that row:
+ * goal_of() may then miss a caret there, which goes on from the x it
+ * landed at.  Of carets that met, the first one's x is found.
  */
 static void
 keep_goals(tiku_codeview_t *v, const tiku_cv_goal_t *g, size_t n)
@@ -601,7 +598,7 @@ column(const tiku_codeview_t *v)
     return w > 0 ? w : 1;
 }
 
-/** @brief Scroll by @p delta lines down, or pixels across. */
+/** @brief Scroll by @p delta rows down, or pixels across. */
 static void
 scroll_by(tiku_codeview_t *v, int across, int64_t delta)
 {
@@ -611,7 +608,7 @@ scroll_by(tiku_codeview_t *v, int across, int64_t delta)
         tiku_codeview_scroll_to(v, tiku_cv_top_row(v) + delta, v->left);
 }
 
-/** @brief One arrow's step: a line down, a column across. */
+/** @brief One arrow's step: a row down, a column across. */
 static int64_t
 bar_step(const tiku_codeview_t *v, int across)
 {
@@ -760,7 +757,7 @@ key(tiku_codeview_t *v, const tiku_event_t *e)
 }
 
 /** @brief An event the view's text, scrollbars and caret take, with
- *         @p commit what staging made of it. */
+ *         @p commit the result tiku_text_input_event() gave for it. */
 static int
 dispatch(tiku_codeview_t *view, const tiku_event_t *e, int commit)
 {

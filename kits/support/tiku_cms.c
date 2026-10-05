@@ -4,10 +4,11 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_cms.c - X.509 certificates (RFC 5280) and CMS (RFC 5652): signed
- * data checked -- the content's digest against the signed attributes,
- * those against the signer's key -- with RFC 3161 timestamp tokens
- * checked the same way, and enveloped data opened with an RSA key.
+ * tiku_cms.c - X.509 certificates (RFC 5280) and CMS (RFC 5652).  Signed
+ * data is checked: the content's digest against the signed attributes,
+ * and those against the signer's key.  RFC 3161 timestamp tokens are
+ * signed data and are checked as such.  Enveloped data is opened with an
+ * RSA key.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,9 +20,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CMS_DEPTH 2                 /* a timestamp inside a signature   */
+#define CMS_DEPTH 2                 /* how deep signed data may nest    */
 #define SIG_MISMATCH 100            /* well formed, and not the key's   */
-#define CMS_TRIES 64                /* recipients tried, with no match  */
+#define CMS_TRIES 64                /* the most unnamed recipients tried */
 
 #define OID_SIGNED     "1.2.840.113549.1.7.2"
 #define OID_ENVELOPED  "1.2.840.113549.1.7.3"
@@ -179,7 +180,8 @@ cms_decipher(const tiku_der_t *alg, const unsigned char *key, size_t klen,
 
 /* ------------------------------------------------------ certificates  */
 
-/** @brief The extensions of a certificate: its subject key identifier. */
+/** @brief Read the subject key identifier, the one extension used here,
+ *         from a certificate's extensions @p ext into @p c. */
 static void
 cert_extensions(const tiku_der_t *ext, cms_cert_t *c)
 {
@@ -262,7 +264,8 @@ cms_cert_read(const unsigned char *der, size_t n, cms_cert_t *c)
     return 0;
 }
 
-/** @brief The curves by their names in a key's parameters. */
+/** @brief The TIKU_EC_* curve that @p oid, from a key's parameters,
+ *         names; 0 for another. */
 static int
 curve_of(const tiku_der_t *oid)
 {
@@ -711,7 +714,9 @@ signed_attrs(const signer_info_t *s, const cms_cert_t *cert,
         return say(out, TIKU_SIG_UNCHECKED, "there is no memory to check it");
     }
     memcpy(set, s->attrs.raw, s->attrs.rawlen);
-    set[0] = 0x31;                  /* signed as the SET it is, not [0] */
+    /* The signature covers the attributes under a SET tag; the
+     * SignerInfo holds them under [0]. */
+    set[0] = 0x31;
     over.p = set;
     over.n = s->attrs.rawlen;
     status = sig_check(cert, &s->salg, out->digest, &over, 1, s->sig.body,
@@ -728,10 +733,14 @@ signed_attrs(const signer_info_t *s, const cms_cert_t *cert,
 }
 
 /**
- * @brief One SignerInfo @p si of SignedData, over the content: its signer
- *        found among @p certs; the content's digest held against its
- *        signed attributes, and they, or the content, against its
- *        signature; a timestamp over it checked too.  @return the status.
+ * @brief Check one SignerInfo @p si of a SignedData over @p content.
+ *
+ * Finds the signer's certificate in @p certs and digests the content.  With
+ * signed attributes, the digest is checked against them and the signature
+ * over them; without, the signature is checked over the content.  A
+ * timestamp in the unsigned attributes is checked too, at depth 0 only.
+ *
+ * @return the TIKU_SIG_* status, also stored in out->status.
  */
 static int
 signer(const tiku_der_t *si, const tiku_der_t *certs,
@@ -764,7 +773,8 @@ signer(const tiku_der_t *si, const tiku_der_t *certs,
     } else if ((status = sig_check(&cert, &s.salg, out->digest, content,
                                    npieces, s.sig.body, s.sig.len, out)) ==
                SIG_MISMATCH) {
-        /* Signed as it is: another content and another key look alike. */
+        /* With no signed attributes, a changed content and another key
+         * fail alike. */
         status = say(out, TIKU_SIG_CHANGED, "the content is not what was "
                      "signed, or not by this certificate's key");
     }
@@ -924,8 +934,9 @@ names_key(const tiku_key_t *key, const tiku_der_t *rid)
            !memcmp(serial.body, cert.serial.body, serial.len);
 }
 
-/** @brief The content key recipient @p ri sealed to @p key: RSA with
- *         v1.5 or OAEP.  @return its length in @p out, or -1. */
+/** @brief The content key @p sealed holds, opened with @p key by the
+ *         RSA scheme @p alg names, v1.5 or OAEP.  @return its length,
+ *         the key in @p out, or -1. */
 static long
 content_key(const tiku_key_t *key, const tiku_der_t *alg,
             const tiku_der_t *sealed, unsigned char *out, size_t cap)
@@ -942,7 +953,8 @@ content_key(const tiku_key_t *key, const tiku_der_t *alg,
     if (tiku_der_oid(&oid, OID_RSA_OAEP)) {
         memset(&params, 0, sizeof params);
         (void)tiku_der_next(&c, &params);
-        pss_params(&params, &hash, &mgf, &salt);  /* the same first two */
+        /* OAEP's parameters open with the same two fields as PSS's. */
+        pss_params(&params, &hash, &mgf, &salt);
         if (hash == 0 || mgf == 0) return -1;
     } else if (!tiku_der_oid(&oid, OID_RSA)) {
         return -1;
@@ -998,9 +1010,10 @@ envelope(const unsigned char *der, size_t n, tiku_der_t *ris, tiku_der_t *eci)
            tiku_der_take(&c, TIKU_DER_SEQUENCE, eci) == 0 ? 0 : -1;
 }
 
-/** @brief Recipient @p ri, when it is one @p named (its id names the key's
- *         certificate) or not, opened with @p key.  @return the content's
- *         length with @p out to free(), or -1. */
+/** @brief The content of @p eci, opened with @p key through recipient
+ *         @p ri when its id names the key's certificate (@p named 1) or
+ *         does not (@p named 0).  @return the content's length with
+ *         @p out to free(), or -1. */
 static long
 recipient(const tiku_key_t *key, const tiku_der_t *ri, int named,
           const tiku_der_t *eci, unsigned char **out)
@@ -1037,8 +1050,9 @@ tiku_cms_open(const tiku_key_t *key, const unsigned char *der, size_t n,
     if (key == NULL || envelope(der, n, &ris, &eci) != 0) {
         return -1;
     }
-    /* The recipient named as the key's certificate first; then, for a key
-     * file without one, or a writer that named another, every one. */
+    /* First the recipients whose id names the key's certificate; then,
+     * for a key file without a certificate or a writer that named
+     * another, up to CMS_TRIES of the rest. */
     for (pass = 1; pass >= 0 && got < 0; pass--) {
         tiku_der_enter(&ris, &c);
         while (got < 0 && tiku_der_take(&c, TIKU_DER_SEQUENCE, &ri) == 0 &&

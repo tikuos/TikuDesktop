@@ -24,8 +24,9 @@
 #define LINE_GROW     256       /* the first growth step, in line starts */
 #define BLOCK         128       /* line starts gathered before each add  */
 
-/** @brief Add the pending shift to the starts after it, up to
- *         @p upto; upstream ApplyStep. */
+/** @brief Add the pending shift to the starts after the step's partition
+ *         up to @p upto, which becomes the step's partition; at the last
+ *         partition the shift is used up. */
 static void
 apply_step(tiku_ed_lines_t *l, int64_t upto)
 {
@@ -39,8 +40,8 @@ apply_step(tiku_ed_lines_t *l, int64_t upto)
     }
 }
 
-/** @brief Take the pending shift back off the starts after @p down;
- *         upstream BackStep. */
+/** @brief Take the pending shift back off the starts after @p down, so
+ *         it is pending from there. */
 static void
 back_step(tiku_ed_lines_t *l, int64_t down)
 {
@@ -77,8 +78,8 @@ tiku_ed_lines_free(tiku_ed_lines_t *l)
 void
 tiku_ed_lines_reset(tiku_ed_lines_t *l)
 {
-    /* Upstream DeleteAll frees and inserts again; the two entries are
-     * written into the storage already held. */
+    /* The two entries go into the storage already held, so a reset
+     * never allocates. */
     tiku_ed_starts_delete(&l->body, 0, l->body.length);
     tiku_ed_starts_insert(&l->body, 0, 0);
     tiku_ed_starts_insert(&l->body, 1, 0);
@@ -165,8 +166,11 @@ tiku_ed_lines_set_start(tiku_ed_lines_t *l, int64_t partition, int64_t pos)
 void
 tiku_ed_lines_shift(tiku_ed_lines_t *l, int64_t partition, int64_t delta)
 {
-    /* Point every start after the change further along, lazily: one
-     * pending step, moved or spread only when it has to be. */
+    /* One pending step holds the shift.  With none pending, the change
+     * starts it.  A change at or after the step applies the step up to
+     * the change, and one within a tenth of the line starts before it
+     * moves the step back to the change; delta then joins the step.  A
+     * change further away applies the whole step and starts a new one. */
     if (l->step_length == 0) {
         l->step_partition = partition;
         l->step_length = delta;
@@ -224,15 +228,16 @@ tiku_ed_text_line_cost(const char *s, int64_t n)
 {
     int64_t i, cost = 2;
 
-    /* One per CR or LF, one for splitting a CRLF at the insertion point
-     * and one for the CR the text may end with, added then dropped. */
+    /* An upper bound on the starts an insertion of the text adds: one
+     * per CR or LF, one for splitting a CRLF at the insertion point, and
+     * one spare. */
     for (i = 0; i < n; i++)
         if (s[i] == '\r' || s[i] == '\n')
             cost++;
     return cost;
 }
 
-/** @brief The byte at @p pos, 0 outside, as upstream ValueAt answers. */
+/** @brief The byte at @p pos, 0 outside. */
 static unsigned char
 byte_at(const tiku_ed_text_t *t, int64_t pos)
 {
@@ -319,8 +324,8 @@ tiku_ed_text_delete(tiku_ed_text_t *t, int64_t pos, int64_t n)
     before = byte_at(t, pos - 1);
     next = byte_at(t, pos);
     if (before == '\r' && next == '\n') {
-        /* Deleting from between CR and LF: the LF's line now starts at
-         * pos, and the first LF deleted is not a line going. */
+        /* Deleting from between a CR and its LF: the LF's line starts at
+         * pos, and the first LF deleted removes no line. */
         tiku_ed_lines_set_start(&t->lines, line, pos);
         line++;
         ignore_lf = 1;

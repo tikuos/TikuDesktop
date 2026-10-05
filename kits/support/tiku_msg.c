@@ -6,15 +6,12 @@
  *
  * tiku_msg.c - a message that describes itself.
  *
- * Three structures deep: a message is a code and a list of fields, a
- * field a name, a type and a list of values, a value a run of bytes and
- * how many.  A value is held in memory in the same bytes it goes on the
- * wire in, little-endian with sizes fixed by type, so flattening is a
- * copy and there is one place where a number turns into bytes; a number
- * is decoded when asked for.  A nested message is held flattened, as a
- * run of bytes like any other value: nesting costs nothing to flatten,
- * and reading one is an unflatten of that blob at that one level, so a
- * message a thousand deep is a thousand separate asks, not a stack.
+ * A message is a code and a list of fields; a field is a name, a type
+ * and a list of values; a value is a run of bytes and its length.  A
+ * value is held in the bytes it has on the wire, little-endian, so
+ * flattening is a copy and a number is decoded when asked for.  A nested
+ * message is held flattened, like any other value, and is read back one
+ * level at a time when asked for, so nothing here recurses.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,9 +21,8 @@
 #include "tiku_msg.h"
 
 /*
- * Floats go on the wire as their IEEE 754 bit pattern, little-endian.
- * Every machine this will run on is IEEE; saying so is worth more than
- * the code that would pretend otherwise and be wrong in a different way.
+ * Floats go on the wire as their IEEE 754 bit pattern, little-endian; the
+ * code assumes the host's float and double are IEEE 754.
  */
 
 /** @brief One value: bytes, and how many of them. */
@@ -55,6 +51,7 @@ struct tiku_msg {
 /* Bytes                                                                     */
 /*---------------------------------------------------------------------------*/
 
+/** @brief @p v as two bytes at @p p, little-endian. */
 static void
 enc16(unsigned char *p, uint16_t v)
 {
@@ -62,6 +59,7 @@ enc16(unsigned char *p, uint16_t v)
     p[1] = (unsigned char)((v >> 8) & 0xFFu);
 }
 
+/** @brief @p v as four bytes at @p p, little-endian. */
 static void
 enc32(unsigned char *p, uint32_t v)
 {
@@ -71,6 +69,7 @@ enc32(unsigned char *p, uint32_t v)
     p[3] = (unsigned char)((v >> 24) & 0xFFu);
 }
 
+/** @brief @p v as eight bytes at @p p, little-endian. */
 static void
 enc64(unsigned char *p, uint64_t v)
 {
@@ -78,12 +77,14 @@ enc64(unsigned char *p, uint64_t v)
     enc32(p + 4, (uint32_t)((v >> 32) & 0xFFFFFFFFu));
 }
 
+/** @brief The number in the two little-endian bytes at @p p. */
 static uint16_t
 dec16(const unsigned char *p)
 {
     return (uint16_t)((uint16_t)p[0] | (uint16_t)((uint16_t)p[1] << 8));
 }
 
+/** @brief The number in the four little-endian bytes at @p p. */
 static uint32_t
 dec32(const unsigned char *p)
 {
@@ -91,13 +92,15 @@ dec32(const unsigned char *p)
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
+/** @brief The number in the eight little-endian bytes at @p p. */
 static uint64_t
 dec64(const unsigned char *p)
 {
     return (uint64_t)dec32(p) | ((uint64_t)dec32(p + 4) << 32);
 }
 
-/** @brief How many bytes a value of @p type must be, or 0 when it varies. */
+/** @brief How many bytes a value of @p type must be, or 0 when it varies
+ *         or the type is not one this build knows. */
 static size_t
 fixed_size(tiku_msg_type_t type)
 {
@@ -136,7 +139,7 @@ tiku_msg_new(uint32_t what)
     return m;
 }
 
-/** @brief Let go of one field and everything under it. */
+/** @brief Free @p f's name and values, and leave it empty. */
 static void
 field_drop(field_t *f)
 {
@@ -197,11 +200,12 @@ tiku_msg_set_what(tiku_msg_t *m, uint32_t what)
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief The field called @p name, or NULL.
+ * @brief The first field called @p name, or NULL.
  *
- * The FIRST of that name.  A message this interface built never holds two,
- * since adding merges; one read off a wire may, and then the later one is
- * unreachable by name but still carried, which is the safe way round.
+ * The add calls never make a second field of one name, but
+ * tiku_msg_unflatten() keeps a field that repeats a name: this finds only
+ * the first, while tiku_msg_field_at() and flattening still see the later
+ * one.
  */
 static field_t *
 field_find(const tiku_msg_t *m, const char *name)
@@ -219,7 +223,8 @@ field_find(const tiku_msg_t *m, const char *name)
     return NULL;
 }
 
-/** @brief Room for one more of something. @return 1 when there is. */
+/** @brief Room for @p need items of @p unit bytes at *@p base, growing
+ *         *@p cap by doubling.  @return 1 when there is room, else 0. */
 static int
 grow(void **base, int *cap, int need, size_t unit)
 {
@@ -249,11 +254,11 @@ grow(void **base, int *cap, int need, size_t unit)
 }
 
 /**
- * @brief Append an empty field, or NULL.
+ * @brief Append an empty field of @p type named by the @p n bytes at
+ *        @p name; NULL when out of room.
  *
- * The name is given with its length rather than as a C string, so the
- * unflatten path can point straight into the buffer it is reading instead
- * of copying sixty-four kilobytes of stack around to terminate it.
+ * The name comes with its length, so unflatten can pass a name straight
+ * from its buffer, where no NUL ends it.
  */
 static field_t *
 field_add(tiku_msg_t *m, const char *name, size_t n,
@@ -283,12 +288,13 @@ field_add(tiku_msg_t *m, const char *name, size_t n,
 }
 
 /**
- * @brief Put @p len bytes under @p name as a value of @p type.
+ * @brief Add a copy of the @p len bytes at @p data under @p name as a
+ *        value of @p type.
  *
- * Nothing about @p m changes unless the whole of it works: the bytes are
- * taken first, and a field made for them is unmade again if the value
- * cannot then be hung off it.  A half-added field is the kind of thing
- * that is found much later, in something else.
+ * On failure @p m is left as it was: the bytes are copied first, and a
+ * field made for them is removed again if the value cannot be added.
+ * @return 1, or 0 for a bad argument, a name already holding another
+ *         type, or no room.
  */
 static int
 put(tiku_msg_t *m, const char *name, tiku_msg_type_t type,
@@ -301,13 +307,13 @@ put(tiku_msg_t *m, const char *name, tiku_msg_type_t type,
     if (m == NULL || name == NULL || name[0] == '\0') {
         return 0;
     }
-    if (strlen(name) > 0xFFFFu) {           /* the wire says u16 */
+    if (strlen(name) > 0xFFFFu) {           /* a u16 in the flat form */
         return 0;
     }
     if (len > 0u && data == NULL) {
         return 0;
     }
-    if (len > 0xFFFFFFFFu) {                /* the wire says u32 */
+    if (len > 0xFFFFFFFFu) {                /* a u32 in the flat form */
         return 0;
     }
 
@@ -321,7 +327,7 @@ put(tiku_msg_t *m, const char *name, tiku_msg_type_t type,
 
     f = field_find(m, name);
     if (f != NULL && f->type != type) {
-        free(copy);                 /* the name already means another thing */
+        free(copy);                 /* the name holds another type */
         return 0;
     }
     if (f == NULL) {
@@ -346,7 +352,8 @@ put(tiku_msg_t *m, const char *name, tiku_msg_type_t type,
     return 1;
 }
 
-/** @brief The one value asked for, or NULL if it is not there as asked. */
+/** @brief The value at @p index under @p name, or NULL when the field is
+ *         missing, holds another type, or has no such index. */
 static const val_t *
 value_of(const tiku_msg_t *m, const char *name, int index,
          tiku_msg_type_t type)
@@ -406,7 +413,7 @@ tiku_msg_add_int64(tiku_msg_t *m, const char *name, int64_t v)
     return put(m, name, TIKU_MSG_T_INT64, b, sizeof b);
 }
 
-/** @brief A float as its four bytes, little-endian. */
+/** @brief @p v's IEEE 754 bits as four bytes at @p p, little-endian. */
 static void
 enc_f32(unsigned char *p, float v)
 {
@@ -416,6 +423,7 @@ enc_f32(unsigned char *p, float v)
     enc32(p, bits);
 }
 
+/** @brief The float whose bits are the four little-endian bytes at @p p. */
 static float
 dec_f32(const unsigned char *p)
 {
@@ -652,13 +660,12 @@ tiku_msg_find_rect(const tiku_msg_t *m, const char *name,
 }
 
 /**
- * @brief A string value, which ends where it says it does.
+ * @brief The text at @p index under @p name as a value of @p type, or
+ *        NULL.
  *
- * There is no check here that it is terminated, because there are only
- * two doors into a value of these types and both hold it: add_string and
- * add_ref write the terminator themselves, and unflatten turns away text
- * that arrives without one.  A third check here would be one no test
- * could ever reach, and an unreachable guard is a claim nobody can keep.
+ * Its NUL is not checked here: values of these types are made only by
+ * tiku_msg_add_string() and tiku_msg_add_ref(), which store the NUL, and
+ * by tiku_msg_unflatten(), which refuses text without one.
  */
 static const char *
 text_of(const tiku_msg_t *m, const char *name, int index,
@@ -796,7 +803,8 @@ tiku_msg_type_name(tiku_msg_type_t type)
 /* The flat form                                                             */
 /*---------------------------------------------------------------------------*/
 
-/** @brief @p a + @p b, or 0 if that would wrap.  Sizes come from a wire. */
+/** @brief @p a + @p b, or 0 when @p a is 0 or the sum would wrap, so a
+ *         sum that failed once stays 0. */
 static size_t
 add_sz(size_t a, size_t b)
 {
@@ -873,10 +881,10 @@ tiku_msg_flatten(const tiku_msg_t *m, void *buf, size_t max,
 }
 
 /**
- * @brief Hang @p len bytes off @p f without copying them twice.
- *
- * The unflatten path already knows the bytes are inside the buffer; this
- * takes them once, straight from it.
+ * @brief Add a copy of the @p len bytes at @p src to @p f as one more
+ *        value, with none of put()'s checks.
+ * @return 1, or 0 when out of room.
+ * @note For tiku_msg_unflatten(), which has checked the bytes.
  */
 static int
 take(field_t *f, const unsigned char *src, size_t len)
@@ -913,16 +921,8 @@ tiku_msg_unflatten(const void *buf, size_t len, size_t *read)
     nfield = dec32(p + 8);
 
     /*
-     * The buffer bounds the count better than any number picked here
-     * could: a field cannot be told in fewer than ten bytes, so a header
-     * claiming more than that many is claiming something the bytes in
-     * hand cannot hold, whatever it says.
-     *
-     * The walk below would refuse it too, when it ran out of bytes.  This
-     * refuses it now instead, so a header claiming ten million fields
-     * costs one division rather than ten million reads -- which is the
-     * difference between a bad message and a way to spend an afternoon of
-     * somebody else's device.
+     * A field takes at least ten bytes: a count of more fields than the
+     * rest of the buffer can hold is refused before anything is allocated.
      */
     if ((size_t)nfield > (len - 12u) / 10u) {
         return NULL;
@@ -934,9 +934,8 @@ tiku_msg_unflatten(const void *buf, size_t len, size_t *read)
     }
 
     /*
-     * Room is taken a field at a time, as bytes are read, and never up
-     * front from the count above -- a count is something the buffer says,
-     * and nothing is allocated on what a buffer says.
+     * Room is taken as each field's bytes are read; no allocation is sized
+     * from the count in the header.
      */
     for (i = 0; i < nfield; i++) {
         uint32_t type, nval, j;
@@ -950,11 +949,11 @@ tiku_msg_unflatten(const void *buf, size_t len, size_t *read)
         namelen = dec16(p + at);
         at += 2u;
         if (namelen == 0u || len - at < namelen) {
-            goto bad;               /* a field with no name is not one */
+            goto bad;               /* empty, or running past the end */
         }
         name = (const char *)(p + at);
         if (memchr(name, '\0', namelen) != NULL) {
-            goto bad;               /* a name with a hole in it */
+            goto bad;               /* a NUL inside the name */
         }
         at += namelen;
 
@@ -986,12 +985,12 @@ tiku_msg_unflatten(const void *buf, size_t len, size_t *read)
                 goto bad;
             }
             if (want != 0u && vlen != want) {
-                goto bad;           /* a number that is the wrong size */
+                goto bad;           /* a fixed-size value of another size */
             }
             if ((type == (uint32_t)TIKU_MSG_T_STRING ||
                  type == (uint32_t)TIKU_MSG_T_REF) &&
                 (vlen == 0u || p[at + vlen - 1u] != '\0')) {
-                goto bad;           /* text that does not end */
+                goto bad;           /* text without its NUL */
             }
             if (!take(f, p + at, vlen)) {
                 goto bad;
@@ -1010,13 +1009,6 @@ bad:
     return NULL;
 }
 
-/*
- * The copy goes out through the flat form and back in.  It is the same
- * work either way, and this way there is one description of what a field
- * is made of rather than two -- including for a field of a type this
- * build has never heard of, which is carried across whole because the
- * flat form carries it whole.
- */
 tiku_msg_t *
 tiku_msg_copy(const tiku_msg_t *m)
 {

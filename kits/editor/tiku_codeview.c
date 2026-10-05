@@ -15,12 +15,17 @@
 
 #include <string.h>
 
-/** @brief Keep the first row on the text it showed when a change lands
- *         above it, or on the change when the change covers it, carry
- *         the line widths, rows, colouring states and checkpoints across
- *         it, and ask the host to paint again.  A change ends a drag, a
- *         held thumb, the x vertical moves were keeping and the hotspot
- *         shown under the pointer. */
+/**
+ * @brief Follow a change to the document, then ask the host to paint
+ *        again.
+ *
+ * The first row keeps the text it showed when a change lands above it,
+ * and moves to a change that covers it.  Widths, rows and colouring states
+ * are carried across a change, checkpoints past its start are dropped,
+ * and a folded region it touches unfolds; a load drops them all, and the
+ * list and tip, and scrolls back to the start.  Any change ends a drag, a
+ * held thumb, the x kept for moves up and down, and the hotspot shown.
+ */
 static void
 heard(void *ctx, tiku_editdoc_t *doc, const tiku_edit_change_t *change)
 {
