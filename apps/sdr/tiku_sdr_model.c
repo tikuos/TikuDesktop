@@ -31,6 +31,7 @@ void sdr_model_init(sdr_model_t *m)
     m->avg_count = 4;
     m->track = 1;
     m->mark_held = -1;
+    m->one_max = SDR_LIVE_SPAN;
     m->div = 10.0f;
     m->scale_hi = 110.0f;
     m->scale_lo = m->scale_hi - SDR_DIVS * m->div;
@@ -118,7 +119,7 @@ void sdr_model_range(sdr_model_t *m, double start, double stop)
     sdr_range_fit(&start, &stop);
     m->start = start;
     m->stop = stop;
-    m->sweep = stop - start > SDR_LIVE_SPAN + 1e-6;
+    m->sweep = stop - start > m->one_max + 1e-6;
     if (m->sweep) slices(m); else one_spectrum(m);
     memset(m->db, 0, sizeof m->db);
     memset(m->seen, 0, sizeof m->seen);
@@ -130,13 +131,7 @@ void sdr_model_range(sdr_model_t *m, double start, double stop)
 
 int sdr_model_is_live(const sdr_model_t *m)
 {
-    return fabs(m->stop - m->start - SDR_LIVE_SPAN) < 1e-6;
-}
-
-int sdr_model_is_band(const sdr_model_t *m)
-{
-    return fabs(m->start - SDR_BAND_START) < 1e-6 &&
-           fabs(m->stop - SDR_BAND_STOP) < 1e-6;
+    return !m->sweep;
 }
 
 void sdr_mhz_text(double mhz, char *out, size_t max)

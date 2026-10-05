@@ -26,6 +26,12 @@ static int asked_mode = -1;                 /* the file panel last asked */
 static tiku_menuset_t last_menus;           /* the menus last published  */
 static char asked_start[512], asked_name[160];
 
+/** @brief Whether @p m shows the 2.4 GHz band, the wide view it opens with. */
+static int is_band(const sdr_model_t *m)
+{
+    return m->start == SDR_BAND_START && m->stop == SDR_BAND_STOP;
+}
+
 /** @brief The desktop's open: the window TikuSDR asks for. */
 static uint32_t opened(void *ctx, const char *title, int w, int h)
 {
@@ -224,14 +230,15 @@ static void model_tests(void)
     char line[1200], ch[96], cmd[64];
 
     sdr_model_init(&m);
-    assert(!m.sweep && m.start == 2417 && m.stop == 2457 && m.tune == 2437);
-    assert(m.rate == 1 && m.k0 == 0 && m.n == 256 && sdr_model_is_live(&m));
+    /* Live: 24 MHz about 2437, the flat middle of a 40 MS/s capture. */
+    assert(!m.sweep && m.start == 2425 && m.stop == 2449 && m.tune == 2437);
+    assert(m.rate == 1 && m.k0 == 52 && m.n == 153 && sdr_model_is_live(&m));
     spec_line(line, sizeof line, 2437, 256, 100, 160, 180);
     assert(sdr_model_line(&m, line) == 1);
-    assert(m.db[160] == 90.0f && m.db[0] == 50.0f && m.gain == 76);
+    assert(m.db[160 - 52] == 90.0f && m.db[0] == 50.0f && m.gain == 76);
     assert(m.spectra == 1 && m.wf_count == 1 && m.fresh);
-    assert(fabs(sdr_model_freq(&m, 128) - 2437.0) < 1e-9);
-    assert(sdr_model_bin(&m, 2437.0) == 128 && sdr_model_bin(&m, 2300) == -1);
+    assert(fabs(sdr_model_freq(&m, 76) - 2437.0) < 1e-9);
+    assert(sdr_model_bin(&m, 2437.0) == 76 && sdr_model_bin(&m, 2300) == -1);
     spec_line(line, sizeof line, 2442, 256, 100, 0, 100);
     assert(sdr_model_line(&m, line) == 0);            /* an older tuning */
     assert(sdr_model_line(&m, "SPEC 2437 40000000 76 256 zz") == -1);
@@ -239,7 +246,7 @@ static void model_tests(void)
     assert(!strcmp(sdr_command(&m, cmd, sizeof cmd), "sdr spec 2437 1 256"));
 
     sdr_model_range(&m, SDR_BAND_START, SDR_BAND_STOP);
-    assert(m.sweep && sdr_model_is_band(&m) && !sdr_model_is_live(&m));
+    assert(m.sweep && is_band(&m) && !sdr_model_is_live(&m));
     assert(m.first == 2404 && m.last == 2484 && m.n == 307 && m.wf_count == 0);
     /* The tail of a sweep begun before Band hears part of the band only:
      * no frame of it, or the rest would read as 0 dB. */
@@ -321,12 +328,22 @@ static void range_tests(void)
     assert(!m.sweep && m.tune == 2433 && m.rate == 4);
     sdr_model_range(&m, 2430, 2440);
     assert(m.rate == 3 && m.k0 == 0 && m.n == 256);
-    sdr_model_range(&m, 2420, 2440);
-    assert(m.rate == 2 && !sdr_model_is_live(&m));
-    sdr_model_range(&m, 2400, 2440);
+    sdr_model_range(&m, 2420, 2440);         /* one capture: live too */
+    assert(m.rate == 2 && sdr_model_is_live(&m));
+    sdr_model_range(&m, 2425, 2449);
     assert(!m.sweep && m.rate == 1 && sdr_model_is_live(&m));
+    /* Past 24 MHz a 40 MS/s capture is no longer flat: swept instead. */
+    sdr_model_range(&m, 2425, 2450);
+    assert(m.sweep && m.first == 2433 && m.last == 2449);
+    sdr_model_range(&m, 2400, 2440);
+    assert(m.sweep && m.first == 2408 && m.last == 2440 && m.n == 128);
+    /* A version 1 recording held 40 MHz in one spectrum. */
+    m.one_max = SDR_ONE_V1;
+    sdr_model_range(&m, 2417, 2457);
+    assert(!m.sweep && m.rate == 1 && m.k0 == 0 && m.n == 256);
+    m.one_max = SDR_LIVE_SPAN;
 
-    /* Past 40 MHz, swept from the first slice that reaches the start. */
+    /* Wider, swept from the first slice that reaches the start. */
     sdr_model_range(&m, 2417, 2458);
     assert(m.sweep && m.first == 2425 && m.last == 2457 && m.n == 131);
     assert(!strcmp(sdr_command(&m, cmd, sizeof cmd),
@@ -403,6 +420,8 @@ static void marker_tests(void)
     assert(m.type[0] == SDR_T_AVG && m.type[1] == SDR_T_OFF &&
            m.type[2] == SDR_T_OFF && m.avg_count == 4);
     assert(!sdr_marks_out(&m) && m.track && m.mark_held == -1);
+    m.one_max = SDR_ONE_V1;             /* 40 MHz in one spectrum, so its */
+    sdr_model_range(&m, 2417, 2457);    /* bins are the board's own       */
     memset(v, 100, sizeof v);                   /* a 50 dB floor */
     frame_of(&m, v);
     v[10] = 180;                                /* 90 dB, once */
@@ -601,7 +620,7 @@ static void record(sdr_t *st, int master, int64_t *now, const char *dir)
     assert(!strcmp(got, "sdr spec 2437 1 256\r"));
 
     /* Band: the change is written, then a sweep's six slices. */
-    assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
     say(master, PROMPT);                    /* the spec in flight, done */
     ticks(st, now, 2);
     board_read(master, got, sizeof got);
@@ -621,8 +640,8 @@ static void record(sdr_t *st, int master, int64_t *now, const char *dir)
     assert(tiku_sdr_app.event(st, &r) == 0 && !st->rec.file);
     assert(strstr(st->saved, "Saved rec.sdrlog: 0:00, 2 spectra, "));
     assert(!strcmp(st->note, st->saved));
-    assert(file_has(path, "# TikuSDR recording 1\n# board: c61 (esp32c61)\n"));
-    assert(file_has(path, "\n0.000 VIEW range 2417 2457\n"));
+    assert(file_has(path, "# TikuSDR recording 2\n# board: c61 (esp32c61)\n"));
+    assert(file_has(path, "\n0.000 VIEW range 2425 2449\n"));
     assert(file_has(path, " SPEC 2437 40000000 76 256 "));
     assert(file_has(path, " VIEW range 2396 2492\n"));
     assert(file_has(path, " SPEC 2484 40000000 76 128 "));
@@ -738,8 +757,8 @@ static void fields(sdr_t *st, int master, int64_t *now)
     board_read(master, got, sizeof got);
     assert(!strcmp(got, "sdr spec 2426 5 256\r"));
 
-    type_field(st, SDR_F_START, "2400");
-    assert(m->start == 2400 && m->stop == 2427 && !m->sweep && m->rate == 1);
+    type_field(st, SDR_F_START, "2400");            /* 27 MHz: swept */
+    assert(m->start == 2400 && m->stop == 2427 && m->sweep);
     type_field(st, SDR_F_STOP, "2.492G");
     assert(m->start == 2400 && m->stop == 2492 && m->sweep);
     type_field(st, SDR_F_STOP, "2390");             /* below the start */
@@ -749,7 +768,7 @@ static void fields(sdr_t *st, int master, int64_t *now)
     assert(!strcmp(st->field[SDR_F_CENTER].text, "2344"));
 
     click_field(st, SDR_F_SPAN);                    /* 'b' is text here */
-    assert(key_in(st, 'b', "b") == 0 && !sdr_model_is_band(m));
+    assert(key_in(st, 'b', "b") == 0 && !is_band(m));
     assert(!strcmp(st->field[SDR_F_SPAN].text, "b"));
     assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0 && editing(st) < 0);
     assert(m->stop - m->start == 92);
@@ -767,9 +786,9 @@ static void fields(sdr_t *st, int master, int64_t *now)
     click_at(st, plot.x + 10, plot.y + 10);         /* a press elsewhere */
     assert(editing(st) < 0 && m->start == 2354 && m->stop == 2446);
 
-    assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0);
-    assert(sdr_model_is_band(m) && !strcmp(sdr_command(m, line, sizeof line),
-                                          "sdr sweep 2404 2484 16 1 128"));
+    show(st, SDR_BAND_START, SDR_BAND_STOP);
+    assert(is_band(m) && !strcmp(sdr_command(m, line, sizeof line),
+                                 "sdr sweep 2404 2484 16 1 128"));
 }
 
 /** @brief The recording played back: the Open panel starts where it was
@@ -796,13 +815,13 @@ static void replay(sdr_t *st, int64_t *now, const char *dir)
     assert(st->model.tune == 2437 && sdr_model_is_live(&st->model));
     assert(tiku_sdr_app.pick(st, st->id, CMD_PAUSE) == 0 && !st->paused);
     ticks(st, now, 40);
-    assert(!st->play.file && sdr_model_is_band(&st->model));
+    assert(!st->play.file && is_band(&st->model));
     assert(st->model.spectra == 2);
     assert(!strcmp(st->note, "End of rec.sdrlog: 0:00, 2 spectra."));
     assert(sdr_enabled(st, CMD_LIVE) && !strcmp(st->shown, path));
 
     /* Its CSV is the whole recording, converted over ticks: one live
-     * spectrum of 256 bins and one sweep of 307. */
+     * spectrum of 153 bins (24 MHz) and one sweep of 307. */
     snprintf(path, sizeof path, "%s/rec.csv", dir);
     assert(tiku_sdr_app.pick(st, st->id, CMD_EXPORT) == 0);
     assert(!strcmp(asked_name, "rec.csv"));
@@ -811,8 +830,8 @@ static void replay(sdr_t *st, int64_t *now, const char *dir)
     assert(!sdr_enabled(st, CMD_EXPORT));
     ticks(st, now, 3);
     assert(!st->csv.in);
-    assert(!strncmp(st->note, "Exported rec.csv: 2 spectra, 563 rows, ", 39));
-    assert(file_lines(path) == 564);
+    assert(!strncmp(st->note, "Exported rec.csv: 2 spectra, 460 rows, ", 39));
+    assert(file_lines(path) == 461);
     assert(file_has(path, ",2437.00000,") && file_has(path, ",2396.00000,"));
     unlink(path);
     /* Tuned, the screen is no longer the recording's. */
@@ -905,8 +924,11 @@ static void odd_files(sdr_t *st, int64_t *now, const char *dir)
     assert(st->play.file && st->play.total == 100.0);
     ticks(st, now, 4);                      /* the first spectrum */
     assert(st->model.spectra == 1 && st->model.tune == 2426);
+    /* Version 1: Live was 40 MHz in one spectrum, and plays so. */
+    assert(!st->model.sweep && st->model.stop - st->model.start == SDR_ONE_V1);
     ticks(st, now, 12);                     /* 99.9 s of silence, cut */
     assert(st->model.spectra == 2 && !st->play.file);
+    assert(st->model.one_max == SDR_LIVE_SPAN);     /* the board's again */
 
     assert(tiku_sdr_app.pick(st, st->id, CMD_REPLAY) == 0);
     tiku_sdr_app.picked(st, st->id, gap);
@@ -980,7 +1002,7 @@ static void no_esp32(const tiku_app_services_t *services)
     assert(offered(CMD_CONNECT) == 0 && offered(CMD_REPLAY) == 0 &&
            offered(CMD_QUIT) == 1 && !sdr_enabled(st, CMD_LIVE));
     assert(!strcmp(last_menus.menu[last_menus.nmenu - 1].title, "Tune"));
-    assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0 &&
+    assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0 &&
            sdr_model_is_live(&st->model) && st->alert.open);
     assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0 &&
            released == before && st->alert.open);
@@ -1112,8 +1134,8 @@ static void drawn(const tiku_app_services_t *services)
            !sdr_enabled(st, CMD_FIELD + SDR_F_MARK));
     assert(st->dialog.focus == CMD_PAUSE);  /* never a field by itself */
     memset(v, 100, sizeof v);
-    v[60] = 200;
-    v[140] = 180;
+    v[m->k0 + 60] = 200;                    /* the view's bins 60 and 140 */
+    v[m->k0 + 140] = 180;
     frame_of(m, v);
     sdr_layout(st, &plot, &fall);
     mid = plot.y + plot.h / 2;
@@ -1165,7 +1187,7 @@ static void drawn(const tiku_app_services_t *services)
     assert(m->mark_sel == 0 && sdr_mark_bin(m, 0) == 140 &&
            sdr_mark_bin(m, 1) == 60);
     type_field(st, SDR_F_MARK, "2430");
-    assert(sdr_mark_bin(m, 0) == 83);
+    assert(sdr_mark_bin(m, 0) == 31);
     assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0);
     assert(key_in(st, TIKU_KEY_DELETE, NULL) == 0);
     assert(!m->mark[0].on && m->mark[1].on && sdr_marks_out(m));
@@ -1195,11 +1217,11 @@ static void drawn(const tiku_app_services_t *services)
     assert(key_in(st, '1', "1") == 0 && m->mark_sel == 0);
     assert(key_in(st, 'm', "m") == 0 && sdr_mark_bin(m, 0) == 60);
     assert(tiku_sdr_app.pick(st, st->id, CMD_MARK_CENTER) == 0);
-    assert(m->start == 2406.375 && m->stop == 2446.375);
+    assert(m->start == 2422.5 && m->stop == 2446.5);
 
     /* In a sweep a press on the spectrum moves a marker, not the view;
      * one on the spectrogram still tunes Live there. */
-    assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
     for (int c = m->first; c <= m->last; c += SDR_SLICE_STEP) {
         spec_line(line, sizeof line, c, 128, 80, c == 2420 ? 83 : -1, 200);
         assert(sdr_model_line(m, line) == 0);
@@ -1209,7 +1231,7 @@ static void drawn(const tiku_app_services_t *services)
     mid = plot.y + plot.h / 2;
     pointer_at(st, TIKU_EVENT_POINTER_DOWN, column(st, 20), mid);
     pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 20), mid);
-    assert(sdr_model_is_band(m) && sdr_mark_bin(m, 0) == 20);
+    assert(is_band(m) && sdr_mark_bin(m, 0) == 20);
     hover(st, column(st, 20), fall.y + 4);
     assert(strstr(st->hover, "click to tune here"));
     hover(st, column(st, 20), mid);
@@ -1217,6 +1239,30 @@ static void drawn(const tiku_app_services_t *services)
     pointer_at(st, TIKU_EVENT_POINTER_DOWN, column(st, 20), fall.y + 4);
     pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 20), fall.y + 4);
     assert(sdr_model_is_live(m));
+
+    /* Live's light: green over one capture, grey over a sweep; pressed,
+     * Live goes to the last view of the other kind, by hand or by key. */
+    {
+        double a = m->start, b = m->stop;
+        int lx, ly;
+
+        r = sdr_control_rect(st, CMD_LIVE);
+        lx = r.x + (r.w - 16 - tiku_text_width(tiku_font_plain(), "Live")) /
+             2 + 5;
+        ly = r.y + r.h / 2;
+        sdr_paint(st);
+        publish(st);                    /* as the tick does on a change */
+        assert(tiku_peek(st->surface, lx, ly) == LIVE_ON && marked(CMD_LIVE));
+        click_control(st, CMD_LIVE);
+        assert(is_band(m) && !sdr_model_is_live(m) && !marked(CMD_LIVE));
+        sdr_paint(st);
+        assert(tiku_peek(st->surface, lx, ly) == LIVE_OFF);
+        type_field(st, SDR_F_STOP, "2500");       /* another wide view */
+        assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0 && m->stop == 2500);
+        assert(key_in(st, 'l', "l") == 0 && m->start == a && m->stop == b);
+        assert(key_in(st, 'l', "l") == 0 && m->start == SDR_BAND_START &&
+               m->stop == 2500);
+    }
     tiku_sdr_app.stop(st);
 }
 
@@ -1283,7 +1329,8 @@ int main(void)
     say(master, line);
     ticks(st, &now, 4);
     assert(st->model.spectra == 1 && st->model.wf_count == 1);
-    assert(st->model.db[140] == 95.0f && st->model.gain == 76);
+    assert(st->model.db[140 - st->model.k0] == 95.0f &&
+           st->model.gain == 76);
     assert(offered(CMD_EXPORT) == 1 && offered(CMD_PICTURE) == 1);
     board_read(master, got, sizeof got);                    /* the next ask */
     assert(!strcmp(got, "sdr spec 2437 1 256\r"));
@@ -1292,7 +1339,8 @@ int main(void)
     {
         tiku_rect_t plot, fall;
         sdr_layout(st, &plot, &fall);
-        hover(st, plot.x + 140 * plot.w / 256 + 1, plot.y + 4);
+        hover(st, plot.x + (140 - st->model.k0) * plot.w / st->model.n + 1,
+              plot.y + 4);
         assert(strstr(st->hover, "MHz") && strstr(st->hover, "Wi-Fi"));
         st->hover[0] = '\0';
     }

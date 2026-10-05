@@ -46,16 +46,22 @@ the span kept. A number may end in k, M or G, with or without Hz:
 board tunes 2200 to 2700&#160;MHz, so a view is moved inside that, and is
 at least 1&#160;MHz wide.</p>
 
-<p><b>Live</b> is 40&#160;MHz about the view&#8217;s centre, <b>Band</b>
-the whole 2.4&#160;GHz band, 2396 to 2492&#160;MHz, and <b>Full</b> all
-500&#160;MHz the board tunes. Up to 40&#160;MHz is one spectrum at the
-narrowest sample rate that holds the view, 4, 8, 10, 20 or 40&#160;MS/s,
-so a narrow span shows finer bins: 2&#160;MHz about a BLE channel is
-15.6&#160;kHz a bin. Wider is swept in 16&#160;MHz slices, each heard at its
-own automatic gain and its noise floor levelled to a common one before the
-slices are joined: in a sweep, a level is a height above the floor around
-it. In a sweep, click the spectrogram -- or the spectrum, with no marker
-out -- to see 40&#160;MHz there.</p>
+<p>Up to 24&#160;MHz is one spectrum, all of it caught at once, at the
+narrowest sample rate that holds the view, 4, 8, 10, 20 or 40&#160;MS/s, so
+a narrow span shows finer bins: 2&#160;MHz about a BLE channel is
+15.6&#160;kHz a bin. 24&#160;MHz is what the receiver keeps flat: beyond the
+middle of a 40&#160;MS/s capture, it hears 15 to 30&#160;dB less. Wider is
+swept in 16&#160;MHz slices, each heard at its own automatic gain and its
+noise floor levelled to a common one before the slices are joined: in a
+sweep, a level is a height above the floor around it, and a slice is
+caught a moment after the one before.</p>
+
+<p><b>Live</b>&#8217;s light is green while the view is one spectrum
+caught at once, and grey while it is swept. Pressed, Live goes back to the
+last view of the other kind: from a live view to the last wide one -- the
+2.4&#160;GHz band, 2396 to 2492&#160;MHz, until another is typed -- and from
+a wide view to the last live one. In a sweep, click the spectrogram -- or
+the spectrum, with no marker out -- to see 24&#160;MHz there, live.</p>
 
 <h2 id="traces">Traces</h2>
 
@@ -111,8 +117,9 @@ leave the room it gives them. <b>RBW</b> is how wide each point is, with
 the sample rate or the slices beneath; the receiver&#8217;s gain and which
 trace is which stand at the right. Beneath the graticule are <b>Start</b>,
 <b>Center</b>, <b>Stop</b> and <b>Span</b>, the number of points, and how
-many spectra or sweeps arrive a second. At 40&#160;MS/s the receiver is
-flat over the middle 24&#160;MHz alone; the edges are shaded.</p>
+many spectra or sweeps arrive a second. A recording made before
+TikuSDR swept past 24&#160;MHz may show 40&#160;MHz in one spectrum; its
+edges, beyond the middle 24&#160;MHz, are shaded.</p>
 
 <p>The spectrogram shows the spectra that came before, newest at the top,
 coloured from just under the noise, blue, through green and yellow to red
@@ -173,9 +180,8 @@ their annotations and markers, as a PNG.</p>
 
 <h2 id="keys">Keys</h2>
 
-<p><b>Space</b> pauses and resumes; <b>L</b>, <b>B</b> and <b>F</b> show
-Live, Band and Full; the arrow keys move the view one megahertz, five with
-Shift, as does the scroll wheel. <b>P</b> makes trace 2 a max hold or takes
+<p><b>Space</b> pauses and resumes; <b>L</b> presses Live; the arrow keys
+move the view one megahertz, five with Shift, as does the scroll wheel. <b>P</b> makes trace 2 a max hold or takes
 it off, <b>A</b> does the same for the latest on trace 3, and <b>C</b>
 clears the traces. <b>1</b> to <b>4</b> pick a marker, <b>M</b> puts it out
 or takes it in, <b>K</b> is Peak Search, <b>N</b> Next Peak, <b>[</b> and

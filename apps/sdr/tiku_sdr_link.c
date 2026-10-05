@@ -273,6 +273,8 @@ static void take_line(sdr_t *st, const char *line)
     if (st->state == SDR_STARTING) {
         if (!strncmp(line, "SDR ready", 9)) {
             st->state = SDR_RUNNING;
+            /* A recording's rule for one spectrum gives way to the board's. */
+            sdr_model_range(&st->model, st->model.start, st->model.stop);
             st->model.spectra = 0;
             st->rate_at = st->now;
             st->rate_count = 0;

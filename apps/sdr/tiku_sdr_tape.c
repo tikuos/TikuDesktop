@@ -33,7 +33,8 @@ static const char *const format[] = {
     "#     decibels (uncalibrated: compare levels within one recording)",
     "#   SWEEP <slices>: the band's slices since the last SWEEP are one",
     "#   VIEW range <start MHz> <stop MHz>: what the window showed from",
-    "#     here on (VIEW live <MHz> and VIEW band in older recordings)",
+    "#     here on: one spectrum up to 24 MHz wide, else a sweep (in",
+    "#     version 1, up to 40 MHz; VIEW live <MHz> and VIEW band too)",
 };
 
 const char *sdr_tape_leaf(const char *path)
@@ -108,7 +109,7 @@ static void rec_head(sdr_t *st)
 
     if (localtime_r(&now, &tm))
         strftime(began, sizeof began, "%Y-%m-%d %H:%M:%S %z", &tm);
-    n = fprintf(r->file, TAPE_MAGIC " 1\n# board: %s%s%s%s\n# began: %s\n",
+    n = fprintf(r->file, TAPE_MAGIC " 2\n# board: %s%s%s%s\n# began: %s\n",
                 st->board, *st->mcu ? " (" : "", st->mcu, *st->mcu ? ")" : "",
                 began);
     r->bytes = n > 0 ? n : 0;
@@ -294,18 +295,19 @@ static int tape_apply(sdr_model_t *m, const char *line)
         sdr_model_range(m, SDR_BAND_START, SDR_BAND_STOP);
         return 0;
     }
-    if (sscanf(line, "VIEW live %d", &mhz) == 1) {
+    if (sscanf(line, "VIEW live %d", &mhz) == 1) {     /* version 1's */
         if (mhz >= SDR_TUNE_LO && mhz <= SDR_TUNE_HI)
-            sdr_model_range(m, mhz - SDR_LIVE_SPAN / 2,
-                            mhz + SDR_LIVE_SPAN / 2);
+            sdr_model_range(m, mhz - SDR_ONE_V1 / 2, mhz + SDR_ONE_V1 / 2);
         return 0;
     }
     return sdr_model_line(m, line) == 1;
 }
 
 /** @brief A recording opened for reading, past its first line, which must
- *         say what it is.  @return NULL with the reason in the note. */
-static FILE *tape_open(sdr_t *st, const char *path)
+ *         say what it is; @p one_max the widest view one spectrum showed
+ *         when it was made: 40 MHz in version 1, else 24.  @return NULL
+ *         with the reason in the note. */
+static FILE *tape_open(sdr_t *st, const char *path, double *one_max)
 {
     char head[64];
     int fd = open(path, O_RDONLY | O_CLOEXEC);
@@ -324,6 +326,8 @@ static FILE *tape_open(sdr_t *st, const char *path)
                  "%s is not a TikuSDR recording.", sdr_tape_leaf(path));
         return NULL;
     }
+    *one_max = strtol(head + strlen(TAPE_MAGIC), NULL, 10) <= 1 ?
+               SDR_ONE_V1 : SDR_LIVE_SPAN;
     return f;
 }
 
@@ -347,10 +351,11 @@ static void next_line(sdr_play_t *p)
 int sdr_play_start(sdr_t *st, const char *path)
 {
     sdr_play_t *p = &st->play;
+    double one_max;
     FILE *f;
 
     sdr_play_stop(st);
-    if (!(f = tape_open(st, path))) return -1;
+    if (!(f = tape_open(st, path, &one_max))) return -1;
     memset(p, 0, sizeof *p);
     p->file = f;
     snprintf(p->path, sizeof p->path, "%s", path);
@@ -358,6 +363,7 @@ int sdr_play_start(sdr_t *st, const char *path)
     p->last = st->now;
     st->paused = 0;
     st->saved[0] = '\0';
+    st->model.one_max = one_max;        /* its views as they were made */
     sdr_model_range(&st->model, st->model.start, st->model.stop);
     st->model.spectra = 0;
     next_line(p);
@@ -412,6 +418,7 @@ void sdr_play_stop(sdr_t *st)
     fclose(st->play.file);
     st->play.file = NULL;
     st->play.ready = 0;
+    st->model.one_max = SDR_LIVE_SPAN;  /* the next view the board's way */
     st->dirty = 1;
 }
 
@@ -488,9 +495,11 @@ int sdr_csv_start(sdr_t *st, const char *path)
 {
     sdr_csv_t *x = &st->csv;
     FILE *in = NULL;
+    double one_max = SDR_LIVE_SPAN;
     long rows;
 
-    if (x->out || (*st->shown && !(in = tape_open(st, st->shown)))) return -1;
+    if (x->out || (*st->shown && !(in = tape_open(st, st->shown, &one_max))))
+        return -1;
     snprintf(x->path, sizeof x->path, "%s", path);
     x->rows = 0;
     x->frames = 0;
@@ -513,6 +522,7 @@ int sdr_csv_start(sdr_t *st, const char *path)
     }
     x->in = in;
     sdr_model_init(x->model);
+    x->model->one_max = one_max;
     if (fseek(in, 0, SEEK_END) == 0) x->size = ftell(in);
     (void)fseek(in, 0, SEEK_SET);
     snprintf(st->note, sizeof st->note, "Exporting %s...",

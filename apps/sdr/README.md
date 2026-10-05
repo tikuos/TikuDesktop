@@ -11,12 +11,16 @@ and a bar at the foot to record, pause and say what is happening.
 
 - **Frequency**: Center, Span, Start and Stop in MHz, typed in (k, M or G
   after a number work too).  Start or Stop moves Center and Span to match;
-  Center or Span moves Start and Stop.  Up to 40 MHz is one spectrum at
+  Center or Span moves Start and Stop.  Up to 24 MHz is one spectrum at
   the narrowest sample rate that holds it (4, 8, 10, 20 or 40 MS/s, so 2
-  MHz shows 15.6 kHz bins); wider is swept in 16 MHz slices, anywhere from
-  2200 to 2700 MHz, each slice's noise floor levelled to a common one.
-  Live (40 MHz about the centre), Band (2396-2492 MHz) and Full (all of
-  it) are three such views.
+  MHz shows 15.6 kHz bins): a 40 MS/s capture is flat over its middle 24
+  MHz alone, 15-30 dB down beyond.  Wider is swept in 16 MHz slices,
+  anywhere from 2200 to 2700 MHz, each slice's noise floor levelled to a
+  common one.  Live's light is green while the view is one spectrum and
+  grey while it is swept; pressed, Live swaps the last live view and the
+  last wide one (the 2.4 GHz band, 2396-2492 MHz, until another is
+  typed).  Recordings say their version: a version 1 one held up to 40 MHz
+  in one spectrum, and still plays so.
 - **Traces**: three at once, each Off, Clear & Write, Average (over a count
   of spectra), Max Hold or Min Hold, in black, red and blue.  Trace 1
   opens as the average of four.

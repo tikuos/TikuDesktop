@@ -79,7 +79,6 @@ static void menu_label(const sdr_t *st, int command, char *out, size_t max)
         t = st->play.file ? "Close Recording" : "Open Recording…";
     else if (command == CMD_EXPORT) t = "Export CSV…";
     else if (command == CMD_PICTURE) t = "Save Picture…";
-    else if (command == CMD_FULL) t = "Full Span";
     else if (command == CMD_CLEAR) t = "Clear Traces";
     else if (command == CMD_MARK_ACTIVE) t = "Marker On";
     else if (command == CMD_TRACK) t = "Track Peaks";
@@ -105,9 +104,6 @@ static int menu_marked(const sdr_t *st, int c)
     if (c >= CMD_MARK_SEL && c < CMD_MARK_SEL + SDR_MARKERS)
         return m->mark_sel == c - CMD_MARK_SEL;
     return (c == CMD_LIVE && sdr_model_is_live(m)) ||
-           (c == CMD_BAND && sdr_model_is_band(m)) ||
-           (c == CMD_FULL && m->start == SDR_TUNE_LO &&
-            m->stop == SDR_TUNE_HI) ||
            (c == CMD_MARK_ACTIVE && m->mark[m->mark_sel].on) ||
            (c == CMD_TRACK && m->track) ||
            (c == CMD_WATERFALL && st->fall_on) ||
@@ -145,7 +141,6 @@ static unsigned menu_state(const sdr_t *st)
                  (unsigned)(m->fresh != 0) << 7 |
                  (unsigned)(st->shown[0] != '\0') << 8 |
                  (unsigned)sdr_model_is_live(m) << 9 |
-                 (unsigned)sdr_model_is_band(m) << 10 |
                  (unsigned)(st->alert.open != 0) << 11 |
                  (unsigned)(st->fall_on != 0) << 12 |
                  (unsigned)(st->plans_on != 0) << 13 |
@@ -155,16 +150,15 @@ static unsigned menu_state(const sdr_t *st)
     v = v * 31u + (unsigned)m->mark_sel;
     for (int t = 0; t < SDR_TRACES; t++) v = v * 31u + (unsigned)m->type[t];
     for (int k = 0; k < SDR_MARKERS; k++) v = v * 31u + (unsigned)m->mark[k].on;
-    return v * 31u + (unsigned)(m->start == SDR_TUNE_LO);
+    return v;
 }
 
 /** @brief Menus follow the panel: the receiver's, files -- recordings, CSV
  *         and pictures -- the traces, the markers, tuning and the boards. */
 static void publish(sdr_t *st)
 {
-    static const int sdr[] = {CMD_CONNECT, 0, CMD_LIVE, CMD_BAND, CMD_FULL,
-                              0, CMD_PAUSE, 0, CMD_WATERFALL, CMD_PLANS, 0,
-                              CMD_QUIT};
+    static const int sdr[] = {CMD_CONNECT, 0, CMD_LIVE, 0, CMD_PAUSE, 0,
+                              CMD_WATERFALL, CMD_PLANS, 0, CMD_QUIT};
     static const int file[] = {CMD_RECORD, CMD_REPLAY, 0, CMD_EXPORT,
                                CMD_PICTURE};
     static const int trace[] = {CMD_TRACE_SEL, CMD_TRACE_SEL + 1,
@@ -198,9 +192,9 @@ static void publish(sdr_t *st)
 }
 
 /** @brief A new view, @p start to @p stop fitted, the traces and the
- *         spectrogram started afresh and written into a recording; the
- *         same view again is left alone, and a recording being played
- *         keeps its own. */
+ *         spectrogram started afresh and written into a recording, and
+ *         kept as the last of its kind, live or wide; the same view again
+ *         is left alone, and a recording being played keeps its own. */
 static void show(sdr_t *st, double start, double stop)
 {
     if (st->play.file) return;
@@ -208,6 +202,10 @@ static void show(sdr_t *st, double start, double stop)
     if (start == st->model.start && stop == st->model.stop) return;
     st->shown[0] = '\0';                /* a recording no longer shown */
     sdr_model_range(&st->model, start, stop);
+    double *kept = sdr_model_is_live(&st->model) ? st->live_view
+                                                 : st->wide_view;
+    kept[0] = start;
+    kept[1] = stop;
     sdr_rec_view(st);
     st->dirty = 1;
 }
@@ -419,11 +417,11 @@ static int sdr_pick(void *state, uint32_t window, int command)
         else if (sdr_connect(st) < 0)   /* gone since the menu was drawn */
             snprintf(st->note, sizeof st->note,
                      "No software-defined radio is connected.");
-    } else if (command == CMD_LIVE)
-        centre_at(st, (m->start + m->stop) / 2, SDR_LIVE_SPAN);
-    else if (command == CMD_BAND) show(st, SDR_BAND_START, SDR_BAND_STOP);
-    else if (command == CMD_FULL) show(st, SDR_TUNE_LO, SDR_TUNE_HI);
-    else if (command == CMD_CLEAR) sdr_model_clear(m);
+    } else if (command == CMD_LIVE) {   /* the last view of the other kind */
+        const double *v = sdr_model_is_live(m) ? st->wide_view
+                                               : st->live_view;
+        show(st, v[0], v[1]);
+    } else if (command == CMD_CLEAR) sdr_model_clear(m);
     else if (command == CMD_PEAK)       /* trace 2 a max hold, or off */
         set_type(st, 1, m->type[1] == SDR_T_MAX ? SDR_T_OFF : SDR_T_MAX);
     else if (command == CMD_OVERLAY)    /* trace 3 the latest, or off */
@@ -528,8 +526,7 @@ static void hover(sdr_t *st, int x, int y)
 static int keys(sdr_t *st, const tiku_event_t *ev)
 {
     int step = (ev->modifiers & TIKU_MOD_SHIFT) ? 5 : 1;
-    int command = ev->key == ' ' ? CMD_PAUSE : ev->key == 'b' ? CMD_BAND :
-                  ev->key == 'l' ? CMD_LIVE : ev->key == 'f' ? CMD_FULL :
+    int command = ev->key == ' ' ? CMD_PAUSE : ev->key == 'l' ? CMD_LIVE :
                   ev->key == 'p' ? CMD_PEAK : ev->key == 'a' ? CMD_OVERLAY :
                   ev->key == 'r' ? CMD_RECORD : ev->key == 'c' ? CMD_CLEAR :
                   ev->key == 'm' ? CMD_MARK_ACTIVE :
@@ -850,6 +847,10 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     if (services->sizeable) services->sizeable(services->ctx, st->id);
     st->fall_on = 1;
     sdr_model_init(&st->model);
+    st->live_view[0] = st->model.start;    /* it opens live */
+    st->live_view[1] = st->model.stop;
+    st->wide_view[0] = SDR_BAND_START;     /* and goes wide to the band */
+    st->wide_view[1] = SDR_BAND_STOP;
     tiku_dialog_init(&st->dialog);
     lists_init(st);
     tiku_alert_reset(&st->alert);

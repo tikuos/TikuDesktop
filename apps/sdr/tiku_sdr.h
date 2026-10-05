@@ -33,13 +33,15 @@
 #define SDR_DIVS     10             /* graticule divisions, each way   */
 
 /* A view is a range, start to stop in MHz.  The board tunes whole MHz from
- * 2200 to 2700; one spectrum spans its sample rate, 4 to 40 MHz, and a
- * wider view is swept in 40 MS/s slices 16 MHz apart.  Live and Band are
- * two ranges: 40 MHz about a centre, and the 2.4 GHz band. */
+ * 2200 to 2700.  One spectrum holds up to 24 MHz, all a 40 MS/s capture
+ * keeps flat (beyond it, 15 to 30 dB down); a wider view is swept in 40
+ * MS/s slices 16 MHz apart.  Live and Band are two ranges: 24 MHz about a
+ * centre, and the 2.4 GHz band.  A recording of version 1 held up to 40. */
 #define SDR_TUNE_LO      2200.0
 #define SDR_TUNE_HI      2700.0
 #define SDR_SPAN_MIN     1.0
-#define SDR_LIVE_SPAN    40.0
+#define SDR_LIVE_SPAN    24.0
+#define SDR_ONE_V1       40.0
 #define SDR_BAND_START   2396.0
 #define SDR_BAND_STOP    2492.0
 #define SDR_SLICE_STEP   16
@@ -64,7 +66,7 @@ enum {
 /* Commands: the panel's buttons, menus and keys share them. */
 enum {
     CMD_CONNECT = 1,                /* the SDR menu's alone             */
-    CMD_LIVE, CMD_BAND, CMD_FULL,   /* Frequency: three views           */
+    CMD_LIVE,                       /* Frequency: live, or the wide view */
     CMD_CLEAR, CMD_EXPORT,          /* Traces                           */
     CMD_MARK_ACTIVE, CMD_TRACK,     /* Markers: its two checkboxes      */
     CMD_PEAK_SEARCH, CMD_NEXT_PEAK, CMD_PEAK_LEFT, CMD_PEAK_RIGHT,
@@ -99,6 +101,7 @@ typedef struct {
  *         history, every value in decibels. */
 typedef struct {
     double start, stop;             /* the view, MHz                   */
+    double one_max;                 /* the widest view one spectrum shows */
     int    sweep;                   /* swept in slices, or one spectrum */
     int    tune, rate, nfft;        /* tuned (MHz), rate code, bins    */
     int    k0;                      /* one spectrum: its first bin shown */
@@ -185,6 +188,8 @@ typedef struct {
     char note[160], hover[160];
     int dirty;
     int fall_on;                    /* the spectrogram shown           */
+    double live_view[2], wide_view[2];  /* the last view of each kind,
+                                           start and stop: Live swaps them */
     int plans_on;                   /* the band's channel plans shown  */
     int64_t painted_at, names_at;
     uint32_t *pic;                  /* the spectrogram's bitmap        */
@@ -210,12 +215,12 @@ void sdr_model_init(sdr_model_t *m);
  *         where they fit), to the kHz. */
 void sdr_range_fit(double *start, double *stop);
 /** @brief Show @p start to @p stop, fitted: one spectrum at the narrowest
- *         rate that holds it up to 40 MHz, a sweep of slices beyond; the
- *         traces and the spectrogram start afresh. */
+ *         rate that holds it up to one_max MHz, a sweep of slices beyond;
+ *         the traces and the spectrogram start afresh. */
 void sdr_model_range(sdr_model_t *m, double start, double stop);
-/** @brief Whether the view is Live, 40 MHz about a centre, or Band. */
+/** @brief Whether the view is live: one spectrum caught at once, up to
+ *         one_max MHz wide, rather than a sweep of slices. */
 int  sdr_model_is_live(const sdr_model_t *m);
-int  sdr_model_is_band(const sdr_model_t *m);
 /** @brief @p mhz, at least 0, as a field shows it: to the kHz, with no
  *         trailing zeros and a point whatever the locale. */
 void sdr_mhz_text(double mhz, char *out, size_t max);

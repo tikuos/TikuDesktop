@@ -27,6 +27,8 @@
 #define ZB_INK     TIKU_RGB(60, 140, 60)
 #define WIFI_INK   TIKU_RGB(60, 110, 180)
 #define REC_INK    TIKU_RGB(214, 48, 49)
+#define LIVE_ON    TIKU_RGB(40, 186, 72)
+#define LIVE_OFF   TIKU_RGB(150, 150, 150)
 
 #define PANEL_X    8
 #define PANEL_W    200
@@ -95,9 +97,7 @@ tiku_rect_t sdr_control_rect(const sdr_t *st, int id)
     case CMD_FIELD + SDR_F_SPAN:   return row_at(S_FREQ, 1, x, fw);
     case CMD_FIELD + SDR_F_START:  return row_at(S_FREQ, 2, x, fw);
     case CMD_FIELD + SDR_F_STOP:   return row_at(S_FREQ, 3, x, fw);
-    case CMD_LIVE: return button_at(S_FREQ, 4, 0, 3);
-    case CMD_BAND: return button_at(S_FREQ, 4, 1, 3);
-    case CMD_FULL: return button_at(S_FREQ, 4, 2, 3);
+    case CMD_LIVE: return button_at(S_FREQ, 4, 0, 1);
     case CMD_CHOICE + SDR_C_TRACE: return row_at(S_TRACE, 0, x, w);
     case CMD_CHOICE + SDR_C_TYPE:  return row_at(S_TRACE, 1, x, w);
     case CMD_FIELD + SDR_F_AVG:    return row_at(S_TRACE, 2, x, 48);
@@ -152,8 +152,6 @@ const char *sdr_label(const sdr_t *st, int command)
         return st->state == SDR_IDLE ? "Connect" :
                st->state >= SDR_STOPPING ? "Returning" : "Disconnect";
     case CMD_LIVE: return "Live";
-    case CMD_BAND: return "Band";
-    case CMD_FULL: return "Full";
     case CMD_CLEAR: return "Clear";
     case CMD_EXPORT: return "Export";
     case CMD_MARK_ACTIVE: return "Active";
@@ -198,7 +196,7 @@ int sdr_enabled(const sdr_t *st, int command)
     case CMD_CONNECT:                   /* Disconnect, or a radio there */
         return st->state == SDR_IDLE ? st->names[0] != '\0' :
                                        st->state < SDR_STOPPING;
-    case CMD_LIVE: case CMD_BAND: case CMD_FULL: return !st->play.file;
+    case CMD_LIVE: return !st->play.file;
     case CMD_RECORD: return st->state == SDR_RUNNING || st->rec.file;
     case CMD_REPLAY: return st->state == SDR_IDLE;
     case CMD_EXPORT:
@@ -238,8 +236,7 @@ void sdr_controls(sdr_t *st)
         {CMD_FIELD + SDR_F_SPAN, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_START, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_STOP, TIKU_DIALOG_INPUT},
-        {CMD_LIVE, TIKU_DIALOG_BUTTON}, {CMD_BAND, TIKU_DIALOG_BUTTON},
-        {CMD_FULL, TIKU_DIALOG_BUTTON},
+        {CMD_LIVE, TIKU_DIALOG_BUTTON},
         {CMD_CHOICE + SDR_C_TRACE, TIKU_DIALOG_INPUT},
         {CMD_CHOICE + SDR_C_TYPE, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_AVG, TIKU_DIALOG_INPUT},
@@ -667,6 +664,25 @@ static void glyph(sdr_t *st, int id, tiku_rect_t r, unsigned flags)
     }
 }
 
+/** @brief Live: its light green while the view is caught whole, grey
+ *         while it is swept, beside its word, the two centred together. */
+static void live_button(sdr_t *st, tiku_rect_t r, unsigned flags)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    const char *word = sdr_label(st, CMD_LIVE);
+    int off = (flags & TIKU_S_PRESSED) ? 1 : 0;
+    int x = r.x + (r.w - 16 - tiku_text_width(f, word)) / 2 + off;
+    int y = r.y + r.h / 2 + off;
+    int dim = (flags & TIKU_S_DISABLED) != 0;
+
+    tiku_ui_button(st->surface, r, "", flags);
+    tiku_fill_round(st->surface, (tiku_rect_t){x, y - 5, 10, 10}, 5,
+                    TIKU_CORNER_ALL, dim ? tiku_tint(TIKU_C_PANEL, 1.20f) :
+                    sdr_model_is_live(&st->model) ? LIVE_ON : LIVE_OFF);
+    tiku_text(st->surface, f, x + 16, y - f->height / 2 + f->ascent, word,
+              dim ? tiku_tint(TIKU_C_PANEL, 1.30f) : TIKU_C_TEXT);
+}
+
 /** @brief The panel's controls and the bar's buttons, each in its state:
  *         a checkbox or switch on while what it says is. */
 static void controls(sdr_t *st)
@@ -693,6 +709,8 @@ static void controls(sdr_t *st)
             if (id == CMD_WATERFALL ? st->fall_on : st->plans_on)
                 flags |= TIKU_S_ON;
             tiku_ui_switch(st->surface, r, sdr_label(st, id), flags);
+        } else if (id == CMD_LIVE) {
+            live_button(st, r, flags);
         } else if (id == CMD_RECORD || id == CMD_PAUSE) {
             tiku_ui_button(st->surface, r, "", flags);
             glyph(st, id, r, flags);
