@@ -12,9 +12,9 @@
  * drained into messages the link carries to it, as fast as the link will
  * take them.  A loss the link reports discards the backlog, stale by
  * then, and greets the board afresh; a greeting it leaves unanswered for
- * two seconds is said again, twice, then only every ten seconds.  The
- * shell keeps the cable, or the channel keeps a port of its own for a
- * board built without one.
+ * two seconds is said again, twice, then only every ten seconds.  A
+ * channel runs over a session the shell owns, or over a port of its own
+ * for a board built without a shell.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,13 +31,14 @@ typedef struct tiku_channel tiku_channel_t;
 #define TIKU_CHANNEL_INVITE 0x80000000u
 
 /** @brief Open a channel on @p s: a serial link is opened over the session
- *         and its messages flow to the channel.  NULL when out of sockets. */
+ *         and its messages flow to the channel.  NULL when out of memory
+ *         or sockets. */
 tiku_channel_t *tiku_channel_open(tiku_session_t *s);
 
 /**
  * @brief Open a channel on @p link, whatever medium it is: the channel
  *        owns it from here and closes it with itself.  NULL when out of
- *        sockets, and @p link is closed in that case.
+ *        memory or sockets, and @p link is closed in that case.
  */
 tiku_channel_t *tiku_channel_adopt(tiku_link_t *link);
 
@@ -52,17 +53,17 @@ tiku_channel_t *tiku_channel_open_port(const char *port, int baud);
 /**
  * @brief Whether a board is behind a channel opened on a port of its own:
  *        pumps until the link's opening SYN is acknowledged, or given up
- *        on after its retries.  @return 1 for a board that answered, 0 for
- *        a port with nothing there; a channel on a session the caller
- *        owns is taken as answered, since its prompt was met.
+ *        on after its retries, for at most @p timeout_ms.  @return 1 for
+ *        a board that answered, 0 for a port with nothing there; a
+ *        channel on a session the caller owns, or on a link other than a
+ *        serial one, is taken as answered.
  */
 int tiku_channel_probe(tiku_channel_t *ch, int timeout_ms);
 
 /**
  * @brief Tell the board a desktop is listening: a WELCOME carrying the
  *        invitation bit (TIKU_CHANNEL_INVITE in its features), which a
- *        board answers by saying hello again and re-opening what it had
- *        drawn before anyone was there to see it.
+ *        board answers with a HELLO and by opening its windows again.
  */
 void tiku_channel_greet(tiku_channel_t *ch);
 
@@ -75,18 +76,19 @@ tiku_link_t *tiku_channel_link(const tiku_channel_t *ch);
 /**
  * @brief The board's shell over the same link: a transport whose bytes
  *        out go as SHELL_IN messages and whose bytes back are what the
- *        board's shell wrote, so a session and a namespace stand on a
- *        board that has no cable here.  One per channel; the transport
+ *        board's shell wrote, so a session and a namespace can run on a
+ *        board reached only over the link.  One per channel; the transport
  *        is the caller's to close, and reads nothing once the channel is
  *        closed.  NULL when out of sockets.
  */
 tiku_tx_t *tiku_channel_shell_tx(tiku_channel_t *ch);
 
 /**
- * @brief Send text to the board's INTERPRETER, on a stream of its own.
+ * @brief Send text to the board's interpreter, as BASIC_IN messages.
  *
- * Not the shell's: a board driven here keeps its console, so its
- * namespace still answers while a program runs.
+ * The interpreter's stream is separate from the shell's, so the board's
+ * namespace answers while a program runs.  Waits up to two seconds for
+ * the link to take each message.
  * @return the bytes taken, or -1.
  */
 int tiku_channel_basic_send(tiku_channel_t *ch, const void *bytes, size_t len);
@@ -97,8 +99,8 @@ int tiku_channel_basic_send(tiku_channel_t *ch, const void *bytes, size_t len);
  */
 int tiku_channel_basic_recv(tiku_channel_t *ch, void *buf, size_t max);
 
-/** @brief Losses the link has reported in all, for a caller to decide
- *         when a board that dialled in is gone for good. */
+/** @brief How many losses the link has reported since the channel
+ *         opened. */
 int tiku_channel_losses(const tiku_channel_t *ch);
 
 /**

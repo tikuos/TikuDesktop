@@ -6,9 +6,8 @@
  *
  * tiku_tx.h - transport seam: bytes to and from one device.
  *
- * Serial, TCP and a custom one over a caller's own descriptor and hooks;
- * the WebSocket/wasm build implements the same three calls.  Nothing above
- * this header knows which one it is talking to.
+ * Serial, TCP, and a custom one over a caller's own descriptor and hooks.
+ * Nothing above this header knows which one it is talking to.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,14 +28,14 @@ typedef struct tiku_tx tiku_tx_t;
  */
 tiku_tx_t *tiku_tx_open_serial(const char *path, int baud);
 
-/* Resolves a name and connects, each of which may take seconds: never
- * on a thread that draws. */
 /**
  * @brief Open a TCP connection (the telnet-shell channel).
  *
  * @param host  Dotted-quad or hostname.
  * @param port  TCP port.
  * @return Handle, or NULL (errno set).
+ * @note Resolving the name and connecting may each take seconds: never
+ *       call this on a thread that draws.
  */
 tiku_tx_t *tiku_tx_open_tcp(const char *host, int port);
 
@@ -79,13 +78,16 @@ int tiku_tx_reopen(tiku_tx_t *tx);
 /** @brief Human-readable endpoint name, for window titles and logs. */
 const char *tiku_tx_name(const tiku_tx_t *tx);
 
+/** @brief Close the transport; a custom one's descriptor stays open, as
+ *         the caller's. */
 void tiku_tx_close(tiku_tx_t *tx);
 
 /**
- * @brief List TikuOS-looking serial devices under /dev/serial/by-id.
+ * @brief The serial ports a board could be on, as tiku_sys_serial_ports()
+ *        lists them for this host.
  *
  * Fills @p out with up to @p max NUL-terminated paths.
- * @return Count found, or -1 if the directory is unreadable.
+ * @return Count found, or -1 when this host has no such list.
  */
 int tiku_tx_scan_serial(char out[][256], int max);
 

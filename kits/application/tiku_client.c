@@ -4,7 +4,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_client.c - the out-of-process runner for one descriptor.
+ * tiku_client.c - the runner that serves one application descriptor in
+ * its own process: the services over the window session, and the loop
+ * that hands the desktop's messages to the descriptor.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,17 +27,10 @@
 #include "tiku_watch.h"
 
 /*
- * The stamp that says "a TikuOS application built this".
- *
- * A listing cannot tell tiku-term from /bin/ls: both are executables, and
- * the type of a file here is decided by its NAME, which a program does
- * not have an extension for.  Reading the whole binary looking for a
- * descriptor id would cost megabytes per row.
- *
- * So the build says it instead, in a section of its own: a reader opens
- * the file, walks the section table -- a few hundred bytes near the head
- * -- and knows.  Anything that links this kit carries it, which is
- * exactly the set of things that ARE TikuOS applications.
+ * The stamp that marks a TikuOS application's binary: this string, in a
+ * section of its own.  A folder listing (tiku_backend_posix.c) recognises
+ * an application by that section's name in the binary's headers, without
+ * reading the string.  A program that links this file carries it.
  */
 #ifdef __APPLE__
 /* Mach-O names a section by its segment too, and the stamp reader
@@ -46,29 +41,28 @@ __attribute__((used, section(".tikuos")))
 #endif
 static const char tiku_app_stamp_client[] = "TikuOS-application-1";
 
+/** @brief The runner's state, the services' context. */
 typedef struct {
     tiku_remote_client_t remote;
-    /* Windows this application is holding.  The session ends when the
-     * last one goes -- which for an application with one window is the
-     * moment its window is closed, exactly as before. */
+    /* Windows the application holds; the run ends when the last one
+     * closes. */
     int                       windows;
-    /* The desk's clipboard, mirrored: the shell TELLs every change, so
-     * a paste reads from here and never waits on the wire.  Held at its
-     * size (NULL when empty); the stamp moves whenever it does. */
+    /* The desk's clipboard, mirrored: the shell sends every change as a
+     * TELL, so a paste reads from here and never waits on the wire.  Held
+     * at its size (NULL when empty); the stamp moves whenever it does. */
     char                     *clip;
     unsigned                  clip_stamp;
-    /* The boards the shell has mounted, kept warm the way the clipboard
-     * is: a menu asks while it is being drawn.  Heard once the shell has
-     * first said them, a turn after start(): until then none means not
-     * yet, not none. */
+    /* The shell's board list, a "name<TAB>port<TAB>mcu" row a line,
+     * mirrored like the clipboard.  boards_heard is 0 until the shell
+     * first sends it, a turn after start(); before that an empty list
+     * does not mean there are no boards. */
     char                      boards[512];
     int                       boards_heard;
-    /* The desktop's current device, mirrored the same way: an app that
-     * defaults its work to it asks while a menu is being built. */
+    /* The desktop's current device, mirrored the same way. */
     char                      current[64];
 } client_ctx_t;
 
-/* Window properties are data, not access to the desktop workspace. */
+/** @brief Send window @p id's title, content size and size controls. */
 static int svc_configure(void *ctx, uint32_t id, const char *title,
                          int w, int h, int resize, int zoom)
 {
@@ -76,12 +70,14 @@ static int svc_configure(void *ctx, uint32_t id, const char *title,
     return tiku_remote_configure(&c->remote, id, title, w, h, resize, zoom);
 }
 
+/** @brief Say @p message to the desktop. */
 static int svc_message(void *ctx, const tiku_msg_t *message)
 {
     client_ctx_t *c = ctx;
     return tiku_remote_say(&c->remote, message);
 }
 
+/** @brief Ask the desktop for a window, and count it as held. */
 static uint32_t
 svc_open(void *ctx, const char *title, int w, int h)
 {
@@ -95,6 +91,7 @@ svc_open(void *ctx, const char *title, int w, int h)
     return id;
 }
 
+/** @brief Send @p px as window @p id's next frame.  @return 0, or -1. */
 static int
 svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
@@ -106,13 +103,13 @@ svc_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 }
 
 /**
- * @brief Hand the window over the cheap way when the cheap way is whole.
+ * @brief Send window @p id as its display list when the list can stand
+ *        for it, else as pixels.
  *
- * Three things have to be true to send commands: the far end has to be
- * able to play them, the list has to describe the WHOLE window -- an
- * icon in it and it does not -- and it has to actually be smaller, which
- * for a window of four fills it is not.  Any of them false and the
- * pixels go, and nothing above here notices either way.
+ * The list goes when the desktop has claimed command streams, and icon
+ * and picture commands too if the list holds any; when the list missed
+ * nothing; and when it is under half the frame's size.  Otherwise the
+ * pixels go, with a text description of the list, if any, for readers.
  */
 static int
 svc_present(void *ctx, uint32_t id, const struct tiku_dl *dl,
@@ -122,18 +119,10 @@ svc_present(void *ctx, uint32_t id, const struct tiku_dl *dl,
     size_t frame = 4u * (size_t)w * (size_t)h;
 
     /*
-     * FOUR things, and the first cannot be assumed: the far end has to
-     * have SAID it can play a stream.  Assuming it is survivable only
-     * while both ends are built together -- an end that cannot play a
-     * command steps over it (tiku_dl.h) and the window arrives missing
-     * whatever it drew, with the list still saying it is whole.
-     *
-     * Zero features means the desktop has not answered yet, or is too
-     * old to answer at all.  Both get the pixels, which every version
-     * has always understood.  And a list carrying ICONS needs the far
-     * end to have claimed those separately: an end that plays streams
-     * but not icon commands would step over them and show a window
-     * with holes where its art was.
+     * A list goes only to a desktop that claimed what it holds: an end
+     * steps over a command it cannot play (tiku_dl.h), and the window
+     * would show holes.  Zero features means no WELCOME yet, and the
+     * pixels go.
      */
     if (dl != NULL &&
         (tiku_remote_peer_features(&c->remote) &
@@ -141,9 +130,6 @@ svc_present(void *ctx, uint32_t id, const struct tiku_dl *dl,
         (tiku_dl_icons(dl) == 0 ||
          (tiku_remote_peer_features(&c->remote) &
               TIKU_FEAT_ICON_STREAM) != 0u) &&
-        /* A list carrying PICTURES needs the far end to have claimed
-         * those too: one that stepped over them would show a window
-         * with holes where its thumbnails were. */
         (tiku_dl_pictures(dl) == 0 ||
          (tiku_remote_peer_features(&c->remote) &
               TIKU_FEAT_PICTURE_STREAM) != 0u) &&
@@ -161,6 +147,7 @@ svc_present(void *ctx, uint32_t id, const struct tiku_dl *dl,
     return result;
 }
 
+/** @brief Send window @p id's menu set. */
 static int
 svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 {
@@ -169,6 +156,7 @@ svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
     return tiku_remote_menus(&c->remote, id, set);
 }
 
+/** @brief Ask the desktop to bring window @p id forward. */
 static int
 svc_raise(void *ctx, uint32_t id)
 {
@@ -178,6 +166,7 @@ svc_raise(void *ctx, uint32_t id)
     return 0;
 }
 
+/** @brief Tell the desktop window @p id's place role. */
 static int
 svc_place(void *ctx, uint32_t id, int role)
 {
@@ -187,6 +176,7 @@ svc_place(void *ctx, uint32_t id, int role)
     return 0;
 }
 
+/** @brief Tell the desktop the person may resize window @p id. */
 static int
 svc_sizeable(void *ctx, uint32_t id)
 {
@@ -196,13 +186,14 @@ svc_sizeable(void *ctx, uint32_t id)
     return 0;
 }
 
+/** @brief Give window @p id back, and stop counting it as held. */
 static void
 svc_close(void *ctx, uint32_t id)
 {
     client_ctx_t *c = ctx;
 
-    /* The window is given back by NAME; leaving is what happens when
-     * the last one has gone, which the pump decides. */
+    /* Only this window goes; the pump ends the run when the last one
+     * has gone. */
     tiku_remote_close_window(&c->remote, id);
     tiku_trail("window close requested id %u", id);
     if (c->windows > 0) {
@@ -210,6 +201,7 @@ svc_close(void *ctx, uint32_t id)
     }
 }
 
+/** @brief Microseconds on the monotonic clock. */
 static int64_t
 now_us(void)
 {
@@ -222,9 +214,8 @@ now_us(void)
 /**
  * @brief Ask the shell to let the person pick a file.
  *
- * Over SAY, the road that already carries a self-describing message
- * upward: the answer comes back over TELL, and neither direction needs
- * an op of its own for one question.
+ * Sent as a TIKU_MSG_PICK over SAY; the answer comes back as a
+ * TIKU_MSG_PICKED over TELL.
  */
 static int
 svc_pick(void *ctx, uint32_t id, int mode, const char *start,
@@ -250,9 +241,9 @@ svc_pick(void *ctx, uint32_t id, int mode, const char *start,
     return sent;
 }
 
-/** @brief The mirror made @p text, cut at TIKU_CLIPBOARD_LIMIT between
- *         characters as the desk's store cuts it; its stamp moved.  No
- *         memory for it leaves the mirror empty. */
+/** @brief Set the mirror to @p text, cut at TIKU_CLIPBOARD_LIMIT between
+ *         characters as the desk's store cuts it, and move its stamp.
+ *         Without memory for it the mirror is left empty. */
 static void
 clip_hold(client_ctx_t *c, const char *text)
 {
@@ -273,6 +264,8 @@ clip_hold(client_ctx_t *c, const char *text)
     c->clip_stamp++;
 }
 
+/** @brief Put @p text on the desk's clipboard: into the mirror, then to
+ *         the shell as a TIKU_MSG_CLIP. */
 static int
 svc_clip_set(void *ctx, const char *text)
 {
@@ -280,8 +273,8 @@ svc_clip_set(void *ctx, const char *text)
     tiku_msg_t *m;
     int sent;
 
-    /* The local copy first: a copy-then-paste inside this application
-     * must work even before the shell's echo comes back around. */
+    /* The mirror is set first, so a paste in this application gets the
+     * text before the shell's TELL comes back. */
     clip_hold(c, text);
     m = tiku_msg_new(TIKU_MSG_CLIP);
     if (m == NULL) {
@@ -293,6 +286,7 @@ svc_clip_set(void *ctx, const char *text)
     return sent;
 }
 
+/** @brief The mirrored clipboard, never NULL, and its stamp. */
 static const char *
 svc_clip_text(void *ctx, unsigned *stamp)
 {
@@ -332,6 +326,7 @@ field_of(const char *row, int which, char *out, size_t max)
     }
 }
 
+/** @brief The port of @p board, from the mirrored board list. */
 static int
 svc_board_port(void *ctx, const char *board, char *out, size_t max)
 {
@@ -358,6 +353,7 @@ svc_board_port(void *ctx, const char *board, char *out, size_t max)
     return 0;
 }
 
+/** @brief The processor of @p board, from the mirrored board list. */
 static int
 svc_board_mcu(void *ctx, const char *board, char *out, size_t max)
 {
@@ -400,18 +396,21 @@ say_board(client_ctx_t *c, uint32_t what, const char *board)
     return sent;
 }
 
+/** @brief Ask the shell to let @p board go. */
 static int
 svc_board_release(void *ctx, const char *board)
 {
     return say_board(ctx, TIKU_MSG_BOARDFREE, board);
 }
 
+/** @brief Ask the shell to take @p board back. */
 static int
 svc_board_reclaim(void *ctx, const char *board)
 {
     return say_board(ctx, TIKU_MSG_BOARDBACK, board);
 }
 
+/** @brief Ask the shell to look for boards on this machine's ports. */
 static int
 svc_board_find(void *ctx)
 {
@@ -450,7 +449,7 @@ static int svc_help_open(void *ctx, const char *page)
     int sent = tiku_remote_say(&c->remote, m); tiku_msg_free(m); return sent;
 }
 
-/** @brief Bounded report bodies use the same reader without temporary files. */
+/** @brief Send a report of at most 15000 bytes to the desktop's reader. */
 static int svc_help_html(void *ctx, const char *title, const char *html)
 {
     client_ctx_t *c = ctx;
@@ -461,6 +460,7 @@ static int svc_help_html(void *ctx, const char *title, const char *html)
     int sent = tiku_remote_say(&c->remote, m); tiku_msg_free(m); return sent;
 }
 
+/** @brief The desktop's current device, mirrored; empty for this machine. */
 static int
 svc_current_device(void *ctx, char *out, size_t max)
 {
@@ -473,6 +473,8 @@ svc_current_device(void *ctx, char *out, size_t max)
     return (int)strlen(out);
 }
 
+/** @brief The mirrored board names, one a line; -1 until the shell first
+ *         sends the list. */
 static int
 svc_board_names(void *ctx, char *out, size_t max)
 {
@@ -482,8 +484,8 @@ svc_board_names(void *ctx, char *out, size_t max)
         return 0;
     }
         {
-        /* The shell tells name AND port; a caller asking for names is
-         * asking for names. */
+        /* The rows carry a name, a port and a processor; only the names
+         * are copied. */
         const char *row = c->boards;
         size_t n = 0u;
 
@@ -509,6 +511,7 @@ svc_board_names(void *ctx, char *out, size_t max)
     return (int)strlen(out);
 }
 
+/** @brief Ask the shell to run @p program on @p board. */
 static int
 svc_board_run(void *ctx, const char *board, const char *program)
 {
@@ -527,6 +530,7 @@ svc_board_run(void *ctx, const char *board, const char *program)
     return sent;
 }
 
+/** @brief Answer the running program's INPUT with @p text. */
 static int
 svc_board_input(void *ctx, const char *text)
 {
@@ -543,6 +547,7 @@ svc_board_input(void *ctx, const char *text)
     return sent;
 }
 
+/** @brief Ask the shell to keep @p program on @p board as @p name. */
 static int
 svc_board_save(void *ctx, const char *board, const char *name,
                const char *program)
@@ -563,6 +568,7 @@ svc_board_save(void *ctx, const char *board, const char *name,
     return sent;
 }
 
+/** @brief Ask the shell to break the running program. */
 static int
 svc_board_stop(void *ctx)
 {
@@ -578,7 +584,8 @@ svc_board_stop(void *ctx)
     return sent;
 }
 
-/** Log input shape, never document text, clipboard content or typed keys. */
+/** @brief Log an event's kind and window, never document text, clipboard
+ *         content or typed keys. */
 static void trace_event(uint32_t id, const tiku_event_t *e)
 {
     if (e->type == TIKU_EVENT_RESIZE)
@@ -587,6 +594,11 @@ static void trace_event(uint32_t id, const tiku_event_t *e)
         tiku_trail("event %d window %u", (int)e->type, id);
 }
 
+/**
+ * @brief Start @p app with the runner's services, then serve the desktop's
+ *        messages and tick() until it is done.
+ * @return what tiku_client_run() returns.
+ */
 static int
 pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
      const tiku_msg_t *message)
@@ -644,8 +656,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
         int dead = 0;
         tiku_watch_beat();
 
-        /* DRAIN what is queued before sleeping: a drag is many messages,
-         * and one-per-nap starves it. */
+        /* Drain the queue before waiting: a drag is many messages. */
         for (;;) {
             tiku_event_t event;
             uint32_t id = 0;
@@ -671,8 +682,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
             }
             if (type == TIKU_RMSG_CLOSED) {
                 tiku_trail("desktop closed window %u", id);
-                /* The runtime took a window.  An application holding
-                 * others keeps going; the last one going is the end. */
+                /* The desktop closed a window; the last one ends the run. */
                 if (app->closed != NULL) {
                     app->closed(state, id);
                 }
@@ -697,8 +707,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
                 done = 1;
             }
             if (type == TIKU_RMSG_TELL) {
-                /* The shell said something.  One thing is worth hearing
-                 * today: the path a pick() ended in. */
+                /* The shell's message: the board list, a program's output,
+                 * the clipboard or a pick's answer; message() hears each. */
                 tiku_msg_t *heard = tiku_remote_heard(&ctx->remote);
 
                 if (heard != NULL) {
@@ -715,9 +725,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
                         snprintf(was, sizeof was, "%s", ctx->current);
                         snprintf(ctx->current, sizeof ctx->current, "%s",
                                  (cur != NULL) ? cur : "");
-                        /* An application out here defaults its work to the
-                         * current device as one embedded in the shell does,
-                         * so the change has to reach it the same way. */
+                        /* A change of device is told through
+                         * board_said(TIKU_APP_BOARD_CURRENT). */
                         if (strcmp(was, ctx->current) != 0 &&
                             app->board_said != NULL) {
                             app->board_said(state, TIKU_APP_BOARD_CURRENT,
@@ -765,14 +774,8 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
             break;
         }
         {
-            /* Woken by the desktop rather than by a clock: a keystroke
-             * reaches the application as it arrives instead of at the
-             * end of whatever nap was already running.
-             *
-             * The timeout stays SHORT and unconditional because tick is
-             * how an application drives everything the session does not
-             * carry -- a terminal's pty, a clock's minute -- and this
-             * runtime cannot know what else it is waiting on. */
+            /* Wait for the desktop's next message, at most
+             * TIKU_CLIENT_TICK_MS, then tick() again. */
             struct pollfd fds;
 
             fds.fd = ctx->remote.fd;

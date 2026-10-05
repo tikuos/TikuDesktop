@@ -4,12 +4,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_tx.c - serial and TCP transports.
+ * tiku_tx.c - serial, TCP and custom transports.
  *
  * Serial is raw 8N1 with no flow control and DTR left asserted; TCP is a plain
  * stream to the telnet-shell port; a custom one reads a descriptor the caller
- * feeds and writes through a hook.  All poll with a deadline so the UI thread
- * never blocks on a silent device.
+ * feeds and writes through a hook.  Reads poll with a deadline and a stalled
+ * write waits at most a second, so a silent device does not hold the
+ * caller; opening a TCP transport can take seconds.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -49,7 +50,8 @@ struct tiku_tx {
     void            *cctx;
 };
 
-/** @brief Map an integer rate onto its termios constant; B0 if unsupported. */
+/** @brief Map an integer rate onto its termios constant; B0 if unsupported,
+ *         which fails the open. */
 static speed_t
 tx_speed(int baud)
 {
@@ -85,15 +87,13 @@ tx_configure_serial(int fd, int baud)
     (void)cfsetispeed(&t, sp);
     (void)cfsetospeed(&t, sp);
     /*
-     * Set, then READ BACK.  A rate above 230400 is not a constant on
-     * every host -- it is the number itself -- and a line asked for one
-     * may refuse, or may take it and run at something else, which is
-     * the worse of the two because nothing says so.  Garbage at the
-     * wrong rate looks like a board that is not answering.  So the
-     * agreed rate is checked against the asked one, and where they
-     * differ the host is asked to set it a second way; a host that
-     * cannot fails the open rather than handing back a line that will
-     * only ever produce noise.
+     * Set, then read back.  A rate above 230400 is not a termios
+     * constant on every host, and a line asked for one may refuse it, or
+     * take it and run at another rate without saying so; bytes at the
+     * wrong rate look like a board that is not answering.  Where the
+     * agreed rate differs from the asked one the host is asked to set it
+     * another way (tiku_sys_serial_speed()), and a host that cannot fails
+     * the open.
      */
     if (tcsetattr(fd, TCSANOW, &t) != 0) {
         if (tiku_sys_serial_speed(fd, baud) != 0) {
@@ -168,7 +168,7 @@ tx_dial(const char *host, int port)
     freeaddrinfo(res);
     if (fd >= 0) {
         int one = 1;
-        /* The shell's answers are small and latency-visible in the UI. */
+        /* TCP_NODELAY: the shell's small answers go out at once. */
         (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
         (void)fcntl(fd, F_SETFL, O_NONBLOCK);
     }
@@ -234,7 +234,8 @@ tiku_tx_read(tiku_tx_t *tx, void *buf, size_t max, int timeout_ms)
     p.revents = 0;
     if (tx->kind == TX_CUSTOM) {
         /* The medium is serviced from here: whoever waits on the shell
-         * is the only one running while it waits. */
+         * is the only one running while it waits, so the pump runs between
+         * slices of the wait. */
         int left = timeout_ms;
 
         for (;;) {
@@ -258,7 +259,7 @@ tiku_tx_read(tiku_tx_t *tx, void *buf, size_t max, int timeout_ms)
     if (n > 0) {
         return (int)n;
     }
-    /* 0 from a socket is a closed peer; on a serial fd it is just quiet. */
+    /* 0 from a socket is a closed peer; on a serial fd it means no data. */
     if (n == 0) {
         return (tx->kind == TX_SERIAL) ? 0 : -1;
     }
@@ -345,7 +346,7 @@ tiku_tx_close(tiku_tx_t *tx)
 int
 tiku_tx_scan_serial(char out[][256], int max)
 {
-    /* Where a machine keeps its serial ports, and what it calls them,
-     * is the machine's own business and is asked for as such. */
+    /* tiku_sys_serial_ports() knows where this host keeps its serial
+     * ports and what it calls them. */
     return tiku_sys_serial_ports(out, max);
 }

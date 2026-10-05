@@ -1,5 +1,15 @@
-/* Native app controllers keep their workspace private to their own process.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_window_app.c - publishing a private workspace's windows through
+ * the application services: surfaces, titles, menus, the clipboard and
+ * focus.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_window_app.h"
 #include "tiku_remote.h"
 #include "tiku_dl.h"
@@ -8,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* One published window: the toolkit window, the desktop's id for it, and
+ * what was last sent. */
 typedef struct {
     tiku_window_t *window;
     uint32_t id;
@@ -25,14 +37,15 @@ struct tiku_window_app {
     tiku_surface_t *canvas;
     app_window_t windows[TIKU_WINDOW_MAX];
     unsigned clipboard_stamp;
-    unsigned host_stamp;        /* the services' clipboard, as imported */
-    int host_imported;          /* whether it has been at all */
+    unsigned host_stamp;        /* the host clipboard's stamp, as imported */
+    int host_imported;          /* whether it has been imported at all */
     uint64_t focused_generation;
 };
 
-/* Import before a user action, then publish only changes made by that action.
- * The host's copy is compared only when its stamp says it moved, so a large
- * clipboard costs nothing on events that leave it alone. */
+/** @brief Before a user action: take the host's clipboard into the
+ *         toolkit's when its stamp has moved, and note the toolkit's
+ *         stamp, so a large clipboard costs nothing on events that leave
+ *         it alone. */
 static void clipboard_begin(tiku_window_app_t *a)
 {
     unsigned stamp = 0;
@@ -47,13 +60,16 @@ static void clipboard_begin(tiku_window_app_t *a)
     a->clipboard_stamp = tiku_clipboard_stamp();
 }
 
+/** @brief After a user action: send the toolkit's clipboard to the host
+ *         when the action changed it. */
 static void clipboard_end(tiku_window_app_t *a)
 {
     if (a->clipboard_stamp != tiku_clipboard_stamp() && a->services.clip_set)
         a->services.clip_set(a->services.ctx, tiku_clipboard_text());
 }
 
-/* Content coordinates in the private workspace always begin at zero. */
+/** @brief Set @p w's frame so its content starts at 0,0 and is @p width
+ *         by @p height. */
 static void geometry(tiku_window_t *w, int width, int height)
 {
     int border = w->plain ? 1 : TIKU_WINDOW_BORDER;
@@ -96,7 +112,15 @@ uint32_t tiku_window_app_id(tiku_window_app_t *a, tiku_window_t *w)
     return 0;
 }
 
-/* Never resize an allocated frame in place until allocation succeeds. */
+/**
+ * @brief Publish one window: open it at the desktop when new, send a
+ *        changed title, size or menu set, and draw and send a frame when
+ *        @p dirty or its surface is new.
+ *
+ * A new surface is allocated before the old one is freed.
+ * @return 0 when its size is out of range, or it could not be opened or
+ *         its surface made.
+ */
 static int publish(tiku_window_app_t *a, app_window_t *slot, int dirty)
 {
     tiku_window_t *w = slot->window;

@@ -8,7 +8,8 @@
  *
  * Sends a command, returns what the device printed before the next prompt, and
  * routes asynchronous `~<path>` subscription lines to a callback wherever they
- * land in the stream.
+ * land in the stream.  Frames for a window session share the line and are
+ * cut out of it first.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,23 +19,24 @@
 #include <stddef.h>
 #include "tiku_tx.h"
 
+/** @brief A conversation with one device over one transport. */
 typedef struct tiku_session tiku_session_t;
 
 /**
  * @brief Called for every `~<path>` line the device emits.
  *
- * Delivered from inside a session call, so handlers must not re-enter the
- * session; queue the path and re-read after the current command returns.
+ * @note Called from inside a session call: a handler must not re-enter
+ *       the session, but queue the path and re-read it after the current
+ *       command returns.
  */
 typedef void (*tiku_notify_fn)(const char *path, void *ctx);
 
 /**
  * @brief The board's text, handed over as it arrives.
  *
- * What a client that OWNS the line reads: bytes as the board wrote them,
- * with the escape sequences already taken out, and no prompt framing --
- * a running program's output is not a command's reply and has no prompt
- * to end it until it ends.
+ * What a client that owns the line reads: bytes as the board wrote them,
+ * with ANSI escape sequences taken out and no prompt framing; `~` lines
+ * still go to the notify callback.
  */
 typedef void (*tiku_text_fn)(const unsigned char *bytes, size_t n,
                              void *ctx);
@@ -42,6 +44,7 @@ typedef void (*tiku_text_fn)(const unsigned char *bytes, size_t n,
 /** @brief Wrap an open transport.  Takes ownership of @p tx. */
 tiku_session_t *tiku_session_new(tiku_tx_t *tx);
 
+/** @brief Close the transport and free the session. */
 void tiku_session_free(tiku_session_t *s);
 
 /** @brief Install the subscription-line handler (NULL to drop them). */
@@ -81,11 +84,14 @@ int tiku_session_reconnect(tiku_session_t *s);
  *         resynchronise on; what was half read is dropped.  0 on success. */
 int tiku_session_reopen(tiku_session_t *s);
 
-/*
- * Frames on the same line.  A board's console carries typed text and,
- * between 0xC0 delimiters after a 0xF1 marker, binary frames escaped the
- * SLIP way; the frames are cut out of the stream before any text is
- * looked at, so a shell and a window session share one cable.
+/**
+ * @brief The largest frame, unescaped: a larger one coming in is dropped
+ *        whole, and one going out is refused.
+ *
+ * A board's console carries typed text and, between 0xC0 delimiters
+ * after a 0xF1 marker, binary frames escaped the SLIP way; the frames are
+ * cut out of the stream before any text is looked at, so a shell and a
+ * window session share one cable.
  */
 #define TIKU_SESSION_FRAME_MAX 4096
 
@@ -96,15 +102,15 @@ typedef void (*tiku_frame_fn)(const unsigned char *bytes, size_t len,
 /** @brief Route frames to @p fn; NULL drops them. */
 void tiku_session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx);
 
-/** @brief Send @p len bytes as one frame.  0 on success. */
 /**
  * @brief Hand the board's text to @p fn as it arrives, instead of keeping
  *        it for the next command's reply.  NULL gives it back.
  *
  * Frames are untouched: a board whose windows share the line goes on
- * drawing while a program prints.  A command cannot be framed while this
- * is set -- its reply would go to @p fn -- so a caller takes the line,
- * uses it, and gives it back.
+ * drawing while a program prints.
+ * @note While @p fn is set a command's reply goes to it, so a caller
+ *       takes the line, uses it, and gives it back before
+ *       tiku_session_cmd().
  */
 void tiku_session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx);
 
@@ -118,14 +124,15 @@ int tiku_session_send_raw(tiku_session_t *s, const void *bytes, size_t n);
 /**
  * @brief Read and discard until the board has been quiet for @p quiet_ms.
  *
- * What a caller handing the line back owes the next one.  A sync alone
- * cannot do it: it clears what it holds and then takes the next prompt it
- * sees, so a prompt already on its way from the last client's traffic
- * satisfies it while the answer to its OWN newline is still to come, and
- * the command after that reads one prompt out of step.
+ * @note A caller handing the line back calls this.  tiku_session_sync()
+ *       alone may take a prompt already on its way from the last client's
+ *       traffic as its own, leaving the next command one prompt out of
+ *       step.
  */
 void tiku_session_drain(tiku_session_t *s, int quiet_ms);
 
+/** @brief Send @p len bytes, at most TIKU_SESSION_FRAME_MAX, as one frame.
+ *         @return 0, or -1. */
 int tiku_session_send_frame(tiku_session_t *s, const void *bytes,
                             size_t len);
 

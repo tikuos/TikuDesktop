@@ -7,8 +7,8 @@
  * tiku_app_cursor.c - the pointer shape a window's content asks for.
  *
  * The request is a message the desktop answers (TIKU_MSG_CURSOR in
- * tiku_remote.h); a file of its own so that an application which never
- * asks for one links nothing of the message kit for it.
+ * tiku_remote.h).  It is a file of its own: an application that never
+ * asks for a cursor links no message code for it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

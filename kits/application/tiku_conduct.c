@@ -4,11 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_conduct.c - the conductor channel (see the header).
+ * tiku_conduct.c - the conductor channel, the shell's end and the
+ * driver's.
  *
- * The framing is the window session's, deliberately: one wire format for
- * everything this desktop speaks, so the day these frames ride a serial
- * link there is one thing to carry and not two.
+ * The framing is the window session's ([u32 type][u32 length][payload]),
+ * one wire format for both channels, over a local socket or a serial line
+ * (tiku_conduct_open_tty(), tiku_conduct_adopt()).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,8 +31,12 @@
 #include <time.h>
 #include <unistd.h>
 
+/** @brief The largest payload either end accepts; a longer length ends
+ *         the stream. */
 #define CONDUCT_MAX_PAYLOAD (64u * 1024u)
 
+/** @brief Make @p fd nonblocking, and ignore SIGPIPE: a write to a peer
+ *         that has gone then fails with EPIPE.  @return 0, or -1. */
 static int
 set_nonblock(int fd)
 {
@@ -42,6 +47,8 @@ set_nonblock(int fd)
     return (flags >= 0) ? fcntl(fd, F_SETFL, flags | O_NONBLOCK) : -1;
 }
 
+/** @brief Write all of @p data, retrying at once while the socket is full;
+ *         a write error ends it early. */
 static void
 send_all(int fd, const void *data, size_t n)
 {
@@ -61,6 +68,8 @@ send_all(int fd, const void *data, size_t n)
     }
 }
 
+/** @brief Write one message: its type and length, then @p n bytes of
+ *         @p payload. */
 static void
 send_msg(int fd, uint32_t type, const void *payload, uint32_t n)
 {
@@ -108,7 +117,7 @@ stream_read(int fd, unsigned char *hbuf, size_t *hgot, unsigned char **buf,
             memcpy(head, hbuf, sizeof head);
             *hgot = 0u;
             if (head[1] > CONDUCT_MAX_PAYLOAD) {
-                return -1;      /* nonsense on the wire: end it */
+                return -1;      /* past CONDUCT_MAX_PAYLOAD: end it */
             }
             *cur_type = head[0];
             *want = head[1];
@@ -142,7 +151,7 @@ stream_read(int fd, unsigned char *hbuf, size_t *hgot, unsigned char **buf,
 }
 
 /*---------------------------------------------------------------------------*/
-/* The shell's side                                                          */
+/* THE SHELL'S SIDE                                                          */
 /*---------------------------------------------------------------------------*/
 
 int
@@ -171,7 +180,7 @@ tiku_conduct_listen(tiku_conduct_t *c, const char *path,
         sizeof c->path) {
         return -1;
     }
-    /* Every directory on the way; see tiku_remote_listen. */
+    /* Make every directory on the way, as tiku_remote_listen() does. */
     snprintf(dir, sizeof dir, "%s", c->path);
     slash = strrchr(dir, '/');
     if (slash != NULL) {
@@ -241,13 +250,11 @@ tiku_conduct_open_tty(const char *path, int baud)
     }
     if (tcgetattr(fd, &tio) == 0) {
         cfmakeraw(&tio);
-        /* cfmakeraw leaves VMIN 1, VTIME 0, and it must STAY that way.
-         * With VMIN 0 a terminal read that has nothing to give returns
-         * ZERO -- which on a socket means the peer hung up, and this code
-         * reads both.  A line configured to poll would therefore look
-         * like a cable being unplugged on every quiet moment.  Being
-         * non-blocking is O_NONBLOCK's job; it reports EAGAIN, which is
-         * a different thing from end-of-file and must remain so. */
+        /* cfmakeraw leaves VMIN 1 and VTIME 0, and they stay so: with
+         * VMIN 0 a read with nothing to give returns 0, which this code,
+         * reading sockets too, takes as the peer hanging up.  The line is
+         * made nonblocking (set_nonblock()) before it is read, and its
+         * EAGAIN is not end-of-file. */
         if (baud > 0) {
             speed_t sp = (baud == 9600)     ? B9600
                        : (baud == 19200)    ? B19200
@@ -261,17 +268,14 @@ tiku_conduct_open_tty(const char *path, int baud)
             (void)cfsetispeed(&tio, sp);
             (void)cfsetospeed(&tio, sp);
             if (tcsetattr(fd, TCSANOW, &tio) != 0) {
-                /* The rate was refused outright.  On a host whose
-                 * termios cannot name it the driver is told instead;
-                 * on one that can, there is nothing else to try and
+                /* The rate was refused: the serial driver is asked to set
+                 * it (tiku_sys_serial_speed()), and where that cannot help
                  * the line is left as it was found. */
                 (void)tiku_sys_serial_speed(fd, baud);
             } else if (tcgetattr(fd, &tio) == 0 &&
                        cfgetospeed(&tio) != sp) {
-                /* Taken, but not honoured: the line is running at
-                 * something other than what was asked for, which is
-                 * the quiet way a link comes to carry nothing but
-                 * noise -- and looks like a board not answering. */
+                /* Accepted but not applied: the line runs at another rate,
+                 * so the serial driver is asked to set it. */
                 (void)tiku_sys_serial_speed(fd, baud);
             }
             return fd;
@@ -301,7 +305,6 @@ tiku_conduct_shutdown(tiku_conduct_t *c)
     c->got = c->want = c->hgot = 0u;
 }
 
-/** @brief Serve one complete message.  @return nonzero if it injected. */
 void
 tiku_conduct_require(tiku_conduct_t *c, const char *full_token,
                           const char *query_token)
@@ -314,8 +317,7 @@ tiku_conduct_require(tiku_conduct_t *c, const char *full_token,
              (full_token != NULL) ? full_token : "");
     snprintf(c->token_query, sizeof c->token_query, "%s",
              (query_token != NULL) ? query_token : "");
-    /* A peer already connected is stripped back to nothing: whatever it
-     * was before names were required, it has not named itself yet. */
+    /* A peer already connected may do nothing until it names itself. */
     c->grant = TIKU_CONDUCT_GRANT_NONE;
     snprintf(c->principal, sizeof c->principal, "unnamed");
     c->subs = 0;
@@ -330,7 +332,7 @@ tiku_conduct_quota(tiku_conduct_t *c, long messages)
     }
 }
 
-/** @brief One stable signature of a fact's text, for "did it change". */
+/** @brief An FNV-1a hash of a fact's text, to tell whether it changed. */
 static uint32_t
 conduct_sig(const char *text)
 {
@@ -377,12 +379,11 @@ conduct_now_us(void)
 }
 
 /**
- * @brief Look at every watched fact and TELL the driver the ones that
- *        changed, at most once per interval.
+ * @brief Send a TOLD for each watched fact whose text changed, at most
+ *        once per TIKU_CONDUCT_TELL_MS.
  *
- * The interval is the economy: evaluating a fact costs the shell what
- * answering the query costs -- for a narration, a content draw -- so a
- * quiet watch must not become a per-turn tax.
+ * Evaluating a fact costs what answering its query costs, a content draw
+ * for a narration, so the facts are not read every turn.
  */
 static void
 conduct_tell(tiku_conduct_t *c)
@@ -404,7 +405,7 @@ conduct_tell(tiku_conduct_t *c)
 
         text[0] = '\0';
         if (!c->text(c->ctx, c->sub_name[i], text, sizeof text)) {
-            continue;           /* a fact gone quiet is not a change */
+            continue;           /* unanswered now: not a change */
         }
         sig = conduct_sig(text);
         if (sig != c->sub_sig[i]) {
@@ -419,6 +420,8 @@ conduct_tell(tiku_conduct_t *c)
     }
 }
 
+/** @brief Serve one complete message from the driver.
+ *  @return nonzero if it injected an event. */
 static int
 conduct_message(tiku_conduct_t *c)
 {
@@ -426,8 +429,9 @@ conduct_message(tiku_conduct_t *c)
 
     switch (c->cur_type) {
     case TIKU_CMSG_HELLO:
-        /* A driver from another world is refused rather than half-served:
-         * the version is the only thing checked before anything acts. */
+        /* A HELLO naming another version closes the peer.  Without
+         * required tokens, a peer that sends no HELLO keeps the full
+         * grant it got when it connected. */
         if (c->want >= 4u) {
             uint32_t version;
 
@@ -439,9 +443,9 @@ conduct_message(tiku_conduct_t *c)
             }
         }
         if (c->required) {
-            /* Identity before reach: the token after the version is the
-             * session's name, and an unnamed or wrongly named peer gets
-             * exactly what a version mismatch gets -- nothing. */
+            /* With tokens required, the token after the version names the
+             * peer: the full token grants FULL, the query token QUERY, and
+             * anything else closes the peer. */
             char token[TIKU_CONDUCT_TOKEN];
 
             token[0] = '\0';
@@ -479,8 +483,8 @@ conduct_message(tiku_conduct_t *c)
     switch (c->cur_type) {
     case TIKU_CMSG_INJECT:
         if (c->grant < TIKU_CONDUCT_GRANT_FULL) {
-            /* A reader's credential provably cannot inject: the event is
-             * dropped here, before the shell ever sees it. */
+            /* A reader's grant cannot inject: the event is dropped here,
+             * before the shell sees it. */
             break;
         }
         if (c->want >= sizeof(tiku_event_t) && c->inject != NULL) {
@@ -493,7 +497,7 @@ conduct_message(tiku_conduct_t *c)
         break;
     case TIKU_CMSG_QUERY:
         if (c->grant < TIKU_CONDUCT_GRANT_QUERY) {
-            break;              /* unnamed: not even an answer of no */
+            break;              /* no grant: no answer at all */
         }
         if (c->want >= 12u + TIKU_CONDUCT_ARG) {
             uint32_t what;
@@ -516,12 +520,9 @@ conduct_message(tiku_conduct_t *c)
                 reply[0] = 1;
             } else if (what == TIKU_CQ_TEXT && c->text != NULL &&
                        arg[0] == '~') {
-                /* The watched form of any named fact: answer its current
-                 * text AND remember it, so a change is pushed as a TOLD
-                 * frame instead of waiting to be asked for again.  An
-                 * unknown name, or a full watch table, is refused the
-                 * same way an unknown name always is: told, not guessed
-                 * at. */
+                /* "~name" answers the fact's current text and watches it,
+                 * so a change is pushed as a TOLD frame; an unknown name
+                 * or a full watch table is answered 0. */
                 reply[0] = (c->text(c->ctx, arg + 1, text, sizeof text) &&
                             conduct_watch(c, arg + 1, text)) ? 1 : 0;
             } else if (what == TIKU_CQ_TEXT && c->text != NULL) {
@@ -573,10 +574,8 @@ tiku_conduct_poll(tiku_conduct_t *c)
         if (r == 0) {
             break;
         }
-        /* Handled BEFORE the length is cleared: every branch below
-         * checks the payload size, and a zeroed one refuses them all. */
-        /* Handled BEFORE the length is cleared: every branch below
-         * checks the payload size, and a zeroed one refuses them all. */
+        /* Served before the length is cleared: every branch checks the
+         * payload size, and a zeroed one refuses them all. */
         injected |= conduct_message(c);
         c->want = 0u;
     }
@@ -585,7 +584,7 @@ tiku_conduct_poll(tiku_conduct_t *c)
 }
 
 /*---------------------------------------------------------------------------*/
-/* The driver's side                                                         */
+/* THE DRIVER'S SIDE                                                         */
 /*---------------------------------------------------------------------------*/
 
 int
@@ -608,14 +607,13 @@ tiku_conduct_connect_as(tiku_conduct_client_t *c, const char *path,
 
         if (fd >= 0) {
             if (connect(fd, (struct sockaddr *)&addr, sizeof addr) == 0) {
-                /* connect_fd_as sets non-blocking too, so the bounded
-                 * wait for an answer can actually time out. */
+                /* connect_fd_as makes the fd nonblocking, so the bounded
+                 * wait for an answer can time out. */
                 return tiku_conduct_connect_fd_as(c, fd, token);
             }
             (void)close(fd);
         }
-        /* The shell may still be starting: waiting here is what frees the
-         * harness from having to sequence two processes by hand. */
+        /* The shell may still be starting, so the connect is retried. */
         if (waited >= wait_ms) {
             return -1;
         }
@@ -707,10 +705,8 @@ tiku_conduct_query(tiku_conduct_client_t *c, uint32_t what,
     }
     send_msg(c->fd, TIKU_CMSG_QUERY, msg, (uint32_t)sizeof msg);
 
-    /* Wait for the one answer, but NOT forever: a shell that stopped
-     * answering must show up as a failed question, not as a driver that
-     * never returns.  A harness that hangs is worse than one that fails,
-     * because it reports nothing at all and someone waits on it. */
+    /* Wait at most TIKU_CONDUCT_ANSWER_MS; a shell that stopped
+     * answering makes the query fail. */
     for (waited = 0; waited < TIKU_CONDUCT_ANSWER_MS; ) {
         int r = stream_read(c->fd, hbuf, &hgot, &buf, &got, &want, &type);
 
@@ -742,7 +738,7 @@ tiku_conduct_query(tiku_conduct_client_t *c, uint32_t what,
             free(buf);
             return ok;
         }
-        want = 0u;              /* something else: keep waiting */
+        want = 0u;              /* another frame: dropped, keep waiting */
     }
     free(buf);
     return 0;                   /* it never answered */
@@ -769,9 +765,8 @@ tiku_conduct_told(tiku_conduct_client_t *c, char *name,
     if (text != NULL && text_max > 0u) {
         text[0] = '\0';
     }
-    /* Nothing is sent: being told was arranged when the watch was asked
-     * for, and this only listens for it -- bounded, so a notice that
-     * never comes is a failure someone sees, not a driver that hangs. */
+    /* Nothing is sent: the QUERY that set the watch arranged the telling,
+     * and this only listens, for at most wait_ms. */
     for (waited = 0; waited < wait_ms; ) {
         int r = stream_read(c->fd, hbuf, &hgot, &buf, &got, &want, &type);
 
@@ -801,7 +796,7 @@ tiku_conduct_told(tiku_conduct_client_t *c, char *name,
             free(buf);
             return 1;
         }
-        want = 0u;              /* something else: keep listening */
+        want = 0u;              /* another frame: dropped, keep listening */
     }
     free(buf);
     return 0;                   /* the notice never came */

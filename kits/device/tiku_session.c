@@ -6,9 +6,9 @@
  *
  * tiku_session.c - prompt discipline, echo removal, notify demux.
  *
- * The cadence follows TikuBench's ShellSession, which is proven against every
- * board in the fleet: strip ANSI, match the cwd-tolerant prompt, and treat
- * anything the device says before it as the answer.
+ * It strips ANSI escapes, matches the prompt with or without a working
+ * directory in it, and takes what the device says before the prompt as
+ * the answer.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,7 +22,8 @@
 #include <stdio.h>
 #include <time.h>
 
-/* One BASIC LIST or a full manifest is the worst case the buffer must hold. */
+/* The text buffer starts small and grows for a long reply, such as a
+ * BASIC LIST or a whole manifest. */
 #define SESSION_BUF_INIT  (16u * 1024u)
 #define SESSION_BUF_MAX   (512u * 1024u)
 
@@ -52,12 +53,11 @@ struct tiku_session {
     int                 overflow;       /* the frame outgrew fbuf: dropped */
     /* One hand on the wire at a time: a worker in the middle of a
      * command and the loop polling for frames share this line, and the
-     * prompt discipline cannot survive two readers. */
+     * prompt matching breaks with two readers. */
     pthread_mutex_t     hand;
-    /* The pen is for writing only.  A frame sent while a worker holds
-     * the hand goes between the command's bytes, which the board's
-     * decoder takes whole; what must not happen is two writers
-     * interleaving. */
+    /* The pen is for writing only, so two writers never interleave.  A
+     * frame sent while a worker holds the hand goes between the
+     * command's bytes, which the board's decoder takes whole. */
     pthread_mutex_t     pen;
 };
 
@@ -82,6 +82,8 @@ now_ms(void)
     return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
+/** @brief Room for @p extra more bytes and a NUL in the text buffer,
+ *         doubling it up to SESSION_BUF_MAX.  @return 0, or -1. */
 static int
 buf_reserve(tiku_session_t *s, size_t extra)
 {
@@ -172,8 +174,8 @@ find_prompt(const unsigned char *b, size_t len, size_t *end_out)
 /**
  * @brief Pull complete `~<path>` lines out of the buffer and dispatch them.
  *
- * Subscription lines can land between any two bytes of a command's output, so
- * they are removed from the stream rather than parsed at the edges.
+ * A subscription line can arrive anywhere in a command's output; each
+ * complete `~` line is cut out of the buffer wherever it starts a line.
  *
  * @return Lines dispatched.
  */
@@ -300,8 +302,8 @@ pump(tiku_session_t *s, int timeout_ms, int *notified)
     if (notified != NULL) {
         *notified += f;
     }
-    /* A client holding the line takes the text as it comes.  After the
-     * notices, so a board that still pushes one is still heard. */
+    /* A client holding the line takes the text as it comes, after the
+     * `~` lines have gone to the notify callback. */
     if (s->text != NULL && s->len > 0u) {
         s->text(s->buf, s->len, s->text_ctx);
         s->len = 0;
@@ -309,6 +311,8 @@ pump(tiku_session_t *s, int timeout_ms, int *notified)
     return n;
 }
 
+/** @brief A session on @p tx with an empty text buffer; its mutexes are
+ *         the caller's to set up. */
 static tiku_session_t *
 session_new(tiku_tx_t *tx)
 {
@@ -331,6 +335,7 @@ session_new(tiku_tx_t *tx)
     return s;
 }
 
+/** @brief Close the transport and free the session's memory. */
 static void
 session_free(tiku_session_t *s)
 {
@@ -342,6 +347,7 @@ session_free(tiku_session_t *s)
     free(s);
 }
 
+/** @brief Set where whole frames go. */
 static void
 session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
 {
@@ -351,19 +357,20 @@ session_on_frame(tiku_session_t *s, tiku_frame_fn fn, void *ctx)
     }
 }
 
+/** @brief Hand the text to @p fn from now on, dropping what is held. */
 static void
 session_on_text(tiku_session_t *s, tiku_text_fn fn, void *ctx)
 {
     if (s == NULL) {
         return;
     }
-    /* What arrived before the handover belonged to whoever asked for it;
-     * it is not this client's to be given. */
+    /* Text that arrived before the handover is dropped. */
     s->len = 0;
     s->text = fn;
     s->text_ctx = ctx;
 }
 
+/** @brief Write @p n bytes as they are.  @return 0, or -1. */
 static int
 session_send_raw(tiku_session_t *s, const void *bytes, size_t n)
 {
@@ -373,6 +380,7 @@ session_send_raw(tiku_session_t *s, const void *bytes, size_t n)
     return (put(s, bytes, n) < 0) ? -1 : 0;
 }
 
+/** @brief Read and discard until nothing has arrived for @p quiet_ms. */
 static void
 session_drain(tiku_session_t *s, int quiet_ms)
 {
@@ -394,6 +402,8 @@ session_drain(tiku_session_t *s, int quiet_ms)
     s->len = 0;
 }
 
+/** @brief Escape @p bytes and write them as one frame: END, the marker,
+ *         the payload, END.  @return 0, or -1. */
 static int
 session_send_frame(tiku_session_t *s, const void *bytes, size_t len)
 {
@@ -431,6 +441,7 @@ session_send_frame(tiku_session_t *s, const void *bytes, size_t len)
     return rc < 0 ? -1 : 0;
 }
 
+/** @brief Set the subscription-line handler. */
 static void
 session_on_notify(tiku_session_t *s, tiku_notify_fn fn,
                             void *ctx)
@@ -441,6 +452,8 @@ session_on_notify(tiku_session_t *s, tiku_notify_fn fn,
     }
 }
 
+/** @brief Drop what is held, send a line break and wait up to
+ *         @p timeout_ms for a prompt.  @return 0, or -1. */
 static int
 session_sync(tiku_session_t *s, int timeout_ms)
 {
@@ -469,6 +482,8 @@ session_sync(tiku_session_t *s, int timeout_ms)
     }
 }
 
+/** @brief Send @p line and gather what the device says before the next
+ *         prompt, the echo removed.  @return the bytes in @p out, or -1. */
 static int
 session_cmd(tiku_session_t *s, const char *line, char *out,
                       size_t max, int timeout_ms)
@@ -500,10 +515,9 @@ session_cmd(tiku_session_t *s, const char *line, char *out,
             size_t start = 0, n, eol = 0;
 
 
-            /* The shell echoes the typed line.  Match it at the END of the
-             * first line rather than the start: a stale prompt fragment can
-             * precede the echo, and dropping through the newline removes
-             * both in one step. */
+            /* The shell echoes the typed line.  It is matched at the end
+             * of the first line, since a stale prompt fragment can precede
+             * it; dropping through the newline removes both. */
             while (eol < (size_t)at && s->buf[eol] != '\n') {
                 eol++;
             }
@@ -546,6 +560,8 @@ session_cmd(tiku_session_t *s, const char *line, char *out,
     }
 }
 
+/** @brief One read of up to @p timeout_ms.
+ *  @return the `~` lines dispatched, or -1 on a broken link. */
 static int
 session_poll(tiku_session_t *s, int timeout_ms)
 {
@@ -560,6 +576,8 @@ session_poll(tiku_session_t *s, int timeout_ms)
     return fired;
 }
 
+/** @brief Reopen the transport and forget any half-read text or frame.
+ *  @return 0, or -1. */
 static int
 session_reopen(tiku_session_t *s)
 {
@@ -575,6 +593,8 @@ session_reopen(tiku_session_t *s)
     return 0;
 }
 
+/** @brief Reopen, then wait up to four seconds for a prompt.
+ *  @return 0, or -1. */
 static int
 session_reconnect(tiku_session_t *s)
 {
@@ -593,12 +613,6 @@ tiku_session_name(const tiku_session_t *s)
 /*---------------------------------------------------------------------------*/
 /* THE HAND                                                                  */
 /*---------------------------------------------------------------------------*/
-
-/*
- * Every way in takes the hand; a poll that finds it taken says "nothing
- * now" rather than waiting, because a poll is a look and the loop that
- * looks must not stand behind a worker's four-second command.
- */
 
 tiku_session_t *
 tiku_session_new(tiku_tx_t *tx)
@@ -628,6 +642,12 @@ tiku_session_free(tiku_session_t *s)
     session_free(s);
 }
 
+/*
+ * Every call that reads the line or changes a handler takes the hand; a
+ * send holds only the pen (put()).  A poll that finds the hand taken
+ * returns 0 at once, so the loop that polls never waits behind a
+ * worker's command.
+ */
 #define WITH_HAND(s, call) do { \
         pthread_mutex_lock(&(s)->hand); call; \
         pthread_mutex_unlock(&(s)->hand); } while (0)

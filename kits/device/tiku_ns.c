@@ -6,10 +6,10 @@
  *
  * tiku_ns.c - manifest parsing and the mirrored namespace.
  *
- * Manifest lines are "path\tkind\tperm\tmeta\tcap"; everything the UI needs to
- * decide what a node IS comes from that one read, so windows never guess a
- * node's type or writability.  The read is paged: a page of whole lines
- * at a time, each bounded to what a link carries in one reply.
+ * Manifest lines are "path\tkind\tperm\tmeta\tcap\tid"; what the UI needs to
+ * decide what a node is comes from the manifest, so windows never guess a
+ * node's type or writability.  The manifest is read a page of whole lines
+ * at a time, each page bounded to what a link carries in one reply.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,7 +23,7 @@
 #define NS_MANIFEST_PATH  "/sys/vfs/manifest"
 #define NS_READ_BUF       (64u * 1024u)
 /* A page's byte budget: under a link's outbox with the line's own
- * overhead, and a few round trips for a tree of a hundred nodes. */
+ * overhead. */
 #define NS_PAGE_BYTES     1024
 /* A reply wider than this to a page request is the whole node from a
  * board older than paging, which ignores the extra words. */
@@ -40,7 +40,7 @@ struct tiku_ns {
     int                  push_probed;
     char                 pending[NS_PENDING_MAX][TIKU_NS_PATH_MAX];
     int                  npending;
-    int                  write_timeout_ms; /* a write's patience, default 20 s */
+    int                  write_timeout_ms; /* 0 for the 20 s default */
     int                  down;            /* the link failed; reopen it   */
 };
 
@@ -95,6 +95,8 @@ tiku_ns_free(tiku_ns_t *ns)
     free(ns);
 }
 
+/** @brief A new node at the end of the table, doubling the table when it
+ *         is full; NULL when it cannot grow.  The node is not cleared. */
 static tiku_node_t *
 ns_grow(tiku_ns_t *ns)
 {
@@ -150,8 +152,8 @@ path_depth(const char *p)
 /**
  * @brief Cache the last path component for display.
  *
- * A name longer than the field is truncated deliberately: the full path
- * stays authoritative, and only the label a row shows is shortened.
+ * A name longer than the field is cut: the full path stays the node's
+ * name, and only the label a row shows is shortened.
  */
 static void
 set_name(tiku_node_t *n)
@@ -270,9 +272,8 @@ tiku_ns_load(tiku_ns_t *ns)
         p = field(p, n->cap, sizeof n->cap);
         if (*p == '\t') { p++; }
         {
-            /* rev 3 added the identity column.  An older device simply has
-             * no sixth field, and leaving it zero is what tells the caller
-             * to fall back rather than trust a made-up id. */
+            /* The identity column, from manifest revision 3; an older
+             * device has no sixth field, and the id stays 0. */
             char idtxt[16];
 
             p = field(p, idtxt, sizeof idtxt);
@@ -281,10 +282,10 @@ tiku_ns_load(tiku_ns_t *ns)
         }
         while (*p != '\0' && *p != '\n') { p++; }
 
-        /* The device renders the manifest into its shell's read buffer,
-         * so a tree wider than that arrives cut mid-line: the last line
-         * then has no capability column.  Note it: the tail is completed
-         * by ls-walking rather than silently missing. */
+        /* A manifest cut short, by an older board's read buffer or by
+         * filling this side's, ends mid-line, and its last line has no
+         * capability column.  It is marked truncated; tiku_ns_complete()
+         * fills in the rest. */
         ns->truncated = (n->cap[0] == '\0');
         n->is_dir = (kind[0] == 'd');
         n->perm = 0u;
@@ -319,9 +320,8 @@ tiku_ns_events(tiku_ns_t *ns, tiku_ns_change_t *out, int max,
     rc = tiku_session_cmd(ns->s, "cat /sys/vfs/events", buf,
                                sizeof buf, 4000);
     if (rc <= 0) {
-        /* No such node: an older device that cannot say what changed.  The
-         * caller must poll, and telling it apart from "nothing happened" is
-         * the whole point of the negative return. */
+        /* No such node, or no answer: the device cannot say what
+         * changed. */
         return -1;
     }
     buf[rc] = '\0';
@@ -347,12 +347,9 @@ tiku_ns_events(tiku_ns_t *ns, tiku_ns_change_t *out, int max,
                     out[n].seq = seq;
                     n++;
                 } else {
-                    /* The read already DRAINED these from the device, so a
-                     * record that does not fit is gone for good.  Counting
-                     * it as a drop is what tells the caller its picture is
-                     * incomplete -- silently returning the first few would
-                     * be the same silent loss the device's own drop counter
-                     * exists to prevent. */
+                    /* The read already drained these from the device, so
+                     * a record that does not fit in out is lost: it is
+                     * counted in *dropped. */
                     if (dropped != NULL) {
                         (*dropped)++;
                     }
@@ -394,6 +391,7 @@ tiku_ns_at(const tiku_ns_t *ns, int i)
     return &ns->nodes[i];
 }
 
+/** @brief The node at exact path @p path, writable, or NULL. */
 static tiku_node_t *
 ns_find_mut(tiku_ns_t *ns, const char *path)
 {
@@ -522,7 +520,7 @@ tiku_ns_quote(const char *value, char *out, size_t cap)
     } else if (strchr(value, '\'') == NULL) {
         n = snprintf(out, cap, "'%s'", value);
     } else {
-        return -1;              /* both quotes and a space: no way to say it */
+        return -1;              /* needs a quote, holds both: none wraps it */
     }
     return (n >= 0 && (size_t)n < cap) ? 0 : -1;
 }
@@ -572,7 +570,8 @@ tiku_ns_write(tiku_ns_t *ns, const char *path, const char *value,
     if (ns == NULL || path == NULL || value == NULL) {
         return -1;
     }
-    /* Quoted as the shell reads them: an unquoted "a b" arrived as "a". */
+    /* Quoted as the shell reads them: an unquoted "a b" would arrive as
+     * "a". */
     if (tiku_ns_quote(path, where, sizeof where) != 0 ||
         tiku_ns_quote(value, what, sizeof what) != 0) {
         if (err != NULL && errmax > 0u) {
@@ -586,9 +585,8 @@ tiku_ns_write(tiku_ns_t *ns, const char *path, const char *value,
      * The console has no flow control, so a busy board can drop bytes off
      * the tail of a command -- "write /p 1" arrives as "write /p", and the
      * shell answers "Usage:", which is neither a refusal nor a success.
-     * A refusal ("cannot write") is the board's own considered no and is
-     * returned at once; a mangled line is retried, since the value never
-     * reached the node.
+     * A refusal ("cannot write") is returned at once; a mangled line is
+     * retried, since the value never reached the node.
      */
     for (attempt = 0; attempt < 3; attempt++) {
         rc = tiku_session_cmd(ns->s, cmd, buf, sizeof buf,
@@ -688,10 +686,10 @@ tiku_ns_truncated(const tiku_ns_t *ns)
 }
 
 /**
- * @brief Join a parent path and a child name.
+ * @brief Join a parent path and a child name into @p out.
  *
- * Refuses rather than truncates: a shortened path would name a different
- * node, which is worse than omitting a deep one.
+ * @return 0, or -1 when the joined path does not fit: a cut path would
+ *         name a different node.
  */
 static int
 ns_join(char *out, size_t max, const char *parent, const char *name)
@@ -702,8 +700,7 @@ ns_join(char *out, size_t max, const char *parent, const char *name)
     if (need > max) {
         return -1;
     }
-    /* Built by hand rather than snprintf: the length is already proven, and
-     * a formatter here only teaches the compiler to doubt it. */
+    /* The length is checked above, so the copies fit. */
     if (root) {
         out[0] = '/';
         memcpy(out + 1, name, strlen(name) + 1u);
@@ -746,10 +743,11 @@ ns_add_walked(tiku_ns_t *ns, const char *parent, const char *name,
 }
 
 /**
- * @brief Recursive half of the completion walk.
+ * @brief Recursive half of the completion walk: add what `ls` lists under
+ *        @p path, then walk each directory among it, down to
+ *        @p max_depth.
  *
- * `ls` marks directories with a trailing slash, which tiku_ns_ls strips,
- * so kind is re-derived by asking whether the entry lists as a directory.
+ * @return Nodes added; a directory `ls` cannot list adds none.
  */
 static int
 ns_walk(tiku_ns_t *ns, const char *path, int depth, int max_depth)

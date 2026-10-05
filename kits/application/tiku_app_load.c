@@ -6,9 +6,9 @@
  *
  * tiku_app_load.c - taking an application out of a shared object.
  *
- * One exported symbol, checked before anything in it is believed: a file
- * built against another toolkit is refused with a reason rather than run
- * against a descriptor that no longer means what it says.
+ * The loader looks up one exported symbol and checks its interface
+ * version and descriptor size before using it; a file built against
+ * another toolkit is refused, with the reason in err.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,17 +19,9 @@
 #include <stdio.h>
 
 /*
- * The stamp that says "a TikuOS application built this".
- *
- * A listing cannot tell tiku-term from /bin/ls: both are executables, and
- * the type of a file here is decided by its NAME, which a program does
- * not have an extension for.  Reading the whole binary looking for a
- * descriptor id would cost megabytes per row.
- *
- * So the build says it instead, in a section of its own: a reader opens
- * the file, walks the section table -- a few hundred bytes near the head
- * -- and knows.  Anything that links this kit carries it, which is
- * exactly the set of things that ARE TikuOS applications.
+ * The stamp that marks a TikuOS application's binary: this string, in a
+ * section of its own, which a file listing finds in the section table
+ * near the head of the file.  A program that links this file carries it.
  */
 #ifdef __APPLE__
 /* Mach-O names a section by its segment too, and the stamp reader
@@ -53,9 +45,8 @@ tiku_app_load(const char *path, char *err, size_t max)
         snprintf(err, max, "no path");
         return NULL;
     }
-    /* RTLD_NOW so a missing symbol is a refusal here, not a crash on the
-     * first call; RTLD_LOCAL so one application cannot resolve against
-     * another's symbols by accident. */
+    /* RTLD_NOW: a missing symbol fails the load here.  RTLD_LOCAL: one
+     * application's symbols do not resolve another's. */
     object = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (object == NULL) {
         snprintf(err, max, "%s", dlerror());

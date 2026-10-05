@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_remote.c - the window session over a local stream.
+ * tiku_remote.c - the window session, both ends: the desktop's listener
+ * and its sessions, and the application's client.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -35,34 +36,25 @@
     (12u + 4u * TIKU_REMOTE_MAX_DIM * TIKU_REMOTE_MAX_DIM)
 
 /**
- * @brief What the desktop may send DOWN in one message.
+ * @brief What the desktop may send down in one message.
  *
- * Frames go the other way, so little down here is large: an event, a
- * pick, or a message a shell composed.  The largest is the clipboard,
- * mirrored whole to every session, so the bound is its limit and room
- * for the message around it; a bound still, which matters because the
- * client reads a message into a buffer of its size before looking.
+ * The largest message down is the clipboard, mirrored whole to every
+ * session: the bound is its limit plus room for the message around it.
+ * The client allocates a message's whole length before reading it.
  */
 #define REMOTE_MAX_DOWN (TIKU_CLIPBOARD_LIMIT + 64u * 1024u)
 
 /**
  * @brief What a session's output may hold of ordinary messages.
  *
- * A stopped application fills it and is then refused, so it is its input
- * that is dropped, not the desktop's memory that grows.  A message larger
- * than half of it -- the clipboard -- is counted apart: one is taken when
- * no other is waiting, and ordinary messages queue behind it to this
- * bound, so a stopped application holds this and one clipboard at most.
+ * A stopped application fills it, and further messages to it are
+ * refused and dropped.  A message larger than half of it, a clipboard,
+ * is counted apart: one is taken when no other is waiting, and ordinary
+ * messages queue behind it to this bound, so a stopped application holds
+ * this and one clipboard at most.
  */
 #define REMOTE_QUEUE_MAX (512u * 1024u)
 
-/**
- * @brief Pin the authenticated local peer; never trust a client-supplied PID.
- *
- * What identity means on a given machine is the machine's business
- * (tiku_sys.h): here it is only which socket to ask about.  The caller
- * owns the descriptor that comes back.
- */
 int tiku_remote_process_handle(const tiku_remote_session_t *session, long *pid)
 {
     if (session == NULL || !session->used || session->fd < 0) {
@@ -72,7 +64,6 @@ int tiku_remote_process_handle(const tiku_remote_session_t *session, long *pid)
     return tiku_sys_process_pin(session->fd, pid);
 }
 
-/** @brief Kill only the pinned process, even if its numeric PID was reused. */
 int tiku_remote_process_kill(int handle)
 {
     return tiku_sys_process_kill(handle);
@@ -93,9 +84,9 @@ tiku_remote_path(char *out, size_t max)
     return 0;
 }
 
-/** @brief Room in a session's socket for a large message, so a clipboard
- *         crosses in a few turns rather than a small buffer at a time.
- *         An fd that is not a socket (a serial line) is left as it is. */
+/** @brief Give a session's socket 1 MB buffers each way, so a clipboard
+ *         crosses in a few turns.  An fd that is not a socket (a serial
+ *         line) is left as it is. */
 static void
 roomy(int fd)
 {
@@ -105,10 +96,11 @@ roomy(int fd)
     (void)setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof size);
 }
 
+/** @brief Make @p fd nonblocking, and ignore SIGPIPE: a write to a peer
+ *         that has gone then fails with EPIPE.  @return 0, or -1. */
 static int
 set_nonblock(int fd)
 {
-    /* The line may die under us; a write then must report, not kill. */
     (void)signal(SIGPIPE, SIG_IGN);
 
     int flags = fcntl(fd, F_GETFL, 0);
@@ -118,10 +110,9 @@ set_nonblock(int fd)
 
 /*
  * How long a peer that has stopped reading is waited for, and the step
- * the wait is taken in.  Two seconds is far longer than a desktop busy
- * with a redraw and far shorter than one that has gone: the descriptors
- * here are non-blocking, so without a ceiling EAGAIN is forever and the
- * program spins inside whatever call it was making.
+ * the wait is taken in.  The descriptors are nonblocking: without this
+ * ceiling a peer that never reads would keep a send retrying EAGAIN for
+ * ever.
  */
 #define REMOTE_STALL_MS 2000
 #define REMOTE_STEP_MS    50
@@ -153,13 +144,12 @@ wait_ready(int fd, short what, int *waited)
 }
 
 /**
- * @brief Send all of it; a stalled peer forfeits the LINE, not the message.
+ * @brief Send all @p n bytes, or close the connection: a peer stalled for
+ *        REMOTE_STALL_MS gets its descriptor closed and set to -1.
  *
- * Half a message is worse than none, because the far end reads whatever
- * follows as a length and every frame after it is nonsense.  So when the
- * peer has had its two seconds the descriptor is closed and set to -1:
- * every send guards on `fd < 0` and does nothing, and the read side
- * reports the disconnect that callers already know how to handle.
+ * A partly sent message would make the far end read what follows as a
+ * length.  Every send guards on `fd < 0` and does nothing, and the read
+ * side reports the disconnect.
  */
 static void
 send_all(int *fd, const void *data, size_t n)
@@ -173,7 +163,7 @@ send_all(int *fd, const void *data, size_t n)
         if (wrote > 0) {
             p += (size_t)wrote;
             n -= (size_t)wrote;
-            waited = 0;         /* it is moving; the clock starts again */
+            waited = 0;         /* it is moving: the wait starts again */
             continue;
         }
         if (wrote < 0 && errno == EINTR) {
@@ -193,6 +183,8 @@ send_all(int *fd, const void *data, size_t n)
     }
 }
 
+/** @brief Write one message: its type and length, then @p n bytes of
+ *         @p payload. */
 static void
 send_msg(int *fd, uint32_t type, const void *payload, uint32_t n)
 {
@@ -207,13 +199,13 @@ send_msg(int *fd, uint32_t type, const void *payload, uint32_t n)
 }
 
 /*---------------------------------------------------------------------------*/
-/* Listener                                                                  */
+/* LISTENER                                                                  */
 /*---------------------------------------------------------------------------*/
 
 static void window_unmap(tiku_remote_window_t *win);
 
-/** @brief @p w bytes of @p s's output written: what of them was the
- *         large message's taken off what it has waiting. */
+/** @brief Count @p w bytes of @p s's output as written: those that were
+ *         the large message's come off what it has left. */
 static void large_written(tiku_remote_session_t *s, size_t w)
 {
     if (!s->out_large) return;
@@ -246,8 +238,13 @@ static void session_flush(tiku_remote_session_t *s)
     }
 }
 
-/** @brief Queue whole frames, never corrupting the stream under backpressure.
- * Refuse new messages when full, retaining the peer so it can be force quit.
+/**
+ * @brief Queue one message for @p s, then write what the socket takes now.
+ *
+ * A message is queued whole or refused, never cut.  When the queue is
+ * full the session is kept, so a stopped application can still be force
+ * quit.
+ * @return 1 when queued, 0 when refused.
  */
 static int session_send(tiku_remote_session_t *s, uint32_t type,
                          const void *payload, uint32_t n)
@@ -286,7 +283,7 @@ session_window(tiku_remote_session_t *s, uint32_t id)
     return NULL;
 }
 
-/** @brief A free row of @p s, or NULL when it is holding its share. */
+/** @brief A free row of @p s, or NULL when every row is in use. */
 static tiku_remote_window_t *
 session_window_free(tiku_remote_session_t *s)
 {
@@ -300,6 +297,8 @@ session_window_free(tiku_remote_session_t *s)
     return NULL;
 }
 
+/** @brief Give back every window's surface, frame and list, close the
+ *         connection, and free what the session holds. */
 static void
 session_free(tiku_remote_session_t *s)
 {
@@ -309,8 +308,6 @@ session_free(tiku_remote_session_t *s)
         window_unmap(&s->win[j]);
         free(s->win[j].frame);
         s->win[j].frame = NULL;
-        /* The list is given back with the window everywhere else; a
-         * session that ends gives back every window it held. */
         tiku_dl_free(s->win[j].list);
         s->win[j].list = NULL;
     }
@@ -345,9 +342,8 @@ tiku_remote_listen(tiku_remote_listener_t *listener)
                               sizeof listener->path) != 0) {
         return -1;
     }
-    /* EVERY directory on the way, not just the last: a fresh home has no
-     * .config either, and one mkdir of .config/tracker fails on the
-     * missing parent -- leaving a desktop no application can reach. */
+    /* Make every directory on the way: a fresh home has no .config
+     * either. */
     snprintf(dir, sizeof dir, "%s", listener->path);
     slash = strrchr(dir, '/');
     if (slash != NULL) {
@@ -399,7 +395,7 @@ tiku_remote_shutdown(tiku_remote_listener_t *listener)
     }
 }
 
-/** @brief Give back a shared surface, if this session had one. */
+/** @brief Give back a shared surface, if this window had one. */
 static void
 window_unmap(tiku_remote_window_t *win)
 {
@@ -423,7 +419,8 @@ id_of(const unsigned char *p)
     return id;
 }
 
-/** @brief Apply one complete message to its session. */
+/** @brief Apply one complete message to its session.
+ *  @return nonzero when a window changed, -1 to drop the session. */
 static int
 session_message(tiku_remote_session_t *s)
 {
@@ -438,23 +435,18 @@ session_message(tiku_remote_session_t *s)
 
             memcpy(&version, p, 4);
             if (version != TIKU_REMOTE_VERSION) {
-                return -1;      /* wrong world: drop the session */
+                return -1;      /* another version: drop the session */
             }
             memcpy(s->name, p + 4, 32);
             s->name[31] = '\0';
-            /* Longer means the peer said what else it can do.  A version
-             * 1 hello is 36 bytes and stays welcome. */
+            /* Longer means the peer said what else it can do; a hello of
+             * 36 bytes claims nothing more. */
             if (s->want >= 4u + 32u + 4u) {
                 memcpy(&s->features, p + 36, 4);
             }
             {
-                /*
-                 * And say what THIS end can do.  A client cannot choose
-                 * what to send without it, and the choice is not optional
-                 * once the vocabulary can grow: an op the far end has not
-                 * got is stepped over, so guessing wrong loses whatever it
-                 * drew rather than failing.
-                 */
+                /* Answer with this end's features: a client sends lists,
+                 * icons and pictures only to a desktop that claimed them. */
                 unsigned char reply[8];
                 uint32_t version = TIKU_REMOTE_VERSION;
                 uint32_t mine = TIKU_FEAT_COMMAND_STREAM |
@@ -485,7 +477,7 @@ session_message(tiku_remote_session_t *s)
             }
             win = session_window(s, id);
             if (win == NULL) {
-                break;          /* a surface for no window of ours */
+                break;          /* a surface for no window it holds */
             }
             window_unmap(win);
             {
@@ -495,13 +487,10 @@ session_message(tiku_remote_session_t *s)
 
                 if (fd >= 0) {
                     /*
-                     * The peer's numbers are checked against the object
-                     * they name, not taken on trust: a SURFACE that says
-                     * 400x210 over an object holding one small buffer
-                     * would map short and every read past it would be
-                     * somebody else's memory.  Refused rather than
-                     * half-mapped, which is what this channel does with
-                     * everything it cannot believe.
+                     * The size is checked against the object: a SURFACE
+                     * claiming more than the object holds would map
+                     * short, and a read past its end would fault.  Such a
+                     * surface is not mapped.
                      */
                     struct stat sb;
                     void *at = MAP_FAILED;
@@ -512,8 +501,8 @@ session_message(tiku_remote_session_t *s)
                                   fd, 0);
                     }
                     (void)close(fd);
-                    /* Unlinked once mapped: the mapping keeps it alive,
-                     * and a name left behind outlives the window. */
+                    /* Unlinked, mapped or not: a mapping keeps the object
+                     * alive, and a name left behind outlives the window. */
                     (void)shm_unlink(name);
                     if (at != MAP_FAILED) {
                         win->shared = at;
@@ -526,9 +515,8 @@ session_message(tiku_remote_session_t *s)
                         win->sw = w;
                         win->sh = h;
                         win->shown = 0;
-                        /* The mapping is the window again: fw/fh now
-                         * describe it, and a list drawn before it is
-                         * a frame ago. */
+                        /* The mapping is the window again, at its own
+                         * size. */
                         win->list_fresh = 0;
                     }
                 }
@@ -547,11 +535,9 @@ session_message(tiku_remote_session_t *s)
              * pixels. */
             win->shown = (index < TIKU_REMOTE_BUFFERS) ? (int)index : 0;
             /*
-             * Back to the MAPPING's geometry.  A DRAW or FRAME since the
-             * surface arrived left fw/fh at that list's own size, and
-             * the shared read strides by them -- so re-enabling it
-             * without restoring them reads the mapping at a stride it
-             * was never made with.
+             * Back to the mapping's size: a DRAW or FRAME since the
+             * surface arrived left fw/fh at its own, and the shared read
+             * strides by them.
              */
             win->fw = win->sw;
             win->fh = win->sh;
@@ -579,7 +565,7 @@ session_message(tiku_remote_session_t *s)
                 win = session_window_free(s);
             }
             if (win == NULL) {
-                break;          /* holding its share already */
+                break;          /* every row is in use */
             }
             win->session = s;
             win->win_id = id_of(p);
@@ -610,7 +596,7 @@ session_message(tiku_remote_session_t *s)
                     win->frame = px;
                     win->fw = w;
                     win->fh = h;
-                    win->list_fresh = 1;   /* the copy IS `frame` */
+                    win->list_fresh = 1;   /* the copy is the window */
                     win->description[0] = 0;
                     tiku_dl_free(win->list); win->list = NULL;
                     changed = 1;
@@ -636,11 +622,9 @@ session_message(tiku_remote_session_t *s)
 
                     if (px != NULL) {
                         /*
-                         * Played into the SAME buffer a copied frame
-                         * lands in, so nothing downstream of here can
-                         * tell which way the window arrived -- which is
-                         * the point of putting this beside FRAME rather
-                         * than above it.
+                         * Played into the buffer a copied frame lands
+                         * in, so what reads the window cannot tell which
+                         * way it arrived.
                          */
                         tiku_surface_t face;
 
@@ -669,9 +653,7 @@ session_message(tiku_remote_session_t *s)
         }
         break;
     case TIKU_RMSG_RAISE:
-        /* The application asking for one of ITS windows: noted here,
-         * done by the shell, which is the only side that knows what
-         * being in front means. */
+        /* Noted here; the shell does the raising. */
         win = (s->want >= 4u) ? session_window(s, id_of(p)) : NULL;
         if (win != NULL) {
             win->wants_front = 1;
@@ -679,7 +661,7 @@ session_message(tiku_remote_session_t *s)
         }
         break;
     case TIKU_RMSG_PLACE:
-        /* What KIND of window this is: noted for the shell, which owns
+        /* What kind of window this is: noted for the shell, which owns
          * where such a window goes and what it wears. */
         win = (s->want >= 8u) ? session_window(s, id_of(p)) : NULL;
         if (win != NULL) {
@@ -726,9 +708,6 @@ session_message(tiku_remote_session_t *s)
         }
         break;
     case TIKU_RMSG_MENUS:
-        /* Onto the window the id names.  Menus that ignored it landed
-         * on whichever window the session happened to be, so an
-         * application with two published one menu twice. */
         win = (s->want >= 4u + sizeof(tiku_menuset_t))
                   ? session_window(s, id_of(p)) : NULL;
         if (win != NULL) {
@@ -760,11 +739,13 @@ session_message(tiku_remote_session_t *s)
         tiku_msg_t *m = tiku_msg_unflatten(p, s->want, NULL);
 
         if (m == NULL) {
-            break;              /* not a message: the rest of the link is */
-        }                       /* still good, so keep it and drop this   */
+            /* A payload that is not a message is dropped; the session
+             * stays open. */
+            break;
+        }
         if (s->said_count >= TIKU_REMOTE_SAID) {
             tiku_msg_free(m);
-            s->said_lost++;     /* said, and counted, and let go */
+            s->said_lost++;     /* dropped, and counted */
             break;
         }
         s->said[(s->said_head + s->said_count) % TIKU_REMOTE_SAID] = m;
@@ -773,9 +754,8 @@ session_message(tiku_remote_session_t *s)
         break;
     }
     case TIKU_RMSG_CLOSE:
-        /* Naming a window gives back THAT window; naming nothing is the
-         * application leaving, which is what an older client sends and
-         * what the last window going still means. */
+        /* Naming a window gives back that window; a CLOSE naming none
+         * is the application leaving (tiku_remote_disconnect()). */
         if (s->want >= 4u) {
             win = session_window(s, id_of(p));
             if (win != NULL) {
@@ -787,10 +767,10 @@ session_message(tiku_remote_session_t *s)
                 win->opened = 0;
                 win->has_menus = 0;
                 win->menus_fresh = 0;
-                /* The window itself is the desktop's to close.  Moved
-                 * ASIDE rather than left in place: an OPEN in this same
-                 * batch may take the row, and a stale pointer under a
-                 * new tenant reads as a window already made. */
+                /* The window itself is the desktop's to close.  It moves
+                 * to reap: an OPEN in this same batch may take the row,
+                 * and a pointer left there would read as a window
+                 * already made. */
                 if (win->window != NULL && win->reap == NULL) {
                     win->reap = win->window;
                     win->window = NULL;
@@ -806,22 +786,6 @@ session_message(tiku_remote_session_t *s)
     return changed;
 }
 
-/**
- * @brief Wait up to @p timeout_us for any session to have something.
- *
- * The listening socket and every live session, in one wait: a window
- * that is about to exist announces itself by connecting, and one that
- * already does by writing, and a caller between turns cannot tell which
- * it is waiting for.
- *
- * @return nonzero when something is ready, 0 when the time passed.
- */
-/**
- * @brief How many sessions are connected right now.
- *
- * Against the number of children started, this is how a caller tells a
- * program that is still coming up from one that is up and quiet.
- */
 int
 tiku_remote_sessions(const tiku_remote_listener_t *listener)
 {
@@ -865,13 +829,14 @@ tiku_remote_wait(tiku_remote_listener_t *listener, int timeout_us)
     if (n == 0) {
         return 0;
     }
-    /* Rounded UP: a timeout that rounds to nothing is a spin, which is
-     * the thing this exists to stop. */
+    /* Rounded up to whole milliseconds, so a timeout under 1 ms still
+     * waits. */
     ready = poll(watch, n, (timeout_us + 999) / 1000);
     return ready > 0;
 }
 
-/** @brief Read whatever is ready.  @return change, or -1 when it died. */
+/** @brief Read whatever is ready.
+ *  @return nonzero when a window changed, or -1 when the session died. */
 static int
 session_read(tiku_remote_session_t *s)
 {
@@ -897,7 +862,7 @@ session_read(tiku_remote_session_t *s)
             memcpy(head, s->hbuf, sizeof head);
             s->hgot = 0u;
             if (head[1] > REMOTE_MAX_PAYLOAD) {
-                return -1;      /* nonsense length: protect the shell */
+                return -1;      /* past REMOTE_MAX_PAYLOAD: drop it */
             }
             s->cur_type = head[0];
             s->want = head[1];
@@ -991,7 +956,7 @@ tiku_remote_poll(tiku_remote_listener_t *listener)
             }
         }
         if (fd >= 0) {
-            (void)close(fd);    /* full house */
+            (void)close(fd);    /* every session is in use */
         }
     }
     for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
@@ -1007,8 +972,6 @@ tiku_remote_poll(tiku_remote_listener_t *listener)
             session_free(s);
             changed = 1;
         } else {
-            /* A frame that arrived and never marked a repaint is a
-             * window one event behind its own application. */
             changed |= r;
         }
     }
@@ -1145,7 +1108,7 @@ tiku_remote_window_closed(tiku_remote_listener_t *listener,
         return;
     }
     session_send(win->session, TIKU_RMSG_CLOSED, &win->win_id, 4);
-    /* The ROW is given back, not the session: an application whose
+    /* The row is given back, not the session: an application whose
      * second window was closed still has its first. */
     window_unmap(win);
     free(win->frame);
@@ -1157,10 +1120,6 @@ tiku_remote_window_closed(tiku_remote_listener_t *listener,
     win->has_menus = 0;
     win->menus_fresh = 0;
 }
-
-/*---------------------------------------------------------------------------*/
-/* Client                                                                    */
-/*---------------------------------------------------------------------------*/
 
 /** @brief The session at @p index, when there is a live one. */
 static tiku_remote_session_t *
@@ -1198,10 +1157,13 @@ tiku_remote_lost(const tiku_remote_listener_t *listener, int index)
 }
 
 /**
- * @brief Flatten @p m and send it as @p type down @p fd.
+ * @brief Flatten @p m and send it as @p type: queued to @p session when
+ *        one is given, else written down @p fd.
  *
  * The size is asked for first and the buffer taken to fit, so a message
  * is never half-written onto a wire the other end is reading in frames.
+ * @return 0 when it could not be flattened, the fd is closed or the
+ *         session refused it; else 1.
  */
 static int
 send_flat(int *fd, uint32_t type, const tiku_msg_t *m,
@@ -1236,6 +1198,10 @@ tiku_remote_tell(tiku_remote_listener_t *listener, int index,
 
     return (s != NULL) ? send_flat(&s->fd, TIKU_RMSG_TELL, m, s) : 0;
 }
+
+/*---------------------------------------------------------------------------*/
+/* CLIENT                                                                    */
+/*---------------------------------------------------------------------------*/
 
 int
 tiku_remote_connect(tiku_remote_client_t *client,
@@ -1288,17 +1254,14 @@ tiku_remote_connect_fd(tiku_remote_client_t *client,
         return -1;
     }
     /*
-     * Start from nothing.  It mattered less when every field was a number
-     * a caller could be trusted to have zeroed; it matters now that the
-     * client HOLDS something -- the message it last heard -- because a
-     * pointer nobody set is one disconnect away from being freed.
+     * Cleared first: the client holds the message it last heard, and a
+     * pointer nobody set would be freed at disconnect.
      */
     memset(client, 0, sizeof *client);
     client->fd = fd;
     client->next_id = 1;
-    /* A shared surface means one machine.  A socket says so; a serial
-     * line says the opposite, and getsockopt is how the difference is
-     * asked rather than assumed. */
+    /* A shared surface needs one machine: claimed on a socket, which
+     * getsockopt recognises, and not on a serial line. */
     if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) == 0) {
         features |= TIKU_FEAT_SHARED_SURFACE;
     }
@@ -1501,9 +1464,9 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
     snprintf(client->shm_name, sizeof client->shm_name,
              "/tiku-desk-%ld-%u-%u", (long)getpid(), (unsigned)id,
              (unsigned)++client->shared_serial);
-    /* Each queued SURFACE owns its name. Reusing/unlinking a name here
-     * lets a slow desktop map the replacement for the earlier message,
-     * then unlink it before the replacement's message is processed. */
+    /* Each queued SURFACE owns its name.  A reused name would let a slow
+     * desktop map the replacement for the earlier message, then unlink it
+     * before the replacement's message is processed. */
     fd = shm_open(client->shm_name, O_RDWR | O_CREAT | O_EXCL, 0600);
     if (fd < 0) {
         return 0;
@@ -1514,8 +1477,9 @@ client_share(tiku_remote_client_t *client, uint32_t id, int w, int h)
         return 0;
     }
     {
-        /* If the shared store has no room for this, send pixels: better
-         * a slower window than one that dies on its first write. */
+        /* With no room in the shared store the pixels are copied
+         * instead: a mapping without its pages faults on the first
+         * write. */
         int reserved = tiku_sys_reserve(fd, (long long)bytes);
 
         if (reserved) {
@@ -1569,8 +1533,9 @@ tiku_remote_frame(tiku_remote_client_t *client, uint32_t id,
         unsigned char ready[8];
         uint32_t index = (uint32_t)client->next_buffer;
 
-        /* Painted into the half the desktop is NOT showing, so a frame
-         * is never half-old and half-new on screen. */
+        /* The buffers alternate: this frame goes into the one the last
+         * READY did not name, which the desktop stops showing once it
+         * has taken that READY. */
         memcpy((unsigned char *)client->shared + index * one, px, one);
         memcpy(ready, &id, 4);
         memcpy(ready + 4, &index, 4);
@@ -1710,10 +1675,8 @@ tiku_remote_read(tiku_remote_client_t *client, uint32_t *id,
         if (buf == NULL) {
             return -1;
         }
-        /* Mid-message: the header is already taken, so there is no
-         * stopping half way and coming back.  Waited out with the same
-         * ceiling a send has -- a peer that announced a length and then
-         * went quiet must not hold this program for ever. */
+        /* Mid-message the header is taken, so the body is read to its end
+         * here, waiting at most REMOTE_STALL_MS for a peer gone quiet. */
         waited = 0;
         while (at < n) {
             got = read(client->fd, buf + at, n - at);
@@ -1759,9 +1722,10 @@ tiku_remote_read(tiku_remote_client_t *client, uint32_t *id,
             client->peer_features = f;
         }
         if (head[0] == TIKU_RMSG_TELL) {
-            tiku_msg_free(client->heard);   /* one at a time: a read */
-            client->heard =                      /* nobody took is a read */
-                tiku_msg_unflatten(buf, n, NULL);  /* nobody wanted  */
+            /* One at a time: a message not taken by now is dropped. */
+            tiku_msg_free(client->heard);
+            client->heard =
+                tiku_msg_unflatten(buf, n, NULL);
         }
         free(buf);
     }

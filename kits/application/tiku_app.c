@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_app.c - embedded application lifecycle and registry.
+ * tiku_app.c - the application registry, starting and stopping a
+ * descriptor in process, and the one event dispatch every host uses.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,17 +15,9 @@
 #include <string.h>
 
 /*
- * The stamp that says "a TikuOS application built this".
- *
- * A listing cannot tell tiku-term from /bin/ls: both are executables, and
- * the type of a file here is decided by its NAME, which a program does
- * not have an extension for.  Reading the whole binary looking for a
- * descriptor id would cost megabytes per row.
- *
- * So the build says it instead, in a section of its own: a reader opens
- * the file, walks the section table -- a few hundred bytes near the head
- * -- and knows.  Anything that links this kit carries it, which is
- * exactly the set of things that ARE TikuOS applications.
+ * The stamp that marks a TikuOS application's binary: this string, in a
+ * section of its own, which a file listing finds in the section table
+ * near the head of the file.  A program that links this file carries it.
  */
 #ifdef __APPLE__
 /* Mach-O names a section by its segment too, and the stamp reader
@@ -135,9 +128,6 @@ tiku_app_deliver_event(const tiku_app_descriptor_t *descriptor,
     if (descriptor == NULL || event == NULL) {
         return 0;
     }
-    /* ONE place decides which call an application gets.  A host that
-     * decided for itself would be a second answer to the question, and
-     * the two would disagree on the day one of them was changed. */
     if (descriptor->event_in != NULL) {
         return descriptor->event_in(state, window, event);
     }

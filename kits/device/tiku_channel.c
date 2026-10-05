@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_channel.c - the socket pair between a link and the desktop's listener.
+ * tiku_channel.c - the socket pair between a link and the desktop's
+ * listener, the shell road beside it, and a program's output.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,9 +31,8 @@
 #define RMSG_SHELL_OUT    22u
 #define RMSG_BASIC_IN     23u
 #define RMSG_BASIC_OUT    24u
-/* What a program has printed and nobody has read yet.  A run says more
- * than a command does, and the reader is a shell drawing between
- * pumps. */
+/* What a program has printed and nobody has read yet; past this, newer
+ * bytes are dropped. */
 #define BASIC_CAP         4096u
 
 /* The most shell text one message carries; a board's inject ring is 256. */
@@ -44,7 +44,7 @@
  * and after a loss; REGREETS of those go out at once since the board
  * last spoke, and past that only one every HEARTBEAT_MS, so a board with
  * a link and no windows costs two spare greetings and then a slow retry
- * that heals one that comes back. */
+ * that reaches one that comes back. */
 #define SILENCE_MS        2000L
 #define REGREETS          2
 #define HEARTBEAT_MS      10000L
@@ -82,7 +82,8 @@ now_ms(void)
     return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-/** @brief Write all of @p bytes to @p fd, waiting out a full socket. */
+/** @brief Write all of @p bytes to @p fd, retrying at once while the
+ *         socket is full; another error drops the rest. */
 static void
 write_all(int fd, const unsigned char *bytes, size_t len)
 {
@@ -111,10 +112,10 @@ len_at(const unsigned char *b)
 
 /**
  * @brief A message from the board: handed to the desktop as a stream,
- *        except what its shell wrote, which goes to the shell road when
- *        one is open.  The two never mix: the desktop's listener does
- *        not know the shell's messages, and the shell's session does not
- *        know windows.
+ *        except what its shell wrote, which goes to the shell road (and
+ *        is dropped when none is open), and what a program printed, which
+ *        is kept for tiku_channel_basic_recv().  The desktop's listener
+ *        knows neither, and the shell's session does not know windows.
  */
 static void
 on_message(const unsigned char *bytes, size_t len, void *ctx)
@@ -132,8 +133,6 @@ on_message(const unsigned char *bytes, size_t len, void *ctx)
     }
     if (len >= MSG_HEAD && bytes[0] == RMSG_BASIC_OUT && bytes[1] == 0u &&
         bytes[2] == 0u && bytes[3] == 0u && MSG_HEAD + len_at(bytes) <= len) {
-        /* What a program printed: kept for whoever is running it, and
-         * never given to the listener, which does not know it. */
         size_t n = len_at(bytes);
 
         if (ch->basic_len + n > BASIC_CAP) {
@@ -174,7 +173,9 @@ tiku_channel_adopt(tiku_link_t *link)
 }
 
 /** @brief Bytes for the board's shell, as SHELL_IN messages the link
- *         takes one at a time; the link is serviced while it will not. */
+ *         takes one at a time; the link is serviced while it will not.
+ *  @return @p len, or -1 when the link refuses a message or stays busy
+ *          for SHELL_WAIT_MS. */
 static int
 shell_write(const void *buf, size_t len, void *ctx)
 {
@@ -208,7 +209,7 @@ shell_write(const void *buf, size_t len, void *ctx)
     return (int)len;
 }
 
-/** @brief While a shell read waits, the link is serviced from here. */
+/** @brief Service the link while a read of the board's shell waits. */
 static void
 shell_pump(void *ctx)
 {
@@ -500,9 +501,8 @@ tiku_channel_pump(tiku_channel_t *ch)
         if (pass(ch) != 0) {
             return sent;
         }
-        /* The socket is the backlog: a message is pulled from it only
-         * when the link would take one now, and a full window leaves it
-         * there rather than queued behind the window. */
+        /* The socket is the backlog: a message is read from it only
+         * when the link would send one now. */
         if (ch->got < OUT_MAX && tiku_link_ready(ch->link)) {
             n = read(ch->mine_fd, ch->out + ch->got, OUT_MAX - ch->got);
             if (n > 0) {

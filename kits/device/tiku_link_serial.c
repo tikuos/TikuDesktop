@@ -9,7 +9,8 @@
  * The desktop paces what it sends: a window of numbered frames the board
  * acknowledges, written again when an acknowledgement is late and given
  * up on after enough tries.  What the board sends comes unpaced, checked
- * and counted here by the rules the board's own receiver keeps.
+ * and counted here by the rules the board's receiver keeps
+ * (kernel/link/tiku_link_console.c).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -43,7 +44,7 @@ struct serial_link {
     int                      n_pending;
     int                      retries;       /* rounds since the last ACK */
     int                      need_syn;      /* the next send opens a stream */
-    int                      dead;          /* nothing here ever answered */
+    int                      dead;          /* the board never answered */
     int                      ever_acked;
     /* the receiver */
     unsigned char            paced_expect;  /* the next WANT_ACK seq taken */
@@ -190,7 +191,8 @@ drop_all(struct serial_link *sl)
 
 /** @brief The window is lost: what it held is counted and freed.  A
  *         board that once answered may have rebooted and gets a fresh
- *         SYN with the next send; one that never did is not there. */
+ *         SYN with the next send; one that never answered is marked dead,
+ *         and sends to it are refused. */
 static void
 give_up(struct serial_link *sl)
 {

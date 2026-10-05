@@ -24,7 +24,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-/* What one turn writes and reads at most, so a flood cannot hold the loop. */
+/* About what one turn reads, so a flood cannot hold the loop, and how
+ * much may wait to go out while the link still reports itself ready. */
 #define CHUNK 4096u
 
 struct tcp_link {
@@ -118,8 +119,8 @@ head_len(const struct tcp_link *tl)
 
 /**
  * @brief Take @p len bytes of the stream: a length, then that many bytes.
- *        One larger than a board ever sends is passed over rather than
- *        delivered short, so the stream stays in step.
+ *        A message longer than TIKU_LINK_TCP_RECV_MAX is skipped whole and
+ *        counted as oversize, so the stream stays in step.
  */
 static void
 absorb(struct tcp_link *tl, const unsigned char *p, size_t len)
@@ -149,8 +150,8 @@ absorb(struct tcp_link *tl, const unsigned char *p, size_t len)
         tl->in_len += take;
         p += take;
         len -= take;
-        /* Here, not at the top: a message finished by the chunk's last
-         * byte is delivered on this turn rather than the next chunk's. */
+        /* Checked after each take, so a message finished by the chunk's
+         * last byte is delivered on this turn. */
         if (tl->in_len >= TIKU_LINK_TCP_HEADER &&
             head_len(tl) <= TIKU_LINK_TCP_RECV_MAX &&
             tl->in_len == head_len(tl) + TIKU_LINK_TCP_HEADER) {
@@ -193,7 +194,8 @@ tcp_pump(tiku_link_t *l)
     flush_out(tl);
 }
 
-/** @brief Whether a send would go out rather than pile up. */
+/** @brief Whether the link is up with less than CHUNK bytes waiting to
+ *         go out. */
 static int
 tcp_ready(tiku_link_t *l)
 {
@@ -258,7 +260,7 @@ tiku_link_tcp_open(int fd)
     }
     tl->fd = fd;
     (void)fcntl(fd, F_SETFL, O_NONBLOCK);
-    /* A window's frames are small and wanted at once, not gathered. */
+    /* TCP_NODELAY: each of a window's small frames goes out at once. */
     (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
     tl->link.ops = &tcp_ops;
     tl->link.ctx = tl;
@@ -271,10 +273,9 @@ tiku_link_tcp_listen(int port)
     struct sockaddr_in a;
     int fd = socket(AF_INET, SOCK_STREAM, 0);
 #ifdef __APPLE__
-    /* Darwin has no MSG_NOSIGNAL, so a send to a peer that hung up would
-     * raise SIGPIPE and take the program with it.  The socket carries the
-     * suppression instead, from here, because this link may be the only
-     * thing a program opens. */
+    /* Darwin has no MSG_NOSIGNAL: a send to a peer that hung up raises
+     * SIGPIPE, which ends a program that does not ignore it.  SO_NOSIGPIPE,
+     * set here on the listening socket, suppresses it. */
     if (fd >= 0) {
         int on = 1;
 

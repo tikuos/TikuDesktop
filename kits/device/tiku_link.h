@@ -7,10 +7,11 @@
  * tiku_link.h - a link: whole messages to and from one board, on any medium.
  *
  * The desktop's mirror of the kernel's link.  A channel adopts a link and
- * neither knows nor cares whether it is a serial cable, a socket or a radio;
- * a serial link is the first, over a prompt-aware session's frames.  A
- * message arrives whole and intact or not at all; a link that loses one
- * says so through lost(), and the session above re-greets.
+ * does not know whether it is a serial cable, a socket or a radio: the
+ * serial link (tiku_link_serial.h) runs over a session's frames, the TCP
+ * link (tiku_link_tcp.h) over a socket a board dialled.  A message arrives
+ * whole and intact or not at all; a link that loses one says so through
+ * lost(), and the channel above greets the board again.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

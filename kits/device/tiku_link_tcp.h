@@ -7,9 +7,9 @@
  * tiku_link_tcp.h - a link over a socket a board dialled.
  *
  * The desktop listens; a board with an address dials it and its window
- * session rides the connection.  TCP delivers bytes whole and in order, so
- * a message needs only its length in front: no checksum, no acknowledgement
- * and no pacing of the link's own.  It owns the socket it is given.
+ * session rides the connection.  A message is its 32-bit length followed
+ * by its bytes, which TCP delivers whole and in order.  The link owns the
+ * socket it is given.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,8 +31,8 @@
 /**
  * @brief The largest message a board sends.
  *
- * Larger than what it takes: a window's display list is drawn by the board
- * and only read by the desk, so the two directions are not one size.
+ * A board sends display lists larger than any message it takes, so this
+ * is larger than TIKU_LINK_TCP_MTU.
  */
 #define TIKU_LINK_TCP_RECV_MAX TIKU_SESSION_FRAME_MAX
 
