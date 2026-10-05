@@ -4,16 +4,38 @@
 wait 20
 click 980 20
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
-expect-menu Editor|TikuImage|TikuReader|Terminal
+expect-menu Editor|Sticky Notes|TikuDoc|TikuMarker|TikuPDF|TikuReader|TikuSlides
+shot /tmp/trk_documents_menu.png
+click 500 700
+wait 4
+click 980 20
+wait 4
+menu-pick Graphics & Design
+wait 4
+expect-menu TikuCircuit|TikuGrab|TikuImage
+click 500 700
+wait 4
+click 980 20
+wait 4
+menu-pick Utilities
+wait 4
+expect-menu Calculator|Terminal|TikuArchive
+click 500 700
+wait 4
+click 980 20
+wait 4
+menu-pick Development
+wait 4
+expect-menu Developer Calculator|TikuBasic|TikuC|TikuDiff|TikuHex
 click 500 700
 wait 4
 click 980 20
 wait 4
 menu-pick Device Tools
 wait 4
-expect-menu TikuBench|TikuConsole
+expect-menu Device Monitor|TikuBench|TikuConsole|TikuSDR|VFS Inspector
 shot /tmp/trk_device_tools_menu.png
 click 500 700
 wait 4

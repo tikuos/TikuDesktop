@@ -61,6 +61,8 @@ int tiku_manifest_read(const char *path, tiku_manifest_t *out,
     if (!version || !identifier(m.id) || !m.name[0] ||
         !identifier(m.module) || n < 4 || strcmp(m.module + n - 3, ".so") ||
         (strcmp(m.category, "applications") && strcmp(m.category, "programming") &&
+         strcmp(m.category, "documents") && strcmp(m.category, "graphics") &&
+         strcmp(m.category, "utilities") && strcmp(m.category, "development") &&
          strcmp(m.category, "device-tools") && strcmp(m.category, "demos")) ||
         (m.icon[0] && !identifier(m.icon))) ok = 0;
     if (!ok) return -1;

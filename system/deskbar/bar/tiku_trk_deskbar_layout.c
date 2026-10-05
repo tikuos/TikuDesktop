@@ -266,6 +266,7 @@ tiku_trk_deskbar_add_app_in(tiku_trk_deskbar_t *db, int group,
                             const char *icon)
 {
     if (db == NULL || label == NULL || command == NULL ||
+        group < 0 || group >= TIKU_TRK_DB_GROUP_COUNT ||
         db->app_count >= (int)(sizeof db->app / sizeof db->app[0])) {
         return 0;
     }

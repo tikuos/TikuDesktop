@@ -11,7 +11,7 @@
 wait 40
 click 980 30
 wait 10
-menu-pick Applications
+menu-pick Utilities
 wait 10
 note it fails inside start(), before it has a window at all
 menu-pick Fault

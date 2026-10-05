@@ -15,7 +15,7 @@ move 500 90
 wait 30
 expect-menu Fonts
 expect-same-as-redraw
-note moving to Applications replaces Settings after the hover delay
+note moving to Documents replaces Settings after the hover delay
 move 800 111
 wait 35
 expect-menu TikuReader

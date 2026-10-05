@@ -4,7 +4,7 @@
 wait 25
 click 980 30
 wait 4
-menu-pick Programming
+menu-pick Development
 wait 4
 menu-pick TikuBasic
 wait 20
@@ -23,7 +23,7 @@ expect-windows 1
 note A second launch with automatic splash dismissal must render identically.
 click 980 30
 wait 4
-menu-pick Programming
+menu-pick Development
 wait 4
 menu-pick TikuBasic
 wait 220

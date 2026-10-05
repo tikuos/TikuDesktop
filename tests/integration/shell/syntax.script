@@ -13,7 +13,7 @@
 wait 14
 click 980 30
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
 menu-pick Editor
 wait 90

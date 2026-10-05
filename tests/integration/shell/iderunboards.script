@@ -24,7 +24,7 @@ menu-pick Connect to nRF54LM20B
 wait 300
 click 980 30
 wait 4
-menu-pick Programming
+menu-pick Development
 wait 4
 menu-pick TikuBasic
 wait 150

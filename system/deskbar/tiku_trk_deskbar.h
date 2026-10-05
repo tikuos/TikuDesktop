@@ -802,7 +802,7 @@ void tiku_trk_deskbar_set_theme(tiku_trk_deskbar_t *db, int which);
 void tiku_trk_deskbar_set_top_inset(tiku_trk_deskbar_t *db, int px);
 
 /**
- * @brief Offer @p label under Applications, starting @p command when
+ * @brief Offer @p label under Utilities, starting @p command when
  *        chosen, drawn with the art named by @p icon.
  *
  * The shell registers what it can find, so a program that is not
@@ -819,7 +819,12 @@ enum {
     TIKU_TRK_DB_GROUP_PROGRAMMING,
     TIKU_TRK_DB_GROUP_DEVICE_TOOLS,
     TIKU_TRK_DB_GROUP_DEMOS,
-    TIKU_TRK_DB_GROUP_COUNT
+    TIKU_TRK_DB_GROUP_DOCUMENTS,
+    TIKU_TRK_DB_GROUP_GRAPHICS,
+    TIKU_TRK_DB_GROUP_COUNT,
+    /* Source compatibility for existing callers; group IDs are unchanged. */
+    TIKU_TRK_DB_GROUP_UTILITIES = TIKU_TRK_DB_GROUP_APPS,
+    TIKU_TRK_DB_GROUP_DEVELOPMENT = TIKU_TRK_DB_GROUP_PROGRAMMING
 };
 
 /**

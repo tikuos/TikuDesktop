@@ -7,7 +7,7 @@
 wait 20
 click 980 30
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
 menu-pick Sticky Notes
 wait 100

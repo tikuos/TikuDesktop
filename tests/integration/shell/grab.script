@@ -8,7 +8,7 @@
 wait 20
 click 980 40
 wait 4
-menu-pick Applications
+menu-pick Graphics & Design
 wait 4
 expect-menu TikuGrab
 menu-pick TikuGrab

@@ -9,6 +9,7 @@
  */
 
 #include "tiku_trk_deskbar_private.h"
+#include <strings.h>
 
 /* Used before they are defined. */
 static void clock_text(const tiku_trk_deskbar_t *db, char *clock,
@@ -757,6 +758,16 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
             if (si != NULL) {
                 snprintf(si->path, sizeof si->path, "%s", db->app[i].command);
             }
+        }
+        /* Sort displayed labels, not bundle paths. Move whole rows so icons
+         * and exact launch paths remain attached; equal labels stay stable. */
+        for (i = 1; i < db->sub_count; i++) {
+            tiku_trk_db_item_t item = db->sub[i];
+            int j = i;
+            while (j > 0 && strcasecmp(db->sub[j-1].label, item.label) > 0) {
+                db->sub[j] = db->sub[j-1]; j--;
+            }
+            db->sub[j] = item;
         }
         break;
     }

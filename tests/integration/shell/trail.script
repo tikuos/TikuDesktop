@@ -16,7 +16,7 @@ note the ports the shell asked at startup, and what answered
 expect-read trail:mount /devices/nrf54lm20b
 click 980 30
 wait 10
-menu-pick Programming
+menu-pick Development
 wait 10
 menu-pick TikuBasic
 wait 250

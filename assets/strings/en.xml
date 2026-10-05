@@ -61,6 +61,10 @@
   <string name="menu.force_quit">Force Quit…</string>
   <string name="menu.applications">Applications</string>
   <string name="menu.programming">Programming</string>
+  <string name="menu.documents">Documents</string>
+  <string name="menu.graphics">Graphics &amp; Design</string>
+  <string name="menu.utilities">Utilities</string>
+  <string name="menu.development">Development</string>
   <string name="menu.device_tools">Device Tools</string>
   <string name="menu.demos">Demos</string>
   <string name="menu.deskbar_prefs">Deskbar preferences…</string>

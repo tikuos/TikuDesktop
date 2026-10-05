@@ -175,7 +175,7 @@ static void categories(tiku_surface_t *s)
         assert(db->sub_of == i && db->sub_count > 0 && db->menu_open);
         now += 2*delay; tested++;
     }
-    assert(tested == 6);
+    assert(tested == TIKU_TRK_DB_GROUP_COUNT + 2); /* Settings and recents. */
     tiku_trk_deskbar_free(db);
 }
 

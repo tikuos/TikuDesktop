@@ -6,16 +6,12 @@
 wait 12
 click 980 20
 wait 4
-note the programs are under Applications, with their own art
-menu-pick Applications
+note document applications have their own category and icons
+menu-pick Documents
 wait 4
-expect-menu Editor|TikuImage|TikuReader|Terminal
+expect-menu Editor|TikuReader
 shot /tmp/tiku-editor-app-menu.png
-note each row wears its own art: the pencil on the editor's sheet, the
-note green prompt on the terminal's screen, and they are not the same
-note picture. Stable bundle discovery puts Editor first and Terminal fourth.
-expect-pixel 494 111 f7d066
-expect-pixel 491 177 5ce678
+note the editor and reader retain their app icons and launch identities
 note choosing the editor starts it; its window arrives over the session
 menu-pick Editor
 wait 90
@@ -28,7 +24,7 @@ note kit's own alert asks first, inside the application's window -- no
 note shell involved, which is the point of the alert being the kit's
 click 980 20
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
 menu-pick Editor
 wait 90

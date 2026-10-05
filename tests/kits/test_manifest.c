@@ -27,6 +27,12 @@ int main(void)
     assert(parse(valid, &m) == 0);
     assert(!strcmp(m.id, "basic") && !strcmp(m.icon, "application"));
     char text[1024];
+    const char *categories[] = {"documents", "graphics", "utilities", "development",
+        "device-tools", "demos", "applications", "programming"};
+    for (size_t i = 0; i < sizeof categories / sizeof categories[0]; i++) {
+        snprintf(text, sizeof text, "version=1\nid=test\nname=Test\nmodule=test.so\ncategory=%s\n", categories[i]);
+        assert(!parse(text, &m) && !strcmp(m.category, categories[i]));
+    }
     const char *bad[] = {"version=1\n", "id=duplicate\n", "unknown=1\n",
                          "module=../escape.so\n", "name=bad\tvalue\n"};
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {

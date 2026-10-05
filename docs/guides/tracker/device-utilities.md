@@ -3,7 +3,7 @@
 Open these utilities from **Device Tools**. Both are native shell-owned windows:
 they use TikuDesktop's mounted VFS backend, without opening another serial port
 or extending the application IPC protocol. Developer Calculator is a separate
-loadable app under **Applications**.
+loadable app under **Development**.
 
 Each device utility captures the desktop default when opened. **Use default**
 explicitly adopts a new default; **Next device** cycles through connected boards.

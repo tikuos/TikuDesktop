@@ -14,7 +14,7 @@ note missing one reads as a missing FILE rather than a broken road
 expect-file /tmp/trk_home/hello.bas
 click 980 30
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
 menu-pick Editor
 wait 90

@@ -4,7 +4,7 @@
 wait 15
 click 980 30
 wait 20
-menu-pick Programming
+menu-pick Graphics & Design
 wait 20
 expect-menu TikuCircuit
 menu-pick TikuCircuit

@@ -1,6 +1,6 @@
 # TikuCircuit
 
-Build with `make -C applications apps`, then open **Programming >
+Build with `make -C applications apps`, then open **Graphics & Design >
 TikuCircuit** in TikuDesktop, or double-click a schematic, Gerber, drill or
 job file in Tracker. TikuCircuit is a read-only viewer; it runs in its own
 process through `tiku-run`, and its readers and renderer are the

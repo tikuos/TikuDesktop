@@ -6,7 +6,7 @@
 wait 20
 click 980 40
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
 shot /tmp/trk_reader_menu.png
 menu-pick TikuReader

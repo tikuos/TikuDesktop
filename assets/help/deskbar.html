@@ -19,8 +19,8 @@ they are drawn:</p>
 <li><b>Find…</b> opens the Find window, the same one Ctrl+F opens</li>
 <li><b>Force Quit…</b> selects an unresponsive application to stop</li>
 <li><b>Settings</b> holds the preference windows, listed below</li>
-<li>one row for each application group that has a member: Applications,
-Programming, Device Tools, Demos</li>
+<li>one row for each nonempty application category: Documents, Graphics &amp;
+Design, Utilities, Development, Device Tools and Demos</li>
 <li>a rule, then one row for every place mounted other than the root,
 opening where it is mounted; the forms a board publishes follow its
 row, one each, opening that form's panel</li>
@@ -59,38 +59,27 @@ reads <b>Hide replicants</b> once chosen, and choosing it leaves the
 menu open with the other word in place. The tray's rows are drawn either
 way.</p>
 
-<h2 id="groups">The four groups</h2>
+<h2 id="groups">Application categories</h2>
 
-<p>A program is sorted into a group by the file it is installed as and
-the folder it is installed in.</p>
+<p>Each installed application's manifest chooses its category. Categories
+open directly from the TikuOS menu, without another Applications submenu.</p>
 
 <table>
 <tr><th>Group</th><th>What it holds</th></tr>
-<tr><td>Applications</td><td>every other <code>.so</code> in
-<code>apps</code></td></tr>
-<tr><td>Programming</td><td>every <code>.so</code> in
-<code>apps/programming</code></td></tr>
-<tr><td>Device Tools</td><td><code>Bench.so</code>,
-<code>TikuBench.so</code>, <code>TikuConsole.so</code>,
-<code>TikuHex.so</code>, and Device
-Monitor and VFS Inspector, which are built in</td></tr>
-<tr><td>Demos</td><td><code>hello.so</code>, <code>clock.so</code>,
-<code>counter.so</code>, <code>sketch.so</code>, <code>twowin.so</code>,
-<code>sensors.so</code>, <code>gallery.so</code>, <code>demo.so</code>,
-<code>sounds.so</code></td></tr>
+<tr><td>Documents</td><td>Editor, Sticky Notes, TikuReader, TikuMarker, TikuDoc, TikuPDF, TikuSlides</td></tr>
+<tr><td>Graphics &amp; Design</td><td>TikuImage, TikuGrab, TikuCircuit</td></tr>
+<tr><td>Utilities</td><td>Calculator, Terminal, TikuArchive</td></tr>
+<tr><td>Development</td><td>TikuBasic, TikuC, Developer Calculator, TikuHex, TikuDiff</td></tr>
+<tr><td>Device Tools</td><td>TikuBench, TikuConsole, Device Monitor, VFS Inspector, TikuSDR</td></tr>
+<tr><td>Demos</td><td>Example applications, only when installed</td></tr>
 </table>
 
-<p>A row is named after its file: <code>tiku_</code> goes from the
-front, underscores become spaces, <code>.so</code> goes from the end and
-the first letter is capitalised, so <code>editor.so</code> is offered as
-<b>Editor</b>. Two are renamed after that:
-<code>DeveloperCalculator.so</code> is <b>Developer Calculator</b> and
-<code>Bench.so</code> is <b>TikuBench</b>. Rows stand in file-name
-order, and a group with no member gets no row. Choosing a row starts the
-program in a process of its own through the <code>tiku-run</code> runner
-installed beside the desktop; with no runner there, no installed file is
-offered at all. Device Monitor and VFS Inspector open in the desktop
-itself.</p>
+<p>Rows use the application's declared name and icon and are sorted
+alphabetically. Empty categories are hidden. Choosing an application starts
+its own process through <code>tiku-run</code>. The category does not change
+file associations, startup preferences or process isolation. Older manifests
+using <code>applications</code> appear in Utilities; those using
+<code>programming</code> appear in Development.</p>
 
 <h2 id="clock">The clock</h2>
 

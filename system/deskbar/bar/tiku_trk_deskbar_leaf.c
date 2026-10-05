@@ -220,11 +220,17 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     add_expand(db, TIKU_TRK_DB_EXPAND_SETTINGS, 0, tiku_str("menu.settings"),
                NULL, "folder_system");
     {
-        const char *keys[] = {"menu.applications", "menu.programming",
-                              "menu.device_tools", "menu.demos"};
+        const struct { int group; const char *key; } groups[] = {
+            {TIKU_TRK_DB_GROUP_DOCUMENTS, "menu.documents"},
+            {TIKU_TRK_DB_GROUP_GRAPHICS, "menu.graphics"},
+            {TIKU_TRK_DB_GROUP_UTILITIES, "menu.utilities"},
+            {TIKU_TRK_DB_GROUP_DEVELOPMENT, "menu.development"},
+            {TIKU_TRK_DB_GROUP_DEVICE_TOOLS, "menu.device_tools"},
+            {TIKU_TRK_DB_GROUP_DEMOS, "menu.demos"}
+        };
         /* A group added without its name would read this table past its
          * end: the two are one list, and the compiler says so. */
-        _Static_assert(sizeof keys / sizeof keys[0] ==
+        _Static_assert(sizeof groups / sizeof groups[0] ==
                        TIKU_TRK_DB_GROUP_COUNT, "a group has no name");
         int counts[TIKU_TRK_DB_GROUP_COUNT] = {0};
         for (i = 0; i < db->app_count; i++) {
@@ -232,9 +238,10 @@ db_build_leaf(tiku_trk_deskbar_t *db)
             if (group >= 0 && group < TIKU_TRK_DB_GROUP_COUNT) counts[group]++;
         }
         for (i = 0; i < TIKU_TRK_DB_GROUP_COUNT; i++) {
-            if (counts[i]) add_expand(db, TIKU_TRK_DB_EXPAND_APPS, i,
-                tiku_str(keys[i]), NULL,
-                i == TIKU_TRK_DB_GROUP_PROGRAMMING ? "folder_develop"
+            int group = groups[i].group;
+            if (counts[group]) add_expand(db, TIKU_TRK_DB_EXPAND_APPS, group,
+                tiku_str(groups[i].key), NULL,
+                group == TIKU_TRK_DB_GROUP_DEVELOPMENT ? "folder_develop"
                                                    : "folder_apps");
         }
     }

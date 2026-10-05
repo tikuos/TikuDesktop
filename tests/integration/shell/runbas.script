@@ -11,7 +11,7 @@ wait 14
 expect-file /tmp/trk_home/blink.bas
 click 980 30
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
 menu-pick Editor
 wait 90

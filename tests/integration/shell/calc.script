@@ -6,7 +6,7 @@
 wait 20
 click 980 30
 wait 4
-menu-pick Applications
+menu-pick Utilities
 wait 4
 menu-pick Calculator
 wait 100

@@ -8,7 +8,7 @@ key w ctrl
 wait 6
 click 980 20
 wait 4
-menu-pick Programming
+menu-pick Development
 wait 4
 expect-menu TikuBasic
 note picked up from its row and carried to the desk

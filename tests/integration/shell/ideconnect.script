@@ -28,7 +28,7 @@ menu-pick This machine
 wait 20
 click 980 30
 wait 10
-menu-pick Programming
+menu-pick Development
 wait 10
 menu-pick TikuBasic
 wait 250

@@ -10,7 +10,7 @@
 wait 15
 click 980 20
 wait 4
-expect-menu Find…|Force Quit…|Settings|Applications|Device Tools|-|board1|-|Recent folders|-|Shut down…|
+expect-menu Find…|Force Quit…|Settings|Documents|Graphics & Design|Utilities|Device Tools|-|board1|-|Recent folders|-|Shut down…|
 note and the row opens the store it names, by the name the namespace
 note knows it by rather than by whatever the store calls its own root
 menu-pick board1

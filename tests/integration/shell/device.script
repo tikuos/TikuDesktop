@@ -13,7 +13,7 @@ note the Deskbar knows this shell and nothing it did not start
 note the global bar is on, so the leaf sits below it
 click 980 40
 wait 4
-expect-menu Applications
+expect-menu Documents
 key Escape
 wait 4
 note and what the screen shows is THAT Desktop, not the login session's

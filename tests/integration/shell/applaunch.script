@@ -6,7 +6,7 @@
 wait 12
 click 980 20
 wait 4
-menu-pick Programming
+menu-pick Development
 wait 4
 expect-menu TikuBasic
 press 520 134

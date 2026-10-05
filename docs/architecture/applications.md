@@ -66,7 +66,7 @@ version=1
 id=basic
 name=TikuBasic
 module=TikuBasic.so
-category=programming
+category=development
 icon=application
 types=text/x-basic,application/x-tiku-project
 startup=programming/TikuBasic.so
@@ -75,7 +75,12 @@ help=apps/tikubasic.html
 
 - `id` is a stable installation/startup identity.
 - `module` is a leaf filename inside the bundle, not a command or path.
-- `category` is `applications`, `programming`, `device-tools` or `demos`.
+- `category` is `documents`, `graphics`, `utilities`, `development`,
+  `device-tools` or `demos`. These appear directly in the Deskbar as Documents,
+  Graphics & Design, Utilities, Development, Device Tools and Demos. Empty
+  categories are hidden; each submenu is sorted by displayed name, ignoring
+  case. Older `applications` and `programming` values remain accepted as
+  aliases for Utilities and Development. No app-name-specific routing is used.
 - `icon` names a public icon; `types` advertises file-association candidates.
   The person's File Associations preferences still select preferred handlers.
   Bundles with no document types are not offered in Open With.

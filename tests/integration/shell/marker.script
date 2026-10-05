@@ -48,7 +48,7 @@ key w ctrl
 wait 10
 click 980 40
 wait 4
-menu-pick Applications
+menu-pick Documents
 wait 4
 expect-menu TikuMarker
 menu-pick TikuMarker
