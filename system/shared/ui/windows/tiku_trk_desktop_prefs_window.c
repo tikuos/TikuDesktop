@@ -3,11 +3,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_prefs_window.c - dressing the Desktop.
+ * tiku_trk_desktop_prefs_window.c - the Desktop preferences window.
  *
- * The pictures offered are the ones already on the Desktop or in its
- * wallpapers directory: a chooser a person fills by dropping a file in,
- * which is how everything else about this device is configured.
+ * The picture behind the Desktop, how it is laid, the icon size and Reduce
+ * motion.  The pictures offered are the images in the Desktop folder and
+ * in the wallpapers folder beside it, so a picture is added by dropping
+ * its file into either.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,11 +28,8 @@
 #define LIST_ROWS  6
 
 /*
- * Where the controls sit, in content coordinates -- asked of the face
- * rather than written down, for the same reason as in the Fonts window
- * next door: this one can be open while the face changes, and a control
- * drawn at its new size into a slot sized for the old one is a control
- * the click misses.  Each answers what was written here at 12 px.
+ * Where the controls sit, in content coordinates, computed from the face
+ * on every call; the drawing and the click both use them.
  */
 static int row_h(void)   { return tiku_ui_row_h(); }   /* 22 at 12 px */
 static int list_y(void)  { return tiku_font_bold()->height + 27; }
@@ -54,26 +52,15 @@ motion_rect(tiku_rect_t content)
     return r;
 }
 
-/** @brief The tick-box beside a laying mode. */
+/** @brief The side of the tick box beside a laying mode. */
 static int box_side(void)
 {
     return tiku_font_plain()->height - 3;              /* 12 at 12 px */
 }
 
-/*
- * The icon-size stepper had the same fault the Fonts window's did: it was
- * drawn as the string "-   32 px   +" and any click right of pixel 300
- * counted as a plus.  Where the plus SIGN fell depended on the face, so
- * at a small one it sat left of the split and pressing it made the icons
- * smaller.  Two real buttons instead, laid out from the right edge in, so
- * they stay within a few pixels of the same place at every size -- and
- * handed back, so drawing and hit-testing cannot disagree about them.
- */
 /**
- * @brief Row @p i of the laying-mode choices, in @p content's space.
- *
- * Written once, so the drawing and the click agree about it -- they did
- * not: the click was bounded on y alone and accepted any x at all.
+ * @brief Row @p i of the laying-mode choices, in @p content's space.  The
+ *        drawing and the click both read it.
  */
 static tiku_rect_t
 mode_row(tiku_rect_t content, int i)
@@ -87,7 +74,12 @@ mode_row(tiku_rect_t content, int i)
     return r;
 }
 
-/** @brief The icon-size stepper's plus, at the row's right edge. */
+/**
+ * @brief The icon-size stepper's plus, at the row's right edge.
+ *
+ * The stepper is laid out from the right edge inward; the drawing and the
+ * press both read these rectangles.
+ */
 static tiku_rect_t
 plus_rect(tiku_rect_t content)
 {
@@ -142,7 +134,7 @@ revert_rect(tiku_rect_t content)
     return r;
 }
 
-/** @brief The whole window, title bar and all. */
+/** @brief The window's frame height: content, title tab and border. */
 static int
 window_height(void)
 {
@@ -151,12 +143,10 @@ window_height(void)
 }
 
 /**
- * @brief Grow or shrink to what the contents now need.
+ * @brief Grow or shrink the window to what the contents need.
  *
- * Taken on every draw rather than where a change is noticed, because
- * nothing this window does changes the face -- the window NEXT DOOR does,
- * and this one has to notice on its own.  The top-left corner stays put:
- * a window that re-centred itself would walk out from under the hand.
+ * Checked on every draw: the face can change while the window is open.
+ * The top-left corner stays where it is.
  */
 static void
 refit(tiku_trk_desktop_prefs_window_t *controller)
@@ -175,8 +165,8 @@ refit(tiku_trk_desktop_prefs_window_t *controller)
     }
 }
 
-/* The keys of the four laying modes; the words come from the catalogue
- * when a row is drawn, so a translation reaches them too. */
+/* The catalogue keys of the four laying modes' labels, looked up when a
+ * row is drawn. */
 static const char *const kModeKeys[4] = {
     "prefs.desktop.mode.corner", "prefs.desktop.mode.centred",
     "prefs.desktop.mode.scaled", "prefs.desktop.mode.tiled"
@@ -189,7 +179,7 @@ inside(tiku_rect_t r, int x, int y)
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 }
 
-/** @brief The name a picture is offered under: its file's own. */
+/** @brief The name a picture is listed under: the last part of its path. */
 static const char *
 leaf_of(const char *path)
 {
@@ -198,7 +188,10 @@ leaf_of(const char *path)
     return (slash != NULL) ? slash + 1 : path;
 }
 
-/** @brief Put what the window says onto the Desktop it is about. */
+/**
+ * @brief Save the record and apply it to the Desktop: the icon size, the
+ *        picture, and Reduce motion when it changed.
+ */
 static void
 apply(tiku_trk_desktop_prefs_window_t *controller)
 {
@@ -224,8 +217,8 @@ apply(tiku_trk_desktop_prefs_window_t *controller)
     if (desk != NULL && desk->view != NULL) {
         tiku_trk_poseview_set_icon_size(desk->view,
                                         controller->model.value.icon_size);
-        /* The pictures behind it are cached by the path last shown, and
-         * forgetting is how a changed record reaches the screen. */
+        /* Dropping the kept pixels makes the next frame paint the
+         * Desktop whole, from the changed record. */
         tiku_trk_folder_window_forget(desk);
     }
     if (controller->dirty != NULL) {
@@ -234,8 +227,9 @@ apply(tiku_trk_desktop_prefs_window_t *controller)
 }
 
 /**
- * @brief Draw the picture list, the laying modes, the icon-size stepper
- *        and the buttons, refitting the window to the face first.
+ * @brief Draw the picture list, the laying modes, the icon-size stepper,
+ *        Reduce motion and the buttons, refitting the window to the face
+ *        first.
  */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
@@ -364,8 +358,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
 }
 
 /**
- * @brief A press picks a picture, a laying mode, a step of the icon size
- *        or a button, and applies it.  @return 1 when taken.
+ * @brief A press picks a picture or a laying mode or toggles Reduce
+ *        motion; the stepper's arrows and the buttons act on a release
+ *        over them.  Each change is applied at once.
+ * @return 1 when taken.
  */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
@@ -376,8 +372,9 @@ event(tiku_window_t *window, const tiku_event_t *event,
     int x = event->x - content.x, y = event->y - content.y;
 
     {
-        /* The four buttons go down under the hand and act when it lets
-         * go on them; the rows and the layouts answer the press. */
+        /* The stepper's arrows and the two buttons show pressed while
+         * held and act on a release over them; the list, the modes and
+         * the tick box act on the press. */
         int under = inside(minus_rect(content), event->x, event->y) ? 1
                   : inside(plus_rect(content), event->x, event->y) ? 2
                   : (inside(defaults_rect(content), event->x, event->y) &&
@@ -441,12 +438,8 @@ event(tiku_window_t *window, const tiku_event_t *event,
         return 1;
     }
     {
-        /*
-         * The rows, asked for rather than recalled -- and asked for
-         * WHOLE.  A bound on y alone lets a click at the far right edge
-         * of the window, hundreds of pixels from anything drawn, lay the
-         * wallpaper out again.
-         */
+        /* The mode rows as mode_row() lays them out, in content-relative
+         * coordinates, tested on x as well as y. */
         tiku_rect_t zero = { 0, 0, TIKU_TRK_DESK_PREFS_W, 0 };
         int i;
 
@@ -455,8 +448,8 @@ event(tiku_window_t *window, const tiku_event_t *event,
 
             if (x >= row.x && x < row.x + row.w &&
                 y >= row.y && y < row.y + row.h) {
-                /* Only while a picture is showing: a way of laying
-                 * nothing is not a choice anybody can see. */
+                /* Only while a picture is chosen; without one the modes
+                 * are greyed. */
                 if (controller->model.value.have_bg) {
                     tiku_trk_deskprefs_set_mode(&controller->model,
                         (tiku_trk_bg_mode_t)i);
@@ -532,8 +525,8 @@ tiku_trk_desktop_prefs_window_open(
                                      controller->window);
         return;
     }
-    /* Read afresh every time it opens: the Desktop may have been dressed
-     * from somewhere else since, and a stale window would undo it. */
+    /* Read afresh on every open: the Desktop's record may have changed
+     * elsewhere since, and a stale model would undo that change. */
     desk = tiku_trk_desktop_view_folder(controller->desktop_view);
     (void)tiku_trk_deskprefs_load(&controller->model, controller->store,
         controller->node,

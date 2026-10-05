@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_info_window.h - Get Info window controller.
+ * tiku_trk_info_window.h - the Get Info windows: a fixed set of slots, each
+ * showing one entry's icon, its name and the Information, Permissions and
+ * Attributes tabs.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,8 +23,9 @@
 #include "tiku_model.h"
 #include "tiku_state.h"
 
-#define TIKU_TRK_INFO_WINDOW_MAX 8
+#define TIKU_TRK_INFO_WINDOW_MAX 8   /**< Get Info windows open at once */
 
+/** @brief What a point in a Get Info window lands on. */
 typedef enum {
     TIKU_TRK_INFO_HIT_NONE = 0,
     TIKU_TRK_INFO_HIT_TAB,
@@ -34,11 +37,13 @@ typedef enum {
 
 typedef struct tiku_trk_info_windows tiku_trk_info_windows_t;
 
+/** @brief What a window hands its draw callback: the set and the slot. */
 typedef struct {
     tiku_trk_info_windows_t *owner;
     int                      slot;
 } tiku_trk_info_window_context_t;
 
+/** @brief The Get Info windows and what each one shows. */
 struct tiku_trk_info_windows {
     /* One slot per open window: what it describes, the window, its tabs,
      * and the context the window hands back to name its slot. */
@@ -53,9 +58,8 @@ struct tiku_trk_info_windows {
     tiku_alert_t              *alert;      /* says why a rename was refused */
     tiku_field_t                name;      /* the rename editor */
     int                            renaming;  /* the slot in rename, or -1 */
-    /* The slot whose icon an in-flight drag is over, or -1: the icon
-     * answers a hover the way a pose does, by its selected variant
-     * (IV-058). */
+    /* The slot whose icon a drag is over, or -1; that icon is drawn
+     * selected (IV-058). */
     int                            drop_hot;
     /* The field the pointer rests on, for the truncated-value pop-up
      * (AW-073): -1 when nowhere. */
@@ -74,7 +78,9 @@ void tiku_trk_info_windows_init(tiku_trk_info_windows_t *controller,
     int *dirty);
 /**
  * @brief Show @p path: the window already on it is activated, else a free
- *        slot opens one.  @return the slot, or -1 when every slot is taken.
+ *        slot opens one.
+ * @return the slot, or -1 when every slot is taken or @p path cannot be
+ *         read.
  */
 int tiku_trk_info_windows_open(tiku_trk_info_windows_t *controller,
                                const char *path);
@@ -99,14 +105,16 @@ tiku_trk_info_hit_t tiku_trk_info_windows_hit(
     tiku_trk_info_windows_t *controller, int slot, int x, int y, int *which);
 
 /**
- * @brief Make tab @p which current in @p slot, re-reading what it shows.
- *
- * The tab strip owns which is current; this is where a click on it lands,
- * and where the Attributes tab gets a fresh read on the way in.
+ * @brief Make tab @p which current in @p slot; selecting the Attributes
+ *        tab re-reads the attributes.
  */
 void tiku_trk_info_windows_select_tab(tiku_trk_info_windows_t *controller,
                                       int slot, int which);
-/** @brief The screen rectangle of field row @p i in @p slot (AW-073). */
+/**
+ * @brief The screen rectangle of the value in field row @p i of @p slot,
+ *        for the hover pop-up (AW-073).
+ * @return 1, or 0 when the slot has no open window.
+ */
 int tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
                                      int slot, int i,
                                      int *x, int *y, int *w, int *h);
@@ -115,7 +123,12 @@ int tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
 void tiku_trk_info_windows_begin_rename(
     tiku_trk_info_windows_t *controller, int slot);
 
-/** @return Nonzero if the focused Get Info window consumed the key. */
+/**
+ * @brief A key for the focused Get Info window: while renaming, Return,
+ *        Escape, Backspace and characters edit the name; otherwise Cmd+E
+ *        starts a rename and Cmd+W closes the window.
+ * @return nonzero when the key was taken.
+ */
 int tiku_trk_info_windows_key(tiku_trk_info_windows_t *controller,
     int key, unsigned modifiers, char character);
 
@@ -135,7 +148,13 @@ int tiku_trk_info_windows_device_gone(tiku_trk_info_windows_t *controller,
 int tiku_trk_info_windows_refresh(tiku_trk_info_windows_t *controller,
                                   int64_t now);
 
-/** @brief Insert committed text only; 0 not focused, 1 handled, -1 rejected. */
+/**
+ * @brief Insert committed text into the focused Get Info window's rename
+ *        editor.
+ * @return 0 with no Get Info window focused, -1 when the editor rejects
+ *         the text, else 1; with no rename open, or the alert up, the
+ *         text is dropped.
+ */
 int tiku_trk_info_windows_text(tiku_trk_info_windows_t *controller,
     const char *text);
 

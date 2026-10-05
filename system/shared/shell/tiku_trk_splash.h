@@ -5,16 +5,12 @@
  *
  * tiku_trk_splash.h - what the screen says while the desktop is coming up.
  *
- * A black screen, the mark in the middle, and one line under it naming
- * the part of the system being started.  The names are the real stages,
- * each written the moment that piece of the shell is built, not read
- * off a list: a boot screen reciting a fixed sequence is a progress bar
- * that has been lied to.  A stage is held for a moment, or the whole
- * thing would be a flicker; what is shown is what the work was.  Then
- * the black lifts off the running desktop over about a second.  The way
- * out is the same screen backwards: the black laid over the desktop, a
- * beat, then the stages naming the pieces being put away in the order
- * they are, so a shutdown reads as the machine closing.
+ * A black screen, the mark in the middle, and one line under it naming the
+ * piece of the shell being built, as it is built.  Each line stays up for
+ * at least TIKU_TRK_SPLASH_STEP_US.  When loading ends the screen holds,
+ * then fades off the running desktop.  Closing is the same screen
+ * backwards: the black fades back over the desktop, then the lines name
+ * the pieces being put away, in the order they are.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,18 +23,13 @@
 
 /** @brief The least time a stage stays up, so it can be read. */
 #define TIKU_TRK_SPLASH_STEP_US 220000
-/**
- * @brief How long the finished screen holds before it starts to go.
- *
- * Long enough to be seen as a finished state rather than as the last
- * frame of the loading -- and long enough that a script watching it is
- * not racing the first step of the fade, which at three hundred
- * milliseconds it was.
- */
+/** @brief How long the finished screen holds before it fades, and how long
+ *         the closing screen holds once down. */
 #define TIKU_TRK_SPLASH_HOLD_US 700000
-/** @brief And how long it takes to go. */
+/** @brief How long a fade takes, out or back in. */
 #define TIKU_TRK_SPLASH_FADE_US 900000
 
+/** @brief The splash screen's state. */
 typedef struct {
     int     live;            /* whether there is a splash at all      */
     int64_t stage_us;        /* when the line now up was written      */
@@ -49,58 +40,57 @@ typedef struct {
 } tiku_trk_splash_t;
 
 /**
- * @brief Put the splash up, or don't.
+ * @brief Put the splash up, or not.
  *
- * @param live Zero leaves every call below a no-op, which is what a
- *             scripted run wants: 164 scripts would each pay the dwell.
+ * @param live Zero makes every call below a no-op; a scripted run passes
+ *             zero.
  */
 void tiku_trk_splash_begin(tiku_trk_splash_t *sp, int live, int64_t now);
 
-/** @brief Name the part of the system that has just been built. */
+/** @brief Name the part of the shell that has just been built; ignored
+ *         between the end of loading and the start of closing. */
 void tiku_trk_splash_say(tiku_trk_splash_t *sp, const char *what,
                          int64_t now);
 
 /**
  * @brief How long the line now up is still owed, in microseconds.
  *
- * The caller sleeps this out before starting the next piece of work, so
- * the pacing is the shell's rather than something the splash does behind
- * its back.  Zero when there is nothing owed, which is always the case
- * when the splash is not live.
+ * Zero when nothing is owed, and always when the splash is not live.
+ *
+ * @note The caller sleeps this out before starting the next piece of
+ *       work; the splash itself never waits.
  */
 int64_t tiku_trk_splash_owed(const tiku_trk_splash_t *sp, int64_t now);
 
-/** @brief The shell is up; start letting go. */
+/** @brief The shell is up: hold the screen, then fade it out. */
 void tiku_trk_splash_done(tiku_trk_splash_t *sp, int64_t now);
 
 /** @brief Whether any of it is still on the screen. */
 int tiku_trk_splash_visible(const tiku_trk_splash_t *sp, int64_t now);
 
 /**
- * @brief How solid it is: 1 while loading and holding, 0 once gone.
+ * @brief How solid it is: 1 while loading and holding, 0 once gone, and
+ *        rising again while closing.
  *
- * Everything the splash draws is drawn at this strength, so the mark,
- * the line and the black all leave together -- and, on the way out,
- * arrive together.
+ * Everything the splash draws is drawn at this strength, so the mark, the
+ * line and the black fade together, out and back in.
  */
 float tiku_trk_splash_veil(const tiku_trk_splash_t *sp, int64_t now);
 
 /**
  * @brief Start the closing: the black comes back down over the desktop.
  *
- * The line the boot screen went out on is dropped, because what is said
- * from here is what is being put away rather than what was built.  A
- * screen that is not live has nothing to lower, and says so through
- * tiku_trk_splash_closed() at once.
+ * The last loading line is dropped: the lines from here name what is being
+ * put away.  A splash that is not live reports closed at once through
+ * tiku_trk_splash_closed().
  */
 void tiku_trk_splash_closing(tiku_trk_splash_t *sp, int64_t now);
 
 /**
  * @brief Whether the screen is down and the shell may stop.
  *
- * True once the black has arrived and held its beat -- and immediately
- * when there is no splash at all, so a scripted run ends where it always
- * did rather than waiting out a transition nobody is watching.
+ * True once the black has faded in and held for TIKU_TRK_SPLASH_HOLD_US,
+ * and at once when the splash is not live.
  */
 int tiku_trk_splash_closed(const tiku_trk_splash_t *sp, int64_t now);
 

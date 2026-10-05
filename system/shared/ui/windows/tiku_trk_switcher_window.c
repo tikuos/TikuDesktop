@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_switcher_window.c - application switcher window controller.
+ * tiku_trk_switcher_window.c - the application switcher: the running
+ * applications in a row, the chosen one highlighted and named.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,18 +22,19 @@
 #define SWITCHER_PAD   12
 #define SWITCHER_ARROW 14
 
-/*
- * The strip below the icons, which holds the name of whatever is picked.
- * The icons are a fixed size and stay one; the NAME is text, and the row
- * reserved for it was 22 pixels -- what a 12 px face needs and no more,
- * so at 16 the name was drawn through the bottom edge.
+/**
+ * @brief The height of the strip below the icons that holds the chosen
+ *        one's name, from the face.
  */
 static int title_h(void)
 {
     return tiku_font_plain()->height + 7;        /* 22 at 12 px */
 }
 
-/** @brief The window, sized to the slots it shows, centred on the screen. */
+/**
+ * @brief The window, sized to the slots it shows, centred across the
+ *        screen a little above the middle.
+ */
 static tiku_rect_t
 frame(tiku_trk_switcher_window_t *controller)
 {
@@ -50,7 +52,10 @@ frame(tiku_trk_switcher_window_t *controller)
     return result;
 }
 
-/** @brief Draw the applications in a row, the chosen one framed and named. */
+/**
+ * @brief Draw the applications in a row, the chosen one on the selection
+ *        colour, the scroll arrows, and the chosen one's title.
+ */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -66,9 +71,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     slots = controller->model.n < TIKU_TRK_SW_SLOTS
           ? controller->model.n : TIKU_TRK_SW_SLOTS;
     {
-        /* The strip slides rather than jumps: everything below draws
-         * relative to where the scroll IS on the animation clock
-         * (DB-058). */
+        /* The icons are drawn relative to where the scroll is on the
+         * animation clock, so the strip slides (DB-058). */
         int spx = tiku_trk_switcher_scroll_px(&controller->model,
                                               SWITCHER_SLOT, now);
         int base = controller->model.scroll * SWITCHER_SLOT - spx;

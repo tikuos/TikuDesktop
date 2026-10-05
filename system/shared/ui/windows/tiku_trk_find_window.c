@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_find_window.c - Find window controller.
+ * tiku_trk_find_window.c - the Find window: the query form in a window,
+ * with its query icon and its Search and Save actions.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,9 +16,9 @@
 #include "tiku_trk_find_window.h"
 #include "tiku_iconpaint.h"
 
-#define FIND_WIDTH 560
+#define FIND_WIDTH 560      /* the window's frame width */
 
-/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
+/** @brief Set the shell's redraw flag, when it has one. */
 static void
 mark_dirty(tiku_trk_find_window_t *controller)
 {
@@ -26,7 +27,7 @@ mark_dirty(tiku_trk_find_window_t *controller)
     }
 }
 
-/** @brief Put @p text in the shell's status line, when it lent one. */
+/** @brief Put @p text in the shell's status line, when it has one. */
 static void
 set_status(tiku_trk_find_window_t *controller, const char *text)
 {
@@ -98,18 +99,17 @@ sync_window(tiku_trk_find_window_t *controller)
 }
 
 /**
- * @brief Save the query where it belongs, or hand the question of where
- *        to the save panel; the status line says what happened.
+ * @brief Save the query back to what it was opened from, or ask the save
+ *        panel where to put it; the status line says what happened.
  */
 static void
 save(tiku_trk_find_window_t *controller)
 {
     if (tiku_trk_find_save_current(&controller->model,
                                    (int64_t)time(NULL)) != 0) {
-        /* Nothing attached to save INTO: the question becomes WHERE, and
-         * that question is the save panel's (AW-052).  The old fallback
-         * -- a silent store record under an invented name -- remains only
-         * for a shell that wired no panel. */
+        /* Nothing attached to save into: the save panel asks where
+         * (AW-052).  A shell that wired no panel gets a store record under
+         * a generated name. */
         if (controller->save_as != NULL) {
             controller->save_as(controller->save_as_context);
             return;
@@ -136,8 +136,8 @@ save(tiku_trk_find_window_t *controller)
 }
 
 /**
- * @brief The default action: save the template, or run the search; the
- *        window closes once it went.
+ * @brief The default action: save the template being edited, or run the
+ *        search; the window closes when it succeeds.
  */
 static void
 primary(tiku_trk_find_window_t *controller)

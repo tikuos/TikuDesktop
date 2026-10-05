@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_drag_target.h - drag hover, scrolling, and spring-open state.
+ * tiku_trk_drag_target.h - the target under a drag: the folder window and
+ * row it is over, auto-scroll at a window's edge, and spring-opening a
+ * folder the drag rests on.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,35 +19,38 @@
 #include "tiku_trk_drag.h"
 #include "tiku_trk_springmenu.h"
 
+/** @brief Open @p path, the folder a drag rested on long enough. */
 typedef void (*tiku_trk_drag_open_fn)(void *context, const char *path);
 
 /** @brief Dependencies and state for resolving the target under a drag. */
 typedef struct tiku_trk_drag_target {
-    tiku_workspace_t *workspace;
-    tiku_trk_deskbar_t *deskbar;
-    tiku_trk_desktop_view_t *desktop_view;
-    tiku_trk_drag_t *drag;
-    tiku_trk_folder_window_t *folders;
-    int *folder_count;
-    int row_h;
-    int *dirty;
-    tiku_trk_drag_open_fn open;
-    void *open_context;
-    tiku_trk_folder_window_t *folder;
-    int row;
-    int64_t hover_at;
-    int64_t scroll_at;
-    int sprung;
-    /* Non-zero when a script drives the shell: a hold is counted in
-     * pulses, not wall time, for the same reason the band's is.  Both
-     * holds here take it -- the spring's and the autoscroll's. */
+    tiku_workspace_t *workspace;            /**< borrowed                 */
+    tiku_trk_deskbar_t *deskbar;            /**< borrowed                 */
+    tiku_trk_desktop_view_t *desktop_view;  /**< borrowed                 */
+    tiku_trk_drag_t *drag;                  /**< the drag in hand         */
+    tiku_trk_folder_window_t *folders;      /**< the shell's windows      */
+    int *folder_count;                      /**< folders[] in use         */
+    int row_h;                  /**< a row's height: the icon-mode step   */
+    int *dirty;                 /**< set when the screen changed          */
+    tiku_trk_drag_open_fn open;             /**< opens a sprung folder    */
+    void *open_context;                     /**< handed back to open      */
+    tiku_trk_folder_window_t *folder;       /**< the target window, or NULL */
+    int row;                    /**< the droppable row under it, or -1    */
+    int64_t hover_at;           /**< when the current target was entered  */
+    int64_t scroll_at;          /**< when the drag reached an edge, or 0  */
+    int sprung;                 /**< the target's folder has been opened  */
+    /* Non-zero when a script drives the shell: both holds here, the
+     * spring's and the auto-scroll's, are then counted in pulses. */
     int spring_script_pulses;
-    int spring_held;
-    int scroll_held;            /* turns spent in the band, when scripted */
-    tiku_trk_springmenu_t spring;
+    int spring_held;            /**< pulses held over the target          */
+    int scroll_held;            /**< pulses spent in the edge band        */
+    tiku_trk_springmenu_t spring;           /**< the spring hold          */
 } tiku_trk_drag_target_t;
 
-/** @brief Count the spring hold in pulses rather than wall time. */
+/**
+ * @brief Count the spring and auto-scroll holds in @p pulses instead of
+ *        wall time; 0 goes back to wall time.
+ */
 void tiku_trk_drag_target_set_script_delay(
     tiku_trk_drag_target_t *controller, int pulses);
 

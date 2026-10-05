@@ -68,8 +68,7 @@ tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
              (client != NULL) ? client : "TikuTracker");
     snprintf(p->home, sizeof p->home, "%s", home_dir());
     (void)tiku_desktop_dir(p->desktop, sizeof p->desktop);
-    /* Three rungs, and the last cannot fail: a panel that opened nowhere
-     * would be a window with no folder in it (AW-050). */
+    /* Three rungs; the last, the root, cannot fail (AW-050). */
     if (is_dir(b, want, NULL)) {
         snprintf(p->dir, sizeof p->dir, "%s", want);
     } else if (is_dir(b, p->home, NULL)) {
@@ -89,10 +88,7 @@ tiku_trk_panel_title(const tiku_trk_panel_t *p, char *out, size_t max)
         out[0] = '\0';
         return;
     }
-    /* What is being asked, plainly: Save, or Open.  The asker's name
-     * came off the title the day the panel learned to say WHERE it is
-     * -- a title carrying both was a title too long to read, and the
-     * question is the half a person acts on. */
+    /* The title is only what is being asked, Save or Open (AW-064). */
     snprintf(out, max, "%s",
              (p->mode == TIKU_TRK_PANEL_SAVE) ? "Save" : "Open");
 }
@@ -123,9 +119,8 @@ tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
     if (p == NULL) {
         return "Open";
     }
-    /* A lone folder relabels the button whatever the panel is for: the
-     * thing in front of the user is a folder, and the only sense a button
-     * can make of one is to go into it (AW-053). */
+    /* A lone folder relabels the button Open whatever the panel is for:
+     * the button enters it (AW-053). */
     if (n == 1 && sel != NULL && tiku_model_is_container(&sel[0])) {
         return "Open";
     }
@@ -145,13 +140,13 @@ tiku_trk_panel_button_enabled(const tiku_trk_panel_t *p,
         return 1;               /* entering is always available */
     }
     if (p->mode == TIKU_TRK_PANEL_SAVE) {
-        /* The field, not the selection: a save is a name, and a highlighted
-         * row is only a suggestion for one (AW-053). */
+        /* A save panel follows the name field, not the selection
+         * (AW-053). */
         return (p->name_len > 0);
     }
     if (n <= 0) {
-        /* Nothing picked.  A panel asking for a FOLDER still has an answer
-         * -- the one it is showing -- which is how "choose this folder"
+        /* Nothing picked.  A panel asking for a folder still has an
+         * answer, the one it is showing, which is how "choose this folder"
          * works without a row for it. */
         return (p->flavors & TIKU_TRK_PANEL_DIR) != 0u;
     }
@@ -179,9 +174,8 @@ tiku_trk_panel_pick_name(tiku_trk_panel_t *p, const tiku_model_t *sel,
     }
     snprintf(p->name, sizeof p->name, "%s", sel[0].name);
     p->name_len = (int)strlen(p->name);
-    /* The focus is deliberately NOT taken: the user is picking with the
-     * mouse, and a field that grabbed the keyboard here would swallow
-     * whatever they typed next (AW-054). */
+    /* The keyboard focus stays where it is: the user is picking with the
+     * mouse (AW-054). */
     return 1;
 }
 
@@ -191,10 +185,8 @@ tiku_trk_panel_activate(const tiku_trk_panel_t *p, const tiku_model_t *m)
     if (p == NULL || m == NULL) {
         return TIKU_TRK_PANEL_ACT_NOTHING;
     }
-    /* A folder is ENTERED even by a panel that would accept one as its
-     * answer.  Choosing it is what the default button is for; a
-     * double-click that answered the question would make the folder tree
-     * unwalkable past its first level (AW-055). */
+    /* A folder is entered even by a panel that would accept one as its
+     * answer; the default button is what chooses it (AW-055). */
     if (tiku_model_is_container(m)) {
         return TIKU_TRK_PANEL_ACT_ENTER;
     }
@@ -241,8 +233,8 @@ tiku_trk_panel_save_check(const tiku_trk_panel_t *p, tiku_backend_t *b,
     }
     if (b != NULL && b->ops != NULL && b->ops->stat != NULL &&
         b->ops->stat(b, full, &m) == 0) {
-        /* A folder of that name is final; a file of that name is a
-         * question, since replacing one is what saving often means. */
+        /* A folder of that name refuses the save; a file of that name
+         * asks whether to replace it. */
         return tiku_model_is_container(&m) ? TIKU_TRK_SAVE_IS_FOLDER
                                                : TIKU_TRK_SAVE_REPLACE;
     }
@@ -291,9 +283,8 @@ tiku_trk_panel_drop(tiku_trk_panel_t *p, tiku_backend_t *b,
         b->ops->stat(b, path, &m) != 0) {
         return 0;
     }
-    /* A file names the folder it is IN, and is then pointed at: a drop is
-     * the user saying "this one", and landing on its folder with it
-     * unselected would make them find it again (AW-059). */
+    /* A file opens the folder it is in and is selected there: a drop is
+     * the user saying "this one" (AW-059). */
     slash = strrchr(path, '/');
     if (slash == NULL || slash == path) {
         snprintf(p->dir, sizeof p->dir, "/");
@@ -350,9 +341,8 @@ tiku_trk_panel_dir_gone(tiku_trk_panel_t *p, tiku_backend_t *b)
     if (p == NULL) {
         return;
     }
-    /* Falls back rather than closing.  A folder WINDOW whose folder went
-     * has nothing left to be; a panel is in the middle of a question, and
-     * closing it would answer that question as cancel (PVN-029, PVN-043). */
+    /* The panel stays open, since closing it would answer its question as
+     * cancel, and moves to home, else the root (PVN-029, PVN-043). */
     if (is_dir(b, p->home, NULL)) {
         snprintf(p->dir, sizeof p->dir, "%s", p->home);
     } else {
@@ -374,8 +364,8 @@ tiku_trk_panel_parent(const tiku_trk_panel_t *p, char *out, size_t max)
             return 0;           /* the Desktop is the top */
         }
         if (strcmp(p->dir, "/") == 0) {
-            /* Up from the root lands on the Desktop rather than nowhere:
-             * with the setting on, the root is BELOW the Desktop (AW-061). */
+            /* With the setting on, the root is below the Desktop, so Up
+             * from it lands there (AW-061). */
             if (p->desktop[0] == '\0') {
                 return 0;
             }
@@ -414,9 +404,7 @@ tiku_trk_panel_key(const tiku_trk_panel_t *p, int key, unsigned mods,
         return TIKU_TRK_PANEL_KEY_CANCEL;       /* Escape */
     }
     if (key == '\t') {
-        /* Tab moves between the controls instead of walking the poses: a
-         * panel has a field and buttons to reach, which a folder window
-         * does not (PVK-022). */
+        /* Tab moves the keyboard between the controls (PVK-022). */
         return TIKU_TRK_PANEL_KEY_FOCUS;
     }
     if (key == '\n' || key == '\r') {
@@ -435,10 +423,9 @@ tiku_trk_panel_key(const tiku_trk_panel_t *p, int key, unsigned mods,
     case 'h': case 'H':
         return TIKU_TRK_PANEL_KEY_HOME;
     case 'd': case 'D':
-        /* Cmd+D is the Desktop, EXCEPT when the list has the keyboard and
-         * the selection could be duplicated -- then it means what it means
-         * in a folder window, because that is the window the user is
-         * looking at (AW-058). */
+        /* Cmd+D is the Desktop, except when the list has the keyboard and
+         * the selection could be duplicated: then it duplicates, as in a
+         * folder window (AW-058). */
         return (pose_focus && can_duplicate) ? TIKU_TRK_PANEL_KEY_DUPLICATE
                                              : TIKU_TRK_PANEL_KEY_DESKTOP;
     default:
@@ -523,8 +510,7 @@ tiku_trk_recent_add(tiku_store_t *s, tiku_trk_recent_t which,
     snprintf(keep[k++], TIKU_PATH_MAX, "%.*s",
              (int)(TIKU_PATH_MAX - 1), path);
     for (i = 0; i < n && k < TIKU_TRK_RECENT_MAX; i++) {
-        /* Used again is not a second entry: it moves to the front, which
-         * is what makes the list a history rather than a log. */
+        /* Used again is not a second entry: it moves to the front. */
         if (strcmp(list[i], path) != 0) {
             snprintf(keep[k++], TIKU_PATH_MAX, "%.*s",
                      (int)(TIKU_PATH_MAX - 1), list[i]);
@@ -540,9 +526,7 @@ tiku_trk_recent_list(tiku_store_t *s, tiku_trk_recent_t which, int cap,
     int n, shown;
 
     n = list_read(s, recent_attr(which), out, max);
-    /* One FEWER than the configured count is what the original's loop
-     * actually yields, and matching the number the user sees matters more
-     * than matching the number they typed (CW-058). */
+    /* One fewer than the configured count (CW-058). */
     shown = cap - 1;
     if (shown < 0) {
         shown = 0;
@@ -581,7 +565,7 @@ tiku_trk_panel_favorites(tiku_store_t *s, char out[][TIKU_PATH_MAX],
 }
 
 /*---------------------------------------------------------------------------*/
-/* Geometry                                                                  */
+/* Geometry and name completion                                              */
 /*---------------------------------------------------------------------------*/
 
 /** @brief Clamp one dimension into the panel's limits. */
@@ -606,9 +590,8 @@ tiku_trk_panel_restore_frame(tiku_store_t *s, int *x, int *y, int *w,
     }
     if (x != NULL) { *x = (int)fr[0]; }
     if (y != NULL) { *y = (int)fr[1]; }
-    /* Clamped on the way OUT, not only on the way in: a template written by
-     * a differently sized screen would otherwise open a panel with its
-     * buttons off the bottom (AW-063). */
+    /* Clamped on the way out as well as in, so a frame saved on another
+     * screen still fits the limits (AW-063). */
     if (w != NULL) {
         *w = clamp((int)fr[2], TIKU_TRK_PANEL_MIN_W, TIKU_TRK_PANEL_MAX_W);
     }

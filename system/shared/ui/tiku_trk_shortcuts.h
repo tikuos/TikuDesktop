@@ -3,18 +3,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_shortcuts.h - the action table.
+ * tiku_trk_shortcuts.h - the action table: for every user action, its
+ * label, the command it sends, its shortcut key, and whether it is enabled
+ * now.
  *
- * Tracker keeps one class that answers, for every user action: what it is
- * called, what command it sends, what key invokes it, and whether it is
- * enabled right now.  Menus are built and updated THROUGH it, which is why
- * the File menu and the pose context menu can never disagree about whether
- * Duplicate is available.  Rebuilding that here is the point of porting the
- * brain rather than redrawing the body.
- *
- * Nine of these actions rename themselves while Shift is held, and each one
- * changes its command with its label -- an item reading "Delete" that still
- * carries the trash command is the bug this arrangement rules out.
+ * Menus are built and updated through it, so the File menu and the context
+ * menus agree on every action.  Nine actions rename themselves while Shift
+ * is held; all but Identify change their command with their label.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,14 +18,14 @@
 
 #include "tiku_menu.h"
 
-/** @brief Commands.  Values are ours; the actions are Tracker's. */
+/** @brief The action commands: Tracker's actions, with this port's values. */
 enum {
     TIKU_TRK_CMD_NONE = 0,
     TIKU_TRK_CMD_FIND,
     TIKU_TRK_CMD_NEW_FOLDER,
     TIKU_TRK_CMD_OPEN,
-    /* Between Open and Open with, where the original puts it: it is what
-     * you do with a query instead of opening it (CW-033). */
+    /* Placed between Open and Open with, as in the original menus
+     * (CW-033). */
     TIKU_TRK_CMD_EDIT_QUERY,
     TIKU_TRK_CMD_OPEN_WITH,
     TIKU_TRK_CMD_GET_INFO,
@@ -120,58 +115,57 @@ enum {
 
 /*
  * The Devices menu's dynamic rows: one command per connected device
- * (PICK), one per available port (CONNECT).  High, fixed bases so the
- * index added to them never collides with the enum above or with a
- * folder command.
+ * (PICK), one per available port (CONNECT), and one Disconnect per device
+ * (DROP).  The bases are high and fixed, so the index added to them never
+ * collides with the enum above or with a folder command.
  */
 #define TIKU_TRK_CMD_DEVICE_PICK_BASE    0x2000
 #define TIKU_TRK_CMD_DEVICE_CONNECT_BASE 0x2100
 #define TIKU_TRK_CMD_DEVICE_DROP_BASE    0x2200
 
 /**
- * @brief What the enablement rules are asked about.
- *
- * These are the questions Tracker's own Update methods ask, one field per
- * question, so a rule here reads like the rule it came from.
- */
-/**
- * @brief The up arrow, as a shortcut "key".
- *
- * Outside the printable range on purpose: a menu prints it as an arrow and
- * nothing can confuse it with a letter.
+ * @brief The up arrow as a shortcut key: outside the printable range, so
+ *        it cannot be taken for a letter.
  */
 #define TIKU_TRK_KEY_ARROW_UP 0x01
 
+/**
+ * @brief What the enablement rules are asked about, one field per question
+ *        Tracker's Update methods ask.
+ */
 typedef struct {
     int      selection;          /* items selected                          */
     int      selection_ro;       /* selection lives somewhere unwritable    */
     int      target_ro;          /* this folder cannot be written           */
-    int      is_root;
-    int      is_trash;
-    int      in_trash;
-    int      is_query;
+    int      is_root;            /* the window shows the root               */
+    int      is_trash;           /* the window shows the Trash              */
+    int      in_trash;           /* the window shows a folder in the Trash  */
+    int      is_query;           /* a query: the item or the window         */
     int      is_virtual;         /* a namespace directory: fixed shape      */
     int      is_desktop;         /* the desktop background, not a folder    */
-    int      selection_is_volume;
+    int      selection_is_volume;    /* the selection is a volume           */
     int      selection_is_boot;      /* the boot volume cannot be unmounted */
-    int      can_edit_name;
-    int      can_open_parent;
-    int      can_trash_or_dup;
-    int      trash_full;
-    int      clipboard_has_refs;
-    int      clipboard_has_layout;
+    int      can_edit_name;      /* the selection can be renamed            */
+    int      can_open_parent;    /* the folder has a parent to open         */
+    int      can_trash_or_dup;   /* selection can be trashed or duplicated  */
+    int      trash_full;         /* the Trash holds something               */
+    int      clipboard_has_refs; /* files are on the clipboard              */
+    int      clipboard_has_layout;   /* a column layout has been copied     */
     int      text_focus;         /* a text field has focus                  */
     int      view_mode;          /* TIKU_TRK_MODE_*                         */
-    int      icon_size;
-    int      sort_field;
-    int      reverse_sort;
+    int      icon_size;          /* in pixels                               */
+    int      sort_field;         /* TIKU_TRK_COL_* the view sorts by        */
+    int      reverse_sort;       /* the sort runs descending                */
     /* Which columns the view is showing, as a bit per TIKU_TRK_COL_*, so the
-     * Attributes menu can check the ones that are really there. */
+     * Attributes menu can mark the ones shown. */
     unsigned columns;
-    unsigned mods;               /* live modifiers, for the nine            */
+    unsigned mods;               /* live modifiers, for the Shift renames   */
 } tiku_trk_sc_ctx_t;
 
-/** @brief The label an action shows right now.  Never NULL. */
+/**
+ * @brief The label an action shows right now: never NULL, and "" for a
+ *        command the table does not know.
+ */
 const char *tiku_trk_sc_label(int command, unsigned mods);
 
 /** @brief The command an action sends right now, given the modifiers. */
@@ -184,11 +178,12 @@ int tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c);
 char tiku_trk_sc_key(int command);
 
 /**
- * @brief The command a bare Cmd+letter chord asks for, or 0 (PVK-042).
+ * @brief The command a Cmd+letter chord asks for, or 0 (PVK-042).
  *
- * The reverse of tiku_trk_sc_key, for the shells' key fallback: only the
- * vocabulary the standard shortcut set defines, with Shift and Option
- * picking the variants the menu labels pick.
+ * The shells' key fallback, over the keys o, i, e, g, u, n, x, c, v and k:
+ * Shift picks the shifted commands, and Option turns Open into Open with.
+ * Each letter but u (Unmount) is the one tiku_trk_sc_key() gives the
+ * command.
  */
 int tiku_trk_sc_command_for_key(unsigned key, unsigned mods);
 
@@ -198,8 +193,9 @@ unsigned tiku_trk_sc_mods(int command, unsigned mods);
 /**
  * @brief Append an action to @p m, resolved against @p c.
  *
- * This is the only way menus should gain items: label, command, shortcut and
- * enabled state all come from one place and cannot drift apart.
+ * The label, command, shortcut and enabled state all come from this table.
+ *
+ * @return what tiku_menu_add() returns.
  */
 int tiku_trk_sc_add(tiku_menu_t *m, int command,
                     const tiku_trk_sc_ctx_t *c);
@@ -207,8 +203,9 @@ int tiku_trk_sc_add(tiku_menu_t *m, int command,
 /**
  * @brief Re-resolve every item of @p m against @p c.
  *
- * Called when a menu opens, and again whenever the modifiers change while it
- * is open, which is what makes the nine rename themselves live.
+ * Called when a menu opens and whenever the modifiers change while it is
+ * open.  Submenus are updated in turn; a row whose command the table does
+ * not know keeps its own label and state, and marks are left alone.
  */
 void tiku_trk_sc_update(tiku_menu_t *m, const tiku_trk_sc_ctx_t *c);
 

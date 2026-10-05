@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_info_window.c - Get Info window controller.
+ * tiku_trk_info_window.c - the Get Info windows: each shows one entry's
+ * icon, its name or the rename editor, and the Information, Permissions and
+ * Attributes tabs.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,30 +20,14 @@
 
 #include "tiku_attr.h"
 
+/* The window's width, fixed; a value too long for its row is
+ * middle-truncated and shown whole on hover (AW-073). */
 #define INFO_WIDTH    360
-
-/*
- * The width stays written down, deliberately.  It was tried the other
- * way -- measured over the values, so a date would not be truncated at a
- * larger face -- and the measurement will not hold still: one of those
- * values is a modification time WITH SECONDS in it, so the width changed
- * as the clock ticked and the window never settled.  A value too long for
- * its row is middle-truncated with the whole of it on hover (AW-073),
- * which is the answer this window already had.
- */
 #define INFO_PAD       10
 #define INFO_ICON      32
 #define CASCADE_STEP   22
 
-/*
- * The rows, the tab strip and the height, from the face rather than
- * written down.  Each answers what was written here at 12 px, which is
- * what the interface has always defaulted to; a window whose rows stayed
- * 18 pixels while its words grew is one whose words leave their rows.
- *
- * Note this window had a tab height of ITS OWN, a second copy of a number
- * the toolkit already knew -- so it is asked for now, like the rest.
- */
+/* The row, tab strip and name heights, from the face. */
 static int row_h(void)   { return tiku_font_plain()->height + 3; }
 static int tab_h(void)   { return tiku_font_plain()->height + 5; }
 static int name_h(void)  { return tiku_font_plain()->height + 5; }
@@ -49,11 +35,9 @@ static int name_h(void)  { return tiku_font_plain()->height + 5; }
 /**
  * @brief How tall the window has to be for the longest of its pages.
  *
- * 300, moved by what actually grew: the tab strip, the eight rows of the
- * permissions page, and the window's own title bar.  Adding the parts up
- * instead would come to 294 and quietly lose six pixels of margin that
- * were chosen, not left over -- so the original number stays the origin
- * and only the difference is computed.
+ * 300 at the 12 px face, moved by how far the tab strip, the eight rows of
+ * the Information page and the window's title tab have grown from their
+ * 12 px heights (20, 18 and 21).  The margins within the 300 stay fixed.
  */
 static int info_height(void)
 {
@@ -61,7 +45,7 @@ static int info_height(void)
                + (tiku_window_tab_h() - 21);
 }
 
-/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
+/** @brief Set the shell's redraw flag, when it has one. */
 static void
 mark_dirty(tiku_trk_info_windows_t *controller)
 {
@@ -102,7 +86,7 @@ measure_info_text(const char *text, void *ctx)
     return tiku_text_width((const tiku_font_t *)ctx, text);
 }
 
-/** @brief The @p index-th permission button, down the body's left side. */
+/** @brief The @p index-th permission checkbox, down the body's left side. */
 static tiku_rect_t
 permission_rect(tiku_rect_t body, int index)
 {
@@ -113,13 +97,8 @@ permission_rect(tiku_rect_t body, int index)
 
 
 /**
- * @brief Where the values start: past the widest label there is.
- *
- * Measured over the labels the catalogue returns, so a larger face and
- * a translation each get the column they need; a written-down 96 held
- * the English labels at 12 px and nothing else, and the value's room
- * was measured from the same number.  Floored at 96, so the default
- * face draws the column it always drew.
+ * @brief Where the values start: past the widest label in the face, and at
+ *        least 96.
  */
 static int
 value_column(tiku_trk_info_t *info, tiku_store_t *store)
@@ -146,7 +125,11 @@ value_column(tiku_trk_info_t *info, tiku_store_t *store)
     return (widest > 96) ? widest : 96;
 }
 
-/** @brief The three columns of the attributes page, likewise measured. */
+/**
+ * @brief Where column @p which of the attributes page starts: 0 the type,
+ *        1 the value.  Each column is as wide as its widest entry, with a
+ *        floor.
+ */
 static int
 attr_column(const tiku_trk_info_t *info, int which)
 {
@@ -165,7 +148,7 @@ attr_column(const tiku_trk_info_t *info, int which)
         }
     }
     if (name_w + 24 < 142) {
-        name_w = 142 - 24;              /* what 150 came to at 12 px */
+        name_w = 142 - 24;              /* type column at least 142 in */
     }
     if (type_w + 16 < 60) {
         type_w = 60 - 16;
@@ -174,13 +157,10 @@ attr_column(const tiku_trk_info_t *info, int which)
 }
 
 /**
- * @brief Grow or shrink to what the face now needs.
+ * @brief Grow or shrink the window's height to what the face needs.
  *
- * Nothing this window does changes the face; the Fonts window next door
- * does, and this one has to notice on its own -- so the fit is taken on
- * every draw rather than where a change could be seen.  The corner stays
- * where it is: several of these cascade, and a window that re-placed
- * itself would break the stack they were opened in.
+ * Checked on every draw: the face can change while the window is open.
+ * The corner stays where it is.
  */
 static void
 refit(tiku_window_t *window, int *dirty)
@@ -227,11 +207,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             INFO_ICON);
     }
     if (controller->renaming == window_context->slot) {
-        /* Ring AND caret follow the keyboard: the key handler resolves
-         * its slot from the focused window, so a renaming Get Info in
-         * the background takes nothing -- and a field that still showed
-         * a lit ring and a caret there was promising keys it could not
-         * receive. */
+        /* The focus ring and the caret show only in the focused window:
+         * the key handler finds its slot from the focused window, so a
+         * renaming Get Info in the background receives no keys. */
         int owns = (window ==
                     tiku_workspace_focused(controller->workspace));
 
@@ -260,8 +238,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             tiku_text(surface, font, body.x + 8, y, label,
                            TIKU_C_TEXT);
             {
-                /* Truncated to the row, so a long path has something for
-                 * the hover pop-up to expand (AW-073). */
+                /* Middle-truncated to the row; the hover pop-up shows the
+                 * whole value (AW-073). */
                 char fitted[TIKU_TRK_INFO_VAL_MAX];
                 int at = value_column(info, controller->store);
                 int room = body.w - at - 12;
@@ -703,8 +681,8 @@ tiku_trk_info_windows_select_tab(tiku_trk_info_windows_t *controller,
     (void)tiku_tabs_select(&controller->tabs[slot], which);
     if (tiku_tabs_current(&controller->tabs[slot]) ==
             TIKU_TRK_INFO_TAB_ATTRIBUTES) {
-        /* Re-read on the way in: an attribute written since the window
-         * opened would otherwise never appear. */
+        /* Re-read when the tab is selected, so attributes written since
+         * the window opened appear. */
         (void)tiku_trk_info_attrs(&controller->model[slot],
                                   controller->store);
     }

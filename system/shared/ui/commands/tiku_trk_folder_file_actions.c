@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_file_actions.c - filesystem-facing folder commands.
+ * tiku_trk_folder_file_actions.c - the folder commands that change the
+ * filesystem: trash and delete, duplicate, link, identify, restore, the
+ * clipboard and paste, drops, and a new folder.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,10 +21,8 @@
 /**
  * @brief The clipboard follows a file the engine has just moved (FS-060).
  *
- * Installed here because this is where the clipboard, the engine and the
- * backend meet; both shells reach it through one call.  The identity is
- * read again at the new path -- a move across a device leaves a different
- * node holding the same file.
+ * The identity is read again at the new path: a move across devices leaves
+ * a different node holding the file.
  */
 static void
 clip_follow(void *context, const char *from, const char *to)
@@ -136,8 +136,7 @@ selection_of(tiku_trk_folder_file_actions_t *controller,
 /**
  * @brief Link the selection beside itself (FS-009, CW-035).
  *
- * Into the item's own folder, which is where a link made from the menu
- * goes; Shift asks for a relative one.
+ * Into the first item's folder; Shift asks for relative links.
  */
 static void
 link_selection(tiku_trk_folder_file_actions_t *controller,
@@ -175,9 +174,8 @@ link_selection(tiku_trk_folder_file_actions_t *controller,
 /**
  * @brief Read the selection's type again (CW-042's Identify).
  *
- * The source re-sniffs the file to fill the MIME database; here a node's
- * type comes from the backend and the type table, both of which can have
- * changed since the listing was taken, so identifying is re-asking.
+ * Each selected entry is stat'ed again and its row takes the fresh model;
+ * the status line counts the types that changed.
  */
 static void
 identify_selection(tiku_trk_folder_file_actions_t *controller,
@@ -257,11 +255,8 @@ delete_outright(tiku_trk_folder_file_actions_t *controller,
 }
 
 /**
- * @brief Silently drop the Trash from the selection (PVL-085).
- *
- * You cannot trash the Trash, and the way that is said is by the pose
- * quietly leaving the selection before the operation counts anything --
- * the status line and the highlight agree with what the queue will do.
+ * @brief Deselect the Trash before anything is counted (PVL-085): the
+ *        Trash cannot be trashed.
  */
 static void
 prune_trash_pose(tiku_trk_folder_window_t *folder)
@@ -283,12 +278,11 @@ prune_trash_pose(tiku_trk_folder_window_t *folder)
 }
 
 /**
- * @brief Volumes leave the selection as UNMOUNTS (FS-041).
+ * @brief Selected volumes are unmounted, not trashed (FS-041).
  *
- * A whole volume put in the Trash never meant delete: each selected
- * volume pose is taken out of the selection and unmounted -- the boot
- * volume refuses by name -- before the trash/delete question is even
- * asked about whatever is left.
+ * Each is taken out of the selection and unmounted, with an alert for a
+ * refusal such as the boot volume's, before the rest of the selection is
+ * trashed or deleted.
  */
 static void
 unmount_selected_volumes(tiku_trk_folder_file_actions_t *controller,
@@ -437,21 +431,20 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
         if (shift) {
             delete_outright(controller, folder);
         } else {
-            /* No Trash to offer, or already in one: there is no question
-             * to ask, and the one way out is the one that happens. */
+            /* No Trash to offer, or already in one: deleted outright,
+             * without a question. */
             delete_outright(controller, folder);
         }
         return;
     }
     if (controller->alert == NULL) {
-        /* Nowhere to ask: a shell with no alert layer keeps what it did
-         * before the question existed, rather than silently doing nothing
-         * (FS-046 holds in the multi-window shell only). */
+        /* With no alert layer to ask, the selection goes to the Trash
+         * (FS-046 applies to the multi-window shell only). */
         move_to_trash(controller, folder, 0);
         return;
     }
-    /* Three ways out, and the destructive one says so before it is taken
-     * (FS-046).  Cancel is first so Escape lands on it. */
+    /* The question offers Cancel, Move to Trash and Delete (FS-046);
+     * Cancel is first so Escape lands on it. */
     {
         char message[300];
 
@@ -584,9 +577,8 @@ paste(tiku_trk_folder_file_actions_t *controller,
 {
     char paths[64][TIKU_PATH_MAX], here[64][TIKU_PATH_MAX];
     const char *selection[64], *same[64];
-    /* Two lists over one store: a clipboard holding both a cut and a copy
-     * is two operations, and running it as one move takes the COPIED file
-     * away from where it was (FS-055). */
+    /* A clipboard holding both cuts and copies is two operations: the cuts
+     * move and the copies copy (FS-055). */
     const char *moves[64], *copies[64];
     int move_count = 0, copy_count = 0;
     int i, count = 0, same_count = 0;
@@ -657,9 +649,9 @@ paste(tiku_trk_folder_file_actions_t *controller,
         (void)tiku_fs_copy(controller->fs, copies, copy_count,
                                folder->path, TIKU_CONFLICT_ASK);
     } else if (copy_count > 0) {
-        /* The engine takes one job at a time, and a start() while it is
-         * busy is refused -- which would drop the copy half of a mixed
-         * paste on the floor.  It waits for the pump instead. */
+        /* The engine runs one job at a time and refuses a start while
+         * busy, so the copy half of a mixed paste waits for
+         * tiku_trk_folder_file_actions_pump(). */
         int k;
 
         for (k = 0; k < copy_count; k++) {
@@ -671,9 +663,8 @@ paste(tiku_trk_folder_file_actions_t *controller,
         snprintf(controller->deferred_dest, sizeof controller->deferred_dest,
                  "%s", folder->path);
     }
-    /* The cut is spent by its paste, and becomes a copy: the file is not
-     * where the entry said it was any more, and emptying the clipboard
-     * instead would take the copied entries with it (FS-055). */
+    /* A pasted cut becomes a copy entry, and the copied entries stay
+     * (FS-055). */
     (void)tiku_trk_clip_spend_cuts(controller->clip);
     if (move_count > 0 && copy_count > 0) {
         snprintf(controller->status, controller->status_size,
@@ -730,9 +721,8 @@ tiku_trk_folder_file_actions_invoke(
         restore_selection(controller, folder);
         return 1;
     case TIKU_TRK_CMD_EMPTY_TRASH:
-        /* Asked first, as the source asks -- and the destructive verb
-         * does not ride Return: Cancel keeps the default ring and
-         * emptying takes an aimed press (item 5's rule). */
+        /* Asked first, with Cancel as the default button, so Return does
+         * not empty the Trash. */
         if (controller->alert != NULL) {
             tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                 TIKU_TRK_ALERT_TAG_EMPTY_TRASH,

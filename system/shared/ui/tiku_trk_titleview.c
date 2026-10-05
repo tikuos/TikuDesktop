@@ -85,9 +85,8 @@ tiku_trk_titleview_edge_at(const tiku_trk_titleview_t *t, int x)
         return -1;
     }
     n = tiku_trk_poseview_columns(t->view, &cols);
-    /* First match in list order, as Tracker's aggregate does: where two
-     * bands overlap the LEFT column wins, so the divider always resizes the
-     * column that owns it. */
+    /* First match in list order: where two bands overlap the left column
+     * wins, so a divider resizes the column it closes. */
     for (i = 0; i < n; i++) {
         int r = cols[i].offset + cols[i].width + TIKU_TRK_COL_RIGHT_MARGIN;
 
@@ -126,9 +125,7 @@ tiku_trk_titleview_mouse_down(tiku_trk_titleview_t *t, int x, int y,
         return TIKU_TRK_TT_NOTHING;
     }
     if (!active) {
-        /* TS-015: the first click on an inactive window is spent waking it.
-         * Sorting as well would make a window the user was only bringing
-         * forward re-order itself under the pointer. */
+        /* TS-015: the first click on an inactive window only wakes it. */
         return TIKU_TRK_TT_ACTIVATE | TIKU_TRK_TT_REDRAW;
     }
     edge = tiku_trk_titleview_edge_at(t, x);
@@ -139,12 +136,9 @@ tiku_trk_titleview_mouse_down(tiku_trk_titleview_t *t, int x, int y,
         return TIKU_TRK_TT_MENU;
     }
     if (edge >= 0) {
-        /* PVL-037: a second press on the same divider inside the
-         * double-click window fits the column to its widest value, and the
-         * middle button forces the same with no prior click and no timing. */
-        /* Any previous divider click inside the window, not necessarily
-         * this divider's: what the gesture means is "that was a double
-         * click", and the pointer has to be on a divider now either way. */
+        /* PVL-037: a press on a divider within the double-click interval
+         * of an earlier press on any divider fits the column to its widest
+         * value; the middle button fits with no earlier press. */
         int fit = (buttons == 3) ||
                   (t->prev_field >= 0 && t->prev_click_at != 0 &&
                    now - t->prev_click_at < TIKU_TRK_CLICK_SPEED_US);
@@ -152,10 +146,9 @@ tiku_trk_titleview_mouse_down(tiku_trk_titleview_t *t, int x, int y,
         t->prev_field = edge;
         t->prev_click_at = now;
         if (fit && tiku_trk_poseview_fit_column(t->view, edge)) {
-            /* It fitted, so the press is spent: no drag follows.  A fit
-             * that changed nothing falls through into one instead, which is
-             * what stops a double-click on an already-fitted column from
-             * doing nothing at all. */
+            /* A fit that was taken spends the press: no drag follows.  A
+             * refused fit, with nothing to fit, falls through into a
+             * resize. */
             return TIKU_TRK_TT_REDRAW;
         }
         t->track = TIKU_TRK_TRACK_RESIZE;
@@ -167,9 +160,8 @@ tiku_trk_titleview_mouse_down(tiku_trk_titleview_t *t, int x, int y,
             n = tiku_trk_poseview_columns(t->view, &cols);
             for (i = 0; i < n; i++) {
                 if (cols[i].field == edge) {
-                    /* The grabbed edge stays pinned under the pointer for
-                     * the whole drag; without this the column jumps by
-                     * however far into the band the press landed. */
+                    /* The grabbed edge stays under the pointer for the
+                     * whole drag: grab is the press's distance from it. */
                     t->grab = (cols[i].offset + cols[i].width) - x;
                     t->line_x = cols[i].offset + cols[i].width +
                                 TIKU_TRK_COL_RIGHT_MARGIN;
@@ -189,9 +181,8 @@ tiku_trk_titleview_mouse_down(tiku_trk_titleview_t *t, int x, int y,
     t->first_x = x;
     t->first_y = y;
     t->last_x = x;
-    /* The deadline is captured HERE, not measured at the release: the same
-     * value gates the dead zone during motion, and two clocks would let a
-     * gesture be a click by one test and a drag by the other. */
+    /* The click deadline is taken at the press; the same value gates the
+     * dead zone during motion and the click test at the release. */
     t->past_click = now + TIKU_TRK_CLICK_SPEED_US;
     t->has_moved = 0;
     return TIKU_TRK_TT_REDRAW |
@@ -227,9 +218,9 @@ drag_moved(tiku_trk_titleview_t *t, int x, int y)
 {
     int inside;
 
-    /* The band is grown VERTICALLY only, so a title dragged along the strip
-     * is being re-ordered however far it goes; it takes ten pixels of
-     * up-or-down to mean "take this column away". */
+    /* The strip is grown vertically only: a title dragged along it reorders
+     * however far it goes, and leaving it by more than
+     * TIKU_TRK_REMOVE_MARGIN above or below removes the column. */
     inside = (y >= -TIKU_TRK_REMOVE_MARGIN &&
               y <= t->height + TIKU_TRK_REMOVE_MARGIN);
     if (!inside) {
@@ -248,10 +239,10 @@ drag_moved(tiku_trk_titleview_t *t, int x, int y)
             }
             (void)tiku_trk_titleview_bounds(t, t->field, &old_l, NULL);
             if (tiku_trk_poseview_toggle_column(t->view, t->field)) {
-                /* Kept, not thrown: dragging back in has to restore the
-                 * column that left, not a fresh one with default width.
-                 * The origin is rebased by the title's old left edge, so
-                 * the outline stays under the pointer that is carrying it. */
+                /* The column's width and alignment were kept above, so a
+                 * drag back in restores it.  The origin is rebased by the
+                 * title's old left edge, so the outline stays under the
+                 * pointer. */
                 t->removed = 1;
                 t->drag_base -= old_l;
             }
@@ -259,10 +250,9 @@ drag_moved(tiku_trk_titleview_t *t, int x, int y)
         return TIKU_TRK_TT_REDRAW;
     }
     if (t->removed) {
-        /* Re-entry is tested against the UNGROWN strip: leaving at ten
-         * pixels and returning at zero is the hysteresis, and testing both
-         * against the same edge would make the column flicker in and out
-         * along it. */
+        /* Re-entry is tested against the strip itself, not the grown band:
+         * the gap between the two keeps the column from flickering in and
+         * out along one edge. */
         if (y < 0 || y > t->height) {
             return TIKU_TRK_TT_NOTHING;
         }
@@ -273,9 +263,7 @@ drag_moved(tiku_trk_titleview_t *t, int x, int y)
             (void)tiku_trk_poseview_resize_column(t->view, t->removed_field,
                                                   t->removed_width);
             if (over >= 0 && over != t->removed_field) {
-                /* AFTER the header it was dropped on: landing before it
-                 * would make the last position unreachable and the first
-                 * reachable only by accident. */
+                /* After the header it is dropped on (TS-009). */
                 (void)tiku_trk_poseview_column_after(t->view,
                                                      t->removed_field, over);
             }
@@ -283,9 +271,7 @@ drag_moved(tiku_trk_titleview_t *t, int x, int y)
             t->field = t->removed_field;
             if (tiku_trk_titleview_bounds(t, t->field, &new_l, NULL)) {
                 /* The outline is drawn relative to the press point, so the
-                 * origin follows the title wherever re-insertion put it --
-                 * otherwise the restored title is painted a column width
-                 * away from the pointer holding it. */
+                 * origin follows the title to where it was re-inserted. */
                 t->drag_base += new_l;
             }
         }
@@ -294,10 +280,9 @@ drag_moved(tiku_trk_titleview_t *t, int x, int y)
     {
         int over, self_l, self_r, over_l, over_r;
 
-        /* Reordering needs the pointer ON the strip.  Between the strip and
-         * the removal band it is neither: the outline follows the pointer
-         * and the columns stay put, which is what stops a drag that has
-         * slipped into the list from silently re-ordering. */
+        /* Reordering needs the pointer on the strip; between the strip and
+         * the removal band the outline follows the pointer and the columns
+         * stay put. */
         if (y < 0 || y > t->height) {
             return TIKU_TRK_TT_REDRAW;
         }
@@ -309,19 +294,17 @@ drag_moved(tiku_trk_titleview_t *t, int x, int y)
             !tiku_trk_titleview_bounds(t, over, &over_l, &over_r)) {
             return TIKU_TRK_TT_REDRAW;
         }
-        /* Moving right: the neighbour has to be clear of the dragged title.
-         * Moving left: the pointer must still be within one dragged-title
-         * width of the neighbour's left edge -- that second term is the
-         * only thing stopping the pair from swapping back and forth on
-         * every motion event once they have swapped once. */
+        /* Moving right, the neighbour must be clear of the dragged title;
+         * moving left, the pointer must be within one dragged-title width
+         * of the neighbour's left edge, which keeps the pair from swapping
+         * back on the next move. */
         if (over_l >= self_r || x < over_l + (self_r - self_l)) {
             if (tiku_trk_poseview_move_column(t->view, t->field, over)) {
                 int new_l;
 
                 if (tiku_trk_titleview_bounds(t, t->field, &new_l, NULL)) {
                     /* The outline is drawn from the press point, so the
-                     * base is rebased by however far the title itself
-                     * moved; otherwise it jumps by a column width. */
+                     * base moves with the title. */
                     t->drag_base += new_l - self_l;
                 }
                 return TIKU_TRK_TT_REDRAW;
@@ -339,17 +322,14 @@ tiku_trk_titleview_mouse_moved(tiku_trk_titleview_t *t, int x, int y,
         return TIKU_TRK_TT_NOTHING;
     }
     if (t->track == TIKU_TRK_TRACK_NONE) {
-        /* TS-013: the resize cursor is a hint about where the pointer is,
-         * and it is only offered while nothing is being tracked -- during a
-         * drag the cursor stays as it was. */
+        /* TS-013: the resize cursor is offered only while nothing is
+         * tracked. */
         return (tiku_trk_titleview_edge_at(t, x) >= 0) ? TIKU_TRK_TT_CURSOR
                                                        : TIKU_TRK_TT_NOTHING;
     }
     if (!t->has_moved && now < t->past_click) {
-        /* One pixel of slop, inclusive, and only until the deadline: a hand
-         * that shakes during a click must not turn it into a drag, and a
-         * pointer that has not moved at all after the deadline must not
-         * stay a click for ever. */
+        /* One pixel of slop, inclusive, until the click deadline: a press
+         * that shakes by a pixel stays a click. */
         if (x >= t->first_x - 1 && x <= t->first_x + 1 &&
             y >= t->first_y - 1 && y <= t->first_y + 1) {
             return TIKU_TRK_TT_NOTHING;
@@ -375,8 +355,8 @@ tiku_trk_titleview_mouse_up(tiku_trk_titleview_t *t, int x, int y, int shift,
     if (t == NULL || t->track == TIKU_TRK_TRACK_NONE) {
         return TIKU_TRK_TT_NOTHING;
     }
-    /* A click is short AND still.  Either test alone lets a slow press that
-     * never moved sort the column, or a fast flick reorder it. */
+    /* A click is short and still: released by the deadline, with no move
+     * past the dead zone. */
     clicked = (now <= t->past_click && !t->has_moved);
     if (clicked && t->track == TIKU_TRK_TRACK_DRAG) {
         tiku_trk_poseview_sort_click(t->view, t->field, shift);
@@ -385,9 +365,8 @@ tiku_trk_titleview_mouse_up(tiku_trk_titleview_t *t, int x, int y, int shift,
     if (t->track == TIKU_TRK_TRACK_RESIZE) {
         flags |= TIKU_TRK_TT_NO_LINE;
     }
-    /* A column dragged out and released outside the strip stays out: the
-     * release is not an undo, and restoring it would make the gesture
-     * impossible to complete. */
+    /* A column dragged out and released outside the strip stays
+     * removed. */
     t->track = TIKU_TRK_TRACK_NONE;
     t->field = -1;
     t->line_x = -1;

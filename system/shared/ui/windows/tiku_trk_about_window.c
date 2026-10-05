@@ -3,18 +3,16 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_about_window.c - the About box, in the R5 manner.
+ * tiku_trk_about_window.c - the About box.
  *
- * The original About BeOS put the identity on the left and the facts
- * beside it.  This one keeps that shape and keeps the facts short: the
- * release, then only what the machine can answer for itself, how many
- * processors and how much memory is free.  A build date, a kernel
- * string, a processor model and the computer's name say more about the
- * host than about the system asked to describe itself, so they are out.
- * Written as a descriptor against the services contract, as a
- * third-party application is: it paints its own surface, asks for the
- * ANNOUNCE role rather than a position, and owns its colour cycle.  The
- * shell only hosts it, which is the boundary this panel demonstrates.
+ * The identity column on the left holds the logo mark in its colour cycle
+ * and the wordmark.  Beside it are the release, the processor count, free
+ * memory over a gauge and a button naming the newest report; the footer
+ * under both gives the licence and the build stamp.  The connected boards
+ * follow, one at a time, and the reports section opens under them.  The
+ * box is an application descriptor: it paints its own surface, asks the
+ * host for the PANEL placement role, and refits itself when the face or the
+ * boards change.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -36,36 +34,17 @@
 #include "tiku_iconpaint.h"
 #include "tiku_window.h"
 
+/* The narrowest body width; it holds the identity column's margins. */
 #define ABOUT_W 430
 
-/* The one place the number lives. */
+/* The release the box shows. */
 #define ABOUT_VERSION "0.1"
 
 /*
- * The facts column already grew with the face -- every line of it steps
- * by plain->height -- but the window it was written into did not, so at
- * 16 px the last lines were drawn below their own frame.
- *
- * The column takes THREE steps of a line height now, where it took six:
- * the release, the processor count, and the memory over its gauge.  So
- * the window moves by three times whatever the line height moved by.
- * Written this way rather than by adding the parts up -- 171 is the old
- * 240 less the three lines that went, and what is left over the text is
- * margin that was chosen rather than derived.  Re-deriving the whole
- * from the lines alone would quietly throw it away.  At 12 px, the face
- * it was chosen against, it is 171.
- */
-/*
- * The colour cycle.  A set is held, then carried into the next over a
- * little over a second, and the whole thing comes back round to the
- * amber it started on.  Held far longer than it fades, because the point
- * is a mark that is quietly alive, not one that is busy.
- *
- * FADE_STEPS is how many distinct pictures the fade is made of.  It is
- * NOT how smooth the fade can be -- the colours are interpolated, so it
- * could be any number -- it is how many frames the flourish is allowed
- * to cost.  Sixteen over 1.2 seconds is about thirteen a second, which
- * reads as continuous.
+ * The colour cycle.  Each set of colours is held for HOLD_US, then faded
+ * into the next over FADE_US; after the last set the cycle starts again
+ * at the first.  A fade is drawn in FADE_STEPS distinct frames, which is
+ * the number of repaints it costs.
  */
 #define HOLD_US     3000000
 #define FADE_US     1200000
@@ -76,24 +55,21 @@ typedef struct {
     const tiku_app_services_t *services;
     tiku_surface_t            *surface;
     uint32_t                        id;
-    /* Counted once at start; the memory is re-read per paint. */
+    /* Counted once at start; the memory is read again on every paint. */
     int                        ncpu;
-    int64_t                    opened_us;
+    int64_t                    opened_us;      /* when the cycle started */
     /*
-     * Which step of the colour cycle was last painted, and the second the
-     * gauge was last read on.  Both are remembered so the tick can say
-     * whether anything a person could see has actually changed: the
-     * Deskbar's clock keeps the same discipline, and for the same reason
-     * -- a window standing open must not cost a frame per tick.
+     * The colour-cycle step last painted and the second the gauge was
+     * last read on; the tick repaints only when one of them changes.  An
+     * event sets step to -1 to force a repaint.
      */
     int                        step;
         int64_t                    gauge_s;
-    /* The one row that does something: the newest report, and where
-     * on the box it was painted, so a click can be matched to it. */
+    /* The newest report's path, named on the reports button. */
             char                       report[512];
-    tiku_rect_t                reports_btn;    /* the door to the section */
-    /* The reports section, under the facts when opened from the row:
-     * every report newest first, and the chosen one's account. */
+    tiku_rect_t                reports_btn;    /* opens the reports section */
+    /* The reports section, opened from the reports button: every report
+     * newest first, and the chosen one's account. */
     int                        reports_open;
     char                       paths[64][512];
     int                        nreports;
@@ -107,29 +83,28 @@ typedef struct {
     }                          detail;
         tiku_rect_t                list_box;
     tiku_rect_t                open_btn;       /* "Open the file" */
-    /* The boards connected to this desk, as the shell last kept them:
-     * a section under the facts, so the box describes the whole of what
-     * is here and not only the machine it runs on. */
+    /* The boards connected to the desktop, as the shell last kept them,
+     * for the devices section under the facts. */
     struct {
         char          name[64];     /* what it is mounted as       */
         char          mcu[32];      /* the processor on it         */
         unsigned long freq;         /* its clock, in hertz         */
-        /* One a memory KIND the part actually has: its SRAM, its
-         * non-volatile memory under the name the device gives it, and
-         * the extra tiers only some parts carry. */
+        /* One per kind of memory the part has, from a board that sends
+         * no maps: its SRAM, its non-volatile memory under the device's
+         * name for it, and the extra tiers some parts carry. */
         struct {
             char          label[16];
             unsigned long freeb, total;
         }             mem[4];
         int           nmem;
-        /* Each memory as the board LAYS IT OUT: its estates in order,
-         * drawn as one bar with a legend, not a gauge apiece. */
+        /* Each memory's map as the board reports it: its estates in
+         * order, drawn as one bar with a legend. */
         struct {
             char          name[16];     /* SRAM, or the NVM's kind */
             unsigned long total;        /* the bank, or the part */
             struct {
                 char          label[12];
-                unsigned long size, used;   /* used: the live part, or 0 */
+                unsigned long size, used;   /* in use; stack: headroom */
                 int           live;         /* used is meaningful */
             }             est[8];
             int           nest;
@@ -137,16 +112,16 @@ typedef struct {
         }             lay[2];
         int           nlay;
         char          has[112];     /* what else is on it          */
-        unsigned long part_sram;    /* what the PART has, fitted   */
+        unsigned long part_sram;    /* the SRAM the part is fitted with */
         unsigned long part_nvm;
         char          kind[16];     /* what its NVM is called      */
         char          up[24];       /* seconds it has been running */
         char          boots[16];
-        int           known;        /* an answer has landed for it */
+        int           known;        /* the shell has an answer for it */
     }                          dev[6];
     int                        ndev;
-    /* One board at a time, so the box never outgrows the screen: which
-     * one, and where its stepper was painted so a click can find it. */
+    /* The board on show, and where its stepper's arrows were painted,
+     * for the hit test. */
     int                        page;
     tiku_rect_t                prev_btn, next_btn;
     /* The button a press is holding: 1 reports, 2 prev, 3 next, 4 open. */
@@ -186,17 +161,12 @@ cycle_step(const about_state_t *st, int64_t now)
     return set * (FADE_STEPS + 1) + (int)(t * (float)FADE_STEPS);
 }
 
-/*
- * The window was 430 wide at the 12 px face and did not grow with it.
- * The facts column starts 150 in, so at 16 px "Memory: ... free" ran
- * off the side of the very box that was stating it -- the same fault
- * the heights had, in the other direction.
+/**
+ * @brief The body's width: room for the widest memory line, in the face.
  *
- * Measured against a template of the widest numbers a host could have
- * rather than against the ones THIS host has, so the window does not
- * change width with the memory in it.  Never narrower than the 430 it
- * was: that number carries the identity column's margins, which are not
- * derived from any text.
+ * Measured on a template of the widest numbers a host can report, so the
+ * width does not change with the memory.  The facts column starts 150 in;
+ * the result is at least ABOUT_W.
  */
 static int about_body_w(void)
 {
@@ -207,13 +177,13 @@ static int about_body_w(void)
     return (need > ABOUT_W) ? need : ABOUT_W;
 }
 
-/** @brief What the reports section adds under the facts when open. */
+/** @brief What the reports section adds to the box's height when open. */
 static int reports_h(void)
 {
     int h = tiku_font_plain()->height;
 
     /* A heading, the list, the account, a button row, and the margins
-     * between: every pixel of it drawn, none reserved. */
+     * between, as paint_reports() lays them out. */
     return 8 + h + 5 + REPORT_ROWS * (h + 3) + 8 +
            ACCOUNT_LINES * (h + 2) + 8 + 6 + tiku_ui_button_h() + 12;
 }
@@ -227,9 +197,9 @@ static void about_dev_estate(about_state_t *st, int at, const char *mem,
 /**
  * @brief Re-read what the shell keeps about each connected board.
  *
- * Cache reads, every one: the shell answers from what it kept and sets
- * its own worker going when that is stale, so this costs the tick
- * nothing and the box shows the last thing the board said.
+ * Both services answer from the shell's copy, which starts a worker when
+ * the copy is stale; the tick does not wait on a board, and the box shows
+ * what each board last reported.
  */
 static void
 about_devices_refresh(about_state_t *st)
@@ -240,7 +210,7 @@ about_devices_refresh(about_state_t *st)
     st->ndev = 0;
     if (st->services == NULL || st->services->board_names == NULL ||
         st->services->device_stats == NULL) {
-        return;                 /* an older host: the section is not there */
+        return;                 /* no such services: no devices section */
     }
     if (st->services->board_names(st->services->ctx, names,
                                   sizeof names) <= 0) {
@@ -286,8 +256,7 @@ static void
 fmt_bytes(unsigned long n, char *out, size_t max)
 {
     if (n >= 1024UL * 1024UL) {
-        /* To the nearest tenth, not the tenth below it: 1.49 MB read
-         * as 1.4 on a board whose RRAM is a hair under 1.5. */
+        /* Rounded to the nearest tenth of a megabyte. */
         unsigned long tenths = (n * 10UL + 512UL * 1024UL) /
                                (1024UL * 1024UL);
 
@@ -312,7 +281,7 @@ fmt_hz(unsigned long hz, char *out, size_t max)
     }
 }
 
-/** @brief One "mem<TAB>label<TAB>free<TAB>total" row, kept. */
+/** @brief Store one "mem<TAB>label<TAB>free<TAB>total" row. */
 static void
 about_dev_mem(about_state_t *st, int at, char *rest)
 {
@@ -336,7 +305,7 @@ about_dev_mem(about_state_t *st, int at, char *rest)
     st->dev[at].nmem = k + 1;
 }
 
-/** @brief One "<mem>\t<key>\t<a>[\t<b>[\t<c>]]" map line, as an estate. */
+/** @brief Store one "<mem>\t<key>\t<a>[\t<b>[\t<c>]]" map line. */
 static void
 about_dev_estate(about_state_t *st, int at, const char *mem, char *rest)
 {
@@ -360,7 +329,8 @@ about_dev_estate(about_state_t *st, int at, const char *mem, char *rest)
     if (which + 1 > st->dev[at].nlay) {
         st->dev[at].nlay = which + 1;
     }
-    /* The lines that NAME the memory rather than carve it. */
+    /* kind names the NVM, and total, bank and bank2 size the memory;
+     * every other key is an estate. */
     if (which == 1 && strcmp(f[0], "kind") == 0 && nf > 1) {
         snprintf(st->dev[at].lay[1].name, sizeof st->dev[at].lay[1].name,
                  "%s", f[1]);
@@ -385,19 +355,20 @@ about_dev_estate(about_state_t *st, int at, const char *mem, char *rest)
     snprintf(st->dev[at].lay[which].est[k].label,
              sizeof st->dev[at].lay[which].est[k].label, "%s", f[0]);
     /* stack: pool then headroom; tier: size, used, bank; code: window
-     * then in use; the rest are a size alone. */
+     * then in use; store: capacity, then in use when the board says it;
+     * the rest are a size alone. */
     st->dev[at].lay[which].est[k].size = v[0];
     if (strcmp(f[0], "stack") == 0) {
-        /* The pool the stack grows in, and the worst-case headroom the
-         * paint has seen: two bases, so neither is subtracted from the
-         * other; the legend says both. */
+        /* For the stack, used holds the lowest headroom the board has
+         * seen, which the legend prints as headroom; live stays 0. */
         st->dev[at].lay[which].est[k].used = v[1];
         st->dev[at].lay[which].est[k].live = 0;
     } else if (strcmp(f[0], "tier") == 0 || strcmp(f[0], "code") == 0 ||
                (strcmp(f[0], "store") == 0 && nf >= 3)) {
         st->dev[at].lay[which].est[k].used = v[1];
         st->dev[at].lay[which].est[k].live = 1;
-        /* A tier in a bank of its own is not part of this bar. */
+        /* A tier in bank 2 is relabelled "tier2": the memory bar and its
+         * legend leave it out, and the bank 2 line reports it. */
         if (which == 0 && strcmp(f[0], "tier") == 0 && v[2] == 2UL) {
             snprintf(st->dev[at].lay[which].est[k].label,
                      sizeof st->dev[at].lay[which].est[k].label, "tier2");
@@ -459,8 +430,7 @@ about_dev_facts(about_state_t *st, int at, const char *text)
             } else if (strcmp(row, "sram") == 0 || strcmp(row, "nvm") == 0) {
                 about_dev_estate(st, at, row, tab);
             } else if (strcmp(row, "has") == 0) {
-                /* Joined as they arrive: one line reads better than one
-                 * row per thing the board happens to carry. */
+                /* Joined into one comma-separated line. */
                 size_t used = strlen(st->dev[at].has);
 
                 snprintf(st->dev[at].has + used,
@@ -498,13 +468,13 @@ dev_rows(const about_state_t *st, int i)
     }
     if (st->dev[i].has[0] != '\0' || st->dev[i].up[0] != '\0' ||
         st->dev[i].boots[0] != '\0') {
-        rows++;                 /* what else is on it, and how long: one line */
+        rows++;                 /* the extras, uptime and boots: one line */
     }
     return rows;
 }
 
-/* A hue per estate; small keys match the bar while the labels retain
- * the theme's text contrast. */
+/* A name and a hue per estate key, shared by the bar and the legend's
+ * swatches; the legend's labels use the theme's text colour. */
 static const struct { const char *key; const char *say; tiku_rgb_t hue; }
 about_estates[] = {
     { "code",    "Code",    0x3B6EA5u },   /* the desktop's blue     */
@@ -536,9 +506,12 @@ estate_look(const char *key, tiku_rgb_t *hue)
 }
 
 /**
- * @brief Aligned memory details: region, reserved size and live usage.
- *        Count the same rows when measuring, including the header and
- *        trailing space that separates one memory from the next.
+ * @brief The legend table under one memory's bar: a header row, then each
+ *        estate's swatch, name, size and usage.
+ *
+ * With @p s NULL nothing is drawn and the lines are only counted, which is
+ * how dev_rows() measures what is painted.  The count includes the header
+ * and the blank line that separates one memory from the next.
  * @return how many lines it took.
  */
 static int
@@ -569,7 +542,7 @@ legend_lines(about_state_t *st, tiku_surface_t *s, int x, int y, int i,
         const char *name;
 
         if (strcmp(st->dev[i].lay[m].est[k].label, "tier2") == 0) {
-            continue;           /* lives in the second bank, said after */
+            continue;           /* in the second bank: its own line */
         }
         name = estate_look(st->dev[i].lay[m].est[k].label, &hue);
         fmt_bytes(st->dev[i].lay[m].est[k].size, size, sizeof size);
@@ -619,8 +592,8 @@ legend_lines(about_state_t *st, tiku_surface_t *s, int x, int y, int i,
 }
 
 /**
- * @brief The table under a memory's bar; then a
- *        second bank, when there is one.
+ * @brief The table under a memory's bar, then a line for its second bank
+ *        when there is one.
  * @return how many lines it took.
  */
 static int
@@ -659,9 +632,9 @@ paint_legend(about_state_t *st, int x, int y, int i, int m)
 
 /**
  * @brief One memory as one bar: its estates side by side in the order
- *        they lie, each lit to its size, the live ones showing their
- *        use inside; the legend underneath names them.
- * @return how many lines it took.
+ *        they lie, each as wide as its share, the live ones showing their
+ *        use inside, the total at the right and the legend underneath.
+ * @return how many lines it took, or 0 when the memory has no total.
  */
 static int
 paint_layout(about_state_t *st, int x, int y, int i, int m)
@@ -670,8 +643,8 @@ paint_layout(about_state_t *st, int x, int y, int i, int m)
     int h = plain->height, k, px;
     unsigned long total = st->dev[i].lay[m].total, laid = 0UL;
     char a[24];
-    /* The bar takes the room the box has, leaving the total its place at
-     * the right: a fixed width pushed that label past the edge. */
+    /* The bar takes the box's width, less room for the total at its
+     * right. */
     tiku_rect_t bar = { x + 62, y + 1, st->surface->w - (x + 62) - 78,
                         h - 2 };
 
@@ -698,8 +671,8 @@ paint_layout(about_state_t *st, int x, int y, int i, int m)
         if (w < 1 && sz > 0UL) {
             w = 1;
         }
-        /* The whole estate in its hue, lightened; what is used of it
-         * in the hue itself, so a slice reads as "this much of this". */
+        /* The whole estate in its hue, lightened; the used part over it
+         * in the hue itself. */
         tiku_fill(st->surface, (tiku_rect_t){ px, bar.y, w, bar.h },
                   tiku_tint(hue, 1.55f));
         if (!st->dev[i].lay[m].est[k].live && sz > 0UL) {
@@ -720,7 +693,7 @@ paint_layout(about_state_t *st, int x, int y, int i, int m)
         px += w;
         laid += sz;
     }
-    /* Sunken is the raised bevel inverted: shadow above, light below. */
+    /* A sunken edge: shadow above and left, light below and right. */
     tiku_bevel(st->surface, bar, tiku_tint(TIKU_C_PANEL, 0.72f),
                tiku_tint(TIKU_C_PANEL, 1.18f));
     fmt_bytes(total, a, sizeof a);
@@ -739,9 +712,8 @@ devices_h(const about_state_t *st)
     if (st->ndev <= 0) {
         return 0;
     }
-    /* Only the board on show, plus the stepper's row when there is
-     * more than one: the box stays the size of one board however many
-     * are plugged in. */
+    /* Only the board on show, plus the stepper's row when more than one
+     * is connected. */
     i = (st->page >= 0 && st->page < st->ndev) ? st->page : 0;
     rows = dev_rows(st, i);
     return 10 + h + 8 + rows * (h + 2) + 10 + 6 +
@@ -749,9 +721,8 @@ devices_h(const about_state_t *st)
 }
 
 /**
- * @brief A labelled gauge with the numbers beside it, as the machine's
- *        own memory is drawn: the bar says at a glance, the text says
- *        exactly.
+ * @brief A labelled gauge filled with the used part, and "free of total"
+ *        beside it.
  */
 static void
 paint_room(about_state_t *st, int x, int y, const char *label,
@@ -770,7 +741,6 @@ paint_room(about_state_t *st, int x, int y, const char *label,
     if (bar.h < 6) {
         bar.h = 6;
     }
-    /* The gauge fills with what is USED, as the machine's does. */
     tiku_ui_gauge(st->surface, bar,
                   (total > 0UL && total >= freeb)
                       ? (float)(total - freeb) / (float)total
@@ -797,15 +767,14 @@ paint_device(about_state_t *st, int i, int y)
     char said[128];
     int x = 58;
 
-    /* Its own mark, the size the Deskbar draws a team at. */
     (void)tiku_icon_paint(st->surface, "microcontroller", 18, y + 2,
                           32);
     tiku_text(st->surface, bold, x, y + bold->ascent,
               st->dev[i].name, TIKU_C_TEXT);
     y += h + 2;
     if (!st->dev[i].known) {
-        /* Nothing kept yet: the shell is asking, and the box says
-         * so rather than showing a board with no facts at all. */
+        /* The shell has no answer for this board: "asking..." in place
+         * of its facts. */
         tiku_text(st->surface, plain, x, y + plain->ascent,
                   "asking...", quiet);
         return y + h + 2 + 10;
@@ -819,8 +788,8 @@ paint_device(about_state_t *st, int i, int y)
     }
     tiku_text(st->surface, plain, x, y + plain->ascent, said, quiet);
     y += h + 2;
-    /* What the part is FITTED with, said once: the gauges below are
-     * what is free to allocate, which is a smaller thing. */
+    /* A board without maps: what the part is fitted with, on one line;
+     * the gauges below show what is free to allocate. */
     if (st->dev[i].nlay == 0 &&
         (st->dev[i].part_sram > 0UL || st->dev[i].part_nvm > 0UL)) {
         char a[24], b[24];
@@ -868,14 +837,12 @@ paint_device(about_state_t *st, int i, int y)
 }
 
 /**
- * @brief The devices section: a board its own mark, its name, what it
- *        is, what memory of each KIND it has left, and what else is on
- *        it.
+ * @brief The devices section under the machine's own facts: a heading,
+ *        a stepper when several boards are connected, and the board on
+ *        show with its mark, name, part, memory and extras.
  *
- * Under the machine's own facts on purpose -- the box answers for the
- * whole of what is here, this computer first and then what is plugged
- * into it.  Drawn the way the machine's own memory is, so the two read
- * as one box rather than a list stapled under one.
+ * A board that reports maps of its memory is drawn as layout bars with a
+ * legend; one that does not, as a gauge per kind of memory.
  */
 static void
 paint_devices(about_state_t *st, int top)
@@ -891,8 +858,8 @@ paint_devices(about_state_t *st, int top)
     tiku_text(st->surface, bold, 14, y + bold->ascent,
               "Connected devices", TIKU_C_TEXT);
     if (st->ndev > 1) {
-        /* Which of them, and the way to the others: a stepper at the
-         * heading's right, the count between its arrows. */
+        /* A stepper at the heading's right, the count between its
+         * arrows. */
         char count[24];
         int bh = tiku_ui_button_h(), cw, bx = st->surface->w - 14;
 
@@ -921,27 +888,31 @@ paint_devices(about_state_t *st, int top)
     }
     (void)paint_device(st, st->page, y);
 }
+
 /**
  * @brief The body's height: the taller of the two columns, plus the
  *        two-line footer.
  */
 static int about_body_h(void)
 {
+    /* The facts column: 171 px at a 15 px line, growing by three line
+     * heights with the face. */
     int facts = 171 + 3 * (tiku_font_plain()->height - 15);
-    /* The identity column has the mark in it now: sixteen above, eighty
-     * of mark, then the wordmark and its rule and the second line.  The
-     * taller of the two columns is what the window has to be. */
+    /* The identity column: 16 above, the 80 px mark, the wordmark, its
+     * rule, and the line under the rule. */
     int identity = 16 + 80 + 14 + tiku_font_at(28)->height + 6 + 3 + 14 +
                    tiku_font_plain()->height + 20;
 
-    /* The footer is two lines now, not one -- the copyright with the
-     * project page, then the licence -- and it runs under BOTH columns,
-     * so whichever of them is the taller has to find the extra line. */
+    /* The two-line footer runs under both columns: its first line sits in
+     * the taller column's bottom margin, and the second is added here. */
         return ((identity > facts) ? identity : facts)
            + tiku_font_plain()->height + 4;
 }
 
-/** @brief The whole box: the facts, and the reports when they are open. */
+/**
+ * @brief The whole box: the facts, the connected boards, and the reports
+ *        when they are open.
+ */
 static int
 about_h(const about_state_t *st)
 {
@@ -949,27 +920,18 @@ about_h(const about_state_t *st)
            (st->reports_open ? reports_h() : 0);
 }
 
-/*
- * The pre-descriptor window declared its FRAME width as the body width,
- * chrome not counted -- an asymmetry (its height did count the chrome)
- * that every measured pixel in about.script stands on.  The content the
- * services give back is the body less two borders, so asking for that
- * puts the outer box, and every glyph in it, exactly where it has
- * always been.
+/**
+ * @brief The content width: the body less two window borders, so the
+ *        window's outer width is about_body_w().
+ *
+ * tests/integration/shell/about.script checks pixels at this geometry.
  */
 static int about_content_w(void)
 {
     return about_body_w() - 2 * TIKU_WINDOW_BORDER;
 }
 
-/**
- * @brief How many processors.
- *
- * The count and nothing else, not the model name: on a machine whose
- * processor table does not carry one, the device tree answers instead
- * with the name of the COMPUTER, and an About box for an operating
- * system then announces the laptop it happens to be running on.
- */
+/** @brief How many processors are online, at least 1. */
 static int
 count_cpus(void)
 {
@@ -1004,10 +966,10 @@ report_label(const char *path, char *out, size_t max)
 }
 
 /**
- * @brief A frame as the report wrote it, made readable.
+ * @brief A stack frame line from a report, made readable.
  *
- * Both the shape of the line and what can name an offset in it belong to
- * the host that wrote it, so both live behind the system seam.
+ * The line's format depends on the host that wrote the report, so
+ * tiku_sys_frame_name() reads it.
  */
 static void
 frame_name(const char *raw, char *out, size_t max)
@@ -1074,7 +1036,10 @@ load_detail(about_state_t *st)
     (void)fclose(f);
 }
 
-/** @brief Open the section, or refresh it: the list and the newest. */
+/**
+ * @brief Open the reports section, or refresh it: list the reports and
+ *        choose the newest.
+ */
 static void
 reports_open(about_state_t *st)
 {
@@ -1196,7 +1161,7 @@ paint_reports(about_state_t *st, int y)
     }
     y += account.h + 8;
 
-    /* The button row: the file itself, for the whole of it. */
+    /* The button row: Open the file opens the whole report. */
     btn.w = tiku_ui_button_w("Open the file", 0);
     btn.h = tiku_ui_button_h();
     btn.x = surface->w - left - btn.w;
@@ -1208,8 +1173,8 @@ paint_reports(about_state_t *st, int y)
 }
 
 /**
- * @brief Paint the box: the mark and wordmark, the facts beside them, and
- *        the footer with the licence and the build.
+ * @brief Paint the box: the identity column, the facts, the footer, then
+ *        the devices and reports sections when they are shown.
  */
 static void
 paint(about_state_t *st)
@@ -1225,10 +1190,9 @@ paint(about_state_t *st)
 
     tiku_fill(surface, (tiku_rect_t){ 0, 0, surface->w, surface->h },
                    TIKU_C_PANEL);
-    {   /* The identity column: the MARK, then the wordmark under it over
-         * its accent rule, the way the original wore its logo.  The mark
-         * is drawn rather than stamped, so it is as sharp here at eighty
-         * pixels as it is at sixteen on the Deskbar. */
+    {   /* The identity column: the mark, drawn from its paths in the
+         * cycle's current colours, then the wordmark over its accent
+         * rule. */
         int mark = 80;
         int base;
 
@@ -1242,10 +1206,8 @@ paint(about_state_t *st)
                              TIKU_LOGO_GROUND, &p, 1.0f);
         base = 16 + mark + 14 + big->ascent;
 
-        /* The wordmark reads across the rule -- it was "Tiku" over "OS
-         * desktop", which is the product name split at the wrong place.
-         * The name is TikuOS; what is under the rule is what this one of
-         * them is. */
+        /* The product name above the rule, and under it which part of
+         * TikuOS this is. */
         tiku_text(surface, big, left, base, "TikuOS", TIKU_C_TEXT);
         tiku_fill(surface, (tiku_rect_t){ left, base + 6, 96, 3 },
                        TIKU_C_TAB);
@@ -1269,10 +1231,8 @@ paint(about_state_t *st)
 
         read_memory(&total, &avail);
         used = (total > avail) ? total - avail : 0;
-        /* The number says what is FREE; the bar fills with what is not,
-         * which is the direction a bar is read in.  They are the two
-         * ends of the same figure, so neither has to be worked out from
-         * the other. */
+        /* The text gives the free memory; the gauge fills with the used
+         * part. */
         snprintf(line, sizeof line, "Memory: %ld MB of %ld MB free",
                  avail / 1024, total / 1024);
         tiku_text(surface, plain, facts_x, y + plain->ascent, line,
@@ -1281,9 +1241,9 @@ paint(about_state_t *st)
                       (total > 0) ? (float)used / (float)total : 0.0f);
     }
     y += plain->height + 10 + 8;
-    {   /* The newest account of something going wrong, on a button that
-         * opens every one of them under the facts: the whole of what
-         * this box shows for its reports until the button is pressed. */
+    {   /* The reports button: it names the newest report and opens the
+         * reports section, and reads Hide reports while the section is
+         * open. */
         const char *leaf;
         char kind[16] = "", stamp[16] = "";
         tiku_rect_t btn;
@@ -1297,8 +1257,8 @@ paint(about_state_t *st)
             snprintf(line, sizeof line, "Reports: none");
         } else if (sscanf(leaf, "%15[a-z]-%15[0-9-]", kind, stamp) == 2 &&
                    strlen(stamp) >= 15u) {
-            /* A report is named <kind>-<yyyymmdd>-<hhmmss>-...: the kind
-             * and the moment are what a person is choosing between. */
+            /* A report is named <kind>-<yyyymmdd>-<hhmmss>-...; the
+             * button shows the kind and the moment. */
             snprintf(line, sizeof line,
                      "Last report: %s, %.4s-%.2s-%.2s %.2s:%.2s...",
                      kind, stamp, stamp + 4, stamp + 6, stamp + 9,
@@ -1315,11 +1275,9 @@ paint(about_state_t *st)
                        (tiku_press_held(&st->press, 1) ? TIKU_S_PRESSED : 0u));
         st->reports_btn = btn;
     }
-    {   /* Whose it is, where it lives, and on what terms.  Two lines
-         * rather than one because the three together are 405 pixels at
-         * the 12 px face and 526 at 16, against the 394 the window has
-         * between its margins -- so the licence goes under the rest
-         * instead of running off the side of the box that states it. */
+    {   /* The footer: the copyright and the project page, then the
+         * licence on a second line, since the three do not fit on one
+         * line between the margins. */
         int foot = about_body_h() - 14;
 
         tiku_text(surface, plain, left, foot - plain->height - 4,
@@ -1327,9 +1285,7 @@ paint(about_state_t *st)
                        TIKU_C_TEXT);
         tiku_text(surface, plain, left, foot,
                        "Apache License 2.0", TIKU_C_TEXT);
-        /* WHICH build, on the box itself: a development machine grows
-         * copies, and the one question worth answering at a glance is
-         * whether the window in front of you is today's. */
+        /* The build date and time, right-aligned on the licence line. */
         {
             char built[64];
             int w;
@@ -1394,11 +1350,8 @@ about_start(void **state, const tiku_app_services_t *services)
         free(st);
         return -1;
     }
-    /* A role, not a position: where a panel that announces goes is the
-     * HOST's guideline, and a host too old to have the service places it
-     * however it places anything.  PANEL rather than ANNOUNCE: this box
-     * is opened from a menu and stays until it is dismissed, so it wears
-     * the tab and close a person reaches for. */
+    /* The host places a PANEL window and gives it a tab and a close box;
+     * a host without place() places it as any other window. */
     if (services->place != NULL) {
         (void)services->place(services->ctx, st->id,
                               TIKU_APP_PLACE_PANEL);
@@ -1434,8 +1387,9 @@ inside_rect(tiku_rect_t r, int x, int y)
 /**
  * @brief Which of the About box's buttons is under (@p x, @p y).
  *
- * Only a button that can act counts: a greyed one is not there to
- * press.  1 the reports row, 2 and 3 the page steppers, 4 Open the file.
+ * Only a button that can act counts; a greyed one is not found.
+ * @return 1 the reports button, 2 and 3 the board stepper's arrows,
+ *         4 Open the file, 0 none.
  */
 static int
 about_button_at(const about_state_t *st, int x, int y)
@@ -1458,15 +1412,16 @@ about_button_at(const about_state_t *st, int x, int y)
     return 0;
 }
 
-/** @brief Escape asks to close; every other event is watched and ignored. */
+/**
+ * @brief Escape asks to close; presses drive the buttons and pick a
+ *        report, and the wheel scrolls the report list.
+ * @return 1 to close the box, 0 otherwise.
+ */
 static int
 about_event(void *state, const tiku_event_t *event)
 {
     about_state_t *st = state;
 
-    /* Escape closes it, as a panel that announces should.  Everything
-     * else -- there is one control, the report row -- is watched and
-     * ignored. */
     if (event != NULL && event->type == TIKU_EVENT_KEY_DOWN &&
         event->key == TIKU_KEY_ESCAPE) {
         return 1;
@@ -1474,9 +1429,9 @@ about_event(void *state, const tiku_event_t *event)
         if (event == NULL || st == NULL) {
         return 0;
     }
-    /* The buttons go DOWN under the hand and act when it lets go on
-     * them; a press that wanders off does nothing.  One hit test says
-     * which button is under the hand at any moment. */
+    /* A button shows pressed while a press holds it and acts on a
+     * release over it; a press released elsewhere does nothing.  The
+     * same hit test serves the press, the move and the release. */
     if (event->type == TIKU_EVENT_POINTER_DOWN) {
         int id = about_button_at(st, event->x, event->y);
 
@@ -1496,8 +1451,8 @@ about_event(void *state, const tiku_event_t *event)
 
         st->step = -1;
         if (id == 1) {
-            /* The row is the door: the reports open under the facts, or
-             * close again. */
+            /* The reports button opens the reports section, or closes
+             * it. */
             if (st->reports_open) {
                 st->reports_open = 0;
             } else {
@@ -1539,8 +1494,8 @@ about_event(void *state, const tiku_event_t *event)
 }
 
 /**
- * @brief Refit the surface when the face changed, and advance the colour
- *        cycle, repainting when either moved.
+ * @brief Refresh the boards, refit the surface to about_h(), and repaint
+ *        when the size, the cycle step or the second changes.
  */
 static void
 about_tick(void *state, int64_t now_us)
@@ -1553,12 +1508,9 @@ about_tick(void *state, int64_t now_us)
     if (st == NULL) {
         return;
     }
-    /* Nothing this window does changes the face; the Fonts window next
-     * door does, and this one has to notice on its own.  The host keeps
-     * the corner where it is, so a refit does not jump under the
-     * pointer. */
-    /* What the boards say is re-read before the height is asked for,
-     * so a board arriving or leaving resizes the box on this same tick. */
+    /* The face and the boards change outside this window, so the size is
+     * checked on every tick, after the boards are re-read.  The host keeps
+     * the window's corner in place on a resize. */
     about_devices_refresh(st);
     want_w = about_content_w();
     want_h = about_h(st);
@@ -1581,8 +1533,8 @@ about_tick(void *state, int64_t now_us)
         st->step = step;
         owe = 1;
     }
-    /* The gauge follows the machine underneath, on a beat a person can
-     * see and a loop cannot feel. */
+    /* Repainted once a second, so the memory gauge follows the
+     * machine. */
     sec = now_us / 1000000;
     if (sec != st->gauge_s) {
         st->gauge_s = sec;

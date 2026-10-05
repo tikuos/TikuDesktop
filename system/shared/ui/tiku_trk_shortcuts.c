@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_shortcuts.c - the action table.
+ * tiku_trk_shortcuts.c - the action table: each action's label, command,
+ * shortcut key, shortcut modifiers and enable rule.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,11 +17,9 @@
 #include <string.h>
 
 /**
- * @brief The unshifted command an item belongs to.
- *
- * An item currently showing its shifted face still has to be found and
- * updated, or it freezes in that face once the key comes back up.  Every
- * shifted command therefore maps back to the one the table is keyed on.
+ * @brief The unshifted command a shifted one belongs to, which the table is
+ *        keyed on; through it an item showing its shifted face is updated
+ *        back when Shift is released.
  */
 static int
 canonical(int command)
@@ -50,15 +49,13 @@ tiku_trk_sc_label(int command, unsigned mods)
 {
     int sh = shifted(mods);
 
-    /* Delete is also the shifted form of Move to Trash, but a Trash menu
-     * asks for Delete directly and must not need Shift to say what it does. */
+    /* Delete asked for directly, as a Trash menu does, is labelled Delete
+     * without Shift. */
     if (command == TIKU_TRK_CMD_DELETE) {
         return tiku_str("cmd.delete");
     }
     switch (canonical(command)) {
-    /* The nine that rename themselves.  Capitalisation is the original's:
-     * "Move to Trash" and "Empty Trash" capitalise Trash, the rest do not
-     * capitalise their second word. */
+    /* The actions Shift renames, with Copy and Paste layout among them. */
     case TIKU_TRK_CMD_CLEANUP:
         return tiku_str(sh ? "cmd.cleanup_shift" : "cmd.cleanup");
     case TIKU_TRK_CMD_CLOSE:
@@ -227,8 +224,8 @@ tiku_trk_sc_command(int command, unsigned mods)
         return sh ? TIKU_TRK_CMD_REL_LINK_HERE : TIKU_TRK_CMD_LINK_HERE;
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
         return sh ? TIKU_TRK_CMD_DELETE : TIKU_TRK_CMD_MOVE_TO_TRASH;
-    /* Identify is the exception: the label changes but the command does NOT.
-     * The shift travels with the message as a "force" flag instead. */
+    /* Identify keeps its command when Shift renames it; the shift goes
+     * with it as a "force" flag. */
     case TIKU_TRK_CMD_IDENTIFY:
         return TIKU_TRK_CMD_IDENTIFY;
     default:
@@ -282,13 +279,11 @@ tiku_trk_sc_key(int command)
     case TIKU_TRK_CMD_CLOSE_ALL_WORKSPACE: return 'Q';
     case TIKU_TRK_CMD_PREFERENCES:       return ',';
     case TIKU_TRK_CMD_ICON_VIEW:         return '1';
-    /* Open parent is Cmd+Up.  The menu shows no accelerator for it: this
-     * drawing floor's font has one glyph per byte and no arrow among them,
-     * and a blank column advertises a chord the user cannot read. */
+    /* Open parent is Cmd+Up and shows no accelerator: the font has no
+     * arrow glyph. */
     case TIKU_TRK_CMD_MINI_ICON_VIEW:    return '2';
     case TIKU_TRK_CMD_LIST_VIEW:         return '3';
-    /* Move to Trash is the one action bound WITHOUT the command key: it is
-     * plain Del, so that pressing Del in a list does the obvious thing. */
+    /* Move to Trash is bound to plain Del, without the command key. */
     case TIKU_TRK_CMD_MOVE_TO_TRASH:     return 0x7F;
     default:                             return 0;
     }
@@ -308,7 +303,7 @@ tiku_trk_sc_mods(int command, unsigned mods)
     case TIKU_TRK_CMD_OPEN_WITH:
         return TIKU_MENU_MOD_CMD | TIKU_MENU_MOD_CTRL;
     /* The five that carry the live shift into their own shortcut, so the
-     * key shown is the key that will actually fire the shifted command. */
+     * key shown is the key that fires the shifted command. */
     case TIKU_TRK_CMD_CLEANUP:
     case TIKU_TRK_CMD_CLOSE:
     case TIKU_TRK_CMD_COPY:
@@ -361,8 +356,8 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
         return c->selection > 0 && !c->selection_ro;
 
-    /* Only where there is a query to edit: the item clicked is one, or
-     * the window itself is a results window (CW-033). */
+    /* Only where there is a query to edit: the item clicked is one, or the
+     * window is a results window (CW-033). */
     case TIKU_TRK_CMD_EDIT_QUERY:
         return c->is_query;
 
@@ -375,9 +370,9 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_EMPTY_TRASH:
         return c->trash_full;
 
-    /* Cut is refused outright in the places where the idea makes no sense,
-     * and Cut/Copy/Paste are all available whenever a text field has focus,
-     * because then they mean the text-editing verbs instead. */
+    /* With a text field focused, Cut, Copy and Paste are its text verbs and
+     * always enabled.  Cut is refused in the root, the Trash and virtual
+     * folders. */
     case TIKU_TRK_CMD_CUT:
         if (c->text_focus) {
             return 1;
@@ -412,8 +407,8 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_MOUNT:
         return 0;
 
-    /* Live now, through the volume model; the boot volume's entry is
-     * disabled so it cannot be unmounted (CW-034). */
+    /* Unmount needs a selected volume other than the boot volume
+     * (CW-034). */
     case TIKU_TRK_CMD_UNMOUNT:
         return c->selection_is_volume && !c->selection_is_boot;
     case TIKU_TRK_CMD_MOUNT_ALL:
@@ -422,7 +417,8 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_OPEN_WITH_WINDOW:
         return c->selection > 0;
 
-    /* Arrange by is meaningless in list view, where the column titles sort. */
+    /* Arrange by and Clean up apply outside list view, where the column
+     * titles sort. */
     case TIKU_TRK_CMD_ARRANGE_BY:
         return c->view_mode != TIKU_TRK_MODE_LIST;
     case TIKU_TRK_CMD_CLEANUP:
@@ -462,27 +458,22 @@ tiku_trk_sc_update(tiku_menu_t *m, const tiku_trk_sc_ctx_t *c)
             continue;
         }
         if (it->submenu != NULL) {
-            /* A submenu holder carries no command of its own, so its enabled
-             * state is asked for by the label it was built with; its contents
-             * are updated in their own right. */
+            /* A submenu holder keeps its own label and state; its contents
+             * are updated. */
             tiku_trk_sc_update(it->submenu, c);
             continue;
         }
-        /* In a Trash inventory Delete is the base action.  Elsewhere the
-         * same command value is the shifted face of Move to Trash and must
-         * turn back when Shift is released. */
+        /* In the Trash, Delete is the base action; elsewhere the same
+         * command is Move to Trash's shifted face, which turns back when
+         * Shift is released. */
         base = (it->command == TIKU_TRK_CMD_DELETE && c != NULL &&
                 (c->is_trash || c->in_trash))
                    ? TIKU_TRK_CMD_DELETE : canonical(it->command);
         if (tiku_trk_sc_label(base, mods)[0] == '\0') {
             /*
-             * A command this table has never heard of: a row somebody
-             * BUILT, like a partition under Mount or an application under
-             * Open with, whose label and enablement are the builder's own
-             * facts.  Relabelling it from the table wrote the empty
-             * string over the name and turned the row back on -- so a
-             * greyed, already-mounted partition came back lit and blank.
-             * The table speaks for the commands it knows and no others.
+             * A command the table does not know -- a row its builder
+             * labelled, such as a partition under Mount or an application
+             * under Open with -- keeps its own label and enabled state.
              */
             continue;
         }
@@ -492,6 +483,5 @@ tiku_trk_sc_update(tiku_menu_t *m, const tiku_trk_sc_ctx_t *c)
                               tiku_trk_sc_mods(base, mods));
         it->enabled = tiku_trk_sc_enabled(base, c);
     }
-    /* Marks are the caller's business: they come from view state, not from
-     * the action table. */
+    /* Marks are left to the caller, which sets them from view state. */
 }

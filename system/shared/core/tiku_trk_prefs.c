@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Short names for the setting types, for the table below. */
 #define B TIKU_TRK_PREF_BOOL
 #define I TIKU_TRK_PREF_INT
 #define C TIKU_TRK_PREF_COLOUR
@@ -24,16 +25,15 @@
 
 /** @brief Every setting, with the name it has in the file. */
 static const tiku_trk_pref_t table[] = {
-    /* On: ONE way in to the machine's filesystem, for when a person
-     * wants it.  The volumes themselves stay off, or the Desktop
-     * becomes a view of the host again. */
+    /* On: one way into the machine's filesystem, for when a person wants
+     * it.  The volumes themselves stay off, so the Desktop does not show
+     * the host. */
     { "ShowDisksIcon",           B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0, "" },
-    /* Off: this Desktop is a device's, and the machine's volumes are
-     * not what it is for.  The Preferences page still offers them. */
+    /* Off: the Desktop shows the device, not the machine's volumes; the
+     * Preferences page still offers them. */
     { "MountVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 0, 0, 0, "" },
     { "MountSharedVolumesOntoDesktop", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0, "" },
     { "IntegrateNonBootBeOSDesktops", B, TIKU_TRK_PAGE_DESKTOP, 1, 0, 0, "" },
-    /* Last on its page so the rows above it keep their places. */
     { "SelectedLabelColor",      C, TIKU_TRK_PAGE_DESKTOP,
       (int32_t)0xc01a3350, 0, 0, "" },
     { "ShowFullPathInTitleBar",  B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
@@ -45,14 +45,9 @@ static const tiku_trk_pref_t table[] = {
     { "HideDotFiles",            B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
     { "TypeAheadFiltering",      B, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
     { "GenerateImageThumbnails", B, TIKU_TRK_PAGE_WINDOWS, 1, 0, 0, "" },
-    /* Not a Haiku setting: the theme swap the toolkit's table makes
-     * possible.  Appended so every row above keeps its place.
-     *
-     * THREE-valued, not a flag: 0 light, 1 dark, 2 without hue.  It kept
-     * its name when the third arrived, because the name is what is
-     * written in everybody's settings file and 0 and 1 still mean what
-     * they meant -- see the read path, which also still answers to the
-     * word "on" that a file written by an older build says. */
+    /* Not a Haiku setting: the theme.  0 light, 1 dark, 2 without hue;
+     * the read path also takes "on" and "off", which a settings file may
+     * hold. */
     { "DarkMode",                I, TIKU_TRK_PAGE_WINDOWS, 0, 0, 0, "" },
     /* Not a Haiku setting either: one menu bar at the top of the screen,
      * fed by whatever the focused window publishes. */
@@ -69,11 +64,12 @@ static const tiku_trk_pref_t table[] = {
     { "RecentApplications",      I, TIKU_TRK_PAGE_NONE,   10, 0, 0, "" },
     { "RecentDocuments",         I, TIKU_TRK_PAGE_NONE,   10, 0, 0, "" },
     { "RecentFolders",           I, TIKU_TRK_PAGE_NONE,   10, 0, 0, "" },
-    /* No control of their own, and still read and written so an older
-     * file round-trips rather than losing them (TS-062). */
+    /* No control of its own, as in the source: whether the file panel's
+     * Up from the root lands on the Desktop (AW-061, TS-062). */
     { "DesktopFilePanelRoot",    B, TIKU_TRK_PAGE_NONE,    1, 0, 0, "" },
     /* The moments that sound (tiku_trk_soundprefs.h): the chime, the
-     * beep and the closing sound on; the window ticks off, being many. */
+     * beep and the closing sound default to on, the window sounds to
+     * off. */
     { "sound.startup",           B, TIKU_TRK_PAGE_NONE,    1, 0, 0, "" },
     { "sound.beep",              B, TIKU_TRK_PAGE_NONE,    1, 0, 0, "" },
     { "sound.window-open",       B, TIKU_TRK_PAGE_NONE,    0, 0, 0, "" },
@@ -168,8 +164,9 @@ tiku_trk_prefs_get(tiku_trk_prefs_t *p, const char *name)
 /**
  * @brief The rules that keep settings from contradicting each other.
  *
- * Applied after ANY change to @p name, however it arrived -- the window's
- * click and a programmatic set go through the same door (TS-046).
+ * Applied after every tiku_trk_prefs_set() of @p name, from the window or
+ * from a script (TS-046); a load, a defaults or a revert does not apply
+ * them.
  */
 static void
 interlock(tiku_trk_prefs_t *p, const char *name, int32_t v)
@@ -182,15 +179,15 @@ interlock(tiku_trk_prefs_t *p, const char *name, int32_t v)
         }
     }
     /* The Disks icon and volumes-on-Desktop are two answers to one
-     * question -- what the Desktop shows for storage -- so turning one
-     * on turns the other off (TS-046). */
+     * question, what the Desktop shows for storage, so turning one on
+     * turns the other off (TS-046). */
     if (strcmp(name, "ShowDisksIcon") == 0 && v != 0) {
         tiku_trk_pref_t *m = tiku_trk_prefs_find(p,
                                  "MountVolumesOntoDesktop");
 
         if (m != NULL) {
             m->value = 0;
-            /* And what rode on it goes with it. */
+            /* Shared volumes, which depend on it, go off too. */
             interlock(p, "MountVolumesOntoDesktop", 0);
         }
     }
@@ -202,8 +199,8 @@ interlock(tiku_trk_prefs_t *p, const char *name, int32_t v)
                 d->value = 0;
             }
         } else {
-            /* Shared volumes ride on volumes-on-Desktop: with the base
-             * setting off there is nothing for them to ride (TS-046). */
+            /* Shared volumes depend on volumes-on-Desktop and go off
+             * with it (TS-046). */
             tiku_trk_pref_t *sh = tiku_trk_prefs_find(p,
                                       "MountSharedVolumesOntoDesktop");
 
@@ -326,11 +323,9 @@ tiku_trk_prefs_load(tiku_trk_prefs_t *p, const char *path)
             pr->value = (int32_t)strtoul(val, NULL, 0);
         } else {
             /*
-             * An older build wrote this one as a flag, so a settings file
-             * in the wild says "DarkMode on".  strtol would read that as
-             * nought and turn somebody's dark desktop back to white on
-             * the first launch after an update, silently, which is the
-             * kind of thing nobody reports and everybody notices.
+             * An integer setting reads "on" and "off" as 1 and 0, because
+             * a settings file may say "DarkMode on", which strtol would
+             * read as 0.
              */
             if (strcmp(val, "on") == 0) {
                 pr->value = 1;
@@ -355,12 +350,9 @@ write_lines(FILE *f, void *context)
     for (i = 0; i < p->n; i++) {
         const tiku_trk_pref_t *pr = &p->pref[i];
 
-        /* Only what the user actually moved.  A file that repeats every
-         * default freezes TODAY'S defaults into it forever: when a later
-         * build ships a better default, every saved file silently vetoes
-         * it (this happened -- the global bar's default flipped on and
-         * old files kept saying off).  A divergence is a decision and is
-         * written down; agreement is not. */
+        /* Only settings that differ from their default are written, so a
+         * later default reaches files that never changed it.  A TEXT
+         * setting is written when it is set. */
         if (pr->type == TIKU_TRK_PREF_TEXT) {
             if (pr->text[0] != '\0') {
                 fprintf(f, "%s %s\n", pr->name, pr->text);
@@ -396,10 +388,9 @@ tiku_trk_prefs_save(tiku_trk_prefs_t *p, const char *path)
         return -1;
     }
     (void)tiku_state_mkparents(path);
-    /* Replaced whole rather than rewritten in place: TikuTracker reads the
-     * file within a tenth of a second of a change, and a half-written one
-     * reads as the defaults.  A file kept as a link is replaced where it
-     * points. */
+    /* Replaced whole: TikuTracker re-reads the file within a tenth of a
+     * second of a change, and a half-written one would read as the
+     * defaults.  A file kept as a link is replaced where it points. */
     target = realpath(path, NULL);
     rc = tiku_atomic_file((target != NULL) ? target : path, write_lines, p);
     free(target);
@@ -518,10 +509,10 @@ tiku_trk_prefs_defaults(tiku_trk_prefs_t *p, tiku_trk_page_t page)
         return;
     }
     if (page == TIKU_TRK_PAGE_MOUNT) {
-        /* The Disk mount page can NEVER be defaulted: a mount policy set
-         * back to a default behind the user's back is a disk appearing or
-         * refusing to, which the source hard-codes IsDefaultable()=false
-         * for (TS-065). */
+        /* The Mount page is never defaulted: a mount policy set back to a
+         * default behind the user's back is a disk appearing or refusing
+         * to, and the source hard-codes IsDefaultable()=false for it
+         * (TS-065). */
         return;
     }
     for (i = 0; i < p->n; i++) {
@@ -541,10 +532,9 @@ tiku_trk_prefs_revert(tiku_trk_prefs_t *p, tiku_trk_page_t page)
     }
     for (i = 0; i < p->n; i++) {
         if (p->pref[i].page == page) {
-            /* Every setting on the page, including the ones with no
-             * control: the original's Windows page misses HideDotFiles
-             * here and corrupts another, which is a bug rather than a
-             * behaviour worth porting (TS-061). */
+            /* Every setting on the page.  The original's Windows page
+             * skips HideDotFiles here and writes its value into
+             * SortFolderNamesFirst, a bug that is not ported (TS-061). */
             p->pref[i].value = p->pref[i].opened;
         }
     }
@@ -566,6 +556,7 @@ tiku_trk_prefs_page_name(tiku_trk_page_t page)
 /* The window's layout                                                       */
 /*---------------------------------------------------------------------------*/
 
+/* The window's measurements, in pixels. */
 #define PAGE_H   24
 #define PAGE_TOP 12
 #define CTRL_H   22
@@ -601,8 +592,7 @@ tiku_trk_prefs_page_controls(tiku_trk_prefs_t *p, tiku_trk_page_t page,
     if (p == NULL || out == NULL) {
         return 0;
     }
-    /* The table's order IS the window's order: one list to keep in step
-     * instead of two. */
+    /* The window shows a page's settings in table order. */
     for (i = 0; i < p->n && n < max; i++) {
         if (p->pref[i].page == page) {
             out[n++] = i;

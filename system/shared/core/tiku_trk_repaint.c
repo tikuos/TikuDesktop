@@ -1,8 +1,18 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_repaint.c - recording a view's damage and merging it.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_repaint.h"
 #include <string.h>
 
+/** @brief The larger of two ints. */
 static int max_i(int a, int b) { return a > b ? a : b; }
+/** @brief The smaller of two ints. */
 static int min_i(int a, int b) { return a < b ? a : b; }
 
 /** @brief The smallest rectangle holding both. */
@@ -53,9 +63,8 @@ tiku_trk_repaint_insert(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
     if (row_y >= visible.y + visible.h) {
         return;                        /* below it: nothing on screen     */
     }
-    /* The rows under it change place and nothing else, so they are moved
-     * rather than drawn again, and the row that appeared is the only one
-     * painted. */
+    /* The rows under it only change place, so they slide, and the row
+     * that appeared is the only one painted. */
     tiku_trk_repaint_slide(r, row_y, row_h, visible);
     tiku_trk_repaint_add(r, (tiku_trk_repaint_rect_t){ visible.x, row_y,
                                                        visible.w, row_h });
@@ -82,7 +91,7 @@ tiku_trk_repaint_remove(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
         visible.x, visible.y + visible.h - row_h, visible.w, row_h });
 }
 
-/** @brief The strip between two edges, or nothing when they are the same. */
+/** @brief Paint the strip from @p y0 down to @p y1, if it has any height. */
 static void
 add_strip(tiku_trk_repaint_t *r, int x, int y0, int w, int y1)
 {
@@ -102,9 +111,7 @@ tiku_trk_repaint_band(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t old_rect,
     if (r == NULL) {
         return;
     }
-    /* What CHANGED: the strips one rectangle has and the other does not.
-     * The union would be the whole band, which is the thing this exists to
-     * avoid -- a band grown by a row would repaint every row it covers. */
+    /* What changed: the strips one rectangle has and the other does not. */
     all = union_rect(old_rect, new_rect);
     old_b = old_rect.y + old_rect.h;
     new_b = new_rect.y + new_rect.h;
@@ -139,10 +146,8 @@ tiku_trk_repaint_slide(tiku_trk_repaint_t *r, int y, int delta,
         return;
     }
     if (r->slide_delta != 0) {
-        /* One blit to a frame.  A second slide would have to be applied on
-         * top of the first one's result, and the rectangles already
-         * recorded would name places that moved twice; the batch gives up
-         * and paints the view. */
+        /* One blit to a frame: the rectangles already recorded cannot
+         * follow a second slide, so the batch paints the whole view. */
         r->slide_delta = 0;
         r->slide_y = 0;
         tiku_trk_repaint_add(r, visible);

@@ -78,9 +78,7 @@ tiku_trk_switcher_open(tiku_trk_switcher_t *s, int64_t now, int back)
         return;
     }
     if (!s->shown) {
-        /* Re-sorted only when it has been idle: repeated fast switching
-         * must keep a stable order, or the second press would land
-         * somewhere the first press moved it to (DB-055). */
+        /* Re-sorted only after an idle spell (DB-055). */
         if (now - s->last_switch > TIKU_TRK_SW_RESORT_US) {
             sort_mru(s);
             s->sel = 0;
@@ -96,9 +94,8 @@ tiku_trk_switcher_open(tiku_trk_switcher_t *s, int64_t now, int back)
     if (s->sel >= s->n) { s->sel = 0; }
     if (s->sel < 0)     { s->sel = s->n - 1; }
     s->selwin = 0;
-    /* The strip follows the selection rather than the other way round --
-     * and it SLIDES there, so where it left from is remembered
-     * (DB-058). */
+    /* The strip follows the selection, and slides there, so where it left
+     * from is remembered (DB-058). */
     s->scroll_from = s->scroll;
     if (s->sel < s->scroll) {
         s->scroll = s->sel;
@@ -124,8 +121,8 @@ tiku_trk_switcher_scroll_px(const tiku_trk_switcher_t *s, int slot_w,
     gone = now - s->moved;
     done = (int)(gone / TIKU_TRK_SW_STEP_US) + 1;
     if (done > TIKU_TRK_SW_STEPS) { done = TIKU_TRK_SW_STEPS; }
-    /* The same quantised clock the icon sizes ride: each step covers a
-     * share of the distance, and the last step lands exactly. */
+    /* Quantised like the icon sizes: each step covers a share of the
+     * distance, and the last step lands exactly. */
     return s->scroll_from * slot_w +
            (s->scroll - s->scroll_from) * slot_w * done / TIKU_TRK_SW_STEPS;
 }
@@ -138,9 +135,9 @@ tiku_trk_switcher_release(tiku_trk_switcher_t *s, int64_t now)
     if (s == NULL || !s->shown) {
         return 0;
     }
-    /* Released inside the hair trigger: the user meant "the previous
-     * application", not "show me the list".  The same gesture means two
-     * things and only the timing tells them apart (DB-054). */
+    /* Released inside the hair trigger: a quick switch to the previous
+     * application.  Only the timing tells it from a look at the list
+     * (DB-054). */
     quick = (now - s->opened <= TIKU_TRK_SW_HAIR_US);
     s->shown = 0;
     s->last_switch = now;
@@ -150,7 +147,7 @@ tiku_trk_switcher_release(tiku_trk_switcher_t *s, int64_t now)
     return quick;
 }
 
-/** @brief Move to the next application that may be selected. */
+/** @brief Step the selection one application on, or back, wrapping. */
 static void
 cycle_app(tiku_trk_switcher_t *s, int back)
 {
@@ -184,9 +181,7 @@ tiku_trk_switcher_key(tiku_trk_switcher_t *s, const char *key, int shift)
         return TIKU_TRK_SW_MOVED;
     }
     if (strcmp(key, "Down") == 0 || strcmp(key, "Up") == 0) {
-        /* Windows do NOT wrap: the list is short and a wrap here would
-         * make Up from the first window jump to the last, which reads as
-         * having missed the key. */
+        /* Windows do not wrap: Up on the first window stays there. */
         int to = s->selwin + ((strcmp(key, "Down") == 0) ? 1 : -1);
         int have = (s->sel >= 0 && s->sel < s->n) ? s->app[s->sel].nwin : 0;
 
@@ -217,8 +212,7 @@ tiku_trk_switcher_click(tiku_trk_switcher_t *s, int slot)
         return TIKU_TRK_SW_NOTHING;
     }
     if (slot < 0) {
-        /* Outside the panel dismisses WITHOUT switching: a click that
-         * missed must not choose whatever it happened to be over. */
+        /* A click outside the panel dismisses it without switching. */
         s->shown = 0;
         return TIKU_TRK_SW_CANCEL;
     }
@@ -234,8 +228,7 @@ void
 tiku_trk_switcher_place(int sw, int sh, int w, int h, int *x, int *y)
 {
     if (x != NULL) { *x = (sw - w) / 2; }
-    /* Slightly ABOVE centre: a panel centred exactly sits under where the
-     * eye already is, and the original lifts it by a sixteenth. */
+    /* Slightly above centre: lifted by a sixteenth of the screen height. */
     if (y != NULL) { *y = (sh - h) / 2 - sh / 16; }
 }
 
@@ -250,8 +243,8 @@ tiku_trk_switcher_title(const tiku_trk_switcher_t *s, int i, int w,
     if (s == NULL || i < 0 || i >= s->n) {
         return;
     }
-    /* "App: Window" unless the window has no title of its own, in which
-     * case repeating the application's name twice says nothing. */
+    /* "App: Window", or just the application when the window has no
+     * title of its own. */
     if (w >= 0 && w < s->app[i].nwin && s->app[i].win[w][0] != '\0') {
         snprintf(out, max, "%s: %s", s->app[i].name, s->app[i].win[w]);
     } else {
@@ -284,9 +277,7 @@ tiku_trk_switcher_icon_size(const tiku_trk_switcher_t *s, int i, int64_t now)
         return (i == s->sel) ? TIKU_TRK_SW_LARGE : TIKU_TRK_SW_SMALL;
     }
     gone = now - s->moved;
-    /* Quantised to the step rather than smooth: the original insets twice,
-     * and a continuous slide would be a different animation wearing the
-     * same numbers. */
+    /* Quantised to whole steps of TIKU_TRK_SW_STEP_US. */
     done = (int)(gone / TIKU_TRK_SW_STEP_US) + 1;
     if (done > TIKU_TRK_SW_STEPS) { done = TIKU_TRK_SW_STEPS; }
     if (i == s->sel) {

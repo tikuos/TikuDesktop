@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_switcher_window.h - application switcher window controller.
+ * tiku_trk_switcher_window.h - the application switcher: the running
+ * applications in a row, the chosen one highlighted and named.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,6 +18,7 @@
 #include "tiku_trk_deskbar.h"
 #include "tiku_trk_switcher.h"
 
+/** @brief The switcher window over the Deskbar's teams. */
 typedef struct {
     tiku_trk_switcher_t    model;
     tiku_workspace_t *workspace;

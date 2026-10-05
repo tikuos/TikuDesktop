@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_navigator.c - bounded browser history.
+ * tiku_trk_navigator.c - a browser window's Back and Forward history, and
+ * the path helpers for a folder's parents and a drop's destination.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +14,8 @@
 #include <stdio.h>
 #include <string.h>
 
-/** @brief Append while retaining the newest 32 entries. */
+/** @brief Append @p path, dropping the oldest entry when the stack is
+ *         full. */
 static void
 append(char stack[][TIKU_PATH_MAX], int *count, const char *path)
 {

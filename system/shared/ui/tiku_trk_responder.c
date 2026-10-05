@@ -1,5 +1,13 @@
-/* TikuTracker responders: one interface for every surface on the desk.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_responder.c - the responder stack: damage rectangles, z-order,
+ * the press capture, and routing each event to the surface that takes it.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_responder.h"
 #include <string.h>
 
@@ -12,7 +20,7 @@ tiku_trk_damage_none(void)
 tiku_rect_t
 tiku_trk_damage_all(void)
 {
-    /* A rectangle no surface could return by accident: a negative width. */
+    /* A negative width: no surface returns one as a real rectangle. */
     return (tiku_rect_t){ 0, 0, -1, -1 };
 }
 

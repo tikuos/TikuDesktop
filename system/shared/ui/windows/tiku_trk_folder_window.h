@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_window.h - folder-window state and rendering.
+ * tiku_trk_folder_window.h - a folder window: its state, the drawing
+ * services the shell shares with it, and the calls that draw and measure
+ * it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,12 +29,12 @@
 #include "tiku_trk_services.h"
 
 /**
- * @brief Row slots a window keeps pixels for.
+ * @brief Row slots whose signatures a window keeps.
  *
- * A window taller than this paints its every row every frame, which is
- * correct and merely slower.
+ * A row past the last slot is painted on every frame.
  */
 #define TIKU_TRK_ROWS_KEPT 160
+/** @brief Icon poses whose signature and place a window keeps. */
 #define TIKU_TRK_ICONS_KEPT 192
 
 typedef struct tiku_trk_folder_window tiku_trk_folder_window_t;
@@ -47,7 +49,7 @@ struct tiku_trk_drag_target;
  *        already offered its menu.
  */
 typedef struct {
-    int64_t                   at;       /* in us                        */
+    int64_t                   at;       /* microseconds                 */
     int                       x, y;
     int                       row;      /* the pose row hit, or -1      */
     tiku_trk_folder_window_t *folder;   /* the folder the press is in   */
@@ -57,6 +59,7 @@ typedef struct {
     int                       menu;     /* the long press already fired */
 } tiku_trk_press_t;
 
+/** @brief Brings the menus up to date for a window about to draw. */
 typedef void (*tiku_trk_folder_prepare_menu_fn)(void *context,
                                                  tiku_trk_folder_window_t *);
 
@@ -71,29 +74,28 @@ typedef struct {
     tiku_store_t      *store;
     tiku_thumb_q_t    *thumbs;
     int                    row_h;
-    /* How many list rows the last frame actually painted.  A repaint that
-     * touches one row and a repaint that touches every row produce the
-     * same picture, so this is the only way to tell them apart (PVL-045,
-     * PVL-048, PVL-075). */
+    /* How many rows and icon poses have been painted since a script last
+     * reset the count; the scripts read it to check how much a repaint
+     * touched (PVL-045, PVL-048, PVL-075). */
     int                    rows_drawn;
-    /* What this frame is repainting, taken once so the ground and the
-     * rows agree about it. */
+    /* What this frame repaints, taken once per frame and read by both the
+     * ground and the rows. */
     tiku_trk_repaint_rect_t damage[TIKU_TRK_REPAINT_MAX];
     int                    ndamage;
     int                    screen_w;
     int                    screen_h;
-    char                  *status;
-    char                  *count_text;
+    char                  *status;       /* the shell's status line */
+    char                  *count_text;   /* the front window's count line */
     size_t                 count_text_size;
-    int                   *finding;
-    char                  *find_text;
+    int                   *finding;      /* a type-ahead find is open */
+    char                  *find_text;    /* the text typed into it */
     /* The shell's live state a row is drawn against, each by its owner:
      * the inline editor, the band, the drop target, the press. */
     const struct tiku_trk_folder_edit    *edit;
     const struct tiku_trk_band_controller *band;
     const struct tiku_trk_drag_target     *drop;
     const tiku_trk_press_t                *press;
-    /* The shell's answers: an application's art, among others. */
+    /* The shell's services; art_for gives an application's icon art. */
     const tiku_trk_services_t             *services;
     tiku_trk_folder_prepare_menu_fn prepare_menu;
     void                  *prepare_context;
@@ -102,9 +104,8 @@ typedef struct {
      * (TS-008, TS-063).  Both NULL when nothing is being tracked. */
     const struct tiku_trk_titleview *strip;
     const tiku_trk_folder_window_t *strip_owner;
-    /* One menu bar at the top of the SCREEN instead of one per window:
-     * with this set the windows carry no bar of their own (and no bar
-     * icon), and the content reclaims the strip. */
+    /* Set: one menu bar at the top of the screen, and the windows carry
+     * no bar or bar icon of their own; their content takes the strip. */
     int                    global_bar;
 } tiku_trk_folder_render_t;
 
@@ -117,12 +118,12 @@ struct tiku_trk_folder_window {
     char                       state_path[TIKU_PATH_MAX];
     tiku_window_t        *win;             /* the host; NULL once closed */
     tiku_qrun_t           *run;            /* the query feeding it, else NULL */
-    int                        live;       /* filled; 0 when its store left */
+    int                        live;       /* fed by a live query run */
     /* Its folder or volume vanished: the window is closing, and its frame
      * is not saved. */
     int                        gone;
     tiku_trk_frame_t           opened_with; /* the frame restored at open */
-    tiku_scroll_t          sbar;    /* the window's own bar (PVL-051) */
+    tiku_scroll_t          sbar;    /* its scroll bar (PVL-051) */
     int                        trash_union; /* every volume's trash, one
                                              * window (PVN-027) */
     int                        had_frame;  /* a saved frame was found for it */
@@ -130,47 +131,42 @@ struct tiku_trk_folder_window {
      * when a number moved; -1 until the first frame. */
     int                        count_last_total;
     int                        count_last_selected;
-    /* What this window's count line says.  Per window, because the cache
-     * above is: a shared one hands a window the other window's count the
-     * first frame its own numbers stop changing. */
+    /* What this window's count line says; kept per window, like the
+     * numbers above. */
     char                       count_text[256];
     /* The saved query it shows, by name; "" for a folder. */
     char                       qname[TIKU_NAME_MAX];
-    /* Where its search looks, in the words the panel used.  Kept with the
-     * window because the status line is written again as the walk goes
-     * and finishes, long after the panel that started it has closed. */
+    /* Where its search looks, in the words the panel used, kept with the
+     * window for the line that reports the search after the panel that
+     * started it has closed. */
     char                       qscope[64];
-    /* The picture behind it, decoded once and kept with the window that
-     * shows it: re-reading the file every frame is a decode per frame. */
+    /* The picture behind it, decoded once and kept with the window, so a
+     * frame does not decode the file again. */
     tiku_image_t           bg_image;       /* the decoded picture */
     char                       bg_shown[TIKU_PATH_MAX]; /* its file */
     int                        bg_drawn;   /* labels need a halo over it */
-    /* The rows' own pixels, kept between frames.  The shell redraws the
-     * screen from the backdrop up every frame, so a row this frame did not
-     * paint would come back as the window's face rather than as what the
-     * row holds: the rows are painted here, kept, and handed to the frame
-     * whole (PVL-045).  NULL until the first list frame asks for it. */
+    /* The rows' or icons' pixels, kept between frames and blitted to the
+     * frame whole, since the shell redraws the screen from the backdrop
+     * up every frame (PVL-045).  kept.px is NULL until the first frame. */
     tiku_surface_t        kept;            /* the rows' pixels */
     int                        kept_ready; /* they hold a whole frame */
-    /* What each row slot in those pixels was last painted from.  A row is
-     * painted again when what it would draw differs from what is there,
-     * which no state change can slip past -- damage says a place needs
-     * paint, this says a row LOOKS different.  Slots past the end hold 0,
-     * which nothing hashes to. */
+    /* The hash of what each row slot in those pixels was last painted
+     * from; a row whose hash differs is painted again, damaged or not.
+     * Slots past the end hold 0. */
     uint32_t                   row_sig[TIKU_TRK_ROWS_KEPT];
-    /* The icon modes' own memory: what each visible pose was painted
-     * from and where, so an icon frame repaints exactly the poses that
-     * changed and the places they left (PVL-062). */
+    /* For the icon modes: each visible pose's hash and where it was
+     * painted; an icon frame repaints the poses that changed and the
+     * places they left (PVL-062). */
     uint32_t                   icon_sig[TIKU_TRK_ICONS_KEPT];  /* per pose  */
     tiku_rect_t           icon_rect[TIKU_TRK_ICONS_KEPT]; /* where each was */
     int                        icon_kept_n;   /* how many of those are held */
-    uint32_t                   icon_view_sig; /* the view: origin and mode */
+    uint32_t                   icon_view_sig; /* icon size, area, mode */
     int                        icon_origin_x, icon_origin_y;
-    int                        kept_icons;     /* what the kept pixels are */
+    int                        kept_icons;     /* kept pixels are icons */
     tiku_trk_folder_render_t  *render;     /* the shell's draw state */
 };
 
-/** @brief Let go of the pixels a closed window was keeping. */
+/** @brief Free the pixels the window keeps; its next frame paints whole. */
 void tiku_trk_folder_window_forget(tiku_trk_folder_window_t *folder);
 
 /**
@@ -186,23 +182,24 @@ void tiku_trk_folder_window_configure(tiku_trk_folder_window_t *folder,
  */
 void tiku_trk_folder_window_draw(tiku_window_t *window,
     tiku_surface_t *surface, tiku_rect_t content, void *context);
-/** @brief The placed poses in icon mode, each at its own place. */
+/** @brief Draw the visible placed poses, each at its own place. */
 void tiku_trk_folder_window_draw_icons(tiku_trk_folder_window_t *folder,
     tiku_surface_t *surface, tiku_rect_t content);
 
 /**
- * @brief Draw the picture behind @p folder, if it carries one (CW-020).
- *
- * Icon modes only, which is the rule itself: a picture behind a table of
- * text is unreadable.  The desktop draws its own the same way.
- *
- * @return 1 when a picture was drawn, which is what tells the labels to
- *         carry a halo.
+ * @brief Draw the picture behind @p folder, its own or the template
+ *        folder's (CW-020).
+ * @note For the icon modes only.
+ * @return 1 when a picture was drawn, which tells the labels to carry a
+ *         halo.
  */
 int tiku_trk_folder_window_draw_background(tiku_trk_folder_window_t *folder,
     tiku_surface_t *surface, tiku_rect_t content);
 
-/** @brief The area the rows fill: under the menu bar and the title strip. */
+/**
+ * @brief The area under the menu bar and the title strip: the rows, and the
+ *        count line under them.
+ */
 tiku_rect_t tiku_trk_folder_window_content(
     const tiku_trk_folder_window_t *folder);
 /** @brief The window's own menu bar, or w=0 under the global bar. */
@@ -234,7 +231,10 @@ int tiku_trk_folder_window_count_at(
 int tiku_trk_folder_window_column_at(const tiku_trk_folder_window_t *folder,
                                      int x);
 
-/** @brief Whether a point on @p row is on its name rather than its icon. */
+/**
+ * @brief Whether a point on @p row counts as on its name: the left two
+ *        thirds of the row in list mode, the label in an icon mode.
+ */
 int tiku_trk_folder_window_name_at(const tiku_trk_folder_window_t *folder,
                                    int row, int x, int y);
 

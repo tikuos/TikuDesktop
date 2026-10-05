@@ -23,6 +23,7 @@
 
 #define TASK_KEY_MAX 64
 
+/* The flavours of task, as the original's TaskLoop has them. */
 enum task_kind {
     TASK_ONCE,
     TASK_PERIODIC,
@@ -73,12 +74,11 @@ tiku_trk_task_system_busy(void)
     if (task_load_fn != NULL) {
         load = task_load_fn();
     } else if (getloadavg(&load, 1) != 1) {
-        /* Not through /proc: getloadavg(3) is the same number and every
-         * host this runs on has it. */
+        /* getloadavg(3): the one-minute load average. */
         load = -1.0;
     }
     if (load < 0.0) {
-        return 0;               /* no meter is not a reason to stall */
+        return 0;               /* unknown counts as not busy */
     }
     {
         long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
@@ -144,10 +144,9 @@ void
 tiku_trk_loop_stop(tiku_trk_loop_t *loop)
 {
     if (loop != NULL) {
-        /* The shipped shells pump this loop on their own event thread, so
-         * there is no worker to join.  Still publish the same two-phase
-         * contract: request stop first, then teardown only after no callback
-         * is running.  A callback can inspect the flag and finish cleanly. */
+        /* The shells pump this loop on their own event thread, so there is
+         * no worker to join: the stop is a flag, set before teardown, which
+         * a running callback checks to finish. */
         loop->stop_requested = 1;
     }
 }
@@ -373,8 +372,8 @@ tiku_trk_loop_run(tiku_trk_loop_t *loop)
     now = tiku_trk_now();
     loop->running = 1;
 
-    /* Snapshot the due set first: a task body may add tasks, and a task
-     * added by this pass must not also run in it. */
+    /* The pass compares with one reading of the clock: a task a body adds
+     * is due from a later reading, so it waits for the next pass. */
     for (t = loop->head; t != NULL; t = t->next) {
         int done;
 
@@ -385,8 +384,8 @@ tiku_trk_loop_run(tiku_trk_loop_t *loop)
             t->due = now + t->period;
             if (now - loop->last_activity < t->idle_for ||
                 tiku_trk_task_system_busy()) {
-                /* Still busy -- by the user's hand or the machine's own
-                 * load (AW-085); either restarts the wait. */
+                /* Still busy, by the user's hand or by the host's load
+                 * (AW-085): the wait starts again. */
                 continue;
             }
         }
@@ -420,7 +419,7 @@ tiku_trk_loop_run(tiku_trk_loop_t *loop)
 int
 tiku_trk_loop_pulse(tiku_trk_loop_t *loop)
 {
-    /* File panels and the desktop do not own worker threads in this port;
-     * they call the due-task pump from their normal event heartbeat. */
+    /* File panels and the desktop call this from their event heartbeat;
+     * there are no worker threads. */
     return tiku_trk_loop_run(loop);
 }

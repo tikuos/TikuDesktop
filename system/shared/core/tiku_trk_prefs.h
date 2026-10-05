@@ -5,11 +5,10 @@
  *
  * tiku_trk_prefs.h - the settings, their file, and what a page owes.
  *
- * The settings themselves are a small typed table rather than a struct of
- * fields, because the preferences window's rules are all ABOUT the table:
- * whether any page differs from its defaults, whether any differs from what
- * it was when the window opened, and which page to show in bold.  A struct
- * would make each of those a hand-written comparison per field.
+ * The settings are a small typed table, and the preferences window's rules
+ * are each one loop over it: whether any page differs from its defaults,
+ * whether any differs from what it was when the window opened, and which
+ * page to show in bold.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,6 +27,7 @@ typedef enum {
     TIKU_TRK_PAGE_NONE          /* settings with no control of their own */
 } tiku_trk_page_t;
 
+/** @brief How many pages have controls. */
 #define TIKU_TRK_PAGES 4
 
 /** @brief What a setting holds. */
@@ -38,6 +38,7 @@ typedef enum {
     TIKU_TRK_PREF_TEXT          /* a name; "" is the default            */
 } tiku_trk_pref_type_t;
 
+/** @brief The room for a TEXT setting's value. */
 #define TIKU_TRK_PREF_TEXT_MAX 64
 
 /** @brief One setting: its name in the file, its page, and three values. */
@@ -51,14 +52,13 @@ typedef struct {
     char                 text[TIKU_TRK_PREF_TEXT_MAX]; /* a TEXT's value */
 } tiku_trk_pref_t;
 
-/** @brief Every setting, plus whatever an older file carried. */
+/** @brief Every setting, plus the file's lines this build does not know. */
 typedef struct {
     tiku_trk_pref_t *pref;
     int              n;
-    /* Lines from the file that name no setting this build knows.  Kept and
-     * written back so an older or newer Tracker's file round-trips rather
-     * than
-     * being quietly emptied (TS-062). */
+    /* Lines from the file that name no setting this build knows, kept and
+     * written back so an older or newer Tracker's file round-trips
+     * (TS-062). */
     char           **unknown;
     int              nunknown;
 } tiku_trk_prefs_t;
@@ -85,14 +85,21 @@ void tiku_trk_prefs_set_text(tiku_trk_prefs_t *p, const char *name,
 int tiku_trk_prefs_control_enabled(const tiku_trk_prefs_t *p,
                                    const tiku_trk_pref_t *pref);
 
-/** @brief Read the settings file; missing is not an error. */
+/**
+ * @brief Read the settings file; missing is not an error.
+ *
+ * A line naming no setting this build knows is kept for the next save.
+ *
+ * @return 0, or -1 when @p p or @p path is NULL.
+ */
 int tiku_trk_prefs_load(tiku_trk_prefs_t *p, const char *path);
 
 /**
  * @brief Write it, booleans as on/off and colours as 0x%08x (TS-045).
  *
- * The file is replaced whole, so a reader sees the old settings or the
- * new ones and never a part of either.
+ * Only settings that differ from their default are written, then the lines
+ * kept from the last load.  The file is replaced whole, so a reader sees
+ * the old settings or the new ones and never a part of either.
  *
  * @return 0, or -1 on failure.
  */
@@ -107,27 +114,27 @@ int32_t tiku_trk_prefs_colour_next(int32_t value);
 /**
  * @brief How many positions a numbered setting has.
  *
- * The table holds a name, a type and three values and no room for a
- * range, and widening it would move every row in a file nobody asked to
- * have rewritten.  Asked by name instead, which is honest about there
- * being exactly one such setting so far.
+ * The table has no room for a range, so this is asked by name; DarkMode is
+ * the one such setting.
  *
  * @return the count, or 0 for a setting that is not one of these.
  */
 int tiku_trk_prefs_seats(const char *name);
 
-/** @brief Whether @p page has anything differing from its defaults. */
+/** @brief Whether @p page has anything differing from its defaults; never
+ *         for the Mount page (TS-065). */
 int tiku_trk_prefs_defaultable(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 
 /** @brief Whether @p page differs from what it was when the window opened. */
 int tiku_trk_prefs_revertable(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 
-/** @brief Whether ANY page is defaultable; what enables the button. */
+/** @brief Whether any page is defaultable; what enables the button. */
 int tiku_trk_prefs_any_defaultable(tiku_trk_prefs_t *p);
 /** @brief Whether any page is revertable; what enables the button. */
 int tiku_trk_prefs_any_revertable(tiku_trk_prefs_t *p);
 
-/** @brief Put @p page back to its defaults, or to its opened values. */
+/** @brief Put @p page back to its defaults; the Mount page is left alone
+ *         (TS-065). */
 void tiku_trk_prefs_defaults(tiku_trk_prefs_t *p, tiku_trk_page_t page);
 /** @brief Put @p page back to what it was when the window opened. */
 void tiku_trk_prefs_revert(tiku_trk_prefs_t *p, tiku_trk_page_t page);
@@ -148,6 +155,7 @@ typedef enum {
     TIKU_TRK_PREF_HIT_REVERT
 } tiku_trk_pref_hit_t;
 
+/** @brief The window's size, and the width of its page list. */
 #define TIKU_TRK_PREF_W        420
 #define TIKU_TRK_PREF_H        280
 #define TIKU_TRK_PREF_LIST_W   120
@@ -156,10 +164,9 @@ typedef enum {
 void tiku_trk_prefs_page_rect(int k, int *x, int *y, int *w, int *h);
 
 /**
- * @brief The rectangle of the @p nth control shown on @p page.
+ * @brief The rectangle of the @p nth control shown on a page.
  *
- * Controls are laid out in the order they appear in the table, which is
- * why the table's order is the window's order.
+ * Controls are laid out in the order they appear in the table.
  */
 void tiku_trk_prefs_control_rect(int nth, int *x, int *y, int *w, int *h);
 

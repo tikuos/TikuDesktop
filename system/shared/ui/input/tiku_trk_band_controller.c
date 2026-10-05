@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_band_controller.c - rubber-band selection interaction.
+ * tiku_trk_band_controller.c - the rubber band: arming, sweeping, and
+ * scrolling while held at a window's edge.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -136,8 +137,8 @@ tiku_trk_band_controller_pulse(tiku_trk_band_controller_t *controller,
         return 0;
     }
     if (controller->script_delay_pulses > 0) {
-        /* Scripted: the delay is a NUMBER OF TURNS, so the same script
-         * passes on a loaded machine and an idle one alike. */
+        /* Scripted: the delay is a number of turns, so a script passes the
+         * same on a loaded machine and an idle one. */
         if (controller->held_pulses < controller->script_delay_pulses) {
             controller->held_pulses++;
             return 0;

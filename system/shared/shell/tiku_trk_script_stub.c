@@ -5,16 +5,13 @@
  *
  * tiku_trk_script_stub.c - the shipping build's answer to -script.
  *
- * The scripted driver and its presentation adapter are test
- * infrastructure: an interpreter that can be pointed at any file, and the
- * introspection that reads rows, menus and pixels back out of a live
- * shell.  A device image carries neither, so a shipping build links this
- * instead: the same five entry points, none of the engine.  Every
- * scripted path is reached through a pointer that only a successful open
- * returns, so refusing the open here removes all of it, and a build with
- * TRK_SCRIPT_ENABLE=1 links the real files.  The refusal is loud, as the
- * kernel's guard is: a harness that ran the wrong binary must be told,
- * not given a shell that ignores its script and passes.
+ * The scripted driver and its presentation adapter are test infrastructure
+ * and are not shipped: the product TikuDesktop (build/runtime/system) links
+ * this file in their place, with the same entry points and none of the
+ * engine.  Every scripted path is reached through a pointer that only a
+ * successful open returns, so the refused open here removes all of it.  The
+ * development flavour (build/dev) links the real files.  The refusal is
+ * printed, so a harness that ran the wrong binary is told so.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -105,9 +102,8 @@ tiku_trk_script_adapter_init(tiku_trk_script_adapter_t *adapter,
     (void)status;
     (void)count_text;
     (void)row_h;
-    /* Zeroed rather than left alone: the shell stores its redraw hook in
-     * here right after the init, and reads members back on the scripted
-     * path.  An adapter that is all zeroes is one that observes nothing. */
+    /* Zeroed: the shell stores its redraw hook in it right after the init
+     * and reads members back on the scripted path. */
     if (adapter != NULL) {
         memset(adapter, 0, sizeof *adapter);
     }

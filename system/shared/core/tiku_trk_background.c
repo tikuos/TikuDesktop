@@ -128,8 +128,8 @@ tiku_trk_bg_place(const tiku_trk_bg_t *bg, int view_w, int view_h,
             return 0;
         }
         /* Its own size, over the middle: a picture larger than the view
-         * shows its middle rather than being shrunk to fit, which is a
-         * different mode. */
+         * shows its middle and is not shrunk; SCALED is the mode that
+         * fits it. */
         *dx = (view_w - img_w) / 2;
         *dy = (view_h - img_h) / 2;
         *dw = img_w;
@@ -175,7 +175,7 @@ tiku_trk_bg_install_default(tiku_store_t *store, const char *node,
     }
 
     if (tiku_trk_bg_have(store, node)) {
-        return 0;               /* it has one, or had one and lost it     */
+        return 0;               /* set before, or cleared                 */
     }
     memset(&bg, 0, sizeof bg);
     snprintf(bg.path, sizeof bg.path, "%s%s", home,

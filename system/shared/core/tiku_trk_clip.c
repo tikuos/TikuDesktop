@@ -43,9 +43,8 @@ find_id(const tiku_trk_clip_t *c, uint64_t id)
 static int
 clippable(const tiku_model_t *m)
 {
-    /* The places, not the things in them: a volume, the root, the Trash and
-     * the desktop are excluded because none of them can be pasted anywhere
-     * and offering to would be a promise nothing can keep. */
+    /* A volume, the root, the Trash and the desktop cannot be pasted
+     * anywhere; the things in them can. */
     return m != NULL && m->node_id != 0 &&
            m->kind != TIKU_KIND_VOLUME &&
            m->kind != TIKU_KIND_ROOT &&
@@ -72,10 +71,9 @@ tiku_trk_clip_add(tiku_trk_clip_t *c, const tiku_model_t *models, int n,
         if (!clippable(&models[i])) {
             continue;
         }
-        /* Keyed by identity, so a second Cut of the same file rewrites the
-         * entry it already has rather than adding a second one -- an item
-         * cannot be on the clipboard twice (FS-053).  The mode is
-         * overwritten too: copying something that was cut makes it a copy. */
+        /* Keyed by identity: a second Cut of the same file rewrites the
+         * entry it already has (FS-053), mode included, so copying
+         * something that was cut makes it a copy. */
         at = find_id(c, models[i].node_id);
         if (at < 0) {
             if (c->count >= TIKU_TRK_CLIP_MAX) {
@@ -116,9 +114,8 @@ tiku_trk_clip_moved(tiku_trk_clip_t *c, uint64_t id, const char *to)
     if (at < 0) {
         return 0;
     }
-    /* The payload follows; the MODE does not.  An item cut and then renamed
-     * is still cut, and the paste that eventually happens uses the name it
-     * has now (FS-060). */
+    /* The path follows and the mode stays: an item cut and then renamed is
+     * still cut, and the paste uses the name it has now (FS-060). */
     snprintf(c->item[at].path, sizeof c->item[at].path, "%s", to);
     c->serial++;
     return 1;
@@ -193,9 +190,8 @@ tiku_trk_clip_prune(tiku_trk_clip_t *c)
     for (i = 0; i < c->count; i++) {
         struct stat st;
 
-        /* An entry whose file has gone is dropped rather than pasted: the
-         * clipboard is a list of references, and a reference to nothing is
-         * not something to hand to a copy (FS-058). */
+        /* An entry whose file has gone is dropped, so a paste is never
+         * handed a missing file (FS-058). */
         if (stat(c->item[i].path, &st) != 0) {
             dropped++;
             continue;

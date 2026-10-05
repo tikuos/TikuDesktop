@@ -3,22 +3,20 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview.c - the engine.
- *
- * Rules here are Tracker's, read from the source and recorded in FEATURES.md;
- * each block cites the rows it implements so a behavior can be traced back to
- * the code that specified it.
+ * tiku_trk_poseview.c - the shown list and its accessors, and the text each
+ * column shows for a pose, with the per-pose cache that holds it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_trk_poseview_private.h"
 
+/* The layout clipboard, one per process and separate from the file
+ * clipboard.  It holds a copied layout by value; each copy replaces it
+ * whole, and every view pastes the same one. */
 tiku_trk_layout_clip_t pv_g_layout_clip;
 int pv_g_layout_clip_valid;
 
-/*---------------------------------------------------------------------------*/
-/* list access -- everything iterates through CurrentPoseList()              */
 int
 tiku_trk_poseview_count(const tiku_trk_poseview_t *v)
 {
@@ -79,7 +77,8 @@ column_width_of(const tiku_trk_poseview_t *v, int field)
     return 140;
 }
 
-/** @brief Whether @p path is inside a real filesystem Trash directory. */
+/** @brief Whether @p path lies inside a .Trash directory, not the Trash
+ *         itself. */
 static int
 path_in_trash(const char *path)
 {
@@ -100,7 +99,14 @@ path_in_trash(const char *path)
     return 0;
 }
 
-/** @brief Read a Trash origin, walking ancestors for folder-level records. */
+/**
+ * @brief Where a trashed entry came from, into @p out.
+ *
+ * Ancestors inside the Trash are asked too, so an entry inside a folder that
+ * was trashed whole answers with the folder's record.
+ *
+ * @return 1 when a record was found.
+ */
 static int
 original_path_text(tiku_trk_poseview_t *v, const char *path, char *out,
                    size_t max)
@@ -147,10 +153,9 @@ original_path_text(tiku_trk_poseview_t *v, const char *path, char *out,
 /**
  * @brief The text a column shows, formatted for a given width.
  *
- * The width matters: an interval reads "2h 37m 5s" where there is room and
- * "2h 37m" where there is not, so "what does this cell say" and "how wide
- * would this cell like to be" are two different questions asked of the same
- * function with two different widths.
+ * A size or a date is written as long as @p width can hold;
+ * tiku_trk_poseview_column_widest() asks at an unbounded width for the
+ * text's full length.
  */
 const char *
 pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
@@ -163,9 +168,9 @@ pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
     switch (field) {
     case TIKU_TRK_COL_NAME:
         if (v->is_query) {
-            /* Results come from EVERYWHERE, so two rows can share a name;
+            /* Results come from everywhere, so two rows can share a name;
              * the one that does gains the minimum distinguishing path
-             * (NeXT UIG ch8) -- computed against the rows shown. */
+             * (NeXT UIG ch8), computed against every row the view holds. */
             const char *others[POSES_MAX];
             int k;
 
@@ -190,10 +195,8 @@ pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
         return (p->model.facts.req_cap[0] != '\0') ? p->model.facts.req_cap
                                                    : "-";
     case TIKU_TRK_COL_SIZE:
-        /* A volume reports its CAPACITY, which is the size it has; every
-         * other container has none of its own, and neither does a link --
-         * a link's own bytes are not what anyone reading the column is
-         * asking about.  -1 is the unknown that reads as "-" (MA-024). */
+        /* A volume or the root reports its capacity; any other container
+         * and a link report -1, the unknown that reads as "-" (MA-024). */
         if (p->model.kind == TIKU_KIND_VOLUME ||
             p->model.kind == TIKU_KIND_ROOT) {
             (void)tiku_attr_size_fit(
@@ -213,8 +216,7 @@ pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
                                      v->measure_ctx, buf, max);
         return buf;
     case TIKU_TRK_COL_PATH: {
-        /* The folder it is IN, not its own path: the row already says its
-         * name, and what a Location column answers is "where". */
+        /* The Location column shows the folder the entry is in. */
         const char *slash = strrchr(p->model.path, '/');
 
         if (slash == NULL) {
@@ -245,10 +247,7 @@ pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
                                         v->attrcol[at].name, buf, max - 1u);
             }
             if (n <= 0) {
-                /* Nothing written for this entry.  A dash rather than an
-                 * empty cell: the column exists for the whole listing, and
-                 * a blank reads as "not measured yet" rather than "this
-                 * one has none". */
+                /* Nothing written for this entry: the cell shows "-". */
                 return "-";
             }
             buf[n] = '\0';
@@ -259,10 +258,10 @@ pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
         unsigned perm = p->model.facts.perm;
 
         if (p->model.facts.mode_known && max >= 11u) {
-            /* The classic ten characters (MA-031), walked from 00400 down
-             * exactly as the source walks them.  The leading character
-             * comes from what the MODEL is -- a link statted through
-             * carries its target's bits, but it is still a link. */
+            /* The classic ten characters (MA-031), the permission bits
+             * walked from 0400 down.  The leading character comes from the
+             * model's kind: a link statted through carries its target's
+             * bits, but it is still a link. */
             unsigned mode = p->model.facts.mode;
             unsigned mask = 0400u;
             int i;
@@ -277,7 +276,7 @@ pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
             buf[10] = '\0';
             return buf;
         }
-        /* No mode word in this store: what THIS user may do, which is
+        /* No mode word in this store: what this user may do, which is
          * what the access fact carries. */
         snprintf(buf, max, "%c%c%c",
                  (perm & TIKU_P_READ) ? 'r' : '-',
@@ -299,10 +298,10 @@ tiku_trk_poseview_cell_text(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
     if (v == NULL || p == NULL || buf == NULL || max == 0u) {
         return "";
     }
-    /* The fingerprint contains every value that can affect a formatted
-     * cell.  Width is kept separately because fitting is intentionally a
-     * cache key too: resizing a column never reuses text fitted for its old
-     * width. */
+    /* The key mixes the model's facts and the value a cell is formatted
+     * from; text read from the state store (attribute columns, Original
+     * path) is not in it.  The width is matched separately, so a resized
+     * column never reuses text fitted for its old width. */
 #define MIX_CELL(value) do { \
         uint64_t _x = (uint64_t)(value); \
         key ^= _x; key *= UINT64_C(1099511628211); \
@@ -310,7 +309,7 @@ tiku_trk_poseview_cell_text(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
     MIX_CELL(field);
     MIX_CELL(p->model.node_id);
     if (v->is_query && field == TIKU_TRK_COL_NAME) {
-        /* A result's NAME can depend on its neighbours (the
+        /* A result's name can depend on its neighbours (the
          * disambiguating suffix), so membership is part of the key. */
         MIX_CELL(v->count);
         MIX_CELL(v->load_gen);

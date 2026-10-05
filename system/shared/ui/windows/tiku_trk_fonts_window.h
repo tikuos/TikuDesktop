@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_fonts_window.h - Fonts preferences controller.
+ * tiku_trk_fonts_window.h - the Fonts preferences window: the family and
+ * the size of the interface's face, with a sample.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,13 +17,14 @@
 #include "tiku_dialog.h"
 #include "tiku_list.h"
 
-#define TIKU_TRK_FONTS_W 620
+#define TIKU_TRK_FONTS_W 620    /**< the window's frame width */
 
+/** @brief The Fonts preferences window and the settings it edits. */
 typedef struct {
     tiku_trk_fontprefs_t       model;
-    tiku_trk_fontprefs_offer_t offer;
+    tiku_trk_fontprefs_offer_t offer;   /**< the families on offer */
     tiku_dialog_t dialog;       /* shared focus and pointer capture */
-    tiku_list_t families;       /* imported families scroll in the same well */
+    tiku_list_t families;       /* the family list, which scrolls */
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
     tiku_trk_deskbar_t    *deskbar;

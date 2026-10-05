@@ -1,4 +1,12 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_state_pipeline.c - the attribute copy, one value at a time.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_state_pipeline.h"
 #include <string.h>
 
@@ -14,8 +22,10 @@ typedef struct {
 
 /**
  * @brief Copy one attribute through the pipeline: skipped when the accept
- * hook refuses it, transformed when there is a transform, then written to
- * the destination.  @return 1 to stop the walk after a failure.
+ *        hook refuses it, transformed when there is a transform, then
+ *        written to the destination.
+ *
+ * @return 1 to stop the walk after a failure, else 0.
  */
 static int
 copy_one(const char *attr, const void *value, size_t len, void *opaque)

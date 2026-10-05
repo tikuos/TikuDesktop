@@ -3,18 +3,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_nodeicon.h - where an entry's icon comes from, and its cache.
+ * tiku_trk_nodeicon.h - where an entry's icon comes from, and the cache of
+ * node icons.
  *
- * Three sources in order: the NODE's own picture, then its type's, then the
- * generic one for its kind.  The order is the whole rule -- a file that
- * carries its own picture must not be drawn as a generic anything.
- *
- * The other half is the shortcut past it.  Whether a node has a picture is
- * asked ONCE, when the entry is taken in, and remembered on the model; the
- * draw path then reads the store only for the entries that said yes.  The
- * cost of getting that wrong is not theoretical -- before this existed, every
- * row of every frame sniffed the file's first bytes and read an attribute to
- * ask a question whose answer had not changed.
+ * Three sources, in order: the node's own picture (an icon attribute or a
+ * thumbnail), its type's, and the generic one for its kind.  Whether a node
+ * has a picture of its own is asked once, when the entry is taken in, and
+ * kept on the model as its icon hint; the draw path reads the store only
+ * for entries whose hint says yes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,9 +25,8 @@
 typedef enum {
     TIKU_TRK_ICON_FROM_UNKNOWN = 0,
     TIKU_TRK_ICON_FROM_NODE,        /* the entry's own icon attribute     */
-    /* Also the node's, and Tracker files it under the same source; it is
-     * separate here because the caller has to DRAW it differently -- a
-     * thumbnail is a bitmap to load, not a name in the art set. */
+    /* The node's thumbnail: a bitmap the caller loads, where the other
+     * sources name art in the art set. */
     TIKU_TRK_ICON_FROM_THUMB,
     TIKU_TRK_ICON_FROM_TYPE,        /* its type's                         */
     TIKU_TRK_ICON_FROM_GENERIC      /* the fallback for its kind          */
@@ -40,35 +35,35 @@ typedef enum {
 /** @brief The attribute an entry's own icon lives in. */
 #define TIKU_TRK_ATTR_ICON "_trk/icon"
 
-/** @brief How many node icons are remembered at once. */
+/** @brief How many types without art of their own are remembered. */
 #define TIKU_TRK_NODEICON_MISS_MAX 8
 
+/** @brief How many node icons are remembered at once. */
 #define TIKU_TRK_NODEICON_MAX 64
 
-/** @brief One remembered node icon. */
 struct tiku_trk_types;
 
+/** @brief One remembered node icon. */
 typedef struct {
-    char     path[TIKU_PATH_MAX];
+    char     path[TIKU_PATH_MAX];   /* the entry it belongs to        */
     char     name[TIKU_NAME_MAX];   /* the art it resolved to         */
-    int      permanent;                 /* preloaded; survives a delete   */
-    int      used;
+    int      permanent;                 /* preloaded; never evicted       */
+    int      used;                      /* the slot holds an entry        */
 } tiku_trk_nodeicon_ent_t;
 
 /** @brief The node-icon cache. */
 typedef struct {
     tiku_trk_nodeicon_ent_t e[TIKU_TRK_NODEICON_MAX];
-    int                     n;
-    int                     reads;      /* store probes actually made     */
-    uint64_t                generation; /* changed art invalidates draws  */
+    int                     n;          /* e[] slots ever used            */
+    int                     reads;      /* store reads resolve has made   */
+    uint64_t                generation; /* bumped when cached art goes    */
     const struct tiku_trk_types *types;   /* where a type's art is
                                           * declared, or NULL       */
-    /* Types known to have no art of their own.  A miss costs a database
-     * walk and a comparison against the bare model; remembered, it costs
-     * a string compare, which is the whole of IV-011. */
+    /* Types known to have no art of their own, so resolve skips the
+     * database walk for them (IV-011). */
     char                    miss[TIKU_TRK_NODEICON_MISS_MAX]
                                 [TIKU_TYPE_MAX];
-    int                     miss_n;
+    int                     miss_n;     /* miss[] in use                  */
 } tiku_trk_nodeicon_t;
 
 /** @brief How many types the negative cache remembers. */
@@ -80,10 +75,9 @@ void tiku_trk_nodeicon_init(tiku_trk_nodeicon_t *c);
 /**
  * @brief Ask, once, whether @p m has a picture of its own (IV-005, IV-037).
  *
- * The one probe: a thumbnail it already has or would be given, else an icon
- * attribute.  A model that has been asked is never asked again, so calling
- * this from a listing pass costs one probe per entry and calling it from a
- * draw costs nothing after the first.
+ * The probe: whether a thumbnail is wanted for it, else whether it has an
+ * icon attribute.  A model already asked returns its stored hint without a
+ * probe.
  *
  * @param q  The thumbnail queue, for the "generate thumbnails" setting;
  *           NULL means no thumbnails, and only the attribute is looked for.
@@ -95,8 +89,8 @@ int tiku_trk_nodeicon_hint(tiku_store_t *store,
 /**
  * @brief Whether @p m could have an icon of its own at all (IV-005).
  *
- * Answered from the hint the model already carries, never by probing, which
- * is what lets the draw path ask it per row per frame.
+ * Answered from the hint the model carries, without a store read; an entry
+ * not yet asked answers 0.
  */
 int tiku_trk_nodeicon_possible(const tiku_model_t *m);
 
@@ -105,7 +99,7 @@ int tiku_trk_nodeicon_possible(const tiku_model_t *m);
  *
  * @param out  Receives the art's name.  A thumbnail gets one too -- the
  *             fallback its row draws until the picture has been made.
- * @return the source, so a caller can tell a node icon from a fallback.
+ * @return where the icon came from.
  */
 tiku_trk_icon_from_t tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c,
                                                tiku_store_t *store,
@@ -115,19 +109,23 @@ tiku_trk_icon_from_t tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c,
 /**
  * @brief Let the cache consult the type database for a type's icon.
  *
- * The database is where a type's art is DECLARED and can be edited; the
- * compiled table is only what the port ships knowing.  Consulted ahead of
- * it, so a type given an icon by the user wears it (AW-013, IV-011).
+ * The database's icon for a type is used ahead of the compiled table, so a
+ * type the user gave an icon wears it (AW-013, IV-011).  Setting it forgets
+ * the remembered misses.
  */
 void tiku_trk_nodeicon_set_types(tiku_trk_nodeicon_t *c,
                                  const struct tiku_trk_types *db);
 
-/** @brief Remember @p path's icon, and refuse to forget it (IV-041). */
+/**
+ * @brief Remember @p path's icon as permanent: eviction and a deletion
+ *        notice leave it (IV-041).
+ */
 void tiku_trk_nodeicon_preload(tiku_trk_nodeicon_t *c, const char *path,
                                const char *name);
 
 /**
- * @brief Forget @p path's icon because the entry changed (IV-038).
+ * @brief Forget @p path's icon, preloaded or not, because the entry
+ *        changed (IV-038).
  *
  * @return 1 when something was dropped.
  */
@@ -138,20 +136,17 @@ uint64_t tiku_trk_nodeicon_generation(const tiku_trk_nodeicon_t *c);
 /**
  * @brief Forget @p path's icon because the entry went (IV-041).
  *
- * A preloaded entry is KEPT: it was cached because it is wanted often, and
- * the file being deleted does not make it less wanted next time.
+ * A preloaded entry is kept.
  *
  * @return 1 when something was dropped.
  */
 int tiku_trk_nodeicon_deleted(tiku_trk_nodeicon_t *c, const char *path);
 
 /**
- * @brief Forget @p path's icon because the entry it was preloaded FROM has
- * gone (IV-041).
+ * @brief Forget @p path's icon, preloaded or not, because the file it was
+ *        preloaded from has gone (IV-041).
  *
- * The stronger removal, and the only one that takes a permanent entry: it is
- * for whoever preloaded it to say the file behind it no longer exists.  An
- * ordinary deletion goes through _deleted and leaves it alone.
+ * tiku_trk_nodeicon_deleted() keeps a preloaded entry; this does not.
  *
  * @return 1 when something was dropped.
  */
@@ -161,11 +156,10 @@ int tiku_trk_nodeicon_removing(tiku_trk_nodeicon_t *c, const char *path);
 int tiku_trk_nodeicon_attr_matters(const char *attr);
 
 /**
- * @brief Take back the hint on @p m as well, after such a change (IV-038).
+ * @brief Reset @p m's icon hint to unasked after such a change (IV-038).
  *
- * Dropping the cached art alone would leave a model that was told it has no
- * picture still believing it, so a newly given icon would never be looked
- * for.
+ * The next tiku_trk_nodeicon_hint() then probes again, so a newly given
+ * icon is found.
  */
 void tiku_trk_nodeicon_unhint(tiku_model_t *m);
 

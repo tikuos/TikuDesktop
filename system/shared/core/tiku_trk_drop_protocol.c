@@ -1,4 +1,13 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_drop_protocol.c - reading a foreign drag's offer, choosing
+ * what its drop does, and writing a clipping.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_drop_protocol.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -63,9 +72,10 @@ tiku_trk_foreign_drop(const tiku_trk_foreign_offer_t *o, int directory,
 }
 
 /**
- * @brief The path a clipping lands at in @p dir: @p name when one was
- * offered, else an "Untitled" one; a @p serial past the first appends its
- * number.  @return 0, or -1 when it does not fit in @p max.
+ * @brief The path a clipping lands at in @p dir: @p name, else an Untitled
+ *        one, and from @p serial 1 on the name followed by serial + 1.
+ *
+ * @return 0, or -1 when it does not fit in @p max.
  */
 static int
 join_clip_path(char *out, size_t max, const char *dir, const char *name,

@@ -3,11 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_gfx_dep.h - the drawing floor this app sits on.
- *
- * The surface, font and R5 control set live in applications/kits/interface;
- * they are the floor, not the product.  Pulling them in through one header
- * keeps the dependency visible in every file that draws.
+ * tiku_trk_gfx_dep.h - one include for the drawing floor: the surface, the
+ * font and the R5 control set from kits/interface.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

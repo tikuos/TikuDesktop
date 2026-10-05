@@ -7,9 +7,8 @@
  *
  * Tracker's clipboard holds no file content and copies nothing: it holds a
  * reference per item plus a mode saying whether the eventual Paste should
- * move or copy.  The entries are keyed by the node's IDENTITY rather than
- * its path, which is what lets an entry survive being renamed while it sits
- * there -- and what makes an item structurally unable to appear twice.
+ * move or copy.  The entries are keyed by the node's identity, so an entry
+ * survives a rename while it sits there and an item cannot appear twice.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,6 +19,7 @@
 
 #include "tiku_model.h"
 
+/** @brief The most entries the clipboard holds. */
 #define TIKU_TRK_CLIP_MAX 256
 
 /** @brief What a Paste of this entry should do. */
@@ -29,17 +29,19 @@ typedef enum {
     TIKU_TRK_CLIP_MOVE           /* Cut: the item leaves where it is      */
 } tiku_trk_clip_mode_t;
 
+/** @brief One item on the clipboard. */
 typedef struct {
     uint64_t             id;     /* the node's identity, and the key      */
     char                 path[TIKU_PATH_MAX];
     tiku_trk_clip_mode_t mode;
 } tiku_trk_clip_entry_t;
 
+/** @brief The clipboard: its entries and a change counter. */
 typedef struct {
     tiku_trk_clip_entry_t item[TIKU_TRK_CLIP_MAX];
     int                   count;
-    /* Bumped whenever the contents change, so a view can tell that what it
-     * last drew is stale without comparing the whole list. */
+    /* Bumped whenever the contents change; a view compares it with the
+     * serial it last drew. */
     int                   serial;
 } tiku_trk_clip_t;
 
@@ -49,7 +51,9 @@ void tiku_trk_clip_init(tiku_trk_clip_t *c);
 /**
  * @brief Put @p models on the clipboard.
  *
- * @param replace Clear it first -- Cut and Copy do, "Cut more" and "Copy
+ * A volume, the root, the Trash and the desktop are left off (FS-052).
+ *
+ * @param replace Clear it first: Cut and Copy do, "Cut more" and "Copy
  *                more" do not.
  * @param mode    COPY or MOVE.
  * @return How many entries the clipboard holds afterwards.
@@ -74,9 +78,9 @@ int tiku_trk_clip_moved(tiku_trk_clip_t *c, uint64_t id, const char *to);
 /**
  * @brief Follow an entry by the path it had before the move (FS-060).
  *
- * What a shell can call: the operation engine reports the two paths and
- * nothing else, the identity having changed under it where the move
- * crossed a device.  An entry INSIDE a folder that moved follows with it.
+ * The operation engine reports a move as two paths, and a move across
+ * devices also changes the identity, so the entry is found by path.  An
+ * entry inside a folder that moved follows it.
  *
  * @param now_id The identity at @p to, or 0 to keep the one on record.
  * @return How many entries were updated.
@@ -93,9 +97,8 @@ int tiku_trk_clip_prune(tiku_trk_clip_t *c);
 /**
  * @brief Spend the cuts a paste has just carried out (FS-055).
  *
- * A cut entry becomes a copy rather than leaving the clipboard: the file is
- * no longer where the entry said it was, and a second paste copies what it
- * moved.  Emptying instead would take the copied entries with it.
+ * A cut entry becomes a copy entry and stays on the clipboard, so a second
+ * paste copies what the first one moved.
  *
  * @return How many entries changed.
  */
@@ -104,7 +107,11 @@ int tiku_trk_clip_spend_cuts(tiku_trk_clip_t *c);
 /** @brief Empty it (FS-062). */
 void tiku_trk_clip_clear(tiku_trk_clip_t *c);
 
-/** @brief Remove just these entries, leaving the rest (Shift+Escape). */
+/**
+ * @brief Remove just these entries, leaving the rest (Shift+Escape).
+ *
+ * @return How many entries were removed.
+ */
 int tiku_trk_clip_remove(tiku_trk_clip_t *c, const tiku_model_t *models,
                          int n);
 

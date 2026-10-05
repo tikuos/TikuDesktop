@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_prefs_window.c - preferences window controller.
+ * tiku_trk_prefs_window.c - the Tracker preferences window: the list of
+ * pages, the settings of the page shown, and Defaults and Revert.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +17,10 @@
 #include "tiku_strings.h"
 #include "tiku_trk_prefs_window.h"
 
-/** @brief Draw the preferences model owned by this controller. */
+/**
+ * @brief Draw the page list, the settings of the page shown, and the
+ *        Defaults and Revert buttons.
+ */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -50,8 +54,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                            ink);
             if (tiku_trk_prefs_revertable(&controller->model,
                                           (tiku_trk_page_t)i)) {
-                /* Bold from one face: the same string one pixel over,
-                 * the trick the label halo already uses (TS-060). */
+                /* A page with changes to revert is drawn bold, by
+                 * drawing its name again one pixel over (TS-060). */
                 tiku_text(surface, font, rect.x + 7, rect.y + 15,
                                name, ink);
             }
@@ -73,10 +77,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                           : tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL);
 
         if (pref->type == TIKU_TRK_PREF_BOOL) {
-            /* The kit's own checkbox, mark and all: this window drew a
-             * letter x in a flat box while its Defaults button eight
-             * lines down was kit-drawn, and Find, Select and Get Info
-             * all draw this exact kind of setting with the kit. */
+            /* An on/off setting is drawn as the kit's checkbox. */
             tiku_rect_t row = { content.x + x, content.y + y,
                                      width, height };
 
@@ -85,18 +86,16 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                 | (unsigned)(on ? 0u : TIKU_S_DISABLED));
             continue;
         } else if (pref->type == TIKU_TRK_PREF_COLOUR) {
-            /* The swatch IS the control: it shows the colour and a click
-             * walks to the next one. */
+            /* The swatch is the control: it shows the colour, and a
+             * click moves to the next one. */
             tiku_fill(surface, box,
                            (tiku_rgb_t)pref->value & 0xffffffu);
             tiku_frame(surface, box, TIKU_C_TEXT);
         } else {
             /*
-             * A number, shown the way the Deskbar's switch shows the same
-             * one: a track with the knob in the seat the value names.  A
-             * click walks to the next seat, as the swatch above walks to
-             * the next colour -- one idiom for "this control has a small
-             * set of positions", wherever it is drawn.
+             * A setting with a few positions is a track with the knob in
+             * the seat its value names; a click moves the knob to the
+             * next seat.
              */
             int seats = tiku_trk_prefs_seats(pref->name);
             int at = (seats > 1) ? (int)pref->value % seats : 0;
@@ -132,7 +131,11 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
 }
 
-/** @brief Apply one pointer action and persist it immediately. */
+/**
+ * @brief A press picks a page or changes a setting, and Defaults and
+ *        Revert act on a release over them; each change is saved at once.
+ * @return 1 when taken.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
       void *context)
@@ -149,8 +152,8 @@ event(tiku_window_t *window, const tiku_event_t *event,
     hit = tiku_trk_prefs_hit(&controller->model, controller->page,
                              event->x - content.x, event->y - content.y,
                              &which);
-    /* The two buttons go down under the hand and act when it lets go on
-     * them; everything else in the window answers the press as before. */
+    /* The two buttons show pressed while held and act on a release over
+     * them; everything else in the window acts on the press. */
     {
         int under = (hit == TIKU_TRK_PREF_HIT_DEFAULTS &&
                      tiku_trk_prefs_any_defaultable(&controller->model)) ? 1

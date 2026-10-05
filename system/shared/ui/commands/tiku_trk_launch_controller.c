@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_launch_controller.c - application launch presentation services.
+ * tiku_trk_launch_controller.c - opening files with an application: the
+ * preferred application for a file, the launch and its status line, and
+ * the Open with menu built from a folder's selection.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -164,17 +166,17 @@ tiku_trk_launch_controller_build_menu(
         char label[TIKU_TRK_APP_NAME_MAX + 40];
 
         if (i > 0 && candidates[i].rel != candidates[i - 1].rel) {
-            /* A rule between the relation groups: how well an entry
-             * matches is the menu's ORDER, and the rule is where the
-             * order changes meaning (AW-048). */
+            /* A separator wherever the relation changes: the candidates
+             * come preferred first, then by how well they match
+             * (AW-048). */
             (void)tiku_menu_add_separator(menu);
         }
         snprintf(label, sizeof label, "%s (%s)", candidates[i].app->name,
                  tiku_trk_launch_relation_label(candidates[i].rel));
         (void)tiku_menu_add(menu, label,
             TIKU_TRK_CMD_OPEN_WITH_BASE + i, 0, 0u, 1);
-        /* Each candidate wears the application art: the item names a
-         * runnable file, and the icon says so (IV-054). */
+        /* Each candidate shows its application's icon, else the generic
+         * application icon (IV-054). */
         tiku_menu_set_icon(menu, TIKU_TRK_CMD_OPEN_WITH_BASE + i,
                                candidates[i].app->icon[0] ?
                                candidates[i].app->icon : "application");
@@ -185,8 +187,7 @@ tiku_trk_launch_controller_build_menu(
     if (menu->count > 0) {
         (void)tiku_menu_add_separator(menu);
     }
-    /* The window, for the case the shortlist cannot answer: every
-     * application, relations said, one selection (AW-047). */
+    /* The last entry opens the Open with window (AW-047). */
     (void)tiku_menu_add(menu, "Open with…",
                             TIKU_TRK_CMD_OPEN_WITH_WINDOW, 0, 0u, 1);
 }

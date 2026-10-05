@@ -5,15 +5,12 @@
  *
  * tiku_trk_find.h - the Find panel.
  *
- * Three modes, as the original has: by name, by attribute, by formula.  The
- * attribute mode is a grid of rows, each an attribute, an operator and a
- * value, with the and/or that joins a row to the NEXT one sitting on the row
- * above -- and the fold is strictly left-to-right with no precedence, so
- * "a or b and c" means ((a or b) and c) and not what arithmetic would say.
- *
- * Switching into formula mode pre-fills the field with the predicate the
- * controls would have produced, which is the panel's best feature: it is how
- * the query language is discovered rather than documented.
+ * Three modes: by name, by attribute, by formula.  Attribute mode is a grid
+ * of rows, each an attribute, an operator and a value; the and/or joining a
+ * row to the next is stored on the row above, and the rows fold left to
+ * right with no precedence, so "a or b and c" means ((a or b) and c).
+ * Switching into formula mode fills the field with the predicate the
+ * controls produce.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,8 +24,11 @@
 
 struct tiku_store;
 
+/** @brief How many attribute rows the panel holds. */
 #define TIKU_TRK_FIND_ROWS_MAX   4
+/** @brief How many places the scope menu offers. */
 #define TIKU_TRK_FIND_PLACES_MAX 8
+/** @brief The longest name text or row value, with its NUL. */
 #define TIKU_TRK_FIND_TEXT_MAX   64
 
 /** @brief Which control has the caret. */
@@ -57,11 +57,12 @@ typedef enum {
     TIKU_TRK_FIND_HIT_QUERIES      /* the templates and recent queries     */
 } tiku_trk_find_hit_t;
 
+/** @brief One attribute row: an attribute, an operator and a value. */
 typedef struct {
-    tiku_qfield_t field;
-    tiku_qop_t    op;
-    char              value[TIKU_TRK_FIND_TEXT_MAX];
-    tiku_qjoin_t  join;        /* joins this row to the NEXT one       */
+    tiku_qfield_t field;       /* the attribute tested                 */
+    tiku_qop_t    op;          /* the operator                         */
+    char              value[TIKU_TRK_FIND_TEXT_MAX];    /* typed value  */
+    tiku_qjoin_t  join;        /* joins this row to the next one       */
 } tiku_trk_find_row_t;
 
 /** @brief How many past runs the Queries menu offers (Q-032). */
@@ -69,78 +70,79 @@ typedef struct {
 
 /** @brief How many types the most-used list keeps at the top (Q-016). */
 #define TIKU_TRK_FIND_MOST_USED 4
+/** @brief How many types one opening of the type popup can offer. */
 #define TIKU_TRK_FIND_TYPE_CHOICES TIKU_TRK_TYPES_MAX
+/** @brief How many supertype submenus the type popup holds. */
 #define TIKU_TRK_FIND_TYPE_SUPERS 8
 
+/** @brief The Find panel's state. */
 typedef struct {
-    tiku_qmode_t      mode;
-    /* The type every term is narrowed to, or "" for all.  Held as the type
-     * STRING rather than as an index into the table, because it is what
-     * goes into the query and what comes back out of a saved one. */
+    tiku_qmode_t      mode;     /* by name, by attribute or by formula */
+    /* The type every term is narrowed to, or "" for all; held as the type
+     * string, which a query stores and a saved one returns. */
     char                  type[TIKU_TYPE_MAX];
-    char                  name_text[TIKU_TRK_FIND_TEXT_MAX];
-    tiku_trk_find_row_t   row[TIKU_TRK_FIND_ROWS_MAX];
-    int                   row_count;
-    char                  formula[TIKU_QUERY_PRED_MAX];
+    char                  name_text[TIKU_TRK_FIND_TEXT_MAX]; /* by name   */
+    tiku_trk_find_row_t   row[TIKU_TRK_FIND_ROWS_MAX];       /* by attr   */
+    int                   row_count;    /* row[] in use; at least 1     */
+    char                  formula[TIKU_QUERY_PRED_MAX];      /* by formula */
     /* Scope.  "Everywhere" and a set of places are mutually exclusive the
      * way "All disks" and individual volumes are. */
     char                  place[TIKU_TRK_FIND_PLACES_MAX][TIKU_NAME_MAX];
-    uint64_t              place_dev[TIKU_TRK_FIND_PLACES_MAX];
+    uint64_t              place_dev[TIKU_TRK_FIND_PLACES_MAX]; /* volume id */
     char                  place_volume[TIKU_TRK_FIND_PLACES_MAX]
-                                      [TIKU_NAME_MAX];
-    int                   place_count;
-    unsigned              place_mask;
+                                      [TIKU_NAME_MAX];  /* volume name   */
+    int                   place_count;  /* place[] in use               */
+    unsigned              place_mask;   /* the places searched, a bit each */
     /* Set when 'Select folders...' was chosen: the shell answers with
      * its folder panel and adds the choice as a place (Q-019). */
     int                   wants_folder;
-    int                   everywhere;
-    int                   include_trash;
-    /* Whether the panel's window owns the keyboard right now: the owner
-     * sets it before drawing, and the default ring is drawn only while it
-     * is TRUE -- an affordance shown only while Return would honour it
-     * (NeXT UIG ch7). */
+    int                   everywhere;   /* the search is not scoped     */
+    int                   include_trash;    /* the Trash is searched too */
+    /* Whether the panel's window has the keyboard, set by the owner before
+     * drawing: the default button's look and the caret show only while it
+     * is set (NeXT UIG ch7). */
     int                   has_keyboard;
-    tiku_trk_find_focus_t focus;
-    int                   focus_row;
+    tiku_trk_find_focus_t focus;        /* the field keys go into       */
+    int                   focus_row;    /* which row, for a row value   */
     /* A popup currently showing, and what it belongs to. */
     tiku_menu_t       popup;
-    tiku_trk_find_hit_t   popup_for;
-    int                   popup_row;
-    tiku_rect_t      popup_frame;
-    /* Type submenus are owned by the panel: menu items intentionally keep
-     * non-owned pointers, so stack-built children would dangle on return. */
+    tiku_trk_find_hit_t   popup_for;    /* none when no popup shows     */
+    int                   popup_row;    /* the row it belongs to        */
+    tiku_rect_t      popup_frame;       /* where it is drawn            */
+    /* The type popup's submenus live in the panel, since menu items hold
+     * pointers to their submenus. */
     tiku_menu_t       type_sub[TIKU_TRK_FIND_TYPE_SUPERS];
-    int                   type_sub_count;
-    tiku_menu_t      *popup_sub;
-    tiku_rect_t      popup_sub_frame;
+    int                   type_sub_count;   /* type_sub[] in use         */
+    tiku_menu_t      *popup_sub;        /* the open submenu, or NULL    */
+    tiku_rect_t      popup_sub_frame;   /* where it is drawn            */
     char                  type_choice[TIKU_TRK_FIND_TYPE_CHOICES]
-                                     [TIKU_TYPE_MAX];
-    int                   type_choice_count;
-    /* What the last action through the Queries menu did, for the shell's
-     * status line: a menu that loads a saved search without saying which
-     * one leaves the user looking at a panel that changed by itself. */
+                                     [TIKU_TYPE_MAX];   /* by command  */
+    int                   type_choice_count;    /* type_choice[] in use */
+    /* What the last Queries-menu action did, for the shell's status
+     * line. */
     char                  note[80];
-    /* The record the panel came from.  Templates normally remain sources;
-     * edit_template is set only by the explicit in-place edit action. */
+    /* The record the panel was loaded from, and its kind.  edit_template
+     * is set only by the in-place template edit, after which Save writes
+     * the template back. */
     char                  loaded_name[128];
     tiku_qrec_t       loaded_kind;
     int                   edit_template;
-    /* Where the most-used type list lives.  Held on the panel because the
-     * menu is built where the click lands, and passing it through every
-     * hit-testing call would put a store in the geometry's signature. */
+    /* Where the most-used type list and the saved searches live. */
     struct tiku_store *store;
-    const tiku_trk_types_t *types;
+    const tiku_trk_types_t *types;      /* type database, or NULL       */
 } tiku_trk_find_t;
 
-/** @brief Append UTF-8 to the focused field without running the query. */
+/**
+ * @brief Append UTF-8 to the focused field without running the query.
+ * @return nonzero when appended; 0 while a popup is open or with no field
+ *         focused.
+ */
 int tiku_trk_find_text(tiku_trk_find_t *f, const char *text);
 
 /**
  * @brief Load the record @p name into the panel (Q-031, Q-032, Q-035).
  *
- * The same call whether it is a template or a query: what differs is what
- * the record SAYS it is, and a template loaded into the panel is exactly
- * a panel filled in and not run.
+ * Templates and queries alike fill the panel; nothing runs.
  *
  * @return 1 when it loaded whole, 0 when it loaded with something lost,
  *         -1 when there is no such record.
@@ -148,10 +150,9 @@ int tiku_trk_find_text(tiku_trk_find_t *f, const char *text);
 int tiku_trk_find_load_named(tiku_trk_find_t *f, const char *name);
 
 /**
- * @brief Save what the panel holds as a TEMPLATE under @p name (Q-028).
+ * @brief Save what the panel holds as a template under @p name (Q-028).
  *
- * A template is not run when it is opened -- it fills the panel in -- so
- * this is the second save action the Save button could never be.
+ * A template fills the panel when it is opened, instead of running.
  *
  * @return 0 when written.
  */
@@ -179,9 +180,8 @@ int tiku_trk_find_primary_is_save(const tiku_trk_find_t *f);
 /**
  * @brief Whether one of the panel's popups is showing.
  *
- * A popup hangs BELOW the panel's window, over whatever is behind it, so
- * the shell has to send it the click wherever it lands -- otherwise the
- * menu is drawn over the Desktop and clicked on the Desktop.
+ * @note While one is, the shell sends every click to the panel: a popup
+ *       can hang below the panel's window, over whatever is behind it.
  */
 int tiku_trk_find_popup_open(const tiku_trk_find_t *f);
 
@@ -204,8 +204,7 @@ void tiku_trk_find_init(tiku_trk_find_t *f);
 /**
  * @brief Whether the type menu is shown at all (Q-012).
  *
- * Hidden in formula mode, where the formula says what it asks for and a
- * control that silently ANDed something onto it would make the text a lie.
+ * Hidden in formula mode, where the formula alone says what is asked.
  */
 int tiku_trk_find_type_shown(const tiku_trk_find_t *f);
 
@@ -221,10 +220,10 @@ void tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
                             struct tiku_store *store);
 
 /**
- * @brief The types the menu offers, most-used first (Q-015).
+ * @brief The model's types, most-used first: the type menu when no type
+ *        database is installed (Q-015).
  *
- * "All files and folders" is not in this list: it is the fixed first item,
- * which is a different thing from a type.
+ * The menu's fixed first item, All files and folders, is not in the list.
  *
  * @return how many were written.
  */
@@ -247,8 +246,8 @@ int tiku_trk_find_add_place_identity(tiku_trk_find_t *f, const char *name,
 /**
  * @brief Change mode.
  *
- * Entering formula mode fills the field from the controls being left, so the
- * predicate is visible and editable rather than hidden.
+ * Entering formula mode fills the field with the predicate the controls
+ * describe; leaving it keeps the rows and the formula.
  */
 void tiku_trk_find_set_mode(tiku_trk_find_t *f, tiku_qmode_t mode);
 
@@ -262,13 +261,12 @@ int tiku_trk_find_remove_row(tiku_trk_find_t *f);
 void tiku_trk_find_build(const tiku_trk_find_t *f, tiku_query_t *q);
 
 /**
- * @brief Fill the panel FROM a query, for Edit query (Q-026).
+ * @brief Fill the panel from a query, for Edit query (Q-026).
  *
- * The inverse of _build, which is what lets a saved query be opened and
- * not only run: the mode, the rows with their joins, and the name text
- * of a by-name query come back.  A scope naming a place the panel
- * offers ticks it; one naming a place it does not stays on
- * "everywhere" rather than narrowing the search to nothing.
+ * The inverse of tiku_trk_find_build(): the mode, the rows with their
+ * joins, the type, and the name text of a by-name query come back.  A scope
+ * naming a place the panel offers ticks it; when none of the scopes is
+ * offered, the panel searches everywhere.
  *
  * @return 1 when every scope in the query was recognised.
  */
@@ -287,7 +285,7 @@ int tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp,
 int tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out,
                               size_t max);
 
-/** @brief Natural height for @p width. */
+/** @brief The panel's natural height for its mode and rows. */
 int tiku_trk_find_height(const tiku_trk_find_t *f);
 
 /** @brief The whole panel into @p frame: mode, rows, scope, buttons. */
@@ -297,8 +295,7 @@ void tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
 /**
  * @brief Where the draggable query icon sits (Q-034), or an empty rect.
  *
- * Empty in template-edit mode, as Haiku omits the icon there: the window
- * is not a search to save, it is a record being edited in place.
+ * Empty in template-edit mode.
  */
 tiku_rect_t tiku_trk_find_icon_rect(const tiku_trk_find_t *f,
                                          tiku_rect_t frame);

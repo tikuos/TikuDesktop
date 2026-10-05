@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_edit.c - folder value-edit and rename controller.
+ * tiku_trk_folder_edit.c - inline editing in folder windows: renaming a
+ * pose, and editing an attribute's value in place.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -135,9 +136,8 @@ tiku_trk_folder_edit_begin_rename(tiku_trk_folder_edit_t *controller,
     controller->rename_row = row;
     tiku_field_start(&controller->rename_edit, pose->model.name);
     tiku_field_deny(&controller->rename_edit, tiku_fs_name_deny());
-    /* A read-only volume still offers the name as selectable text.  This
-     * keeps the usual rename affordance useful for copying a name without
-     * exposing a write path that the volume cannot satisfy (MA-048). */
+    /* On a read-only volume the name opens as selectable text that cannot
+     * be edited, for copying (MA-048). */
     tiku_field_set_editable(&controller->rename_edit,
         (pose->model.facts.vol_flags & TIKU_VOL_READ_ONLY) == 0u);
     snprintf(controller->rename_path, sizeof controller->rename_path, "%s",
@@ -165,12 +165,10 @@ tiku_trk_folder_edit_finish_rename(tiku_trk_folder_edit_t *controller,
     if (commit && controller->rename_edit.len > 0 &&
         tiku_fs_rename(controller->fs, controller->rename_path,
             controller->rename_edit.text, error, sizeof error) != 0) {
-        /* A rejected name keeps the EDITOR, not just the reason: the text
-         * stays, selected whole, so the user retypes immediately instead
-         * of starting the rename over (NeXT UIG ch7: a rejected entry is
-         * selected and highlighted for retyping). */
+        /* A rejected name keeps the editor open with its whole text
+         * selected (NeXT UIG ch7). */
         snprintf(controller->status, controller->status_size, "%s", error);
-        controller->rename_edit.active = 1; /* Return had closed it      */
+        controller->rename_edit.active = 1; /* Return deactivated it     */
         controller->rename_edit.sel_a = 0;
         controller->rename_edit.sel_b = controller->rename_edit.len;
         controller->rename_edit.caret = controller->rename_edit.len;
@@ -203,8 +201,10 @@ edit_key(unsigned key)
 }
 
 /**
- * @brief The next row after @p row, wrapping, whose name can be edited:
- *        device nodes and namespace folders are skipped.  -1 for none.
+ * @brief The next row after @p row, or before it when @p backwards,
+ *        wrapping, whose name can be edited: device nodes and namespace
+ *        folders are skipped.
+ * @return the row, or -1 for none.
  */
 static int
 next_rename_row(tiku_trk_folder_window_t *folder, int row, int backwards)
@@ -247,13 +247,11 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         return 0;
     }
     /*
-     * Only the window the editor is IN.  The caller resolves keys by the
-     * FOCUSED window, but focus can move with a rename still open -- a
-     * click on another window's tab activates it without committing --
-     * and this controller is app-wide, so typing aimed at the newly
-     * focused window landed in the old window's rename box and renamed a
-     * file the user was not looking at.  The desktop backdrop's folder
-     * has no window and keeps its editor regardless.
+     * Only the window the editor is in takes its keys: the caller routes
+     * keys by the focused window, and focus can move while an editor is
+     * open (a click on another window's tab activates it without
+     * committing).  The desktop backdrop's folder has no window and keeps
+     * its editor.
      */
     if (controller->renaming && controller->rename_folder != NULL &&
         controller->rename_folder->win != NULL &&
@@ -279,8 +277,8 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         return 1;
     }
     if ((modifiers & TIKU_MOD_CMD) && key == 'n') {
-        /* A command invoked while the editor is up first commits the current
-         * name, then reaches the shell's command dispatcher. */
+        /* Cmd+N commits the open name or value, then returns 0 so the
+         * shell's dispatcher runs the command. */
         if (controller->renaming) {
             tiku_trk_folder_edit_finish_rename(controller, 1);
         } else {
@@ -296,9 +294,9 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
         if (!backwards && folder != NULL &&
             tiku_trk_poseview_has_column(folder->view,
                                          TIKU_TRK_COL_VALUE)) {
-            /* Tab walks to the NEXT EDITABLE COLUMN of the same pose,
-             * committing the current one (MA-047): here that is the
-             * Value column, when the entry can carry one. */
+            /* Tab commits and moves to the next editable column of the
+             * same pose (MA-047): the Value column, when the entry's value
+             * can be written. */
             tiku_trk_pose_t *pose;
 
             tiku_trk_poseview_click(folder->view, row, 0u);
@@ -310,8 +308,8 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
                 return 1;
             }
         }
-        /* No editable column that way: the walk continues into the next
-         * row's name, which is where the next editable thing lives. */
+        /* No editable column that way: the walk goes on to the next
+         * row's name, or with Shift the previous row's. */
         row = next_rename_row(folder, row, backwards);
         if (row >= 0) {
             tiku_trk_poseview_click(folder->view, row, 0u);
@@ -328,7 +326,7 @@ tiku_trk_folder_edit_key(tiku_trk_folder_edit_t *controller,
 
         tiku_trk_folder_edit_commit_value(controller, folder);
         if (backwards && row >= 0) {
-            /* Shift-Tab walks BACK to the name column of the same pose. */
+            /* Shift-Tab goes back to the name column of the same pose. */
             tiku_trk_folder_edit_begin_rename(controller, folder, row);
         } else {
             int next = next_rename_row(folder, row, 0);

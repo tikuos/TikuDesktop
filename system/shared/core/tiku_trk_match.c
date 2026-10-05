@@ -5,9 +5,8 @@
  *
  * tiku_trk_match.c - starts / ends / contains / wildcard / regular expression.
  *
- * The wildcard matcher is TrackerString::StringMatchesPattern ported: the
- * pattern-level stack that lets a failed tail back up to the last '*' is what
- * makes "*a*b" behave, and a simple left-to-right scan does not.  Glyphs
+ * The wildcard matcher is TrackerString::StringMatchesPattern ported: a
+ * pattern-level stack lets a failed tail back up to the last '*'.  Glyphs
  * are UTF-8: a '?' and a bracket class step one glyph, not one byte
  * (Q-049).
  *
@@ -24,9 +23,8 @@
 /**
  * @brief Bytes in the UTF-8 glyph beginning at @p c (Q-049).
  *
- * A '?' eats a GLYPH, not a byte: a name with an accent in it must not
- * need two question marks for one character.  A stray continuation byte
- * counts as one, defensively.
+ * A '?' eats a glyph, not a byte, so one '?' matches an accented character.
+ * A stray continuation byte counts as one.
  */
 static int
 glyph_len(const char *c)
@@ -37,7 +35,7 @@ glyph_len(const char *c)
 
     for (i = 1; i < n; i++) {
         if (((unsigned char)c[i] & 0xC0u) != 0x80u) {
-            return 1;           /* truncated sequence: one byte, honestly */
+            return 1;           /* a truncated sequence is one byte */
         }
     }
     return n;
@@ -62,10 +60,11 @@ cond_lower(char c, int cs)
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief A bracket expression, @p pattern pointing PAST the opening '['.
+ * @brief Whether the string's first glyph matches a bracket expression,
+ *        @p pattern pointing past the opening '['.
  *
- * Past it deliberately: an encountered '[' is then taken literally, which is
- * what makes "[[]" a way to match a bracket.
+ * Starting past it means a '[' inside is taken literally, which is what
+ * makes "[[]" a way to match a bracket.
  */
 static int
 bracket_match(const char *string, const char *pattern, int cs)
@@ -85,8 +84,8 @@ bracket_match(const char *string, const char *pattern, int cs)
             int up = (start >= 'A' && start <= 'Z');
             int di = (start >= '0' && start <= '9');
 
-            /* Both ends must be of one kind, or the range is a syntax error
-             * rather than a range that happens to span the alphabet. */
+            /* A range whose ends are not both lower case, both upper case
+             * or both digits fails the match. */
             if ((lo && stop >= 'a' && stop <= 'z') ||
                 (up && stop >= 'A' && stop <= 'Z') ||
                 (di && stop >= '0' && stop <= '9')) {
@@ -101,7 +100,7 @@ bracket_match(const char *string, const char *pattern, int cs)
             match = (glyph_len(string) == gp &&
                      memcmp(string, pattern, (size_t)gp) == 0);
             if (!match) {
-                pattern += gp - 1;      /* the ++ below takes the lead */
+                pattern += gp - 1;      /* the ++ below takes the last byte */
             }
         } else {
             match = chars_equal(testChar, *pattern, cs);
@@ -147,8 +146,8 @@ glob_match(const char *string, const char *pattern, int cs)
             int match = 0;
             const char *before;
 
-            /* Collapse ** and *? so the level stack holds one entry per
-             * distinct wildcard rather than one per character typed. */
+            /* Collapse ** and *?, so the level stack holds one entry per
+             * run of wildcards. */
             while (*pattern == '*' || *pattern == '?') {
                 pattern++;
                 if (*pattern == '?' && *string != '\0') {
@@ -234,13 +233,17 @@ glob_match(const char *string, const char *pattern, int cs)
 /* regular expression                                                        */
 /*---------------------------------------------------------------------------*/
 
+/* Limits of one compiled expression: nodes, groups, classes, and branches
+ * per group. */
 #define RX_NODES 192
 #define RX_ALTS   32
 #define RX_CLS    24
 #define RX_BRANCH  8
 
+/* What one node matches: a byte, any byte, a class, a group, '^' or '$'. */
 enum { RX_CHAR = 0, RX_ANY, RX_CLASS, RX_GROUP, RX_BOL, RX_EOL };
 
+/** @brief One atom of an expression, with its repeat count. */
 typedef struct {
     int           type;
     unsigned char ch;
@@ -250,11 +253,13 @@ typedef struct {
     int           next;             /* next node in this sequence, or -1   */
 } rx_node_t;
 
+/** @brief One group's alternatives. */
 typedef struct {
     int first[RX_BRANCH];           /* head node of each alternative       */
     int count;
 } rx_alt_t;
 
+/** @brief A compiled expression. */
 typedef struct {
     rx_node_t     node[RX_NODES];
     int           nnode;
@@ -302,7 +307,11 @@ cls_set(unsigned char *bits, unsigned char c, int cs)
     }
 }
 
-/** @brief Parse "[...]" with @p p on the character after '['. */
+/**
+ * @brief Parse "[...]" with @p p on the character after '['.
+ *
+ * @return the class's index, or -1 with the error set.
+ */
 static int
 rx_parse_class(rx_t *r, const char **p, int cs)
 {
@@ -321,8 +330,8 @@ rx_parse_class(rx_t *r, const char **p, int cs)
         negate = 1;
         s++;
     }
-    /* A ']' first is a literal ']', as it is everywhere else this syntax
-     * appears; treating it as the close would make the class unwritable. */
+    /* A ']' first is a literal ']', as in other regular expression
+     * syntaxes. */
     if (*s == ']') {
         cls_set(bits, (unsigned char)*s, cs);
         s++;
@@ -363,7 +372,12 @@ rx_parse_class(rx_t *r, const char **p, int cs)
     return idx;
 }
 
-/** @brief Parse one sequence; @return its head node index, or -1 if empty. */
+/**
+ * @brief Parse one sequence.
+ *
+ * @return its head node index, or -1 when it is empty or on an error, which
+ *         sets r->err.
+ */
 static int
 rx_parse_seq(rx_t *r, const char **p, int depth)
 {
@@ -485,6 +499,8 @@ rx_parse_alt(rx_t *r, const char **p, int depth)
     return idx;
 }
 
+/** @brief What is left to match after a node: a chain to continue, or a
+ *         repetition to try again. */
 typedef struct rx_cont {
     int                    kind;    /* 0 = continue a chain, 1 = repeat  */
     int                    node;
@@ -734,6 +750,7 @@ fold_copy(char *out, size_t max, const char *in)
     out[(i < max) ? i : max - 1u] = '\0';
 }
 
+/* Room for a case-folded copy of the text and of the expression. */
 #define MATCH_MAX 512
 
 int
@@ -756,8 +773,8 @@ tiku_trk_match(const char *text, const char *expr, int case_sensitive,
         return case_sensitive ? (strncmp(text, expr, el) == 0)
                               : (strncasecmp(text, expr, el) == 0);
     case TIKU_TRK_MATCH_ENDS:
-        /* Anchored at the END, not "the last occurrence is somewhere": a
-         * name shorter than the expression cannot end with it. */
+        /* Anchored at the end: a name shorter than the expression cannot
+         * end with it. */
         if (el > tl) {
             return 0;
         }
@@ -788,8 +805,8 @@ tiku_trk_match(const char *text, const char *expr, int case_sensitive,
     }
     case TIKU_TRK_MATCH_NONE:
     default:
-        /* kNone matches nothing.  It is a real state -- an unset rule must
-         * not quietly behave like "contains". */
+        /* kNone matches nothing: an unset rule does not behave like
+         * "contains". */
         return 0;
     }
 }

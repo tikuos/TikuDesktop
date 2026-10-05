@@ -3,7 +3,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_window.c - folder-window state and rendering.
+ * tiku_trk_folder_window.c - drawing a folder window.
+ *
+ * The menu bar, the column strip, the rows or the icons, the scroll bar and
+ * the count line.  The rows and icons are painted into pixels the window
+ * keeps between frames, and a frame repaints only what its damage touches
+ * or what looks different.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -46,18 +51,19 @@ static void fw_draw_rows(tiku_window_t *window, tiku_surface_t *surface,
                          int slide, int slide_y);
 /* End of the forward declarations. */
 
-#define COUNT_HEIGHT 16
-#define TITLE_HEIGHT 20
-/* The list's mini icon follows the row, which follows the font (the row
- * is the plain face's height plus five): at the reference 12 px face the
- * row is 20 and this reads 16, exactly the old constant (IV-013). */
+#define COUNT_HEIGHT 16     /* the count line along the bottom */
+#define TITLE_HEIGHT 20     /* the column title strip, in list mode */
+/* The list's mini icon follows the row height, which follows the face: at
+ * the 12 px face the row is 20 and the icon 16 (IV-013). */
 #define MINI_ICON_FOR(row_h) ((row_h) - 4)
-#define VALUE_GAP   120
+#define VALUE_GAP   120     /* room left of a value, for fit_width */
 
 
-/* The document ground, read through the THEME so dark mode follows; a
- * query view is set slightly off it so the read-only cue survives
- * whichever way the theme leans. */
+/**
+ * @brief The document ground from the theme; a query view's ground is set
+ *        slightly off it, as a read-only cue on light and dark themes
+ *        alike.
+ */
 static uint32_t
 folder_background(const tiku_trk_poseview_t *v)
 {
@@ -226,10 +232,9 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
 {
     tiku_trk_folder_render_t *render = folder->render;
 
-    /* The economy counter the scripts read.  The backdrop's own poses
-     * are not counted: it is always on screen, and the scripts measure
-     * the WINDOW they drove -- and a narration is not driving, so a
-     * recording surface leaves the count alone too. */
+    /* rows_drawn, which the scripts read, counts the poses painted in
+     * folder windows; the backdrop's poses and a recording surface are
+     * not counted. */
     if (folder->win != NULL && surface->record == NULL) {
         render->rows_drawn++;
     }
@@ -256,8 +261,7 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
         (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
                                         &pose->model, art, sizeof art);
     }
-    /* Under a held button the icon goes dark, so the press itself is
-     * seen and not only the selection it leaves behind. */
+    /* An icon under a held button is drawn darkened. */
     int held = render->press != NULL && render->press->down &&
                render->press->folder == folder && render->press->row >= 0 &&
                tiku_trk_poseview_at(folder->view, render->press->row) ==
@@ -286,13 +290,13 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
         if (folder->win != NULL &&
             folder->win !=
                 tiku_workspace_focused(render->workspace)) {
-            /* Shown while inactive, shown in grey (IV-022). */
+            /* An inactive window's selection is grey (IV-022). */
             band = TIKU_RGB(154, 154, 154);
         }
         if (folder->win == NULL) {
-            /* The Desktop's backdrop is the selection blue itself, so its
-             * chosen labels carry their own, darker colour -- adjustable
-             * in the preferences. */
+            /* On the Desktop's backdrop, which can be the selection
+             * blue itself, a selected label takes SelectedLabelColor
+             * from the preferences. */
             band = (tiku_rgb_t)tiku_trk_prefs_get(render->prefs,
                        "SelectedLabelColor") & 0xffffffu;
         }
@@ -315,10 +319,8 @@ draw_pose_icon(tiku_trk_folder_window_t *folder,
         (void)tiku_trk_poseview_fit_label(folder->view, pose, fit,
                                           sizeof fit);
         if (folder->bg_drawn && !selected) {
-            /* Over a picture the ink alone is unreadable wherever the
-             * picture is the same colour, so the label carries a halo of
-             * the opposite one (PVL-071).  A selected label has its own
-             * filled box and needs none. */
+            /* Over a picture a label carries a halo of the opposite
+             * colour (PVL-071); a selected label has its filled box. */
             tiku_paint_text_halo(surface, font, lx, ly + font->ascent,
                                      fit, ink);
         } else {
@@ -337,8 +339,8 @@ tiku_trk_folder_window_draw_background(tiku_trk_folder_window_t *folder,
     tiku_trk_bg_t bg;
     int i, dx, dy, dw, dh;
 
-    /* The BACKEND's store, where the folder's other per-node state lives:
-     * the session store is per device and knows nothing about one folder. */
+    /* The picture record is in the backend's store, with the folder's
+     * other per-node state. */
     if (render == NULL || render->backend == NULL ||
         render->backend->ops->state_store == NULL) {
         return 0;
@@ -392,8 +394,8 @@ pose_footprint(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
     r.y = (iy < ly) ? iy : ly;
     x1 = (ix + iw > lx + lw + 3) ? ix + iw : lx + lw + 3;
     y1 = (iy + ih > ly + lh + 2) ? iy + ih : ly + lh + 2;
-    /* A pixel of margin each way: the halo and the selection band both
-     * reach past the ink. */
+    /* Two pixels of margin each way: the halo and the selection band
+     * both reach past the ink. */
     r.x -= 2;
     r.y -= 2;
     r.w = x1 - r.x + 2;
@@ -462,7 +464,10 @@ tiku_trk_folder_window_draw_icons(tiku_trk_folder_window_t *folder,
     }
 }
 
-/** @brief Ask for this row's picture if it wants one and has none yet. */
+/**
+ * @brief Queue a thumbnail for this row when its icon comes from one and
+ *        the stored thumbnail is missing or stale.
+ */
 static void
 queue_thumbnail(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose)
 {
@@ -497,7 +502,7 @@ sig_bytes(uint32_t h, const void *p, size_t n)
     return h;
 }
 
-/** @brief Fold a string, terminator included, into a row signature. */
+/** @brief Fold a string, terminator included, into a running hash. */
 static uint32_t
 sig_text(uint32_t h, const char *t)
 {
@@ -505,12 +510,11 @@ sig_text(uint32_t h, const char *t)
 }
 
 /**
- * @brief What row @p slot would draw, in one number.
- *
- * Everything the row's appearance turns on, and nothing else: two frames
- * that hash the same put the same pixels there, so the second need not
- * draw.  A field the drawing reads and this does not is a row that stops
- * refreshing -- when the drawing gains one, it gains one here.
+ * @brief What the row of @p pose would draw, hashed: everything the row's
+ *        appearance depends on.  draw_list() skips a row whose hash has
+ *        not changed.
+ * @note A field draw_list() reads must be hashed here, or a change to it
+ *       is never painted.
  */
 static uint32_t
 row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
@@ -528,7 +532,7 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
     h = sig_bytes(h, &selected, sizeof selected);
     h = sig_bytes(h, &cut, sizeof cut);
     if (selected) {
-        /* The selection's COLOUR follows the window's activity when it
+        /* The selection's colour follows the window's activity when it
          * shows while inactive (IV-022). */
         int act = (folder->win == NULL ||
                    folder->win ==
@@ -542,8 +546,8 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
     h = sig_bytes(h, &pose->model.facts.avail, sizeof pose->model.facts.avail);
     h = sig_bytes(h, &hscroll, sizeof hscroll);
     h = sig_bytes(h, &render->row_h, sizeof render->row_h);
-    /* The editor draws over the row it is on, so that row differs from the
-     * same row without it. */
+    /* The rename editor is drawn over its row, so the hash marks the
+     * row it is on. */
     if (render->edit->renaming && render->edit->rename_folder == folder &&
         render->edit->rename_row == pose->index) {
         h = sig_bytes(h, "edit", 5u);
@@ -569,8 +573,9 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
 }
 
 /**
- * @brief The rows on screen: all of them, or only the damaged ones, with
- *        each row's signature written back unless a reader is observing.
+ * @brief The rows on screen: all of them, or, when the frame has damage,
+ *        the rows it touches and those that look different.  Each painted
+ *        row's hash is kept, except on a recording surface.
  */
 static void
 draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
@@ -580,10 +585,9 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
     const tiku_font_t *font = tiku_font_plain();
     const tiku_trk_repaint_rect_t *damage = folder->render->damage;
     int ndamage = folder->render->ndamage;
-    /* A recording surface is a READER asking, not a frame being shown:
-     * paint all of it (ndamage is 0 on that path), and write nothing
-     * back -- a narration that updated row signatures would tell the
-     * next real frame its stale kept pixels are current. */
+    /* On a recording surface every row is painted (ndamage is 0 there)
+     * and no hash is written back, since the kept pixels are not
+     * painted. */
     int observing = (surface->record != NULL);
     int win_active = (folder->win == NULL ||
                       folder->win ==
@@ -609,9 +613,8 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
             selected = 1;
         }
         if (ndamage > 0 && i < TIKU_TRK_ROWS_KEPT) {
-            /* Two reasons to paint a row: the place needs it, or the row
-             * looks different from what is there.  Damage alone would
-             * leave a selection nobody thought to damage unpainted. */
+            /* A row is painted when the damage touches it or its hash
+             * changed. */
             uint32_t sig = row_signature(folder, pose, i, selected, cut);
             int d, hit = 0;
 
@@ -622,9 +625,8 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                       damage[d].y + damage[d].h > top;
             }
             if (!observing && !hit && folder->row_sig[i] == sig) {
-                /* Skipping the PAINT must not skip the asking: a row's
-                 * thumbnail is queued while it is drawn, and a row that
-                 * stops being drawn would stop ever being asked for. */
+                /* A skipped row still queues its thumbnail, which is
+                 * otherwise queued only while a row is drawn. */
                 queue_thumbnail(folder, pose);
                 continue;
             }
@@ -653,9 +655,9 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
             if (mini > MINI_ICON_FOR(render->row_h)) {
                 mini = MINI_ICON_FOR(render->row_h);
             }
-            /* IV-024: the selection covers the icon and the NAME column,
-             * and stops there -- the other columns stay normal, which is
-             * what tells a reader they are other columns. */
+            /* The selection covers the icon and the first column,
+             * normally Name, and stops there; the other columns stay
+             * plain (IV-024). */
             if (ncol > 0) {
                 name_end = list.x + 2 + cols[0].offset + cols[0].width -
                            hscroll;
@@ -667,8 +669,8 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                 if (name.w < 0) {
                     name.w = 0;
                 }
-                /* Shown-while-inactive is shown in GREY: still there,
-                 * plainly not the window the keyboard is in (IV-022). */
+                /* An inactive window's selection is drawn in grey
+                 * (IV-022). */
                 tiku_fill_round(surface, name, 3, TIKU_CORNER_ALL,
                     win_active ? TIKU_C_SELECT
                                : TIKU_RGB(154, 154, 154));
@@ -706,10 +708,9 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                     : tiku_icon_paint(surface, art, row.x + 2,
                         row.y + (render->row_h - mini) / 2, mini));
             }
-            /* A row IS its columns.  Through the ENGINE's formatter, not a
-             * second copy: two implementations of "what does this cell
-             * say" is how a column comes to be fitted to text the row does
-             * not draw (PVL-032, TS-005). */
+            /* Each cell's text comes from tiku_trk_poseview_cell_text(),
+             * the formatter column fitting also uses, so a column is
+             * fitted to the text the row draws (PVL-032, TS-005). */
             for (j = 0; j < ncol; j++) {
                 char tmp[160], fitted[96];
                 const char *txt = tiku_trk_poseview_cell_text(folder->view,
@@ -719,9 +720,9 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                                           row.h };
                 int tw;
 
-                {   /* Intersected with the list, not substituted for it:
-                     * a cell scrolled left of the view would otherwise
-                     * paint over the border and the window frame. */
+                {   /* The cell is clipped to the list's inside, so a
+                     * cell scrolled left of the view does not paint over
+                     * the border and the window frame. */
                     tiku_rect_t inner = tiku_inset(list, 2);
                     int x0 = (cell.x > inner.x) ? cell.x : inner.x;
                     int x1 = (cell.x + cell.w < inner.x + inner.w)
@@ -741,9 +742,9 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                 }
                 tiku_text(surface, font, cell_x, text_y, fitted,
                     (selected && j == 0)
-                        /* A cut label greys even while selected, as the
-                         * source greys it (IV-023); an inactive window's
-                         * selection reads in plain ink over its grey. */
+                        /* A cut label is greyed even while selected
+                         * (IV-023); an inactive window's selection reads
+                         * in plain ink over its grey. */
                         ? (!win_active ? TIKU_C_TEXT
                            : cut ? tiku_tint(TIKU_C_SELTEXT,
                                                   1.45f)
@@ -752,9 +753,8 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                                : TIKU_C_TEXT));
                 if (cols[j].field == TIKU_TRK_COL_NAME &&
                     pose->model.kind == TIKU_KIND_SYMLINK) {
-                    /* MA-076/IV-043: under the TEXT only, and only in the
-                     * first column -- a rule that underlined the whole
-                     * cell would read as a divider. */
+                    /* A link's name is underlined under its text only,
+                     * in the Name column (MA-076, IV-043). */
                     tiku_hline(surface, cell_x, text_y + 2, tw,
                                     TIKU_C_TEXT);
                 }
@@ -787,8 +787,7 @@ draw_title(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
            tiku_rect_t title)
 {
     const tiku_trk_column_t *columns;
-    /* Three-quarters of the body text, the source's strip proportion
-     * (TS-019). */
+    /* Three-quarters of the body face (TS-019). */
     const tiku_font_t *font =
         tiku_font_at(tiku_font_size() * 3 / 4);
     int n, i;
@@ -813,8 +812,8 @@ draw_title(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
         int tw, tx;
 
         if (c->field == dragged) {
-            /* The dragged title slides with the pointer and goes on TOP,
-             * so it is drawn after its neighbours (TS-005). */
+            /* The dragged title follows the pointer and is drawn after
+             * its neighbours, on top of them (TS-005). */
             continue;
         }
         tiku_fill(surface, r, TIKU_C_PANEL);
@@ -914,6 +913,7 @@ draw_folder_icon(tiku_trk_folder_window_t *folder,
  *
  * A new or resized surface holds nothing, so the frame that makes one
  * paints all of it.
+ * @return 1 when the pixels are there, 0 when they cannot be had.
  */
 static int
 keep_pixels(tiku_trk_folder_window_t *folder, int w, int h, int scale)
@@ -957,7 +957,7 @@ tiku_trk_folder_window_forget(tiku_trk_folder_window_t *folder)
 
 /**
  * @brief What is drawn over the rows and does not stay: the selection
- *        band and the drop point of a drag in progress.
+ *        band and, in list mode, the inline rename field.
  */
 static void
 draw_transients(tiku_trk_folder_window_t *folder,
@@ -971,8 +971,8 @@ draw_transients(tiku_trk_folder_window_t *folder,
         int x0 = render->band->x0, y0 = render->band->y0;
         int x1 = render->band->x1, y1 = render->band->y1;
 
-        /* The band is where the pointer has been, which is the screen's
-         * coordinates and not the surface being painted. */
+        /* The band is in screen coordinates; off_x and off_y move it
+         * onto the surface being painted. */
         x0 -= off_x;
         x1 -= off_x;
         y0 -= off_y;
@@ -1010,8 +1010,9 @@ draw_transients(tiku_trk_folder_window_t *folder,
 }
 
 /**
- * @brief The strip along the bottom: the count and selection, the text
- *        typed ahead, or the finding note while a search is on.
+ * @brief The count line along the bottom: the type-ahead find or a value
+ *        being edited in the focused window, else the status line, the
+ *        text typed ahead, or the item and selection count.
  */
 static void
 draw_count(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
@@ -1094,8 +1095,8 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
     if (render->prepare_menu != NULL) {
         render->prepare_menu(render->prepare_context, folder);
     }
-    /* The live setting, read where it acts: whether a selection shows in
-     * an inactive window at all (IV-022). */
+    /* Read on every draw: whether a selection shows in an inactive
+     * window at all (IV-022). */
     tiku_trk_poseview_show_selection_when_inactive(folder->view,
         tiku_trk_prefs_get(render->prefs, "ShowSelectionWhenInactive"));
     bar.h = render->global_bar ? 0 : render->menus->bar.height;
@@ -1110,42 +1111,31 @@ tiku_trk_folder_window_draw(tiku_window_t *window,
         draw_title(folder, surface, title);
         list.y += TITLE_HEIGHT;
         list.h -= TITLE_HEIGHT;
-        /* The bar's gutter (PVL-051): list mode only, so an icon
-         * arrangement keeps every pixel it had. */
+        /* Room for the scroll bar, in list mode only (PVL-051). */
         list.w -= 15;
     }
     list.h -= COUNT_HEIGHT;
     icons = tiku_trk_poseview_mode(folder->view) != TIKU_TRK_MODE_LIST;
-    /* Where the rows go.  In list mode that is the window's own kept
-     * pixels, drawn at its own origin and handed to the frame at the end;
-     * the icon modes draw into the frame directly, having no damage to
-     * spare. */
+    /* Where the rows go: the window's own kept pixels in every mode,
+     * drawn at their own origin and blitted to the frame at the end, or
+     * the frame itself when the kept pixels cannot be had. */
     paint = surface;
     area = list;
     if (folder->kept_icons != icons) {
-        /* The kept pixels belong to the other mode: worthless here. */
+        /* Kept pixels painted in the other mode are not reused. */
         folder->kept_ready = 0;
         folder->kept_icons = icons;
     }
-    /* A recording surface never takes the kept-pixels shortcut: the kept
-     * cache is a picture, and a picture blitted whole is one mark the
-     * wire cannot carry where a reader wanted the rows.  Painting direct
-     * also leaves the cache and its bookkeeping exactly as the shown
+    /* A recording surface is painted directly: its reader gets the rows
+     * themselves, and the kept pixels and their hashes stay as the shown
      * frames left them. */
     if (surface->record == NULL &&
         keep_pixels(folder, list.w, list.h, surface->scale)) {
         paint = &folder->kept;
         area = (tiku_rect_t){ 0, 0, list.w, list.h };
     }
-    /* The ground and the rows are one decision.  Filling the whole list
-     * and then painting only the damaged rows leaves the others as bare
-     * ground: what a frame does not repaint, it must not erase.  Nothing
-     * has to be told which rows a fill took with it, because every fill
-     * here is a damage rectangle and every row a damage rectangle touches
-     * is painted below in the same frame. */
-    /* An observation takes nothing: the slide is a repaint the SHOWN
-     * frame is owed, and a narration that drained it would cost that
-     * frame its carry. */
+    /* A recording surface leaves the pending slide for the next shown
+     * frame. */
     slide = (surface->record == NULL)
         ? tiku_trk_poseview_repaint_take_slide(folder->view, &slide_y)
         : 0;
@@ -1325,7 +1315,8 @@ tiku_trk_folder_window_name_at(const tiku_trk_folder_window_t *folder,
 }
 
 /**
- * @brief the paint handed over and the kept pixels remembered
+ * @brief Blit the kept pixels to the frame and, in list mode, draw the
+ *        scroll bar with its focus frame.
  */
 static void
 fw_draw_finish(tiku_window_t *window, tiku_surface_t *surface,
@@ -1337,14 +1328,14 @@ fw_draw_finish(tiku_window_t *window, tiku_surface_t *surface,
     (void)content;
     (void)context;
     if (paint != surface) {
-        /* The frame gets the window's pixels whole, painted this time or
-         * five frames ago. */
+        /* The frame gets the kept pixels whole, whichever frame painted
+         * each row. */
         tiku_blit(surface, list.x, list.y, &(*folder)->kept);
         (*folder)->kept_ready = 1;
     }
     if (!icons) {
-        /* The bar itself: a CONTROL, drawn from its own held state so a
-         * grip survives the frame (PVL-051). */
+        /* The scroll bar is drawn from its own state in sbar, which
+         * holds a grip across frames (PVL-051). */
         tiku_rect_t sb = { list.x + list.w, list.y, 15, list.h };
         int tpos = 0, tlen = 0;
         float frac, pos;
@@ -1363,10 +1354,8 @@ fw_draw_finish(tiku_window_t *window, tiku_surface_t *surface,
         }
         tiku_ui_scrollbar_held(surface, sb, pos, frac, 0,
                                (*folder)->sbar.arrow_dir);
-        /* CW-019: the bar highlights with the view's focus border, so the
-         * chrome agrees with the list about where the keyboard aims.  A
-         * query window keeps the plain bar, as Haiku turns the highlight
-         * off for query windows. */
+        /* The bar takes the focus frame while the window has the
+         * keyboard (CW-019); a query window's bar never does. */
         if (!tiku_trk_poseview_is_query((*folder)->view) &&
             ((*folder)->win == NULL ||
              (*folder)->win ==
@@ -1377,7 +1366,9 @@ fw_draw_finish(tiku_window_t *window, tiku_surface_t *surface,
 }
 
 /**
- * @brief icon mode: the icons, the band, the drop point
+ * @brief Measure the visible rows, then paint the poses: in an icon mode
+ *        only those whose signature changed, in list mode the rows
+ *        draw_list() repaints.
  */
 static void
 fw_draw_icons(tiku_window_t *window, tiku_surface_t *surface,
@@ -1399,11 +1390,12 @@ fw_draw_icons(tiku_window_t *window, tiku_surface_t *surface,
     (*total) = tiku_trk_poseview_count(folder->view);
     tiku_clip_set(paint, tiku_inset((*area), 2));
     if (icons) {
-        /* The icon frame paints what changed and nothing else: every
-         * visible pose is signed, the poses whose signature moved are
-         * repainted where they are AND where they were, and a frame in
-         * which nothing moved paints nothing at all (PVL-062).  A view
-         * change -- origin, size, mode, ground -- repaints whole. */
+        /* An icon frame paints only what changed: every visible pose is
+         * signed, a pose whose signature moved is repainted where it is
+         * and where it was, and a frame in which nothing moved paints
+         * nothing (PVL-062).  A change of icon size, area, mode, ground or
+         * origin, a band in progress or a recording surface repaints the
+         * whole area. */
         tiku_rect_t inner = tiku_inset((*area), 2);
         uint32_t vsig = UINT32_C(2166136261);
         tiku_rect_t dmg[24];
@@ -1475,7 +1467,8 @@ fw_draw_icons(tiku_window_t *window, tiku_surface_t *surface,
             }
         }
         if (full) {
-            /* The frame's border lies OUTSIDE the pose clip. */
+            /* The frame's border lies outside the pose clip, so the clip
+             * is reset to draw it. */
             tiku_clip_reset(paint);
             tiku_ui_sunken(paint, (*area),
                                 folder_background(folder->view));
@@ -1535,7 +1528,11 @@ fw_draw_icons(tiku_window_t *window, tiku_surface_t *surface,
 }
 
 /**
- * @brief the rows, whole or only the damaged ones
+ * @brief Lay the list's ground, whole or only the damaged strips, after
+ *        sliding the rows that only moved; the icon modes lay their own.
+ *
+ * Only the damaged strips are filled, and draw_list() repaints every row a
+ * strip touches, so no row is left as bare ground.
  */
 static void
 fw_draw_rows(tiku_window_t *window, tiku_surface_t *surface,
@@ -1549,24 +1546,23 @@ fw_draw_rows(tiku_window_t *window, tiku_surface_t *surface,
     (void)content;
     (void)context;
     if (icons) {
-        /* The icon modes' ground is painted inside their own damage
-         * logic below: filling it here would erase poses no frame
-         * repaints (PVL-062). */
+        /* The icon modes paint their ground in fw_draw_icons(); filling
+         * it here would erase poses no frame repaints (PVL-062). */
     } else if (render->ndamage > 0) {
         tiku_rect_t inner = tiku_inset(area, 2);
         int d;
 
         if (slide != 0) {
-            /* The rows the insertion or removal only MOVED: they are
-             * carried to their new place rather than drawn again, which is
-             * what leaves a single row to paint. */
+            /* Rows that an insertion or removal only moved are copied to
+             * their new place; only the rows the change touched are
+             * painted. */
             int rh = render->row_h > 0 ? render->row_h : 1;
             int by = slide / rh;
             int from = slide_y / rh;
             int k;
 
-            /* Inside the rows and no further: the border below them is
-             * not a row and must not be slid over. */
+            /* Clipped to the rows, so the border below them is not slid
+             * over. */
             tiku_clip_set(paint, inner);
             tiku_copy_bits(paint,
                                 (tiku_rect_t){ inner.x,
@@ -1575,7 +1571,7 @@ fw_draw_rows(tiku_window_t *window, tiku_surface_t *surface,
                                                     inner.h - slide_y },
                                 0, slide);
             tiku_clip_reset(paint);
-            /* What each slot holds moved with the pixels. */
+            /* The slots' signatures move with the pixels. */
             if (by > 0) {
                 for (k = TIKU_TRK_ROWS_KEPT - 1; k >= from; k--) {
                     folder->row_sig[k] = (k - by >= from)

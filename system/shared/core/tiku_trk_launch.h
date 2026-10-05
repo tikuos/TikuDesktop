@@ -5,12 +5,11 @@
  *
  * tiku_trk_launch.h - which application opens a document, and running it.
  *
- * Tracker asks the MIME database three questions: which applications claim
- * this type, which one is preferred, and how well each matches.  There is no
- * MIME database here, so the same three questions are asked of a registry
- * the port owns: a list of applications, each naming the types it reads.
- * The ANSWERS are what the rows are about -- the ranking, the union across a
- * multiple selection, and what happens when nothing claims the type.
+ * A registry of applications, each naming the types it reads, answers the
+ * three questions Tracker asks its MIME database: which applications claim
+ * a type, which one is preferred, and how well each matches.  This file
+ * ranks the answers, takes their union across a selection, runs the chosen
+ * application and collects it when it ends.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,23 +23,34 @@ struct tiku_store;
 struct tiku_msg;
 struct tiku_trk_app;
 
-/** Launch with bounded structured data over an inherited private descriptor. */
+/**
+ * @brief Launch @p app's module with @p message, handed over through an
+ *        inherited descriptor named by --message-fd.
+ *
+ * The message is flattened into an unlinked temporary file of at most
+ * 32 KiB.
+ *
+ * @return a tiku_trk_launch_err_t: TIKU_TRK_LAUNCH_NOTHING when @p app has
+ *         no module, TIKU_TRK_LAUNCH_FAILED when the message cannot be
+ *         staged or the fork fails.
+ */
 int tiku_trk_launch_message(const struct tiku_trk_app *app,
                             const struct tiku_msg *message);
 
-/** @brief How many applications the registry holds, and types each claims. */
+/** @brief The registry's limits: applications, types each claims, and the
+ *         longest name and command. */
 #define TIKU_TRK_APP_MAX        64
 #define TIKU_TRK_APP_TYPES_MAX   8
 #define TIKU_TRK_APP_NAME_MAX   48
 #define TIKU_TRK_APP_CMD_MAX   192
 
 /**
- * @brief WHY an application matched, which is also how well (MA-017).
+ * @brief Why an application matched, which is also how well (MA-017).
  *
  * The order is the ranking: an exact type beats a supertype match, which
  * beats an application that takes anything at all.  A preferred handler is
- * not a fourth kind of match -- it is one of these that the user has
- * chosen -- so it is carried beside the relation rather than inside it.
+ * one of these that the user has chosen; tiku_trk_cand_t carries it beside
+ * the relation.
  */
 typedef enum {
     TIKU_TRK_REL_NONE = 0,
@@ -73,6 +83,7 @@ typedef struct {
     int                   preferred;     /* the user's choice for the type */
 } tiku_trk_cand_t;
 
+/** @brief The application registry. */
 typedef struct tiku_trk_apps {
     tiku_trk_app_t app[TIKU_TRK_APP_MAX];    /* every application registered */
     int            count;                    /* how many slots are used      */
@@ -80,7 +91,8 @@ typedef struct tiku_trk_apps {
 
 /**
  * @brief Order for a candidate list: the user's choice, then the better
- * claim, then the handler the desktop would reach for on its own.
+ *        claim, then a shipped document application (one with a module)
+ *        for an equal claim, then the name.
  *
  * @return non-zero when @p a belongs above @p b.
  */
@@ -90,7 +102,13 @@ int tiku_trk_launch_cand_before(const tiku_trk_cand_t *a,
 /** @brief Forget every application. */
 void tiku_trk_launch_clear(tiku_trk_apps_t *r);
 
-/** @brief Register a document app, launched as runner module file. */
+/**
+ * @brief Register a document application, launched as
+ *        `runner module file`.
+ *
+ * @return its index, the existing entry's index when @p module is already
+ *         registered, or -1.
+ */
 int tiku_trk_launch_add_document(tiku_trk_apps_t *r, const char *name,
     const char *runner, const char *module, const char *types);
 
@@ -105,10 +123,9 @@ int tiku_trk_launch_add(tiku_trk_apps_t *r, const char *name,
 /**
  * @brief Read a registry file: one application per line.
  *
- * `name<TAB>command<TAB>type,type,...`, '#' comments, blank lines ignored.
- * A file rather than a database because that is what this port can carry:
- * the rules that matter are about the ANSWERS, not about where the list is
- * kept (AW-013).
+ * `name<TAB>command<TAB>type,type,...`, '#' comments, blank lines ignored
+ * (AW-013).  An entry whose absolute command no longer exists is skipped
+ * (AW-041).
  *
  * @return how many were added, or -1 when the file cannot be read.
  */
@@ -126,14 +143,11 @@ tiku_trk_relation_t tiku_trk_launch_relation(const tiku_trk_app_t *app,
 /**
  * @brief The applications that can open @p types, best first (AW-040).
  *
- * The UNION over the selection: an application appears when it can open
- * ANY of the types, which is what makes a mixed selection openable at all.
- * Sorted by relation and then by name, so the order is an explanation
- * rather than an accident (AW-042).  Applications in the Trash and
- * applications that are not really applications never reach here (AW-041)
- * -- the registry holds no such entries by construction.
+ * The union over the selection: an application appears when it can open
+ * any of the types.  Sorted as tiku_trk_launch_cand_before() orders them
+ * (AW-042).  The registry holds applications only (AW-041).
  *
- * @param preferred_of Consulted per type for the user's choice; may be NULL.
+ * @param store Consulted per type for the user's choice; may be NULL.
  * @return how many candidates were written.
  */
 int tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
@@ -144,9 +158,8 @@ int tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
 /**
  * @brief Whether every one of @p types agrees on one preferred handler.
  *
- * The Open With list preselects a handler only when the selection agrees:
- * with two documents wanting different applications there is no answer to
- * preselect (AW-043).
+ * The Open With list preselects a handler only when the selection agrees
+ * (AW-043).
  *
  * @return the application, or NULL.
  */
@@ -155,11 +168,16 @@ const tiku_trk_app_t *tiku_trk_launch_agreed(const tiku_trk_apps_t *r,
                                              int ntypes,
                                              struct tiku_store *store);
 
-/** @brief Remember @p app as the handler for @p type (AW-044). */
+/**
+ * @brief Remember the application named @p app_name as the handler for
+ *        @p type (AW-044).
+ *
+ * @return 0, or -1 when it could not be stored.
+ */
 int tiku_trk_launch_set_preferred(struct tiku_store *store,
                                   const char *type, const char *app_name);
 
-/** @brief The remembered handler for @p type, or "" . */
+/** @brief The remembered handler's name for @p type, or "". */
 const char *tiku_trk_launch_preferred(struct tiku_store *store,
                                       const char *type, char *buf,
                                       size_t max);
@@ -179,11 +197,8 @@ typedef enum {
 /**
  * @brief Make @p m into the application it already is.
  *
- * A file that can be executed does not need something else to open it --
- * it IS the thing that opens.  Asking the registry which application
- * handles its type answers nothing for one, and "no application" for
- * the one file in a folder guaranteed to be runnable is the wrong
- * refusal.
+ * An executable file opens itself; the registry is not asked about its
+ * type.
  *
  * @return 1 when @p m is a runnable file and @p out was filled.
  */
@@ -193,12 +208,13 @@ int tiku_trk_launch_self(const tiku_model_t *m, tiku_trk_app_t *out);
  * @brief Run @p app over @p paths (AW-002, AW-038).
  *
  * The application's own file is dropped from what it is handed, so it never
- * opens itself.  The child starts in the user's home directory, which is
- * what the original gives everything it launches.  The parent does not wait:
- * a launch that blocked the window it was started from would be a launch
- * the user watches.
+ * opens itself.  The child starts in the user's home directory.  The parent
+ * does not wait for it.
  *
- * @return TIKU_TRK_LAUNCH_OK, or why not.
+ * @return TIKU_TRK_LAUNCH_OK once the child is forked, or why not.  A
+ *         command that then fails to run shows when it is reaped.
+ * @note An application with a module takes one document per launch; more
+ *       than one is refused as TIKU_TRK_LAUNCH_NOTHING.
  */
 tiku_trk_launch_err_t tiku_trk_launch_run(const tiku_trk_app_t *app,
                                           const char *const *paths, int n);
@@ -209,20 +225,19 @@ const char *tiku_trk_launch_reason(tiku_trk_launch_err_t err);
 /**
  * @brief Remember that @p pid is @p name, until it is collected.
  *
- * A program that ends is reaped by pid, so nothing else's child is
- * taken, and named when it goes -- a bare pid says nothing to the
- * person reading what happened.
+ * A program that ends is reaped by its pid, so no other code's child is
+ * collected, and its name goes into the trail with how it ended.
  */
 void tiku_trk_launch_note(pid_t pid, const char *name);
-/** @brief Mark a successfully requested SIGKILL as intentional for notices. */
+/** @brief Mark @p pid's coming SIGKILL as a requested Force Quit, so its end
+ *         is not reported as a crash. */
 void tiku_trk_launch_expect_stop(pid_t pid);
 
 /**
  * @brief How many launched programs have not yet been collected.
  *
- * Asked by a caller that is about to wait: a desktop with a child it
- * started is a desktop whose next event may come from another process
- * rather than from itself.
+ * A caller about to wait asks it: while a child it started runs, the next
+ * event may come from that process.
  */
 int tiku_trk_launch_running(void);
 
@@ -230,17 +245,17 @@ int tiku_trk_launch_running(void);
 typedef struct {
     char name[64];
     long pid;                   /* the exact child whose status was reaped */
-    char report[512];           /* parent exit record, or empty on failure */
+    char report[512];           /* where its exit report went, or empty */
     int  signal;                /* what killed it, or 0 */
     int  status;                /* what it exited with, when it exited */
-    int  expected;              /* deliberate Force Quit, not a crash */
+    int  expected;              /* a requested Force Quit, not a crash */
 } tiku_trk_death_t;
 
 /**
  * @brief Collect any launched program that has ended.
  *
  * @param out up to @p max of them, or NULL when only the trail is
- *            wanted.
+ *            wanted; then every ended program is collected.
  * @return how many, each written into the trail with how it went.
  */
 int tiku_trk_launch_reap(tiku_trk_death_t *out, int max);

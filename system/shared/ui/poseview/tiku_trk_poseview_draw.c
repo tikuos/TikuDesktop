@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_draw.c - what drawing needs to know: liveness, ordering,
- * and the rows on screen
+ * tiku_trk_poseview_draw.c - re-reading the values of the rows on screen,
+ * keeping rows in sort order, and the column set: adding, removing and
+ * registering columns, and copying a layout between views.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,8 +15,8 @@
 /**
  * @brief Whether the pose array is ordered under the current sort.
  *
- * The incremental insert is a binary search whose precondition is exactly
- * this; a value refresh under a value sort silently breaks it.
+ * The incremental insert is a binary search that needs this to hold, and a
+ * changed sort key can break it.
  */
 int
 pv_poses_sorted(tiku_trk_poseview_t *v)
@@ -50,7 +51,7 @@ tiku_trk_poseview_recheck_order(tiku_trk_poseview_t *v, int at)
     was_active = (v->active == at);
     scroll_was = v->scroll;
     pv_remove_pose(v, at);
-    v->scroll = scroll_was;             /* re-placing is not a removal     */
+    v->scroll = scroll_was;             /* a re-slot keeps the scroll      */
     now_at = pv_insert_sorted(v, &moved);
     if (now_at >= 0) {
         v->poses[now_at].selected = moved.selected;
@@ -60,21 +61,22 @@ tiku_trk_poseview_recheck_order(tiku_trk_poseview_t *v, int at)
         }
     }
     if (v->filtering) {
-        /* filtered[] holds indices INTO the pose array, and remove+insert
-         * has just renumbered it.  Left alone the filtered listing points
-         * at whatever slid into those slots -- the notify path rebuilds for
-         * exactly this reason and this path must too. */
+        /* filtered[] holds indices into the pose array, which remove and
+         * insert have just renumbered: left alone, the filtered listing
+         * would point at whatever slid into those slots. */
         pv_rebuild_filter(v);
     }
     return now_at;
 }
 
 /**
- * @brief Re-read the value of ONE row.  @return 1 when what it says moved.
+ * @brief Re-read the value of shown row @p i.
  *
- * Lifted out of the sweep so the sweep can be given a deadline: the whole
- * cost of a refresh is in here, one backend read, and a store on the far
- * end of a wire can take seconds over it.
+ * The whole cost of a refresh is this one backend read, which a store on
+ * the far end of a wire can take seconds over; refresh_until() bounds the
+ * sweep by a deadline between reads.
+ *
+ * @return 1 when what the row shows changed.
  */
 static int
 refresh_one(tiku_trk_poseview_t *v, int i)
@@ -113,27 +115,23 @@ refresh_one(tiku_trk_poseview_t *v, int i)
             snprintf(p->value, sizeof p->value, "%s", buf);
             p->value_valid = 1;
             changed++;
-            /* The row whose reading moved, and no other: a value refresh
-             * that redrew the listing would undo the saving the notice
-             * path just made (PVL-075). */
+            /* Only the row whose reading changed is repainted (PVL-075). */
             tiku_trk_poseview_damage_row(v, i);
             if (v->sort_field == TIKU_TRK_COL_VALUE ||
                 v->sort2_field == TIKU_TRK_COL_VALUE) {
-                /* MA-055: the key this listing is ordered by has moved, so
-                 * the row moves with it now rather than at whatever later
-                 * insert happens to notice the array is unsorted.  The
-                 * walk carries on from the same index, which may re-read a
-                 * row that shifted into it -- harmless, since every value
-                 * is re-read on the next tick anyway. */
+                /* MA-055: the sort key has changed, so the row moves to
+                 * its new slot now.  The walk carries on from the same
+                 * index and may re-read a row that shifted into it; every
+                 * value is re-read on the next tick. */
                 (void)tiku_trk_poseview_recheck_order(v, p->index);
             }
             return changed;
         }
         if (!p->value_valid) {
-            /* The reading is the same one as before, but the row has been
-             * showing a dash since the notice invalidated it: coming back
-             * is a change to what the row says, and a row nobody reports
-             * keeps the dash until something else repaints it. */
+            /* The reading has not changed, but the row has shown a dash
+             * since a notice invalidated it: showing the reading again is
+             * a change, or the dash stays until something else repaints
+             * the row. */
             p->value_valid = 1;
             changed++;
             tiku_trk_poseview_damage_row(v, i);
@@ -158,14 +156,15 @@ tiku_trk_poseview_refresh_values(tiku_trk_poseview_t *v, int first, int count)
 }
 
 /**
- * @brief Re-read what is on screen, for as long as @p deadline allows.
+ * @brief Re-read up to REFRESH_WINDOW rows from the first one shown, for
+ *        as long as @p deadline allows.
  *
- * A store on the far end of a serial line answers in seconds, so a
- * cursor survives the tick and a deadline bounds it: each tick reads
- * what it has time for and leaves the rest for the next.  The cursor
- * advances before the read, so a row that overruns is not retried for
- * ever while the rows behind it go unreached; a row not yet re-read
- * shows its last reading, as it does between ticks anyway.
+ * The cursor survives the tick: each tick reads what the deadline allows,
+ * at least one row, and leaves the rest for the next.  It advances before
+ * each read, so a row whose read overruns is not retried every tick ahead
+ * of the rows behind it.
+ *
+ * @return how many rows' values changed.
  */
 static int
 refresh_until(tiku_trk_poseview_t *v, int64_t deadline)
@@ -207,18 +206,16 @@ tiku_trk_poseview_pump(tiku_trk_poseview_t *v, int timeout_ms)
     if (v == NULL || v->backend->ops->pump == NULL) {
         return 0;
     }
-    /* One budget for the whole tick, not one per thing done in it: the
-     * pump spends what it needs and the value sweep gets what is left,
-     * which may be nothing.  That is the point -- a tick costs about what
-     * it was given, whatever the store on the other end is doing. */
+    /* One deadline for the whole tick: the pump spends what it needs and
+     * the value sweep gets what is left, though it reads at least one row,
+     * so a tick costs about what it was given. */
     deadline = tiku_trk_now() + (int64_t)timeout_ms * 1000;
     (void)v->backend->ops->pump(v->backend, timeout_ms);
-    /* Values are re-read for the rows on screen; a folder of thousands does
-     * not pay for what nobody is looking at. */
     return refresh_until(v, deadline);
 }
 
-/** @brief Title and default width for a field. */
+/** @brief Title and default width for a field, attribute columns
+ *         included; an unknown field answers as the name column. */
 void
 pv_column_def_v(const tiku_trk_poseview_t *v, int field, const char **title,
              int *width)
@@ -246,10 +243,8 @@ pv_column_def_v(const tiku_trk_poseview_t *v, int field, const char **title,
 }
 
 /**
- * @brief The sort key a view falls back to when its own column goes.
- *
- * The column that LEADS the strip, which is the one the reader is looking
- * at -- not whichever column happens to be called Name (MA-067).
+ * @brief The sort key a view falls back to when its sort column goes: the
+ *        column leading the strip, or the name with no columns (MA-067).
  */
 int
 pv_sort_fallback(const tiku_trk_poseview_t *v)
@@ -257,7 +252,8 @@ pv_sort_fallback(const tiku_trk_poseview_t *v)
     return (v->column_count > 0) ? v->columns[0].field : TIKU_TRK_COL_NAME;
 }
 
-/** @brief A size column is a number, and numbers read right-aligned. */
+/** @brief A new column's alignment: right for the size, left for the
+ *         rest. */
 static int
 column_alignment(int field)
 {
@@ -280,7 +276,7 @@ tiku_trk_poseview_types_present(const tiku_trk_poseview_t *v,
 
         if (ty[0] == '\0' || tiku_model_is_container(&v->poses[i].model)) {
             /* A folder's type is the folder type, which says nothing about
-             * what the listing HOLDS. */
+             * what the listing holds. */
             continue;
         }
         for (k = 0; k < n; k++) {
@@ -350,8 +346,9 @@ tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v)
     for (i = 0; i < pv_g_layout_clip.count && n < TIKU_TRK_COLUMNS_MAX; i++) {
         const tiku_trk_layout_column_t *src = &pv_g_layout_clip.column[i];
 
-        /* Name is mandatory; other built-ins are always known.  A custom
-         * field is only accepted when this target registered it already. */
+        /* The name column is required; the other built-ins are always
+         * known.  An attribute column is taken only when this view has
+         * registered it already. */
         if (src->field >= TIKU_TRK_COL_ATTR_BASE &&
             !tiku_trk_poseview_attr_of(v, src->field)) {
             continue;
@@ -368,8 +365,8 @@ tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v)
             int ignored_width = next[n].width;
 
             pv_column_def_v(v, src->field, &title, &ignored_width);
-            /* Built-in titles are static and custom titles are owned by the
-             * target view, so this pointer remains valid for the view. */
+            /* Built-in titles are static and attribute titles are owned by
+             * this view, so the pointer stays valid as long as the view. */
             next[n].title = title;
         }
         n++;
@@ -450,8 +447,6 @@ tiku_trk_poseview_attr_of(const tiku_trk_poseview_t *v, int field)
 int
 tiku_trk_poseview_last_column(const tiku_trk_poseview_t *v, int field)
 {
-    /* The name column is the one that cannot go, so it is also the one
-     * whose removal would leave nothing (TS-023). */
     (void)v;
     return (field == TIKU_TRK_COL_NAME) ? 1 : 0;
 }
@@ -473,8 +468,8 @@ tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field)
         }
         v->column_count--;
         tiku_trk_poseview_reflow_columns(v);
-        /* Sorting on a column nobody can see is sorting by nothing the
-         * user can check. */
+        /* A sort on the removed column falls to the column leading the
+         * strip. */
         if (v->sort_field == field) {
             v->sort_field = pv_sort_fallback(v);
             v->sort_reverse = 0;
@@ -483,8 +478,8 @@ tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field)
         if (v->sort2_field == field) {
             v->sort2_field = -1;    /* TS-004: no column, no tie-break     */
         }
-        /* PVL-081: the filter matches column TEXT, so a column that has
-         * gone can only take rows away -- thin the list in place. */
+        /* PVL-081: the filter matches column text, so a column that has
+         * gone can only take rows away; the list is thinned in place. */
         pv_filter_changed(v, 1);
         v->columns_dirty = 1;
     v->state_dirty = 1;
@@ -499,7 +494,7 @@ tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field)
     v->columns[v->column_count].alignment = column_alignment(field);
     v->column_count++;
     tiku_trk_poseview_reflow_columns(v);
-    /* PVL-081: a new column can only bring rows BACK, and nothing short of
+    /* PVL-081: a new column can only bring rows back, and nothing short of
      * a rebuild can find a row that is not in the filtered list. */
     pv_filter_changed(v, 0);
     v->state_dirty = 1;

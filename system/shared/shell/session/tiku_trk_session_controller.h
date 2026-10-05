@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_session_controller.h - desktop session restore and persistence.
+ * tiku_trk_session_controller.h - the desktop session: the store it is kept
+ * in, the folders and Deskbar it restores at startup, and what it saves and
+ * finishes at shutdown.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,7 +19,8 @@
 #include "tiku_model.h"
 #include "tiku_state.h"
 
-/** @brief Session-owned services shared by startup and shutdown. */
+/** @brief What the session reads and writes: the store, the Deskbar, the
+ *         Desktop and the folder windows. */
 typedef struct {
     tiku_store_t *store;
     tiku_trk_deskbar_t *deskbar;
@@ -47,14 +50,16 @@ void tiku_trk_session_restore_folders(
     tiku_trk_session_controller_t *controller, const char *const *paths,
     int path_count, int safe_mode, int device_backend, int fallback);
 /**
- * @brief Save the session: every open folder window, each view's state
- *        and columns, and the Deskbar's dock and width; then flush.
+ * @brief Save the session: every open folder window but a query's, each
+ *        view's state, columns and frame, and the Deskbar's dock and
+ *        width; then flush the store.
  */
 void tiku_trk_session_controller_save(
     tiku_trk_session_controller_t *controller);
 /**
  * @brief Finish the file work under way before quitting, answering any
- *        conflict by renaming and any error by skipping; bounded.
+ *        conflict by renaming and any error by skipping, for at most 50
+ *        rounds of 100 ms.
  */
 void tiku_trk_session_drain_filesystem(tiku_fs_t *filesystem);
 

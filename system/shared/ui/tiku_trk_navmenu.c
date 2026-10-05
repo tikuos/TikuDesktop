@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_navmenu.c - progressive filling, descent, and what a menu hides.
+ * tiku_trk_navmenu.c - navigation menus: filling a level a chunk at a time,
+ * descending and leaving levels, and what a menu hides.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -65,8 +66,8 @@ tiku_trk_nav_spring_states(tiku_trk_nav_t *nav,
             int broken = 0;
             int accepts = 0;
 
-            /* An entry that cannot be resolved is a broken link: listed,
-             * greyed, never a landing. */
+            /* An entry that does not resolve is taken as a broken link:
+             * listed and greyed. */
             if (nav->backend != NULL &&
                 nav->backend->ops->stat(nav->backend, it->path, &m) == 0) {
                 broken = m.facts.link_broken;
@@ -102,26 +103,24 @@ tiku_trk_nav_spring_states(tiku_trk_nav_t *nav,
 int
 tiku_trk_nav_wanted(const tiku_model_t *m)
 {
-    /* A file has nothing to navigate into, and an empty submenu hanging
-     * off every row is worse than none at all (CW-045). */
     return (m != NULL && tiku_model_is_container(m));
 }
 
 /** @brief What one level's fill is carrying between calls. */
 struct fill_ctx {
-    tiku_trk_nav_t       *nav;
-    tiku_trk_nav_level_t *lv;
+    tiku_trk_nav_t       *nav;      /* the walk                          */
+    tiku_trk_nav_level_t *lv;       /* the level being filled            */
     int                   skip;     /* entries already taken             */
     int                   seen;     /* entries walked this call          */
-    int                   added;
+    int                   added;    /* entries added this call           */
 };
 
 /** @brief Whether a menu shows @p m at all (CW-057). */
 static int
 visible(const tiku_trk_nav_t *nav, const tiku_model_t *m)
 {
-    /* Exactly what the window hides: a menu that showed a dot file the
-     * window does not would be a second, disagreeing view of one folder. */
+    /* Dot files are hidden when the window hides them; the Trash always
+     * is. */
     if (nav->hide_dotfiles && m->name[0] == '.') {
         return 0;
     }
@@ -145,8 +144,8 @@ fill_one(const tiku_model_t *m, void *ctx)
     if (!visible(c->nav, m)) {
         return 0;
     }
-    /* Skipped rather than restarted: the walk has no cursor of its own, so
-     * a chunk resumes by passing over what it already took. */
+    /* The backend's walk has no cursor, so a chunk resumes by passing over
+     * the entries it already took. */
     if (c->seen++ < c->skip) {
         return 0;
     }
@@ -158,16 +157,16 @@ fill_one(const tiku_model_t *m, void *ctx)
     snprintf(it->name, sizeof it->name, "%s", m->name);
     snprintf(it->path, sizeof it->path, "%s", m->path);
     it->is_container = tiku_model_is_container(m);
-    /* A file is listed but not choosable from a NAVIGATION menu: the menu
-     * exists to reach a folder, and a live file row would make it a second
-     * way to open things that behaves differently (CW-056). */
+    /* A file is listed but cannot be chosen in a navigation menu
+     * (CW-056). */
     it->enabled = it->is_container;
     c->lv->n++;
     c->added++;
     return 0;
 }
 
-/** @brief Folders before files, then by name. */
+/** @brief Folders before files when folders_first is set, then by name in
+ *         byte order. */
 static void
 sort_level(tiku_trk_nav_t *nav, tiku_trk_nav_level_t *lv)
 {
@@ -210,9 +209,8 @@ tiku_trk_nav_fill(tiku_trk_nav_t *nav, int level)
         return 0;
     }
     if (strcmp(lv->path, "/") == 0 && nav->backend->devid[0] == '\0') {
-        /* A menu on the root lists VOLUMES, as the root window does: the
-         * root is the Disks surface, not a folder of system directories
-         * (CW-057). */
+        /* On a local backend the root level lists the volumes, as the
+         * root window does (CW-057). */
         tiku_volumes_t vs;
         int k;
 
@@ -244,8 +242,7 @@ tiku_trk_nav_fill(tiku_trk_nav_t *nav, int level)
     c.added = 0;
     (void)nav->backend->ops->list(nav->backend, lv->path, fill_one, &c);
     if (lv->n == before || lv->n >= TIKU_TRK_NAV_MAX) {
-        /* Nothing new arrived: the folder is exhausted, and the level can
-         * be sorted and shown as final. */
+        /* Nothing new arrived, or the level is full: it is complete. */
         lv->done = 1;
         sort_level(nav, lv);
         return 0;
@@ -277,11 +274,9 @@ tiku_trk_nav_enter(tiku_trk_nav_t *nav, int i)
         return 0;
     }
     to = &nav->level[nav->depth];
-    /* Cleared, not reused: re-opening must RE-READ, because a menu is not
-     * a snapshot and one showing last time's contents would be lying
+    /* The new level is cleared, so the fill lists the folder afresh
      * (CW-055). */
-    {   /* Copied out first: `to` and `lv->item[i]` live in the same
-         * array, and clearing the destination would erase the source. */
+    {
         char into[TIKU_PATH_MAX];
 
         snprintf(into, sizeof into, "%s", lv->item[i].path);
@@ -317,8 +312,7 @@ tiku_trk_nav_move(tiku_trk_nav_t *nav, tiku_trk_nav_key_t k)
         if (lv->n == 0) {
             return 0;
         }
-        /* No wrap: a menu is a list with ends, and wrapping from the last
-         * row to the first reads as the key having been missed. */
+        /* No wrap at the last row. */
         if (lv->sel + 1 >= lv->n) {
             return 0;
         }
@@ -366,8 +360,8 @@ tiku_trk_nav_place(const tiku_trk_nav_t *nav, int level, int px, int py,
     hh = rows * TIKU_TRK_NAV_ROW + 4;
     xx = px;
     yy = py;
-    /* Flipped rather than clipped: a level that ran off the screen would
-     * put its rows where they cannot be clicked. */
+    /* A level that would run off the right edge opens to the left of px
+     * instead. */
     if (xx + ww > screen_w) {
         xx = px - ww;
     }

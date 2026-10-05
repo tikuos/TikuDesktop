@@ -5,9 +5,10 @@
  *
  * tiku_trk_soundprefs.h - which moments sound, and how loud, as settings.
  *
- * One line per event in the settings file ("sound.beep on") and one for
- * the volume ("sound.volume 80"), so the Sounds window and a hand edit
- * of the file are the same act; apply() is the only road into the kit.
+ * One line per event in the settings file ("sound.beep on"), one naming
+ * the file it plays ("sound.beep.clip") and one for the volume
+ * ("sound.volume 80"), so the Sounds window and a hand edit of the file are
+ * the same act.  tiku_trk_soundprefs_apply() is the one path into the kit.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,7 +18,9 @@
 #include "tiku_sound.h"
 #include "tiku_trk_prefs.h"
 
+/** @brief How far one step moves the volume, out of 100. */
 #define TIKU_TRK_SOUND_VOLUME_STEP 10
+/** @brief How many files the sounds folder can offer. */
 #define TIKU_TRK_SOUND_OFFER_MAX 24
 
 /** @brief The files in the sounds folder, by name, in order. */
@@ -79,7 +82,9 @@ int tiku_trk_soundprefs_defaultable(tiku_trk_prefs_t *prefs);
 /** @brief Put every sound setting back to its default. */
 void tiku_trk_soundprefs_defaults(tiku_trk_prefs_t *prefs);
 
-/** @brief Push the enables and the volume in @p prefs into the kit. */
+/** @brief Push the enables, the file choices and the volume in @p prefs
+ *         into the kit; an event whose file is unset or unreadable gets its
+ *         baked score. */
 void tiku_trk_soundprefs_apply(tiku_trk_prefs_t *prefs);
 
 #endif /* TIKU_TRK_SOUNDPREFS_H_ */

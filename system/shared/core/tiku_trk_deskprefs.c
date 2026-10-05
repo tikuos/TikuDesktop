@@ -3,10 +3,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskprefs.c - what the Desktop looks like (see the header).
+ * tiku_trk_deskprefs.c - what the Desktop looks like.
  *
- * The values only; where the controls sit and what a click on one means
- * belong to the window, as they do for the Deskbar's own preferences.
+ * The values only: where the controls sit and what a click on one means
+ * belong to the window, tiku_trk_desktop_prefs_window.c.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,8 +39,7 @@ tiku_trk_deskprefs_default(tiku_trk_deskprefs_values_t *values)
         return;
     }
     memset(values, 0, sizeof *values);
-    /* No picture and the middle rung: what a Desktop nobody has dressed
-     * looks like. */
+    /* No picture, scaled, and the smallest icons. */
     values->bg.mode = TIKU_TRK_BG_SCALED;
     values->icon_size = 32;
 }
@@ -73,8 +72,8 @@ tiku_trk_deskprefs_load(tiku_trk_deskprefs_t *prefs,
              tiku_trk_bg_load(store, node, &prefs->value.bg));
     prefs->value.have_bg = found && prefs->value.bg.path[0] != '\0';
     if (!prefs->value.have_bg) {
-        /* A record with no picture in it still said which way to lay one,
-         * and forgetting that would reset the mode every time. */
+        /* A record with no picture in it still names a mode, so only the
+         * path is cleared and the mode is kept. */
         prefs->value.bg.path[0] = '\0';
     }
     prefs->opened = prefs->value;
@@ -115,8 +114,8 @@ same(const tiku_trk_deskprefs_values_t *a,
         a->bg.mode != b->bg.mode) {
         return 0;
     }
-    /* The path only counts while there IS one: two Desktops showing no
-     * picture are the same Desktop, whatever path each last held. */
+    /* The path counts only while a picture is shown: two Desktops showing
+     * no picture are the same, whatever path each last held. */
     if (a->have_bg && strcmp(a->bg.path, b->bg.path) != 0) {
         return 0;
     }
@@ -203,11 +202,11 @@ tiku_trk_deskprefs_step_icon(tiku_trk_deskprefs_t *prefs, int up)
         }
     }
     if (i >= TIKU_TRK_DESK_ICON_STEPS) {
-        i = 0;                  /* a size off the ladder starts at its foot */
+        i = 0;                  /* a size not in kSteps counts as kSteps[0] */
     }
     i += up ? 1 : -1;
     if (i < 0 || i >= TIKU_TRK_DESK_ICON_STEPS) {
-        return 0;               /* the ends stop rather than wrap */
+        return 0;               /* the ends do not wrap */
     }
     prefs->value.icon_size = kSteps[i];
     return 1;
@@ -254,8 +253,8 @@ tiku_trk_deskprefs_pictures(tiku_trk_deskprefs_pictures_t *out,
         }
         (void)closedir(dir);
     }
-    /* Named order, so the list a person learns is the list they see
-     * again: a directory hands its entries back however it likes. */
+    /* Sorted by path, since a directory returns its entries in no fixed
+     * order. */
     {
         int i, j;
 

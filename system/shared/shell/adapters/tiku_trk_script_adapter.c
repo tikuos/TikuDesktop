@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_script_adapter.c - script observations of desktop presentation.
+ * tiku_trk_script_adapter.c - what a script reads of the desktop shell, and
+ * the events its steps become.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,6 +16,7 @@
 #include "tiku_trk_script_adapter.h"
 #include "tiku_trk_task.h"
 
+/* The height of a folder window's count view, under its list. */
 #define COUNT_HEIGHT 16
 
 void
@@ -67,8 +69,8 @@ tiku_trk_script_adapter_tab_point(void *context, const char *title, int *x,
             continue;
         }
         if (strstr(w->title, title) == NULL) {
-            /* Titles are the folder's NAME now (CW-016); a script that
-             * still addresses a window by path finds it by the leaf. */
+            /* Titles are the folder's name (CW-016), so a path finds the
+             * window by its leaf. */
             const char *leaf = strrchr(title, '/');
 
             if (leaf == NULL || leaf[1] == '\0' ||
@@ -76,14 +78,13 @@ tiku_trk_script_adapter_tab_point(void *context, const char *title, int *x,
                 continue;
             }
         }
-        /* The tab's middle, TAB_H/2 down: clear of the close box on the
-         * left and the zoom box on the right, whatever their width, so a
-         * click meant to raise a window never lands on either.
+        /* The tab's middle, half the tab's height down: clear of the close
+         * box on the left and the zoom box on the right, whatever their
+         * width.
          *
-         * Where another window stands over the middle, the tab is walked
-         * for somewhere this one is really in front: a point under
-         * another window is not a point a hand could reach, and an
-         * application holding several windows has tabs that overlap. */
+         * Where another window covers the middle, the tab is walked in
+         * 12-pixel steps for a point where this window is in front: the
+         * windows of one application can have overlapping tabs. */
         *x = w->frame.x + w->frame.w / 2;
         *y = w->frame.y + tiku_window_tab_h() / 2;
         {
@@ -188,7 +189,8 @@ tiku_trk_script_adapter_pose_at(void *context, const char *name,
     }
 }
 
-/** @brief Like pose_at, but the DESKTOP only: what click-desk aims at. */
+/** @brief Like pose_at, but on the Desktop only and by the shown name too:
+ *         what the *-desk gestures aim at. */
 static int
 tiku_trk_script_adapter_pose_desk_at(void *context, const char *name,
                                      int *x, int *y)
@@ -208,8 +210,8 @@ tiku_trk_script_adapter_pose_desk_at(void *context, const char *name,
     for (i = 0; i < count; i++) {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
 
-        /* By the name it SHOWS as well as the name it has: a synthetic
-         * pose like Disks has no file name to be asked for. */
+        /* By the name it shows as well as the name it has: a synthetic
+         * pose like Disks has no file name. */
         if (pose != NULL &&
             (strcmp(pose->model.name, name) == 0 ||
              strcmp(tiku_model_display_name(&pose->model), name) == 0)) {
@@ -267,9 +269,7 @@ tiku_trk_script_adapter_cell_point(void *context, int row, const char *title,
     if (adapter == NULL || title == NULL || x == NULL || y == NULL) {
         return 0;
     }
-    /* The row answers where it sits; the column answers where it starts.
-     * A test that worked either out by arithmetic would be encoding the
-     * chrome all over again. */
+    /* The row says where it sits; the column says where it starts. */
     if (!tiku_trk_script_adapter_row_point(context, row, x, y)) {
         return 0;
     }
@@ -316,11 +316,9 @@ tiku_trk_script_adapter_pose_screen(void *context, const char *name,
             if (pose == NULL || strcmp(pose->model.name, name) != 0) {
                 continue;
             }
-            /* The icon's own place, not the union with its name: a landing
-             * is where the ICON went, and the union moves with the length
-             * of the file name.  Converted the way a press is converted on
-             * the way in, so a test can name a drop point instead of the
-             * chrome. */
+            /* The icon's own place, without its name, whose length moves
+             * the union.  Converted as a press is converted on the way in,
+             * so a script can name a drop point in screen pixels. */
             tiku_trk_poseview_pose_location(folder->view, pose, x, y);
             content = tiku_trk_folder_window_content(folder);
             tiku_trk_poseview_origin(folder->view, &ox, &oy);
@@ -328,8 +326,8 @@ tiku_trk_script_adapter_pose_screen(void *context, const char *name,
             *y += content.y + 2 - oy;
             return 1;
         }
-        /* The desktop has no window to focus, and its icons are poses like
-         * any other -- asking about one must not answer "nowhere". */
+        /* The Desktop has no window to focus: its poses are searched
+         * next. */
         if (folder == tiku_trk_desktop_view_folder(adapter->desktop_view)) {
             return 0;
         }
@@ -465,9 +463,8 @@ fill_state(tiku_trk_script_adapter_t *adapter,
     append_menu_labels(adapter, *adapter->popup);
     append_menu_labels(adapter, *adapter->popup_sub);
     if (adapter->menu_labels[0] == '\0') {
-        /* The Deskbar's leaf menu is a menu too: without this a script
-         * could only reach it by pixel, and its rows move whenever what
-         * the user has recently opened does. */
+        /* With no popup open, the Deskbar's menus, so a script can name
+         * their rows. */
         size_t used;
 
         (void)tiku_trk_deskbar_menu_labels(adapter->deskbar, 0,
@@ -488,9 +485,8 @@ fill_state(tiku_trk_script_adapter_t *adapter,
         state->scroll = tiku_trk_poseview_scroll(folder->view);
         state->rows = tiku_trk_poseview_count(folder->view);
         /*
-         * How many of them the window can SHOW, which is the list's
-         * height divided by a row's -- so it is the one number a script
-         * can ask that moves when the face does.
+         * How many rows the window can show: the list's height over a
+         * row's, which changes with the font.
          */
         state->viewport_rows = tiku_trk_poseview_visible_rows(folder->view);
     } else if (focused != NULL && focused ==
@@ -557,8 +553,8 @@ menu_pick(tiku_trk_script_adapter_t *adapter, const char *label,
         return 0;
     }
     {
-        /* An exact label outranks a substring: "Move to" must not land on
-         * "Move to Trash" merely because the Trash row comes first. */
+        /* An exact label outranks a substring, so "Move to" does not land
+         * on "Move to Trash" when that row comes first. */
         int pass;
 
         for (pass = 0; pass < 2; pass++) {

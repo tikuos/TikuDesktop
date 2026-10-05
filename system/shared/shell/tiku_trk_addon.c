@@ -1,9 +1,18 @@
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_addon.c - the add-on table: registering, discovering, the menu
+ * and shortcuts, and running an external add-on.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-/* SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_trk_addon.h"
 #include <stdio.h>
 #include <string.h>
@@ -26,7 +35,7 @@ tiku_trk_addons_register(tiku_trk_addons_t *a, const char *name,
     snprintf(x->type, sizeof x->type, "%s", type != NULL ? type : "*");
     x->generic = strcmp(x->type, "*") == 0;
     x->key = key;
-    x->mods = 0x3u; /* Command+Option; the command key is always forced. */
+    x->mods = 0x3u; /* Command and Option, in the key handler's bits */
     a->generation++;
     return a->count - 1;
 }
@@ -168,8 +177,8 @@ tiku_trk_addons_discover(tiku_trk_addons_t *addons, const char *dir)
     if (addons == NULL || dir == NULL) {
         return 0;
     }
-    /* What an earlier discovery found is replaced wholesale: an add-on
-     * removed from the directory must leave the menu (AW-023). */
+    /* What an earlier discovery found is replaced, so an add-on removed
+     * from the directory leaves the menu (AW-023). */
     for (i = 0; i < addons->count; i++) {
         if (addons->item[i].external) {
             addons->item[i] = addons->item[--addons->count];
@@ -224,7 +233,7 @@ tiku_trk_addons_discover(tiku_trk_addons_t *addons, const char *dir)
             snprintf(a->type, sizeof a->type, "%s", type);
             a->generic = (type[0] == '\0');
             a->key = keyline[0];
-            a->mods = 0x3u; /* Command+Option, the add-on default chord */
+            a->mods = 0x3u; /* Command and Option, as registered ones */
             a->external = 1;
             found++;
         }
@@ -260,8 +269,8 @@ tiku_trk_addons_run_external(const tiku_trk_addon_t *addon,
         execvp(argv[0], (char *const *)(void *)argv);
         _exit(127);
     }
-    /* Reaped without waiting: an add-on that blocked the window it ran
-     * from would be an add-on the user watches (CW-038). */
+    /* Reaped without waiting, so the window it ran from is not blocked
+     * (CW-038). */
     (void)waitpid(pid, NULL, WNOHANG);
     return 0;
 }

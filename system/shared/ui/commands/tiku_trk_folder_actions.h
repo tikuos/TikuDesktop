@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_actions.h - direct folder-view command actions.
+ * tiku_trk_folder_actions.h - the commands a folder view carries out
+ * itself: view modes, icon sizes, sorting, columns, clean-up and resize to
+ * fit.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

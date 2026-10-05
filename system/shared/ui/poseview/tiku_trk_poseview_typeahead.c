@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_typeahead.c - typing a name to reach a pose
+ * tiku_trk_poseview_typeahead.c - typing to reach a pose, and the
+ * type-ahead filter: its terms, the rows they let through, and Return.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,7 +12,8 @@
 #include "tiku_trk_poseview_private.h"
 
 /**
- * @brief Tracker's scoring: starts-with always wins, else 1/offset.
+ * @brief Type-ahead scoring: 1000 for a name starting with @p typed, else
+ *        1/(offset + 1) for a name containing it.
  *
  * @return Score, higher is better; 0 means not a candidate.
  */
@@ -45,9 +47,8 @@ tiku_trk_poseview_filter_pose(tiku_trk_poseview_t *v,
     }
     left = v->filter_count;
     memset(found, 0, sizeof found);
-    /* An empty term matches everything, and is counted straight away: it is
-     * the state the filter is in before a character is typed, and treating
-     * it as unmatched would blank the listing on entry. */
+    /* An empty term matches everything and counts as found, so a filter
+     * with nothing typed shows every row. */
     for (j = 0; j < v->filter_count; j++) {
         if (v->filter[j][0] == '\0') {
             found[j] = 1;
@@ -57,8 +58,8 @@ tiku_trk_poseview_filter_pose(tiku_trk_poseview_t *v,
     if (left == 0) {
         return 1;
     }
-    /* Every COLUMN is searched, not the name: each term may land in a
-     * different one, which is what makes two short terms selective. */
+    /* Every column is searched, not just the name, and each term may land
+     * in a different one. */
     for (i = 0; i < v->column_count; i++) {
         char buf[160];
         const char *text = tiku_trk_poseview_cell_text(v, p,
@@ -96,8 +97,8 @@ pv_rebuild_filter(tiku_trk_poseview_t *v)
         if (tiku_trk_poseview_filter_pose(v, &v->poses[i])) {
             v->filtered[v->filtered_count++] = i;
         } else {
-            /* A row that has left the listing cannot stay in the selection:
-             * a later command would act on something the user cannot see. */
+            /* A row the filter leaves out is deselected, so no command
+             * acts on a hidden row. */
             v->poses[i].selected = 0;
         }
     }
@@ -133,9 +134,9 @@ tiku_trk_poseview_filter_term(tiku_trk_poseview_t *v)
 }
 
 /**
- * @brief Re-apply the filter after a term changed (TypeAheadFilteringChanged).
+ * @brief Re-apply the filter after a term changed.
  *
- * A term that GREW can only take rows away, so the filtered list is walked
+ * A term that grew can only take rows away, so the filtered list is walked
  * and thinned in place.  A term that shrank, or a term that went away, can
  * bring rows back, and nothing but a full rebuild can find them.
  */
@@ -159,8 +160,8 @@ pv_filter_changed(tiku_trk_poseview_t *v, int grew)
     } else {
         pv_rebuild_filter(v);
     }
-    /* PVL-061: a shrinking list must not leave the window scrolled past its
-     * own last row. */
+    /* PVL-061: a shrinking list pulls the scroll back, so the window is not
+     * scrolled past the last row. */
     if (v->visible_rows > 0 && v->scroll > 0 &&
         v->scroll + v->visible_rows > v->filtered_count) {
         v->scroll = v->filtered_count - v->visible_rows;
@@ -182,9 +183,9 @@ type_select_best(tiku_trk_poseview_t *v)
         float s = type_score(p->model.name, v->typed);
 
         if (v->mode == TIKU_TRK_MODE_LIST) {
-            /* Every COLUMN participates, as the filter's walk does: a
-             * kind or a value typed at the list should land on the row
-             * that shows it (PVK-029). */
+            /* Every column participates, as the filter's walk does: a
+             * kind or a value typed at the list lands on the row that
+             * shows it (PVK-029). */
             int c;
 
             for (c = 0; c < v->column_count; c++) {
@@ -210,8 +211,7 @@ type_select_best(tiku_trk_poseview_t *v)
         v->pivot = best;
         v->last_added = best;
         v->active = tiku_trk_poseview_at(v, best)->index;
-        /* Typing a name that is off screen must SHOW it: a selection the
-         * user cannot see is one they cannot tell happened (PVL-054). */
+        /* A match off screen is scrolled into view (PVL-054). */
         tiku_trk_poseview_scroll_into_view(v, best, v->visible_rows);
     }
 }
@@ -256,8 +256,8 @@ tiku_trk_poseview_type_backspace(tiku_trk_poseview_t *v)
         if (n > 0u) {
             t[n - 1u] = '\0';
         } else if (v->filter_count > 1) {
-            /* Backspacing off the front of a term removes the term, which is
-             * how the '|' separators come back off one at a time. */
+            /* Backspacing an empty term removes it, and the '|' before it
+             * in the shown string. */
             v->filter_count--;
         }
         pv_filter_changed(v, 0);
@@ -295,9 +295,7 @@ tiku_trk_poseview_type_string(const tiku_trk_poseview_t *v)
         return "";
     }
     if (v->filtering) {
-        /* Terms are shown joined by '|', as the count view shows them: the
-         * separator is the only thing on screen that says two terms are in
-         * force rather than one long one. */
+        /* Terms are shown joined by '|', as the count view draws them. */
         tiku_trk_poseview_t *m = (tiku_trk_poseview_t *)v;
         size_t at = 0;
         int i;
@@ -335,8 +333,8 @@ tiku_trk_poseview_set_filtering(tiku_trk_poseview_t *v, int on)
         return;
     }
     if (!on) {
-        /* Leaving the mode drops the terms: they are not a setting, they are
-         * a query, and a stale one would silently hide rows next time. */
+        /* Leaving the mode drops the terms, so they do not hide rows the
+         * next time filtering starts. */
         v->filter_count = 1;
         v->filter[0][0] = '\0';
     }
@@ -361,8 +359,8 @@ tiku_trk_poseview_return_pressed(tiku_trk_poseview_t *v, int shift)
     }
     if (v->filtering && tiku_trk_poseview_selection_count(v) == 0 &&
         tiku_trk_poseview_count(v) > 0) {
-        /* PVK-015: the filter has already picked the row out; asking the
-         * user to arrow onto it first would make the filter half a tool. */
+        /* PVK-015: with nothing selected, Return selects the top filtered
+         * row and makes it the pivot and the active row. */
         tiku_trk_pose_t *p = tiku_trk_poseview_at(v, 0);
 
         pv_clear_selection(v);
@@ -371,7 +369,7 @@ tiku_trk_poseview_return_pressed(tiku_trk_poseview_t *v, int shift)
         v->last_added = p->index;
         v->active = p->index;
     }
-    /* PVK-016: Shift says "and put the listing back", so the window is not
-     * left filtered around a folder the user has just left. */
+    /* PVK-016: with Shift the caller also ends filtering, putting the full
+     * listing back. */
     return (shift && v->filtering) ? 1 : 0;
 }

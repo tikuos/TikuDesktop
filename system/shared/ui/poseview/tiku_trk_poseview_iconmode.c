@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_iconmode.c - icon mode: the layout of icons and where a
- * dropped one lands
+ * tiku_trk_poseview_iconmode.c - the modes and icon sizes, the icon grid
+ * and auto-placement, the geometry a pose is drawn and hit-tested in, the
+ * rubber band, and where a dropped entry lands.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -49,17 +50,15 @@ tiku_trk_poseview_step_icon_size(tiku_trk_poseview_t *v, int up)
         }
     }
     if (i >= n) {
-        /* Not on the ladder at all: step onto the nearest rung rather than
-         * refusing, so a restored odd size is not a dead end. */
+        /* Not on the ladder: the step starts from the first rung at or
+         * above the size. */
         for (i = 0; i < n - 1 && icon_ladder[i] < v->icon_size; i++) {
         }
     }
-    /* The ends are a no-op, not a wrap: 128 stepping to 32 would look like
-     * the display broke. */
+    /* The ends are a no-op, not a wrap. */
     {
-        /* What the middle of the window is looking at, in the UNSCALED
-         * space positions are stored in -- the one thing that does not
-         * change when the size does. */
+        /* The point at the middle of the window, in the unscaled space
+         * positions are stored in, which a size change does not move. */
         float was = pv_mode_scale(v->mode, v->icon_size);
         float cx = ((float)v->icon_x + (float)v->view_w / 2.0f) / was;
         float cy = ((float)v->icon_y + (float)v->view_h / 2.0f) / was;
@@ -71,9 +70,8 @@ tiku_trk_poseview_step_icon_size(tiku_trk_poseview_t *v, int up)
         } else {
             return 0;
         }
-        /* Put that same point back in the middle.  Without this the view
-         * jumps to the top-left on every size change, because the origin
-         * is in pixels and the pixels all moved (PVL-010). */
+        /* That point goes back to the middle of the window: the origin is
+         * in pixels, and every pixel position moved (PVL-010). */
         pv_extent_clear(v);
         {
             float now = pv_mode_scale(v->mode, v->icon_size);
@@ -98,11 +96,10 @@ pv_mode_scale(int mode, int size)
 /**
  * @brief Carry existing positions from one icon grid into another (PVL-011).
  *
- * The whole-cell count and the offset WITHIN the cell are converted
- * separately: converting the raw coordinate would rescale a deliberate
- * nudge into a different cell, and converting only the cell count would
- * lose it.  Together they keep the arrangement recognisable across a mode
- * whose cell is a different shape.
+ * Each position is pinned to the old grid, and the cell count and the
+ * offset within the cell are converted separately, so the arrangement and
+ * any nudge off the grid carry across a mode whose cell is a different
+ * shape.
  */
 static void
 map_icons(tiku_trk_poseview_t *v, int old_mode, int old_size)
@@ -132,7 +129,7 @@ map_icons(tiku_trk_poseview_t *v, int old_mode, int old_size)
         y = (int)((float)p->loc_y * oscale);
         px = x;
         py = y;
-        {   /* Pin to the OLD grid to find the cell and the nudge. */
+        {   /* Pin to the old grid to find the cell and the nudge. */
             float fx = (float)(px - oox) / (float)ogx;
             float fy = (float)(py - ooy) / (float)ogy;
             px = (int)((fx >= 0.0f) ? (fx + 0.5f) : (fx - 0.5f)) * ogx + oox;
@@ -176,9 +173,9 @@ tiku_trk_poseview_reset_hint(tiku_trk_poseview_t *v)
     if (v == NULL) {
         return;
     }
-    /* PVL-017: back to the top-left of what is on screen.  Left where it
-     * was, the next folder's auto-placement carries on from the last
-     * folder's last icon and the first row lands halfway down. */
+    /* PVL-017: back to the top-left of what is on screen, so the next
+     * folder's auto-placement does not carry on from the last folder's
+     * last icon. */
     tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
     v->hint_x = ox;
     v->hint_y = oy;
@@ -202,11 +199,9 @@ tiku_trk_poseview_set_mode(tiku_trk_poseview_t *v, int mode)
     old_mode = v->mode;
     v->mode = mode;
     v->state_dirty = 1;
-    /* Between the two icon modes the cell changes shape, so what was laid
-     * out has to be carried across; list mode has no grid to carry into.
-     * Leaving LIST, the stored positions are in whatever icon grid was
-     * last live -- the fLastIconMode the record kept -- so they are
-     * mapped from THAT, not taken at face value (MA-061). */
+    /* Positions are carried into the new icon grid; list mode has no grid.
+     * Leaving list mode, they are mapped from the icon grid last live
+     * (MA-061). */
     if (mode != TIKU_TRK_MODE_LIST) {
         int from = (old_mode != TIKU_TRK_MODE_LIST) ? old_mode
                                                     : v->last_icon;
@@ -216,9 +211,8 @@ tiku_trk_poseview_set_mode(tiku_trk_poseview_t *v, int mode)
         }
         v->last_icon = mode;
     }
-    /* Every rect changed shape, so the box built from the old ones is a
-     * box around nothing; and the origin this mode kept is re-clamped
-     * against it, since the mode it was saved under may have been bigger. */
+    /* Every rect changed shape, so the box is forgotten, and the mode's
+     * origin is clamped against the rebuilt one. */
     pv_extent_clear(v);
     {
         int x, y;
@@ -242,7 +236,7 @@ tiku_trk_poseview_layout_info(const tiku_trk_poseview_t *v, int *gx, int *gy,
     switch (v->mode) {
     case TIKU_TRK_MODE_MINI:
         /* PVL-013: a wide, short cell, because a mini-icon row is a label.
-         * Its HEIGHT is the taller of the art and the label, since the two
+         * Its height is the taller of the art and the label, since the two
          * sit side by side (PVL-007). */
         *gx = s * 6;
         *gy = (v->font_h > 0 && v->font_h + 1 > s) ? v->font_h + 1 : s;
@@ -251,9 +245,8 @@ tiku_trk_poseview_layout_info(const tiku_trk_poseview_t *v, int *gx, int *gy,
         break;
     case TIKU_TRK_MODE_ICON:
         *gx = s + (int)(s * 0.875f + 0.999f);
-        /* The label sits UNDER the icon, so the cell is as tall as both:
-         * a height derived from the art alone clips the name at one font
-         * and leaves it floating at another (PVL-007). */
+        /* The label sits under the icon, so the cell is as tall as both
+         * (PVL-007). */
         *gy = (v->font_h > 0) ? s + v->font_h + 1 : *gx;
         *ox = (int)(s * 0.625f + 0.999f);
         *oy = *ox;
@@ -279,7 +272,7 @@ tiku_trk_poseview_pin_to_grid(const tiku_trk_poseview_t *v, int *x, int *y)
     if (gx == 0 || gy == 0) {
         return;                   /* PVL-014: a no-op with no grid */
     }
-    /* Round to the NEAREST cell, in both directions. */
+    /* Round to the nearest cell, negative coordinates included. */
     {
         float fx = (float)(*x - ox) / (float)gx;
         float fy = (float)(*y - oy) / (float)gy;
@@ -312,7 +305,7 @@ tiku_trk_poseview_open_anim_rect(const tiku_trk_poseview_t *v, int row,
     }
     *x = 2;
     *y = 2 + (row - v->scroll) * row_h;
-    /* The MEASURED first column, not a guess (PVS-013). */
+    /* The first column's measured width (PVS-013). */
     *w = (v->column_count > 0) ? v->columns[0].width : 200;
     *h = row_h;
     return 1;
@@ -353,13 +346,14 @@ tiku_trk_poseview_move_pose(tiku_trk_poseview_t *v, tiku_trk_pose_t *p,
     p->loc_y = (int)((float)y / scale);
     p->placed = 1;
     p->auto_placed = 0;           /* the user put it there */
-    /* Grown in place.  A pose can only ever move the box OUTWARDS from
-     * here; shrinking it needs the walk, and that is what removal does. */
+    /* Grown in place.  A move only pushes the box outwards; shrinking it
+     * needs the walk that removal does. */
     pv_extent_add(v, p);
     v->state_dirty = 1;
 }
 
-/** @brief Cell footprint of one pose on screen. */
+/** @brief The grid cell one pose takes, or the icon size where there is no
+ *         grid. */
 static void
 pose_extent(const tiku_trk_poseview_t *v, int *w, int *h)
 {
@@ -371,10 +365,11 @@ pose_extent(const tiku_trk_poseview_t *v, int *w, int *h)
 }
 
 /**
- * @brief Is the candidate slot taken?
+ * @brief Whether the candidate slot at @p x, @p y is taken by a placed pose
+ *        other than @p self.
  *
- * Only poses vertically near the candidate are inspected, so placement stays
- * cheap in a crowded folder (PVL-016).
+ * Poses that do not overlap the candidate's vertical span are skipped
+ * before the horizontal test (PVL-016).
  */
 static int
 slot_occupied(tiku_trk_poseview_t *v, int x, int y, const tiku_trk_pose_t *self)
@@ -393,9 +388,8 @@ slot_occupied(tiku_trk_poseview_t *v, int x, int y, const tiku_trk_pose_t *self)
         if (py + h <= y || py >= y + h) {
             continue;             /* not in this band */
         }
-        /* The footprint is GROWN horizontally, not shrunk: the margin exists
-         * so two icons never quite touch, and insetting the other way lets
-         * them overlap by exactly the margin meant to prevent it (PVL-015). */
+        /* The footprint is widened by TIKU_TRK_PLACE_GAP on each side, so
+         * two placed icons never touch (PVL-015). */
         if (px + w + TIKU_TRK_PLACE_GAP > x &&
             px - TIKU_TRK_PLACE_GAP < x + w) {
             return 1;
@@ -410,9 +404,8 @@ tiku_trk_poseview_art_size(const tiku_trk_poseview_t *v)
     if (v == NULL) {
         return TIKU_TRK_MINI_ICON;
     }
-    /* Mini-icon mode is defined by its icon size, not merely by its grid:
-     * drawing the icon-mode size in it produces full-size art in a short
-     * cell, which is not a third mode at all. */
+    /* Mini-icon and list modes draw at the mini size whatever the icon
+     * size is set to. */
     return (v->mode == TIKU_TRK_MODE_ICON) ? v->icon_size
                                            : TIKU_TRK_MINI_ICON;
 }
@@ -446,9 +439,7 @@ place_pose(tiku_trk_poseview_t *v, tiku_trk_pose_t *p, int view_w)
         tries++;
     }
     if (tries >= 4096) {
-        /* PVL-019: nowhere free.  The icon goes to the ORIGIN rather than
-         * to wherever the search happened to stop, which would be a
-         * position far outside anything the user can see. */
+        /* PVL-019: nowhere free, so the icon goes to the grid origin. */
         tiku_trk_poseview_reset_hint(v);
     }
     p->loc_x = (int)((float)v->hint_x / scale);
@@ -469,11 +460,9 @@ tiku_trk_poseview_place_unplaced(tiku_trk_poseview_t *v, int view_w)
     tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
     (void)gx;
     (void)gy;
-    /* The hint restarts at the top-left of the VIEW, not the document
-     * (PVL-017); this view does not scroll in icon mode yet, so they
-     * coincide.  It is reset by the events that invalidate it -- a mode
-     * change, a directory switch, a clear -- rather than guessed at from
-     * being (0,0), which a legitimately-placed hint can also be. */
+    /* The hint restarts at the top-left of the view (PVL-017).  A hint
+     * still at (0,0) has never been set and starts at the layout offset; a
+     * mode change, a directory switch, a reload and a resize reset it. */
     if (v->hint_x == 0 && v->hint_y == 0) {
         v->hint_x = ox;
         v->hint_y = oy;
@@ -484,10 +473,10 @@ tiku_trk_poseview_place_unplaced(tiku_trk_poseview_t *v, int view_w)
         if (v->poses[i].placed) {
             continue;
         }
-        /* A position asked for before the entry existed -- the point a drop
-         * landed on, or the click that made a folder -- is honoured here
-         * as well as on the notice, so a listing rebuilt from disk does not
-         * put it back in the next free slot (PVL-025, PVL-098). */
+        /* A landing reserved before the entry existed (where a drop
+         * landed, or the click that made a folder) is taken here as well
+         * as by a creation notice, so an entry that arrives by a reload
+         * lands there too (PVL-025, PVL-098). */
         if (v->mode != TIKU_TRK_MODE_LIST &&
             pv_take_landing(v, v->poses[i].model.path, &lx, &ly)) {
             float scale = pv_mode_scale(v->mode, v->icon_size);
@@ -513,10 +502,8 @@ tiku_trk_poseview_cleanup(tiku_trk_poseview_t *v, int view_w)
     if (v == NULL) {
         return;
     }
-    /* List mode has no grid to clean up onto: laying out against gx=gy=0
-     * would clear every saved position and stack the lot on the origin, so
-     * an arrangement made in icon mode would not survive a stray Cmd+K in
-     * list mode. */
+    /* List mode has no grid: laying out there would stack every icon at
+     * the origin and lose the icon-mode arrangement. */
     if (v->mode == TIKU_TRK_MODE_LIST) {
         return;
     }
@@ -540,10 +527,8 @@ tiku_trk_poseview_snap_to_grid(tiku_trk_poseview_t *v)
         return 0;
     }
     {
-        /* Snapped in the space positions are STORED in, not in screen
-         * pixels: a screen point converted to storage and back does not
-         * always return itself, so a snap done on screen would move the
-         * same icon again every time it was asked. */
+        /* Snapped in the unscaled space positions are stored in, where
+         * snapping an icon already on the grid leaves it in place. */
         int gx, gy, ox, oy;
         float sc = pv_mode_scale(v->mode, v->icon_size);
         float ugx, ugy, uox, uoy;
@@ -609,17 +594,15 @@ tiku_trk_poseview_row_height(const tiku_trk_poseview_t *v)
         return 20;              /* the reference face's row */
     }
     if (v->row_h > 0) {
-        /* What the owner actually DRAWS with.  Deriving a second answer
-         * here is how a band came to sweep rows 27 px apart over a list
-         * drawn 20 px apart, catching the row above the one under the
-         * pointer. */
+        /* What the owner draws with, so a band sweeps rows at the pitch
+         * drawn on screen. */
         return v->row_h;
     }
     if (v->font_h <= 0) {
         return 20;
     }
-    /* Tracker's own: ceil(font height * 1.65), which is what leaves a mini
-     * icon room in the row rather than touching both edges. */
+    /* ceil(font height * 1.65), which leaves a mini icon room in the
+     * row. */
     return (int)((float)v->font_h * 1.65f + 0.999f);
 }
 
@@ -747,9 +730,7 @@ tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
     art = tiku_trk_poseview_art_size(v);
     tiku_trk_poseview_pose_location(v, p, &px, &py);
     if (v->measure != NULL) {
-        /* Measured from the label as it will be DRAWN, elided and all: the
-         * width taken from the whole name is a box that runs off across
-         * the icons beside it (IV-047). */
+        /* Measured from the label as it is drawn, elided (IV-047). */
         char fit[TIKU_NAME_MAX * 2];
 
         if (v->mode != TIKU_TRK_MODE_LIST &&
@@ -761,10 +742,8 @@ tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
         }
     }
     if (v->mode == TIKU_TRK_MODE_LIST) {
-        /* A row, not a saved location: in a list the pose's place is its
-         * INDEX, and the icon-mode location it also carries belongs to a
-         * different arrangement entirely.  Answering with that one is how
-         * a band swept over rows would catch the wrong ones. */
+        /* In list mode a pose's place is its row (p->index); the icon-mode
+         * location it also carries is ignored. */
         int rh = tiku_trk_poseview_row_height(v);
 
         py = p->index * rh;
@@ -814,10 +793,8 @@ tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
         return;
     }
     if (v->mode == TIKU_TRK_MODE_LIST) {
-        /* The whole ROW, not the union of the icon and the name: a list is
-         * judged by row -- a click anywhere across it hits the pose -- so
-         * a band that only caught the rows whose NAME it crossed would
-         * sweep a different box from the one a click is judged against. */
+        /* In list mode the whole row: a click anywhere across a row hits
+         * its pose, and a band sweeps the same box. */
         int rh = tiku_trk_poseview_row_height(v);
 
         *x = 0;
@@ -826,9 +803,8 @@ tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
         *h = rh;
         return;
     }
-    /* The UNION of the parts, derived rather than computed a second time:
-     * two pieces of arithmetic for one rectangle is how a band comes to
-     * sweep a different box from the one a click is judged against. */
+    /* The union of the parts, derived from pose_parts so a band and a
+     * click work from one piece of arithmetic. */
     tiku_trk_poseview_pose_parts(v, p, &ix, &iy, &iw, &ih, &lx, &ly, &lw,
                                  &lh);
     x0 = (lw > 0 && lx < ix) ? lx : ix;
@@ -836,9 +812,9 @@ tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
     x1 = (lw > 0 && lx + lw > ix + iw) ? lx + lw : ix + iw;
     y1 = (lh > 0 && ly + lh > iy + ih) ? ly + lh : iy + ih;
     {
-        /* Never narrower than the cell in mini mode, where the row IS the
-         * cell and a short name would leave a gap nothing can be clicked
-         * in. */
+        /* Never narrower than the cell in mini mode, so a band through
+         * the empty end of the cell still catches a pose with a short
+         * name. */
         int cw, ch;
 
         pose_extent(v, &cw, &ch);
@@ -883,22 +859,21 @@ tiku_trk_poseview_pose_at(tiku_trk_poseview_t *v, int x, int y)
         }
         if (!in_rect(x, y, ix, iy, iw, ih)) {
             /* The gap between an icon and its name, and the space beside a
-             * short label, belong to neither: in an icon mode the cell is
-             * mostly empty, and treating the cell as the pose makes the
-             * space BETWEEN icons undraggable (PVS-019). */
+             * short label, belong to no pose, so a band can start there
+             * (PVS-019). */
             continue;
         }
         if (v->icon_hit != NULL) {
-            /* Opaque pixels only.  An icon is not a rectangle, and arming
-             * from its transparent corner is what makes the gap between two
-             * adjacent icons draggable at all (IV-026). */
+            /* Opaque pixels only: an icon's transparent corners belong to
+             * the gap, so a band can start between two adjacent icons
+             * (IV-026). */
             if (v->icon_hit(&p->model, iw, x - ix, y - iy,
                             v->icon_hit_ctx)) {
                 return p;
             }
             continue;
         }
-        return p;               /* no hook: the square, as before */
+        return p;               /* no hook: the icon square */
     }
     return NULL;
 }
@@ -915,13 +890,11 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         return 0;
     }
     n = tiku_trk_poseview_count(v);
-    /* The sliver between where the band WAS and where it is now, rather
-     * than the whole view: a band that grows by a pixel repaints a pixel's
-     * worth of rows (PVL-070). */
+    /* Only the sliver between where the band was and where it is now is
+     * repainted (PVL-070). */
     {
-        /* Full width, whatever the band's own shape: what gets painted
-         * again is a ROW, and a band swept straight down is a rectangle
-         * with no width at all. */
+        /* Full width, whatever the band's shape: what is repainted is
+         * whole rows. */
         tiku_trk_repaint_rect_t now = { 0, loy,
                                         (v->view_w > 0) ? v->view_w : 1,
                                         (hiy > loy) ? hiy - loy : 1 };
@@ -937,13 +910,12 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         v->band_seen = 1;
     }
     if (v->single_only) {
-        /* A band cannot gather in a single-selection view: the additive
-         * modifiers mean nothing, and the sweep stops at the first pose it
-         * touches rather than lighting the row under every one (PVS-009). */
+        /* In a single-selection view the additive modifiers are dropped
+         * and the sweep stops at the first pose it touches (PVS-009). */
         mods &= ~(TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD);
     }
-    /* Outside a tracked band the rectangle simply selects: with a modifier it
-     * adds to what is there, without one it replaces. */
+    /* Outside a tracked band the rectangle adds to the selection with a
+     * modifier, and replaces it without one. */
     if (!v->band && !(mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD))) {
         pv_clear_selection(v);
     }
@@ -954,7 +926,7 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         if (p == NULL ||
             (!p->placed && v->mode != TIKU_TRK_MODE_LIST)) {
             /* An unplaced pose has no rectangle to sweep -- except in a
-             * list, where the row IS the place and nothing was ever
+             * list, where the row is the place and nothing was ever
              * placed. */
             continue;
         }
@@ -962,8 +934,8 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         inside = (px + pw > lox && px < hix && py + ph > loy && py < hiy);
         if (v->band) {
             /* PVS-027: within a band each pose is toggled against what it
-             * was when the band STARTED, so sweeping back over a pose puts
-             * it back rather than leaving it stuck selected. */
+             * was when the band started, so a pose the band leaves again
+             * returns to that state. */
             int was = v->band_was[p->index];
 
             pv_set_selected(p, inside ? !was : was);
@@ -1022,9 +994,7 @@ tiku_trk_poseview_drop_land(tiku_trk_poseview_t *v, const char *name, int x,
     if (i == v->land_count) {
         if (v->land_count >= TIKU_TRK_LAND_MAX) {
             /* More names than the table holds: the rest are auto-placed,
-             * which is what a view does for an entry it was told nothing
-             * about.  Dropping the OLDEST instead would scatter the items
-             * the user is watching. */
+             * and the reservations already made stand. */
             return;
         }
         v->land_count++;
@@ -1043,11 +1013,12 @@ tiku_trk_poseview_clear_landings(tiku_trk_poseview_t *v)
 }
 
 /**
- * @brief Take the landing reserved for @p path, if there is one.
+ * @brief Take the landing reserved for @p path's name, if there is one.
  *
- * Consumed rather than read: a name that arrives twice is a new entry the
- * second time, and giving it the old drop point would put it under the
- * thing already there.
+ * The reservation is consumed, so a name that arrives a second time is
+ * auto-placed.
+ *
+ * @return 1 with the point in @p x and @p y when one was reserved.
  */
 int
 pv_take_landing(tiku_trk_poseview_t *v, const char *path, int *x, int *y)

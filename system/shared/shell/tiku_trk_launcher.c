@@ -5,12 +5,13 @@
  *
  * tiku_trk_launcher.c - enter whichever shell this build linked.
  *
- * This file holds the only main(), and the Makefile links it into both
- * build/TikuTracker and build/TikuDesktop, so tiku_trk_application resolves
- * to tiku_trk_app.c's descriptor in one binary and tiku_trk_desktop.c's in
- * the other.  Both enter through the Application kit's registry, from
- * kits/application/tiku_app.h, so a linked-in shell is looked up by id the
- * same way a loaded application would be.
+ * This file holds the only main().  mk/system.mk links it into
+ * build/dev/TikuTracker and into both TikuDesktop flavours (build/dev and
+ * build/runtime/system), so tiku_trk_application is tiku_trk_app.c's
+ * descriptor in TikuTracker and tiku_trk_desktop.c's in TikuDesktop.  Both
+ * enter through the Application kit's registry (kits/application/
+ * tiku_app.h), which looks a linked-in shell up by id as it would a loaded
+ * application.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,12 +21,13 @@
 
 #include <stdio.h>
 
-/** @brief Register the browser application and run it. */
+/** @brief Register the descriptor this binary linked, tiku_trk_application,
+ *         and run it. */
 int
 main(int argc, char **argv)
 {
-    /* Before anything else can go wrong: from here a fault leaves a
-     * file saying what this was doing, rather than nothing at all. */
+    /* Installed first, so a fault from here on leaves a report saying
+     * what the process was doing. */
     tiku_report_install("TikuDesktop", NULL);
     tiku_app_registry_t registry;
     const tiku_app_descriptor_t *application;

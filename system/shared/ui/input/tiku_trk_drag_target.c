@@ -3,13 +3,18 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_drag_target.c - drag hover, scrolling, and spring-open state.
+ * tiku_trk_drag_target.c - the target under a drag: hit-testing the folder
+ * and row, auto-scroll at a window's edge, and the spring hold.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_trk_drag_target.h"
 
+/* Edge auto-scroll: the band that scrolls, in pixels; the depth past
+ * which it steps by 3; the hold before it starts.  COUNT_HEIGHT is the
+ * item-count strip at the bottom of a window.  SPRING_DELAY_US is not
+ * read: the spring delay is TIKU_TRK_SPRING_DELAY_US. */
 #define AUTOSCROLL_BAND 6
 #define AUTOSCROLL_FAST 30
 #define AUTOSCROLL_DELAY_US 600000
@@ -82,9 +87,9 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
             }
         }
     }
-    /* Keep a sprung target alive while the pointer crosses the margin around
-     * its menu.  Without this, the next motion sample would reset the hover
-     * clock before the user can reach a submenu item (PVS-054). */
+    /* Within the spring's margin and over no droppable row, the target is
+     * kept, so the hover clock does not restart on the way to a submenu
+     * item (PVS-054). */
     if (inside_spring && controller->folder != NULL && row < 0) {
         folder = controller->folder;
         row = controller->row;
@@ -173,11 +178,8 @@ auto_scroll(tiku_trk_drag_target_t *controller, int64_t now)
         return 0;
     }
     if (controller->spring_script_pulses > 0) {
-        /* Scripted: the hold is a NUMBER OF TURNS, the same lesson the
-         * band learnt (PVS-050).  Counted in wall time it was the
-         * machine's speed that decided whether a script's twenty-five
-         * turns had used up six hundred milliseconds, and the answer
-         * changed with the load. */
+        /* Scripted: the hold is a number of turns, so a script's timing
+         * does not depend on the machine's speed (PVS-050). */
         if (controller->scroll_held < controller->spring_script_pulses) {
             controller->scroll_held++;
             return 0;
@@ -226,7 +228,7 @@ tiku_trk_drag_target_pulse(tiku_trk_drag_target_t *controller, int64_t now)
     int spring_fired = 0;
 
     if (controller->spring_script_pulses > 0) {
-        /* Scripted: a hold is a number of turns (PVS-050's lesson). */
+        /* Scripted: the hold is a number of turns (PVS-050). */
         if (tiku_trk_drag_active(controller->drag) &&
             controller->folder != NULL && controller->row >= 0 &&
             !controller->sprung && controller->spring.armed &&

@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_load.c - filling the list from the backend, and
- * refreshing it
+ * tiku_trk_poseview_load.c - filling the list from the backend in batches
+ * or from a result set, the sort comparison, and creating, freeing and
+ * re-pointing a view.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +13,8 @@
 #include "tiku_trk_poseview_private.h"
 
 /* Every view that exists, so a listing fetched elsewhere can be told
- * whether the view it was for is still there to take it. */
+ * whether the view it was for is still there to take it.  A view made past
+ * VIEWS_MAX is not recorded, and so never reads as alive. */
 #define VIEWS_MAX 256
 static tiku_trk_poseview_t *views[VIEWS_MAX];
 static tiku_trk_poseview_lister_fn lister;
@@ -90,9 +92,7 @@ pv_collect(const tiku_model_t *m, void *ctx)
     if (m->kind == TIKU_KIND_UNKNOWN) {
         /*
          * The backend could not describe it -- busy, mid-write, a transient
-         * error.  It is HELD rather than shown: a row that says "unknown"
-         * is a promise the view cannot keep, and dropping it would make the
-         * entry vanish and later reappear as though newly created.  It is
+         * error -- so it is held as a zombie, out of the listing, and
          * promoted the moment any listing describes it.
          */
         if (v->zombie_count < (int)(sizeof v->zombie / sizeof v->zombie[0])) {
@@ -125,8 +125,8 @@ pv_collect(const tiku_model_t *m, void *ctx)
     }
     memset(&v->poses[v->count], 0, sizeof v->poses[0]);
     v->poses[v->count].model = *m;
-    /* Resolve the type once here rather than on every draw: it is a property
-     * of the node, and it decides formatting, editability and sort order. */
+    /* The descriptor is parsed once here; it decides formatting,
+     * editability and the value sort. */
     (void)tiku_desc_parse(m->facts.meta, &v->poses[v->count].desc);
     v->poses[v->count].index = v->count;
     v->count++;
@@ -151,7 +151,8 @@ pv_apply_visibility(tiku_trk_poseview_t *v)
     v->count = w;
 }
 
-/** @brief Reject a saved scroll origin that could place the view nowhere. */
+/** @brief A saved scroll origin, or 0 when it could place the view nowhere:
+ *         out of range, or negative where @p allow_negative is not set. */
 int
 pv_sane_scroll_origin(int value, int allow_negative)
 {
@@ -165,7 +166,8 @@ pv_sane_scroll_origin(int value, int allow_negative)
     return value;
 }
 
-/** @brief Natural order: digits inside names compare by value, not by digit. */
+/** @brief Natural order: digits inside names compare by value, letters
+ *         compare case-folded. */
 static int
 natural_cmp(const char *a, const char *b)
 {
@@ -207,8 +209,8 @@ field_cmp(const tiku_trk_pose_t *a, const tiku_trk_pose_t *b, int field)
         return (a->model.facts.size < b->model.facts.size) ? -1
                : (a->model.facts.size > b->model.facts.size) ? 1 : 0;
     case TIKU_TRK_COL_VALUE:
-        /* Through the descriptor, so a byte column orders 9 B before 10 KiB
-         * rather than ordering the text it happens to be shown as. */
+        /* Through the descriptor, so a byte column orders 9 B before
+         * 10 KiB. */
         return tiku_attr_compare(&a->desc, a->value, b->value);
     case TIKU_TRK_COL_CAP:
         return strcmp(a->model.facts.req_cap, b->model.facts.req_cap);
@@ -225,7 +227,8 @@ field_cmp(const tiku_trk_pose_t *a, const tiku_trk_pose_t *b, int field)
 
 /**
  * @brief The sort order: containers first when that setting is on, then
- *        the sort field, then the secondary; reads the view in pv_g_sorting.
+ *        the sort field, then the secondary, then the name; reads the view
+ *        in pv_g_sorting.
  */
 int
 pv_pose_cmp(const void *pa, const void *pb)
@@ -233,15 +236,10 @@ pv_pose_cmp(const void *pa, const void *pb)
     const tiku_trk_pose_t *a = pa, *b = pb;
     int r;
 
-    /* Containers first, then by the sort field: a folder is not just a big
-     * file, and mixing them makes a listing unreadable.  It is a SETTING,
-     * though -- the user can ask for one list sorted by the column alone
-     * (MA-039). */
+    /* Containers first while folders_first is set (MA-039). */
     if (pv_g_sorting->folders_first) {
-        /* The full ladder, not one bit: the Disks root beats everything,
-         * real volumes beat folders, folders beat files -- and a volume
-         * whose capacity reads zero is DEMOTED to the folder bucket, the
-         * way the source sorts a volume that cannot say its size
+        /* The Disks root comes first, then volumes, then folders, then
+         * files; a volume whose capacity reads zero sorts with the folders
          * (MA-009). */
         int ba = (a->model.kind == TIKU_KIND_ROOT) ? 3
                : (a->model.kind == TIKU_KIND_VOLUME &&
@@ -256,10 +254,9 @@ pv_pose_cmp(const void *pa, const void *pb)
             return bb - ba;
         }
     }
-    /* An entry with no value for the sort field sorts LAST whichever way
-     * the column is ordered.  Decided here rather than inside the field
-     * comparison, because the reverse below negates everything it returns
-     * and "last" is not a value to be turned around. */
+    /* An entry with no value sorts last whichever way the column is
+     * ordered: it is decided before the comparison the reverse below
+     * negates. */
     if (pv_g_sorting->sort_field == TIKU_TRK_COL_VALUE) {
         int ea = (a->value[0] == '\0'), eb = (b->value[0] == '\0');
 
@@ -294,10 +291,10 @@ pv_resort(tiku_trk_poseview_t *v)
 }
 
 /**
- * @brief Stage one entry from the enumeration.
- *
- * Zero CONTINUES the walk and non-zero stops it, which is the backend's
- * contract and the opposite of what a "did it work" return would read as.
+ * @brief Stage one entry from the enumeration, skipping dotfiles when they
+ *        are hidden.
+ * @return 0 to continue the walk, nonzero to stop it when the stage is
+ *         full (the backend's list contract).
  */
 static int
 stage_one(const tiku_model_t *m, void *ctx)
@@ -321,7 +318,7 @@ already_inserted(const tiku_trk_poseview_t *v, uint64_t id)
     int i;
 
     if (id == 0) {
-        return 0;                       /* no identity, no claim           */
+        return 0;                       /* an id of 0 never matches        */
     }
     for (i = 0; i < v->inserted_count; i++) {
         if (v->inserted[i] == id) {
@@ -359,8 +356,6 @@ tiku_trk_poseview_pole(const tiku_trk_poseview_t *v, int64_t now)
     if (v == NULL || !v->loading) {
         return 0;
     }
-    /* Armed, not shown: a folder that loads in a blink must not flash a
-     * pole at the user, so the arming time has to pass first. */
     return (now >= v->pole_at) ? 1 : 0;
 }
 
@@ -370,8 +365,8 @@ tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now)
     if (v == NULL || v->backend == NULL) {
         return -1;
     }
-    /* The generation moves FIRST.  Anything still in flight from the last
-     * load is stamped with the old one from here on and will be refused. */
+    /* The generation moves first: anything still in flight from the last
+     * load carries the old one from here on and is refused. */
     v->load_gen++;
     v->count = 0;
     v->pivot = -1;
@@ -400,8 +395,8 @@ tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now)
     }
     v->loading = 1;
     v->pole_at = now + TIKU_TRK_POLE_AFTER_US;
-    /* Zero, so the first row is published on its own and the window shows
-     * something at once; the batching starts from the second. */
+    /* Zero publishes the first row on its own; batches start from the
+     * second. */
     v->next_chunk = 0;
     return v->stage_count;
 }
@@ -421,7 +416,7 @@ tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
         tiku_model_t *m = &v->stage[v->stage_at];
 
         /* By identity where the store has one, and by path where it does
-         * not: a backend without node ids still must not list a row twice. */
+         * not, so no row is listed twice. */
         if (already_inserted(v, m->node_id) || pv_pose_index(v, m->path) >= 0 ||
             pv_pose_is_hidden(v, m->path)) {
             /* A node the change notices already brought in, or one marked
@@ -429,8 +424,8 @@ tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
             v->stage_at++;
             continue;
         }
-        {   /* collect() answers the WALK, not the caller: whether a row
-             * appeared is the count moving, not its return value. */
+        {   /* pv_collect()'s return is for the walk; a row appeared when
+             * the count moved. */
             int before = v->count;
 
             (void)pv_collect(m, v);
@@ -455,7 +450,7 @@ tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
         pv_rebuild_filter(v);
     }
     if (v->stage_at >= v->stage_count) {
-        v->loading = 0;                 /* AddPosesCompleted               */
+        v->loading = 0;                 /* the last batch is published     */
         v->stage_count = 0;
         v->stage_at = 0;
         return 0;
@@ -467,13 +462,10 @@ int
 tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
 {
     /* A reload is a fresh set of poses, so the placement hint starts over
-     * with them: kept, it would place the first new icon under whatever
-     * the last listing left behind (PVL-017). */
+     * (PVL-017). */
     tiku_trk_poseview_reset_hint(v);
-    /* And the armed rename goes with them: the arm names a pose INDEX,
-     * and over a fresh listing that index is whatever happens to land
-     * there -- an arm kept across a reload opened an editor on the row
-     * that slid into the armed slot (MA-043). */
+    /* The armed rename is cancelled: it names a pose index, which a fresh
+     * listing gives to another row (MA-043). */
     tiku_trk_poseview_cancel_edit_wait(v);
     if (v == NULL || v->backend == NULL) {
         return -1;
@@ -481,8 +473,7 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
     if (v->is_query) {
         return v->count;      /* results do not come from a directory    */
     }
-    /* The same path the batched loader takes, drained in one go: two ways
-     * of building a listing is two places for it to differ. */
+    /* The batched loader's path, drained in one go. */
     if (tiku_trk_poseview_load_begin(v, 0) < 0) {
         return -1;
     }
@@ -493,10 +484,9 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
     }
     pv_resort(v);
     {
-        /* The invisible bit rides on the saved records, and this path does
-         * not read them wholesale -- so each entry is asked individually.
-         * Without this, poll()'s overflow reload resurrects every hidden
-         * row until the next restore. */
+        /* The invisible bit is in the saved records, which this path does
+         * not restore, so each entry's record is asked: a reload, such as
+         * poll()'s on overflow, keeps hidden rows hidden. */
         int i2, w = 0;
 
         for (i2 = 0; i2 < v->count; i2++) {
@@ -510,9 +500,8 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
         }
         v->count = w;
     }
-    /* The filter indexes INTO the pose list, so a listing replaced under it
-     * leaves those indices pointing at rows that are gone -- which shows as
-     * the previous folder's entries listed inside this one. */
+    /* The filter indexes into the pose list, so it is rebuilt for the new
+     * listing. */
     if (v->filtering) {
         pv_rebuild_filter(v);
     } else {
@@ -522,7 +511,8 @@ tiku_trk_poseview_reload(tiku_trk_poseview_t *v)
     return v->count;
 }
 
-/** @brief Fill from a model set; a query view also says it is one. */
+/** @brief Register attribute @p attr as a column and append it to the
+ *         query layout, while there is room. */
 static void
 query_attr_column(tiku_trk_poseview_t *v, const char *attr,
                   const char *title, int width)
@@ -535,7 +525,9 @@ query_attr_column(tiku_trk_poseview_t *v, const char *attr,
     }
 }
 
-/** @brief Built-in layout used only when this type has no saved template. */
+/** @brief The built-in query layout, which a saved template for the type
+ *         replaces: Name and Location, then the type's attribute columns,
+ *         or Size and Modified. */
 static void
 query_default_columns(tiku_trk_poseview_t *v)
 {
@@ -576,8 +568,8 @@ query_default_columns(tiku_trk_poseview_t *v)
 
 /**
  * @brief Replace the poses with @p n models, as a query's results when
- *        @p as_query says so.  @return -1 for a view or models that are
- *        missing, else 0.
+ *        @p as_query says so.  @return the rows now held, or -1 for a view
+ *        or models that are missing.
  */
 static int
 fill_from(tiku_trk_poseview_t *v, const tiku_model_t *m, int n,
@@ -596,8 +588,9 @@ fill_from(tiku_trk_poseview_t *v, const tiku_model_t *m, int n,
     v->last_added = -1;
     v->is_query = as_query ? 1 : 0;
     if (as_query) {
-        /* Results are a report, not a place whose icons can be arranged.
-         * Force their stable list shape before any result is inserted. */
+        /* Results are shown in list mode, set before any result is
+         * inserted; a query's first fill takes its saved or default
+         * columns. */
         v->mode = TIKU_TRK_MODE_LIST;
         if (first_query) {
             query_default_columns(v);
@@ -646,7 +639,7 @@ tiku_trk_poseview_adopt(tiku_trk_poseview_t *v, const tiku_model_t *m)
         return -1;
     }
     if (pv_pose_index(v, m->path) >= 0) {
-        return -1;              /* already here: adopting twice is a copy */
+        return -1;              /* already here */
     }
     memset(&p, 0, sizeof p);
     p.model = *m;
@@ -783,10 +776,9 @@ tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path)
     }
     tiku_trk_poseview_type_clear(v);
     tiku_trk_poseview_reset_hint(v);
-    /* Everything the old folder was still waiting on goes with it: a notice
-     * parked for a node in the folder just left would otherwise be replayed
-     * into this one if a name happened to match, and would sit in the park
-     * until it aged out either way. */
+    /* Parked notices and zombies belong to the folder just left and are
+     * dropped: a parked notice could otherwise be replayed into this folder
+     * when a name matched. */
     tiku_park_clear(&v->park);
     v->zombie_count = 0;
     snprintf(v->path, sizeof v->path, "%s", path);

@@ -125,11 +125,9 @@ tiku_trk_launch_load(tiku_trk_apps_t *r, const char *path)
             *types++ = '\0';
         }
         {
-            /* A registry entry whose program has been thrown away is not
-             * an application any more: listed, it would rank in Open With
-             * and then fail to run (AW-041).  Only an ABSOLUTE command
-             * can be checked -- a bare name is resolved by PATH at run
-             * time and is not ours to second-guess. */
+            /* A registry entry whose program is gone is skipped (AW-041).
+             * Only an absolute command can be checked; a bare name is
+             * resolved by PATH at run time. */
             struct stat st;
 
             if (cmd[0] == '/' && stat(cmd, &st) != 0) {
@@ -161,7 +159,7 @@ tiku_trk_launch_relation(const tiku_trk_app_t *app, const char *type)
             if (strcmp(claim, type) == 0) {
                 return TIKU_TRK_REL_EXACT;   /* nothing beats it */
             }
-            /* A claim ending in '/' is the SUPERTYPE claim: "text/" reads
+            /* A claim ending in '/' is the supertype claim: "text/" reads
              * every text there is, which is a weaker match than naming the
              * type itself (MA-017). */
             if (len > 0u && claim[len - 1u] == '/' &&
@@ -248,7 +246,7 @@ tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
         tiku_trk_relation_t best = TIKU_TRK_REL_NONE;
         int preferred = 0;
 
-        /* The UNION: an application that can open any one of the types is
+        /* The union: an application that can open any one of the types is
          * a candidate for the selection, and the relation it is shown with
          * is the best one it has for anything in it (AW-040, MA-080). */
         for (t = 0; t < ntypes; t++) {
@@ -273,8 +271,8 @@ tiku_trk_launch_candidates(const tiku_trk_apps_t *r,
         out[n].preferred = preferred;
         n++;
     }
-    /* Insertion sort: the list is a menu's worth, and the comparison is
-     * the explanation the Relation column shows. */
+    /* Insertion sort by tiku_trk_launch_cand_before(); the list is a
+     * menu's worth. */
     for (i = 1; i < n; i++) {
         tiku_trk_cand_t hold = out[i];
         int k = i;
@@ -368,7 +366,12 @@ tiku_trk_launch_self(const tiku_model_t *m, tiku_trk_app_t *out)
     return 1;
 }
 
-/** @brief Execute only the runner; launch data is never a command string. */
+/**
+ * @brief Fork and exec @p app over @p paths, or with @p message_fd for a
+ *        message launch.
+ *
+ * The arguments go to execvp() as they are, never through a shell.
+ */
 static tiku_trk_launch_err_t
 launch_process(const tiku_trk_app_t *app, const char *const *paths,
                int n, int message_fd)
@@ -383,13 +386,12 @@ launch_process(const tiku_trk_app_t *app, const char *const *paths,
     }
     if (app->is_tracker) {
         /* Choosing this Tracker is not a launch: the running one takes it,
-         * which is what stops a second copy of the desktop appearing
-         * (AW-035). */
+         * so no second copy of the desktop starts (AW-035). */
         return TIKU_TRK_LAUNCH_IS_TRACKER;
     }
     argv[argc++] = app->cmd;
     if (app->module[0]) {
-        /* One fresh app per document: never silently lose a batch. */
+        /* One document per launch of a module: a batch is refused. */
         if (n < 0 || n > 1 || (n == 1 &&
             (!paths || !paths[0] || !*paths[0])))
             return TIKU_TRK_LAUNCH_NOTHING;
@@ -421,12 +423,11 @@ launch_process(const tiku_trk_app_t *app, const char *const *paths,
         const char *home = getenv("HOME");
         if (message_fd >= 0 && fcntl(message_fd, F_SETFD, 0) < 0) _exit(127);
 
-        /* Everything launched starts in the user's home directory, which
-         * is what the original gives it (AW-002). */
+        /* Everything launched starts in the user's home directory
+         * (AW-002). */
         if (home != NULL && home[0] != '\0') {
             if (chdir(home) != 0) {
-                /* Not fatal: a home that cannot be entered is not a
-                 * reason to refuse to open the document. */
+                /* Not fatal: the document still opens. */
                 (void)0;
             }
         }
@@ -434,8 +435,8 @@ launch_process(const tiku_trk_app_t *app, const char *const *paths,
         _exit(127);
     }
             {
-        /* By its leaf: a program is known by its name, and a path long
-         * enough would push the name off the end of the line. */
+        /* By its leaf, so a long path does not push the name off the
+         * line. */
         const char *leaf = strrchr(app->name, '/');
 
         leaf = (leaf != NULL) ? leaf + 1 : app->name;
@@ -452,7 +453,16 @@ tiku_trk_launch_run(const tiku_trk_app_t *app, const char *const *paths, int n)
     return launch_process(app, paths, n, -1);
 }
 
-/** @brief Unlinked storage avoids pipe-capacity blocking during launch. */
+/**
+ * @brief Flatten @p message into an unlinked temporary file, rewound and
+ *        close-on-exec.
+ *
+ * The child reads it at its own pace, so the launch never blocks on the
+ * message's size.
+ *
+ * @return the file, or NULL when the message is empty, over 32 KiB or cannot
+ *         be written.
+ */
 static FILE *launch_message_file(const tiku_msg_t *message)
 {
     size_t size = tiku_msg_flat_size(message);
@@ -483,13 +493,15 @@ int tiku_trk_launch_message(const tiku_trk_app_t *app,
 /* WHAT WAS LAUNCHED, UNTIL IT ENDS                                          */
 /*---------------------------------------------------------------------------*/
 
+/** @brief One launched program, until it is reaped. */
 typedef struct launched_app {
     pid_t pid;
     char  name[64];
-    int expected;
+    int expected;                   /* a Force Quit was requested */
     struct launched_app *next;
 } launched_app_t;
 
+/* Every launched program not yet reaped, newest first. */
 static launched_app_t *launched;
 
 void tiku_trk_launch_expect_stop(pid_t pid)
@@ -501,9 +513,9 @@ void tiku_trk_launch_expect_stop(pid_t pid)
 int
 tiku_trk_launch_running(void)
 {
-    /* The list itself: a child stays on it from the moment it was
-     * started until it is reaped, which is exactly the span in which it
-     * may still be starting up and about to say something. */
+    /* A child stays on the list from its start until it is reaped, the
+     * span in which it may still be starting up and about to say
+     * something. */
     int n = 0;
 
     for (launched_app_t *a = launched; a; a = a->next) n++;

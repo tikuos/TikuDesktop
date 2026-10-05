@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_find.c - the Find panel.
+ * tiku_trk_find.c - the Find panel: its state, building a query from it
+ * and filling it from one, the type menu, drawing and hit-testing.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,9 +23,8 @@ static int in(tiku_rect_t r, int x, int y);
 static void open_type_popup(tiku_trk_find_t *f, tiku_menu_t *m);
 /* End of the forward declarations. */
 
-/* Metrics from R5-SPEC.md, not chosen here: a control that is the wrong
- * height is the thing that makes a panel read as not-quite-right even when
- * every colour is correct. */
+/* The panel's layout, in pixels; BTN_H, BTN_W and TEXT_H are the R5 control
+ * metrics. */
 #define PAD        8
 #define ROW_H     24
 #define GAP        4
@@ -37,15 +37,18 @@ static void open_type_popup(tiku_trk_find_t *f, tiku_menu_t *m);
 #define JOIN_W    52
 #define VALUE_W  150
 
-/** @brief The fields a row can test, in the order the menu offers them. */
-/* Text fields offer the five string operators; measured ones offer is,
- * greater than and less than.  A field also carries the operator it STARTS
- * on, because "contains" on a size is a question nobody asks. */
+/* The operator sets a field offers, a bit per tiku_qop_t: the five string
+ * operators for text, is / greater / less for a measure, is / is not for a
+ * yes-no field, and after / before for a date. */
 #define OPS_TEXT  0x1Fu       /* contains, is, is not, starts, ends       */
 #define OPS_NUM   0x62u       /* is, greater than, less than              */
 #define OPS_EXACT 0x06u       /* is, is not -- for a yes/no field         */
 #define OPS_DATE  0x60u       /* after, before                            */
 
+/**
+ * @brief The fields a row can test, in the order the menu offers them,
+ *        each with its operators and the operator a row starts on.
+ */
 static const struct {
     tiku_qfield_t field;
     const char       *label;
@@ -65,7 +68,7 @@ static const struct {
 };
 #define NFIELDS ((int)(sizeof kFields / sizeof kFields[0]))
 
-/** @brief Operator labels, in the original's order. */
+/** @brief Operator label keys, indexed by tiku_qop_t. */
 static const char *kOps[] = {
     "op.contains", "op.is", "op.is_not", "op.starts_with", "op.ends_with",
     "op.greater_than", "op.less_than"
@@ -137,7 +140,11 @@ record_has_field(const tiku_trk_typerec_t *r, tiku_qfield_t field)
     return 0;
 }
 
-/** @brief The original's three built-ins plus what the selected type adds. */
+/**
+ * @brief Whether @p field is in a row's attribute menu: name, size and
+ *        modified always, and what the chosen type's record, or its
+ *        supertype's, declares.
+ */
 static int
 field_in_menu(const tiku_trk_find_t *f, tiku_qfield_t field)
 {
@@ -213,7 +220,7 @@ tiku_trk_find_scope_to_folder(tiku_trk_find_t *f, const char *path)
     /* Stored without its leading slash, as every place is; the label and
      * the scope path both put it back. */
     if (!tiku_trk_find_add_place(f, path + 1)) {
-        /* Already offered: just scope to it. */
+        /* Already offered: the search is scoped to it. */
         int i;
 
         for (i = 0; i < f->place_count; i++) {
@@ -254,22 +261,20 @@ tiku_trk_find_set_mode(tiku_trk_find_t *f, tiku_qmode_t mode)
         return;
     }
     if (mode == TIKU_QMODE_FORMULA) {
-        /* Entering formula mode shows what the controls were asking, which
-         * is how the predicate language gets learned. */
+        /* Entering formula mode fills the field with the predicate the
+         * controls describe. */
         tiku_query_t q;
 
         tiku_trk_find_build(f, &q);
         (void)tiku_query_predicate(&q, f->formula, sizeof f->formula);
         f->focus = TIKU_TRK_FIND_FOCUS_FORMULA;
     } else {
-        /* Leaving formula mode, the original silently discards both the
-         * formula and the attribute rows.  The rows are kept here instead:
-         * losing a half-built query to a mis-click is a defect, not a
-         * behaviour worth reproducing. */
+        /* Leaving formula mode keeps the formula and the attribute
+         * rows. */
         f->focus = (mode == TIKU_QMODE_NAME)
                        ? TIKU_TRK_FIND_FOCUS_NAME
                        : TIKU_TRK_FIND_FOCUS_ROW;
-        /* The last row, not the first: it is the one still being filled in. */
+        /* Attribute mode focuses the last row. */
         f->focus_row = (mode == TIKU_QMODE_ATTRIBUTE)
                            ? f->row_count - 1 : 0;
     }
@@ -299,7 +304,7 @@ tiku_trk_find_add_row(tiku_trk_find_t *f)
 int
 tiku_trk_find_remove_row(tiku_trk_find_t *f)
 {
-    /* One row is the floor: a panel with no rows asks nothing. */
+    /* At least one row stays. */
     if (f == NULL || f->row_count <= 1) {
         return 0;
     }
@@ -319,19 +324,14 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q)
         return 0;
     }
     {
-        /* The PLACES survive the reset.  They are what this panel offers --
-         * supplied by the shell from what is mounted -- not part of the
-         * query being restored, and a restore that wiped them would leave
-         * a panel that can no longer name where to search. */
+        /* The places survive the reset: the shell supplies them from what
+         * is mounted, and they are not part of the query. */
         char kept[TIKU_TRK_FIND_PLACES_MAX][TIKU_NAME_MAX];
         uint64_t kept_dev[TIKU_TRK_FIND_PLACES_MAX];
         char kept_volume[TIKU_TRK_FIND_PLACES_MAX][TIKU_NAME_MAX];
         int nkept = f->place_count, k;
-        /* The STORE survives too, for the same reason: it is where this
-         * panel keeps its most-used types and reads its saved searches
-         * from, not part of the query being restored.  A restore that
-         * dropped it left a panel that could no longer find anything it
-         * had itself saved. */
+        /* The store and the type database survive too: they belong to the
+         * panel, not to the query. */
         struct tiku_store *store = f->store;
         const tiku_trk_types_t *types = f->types;
 
@@ -357,8 +357,8 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q)
         f->row[i].op = q->term[i].op;
         snprintf(f->row[i].value, sizeof f->row[i].value, "%s",
                  q->term[i].value);
-        /* The join belongs to the row BEFORE, which is where the control
-         * sits -- the same asymmetry _build writes out. */
+        /* A term's join is stored on the row before it, where its control
+         * sits, as tiku_trk_find_build() reads it. */
         if (i > 0) {
             f->row[i - 1].join = q->term[i].join;
         }
@@ -369,9 +369,8 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q)
     }
     snprintf(f->type, sizeof f->type, "%s", q->type);
     if (q->type[0] != '\0' && f->row_count > 0) {
-        /* The type term is the panel's control, not one of its rows: it was
-         * appended by _build, so restoring it as a row would show the user
-         * a condition they never typed and duplicate it on the next run. */
+        /* The type term, which tiku_trk_find_build() appends last, belongs
+         * to the type control, so it is not restored as a row. */
         int last = f->row_count - 1;
 
         if (f->row[last].field == TIKU_QF_TYPE) {
@@ -384,8 +383,8 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q)
         }
     }
     if (q->mode == TIKU_QMODE_NAME && q->term_count > 0) {
-        /* A by-name query is one term over the name; the panel shows what
-         * was TYPED, which is that term's value. */
+        /* A by-name query's first term holds the typed text, which the name
+         * field shows. */
         snprintf(f->name_text, sizeof f->name_text, "%s", q->term[0].value);
     }
     if (q->mode == TIKU_QMODE_FORMULA) {
@@ -400,9 +399,8 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q)
         for (k = 0; k < f->place_count; k++) {
             char path[TIKU_PATH_MAX];
 
-            /* With the separator the scope list keeps: a scope is stored
-             * normalised so its prefix test cannot admit a sibling, and
-             * comparing an un-normalised path against it never matches. */
+            /* The scope list stores each path with a trailing '/', so the
+             * place is compared in that form. */
             snprintf(path, sizeof path, "/%s/", f->place[k]);
             if (strcmp(path, q->scope[i]) == 0) {
                 f->place_mask |= (1u << k);
@@ -414,10 +412,9 @@ tiku_trk_find_from_query(tiku_trk_find_t *f, const tiku_query_t *q)
             }
         }
         if (!found) {
-            /* Somewhere this panel does not offer -- a disk that has gone,
-             * or a place another session knew about.  Reported rather than
-             * dropped silently: a search that quietly lost its scope
-             * searches somewhere else. */
+            /* A scope this panel does not offer -- a disk that has gone, or
+             * a place another session knew -- is reported in the return
+             * value. */
             all = 0;
         }
     }
@@ -443,8 +440,8 @@ tiku_trk_find_build(const tiku_trk_find_t *f, tiku_query_t *q)
         break;
     case TIKU_QMODE_ATTRIBUTE:
         for (i = 0; i < f->row_count; i++) {
-            /* The join that reaches a row is the one recorded on the row
-             * BEFORE it, which is where the control sits. */
+            /* The join that reaches a row is stored on the row before it,
+             * where its control sits. */
             (void)tiku_query_add_term(q, f->row[i].field, f->row[i].op,
                                           f->row[i].value,
                                           (i == 0) ? TIKU_JOIN_AND
@@ -452,17 +449,15 @@ tiku_trk_find_build(const tiku_trk_find_t *f, tiku_query_t *q)
         }
         break;
     default:
-        /* Formula mode runs what the field says, not the rows it started
-         * from.  A malformed predicate remains an empty query so the shell
-         * can refuse it rather than silently running something else. */
+        /* Formula mode runs the formula field.  A malformed predicate
+         * marks the query invalid, and the shell refuses to run it. */
         (void)tiku_query_set_formula(q, f->formula);
         break;
     }
     q->include_trash = f->include_trash;
     if (f->type[0] != '\0' && f->mode != TIKU_QMODE_FORMULA) {
-        /* ANDed onto everything the rows ask, which is what "of type" means
-         * -- and recorded on the query so a saved one comes back with its
-         * narrowing intact (Q-004). */
+        /* ANDed onto everything the rows ask, and recorded on the query, so
+         * a saved query comes back with its type (Q-004). */
         snprintf(q->type, sizeof q->type, "%s", f->type);
         (void)tiku_query_add_term(q, TIKU_QF_TYPE, TIKU_OP_IS,
                                       f->type, TIKU_JOIN_AND);
@@ -506,8 +501,7 @@ tiku_trk_find_scope_label(const tiku_trk_find_t *f, char *out, size_t max)
             last = i;
         }
     }
-    /* One place is named; several are counted.  Listing them would not fit
-     * and would not be read. */
+    /* One place is named; several are counted. */
     if (n == 0) {
         snprintf(out, max, "%s", tiku_str("find.everywhere"));
     } else if (n == 1) {
@@ -561,7 +555,8 @@ tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp, char *out,
     (void)gmtime_r(&t, &tmv);
     (void)strftime(when, sizeof when, " - %b %d, %H:%M:%S", &tmv);
     snprintf(out, max, "%s%s", desc, when);
-    /* Sanitise: a name is going to become a path component. */
+    /* The name becomes a path component, so separators and control
+     * whitespace become '_'. */
     for (i = 0; out[i] != '\0'; i++) {
         if (out[i] == '/' || out[i] == '\\' || out[i] == '\n' ||
             out[i] == '\r' || out[i] == '\t') {
@@ -572,14 +567,11 @@ tiku_trk_find_default_name(const tiku_trk_find_t *f, long stamp, char *out,
 }
 
 /*---------------------------------------------------------------------------*/
-/* layout                                                                    */
-/*---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------*/
 /* The type menu (Q-004, Q-012, Q-015, Q-016)                                */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Where the most-used list lives. */
+/** @brief The state-store node and attribute the most-used list is kept
+ *         under. */
 #define TYPE_SLOT "\x01types"
 #define TYPE_ATTR "_trk/types_used"
 
@@ -602,9 +594,6 @@ tiku_trk_find_set_types(tiku_trk_find_t *f, const tiku_trk_types_t *types)
 int
 tiku_trk_find_type_shown(const tiku_trk_find_t *f)
 {
-    /* Not in formula mode: the formula IS the question there, and a control
-     * quietly ANDing a type onto it would make the text on screen a lie
-     * about what is being asked (Q-012). */
     return (f != NULL && f->mode != TIKU_QMODE_FORMULA);
 }
 
@@ -670,10 +659,7 @@ tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
         return;
     }
     snprintf(f->type, sizeof f->type, "%s", (type != NULL) ? type : "");
-    /* The attribute rows are deliberately NOT discarded here.  The original
-     * throws them away on a type change; this panel already refuses the
-     * same loss when the mode changes, for the same reason -- a half-built
-     * query is worth more than a clean slate (Q-013). */
+    /* A type change keeps the attribute rows (Q-013). */
     if (store == NULL || f->type[0] == '\0') {
         return;
     }
@@ -681,8 +667,8 @@ tiku_trk_find_set_type(tiku_trk_find_t *f, const char *type,
     snprintf(keep[k++], TIKU_TYPE_MAX, "%.*s",
              (int)(TIKU_TYPE_MAX - 1), f->type);
     for (i = 0; i < n && k < TIKU_TRK_FIND_MOST_USED; i++) {
-        /* Promoted, not appended: picking one again moves it up, which is
-         * what makes the head of the menu the types this user works in. */
+        /* The chosen type moves to the head of the list; the rest keep
+         * their order. */
         if (strcmp(used[i], f->type) != 0) {
             memcpy(keep[k++], used[i], TIKU_TYPE_MAX);
         }
@@ -718,9 +704,8 @@ tiku_trk_find_type_menu(struct tiku_store *store, const char **out,
     for (i = 0; i < nu && n < max; i++) {
         out[n++] = used[i];
     }
-    /* Then every type the port knows, minus the ones already at the top:
-     * the table IS the type database here, so a menu offering more would
-     * offer types nothing can recognise. */
+    /* Then every type in the model's table, minus the ones already at the
+     * top. */
     for (i = 0; (t = tiku_model_type_at(i, NULL)) != NULL && n < max;
          i++) {
         int seen = 0;
@@ -758,7 +743,11 @@ type_label(const tiku_trk_find_t *f, const char *type)
     return type;
 }
 
-/** @brief Command stable for this opening, including nested menu items. */
+/**
+ * @brief The menu command for @p type: 100 plus its index among this
+ *        opening's choices, the same in a submenu.
+ * @return the command, or -1 when the choice table is full.
+ */
 static int
 type_command(tiku_trk_find_t *f, const char *type)
 {
@@ -808,6 +797,10 @@ type_has_parent(const tiku_trk_types_t *db, const char *type)
     return 0;
 }
 
+/*---------------------------------------------------------------------------*/
+/* layout                                                                    */
+/*---------------------------------------------------------------------------*/
+
 /** @brief Rows of controls the current mode needs. */
 static int
 control_rows(const tiku_trk_find_t *f)
@@ -818,8 +811,7 @@ control_rows(const tiku_trk_find_t *f)
     case TIKU_QMODE_ATTRIBUTE: n = f->row_count; break;
     default:                       n = 1; break;
     }
-    /* The type control is a row of its own when it is shown, so the panel
-     * grows and shrinks with it rather than overlapping the scope row. */
+    /* The type control takes a row of its own when it is shown. */
     return n + (tiku_trk_find_type_shown(f) ? 1 : 0);
 }
 
@@ -895,31 +887,27 @@ trash_rect(const tiku_trk_find_t *f, tiku_rect_t fr)
 }
 
 /**
- * @brief Where button @p which sits on the bottom row; the default
- *        button is wider, for the ring inside its rectangle.
+ * @brief Where button @p which sits on the bottom row; the default button,
+ *        0, is 8 pixels wider and taller.
  */
 static tiku_rect_t
 button_rect(const tiku_trk_find_t *f, tiku_rect_t fr, int which)
 {
     tiku_rect_t r;
-    /* The default button's ring lives INSIDE its rectangle (the face is
-     * inset by 4), so it needs the extra room rather than overlapping its
-     * neighbour. */
     int w = BTN_W + ((which == 0) ? 8 : 0);
 
     r.y = fr.y + PAD + ROW_H + GAP + control_rows(f) * (ROW_H + GAP) +
           ROW_H + GAP;
     r.h = BTN_H + ((which == 0) ? 8 : 0);
     r.w = w;
-    /* Search is the default action and sits at the right, where the eye
-     * finishes; Save is beside it. */
+    /* The default button sits at the right. */
     if (which == 0) {
         r.x = fr.x + fr.w - PAD - w;
     } else {
-        /* Leftward from the default in the order they are numbered, so
-         * adding one never moves the two that were there. */
+        /* The others go leftward from it, in the order they are
+         * numbered. */
         r.x = fr.x + fr.w - PAD - (BTN_W + 8) - which * (GAP + w);
-        r.y += 4;                 /* centred against the ringed default   */
+        r.y += 4;                 /* centred against the taller default   */
     }
     return r;
 }
@@ -941,8 +929,7 @@ static void
 draw_field(tiku_surface_t *s, tiku_rect_t r, const char *text,
            int focused)
 {
-    /* The shared text control owns the caret, so it blinks and sits where
-     * every other field's does. */
+    /* The shared text control draws the caret. */
     tiku_ui_textfield(s, r, (text != NULL) ? text : "",
                            focused ? (int)strlen((text != NULL) ? text : "")
                                    : -1,
@@ -1033,11 +1020,9 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
             c.w = VALUE_W;
             c.y += (ROW_H - TEXT_H) / 2;
             c.h = TEXT_H;
-            /* Gated at the DRAW only: f->focus keeps naming the buffer
-             * keys go into after re-activation, so it must survive the
-             * window losing the keyboard.  The other two fields above
-             * keep the same rule, which the default button had all
-             * along. */
+            /* The caret is gated at draw time only: f->focus survives the
+             * window losing the keyboard, and names the field keys go into
+             * after re-activation. */
             draw_field(s, c, f->row[i].value,
                        f->has_keyboard &&
                        f->focus == TIKU_TRK_FIND_FOCUS_ROW &&
@@ -1078,9 +1063,8 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
                     (f->row_count >= TIKU_TRK_FIND_ROWS_MAX)
                         ? TIKU_S_DISABLED : TIKU_S_NORMAL);
         a.x += a.w + GAP;
-        /* Remove is disabled, not absent, while one row remains: the
-         * control's place should not move as rows come and go.  Disabled is
-         * the control look's own state, not a wash painted over it. */
+        /* Remove is disabled, not absent, while one row remains, so the
+         * controls do not move. */
         draw_button(s, a, "-",
                     (f->row_count <= 1) ? TIKU_S_DISABLED
                                         : TIKU_S_NORMAL);
@@ -1091,8 +1075,8 @@ tiku_trk_find_draw(tiku_trk_find_t *f, tiku_surface_t *s,
                                                  : tiku_str("find.search"),
                 f->has_keyboard ? TIKU_S_DEFAULT
                                 : TIKU_S_NORMAL);
-    /* Always live: with something attached it saves back, and with
-     * nothing attached it asks WHERE -- the save panel (AW-052). */
+    /* Always enabled: it saves back to the attached record, or asks where
+     * through the save panel (AW-052). */
     draw_button(s, button_rect(f, frame, 1), "Save", TIKU_S_NORMAL);
     draw_button(s, button_rect(f, frame, 2), "Queries", TIKU_S_NORMAL);
 
@@ -1245,9 +1229,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
         }
         break;
     case TIKU_TRK_FIND_HIT_OP: {
-        /* Only the operators the field offers appear at all -- "greater
-         * than" on a capability string is a question with no answer, and
-         * showing it disabled would be worse than not showing it. */
+        /* Only the operators the field offers are listed. */
         unsigned ops = field_ops(f->row[row].field);
 
         for (i = 0; i < 7; i++) {
@@ -1275,9 +1257,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
 
         (void)tiku_menu_add(m, tiku_str("find.save_as_template"), 0, 0,
                                 0u, 1);
-        /* Templates ABOVE the queries that were run, which is the order
-         * the original's menu has them in: a template is a thing you keep,
-         * a run is a thing that happened (Q-032). */
+        /* The templates first, then the recent queries (Q-032). */
         n = tiku_query_list_kind(f->store, TIKU_QREC_TEMPLATE,
                                      names, TIKU_QUERY_LIST_MAX);
         if (n > 0) {
@@ -1294,8 +1274,7 @@ open_popup(tiku_trk_find_t *f, tiku_trk_find_hit_t what, int row,
                 (void)tiku_menu_add(m, names[i], 200 + i, 0, 0u, 1);
             }
         }
-        /* Kept at the end so attaching a loaded template does not move the
-         * template and recent-query entries the user was already using. */
+        /* Last, so offering it does not move the entries above. */
         if (f->loaded_kind == TIKU_QREC_TEMPLATE &&
             f->loaded_name[0] != '\0' && !f->edit_template) {
             (void)tiku_menu_add_separator(m);
@@ -1370,8 +1349,8 @@ tiku_trk_find_save_template(tiku_trk_find_t *f, const char *name,
     }
     tiku_trk_find_build(f, &q);
     q.kind = TIKU_QREC_TEMPLATE;
-    /* Never a by-product: a template is saved deliberately, and the sweep
-     * that reaps unnamed searches must not reach it (AW-090). */
+    /* A template is never temporary, so the sweep that reaps unnamed
+     * searches leaves it (AW-090). */
     q.temporary = 0;
     q.saved_at = now;
     if (tiku_query_save(&q, name, f->store) != 0) {
@@ -1394,8 +1373,8 @@ tiku_trk_find_edit_template(tiku_trk_find_t *f, const char *name)
         q.kind != TIKU_QREC_TEMPLATE) {
         return -1;
     }
-    /* The menu passes f->loaded_name itself.  _from_query reinitialises the
-     * panel, so keep the name before that storage is cleared. */
+    /* The menu passes f->loaded_name itself, which
+     * tiku_trk_find_from_query() clears, so the name is copied first. */
     snprintf(attached, sizeof attached, "%s", name);
     whole = tiku_trk_find_from_query(f, &q);
     snprintf(f->loaded_name, sizeof f->loaded_name, "%s", attached);
@@ -1451,8 +1430,8 @@ tiku_trk_find_open_default(tiku_trk_find_t *f, int64_t now)
         }
     }
     whole = tiku_trk_find_from_query(f, &q);
-    /* The default is a starting shape, not an explicitly opened record.
-     * Save must stay disabled until the user chooses something to attach. */
+    /* The default is a starting shape, not an opened record: nothing is
+     * attached, so Save asks where to save. */
     f->loaded_name[0] = '\0';
     f->loaded_kind = TIKU_QREC_QUERY;
     f->edit_template = 0;
@@ -1520,9 +1499,8 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
             pick = tiku_menu_item_at(&f->popup, f->popup_frame, x, y);
         }
 
-        /* Enabled, as the shells' own popups ask: a supertype whose
-         * children are all in the most-used list is added greyed with an
-         * EMPTY submenu, and this click opened that nothing. */
+        /* Only enabled items act: a supertype whose members are all in
+         * the most-used list is added greyed, with an empty submenu. */
         if (pick >= 0 && picked_menu->item[pick].enabled) {
             int cmd = picked_menu->item[pick].command;
 
@@ -1541,9 +1519,8 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
                 break;
             case TIKU_TRK_FIND_HIT_FIELD:
                 f->row[f->popup_row].field = kFields[cmd].field;
-                /* An operator the new field does not offer would be left
-                 * showing something it cannot do, so the row drops to that
-                 * field's own starting operator. */
+                /* An operator the new field does not offer falls back to
+                 * the field's starting operator. */
                 if ((kFields[cmd].ops &
                      (1u << (unsigned)f->row[f->popup_row].op)) == 0u) {
                     f->row[f->popup_row].op = kFields[cmd].first;
@@ -1557,7 +1534,7 @@ tiku_trk_find_click(tiku_trk_find_t *f, tiku_rect_t frame, int x, int y)
                 break;
             case TIKU_TRK_FIND_HIT_SCOPE:
                 if (cmd == 99) {
-                    /* The shell owns the panel; it will call back with
+                    /* The shell opens the file panel and calls back with
                      * the folder (Q-019). */
                     f->wants_folder = 1;
                 } else if (cmd == 0) {
@@ -1756,8 +1733,10 @@ int tiku_trk_find_text(tiku_trk_find_t *f, const char *text)
 }
 
 /**
- * @brief The type popup: every type present, the most-used first, with a
- * submenu per family
+ * @brief The type popup: All files and folders, the most-used types, then
+ *        the type database's supertypes, each with a submenu of its
+ *        members, then its other types and the model's own; without a
+ *        database, the model's table.
  */
 static void
 open_type_popup(tiku_trk_find_t *f, tiku_menu_t *m)
@@ -1783,9 +1762,8 @@ open_type_popup(tiku_trk_find_t *f, tiku_menu_t *m)
         (void)tiku_menu_add_separator(m);
     }
     if (f->types != NULL) {
-        /* Supertypes own their subtype menus.  A supertype with no
-         * installed member is omitted rather than presenting an empty
-         * arrow, and promoted entries are not repeated in the tree. */
+        /* A supertype with no member is omitted, and the most-used types
+         * are not repeated in the tree. */
         for (i = 0; i < f->types->n; i++) {
             const tiku_trk_typerec_t *super = &f->types->rec[i];
             size_t sn = strlen(super->type);
@@ -1858,9 +1836,8 @@ open_type_popup(tiku_trk_find_t *f, tiku_menu_t *m)
                 m->item[at].marked = 1;
             }
         }
-        /* The model also owns structural types such as Folder and
-         * Volume.  They remain selectable even when the editable type
-         * database has no column declaration for them. */
+        /* The model's own types, such as Folder and Volume, are listed
+         * when the type database has no record for them. */
         for (i = 0; tiku_model_type_at(i, NULL) != NULL; i++) {
             const char *type = tiku_model_type_at(i, NULL);
             int cmd, at;

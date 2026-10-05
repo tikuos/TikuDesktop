@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_status_overlay.c - modal alert and job-status presentation.
+ * tiku_trk_status_overlay.c - the alert and the file-job progress panel
+ * drawn over everything else, and the pointer and keys they take while
+ * they are up.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,6 +17,7 @@
 #include "tiku_trk_status_overlay.h"
 #include "tiku_trk_task.h"
 
+/* The progress panel's geometry, in pixels. */
 #define PROGRESS_WIDTH  380
 #define PROGRESS_MARGIN 24
 #define PROGRESS_ROW_H  48
@@ -62,8 +65,6 @@ draw_alert(tiku_trk_status_overlay_t *controller)
     if (!controller->alert.open) {
         return;
     }
-    /* The panel is the kit's: the same question an application can raise
-     * over its own window, drawn here over the whole desktop. */
     tiku_alert_draw(&controller->alert, controller->surface,
                     alert_frame(controller));
 }
@@ -131,8 +132,7 @@ draw_progress(tiku_trk_status_overlay_t *controller)
         }
         tiku_text(controller->surface, font, frame.x + frame.w - 70,
                        y, line, TIKU_C_TEXT);
-        /* Where it is going, under the name: a file name alone does not
-         * say whether this is the copy the user meant (FS-069). */
+        /* The destination folder, under the name (FS-069). */
         if (progress->dest[0] != '\0') {
             const char *to = strrchr(progress->dest, '/');
 
@@ -178,7 +178,10 @@ draw_progress(tiku_trk_status_overlay_t *controller)
     }
 }
 
-/** @brief Button @p chosen answers the alert; the caller is told. */
+/**
+ * @brief Answer the alert with button @p chosen: the answer callback gets
+ *        the alert, then the alert is reset.
+ */
 static void
 answer(tiku_trk_status_overlay_t *controller, int chosen)
 {
@@ -258,8 +261,8 @@ tiku_trk_status_overlay_pointer(tiku_trk_status_overlay_t *controller,
     if (controller->alert.open) {
         tiku_rect_t frame = alert_frame(controller);
 
-        /* Armed, not answered: the button goes down and answers on the
-         * release over it (tiku_trk_status_overlay_pointer_up). */
+        /* A press arms the button under it; the release over it answers
+         * (tiku_trk_status_overlay_pointer_up()). */
         (void)tiku_alert_press(&controller->alert, frame.w, frame.h,
                                x - frame.x, y - frame.y);
         mark_dirty(controller);
@@ -340,10 +343,8 @@ tiku_trk_status_overlay_key(tiku_trk_status_overlay_t *controller,
                                ? controller->alert.dflt
                                : controller->alert.nbutton - 1);
     } else if (key >= 'a' && key <= 'z') {
-        /* A button answers to the letter it starts with, which is what
-         * makes the delete question's 'm' and 'd' the shortcuts the
-         * source names (FS-046).  The first match wins; Escape already
-         * owns Cancel, so a second C would not be reached anyway. */
+        /* A lower-case letter answers with the first button whose label
+         * starts with it, in either case (FS-046). */
         int i;
 
         for (i = 0; i < controller->alert.nbutton; i++) {

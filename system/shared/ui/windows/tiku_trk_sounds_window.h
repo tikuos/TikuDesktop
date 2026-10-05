@@ -8,7 +8,7 @@
  * volume under them.
  *
  * Every change is saved to the settings file and applied to the kit at
- * once, in the manner of the other preference windows: there is no OK.
+ * once; there is no OK button.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,17 +19,18 @@
 #include "tiku_window.h"
 #include "tiku_trk_soundprefs.h"
 
-#define TIKU_TRK_SOUNDS_W 500
+#define TIKU_TRK_SOUNDS_W 500    /**< the window's frame width */
 
-/** @brief Asked to put a file panel up for @p event's sound. */
+/** @brief Asks the shell to put up a file panel for @p event's sound. */
 typedef void (*tiku_trk_sounds_choose_fn)(void *context,
                                           tiku_sound_event_t event);
 
+/** @brief The Sounds preferences window and what it opened on. */
 typedef struct {
     tiku_trk_prefs_t *prefs;        /* the settings, owned elsewhere */
     tiku_trk_sounds_choose_fn choose; /* the shell's file panel, or NULL */
     void             *choose_ctx;
-    int               tracking;     /* the volume knob is in hand */
+    int               tracking;     /* the volume knob is held */
     char              path[512];    /* the file they are saved to, or "" */
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
@@ -62,8 +63,8 @@ void tiku_trk_sounds_window_init(tiku_trk_sounds_window_t *controller,
 void tiku_trk_sounds_window_chosen(tiku_trk_sounds_window_t *controller,
                                    tiku_sound_event_t event,
                                    const char *path);
-/** @brief Whether the volume knob is in hand, so moves and the release
- *         belong to this window. */
+/** @brief Whether the volume knob is held; while it is, the shell sends
+ *         the pointer's moves and release here. */
 int tiku_trk_sounds_window_tracking(
     const tiku_trk_sounds_window_t *controller);
 /** @brief Close the window if open; nothing else is held. */

@@ -1,12 +1,20 @@
-/* File-type preference drafts; discovery and cancellation never write.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_associations.c - the File Associations model.  Loading and
+ * cancelling never write; only a save touches the stored preferences.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_associations.h"
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
 
-/** @brief Friendly names describe formats, not which application wins. */
+/** @brief The name the list shows for @p type, or NULL for one not named. */
 static const char *association_label(const char *type)
 {
     static const struct { const char *type, *label; } names[] = {
@@ -37,7 +45,13 @@ static const char *association_label(const char *type)
     return NULL;
 }
 
-/** @brief Include supported documents, never directory or wildcard records. */
+/**
+ * @brief Add a row for @p type when some application opens it.
+ *
+ * Folder types (inode/), supertypes ("text/"), Be types and a type already
+ * listed are skipped.  The label is association_label()'s, else @p label,
+ * else the type itself.
+ */
 static void association_add(tiku_trk_associations_t *m,
     const tiku_trk_apps_t *apps, const char *type, const char *label)
 {
@@ -58,7 +72,7 @@ static void association_add(tiku_trk_associations_t *m,
              label && *label ? label : type);
 }
 
-/** @brief Stable alphabetical rows, independent of registry discovery order. */
+/** @brief Order rows by label, whatever order the registries list them in. */
 static int association_compare(const void *a, const void *b)
 {
     const tiku_trk_association_t *x = a, *y = b;

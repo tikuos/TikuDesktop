@@ -7,7 +7,7 @@
  *
  * The volume is a slider: the knob is taken on a press and follows the
  * pointer until the release, which the shell routes here while the
- * knob is in hand (tiku_trk_sounds_window_tracking).
+ * knob is held (tiku_trk_sounds_window_tracking).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,7 +29,7 @@
 #define CHOOSE_W 28
 #define KNOB_W 12
 
-/** @brief One row of the table: the label's face plus room around it. */
+/** @brief A table row's height: the label's face plus room around it. */
 static int
 row_h(void)
 {
@@ -43,7 +43,7 @@ list_y(void)
     return 10 + tiku_font_bold()->height + 8;
 }
 
-/** @brief Where the volume stepper sits, under the last row. */
+/** @brief Where the volume slider sits, under the last row. */
 static int
 volume_y(void)
 {
@@ -234,8 +234,8 @@ apply(tiku_trk_sounds_window_t *controller)
 }
 
 /**
- * @brief Sound @p event whatever its row says: a person pressing Test
- *        on a moment that is off is asking what they would be missing.
+ * @brief Play @p event even when its row is off, leaving its on/off as it
+ *        was.
  */
 static void
 test(tiku_sound_event_t event)
@@ -248,7 +248,7 @@ test(tiku_sound_event_t event)
 }
 
 /**
- * @brief Draw the table of moments, the volume stepper and the buttons.
+ * @brief Draw the table of moments, the volume slider and the buttons.
  */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface, tiku_rect_t content,
@@ -312,8 +312,10 @@ draw(tiku_window_t *window, tiku_surface_t *surface, tiku_rect_t content,
 }
 
 /**
- * @brief A press toggles a moment, tests one, steps the volume or presses
- *        a button, and what it changed is applied.  @return 1 when taken.
+ * @brief A press toggles a moment or takes the volume knob; the clip,
+ *        choose and Test buttons, Defaults and Revert act on a release
+ *        over them.  What changed is applied.
+ * @return 1 when taken.
  */
 static int
 event(tiku_window_t *window, const tiku_event_t *ev, void *context)
@@ -323,8 +325,8 @@ event(tiku_window_t *window, const tiku_event_t *ev, void *context)
     int i;
 
     if (controller->tracking) {
-        /* The knob follows the hand wherever it goes, and the file is
-         * written once, when it lets go. */
+        /* The knob follows the pointer, and the settings file is written
+         * once, on the release. */
         tiku_trk_prefs_set(controller->prefs, "sound.volume",
                            volume_at(content, ev->x));
         tiku_trk_soundprefs_apply(controller->prefs);
@@ -338,8 +340,8 @@ event(tiku_window_t *window, const tiku_event_t *ev, void *context)
         return 1;
     }
     {
-        /* Every button goes down under the hand and acts when it lets
-         * go on it; the checkboxes and the knob answer the press. */
+        /* Every button shows pressed while held and acts on a release
+         * over it; the checkboxes and the knob act on the press. */
         int under = 0, k;
 
         for (k = 0; k < TIKU_SOUND_EVENTS && under == 0; k++) {
@@ -377,8 +379,7 @@ event(tiku_window_t *window, const tiku_event_t *ev, void *context)
                 k = (id - 1) / 3;
                 switch ((id - 1) % 3) {
                 case 0:
-                    /* Heard as well as shown: a name says little
-                     * about a sound. */
+                    /* The new clip is played as well as named. */
                     if (tiku_trk_soundprefs_cycle_clip(controller->prefs,
                                                        &controller->offer, k)) {
                         apply(controller);
@@ -476,8 +477,8 @@ tiku_trk_sounds_window_chosen(tiku_trk_sounds_window_t *controller,
     if (strlen(base) >= TIKU_TRK_PREF_TEXT_MAX) {
         return;
     }
-    /* Into the folder, so the choice survives the original moving and
-     * is offered to the other rows too. */
+    /* Copied into the sounds folder, where every row is offered it and
+     * it no longer depends on the original file. */
     (void)tiku_sounds_dir(dir, sizeof dir);
     snprintf(to, sizeof to, "%s/%s", dir, base);
     if (strcmp(to, path) != 0 && copy_file(path, to) != 0) {
@@ -550,8 +551,8 @@ tiku_trk_sounds_window_open(tiku_trk_sounds_window_t *controller)
         snprintf(controller->opened_clip[i], sizeof controller->opened_clip[i],
                  "%s", tiku_trk_soundprefs_clip(controller->prefs, i));
     }
-    /* The folder is the list, read every time the window opens: a file
-     * dropped in while it was shut is offered when it reopens. */
+    /* The sounds folder is read on every open, so a file dropped in while
+     * the window was shut is offered. */
     (void)tiku_trk_soundprefs_offer(&controller->offer);
     controller->opened_volume = tiku_trk_soundprefs_volume(controller->prefs);
     frame.w = TIKU_TRK_SOUNDS_W;

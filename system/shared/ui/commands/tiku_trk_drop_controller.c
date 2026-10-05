@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_drop_controller.c - folder and Deskbar drop execution.
+ * tiku_trk_drop_controller.c - carrying out a drop: the Deskbar, a
+ * rearrangement in the source view, an application launch, a colour, a
+ * volume dropped on the Trash, and copy, move or link into a folder.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -71,7 +73,7 @@ say(tiku_trk_drop_controller_t *controller, const char *fmt, ...)
     }
 }
 
-/** @brief Something on the screen changed: a frame is owed. */
+/** @brief Ask the shell to redraw the whole screen. */
 static void
 changed(tiku_trk_drop_controller_t *controller)
 {
@@ -95,9 +97,11 @@ drop_paths(tiku_trk_drop_controller_t *controller, const char **paths)
 
 /**
  * @brief A drop that lands on the Deskbar: a menu folder links the items
- *        into it, the tray subscribes to one node, a team row hands the
- *        items to that application.  @return 1 when the bar took the
- *        drop, 0 when it landed elsewhere.
+ *        into it, the logo links them into the Deskbar folder, the tray
+ *        subscribes to one node, a team row hands the items to that
+ *        application, and the bar itself reports on the status line how
+ *        many items can launch.  @return 1 when the bar took the drop, 0
+ *        when it landed elsewhere.
  */
 static int
 drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
@@ -125,8 +129,8 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
         return 1;
     }
     if (drop == TIKU_TRK_DB_DROP_TRAY) {
-        /* The tray: exactly one dropped node becomes a subscription,
-         * addressable afterwards by the id this returns (DB-038). */
+        /* The tray takes exactly one node, as a subscription with the id
+         * tiku_trk_deskbar_add_replicant() returns (DB-038). */
         count = drop_paths(controller, paths);
         if (count == 1) {
             const char *base = strrchr(paths[0], '/');
@@ -153,9 +157,8 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
 
         if (home != NULL && snprintf(destination, sizeof destination,
                 "%s/.config/deskbar", home) > 0) {
-            /* Its parents too: a home that has never run this has no
-             * .config either, and a link into a folder that cannot be
-             * made is a drop that quietly does nothing. */
+            /* Its parents too, since a fresh home may have no
+             * .config. */
             (void)tiku_state_mkparents(destination);
             (void)mkdir(destination, 0755);
             (void)tiku_fs_link(controller->fs, paths, count,
@@ -206,7 +209,8 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
 /**
  * @brief A drop back into the icon view the drag began in: the selected
  *        icons move by the drag's offset, snapped to the grid with Cmd,
- *        and the layout is saved.  @return 1 when that is what the drop was.
+ *        and the layout is saved.  @return 1 when the drop was a
+ *        rearrangement, 0 otherwise.
  */
 static int
 arrange_in_source(tiku_trk_drop_controller_t *controller, int x, int y,
@@ -273,9 +277,11 @@ drop_destination(tiku_trk_drop_controller_t *controller, char *destination,
 }
 
 /**
- * @brief Whether @p destination takes the drag: the foreign offer decides
- *        for items from outside, the store's own rules for its own; a
- *        refusal is said in the alert.  @return 1 when the drop may go on.
+ * @brief Whether @p destination takes the drag: items from another
+ *        application must pass their offer, then every drag needs a
+ *        writable folder, no copy or link into the Trash, and a first item
+ *        that may move there.  A refusal opens an alert.
+ * @return 1 when the drop may go on.
  */
 static int
 drop_allowed(tiku_trk_drop_controller_t *controller,
@@ -330,9 +336,9 @@ static const char *link_name_of(const tiku_trk_drop_controller_t *controller,
                                 int i);
 
 /**
- * @brief In an icon view, give each dropped item the spot it was carried
- *        to, so it lands where it was let go rather than where the layout
- *        would put it.
+ * @brief In an icon view, when the drop is not on a pose, reserve for each
+ *        dropped item the spot it was carried to, so it appears where it
+ *        was let go.
  */
 static void
 reserve_icon_landings(tiku_trk_drop_controller_t *controller,
@@ -376,8 +382,8 @@ tiku_trk_drop_controller_set_launcher(
 }
 
 /**
- * @brief The registered application @p path is or links to, or NULL: the
- *        shell's registry answers, through the link when it is one.
+ * @brief The registered application @p path is, or links to, from the
+ *        shell's registry; NULL when there is none.
  */
 static const tiku_trk_app_t *
 app_behind(const tiku_trk_drop_controller_t *controller, const char *path)
@@ -428,13 +434,15 @@ carries_applications(const tiku_trk_drop_controller_t *controller)
 }
 
 /**
- * @brief A drop on an application pose launches it (PVS-044).
+ * @brief A drop on a file: an application launches with the dropped
+ *        documents (PVS-044), and any other file refuses the drop.
  *
- * Only the documents the target claims to handle are passed; Cmd held at
- * the release forces every one of them through (the source's Control).
- * With nothing surviving the filter, nothing is launched.
+ * Only the documents the application claims to handle are passed; Cmd
+ * held at the release passes every one.  With none left, nothing is
+ * launched.
  *
- * @return Nonzero when the drop was an application drop, handled or not.
+ * @return 1 when @p destination is a file, 0 when it is a container, cannot
+ *         be read, or no launcher is installed.
  */
 static int
 drop_on_application(tiku_trk_drop_controller_t *controller,
@@ -460,8 +468,8 @@ drop_on_application(tiku_trk_drop_controller_t *controller,
     }
     application = app_behind(controller, destination);
     if (application == NULL) {
-        /* An executable nothing registered: saying so beats pretending the
-         * drop was a move into a file. */
+        /* Not a registered application: the drop is refused with a
+         * status line. */
         say(controller,
                  "%s is not a registered application", target.name);
         changed(controller);
@@ -555,18 +563,17 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
     if ((modifiers & TIKU_MOD_CMD) != 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
     }
-    /* A program stays where it is installed: dragging one somewhere
-     * makes a link to it there, the way the Deskbar's menu offers it,
-     * unless a copy is asked for outright. */
+    /* Dragging a program makes a link to it, unless Option asks for a
+     * copy. */
     if (carries_applications(controller) &&
         (drag_modifiers & TIKU_TRK_DRAG_MOD_COPY) == 0u) {
         drag_modifiers |= TIKU_TRK_DRAG_MOD_LINK;
     }
     if (tiku_fs_in_trash(controller->fs, destination)) {
-        /* FS-041: a whole volume dragged to the Trash means UNMOUNT, not
-         * delete -- the boot volume refuses by name.  Volumes are taken
-         * out of the drop here; anything else dragged alongside them
-         * still goes to the Trash below. */
+        /* FS-041: a volume dragged to the Trash is unmounted, with an
+         * alert for a refusal such as the boot volume's.  Volumes are
+         * taken out of the drop here; anything dragged with them still
+         * goes to the Trash below. */
         tiku_volumes_t vols;
         int scanned = 0, vols_dropped = 0, others = 0;
         int di;

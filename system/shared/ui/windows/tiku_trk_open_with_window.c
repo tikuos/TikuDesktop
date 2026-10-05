@@ -16,25 +16,16 @@
 #include "tiku_trk_open_with_window.h"
 
 #define OW_WIDTH   420
-#define OW_ROWS    10     /* what (260 - 26 - 40) / 18 came to */
+#define OW_ROWS    10     /* rows the list shows */
 
-/*
- * A row is as tall as the name in it, and the list starts under a line of
- * text -- so both are asked for.  Each answers what a fixed number gives
- * at 12 px; at 16, rows 18 pixels tall holding 19-pixel words land a
- * click a row away from the one it looked like.
- */
+/* The row height and the list's top, from the face; the drawing and the
+ * click both use them. */
 static int row_h(void)    { return tiku_font_plain()->height + 3; }
 static int list_top(void) { return tiku_font_plain()->height + 11; }
 
 /**
- * @brief The window, grown by what its ten rows grew by.
- *
- * Not the other way about: a height written down, with the row COUNT
- * falling out of it, shows a larger face fewer applications rather than
- * a window with room for them.  260 stays the
- * origin, because the slack in it was chosen; only the difference the
- * face makes is worked out.
+ * @brief The window's height: 260 at the 12 px face, grown by what the
+ *        label line and the ten rows grow by with the face.
  */
 static int ow_height(void)
 {
@@ -42,13 +33,10 @@ static int ow_height(void)
 }
 
 /**
- * @brief Where the rows go: the one rectangle the loop below lays a
- *        row at a time into.
+ * @brief Where the rows go: OW_ROWS rows of the face's height, inset eight
+ *        from the window's sides.
  *
- * Ten rows of the face's height, inset eight from the window's sides --
- * written once here so the draw, the click and the keyboard cannot come
- * to disagree about where a row is, which is the bug the arithmetic in
- * three places was one edit away from.
+ * The drawing, the click and the keyboard all read this rectangle.
  */
 static tiku_rect_t
 list_body(tiku_rect_t content)
@@ -62,7 +50,7 @@ list_body(tiku_rect_t content)
     return body;
 }
 
-/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
+/** @brief Set the shell's redraw flag, when it has one. */
 static void
 mark_dirty(tiku_trk_open_with_window_t *c)
 {
@@ -83,7 +71,10 @@ buttons(tiku_trk_open_with_window_t *c, tiku_rect_t content,
                                     content.y + content.h - 30, 182, 22 };
 }
 
-/** @brief The live enable rules the source keeps in Pulse (AW-045). */
+/**
+ * @brief Whether Open and Open and make preferred can act on the selection
+ *        (AW-045).
+ */
 static void
 enables(const tiku_trk_open_with_window_t *c, int *can_open,
         int *can_prefer)
@@ -91,8 +82,8 @@ enables(const tiku_trk_open_with_window_t *c, int *can_open,
     int sel = tiku_list_chosen(&c->list);
 
     *can_open = (sel >= 0 && sel < c->count);
-    /* No relation cannot become preferred, and the preferred app already
-     * is: neither button press would change anything true. */
+    /* An application with no relation cannot become preferred, and the
+     * preferred one already is, so the button is off for both. */
     *can_prefer = *can_open && c->cand[sel].rel != TIKU_TRK_REL_NONE &&
                   !c->cand[sel].preferred;
 }
@@ -133,9 +124,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
                                     : TIKU_C_TEXT);
         }
         {
-            /* The relation, said in words and truncated at the END: the
-             * tail of "opens this kind of file" is the part a reader can
-             * spare (MA-081). */
+            /* The relation in words, cut at its end to 30 characters
+             * (MA-081). */
             char rel[48];
 
             snprintf(rel, sizeof rel, "%.30s",
@@ -189,9 +179,9 @@ do_open(tiku_trk_open_with_window_t *c, int make_preferred)
     }
     if (pick->rel == TIKU_TRK_REL_NONE && !c->generic_only &&
         c->alert != NULL) {
-        /* The application does not claim the document's type: ask first,
-         * Cancel the default -- unless every document is untyped, when
-         * there is nothing to disagree with (AW-046). */
+        /* The application does not claim the document's type: ask
+         * first, with Cancel the default, unless every document is
+         * untyped (AW-046). */
         char text[220];
 
         snprintf(text, sizeof text,
@@ -200,7 +190,8 @@ do_open(tiku_trk_open_with_window_t *c, int make_preferred)
         tiku_alert_open(c->alert, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_OPEN_ANYWAY, text,
                             tiku_str("alert.btn.open"));
-        return;                     /* the answer re-enters via confirmed */
+        /* The answer arrives at tiku_trk_open_with_window_confirmed(). */
+        return;
     }
     if (c->open != NULL) {
         c->open(c->open_context, pick->app, c->path_ptr, c->path_count);
@@ -222,7 +213,11 @@ tiku_trk_open_with_window_confirmed(tiku_trk_open_with_window_t *c)
     close_window(c);
 }
 
-/** @brief A press chooses a row or a button.  @return 1 for any press. */
+/**
+ * @brief A press picks a row; Open and Open and make preferred act on a
+ *        release over them.
+ * @return 1 when taken.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *ev,
       void *context)
@@ -239,7 +234,8 @@ event(tiku_window_t *window, const tiku_event_t *ev,
 #define INSIDE(r) (ev->x >= (r).x && ev->x < (r).x + (r).w && \
                    ev->y >= (r).y && ev->y < (r).y + (r).h)
     {
-        /* Down under the hand, acting when it lets go on the button. */
+        /* A button shows pressed while held and acts on a release over
+         * it. */
         int can_open, can_prefer, under = 0;
 
         enables(c, &can_open, &can_prefer);
@@ -292,9 +288,8 @@ tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *c,
     c->open_context = open_context;
     c->alert = alert;
     c->store = store;
-    /* One question, one answer: the list holds a single row at a time,
-     * and it is the list that enforces that rather than each gesture
-     * here remembering to. */
+    /* A single-selection list: the list keeps at most one row
+     * selected. */
     tiku_list_init(&c->list, 1);
     tiku_list_set_row_h(&c->list, row_h());
 }
@@ -336,9 +331,8 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
         c->path_ptr[c->path_count] = c->paths[c->path_count];
         c->path_count++;
     }
-    /* Every document-capable app, with its best relation to the selection
-     * said: the window exists for the case the menu's shortlist cannot
-     * answer (AW-046). */
+    /* Every application that opens documents, with its best relation to
+     * the selection's types (AW-046). */
     for (i = 0; i < apps->count && c->count < TIKU_TRK_APP_MAX; i++) {
         /* A bundle with no types advertises no document-opening API. */
         if (apps->app[i].module[0] && !apps->app[i].ntype &&
@@ -366,7 +360,8 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
             }
         }
     }
-    /* Better claims first; a stable order the eye can rely on. */
+    /* Better claims first, in the order tiku_trk_launch_cand_before()
+     * gives. */
     for (i = 0; i < c->count; i++) {
         for (j = i + 1; j < c->count; j++) {
             if (tiku_trk_launch_cand_before(&c->cand[j], &c->cand[i])) {
@@ -377,8 +372,6 @@ tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *c,
             }
         }
     }
-    /* The candidates are settled: the list is told how many rows it
-     * has, which is what makes a click or an arrow mean anything. */
     (void)tiku_list_set_count(&c->list, c->count);
     {
         tiku_rect_t frame = { (c->screen_w - OW_WIDTH) / 2,
@@ -413,14 +406,14 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
         return 0;
     }
     if (c->alert != NULL && c->alert->open) {
-        /* The confirm is up: its letters belong to the alert, later in
-         * the shell's chain (AW-046). */
+        /* The confirm is up: its keys belong to the alert, later in the
+         * shell's chain (AW-046). */
         return 0;
     }
     switch (key) {
     case TIKU_KEY_ESCAPE:
-        /* Escape cancels the window, which is the whole of its keyboard
-         * contract beyond the list walk (AW-047). */
+        /* Escape closes the window without opening anything
+         * (AW-047). */
         close_window(c);
         return 1;
     case TIKU_KEY_UP:
@@ -429,9 +422,6 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
     case TIKU_KEY_PAGE_DOWN:
     case TIKU_KEY_HOME:
     case TIKU_KEY_END:
-        /* The walk, and the scrolling that has to follow it, are the
-         * list's -- so this window gained Page and Home and End by
-         * giving up the four lines that did Up and Down badly. */
         (void)tiku_list_key(&c->list, key, modifiers,
                             list_body(tiku_window_content(c->window)));
         mark_dirty(c);
@@ -440,6 +430,6 @@ tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *c, int key,
         do_open(c, 0);
         return 1;
     default:
-        return 1;               /* a modal-ish window keeps its keys */
+        return 1;               /* the window keeps every other key */
     }
 }

@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_sort.c - the sort order and the comparisons that keep it
+ * tiku_trk_poseview_sort.c - choosing the sort key, its direction and the
+ * tie-break column.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +17,6 @@ tiku_trk_poseview_sort_by(tiku_trk_poseview_t *v, int field)
     if (v == NULL) {
         return;
     }
-    /* The same column again reverses; a different column sorts ascending. */
     if (v->sort_field == field) {
         v->sort_reverse = !v->sort_reverse;
     } else {
@@ -53,8 +53,7 @@ tiku_trk_poseview_set_secondary(tiku_trk_poseview_t *v, int field)
     if (v == NULL) {
         return;
     }
-    /* A secondary that no longer has a column is no secondary at all: it
-     * would order the listing by something nothing on screen shows. */
+    /* A field with no column is not taken as the secondary. */
     if (field >= 0 && !tiku_trk_poseview_has_column(v, field)) {
         field = -1;
     }
@@ -80,8 +79,8 @@ tiku_trk_poseview_sort_click(tiku_trk_poseview_t *v, int field, int shift)
             v->sort_field = v->sort2_field;
             v->sort2_field = old;
         } else {
-            /* With no secondary there is nothing to swap, so Shift falls
-             * through to the plain reversal rather than doing nothing. */
+            /* With no secondary, Shift reverses the sort as a plain click
+             * does. */
             v->sort_reverse = !v->sort_reverse;
         }
     } else if (shift) {

@@ -1,4 +1,13 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_springmenu.c - spring-loaded menus: arming over an area, the
+ * delay before the menu opens, and the margin the pointer may wander.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_springmenu.h"
 #include <string.h>
 

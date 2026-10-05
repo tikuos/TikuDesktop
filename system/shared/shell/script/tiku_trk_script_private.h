@@ -27,7 +27,9 @@
 #include <strings.h>
 #include <sys/stat.h>
 
+/** @brief The most steps a script holds; the lines after that are not read. */
 #define SC_MAX_STEPS 512
+/** @brief The room for a step's first string, and for a note. */
 #define SC_TEXT_MAX  256
 
 /** @brief What one line was asking for. */
@@ -44,33 +46,39 @@ typedef enum {
     OP_EXPECT_UNDER, OP_EXPECT_OVER, OP_EXPECT_SAID
 } sc_op_t;
 
+/** @brief One parsed script line. */
 typedef struct {
-    sc_op_t  op;                        /* the verb                      */
-    unsigned key;                       /* KEY: the keysym               */
-    unsigned modifiers;                 /* TIKU_MOD_* bits with a key    */
-    int      button_x, button_y;        /* a resolved tab point          */
+    sc_op_t  op;                        /**< the verb                    */
+    unsigned key;                       /**< KEY: logical key or char    */
+    unsigned modifiers;                 /**< TIKU_MOD_* bits held        */
+    int      button_x, button_y;        /**< a window op's tab point     */
+    /** A point, a size for resize, or 1 in x for an "at most" or "at
+     *  least" check. */
     int      x, y;
-    unsigned button;                    /* the mouse button, 1 unless    */
-    int      count;                     /* WAIT turns                    */
-    char     text[SC_TEXT_MAX];         /* path, substring or note       */
-    /* A second string, where one is needed.  Long enough for a PATH: it
-     * was a word, and a needle too long to hold was silently truncated to
-     * nothing -- which made every check that used it pass. */
-    char     text2[512];
-    int      line;                      /* the script line, for the report */
+    unsigned button;                    /**< the mouse button, 1 unless
+                                             the line names another      */
+    /** WAIT turns, a row, the number a check expects, or the turns a
+     *  repeated check may take. */
+    int      count;
+    char     text[SC_TEXT_MAX];         /**< path, substring or note     */
+    char     text2[512];                /**< a second string, room for a
+                                             whole path                  */
+    int      line;                      /**< the script line, for reports */
 } sc_step_t;
 
+/** @brief A script being run. */
 struct tiku_trk_script {
-    sc_step_t step[SC_MAX_STEPS];       /* the lines, parsed, in order   */
-    int       count;                    /* how many of step[] are used   */
-    int       cursor;                   /* next step to run, into step[] */
-    int       waiting;                  /* turns still owed to a WAIT    */
-    int       pending_release;          /* a CLICK's release still to go */
-    int       dragging_window;          /* a tab drag, mid-play          */
-    int       drag_to_x, drag_to_y;          /* a CLICK's second half         */
-    char      note[SC_TEXT_MAX];        /* what the next check is for    */
-    int       passes, fails;
-    int       finished;                 /* quit, or the last step, ran  */
+    sc_step_t step[SC_MAX_STEPS];       /**< the lines, parsed, in order */
+    int       count;                    /**< how many of step[] are used */
+    int       cursor;                   /**< next step to run in step[]  */
+    int       waiting;                  /**< turns still owed to a WAIT  */
+    int       pending_release;          /**< a click's release to send   */
+    int       dragging_window;          /**< a tab drag: 1 owes the move,
+                                             2 the release               */
+    int       drag_to_x, drag_to_y;          /**< where a tab drag ends  */
+    char      note[SC_TEXT_MAX];        /**< what the next check is for  */
+    int       passes, fails;            /**< checks passed and failed    */
+    int       finished;                 /**< quit, or the last step, ran */
 };
 
 

@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_lifecycle.c - spatial folder-window lifecycle.
+ * tiku_trk_folder_lifecycle.c - opening, finding and closing spatial folder
+ * windows, and the query result windows that use the same slots.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -82,10 +83,10 @@ tiku_trk_folder_lifecycle_find(tiku_trk_folder_lifecycle_t *controller,
     if (controller == NULL || window == NULL) {
         return NULL;
     }
-    /* The workspace recycles window objects, so a CLOSED folder can still
-     * hold the same pointer a reopened window was just given.  The open
-     * one is the one on screen; it answers first, and the closed match is
-     * only a fallback for callers sweeping up after a close. */
+    /* The workspace recycles window objects, so a closed folder can still
+     * hold the pointer a reopened window was just given.  The open folder
+     * answers first; the closed match is a fallback for callers cleaning
+     * up after a close. */
     for (i = 0; i < *controller->count; i++) {
         if (controller->folders[i].win == window &&
             controller->folders[i].win->open) {
@@ -131,14 +132,12 @@ tiku_trk_folder_lifecycle_close(tiku_trk_folder_lifecycle_t *controller,
     tiku_trk_folder_lifecycle_save_frame(controller, folder);
     tiku_sound_play(TIKU_SOUND_WINDOW_CLOSE);
     tiku_workspace_close(controller->workspace, folder->win);
-    /* The pixels belonged to the window that was showing.  A slot reused
-     * for another folder starts from a blank frame, not from what the last
-     * one left in it. */
+    /* The kept pixels belong to the window that was showing, so a slot
+     * reused for another folder starts from a blank frame. */
     tiku_trk_folder_window_forget(folder);
-    /* And the window pointer goes too: the workspace recycles window
-     * objects, so a closed slot still holding one would later claim a
-     * REOPENED window that happens to land at the same address -- two
-     * slots, one window, and the stale one answering for it. */
+    /* The window pointer is cleared too: the workspace recycles window
+     * objects, so a closed slot still holding one would claim a reopened
+     * window that lands at the same address. */
     folder->win = NULL;
     *controller->dirty = 1;
 }
@@ -200,9 +199,9 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
     if (controller == NULL || path == NULL) {
         return NULL;
     }
-    /* Browser mode keeps one spatial window and changes its location.  Do
-     * this before the normal per-folder lookup so a second folder cannot
-     * quietly create another window while the preference is enabled. */
+    /* With SingleWindowBrowse on, the first open folder window that is
+     * not a live query and can switch to path moves there, and no window
+     * opens.  This runs before the per-folder lookup. */
     if (controller->prefs != NULL &&
         tiku_trk_prefs_get(controller->prefs, "SingleWindowBrowse")) {
         for (i = 0; i < *controller->count; i++) {
@@ -257,9 +256,9 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
     tiku_trk_poseview_set_hide_dotfiles(folder->view,
         tiku_trk_prefs_get(controller->prefs, "HideDotFiles"));
     if (tiku_trk_poseview_restore_columns(folder->view) == 0) {
-        /* A first opening inherits its PARENT's layout, like the frame
-         * (MA-070): what the user shaped for the folder above is the best
-         * guess for the folder within it. */
+        /* A folder with no saved columns takes its parent's layout when a
+         * window on the parent has been opened, as the frame is inherited
+         * (MA-070). */
         char parent[TIKU_PATH_MAX];
         const char *slash = strrchr(path, '/');
         int i;
@@ -373,10 +372,9 @@ tiku_trk_folder_lifecycle_refresh_results(
         !folder->live) {
         return 0;
     }
-    /* Asked for, not done here.  What a notice knows is that something
-     * changed; the re-walk it implies is minutes of work on a real disk,
-     * and this is the thread with a frame to draw.  The turn takes it
-     * from here (tiku_trk_folder_lifecycle_step_results). */
+    /* Only begun here: a re-walk can be long on a real disk, and this is
+     * the thread that draws.  tiku_trk_folder_lifecycle_step_results()
+     * carries it out a slice per turn. */
     if (tiku_query_refreshing(folder->run)) {
         return 0;               /* one is already under way */
     }
@@ -400,18 +398,12 @@ tiku_trk_folder_lifecycle_step_results(
         return 0;
     }
     if (!refreshing) {
-        /* The FIRST walk, where a row that has been found is a row worth
-         * showing: a search over a disk takes long enough that waiting
-         * for all of it would be waiting for nothing to happen.  The
-         * line under it counts up, and says "live" once there is nothing
-         * left to look at -- so a person can tell a search still running
-         * from one that found this much and stopped. */
+        /* The first walk shows each row as it is found; the count line
+         * under the rows counts up, and says "live" once the walk is
+         * done. */
         show_results(folder);
-        /* The status line is not written here, and deliberately.  There
-         * is one of it for the whole desktop, the walk takes thousands of
-         * turns, and a person who has gone on to do something else would
-         * watch this scribble over whatever they are being told.  The
-         * window's own count bar is where a search's progress shows. */
+        /* The first walk leaves the desktop's status line alone; the
+         * window's count line shows its progress. */
         *controller->dirty = 1;
         return 1;
     }

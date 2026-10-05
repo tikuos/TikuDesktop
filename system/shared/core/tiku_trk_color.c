@@ -1,4 +1,12 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_color.c - reading a dropped colour.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_color.h"
 #include <string.h>
 

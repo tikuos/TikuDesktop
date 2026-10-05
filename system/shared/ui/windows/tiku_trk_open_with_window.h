@@ -5,12 +5,11 @@
  *
  * tiku_trk_open_with_window.h - the Open With window (AW-045, AW-047).
  *
- * Single-selection, list only, no menus, Escape cancels: a window that
- * exists to answer ONE question -- which application -- and get out of the
- * way. Every document-capable application is listed with its relation to the
- * selection said in words (MA-081); the buttons live-update from the
- * selection, and an application that does not claim the type asks first
- * (AW-046).
+ * Single selection, a list only, no menus, Escape cancels: the window asks
+ * which application opens the selection.  Every document-capable
+ * application is listed with its relation to the selection in words
+ * (MA-081); the buttons follow the selection, and an application that does
+ * not claim the type asks first (AW-046).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,11 +23,13 @@
 #include "tiku_trk_launch.h"
 #include "tiku_model.h"
 
-#define TIKU_TRK_OW_PATHS 16
+#define TIKU_TRK_OW_PATHS 16   /**< documents one question can carry */
 
+/** @brief Opens the @p count documents in @p paths with @p app. */
 typedef void (*tiku_trk_ow_open_fn)(void *context,
     const tiku_trk_app_t *app, const char *const *paths, int count);
 
+/** @brief The Open With window and the question it asks. */
 typedef struct {
     tiku_workspace_t *workspace;
     tiku_window_t    *window;
@@ -48,10 +49,7 @@ typedef struct {
     char                   types[TIKU_TRK_APP_TYPES_MAX][TIKU_TYPE_MAX];
     int                    type_count;
     int                    generic_only; /* every document is untyped     */
-    /* The rows, the one that is picked and the one shown first: the
-     * kit's list rather than an index and a scroll of its own, so the
-     * anchor rules and the walk are the same ones every other list on
-     * this desktop keeps. */
+    /* The rows, the one picked and the one shown first. */
     tiku_list_t       list;
     tiku_press_t press;     /* the button held: 1 open, 2 prefer */
 } tiku_trk_open_with_window_t;
@@ -65,7 +63,10 @@ void tiku_trk_open_with_window_init(tiku_trk_open_with_window_t *controller,
     int *dirty, tiku_trk_ow_open_fn open, void *open_context,
     tiku_alert_t *alert, struct tiku_store *store);
 
-/** @brief Ask which application, for @p paths of @p types. */
+/**
+ * @brief Ask which application, for @p paths of @p types; an open window
+ *        takes the new question.
+ */
 void tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *controller,
     const tiku_trk_apps_t *apps, const char *const *types, int ntypes,
     const char *const *paths, int npaths);
@@ -74,11 +75,19 @@ void tiku_trk_open_with_window_open(tiku_trk_open_with_window_t *controller,
 tiku_window_t *tiku_trk_open_with_window_handle(
     tiku_trk_open_with_window_t *controller);
 
-/** @return Nonzero when the focused window consumed the key. */
+/**
+ * @brief A key for the focused Open With window: Escape closes it, the
+ *        arrows, Page Up and Down, Home and End walk the list, Return
+ *        opens, and every other key is kept.
+ * @return nonzero when taken; 0 while the confirm alert is up.
+ */
 int tiku_trk_open_with_window_key(tiku_trk_open_with_window_t *controller,
                                   int key, unsigned modifiers);
 
-/** @brief The confirm alert said Open anyway (AW-046). */
+/**
+ * @brief The confirm alert said Open anyway: open with the selected
+ *        application and close the window (AW-046).
+ */
 void tiku_trk_open_with_window_confirmed(
     tiku_trk_open_with_window_t *controller);
 

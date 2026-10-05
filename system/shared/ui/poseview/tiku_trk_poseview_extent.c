@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_extent.c - the viewport, the extent of what is laid out,
- * and the notices that move them
+ * tiku_trk_poseview_extent.c - the viewport and origin, the extent of what
+ * is laid out, inserting and removing rows, and applying change notices and
+ * re-listings.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,7 +26,8 @@ int pv_poll_ring(tiku_trk_poseview_t *v, int64_t now,
                  unsigned *flags, unsigned *out);
 /* End of the forward declarations. */
 
-/** @brief Take one pose's rectangle into the running bounding box. */
+/** @brief Take one placed pose's rectangle into the running bounding
+ *         box. */
 void
 pv_extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
 {
@@ -49,7 +51,8 @@ pv_extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
     if (py + ph > v->ext_y1)      { v->ext_y1 = py + ph; }
 }
 
-/** @brief Forget the box; the next pose to arrive defines it again. */
+/** @brief Forget the box; the next extent query rebuilds it from every
+ *         placed pose. */
 void
 pv_extent_clear(tiku_trk_poseview_t *v)
 {
@@ -57,7 +60,8 @@ pv_extent_clear(tiku_trk_poseview_t *v)
     v->ext_x0 = v->ext_y0 = v->ext_x1 = v->ext_y1 = 0;
 }
 
-/** @brief Walk every pose again.  Only for what cannot grow a box: removal. */
+/** @brief Rebuild the box from every placed pose: after a removal, or
+ *         once it has been forgotten. */
 static void
 extent_recalc(tiku_trk_poseview_t *v)
 {
@@ -73,8 +77,8 @@ void
 tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h)
 {
     if (v != NULL && (v->view_w != w || v->view_h != h)) {
-        /* The hint is a point in the WINDOW, so a window of a different
-         * size has a different top-left to start from (PVL-017). */
+        /* A new size changes where auto-placement wraps, so placement
+         * starts over (PVL-017). */
         tiku_trk_poseview_reset_hint(v);
     }
     if (v == NULL || w < 0 || h < 0) {
@@ -82,22 +86,16 @@ tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h)
     }
     v->view_w = w;
     v->view_h = h;
-    /* And the horizontal axis is pulled back like the vertical one: a
-     * window grown past its scrolled-away content re-anchors the content
-     * to the window instead of keeping a blank gulf (PVL-058). */
+    /* The horizontal scroll is clamped again: a window grown past its
+     * scrolled-away content shows the content (PVL-058). */
     tiku_trk_poseview_set_hscroll(v, v->hscroll);
-    /* The row count follows from the height, so a caller that says how big
-     * the window is has said everything: two numbers that could disagree
-     * are two numbers that will. */
+    /* The row count follows from the height. */
     tiku_trk_poseview_set_visible_rows(v,
         h / (tiku_trk_poseview_row_height(v) > 0
                  ? tiku_trk_poseview_row_height(v) : 1));
     {
-        /* The CURRENT origin, put through the clamp again: a window that
-         * grew can leave the view scrolled past content that now fits.
-         * Passing zero here instead would reset the view to the top-left
-         * on every resize, which is a different bug wearing this one's
-         * clothes. */
+        /* The current origin, clamped again: a window that grew can leave
+         * the view scrolled past content that now fits. */
         int x, y;
 
         tiku_trk_poseview_origin(v, &x, &y);
@@ -125,8 +123,8 @@ tiku_trk_poseview_extent(tiku_trk_poseview_t *v, int *x, int *y, int *w,
         return;
     }
     if (v->mode == TIKU_TRK_MODE_LIST) {
-        /* The columns by the rows.  A list has no origin of its own: it
-         * scrolls by whole rows, which is what v->scroll counts. */
+        /* The columns' width by the rows' height, from (0, 0); a list
+         * scrolls by whole rows, in v->scroll. */
         int shown = v->filtering ? v->filtered_count : v->count;
 
         if (x != NULL) { *x = 0; }
@@ -145,12 +143,10 @@ tiku_trk_poseview_extent(tiku_trk_poseview_t *v, int *x, int *y, int *w,
     y0 = v->ext_valid ? v->ext_y0 - oy : 0;
     x1 = v->ext_valid ? v->ext_x1 + ox : 0;
     y1 = v->ext_valid ? v->ext_y1 + oy : 0;
-    /* The window's own corner is always part of it, so icons that all sit
-     * low in the view do not drag the origin down after them: dropping at
-     * the bottom of a window would scroll the window, putting what was
-     * just dropped somewhere other than where it was let go.  The margin
-     * is only outside content that is ITSELF outside the corner -- adding
-     * it to an icon at 3 would scroll the view by three pixels. */
+    /* The view's (0, 0) is always inside the box, so icons that all sit
+     * low in the view do not move the origin down after them, and a drop at
+     * the bottom of a window does not scroll it.  On the left and top the
+     * margin is added only where content lies past 0. */
     if (v->ext_valid && v->ext_x0 >= 0) { x0 = 0; }
     if (v->ext_valid && v->ext_y0 >= 0) { y0 = 0; }
     if (x != NULL) { *x = x0; }
@@ -188,9 +184,8 @@ tiku_trk_poseview_set_origin(tiku_trk_poseview_t *v, int x, int y)
         return;
     }
     tiku_trk_poseview_extent(v, &ex, &ey, &ew, &eh);
-    /* Clamped to what there IS to see: an origin past the end is rows of
-     * blank space with nothing to scroll back to, and a saved one from a
-     * bigger window would open the folder looking empty (PVL-053). */
+    /* Clamped to the extent less the viewport, so a saved origin from a
+     * bigger window does not open the folder on blank space (PVL-053). */
     maxx = ew - v->view_w;
     maxy = eh - v->view_h;
     if (maxx < 0) { maxx = 0; }
@@ -214,10 +209,8 @@ tiku_trk_poseview_origin(const tiku_trk_poseview_t *v, int *x, int *y)
            : (v->mode == TIKU_TRK_MODE_MINI) ? v->mini_x : 0;
     }
     if (y != NULL) {
-        /* A list scrolls in ROWS, and its origin is that scroll in the
-         * same pixels every other mode answers in -- a caller converting
-         * screen to view coordinates must not have to know which mode it
-         * is looking at. */
+        /* In list mode the origin is the row scroll in pixels, so window
+         * points convert to view points the same way in every mode. */
         *y = (v->mode == TIKU_TRK_MODE_ICON) ? v->icon_y
            : (v->mode == TIKU_TRK_MODE_MINI) ? v->mini_y
            : v->scroll * tiku_trk_poseview_row_height(v);
@@ -285,7 +278,7 @@ tiku_trk_poseview_set_visible_rows(tiku_trk_poseview_t *v, int rows)
     /* A window that grew, or a listing that shrank, can leave the view
      * scrolled past its own content -- rows of blank space under real
      * content, with nothing to scroll to (CW-013, PVL-061).  Corrected
-     * here because this is the one call that knows the height. */
+     * here, where the height is known. */
     shown = v->filtering ? v->filtered_count : v->count;
     max = shown - rows;
     if (max < 0) {
@@ -306,9 +299,9 @@ tiku_trk_poseview_set_invisible(tiku_trk_poseview_t *v, int index,
         return 0;
     }
     p->invisible = hidden ? 1 : 0;
-    /* The bit lives in the saved record, so hiding something is a change to
-     * PERSIST -- without this it would be forgotten at the next reload and
-     * the entry would quietly come back. */
+    /* The bit lives in the saved position record, which save_state writes
+     * only for a placed pose, so hiding marks the pose placed and the view
+     * changed; otherwise the next reload would bring the entry back. */
     p->placed = 1;
     v->state_dirty = 1;
     return 1;
@@ -391,9 +384,8 @@ pv_sorted_slot(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
 
 /**
  * @brief Insert @p p at its sorted slot, re-sorting first when the array
- *        has come unsorted, and move every index that pointed past the
- *        slot down by one.  @return the slot, or -1 when the array is
- *        full.
+ *        has come unsorted, and shift every index at or past the slot by
+ *        one.  @return the slot, or -1 when the array is full.
  */
 int
 pv_insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
@@ -403,9 +395,9 @@ pv_insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
     if (v->count >= POSES_MAX) {
         return -1;
     }
-    /* The binary search is only right when the array is ordered, and a value
-     * refresh under a value sort can have unsorted it since.  Restoring the
-     * precondition here costs a re-sort only when it was actually broken. */
+    /* The binary search needs an ordered array, which a changed sort key
+     * can have broken since; the array is re-sorted first only when it is
+     * out of order. */
     if (!pv_poses_sorted(v)) {
         pv_resort(v);
     }
@@ -419,7 +411,7 @@ pv_insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
     }
     v->poses[at] = *p;
     v->count++;
-    /* Indices that pointed past the insertion have all moved down one. */
+    /* Indices at or past the slot shift up by one. */
     if (v->active >= at)         { v->active++; }
     if (v->pivot >= at)          { v->pivot++; }
     if (v->real_pivot >= at)     { v->real_pivot++; }
@@ -436,9 +428,9 @@ pv_insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
 /**
  * @brief Drop the row at @p at and everything that referred to it.
  *
- * A row removed while it is the selection pivot, the active pose or the
- * last-added leaves those pointing at whatever slid into its place, so they
- * are cleared here rather than at each call site.
+ * The pivots, the active pose, the last-added mark and an armed rename
+ * that pointed at the row are cleared, and the indices past it shift down
+ * by one.
  */
 void
 pv_remove_pose(tiku_trk_poseview_t *v, int at)
@@ -470,20 +462,17 @@ pv_remove_pose(tiku_trk_poseview_t *v, int at)
     for (i = 0; i < v->count; i++) {
         v->poses[i].index = i;
     }
-    /* The one thing a running box cannot do is shrink, so a removal is the
-     * one thing that pays for the walk (PVL-050). */
+    /* A running box cannot shrink, so a removal rebuilds it from every
+     * pose (PVL-050). */
     extent_recalc(v);
     /*
-     * Stated in terms of what is VISIBLE: if the row that went was the last
-     * one on screen and the view is scrolled, coming up by one keeps the
-     * window full instead of leaving blank space under real content.  With
-     * no window height known, fall back to the weaker "do not scroll past
-     * the end" rule rather than guessing a height.
+     * If the row that went was the last one on screen and the view is
+     * scrolled, the scroll comes up by one, keeping the window full.  With
+     * no window height known, the scroll is only kept within the rows.
      */
     {
-        /* Scroll indexes the DISPLAYED list, so the correction counts that
-         * list: comparing against the unfiltered total scrolls a filtered
-         * view by the wrong amount, or not at all. */
+        /* The scroll indexes the displayed list, so the correction counts
+         * that list. */
         int shown = v->filtering ? v->filtered_count : v->count;
 
         if (v->visible_rows > 0) {
@@ -504,9 +493,8 @@ tiku_trk_poseview_on_device(const tiku_trk_poseview_t *v, uint64_t dev)
     if (v == NULL || dev == 0u) {
         return 0;
     }
-    /* The FOLDER's own device, taken from any row that is on it: the view
-     * keeps no model of the directory it shows, and every row of a folder
-     * on one volume carries that volume. */
+    /* The view keeps no model of the directory it shows, so its rows
+     * answer: any row on that device puts the view on it. */
     for (i = 0; i < v->count; i++) {
         if (v->poses[i].model.facts.dev == dev) {
             return 1;
@@ -568,7 +556,8 @@ tiku_trk_poseview_broken_repair_due(tiku_trk_poseview_t *v, int64_t now)
     return 1;
 }
 
-/** @brief Which notice fields a column reads from (MA-072's routing). */
+/** @brief Which notice fields (TIKU_EVF_*) a column's text is made from
+ *         (MA-072). */
 static unsigned
 column_fields(int field)
 {
@@ -580,8 +569,8 @@ column_fields(int field)
     case TIKU_TRK_COL_CAP:   return TIKU_EVF_CAP;
     case TIKU_TRK_COL_PERM:  return TIKU_EVF_PERM;
     default:
-        /* The name changes only through MOVED; a named attribute column
-         * reads the meta the VALUE bit stands for. */
+        /* The name changes only through a MOVED notice; an attribute
+         * column reads the meta the VALUE bit stands for. */
         return (field >= TIKU_TRK_COL_ATTR_BASE) ? TIKU_EVF_VALUE : 0u;
     }
 }
@@ -598,32 +587,28 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_node_event_t *e)
     }
     if (v->icons != NULL) {
         /* Before anything else, and whether or not this view holds the row:
-         * the cache is shared, so a notice that turns out to be about some
-         * other window's entry still describes an icon this one may be
-         * showing.  The MODEL's own hint needs no clearing here -- every
-         * branch below overwrites it with the freshly listed one, which has
-         * not been asked yet. */
+         * the cache is shared, so a notice about another window's entry may
+         * describe an icon this one shows.  The model's own icon hint needs
+         * no clearing: every branch below replaces the model with the
+         * notice's, whose hint has not been probed. */
         if (e->op == TIKU_EV_REMOVED) {
             (void)tiku_trk_nodeicon_deleted(v->icons, e->path);
         } else {
             (void)tiku_trk_nodeicon_changed(v->icons, e->path);
             if (e->op == TIKU_EV_MOVED && e->from[0] != '\0') {
-                /* Keyed by path, so its former name is a key that describes
-                 * nothing. */
+                /* The cache is keyed by path, so the entry under the former
+                 * path goes too. */
                 (void)tiku_trk_nodeicon_changed(v->icons, e->from);
             }
         }
     }
-    /* A notice about the folder ITSELF is not about its contents.  A rename
-     * names the folder by its OLD path -- the new one is where it has just
-     * gone -- so matching only e->path would miss exactly the case the
-     * retitle rule is about. */
+    /* A notice about the folder itself.  A rename names the folder by its
+     * old path, in e->from, so both paths are matched. */
     if (strcmp(e->path, v->path) == 0 ||
         (e->op == TIKU_EV_MOVED && e->from[0] != '\0' &&
          strcmp(e->from, v->path) == 0)) {
         if (e->op == TIKU_EV_REMOVED) {
-            /* The root is exempt: it has nowhere to go, and closing it would
-             * leave nothing to browse. */
+            /* The root is never reported gone. */
             return (strcmp(v->path, "/") == 0)
                        ? TIKU_TRK_NOTIFY_NOTHING : TIKU_TRK_NOTIFY_GONE;
         }
@@ -634,7 +619,7 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_node_event_t *e)
         return TIKU_TRK_NOTIFY_NOTHING;
     }
 
-    /* PVN-057: an ANCESTOR moving takes this folder with it.  Nothing about
+    /* PVN-057: an ancestor moving takes this folder with it.  Nothing about
      * the contents changed and no row moved -- but the window is showing a
      * path that no longer exists, so the title has to follow. */
     if (e->op == TIKU_EV_MOVED && e->from[0] != '\0') {
@@ -646,9 +631,8 @@ tiku_trk_poseview_notify(tiku_trk_poseview_t *v, const tiku_node_event_t *e)
             v->path[n] == '/') {
             char rebuilt[TIKU_PATH_MAX];
 
-            /* Built into a scratch buffer and only then adopted: a path
-             * that would not fit leaves the window pointing at the old one
-             * rather than at a truncated name that resolves to nothing. */
+            /* Built in a scratch buffer first: a path that would not fit
+             * leaves the window on its old path. */
             if ((int)snprintf(rebuilt, sizeof rebuilt, "%s%s", e->path,
                               v->path + n) < (int)sizeof rebuilt) {
                 snprintf(v->path, sizeof v->path, "%s", rebuilt);
@@ -701,10 +685,9 @@ tiku_trk_poseview_apply_results(tiku_trk_poseview_t *v,
     if (v == NULL) {
         return TIKU_TRK_NOTIFY_NOTHING;
     }
-    /* The same diff a folder does, against the result set instead of a
-     * directory read: a query window that rebuilt itself wholesale would
-     * drop the selection every time any row moved, which a folder window
-     * does not do -- and the row says both must update by one path. */
+    /* The same diff a folder's re-listing makes, against the result set, so
+     * rows that remain keep their selection.  Adopted rows are left out of
+     * the diff. */
     was = calloc((size_t)(v->count > 0 ? v->count : 1), sizeof *was);
     if (was == NULL) {
         return TIKU_TRK_NOTIFY_NOTHING;
@@ -752,10 +735,9 @@ relist_one(const tiku_model_t *m, void *ctx)
         return 1;
     }
     if (m->kind == TIKU_KIND_UNKNOWN) {
-        /* The same hold the first listing applies.  Without it the live path
-         * puts an entry the backend could not describe straight into the
-         * diff, and it appears as a visible UNKNOWN row -- while still being
-         * held, so it is both hidden and shown. */
+        /* The same hold the first listing applies: an entry the backend
+         * could not describe is held as a zombie, not put into the diff as
+         * a row of unknown kind. */
         if (r->view != NULL &&
             r->view->zombie_count < (int)(sizeof r->view->zombie /
                                           sizeof r->view->zombie[0])) {
@@ -789,7 +771,8 @@ relist_one(const tiku_model_t *m, void *ctx)
     return 0;
 }
 
-/** @brief What the node carrying @p id is currently called.  0 on success. */
+/** @brief The path the node carrying @p id has now, into @p out.
+ *         @return 0 on success, -1 when the backend cannot say. */
 static int
 tiku_trk_poseview_path_of_id(tiku_trk_poseview_t *v, uint64_t id, char *out,
                              size_t max)
@@ -826,12 +809,10 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
         return flags;
     }
     /*
-     * Ask the backend what changed before re-reading anything.  One round
-     * trip answers "did anything happen at all" whatever the size of the
-     * namespace, so a quiet device costs one question per tick instead of a
-     * directory listing per open window.  A backend that cannot tell
-     * answers -1 and the re-listing follows, which is what a local
-     * filesystem does.
+     * The changes the owner drained say what happened before anything is
+     * re-read, so a quiet device costs no directory listing per open
+     * window.  When the backend cannot tell (nch is -1), the re-listing
+     * follows, as on a local filesystem.
      */
     if (pv_poll_ring(v, now, ch, nch, complete, &flags, &out)) {
         return out;
@@ -871,33 +852,32 @@ tiku_trk_poseview_poll(tiku_trk_poseview_t *v, int64_t now,
 }
 
 /**
- * @brief A node changed, or an attribute did: its row re-read, its place kept.
- * @return 1 with the verdict in @p out when the notice is settled here, 0 to go
- * on
+ * @brief A node or one of its attributes changed: the row takes the new
+ *        model, and moves when a sort key changed; a notice for a row not
+ *        here yet is parked.
+ * @return 0: the caller finishes the notice; @p out is not written.
  */
 int
 pv_notify_changed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
                   unsigned *flags, int *at, unsigned *out)
 {
     (void)out;
-    /* The shells rebuild Open With/Add-ons from the focused view on
-     * every menu open; this serial makes a MIME/type notice observable
-     * even when the row remains in place. */
+    /* The shells rebuild Open With and Add-ons from the focused view on
+     * every menu open; this counter makes a type change observable even
+     * when the row stays in place. */
     v->menu_generation++;
     (*at) = pv_pose_index(v, e->path);
     if ((*at) < 0) {
-        /* The row is not here yet.  Park it rather than lose it: a file
-         * altered the instant after it was created would otherwise show
-         * the state it was born with. */
+        /* The row is not here yet, so the notice is parked and replayed
+         * when the row arrives. */
         (void)tiku_park_add(&v->park, e);
         return 0;
     }
     {
-        /* Only the affected columns refresh (MA-072): a notice that
-         * NAMES its fields is compared column by column -- the value
-         * AND the fitted text must both have moved before a repaint
-         * is owed -- while one that cannot say re-reads everything,
-         * which is what every notice meant before the mask. */
+        /* Only the affected columns are compared (MA-072): a notice that
+         * names its fields repaints the row when a named column's text
+         * changed, while one that names none, or names the kind, repaints
+         * it outright. */
         unsigned f = e->fields;
         int repaint = (f == 0u) || (f & TIKU_EVF_KIND) != 0u;
         tiku_trk_pose_t before = v->poses[(*at)];
@@ -932,14 +912,11 @@ pv_notify_changed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
         }
         if (repaint) {
             (*flags) |= TIKU_TRK_NOTIFY_REDRAW;
-            /* One row changed, so one row is what needs painting
-             * again: the icon, the size and the date all live inside
-             * it (PVL-075). */
+            /* Only this row is repainted (PVL-075). */
             tiku_trk_poseview_damage_row(v, (*at));
         }
-        /* The re-slot check is owed only when the changed FIELD is a
-         * sort key (PVL-047): re-checking on every notice churned the
-         * listing, and a notice that cannot say stays conservative. */
+        /* The row is re-slotted only when a changed field is a sort key,
+         * or when the notice names no fields (PVL-047). */
         if (f != 0u &&
             (column_fields(v->sort_field) & f) == 0u &&
             (v->sort2_field < 0 ||
@@ -948,9 +925,8 @@ pv_notify_changed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
         }
     }
     {
-        /* The changed fact may be the one the listing is ORDERED by, and
-         * a row that keeps its slot while its key moves leaves the
-         * listing quietly unsorted (_CheckPoseSortOrder). */
+        /* The changed fact may be a sort key: the row moves to its new
+         * slot, or the listing is left unsorted (_CheckPoseSortOrder). */
         tiku_trk_pose_t moved = v->poses[(*at)];
         int slot = pv_sorted_slot(v, &moved);
         int scroll_was = v->scroll;
@@ -976,8 +952,9 @@ pv_notify_changed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
 
 /**
  * @brief A node moved: renamed in place, arrived from elsewhere, or gone
- * elsewhere.  @return 1 with the verdict in @p out when the notice is settled
- * here, 0 to go on
+ *        elsewhere.
+ * @return 1 with the flags in @p out when the notice was handled as a
+ *         creation, 0 for the caller to finish it.
  */
 int
 pv_notify_moved(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
@@ -989,28 +966,25 @@ pv_notify_moved(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
         (*at) = pv_pose_index(v, e->path);
     }
     if ((*at) < 0) {
-        /* Moved IN from elsewhere: that is a creation here. */
+        /* Moved in from elsewhere: that is a creation here. */
         tiku_node_event_t as_new = *e;
 
         as_new.op = TIKU_EV_CREATED;
         *out = tiku_trk_poseview_notify(v, &as_new); return 1;
     }
-    /* Moved OUT of this folder is a removal -- unless this is a query or
-     * a virtual listing, whose rows have no single parent, so every move
-     * is a rename in place. */
+    /* Moved out of this folder is a removal -- unless this is a query,
+     * whose rows have no single parent, so every move is a rename in
+     * place. */
     if (!v->is_query && strcmp(e->dir, v->path) != 0) {
-        /* Moved out of this folder: the same thing as a removal, so it
-         * must leave by the same door.  Returning here skipped the tail
-         * that rebuilds the filtered list, and a filtered view was left
-         * reporting a row it no longer had. */
+        /* A removal, returning 0 so the caller rebuilds the filtered list
+         * as it does after any other removal. */
         pv_remove_pose(v, (*at));
         (*flags) |= TIKU_TRK_NOTIFY_REDRAW;
         return 0;
     }
     {
-        /* A rename re-reads EVERY column, not just the name: the notice
-         * says the entry changed identity, and other notices for it may
-         * have been missed while it had none. */
+        /* A rename takes the notice's whole model, not just the name:
+         * notices for the entry under its old name may have been missed. */
         tiku_trk_pose_t moved = v->poses[(*at)];
         int was_selected = moved.selected;
         int was_active = (v->active == (*at));
@@ -1022,9 +996,9 @@ pv_notify_moved(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
         (void)tiku_desc_parse(e->model.facts.meta, &moved.desc);
         moved.value_valid = 0;
         pv_remove_pose(v, (*at));
-        /* remove+insert is an implementation of RENAME, and a rename
-         * changes nothing about what is visible -- the scroll correction
-         * belongs to removal and must not leak in here. */
+        /* The rename is done as a removal and an insert, but the scroll
+         * correction belongs to removal alone, so the scroll is put
+         * back. */
         v->scroll = scroll_was;
         /* Back to its sorted place, without re-sorting the folder. */
         now_at = pv_insert_sorted(v, &moved);
@@ -1036,11 +1010,9 @@ pv_notify_moved(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
             if ((was_selected || was_active) &&
                 v->mode == TIKU_TRK_MODE_LIST &&
                 v->visible_rows > 0) {
-                /* The APPLICATION moved the selection, so it is the
-                 * application's job to keep it visible (NeXT UIG ch3:
-                 * never move the selection out of view) -- a rename
-                 * that re-sorts the row past the viewport follows it
-                 * there.  A user's own scrolling is never chased. */
+                /* A rename that re-sorts a selected or active row past
+                 * the viewport scrolls to it (NeXT UIG ch3: the selection
+                 * is never moved out of view). */
                 tiku_trk_poseview_scroll_into_view(v, now_at,
                                                    v->visible_rows);
             }
@@ -1068,8 +1040,9 @@ pv_notify_moved(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
 }
 
 /**
- * @brief A node removed: its row taken out and the selection mended.  @return 1
- * with the verdict in @p out when the notice is settled here, 0 to go on
+ * @brief A node removed: its row taken out and the anchors that pointed at
+ *        it mended, or a zombie of that path dropped.
+ * @return 0: the caller finishes the notice; @p out is not written.
  */
 int
 pv_notify_removed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
@@ -1102,17 +1075,18 @@ pv_notify_removed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
 }
 
 /**
- * @brief A node created: a row inserted where the sort puts it, or the listing
- * marked for a re-read.  @return 1 with the verdict in @p out when the notice
- * is settled here, 0 to go on
+ * @brief A node created: a row inserted where the sort puts it, unless it
+ *        lives in another folder, is already here, is held or is hidden.
+ * @return 1 with the flags in @p out when the notice is settled here, 0
+ *         for the caller to finish it.
  */
 int
 pv_notify_created(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
                   unsigned *flags, int *at, unsigned *out)
 {
     v->menu_generation++;
-    /* A file made in some other folder is not this folder's business,
-     * and a duplicate notice must not produce a second row. */
+    /* A file made in another folder, or one already listed, adds no
+     * row. */
     if (!v->is_query && strcmp(e->dir, v->path) != 0) {
         *out = TIKU_TRK_NOTIFY_NOTHING; return 1;
     }
@@ -1120,11 +1094,8 @@ pv_notify_created(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
         *out = TIKU_TRK_NOTIFY_NOTHING; return 1;
     }
     {
-        /* The same node under another name is not a second entry: the
-         * path is a name, the identity is the node, and a notice can
-         * arrive under either.  The held tier is consulted for the same
-         * reason -- an entry being held is not one waiting to be
-         * discovered again. */
+        /* A node already listed under another path, or held as a zombie,
+         * adds no row. */
         int k;
 
         if (e->model.node_id != 0) {
@@ -1165,11 +1136,8 @@ pv_notify_created(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
             }
         }
         if (v->drop_valid && v->mode != TIKU_TRK_MODE_LIST && !p.placed) {
-            /* The position was asked for BEFORE the entry existed -- at
-             * the click that made it -- and is consumed by the first
-             * entry to appear.  Placing it afterwards would let
-             * auto-placement put it somewhere else first and then jump
-             * (PVL-025, PVL-098). */
+            /* The drop point set before the entry existed is consumed by
+             * the first entry to appear (PVL-025, PVL-098). */
             float scale = pv_mode_scale(v->mode, v->icon_size);
 
             p.loc_x = (int)((float)v->drop_x / scale);
@@ -1179,24 +1147,21 @@ pv_notify_created(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
             v->drop_valid = 0;
         }
         if (pv_pose_is_hidden(v, e->path)) {
-            /* Marked invisible in its saved record: it exists and it is
-             * deliberately not shown, so the notice is consumed rather
-             * than producing a row. */
+            /* Marked invisible in its saved record: the notice is
+             * consumed and no row is made. */
             *out = TIKU_TRK_NOTIFY_NOTHING; return 1;
         }
         if (pv_insert_sorted(v, &p) < 0) {
             *out = TIKU_TRK_NOTIFY_NOTHING; return 1;
         }
-        /* PVL-090: the insertion set is shared with the loader.  A node
-         * this notice brought in early must be recorded here, or the
-         * loader reaching the same entry adds it a second time. */
+        /* PVL-090: recorded in the insertion set the loader checks, so
+         * the loader does not add this node a second time. */
         pv_note_inserted(v, e->model.node_id);
         (*flags) |= TIKU_TRK_NOTIFY_REDRAW;
         /* Anything that arrived for this node before it existed is
-         * replayed now, in the order it came. */
-        /* Drained in batches until empty: stopping at one bufferful
-         * would strand the NEWEST notices, which are the ones that say
-         * what the row looks like now. */
+         * replayed now, in the order it came, drained in batches until
+         * empty: stopping at one bufferful would strand the newest
+         * notices, which say what the row looks like now. */
         do {
             n = tiku_park_take(&v->park, e->path, held,
                                    (int)(sizeof held / sizeof held[0]));
@@ -1209,8 +1174,11 @@ pv_notify_created(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
 }
 
 /**
- * @brief the change ring answered: each notice applied, or the listing marked
- * for a re-read.  @return 1 with the answer in @p out when this settled it
+ * @brief Apply the change records the owner drained: a change to a row this
+ *        view holds goes through the notice handler, and anything else asks
+ *        for a re-listing.
+ * @return 1 with the flags in @p out when no re-listing is needed, 0 to
+ *         re-list.
  */
 int
 pv_poll_ring(tiku_trk_poseview_t *v, int64_t now, const tiku_model_change_t *ch,
@@ -1218,8 +1186,8 @@ pv_poll_ring(tiku_trk_poseview_t *v, int64_t now, const tiku_model_change_t *ch,
 {
     if (nch >= 0) {
         if (nch == 0 && complete) {
-            /* Nothing happened anywhere, and the device is sure of it: one
-             * question served every open window. */
+            /* Nothing changed, and the set is complete: nothing to
+             * re-list. */
             *out = (*flags); return 1;
         }
         {
@@ -1233,12 +1201,9 @@ pv_poll_ring(tiku_trk_poseview_t *v, int64_t now, const tiku_model_change_t *ch,
                         v->poses[k].model.node_id == ch[i].id) {
                         held = 1;
                         if (ch[i].op == TIKU_CH_CHANGED) {
-                            /* Through the SAME handler everything else uses:
-                             * an inline poke here was a second update path,
-                             * and a second path is how a query view and a
-                             * folder view drift apart.  The model is
-                             * re-stat'ed so the descriptor and facts move
-                             * with the value. */
+                            /* Through the handler every other change
+                             * uses.  The model is re-stat'ed so the
+                             * descriptor and facts move with the value. */
                             tiku_node_event_t ev;
 
                             memset(&ev, 0, sizeof ev);
@@ -1254,25 +1219,20 @@ pv_poll_ring(tiku_trk_poseview_t *v, int64_t now, const tiku_model_change_t *ch,
                             }
                             (*flags) |= tiku_trk_poseview_notify(v, &ev);
                         } else {
-                            /* Created, removed or renamed changes the SHAPE
-                             * of the listing, and only a re-read can say
-                             * what it looks like now.  Treating it as
-                             * handled here is what leaves a deleted row on
-                             * screen. */
+                            /* Created, removed or renamed changes the
+                             * shape of the listing, which only a re-read
+                             * can show. */
                             relist = 1;
                         }
                     }
                 }
                 if (!held) {
                     /*
-                     * A node this view does not hold.  It may be about to
-                     * appear here, so the listing is re-read -- and the
-                     * notice is turned into a real ATTR event first, keyed
-                     * on the node's own identity, so it can be PARKED and
-                     * replayed when the row arrives.  Without this the
-                     * parking machinery is unreachable by anything except a
-                     * test: a diff of two listings can only ever describe
-                     * nodes the view already has.
+                     * A node this view does not hold may be about to appear
+                     * here, so the listing is re-read.  A change to it is
+                     * first turned into an ATTR notice on the node's
+                     * current path, so it can be parked and replayed when
+                     * the row arrives.
                      */
                     if (ch[i].op == TIKU_CH_CHANGED &&
                         v->backend->ops->stat != NULL) {
@@ -1294,11 +1254,11 @@ pv_poll_ring(tiku_trk_poseview_t *v, int64_t now, const tiku_model_change_t *ch,
                             snprintf(ev.path, sizeof ev.path, "%s", idpath);
                             {
                                 /* The notice is only this view's business if
-                                 * the node belongs to the folder it shows.
-                                 * Parking a change to some other directory
-                                 * would hold it here for ten seconds and
-                                 * then drop it, which is neither use nor
-                                 * ornament. */
+                                 * the node belongs to the folder it shows:
+                                 * a change parked for another directory
+                                 * would sit here for
+                                 * TIKU_PARK_LIFETIME_US and then be
+                                 * dropped. */
                                 const char *slash = strrchr(idpath, '/');
                                 size_t dlen = (slash != NULL && slash != idpath)
                                                   ? (size_t)(slash - idpath)
@@ -1347,8 +1307,8 @@ tiku_trk_poseview_relist_landed(tiku_trk_poseview_t *v, int gen,
         return flags;           /* for a listing the window has left */
     }
     if (n < 0) {
-        /* The listing failed: the folder may be gone.  Ask about the
-         * folder rather than concluding it from a failed read. */
+        /* The listing failed: the folder is reported gone only when it
+         * no longer stats. */
         tiku_model_t self;
 
         if (v->backend->ops->stat != NULL &&
@@ -1371,8 +1331,8 @@ tiku_trk_poseview_relist_landed(tiku_trk_poseview_t *v, int gen,
             was[nwas++] = v->poses[i].model;
         }
     }
-    /* Through relist_one, whichever thread fetched them: it is what
-     * keeps an entry of unknown kind as a zombie rather than a row. */
+    /* Through relist_one(), whichever thread fetched them, so an entry of
+     * unknown kind is held as a zombie. */
     r.set = is;
     r.n = 0;
     r.max = POSES_MAX;

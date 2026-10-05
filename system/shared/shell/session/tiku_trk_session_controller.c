@@ -3,7 +3,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_session_controller.c - desktop session restore and persistence.
+ * tiku_trk_session_controller.c - restoring and saving the desktop session.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -56,8 +56,10 @@ tiku_trk_session_restore_deskbar(tiku_trk_session_controller_t *controller)
 }
 
 /**
- * @brief Reopen the saved session's folders, minimised as they were;
- *        none in safe mode.  @return how many opened.
+ * @brief Reopen the saved session's folders, minimised as they were; none
+ *        in safe mode, and not the root unless the Desktop shows Disks.
+ *
+ * @return how many opened.
  */
 static int
 restore_saved(tiku_trk_session_controller_t *controller, int safe_mode)

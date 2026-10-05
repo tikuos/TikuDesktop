@@ -27,8 +27,7 @@ tiku_trk_frame_load(tiku_store_t *s, const char *path,
         return 0;
     }
     if (f.w < TIKU_TRK_FRAME_MIN_W || f.h < TIKU_TRK_FRAME_MIN_H) {
-        /* A record too small to be a window is not one: rather than open a
-         * sliver nobody can use, the caller is told there was nothing. */
+        /* A record smaller than the minimum reads as none. */
         return 0;
     }
     *out = f;
@@ -44,9 +43,7 @@ tiku_trk_frame_save(tiku_store_t *s, const char *path,
     }
     if (was != NULL && was->x == now->x && was->y == now->y &&
         was->w == now->w && was->h == now->h) {
-        /* Nothing moved.  A window that opened where it was told and was
-         * never touched has nothing to say, and writing it anyway is a
-         * store write per window per session (CW-002). */
+        /* Nothing moved, so nothing is written (CW-002). */
         return 0;
     }
     return (tiku_state_write(s, path, TIKU_ATTR_FRAME, now,
@@ -64,11 +61,9 @@ tiku_trk_frame_clamp(tiku_trk_frame_t *f, int sw, int sh)
     if (f->w < TIKU_TRK_FRAME_MIN_W) { f->w = TIKU_TRK_FRAME_MIN_W; }
     if (f->h < TIKU_TRK_FRAME_MIN_H) { f->h = TIKU_TRK_FRAME_MIN_H; }
     /*
-     * Enough of the window has to be GRABBABLE, which is a weaker rule than
-     * "all of it fits": a window may hang off the bottom, and pulling every
-     * such window up would move windows the user deliberately put there.
-     * What must be on screen is the tab -- its top edge and a hand's width
-     * of its left edge.
+     * Only enough to grab stays on screen: the top edge, and
+     * TIKU_TRK_FRAME_GRAB pixels of the width.  A window may hang off the
+     * bottom where the user put it.
      */
     if (f->y < 0) { f->y = 0; }
     if (f->y > sh - TIKU_TRK_FRAME_TAB) {
@@ -150,16 +145,13 @@ tiku_trk_frame_inherit(tiku_store_t *s, const char *path,
         return 0;
     }
     if (strcmp(path, "/") == 0) {
-        /* The root inherits nothing and takes no default: it is the one
-         * window whose place is its own, and a template applied to it
-         * would move the thing every other window is measured against
-         * (CW-069). */
+        /* The root inherits nothing and takes no default (CW-069). */
         return 0;
     }
     parent_of(path, parent, sizeof parent);
     if (parent[0] != '\0' && tiku_trk_frame_load(s, parent, out)) {
-        /* Offset, so a first opening does not land exactly on the window it
-         * came from and look like nothing happened (CW-005). */
+        /* Offset from the parent's frame, so the new window does not cover
+         * it exactly (CW-005). */
         out->x += 22;
         out->y += 22;
         return 1;
@@ -169,6 +161,8 @@ tiku_trk_frame_inherit(tiku_store_t *s, const char *path,
 
 /*---------------------------------------------------------------------------*/
 /* The session                                                               */
+/*---------------------------------------------------------------------------*/
+
 int
 tiku_trk_session_save(tiku_store_t *s,
                       const char paths[][TIKU_PATH_MAX], int n)
@@ -264,8 +258,8 @@ tiku_trk_session_load_entries(tiku_store_t *s,
         }
         entry = &out[n];
         entry->minimized = 0;
-        /* 'M ' and 'O ' are the current format.  A path-only line is the
-         * original record and means an ordinary shown window. */
+        /* A line is 'M ' or 'O ' and the path; a line with neither prefix
+         * is a shown window. */
         if ((line[0] == 'M' || line[0] == 'O') && line[1] == ' ') {
             entry->minimized = (line[0] == 'M');
             path = line + 2;

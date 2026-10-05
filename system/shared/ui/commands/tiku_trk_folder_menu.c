@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_menu.c - folder menu model controller.
+ * tiku_trk_folder_menu.c - the folder menus' controller: the enablement
+ * context, and the Open with and per-type submenus.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -209,8 +210,9 @@ tiku_trk_folder_menu_build_per_type(tiku_trk_folder_menu_t *controller,
         if (record == NULL) {
             continue;
         }
-        /* The submenu's own item wears the type's icon; types_find already
-         * walked exact-then-supertype, which IS the fallback (IV-056). */
+        /* The submenu's item wears the type's icon; tiku_trk_types_find()
+         * has already fallen back from the exact type to its supertype
+         * (IV-056). */
         snprintf(controller->menus->per_type_icon[controller->menus->per_type_count],
                  sizeof controller->menus->per_type_icon[0], "%s",
                  record->icon);

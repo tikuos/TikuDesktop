@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_find_window.h - Find window controller.
+ * tiku_trk_find_window.h - the Find window: the query form in a window,
+ * with its query icon and its Search and Save actions.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,26 +17,32 @@
 #include "tiku_trk_find.h"
 #include "tiku_state.h"
 
-/** @brief Execute the controller's query without exposing shell state. */
+/**
+ * @brief Runs the form's query in the shell and shows the results.
+ * @return nonzero when the search ran, which closes the window.
+ */
 typedef int (*tiku_trk_find_window_search_fn)(void *context,
                                                tiku_trk_find_t *model);
 
+/** @brief The Find window and the form behind it. */
 typedef struct {
     tiku_trk_find_t       model;
     tiku_workspace_t *workspace;
-    tiku_window_t    *window;
-    tiku_store_t      *store;
+    tiku_window_t    *window;      /**< while open, else NULL */
+    tiku_store_t      *store;      /**< where saved queries go */
     int                    screen_w;
     int                    screen_h;
-    int                   *dirty;
-    char                  *status;
+    int                   *dirty;      /**< set when a redraw is owed */
+    char                  *status;     /**< the shell's status line */
     size_t                 status_size;
     tiku_trk_find_window_search_fn search;
-    /* Raised when Save has nowhere attached to save INTO: the shell
-     * answers with the save panel (AW-052). */
+    /** Called when Save has no query attached to save into: the shell puts
+     *  up the save panel (AW-052). */
     void                 (*save_as)(void *context);
+    /** Passed to save_as and to select_folder. */
     void                  *save_as_context;
-    /* 'Select folders...' chose the panel; the shell raises it (Q-019). */
+    /** Called for 'Select folders...': the shell raises its folder panel
+     *  (Q-019). */
     void                 (*select_folder)(void *context);
     void                  *search_context;
 } tiku_trk_find_window_t;
@@ -70,7 +77,11 @@ void tiku_trk_find_window_open(tiku_trk_find_window_t *controller);
 /** @brief Close the window, if open, and ask for a redraw. */
 void tiku_trk_find_window_close(tiku_trk_find_window_t *controller);
 
-/** @return Nonzero when the focused Find window consumed the key. */
+/**
+ * @brief A key for the Find window: Return runs the default action, Escape
+ *        closes, Backspace deletes and a character is typed.
+ * @return nonzero when the Find window is focused, which takes every key.
+ */
 int tiku_trk_find_window_key(tiku_trk_find_window_t *controller,
     unsigned key, char character);
 
@@ -78,11 +89,18 @@ int tiku_trk_find_window_key(tiku_trk_find_window_t *controller,
 int tiku_trk_find_window_icon_at(tiku_trk_find_window_t *controller,
                                  int x, int y);
 
-/** @return Nonzero while the open window has a popup up. */
+/**
+ * @brief Whether the open window has one of its popups showing.
+ * @return nonzero while it does.
+ */
 int tiku_trk_find_window_popup_open(
     const tiku_trk_find_window_t *controller);
 
-/** @brief Insert committed text only; 0 not focused, 1 handled, -1 rejected. */
+/**
+ * @brief Insert committed text into the focused Find window's form.
+ * @return 0 when the window is not focused, -1 when the form rejects the
+ *         text, else 1; a popup that is up drops the text.
+ */
 int tiku_trk_find_window_text(tiku_trk_find_window_t *controller,
     const char *text);
 

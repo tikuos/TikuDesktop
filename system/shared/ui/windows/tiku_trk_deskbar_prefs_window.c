@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_prefs_window.c - Deskbar preferences controller.
+ * tiku_trk_deskbar_prefs_window.c - the Deskbar preferences window: its
+ * rows, the dock monitor and the three buttons.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,8 +25,8 @@ enum {
     ROW_ALWAYS_TOP, ROW_AUTO_RAISE, ROW_AUTO_HIDE, ROW_COUNT
 };
 
-/* One key per row, in ROW order; the words come from the catalogue when
- * the row is drawn, so a translation reaches every label. */
+/* The catalogue key of each row's label, in ROW order; the text is looked
+ * up when the row is drawn. */
 static const char *const label_keys[ROW_COUNT] = {
     "prefs.deskbar.sort_apps", "prefs.deskbar.tracker_first",
     "prefs.deskbar.show_expander", "prefs.deskbar.expand_new",
@@ -48,7 +49,6 @@ static void
 button(tiku_surface_t *surface, tiku_rect_t rect,
        const char *label, int enabled, int down)
 {
-    /* The R5 button, not a beveled slab (the toolkit knows the look). */
     tiku_ui_button(surface, rect, label,
                         (enabled ? 0u : TIKU_S_DISABLED) |
                         (down ? TIKU_S_PRESSED : 0u));
@@ -99,15 +99,8 @@ apply(tiku_trk_deskbar_prefs_window_t *controller)
 }
 
 /**
- * @brief Where a stepper's two arrows and its number go, in the row at
- *        @p y of @p content.
- *
- * ONE description, asked by the drawing and by the press.  A row drawn
- * as the string "-   12 px   +" with the press split at a written-down
- * pixel moves which half a click lands in with the face AND with the
- * number -- "8 px" and "128 px" are not the same width, and the minus
- * of one sits where the plus of the other was.  Part 0 is the minus,
- * part 1 the number, part 2 the plus.
+ * @brief The stepper's layout: part 0 the minus, part 1 the number,
+ *        part 2 the plus.  The drawing and the press both read it.
  */
 static void
 stepper_row(tiku_layout_t *l)
@@ -186,8 +179,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             number[0] = '\0';
         }
         if (number[0] != '\0') {
-            /* Two arrows a press can land ON, and the number between
-             * them -- laid from the same description the press reads. */
+            /* The two arrows and the number between them, placed by the
+             * layout the press reads. */
             tiku_layout_t step;
             tiku_rect_t run = stepper_rect(content, y);
             tiku_rect_t minus, mid, plus;
@@ -235,8 +228,9 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
 }
 
 /**
- * @brief A press on a row toggles or steps its setting; on the monitor it
- *        moves the dock; on a button it acts.  @return 1 when taken.
+ * @brief A press on a row toggles or steps its setting, and on the monitor
+ *        moves the dock; a button acts on a release over it.
+ * @return 1 when taken.
  */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
@@ -248,8 +242,8 @@ event(tiku_window_t *window, const tiku_event_t *event,
     int row = (y - 12) / 29;
 
     {
-        /* The three buttons along the bottom go down under the hand and
-         * act when it lets go on them; the rows answer the press. */
+        /* The three buttons along the bottom show pressed while held and
+         * act on a release over them; the rows act on the press. */
         int under = (inside((tiku_rect_t){ 18, 488, 112, 26 }, x, y) &&
                      tiku_trk_deskbar_prefs_defaultable(&controller->model)) ? 1
                   : (inside((tiku_rect_t){ 140, 488, 100, 26 }, x, y) &&
@@ -298,9 +292,9 @@ event(tiku_window_t *window, const tiku_event_t *event,
         if (row == ROW_ICON || row == ROW_FONT ||
             (row >= ROW_DOCS && row <= ROW_APPS)) {
             /*
-             * The arrows, asked for rather than recalled: part 0 is the
-             * minus and part 2 the plus, wherever the face put them.
-             * A press anywhere else in the row is not a step.
+             * Part 0 of the stepper is the minus and part 2 the plus; a
+             * press elsewhere in the row is not a step.  In a recent-items
+             * row, a press left of x 300 toggles the row's box.
              */
             tiku_layout_t step;
             tiku_rect_t run = stepper_rect((tiku_rect_t){ 0, 0, 0, 0 },
@@ -416,10 +410,9 @@ tiku_trk_deskbar_prefs_window_open(
                                      controller->window);
         return;
     }
-    /* Read afresh, as the other preference windows do: the Fonts window
-     * writes two of these fields, and a model left saying what they were
-     * when this window last closed would put the old face back the next
-     * time anything here was touched. */
+    /* Read afresh: the Fonts window writes two of these fields, and a
+     * stale model would write the old face back on the next change made
+     * here. */
     (void)tiku_trk_deskbar_prefs_load(&controller->model, controller->store);
     tiku_trk_deskbar_prefs_mark_opened(&controller->model);
     controller->window = tiku_workspace_open(controller->workspace,

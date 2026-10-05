@@ -18,8 +18,8 @@ const char *
 tiku_trk_script_suite(int i)
 {
     /* What a discovery request lists: the properties and the specifiers
-     * each will take.  Held as text because that IS the interface -- a
-     * client reads it to find out what it may ask (PVK-048). */
+     * each takes, as the text a client reads to learn what it may ask
+     * (PVK-048). */
     static const char *props[] = {
         "Path: get [direct]",
         "Entry: count [direct]; get [direct|index|previous|next]; "
@@ -97,8 +97,7 @@ tiku_trk_script_parse(const char *line, tiku_trk_req_t *req,
         if (word_is(w[2], "previous") || word_is(w[2], "next")) {
             req->spec = word_is(w[2], "next") ? TIKU_TRK_SPEC_NEXT
                                               : TIKU_TRK_SPEC_PREVIOUS;
-            /* Both name a path to walk FROM, and dropping it would make
-             * every walk start at nothing. */
+            /* Both name the path to walk from. */
             if (n >= 4 && store != NULL) {
                 snprintf(store[0], TIKU_PATH_MAX, "%s", w[3]);
                 req->path = store[0];
@@ -169,9 +168,9 @@ tiku_trk_script_run(tiku_trk_poseview_t *v, const tiku_trk_req_t *req,
         rep->error = TIKU_TRK_ERR_UNHANDLED;
         return;
     }
-    /* Every count and every index is against the CURRENT list, so the
-     * active filter and the current sort order are what a client sees --
-     * which is exactly why indices are unstable and say so (PVK-055). */
+    /* Every count and index is against the current list, with its filter
+     * and sort order, so an index holds only until the list changes
+     * (PVK-055). */
     n = tiku_trk_poseview_count(v);
 
     if (req->prop == TIKU_TRK_PROP_PATH) {
@@ -243,10 +242,8 @@ tiku_trk_script_run(tiku_trk_poseview_t *v, const tiku_trk_req_t *req,
             return;
         case TIKU_TRK_VERB_EXECUTE:
         case TIKU_TRK_VERB_DELETE: {
-            /* Both name entries the same way; what differs is what the
-             * CALLER then does with them, which is why they are resolved
-             * here and acted on outside.  Delete means the Trash, not
-             * destruction (PVK-052). */
+            /* Both are resolved to paths here; the caller acts on them,
+             * and a delete moves them to the Trash (PVK-052). */
             if (req->spec == TIKU_TRK_SPEC_INDEX) {
                 if (req->a < 0 || req->a >= n) {
                     rep->error = TIKU_TRK_ERR_BAD_INDEX;
@@ -291,12 +288,10 @@ tiku_trk_script_run(tiku_trk_poseview_t *v, const tiku_trk_req_t *req,
     case TIKU_TRK_VERB_SET:
     case TIKU_TRK_VERB_CREATE:
         if (req->spec == TIKU_TRK_SPEC_RANGE) {
-            /* Both bounds are checked as valid indices and the END is
-             * EXCLUSIVE -- the original's loop is `index < end`, and a
-             * client that assumed otherwise would select one too few.
-             * Checked BEFORE anything is cleared: a request that is going
-             * to be refused must not have emptied the selection on its
-             * way to being refused. */
+            /* Both bounds must be valid indices, and the end is exclusive,
+             * as in the original's `index < end` loop.  They are checked
+             * before anything is cleared, so a refused request leaves the
+             * selection alone. */
             if (req->a < 0 || req->a >= n || req->b < 0 || req->b >= n) {
                 rep->error = TIKU_TRK_ERR_BAD_INDEX;
                 return;
@@ -312,8 +307,8 @@ tiku_trk_script_run(tiku_trk_poseview_t *v, const tiku_trk_req_t *req,
             rep->count = (req->b > req->a) ? req->b - req->a : 0;
             return;
         }
-        /* Resolved first, then applied, for the same reason: a set naming
-         * one path that is not there must not clear the selection. */
+        /* Resolved first, then applied, so a set naming a missing path
+         * leaves the selection alone. */
         for (i = 0; i < req->npath; i++) {
             if (index_of(v, (req->paths != NULL) ? req->paths[i]
                                                  : req->path) < 0) {

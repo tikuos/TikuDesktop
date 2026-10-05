@@ -6,11 +6,10 @@
  * tiku_trk_panel.h - the Open and Save panel.
  *
  * A browser that answers a question and closes: which file, or where and
- * under what name.  It is the same pose view a folder window uses, held to
- * narrower terms -- one choice or several, list mode only, positions never
- * saved -- plus the parts a folder window has no use for: a name field, a
- * default button that tracks what is selected, and the refusals a save has
- * to make before anything is written.
+ * under what name.  It shows a folder window's pose view in list mode, with
+ * one choice or several and positions never saved, plus a name field, a
+ * default button that tracks what is selected, and the checks a save makes
+ * before anything is written.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,11 +25,11 @@ typedef enum {
     TIKU_TRK_PANEL_SAVE
 } tiku_trk_panel_mode_t;
 
-/** @brief What may be CHOSEN.  A folder is always enterable either way. */
+/** @brief What may be chosen.  A folder is always enterable either way. */
 #define TIKU_TRK_PANEL_FILE 0x1u
 #define TIKU_TRK_PANEL_DIR  0x2u
 
-/** @brief How many names the shared recent lists keep. */
+/** @brief How many names each shared recent list, and the favourites, keep. */
 #define TIKU_TRK_RECENT_MAX 10
 
 /** @brief Which recent list; they are counted and capped separately. */
@@ -71,6 +70,7 @@ typedef enum {
     TIKU_TRK_PANEL_KEY_FOCUS      /* Tab: move between the controls     */
 } tiku_trk_panel_key_t;
 
+/** @brief The room for a name in the save field. */
 #define TIKU_TRK_PANEL_NAME_MAX 128
 
 /** @brief Which control has the keyboard (PVK-022). */
@@ -80,49 +80,49 @@ typedef enum {
 /** @brief One panel. */
 typedef struct {
     tiku_trk_panel_mode_t mode;
-    unsigned              flavors;
+    unsigned              flavors;        /* TIKU_TRK_PANEL_FILE, _DIR  */
     int                   multiple;       /* several may be chosen      */
     char                  dir[TIKU_PATH_MAX];
     char                  name[TIKU_TRK_PANEL_NAME_MAX];
     int                   name_len;
     int                   focus;
-    char                  client[48];     /* whose panel it is; the title */
-    /* With this on, the Desktop is the top of the tree and going up from
-     * the root lands there rather than nowhere (AW-061). */
+    char                  client[48];     /* whose panel it is          */
+    /* With this on, the Desktop is the top of the tree and Up from the
+     * root lands there (AW-061). */
     int                   desktop_is_root;
     char                  home[TIKU_PATH_MAX];
     char                  desktop[TIKU_PATH_MAX];
 } tiku_trk_panel_t;
 
 /**
- * @brief Open a panel on @p want, falling back as the original does.
+ * @brief Open a panel on @p want, or on a fallback.
  *
- * The requested folder if it is one, else the user's home, else the root of
- * the boot volume -- so a panel always opens somewhere real, however stale
- * the caller's idea of where it should start (AW-050).
+ * The requested folder if it is one, else the user's home, else the root
+ * (AW-050).  An open panel may choose several entries; a save panel starts
+ * with the name field focused.
+ *
+ * @param flavors TIKU_TRK_PANEL_FILE and TIKU_TRK_PANEL_DIR; 0 means files.
  */
 void tiku_trk_panel_open(tiku_trk_panel_t *p, tiku_trk_panel_mode_t mode,
                          unsigned flavors, const char *want,
                          tiku_backend_t *b, const char *client);
 
 /**
- * @brief Whether @p m is a thing THIS panel may be answered with.
+ * @brief Whether @p m is an answer this panel accepts.
  *
- * The rule the panel already keeps for what it will accept, said out
- * loud so the window can ask it rather than assume a folder: a panel
- * asked for a file must not answer with the folder the file is in.
+ * A panel asked for a file does not accept the folder the file is in.
  */
 int tiku_trk_panel_choosable(const tiku_trk_panel_t *p,
                              const tiku_model_t *m);
 
-/** @brief The window title: "<client>: Open" / "<client>: Save" (AW-064). */
+/** @brief The window title: "Open" or "Save" (AW-064). */
 void tiku_trk_panel_title(const tiku_trk_panel_t *p, char *out, size_t max);
 
 /**
  * @brief The default button's label for the current selection (AW-053).
  *
- * A single selected folder relabels it Open however the panel was opened,
- * because entering is what a folder offers.
+ * A single selected folder relabels it Open whatever the panel is for: the
+ * button then enters the folder.
  */
 const char *tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
                                         const tiku_model_t *sel, int n);
@@ -133,7 +133,8 @@ const char *tiku_trk_panel_button_label(const tiku_trk_panel_t *p,
  * A save panel follows the name field being non-empty; an open panel
  * follows the selection matching what was asked for, and a lone folder
  * always enables it.  Nothing selected in an open panel enables it only
- * when a folder is a legal answer -- the folder being shown IS the answer.
+ * when a folder is a legal answer: the folder being shown is then the
+ * answer.
  */
 int tiku_trk_panel_button_enabled(const tiku_trk_panel_t *p,
                                   const tiku_model_t *sel, int n);
@@ -141,9 +142,8 @@ int tiku_trk_panel_button_enabled(const tiku_trk_panel_t *p,
 /**
  * @brief Take a single selected file's name into the save field (AW-054).
  *
- * Only a lone non-directory, and the focus is left where it was: the user
- * is picking with the mouse and a field that stole the keyboard mid-click
- * would swallow the next thing they typed.
+ * Only in a save panel and only for a lone non-directory.  The keyboard
+ * focus stays where it was.
  *
  * @return 1 when the field changed.
  */
@@ -182,8 +182,8 @@ int tiku_trk_panel_drop(tiku_trk_panel_t *p, tiku_backend_t *b,
 /**
  * @brief The folder being shown was renamed or moved (AW-060, PVN-029).
  *
- * The panel follows it: a picker that closed because its folder was renamed
- * would lose a half-typed name for no reason the user can see.
+ * The panel follows it, and follows a folder above it that moved, keeping
+ * the name being typed.
  *
  * @return 1 when the panel was re-pointed.
  */
@@ -193,8 +193,8 @@ int tiku_trk_panel_dir_moved(tiku_trk_panel_t *p, const char *from,
 /**
  * @brief The folder being shown went away (AW-060, PVN-029, PVN-043).
  *
- * A folder WINDOW closes; a panel falls back instead, because it is in the
- * middle of a question and closing it would answer that question as cancel.
+ * The panel moves to home, else the root, and stays open with its
+ * question.
  */
 void tiku_trk_panel_dir_gone(tiku_trk_panel_t *p, tiku_backend_t *b);
 
@@ -208,7 +208,14 @@ void tiku_trk_panel_dir_gone(tiku_trk_panel_t *p, tiku_backend_t *b);
  */
 int tiku_trk_panel_parent(const tiku_trk_panel_t *p, char *out, size_t max);
 
-/** @brief Interpret a key chord (AW-057, AW-058). */
+/**
+ * @brief Interpret a key chord (AW-057, AW-058).
+ *
+ * @param pose_focus    Nonzero when the list has the keyboard.
+ * @param can_duplicate Nonzero when the selection could be duplicated; with
+ *                      @p pose_focus, Cmd+D then duplicates rather than
+ *                      going to the Desktop.
+ */
 tiku_trk_panel_key_t tiku_trk_panel_key(const tiku_trk_panel_t *p, int key,
                                         unsigned mods, int pose_focus,
                                         int can_duplicate);
@@ -228,15 +235,18 @@ void tiku_trk_recent_add(tiku_store_t *s, tiku_trk_recent_t which,
 /**
  * @brief The recent list, most recent first.
  *
- * @param cap How many the user asked to see.  The menu shows one FEWER than
- *            the configured count, which is the original's own arithmetic
- *            rather than an off-by-one (CW-058).
+ * @param cap How many the user asked to see; the list holds one fewer
+ *            (CW-058).
  * @return how many were written.
  */
 int tiku_trk_recent_list(tiku_store_t *s, tiku_trk_recent_t which,
                          int cap, char out[][TIKU_PATH_MAX], int max);
 
-/** @brief Add the folder being shown to the favourites (AW-062). */
+/**
+ * @brief Add the folder being shown to the favourites (AW-062).
+ *
+ * @return 1 when added; 0 when it is there already or the list is full.
+ */
 int tiku_trk_panel_add_favorite(const tiku_trk_panel_t *p,
                                 tiku_store_t *s);
 
@@ -245,10 +255,10 @@ int tiku_trk_panel_favorites(tiku_store_t *s,
                              char out[][TIKU_PATH_MAX], int max);
 
 /*---------------------------------------------------------------------------*/
-/* Geometry (AW-063)                                                         */
+/* Geometry (AW-063) and name completion                                     */
 /*---------------------------------------------------------------------------*/
 
-/** @brief The size a panel refuses to go outside. */
+/** @brief The limits of a panel's size. */
 #define TIKU_TRK_PANEL_MIN_W 360
 #define TIKU_TRK_PANEL_MAX_W 1000
 #define TIKU_TRK_PANEL_MIN_H 200
@@ -257,16 +267,16 @@ int tiku_trk_panel_favorites(tiku_store_t *s,
 /**
  * @brief Restore the shared panel frame, clamped to the limits.
  *
- * ONE template for every panel of every application: a size the user chose
- * once is the size pickers have from then on, which is the whole point of
- * the setting being shared rather than per folder.
+ * One frame shared by every panel of every application: a size the user
+ * chose once is the size pickers open with from then on.
  *
- * @return 1 when a saved frame was found; @p out is left alone otherwise.
+ * @return 1 when a saved frame was found; @p x, @p y, @p w and @p h are
+ *         left alone otherwise.
  */
 int tiku_trk_panel_restore_frame(tiku_store_t *s, int *x, int *y,
                                  int *w, int *h);
 
-/** @brief Save the shared panel frame. */
+/** @brief Save the shared panel frame, its size clamped to the limits. */
 void tiku_trk_panel_save_frame(tiku_store_t *s, int x, int y, int w,
                                int h);
 
@@ -275,7 +285,7 @@ void tiku_trk_panel_save_frame(tiku_store_t *s, int x, int y, int w,
  *        file-name completion wherever a file name may be typed).
  *
  * @p out receives the longest common extension of every entry in @p dir
- * whose name begins with @p prefix -- at least the prefix itself.
+ * whose name begins with @p prefix, which is at least the prefix itself.
  *
  * @return how many entries matched: 0 leaves @p out alone, 1 means the
  *         completion is a whole name.

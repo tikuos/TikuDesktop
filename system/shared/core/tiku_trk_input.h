@@ -12,11 +12,12 @@
 
 #include "tiku_event.h"
 
-/* Compatibility names while Tracker controllers migrate to the desktop app
- * API.  Their values and platform mapping are owned by the runtime. */
+/** @brief Tracker's names for two of the runtime's modifiers; tiku_event.h
+ *         owns their values and platform mapping. */
 #define TIKU_TRK_MOD_SHIFT TIKU_MOD_SHIFT
 #define TIKU_TRK_MOD_CMD   TIKU_MOD_CMD
 
+/** @brief Tracker's names for the runtime's navigation keys. */
 #define TIKU_TRK_KEY_UP    TIKU_KEY_UP
 #define TIKU_TRK_KEY_DOWN  TIKU_KEY_DOWN
 #define TIKU_TRK_KEY_LEFT  TIKU_KEY_LEFT

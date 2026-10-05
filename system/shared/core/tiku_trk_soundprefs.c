@@ -59,7 +59,7 @@ tiku_trk_soundprefs_set_clip(tiku_trk_prefs_t *prefs,
     tiku_trk_prefs_set_text(prefs, tiku_trk_soundprefs_clip_key(event), name);
 }
 
-/** @brief Whether @p name ends in a way the kit can read. */
+/** @brief Whether @p name is a .score or .wav file, and not hidden. */
 static int
 playable(const char *name)
 {

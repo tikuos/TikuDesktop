@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_columns.c - the column layout, saved per folder and
- * restored
+ * tiku_trk_poseview_columns.c - the list-mode columns: their widths and
+ * order, saving and restoring them per folder or query, and the horizontal
+ * and row scroll.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -38,7 +39,8 @@ swap32(int32_t v)
     return (int32_t)swap32u((uint32_t)v);
 }
 
-/** @brief Round UP into device pixels; a column must not lose a pixel. */
+/** @brief A stored width in pixels at the view's font, rounded up so a
+ *         column does not lose a pixel. */
 static int
 scale_in(const tiku_trk_poseview_t *v, int32_t stored)
 {
@@ -47,7 +49,8 @@ scale_in(const tiku_trk_poseview_t *v, int32_t stored)
     return (int)((n + TIKU_TRK_FONT_REF - 1) / TIKU_TRK_FONT_REF);
 }
 
-/** @brief Round DOWN into stored units, so a round trip cannot creep. */
+/** @brief Pixels into stored units, rounded down so repeated round trips
+ *         do not creep. */
 static int32_t
 scale_out(const tiku_trk_poseview_t *v, int px)
 {
@@ -65,9 +68,8 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
         return 0;
     }
     if (!v->columns_dirty) {
-        /* Nothing about the columns changed, so nothing is written: a
-         * click that only re-sorted must not rewrite the layout record
-         * (TS-036). */
+        /* Nothing about the columns changed since the last save, so
+         * nothing is written (TS-036). */
         return 0;
     }
     store = (v->query_layout[0] != '\0' && v->layout_store != NULL)
@@ -113,7 +115,7 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
     return v->column_count;
 }
 
-/** @brief Order restored columns by their saved offset (CompareColumns). */
+/** @brief Order restored columns by their saved offset. */
 static int
 rec_cmp(const void *a, const void *b)
 {
@@ -171,8 +173,8 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
         }
         got = (size_t)r;
     }
-    /* A record that is not a whole number of columns is not a layout: it is
-     * a truncated write or something else's bytes under this name. */
+    /* A record that is not a whole number of columns, such as a truncated
+     * write, is refused. */
     if (got % sizeof rec[0] != 0u) {
         return 0;
     }
@@ -209,22 +211,16 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
         if (order < 0) {
             order = swapped;
         } else if (order != swapped) {
-            /* Records disagreeing about their own byte order are not one
-             * layout written by one host; nothing legitimate produces that. */
+            /* Records disagreeing about their byte order are refused. */
             return 0;
         }
         if (rec[i].key != COLUMN_REC_KEY ||
             rec[i].version != COLUMN_REC_VERSION) {
-            return 0;               /* not ours, or not this format        */
+            return 0;   /* not a column record, or another version */
         }
-        /* TS-032: a value out of range is REJECTED, not clamped.  Clamping
-         * a corrupt width to something legal produces a layout the user
-         * never chose and cannot tell from one they did.
-         *
-         * Checked on the SCALED value, because that is the number that
-         * becomes a column: bounding the stored one instead lets the
-         * ceiling grow with the font size, so the same record is legal at
-         * one font and absurd at another. */
+        /* TS-032: a value out of range rejects the whole layout; nothing
+         * is clamped.  Widths and offsets are bounded after scaling, in the
+         * pixels a column will have. */
         if (scale_in(v, rec[i].width) < 0 ||
             scale_in(v, rec[i].width) > 10000 ||
             scale_in(v, rec[i].offset) < 0 ||
@@ -236,15 +232,15 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
              (rec[i].field < TIKU_TRK_COL_ATTR_BASE ||
               rec[i].field >= TIKU_TRK_COL_ATTR_BASE +
                               TIKU_TRK_COL_ATTR_MAX))) {
-            /* A field outside the fixed set is legal only when it is an
-             * attribute column's slot -- and one of THIS session's, since
-             * the name it carries has already been registered above. */
+            /* A field outside the fixed set is legal only as an attribute
+             * column's slot; a record carrying a name was mapped into this
+             * session's numbering above. */
             return 0;
         }
         for (j = 0; j < i; j++) {
-            /* Two records for one field would produce a listing with the
-             * same column twice, and the name column cannot be removed --
-             * so a layout like that could never be undone. */
+            /* Two records for one field are refused: the listing would show
+             * that column twice, and a doubled name column could not be
+             * removed. */
             if (rec[j].field == rec[i].field) {
                 return 0;
             }
@@ -256,9 +252,8 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
     if (!kept) {
         return 0;
     }
-    /* PVL-033: the saved offsets are used ONCE, to sort, and then thrown
-     * away; positions are re-derived.  Keeping them would let a layout
-     * saved at another font size place a column where nothing draws. */
+    /* PVL-033: the saved offsets only sort the records; positions are
+     * re-derived from the widths. */
     qsort(rec, (size_t)n, sizeof rec[0], rec_cmp);
     for (i = 0; i < n; i++) {
         const char *title;
@@ -275,10 +270,8 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
     }
     v->column_count = n;
     tiku_trk_poseview_reflow_columns(v);
-    /* A sort key whose column did not come back sorts by nothing visible.
-     * It falls to the column that LEADS the strip, which is the one the
-     * reader is looking at, rather than to whichever column happens to be
-     * called Name (MA-067). */
+    /* A sort key whose column did not come back falls to the column
+     * leading the strip (MA-067). */
     if (column_index(v, v->sort_field) < 0) {
         v->sort_field = pv_sort_fallback(v);
         v->sort_reverse = 0;
@@ -332,8 +325,8 @@ tiku_trk_poseview_install_query_defaults(tiku_backend_t *backend,
                     frame.h >= TIKU_TRK_FRAME_MIN_H;
         if (!has_columns) {
             (void)tiku_trk_poseview_set_results(v, NULL, 0);
-            /* The install IS the change being recorded: the gate that
-             * spares a sort-only release must not spare it (TS-036). */
+            /* The install is the change being recorded, so the columns
+             * are marked changed for the save (TS-036). */
             v->columns_dirty = 1;
             (void)tiku_trk_poseview_save_columns(v);
         }
@@ -355,8 +348,8 @@ int
 tiku_trk_poseview_start_offset(const tiku_trk_poseview_t *v)
 {
     /* The row's icon owns the strip to the left of the first column, so the
-     * first column starts past it: icon, the mini-icon separator, and one
-     * pixel of air. */
+     * first column starts past it: the mini icon, the placement gap, and
+     * one pixel. */
     (void)v;
     return TIKU_TRK_MINI_ICON + TIKU_TRK_PLACE_GAP + 1;
 }
@@ -464,8 +457,7 @@ tiku_trk_poseview_column_after(tiku_trk_poseview_t *v, int field, int after)
     if (at < 0) {
         return 0;
     }
-    /* One PAST the target, which is what "insert after" means and what a
-     * column dragged back into the strip has to land on. */
+    /* The index just past the target's. */
     return tiku_trk_poseview_move_column_to(v, field, at + 1);
 }
 
@@ -480,9 +472,9 @@ tiku_trk_poseview_move_column(tiku_trk_poseview_t *v, int field, int before)
     }
     from = column_index(v, field);
     to = column_index(v, before);
-    /* The destination index is read BEFORE the source is lifted out: taken
-     * afterwards, a rightward move would land one short of where the user
-     * dropped it and the column would never pass its neighbour. */
+    /* The destination index is read before the source is lifted out:
+     * taken afterwards, a rightward move would land one short of where the
+     * user dropped it and the column would never pass its neighbour. */
     if (from < 0 || to < 0 || from == to) {
         return 0;
     }
@@ -515,8 +507,8 @@ tiku_trk_poseview_column_widest(tiku_trk_poseview_t *v, int field)
     if (v == NULL || v->measure == NULL) {
         return 0;
     }
-    /* Measured over the list being SHOWN: fitting a filtered listing to a
-     * row that is filtered out would widen the column for nothing. */
+    /* Measured over the list being shown, so a filtered-out row does not
+     * widen the column. */
     n = tiku_trk_poseview_count(v);
     for (i = 0; i < n; i++) {
         tiku_trk_pose_t *p = tiku_trk_poseview_at(v, i);
@@ -527,9 +519,8 @@ tiku_trk_poseview_column_widest(tiku_trk_poseview_t *v, int field)
         if (p == NULL) {
             continue;
         }
-        /* Measured at an effectively unbounded width, as PreferredWidth is:
-         * asking the cell how wide it wants to be at its CURRENT width can
-         * only ever ratify the width it already has. */
+        /* Measured at an unbounded width: at the column's current width a
+         * date or a size is already shortened to fit it. */
         text = pv_cell_text_at(v, p, field, 100000, buf, sizeof buf);
         if (text == NULL || text[0] == '\0') {
             continue;
@@ -558,16 +549,14 @@ tiku_trk_poseview_fit_column(tiku_trk_poseview_t *v, int field)
     if (want <= 0) {
         return 0;
     }
-    /* Nothing to fit: the widest value is already at the floor and the
-     * column is no wider than that.  Saying so is what lets the caller fall
-     * through to a drag instead of swallowing the click. */
+    /* Nothing to fit: the widest value is at the floor and the column is no
+     * wider.  Returning 0 lets the caller start a drag with the click. */
     if (!(want > TIKU_TRK_COL_MIN_WIDTH || want < v->columns[i].width)) {
         return 0;
     }
-    /* Note the answer is about the GESTURE, not about the pixels: fitting a
-     * column that is already the right width still consumes the
-     * double-click, or the second one would arm a resize on the column the
-     * user has just finished fitting. */
+    /* A fit consumes the double-click even when the width does not
+     * change; otherwise its second click would arm a resize on the column
+     * just fitted. */
     (void)tiku_trk_poseview_resize_column(v, field, want);
     return 1;
 }
@@ -588,9 +577,8 @@ tiku_trk_poseview_set_hscroll(tiku_trk_poseview_t *v, int px)
     }
     max = tiku_trk_poseview_columns_width(v);
     if (v->view_w > 0) {
-        /* The clamp is against what CANNOT be shown, not against the
-         * content's whole width: scrolling ends where the last column
-         * meets the window's right edge (PVL-058). */
+        /* Scrolling ends where the last column meets the window's right
+         * edge (PVL-058). */
         max -= v->view_w;
         if (max < 0) {
             max = 0;
@@ -624,8 +612,6 @@ tiku_trk_poseview_columns(const tiku_trk_poseview_t *v,
         return 0;
     }
     if (out != NULL) {
-        /* Asking only HOW MANY is a fair question, and answering it with a
-         * write through a null pointer is not an answer. */
         *out = v->columns;
     }
     return v->column_count;

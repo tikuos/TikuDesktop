@@ -22,9 +22,9 @@
 /**
  * @brief The node a folder with no background of its own inherits from.
  *
- * The source looks the picture up on the folder and then on a template
- * node; this is that node, named rather than a real directory because the
- * store is keyed by name and needs no file to hang a record on.
+ * A folder with no background record shows this node's, as the source
+ * looks a picture up on the folder and then on a template node.  It names
+ * no directory: the store is keyed by name and needs no file for a record.
  */
 #define TIKU_TRK_BG_TEMPLATE_NODE "\x01template"
 
@@ -39,6 +39,7 @@ typedef enum {
     TIKU_TRK_BG_TILED
 } tiku_trk_bg_mode_t;
 
+/** @brief One background: the picture, how it is laid, and where. */
 typedef struct {
     char               path[TIKU_PATH_MAX];
     tiku_trk_bg_mode_t mode;
@@ -48,14 +49,18 @@ typedef struct {
 /**
  * @brief Read a record, "<mode> <x> <y> <path>".
  *
- * @return 1 when the record is one of ours, 0 otherwise.
+ * @return 1 for a well-formed record that names a picture, 0 otherwise;
+ *         @p out is not touched on 0.
  */
 int tiku_trk_bg_parse(const char *rec, tiku_trk_bg_t *out);
 
-/** @brief Write one.  @return length written. */
+/** @brief Write @p bg as a record.  @return its length, 0 on bad input. */
 int tiku_trk_bg_format(const tiku_trk_bg_t *bg, char *out, size_t max);
 
-/** @brief Whether @p node carries a background at all (AW-016's guard). */
+/**
+ * @brief Whether @p node carries a background record at all, even one with
+ *        no picture (the guard tiku_trk_bg_install_default() uses, AW-016).
+ */
 int tiku_trk_bg_have(tiku_store_t *store, const char *node);
 
 /** @brief Read @p node's background.  @return 1 when there is one. */
@@ -71,26 +76,26 @@ int tiku_trk_bg_save(tiku_store_t *store, const char *node,
  *
  * One rectangle for every mode but TILED, which walks the grid; the caller
  * stops when this answers 0.  The rectangle may fall outside the view, and
- * the caller clips -- a picture larger than the window is drawn from its
- * corner, not shrunk to fit.
+ * the caller clips: only SCALED changes the picture's size.
  *
- * @return 1 when @p dst was filled, 0 when there is nothing more to draw.
+ * @return 1 when @p dx, @p dy, @p dw and @p dh were filled, 0 when there is
+ *         nothing more to draw.
  */
 int tiku_trk_bg_place(const tiku_trk_bg_t *bg, int view_w, int view_h,
                       int img_w, int img_h, int i, int *dx, int *dy,
                       int *dw, int *dh);
 
-/** @brief Where a default desktop picture is looked for (AW-016). */
+/** @brief Where a default desktop picture is looked for, under $HOME
+ *         (AW-016). */
 #define TIKU_TRK_BG_DEFAULT_FILE "/.config/tracker/desktop-background"
 
 /**
  * @brief Install a default desktop picture, once (AW-016).
  *
- * Only when @p node carries no background yet: a desktop the user has set,
- * or deliberately cleared, is not overwritten on the next boot.  The
- * picture goes at a golden-ratio x and nine tenths of the height, as the
- * source's logo does.  Nothing is installed when there is no default
- * picture on disk -- this port ships no wallpaper of its own.
+ * Only when @p node carries no background record yet, so a desktop the user
+ * has set, or cleared, is not overwritten on the next boot.  The picture
+ * goes at a golden-ratio x and nine tenths of the height, as the source's
+ * logo does.  Nothing is installed when the default file is not readable.
  *
  * @return 1 when one was installed.
  */

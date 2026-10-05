@@ -32,9 +32,8 @@ tiku_trk_select_init(tiku_trk_select_t *w)
     }
     memset(w, 0, sizeof *w);
     tiku_field_start(&w->expr, "");
-    /* Item 3 -- wildcard -- marked, and Ignore case checked: an expression
-     * with no metacharacters in it is then an exact, case-blind match, which
-     * is what a typed name looks like it should do. */
+    /* Item 3, wildcard, marked and Ignore case checked: an expression with
+     * no metacharacters is then an exact, case-blind match. */
     w->rule = 3;
     w->ignore_case = 1;
     w->invert = 0;
@@ -92,9 +91,8 @@ tiku_trk_select_show(tiku_trk_select_t *sw, int mouse_x, int mouse_y, int w,
     }
     tiku_trk_select_place(mouse_x, mouse_y, w, h, screen_w, screen_h, &sw->x,
                           &sw->y);
-    /* Everything else is left exactly as it was: the expression from last
-     * time is the one most likely wanted this time, which is why this
-     * window is hidden rather than destroyed. */
+    /* Everything else is left as it was, so the last expression is offered
+     * again. */
     sw->expr.active = 1;
     sw->open = 1;
     sw->ever = 1;

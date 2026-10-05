@@ -3,7 +3,11 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_prefs_window.h - Deskbar preferences controller.
+ * tiku_trk_deskbar_prefs_window.h - the Deskbar preferences window.
+ *
+ * A row per setting, a monitor that picks the dock, and the Defaults,
+ * Revert and Edit in TikuTracker buttons.  A change to a row is applied to
+ * the bar and saved at once.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,25 +18,27 @@
 #include "tiku_window.h"
 #include "tiku_trk_deskbar_prefs.h"
 
-#define TIKU_TRK_DB_PREFS_W 470
-#define TIKU_TRK_DB_PREFS_H 580
+#define TIKU_TRK_DB_PREFS_W 470    /**< the window's frame width */
+#define TIKU_TRK_DB_PREFS_H 580    /**< the window's frame height */
 
+/** @brief Opens @p path, the menu folder, in a Tracker window. */
 typedef void (*tiku_trk_deskbar_prefs_open_fn)(void *context,
                                                 const char *path);
 
+/** @brief The Deskbar preferences window and the settings it edits. */
 typedef struct {
-    tiku_trk_deskbar_prefs_t model;
+    tiku_trk_deskbar_prefs_t model;   /**< the value, and as opened */
     tiku_workspace_t *workspace;
-    tiku_window_t *window;
-    tiku_trk_deskbar_t *deskbar;
-    tiku_store_t *store;
+    tiku_window_t *window;            /**< while open, else NULL */
+    tiku_trk_deskbar_t *deskbar;      /**< the bar the settings apply to */
+    tiku_store_t *store;              /**< the settings and the frame */
     int screen_w;
     int screen_h;
-    int *dirty;
-    char menu_dir[TIKU_PATH_MAX];
-    tiku_trk_deskbar_prefs_open_fn open_path;
+    int *dirty;                       /**< set when a redraw is owed */
+    char menu_dir[TIKU_PATH_MAX];     /**< the Deskbar's menu folder */
+    tiku_trk_deskbar_prefs_open_fn open_path;  /**< opens menu_dir */
     void *open_context;
-    tiku_press_t press;     /* 1 Defaults, 2 Revert, 3 the menu folder */
+    tiku_press_t press;     /**< 1 Defaults, 2 Revert, 3 the menu folder */
 } tiku_trk_deskbar_prefs_window_t;
 
 /**

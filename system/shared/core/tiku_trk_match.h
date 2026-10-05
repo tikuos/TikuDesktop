@@ -5,11 +5,8 @@
  *
  * tiku_trk_match.h - the five ways Tracker matches a name.
  *
- * TrackerString is the one string-matching engine in Tracker, and everything
- * that matches a name by rule goes through it: the Select window, Find's
- * name predicate, and Tracker's own "reveal this ref in its parent window",
- * which builds an anchored "^name$" regular expression rather than inventing
- * a sixth comparison.  Keeping one engine is why those three agree.
+ * A port of TrackerString, Tracker's string-matching engine.  The Select
+ * window matches names through it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -40,8 +37,8 @@ int tiku_trk_match(const char *text, const char *expr, int case_sensitive,
 /**
  * @brief Whether a regular expression compiles, and why not.
  *
- * A bad expression is REPORTED rather than quietly matching nothing: the two
- * look identical on screen, and one of them is the user's typo.
+ * tiku_trk_match() finds no match for a bad expression; this names what is
+ * wrong with it.
  *
  * @param err Receives the reason, by name.
  * @return 1 when the expression is usable.

@@ -3,17 +3,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_about_window.h - the About box, in the R5 manner.
+ * tiku_trk_about_window.h - the About box.
  *
- * One modeless window that says what this system IS: the wordmark, the
- * release, how many processors, and the memory with its gauge.  Closed by
- * its own close box or Escape; nothing in it is a control.
- *
- * It is an application DESCRIPTOR now, not a window controller: the shell
- * hosts it through the same services every embedded application gets, so
- * the flagship panel and a third-party app arrive through one door -- and
- * whatever the About needs of that door (a placement role, a refit) had
- * to be added to the door rather than kept as a private privilege.
+ * One modeless window that says what this system is: the wordmark, the
+ * release, the processor count, free memory with its gauge, the newest
+ * report, the connected boards and the build.  Closed by its tab's close
+ * box or Escape.  It is an application descriptor, run by the shell
+ * through the services of tiku_app.h.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,6 +18,7 @@
 
 #include "tiku_app.h"
 
+/** @brief The About box, as an application descriptor the shell hosts. */
 extern const tiku_app_descriptor_t tiku_trk_about_app;
 
 #endif /* TIKU_TRK_ABOUT_WINDOW_H_ */

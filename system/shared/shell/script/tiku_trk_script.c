@@ -27,9 +27,7 @@ sc_words(char *line, char **out, int max)
     char *p = line;
 
     while (*p != '\0' && n < max) {
-        /* The line's own newline is a separator like any other: without
-         * that, the last word on every line carries it and compares equal
-         * to nothing. */
+        /* The line's own newline is a separator like any other. */
         while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
             p++;
         }
@@ -71,7 +69,8 @@ sc_rest(char **w, int n, int from, char *out, size_t max)
     }
 }
 
-/** @brief Read the trailing modifier words of a key line. */
+/** @brief The modifier words from word @p from on: ctrl (TIKU_MOD_CMD),
+ *         shift and alt. */
 unsigned
 sc_mods_of(char **w, int n, int from)
 {
@@ -90,7 +89,8 @@ sc_mods_of(char **w, int n, int from)
     return m;
 }
 
-/** @brief Resolve the portable key names accepted by the script grammar. */
+/** @brief Resolve a key name of the script grammar; one character is itself.
+ *         @return the key, or 0 for an unknown name. */
 unsigned
 sc_key_of(const char *name)
 {
@@ -208,7 +208,8 @@ tiku_trk_script_free(tiku_trk_script_t *s)
     free(s);
 }
 
-/** @brief Record one check, naming it from the last note. */
+/** @brief Print one check's PASS or FAIL, with the last note under it, and
+ *         count it. */
 void
 sc_verdict(tiku_trk_script_t *s, int ok, const char *what, const char *arg)
 {
@@ -238,9 +239,9 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     memset(out, 0, sizeof *out);
     out->what = TIKU_TRK_SC_IDLE;
 
-    /* A wait owes the loop turns before anything else happens: the point of
-     * it is to let deferred work -- a stepped copy, an armed rename -- get
-     * as far as it would on a real clock. */
+    /* A wait owes the loop turns before anything else happens, so deferred
+     * work (a stepped copy, an armed rename) gets as far as it would on a
+     * real clock. */
     if (s->waiting > 0) {
         s->waiting--;
         return 1;
@@ -273,7 +274,7 @@ tiku_trk_script_pump(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     }
     if (s->cursor >= s->count) {
-        s->finished = 1;        /* every step ran: the end IS the quit */
+        s->finished = 1;        /* every step ran: the end is the quit */
         return 0;
     }
     cur = &s->step[s->cursor++];
@@ -319,19 +320,15 @@ tiku_trk_script_report(const tiku_trk_script_t *s, const char *who)
     if (s == NULL) {
         return 0;
     }
-    /* A script that asserted nothing is a script that proved nothing, and
-     * saying so is the difference between a green suite and a real one. */
+    /* A script that made no check fails. */
     if (s->passes + s->fails == 0) {
         printf("\n%s: no checks were made\n", (who != NULL) ? who : "script");
         return 1;
     }
     printf("\n%s: %d passed, %d failed\n", (who != NULL) ? who : "script",
            s->passes, s->fails);
-    /* A script the shell left with steps unreached proved only what it
-     * had reached: two checks of four is not a pass, it is a run cut
-     * short, and the checks after the cut are exactly the ones the
-     * shell's going would have failed.  A script that ran every step and
-     * never wrote quit ended the way it meant to. */
+    /* A script with steps unreached fails: the run was cut short.  One that
+     * ran every step without a quit line has finished. */
     if (!s->finished) {
         int at = (s->cursor > 0) ? s->step[s->cursor - 1].line : 0;
 

@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_select_window.c - Select by pattern window controller.
+ * tiku_trk_select_window.c - the Select window: selects the items of a
+ * folder whose names match a pattern.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,23 +18,22 @@
 #define SELECT_WIDTH  360
 
 /*
- * A field, a tick and a button are each one line of text tall, so each is
- * asked for.  Every one answers what was written here at 12 px, and the
- * window's own height falls out of them rather than being a number the
- * controls then have to fit inside.
+ * The field and checkbox heights, the row step and where the checkboxes
+ * sit, from the face; the window's height follows from them.
  */
 static int field_h(void) { return tiku_font_plain()->height + 5; }
 static int tick_h(void)  { return tiku_font_plain()->height + 1; }
 static int step(void)    { return field_h() + 8; }
 static int ticks_y(void) { return 2 * step() + step(); }
 
-/** @brief The whole window, title bar and all. */
+/** @brief The window's frame height, title tab and borders included. */
 static int select_height(void)
 {
     return ticks_y() + tick_h() + 1 +
            tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER;
 }
 
+/* What a point in the window lands on. */
 typedef enum {
     SELECT_HIT_NONE = 0,
     SELECT_HIT_EXPRESSION,
@@ -75,10 +75,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     const tiku_font_t *font = tiku_font_plain();
     tiku_rect_t expression, rule, ignore, invert, apply;
     char label[96];
-    /* Caret and ring only while this window owns the keyboard -- the same
-     * test its own key handler opens with, which the field never asked:
-     * from open to close it sat lit, promising keys the handler was
-     * refusing. */
+    /* The caret and the focus ring show only while this window owns the
+     * keyboard, the same test its key handler makes. */
     int owns = (controller->window != NULL &&
                 controller->window ==
                     tiku_workspace_focused(controller->workspace));
@@ -102,9 +100,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         controller->model.ignore_case ? TIKU_S_ON : 0u);
     tiku_ui_checkbox(surface, invert, "Invert selection",
         controller->model.invert ? TIKU_S_ON : 0u);
-    /* Return presses this while the window owns the keyboard, and the
-     * ring says so -- it wore no ring at all while the key handler was
-     * binding Return to it, the exact inverse of the field above. */
+    /* Return presses Select while the window owns the keyboard, so the
+     * default ring shows only then. */
     tiku_ui_button(surface, apply, "Select",
                         (owns ? TIKU_S_DEFAULT : 0u) |
                         (tiku_press_held(&controller->press, 1)
@@ -133,7 +130,7 @@ hit(tiku_trk_select_window_t *controller, int x, int y)
     return SELECT_HIT_NONE;
 }
 
-/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
+/** @brief Set the shell's redraw flag, when it has one. */
 static void
 mark_dirty(tiku_trk_select_window_t *controller)
 {
@@ -142,7 +139,10 @@ mark_dirty(tiku_trk_select_window_t *controller)
     }
 }
 
-/** @brief Hand the expression to the shell to select by, then close. */
+/**
+ * @brief Hand the form to the shell to select by; when it applied, close
+ *        the window and activate the folder's.
+ */
 static void
 apply(tiku_trk_select_window_t *controller)
 {
@@ -164,7 +164,11 @@ apply(tiku_trk_select_window_t *controller)
     tiku_workspace_activate(controller->workspace, target);
 }
 
-/** @brief A press focuses a field, toggles a box or applies.  @return 1. */
+/**
+ * @brief A press focuses the field, steps the rule or toggles a box; Select
+ *        acts on a release over it.
+ * @return 1 when taken.
+ */
 static int
 event(tiku_window_t *window, const tiku_event_t *event,
       void *context)
@@ -172,8 +176,8 @@ event(tiku_window_t *window, const tiku_event_t *event,
     tiku_trk_select_window_t *controller = context;
 
     (void)window;
-    /* The Select button goes down under the hand and applies when the
-     * hand lets go on it; the rest of the window answers the press. */
+    /* The Select button shows pressed while held and applies on a
+     * release over it; the rest of the window acts on the press. */
     if (event->type == TIKU_EVENT_POINTER_MOVE) {
         if (tiku_press_track(&controller->press,
                 hit(controller, event->x, event->y) == SELECT_HIT_APPLY)) {

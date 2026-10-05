@@ -1,21 +1,33 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_repaint.h - the damage a view owes: rectangles to paint, a
+ * scroll, and at most one slide per batch.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #ifndef TIKU_TRK_REPAINT_H_
 #define TIKU_TRK_REPAINT_H_
 
 #include <stdint.h>
 
+/** @brief A rectangle to paint, in the view's own coordinates. */
 typedef struct {
     int32_t x, y, w, h;
 } tiku_trk_repaint_rect_t;
 
+/** @brief How many rectangles a batch records; more merge into the first. */
 #define TIKU_TRK_REPAINT_MAX 32
 
+/** @brief One batch of damage. */
 typedef struct {
     tiku_trk_repaint_rect_t rect[TIKU_TRK_REPAINT_MAX];
     int count;
-    int scroll_delta;
-    /* Pixels that only MOVED: everything from slide_y down goes slide_delta
-     * further on, and the caller blits rather than draws them again. */
+    int scroll_delta;   /* rows inserted or removed above the view, in px */
+    /* Pixels that only moved: everything from slide_y down moves by
+     * slide_delta, and the caller blits it. */
     int slide_y;
     int slide_delta;
 } tiku_trk_repaint_t;
@@ -43,8 +55,10 @@ void tiku_trk_repaint_insert(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visi
 void tiku_trk_repaint_remove(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t visible,
                              int row_h, int row_y);
 /**
- * @brief The band grew or shrank from @p old_rect to @p new_rect: only the
- * strips one has and the other has not are painted, never the whole band.
+ * @brief The band grew or shrank from @p old_rect to @p new_rect.
+ *
+ * Only the strips one has and the other has not are painted; a change of x
+ * or width adds the overlapping height as well.
  */
 void tiku_trk_repaint_band(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t old_rect,
                            tiku_trk_repaint_rect_t new_rect);
@@ -62,7 +76,8 @@ int tiku_trk_repaint_take(tiku_trk_repaint_t *r, tiku_trk_repaint_rect_t *out,
 void tiku_trk_repaint_slide(tiku_trk_repaint_t *r, int y, int delta,
                             tiku_trk_repaint_rect_t visible);
 
-/** @brief Take the pending slide, or 0 when there is none. */
+/** @brief Take the pending slide: @return its delta, with its top in @p y,
+ *         or 0 when there is none. */
 int tiku_trk_repaint_take_slide(tiku_trk_repaint_t *r, int *y);
 
 #endif

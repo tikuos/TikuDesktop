@@ -37,8 +37,8 @@ tiku_trk_click_press(tiku_trk_click_t *click, const void *pose,
             dy < TIKU_TRK_DOUBLE_CLICK_SLOP &&
             now - click->at < TIKU_TRK_DOUBLE_CLICK_US;
     if (match) {
-        /* A triple click is one pair plus a new first click, not two
-         * overlapping pairs. */
+        /* A completed pair is forgotten: a triple click is one pair and a
+         * new first click. */
         memset(click, 0, sizeof *click);
         return 1;
     }
@@ -96,8 +96,8 @@ tiku_trk_drag_arm(tiku_trk_drag_t *d, int x, int y, unsigned buttons,
         return;
     }
     tiku_trk_drag_reset(d);
-    /* A second click is the start of a double-click, and a double-click
-     * opens.  Arming on it would make every impatient open a drag. */
+    /* Only a single click arms: the second press of a double-click opens
+     * instead. */
     if (clicks != 1) {
         return;
     }
@@ -168,7 +168,7 @@ tiku_trk_drag_moved(tiku_trk_drag_t *d, int x, int y)
     d->x = x;
     d->y = y;
     if (d->active) {
-        return 0;                   /* already started; just tracking */
+        return 0;                   /* already started: only tracked  */
     }
     /* Squared, against the squared threshold: the comparison is the same
      * one and costs no square root. */
@@ -222,14 +222,14 @@ tiku_trk_drag_can_drop(const tiku_trk_drag_t *d, const tiku_model_t *over)
     }
     if (!tiku_model_is_container(over)) {
         /* An executable is a target too: dropping documents on an
-         * application launches it with them (PVS-044), the same
-         * IsDropTarget the source's Model answered. */
+         * application launches it with them (PVS-044), as the source's
+         * Model::IsDropTarget answers. */
         return (over->facts.perm & TIKU_P_EXEC) != 0u &&
                over->kind == TIKU_KIND_FILE;
     }
-    /* A container that will not accept new entries -- a read-only store, a
-     * device node's virtual directory -- is not a target either, and saying
-     * so during the hover is better than refusing after the drop. */
+    /* A container that will not accept new entries (a read-only store, a
+     * device node's virtual directory) is not a target either, so the hover
+     * already shows the refusal. */
     return tiku_model_is_mutable_container(over);
 }
 
@@ -243,8 +243,7 @@ tiku_trk_drag_action(const tiku_trk_drag_t *d, const char *dst_dir,
         return TIKU_TRK_DROP_NOTHING;
     }
     /* Control asks for a link whatever else is true, and Option forces a
-     * copy: both are read at the DROP, not at the press, because the user
-     * decides what the gesture means while it is in the air. */
+     * copy; both are read at the drop, not at the press. */
     if ((mods & TIKU_TRK_DRAG_MOD_LINK) != 0u) {
         return TIKU_TRK_DROP_LINK;
     }
@@ -254,10 +253,8 @@ tiku_trk_drag_action(const tiku_trk_drag_t *d, const char *dst_dir,
     if (d->src_virtual && (mods & TIKU_TRK_DRAG_MOD_COPY) == 0u) {
         return TIKU_TRK_DROP_LINK;
     }
-    /* Back where it started is not an operation.  Checked against the
-     * item's own parent rather than the drag's source folder, so a drag of
-     * items gathered from several places still does the right thing for
-     * each. */
+    /* A drop into the first item's own parent does nothing unless Option
+     * asks for a copy. */
     parent_of(d->path[0], from, sizeof from);
     if (strcmp(from, dst_dir) == 0) {
         return ((mods & TIKU_TRK_DRAG_MOD_COPY) != 0u) ? TIKU_TRK_DROP_COPY
@@ -266,8 +263,7 @@ tiku_trk_drag_action(const tiku_trk_drag_t *d, const char *dst_dir,
     if ((mods & TIKU_TRK_DRAG_MOD_COPY) != 0u) {
         return TIKU_TRK_DROP_COPY;
     }
-    /* Same volume moves, different volume copies: the bytes only travel
-     * when they have to. */
+    /* Same volume moves, different volume copies. */
     return same_volume ? TIKU_TRK_DROP_MOVE : TIKU_TRK_DROP_COPY;
 }
 
@@ -318,14 +314,13 @@ tiku_trk_drag_landing(const tiku_trk_drag_t *d, int i, int dx, int dy,
             if (y != NULL) { *y = dy + row * TIKU_TRK_DRAG_FOREIGN_CELL_H; }
             return;
         }
-        /* A list has no positions to preserve, so a column at the drop
-         * point is the only arrangement that is not a heap. */
+        /* A list has no positions to preserve: a column at the drop
+         * point. */
         if (x != NULL) { *x = dx; }
         if (y != NULL) { *y = dy + i * TIKU_TRK_DRAG_STACK; }
         return;
     }
-    /* One delta for the whole selection: what the user picked up is what
-     * they put down, in the same shape. */
+    /* One delta for the whole selection, so it keeps its shape. */
     if (x != NULL) { *x = dx + (d->ox[i] - d->ox[0]); }
     if (y != NULL) { *y = dy + (d->oy[i] - d->oy[0]); }
 }
@@ -336,9 +331,8 @@ tiku_trk_drag_types(tiku_trk_drag_t *d)
     if (d == NULL) {
         return 0;
     }
-    /* Sealed on the first ask.  Re-entering a view with the same drag must
-     * not rebuild the list: the drag has not changed, and rebuilding on
-     * every entry is how a hover becomes expensive. */
+    /* Sealed on the first ask, so tiku_trk_drag_add_at() adds no more
+     * types and re-entering a view does not rebuild the list. */
     d->types_built = 1;
     return d->ntype;
 }

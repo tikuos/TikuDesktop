@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_menu.h - folder menu model controller.
+ * tiku_trk_folder_menu.h - the folder menus' controller: the enablement
+ * context for a folder and its selection, and the Open with and per-type
+ * submenus, rebuilt before a folder is painted.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,17 +20,17 @@
 #include "tiku_trk_launch_controller.h"
 #include "tiku_trk_types.h"
 
-/** @brief Services the folder menus are rebuilt from, off live model state. */
+/** @brief What the folder menus are rebuilt from; everything is borrowed. */
 typedef struct {
-    tiku_trk_cwmenu_t             *menus;
-    tiku_trk_clip_t               *clip;
-    tiku_backend_t            *backend;
-    tiku_fs_t                 *fs;
-    tiku_trk_types_t              *types;
-    tiku_trk_launch_controller_t  *launcher;
-    tiku_trk_folder_window_t     **bar_folder;
-    int                           *bar_open;
-    tiku_trk_folder_edit_t        *editor;
+    tiku_trk_cwmenu_t             *menus;   /**< the menus rebuilt         */
+    tiku_trk_clip_t               *clip;    /**< the file clipboard        */
+    tiku_backend_t            *backend;     /**< for stat                  */
+    tiku_fs_t                 *fs;          /**< for the Trash             */
+    tiku_trk_types_t              *types;   /**< the type database         */
+    tiku_trk_launch_controller_t  *launcher;    /**< builds Open with      */
+    tiku_trk_folder_window_t     **bar_folder;  /**< whose bar menu is open */
+    int                           *bar_open;    /**< which menu, or -1     */
+    tiku_trk_folder_edit_t        *editor;      /**< the inline editor     */
 } tiku_trk_folder_menu_t;
 
 /** @brief Bind live folder-menu models and their supporting services. */

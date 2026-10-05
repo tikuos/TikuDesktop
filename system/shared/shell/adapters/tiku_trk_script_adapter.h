@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_script_adapter.h - script observations of desktop presentation.
+ * tiku_trk_script_adapter.h - what a script reads of the desktop shell: its
+ * state for each step, the points a gesture aims at, and the events a step
+ * becomes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,7 +22,8 @@
 #include "tiku_menu.h"
 #include "tiku_trk_script.h"
 
-/** @brief Read-only presentation dependencies exposed to script callbacks. */
+/** @brief The desktop shell's pieces a script reads, and the adapter's own
+ *         state between steps. */
 typedef struct {
     tiku_workspace_t *workspace;
     tiku_surface_t *surface;
@@ -37,15 +40,15 @@ typedef struct {
     tiku_rect_t *popup_sub_frame;
     char *status;
     char *count_text;
-    char menu_labels[512];
-    char shot_path[TIKU_PATH_MAX];
+    char menu_labels[512];          /* the open menus' labels, '|' after each */
+    char shot_path[TIKU_PATH_MAX];  /* where the last shot step's frame goes */
     /* A pick on a menu row is a press and a release, as a click is: the
      * release is owed at the row's point on the next turn.  A program's
      * row starts its program only when the button comes up, and a press
      * without its release leaves a surface holding the capture. */
     int release_owed;
     int release_x, release_y;
-    int row_h;
+    int row_h;                      /* a list row's height */
     /* The shell's own full redraw, for the check that what the frames
      * painted is what a full redraw would have drawn. */
     long               (*redraw_diff)(void *ctx);
@@ -54,8 +57,8 @@ typedef struct {
      * than the window it began in. */
     int                (*resize)(void *ctx, int width, int height);
     void                *resize_ctx;
-    /* The shell's named-fact answerer -- the SAME function its conductor
-     * channel answers QUERY with, so both surfaces stay one surface. */
+    /* The shell's named-fact answerer, the function its conductor channel
+     * answers QUERY with. */
     int                (*say)(void *ctx, const char *noun, char *out,
                               size_t max);
     void                *say_ctx;
@@ -113,6 +116,7 @@ int tiku_trk_script_adapter_pose_screen(void *context, const char *name,
 int tiku_trk_script_adapter_pose_at(void *context, const char *name,
                                     int *x, int *y);
 
+/** @brief What tiku_trk_script_adapter_next() hands back. */
 typedef enum {
     TIKU_TRK_SCRIPT_ADAPTER_STOP = -1,
     TIKU_TRK_SCRIPT_ADAPTER_IDLE = 0,

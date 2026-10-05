@@ -33,14 +33,9 @@ tiku_trk_info_open(tiku_trk_info_t *in, tiku_backend_t *b,
     snprintf(in->path, sizeof in->path, "%s", path);
     in->used = 1;
     in->perm = in->model.facts.perm;
-    /* Editable only where the store can be told.  A backend with no way to
-     * set permissions shows the grid as it is rather than offering an edit
-     * that fails after the fact (AW-078).
-     *
-     * Asked of whatever serves THIS node, not of the shell's backend: a
-     * namespace always has a setperm -- it has to, to route one -- so
-     * asking the outer table made the grid editable over a device, which
-     * is the exact after-the-fact failure AW-078 exists to prevent. */
+    /* Editable only where the backend serving this node has a setperm
+     * (AW-078).  The shell's own backend is a namespace, which always has
+     * one, to route it, even over a device that cannot set permissions. */
     {
         tiku_backend_t *on = tiku_backend_serving(b, path, NULL, 0);
 
@@ -108,16 +103,15 @@ field_list(const tiku_trk_info_t *in, tiku_store_t *store,
         !tiku_model_is_container(&in->model) &&
         (in->model.facts.perm & TIKU_P_EXEC) == 0u) {
         /* Not for executables, directories or volumes: an application
-         * does not open THROUGH another application (AW-071). */
+         * does not open through another application (AW-071). */
         out[n++] = TIKU_TRK_INFO_F_OPENS_WITH;
     }
     if ((in->model.kind == TIKU_KIND_VOLUME ||
          in->model.kind == TIKU_KIND_ROOT) && n < max) {
         out[n++] = TIKU_TRK_INFO_F_FILESYSTEM;
     }
-    /* Only when the picture has actually been measured.  A row that said
-     * "unknown" for every image until one was made would be worse than no
-     * row at all (IV-035). */
+    /* Only once the picture has been measured, so no image shows an
+     * "unknown" size (IV-035). */
     if (store != NULL && n < max &&
         tiku_state_read(store, in->path, TIKU_ATTR_THUMB_DIM, dim,
                             sizeof dim) == (int)sizeof dim) {
@@ -153,9 +147,7 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_store_t *store,
         if (label != NULL) { *label = tiku_str("label.size"); }
         if (tiku_model_is_container(&in->model)) {
             if (in->calc == TIKU_TRK_INFO_CALC_RUNNING) {
-                /* Not "0 bytes" and not blank: the window says what it is
-                 * doing, because the answer takes as long as the tree is
-                 * deep (AW-068). */
+                /* The total is not known until the walk ends (AW-068). */
                 snprintf(value, max, "calculating" "\xe2\x80\xa6");
             } else if (in->calc == TIKU_TRK_INFO_CALC_DONE) {
                 char sz[32];
@@ -241,10 +233,9 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_store_t *store,
         if (label != NULL) { *label = tiku_str("info.filesystem"); }
         {
             /*
-             * The store the entry is really ON.  Every model belongs to
-             * the namespace now, so asking the model's own backend for
-             * its name answers "mount" for a local file and for a device
-             * alike -- which is the one thing this row exists not to say.
+             * The store the entry is on.  The model's own backend is the
+             * namespace, named "mount" for a local file and a device
+             * alike.
              */
             tiku_backend_t *on =
                 tiku_backend_serving(in->model.backend, in->model.path,
@@ -262,6 +253,8 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_store_t *store,
 
 /*---------------------------------------------------------------------------*/
 /* The size walk                                                             */
+/*---------------------------------------------------------------------------*/
+
 void
 tiku_trk_info_calc_start(tiku_trk_info_t *in)
 {
@@ -283,9 +276,7 @@ tiku_trk_info_calc_stop(tiku_trk_info_t *in)
     if (in == NULL) {
         return;
     }
-    /* Back to idle rather than to done: a half-counted total presented as
-     * the answer would be a smaller number than the truth, stated with the
-     * same confidence (AW-068). */
+    /* Back to idle, so a half-counted total is never shown (AW-068). */
     in->calc = TIKU_TRK_INFO_CALC_IDLE;
     in->nqueue = 0;
 }
@@ -302,9 +293,7 @@ calc_entry(const tiku_model_t *m, void *ctx)
             snprintf(in->queue[in->nqueue++], TIKU_PATH_MAX, "%s",
                      m->path);
         } else {
-            /* Said out loud rather than silently under-counted: a total
-             * that quietly stopped descending is a wrong number wearing a
-             * right number's face. */
+            /* The finished total is marked as incomplete. */
             in->calc_overflow = 1;
         }
     } else {
@@ -340,6 +329,8 @@ tiku_trk_info_calc_step(tiku_trk_info_t *in, tiku_backend_t *b)
 
 /*---------------------------------------------------------------------------*/
 /* Liveness                                                                  */
+/*---------------------------------------------------------------------------*/
+
 int
 tiku_trk_info_refresh(tiku_trk_info_t *in, tiku_backend_t *b, int64_t now)
 {
@@ -349,9 +340,9 @@ tiku_trk_info_refresh(tiku_trk_info_t *in, tiku_backend_t *b, int64_t now)
         b->ops->stat == NULL) {
         return 0;
     }
-    /* Only what changes without anyone saying so.  A folder's contents
-     * arrive as notices; free space is nobody's node, and a file being
-     * written is not reported until it is closed (AW-069). */
+    /* Only what changes without a notice: free space belongs to no node,
+     * and a file being written is not reported until it is closed.  A
+     * folder's contents arrive as notices (AW-069). */
     if (in->model.kind != TIKU_KIND_VOLUME &&
         in->model.kind != TIKU_KIND_ROOT &&
         in->model.kind != TIKU_KIND_FILE) {
@@ -400,9 +391,8 @@ tiku_trk_info_moved(tiku_trk_info_t *in, tiku_backend_t *b,
         }
         snprintf(in->path, sizeof in->path, "%s", rebuilt);
     }
-    /* Re-read rather than patched: the title, the Location field and the
-     * kind all come off the model, and a model still describing the old
-     * path would leave two of the three quietly wrong. */
+    /* Re-read: the title, the Location field and the kind all come off
+     * the model. */
     if (b != NULL && b->ops != NULL && b->ops->stat != NULL) {
         (void)b->ops->stat(b, in->path, &in->model);
     }
@@ -440,8 +430,8 @@ tiku_trk_info_refind(tiku_trk_info_t *in, tiku_backend_t *b)
     if (strcmp(was, in->path) == 0) {
         return 0;               /* nothing there answers to it */
     }
-    /* Re-read rather than trusting the listing's copy: the title, the
-     * Location field and the kind all come off the model. */
+    /* Re-read: the title, the Location field and the kind all come off
+     * the model. */
     return (b->ops->stat(b, in->path, &in->model) == 0);
 }
 
@@ -456,8 +446,7 @@ tiku_trk_info_gone(const tiku_trk_info_t *in, const char *removed)
     if (strcmp(in->path, removed) == 0) {
         return 1;
     }
-    /* A folder above it going takes it too: the entry is gone whether or
-     * not anyone said its name. */
+    /* A folder above it going takes it too. */
     n = strlen(removed);
     return (n > 0u && strncmp(removed, in->path, n) == 0 &&
             in->path[n] == '/');
@@ -507,9 +496,8 @@ tiku_trk_info_perm_toggle(tiku_trk_info_t *in, tiku_backend_t *b,
     }
     want = in->perm ^ perm_bit(which);
     if (b->ops->setperm(b, in->path, want, err, errmax) != 0) {
-        /* The box goes back rather than staying where the click put it:
-         * with no OK button the tick IS the claim, and a tick the store
-         * refused would be a lie the window keeps telling (AW-078). */
+        /* The box keeps its old state: with no OK button the tick is the
+         * claim, and the store refused it (AW-078). */
         return -1;
     }
     in->perm = want;
@@ -568,8 +556,7 @@ attr_row(const char *name, const void *val, size_t len, void *ctx)
         snprintf(a->type, sizeof a->type, (len == 4u) ? "int32" : "int64");
         snprintf(a->value, sizeof a->value, "%lld", (long long)n);
     } else {
-        /* A blob is described rather than spelled: printing a thumbnail as
-         * mojibake tells the reader nothing and costs a screenful. */
+        /* A blob is shown as its size. */
         snprintf(a->type, sizeof a->type, "raw");
         snprintf(a->value, sizeof a->value, "%u bytes", (unsigned)len);
     }
@@ -592,6 +579,8 @@ tiku_trk_info_attrs(tiku_trk_info_t *in, tiku_store_t *store)
 
 /*---------------------------------------------------------------------------*/
 /* Where the clickable fields lead                                           */
+/*---------------------------------------------------------------------------*/
+
 int
 tiku_trk_info_location(const tiku_trk_info_t *in, char *dir, size_t dmax,
                        char *select, size_t smax)
@@ -677,6 +666,7 @@ typedef struct {
     size_t        len;
 } kept_attr_t;
 
+/** @brief The attributes kept aside, in the order they were read. */
 typedef struct {
     kept_attr_t a[TIKU_TRK_INFO_ATTRS];
     int         n;
@@ -684,7 +674,7 @@ typedef struct {
 
 /**
  * @brief Keep one attribute, bytes and all, for writing back; one that
- * will not fit is dropped whole rather than truncated.
+ *        will not fit is dropped whole.
  */
 static int
 keep_attr(const char *name, const void *val, size_t len, void *ctx)
@@ -692,9 +682,7 @@ keep_attr(const char *name, const void *val, size_t len, void *ctx)
     kept_t *k = ctx;
 
     if (k->n >= TIKU_TRK_INFO_ATTRS || len > sizeof k->a[0].val) {
-        /* Anything that will not fit is dropped LOUDLY rather than
-         * truncated: half a thumbnail written back is a valid-looking
-         * attribute holding nonsense. */
+        /* Anything that will not fit is dropped whole, and reported. */
         return 0;
     }
     snprintf(k->a[k->n].name, sizeof k->a[k->n].name, "%s", name);
@@ -723,9 +711,8 @@ tiku_trk_info_relink(tiku_trk_info_t *in, tiku_backend_t *b,
         snprintf(err, errmax, "%s", tiku_str("info.msg.not_a_link"));
         return -1;
     }
-    /* Read BEFORE the link is replaced, and read RAW: a store that keeps
-     * state on the file itself loses it with the old link, and writing back
-     * the displayed text would turn a blob into a description of itself
+    /* Read before the link is replaced, since a store that keeps state on
+     * the file itself loses it with the old link, and read raw, as bytes
      * (AW-074). */
     kept.n = 0;
     if (store != NULL) {

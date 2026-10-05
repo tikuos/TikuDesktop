@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_script_expect.c - files on disk: their bits, their presence, and
- * writing or removing them
+ * tiku_trk_script_expect.c - the checks a script makes, parsed and run:
+ * files on disk and what they hold, the focused window, the Desktop, what
+ * the shell says, and what was painted.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,8 +14,10 @@
 #include "tiku_state.h"
 
 /**
- * @brief files on disk: their bits, their presence, and writing or removing
- * them
+ * @brief Run a file step: expect-perm, remove, write, expect-file and
+ *        expect-no-file, and also expect-alert.
+ *
+ * @return 1 for a step of this group, 0 for another group's.
  */
 int
 sc_pump_file_state(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
@@ -75,7 +78,10 @@ sc_pump_file_state(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 }
 
 /**
- * @brief what the Desktop shows
+ * @brief Run a Desktop check: expect-desk-selected, its -name form, and
+ *        expect-desk-icon and expect-no-desk-icon.
+ *
+ * @return 1 for a step of this group, 0 for another group's.
  */
 int
 sc_pump_desktop(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
@@ -127,8 +133,10 @@ sc_pump_desktop(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 }
 
 /**
- * @brief A noun's answer against the whole text, or a bound: the checks
- *        that read the shell's own words.  @return 0 for another op.
+ * @brief Run expect-said, expect-under or expect-over: a noun's whole
+ *        answer, or its number against a bound.
+ *
+ * @return 1 for one of these, 0 for another step.
  */
 static int
 sc_said_noun(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
@@ -171,8 +179,11 @@ sc_said_noun(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 }
 
 /**
- * @brief what the shell says when asked: the count, the menu, the nouns, the
- * narration
+ * @brief Run a check of what the shell says: the count, the menu, the
+ *        sounds and the volume, the mounts and controls, a namespace read,
+ *        the operation, and the narration.
+ *
+ * @return 1 for a step of this group, 0 for another group's.
  */
 int
 sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
@@ -202,9 +213,9 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_NO_SOUND:
     case OP_EXPECT_SOUND_ON:
     case OP_EXPECT_SOUND_OFF: {
-        /* The shell's word on the moment, through the "sounds" noun as
-         * name:count:on|off: a scripted run is mute, so the count is the
-         * whole proof of a moment and the flag of a preference. */
+        /* The "sounds" noun answers name:count:on|off for each moment.  A
+         * scripted run is mute: the count says a moment sounded, the flag
+         * whether it is enabled. */
         char text[2048], key[80];
         const char *hit, *tail = "";
         unsigned count = 0;
@@ -252,9 +263,8 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     }
     case OP_EXPECT_MOUNTS:
     case OP_EXPECT_CONTROL: {
-        /* Asked through the shell's own noun table -- the same answer
-         * the conductor's QUERY gives, so this line means one thing in
-         * both drivers. */
+        /* Asked through the shell's noun table, which the conductor's
+         * QUERY also answers from. */
         const char *noun =
             (cur->op == OP_EXPECT_MOUNTS) ? "mounts" : "controls";
         char text[2048];
@@ -270,8 +280,8 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     }
     case OP_EXPECT_READ: {
-        /* The namespace as a noun table: the path is asked through the
-         * same say() the conductor answers with. */
+        /* A path is a noun as well: say() answers it with the node's value
+         * or the container's children. */
         char text[2048];
 
         text[0] = '\0';
@@ -285,9 +295,8 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     }
     case OP_EXPECT_OPERATION: {
-        /* Eventually, bounded: a job's lifecycle takes turns to reach
-         * any given state, and a driver that must catch it mid-flight
-         * would be racing the clock this harness refuses to race. */
+        /* Asked again each turn, within the turn budget in count, until
+         * the text appears: a job takes turns to reach a state. */
         char text[2048];
 
         text[0] = '\0';
@@ -310,11 +319,10 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     }
     case OP_EXPECT_TOLD: {
-        /* Being told, composed the only way an in-process driver can:
-         * ask again each turn, bounded.  The conducted driver spells
-         * this same line as a real push from the shell; the CLAIM --
-         * the window comes to say it within the bound -- is what the
-         * two of them prove twice, two ways. */
+        /* The narration is read again each turn, within the turn budget
+         * in count, until it holds the text.  tests/tools/trk_conduct.c
+         * runs the same line by waiting for the TOLD frame the shell
+         * pushes when the narration changes. */
         char lines[2048];
 
         lines[0] = '\0';
@@ -338,10 +346,8 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     }
     case OP_EXPECT_NARRATE:
     case OP_EXPECT_NO_NARRATE: {
-        /* The focused window as its display list narrates it: the same
-         * answer the conductor's "narrate" noun gives, so this line means
-         * one thing in both drivers.  The negative is what proves a
-         * window MOVED: words that were not there before, and are. */
+        /* The focused window as its display list narrates it, the answer
+         * the conductor's "narrate" noun also gives. */
         char lines[2048];
         int said;
 
@@ -366,7 +372,10 @@ sc_pump_said(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 }
 
 /**
- * @brief what a file holds and what a link says
+ * @brief Run expect-file-has, expect-file-lacks or expect-link: what a file
+ *        holds and what a link says.
+ *
+ * @return 1 for a step of this group, 0 for another group's.
  */
 int
 sc_pump_file_contents(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
@@ -381,16 +390,15 @@ sc_pump_file_contents(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         char path[sizeof cur->text + sizeof cur->text2];
         char needle[sizeof cur->text2];
         FILE *f;
-        /* Enough for a report: a backtrace pushes what a driver is
-         * asking about well past the first few hundred bytes. */
+        /* Room for a crash report, where the text asked about can lie
+         * well past the first few hundred bytes. */
         char got[8192] = "";
         int ok = 0;
 
-        /* A path with spaces in it cannot be one word.  The path is the
-         * LONGEST prefix of the line that names a real file and the
-         * needle is the rest -- longest, so "New Query 2" is not
-         * shadowed by a "New Query" beside it; one-word paths behave
-         * exactly as they always did. */
+        /* A path may hold spaces: the path is the longest prefix of the
+         * line that names an existing file, and the needle is the rest.
+         * Longest, so "New Query 2" is not shadowed by a "New Query"
+         * beside it. */
         {
             char line[sizeof path];
             size_t k, len, best = 0;
@@ -423,11 +431,9 @@ sc_pump_file_contents(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
             (void)fclose(f);
             ok = (needle[0] != '\0' && strstr(got, needle) != NULL);
         }
-        /* What it HOLDS, not that it exists: a file written by something
-         * that ran with no arguments exists just as readily.  The LACKS
-         * form asserts the absence of a line: since the settings file
-         * records decisions rather than defaults, "back to the default"
-         * is proved by the line being GONE, not by an "off" appearing. */
+        /* The lacks form asserts that the needle is absent; a file that
+         * cannot be read lacks it too.  A setting back at its default
+         * leaves the settings file, so this is how it is checked. */
         if (cur->op == OP_EXPECT_FILELACKS) {
             ok = (needle[0] != '\0' && strstr(got, needle) == NULL);
             sc_verdict(s, ok, "absent from file:", cur->text2);
@@ -440,9 +446,8 @@ sc_pump_file_contents(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         char target[512];
         ssize_t got = readlink(cur->text, target, sizeof target - 1u);
 
-        /* What the link SAYS, not what it resolves to: a relative link and
-         * an absolute one to the same file are indistinguishable once
-         * followed, and the difference is the whole point. */
+        /* The link's own text, as readlink returns it: a relative and an
+         * absolute link to one file differ only there. */
         target[(got > 0) ? (size_t)got : 0u] = '\0';
         sc_verdict(s, got > 0 && strcmp(target, cur->text2) == 0,
                 "link says:", (got > 0) ? target : "nothing");
@@ -454,7 +459,11 @@ sc_pump_file_contents(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 }
 
 /**
- * @brief what the window shows: title, rows, selection, positions, pixels
+ * @brief Run a check of the focused window: status, title, scroll, rows,
+ *        windows, selection, renaming, Find, location, navigation, type
+ *        narrowing and columns.
+ *
+ * @return 1 for a step of this group, 0 for another group's.
  */
 int
 sc_pump_window(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
@@ -468,15 +477,12 @@ sc_pump_window(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
                    strstr(st->status, cur->text) != NULL,
                 "status says", cur->text);
         if (s->fails > 0 && st != NULL && st->status != NULL) {
-            /* Showing what it DID say is the difference between a failure
-             * you can act on and one you have to reproduce by hand. */
+            /* On a failure, print what the status line did say. */
             printf("         (status: \"%s\")\n", st->status);
         }
         return 1;
     case OP_EXPECT_TITLE:
-        /* The verdict reads back what the WINDOW says, not what was asked
-         * for: a failure that repeats the expectation tells the reader
-         * nothing about why it failed. */
+        /* The verdict prints the window's title, not the expectation. */
         sc_verdict(s, st != NULL && st->title != NULL &&
                    strstr(st->title, cur->text) != NULL,
                 "title says",
@@ -493,9 +499,7 @@ sc_pump_window(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 
         snprintf(n, sizeof n, "%d", (st != NULL) ? st->scroll : -1);
         if (cur->x != 0) {
-            /* The "at most" form.  A >= test against 0 is always true and
-             * asserts nothing, which is how three mutations survived the
-             * first version of this check. */
+            /* The "at most" form, from expect-scroll-at-most. */
             sc_verdict(s, st != NULL && st->scroll <= cur->count,
                     "scrolled at most, and is at", n);
         } else {
@@ -523,8 +527,7 @@ sc_pump_window(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_SEL: {
         char n[32];
 
-        /* What was COUNTED, not what was asked for: a verdict that reads
-         * back the expectation says nothing when it fails. */
+        /* The verdict prints the count, not the expectation. */
         snprintf(n, sizeof n, "%d", (st != NULL) ? st->selected : -1);
         sc_verdict(s, st != NULL && st->selected == cur->count, "selected:", n);
         return 1;
@@ -599,8 +602,9 @@ sc_pump_window(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 }
 
 /**
- * @brief files on disk: their bits, their presence, and writing or removing
- * them
+ * @brief Parse expect-perm, write, remove, expect-file or expect-no-file.
+ *
+ * @return 1 for one of these, 0 for another verb.
  */
 int
 sc_parse_file_state(sc_step_t *st, char **w, int n)
@@ -610,15 +614,13 @@ sc_parse_file_state(sc_step_t *st, char **w, int n)
         snprintf(st->text, sizeof st->text, "%s", w[1]);
         snprintf(st->text2, sizeof st->text2, "%s", w[2]);
     } else if (strcmp(w[0], "write") == 0 && n >= 3) {
-        /* The other half of `remove`: changing a file behind the
-         * shell's back, which is what a change notice is about. */
+        /* Writes a file behind the shell's back, to raise a change
+         * notice. */
         st->op = OP_WRITE;
         snprintf(st->text, sizeof st->text, "%s", w[1]);
         sc_rest(w, n, 2, st->text2, sizeof st->text2);
     } else if (strcmp(w[0], "remove") == 0 && n >= 2) {
-        /* The one way a script can change the world behind the shell's
-         * back, which is what liveness means: everything else it does
-         * arrives through the shell's own hands. */
+        /* Removes a file behind the shell's back. */
         st->op = OP_REMOVE;
         sc_rest(w, n, 1, st->text, sizeof st->text);
     } else if (strcmp(w[0], "expect-file") == 0 && n >= 2) {
@@ -636,15 +638,16 @@ sc_parse_file_state(sc_step_t *st, char **w, int n)
 /**
  * @brief Parse the Desktop verbs: click-desk by icon name (a trailing
  *        number is the button), and the expectations on what the Desktop
- *        shows or has selected.  @return 1 for a verb of this group.
+ *        shows or has selected.
+ *
+ * @return 1 for a verb of this group, 0 for another verb.
  */
 int
 sc_parse_desktop(sc_step_t *st, char **w, int n)
 {
     if (strcmp(w[0], "click-desk") == 0 && n >= 2) {
-        /* By NAME, not by pixel: where a Desktop icon lands depends
-         * on when its source reported it, which moves under load --
-         * the name is the only stable address a script has. */
+        /* By name: where a Desktop icon lands depends on when its source
+         * reported it. */
         st->op = OP_CLICK_DESK;
         st->button = 1;
         if (n >= 3 && atoi(w[n - 1]) > 0) {
@@ -673,8 +676,12 @@ sc_parse_desktop(sc_step_t *st, char **w, int n)
 }
 
 /**
- * @brief what the shell says when asked: the count, the menu, the nouns, the
- * narration
+ * @brief Parse a check of what the shell says (expect-count, -menu,
+ *        -no-menu, -narrate, -no-narrate, the sound checks, -volume,
+ *        -mounts, -control, -read, -under, -over, -said, -operation and
+ *        -told), and the press-desk, move-desk and release-desk gestures.
+ *
+ * @return 1 for one of these, 0 for another verb.
  */
 int
 sc_parse_said(sc_step_t *st, char **w, int n)
@@ -713,42 +720,39 @@ sc_parse_said(sc_step_t *st, char **w, int n)
         st->op = OP_EXPECT_CONTROL;
         sc_rest(w, n, 1, st->text, sizeof st->text);
     } else if (strcmp(w[0], "expect-read") == 0 && n >= 3) {
-        /* The path first, then the substring: a path is one word by
-         * construction, a value is not. */
+        /* The path first, then the substring: a path is one word, a value
+         * may be several. */
         st->op = OP_EXPECT_READ;
         snprintf(st->text2, sizeof st->text2, "%s", w[1]);
         sc_rest(w, n, 2, st->text, sizeof st->text);
     } else if ((strcmp(w[0], "expect-under") == 0 ||
                 strcmp(w[0], "expect-over") == 0) && n >= 3) {
-        /* A noun that answers a number, and the number it must stay
-         * under (how "the loop never waits" is asserted) or over. */
+        /* A noun that answers a number, and the bound it must stay under
+         * or over. */
         st->op = (w[0][7] == 'u') ? OP_EXPECT_UNDER : OP_EXPECT_OVER;
         snprintf(st->text2, sizeof st->text2, "%s", w[1]);
         st->count = atoi(w[2]);
     } else if (strcmp(w[0], "expect-said") == 0 && n >= 2) {
-        /* A noun and its WHOLE answer, which may be nothing: the check
-         * expect-read's substring cannot make, that no row is hot or no
-         * text floats. */
+        /* A noun and its whole answer, which may be empty. */
         st->op = OP_EXPECT_SAID;
         snprintf(st->text2, sizeof st->text2, "%s", w[1]);
         sc_rest(w, n, 2, st->text, sizeof st->text);
     } else if (strcmp(w[0], "expect-operation") == 0 && n >= 2) {
         st->op = OP_EXPECT_OPERATION;
         sc_rest(w, n, 1, st->text, sizeof st->text);
-        /* Smaller than expect-told's budget on purpose: the engine
-         * is asked directly, so there is no notification lag to
-         * outwait -- only the job itself, at its stepped pace. */
+        /* A smaller turn budget than expect-told's: the engine is asked
+         * directly, with no notice to wait for. */
         st->count = 400;
     } else if (strcmp(w[0], "expect-told") == 0 && n >= 2) {
         st->op = OP_EXPECT_TOLD;
         sc_rest(w, n, 1, st->text, sizeof st->text);
-        st->count = 2000;    /* the turn budget: bounded, never hung */
+        st->count = 2000;    /* the turn budget */
     } else if (strcmp(w[0], "expect-no-menu") == 0) {
         st->op = OP_EXPECT_NO_MENU;
     } else if ((strcmp(w[0], "press-desk") == 0 ||
                 strcmp(w[0], "move-desk") == 0 ||
                 strcmp(w[0], "release-desk") == 0) && n >= 2) {
-        /* The pieces of a drag, aimed by NAME like click-desk. */
+        /* The pieces of a drag, aimed by name like click-desk. */
         st->op = (w[0][0] == 'p') ? OP_PRESS_DESK
                : (w[0][0] == 'm') ? OP_MOVE_DESK : OP_RELEASE_DESK;
         st->button = 1;
@@ -760,7 +764,9 @@ sc_parse_said(sc_step_t *st, char **w, int n)
 }
 
 /**
- * @brief what a file holds and what a link says
+ * @brief Parse expect-file-has, expect-file-lacks or expect-link.
+ *
+ * @return 1 for one of these, 0 for another verb.
  */
 int
 sc_parse_file_contents(sc_step_t *st, char **w, int n)
@@ -774,8 +780,8 @@ sc_parse_file_contents(sc_step_t *st, char **w, int n)
         snprintf(st->text, sizeof st->text, "%s", w[1]);
         sc_rest(w, n, 2, st->text2, sizeof st->text2);
     } else if (strcmp(w[0], "expect-link") == 0 && n >= 3) {
-        /* The target is the LAST word, so a link whose own name has a
-         * space in it -- "a.txt link" -- can still be named. */
+        /* The target is the last word, so a link whose own name has a
+         * space in it ("a.txt link") can still be named. */
         st->op = OP_EXPECT_LINK;
         sc_rest(w, n - 1, 1, st->text, sizeof st->text);
         snprintf(st->text2, sizeof st->text2, "%s", w[n - 1]);
@@ -786,7 +792,12 @@ sc_parse_file_contents(sc_step_t *st, char **w, int n)
 }
 
 /**
- * @brief what the window shows: title, rows, selection, positions, pixels
+ * @brief Parse a check of the window or of what was painted: the font,
+ *        status, title, alert, scroll, rows, windows, selection, renaming,
+ *        Find, location, navigation, type narrowing, columns, positions,
+ *        rows drawn, ink, pixels and a full redraw.
+ *
+ * @return 1 for one of these, 0 for another verb.
  */
 int
 sc_parse_window(sc_step_t *st, char **w, int n)
@@ -871,8 +882,8 @@ sc_parse_window(sc_step_t *st, char **w, int n)
         st->y = atoi(w[2]);
     } else if ((strcmp(w[0], "expect-icon-screen") == 0 ||
                 strcmp(w[0], "expect-icon-at") == 0) && n >= 4) {
-        /* The coordinates are the LAST two words, so a name with a
-         * space in it -- "New folder" -- can still be named. */
+        /* The coordinates are the last two words, so a name with a space
+         * in it ("New folder") can still be named. */
         st->op = (w[0][12] == 's') ? OP_EXPECT_ICONSCREEN
                                    : OP_EXPECT_ICONAT;
         sc_rest(w, n - 2, 1, st->text, sizeof st->text);
@@ -881,9 +892,7 @@ sc_parse_window(sc_step_t *st, char **w, int n)
     } else if (strcmp(w[0], "draw-reset") == 0) {
         st->op = OP_DRAW_RESET;
     } else if (strcmp(w[0], "expect-drawn") == 0 && n >= 2) {
-        /* "at most" by default, "at least <n>" with the word: a check
-         * that only ever says "no more than" passes when nothing was
-         * painted at all. */
+        /* At most <n> by default; at least with "at-least <n>". */
         st->op = OP_EXPECT_DRAWN;
         if (n >= 3 && strcmp(w[1], "at-least") == 0) {
             st->x = 1;
@@ -892,9 +901,8 @@ sc_parse_window(sc_step_t *st, char **w, int n)
             st->count = atoi(w[1]);
         }
     } else if (strcmp(w[0], "expect-ink") == 0 && n >= 3) {
-        /* Something is drawn here, whatever shade the font renderer
-         * gives its edges: a cell with text in it is the claim, not a
-         * particular grey. */
+        /* Anything but white at the point, whatever shade the font
+         * renderer gives its edges. */
         st->op = OP_EXPECT_INK;
         st->x = atoi(w[1]);
         st->y = atoi(w[2]);
@@ -912,8 +920,11 @@ sc_parse_window(sc_step_t *st, char **w, int n)
 }
 
 /**
- * @brief where things are and what was painted: the bar, a window, an icon, the
- * rows drawn, the font, ink and pixels, and a redraw compared
+ * @brief Run a check of where things are and what was painted: the
+ *        Deskbar, the focused window, an icon, the rows drawn, the font,
+ *        ink, a pixel, and a full redraw compared.
+ *
+ * @return 1 for a step of this group, 0 for another group's.
  */
 int
 sc_pump_pixels(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
@@ -934,8 +945,7 @@ sc_pump_pixels(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
     case OP_EXPECT_WINAT: {
         char at[48];
 
-        /* Report where the window IS: an expectation echoed back tells
-         * the reader nothing about what moved it. */
+        /* The verdict prints where the window is. */
         snprintf(at, sizeof at, "%d,%d", (st != NULL) ? st->win_x : -1,
                  (st != NULL) ? st->win_y : -1);
         sc_verdict(s, st != NULL && st->win_x == cur->x && st->win_y == cur->y,
@@ -958,9 +968,8 @@ sc_pump_pixels(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         } else {
             snprintf(at, sizeof at, "%s is not there", cur->text);
         }
-        /* Within a few pixels: the position is stored unscaled and scaled
-         * back for the view, and a rounding of one pixel each way is not
-         * the arrangement being wrong. */
+        /* Within two pixels each way: the position is stored unscaled and
+         * scaled back for the view, which rounds. */
         sc_verdict(s, got && px >= cur->x - 2 && px <= cur->x + 2 &&
                        py >= cur->y - 2 && py <= cur->y + 2, "icon:", at);
         return 1;
@@ -982,9 +991,8 @@ sc_pump_pixels(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     }
     case OP_EXPECT_FONT: {
-        /* Asked of the TOOLKIT, which is where every label in the
-         * interface gets its metrics: what it answers is what the whole
-         * desktop is drawn in, not what one window believes. */
+        /* Asked of the toolkit, where every label in the interface gets
+         * its metrics. */
         const char *name = tiku_font_current_family();
         char got[64];
 

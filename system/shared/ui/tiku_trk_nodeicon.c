@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_nodeicon.c - the lookup order and the cache behind it.
+ * tiku_trk_nodeicon.c - the icon lookup order, the one-time probe for a
+ * node's own picture, and the node-icon cache.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -35,10 +36,9 @@ tiku_trk_nodeicon_hint(tiku_store_t *store, const tiku_thumb_q_t *q,
     if (m->facts.icon_hint != TIKU_ICONHINT_UNASKED) {
         return m->facts.icon_hint;
     }
-    /* A thumbnail is a node icon, and it counts from the moment the file is
-     * one that WOULD get a thumbnail -- before it exists.  Waiting for the
-     * attribute would mean the first draw of every image took the type icon
-     * and nothing ever asked again (IV-037). */
+    /* A file that would get a thumbnail is hinted TIKU_ICONHINT_THUMB before
+     * the thumbnail exists, so its first draw does not settle on the type
+     * icon (IV-037). */
     if (q != NULL && tiku_thumb_wanted(q, m->path)) {
         m->facts.icon_hint = TIKU_ICONHINT_THUMB;
     } else if (store != NULL &&
@@ -57,9 +57,8 @@ tiku_trk_nodeicon_possible(const tiku_model_t *m)
     if (m == NULL) {
         return 0;
     }
-    /* From the hint alone.  An entry that has not been asked yet answers no
-     * rather than probing here: this is called from the draw path, and one
-     * read hidden inside it is the read the whole tier exists to avoid. */
+    /* From the hint alone: an entry not yet asked answers 0, with no store
+     * read, since the draw path calls this for every row. */
     return (m->facts.icon_hint == TIKU_ICONHINT_ATTR ||
             m->facts.icon_hint == TIKU_ICONHINT_THUMB);
 }
@@ -78,7 +77,8 @@ find(tiku_trk_nodeicon_t *c, const char *path)
     return NULL;
 }
 
-/** @brief A free slot, evicting the oldest non-permanent one if need be. */
+/** @brief A free slot, or when the cache is full the first entry that is
+ *         not permanent; NULL when every entry is. */
 static tiku_trk_nodeicon_ent_t *
 slot(tiku_trk_nodeicon_t *c)
 {
@@ -92,8 +92,7 @@ slot(tiku_trk_nodeicon_t *c)
     if (c->n < TIKU_TRK_NODEICON_MAX) {
         return &c->e[c->n++];
     }
-    /* Full: the first entry nobody asked to keep goes.  A preloaded one
-     * is never evicted, which is what "permanent" means. */
+    /* Full: the first entry that is not permanent is reused. */
     for (i = 0; i < c->n; i++) {
         if (!c->e[i].permanent) {
             return &c->e[i];
@@ -116,10 +115,9 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_store_t *store,
         return TIKU_TRK_ICON_FROM_UNKNOWN;
     }
     if (m->facts.icon_hint == TIKU_ICONHINT_THUMB) {
-        /* Nothing to read: the caller loads the picture itself.  It is
-         * still given a name, because a thumbnail that has not been made
-         * yet has to draw as SOMETHING and the type icon is what the row
-         * shows meanwhile (IV-031). */
+        /* Nothing to read: the caller loads the picture.  It still gets the
+         * type icon's name, which the row draws until the thumbnail exists
+         * (IV-031). */
         if (out != NULL) {
             snprintf(out, max, "%s", tiku_model_icon_name(m));
         }
@@ -136,9 +134,7 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_store_t *store,
         c->reads++;
         if (tiku_state_read(store, m->path, TIKU_TRK_ATTR_ICON, art,
                                 sizeof art) > 0) {
-            /* The entry's OWN icon wins over anything its type would give
-             * it: a file that carries its own picture must not be drawn as
-             * a generic anything (IV-001). */
+            /* The entry's own icon wins over its type's (IV-001). */
             art[sizeof art - 1u] = '\0';
             e = slot(c);
             if (e != NULL) {
@@ -158,9 +154,8 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_store_t *store,
 
         for (k = 0; k < c->miss_n; k++) {
             if (strcmp(c->miss[k], m->type) == 0) {
-                /* Known to have none: the generic answer, without the
-                 * database walk and the comparison that proved it the
-                 * first time (IV-011). */
+                /* A type remembered as having no art: the generic icon,
+                 * without the database walk (IV-011). */
                 if (out != NULL) {
                     snprintf(out, max, "%s", tiku_model_icon_name(m));
                 }
@@ -173,8 +168,8 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_store_t *store,
                                                            m->type);
 
         if (tr != NULL && tr->icon[0] != '\0') {
-            /* Declared for the type rather than compiled in: this is the
-             * one an installation can change. */
+            /* The type database's icon, which an installation can
+             * change. */
             if (out != NULL) {
                 snprintf(out, max, "%s", tr->icon);
             }
@@ -185,11 +180,9 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_store_t *store,
         snprintf(out, max, "%s", tiku_model_icon_name(m));
     }
     if (m->type[0] != '\0') {
-        /* The type only counts as the SOURCE when it actually supplies
-         * something.  A type nothing is registered for lands on the same
-         * document icon an untyped file gets, and calling that a type
-         * answer would let a caller share one cached icon across every
-         * unregistered type in the listing. */
+        /* The type is the source only when its icon differs from an
+         * untyped file's; otherwise the answer is the generic icon, which
+         * a caller may share across every unregistered type. */
         tiku_model_t bare = *m;
 
         bare.type[0] = '\0';
@@ -198,9 +191,8 @@ tiku_trk_nodeicon_resolve(tiku_trk_nodeicon_t *c, tiku_store_t *store,
             return TIKU_TRK_ICON_FROM_TYPE;
         }
         if (c->miss_n < TIKU_TRK_NODEICON_MISS_MAX) {
-            /* Nothing anywhere has art for this type.  Remembered so the
-             * walk is paid once rather than per row of a folder full of
-             * them (IV-011). */
+            /* No art anywhere for this type: remembered, so the next
+             * lookup skips the walk (IV-011). */
             snprintf(c->miss[c->miss_n], TIKU_TYPE_MAX, "%s", m->type);
             c->miss_n++;
         }
@@ -220,8 +212,7 @@ tiku_trk_nodeicon_set_types(tiku_trk_nodeicon_t *c,
 {
     if (c != NULL) {
         c->types = db;
-        /* What is missing is a question about the database, so a new one
-         * makes every remembered miss an unasked question again. */
+        /* The misses were answers from the old database. */
         c->miss_n = 0;
     }
 }
@@ -261,9 +252,8 @@ tiku_trk_nodeicon_changed(tiku_trk_nodeicon_t *c, const char *path)
     if (e == NULL) {
         return 0;
     }
-    /* Dropped whether or not it is permanent: the attribute CHANGED, so
-     * what was remembered is now wrong, and being wanted often is no
-     * reason to keep showing the wrong picture (IV-038). */
+    /* Dropped whether or not it is permanent: the icon changed
+     * (IV-038). */
     memset(e, 0, sizeof *e);
     c->generation++;
     return 1;
@@ -279,9 +269,7 @@ tiku_trk_nodeicon_deleted(tiku_trk_nodeicon_t *c, const char *path)
     }
     e = find(c, path);
     if (e == NULL || e->permanent) {
-        /* Preloaded entries survive: they were cached because they are
-         * wanted often, and the file going does not make the next ask
-         * less likely (IV-041). */
+        /* A preloaded entry is kept (IV-041). */
         return 0;
     }
     memset(e, 0, sizeof *e);
@@ -301,8 +289,7 @@ tiku_trk_nodeicon_removing(tiku_trk_nodeicon_t *c, const char *path)
     if (e == NULL) {
         return 0;
     }
-    /* Permanent or not.  The flag says "do not evict this to make room",
-     * not "keep it after the file it describes has gone". */
+    /* Dropped whether or not it is permanent. */
     memset(e, 0, sizeof *e);
     c->generation++;
     return 1;
@@ -328,9 +315,8 @@ tiku_trk_nodeicon_attr_matters(const char *attr)
     if (attr == NULL) {
         return 0;
     }
-    /* The icon itself and the thumbnail, since a thumbnail IS the node's
-     * icon for an image; the thumbnail's stamp too, because that is what
-     * changes when one is regenerated. */
+    /* The icon attribute, the thumbnail, and the thumbnail's stamp, which
+     * changes when the thumbnail is regenerated. */
     return (strcmp(attr, TIKU_TRK_ATTR_ICON) == 0 ||
             strcmp(attr, TIKU_ATTR_THUMB) == 0 ||
             strcmp(attr, TIKU_ATTR_THUMB_TIME) == 0);

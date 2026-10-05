@@ -1,5 +1,14 @@
-/* Font Preferences: classic grouped panel using shared dialog controls.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_fonts_window.c - the Fonts preferences window: the family list,
+ * the size stepper, a sample of the face, and Defaults, Revert and Done,
+ * laid out as grouped boxes over the shared dialog controls.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_fonts_window.h"
 #include <stdio.h>
 #include <string.h>
@@ -17,11 +26,17 @@ typedef struct {
     tiku_rect_t help, defaults, revert, done;
 } font_layout_t;
 
-/** Imported families scroll instead of growing the panel off screen. */
+/**
+ * @brief The panel's body height, from the face alone; the family list
+ *        scrolls.
+ */
 static int body_height(void)
 { return 300 + 7 * tiku_font_plain()->height; }
 
-/** One geometry shared by painting and input at every supported font size. */
+/**
+ * @brief Where every control sits in the content @p c, read by the drawing
+ *        and the input alike at every face size.
+ */
 static font_layout_t layout(tiku_rect_t c)
 {
     font_layout_t l;
@@ -51,11 +66,14 @@ static font_layout_t layout(tiku_rect_t c)
     return l;
 }
 
-/** Include the title tab and border in the workspace frame. */
+/** @brief The frame's height: the body, the title tab and the border. */
 static int window_height(void)
 { return body_height() + tiku_window_tab_h() + TIKU_WINDOW_BORDER; }
 
-/** Refit without moving the panel out from under the pointer. */
+/**
+ * @brief Fit the window's height to the face, keeping its top-left corner
+ *        in place.
+ */
 static void refit(tiku_trk_fonts_window_t *p)
 {
     if (p->window && p->window->open &&
@@ -65,7 +83,11 @@ static void refit(tiku_trk_fonts_window_t *p)
     }
 }
 
-/** Disabled and focused controls share the same model used for hit testing. */
+/**
+ * @brief Give the dialog its controls at their layout rectangles, each
+ *        enabled when it can act; the drawing and the hit testing both read
+ *        them.
+ */
 static void controls(tiku_trk_fonts_window_t *p, font_layout_t l)
 {
     tiku_dialog_begin(&p->dialog, DONE, DONE);
@@ -83,7 +105,10 @@ static void controls(tiku_trk_fonts_window_t *p, font_layout_t l)
     tiku_dialog_end(&p->dialog);
 }
 
-/** Save only font preferences and keep the Deskbar's settings in step. */
+/**
+ * @brief Save the font preferences, apply them through the Deskbar's
+ *        settings, put a dropped-in family in force, and refit the window.
+ */
 static void
 apply(tiku_trk_fonts_window_t *controller)
 {
@@ -91,9 +116,9 @@ apply(tiku_trk_fonts_window_t *controller)
 
     (void)tiku_trk_fontprefs_save(&controller->model, controller->store);
     (void)tiku_store_flush(controller->store);
-    /* Through the Deskbar rather than straight at the toolkit: it holds
-     * the settings everything else is applied from, and a copy of them
-     * left saying the old face would put it back on the next change. */
+    /* Applied through the Deskbar, which holds the settings everything
+     * else is applied from; a stale copy there would put the old face
+     * back on its next change. */
     tiku_trk_deskbar_prefs_init(&record);
     if (controller->store != NULL) {
         (void)tiku_trk_deskbar_prefs_load(&record, controller->store);
@@ -102,8 +127,8 @@ apply(tiku_trk_fonts_window_t *controller)
         record.value.font_size = controller->model.value.size;
     }
     tiku_trk_deskbar_apply_settings(controller->deskbar, &record.value);
-    /* Last, because the Deskbar's own apply puts a BAKED family in force
-     * and a dropped one has to win. */
+    /* Last, because the Deskbar's apply puts a baked family in force and
+     * a dropped-in family must override it. */
     tiku_trk_fontprefs_apply(&controller->model);
     refit(controller);
     if (controller->dirty != NULL) {
@@ -111,14 +136,15 @@ apply(tiku_trk_fonts_window_t *controller)
     }
 }
 
-/** Name a family without duplicating the font registry. */
+/** @brief The name of the family on @p row, for the list; "" past the end. */
 static const char *family_name(void *ctx, int row)
 {
     tiku_trk_fonts_window_t *p = ctx;
     return row >= 0 && row < p->offer.count ? p->offer.name[row] : "";
 }
 
-/** Native button state follows focus, capture and availability. */
+/** @brief Draw the buttons, each disabled, focused or pressed as the
+ *         dialog says. */
 static void buttons_draw(tiku_trk_fonts_window_t *p, tiku_surface_t *s)
 {
     const char *labels[] = {"", "", "-", "+", tiku_str("button.defaults"),
@@ -133,7 +159,10 @@ static void buttons_draw(tiku_trk_fonts_window_t *p, tiku_surface_t *s)
     }
 }
 
-/** An etched family well, compact size control and live paper specimen. */
+/**
+ * @brief Draw the panel: the family list, the size stepper, a sample of the
+ *        face, the help text and the buttons, refitting the window first.
+ */
 static void draw(tiku_window_t *window, tiku_surface_t *s,
                  tiku_rect_t content, void *ctx)
 {
@@ -171,7 +200,11 @@ static void draw(tiku_window_t *window, tiku_surface_t *s,
     buttons_draw(p, s);
 }
 
-/** Apply a choice once, then align the list with the selected family. */
+/**
+ * @brief Carry out a button: Done closes the window; the size steps,
+ *        Defaults and Revert are applied, and the list then selects and
+ *        reveals the chosen family.
+ */
 static void activate(tiku_trk_fonts_window_t *p, int command)
 {
     int changed = 0;
@@ -191,15 +224,20 @@ static void activate(tiku_trk_fonts_window_t *p, int command)
         layout(tiku_window_content(p->window)).list);
 }
 
-/** Release-to-activate buttons, keyboard selection and wheel scrolling. */
+/**
+ * @brief A key moves the focused family list, a button acts on a release
+ *        over it, a press on the list picks a family, and the wheel scrolls
+ *        the list.
+ * @return 1 when taken.
+ */
 static int event(tiku_window_t *window, const tiku_event_t *ev, void *ctx)
 {
     tiku_trk_fonts_window_t *p = ctx;
     font_layout_t l = layout(tiku_window_content(window));
     controls(p, l);
-    /* A chord is not list navigation: Cmd-A on a one-at-a-time list is
-     * "select the first", and the whole desktop would be drawn in it.
-     * Return reaches the panel's Done as Escape reaches its cancel. */
+    /* Keys with Cmd or Option, Tab, Escape and Return do not reach the
+     * list: Cmd-A would pick the first family and redraw the desktop in
+     * it.  The dialog gives Return and Escape to Done. */
     if (p->dialog.focus == FAMILY && ev->type == TIKU_EVENT_KEY_DOWN &&
         !(ev->modifiers & (TIKU_MOD_CMD | TIKU_MOD_OPTION)) &&
         ev->key != TIKU_KEY_TAB && ev->key != TIKU_KEY_ESCAPE &&
@@ -276,12 +314,12 @@ tiku_trk_fonts_window_open(tiku_trk_fonts_window_t *controller)
                                      controller->window);
         return;
     }
-    /* Read afresh: the size can be changed from the Deskbar's own
-     * preferences, and a stale window would put the old one back. */
+    /* Read afresh: the Deskbar's preferences also change the size, and a
+     * stale model would put the old size back. */
     (void)tiku_trk_fontprefs_load(&controller->model, controller->store);
     tiku_trk_fontprefs_mark_opened(&controller->model);
-    /* The folder is the list, so it is read every time the window opens:
-     * a face dropped in while it was shut is offered when it reopens. */
+    /* The fonts folder is read on every open, so a face dropped in while
+     * the window was shut is offered. */
     (void)tiku_trk_fontprefs_offer(&controller->offer);
 
     tiku_dialog_init(&controller->dialog);

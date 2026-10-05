@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_folder_actions.c - direct folder-view command actions.
+ * tiku_trk_folder_actions.c - the commands a folder view carries out
+ * itself, dispatched by command.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -129,9 +130,8 @@ tiku_trk_folder_actions_invoke(tiku_workspace_t *workspace,
             (void)tiku_workspace_zoom(workspace, folder->win,
                 tiku_trk_folder_window_fit_width(folder),
                 tiku_trk_folder_window_fit_height(folder));
-            /* And to the content's TOP-LEFT: a fit that leaves the view
-             * scrolled shows a window sized for everything displaying
-             * only some of it (PVL-059). */
+            /* Then back to the content's top-left, so the fitted window
+             * shows all of it (PVL-059). */
             tiku_trk_poseview_scroll_to(folder->view, 0);
             tiku_trk_poseview_set_origin(folder->view, 0, 0);
         }

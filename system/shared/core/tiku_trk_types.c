@@ -58,9 +58,8 @@ tiku_trk_types_add(tiku_trk_types_t *db, const char *type, const char *desc,
     }
     for (i = 0; i < db->n; i++) {
         if (strcmp(db->rec[i].type, type) == 0) {
-            /* REPLACED, not added twice: a database read over one already
-             * in memory must not leave two records for one type, with the
-             * lookup free to return either. */
+            /* Replaced, not added twice: a database read over one already
+             * in memory keeps one record per type. */
             r = &db->rec[i];
             break;
         }
@@ -91,8 +90,8 @@ tiku_trk_types_add(tiku_trk_types_t *db, const char *type, const char *desc,
             r->document = 1;
         } else if (strncmp(word, "attr:", 5) == 0 && word[5] != '\0' &&
             r->nattr < TIKU_TRK_TYPE_COLS_MAX) {
-            /* Named, not numbered: what a view will call it depends on
-             * which slot it gets, and that is this session's business. */
+            /* Kept by name: a view numbers it when it gives it a column
+             * slot. */
             snprintf(r->attr[r->nattr], sizeof r->attr[0], "%s", word + 5);
             r->nattr++;
         } else {
@@ -251,9 +250,7 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
         return 0;
     }
     if (tiku_trk_types_load(db, path) >= 0) {
-        /* One is already there.  A database the user has edited is not
-         * ours to overwrite, and re-installing on every start would undo
-         * every type they added (AW-013). */
+        /* One is already there, and it is left alone (AW-013). */
         return 0;
     }
     tiku_trk_types_init(db);
@@ -293,7 +290,8 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
                              "size,modified");
     (void)tiku_trk_types_add(db, "application/gzip", "Gzip-compressed file",
                              "archive_file", "size,modified");
-    /* Office files: OOXML's own types outrun a type's room here. */
+    /* Office files: OOXML's own type names are longer than
+     * TIKU_TYPE_MAX. */
     (void)tiku_trk_types_add(db, "application/x-docx", "Word document",
                              "doc_file", "size,modified");
     (void)tiku_trk_types_add(db, "application/vnd.oasis.opendocument.text",
@@ -314,8 +312,8 @@ tiku_trk_types_install(tiku_trk_types_t *db, const char *path)
                              "attr:META:name,attr:META:email");
     (void)tiku_trk_types_add(db, "text/x-email", "E-mail", "file",
                              "attr:MAIL:subject,attr:MAIL:from");
-    /* An attribute column in the shipped database, so the mechanism has a
-     * user on a first run rather than waiting for someone to write one. */
+    /* Replaces the text/x-source record above with one that adds the
+     * user.trk.note attribute column. */
     (void)tiku_trk_types_add(db, "text/x-source", "Source file",
                              "text_file",
                              "size,modified,permissions,attr:user.trk.note");

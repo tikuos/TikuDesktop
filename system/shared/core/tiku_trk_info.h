@@ -5,15 +5,14 @@
  *
  * tiku_trk_info.h - the Get Info window: everything one entry is.
  *
- * Three tabs over one node.  Information is what the entry IS -- size,
- * dates, kind, where it lives, what a link points at -- read through the
- * same formatters the columns use, so the two cannot say the same fact
+ * Three tabs over one node.  Information is what the entry is: size, dates,
+ * kind, where it lives, what a link points at, read through the same
+ * formatters the columns use, so the two cannot say the same fact
  * differently.  Permissions is what it allows.  Attributes is what it
  * carries.
  *
- * The one thing that cannot be answered by looking is a folder's size, so it
- * is walked in the background and the field says "calculating" until the
- * walk finishes or is stopped.
+ * A folder's size cannot be read off the folder, so it is walked in the
+ * background and the field says "calculating" while the walk runs.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,11 +30,12 @@ typedef enum {
     TIKU_TRK_INFO_TABS
 } tiku_trk_info_tab_t;
 
-/** @brief One row of the Information tab. */
+/** @brief The most rows the Information tab lists, and the room for one
+ *         row's or one attribute's value text. */
 #define TIKU_TRK_INFO_FIELDS   8
 #define TIKU_TRK_INFO_VAL_MAX  96
 
-/** @brief Which field, so a caller can tell the clickable ones apart. */
+/** @brief Which field a row shows; the ones commented here take a click. */
 typedef enum {
     TIKU_TRK_INFO_F_NONE = 0,
     TIKU_TRK_INFO_F_SIZE,       /* clicking recalculates a folder's       */
@@ -57,7 +57,7 @@ typedef enum {
     TIKU_TRK_INFO_CALC_DONE
 } tiku_trk_info_calc_t;
 
-/** @brief How many directories deep a size walk will queue. */
+/** @brief How many directories a size walk can hold waiting to be read. */
 #define TIKU_TRK_INFO_CALC_QUEUE 64
 
 /** @brief How many attributes the Attributes tab will list. */
@@ -75,41 +75,41 @@ typedef struct {
     int                  used;
     char                 path[TIKU_PATH_MAX];
     tiku_model_t     model;
-    /* The size walk.  A queue of directories rather than recursion, so a
-     * step can return to the caller between any two of them -- a walk that
-     * could not be left half-done could not be stopped either. */
+    /* The size walk: the directories waiting to be read, so a step can
+     * return to the caller between any two of them and the walk can be
+     * stopped part-way. */
     tiku_trk_info_calc_t calc;
     char                 queue[TIKU_TRK_INFO_CALC_QUEUE][TIKU_PATH_MAX];
     int                  nqueue;
     int64_t              calc_bytes;
     int                  calc_files, calc_dirs;
-    int                  calc_overflow;   /* deeper than the queue holds  */
-    /* What the last refresh saw, so a poll can say whether anything moved
-     * without the caller diffing the strings. */
+    int                  calc_overflow;   /* the queue ran out of room    */
+    /* When the facts were last re-read, for the TIKU_TRK_INFO_REFRESH_US
+     * throttle. */
     int64_t              last_refresh;
     tiku_trk_info_attr_t attr[TIKU_TRK_INFO_ATTRS];
     int                  nattr;
-    /* The permissions being shown.  Held separately from the model so a
-     * toggle can be applied and then reconciled with what the store
-     * actually granted. */
+    /* The permissions the grid shows.  A toggle the store refuses leaves
+     * them unchanged. */
     unsigned             perm;
     int                  perm_editable;
-    /* "Opens with": the resolved handler's NAME, filled by the shell --
-     * the registry is the shell's to ask (AW-071).  Empty hides the row. */
+    /* "Opens with": the resolved handler's name, filled by the shell, which
+     * owns the registry (AW-071).  Empty hides the row. */
     char                 opens_with[48];
 } tiku_trk_info_t;
 
 /**
- * @brief Fill @p in from @p path.  @return 0 when the entry is there.
+ * @brief Fill @p in from @p path, and start a container's size walk.
  *
- * The window is one per NODE: a caller holding several of these finds an
- * existing one by path rather than opening a second on the same entry
- * (AW-065).
+ * @return 0 when the entry is there.
+ * @note The window is one per node: a caller holding several of these finds
+ *       an existing one by path before opening another on the same entry
+ *       (AW-065).
  */
 int tiku_trk_info_open(tiku_trk_info_t *in, tiku_backend_t *b,
                        const char *path);
 
-/** @brief The window's title: the entry's name and what this window is. */
+/** @brief The window's title: the entry's name and "info". */
 void tiku_trk_info_title(const tiku_trk_info_t *in, char *out, size_t max);
 
 /** @brief The tab's name, for drawing and for hit-testing. */
@@ -118,13 +118,13 @@ const char *tiku_trk_info_tab_name(tiku_trk_info_tab_t tab);
 /**
  * @brief One row of the Information tab.
  *
- * The rows shown depend on what the entry IS: a volume reports capacity
- * where a file reports size, a symlink adds where it points, an image adds
- * its dimensions.  Asking for a row past the end returns
- * TIKU_TRK_INFO_F_NONE, which is how a caller finds the count.
+ * The rows shown depend on the entry's kind: a volume reports capacity
+ * where a file reports size, a symlink adds where it points, and a measured
+ * image adds its dimensions.
  *
  * @param label Receives the field's name.
  * @param value Receives its text, formatted as the columns format it.
+ * @return the field, or TIKU_TRK_INFO_F_NONE past the last row.
  */
 tiku_trk_info_field_t tiku_trk_info_field(const tiku_trk_info_t *in,
                                           tiku_store_t *store, int i,
@@ -135,7 +135,6 @@ tiku_trk_info_field_t tiku_trk_info_field(const tiku_trk_info_t *in,
 /* The folder-size walk (AW-068)                                             */
 /*---------------------------------------------------------------------------*/
 
-/*---------------------------------------------------------------------------*/
 /**
  * @brief Begin the folder-size walk from the node's own path; a node that
  *        is not a container is left alone.
@@ -145,51 +144,56 @@ void tiku_trk_info_calc_start(tiku_trk_info_t *in);
 /**
  * @brief Read one queued directory.
  *
- * @return 1 when there is more to do, so a caller can drive it from an idle
- *         tick and keep answering the mouse (the same discipline the
- *         thumbnail queue uses).
+ * @return 1 when there is more to do.
+ * @note A caller drives it from an idle tick, one directory a call, so the
+ *       window keeps answering the mouse.
  */
 int tiku_trk_info_calc_step(tiku_trk_info_t *in, tiku_backend_t *b);
 
-/** @brief Abandon the walk; what it had counted so far is discarded. */
+/** @brief Abandon the walk; the size row shows no partial total. */
 void tiku_trk_info_calc_stop(tiku_trk_info_t *in);
 
 /*---------------------------------------------------------------------------*/
 /* Liveness (AW-069, AW-077)                                                 */
 /*---------------------------------------------------------------------------*/
 
-/** @brief How often a volume's free space and an open file's size re-read. */
+/** @brief How often a volume's free space and a file's size are re-read. */
 #define TIKU_TRK_INFO_REFRESH_US 1000000
 
 /**
  * @brief Re-read the facts if it is time to.
  *
- * Volumes and plain files only: their numbers change without anything
- * telling us, because free space is nobody's node and a file's size is not
+ * Volumes, the root and plain files only: their numbers change without a
+ * notice, because free space belongs to no node and a file's size is not
  * reported until it is closed.
  *
- * @return 1 when something changed.
+ * @return 1 when the size, free space or modification time changed.
  */
 int tiku_trk_info_refresh(tiku_trk_info_t *in, tiku_backend_t *b,
                           int64_t now);
 
-/** @brief The entry was renamed or moved; the window follows it (AW-077). */
+/**
+ * @brief The entry, or a folder above it, moved from @p from to @p to; the
+ *        window follows it (AW-077).
+ *
+ * @return 1 when the window re-pointed.
+ */
 int tiku_trk_info_moved(tiku_trk_info_t *in, tiku_backend_t *b,
                         const char *from, const char *to);
 
 /**
  * @brief Look for the entry again after it stopped being where it was.
  *
- * By NODE, in the folder it was in: a rename changes the name and nothing
- * else, so the entry answering to the same identity there is the same
- * entry.  A move to somewhere else cannot be found this way and reads as
- * gone, which is what a window with no notice channel can honestly say.
+ * By node identity, in the folder it was in: a rename changes only the
+ * name, so the entry there with the same identity is the same entry.  A
+ * move elsewhere is not found this way and reads as gone.
  *
  * @return 1 when it was found and the window re-pointed.
  */
 int tiku_trk_info_refind(tiku_trk_info_t *in, tiku_backend_t *b);
 
-/** @brief Whether the entry has gone, so the window must close (AW-077). */
+/** @brief Whether removing @p removed took the entry, itself or a folder
+ *         above it, so the window must close (AW-077). */
 int tiku_trk_info_gone(const tiku_trk_info_t *in, const char *removed);
 
 /*---------------------------------------------------------------------------*/
@@ -204,10 +208,8 @@ int tiku_trk_info_gone(const tiku_trk_info_t *in, const char *removed);
 /**
  * @brief Toggle one box and apply it at once.
  *
- * There is no OK button, so there is no moment at which a change is
- * pending; a store that refuses says so through @p err and the box goes
- * back to what it was rather than showing a permission the entry does not
- * have.
+ * There is no OK button, so no change is ever pending.  A store that
+ * refuses says so through @p err, and the box keeps its old state.
  *
  * @return 0 when applied.
  */
@@ -232,31 +234,32 @@ int tiku_trk_info_attrs(tiku_trk_info_t *in, tiku_store_t *store);
 /* Where the clickable fields lead (AW-072, AW-074)                          */
 /*---------------------------------------------------------------------------*/
 
-/*---------------------------------------------------------------------------*/
 /**
  * @brief The place to open for a node: its parent in @p dir and its own
- *        name in @p select, the root standing for itself.
- * @return 1 when the slot is in use, else 0 with both empty.
+ *        name in @p select.
+ *
+ * @return 1 when there is a parent to open; 0 with both empty for an unused
+ *         slot or the root.
  */
 int tiku_trk_info_location(const tiku_trk_info_t *in, char *dir, size_t dmax,
                            char *select, size_t smax);
 
 /**
- * @brief The same for "Link to".
+ * @brief The place to open for "Link to": the target's folder in @p dir
+ *        and its name in @p select.
  *
- * @return 1 when the target resolves; 0 when the link is broken, which is
- *         the caller's cue to offer a picker rather than an error.
+ * @return 1 when the target resolves; 0 when the link is broken.
  */
 int tiku_trk_info_link_target(const tiku_trk_info_t *in,
                               tiku_backend_t *b, char *dir, size_t dmax,
                               char *select, size_t smax);
 
 /**
- * @brief Point a broken link at @p target, keeping its name and state.
+ * @brief Point a link at @p target, keeping its name and state.
  *
- * The attributes are carried across by hand: the link is replaced, and a
- * replacement that dropped what the old one carried would lose the pose's
- * position and its icon along with the target (AW-074).
+ * The link is replaced, so its attributes are read first and written back,
+ * keeping the pose's position and its icon (AW-074).  An attribute over 256
+ * bytes is not carried.
  *
  * @return 0, or -1 with @p err filled.
  */

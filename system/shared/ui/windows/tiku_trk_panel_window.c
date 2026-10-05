@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_panel_window.c - Open and Save panel window controller.
+ * tiku_trk_panel_window.c - the Open and Save panel: one folder's list
+ * under a row for its parent, Favorites, and in a save panel the name field
+ * and New folder.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,20 +22,18 @@
 #include "tiku_trk_task.h"
 
 #define PANEL_BUTTON_W 78
-#define PANEL_BUTTON_MIN_H 22   /* what a 12 px face needs; see button_h() */
+#define PANEL_BUTTON_MIN_H 22   /* floor: the row at the 12 px face */
 #define PANEL_PADDING  10
 #define PANEL_FIELD_MIN_H 22
 #define PANEL_WIDTH    460
 #define PANEL_HEIGHT   320
 #define PANEL_MINI_ICON 16
 
-/*
- * A button, a name field and a favourite are each a row of text, so each
- * is as tall as the text in it.  They were written down against a 12 px
- * face; this panel is opened from a shell whose face is a preference, so
- * a name typed at 16 px was being typed into a field sized for 12.
+/**
+ * @brief @p want, or @p least when that is more.
  *
- * Each answers what it replaces at 12 px, and never less.
+ * A button, the name field and a favourites row are each a row of text,
+ * so each follows the face, never smaller than at the 12 px face.
  */
 static int
 panel_at_least(int want, int least)
@@ -54,6 +54,7 @@ static int field_h(void)
 }
 
 
+/* What a point in the panel lands on. */
 typedef enum {
     PANEL_HIT_NONE = 0,
     PANEL_HIT_LIST,
@@ -76,7 +77,7 @@ static int fav_row_h(void)
                           PANEL_FAV_MIN_H);
 }
 
-/** @brief Ask the shell for a redraw, when it gave a flag to raise. */
+/** @brief Set the shell's redraw flag, when it has one. */
 static void
 mark_dirty(tiku_trk_panel_window_t *controller)
 {
@@ -124,9 +125,8 @@ scrollbar_rect(tiku_rect_t list)
 }
 
 /**
- * @brief Whether a row is SHOWN but not OFFERED: a file the panel's
- *        one-name filter rules out.  Folders are never dimmed -- they
- *        are the roads to the file being looked for.
+ * @brief Whether a row is shown but not offered: a file the panel's
+ *        one-name filter rules out.  Folders are never dimmed.
  */
 static int
 row_dimmed(const tiku_trk_panel_window_t *controller,
@@ -138,13 +138,9 @@ row_dimmed(const tiku_trk_panel_window_t *controller,
 }
 
 /**
- * @brief The FOLDER THAT HOLDS this one, worn as the list's own first
- *        row rather than as a button.
- *
- * The one road a list of what is INSIDE a folder cannot offer on its
- * own rows -- so it is given the shape of a row, above them, the way
- * the modern desks keep the enclosing folder at the head of the list.
- * At the root there is nothing above, and no row says so.
+ * @brief The row above the list that names the enclosing folder; a press
+ *        on it goes up into that folder.  At the root the row is blank and
+ *        does nothing.
  */
 static tiku_rect_t
 parent_row(const tiku_trk_panel_window_t *controller)
@@ -157,14 +153,17 @@ parent_row(const tiku_trk_panel_window_t *controller)
                                button_h() };
 }
 
-/** @brief The path one rung up from @p dir, into @p out. */
+/**
+ * @brief The path one level up from @p dir, into @p out.
+ * @return 1, or 0 at the root.
+ */
 static int
 parent_of(const char *dir, char *out, size_t max)
 {
     char *slash;
 
     if (strcmp(dir, "/") == 0) {
-        return 0;               /* the root holds itself */
+        return 0;               /* the root has no parent */
     }
     snprintf(out, max, "%s", dir);
     slash = strrchr(out, '/');
@@ -179,7 +178,7 @@ parent_of(const char *dir, char *out, size_t max)
     return 1;
 }
 
-/** @brief The Favorites button, bottom-left, and its open list. */
+/** @brief The Favorites button, at the bottom left. */
 static tiku_rect_t
 favorites_button(const tiku_trk_panel_window_t *controller)
 {
@@ -192,12 +191,8 @@ favorites_button(const tiku_trk_panel_window_t *controller)
 }
 
 /**
- * @brief The New folder button, beside Favorites; the SAVE panel only.
- *
- * Saving is the one time a person discovers the folder they meant to
- * save INTO does not exist yet -- a new project wants a folder of its
- * own -- and sending them away to make one loses the panel, the place
- * and the name they had already typed.
+ * @brief The New folder button, beside Favorites, in the save panel only:
+ *        it makes the folder the name field names and enters it.
  */
 static tiku_rect_t
 new_folder_button(const tiku_trk_panel_window_t *controller)
@@ -208,7 +203,10 @@ new_folder_button(const tiku_trk_panel_window_t *controller)
     return fav;
 }
 
-/** @brief The favourites popup, above its button, a row per favourite. */
+/**
+ * @brief The favourites popup, above its button: a row per favourite and
+ *        one to add the folder shown.
+ */
 static tiku_rect_t
 favorites_list_rect(const tiku_trk_panel_window_t *controller)
 {
@@ -272,7 +270,10 @@ selection(const tiku_trk_panel_window_t *controller, tiku_model_t *out,
     return selected;
 }
 
-/** @brief Draw the list, the name field, the buttons and the favourites. */
+/**
+ * @brief Draw the list, the name field, the buttons, the parent row and the
+ *        favourites.
+ */
 static void
 draw(tiku_window_t *window, tiku_surface_t *surface,
      tiku_rect_t content, void *context)
@@ -283,9 +284,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     tiku_model_t selected[8];
     int selected_count = selection(controller, selected, 8);
     int rows, scroll, total, i;
-    /* The panel owns the keyboard only while it is the focused window --
-     * the rule its own default button already keeps, eight lines from a
-     * name field that was ignoring it. */
+    /* The panel owns the keyboard only while it is the focused window,
+     * so only then does the name field show its caret and focus ring. */
     int owns = (controller->window != NULL &&
                 controller->window ==
                     tiku_workspace_focused(controller->workspace));
@@ -322,8 +322,7 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             tiku_fill(surface, row, TIKU_C_SELECT);
         }
         if (row_dimmed(controller, &pose->model)) {
-            /* Shown but not offered: the person sees the file exists
-             * and sees it is not what this panel is asking for. */
+            /* A dimmed row: listed and greyed, but not offered. */
             (void)tiku_icon_paint_dim(surface,
                 tiku_model_icon_name(&pose->model), row.x + 2,
                 row.y + (controller->row_h - mini) / 2, mini,
@@ -344,8 +343,6 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
     }
     tiku_clip_reset(surface);
     if (total > rows && rows > 0) {
-        /* The same bar the folder windows wear, in the same place: one
-         * scrollbar everywhere, or a person has to learn two. */
         tiku_ui_scrollbar(surface, scrollbar_rect(list),
             (float)scroll / (float)(total - rows),
             (float)rows / (float)total, 0);
@@ -371,9 +368,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
         (!tiku_trk_panel_button_enabled(&controller->model, selected,
                                         selected_count)
             ? TIKU_S_DISABLED
-        /* The ring is drawn only while the panel owns the keyboard, so
-         * it never promises a Return the window would not receive
-         * (NeXT UIG ch7). */
+        /* The default ring is drawn only while the panel owns the
+         * keyboard (NeXT UIG ch7). */
         : (controller->window != NULL &&
            controller->window ==
                tiku_workspace_focused(controller->workspace))
@@ -397,8 +393,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             tiku_fill(surface, pr, TIKU_C_DOC);
             (void)tiku_icon_paint(surface, "folder", pr.x + 4,
                                       pr.y + (pr.h - 16) / 2, 16);
-            /* The WHOLE path, tail kept when it will not fit: the leaf
-             * end is the half a person navigates by. */
+            /* The whole path, cut from the front when it does not fit, so
+             * the leaf end stays. */
             while (*says != '\0' && sw2 > pr.w - 32) {
                 says++;
                 sw2 = tiku_text_width(pf, says);
@@ -426,8 +422,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
             tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_2),
             tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
         if (controller->fav_count == 0) {
-            /* An empty list says so, disabled, rather than showing
-             * nothing (CW-058). */
+            /* An empty list shows a disabled "<No recent items>" row
+             * (CW-058). */
             tiku_text(surface, font, fr.x + 8,
                 fr.y + 2 + font->ascent + 1, "<No recent items>",
                 tiku_dim(TIKU_C_TEXT, TIKU_C_DOC));
@@ -447,9 +443,8 @@ draw(tiku_window_t *window, tiku_surface_t *surface,
 }
 
 /**
- * @brief Which poses a person is shown: the machinery folders -- the
- *        dot-named ones -- are not choices, and a home that holds
- *        thirty of them buried everything a person actually keeps.
+ * @brief Which poses are shown: all but the dot-named and the invisible
+ *        ones.  Each folder row also notes whether it holds a project.
  */
 static void
 rebuild_visible(tiku_trk_panel_window_t *controller)
@@ -472,10 +467,8 @@ rebuild_visible(tiku_trk_panel_window_t *controller)
             pose->invisible) {
             continue;
         }
-        /* A folder that HOLDS a project description is a project, and
-         * the row says so with the developer's folder: a person asked
-         * to open a project should not have to open every folder to
-         * learn which ones are. */
+        /* A folder that holds a project.tiku is a project, and its row
+         * shows the developer's folder. */
         controller->proj[controller->nvis] = 0;
         if (tiku_model_is_container(&pose->model) &&
             controller->backend != NULL &&
@@ -579,10 +572,10 @@ commit(tiku_trk_panel_window_t *controller)
         return;
     }
     if (controller->model.mode == TIKU_TRK_PANEL_SAVE) {
-        /* Checked BEFORE anything is written (AW-052): a refusal is said
-         * and the name left selected for another try; an existing file is
-         * a QUESTION, Cancel first, and the checked path waits for the
-         * answer rather than being recomputed after it. */
+        /* Checked before anything is written (AW-052): a refusal is
+         * reported and the name left selected for another try; an existing
+         * file raises the Replace question, Cancel first, and the checked
+         * path waits in pending_save for the answer. */
         tiku_trk_save_t why = tiku_trk_panel_save_check(&controller->model,
             controller->backend, controller->pending_save,
             sizeof controller->pending_save);
@@ -618,16 +611,13 @@ commit(tiku_trk_panel_window_t *controller)
         tiku_trk_panel_choosable(&controller->model, &selected[0])) {
         snprintf(destination, sizeof destination, "%s", selected[0].path);
     } else if ((controller->model.flavors & TIKU_TRK_PANEL_DIR) != 0u) {
-        /* Nothing picked, and a folder is an answer: the one being
-         * shown is what the button means (AW-055). */
+        /* Nothing picked, and a folder is an answer: the panel answers
+         * with the folder shown (AW-055). */
         snprintf(destination, sizeof destination, "%s",
                  controller->model.dir);
     } else {
-        /*
-         * Asked for a file and given none: there is nothing to answer
-         * with, so the panel stays up rather than handing back the
-         * folder -- which the asker would take for a document.
-         */
+        /* Asked for a file and given none: the panel stays up and
+         * answers nothing. */
         return;
     }
     if (controller->commit != NULL) {
@@ -686,9 +676,8 @@ activate_default(tiku_trk_panel_window_t *controller)
     tiku_model_t selected[8];
     int count = selection(controller, selected, 8);
 
-    /* ENTERING a folder is navigation, not answering, so it is not
-     * behind the button's enablement: a file panel with a folder
-     * selected has somewhere to GO even when it has nothing to say. */
+    /* A selected folder is entered whether or not the button is
+     * enabled. */
     if (count == 1 && tiku_model_is_container(&selected[0])) {
         go(controller, selected[0].path);
         return;
@@ -755,8 +744,8 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
 
         if (INSIDE(sb)) {
             if (row != NULL) {
-                /* Which half of the track was pressed rides out in the
-                 * row slot: negative for back, positive for on. */
+                /* Which half of the track was pressed goes out in *row:
+                 * -2 for the upper half, -3 for the lower. */
                 *row = (y < sb.y + sb.h / 2) ? -2 : -3;
             }
             return PANEL_HIT_SCROLL;
@@ -777,8 +766,10 @@ hit(tiku_trk_panel_window_t *controller, int x, int y, int *row)
 }
 
 /**
- * @brief A press picks a row, a double click enters or answers, and the
- *        buttons and the favourites act.  @return 1 for a press.
+ * @brief A press picks a row, a double click enters or answers, a press
+ *        on the scroll bar pages, and the buttons act on a release over
+ *        them.
+ * @return 1 when taken.
  */
 static int
 event(tiku_window_t *window, const tiku_event_t *input,
@@ -791,9 +782,9 @@ event(tiku_window_t *window, const tiku_event_t *input,
     int what;
 
     (void)window;
-    /* The four buttons go down under the hand and act when it lets go
-     * on them: the release re-enters the switch below as the button's
-     * own hit.  The list, the name and the bar answer the press. */
+    /* The four buttons show pressed while held and act on a release over
+     * them, which reaches the switch below as the button's own hit.  The
+     * list, the name field and the scroll bar act on the press. */
     what = hit(controller, input->x, input->y, &row);
     {
         int under = (what == PANEL_HIT_CANCEL || what == PANEL_HIT_DEFAULT ||
@@ -828,8 +819,7 @@ event(tiku_window_t *window, const tiku_event_t *input,
         controller->fav_open = !controller->fav_open;
         break;
     case PANEL_HIT_SCROLL: {
-        /* A press on the bar PAGES toward the hand, the way the track
-         * of every scrollbar here answers a press beside its thumb. */
+        /* A press on the track pages toward the pointer. */
         tiku_rect_t content = tiku_window_content(controller->window);
         tiku_rect_t list2, nm, db, cb;
         int rows2;
@@ -859,9 +849,9 @@ event(tiku_window_t *window, const tiku_event_t *input,
         break;
     }
     case PANEL_HIT_NEWFOLDER: {
-        /* The NAME field names the folder: a person typing "blinker"
-         * and pressing the button lands INSIDE blinker/, with the name
-         * the caller offered back in the field, ready to save. */
+        /* The name field names the folder: the panel goes into the new
+         * folder and puts the name the caller offered back in the
+         * field. */
         char at[TIKU_PATH_MAX];
         struct stat sb;
 
@@ -888,8 +878,8 @@ event(tiku_window_t *window, const tiku_event_t *input,
             }
             break;
         }
-        /* Already a folder is not an error: the person is taken in,
-         * which is what they were making it FOR. */
+        /* A folder of that name already there is not an error: the
+         * panel goes into it. */
         if (stat(at, &sb) != 0 && mkdir(at, 0755) != 0) {
             if (controller->alert != NULL) {
                 tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
@@ -937,8 +927,7 @@ event(tiku_window_t *window, const tiku_event_t *input,
                 tiku_trk_poseview_at(controller->view, row);
 
             if (dp != NULL && row_dimmed(controller, &dp->model)) {
-                break;          /* shown, not offered: the click is not
-                                 * a choice */
+                break;          /* a dimmed row cannot be picked */
             }
         }
         tiku_trk_poseview_click(controller->view, row, 0u);
@@ -1022,7 +1011,8 @@ tiku_trk_panel_window_open(tiku_trk_panel_window_t *controller, void *target,
     frame = (tiku_rect_t){ x, y, width, height };
     tiku_field_start(&controller->name, "");
     if (controller->window != NULL && controller->window->open) {
-        /* Asked again while up: the title follows the new question. */
+        /* Opened again while up: the frame and the title follow the new
+         * question. */
         controller->window->frame = frame;
         tiku_trk_panel_title(&controller->model, controller->window->title,
                              sizeof controller->window->title);
@@ -1048,8 +1038,7 @@ tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
     tiku_trk_panel_window_open(controller, target, command,
                                initial_directory);
     if (controller->target != NULL) {
-        /* Only what may be ANSWERED with changes; the panel, its rows
-         * and its walking are the ones the person already knows. */
+        /* The panel answers with a file, not a folder. */
         controller->model.flavors = TIKU_TRK_PANEL_FILE;
         if (only != NULL) {
             snprintf(controller->only, sizeof controller->only, "%s",
@@ -1069,8 +1058,7 @@ tiku_trk_panel_window_open_save(tiku_trk_panel_window_t *controller,
     if (controller->window == NULL) {
         return;
     }
-    /* The same panel asked the other way round: a name to be written
-     * rather than an entry to be chosen, keys landing in the name first. */
+    /* A save panel: the name field takes the keys first. */
     controller->model.mode = TIKU_TRK_PANEL_SAVE;
     controller->model.focus = TIKU_TRK_PANEL_FOCUS_NAME;
     snprintf(controller->model.name, sizeof controller->model.name, "%s",
@@ -1205,9 +1193,8 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
     default:
         if (controller->model.focus == TIKU_TRK_PANEL_FOCUS_LIST &&
             (key == TIKU_KEY_UP || key == TIKU_KEY_DOWN)) {
-            /* Travel in the SHOWN rows: the arrows walk what the
-             * person sees, never the machinery folders under it, and
-             * the window follows the walk off either end. */
+            /* The arrows walk the shown rows, never the hidden ones, and
+             * the list scrolls to follow the walk off either end. */
             tiku_model_t picked[8];
             int n, at = -1, i;
 
@@ -1224,9 +1211,7 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
             if (at >= controller->nvis) {
                 at = controller->nvis - 1;
             }
-            /* The walk steps OVER what is not offered, the way it
-             * steps over a heading: dimmed rows are read, not stood
-             * on. */
+            /* The walk steps over dimmed rows, which are not offered. */
             while (at >= 0 && at < controller->nvis) {
                 tiku_trk_pose_t *wp = tiku_trk_poseview_at(
                     controller->view, controller->vis[at]);
@@ -1244,8 +1229,8 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                     controller->view, controller->vis[at]);
 
                 if (lp != NULL && row_dimmed(controller, &lp->model)) {
-                    return 0;   /* the clamp landed on what is not
-                                 * offered: the walk stays put */
+                    return 0;   /* clamped onto a dimmed row: the
+                                 * selection stays */
                 }
             }
             if (at >= 0 && at < controller->nvis) {
@@ -1288,17 +1273,16 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
             } else if ((modifiers & TIKU_MOD_CMD) != 0u &&
                        (key == 'x' || key == 'c' || key == 'v' ||
                         key == 'a')) {
-                /* The desk's editing keys, in the panel's name too: a
-                 * name copied from an editor's page lands here, and a
-                 * name cut here lands there. */
+                /* Cut, copy, paste and select all in the name field,
+                 * through the desk's clipboard. */
                 if (tiku_field_key(&controller->name,
                     (key == 'x') ? TIKU_FIELD_CUT
                   : (key == 'c') ? TIKU_FIELD_COPY
                   : (key == 'v') ? TIKU_FIELD_PASTE
                                  : TIKU_FIELD_SELECT_ALL,
                     tracker_mods, '\0') == TIKU_FIELD_REJECTED) {
-                    /* The panel has no status line of its own; the shell
-                     * asks after the key and says it. */
+                    /* The panel has no status line; the shell reads the
+                     * refusal after the key and reports it. */
                     controller->refused = 1;
                 }
             } else if (key == TIKU_KEY_BACKSPACE) {
@@ -1309,9 +1293,9 @@ tiku_trk_panel_window_key(tiku_trk_panel_window_t *controller, unsigned key,
                     TIKU_FIELD_CHAR, tracker_mods, character);
             }
             if (controller->name.len >= (int)sizeof controller->model.name) {
-                /* The panel's own name is shorter than the field's: what
-                 * the field took, this reverts, and that is a refusal
-                 * the shell has to be able to say out loud. */
+                /* The model's name is shorter than the field's: an edit
+                 * past it is reverted and counted as a refusal for the
+                 * shell to report. */
                 controller->name = before;
                 controller->refused = 1;
             }

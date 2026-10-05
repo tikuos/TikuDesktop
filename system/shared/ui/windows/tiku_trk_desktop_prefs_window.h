@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_prefs_window.h - Desktop preferences controller.
+ * tiku_trk_desktop_prefs_window.h - the Desktop preferences window: the
+ * picture, how it is laid, the icon size and Reduce motion.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,23 +17,25 @@
 #include "tiku_trk_desktop_view.h"
 #include "tiku_trk_prefs.h"
 
-#define TIKU_TRK_DESK_PREFS_W 430
+#define TIKU_TRK_DESK_PREFS_W 430    /**< the window's frame width */
 
+/** @brief The Desktop preferences window and the record it edits. */
 typedef struct {
     tiku_trk_deskprefs_t          model;
-    tiku_trk_deskprefs_pictures_t pictures;
+    tiku_trk_deskprefs_pictures_t pictures;  /**< the pictures offered */
     tiku_workspace_t        *workspace;
-    tiku_window_t           *window;
+    tiku_window_t           *window;         /**< while open, else NULL */
     tiku_trk_desktop_view_t      *desktop_view;
     tiku_store_t             *store;
-    tiku_trk_prefs_t         *shared_prefs;   /* where ReduceMotion lives */
-    char                     shared_prefs_path[TIKU_PATH_MAX]; /* its file */
+    tiku_trk_prefs_t         *shared_prefs;   /**< where ReduceMotion lives */
+    char                     shared_prefs_path[TIKU_PATH_MAX]; /**< its file */
     int                           screen_w;
     int                           screen_h;
-    int                          *dirty;
-    char                          node[TIKU_PATH_MAX];
+    int                          *dirty;     /**< set when a redraw is owed */
+    char                          node[TIKU_PATH_MAX];  /**< Desktop folder */
+    /** The wallpapers folder beside the Desktop folder. */
     char                          pictures_dir[TIKU_PATH_MAX];
-    tiku_press_t                  press;   /* 1 -, 2 +, 3 Defaults, 4 Revert */
+    tiku_press_t                  press; /**< 1 -, 2 +, 3 Defaults, 4 Revert */
 } tiku_trk_desktop_prefs_window_t;
 
 /**
@@ -54,8 +57,9 @@ void tiku_trk_desktop_prefs_window_bind_settings(
 void tiku_trk_desktop_prefs_window_destroy(
     tiku_trk_desktop_prefs_window_t *controller);
 /**
- * @brief Open the window centred on the screen, reading the Desktop's
- *        record and pictures afresh; an open window is activated instead.
+ * @brief Open the window centred across the screen in its upper third,
+ *        reading the Desktop's record and pictures afresh; an open window
+ *        is activated instead.
  */
 void tiku_trk_desktop_prefs_window_open(
     tiku_trk_desktop_prefs_window_t *controller);

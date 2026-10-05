@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_band_controller.h - rubber-band selection interaction.
+ * tiku_trk_band_controller.h - the rubber band: arming a sweep on a press,
+ * selecting what it covers, and scrolling the view while it is held at an
+ * edge.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,25 +18,27 @@
 
 /** @brief Retained state for an armed or active selection sweep. */
 typedef struct tiku_trk_band_controller {
-    tiku_trk_folder_window_t *folder;
-    tiku_trk_folder_window_t *armed_folder;
-    int x0;
+    tiku_trk_folder_window_t *folder;       /**< the window being swept   */
+    tiku_trk_folder_window_t *armed_folder; /**< pressed, not yet a band  */
+    int x0;                     /**< the press point                      */
     int y0;
-    int x1;
+    int x1;                     /**< the pointer now                      */
     int y1;
-    unsigned modifiers;
-    int64_t scroll_at;
-    /* Non-zero when a SCRIPT drives the shell: the hold delay is counted
-     * in loop pulses instead of wall time, because a scripted wait is a
-     * number of turns and the wall clock under load crosses a 600 ms line
-     * whenever it pleases.  A real user's shell leaves this 0. */
+    unsigned modifiers;         /**< held during the sweep                */
+    int64_t scroll_at;          /**< when the band reached an edge, or 0  */
+    /* Non-zero when a script drives the shell: the edge hold is counted in
+     * loop pulses, so a script's timing does not depend on the machine's
+     * load.  An interactive shell leaves it 0. */
     int script_delay_pulses;
-    int held_pulses;
-    int row_h;
-    int *dirty;
+    int held_pulses;            /**< pulses held at an edge, scripted     */
+    int row_h;                  /**< a row's height: the icon-mode step   */
+    int *dirty;                 /**< set when the screen changed          */
 } tiku_trk_band_controller_t;
 
-/** @brief Count the hold delay in pulses rather than wall time. */
+/**
+ * @brief Count the edge hold in @p pulses instead of wall time; 0 goes back
+ *        to wall time.
+ */
 void tiku_trk_band_controller_set_script_delay(
     tiku_trk_band_controller_t *controller, int pulses);
 
@@ -50,7 +54,10 @@ void tiku_trk_band_controller_arm(tiku_trk_band_controller_t *controller,
  */
 int tiku_trk_band_controller_motion(tiku_trk_band_controller_t *controller,
                                     int x, int y, unsigned modifiers);
-/** @brief The band ends.  @return 1 when there was one. */
+/**
+ * @brief The band ends, and the view's state is saved.  @return 1 when
+ *        there was one.
+ */
 int tiku_trk_band_controller_finish(tiku_trk_band_controller_t *controller);
 /**
  * @brief A tick while the band is held at an edge: the view scrolls and

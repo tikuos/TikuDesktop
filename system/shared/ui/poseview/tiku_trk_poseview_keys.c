@@ -3,15 +3,15 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_poseview_keys.c - the keys: arrows, page, home and end, and what
- * they do to the selection
+ * tiku_trk_poseview_keys.c - arrow, Page, Home and End navigation, and what
+ * each key does to the selection and the scroll.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_trk_poseview_private.h"
 
-/** @brief Row of the current list holding the active pose, or -1. */
+/** @brief Row of the shown list holding the active pose, or -1. */
 static int
 active_row(tiku_trk_poseview_t *v)
 {
@@ -28,10 +28,8 @@ active_row(tiku_trk_poseview_t *v)
 /**
  * @brief The pose an arrow from @p row lands on in an icon mode (PVK-007).
  *
- * Tracker's own rule: among the poses in the half-plane the key points at,
- * the nearest by distance, with movement ALONG the key's axis counting for
- * more than movement across it -- otherwise "down" from a lone icon picks
- * whatever happens to be nearest, which is usually beside it.
+ * Among the poses in the half-plane the key points at, the nearest by a
+ * distance in which movement across the key's axis counts double.
  *
  * @return a display index, or -1 when there is nothing that way.
  */
@@ -104,8 +102,8 @@ nearest_in_direction(tiku_trk_poseview_t *v, int row, int key)
             along = mx - cx;  across = (my > cy) ? my - cy : cy - my;
             break;
         }
-        /* Across counts double, which is what keeps a step down inside its
-         * own column when the next column's icon is marginally closer. */
+        /* Across counts double, so a step down stays in its column when the
+         * next column's icon is marginally closer. */
         score = along + 2 * across;
         if (best < 0 || score < best_score) {
             best = i;
@@ -127,17 +125,14 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
     if (n == 0) {
         return 1;
     }
-    /* PVK-003 keys on the SELECTION being empty, not on whether some pose
-     * was active earlier: after Select None an arrow must seed, even though
-     * the last-clicked pose is still remembered. */
+    /* PVK-003: with an empty selection an arrow seeds, even after Select
+     * None, which leaves the active pose remembered. */
     row = (tiku_trk_poseview_selection_count(v) == 0) ? -1 : active_row(v);
 
     if (v->mode != TIKU_TRK_MODE_LIST &&
         (key == TIKU_TRK_KEY_UP || key == TIKU_TRK_KEY_DOWN ||
          key == TIKU_TRK_KEY_LEFT || key == TIKU_TRK_KEY_RIGHT)) {
-        /* Geometrically, not by index: icons are laid out in two
-         * dimensions and walking the sort order would jump across the
-         * window (PVK-007). */
+        /* In an icon mode an arrow moves geometrically (PVK-007). */
         target = nearest_in_direction(v, row, key);
         if (target < 0) {
             return 1;           /* nothing that way; the selection stays */
@@ -169,14 +164,11 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
     case TIKU_TRK_KEY_END:   target = n - 1; break;
     case TIKU_TRK_KEY_PGUP:
     case TIKU_TRK_KEY_PGDN: {
-        /* A page is what the window can SHOW, not a constant: paging by
-         * twenty rows in a window that holds eight skips twelve of them
-         * unseen, which is the one thing paging must not do. */
+        /* A page is one row less than the window shows, so paging skips
+         * no row unseen. */
         int page = (v->visible_rows > 1) ? v->visible_rows - 1 : 1;
-        /* From the first VISIBLE row, not the selected one: a page is a
-         * movement of the window, and stepping it from a selection six
-         * screens away pages somewhere the user is not looking
-         * (PVK-011). */
+        /* From the selected row while it is on screen, else from the first
+         * visible row (PVK-011). */
         int base = (row >= 0 && row >= v->scroll &&
                     row < v->scroll + v->visible_rows) ? row : v->scroll;
 
@@ -193,23 +185,19 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
         return 0;
     }
 
-    /* PVK-010/PVL-055: in an icon mode Home/End/Page move the VIEW and leave
-     * the selection alone -- there is no "first row" to select when the
-     * poses are arranged in two dimensions, and jumping the selection to a
-     * corner of the layout is not what the key means there. */
     if (v->no_autoscroll &&
         (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
          key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
-        /* The Desktop is exempt: it does not scroll for anyone
-         * (PVK-013). */
+        /* The Desktop is exempt: it does not scroll, so these keys do
+         * nothing there (PVK-013). */
         return 1;
     }
     if (v->mode != TIKU_TRK_MODE_LIST &&
         (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
          key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
-        /* In pixels, against the extent: an icon layout has no rows to
-         * count, and a row index written by these keys is read by nothing
-         * that draws icons (PVK-010). */
+        /* PVK-010/PVL-055: in an icon mode Home, End and Page move the
+         * view, in pixels against the extent, and leave the selection
+         * alone. */
         int ex, ey, ew, eh, ox, oy;
         int page = (v->view_h > 1) ? v->view_h : 1;
 
@@ -221,9 +209,6 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
         case TIKU_TRK_KEY_PGUP: oy -= page; break;
         default:                oy += page; break;
         }
-        /* The SELECTION is deliberately untouched: in an icon mode these
-         * keys move the view, and moving the selection as well would lose
-         * what the user gathered before scrolling to look at something. */
         tiku_trk_poseview_set_origin(v, ox, oy);
         return 1;
     }
@@ -232,7 +217,7 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
     if ((mods & TIKU_TRK_MOD_SHIFT) && !v->single_only &&
         (key == TIKU_TRK_KEY_HOME || key == TIKU_TRK_KEY_END ||
          key == TIKU_TRK_KEY_PGUP || key == TIKU_TRK_KEY_PGDN)) {
-        /* A jump key with Shift selects EVERYTHING between where the
+        /* A jump key with Shift selects everything between where the
          * selection stood and where the jump lands -- Shift+End extends
          * to the end, not by one row (PVK-012). */
         int from = (row >= 0) ? row : target;
@@ -272,10 +257,8 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
             if (last != NULL) {
                 last->selected = 0;
             }
-            /* The walk-back has to MOVE the mark, or the second step drops
-             * the pose the first one already dropped and the selection
-             * stops shrinking.  It becomes the target, which is the pose
-             * the walk is now standing on. */
+            /* The walk-back moves the mark to the target, the pose the
+             * walk now stands on, so the next step drops the next pose. */
             v->last_added = t->index;
         } else if (t != NULL) {
             pv_set_selected(t, 1);
@@ -292,7 +275,7 @@ tiku_trk_poseview_key_nav(tiku_trk_poseview_t *v, int key, unsigned mods)
         v->last_added = v->pivot;
     }
     v->active = tiku_trk_poseview_at(v, target)->index;
-    /* PVL-054: a selection that moved is a selection to be looked at. */
+    /* PVL-054: the moved selection is scrolled into view. */
     tiku_trk_poseview_scroll_into_view(v, target, v->visible_rows);
     return 1;
 }

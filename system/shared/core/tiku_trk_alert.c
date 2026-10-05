@@ -27,9 +27,8 @@ tiku_trk_alert_for_conflict(tiku_alert_t *a, const tiku_progress_t *pr)
     leaf = (leaf != NULL) ? leaf + 1 : pr->conflict_path;
     snprintf(text, sizeof text,
              tiku_str("alert.msg.exists_here"), leaf);
-    /* The four-way form when a folder is involved or more than one
-     * collision is pending; otherwise the short one.  The engine already
-     * decided which -- this only renders it (FS-018, FS-019). */
+    /* The engine chose the form: conflict_many asks for the four-way one
+     * (FS-018, FS-019). */
     if (pr->conflict_many) {
         tiku_alert_open(a, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
@@ -47,9 +46,6 @@ tiku_trk_alert_for_error(tiku_alert_t *a, const tiku_progress_t *pr)
     if (a == NULL || pr == NULL) {
         return;
     }
-    /* A delete failure offers no way on: there is nothing to continue to,
-     * which is why the engine carries the flag rather than the shell
-     * guessing from the message. */
     tiku_alert_open(a, TIKU_ALERT_STOP, TIKU_TRK_ALERT_TAG_ERROR,
                         pr->error,
                         pr->error_can_continue ? tiku_str("alert.btn.ok")
@@ -76,6 +72,8 @@ tiku_trk_alert_conflict_answer(const tiku_alert_t *a)
     }
 }
 
+/*---------------------------------------------------------------------------*/
+/* The progress window                                                        */
 /*---------------------------------------------------------------------------*/
 
 void
@@ -116,8 +114,8 @@ tiku_trk_progress_update(tiku_trk_progress_win_t *p, int i,
         p->row[i].used = 1;
         snprintf(p->row[i].caption, sizeof p->row[i].caption, "%s",
                  tiku_trk_progress_caption(pr->op));
-        /* The name is copied even when the counter has not moved: it is
-         * the one field a throttled repaint must not lose (FS-075). */
+        /* The current item is taken whenever the engine names one, whether
+         * or not the count moved (FS-075). */
         if (pr->current[0] != '\0') {
             snprintf(p->row[i].current, sizeof p->row[i].current, "%s",
                      pr->current);
@@ -128,18 +126,14 @@ tiku_trk_progress_update(tiku_trk_progress_win_t *p, int i,
         p->row[i].done = pr->done + pr->skipped + pr->failed;
         p->row[i].total = pr->total;
     }
-    /* The window exists only while a job does: it appears with the first
-     * and goes with the last, rather than sitting empty (FS-072). */
+    /* The window is open while any row is in use (FS-072). */
     for (k = 0; k < TIKU_TRK_PROGRESS_ROWS; k++) {
         any |= p->row[k].used;
     }
     p->open = any;
 }
 
-/*---------------------------------------------------------------------------*/
-/* The pause and stop buttons (FS-074)                                       */
-/*---------------------------------------------------------------------------*/
-
+/* Where a row's pause and stop buttons sit (FS-074). */
 #define PROG_ROW_H  48
 #define PROG_TOP    14
 #define PROG_BTN    18
@@ -149,8 +143,8 @@ void
 tiku_trk_progress_button_rect(int i, int which, int w, int *bx, int *by,
                               int *bw, int *bh)
 {
-    /* Right-hand end of the row, stop outermost: the destructive one is
-     * furthest from the pause a user is aiming for. */
+    /* Right-hand end of the row, stop outermost, so the destructive button
+     * is the one furthest from pause. */
     int right = w - 10;
     int x = right - PROG_BTN - (which == TIKU_TRK_PROGRESS_HIT_STOP
                                     ? 0 : PROG_BTN + PROG_BTN_GAP);
@@ -195,8 +189,6 @@ tiku_trk_progress_row_text(const tiku_trk_progress_win_t *p, int i)
         !p->row[i].used) {
         return "";
     }
-    /* A paused row says what to do about it: a frozen counter with no
-     * explanation reads as a hang. */
     return p->row[i].paused ? "Paused: click to resume or stop"
                             : p->row[i].current;
 }
@@ -205,8 +197,6 @@ int
 tiku_trk_progress_wanted(tiku_op_t op, int items)
 {
     if (op == TIKU_OP_LINK) {
-        /* Links are instantaneous; a window that appeared and vanished
-         * would be a flash nobody can read (FS-070). */
         return (items > TIKU_TRK_PROGRESS_LINK_MIN);
     }
     return 1;
@@ -224,8 +214,7 @@ tiku_trk_progress_sample(tiku_trk_progress_win_t *p, int i, int64_t bytes,
     }
     r = &p->row[i];
     r->total_bytes = bytes;
-    /* A ring of the last few samples: the mean over them is the speed,
-     * and one huge file must not set it for the rest of the job. */
+    /* Shift the samples along, newest first; the oldest falls off. */
     for (k = TIKU_TRK_PROGRESS_SLOTS - 1; k > 0; k--) {
         r->bytes[k] = r->bytes[k - 1];
         r->at[k] = r->at[k - 1];
@@ -249,7 +238,7 @@ tiku_trk_progress_speed(const tiku_trk_progress_win_t *p, int i)
     }
     r = &p->row[i];
     if (r->nsample < 2) {
-        return 0;                   /* not enough to average anything */
+        return 0;
     }
     last = r->nsample - 1;
     db = r->bytes[0] - r->bytes[last];
@@ -268,15 +257,14 @@ tiku_trk_progress_eta(const tiku_trk_progress_win_t *p, int i)
     int64_t left;
 
     if (speed <= 0 || p == NULL) {
-        return -1;                  /* a job just started has no estimate
-                                     * rather than a wild one */
+        return -1;
     }
     r = &p->row[i];
     if (r->total <= 0 || r->done <= 0 || r->done >= r->total) {
         return -1;
     }
-    /* Scaled from the items done: bytes are what the speed is in, and the
-     * item count is the only measure of what is left. */
+    /* The bytes still to write are estimated from the bytes per item so
+     * far: only the item count says how much is left. */
     left = r->total_bytes * (r->total - r->done) / r->done;
     return left / speed;
 }
@@ -316,8 +304,7 @@ tiku_trk_progress_say(const tiku_trk_progress_win_t *p, char *out,
         if (!row->used) {
             continue;
         }
-        /* The leaf, not the path: the fact is WHAT is being copied and
-         * how far along, and a full path would drown the count. */
+        /* The leaf of the current item's path keeps the line short. */
         slash = strrchr(row->current, '/');
         used += (size_t)snprintf(out + used,
                                  (used < max) ? max - used : 0u,

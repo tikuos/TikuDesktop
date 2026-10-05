@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_cwmenu.c - building a folder window's menus.
+ * tiku_trk_cwmenu.c - building a folder window's menus, the Templates
+ * hierarchy and the Mount submenu among them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -57,10 +58,11 @@ tiku_trk_cwmenu_init(tiku_trk_cwmenu_t *cw)
     (void)tiku_menubar_add(&cw->bar, &cw->window);
 }
 
+/* One entry of a Templates folder. */
 typedef struct {
     char name[TIKU_NAME_MAX];
     char path[TIKU_PATH_MAX];
-    int is_dir;
+    int is_dir;                 /* a subfolder: a submenu of its own */
 } template_child_t;
 
 /** @brief Name order, case first ignored then not. */
@@ -171,10 +173,8 @@ template_fill(tiku_trk_cwmenu_t *cw, int node, int depth)
                                                 &cw->template_node[sub].menu,
                                                 1);
                 template_fill(cw, sub, depth + 1);
-                /* A directory can itself be a useful folder template as
-                 * well as a submenu.  The explicit leaf keeps both meanings
-                 * available without requiring a filesystem-specific marker
-                 * attribute. */
+                /* A subfolder is both a submenu and a template: its first
+                 * row, "New <name>", uses the subfolder itself. */
                 {
                     int use = template_command(cw, child[i].path, 0);
 
@@ -198,11 +198,9 @@ template_fill(tiku_trk_cwmenu_t *cw, int node, int depth)
             }
         }
     }
-    /* Every visible template directory can grow another submenu.  This is
-     * deliberately a dynamic command rather than a shell-side special case,
-     * so nested levels expose the same operation.  An empty root is kept
-     * quiet: with no stored templates the File menu remains plain "New
-     * folder", matching Tracker's fallback. */
+    /* Every template folder, at every level, ends with an "Add new
+     * submenu" row.  An empty root gets none, so with no templates the
+     * File menu shows a plain New folder. */
     if (n > 0 || node != 0) {
         int command = template_command(cw,
                                        cw->template_node[node].path, 1);
@@ -287,8 +285,8 @@ tiku_trk_cwmenu_templates_root(const tiku_trk_cwmenu_t *cw)
 static void
 build_icon_size(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
-    /* Every rung, so a size the keyboard can reach is a size the menu can
-     * reach; offering three of six left a 40 px view showing "48" marked. */
+    /* Every rung of the ladder, so the menu reaches each size the keyboard
+     * does. */
     static const int sizes[] = { TIKU_TRK_CMD_ICON_SIZE_32,
                                  TIKU_TRK_CMD_ICON_SIZE_40,
                                  TIKU_TRK_CMD_ICON_SIZE_48,
@@ -303,8 +301,7 @@ build_icon_size(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     for (i = 0; i < nsz; i++) {
         ADD(&cw->icon_size, sizes[i]);
     }
-    /* The size is marked only while actually in icon mode; in list mode
-     * nothing is marked, because no size is in force. */
+    /* A size is marked only in icon mode. */
     if (c->view_mode == TIKU_TRK_MODE_ICON) {
         for (i = 0; i < nsz; i++) {
             if (c->icon_size == px[i]) {
@@ -320,9 +317,6 @@ build_icon_size(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 static void
 build_arrange(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
-    /* The same attributes the Attributes menu offers as COLUMNS: a
-     * capability that can be sorted by a title click but not chosen here
-     * would make the two menus disagree about what the listing has. */
     static const int keys[] = { TIKU_TRK_CMD_SORT_BY_NAME,
                                 TIKU_TRK_CMD_SORT_BY_KIND,
                                 TIKU_TRK_CMD_SORT_BY_SIZE,
@@ -348,28 +342,22 @@ build_arrange(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_COL_CAP:   chosen = TIKU_TRK_CMD_SORT_BY_CAP;   break;
     default: break;
     }
-    /* Every key the menu OFFERS must be markable, or offering one more
-     * makes the menu assert the wrong answer when it is chosen. */
+    /* The sort field is marked; a field the menu does not offer marks
+     * Name. */
     tiku_menu_mark_radio(&cw->arrange, keys,
                              (int)(sizeof keys / sizeof keys[0]), chosen);
     tiku_menu_mark(&cw->arrange, TIKU_TRK_CMD_REVERSE_ORDER,
                        c->reverse_sort);
 }
 
-/** @brief The clipboard block, omitted where the idea has no meaning. */
+/** @brief Whether the clipboard block is offered: not in the root or the
+ *         Trash. */
 static int
 wants_clipboard(const tiku_trk_sc_ctx_t *c)
 {
     return !(c->is_root || c->is_trash || c->in_trash);
 }
 
-/**
- * @brief Open with: a SUBMENU of applications when there are any (AW-048).
- *
- * The plain item stays when the list is empty -- disabled, because there is
- * nothing behind it -- rather than disappearing: an item that comes and
- * goes is harder to find than one that is greyed.
- */
 /**
  * @brief One picker item: a submenu when the shell built one, the plain
  *        panel command when it did not (CW-035).
@@ -390,8 +378,8 @@ add_picker(tiku_trk_cwmenu_t *cw, tiku_menu_t *m, int k,
 }
 
 /**
- * @brief The Open With row: a submenu of applications when there are
- *        any, else a disabled row.
+ * @brief The Open with row: a submenu of applications when there are any
+ *        (AW-048), else the plain item, disabled.
  */
 static void
 add_open_with(tiku_trk_cwmenu_t *cw, tiku_menu_t *m,
@@ -432,8 +420,8 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
     SEP(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
-    /* Between Open and Open with: a query is edited rather than opened,
-     * and the item is present only when there is one (CW-033, CW-042). */
+    /* Edit query, between Open and Open with, is enabled only for a query
+     * (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     add_open_with(cw, m, c);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
@@ -444,7 +432,7 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_UNMOUNT);
     }
     /* In the Trash, Delete and Restore stand where Duplicate and Move to
-     * Trash would be: there is nowhere further to throw something away. */
+     * Trash would be. */
     if (c->is_trash || c->in_trash) {
         ADD(m, TIKU_TRK_CMD_DELETE);
         ADD(m, TIKU_TRK_CMD_RESTORE);
@@ -468,7 +456,8 @@ build_file(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     (void)tiku_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
 }
 
-/** @brief The New submenu combines the built-in folder and user templates. */
+/** @brief The New submenu: New folder, the user's templates, and Edit
+ *         templates. */
 static void
 build_new(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
@@ -501,9 +490,8 @@ build_window(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 
     tiku_menu_clear(m);
     if (c->is_query) {
-        /* A results window is a set of answers, not a place: there is no
-         * arrangement to keep, nothing above it to open, and a view mode
-         * would be a mode for a folder that does not exist (CW-023). */
+        /* A results window has no view modes, no arrangement and no
+         * parent to open (CW-023). */
         ADD(m, TIKU_TRK_CMD_RESIZE_TO_FIT);
         ADD(m, TIKU_TRK_CMD_SELECT_MATCHING);
         ADD(m, TIKU_TRK_CMD_SELECT_ALL);
@@ -531,8 +519,8 @@ build_window(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     SEP(m);
     ADD(m, TIKU_TRK_CMD_PREFERENCES);
 
-    /* The Icon view item carries the icon mode itself, so its mark has to be
-     * set on the holder rather than through the action table. */
+    /* The Icon view row, item 0, is the icon-size submenu's holder, so its
+     * mark is set on it directly. */
     switch (c->view_mode) {
     case TIKU_TRK_MODE_ICON: chosen = TIKU_TRK_CMD_ICON_VIEW;      break;
     case TIKU_TRK_MODE_MINI: chosen = TIKU_TRK_CMD_MINI_ICON_VIEW; break;
@@ -558,12 +546,10 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     ADD(m, TIKU_TRK_CMD_COL_PATH);
     ADD(m, TIKU_TRK_CMD_COL_PERM);
     ADD(m, TIKU_TRK_CMD_COL_ORIGINAL);
-    /* Name is always a column and cannot be turned off, so it is marked and
-     * disabled rather than absent. */
+    /* Name is always a column: marked and disabled. */
     tiku_menu_mark(m, TIKU_TRK_CMD_COL_NAME, 1);
     tiku_menu_enable(m, TIKU_TRK_CMD_COL_NAME, 0);
-    /* Every other item is checked from the columns the view really has, so
-     * the menu reports the view rather than remembering its own idea. */
+    /* Every other row is marked from the columns the view has. */
     tiku_menu_mark(m, TIKU_TRK_CMD_COL_KIND,
                        (c->columns & (1u << TIKU_TRK_COL_KIND)) != 0u);
     tiku_menu_mark(m, TIKU_TRK_CMD_COL_VALUE,
@@ -586,8 +572,7 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     if (cw->per_type_count > 0) {
         int k;
 
-        /* The types the folder really holds, each with what it has to
-         * show: a folder of text files does not offer an image's columns
+        /* A submenu per type the folder holds, with that type's columns
          * (CW-026). */
         SEP(m);
         for (k = 0; k < cw->per_type_count; k++) {
@@ -604,7 +589,8 @@ build_attributes(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     }
 }
 
-/** @brief The context menus: on a pose, on the window, on the Desktop. */
+/** @brief The context menus: on a pose, on the window background, on a
+ *         volume, and on the Trash. */
 static void
 build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
 {
@@ -614,8 +600,8 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     m = &cw->pose_ctx;
     tiku_menu_clear(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
-    /* Between Open and Open with: a query is edited rather than opened,
-     * and the item is present only when there is one (CW-033, CW-042). */
+    /* Edit query, between Open and Open with, is enabled only for a query
+     * (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     add_open_with(cw, m, c);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
@@ -679,7 +665,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
         ADD(m, TIKU_TRK_CMD_SELECT_ALL);
         ADD(m, TIKU_TRK_CMD_OPEN_PARENT);
         if (c->is_desktop || c->is_root) {
-            /* After Select all, as the source inserts it there (CW-034). */
+            /* Mount, on the Desktop and the root (CW-034). */
             SEP(m);
             (void)tiku_menu_add_submenu(m, tiku_str("cmd.mount"),
                                         &cw->mount_menu, 1);
@@ -691,8 +677,7 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     m = &cw->volume_ctx;
     tiku_menu_clear(m);
     ADD(m, TIKU_TRK_CMD_OPEN);
-    /* Between Open and Open with: a query is edited rather than opened,
-     * and the item is present only when there is one (CW-033, CW-042). */
+    /* Edit query is enabled only for a query (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     ADD(m, TIKU_TRK_CMD_EDIT_NAME);
@@ -703,13 +688,12 @@ build_contexts(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
                                         &cw->mount_menu, 1);
     (void)tiku_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
 
-    /* On the Trash itself: three items, and Empty is the first. */
+    /* On the Trash itself: Empty Trash first. */
     m = &cw->trash_ctx;
     tiku_menu_clear(m);
     ADD(m, TIKU_TRK_CMD_EMPTY_TRASH);
     ADD(m, TIKU_TRK_CMD_OPEN);
-    /* Between Open and Open with: a query is edited rather than opened,
-     * and the item is present only when there is one (CW-033, CW-042). */
+    /* Edit query is enabled only for a query (CW-033, CW-042). */
     ADD(m, TIKU_TRK_CMD_EDIT_QUERY);
     ADD(m, TIKU_TRK_CMD_GET_INFO);
     (void)tiku_menu_add_submenu(m, tiku_str("menu.add_ons"), &cw->addons, cw->addons.count > 0);
@@ -733,8 +717,7 @@ build_mount_menu(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
                  part[i].name);
         snprintf(label, sizeof label, "%s (%llu MB)", part[i].name,
                  (unsigned long long)(part[i].kb / 1024u));
-        /* A mounted partition is marked and left alone: picking it again
-         * would promise something the mark already says is true. */
+        /* A mounted partition is marked and disabled. */
         (void)tiku_menu_add(&cw->mount_menu, label,
                                 TIKU_TRK_CMD_MOUNT_PART_BASE + i, 0, 0u,
                                 !part[i].mounted);
@@ -767,8 +750,8 @@ tiku_trk_cwmenu_rebuild(tiku_trk_cwmenu_t *cw, const tiku_trk_sc_ctx_t *c)
     build_attributes(cw, c);
     build_contexts(cw, c);
 
-    /* Attributes belongs to list view only, and sits after Window; it comes
-     * and goes as the view mode changes rather than being disabled. */
+    /* Attributes is in the bar only in list view, after Window; in an icon
+     * mode it is removed, not disabled. */
     if (c->view_mode == TIKU_TRK_MODE_LIST) {
         if (!cw->attributes_shown) {
             (void)tiku_menubar_insert(&cw->bar, 2, &cw->attributes);
@@ -814,10 +797,8 @@ tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw, int dst_read_only,
     }
     memset(&ctx, 0, sizeof ctx);
     ctx.mods = mods;
-    /* This menu exists only while a drag payload is pending.  The shared
-     * enablement table quite correctly requires a selection for Create
-     * link; represent the payload as that selection instead of leaving the
-     * link item grey in an otherwise actionable drop menu (PVS-039). */
+    /* The enablement table requires a selection for Create link, so the
+     * drag's payload counts as one (PVS-039). */
     ctx.selection = 1;
     m = &cw->drop_ctx;
     tiku_menu_clear(m);
@@ -827,9 +808,8 @@ tiku_trk_cwmenu_drop(tiku_trk_cwmenu_t *cw, int dst_read_only,
     SEP(m);
     ADD(m, TIKU_TRK_CMD_CANCEL);
 
-    /* An unwritable destination disables every verb; an unwritable SOURCE
-     * disables only Move, since copying from it is still possible.  Cancel
-     * is never disabled -- there has to be a way out. */
+    /* An unwritable destination disables every verb, an unwritable source
+     * only Move; Cancel stays enabled. */
     if (dst_read_only) {
         tiku_menu_enable(m, TIKU_TRK_CMD_MOVE_HERE, 0);
         tiku_menu_enable(m, TIKU_TRK_CMD_COPY_HERE, 0);
@@ -877,9 +857,9 @@ tiku_trk_cwmenu_query_drop(tiku_trk_cwmenu_t *cw, int dst_read_only)
     if (cw == NULL) {
         return NULL;
     }
-    /* The Find icon's drop menu (Q-034): the two ways the gesture can
-     * save the search, and a way out.  Reuses the drop menu's storage --
-     * only one drop menu is ever open. */
+    /* The Find icon's drop menu (Q-034): save the search as a query or as a
+     * template, or cancel.  It reuses the drop menu's storage; only one
+     * drop menu is open at a time. */
     memset(&ctx, 0, sizeof ctx);
     ctx.selection = 1;
     m = &cw->drop_ctx;
