@@ -337,7 +337,8 @@ root (https://github.com/tikuos/tikuOS/blob/main/comment-style.md), with this
 tree's denser limits: a file header of at most 20 lines and a doc comment of
 at most 6 lines of prose. Inside a tikuOS checkout, `make lint` at the
 applications root runs its checker, `tools/check_comment_style.py`, over this
-tree, and says SKIPPED, not nothing, when the checkout is absent. The rule
+tree, with `--strict` over `system/`, `kits/` and `apps/`, and says SKIPPED,
+not nothing, when the checkout is absent. The rule
 that matters: a comment states the **live hazard or the reason**, never the
 route you took to find it. No "used to", no "turned out", no milestone
 markers.

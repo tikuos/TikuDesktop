@@ -160,8 +160,12 @@ source-report:
 
 lint: check-source-modules
 	@if [ -x $(TIKUOS)/tools/check_comment_style.py ]; then \
+	    rc=0; \
 	    python3 $(TIKUOS)/tools/check_comment_style.py --root=$(CURDIR) \
-	        --prose=6 --header=20; \
+	        --prose=6 --header=20 || rc=1; \
+	    python3 $(TIKUOS)/tools/check_comment_style.py --root=$(CURDIR) \
+	        --prose=6 --header=20 --strict system kits apps || rc=1; \
+	    exit $$rc; \
 	else \
 	    echo "check_comment_style: SKIPPED -- no tikuOS checkout at $(TIKUOS)"; \
 	    echo "  comment style is UNCHECKED; see comment-style.md in tikuOS"; \

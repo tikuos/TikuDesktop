@@ -9,15 +9,18 @@ For C, Objective-C and implementation fragments under the requested trees
 
   * no function over FUNC_MAX lines, and none with more than LOCALS_MAX
     locals declared at its head;
-  * no file with more than one section banner (a banner is a directory
-    waiting to happen);
+  * no file with more than one section marker, counting both the
+    three-line banner and the one-line /* ---- label */ divider (a banner
+    is a directory waiting to happen);
   * a file header of at most HEADER_MAX lines;
   * no `//` comment, no line over COLS columns;
   * every function documented exactly once: an exported one at its
     prototype in a header, a static one at its definition, neither in
     both places.  A family-internal function, whose prototype lives in
     the generated block of a `*_private.h`, counts as exported only
-    within the family and is documented at its definition;
+    within the family and is documented at its definition.  A comment
+    documents the declaration right below it only, and a one-word group
+    label such as /* App. */ documents nothing;
   * every field of a struct in a `*_private.h` header carrying a comment.
 
 Each rule can carry exemptions, listed below with the reason.  A rule
@@ -66,6 +69,12 @@ EXEMPT_BANNERS = {
     'system/shared/core/tiku_trk_match.c': 'matching, two stages',
     'system/shared/core/tiku_trk_panel.c': 'the file panel, two stages',
     'system/shared/ui/tiku_trk_find.c': 'the Find window, five stages',
+    # Headers whose sections group one API and mirror the sections of the
+    # exempt .c file behind it.
+    'system/shared/core/tiku_trk_info.h': 'the Info model\'s API, as info.c',
+    'system/shared/core/tiku_trk_panel.h': 'the file panel\'s API, as panel.c',
+    'system/shared/ui/tiku_trk_poseview.h': 'the pose view family\'s one '
+                                           'public header, by concern',
 }
 EXEMPT_HEADER = {
 }
@@ -79,6 +88,10 @@ ONELINE = re.compile(r'^(static\s+)?((?:inline\s+)?[A-Za-z_][\w \t*]*?[ *])([a-z
 BANNER = re.compile(r'^/\*[-=]{20,}\*/$')
 # a section label: a one-line comment padded out to the banner's width
 LABEL = re.compile(r'^/\* .*\s{2,}\*/$')
+# a one-line divider, a rule and a label on one line: /* ---- label */
+DIVIDER = re.compile(r'^/\* ?[-=]{3,}.*\*/\s*$')
+# a one-word group label, /* App. */ or the generated block's /* x.c */
+GROUP_LABEL = re.compile(r'^/\*\s*\S+\s*\*/$')
 
 
 def is_doc_end(line):
@@ -190,15 +203,10 @@ def main(argv):
                 while k >= 0 and L[k].strip() == '':
                     k -= 1
                 hdr_all.setdefault(m.group(1), os.path.relpath(p, ROOT))
-                # a comment above a run of prototypes covers the run
-                while k >= 0 and re.match(r'^[A-Za-z_][\w \t*]*?\b[a-z_][a-z0-9_]*\s*\(', L[k]) and L[k].rstrip().endswith(';'):
-                    k -= 1
-                    while k >= 0 and L[k].strip() == '':
-                        k -= 1
-                # the generated shared block labels its runs with the file's
-                # name, which documents nothing
+                # a comment documents the declaration right below it, and a
+                # one-word group label documents nothing
                 if (k >= 0 and is_doc_end(L[k])
-                        and not re.match(r'^/\* \S+\.c \*/$', L[k].strip())
+                        and not GROUP_LABEL.match(L[k].strip())
                         and 'Shared across' not in L[k]):
                     hdr_doc.add(m.group(1))
     for p in sorted(files):
@@ -210,9 +218,17 @@ def main(argv):
             if re.search(r'(^|\s)//', strip_comments_and_strings(l)):
                 counts['slashes'] += 1
                 errors.append('%s:%d: a // comment' % (rel, i + 1))
-        banners = sum(1 for k in range(len(L) - 2)
-                      if BANNER.match(L[k]) and BANNER.match(L[k + 2]))
-        if banners > 1 and p.endswith('.c') and rel not in EXEMPT_BANNERS:
+        banners = 0
+        k = 0
+        while k < len(L):
+            if k + 2 < len(L) and BANNER.match(L[k]) and BANNER.match(L[k + 2]):
+                banners += 1
+                k += 3          # its closing rule opens no second banner
+                continue
+            if DIVIDER.match(L[k]) and not BANNER.match(L[k]):
+                banners += 1
+            k += 1
+        if banners > 1 and rel not in EXEMPT_BANNERS:
             counts['banners'] += 1
             errors.append('%s: %d section banners; a banner is a file waiting to happen' % (rel, banners))
         h = header_lines(L)
