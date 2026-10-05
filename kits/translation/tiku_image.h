@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /** @brief Resource ceilings shared by thumbnails and snapshot viewers. */
 #define TIKU_IMAGE_BYTES_MAX (32u * 1024u * 1024u)
@@ -68,6 +69,10 @@ void tiku_image_free(tiku_image_t *im);
  */
 int tiku_png_write(const char *path, const uint32_t *px, int w, int h,
                    int alpha);
+/** @brief Encode to an open stream; does not flush or close it. Suitable
+ * for tiku_atomic_file producers. Same return convention as _write. */
+int tiku_png_write_stream(FILE *stream, const uint32_t *px, int w, int h,
+                          int alpha);
 
 /**
  * @brief Scale @p src into a @p size square, keeping its aspect ratio.

@@ -17,6 +17,7 @@
 #define _DEFAULT_SOURCE 1
 
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -151,6 +152,19 @@ static void png_tests(void)
           "RGB: every pixel back, opaque");
     check(png_back(path, px, 37, 23, 1), "PW-021",
           "RGBA: every pixel back, its alpha too");
+    f = fopen(path, "wb");
+    int stream_ok = f && !tiku_png_write_stream(f, px, 37, 23, 1);
+    if (f && fclose(f)) stream_ok = 0;
+    tiku_image_t streamed = {0};
+    stream_ok = stream_ok && !tiku_image_load(path, &streamed) &&
+                streamed.w == 37 && streamed.h == 23 &&
+                !memcmp(streamed.px, px, 37u * 23u * sizeof *px);
+    check(stream_ok, "PW-024", "open-stream encoding round-trips RGBA");
+    tiku_image_free(&streamed);
+    f = tmpfile();
+    check(f && tiku_png_write_stream(f, px, INT_MAX, INT_MAX, 0) == -1 &&
+          ftell(f) == 0, "PW-025", "oversized image refused before writing");
+    if (f) fclose(f);
     for (int y = 0; y < h; y++)             /* a desk: flat, with windows */
         for (int x = 0; x < w; x++)
             px[(size_t)y * w + x] = (x > 100 && x < 700 && y > 60 && y < 500)

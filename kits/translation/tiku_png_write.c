@@ -124,17 +124,17 @@ static unsigned char *rows(const uint32_t *px, int w, int h, int bpp,
     return raw;
 }
 
-int tiku_png_write(const char *path, const uint32_t *px, int w, int h,
-                   int alpha)
+static int write_to(const char *path, FILE *f, const uint32_t *px,
+                    int w, int h, int alpha)
 {
     static const unsigned char sig[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26,
                                           10 };
     unsigned char ihdr[13], *raw, *z = NULL;
     size_t rawlen = 0, zlen = 0;
-    FILE *f = NULL;
     int ok = 0;
 
-    if (!path || !px || w <= 0 || h <= 0) return -1;
+    if ((!path && !f) || !px || w <= 0 || h <= 0 ||
+        (size_t)w > TIKU_IMAGE_PIXELS_MAX / (size_t)h) return -1;
     raw = rows(px, w, h, alpha ? 4 : 3, &rawlen);
     if (raw) z = tiku_deflate_zlib(raw, rawlen, &zlen);
     free(raw);
@@ -143,11 +143,24 @@ int tiku_png_write(const char *path, const uint32_t *px, int w, int h,
     ihdr[8] = 8;                            /* bits a sample */
     ihdr[9] = alpha ? 6 : 2;                /* RGBA or RGB */
     ihdr[10] = ihdr[11] = ihdr[12] = 0;     /* deflate, adaptive, straight */
-    if (z && (f = fopen(path, "wb")) != NULL)
+    /* Do not open/truncate a destination before encoding succeeds. */
+    if (z && zlen <= UINT32_MAX && (!path || (f = fopen(path,"wb")) != NULL))
         ok = fwrite(sig, 1, 8, f) == 8 && chunk(f, "IHDR", ihdr, 13) == 0 &&
              chunk(f, "IDAT", z, zlen) == 0 && chunk(f, "IEND", NULL, 0) == 0;
-    if (f && fclose(f) != 0) ok = 0;
     free(z);
-    if (!ok && f) remove(path);
+    if (path && f) {
+        if (fclose(f)) ok = 0;
+        if (!ok) remove(path);
+    }
     return ok ? 0 : -1;
+}
+
+int tiku_png_write_stream(FILE *f, const uint32_t *px, int w, int h, int alpha)
+{
+    return write_to(NULL,f,px,w,h,alpha);
+}
+
+int tiku_png_write(const char *path, const uint32_t *px, int w, int h, int alpha)
+{
+    return write_to(path,NULL,px,w,h,alpha);
 }
