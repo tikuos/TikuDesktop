@@ -56,6 +56,7 @@ typedef struct {
     tiku_surface_t            *surface;
     uint32_t                        id;
     tiku_text_input_t commit;
+    int                        boards_at_start;  /* board_names() then */
 } echo_state_t;
 
 static int
@@ -67,6 +68,12 @@ echo_start(void **state, const tiku_app_services_t *services)
         return -1;
     }
     st->services = services;
+    {
+        char names[64];
+
+        st->boards_at_start = services->board_names(services->ctx, names,
+                                                    sizeof names);
+    }
     st->surface = tiku_surface_new(8, 8, TIKU_C_PANEL);
     if (st->surface == NULL) {
         free(st);
@@ -107,6 +114,17 @@ echo_event(void *state, const tiku_event_t *event)
             const char *text = st->services->clip_text(st->services->ctx, NULL);
             st->surface->px[0] = !strcmp(text, "fresh host caf\xc3\xa9")
                                 ? 0x00abcdefu : 0x00123456u;
+        }
+        if (event->key == 'b') {        /* the boards, once they are said */
+            char names[64], mcu[16];
+            int n = st->services->board_names(st->services->ctx, names,
+                                              sizeof names);
+
+            st->services->board_mcu(st->services->ctx, "c61", mcu, sizeof mcu);
+            st->surface->px[0] = st->boards_at_start == -1 && n == 4 &&
+                                 !strcmp(names, "c61\n") &&
+                                 !strcmp(mcu, "ESP32-C61")
+                                ? 0x00b0a2d5u : 0x00123456u;
         }
         if (event->key == 'l') {        /* the large clipboard, every byte */
             const char *text = st->services->clip_text(st->services->ctx, NULL);
@@ -248,6 +266,22 @@ main(void)
         const uint32_t *pixels = tiku_remote_pixels(&listener.session[0].win[0]);
         check(pixels && pixels[0] == 0x00abcdefu,
               "a remote app reads fresh UTF-8 text on its first paste");
+    }
+    {
+        /* Not said at start, then said: none until then meant not yet. */
+        tiku_msg_t *boards = tiku_msg_new(TIKU_MSG_BOARDS);
+        (void)tiku_msg_add_string(boards, "names", "c61\t/dev/x\tESP32-C61\n");
+        (void)tiku_msg_add_string(boards, "current", "");
+        check(tiku_remote_tell(&listener, 0, boards),
+              "the boards are told after the application started");
+        tiku_msg_free(boards);
+        key.key = 'b';
+        tiku_remote_event(&listener, &fake, &key);
+        check(await_frame(&listener, 500) >= 0,
+              "the app responds to a key after the boards");
+        const uint32_t *pixels = tiku_remote_pixels(&listener.session[0].win[0]);
+        check(pixels && pixels[0] == 0x00b0a2d5u,
+              "board_names is -1 until the shell says them, then the names");
     }
     {
         /* Past the quarter megabyte a message down was once held to. */

@@ -140,7 +140,8 @@ typedef struct tiku_app_services {
      * A local copy the shell keeps warm, like the clipboard: an
      * application asks it while drawing a menu, and a service that
      * returns data must never wait on the wire.
-     * @return the bytes written.
+     * @return the bytes written, or -1 (none written) out of process
+     *         until the shell first says them, a turn after start().
      */
     int (*board_names)(void *ctx, char *out, size_t max);
 

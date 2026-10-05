@@ -58,8 +58,11 @@ typedef struct {
     char                     *clip;
     unsigned                  clip_stamp;
     /* The boards the shell has mounted, kept warm the way the clipboard
-     * is: a menu asks while it is being drawn. */
+     * is: a menu asks while it is being drawn.  Heard once the shell has
+     * first said them, a turn after start(): until then none means not
+     * yet, not none. */
     char                      boards[512];
+    int                       boards_heard;
     /* The desktop's current device, mirrored the same way: an app that
      * defaults its work to it asks while a menu is being built. */
     char                      current[64];
@@ -501,7 +504,7 @@ svc_board_names(void *ctx, char *out, size_t max)
             }
             row++;
         }
-        return (int)n;
+        return c->boards_heard ? (int)n : -1;
     }
     return (int)strlen(out);
 }
@@ -708,6 +711,7 @@ pump(const tiku_app_descriptor_t *app, client_ctx_t *ctx, const char *document,
 
                         snprintf(ctx->boards, sizeof ctx->boards, "%s",
                                  (n != NULL) ? n : "");
+                        ctx->boards_heard = 1;
                         snprintf(was, sizeof was, "%s", ctx->current);
                         snprintf(ctx->current, sizeof ctx->current, "%s",
                                  (cur != NULL) ? cur : "");
