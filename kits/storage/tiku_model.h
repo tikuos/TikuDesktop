@@ -6,10 +6,10 @@
  *
  * tiku_model.h - the Model and the backend seam.
  *
- * Tracker's Model is the one place that knows what kind of thing a pose wraps;
- * everything above it asks questions (IsContainer, IsWritable, Kind) rather
- * than testing a backend.  That is what lets local files and a device
- * namespace be browsed by the same view.
+ * The Model is the one place that knows what kind of thing a pose wraps.
+ * A view asks it questions -- is it a container, is it writable, what kind
+ * is it -- and browses local files and a device namespace with the same
+ * code.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,11 +29,9 @@
 /**
  * @brief What a Model is.
  *
- * Directories on a device are VIRTUAL_DIR, not DIRECTORY: they cannot be
- * created in, renamed or pasted into, and the whole read-only story for /sys,
- * /dev and /proc follows from that one answer (the alternative -- reusing
- * DIRECTORY -- silently offers New Folder on /sys).  A dynamic store like
- * /data IS a real DIRECTORY.
+ * Directories on a device are VIRTUAL_DIR: nothing can be created, renamed
+ * or pasted in them, so /sys, /dev and /proc are read-only in the UI.  A
+ * dynamic store such as /data is a DIRECTORY.
  */
 typedef enum {
     TIKU_KIND_UNKNOWN = 0,
@@ -45,8 +43,7 @@ typedef enum {
     TIKU_KIND_VIRTUAL_DIR,   /* a device namespace directory            */
     TIKU_KIND_DEVICE_NODE,   /* a device namespace leaf: a live value   */
     TIKU_KIND_QUERY,
-    /* A print destination.  Tracker gives these their own art and so does
-     * the icon set; without the kind the blob is never asked for. */
+    /* A print destination, which wears the printer icon. */
     TIKU_KIND_PRINTER,
     TIKU_KIND_TRASH,
     TIKU_KIND_DESKTOP,
@@ -58,49 +55,45 @@ typedef enum {
 #define TIKU_P_EXEC   0x4u
 
 /**
- * @brief What the backend said about a node, as facts rather than verdicts.
+ * @brief What the backend said about a node: permission bits, the
+ *        manifest's columns, sizes and times.
  *
- * ONE copy of the manifest's columns lives here; permission answers are
- * derived from it and memoised elsewhere, never duplicated -- two copies
- * refreshed on different triggers is how menu enablement goes silently wrong.
+ * Permission answers such as tiku_model_is_writable() are derived from
+ * these facts each time they are asked.
  */
 typedef struct {
     unsigned perm;                        /* TIKU_P_*                   */
     char     req_cap[24];                 /* "-", "hw", "sys", ...          */
     char     meta[TIKU_META_MAX];     /* typed descriptor, or "-"       */
     int      cap_known;                   /* 0 when the manifest was cut    */
-    /* A link whose target is gone.  It is still a link and still an entry:
-     * the row stays and says so, rather than disappearing as though the
-     * link itself had been deleted. */
+    /* Set on a link whose target is gone; the link is still listed, and its
+     * row says it is broken. */
     int      link_broken;
-    /* The raw mode word, when the store HAS one (MA-031): the Permissions
+    /* The raw mode word, when the store has one (MA-031): the Permissions
      * column renders the classic ten-character string from it.  A store
      * with no mode bits leaves mode_known 0 and the column falls back to
-     * the three access answers this user actually has. */
+     * the three access answers this user has. */
     unsigned mode;
     int      mode_known;
-    /* A Trash that has something in it.  Carried as a FACT rather than
-     * recomputed at draw time: the icon, the menu item's enablement and
-     * the delete question all ask the same question, and a directory read
-     * per draw to answer it would be a read per frame. */
+    /* Set on a Trash that holds something, when the entry is taken in;
+     * the icon, the menu item's enablement and the delete question read it
+     * from here. */
     int      trash_full;
-    /* A VOLUME's capacity.  Carried as facts for the same reason the
-     * Trash's fullness is: the space bar, the Kind column and the free-
-     * space question all ask it, and a statvfs per draw would be one per
-     * frame.  Both zero on anything that is not a volume. */
+    /* A volume's capacity and free space in bytes, read when the entry is
+     * taken in; the space bar, the Kind column and the free-space question
+     * read them from here.  Both zero on anything that is not a volume. */
     uint64_t total, avail;
-    /* Which filesystem the entry is ON, and what that filesystem allows.
-     * Carried rather than re-derived: "every window showing something on
-     * the volume that just left" cannot be asked of a path, and re-stat()ing
-     * for st_dev on every drop question is a syscall per question. */
+    /* Which filesystem the entry is on (st_dev) and what that filesystem
+     * allows (TIKU_VOL_*).  When a volume leaves, the windows showing it
+     * are found by dev: their paths no longer stat. */
     uint64_t dev;
     unsigned vol_flags;
     int64_t  size;
     int64_t  mtime;
-    /* Whether the node carries a picture of its own, asked ONCE when the
-     * entry is taken in rather than on every draw.  Unasked is a distinct
-     * answer from none: a zeroed model has not been probed, and treating
-     * that as "no icon" is how a file's own art silently never appears. */
+    /* Whether the node carries a picture of its own (TIKU_ICONHINT_*),
+     * asked once when the entry is taken in.  A zeroed model is UNASKED:
+     * it has not been probed, and reading it as NONE hides the node's own
+     * art. */
     int      icon_hint;
 } tiku_facts_t;
 
@@ -114,22 +107,23 @@ typedef struct {
 #define TIKU_ICONHINT_UNASKED 0
 #define TIKU_ICONHINT_NONE    1
 #define TIKU_ICONHINT_ATTR    2  /* an icon attribute of its own       */
-#define TIKU_ICONHINT_THUMB   3  /* its own picture IS its icon        */
+#define TIKU_ICONHINT_THUMB   3  /* its own picture is its icon        */
 
 typedef struct tiku_backend tiku_backend_t;
 
 /**
  * @brief One change the backend reports: what happened, and to which node.
  *
- * The op is not decoration.  A removal and a value move demand different
- * work, and a caller that keeps only the identity treats them alike -- which
- * shows as a deleted row staying on screen.
+ * @note The caller acts on op: a removal takes the row out, a value change
+ *       refreshes it.  A caller that reads only the id leaves deleted rows
+ *       on screen.
  */
 typedef struct {
     uint64_t id;
-    int      op;      /* 0 changed, 1 created, 2 removed, 3 moved          */
+    int      op;      /* TIKU_CH_*                                         */
 } tiku_model_change_t;
 
+/** @brief What a change record says happened. */
 #define TIKU_CH_CHANGED 0
 #define TIKU_CH_CREATED 1
 #define TIKU_CH_REMOVED 2
@@ -144,37 +138,36 @@ typedef struct {
     tiku_facts_t     facts;
     tiku_backend_t  *backend;                   /* not owned            */
     uint64_t             node_id;                   /* inode, or a hash     */
-    unsigned             generation;                /* bumped on any change */
+    unsigned             generation;                /* device value changes */
 } tiku_model_t;
 
 /*---------------------------------------------------------------------------*/
-/* Questions the view asks -- never "which backend is this"                  */
+/* Questions the view asks                                                   */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Can it hold other entries (any kind of directory or volume). */
+/** @brief Whether it holds other entries: any kind of directory or volume,
+ *         a query, the Trash, the Desktop, or a link to a folder. */
 int tiku_model_is_container(const tiku_model_t *m);
 
-/** @brief Can entries be created, renamed or pasted inside it. */
+/** @brief Whether entries can be created, renamed or pasted inside it. */
 int tiku_model_is_mutable_container(const tiku_model_t *m);
 
-/** @brief Is its value writable (a file, or a writable device node). */
+/** @brief Whether its facts carry the write bit. */
 int tiku_model_is_writable(const tiku_model_t *m);
 
 /**
- * @brief The special display name presented to people, never a path key.
+ * @brief The name shown to people: the string table's name for the Disks
+ *        root, the Trash or the Desktop, and the entry's own name otherwise.
  *
- * Model.name remains the real entry name for filesystem operations and
- * round-tripping.  Views use this answer so special roots need no local
- * substitute labels.
+ * Model.name stays the real entry name, for file operations.
  */
 const char *tiku_model_display_name(const tiku_model_t *m);
 
 /**
  * @brief Walk the type table (Q-015).
  *
- * The port has no type DATABASE: what a type means comes from a compiled-in
- * table, so "every type the system knows" is exactly this list.  A menu that
- * offered more would be offering types nothing can recognise.
+ * The compiled-in table is every type the system knows, so a menu built
+ * from it offers only types something recognises.
  *
  * @param i     Row index, from zero.
  * @param label Receives the human name ("Text file"), or NULL.
@@ -185,10 +178,8 @@ const char *tiku_model_type_at(int i, const char **label);
 /**
  * @brief Whether @p type is the type @p want asks for (Q-004).
  *
- * A supertype admits its members -- picking "text/" finds
- * "text/x-source-code" -- which is the same widening the icon and kind
- * lookups already do, and the reason a menu of a dozen entries is useful
- * at all.
+ * A supertype admits its members: "text/" admits "text/x-source-code".
+ * The match is case-folded, and an empty @p want admits every type.
  */
 int tiku_model_type_is(const char *type, const char *want);
 
@@ -198,9 +189,8 @@ const char *tiku_model_kind_string(const tiku_model_t *m);
 /**
  * @brief Which icon of the set represents it.
  *
- * Tracker resolves an icon from the node's own BEOS:ICON attribute, then its
- * MIME type, then a per-kind default; only the last two steps exist here,
- * so a node cannot yet carry bespoke art.
+ * The icon comes from the entry's kind and type; a node's own picture
+ * (facts.icon_hint) is not consulted here.
  *
  * @return A name for tiku_icons_bitmap(); never NULL.
  */
@@ -216,14 +206,12 @@ typedef int (*tiku_entry_fn)(const tiku_model_t *m, void *ctx);
 /**
  * @brief What every backend implements.
  *
- * Listing is a callback rather than an array because a directory read is
- * incremental: Tracker shows the first poses while the rest are still
- * arriving, and a slow device must not block the caller for its whole tree.
+ * A listing hands each entry to a callback as it is read.
  */
 typedef struct {
     const char *name;
 
-    /** @brief Fill @p out for one path.  0 on success. */
+    /** @brief Fill @p out for one path.  0, or -1. */
     int (*stat)(tiku_backend_t *b, const char *path,
                 tiku_model_t *out);
 
@@ -239,21 +227,23 @@ typedef struct {
     int (*write)(tiku_backend_t *b, const char *path, const void *buf,
                  size_t len, char *err, size_t errmax);
 
-    /** @brief Service the link and dispatch change notices.  Notices, or -1. */
+    /** @brief Service the link and dispatch change notices.  Notices
+     *         handled, or -1 on a link error. */
     int (*pump)(tiku_backend_t *b, int timeout_ms);
 
     /**
-     * @brief Ask what changed since the last ask.
+     * @brief Ask what changed since the last ask: one question for the
+     *        whole backend.
      *
-     * One cheap question that answers "did anything happen at all", so a
-     * view need not re-read a directory on a timer to find out.
+     * A backend with no change records leaves this NULL, and the view
+     * polls by listing again.
      *
-     * @param ids      Receives the identities that changed
-     * @param max      Capacity of @p ids
-     * @param complete Set to 0 when the answer is known to be partial, so
-     *                 the caller re-reads instead of trusting it
-     * @return Identities written, or -1 when the backend cannot tell (an
-     *         older device, or a local filesystem), which means "poll".
+     * @param out      Receives the changes
+     * @param max      Capacity of @p out
+     * @param complete Set to 0 when the answer is known to be partial; the
+     *                 caller then lists again
+     * @return Changes written, or -1 when the backend cannot tell (an
+     *         older device): the caller polls.
      */
     int (*changes)(tiku_backend_t *b, tiku_model_change_t *out, int max,
                    int *complete);
@@ -270,10 +260,8 @@ typedef struct {
     /**
      * @brief Change what an entry permits.  0, or -1 with @p err filled.
      *
-     * NULL where the idea does not apply.  A device node's capability bits
-     * are not the user's to set, and a backend that says so by leaving this
-     * out is what lets the caller show the grid as read-only rather than
-     * offering an edit that silently fails.
+     * NULL where the idea does not apply, as for a device node's capability
+     * bits; the caller then shows the permissions grid read-only.
      */
     int (*setperm)(tiku_backend_t *b, const char *path, unsigned perm,
                    char *err, size_t errmax);
@@ -281,6 +269,7 @@ typedef struct {
     /** @brief The state store for entries of this backend. */
     struct tiku_store *(*state_store)(tiku_backend_t *b);
 
+    /** @brief Release the backend and everything it holds. */
     void (*close)(tiku_backend_t *b);
 } tiku_backend_ops_t;
 
@@ -291,13 +280,16 @@ struct tiku_backend {
     void                         *impl;
 };
 
-/** @brief Local files, with real attributes and permissions. */
+/** @brief Local files: permissions as this user has them, state in
+ *         extended attributes. */
 tiku_backend_t *tiku_backend_posix_open(void);
 
 /**
- * @brief A TikuOS device over the proven session/namespace client.
+ * @brief A TikuOS device, over the session and namespace client in
+ *        kits/device.
  *
- * @param port  Serial device, or NULL to take the first board found.
+ * @param port  Serial device, or NULL to take the first port that looks
+ *              like a board.
  * @param baud  Line rate.
  */
 tiku_backend_t *tiku_backend_tiku_open(const char *port, int baud);
@@ -305,21 +297,20 @@ tiku_backend_t *tiku_backend_tiku_open(const char *port, int baud);
 /**
  * @brief The same, with the wait and the recovery chosen.
  *
- * A board at its shell answers a newline in well under a second; the
- * long wait and the break-and-BYE that put a board back inside its
- * interpreter are for a port KNOWN to carry one.  Looking across every
- * port on a machine is a different act: @p sync_ms short and
- * @p recover zero, so a port that is not a board costs a moment and is
- * not written to.
+ * @p sync_ms is how long to wait for the shell's prompt after a newline.
+ * With @p recover set, a port that does not answer is sent a break and BYE,
+ * which bring a board back out of its interpreter, and asked again.  A
+ * scan of every port passes a short @p sync_ms and @p recover 0, so a port
+ * that is not a board is sent only the newline.
  */
 tiku_backend_t *tiku_backend_tiku_open_within(const char *port, int baud,
                                               int sync_ms, int recover);
-/**
- * @brief The same device over a transport already open -- the shell of a
- *        board that reached the desk over a link rather than a cable.
- *        Takes @p tx: it is closed with the backend, or on failure.
- */
 struct tiku_tx;
+/**
+ * @brief The same device over a transport already open, such as a board
+ *        that reached the desk over a network link.  Takes @p tx: it is
+ *        closed with the backend, or on failure.
+ */
 tiku_backend_t *tiku_backend_tiku_open_tx(struct tiku_tx *tx);
 /** @brief A device backend's patience for one write, in ms. */
 void tiku_backend_tiku_set_write_timeout(tiku_backend_t *b, int ms);
@@ -329,14 +320,14 @@ int tiku_backend_tiku_down(const tiku_backend_t *b);
 struct tiku_session *tiku_backend_tiku_session(tiku_backend_t *b);
 
 /**
- * @brief The identity that backend bound to, or NULL if it is not one.
+ * @brief The identity the backend bound to, or NULL when @p b is not a
+ *        device backend.
  *
- * Read once when the device was opened, so asking costs nothing; over
- * the wire it would be a round trip per question.  What a board is
- * CALLED lives in here, which is how a shell decides what to name it in
- * the namespace -- and the header for that field says what the caller
- * has to know: the name is user-settable, so two boards may answer to
- * it, and nothing durable may be keyed on it.
+ * Read once when the device was opened, so asking costs no round trip.
+ * A shell names the board in its namespace from the name held here.
+ *
+ * @note The name is user-settable: two boards may answer to it, so
+ *       nothing durable may be keyed on it.
  */
 const tiku_identity_t *tiku_backend_tiku_identity(const tiku_backend_t *b);
 
@@ -349,9 +340,9 @@ int tiku_backend_tiku_port(const tiku_backend_t *b, char *out, size_t max);
 /**
  * @brief Open the board whose die says @p uid, whatever port it is on.
  *
- * A board that has just been reflashed comes back on whichever node the
- * host gives it next, so the way back to it is what it IS, not where it
- * was.  Every port is asked in turn and the rest let go.
+ * Every serial port that looks like a board is opened in turn and asked
+ * for its uid, and the others are closed again.  A reflashed board comes
+ * back on whichever node the host gives it, and is found there.
  * @return the board, or NULL when none of them is that one.
  */
 tiku_backend_t *tiku_backend_tiku_open_uid(const char *uid, int baud);
@@ -361,14 +352,13 @@ tiku_backend_t *tiku_backend_tiku_open_uid(const char *uid, int baud);
  *        @p on_text as it arrives, and the namespace is closed until it
  *        is given back.
  *
- * A program running on the board owns the line -- every byte sent to it
- * is the program's input, and its output has no prompt to end it until
- * it ends.  So a caller that runs one takes the shell, and while it
- * holds it a stat, a list, a read or a write is refused rather than
- * quietly becoming the program's input.  Pumping still works: it is what
- * moves the text.
+ * While the shell is held, a stat, a list, a read or a write returns -1:
+ * on a board running a program every byte sent is the program's input,
+ * and its output has no prompt until it ends.  Pumping still works and is
+ * what moves the text.
  *
- * @return 0, -1 if this is not a board backend or somebody already holds it.
+ * @return 0, or -1 when this is not a board backend, @p on_text is NULL or
+ *         somebody already holds the shell.
  */
 int tiku_backend_tiku_lease(tiku_backend_t *b,
                             void (*on_text)(const unsigned char *bytes,
@@ -385,6 +375,8 @@ void tiku_backend_tiku_unlease(tiku_backend_t *b);
 /** @brief Whether somebody is holding the shell. */
 int tiku_backend_tiku_leased(const tiku_backend_t *b);
 
+/** @brief Close @p b through its ops; NULL, or a backend with no close,
+ *         is left alone. */
 void tiku_backend_close(tiku_backend_t *b);
 
 #endif /* TIKU_MODEL_H_ */

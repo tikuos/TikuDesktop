@@ -16,7 +16,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* fsync the directory holding path: a renamed entry is not on disk before. */
+/** @brief fsync() the directory holding @p path, which makes a rename in it
+ *         durable.  @return 0, or -1. */
 static int sync_parent(const char *path)
 {
     const char *slash = strrchr(path, '/');

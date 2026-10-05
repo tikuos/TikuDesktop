@@ -6,13 +6,12 @@
  *
  * tiku_sound_coreaudio.c - the host backend over CoreAudio's audio queue.
  *
- * The twin of tiku_sound_pulse.c: the same five calls behind the same
- * struct, and the Makefile compiles one of the two.  An audio queue
- * hands over a chunk and walks away, the card asking for the next one
- * on a thread of its own, so the backend is three buffers and which of
- * them are ours.  The framework is part of the system rather than
- * loaded at run time; opening an output can still fail on a machine
- * with no device or session, which is said once and then played silent.
+ * The CoreAudio counterpart of tiku_sound_pulse.c, behind the same backend
+ * struct; the Makefile compiles one of the two.  An audio queue plays the
+ * buffers it is given and hands each back on a thread of its own, so the
+ * backend is three buffers and which of them are free.  Opening an output
+ * can fail on a machine with no device or session: one line on stderr,
+ * then silence.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,13 +30,13 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static struct {
     AudioQueueRef       queue;
     AudioQueueBufferRef buffer[BUFFERS];
-    /* Whose each buffer is.  The card gives one back on a thread of its
-     * own, so this is the one thing here that needs the lock. */
+    /* Which buffers are free to fill.  The card hands one back on a
+     * thread of its own, so this is guarded by lock. */
     int                 mine[BUFFERS];
     int                 said;       /* the one line on stderr, once */
 } audio;
 
-/** @brief Say it once: a shell that cannot make a sound still runs. */
+/** @brief Print one line on stderr, the first time only. */
 static void
 say_once(const char *what)
 {
@@ -47,7 +46,7 @@ say_once(const char *what)
     }
 }
 
-/** @brief The card has finished with a buffer and it is ours again. */
+/** @brief The card has finished with a buffer: it is free again. */
 static void
 played(void *ctx, AudioQueueRef queue, AudioQueueBufferRef buffer)
 {
@@ -77,6 +76,11 @@ tear_down(void)
     memset(audio.mine, 0, sizeof audio.mine);
 }
 
+/**
+ * @brief Open an output queue at @p rate with three buffers, and start it
+ *        primed with silence.
+ * @return 0, or -1 with one line on stderr.
+ */
 static int
 coreaudio_open(void *ctx, unsigned rate)
 {
@@ -114,11 +118,9 @@ coreaudio_open(void *ctx, unsigned rate)
         audio.mine[i] = 1;
     }
     /*
-     * Primed with one buffer of silence, and only then started.  A queue
-     * with nothing in it has nothing to play and starting one anyway is
-     * not something the framework answers: it waits for an IO cycle that
-     * never comes.  Fifty milliseconds of nothing at the head of the
-     * first clip is the whole cost.
+     * Primed with one buffer of silence before it starts: a queue started
+     * empty waits for an IO cycle that never comes.  The first clip starts
+     * fifty milliseconds late.
      */
     audio.buffer[0]->mAudioDataByteSize = CHUNK_FRAMES * sizeof(int16_t);
     memset(audio.buffer[0]->mAudioData, 0,
@@ -131,11 +133,9 @@ coreaudio_open(void *ctx, unsigned rate)
     }
     audio.mine[0] = 0;
     /*
-     * Slow on purpose, and here on purpose: starting a device can take a
-     * moment, and on a machine that will not start one at all this does
-     * not come back.  open() is where the kit expects that -- a shell
-     * with workers hands it to one (tiku_sound_set_opener), so the turn
-     * is never the thread that waits.
+     * Starting a device can take a moment, and on a machine that will not
+     * start one this does not return.  A shell with workers runs open() on
+     * one (tiku_sound_set_opener()).
      */
     if (AudioQueueStart(audio.queue, NULL) != noErr) {
         tear_down();
@@ -145,7 +145,7 @@ coreaudio_open(void *ctx, unsigned rate)
     return 0;
 }
 
-/** @brief A chunk for every buffer the card has given back. */
+/** @brief A chunk for every free buffer; -1 when the queue is not open. */
 static int
 coreaudio_room(void *ctx)
 {
@@ -163,6 +163,8 @@ coreaudio_room(void *ctx)
     return n * CHUNK_FRAMES;
 }
 
+/** @brief Fill a free buffer with up to one chunk and queue it.
+ *  @return Frames taken, 0 when every buffer is with the card, or -1. */
 static int
 coreaudio_write(void *ctx, const int16_t *pcm, size_t frames)
 {
@@ -201,6 +203,7 @@ coreaudio_write(void *ctx, const int16_t *pcm, size_t frames)
     return (int)frames;
 }
 
+/** @brief Stop the queue and free it. */
 static void
 coreaudio_close(void *ctx)
 {
@@ -208,8 +211,8 @@ coreaudio_close(void *ctx)
     if (audio.queue == NULL) {
         return;
     }
-    /* At once, not played out: the kit closes only after a while with
-     * nothing playing, so there is nothing left in it to wait for. */
+    /* Stopped at once, not played out: the kit closes only after two
+     * seconds with nothing written. */
     (void)AudioQueueStop(audio.queue, true);
     tear_down();
 }

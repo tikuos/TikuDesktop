@@ -1,5 +1,18 @@
-/* Synced, immutable, UID-bound outbox. No background device mutations.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_config_outbox.c - the configuration request outbox.
+ *
+ * A record, <uid>.pending, holds "TIKU-CONFIG-OUTBOX-1", the board's UID,
+ * "enroll" or "write", the path, the request and a CRC-32 line.  It is
+ * written under a temporary name, synced and linked into place, never
+ * rewritten, and removed once the device's receipt confirms it.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_config_outbox.h"
 #include "tiku_sys.h"
 #include <errno.h>
@@ -18,12 +31,15 @@ extern int tiku_config_outbox_fail(const char *step);
 #define OB_FAIL(step) 0
 #endif
 
+/** @brief Set @p p's state and summary.  @return -1 for ERROR, else 0. */
 static int ob_result(tiku_config_pending_t *p, int state, const char *message)
 {
     p->state = state;
     snprintf(p->summary, sizeof p->summary, "%s", message);
     return state == TIKU_CONFIG_PENDING_ERROR ? -1 : 0;
 }
+/** @brief Whether @p s is lower-case hex of even length from @p min to
+ *         @p max, not all zeros. */
 static int ob_hex(const char *s, size_t min, size_t max)
 {
     size_t n = strlen(s);
@@ -36,6 +52,7 @@ static int ob_hex(const char *s, size_t min, size_t max)
     }
     return any != 0;
 }
+/** @brief The CRC-32 (reflected, polynomial 0xedb88320) of @p n bytes. */
 static uint32_t ob_crc(const char *s, size_t n)
 {
     uint32_t crc = UINT32_MAX;
@@ -46,6 +63,8 @@ static uint32_t ob_crc(const char *s, size_t n)
     }
     return ~crc;
 }
+/** @brief Read @p path into @p out as a string.  @return Its length, or
+ *         -1. */
 static int ob_read(tiku_backend_t *b, const char *path, char *out, size_t max)
 {
     int n;
@@ -55,6 +74,9 @@ static int ob_read(tiku_backend_t *b, const char *path, char *out, size_t max)
     out[n] = 0;
     return n;
 }
+/** @brief The board's hardware UID from /sys/device/uid, 8 to 32 hex
+ *         digits.  @return 0, or -1 when it is absent, malformed or not the
+ *         UID the backend's key names. */
 static int ob_uid(tiku_backend_t *b, char uid[33])
 {
     char raw[64];
@@ -77,11 +99,11 @@ int tiku_config_outbox_dir(char *out, size_t max)
         n = snprintf(out, max, "%s/.config/tracker/config-requests", home);
     else return -1;
     if (n <= 1 || (size_t)n >= max || out[0] != '/') return -1;
-    /* Trailing slashes go here: ob_directory() refuses them, and a path
-     * this call accepts must be one that opens. */
+    /* Trailing slashes are dropped here: ob_directory() refuses them. */
     while (n > 1 && out[n-1] == '/') out[--n] = 0;
     return n > 1 ? 0 : -1;
 }
+/** @brief fsync() the directory that holds @p path.  @return 0, or -1. */
 static int ob_parent_sync(const char *path)
 {
     char parent[1024], *slash;
@@ -94,6 +116,13 @@ static int ob_parent_sync(const char *path)
     if (fd < 0) return -1;
     rc = fsync(fd); close(fd); return rc;
 }
+/**
+ * @brief Open the outbox directory, which must be this user's and closed to
+ *        others; with @p create, make it (syncing each new level) and take
+ *        its lock.
+ * @return The descriptor, or -1 with errno set: EACCES for a directory
+ *         that is not private, EBUSY when another process holds it.
+ */
 static int ob_directory(const char *dir, int create)
 {
     char path[1024];
@@ -123,8 +152,16 @@ static int ob_directory(const char *dir, int create)
     }
     return fd;
 }
+/** @brief The record's file name for @p uid: "<uid>.pending". */
 static void ob_filename(const char *uid, char name[48])
 { snprintf(name, 48, "%s.pending", uid); }
+
+/**
+ * @brief Whether a record is well formed: an enrollment of 32 hex digits to
+ *        /sys/config/provision, or a request that decodes for the device
+ *        name (at most 31 bytes) or the CPU target frequency (a decimal,
+ *        no leading zero, up to UINT32_MAX).
+ */
 static int ob_valid(const tiku_config_pending_t *p)
 {
     tiku_config_snapshot_t s;
@@ -136,12 +173,14 @@ static int ob_valid(const tiku_config_pending_t *p)
     if (tiku_config_decode_request(p->request, &s, token, value)) return 0;
     if (!strcmp(p->path, "/sys/device/name")) return strlen(value) <= 31;
     if (strcmp(p->path, "/sys/cpu/freq_target")) return 0;
-    /* Firmware normalizes decimal clock targets. Require canonical input so
-     * receipt payload comparison remains exact. */
+    /* The firmware normalises a decimal clock target, so only the canonical
+     * form is taken: a receipt's value then compares exactly. */
     if (value[0] < '1' || value[0] > '9' || strlen(value) > 10) return 0;
     for (size_t i = 1; value[i]; i++) if (value[i] < '0' || value[i] > '9') return 0;
     return strtoull(value, NULL, 10) <= UINT32_MAX;
 }
+/** @brief Encode a record, its CRC-32 line last.  @return Its length, or
+ *         -1. */
 static int ob_encode(const tiku_config_pending_t *p, char out[384])
 {
     int n = snprintf(out, 384, "TIKU-CONFIG-OUTBOX-1\n%s\n%s\n%s\n%s\n",
@@ -150,7 +189,9 @@ static int ob_encode(const tiku_config_pending_t *p, char out[384])
     snprintf(out+n, 384-(size_t)n, "%08lx\n", (unsigned long)ob_crc(out, (size_t)n));
     return n+9;
 }
-/* 0 = absent, 1 = valid record, -1 = unsafe/corrupt/unreadable. */
+/** @brief Load the record kept for @p uid.  @return 1 with @p out filled,
+ *         0 when there is none, -1 for one that is unsafe, corrupt or
+ *         unreadable. */
 static int ob_load(int dir, const char *uid, tiku_config_pending_t *out)
 {
     char name[48], buf[384], expected[10], *lines[5], *next;
@@ -194,12 +235,15 @@ static int ob_load(int dir, const char *uid, tiku_config_pending_t *out)
     *out = p;
     return 1;
 }
+/** @brief Whether two records hold the same request. */
 static int ob_same(const tiku_config_pending_t *a, const tiku_config_pending_t *b)
 {
     return a && b && a->enrollment == b->enrollment &&
         !strcmp(a->uid, b->uid) && !strcmp(a->path, b->path) &&
         !strcmp(a->request, b->request);
 }
+/** @brief Write a record under a temporary name, sync it, link it into
+ *         place and sync the directory.  @return 0, or -1. */
 static int ob_store(int dir, const tiku_config_pending_t *p)
 {
     char buf[384], name[48], temp[48], token[33];
@@ -228,6 +272,8 @@ done:
     (void)unlinkat(dir, temp, 0);
     return rc;
 }
+/** @brief Remove the kept record, synced, when it still matches @p p.
+ *  @return 0, or -1. */
 static int ob_remove(int dir, const tiku_config_pending_t *p)
 {
     tiku_config_pending_t current;
@@ -241,6 +287,8 @@ static int ob_remove(int dir, const tiku_config_pending_t *p)
     rc = unlinkat(dir, name, 0) || fsync(dir) || tiku_sys_sync_file(fd) ? -1 : 0;
     close(fd); return rc;
 }
+/** @brief Sync the kept record and its directory again, when it still
+ *         matches @p p.  @return 0, or -1. */
 static int ob_durable(int dir, const tiku_config_pending_t *p)
 {
     tiku_config_pending_t current;
@@ -250,11 +298,17 @@ static int ob_durable(int dir, const tiku_config_pending_t *p)
     ob_filename(p->uid, name);
     fd = openat(dir, name, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return -1;
-    /* A previous publish could have failed at directory fsync. Visibility on
-     * this boot alone is not enough to authorize a retry after that failure. */
+    /* A record whose publish failed at the directory sync is visible on
+     * this boot but may not survive a crash, so it is synced again before
+     * a send. */
     rc = OB_FAIL("retry-sync") || fsync(dir) || tiku_sys_sync_file(fd) ? -1 : 0;
     close(fd); return rc;
 }
+/**
+ * @brief Set @p p's state from the device: an enrollment by the store's
+ *        incarnation, a write by the receipts in /sys/config/history.
+ * @return -1 for ERROR, else 0.
+ */
 static int ob_resolve(tiku_backend_t *b, tiku_config_pending_t *p)
 {
     tiku_config_snapshot_t probe, wanted, current, after;
@@ -284,7 +338,7 @@ static int ob_resolve(tiku_backend_t *b, tiku_config_pending_t *p)
         tiku_config_snapshot_t receipt;
         end = strchr(line, '\n');
         /* The session trims the reply's trailing newline, so the last
-         * line ends at the terminator rather than at a break. */
+         * line ends at the terminator. */
         if (++count > 4) goto malformed;
         if (end) *end = 0;
         size_t len = strlen(line);
@@ -336,6 +390,11 @@ int tiku_config_outbox_inspect(const char *dir, tiku_backend_t *b,
         "Local request is unreadable or corrupt. Inspect the recovery directory; nothing was sent.");
     return found ? ob_resolve(b, out) : 0;
 }
+/**
+ * @brief Send a kept record, once the board's UID is checked and the record
+ *        synced, and resolve the outcome; a confirmed record is removed.
+ * @return 0 when confirmed and removed, -1 otherwise with @p error filled.
+ */
 static int ob_transmit(int fd, tiku_backend_t *b, tiku_config_pending_t *p,
                        char *error, size_t max)
 {
@@ -357,7 +416,7 @@ static int ob_transmit(int fd, tiku_backend_t *b, tiku_config_pending_t *p,
         }
         (void)b->ops->write(b, p->path, p->request, strlen(p->request), error, max);
     } else (void)tiku_config_send(b, p->path, p->request, error, max);
-    /* Never infer acceptance from a possibly empty transport acknowledgement. */
+    /* Acceptance is read from the receipts, not from the write's answer. */
     (void)ob_resolve(b, p);
     if (p->state == TIKU_CONFIG_PENDING_CONFIRMED) {
         if (!ob_remove(fd, p)) { snprintf(error, max, "Device confirmed the request."); return 0; }
@@ -365,6 +424,9 @@ static int ob_transmit(int fd, tiku_backend_t *b, tiku_config_pending_t *p,
     } else snprintf(error, max, "%s", p->summary);
     return -1;
 }
+/** @brief Keep @p p for its board and send it.  @return As ob_transmit(),
+ *         or -1 when the UID cannot be read, a request is already kept or
+ *         the record cannot be stored. */
 static int ob_start(const char *dir, tiku_backend_t *b, tiku_config_pending_t *p,
                      char *error, size_t max)
 {
@@ -414,6 +476,8 @@ int tiku_config_outbox_enroll(const char *dir, tiku_backend_t *b, char *error, s
     for (int i = 0; i < 16; i++) snprintf(p.request+2*i, 3, "%02x", token[i]);
     return ob_start(dir, b, &p, error, max);
 }
+/** @brief Retry, or with @p forget remove, the kept request
+ *         @p displayed, which must still match the kept record. */
 static int ob_existing(const char *dir, tiku_backend_t *b,
     const tiku_config_pending_t *displayed, int forget, char *error, size_t max)
 {

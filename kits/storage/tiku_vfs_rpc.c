@@ -1,5 +1,17 @@
-/* Versioned, bounded VFS messages and a worker-only backend proxy.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_vfs_rpc.c - the namespace proxy an application uses, and the
+ * desktop's side that serves it (tiku_vfs_serve.inl).
+ *
+ * Messages are versioned and bounded: a value is under TIKU_VFS_RPC_BYTES
+ * and a listing at most TIKU_VFS_RPC_ROWS rows.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_vfs_rpc.h"
 #include <pthread.h>
 #include <time.h>
@@ -8,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/** @brief A proxy: the one request in flight, its reply, and the value
+ *         last read, which a write is checked against. */
 typedef struct {
     tiku_backend_t base;
     pthread_mutex_t lock;
@@ -20,7 +34,8 @@ typedef struct {
     size_t last_size;
 } proxy_t;
 
-/* Only canonical device-relative paths can reach the broker. */
+/** @brief Whether @p path is canonical: absolute, under 256 bytes, with no
+ *         control character and no empty, "." or ".." component. */
 static int valid_path(const char *path)
 {
     if (!path || *path != '/' || strlen(path) >= 256) return 0;
@@ -33,7 +48,12 @@ static int valid_path(const char *path)
     return 1;
 }
 
-/* Publish one request, then wait off the UI thread with a finite deadline. */
+/**
+ * @brief Post one request and wait up to 15 seconds for its reply; the
+ *        device's key is learnt from the first reply.
+ * @return The reply, or NULL on a bad path, a cancel, a timeout or a
+ *         request already in flight.
+ */
 static tiku_msg_t *exchange(proxy_t *p, const char *op, const char *path,
                              const void *data, size_t size)
 {
@@ -66,14 +86,15 @@ static tiku_msg_t *exchange(proxy_t *p, const char *op, const char *path,
     return reply;
 }
 
-/* Missing status is failure, never a successful empty value. */
+/** @brief Whether a reply says ok; a reply with no status is a failure. */
 static int succeeded(const tiku_msg_t *m)
 {
     int32_t ok = 0;
     return m && tiku_msg_find_int32(m, "ok", 0, &ok) && ok == 1;
 }
 
-/* Wire models deliberately contain no host pointers or C structure layout. */
+/** @brief Row @p index of a reply as a Model: the name, kind and permission
+ *         bits a wire model carries. */
 static int model_get(const tiku_msg_t *m, int index, tiku_model_t *out)
 {
     const char *name = tiku_msg_find_string(m, "name", index);
@@ -87,6 +108,7 @@ static int model_get(const tiku_msg_t *m, int index, tiku_model_t *out)
     return 1;
 }
 
+/** @brief Stat @p path through the desktop.  0, or -1. */
 static int proxy_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
     tiku_msg_t *m = exchange(b->impl, "stat", path, NULL, 0);
@@ -95,6 +117,7 @@ static int proxy_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
     tiku_msg_free(m); return ok ? 0 : -1;
 }
 
+/** @brief List @p path through the desktop.  Entries, or -1. */
 static int proxy_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
 {
     tiku_msg_t *m = exchange(b->impl, "list", path, NULL, 0);
@@ -110,6 +133,8 @@ static int proxy_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, voi
     tiku_msg_free(m); return count;
 }
 
+/** @brief Read @p path through the desktop, and keep the value for a later
+ *         write's check.  Bytes, or -1. */
 static int proxy_read(tiku_backend_t *b, const char *path, void *out, size_t max)
 {
     proxy_t *p = b->impl;
@@ -125,6 +150,12 @@ static int proxy_read(tiku_backend_t *b, const char *path, void *out, size_t max
     tiku_msg_free(m); return ok ? (int)size : -1;
 }
 
+/**
+ * @brief Write @p path through the desktop: at most 512 bytes, to the path
+ *        this proxy last read, and taken only when the device still holds
+ *        the value read.
+ * @return 0, or -1 with @p error filled.
+ */
 static int proxy_write(tiku_backend_t *b, const char *path, const void *data,
                        size_t size, char *error, size_t max)
 {
@@ -148,7 +179,7 @@ void tiku_vfs_proxy_cancel(tiku_backend_t *b)
     pthread_cond_broadcast(&p->ready); pthread_mutex_unlock(&p->lock);
 }
 
-/* Call after the app worker has finished, not while it is inside exchange. */
+/** @brief Free the proxy and any reply left waiting. */
 static void proxy_close(tiku_backend_t *b)
 {
     proxy_t *p = b->impl;

@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_attr.c - typed descriptors, formatting and validation.
+ * tiku_attr.c - typed descriptors: parsing, formatting, validation and
+ * ordering, and fitting a cell's text to a column.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -168,10 +169,9 @@ as_long(const char *raw, long *v)
 }
 
 /**
- * @brief Bytes, with the binary prefixes and one decimal above the first.
- *
- * Under a kibibyte the count is exact and carries its unit word, because
- * "512 bytes" is worth more than "0.5 KiB" at that size.
+ * @brief Bytes: under a kibibyte the exact count with its unit word
+ *        ("512 bytes"), above it one decimal and a binary prefix
+ *        ("1.5 KiB").
  */
 static void
 fmt_bytes(long v, char *out, size_t max)
@@ -191,21 +191,18 @@ fmt_bytes(long v, char *out, size_t max)
     snprintf(out, max, "%.1f %s", d, suffix[i]);
 }
 
-/** @brief An interval, dropping the smallest part first as room runs out. */
+/** @brief An interval as H:MM:SS, or M:SS under an hour, with its sign. */
 static void
 fmt_seconds(long v, char *out, size_t max)
 {
-    /* Split the MAGNITUDE and carry the sign separately: dividing a negative
-     * total truncates each part toward zero, so -3600 comes out as every
-     * field zero and reads as "0:00" -- an hour ago shown as now. */
+    /* The magnitude is split and the sign carried apart, so -3600 reads
+     * "-1:00:00". */
     const char *sign = (v < 0) ? "-" : "";
     long a = (v < 0) ? -v : v;
     long h = a / 3600, m = (a % 3600) / 60, s = a % 60;
 
-    /* Hours accumulate rather than rolling into days: a duration is one
-     * span, and a reader comparing two of them compares the leading
-     * number.  Under the hour the hours field goes rather than sit at
-     * zero (MA-035). */
+    /* Hours do not roll into days, and under an hour the hours field is
+     * left out (MA-035). */
     if (h > 0) {
         snprintf(out, max, "%s%ld:%02ld:%02ld", sign, h, m, s);
     } else {
@@ -213,6 +210,8 @@ fmt_seconds(long v, char *out, size_t max)
     }
 }
 
+/** @brief A frequency in Hz, kHz from 1000 or MHz from a million, to six
+ *         significant digits. */
 static void
 fmt_hz(long v, char *out, size_t max)
 {
@@ -225,7 +224,7 @@ fmt_hz(long v, char *out, size_t max)
     }
 }
 
-/** @brief Thousands separated, so a seven-digit count is readable at a glance. */
+/** @brief A count with its thousands separated by spaces. */
 static void
 fmt_count(long v, char *out, size_t max)
 {
@@ -259,8 +258,8 @@ tiku_attr_format(const tiku_desc_t *d, const char *raw,
         return 0;
     }
     if (raw == NULL || raw[0] == '\0') {
-        /* A node that has not been read yet is not a node whose value is
-         * empty; the two must not look the same. */
+        /* No value: "-".  A node not yet read must not look like a node
+         * whose value is empty. */
         snprintf(out, max, "-");
         return (int)strlen(out);
     }
@@ -290,8 +289,7 @@ tiku_attr_format(const tiku_desc_t *d, const char *raw,
             snprintf(out, max, "%s", (v != 0) ? "on" : "off");
         } else if (d->unit_name[0] != '\0' &&
                    strcmp(d->unit_name, "-") != 0) {
-            /* A unit with no formatter is still worth showing: the
-             * reading means more with its unit than without. */
+            /* A unit with no formatter of its own follows the number. */
             snprintf(out, max, "%ld %s", v, d->unit_name);
         } else {
             snprintf(out, max, "%ld", v);
@@ -330,11 +328,10 @@ as_bool(const char *t)
 }
 
 /**
- * @brief Read a scalar, accepting a k/m/g suffix.
+ * @brief Read a scalar, accepting a k/m/g suffix and a "b" after it.
  *
- * Typing "64k" into a byte field is how the size is spoken; the original
- * accepts it and so does this.  The multipliers are binary, matching the
- * prefixes the values are displayed with.
+ * The multipliers are binary, matching the prefixes values are displayed
+ * with: "64k" is 65536.
  *
  * @return 1 when the whole string was consumed.
  */
@@ -380,8 +377,8 @@ tiku_attr_validate(const tiku_desc_t *d, const char *text, char *err,
         err[0] = '\0';
     }
     if (text == NULL || text[0] == '\0') {
-        /* A boolean reads an empty field as false -- clearing the box IS
-         * the input -- where every other type has nothing to send. */
+        /* A boolean reads an empty field as false; any other type has
+         * nothing to send. */
         if (d != NULL && d->vtype == TIKU_VT_BOOL) {
             return 1;
         }
@@ -407,8 +404,7 @@ tiku_attr_validate(const tiku_desc_t *d, const char *text, char *err,
         snprintf(err, errmax, "%ld is negative; this value cannot be", v);
         return 0;
     }
-    /* A declared range is checked HERE rather than at the device, so a
-     * refusal names the range instead of arriving as a bare error. */
+    /* A declared range is checked here, and the refusal names it. */
     if (d->has_range && (v < d->lo || v > d->hi)) {
         snprintf(err, errmax, "%ld is outside %ld..%ld", v, d->lo, d->hi);
         return 0;
@@ -433,8 +429,7 @@ tiku_attr_canonical(const tiku_desc_t *d, const char *text, char *out,
                       d->vtype == TIKU_VT_I32)) {
         long v;
 
-        /* A suffix is a convenience for typing, not something to send: the
-         * device is given the number it means. */
+        /* A suffix is expanded: the device is sent the number. */
         if (parse_scalar(text, &v)) {
             snprintf(out, max, "%ld", v);
             return (int)strlen(out);
@@ -457,8 +452,7 @@ tiku_attr_size_fit(int64_t bytes, int width,
         return 0;
     }
     if (bytes < 0) {
-        /* Not "0 bytes": an unknown size and an empty file are different
-         * facts and a listing must not spell them the same way. */
+        /* An unknown size reads "-", not "0 B". */
         snprintf(out, max, "-");
         return (int)strlen(out);
     }
@@ -480,8 +474,8 @@ tiku_attr_size_fit(int64_t bytes, int width,
         }
     }
     if (measure != NULL && measure(out, ctx) > width) {
-        /* Too narrow for the formatted form: the plain byte count is
-         * shorter for small values and honest for large ones. */
+        /* Too narrow for the formatted form: the bare byte count, if it
+         * fits. */
         char plain[40];
 
         snprintf(plain, sizeof plain, "%lld", (long long)bytes);
@@ -495,7 +489,8 @@ tiku_attr_size_fit(int64_t bytes, int width,
     return (int)strlen(out);
 }
 
-#define ELLIPSIS "\xe2\x80\xa6"     /* U+2026, one character            */
+/* U+2026 in UTF-8: one character. */
+#define ELLIPSIS "\xe2\x80\xa6"
 
 int
 tiku_text_fit(const char *in, int width, tiku_trunc_t how,
@@ -531,7 +526,7 @@ tiku_text_fit(const char *in, int width, tiku_trunc_t how,
         return 0;
     }
     if (how == TIKU_TRUNC_BEGIN) {
-        /* From the BEGINNING: what survives is the tail, which for a
+        /* Elided from the beginning: the tail survives, which for a
          * string being typed is the part still changing (TS-041). */
         size_t skip;
 
@@ -547,8 +542,8 @@ tiku_text_fit(const char *in, int width, tiku_trunc_t how,
         snprintf(out, max, ELLIPSIS);
         return (int)strlen(out);
     }
-    /* Middle: give up a character from each side in turn, so the head and
-     * the tail shrink together and both stay legible. */
+    /* Middle: a character goes from each side in turn, so the head and the
+     * tail shrink together. */
     for (keep = (int)n - 1; keep > 0; keep--) {
         char try[256];
         int head = (keep + 1) / 2;
@@ -572,25 +567,19 @@ tiku_attr_compare(const tiku_desc_t *d, const char *a, const char *b)
 
     if (a == NULL) { a = ""; }
     if (b == NULL) { b = ""; }
-    /* An entry that has no value sorts LAST whichever way the column is
-     * ordered -- it is not "the smallest value", it is the absence of one,
-     * and letting the empty string compare as a value puts a column of
-     * unread nodes above everything that has been read. */
+    /* An empty value is no value, and sorts after every value. */
     if (a[0] == '\0' || b[0] == '\0') {
         if (a[0] == '\0' && b[0] == '\0') {
             return 0;
         }
         return (a[0] == '\0') ? 1 : -1;
     }
-    /* Numbers compare as numbers whatever the column shows: ordering by the
-     * formatted text would sort "9 bytes" after "10.0 KiB". */
+    /* Numbers compare as numbers, not as their formatted text. */
     if (d != NULL && d->vtype != TIKU_VT_NONE &&
         d->vtype != TIKU_VT_STR && as_long(a, &x) && as_long(b, &y)) {
         return (x < y) ? -1 : ((x > y) ? 1 : 0);
     }
-    /* Text compares case-insensitively, as every other name comparison in
-     * this port does: a column that sorted "Zebra" before "apple" would be
-     * the only place capitals mattered. */
+    /* Text compares case-insensitively. */
     return strcasecmp(a, b);
 }
 
@@ -609,8 +598,8 @@ tiku_attr_time_fit(int64_t when, int width,
                        int (*measure)(const char *, void *), void *ctx,
                        char *out, size_t max)
 {
-    /* Longest first, exactly as TruncTimeBase orders them: long date with
-     * seconds, then without, then a shorter date, then the shortest. */
+    /* Longest first: long date with seconds, then without, then a shorter
+     * date, then the shortest. */
     static const date_form_t forms[] = {
         { "%B %e, %Y", "%l:%M:%S %p" },
         { "%B %e, %Y", "%l:%M %p"    },
@@ -625,8 +614,7 @@ tiku_attr_time_fit(int64_t when, int width,
         return 0;
     }
     if (when <= 0) {
-        /* No wall clock behind this store.  Saying so beats printing a date
-         * in 1970 that the user would read as a fact. */
+        /* No wall clock behind this store. */
         snprintf(out, max, "-");
         return (int)strlen(out);
     }
@@ -639,9 +627,8 @@ tiku_attr_time_fit(int64_t when, int width,
 
         (void)strftime(date, sizeof date, forms[i].date, &tmv);
         (void)strftime(time_s, sizeof time_s, forms[i].time, &tmv);
-        {   /* %e and %l pad with a space; a column of dates reads better
-             * without the hole, and the width measurement should not pay
-             * for a character that is not information. */
+        {   /* %e and %l pad with a space, which is dropped before the
+             * width is measured. */
             char *p2 = date;
             while (*p2 == ' ') { p2++; }
             snprintf(both, sizeof both, "%s, %s", p2,
@@ -687,8 +674,7 @@ gauge_cells(long value, long vmax, int cells, char *out, size_t max)
     for (i = 0; i < cells && at + 1u < max; i++) {
         long n = (long)i * steps;
 
-        /* Full above the cell's midpoint, half above its start: a reading
-         * that has only just entered a cell must not fill it. */
+        /* Full above the cell's midpoint, half above its start. */
         out[at++] = (value > n + steps / 2) ? '*' : (value > n) ? '+' : '.';
     }
     out[at] = '\0';
@@ -771,8 +757,8 @@ tiku_attr_disambiguate(const char *path, const char *const *others,
     snprintf(dir, sizeof dir, "%s", path);
     slash = strrchr(dir, '/');
     dir[(slash != NULL) ? (size_t)(slash - dir) : 0u] = '\0';
-    /* The MINIMUM that tells them apart: one trailing component, then two,
-     * until no colliding neighbour shares the suffix. */
+    /* The shortest suffix that tells them apart: one trailing component,
+     * then two, until no colliding neighbour shares it. */
     for (depth = 1; ; depth++) {
         const char *mine = dis_suffix(dir, depth);
         int clash = 0, whole = (mine == dir);
@@ -794,7 +780,7 @@ tiku_attr_disambiguate(const char *path, const char *const *others,
             }
         }
         if (!clash || whole) {
-            /* Dots stand for what was left OUT; a suffix that is the
+            /* Dots stand for what was left out; a suffix that is the
              * whole parent shows the parent as it is. */
             return whole
                 ? snprintf(out, max, "%s -- %s", leaf,

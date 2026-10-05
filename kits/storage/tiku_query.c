@@ -88,9 +88,8 @@ tiku_query_set_name(tiku_query_t *q, const char *text)
     }
     q->mode = TIKU_QMODE_NAME;
     q->term_count = 0;
-    /* The star decides the operator, and it is looked for ANYWHERE in the
-     * typed text rather than at either end: "*.txt" and "a*b" are both
-     * whole-name patterns, "txt" is a substring. */
+    /* A star anywhere in the text makes it a whole-name pattern (IS):
+     * "*.txt" and "a*b" are patterns, "txt" is a substring (CONTAINS). */
     (void)tiku_query_add_term(q, TIKU_QF_NAME,
                                   (text != NULL && strchr(text, '*') != NULL)
                                       ? TIKU_OP_IS
@@ -136,9 +135,9 @@ tiku_query_set_formula(tiku_query_t *q, const char *formula)
     if (q == NULL) {
         return -1;
     }
-    /* Leave a positively invalid query on every failure path.  Otherwise a
-     * bad edit could leave the previously parsed formula live, or become an
-     * empty predicate that matches every node. */
+    /* On every failure path @p q is left reset and marked invalid, so
+     * neither the previous formula nor an empty predicate, which matches
+     * every node, stays live. */
     tiku_query_init(q);
     q->mode = TIKU_QMODE_FORMULA;
     q->invalid = 1;
@@ -243,10 +242,9 @@ tiku_query_add_scope(tiku_query_t *q, const char *path)
         q->scope_count >= TIKU_QUERY_SCOPES_MAX) {
         return 0;
     }
-    /* Normalise BEFORE comparing: a trailing separator is appended so the
-     * prefix test cannot match a sibling whose name merely starts the same
-     * way (/dev must not admit /devices), and comparing the raw path against
-     * an already-normalised one would never find the duplicate. */
+    /* The path gets a trailing separator before the duplicate test: the
+     * stored scopes carry one, and the prefix test needs it so /dev does
+     * not admit /devices. */
     snprintf(norm, sizeof norm, "%s", path);
     n = strlen(norm);
     if (n > 0u && norm[n - 1u] != '/' && n + 1u < sizeof norm) {
@@ -346,8 +344,8 @@ tiku_query_in_scope(const tiku_query_t *q, const char *path)
         size_t prefix_n = n;
 
         /* Scopes are stored with a trailing separator so child prefixes are
-         * unambiguous.  A file scope has no child and must still admit the
-         * exact node itself (PVN-070). */
+         * unambiguous; a file scope, which has no children, admits the node
+         * itself (PVN-070). */
         if (prefix_n > 1u && q->scope[i][prefix_n - 1u] == '/') {
             prefix_n--;
         }
@@ -416,7 +414,8 @@ parse_scalar(const char *text, long double *out)
     return 1;
 }
 
-/** @brief Tracker's permissive boolean conversion, normalized to 0/1. */
+/** @brief A permissive boolean: "true", "on", "yes" or an odd number is 1,
+ *         anything else 0. */
 static int
 parse_bool(const char *text)
 {
@@ -435,7 +434,7 @@ parse_bool(const char *text)
     return (end != text && (value % 2) != 0) ? 1 : 0;
 }
 
-/** @brief Local midnight, shifted by calendar days rather than 86400 s. */
+/** @brief Local midnight @p days calendar days from the day of @p now. */
 static int64_t
 day_start(int64_t now, int days)
 {
@@ -505,12 +504,14 @@ parse_date(const char *text, int64_t now, int64_t *out)
     return 0;
 }
 
+/** @brief Whether @p c is an ASCII letter. */
 static int
 is_alpha(int c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
+/** @brief @p c in ASCII lower case. */
 static int
 lower(int c)
 {
@@ -527,22 +528,21 @@ tiku_query_pattern(const char *value, tiku_qop_t op, char *out,
     if (out == NULL || max == 0u) {
         return 0;
     }
-    /* Substring and suffix searches are anchored by a leading star; the
-     * value itself never carries one. */
+    /* Substring and suffix searches take a leading star, substring and
+     * prefix searches a trailing one. */
     if ((op == TIKU_OP_CONTAINS || op == TIKU_OP_ENDS_WITH) &&
         o + 1u < max) {
         out[o++] = '*';
     }
     for (; p != NULL && *p != '\0'; p++) {
         if (*p == ' ') {
-            /* A space matches any run, which is why "foo bar" also finds
-             * "foo-bar" and "foo.bar". */
+            /* A space matches any run: "foo bar" also finds "foo-bar" and
+             * "foo.bar". */
             if (o + 1u < max) { out[o++] = '*'; }
             continue;
         }
         if (is_alpha((unsigned char)*p)) {
-            /* Case-insensitivity is spelled as a class per letter rather
-             * than as a flag on the comparison. */
+            /* Each letter becomes a class of its two cases. */
             if (o + 4u < max) {
                 out[o++] = '[';
                 out[o++] = (char)lower((unsigned char)*p);
@@ -571,10 +571,8 @@ tiku_query_glob(const char *pattern, const char *name)
     }
     while (*name != '\0') {
         if (*pattern == '[' && strchr(pattern, ']') != NULL) {
-            /* A '[' with no ']' after it is not a class -- it is a literal
-             * bracket in a name.  Treating it as an unterminated class let
-             * "[abc" match "a", because the scan ran to the terminator and
-             * the pattern was then considered spent. */
+            /* Only a '[' with a ']' after it opens a class; any other is a
+             * literal bracket in a name, so "[abc" does not match "a". */
             const char *cl = pattern + 1;
             int neg = 0, hit = 0;
 
@@ -644,7 +642,8 @@ field_text(tiku_qfield_t f, const tiku_model_t *m,
     }
 }
 
-/** @brief Whether a field is compared as a number rather than as text. */
+/** @brief Whether a field is compared as a number: Size, and a Value whose
+ *         descriptor gives a numeric type. */
 static int
 numeric_field(tiku_qfield_t f, const tiku_desc_t *d)
 {
@@ -655,6 +654,8 @@ numeric_field(tiku_qfield_t f, const tiku_desc_t *d)
             d->vtype != TIKU_VT_NONE && d->vtype != TIKU_VT_STR);
 }
 
+/** @brief Whether one term holds for @p m, its descriptor @p d and its
+ *         value; @p now anchors relative dates. */
 static int
 term_matches(const tiku_qterm_t *t, const tiku_model_t *m,
              const tiku_desc_t *d, const char *value, int64_t now)
@@ -664,9 +665,9 @@ term_matches(const tiku_qterm_t *t, const tiku_model_t *m,
 
     if (!t->pattern_ready && t->field == TIKU_QF_TYPE &&
         (t->op == TIKU_OP_IS || t->op == TIKU_OP_IS_NOT)) {
-        /* A type is not a string to compare: "text/" IS the type of
-         * "text/x-source-code", which no text operator can say.  The other
-         * operators are left as text, so "contains vnd" still works. */
+        /* IS and IS_NOT match a type with tiku_model_type_is(), so "text/"
+         * admits "text/x-source-code"; the other operators match the type
+         * as text, so "contains vnd" works. */
         int yes = tiku_model_type_is(text, t->value);
 
         return (t->op == TIKU_OP_IS) ? yes : !yes;
@@ -703,16 +704,12 @@ term_matches(const tiku_qterm_t *t, const tiku_model_t *m,
         int text_num = parse_scalar(text, &a);
         int want_num = parse_scalar(t->value, &b);
 
-        /* Tracker takes the type from the attribute registry and simply does
-         * not offer an ordering operator on anything untyped.  Most nodes
-         * here ARE untyped, so refusing would make the operator useless;
-         * instead the values decide.  Both numeric compares as numbers --
-         * without which "30" > "1000" is true, because '3' > '1'. */
+        /* Two numbers compare as numbers, so "30" is less than "1000". */
         if (want_num && text_num) {
             return (t->op == TIKU_OP_GREATER) ? (a > b) : (a < b);
         }
-        /* Asked for a number and given a name, the answer is no: a device
-         * name is not greater than 1000, nor less than it. */
+        /* A number and a name do not compare: neither is greater nor
+         * less. */
         if (want_num != text_num) {
             return 0;
         }
@@ -746,9 +743,9 @@ tiku_query_matches_at(const tiku_query_t *q,
     if (q == NULL || m == NULL || q->term_count == 0) {
         return 1;
     }
-    /* Terms fold left, each joining the accumulated result the way its own
-     * join says -- the same shape as the panel, where the and/or control
-     * sits on the row ABOVE the one it governs. */
+    /* Terms fold left: each joins the result so far by its own join, as
+     * the panel's and/or control sits on the row above the one it
+     * governs. */
     acc = term_matches(&q->term[0], m, d, value, now);
     for (i = 1; i < q->term_count; i++) {
         int r = term_matches(&q->term[i], m, d, value, now);
@@ -766,7 +763,7 @@ tiku_query_matches(const tiku_query_t *q, const tiku_model_t *m,
                                      (int64_t)time(NULL));
 }
 
-/** @brief Case-insensitive substring without locale-dependent allocation. */
+/** @brief Whether @p text contains @p needle, case ignored. */
 static int
 contains_ci(const char *text, const char *needle)
 {
@@ -826,6 +823,7 @@ tiku_query_next_refresh(const tiku_query_t *q, int64_t now)
 /* rendering                                                                 */
 /*---------------------------------------------------------------------------*/
 
+/** @brief The formula's name for field @p f. */
 static const char *
 field_name(tiku_qfield_t f)
 {
@@ -873,9 +871,8 @@ tiku_query_predicate(const tiku_query_t *q, char *out, size_t max)
             snprintf(frag, sizeof frag, "(%s%s%s)", field_name(t->field), op,
                      t->value);
         } else {
-            /* The pattern is what is really compared, so it is what the
-             * formula shows: an editable predicate that lies about what it
-             * will do is worse than none. */
+            /* The pattern is what is compared, so it is what the formula
+             * shows. */
             if (t->pattern_ready) {
                 snprintf(pat, sizeof pat, "%s", t->value);
             } else {
@@ -897,6 +894,8 @@ tiku_query_predicate(const tiku_query_t *q, char *out, size_t max)
 /* running                                                                   */
 /*---------------------------------------------------------------------------*/
 
+/** @brief A search in progress: the walk's stack of folders, the results
+ *         and any refresh under way. */
 struct tiku_qrun {
     tiku_backend_t *backend;
     tiku_query_t    q;
@@ -913,29 +912,30 @@ struct tiku_qrun {
      * the current results are new since it. */
     unsigned char      *fresh;
     int                 refreshes;
-    /* A refresh in progress.  The snapshot outlives the turn that began
-     * it, because the re-walk does: a search over a real disk is minutes
-     * of work and the shell has a frame to draw every sixteenth of a
-     * second. */
+    /* A refresh in progress: the snapshot lives here while the re-walk is
+     * stepped. */
     tiku_model_t       *old;
     unsigned char      *seen;
     int                 old_count;
     int                 refreshing;
 };
 
+/** @brief Push @p path for the walk; when the stack is full the subtree
+ *         is left out. */
 static void
 enqueue(tiku_qrun_t *r, const char *path)
 {
     int next = (r->tail + 1) % QUEUE_MAX;
 
     if (next == r->head) {
-        return;                /* the queue is full; this subtree is cut  */
+        return;                /* full: this subtree is left out          */
     }
     snprintf(r->queue[r->tail], TIKU_PATH_MAX, "%s", path);
     r->tail = next;
 }
 
-/** @brief Receives one entry during the walk. */
+/** @brief Receives one entry during the walk: push it when it is a folder,
+ *         keep it when it is in scope and matches. */
 static int
 visit(const tiku_model_t *m, void *ctx)
 {
@@ -943,19 +943,16 @@ visit(const tiku_model_t *m, void *ctx)
     tiku_desc_t d;
     char value[128];
 
-    /* Do this before enqueueing: excluding only the Trash pose but walking
-     * its children would still put deleted items in the result set. */
+    /* The Trash test comes before the push, so the Trash's children are
+     * never walked. */
     if (!tiku_query_allows_path(&r->q, m)) {
         return 0;
     }
     if (tiku_model_is_container(m) &&
         m->kind != TIKU_KIND_SYMLINK) {
-        /* Descend regardless of whether the directory itself matches: what
-         * is being searched for is usually inside it.  Only REAL
-         * directories are descended, as the source pushes only
-         * B_DIRECTORY_NODE entries: a symlink is an entry, not a place --
-         * and following links is how /proc's cycles make a depth-first
-         * walk never come home. */
+        /* Every directory is descended, whether or not it matches.  A
+         * symlink is not: following links would let /proc's cycles keep
+         * the walk from ending. */
         enqueue(r, m->path);
     }
     if (r->count >= r->q.max_results) {
@@ -963,8 +960,8 @@ visit(const tiku_model_t *m, void *ctx)
     }
     (void)tiku_desc_parse(m->facts.meta, &d);
     value[0] = '\0';
-    /* A term on the value has to read it, which costs a round trip -- so it
-     * is only paid when a term actually asks for one. */
+    /* The value is read, a round trip on a device, only when a term tests
+     * it. */
     {
         int i, wants = 0;
 
@@ -1034,8 +1031,7 @@ tiku_query_start(tiku_backend_t *b, const tiku_query_t *q)
     if (r->q.max_results <= 0 || r->q.max_results > RESULTS_MAX) {
         r->q.max_results = RESULTS_MAX;
     }
-    /* Walking starts at the scopes when there are any, so a scoped search
-     * does not read the whole namespace and then throw most of it away. */
+    /* A scoped search starts its walk at the scopes. */
     if (r->q.scope_count > 0) {
         for (i = 0; i < r->q.scope_count; i++) {
             char start[TIKU_PATH_MAX];
@@ -1047,10 +1043,8 @@ tiku_query_start(tiku_backend_t *b, const tiku_query_t *q)
             if (n > 1u && start[n - 1u] == '/') {
                 start[n - 1u] = '\0';
             }
-            /* A query scope may name a file, not only a directory.  Keep
-             * that one node as a pending visit instead of feeding it to
-             * list(), whose opendir failure otherwise makes the result
-             * silently empty (PVN-070). */
+            /* A scope may name a file: it is kept as a single visit,
+             * because list() on a file fails (PVN-070). */
             if (b->ops->stat != NULL && b->ops->stat(b, start, &m) == 0 &&
                 !tiku_model_is_container(&m)) {
                 if (r->single_count < TIKU_QUERY_SCOPES_MAX) {
@@ -1063,8 +1057,8 @@ tiku_query_start(tiku_backend_t *b, const tiku_query_t *q)
     } else if (requested_scopes == 0) {
         enqueue(r, "/");
     } else {
-        /* Every saved target is absent or now names a leaf.  Searching the
-         * whole namespace here would silently turn a narrow query broad. */
+        /* No saved scope is available, so the run ends with no
+         * results. */
         r->done = 1;
     }
     return r;
@@ -1098,10 +1092,10 @@ tiku_query_step(tiku_qrun_t *r, int budget)
     while (budget-- > 0 && r->head != r->tail) {
         char dir[TIKU_PATH_MAX];
 
-        /* The most recently found directory first: a STACK, so the walk
-         * descends before it moves on, in the source's depth-first order
-         * (PVN-069).  The no-snapshot semantics are unchanged -- a folder
-         * already passed still misses later creations. */
+        /* The most recently found directory first: a stack, so the walk
+         * descends before it moves on, depth first (PVN-069).  The walk
+         * takes no snapshot: a folder already passed misses later
+         * creations. */
         r->tail = (r->tail + QUEUE_MAX - 1) % QUEUE_MAX;
         snprintf(dir, sizeof dir, "%s", r->queue[r->tail]);
         r->visited++;
@@ -1149,11 +1143,8 @@ tiku_query_refresh_begin(tiku_qrun_t *r)
     if (r == NULL || r->refreshing) {
         return -1;
     }
-    /* Snapshot, then re-walk.  The view is NOT cleared: a result that is
-     * still there keeps its row, so nothing flickers and no selection is
-     * lost merely because a value moved.  Which is also why nothing is
-     * shown until the walk finishes -- mid-walk the list is half rebuilt,
-     * and a row that is about to be found again would blink out. */
+    /* The current results are copied to the snapshot and the walk starts
+     * again from the scopes; tiku_query_refresh_end() compares the two. */
     r->old = calloc((size_t)(r->count > 0 ? r->count : 1), sizeof *r->old);
     r->seen = calloc((size_t)(r->count > 0 ? r->count : 1), 1);
     if (r->old == NULL || r->seen == NULL) {
@@ -1222,10 +1213,8 @@ tiku_query_refresh_end(tiku_qrun_t *r, tiku_qdiff_t *out)
     }
     r->fresh = calloc((size_t)(r->count > 0 ? r->count : 1), 1);
 
-    /* Mark survivors in the snapshot as they are re-found.  Leaving them
-     * marked unseen is the hazard the original carries: everything still in
-     * the snapshot at the end is treated as gone, so a result that never
-     * left would be deleted and re-added on every refresh. */
+    /* Each result found again marks its snapshot entry seen; whatever is
+     * still unseen at the end has left the set. */
     for (i = 0; i < r->count; i++) {
         int survived = 0;
 
@@ -1254,9 +1243,8 @@ tiku_query_refresh_end(tiku_qrun_t *r, tiku_qdiff_t *out)
         }
         if (out != NULL) {
             out->removed++;
-            /* Why it left is only knowable now: ask whether the node is
-             * still there at all.  Afterwards the two cases are
-             * indistinguishable. */
+            /* A result that left has vanished when its node no longer
+             * stats. */
             if (r->backend->ops->stat == NULL ||
                 r->backend->ops->stat(r->backend, r->old[j].path,
                                       &probe) != 0) {
@@ -1330,10 +1318,8 @@ tiku_query_search_type(const tiku_qrun_t *r)
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief Serialise a query to one line per field.
- *
- * Text rather than a struct dump: a saved query outlives the build that
- * wrote it, and a layout change must not silently reinterpret an old one.
+ * @brief Serialise a query to text, one line per field, so a record reads
+ *        the same across builds.  Length, or -1 when @p max is too small.
  */
 static int
 serialise(const tiku_query_t *q, char *out, size_t max)
@@ -1341,16 +1327,17 @@ serialise(const tiku_query_t *q, char *out, size_t max)
     size_t o = 0;
     int i;
 
-    /* v2 added what a record has to carry to be re-openable and sweepable;
-     * v3 adds formula patterns and Include Trash; v4 adds dynamic dates:
-     * what it IS, whether anyone meant to keep it, when it was written, and
-     * what its scopes were.  A v1 record still reads -- the fields it does
-     * not carry simply keep their defaults. */
+    /* The record's versions: v2 carries what a record needs to be
+     * re-opened and swept -- its kind, whether it is temporary, when it
+     * was written and what its scopes were; v3 adds formula patterns and
+     * Include Trash, v4 dynamic dates.  A v1 record still reads, the
+     * fields it does not carry keeping their defaults. */
     o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
                           "v4\nmode %d\nkind %d %d %lld\n", (int)q->mode,
                           (int)q->kind, q->temporary,
                           (long long)q->saved_at);
-    /* Persist the choice, not this machine's resolved Trash path. */
+    /* Only the Include Trash choice is written, not this machine's Trash
+     * path. */
     o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
                           "o %d\n", q->include_trash);
     o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
@@ -1367,8 +1354,8 @@ serialise(const tiku_query_t *q, char *out, size_t max)
                               q->term[i].value);
     }
     for (i = 0; i < q->scope_count; i++) {
-        /* The identity goes on the SAME line as the path, so a reader that
-         * only understands "s <path>" still gets the path. */
+        /* The identity goes on a "d" line of its own after the path, so a
+         * reader that only understands "s <path>" still gets the path. */
         o += (size_t)snprintf(out + o, (o < max) ? max - o : 0u,
                               "s %s\n", q->scope[i]);
         if (q->scope_was[i].dev != 0u || q->scope_was[i].volume[0] != '\0') {
@@ -1381,6 +1368,8 @@ serialise(const tiku_query_t *q, char *out, size_t max)
     return (o < max) ? (int)o : -1;
 }
 
+/** @brief Read a saved record, v1 to v4, into @p q; unknown lines are
+ *         skipped.  @return 0, or -1 for an unknown version. */
 static int
 deserialise(tiku_query_t *q, const char *in)
 {
@@ -1445,9 +1434,9 @@ deserialise(tiku_query_t *q, const char *in)
         } else if (line[0] == 's' && line[1] == ' ') {
             (void)tiku_query_add_scope(q, line + 2);
         } else if (line[0] == 'd' && line[1] == ' ') {
-            /* Belongs to the scope just read: the writer emits it directly
-             * after, and a stray one with no scope before it is dropped
-             * rather than attached to the wrong place. */
+            /* A "d" line belongs to the scope just read, which the writer
+             * puts directly before it; one with no scope before it is
+             * counted in dropped. */
             unsigned long long dev = 0ull;
             int used = 0;
 
@@ -1498,8 +1487,7 @@ tiku_query_save(const tiku_query_t *q, const char *name,
                              strlen(buf)) != 0) {
         return -1;
     }
-    /* The index is what makes saved queries findable; without it a name has
-     * to be remembered to be re-opened. */
+    /* The index lists the saved queries for the menus. */
     n = tiku_state_read(store, TIKU_QUERY_STORE_NODE,
                             TIKU_QUERY_INDEX_ATTR, index,
                             sizeof index - 1u);
@@ -1508,11 +1496,11 @@ tiku_query_save(const tiku_query_t *q, const char *name,
     }
     index[n] = '\0';
     if (strstr(index, name) == NULL) {
-        /* Newest first, so the list reads as a history. */
+        /* Newest first. */
         char merged[2048];
 
-        /* A name is bounded so the oldest entries fall off the end of the
-         * index rather than the newest failing to be written. */
+        /* The name is cut to 127 bytes and the old index to 1900, so the
+         * oldest entries fall off the end. */
         snprintf(merged, sizeof merged, "%.127s\n%.1900s", name, index);
         (void)tiku_state_write(store, TIKU_QUERY_STORE_NODE,
                                    TIKU_QUERY_INDEX_ATTR, merged,
@@ -1595,9 +1583,8 @@ tiku_query_list_kind(struct tiku_store *store, tiku_qrec_t kind,
         tiku_query_t q;
 
         if (tiku_query_load(&q, all[i], store) != 0) {
-            /* Indexed but not readable: the index is a list of names, and
-             * a name whose record has gone is not one of this kind or of
-             * any other. */
+            /* Indexed but not readable: its record has gone, and it is of
+             * no kind. */
             continue;
         }
         if (q.kind != kind) {
@@ -1620,8 +1607,7 @@ tiku_query_sweep(struct tiku_store *store, int64_t now,
         return -1;
     }
     if (up_for < TIKU_QUERY_SWEEP_WAIT) {
-        /* Not yet.  Nothing here is urgent, and a machine that has just
-         * started has better things to do than delete week-old records. */
+        /* Not before TIKU_QUERY_SWEEP_WAIT after start. */
         return -1;
     }
     n = tiku_query_list(store, all, TIKU_QUERY_LIST_MAX);
@@ -1646,8 +1632,7 @@ tiku_query_sweep(struct tiku_store *store, int64_t now,
             }
         }
         if (shown) {
-            /* A window is showing it.  Deleting the record under an open
-             * window would leave the window unable to say what it is. */
+            /* A window shows it, and its record stays. */
             continue;
         }
         if (tiku_query_forget(all[i], store) == 0) {
@@ -1691,9 +1676,8 @@ tiku_query_forget(const char *name, struct tiku_store *store)
         }
         p = nl + 1;
     }
-    /* The RECORD goes too, not only its line in the index: a name dropped
-     * from the index while its fields stay behind is a query that cannot
-     * be found and cannot be reclaimed either (Q-037). */
+    /* The record is emptied as well as its index line, so nothing is left
+     * that the index cannot reach (Q-037). */
     (void)tiku_state_write(store, name, TIKU_QUERY_ATTR, "", 0);
     return tiku_state_write(store, TIKU_QUERY_STORE_NODE,
                                 TIKU_QUERY_INDEX_ATTR, merged,

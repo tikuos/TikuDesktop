@@ -6,10 +6,10 @@
  *
  * tiku_backend_tiku.c - a live device as a browsable volume.
  *
- * Rides the session/namespace client already proven against three boards
- * (kits/device): the manifest supplies structure, typed descriptors
- * and capabilities in one read, `cat`/`write` supply values, and `ls` supplies
- * the runtime contents of a dynamic store like /data.
+ * Built on the session and namespace client in kits/device: the manifest
+ * supplies structure, typed descriptors and capabilities in one read,
+ * `cat` and `write` supply values, `ls` supplies the contents of a dynamic
+ * store such as /data, and /sys/vfs/events says what changed.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -35,14 +35,14 @@ typedef struct {
     tiku_identity_t  ident;
     int                  leased;        /* a client holds the shell       */
     char                 devid[TIKU_DEVID_MAX];
-    /* One hand on this board at a time: the namespace in memory is
-     * rebuilt by a worker's reload while the loop reads it for a stat,
-     * so every way in takes this, not only the ones that reach the
-     * wire. */
+    /* Every operation takes this lock, including those answered from
+     * memory: a worker's reload rebuilds the namespace while the loop
+     * reads it for a stat. */
     pthread_mutex_t      hand;
 } tiku_impl_t;
 
-/** @brief Whether the shell is somebody's, so the namespace is closed. */
+/** @brief Whether a client holds the shell; the namespace is closed while
+ *         it does. */
 static int
 shell_is_leased(const tiku_backend_t *b)
 {
@@ -72,21 +72,22 @@ read_ident_field(tiku_ns_t *ns, const char *path, char *out, size_t max)
     }
 }
 
-/**
- * @brief Decide a namespace node's kind.
- *
- * A device directory is VIRTUAL_DIR unless it is a dynamic store, which is a
- * real DIRECTORY; the distinction is what makes /sys read-only in the UI while
- * /data accepts new files.  The manifest does not yet mark dynamic
- * directories, so /data is recognised by path until the firmware emits a
- * distinct type character.
- */
+/** @brief Whether @p path is /data or inside it, the device's dynamic
+ *         store. */
 static int
 in_store(const char *path)
 {
     return (strcmp(path, "/data") == 0 || strncmp(path, "/data/", 6) == 0);
 }
 
+/**
+ * @brief Decide a namespace node's kind.
+ *
+ * The device root is a VOLUME.  A device directory is VIRTUAL_DIR, read-only
+ * in the UI, unless it is in the dynamic store, where it is a DIRECTORY that
+ * accepts new files.  The manifest does not mark dynamic directories, so the
+ * store is recognised by its path, /data.
+ */
 static tiku_kind_t
 kind_of(const tiku_node_t *n)
 {
@@ -94,9 +95,8 @@ kind_of(const tiku_node_t *n)
         return TIKU_KIND_VOLUME;
     }
     if (in_store(n->path)) {
-        /* A dynamic store holds FILES -- bytes with a name -- not live
-         * values.  Getting this wrong makes every saved BASIC program look
-         * like a sensor reading, and denies them file semantics. */
+        /* Everything in the dynamic store is a file or a folder: a saved
+         * BASIC program is a file, not a live value. */
         return n->is_dir ? TIKU_KIND_DIRECTORY : TIKU_KIND_FILE;
     }
     return n->is_dir ? TIKU_KIND_VIRTUAL_DIR : TIKU_KIND_DEVICE_NODE;
@@ -111,8 +111,7 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
     const char *p;
 
     memset(m, 0, sizeof *m);
-    /* Copied with an explicit bound: the namespace fields are larger than the
-     * Model's, and a truncated path names a different node. */
+    /* Copied with an explicit bound against the Model's field sizes. */
     {
         size_t pl = strlen(n->path), nl = strlen(n->name);
         if (pl >= sizeof m->path) { pl = sizeof m->path - 1u; }
@@ -125,14 +124,11 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
     m->facts.perm = 0u;
     if (n->perm & TIKU_NS_P_READ)  { m->facts.perm |= TIKU_P_READ; }
     if (n->perm & TIKU_NS_P_WRITE) { m->facts.perm |= TIKU_P_WRITE; }
-    /* On a container, WRITE means "entries can be created here", which is
-     * what access(W_OK) answers for a local directory.  The manifest's perm
-     * column instead describes the NODE's own read/write handlers, and a
-     * directory has none -- so every device directory arrives "--".  A
-     * dynamic store really is mutable, so say so; a namespace directory
-     * really is not, so leave it clear.  (Firmware follow-up: emit a
-     * distinct type character for dynamic dirs so this stops being keyed
-     * on the path.) */
+    /* On a container, WRITE means entries can be created in it.  The
+     * manifest's perm column describes a node's own read and write
+     * handlers, and a directory has none, so every device directory
+     * arrives "--": a store directory gets read and write here, a
+     * namespace directory and the root read only. */
     if (m->kind == TIKU_KIND_DIRECTORY) {
         m->facts.perm |= TIKU_P_READ | TIKU_P_WRITE;
     } else if (m->kind == TIKU_KIND_VIRTUAL_DIR ||
@@ -141,8 +137,8 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
     }
     snprintf(m->facts.req_cap, sizeof m->facts.req_cap, "%s", n->cap);
     snprintf(m->facts.meta, sizeof m->facts.meta, "%s", n->meta);
-    /* "?" is what the ls-walk fills in when the manifest was cut, so the UI
-     * can tell "open" from "never learned". */
+    /* The ls walk fills the capability in as "?" when the manifest was cut;
+     * cap_known is 0 for those. */
     m->facts.cap_known = (strcmp(n->cap, "?") != 0);
     m->facts.size = (int64_t)strlen(n->value);
     snprintf(m->type, sizeof m->type, "%s",
@@ -152,14 +148,12 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
              : n->is_dir ? "tiku-dir/namespace" : "tiku-node/value");
 
     if (n->id != 0u) {
-        /* The device's own identity, stable across a rename -- which is what
-         * lets a renamed node be recognised as the SAME node instead of one
-         * vanishing and another appearing. */
+        /* The device's own identity, stable across a rename: a renamed node
+         * keeps its node_id. */
         m->node_id = n->id;
     } else {
-        /* An older device has no identity column.  Hashing the path is the
-         * only fallback, and it is why a rename there looks like a different
-         * node: the identity moves with the name. */
+        /* An older device has no identity column, so the id is a hash of
+         * the path, and a node renamed there gets a new id. */
         for (p = n->path; *p != '\0'; p++) {
             h ^= (unsigned char)*p;
             h *= 1099511628211ULL;
@@ -170,11 +164,13 @@ from_node(tiku_backend_t *b, const tiku_node_t *n,
 }
 
 /**
- * @brief What the device has recorded since the last ask.
+ * @brief What the device has recorded since the last ask, from its change
+ *        ring at /sys/vfs/events.
  *
- * Reading the device's change ring is one round trip whatever the size of
- * the namespace, which is what makes it worth asking every tick where
- * re-listing every open directory is not.
+ * Reading the ring is one round trip whatever the size of the namespace.
+ *
+ * @return Changes written, 0 while the shell is leased, or -1 when the
+ *         device has no ring.
  */
 static int
 do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
@@ -186,9 +182,8 @@ do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
     int n, i, w = 0;
 
     if (shell_is_leased(b)) {
-        /* A program has the shell: asking the namespace what changed
-         * would read the program output off the wire and throw
-         * it away.  Report nothing changed while the run holds it. */
+        /* The ring is not read while a client holds the shell: a command
+         * now would consume the program's output. */
         return 0;
     }
 
@@ -198,12 +193,10 @@ do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
     n = tiku_ns_events(impl->ns, recs,
                             (int)(sizeof recs / sizeof recs[0]), &dropped);
     if (n < 0) {
-        return -1;              /* the device cannot tell: poll instead   */
+        return -1;              /* the device cannot tell: caller polls  */
     }
-    /* The device's drop counter is cumulative since boot, so testing it
-     * against zero would mark every answer incomplete for ever once the
-     * ring had overflowed even once.  What matters is whether it MOVED
-     * since the last ask. */
+    /* The device's drop counter is cumulative since boot: an answer is
+     * incomplete when the counter moved since the last ask. */
     if (dropped != impl->last_dropped) {
         impl->last_dropped = dropped;
         if (complete != NULL) {
@@ -211,12 +204,9 @@ do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
         }
     }
     /*
-     * A created, removed or moved record means the SHAPE of the namespace
-     * moved, and the manifest this backend answers stat from was read once
-     * at connect.  Refreshing it here is what makes a deleted folder
-     * DETECTABLE: without this, ns_find still knows the old path, tk_stat
-     * still answers for it, and the window over it can never learn it is
-     * gone.
+     * A created, removed or moved record changes the shape of the
+     * namespace, so the manifest is read again: stat answers from it, and
+     * a stale manifest still holds a deleted folder's path.
      */
     for (i = 0; i < n; i++) {
         if (strcmp(recs[i].op, "changed") != 0) {
@@ -226,9 +216,8 @@ do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
     }
     for (i = 0; i < n && w < max; i++) {
         out[w].id = (uint64_t)recs[i].id;
-        /* The op decides what the caller must DO: only a value move can be
-         * served by refreshing a row in place; anything else changes the
-         * shape of the listing and has to be re-read. */
+        /* A value change refreshes a row in place; any other op changes
+         * the shape of the listing, which the caller lists again. */
         if (strcmp(recs[i].op, "created") == 0) {
             out[w].op = TIKU_CH_CREATED;
         } else if (strcmp(recs[i].op, "removed") == 0) {
@@ -243,6 +232,8 @@ do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
     return w;
 }
 
+/** @brief The manifest's path for the node carrying @p id; -1 when no node
+ *         has it. */
 static int
 do_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
 {
@@ -257,6 +248,11 @@ do_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
     return 0;
 }
 
+/**
+ * @brief Describe @p path: from the manifest, or by asking the device for
+ *        a node the manifest does not hold.
+ * @return 0, or -1 while the shell is leased or when the node is absent.
+ */
 static int
 do_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
@@ -268,11 +264,10 @@ do_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 
     if (n == NULL && path[0] == '/' && path[1] == '\0') {
         /*
-         * The root is no line of the manifest, and asking the line about
-         * it answers ENOENT both ways.  It is the one path the router
-         * asks of a mount while listing the folder the mount sits in,
-         * so it is answered here: the device itself, as a volume, under
-         * the name the device gives itself.
+         * The root is not in the manifest, and the device answers ENOENT
+         * for it.  The router asks it of a mount while listing the folder
+         * the mount sits in, so it is answered here: the device as a
+         * volume, named by /sys/device/name or else by its key.
          */
         tiku_node_t root;
 
@@ -288,12 +283,11 @@ do_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
         return 0;
     }
     if (n == NULL) {
-        /* Not in the manifest.  Ask the device before declaring it absent:
-         * the manifest is a snapshot, and a node born since -- a /data file,
-         * a runtime-registered driver -- is still a node.  One that the
-         * device lists but cannot read is reported as UNKNOWN rather than
-         * absent: an entry that cannot be described is not an entry that is
-         * not there, and this is what feeds the held tier. */
+        /* Not in the manifest, which is a snapshot: a node made since, such
+         * as a /data file or a driver registered at run time, is read from
+         * the device.  A node its parent lists but that cannot be read is
+         * UNKNOWN; the view holds such an entry out of sight until a
+         * listing describes it. */
         int rc = tiku_ns_read(impl->ns, path);
 
         memset(out, 0, sizeof *out);
@@ -314,8 +308,8 @@ do_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
             return 0;
         }
         {
-            /* Readable? no.  Listed by its parent? then it exists and is
-             * merely indescribable right now. */
+            /* Not readable: if its parent lists it, it exists but cannot be
+             * described now. */
             char names[64][64];
             char dir[TIKU_PATH_MAX];
             const char *slash = strrchr(path, '/');
@@ -341,6 +335,11 @@ do_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
     return 0;
 }
 
+/**
+ * @brief List the children of @p path as the device has them now.
+ * @return Entries listed, or -1 while the shell is leased or when the
+ *         folder is not there.
+ */
 static int
 do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
         void *ctx)
@@ -353,13 +352,10 @@ do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
     int n, i, count;
 
     /*
-     * The manifest is read once at connect, so serving a listing out of it
-     * shows the namespace as it was THEN: a node that appears or goes never
-     * shows up, which is liveness quietly absent rather than slow.  So the
-     * directory is asked for again here, and the manifest supplies the
-     * TYPED detail (descriptor, capability, identity) for the names that
-     * come back.  Names the manifest has never heard of are still listed --
-     * a node discovered at runtime is a node.
+     * The directory is listed on the device, because the manifest is a
+     * snapshot.  The manifest supplies the typed detail (descriptor,
+     * capability, identity) for the names that come back, and a name it
+     * does not hold is still listed.
      */
     {
         char names[128][64];
@@ -383,20 +379,16 @@ do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
                 if (known != NULL) {
                     from_node(b, known, &m);
                 } else {
-                    /* Not in the manifest: describe what the listing told
-                     * us and leave the rest unknown rather than invented. */
+                    /* Not in the manifest: the entry carries what the
+                     * listing said, and its capability is "?". */
                     memset(&m, 0, sizeof m);
                     (void)snprintf(m.path, sizeof m.path, "%s", full);
                     (void)snprintf(m.name, sizeof m.name, "%s", names[i]);
                     (void)snprintf(m.facts.meta, sizeof m.facts.meta, "-");
                     (void)snprintf(m.facts.req_cap, sizeof m.facts.req_cap,
                                    "?");
-                    /* WHERE it is decides what it is, exactly as it does
-                     * for a name the manifest knows: the manifest is read
-                     * once at connect, so a program saved after that -- or
-                     * every name on an image whose manifest is empty --
-                     * would otherwise be served as a live value node, and
-                     * a saved BASIC program would read as a sensor. */
+                    /* Its place decides its kind, as kind_of() does for a
+                     * name the manifest holds. */
                     if (in_store(full)) {
                         m.kind = kinds[i] ? TIKU_KIND_DIRECTORY
                                           : TIKU_KIND_FILE;
@@ -404,10 +396,8 @@ do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
                         m.kind = kinds[i] ? TIKU_KIND_VIRTUAL_DIR
                                           : TIKU_KIND_DEVICE_NODE;
                     }
-                    /* Writability is the manifest's to state and this name
-                     * is not in it; a store file the person may not edit is
-                     * wrong in one direction, inventing a permission the
-                     * device never granted is wrong in the other. */
+                    /* The manifest states writability and does not hold
+                     * this name, so the entry is read-only. */
                     m.facts.perm = TIKU_P_READ;
                     m.facts.cap_known = 0;
                     m.backend = b;
@@ -426,10 +416,9 @@ do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
             }
             return count;
         }
-        /* The device could not be asked.  If the manifest has never heard of
-         * this path either, the folder is not there -- and saying so is what
-         * lets a window close when its folder goes.  Returning a count on
-         * every path made that branch unreachable here. */
+        /* The device listed nothing or could not be asked: the manifest's
+         * children are listed, and a path the manifest does not hold
+         * either returns -1. */
         n = tiku_ns_children(impl->ns, path, kids, 256);
         if (n <= 0 && tiku_ns_find(impl->ns, path) == NULL) {
             return -1;
@@ -443,8 +432,8 @@ do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
             }
         }
     }
-    /* A dynamic store's contents are data, not policy, so the manifest does
-     * not carry them: ask the device. */
+    /* The manifest does not list a dynamic store's contents, so /data is
+     * asked for with ls. */
     if (n == 0 && strcmp(path, "/data") == 0) {
         char names[64][64];
         int k = tiku_ns_ls(impl->ns, path, names, 64);
@@ -452,9 +441,8 @@ do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
         for (i = 0; i < k; i++) {
             tiku_model_t m;
             memset(&m, 0, sizeof m);
-            {   /* ls names are shorter than these fields; bound the copy
-                 * anyway so the compiler can see it and a long name is
-                 * dropped rather than silently renamed. */
+            {   /* A name too long for the Model is skipped, not cut
+                 * short. */
                 size_t nl = strlen(names[i]);
                 if (nl >= sizeof m.name - 8u) { continue; }
                 memcpy(m.name, names[i], nl + 1u);
@@ -477,6 +465,8 @@ do_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn,
     return count;
 }
 
+/** @brief Read @p path's value from the device into @p buf, unterminated.
+ *  @return Bytes copied, at most @p max, or -1. */
 static int
 do_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
 {
@@ -488,10 +478,9 @@ do_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
     size_t len;
 
     if (tiku_ns_find(impl->ns, path) == NULL) {
-        /* A node the manifest never listed -- a file the board made after
-         * it was mounted -- is asked about, not refused: its directory is
-         * asked what it holds now, the same way the forms under gui/ are
-         * asked for at connect. */
+        /* A node the manifest does not hold, such as a file the board made
+         * after it was mounted: its directory is completed from the device
+         * first, as the forms under gui/ are at connect. */
         char dir[TIKU_PATH_MAX];
         char *slash;
 
@@ -517,6 +506,9 @@ do_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
     return (int)len;
 }
 
+/** @brief Write @p len bytes to @p path on the device, as one value of at
+ *         most 511 bytes; a longer one is cut there.
+ *  @return 0, or -1 with @p err filled. */
 static int
 do_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
          char *err, size_t errmax)
@@ -534,8 +526,7 @@ do_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
     memcpy(val, buf, n);
     val[n] = '\0';
     /* The device's own refusal text is the error the user sees: it names the
-     * real reason (EACCES from the capability gate, ERANGE from a range) and
-     * inventing another would only obscure it. */
+     * reason (EACCES from the capability gate, ERANGE from a range). */
     return tiku_ns_write(impl->ns, path, val, err, errmax);
 }
 
@@ -565,6 +556,8 @@ tiku_backend_tiku_down(const tiku_backend_t *b)
     return impl != NULL && impl->ns != NULL && tiku_ns_down(impl->ns);
 }
 
+/** @brief Service the namespace's notifications for up to @p timeout_ms.
+ *  @return Nodes refreshed, or -1 on a link error. */
 static int
 do_pump(tiku_backend_t *b, int timeout_ms)
 {
@@ -573,6 +566,8 @@ do_pump(tiku_backend_t *b, int timeout_ms)
     return tiku_ns_pump(impl->ns, timeout_ms);
 }
 
+/** @brief The device's sidecar state store, opened on first use under the
+ *         device's key. */
 static tiku_store_t *
 tk_store(tiku_backend_t *b)
 {
@@ -584,14 +579,17 @@ tk_store(tiku_backend_t *b)
     return impl->store;
 }
 
+/** @brief Flush and free the state store, then the namespace, the session
+ *         and the backend. */
 static void
 do_close(tiku_backend_t *b)
 {
     tiku_impl_t *impl = b->impl;
 
     if (impl != NULL) {
-        /* Flush before the link goes: unplug is the device's unmount, and
-         * the arrangement must survive it. */
+        /* The store is flushed before the session closes: an unplug is
+         * the device's unmount, and its arrangement is kept in the
+         * sidecar. */
         if (impl->store != NULL) {
             (void)tiku_store_flush(impl->store);
             tiku_store_free(impl->store);
@@ -609,6 +607,7 @@ do_close(tiku_backend_t *b)
 
 #define HAND(b) (&((tiku_impl_t *)(b)->impl)->hand)
 
+/** @brief do_changes() with the hand held. */
 static int
 tk_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
            int *complete)
@@ -621,6 +620,7 @@ tk_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
     return rc;
 }
 
+/** @brief do_path_of_id() with the hand held. */
 static int
 tk_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
 {
@@ -632,6 +632,7 @@ tk_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
     return rc;
 }
 
+/** @brief do_stat() with the hand held. */
 static int
 tk_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
@@ -643,6 +644,7 @@ tk_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
     return rc;
 }
 
+/** @brief do_list() with the hand held. */
 static int
 tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
 {
@@ -654,6 +656,7 @@ tk_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
     return rc;
 }
 
+/** @brief do_read() with the hand held. */
 static int
 tk_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
 {
@@ -665,6 +668,7 @@ tk_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
     return rc;
 }
 
+/** @brief do_write() with the hand held. */
 static int
 tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
          char *err, size_t errmax)
@@ -677,12 +681,14 @@ tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
     return rc;
 }
 
+/** @brief do_pump(), or nothing while a worker holds the hand. */
 static int
 tk_pump(tiku_backend_t *b, int timeout_ms)
 {
     int rc;
 
-    /* A pump is a look: behind a worker's command it says nothing now. */
+    /* A pump does not wait for the hand: while a worker holds it, the pump
+     * returns 0. */
     if (pthread_mutex_trylock(HAND(b)) != 0) {
         return 0;
     }
@@ -691,6 +697,7 @@ tk_pump(tiku_backend_t *b, int timeout_ms)
     return rc;
 }
 
+/** @brief Wait for whoever holds the hand, then close the backend. */
 static void
 tk_close(tiku_backend_t *b)
 {
@@ -703,10 +710,9 @@ tk_close(tiku_backend_t *b)
 }
 
 static const tiku_backend_ops_t TIKU_OPS = {
-    /* No setperm: a device node's capability bits are the device's to
-     * declare, not the user's to set, and saying so by leaving it out is
-     * what makes the permissions grid read-only rather than an edit that
-     * fails after the fact (AW-078). */
+    /* No setperm: a device node's capability bits are declared by the
+     * device, and a NULL setperm shows the permissions grid read-only
+     * (AW-078). */
     "tiku", tk_stat, tk_list, tk_read, tk_write, tk_pump, tk_changes,
     tk_path_of_id, NULL, tk_store, tk_close
 };
@@ -748,14 +754,12 @@ tiku_backend_tiku_unlease(tiku_backend_t *b)
     }
     tiku_session_on_text(impl->sess, NULL, NULL);
     impl->leased = 0;
-    /* Whatever the client left on the line is not the namespace's: let the
-     * tail land and drop it, THEN find the prompt.  Syncing first would
-     * take that tail's own prompt for its answer and leave every command
-     * after it one prompt out of step. */
+    /* The client's tail is drained and dropped before the sync: a prompt
+     * in that tail would answer the sync and leave every later command one
+     * prompt out of step. */
     tiku_session_drain(impl->sess, 150);
-    /* Short on purpose: the drain has already left the line quiet, and
-     * this can be called from a loop that draws -- four seconds of it
-     * is a frozen shell, not a careful one. */
+    /* A short sync: the line is quiet after the drain, and this can run on
+     * the drawing loop. */
     (void)tiku_session_sync(impl->sess, 500);
 }
 
@@ -856,6 +860,13 @@ tiku_backend_tiku_open_tx(tiku_tx_t *tx)
     return open_tx_within(tx, 4000, 1);
 }
 
+/**
+ * @brief Open a device backend over @p tx: find the shell's prompt within
+ *        @p sync_ms, read the manifest and the identity nodes.
+ *
+ * With @p recover set, a port that does not answer is sent a break and BYE
+ * and asked once more.  @p tx is closed on failure.
+ */
 static tiku_backend_t *
 open_tx_within(tiku_tx_t *tx, int sync_ms, int recover)
 {
@@ -887,15 +898,14 @@ open_tx_within(tiku_tx_t *tx, int sync_ms, int recover)
                         tiku_session_sync(impl->sess, sync_ms) == 0);
 
         if (impl->sess != NULL && !answered && !recover) {
-            /* A probe: nothing answered, and nothing is written to a
-             * port that may belong to something else. */
+            /* A probe that got no answer writes nothing more to the port,
+             * which may belong to something else. */
             tiku_session_free(impl->sess);
             impl->sess = NULL;
         } else if (impl->sess != NULL && !answered) {
         /* No shell prompt.  A board whose last client died mid-program is
-         * still inside its interpreter, answering ok> to everything and
-         * the shell's prompt to nothing; break and BYE put it back, and
-         * cost a board that was never there nothing but a moment. */
+         * still inside its interpreter, which answers ok>; a break and BYE
+         * bring it back to the shell. */
         (void)tiku_session_send_raw(impl->sess, "\x03", 1u);
         tiku_session_drain(impl->sess, 150);
         (void)tiku_session_send_raw(impl->sess, "BYE\n", 4u);
@@ -919,9 +929,9 @@ open_tx_within(tiku_tx_t *tx, int sync_ms, int recover)
         free(b);
         return NULL;
     }
-    /* The manifest never lists what a dynamic directory holds -- the
-     * forms under gui/ above all -- so those are asked for; a manifest
-     * cut by the device's buffer is completed whole instead. */
+    /* The manifest does not list what a dynamic directory holds, such as
+     * the forms under gui/, so those are asked for; a manifest cut short
+     * by the device's buffer is completed whole. */
     if (tiku_ns_truncated(impl->ns)) {
         (void)tiku_ns_complete(impl->ns, 4);
     } else {
@@ -942,7 +952,6 @@ open_tx_within(tiku_tx_t *tx, int sync_ms, int recover)
     return b;
 }
 
-/** @brief The identity this backend bound to.  See tiku_model.h. */
 const tiku_identity_t *
 tiku_backend_tiku_identity(const tiku_backend_t *b)
 {

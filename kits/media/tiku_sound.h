@@ -6,13 +6,11 @@
  *
  * tiku_sound.h - system sounds: the moments a shell may sound, and how.
  *
- * A table of named events in the R5 manner -- the startup chime, the
- * beep, a window opening -- each with a clip, an on/off and a share of
- * one volume.  A shell raises an event at the moment it already knows
- * about and never learns what plays: the kit hands PCM to a backend a
- * chunk per turn, so the loop never waits on the card.  With no backend
- * every event is silent and still counted, which is what a scripted run
- * proves against.
+ * A table of named events -- the startup chime, the beep, a window
+ * opening -- each with a clip, an on/off and one shared volume.  A shell
+ * raises an event, and tiku_sound_pump() hands the clip's PCM to a backend
+ * a chunk per turn.  With no backend every event is silent and still
+ * counted (tiku_sound_count()).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -41,10 +39,10 @@ typedef enum {
 /**
  * @brief Where the PCM goes: mono, signed 16-bit, at TIKU_SOUND_RATE.
  *
- * open() is called on the first play and close() once nothing has played
- * for a while, so an idle shell holds no stream.  room() says how many
- * frames write() would take without blocking, or -1 when the backend
- * cannot tell, in which case the kit writes small chunks.
+ * open() is called when a clip first needs writing, and close() once
+ * nothing has been written for two seconds.  room() says how many frames
+ * write() would take without blocking, or -1 when the backend cannot
+ * tell; the kit writes chunks of at most fifty milliseconds either way.
  */
 typedef struct tiku_sound_backend {
     const char *name;
@@ -84,20 +82,28 @@ void tiku_sound_play(tiku_sound_event_t event);
 /**
  * @brief Hand the backend the next chunk, from the shell's turn.
  *
- * Never blocks for longer than the backend's own write of one chunk,
- * which is under fifty milliseconds of audio.  Closes an idle backend.
+ * Blocks no longer than the backend's write of one chunk, at most fifty
+ * milliseconds of audio.  Closes an idle backend.
  */
 void tiku_sound_pump(void);
 
-/*
- * Opening the device elsewhere.  Connecting to the sound server can take
- * seconds; a shell with workers installs an opener that is asked when the
- * device is closed and a clip wants out.  The opener returns nonzero
- * when it took the opening; it then calls tiku_sound_open_now() where it
- * likes and tiku_sound_opened() on the loop.
+/**
+ * @brief Install an opener, asked when the device is closed and a clip is
+ *        waiting; it returns nonzero when it takes the opening.
+ *
+ * Connecting to the sound server can take seconds, so a shell with workers
+ * opens the device on a worker.
  */
 void tiku_sound_set_opener(int (*fn)(void *ctx), void *ctx);
+
+/** @brief Open the backend now, at TIKU_SOUND_RATE.
+ *  @return The backend's open() result, or -1 with no backend.
+ *  @note An opener calls this where it likes, a worker included. */
 int  tiku_sound_open_now(void);
+
+/** @brief Report the opener's result: the device is open when @p ok, and
+ *         otherwise the waiting clip is dropped.
+ *  @note Call it on the loop. */
 void tiku_sound_opened(int ok);
 
 /** @brief Whether a clip is still being handed out. */
@@ -127,7 +133,8 @@ int tiku_sound_load_scores(void);
 /** @brief The score text baked for @p event, or NULL. */
 const char *tiku_sound_score(tiku_sound_event_t event);
 
-/** @brief Give @p event its baked score again.  @return 1 when it has one. */
+/** @brief Give @p event its baked score again.  @return 1 when it has
+ *         one; without one the event's clip is cleared. */
 int tiku_sound_load_score(tiku_sound_event_t event);
 
 /**
@@ -143,13 +150,11 @@ size_t tiku_sound_frames(tiku_sound_event_t event);
 /**
  * @brief Whatever plays sound on the host this was built for.
  *
- * One name, one file per host behind it, the Makefile choosing: the
- * PulseAudio simple API opened with dlopen where there is one, an audio
- * queue where there is CoreAudio.  A shell asks for it without knowing
- * which, and takes silence for an answer either way.
+ * Defined once per host, the Makefile choosing the file: the PulseAudio
+ * simple API opened with dlopen, or a CoreAudio audio queue.  A backend
+ * that cannot open a device prints one line on stderr and plays silence.
  *
- * @return the backend, or NULL where this host has nothing to play on,
- *         in which case the shell runs silent and says so once.
+ * @return the backend, or NULL where this host has nothing to play on.
  */
 const tiku_sound_backend_t *tiku_sound_host_backend(void);
 

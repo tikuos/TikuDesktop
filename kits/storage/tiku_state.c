@@ -6,10 +6,10 @@
  *
  * tiku_state.c - the three state stores behind one interface.
  *
- * xattr writes through to the filesystem immediately (the object owns its
- * state); sidecar and memory hold records in a list and the sidecar serialises
- * them on flush.  The sidecar file is a simple length-prefixed record stream:
- * values are binary blobs, not text.
+ * The xattr store writes through to the file at once.  The sidecar and
+ * memory stores hold records in a list, and the sidecar writes them to its
+ * file on flush and on free: a magic string, then length-prefixed records
+ * whose values are binary.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,8 +32,8 @@
 #include <stdint.h>
 
 #define STATE_NODE_MAX 256
-/* Room for the longest thing named here: a MIME type (TIKU_TYPE_MAX) and
- * the prefix the xattr store puts in front of it. */
+/* The longest attribute name a record keeps, with its terminator; the
+ * xattr store's "user." prefix has room of its own. */
 #define STATE_ATTR_MAX 64
 #define STATE_VAL_MAX  4096
 #define SIDECAR_MAGIC  "TRKSTATE1"
@@ -60,6 +60,7 @@ struct tiku_store {
 /* record list (sidecar + memory)                                            */
 /*---------------------------------------------------------------------------*/
 
+/** @brief The record for @p attr of @p node, or NULL. */
 static state_rec_t *
 rec_find(tiku_store_t *s, const char *node, const char *attr)
 {
@@ -73,6 +74,8 @@ rec_find(tiku_store_t *s, const char *node, const char *attr)
     return NULL;
 }
 
+/** @brief Set @p attr of @p node to a copy of @p len bytes, adding the
+ *         record when it is new.  @return 0, or -1 when refused. */
 static int
 rec_set(tiku_store_t *s, const char *node, const char *attr,
         const void *buf, size_t len)
@@ -83,9 +86,8 @@ rec_set(tiku_store_t *s, const char *node, const char *attr,
     if (len > STATE_VAL_MAX) {
         return -1;
     }
-    /* Refused rather than shortened: a name cut down here is a name the
-     * lookup no longer matches, so every write would add one more
-     * record nothing can read back. */
+    /* A name too long for a record is refused: a shortened name would not
+     * match its lookup, and every write would add another record. */
     if (strlen(node) >= sizeof r->node || strlen(attr) >= sizeof r->attr) {
         return -1;
     }
@@ -117,7 +119,8 @@ rec_set(tiku_store_t *s, const char *node, const char *attr,
 /* sidecar file                                                              */
 /*---------------------------------------------------------------------------*/
 
-/** @brief $XDG_DATA_HOME/tracker/devices, created if needed. */
+/** @brief $XDG_DATA_HOME/tracker/devices (else ~/.local/share/...),
+ *         created if needed. */
 static int
 sidecar_dir(char *out, size_t max)
 {
@@ -149,6 +152,8 @@ sidecar_dir(char *out, size_t max)
     return 0;
 }
 
+/** @brief Read the sidecar file into @p s; a missing file is a device seen
+ *         for the first time.  @return 0, or -1 when it is not a sidecar. */
 static int
 sidecar_load(tiku_store_t *s)
 {
@@ -191,6 +196,8 @@ sidecar_load(tiku_store_t *s)
     return 0;
 }
 
+/** @brief Write every record to "<path>.new" and rename it over the
+ *         sidecar.  @return 0, or -1. */
 static int
 sidecar_save(tiku_store_t *s)
 {
@@ -228,8 +235,8 @@ sidecar_save(tiku_store_t *s)
         (void)unlink(tmp);
         return -1;
     }
-    /* Rename over the old file: a crash mid-write loses the newest change,
-     * never the whole arrangement. */
+    /* The new file is renamed over the old one, so a crash mid-write
+     * leaves the previous file whole. */
     if (rename(tmp, s->path) != 0) {
         (void)unlink(tmp);
         return -1;
@@ -242,6 +249,7 @@ sidecar_save(tiku_store_t *s)
 /* public                                                                    */
 /*---------------------------------------------------------------------------*/
 
+/** @brief A new, empty, writable store of @p kind. */
 static tiku_store_t *
 store_new(enum store_kind kind)
 {
@@ -280,17 +288,17 @@ tiku_store_sidecar_open(const char *devid)
         return NULL;
     }
     if (sidecar_dir(dir, sizeof dir) != 0) {
-        s->writable = 0;               /* nowhere to persist: degrade */
+        s->writable = 0;               /* nowhere to persist          */
         return s;
     }
-    /* Refuse rather than truncate: a shortened path would collide two
-     * devices' arrangements into one file. */
+    /* A path too long is refused, not cut short: two devices' cut paths
+     * could name one file. */
     if (strlen(dir) + strlen(devid) + 8u >= sizeof s->path) {
         s->writable = 0;
         return s;
     }
-    /* Assembled by hand: the length is proven above, and a formatter here
-     * only teaches the compiler to doubt it. */
+    /* Assembled by hand: the length is checked above, and snprintf here
+     * draws a truncation warning from the compiler. */
     {
         size_t dl = strlen(dir), il = strlen(devid);
         memcpy(s->path, dir, dl);
@@ -337,12 +345,12 @@ xattr_name(const char *attr, char *out, size_t max)
 }
 
 #if defined(TIKU_HAVE_XATTR)
-/*
- * The same three calls, spelled once.  Darwin's take a position and an
- * options word Linux's do not, and both are zero every time this store
- * asks: what is kept here is a whole value on the file itself, never a
- * window into a resource fork, and a symlink is followed because the node
- * a pose belongs to is what the link points at.
+/**
+ * @brief getxattr() on either host.
+ *
+ * Darwin's calls take a position and an options word that Linux's do not;
+ * both are 0: the whole value, no resource fork, and a symlink is followed
+ * to the node the pose belongs to.
  */
 static ssize_t
 state_get(const char *node, const char *name, void *buf, size_t max)
@@ -354,6 +362,7 @@ state_get(const char *node, const char *name, void *buf, size_t max)
 #endif
 }
 
+/** @brief setxattr() on either host, following a symlink. */
 static int
 state_set(const char *node, const char *name, const void *buf, size_t len)
 {
@@ -364,6 +373,7 @@ state_set(const char *node, const char *name, const void *buf, size_t len)
 #endif
 }
 
+/** @brief listxattr() on either host, following a symlink. */
 static ssize_t
 state_list(const char *node, char *names, size_t max)
 {
@@ -373,7 +383,7 @@ state_list(const char *node, char *names, size_t max)
     return listxattr(node, names, max);
 #endif
 }
-#endif /* TIKU_HAVE_XATTR */
+#endif
 
 int
 tiku_state_read(tiku_store_t *s, const char *node, const char *attr,
@@ -415,7 +425,7 @@ tiku_state_write(tiku_store_t *s, const char *node, const char *attr,
         return -1;
     }
     if (!s->writable) {
-        return -1;                     /* read-only: the caller degrades */
+        return -1;                     /* the store cannot persist      */
     }
     if (s->kind == STORE_XATTR) {
 #if defined(TIKU_HAVE_XATTR)
@@ -454,8 +464,8 @@ tiku_state_each(tiku_store_t *s, const char *node,
             const char *nm = names + at;
             ssize_t got;
 
-            /* Only ours.  Another program's attributes are on the file too
-             * and are none of this window's business. */
+            /* Only the _trk/ attributes; other programs' attributes on the
+             * file are skipped. */
             if (strncmp(nm, "user._trk/", 10) != 0) {
                 continue;
             }

@@ -6,15 +6,14 @@
  *
  * tiku_score.h - a sound written down: notes, a waveform, an envelope.
  *
- * A score is text, one instruction per line:
+ * A score is text, one instruction per line; blank lines and lines that
+ * start with '#' are skipped:
  *
  *     wave sine|triangle|square      the waveform for every note
  *     attack <ms>                    the rise at the start of each note
  *     release <ms>                   the fall at its end
  *     note <hz> <ms> <amplitude>     one tone, amplitude 0 to 1
  *     rest <ms>                      silence
- *
- * so a system sound is reviewable as text and renders at any rate.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

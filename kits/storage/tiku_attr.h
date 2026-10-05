@@ -6,14 +6,11 @@
  *
  * tiku_attr.h - attributes, and the text a column shows for one.
  *
- * Tracker decides a column's text by the attribute's name, then by the
- * "display as" hint the type registry gave it, then by a generic reader.
- * A TikuOS node carries that hint itself: the manifest's meta column is
- * a typed descriptor (vtype,unit,freshness,cost[,lo..hi]), so the
- * registry is already attached to the node.  The descriptor is what
- * shows a reading as "1.2 MiB" or "15h 57m" instead of a bare integer,
- * and what refuses a value before it is sent: "banana" to a u32, or 5
- * to a node declared 0..1, is caught without troubling the device.
+ * A TikuOS node's manifest meta column is a typed descriptor
+ * (vtype,unit,freshness,cost[,lo..hi]).  The descriptor formats a reading
+ * ("1.2 MiB", "1:02:03") and refuses a value before it is sent: "banana"
+ * for a u32, or 5 for a node declared 0..1.  The fitting functions shorten
+ * a cell's text to a column's width.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,7 +22,7 @@
 
 #include "tiku_model.h"
 
-/** @brief What a node's value IS. */
+/** @brief What a node's value is. */
 typedef enum {
     TIKU_VT_NONE = 0,        /* untyped: the text is the value        */
     TIKU_VT_BOOL,
@@ -34,7 +31,7 @@ typedef enum {
     TIKU_VT_STR
 } tiku_vtype_t;
 
-/** @brief What the number MEANS, which is what picks the formatter. */
+/** @brief What the number means, which picks the formatter. */
 typedef enum {
     TIKU_UNIT_NONE = 0,
     TIKU_UNIT_BOOL,
@@ -69,10 +66,8 @@ typedef struct {
 /**
  * @brief Parse a manifest meta field.
  *
- * Accepts "-" and anything unrecognised, which yields an untyped descriptor
- * rather than an error: a node the device describes in a way this build
- * does not know yet must still be listed, just without a specialised
- * formatter.
+ * "-" and anything unrecognised give an untyped descriptor, whose value is
+ * shown as text.
  *
  * @return 1 when a type was recognised, 0 when the result is untyped.
  */
@@ -107,9 +102,8 @@ int tiku_attr_autoread(const char *meta, const char *path);
 /**
  * @brief Format @p raw for display, by what the descriptor says it means.
  *
- * The text a cell too narrow to hold it is fitted by the caller's own
- * measurer, the same as any other cell: what a value means does not depend
- * on how much room the column has.
+ * The text is not fitted to a width; the caller fits it like any other
+ * cell.
  *
  * @return Length written.
  */
@@ -117,10 +111,8 @@ int tiku_attr_format(const tiku_desc_t *d, const char *raw,
                          char *out, size_t max);
 
 /**
- * @brief Whether this node's value can be edited in place.
- *
- * Writable and typed as something a text field can produce; a node with no
- * declared type is still editable, since its value is text.
+ * @brief Whether this node's value can be edited in place: it is writable
+ *        and not a container.  @p d is not consulted.
  */
 int tiku_attr_editable(const tiku_model_t *m,
                            const tiku_desc_t *d);
@@ -128,8 +120,7 @@ int tiku_attr_editable(const tiku_model_t *m,
 /**
  * @brief Check @p text before it is sent to the device.
  *
- * @param err Receives the message the user should read; the wording is the
- *            reason, not "invalid input".
+ * @param err Receives the reason, worded for the user.
  * @return 1 when acceptable.
  */
 int tiku_attr_validate(const tiku_desc_t *d, const char *text,
@@ -147,8 +138,9 @@ int tiku_attr_canonical(const tiku_desc_t *d, const char *text,
 /**
  * @brief Order two values of the same descriptor.
  *
- * Numbers compare as numbers even though the column shows them formatted --
- * sorting a byte column by its displayed text would put "9 B" after "10 KiB".
+ * Numbers compare as numbers, not as their formatted text, so 9 bytes sort
+ * before 10 KiB.  An empty value sorts after every value, and other text
+ * compares case-insensitively.
  *
  * @return <0, 0 or >0.
  */
@@ -165,9 +157,9 @@ typedef enum {
 /**
  * @brief Fit @p in to @p width pixels, eliding with a single ellipsis.
  *
- * Names elide in the MIDDLE, which is what keeps both ends of
- * "gpio_bank_1_direction" readable where a trailing elision would leave a
- * column of identical prefixes.  The mark is one U+2026, not three periods.
+ * TIKU_TRUNC_MIDDLE keeps both ends of a name such as
+ * "gpio_bank_1_direction" readable.  The mark is one U+2026, and a text that
+ * already fits is copied whole.
  *
  * @param measure Returns the pixel width of a string.
  * @return Length written.
@@ -179,15 +171,13 @@ int tiku_text_fit(const char *in, int width, tiku_trunc_t how,
 /**
  * @brief The longest date+time form that fits @p width (MA-025).
  *
- * Tried longest first -- long date with medium time, long with short,
- * medium with short, short with short -- and the first that fits wins.  If
- * none do, the date alone; if that still does not, it is elided.  A column
- * therefore says as much as it has room for rather than the same thing at
- * every width.
+ * Tried longest first -- long date with seconds, long date, medium date,
+ * short date, each with its time -- and the first that fits wins.  If none
+ * fits, the short date alone, elided in the middle when it is still too
+ * wide.
  *
- * @param when Seconds since the epoch.  Zero means the store has no wall
- *             clock behind it, and the field reads as unknown rather than
- *             as 1970.
+ * @param when Seconds since the epoch; zero or less reads "-", for a store
+ *             with no wall clock.
  * @return Length written.
  */
 int tiku_attr_time_fit(int64_t when, int width,
@@ -195,47 +185,43 @@ int tiku_attr_time_fit(int64_t when, int width,
                            char *out, size_t max);
 
 /**
- * @brief A human-readable size that degrades with the column (MA-023).
+ * @brief A size that fits @p width (MA-023).
  *
- * A negative @p bytes is an UNKNOWN size and reads "-": a listing that
- * spelled it "0 B" would be claiming a fact it does not have.  Below a
- * kibibyte the plain byte count is the readable form; above it the value is
- * scaled and an insignificant trailing zero dropped, and if that still does
- * not fit, the bare number, and only then an end ellipsis.
+ * A negative @p bytes is unknown and reads "-".  Under a kibibyte it is "N
+ * B"; above, two decimals and a binary prefix, a trailing zero dropped
+ * ("1.0 KiB").  When that is too wide, the bare byte count, and failing that
+ * the formatted form with an end ellipsis.
  */
 int tiku_attr_size_fit(int64_t bytes, int width,
                            int (*measure)(const char *, void *), void *ctx,
                            char *out, size_t max);
 
 /**
- * @brief Five stars out of ten, with halves (MA-037).
+ * @brief A rating from 0 to 10 as five cells: '*' full, '+' half and '.'
+ *        empty (MA-037).
  *
- * The thresholds are Tracker's: with five cells over a maximum of ten, cell
- * n is full above n+1, half above n, and empty otherwise.  The marks are
- * ASCII because the drawing floor's font is single-byte, so a star glyph
- * would render as nothing at all.
+ * A cell is full above its midpoint and half above its start.  The marks are
+ * ASCII: the drawing floor's font is single-byte.
  */
 int tiku_attr_rating(long value, char *out, size_t max);
 
 /**
- * @brief The same cell arithmetic over a declared range.
- *
- * A rating is a gauge with a fixed range; a node that declares one (a
- * battery, a signal strength) wants the identical rendering, which is why
- * this is the general form and the rating is a call into it.
+ * @brief A value over its descriptor's declared range, drawn in cells as
+ *        tiku_attr_rating() draws its five.
  *
  * @param cells How many cells to draw.
- * @return Length written, or 0 when the descriptor declares no range.
+ * @return Length written, or 0 when the descriptor declares no range or
+ *         @p raw is not a number.
  */
 int tiku_attr_gauge(const tiku_desc_t *d, const char *raw, int cells,
                         char *out, size_t max);
 
 /**
- * @brief A display name that tells same-named neighbours apart (NeXT UIG
- *        ch8): the leaf alone when it is unique among @p others, otherwise
- *        "leaf -- .../suffix" with the MINIMUM trailing path that
- *        distinguishes it -- computed against the rows actually shown,
- *        not against the whole namespace.
+ * @brief A display name that tells same-named neighbours apart: the leaf
+ *        alone when it is unique among @p others, otherwise "leaf --
+ *        .../suffix" with the shortest trailing path that distinguishes it
+ *        from @p others, or "leaf -- parent" when only the whole parent
+ *        does.
  *
  * @return the length written.
  */

@@ -1,9 +1,20 @@
-/* TikuOS kits -- configuration v1 client, no board-specific NVM assumptions.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_config.c - the configuration v1 client: the wire codec, probing and
+ * reading a setting, and sending a request.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_config.h"
 #include <stdio.h>
 #include <string.h>
 
+/** @brief The /sys/config node behind a curated setting's path, or
+ *         NULL. */
 static const char *endpoint(const char *path)
 {
     if (!path) return NULL;
@@ -11,16 +22,19 @@ static const char *endpoint(const char *path)
     if (!strcmp(path, "/sys/cpu/freq_target")) return "/sys/config/frequency";
     return NULL;
 }
+/** @brief The value of a lower-case hex digit, or -1. */
 static int digit(char c)
 {
     if (c >= '0' && c <= '9') return c - '0';
     return c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
 }
+/** @brief Whether the first @p n characters of @p s are lower-case hex. */
 static int hex(const char *s, size_t n)
 {
     for (size_t i = 0; i < n; i++) if (digit(s[i]) < 0) return 0;
     return 1;
 }
+/** @brief The CRC-32 (reflected, polynomial 0xedb88320) of @p n bytes. */
 static uint32_t checksum(const char *s, size_t n)
 {
     uint32_t crc = UINT32_MAX;
@@ -89,6 +103,8 @@ int tiku_config_request(const tiku_config_snapshot_t *s, const uint8_t token[16]
         (unsigned long)checksum(out, (size_t)rc));
     return tail == 9 && (size_t)rc + 9 < max ? rc + 9 : -1;
 }
+/** @brief Read @p path into @p out as a string.  @return Its length, or -1
+ *         when it is empty, too long or holds a NUL. */
 static int scalar(tiku_backend_t *b, const char *path, char *out, size_t max)
 {
     int n = b->ops->read(b, path, out, max);
@@ -166,7 +182,8 @@ int tiku_config_decode_request(const char *wire, tiku_config_snapshot_t *out,
         return -1;
     for (size_t i = n-8; i < n; i++) crc = crc*16u + (unsigned)digit(wire[i]);
     if (crc != checksum(wire, n-9)) return -1;
-    /* Reuse the strict value/epoch codec; its synthetic revision is positive. */
+    /* The value is checked by tiku_config_parse(), under a placeholder
+     * revision of 1. */
     snprintf(state, sizeof state, "v1:%.32s:00000001:accepted:%.*s",
              wire, (int)(n-84), wire+75);
     if (tiku_config_parse(state, out)) return -1;
@@ -192,15 +209,16 @@ int tiku_config_send(tiku_backend_t *b, const char *path, const char *request,
         snprintf(error, max, "Recovery state changed. Refresh before saving.");
         return -1;
     }
-    /* The optional desktop RPC proxy also requires a last-read byte snapshot.
-     * Prime that transport guard WITHOUT adopting its newer revision. The
-     * device still checks the original request revision atomically. */
+    /* The desktop's RPC proxy checks a write against the bytes it last
+     * read, so the endpoint is read first.  The request keeps its own
+     * revision, which the device checks. */
     if (!b->ops->read || scalar(b, ep, transport_value, sizeof transport_value) < 0) {
         snprintf(error, max, "Recovery state unavailable. Refresh before saving."); return -1;
     }
     if (b->ops->write(b, ep, request, strlen(request), error, max)) {
-        /* No blind retry/new revision. The outbox layer persists the exact
-         * request and correlates receipts even when acknowledgement is lost. */
+        /* No retry and no new revision: the outbox keeps the exact request
+         * and matches the device's receipts when an acknowledgement is
+         * lost. */
         if (strstr(error, "ECONFLICT") || strstr(error, "ESTALE"))
             snprintf(error, max, "Device configuration changed. Refresh before saving.");
         else snprintf(error, max, "Save not confirmed. Refresh to inspect device state.");

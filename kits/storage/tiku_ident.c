@@ -4,7 +4,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_ident.c - scored device identity.
+ * tiku_ident.c - the device key and the scored identity match.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -81,8 +81,6 @@ tiku_ident_score(const tiku_identity_t *known,
     if (known == NULL || seen == NULL) {
         return 0;
     }
-    /* The veto: a die identifier that disagrees settles the question, no
-     * matter how much of the soft identity coincides. */
     if (differ(known->uid, seen->uid)) {
         return -1;
     }

@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_model.c - the questions the view is allowed to ask.
+ * tiku_model.c - a model's container and write answers, its kind, display
+ * name and icon, and the type table behind them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -33,9 +34,8 @@ tiku_model_is_container(const tiku_model_t *m)
     case TIKU_KIND_QUERY:
         return 1;
     case TIKU_KIND_SYMLINK:
-        /* ResolveIfLink's answer: a link to a folder sorts, opens and
-         * takes drops as the folder it leads to; a broken one is a thing
-         * to see, not a place to put something (MA-008). */
+        /* A link to a folder sorts, opens and takes drops as the folder it
+         * leads to; a broken link is not a container (MA-008). */
         return !m->facts.link_broken &&
                strcmp(m->type, "application/x-vnd.Be-directory") == 0;
     default:
@@ -49,9 +49,9 @@ tiku_model_is_mutable_container(const tiku_model_t *m)
     if (!tiku_model_is_container(m)) {
         return 0;
     }
-    /* A namespace directory has a fixed shape: nothing can be created,
-     * renamed or pasted into /sys.  This single answer is what disables
-     * New Folder, Paste and drop-targeting there. */
+    /* A namespace directory, the Disks root and a query take no new
+     * entries: this answer disables New Folder, Paste and drop targeting
+     * there. */
     if (m->kind == TIKU_KIND_VIRTUAL_DIR ||
         m->kind == TIKU_KIND_ROOT ||
         m->kind == TIKU_KIND_QUERY) {
@@ -107,9 +107,10 @@ static const struct {
     { "application/x-gerber",           "kind.gerber",        "circuit" },
     { "application/x-gerber-job",       "kind.gerberjob",     "circuit" },
     { "application/x-schematic",        "kind.eagleschematic", "circuit" },
-    /* No bare "application/" row: it would claim octet-stream, which is a
-     * generic blob and not a program.  A real executable is recognised by
-     * its permission bits before this table is consulted. */
+    /* There is no bare "application/" row: one would match
+     * application/octet-stream, a generic blob.  An executable with no row
+     * of its own gets its icon from its execute bit
+     * (tiku_model_icon_name()). */
     { "text/",                          "kind.text_file",     "text_file" },
     { "image/",                         "kind.image",         "file" },
     { "audio/",                         "kind.audio",         "file" },
@@ -147,16 +148,14 @@ fold_eq(const char *a, const char *b, size_t n)
     return 1;
 }
 
-/** @brief The table row @p type matches, or -1.  Exact beats supertype. */
 static int type_row_walk(const char *type);
 
 /**
  * @brief The table row @p type matches, memoised (IV-011).
  *
- * A type that has no row of its own is remembered AS SUCH, so the miss is
- * paid once -- the alias entry the source inserts after falling back, as a
- * four-slot memo over the walk.  Hits are remembered too: the memo is the
- * answer, whatever the answer was.
+ * A type with no row of its own is remembered as a miss, so its walk is
+ * paid once; hits are remembered too.  The memo has four slots, reused in
+ * turn, and a type too long for a slot is not kept.
  */
 static int
 type_row(const char *type)
@@ -185,6 +184,7 @@ type_row(const char *type)
     return row;
 }
 
+/** @brief The table row @p type matches, or -1.  Exact beats supertype. */
 static int
 type_row_walk(const char *type)
 {
@@ -233,9 +233,7 @@ tiku_model_type_is(const char *type, const char *want)
     if (fold_eq(type, want, n) && type[n] == '\0') {
         return 1;               /* the type itself */
     }
-    /* A SUPERTYPE ends at the slash and admits everything under it, which
-     * is what lets a table of a dozen entries answer for types it has
-     * never heard of. */
+    /* A supertype ends at the slash and admits every type under it. */
     return (want[n - 1u] == '/' && fold_eq(type, want, n));
 }
 
@@ -245,9 +243,8 @@ tiku_model_kind_string(const tiku_model_t *m)
     if (m == NULL) {
         return "";
     }
-    /* The type is more specific than the kind, so it answers first: a file
-     * is a "Text file" when it says so, and only a bare "File" when it does
-     * not. */
+    /* For a file the type answers first: "Text file" when the table has
+     * its type, a bare "File" otherwise. */
     {
         int r = type_row(m->type);
 
@@ -272,7 +269,7 @@ tiku_model_kind_string(const tiku_model_t *m)
     }
 }
 
-/** @brief Does @p path end in the component @p leaf. */
+/** @brief Whether @p path ends in the component @p leaf. */
 static int
 leaf_is(const char *path, const char *leaf)
 {
@@ -289,16 +286,16 @@ tiku_model_icon_name(const tiku_model_t *m)
     }
     switch (m->kind) {
     case TIKU_KIND_TRASH:
-        /* Two icons, one kind: whether the Trash has anything in it is the
-         * one piece of state the icon exists to show. */
+        /* Two icons, one kind: the full one while the Trash holds
+         * anything. */
         return m->facts.trash_full ? "trash_full" : "trash_empty";
     case TIKU_KIND_DESKTOP:
         return "desktop";
     case TIKU_KIND_SYMLINK:
         if (!m->facts.link_broken) {
-            /* The TARGET's art: attributes and label stay the link's, only
+            /* The target's art: attributes and label stay the link's, only
              * the icon comes from what it points at (IV-042).  The model
-             * already carries the target's nature in its type -- the
+             * carries the target's nature in its type, because the
              * backend stats through a resolving link. */
             int r = type_row(m->type);
 
@@ -307,16 +304,14 @@ tiku_model_icon_name(const tiku_model_t *m)
             }
             return "file";
         }
-        /* Haiku's broken-link blob is byte-identical to its symlink one, so
-         * there is no art to distinguish them and inventing some would be a
-         * different icon set.  The Kind column carries the distinction, and
-         * the drawing dims a broken row. */
+        /* The icon set's broken-link art is the same as its symlink art,
+         * so a broken link wears the symlink icon; the Kind column says it
+         * is broken, and the drawing dims its row. */
         return "symlink";
     case TIKU_KIND_QUERY:
         return "query";
     case TIKU_KIND_VOLUME:
-        /* A share is not a disk, and the art set has always carried a
-         * separate blob for one that nothing ever selected (IV-006). */
+        /* A network share wears the share icon, not a disk's (IV-006). */
         if (m->facts.vol_flags & TIKU_VOL_SHARED) {
             return "share";
         }
@@ -326,19 +321,18 @@ tiku_model_icon_name(const tiku_model_t *m)
     case TIKU_KIND_PRINTER:
         return "printer";
     case TIKU_KIND_DEVICE_NODE:
-        /* A live value has no counterpart in a file system, so it borrows the
-         * plain document icon rather than pretending to be something it is
-         * not; the Value column is what tells the user it is live. */
+        /* A live value has no counterpart in a file system, so it wears
+         * the plain document icon; the Value column shows that it is
+         * live. */
         return "file";
     case TIKU_KIND_VIRTUAL_DIR:
-        /* Haiku ships an icon for exactly this idea -- a directory whose
-         * contents are produced rather than stored. */
+        /* The icon set's art for a directory whose contents are produced
+         * rather than stored. */
         return "folder_virtual";
     case TIKU_KIND_DIRECTORY:
-        /* Tracker picks a special folder's icon by comparing node refs against
-         * the ones it looked up at startup; with no such registry the leaf
-         * name is matched, which is right for the standard places and falls
-         * back to the plain folder everywhere else. */
+        /* A special folder is recognised by its leaf name and the home
+         * folder by its whole path; any other directory wears the plain
+         * folder icon. */
         if (leaf_is(m->path, "Desktop"))   { return "desktop"; }
         if (leaf_is(m->path, "Downloads")) { return "folder_downloads"; }
         if (leaf_is(m->path, "Documents")) { return "folder_people"; }
@@ -366,12 +360,9 @@ tiku_model_icon_name(const tiku_model_t *m)
         break;
     }
     {
-        /*
-         * The TYPE is asked before the execute bit, so a program this
-         * system built keeps the application art instead of falling to
-         * the generic executable one.  The other way round, every
-         * TikuOS application looked exactly like /bin/ls.
-         */
+        /* The type is asked before the execute bit, so a TikuOS
+         * application wears the application art and any other executable
+         * the executable art. */
         int app = type_row(m->type);
 
         if (app >= 0 && strcmp(kTypes[app].icon, "application") == 0) {
@@ -382,9 +373,6 @@ tiku_model_icon_name(const tiku_model_t *m)
         return "executable";
     }
     {
-        /* Case-folded, and by supertype as well as exact: a type registry
-         * that only matched lowercase exact strings would miss most of what
-         * it is asked about. */
         int r = type_row(m->type);
 
         if (r >= 0) {

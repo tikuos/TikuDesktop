@@ -4,11 +4,11 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_fs.c - file operations, stepped rather than blocking.
+ * tiku_fs.c - file operations, run in steps.
  *
  * An operation is a queue plus a cursor: tiku_fs_step() does a little and
- * returns, so the window keeps drawing and a collision can stop the queue and
- * wait for an answer instead of guessing.
+ * returns, and a collision or an error stops the queue until it is answered.
+ * Every public entry point takes the engine's lock, the hand.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -42,8 +42,7 @@ typedef struct {
 /**
  * @brief One reversible operation: its kind and the records it produced.
  *
- * A whole operation is the unit, not a record: undoing half a move of nine
- * items is not something the user ever asked for.
+ * Undo and redo take a whole operation, every record of it.
  */
 typedef struct {
     tiku_op_t op;
@@ -52,11 +51,8 @@ typedef struct {
 } undo_op_t;
 
 /**
- * @brief How deep the two stacks go.
- *
- * Tracker's kUndoRedoListMaxCount.  A bound rather than a growing list
- * because the records hold paths, and an unbounded history of them is a
- * leak that only shows up on a long-lived session.
+ * @brief How deep the undo and redo stacks go; when one is full, its oldest
+ *        operation is dropped.
  */
 #define FS_UNDO_MAX 20
 
@@ -67,8 +63,8 @@ struct tiku_fs {
     tiku_backend_t *backend;
     char                queue[FS_QUEUE_MAX][TIKU_PATH_MAX];
     /* Set once a folder's children have been queued ahead of its second
-     * visit, so a folder whose children WILL NOT go is not expanded again
-     * forever (FS-049). */
+     * visit, so a folder whose children will not go is not expanded again
+     * (FS-049). */
     unsigned char       qexpanded[FS_QUEUE_MAX];
     int                 qcount;
     int                 qcursor;
@@ -129,7 +125,8 @@ fs_give(tiku_fs_t *fs)
     }
 }
 
-/** @brief Put the hand down entirely, for a wait; @return the hold to restore. */
+/** @brief Put the hand down entirely, for a wait.
+ *  @return The hold to restore with fs_back(). */
 static int
 fs_rest(tiku_fs_t *fs)
 {
@@ -149,7 +146,8 @@ fs_back(tiku_fs_t *fs, int held)
     fs->depth = held;
 }
 
-/** @brief An item is no longer at @p from; it is at @p to. */
+/** @brief Note that an item moved from @p from to @p to, for
+ *         tiku_fs_moved_pump() to report; at most 16 wait. */
 static void
 landed(tiku_fs_t *fs, const char *from, const char *to)
 {
@@ -192,6 +190,8 @@ tiku_fs_moved_pump(tiku_fs_t *fs)
         }
     }
 }
+
+/** @brief Install the moved hook. */
 static void
 fs_set_moved(tiku_fs_t *fs, tiku_fs_moved_fn fn, void *ctx)
 {
@@ -213,6 +213,8 @@ cancelled(tiku_fs_t *fs)
     }
     return fs->cancelling;
 }
+
+/** @brief A zeroed engine over @p backend, or NULL. */
 static tiku_fs_t *
 fs_new(tiku_backend_t *backend)
 {
@@ -223,6 +225,8 @@ fs_new(tiku_backend_t *backend)
     }
     return fs;
 }
+
+/** @brief Free the engine and both undo stacks. */
 static void
 fs_free(tiku_fs_t *fs)
 {
@@ -234,6 +238,8 @@ fs_free(tiku_fs_t *fs)
         free(fs);
     }
 }
+
+/** @brief Whether an operation has items still to process. */
 static int
 fs_busy(const tiku_fs_t *fs)
 {
@@ -245,7 +251,7 @@ fs_busy(const tiku_fs_t *fs)
 /* names                                                                     */
 /*---------------------------------------------------------------------------*/
 
-/** @brief The one place the illegal set is written down. */
+/** @brief The characters a name may not contain. */
 #define NAME_DENY "/"
 
 const char *
@@ -296,7 +302,8 @@ join(char *out, size_t max, const char *dir, const char *name)
     return 0;
 }
 
-/** @brief Does an entry exist at dir/name? */
+/** @brief Whether an entry exists at @p dir / @p name; a name too long to
+ *         join counts as taken. */
 static int
 exists(tiku_fs_t *fs, const char *dir, const char *name)
 {
@@ -326,6 +333,7 @@ parent_of(const char *path, char *out, size_t max)
     out[n] = '\0';
 }
 
+/** @brief The last component of @p path, or @p path when it has none. */
 static const char *
 leaf_of(const char *path)
 {
@@ -335,10 +343,12 @@ leaf_of(const char *path)
 }
 
 /**
- * @brief Split "<base> copy N" into its base and the number.
+ * @brief Split "<base> <word> N" into its base and the number.
  *
- * This is what stops "x copy" duplicating into "x copy copy": the suffix is
- * recognised and the counter advanced instead (FS-006).
+ * A name that already ends in the suffix is recognised, so "x copy"
+ * duplicates to "x copy 2", not "x copy copy" (FS-006).
+ *
+ * @return N, 1 for a bare suffix, or 0 when @p name has no suffix.
  */
 static int
 split_suffix(const char *name, const char *word, char *base, size_t max)
@@ -401,6 +411,8 @@ free_suffixed_name(tiku_fs_t *fs, const char *dir, const char *name,
     }
     return -1;
 }
+
+/** @brief The first free "<name> copy [n]" in @p dir. */
 static int
 fs_duplicate_name(tiku_fs_t *fs, const char *dir,
                            const char *name, char *out, size_t max)
@@ -408,6 +420,9 @@ fs_duplicate_name(tiku_fs_t *fs, const char *dir,
     /* Duplicate never reuses the plain name: a duplicate is always "copy". */
     return free_suffixed_name(fs, dir, name, "copy", 0, out, max);
 }
+
+/** @brief @p name when it is free in @p dir, else the first free
+ *         "<name> link [n]". */
 static int
 fs_link_name(tiku_fs_t *fs, const char *dir, const char *name,
                       char *out, size_t max)
@@ -420,14 +435,11 @@ fs_link_name(tiku_fs_t *fs, const char *dir, const char *name,
 /* drop semantics                                                            */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Volume id of a path, or 0 when it cannot be told. */
 /**
- * @brief Which store answers for @p path, and what it is called there.
+ * @brief Which backend serves @p path, and the path it knows it by.
  *
- * Not "which volume" -- that is st_dev's question and is asked elsewhere.
- * This one decides whether the local filesystem calls in this file may be
- * used at all: they may, for a path a POSIX store answers for, and they
- * may not for anything else.
+ * The local filesystem calls in this file are made only for a path a local
+ * store serves.
  */
 static tiku_backend_t *
 store_of(const tiku_fs_t *fs, const char *path, char *local, size_t max)
@@ -436,14 +448,10 @@ store_of(const tiku_fs_t *fs, const char *path, char *local, size_t max)
 }
 
 /**
- * @brief Whether a DEVICE answers for @p path, rather than local files.
+ * @brief Whether a device serves @p path.
  *
- * Nearly everything in this file is about a local filesystem (statvfs,
- * the volumes scan, the Trash, rename(2), opendir), and a namespace has
- * no whole answer to whether the shell's backend is a device: the
- * router carries its root's identity, so with local files at the root
- * every path under /devices/<board> would look local and the gates
- * would open on paths no local filesystem has.  So it is asked per path.
+ * Asked per path: a namespace carries its root's identity, which with local
+ * files at the root says nothing about a path under /devices/<board>.
  */
 static int
 on_device(const tiku_fs_t *fs, const char *path)
@@ -453,14 +461,17 @@ on_device(const tiku_fs_t *fs, const char *path)
     return on != NULL && on->devid[0] != '\0';
 }
 
+/**
+ * @brief The volume @p path is on, as st_dev (its parent's when @p path
+ *        does not exist); 0 when neither can be stat'ed.
+ *
+ * Every device path answers 1, so a drop inside a device is a move.
+ */
 static unsigned long
 volume_of(tiku_fs_t *fs, const char *path)
 {
     struct stat st;
 
-    /* A device store is one volume; its identity IS the volume, so a
-     * drop inside one is always a move.  Asked of the store serving
-     * THIS path -- a namespace has no single answer. */
     if (on_device(fs, path)) {
         return 1;
     }
@@ -473,6 +484,9 @@ volume_of(tiku_fs_t *fs, const char *path)
     }
     return (unsigned long)st.st_dev;
 }
+
+/** @brief TIKU_OP_MOVE when @p src and @p dst_dir are on one volume and no
+ *         copy was asked for, else TIKU_OP_COPY. */
 static tiku_op_t
 fs_drop_action(tiku_fs_t *fs, const char *src,
                         const char *dst_dir, int force_copy)
@@ -513,11 +527,8 @@ undo_stack_clear(undo_op_t *stack, int *count)
 }
 
 /**
- * @brief Push @p o, dropping the OLDEST when the stack is full.
- *
- * The oldest goes because the recent operations are the ones anybody wants
- * back; a full stack that refused new entries would silently stop recording
- * exactly when the history matters most.
+ * @brief Push @p o; when the stack is full, the oldest operation is
+ *        dropped.
  */
 static undo_op_t *
 undo_stack_push(undo_op_t *stack, int *count, const undo_op_t *o)
@@ -537,10 +548,8 @@ undo_stack_push(undo_op_t *stack, int *count, const undo_op_t *o)
 }
 
 /**
- * @brief Begin recording a new operation of kind @p op.
- *
- * Doing anything new makes the redo history unreachable -- it described a
- * world that no longer exists -- so the redo stack goes here.
+ * @brief Begin recording a new operation of kind @p op, and empty the redo
+ *        stack.
  */
 static void
 undo_reset(tiku_fs_t *fs, tiku_op_t op)
@@ -553,6 +562,9 @@ undo_reset(tiku_fs_t *fs, tiku_op_t op)
     (void)undo_stack_push(fs->ustack, &fs->ucount, &fresh);
 }
 
+/** @brief Add one record to the operation being recorded: the item is now
+ *         at @p from, it came from @p to, and @p created marks a thing the
+ *         operation made. */
 static void
 undo_push(tiku_fs_t *fs, const char *from, const char *to, int created)
 {
@@ -577,10 +589,8 @@ undo_push(tiku_fs_t *fs, const char *from, const char *to, int created)
 }
 
 /**
- * @brief Whether the Trash lives underneath @p path.
- *
- * A prefix test, not a substring one: "/home/u" contains "/home/u/.Trash",
- * and a plain strstr would also match a sibling called "/home/user-.Trash".
+ * @brief Whether a Trash sits directly inside @p path: <path>/.Trash
+ *        exists.
  */
 static int
 contains_trash(tiku_fs_t *fs, const char *path)
@@ -603,6 +613,15 @@ contains_trash(tiku_fs_t *fs, const char *path)
     return exists(fs, probe, ".Trash");
 }
 
+/**
+ * @brief Queue @p paths for @p op into @p dst, leaving out what the rules
+ *        refuse, and check what the volumes allow.
+ *
+ * At most FS_QUEUE_MAX paths are taken.
+ *
+ * @return 0 when the job starts, or -1 when the engine is busy or a volume
+ *         refuses the whole job.
+ */
 static int
 start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
       const char *dst, tiku_conflict_t policy)
@@ -621,9 +640,8 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
     for (i = 0; i < n; i++) {
         if ((op == TIKU_OP_COPY || op == TIKU_OP_MOVE) &&
             dst != NULL) {
-            /* Refused HERE, where every copy and move passes, so no caller
-             * can reach the loop with an item that would destroy something
-             * it did not name (FS-023, FS-024, FS-025). */
+            /* Every copy and move passes this refusal check (FS-023,
+             * FS-024, FS-025). */
             char why[200];
 
             if (tiku_fs_check_move(fs, paths[i], dst, why,
@@ -633,24 +651,18 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
                 continue;
             }
         }
-        /* The Trash is dropped from any destructive selection, so it can
-         * never be trashed or deleted -- and neither can anything that
-         * CONTAINS it, since taking the parent takes the Trash with it
-         * (FS-043).  Both tests are silent: the row says so. */
+        /* A trashing drops the Trash, anything in it and anything that
+         * holds it, without a message (FS-043).  Other operations keep
+         * them, so a folder that holds a Trash can still be copied. */
         if (op == TIKU_OP_TRASH &&
             (strstr(paths[i], "/.Trash") != NULL ||
              contains_trash(fs, paths[i]))) {
-            /* Scoped to the destructive op.  Applied to every queue it also
-             * dropped a plain COPY of any folder that happens to hold a
-             * Trash -- copying a home directory would quietly do nothing. */
             continue;
         }
         if ((op == TIKU_OP_TRASH || op == TIKU_OP_DELETE) &&
             !on_device(fs, paths[i])) {
-            /* And a whole VOLUME, out loud.  The copy/move gate above does
-             * not run for these two ops, and a disk trashed as an ordinary
-             * directory is a disk emptied: its own Trash is inside it, so
-             * the move either fails or copies the volume into itself. */
+            /* A whole volume is refused, with a message: trashed as a
+             * directory, it would be moved into its own Trash. */
             tiku_volumes_t vs;
 
             if (tiku_volumes_scan(&vs) > 0 &&
@@ -669,9 +681,9 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
     fs->qcursor = 0;
     fs->policy = policy;
     snprintf(fs->dst, sizeof fs->dst, "%s", dst ? dst : "");
-    {   /* A refusal recorded while the queue was built is the reason an
-         * item is not in it; clearing progress wholesale would throw the
-         * only explanation away. */
+    {   /* Progress is cleared except for the refusal recorded while the
+         * queue was built, and the skip count: they say why items are
+         * missing. */
         char kept[sizeof fs->prog.error];
         int skipped = fs->prog.skipped;
 
@@ -681,9 +693,8 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
         fs->prog.skipped = skipped;
     }
     {
-        /* Counted before the job starts, because the QUESTION depends on
-         * how many collisions there are and asking that after the first
-         * one has been answered is too late (FS-017). */
+        /* Counted before the job starts: the collision question's form
+         * depends on how many there are (FS-017). */
         int k, collisions = 0;
 
         for (k = 0; dst != NULL && k < fs->qcount; k++) {
@@ -693,18 +704,17 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
         }
         fs->prog.collisions = collisions;
     }
-    {   /* What the VOLUME allows, before a byte moves.  A move off a
-         * read-only volume becomes a copy rather than failing, which is
-         * the only way to get a file off a disc at all (FS-013); a
-         * destination that will not take a write refuses outright
-         * (FS-012); and a delete or a move OF a read-only item is
-         * refused with the volume named (FS-045). */
+    {   /* What the volumes allow, before a byte moves: a destination
+         * that takes no write refuses the job (FS-012); a move off a
+         * read-only volume becomes a copy, which is how a file comes off
+         * a disc (FS-013); and trashing or deleting an item on a
+         * read-only volume is refused with the volume named (FS-045). */
         tiku_volumes_t vs;
         char why[200];
         int k;
 
-        /* The volumes machinery is about LOCAL filesystems; the
-         * destination decides whether any of it applies. */
+        /* The volume rules apply to local filesystems, decided by the
+         * destination, or by the first item when there is none. */
         if (!on_device(fs, (dst != NULL) ? dst : paths[0]) &&
             tiku_volumes_scan(&vs) > 0) {
             if (dst != NULL &&
@@ -742,11 +752,10 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
     }
     if (op == TIKU_OP_COPY && dst != NULL &&
         !tiku_fs_in_trash(fs, dst) && !on_device(fs, dst)) {
-        /* Summed before a byte moves: a copy that runs out half way leaves
-         * the user with a truncated tree AND less space than they started
-         * with.  Skipped for the Trash, where a move is what happens, and
-         * for a device store, whose free space is not a number this side
-         * knows (FS-015). */
+        /* The space needed is summed before a byte moves, and a copy that
+         * would not fit does not start.  Skipped for the Trash, where the
+         * copy becomes a move, and for a device, whose free space is not
+         * known here (FS-015). */
         const char *q[FS_QUEUE_MAX];
         int k;
         uint64_t total;
@@ -767,9 +776,7 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
     }
     if (op == TIKU_OP_COPY && dst != NULL &&
         tiku_fs_in_trash(fs, dst)) {
-        /* Copying INTO the Trash would leave the original where it was and
-         * put a second copy somewhere the user cannot see, so the gesture
-         * means the move it looks like (FS-014). */
+        /* A copy into the Trash is a move (FS-014). */
         op = TIKU_OP_MOVE;
     }
     fs->prog.op = op;
@@ -779,24 +786,32 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
     undo_reset(fs, op);
     return 0;
 }
+
+/** @brief Start a copy job: start() for TIKU_OP_COPY. */
 static int
 fs_copy(tiku_fs_t *fs, const char *const *paths, int n,
                  const char *dst_dir, tiku_conflict_t policy)
 {
     return start(fs, TIKU_OP_COPY, paths, n, dst_dir, policy);
 }
+
+/** @brief Start a move job: start() for TIKU_OP_MOVE. */
 static int
 fs_move(tiku_fs_t *fs, const char *const *paths, int n,
                  const char *dst_dir, tiku_conflict_t policy)
 {
     return start(fs, TIKU_OP_MOVE, paths, n, dst_dir, policy);
 }
+
+/** @brief Start a duplicate job, every collision renamed. */
 static int
 fs_duplicate(tiku_fs_t *fs, const char *const *paths, int n)
 {
     return start(fs, TIKU_OP_DUPLICATE, paths, n, NULL,
                  TIKU_CONFLICT_RENAME);
 }
+
+/** @brief Start a trashing job. */
 static int
 fs_trash(tiku_fs_t *fs, const char *const *paths, int n)
 {
@@ -805,9 +820,6 @@ fs_trash(tiku_fs_t *fs, const char *const *paths, int n)
 }
 
 
-/**
- * @brief Bytes @p path's filesystem has left, or 0 when it will not say.
- */
 uint64_t
 tiku_fs_free_bytes(const char *path)
 {
@@ -833,10 +845,9 @@ tiku_fs_items_size(const char *const *paths, int n)
             continue;
         }
         if (!S_ISDIR(st.st_mode)) {
-            /* Charged a whole block, because that is what a file costs on
-             * the destination however few bytes it holds; the original
-             * clamps the block size to [1024, 8192] and assumes 2048 when
-             * the filesystem will not say. */
+            /* A file is charged its size and one block: its st_blksize
+             * clamped to [1024, 8192], or 2048 when the filesystem gives
+             * none. */
             unsigned long blk = (st.st_blksize > 0)
                                     ? (unsigned long)st.st_blksize : 2048ul;
 
@@ -873,9 +884,8 @@ tiku_fs_items_size(const char *const *paths, int n)
 int
 tiku_fs_fits(uint64_t total, uint64_t free_bytes)
 {
-    /* Four kilobytes of headroom, and >= rather than >: a destination left
-     * with exactly nothing is a destination the next write fails on, so
-     * the boundary counts as not fitting. */
+    /* Four kilobytes of headroom; landing exactly on the free space
+     * counts as not fitting. */
     if (free_bytes == 0u) {
         return 1;                   /* unknown: not a reason to refuse    */
     }
@@ -902,9 +912,8 @@ under(const char *path, const char *dir)
 tiku_confirm_t
 tiku_fs_confirm_move(const char *path)
 {
-    /* The system directories, as this platform spells them.  Moving
-     * anything out of one of these breaks the machine, which is why the
-     * original makes the confirmation button need a modifier. */
+    /* The system directories: a move out of one needs Shift held to
+     * confirm. */
     static const char *system_dirs[] = {
         "/bin", "/boot", "/etc", "/lib", "/lib64", "/sbin", "/usr", "/var"
     };
@@ -923,11 +932,8 @@ tiku_fs_confirm_move(const char *path)
         char cfg[TIKU_PATH_MAX];
         const char *xdg = getenv("XDG_CONFIG_HOME");
 
-        /* HOME itself, and ONLY home itself: the original tests the home
-         * folder for an exact match where it tests the system folder for
-         * containment, so an ordinary file inside home is moved without a
-         * word.  Ported as it is -- a browser that asked before every move
-         * inside the home folder would train the answer out of the user. */
+        /* Home itself only, by exact match: a file inside home moves
+         * without a question. */
         if (strcmp(path, home) == 0) {
             return TIKU_CONFIRM_OVERRIDE;
         }
@@ -941,6 +947,8 @@ tiku_fs_confirm_move(const char *path)
     }
     return TIKU_CONFIRM_NONE;
 }
+
+/** @brief Whether @p path is its filesystem's Trash or inside it. */
 static int
 fs_in_trash(tiku_fs_t *fs, const char *path)
 {
@@ -957,6 +965,8 @@ fs_in_trash(tiku_fs_t *fs, const char *path)
     return (strncmp(path, trash, n) == 0 &&
             (path[n] == '\0' || path[n] == '/'));
 }
+
+/** @brief Start a job linking @p paths into @p dst. */
 static int
 fs_link(tiku_fs_t *fs, const char *const *paths, int n,
                  const char *dst, int relative)
@@ -969,6 +979,9 @@ fs_link(tiku_fs_t *fs, const char *const *paths, int n,
     return start(fs, TIKU_OP_LINK, paths, n, dst,
                  TIKU_CONFLICT_ASK);
 }
+
+/** @brief Start a job making one link to @p path in @p dst, named
+ *         @p name. */
 static int
 fs_link_as(tiku_fs_t *fs, const char *path, const char *dst,
            const char *name, int relative)
@@ -982,6 +995,8 @@ fs_link_as(tiku_fs_t *fs, const char *path, const char *dst,
     snprintf(fs->link_as, sizeof fs->link_as, "%s", name);
     return start(fs, TIKU_OP_LINK, paths, 1, dst, TIKU_CONFLICT_ASK);
 }
+
+/** @brief Start a deletion job. */
 static int
 fs_delete(tiku_fs_t *fs, const char *const *paths, int n)
 {
@@ -992,14 +1007,11 @@ fs_delete(tiku_fs_t *fs, const char *const *paths, int n)
 /* the work                                                                  */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Copy one file's bytes through the backend. */
 /**
  * @brief Give @p dst the source's permissions, owner, group and times.
  *
- * A copy that lands as a fresh file owned by whoever ran the browser, world
- * readable and stamped now, is not the same file: mode and mtime are part of
- * what was copied (FS-031).  Ownership is attempted and allowed to fail --
- * only root may give a file away.
+ * Mode and times are part of what is copied (FS-031).  Ownership is
+ * attempted and may fail: only root may give a file away.
  *
  * @param link  Non-zero when @p dst is a symlink, which must not be followed.
  */
@@ -1015,8 +1027,6 @@ carry_over(const char *src, const char *dst, int link)
     times[0] = st.st_atim;
     times[1] = st.st_mtim;
     if (link) {
-        /* Only root may give a file away, so a refusal here is the normal
-         * case and not a failure of the copy. */
         if (lchown(dst, st.st_uid, st.st_gid) != 0) { errno = 0; }
         (void)utimensat(AT_FDCWD, dst, times, AT_SYMLINK_NOFOLLOW);
         return;
@@ -1029,11 +1039,9 @@ carry_over(const char *src, const char *dst, int link)
 /**
  * @brief Carry an icon pose record along with a cross-folder copy.
  *
- * Pose information is per item in the state store, so copying the bytes is
- * the backend equivalent of Tracker's kAttrPoseInfo inheritance.  A later
- * explicit drop point still wins when the destination view receives the
- * create notice; this only supplies the useful default when no point was
- * specified (FS-037).
+ * The copy takes the source's pose record from the state store.  An
+ * explicit drop point, applied when the destination view hears of the new
+ * item, still wins (FS-037).
  */
 static void
 copy_pose_info(tiku_fs_t *fs, const char *src, const char *dst)
@@ -1061,12 +1069,11 @@ copy_pose_info(tiku_fs_t *fs, const char *src, const char *dst)
 /**
  * @brief Copy one node from one store to another, through both of them.
  *
- * The only road between two stores is the backend contract, narrow in
- * two ways.  Its read takes no offset, so this carries what one buffer
- * holds and refuses what it does not: a copy that silently kept the
- * first sixty-four kilobytes would be worse than none.  And write is the
- * whole of what it can change, with no way to make or remove a
- * directory, so a folder crossing between stores is refused.
+ * Between two stores only the backend ops apply.  Read takes no offset, so
+ * a node larger than the 64 KB buffer is refused; and the ops cannot make a
+ * directory, so a folder is refused.
+ *
+ * @return 0, -1 with @p err filled, or -2 when cancelled.
  */
 static int
 copy_across(tiku_fs_t *fs, tiku_backend_t *sb, const char *slocal,
@@ -1077,8 +1084,7 @@ copy_across(tiku_fs_t *fs, tiku_backend_t *sb, const char *slocal,
     tiku_model_t m;
     int len;
 
-    /* Asked once and up front: what follows is one read and one write,
-     * so there is no middle to stop in. */
+    /* Cancel is asked once, before the one read and the one write. */
     if (cancelled(fs)) {
         snprintf(err, errmax, "cancelled");
         return -2;
@@ -1110,11 +1116,8 @@ copy_across(tiku_fs_t *fs, tiku_backend_t *sb, const char *slocal,
         snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
         return -1;
     }
-    /*
-     * A short read where the entry said it was longer is a truncated
-     * copy waiting to happen, and the caller would never know: the write
-     * would succeed and the file would simply be wrong.
-     */
+    /* A read shorter than the entry's size is refused: writing it would
+     * leave a truncated file. */
     if (m.facts.size > 0 && (int64_t)len < m.facts.size) {
         snprintf(err, errmax,
                  "'%.40s' was read short, %d of %lld bytes", leaf_of(src),
@@ -1135,6 +1138,12 @@ copy_across(tiku_fs_t *fs, tiku_backend_t *sb, const char *slocal,
     }
 }
 
+/**
+ * @brief Copy one file's bytes within one store: through the backend on a
+ *        device, with stdio for local files.
+ * @return 0, -1 with @p err filled, or -2 when cancelled, the partial file
+ *         removed.
+ */
 static int
 copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
            size_t errmax)
@@ -1143,9 +1152,8 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
     FILE *in, *out;
     size_t n;
 
-    /* Local files copy directly; a device file goes through the backend
-     * so its own transfer discipline applies.  Both ends are on ONE store
-     * here -- a crossing was taken above -- so the source answers for
+    /* A device file goes through the backend.  Both ends are on one store
+     * here (copy_across() takes a crossing), so the source answers for
      * both. */
     if (on_device(fs, src)) {
         int len = fs->backend->ops->read(fs->backend, src, buf, sizeof buf);
@@ -1156,9 +1164,8 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
         return fs->backend->ops->write(fs->backend, dst, buf, (size_t)len,
                                        err, errmax);
     }
-    {   /* Re-checked per file, not only up front: another process may
-         * have taken the space between the two, and finding out at the
-         * write is finding out too late (FS-016). */
+    {   /* Space is checked again for each file: another process may have
+         * taken it since the job started (FS-016). */
         struct stat st;
         char dir[TIKU_PATH_MAX];
 
@@ -1166,8 +1173,7 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
 
         parent_of(dst, dir, sizeof dir);
         freeb = tiku_fs_free_bytes(dir);
-        /* One kilobyte of headroom here, not the four the whole job was
-         * checked against: this is the last look before the write. */
+        /* One kilobyte of headroom per file. */
         if (freeb != 0u && stat(src, &st) == 0 &&
             (uint64_t)st.st_size + 1024u >= freeb) {
             snprintf(err, errmax, "There is not enough free space on the "
@@ -1188,15 +1194,11 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
         return -1;
     }
     for (;;) {
-        /* Before the chunk, not after: a cancel that had to wait for the
-         * write it was trying to stop would not be a cancel. */
+        /* Cancel is asked before each chunk. */
         if (cancelled(fs)) {
             (void)fclose(in);
             (void)fclose(out);
-            /* The destination is half a file and nothing owns it: it was
-             * created by this copy and the copy is not happening.  Leaving
-             * it would put a truncated file under the real one's name
-             * (FS-033). */
+            /* The half-written destination is removed (FS-033). */
             (void)remove(dst);
             snprintf(err, errmax, "cancelled");
             return -2;
@@ -1231,8 +1233,6 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
     return (fclose(out) == 0) ? 0 : -1;
 }
 
-/** @brief Process one queued item.  @return 1 done, 0 stopped on a conflict. */
-
 
 
 /*---------------------------------------------------------------------------*/
@@ -1242,10 +1242,8 @@ copy_bytes(tiku_fs_t *fs, const char *src, const char *dst, char *err,
 /**
  * @brief Remove @p path and everything under it.
  *
- * Best effort, as the original's delete loop is: one child that will not go
- * does not abandon the rest, because leaving a half-deleted tree AND
- * reporting failure is worse than removing what can be removed.  A symbolic
- * link is removed itself; what it points at is not entered.
+ * Best effort: a child that will not go does not stop the rest.  A
+ * symbolic link is removed itself; what it points at is not entered.
  *
  * @return 0 when the top-level item went.
  */
@@ -1280,15 +1278,15 @@ remove_tree(const char *path)
 }
 
 /**
- * @brief Copy @p src into @p dst_dir, merging into a folder already there.
+ * @brief Copy @p src to @p dstpath, merging into a folder already there.
  *
- * "Replacing" a folder is a MERGE and never a delete-then-copy: the
- * destination folder is kept, its children that have no counterpart in the
- * source SURVIVE, same-named files are replaced, and same-named folders
- * recurse into the same rule.  Deleting the destination first would throw
- * away everything the user did not name.
+ * Replacing a folder merges: the destination folder is kept, its children
+ * with no counterpart in the source stay, same-named files are replaced and
+ * same-named folders merge by the same rule.
  *
- * @return 0 on success.
+ * @param dstpath The full destination path, whose name a collision answer
+ *                may have chosen.
+ * @return 0, -1 with @p err filled, or -2 when cancelled.
  */
 static int
 copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
@@ -1299,12 +1297,8 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
     DIR *d;
     struct dirent *e;
     {
-        /*
-         * Two different stores, so none of the local filesystem calls
-         * below apply: lstat would be asking this host about a path that
-         * lives on a board.  The backend contract is the only road, and
-         * copy_across says what it can and cannot carry.
-         */
+        /* Between two stores the local filesystem calls below do not
+         * apply; copy_across() copies through the backends. */
         char sl[TIKU_PATH_MAX], dl[TIKU_PATH_MAX];
         tiku_backend_t *sb = store_of(fs, src, sl, sizeof sl);
         tiku_backend_t *db = store_of(fs, dstpath, dl, sizeof dl);
@@ -1314,20 +1308,14 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
         }
     }
 
-    /* The full destination PATH, not the folder: the name may have been
-     * chosen by a collision answer, and recomputing it from the source
-     * leaf would quietly undo that choice. */
-    /* lstat, so a LINK is seen as a link: stat() follows it and would
-     * report whatever it points at, which is how a link gets copied as a
-     * duplicate of its target (FS-032). */
+    /* lstat(), so a link is seen as a link (FS-032). */
     if (lstat(src, &st) != 0) {
         snprintf(err, errmax, "cannot read '%.60s'", leaf_of(src));
         return -1;
     }
     if (S_ISLNK(st.st_mode)) {
-        /* The LINK, not what it points at.  Following it would turn a
-         * one-line pointer into a copy of a whole tree, and a link into a
-         * device node into a snapshot of one moment of it (FS-032). */
+        /* A link is copied as a link, not as what it points at
+         * (FS-032). */
         char target[TIKU_PATH_MAX];
         ssize_t n = readlink(src, target, sizeof target - 1u);
 
@@ -1343,8 +1331,7 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
                      leaf_of(dstpath), strerror(errno));
             return -1;
         }
-        /* Permissions and times, but no attributes: the original does not
-         * copy those for a link either. */
+        /* Owner and times, but no attributes. */
         carry_over(src, dstpath, 1);
         return 0;
     }
@@ -1356,9 +1343,8 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
         }
         return rc;
     }
-    /* Held before `st` is re-used for the destination, because the
-     * mount-point test below compares each child against the SOURCE's
-     * filesystem and would otherwise compare against the wrong one. */
+    /* The source's device, kept before st is reused for the destination:
+     * the mount-point test below compares each child against it. */
     sdev = st.st_dev;
     if (stat(dstpath, &st) == 0) {
         if (!S_ISDIR(st.st_mode)) {
@@ -1367,10 +1353,8 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
                      leaf_of(dstpath));
             return -1;
         }
-        /* It is there and it is a folder: merge INTO it.  Its own
-         * attributes are left alone for the same reason its children are --
-         * the user asked for the contents to arrive, not for the folder to
-         * be replaced by another one. */
+        /* A folder is there: merge into it, its own attributes left as
+         * they are. */
     } else if (mkdir(dstpath, 0755) != 0) {
         snprintf(err, errmax, "cannot create '%.60s' (%.40s)",
                  leaf_of(dstpath), strerror(errno));
@@ -1396,14 +1380,11 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
                 join(cdst, sizeof cdst, dstpath, e->d_name) != 0) {
                 continue;
             }
-            /* A failure on one child does not abandon the rest: the loop
-             * is best-effort, as the original's is, so one unreadable file
-             * does not cost the user the whole folder. */
-            {   /* A directory on a DIFFERENT filesystem is a mount
-                 * point: descending into it would copy a whole other
-                 * volume that the user pointed at nothing of.  And an
-                 * entry that is neither file, folder nor link is
-                 * ignored -- a device node has no bytes to copy (FS-036). */
+            /* A failure on one child does not stop the rest. */
+            {   /* A directory on another filesystem is a mount point and
+                 * is not copied, and an entry that is neither file,
+                 * folder nor link, such as a device node, is left out
+                 * (FS-036). */
                 struct stat cs;
 
                 if (lstat(child, &cs) == 0) {
@@ -1417,10 +1398,8 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
                 }
             }
             if (copy_tree(fs, child, cdst, err, errmax) == -2) {
-                /* Cancelled.  The folder already made and the children
-                 * already written STAY: only the file being written when
-                 * the cancel arrived is cleaned up, so what the user sees
-                 * is how far the copy got rather than nothing (FS-034). */
+                /* Cancelled: the folders made and the files written stay,
+                 * and only the file being written is removed (FS-034). */
                 (void)closedir(d);
                 return -2;
             }
@@ -1431,13 +1410,15 @@ copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
 }
 
 /**
- * @brief Move @p src into @p dst_dir on one filesystem, merging (FS-029).
+ * @brief Move @p src to @p dstpath, merging into a folder already there
+ *        (FS-029).
  *
- * A same-volume move never copies.  Where the destination already holds a
- * folder of the same name it is descended into and the emptied source
- * folders are removed behind it, which is a merge rather than a refusal.
+ * On one filesystem the move is a rename; across filesystems, or from local
+ * files to another store, it is a copy and then a delete.  A same-named
+ * folder at the destination is merged into, and the emptied source folders
+ * are removed.
  *
- * @return 0 on success.
+ * @return 0, or negative with @p err filled.
  */
 static int
 move_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
@@ -1447,14 +1428,9 @@ move_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
     DIR *d;
     struct dirent *e;
     {
-        /*
-         * Between two stores a move is a copy and then a delete, which is
-         * what it already is across a volume boundary -- but the delete
-         * can only be done where the local filesystem answers, because
-         * the backend contract has no way to take anything away.  So a
-         * move OFF a device is refused rather than left as a copy the
-         * user believes was a move.
-         */
+        /* Between two stores a move is a copy and then a delete, and the
+         * delete needs the local filesystem: the backend ops remove
+         * nothing.  A move off a device is refused. */
         char sl[TIKU_PATH_MAX], dl[TIKU_PATH_MAX];
         tiku_backend_t *sb = store_of(fs, src, sl, sizeof sl);
         tiku_backend_t *db = store_of(fs, dstpath, dl, sizeof dl);
@@ -1491,8 +1467,8 @@ move_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
                      leaf_of(src), strerror(errno));
             return -1;
         }
-        /* Across a boundary a move is a copy followed by a delete, which
-         * is the one case where a move reads every byte (FS-030). */
+        /* Across a filesystem boundary a move is a copy and then a delete
+         * (FS-030). */
         if (copy_tree(fs, src, dstpath, err, errmax) != 0) {
             return -1;
         }
@@ -1530,8 +1506,8 @@ move_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
         }
     }
     (void)closedir(d);
-    /* The source folder is left behind only if something in it would not
-     * move; an empty one goes, which is what makes this a move. */
+    /* The emptied source folder goes; one with something left in it
+     * stays. */
     (void)rmdir(src);
     return 0;
 }
@@ -1540,7 +1516,8 @@ move_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
 /* Refusals (FS-023, FS-024, FS-025)                                         */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Whether @p dir is @p path or contains it, at a component boundary. */
+/** @brief Whether @p dir is @p path or contains it, at a component
+ *         boundary. */
 static int
 path_contains(const char *dir, const char *path)
 {
@@ -1569,6 +1546,9 @@ is_dir(const char *path)
 
     return (stat(path, &st) == 0) && S_ISDIR(st.st_mode);
 }
+
+/** @brief The refusal, if any, for moving or copying @p src into
+ *         @p dst_dir; @p msg receives the sentence to show. */
 static tiku_refusal_t
 fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir,
                        char *msg, size_t max)
@@ -1590,11 +1570,9 @@ fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir,
         return TIKU_REFUSE_TRASH;
     }
     /*
-     * A whole VOLUME is not an item.  Refused here, at the one gate every
-     * copy and move passes, because the alternative is not a failure: a
-     * mount point moved off its own device gets rename(EXDEV), and the
-     * fallback copies every byte of the volume and then deletes what it
-     * copied from.  Dragging a disk to the Trash must not empty the disk.
+     * A whole volume is not an item: a mount point moved off its device
+     * gets EXDEV, and the fallback would copy every byte of the volume and
+     * then delete the source.
      */
     if (!on_device(fs, src)) {
         tiku_volumes_t vs;
@@ -1602,9 +1580,6 @@ fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir,
         if (tiku_volumes_scan(&vs) > 0 &&
             tiku_volume_is_root(&vs, src)) {
             if (msg != NULL) {
-                /* What the gesture MEANS is unmount, which this port
-                 * cannot do -- so it says what it cannot do rather than
-                 * doing something else. */
                 snprintf(msg, max,
                          "\"%.40s\" is a disk, not an item: it can be "
                          "unmounted but not moved, copied or deleted.",
@@ -1613,9 +1588,7 @@ fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir,
             return TIKU_REFUSE_VOLUME;
         }
     }
-    /* Into ITSELF, or into anything underneath it.  Tested on the source
-     * directory, because that is the thing that would end up inside a copy
-     * of itself, for ever. */
+    /* A folder into itself, or into anything underneath it. */
     if (is_dir(src) && path_contains(src, dst_dir)) {
         if (msg != NULL) {
             snprintf(msg, max,
@@ -1643,8 +1616,7 @@ fs_check_move(tiku_fs_t *fs, const char *src, const char *dst_dir,
             }
             return TIKU_REFUSE_BY_CHILD;
         }
-        /* A kind mismatch is refused outright -- there is no "replace
-         * anyway", because neither thing can stand in for the other. */
+        /* A kind mismatch is refused outright. */
         if (S_ISDIR(dst_st.st_mode) != (is_dir(src) ? 1 : 0)) {
             if (msg != NULL) {
                 snprintf(msg, max, is_dir(src)
@@ -1681,30 +1653,24 @@ make_path(const char *path)
     }
     return mkdir(buf, 0755);
 }
+
+/**
+ * @brief Whether the store can hold a Trash, answered for its root: a
+ *        device has none, as its nodes are not files (FS-044).
+ *
+ * Whether one item can be trashed is answered by tiku_fs_trash_dir().
+ */
 static int
 fs_has_trash(const tiku_fs_t *fs)
 {
-    /*
-     * A device store has nowhere to put anything: its nodes are not
-     * files.  Saying so is what lets the caller offer an honest "delete
-     * outright" rather than a Trash that silently destroys (FS-044).
-     *
-     * This one is about the namespace as a WHOLE -- it takes no path, so
-     * it cannot be about anything else -- and it answers for the root,
-     * which is where a Trash would be.  Whether a particular ITEM can be
-     * trashed is a different question with a different answer, and it is
-     * asked where a path exists: tiku_fs_trash_dir() below.
-     */
     return (fs != NULL && fs->backend != NULL && !on_device(fs, "/"));
 }
 
 /**
  * @brief The root of the filesystem @p path lives on.
  *
- * Walked up until the device changes, which is where that filesystem is
- * mounted.  The Trash has to be on the item's OWN filesystem or trashing
- * stops being a rename and becomes a copy across a boundary -- which is
- * slow, can half-fail, and on this host simply returns EXDEV.
+ * Walked up until the device changes.  The Trash is on the item's own
+ * filesystem, so trashing is a rename.
  */
 static void
 volume_root(const char *path, char *out, size_t max)
@@ -1717,10 +1683,8 @@ volume_root(const char *path, char *out, size_t max)
         return;
     }
     snprintf(cur, sizeof cur, "%s", path);
-    /* The item itself may be gone -- asking where a trashed thing CAME
-     * from is exactly this case -- so start from the nearest ancestor that
-     * still exists.  Tracker keeps the device in the node ref and never
-     * has to ask twice; a path is all this store has. */
+    /* The item itself may be gone, as when a trashed item is put back:
+     * the walk starts at the nearest ancestor that exists. */
     while (stat(cur, &st) != 0) {
         char *slash = strrchr(cur, '/');
 
@@ -1759,8 +1723,7 @@ trash_under(const char *dir, char *out, size_t max)
     struct stat st;
     int n;
 
-    /* One slash: "/" and "/home" both have to join cleanly, and "//.Trash"
-     * is a different path from the one anything else will look in. */
+    /* One slash between, so "/" gives "/.Trash", not "//.Trash". */
     n = snprintf(out, max, "%s%s%s", dir,
                  (dir[0] != '\0' && dir[strlen(dir) - 1u] == '/') ? "" : "/",
                  TIKU_TRASH_NAME);
@@ -1772,6 +1735,9 @@ trash_under(const char *dir, char *out, size_t max)
     }
     return (mkdir(out, 0755) == 0) ? 0 : -1;
 }
+
+/** @brief tiku_fs_trash_dirs(): the Trash of every writable volume in the
+ *         mount table. */
 static int
 fs_trash_dirs(tiku_fs_t *fs, char out[][TIKU_PATH_MAX],
                        int max)
@@ -1783,8 +1749,7 @@ fs_trash_dirs(tiku_fs_t *fs, char out[][TIKU_PATH_MAX],
         return 0;
     }
     if (on_device(fs, "/") || tiku_volumes_scan(&vs) <= 0) {
-        /* A device namespace has one Trash at most, and it is wherever the
-         * item's own resolution puts it. */
+        /* With no volume table, the one Trash is the home folder's. */
         if (tiku_fs_trash_dir(fs, NULL, out[0], TIKU_PATH_MAX) ==
                 0) {
             return 1;
@@ -1794,6 +1759,9 @@ fs_trash_dirs(tiku_fs_t *fs, char out[][TIKU_PATH_MAX],
     return tiku_fs_trash_dirs_of(fs,
                (const struct tiku_volumes *)&vs, out, max);
 }
+
+/** @brief Make every writable volume's Trash.  @return How many there
+ *         are. */
 static int
 fs_prepare_trash(tiku_fs_t *fs)
 {
@@ -1802,11 +1770,12 @@ fs_prepare_trash(tiku_fs_t *fs)
     if (fs == NULL) {
         return 0;
     }
-    /* The directory pass is deliberately explicit at application startup;
-     * constructing an operation engine must remain side-effect free for
-     * callers such as tests and file panels. */
+    /* Called at startup, not from tiku_fs_new(): making an engine creates
+     * no directories. */
     return tiku_fs_trash_dirs(fs, dirs, TIKU_VOLUME_MAX);
 }
+
+/** @brief The Trash of each writable volume in @p v, each listed once. */
 static int
 fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *v,
                           char out[][TIKU_PATH_MAX], int max)
@@ -1822,8 +1791,8 @@ fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *v,
         int k, dupe = 0;
 
         if (vsp->v[i].read_only) {
-            /* Nothing can be trashed onto it, so it has no Trash -- and
-             * asking would try to create a directory on a disc. */
+            /* A read-only volume has no Trash; asking would try to make
+             * one. */
             continue;
         }
         if (tiku_fs_trash_dir(fs, vsp->v[i].mount, here,
@@ -1842,6 +1811,9 @@ fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *v,
     }
     return n;
 }
+
+/** @brief The Trash for @p path, made when absent; see
+ *         tiku_fs_trash_dir().  @return 0, or -1. */
 static int
 fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
                       size_t max)
@@ -1852,22 +1824,17 @@ fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
 
     if (fs == NULL || out == NULL || path == NULL ||
         !tiku_fs_has_trash(fs) || on_device(fs, path)) {
-        /* Per ITEM, not per namespace: with a board mounted beside the
-         * disk, the disk has a Trash and the board has none, and the
-         * question is which of them this path is on. */
+        /* Asked per item: with a board mounted beside the disk, the disk
+         * has a Trash and the board has none. */
         return -1;
     }
-    /* Resolved from the ITEM's own filesystem, as Tracker resolves it from
-     * the item's own device: a Trash somewhere else turns every trash into
-     * a cross-boundary copy, which is exactly what this rule prevents. */
+    /* Resolved from the item's own filesystem, so trashing is a
+     * rename. */
     volume_root((path != NULL) ? path : home, root, sizeof root);
-    /* The home directory first, whenever it shares that filesystem.  A
-     * volume root can be writable by EVERYONE -- a sticky /tmp is one --
-     * and a Trash made there belongs to whoever trashed first; every
-     * other user's trashing then fails on a neighbour's directory.  The
-     * home directory is the per-user writable place on the same
-     * filesystem, which keeps the move a rename AND keeps the Trash
-     * ours. */
+    /* The home folder's Trash first, whenever home is on that filesystem:
+     * a volume root can be writable by everyone (a sticky /tmp), and a
+     * Trash made there would belong to whoever trashed first.  Home is per
+     * user and on the same filesystem, so the move stays a rename. */
     if (home != NULL && home[0] != '\0' && stat(home, &hs) == 0 &&
         stat(root, &rs) == 0 && hs.st_dev == rs.st_dev &&
         trash_under(home, out, max) == 0) {
@@ -1876,6 +1843,9 @@ fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
     /* A volume the home does not live on keeps its Trash at its root. */
     return (trash_under(root, out, max) == 0) ? 0 : -1;
 }
+
+/** @brief Where the trashed item at @p path came from, into @p out.
+ *  @return 1, or 0 when nothing was recorded. */
 static int
 fs_original_path(tiku_fs_t *fs, const char *path, char *out,
                           size_t max)
@@ -1914,14 +1884,13 @@ record_origin(tiku_fs_t *fs, const char *trashed, const char *origin)
     if (store == NULL || !tiku_store_writable(store)) {
         return;
     }
-    /* Recorded against the path the item now HAS.  Tracker writes the
-     * attribute on the node, where it travels with the file; a store keyed
-     * by path has to write it where the item ended up, or the record is
-     * filed under a name nothing answers to. */
+    /* Recorded under the path the item now has, in the Trash. */
     (void)tiku_state_write(store, trashed, TIKU_ATTR_ORIGINAL,
                                origin, strlen(origin));
     (void)tiku_store_flush(store);
 }
+
+/** @brief The Delete key's question for @p path; see tiku_delete_q_t. */
 static tiku_delete_q_t
 fs_delete_question(const tiku_fs_t *fs, const char *path,
                             int shift_held)
@@ -1933,10 +1902,8 @@ fs_delete_question(const tiku_fs_t *fs, const char *path,
         return TIKU_DELETE_STRAIGHT;    /* the user has decided       */
     }
     {
-        /* Asked of THIS item's volume, not of the store: a filesystem with
-         * no writable Trash cannot offer to move anything to one, and the
-         * three-way question would show a button that does nothing
-         * (FS-044). */
+        /* Asked of this item's filesystem: with no Trash there, the item
+         * is deleted outright (FS-044). */
         char trash[TIKU_PATH_MAX];
 
         if (tiku_fs_trash_dir((tiku_fs_t *)fs, path, trash,
@@ -1945,12 +1912,14 @@ fs_delete_question(const tiku_fs_t *fs, const char *path,
         }
     }
     if (path != NULL && strstr(path, "/" TIKU_TRASH_NAME) != NULL) {
-        /* Inside the Trash the only thing left IS deletion, so asking
-         * whether to move it to the Trash asks nothing (FS-047). */
+        /* Inside the Trash the item is deleted outright (FS-047). */
         return TIKU_DELETE_STRAIGHT;
     }
     return TIKU_DELETE_ASK;
 }
+
+/** @brief Put trashed items back where they came from; see
+ *         tiku_fs_restore().  @return Number restored. */
 static int
 fs_restore(tiku_fs_t *fs, const char *const *paths, int n,
                     char *err, size_t errmax)
@@ -1976,8 +1945,8 @@ fs_restore(tiku_fs_t *fs, const char *const *paths, int n,
             continue;
         }
         if (stat(origin, &st) == 0) {
-            /* Refused, not overwritten: putting one item back is not
-             * permission to destroy whatever took its place (FS-040). */
+            /* Something at the original path is not overwritten: the item
+             * stays in the Trash (FS-040). */
             if (err != NULL) {
                 snprintf(err, errmax,
                          "cannot restore '%s': something is there already",
@@ -2010,6 +1979,8 @@ fs_restore(tiku_fs_t *fs, const char *const *paths, int n,
     }
     return done;
 }
+
+/** @brief Start deleting what every Trash holds.  @return Items queued. */
 static int
 fs_empty_trash(tiku_fs_t *fs)
 {
@@ -2022,10 +1993,9 @@ fs_empty_trash(tiku_fs_t *fs)
     if (fs == NULL) {
         return 0;
     }
-    /* EVERY volume's trash at once (FS-048), the same set the union
-     * window lists (PVN-027) -- read-only and unreachable volumes simply
-     * contribute no directory.  The Trash folders themselves stay: only
-     * what is IN them is queued. */
+    /* Every volume's Trash at once, the set the union window lists
+     * (FS-048, PVN-027); a read-only volume has none.  The Trash folders
+     * stay: only what is in them is queued. */
     nd = tiku_fs_trash_dirs(fs, dirs, TIKU_VOLUME_MAX);
     for (k = 0; k < nd; k++) {
         DIR *d = opendir(dirs[k]);
@@ -2050,9 +2020,8 @@ fs_empty_trash(tiku_fs_t *fs)
     if (n == 0) {
         return 0;
     }
-    /* DELETE, not trash: the queue builder refuses to trash anything
-     * inside the Trash -- rightly, since the Trash cannot be put in
-     * itself -- and emptying it is the other rule (FS-043 vs FS-048). */
+    /* Deleted, not trashed: a trashing drops anything inside the Trash
+     * (FS-043, FS-048). */
     (void)tiku_fs_delete(fs, sel, n);
     return n;
 }
@@ -2061,9 +2030,7 @@ fs_empty_trash(tiku_fs_t *fs)
  * @brief Write the path of @p target as seen from inside @p dir.
  *
  * Built by walking the two absolute paths while they agree, then one ".."
- * per component of @p dir that is left, then the rest of the target.  The
- * original chdir()s to do this; a string walk gets the same answer without
- * moving the process's working directory out from under everything else.
+ * per component of @p dir that is left, then the rest of the target.
  *
  * @return 0 on success.
  */
@@ -2115,10 +2082,9 @@ relative_path(const char *dir, const char *target, char *out, size_t max)
 /**
  * @brief Stop on a failure and put "would you like to continue?" up.
  *
- * The item is NOT counted yet: whether it counts as failed or as the last
- * thing the job did depends on the answer.  A delete failure is told apart
- * because the original offers no Continue for one -- there is nothing left
- * to continue to.
+ * The item is not counted yet: tiku_fs_resolve_error() counts it when the
+ * question is answered.  @p can_continue is 0 for a delete failure, whose
+ * question offers no Continue.
  *
  * @return 0, so the caller can `return fail_ask(...)` from a step.
  */
@@ -2140,6 +2106,12 @@ give_up(tiku_fs_t *fs)
     return 1;
 }
 
+/**
+ * @brief Process one queued item.
+ *
+ * @return 1 when the item is done or the job ends, 0 when the job stopped
+ *         on a question: a collision or an error.
+ */
 static int
 step_one(tiku_fs_t *fs)
 {
@@ -2156,17 +2128,15 @@ step_one(tiku_fs_t *fs)
 
     if (fs->prog.op == TIKU_OP_TRASH && tiku_fs_has_trash(fs) &&
         strstr(src, "/" TIKU_TRASH_NAME) == NULL) {
-        /* A real Trash move: the item is RENAMED into the Trash, keeping
-         * a record of where it came from so it can be put back.  An item
-         * already in the Trash falls through to deletion, which is the
-         * only thing left to do to it. */
+        /* The item is renamed into the Trash, and where it came from is
+         * recorded for a restore.  An item already in the Trash falls
+         * through to deletion. */
         char trash[TIKU_PATH_MAX], want[TIKU_NAME_MAX];
 
         if (tiku_fs_trash_dir(fs, src, trash, sizeof trash) != 0) {
-            /* This item's filesystem has no writable Trash.  Deleting is
-             * what is left, and the caller has already asked -- the
-             * question it put to the user was a straight delete precisely
-             * because this call would fail (FS-044). */
+            /* No Trash on this item's filesystem: the item is deleted
+             * below, and the question put to the user was a straight
+             * delete (FS-044). */
             trash[0] = '\0';
         }
         if (trash[0] != '\0') {
@@ -2185,12 +2155,9 @@ step_one(tiku_fs_t *fs)
                      leaf_of(src), strerror(errno));
             fs->prog.failed++;
         } else {
-            /* Recorded AFTER the move, under the name it now has: this
-             * store is keyed by path, so a record written before would be
-             * filed under a name nothing answers to. */
+            /* Recorded after the move, under the name it now has. */
             record_origin(fs, dstpath, src);
-            /* Undoing a trash move puts the item back where it was, which
-             * is the same shape as undoing any other move. */
+            /* Undo moves it back, as for any move. */
             undo_push(fs, dstpath, src, 0);
             landed(fs, src, dstpath);
             fs->prog.done++;
@@ -2203,22 +2170,11 @@ step_one(tiku_fs_t *fs)
         fs->prog.op == TIKU_OP_DELETE) {
         if (on_device(fs, src)) {
             /*
-             * A device node is not a file, and nothing in the backend
-             * contract removes anything -- write is the whole of what a
-             * store can be asked to change.  So this cannot be done, and
-             * the only question is how it fails.
-             *
-             * Calling unlink() with the path the NAMESPACE knows --
-             * /devices/board1/gpio/17 -- which no local filesystem has
-             * ever heard of, gets ENOENT from the kernel, and "no such
-             * file" reads as the item being already gone, which is the
-             * one thing it is not.
-             *
-             * Refused by name instead, the way a folder that cannot cross
-             * stores is refused: a limit that says what it is can be
-             * worked with, and a limit that reports somebody else's errno
-             * cannot.  Continuable, so the rest of a queue that spans a
-             * board and the disk still goes.
+             * The backend ops remove nothing, so a device node cannot be
+             * trashed or deleted; unlink() on its namespace path would
+             * only report ENOENT.  The refusal names the limit and can be
+             * continued past, so the rest of a queue that spans a board
+             * and the disk still goes.
              */
             char msg[240];
 
@@ -2228,11 +2184,10 @@ step_one(tiku_fs_t *fs)
                      leaf_of(src));
             return fail_ask(fs, msg, 1);
         } else if (is_dir(src) && !fs->qexpanded[fs->qcursor]) {
-            /* A folder goes children-first: each child is queued as an
+            /* A folder goes children first: each child is queued as an
              * item of its own, then the folder again, so a child that
-             * cannot go is reported by NAME and its siblings still go --
-             * the walk continues past individual failures rather than
-             * abandoning the tree (FS-049). */
+             * cannot go is reported by name and its siblings still go
+             * (FS-049). */
             DIR *d = opendir(src);
             int before = fs->qcount;
 
@@ -2270,10 +2225,9 @@ step_one(tiku_fs_t *fs)
 delete_attempt:
             if (remove(src) != 0) {
                 if (errno == ENOTEMPTY || errno == EEXIST) {
-                    /* Its grandchildren may still be queued behind this
-                     * visit: as long as a descendant is pending, the
-                     * folder steps to the back of the line instead of
-                     * failing -- it can only be empty AFTER them. */
+                    /* While a descendant is still queued, the folder goes
+                     * to the back of the queue: it can only be empty after
+                     * them. */
                     size_t plen = strlen(src);
                     int k;
 
@@ -2293,9 +2247,8 @@ delete_attempt:
                         return 1;
                     }
                 }
-                /* The message is for a human in a dialog: show the leaf
-                 * name, which is what they selected, not the whole
-                 * path. */
+                /* The dialog names the leaf, which is what was
+                 * selected. */
                 char msg[240];
 
                 snprintf(msg, sizeof msg,
@@ -2313,7 +2266,7 @@ delete_attempt:
         char target[TIKU_PATH_MAX];
         struct stat ss, ds;
 
-        /* "<name> link" ONLY when the plain name is taken, so linking into
+        /* "<name> link" only when the plain name is taken, so linking into
          * another folder keeps the original name (FS-009). */
         if (tiku_fs_link_name(fs, fs->dst,
                               fs->link_as[0] != '\0' ? fs->link_as
@@ -2329,9 +2282,9 @@ delete_attempt:
             stat(fs->dst, &ds) == 0 && ss.st_dev == ds.st_dev) {
             char rel[TIKU_PATH_MAX];
 
-            /* Across devices a relative path cannot be walked, so the
-             * request degrades to an absolute link rather than failing --
-             * silently, as the original does (FS-010). */
+            /* A relative link is made only when source and destination
+             * share a device and a relative path can be built; otherwise
+             * the link is absolute (FS-010). */
             if (relative_path(fs->dst, src, rel, sizeof rel) == 0) {
                 snprintf(target, sizeof target, "%s", rel);
             }
@@ -2339,8 +2292,8 @@ delete_attempt:
         if (symlink(target, dstpath) != 0) {
             char msg[240];
 
-            /* A store that cannot hold a link says so in its own terms
-             * rather than reporting a generic failure (FS-011). */
+            /* EPERM or ENOSYS means the disk takes no links, and the
+             * message says so (FS-011). */
             snprintf(msg, sizeof msg, "%s",
                      (errno == EPERM || errno == ENOSYS)
                          ? "The target disk does not support creating links."
@@ -2353,8 +2306,8 @@ delete_attempt:
         return 1;
     }
     if (fs->prog.op == TIKU_OP_DUPLICATE) {
-        /* Each item duplicates into its OWN parent, even when the selection
-         * spans folders (FS-008). */
+        /* Each item duplicates into its own parent, even when the
+         * selection spans folders (FS-008). */
         parent_of(src, dstdir, sizeof dstdir);
         if (tiku_fs_duplicate_name(fs, dstdir, leaf_of(src), name,
                                        sizeof name) != 0) {
@@ -2365,8 +2318,8 @@ delete_attempt:
     } else {
         snprintf(dstdir, sizeof dstdir, "%s", fs->dst);
         snprintf(name, sizeof name, "%s", leaf_of(src));
-        {   /* An item already in the destination is silently skipped, not
-             * copied onto itself (FS-005). */
+        {   /* An item already in the destination is skipped, not copied
+             * onto itself (FS-005). */
             char srcdir[TIKU_PATH_MAX];
             parent_of(src, srcdir, sizeof srcdir);
             if (strcmp(srcdir, dstdir) == 0) {
@@ -2386,9 +2339,8 @@ delete_attempt:
     if (fs->prog.op != TIKU_OP_DUPLICATE && exists(fs, dstdir, name)) {
         switch (fs->policy) {
         case TIKU_CONFLICT_SKIP:
-            /* A policy the CALLER set stands for the whole job; answering
-             * one question is resolve()'s business, and keeping the
-             * distinction in one place is what stops the two disagreeing. */
+            /* A policy the caller set stands for the whole job; a one-off
+             * answer comes through tiku_fs_resolve(). */
             fs->prog.skipped++;
             fs->qcursor++;
             return 1;
@@ -2407,11 +2359,9 @@ delete_attempt:
                 fs->pending_ask = 0;
                 fs->policy = TIKU_CONFLICT_ASK;
             }
-            /* Replaced by REMOVING first, not by writing over.  Truncating
-             * in place would leave anything holding the old file looking at
-             * a half-new one, and a file that cannot be removed is one this
-             * job must not start writing into (FS-021).  A directory is
-             * left alone: replacing a folder means merging into it. */
+            /* The old file is removed first, not written over: a file
+             * that cannot be removed is not written into (FS-021).  A
+             * directory is merged into, not removed. */
             if (!is_dir(dstpath) && remove(dstpath) != 0) {
                 char msg[240];
 
@@ -2425,10 +2375,10 @@ delete_attempt:
             fs->prog.conflict = 1;
             snprintf(fs->prog.conflict_path, sizeof fs->prog.conflict_path,
                      "%s", dstpath);
-            /* What the question should offer: a FOLDER collision always
-             * gets the four-way form, and so does any collision while more
-             * than one is pending -- only a lone file-versus-file
-             * collision gets the short form (FS-018, FS-019). */
+            /* What the question offers: a folder collision always gets the
+             * four-way form, and so does any collision while more than one
+             * is pending; a lone file-versus-file collision gets the short
+             * form (FS-018, FS-019). */
             fs->prog.conflict_isdir = is_dir(dstpath);
             fs->prog.conflict_many = (fs->prog.collisions > 1) ||
                                      fs->prog.conflict_isdir;
@@ -2437,9 +2387,8 @@ delete_attempt:
     }
 
     if (fs->prog.op == TIKU_OP_MOVE) {
-        /* Through the tree walker, so a FOLDER moves too -- and moves onto
-         * an existing folder of the same name by merging into it rather
-         * than refusing or replacing it (FS-029). */
+        /* Through the tree walker, so a folder moves too, merging into a
+         * same-named folder at the destination (FS-029). */
         int rc = move_tree(fs, src, dstpath, err, sizeof err);
 
         if (rc == -2) {
@@ -2456,8 +2405,8 @@ delete_attempt:
         landed(fs, src, dstpath);
         fs->prog.done++;
     } else {
-        /* The same for a copy: a folder already there is merged into, so
-         * its children that the source has no counterpart for survive
+        /* The same for a copy: a folder already there is merged into,
+         * and its children with no counterpart in the source stay
          * (FS-020). */
         int rc = copy_tree(fs, src, dstpath, err, sizeof err);
 
@@ -2489,6 +2438,9 @@ delete_attempt:
     fs->qcursor++;
     return 1;
 }
+
+/** @brief Process up to @p budget items; nothing while a question is open.
+ *  @return Items processed. */
 static int
 fs_step(tiku_fs_t *fs, int budget)
 {
@@ -2499,7 +2451,7 @@ fs_step(tiku_fs_t *fs, int budget)
     }
     while (n < budget && fs->qcursor < fs->qcount) {
         if (!step_one(fs)) {
-            break;                  /* stopped on a conflict */
+            break;                  /* stopped on a question */
         }
         n++;
     }
@@ -2508,6 +2460,8 @@ fs_step(tiku_fs_t *fs, int budget)
     }
     return n;
 }
+
+/** @brief Answer the collision the job stopped on; see tiku_fs_resolve(). */
 static void
 fs_resolve(tiku_fs_t *fs, tiku_conflict_t how)
 {
@@ -2515,10 +2469,9 @@ fs_resolve(tiku_fs_t *fs, tiku_conflict_t how)
         return;
     }
     fs->prog.conflict = 0;
-    /* The two "all" answers are the only sticky ones: they become the
-     * job's standing policy.  The other two answer the collision in hand
-     * and leave the next one to ask again, which is the whole difference
-     * between "Replace" and "Replace all" (FS-019). */
+    /* The two "all" answers become the job's standing policy; Skip and
+     * Replace answer the collision in hand, and the next one asks again
+     * (FS-019). */
     switch (how) {
     case TIKU_CONFLICT_SKIP_ALL:
         fs->policy = TIKU_CONFLICT_SKIP;
@@ -2541,13 +2494,14 @@ fs_resolve(tiku_fs_t *fs, tiku_conflict_t how)
         break;
     }
 }
+
+/** @brief Stop the job; what is done stays done. */
 static void
 fs_cancel(tiku_fs_t *fs)
 {
     if (fs != NULL) {
-        /* What is already done stays done: a half-finished copy is real.
-         * The flag rather than a drain, so a copy already inside a file
-         * sees it on its next chunk and cleans that file up (FS-033). */
+        /* The flag reaches a copy inside a file at its next chunk, and the
+         * copy removes that file (FS-033). */
         fs->cancelling = 1;
         fs->qcursor = fs->qcount;
         fs->prog.conflict = 0;
@@ -2555,6 +2509,8 @@ fs_cancel(tiku_fs_t *fs)
         fs->prog.cancelled = 1;
     }
 }
+
+/** @brief Install the check asked before every chunk. */
 static void
 fs_set_cancel_check(tiku_fs_t *fs, tiku_cancel_fn fn,
                              void *ctx)
@@ -2564,6 +2520,9 @@ fs_set_cancel_check(tiku_fs_t *fs, tiku_cancel_fn fn,
         fs->cancel_ctx = ctx;
     }
 }
+
+/** @brief Answer the error the job stopped on; see
+ *         tiku_fs_resolve_error(). */
 static void
 fs_resolve_error(tiku_fs_t *fs, int keep_going)
 {
@@ -2574,15 +2533,17 @@ fs_resolve_error(tiku_fs_t *fs, int keep_going)
     fs->prog.failed++;
     fs->qcursor++;
     if (fs->prog.op == TIKU_OP_DELETE) {
-        /* FSDeleteFolder keeps iterating past a failure whatever the
-         * dialog said -- only a cancel propagates -- so a child that will
-         * not go costs that child, not the rest of the tree (FS-049). */
+        /* A deletion goes on past a failure whatever the answer, so a
+         * child that will not go costs only that child (FS-049); only a
+         * cancel stops it. */
         return;
     }
     if (!keep_going || !fs->prog.error_can_continue) {
         (void)give_up(fs);
     }
 }
+
+/** @brief Rename one entry; see tiku_fs_rename(). */
 static int
 fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
                    char *err, size_t errmax)
@@ -2600,11 +2561,9 @@ fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
         char why[200];
 
         if (tiku_volumes_scan(&vs) > 0) {
-            /* A volume's name is the FILESYSTEM's label, not the directory
-             * entry it happens to be mounted on: renaming the entry would
-             * move the mount point and leave the volume called what it was.
-             * Refused rather than attempted, because this port has no way
-             * to write a label (MA-052). */
+            /* A volume's name is its filesystem's label, which nothing
+             * here can write; renaming the mount point's entry would leave
+             * the label as it was.  Refused (MA-052). */
             if (tiku_volume_is_root(&vs, path)) {
                 if (err != NULL) {
                     snprintf(err, errmax,
@@ -2614,8 +2573,8 @@ fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
                 }
                 return -1;
             }
-            /* And the volume has to allow the write at all, said in the
-             * words it already has for refusing one. */
+            /* The volume must take writes; its own refusal is the
+             * message. */
             if (!tiku_volume_may_write(&vs, path, 1, why, sizeof why)) {
                 if (err != NULL) {
                     snprintf(err, errmax, "%s", why);
@@ -2625,9 +2584,8 @@ fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
         }
     }
     {
-        /* The Trash, the Desktop and the root are found BY their names:
-         * renaming one strands every rule that looks there (MA-051).
-         * Haiku's own refusal is this same predicate list. */
+        /* The Trash and the Desktop are found by their names: renaming
+         * either strands every rule that looks there (MA-051). */
         tiku_model_t m;
 
         if (fs->backend->ops->stat(fs->backend, path, &m) == 0 &&
@@ -2643,8 +2601,7 @@ fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
         }
     }
     if (strlen(new_name) > 255u) {
-        /* NAME_MAX on every host this builds on; said in the source's own
-         * words rather than failing the join silently (FS-080). */
+        /* 255 is NAME_MAX on every host this builds on (FS-080). */
         if (err != NULL) {
             snprintf(err, errmax, "The entered name is too long.");
         }
@@ -2679,6 +2636,9 @@ fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
 /*---------------------------------------------------------------------------*/
 /* New folder (FS-079)                                                       */
 /*---------------------------------------------------------------------------*/
+
+/** @brief The first free "New folder" name in @p dir; see
+ *         tiku_fs_new_folder_name(). */
 static void
 fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out,
                             size_t max)
@@ -2693,11 +2653,8 @@ fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out,
         return;
     }
     for (n = 2; n < 10000; n++) {
-        /* The missing space past nine is the original's, not a slip: it
-         * increments before formatting and switches format string at >9,
-         * so "New folder 9" is followed by "New folder10".  Ported as it
-         * is, because a folder created by one and found by the other has
-         * to be the same folder. */
+        /* Past nine there is no space: "New folder 9" is followed by
+         * "New folder10", the names Haiku Tracker gives. */
         if (n <= 9) {
             snprintf(out, max, "New folder %ld", n);
         } else {
@@ -2708,6 +2665,8 @@ fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out,
         }
     }
 }
+
+/** @brief Make a new folder in @p dir, recorded for undo. */
 static int
 fs_new_folder(tiku_fs_t *fs, const char *dir, char *out,
                        size_t max, char *err, size_t errmax)
@@ -2731,6 +2690,9 @@ fs_new_folder(tiku_fs_t *fs, const char *dir, char *out,
     }
     return 0;
 }
+
+/** @brief Copy a template into @p dst_dir under a fresh "New ..." name; see
+ *         tiku_fs_new_from_template(). */
 static int
 fs_new_from_template(tiku_fs_t *fs, const char *template_path,
                               const char *dst_dir, char *out, size_t max,
@@ -2753,8 +2715,7 @@ fs_new_from_template(tiku_fs_t *fs, const char *template_path,
         }
         return -1;
     }
-    /* Templates are host filesystem objects.  A device namespace has no
-     * local tree to copy and must not fall through to the POSIX walkers. */
+    /* Templates are local files; a device destination is refused. */
     if (fs->backend == NULL || on_device(fs, dst_dir) ||
         lstat(template_path, &st) != 0 ||
         (!S_ISREG(st.st_mode) && !S_ISDIR(st.st_mode) &&
@@ -2802,6 +2763,9 @@ fs_new_from_template(tiku_fs_t *fs, const char *template_path,
     snprintf(out, max, "%s", dst);
     return 0;
 }
+
+/** @brief Whether the last operation can be undone; @p what takes its
+ *         name. */
 static int
 fs_can_undo(const tiku_fs_t *fs, char *what, size_t max)
 {
@@ -2814,8 +2778,7 @@ fs_can_undo(const tiku_fs_t *fs, char *what, size_t max)
     if (o->n == 0) {
         return 0;
     }
-    /* A delete is gone; saying "Undo Delete" and failing would be worse
-     * than not offering it. */
+    /* A delete cannot be undone, so it is not offered. */
     if (o->op == TIKU_OP_DELETE) {
         return 0;
     }
@@ -2824,6 +2787,9 @@ fs_can_undo(const tiku_fs_t *fs, char *what, size_t max)
     }
     return 1;
 }
+
+/** @brief The paths the last operation put in place; see
+ *         tiku_fs_last_created(). */
 static int
 fs_last_created(const tiku_fs_t *fs,
                          char out[][TIKU_PATH_MAX], int max)
@@ -2836,8 +2802,8 @@ fs_last_created(const tiku_fs_t *fs,
     }
     o = &fs->ustack[fs->ucount - 1];
     for (i = 0; i < o->n && n < max; i++) {
-        /* An entry the operation brought into being: created outright, or
-         * the destination half of a copy (its 'to' names the origin). */
+        /* A path the operation put in place: made outright, or the
+         * destination of a copy or a move, whose 'to' names its origin. */
         if (o->rec[i].created || o->rec[i].to[0] != '\0') {
             snprintf(out[n], TIKU_PATH_MAX, "%s", o->rec[i].from);
             n++;
@@ -2845,6 +2811,8 @@ fs_last_created(const tiku_fs_t *fs,
     }
     return n;
 }
+
+/** @brief Whether the last undo can be redone; @p what takes its name. */
 static int
 fs_can_redo(const tiku_fs_t *fs, char *what, size_t max)
 {
@@ -2886,9 +2854,8 @@ static int
 undo_one(tiku_fs_t *fs, const undo_rec_t *r, char *err, size_t errmax)
 {
     if (r->created) {
-        /* Whatever the operation made goes, tree and all: a copied FOLDER
-         * has children the copy created too, and remove() would leave the
-         * lot behind on the grounds that the directory is not empty. */
+        /* Whatever the operation made goes, tree and all: a copied folder
+         * holds what the copy made inside it. */
         return (remove_tree(r->from) == 0);
     }
     if (rename(r->from, r->to) == 0) {
@@ -2905,9 +2872,9 @@ undo_one(tiku_fs_t *fs, const undo_rec_t *r, char *err, size_t errmax)
 /**
  * @brief Do one record over again, in the direction the operation went.
  *
- * The record does not say what the operation WAS, so the kind is passed in:
- * putting a copy back means copying again, while putting a move back means
- * moving, and the two records look identical.
+ * A record the operation made is copied again from where it came from,
+ * except a new folder's (@p op), which is made afresh; any other record is
+ * renamed again.
  */
 static int
 redo_one(tiku_fs_t *fs, tiku_op_t op, const undo_rec_t *r, char *err,
@@ -2932,6 +2899,9 @@ redo_one(tiku_fs_t *fs, tiku_op_t op, const undo_rec_t *r, char *err,
     }
     return 0;
 }
+
+/** @brief Reverse the last operation, its records in reverse order.
+ *  @return Records reversed, or -1 when there is nothing to undo. */
 static int
 fs_undo(tiku_fs_t *fs, char *err, size_t errmax)
 {
@@ -2947,14 +2917,16 @@ fs_undo(tiku_fs_t *fs, char *err, size_t errmax)
     for (i = o->n - 1; i >= 0; i--) {
         n += undo_one(fs, &o->rec[i], err, errmax);
     }
-    /* Moved to the redo stack whatever the individual records did: the
-     * original ignores Undo()'s return code too, and a partially reversed
-     * operation is still the thing the user would want back. */
+    /* The operation goes to the redo stack whatever its records did: a
+     * partly reversed operation can still be redone. */
     (void)undo_stack_push(fs->rstack, &fs->rcount, o);
     memset(o, 0, sizeof *o);
     fs->ucount--;
     return n;
 }
+
+/** @brief Do the last undone operation again.
+ *  @return Records redone, or -1 when there is nothing to redo. */
 static int
 fs_redo(tiku_fs_t *fs, char *err, size_t errmax)
 {
@@ -2974,12 +2946,14 @@ fs_redo(tiku_fs_t *fs, char *err, size_t errmax)
     return n;
 }
 
-/** @brief tiku_backend_text's listing half: append one child's name. */
+/** @brief Where backend_text_entry() appends names. */
 typedef struct {
     char  *out;
     size_t max, used;
 } backend_text_ctx_t;
 
+/** @brief tiku_backend_text()'s listing half: append one child's name and
+ *         a '|'; stop when the buffer is full. */
 static int
 backend_text_entry(const tiku_model_t *m, void *ctx)
 {
@@ -3003,7 +2977,7 @@ tiku_backend_text(tiku_backend_t *b, const char *path,
     out[0] = '\0';
     if (b == NULL || b->ops == NULL || path == NULL || path[0] != '/' ||
         b->ops->stat(b, path, &m) != 0) {
-        return 0;               /* nothing serves it: told, not guessed */
+        return 0;               /* nothing serves it                    */
     }
     if (tiku_model_is_container(&m)) {
         backend_text_ctx_t t = { out, max, 0u };

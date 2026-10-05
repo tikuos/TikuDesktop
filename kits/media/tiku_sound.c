@@ -123,7 +123,13 @@ tiku_sound_play(tiku_sound_event_t event)
     sound.at = 0;
 }
 
-/** @brief Open the backend on demand; a refusal drops the clip in flight. */
+/**
+ * @brief Whether the backend is open, opening it when needed.
+ *
+ * With an opener installed it is asked, and 0 is returned until it reports
+ * through tiku_sound_opened(); without one the backend is opened here, and
+ * a refusal drops the clip in flight.
+ */
 static int
 ensure_open(void)
 {
@@ -131,9 +137,9 @@ ensure_open(void)
         return 1;
     }
     if (opener != NULL) {
-        /* Opening the device connects to a sound server, which can take
-         * seconds: asked of the opener, who does it elsewhere and says
-         * so; until then nothing is written and the clip waits. */
+        /* The opener opens the device elsewhere and reports through
+         * tiku_sound_opened(); until then nothing is written and the clip
+         * waits. */
         if (!opening && opener(opener_ctx)) {
             opening = 1;
         }
@@ -181,8 +187,8 @@ tiku_sound_pump(void)
     if (room > 0 && (size_t)room < n) {
         n = (size_t)room;
     }
-    /* The volume is applied here, once, so a clip is stored at full scale
-     * and the slider costs nothing until something plays. */
+    /* The volume is applied as each chunk is written; clips are kept at
+     * full scale. */
     for (i = 0; i < n; i++) {
         sound.chunk[i] = (int16_t)((int)sound.playing->pcm[sound.at + i] *
                                    sound.volume / 100);

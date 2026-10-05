@@ -136,8 +136,7 @@ tiku_wav_read(const char *path, unsigned rate, unsigned max_s, size_t *frames)
         free(data);
         return NULL;
     }
-    /* Nearest frame: a system sound is a tick or a chime, and a proper
-     * filter would cost more than the difference is worth. */
+    /* Each output frame takes the nearest source frame, unfiltered. */
     for (i = 0; i < n; i++) {
         size_t src = (size_t)((double)i * fmt.rate / rate);
 

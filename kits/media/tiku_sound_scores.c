@@ -4,11 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_sound_scores.c - the eight system sounds, rendered once at start.
+ * tiku_sound_scores.c - the system sounds: the baked scores rendered into
+ * clips, and a .score or .wav file in place of one.
  *
- * The scores are the text files under assets/sounds, baked into a header
- * at build time the way the strings catalogue is, so the sounds ship in
- * the binary and stay reviewable as text in the tree.
+ * The scores are the text files under assets/sounds, baked into
+ * tiku_scores_default.h at build time, so the sounds ship in the binary and
+ * stay text in the tree.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -89,7 +90,8 @@ tiku_sound_load_scores(void)
     return loaded;
 }
 
-/** @brief The whole of @p path as text, malloc'd, or NULL. */
+/** @brief The first SCORE_FILE_MAX bytes of @p path as text, malloc'd, or
+ *         NULL. */
 static char *
 slurp(const char *path)
 {

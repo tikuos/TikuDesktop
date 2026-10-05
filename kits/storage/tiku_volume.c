@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_volume.c - reading the mount table and answering for it.
+ * tiku_volume.c - the mount table, the partition list, mounting and
+ * unmounting, and the volume rules.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,7 +21,7 @@
 #include <dirent.h>
 #include <sys/param.h>
 #include <sys/ucred.h>
-/* Darwin spells it unmount(2) and takes the flags this tree never passes. */
+/* Darwin's call is unmount(2), with a flags word that is always 0 here. */
 #define umount(path) unmount((path), 0)
 #endif
 
@@ -29,7 +30,8 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 
-/** @brief The leaf of a mount point, which is the name a volume shows. */
+/** @brief The leaf of a mount point, which is the name a volume shows;
+ *         "/" is "Boot". */
 static void
 name_of(const char *mount, char *out, size_t max)
 {
@@ -45,10 +47,8 @@ name_of(const char *mount, char *out, size_t max)
 
 #ifdef __APPLE__
 /*
- * Darwin keeps no /proc: the mount table is asked for, not read, and it
- * arrives already parsed -- with the read-only and local bits the Linux
- * side has to pick out of an option string, and with the block counts
- * that would otherwise cost a statvfs per row.
+ * On Darwin the mount table comes from getmntinfo(), already parsed: the
+ * read-only and local flags and the block counts come with it.
  */
 /** @brief What a mount attempt came back with, filled by the callback. */
 struct mount_answer {
@@ -71,12 +71,10 @@ mounted(DADiskRef disk, DADissenterRef refusal, void *ctx)
 /**
  * @brief Mount @p devname through the arbitration service.
  *
- * Which filesystem it holds and where it should go are the system's to
- * decide here -- the same decision it makes for a disk plugged in while
- * nobody is looking -- so nothing is guessed at.  The answer comes back
- * on a run loop, which is run for a bounded five seconds rather than
- * until it arrives: a disk that will not answer must not become a shell
- * that will not answer either.
+ * The system chooses the filesystem and the mount point, as it does for a
+ * disk plugged in.  The answer comes back on a run loop, which is run for
+ * at most five seconds (then ETIMEDOUT), so a disk that does not answer
+ * does not hang the shell.
  *
  * @return 0 when it mounted, -1 with errno otherwise.
  */
@@ -114,9 +112,8 @@ arbitrate_mount(const char *devname)
         return -1;
     }
     if (answer.refused != 0) {
-        /* The service's own reasons do not map onto errno, and the one
-         * that matters to a person -- it would not let me -- is the one
-         * worth keeping. */
+        /* A refusal is reported as EPERM: the service's own reasons do not
+         * map onto errno. */
         errno = EPERM;
         return -1;
     }
@@ -126,11 +123,9 @@ arbitrate_mount(const char *devname)
 /**
  * @brief Whether the device behind @p from is one a person may take away.
  *
- * Asked of the arbitration service rather than guessed from the mount
- * point: "not the boot volume and local" calls a second internal volume
- * removable, and offering Eject on one is offering to break the machine.
- * A medium that says it is removable is; so is a device that says it is
- * not internal.  A device that says neither is left alone.
+ * Asked of the arbitration service: a medium that says it is removable is,
+ * and so is a device that says it is not internal.  A device that says
+ * neither, such as a second internal volume, is not removable.
  *
  * @param from  the f_mntfromname of a mount, "/dev/disk2s5".
  */
@@ -187,13 +182,10 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
         return -1;
     }
     /*
-     * The boot volume is two volumes: a sealed, read-only system and a
-     * writable data volume, joined so that one namespace hangs off "/".
-     * The system half is what "/" reports and it says read-only, which is
-     * true of the seal and false of every path a person can reach -- and
-     * both halves answer to the same st_dev, so the volume a path belongs
-     * to cannot be told apart afterwards.  Ask the writable half once,
-     * here, and let "/" wear its answer.
+     * The boot volume is two volumes joined under "/": a sealed read-only
+     * system and a writable data volume.  "/" reports the system half's
+     * read-only flag, and both halves share one st_dev, so "/" takes its
+     * read-only flag from /System/Volumes/Data.
      */
     for (i = 0; i < count; i++) {
         if (strcmp(mounts[i].f_mntonname, "/System/Volumes/Data") == 0) {
@@ -208,11 +200,9 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
         tiku_volume_t *v;
         struct stat st;
 
-        /* Only volumes a person could browse.  MNT_DONTBROWSE is the
-         * system's own word for that, set on every one of the boot
-         * group's halves and on the recovery and preboot volumes: the
-         * same bit the platform's own file manager reads, so what this
-         * desktop shows is what the machine says to show. */
+        /* Only volumes a person could browse: MNT_DONTBROWSE, which the
+         * system sets on the boot group's halves and on the recovery and
+         * preboot volumes, hides a mount, "/" aside. */
         if ((m->f_flags & MNT_DONTBROWSE) != 0 && !is_root) {
             continue;
         }
@@ -240,9 +230,8 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
         v->persistent = !(strcmp(type, "tmpfs") == 0 ||
                           strcmp(type, "devfs") == 0);
         v->is_boot = is_root;
-        /* The system volume group's siblings -- /System/Volumes/Data and
-         * the rest -- are parts of the boot disk wearing mount points,
-         * and offering to eject one is offering to break the machine. */
+        /* The boot volume is never removable; another volume is when the
+         * arbitration service says so. */
         v->removable = !v->is_boot && device_removable(m->f_mntfromname);
         v->total = (uint64_t)m->f_blocks * (uint64_t)m->f_bsize;
         v->avail = (uint64_t)m->f_bavail * (uint64_t)m->f_bsize;
@@ -261,8 +250,7 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
         return -1;
     }
     memset(vs, 0, sizeof *vs);
-    /* The kernel's own table rather than /etc/mtab: what is mounted NOW is
-     * the question, and the two can disagree. */
+    /* The kernel's own table, which /etc/mtab can disagree with. */
     f = fopen("/proc/self/mounts", "r");
     if (f == NULL) {
         return -1;
@@ -317,9 +305,9 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
         }
         snprintf(v->fstype, sizeof v->fstype, "%.*s",
                  (int)(sizeof v->fstype - 1u), type);
-        /* Served over a network rather than by a disk.  It matters twice:
-         * such a volume gets its own icon, and the setting that puts disks
-         * on the desktop treats shares separately (IV-006, PVN-040). */
+        /* Served over a network: such a volume wears the share icon, and
+         * the setting that puts disks on the desktop treats shares
+         * separately (IV-006, PVN-040). */
         v->shared = tiku_volume_shared_type(type);
         v->persistent = !(strcmp(type, "tmpfs") == 0 ||
                           strcmp(type, "devtmpfs") == 0 ||
@@ -339,7 +327,7 @@ tiku_volumes_scan_now(tiku_volumes_t *vs)
     return vs->n;
 }
 
-#endif /* __APPLE__ */
+#endif
 
 int
 tiku_volume_shared_type(const char *fstype)
@@ -378,8 +366,8 @@ tiku_volume_of(const tiku_volumes_t *vs, const char *path)
     if (vs == NULL || path == NULL || stat(path, &st) != 0) {
         return NULL;
     }
-    /* By device rather than by longest prefix: a bind mount and a symlink
-     * both make the prefix lie, and the device does not. */
+    /* Matched by device: a bind mount or a symlink can put a path under a
+     * mount point that is not its volume's. */
     for (i = 0; i < vs->n; i++) {
         if (vs->v[i].dev == st.st_dev) {
             /* The shortest mount point on that device is the volume; a
@@ -416,7 +404,7 @@ tiku_volume_may_unmount(const tiku_volumes_t *vs, const char *path,
     const tiku_volume_t *v;
 
     if (!tiku_volume_is_root(vs, path)) {
-        return 0;                   /* not a volume: not this gesture */
+        return 0;                   /* not a mount point */
     }
     v = tiku_volume_of(vs, path);
     if (v == NULL) {
@@ -446,8 +434,7 @@ tiku_volume_may_write(const tiku_volumes_t *vs, const char *path,
         return 1;
     }
     if (why != NULL) {
-        /* The original's words: it names the volume, because a user with
-         * several mounted needs to know which one refused. */
+        /* The message names the volume that refused. */
         snprintf(why, max, "Files cannot be moved or deleted from a "
                            "read-only volume (\"%.40s\").", v->name);
     }
@@ -475,8 +462,8 @@ tiku_volume_shows_icon(const tiku_volumes_t *vs,
         if (&vs->v[i] == v || vs->v[i].is_boot) {
             continue;
         }
-        /* Mounted under another volume, on a whole path component: a
-         * detail of that one rather than a second disk. */
+        /* Mounted under another volume, on a whole path component: no
+         * icon of its own. */
         if (on < n && strncmp(v->mount, o, on) == 0 &&
             (o[on - 1u] == '/' || v->mount[on] == '/')) {
             return 0;
@@ -510,9 +497,8 @@ tiku_volume_space_facts(uint64_t total, uint64_t avail, int *used_pct)
         *used_pct = 0;
     }
     if (total == 0u) {
-        /* A volume that will not say its size shows an empty bar rather
-         * than a full one: guessing "full" would warn about every device
-         * whose driver has no free-space call. */
+        /* A volume that does not report its size shows an empty bar and
+         * no warning. */
         return TIKU_SPACE_FREE;
     }
     used = (total > avail) ? (total - avail) : 0u;
@@ -521,9 +507,8 @@ tiku_volume_space_facts(uint64_t total, uint64_t avail, int *used_pct)
     if (used_pct != NULL) {
         *used_pct = pct;
     }
-    /* The threshold is on what is LEFT, not on what is used: a rounded
-     * used-share of 95 covers anything from 94.5 to 95.5, and the volume
-     * that matters is the one with under a twentieth free. */
+    /* The warning tests what is left, not the rounded used share: under
+     * TIKU_VOLUME_WARN_PCT percent free. */
     if (avail * 100u < total * (uint64_t)TIKU_VOLUME_WARN_PCT) {
         return TIKU_SPACE_WARNING;
     }
@@ -538,9 +523,9 @@ tiku_volume_space_facts(uint64_t total, uint64_t avail, int *used_pct)
 static int
 same_volume(const tiku_volume_t *a, const tiku_volume_t *b)
 {
-    /* Both, not either: a mount point reused by another device is one
-     * volume leaving and another arriving, and a device remounted
-     * somewhere else is too. */
+    /* Both must match: a mount point reused by another device, or a
+     * device mounted somewhere else, is one volume leaving and another
+     * arriving. */
     return strcmp(a->mount, b->mount) == 0 && a->dev == b->dev;
 }
 
@@ -621,9 +606,8 @@ tiku_volwatch_poll(tiku_volwatch_t *w, tiku_volchange_t *out,
         return 0;
     }
     n = tiku_volwatch_diff(&w->was, &now, out, max);
-    /* The baseline moves whether or not anything was reported, and whether
-     * or not the caller had room: a change dropped for want of space must
-     * not be reported for ever. */
+    /* The baseline moves even when @p out had no room for every change:
+     * a change that did not fit is not reported again. */
     w->was = now;
     return n;
 }
@@ -631,9 +615,9 @@ tiku_volwatch_poll(tiku_volwatch_t *w, tiku_volchange_t *out,
 /**
  * @brief Drop any entry whose name another entry's name extends.
  *
- * A disk that is carved into partitions is not itself the mountable
- * thing, and both hosts name the parts by extending the whole's name --
- * sda and sda1, disk2 and disk2s5.
+ * Both hosts name a partition by extending its disk's name (sda and sda1,
+ * disk2 and disk2s5), and a disk carved into partitions is not itself
+ * mountable.
  *
  * @return how many are left.
  */
@@ -673,18 +657,12 @@ disk_number(CFDictionaryRef about, CFStringRef key)
 }
 
 /*
- * Darwin keeps no table of partitions to read.  The disks are asked
- * about one at a time through the arbitration service, and which ones
- * there are to ask about is what /dev has entries for -- the same two
- * facts the other host reads out of /proc/partitions, by the only route
- * this one offers.
- *
- * Asking costs a mach round trip and a plist per disk, some 8 ms for
- * twenty of them, and the Mount menu asks on every frame a folder
- * window draws.  So the answer is kept, and given again while nothing
- * it depends on has changed: the names under /dev (devfs does not date
- * the directory when a disk appears, so they are read, not stat'ed)
- * and the mount table (getmntinfo, a copy the kernel already holds).
+ * Darwin has no partition table to read: each disk named under /dev is
+ * asked about through the arbitration service, a mach round trip and a
+ * plist per disk.  The Mount menu asks on every frame a folder window
+ * draws, so the answer is kept while the names under /dev and the mount
+ * table stay the same.  The names are read, not stat'ed: devfs does not
+ * date the directory when a disk appears.
  */
 /** @brief FNV-1a over a string, folded into a running hash. */
 static uint64_t
@@ -711,7 +689,8 @@ fold_mounts(uint64_t h)
     return h;
 }
 
-#define PARTITIONS_HELD 64      /* more disks than a desk ever has      */
+/* How many partitions the kept answer holds. */
+#define PARTITIONS_HELD 64
 
 int
 tiku_partitions_scan(tiku_partition_t *out, int max)
@@ -852,7 +831,7 @@ tiku_partitions_scan(tiku_partition_t *out, int max)
     (void)fclose(f);
     return drop_carved(out, n);
 }
-#endif /* __APPLE__ */
+#endif
 
 
 int
@@ -867,8 +846,8 @@ tiku_volume_mount(const char *devname, char *why, size_t max)
         return -1;
     }
     snprintf(dev, sizeof dev, "/dev/%s", devname);
-    /* The permission check comes before anything else the kernel would
-     * object to, so an unprivileged browser learns the true reason. */
+    /* mount(2) checks privilege first, so an unprivileged caller gets
+     * EPERM, which @p why words as needing the system's leave. */
 #ifndef __APPLE__
     if (mount(dev, "/mnt", "ext4", 0, NULL) == 0) {
         return 0;
@@ -905,9 +884,8 @@ tiku_volume_unmount(const tiku_volumes_t *vs, const char *path,
         return TIKU_UNMOUNT_REFUSED;
     }
     if (before != NULL) {
-        /* While the volume is still THERE: afterwards there is nowhere to
-         * write, and the arrangement of everything open on that disk is
-         * lost the moment it leaves (AW-096). */
+        /* Before the unmount, while the volume can still be written
+         * (AW-096). */
         before(v->dev, ctx);
     }
     if (umount(v->mount) != 0) {
@@ -923,15 +901,13 @@ tiku_volume_unmount(const tiku_volumes_t *vs, const char *path,
 }
 
 /*
- * The cache.  A scan asks statvfs of every mount, and a mount that has
- * gone away on the network answers never; so a shell with workers has
- * one scan on a worker at a time and installs what it found here, and
- * every caller of tiku_volumes_scan() reads that.  With no cache ever
- * installed, a scan is a scan, as it always was.
+ * The table tiku_volumes_cache_set() installs and tiku_volumes_scan()
+ * reads.  cache_count is -1 until one is installed, and until then
+ * tiku_volumes_scan() scans.
  */
 static pthread_mutex_t cache_lock = PTHREAD_MUTEX_INITIALIZER;
 static tiku_volumes_t  cache;
-static int             cache_count = -1;    /* -1: never installed */
+static int             cache_count = -1;
 
 void
 tiku_volumes_cache_set(const tiku_volumes_t *vs, int count)
@@ -964,10 +940,6 @@ tiku_volumes_scan(tiku_volumes_t *vs)
     return tiku_volumes_scan_now(vs);
 }
 
-/*
- * An unmount in two halves, for a shell that will not wait on umount(2):
- * the asking and the saving on the loop, the call itself elsewhere.
- */
 int
 tiku_volume_unmount_prepare(const tiku_volumes_t *vs, const char *path,
                             tiku_before_unmount_fn before, void *ctx,

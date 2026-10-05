@@ -1,7 +1,20 @@
-/* The owning process serializes this complete operation with device traffic. */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_vfs_serve.inl - the desktop's side of the namespace proxy,
+ * included by tiku_vfs_rpc.c: tiku_vfs_serve() answers one request from
+ * the backend that holds the board.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/** @brief A listing being put into a reply. */
 typedef struct { tiku_msg_t *reply; int count, failed; } rpc_listing_t;
 
-/* Only stable data fields, never a backend pointer, cross the wire. */
+/** @brief Add one Model to a reply: its name, kind and permission bits. */
 static int model_put(tiku_msg_t *reply, const tiku_model_t *m)
 {
     return tiku_msg_add_string(reply, "name", m->name) &&
@@ -9,7 +22,9 @@ static int model_put(tiku_msg_t *reply, const tiku_model_t *m)
         tiku_msg_add_int32(reply, "perm", (int32_t)m->facts.perm);
 }
 
-/* One extra entry lets a 128-row inspector truthfully report truncation. */
+/** @brief Add one listed entry to the reply, at most TIKU_VFS_RPC_ROWS: one
+ *         more than an inspector's 128 rows, so it can tell the listing was
+ *         cut. */
 static int serve_entry(const tiku_model_t *m, void *ctx)
 {
     rpc_listing_t *l = ctx;
@@ -19,7 +34,12 @@ static int serve_entry(const tiku_model_t *m, void *ctx)
     return 0;
 }
 
-/* Compare and write happen in a single device worker turn, not two RPCs. */
+/**
+ * @brief Write the request's value when the node is a writable leaf that
+ *        still holds the value the requester last read; the check and the
+ *        write happen in one turn of the device's worker.
+ * @return 1 when written.
+ */
 static int serve_write(tiku_backend_t *b, const tiku_msg_t *request,
                         const char *path, char *error, size_t max)
 {

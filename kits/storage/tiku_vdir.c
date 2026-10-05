@@ -64,9 +64,8 @@ tiku_vdir_load(tiku_vdir_t *v, const char *deffile)
                           p[n - 1u] == ' ')) {
             p[--n] = '\0';
         }
-        /* Order IS priority, which is why blank lines and comments are
-         * skipped rather than counted: a comment must not silently demote
-         * everything under it. */
+        /* Order is priority; blank lines and comments take no place in
+         * it. */
         if (n == 0u || p[0] == '#') {
             continue;
         }
@@ -136,10 +135,9 @@ tiku_vdir_after_change(const tiku_vdir_t *v, tiku_backend_t *b,
     out[0] = '\0';
     owner = tiku_vdir_owner(v, b, name);
     if (created) {
-        /* A creation matters only if the new entry is the one that now
-         * wins.  Appearing in a shadowed directory changes nothing that
-         * can be seen, and a row for it would be a row for a file the
-         * user cannot reach by that name (PVN-061). */
+        /* A creation changes the row only when the new entry is the one
+         * that now wins; one in a shadowed directory changes nothing that
+         * can be seen (PVN-061). */
         if (owner != which) {
             return 0;
         }
@@ -151,11 +149,10 @@ tiku_vdir_after_change(const tiku_vdir_t *v, tiku_backend_t *b,
     if (owner < 0) {
         return 1;                   /* the last copy went: the row goes */
     }
-    /* Whether this removal is visible is a question about PRIORITY, and
-     * the entry is already gone -- so the only evidence left is where the
-     * removal happened relative to whoever owns the name now.  A removal
-     * BELOW the current owner was shadowed and changes nothing; one above
-     * it was the winner, and what it was hiding is revealed (PVN-063). */
+    /* The entry is already gone, so its place relative to the name's
+     * current owner decides: a removal below the owner was shadowed and
+     * changes nothing; one above it was the winner, and the owner's copy is
+     * now shown (PVN-063). */
     if (which > owner) {
         return 0;
     }
@@ -168,6 +165,8 @@ struct merge_ctx {
     int               n, max;
 };
 
+/** @brief Keep @p m unless a higher-priority contributor already gave its
+ *         name; stop when the output is full. */
 static int
 merge_one(const tiku_model_t *m, void *ctx)
 {
@@ -177,8 +176,8 @@ merge_one(const tiku_model_t *m, void *ctx)
     if (c->n >= c->max) {
         return 1;                   /* full: stop the walk */
     }
-    /* Already supplied by a higher-priority directory: shadowed, so it
-     * must not appear twice (PVN-061). */
+    /* Already supplied by a higher-priority directory: shadowed
+     * (PVN-061). */
     for (j = 0; j < c->n; j++) {
         if (strcmp(c->out[j].name, m->name) == 0) {
             return 0;
@@ -219,9 +218,8 @@ tiku_vdir_child(const tiku_vdir_t *v, tiku_backend_t *b,
         return;
     }
     tiku_vdir_init(out);
-    /* Every contributor that HAS the subdirectory contributes it, in the
-     * same order: a subdirectory of a merged directory is itself merged,
-     * or descending into one would quietly leave the merge behind. */
+    /* Every contributor that has the subdirectory contributes it, in the
+     * same order, so a subdirectory of a merge is a merge too. */
     for (i = 0; i < v->nsrc; i++) {
         char path[TIKU_PATH_MAX];
         tiku_model_t m;
@@ -282,9 +280,8 @@ tiku_vdir_poll(const tiku_vdir_t *v, tiku_vdir_watch_t *w,
         return ch;
     }
     if (!w->primed) {
-        /* An unprimed watch reports nothing: the first poll establishes
-         * what "unchanged" means, or every directory would appear to have
-         * just changed the moment it was opened. */
+        /* An unprimed watch takes the current state as its baseline and
+         * reports nothing. */
         tiku_vdir_watch_init(w, v);
         return ch;
     }
@@ -301,8 +298,8 @@ tiku_vdir_poll(const tiku_vdir_t *v, tiku_vdir_watch_t *w,
         int here = (t >= 0);
 
         if (w->src_present[i] && !here) {
-            /* A contributor that has gone takes its rows with it, and the
-             * caller has to be told WHICH so it can find them (PVN-064). */
+            /* A contributor that has gone takes its rows with it; @p gone
+             * names the first such (PVN-064). */
             ch |= TIKU_VDIR_CH_GONE;
             if (gone != NULL && *gone < 0) {
                 *gone = i;
@@ -366,10 +363,8 @@ tiku_vdir_child_id(const tiku_vdir_t *v, const char *name)
     if (v == NULL || name == NULL) {
         return 0;
     }
-    /* Over the CONTRIBUTORS and the name, not over the name alone: two
-     * different merges that happen to hold a folder of the same name are
-     * different folders, and a window keyed on one must not answer for the
-     * other. */
+    /* Over the contributors and the name: same-named folders in two
+     * different merges get different ids. */
     for (i = 0; i < v->nsrc; i++) {
         for (p = (const unsigned char *)v->src[i]; *p != '\0'; p++) {
             h = (h ^ *p) * 1099511628211ull;

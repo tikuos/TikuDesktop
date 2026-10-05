@@ -1,14 +1,15 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_board_basic.h - run a BASIC program on a board, and watch it.
  *
- * The board's interpreter is a sub-shell: entered by name, fed a line at
- * a time, started with RUN, and finished when its prompt comes back.  A
- * caller drives none of that -- it hands over a program and takes the
- * output as lines, the same shape a program run on this machine has.
+ * The board's interpreter is entered from its shell with "basic", or on a
+ * stream of its own; it is fed the program a line at a time, started with
+ * RUN, and done when its prompt comes back.  The caller hands over a
+ * program and takes the output as lines.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,6 +21,7 @@
 
 struct tiku_backend;
 
+/** @brief One run, save or listing on a board. */
 typedef struct tiku_board_basic tiku_board_basic_t;
 
 /** @brief Where a run has got to. */
@@ -70,8 +72,7 @@ tiku_board_basic_t *tiku_board_basic_start(struct tiku_backend *b,
 /**
  * @brief Move the run along and hand over whatever the program printed.
  *
- * Never waits longer than @p timeout_ms.  Call it as often as a caller
- * likes; a board's program is far slower than the same one here.
+ * Waits at most @p timeout_ms; call it as often as the caller likes.
  *
  * @return the state the run is now in
  */
@@ -84,9 +85,11 @@ tiku_board_basic_state_t tiku_board_basic_pump(tiku_board_basic_t *r,
  * @brief Keep @p program on the board under @p name instead of running it.
  *
  * The interpreter's own SAVE: the board keeps it in a named slot and
- * shows it in its namespace as /data/<name>.bas.  A name is at most seven
- * characters, which is the board's limit and not this kit's.  Pumped and
- * freed like a run; ENDED means saved.
+ * shows it in its namespace as /data/<name>.bas.  Pumped and freed like a
+ * run; ENDED means saved.
+ *
+ * @return the run, or NULL for a name longer than seven characters or with
+ *         a '"' in it, the board's limits.
  */
 tiku_board_basic_t *tiku_board_basic_save(struct tiku_backend *b,
                                           const char *name,
@@ -105,7 +108,8 @@ tiku_board_basic_t *tiku_board_basic_list(struct tiku_backend *b,
  */
 const char *tiku_board_basic_prompt(const tiku_board_basic_t *r);
 
-/** @brief Answer the program's INPUT with @p text. */
+/** @brief Answer the program's INPUT with @p text.
+ *  @return 0, or -1 when the program is not running or the send fails. */
 int tiku_board_basic_input(tiku_board_basic_t *r, const char *text);
 
 /** @brief Break a running program, as Ctrl-C at its console does. */
@@ -116,8 +120,10 @@ void tiku_board_basic_free(tiku_board_basic_t *r);
 
 /**
  * @brief Whether the run rides the board's own stream rather than a held
- *        shell.  A streamed run's leaving pumps the channel, which the
- *        loop pumps too, so only a held run's leaving may go to a worker.
+ *        shell.
+ *
+ * @note Freeing a streamed run pumps the channel, which the loop pumps too,
+ *       so only a held run may be freed on a worker.
  */
 int tiku_board_basic_streamed(const tiku_board_basic_t *r);
 

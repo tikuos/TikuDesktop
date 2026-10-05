@@ -6,12 +6,11 @@
  *
  * tiku_vdir.h - a directory whose contents are several real ones.
  *
- * The rule that makes it more than a concatenation is PRIORITY: a name is
- * supplied by the first contributing directory that has it, and the same
- * name in a later one is shadowed rather than shown twice.  Everything else
- * in the area follows from that -- what appears when a higher-priority copy
- * arrives, what is revealed when the winner is removed, and what goes when a
- * whole contributor does.
+ * Contributors merge by priority: a name is supplied by the first
+ * contributing directory that has it, and the same name in a later one is
+ * shadowed.  Priority decides what appears when a higher-priority copy
+ * arrives, what is revealed when the winner is removed, and what goes when
+ * a whole contributor does.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,19 +31,21 @@ typedef struct {
     char def[TIKU_PATH_MAX];    /* the definition file it came from  */
 } tiku_vdir_t;
 
+/** @brief Empty @p v: no contributors and no definition file. */
 void tiku_vdir_init(tiku_vdir_t *v);
 
 /**
  * @brief Read a definition file: one contributing path per line.
  *
  * Blank lines and '#' comments are ignored, and the order of the remaining
- * lines IS the priority order -- which is why it is a list and not a set.
+ * lines is the priority order.  @p v is emptied first.
  *
- * @return number of paths read, or -1.
+ * @return number of paths kept, or -1 when the file cannot be read.
  */
 int tiku_vdir_load(tiku_vdir_t *v, const char *deffile);
 
-/** @brief Add one contributing path at the end (lowest priority). */
+/** @brief Add one contributing path at the end (lowest priority).
+ *  @return 0, or -1 when @p path is empty or @p v is full. */
 int tiku_vdir_add(tiku_vdir_t *v, const char *path);
 
 /**
@@ -58,7 +59,7 @@ int tiku_vdir_owner(const tiku_vdir_t *v, tiku_backend_t *b,
 /**
  * @brief The real path @p name resolves to.
  *
- * @return 0 when some contributor has it.
+ * @return 0 when some contributor has it, else -1.
  */
 int tiku_vdir_resolve(const tiku_vdir_t *v, tiku_backend_t *b,
                           const char *name, char *out, size_t max);
@@ -66,10 +67,9 @@ int tiku_vdir_resolve(const tiku_vdir_t *v, tiku_backend_t *b,
 /**
  * @brief What a name looks like after a change in contributor @p which.
  *
- * Answers the three rows that are all the same question: an entry created
- * in a higher-priority directory replaces the shown one, removing the
- * winner reveals what it shadowed, and a change in a shadowed directory is
- * invisible.
+ * Three cases, one question: an entry created in a higher-priority
+ * directory replaces the shown one, removing the winner reveals what it
+ * shadowed, and a change in a shadowed directory is invisible.
  *
  * @param created Non-zero when the entry appeared, zero when it went.
  * @param out     Receives the path that should now be shown, or "" for none.
@@ -117,9 +117,8 @@ void tiku_vdir_watch_init(tiku_vdir_watch_t *w,
 /**
  * @brief Look for changes since the last poll.
  *
- * Watched by PATH rather than by node, because a contributing directory
- * that is deleted and recreated is still the same contributor as far as the
- * definition is concerned.
+ * Contributors are watched by path: a contributing directory deleted and
+ * made again is the same contributor.
  *
  * @param gone Receives the index of a contributor that disappeared, or -1.
  * @return a mask of TIKU_VDIR_CH_*.
@@ -130,8 +129,8 @@ unsigned tiku_vdir_poll(const tiku_vdir_t *v,
 /**
  * @brief Whether @p name is currently supplied by contributor @p which.
  *
- * What a caller needs in order to drop every row that came from a
- * contributor that has gone (PVN-064).
+ * When a contributor has gone, its rows are the names this answers 1 for
+ * (PVN-064).
  */
 int tiku_vdir_supplied_by(const tiku_vdir_t *v,
                               tiku_backend_t *b, const char *name,
@@ -140,20 +139,20 @@ int tiku_vdir_supplied_by(const tiku_vdir_t *v,
 /**
  * @brief Drop contributor @p which from the definition.
  *
- * The rows it supplied become whatever now wins, which the caller finds by
- * re-listing; the merge itself only has to forget it.
+ * The caller lists again to find what now supplies its names.
  */
 void tiku_vdir_drop(tiku_vdir_t *v, int which);
 
-/** @brief Remove a generated definition and its now-empty scratch directory. */
+/** @brief Remove a generated definition and its now-empty scratch
+ *         directory.  @return 1 when either went, 0 when neither did. */
 int tiku_vdir_cleanup(tiku_vdir_t *v, const char *scratch_dir);
 
 /**
  * @brief A stable identity for the merged child called @p name.
  *
- * A merged subdirectory has no inode of its own -- it is several -- so it
- * needs an identity derived from what it IS: this parent and this name.
- * The original manufactures a UUID directory for the same reason (PVN-066).
+ * A merged subdirectory has no inode of its own -- it is several -- so its
+ * identity is derived from the parent's contributors and the name
+ * (PVN-066).
  */
 uint64_t tiku_vdir_child_id(const tiku_vdir_t *v, const char *name);
 

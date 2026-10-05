@@ -6,11 +6,9 @@
  *
  * tiku_sound_pulse.c - the host backend over the PulseAudio simple API.
  *
- * Three calls, found at run time with dlopen: no header and no link line
- * for a library that is on every Linux desktop with a sound daemon and on
- * none of the boards.  PipeWire serves the same library through its
- * pipewire-pulse.  The prototypes below are the API's own, declared here
- * so the build asks for nothing.
+ * libpulse-simple is opened at run time with dlopen, so the build needs no
+ * header and no link line; PipeWire serves the same library through
+ * pipewire-pulse.  The prototypes below are the API's own.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,7 +20,7 @@
 
 #define PA_SAMPLE_S16LE    3            /* pa_sample_format_t */
 #define PA_STREAM_PLAYBACK 1            /* pa_stream_direction_t */
-#define LATENCY_FULL_US    200000u      /* past this, the card has enough */
+#define LATENCY_FULL_US    200000u      /* past this, room() answers 0    */
 #define CHUNK_FRAMES       2205         /* fifty milliseconds */
 
 typedef struct {
@@ -52,7 +50,11 @@ static struct {
     int            said;                /* the one line on stderr, once */
 } pulse;
 
-/** @brief Load the library and its four entry points; 0 when any is gone. */
+/**
+ * @brief Load the library and its entry points: pa_simple_new, _write and
+ *        _free are required, pa_simple_get_latency and pa_strerror not.
+ * @return 1, or 0 when the library or a required entry point is missing.
+ */
 static int
 load(void)
 {
@@ -77,6 +79,8 @@ load(void)
     return 1;
 }
 
+/** @brief Open a mono playback stream at @p rate; with no server, one line
+ *         on stderr.  @return 0, or -1. */
 static int
 pulse_open(void *ctx, unsigned rate)
 {
@@ -104,7 +108,8 @@ pulse_open(void *ctx, unsigned rate)
     return 0;
 }
 
-/** @brief A chunk while the server's buffer is short, nothing while full. */
+/** @brief CHUNK_FRAMES while the server holds up to LATENCY_FULL_US of
+ *         audio, 0 while it holds more; -1 when that cannot be asked. */
 static int
 pulse_room(void *ctx)
 {
@@ -118,6 +123,8 @@ pulse_room(void *ctx)
                ? 0 : CHUNK_FRAMES;
 }
 
+/** @brief Write @p frames samples, blocking until the server takes them.
+ *  @return @p frames, or -1. */
 static int
 pulse_write(void *ctx, const int16_t *pcm, size_t frames)
 {
@@ -133,6 +140,7 @@ pulse_write(void *ctx, const int16_t *pcm, size_t frames)
     return (int)frames;
 }
 
+/** @brief Free the stream. */
 static void
 pulse_close(void *ctx)
 {

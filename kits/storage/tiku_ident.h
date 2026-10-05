@@ -6,10 +6,10 @@
  *
  * tiku_ident.h - the one device identity, keyed on by everything durable.
  *
- * A device is recognised by a scored match over the identity nodes it already
- * publishes, modelled on Tracker's MatchArchivedVolume.  Every store keys on
- * the string this produces, so there is exactly one spelling of "which board
- * is this".
+ * A device is recognised by a scored match over the identity nodes it
+ * publishes under /sys/device.  Every store keys on the string
+ * tiku_ident_key() produces, so there is one spelling of "which board is
+ * this".
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -36,24 +36,23 @@ typedef struct {
 #define TIKU_BIND    7
 
 /**
- * @brief Canonical device key: "uid-<hex>" when a uid exists, else "prov-<hex>".
+ * @brief Canonical device key: "uid-<uid>" when the device has a uid, else
+ *        "prov-<hash>" over id, mcu and name.
  *
- * The provisional form is derived from the weaker fields and cannot be trusted
- * to distinguish two identical boards; callers must surface that (see
- * tiku_ident_provisional()).
- *
- * @return Bytes written, excluding the terminator.
+ * @note A provisional key cannot tell two identical boards apart; the
+ *       caller says so where it matters (tiku_ident_provisional()).
+ * @return The key's length as snprintf() counts it; 0 for a NULL argument.
  */
 int tiku_ident_key(const tiku_identity_t *id, char *out, size_t max);
 
-/** @brief Whether the key is a guess rather than a die identifier. */
+/** @brief Whether the device has no uid, so its key is the provisional
+ *         hash. */
 int tiku_ident_provisional(const tiku_identity_t *id);
 
 /**
  * @brief Score @p seen against a remembered @p known identity.
  *
- * A uid that differs is an absolute veto however much else matches: without
- * that rule a renamed board would adopt another board's arrangement.
+ * Two identities whose uids differ score -1, however much else agrees.
  *
  * @return 0..15, or -1 for the veto.
  */

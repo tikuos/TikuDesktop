@@ -6,15 +6,14 @@
  *
  * tiku_query.h - searching the namespace.
  *
- * A query is a predicate plus a scope, as in Tracker: terms are
- * (attribute, operator, value), terms join with and/or, and the scope is
- * a path-prefix test on each result outside the predicate, which is why
- * a folder filter can be added to a running search.  The matching rules
- * are ported: a name search is a substring match unless the text holds a
- * '*', when the whole text is a pattern; case-insensitivity rewrites the
- * value into per-character classes ("txt" as "[tT][xX][tT]") so one
- * matcher serves every operator.  A volume is a namespace subtree and the
- * type registry the node's descriptor, so no index needs to exist.
+ * A query is a predicate plus a scope: terms are (attribute, operator,
+ * value), terms join with and/or, and the scope is a path-prefix test on
+ * each result, outside the predicate.  A name search is a substring match
+ * unless the text holds a '*', when the whole text is a pattern;
+ * case-insensitivity rewrites the value into per-character classes ("txt"
+ * as "[tT][xX][tT]"), so one matcher serves every operator.  A volume is a
+ * namespace subtree and a node's descriptor stands in for a type registry,
+ * so a search walks the namespace and needs no index.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,7 +30,8 @@
 #define TIKU_QUERY_VALUE_MAX  64
 #define TIKU_QUERY_PRED_MAX  512
 
-/** @brief Which field a term tests. */
+/** @brief Which field a term tests.  Saved records store it by number, so
+ *         the order is fixed. */
 typedef enum {
     TIKU_QF_NAME = 0,
     TIKU_QF_PATH,
@@ -41,13 +41,14 @@ typedef enum {
     TIKU_QF_CAP,
     TIKU_QF_UNIT,        /* the descriptor's unit: bytes, Hz, s ...    */
     TIKU_QF_WRITABLE,
-    /* The entry's TYPE, matched as a type rather than as text: picking a
+    /* The entry's type.  With IS and IS_NOT it is matched as a type, so a
      * supertype admits everything under it (Q-004). */
     TIKU_QF_TYPE,
     TIKU_QF_MODIFIED     /* seconds since epoch, with date syntax     */
 } tiku_qfield_t;
 
-/** @brief The operator vocabulary, in the original's order. */
+/** @brief The operator vocabulary.  Saved records store it by number, so
+ *         the order is fixed. */
 typedef enum {
     TIKU_OP_CONTAINS = 0,
     TIKU_OP_IS,
@@ -64,11 +65,12 @@ typedef enum {
     TIKU_JOIN_OR
 } tiku_qjoin_t;
 
+/** @brief One term: a field, an operator and a value. */
 typedef struct {
     tiku_qfield_t field;
     tiku_qop_t    op;
     char              value[TIKU_QUERY_VALUE_MAX];
-    tiku_qjoin_t  join;      /* how it joins the PREVIOUS term         */
+    tiku_qjoin_t  join;      /* how it joins the previous term         */
     int               pattern_ready; /* formula already supplied a glob   */
 } tiku_qterm_t;
 
@@ -79,7 +81,7 @@ typedef enum {
     TIKU_QMODE_FORMULA
 } tiku_qmode_t;
 
-/** @brief What a saved record IS, which decides what opening it does. */
+/** @brief What a saved record is, which decides what opening it does. */
 typedef enum {
     TIKU_QREC_QUERY = 0,     /* opening it runs it                    */
     TIKU_QREC_TEMPLATE       /* opening it opens the panel, filled in */
@@ -88,11 +90,10 @@ typedef enum {
 /**
  * @brief What a scope was when it was written.
  *
- * A path alone cannot say whether the volume it names is the one that was
- * searched: mount points are reused.  The identity is carried beside it and
- * checked on the way back, so a query saved against a disk that is no longer
- * there says so rather than quietly searching whatever took its place
- * (Q-027).
+ * Mount points are reused, so the volume's identity is kept beside the path
+ * and checked when the query runs: a scope whose volume is not the one
+ * recorded is left out of the run, and a run with no scope left finds
+ * nothing (Q-027).
  */
 typedef struct {
     char     path[TIKU_PATH_MAX];
@@ -100,6 +101,7 @@ typedef struct {
     char     volume[TIKU_NAME_MAX];
 } tiku_qscope_t;
 
+/** @brief A query: its terms, its scopes and what kind of record it is. */
 typedef struct {
     tiku_qmode_t mode;
     tiku_qterm_t term[TIKU_QUERY_TERMS_MAX];
@@ -108,33 +110,31 @@ typedef struct {
      * namespace, which is the "All disks" case. */
     char             scope[TIKU_QUERY_SCOPES_MAX][TIKU_PATH_MAX];
     int              scope_count;
-    /* What each scope was, in the same order.  Kept beside the paths rather
-     * than replacing them so a v1 record still loads. */
+    /* What each scope was, in the order of scope[]; a v1 record carries
+     * the paths only. */
     tiku_qscope_t scope_was[TIKU_QUERY_SCOPES_MAX];
     int              max_results;
-    /* Trash is excluded unless the panel explicitly includes it.  The path
-     * supplements the model kind so a query scoped directly inside Trash
-     * still knows that its children belong to the excluded subtree. */
+    /* The Trash is excluded unless include_trash is set.  Besides the
+     * TRASH kind, trash_path marks the excluded subtree, so the children of
+     * a scope inside the Trash are excluded too. */
     int              include_trash;
     char             trash_path[TIKU_PATH_MAX];
-    /* A formula that did not parse must not degenerate into an empty
-     * predicate, since an empty predicate matches the whole namespace. */
+    /* Set when a formula did not parse: tiku_query_start() refuses the
+     * query, whose empty predicate would match the whole namespace. */
     int              invalid;
-    /* Relative Modified terms move with the wall clock and must be
-     * re-evaluated at their next minute/hour/day boundary (Q-009). */
+    /* Set when a Modified term is relative ("2 days ago"); the query is
+     * due again at its next minute, hour or day boundary (Q-009). */
     int              dynamic_date;
-    /* What the record is and how it should be treated.  A query the user
-     * never named is TEMPORARY: it is a by-product of a search, and it is
-     * swept up later rather than accumulating for ever (MA-053, AW-090). */
+    /* What the record is, and whether it is temporary: a query the user
+     * never named, which tiku_query_sweep() deletes once it is stale
+     * (MA-053, AW-090). */
     tiku_qrec_t  kind;
     int              temporary;
     int64_t          saved_at;   /* seconds; 0 when never written         */
     /* The type the panel had selected, ANDed onto everything (Q-004). */
     char             type[TIKU_TYPE_MAX];
-    /* Lines a record carried that could not be placed.  Kept because a
-     * record that half-loaded is worth knowing about: silently dropping
-     * part of a saved search is how a query comes back meaning something
-     * else. */
+    /* Lines of a loaded record that could not be placed; non-zero means
+     * the query is not the whole record. */
     int              dropped;
 } tiku_query_t;
 
@@ -146,12 +146,12 @@ void tiku_query_init(tiku_query_t *q);
  *
  * The '*' rule applies: with a star anywhere the text is a pattern matched
  * outright; without one it is a substring.  Empty text matches everything,
- * because the substring form degenerates to "*" -- which is the original's
- * behaviour and not an accident worth 'fixing'.
+ * because the substring form becomes "*".
  */
 void tiku_query_set_name(tiku_query_t *q, const char *text);
 
-/** @brief Parse the predicate grammar emitted by query_predicate(). */
+/** @brief Parse the formula grammar tiku_query_predicate() writes.
+ *  @return 0, or -1 with the query left marked invalid. */
 int tiku_query_set_formula(tiku_query_t *q, const char *formula);
 
 /** @brief Append a term.  @return its index, or -1. */
@@ -162,6 +162,7 @@ int tiku_query_add_term(tiku_query_t *q, tiku_qfield_t field,
 /** @brief Restrict results to a subtree.  @return 1 when it was added. */
 int tiku_query_add_scope(tiku_query_t *q, const char *path);
 
+/** @brief Drop every scope, so the query covers the whole namespace. */
 void tiku_query_clear_scope(tiku_query_t *q);
 
 /** @brief Record the current identities of scopes that have none yet. */
@@ -171,8 +172,7 @@ void tiku_query_bind_scopes(tiku_query_t *q,
 /**
  * @brief Render the predicate the way the formula field shows it.
  *
- * Switching a panel into formula mode pre-fills it with this, so what the
- * controls were asking is visible and editable rather than hidden.
+ * A panel switched into formula mode is filled with this text.
  */
 int tiku_query_predicate(const tiku_query_t *q, char *out,
                              size_t max);
@@ -201,17 +201,17 @@ int64_t tiku_query_next_refresh(const tiku_query_t *q, int64_t now);
 /**
  * @brief Match @p name against @p pattern, with '*', '?' and [class].
  *
- * Exposed because it is the one matcher every operator goes through, and
- * because its behaviour is worth testing on its own.
+ * Every text operator matches through it.  A '[' with no ']' after it is
+ * a literal bracket.
  */
 int tiku_query_glob(const char *pattern, const char *name);
 
 /**
- * @brief Build the case-insensitive pattern for @p value.
+ * @brief Build the case-insensitive pattern for @p value under @p op.
  *
- * Each letter becomes a two-member class and each space becomes '*', which is
- * how the original spells "case-insensitive" -- and why searching "foo bar"
- * also finds "foo-bar".
+ * Each letter becomes a two-member class and each space becomes '*', so
+ * searching "foo bar" also finds "foo-bar"; @p op adds the leading or
+ * trailing star a substring, prefix or suffix search needs.
  */
 int tiku_query_pattern(const char *value, tiku_qop_t op, char *out,
                            size_t max);
@@ -226,25 +226,29 @@ typedef struct tiku_qrun tiku_qrun_t;
 tiku_qrun_t *tiku_query_start(tiku_backend_t *b,
                                       const tiku_query_t *q);
 
+/** @brief End the search and free it and its results. */
 void tiku_query_stop(tiku_qrun_t *r);
 
 /**
  * @brief Advance the walk by at most @p budget directories.
  *
- * Stepped rather than blocking, for the same reason the original's directory
- * read is: a search over a slow device must not stop the window redrawing.
+ * Each call returns after at most @p budget directories, so the caller
+ * keeps drawing between steps.
  *
  * @return New results this step, or -1 when finished.
  */
 int tiku_query_step(tiku_qrun_t *r, int budget);
 
+/** @brief How many results the run holds; 0 for NULL. */
 int tiku_query_count(const tiku_qrun_t *r);
 
+/** @brief Result @p i, or NULL past the end. */
 const tiku_model_t *tiku_query_at(const tiku_qrun_t *r, int i);
 
 /** @brief How many directories have been visited, for a progress line. */
 int tiku_query_visited(const tiku_qrun_t *r);
 
+/** @brief Whether the walk has finished; 1 for NULL. */
 int tiku_query_done(const tiku_qrun_t *r);
 
 /** @brief Whether this live run searches the volume identified by @p dev. */
@@ -260,11 +264,9 @@ const char *tiku_query_search_type(const tiku_qrun_t *r);
 /**
  * @brief Why a result left the set.
  *
- * The distinction is load-bearing: a node that no longer matches means the
- * ROW goes, while a node that is gone may also mean the thing the window is
- * about is gone.  A single "removed" event cannot tell them apart, and the
- * source that produced it is not recoverable afterwards -- so it is recorded
- * at the moment the difference is still knowable.
+ * A node that no longer matches only loses its row; a node that is gone
+ * may also take away what the window is about.  The reason is found when
+ * the result leaves, by asking whether the node still exists.
  */
 typedef enum {
     TIKU_QGONE_UNMATCHED = 0,   /* still there, no longer qualifies   */
@@ -281,12 +283,10 @@ typedef struct {
 /**
  * @brief Re-run the query and report what changed.
  *
- * The result set is NOT cleared first: survivors keep their place, so a
- * window does not flicker or lose its selection every time a value moves.
+ * Results found again keep their place in the set.
  *
- * The subscription lives as long as the run does; a caller that stops the run
- * when the first fill completes has silently turned liveness off.
- *
+ * @note The run is the live query: a caller that stops it after the first
+ *       fill has nothing left to refresh.
  * @return 0, or -1 on failure.
  */
 int tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out);
@@ -294,13 +294,12 @@ int tiku_query_refresh(tiku_qrun_t *r, tiku_qdiff_t *out);
 /**
  * @brief Begin a refresh without walking it: snapshot, then restart.
  *
- * The three calls below are tiku_query_refresh() taken apart, for a
- * caller with a frame to draw: a re-walk of a real disk is minutes of
- * work, so the shell begins one, steps it with tiku_query_step() from
- * its turn, and ends it when the walk says it is done.  The snapshot
- * lives on the run in between.  Nothing is shown until the end, since
- * mid-walk a row about to be found again would blink out.
+ * This call, tiku_query_step() and tiku_query_refresh_end() are
+ * tiku_query_refresh() in steps, for a caller that draws between them.
+ * The snapshot lives on the run in between.
  *
+ * @note Show the results only after the end: mid-walk the set is half
+ *       rebuilt.
  * @return 0 when a refresh is under way, -1 when one already was.
  */
 int tiku_query_refresh_begin(tiku_qrun_t *r);
@@ -328,21 +327,18 @@ int tiku_query_is_new(const tiku_qrun_t *r, int i);
 
 struct tiku_store;
 
-/**
- * @brief Write @p q under @p name.
- *
- * Tracker saves a query as a FILE whose attributes carry the predicate, and
- * opening that file runs it.  There is no such file here, so the same fields
- * go to the state store under the query's name -- the indirection is kept
- * (a query is a thing you save and re-open, not just a command you re-type)
- * even though the container is different.
- *
- * @return 0, or -1 when the store refused.
- */
 /** @brief The query as its saved text form.  Length, or -1. */
 int tiku_query_serialise(const tiku_query_t *q, char *buf,
                              size_t max);
 
+/**
+ * @brief Write @p q under @p name, and add the name to the head of the
+ *        saved-query index when the index does not list it yet.
+ *
+ * The record goes to the state store under the query's name.
+ *
+ * @return 0, or -1 when the store refused.
+ */
 int tiku_query_save(const tiku_query_t *q, const char *name,
                         struct tiku_store *store);
 
@@ -361,16 +357,15 @@ int tiku_query_load(tiku_query_t *q, const char *name,
 int tiku_query_list(struct tiku_store *store, char names[][128],
                         int max);
 
-/** @brief Forget a saved query. */
+/** @brief Forget a saved query: its record and its line in the index.
+ *  @return 0, or -1 when the index cannot be read or written. */
 int tiku_query_forget(const char *name, struct tiku_store *store);
 
 /**
- * @brief The saved records of ONE kind, newest first (Q-031, Q-032).
+ * @brief The saved records of one kind, newest first (Q-031, Q-032).
  *
- * The two menus the panel offers are the same index read twice: every
- * template, and the queries that were actually run.  Reading the index
- * once and filtering here keeps the newest-first order both of them
- * depend on.
+ * The panel's two menus, the templates and the queries that were run,
+ * each read the index through this, in the index's newest-first order.
  *
  * @return how many were written to @p names.
  */
@@ -387,17 +382,14 @@ int tiku_query_list_kind(struct tiku_store *store,
 /**
  * @brief Delete the temporary records nobody is looking at (Q-037, AW-090).
  *
- * A search nobody named is a by-product: it is kept long enough to be
- * re-opened and then reaped.  Three things spare a record -- being a
- * template or a named query, being younger than a week, or being SHOWN in
- * a window right now, because deleting the record behind an open window
- * would leave the window unable to say what it is.
+ * Three things spare a record: being a template or a named query, being
+ * younger than TIKU_QUERY_STALE_SEC, or being shown in a window now.
  *
  * @param now      Seconds, the same clock saved_at is stamped from.
- * @param up_for   Seconds since this Tracker started.  The sweep does not
- *                 run in the first half hour: a machine that has just come
- *                 up is busy, and this is the least urgent work there is.
+ * @param up_for   Seconds since this Tracker started; the sweep does not
+ *                 run before TIKU_QUERY_SWEEP_WAIT.
  * @param open     Names currently shown in a window; may be NULL.
+ * @param nopen    How many names @p open holds.
  * @return how many were deleted, or -1 when it did not run.
  */
 int tiku_query_sweep(struct tiku_store *store, int64_t now,

@@ -6,10 +6,10 @@
  *
  * tiku_volume.h - what a volume is, and what that means for an operation.
  *
- * Until now the port knew filesystems only as st_dev numbers, which is
- * enough to tell a move from a copy and nothing else.  Several rules need
- * more than that: whether a volume will take a write at all, which one the
- * system booted from, and what a whole volume dragged to the Trash means.
+ * A volume's mount point, device, type and capacity as the mount table
+ * gives them, and the rules that depend on them: whether a volume takes a
+ * write, which one the system booted from, and what a whole volume dragged
+ * to the Trash means.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,14 +32,12 @@ typedef struct {
     int      read_only;
     int      is_boot;               /* the volume "/" lives on           */
     int      removable;             /* can be unmounted at all           */
-    /* The filesystem's type, which the scan already had to read in order to
-     * reject the kernel's own bookkeeping ones, and which is the only place
-     * "this is a share rather than a disk" can come from. */
+    /* The filesystem's type; shared is decided from it
+     * (tiku_volume_shared_type()). */
     char     fstype[24];
     int      shared;
-    /* Backed by a device or a network rather than by RAM: what a Desktop
-     * icon is FOR.  A tmpfs on the backdrop would be an icon for a thing
-     * that forgets (PVN-040's persistence gate). */
+    /* Backed by a device or a network, not by RAM as tmpfs is; only a
+     * persistent volume gets a Desktop icon (PVN-040). */
     int      persistent;
     char     source[64];            /* the mount table's device column   */
     uint64_t total, avail;
@@ -52,7 +50,8 @@ typedef struct tiku_volumes {
 } tiku_volumes_t;
 
 /**
- * @brief Read the mount table.
+ * @brief Read the mount table, or the copy tiku_volumes_cache_set()
+ *        installed.
  *
  * @return how many volumes were found, or -1.
  */
@@ -70,8 +69,8 @@ int tiku_volume_is_root(const tiku_volumes_t *vs, const char *path);
 /**
  * @brief Whether a whole volume dragged to the Trash may be unmounted.
  *
- * The boot volume never can: the system is running from it, and "delete"
- * was never what the gesture meant anyway (FS-041).
+ * The boot volume never can: the system is running from it.  The gesture
+ * means unmount, not delete (FS-041).
  *
  * @param why Receives the refusal, when there is one.
  * @return 1 when the unmount may proceed.
@@ -84,19 +83,9 @@ typedef enum {
     TIKU_UNMOUNT_OK = 0,
     TIKU_UNMOUNT_REFUSED,    /* the rules say no (the boot volume)   */
     TIKU_UNMOUNT_BUSY,       /* something is still using it          */
-    TIKU_UNMOUNT_FAILED      /* the system would not                 */
+    TIKU_UNMOUNT_FAILED      /* the system call failed               */
 } tiku_unmount_t;
 
-/**
- * @brief What the caller must do BEFORE the volume goes (AW-096).
- *
- * Every window showing something on it saves its icon positions while the
- * volume is still there to save them to: afterwards there is nowhere to
- * write, and the arrangement of everything the user had open on that disk
- * is lost the moment it leaves.
- *
- * @param dev The volume's device, so a caller can find its windows.
- */
 /** @brief One block-device partition, mounted or waiting to be. */
 typedef struct {
     char     name[32];              /* kernel name: nvme0n1p5, sda1, ...  */
@@ -108,9 +97,8 @@ typedef struct {
 /**
  * @brief Every partition the kernel offers, mounted ones marked.
  *
- * Whole disks that are carved into partitions are skipped -- the
- * partitions are the mountable things -- and so are the kernel's own
- * ram/loop/zram devices.
+ * Whole disks carved into partitions are skipped, as are the kernel's
+ * ram, loop and zram devices.
  *
  * @return Count written.
  */
@@ -119,25 +107,34 @@ int tiku_partitions_scan(tiku_partition_t *out, int max);
 /**
  * @brief Try to mount @p devname (a kernel partition name).
  *
- * On this host mounting needs the system's leave; the refusal comes back
- * in @p why, worded for a person, so the shell can say it out loud
+ * On Linux it is mounted at /mnt as ext4; on macOS the arbitration service
+ * picks the filesystem and the place.  Mounting needs the system's leave;
+ * a refusal or failure comes back in @p why, worded for a person
  * (CW-034).
  *
  * @return 0 on success.
  */
 int tiku_volume_mount(const char *devname, char *why, size_t max);
 
+/**
+ * @brief Called before the volume goes (AW-096): the caller saves the icon
+ *        positions of every window showing something on it, while the
+ *        volume can still be written.
+ *
+ * @param dev The volume's device, by which the caller finds its windows.
+ */
 typedef void (*tiku_before_unmount_fn)(dev_t dev, void *ctx);
 
 /**
  * @brief Unmount the volume at @p path (AW-096, Q-046).
  *
- * The order is the rule: refuse first, then let the caller save and close
- * what it has open on the volume, and only then ask the system.  Asking
- * first and saving afterwards is how an arrangement is lost.
+ * The rules are checked first, then @p before runs, and only then is the
+ * system asked: once the volume has gone there is nowhere to save the
+ * arrangement.
  *
  * @param before Called once, after the rules pass and before the unmount.
  * @param why    Receives the refusal or the failure, when there is one.
+ * @return TIKU_UNMOUNT_OK, or why the unmount did not happen.
  */
 tiku_unmount_t tiku_volume_unmount(const tiku_volumes_t *vs,
                                            const char *path,
@@ -148,7 +145,7 @@ tiku_unmount_t tiku_volume_unmount(const tiku_volumes_t *vs,
  * @brief Whether an operation on @p path is allowed by its volume.
  *
  * @param write Non-zero when the operation changes the item (a move, a
- *              delete, a rename); zero for a read (a copy FROM it).
+ *              delete, a rename); zero for a read (a copy from it).
  * @param why   Receives the refusal, when there is one.
  * @return 1 when it may proceed.
  */
@@ -158,19 +155,16 @@ int tiku_volume_may_write(const tiku_volumes_t *vs, const char *path,
 /**
  * @brief Whether @p v should get an icon of its own (PVN-041).
  *
- * A volume mounted INSIDE another one is a detail of that volume, not a
- * second disk: showing both puts two icons on the desktop for one thing
- * the user plugged in.  The boot volume is the exception -- everything is
- * inside it, and it is the disk.
+ * A volume mounted inside another one, other than the boot volume, gets no
+ * icon of its own: it is a detail of that volume.  The boot volume always
+ * gets one.
  */
 int tiku_volume_shows_icon(const tiku_volumes_t *vs,
                                const tiku_volume_t *v);
 
 /**
- * @brief Whether a filesystem type names something served over a network.
- *
- * The one fact that separates a share from a disk, and the only place it
- * can come from: nothing about the mount point says it.
+ * @brief Whether a filesystem type is one served over a network: NFS,
+ *        SMB/CIFS, 9p or sshfs.
  */
 int tiku_volume_shared_type(const char *fstype);
 
@@ -191,18 +185,16 @@ typedef enum {
  * @brief How full @p v is, and whether it is low enough to warn.
  *
  * @param used_pct Receives the used share, 0..100.
- * @return the colour the USED part of the bar takes: the warning colour
- *         replaces the used one rather than being drawn beside it, which
- *         is what makes a nearly-full volume read at a glance.
+ * @return the colour of the used part of the bar: TIKU_SPACE_WARNING in
+ *         place of TIKU_SPACE_USED when the volume is low, and
+ *         TIKU_SPACE_FREE when its size is unknown.
  */
 tiku_space_t tiku_volume_space(const tiku_volume_t *v,
                                        int *used_pct);
 
 /**
- * @brief The same question asked of the facts a model already carries.
- *
- * Drawing has the numbers and not the table, and re-reading the mount
- * table to colour a bar would be a read per row per frame.
+ * @brief The same question asked of the total and avail a model carries,
+ *        for drawing, which has no mount table at hand.
  */
 tiku_space_t tiku_volume_space_facts(uint64_t total, uint64_t avail,
                                              int *used_pct);
@@ -214,11 +206,9 @@ tiku_space_t tiku_volume_space_facts(uint64_t total, uint64_t avail,
 /**
  * @brief What a poll of the mount table found.
  *
- * There is no mount NOTIFICATION on either target: the host publishes a
- * table and the device has no concept of mounting at all.  So the notice is
- * derived, the way the port derives every other notice -- by diffing a
- * re-reading against what was there before.  The vocabulary is the real
- * one, and a channel that can push these would replace only the source.
+ * The mount table is polled, not watched, and the device has no concept of
+ * mounting at all, so the notice is derived by diffing a re-reading against
+ * what was there before.
  */
 typedef struct {
     tiku_volumes_t was;
@@ -232,9 +222,8 @@ typedef struct {
 typedef struct {
     tiku_volume_t v;
     int               mounted;      /* 1 arrived, 0 left                 */
-    /* The volume stayed; its NAME did not.  A label edited under the
-     * port's feet reaches the windows as this rather than as a
-     * departure-and-arrival (MA-021). */
+    /* Set when the volume stayed and its name changed: a label edited
+     * while mounted reaches the windows as a rename (MA-021). */
     int               renamed;
 } tiku_volchange_t;
 
@@ -244,30 +233,36 @@ void tiku_volwatch_init(tiku_volwatch_t *w);
 /**
  * @brief Re-read the table and report what moved.
  *
- * Keyed on the MOUNT POINT and the device together: the same directory with
- * a different device behind it is one volume leaving and another arriving,
- * not a volume that stayed.
+ * Keyed on the mount point and the device together: the same directory with
+ * a different device behind it is one volume leaving and another
+ * arriving.
  *
  * @return how many changes were written.
  */
 int tiku_volwatch_poll(tiku_volwatch_t *w,
                            tiku_volchange_t *out, int max);
 
-/** @brief The pure diff the poll runs: testable with the caller's tables. */
+/** @brief The diff the poll runs, over two tables the caller holds. */
 int tiku_volwatch_diff(const tiku_volumes_t *was,
                            const tiku_volumes_t *now,
                            tiku_volchange_t *out, int max);
 
 /**
- * @brief The scan itself: /proc/self/mounts and a statvfs of each --
- *        which a mount gone away on the network never answers.  For a
- *        worker; the loop reads tiku_volumes_scan().
+ * @brief The scan itself: the mount table (/proc/self/mounts, or
+ *        getmntinfo() on macOS) and each volume's capacity.
+ *
+ * @note Call it on a worker: a mount gone away on the network never
+ *       answers statvfs.  The loop reads tiku_volumes_scan().
  */
 int tiku_volumes_scan_now(tiku_volumes_t *vs);
 
 /**
  * @brief Install what a scan found as what tiku_volumes_scan() answers
- *        from now on.  Never called: a scan is a scan.
+ *        from now on.
+ *
+ * A mount gone away on the network never answers statvfs, so a shell with
+ * workers scans on a worker and installs the result here.  Until the first
+ * call, tiku_volumes_scan() scans directly.
  */
 void tiku_volumes_cache_set(const tiku_volumes_t *vs, int count);
 
@@ -275,13 +270,17 @@ void tiku_volumes_cache_set(const tiku_volumes_t *vs, int count);
  * @brief The half of an unmount that belongs on the loop: the refusal,
  *        the saving, and the names.  @return 0 to go on, with @p mount
  *        and @p name filled for tiku_volume_umount_now().
+ *
+ * An unmount in two halves is for a shell that will not wait on umount(2):
+ * the asking and the saving on the loop, the call itself on a worker.
  */
 int tiku_volume_unmount_prepare(const tiku_volumes_t *vs, const char *path,
                                 tiku_before_unmount_fn before, void *ctx,
                                 char *mount, size_t mmax, char *name,
                                 size_t nmax, char *why, size_t max);
 
-/** @brief umount(2) itself, which flushes what is dirty: for a worker. */
+/** @brief umount(2) itself, which flushes what is dirty.
+ *  @note Call it on a worker. */
 tiku_unmount_t tiku_volume_umount_now(const char *mount, const char *name,
                                       char *why, size_t max);
 

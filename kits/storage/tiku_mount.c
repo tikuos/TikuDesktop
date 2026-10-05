@@ -33,12 +33,12 @@ typedef struct {
  * The mount an id came from, in its top byte.  Fifty-six bits are left
  * for the backend's own identity, which is every inode any filesystem
  * here will ever issue; a store that used the top byte would alias two
- * of its nodes onto one, and that is written down rather than guarded
- * because the guard would cost a branch on every entry of every listing.
+ * of its nodes onto one, and nothing guards against it.
  */
 #define ID_SHIFT 56
 #define ID_MASK  0x00FFFFFFFFFFFFFFull
 
+/** @brief @p raw with slot @p slot in its top byte. */
 static uint64_t
 tag_id(int slot, uint64_t raw)
 {
@@ -51,6 +51,7 @@ tiku_mount_tag_id(int slot, uint64_t raw)
     return tag_id(slot, raw);
 }
 
+/** @brief The slot whose mark @p id carries, or -1 for none. */
 static int
 id_slot(uint64_t id)
 {
@@ -59,13 +60,13 @@ id_slot(uint64_t id)
     return (s >= 0 && s < TIKU_MOUNT_MAX) ? s : -1;
 }
 
-/*
- * Only ever for a backend already known to be one of these.  Every
- * backend has an impl pointer and it is its OWN state, so a test of
- * "impl is not null" says nothing at all -- it would hand a POSIX
- * store's private struct back as a mount table and read whatever
- * happened to be at those offsets.  The public entry points ask
- * tiku_mount_is() first, which compares the ops table.
+/**
+ * @brief The mount table of @p b, which must be a namespace.
+ *
+ * @note Only for a backend known to be one, as the ops below are.  Every
+ *       backend's impl is its own state, so a non-NULL impl proves
+ *       nothing; the public entry points use table_of(), which compares
+ *       the ops table.
  */
 static mount_impl_t *
 impl_of(const tiku_backend_t *b)
@@ -119,7 +120,8 @@ strip(const char *prefix, const char *path, char *out, size_t max)
     }
 }
 
-/** @brief The mounted name for @p local, which the backend at @p i gave. */
+/** @brief The mounted path for @p local, as the backend at @p prefix gave
+ *         it. */
 static void
 graft(const char *prefix, const char *local, char *out, size_t max)
 {
@@ -134,7 +136,6 @@ graft(const char *prefix, const char *local, char *out, size_t max)
     }
 }
 
-/** @brief The slot serving @p path: the longest prefix that claims it. */
 void
 tiku_mount_adopt_entry(const char *prefix, int slot, tiku_model_t *m)
 {
@@ -152,6 +153,7 @@ tiku_mount_adopt_entry(const char *prefix, int slot, tiku_model_t *m)
     m->node_id = tag_id(slot, m->node_id);
 }
 
+/** @brief The slot serving @p path: the longest prefix that claims it. */
 static int
 route_slot(const mount_impl_t *m, const char *path)
 {
@@ -219,7 +221,7 @@ child_toward(const char *prefix, const char *dir, char *out, size_t max)
     return out[0] != '\0';
 }
 
-/** @brief Whether @p path is an ancestor of some mount, or a mount root. */
+/** @brief Whether @p path is a strict ancestor of some mount's prefix. */
 static int
 is_synthetic_dir(const mount_impl_t *m, const char *path)
 {
@@ -252,9 +254,8 @@ synth_model(const char *path, tiku_model_t *out)
     snprintf(out->facts.req_cap, sizeof out->facts.req_cap, "%s", "-");
     snprintf(out->facts.meta, sizeof out->facts.meta, "%s", "-");
     /*
-     * Slot zero of the id space, which no mount uses: a synthetic
-     * directory has an identity of its own so a view can tell two of
-     * them apart, and it must not collide with a real node's.
+     * The id is a hash of the path in slot zero, which no mount uses, so
+     * it is distinct from every real node's id.
      */
     {
         uint64_t h = 1469598103934665603ull;
@@ -281,11 +282,9 @@ adopt(tiku_backend_t *router, const mount_impl_t *m, int slot,
     graft(m->slot[slot].prefix, out->path, mounted, sizeof mounted);
     snprintf(out->path, sizeof out->path, "%s", mounted);
     /*
-     * The mount POINT is named by the mount, not by what is mounted.
-     * A device asked about its own root answers with whatever it calls
-     * that root -- "/", or nothing at all -- and a row in /devices
-     * showing an empty name is the device that cannot be told from the
-     * next one.  Inside the mount the backend's own names stand.
+     * The mount point takes the last component of its prefix as its name:
+     * a device names its own root "/" or nothing.  Inside the mount the
+     * backend's own names stand.
      */
     if (strcmp(mounted, m->slot[slot].prefix) == 0) {
         const char *leaf = strrchr(m->slot[slot].prefix, '/');
@@ -296,15 +295,14 @@ adopt(tiku_backend_t *router, const mount_impl_t *m, int slot,
     }
     out->node_id = tag_id(slot, out->node_id);
     /*
-     * Every model leaves here owned by the ROUTER, whatever answered.
-     * A caller keeps the model and later asks its backend to read its
-     * path -- and that path is now a mounted one, which only the router
-     * can resolve.  Handing back the inner backend would send a mounted
-     * path to something that has never heard of the prefix.
+     * Every model leaves here with the router as its backend: its path is
+     * now a mounted one, which only the router can resolve.
      */
     out->backend = router;
 }
 
+/** @brief Stat @p path through the mount that serves it, or describe it
+ *         as a directory of the mounts beneath it.  0, or -1. */
 static int
 mount_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 {
@@ -343,6 +341,7 @@ struct list_relay {
     void           *ctx;
 };
 
+/** @brief Pass one entry of an inner listing on, adopted. */
 static int
 relay_entry(const tiku_model_t *entry, void *ctx)
 {
@@ -353,6 +352,8 @@ relay_entry(const tiku_model_t *entry, void *ctx)
     return r->fn(&copy, r->ctx);
 }
 
+/** @brief List @p path: what the serving mount holds there, then the
+ *         mounts beneath it.  Entries, or -1 when neither exists. */
 static int
 mount_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
 {
@@ -384,7 +385,7 @@ mount_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
     /*
      * And then whatever is mounted beneath, whether or not anything
      * served the directory itself: /devices is nobody's directory but
-     * it has children, and / is the local root AND has /devices in it.
+     * it has children, and / is the local root and has /devices in it.
      */
     for (i = 0; i < TIKU_MOUNT_MAX; i++) {
         char kid[TIKU_NAME_MAX], full[TIKU_PATH_MAX];
@@ -416,9 +417,8 @@ mount_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
             snprintf(full, sizeof full, "%s/%s", path, kid);
         }
         /*
-         * The mount itself, asked of the backend that IS it, so a device
-         * root shows as the device rather than as a bare folder; only a
-         * shared ancestor is synthesised.
+         * Each row is stat'ed through mount_stat(): a mount root is
+         * described by its own backend, a shared ancestor is synthesised.
          */
         if (mount_stat(b, full, &entry) != 0) {
             continue;
@@ -430,14 +430,13 @@ mount_list(tiku_backend_t *b, const char *path, tiku_entry_fn fn, void *ctx)
         }
     }
     /*
-     * A directory nobody served and nothing is mounted under is NOT an
-     * empty directory: the caller asked about something that is not
-     * there, and answering "no entries" would have a folder window open
-     * on a path that does not exist rather than say so.
+     * A directory that nothing serves and nothing is mounted under does
+     * not exist: -1, not an empty listing.
      */
     return (served || syn > 0) ? n : -1;
 }
 
+/** @brief Read @p path through the mount that serves it.  Bytes, or -1. */
 static int
 mount_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
 {
@@ -453,6 +452,8 @@ mount_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
                                             buf, max);
 }
 
+/** @brief Write @p path through the mount that serves it.  0, or -1 with
+ *         @p err filled. */
 static int
 mount_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
             char *err, size_t errmax)
@@ -470,6 +471,7 @@ mount_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
                                              buf, len, err, errmax);
 }
 
+/** @brief Pump every mount.  @return Notices handled across them. */
 static int
 mount_pump(tiku_backend_t *b, int timeout_ms)
 {
@@ -480,11 +482,9 @@ mount_pump(tiku_backend_t *b, int timeout_ms)
         return -1;
     }
     /*
-     * Every mount, each with the whole budget.  That is wrong the moment
-     * a device stops answering -- one dead link would spend the timeout
-     * on every frame while the others wait behind it -- and it is what
-     * the sessions being blocking forces today.  When they poll, this
-     * becomes one pass with a shared budget and the comment goes.
+     * Every mount, each with the whole budget, because the sessions block:
+     * a device that stops answering spends the timeout on every frame
+     * while the others wait behind it.
      */
     for (i = 0; i < TIKU_MOUNT_MAX; i++) {
         int got;
@@ -500,6 +500,8 @@ mount_pump(tiku_backend_t *b, int timeout_ms)
     return n;
 }
 
+/** @brief Every mount's changes, ids marked with their slots; -1 when any
+ *         mount cannot tell. */
 static int
 mount_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
               int *complete)
@@ -521,13 +523,8 @@ mount_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
         }
         if (m->slot[i].backend->ops->changes == NULL) {
             /*
-             * No ring to ask IS the "cannot tell" answer -- the same one
-             * a -1 carries, and it means the same thing for the whole
-             * namespace.  Skipping it instead let a POSIX root sit
-             * silent while a device answered, so this said "nothing
-             * changed, and that is complete" for everything -- and every
-             * local window stopped relisting the moment a board was
-             * mounted beside it.
+             * A mount with no ring cannot tell, and that answer, -1, holds
+             * for the whole namespace: the caller then polls every mount.
              */
             return -1;
         }
@@ -535,11 +532,8 @@ mount_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
                                                max - n, &mine);
         if (got < 0) {
             /*
-             * A backend that cannot tell means POLL -- and it means it
-             * for the whole namespace, because a caller cannot poll one
-             * mount and trust notices from another.  Saying so is the
-             * honest answer; claiming the mounts that DO know would have
-             * a view believing nothing changed on the one that does not.
+             * Likewise a mount whose ring cannot be read: -1 for the whole
+             * namespace.
              */
             return -1;
         }
@@ -555,6 +549,8 @@ mount_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
     return any ? n : -1;
 }
 
+/** @brief The mounted path of the node @p id names, asked of the slot its
+ *         mark names.  0, or -1. */
 static int
 mount_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
 {
@@ -575,6 +571,8 @@ mount_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
     return 0;
 }
 
+/** @brief Set @p path's permissions through the mount that serves it.
+ *         0, or -1 with @p err filled. */
 static int
 mount_setperm(tiku_backend_t *b, const char *path, unsigned perm,
               char *err, size_t errmax)
@@ -592,6 +590,7 @@ mount_setperm(tiku_backend_t *b, const char *path, unsigned perm,
                                                perm, err, errmax);
 }
 
+/** @brief The state store of the mount at "/", or NULL. */
 static struct tiku_store *
 mount_state_store(tiku_backend_t *b)
 {
@@ -602,10 +601,8 @@ mount_state_store(tiku_backend_t *b)
         return NULL;
     }
     /*
-     * The ROOT's store.  The call takes no path, so it cannot be routed,
-     * and the one thing above this that asks for it wants where a pose
-     * position is kept -- which is the local side.  A per-mount store
-     * needs the question to name a node first.
+     * The call takes no path, so it is answered with the root's store;
+     * tiku_backend_store_for() routes by path.
      */
     slot = route_slot(m, "/");
     if (slot < 0 || m->slot[slot].backend->ops->state_store == NULL) {
@@ -614,6 +611,7 @@ mount_state_store(tiku_backend_t *b)
     return m->slot[slot].backend->ops->state_store(m->slot[slot].backend);
 }
 
+/** @brief Close the owned mounts, then the namespace. */
 static void
 mount_close(tiku_backend_t *b)
 {
@@ -711,15 +709,9 @@ tiku_mount_add(tiku_backend_t *router, const char *prefix,
     snprintf(m->slot[spare].prefix, sizeof m->slot[spare].prefix, "%s",
              prefix);
     /*
-     * The namespace answers for its ROOT's kind of storage.
-     *
-     * This is NOT how "is this path on a device" is answered any more --
-     * tiku_fs asks tiku_backend_serving() per path, because the router's
-     * one identity cannot speak for a board mounted beside a disk.  What
-     * is left needs exactly the root's answer and no other: the state
-     * sidecar is keyed by the device a SHELL is on, and a shell is on
-     * its root.  Naming it here keeps the two questions apart, so the
-     * next reader does not take this for the general one again.
+     * The router's devid is its root's: the state sidecar is keyed by the
+     * device a shell is on, and a shell is on its root.  Whether a given
+     * path is on a device is answered per path by tiku_backend_serving().
      */
     if (prefix[0] == '/' && prefix[1] == '\0') {
         snprintf(router->devid, sizeof router->devid, "%s", b->devid);
@@ -780,11 +772,9 @@ tiku_mount_remove(tiku_backend_t *router, const char *prefix)
                 m->slot[i].backend->ops->close(m->slot[i].backend);
             }
             /*
-             * Emptied where it stands.  Sliding the table down would
-             * renumber the mounts, and the number is in the top byte of
-             * every id already handed out -- a change notice arriving
-             * after a device left would then name a node on a different
-             * device.
+             * Emptied in place: the slot number is in the top byte of
+             * every id handed out, and a renumbered table would make a
+             * late change notice name a node on another device.
              */
             m->slot[i].live = 0;
             m->slot[i].backend = NULL;

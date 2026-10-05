@@ -38,8 +38,10 @@ sample(int wave, double phase)
 }
 
 /**
- * @brief Walk the score, handing each note or rest to @p emit; the count
- *        of frames is the sum whether or not anything is written.
+ * @brief Walk the score, writing each note and rest into @p out, at most
+ *        @p max frames; with @p out NULL nothing is written.
+ * @return The frames the score spans, at most TIKU_SCORE_MAX_S of them, or
+ *         0 for a score with no notes or a line it cannot read.
  */
 static size_t
 walk(const char *text, unsigned rate, int16_t *out, size_t max)

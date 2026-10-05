@@ -7,13 +7,12 @@
  * tiku_mount.h - one namespace over several backends.
  *
  * A namespace over several backends, itself a backend: each is attached
- * at a path prefix and every operation goes to the longest prefix that
- * claims it, so a view asking its questions of tiku_backend_ops_t never
- * knows there is more than one store beneath.  Paths are rewritten both
- * ways, a path that is only the ancestor of a mount is listed as a
- * directory of the mounts beneath it, and ids leaving here carry the
- * mount in their top byte so two stores' inode 12345 stay apart.  The
- * reasoning, with the layout, is in doc/namespace.md.
+ * at a path prefix, and every operation goes to the backend whose prefix
+ * is the longest that claims the path.  Paths are rewritten both ways, a
+ * path that is only an ancestor of a mount is listed as a directory of the
+ * mounts beneath it, and ids leaving here carry the mount's slot in their
+ * top byte, so two stores' inode 12345 stay apart.  The layout is set out
+ * in kits/storage/doc/namespace.md.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,13 +26,12 @@
 /**
  * @brief How many backends one namespace may hold.
  *
- * The local files and seven devices.  Small on purpose: the table is
- * searched per operation, and a shell showing eight devices at once has
- * a different problem from this one.
+ * The local files and seven devices.  The table is searched on every
+ * operation, so it is kept small.
  */
 #define TIKU_MOUNT_MAX 8
 
-/** @brief An empty namespace.  NULL if there is no room for one. */
+/** @brief An empty namespace, or NULL when memory runs out. */
 tiku_backend_t *tiku_mount_open(void);
 
 /**
@@ -41,79 +39,80 @@ tiku_backend_t *tiku_mount_open(void);
  *
  * @param prefix Absolute, no trailing slash except for the root "/".
  * @param owned  Nonzero to close @p b when the namespace closes or the
- *               mount is removed.  A caller that keeps the backend for
- *               its own use passes zero and keeps the obligation.
+ *               mount is removed; with zero the caller closes it.
  * @return 0, or -1 if the prefix is bad, taken, or the table is full.
  */
 int tiku_mount_add(tiku_backend_t *router, const char *prefix,
                    tiku_backend_t *b, int owned);
 
 /**
- * @brief Detach whatever is at @p prefix.
+ * @brief Detach whatever is at @p prefix, closing it when it is owned.
  *
- * The entry is emptied rather than moved down, so the mount indices that
- * are baked into every id already handed out do not shift under them.
+ * The slot is emptied in place, so the slot numbers in ids already handed
+ * out keep naming the same mounts.
  *
  * @return 0, or -1 when nothing is mounted there.
  */
 int tiku_mount_remove(tiku_backend_t *router, const char *prefix);
 
 /**
- * @brief Take the mount at @p prefix out of the table WITHOUT closing
- *        it, and hand its backend back -- for a caller who must close it
- *        later, once nothing else has a hand on it.
+ * @brief Take the mount at @p prefix out of the table without closing
+ *        it, and return its backend, which the caller closes later.
  * @return the backend, or NULL for no such mount.
  */
 tiku_backend_t *tiku_mount_detach(tiku_backend_t *router,
                                   const char *prefix);
 
 /**
- * @brief Which mounting of slot @p i this is: a number that changes when
- *        the slot is filled again, so a result made for one board is not
- *        applied to the next in its place.  0 for an empty slot.
+ * @brief Which mounting of slot @p i this is: a number that changes each
+ *        time the slot is filled, so a result made for one board can be
+ *        told from one for the next in its place.  0 for an empty slot.
  */
 unsigned tiku_mount_gen_at(const tiku_backend_t *router, int i);
 
 /**
  * @brief Mark @p raw, an id a slot's own backend minted, as the router
- *        marks every id that leaves it -- for a change record fetched
- *        from that backend directly rather than through the router.
+ *        marks every id that leaves it: for a change record fetched from
+ *        that backend directly.
  */
 uint64_t tiku_mount_tag_id(int slot, uint64_t raw);
 
 /**
  * @brief Make an entry a slot's backend listed look as the router would
  *        have shown it: its path under @p prefix, its id marked with
- *        @p slot.  Pure -- for an entry fetched off the loop, where the
- *        table must not be walked.
+ *        @p slot.  It does not read the table, so it can run on a
+ *        worker.
  */
 void tiku_mount_adopt_entry(const char *prefix, int slot, tiku_model_t *m);
 
 /** @brief How many mounts there are, ignoring the gaps left by removal. */
 int tiku_mount_count(const tiku_backend_t *router);
 
-/**
- * @brief The prefix and backend of slot @p i, or NULL past the end.
- *
- * Walks slots, so a caller iterating to tiku_mount_slots() sees the gaps
- * as NULL rather than being handed a stale backend.
- */
+/** @brief How many slots there are to walk: TIKU_MOUNT_MAX for a
+ *         namespace, 0 for anything else. */
 int tiku_mount_slots(const tiku_backend_t *router);
+
+/** @brief The prefix of slot @p i, or NULL for an empty slot or past the
+ *         end. */
 const char *tiku_mount_prefix_at(const tiku_backend_t *router, int i);
+
+/**
+ * @brief The backend of slot @p i, or NULL for an empty slot or past the
+ *        end.
+ */
 tiku_backend_t *tiku_mount_at(const tiku_backend_t *router, int i);
 
-/** @brief Whether @p b is a namespace at all, rather than a plain backend. */
+/** @brief Whether @p b is a namespace. */
 int tiku_mount_is(const tiku_backend_t *b);
 
 /**
- * @brief The backend that really answers for @p path, router or not.
+ * @brief The backend that serves @p path, router or not.
  *
- * A plain backend answers for itself and @p local comes back as @p path;
- * a namespace routes and strips.  Ask this before anything that depends
- * on the kind of store a path is on, going past the ops table to the
- * local filesystem or naming the store in a window: with a namespace in
- * the way the outer backend is "mount" for everything, and asking it
- * whether it is local files gives the wrong answer for local files.
+ * A plain backend answers for itself, with @p local a copy of @p path; a
+ * namespace routes and strips the prefix.
+ *
+ * @note Code that depends on the kind of store a path is on asks this: a
+ *       namespace's own ops are "mount" for every path.
  *
  * @return the serving backend, or NULL when nothing serves @p path.
  */
@@ -123,12 +122,9 @@ tiku_backend_t *tiku_backend_serving(tiku_backend_t *b, const char *path,
 /**
  * @brief The state store of whatever serves @p path.
  *
- * state_store() on the ops table takes no path, so a namespace cannot
- * route it and answers for its ROOT -- which writes a device node's
- * pose position into the local filesystem's attributes, under a name no
- * local file has, and leaves the per-device sidecar the device backend
- * opens unreachable.  Anything that knows WHICH node it is keeping
- * state for asks here instead.
+ * state_store() on the ops table takes no path, so a namespace answers it
+ * with its root's store.  State for a device node belongs in that device's
+ * sidecar, which this returns for a path on the device.
  *
  * @return the store, or NULL when nothing serves @p path or the store
  *         that does keeps no state.

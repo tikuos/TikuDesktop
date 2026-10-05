@@ -56,8 +56,7 @@ tiku_evlist_add(tiku_evlist_t *l, tiku_evop_t op,
         return 0;
     }
     if (l->count >= TIKU_EVENTS_MAX) {
-        /* Saying so is the point: a caller that silently lost notices would
-         * leave the view believing it is current. */
+        /* The overflow mark tells the caller to list again. */
         l->overflowed = 1;
         return 0;
     }
@@ -86,7 +85,7 @@ tiku_evlist_add_fields(tiku_evlist_t *l, tiku_evop_t op,
     return 1;
 }
 
-/** @brief WHICH displayed facts moved, as TIKU_EVF_* bits (MA-072). */
+/** @brief Which displayed facts moved, as TIKU_EVF_* bits (MA-072). */
 static unsigned
 facts_fields(const tiku_model_t *a, const tiku_model_t *b)
 {
@@ -95,19 +94,18 @@ facts_fields(const tiku_model_t *a, const tiku_model_t *b)
     if (a->facts.size != b->facts.size) { f |= TIKU_EVF_SIZE; }
     if (a->facts.mtime != b->facts.mtime) { f |= TIKU_EVF_DATE; }
     if (a->facts.perm != b->facts.perm) { f |= TIKU_EVF_PERM; }
-    /* A link losing its target changes nothing else about the entry,
-     * so without this term the diff cannot see it happen and the row
-     * goes on claiming the link is live.  A Trash filling or emptying is
-     * the same shape (AW-029).  All of these bear on the ICON. */
+    /* A link losing its target, or a Trash filling or emptying, changes
+     * nothing else about the entry, so these terms are all the diff sees
+     * of it (AW-029).  All of them bear on the icon. */
     if (a->kind != b->kind ||
         a->facts.link_broken != b->facts.link_broken ||
         a->facts.trash_full != b->facts.trash_full ||
         strcmp(a->type, b->type) != 0) {
         f |= TIKU_EVF_KIND;
     }
-    /* A volume's free space moves without anything else moving, which is
-     * the whole of what a space bar shows (AW-097) -- a visual fact like
-     * the icon, and the total is also the Size a volume's row reports. */
+    /* A volume's capacity or free space can move alone.  It is flagged
+     * KIND for the space bar (AW-097) and SIZE for the Size a volume's row
+     * reports. */
     if (a->facts.total != b->facts.total ||
         a->facts.avail != b->facts.avail) {
         f |= TIKU_EVF_KIND | TIKU_EVF_SIZE;
@@ -153,10 +151,9 @@ tiku_notify_diff(const tiku_model_t *was, int nwas,
     before = out->count;
     memset(paired, 0, sizeof paired);
 
-    /* A removal and a creation sharing a node id in one pass are a MOVE.
-     * Reported as two events the row would be destroyed and rebuilt, losing
-     * its selection, its place in the list and its saved position -- which
-     * is precisely what a rename must not do. */
+    /* A removal and a creation sharing a node id in one pass are reported
+     * as one MOVED notice, so the row keeps its selection, its place in
+     * the list and its saved position. */
     for (i = 0; i < nwas; i++) {
         if (find_path(now, nnow, was[i].path) >= 0) {
             continue;                      /* still there                */
@@ -226,10 +223,9 @@ tiku_evlist_coalesce(const tiku_evlist_t *in,
             out->ev[out->count++] = *src;
             continue;
         }
-        /* Preserve the first lifecycle edge.  A row created during a burst
-         * must still be inserted, while later changes only refresh its
-         * payload.  A move retains the original source path for the same
-         * reason. */
+        /* The first lifecycle edge stays: a row created during the burst
+         * is still inserted and later notices only refresh its model, and a
+         * move keeps its first source path. */
         if (dst->op == TIKU_EV_CREATED) {
             dst->model = src->model;
             dst->at = src->at;
@@ -276,10 +272,8 @@ tiku_park_add(tiku_park_t *p, const tiku_node_event_t *e)
         return 0;
     }
     if (p->count >= (int)(sizeof p->ev / sizeof p->ev[0])) {
-        /* Full.  The OLDEST notice gives way, as the device's own ring does:
-         * the newest is the state the row will actually need when it
-         * appears, and dropping it instead would silently replay stale
-         * facts over fresh ones. */
+        /* Full: the oldest notice gives way, as in the device's own ring.
+         * The newest is the state the row needs when it appears. */
         int i;
 
         for (i = 0; i < p->count - 1; i++) {
@@ -300,15 +294,12 @@ tiku_park_take(tiku_park_t *p, const char *path,
     if (p == NULL || path == NULL) {
         return 0;
     }
-    /* Walked forwards and compacted in place, so what comes out is in the
-     * order it arrived: two changes to one node replayed backwards would
-     * leave the earlier value showing. */
+    /* Walked forwards and compacted in place, so notices come out in
+     * arrival order. */
     for (i = 0; i < p->count; i++) {
         if (strcmp(p->ev[i].path, path) == 0 && n < max) {
-            /* Only what is actually HANDED OVER is removed.  Taking the
-             * first few and discarding the rest would lose notices the
-             * caller never saw -- silently, and precisely for the node it
-             * asked about. */
+            /* Only what is handed over is removed: notices for @p path
+             * past @p max stay parked for the next take. */
             if (out != NULL) {
                 out[n] = p->ev[i];
             }
