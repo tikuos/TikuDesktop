@@ -3,8 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_navigate.c - navigation: opening, back, forward, up, and the
- * location field
+ * tiku_trk_app_navigate.c - navigation: opening, Back, Forward, Up and the
+ * location field, and the outline an opened pose grows.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -75,8 +75,8 @@ browser_navigate_to(app_t *a, const char *path, int record)
           !tiku_model_is_container(&m)))) {
         return 0;
     }
-    /* Opening a pose passes storage owned by the view.  Switching folders
-     * replaces that pose array, so keep the destination independent of it. */
+    /* @p path may point into the view's poses, which the switch replaces,
+     * so it is copied first. */
     snprintf(dest, sizeof dest, "%s", path);
     if (strcmp(dest, tiku_trk_poseview_path(a->view)) == 0) {
         return 1;
@@ -84,8 +84,8 @@ browser_navigate_to(app_t *a, const char *path, int record)
     tiku_scroll_detach(&a->sb);
     (void)tiku_trk_poseview_save_state(a->view);
     (void)tiku_trk_poseview_save_columns(a->view);
-    /* switch_dir returns the new row count, and only a negative value is an
-     * error.  A non-empty directory is therefore a successful switch. */
+    /* tiku_trk_poseview_switch_dir() returns the new row count; only a
+     * negative value is an error. */
     if (tiku_trk_poseview_switch_dir(a->view, dest) < 0) {
         tiku_scroll_attach(&a->sb);
         return 0;
@@ -105,7 +105,8 @@ browser_navigate_to(app_t *a, const char *path, int record)
     return 1;
 }
 
-/** @brief Step to the preceding history entry. */
+/** @brief Step to the preceding history entry; the history steps forward
+ *         again when that folder cannot be shown. */
 void
 browser_navigate_back(app_t *a)
 {
@@ -117,7 +118,8 @@ browser_navigate_back(app_t *a)
     }
 }
 
-/** @brief Step to the history entry most recently left by Back. */
+/** @brief Step to the history entry most recently left by Back; the
+ *         history steps back again when that folder cannot be shown. */
 void
 browser_navigate_forward(app_t *a)
 {
@@ -154,7 +156,9 @@ browser_begin_location(app_t *a)
     a->dirty = 1;
 }
 
-/** @brief Apply or abandon the location field without surfacing bad paths. */
+/** @brief Close the location field and, with @p apply, go to the path in
+ *         it (an empty field means /); a path that is not a folder is
+ *         ignored without a message. */
 void
 browser_end_location(app_t *a, int apply)
 {
@@ -173,7 +177,8 @@ browser_end_location(app_t *a, int apply)
     a->dirty = 1;
 }
 
-/** @brief Open the active pose: a container navigates, a value is reported. */
+/** @brief Open the active pose: a container is shown in the window; any
+ *         other file goes to browser_open_image(). */
 void
 browser_open_selection(app_t *a)
 {

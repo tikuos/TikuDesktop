@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_view.c - the Desktop pose-view controller.
+ * tiku_trk_desktop_view.c - the Desktop pose-view controller: the poses
+ * on the screen's backdrop, their sources, and their placement around the
+ * Deskbar.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -138,8 +140,8 @@ add_pose(tiku_trk_desktop_view_t *controller, const char *path)
                                        &model) != 0) {
         return;
     }
-    /* The view's arrival path chooses the same free slot as a watched
-     * Desktop entry, so synthetic Disks and Trash poses obey one layout. */
+    /* The pose is left unplaced, so the next placement pass puts it in
+     * the next free slot, as it does a new Desktop entry. */
     (void)tiku_trk_poseview_adopt(controller->folder.view, &model);
 }
 
@@ -325,8 +327,8 @@ tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller)
     }
     if (have_volumes &&
         tiku_trk_prefs_get(controller->prefs, "MountVolumesOntoDesktop")) {
-        /* Every volume that earns one, live with the mount table this
-         * rebuild was called for (PVN-040). */
+        /* A pose for every volume that earns one, from the mount table
+         * scanned for this rebuild (PVN-040). */
         int shared_too = tiku_trk_prefs_get(controller->prefs,
                              "MountSharedVolumesOntoDesktop") != 0;
         int i;
@@ -371,8 +373,10 @@ tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
     if (controller->folder.view == NULL) {
         return -1;
     }
-    /* The Desktop's own slot: rearranging the backdrop must not disturb
-     * a folder window opened on the same directory (MA-064). */
+    /* The Desktop's own state slot: the backdrop's view state (mode, icon
+     * size, scroll and sort) is kept apart from that of a folder window
+     * opened on the same directory (MA-064).  Icon positions are kept on
+     * each entry, so both views share them. */
     tiku_trk_poseview_set_state_slot(controller->folder.view,
                                      TIKU_KEY_DESKTOP);
     tiku_trk_poseview_set_no_autoscroll(controller->folder.view, 1);

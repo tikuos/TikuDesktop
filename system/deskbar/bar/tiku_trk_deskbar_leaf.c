@@ -4,7 +4,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_trk_deskbar_leaf.c - the leaf menu, built from the namespace every
- * time it opens
+ * time it opens; its folder and recent lists; the calendar's date sums.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -53,7 +53,7 @@ db_calendar_shift(tiku_trk_deskbar_t *db, int months, int years)
     }
 }
 
-/** @brief Append a leaf-menu row; a full menu drops it without a word. */
+/** @brief Append a leaf-menu row; a full menu drops it and returns NULL. */
 static tiku_trk_db_item_t *
 add_item(tiku_trk_deskbar_t *db, tiku_trk_db_item_kind_t kind,
          const char *label, const char *path, const char *icon)
@@ -73,7 +73,8 @@ add_item(tiku_trk_deskbar_t *db, tiku_trk_db_item_kind_t kind,
     return it;
 }
 
-/** @brief A row that acts by @p command, wearing @p icon. */
+/** @brief Append a leaf-menu row that acts by @p command, with the icon
+ *         named @p icon; a full menu drops it. */
 static void
 add_row(tiku_trk_deskbar_t *db, int command, const char *label,
         const char *path, const char *icon)
@@ -100,7 +101,8 @@ add_expand(tiku_trk_deskbar_t *db, tiku_trk_db_expand_t expand, int which,
     }
 }
 
-/** @brief A folder in a menu expands to its entries; a file opens. */
+/** @brief Make @p it the menu row for @p m: a folder expands to its
+ *         entries, a file opens. */
 void
 db_fill_entry(tiku_trk_db_item_t *it, const tiku_model_t *m)
 {
@@ -189,14 +191,13 @@ menu_dir_of(const tiku_trk_deskbar_t *db)
     if (db->menu_dir_fallback[0] != '\0' &&
         db->backend->ops->stat(db->backend, db->menu_dir_fallback, &m) == 0 &&
         tiku_model_is_container(&m)) {
-        /* No per-user folder: the system copy is what the menu shows,
-         * rather than nothing at all (DB-003). */
+        /* No per-user folder: the menu shows the system copy (DB-003). */
         return db->menu_dir_fallback;
     }
     return "";
 }
 
-/** @brief Build the leaf menu from what is there NOW (DB-002, DB-005). */
+/** @brief Build the leaf menu from what is there now (DB-002, DB-005). */
 void
 db_build_leaf(tiku_trk_deskbar_t *db)
 {
@@ -214,9 +215,7 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     add_row(db, TIKU_TRK_DB_FIND, tiku_str("menu.find"), NULL, "query");
     add_row(db, TIKU_TRK_DB_FORCE_QUIT, tiku_str("menu.force_quit"), NULL,
             "force_quit");
-    /* One row for everything that configures the desktop, the way the
-     * programs have one: the leaf says what a person can do here, and
-     * the lists live inside it. */
+    /* One Settings row, expanding to every preferences window. */
     add_expand(db, TIKU_TRK_DB_EXPAND_SETTINGS, 0, tiku_str("menu.settings"),
                NULL, "folder_system");
     {
@@ -228,8 +227,9 @@ db_build_leaf(tiku_trk_deskbar_t *db)
             {TIKU_TRK_DB_GROUP_DEVICE_TOOLS, "menu.device_tools"},
             {TIKU_TRK_DB_GROUP_DEMOS, "menu.demos"}
         };
-        /* A group added without its name would read this table past its
-         * end: the two are one list, and the compiler says so. */
+        /* The groups in the order the menu lists them, each with its
+         * label key; the assertion fails when this table and the enum
+         * differ in length. */
         _Static_assert(sizeof groups / sizeof groups[0] ==
                        TIKU_TRK_DB_GROUP_COUNT, "a group has no name");
         int counts[TIKU_TRK_DB_GROUP_COUNT] = {0};
@@ -247,18 +247,10 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     }
     {
         /*
-         * The stores that are ATTACHED, one row each, opening the place
-         * they are mounted at.
-         *
-         * Not a fixed row each for /sys, /dev and /data, written into
-         * every menu whether the machine has them or not: a device that
-         * is not there does not get a row, so what is in the menu is
-         * what a person can actually reach.  The rule the recents already
-         * keep, applied to places instead of history.
-         *
-         * The namespace is asked directly rather than told, so a mount
-         * that came or went is in the next menu opened; a list published
-         * to the bar would be a second copy to keep agreeing.
+         * The stores that are attached, one row each, opening the place
+         * they are mounted at, each followed by the forms its board
+         * publishes.  The namespace is asked each time the menu is built,
+         * so a mount that came or went shows in the next menu.
          */
         int slots = tiku_mount_slots(db->backend), any = 0;
 
@@ -268,7 +260,7 @@ db_build_leaf(tiku_trk_deskbar_t *db)
 
             if (prefix == NULL ||
                 (prefix[0] == '/' && prefix[1] == '\0')) {
-                continue;       /* the root is where the menu already is */
+                continue;       /* the root has no row of its own */
             }
             leaf = strrchr(prefix, '/');
             leaf = (leaf != NULL && leaf[1] != '\0') ? leaf + 1 : prefix;
@@ -291,8 +283,8 @@ db_build_leaf(tiku_trk_deskbar_t *db)
                     (void)add_item(db, TIKU_TRK_DB_ITEM_SEP, "-", NULL, NULL);
                     any = 1;
                 }
-                /* A list nobody has anything in is not shown at all --
-                 * an empty submenu is a promise of nothing (DB-074). */
+                /* A list with nothing in it is not shown at all
+                 * (DB-074). */
                 add_expand(db, TIKU_TRK_DB_EXPAND_RECENT, i,
                            tiku_str(kRecentKey[i]), NULL,
                            (i == 1) ? "folder" : (i == 2) ? "application"
@@ -302,18 +294,10 @@ db_build_leaf(tiku_trk_deskbar_t *db)
     }
     {
         /*
-         * The Deskbar folder's own items, under a rule that is only put
-         * in if something follows it.
-         *
-         * An empty folder gets no row saying it is empty: an entry whose
-         * whole content is that there is no entry, and one that cannot be
-         * chosen at that, is worse than nothing, which is what an empty
-         * recents list gets (DB-074).
-         *
-         * The rule has to go in before the folder is walked, because the
-         * walk is what adds the items; so it is taken out again if the
-         * walk added none.  Rolling the count back is the whole of it --
-         * what is past leaf_count is not in the menu.
+         * The Deskbar folder's own items, under a separator that stays only
+         * when something follows it: an empty folder adds no rows.  The
+         * separator goes in before the walk adds the items, and rolling
+         * leaf_count back takes it out again when the walk added none.
          */
         int before = db->leaf_count;
 
@@ -325,9 +309,8 @@ db_build_leaf(tiku_trk_deskbar_t *db)
             w.db = db;
             w.n = 0;
             w.into = NULL;
-            /* Two rows held back for the rule and Shut down, which are
-             * added after this walk and would otherwise be the first
-             * rows a full folder pushed out of the menu. */
+            /* The walk stops two rows short of TIKU_TRK_DB_LEAF_MAX, for
+             * the separator and Shut down added after it. */
             w.max = TIKU_TRK_DB_LEAF_MAX - 2 - db->leaf_count;
             if (w.max < 0) {
                 w.max = 0;
@@ -352,9 +335,8 @@ tiku_trk_deskbar_set_menu_dir(tiku_trk_deskbar_t *db, const char *user,
     if (db == NULL) {
         return;
     }
-    /* Copied through the stack: a caller may well hand back the strings
-     * this very bar reported, and a snprintf onto its own source is
-     * undefined. */
+    /* Copied through the stack: a caller may hand back the strings this
+     * bar reported, and an snprintf onto its own source is undefined. */
     snprintf(u, sizeof u, "%s", (user != NULL) ? user : "");
     snprintf(fb, sizeof fb, "%s", (fallback != NULL) ? fallback : "");
     memcpy(db->menu_dir, u, sizeof db->menu_dir);

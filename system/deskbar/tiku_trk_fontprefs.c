@@ -3,10 +3,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_fontprefs.c - the letters the interface is drawn in.
+ * tiku_trk_fontprefs.c - the interface font's preferences.
  *
- * The values only.  Where the controls sit, and what a click on one of
- * them means, belongs to the window (see the header).
+ * The values only: the Fonts window owns its controls and what a click on
+ * one of them means.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,8 +28,7 @@ tiku_trk_fontprefs_default(tiku_trk_fontprefs_values_t *values)
     if (values == NULL) {
         return;
     }
-    /* One answer to "what does an undressed Deskbar look like", and it
-     * lives where the rest of that answer lives. */
+    /* The font defaults are the Deskbar record's defaults. */
     tiku_trk_deskbar_settings_default(&settings);
     memset(values, 0, sizeof *values);
     values->family = settings.font_family;
@@ -66,8 +65,8 @@ tiku_trk_fontprefs_load(tiku_trk_fontprefs_t *prefs, tiku_store_t *store)
         prefs->value.size = record.value.font_size;
     }
     {
-        /* The dropped family is a name of its own, beside the record:
-         * the record holds numbers, and a family is called something. */
+        /* The dropped family's name is stored beside the record, which
+         * holds only numbers. */
         char name[64];
         int n = tiku_state_read(store, TIKU_KEY_SESSION,
                                     TIKU_ATTR_UI_FONT, name,
@@ -93,8 +92,8 @@ tiku_trk_fontprefs_save(const tiku_trk_fontprefs_t *prefs,
     if (prefs == NULL || store == NULL) {
         return 0;
     }
-    /* Read what is there, change the two fields this window owns, write
-     * it back: everything else in the record is somebody else's. */
+    /* Read the record, change the two font fields, write it back: the
+     * other settings in it are kept as they are. */
     tiku_trk_deskbar_prefs_init(&record);
     (void)tiku_trk_deskbar_prefs_load(&record, store);
     record.value.font_family = prefs->value.family;
@@ -123,8 +122,8 @@ same(const tiku_trk_fontprefs_values_t *a,
         strcmp(a->dropped, b->dropped) != 0) {
         return 0;
     }
-    /* Which baked family is remembered underneath does not show while a
-     * dropped one is drawn, so it is not a difference a person can see. */
+    /* While a dropped family is set, the baked family under it is not
+     * compared. */
     return a->dropped[0] != '\0' || a->family == b->family;
 }
 
@@ -188,7 +187,7 @@ tiku_trk_fontprefs_step_size(tiku_trk_fontprefs_t *prefs, int up)
     }
     next = prefs->value.size + (up ? TIKU_TRK_FONT_STEP : -TIKU_TRK_FONT_STEP);
     if (next < TIKU_TRK_FONT_MIN || next > TIKU_TRK_FONT_MAX) {
-        return 0;               /* the ends stop rather than wrap */
+        return 0;               /* no wrap at either end */
     }
     prefs->value.size = next;
     return 1;
@@ -307,8 +306,7 @@ tiku_trk_fontprefs_apply(const tiku_trk_fontprefs_t *prefs)
             (void)tiku_font_set_size(prefs->value.size);
             return;
         }
-        /* Taken out of the folder since it was chosen: the interface
-         * still has to be drawn in something. */
+        /* No longer in the folder: the baked family is used. */
     }
     tiku_font_use_baked();
     (void)tiku_font_set_family(prefs->value.family);

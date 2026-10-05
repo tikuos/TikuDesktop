@@ -3,8 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_winmenu.c - the window menu, and what a click on a team
- * row means
+ * tiku_trk_deskbar_winmenu.c - the window menu, what a click on a team row
+ * means, and where the calendar opens.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,8 +15,8 @@
  * @brief The window menu's rows for @p team, with their enabled states.
  *
  * Hide all is refused when every window is already minimized and Show all
- * when none is; an application with no windows gets 'No windows' plus a
- * 'Force Quit…' -- suppressed for the file manager itself (DB-028).
+ * when none is; an application with no windows gets 'No windows' and,
+ * except for Tracker's own entry, 'Force Quit…' (DB-028).
  * @return how many rows.
  */
 int
@@ -52,7 +52,8 @@ db_win_menu_items(const tiku_trk_deskbar_t *db, int team, const char **items,
     return 4;
 }
 
-/** @brief Where the window menu sits: beside the bar, whichever way. */
+/** @brief Where the window menu sits: beside the bar, whichever way it is
+ *         docked. */
 tiku_rect_t
 db_win_menu_rect(const tiku_trk_deskbar_t *db, int rows, int rowh)
 {
@@ -72,7 +73,8 @@ db_win_menu_rect(const tiku_trk_deskbar_t *db, int rows, int rowh)
     return m;
 }
 
-/** @brief What a plain-or-chorded click on an application row asks for. */
+/** @brief What a click on an application row asks for: a secondary click
+ *         opens its window menu; a chord or a double click makes a pick. */
 void
 db_team_action(tiku_trk_deskbar_t *db, int team, unsigned mods, int button,
             int clicks, tiku_trk_db_pick_t *pick)
@@ -121,7 +123,8 @@ db_calendar_rect(const tiku_trk_deskbar_t *db)
     return c;
 }
 
-/** @brief No row is hot until the pointer says so (DB-004). */
+/** @brief Clear every menu's hot row and the pending submenu dwell: no row
+ *         is hot until the pointer moves onto it (DB-004). */
 void
 db_reset_menu_hots(tiku_trk_deskbar_t *db)
 {

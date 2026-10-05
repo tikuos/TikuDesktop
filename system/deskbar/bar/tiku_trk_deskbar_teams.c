@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_teams.c - the teams and their windows
+ * tiku_trk_deskbar_teams.c - the running applications ("teams"): their
+ * order, their instances, their icons and their windows.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -55,9 +56,8 @@ tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
     db->autohide = db->settings.auto_hide;
     db->autoraise = db->settings.auto_raise;
     if (!db->settings.show_expander) {
-        /* No expander, nothing expanded: rows left open by the control
-         * that has just been taken away would be rows nothing can close
-         * (DB-023). */
+        /* No expander: every row collapses, since nothing could close a
+         * row left open (DB-023). */
         int i;
 
         for (i = 0; i < db->team_count; i++) {
@@ -65,7 +65,7 @@ tiku_trk_deskbar_apply_settings(tiku_trk_deskbar_t *db,
         }
     }
     /* The whole interface reads its metrics from these faces, so the
-     * size and the family land everywhere on the next paint. */
+     * next paint uses the new size and family everywhere. */
     (void)tiku_font_set_family(db->settings.font_family);
     (void)tiku_font_set_size(db->settings.font_size);
     sort_teams(db);
@@ -101,7 +101,7 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
         return -1;
     }
     /* One entry per application however many instances it has, matched
-     * without regard to case as the source matches signatures (DB-015). */
+     * without regard to case (DB-015). */
     for (i = 0; i < db->team_count; i++) {
         if (strcasecmp(db->teams[i].name, name) == 0) {
             return i;
@@ -114,8 +114,7 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
     db->order[i] = i;
     memset(&db->teams[i], 0, sizeof db->teams[i]);
     snprintf(db->teams[i].name, sizeof db->teams[i].name, "%s", name);
-    /* Tracker opens everything: it is the thing that would be asked to
-     * open anything nothing else claims. */
+    /* Tracker's entry takes files of any type. */
     db->teams[i].takes_anything = (strcmp(name, "TikuTracker") == 0);
     db->teams[i].expanded = db->settings.expand_new_apps;
     /* Added without a pid: the shell's own seed, never pruned away. */
@@ -176,8 +175,8 @@ tiku_trk_deskbar_remove_team(tiku_trk_deskbar_t *db, int team)
         db->teams[i] = db->teams[i + 1];
     }
     db->team_count--;
-    /* The display order indexed rows that have moved: rebuilt whole,
-     * which is what sort_teams does anyway. */
+    /* The display order indexes rows that have moved, so it is rebuilt
+     * and sorted again. */
     for (i = 0; i < db->team_count; i++) {
         db->order[i] = i;
     }
@@ -249,9 +248,8 @@ tiku_trk_deskbar_team_icon(const tiku_trk_deskbar_t *db, int team)
     if (t->icon[0] != '\0') {
         return t->icon;
     }
-    /* Tracker's own team is the one that can be named without being
-     * told; anything else wears the generic application icon rather
-     * than a blank, so the column never has a hole in it. */
+    /* Tracker's entry is drawn with the folder icon, and any other entry
+     * without an icon of its own with the generic application icon. */
     return strcmp(t->name, "TikuTracker") == 0 ? "folder" : "application";
 }
 
@@ -361,7 +359,7 @@ tiku_trk_deskbar_strip_title(const char *app, const char *title, char *out,
     }
 }
 
-/** @brief Natural order, so "Doc 2" sorts before "Doc 10" (DB row). */
+/** @brief Natural order, so "Doc 2" sorts before "Doc 10" (DB-031). */
 static int
 natural_less(const char *a, const char *b)
 {

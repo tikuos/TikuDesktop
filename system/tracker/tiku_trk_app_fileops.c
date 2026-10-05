@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_fileops.c - file operations and what follows them
+ * tiku_trk_app_fileops.c - what follows a file operation, and the file
+ * work left at exit.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,12 +12,11 @@
 #include "tiku_trk_app_private.h"
 
 /**
- * @brief Let queued file work finish before the process goes.
+ * @brief Let queued file work finish before the process exits, for about
+ *        five seconds at most.
  *
- * Bounded, because a job that cannot finish must not hold the application
- * open forever: the original gives up after five seconds and so does this.
- * What is already done stays done either way -- the engine has no
- * transaction above one item.
+ * Work already done stays done: the engine has no transaction above one
+ * item.
  */
 void
 browser_drain_fs(tiku_fs_t *fs)
@@ -26,15 +26,15 @@ browser_drain_fs(tiku_fs_t *fs)
     if (fs == NULL) {
         return;
     }
-    /* 50 turns of 100 ms, the original's own budget. */
+    /* At most 50 turns of 100 ms. */
     while (tiku_fs_busy(fs) && guard++ < 50) {
         tiku_fs_moved_pump(fs);
         if (tiku_fs_step(fs, 16) == 0) {
             const tiku_progress_t *pr = tiku_fs_progress(fs);
 
-            /* A question stops the queue and there is nobody left to
-             * answer it, so answer it the way the running shell would and
-             * keep going rather than spinning out the whole budget. */
+            /* A question stops the queue and nobody is left to answer
+             * it: a conflict is answered with Rename, an error with keep
+             * going. */
             if (pr->conflict) {
                 tiku_fs_resolve(fs, TIKU_CONFLICT_RENAME);
             } else if (pr->error_ask) {

@@ -3,15 +3,17 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_layout.c - the layout, settled after a change: title, rows,
- * writability
+ * tiku_trk_app_layout.c - what follows a change: the title, the placement
+ * of unplaced icons, the shared settings, the selection's paths and the
+ * folder's writability.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_trk_app_private.h"
 
-/** @brief The host window's title: the path, prefixed by the device's id. */
+/** @brief The host window's title: the path, after "device:" and the
+ *         device's id when the backend has one. */
 void
 browser_retitle(app_t *a)
 {
@@ -27,11 +29,11 @@ browser_retitle(app_t *a)
 }
 
 /**
- * @brief Place anything the restore did not position.
+ * @brief In the icon modes, place every pose the restore did not position.
  *
- * Saved positions cover only what the user arranged; everything else -- new
- * entries, and icons auto-placed last time -- must be laid out once the
- * folder has finished loading, or it is simply invisible (PVL-020).
+ * Saved positions cover only what the user arranged; new entries and icons
+ * auto-placed last time are laid out here.  A pose with no position is not
+ * drawn (PVL-020).
  */
 void
 browser_settle_layout(app_t *a)
@@ -45,7 +47,12 @@ browser_settle_layout(app_t *a)
     (void)tiku_trk_poseview_place_unplaced(a->view, lr.w - 4);
 }
 
-/** @brief Apply the shared ShowNavigator preference when its file changes. */
+/**
+ * @brief Re-read the shared settings file when it changes, at most every
+ *        100 ms (at once with @p force), and apply ShowNavigator,
+ *        HideDotFiles, SortFolderNamesFirst, TypeAheadFiltering,
+ *        ReduceMotion and DarkMode.
+ */
 void
 browser_sync_navigator_preference(app_t *a, int force)
 {
@@ -85,7 +92,7 @@ browser_sync_navigator_preference(app_t *a, int force)
             dark = 0;
         }
         if (dark != a->theme_mode) {
-            /* The table swap, live (settings semantics): the browser
+            /* The theme's colour table is swapped at once; the browser
              * repaints whole frames, so a change costs one redraw. */
             a->theme_mode = dark;
             tiku_theme_set(dark == 1 ? tiku_theme_dark()
@@ -112,10 +119,10 @@ browser_sync_navigator_preference(app_t *a, int force)
     a->filter_pref = filter;
     if (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST &&
         filter != tiku_trk_poseview_is_filtering(a->view)) {
-        /* Live in both directions: on engages filtering for the next
-         * keystroke, off drops the terms and restores the listing
-         * (TS-052).  Guarded on the current state so an unrelated
-         * settings change cannot wipe a filter mid-use. */
+        /* Live both ways: on engages filtering for the next keystroke,
+         * off drops the terms and restores the listing (TS-052).  Only a
+         * change of the setting resets it, so another setting changing
+         * leaves a filter in use alone. */
         tiku_trk_poseview_set_filtering(a->view, filter);
         a->dirty = 1;
     }
@@ -146,9 +153,9 @@ browser_selection_paths(app_t *a, char paths[][TIKU_PATH_MAX],
 /**
  * @brief Ask the store whether this folder can be written to (PVL-076).
  *
- * Asked of the FOLDER rather than assumed from the backend: a device
- * namespace has writable and read-only regions side by side, and the tint
- * has to follow the one being shown.
+ * The folder is asked, not the backend: a device namespace has writable
+ * and read-only regions side by side, and the tint follows the folder
+ * shown.
  */
 void
 browser_settle_writability(app_t *a)
@@ -164,5 +171,3 @@ browser_settle_writability(app_t *a)
         a->read_only = ((m.facts.perm & TIKU_P_WRITE) == 0u);
     }
 }
-
-/** @brief Refresh the listing after an operation changed the folder. */

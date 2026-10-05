@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_prefs.c - durable Deskbar preference model.
+ * tiku_trk_deskbar_prefs.c - the Deskbar's preferences: defaults, ranges,
+ * the stored record and its older layouts, and the dock picker.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -67,7 +68,6 @@ tiku_trk_deskbar_settings_default(tiku_trk_deskbar_settings_t *settings)
         settings->recent_enabled[i] = 1;
         settings->recent_count[i] = 10;
     }
-    /* This preserves the bar's established floating behavior. */
     settings->always_on_top = 1;
     settings->show_clock = 1;
     settings->font_size = 12;
@@ -110,8 +110,8 @@ tiku_trk_deskbar_settings_normalize(tiku_trk_deskbar_settings_t *settings)
     if (settings->font_size < 10) { settings->font_size = 10; }
     if (settings->font_size > 16) { settings->font_size = 16; }
     settings->font_size &= ~1;      /* the baked faces are even-sized */
-    /* The toolkit is the authority on how many families it carries: a
-     * record naming one that is not there falls back to the first. */
+    /* A family number outside 0 .. tiku_font_family_count() - 1 falls
+     * back to the first family. */
     if (settings->font_family < 0 ||
         settings->font_family >= tiku_font_family_count()) {
         settings->font_family = 0;

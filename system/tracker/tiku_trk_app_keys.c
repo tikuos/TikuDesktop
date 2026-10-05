@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_keys.c - the keys
+ * tiku_trk_app_keys.c - the window's keyboard: an alert, the location field
+ * and the rename editor first, then the chords, navigation, the command
+ * keys and type-ahead.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,7 +30,7 @@ int browser_key_location(app_t *a, const tiku_event_t *event, unsigned key,
 /* End of the forward declarations. */
 
 /**
- * @brief Whether (@p px, @p py) lands on the title strip in list mode,
+ * @brief Whether (@p px, @p py) is on the title strip in list mode,
  *        writing the strip-relative coordinates to @p cx and @p cy when
  *        given.  Icon mode has no strip and answers 0.
  */
@@ -53,8 +55,9 @@ browser_title_hit(app_t *a, int px, int py, int *cx, int *cy)
 
 /**
  * @brief A key for the window: an alert, the location field or a rename
- *        in progress takes it first; then the shortcuts, the navigation
- *        keys, the command keys, and type-ahead for the rest.
+ *        in progress takes it first; then the Cmd chords, the navigation
+ *        keys, the open, view and edit keys, the menus' chord table, and
+ *        type-ahead for the rest.
  */
 void
 browser_handle_key(app_t *a, const tiku_event_t *event)
@@ -92,8 +95,8 @@ browser_handle_key(app_t *a, const tiku_event_t *event)
         return;
     }
     if ((modifiers & TIKU_MOD_CMD) != 0u) {
-        /* The standard set's tail, from the same table the menus read:
-         * a chord the menu advertises must answer here too (PVK-042). */
+        /* The rest of the standard chords, from the table the menus read,
+         * so every chord a menu shows works here (PVK-042). */
         int fcmd = tiku_trk_sc_command_for_key(key, modifiers);
 
         if (fcmd != 0) {
@@ -112,7 +115,8 @@ browser_handle_key(app_t *a, const tiku_event_t *event)
     }
 }
 
-/** @brief Send a menu action through the keyboard path it shares. */
+/** @brief Run a menu command through the keyboard path: @p key with
+ *         @p modifiers, as if typed. */
 void
 browser_menu_key(app_t *a, unsigned key, unsigned modifiers)
 {
@@ -129,9 +133,11 @@ browser_menu_key(app_t *a, unsigned key, unsigned modifiers)
 }
 
 /**
- * @brief editing the selection: rename, delete, duplicate, undo, new folder.
- * @return 0 for a key of another group, 1 when handled, 2 when the handler is
- * done with the event
+ * @brief The editing keys: rename (F2, Cmd+E), Delete, duplicate, undo and
+ *        redo, new folder, and clean up.
+ * @return 0 for a key this group does not handle, 1 for one of its keys
+ *         without the modifier it needs (left to type-ahead), 2 when the
+ *         key was handled.
  */
 int
 browser_key_edit(app_t *a, const tiku_event_t *event, unsigned key,
@@ -151,14 +157,11 @@ browser_key_edit(app_t *a, const tiku_event_t *event, unsigned key,
         }
         break;
     case TIKU_KEY_DELETE: {
-        /* What the key MEANS depends on where the items are: a move that
-         * can be undone where there is a Trash to move them to, and a
-         * deletion inside it or when Shift says the user has already
-         * decided (PVK-038).  The key asks the same controller the menu
-         * item does, so the question a delete puts up is one rule and not
-         * one per way of reaching it (FS-046). */
-        /* Noted BEFORE the listing changes: afterwards the index is
-         * the only thing left pointing at where the item was (FS-050). */
+        /* Delete is Move to Trash, and Shift+Delete is Delete (PVK-038);
+         * both go through the menu command, so the question they put is
+         * the menu's (FS-046). */
+        /* Noted before the listing changes: afterwards the index is
+         * all that marks where the item was (FS-050). */
         a->select_next = browser_first_selected_index(a);
         browser_menu_invoke(a, (modifiers & TIKU_MOD_SHIFT)
                            ? TIKU_TRK_CMD_DELETE
@@ -227,9 +230,7 @@ browser_key_edit(app_t *a, const tiku_event_t *event, unsigned key,
                 snprintf(a->status, sizeof a->status, "created '%.180s'",
                          (slash != NULL) ? slash + 1 : made);
                 browser_after_op(a);
-                /* Tracker opens the name for editing straight away; here
-                 * the folder is at least selected, so the rename is the
-                 * next keystroke rather than a hunt down the list. */
+                /* Selected and opened for renaming at once. */
                 {
                     int i = browser_index_of_path(a, made);
 
@@ -253,9 +254,8 @@ browser_key_edit(app_t *a, const tiku_event_t *event, unsigned key,
         if (modifiers & TIKU_MOD_CMD) {
             tiku_rect_t lr = browser_list_rect(a);
 
-            /* Cmd+K snaps what is there; Shift re-lays it out in sort
-             * order.  Straightening an arrangement and replacing it are
-             * two different commands (PVL-021). */
+            /* Cmd+K snaps what is there to the grid; Cmd+Shift+K lays it
+             * all out again in sort order (PVL-021). */
             tiku_scroll_detach(&a->sb);
             if (modifiers & TIKU_MOD_SHIFT) {
                 tiku_trk_poseview_cleanup(a->view, lr.w - 4);
@@ -275,9 +275,10 @@ browser_key_edit(app_t *a, const tiku_event_t *event, unsigned key,
 }
 
 /**
- * @brief the view and window commands: quit, up, select all, sort, zoom,
- * refresh, the modes.  @return 0 for a key of another group, 1 when handled, 2
- * when the handler is done with the event
+ * @brief The view and window keys: quit, unmount, select all, invert, icon
+ *        size, reload and the three modes.
+ * @return 0 for a key this group does not handle, 1 for one of its keys
+ *         without Cmd (left to type-ahead), 2 when the key was handled.
  */
 int
 browser_key_view(app_t *a, const tiku_event_t *event, unsigned key,
@@ -292,7 +293,8 @@ browser_key_view(app_t *a, const tiku_event_t *event, unsigned key,
         break;
     case 'u':
         if (modifiers & TIKU_MOD_CMD) {
-            /* Cmd+U, which the volume menus advertise (CW-034). */
+            /* Cmd+U runs Unmount, the chord the volume menus show
+             * (CW-034). */
             browser_menu_invoke(a, TIKU_TRK_CMD_UNMOUNT);
             return 2;
         }
@@ -306,8 +308,7 @@ browser_key_view(app_t *a, const tiku_event_t *event, unsigned key,
         break;
     case 's':
         if (modifiers & TIKU_MOD_CMD) {
-            /* PVK-046: invert, which is the only way to say "everything
-             * except these" without clicking each of the rest. */
+            /* PVK-046: invert the selection. */
             tiku_trk_poseview_invert_selection(a->view);
             a->dirty = 1;
             return 2;
@@ -351,8 +352,8 @@ browser_key_view(app_t *a, const tiku_event_t *event, unsigned key,
                 (void)tiku_trk_poseview_place_unplaced(a->view, lr.w - 4);
             } else if (a->filter_pref &&
                        !tiku_trk_poseview_is_filtering(a->view)) {
-                /* Leaving list mode tore filtering down; coming back the
-                 * preference still says filter (TS-052). */
+                /* Leaving list mode turned filtering off; back in list
+                 * mode the preference turns it on again (TS-052). */
                 tiku_trk_poseview_set_filtering(a->view, 1);
             }
             (void)tiku_trk_poseview_save_state(a->view);
@@ -367,9 +368,11 @@ browser_key_view(app_t *a, const tiku_event_t *event, unsigned key,
 }
 
 /**
- * @brief the keys that open, close and move: Return, Space, Backspace, Escape,
- * Tab.  @return 0 for a key of another group, 1 when handled, 2 when the
- * handler is done with the event
+ * @brief Return (open), Shift+Space (a new filter term), Backspace (erase
+ *        a typed character, else go up), Escape (clear the clipboard and
+ *        the type-ahead) and Tab (the next pose).
+ * @return 0 for a key this group does not handle, 1 for a Space it leaves
+ *         to type-ahead, 2 when the key was handled.
  */
 int
 browser_key_open(app_t *a, const tiku_event_t *event, unsigned key,
@@ -379,15 +382,16 @@ browser_key_open(app_t *a, const tiku_event_t *event, unsigned key,
     switch (key) {
 
     case TIKU_KEY_RETURN:
-        /* PVK-015/016: a filter that has already narrowed the listing to
-         * what the user wants should not also demand an arrow key first. */
+        /* PVK-015/016: Return opens what a filter has narrowed the
+         * listing to, with no arrow key first. */
         if (tiku_trk_poseview_return_pressed(a->view,
                                              (mods & TIKU_TRK_MOD_SHIFT))) {
             browser_open_selection(a);
             tiku_trk_poseview_set_filtering(a->view, 0);
             if (a->filter_pref) {
-                /* The terms are spent; the MODE follows the preference,
-                 * so the next keystroke filters again (TS-052). */
+                /* Turning filtering off cleared the terms; with the
+                 * preference on, the next keystroke filters again
+                 * (TS-052). */
                 tiku_trk_poseview_set_filtering(a->view, 1);
             }
         } else {
@@ -397,8 +401,8 @@ browser_key_open(app_t *a, const tiku_event_t *event, unsigned key,
         return 2;
     case ' ':
         if (mods & TIKU_TRK_MOD_SHIFT) {
-            /* PVK-031: a second term, each free to match a different
-             * column, which is what makes two short words selective. */
+            /* PVK-031: a second filter term; each term may match a
+             * different column. */
             if (tiku_trk_poseview_is_filtering(a->view)) {
                 (void)tiku_trk_poseview_filter_term(a->view);
                 a->dirty = 1;
@@ -431,8 +435,8 @@ browser_key_open(app_t *a, const tiku_event_t *event, unsigned key,
             }
         } else {
             if (tiku_trk_clip_count(&a->clip) > 0) {
-                /* A pending cut is aborted before the type-ahead goes,
-                 * in the source's own order (PVK-034). */
+                /* The clipboard is emptied, which aborts a pending cut,
+                 * then the type-ahead is cleared (PVK-034). */
                 tiku_trk_clip_clear(&a->clip);
             }
             tiku_trk_poseview_type_clear(a->view);
@@ -453,7 +457,9 @@ browser_key_open(app_t *a, const tiku_event_t *event, unsigned key,
 }
 
 /**
- * @brief the arrows, Home, End and the page keys, handed to the pose view
+ * @brief Cmd+O, and the arrows, Home, End and the page keys, handed to the
+ *        pose view.
+ * @return 2 when the key was handled, else 1.
  */
 int
 browser_key_nav(app_t *a, const tiku_event_t *event, unsigned key,
@@ -467,8 +473,8 @@ browser_key_nav(app_t *a, const tiku_event_t *event, unsigned key,
     case 'o':
         if (mods & TIKU_TRK_MOD_CMD) {
             if (tiku_trk_poseview_active(a->view) == NULL) {
-                /* Grey in the menu; said out loud for the chord
-                 * (NeXT UIG ch6). */
+                /* Open is grey in the menu; the chord's refusal goes to
+                 * the status line (NeXT UIG ch6). */
                 snprintf(a->status, sizeof a->status,
                          "Open is not available here");
                 a->dirty = 1;
@@ -510,8 +516,10 @@ browser_key_nav(app_t *a, const tiku_event_t *event, unsigned key,
 }
 
 /**
- * @brief the Cmd shortcuts that are not menu commands: the location, the
- * navigator, the popup
+ * @brief The chords taken before navigation: Cmd+L for the location field,
+ *        Cmd+X, C and V, Cmd with Down or Return to open, Cmd with Left,
+ *        Right or Up to move between folders, and Option+Return to open.
+ * @return 2 when the key was handled, else 1.
  */
 int
 browser_key_cmd(app_t *a, const tiku_event_t *event, unsigned key,
@@ -524,9 +532,8 @@ browser_key_cmd(app_t *a, const tiku_event_t *event, unsigned key,
     }
     if ((modifiers & TIKU_MOD_CMD) &&
         (key == 'x' || key == 'c' || key == 'v')) {
-        /* The clipboard verbs, through the shared command layer: this
-         * shell had none at all, so Cut, Copy and Paste were three keys
-         * that did nothing outside a text field. */
+        /* The clipboard verbs go through the shared command layer, as
+         * the menu items do. */
         int base = (key == 'x') ? TIKU_TRK_CMD_CUT
                  : (key == 'c') ? TIKU_TRK_CMD_COPY : TIKU_TRK_CMD_PASTE;
 
@@ -560,8 +567,12 @@ browser_key_cmd(app_t *a, const tiku_event_t *event, unsigned key,
 }
 
 /**
- * @brief typing into the inline rename: every key goes there until Return or
- * Escape
+ * @brief Keys for the inline rename editor while it is open: every key goes
+ *        to the editor, except Tab and Shift+Tab, which move the edit to
+ *        the next or previous row, and Cmd+N, which commits it and goes on
+ *        to New folder.
+ * @return 2 when the editor took the key, 1 when no rename is in progress
+ *         or Cmd+N ended it.
  */
 int
 browser_key_rename(app_t *a, const tiku_event_t *event, unsigned key,
@@ -569,9 +580,8 @@ browser_key_rename(app_t *a, const tiku_event_t *event, unsigned key,
 {
     (void)mods;
     if (a->editing) {
-        /* While editing a name the view's keys are OFF: an arrow must move
-         * the caret's row selection nowhere, and 'd' must type a letter,
-         * not duplicate the file. */
+        /* While a name is being edited the view's keys are off: an arrow
+         * moves the caret, and 'd' types a letter. */
         tiku_field_key_t k = TIKU_FIELD_CHAR;
         int shift = (modifiers & TIKU_MOD_SHIFT) ? 1 : 0;
         char ch = '\0';
@@ -583,8 +593,8 @@ browser_key_rename(app_t *a, const tiku_event_t *event, unsigned key,
                                                      : TIKU_FIELD_PASTE;
             if (tiku_field_key(&a->ed, text_key, 0, '\0') ==
                 TIKU_FIELD_REJECTED) {
-                /* An atomic paste that does not fit says so: refusing in
-                 * silence reads as a key that did nothing. */
+                /* A paste that does not fit is refused whole, with a
+                 * note in the status line. */
                 snprintf(a->status, sizeof a->status,
                          "The clipboard does not fit this field.");
             }
@@ -643,8 +653,9 @@ not_editing:
 }
 
 /**
- * @brief typing into the location field: every key goes there until Return or
- * Escape
+ * @brief Keys for the location field while it is being edited: every key
+ *        goes to the field, and Cmd+Space completes the last component.
+ * @return 2 when the field took the key, 1 when it is not being edited.
  */
 int
 browser_key_location(app_t *a, const tiku_event_t *event, unsigned key,

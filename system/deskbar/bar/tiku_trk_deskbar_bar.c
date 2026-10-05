@@ -3,8 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_bar.c - the bar itself: dock, size, autohide, autoraise,
- * scrolling
+ * tiku_trk_deskbar_bar.c - the bar itself: creation, dock, width, auto-hide,
+ * auto-raise and scrolling.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -70,18 +70,16 @@ tiku_trk_deskbar_dock_at(int x, int y, int sw, int sh,
     if (dr < nearest) { nearest = dr; }
     if (dt < nearest) { nearest = dt; }
     if (db_ < nearest) { nearest = db_; }
-    /* A drop in the MIDDLE keeps the dock it started from: a drag that
-     * ended nowhere in particular is a mis-drag, and moving the bar for it
-     * would be worse than ignoring it (DB-048). */
+    /* Farther than a quarter of the screen from every edge: the dock
+     * stays as it is (DB-048). */
     if (nearest > sw / 4 && nearest > sh / 4) {
         return now;
     }
     if (nearest == dt) { return TIKU_TRK_DB_TOP; }
     if (nearest == db_) { return TIKU_TRK_DB_BOTTOM; }
     {
-        /* Down the top third of an edge is the expanded form; further down
-         * is the collapsed one -- the same split the little monitor makes
-         * between a tall strip and a corner. */
+        /* Down the top third of a side edge is the expanded form; further
+         * down is the collapsed one. */
         int mini = (y > sh / 3);
 
         if (nearest == dl) {
@@ -141,14 +139,13 @@ tiku_trk_deskbar_pointer(tiku_trk_deskbar_t *db, int x, int y)
         return 0;
     }
     was = db->pointer_on;
-    /* Judged against the frame the bar would have if it were SHOWN: a
-     * hidden bar that tested its sliver could never be reached, because
-     * the pointer would have to be inside two pixels to bring it back. */
+    /* Judged against the frame as last laid out: the whole bar while it
+     * shows, its sliver while it hides. */
     on = (x >= db->frame.x && x < db->frame.x + db->frame.w &&
           y >= db->frame.y && y < db->frame.y + db->frame.h);
     if (!on && db->autohide) {
-        /* The edge the bar hides against still answers: that sliver is the
-         * whole of what is left to touch. */
+        /* With auto-hide on, the whole screen edge the bar hides against
+         * counts as the bar. */
         if (tiku_trk_deskbar_vertical(db->dock)) {
             on = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
                   db->dock == TIKU_TRK_DB_LEFT_MINI)
@@ -189,9 +186,7 @@ tiku_trk_deskbar_scroll(tiku_trk_deskbar_t *db, int step)
     int was;
 
     if (db == NULL || !db->overflow) {
-        /* Nothing hidden, nothing to scroll: a wheel that slid a list
-         * which was entirely visible would move it away for no reason
-         * (DB-034). */
+        /* Nothing hidden: the step changes nothing (DB-034). */
         return 0;
     }
     was = db->scroll;
@@ -223,8 +218,8 @@ tiku_trk_deskbar_shown(const tiku_trk_deskbar_t *db)
     if (db == NULL) {
         return 0;
     }
-    /* An open menu keeps the bar out whatever the pointer is doing: a bar
-     * that slid away under its own menu would take the menu with it. */
+    /* An open leaf menu, calendar or clock menu keeps the bar shown
+     * wherever the pointer is. */
     return (!db->autohide || db->pointer_on || db->menu_open ||
             db->calendar_open || db->clock_menu_open);
 }

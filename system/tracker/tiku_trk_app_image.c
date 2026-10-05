@@ -1,18 +1,28 @@
-/* Standalone Tracker hands local documents to the running desktop.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_app_image.c - images and documents on the local disk, handed
+ * from a worker to the running TikuDesktop to open.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_app_private.h"
 #include "tiku_remote.h"
 #include "tiku_mount.h"
 #include "tiku_work.h"
 
+/** @brief One open request in flight; the worker owns it. */
 struct browser_image_job {
-    app_t *owner;
-    char path[TIKU_PATH_MAX];
-    int accepted;
-    int document;
+    app_t *owner;               /* the window, or NULL once it closed */
+    char path[TIKU_PATH_MAX];   /* the file, on the local disk        */
+    int accepted;               /* TikuDesktop said it will open it   */
+    int document;               /* 1: a document; 0: an image         */
 };
 
-/** @brief Keep the connection until the desktop acknowledges the request. */
+/** @brief On the worker: send the open request to TikuDesktop and wait up
+ *         to two seconds for its answer. */
 static void browser_image_run(void *ctx)
 {
     struct browser_image_job *j = ctx;
@@ -46,7 +56,8 @@ static void browser_image_run(void *ctx)
     tiku_remote_disconnect(&client);
 }
 
-/** @brief No UI or backend is retained after Tracker closes. */
+/** @brief On the loop: put the answer in the status line, unless the
+ *         window has closed. */
 static void browser_image_done(void *ctx)
 {
     struct browser_image_job *j = ctx;
@@ -58,15 +69,23 @@ static void browser_image_done(void *ctx)
     j->owner->image_job = NULL; j->owner->dirty = 1;
 }
 
-/** @brief Jobs own their copied path; freeing never touches a backend. */
+/** @brief Free the job, which owns nothing but its copy of the path. */
 static void browser_image_free(void *ctx)
 {
     free(ctx);
 }
 
-/** @brief Files use desktop associations; no device text reads occur.
- * The documents are the ones TikuDesktop's desktop_remote_document()
- * accepts by name: text, Markdown, HTML, BASIC and projects. */
+/**
+ * @brief Hand an image (PNG, JPEG, BMP) or a document on the local disk to
+ *        TikuDesktop to open, through its file associations.
+ *
+ * The documents are the types TikuDesktop's desktop_remote_document()
+ * accepts: text, Markdown, HTML, BASIC and projects.  A file on a device is
+ * refused with a note in the status line.
+ *
+ * @return 0 for a type it does not hand over; 1 for one it does, with the
+ *         status line saying whether the request went out.
+ */
 int browser_open_image(app_t *app, const tiku_model_t *model)
 {
     int document = !strcmp(model->type, "text/plain") ||
@@ -110,7 +129,8 @@ int browser_open_image(app_t *app, const tiku_model_t *model)
     return 1;
 }
 
-/** @brief A late completion must not update the closed browser's stack. */
+/** @brief Detach the request in flight from the window, so a completion
+ *         after the window closes changes nothing. */
 void browser_image_detach(app_t *app)
 {
     if (app->image_job) app->image_job->owner = NULL;

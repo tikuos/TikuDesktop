@@ -1,9 +1,10 @@
 /*
- * TikuDesktop -- isolated application process host.
+ * TikuTracker -- the file manager for TikuOS.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_run.c - give a loadable application a process of its own.
+ * tiku_run.c - the application runner: loads one installed application
+ * module in a process of its own and runs it.
  *
  * Installed applications are loaded here, never in the desktop process.
  *
@@ -26,7 +27,11 @@
 #include "tiku_msg.h"
 #include "tiku_manifest.h"
 
-/* Optional help metadata is data, not a reason to load the app in the shell. */
+/**
+ * @brief Export the help page the bundle's app.manifest names as
+ *        TIKU_APP_HELP when the manifest is this module's; unset it
+ *        otherwise.
+ */
 static void bundle_help(const char *directory, const char *module)
 {
     char file[PATH_MAX];
@@ -41,7 +46,12 @@ static void bundle_help(const char *directory, const char *module)
         setenv("TIKU_APP_HELP", manifest.help, 1);
 }
 
-/* A launch envelope is a bounded regular file, never a socket to block on. */
+/**
+ * @brief The launch message on descriptor @p number, which must be a
+ *        regular file of 1 to 32768 bytes holding one flattened message.
+ *        A descriptor that passes those checks is closed.
+ * @return the message, or NULL.
+ */
 static tiku_msg_t *read_message(const char *number)
 {
     char *end = NULL;
@@ -67,8 +77,11 @@ static tiku_msg_t *read_message(const char *number)
     return m;
 }
 
-/* Bundle-local helper executables belong to the app, not the system PATH.
- * Only this child inherits the addition; discovery does not execute code. */
+/**
+ * @brief Put the module's bundle directory in TIKU_APP_BUNDLE and first on
+ *        PATH, for this process and its children, and export its help.
+ * @return 1, or 0 when the module's path cannot be resolved.
+ */
 static int bundle_environment(const char *module)
 {
     char resolved[PATH_MAX];
@@ -89,6 +102,13 @@ static int bundle_environment(const char *module)
     return ok;
 }
 
+/**
+ * @brief tiku-run <application.so> [document | --message-fd fd]: load the
+ *        module and run it with a document or a launch message.
+ * @return the application's exit code, or 2 for bad usage, a bad launch
+ *         message, a bundle path that cannot be resolved or a module that
+ *         cannot be loaded.
+ */
 int
 main(int argc, char **argv)
 {
@@ -106,8 +126,7 @@ main(int argc, char **argv)
         return 2;
     }
     {
-        /* Named for the application, not for the runner: a report is
-         * looked at by somebody asking which program died. */
+        /* The crash report is named for the application module. */
         const char *leaf = strrchr(argv[1], '/');
 
         tiku_report_install((leaf != NULL) ? leaf + 1 : argv[1], NULL);

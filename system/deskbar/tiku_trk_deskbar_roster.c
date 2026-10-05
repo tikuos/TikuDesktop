@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_roster.c - Deskbar process and window publication.
+ * tiku_trk_deskbar_roster.c - what the Deskbar lists: this user's running
+ * processes, and the windows of a workspace.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,20 +18,21 @@
 
 /** @brief What one pass of the roster is building, across the callbacks. */
 struct roster_pass {
-    tiku_trk_deskbar_t *deskbar;
-    long                live[512];
-    int                 nlive;
-    int                 changed;
+    tiku_trk_deskbar_t *deskbar;    /* the bar being brought up to date */
+    long                live[512];  /* the pids seen in this pass       */
+    int                 nlive;      /* live[] in use                    */
+    int                 changed;    /* an entry or instance came or went */
 };
 
-/** @brief One running program, offered by the system seam. */
+/** @brief Add one process that tiku_sys_processes() reports to its entry
+ *         and to the pass's live pids. */
 static void
 roster_note(const tiku_sys_process_t *process, void *ctx)
 {
     struct roster_pass *pass = ctx;
 
-    /* Tracker is seeded by its shell, so discovering it again would
-     * publish the same application twice. */
+    /* The shell's own process is skipped: the shell seeds its entry as
+     * TikuTracker, and listing it again would show it twice. */
     if (strcmp(process->name, "desktop") == 0) {
         return;
     }
@@ -55,8 +57,8 @@ tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar)
     if (tiku_sys_processes(roster_note, &pass) < 0) {
         return 0;
     }
-    /* The other half of a roster: what QUIT since last time.  An entry
-     * whose last instance went disappears (DB-015). */
+    /* Then what has quit since the last pass: an entry whose last
+     * instance went disappears (DB-015). */
     if (tiku_trk_deskbar_prune_teams(deskbar, pass.live, pass.nlive)) {
         pass.changed = 1;
     }

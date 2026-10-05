@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_roster.h - Deskbar process and window publication.
+ * tiku_trk_deskbar_roster.h - what the Deskbar lists: this user's running
+ * processes, and the windows of a workspace.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,8 +14,11 @@
 #include "tiku_window.h"
 #include "tiku_trk_deskbar.h"
 
-/** @brief Add this user's foreground host processes to the Deskbar. */
-/** @brief Sync the roster with the live process set.  @return changed. */
+/**
+ * @brief Bring the Deskbar's process entries in line with this user's
+ *        running processes: new ones added, ended ones pruned (DB-015).
+ * @return nonzero when the list changed.
+ */
 int tiku_trk_deskbar_scan_processes(tiku_trk_deskbar_t *deskbar);
 
 /** @brief Publish a workspace's open windows beneath one Deskbar team. */

@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_layout.c - where everything on the bar goes
+ * tiku_trk_deskbar_layout.c - where the bar's parts go (the list, the tray
+ * and its icons, the theme switch), the leaf menu's programs, and opening
+ * and closing the bar's popups.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,13 +33,12 @@ db_list_rows(const tiku_trk_deskbar_t *db)
     return h;
 }
 
-/** @brief Where the application list starts: just below the leaf row. */
+/** @brief Where the application list starts: below the leaf row. */
 int
 db_list_y(const tiku_trk_deskbar_t *db)
 {
-    /* Below the leaf, WHEREVER the frame starts: with the global bar on
-     * the whole bar sits lower, and a list still measured from the top
-     * of the screen would draw across the leaf itself. */
+    /* Measured from the frame's top, which sits lower while the global
+     * bar is on. */
     return db->frame.y + db_leaf_row() + PAD;
 }
 
@@ -104,8 +105,8 @@ db_trayicons_w(const tiku_trk_deskbar_t *db)
     return w;
 }
 
-/** @brief The tray's height down a vertical bar: the rows of application
- *         icons, then a row per replicant.  Along an edge it takes none. */
+/** @brief The tray's height: the rows of application icons (down a side
+ *         edge only), then a row per replicant. */
 int
 db_tray_h(const tiku_trk_deskbar_t *db)
 {
@@ -118,9 +119,10 @@ db_tray_h(const tiku_trk_deskbar_t *db)
     return rows * ICON_ROW + db->tray_count * TRAY_ROW;
 }
 
-/** @brief Where the tray starts down a vertical bar, measured up from its
- *         foot as the frame, the switch and the clock are: under the list,
- *         or under the collapsed dock's application button. */
+/** @brief Where the tray starts on a bar docked down a side edge, measured
+ *         up from the frame's bottom past the clock row and the switch
+ *         strip; it lies below the list, or below a mini dock's
+ *         application button. */
 int
 db_tray_top(const tiku_trk_deskbar_t *db)
 {
@@ -142,7 +144,7 @@ tiku_trk_deskbar_trayicon_rect(const tiku_trk_deskbar_t *db, int i)
         return icon_place(db, db->frame.x + 4, db_tray_top(db),
                           tiku_trk_deskbar_width(db) - 8, i, NULL);
     }
-    /* Along an edge: one row just short of the clock and the switch. */
+    /* Along an edge: one row, left of the clock and the switch. */
     return icon_place(db, db->frame.x + db->frame.w - (SWITCH_W + 14) -
                       db_hclock_w(db) - db_trayicons_w(db), db->frame.y +
                       (db->frame.h - ICON_ROW) / 2, db->frame.w, i, NULL);
@@ -179,9 +181,8 @@ tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db)
         return r;
     }
     if (tiku_trk_deskbar_vertical(db->dock)) {
-        /* Its own strip between the tray and the clock, anchored to the
-         * bottom the same way the clock is, so the two agree in every
-         * dock mode. */
+        /* Its own strip between the tray and the clock, measured up from
+         * the frame's bottom as the clock row is. */
         r.x = db->frame.x + (db->frame.w - SWITCH_W) / 2;
         r.y = db->frame.y + db->frame.h - PAD -
               (db->settings.show_clock ? db_clock_row() : 0) - SWITCH_ROW +
@@ -195,13 +196,11 @@ tiku_trk_deskbar_switch_rect(const tiku_trk_deskbar_t *db)
 }
 
 /**
- * @brief The theme switch, drawn like the physical part.
+ * @brief The theme switch: a recessed track, filled with the tab colour
+ *        while the dark theme is on, and a raised knob with grip lines.
  *
- * A recessed track the knob slides in, lit with the accent colour while
- * the dark side is on, and a raised cap with grip lines.  Three detents:
- * light at the left, dark at the right, and no hue in the middle, because
- * the third mode is a different axis rather than a further step into the
- * dark, and the centre is the one position that does not claim otherwise.
+ * The knob has three positions: light at the left, dark at the right, no
+ * hue in the middle.
  */
 void
 db_draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s)
@@ -215,8 +214,7 @@ db_draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s)
     int slot;
     int k;
 
-    /* The well: filled, framed, and shadowed along the top edge the way
-     * a recess catches light from above. */
+    /* The well: filled, framed, and shadowed along its top edge. */
     tiku_fill(s, t, well);
     tiku_frame(s, t, tiku_tint(TIKU_C_PANEL, 1.45f));
     tiku_hline(s, t.x + 1, t.y + 1, t.w - 2,
@@ -225,8 +223,8 @@ db_draw_switch(const tiku_trk_deskbar_t *db, tiku_surface_t *s)
                     tiku_tint(TIKU_C_PANEL,
                                    TIKU_LIGHTEN_MAX));
 
-    /* The knob rides a shade proud of the track, top and bottom.  Its
-     * three seats are the two ends and the exact middle. */
+    /* The knob reaches one pixel past the track at the top and at the
+     * bottom, and sits at the left end, the right end or the middle. */
     slot = (db->theme == 1) ? t.x + t.w - SWITCH_H - 1
          : (db->theme == 2) ? t.x + (t.w - SWITCH_H) / 2
                             : t.x + 1;
@@ -313,11 +311,9 @@ void
 tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db)
 {
     if (db != NULL) {
-        /* The same state a click on the leaf sets.  Exposed because the
-         * keyboard has to reach it too, and a synthetic click would have
-         * to invent coordinates for a button whose position is layout's
-         * business (DB-011). */
-        db_build_leaf(db);         /* from disk, every time (DB-005) */
+        /* The same state a click on the leaf sets, for the Menu key
+         * (DB-011). */
+        db_build_leaf(db);         /* rebuilt from the namespace (DB-005) */
         db->menu_seen = 0;
         db->sub_seen = -1;
         db->menu_open = 1;

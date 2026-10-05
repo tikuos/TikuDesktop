@@ -18,13 +18,13 @@
 int
 tiku_trk_deskicons_mode(int saved)
 {
-    /* Coerced rather than refused at save time: a state file written by
-     * another build is not ours to reject, and the Desktop has to come up
-     * either way. */
+    /* Coerced when read: a state file from another build may hold list
+     * mode. */
     return (saved == TIKU_TRK_MODE_LIST) ? TIKU_TRK_MODE_ICON : saved;
 }
 
-/** @brief Whether two rectangles touch at all. */
+/** @brief Whether two rectangles share a pixel; edges that only meet do not
+ *         count. */
 static int
 overlaps(tiku_trk_rect_t a, tiku_trk_rect_t b)
 {
@@ -50,8 +50,6 @@ tiku_trk_deskicons_valid(tiku_trk_rect_t r, tiku_trk_rect_t screen,
 {
     int i;
 
-    /* Wholly on screen: an icon half off the edge is an icon the user
-     * cannot pick up, which is worse than one in an awkward place. */
     if (r.x < screen.x || r.y < screen.y ||
         r.x + r.w > screen.x + screen.w ||
         r.y + r.h > screen.y + screen.h) {
@@ -85,8 +83,8 @@ tiku_trk_deskicons_pull_back(tiku_trk_rect_t *r, tiku_trk_rect_t screen)
     if (r->y + r->h > screen.y + screen.h) {
         r->y = screen.y + screen.h - r->h;
     }
-    /* The near edges last, so a rectangle wider than the screen ends up
-     * against the top-left rather than off it on the other side. */
+    /* The near edges are applied last, so a rectangle larger than the
+     * screen ends against its top-left corner. */
     if (r->x < screen.x) { r->x = screen.x; }
     if (r->y < screen.y) { r->y = screen.y; }
     return (r->x != ox || r->y != oy);
@@ -172,9 +170,8 @@ tiku_trk_deskicons_remember(tiku_trk_deskpos_set_t *s, int sw, int sh,
     if (s == NULL) {
         return;
     }
-    /* One position per screen SIZE: plugging a monitor back in should put
-     * the icons where they were on that monitor, not where they drifted
-     * to on the other one. */
+    /* One position per screen size, so each size gets back the
+     * arrangement made on it. */
     for (i = 0; i < s->n; i++) {
         if (s->at[i].sw == sw && s->at[i].sh == sh) {
             s->at[i].x = x;
@@ -229,7 +226,7 @@ tiku_trk_deskicons_sources(const tiku_volumes_t *vs,
         tiku_model_t hm;
 
         /* First, so what the user put on their own Desktop is what shows
-         * when another volume happens to hold the same name. */
+         * when another volume holds the same name. */
         if (b->ops->stat(b, home, &hm) == 0 &&
             tiku_model_is_container(&hm)) {
             (void)tiku_vdir_add(out, home);
@@ -239,9 +236,9 @@ tiku_trk_deskicons_sources(const tiku_volumes_t *vs,
         char path[TIKU_PATH_MAX];
         tiku_model_t m;
 
-        /* Only volumes that show an icon contribute: one mounted inside
-         * another is a detail of it, and its Desktop folder is the same
-         * folder seen twice (PVN-041, PVN-051). */
+        /* Only volumes that show an icon contribute (PVN-041, PVN-051): a
+         * volume mounted inside another shows none, so its Desktop folder
+         * is left out. */
         if (!tiku_volume_shows_icon(vs, &vs->v[i])) {
             continue;
         }
@@ -266,7 +263,7 @@ tiku_trk_deskicons_volume_pose(const tiku_volumes_t *vs,
         return 0;
     }
     if (v->is_boot) {
-        return 0;               /* the boot volume IS the Disks pose */
+        return 0;               /* the boot volume is the Disks pose */
     }
     if (!v->persistent) {
         return 0;
@@ -280,7 +277,6 @@ tiku_trk_deskicons_volume_pose(const tiku_volumes_t *vs,
 int
 tiku_trk_deskicons_show_disks(int show_disks_icon, int volumes_on_desktop)
 {
-    /* Either alone puts the root on the Desktop; the preferences make them
-     * exclusive, and this must not depend on that holding. */
+    /* Either setting alone puts the root on the Desktop. */
     return (show_disks_icon || volumes_on_desktop) ? 1 : 0;
 }

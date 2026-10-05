@@ -3,8 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_replicants.c - the replicants: added, synced, stored,
- * removed
+ * tiku_trk_deskbar_replicants.c - the tray: replicants added, synced, stored
+ * and removed, and the applications' own tray icons.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -56,8 +56,8 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
         }
         if (strncmp(db->tray[i].label, label,
                     sizeof db->tray[i].label - 1u) == 0) {
-            /* A DIFFERENT node wearing a taken name is refused, as the
-             * original refuses duplicate view names (DB-038). */
+            /* A different node under a label already taken is refused
+             * (DB-038). */
             return -1;
         }
     }
@@ -67,8 +67,8 @@ tiku_trk_deskbar_add_replicant(tiku_trk_deskbar_t *db, const char *label,
     snprintf(r->path, sizeof r->path, "%s", path);
     r->valid = 0;
     r->height = TIKU_TRK_DB_MAX_REPLICANT_H;
-    /* Ask the node what its reading MEANS, once, so the tray can show
-     * "16h 26m" rather than 59182. */
+    /* The node's description is read once, here; the tray formats each
+     * reading by it, as "16h 26m" for 59182 seconds. */
     if (db->backend != NULL && db->backend->ops->stat != NULL) {
         tiku_model_t m;
 
@@ -100,8 +100,8 @@ tiku_trk_deskbar_sync_replicants(tiku_trk_deskbar_t *db)
         if (r->node_id != 0 && db->backend->ops->path_of_id != NULL &&
             db->backend->ops->path_of_id(db->backend, r->node_id, moved,
                                          sizeof moved) == 0) {
-            /* Moved, not gone: re-pointed, keeping its place and its
-             * label (DB-040). */
+            /* Moved: re-pointed, keeping its place and its label
+             * (DB-040). */
             snprintf(r->path, sizeof r->path, "%s", moved);
             changed = 1;
             continue;
@@ -181,8 +181,8 @@ tiku_trk_deskbar_set_replicant_height(tiku_trk_deskbar_t *db,
                 return 1;
             }
             db->tray[i].height = height;
-            /* The fixed row is the tray's layout unit; changing the
-             * accepted size still invalidates the whole tray immediately. */
+            /* Every row keeps the TRAY_ROW pitch, so a new height moves
+             * nothing on screen; the tray is saved at once. */
             save_replicants(db);
             return 1;
         }
@@ -321,7 +321,7 @@ tiku_trk_deskbar_refresh_except(tiku_trk_deskbar_t *db, const char *except)
 
         if (except != NULL && except[0] != '\0' &&
             strncmp(r->path, except, strlen(except)) == 0) {
-            continue;           /* the caller's to read */
+            continue;           /* read by the caller */
         }
         n = db->backend->ops->read(db->backend, r->path, buf,
                                    sizeof buf - 1);
@@ -424,7 +424,7 @@ tiku_trk_deskbar_trayicon_set(tiku_trk_deskbar_t *db, uint64_t owner,
     i = trayicon_find(db, owner, id);
     if (i >= 0) {
         if (memcmp(&db->trayicons[i], &t, sizeof t) == 0) {
-            return 0;               /* said again, unchanged */
+            return 0;               /* the same item again */
         }
         db->trayicons[i] = t;
         return 1;

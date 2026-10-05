@@ -4,8 +4,8 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_trk_app_private.h - what the tiku_trk_app files share: the includes,
- * the types, the small accessors that read them, and the functions one file
- * defines for another.  Nothing outside this directory includes it.
+ * the window's metrics and state, and the functions one file defines for
+ * another.  Outside this directory, only a test includes it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -48,104 +48,110 @@
 #include "tiku_trk_script.h"
 #include "tiku_trk_task.h"
 
-#define WIN_W 760
-#define WIN_H 520
-#define TAB_H 21
-#define BORDER 5
-#define TITLE_H 18
-#define NAV_H 26
-#define COUNT_H 16
-#define SCROLL_W 15
+#define WIN_W 760               /* the window's first width, px       */
+#define WIN_H 520               /* and its first height               */
+#define TAB_H 21                /* the title tab's height             */
+#define BORDER 5                /* the frame around the content       */
+#define TITLE_H 18              /* the column title strip             */
+#define NAV_H 26                /* the navigator strip                */
+#define COUNT_H 16              /* the count strip under the list     */
+#define SCROLL_W 15             /* the vertical scroll bar            */
 
-/* List mode uses Tracker's mini icon size; a taller row does not grow it. */
+/** @brief The largest icon in a list row, however tall the row is. */
 #define MINI_ICON_MAX 16
 
-/* Tracker's own list row: ceilf(plain font size * 1.65) = 20 at 12 px. */
-
+/** @brief The single-window browser's state. */
 typedef struct {
-    tiku_host_t    *host;            /* the window on the display          */
-    tiku_surface_t *surf;            /* the frame, drawn then blitted      */
-    tiku_trk_poseview_t *view;       /* the one list                       */
-    tiku_backend_t  *backend;        /* the namespace the view lists       */
-    char                 title[160]; /* the window's title: the folder     */
-    int                  row_h;      /* a list row in pixels, from the face */
-    int                  running;    /* 0 once quitting was asked for      */
-    int                  dirty;      /* a frame is owed                    */
-    int                  reduce_motion; /* the settings file's ReduceMotion */
-    tiku_motion_t        activation_motion; /* the opened pose's outline   */
-    tiku_rect_t          activation_rect;   /* the pose it grows out of    */
-    /* rubber band and icon drag */
-    int                  band_active;
-    int                  band_x0, band_y0, band_x1, band_y1;
-    int                  drag_active; /* an icon drag is under way         */
-    int                  drag_x, drag_y;
-    /* file operations */
-    tiku_fs_t       *fs;
-    char                 status[220]; /* the status line's text            */
-    struct browser_image_job *image_job; /* image dispatch in flight       */
-    /* inline rename: the editor is a mode, as Tracker's TextWidget is */
-    int                  editing;
-    tiku_field_t      ed;            /* the rename editor                  */
-    tiku_text_input_t commit;        /* one whole committed text sequence  */
-    char                 edit_path[TIKU_PATH_MAX]; /* the entry being renamed */
-    int                  edit_row;   /* its row                            */
-    /* The window's own activation state, which decides whether a selection
-     * is PAINTED; and where the last press landed, for the long press. */
+    tiku_host_t    *host;            /**< the window on the display, or
+                                      *   NULL in a displayless run       */
+    tiku_surface_t *surf;            /**< the frame, drawn then blitted   */
+    tiku_trk_poseview_t *view;       /**< the one list                    */
+    tiku_backend_t  *backend;        /**< the namespace the view lists    */
+    char                 title[160]; /**< the window's title: the folder  */
+    int                  row_h;      /**< a list row in pixels, from the
+                                      *   face                            */
+    int                  running;    /**< 0 once quitting was asked for   */
+    int                  dirty;      /**< a frame is owed                 */
+    int                  reduce_motion; /**< the settings file's
+                                         *   ReduceMotion                 */
+    tiku_motion_t        activation_motion; /**< the opened pose's outline */
+    tiku_rect_t          activation_rect;   /**< the pose it grows out of  */
+    int                  band_active; /**< a rubber band is being swept   */
+    int                  band_x0, band_y0, band_x1, band_y1; /**< its
+                                      *   corners, in window coordinates  */
+    int                  drag_active; /**< an icon drag is under way      */
+    int                  drag_x, drag_y; /**< where the drag began, in
+                                      *   list coordinates                */
+    tiku_fs_t       *fs;             /**< the file operation engine       */
+    char                 status[220]; /**< the status line's text         */
+    struct browser_image_job *image_job; /**< open request in flight     */
+    int                  editing;    /**< the inline rename editor is open */
+    tiku_field_t      ed;            /**< the rename editor               */
+    tiku_text_input_t commit;        /**< one whole committed text
+                                      *   sequence                        */
+    char                 edit_path[TIKU_PATH_MAX]; /**< the entry being
+                                      *   renamed                         */
+    int                  edit_row;   /**< its row                         */
+    /** The window's activation state, which decides whether a selection
+     *  is painted. */
     int                  active;
-    int64_t              press_at;   /* when the button went down, us      */
-    int                  press_x, press_y;
-    int                  press_row;  /* the row under that press, or -1    */
-    int                  press_down; /* the button is still held           */
-    int                  read_only;  /* the store refuses writes           */
-    tiku_trk_titleview_t tv;         /* the column strip's tracking state  */
-    int                  cursor_ew;  /* which cursor the window is showing */
-    /* The list row to select once a delete has finished; -1 when the last
-     * operation was not one that removes rows (FS-050). */
+    int64_t              press_at;   /**< when the button went down, us   */
+    int                  press_x, press_y; /**< where it went down        */
+    int                  press_row;  /**< the row under that press, or -1 */
+    int                  press_down; /**< the button is still held        */
+    int                  read_only;  /**< the store refuses writes        */
+    tiku_trk_titleview_t tv;         /**< the column strip's tracking state */
+    int                  cursor_ew;  /**< the resize cursor is showing    */
+    /** The list row to select once a delete has finished; -1 when the last
+     *  operation was not one that removes rows (FS-050). */
     int                  select_next;
-    /* The scrollbar as an object: a range that can be held steady while
-     * the user drags it, and detached while a bulk re-layout runs
-     * (PVL-051, PVL-052, PVL-060). */
+    /** The scroll bar as an object: a range that can be held steady while
+     *  the user drags it, and detached while a bulk re-layout runs
+     *  (PVL-051, PVL-052, PVL-060). */
     tiku_scroll_t    sb;
-    tiku_scroll_t    hsb;       /* the horizontal bar (TS-044)        */
-    tiku_rect_t     hsb_rect;
-    tiku_rect_t     sb_rect;         /* where the vertical bar is drawn    */
-    /* The same container-window menus the desktop shell presents. */
+    tiku_scroll_t    hsb;            /**< the horizontal bar (TS-044)     */
+    tiku_rect_t     hsb_rect;        /**< where it is drawn, or empty     */
+    tiku_rect_t     sb_rect;         /**< where the vertical bar is drawn */
+    /** The container-window menus the desktop shell presents too. */
     tiku_trk_cwmenu_t    menus;
-    tiku_menu_t     *popup;          /* the open menu, or NULL             */
-    tiku_menu_t     *popup_sub;      /* its open submenu, or NULL          */
-    tiku_rect_t     popup_frame;     /* where the menu is drawn            */
-    tiku_rect_t     popup_sub_frame; /* where the submenu is drawn         */
-    tiku_rect_t     viewbtn_rect;  /* the gutter's view popup    */
-    int                  theme_mode;    /* -1 until first applied     */
-    int                  bar_open;
-    /* Browser chrome owns its history and location editor per window. */
+    tiku_menu_t     *popup;          /**< the open menu, or NULL          */
+    tiku_menu_t     *popup_sub;      /**< its open submenu, or NULL       */
+    tiku_rect_t     popup_frame;     /**< where the menu is drawn         */
+    tiku_rect_t     popup_sub_frame; /**< where the submenu is drawn      */
+    tiku_rect_t     viewbtn_rect;    /**< the gutter's view-mode button   */
+    int                  theme_mode; /**< DarkMode in force: 0 light,
+                                      *   1 dark, 2 no hue                */
+    int                  bar_open;   /**< the menu bar title open, or -1  */
+    /** The window's own Back/Forward history and location field. */
     tiku_trk_navigator_t nav;
-    tiku_field_t      nav_edit;      /* the location field's editor        */
-    int                  nav_editing; /* the location field has the keys   */
-    int                  show_nav;   /* the navigator strip is shown       */
-    /* the settings file watched for changes */
+    tiku_field_t      nav_edit;      /**< the location field's editor     */
+    int                  nav_editing; /**< the location field has the keys */
+    int                  show_nav;   /**< the navigator strip is shown    */
+    /** The settings file, watched for changes. */
     char                 prefs_path[TIKU_PATH_MAX];
-    int                  prefs_present; /* it existed at the last look     */
-    /* TS-052: the preference that swaps type-to-select for type-to-filter,
-     * applied live when the settings file changes and re-applied when the
-     * view returns to list mode. */
+    int                  prefs_present; /**< it existed at the last look  */
+    /** TS-052: the preference that swaps type-to-select for type-to-filter,
+     *  applied live when the settings file changes and again when the
+     *  view returns to list mode. */
     int                  filter_pref;
-    time_t               prefs_mtime; /* its mtime then                    */
-    off_t                prefs_size;  /* its size then                     */
-    int64_t              prefs_checked; /* when it was last looked at, us  */
-    /* The same command layer the multi-window shell uses.  The folder is a
-     * wrapper over this window's own view, so one implementation of what
-     * Delete or Paste means serves both shells (FEATURES rule 6). */
+    time_t               prefs_mtime; /**< the settings file's mtime, as
+                                       *   last seen                     */
+    off_t                prefs_size;  /**< its size, as last seen         */
+    int64_t              prefs_checked; /**< when it was last looked at, us */
+    /** The command layer the multi-window shell uses too.  The folder is a
+     *  wrapper over this window's own view, so Delete, Paste and the rest
+     *  have one implementation for both shells (rule 6 of
+     *  docs/contracts/tracker.md). */
     tiku_trk_folder_window_t         folder;
-    tiku_trk_clip_t                  clip;         /* the clipboard        */
-    tiku_trk_folder_file_actions_t   file_actions; /* Delete, Paste, kin   */
-    /* Deferred and periodic work, pulsed from the loop's own tick: the
-     * cooperative protothread the TIKU note asks for (AW-083). */
+    tiku_trk_clip_t                  clip;         /**< the clipboard     */
+    tiku_trk_folder_file_actions_t   file_actions; /**< Delete, Paste, kin */
+    /** Deferred and periodic work; browser_turn_end() runs the tasks that
+     *  are due once per turn (AW-083). */
     tiku_trk_loop_t                 *loop;
-    int                  ptr_x, ptr_y;   /* the pointer, as last seen    */
-    /* The modal question, hosted the way the desktop shell hosts it: the
-     * same overlay, over this window's one surface, so the delete question
-     * and a collision are the same question in both shells (FS-046). */
+    int                  ptr_x, ptr_y;   /**< the pointer, as last seen   */
+    /** The modal question: the desktop shell's overlay, over this window's
+     *  one surface, so the delete question and a collision are put the
+     *  same way in both shells (FS-046). */
     tiku_trk_status_overlay_t        status_overlay;
 } app_t;
 
@@ -155,23 +161,26 @@ typedef struct {
 /** @brief The strip the barber pole occupies at the right of the count. */
 #define POLE_W 10
 
-/* What the command line asked for. */
+/** @brief What the command line asked for. */
 typedef struct {
-    const char *port;               /* -p: the board's serial port */
-    const char *start;              /* the folder to open, else the home */
-    int         baud;
-    int         use_device;         /* -d, or -p: that board is the root */
-    int64_t     deadline_us;        /* -seconds: stop at this time, 0 never */
-    const char *shot;               /* write a frame here, then stop */
-    const char *script_path;
-    int         mute;               /* -mute: every moment silent */
+    const char *port;               /**< -p: the board's serial port      */
+    const char *start;              /**< the folder to open; when unset,
+                                         / on a board, else $HOME or / */
+    int         baud;               /**< -b: the serial port's baud rate  */
+    int         use_device;         /**< -d, or -p: that board is the root */
+    int64_t     deadline_us;        /**< -seconds: stop at this time, or 0 */
+    const char *shot;               /**< -shot: the PNG file for one frame */
+    const char *script_path;        /**< -script: the script to run       */
+    int         mute;               /**< -mute: no sound                  */
 } browser_options_t;
 
-/* What the shell's loop keeps between one event and the next. */
+/** @brief What the shell's loop keeps between one event and the next. */
 typedef struct {
-    tiku_trk_click_t    click;      /* the click before this one */
-    tiku_trk_script_t  *sc;         /* the script driving this run, or NULL */
-    int64_t             shot_at_us; /* when the -shot frame is due, 0 never */
+    tiku_trk_click_t    click;      /**< the click before this one       */
+    tiku_trk_script_t  *sc;         /**< the script driving the run, or
+                                     *   NULL                            */
+    int64_t             shot_at_us; /**< when the -shot frame is due, 0
+                                     *   never                           */
 } browser_loop_t;
 
 /* Shared across the family: defined in one file, used in another. */

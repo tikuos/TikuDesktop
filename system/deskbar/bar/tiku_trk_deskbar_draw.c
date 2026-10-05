@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_draw.c - drawing the bar
+ * tiku_trk_deskbar_draw.c - drawing the bar and its popups, the hover and
+ * release handling that changes what is drawn, and the submenus' rows.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,7 +40,8 @@ void db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 void db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows);
 /* End of the forward declarations. */
 
-/** @brief A window's state icon: filled when shown, hollow when minimised. */
+/** @brief A window's state icon: filled when shown, hollow when minimised,
+ *         and ringed in the selection colour when @p current. */
 static void
 draw_win_icon(tiku_surface_t *s, int x, int y, int minimized,
               int current)
@@ -50,8 +52,7 @@ draw_win_icon(tiku_surface_t *s, int x, int y, int minimized,
     tiku_fill(s, b, minimized ? TIKU_C_PANEL : TIKU_C_DOC);
     tiku_frame(s, b, dark);
     if (!minimized) {
-        /* A shown window carries a title bar on its glyph; a minimised one
-         * is an empty outline, so the two are told apart at a glance. */
+        /* A shown window's glyph carries a title bar. */
         tiku_hline(s, b.x + 1, b.y + 1, b.w - 2, TIKU_C_TAB);
         tiku_hline(s, b.x + 1, b.y + 2, b.w - 2, TIKU_C_TAB);
     }
@@ -61,15 +62,10 @@ draw_win_icon(tiku_surface_t *s, int x, int y, int minimized,
     }
 }
 
-/** @brief The expander triangle: right when collapsed, down when expanded. */
 /**
- * @brief Where the leaf menu goes, given which edge the bar is docked to.
- *
- * Docked LEFT the panel has to fall to the right of the bar; the fixed
- * "left of the bar" offset put it at a negative x, i.e. off the screen
- * entirely (DB-010).
+ * @brief Where the leaf menu goes: right of the bar when it is docked
+ *        left, otherwise left of it, clamped at x 0 (DB-010).
  */
-
 tiku_rect_t
 db_leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
 {
@@ -204,9 +200,10 @@ hover_touch(tiku_trk_deskbar_t *db, tiku_rect_t r)
 }
 
 /**
- * @brief The application tray icon under @p x, @p y lit, and what it says
- *        into @p tip with its row into @p tip_y: its tip, or its name for
- *        itself when it gave none.  Menus own the pointer when open.
+ * @brief Light the application tray icon under @p x, @p y, and write its
+ *        tip into @p tip and its top edge into @p tip_y; an icon with no
+ *        tip gives its id.  While the leaf, window or clock menu is open
+ *        no icon is lit.
  * @return 1 when a different icon (or none) is lit now.
  */
 static int
@@ -298,7 +295,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             if (x >= sm.x && x < sm.x + sm.w && y >= sm.y + 2 &&
                 y < sm.y + 2 + db->sub_count * rowh) {
                 sub = (y - sm.y - 2) / rowh;
-                leaf = -1; /* The submenu is above any overlapping parent. */
+                leaf = -1; /* a point in both menus is the submenu's */
             }
         }
     }
@@ -351,12 +348,13 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
         }
     }
     {
-        /* The tooltip half of DB-032: resting on a row whose label was
-         * cut -- or any application row while names are hidden -- says
-         * the whole name.  Menus own the pointer when open. */
+        /* The tooltip (DB-032): over a row whose label is cut, or any
+         * application row while names are hidden, the tip is the whole
+         * name.  No tip shows while the leaf, window or clock menu is
+         * open. */
         char tip[TIKU_TRK_DB_LABEL_MAX] = "";
         int tip_y = -1;
-        /* A tray icon under the pointer says what it is first. */
+        /* A tray icon under the pointer takes the tip first. */
         changed |= tray_hover(db, x, y, tip, sizeof tip, &tip_y);
         if (tip_y < 0 && !db->menu_open && db->win_menu_team < 0 &&
             !db->clock_menu_open && db->settings.show_clock &&
@@ -364,8 +362,8 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             x < db->frame.x + db->frame.w &&
             y >= db->frame.y + db->frame.h - db_clock_row() - PAD &&
             y < db->frame.y + db->frame.h) {
-            /* The clock's tooltip is the whole long-form date (DB-044),
-             * from the same clock the display reads -- frozen and all. */
+            /* The clock's tip is the long-form date (DB-044), from the
+             * clock the display reads, frozen or not. */
             time_t now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
             struct tm tmv;
 
@@ -419,7 +417,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             }
         }
         if (strcmp(tip, db->tip) != 0 || tip_y != db->tip_y) {
-            /* The box that goes and the box that comes. */
+            /* Both the old and the new tip box are repainted. */
             hover_touch(db, tip_box(db));
             snprintf(db->tip, sizeof db->tip, "%s", tip);
             db->tip_y = tip_y;
@@ -459,7 +457,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
     return changed;
 }
 
-/** @brief Every row bearing an arrow expands by click or by hover. */
+/** @brief Whether a row of @p kind expands, by a click or by hover. */
 static int item_expands(int kind)
 {
     return kind == TIKU_TRK_DB_ITEM_EXPAND;
@@ -487,12 +485,14 @@ int tiku_trk_deskbar_menu_tick(tiku_trk_deskbar_t *db, int64_t now)
         return 0;
     }
     if (now-db->sub_entered < TIKU_TRK_DB_SUBMENU_DELAY_US) return 0;
-    /* Populate once, only after a dwell. No synthetic click: Quit and
-     * every other command must still require deliberate selection. */
+    /* The submenu is filled once, after the dwell; hovering never
+     * chooses a row's command. */
     int before = db->sub_of;
     db_open_sub(db, wanted);
     db->sub_pending = row;
-    db->sub_entered = -1; /* Empty/unavailable folders are tried only once. */
+    /* -1 marks the row as tried: a submenu that came out empty is not
+     * built again on every tick while the row stays hot. */
+    db->sub_entered = -1;
     return before != db->sub_of;
 }
 
@@ -509,9 +509,9 @@ tiku_trk_deskbar_menu_keeps_open(const tiku_trk_deskbar_t *db, int x, int y)
     font = tiku_font_plain();
     rowh = font->height + 6;
     m = db_leaf_menu_rect(db, rowh, db->leaf_count);
-    /* Tracker's 20px tracking margin is intentionally outside the visible
-     * menu: it lets the pointer cross the gap into a submenu without
-     * dismissing the menu first. */
+    /* The 20 px tracking margin lies outside the visible menu: the
+     * pointer may cross the gap into a submenu without the menu closing
+     * (DB-036). */
     if (x >= m.x - 20 && x < m.x + m.w + 20 &&
         y >= m.y - 20 && y < m.y + m.h + 20) {
         return 1;
@@ -628,8 +628,10 @@ tiku_trk_deskbar_menu_point(const tiku_trk_deskbar_t *db, const char *label,
     }
     rowh = f->height + 6;
     m = db_leaf_menu_rect(db, rowh, db->leaf_count);
-    /* The open submenu first: its rows sit over the leaf's, and a name
-     * that appears in both is the one the user can see. */
+    /* The open submenu is searched first, so a label in both menus
+     * resolves to the submenu's row.  The submenu is placed beside the
+     * leaf menu; the two overlap only when the screen's left edge pushes
+     * the submenu to x = 0, as it does with a top or bottom dock. */
     if (db->sub_of >= 0 && db->sub_count > 0) {
         tiku_rect_t sm = db_sub_menu_rect(db, m, rowh);
 
@@ -661,7 +663,9 @@ tiku_trk_deskbar_quit_policy(int prefs_open, int shortcut_quit)
     return (shortcut_quit && prefs_open) ? 1 : 0;
 }
 
-/** @brief Where a submenu hangs: beside its row, on the menu's open side. */
+/** @brief Where the submenu goes: level with its leaf row, right of the
+ *         leaf menu with a left dock and left of it otherwise, clamped at
+ *         x 0. */
 tiku_rect_t
 db_sub_menu_rect(const tiku_trk_deskbar_t *db, tiku_rect_t m, int rowh)
 {
@@ -679,7 +683,9 @@ db_sub_menu_rect(const tiku_trk_deskbar_t *db, tiku_rect_t m, int rowh)
     return r;
 }
 
-/** @brief One submenu row that acts by @p command, wearing @p icon. */
+/** @brief Append a submenu row that acts by @p command, with the icon
+ *         named @p icon.  @return the row, or NULL when the submenu is
+ *         full. */
 static tiku_trk_db_item_t *
 sub_row(tiku_trk_deskbar_t *db, int command, const char *label,
         const char *icon)
@@ -735,8 +741,8 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
                 "");
         sub_row(db, TIKU_TRK_DB_ASSOC_PREFERENCES, "File Associations…",
                 "folder_prefs");
-        /* Says what choosing it does, which is the other state: a row
-         * labelled with the state it is in reads as a heading. */
+        /* The label names the action: the opposite of the current
+         * state. */
         sub_row(db, TIKU_TRK_DB_TOGGLE_REPLICANTS,
                 tiku_str(db->show_replicants ? "menu.hide_replicants"
                                              : "menu.show_replicants"),
@@ -759,8 +765,8 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
                 snprintf(si->path, sizeof si->path, "%s", db->app[i].command);
             }
         }
-        /* Sort displayed labels, not bundle paths. Move whole rows so icons
-         * and exact launch paths remain attached; equal labels stay stable. */
+        /* Sorted by label, ignoring case, by moving whole rows so each
+         * keeps its icon and launch path; equal labels keep their order. */
         for (i = 1; i < db->sub_count; i++) {
             tiku_trk_db_item_t item = db->sub[i];
             int j = i;
@@ -777,8 +783,8 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
         for (i = 0; i < db->recent_count[it->which] &&
                     i < db->settings.recent_count[it->which] &&
                     i < TIKU_TRK_DB_SUB_MAX; i++) {
-            /* The name, not the path: a menu of paths is a menu nobody
-             * can read across at a glance. */
+            /* Each row shows the entry's name; its path goes with the
+             * pick. */
             tiku_trk_db_item_t *si = sub_row(db, TIKU_TRK_DB_OPEN_PATH,
                 db_leaf_name(db->recent[it->which][i]),
                 (it->which == 1) ? "folder"
@@ -823,9 +829,8 @@ draw_expander(tiku_surface_t *s, int x, int y, int expanded)
     tiku_rgb_t dark = tiku_tint(TIKU_C_PANEL, 1.40f);
     int k;
 
-    /* STROKED along an open three-point polyline with a two-pixel pen, not
-     * filled: a solid triangle carries far more weight than the original's
-     * arrow and is one of the things that reads as a cheap imitation. */
+    /* An open three-point polyline, stroked with an EXPANDER_PEN-pixel
+     * pen. */
     for (k = 0; k < EXPANDER_PEN; k++) {
         int i;
 
@@ -846,11 +851,9 @@ draw_expander(tiku_surface_t *s, int x, int y, int expanded)
 /**
  * @brief A list row's background.
  *
- * The two recipes are structurally different, not one darker than the other:
- * an idle row is bevelled on every edge over a light gradient, a selected one
- * is a dark slab with a single dark cap and no side bevel at all.  The label
- * colour does NOT change either way -- the original draws selected and
- * unselected menu text in the same black.
+ * An idle row is bevelled on every edge over a light gradient; a selected
+ * one is a darker gradient with a single dark line on top and no side
+ * bevel.  The label colour is the same either way.
  */
 static void
 draw_row_bg(tiku_surface_t *s, tiku_rect_t r, int selected)
@@ -880,7 +883,7 @@ draw_row_bg(tiku_surface_t *s, tiku_rect_t r, int selected)
                     tiku_tint(TIKU_C_PANEL, 1.08f));
 }
 
-/** @brief Truncate to a width budget, with an ellipsis (DB row). */
+/** @brief Truncate to a width budget, with an ellipsis (DB-032). */
 static void
 fit_label(const tiku_font_t *f, const char *src, int budget, char *out,
           size_t max)
@@ -931,8 +934,7 @@ tiku_trk_deskbar_draw(tiku_trk_deskbar_t *db, tiku_surface_t *s)
     rows = tiku_trk_deskbar_mini(db->dock) ? 0 : db_list_rows(db);
     db_draw_frame(db, s, &rows);
 
-    /* On the desk the way a window is: a shadow beneath, a hairline
-     * round, corners square since it stands in the screen's corner. */
+    /* A shadow beneath, a hairline frame, square corners. */
     tiku_shadow(s, db->frame, 12, 0, 0.35f);
     tiku_fill(s, db->frame, TIKU_C_PANEL);
     tiku_frame(s, db->frame, tiku_tint(TIKU_C_PANEL, 1.40f));
@@ -972,15 +974,16 @@ tiku_trk_deskbar_motion_damage(const tiku_trk_deskbar_t *db)
 }
 
 /**
- * @brief the calendar under the clock
+ * @brief The clock's calendar, while it is open: the month and year over a
+ *        grid of its days, the chosen day lit (DB-045, DB-046).
  */
 void
 db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                  const tiku_font_t *f, const tiku_font_t *fb, tiku_rgb_t dark)
 {
     if (db->calendar_open) {
-        /* The clock's calendar: a month grid with steppers, popped beside
-         * the bar and dismissed by the next click anywhere. */
+        /* The heading's four quarters are the month and year steppers that
+         * db_click_calendar() answers; nothing here draws them. */
         struct tm tmv;
         tiku_rect_t c = db_calendar_rect(db);
         int col, rowi, first, days;
@@ -1033,14 +1036,16 @@ db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 }
 
 /**
- * @brief the tip over a row
+ * @brief The tooltip, left of the bar at the height of what it is about,
+ *        clamped at x 0.
  */
 void
 db_draw_tip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
 {
     if (db->tip_y >= 0 && db->tip[0] != '\0') {
-        /* The whole name, said beside the row that could not fit it
-         * (DB-032). */
+        /* The tip tiku_trk_deskbar_motion() chose: a cut or hidden name
+         * (DB-032), a tray icon's tip, or the clock's long date
+         * (DB-044). */
         tiku_rect_t b = tiku_ui_tip_size(db->tip);
 
         b.x = db->frame.x - b.w - 4;
@@ -1051,14 +1056,14 @@ db_draw_tip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
 }
 
 /**
- * @brief the theme switch in its own strip of tray
+ * @brief The application list's scroll arrows (DB-034).
  */
 void
 db_draw_switch_strip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
 {
     {
-        /* The scroll arrows: shown the moment something is out of sight
-         * in the direction they point (DB-034). */
+        /* Each arrow shows while something is out of sight in the
+         * direction it points (DB-034). */
         int up = 0, down = 0, k;
         int ly = db_list_y(db);
         int lb = db->frame.y + db->frame.h - db_tray_h(db) -
@@ -1078,7 +1083,7 @@ db_draw_switch_strip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
 }
 
 /**
- * @brief the clock menu
+ * @brief The clock's four-row menu, while it is open.
  */
 void
 db_draw_clock_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s)
@@ -1094,14 +1099,15 @@ db_draw_clock_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s)
 }
 
 /**
- * @brief the window menu for one application
+ * @brief One application's window menu, while it is open, its refused rows
+ *        dimmed.
  */
 void
 db_draw_win_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                  const tiku_font_t *f)
 {
-    /* The window menu for one application: Hide all / Show all / Close all,
-     * which the original appends to every application's window list. */
+    /* Hide all, Show all and Close all; an application with no windows
+     * gets No windows and Force Quit… instead (DB-028). */
     if (db->win_menu_team >= 0 && db->win_menu_team < db->team_count) {
         const char *items[4];
         int enabled[4];
@@ -1112,8 +1118,8 @@ db_draw_win_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 
         tiku_ui_menu(s, m, items, n, db->win_hot);
         for (k = 0; k < n; k++) {
-            /* A row that cannot be chosen is drawn as such, with the one
-             * dimmed ink the menu layer has (DB-004, DB-028). */
+            /* A refused row is redrawn dimmed over the menu's own
+             * drawing (DB-004, DB-028). */
             if (!enabled[k] && items[k][0] != '-') {
                 tiku_rect_t r = { m.x + 2, m.y + 2 + k * rowh,
                                        m.w - 4, rowh };
@@ -1129,7 +1135,7 @@ db_draw_win_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 }
 
 /**
- * @brief the leaf menu: the head, the recent folders, the places
+ * @brief The leaf menu and its open submenu, each fading in as it opens.
  */
 void
 db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
@@ -1137,8 +1143,9 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 {
     int i;
 
-    /* The leaf menu: the head the original always shows, then the recent
-     * lists, then whatever is in the Deskbar folder right now. */
+    /* The rows db_build_leaf() made: Find, Force Quit, Settings and the
+     * application groups, the mounted stores and their forms, the recent
+     * lists, the Deskbar folder's entries and Shut down. */
     if (db->menu_open) {
         const char *items[TIKU_TRK_DB_LEAF_MAX];
         int rowh = f->height + 6;
@@ -1167,9 +1174,8 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
             tiku_ui_menu(s, m, items, db->leaf_count, db->leaf_hot);
         }
         for (i = 0; i < db->leaf_count; i++) {
-            /* A row that cannot be chosen is drawn as such, and the menu
-             * layer has one ink: dimmed here, over what it already drew
-             * (DB-004). */
+            /* A disabled row is redrawn dimmed over the menu's own
+             * drawing (DB-004). */
             if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DISABLED) {
                 tiku_rect_t r = { m.x + 2, m.y + 2 + i * rowh,
                                        m.w - 4, rowh };
@@ -1180,10 +1186,8 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                                db->leaf[i].label,
                                tiku_tint(TIKU_C_PANEL, 1.55f));
             } else if (item_expands(db->leaf[i].kind)) {
-                /* What expands says so, the way every hierarchical menu
-                 * marks the rows that go somewhere (DB-002) -- with the
-                 * drawn mark the rest of the menus use, rather than a
-                 * greater-than typed in the body face. */
+                /* An expanding row carries the drawn submenu arrow the
+                 * other menus use (DB-002). */
                 tiku_ui_submenu_arrow(s,
                     (tiku_rect_t){ m.x, m.y + 2 + i * rowh, m.w, rowh },
                     TIKU_C_TEXT);
@@ -1229,7 +1233,9 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 }
 
 /**
- * @brief the clock beneath the tray
+ * @brief The clock: in its own row down a side edge, before the theme
+ *        switch along a top or bottom edge.  Down a side edge @p y is
+ *        moved past the switch's strip first.
  */
 void
 db_draw_clock(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
@@ -1248,7 +1254,7 @@ db_draw_clock(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
     cw = tiku_text_width(f, clock);
     if (!tiku_trk_deskbar_vertical(db->dock)) {
         /* Along an edge: inside the bar, after the tray's icons and
-         * before the theme switch, the way the original's tray ends. */
+         * before the theme switch. */
         tiku_text(s, f, db->frame.x + db->frame.w - (SWITCH_W + 14) -
                   db_hclock_w(db) + 6, db->frame.y +
                   (db->frame.h - f->height) / 2 + f->ascent, clock,
@@ -1302,8 +1308,9 @@ clock_text(const tiku_trk_deskbar_t *db, char *clock, size_t cap)
     }
 }
 
-/** @brief The room the clock takes along an edge, with its margins; none
- *         down a bar, where it has a row of its own, or when it is off. */
+/** @brief The room the clock takes along a top or bottom edge, with its
+ *         margins; none down a side edge, where it has a row of its own,
+ *         or when it is off. */
 int
 db_hclock_w(const tiku_trk_deskbar_t *db)
 {
@@ -1317,8 +1324,8 @@ db_hclock_w(const tiku_trk_deskbar_t *db)
 }
 
 /**
- * @brief the applications' own tray icons, each with its text after it,
- *        lit under the pointer (the original's replicants)
+ * @brief The applications' own tray icons, each with its text after it,
+ *        the one under the pointer lit.
  */
 static void
 db_draw_trayicons(tiku_trk_deskbar_t *db, tiku_surface_t *s,
@@ -1336,7 +1343,7 @@ db_draw_trayicons(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                       tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
         }
         /* DB-018: an icon the set does not have leaves its slot as it
-         * is; the text, if any, still says what the item is. */
+         * is; the text, if any, is still drawn. */
         (void)tiku_icon_paint(s, t->icon, r.x, r.y + (r.h - 16) / 2, 16);
         if (t->text[0] != '\0') {
             tiku_text(s, f, r.x + 19, r.y + (r.h - f->height) / 2 +
@@ -1346,7 +1353,8 @@ db_draw_trayicons(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 }
 
 /**
- * @brief the tray: the replicants, one row each
+ * @brief The tray: the applications' tray icons, then down a side edge a
+ *        row per replicant, leaving @p y at the tray's foot.
  */
 void
 db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
@@ -1354,16 +1362,14 @@ db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
 {
     int i;
 
-    /* The tray, then the clock beneath it: the original reserves the
-     * clock's room in the first row, and stacking it here is the vertical
-     * equivalent.  Down a bar it is measured up from the foot, as the
-     * frame and the clock are, so the collapsed dock's application button
-     * sits above it rather than under it. */
+    /* Down a side edge the tray is placed up from the bar's foot, as the
+     * switch and the clock are, so it sits below the mini dock's
+     * application button. */
     (*y) = tiku_trk_deskbar_vertical(db->dock) ? db_tray_top(db)
                                                : db_tray_y(db);
     if (!tiku_trk_deskbar_vertical(db->dock)) {
-        /* Along an edge the tray is its icons, in the strip; the rows
-         * and their rule are a tall dock's, with nowhere to go here. */
+        /* Along a top or bottom edge the tray is its icons only; the
+         * replicant rows and their rule are not drawn. */
         db_draw_trayicons(db, s, f);
         return;
     }
@@ -1380,9 +1386,7 @@ db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
         char val[32];
         int vw;
 
-        /* The tray is the narrowest place on screen, so it is the place a
-         * formatted reading earns the most: the column is too thin to read
-         * a raw second count or byte count against. */
+        /* Each reading is formatted by its node's description. */
         (void)tiku_attr_format(r->desc_known ? &r->desc : NULL,
                                    r->valid ? r->value : "",
                                    val, sizeof val);
@@ -1396,7 +1400,9 @@ db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
 }
 
 /**
- * @brief the application list: a row per team, its windows beneath it
+ * @brief The application list: along a top or bottom edge a strip of
+ *        buttons, down a side edge a row per application with its windows
+ *        beneath it when expanded.
  */
 void
 db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
@@ -1408,14 +1414,16 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
         !tiku_trk_deskbar_vertical(db->dock)) {
         /* The horizontal strip: as many buttons as fit, each between a
          * font-derived minimum and 1.25x it, shrinking as applications
-         * launch and growing back as they quit; past the minimum, the
-         * ends grow arrows (DB-033). */
+         * launch and growing back as they quit.  When they do not all fit
+         * at the minimum they keep it, an arrow is drawn at the strip's
+         * right end, and one at its left end once it is scrolled
+         * (DB-033). */
         int n = db->team_count;
         int min_w = 24 + tiku_text_width(f, "abcdefgh");
         int max_w = min_w + min_w / 4;
         int left = db->frame.x + 2 + HLEAF_W + 4;
         int right = db->frame.x + db->frame.w - (SWITCH_W + 14) -
-                    db_hclock_w(db) - db_trayicons_w(db);  /* the tray's */
+                    db_hclock_w(db) - db_trayicons_w(db);  /* tray icons */
         int avail = right - left;
         int bw = (n > 0) ? avail / n : max_w;
         int bx, i2, k;
@@ -1478,8 +1486,7 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
                                       icon_size, icon_size };
             char label[TIKU_TRK_DB_LABEL_MAX];
 
-            /* A hovering drag lights the row it would be handed to, so
-             * the promise the drop makes is visible before it is made
+            /* A hovering drag lights the row it would be handed to
              * (DB-035). */
             if (db->drop_team == team) {
                 tiku_fill(s, row, TIKU_C_SELECT);
@@ -1488,9 +1495,7 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
             }
             /* The application's icon: its own, or the generic one
              * (tiku_trk_deskbar_team_icon).  DB-018: when even that is
-             * missing, the slot is left as it is.  A coloured rectangle
-             * where an icon failed looks like an application whose icon
-             * IS a blue square. */
+             * missing, the slot is left as it is. */
             (void)tiku_icon_paint(s, tiku_trk_deskbar_team_icon(db, team),
                                       icon.x, icon.y, icon_size);
 
@@ -1536,14 +1541,15 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
 }
 
 /**
- * @brief the mini bar: one row of icons
+ * @brief The mini dock's application button and, while it is open, its
+ *        running-apps menu (DB-037).
  */
 void
 db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f)
 {
     if (tiku_trk_deskbar_mini(db->dock)) {
-        /* The collapsed dock's second icon: the application list folded
-         * into one button that pops the running-apps menu (DB-037). */
+        /* The mini dock's second icon: one button under the leaf that
+         * opens the running-apps menu (DB-037). */
         tiku_rect_t ab = { db->frame.x + 2,
                                 db->frame.y + 2 + db_leaf_row() + 2,
                                 db->frame.w - 4, db_team_row() };
@@ -1573,12 +1579,12 @@ db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f)
                                      : db->frame.x + db->frame.w + 2;
             if (db->team_count == 0) {
                 tiku_ui_menu(s, am, items, n, db->apps_hot);
-            } else {                /* each wearing its own icon */
+            } else {                /* each with its team's icon */
                 tiku_ui_menu_icons(s, am, items, n, db->apps_hot,
                                    apps_menu_icon, db);
             }
             if (db->team_count == 0) {
-                /* Disabled the one way this layer says it (DB-004). */
+                /* The empty menu's one row, dimmed (DB-004). */
                 tiku_rect_t r = { am.x + 2, am.y + 2, am.w - 4,
                                        rowh };
 
@@ -1593,22 +1599,21 @@ db_draw_mini(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f)
 }
 
 #define LEAF_HELD      1.22f    /* the face while the menu is out */
-#define LEAF_HELD_EDGE 1.55f    /* its near edges, in shadow then */
+#define LEAF_HELD_EDGE 1.55f    /* its top and left edges, held   */
 #define LEAF_HOVER     0.72f    /* the face under the pointer     */
 
 /**
- * @brief the leaf, the one control that is not a list item
+ * @brief The leaf button: the TikuOS mark and name on the tab colour, held
+ *        down while its menu is out.  Sets @p leaf to its rectangle.
  */
 void
 db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
              tiku_rgb_t dark, tiku_rect_t *leaf)
 {
-    /* The leaf: the one control that is not a list item, so it is the one
-     * thing wearing the tab colour. */
-    /* Held down while its menu is out: a deeper face, the bevel turned
-     * so the light falls on the far edges, and the label a pixel down
-     * and right, the way a pressed button's does.  A click on it is
-     * seen at once, and the pop back says the menu has gone. */
+    /* The leaf is filled with the tab colour.  While its menu is out it is
+     * drawn pressed: a deeper face, the bevel dark on the top and left
+     * edges and light on the far ones, and the mark and label one pixel
+     * down and right. */
     int down = db->menu_open;
     tiku_rgb_t face;
 
@@ -1627,21 +1632,14 @@ db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
                     tiku_tint(TIKU_C_TAB, down ? TIKU_LIGHTEN_2
                                                : TIKU_DARKEN_2));
     {
-        /*
-         * The mark, then the name beside it.  Drawn without its own
-         * ground: the leaf already has a surface of its own and a pale
-         * square on the amber would read as a sticker stuck to it.
-         */
+        /* The mark, drawn without a ground of its own, then the name
+         * beside it. */
         int mark = db_leaf_row() - 10;  /* 24 at the default face */
         tiku_rect_t label = (*leaf);
         /*
-         * Shaded to the ground it is standing on, which is the leaf and
-         * so is a different colour in each of the three modes.  Light:
-         * as drawn -- near-black edges on amber.  Dark: lifted well up,
-         * because the deepened amber under it is dark enough that the
-         * mark's own edges would sink into the button and leave a smudge.
-         * Without hue: a touch down, so it sits on the mid-grey tab
-         * rather than floating over it.
+         * The mark's shade follows the leaf's colour in each theme: 1.0 in
+         * light (near-black edges on amber), 0.35 in dark (lighter edges
+         * on the darker amber), 1.15 without hue (on the mid-grey tab).
          */
         float shade = (db->theme == 1) ? 0.35f
                     : (db->theme == 2) ? 1.15f : 1.0f;
@@ -1659,16 +1657,17 @@ db_draw_leaf(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *fb,
 }
 
 /**
- * @brief the frame: the backdrop, the bevel, and where the bar sits when hidden
- * or vertical
+ * @brief Lay the frame out for the dock, capping @p rows at the room the
+ *        list has; while the bar is hidden, shrink it to its sliver and
+ *        paint that.
  */
 void
 db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
 {
     {
-        /* How much room the list actually has, once the leaf, the tray and
-         * the clock have taken theirs.  A list longer than that is what
-         * makes the bar scrollable (DB-034). */
+        /* The room the list has once the leaf, the tray, the switch and
+         * the clock have taken theirs.  A longer list makes the bar
+         * scrollable (DB-034). */
         int room = s->h - db->top_inset - (db_leaf_row() + PAD) -
                    db_tray_h(db) - SWITCH_ROW -
                    (db->settings.show_clock ? db_clock_row() : 0) - 2 * PAD;
@@ -1683,9 +1682,8 @@ db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
         }
     }
     db->frame.w = tiku_trk_deskbar_width(db);
-    /* The bar starts below whatever owns the top of the screen: with the
-     * global menu bar on, a Deskbar at y 0 would put its own leaf under
-     * the strip. */
+    /* The bar starts below the top inset, the global menu bar's strip
+     * when that bar is on. */
     db->frame.y = db->top_inset;
     if (tiku_trk_deskbar_vertical(db->dock)) {
         db->frame.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
@@ -1698,7 +1696,7 @@ db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
                       (db->settings.show_clock ? db_clock_row() : 0) + PAD;
     } else {
         /* Along an edge: the bar spans the screen and is as deep as one
-         * row needs.  The application STRIP lives here -- buttons that
+         * row needs.  The application strip lives here: buttons that
          * shrink as more launch and grow back as they quit (DB-033). */
         db->frame.x = 0;
         db->frame.w = s->w;
@@ -1708,10 +1706,8 @@ db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
         (*rows) = 0;
     }
     if (!tiku_trk_deskbar_shown(db)) {
-        /* Hidden: a sliver against its own edge, which is all there is
-         * left to touch (DB-051).  The frame is what the hit test and the
-         * drawing both read, so hiding is a geometry change and not a
-         * second drawing path. */
+        /* Hidden: the frame becomes a sliver against the bar's edge
+         * (DB-051); the hit test and the drawing both read the frame. */
         if (tiku_trk_deskbar_vertical(db->dock)) {
             if (db->frame.x > 0) {
                 db->frame.x = s->w - TIKU_TRK_DB_SLIVER;

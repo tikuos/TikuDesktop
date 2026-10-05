@@ -3,14 +3,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_desk.c - the program that is still standing when the desk is not.
+ * tiku_desk.c - the desktop supervisor: runs TikuDesktop and reports how it
+ * ended.
  *
- * Starts TikuDesktop with its stderr kept, waits, and when the desk
- * ends badly writes down how -- the signal, the status, what the desk
- * last printed, and where its own account of itself is -- then starts it
- * once more, told where that account is, so the first thing on the
- * screen says what happened.  A desk that ends badly twice in a minute
- * is left down, with the reason on this program's stderr.
+ * Starts TikuDesktop with its stderr in desk.log and waits.  When the desk
+ * ends badly it writes an exit report (the signal or status, the paths of
+ * the latest crash and stall reports, and the log's last lines) and
+ * starts the desk once more, passing -after and the report's path.  A desk
+ * that ends badly again is left down, with the reason on stderr.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,24 +29,22 @@
 #include "tiku_report.h"
 
 #define LOG_LIMIT       (1024L * 1024L)     /* desk.log rolls over at */
-#define TAIL_LINES      200
-#define TAIL_ROOM       (64 * 1024)
-#define SOON_S          60                  /* a second end this soon
-                                             * after a start is a loop,
-                                             * not a mishap */
+#define TAIL_LINES      200                 /* log lines in a report  */
+#define TAIL_ROOM       (64 * 1024)         /* bytes read for them    */
+#define SOON_S          60                  /* a second bad end sooner
+                                             * than this after the
+                                             * restart is reported as
+                                             * "within a minute" */
 
-static pid_t child;
-static char  folder[512];
-static volatile sig_atomic_t asked_to_end;   /* somebody ended US */
-
-/*---------------------------------------------------------------------------*/
-/* WHERE THINGS ARE                                                          */
-/*---------------------------------------------------------------------------*/
+static pid_t child;                          /* the running desk, or 0 */
+static char  folder[512];                    /* the reports folder     */
+static volatile sig_atomic_t asked_to_end;   /* SIGTERM, SIGINT or SIGHUP
+                                              * reached this program   */
 
 /**
- * @brief The desk to run: $TIKU_DESK when set (the harness names the
- *        development flavour so), else the one beside this program,
- *        else "TikuDesktop" on the PATH.
+ * @brief The desk to run: $TIKU_DESK when set (the test harness sets it),
+ *        else the TikuDesktop beside this program, else "TikuDesktop" on
+ *        the PATH.
  */
 static void
 find_desk(const char *argv0, char *out, size_t max)
@@ -89,10 +87,6 @@ make_path(const char *path)
     (void)mkdir(part, 0700);
 }
 
-/*---------------------------------------------------------------------------*/
-/* THE LOG                                                                   */
-/*---------------------------------------------------------------------------*/
-
 /**
  * @brief Open desk.log for the desk's stderr, rolling the old one over
  *        to desk.log.1 when it has grown past its limit.
@@ -111,7 +105,8 @@ open_log(void)
     return open(path, O_WRONLY | O_CREAT | O_APPEND, 0600);
 }
 
-/** @brief The last lines of desk.log, for the report. */
+/** @brief The last TAIL_LINES lines of desk.log, at most @p max - 1 bytes,
+ *         into @p out.  @return their length. */
 static size_t
 log_tail(char *out, size_t max)
 {
@@ -144,11 +139,8 @@ log_tail(char *out, size_t max)
     return n;
 }
 
-/*---------------------------------------------------------------------------*/
-/* THE REPORT                                                                */
-/*---------------------------------------------------------------------------*/
-
-/** @brief Write exit-<time>.txt for a desk that ended badly. */
+/** @brief Write exit-<time>.txt for a desk that ended with @p status, its
+ *         path into @p path, and point latest-exit.txt at it. */
 static void
 write_exit(int status, char *path, size_t max)
 {
@@ -175,7 +167,9 @@ write_exit(int status, char *path, size_t max)
     } else {
         fprintf(f, "stopped by: exit %d\n", WEXITSTATUS(status));
     }
-    /* The desk's own account, if it managed one, is the better one. */
+    /* The latest crash and stall reports in the folder, when there are
+     * any; either may be from an earlier run or from another program
+     * that reports into the same folder. */
     snprintf(latest, sizeof latest, "%s/latest-crash.txt", folder);
     if (access(latest, R_OK) == 0) {
         fprintf(f, "its own account: %s\n", latest);
@@ -198,7 +192,8 @@ write_exit(int status, char *path, size_t max)
 /* RUNNING THE DESK                                                          */
 /*---------------------------------------------------------------------------*/
 
-/** @brief What is sent to this program is passed on to the desk. */
+/** @brief Signal handler: note that this program was asked to end, and
+ *         pass @p sig on to the running desk. */
 static void
 pass_on(int sig)
 {
@@ -212,7 +207,8 @@ pass_on(int sig)
  * @brief Start the desk and wait for it.
  *
  * @param after the exit report to tell it about, or NULL.
- * @return the wait status, or -1 when it could not be started.
+ * @return the wait status, or -1 when no process could be made or waited
+ *         for; a desk that cannot be executed exits with status 127.
  */
 static int
 run_desk(const char *desk, int argc, char **argv, const char *after)
@@ -263,8 +259,8 @@ run_desk(const char *desk, int argc, char **argv, const char *after)
 }
 
 /**
- * @brief Ended the way a desk does when somebody quit it -- or when
- *        somebody ended this program, whose end the desk shared.
+ * @brief Whether the desk ended well: exit status 0, or any end after this
+ *        program was itself asked to end.
  */
 static int
 ended_well(int status)
@@ -273,6 +269,13 @@ ended_well(int status)
            (WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
+/**
+ * @brief tiku-desk [desk arguments]: run TikuDesktop with the arguments,
+ *        restarting it once after a bad end.
+ * @return 0 when the desk ended well, 127 when run_desk() fails, 1 when
+ *         it ended badly a second time, which includes a desk that cannot
+ *         be executed.
+ */
 int
 main(int argc, char **argv)
 {
@@ -303,8 +306,8 @@ main(int argc, char **argv)
     write_exit(status, report, sizeof report);
     fprintf(stderr, "tiku-desk: the desk ended badly; see %s\n", report);
 
-    /* Once more, told why.  A desk that ends badly again soon after is
-     * not restarted into a loop; it is left down with the reason here. */
+    /* Once more, passing -after and the report.  A second bad end is not
+     * restarted; the reason goes to stderr. */
     began = time(NULL);
     status = run_desk(desk, argc, argv, report);
     if (status >= 0 && ended_well(status)) {

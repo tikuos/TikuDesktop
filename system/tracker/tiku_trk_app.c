@@ -3,12 +3,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app.c - the window: a real Tracker list view over a real backend.
+ * tiku_trk_app.c - the single-window browser: a Tracker list view over a
+ * backend, run as its own application.
  *
- * One X11 window drawn entirely by us, wired to the pose engine: the title bar
- * sorts, rows select with Tracker's own rules, the keyboard navigates, and a
- * device's values update live because the loop pumps the backend between
- * events instead of blocking on X.
+ * One host window, drawn entirely by this shell and wired to the pose
+ * engine: the title strip sorts, rows select by the engine's rules, the
+ * keyboard navigates, and a device's values update live because the loop
+ * pumps the backend between events.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,7 +30,7 @@ browser_paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
 }
 
 /*---------------------------------------------------------------------------*/
-/* the run                                                                   */
+/* THE RUN                                                                   */
 /*---------------------------------------------------------------------------*/
 
 /**
@@ -53,9 +54,8 @@ tracker_run(int argc, char **argv)
     tiku_trk_cwmenu_init(&a.menus);
     a.bar_open = -1;
     a.show_nav = 1;
-    /* Zero is a valid row, so the "nothing to select" state has to be set
-     * rather than zeroed: left at 0 it would re-select the first row after
-     * every operation (FS-050). */
+    /* -1: no row to select after an operation.  Row 0 is a real row
+     * (FS-050). */
     a.select_next = -1;
     code = browser_parse_args(argc, argv, &opt);
     if (code >= 0) {
@@ -70,9 +70,9 @@ tracker_run(int argc, char **argv)
     while (a.running) {
         (void)tiku_work_collect();
         browser_sync_navigator_preference(&a, 0);
-        /* Events first, then the device: the window stays responsive while a
-         * slow link is being read, which is the whole point of pumping here
-         * rather than blocking on either one. */
+        /* Events first, then the device: the loop pumps both without
+         * blocking on either, so the window answers while a slow link is
+         * read. */
         browser_turn_begin(&a, &lp);
         browser_turn_end(&a, &opt, &lp);
     }

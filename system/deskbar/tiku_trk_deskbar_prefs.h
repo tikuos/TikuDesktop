@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_prefs.h - durable Deskbar preference model.
+ * tiku_trk_deskbar_prefs.h - the Deskbar's preferences: their values, the
+ * stored record, and the rules its preferences window follows.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,11 +14,12 @@
 #include "tiku_trk_deskbar.h"
 #include "tiku_state.h"
 
-#define TIKU_TRK_DB_ICON_MIN 16
-#define TIKU_TRK_DB_ICON_MAX 96
-#define TIKU_TRK_DB_RECENT_LIMIT 50
+#define TIKU_TRK_DB_ICON_MIN 16          /**< smallest list icon, px      */
+#define TIKU_TRK_DB_ICON_MAX 96          /**< largest list icon, px       */
+#define TIKU_TRK_DB_RECENT_LIMIT 50      /**< longest recent list         */
 
-/** @brief The fifteen values covered by Defaults and Revert (DB-062). */
+/** @brief The Deskbar settings, every one covered by Defaults and Revert
+ *         (DB-062). */
 typedef struct tiku_trk_deskbar_settings {
     int sort_apps;          /* the application list in name order */
     int tracker_first;      /* Tracker's own row ahead of the rest */
@@ -36,13 +38,15 @@ typedef struct tiku_trk_deskbar_settings {
     int show_seconds;       /* the clock with seconds */
     int show_day_of_week;   /* the clock with the weekday */
     int show_timezone;      /* the clock with the zone */
-    int font_size;      /* UI text size in px; the toolkit snaps it */
+    int font_size;      /* UI text size in px: even, 10 to 16 */
     int font_family;    /* which baked family the interface is drawn in */
 } tiku_trk_deskbar_settings_t;
 
+/** @brief The settings being edited, and what they were when the window
+ *         opened. */
 typedef struct {
-    tiku_trk_deskbar_settings_t value;
-    tiku_trk_deskbar_settings_t opened;
+    tiku_trk_deskbar_settings_t value;  /* as edited                */
+    tiku_trk_deskbar_settings_t opened; /* what Revert goes back to */
 } tiku_trk_deskbar_prefs_t;
 
 /** @brief The settings a fresh Deskbar has. */
@@ -82,20 +86,26 @@ int tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
                                 tiku_store_t *store);
 /**
  * @brief Write the settings record to @p store.
- * @return What the store says of the write, or -1 with nothing to write to.
+ * @return tiku_state_write()'s result, or -1 for no prefs or no store.
  */
 int tiku_trk_deskbar_prefs_save(const tiku_trk_deskbar_prefs_t *prefs,
                                 tiku_store_t *store);
 
-/** @brief Map the little monitor's thirds to its six supported docks. */
+/**
+ * @brief Map a point in the dock picker's monitor to a dock: the left and
+ *        right thirds give the side docks (expanded in the middle band,
+ *        mini above and below it), the middle third the top or bottom bar.
+ */
 tiku_trk_db_dock_t tiku_trk_deskbar_prefs_dock_at(
     int x, int y, int width, int height, tiku_trk_db_dock_t current);
 
-/** @brief Map the selector's arrow/numpad key names to a dock. */
+/** @brief Map the selector's arrow/numpad key names to a dock.
+ *  @return 1 with the dock in @p dock, 0 for a key that names none. */
 int tiku_trk_deskbar_prefs_dock_key(const char *key,
                                     tiku_trk_db_dock_t *dock);
 
-/** @brief Restore a complete on-screen preferences frame, or center it. */
+/** @brief The preferences window's frame: the saved one when @p saved and
+ *         it lies wholly on the screen, else centred. */
 tiku_rect_t tiku_trk_deskbar_prefs_frame(int saved, int x, int y,
                                               int screen_w, int screen_h,
                                               int width, int height);

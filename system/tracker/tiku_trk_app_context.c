@@ -3,15 +3,20 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_context.c - the state, its geometry, and the context commands
- * run in
+ * tiku_trk_app_context.c - the window's geometry, its row lookups, the
+ * context the menus' enable rules read, the modal answers, and the column
+ * titles.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_trk_app_private.h"
 
-/** @brief Hand a modal filesystem answer back to the operation engine. */
+/**
+ * @brief Hand the answer to a modal question to whoever asked: the
+ *        operation engine for a conflict or an error, the file actions for
+ *        Empty Trash and the delete question.
+ */
 void
 browser_app_alert_answer(void *context, const tiku_alert_t *alert)
 {
@@ -32,9 +37,9 @@ browser_app_alert_answer(void *context, const tiku_alert_t *alert)
         }
     } else if (alert->tag == TIKU_TRK_ALERT_TAG_DELETE) {
         {
-            /* Cancel, Move to Trash, Delete, in the order the buttons
-             * are offered (FS-046); the alert's own default already
-             * steps left of Delete, so Return lands on Move to Trash. */
+            /* Cancel, Move to Trash, Delete: the buttons' order (FS-046).
+             * The alert's default is the button left of Delete, so Return
+             * answers Move to Trash. */
             static const tiku_trk_delete_answer_t by_button[] = {
                 TIKU_TRK_DELETE_ANSWER_CANCEL,
                 TIKU_TRK_DELETE_ANSWER_TRASH,
@@ -42,10 +47,8 @@ browser_app_alert_answer(void *context, const tiku_alert_t *alert)
             };
             int chosen = (alert->chosen >= 0 && alert->chosen < 3)
                              ? alert->chosen : 0;
-        /* Cancel, Move to Trash, Delete, in the order the buttons are
-         * offered (FS-046).  The folder wrapper is refreshed here: the
-         * question was modal, but the answer must still act on the view
-         * the window is showing NOW. */
+        /* The folder wrapper is refreshed so the answer acts on the view
+         * the window shows now. */
         a->folder.view = a->view;
         snprintf(a->folder.path, sizeof a->folder.path, "%s",
                  tiku_trk_poseview_path(a->view));
@@ -56,7 +59,8 @@ browser_app_alert_answer(void *context, const tiku_alert_t *alert)
     a->dirty = 1;
 }
 
-/** @brief Stop asks the operation engine to cancel at its safe boundary. */
+/** @brief The alert's Stop: ask the operation engine to cancel at its
+ *         next safe boundary. */
 void
 browser_app_alert_stop(void *context)
 {
@@ -151,14 +155,15 @@ browser_measure_prefix_px(const char *text, int n, void *ctx)
     return tiku_text_width(tiku_font_plain(), tmp);
 }
 
-/** @brief The navigator takes no layout space while globally hidden. */
+/** @brief The navigator strip's height: NAV_H while it is shown, else 0. */
 int
 browser_navigator_height(const app_t *a)
 {
     return a->show_nav ? NAV_H : 0;
 }
 
-/** @brief Geometry of the row area, derived once per draw. */
+/** @brief The list area: below the menu bar, the navigator and, in list
+ *         mode, the column titles; above the count strip. */
 tiku_rect_t
 browser_list_rect(const app_t *a)
 {
@@ -167,8 +172,8 @@ browser_list_rect(const app_t *a)
     int titled = (tiku_trk_poseview_mode(a->view) == TIKU_TRK_MODE_LIST);
 
     r.x = BORDER;
-    /* The column title bar belongs to list mode; icon mode gets the space
-     * back, and hit-testing must use the same rectangle drawing does. */
+    /* The column title strip exists in list mode only.  Hit-testing and
+     * drawing both use this rectangle. */
     r.y = TAB_H + BORDER + a->menus.bar.height + browser_navigator_height(a) +
           (titled ? TITLE_H : 0);
     r.w = a->surf->w - 2 * BORDER - (titled ? SCROLL_W : 0);
@@ -176,7 +181,7 @@ browser_list_rect(const app_t *a)
     return r;
 }
 
-/** @brief Browser controls directly below the menu bar. */
+/** @brief The navigator strip, directly below the menu bar. */
 tiku_rect_t
 browser_navigator_rect(const app_t *a)
 {
@@ -265,8 +270,7 @@ browser_menu_ctx(app_t *a, unsigned mods)
     }
     p = tiku_trk_poseview_active(a->view);
     c.can_edit_name = (c.selection == 1);
-    /* Without these every Paste stays grey: the enable rules can only see
-     * what the context carries (CW-042). */
+    /* The Paste rules read these two (CW-042). */
     c.clipboard_has_refs = tiku_trk_clip_count(&a->clip) > 0;
     c.clipboard_has_layout = tiku_trk_poseview_has_layout_clipboard();
     c.can_open_parent = strcmp(tiku_trk_poseview_path(a->view), "/") != 0;
@@ -294,8 +298,8 @@ browser_menu_ctx(app_t *a, unsigned mods)
         c.selection_is_volume = p->model.kind == TIKU_KIND_VOLUME ||
                                 p->model.kind == TIKU_KIND_ROOT;
         if (c.selection_is_volume) {
-            /* Scanned only when a volume is the selection: menus are
-             * rebuilt per draw, and the mount table is a file. */
+            /* The mount table is a file and the menus are rebuilt every
+             * draw, so it is scanned only when a volume is selected. */
             tiku_volumes_t vols;
             const tiku_volume_t *vol;
 
@@ -338,17 +342,16 @@ browser_col_x(const app_t *a, const tiku_trk_column_t *c)
 /**
  * @brief One column title (TS-017, TS-018).
  *
- * The rectangle is the column's, widened by both margins: the left margin is
- * where the sort mark lives, which is why the text starts one pixel inside
- * the DATA rather than inside the rectangle.
+ * The rectangle is the column's, widened by both margins.  The sort mark
+ * lives in the left margin, and left-aligned text starts one pixel inside
+ * the column's data edge.
  */
 void
 browser_draw_title(app_t *a, tiku_rect_t strip, const tiku_trk_column_t *c,
            int pressed, int drag_dx)
 {
     tiku_surface_t *s = a->surf;
-    /* Three-quarters of the body text, the source's own strip proportion
-     * (TS-019): the titles are labels ABOUT the rows, not rows. */
+    /* The titles are three-quarters of the body text size (TS-019). */
     const tiku_font_t *f =
         tiku_font_at(tiku_font_size() * 3 / 4);
     tiku_rect_t r;
@@ -363,9 +366,8 @@ browser_draw_title(app_t *a, tiku_rect_t strip, const tiku_trk_column_t *c,
                                  : TIKU_C_PANEL);
     tiku_bevel(s, r, tiku_tint(TIKU_C_PANEL, 0.0f),
                     tiku_tint(TIKU_C_PANEL, 1.06f));
-    /* Truncated against the column's own width -- the margins are not
-     * text space -- and losing its END, because the head of a column name
-     * is what identifies it. */
+    /* Truncated to the column's own width, without the margins, losing
+     * its end: the head of a column name identifies it. */
     (void)tiku_text_fit(c->title, c->width, TIKU_TRUNC_END,
                             browser_measure_text, (void *)f, fit, sizeof fit);
     tw = tiku_text_width(f, fit);
@@ -374,8 +376,8 @@ browser_draw_title(app_t *a, tiku_rect_t strip, const tiku_trk_column_t *c,
         tx = data_x + c->width - tw;
         break;
     case TIKU_TRK_ALIGN_CENTER:
-        /* Centred in the whole rectangle, both margins included, and on the
-         * width AFTER truncation. */
+        /* Centred in the whole rectangle, both margins included, on the
+         * width after truncation. */
         tx = r.x + (r.w - tw) / 2;
         break;
     default:
@@ -386,16 +388,14 @@ browser_draw_title(app_t *a, tiku_rect_t strip, const tiku_trk_column_t *c,
                    pressed ? tiku_tint(TIKU_C_TEXT, 1.20f)
                            : TIKU_C_TEXT);
     if (pressed && drag_dx != 0) {
-        /* A dragged title is outlined where it will LAND, which is the only
-         * thing on screen that says the drag is going to move a column
-         * rather than sort it. */
+        /* A dragged title is outlined at its dragged place: dropping it
+         * moves the column. */
         tiku_frame(s, r, TIKU_C_FOCUS);
     }
     {
         /* The sort mark sits in the left margin, six pixels before the text
-         * starts, so it follows the alignment.  The primary key is drawn
-         * darker than the tie-break: two identical marks would say the
-         * listing has two equal keys. */
+         * starts, so it follows the alignment.  The primary key's mark is
+         * darker than the tie-break's. */
         int primary = (c->field == tiku_trk_poseview_sort_field(a->view));
         int secondary = (c->field ==
                          tiku_trk_poseview_sort_secondary(a->view));
@@ -405,9 +405,8 @@ browser_draw_title(app_t *a, tiku_rect_t strip, const tiku_trk_column_t *c,
             tiku_tint(TIKU_C_PANEL, primary ? 1.60f : 1.30f);
 
         if (primary || secondary) {
-            /* Ascending points DOWN and reverse points UP, which is the way
-             * round the original draws it -- the widest row is the base, so
-             * the base has to be at the top for a downward apex. */
+            /* Ascending points down and reverse points up: three rows,
+             * the widest at the top for a downward apex. */
             for (k = 0; k < 3; k++) {
                 int wgt = up ? k : 2 - k;
 

@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_drops.c - drops onto the bar
+ * tiku_trk_deskbar_drops.c - drops onto the bar and its open menu, and the
+ * clock's fixture and stamp.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -40,7 +41,7 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
         }
         ry -= team_h + SEAM;
         if (db->teams[team].expanded) {
-            /* A window row is not a drop target of its own: the drop
+            /* A window row is not a drop target of its own: a drop there
              * belongs to the application that owns it. */
             ry -= db->teams[team].win_count * (db_win_row() + SEAM);
         }
@@ -61,8 +62,7 @@ tiku_trk_deskbar_set_dragging(tiku_trk_deskbar_t *db, int dragging)
     if (db != NULL) {
         db->dragging = dragging;
         if (!dragging) {
-            /* The highlight belongs to the drag: when one ends there is
-             * nothing for it to be promising. */
+            /* Ending the drag clears the drop highlight. */
             db->drop_team = -1;
         }
     }
@@ -88,9 +88,9 @@ tiku_trk_deskbar_item_enabled(const tiku_trk_deskbar_t *db, int fixed)
     if (db == NULL) {
         return 1;
     }
-    /* Only the FIXED items go dead while a drag is in flight; folders and
-     * recents stay live, because those are exactly the drop targets the
-     * menu exists to offer during one (DB-008). */
+    /* While a drag is in flight a fixed row is reported disabled; folder
+     * entries and recents stay enabled as the menu's drop targets
+     * (DB-008). */
     return fixed ? !db->dragging : 1;
 }
 
@@ -121,10 +121,10 @@ tiku_trk_deskbar_team_accepts(const tiku_trk_deskbar_t *db, int i,
         return 1;
     }
     if (ntypes <= 0) {
-        return 0;                   /* nothing known about them: refuse */
+        return 0;                   /* no types: refused */
     }
-    /* EVERY type must be one it opens: handing an application a mixed
-     * selection it can only half read is a drop that half works. */
+    /* Every type must be one it opens: a mixed selection it can read
+     * only part of is refused. */
     for (t = 0; t < ntypes; t++) {
         int ok = 0;
 
@@ -147,9 +147,7 @@ tiku_trk_deskbar_launchable(const tiku_model_t *m)
     if (m == NULL) {
         return 0;
     }
-    /* A directory is silently ignored rather than refused: launching one
-     * has no meaning, and complaining about something the user very likely
-     * did by accident would be noise (DB-066). */
+    /* A directory is not launchable (DB-066). */
     return !tiku_model_is_container(m);
 }
 
@@ -177,9 +175,9 @@ tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
     if (i < 0 || i >= db->leaf_count) {
         return TIKU_TRK_DB_DROP_NONE;
     }
-    /* A FOLDER takes the links; a file in the menu is launched with them;
-     * everything else is fixed, and fixed items are not drop targets at
-     * all while a drag is in flight (DB-008). */
+    /* A folder entry, or an open-path row labelled by its absolute path,
+     * takes the links; any other open-path row is a file, launched with
+     * them; every other row is fixed and takes nothing (DB-008). */
     if ((db->leaf[i].kind == TIKU_TRK_DB_ITEM_EXPAND &&
          db->leaf[i].expand == TIKU_TRK_DB_EXPAND_DIR) ||
         (db->leaf[i].kind == TIKU_TRK_DB_ITEM_ROW &&
@@ -223,8 +221,8 @@ tiku_trk_deskbar_clock_stamp(const tiku_trk_deskbar_t *db, char *out,
     }
     now = (db->fixed_now != 0) ? db->fixed_now : time(NULL);
     (void)localtime_r(&now, &tmv);
-    /* Exactly the fields the rendering varies with: a repaint is owed
-     * only when one of them turns over (DB-044). */
+    /* The fields the rendering can vary with: a repaint is owed only when
+     * one of them turns over (DB-044). */
     (void)strftime(out, max, db->settings.show_seconds
                                  ? "%a %e %b %H:%M:%S %Z"
                                  : "%a %e %b %H:%M %Z", &tmv);

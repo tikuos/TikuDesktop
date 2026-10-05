@@ -5,10 +5,10 @@
  *
  * tiku_trk_deskicons.h - the rules the Desktop's own icons obey.
  *
- * The Desktop is a pose view with three things no folder window has: it is
- * never a list, its icons must stay somewhere the user can reach them, and
- * it shows the union of every volume's Desktop folder rather than one
- * directory.  The last of those is a virtual directory, so it is one.
+ * The Desktop is a pose view that is never a list, keeps its icons where
+ * the user can reach them, and shows the union of the user's Desktop
+ * folder and those of the volumes that show an icon, built as a virtual
+ * directory (tiku_vdir).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,16 +26,15 @@ typedef struct {
 /**
  * @brief Coerce a saved view mode for the Desktop (PVL-008).
  *
- * The Desktop is never a list: a saved state that says otherwise is from a
- * window, or from a build that allowed it, and honouring it would leave the
- * user with a Desktop they cannot put icons on.
- *
- * @return the mode the Desktop should actually use.
+ * @return @p saved, except that list mode becomes icon mode: the Desktop
+ *         is never a list.
  */
 int tiku_trk_deskicons_mode(int saved);
 
-/** @brief How far an icon must stay clear of the Deskbar and of others. */
+/** @brief How far an icon stays clear of the Deskbar, in pixels. */
 #define TIKU_TRK_DESK_BAR_MARGIN   10
+/** @brief How far it stays clear of a replicant or another reserved
+ *         rectangle, in pixels. */
 #define TIKU_TRK_DESK_OTHER_MARGIN  5
 
 /**
@@ -55,12 +54,14 @@ int tiku_trk_deskicons_valid(tiku_trk_rect_t r, tiku_trk_rect_t screen,
  */
 int tiku_trk_deskicons_pull_back(tiku_trk_rect_t *r, tiku_trk_rect_t screen);
 
-/** @brief Preserve a rectangle's relative position across a screen resize. */
+/** @brief Move @p r so it keeps its relative position from @p old_area in
+ *         @p new_area, across a screen resize. */
 void tiku_trk_deskicons_reflow(tiku_trk_rect_t *r,
                                tiku_trk_rect_t old_area,
                                tiku_trk_rect_t new_area);
 
-/** @brief Move a rectangle to the nearest unoccupied grid slot. */
+/** @brief Move a rectangle to the nearest unoccupied grid slot in @p area.
+ *  @return 1 when it found one, 0 when none is free. */
 int tiku_trk_deskicons_find_free(tiku_trk_rect_t *r,
     tiku_trk_rect_t area, const tiku_trk_rect_t *others, int nothers,
     int step_x, int step_y);
@@ -71,6 +72,7 @@ typedef struct {
     int x, y;
 } tiku_trk_deskpos_t;
 
+/** @brief How many screen sizes one icon remembers a position for. */
 #define TIKU_TRK_DESK_POS_MAX 8
 
 /** @brief Every position remembered for one icon. */
@@ -92,15 +94,15 @@ int tiku_trk_deskicons_recall(const tiku_trk_deskpos_set_t *s, int sw,
                               int sh, int *x, int *y);
 
 /**
- * @brief Build the Desktop's source: every volume's Desktop folder.
+ * @brief Build the Desktop's source: the Desktop folders of @p home and of
+ *        each volume that shows an icon.
  *
- * A union rather than one directory, so a second disk's Desktop items
- * appear beside the boot volume's (PVN-051).
+ * Each volume that shows an icon contributes its Desktop folder, so a
+ * second disk's Desktop items appear beside the boot volume's (PVN-051).
  *
- * @param home The boot volume's Desktop folder, which on a system with a
- *             home directory is the user's own rather than one at the
- *             mount point.  It contributes FIRST, so a name it holds is
- *             the one that shows.  NULL or "" leaves it out.
+ * @param home The boot volume's Desktop folder: the user's own on a system
+ *             with a home directory.  It contributes first, so a name it
+ *             holds is the one that shows.  NULL or "" leaves it out.
  */
 void tiku_trk_deskicons_sources(const tiku_volumes_t *vs,
                                 tiku_backend_t *b, const char *home,
@@ -109,8 +111,7 @@ void tiku_trk_deskicons_sources(const tiku_volumes_t *vs,
 /**
  * @brief Whether the "/" icon should be shown, given the two settings.
  *
- * They are mutually exclusive in the original's preferences; here the
- * question is only whether the icon appears, so both are read (PVN-058).
+ * Either setting alone shows it (PVN-058).
  */
 int tiku_trk_deskicons_show_disks(int show_disks_icon, int volumes_on_desktop);
 
@@ -118,8 +119,8 @@ int tiku_trk_deskicons_show_disks(int show_disks_icon, int volumes_on_desktop);
  * @brief Whether @p v earns its own Desktop pose (PVN-040).
  *
  * The boot volume is already the Disks pose; a shared volume follows its
- * own setting; and only a persistent volume shows at all -- an icon for a
- * RAM filesystem would be an icon for a thing that forgets.
+ * own setting; and only a persistent volume shows at all, so a RAM
+ * filesystem gets no icon.
  */
 int tiku_trk_deskicons_volume_pose(const tiku_volumes_t *vs,
                                    const tiku_volume_t *v,

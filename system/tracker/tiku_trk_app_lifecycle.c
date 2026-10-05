@@ -3,8 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_lifecycle.c - The way out: the window, the surface, the work
- * still under way, and the script's verdict.
+ * tiku_trk_app_lifecycle.c - the command line, the boot up to the first
+ * frame, and the teardown.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,8 +12,9 @@
 #include "tiku_trk_app_private.h"
 
 /**
- * @brief The way out: the window, the surface, the work still under way, and
- * the script's verdict.
+ * @brief Close the window and the surface, let file work under way finish,
+ *        report the script's verdict, and free the rest.
+ * @return the script's verdict, or 0 when no script ran.
  */
 int
 browser_teardown(app_t *app, browser_loop_t *lp)
@@ -24,9 +25,8 @@ browser_teardown(app_t *app, browser_loop_t *lp)
     tiku_sound_free();
     tiku_host_close(app->host);
     tiku_surface_free(app->surf);
-    /* Quitting waits for work already under way, up to five seconds
-     * (AW-009): the alternative is a copy abandoned mid-file with
-     * nothing to say so. */
+    /* Quitting waits up to five seconds for file work already under way
+     * (AW-009). */
     browser_drain_fs(app->fs);
     if (lp->sc != NULL) {
         rc = tiku_trk_script_report(lp->sc, "tracker");
@@ -39,9 +39,9 @@ browser_teardown(app_t *app, browser_loop_t *lp)
 }
 
 /**
- * @brief Everything between the command line and the first frame.  @return -1
- * once the window is up; otherwise the exit code of the piece that
- * refused.
+ * @brief Everything between the command line and the first frame.
+ * @return -1 when every step succeeded; otherwise the exit code of the
+ *         step that failed.
  */
 int
 browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
@@ -82,16 +82,13 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
     tiku_trk_status_overlay_init(&app->status_overlay, app->surf, WIN_W, WIN_H,
                                  &app->dirty, browser_app_alert_answer,
                                  browser_app_alert_stop, app);
-    /* No preferences window in this shell, but the command layer now has
-     * somewhere to ASK: the overlay's alert, so the delete question and a
-     * collision are put up here exactly as the desktop puts them up
-     * (FS-046, FEATURES rule 6). */
+    /* The command layer asks its questions on the overlay's alert, as in
+     * the desktop shell (FS-046; rule 6 of docs/contracts/tracker.md). */
     tiku_trk_folder_file_actions_init(&app->file_actions, app->fs, app->backend,
         &app->clip, NULL, NULL,
         tiku_trk_status_overlay_alert(&app->status_overlay), NULL, NULL,
         app->status, sizeof app->status, NULL, NULL);
-    /* Derived from the live face, not a constant: the row grows with
-     * the UI font the way the original's font metric did (IV-013). */
+    /* The row height follows the interface face (IV-013). */
     app->row_h = tiku_font_plain()->height + 5;
     {
         const char *home = getenv("HOME");
@@ -104,9 +101,9 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
     }
 
     if (o->script_path != NULL) {
-        /* Displayless.  The shell draws into the same surface either way,
-         * so a scripted run exercises the real draw path -- it just has
-         * nobody to show it to (see tiku_trk_script.h). */
+        /* Displayless: the shell draws into the same surface, so a
+         * scripted run exercises the real draw path (see
+         * tiku_trk_script.h). */
         lp->sc = tiku_trk_script_open(o->script_path);
         if (lp->sc == NULL) {
             return 2;
@@ -122,15 +119,14 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
                 tiku_host_scale(app->host), TIKU_C_PANEL);
         }
     }
-    /* The window measures its own labels, which is what lets a pose's rect
-     * grow to fit a long name instead of staying icon-sized (PVL-065), and
-     * what "fit this column to its widest value" is measured with. */
+    /* The window measures labels for the view: a pose's rectangle grows
+     * to fit a long name (PVL-065), and column fitting measures with
+     * it. */
     tiku_trk_poseview_set_measure(app->view, browser_measure_text,
                                   (void *)tiku_font_plain());
     tiku_trk_poseview_set_font_size(app->view,
                                     tiku_font_plain()->height);
-    /* And the metrics the icon-mode CELLS are derived from, which is a
-     * different question from the width columns are scaled against. */
+    /* The face metrics the icon-mode cells are derived from. */
     tiku_trk_poseview_set_font_metrics(app->view, tiku_font_plain()->height,
                                        tiku_font_plain()->ascent);
     (void)tiku_trk_poseview_restore_columns(app->view);
@@ -139,8 +135,8 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
     browser_settle_writability(app);
     browser_retitle(app);
     if (getenv("TRK_DEMO_OPS") != NULL) {
-        /* Scripted: select everything and duplicate, so the capture shows a
-         * real operation and its result. */
+        /* TRK_DEMO_OPS: everything selected and duplicated, for a
+         * capture of an operation. */
         char paths[64][TIKU_PATH_MAX];
         const char *sel[64];
         int n;
@@ -153,8 +149,8 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
         }
     }
     if (getenv("TRK_DEMO_ICON") != NULL) {
-        /* Scripted: icon mode, auto-place, then move two icons the way a
-         * user would drag them, so the capture shows real spatial state. */
+        /* TRK_DEMO_ICON: icon mode, auto-placed, with the first two icons
+         * moved and the second selected. */
         tiku_rect_t lr = browser_list_rect(app);
         tiku_scroll_detach(&app->sb);
         tiku_trk_poseview_set_mode(app->view, TIKU_TRK_MODE_ICON);
@@ -178,8 +174,8 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
         tiku_trk_poseview_click(app->view, 2, 0);
     }
     if (getenv("TRK_DEMO_COLS") != NULL) {
-        /* Scripted: a resize in progress, so the capture shows the guide
-         * line standing where the column will fall, and the pressed title. */
+        /* TRK_DEMO_COLS: a resize of the Name column in progress, with
+         * its guide line and pressed title. */
         int r = 0;
 
         (void)tiku_trk_titleview_bounds(&app->tv, TIKU_TRK_COL_NAME, NULL, &r);
@@ -190,8 +186,8 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
                                              2 * TIKU_TRK_CLICK_SPEED_US);
     }
     if (getenv("TRK_DEMO_FILTER") != NULL) {
-        /* Scripted: two filter terms and a selection, so a capture shows the
-         * count view carrying "a|m" and the rows that match both. */
+        /* TRK_DEMO_FILTER: two filter terms, 'e' and 's', and the first
+         * matching row selected. */
         tiku_trk_poseview_set_filtering(app->view, 1);
         tiku_trk_poseview_type_ahead(app->view, 'e');
         (void)tiku_trk_poseview_filter_term(app->view);
@@ -199,14 +195,13 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
         tiku_trk_poseview_click(app->view, 0, 0);
     }
     if (getenv("TRK_DEMO_RENAME") != NULL) {
-        /* Scripted: the inline editor open on a row, with the whole name
-         * selected as it is when it opens. */
+        /* TRK_DEMO_RENAME: the inline editor open on the second row. */
         tiku_trk_poseview_click(app->view, 1, 0);
         browser_begin_rename(app);
     }
     if (getenv("TRK_DEMO_SELECT") != NULL) {
-        /* Scripted interaction for a reviewable screenshot: select a range
-         * the way a user would, without needing someone at the keyboard. */
+        /* TRK_DEMO_SELECT: rows 16 to 18 selected by a click and a
+         * Shift-click. */
         tiku_trk_poseview_click(app->view, 16, 0);
         tiku_trk_poseview_click(app->view, 18, TIKU_TRK_MOD_SHIFT);
     }
@@ -214,15 +209,17 @@ browser_boot(app_t *app, browser_options_t *o, browser_loop_t *lp)
     app->dirty = 1;
     app->active = 1;
     if (o->shot != NULL) {
-        /* Give the first values time to arrive before capturing. */
+        /* The -shot frame is due 1.5 s after boot, which gives the first
+         * values time to arrive. */
         lp->shot_at_us = tiku_trk_now() + 1500000;
     }
     return -1;
 }
 
 /**
- * @brief What the command line asked for, into @p o.  @return -1 to carry on;
- * otherwise an exit code.
+ * @brief Fill @p o from the command line: -d, -p port, -b baud, -shot
+ *        file, -script file, -mute, -seconds n, and the folder to open.
+ * @return -1, to carry on: no option ends the run here.
  */
 int
 browser_parse_args(int argc, char **argv, browser_options_t *o)

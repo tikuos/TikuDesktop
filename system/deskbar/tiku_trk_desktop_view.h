@@ -3,7 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_view.h - the Desktop pose-view controller.
+ * tiku_trk_desktop_view.h - the Desktop pose-view controller: the poses
+ * on the screen's backdrop, their sources, and their placement around the
+ * Deskbar.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,16 +23,16 @@
 
 /** @brief Desktop view state, including its union source and watcher. */
 typedef struct {
-    tiku_trk_folder_window_t folder;
-    tiku_vdir_t          sources;
-    tiku_vdir_watch_t    watch;
+    tiku_trk_folder_window_t folder;    /* the view behind the backdrop */
+    tiku_vdir_t          sources;       /* the Desktop folders it shows  */
+    tiku_vdir_watch_t    watch;         /* change watch on the sources  */
     tiku_backend_t      *backend;
     tiku_fs_t           *fs;
     tiku_trk_prefs_t        *prefs;
     tiku_trk_deskbar_t      *deskbar;
     int                      screen_w;
     int                      screen_h;
-    int                      disks_shown;
+    int                      disks_shown;   /* the Disks pose is shown  */
     /* Pixels at the top the poses must keep clear (the global menu
      * bar's strip). */
     int                      top_inset;
@@ -39,7 +41,7 @@ typedef struct {
 /**
  * @brief Set the controller up over the backend, filesystem, settings and
  *        bar, build the Desktop's poses and take the workspace backdrop.
- * @return 0, or -1 for a missing argument.
+ * @return 0, or -1 for a missing argument or a view that cannot be made.
  */
 int tiku_trk_desktop_view_init(tiku_trk_desktop_view_t *controller,
     tiku_backend_t *backend, tiku_fs_t *fs,
@@ -59,9 +61,10 @@ int tiku_trk_desktop_view_shows_disks(
 tiku_trk_rect_t tiku_trk_desktop_view_area(
     const tiku_trk_desktop_view_t *controller);
 /**
- * @brief Take a new screen size: poses keep their places on the grid of
- *        the area, and any left off the screen are brought back.
- * @return How many poses moved.
+ * @brief Take a new screen size: poses keep their relative places in the
+ *        area, a pose whose new place is taken moves to the nearest free
+ *        grid slot, and any left off the screen are brought back.
+ * @return How many poses moved; 0 when the size is unchanged.
  */
 int tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
     int screen_w, int screen_h);
@@ -78,21 +81,23 @@ int tiku_trk_desktop_view_ensure_visible(
  */
 void tiku_trk_desktop_view_rebuild(tiku_trk_desktop_view_t *controller);
 /**
- * @brief Re-ask whether the Trash is full, across every volume (AW-029).
- *
- * The listing diff only re-stats an entry whose own directory changed, and
- * a file trashed on ANOTHER volume changes nothing under the Desktop.  So
- * on the owner's slow beat the desk Trash pose is asked again -- and the
- * answer is the union over the same trash directories the union window
- * lists (PVN-027): a file trashed on a memory stick fills the desk icon
- * even while the home trash is empty.
- *
- * @return nonzero when the icon flipped and a repaint is owed.
+ * @brief Keep the top @p inset pixels clear of poses (the global menu
+ *        bar's strip); the poses move out from under it as on a resize.
  */
 void tiku_trk_desktop_view_set_top_inset(tiku_trk_desktop_view_t *controller,
                                          int inset);
 
-/** @brief Re-stat the desk Trash pose's fullness (AW-029). */
+/**
+ * @brief Re-ask whether the Trash is full, across every volume (AW-029).
+ *
+ * The desk Trash pose is full when any trash directory the Trash window
+ * lists has an entry (PVN-027): a file trashed on a memory stick fills it
+ * while the home trash is empty.
+ *
+ * @note The listing diff does not re-stat the pose for a file trashed on
+ *       another volume; the shell calls this every few seconds.
+ * @return nonzero when the icon flipped and a repaint is owed.
+ */
 int tiku_trk_desktop_view_trash_check(tiku_trk_desktop_view_t *controller);
 
 /**

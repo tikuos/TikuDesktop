@@ -3,19 +3,15 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_script.c - what a script may ask of the window
+ * tiku_trk_app_script.c - what a script may ask of the window, and the hit
+ * tests the pointer shares with it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_trk_app_private.h"
 
-/**
- * @brief The character a key event types, or 0.
- *
- * With no display there is no keyboard map to consult, so a Latin-1 keysym
- * stands for itself -- which is all a script needs in order to type.
- */
+/** @brief The character a key event types: its text[0], or 0. */
 char
 browser_key_char(const tiku_event_t *event)
 {
@@ -38,7 +34,7 @@ browser_row_at(app_t *a, int px, int py)
     return (idx < tiku_trk_poseview_count(a->view)) ? idx : -1;
 }
 
-/** @brief Hit-test the count strip, kept separate from list rows (TS-043). */
+/** @brief Whether (@p px, @p py) is on the count strip (TS-043). */
 int
 browser_count_at(app_t *a, int px, int py)
 {
@@ -71,7 +67,8 @@ browser_script_row_point(void *ctx, int row, int *x, int *y)
     return 1;
 }
 
-/** @brief Resolve a named icon to its view-space location (drop space). */
+/** @brief Where the placed icon named @p name sits in the view, in view
+ *         pixels.  @return 1, or 0 when no placed icon has that name. */
 int
 browser_script_pose_at(void *ctx, const char *name, int *x, int *y)
 {
@@ -107,12 +104,13 @@ browser_script_pixel_at(void *ctx, int x, int y)
     return (unsigned)tiku_peek(a->surf, x, y) & 0xffffffu;
 }
 
-/** @brief The window said from its display list, for expect-narrate.
+/**
+ * @brief The window recited from its display list, as prose or, with
+ *        @p as_facts, as facts.
  *
- * This front-end paints its whole window every frame with no kept
- * pixels, so the same draw() the loop calls is aimed once at a recording
- * scratch surface -- the shown pixels are never touched, and nothing is
- * drained or signed that a real frame would miss. */
+ * browser_draw() runs once onto a scratch surface that records.  The shown
+ * surface is not touched, and nothing a real frame needs is consumed.
+ */
 static size_t
 script_recite(void *ctx, char *out, size_t max, int as_facts)
 {
@@ -157,8 +155,13 @@ browser_script_narrate(void *ctx, char *out, size_t max)
     return script_recite(ctx, out, max, 0);
 }
 
-/** @brief The nouns this front-end can say, spelled as the desktop's
- *         conductor spells them, so a shared script means one thing. */
+/**
+ * @brief Answer a script's noun, named as the desktop's conductor names it:
+ *        sounds, mounts, controls, hot, operation, alert, or a namespace
+ *        path.
+ * @return 1 with the answer in @p out, 0 for a noun this front-end does
+ *         not answer; for a path, what tiku_backend_text() returns.
+ */
 int
 browser_script_say(void *ctx, const char *noun, char *out, size_t max)
 {
@@ -202,8 +205,8 @@ browser_script_say(void *ctx, const char *noun, char *out, size_t max)
         return 1;
     }
     if (strcmp(noun, "hot") == 0) {
-        /* The open menu's row under the pointer, by label; empty for
-         * none, so a pointer that left is provable. */
+        /* The open menu's row under the pointer, by label; empty when
+         * there is none. */
         const tiku_menu_t *m = (a->popup_sub != NULL && a->popup_sub->hot >= 0)
                                    ? a->popup_sub : a->popup;
 
@@ -214,8 +217,8 @@ browser_script_say(void *ctx, const char *noun, char *out, size_t max)
         return 1;
     }
     if (strcmp(noun, "operation") == 0) {
-        /* This front-end keeps no progress window; the engine itself is
-         * asked, so the noun cannot say idle while a job runs. */
+        /* This front-end has no progress window; the engine is asked
+         * directly. */
         if (a->fs != NULL && tiku_fs_busy(a->fs)) {
             const tiku_progress_t *pr = tiku_fs_progress(a->fs);
             const char *slash = strrchr(pr->current, '/');
@@ -252,8 +255,8 @@ browser_script_pose_screen(void *ctx, const char *name, int *x, int *y)
     if (!browser_script_pose_at(ctx, name, x, y)) {
         return 0;
     }
-    /* Converted the way draw_icons converts on the way out, so a test can
-     * name a screen point instead of the chrome. */
+    /* Offset by the list's corner, as browser_draw_icons() draws the
+     * poses. */
     lr = browser_list_rect(a);
     *x += lr.x;
     *y += lr.y;

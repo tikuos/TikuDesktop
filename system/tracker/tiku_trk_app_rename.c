@@ -3,7 +3,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_rename.c - renaming in place
+ * tiku_trk_app_rename.c - renaming in place, in the inline editor.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,8 +12,8 @@
 
 /**
  * @brief Open the inline editor on the active pose's name.  A device node
- *        or namespace folder is refused with a status line instead, since
- *        it has no name of its own to change.
+ *        or namespace folder is refused with a note in the status line:
+ *        the device namespace cannot be renamed.
  */
 void
 browser_begin_rename(app_t *a)
@@ -23,8 +23,8 @@ browser_begin_rename(app_t *a)
     if (p == NULL || a->fs == NULL) {
         return;
     }
-    /* A namespace node has no name of its own to change; refuse up front
-     * rather than letting the device say no after the fact. */
+    /* A device node or namespace folder is refused here, before the
+     * editor opens. */
     if (p->model.kind == TIKU_KIND_DEVICE_NODE ||
         p->model.kind == TIKU_KIND_VIRTUAL_DIR) {
         snprintf(a->status, sizeof a->status,
@@ -38,14 +38,14 @@ browser_begin_rename(app_t *a)
     tiku_host_cancel_composition(a->host);
     a->edit_row = browser_pose_index(a, p);
     tiku_field_start(&a->ed, p->model.name);
-    /* A character the store will refuse must never reach the field. */
+    /* Characters the store refuses are kept out of the field. */
     tiku_field_deny(&a->ed, tiku_fs_name_deny());
     snprintf(a->edit_path, sizeof a->edit_path, "%s", p->model.path);
     a->status[0] = '\0';
     a->dirty = 1;
 }
 
-/** @brief Begin the rename the slow-second-click timer just armed. */
+/** @brief Begin the rename the slow-second-click timer armed on @p row. */
 void
 browser_begin_rename_row(app_t *a, int row)
 {
@@ -54,13 +54,14 @@ browser_begin_rename_row(app_t *a, int row)
     if (p == NULL) {
         return;
     }
-    /* The engine armed it on a row; the editor works on the ACTIVE pose, so
-     * the two are made to agree before it opens. */
+    /* The engine armed it on a row and the editor works on the active
+     * pose, so that row is made the active pose first. */
     tiku_trk_poseview_click(a->view, row, 0u);
     browser_begin_rename(a);
 }
 
-/** @brief Commit or abandon the inline edit. */
+/** @brief Commit the inline edit with @p commit, else abandon it; a name
+ *         the store refuses keeps the editor open, its text selected. */
 void
 browser_end_rename(app_t *a, int commit)
 {
@@ -69,9 +70,8 @@ browser_end_rename(app_t *a, int commit)
     if (!a->editing) {
         return;
     }
-    {   /* MA-050: a name that was not changed is not a rename.  Sent
-         * anyway, the store finds the file already there and reports a
-         * collision with itself -- an error where the rule wants silence. */
+    {   /* MA-050: an unchanged name is not sent to the store, which
+         * refuses it as a name that already exists. */
         const char *slash = strrchr(a->edit_path, '/');
         const char *was = (slash != NULL) ? slash + 1 : a->edit_path;
 
@@ -82,10 +82,9 @@ browser_end_rename(app_t *a, int commit)
     if (commit && a->ed.len > 0 &&
         tiku_fs_rename(a->fs, a->edit_path, a->ed.text, err,
                            sizeof err) != 0) {
-        /* A rejected name keeps the EDITOR, not just the reason: the text
-         * stays, selected whole, so the user retypes immediately instead
-         * of starting the rename over (NeXT UIG ch7: a rejected entry is
-         * selected and highlighted for retyping). */
+        /* A rejected name keeps the editor open, with the reason in the
+         * status line and the text selected whole for retyping (NeXT UIG
+         * ch7). */
         snprintf(a->status, sizeof a->status, "%s", err);
         a->ed.active = 1;               /* Return had already closed it */
         a->ed.sel_a = 0;
@@ -102,8 +101,8 @@ browser_end_rename(app_t *a, int commit)
 
         a->status[0] = '\0';
         browser_after_op(a);
-        /* The rename re-sorted the row; the application moved it, so the
-         * application keeps it visible (NeXT UIG ch3). */
+        /* The rename re-sorted the row; it is selected and scrolled into
+         * view (NeXT UIG ch3). */
         snprintf(parent, sizeof parent, "%s", a->edit_path);
         slash = strrchr(parent, '/');
         if (slash != NULL) {

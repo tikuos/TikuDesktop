@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_app_commands.c - the commands: the menu bar, the popup, the
- * context menu
+ * tiku_trk_app_commands.c - the commands: the menu bar, the open popup, the
+ * context menu, the navigator strip, and the commands this shell carries out
+ * itself (mount, unmount, new folder and templates).
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,8 +20,8 @@ int browser_cmd_unmount(app_t *a, int command);
 int browser_cmd_mount(app_t *a, int command);
 /* End of the forward declarations. */
 
-/** @brief Save what is open on the leaving volume while it is still there
- *         to save to (AW-096). */
+/** @brief Unmount callback: save the view's state when it shows the
+ *         leaving volume, before the volume goes (AW-096). */
 static void
 save_before_unmount(dev_t dev, void *context)
 {
@@ -32,11 +33,11 @@ save_before_unmount(dev_t dev, void *context)
 }
 
 /**
- * @brief Point a new entry at where it was asked for (PVL-025, PVL-098).
- *
- * The menu's own corner is where it was opened, which is the click that
- * asked for the folder; a keyboard shortcut has no menu, so the last press
- * answers instead, and only while it is over the view.
+ * @brief Where a new entry goes in the icon modes (PVL-025, PVL-098): the
+ *        open menu's corner, which is where the asking click was, else the
+ *        last press.
+ * @return 1 with the point in view coordinates; 0 in list mode or when the
+ *         point is outside the view.
  */
 static int
 seed_new_entry(app_t *a, int *vx, int *vy)
@@ -71,17 +72,16 @@ browser_menu_invoke(app_t *a, int command)
     int field = -1;
 
     {
-        /* The one enablement the menus use gates EVERY route here: a
-         * chord for a command the menu would show grey answers out loud
-         * instead of being silently swallowed (NeXT UIG ch6). */
+        /* Every route here, except for the three commands below, passes
+         * the menus' enable rules: a chord for a command the menu shows
+         * grey puts a refusal in the status line (NeXT UIG ch6). */
         tiku_trk_sc_ctx_t gc = browser_menu_ctx(a, 0u);
 
-        /* Three commands are exempt because their handlers carry WIDER
-         * semantics than the menu rule and say their own refusals:
-         * Unmount acts on the volume being SHOWN when nothing is
-         * selected (AW-096), and the trash/delete pair routes a selected
-         * VOLUME to an unmount with its own boot-volume refusal
-         * (FS-041). */
+        /* Unmount, Move to Trash and Delete are exempt: their handlers
+         * apply wider rules and report their own refusals.  Unmount acts
+         * on the volume shown when nothing is selected (AW-096); Move to
+         * Trash and Delete send a selected volume to an unmount, refusing
+         * the boot volume (FS-041). */
         if (command != TIKU_TRK_CMD_UNMOUNT &&
             command != TIKU_TRK_CMD_MOVE_TO_TRASH &&
             command != TIKU_TRK_CMD_DELETE &&
@@ -102,20 +102,19 @@ browser_menu_invoke(app_t *a, int command)
     if (browser_cmd_new_folder(a, command)) {
         return;
     }
-    /* Through the shared controller first: what Delete, Duplicate, Create
-     * link, Identify and the clipboard verbs mean is one implementation,
-     * not one per shell. */
+    /* The shared controller first: Delete, Duplicate, Create link,
+     * Identify and the clipboard verbs run the code the desktop shell
+     * runs. */
     a->folder.view = a->view;
     snprintf(a->folder.path, sizeof a->folder.path, "%s",
              tiku_trk_poseview_path(a->view));
     if (tiku_trk_folder_file_actions_invoke(&a->file_actions, &a->folder,
                                             command)) {
-        /* No reload here: what a command changed arrives as change notices
-         * and through after_op when the engine goes idle, as it does in
-         * the other shell.  A reload at this point cleared the selection
-         * the command left behind -- the cut it had just tinted, and the
-         * rows the modal delete question re-reads when it is answered
-         * (FS-046, FS-060). */
+        /* No reload here: a command's changes arrive as change notices
+         * and through browser_after_op() once the engine is idle, and a
+         * reload clears the selection the command leaves, which holds the
+         * cut it tints and the rows the modal delete question reads when
+         * answered (FS-046, FS-060). */
         a->dirty = 1;
         return;
     }
@@ -253,7 +252,12 @@ browser_menubar_press(app_t *a, int x, int y, unsigned state)
     return 1;
 }
 
-/** @brief Route a press through an open menu or its first submenu. */
+/**
+ * @brief Route a press to the open menu, or to its open submenu: a row with
+ *        a submenu opens it, another enabled row runs its command, and any
+ *        other press closes the menu.
+ * @return 1 while a menu is open, else 0.
+ */
 int
 browser_popup_press(app_t *a, int x, int y)
 {
@@ -287,7 +291,8 @@ browser_popup_press(app_t *a, int x, int y)
     return 1;
 }
 
-/** @brief Build the pose/background context menu at a completed click. */
+/** @brief Open the context menu of pose @p row, or of the background when
+ *         @p row is -1, at (@p x, @p y). */
 void
 browser_open_context_menu(app_t *a, int row, int x, int y, unsigned state)
 {
@@ -310,7 +315,11 @@ browser_open_context_menu(app_t *a, int row, int x, int y, unsigned state)
     a->dirty = 1;
 }
 
-/** @brief Route a click inside the browser navigator. */
+/**
+ * @brief A press on the navigator strip: the location field takes the
+ *        keys, or Back, Forward or Up runs when it is enabled.
+ * @return 1 when the press was on the strip.
+ */
 int
 browser_navigator_press(app_t *a, int x, int y)
 {
@@ -343,8 +352,9 @@ browser_navigator_press(app_t *a, int x, int y)
 }
 
 /**
- * @brief a new entry from a template, and editing the templates.  @return 1
- * when this was the command
+ * @brief A new entry from a template, a new template submenu, or Edit
+ *        Templates.
+ * @return 1 when the command was one of these.
  */
 int
 browser_cmd_template(app_t *a, int command, const char *template_path,
@@ -413,16 +423,16 @@ browser_cmd_template(app_t *a, int command, const char *template_path,
 }
 
 /**
- * @brief a new folder, named and renamed in place.  @return 1 when this was the
- * command
+ * @brief New folder: made in the folder shown, placed where the asking
+ *        click was in the icon modes, and opened for renaming.
+ * @return 1 when the command was New folder.
  */
 int
 browser_cmd_new_folder(app_t *a, int command)
 {
     if (command == TIKU_TRK_CMD_NEW_FOLDER) {
-        /* Made HERE rather than in the shared controller: only the shell
-         * knows where the asking click landed, and the folder must appear
-         * there rather than in the next free slot (PVL-025, PVL-098). */
+        /* Made here, where the asking click is known, so the folder is
+         * placed at it (PVL-025, PVL-098). */
         char made[TIKU_PATH_MAX], error[200];
         int seeded, sx = 0, sy = 0, row;
         const char *slash;
@@ -438,9 +448,9 @@ browser_cmd_new_folder(app_t *a, int command)
                     (slash != NULL) ? slash + 1 : made, sx, sy);
             }
             (void)tiku_trk_poseview_reload(a->view);
-            /* A reload drains in one go, so the loading loop never runs
-             * for it: the landing recorded above is applied here or not
-             * at all. */
+            /* tiku_trk_poseview_reload() reads the folder in one pass,
+             * not in the batches browser_turn_end() loads, so the landing
+             * recorded above is applied here or not at all. */
             browser_settle_layout(a);
             row = browser_index_of_path(a, made);
             if (row >= 0) {
@@ -460,17 +470,18 @@ browser_cmd_new_folder(app_t *a, int command)
 }
 
 /**
- * @brief unmounting the volume shown, refused out loud when it cannot be.
- * @return 1 when this was the command
+ * @brief Unmount: the selected volume, else the volume whose root is
+ *        shown.
+ * @return 1 when the command was Unmount.
  */
 int
 browser_cmd_unmount(app_t *a, int command)
 {
     if (command == TIKU_TRK_CMD_UNMOUNT) {
-        /* The selection names the volume; with none, the volume ROOT being
-         * shown is the one the gesture means (CW-034).  Everything open on
-         * it saves itself first, while there is still somewhere to save
-         * to, and a refusal or failure is said out loud (AW-096). */
+        /* The selection names the volume; with none, the volume root
+         * shown (CW-034).  The view's state is saved before the volume
+         * goes, and a refusal with a reason goes up as an alert
+         * (AW-096). */
         char paths[1][TIKU_PATH_MAX];
         const char *sel[1];
         const char *path = (browser_selection_paths(a, paths, sel, 1) > 0)
@@ -496,8 +507,8 @@ browser_cmd_unmount(app_t *a, int command)
                     "Cancel");
             }
         } else {
-            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
-             * ch6). */
+            /* Nothing here is a volume: the refusal goes to the status
+             * line (NeXT UIG ch6). */
             snprintf(a->status, sizeof a->status,
                      "Unmount is not available here");
         }
@@ -508,14 +519,14 @@ browser_cmd_unmount(app_t *a, int command)
 }
 
 /**
- * @brief the mount settings and mounting everything.  @return 1 when this was
- * the command
+ * @brief Mount settings, Mount all, and mounting one partition from the
+ *        Mount submenu.
+ * @return 1 when the command was one of these.
  */
 int
 browser_cmd_mount(app_t *a, int command)
 {
     if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
-        /* The preferences page for it lives in the desktop shell. */
         snprintf(a->status, sizeof a->status,
                  "mount settings live in the desktop shell's preferences");
         a->dirty = 1;
@@ -525,8 +536,9 @@ browser_cmd_mount(app_t *a, int command)
         (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
          command < TIKU_TRK_CMD_MOUNT_PART_BASE +
                        TIKU_TRK_MOUNT_PART_MAX)) {
-        /* Asked of the system, and the answer -- on this host, that
-         * mounting needs its leave -- is said out loud (CW-034). */
+        /* Mounting is asked of the system; Mount all stops at the first
+         * failure, and a failure with a reason, such as a missing
+         * permission, goes up as an alert (CW-034). */
         char why[200];
         int failed = 0, tried = 0;
 

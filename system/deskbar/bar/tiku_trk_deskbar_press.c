@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_deskbar_press.c - what a press, a drag and a key do to the bar
+ * tiku_trk_deskbar_press.c - what a click on the bar, or on one of its
+ * popups, does.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -63,8 +64,8 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         return 0;
     }
     {
-        /* An application's own tray icon: the click is its owner's to
-         * hear, whichever way the bar is docked. */
+        /* An application's tray icon: a primary click is picked for its
+         * owner, in every dock; another button does nothing. */
         int ti = db_trayicon_at(db, x, y);
 
         if (ti >= 0) {
@@ -86,7 +87,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         }
         if (x >= db->frame.x + db->frame.w - SWITCH_W - 10) {
             /* The strip's far end is the theme switch: the whole
-             * reserved end answers, not only the painted track. */
+             * reserved end answers. */
             pick->what = TIKU_TRK_DB_TOGGLE_DARK;
             return 1;
         }
@@ -129,9 +130,8 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     }
     {
         /* The theme switch's strip, checked before anything below it so
-         * the collapsed dock reaches it too.  The whole row answers: a
-         * 26 px track is a target for a pointer, the row is one for a
-         * finger. */
+         * the mini dock reaches it too; a primary click anywhere on the
+         * row answers. */
         tiku_rect_t sw = tiku_trk_deskbar_switch_rect(db);
 
         if (!secondary && y >= sw.y - (SWITCH_ROW - SWITCH_H) / 2 &&
@@ -145,7 +145,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     }
 
     /* The scroll arrows first: while the list overflows, its top and
-     * bottom edges step it -- three rows at a time with a modifier held
+     * bottom edges step it, three rows at a time with a modifier held
      * (DB-034). */
     if (db->overflow) {
         int astep = ((mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD |
@@ -168,7 +168,9 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         &ry)) >= 0) {
         return r;
     }
-    /* Secondary click on the tray opens clock options. */
+    /* The clock: a secondary click opens its menu and a primary one the
+     * calendar (DB-043, DB-070); a secondary click on the tray row above
+     * it opens the menu too. */
     if (db->settings.show_clock && y >= db->frame.y + db->frame.h -
         db_clock_row() - PAD) {
         if (secondary) {
@@ -202,8 +204,9 @@ tiku_trk_deskbar_calendar_date(const tiku_trk_deskbar_t *db, int *year,
 }
 
 /**
- * @brief a click on the application list: the expander, the name, a window row.
- * @return -1 when the click was not here, else what the click did
+ * @brief A click on the application list: the expander, a team row or a
+ *        window row.
+ * @return -1 when the click missed every row, else 1.
  */
 int
 db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods, int button,
@@ -212,8 +215,10 @@ db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods, int button,
     int i;
     int j;
 
-    /* The application list: the expander toggles, the name opens the window
-     * menu, a window entry raises (or minimises with Ctrl). */
+    /* A press on the expander arms it, and a press elsewhere on a team row
+     * goes to db_team_action().  A window row raises its window; with Cmd
+     * it minimises it, with Cmd+Option it hides the application, and a
+     * secondary or Shift+middle click closes it. */
     (*ry) = db_list_y(db);
     for (i = 0; i < db->team_count; i++) {
         int team = db->order[i];
@@ -227,14 +232,15 @@ db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods, int button,
         if (y >= (*ry) && y < (*ry) + team_h) {
             if (db->settings.show_expander &&
                 x > db->frame.x + db->frame.w - EXPANDER_W - 6) {
-                /* Armed, not flipped: the arrow turns down at once and
-                 * the state commits on release over the same strip
-                 * (DB-022). */
+                /* Armed: the arrow turns down at once, and the state
+                 * flips on a release over the same strip (DB-022). */
                 db->expander_press = team;
             } else {
-                /* The chord map, shared with the horizontal strip: the
-                 * grip kills, middle launches, CMD fronts, CMD+Shift
-                 * minimizes, a double activates (DB-019/020/021). */
+                /* Shared with the horizontal strip: Cmd+Option+Shift
+                 * kills, a middle click launches another instance, Cmd
+                 * shows the windows, Cmd+Shift minimises them, a double
+                 * click activates and a secondary click opens the window
+                 * menu (DB-019, DB-020, DB-021). */
                 db_team_action(db, team, mods, button, clicks, pick);
             }
             return 1;
@@ -254,8 +260,8 @@ db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods, int button,
                     pick->what = TIKU_TRK_DB_CLOSE_WINDOW;
                 } else if ((mods & TIKU_TRK_MOD_CMD) != 0u &&
                            (mods & TIKU_MOD_OPTION) != 0u) {
-                    /* Option means the whole application, on the gesture
-                     * that takes one window down (CW-014). */
+                    /* With Option, the gesture that minimises one window
+                     * hides the whole application (CW-014). */
                     pick->what = TIKU_TRK_DB_HIDE_ALL;
                 } else if (mods & TIKU_TRK_MOD_CMD) {
                     pick->what = TIKU_TRK_DB_MINIMIZE_WINDOW;
@@ -271,8 +277,9 @@ db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods, int button,
 }
 
 /**
- * @brief a click while the applications menu is open.  @return -1 when the
- * click was not here, else what the click did
+ * @brief A click while the mini dock's running-apps menu is open: a row
+ *        activates its application, and any click closes the menu.
+ * @return -1 when the menu is closed, else 1.
  */
 int
 db_click_apps_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
@@ -301,7 +308,7 @@ db_click_apps_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         if (x >= am.x && x < am.x + am.w && y >= am.y &&
             y < am.y + am.h && idx >= 0 && idx < db->team_count) {
             /* Choosing an application activates it (DB-037); the empty
-             * menu's one row is said, not chosen. */
+             * menu's one row cannot be chosen. */
             pick->what = TIKU_TRK_DB_ACTIVATE_TEAM;
             pick->team = db->order[idx];
         }
@@ -311,8 +318,10 @@ db_click_apps_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 }
 
 /**
- * @brief a click while the leaf menu is open: its rows, its submenus, and
- * outside it.  @return -1 when the click was not here, else what the click did
+ * @brief A click while the leaf menu is open: a row of the submenu or of
+ *        the menu is chosen or expanded, and a click anywhere else closes
+ *        the menu.
+ * @return -1 when the menu is closed, else 1.
  */
 int
 db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
@@ -336,8 +345,8 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 const tiku_trk_db_item_t *it = &db->sub[si];
 
                 if (it->command == TIKU_TRK_DB_TOGGLE_REPLICANTS) {
-                    /* A toggle is not a departure: the menu stays up
-                     * with the row saying the other thing now. */
+                    /* The toggle leaves the menu open, the row
+                     * relabelled. */
                     int of = db->sub_of;
 
                     db->show_replicants = !db->show_replicants;
@@ -362,7 +371,7 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 return 1;
             case TIKU_TRK_DB_ITEM_DISABLED:
             case TIKU_TRK_DB_ITEM_SEP:
-                return 1;       /* said, not chosen */
+                return 1;       /* cannot be chosen */
             default:
                 break;
             }
@@ -382,8 +391,9 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 }
 
 /**
- * @brief a click while an application's window menu is open.  @return -1 when
- * the click was not here, else what the click did
+ * @brief A click while an application's window menu is open: an enabled
+ *        row picks its action, and any click closes the menu.
+ * @return -1 when the menu is closed, else 1.
  */
 int
 db_click_win_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
@@ -406,8 +416,8 @@ db_click_win_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         if (x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h &&
             idx >= 0 && idx < n && enabled[idx]) {
             if (db->teams[team].win_count == 0) {
-                /* The empty-application variant: its one live row asks
-                 * the application to QUIT, politely (DB-028). */
+                /* The empty-application variant: its one enabled row,
+                 * Force Quit…, picks TIKU_TRK_DB_QUIT_TEAM (DB-028). */
                 if (idx == 1) {
                     pick->what = TIKU_TRK_DB_QUIT_TEAM;
                     pick->team = team;
@@ -423,8 +433,9 @@ db_click_win_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 }
 
 /**
- * @brief a click while the clock menu is open.  @return -1 when the click was
- * not here, else what the click did
+ * @brief A click while the clock menu is open: a row picks its setting,
+ *        and any click closes the menu.
+ * @return -1 when the menu is closed, else 1.
  */
 int
 db_click_clock_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
@@ -455,8 +466,9 @@ db_click_clock_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 }
 
 /**
- * @brief a click while the calendar is open.  @return -1 when the click was not
- * here, else what the click did
+ * @brief A click while the calendar is open: on the clock, a stepper or a
+ *        day it stays open; anywhere else closes it.
+ * @return -1 when the calendar is closed, else 1.
  */
 int
 db_click_calendar(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
@@ -467,7 +479,7 @@ db_click_calendar(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     (void)clicks;
     (void)pick;
     if (db->calendar_open) {
-        /* A second click on the clock reactivates the existing popup. */
+        /* A click on the clock keeps the calendar open (DB-045). */
         if (db->settings.show_clock &&
             x >= db->frame.x && x < db->frame.x + db->frame.w &&
             y >= db->frame.y + db->frame.h - db_clock_row() - PAD) {
