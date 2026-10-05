@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "tiku_alert.h"
 #include "tiku_app.h"
 #include "tiku_dialog.h"
 #include "tiku_gfx.h"
@@ -106,9 +107,11 @@ typedef struct {
     uint32_t id;
     int w, h;
     tiku_dialog_t dialog;
+    tiku_alert_t alert;             /* no ESP32-C61: said over the window */
     sdr_model_t model;
-    /* The board. */
+    /* The board: names holds the mounted ESP32-C61s alone. */
     char board[64], port[160], mcu[48], names[1024];
+    int looking;                    /* the first look at them is due   */
     int state, fd, paused, pending, closing, stopped;
     int64_t now, deadline, sent_at, rate_at;
     unsigned rate_count;
@@ -157,10 +160,14 @@ int  sdr_channels(double mhz, char *out, size_t max);
 const char *sdr_command(const sdr_model_t *m, char *out, size_t max);
 
 /* tiku_sdr_link.c */
-/** @brief The mounted boards, and the one meant when none is chosen. */
-void sdr_targets(sdr_t *st);
-/** @brief Ask the desktop to let go of the chosen board. */
-void sdr_connect(sdr_t *st);
+/** @brief The mounted ESP32-C61s, the one part with the receiver, and the
+ *         one meant when none is chosen: the desktop's current device if
+ *         it is one, else the first.  @return 1 once the desktop has said
+ *         which boards it has, 0 before -- then none is not yet none. */
+int  sdr_targets(sdr_t *st);
+/** @brief Ask the desktop to let go of the chosen board.  @return 0, or
+ *         -1 with nothing done when no ESP32-C61 is mounted. */
+int  sdr_connect(sdr_t *st);
 /** @brief Tell the board to stop and give it back, over the next ticks. */
 void sdr_disconnect(sdr_t *st);
 /** @brief The same, now: the window is closing and there are no ticks. */
@@ -210,6 +217,8 @@ void sdr_csv_stop(sdr_t *st);
 /* tiku_sdr_view.c */
 /** @brief Where the spectrum and the waterfall go in the window. */
 void sdr_layout(const sdr_t *st, tiku_rect_t *plot, tiku_rect_t *fall);
+/** @brief Where the alert goes: centred, in the window's upper third. */
+tiku_rect_t sdr_alert_rect(const sdr_t *st);
 /** @brief The toolbar's buttons, registered for input and paint alike. */
 void sdr_controls(sdr_t *st);
 /** @brief The whole window, handed to the desktop. */
@@ -217,7 +226,8 @@ void sdr_paint(sdr_t *st);
 /** @brief The words for @p command, on a button or in a menu. */
 const char *sdr_label(const sdr_t *st, int command);
 /** @brief Whether @p command can be used now: a recording being played
- *         says what is shown, and only a running board records. */
+ *         says what is shown, only a running board records, and an alert
+ *         holds everything but Quit. */
 int  sdr_enabled(const sdr_t *st, int command);
 /** @brief The window below its toolbar, as a PNG at @p path.  @return 0,
  *         or -1 with the reason in the note. */

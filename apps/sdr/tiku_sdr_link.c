@@ -3,6 +3,7 @@
  * read, so closing the window cannot strand a thread), and given back.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -23,25 +24,66 @@
 #define DRAIN_US      100000
 #define READ_MAX       32768
 
-void sdr_targets(sdr_t *st)
+/** @brief Whether @p text names an ESP32-C61, whatever its case, dashes
+ *         and underscores: "ESP32-C61" and "esp32c61" alike. */
+static int receiver_part(const char *text)
 {
-    char names[sizeof st->names] = "";
-    const tiku_app_services_t *sv = st->services;
+    const char *want = "esp32c61";
 
-    if (sv->board_names) sv->board_names(sv->ctx, names, sizeof names);
-    if (strcmp(names, st->names)) {
-        snprintf(st->names, sizeof st->names, "%s", names);
+    for (; *text && *want; text++) {
+        if (*text == '-' || *text == '_') continue;
+        if (tolower((unsigned char)*text) != *want++) return 0;
+    }
+    return !*want;
+}
+
+/** @brief Whether @p board is one line of @p names. */
+static int listed(const char *names, const char *board)
+{
+    size_t n = strlen(board);
+
+    for (const char *p = names; n && *p; p += strcspn(p, "\n") + 1) {
+        if (!strncmp(p, board, n) && (p[n] == '\n' || !p[n])) return 1;
+        if (!strchr(p, '\n')) break;
+    }
+    return 0;
+}
+
+int sdr_targets(sdr_t *st)
+{
+    char names[sizeof st->names] = "", fit[sizeof st->names] = "";
+    char *save = NULL;
+    const tiku_app_services_t *sv = st->services;
+    int known = 1;
+    size_t n = 0;
+
+    if (sv->board_names)
+        known = sv->board_names(sv->ctx, names, sizeof names) >= 0;
+    for (char *p = strtok_r(names, "\n", &save); p;
+         p = strtok_r(NULL, "\n", &save)) {
+        char mcu[48] = "";
+
+        if (sv->board_mcu) sv->board_mcu(sv->ctx, p, mcu, sizeof mcu);
+        /* The die says what a board is; one whose die never said is
+         * judged by its name. */
+        if (!receiver_part(*mcu ? mcu : p) || n + strlen(p) + 2 > sizeof fit)
+            continue;
+        n += (size_t)snprintf(fit + n, sizeof fit - n, "%s\n", p);
+    }
+    if (strcmp(fit, st->names)) {
+        snprintf(st->names, sizeof st->names, "%s", fit);
         st->dirty = 1;
     }
-    if (!*st->board && sv->current_device)
-        sv->current_device(sv->ctx, st->board, sizeof st->board);
-    if (!*st->board) {
-        /* One board mounted, and only one: it is the one meant. */
-        size_t len = strcspn(names, "\n");
-        if (len && len < sizeof st->board &&
-            !names[len + strspn(names + len, "\n")])
-            snprintf(st->board, sizeof st->board, "%.*s", (int)len, names);
+    if (!*st->board && sv->current_device) {
+        char current[sizeof st->board] = "";
+        sv->current_device(sv->ctx, current, sizeof current);
+        if (listed(fit, current))
+            snprintf(st->board, sizeof st->board, "%s", current);
     }
+    if (!*st->board && *fit)
+        snprintf(st->board, sizeof st->board, "%.*s",
+                 (int)strcspn(fit, "\n"), fit);
+    return known;
 }
 
 /** @brief Write all of @p text and a return; the line is short. */
@@ -120,17 +162,17 @@ static void serial_open(sdr_t *st)
     reclaim(st);
 }
 
-void sdr_connect(sdr_t *st)
+int sdr_connect(sdr_t *st)
 {
     const tiku_app_services_t *sv = st->services;
 
-    if (st->state != SDR_IDLE) return;
+    if (st->state != SDR_IDLE) return 0;
     sdr_targets(st);
-    if (!*st->board) {
-        snprintf(st->note, sizeof st->note, "No board is mounted.");
-        st->dirty = 1;
-        return;
+    if (!listed(st->names, st->board)) {
+        st->board[0] = '\0';            /* gone since it was chosen */
+        sdr_targets(st);
     }
+    if (!*st->board) return -1;
     st->port[0] = st->mcu[0] = '\0';
     if (sv->board_port)
         sv->board_port(sv->ctx, st->board, st->port, sizeof st->port);
@@ -141,8 +183,9 @@ void sdr_connect(sdr_t *st)
         snprintf(st->note, sizeof st->note, "%s is not a serial board.",
                  st->board);
         st->dirty = 1;
-        return;
+        return 0;
     }
+    sdr_play_stop(st);
     st->closing = 0;
     st->shown[0] = '\0';                /* the board's, from now on */
     st->state = SDR_RELEASING;
@@ -155,6 +198,7 @@ void sdr_connect(sdr_t *st)
                  "%s is busy. Stop other device work and retry.", st->board);
     }
     st->dirty = 1;
+    return 0;
 }
 
 void sdr_disconnect(sdr_t *st)
@@ -200,7 +244,8 @@ void sdr_board_said(void *state, int what, const char *text)
     sdr_t *st = state;
 
     if (what == TIKU_APP_BOARD_CURRENT) {
-        if (st->state == SDR_IDLE && text && *text)
+        sdr_targets(st);                /* the names came with it */
+        if (st->state == SDR_IDLE && text && listed(st->names, text))
             snprintf(st->board, sizeof st->board, "%s", text);
     } else if ((what == TIKU_APP_BOARD_RELEASED ||
                 what == TIKU_APP_BOARD_RECLAIMED) &&

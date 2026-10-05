@@ -49,7 +49,7 @@ static int device_rows(sdr_t *st, tiku_menu_list_t *menu)
         if (tab) *tab = '\0';
         snprintf(menu->item[n].label, sizeof menu->item[n].label, "%s", p);
         menu->item[n].command = CMD_BOARD + n;
-        menu->item[n].enabled = st->state == SDR_IDLE;
+        menu->item[n].enabled = st->state == SDR_IDLE && !st->alert.open;
         menu->item[n].marked = !strcmp(p, st->board);
     }
     return n;
@@ -104,7 +104,8 @@ static unsigned menu_state(const sdr_t *st)
            (unsigned)(st->shown[0] != '\0') << 8 |
            (unsigned)st->model.mode << 9 |
            (unsigned)(st->model.peak_on != 0) << 10 |
-           (unsigned)(st->model.avg_on != 0) << 11;
+           (unsigned)(st->model.avg_on != 0) << 11 |
+           (unsigned)(st->alert.open != 0) << 12;
 }
 
 /** @brief Menus follow the same commands as the toolbar: the receiver's,
@@ -202,6 +203,18 @@ static void tape(sdr_t *st, int command)
     }
 }
 
+/** @brief Say, over the window, that no ESP32 is connected: the receiver
+ *         is an ESP32-C61's radio, lent by the desktop.  Escape quits, as
+ *         it does in the window; Return keeps the window for recordings. */
+static void missing(sdr_t *st)
+{
+    tiku_alert_open(&st->alert, TIKU_ALERT_STOP, 0,
+                    "No ESP32 is detected. TikuSDR listens through an "
+                    "ESP32-C61's radio. Connect one through the Devices "
+                    "menu.", "Quit|OK");
+    st->dirty = 1;
+}
+
 /** @brief One command, from a button, a menu or a key. */
 static int sdr_pick(void *state, uint32_t window, int command)
 {
@@ -210,9 +223,10 @@ static int sdr_pick(void *state, uint32_t window, int command)
 
     (void)window;
     if (command == CMD_QUIT) return 1;
+    if (st->alert.open) return 0;       /* the alert is answered first */
     if (command == CMD_CONNECT) {
-        sdr_play_stop(st);
-        if (st->state == SDR_IDLE) sdr_connect(st); else sdr_disconnect(st);
+        if (st->state != SDR_IDLE) sdr_disconnect(st);
+        else if (sdr_connect(st) < 0) missing(st);
     } else if (command == CMD_LIVE && m->mode != SDR_LIVE) tune(st, m->centre);
     else if (command == CMD_BAND && m->mode != SDR_BAND)
         show(st, SDR_BAND, m->centre);
@@ -302,7 +316,34 @@ static void pointer(sdr_t *st, const tiku_event_t *ev)
     st->dirty = 1;
 }
 
-/** @brief Input: the toolbar first, then keys and the pointer. */
+/** @brief The alert answered, by key or by hand: Quit ends TikuSDR, and OK
+ *         leaves the window.  @return 1 when TikuSDR is done. */
+static int answer(sdr_t *st, const tiku_event_t *ev)
+{
+    tiku_rect_t f = sdr_alert_rect(st);
+    int x = ev->x - f.x, y = ev->y - f.y, at = -1, redraw = 0;
+
+    if (ev->type == TIKU_EVENT_KEY_DOWN)
+        at = tiku_alert_key(&st->alert, ev->key);
+    else if (ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1)
+        redraw = tiku_alert_press(&st->alert, f.w, f.h, x, y);
+    else if (ev->type == TIKU_EVENT_POINTER_MOVE)
+        redraw = tiku_alert_track(&st->alert, f.w, f.h, x, y);
+    else if (ev->type == TIKU_EVENT_POINTER_UP && ev->button == 1) {
+        at = tiku_alert_release(&st->alert, f.w, f.h, x, y);
+        redraw = 1;
+    }
+    if (at == 0) return 1;              /* Quit, the first button */
+    if (at > 0) {
+        tiku_alert_reset(&st->alert);
+        publish(st);
+        redraw = 1;
+    }
+    if (redraw) sdr_paint(st);
+    return 0;
+}
+
+/** @brief Input: an alert first, then the toolbar, keys and the pointer. */
 static int sdr_event(void *state, const tiku_event_t *ev)
 {
     sdr_t *st = state;
@@ -318,6 +359,7 @@ static int sdr_event(void *state, const tiku_event_t *ev)
         sdr_paint(st);
         return 0;
     }
+    if (st->alert.open) return answer(st, ev);
     if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_ESCAPE) return 1;
     sdr_controls(st);
     result = tiku_dialog_event(&st->dialog, ev);
@@ -331,17 +373,38 @@ static int sdr_event(void *state, const tiku_event_t *ev)
     return 0;
 }
 
-/** @brief The link's work and a throttled repaint. */
+/** @brief The boards again.  The first time the desktop has said which it
+ *         has and none is an ESP32-C61, that is said over the window; the
+ *         alert goes by itself once one is connected. */
+static void look(sdr_t *st)
+{
+    int known = sdr_targets(st);
+
+    if (st->looking && known) {
+        st->looking = 0;
+        if (!*st->names) missing(st);
+    } else if (st->alert.open && *st->names) {
+        tiku_alert_reset(&st->alert);
+        snprintf(st->note, sizeof st->note,
+                 "%s is connected. Choose Connect to start the receiver.",
+                 st->board);
+        st->dirty = 1;
+    }
+}
+
+/** @brief The link's work and a throttled repaint.  The boards are looked
+ *         at every second, and every tick while an answer about them is
+ *         awaited. */
 static void sdr_tick(void *state, int64_t now_us)
 {
     sdr_t *st = state;
 
     st->now = now_us;
-    if (now_us - st->names_at >= NAMES_US) {
+    if (st->looking || st->alert.open || now_us - st->names_at >= NAMES_US) {
         char before[sizeof st->names];
         snprintf(before, sizeof before, "%s", st->names);
         st->names_at = now_us;
-        sdr_targets(st);
+        look(st);
         if (strcmp(before, st->names)) publish(st);
     }
     sdr_link_tick(st);
@@ -398,7 +461,9 @@ static void sdr_board_news(void *state, int what, const char *text)
 }
 
 /** @brief A window, the model, and the boards: nothing touched yet.  A
- *         recording it was opened with, from Tracker, plays at once. */
+ *         recording it was opened with, from Tracker, plays at once and
+ *         needs no board; else the boards are looked at for an ESP32-C61
+ *         as soon as the desktop has said which it has. */
 static int sdr_start(void **state, const tiku_app_services_t *services)
 {
     sdr_t *st = calloc(1, sizeof *st);
@@ -415,9 +480,12 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     if (services->sizeable) services->sizeable(services->ctx, st->id);
     sdr_model_init(&st->model);
     tiku_dialog_init(&st->dialog);
-    sdr_targets(st);
+    tiku_alert_reset(&st->alert);
     if (services->startup_document && *services->startup_document)
         (void)sdr_play_start(st, services->startup_document);
+    else
+        st->looking = 1;
+    look(st);
     publish(st);
     sdr_paint(st);
     *state = st;

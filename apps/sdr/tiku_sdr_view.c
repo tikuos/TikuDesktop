@@ -60,8 +60,17 @@ const char *sdr_label(const sdr_t *st, int command)
     }
 }
 
+tiku_rect_t sdr_alert_rect(const sdr_t *st)
+{
+    int w, h;
+
+    tiku_alert_size(&w, &h);
+    return (tiku_rect_t){(st->w - w) / 2, (st->h - h) / 3, w, h};
+}
+
 int sdr_enabled(const sdr_t *st, int command)
 {
+    if (st->alert.open) return command == CMD_QUIT;
     switch (command) {
     case CMD_CONNECT: return st->state < SDR_STOPPING;
     case CMD_LIVE: case CMD_BAND: case CMD_DOWN: case CMD_UP:
@@ -360,6 +369,8 @@ void sdr_paint(sdr_t *st)
     spectrum(st, plot);
     waterfall(st, fall);
     status(st);
+    if (st->alert.open)
+        tiku_alert_draw(&st->alert, st->surface, sdr_alert_rect(st));
     st->services->frame(st->services->ctx, st->id, st->surface->px, st->w,
                         st->h);
     st->dirty = 0;

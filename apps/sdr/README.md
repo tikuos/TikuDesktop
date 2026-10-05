@@ -18,6 +18,13 @@ Connect borrows the board from the desktop, as TikuConsole does, and gives
 it back on Disconnect or when the window closes.  Levels are the board's
 own decibels: uncalibrated, and moved by its automatic gain.
 
+Only ESP32-C61s are offered, as their die says.  With none connected
+through the desktop's Devices menu, TikuSDR says "No ESP32 is detected"
+over its window as soon as the desktop has said which boards it has (out
+of process that is a turn after start, so `board_names` answers -1 until
+then), and again on Connect; the alert goes once one is connected.  A
+recording opened from Tracker needs no board and is not interrupted.
+
 The **File** menu: **Record** writes every line the board sends, with its
 time, to a plain text `.sdrlog` file (about 20-30 MB an hour); **Open
 Recording...** plays one back through the same view, at the pace it was

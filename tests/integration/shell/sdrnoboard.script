@@ -1,0 +1,34 @@
+# shell: desktop
+# prefs: factory
+# setup: sdr
+# TikuSDR opened with no ESP32-C61 connected through Devices says so at
+# once, over its own window, with the stop icon: Return leaves the window,
+# Connect says it again, and Escape answers Quit.
+wait 60
+click 980 30
+wait 10
+menu-pick Device Tools
+wait 10
+menu-pick TikuSDR
+wait 200
+expect-title TikuSDR
+shot /tmp/trk_sdr_noesp32.png
+note The stop icon's red, left of its cross, on the alert's stripe
+expect-pixel 309 233 cb3030
+key Return
+wait 20
+shot /tmp/trk_sdr_noesp32_ok.png
+expect-pixel 309 233 0e1217
+click-window TikuSDR
+click 71 8
+wait 8
+menu-pick Connect
+wait 20
+shot /tmp/trk_sdr_noesp32_again.png
+expect-pixel 309 233 cb3030
+expect-windows 2
+key Escape
+wait 30
+expect-no-title TikuSDR
+expect-windows 1
+quit
