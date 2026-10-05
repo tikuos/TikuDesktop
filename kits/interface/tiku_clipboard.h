@@ -1,10 +1,10 @@
 /*
  * TikuOS kits -- the foundation TikuDesktop and TikuTracker
- * are built from.
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_clipboard.h - the desk's one TEXT clipboard.
+ * tiku_clipboard.h - the desk's one text clipboard.
  *
  * One clipboard for every field and every editor page in the process:
  * what was cut from a rename can be pasted into a program, and the
@@ -12,9 +12,8 @@
  * clipboard; an application hosted out of process reaches the same store
  * through its services, and the shell keeps the two in step.
  *
- * Text only, by design: the file clipboard (Tracker's) holds names and
- * cuts nothing, and the two must never be one, since a rename's Cut
- * must not cut the selected files.
+ * Text only: Tracker's file clipboard is a separate store of file
+ * references, so a rename's Cut does not cut the selected files.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,16 +22,17 @@
 
 #include <stddef.h>
 
-/* The most text the clipboard holds, in bytes, its NUL apart: room for
- * the whole text of a long document.  A bound all the same, since every
- * application's session keeps a copy of it. */
+/** @brief The most text the clipboard holds, in bytes, its NUL apart;
+ *         every remote session keeps a copy of it. */
 #define TIKU_CLIPBOARD_LIMIT (16u * 1024u * 1024u)
 
-/* TIKU_EVENT_CLIPBOARD carries one of these results in event.key. */
+/** @brief A host clipboard transfer's result, which a
+ *         TIKU_EVENT_CLIPBOARD event carries in its key. */
 enum { TIKU_CLIPBOARD_OK = 1, TIKU_CLIPBOARD_UNAVAILABLE,
        TIKU_CLIPBOARD_TOO_LARGE, TIKU_CLIPBOARD_INVALID, TIKU_CLIPBOARD_TIMEOUT };
 
-/** @brief User-facing transfer result, empty on success. */
+/** @brief The message to show for transfer result @p status: empty for
+ *         TIKU_CLIPBOARD_OK. */
 const char *tiku_clipboard_status_text(int status);
 
 /** @brief Put @p text on the clipboard; NULL clears it.  Text past
@@ -40,14 +40,16 @@ const char *tiku_clipboard_status_text(int status);
  *         there is no memory for leaves the clipboard empty. */
 void tiku_clipboard_set(const char *text);
 
-/** @brief Atomically import a complete UTF-8 string from an external source.
- * Returns 1 on success, 0 for more than TIKU_CLIPBOARD_LIMIT bytes, embedded
- * NUL, malformed UTF-8 or no memory.  Failure leaves both contents and stamp
- * unchanged.  No truncation is allowed.
+/**
+ * @brief Put @p length bytes of @p text on the clipboard whole, or not at
+ *        all: it must be UTF-8 with no NUL, and nothing is cut short.
+ * @return 1, or 0 for more than TIKU_CLIPBOARD_LIMIT bytes, an embedded
+ *         NUL, malformed UTF-8 or no memory, leaving the contents and the
+ *         stamp as they were.
  */
 int tiku_clipboard_import(const char *text, size_t length);
 
-/** @brief What the clipboard holds -- never NULL, empty when nothing; good
+/** @brief What the clipboard holds: never NULL, empty when nothing; good
  *         until the next set() or import(). */
 const char *tiku_clipboard_text(void);
 
@@ -55,11 +57,11 @@ const char *tiku_clipboard_text(void);
 size_t tiku_clipboard_length(void);
 
 /**
- * @brief A counter that moves on every set().
+ * @brief A counter that moves on every set() and every import() that
+ *        succeeds.
  *
- * For the one party that must NOTICE a change it did not make -- the
- * shell, which mirrors the clipboard to its remote sessions -- without
- * this store having to know that party exists.
+ * A party that mirrors the clipboard (the shell, to its remote sessions)
+ * compares it to notice a change it did not make.
  */
 unsigned tiku_clipboard_stamp(void);
 

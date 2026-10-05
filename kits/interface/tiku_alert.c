@@ -60,18 +60,12 @@ tiku_alert_open(tiku_alert_t *a, tiku_alert_kind_t kind, int tag,
         a->nbutton++;
         p = (bar != NULL) ? bar + 1 : p + n;
     }
-    /* Escape presses the FIRST button.  The original puts Cancel leftmost
-     * and makes it the escape route, so the safe answer is the one a
-     * keyboard reflex reaches. */
+    /* Escape presses the first button, the leftmost. */
     a->cancel = (a->nbutton > 0) ? 0 : -1;
     a->dflt = a->nbutton - 1;
     {
-        /* A destructive verb never rides Return: while the default names
-         * an action that erases or overwrites, it steps LEFT toward the
-         * safer answers -- the delete question's Return lands on Move to
-         * Trash, an overwrite's on Cancel -- and the destructive answer
-         * takes an aimed click (Mac HIG ch3; NeXT UIG ch5: the default
-         * should be the safest of the alternatives). */
+        /* While the default's label is one of these, the default steps
+         * one button left, stopping at the first. */
         static const char *harm[] = { "Delete", "Replace", "Replace all",
                                       "Empty Trash" };
         int harmful = 1;
@@ -109,13 +103,11 @@ tiku_alert_button_rect(const tiku_alert_t *a, int i, int w, int h,
     if (a == NULL || i < 0 || i >= a->nbutton) {
         return;
     }
-    /* Laid out from the right edge: the default action is the rightmost,
-     * which is where the pointer already is after reading the text. */
+    /* Laid out from the right edge: the last button is the rightmost. */
     from_right = a->nbutton - 1 - i;
     {
-        /* One width for the whole set, from the longest label when the
-         * renderer has measured one (Mac HIG ch3: uniform buttons, sized
-         * by the longest). */
+        /* One width for every button: btn_w once tiku_alert_draw has
+         * measured the labels, BTN_W before. */
         int bwidth = (a->btn_w > 0) ? a->btn_w : BTN_W;
 
         if (bx != NULL) {
@@ -181,13 +173,6 @@ draw_disc(tiku_surface_t *surface, int cx, int cy, int r, tiku_rgb_t color)
     }
 }
 
-/**
- * @brief The alert's own icon: what KIND of thing is being said.
- *
- * Info speaks in blue, a warning in the tab's yellow, a stop in red --
- * a ringed disc with its mark, drawn from primitives so every target
- * carries it.
- */
 void
 tiku_alert_icon_draw(tiku_surface_t *surface, int cx, int cy,
                      tiku_alert_kind_t kind)
@@ -210,7 +195,7 @@ tiku_alert_icon_draw(tiku_surface_t *surface, int cx, int cy,
     draw_disc(surface, cx, cy, 16, tiku_tint(body, 1.45f));
     draw_disc(surface, cx, cy, 14, body);
     if (kind == TIKU_ALERT_STOP) {
-        /* The cross: this far and no further. */
+        /* The cross: two diagonals of 3 by 3 squares. */
         for (k = -6; k <= 6; k++) {
             tiku_fill(surface, (tiku_rect_t){ cx + k - 1,
                            cy + k - 1, 3, 3 }, ink);
@@ -238,16 +223,15 @@ tiku_alert_draw(tiku_alert_t *a, tiku_surface_t *s, tiku_rect_t frame)
     if (a == NULL || s == NULL || !a->open) {
         return;
     }
-    /* The two-ring border the menus wear, then a bevel just inside it:
-     * all three rings lie within the frame. */
+    /* The menus' two-ring border, then a bevel just inside it: all
+     * three rings lie within the frame. */
     tiku_fill(s, frame, TIKU_C_PANEL);
     tiku_ui_popup_border(s, frame);
     tiku_bevel(s, tiku_inset(frame, 2),
         tiku_tint(TIKU_C_PANEL, TIKU_LIGHTEN_1),
         tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));
     {
-        /* The icon on its grey stripe, as BAlert lays it: the KIND of
-         * thing being said, visible before a word is read. */
+        /* The icon on a darker stripe down the left edge. */
         tiku_rect_t stripe = { frame.x + 3, frame.y + 3, 52,
                                     frame.h - 6 };
 
@@ -256,10 +240,10 @@ tiku_alert_draw(tiku_alert_t *a, tiku_surface_t *s, tiku_rect_t frame)
     }
     text_y = frame.y + 24;
     {
-        /* Two tiers (Mac HIG ch3): the first sentence is the SUMMARY and
-         * wears the bold face; whatever follows is the detail, in the
-         * plain face below it.  One text block in, two voices out -- no
-         * caller changes. */
+        /* Two tiers: the first sentence, up to a '.', '?' or '!' before
+         * a space or the end, is the summary in the bold face, and the
+         * rest is the detail in the plain face below it.  A text with no
+         * sentence end is drawn plain. */
         const tiku_font_t *bold = tiku_font_bold();
         const char *text = a->text;
         const char *split = NULL;
@@ -288,7 +272,7 @@ tiku_alert_draw(tiku_alert_t *a, tiku_surface_t *s, tiku_rect_t frame)
                 while (*text == ' ') {
                     text++;
                 }
-                text_y += 2;    /* a breath between the voices */
+                text_y += 2;    /* a gap between the tiers */
             }
             while (*text != '\0' && (end == NULL || text < end) &&
                    text_y < frame.y + frame.h - 46) {
@@ -331,9 +315,9 @@ tiku_alert_draw(tiku_alert_t *a, tiku_surface_t *s, tiku_rect_t frame)
         }
     }
     {
-        /* Uniform buttons, sized by the longest label (Mac HIG ch3): the
-         * geometry lives beside the layout, the fonts live here, so the
-         * width is measured here and written back for the hit-test. */
+        /* One width for every button, from the longest label plus 20,
+         * kept within 58..150; written back to btn_w, which the button
+         * geometry and the hit-test read. */
         int widest = 0;
 
         for (i = 0; i < a->nbutton; i++) {
@@ -355,8 +339,8 @@ tiku_alert_draw(tiku_alert_t *a, tiku_surface_t *s, tiku_rect_t frame)
         tiku_alert_button_rect(a, i, frame.w, frame.h,
                                &x, &y, &width, &height);
         button = (tiku_rect_t){ frame.x + x, frame.y + y, width, height };
-        /* The R5 button, ring and all: the rightmost is the default,
-         * which is where the pointer already is after reading. */
+        /* The default button wears the default ring; the button a press
+         * holds is drawn pressed. */
         tiku_ui_button(s, button, a->button[i],
                             ((i == a->dflt) ? TIKU_S_DEFAULT : 0u) |
                             (tiku_press_held(&a->press, i + 1)
@@ -370,7 +354,7 @@ tiku_alert_press(tiku_alert_t *a, int w, int h, int x, int y)
     if (a == NULL || !a->open) {
         return 0;
     }
-    /* Buttons are numbered from one here: zero is the tracker's "nothing". */
+    /* The press tracker numbers buttons from one: zero is no button. */
     return tiku_press_arm(&a->press, tiku_alert_button_at(a, w, h, x, y) + 1);
 }
 

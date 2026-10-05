@@ -1,46 +1,85 @@
-/* Private X11 clipboard transport. SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_x11_clipboard.h - the X11 host's side of the CLIPBOARD selection,
+ * used by tiku_x11.c alone.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #ifndef TIKU_X11_CLIPBOARD_H_
 #define TIKU_X11_CLIPBOARD_H_
 #include <X11/Xlib.h>
 #include <stdint.h>
 #include "tiku_clipboard.h"
 
-/* One peer taking the clipboard text a piece at a time (ICCCM 2.7.2, INCR). */
+/** @brief One peer taking the clipboard text a piece at a time (ICCCM
+ *         2.7.2, INCR). */
 typedef struct {
-    Window requestor;           /* None when no transfer is running */
-    Atom property, type;        /* where it reads each piece; as what */
-    char *data;                 /* a private copy of what it takes */
-    size_t len, sent;           /* its bytes; sent so far */
-    int64_t deadline;           /* a peer silent past this is let go */
+    Window requestor;           /**< None when no transfer is running */
+    Atom property, type;        /**< where it reads each piece; as what */
+    char *data;                 /**< a private copy of what it takes */
+    size_t len, sent;           /**< its bytes; sent so far */
+    int64_t deadline;           /**< a peer silent past this is let go */
 } tiku_x11_send_t;
 
+/** @brief The clipboard's X state: the import in, the text out. */
 typedef struct {
     Display *display;
+    /* The host window; the window an import reads into (None when no
+     * import runs); the owner it reads from; the owner last read. */
     Window window, requestor, source, cached_owner;
     Atom clipboard, utf8, targets, text, timestamp, incr, property, clock;
-    Atom requested, received;
-    Time acquired;
-    unsigned stamp;
+    Atom requested, received;   /**< the target asked for, and the type */
+    Time acquired;              /**< server time ownership was taken at */
+    unsigned stamp;             /**< the local clipboard's stamp last seen */
+    /* Fetching a timestamp to take ownership with; an import arriving in
+     * INCR pieces; a finished import's TIKU_CLIPBOARD_* result, 0 for
+     * none. */
     int publishing, incremental, result;
-    int asked;                  /* the import someone is waiting on */
-    int64_t deadline, refreshed;
-    char *incoming;             /* text being taken in, held at its size */
-    size_t used, room;          /* its bytes; what is allocated */
-    char *outgoing;             /* the text published; NULL when empty */
-    size_t outlen;              /* its bytes */
-    tiku_x11_send_t send;       /* the one transfer out in pieces */
+    int asked;                  /**< a paste waits on the import */
+    int64_t deadline, refreshed; /**< import give-up time; last read time */
+    char *incoming;             /**< text being taken in, held at its size */
+    size_t used, room;          /**< its bytes; what is allocated */
+    char *outgoing;             /**< the text published; NULL when empty */
+    size_t outlen;              /**< its bytes */
+    tiku_x11_send_t send;       /**< the one transfer out in pieces */
 } tiku_x11_clipboard_t;
 
+/** @brief Set @p c up for window @p w on @p d, with nothing in flight. */
 void tiku_x11_clipboard_init(tiku_x11_clipboard_t *c, Display *d, Window w);
+/** @brief End any import and transfer, and free the published text. */
 void tiku_x11_clipboard_close(tiku_x11_clipboard_t *c);
-/** @brief Export local changes and enforce the external-transfer deadlines. */
+/**
+ * @brief Publish a local clipboard change, and give up an import or a
+ *        transfer out that passed its deadline.
+ *
+ * A change is copied and a server timestamp fetched, through a property
+ * change on the window; ownership is taken when it arrives.
+ */
 void tiku_x11_clipboard_tick(tiku_x11_clipboard_t *c, int64_t now);
-/** @brief Refresh external text, using a short cache unless force is set.
- * Returns nonzero while a transfer is pending; never waits for its owner.
+/**
+ * @brief Start reading the selection owner's text into the local
+ *        clipboard.
+ *
+ * Nothing starts while this window owns the selection, while a timestamp
+ * is fetched or an import runs, or, without @p force, when the same owner
+ * was read in the last 250 ms.  With no owner the clipboard is emptied.
+ *
+ * @return nonzero while an import is pending; the call does not wait.
  */
 int tiku_x11_clipboard_request(tiku_x11_clipboard_t *c, int64_t now, int force);
-/** @brief Consume selection/property events, leaving ordinary input alone. */
+/**
+ * @brief Handle one clipboard protocol event.
+ *
+ * @return 1 when @p e was one; 0 for any other event, left alone.
+ */
 int tiku_x11_clipboard_event(tiku_x11_clipboard_t *c, XEvent *e, int64_t now);
-/** @brief Predicate for protocol-only polling while normal input is deferred. */
+/**
+ * @brief XCheckIfEvent() predicate: true for the clipboard's selection
+ *        events and the property events of its windows.
+ */
 Bool tiku_x11_clipboard_match(Display *d, XEvent *e, XPointer ctx);
 #endif

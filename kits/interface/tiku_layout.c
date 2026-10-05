@@ -34,9 +34,7 @@ tiku_layout_add(tiku_layout_t *l, int size, int weight, int least)
     }
     at = l->n;
     l->item[at].size = (size > 0) ? size : 0;
-    /* A part with neither a size nor a weight is a spring: without this
-     * an unweighted share would take nothing, and a row pushed right by
-     * an empty first part would not move at all. */
+    /* A part with neither a size nor a weight is a spring of one share. */
     l->item[at].weight = (l->item[at].size == 0 && weight <= 0)
                              ? 1 : ((weight > 0) ? weight : 0);
     l->item[at].least = (least > 0) ? least : 0;
@@ -68,12 +66,11 @@ tiku_layout_least(const tiku_layout_t *l)
 /**
  * @brief Work out every part's extent along the laid axis.
  *
- * Fixed parts take their size; what is left is shared by weight, and a
- * part never goes below its least even when the whole then overruns,
- * since a control squeezed under its own word is unreadable and an
- * overrunning window is at least visibly wrong.  The last weighted part
- * takes the remainder the division could not share, so the parts cover
- * the run exactly with no sliver left that belongs to nobody.
+ * Fixed parts take their size, or their least when that is larger; what
+ * is left is shared by weight, and no part goes below its least even
+ * when the whole then overruns.  The last weighted part takes the
+ * remainder the division could not share, so that the parts cover the
+ * run exactly.
  */
 static void
 solve(const tiku_layout_t *l, int extent, int *out)

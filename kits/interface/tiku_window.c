@@ -17,12 +17,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*
- * The tab and its buttons, from the face rather than from memory.  The
- * arithmetic is chosen to answer 21 and 12 at 12 px -- the numbers that
- * were written here before -- so the default interface is pixel for
- * pixel what it was, and only the other sizes change.
- */
 int
 tiku_window_tab_h(void)
 {
@@ -61,12 +55,12 @@ struct tiku_workspace {
         tiku_surface_t *pixels;
         int valid, active;
     } cache[TIKU_WINDOW_MAX];
-    int64_t now;                /* the clock, 0 when nobody tells it   */
+    int64_t now;                /* the clock, 0 when unset             */
     int animating;              /* the last draw left motion behind    */
     tiku_rect_t motion;         /* where that motion is, this frame and next */
-    /* Ghosts: the last picture of a window that has just gone, on its
-     * way out -- shrinking a little and fading where it was, or flying
-     * to the row that keeps it. */
+    /* Ghosts: the last picture of a window just closed, shrinking and
+     * fading where it was, or of one just minimized, moving to where it
+     * went. */
     struct {
         tiku_surface_t *pixels;
         tiku_rect_t from, to;
@@ -113,6 +107,7 @@ void tiku_workspace_cache_stats(tiku_workspace_t *ws,
     if (bytes) *bytes = ws ? ws->cache_bytes : 0;
 }
 
+/** @brief Whether @p x, @p y lies inside @p rect. */
 static int
 inside(tiku_rect_t rect, int x, int y)
 {
@@ -120,6 +115,7 @@ inside(tiku_rect_t rect, int x, int y)
            y >= rect.y && y < rect.y + rect.h;
 }
 
+/** @brief Where slot @p slot stands in the stacking order, or -1. */
 static int
 order_index(tiku_workspace_t *workspace, int slot)
 {
@@ -133,14 +129,16 @@ order_index(tiku_workspace_t *workspace, int slot)
     return -1;
 }
 
+/**
+ * @brief Where @p window's tab sits: flush with the frame's top-left, as
+ *        wide as its parts, at most the frame's width and at least 60.
+ */
 static tiku_rect_t
 tab_rect(const tiku_window_t *window)
 {
     tiku_rect_t tab;
-    /* MEASURED, not guessed: the tab is as wide as its title needs --
-     * the close button, the title in the bold face, the zoom button when
-     * there is one, and the breathing room the draw insets -- so the
-     * text on it is never clipped short of the window's own edge. */
+    /* The parts: the close button, the title in the bold face, the zoom
+     * button when there is one, and the insets the draw uses. */
     int btn = tiku_window_tab_button();
     int width = btn + 16 +
                 tiku_text_width(tiku_font_bold(), window->title) +
@@ -148,8 +146,6 @@ tab_rect(const tiku_window_t *window)
 
     if (width > window->frame.w) { width = window->frame.w; }
     if (width < 60) { width = 60; }
-    /* Flush with the window's left edge, as the original's tab sits --
-     * not floated a few pixels in. */
     tab.x = window->frame.x;
     tab.y = window->frame.y;
     tab.w = width;
@@ -312,9 +308,10 @@ window_reach(const tiku_window_t *window)
 /**
  * @brief Keep the last picture of @p window as a ghost bound for @p to.
  *
- * Taken off the surface as it stands, which is the frame last shown --
- * the compositor is called between frames, never during one.  Nothing
- * happens without a clock, or when every ghost slot is spoken for.
+ * Taken off the surface as it stands, which holds the frame last shown,
+ * since the compositor is called between frames.  Nothing is kept with
+ * the clock at 0, for a minimized window, or when all four ghost slots
+ * are in use.
  */
 static void
 ghost_take(tiku_workspace_t *ws, tiku_window_t *window, tiku_rect_t to,
@@ -494,7 +491,7 @@ tiku_window_content(const tiku_window_t *window)
     tiku_rect_t content;
 
     if (window->plain) {
-        /* Only the hairline stands between the frame and the page. */
+        /* A plain window's content is inside its hairline. */
         content = tiku_inset(window->frame, 1);
         if (content.w < 0) { content.w = 0; }
         if (content.h < 0) { content.h = 0; }
@@ -536,7 +533,7 @@ tiku_workspace_hit(tiku_workspace_t *workspace, int x, int y,
 
         if (!window->open || window->minimized) { continue; }
         if (window->plain) {
-            /* Nothing to grab: inside is content, outside is not it. */
+            /* A plain window is all content. */
             if (!inside(window->frame, x, y)) { continue; }
             if (out != NULL) { *out = window; }
             return TIKU_HIT_CONTENT;
@@ -678,6 +675,7 @@ tiku_workspace_zoom(tiku_workspace_t *workspace,
     return 1;
 }
 
+/** @brief Draw a tab's close or (@p zoom) zoom button at @p x, @p y. */
 static void
 draw_button(tiku_surface_t *surface, int x, int y, int zoom, int active,
             int down)
@@ -690,7 +688,11 @@ draw_button(tiku_surface_t *surface, int x, int y, int zoom, int active,
         zoom ? TIKU_TAB_ZOOM : TIKU_TAB_CLOSE, face, down);
 }
 
-/** @brief Capture only complete, visible content, never an occluded crop. */
+/**
+ * @brief Copy the content just drawn in @p r into slot @p slot's cache,
+ *        when all of @p r is inside the clip and the caches stay within
+ *        64 MiB.
+ */
 static void cache_capture(tiku_workspace_t *ws, int slot, tiku_rect_t r,
                            int active)
 {
@@ -721,7 +723,12 @@ static void cache_capture(tiku_workspace_t *ws, int slot, tiku_rect_t r,
     ws->cache[slot].valid = 1; ws->cache[slot].active = active;
 }
 
-/** @brief Reuse content while moving; keep ordinary/recording draws live. */
+/**
+ * @brief Draw window @p w's content in @p r: from its cache under
+ *        TIKU_CACHE_REUSE when the cache matches, otherwise through its
+ *        draw callback, caching the result unless caching is off.  A
+ *        recording surface always draws.
+ */
 static void draw_content(tiku_workspace_t *ws, tiku_window_t *w,
                           tiku_rect_t r, int active)
 {
@@ -749,7 +756,7 @@ static void draw_content(tiku_workspace_t *ws, tiku_window_t *w,
 #define RISE_US 150000          /* a window opening lifts into place  */
 #define RISE_PX 8
 
-/** @brief Ease out: fast at first, settling, as a thing put down does. */
+/** @brief Cubic ease-out of @p t. */
 static float
 ease_out(float t)
 {
@@ -759,9 +766,9 @@ ease_out(float t)
 }
 
 /**
- * @brief The window's chrome and content, on the new look: a shadow
- *        beneath, rounded corners where no tab stands, a hairline where
- *        there were bevels.
+ * @brief Draw @p window's shadow, frame, tab and content: rounded corners
+ *        where no tab stands and a hairline edge.  @p lift scales the
+ *        shadow's strength.
  */
 static void
 draw_window_at(tiku_workspace_t *workspace, tiku_window_t *window,
@@ -782,7 +789,7 @@ draw_window_at(tiku_workspace_t *workspace, tiku_window_t *window,
     int radius = TIKU_WINDOW_RADIUS;
 
     if (window->plain) {
-        /* The announcement look: the page, a hairline, nothing else. */
+        /* A plain window: a shadow, the panel and a hairline. */
         (void)active;
         tiku_shadow(surface, window->frame, TIKU_WINDOW_SHADOW_RADIUS,
                     radius + 1, 0.45f * lift);
@@ -823,7 +830,7 @@ draw_window_at(tiku_workspace_t *workspace, tiku_window_t *window,
     }
     draw_content(workspace, window, content, active);
     if (window->resizable) {
-        /* Two pixels in from the corner, which is a curve now. */
+        /* The resize grip, inside the rounded corner. */
         int gx = window->frame.x + window->frame.w - 16;
         int gy = window->frame.y + window->frame.h - 16;
         int i;
@@ -838,9 +845,9 @@ draw_window_at(tiku_workspace_t *workspace, tiku_window_t *window,
 }
 
 /**
- * @brief A window just opened rises the last few pixels into its place
- *        with its shadow deepening; one already there is simply drawn.
- *        The frame the hand meets is never moved -- only the picture.
+ * @brief Draw @p window; one opened within RISE_US rises the last
+ *        RISE_PX pixels into place as its shadow deepens.  Only the
+ *        picture moves: the frame that hit tests use stays put.
  */
 static void
 draw_window(tiku_workspace_t *workspace, tiku_window_t *window,
@@ -938,15 +945,15 @@ tiku_workspace_draw_window(tiku_workspace_t *workspace,
     if (workspace == NULL || window == NULL || out == NULL || !window->open)
         return;
     shown = workspace->surface;
-    workspace->surface = out;       /* drawn as it is shown, but there */
+    workspace->surface = out;       /* drawn as shown, onto out */
     draw_window_at(workspace, window, 1, 0.0f);
     workspace->surface = shown;
 }
 
 /**
  * @brief Draw @p window's content once onto a recording surface of the
- *        workspace's size -- never the shown one -- and hand back the
- *        list.  The shared first half of narrating and reciting facts.
+ *        workspace's size, never the shown one, and return the list, or
+ *        NULL when there is nothing to record.
  */
 static tiku_dl_t *
 workspace_record(tiku_workspace_t *workspace, tiku_window_t *window)
@@ -963,9 +970,8 @@ workspace_record(tiku_workspace_t *workspace, tiku_window_t *window)
     if (content.w <= 0 || content.h <= 0) {
         return NULL;
     }
-    /* The workspace's size but never its surface: an answer that painted
-     * the shown pixels would be an observation that changes what it
-     * observes, the same rule the pixel query lives by. */
+    /* A scratch surface of the workspace's size: recording leaves the
+     * shown pixels alone. */
     scratch = tiku_surface_new(workspace->surface->w,
                                     workspace->surface->h, TIKU_C_PANEL);
     if (scratch == NULL) {

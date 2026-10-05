@@ -4,10 +4,11 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_font.c - glyph blending.
+ * tiku_font.c - the UI faces: sizes, families, faces read from files,
+ * and drawing text.
  *
- * Coverage is blended against the destination pixel rather than a supplied
- * background, so a label reads correctly wherever it lands.
+ * Coverage is blended against the pixel already on the surface, so a
+ * label reads correctly on any background.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,20 +22,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The faces handed out are mutable copies with a STABLE address, so a
- * caller that kept the pointer follows a size change instead of keeping
- * yesterday's metrics. */
+/* The faces handed out are mutable copies with a stable address, so a
+ * caller that kept the pointer sees a size change. */
 static tiku_font_t current_plain;
 static tiku_font_t current_bold;
 static int current_size;
 static int current_family;
 
 /*
- * A face read from a file.  The baked tables cannot hold one -- they are
- * const, and a dropped face is not known until somebody drops it -- so a
- * built face owns its glyphs and coverage and is rebuilt when the size
- * changes.  Latin-1, as the baked faces carry: the same letters, from a
- * different file.
+ * A face read from a file.  The baked tables are const and cannot hold
+ * one, so a built face owns its glyphs and coverage, drawn as they are
+ * asked for, and is rebuilt when the size changes.
  */
 #define BUILT_MAX     6         /* faces alive at once: sizes x weights */
 #define CACHE_SLOTS   512       /* per face; a power of two */
@@ -43,12 +41,12 @@ static int current_family;
 typedef struct {
     unsigned              cp;
     int                   used;
-    int                   present;    /* the FILE has it, ink or not */
+    int                   present;    /* the file has it, ink or not */
     tiku_ttf_glyph_t glyph;
 } cache_slot_t;
 
 struct tiku_face_src {
-    const tiku_ttf_t *ttf;     /* borrowed; this module owns it */
+    const tiku_ttf_t *ttf;     /* file_regular's or file_bold's */
     int                    px;
     int                    bold;
     int                    filled;
@@ -59,12 +57,10 @@ typedef struct {
     tiku_font_t      face;
     tiku_face_src_t *src;
     /*
-     * The same face at twice the size, kept in the SAME slot as the one
-     * it belongs to.  It could have been another entry in this table --
-     * it is a face at a size like any other -- but faces are handed out
-     * by address and this table evicts, so a cross-entry pointer would
-     * one day be a face somebody else had taken over.  Owned here, freed
-     * here, and covered by the eviction guards the 1x face already has.
+     * The same face at twice the size, kept in the same slot as its 1x
+     * face: faces are handed out by address and this table evicts, so a
+     * pointer to another entry could come to name the face that slot was
+     * given to since.  It is freed with its 1x face.
      */
     tiku_font_t      hiface;
     tiku_face_src_t *hisrc;
@@ -75,8 +71,8 @@ typedef struct {
 static built_face_t built[BUILT_MAX];
 static unsigned built_clock;
 /* A face handed out a moment ago but not yet copied into the pair in
- * force.  Making the SECOND face of a pair must not take the first one
- * out from under the caller, which is a zeroed face and a crash. */
+ * force: making the second face of a pair must not evict the first,
+ * which the caller still holds. */
 static const tiku_font_t *built_pinned;
 static tiku_ttf_t *file_regular;
 static tiku_ttf_t *file_bold;
@@ -146,9 +142,8 @@ cache_glyph(tiku_face_src_t *src, unsigned cp)
     if (src == NULL || src->ttf == NULL) {
         return NULL;
     }
-    /* A page of Chinese is thousands of letters, and every one of them
-     * would be kept for ever otherwise.  Wiping the slate is cheaper to
-     * write than an eviction order, and a redraw refills what it uses. */
+    /* A page of Chinese is thousands of letters, so past CACHE_CEILING
+     * the cache is emptied whole; a redraw refills what it uses. */
     if (src->filled >= CACHE_CEILING) {
         cache_empty(src);
     }
@@ -161,10 +156,9 @@ cache_glyph(tiku_face_src_t *src, unsigned cp)
     }
     memset(&slot->glyph, 0, sizeof slot->glyph);
     /*
-     * Present and inkless is not the same as absent.  A space is a real
-     * glyph with a real advance and nothing to draw, and reading it as
-     * "the file has not got this" sends the width off to the baked face
-     * -- so every space in a dropped font would be the wrong width.
+     * Present and inkless is not absent: a space has an advance and
+     * nothing to draw, and taken as absent its width would come from the
+     * baked face.
      */
     slot->present = tiku_ttf_render(src->ttf, cp, src->px,
                                          &slot->glyph) ? 1 : 0;
@@ -209,18 +203,12 @@ built_make(built_face_t *b, const tiku_ttf_t *ttf, int px, int bold)
     b->face.height = (height > 0) ? height : px + 2;
 
     /*
-     * And the same face again at twice the size, which is what a screen
-     * running at scale 2 actually has the pixels for.  Metrics only here
-     * -- its glyphs are drawn the first time one is asked for, as the 1x
-     * face's are, so a face nobody draws at scale costs one calloc.
-     *
-     * Its advances are never consulted: tiku_text() steps the pen by the
-     * LOGICAL advance whatever face drew the letter, so the line occupies
-     * exactly the space it was measured to.  What comes from here is ink
-     * and nothing else.
-     *
-     * If it cannot be had, the face keeps its 1x glyphs and a scaled
-     * screen replicates them, which is what happened before this existed.
+     * And the same face at twice the size, for a screen at scale 2.
+     * Metrics only here: its glyphs are drawn the first time one is asked
+     * for, as the 1x face's are.  Its advances are not used, since
+     * tiku_text() steps the pen by the logical advance whichever face drew
+     * the letter.  If it cannot be had, a scaled screen replicates the 1x
+     * glyphs.
      */
     b->face.hi = NULL;
     b->hisrc = calloc(1u, sizeof *b->hisrc);
@@ -267,12 +255,11 @@ built_face(int px, int bold)
     }
     if (spare < 0) {
         /*
-         * Every slot taken, so one has to go -- the one wanted longest
-         * ago.  ONE, not all of them: a face is handed out by address,
-         * and the caller of the moment is still holding two of these.
-         * Skip the pair in force, the face pinned by an adopt() half
-         * finished, and the two most recently asked for, which is what
-         * a caller can be holding across a call that lands here.
+         * Every slot is taken, so the one asked for longest ago goes;
+         * only one, since faces are handed out by address and a caller
+         * may be holding two.  The pair in force, the face pinned by an
+         * unfinished adopt() and the two most recently asked for are
+         * skipped.
          */
         unsigned newest = 0, second = 0;
 
@@ -296,7 +283,7 @@ built_face(int px, int bold)
             }
         }
         if (spare < 0) {
-            return NULL;        /* all spoken for: draw with what there is */
+            return NULL;        /* all held: callers use a baked face */
         }
         built_free(&built[spare]);
     }
@@ -530,8 +517,8 @@ tiku_font_mono_cell(int bold)
     return tiku_text_width(tiku_font_mono(bold), "M");
 }
 
-/** The mono cuts, numbered as their TIKU_FONT_* bits: regular, bold,
- *  italic, bold italic. */
+/** @brief How many mono cuts there are, numbered as their TIKU_FONT_*
+ *         bits: regular, bold, italic, bold italic. */
 #define MONO_CUTS  4u
 
 /** @brief Rung @p i's mono face in the cut @p style names. */
@@ -588,9 +575,10 @@ tiku_font_bold(void)
 /**
  * @brief The next code point in @p text, stepping @p text past it.
  *
- * Names are UTF-8 -- a file called "caf\u00e9" is five bytes and four
- * letters -- so the text path walks code points, not bytes.  A malformed
- * sequence yields its lead byte rather than running off the end.
+ * Text is UTF-8 (a file called "caf\u00e9" is five bytes and four
+ * letters), so the text path walks code points, not bytes.  A malformed
+ * sequence ends at the first byte that does not continue it, and never
+ * past the terminator.
  */
 static unsigned
 utf8_next(const char **text)
@@ -621,7 +609,7 @@ typedef struct face_glyph face_glyph_t;
 static int face_glyph(const tiku_font_t *f, unsigned cp,
                       face_glyph_t *out);
 
-/** @brief The baked face this size and weight would otherwise use. */
+/** @brief The baked face of this size and weight in the current family. */
 static const tiku_font_t *
 baked_face(int px, int bold)
 {
@@ -641,8 +629,9 @@ struct face_glyph {
 /**
  * @brief Fill @p out with @p cp from @p f.
  *
- * @return 1 when the face has that letter, 0 when it does not -- the
- *         caller decides what a letter nobody has looks like.
+ * @return 1 when the face has that letter; 0 when it does not, with
+ *         @p out holding a stand-in: the face's first glyph, or an empty
+ *         one a third of the height wide.
  */
 static int
 face_glyph(const tiku_font_t *f, unsigned cp, face_glyph_t *out)
@@ -653,10 +642,9 @@ face_glyph(const tiku_font_t *f, unsigned cp, face_glyph_t *out)
 
         if (g == NULL) {
             /*
-             * Not in the file -- so ask the baked face for it.  A face
-             * dropped in for one script has no business blanking every
-             * other: drop a Chinese font and the menus are still there,
-             * in the face they were in before.
+             * Not in the file, so the baked face of the same size and
+             * weight answers: a font dropped in for one script leaves the
+             * other scripts in the baked face.
              */
             const tiku_font_t *baked = baked_face(f->src->px,
                                                        f->src->bold);
@@ -673,7 +661,7 @@ face_glyph(const tiku_font_t *f, unsigned cp, face_glyph_t *out)
         out->h = g->h;
         out->ox = g->ox;
         out->oy = g->oy;
-        out->cover = g->cover;      /* NULL for a space, which is right */
+        out->cover = g->cover;      /* NULL for a glyph with no ink */
         return 1;
     }
     if (f->glyphs == NULL || f->count <= 0) {
@@ -745,7 +733,7 @@ tiku_text_height(const tiku_font_t *f)
     return (f != NULL) ? f->height : 0;
 }
 
-/** @brief Blend @p c over the NATIVE pixel at (x,y), coverage @p a. */
+/** @brief Blend @p c over the native pixel at (x,y), coverage @p a. */
 static void
 blend(tiku_surface_t *s, int sc, int x, int y, tiku_rgb_t c,
       unsigned a)
@@ -778,10 +766,10 @@ blend(tiku_surface_t *s, int sc, int x, int y, tiku_rgb_t c,
  *
  * One byte: 0 to 5 are the six faces the interface is drawn in at whatever
  * size that is, TIKU_DL_MONO_SIZED onward is a mono face at its own size,
- * and any other larger value is a plain face at that many pixels, which is
- * how a status line set at eleven says so.  -1 is a face this cannot name,
- * one read from a dropped file; the caller marks the list incomplete rather
- * than guessing at the letters.
+ * and any other larger value is a plain face at that many pixels (10, 12,
+ * 14 or 16), which is how a status line drawn smaller than the body says
+ * so.  -1 is a face this cannot name, one read from a dropped file; the
+ * caller then marks a miss.
  */
 static int
 face_id(const tiku_font_t *f)
@@ -859,9 +847,9 @@ tiku_text(tiku_surface_t *s, const tiku_font_t *f, int x, int y,
         }
     }
     sc = (s->scale > 1) ? s->scale : 1;
-    /* An even scale draws the 2x face: half the replication, twice the
-     * detail.  The advances match by construction, so the layout the
-     * logical metrics promised is exactly the space this ink fills. */
+    /* An even scale draws the 2x face, replicated half as much.  The pen
+     * still steps by the logical advance, so the text fills the space
+     * its layout measured. */
     hi = (sc > 1 && (sc & 1) == 0) ? f->hi : NULL;
     pen = x * sc;
     while (*text != '\0') {
@@ -871,9 +859,8 @@ tiku_text(tiku_surface_t *s, const tiku_font_t *f, int x, int y,
 
         (void)face_glyph(f, cp, &logical);
         ink = logical;
-        /* The 2x face is a refinement, not a replacement: a letter it
-         * does not carry is drawn from the 1x face replicated -- chunky,
-         * where dropping to the 2x face's space glyph would be blank. */
+        /* A letter the 2x face does not carry is drawn from the 1x face,
+         * replicated. */
         if (hi != NULL && face_has(hi, cp)) {
             (void)face_glyph(hi, cp, &ink);
             rep = sc / 2;
@@ -907,7 +894,8 @@ tiku_text_centered(tiku_surface_t *s, const tiku_font_t *f,
 {
     int tw = tiku_text_width(f, text);
     int x = r.x + (r.w - tw) / 2;
-    /* Centre the ink, not the line box: R5 labels sit optically centred. */
+    /* Centre ascent plus descent in r, with no line gap: R5 labels sit
+     * centred on their ink. */
     int y = r.y + (r.h - f->height) / 2 + f->ascent;
     int rec = tiku_gfx_rec_enter(s);
 

@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_measure_font.c - the desktop answers from its baked faces.
+ * tiku_measure_font.c - text measured on the desktop, from its baked
+ * faces.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +14,7 @@
 #include "tiku_font.h"
 #include "tiku_ui.h"
 
-/** @brief The face numbered @p face. */
+/** @brief The baked face for face number @p face. */
 static const tiku_font_t *
 face_of(int face)
 {
@@ -24,11 +25,11 @@ face_of(int face)
     }
 }
 
-/** @brief Use the measured font ladder, never draw a size layout cannot measure. */
 int tiku_measure_heading(int level)
 {
     int body = tiku_font_size();
     int size = body + (level == 1 ? 4 : level == 2 ? 2 : 0);
+    /* 16 is the largest size the baked ladder holds. */
     if (size > 16) size = 16;
     return size > body ? size : TIKU_MEASURE_BOLD;
 }

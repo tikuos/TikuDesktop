@@ -1,15 +1,15 @@
 /*
- * TikuDesktop -- graphical interface to TikuOS devices.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * glyphdump.c - what the kit's rasteriser makes of one glyph.
  *
- * A DEVELOPMENT tool, not part of the build or the suite: it prints a
- * glyph's metrics and coverage so tools/compare_freetype.py can hold them
- * against what freetype makes of the same glyph.  No font library ships
- * and the suite depends on none; this is how the kit's own work is
- * checked against one anyway, on a machine that happens to have it.
+ * A development tool, not part of the build or the suite: it prints a
+ * font's metrics and each glyph's coverage, which
+ * kits/interface/tools/compare_freetype.py compares with FreeType's
+ * rendering of the same glyph.
  *
  *   cc -Ikits/interface -o build/tools/glyphdump \
  *      kits/interface/tools/glyphdump.c build/lib/libtiku_interface.a \
@@ -25,6 +25,10 @@
 
 #include "tiku_ttf.h"
 
+/**
+ * @brief Print FAMILY and METRICS lines for the font, then a GLYPH line
+ *        and the coverage rows of each code point named in hex.
+ */
 int
 main(int argc, char **argv)
 {

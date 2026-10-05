@@ -33,10 +33,8 @@ tiku_tabs_draw(const tiku_tabs_t *t, tiku_surface_t *s, tiku_rect_t strip)
         int rec = tiku_gfx_rec_enter(s);
 
         if (rec) {
-            /* The tabs BY NAME with the current one marked, rather than
-             * the fills and seams they are drawn from: which tab a window
-             * is showing is a fact, and a reader should not have to infer
-             * it from which rectangle is the brighter. */
+            /* Recorded as the tabs by name with the current one
+             * marked. */
             char labels[TIKU_TABS_MAX * TIKU_TABS_LABEL_MAX];
             size_t used = 0u;
             int k;
@@ -59,7 +57,7 @@ tiku_tabs_draw(const tiku_tabs_t *t, tiku_surface_t *s, tiku_rect_t strip)
     }
 }
 
-/** @brief The strip's actual pixels, once the recording is decided. */
+/** @brief Draw the strip's pixels; tiku_tabs_draw() records their meaning. */
 static void
 draw_strip(const tiku_tabs_t *t, tiku_surface_t *s, tiku_rect_t strip)
 {
@@ -69,8 +67,8 @@ draw_strip(const tiku_tabs_t *t, tiku_surface_t *s, tiku_rect_t strip)
     int i;
 
     /* The line the body's top edge sits on, under the whole strip.  The
-     * current tab erases its own stretch of it, which is what "open to
-     * the body" is drawn out of. */
+     * current tab covers its own stretch of it, which opens the tab onto
+     * the body. */
     tiku_hline(s, strip.x, seam, strip.w, tiku_tint(TIKU_C_PANEL, 0.70f));
 
     for (i = 0; i < n; i++) {
@@ -81,17 +79,16 @@ draw_strip(const tiku_tabs_t *t, tiku_surface_t *s, tiku_rect_t strip)
         int tx = r.x + (r.w - tw) / 2;
         int ty = r.y + (r.h - font->height) / 2 + font->ascent;
 
-        /* An idle tab sits a shade lower and keeps the seam under it; the
-         * current one fills to the seam and rubs it out, joining the body.
-         */
+        /* An idle tab sits two pixels lower and keeps the seam under it;
+         * the current one fills to the seam and covers it. */
         if (active) {
             tiku_fill(s, (tiku_rect_t){ r.x, r.y, r.w, r.h }, face);
             tiku_hline(s, r.x, seam, r.w, face);
         } else {
             tiku_fill(s, (tiku_rect_t){ r.x, r.y + 2, r.w, r.h - 3 }, face);
         }
-        /* A hairline down the right of every tab but the last, so the row
-         * reads as separate tabs and not one long fill. */
+        /* A hairline down the right of every tab but the last divides
+         * the tabs. */
         if (i < n - 1) {
             tiku_vline(s, r.x + r.w - 1, r.y + 2, r.h - 3,
                        tiku_tint(TIKU_C_PANEL, 0.70f));

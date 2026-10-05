@@ -4,17 +4,16 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_dl.c - what was drawn, rather than what it came out as.
+ * tiku_dl.c - the display list: recording, flattening, playing and
+ * reading it.
  *
  * The whole of it is one growing byte buffer.  Recording appends the
- * bytes that go on the wire, so flattening is a copy; playing walks the
- * same bytes and calls the drawing functions the recording mirrors, so
- * there is exactly one description of what a command looks like, in the
- * two switch-shaped places below, rather than an encoder and a decoder.
+ * bytes that go on the wire, so flattening is a copy; tiku_dl_play() and
+ * tiku_dl_read() decode the same layouts, calling the drawing functions
+ * the recorders mirror or handing back facts.
  *
- * Coordinates go as i16: a pixel further than 32767 from the origin is
- * not a thing this interface draws, and halving every rectangle is worth
- * more than the reach when the point of the exercise is the size.
+ * Coordinates go as i16: nothing is drawn further than 32767 from the
+ * origin, and a rectangle takes 8 bytes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -45,7 +44,7 @@ struct tiku_dl {
     int            icons;                    /* OP_ICON placements     */
     int            pictures;                 /* OP_PICTURE bitmaps     */
     int            arts;                     /* distinct OP_ICON_ARTs  */
-    uint32_t       art[TIKU_DL_ART_MAX];     /* their ids, for once-ness */
+    uint32_t       art[TIKU_DL_ART_MAX];     /* their ids: each defined once */
 };
 
 /** @brief The far end's rasteriser, injected by whoever links one. */
@@ -57,7 +56,8 @@ tiku_dl_set_icon_painter(tiku_dl_icon_fn fn)
     icon_painter = fn;
 }
 
-/** @brief FNV-1a of the blob: the art's identity is its bytes. */
+/** @brief The id of the art in @p p: the FNV-1a hash of its @p n bytes,
+ *         so equal bytes give equal ids. */
 static uint32_t
 art_id_of(const unsigned char *p, size_t n)
 {
@@ -74,6 +74,7 @@ art_id_of(const unsigned char *p, size_t n)
 /* Bytes                                                                     */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Write @p v little-endian at @p p. */
 static void
 put16(unsigned char *p, uint16_t v)
 {
@@ -81,6 +82,7 @@ put16(unsigned char *p, uint16_t v)
     p[1] = (unsigned char)((v >> 8) & 0xFFu);
 }
 
+/** @brief Write @p v little-endian at @p p. */
 static void
 put32(unsigned char *p, uint32_t v)
 {
@@ -88,18 +90,21 @@ put32(unsigned char *p, uint32_t v)
     put16(p + 2, (uint16_t)((v >> 16) & 0xFFFFu));
 }
 
+/** @brief The little-endian 16-bit value at @p p. */
 static uint16_t
 get16(const unsigned char *p)
 {
     return (uint16_t)((uint16_t)p[0] | (uint16_t)((uint16_t)p[1] << 8));
 }
 
+/** @brief The little-endian 32-bit value at @p p. */
 static uint32_t
 get32(const unsigned char *p)
 {
     return (uint32_t)get16(p) | ((uint32_t)get16(p + 2) << 16);
 }
 
+/** @brief The little-endian signed 16-bit value at @p p. */
 static int16_t
 get_i16(const unsigned char *p)
 {
@@ -135,9 +140,9 @@ room(tiku_dl_t *dl, size_t more)
 /**
  * @brief Open a command of @p op with @p len bytes of payload.
  *
- * @return where to write the payload, or NULL when there is no room --
- *         and then nothing has been written, so a list that runs out
- *         stays a list of whole commands.
+ * @return where to write the payload, or NULL when there is no room, with
+ *         nothing written, so that a list that runs out holds only whole
+ *         commands.
  */
 static unsigned char *
 begin(tiku_dl_t *dl, uint16_t op, size_t len)
@@ -155,6 +160,7 @@ begin(tiku_dl_t *dl, uint16_t op, size_t len)
     return at + 4;
 }
 
+/** @brief Write @p r as four i16 at @p p: x, y, w, h. */
 static void
 put_rect(unsigned char *p, tiku_rect_t r)
 {
@@ -164,6 +170,7 @@ put_rect(unsigned char *p, tiku_rect_t r)
     put16(p + 6, (uint16_t)(int16_t)r.h);
 }
 
+/** @brief The rectangle put_rect() wrote at @p p. */
 static tiku_rect_t
 get_rect(const unsigned char *p)
 {
@@ -345,6 +352,8 @@ text_len(const char *s)
     return (s != NULL) ? strlen(s) + 1u : 1u;
 }
 
+/** @brief Write @p s and its terminator at @p p; NULL writes an empty
+ *         string. */
 static void
 put_text(unsigned char *p, const char *s)
 {
@@ -433,7 +442,8 @@ tiku_dl_raised(tiku_dl_t *dl, tiku_rect_t r)
     return rect_only(dl, OP_RAISED, r);
 }
 
-/** @brief A control with a label and a state: the whole point of this. */
+/** @brief A control with a label and a state: rect, state, then the
+ *         label. */
 static int
 labelled(tiku_dl_t *dl, uint16_t op, tiku_rect_t r, const char *label,
          unsigned state)
@@ -594,11 +604,7 @@ tiku_dl_icon(tiku_dl_t *dl, const void *hvif, size_t hlen,
     if (dl == NULL) {
         return 0;
     }
-    /*
-     * The contract is record-or-miss, never neither: every refusal below
-     * marks the list not-whole, so whoever is about to put it on a wire
-     * sends the frame instead of a window with a hole where art was.
-     */
+    /* Every refusal below marks the list not whole. */
     if (blob == NULL || hlen == 0u || hlen > 0xFFF0u ||
         size <= 0 || size > 1024) {
         tiku_dl_miss(dl);
@@ -627,9 +633,8 @@ tiku_dl_icon(tiku_dl_t *dl, const void *hvif, size_t hlen,
     }
     p = begin(dl, OP_ICON, 16u);
     if (p == NULL) {
-        /* The definition may already be in: harmless on its own, an
-         * unplaced piece of art draws nothing.  The PLACEMENT is what
-         * was lost, and that is a miss. */
+        /* The definition may already be in, and unplaced art draws
+         * nothing; the placement is what was lost, and that is a miss. */
         tiku_dl_miss(dl);
         return 0;
     }
@@ -668,9 +673,7 @@ tiku_dl_picture(tiku_dl_t *dl, int x, int y, int w, int h,
         return 0;
     }
     if ((long)w * (long)h > TIKU_DL_PICTURE_MAX) {
-        /* Refused rather than truncated: half a picture drawn as if it
-         * were the whole one is the lie the miss counter exists for, and
-         * the caller marks one. */
+        /* Refused whole; the caller marks a miss. */
         return 0;
     }
     n = 8u + 4u * (size_t)w * (size_t)h;
@@ -812,10 +815,9 @@ tiku_dl_unflatten(const void *buf, size_t len, size_t *read)
     }
     dl->count = count;
     /*
-     * The counters are rebuilt from the bytes, so a list that crossed a
-     * wire answers tiku_dl_icons() the same as the one that was recorded
-     * -- the gate that asks is on the SENDING side, but a fact that is
-     * true of a list should not depend on which end is holding it.
+     * The counters are rebuilt from the bytes, so that a list that crossed
+     * a wire answers tiku_dl_icons() and tiku_dl_pictures() as the
+     * recorded one does.
      */
     at = 0u;
     while (at + 4u <= len) {
@@ -871,11 +873,9 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
     size_t at = 0u;
     int done = 0;
     /*
-     * The art this list defined, id to bytes.  It points INTO the list,
-     * which owns its buffer for the whole of the play, so nothing is
-     * copied; and it is per-play, so a list is self-contained -- there
-     * is no cache on this end whose absence the far end could guess
-     * wrong about.
+     * The art this list defined, id to bytes, pointing into the list's
+     * own buffer.  It is built afresh for each play, so a list carries all
+     * the art it uses and nothing is cached between lists.
      */
     struct {
         uint32_t             id;
@@ -893,7 +893,7 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
         const unsigned char *a = dl->b + at + 4;
 
         if (dl->n - at - 4u < (size_t)n) {
-            break;                  /* unflatten refuses these; belt */
+            break;                  /* unflatten refuses these too */
         }
         at += 4u + (size_t)n;
         switch (op) {
@@ -930,7 +930,7 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
             break;
         case OP_ICON_ART:
             /* A definition draws nothing; it is remembered for the
-             * placements after it.  A duplicate id keeps the FIRST
+             * placements after it.  A duplicate id keeps the first
              * definition, so a hostile list cannot redefine art that
              * commands earlier in the same list were drawn with. */
             if (n >= 7u && arts < TIKU_DL_ART_MAX) {
@@ -963,10 +963,6 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
                             uint32_t v = get32(a + 8 +
                                 4u * ((size_t)py * (size_t)iw + px));
 
-                            /* The mask travels with the picture: a
-                             * pixel with no alpha is not painted, which
-                             * is what lets a thumbnail sit on a row
-                             * rather than in a square of its own. */
                             if ((v >> 24) != 0u) {
                                 tiku_pixel(s, ix + px, iy + py,
                                     TIKU_RGB((v >> 16) & 0xffu,
@@ -978,9 +974,9 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
             }
             break;
         case OP_ICON:
-            /* By reference into what THIS list defined.  An id nothing
-             * defined, or no rasteriser on this end, is stepped over --
-             * the format's ordinary answer to what an end cannot do. */
+            /* By reference into what this list defined.  An id nothing
+             * defined, or no rasteriser on this end, is stepped over and
+             * not counted. */
             if (icon_painter != NULL) {
                 uint32_t aid = get32(a);
                 int k;
@@ -1024,9 +1020,8 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
         case OP_TEXTFIELD: {
             const char *text = (const char *)(a + 12);
 
-            /* Played with the caret past the end: the stream carries what
-             * the field SAYS, and where the caret was is the far end's
-             * own business -- it is not typing into this copy. */
+            /* Played with the caret past the end: the stream carries the
+             * field's text, not its caret. */
             tiku_ui_textfield(s, get_rect(a), text, (int)strlen(text),
                               get32(a + 8));
             break;
@@ -1081,7 +1076,7 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
                              get32(a + 8) != 0u);
             break;
         default:
-            continue;               /* not ours: stepped over, not counted */
+            continue;               /* unknown op: stepped over, not counted */
         }
         done++;
     }
@@ -1220,9 +1215,9 @@ tiku_dl_read(const void *buf, size_t len, size_t *at, tiku_dl_fact_t *out)
         out->v1 = (int)get16(a + 8);
         out->v2 = get_i16(a + 10);
         out->text = (const char *)(a + 12);
-        /* The names must all TERMINATE inside the payload, counted here
+        /* The names must all terminate inside the payload, counted here
          * so the narrator and every other reader may walk them without
-         * re-checking. */
+         * checking again. */
         {
             const char *p = out->text;
             const char *end = (const char *)a + n;
@@ -1240,8 +1235,8 @@ tiku_dl_read(const void *buf, size_t len, size_t *at, tiku_dl_fact_t *out)
         return 1;
     case OP_HLINE:
     case OP_VLINE:
-        /* A line carries three numbers and a colour, not a rectangle:
-         * read as one, its fourth field comes out of the colour. */
+        /* A line's payload is x, y, a length and a colour, so its rect
+         * is built here: get_rect() would read half the colour as h. */
         if (n < 6u) {
             return 0;
         }
@@ -1259,7 +1254,8 @@ tiku_dl_read(const void *buf, size_t len, size_t *at, tiku_dl_fact_t *out)
     }
 }
 
-/** @brief Append to the narration, stopping cleanly at the buffer's end. */
+/** @brief Append to the narration; at the buffer's end the text is cut,
+ *         still terminated. */
 static void
 say(char *out, size_t max, size_t *used, const char *fmt, ...)
 {
@@ -1388,8 +1384,7 @@ tiku_dl_say(const tiku_dl_t *dl, char *out, size_t max)
     }
     free(flat);
     if (tiku_dl_misses(dl) > 0 && used + 1u < max) {
-        /* Confessed, not omitted: a reader must be told there was more
-         * than it heard. */
+        /* A closing line says how many marks the wire could not carry. */
         used += (size_t)snprintf(out + used, max - used,
                                  "(%d marks this window drew, the wire "
                                  "could not carry)\n",
@@ -1398,7 +1393,8 @@ tiku_dl_say(const tiku_dl_t *dl, char *out, size_t max)
     return used;
 }
 
-/** @brief The fact kinds by the nouns the narrator already speaks. */
+/** @brief The fact kinds as one-word nouns for tiku_dl_facts(); NULL
+ *         for paint. */
 static const char *
 fact_noun(int kind)
 {

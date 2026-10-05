@@ -1,5 +1,6 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -16,21 +17,21 @@
 #include "tiku_menu.h"
 #include "tiku_ui.h"
 
-/* Every measurement below descends from one number: half the plain font's
- * size, which the control look calls the default label spacing.  At the 12 px
- * face that is 6, and the paddings are 14 / 2 / 20 / 0. */
+/* The measurements the control look gives for the 12 px face, where the
+ * default label spacing, half the font's size, is 6.  They are fixed and
+ * do not follow the interface size. */
 #define LABEL_SPACING  6
-#define PAD_LEFT      14      /* the mark gutter, reserved whether or not   */
-#define PAD_TOP        2      /* anything is actually marked                */
+#define PAD_LEFT      14      /* the mark gutter, kept when nothing is marked */
+#define PAD_TOP        2
 #define PAD_RIGHT     20
 #define PAD_BOTTOM     0
 #define SEAM           1      /* items do not tile: one unpainted row       */
-#define FONT_SIZE     12
+#define FONT_SIZE     12      /* one em, the room for a shortcut's modifiers */
 #define SEP_H          8      /* max(4, floor((size * 0.8) / 2) * 2)        */
-#define MARK_TINT   0.75f     /* the check and the arrow are LIGHTER than   */
-                              /* the label, not darker                      */
+#define MARK_TINT   0.75f     /* the check and the arrow are drawn lighter  */
+                              /* than the label                             */
 
-/** @brief A stroked line with a square pen, for the check and the arrow. */
+/** @brief A stroked line with a square pen, for the check. */
 static void
 pen_line(tiku_surface_t *s, int x0, int y0, int x1, int y1, int pen,
          tiku_rgb_t c)
@@ -96,9 +97,8 @@ tiku_menu_add_separator(tiku_menu_t *m)
     int i = tiku_menu_add(m, "", 0, 0, 0u, 0);
 
     if (i >= 0) {
-        /* Disabled, unhittable and skipped by traversal -- three separate
-         * mechanisms in the original, and all three matter: a separator that
-         * can take focus is immediately noticeable. */
+        /* Disabled, and never hit or highlighted: tiku_menu_item_at() and
+         * tiku_menu_track() both pass over it. */
         m->item[i].separator = 1;
         m->item[i].enabled = 0;
     }
@@ -224,9 +224,6 @@ tiku_menu_relabel(tiku_menu_t *m, int at, const char *label,
     if (m == NULL || at < 0 || at >= m->count) {
         return;
     }
-    /* Label, command and shortcut modifiers change TOGETHER: an item that
-     * says "Delete" while still carrying the trash command is the failure
-     * this single entry point exists to prevent. */
     snprintf(m->item[at].label, sizeof m->item[at].label, "%s",
              label != NULL ? label : "");
     m->item[at].command = command;
@@ -277,8 +274,8 @@ tiku_menu_measure(tiku_menu_t *m)
         }
         iw = tiku_text_width(f, m->item[i].label) + PAD_LEFT + PAD_RIGHT;
         if (m->item[i].icon[0] != '\0') iw += 18;
-        /* A shortcut costs an em only when it is shown WITH modifiers; the
-         * modifier badges themselves are added once for the whole menu. */
+        /* A shortcut costs an em only when it has modifiers; room for the
+         * modifiers themselves is added once for the whole menu. */
         if (m->item[i].shortcut != 0 && m->item[i].mods != 0u) {
             iw += FONT_SIZE;
         }
@@ -296,8 +293,8 @@ tiku_menu_measure(tiku_menu_t *m)
         w += FONT_SIZE + 1;
     }
     if (any_sub) {
-        /* Room for the arrow is reserved once for the menu, not per item, so
-         * a single submenu widens every row alike. */
+        /* Room for the arrow is added once for the whole menu, so one
+         * submenu widens every row alike. */
         w += item_h / 2;
     }
     m->width = w;
@@ -317,16 +314,14 @@ tiku_menu_item_at(const tiku_menu_t *m, tiku_rect_t frame,
         return -1;
     }
     for (i = 0; i < m->count; i++) {
-        /* The same +1 the draw uses to clear the frame's top bevel:
-         * without it every hit band sat one row above its painted band,
-         * so the last painted row of every item chose NOTHING and the
-         * bevel itself chose item zero. */
+        /* The same +1 the draw uses to clear the frame's top edge, so
+         * each hit band is the band the item is painted in. */
         int top = frame.y + 1 + tiku_menu_item_top(m, i);
         int h = tiku_menu_item_height(m, i);
 
         if (y >= top && y < top + h) {
-            /* A separator is not an item you can be on, and the seam below
-             * each item belongs to nobody. */
+            /* A separator hits nothing; the seam below each item falls
+             * outside every band. */
             return m->item[i].separator ? -1 : i;
         }
     }
@@ -367,8 +362,8 @@ tiku_menu_place_sub(tiku_menu_t *m, int i, tiku_rect_t frame,
     }
     tiku_menu_measure(sub);
     /* Anchored one pixel down and right of the parent item's top-right
-     * corner, and flipped to the parent's LEFT rather than clamped when it
-     * would leave the screen -- clamping would cover the parent. */
+     * corner; when that would leave the screen it is flipped to the
+     * parent's left. */
     r.x = frame.x + frame.w + 1;
     r.y = frame.y + tiku_menu_item_top(m, i) + 1;
     r.w = sub->width;
@@ -403,12 +398,9 @@ draw_mark(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
              2, c);
 }
 
-/*
- * The submenu arrow is the kit's, drawn as horizontal runs rather than
- * stroked with a two-pixel pen, for two reasons: an open chevron loses
- * its point at a twelve-pixel row, and a plotted pixel is not something
- * the display list can carry, so a menu sent down a line arrives with
- * its arrows missing.  One arrow, in all three menus.
+/**
+ * @brief The submenu arrow, drawn by tiku_ui_submenu_arrow() as
+ *        horizontal runs, which the display list carries as commands.
  */
 static void
 draw_arrow(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
@@ -428,7 +420,7 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
         return;
     }
     tiku_menu_measure(m);
-    /* A card laid on the desk: a shadow, rounded corners, a hairline. */
+    /* A card: a shadow, rounded corners, a hairline. */
     tiku_shadow(s, frame, 10, 4, 0.35f);
     tiku_fill_round(s, frame, 4, TIKU_CORNER_ALL, base);
     tiku_frame_round(s, frame, 4, TIKU_CORNER_ALL, tiku_tint(base, 1.40f));
@@ -459,10 +451,9 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
                             TIKU_C_SELECT);
             ink = TIKU_C_SELTEXT;
         } else {
-            /* Disabled ink is the text pulled toward its own ground:
-             * tinting toward white receded on a light panel and ADVANCED
-             * on a dark one, so under the dusk table a greyed command
-             * was brighter than a pickable one. */
+            /* Disabled ink is the text pulled halfway toward the panel
+             * colour (tiku_dim()), which recedes on light and dark
+             * themes alike. */
             ink = it->enabled ? TIKU_C_TEXT
                               : tiku_dim(TIKU_C_TEXT, base);
         }
@@ -471,9 +462,9 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
             draw_mark(s, r, tiku_tint(ink, MARK_TINT));
         }
         if (it->icon[0] != '\0') {
-            /* The named art itself, dimmed when the item is disabled;
-             * without a painter installed the slot stays the plain
-             * stand-in (IV-054). */
+            /* The named art, dimmed when the item is disabled; without a
+             * painter, or when it paints nothing, the slot is a plain
+             * square (IV-054). */
             if (icon_painter == NULL ||
                 !icon_painter(s, it->icon, r.x + PAD_LEFT, r.y + 2, 14,
                               !it->enabled)) {
@@ -491,8 +482,8 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
             char sc[8];
             int n = 0;
 
-            /* The modifier reads before the key, and the block is placed from
-             * the right edge inward. */
+            /* The modifiers read before the key, and the text is placed
+             * from the right edge inward. */
             if (it->mods & TIKU_MENU_MOD_SHIFT) { sc[n++] = '^'; }
             sc[n++] = it->shortcut;
             sc[n] = '\0';
@@ -504,7 +495,7 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
 }
 
 /*---------------------------------------------------------------------------*/
-/* The menu bar                                                              */
+/* MENU BAR                                                                  */
 /*---------------------------------------------------------------------------*/
 
 void
@@ -606,9 +597,8 @@ tiku_menubar_panel(tiku_menubar_t *b, tiku_rect_t frame,
     for (i = 0; i < b->open; i++) {
         tx += title_width(b->menu[i]);
     }
-    /* A menu bar drops its panel from the title's bottom-left corner, one
-     * pixel down and right, rather than from the right edge as a nested
-     * submenu does. */
+    /* The panel drops from the title's bottom-left corner, one pixel
+     * down and right. */
     return tiku_menu_place(b->menu[b->open], tx + 1,
                                frame.y + frame.h + 1, screen);
 }
@@ -638,11 +628,10 @@ tiku_menubar_draw(tiku_menubar_t *b, tiku_surface_t *s,
             ink = TIKU_C_SELTEXT;
         }
         if (b->menu[i]->mark) {
-            /* The mark in the TITLE'S OWN INK, one colour: at twelve
-             * pixels the coloured faces melt into the bar, and a mark
-             * nobody can see is worse than none.  Line-work only -- the
-             * grounds take the row's colour, so the cubes are drawn on
-             * the bar rather than boxed onto it. */
+            /* The mark in the title's own ink, one colour, since at twelve
+             * pixels the coloured faces melt into the bar.  The ground
+             * and the face take the row's colour, so only the edges
+             * show. */
             tiku_logo_palette_t mono;
             tiku_rgb_t bg = (i == b->open) ? TIKU_C_SELECT
                                                 : TIKU_C_PANEL;

@@ -33,12 +33,8 @@ tiku_colors_draw(const tiku_colors_t *c, tiku_surface_t *s, tiku_rect_t r)
         }
         tiku_fill(s, sw, c->swatch[i]);
         if (i == c->current) {
-            /*
-             * The chosen one is ringed in both a light and a dark line,
-             * one inside the other: a single ring of either colour
-             * disappears against the swatches that happen to be that
-             * colour, and this palette has both ends.
-             */
+            /* The chosen one is ringed white, with black inside: one of
+             * the two shows against any swatch. */
             tiku_frame(s, sw, TIKU_RGB(255, 255, 255));
             tiku_frame(s, tiku_inset(sw, 1), TIKU_RGB(0, 0, 0));
         }

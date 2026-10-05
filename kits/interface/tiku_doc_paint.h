@@ -28,14 +28,11 @@ typedef void (*tiku_doc_draw_image_fn)(void *ctx, const char *src,
 typedef struct {
     int scroll;                     /* the first row of the page shown  */
     int focus_link;                 /* a link to ring, or TIKU_DOC_NONE */
-    /*
-     * What to say where the page was cut.  The kit owns no words, so a
-     * caller that has none says nothing and the notice is an empty rule
-     * rather than a sentence in a language nobody chose.
-     */
+    /* What to say where the page was cut; the kit owns no words, so
+     * NULL draws the notice as a bare rule. */
     const char *cut;
-    tiku_doc_draw_image_fn image;
-    void *image_ctx;
+    tiku_doc_draw_image_fn image;   /* NULL frames a picture's place    */
+    void *image_ctx;                /* handed to image                  */
 } tiku_doc_paint_t;
 
 /**
@@ -51,6 +48,8 @@ void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
 /** @brief Optional decoration of a piece, before its text is painted. */
 typedef void (*tiku_doc_mark_fn)(void *ctx, tiku_surface_t *s,
                                int piece, tiku_rect_t where);
+/** @brief tiku_doc_draw(), calling @p mark with @p ctx for each piece
+ *         drawn, before its text. */
 void tiku_doc_draw_marked(tiku_surface_t *s, const tiku_doc_t *d,
                          tiku_rect_t r, const tiku_doc_paint_t *how,
                          tiku_doc_mark_fn mark, void *ctx);

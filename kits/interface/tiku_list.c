@@ -13,6 +13,7 @@
 #include "tiku_list.h"
 #include "tiku_measure.h"
 
+/** @brief @p v held to @p lo..@p hi. */
 static int
 clampi(int v, int lo, int hi)
 {
@@ -20,12 +21,11 @@ clampi(int v, int lo, int hi)
 }
 
 /**
- * @brief The rule everything else leans on.
+ * @brief Bring the anchors in line with the selection.
  *
- * An empty selection has no anchors; a selection that is not empty has
- * a valid one.  Called at the end of every gesture rather than trusted
- * to fall out of it -- which is how an anchor came to point at whatever
- * slid into a removed row's place in the view this was lifted from.
+ * An empty selection has no anchors.  A selection that is not empty gets
+ * a selected pivot when its own is not one (@p because_of when that row
+ * is selected, else the first selected row) and a last_added in range.
  */
 static void
 repair(tiku_list_t *l, int because_of)
@@ -73,9 +73,8 @@ tiku_list_set_count(tiku_list_t *l, int count)
     if (count > TIKU_LIST_MAX) {
         count = TIKU_LIST_MAX;
     }
-    /* Rows that no longer exist stop being selected, so a list that
-     * shrinks under a selection cannot leave a flag set where a later
-     * row will land. */
+    /* Rows past the new count lose their flags, so a row added there
+     * later starts clear. */
     for (i = count; i < l->count && i < TIKU_LIST_MAX; i++) {
         l->sel[i] = 0u;
         l->head[i] = 0u;
@@ -154,9 +153,8 @@ tiku_list_at(const tiku_list_t *l, tiku_rect_t body, int x, int y)
         return -1;
     }
     row = l->top + (y - body.y) / h;
-    /* A body that is not a whole number of rows tall has a strip at its
-     * foot the painter leaves empty: a click there is on no row, not on
-     * the row that would have been drawn next. */
+    /* The strip at the foot of a body that is not a whole number of
+     * rows tall is on no row. */
     if (row >= l->top + tiku_list_visible_rows(l, body)) {
         return -1;
     }
@@ -171,8 +169,7 @@ tiku_list_set_heading(tiku_list_t *l, int row, int heading)
     }
     l->head[row] = (unsigned char)(heading ? 1 : 0);
     if (l->head[row]) {
-        /* A row that BECOMES furniture stops being picked, or the
-         * selection would hold something no gesture could let go of. */
+        /* A heading is deselected: no gesture deselects one later. */
         l->sel[row] = 0u;
         if (l->cursor == row) {
             l->cursor = -1;
@@ -247,8 +244,7 @@ tiku_list_select_all(tiku_list_t *l)
         return;
     }
     if (l->single) {
-        /* Holding one row at a time, "all" is the first of them -- the
-         * rule is kept here rather than asked of every caller. */
+        /* Holding one row at a time, "all" is row 0. */
         tiku_list_select_only(l, 0);
         return;
     }
@@ -259,9 +255,7 @@ tiku_list_select_all(tiku_list_t *l)
             l->sel[i] = (unsigned char)!l->head[i];
         }
     }
-    /* Both anchors are re-taken, not merely filled in when missing: one
-     * left over from an earlier click would make the next shift-click
-     * reach from a row that has nothing to do with this selection. */
+    /* Both anchors are set afresh, to the first row and the last. */
     l->pivot = 0;
     l->last_added = l->count - 1;
     repair(l, -1);
@@ -310,8 +304,8 @@ range(tiku_list_t *l, int a, int b, int on)
         return;
     }
     if (l->single) {
-        /* A range is an extension, and extending is what single mode
-         * refuses -- so it lands on the row the gesture reached. */
+        /* Holding one row at a time, a range selects only the row the
+         * gesture reached. */
         tiku_list_select_only(l, b);
         return;
     }
@@ -319,7 +313,7 @@ range(tiku_list_t *l, int a, int b, int on)
     hi = (a < b) ? b : a;
     for (i = lo; i <= hi; i++) {
         if (l->head[i]) {
-            continue;       /* reached OVER, not taken */
+            continue;       /* a heading inside the range stays clear */
         }
         l->sel[i] = (unsigned char)(on ? 1 : 0);
     }
@@ -335,15 +329,13 @@ tiku_list_click(tiku_list_t *l, int row, unsigned modifiers)
         return;
     }
     if (row < 0 || row >= l->count) {
-        /* The empty space below the rows is a place too, and clicking
-         * it means "none of them". */
+        /* A click below the rows selects nothing. */
         tiku_list_select_none(l);
         l->cursor = -1;
         return;
     }
     if (tiku_list_is_heading(l, row)) {
-        /* Furniture, not a row: pressing the word that NAMES a group
-         * neither picks anything nor lets go of what is picked. */
+        /* A click on a heading leaves the selection as it is. */
         return;
     }
     toggle = (modifiers & TIKU_MOD_CMD) != 0u;
@@ -351,8 +343,7 @@ tiku_list_click(tiku_list_t *l, int row, unsigned modifiers)
     l->cursor = row;
 
     if (extend && toggle) {
-        /* The range takes what the clicked row did NOT have, so
-         * reaching out to ADD to a selection cannot clear it. */
+        /* The range takes the state the clicked row did not have. */
         int on = !l->sel[row];
 
         if (l->pivot >= 0) {
@@ -368,8 +359,8 @@ tiku_list_click(tiku_list_t *l, int row, unsigned modifiers)
             memset(l->sel, 0, (size_t)l->count);
         }
         range(l, from, row, 1);
-        /* The pivot is NOT moved: a second shift-click reaches from the
-         * same place rather than growing what the last one left. */
+        /* The pivot stays, so a second shift-click reaches from the
+         * same row. */
         if (l->pivot < 0) {
             l->pivot = row;
         }
@@ -385,9 +376,8 @@ tiku_list_click(tiku_list_t *l, int row, unsigned modifiers)
         }
     } else if (l->sel[row] &&
                (tiku_list_selection_count(l) > 1 || row == l->pivot)) {
-        /* Already part of the selection: nothing changes, which is what
-         * lets a gesture that starts on a selected row carry the whole
-         * selection with it. */
+        /* Already part of the selection: nothing changes, so a drag that
+         * starts here carries the whole selection. */
         return;
     } else {
         tiku_list_select_only(l, row);
@@ -396,13 +386,10 @@ tiku_list_click(tiku_list_t *l, int row, unsigned modifiers)
 }
 
 /**
- * @brief The first row at or past @p from that can be landed on.
+ * @brief The first row that is not a heading, looking from @p from in
+ *        direction @p dir and then back the other way.
  *
- * Travel goes ON in the direction it was already going, and only then
- * turns back: HOME onto a heading means the first row UNDER it, not the
- * nothing that lies before it.
- *
- * @return that row, or -1 when the list is all furniture.
+ * @return that row, or -1 when every row is a heading.
  */
 static int
 landable(const tiku_list_t *l, int from, int dir)
@@ -467,11 +454,9 @@ tiku_list_key(tiku_list_t *l, unsigned key, unsigned modifiers,
         page = 1;
     }
     /*
-     * A cursor that has not been placed starts where the selection is.
-     * With no selection either, the first arrow LANDS on the row the
-     * list starts from rather than moving off it -- moving from nowhere
-     * has to begin somewhere, and beginning one row in is how a list
-     * silently skips its first entry.
+     * A cursor that has not been placed starts at the selection.  With no
+     * selection either, the first Up, Down or Page key lands on the top
+     * row.
      */
     if (l->cursor < 0) {
         int chosen = tiku_list_chosen(l);
@@ -516,6 +501,7 @@ tiku_list_key(tiku_list_t *l, unsigned key, unsigned modifiers,
     return 0;
 }
 
+/** @brief @p c in lower case, for ASCII letters. */
 static int
 lower(int c)
 {
@@ -547,7 +533,7 @@ tiku_list_typeahead(tiku_list_t *l, char ch, int64_t now,
         size_t k;
 
         if (n == NULL || l->head[i]) {
-            continue;       /* furniture is not what a name spells to */
+            continue;       /* headings are passed by */
         }
         for (k = 0; k < used; k++) {
             if (n[k] == '\0' ||
@@ -561,7 +547,7 @@ tiku_list_typeahead(tiku_list_t *l, char ch, int64_t now,
             return i;
         }
     }
-    return -1;                  /* still being typed: nothing moves */
+    return -1;                  /* no match: nothing moves */
 }
 
 int

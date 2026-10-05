@@ -6,14 +6,9 @@
  *
  * tiku_colors.h - a grid of colours, one of them chosen.
  *
- * The R5 colour control is a palette a colour is PICKED from, not mixed
- * in: a person choosing a backdrop wants to point at a colour, and the
- * three sliders that would let them say #4a7fb2 are a different tool for
- * a different day.  So this holds a fixed grid, which one is current,
- * where each swatch sits and which one a click lands on.
- *
- * The desktop can already be handed a colour by dropping one on it; what
- * it could not do is offer the choice.
+ * The R5 colour control: a fixed grid of swatches a colour is picked
+ * from.  This holds the swatches, which one is current, where each sits
+ * and which one a click lands on; tiku_colors_paint.h draws it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,8 +17,10 @@
 
 #include "tiku_geom.h"
 
+/** @brief The most swatches a palette holds. */
 #define TIKU_COLORS_MAX 64
 
+/** @brief A palette: its swatches, how many across, and the chosen one. */
 typedef struct {
     tiku_rgb_t swatch[TIKU_COLORS_MAX];
     int        count;
@@ -31,18 +28,20 @@ typedef struct {
     int        current;    /* -1 when nothing is chosen               */
 } tiku_colors_t;
 
-/** @brief An empty palette @p cols swatches wide. */
+/** @brief An empty palette @p cols swatches wide, or 8 when @p cols is
+ *         not positive. */
 void tiku_colors_init(tiku_colors_t *c, int cols);
 
 /**
- * @brief Fill with a spread of hues plus a grey ramp, as a default.
+ * @brief Fill @p c with the default palette, 32 swatches eight across:
+ *        dark, full and soft hues, and a grey ramp.
  *
- * What a control offers when its caller has no palette of its own: a
- * readable set rather than an empty grid.
+ * For a control whose caller has no palette of its own.
  */
 void tiku_colors_default(tiku_colors_t *c);
 
-/** @brief Add one swatch.  @return its index, or -1 when full. */
+/** @brief Add one swatch, chosen when it is the first.
+ *  @return its index, or -1 when full. */
 int tiku_colors_add(tiku_colors_t *c, tiku_rgb_t rgb);
 
 /** @brief How many swatches there are. */
@@ -54,14 +53,13 @@ int tiku_colors_current(const tiku_colors_t *c);
 /** @brief The chosen colour; black when nothing is chosen. */
 tiku_rgb_t tiku_colors_value(const tiku_colors_t *c);
 
-/** @brief Choose @p index, clamped.  @return the chosen index. */
+/** @brief Choose @p index, clamped to the palette.
+ *  @return the chosen index, or -1 when the palette is empty. */
 int tiku_colors_select(tiku_colors_t *c, int index);
 
 /**
- * @brief Choose the swatch nearest @p rgb.
- *
- * So a control opened on a colour the palette holds no exact match for
- * still opens somewhere sensible instead of unset.  @return the index.
+ * @brief Choose the swatch nearest @p rgb by squared RGB distance.
+ * @return the index, or -1 when the palette is empty.
  */
 int tiku_colors_select_nearest(tiku_colors_t *c, tiku_rgb_t rgb);
 

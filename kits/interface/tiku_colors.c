@@ -48,9 +48,9 @@ void
 tiku_colors_default(tiku_colors_t *c)
 {
     /*
-     * Four rows of eight: a hue spread at full strength, the same hues
-     * softened, a grey ramp, and the darks.  Chosen to be pointed at
-     * rather than to be complete -- a palette nobody can scan is a list.
+     * Four rows of eight: dark hues, the same at full strength, softened,
+     * and a light row, with a grey ramp from black to white down the
+     * first column and along the last row.
      */
     static const tiku_rgb_t table[32] = {
         TIKU_RGB(0, 0, 0),       TIKU_RGB(128, 0, 0),
@@ -127,9 +127,6 @@ tiku_colors_select_nearest(tiku_colors_t *c, tiku_rgb_t rgb)
         long dr = R_OF(c->swatch[i]) - R_OF(rgb);
         long dg = G_OF(c->swatch[i]) - G_OF(rgb);
         long db = B_OF(c->swatch[i]) - B_OF(rgb);
-        /* Plain squared distance in RGB.  Not how the eye measures
-         * colour, and it does not have to be: what it must do is land on
-         * the same swatch a person would call "that one". */
         long d = dr * dr + dg * dg + db * db;
 
         if (best < 0 || d < best) {

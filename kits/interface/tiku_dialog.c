@@ -12,17 +12,20 @@
 #include "tiku_dialog.h"
 #include <string.h>
 
+/** @brief Where control @p id is in the list, or -1. */
 static int index_of(const tiku_dialog_t *d, int id)
 {
     for (int i = 0; i < d->count; i++)
         if (d->control[i].id == id) return i;
     return -1;
 }
+/** @brief Whether @p id is a listed, enabled control. */
 static int live(const tiku_dialog_t *d, int id)
 {
     int i = index_of(d, id);
     return i >= 0 && d->control[i].enabled;
 }
+/** @brief Whether @p e's point is inside @p r. */
 static int contains(tiku_rect_t r, const tiku_input_event_t *e)
 {
     return e->x >= r.x && e->y >= r.y &&
@@ -35,10 +38,9 @@ void tiku_dialog_init(tiku_dialog_t *d)
 }
 void tiku_dialog_begin(tiku_dialog_t *d, int dflt, int cancel)
 {
-    /* Where the focus stood, before the list it stood in is thrown
-     * away: a control that disables itself must not throw the caret to
-     * the top of the panel, where the next Space would work a setting
-     * the hand never aimed at. */
+    /* Where the focus stood before the list is rebuilt, so that
+     * tiku_dialog_end() can hand a focus whose control disabled itself to
+     * a neighbour. */
     d->focus_at = index_of(d, d->focus);
     d->count = 0; d->dflt = dflt; d->cancel = cancel;
 }
@@ -57,14 +59,14 @@ void tiku_dialog_end(tiku_dialog_t *d)
 
     if (!live(d, d->capture)) d->capture = TIKU_DIALOG_NONE;
     if (live(d, d->focus)) return;
-    /* A focus DISPLACED by a control that disabled itself is shown where
-     * it went; the first seating stays quiet, so a panel opens without a
-     * ring nobody asked for. */
+    /* A focus moved off a control that disabled itself shows its ring
+     * where it lands; the first placing does not, so a panel opens
+     * without a ring. */
     if (d->focus != TIKU_DIALOG_NONE) d->keyboard = 1;
     d->focus = TIKU_DIALOG_NONE;
     if (at > d->count - 1) at = d->count - 1;
-    /* Back one control first: a pager that greys itself hands the focus
-     * to the arrow beside it, not to the first row of the panel. */
+    /* Back from where the focus stood first, then forward: a pager that
+     * greys itself hands the focus to the arrow beside it. */
     for (int i = at; i >= 0; i--) {
         if (d->control[i].enabled) { d->focus = d->control[i].id; return; }
     }

@@ -12,14 +12,20 @@
 #include "tiku_text_layout_paint.h"
 #include "tiku_font.h"
 
+/** @brief The desktop face for face number @p face. */
 static const tiku_font_t *font(int face)
 {
     return face == TIKU_MEASURE_BOLD ? tiku_font_bold() :
            face == TIKU_MEASURE_MONO ? tiku_font_mono(0) : tiku_font_plain();
 }
 
-/* Desktop intersects/restores the current clip. Recording-side helpers
- * reset clipping afterwards, like existing kit painters; see controls.md. */
+/**
+ * @brief Clip @p s to @p r and return the clip to put back.
+ *
+ * On the desktop @p r is intersected with the current clip.  A displayless
+ * build sets @p r as it is, and restore() resets the clip, as the other
+ * kit painters do (kits/interface/doc/controls.md).
+ */
 static tiku_rect_t clip(tiku_surface_t *s, tiku_rect_t r)
 {
 #ifdef TIKU_DISPLAYLESS
@@ -36,6 +42,8 @@ static tiku_rect_t clip(tiku_surface_t *s, tiku_rect_t r)
     tiku_clip_set(s, r);
     return old;
 }
+/** @brief Put back the clip clip() replaced; a displayless build resets
+ *         the clip instead. */
 static void restore(tiku_surface_t *s, tiku_rect_t old)
 {
 #ifdef TIKU_DISPLAYLESS

@@ -6,10 +6,9 @@
  *
  * tiku_ttf.c - reading a font somebody dropped in (see the header).
  *
- * Every read is bounds-checked against the mapped length.  These files
- * arrive by being dropped in a folder, which is to say from anywhere, and
- * a font is a format with offsets pointing at offsets: the parser must
- * treat a truncated or hostile file as simply a file it cannot draw with.
+ * Every read is bounds-checked against the bytes held (t->len).  These
+ * files come from anywhere, and a font's offsets point at offsets: a
+ * truncated or hostile file is a file it cannot draw with.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -43,13 +42,12 @@ struct tiku_ttf {
     int            strike, strike_size;           /* OS/2's             */
     int            bold;
     char           family[64];
-    /* An OpenType file with PostScript outlines keeps them here instead
-     * of in glyf, and everything else about it is the same. */
+    /* The CFF outlines of an OpenType file; its other tables are read as
+     * for TrueType. */
     tiku_cff_t *cff;
     float            cff_upem;
-    /* Where the lowercase and the capitals reach, in font units: the
-     * two lines a reader's eye follows, and so the two worth snapping
-     * to whole pixels.  Measured once, on the first glyph asked for. */
+    /* The x-height and cap height, in font units, which hinting snaps
+     * to whole pixels; measured once, on the first glyph drawn. */
     size_t           os2;
     float            zone_x, zone_cap;
     int              zones;
@@ -57,18 +55,21 @@ struct tiku_ttf {
 
 /* ---------------------------------------------------------------- bytes  */
 
+/** @brief The big-endian 16-bit value at @p p. */
 static unsigned
 rd16(const unsigned char *p)
 {
     return ((unsigned)p[0] << 8) | p[1];
 }
 
+/** @brief The big-endian signed 16-bit value at @p p. */
 static int
 rds16(const unsigned char *p)
 {
     return (int)(short)rd16(p);
 }
 
+/** @brief The big-endian 32-bit value at @p p. */
 static unsigned long
 rd32(const unsigned char *p)
 {
@@ -168,8 +169,7 @@ read_family(tiku_ttf_t *t, size_t name)
     }
     {
         /* UTF-16BE for the Windows and Unicode platforms, one byte per
-         * letter for Mac Roman.  Either way only what is ASCII is kept:
-         * it is a name to pick from a list, not a document. */
+         * letter for Mac Roman.  Either way only ASCII is kept. */
         unsigned i2, out = 0;
         unsigned step = best_wide ? 2u : 1u;
 
@@ -222,8 +222,8 @@ read_cmap(tiku_ttf_t *t, size_t cmap)
         } else {
             continue;
         }
-        /* A symbol map (3,0) claims the private use area and would hand
-         * back a padlock for the letter A. */
+        /* A symbol map (3,0) maps letters into the private use area, so
+         * it ranks below every other. */
         if (platform == 3u && encoding == 0u) {
             rank = 0;
         }
@@ -350,7 +350,11 @@ advance_of(const tiku_ttf_t *t, unsigned g)
     return (int)rd16(t->data + t->hmtx + (size_t)at * 4u);
 }
 
-/** @brief Where glyph @p g's outline lives.  @return its length. */
+/**
+ * @brief Where glyph @p g's outline lives.
+ *
+ * @return its length, or 0 when it has none.
+ */
 static size_t
 glyph_at(const tiku_ttf_t *t, unsigned g, size_t *off)
 {
@@ -373,7 +377,7 @@ glyph_at(const tiku_ttf_t *t, unsigned g, size_t *off)
         b = (size_t)rd16(t->data + t->loca + (size_t)g * 2u + 2u) * 2u;
     }
     if (b <= a || b > t->glyf_len) {
-        return 0;               /* an empty glyph: a space, legitimately */
+        return 0;               /* an empty glyph, such as a space */
     }
     *off = t->glyf + a;
     return b - a;
@@ -396,7 +400,7 @@ typedef struct {
 static int read_outline(const tiku_ttf_t *t, unsigned g,
                         ttf_outline_t *out, float dx, float dy, int depth);
 
-/** @brief A simple glyph: flags, then x deltas, then y deltas. */
+/** @brief Read a simple glyph: flags, then x deltas, then y deltas. */
 static int
 read_simple(const tiku_ttf_t *t, size_t off, size_t len, int contours,
             ttf_outline_t *out, float dx, float dy)
@@ -496,7 +500,7 @@ read_simple(const tiku_ttf_t *t, size_t off, size_t len, int contours,
     return 1;
 }
 
-/** @brief A composite glyph: other glyphs, placed. */
+/** @brief Read a composite glyph: other glyphs, placed. */
 static int
 read_composite(const tiku_ttf_t *t, size_t off, size_t len,
                ttf_outline_t *out, float dx, float dy, int depth)
@@ -529,8 +533,8 @@ read_composite(const tiku_ttf_t *t, size_t off, size_t len,
             ay = (float)(signed char)t->data[p + 1];
             p += 2u;
         }
-        /* Scaled components are placed but not scaled: a scaled accent is
-         * rare, and drawing it at its own size beats not drawing it. */
+        /* Scaled components are placed but not scaled, so a scaled accent
+         * is drawn at its own size. */
         if ((flags & 8u) != 0u) {
             p += 2u;
         } else if ((flags & 0x40u) != 0u) {
@@ -549,6 +553,13 @@ read_composite(const tiku_ttf_t *t, size_t off, size_t len,
     }
 }
 
+/**
+ * @brief Read glyph @p g's points into @p out, moved by @p dx, @p dy;
+ *        composites are followed at most TTF_MAX_DEPTH deep.
+ *
+ * @return 0 for a glyph with no outline, a malformed simple glyph or one
+ *         nested too deep; 1 otherwise
+ */
 static int
 read_outline(const tiku_ttf_t *t, unsigned g, ttf_outline_t *out,
              float dx, float dy, int depth)
@@ -591,9 +602,8 @@ glyph_top(const tiku_ttf_t *t, unsigned cp)
 /**
  * @brief Find the x-height and cap height, once.
  *
- * The font's own OS/2 table states both, from version 2 on, and that is
- * the designer's answer rather than a measured one.  Failing that, the
- * two letters everyone measures are measured.
+ * The OS/2 table states both from version 2 on; failing that, the tops of
+ * 'x' and 'H' are measured.
  */
 static void
 measure_zones(tiku_ttf_t *t)
@@ -614,14 +624,18 @@ measure_zones(tiku_ttf_t *t)
         t->zone_cap = glyph_top(t, 'H');
     }
     /* A face whose zones cannot be found -- a symbol font, a script
-     * with no such lines -- is drawn unhinted rather than wrongly. */
+     * with no such lines -- is drawn unhinted. */
     if (t->zone_x <= 0.0f || t->zone_cap <= t->zone_x) {
         t->zone_x = 0.0f;
         t->zone_cap = 0.0f;
     }
 }
 
-/** @brief The transform for @p px: scaled, and snapped where it counts. */
+/**
+ * @brief The transform for @p scale: scaled, with the x-height and cap
+ *        height snapped to whole pixels.  TIKU_HINT=0 in the environment
+ *        turns the snapping off.
+ */
 static void
 build_hint(tiku_ttf_t *t, float scale, tiku_hint_t *hint)
 {
@@ -630,7 +644,7 @@ build_hint(tiku_ttf_t *t, float scale, tiku_hint_t *hint)
     memset(hint, 0, sizeof *hint);
     hint->scale = scale;
     if (off != NULL && off[0] == '0') {
-        return;                 /* an escape hatch, and how zones are read */
+        return;                 /* unhinted, for measuring against */
     }
     measure_zones(t);
     if (t->zone_x > 0.0f) {
@@ -644,23 +658,15 @@ build_hint(tiku_ttf_t *t, float scale, tiku_hint_t *hint)
         hint->shift[0] = (float)(int)(dx + 0.5f) - dx;
         hint->zones = 1;
         /*
-         * The two lines are only worth treating as two if there is room
-         * between them.  Nudging a pair a third of a pixel apart in
-         * OPPOSITE directions stretches everything caught between by
-         * whatever ratio the gap happens to be, which wrecks the letters
-         * that live there -- accents especially, which sit exactly in
-         * that band.  Close together, one line stands for both.
+         * Two zones only when the lines are a pixel or more apart and
+         * snapping both stretches the band between them by under a
+         * quarter; otherwise one zone stands for both, since a stretched
+         * band distorts the letters in it, the accents above all.
          */
         if (dc - dx >= 1.0f) {
             float other = (float)(int)(dc + 0.5f) - dc;
             float stretch = (other - hint->shift[0]) / (dc - dx);
 
-            /*
-             * And only if the band between them keeps its proportions.
-             * The gap being a pixel wide is not enough: nudging the two
-             * ends a half pixel APART stretches everything in between by
-             * half again, and what lives in between is the accents.
-             */
             if (stretch < 0.25f && stretch > -0.25f) {
                 hint->from[1] = t->zone_cap;
                 hint->shift[1] = other;
@@ -676,8 +682,8 @@ build_hint(tiku_ttf_t *t, float scale, tiku_hint_t *hint)
  * @brief Push one contour into @p path, in device space.
  *
  * TrueType leaves the on-curve point between two off-curve ones implied,
- * and a contour may open on an off-curve point, so the start has to be
- * found before the walk rather than assumed.
+ * and a contour may open on an off-curve point, so the start is found
+ * before the walk.
  */
 static void
 emit_contour(tiku_path_t *path, const ttf_point_t *p, int n,
@@ -788,16 +794,21 @@ tiku_ttf_is_font(const char *path)
             memcmp(head, "OTTO", 4) == 0);
 }
 
-/** @brief Read the tables of face @p face in @p t's bytes; @p path
- *         names them. */
+/**
+ * @brief Read the tables of face @p face in @p t's bytes.
+ *
+ * @p path, when given, gives its leaf as the family of a file that names
+ * none.
+ *
+ * @return @p t, or NULL after closing it when the face cannot be drawn
+ */
 static tiku_ttf_t *
 open_tables(tiku_ttf_t *t, const char *path, unsigned face)
 {
     size_t dir = 0, head, hhea, maxp, name, cmap, os2, post;
 
     if (fits(t, 0u, 12u) && memcmp(t->data, "ttcf", 4) == 0) {
-        /* A collection: the face asked for, the first unless told; the
-         * one a person dropping "the font" in a folder means. */
+        /* A collection: the face asked for, the first unless told. */
         if (face >= rd32(t->data + 8) || !fits(t, 12u + 4u * face, 4u)) {
             tiku_ttf_close(t);
             return NULL;
@@ -983,7 +994,7 @@ int
 tiku_ttf_outline(const tiku_ttf_t *ttf, unsigned gid,
                  const tiku_hint_t *hint, tiku_path_t *path)
 {
-    ttf_outline_t *outline;             /* 48 KB: a worker's own, not shared */
+    ttf_outline_t *outline;             /* 48 KB, allocated per call */
     int drawn = 1;
 
     if (ttf == NULL || hint == NULL || path == NULL) {
@@ -1147,9 +1158,8 @@ tiku_ttf_render(const tiku_ttf_t *ttf, unsigned cp, int px,
         return 1;               /* nothing drawable: an advance and no ink */
     }
     {
-        /* The same switch the grid-fit answers to turns the darkening
-         * off as well, so TIKU_HINT=0 gives the honest linear
-         * coverage for measuring against. */
+        /* TIKU_HINT=0 turns the stem darkening off as well, giving
+         * linear coverage to measure against. */
         const char *off = getenv("TIKU_HINT");
         int darken = !(off != NULL && off[0] == '0');
 

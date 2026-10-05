@@ -7,10 +7,10 @@
  * tiku_ttf.h - reading a font somebody dropped in.
  *
  * A TrueType file is a table directory, a character map and a set of
- * quadratic outlines; rasterising one is the same signed-area coverage
- * the icon renderer resolves its paths with.  No font library: the point
- * of the fonts directory is that a device can be handed a face over a
- * wire and draw with it, which rules out asking the host for help.
+ * quadratic outlines; an OpenType file may hold CFF outlines instead,
+ * which tiku_cff.h reads.  Rasterising either is the same signed-area
+ * coverage the icon renderer resolves its paths with.  No font library is
+ * used, so a device handed a face over a wire can draw with it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,17 +24,19 @@
 typedef struct tiku_ttf tiku_ttf_t;
 
 /**
- * @brief Open a TrueType file.
+ * @brief Open a TrueType or OpenType file, the first face of a collection.
  *
- * @return NULL for anything that cannot be drawn with -- a PostScript-outline
- *         .otf included, which says so in its header rather than lying.
+ * @return NULL for anything that cannot be drawn with.
  */
 tiku_ttf_t *tiku_ttf_open(const char *path);
 /** @brief Face @p face of a collection (.ttc); 0 is the first, and the
  *         only one a file of one face has. */
 tiku_ttf_t *tiku_ttf_open_face(const char *path, unsigned face);
-/** @brief Open a face from bytes, which are copied. */
+/** @brief Open the first face held in @p len bytes at @p data, which are
+ *         copied. */
 tiku_ttf_t *tiku_ttf_open_mem(const unsigned char *data, size_t len);
+
+/** @brief Close @p ttf and free its bytes; NULL is ignored. */
 void tiku_ttf_close(tiku_ttf_t *ttf);
 
 /* For a reader that places glyphs itself -- a PDF names them by index
@@ -56,17 +58,24 @@ int tiku_ttf_advance(const tiku_ttf_t *ttf, unsigned gid);
 int tiku_ttf_outline(const tiku_ttf_t *ttf, unsigned gid,
                      const tiku_hint_t *hint, tiku_path_t *path);
 
-/** @brief The family name the file gives itself. */
+/**
+ * @brief The family name the file gives itself, or the file's name when it
+ *        gives none.
+ */
 const char *tiku_ttf_family(const tiku_ttf_t *ttf);
 
 /** @brief Whether the face calls itself bold. */
 int tiku_ttf_bold(const tiku_ttf_t *ttf);
 
-/** @brief Whether @p path looks like a face that could be opened, cheaply. */
+/**
+ * @brief Whether the first four bytes of @p path are a TrueType, OpenType
+ *        or collection signature; nothing more of the file is read.
+ */
 int tiku_ttf_is_font(const char *path);
 
 /**
- * @brief Ascent and line height in whole pixels at @p px.
+ * @brief Ascent and line height in whole pixels at @p px, from hhea; the
+ *        height leaves out the line gap.
  *
  * Both may be NULL.
  */
@@ -90,19 +99,21 @@ void tiku_ttf_lines(const tiku_ttf_t *ttf, int *under, int *under_size,
 
 /** @brief One rasterised glyph.  @c cover is w*h bytes of coverage. */
 typedef struct {
-    int            adv;
+    int            adv;         /**< the advance, in pixels            */
     int            w, h;
-    int            ox, oy;      /* from the pen, and from the baseline */
-    unsigned char *cover;
+    int            ox, oy;      /**< from the pen, and from the baseline */
+    unsigned char *cover;       /**< NULL for a glyph with no ink      */
 } tiku_ttf_glyph_t;
 
 /**
- * @brief Draw @p cp at @p px pixels.
+ * @brief Draw @p cp at @p px pixels, at most 512.
  *
- * A code point the file has no glyph for is not drawn: the caller shows
- * what it shows for anything else it hasn't got.
+ * A code point the file has no glyph for is not drawn, and the caller
+ * shows its own stand-in.
  *
- * @return 1 when @p out was filled, 0 otherwise.
+ * @return 1 when @p out was filled, a glyph with no ink included; 0
+ *         otherwise.
+ * @note Not reentrant: every call shares one static outline buffer.
  */
 int tiku_ttf_render(const tiku_ttf_t *ttf, unsigned cp, int px,
                          tiku_ttf_glyph_t *out);
@@ -110,6 +121,7 @@ int tiku_ttf_render(const tiku_ttf_t *ttf, unsigned cp, int px,
 /** @brief Whether the file has a glyph for @p cp at all. */
 int tiku_ttf_has(const tiku_ttf_t *ttf, unsigned cp);
 
+/** @brief Free @p glyph's coverage. */
 void tiku_ttf_free_glyph(tiku_ttf_glyph_t *glyph);
 
 #endif /* TIKU_TTF_H_ */

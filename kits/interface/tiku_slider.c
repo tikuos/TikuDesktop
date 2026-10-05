@@ -14,7 +14,7 @@
 #include "tiku_slider.h"
 #include "tiku_measure.h"
 
-/** @brief The knob is square, so the travel is shorter than the track. */
+/** @brief How far the square knob travels: the track less the knob. */
 static int
 travel(const tiku_slider_t *sl, tiku_rect_t r)
 {
@@ -31,8 +31,7 @@ tiku_slider_init(tiku_slider_t *sl, int min, int max, int value, int step)
         return;
     }
     memset(sl, 0, sizeof *sl);
-    /* A range handed over backwards is taken as the range it describes
-     * rather than refused: every answer below then still has a meaning. */
+    /* A backwards range is swapped. */
     sl->min = (min <= max) ? min : max;
     sl->max = (min <= max) ? max : min;
     sl->step = (step > 0) ? step : 1;
@@ -69,8 +68,7 @@ tiku_slider_fraction(const tiku_slider_t *sl)
         return 0.0f;
     }
     span = sl->max - sl->min;
-    /* A range of one value is wholly at its start, not a division by
-     * nothing: a slider over a single choice has nowhere to travel. */
+    /* A range of one value sits at its start. */
     if (span <= 0) {
         return 0.0f;
     }
@@ -100,9 +98,7 @@ value_at(const tiku_slider_t *sl, tiku_rect_t r, int x)
     }
     if (at < 0) { at = 0; }
     if (at > run) { at = run; }
-    /* Rounded rather than truncated, so dragging to the middle of a
-     * coarse range lands on the nearer value instead of always the lower
-     * one -- a slider that drifts down as you scrub it is a broken one. */
+    /* Rounded to the nearer value. */
     return sl->min + (at * span + run / 2) / run;
 }
 

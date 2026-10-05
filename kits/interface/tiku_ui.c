@@ -4,10 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_ui.c - the R5 control set, drawn from the spec table.
+ * tiku_ui.c - the R5 control set, drawn.
  *
- * Each control is bevel pairs around a flat face (R5-SPEC.md); the tints are
- * named as the BeOS constants so a control reads against the documentation.
+ * Raised and sunken controls are bevel pairs around a flat face, in tints
+ * named as the BeOS constants (TIKU_LIGHTEN_*, TIKU_DARKEN_*); push
+ * buttons, pills and the scrollbar thumb are rounded fills.  A control
+ * drawn while recording is recorded as one command.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,12 +20,8 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------*/
-/* How big a thing has to be                                                 */
-/*                                                                           */
-/* The constants that fall out at the default 12 px are the ones the         */
-/* interface was drawn with when they were written down: a 22-pixel row, a   */
-/* 26-pixel button.  Keeping them exact there is deliberate -- it is what    */
-/* lets every pinned pixel in the shell suite go on meaning what it meant.   */
+/* Control sizes.  At the default 12 px they are a 22-pixel row and a        */
+/* 26-pixel button, which the shell suite's pixel tests depend on.           */
 /*---------------------------------------------------------------------------*/
 
 int
@@ -55,7 +53,7 @@ tiku_ui_step_w(void)
 
 #define PANEL   TIKU_C_PANEL
 
-/* The four shades every control is built from. */
+/* The shades the controls are built from, all tints of the panel. */
 #define WHITE()   tiku_tint(PANEL, TIKU_LIGHTEN_MAX)
 #define LIGHT()   tiku_tint(PANEL, TIKU_LIGHTEN_1)
 #define SHADOW()  tiku_tint(PANEL, TIKU_DARKEN_2)
@@ -91,8 +89,7 @@ void
 tiku_ui_popup_border(tiku_surface_t *s, tiku_rect_t r)
 {
     /* Three parts text to one part panel: dark in the light and no-hue
-     * themes, light in the dark one, where a darkened panel is barely
-     * apart from the panel itself. */
+     * themes, light in the dark one. */
     tiku_rgb_t edge = tiku_dim(TIKU_C_TEXT, tiku_dim(TIKU_C_TEXT, PANEL));
 
     tiku_frame(s, r, edge);
@@ -115,12 +112,8 @@ tiku_ui_sunken(tiku_surface_t *s, tiku_rect_t r,
     tiku_gfx_rec_leave(s, rec);
 }
 
-/**
- * @brief Knock the four corner pixels out of a control's outline.
- *
- * R5's buttons and fields are square with clipped corners rather than drawn
- * curves; one pixel is the whole radius.
- */
+/** @brief Paint the four corner pixels of @p r in @p bg: a square
+ *         control's corners, clipped by one pixel. */
 static void
 clip_corners(tiku_surface_t *s, tiku_rect_t r, tiku_rgb_t bg)
 {
@@ -139,7 +132,7 @@ tiku_ui_button(tiku_surface_t *s, tiku_rect_t r,
     if (rec) {
         (void)tiku_dl_button(s->record, r, label, state);
     }
-    if (state & TIKU_S_ICON) {      /* the face only; the icon is its own */
+    if (state & TIKU_S_ICON) {      /* the face only; the caller's icon */
         if (state & TIKU_S_PRESSED) {
             tiku_ui_sunken(s, r, PANEL);
         } else if ((state & TIKU_S_HOT) && !(state & TIKU_S_DISABLED)) {
@@ -160,15 +153,14 @@ tiku_ui_button(tiku_surface_t *s, tiku_rect_t r,
     tiku_rgb_t face = PANEL;
 
     if (state & TIKU_S_DEFAULT) {
-        /* The default button is the one filled with the desk's accent:
-         * what Return does, said in colour, the way a card's one
-         * confirming button is said on every modern desk. */
+        /* The default button, the one Return presses, is filled with
+         * the selection colour. */
         face = TIKU_C_SELECT;
         if (!(state & TIKU_S_DISABLED)) { text = TIKU_C_SELTEXT; }
     }
     if (state & TIKU_S_PRESSED) {
-        /* Pressed reads as the face dropping two steps, no bevel to
-         * invert: a flat control is legible by its shade alone. */
+        /* Pressed darkens the face, and the label moves a pixel down and
+         * right. */
         face = tiku_tint(face, 1.16f);
     }
     tiku_fill_round(s, f, 4, TIKU_CORNER_ALL, face);
@@ -204,10 +196,9 @@ box_rect(tiku_rect_t r)
 }
 
 /**
- * @brief One blended square: a diagonal gradient inside a dark outline.
- *
- * The gradient runs corner to corner, not top to bottom, which is why these
- * squares catch the light the way they do.
+ * @brief One square of a tab widget: a gradient from its top-left corner
+ *        to its bottom-right inside a darker outline, light to @p face, or
+ *        darker to lighter while @p down.
  */
 static void
 blended_rect(tiku_surface_t *s, tiku_rect_t r, tiku_rgb_t face,
@@ -292,7 +283,7 @@ tiku_ui_menufield(tiku_surface_t *s, tiku_rect_t r,
         tiku_frame(s, tiku_inset(r, 3), TIKU_C_FOCUS);
     }
 
-    /* The label is clipped short of the marker rather than overrunning it. */
+    /* The label is clipped short of the marker. */
     size = (r.h * 2) / 3;
     ax = r.x + r.w - size - 5;
     tiku_clip_set(s, (tiku_rect_t){ r.x + 3, r.y, ax - r.x - 6,
@@ -302,7 +293,7 @@ tiku_ui_menufield(tiku_surface_t *s, tiku_rect_t r,
                    (label != NULL) ? label : "", text);
     tiku_clip_reset(s);
 
-    /* A stroked triangle, never filled: a solid one reads much heavier. */
+    /* The marker: a V of two strokes, pen pixels thick. */
     ay = r.y + (r.h - size) / 2;
     hin = size / 3;
     vin = size / 3;
@@ -336,7 +327,7 @@ tiku_ui_checkbox(tiku_surface_t *s, tiku_rect_t r,
     tiku_bevel(s, tiku_inset(b, 1), SHADOW(), PANEL);
 
     if (state & TIKU_S_ON) {
-        /* The R5 mark is a solid square, not a tick. */
+        /* The mark is a solid square. */
         tiku_rect_t m = tiku_inset(b, 3);
         tiku_fill(s, m, (state & TIKU_S_DISABLED)
                              ? tiku_tint(PANEL, 1.30f)
@@ -369,8 +360,8 @@ tiku_ui_radio(tiku_surface_t *s, tiku_rect_t r,
     int cx = b.x + b.w / 2, cy = b.y + b.h / 2, rad = b.w / 2;
     int y;
 
-    /* A 13 px circle drawn by spans: the radius is small enough that the
-     * span table IS the antialiasing. */
+    /* A 13 px circle drawn as horizontal spans, each with a shaded pixel
+     * at either end for the bevel. */
     for (y = -rad; y <= rad; y++) {
         int half = (y * y >= rad * rad) ? 0
                  : (int)((rad * rad - y * y) / (rad * 0.9f) + 0.5f);
@@ -418,7 +409,7 @@ tiku_ui_textfield(tiku_surface_t *s, tiku_rect_t r,
     tiku_ui_textfield_sel(s, r, text, caret, 0, 0, state);
 }
 
-/** @brief Pixel offset of character @p at in @p text. */
+/** @brief Width of the first @p at bytes of @p text, at most 255. */
 static int
 text_offset(const tiku_font_t *f, const char *text, int at)
 {
@@ -451,10 +442,8 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
     tiku_rect_t saved_clip = s->clip;
 
     if (rec) {
-        /* What the field SAYS and whether it is focused or disabled --
-         * the noun an agent wants after a button.  The caret, the
-         * selection and the slide are this end's typing state, not facts
-         * about the field, so they stay here. */
+        /* Recorded with its text and state; the caret, the selection
+         * and the slide are not recorded. */
         (void)tiku_dl_textfield(s->record, r, text, state);
     }
     const tiku_font_t *f = tiku_font_plain();
@@ -488,9 +477,8 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
         int hi = (sel_a < sel_b) ? sel_b : sel_a;
 
         if (hi > lo) {
-            /* Reverse video under the range first, then the whole string in
-             * one pass: drawing the text in three pieces would accumulate
-             * the rounding of three separate advances. */
+            /* The range's ground first, then the whole string over it in
+             * one pass. */
             tiku_rect_t hl;
 
             hl.x = r.x + 3 - scroll_px + text_offset(f, text, lo);
@@ -511,12 +499,13 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
     tiku_gfx_rec_leave(s, rec);
 }
 
-/** @brief A scrollbar arrow button with its triangle. */
+/**
+ * @brief A scrollbar arrow button with its triangle, dimmed unless @p can;
+ *        a held one (@p down) has a darker face.
+ */
 static void
 arrow_button(tiku_surface_t *s, tiku_rect_t r, int dir, int can, int down)
 {
-    /* Down reads as the button's own pressed look: a darker face and
-     * the bevel inverted, so a held arrow is seen to be held. */
     tiku_fill(s, r, down ? tiku_tint(PANEL, 1.16f) : tiku_tint(PANEL, 1.10f));
     tiku_frame(s, r, FRAME());
     tiku_ui_arrow(s, r, dir, can);
@@ -548,8 +537,6 @@ tiku_ui_tip(tiku_surface_t *s, tiku_rect_t r, const char *text)
     }
     rec = tiku_gfx_rec_enter(s);
     if (rec) {
-        /* With its TEXT: recorded as a bare fill, the whole point of a
-         * tip -- what it says -- never reached the far end at all. */
         (void)tiku_dl_tip(s->record, r, text);
     }
     tiku_fill(s, r, TIKU_C_NOTE);
@@ -562,8 +549,7 @@ void
 tiku_ui_arrow(tiku_surface_t *s, tiku_rect_t r, int dir, int enabled)
 {
     int cx = r.x + r.w / 2, cy = r.y + r.h / 2, i;
-    /* An arrow that cannot go any further says so by dimming: the glyph
-     * fades toward the panel while the button it sits on stays. */
+    /* A disabled arrow is drawn lighter. */
     tiku_rgb_t ink = enabled ? DARK()
                              : tiku_tint(DARK(), TIKU_LIGHTEN_2);
 
@@ -591,10 +577,8 @@ tiku_ui_gauge(tiku_surface_t *s, tiku_rect_t r, float fraction)
     if (fraction < 0.0f) { fraction = 0.0f; }
     if (fraction > 1.0f) { fraction = 1.0f; }
     if (rec) {
-        /* The gauge as its NUMBER.  Recorded as a bare fill it arrived as
-         * an EMPTY grey box: the frame and the bar are drawn by calls
-         * this one suppresses, so the far end saw a well with nothing in
-         * it whatever the value was. */
+        /* Recorded as its value in thousandths; the frame and the bar
+         * below are drawn without being recorded. */
         (void)tiku_dl_gauge(s->record, r, (int)(fraction * 1000.0f));
     }
 
@@ -640,8 +624,8 @@ tiku_ui_pill(tiku_surface_t *s, tiku_rect_t r, const char *label, int tone)
               TIKU_C_SELTEXT);
 }
 
-/* A switch's track: twice as wide as it is tall, at most the row it sits
- * in, so the knob it carries reads as round. */
+/* A switch's track, in pixels; tiku_ui_switch() lowers it to fit a
+ * shorter rectangle. */
 #define SWITCH_H  18
 #define SWITCH_W  34
 
@@ -696,15 +680,13 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
     int btn = horiz ? r.h : r.w;
     tiku_rect_t thumb;
 
-    /* The track a full shade down: one step from the panel read as the
-     * panel, and a scrollbar nobody can see is a listing nobody knows
-     * is longer than its window. */
+    /* The track and its frame, darker than the panel. */
     tiku_fill(s, r, tiku_tint(PANEL, 1.10f));
     tiku_frame(s, r, tiku_tint(PANEL, 1.22f));
 
     {
-        /* Whether each direction HAS anywhere to go: at an end the arrow
-         * pointing past it dims, and when everything fits both do. */
+        /* An arrow dims at its end of the track, and both dim when
+         * everything fits. */
         int can_back = frac < 1.0f && pos > 0.0f;
         int can_on = frac < 1.0f && pos < 1.0f;
 
@@ -723,10 +705,8 @@ tiku_ui_scrollbar_held(tiku_surface_t *s, tiku_rect_t r,
     if (frac > 1.0f) { frac = 1.0f; }
     if (frac < 0.05f) { frac = 0.05f; }
     if (rec) {
-        /* Twenty-five rectangles said where the thumb happened to be
-         * drawn; these two numbers say where the VIEW is, which is the
-         * fact a reader wanted and the far end can draw from.  Rounded,
-         * so a caller that hands over thousandths gets them back. */
+        /* Recorded as the position and length in thousandths, rounded,
+         * so thousandths handed in come back exactly. */
         (void)tiku_dl_scrollbar(s->record, r, (int)(pos * 1000.0f + 0.5f),
                                 (int)(frac * 1000.0f + 0.5f), horiz);
     }
@@ -822,8 +802,7 @@ tiku_ui_menu_icons(tiku_surface_t *s, tiku_rect_t r,
         if (icon != NULL) {
             icon(s, i, row.x + 4, row.y + (rowh - 16) / 2, 16, context);
         }
-        /* The row is the label's world: a long one ends at the border
-         * instead of walking out of the menu. */
+        /* A long label is clipped to its row. */
         tiku_clip_set(s, row);
         tiku_text(s, f, row.x + 8 + indent,
                        row.y + (rowh - f->height) / 2 + f->ascent, items[i],
@@ -847,11 +826,8 @@ tiku_ui_submenu_arrow(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
     if (s == NULL || item.h <= 0) {
         return;
     }
-    /*
-     * Half the row, forced odd so there is a single row at the point
-     * rather than a two-pixel blunt end, and never so small that the
-     * taper has nothing to happen in.
-     */
+    /* Half the row's height, made odd so the point is a single pixel
+     * row, and at least 5. */
     th = item.h / 2;
     if ((th & 1) == 0) {
         th--;
@@ -862,8 +838,7 @@ tiku_ui_submenu_arrow(tiku_surface_t *s, tiku_rect_t item, tiku_rgb_t c)
     tw = th / 2 + 1;
     mid = th / 2;
 
-    /* Set against the right edge, at the same remove the label keeps
-     * from the left of the row. */
+    /* Set 8 pixels in from the right edge. */
     x = item.x + item.w - 8 - tw;
     y = item.y + (item.h - th) / 2;
 
@@ -908,7 +883,7 @@ tiku_ui_list_header(tiku_surface_t *s, tiku_rect_t r,
         tiku_text(s, f, c.x + 5, c.y + (c.h - f->height) / 2 + f->ascent,
                        cols[i], TIKU_C_TEXT);
         if (i == sort_col) {
-            /* Sort marker: the same triangle the scrollbar arrows use. */
+            /* Sort marker: a small downward triangle. */
             int cx = c.x + c.w - 10, cy = c.y + c.h / 2, k;
             for (k = 0; k < 3; k++) {
                 tiku_hline(s, cx - k, cy + 1 - k, 2 * k + 1, DARK());
@@ -935,7 +910,7 @@ tiku_ui_window(tiku_surface_t *s, tiku_rect_t r,
         tab.w = tabw;
     }
 
-    /* Body frame first, so the tab overlaps its top edge like R5's does. */
+    /* The body frame first, so the tab overlaps its top edge. */
     tiku_fill(s, body, PANEL);
     tiku_frame(s, body, DARK());
     tiku_bevel(s, tiku_inset(body, 1), WHITE(), SHADOW());
@@ -963,10 +938,8 @@ int
 tiku_ui_text_spans(tiku_surface_t *s, const tiku_font_t *f, int x, int y,
                         const char *text, const tiku_span_t *span, int n)
 {
-    /* One run at a time, because tiku_text draws a whole string: the run
-     * is copied out so it can be terminated.  A run longer than this is
-     * split rather than dropped -- a line that cannot be copied whole is
-     * still a line somebody has to read. */
+    /* Each run is copied out and terminated, since tiku_text() draws a
+     * whole string; a run longer than the buffer is drawn in pieces. */
     char run[256];
     int at = 0, start = x;
     int i = 0;
@@ -986,8 +959,7 @@ tiku_ui_text_spans(tiku_surface_t *s, const tiku_font_t *f, int x, int y,
             len = span[i].len;
             i++;
         } else {
-            /* Past the table: the rest of the line is the document's own
-             * ink, which is what a short table promises. */
+            /* Past the table, the rest of the line is plain. */
             len = (int)strlen(text + at);
         }
         if (len <= 0) {
@@ -1000,11 +972,9 @@ tiku_ui_text_spans(tiku_surface_t *s, const tiku_font_t *f, int x, int y,
             if (take > (int)sizeof run - 1) {
                 int back = (int)sizeof run - 1;
 
-                /* Never cut a code point in half.  The font walks UTF-8,
-                 * so half a letter at the end of one chunk and its other
-                 * half at the head of the next draw as two fallback
-                 * glyphs of the wrong width -- a line that is correct
-                 * until it is long, which is the worst kind. */
+                /* A piece ends on a code point boundary: the halves of a
+                 * split UTF-8 sequence draw as two fallback glyphs of the
+                 * wrong width. */
                 while (back > 0 &&
                        ((unsigned char)text[at + back] & 0xC0u) == 0x80u) {
                     back--;
@@ -1037,17 +1007,16 @@ tiku_ui_group(tiku_surface_t *s, tiku_rect_t r, const char *label)
     if (s == NULL) {
         return in;
     }
-    /* The line sits on the words' middle, so the label straddles it --
-     * which is what makes the gap read as cut for them. */
+    /* The top line sits at the label's mid-height, so the label
+     * straddles it. */
     top = r.y + f->height / 2;
     lx = r.x + 10;
     if (label != NULL && label[0] != '\0') {
         gap = tiku_text_width(f, label) + 8;
     }
     /*
-     * Etched, not raised: dark line then light line, the groove the
-     * bevel language already spells for a sunken edge.  Drawn as four
-     * sides rather than a frame call because the top has a hole in it.
+     * Each side is a dark line with a light line beside it, drawn one
+     * side at a time because the top has a gap for the label.
      */
     if (gap > 0) {
         tiku_hline(s, r.x, top, lx - r.x - 4, DARK());

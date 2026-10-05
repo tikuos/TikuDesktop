@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_glyphpath.c - one outline, however it was described.
+ * tiku_glyphpath.c - the outline builder, its flattener and its
+ * coverage renderer.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,17 +15,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* A glyph is small.  These bound what a hostile file can ask for. */
+/* Bounds on what a malformed font can ask for. */
 #define PATH_MAX_EDGES  20000
 #define PATH_MAX_STEPS  64
-#define PATH_MAX_SIZE   1024    /* pixels across; a glyph is not a poster */
+#define PATH_MAX_SIZE   1024    /* pixels across */
 /*
- * No coordinate past this is worth carrying.  A font states the size of
- * its own em, and one that claims a thousandth of a pixel drives every
- * coordinate into the billions -- where converting a float to an int is
- * undefined, and lands on INT_MIN wherever the machine does not happen
- * to saturate.  Every edge is squared up to this on the way in, so
- * nothing downstream has to be clever.
+ * Every edge's coordinates are clamped to this on the way in.  A font
+ * states the size of its own em, and one that claims a tiny em drives
+ * coordinates into the billions, where converting a float to an int is
+ * undefined.
  */
 #define PATH_COORD_MAX  100000.0f
 
@@ -85,7 +84,7 @@ tiku_hint_y(const tiku_hint_t *hint, float y)
     if (hint->zones > 0 && y > 0.0f) {
         /* Between the baseline and the first zone the nudge comes in
          * proportionally, so a stem does not shear where it meets the
-         * line; above the last zone it is simply carried. */
+         * line; above the last zone the last nudge holds. */
         if (y >= hint->from[hint->zones - 1]) {
             shift = hint->shift[hint->zones - 1];
         } else {
@@ -157,13 +156,12 @@ tiku_path_failed(const tiku_path_t *path)
     return (path == NULL) || path->failed;
 }
 
-/** @brief @p v, brought back into the range an int can hold. */
+/** @brief @p v clamped to +-PATH_COORD_MAX, a NaN made zero. */
 static float
 sane(float v)
 {
-    /* Written against the NOT of each test, so that a NaN -- which
-     * compares false with everything -- comes back as zero rather than
-     * through. */
+    /* Each test is negated so that a NaN, which compares false with
+     * everything, falls into the first and comes back as zero. */
     if (!(v > -PATH_COORD_MAX)) {
         return (v == v) ? -PATH_COORD_MAX : 0.0f;
     }
@@ -183,7 +181,8 @@ saw(tiku_path_t *path, float x, float y)
     if (y > path->maxy) { path->maxy = y; }
 }
 
-/** @brief Lay one edge down, growing the run if there is room to. */
+/** @brief Lay one edge down, growing the array up to PATH_MAX_EDGES;
+ *         past that, or out of memory, the path fails. */
 static void
 edge(tiku_path_t *path, float x0, float y0, float x1, float y1)
 {
@@ -205,7 +204,7 @@ edge(tiku_path_t *path, float x0, float y0, float x1, float y1)
             want = PATH_MAX_EDGES;
         }
         if (path->count >= want) {
-            path->failed = 1;   /* an outline this complicated is not one */
+            path->failed = 1;   /* more than PATH_MAX_EDGES edges */
             return;
         }
         grown = realloc(path->edge, (size_t)want * sizeof *path->edge);
@@ -232,8 +231,8 @@ tiku_path_move(tiku_path_t *path, float x, float y)
         return;
     }
     place(path, &x, &y);
-    /* A new contour leaves the last one shut: a font that forgot to say
-     * so meant to, and an open contour floods the whole glyph. */
+    /* A new contour closes the last one: an open contour would flood
+     * the glyph with coverage. */
     tiku_path_close(path);
     path->x = path->sx = x;
     path->y = path->sy = y;
@@ -252,13 +251,14 @@ tiku_path_line(tiku_path_t *path, float x, float y)
     path->y = y;
 }
 
-/** @brief How many straight pieces a curve that long deserves. */
+/** @brief How many straight pieces a curve whose control polygon is
+ *         @p length long is cut into. */
 static int
 steps_for(float length)
 {
-    /* One piece per two pixels of control polygon: below that the eye
-     * cannot tell, above it the accumulator does the work for nothing.
-     * Tested so that a NaN, or a length no int holds, gets the most. */
+    /* One piece per two pixels of control polygon, plus two, at most
+     * PATH_MAX_STEPS.  The test is written so that a NaN, or a length no
+     * int holds, gets the most. */
     int n;
 
     if (!(length < 2.0f * (float)PATH_MAX_STEPS)) {
@@ -271,7 +271,8 @@ steps_for(float length)
     return n;
 }
 
-/** @brief A cheap length of the segment, to pick a piece count by. */
+/** @brief The segment's length as |dx| + |dy|: cheap, and close enough
+ *         to pick a piece count by. */
 static float
 span(float ax, float ay, float bx, float by)
 {
@@ -279,7 +280,7 @@ span(float ax, float ay, float bx, float by)
 
     if (dx < 0.0f) { dx = -dx; }
     if (dy < 0.0f) { dy = -dy; }
-    return dx + dy;             /* the cheap length: this only picks a count */
+    return dx + dy;
 }
 
 void
@@ -425,8 +426,8 @@ accumulate(float *a, int w, int h, float x0, float y0, float x1, float y1)
         int xai, xbi;
         float *row = a + (size_t)y * (size_t)(w + 2);
 
-        /* Into the row before the casts, not after: past INT_MAX the
-         * conversion has no defined answer to clamp. */
+        /* Clamped into the row before the casts: past INT_MAX a float to
+         * int conversion is undefined. */
         if (!(xa > 0.0f)) { xa = 0.0f; }
         if (!(xb > 0.0f)) { xb = 0.0f; }
         if (xa > (float)w) { xa = (float)w; }
@@ -515,16 +516,8 @@ tiku_path_render(const tiku_path_t *path, int x0, int y0, int w,
             if (cov > 1.0f) {
                 cov = 1.0f;
             }
-            /*
-             * Stem darkening.  Analytic coverage is honest -- a stem half
-             * a pixel wide is drawn half grey -- but honest is washed out
-             * at ten and twelve pixels, where the baked faces (rendered
-             * by a hinting library) put down a solid stem.  a gentle
-             * lift, c(1 + 0.4(1-c)), brings partial coverage toward ink
-             * the way that library's gamma
-             * does, in one multiply and no table, and leaves nothing
-             * fully covered or fully clear where it was.
-             */
+            /* Stem darkening: c(1 + 0.4(1-c)) lifts partial coverage
+             * toward ink; full and empty coverage stay as they are. */
             if (darken) {
                 cov = cov * (1.0f + 0.4f * (1.0f - cov));
             }

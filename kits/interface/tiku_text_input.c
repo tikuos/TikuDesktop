@@ -12,6 +12,10 @@
 #include "tiku_text_input.h"
 #include <string.h>
 
+/**
+ * @brief Whether the @p n bytes at @p s are UTF-8 with no NUL, DEL or
+ *        control character other than a newline or a tab.
+ */
 static int valid(const char *s, size_t n)
 {
     for (size_t i = 0; i < n;) {

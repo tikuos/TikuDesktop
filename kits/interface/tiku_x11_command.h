@@ -1,5 +1,6 @@
 /*
- * TikuTracker -- the file manager for TikuOS.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
@@ -12,14 +13,12 @@
 #define TIKU_X11_COMMAND_H
 
 /**
- * @brief Whether the key a person gives commands with is Command.
+ * @brief Whether commands are given with the Command key; otherwise they
+ *        are given with Control.
  *
- * One modifier on every desktop means "an instruction, not a letter",
- * and which key wears it belongs to the machine: Control on a PC
- * keyboard, Command on a Mac one.  A file per host answers it, since
- * the interface kit draws on no other and is built for boards with no
- * display.  Only which key, never which modifier bit carries it: that
- * belongs to the keymap, and is asked of the server holding it.
+ * The build links one file per host: tiku_x11_command_darwin.c answers
+ * Command, tiku_x11_command_linux.c Control.  Which modifier bit carries
+ * the key is the keymap's, read from the X server by tiku_x11.c.
  *
  * @return nonzero when Command is that key, zero when Control is.
  */

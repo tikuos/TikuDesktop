@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_textview.c - the document's text, caret and scroll.
+ * tiku_textview.c - the document's text, caret, selection, journal and
+ * scroll.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +15,7 @@
 #include "tiku_textview.h"
 #include "tiku_text_input.h"
 
-/** @brief Byte offsets at the adjacent UTF-8 codepoint boundaries. */
+/** @brief The byte offset of the codepoint before byte @p at of @p s. */
 static int text_previous(const char *s, int at)
 {
     int start = at > 0 ? at - 1 : 0;
@@ -22,6 +23,10 @@ static int text_previous(const char *s, int at)
            ((unsigned char)s[start] & 0xc0) == 0x80) start--;
     return start;
 }
+/**
+ * @brief The byte offset after the codepoint at byte @p at of @p s, at
+ *        most @p length.
+ */
 static int text_next(const char *s, int at, int length)
 {
     int end = at < length ? at + 1 : length;
@@ -41,7 +46,7 @@ line_set(tiku_textview_line_t *l, const char *text, int len)
     }
     copy = malloc((size_t)len + 1u);
     if (copy == NULL) {
-        return;                 /* the old text stands rather than a NULL */
+        return;                 /* on failure the old text stays */
     }
     if (len > 0 && text != NULL) {
         memcpy(copy, text, (size_t)len);
@@ -181,7 +186,7 @@ static int
 span_insert(tiku_textview_t *tv, int y, int x, const char *text, int n)
 {
     int breaks = span_breaks(tv, y, x, text, n), i, k = 0, start = 0, seg = 0;
-    const char *old = tiku_textview_line(tv, y);    /* "" for a line not yet held */
+    const char *old = tiku_textview_line(tv, y);  /* "" if not yet held */
     tiku_textview_line_t *made;
 
     if (breaks < 0 ||
@@ -245,8 +250,8 @@ journal_clear(tiku_textview_t *tv)
  * @brief Write one edit into the journal, folding a keystroke run.
  *
  * A single character continuing the run above -- typed just after the
- * last, or rubbed out just before it -- grows that entry rather than
- * making a new one, so a word is one step to undo.  Anything else
+ * last, or rubbed out just before it -- grows that entry, so a word is
+ * one step to undo.  Anything else
  * starts a fresh entry, and the redo history above the present is let
  * go the moment a new edit lands.  Quiet while undo/redo is replaying.
  */
@@ -353,9 +358,9 @@ tiku_textview_init(tiku_textview_t *tv)
         return;
     }
     memset(tv, 0, sizeof *tv);
-    /* One empty line, never zero: every operation below may assume the
-     * caret has a line to stand on, which is what keeps them short. */
-    /* NULL is an empty line too; clearing/freeing a view must not allocate. */
+    /* One empty line, never none: every operation may assume the caret
+     * has a line to stand on.  Its text is NULL, which reads as empty, so
+     * clearing or freeing a view allocates nothing. */
     tv->nline = 1;
     tv->recording = 1;          /* the journal listens from the start */
 }
@@ -408,9 +413,8 @@ tiku_textview_set(tiku_textview_t *tv, const char *text)
         }
         p = nl + 1;
         if (*p == '\0') {
-            /* The newline that ENDS a file closes the last line rather
-             * than starting an empty one, or a file grows a blank line
-             * every time it is opened and written back. */
+            /* The newline that ends a file closes the last line and
+             * starts no empty one. */
             break;
         }
     }
@@ -454,8 +458,8 @@ tiku_textview_line_len(const tiku_textview_t *tv, int i)
 int
 tiku_textview_modified(const tiku_textview_t *tv)
 {
-    /* Not a flag that only ever goes up: the DISTANCE from the mark the
-     * last save left, so undoing back to a save reads as unmodified. */
+    /* Compared with the mark the last save left, so undoing back to a
+     * save reads as unmodified. */
     return (tv != NULL) ? (tv->undo_at != tv->saved_at) : 0;
 }
 
@@ -465,8 +469,8 @@ tiku_textview_saved(tiku_textview_t *tv)
     if (tv != NULL) {
         tv->saved_at = tv->undo_at;
         /* The run is closed at a save, so the next keystroke starts a
-         * new entry -- or typing after a save would grow the entry the
-         * mark points at, and the change would not read as one. */
+         * new entry and moves the present off the mark; a keystroke
+         * folded into the marked entry leaves the view unmodified. */
         if (tv->undo_n > 0) {
             tv->undo[tv->undo_n - 1].coalesce = 0;
         }
@@ -586,11 +590,10 @@ tiku_textview_selected(const tiku_textview_t *tv, char *out, size_t max)
         if (c0 > len) { c0 = len; }
         if (c1 > len) { c1 = len; }
         n = (size_t)((c1 > c0) ? c1 - c0 : 0);
-        /* room for these characters, the newline this line carries only
-         * if it is NOT the last, and the terminator -- reserving a
-         * newline the last line never has would drop its final byte. */
+        /* Room for these characters, a newline unless this is the last
+         * line, and the terminator. */
         if (used + n + (size_t)((line < y1) ? 1u : 0u) + 1u > max) {
-            break;              /* whole characters or none of them */
+            break;              /* the line's part whole or not at all */
         }
         memcpy(out + used, text + c0, n);
         used += n;
@@ -657,8 +660,8 @@ int tiku_textview_commit(tiku_textview_t *tv, const char *text)
         }
     }
     if (run + tail >= TIKU_TEXTVIEW_LINE_MAX) return 0;
-    /* The text goes in whole, so no line of it is measured with the text
-     * after the selection before its own break is made. */
+    /* The text goes in whole, in one span_insert(), so each line is
+     * measured with its own break in place. */
     tiku_textview_group_begin(tv);
     ok = sel_delete(tv) >= 0 &&
          span_insert(tv, tv->cy, tv->cx, checked.text, (int)checked.length);
@@ -784,8 +787,8 @@ tiku_textview_undo(tiku_textview_t *tv)
                  tv->undo[tv->undo_at - 1].group == g);
         tv->recording = 1;
     }
-    /* The run below is closed, so a new edit after an undo is its own
-     * entry rather than a fold into a pre-undo one. */
+    /* The run below is closed, so a new edit after an undo starts an
+     * entry of its own. */
     if (tv->undo_at > 0) {
         tv->undo[tv->undo_at - 1].coalesce = 0;
     }
@@ -832,13 +835,11 @@ tiku_textview_can_redo(const tiku_textview_t *tv)
 }
 
 /**
- * @brief Bring the caret back inside the buffer.
+ * @brief Bring the caret back inside the buffer, onto a codepoint.
  *
- * A caret column can be left past its line's end -- a selection anchor
- * outlives the edit that shortened the line under it.  An edit that then
- * reads `len - cx` gets a negative count that becomes a huge size_t and
- * runs a memcpy off the end (SIGABRT under FORTIFY).  Every edit clamps
- * first so that cannot happen.
+ * A caret column past its line's end gives an edit that reads `len - cx`
+ * a negative count, which becomes a huge size_t and copies off the end of
+ * the line.  Every edit clamps first so that cannot happen.
  */
 static void
 caret_clamp(tiku_textview_t *tv)
@@ -864,8 +865,8 @@ caret_clamp(tiku_textview_t *tv)
  * @brief Remove the selected span in one step, caret left where it began.
  *
  * The span is recorded whole, so a single undo restores it.  An anchor at
- * the caret encloses nothing and is dropped: kept, the edit's own text
- * would become its selection.  @return 1 when the span went, 0 when there
+ * the caret encloses nothing and is dropped, so the edit's own text does
+ * not become a selection.  @return 1 when the span went, 0 when there
  * was none, -1 when the joined line would not fit or memory ran out, and
  * nothing changed.
  */
@@ -933,7 +934,7 @@ tiku_textview_insert(tiku_textview_t *tv, char ch)
     }
     l = &tv->line[tv->cy];
     if (l->len + 1 >= TIKU_TEXTVIEW_LINE_MAX) {
-        return;                 /* a full line refuses rather than truncates */
+        return;                 /* a full line takes nothing */
     }
     {
         int ol = tv->cy, oc = tv->cx;
@@ -1073,9 +1074,8 @@ tiku_textview_delete(tiku_textview_t *tv)
         line_set(l, buf, l->len - n);
         record(tv, 2, gl, gc, gone, n);
     } else if (tv->cy + 1 < tv->nline) {
-        /* Forwards at a line's end is the same fold as backspace at the
-         * next line's head, so it is the same code -- and the caret must
-         * come back to where it already was, which join leaves it. */
+        /* Delete at a line's end is the join backspace makes at the next
+         * line's head, and leaves the caret where it was. */
         int gl = tv->cy, gc = tv->cx;
 
         if (join_previous(tv, tv->cy + 1)) {
@@ -1126,8 +1126,8 @@ tiku_textview_move(tiku_textview_t *tv, tiku_textview_move_t how)
     default:
         return;
     }
-    /* Up and down keep the column where they can: a short line clamps
-     * the caret to its end rather than off it. */
+    /* Up and down keep the column where they can; on a shorter line the
+     * caret goes to its end. */
     if (tv->cx > tv->line[tv->cy].len) {
         tv->cx = tv->line[tv->cy].len;
     }
@@ -1164,8 +1164,7 @@ tiku_textview_scroll_to(tiku_textview_t *tv, int top, int rows)
         return 0;
     }
     was = tv->top;
-    /* Never past the last screenful: scrolling into blank space below a
-     * document is a way to lose sight of it. */
+    /* Never past the last screenful. */
     most = (rows > 0 && tv->nline > rows) ? tv->nline - rows : 0;
     if (top < 0) { top = 0; }
     if (top > most) { top = most; }

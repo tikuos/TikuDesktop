@@ -7,13 +7,11 @@
  * tiku_logo.h - the TikuOS mark.
  *
  * Two wireframe cubes locked through one another, amber on the edges
- * where they meet.  Kept as the drawing rather than a picture: a dozen
- * straight lines and one filled face, described in the 1024-unit space
- * the artwork was drawn in and painted through the outline rasteriser
- * the faces use.  A mark stored as pixels has one size and is soft at
- * every other, and this one sits in a 16-pixel Deskbar strip and fills
- * the About panel; drawn, it is sharp at both and follows the
- * interface's size.
+ * where they meet.  The mark is kept as geometry: twelve stroked runs and
+ * one filled face in the 1024-unit space of the artwork
+ * (assets/system/tikuos-logo-haiku.svg), painted through the glyph path
+ * rasteriser, so it is sharp at any size and its colours are chosen when
+ * it is drawn.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,81 +21,74 @@
 #include "tiku_gfx.h"
 
 /**
- * @brief Lay the artwork's own light ground down under the mark.
- *
- * For somewhere the mark is a TILE -- the About box -- where it should
- * look like the thing on the box.  Left off where the mark sits on a
- * surface of its own, such as the Deskbar's amber leaf, on which a pale
- * square would read as a sticker rather than a logo.
+ * @brief Flag: fill the mark's square with the palette's light ground,
+ *        for a mark shown as a tile.
  */
 #define TIKU_LOGO_GROUND 0x1u
 
 /**
- * @brief Draw the mark, fitted to the largest square inside @p r.
+ * @brief Draw the mark in its own colours, centred in the largest square
+ *        inside @p r.
  *
- * Centred and never wider than tall, since a stretched logo is worse
- * than room beside it.  Drawn three ways across the eightfold range it
- * covers: both cubes at 32 px and up, the near cube alone from 22 to
- * 31, where two wireframes would tangle, and the near cube filled under
- * 22, so it reads as a solid with a lit face.  Without hue the whole
- * goes to luminance, like every other picture.
+ * Drawn three ways by the square's side: both cubes at 32 px and up, the
+ * near cube alone from 22 to 31, and the near cube filled under 22.  A
+ * side under 4 draws nothing.  When the theme has no hue
+ * (tiku_theme_achromatic()), every colour is drawn as its grey.
+ *
+ * @param flags  TIKU_LOGO_GROUND or 0
  */
 void tiku_logo_paint(tiku_surface_t *s, tiku_rect_t r, unsigned flags);
 
 /*---------------------------------------------------------------------------*/
-/* Colour, at the time of drawing rather than at the time of building        */
+/* PALETTES                                                                  */
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief One set of the seven colours the mark is made of.
+ * @brief One set of the seven colours the mark is drawn in.
  *
- * The mark is kept as geometry, so its colours are arguments to fills
- * that have not happened yet.  That is the whole reason it is worth
- * carrying the drawing around instead of a picture of it: a picture has
- * the colours baked into every pixel and can only be recoloured by going
- * back over them and guessing which were which.
+ * The mark is geometry, so a palette recolours it when it is drawn.
  */
 typedef struct {
-    tiku_rgb_t ground;     /* the light square the mark sits on   */
-    tiku_rgb_t dark;       /* the near cube's edges               */
-    tiku_rgb_t grey;       /* the far cube's                      */
-    tiku_rgb_t accent;     /* the lit edges, where they meet      */
-    tiku_rgb_t tint;       /* the one filled face                 */
-    tiku_rgb_t mix_a;      /* the two edges that are half lit     */
-    tiku_rgb_t mix_b;
+    tiku_rgb_t ground;     /**< the light square the mark sits on   */
+    tiku_rgb_t dark;       /**< the near cube's edges               */
+    tiku_rgb_t grey;       /**< the far cube's edges                */
+    tiku_rgb_t accent;     /**< the lit edges, where the cubes meet */
+    tiku_rgb_t tint;       /**< the one filled face                 */
+    tiku_rgb_t mix_a;      /**< the near cube's half-lit edge       */
+    tiku_rgb_t mix_b;      /**< the far cube's half-lit edge        */
 } tiku_logo_palette_t;
 
 /** @brief How many sets are built in.  The first is the mark as drawn. */
 int tiku_logo_palette_count(void);
 
 /**
- * @brief Set @p i, carried @p toward_next of the way to set @p i + 1.
+ * @brief Fill @p out with set @p i blended @p toward_next of the way to
+ *        set @p i + 1.
  *
- * The blend is of the COLOURS, not of two drawings, so a fade costs
- * exactly what a single frame costs -- there is no second rendering to
- * cross-dissolve with.  @p toward_next outside 0..1 is clamped, and the
- * set after the last is the first again.
+ * Only the colours are blended, so a fade between sets costs one frame.
+ * @p toward_next is clamped to 0..1, @p i wraps in both directions, and
+ * the set after the last is the first.
  */
 void tiku_logo_palette(int i, float toward_next, tiku_logo_palette_t *out);
 
 /**
- * @brief Draw with the colours given, shaded by @p shade.
+ * @brief Draw the mark as tiku_logo_paint() does, in palette @p p, shaded
+ *        by @p shade.
  *
- * @p shade follows tiku_tint: 1.0 draws the colours as they are, below
- * one lightens them, above one darkens.  It is what lets one mark sit
- * legibly on the Deskbar's amber leaf in the light theme and on the
- * deepened amber of the dark one, where the near cube's near-black edges
- * would otherwise disappear into the button.
+ * @p shade follows tiku_tint(): 1.0 draws the colours as they are, below
+ * one lightens them, above one darkens.
+ *
+ * @param p  The colours, or NULL for set 0
  */
 void tiku_logo_paint_with(tiku_surface_t *s, tiku_rect_t r, unsigned flags,
                           const tiku_logo_palette_t *p, float shade);
 
 /**
- * @brief The mark's ground colour, for a caller that wants to match it.
+ * @brief The ground colour of set 0, for a caller drawing next to the
+ *        mark.
  *
- * The artwork has a light ground of its own and keeps it in every theme
- * -- a logo whose colours follow the furniture is not a logo -- so
- * anything drawn hard against it should ask rather than assume.
+ * The ground does not follow the theme, except that it is returned as its
+ * grey when the theme has no hue.
  */
 tiku_rgb_t tiku_logo_ground(void);
 

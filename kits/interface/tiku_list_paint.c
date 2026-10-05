@@ -35,8 +35,8 @@ tiku_list_draw(const tiku_list_t *l, tiku_surface_t *s, tiku_rect_t body,
         }
         n = name(ctx, row);
         if (l->head[row]) {
-            /* Words, not a row: the group's NAME, in the face labels
-             * wear, over the paper the rows stand on. */
+            /* A heading: the group's name in the bold face on the
+             * document colour, recorded as text. */
             tiku_rect_t r = tiku_list_row_rect(l, body, row);
             const tiku_font_t *f = tiku_font_bold();
 

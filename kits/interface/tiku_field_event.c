@@ -16,24 +16,28 @@
 
 void tiku_field_input_init(tiku_field_input_t *in)
 { memset(in, 0, sizeof *in); }
+/** @brief Where the code point at @p at ends, at most @p len. */
 static int next(const char *s, int at, int len)
 {
     if (at < len) at++;
     while (at < len && ((unsigned char)s[at] & 0xc0) == 0x80) at++;
     return at;
 }
+/** @brief Where the code point before @p at starts. */
 static int prev(const char *s, int at)
 {
     if (at > 0) at--;
     while (at > 0 && ((unsigned char)s[at] & 0xc0) == 0x80) at--;
     return at;
 }
+/** @brief The plain face's width of the first @p at bytes of @p s. */
 static int width(const char *s, int at)
 {
     char prefix[TIKU_FIELD_MAX];
     memcpy(prefix, s, (size_t)at); prefix[at] = 0;
     return tiku_measure_width(TIKU_MEASURE_PLAIN, prefix);
 }
+/** @brief Scroll so that the caret is inside @p r. */
 static void visible(tiku_field_t *e, tiku_field_input_t *in, tiku_rect_t r)
 {
     int x = width(e->text, e->caret), room = r.w - 6;
@@ -42,6 +46,7 @@ static void visible(tiku_field_t *e, tiku_field_input_t *in, tiku_rect_t r)
     if (x > in->scroll + room) in->scroll = x - room;
     if (in->scroll < 0) in->scroll = 0;
 }
+/** @brief The caret offset nearest window x @p x in the field at @p r. */
 static int caret_at(tiku_field_t *e, tiku_field_input_t *in,
                     tiku_rect_t r, int x)
 {
@@ -57,6 +62,8 @@ static int caret_at(tiku_field_t *e, tiku_field_input_t *in,
     }
     return e->len;
 }
+/** @brief Move the caret to @p at, extending the selection with
+ *         @p shift and dropping it without. */
 static void move(tiku_field_t *e, int at, int shift)
 {
     if (shift) {
@@ -65,11 +72,13 @@ static void move(tiku_field_t *e, int at, int shift)
     } else e->sel_a = e->sel_b = at;
     e->caret = at;
 }
+/** @brief Copy @p e's text, caret and selection into @p s. */
 static void snapshot(tiku_field_snapshot_t *s, const tiku_field_t *e)
 {
     memcpy(s->text, e->text, sizeof s->text);
     s->caret = e->caret; s->a = e->sel_a; s->b = e->sel_b;
 }
+/** @brief Push a snapshot of @p e, the oldest falling off a full stack. */
 static void push(tiku_field_snapshot_t *stack, int *n, const tiku_field_t *e)
 {
     if (*n == TIKU_FIELD_HISTORY) {
@@ -78,6 +87,8 @@ static void push(tiku_field_snapshot_t *stack, int *n, const tiku_field_t *e)
     }
     snapshot(&stack[(*n)++], e);
 }
+/** @brief Step back one edit, or forward one with @p redo; a read-only
+ *         field is left alone. */
 static void undo(tiku_field_t *e, tiku_field_input_t *in, int redo)
 {
     tiku_field_snapshot_t *from = redo ? in->redo : in->undo;
@@ -89,7 +100,9 @@ static void undo(tiku_field_t *e, tiku_field_input_t *in, int redo)
     e->len = (int)strlen(e->text);
     e->caret = s->caret; e->sel_a = s->a; e->sel_b = s->b;
 }
-/* Reject control bytes, malformed/overlong UTF-8, surrogates and overflow. */
+/** @brief Whether @p s may go into @p e: no control or denied byte, and
+ *         UTF-8 with no malformed or overlong sequence, surrogate, or
+ *         code point past U+10FFFF. */
 static int valid(const tiku_field_t *e, const char *s)
 {
     const unsigned char *p = (const unsigned char *)s;
@@ -114,6 +127,11 @@ static int valid(const tiku_field_t *e, const char *s)
     }
     return 1;
 }
+/**
+ * @brief Replace bytes @p lo to @p hi with @p text, as one undo step.
+ * @return 1, also for a read-only field left unchanged; -1 when @p text
+ *         is refused or does not fit.
+ */
 static int replace(tiku_field_t *e, tiku_field_input_t *in,
                      int lo, int hi, const char *text)
 {
@@ -129,6 +147,11 @@ static int replace(tiku_field_t *e, tiku_field_input_t *in,
     move(e, lo + (int)n, 0);
     return 1;
 }
+/**
+ * @brief One key press: a Cmd shortcut, a caret move, a deletion or text.
+ * @return 1 when handled, 0 when it is not the field's, -1 when its text
+ *         was refused.
+ */
 static int key(tiku_field_t *e, tiku_field_input_t *in, const tiku_input_event_t *ev)
 {
     int lo = e->sel_a < e->sel_b ? e->sel_a : e->sel_b;

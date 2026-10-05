@@ -27,8 +27,8 @@
 #define TIKU_MOD_OPTION 0x04u
 #define TIKU_MOD_CAPS   0x08u
 
-/* Printable keys use their character value.  Non-printing navigation keys
- * occupy the small values already used by Tracker's headless controllers. */
+/* Printable keys use their character value; the keys that print nothing
+ * take the small values below 0x20. */
 #define TIKU_KEY_UP       1u
 #define TIKU_KEY_DOWN     2u
 #define TIKU_KEY_LEFT     3u
@@ -49,6 +49,7 @@
 #define TIKU_KEY_OPTION   18u
 #define TIKU_KEY_F1       19u
 
+/** @brief The application-side name of an input event. */
 typedef tiku_input_event_t tiku_event_t;
 
 #endif /* TIKU_DISPLAYLESS */

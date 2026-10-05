@@ -7,13 +7,12 @@
  * tiku_tabs.h - a horizontal tab strip: a row of named tabs, one of them
  * current, over a body the current one names.
  *
- * The state that makes it a control rather than a picture: which tabs
- * there are, which one is current, where each sits in a strip, which one
- * a click lands on, and the arrow that moves between them.  An
- * application supplies the names and reads back the current index to
- * decide what to show under the strip; the widget owns everything else,
- * so a second window that wants tabs does not re-derive the layout, the
- * hit-test and the look a third time.
+ * The state behind the control: which tabs there are, which one is
+ * current, where each sits in a strip, which one a click lands on, and
+ * the arrow that moves between them.  An application supplies the names
+ * and reads back the current index to decide what to show under the
+ * strip; the widget owns the layout, the hit test and, in
+ * tiku_tabs_paint.h, the look.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,13 +21,14 @@
 
 #include "tiku_geom.h"
 
-#define TIKU_TABS_MAX        8
-#define TIKU_TABS_LABEL_MAX 40
+#define TIKU_TABS_MAX        8   /**< tabs in one strip                */
+#define TIKU_TABS_LABEL_MAX 40   /**< bytes of a label, NUL included   */
 
+/** @brief A strip's tabs and the current one. */
 typedef struct {
     char label[TIKU_TABS_MAX][TIKU_TABS_LABEL_MAX];
     int  count;
-    int  current;
+    int  current;                /**< index, or -1 when there are none */
 } tiku_tabs_t;
 
 /** @brief Start empty, nothing current yet. */
@@ -48,28 +48,26 @@ int tiku_tabs_current(const tiku_tabs_t *t);
 
 /**
  * @brief Make @p index current, clamped to what exists.
- * @return the current index after clamping.
+ * @return the current index after clamping, or -1 when there are none.
  */
 int tiku_tabs_select(tiku_tabs_t *t, int index);
 
 /**
  * @brief Step the current tab by @p dir (-1 or +1), wrapping the ends.
  *
- * The arrow keys of a tabbed window: past the last tab comes the first,
- * so a right arrow held never stops on nothing.
- * @return the current index after the step.
+ * The arrow keys of a tabbed window: past the last tab comes the first.
+ * @return the current index after the step, or -1 when there are none.
  */
 int tiku_tabs_next(tiku_tabs_t *t, int dir);
 
 /**
- * @brief Where tab @p index sits in a strip @p strip long.
+ * @brief Where tab @p index sits in @p strip.
  *
  * The tabs divide the strip evenly.  An index the strip does not have
  * gets a zero-width rect, so a caller looping past the count draws and
- * hits nothing.  The strip is assumed at least as wide as the count:
- * narrower, interior tabs floor to zero width and the last eats the
- * rest, hittable no longer; both callers keep the strip an order of
- * magnitude wider than the count.
+ * hits nothing.
+ * @note Keep the strip wider than the count: in a narrower one the
+ *       interior tabs have no width and cannot be hit.
  */
 tiku_rect_t tiku_tabs_rect(const tiku_tabs_t *t, tiku_rect_t strip,
                            int index);

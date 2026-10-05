@@ -26,16 +26,16 @@
 
 /** @brief One effect's timing.  A zeroed one is idle. */
 typedef struct {
-    int64_t since;      /* when it started, monotonic microseconds */
-    int64_t duration;   /* how long it runs, in microseconds       */
-    int     active;     /* nonzero while it runs                   */
+    int64_t since;      /**< when it started, monotonic microseconds */
+    int64_t duration;   /**< how long it runs, in microseconds       */
+    int     active;     /**< nonzero while it runs                   */
 } tiku_motion_t;
 
 /**
  * @brief Start @p motion at @p now, to run for @p duration microseconds.
  *
- * A @p now of zero leaves it idle: a frame with nobody to see it, or one
- * drawn with Reduce motion on, passes zero and shows the end state.
+ * A @p now or a @p duration of zero leaves it idle; a caller passes 0 to
+ * show the end state, as with Reduce motion on.
  */
 void tiku_motion_start(tiku_motion_t *motion, int64_t now, int64_t duration);
 
@@ -70,8 +70,8 @@ tiku_rect_t tiku_motion_outline_bounds(tiku_rect_t icon);
  *
  * Only the part of @p bounds inside the surface's clip is kept, and
  * @p captured says which part.  NULL when there is nothing to fade (a
- * progress outside 0..1, no overlap, or no memory); the popup then draws
- * as it is.
+ * progress below 0 or at 1 and past, no overlap, or no memory); the popup
+ * then draws as it is.
  * @note Hand the result to tiku_motion_fade_end() after drawing the popup.
  */
 tiku_surface_t *tiku_motion_fade_begin(tiku_surface_t *surface,

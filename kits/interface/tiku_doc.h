@@ -7,10 +7,10 @@
  * tiku_doc.h - a documentation page, read and laid out, with no pixels.
  *
  * A help dialect of HTML becomes blocks of inline runs, and a width
- * becomes lines of PIECES: the run/line intersections, each one a byte
+ * becomes lines of pieces: the run/line intersections, each one a byte
  * range with a measured x and width.  The piece table is the one thing
  * the painter draws from and the one thing the hit test searches, so a
- * link is where it was drawn.  What a page LOOKS like is not here: the
+ * link is where it was drawn.  What a page looks like is not here: the
  * ink vocabulary belongs to the painter, and the words belong to the
  * application's strings.
  *
@@ -27,9 +27,8 @@
 
 /*
  * The caps, each with its own #ifndef so a command-line override takes
- * the one it names and leaves the rest.  A table that fills sets its bit
- * and the read goes on: one link too many costs that link, not the rest
- * of the page.
+ * the one it names and leaves the rest.  A table that fills sets its
+ * TIKU_DOC_FULL_* bit and the read goes on without what did not fit.
  */
 #ifndef TIKU_DOC_TEXT_MAX
 #define TIKU_DOC_TEXT_MAX    16384  /* the page's words, entities decoded */
@@ -61,7 +60,7 @@
 /* How deep the elements may nest while reading.  Parse-time only. */
 #define TIKU_DOC_DEPTH_MAX   16
 
-/** @brief Nothing: no link, no line, no block, no piece.  One spelling. */
+/** @brief Nothing: no link, no line, no block, no piece. */
 #define TIKU_DOC_NONE (-1)
 
 /** @brief What a block is, which decides its face, indent and spacing. */
@@ -84,9 +83,7 @@ typedef enum {
     /*
      * What a cap cost, as a block of its own.  A page that was cut gets
      * one at the end, so the cut takes room in the line table and is
-     * read back by anything that reads the window's words.  A bit a
-     * caller may forget to look at is how a listing of 128 came to look
-     * complete.
+     * read back by anything that reads the window's words.
      */
     TIKU_DOC_BLOCK_NOTICE,
     TIKU_DOC_BLOCK_KINDS
@@ -96,8 +93,8 @@ typedef enum {
  * @brief What a run of words means, which the painter turns into ink.
  *
  * tiku_ink_t is the painter's, in tiku_gfx.h, which a file that compiles
- * for a board may not include.  EMPHASIS has no italic face to take:
- * the painter gives it an ink instead.
+ * for a board may not include.  The painter draws EMPHASIS in an ink of
+ * its own: the proportional faces have no italic cut.
  */
 typedef enum {
     TIKU_DOC_INK_PLAIN = 0,
@@ -121,9 +118,8 @@ typedef enum {
 #define TIKU_DOC_BLOCK_HEADER  0x02u
 
 /*
- * Which table filled, as bits.  tiku_doc_full_first() hands back the
- * first of them as an untranslated noun and the cap it hit, because the
- * sentence a person reads is the application's to write.
+ * Which table filled, as bits; tiku_doc_full_first() names the first as
+ * an untranslated noun, with the cap it hit.
  */
 #define TIKU_DOC_FULL_TEXT    0x001u
 #define TIKU_DOC_FULL_BLOCKS  0x002u
@@ -139,19 +135,19 @@ typedef enum {
  *
  * Desktop headings use the measured font-size ladder. At its largest
  * size, and on boards that provide a single baked metrics table, bold
- * at body size is the fallback. This bit reports that fallback without
- * treating it as lost document content.
+ * at body size is the fallback.  This bit reports that fallback; it is
+ * not a cut and adds no notice.
  */
 #define TIKU_DOC_FACE_FLAT    0x200u
 /** @brief A word was broken between codepoints to fit a narrow box. */
 #define TIKU_DOC_NARROW       0x400u
 /**
- * @brief A table had more columns than there are, and folded the rest.
+ * @brief A table had more than TIKU_DOC_COLS_MAX columns, and folded the
+ *        rest.
  *
- * Like the two above, this says how the page was fitted rather than
- * that anything was lost: a cell past the last column is laid in the
- * last one, under whatever is already there, so its words are still
- * read.
+ * Like the two above, this reports how the page was fitted and adds no
+ * notice: a cell past the last column is laid in the last one, under
+ * what is already there.
  */
 #define TIKU_DOC_COLS_FOLDED  0x800u
 
@@ -187,10 +183,9 @@ typedef struct {
 /**
  * @brief One run met by one line: the unit drawn, and the unit hit.
  *
- * The face, the ink and the link are read back through @c run rather
- * than copied here, since a copy is a thing that can come to disagree
- * with what it copied.  @c w was measured while laying out, in that
- * run's face, so a rectangle is arithmetic and never a second measure.
+ * The face, the ink and the link are read back through @c run, not
+ * copied here.  @c w was measured while laying out, in that run's face,
+ * so a rectangle needs no second measure.
  */
 typedef struct {
     int32_t off;                /* into the page's text: the bytes drawn */
@@ -209,7 +204,9 @@ typedef struct {
     int32_t x, w;               /* the indent, and the advance used      */
 } tiku_doc_line_t;
 
-/** @brief A link, and every piece of it, which stay next to each other. */
+/** @brief A link: its href, its runs and its pieces.  Each range starts at
+ *         the link's first run or piece and holds only those that follow
+ *         it without a gap. */
 typedef struct {
     int32_t href;               /* into the page's text                  */
     int32_t run0, nrun;
@@ -249,9 +246,8 @@ typedef struct {
 /**
  * @brief Where a reader is, in terms a re-layout cannot move.
  *
- * A y is a number about one width.  A block and how far down it the
- * reader had got survives a resize and a change of text size, which is
- * what keeps a paragraph under the eye while a window is dragged.
+ * A y holds for one width only; a block and the lines into it hold
+ * across a resize and a change of text size.
  */
 typedef struct {
     int block;
@@ -261,21 +257,29 @@ typedef struct {
 /**
  * @brief How big a picture is, asked of whoever can decode one.
  *
- * The interface kit may not read an image: the decoders are the
- * translation kit's, and this kit includes nothing outside itself.  A
- * caller that has them answers here; one that has not returns 0 and the
- * page draws the alt text in a frame.  The same @p src must be given
- * the same size throughout one layout, or the page drawn and the page
- * hit are two different pages.
+ * The decoders are the translation kit's, and this kit includes nothing
+ * outside itself.  A caller that has them answers here; one that has not
+ * returns 0 and the page draws the alt text in a frame.
+ * @note The same @p src must get the same size throughout one layout, or
+ *       the page drawn and the page hit differ.
  */
 typedef int (*tiku_doc_image_fn)(void *ctx, const char *src,
                                  int *w, int *h);
 
-/** @brief Per-document capacities; defaults remain suitable for small pages. */
+/** @brief Per-document capacities; tiku_doc_init() sets the
+ *         TIKU_DOC_*_MAX defaults. */
 typedef struct {
     int text, blocks, runs, lines, pieces, links, anchors, images;
 } tiku_doc_limits_t;
 
+/**
+ * @brief A page: its text and tables, the layout, and their storage.
+ *
+ * The default tables are inside it, so it is large, and it may point at
+ * larger storage of the caller's.
+ * @note Hold it through a pointer; copied by value, its table pointers
+ *       still point into the original.
+ */
 typedef struct {
     char *text;
     int  ntext;
@@ -299,7 +303,7 @@ typedef struct {
     tiku_doc_limits_t limits;    /* capacities of the bound buffers */
     void *storage;              /* optional caller-owned, aligned memory */
     size_t storage_bytes;
-    /* Default storage needs no heap, and is never enlarged globally. */
+    /* The default tables, inside the page: no heap. */
     char small_text[TIKU_DOC_TEXT_MAX];
     tiku_doc_block_t  small_block[TIKU_DOC_BLOCKS_MAX];
     tiku_doc_run_t    small_run[TIKU_DOC_RUNS_MAX];
@@ -310,24 +314,20 @@ typedef struct {
     tiku_doc_image_t  small_image[TIKU_DOC_IMAGES_MAX];
 } tiku_doc_t;
 
-/*
- * A page includes fixed fallback tables, and may reference larger storage.
- * Hold it through a pointer rather than copying it by value.
- * Every window controller in TikuTracker is embedded in the desktop's
- * own struct, which is already megabytes of stack.
- */
-
 /** @brief An empty page: no blocks, no text, nothing laid out. */
 void tiku_doc_init(tiku_doc_t *d);
 
-/** @brief Bytes for caller-owned storage; zero means invalid capacities. */
+/** @brief Bytes of caller-owned storage @p limits need, or 0 when a limit
+ *         is invalid: fewer than two blocks, any count below 1, or a
+ *         size that would overflow. */
 size_t tiku_doc_storage_size(const tiku_doc_limits_t *limits);
 /**
- * @brief Initialize with larger buffers, without allocating in the parser.
- * Memory must be 8-byte aligned and remain alive until the last use.
- * Read/layout retain these capacities. Reinitialization does not free memory.
- * Documents contain internal pointers: do not copy them by value.
- * Returns zero without modifying the document for invalid/undersized storage.
+ * @brief Initialize @p d with tables of @p limits in caller-owned
+ *        @p storage; tiku_doc_read() and tiku_doc_layout() keep them.
+ * @return 1, or 0 with @p d untouched for invalid limits or storage that
+ *         is too small or not 8-byte aligned.
+ * @note The storage must outlive @p d's last use, and stays the
+ *       caller's: initializing again frees nothing.
  */
 int tiku_doc_init_storage(tiku_doc_t *d, const tiku_doc_limits_t *limits,
                          void *storage, size_t bytes);
@@ -349,17 +349,19 @@ void tiku_doc_images(tiku_doc_t *d, tiku_doc_image_fn fn, void *ctx);
 int tiku_doc_read(tiku_doc_t *d, const char *html);
 
 /**
- * @brief Lay the page out for @p width, and say how tall it came to.
+ * @brief Lay the page out for @p width.
  *
- * Laying out again at the same width and text size is free.  Otherwise
- * it costs one pass over the text, measuring each word once in its own
- * face; a window that lays out while a drag resizes it should let the
- * drag settle first.
+ * Laying out again at the same width and text size returns at once.
+ * Otherwise it costs one pass over the text, measuring each word once in
+ * its own face.
+ * @return how tall it came to.
+ * @note A window resized by a drag lays out when the drag settles.
  */
 int tiku_doc_layout(tiku_doc_t *d, int width);
 
-/** @brief How tall the page is, and what width it was laid for. */
+/** @brief How tall the page is, as last laid out. */
 int tiku_doc_height(const tiku_doc_t *d);
+/** @brief The width the page was last laid out for, or TIKU_DOC_NONE. */
 int tiku_doc_width(const tiku_doc_t *d);
 /** @brief Whether there is a layout to draw or hit at all. */
 int tiku_doc_laid(const tiku_doc_t *d);
@@ -370,8 +372,7 @@ unsigned tiku_doc_full(const tiku_doc_t *d);
 /**
  * @brief The first cap that filled, as a noun and the number it hit.
  *
- * The noun is untranslated and the application writes the sentence:
- * a kit that composed one would have started owning words.
+ * The noun is untranslated: the application writes the sentence.
  *
  * @return 1 when something filled.
  */
@@ -380,18 +381,25 @@ int tiku_doc_full_first(const tiku_doc_t *d, const char **what, int *cap);
 /** @brief The first heading's words, or NULL. */
 const char *tiku_doc_title(const tiku_doc_t *d);
 
+/** @brief How many blocks the page has. */
 int tiku_doc_block_count(const tiku_doc_t *d);
+/** @brief How many lines the last layout made. */
 int tiku_doc_line_count(const tiku_doc_t *d);
+/** @brief How many pieces the last layout made. */
 int tiku_doc_piece_count(const tiku_doc_t *d);
+/** @brief Block @p i, or NULL past the table. */
 const tiku_doc_block_t *tiku_doc_block(const tiku_doc_t *d, int i);
+/** @brief Run @p i, or NULL past the table. */
 const tiku_doc_run_t   *tiku_doc_run(const tiku_doc_t *d, int i);
+/** @brief Line @p i, or NULL past the table. */
 const tiku_doc_line_t  *tiku_doc_line(const tiku_doc_t *d, int i);
+/** @brief Piece @p i, or NULL past the table. */
 const tiku_doc_piece_t *tiku_doc_piece(const tiku_doc_t *d, int i);
 
 /** @brief The text at @p off, or "" when there is none there. */
 const char *tiku_doc_text(const tiku_doc_t *d, int off);
 
-/** @brief Where a piece sits, in page coordinates.  The one answer. */
+/** @brief Where a piece sits, in page coordinates. */
 tiku_rect_t tiku_doc_piece_rect(const tiku_doc_t *d, int piece);
 /** @brief Where a whole block sits: a ground, a rule, a frame. */
 tiku_rect_t tiku_doc_block_rect(const tiku_doc_t *d, int block);
@@ -403,12 +411,13 @@ int tiku_doc_line_at(const tiku_doc_t *d, int y);
  * @brief What is at (@p x, @p y), in page coordinates.
  *
  * A point below the last line, in the ragged room at the end of a line,
- * or on a page with no layout is on nothing: never the piece that would
- * have been next.
+ * or on a page with no layout hits no text or link.
  */
 tiku_doc_hit_t tiku_doc_hit(const tiku_doc_t *d, int x, int y);
 
+/** @brief How many links the page has. */
 int tiku_doc_link_count(const tiku_doc_t *d);
+/** @brief Where link @p link goes, or "" when it names nowhere. */
 const char *tiku_doc_link_href(const tiku_doc_t *d, int link);
 /** @brief Every piece of a link, which lie together.  @return 1 when drawn. */
 int tiku_doc_link_pieces(const tiku_doc_t *d, int link, int *first, int *n);
@@ -423,16 +432,18 @@ int tiku_doc_link_next(const tiku_doc_t *d, int from, int back);
 /** @brief Where a name is, or TIKU_DOC_NONE when the page has none. */
 int tiku_doc_anchor_y(const tiku_doc_t *d, const char *id);
 
-/** @brief Hold a reading position across a re-layout. */
+/** @brief The reading position at page @p y, in terms a re-layout
+ *         keeps. */
 tiku_doc_place_t tiku_doc_place(const tiku_doc_t *d, int y);
+/** @brief The page y of @p at under the current layout. */
 int tiku_doc_place_y(const tiku_doc_t *d, tiku_doc_place_t at);
 
 /**
  * @brief Walk the tables and say whether they agree.  For tests.
  *
  * Every piece inside its run, every line's pieces inside the table,
- * every block's lines inside it, and y never going backwards, which is
- * what the search for a line stands on.
+ * every block's lines inside it, and y never going back but to the top
+ * of a table row.
  *
  * @return 1 when they hold.
  */

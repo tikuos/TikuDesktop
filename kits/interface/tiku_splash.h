@@ -4,15 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_splash.h - the splash screen a program puts up while it gathers itself.
+ * tiku_splash.h - the splash screen a program shows while it starts.
  *
- * The big programs of the old systems came up behind one of these: the
- * artwork across the top, the name below it, a line saying what is
- * being gathered, the people it is by, and the version in the corner.
- * One painter for all of that, here, so every program's announcement is
- * the same announcement wearing different words -- and so the artwork
- * is the system's own mark in the system's own colours, not a picture
- * with its colours baked in.
+ * Artwork across the top half, the program's name below it, a status line
+ * saying what is loading, a block of credit lines, the version in one
+ * bottom corner and the mark in the other.  One painter serves every
+ * program; the built-in artwork is drawn from the mark's palettes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,28 +18,21 @@
 
 #include "tiku_gfx.h"
 
-/** @brief How many small lines a splash screen will carry. */
+/** @brief The most credit lines a splash screen draws. */
 #define TIKU_SPLASH_LINES 6
 
 /**
  * @brief Paint a splash screen over all of @p s.
  *
- * @p name is the big words.  @p lines are the small ones -- who it is
- * by, what it stands on -- painted as a block the way the old splash screens
- * carried their credits.  @p version sits in the bottom-left corner and
- * the mark sits small in the bottom-right, both there whether or not
- * anything is still being gathered.
+ * The top half is @p art, scaled to cover it and cropped, or without it a
+ * sweep of the mark's palettes with the mark at the right.  Below come
+ * @p name in a large face, @p status, and up to TIKU_SPLASH_LINES of
+ * @p lines as a block; @p version and a small mark sit in the bottom
+ * corners.
  *
- * @p status, when given, is what is being gathered RIGHT NOW, painted
- * under the name where those splash screens always said it; NULL paints the
- * finished splash screen, which is what an About box is.
- *
- * @p art, when given, IS the banner: the person's own picture, scaled
- * to fill the band edge to edge, the way those programs wore their
- * artwork.  NULL paints the built-in sweep of the mark's palettes.
- * The pixels are handed in rather than named by a path, because
- * choosing and loading a picture is the caller's business -- this
- * kit's is putting it up.
+ * @param status  What is loading now, or NULL for the finished screen an
+ *                About box shows
+ * @param art     A picture the caller has loaded, or NULL
  */
 void tiku_splash_paint(tiku_surface_t *s, const char *name,
                             const char *const *lines, int nlines,
@@ -50,9 +40,11 @@ void tiku_splash_paint(tiku_surface_t *s, const char *name,
                             const tiku_surface_t *art);
 
 /**
- * @brief The Apache License's notice, small, under the name and the status
- *        of a splash screen painted with no lines: what a program says
- *        while it arrives, the About box keeping the credits.
+ * @brief Paint the Apache License's notice in small grey type under the
+ *        name and the status line of a splash screen.
+ *
+ * @note Paint it over a splash that tiku_splash_paint() drew with no
+ *       lines: the notice takes the place of the credit lines.
  */
 void tiku_splash_license(tiku_surface_t *s);
 

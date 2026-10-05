@@ -7,13 +7,11 @@
  * tiku_slider.h - a value dragged along a track, and a number stepped by
  * a pair of arrows.
  *
- * Both are the same idea wearing different clothes: a number with a
- * floor, a ceiling and a step, which the user changes by pointing at it.
- * The slider is for a quantity whose FEEL matters more than its digits
- * -- a volume, a delay -- and the stepper for one whose digits are the
- * point.  The state is here because a drag is a state machine: where the
- * grab started, what the value was then, and whether the pointer is
- * still down.
+ * Both are a number with a floor, a ceiling and a step that the user
+ * changes by pointing at it: the slider for a quantity set by feel, such
+ * as a volume or a delay, and the stepper for one set by its digits.  The
+ * state is the range, the value, the step and whether a drag is under
+ * way; the stepper uses the same state.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,14 +20,19 @@
 
 #include "tiku_geom.h"
 
+/** @brief A slider's or a stepper's range, value and drag. */
 typedef struct {
     int min, max;
     int value;
-    int step;          /* one arrow click, or one arrow key */
-    int tracking;      /* a press is being followed         */
+    int step;          /**< one arrow click, or one arrow key */
+    int tracking;      /**< a press is being followed         */
 } tiku_slider_t;
 
-/** @brief Set up over @p min..@p max, starting at @p value. */
+/**
+ * @brief Set up over @p min..@p max, starting at @p value, clamped.
+ *
+ * A backwards range is swapped, and a @p step under 1 is taken as 1.
+ */
 void tiku_slider_init(tiku_slider_t *sl, int min, int max, int value,
                       int step);
 
@@ -45,17 +48,18 @@ float tiku_slider_fraction(const tiku_slider_t *sl);
 /**
  * @brief Where the knob sits in a horizontal track @p r.
  *
- * Square, the track's height, and inset so the knob's travel keeps it
- * wholly inside the track at both ends rather than half off it.
+ * Square, the track's height, and inset so the knob stays wholly inside
+ * the track at both ends of its travel.
  */
 tiku_rect_t tiku_slider_knob(const tiku_slider_t *sl, tiku_rect_t r);
 
 /**
  * @brief Take a press at @p x in track @p r: jump to it and grab.
  *
- * A press anywhere on the track moves the value there, the way a
- * scrollbar's page area does, and leaves the knob held so the same
- * gesture carries on as a drag.  @return the value.
+ * A press anywhere on the track moves the knob's centre there and leaves
+ * the knob held, so the same gesture carries on as a drag.
+ *
+ * @return the value.
  */
 int tiku_slider_press(tiku_slider_t *sl, tiku_rect_t r, int x);
 
@@ -76,7 +80,11 @@ typedef enum {
     TIKU_STEPPER_HIT_DOWN
 } tiku_stepper_hit_t;
 
-/** @brief Where a point at @p x,@p y lands on the stepper drawn in @p r. */
+/**
+ * @brief Where a point at @p x,@p y lands on the stepper drawn in @p r:
+ *        its arrows are the right-hand tiku_measure_step_w() pixels, up
+ *        above down.
+ */
 tiku_stepper_hit_t tiku_stepper_hit(tiku_rect_t r, int x, int y);
 
 /**

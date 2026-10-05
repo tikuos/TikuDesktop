@@ -8,8 +8,8 @@
  *
  * Every rectangle here is read from the piece and line tables; nothing
  * is measured a second time.  A link is underlined as well as tinted,
- * because a table with no hue tells a link from a word by the line
- * under it and by nothing else.
+ * because under a theme with no hue the line under it is all that tells
+ * a link from a word.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -41,10 +41,10 @@ tiku_rgb_t tiku_doc_ink(int doc_ink)
 {
     switch (doc_ink) {
     case TIKU_DOC_INK_FAINT:    return tiku_ink(TIKU_INK_FAINT);
-    /* A program's own words, which is what code inside a sentence is. */
+    /* Code in a sentence takes the reserved-word ink. */
     case TIKU_DOC_INK_CODE:     return tiku_ink(TIKU_INK_WORD);
-    /* There is no italic face, so emphasis takes the ink an address
-     * takes: told apart from prose without a second weight. */
+    /* The proportional faces have no italic cut, so emphasis takes the
+     * path ink. */
     case TIKU_DOC_INK_EMPHASIS: return tiku_ink(TIKU_INK_PATH);
     case TIKU_DOC_INK_LINK:     return tiku_ink(TIKU_INK_LINK);
     default:                    return tiku_ink(TIKU_INK_PLAIN);
@@ -98,9 +98,8 @@ static void block_art(tiku_surface_t *s, const tiku_doc_t *d, int i,
         }
         break;
     case TIKU_DOC_BLOCK_CELL:
-        /* One rule under the whole row, drawn by the row's first cell:
-         * every cell of a row is as tall as the row, so any of them
-         * knows where the line goes, and one of them is enough. */
+        /* One rule under the whole row, drawn by the row's first cell;
+         * every cell of a row is as tall as the row. */
         if (b->col == 0) {
             tiku_hline(s, r.x, box.y + box.h - 1, r.w,
                        tiku_ink(TIKU_INK_FAINT));
@@ -120,8 +119,8 @@ static void block_art(tiku_surface_t *s, const tiku_doc_t *d, int i,
                 tiku_frame(s, where, tiku_ink(TIKU_INK_FAINT));
             }
         } else {
-            /* No pixels: the words it stands for, in a frame, so the
-             * page shows that something is missing rather than a gap. */
+            /* No pixels: the alt text is laid out as words, and framed
+             * here. */
             tiku_frame(s, (tiku_rect_t){box.x - 4, box.y - 2, box.w + 8,
                                         box.h + 4},
                        tiku_ink(TIKU_INK_FAINT));
@@ -170,8 +169,8 @@ void tiku_doc_draw_marked(tiku_surface_t *s, const tiku_doc_t *d,
             tiku_text(s, face_of(run->face), x, y + ln->ascent,
                       piece_text(d, pc), ink);
             if (run->link != TIKU_DOC_NONE) {
-                /* Underlined as well as tinted: a table with no hue has
-                 * only the line to tell a link from a word. */
+                /* Underlined as well as tinted: under a theme with no
+                 * hue the line is all that tells a link from a word. */
                 tiku_hline(s, x, y + ln->ascent + 2, pc->w, ink);
                 if (run->link == focus) {
                     tiku_frame(s, (tiku_rect_t){x - 2, y, pc->w + 4, ln->h},
@@ -183,7 +182,6 @@ void tiku_doc_draw_marked(tiku_surface_t *s, const tiku_doc_t *d,
     tiku_clip_reset(s);
 }
 
-/** @brief The undecorated reader remains the default on both hosts and boards. */
 void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
                    const tiku_doc_paint_t *how)
 {

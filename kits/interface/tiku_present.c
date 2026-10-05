@@ -1,9 +1,22 @@
-/* Incremental software-frame presentation; SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_present.c - a software frame copied into a native backing buffer
+ * tile by tile, reporting the rectangles that changed.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_present.h"
 #include <limits.h>
 #include <string.h>
 
-/** @brief Update one native tile, using row copies at matching physical sizes. */
+/**
+ * @brief Update native tile @p r, copying whole rows when the physical
+ *        sizes match, and return nonzero when it changed.
+ */
 static int tile(tiku_rgb_t *dst, int w, int h, int stride,
                 const tiku_surface_t *src, tiku_rect_t r, int force)
 {
@@ -19,7 +32,8 @@ static int tile(tiku_rgb_t *dst, int w, int h, int stride,
             }
         } else {
             for (int x = r.x; x < r.x+r.w; x++) {
-                /* Native resize rounding follows the old logical scaler. */
+                /* Resampled as tiku_scale_pixels() does: logical row
+                 * y * src->h / h, column x * src->w / w. */
                 tiku_rgb_t px = src->px[((size_t)y*src->h/h)*sc*sw+
                                          ((size_t)x*src->w/w)*sc];
                 if (force || out[x-r.x] != px) {

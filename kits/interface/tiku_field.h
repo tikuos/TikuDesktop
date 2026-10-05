@@ -6,15 +6,13 @@
  *
  * tiku_field.h - the editing state behind a single-line text field.
  *
- * The state behind tiku_ui_textfield(), which paints one.  Every
- * application's field wants the same caret, selection, deny-set and
- * clipboard rules, and three programs re-deriving them is how they end
- * up agreeing on none.
+ * The state behind tiku_ui_textfield(), which paints one: the caret,
+ * selection, deny-set and clipboard rules every application's field
+ * shares.
  *
- * The behaviours that matter are the rename editor's, not a text view's:
- * it opens with everything selected so the first keystroke replaces the
- * old name, Escape abandons and Return commits, and while it is up an
- * arrow moves the caret, not the view's selection.
+ * It behaves as the rename editor does: it opens with everything
+ * selected so the first keystroke replaces the old name, Escape abandons
+ * and Return commits, and while it is up an arrow moves the caret.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,11 +22,10 @@
 #include <stddef.h>
 
 /**
- * @brief The editor's ceiling.
+ * @brief The most bytes a field holds, its terminator included.
  *
- * Not smaller than the longest value a pose can hold: an editor that opens
- * already truncated commits the truncation, silently shortening a value the
- * user never touched.
+ * It is at least the longest value a pose holds: a value cut short on
+ * opening would be committed short.
  */
 #define TIKU_FIELD_MAX 256
 
@@ -55,7 +52,7 @@ typedef enum {
     TIKU_FIELD_HANDLED,
     TIKU_FIELD_COMMITTED,
     TIKU_FIELD_CANCELLED,
-    TIKU_FIELD_REJECTED             /* atomic event input did not fit/validate */
+    TIKU_FIELD_REJECTED             /* input refused: invalid or too long */
 } tiku_field_result_t;
 
 /** @brief An open editor: text, caret and the selected range. */
@@ -66,27 +63,30 @@ typedef struct {
     int  sel_a, sel_b;              /* equal means nothing is selected     */
     int  active;
     int  editable;                  /* selectable-only fields keep focus   */
-    /* Characters this field will not accept at all.  A name's illegal set
-     * belongs to the STORE -- a namespace path and a file name forbid
-     * different things -- so it is supplied rather than hardcoded. */
+    /* Characters this field will not accept at all, supplied by the
+     * caller: a namespace path and a file name forbid different things. */
     const char *deny;
 } tiku_field_t;
 
 /**
- * @brief Open the editor over @p text, with all of it selected.
+ * @brief Open the editor over @p text, with all of it selected and the
+ *        caret at the end; editable, with no deny-set.
  *
- * Selected because the common rename is a REPLACEMENT: typing over an
- * inherited name is the case, and having to clear it first would make every
- * rename two operations.
+ * The first keystroke then replaces the whole text.
  */
 void tiku_field_start(tiku_field_t *e, const char *text);
-/** @brief Atomically insert valid UTF-8 at the selection; refuse invalid/full input. */
+/**
+ * @brief Insert @p text in place of the selection, whole or not at all.
+ * @return TIKU_FIELD_HANDLED; TIKU_FIELD_REJECTED for text that is not
+ *         valid UTF-8, holds a control or denied character, or does not
+ *         fit; TIKU_FIELD_IGNORED for a closed or read-only field.
+ */
 tiku_field_result_t tiku_field_commit(tiku_field_t *e, const char *text);
 
 /**
- * @brief Refuse @p deny's characters at the keystroke (MA-046).
- *
- * Set after starting.  NULL accepts anything printable.
+ * @brief Refuse @p deny's characters at the keystroke (MA-046); NULL
+ *        accepts anything printable.
+ * @note Set it after tiku_field_start(), which clears it.
  */
 void tiku_field_deny(tiku_field_t *e, const char *deny);
 
@@ -105,7 +105,7 @@ void tiku_field_stop(tiku_field_t *e);
  * @brief How wide the editor should draw, and how far to slide (MA-049).
  *
  * Grows with the text between @p min_w and @p max_w; past the cap the box
- * stays at @p max_w and @p scroll_px slides the text so the caret is
+ * stays at @p max_w and @p out_scroll slides the text so the caret is
  * visible.  @p measure_prefix measures the first n bytes of the text.
  */
 void tiku_field_metrics(const tiku_field_t *e, int min_w, int max_w,

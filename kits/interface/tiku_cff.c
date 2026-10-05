@@ -4,16 +4,16 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_cff.c - the other kind of outline (see the header).
+ * tiku_cff.c - the CFF and CFF2 reader and its charstring machine.
  *
  * Two halves.  The container is INDEXes and DICTs: counted arrays of byte
  * ranges, and operand-then-operator dictionaries whose numbers are packed
  * six different ways.  The charstring is a stack machine whose operators
  * draw, and whose first stack-clearing operator may carry the glyph's
- * width as one extra argument nobody announces.
+ * width as one extra, unmarked argument.
  *
- * Every read is bounds-checked against the table.  These files arrive by
- * being dropped in a folder, and a charstring is a program: it can call
+ * Every read is bounds-checked against the table.  A font comes from
+ * wherever the user found it, and a charstring is a program: it can call
  * itself, index past its subroutines, and ask for more stack than it has.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -29,12 +29,12 @@
 #define CFF_STACK      520      /* the operand stack (CFF2 blends are wide) */
 #define CFF_MAX_DEPTH  10       /* subroutine calls within calls */
 #define CFF_MAX_STEMS  96
-#define CFF_MAX_OPS    100000   /* a charstring that never ends */
+#define CFF_MAX_OPS    100000   /* operators run per glyph before giving up */
 #define CFF2_MAX_VS    64       /* variation subtables a count is kept for */
 
 typedef struct {
     const unsigned char *offsets;
-    const unsigned char *data;  /* one BEFORE the first element */
+    const unsigned char *data;  /* one before the first element */
     int                  count;
     int                  offsize;
     size_t               end;   /* first byte after the whole index */
@@ -55,9 +55,9 @@ struct tiku_cff {
     int                  fdcount;
     /*
      * A CFF2 face is the same machine with the outlines left variable.
-     * The DEFAULT instance is drawn: the blend operator's deltas all fall
-     * away, and all that is needed of the variation store is how many of
-     * them each subtable carries, so the stack stays in step.
+     * The default instance is drawn: the blend operator's deltas are
+     * dropped, so all that is read of the variation store is how many
+     * regions each subtable carries, which keeps the stack in step.
      */
     int                  cff2;
     int                  region[CFF2_MAX_VS];
@@ -70,18 +70,21 @@ struct tiku_cff {
 
 /* ------------------------------------------------------------ the bytes  */
 
+/** @brief The byte at @p p. */
 static unsigned
 rd8(const unsigned char *p)
 {
     return p[0];
 }
 
+/** @brief The big-endian 16-bit value at @p p. */
 static unsigned
 rd16(const unsigned char *p)
 {
     return ((unsigned)p[0] << 8) | p[1];
 }
 
+/** @brief The big-endian 32-bit value at @p p. */
 static unsigned long
 rd32(const unsigned char *p)
 {
@@ -121,8 +124,8 @@ index_read_inner(const tiku_cff_t *cff, size_t off, cff_index_t *out)
 {
     size_t last;
 
-    /* CFF2 counts its elements in FOUR bytes where CFF counts them in
-     * two -- the one change the container makes to an INDEX. */
+    /* CFF2 counts an INDEX's elements in four bytes, CFF in two; the
+     * rest of an INDEX is the same in both. */
     size_t head = cff->cff2 ? 4u : 2u;
 
     memset(out, 0, sizeof *out);
@@ -148,7 +151,7 @@ index_read_inner(const tiku_cff_t *cff, size_t off, cff_index_t *out)
         return 0;
     }
     out->offsets = cff->data + off + head + 1u;
-    /* Element offsets count from ONE, so the data pointer is one before
+    /* Element offsets count from one, so the data pointer is one before
      * the first byte: element i runs [data+off(i), data+off(i+1)). */
     out->data = cff->data + off + head + 1u +
                 (size_t)(out->count + 1) * (size_t)out->offsize - 1u;
@@ -165,13 +168,11 @@ index_read_inner(const tiku_cff_t *cff, size_t off, cff_index_t *out)
 }
 
 /**
- * @brief Read the INDEX at @p off, leaving NOTHING behind on failure.
+ * @brief Read the INDEX at @p off, or leave @p out empty on failure.
  *
- * A half-read index with its count already taken from the file and its
- * offsets still unset is the shape of a crash: the count says there are
- * elements and the pointer says they are at address nothing.  Callers
- * that ignore the return -- and a Private DICT's Subrs is one -- must
- * find an empty index rather than a lying one.
+ * index_read_inner() can fail with the count read and the offsets unset;
+ * @p out is cleared then, so a caller that ignores the return (a Private
+ * DICT's Subrs) finds an empty index.
  */
 static int
 index_read(const tiku_cff_t *cff, size_t off, cff_index_t *out)
@@ -219,7 +220,8 @@ typedef struct {
 /**
  * @brief Walk a DICT, handing each operator and its operands to @p fn.
  *
- * Operators are 0-21, with 12 as an escape: 1200 + the second byte.
+ * Operators are the bytes 0-27, with 12 an escape: 1200 + the next byte.
+ * The walk stops at a reserved byte or a number cut off by the end.
  */
 static void
 dict_walk(const tiku_cff_t *cff, size_t off, size_t len,
@@ -236,10 +238,10 @@ dict_walk(const tiku_cff_t *cff, size_t off, size_t len,
     while (i < end) {
         unsigned b0 = rd8(cff->data + i);
 
-        /* Operators run 0-21 in CFF, with 12 the escape; CFF2 spends
-         * some of the bytes CFF left reserved -- vstore is 24 -- so the
-         * whole 0-27 band is operators here.  The operand encodings all
-         * begin at 28, so they are never mistaken for one. */
+        /* Operators run 0-21 in CFF, with 12 the escape; CFF2 uses some
+         * of the bytes CFF left reserved (vstore is 24), so the whole 0-27
+         * band is operators here.  The operand encodings all begin at 28,
+         * so none is taken for an operator. */
         if (b0 <= 27u) {
             int op = (int)b0;
 
@@ -270,8 +272,8 @@ dict_walk(const tiku_cff_t *cff, size_t off, size_t len,
             }
             i += 5u;
         } else if (b0 == 30u) {
-            /* A real number, nibble by nibble; only its rough value is
-             * needed, for the FontMatrix. */
+            /* A real number, nibble by nibble, read through atof(); at
+             * most 62 characters of it are kept. */
             char text[64];
             int at = 0;
             int done = 0;
@@ -328,7 +330,7 @@ dict_walk(const tiku_cff_t *cff, size_t off, size_t len,
             }
             i += 2u;
         } else {
-            return;             /* reserved: the DICT is not one */
+            return;             /* a reserved byte: not a DICT */
         }
     }
 }
@@ -336,9 +338,8 @@ dict_walk(const tiku_cff_t *cff, size_t off, size_t len,
 /**
  * @brief An operand as an offset, or 0 when it cannot be one.
  *
- * These are numbers out of the file, and a float too big or below zero
- * has no defined conversion to size_t at all -- so the range is checked
- * before the cast rather than after it.
+ * Converting a negative or too large float to size_t is undefined, so
+ * the range is checked before the cast.
  */
 static size_t
 as_offset(float v)
@@ -360,6 +361,8 @@ typedef struct {
     int    charstring_type;
 } cff_top_t;
 
+/** @brief A Top or Font DICT operator: note what it says in the
+ *         cff_top_t at @p ctx. */
 static void
 top_op(int op, const cff_dict_args_t *args, void *ctx)
 {
@@ -423,6 +426,8 @@ typedef struct {
     float  nominal, dflt;
 } cff_private_t;
 
+/** @brief A Private DICT operator: note the Subrs offset and the two
+ *         widths in the cff_private_t at @p ctx. */
 static void
 private_op(int op, const cff_dict_args_t *args, void *ctx)
 {
@@ -432,10 +437,10 @@ private_op(int op, const cff_dict_args_t *args, void *ctx)
     case 19:                    /* Subrs, offset from the Private DICT */
         if (args->count >= 1) { pv->subrs = as_offset(args->operand[0]); }
         break;
-    case 20:
+    case 20:                    /* defaultWidthX */
         if (args->count >= 1) { pv->dflt = args->operand[0]; }
         break;
-    case 21:
+    case 21:                    /* nominalWidthX */
         if (args->count >= 1) { pv->nominal = args->operand[0]; }
         break;
     default:
@@ -446,9 +451,8 @@ private_op(int op, const cff_dict_args_t *args, void *ctx)
 /**
  * @brief Read a Private DICT for the local subroutines it names.
  *
- * The width it also carries is not read: the charstring's idea of a
- * glyph's advance and hmtx's are the same number in a well-made face,
- * and hmtx is the one the rest of the sfnt is measured against.
+ * The widths it also carries (defaultWidthX, nominalWidthX) are read but
+ * not used.
  */
 static void
 read_private(tiku_cff_t *cff, size_t off, size_t size,
@@ -490,12 +494,6 @@ typedef struct {
     float                  trans[32];
 } cff_run_t;
 
-/**
- * @brief Run a charstring.
- *
- * @return 0 malformed, 1 reached its end or returned, 2 saw an endchar --
- *         which finishes the GLYPH, not merely the subroutine it was in.
- */
 static int run_charstring(cff_run_t *run, const unsigned char *code,
                           size_t len);
 
@@ -512,6 +510,7 @@ bias_of(int count)
     return 32768;
 }
 
+/** @brief Start a contour at (@p x, @p y), closing any open one. */
 static void
 moveto(cff_run_t *run, float x, float y)
 {
@@ -525,12 +524,13 @@ moveto(cff_run_t *run, float x, float y)
     run->open = 1;
 }
 
+/** @brief A line from the pen to (@p x, @p y). */
 static void
 lineto(cff_run_t *run, float x, float y)
 {
     if (!run->open) {
-        /* No moveto yet: the contour starts where the pen stands, which
-         * is the origin.  Better a closed contour than a stray edge. */
+        /* No moveto yet: the contour starts at the pen, still at the
+         * origin, so that the path gets a closed contour. */
         moveto(run, run->x, run->y);
     }
     run->x = x;
@@ -539,6 +539,8 @@ lineto(cff_run_t *run, float x, float y)
                         tiku_hint_y(run->hint, y));
 }
 
+/** @brief A cubic from the pen through (@p ax, @p ay) and (@p bx, @p by)
+ *         to (@p x, @p y). */
 static void
 curveto(cff_run_t *run, float ax, float ay, float bx, float by, float x,
         float y)
@@ -587,7 +589,8 @@ take_width(cff_run_t *run, int even)
     return skip;
 }
 
-/** @brief hstem and friends: count them, and note the width. */
+/** @brief The stem operators: count the stems, which set a hint mask's
+ *         length, and note the width. */
 static void
 do_stems(cff_run_t *run)
 {
@@ -600,6 +603,11 @@ do_stems(cff_run_t *run)
     run->sp = 0;
 }
 
+/**
+ * @brief Run operator @p op on the stack; @p code and @p left step past
+ *        any bytes it consumes (a hint mask).
+ * @return 0 malformed, 1 go on, 2 a return, 3 an endchar.
+ */
 static int
 run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
 {
@@ -823,9 +831,9 @@ run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
             int n = (int)run->stack[--run->sp];
             int drop = n * run->cur_regions;
 
-            /* The n default values sit BELOW n*regions deltas; dropping
-             * the deltas leaves the defaults, which is the instance
-             * drawn.  A well-made charstring never underflows this. */
+            /* The n default values sit below n*regions deltas; dropping
+             * the deltas leaves the defaults, the instance drawn.  A count
+             * larger than the stack empties it. */
             if (n < 0 || drop < 0) {
                 run->sp = 0;
             } else {
@@ -939,13 +947,19 @@ run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
         return 1;
     }
     default:
-        /* The arithmetic and storage operators, which type designers do
-         * not use and which must still not choke the reader. */
+        /* The arithmetic and storage operators, and any unknown one, are
+         * not run: the stack is cleared and the charstring goes on. */
         run->sp = 0;
         return 1;
     }
 }
 
+/**
+ * @brief Run a charstring.
+ *
+ * @return 0 malformed, 1 reached its end or returned, 2 saw an endchar,
+ *         which ends the glyph, not only the subroutine it was in.
+ */
 static int
 run_charstring(cff_run_t *run, const unsigned char *code, size_t len)
 {
@@ -1019,7 +1033,9 @@ run_charstring(cff_run_t *run, const unsigned char *code, size_t len)
 
 /* ------------------------------------------------------------------- API  */
 
-/** @brief Which Private DICT glyph @p gid draws with, in a CID font. */
+/** @brief The local subroutines glyph @p gid draws with: its Font
+ *         DICT's in a CID-keyed or CFF2 font, else the top-level
+ *         Private DICT's. */
 static const cff_index_t *
 fd_subrs_for(const tiku_cff_t *cff, unsigned gid)
 {
@@ -1095,9 +1111,9 @@ read_fdarray(tiku_cff_t *cff, size_t off)
 /**
  * @brief Read a CFF2 variation store for its region counts.
  *
- * The default instance is all that is drawn, so the deltas themselves
- * are of no use -- but a blend has to know how many to step over, and
- * that count is per variation subtable.  vsindex picks the subtable.
+ * Only the default instance is drawn, so the deltas are not read; a
+ * blend still steps over them, and how many there are per value is a
+ * count each subtable carries.  vsindex picks the subtable.
  */
 static void
 read_vstore(tiku_cff_t *cff, size_t off)
@@ -1125,8 +1141,8 @@ read_vstore(tiku_cff_t *cff, size_t off)
             cff->region[cff->nregion++] = 0;
             continue;
         }
-        /* itemCount, wordDeltaCount, then regionIndexCount -- the k a
-         * blend against this subtable carries per value. */
+        /* itemCount, wordDeltaCount, then regionIndexCount: how many
+         * deltas a blend against this subtable carries per value. */
         cff->region[cff->nregion++] = (int)rd16(cff->data + ivd + 4u);
     }
 }
@@ -1134,7 +1150,7 @@ read_vstore(tiku_cff_t *cff, size_t off)
 /**
  * @brief Set up a CFF2 face: header, a bare Top DICT, and the rest.
  *
- * @return the face, or NULL.
+ * @return the face, or NULL with @p cff freed.
  */
 static tiku_cff_t *
 cff2_open(tiku_cff_t *cff)
@@ -1143,7 +1159,7 @@ cff2_open(tiku_cff_t *cff)
     cff_index_t gsubrs;
     size_t hdr, td_len, td_off;
 
-    cff->cff2 = 1;              /* before any INDEX: its count is 32-bit now */
+    cff->cff2 = 1;              /* before any INDEX: CFF2 counts are 32-bit */
     if (!fits(cff, 0u, 5u)) {
         free(cff);
         return NULL;
@@ -1206,7 +1222,7 @@ tiku_cff_open(const unsigned char *data, size_t len)
     cff->upem = 1000.0f;
 
     if (rd8(data) == 2u) {
-        return cff2_open(cff);  /* major version 2: the variable kind */
+        return cff2_open(cff);  /* major version 2: CFF2 */
     }
     hdr = rd8(data + 2);
     if (hdr < 4u || !fits(cff, hdr, 1u)) {
@@ -1229,7 +1245,7 @@ tiku_cff_open(const unsigned char *data, size_t len)
     top.charstring_type = 2;
     dict_walk(cff, (size_t)(dict - data), dict_len, top_op, &top);
     if (top.charstrings == 0u || top.charstring_type != 2) {
-        free(cff);              /* Type 1 charstrings: a different machine */
+        free(cff);              /* Type 1 charstrings are not read */
         return NULL;
     }
     if (!index_read(cff, top.charstrings, &cff->charstrings) ||
@@ -1247,10 +1263,9 @@ tiku_cff_open(const unsigned char *data, size_t len)
         read_fdarray(cff, top.fdarray);
     }
     if (top.matrix0 > 0.0f) {
-        /* The FontMatrix says how big a unit is; 0.001 is the usual.
-         * Believe it only within reason: a matrix claiming a thousand
-         * units to the pixel would scale every coordinate out of the
-         * range an int can hold. */
+        /* The FontMatrix says how big a unit is; 0.001 is usual.  Only
+         * 16 to 16384 units per em are taken: outside that, coordinates
+         * scale to nothing or past what an int holds. */
         float upem = 1.0f / top.matrix0;
 
         if (upem >= 16.0f && upem <= 16384.0f) {
@@ -1261,7 +1276,7 @@ tiku_cff_open(const unsigned char *data, size_t len)
 }
 
 /**
- * @brief The string (or CID) glyph @p gid is charted as.
+ * @brief The string (or CID) the charset gives glyph @p gid, or 0.
  *
  * Charset 0 is the ISOAdobe set, where string and glyph coincide; the
  * three custom formats list strings one per glyph or in runs.
@@ -1279,7 +1294,7 @@ charted(const tiku_cff_t *cff, unsigned gid)
         return gid;                 /* ISOAdobe: string i is glyph i */
     }
     if (off == 1u || off == 2u || !fits(cff, off, 1u)) {
-        return 0;                   /* the expert sets: not drawn from */
+        return 0;                   /* the expert charsets are not read */
     }
     if (rd8(cff->data + off) == 0u) {
         if (!fits(cff, off + 1u + (size_t)(gid - 1u) * 2u, 2u)) {
@@ -1306,7 +1321,8 @@ charted(const tiku_cff_t *cff, unsigned gid)
     return 0;
 }
 
-/** @brief The name behind string @p sid, into @p out. */
+/** @brief The name behind string @p sid, into @p out.
+ *  @return 0 when there is none or it does not fit in @p max. */
 static int
 string_of(const tiku_cff_t *cff, unsigned sid, char *out, size_t max)
 {

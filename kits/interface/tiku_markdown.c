@@ -1,4 +1,18 @@
-/* TikuOS kits -- bounded documentation Markdown. SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_markdown.c - documentation Markdown to help HTML, line by line.
+ *
+ * One renderer counts and emits: with no output buffer it only counts.
+ * The scans that can pass over the same bytes again are charged against
+ * a work bound of 64 steps a source byte plus 4096; a page that uses it
+ * up fails the conversion.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_markdown.h"
 
 #include <ctype.h>
@@ -16,7 +30,7 @@ typedef struct {
     int headings;
 } md_t;
 
-/** @brief Append atomically, reserving the terminating NUL. */
+/** @brief Append all @p n bytes or none, keeping room for the NUL. */
 static void md_put(md_t *m, const char *s, size_t n)
 {
     if (m->full) return;
@@ -26,10 +40,11 @@ static void md_put(md_t *m, const char *s, size_t n)
     if (m->out) m->out[m->used] = 0;
 }
 
-/** @brief Append a generated tag. */
+/** @brief Append the string @p s unescaped. */
 static void md_tag(md_t *m, const char *s) { md_put(m, s, strlen(s)); }
 
-/** @brief Escape both text and attributes; raw HTML is never interpreted. */
+/** @brief Append @p n bytes with &, <, > and " escaped, for text and
+ *         attribute values alike. */
 static void md_escape(md_t *m, const char *s, size_t n)
 {
     for (size_t i = 0; i < n && !m->full; i++) {
@@ -43,7 +58,10 @@ static void md_escape(md_t *m, const char *s, size_t n)
     }
 }
 
-/** @brief Find an unescaped delimiter without reading outside the span. */
+/**
+ * @brief Offset of the first unescaped @p end in @p s, or @p n when there
+ *        is none; reads nothing past @p n.
+ */
 static size_t md_delim(md_t *m, const char *s, size_t n,
                        const char *end, size_t len)
 {
@@ -58,7 +76,14 @@ static size_t md_delim(md_t *m, const char *s, size_t n,
 
 static void md_inline(md_t *m, const char *s, size_t n, int depth, int links);
 
-/** @brief Inline links have balanced destination parentheses and optional titles. */
+/**
+ * @brief Emit the inline link or image that starts @p s.
+ *
+ * The destination's parentheses must balance; a title after it is
+ * accepted and left out.
+ *
+ * @return The bytes the link took, or 0 when @p s starts none
+ */
 static size_t md_link(md_t *m, const char *s, size_t n, int depth)
 {
     int image = s[0] == '!';
@@ -98,7 +123,10 @@ static size_t md_link(md_t *m, const char *s, size_t n, int depth)
     return end+1;
 }
 
-/** @brief Bounded inline recursion; unmatched syntax remains readable text. */
+/**
+ * @brief Emit inline text: escapes, code, emphasis and, when @p links is
+ *        set, links, nested at most 8 deep.  Unmatched syntax stays text.
+ */
 static void md_inline(md_t *m, const char *s, size_t n, int depth, int links)
 {
     if (depth >= 8) { md_escape(m, s, n); return; }
@@ -113,8 +141,8 @@ static void md_inline(md_t *m, const char *s, size_t n, int depth, int links)
         char ch = s[i];
         if (ch == '`' || ch == '*' || ch == '_') {
             size_t count = 1;
-            /* Charged like every other scan: a run re-counted at each
-             * position of a long one costs quadratic time. */
+            /* Charged to the work bound: a long run is counted again
+             * from each of its positions. */
             while (i+count < n && s[i+count] == ch) {
                 if (!m->work) { m->full = 1; return; }
                 m->work--;
@@ -137,7 +165,8 @@ static void md_inline(md_t *m, const char *s, size_t n, int depth, int links)
     }
 }
 
-/** @brief Consume one LF or CRLF line, preserving all code whitespace. */
+/** @brief Take one line ending in LF or CRLF from @p source, without its
+ *         CR, all other whitespace kept. */
 static md_line_t md_line(const char **source)
 {
     const char *p = *source, *end = p;
@@ -148,7 +177,7 @@ static md_line_t md_line(const char **source)
     return (md_line_t){p, n};
 }
 
-/** @brief Trim block syntax, not code content. */
+/** @brief @p l without its leading and trailing whitespace. */
 static md_line_t md_trim(md_line_t l)
 {
     while (l.n && isspace((unsigned char)*l.p)) { l.p++; l.n--; }
@@ -163,7 +192,7 @@ static void md_paragraph_end(md_t *m)
     m->paragraph = 0;
 }
 
-/** @brief Unwind list containers with their current items. */
+/** @brief Close the open lists, and their open items, down to @p depth. */
 static void md_lists_end(md_t *m, int depth)
 {
     while (m->depth > depth) {
@@ -171,7 +200,7 @@ static void md_lists_end(md_t *m, int depth)
     }
 }
 
-/** @brief Leave an ordinary block before a new heading, quote, or fence. */
+/** @brief Close the open paragraph, lists, quote and table. */
 static void md_blocks_end(md_t *m)
 {
     md_paragraph_end(m); md_lists_end(m, 0);
@@ -180,7 +209,10 @@ static void md_blocks_end(md_t *m)
     m->quote = m->table = 0;
 }
 
-/** @brief Rules and setext underlines consist of a repeated marker. */
+/**
+ * @brief Whether @p l is at least @p min of @p marker, with spaces and tabs
+ *        between: a rule, or a setext underline.
+ */
 static int md_rule(md_line_t l, char marker, int min)
 {
     int count = 0;
@@ -191,7 +223,10 @@ static int md_rule(md_line_t l, char marker, int min)
     return count >= min;
 }
 
-/** @brief Headings receive stable lowercase slugs, with duplicate suffixes. */
+/**
+ * @brief Emit a heading, levels past 3 as 3, with an id made from its text
+ *        in lower case; a repeated id gets -1, -2 and so on.
+ */
 static void md_heading(md_t *m, md_line_t l, int level)
 {
     char slug[72], id[96], tag[128]; size_t used = 0;
@@ -203,8 +238,8 @@ static void md_heading(md_t *m, md_line_t l, int level)
     while (used && slug[used-1] == '-') used--;
     slug[used] = 0; if (!used) strcpy(slug, "section");
     snprintf(id, sizeof id, "%s", slug);
-    /* Charged like every other scan: a page of identical headings walks
-     * the whole table again for each suffix it tries. */
+    /* Charged to the work bound: a page of identical headings walks the
+     * table again for each suffix tried. */
     for (int suffix = 1, i = 0; i < m->headings && i < 64;) {
         if (!m->work) { m->full = 1; return; }
         m->work--;
@@ -220,7 +255,8 @@ static void md_heading(md_t *m, md_line_t l, int level)
     snprintf(tag, sizeof tag, "</h%d>", level); md_tag(m, tag);
 }
 
-/** @brief Recognize a pipe-table delimiter row, with optional alignment colons. */
+/** @brief Whether @p l is a pipe table's delimiter row, alignment colons
+ *         allowed. */
 static int md_table_separator(md_line_t l)
 {
     l = md_trim(l); int cells = 0;
@@ -255,7 +291,10 @@ static void md_table_row(md_t *m, md_line_t l, int header)
     md_tag(m, "</tr>");
 }
 
-/** @brief Recognize unordered or numbered list prefixes. */
+/**
+ * @brief Length of the list marker that starts @p l, or 0 for none;
+ *        @p kind is set to 1 for a bullet and 2 for a number.
+ */
 static size_t md_list_marker(md_line_t l, int *kind)
 {
     size_t n = 0;
@@ -269,7 +308,10 @@ static size_t md_list_marker(md_line_t l, int *kind)
     return 0;
 }
 
-/** @brief Keep indentation-based lists within the parser's nesting limit. */
+/**
+ * @brief Emit a list item, opening and closing lists by its indentation,
+ *        at most 8 deep.
+ */
 static void md_list_item(md_t *m, md_line_t l, size_t marker, int kind, int indent)
 {
     md_paragraph_end(m);
@@ -283,7 +325,10 @@ static void md_list_item(md_t *m, md_line_t l, size_t marker, int kind, int inde
     md_tag(m, "<li>"); md_inline(m, l.p+marker, l.n-marker, 0, 1);
 }
 
-/** @brief Fenced code treats everything up to its closing fence as literal. */
+/**
+ * @brief When @p l opens a code fence, emit every line up to its closing
+ *        fence as literal text and return 1; otherwise return 0.
+ */
 static int md_fence(md_t *m, md_line_t l, const char **source)
 {
     if (!l.n || (l.p[0] != '`' && l.p[0] != '~')) return 0;
@@ -300,7 +345,10 @@ static int md_fence(md_t *m, md_line_t l, const char **source)
     md_tag(m, "</pre>"); return 1;
 }
 
-/** @brief Render one nonempty block line, using one line of lookahead. */
+/**
+ * @brief Render one line, looking one line ahead for a setext underline
+ *        or a table's delimiter row.
+ */
 static void md_block(md_t *m, md_line_t raw, const char **source)
 {
     md_line_t l = md_trim(raw);
@@ -346,7 +394,11 @@ static void md_block(md_t *m, md_line_t raw, const char **source)
     md_inline(m, l.p, l.n, 0, 1); if (hard) md_tag(m, "<br>");
 }
 
-/** @brief A counting pass and an emitting pass share syntax and work bounds. */
+/**
+ * @brief Render @p markdown into @p out, or only count when @p out is NULL.
+ *
+ * @return The bytes written, NUL included, or 0 on failure
+ */
 static size_t md_render(char *out, size_t capacity, const char *markdown)
 {
     if (out && capacity) out[0] = 0;

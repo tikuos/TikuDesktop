@@ -6,11 +6,11 @@
  *
  * tiku_doc.c - reading a help page, and fitting it to a width.
  *
- * Reading cooks the page into one text arena and three tables; laying
- * out walks the blocks for one width and fills two more.  Words are
- * measured one at a time in their own run's face, which is what lets a
- * paragraph mix plain, bold and code, and what keeps a word from being
- * dropped in a box too narrow to hold it.
+ * Reading cooks the page into one text arena and the tables of blocks,
+ * runs, links, anchors and images; laying out walks the blocks for one
+ * width and fills the lines and pieces.  Words are measured one at a time
+ * in their own run's face, so a paragraph mixes plain, bold and code, and
+ * a word too wide for its box is broken between code points.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,7 +19,8 @@
 
 #include <string.h>
 
-/* Default caps remain small; runtime buffers also validate index ranges. */
+/* The default caps fit the tables' int32_t indices; caller-sized storage
+ * is checked when it is bound. */
 _Static_assert(TIKU_DOC_BLOCKS_MAX  < INT32_MAX, "blocks index is int32_t");
 _Static_assert(TIKU_DOC_RUNS_MAX    < INT32_MAX, "runs index is int32_t");
 _Static_assert(TIKU_DOC_LINES_MAX   < INT32_MAX, "lines index is int32_t");
@@ -28,11 +29,11 @@ _Static_assert(TIKU_DOC_LINKS_MAX   < INT32_MAX, "links index is int32_t");
 _Static_assert(TIKU_DOC_BLOCKS_MAX  > 1, "a page needs room for a notice");
 _Static_assert(TIKU_DOC_TEXT_MAX    <= INT32_MAX / 4, "text range is bounded");
 
-/* One line's worth of scratch, the size the text helpers already use. */
+/* Scratch for measuring a word, a stretch at a time. */
 #define DOC_WORD_MAX 256
 
-/* The bits that mean a table filled.  FACE_FLAT and NARROW say how the
- * page was fitted, not that anything was lost, so neither is a cut. */
+/* The bits that mean a table filled and earn a notice; FACE_FLAT, NARROW
+ * and COLS_FOLDED report how the page was fitted and are not among them. */
 #define DOC_FULL_CAPS (TIKU_DOC_FULL_TEXT | TIKU_DOC_FULL_BLOCKS | \
                        TIKU_DOC_FULL_RUNS | TIKU_DOC_FULL_LINES | \
                        TIKU_DOC_FULL_PIECES | TIKU_DOC_FULL_LINKS | \
@@ -62,6 +63,7 @@ static int arena_room(tiku_doc_t *d, int n)
     return 0;
 }
 
+/** @brief Append byte @p c, when there is room. */
 static void arena_byte(tiku_doc_t *d, char c)
 {
     if (arena_room(d, 1)) d->text[d->ntext++] = c;
@@ -109,10 +111,9 @@ static int utf8_put(unsigned cp, char *out)
  * @brief One entity, starting just past the '&'.
  *
  * An entity this dialect does not know keeps its '&' and reads as
- * itself, which is what a stray ampersand in a page should do.
- * &nbsp; becomes an ordinary space: U+00A0 is two bytes, and a board
- * charges a space advance for each of them, so the two ends would lay
- * the same page out differently.
+ * itself.  &nbsp; becomes an ordinary space: U+00A0 is two bytes, a board
+ * advances a space for each, and the two ends would lay the page out
+ * differently.
  *
  * @return bytes written into @p out; @p after lands past the entity.
  */
@@ -209,6 +210,7 @@ typedef struct {
     int nstack;
 } read_t;
 
+/** @brief End the run being filled; an empty one is taken back. */
 static void run_close(read_t *r)
 {
     tiku_doc_t *d = r->d;
@@ -225,7 +227,8 @@ static void run_close(read_t *r)
     r->run = TIKU_DOC_NONE;
 }
 
-/** @brief Start a run in the style now in force.  @return 1 when there is one. */
+/** @brief Start a run in the style now in force.
+ *  @return 1 when there is one. */
 static int run_open(read_t *r)
 {
     tiku_doc_t *d = r->d;
@@ -257,6 +260,8 @@ static void style_changed(read_t *r)
     run_close(r);
 }
 
+/** @brief End the block being filled; one with no runs is taken back,
+ *         unless it is a rule, an image or a cell. */
 static void block_end(read_t *r)
 {
     tiku_doc_t *d = r->d;
@@ -268,7 +273,7 @@ static void block_end(read_t *r)
     if (!b->nrun && b->kind != TIKU_DOC_BLOCK_RULE &&
         b->kind != TIKU_DOC_BLOCK_IMAGE &&
         b->kind != TIKU_DOC_BLOCK_CELL) {
-        d->nblock--;            /* a block with nothing in it is nothing */
+        d->nblock--;            /* an empty block is taken back */
     }
     r->block = TIKU_DOC_NONE;
     r->pending = 0;
@@ -315,9 +320,8 @@ static void text_add(read_t *r, const char *s, int n)
             arena_byte(d, ' ');
         } else if (r->run > d->block[r->block].run0 &&
                    (run - 1)->link == TIKU_DOC_NONE && arena_room(d, 1)) {
-            /* The space goes to the words before it rather than to the
-             * ones about to start, unless those words are a link: what
-             * is underlined is the link and not the gap beside it. */
+            /* The space goes to the words before it, unless they are a
+             * link, so a link's underline stops at its last word. */
             tiku_doc_run_t *prev = run - 1;
 
             d->text[prev->off + prev->len] = ' ';
@@ -333,7 +337,9 @@ static void text_add(read_t *r, const char *s, int n)
     d->ntext += n;
 }
 
-/** @brief An attribute of the tag at @p p, copied into the arena. */
+/** @brief Attribute @p name of the tag at @p p, entities decoded,
+ *         copied into the arena.
+ *  @return its offset in the text, or TIKU_DOC_NONE. */
 static int attr(const char *p, const char *name, tiku_doc_t *d)
 {
     size_t n = strlen(name);
@@ -374,9 +380,8 @@ static int attr(const char *p, const char *name, tiku_doc_t *d)
 /**
  * @brief A whole number written in an attribute of the tag at @p p.
  *
- * Read from the tag itself rather than through attr(), which copies
- * what it finds into the page's text: a span is a number the layout
- * wants, not words anybody reads.
+ * Read from the tag itself: attr() would copy the value into the page's
+ * text.
  *
  * @return the number, or @p fallback when there is none or it is not
  *         a number.
@@ -430,6 +435,8 @@ static void anchor_add(read_t *r, const char *p)
     d->nanchor++;
 }
 
+/** @brief A list item's marker as a run of its own: its number and a
+ *         dot when @p ordered, else a dash. */
 static void marker_add(read_t *r, int ordered, int number)
 {
     char text[16];
@@ -464,7 +471,8 @@ static void marker_add(read_t *r, int ordered, int number)
     r->face = face; r->ink = ink; r->link = link; r->flags = flags;
 }
 
-/** @brief Put the element stack's topmost matching entry back. */
+/** @brief Close the innermost open @p tag: restore the style it saved
+ *         and take it off the stack. */
 static void stack_pop(read_t *r, int tag)
 {
     int at = r->nstack - 1;
@@ -480,6 +488,9 @@ static void stack_pop(read_t *r, int tag)
     r->nstack--;
 }
 
+/** @brief Open @p tag, saving the style in force; past
+ *         TIKU_DOC_DEPTH_MAX it is not kept and the depth cap is
+ *         marked. */
 static void stack_push(read_t *r, int tag)
 {
     if (r->nstack == TIKU_DOC_DEPTH_MAX) {
@@ -493,6 +504,8 @@ static void stack_push(read_t *r, int tag)
     r->nstack++;
 }
 
+/** @brief An <img>: an image block keeping its source and alt text, the
+ *         alt text as its words in the faint ink. */
 static void image_add(read_t *r, const char *p)
 {
     tiku_doc_t *d = r->d;
@@ -623,15 +636,14 @@ static const char *tag_do(read_t *r, const char *p, const char **skip_to)
             r->face = TIKU_MEASURE_PLAIN;
             break;
         }
-        /* A cell met outside a table opens one: dropping it would drop
-         * its words, and a page written wrong is still a page to read. */
+        /* A cell met outside a table opens one, so that its words are
+         * kept. */
         if (!r->table) { r->table = 1; r->row = 0; r->col = 0; }
         if (r->row < 0) r->row = 0;
         span = attr_num(body, "colspan", 1);
         if (span < 1) span = 1;
         if (r->col >= TIKU_DOC_COLS_MAX) {
-            /* Past the last column there is nowhere to put a cell, so
-             * its words join the last one rather than being lost. */
+            /* A cell past the last column is put in the last one. */
             r->d->full |= TIKU_DOC_COLS_FOLDED;
             r->col = TIKU_DOC_COLS_MAX - 1;
             span = 1;
@@ -714,7 +726,7 @@ static const char *tag_do(read_t *r, const char *p, const char **skip_to)
     return end;
 }
 
-/** @brief Close a link's run range once its element is done. */
+/** @brief Count each link's runs: those from its first that carry it. */
 static void links_close(tiku_doc_t *d)
 {
     for (int i = 0; i < d->nlink; i++) {
@@ -864,7 +876,7 @@ typedef struct {
     int xc;                     /* where a continuation line begins     */
 } lay_t;
 
-/** @brief How tall a face's line is, and how far down its baseline. */
+/** @brief How tall a line in @p face is. */
 static int face_h(int face) { return tiku_measure_height(face); }
 
 /** @brief What room the line being filled has, its indent taken off. */
@@ -876,7 +888,8 @@ static int line_room(const lay_t *L)
     return room > 0 ? room : 1;
 }
 
-/** @brief Measure @p n bytes of @p s in @p face, through a terminator. */
+/** @brief Measure @p n bytes of @p s in @p face, copied a stretch at a
+ *         time into terminated scratch. */
 static int word_w(int face, const char *s, int n)
 {
     char buf[DOC_WORD_MAX];
@@ -896,6 +909,8 @@ static int word_w(int face, const char *s, int n)
     return total;
 }
 
+/** @brief End the line being filled: trailing spaces come off its last
+ *         piece, and the pen moves down past it. */
 static void line_close(lay_t *L)
 {
     tiku_doc_t *d = L->d;
@@ -912,9 +927,8 @@ static void line_close(lay_t *L)
             last->len--;
             last->w = (int32_t)word_w(face, d->text + last->off, last->len);
         }
-        /* The pen goes back with it, since the line's own width is
-         * where the pen ended and a space that is not drawn is not
-         * part of the line. */
+        /* The pen goes back with it: the line's width is where the pen
+         * ends. */
         L->x -= before - last->w;
         if (!last->len) ln->npiece--, d->npiece--;
     }
@@ -986,11 +1000,9 @@ static int piece_add(lay_t *L, int run, int off, int n, int w)
 }
 
 /**
- * @brief Place a word too wide for any line, a codepoint at a time.
+ * @brief Place a word too wide for the line, a code point at a time.
  *
- * The wrapping helper in tiku_text_layout renders nothing at all in a
- * box narrower than one glyph, so a word placed through it would be
- * lost; here at least one codepoint goes on every line.
+ * At least one code point goes on every line, however narrow the box.
  */
 static void place_long(lay_t *L, int run, int off, int n, int face)
 {
@@ -1011,9 +1023,7 @@ static void place_long(lay_t *L, int run, int off, int n, int face)
             fit = i - at;
             fitw = w;
         }
-        /* A box with no room for one glyph still takes one: the helper
-         * in tiku_text_layout renders nothing at all there, and a page
-         * must not lose a word to its own margin. */
+        /* A box with no room for one glyph still takes one. */
         if (!fit) {
             fit = utf8_len(d->text + off + at);
             fitw = word_w(face, d->text + off + at, fit);
@@ -1075,7 +1085,8 @@ static void place_run(lay_t *L, int run)
     if (rn->flags & TIKU_DOC_RUN_BREAK) line_close(L);
 }
 
-/** @brief The space a block wants above it, and how far it is indented. */
+/** @brief The space a block wants above and below it, and how far it is
+ *         indented. */
 static void block_metrics(const tiku_doc_t *d, int i, int *above, int *below,
                           int *indent)
 {
@@ -1100,8 +1111,7 @@ static void block_metrics(const tiku_doc_t *d, int i, int *above, int *below,
         *above = line / 3; *below = line / 3; *indent = line;
         break;
     case TIKU_DOC_BLOCK_RULE: *above = line / 2; *below = line / 2; break;
-    /* A cell's room is its table's to give: lay_table() holds the pen
-     * for the whole of one, and never asks. */
+    /* lay_table() lays cells out without asking here. */
     case TIKU_DOC_BLOCK_CELL: *below = 0; break;
     case TIKU_DOC_BLOCK_NOTICE: *above = line; *below = line / 2; break;
     default: break;
@@ -1119,10 +1129,9 @@ typedef struct {
 /**
  * @brief The narrowest and the widest one cell can be drawn.
  *
- * The narrowest is its longest word, since a word is not broken unless
- * a column is narrower than one; the widest is everything it holds on
- * a single line.  Both are measured in the runs' own faces, which is
- * how a header cell counts as the bold face it is drawn in.
+ * The narrowest is its longest word and the widest everything it holds
+ * on one line, both measured in the runs' own faces (a header cell's
+ * bold among them).
  */
 static void cell_extent(const tiku_doc_t *d, int i, int *min, int *max)
 {
@@ -1175,7 +1184,7 @@ static void cols_measure(const tiku_doc_t *d, int first, int last, int width,
         const tiku_doc_block_t *b = &d->block[i];
         int lo, hi;
 
-        if (b->span > 1) continue;      /* a spanning cell speaks below */
+        if (b->span > 1) continue;      /* a spanning cell: shared below */
         cell_extent(d, i, &lo, &hi);
         if (lo > min[b->col]) min[b->col] = lo;
         if (hi > max[b->col]) max[b->col] = hi;
@@ -1233,8 +1242,8 @@ static void cols_measure(const tiku_doc_t *d, int first, int last, int width,
  * @brief One table: its cells laid side by side, row by row.
  *
  * The pen goes back to the top of the row for every cell, so a table is
- * the one place in a page where y does not only go down.  What reads
- * the line table knows it: the painter draws every line it is given,
+ * the one place in a page where y does not only go down.  The readers of
+ * the line table allow for it: the painter draws every line it is given,
  * the hit test asks every line whose band holds the point, and
  * tiku_doc_check() allows a step backwards into a cell and nowhere else.
  *
@@ -1355,7 +1364,7 @@ static void lay_block(lay_t *L, int i)
         }
         d->image[b->image].w = 0;
         d->image[b->image].h = 0;
-        /* No pixels: the alt runs are drawn instead, in a frame. */
+        /* No pixels: the alt runs are laid out as words, in a frame. */
     }
 
     /* A list item hangs its marker: the first line begins at the indent
@@ -1404,7 +1413,8 @@ int tiku_doc_layout(tiku_doc_t *d, int width)
     }
     d->full &= ~(TIKU_DOC_FULL_LINES | TIKU_DOC_FULL_PIECES | TIKU_DOC_NARROW);
     d->full &= ~TIKU_DOC_FACE_FLAT;
-    /* Select faces through the measuring end; board fallbacks stay explicit. */
+    /* Headings take their face from tiku_measure_heading(); a fallback
+     * to bold sets TIKU_DOC_FACE_FLAT. */
     for (int i = 0; i < d->nblock; i++) {
         if (d->block[i].kind == TIKU_DOC_BLOCK_H1 ||
             d->block[i].kind == TIKU_DOC_BLOCK_H2 ||
@@ -1572,8 +1582,8 @@ tiku_doc_hit_t tiku_doc_hit(const tiku_doc_t *d, int x, int y)
     h.piece = TIKU_DOC_NONE;
     if (!tiku_doc_laid(d)) return h;
     line = TIKU_DOC_NONE;
-    /* Every line whose band holds the point, not the first: the cells of
-     * a table share a band and are told apart by x alone. */
+    /* Every line whose band holds the point is searched: the cells of a
+     * table share a band and differ by x. */
     for (int k = 0; k < d->nline; k++) {
         const tiku_doc_line_t *ln = &d->line[k];
 

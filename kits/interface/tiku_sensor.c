@@ -1,5 +1,13 @@
-/* Bounded sensor history; no device, drawing or heap dependencies.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_sensor.c - a bounded sensor history and its column summaries.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_sensor.h"
 #include <math.h>
 #include <string.h>

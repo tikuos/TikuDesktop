@@ -34,7 +34,8 @@ void tiku_choice_draw_popup(const tiku_choice_t *c, tiku_surface_t *s,
     tiku_rect_t old = s->clip;
     #endif
     tiku_ui_sunken(s, r, TIKU_C_DOC);
-    /* The caller draws a popup over a whole panel, never a partial row clip. */
+    /* Rows are clipped to the popup's inside; the caller's clip comes
+     * back after them. */
     tiku_clip_set(s, (tiku_rect_t){r.x + 2, r.y + 2, r.w - 4, r.h - 4});
     for (int i = c->top; i < c->count; i++) {
         tiku_rect_t line = {r.x + 2, r.y + 2 + (i - c->top) * row, r.w - 4, row};

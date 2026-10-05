@@ -6,11 +6,9 @@
  *
  * tiku_theme.c - the one table every semantic colour reads through.
  *
- * The default is the BeOS R5 look, and it is a DEFAULT rather than a
- * constant: an application (or one day the system) hands in another table
- * and every widget recolours, because nothing paints a semantic colour
- * except through here.  Layout never moves with the theme -- that is the
- * whole bargain (the Appearance Manager lesson).
+ * The default is the BeOS R5 look.  A table handed to tiku_theme_set()
+ * recolours every widget, since every semantic colour is read through
+ * here; layout does not change with the theme.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -38,12 +36,10 @@ static const tiku_theme_t tiku_theme_r5 = {
 };
 
 /*
- * Dusk, not negation: the surfaces darken and the ink lightens, and the
- * identity survives in shape and accent rather than in brightness -- the
- * tab keeps its AMBER, deepened so a dark screen carries no glowing bar
- * (these surfaces live on devices, where a bright strip is a torch), the
- * selection keeps its Be blue, and every derived bevel follows
- * automatically because bevels are tints of the panel.
+ * The dark table: the surfaces darken and the ink lightens.  The tab keeps
+ * its amber, deepened so a dark screen has no bright bar, the selection
+ * keeps its blue, and the bevels follow because they are tints of the
+ * panel.
  */
 static const tiku_theme_t tiku_theme_dusk = {
     /* panel    */ TIKU_RGB(58, 58, 58),
@@ -73,18 +69,10 @@ tiku_theme_dark(void)
 }
 
 /*
- * No hue at all.  Not a filter over one of the tables above -- a table of
- * its own, because draining the colour out of a palette chosen FOR its
- * colour gives you the greys that happen to fall out, and several of them
- * land on top of each other: the Be blue and the amber tab are close in
- * luminance, so a desaturated desktop loses the difference between the
- * thing that is selected and the window that is active.  Chosen here
- * instead, by the job each role does.
- *
- * "Black and white" and not one bit deep: every bevel in this interface is
- * a TINT of the panel, so a two-value palette would flatten every control
- * in it -- the raised look would simply stop existing.  The greys are what
- * keeps the shapes, and no colour appears anywhere.
+ * No hue at all.  Each role's grey is chosen by its job, so roles that
+ * differ only in hue in the coloured tables stay apart here.  Every bevel
+ * is a tint of the panel, so the table keeps greys between black and
+ * white.
  */
 static const tiku_theme_t tiku_theme_grey = {
     /* panel    */ TIKU_RGB(216, 216, 216),
@@ -99,18 +87,15 @@ static const tiku_theme_t tiku_theme_grey = {
     /* danger   */ TIKU_RGB(64, 64, 64),
     /* note     */ TIKU_RGB(240, 240, 240),
     /* tab_text */ TIKU_RGB(0, 0, 0),
-    /* Without hue the four code inks can only part by LUMINANCE, so they
-     * are spread across the range the white document leaves: the ink
-     * itself stays 0, a reserved word sits just off it, and a remark
-     * stands furthest back -- which is the ordering the coloured tables
-     * mean anyway. */
+    /* Without hue the four code inks part by luminance alone: the text
+     * stays black, a reserved word sits just off it and a remark stands
+     * furthest back. */
     /* code_word*/ TIKU_RGB(32, 32, 32),
     /* code_num */ TIKU_RGB(96, 96, 96),
     /* code_str */ TIKU_RGB(64, 64, 64),
     /* code_rem */ TIKU_RGB(144, 144, 144),
-    /* Two more verdicts with no hue to tell them by: the good one sits
-     * darker than the stop, the doubtful one lighter, so the three still
-     * order by weight. */
+    /* Success sits darker than danger and warning lighter, so the three
+     * still differ. */
     /* success  */ TIKU_RGB(40, 40, 40),
     /* warn     */ TIKU_RGB(128, 128, 128),
 };
@@ -125,12 +110,10 @@ static const tiku_theme_t *tiku_theme_live = &tiku_theme_r5;
 static int tiku_theme_live_achromatic;
 
 /**
- * @brief Whether a table names no hue anywhere.
+ * @brief Whether every role in table @p t is a grey.
  *
- * DERIVED from the table rather than declared beside it, so there is no
- * second thing to keep in agreement: a palette is without hue when every
- * role in it is, and a table added later gets the right answer without
- * anybody remembering to say so.
+ * Worked out from the table, so a table added later needs no flag of its
+ * own.
  */
 static int
 achromatic(const tiku_theme_t *t)
@@ -160,9 +143,8 @@ tiku_theme_achromatic(void)
 tiku_rgb_t
 tiku_grey(tiku_rgb_t c)
 {
-    /* Rec. 601 luminance: the weights the eye actually uses, so a red and
-     * a blue of the same nominal brightness do not come out the same
-     * grey the way a plain average makes them. */
+    /* Rec. 601 luminance, weighted as the eye sees: green counts most and
+     * blue least. */
     unsigned r = (c >> 16) & 0xFFu;
     unsigned g = (c >> 8) & 0xFFu;
     unsigned b = c & 0xFFu;

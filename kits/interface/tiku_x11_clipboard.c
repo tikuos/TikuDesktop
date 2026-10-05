@@ -21,25 +21,30 @@
 #define READ_UNITS (64L * 1024L)    /* 32-bit units one property read takes */
 #define SINGLE_MAX 256000u          /* bytes one request carries anywhere */
 #define PIECE      (64u * 1024u)    /* bytes of each INCR piece sent */
-#define WAIT_US    1000000          /* an import with no progress this long */
+#define WAIT_US    1000000          /* an import silent this long times out */
 #define SEND_US    5000000          /* a requestor quiet this long is let go */
 
-/* A requestor may disappear between SelectionRequest and ChangeProperty.
- * Scope the error trap to this display, restoring the previous handler. */
+/* A requestor may disappear between SelectionRequest and ChangeProperty,
+ * so those calls run inside a trap that catches X errors on this display
+ * and restores the previous handler after. */
 static Display *trapped;
 static int error_code;
 static XErrorHandler previous_handler;
+/** @brief Note an error on the trapped display; pass others on. */
 static int on_error(Display *d, XErrorEvent *e)
 {
     if (d == trapped) { error_code = e->error_code; return 0; }
     return previous_handler ? previous_handler(d, e) : 0;
 }
+/** @brief Sync, then catch X errors on @p d until untrap(). */
 static void trap(Display *d)
 {
     XSync(d, False);
     trapped = d; error_code = 0;
     previous_handler = XSetErrorHandler(on_error);
 }
+/** @brief Sync, restore the previous handler, and return the error code
+ *         caught, 0 for none. */
 static int untrap(Display *d)
 {
     XSync(d, False);
@@ -48,7 +53,7 @@ static int untrap(Display *d)
     return error_code;
 }
 
-/* An import given up: its window, its bytes and their room. */
+/** @brief End an import: destroy its window and free its bytes. */
 static void cancel(tiku_x11_clipboard_t *c)
 {
     if (c->requestor) XDestroyWindow(c->display, c->requestor);
@@ -56,7 +61,8 @@ static void cancel(tiku_x11_clipboard_t *c)
     free(c->incoming); c->incoming = NULL; c->room = 0;
 }
 
-/* The transfer out in pieces ended, its requestor no longer watched. */
+/** @brief End the transfer out in pieces: stop watching its requestor
+ *         and free its copy. */
 static void send_stop(tiku_x11_clipboard_t *c)
 {
     if (c->send.requestor) {
@@ -68,10 +74,13 @@ static void send_stop(tiku_x11_clipboard_t *c)
     memset(&c->send, 0, sizeof c->send);
 }
 
-/* A failed external replacement is unavailable, never a stale local paste.
- * Empty pastes are deliberately no-ops in the field kit and app services.
- * A refresh nobody asked for keeps its failure to itself: the text stands
- * and no error reaches a status line the hand never aimed at. */
+/**
+ * @brief End an import with @p result.
+ *
+ * A failed import that a paste waits on empties the local clipboard and
+ * reports its result; a failed refresh nobody waits on keeps the local
+ * text and reports nothing.
+ */
 static void finish(tiku_x11_clipboard_t *c, int result, int64_t now)
 {
     if (result != TIKU_CLIPBOARD_OK && !c->asked) {
@@ -83,7 +92,7 @@ static void finish(tiku_x11_clipboard_t *c, int result, int64_t now)
         return;
     }
     if (result != TIKU_CLIPBOARD_OK) tiku_clipboard_set("");
-    c->stamp = tiku_clipboard_stamp(); /* Imports must never claim ownership. */
+    c->stamp = tiku_clipboard_stamp(); /* not a local change to publish */
     c->cached_owner = c->source;
     c->refreshed = now;
     c->result = result;
@@ -124,7 +133,8 @@ void tiku_x11_clipboard_tick(tiku_x11_clipboard_t *c, int64_t now)
         c->outgoing = n ? malloc(n + 1) : NULL;
         c->outlen = c->outgoing ? n : 0;
         if (c->outgoing) memcpy(c->outgoing, tiku_clipboard_text(), n + 1);
-        /* Obtain a real server timestamp, including for copy from remote apps. */
+        /* Ownership is taken at a server timestamp, which arrives with
+         * the property change made here. */
         if (!c->publishing) {
             c->publishing = 1;
             XChangeProperty(c->display, c->window, c->clock, XA_INTEGER,
@@ -145,7 +155,7 @@ int tiku_x11_clipboard_request(tiku_x11_clipboard_t *c, int64_t now, int force)
         now - c->refreshed < 250000) return 0;
     c->source = owner;
     if (!owner) {
-        /* No owner means no host text, including after its owner exits. */
+        /* With no owner the clipboard is empty. */
         tiku_clipboard_set("");
         finish(c, TIKU_CLIPBOARD_OK, now);
         return 0;
@@ -162,7 +172,8 @@ int tiku_x11_clipboard_request(tiku_x11_clipboard_t *c, int64_t now, int force)
     return 1;
 }
 
-/* Room for @p more bytes past what came in, and a NUL. */
+/** @brief Make room for @p more bytes past what came in, and a NUL;
+ *         0 when out of memory. */
 static int grow(tiku_x11_clipboard_t *c, size_t more)
 {
     size_t need = c->used + more + 1, room = c->room ? c->room : 4096;
@@ -174,6 +185,10 @@ static int grow(tiku_x11_clipboard_t *c, size_t more)
     return 1;
 }
 
+/**
+ * @brief Take the bytes read into the local clipboard, Latin-1 converted
+ *        to UTF-8, unless the selection changed owner meanwhile.
+ */
 static void import(tiku_x11_clipboard_t *c, int64_t now)
 {
     char *converted = NULL;
@@ -203,8 +218,11 @@ static void import(tiku_x11_clipboard_t *c, int64_t now)
     finish(c, ok ? TIKU_CLIPBOARD_OK : TIKU_CLIPBOARD_INVALID, now);
 }
 
-/* The requestor's property read whole, a piece at a time however large,
- * then deleted -- which in an INCR transfer asks for the next piece. */
+/**
+ * @brief Read the requestor's property whole, a piece at a time however
+ *        large, then delete it, which in an INCR transfer asks for the
+ *        next piece.
+ */
 static void read_property(tiku_x11_clipboard_t *c, int initial, int64_t now)
 {
     Atom type = None;
@@ -252,8 +270,12 @@ static void read_property(tiku_x11_clipboard_t *c, int initial, int64_t now)
     XFlush(c->display);
 }
 
-/* XA_STRING is Latin-1, not UTF-8. Refuse unrepresentable Unicode honestly.
- * @return the bytes made into *out (the caller frees), or -1. */
+/**
+ * @brief Convert UTF-8 @p s to Latin-1, the encoding of XA_STRING.
+ *
+ * @return the bytes made into *out, which the caller frees, or -1 for a
+ *         character Latin-1 lacks.
+ */
 static long latin1(const char *s, size_t n, unsigned char **out)
 {
     unsigned char *o = malloc(n + 1);
@@ -271,9 +293,14 @@ static long latin1(const char *s, size_t n, unsigned char **out)
     return k;
 }
 
-/* @p n bytes of @p data, of @p type, onto a requestor's property: in one
- * request when they fit any server's, else as the one INCR transfer out
- * (on a copy), announced by the size.  @return whether it will get them. */
+/**
+ * @brief Put @p n bytes of @p data, of @p type, onto a requestor's
+ *        property: in one request up to SINGLE_MAX, else as the one INCR
+ *        transfer out, from a copy, announced by its size.
+ *
+ * @return 1 when the requestor will get them; 0 while another transfer
+ *         out runs, or when out of memory.
+ */
 static int put_text(tiku_x11_clipboard_t *c, XSelectionRequestEvent *q,
                     Atom prop, Atom type, const char *data, size_t n,
                     int64_t now)
@@ -295,8 +322,8 @@ static int put_text(tiku_x11_clipboard_t *c, XSelectionRequestEvent *q,
     return 1;
 }
 
-/* The next piece to a requestor that deleted the last; the empty piece
- * after the text ends the transfer (ICCCM 2.7.2). */
+/** @brief Send the next piece to a requestor that deleted the last; the
+ *         empty piece after the text ends the transfer (ICCCM 2.7.2). */
 static void send_next(tiku_x11_clipboard_t *c, int64_t now)
 {
     tiku_x11_send_t *s = &c->send;
@@ -309,6 +336,11 @@ static void send_next(tiku_x11_clipboard_t *c, int64_t now)
     s->deadline = now + SEND_US;
 }
 
+/**
+ * @brief Answer a SelectionRequest for TARGETS, TIMESTAMP, UTF8_STRING,
+ *        TEXT or STRING while this window owns the clipboard; any other
+ *        request is refused.
+ */
 static void serve(tiku_x11_clipboard_t *c, XSelectionRequestEvent *q,
                   int64_t now)
 {

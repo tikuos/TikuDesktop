@@ -1,20 +1,20 @@
 /*
- * TikuDesktop -- graphical interface to TikuOS devices.
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * fontfuzz.c - bend real fonts and see what the reader does.
+ * fontfuzz.c - damaged copies of real fonts, fed to the TrueType reader.
  *
- * A development tool, not part of the build or the suite: it takes every
- * face on the machine, cuts each short twelve ways and bends its bytes
- * twelve more, then draws every letter, under the sanitisers:
+ * A development tool, not part of the build or the suite.  Each font named
+ * is cut short twelve ways and has 40 random bytes changed twelve more,
+ * from a fixed seed, and each copy draws code points 32 to 0x2ff and
+ * 0x4e00 to 0x4e3f under the sanitisers.  From the repository root:
  *
- *   cc -g -fsanitize=address,undefined -I../../kits/interface \
- *      -o fontfuzz fontfuzz.c ../../kits/interface/tiku_ttf.c \
- *      ../../kits/interface/tiku_cff.c ../../kits/interface/tiku_glyphpath.c
+ *   cc -g -fsanitize=address,undefined -Ikits/interface -o fontfuzz \
+ *      kits/interface/tools/fontfuzz.c kits/interface/tiku_ttf.c \
+ *      kits/interface/tiku_cff.c kits/interface/tiku_glyphpath.c
  *   ./fontfuzz $(find /usr/share/fonts -name '*.ttf' -o -name '*.otf')
- *
- * The seed is fixed, so a failure is one anybody can have again.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,8 +25,13 @@
 #include "tiku_ttf.h"
 
 static unsigned long seed = 12345u;
+/** @brief The next number of a fixed-seed linear congruential sequence. */
 static unsigned long rnd(void){ seed = seed*6364136223846793005ul + 1442695040888963407ul; return seed >> 33; }
 
+/**
+ * @brief Open @p path and draw its code points, adding to @p drew each
+ *        glyph that had ink.  @return 1 when the font opened.
+ */
 static int try_file(const char *path, int *drew) {
     tiku_ttf_t *t = tiku_ttf_open(path);
     unsigned cp;
@@ -43,6 +48,7 @@ static int try_file(const char *path, int *drew) {
     return 1;
 }
 
+/** @brief Damage, open and draw a copy of each font named in @p argv. */
 int main(int argc, char **argv) {
     int i, opened = 0, drew = 0, cases = 0;
     for (i = 1; i < argc; i++) {

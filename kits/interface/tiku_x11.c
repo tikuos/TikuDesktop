@@ -4,11 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_x11.c - the native window backend.
+ * tiku_x11.c - the X11 host: one window, its pixels and its events.
  *
- * Plain Xlib: the interface layer owns every pixel, so a toolkit here would
- * only add a dependency and a second event model.  The wasm build replaces
- * this one file with a canvas.
+ * Plain Xlib.  The interface layer draws every pixel; this file scales and
+ * presents the frame, turns X events into tiku events, composes text
+ * through the X input method, and serves the clipboard through
+ * tiku_x11_clipboard.c.  macOS builds tiku_cocoa.m in its place.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -38,11 +39,11 @@ struct tiku_host {
     Window window;
     GC gc;
     XImage *image;
-    Pixmap backing;            /* last complete frame, including during boot */
-    int mapped;                /* first presentation reveals the window */
+    Pixmap backing;            /* last complete frame, and the background */
+    int mapped;                /* the first presentation maps the window */
     Atom delete_window;
     Cursor resize_cursor;
-    Cursor cursors[6];         /* by TIKU_CURSOR_*, made when first asked */
+    Cursor cursors[6];         /* by TIKU_CURSOR_*, created on first use */
     int cursor_kind;
     int scale;
     int logical_width;
@@ -57,12 +58,15 @@ struct tiku_host {
     XIMCallback input_destroy;
     tiku_text_input_t commit;
     unsigned command_mask;     /* which modifiers mean "this is a command" */
-    int fullscreen;            /* the window is the screen, or wants to be */
+    int fullscreen;            /* fullscreen was asked for */
     int force_present;
     uint64_t presented_frames, presented_bytes, presented_rects;
 };
 
-/** @brief Xlib owns destruction when an input-method service disconnects. */
+/**
+ * @brief Xlib's callback when the input method goes away: forget the method
+ *        and its context, which Xlib has destroyed, and any commit.
+ */
 static void input_destroyed(XIM im, XPointer ctx, XPointer data)
 {
     tiku_host_t *host = (tiku_host_t *)ctx;
@@ -71,7 +75,10 @@ static void input_destroyed(XIM im, XPointer ctx, XPointer data)
     tiku_text_input_reset(&host->commit);
 }
 
-/** @brief Negotiate IM-managed composition UI, falling back to local Compose. */
+/**
+ * @brief Open the input method and a context on the window, the server's
+ *        input method first and local Compose (@im=none) failing that.
+ */
 static void input_open(tiku_host_t *host)
 {
     XIMStyles *styles = NULL;
@@ -136,11 +143,10 @@ static int input_utf8(unsigned cp, char *out)
 }
 
 /**
- * @brief How many device pixels make one drawn pixel, at @p dpi.
+ * @brief How many device pixels make one drawn pixel at @p dpi: dpi / 96
+ *        rounded, from 1 to 4.
  *
- * Whole numbers only, between one and four.  A desktop drawn at a
- * fraction of a pixel is a desktop with seams in every border, and past
- * four the arithmetic costs more than the screen can show.
+ * A whole number, so every drawn pixel is a square of device pixels.
  */
 static int
 scale_for_dpi(double dpi)
@@ -153,16 +159,14 @@ scale_for_dpi(double dpi)
 }
 
 /**
- * @brief What a screen's own measurements say its dpi is.
+ * @brief The dpi a screen's width in pixels and in millimetres give.
  *
- * Asked only when nobody has said.  Both numbers come from the same
- * server describing the same screen, so their ratio holds whichever
- * convention it counts in: device pixels give a high dpi and a large
- * scale, drawn pixels a low dpi and a small one, and the picture ends
- * up the same size either way.  A server with nothing to say fakes
- * about ninety-six, which lands on scale 1.
+ * Both come from one server, so the ratio holds whichever pixels it
+ * counts: device pixels give a high dpi and a large scale, logical pixels
+ * a low dpi and a small one.  A server that does not know its size
+ * reports about 96, which is scale 1.
  *
- * @return the dpi, or 0.0 when the numbers cannot mean anything.
+ * @return the dpi, or 0.0 when either number is not positive.
  */
 static double
 dpi_from_size(int pixels, int millimetres)
@@ -173,7 +177,10 @@ dpi_from_size(int pixels, int millimetres)
     return (double)pixels * 25.4 / (double)millimetres;
 }
 
-/** @brief Read the desktop's integer UI scale from its Xft DPI setting. */
+/**
+ * @brief The integer UI scale: TIKU_SCALE when set, else from Xft.dpi,
+ *        else from the screen's size, else 1.
+ */
 static int
 display_scale(Display *display)
 {
@@ -200,14 +207,9 @@ display_scale(Display *display)
         if (database != NULL) { XrmDestroyDatabase(database); }
     }
     /*
-     * Xft.dpi is a thing a DESKTOP SESSION sets, and on a Mac there is
-     * no session to set it: a server started under Aqua carries no
-     * resource database at all.  So a Retina screen said ninety-six and
-     * the whole desktop came up at half the size it should be, every
-     * window and every glyph, with nothing on screen to say why.  The
-     * screen's own measurements are what is left to ask, and they are
-     * the more honest answer anyway -- a person's eyes are a distance
-     * from the glass, not a number in a database.
+     * A desktop session sets Xft.dpi; an X server started under Aqua on
+     * a Mac has no resource database, so the screen's own measurements
+     * are asked next.
      */
     if (dpi <= 0.0) {
         screen = DefaultScreen(display);
@@ -270,14 +272,11 @@ resize_image(tiku_host_t *host, int width, int height)
 }
 
 /**
- * @brief Which modifier bits a keymap puts the Command key on.
+ * @brief Which modifier bits the keymap puts Meta and Super on, the
+ *        Command key; the bits differ between servers.
  *
- * Not a constant anywhere: X lets the keymap say what each of its eight
- * modifiers carries, so the Command bit is wherever Meta and Super sit,
- * which differs between servers.  The four the desktop already spends
- * are removed at the end, since Meta and Alt share a key on most
- * keymaps and Mod1 is Option here: keeping it would make Option-click
- * copy a file and act on it at once.
+ * Shift, Lock, Control and Mod1 are left out: Mod1 is Option here, and
+ * Meta and Alt share a key on most keymaps.
  *
  * @param map   The server's modifier map.
  * @param syms  Its keycode-to-keysym table.
@@ -320,13 +319,9 @@ command_mask_of(const XModifierKeymap *map, const KeySym *syms,
 }
 
 /**
- * @brief The modifiers that mean "this is an instruction, not a letter".
- *
- * Control always, because every shortcut this desktop has is a Control
- * chord and a machine that had them yesterday must have them today.  On
- * a machine whose command key is Command, that key as well -- added,
- * not swapped, so nothing a person already knows stops working and the
- * chord their hand reaches for starts.
+ * @brief The modifiers that make a key press a command: Control always,
+ *        and on a machine whose command key is Command
+ *        (tiku_x11_command_is_meta()) the Meta and Super bits as well.
  */
 static unsigned
 command_modifiers(Display *display)
@@ -535,8 +530,9 @@ tiku_host_present_in(tiku_host_t *host, const tiku_surface_t *surface,
         host->presented_rects++;
     }
     if (n) {
-        /* Expose handling may wait until boot finishes. Let the server
-         * restore real pixels, never a white clear behind sparse uploads. */
+        /* The backing pixmap is the window's background, so the server
+         * repaints an exposed area from it while expose handling waits,
+         * as it does during boot. */
         XSetWindowBackgroundPixmap(host->display, host->window, host->backing);
         if (!host->mapped) {
             XMapWindow(host->display, host->window);
@@ -570,8 +566,8 @@ void tiku_host_wait(tiku_host_t *host, int64_t timeout_us)
         if (host->commit.offset < host->commit.length ||
             host->clipboard.result ||
             (host->has_deferred && !host->clipboard.requestor)) return;
-        /* Queued user input behind a clipboard import cannot run yet.
-         * Wait for protocol traffic instead of spinning on that queue. */
+        /* While input waits behind a clipboard import, queued events do
+         * not end the wait; traffic on the connection does. */
         if (!(host->has_deferred && host->clipboard.requestor) &&
             XPending(host->display)) return;
         fd.fd = ConnectionNumber(host->display);
@@ -608,8 +604,8 @@ tiku_host_set_fullscreen(tiku_host_t *host, int on)
             XDeleteProperty(host->display, host->window, state);
         }
     } else {
-        /* After it: the manager owns the window's state, and is asked
-         * through the root, as the standard says (1 adds, 0 removes). */
+        /* After it: the manager owns the window's state and is asked
+         * through the root, as EWMH says (1 adds, 0 removes). */
         XEvent e;
 
         memset(&e, 0, sizeof e);
@@ -624,9 +620,9 @@ tiku_host_set_fullscreen(tiku_host_t *host, int on)
         XSendEvent(host->display, DefaultRootWindow(host->display), False,
                    SubstructureRedirectMask | SubstructureNotifyMask, &e);
     }
-    /* And the window itself, for a server with no manager to answer --
-     * a test server, a bare Xvfb.  Under a manager this is overruled by
-     * the manager's own placement, which is the answer wanted anyway. */
+    /* The window is also sized to the screen, for a server with no
+     * window manager, such as a bare Xvfb; a manager's own placement
+     * overrides it. */
     if (on) {
         screen = DefaultScreen(host->display);
         XMoveResizeWindow(host->display, host->window, 0, 0,
@@ -644,7 +640,7 @@ tiku_host_set_title(tiku_host_t *host, const char *title)
     }
 }
 
-/** @brief Clipboard deadlines use elapsed time, not X server timestamps. */
+/** @brief Monotonic microseconds, the clock clipboard deadlines use. */
 static int64_t monotonic_us(void)
 {
     struct timespec now;
@@ -652,7 +648,12 @@ static int64_t monotonic_us(void)
     return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }
 
-/** @brief Publish an imported clipboard before releasing its deferred input. */
+/**
+ * @brief Fill @p event with a TIKU_EVENT_CLIPBOARD for a finished import,
+ *        which is delivered before the input deferred behind it.
+ *
+ * @return 1 when there was a result to deliver.
+ */
 static int clipboard_result(tiku_host_t *host, tiku_event_t *event)
 {
     if (!host->clipboard.result) return 0;
@@ -674,15 +675,14 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
     int64_t now = monotonic_us();
     if (tiku_text_input_next(&host->commit, event)) return 1;
     tiku_x11_clipboard_tick(&host->clipboard, now);
-    /* Do not consume later clicks/keys while importing for an earlier event.
-     * Only protocol events bypass the input barrier. Each poll stays bounded. */
+    /* Only clipboard protocol events are taken here, at most 32 a poll;
+     * clicks and keys stay queued behind an import for an earlier event. */
     for (int i = 0; i < 32 && XCheckIfEvent(host->display, &native,
          tiku_x11_clipboard_match, (XPointer)&host->clipboard); i++)
         (void)tiku_x11_clipboard_event(&host->clipboard, &native, now);
     if (clipboard_result(host, event)) return 1;
-    /* Input waits only for an import someone is waiting on.  A refresh
-     * armed by an ordinary click must never hold the desk still while a
-     * stopped application sits on the selection. */
+    /* Input waits only for an import a deferred event waits on; the
+     * refresh an ordinary click starts does not hold input back. */
     if (host->clipboard.requestor && host->has_deferred) return 0;
     if (host->has_deferred) {
         *event = host->deferred;
@@ -764,7 +764,8 @@ tiku_host_poll(tiku_host_t *host, tiku_event_t *event)
             if (next.type != MotionNotify ||
                 next.xmotion.window != native.xmotion.window ||
                 next.xmotion.state != native.xmotion.state) break;
-            /* Collapse only consecutive moves: never cross a release. */
+            /* Consecutive moves with the same buttons and modifiers held
+             * are collapsed into the last; any other event ends the run. */
             XNextEvent(host->display, &native);
         }
         event->type = TIKU_EVENT_POINTER_MOVE;

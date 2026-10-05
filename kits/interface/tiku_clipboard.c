@@ -1,10 +1,10 @@
 /*
  * TikuOS kits -- the foundation TikuDesktop and TikuTracker
- * are built from.
+ * both stand on.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_clipboard.c - the desk's one TEXT clipboard, held at the size of
+ * tiku_clipboard.c - the desk's one text clipboard, held at the size of
  * what it holds, up to TIKU_CLIPBOARD_LIMIT.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -38,8 +38,9 @@ tiku_clipboard_status_text(int status)
     }
 }
 
-/** @brief The store made @p n bytes of @p text; empty when @p n is 0 or
- *         there is no memory for it.  @return whether it holds them. */
+/** @brief Hold @p n bytes of @p text in place of what was held, and move
+ *         the stamp; empty when @p n is 0 or there is no memory for them.
+ *  @return whether it holds them. */
 static int
 hold(const char *text, size_t n)
 {
@@ -63,7 +64,7 @@ tiku_clipboard_set(const char *text)
 
     if (n > TIKU_CLIPBOARD_LIMIT) {
         n = TIKU_CLIPBOARD_LIMIT;
-        /* A valid UTF-8 string must not end in the middle of a codepoint. */
+        /* Cut before a character, not inside one. */
         while (n && ((unsigned char)text[n] & 0xc0) == 0x80) n--;
     }
     (void)hold(text, n);

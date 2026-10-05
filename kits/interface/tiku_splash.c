@@ -15,24 +15,19 @@
 #include "tiku_splash.h"
 #include "tiku_ui.h"
 
-/** @brief The artwork band's height, as a share of the splash screen's. */
+/** @brief The artwork band's height: half the splash screen's. */
 static int
 band_h(int h)
 {
-    /* Half: the artwork IS the announcement, the way the old splash
-     * screens wore it -- and the words below still get the room the
-     * name, the status, the credits and the version corner need. */
     return h / 2;
 }
 
 /**
- * @brief The artwork: the palettes the mark is built from, swept across
- *        the band, with the mark large at the right of it.
+ * @brief The built-in artwork: the mark's palettes swept across the band
+ *        from left to right, with the mark large right of centre.
  *
- * A sweep rather than a picture, because a picture has its colours
- * baked in and this band re-themes with the mark the day the palettes
- * do.  The mark sits where the old splash screens put their artwork's eye:
- * right of centre, large enough to be the point.
+ * Each column runs from its palette's tint at the top to its accent at
+ * the bottom.
  */
 static void
 band_paint(tiku_surface_t *s, int w, int h)
@@ -47,9 +42,6 @@ band_paint(tiku_surface_t *s, int w, int h)
 
         tiku_logo_palette((int)seat, seat - (float)(int)seat, &p);
         for (y = 1; y < h; y++) {
-            /* The tint above, carried toward the accent below: a
-             * ground and a sky, from the two colours the mark already
-             * owns. */
             float down = (float)y / (float)h;
             int tr = (int)(p.tint >> 16) & 0xff;
             int tg = (int)(p.tint >> 8) & 0xff;
@@ -74,11 +66,8 @@ band_paint(tiku_surface_t *s, int w, int h)
 }
 
 /**
- * @brief The person's own picture, scaled to COVER the band.
- *
- * Covered, not fitted: a band with bars down its sides is a picture
- * apologising for its shape.  What the crop loses at an edge the fill
- * of the band is worth.
+ * @brief Draw @p art scaled to cover the band, centred, with what
+ *        overflows it cropped.
  */
 static void
 art_paint(tiku_surface_t *s, int w, int h,
@@ -128,8 +117,7 @@ tiku_splash_paint(tiku_surface_t *s, const char *name,
     all = (tiku_rect_t){ 0, 0, s->w, s->h };
     band = band_h(s->h);
     x = 18;
-    /* The splash screen is paper, edged once: a window that is not a window,
-     * announcing that it will not be staying. */
+    /* Document paper with a one-pixel frame. */
     tiku_fill(s, all, TIKU_C_DOC);
     tiku_frame(s, all, tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     if (art != NULL) {
@@ -137,18 +125,17 @@ tiku_splash_paint(tiku_surface_t *s, const char *name,
     } else {
         band_paint(s, s->w, band);
     }
-    /* The name, big, at the left under the artwork. */
+    /* The name, in a large face, at the left under the artwork. */
     y = band + 12;
     tiku_text(s, big, x, y + big->ascent, name, TIKU_C_TEXT);
     y += big->height + 6;
-    /* What is being gathered, said right under the name -- the one part
-     * of the old splash screens that was never decoration. */
+    /* The status, under the name. */
     if (status != NULL) {
         tiku_text(s, f, x, y + f->ascent, status,
                        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     }
     y += f->height + 10;
-    /* The small lines, as a block: who it is by, what it stands on. */
+    /* The credit lines, as a block. */
     for (i = 0; i < nlines && i < TIKU_SPLASH_LINES; i++) {
         if (lines[i] == NULL) {
             break;
@@ -157,8 +144,7 @@ tiku_splash_paint(tiku_surface_t *s, const char *name,
                        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
         y += f->height + 2;
     }
-    /* The corners: the version at the left, the mark at the right --
-     * both there whether or not anything is still being gathered. */
+    /* The corners: the version at the left, the mark at the right. */
     if (version != NULL) {
         tiku_text(s, f, x, s->h - 10 - f->height + f->ascent, version,
                        tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_1));
@@ -170,8 +156,8 @@ tiku_splash_paint(tiku_surface_t *s, const char *name,
 void
 tiku_splash_license(tiku_surface_t *s)
 {
-    /* Verbatim boilerplate from the repository LICENSE, without its
-     * copyright placeholder; only the line breaks differ. */
+    /* The boilerplate notice from the Apache License 2.0's appendix,
+     * without its copyright placeholder; only the line breaks differ. */
     static const char *const notice[] = {
         "Licensed under the Apache License, Version 2.0 (the \"License\");",
         "you may not use this file except in compliance with the License. You may obtain a copy of",
@@ -182,8 +168,8 @@ tiku_splash_license(tiku_surface_t *s)
         "permissions and limitations under the License."
     };
     const tiku_font_t *small = tiku_font_at(10);
-    /* The painter's own band, name and status metrics, then a four-pixel
-     * gap before the fine print. */
+    /* Four pixels under the status line: the band, name and status
+     * offsets repeat tiku_splash_paint()'s and must change with them. */
     int y = band_h(s->h) + 12 + tiku_font_at(26)->height + 6 +
             tiku_font_plain()->height + 4;
     size_t i;
@@ -191,6 +177,8 @@ tiku_splash_license(tiku_surface_t *s)
     for (i = 0; i < sizeof notice / sizeof *notice; i++) {
         tiku_text(s, small, 18, y + small->ascent, notice[i],
                   TIKU_RGB(128, 128, 128));
-        y += small->height - 1; /* Compact leading keeps the footer clear. */
+        /* A pixel tighter than the face, so the seven lines end above the
+         * card's bottom edge. */
+        y += small->height - 1;
     }
 }

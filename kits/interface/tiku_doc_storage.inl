@@ -1,6 +1,19 @@
-/* Caller-owned storage keeps the document parser allocation-free. */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_doc_storage.inl - a page's tables in caller-owned storage: what
+ * they take, and binding them, so the parser itself allocates nothing.
+ * Included by tiku_doc.c.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-/** @brief Count aligned bytes with bounded signed indices and checked products. */
+/** @brief The bytes @p count items of @p size take, rounded up to 8; 0
+ *         for a count below 1 or above 32 Mi, or a size that would
+ *         overflow. */
 static size_t doc_storage_part(int count, size_t size)
 {
     if (count < 1 || count > 32 * 1024 * 1024 ||
@@ -8,7 +21,6 @@ static size_t doc_storage_part(int count, size_t size)
     return ((size_t)count * size + 7) & ~(size_t)7;
 }
 
-/** @brief Reject invalid capacities before a caller allocates anything. */
 size_t tiku_doc_storage_size(const tiku_doc_limits_t *l)
 {
     if (!l || l->blocks < 2) return 0;
@@ -26,7 +38,6 @@ size_t tiku_doc_storage_size(const tiku_doc_limits_t *l)
     return total;
 }
 
-/** @brief Bind aligned subarrays; ownership stays with the caller. */
 int tiku_doc_init_storage(tiku_doc_t *d, const tiku_doc_limits_t *limits,
                          void *storage, size_t bytes)
 {

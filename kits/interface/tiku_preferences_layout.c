@@ -14,6 +14,10 @@
 #include <limits.h>
 #include <stdint.h>
 
+/**
+ * @brief Width of the button for @p a, as tiku_ui_button_w() measures it,
+ *        or -1 when @p a is invalid.
+ */
 static int button_width(const tiku_preferences_action_t *a)
 {
     if (!a || !a->label || a->minimum < 0) return -1;

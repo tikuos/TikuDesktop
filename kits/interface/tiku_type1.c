@@ -11,7 +11,8 @@
  * (FontMatrix, Encoding), then eexec-encrypted PostScript holding the
  * Subrs and CharStrings, each charstring encrypted once more.  The
  * charstring machine is Type 1's: numbers, a dozen drawing operators,
- * subroutines, and flex, hints and accents through "othersubrs".
+ * subroutines, flex and hint replacement through "othersubrs", and
+ * accents through seac.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -49,7 +50,10 @@ struct tiku_t1 {
 
 /* --------------------------------------------------------------- bytes  */
 
-/** @brief eexec and charstring decryption share one recurrence. */
+/**
+ * @brief Decrypt @p n bytes at @p p in place from key @p r; eexec and
+ *        charstring decryption share one recurrence.
+ */
 static void
 decrypt(unsigned char *p, size_t n, unsigned short r)
 {
@@ -128,7 +132,8 @@ read_head(tiku_t1_t *t, const unsigned char *p, size_t n)
     if (at >= 0) {
         double a = 0;
 
-        /* 0.001 is not a float; the em it means, 1000, is. */
+        /* 0.001 is not exact in floating point, so the em, 1/a, is
+         * rounded to whole units. */
         if (sscanf((const char *)p + at + 11, " [%lf", &a) == 1 && a > 0 &&
             1.0 / a >= 16.0 && 1.0 / a <= 16384.0) {
             t->upem = (float)(long)(1.0 / a + 0.5);
@@ -371,7 +376,8 @@ tiku_t1_open(const unsigned char *data, size_t len)
     }
     body = buf + i;
     blen = n - i;
-    /* Hex when the first four bytes are all digits: the PFA way. */
+    /* The eexec section is hex text (the PFA form) when its first four
+     * bytes are hex digits; it is then decoded to binary in place. */
     if (blen >= 4 && hexval(body[0]) >= 0 && hexval(body[1]) >= 0 &&
         hexval(body[2]) >= 0 && hexval(body[3]) >= 0) {
         size_t o = 0;

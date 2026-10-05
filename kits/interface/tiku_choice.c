@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_choice.c - the dropdown's own state.
+ * tiku_choice.c - the popup choice's behaviour: selection, keys, the
+ * pointer and where the popup goes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,6 +14,7 @@
 #include "tiku_measure.h"
 #include <string.h>
 
+/** @brief Whether @p e's point is inside @p r. */
 static int hit(tiku_rect_t r, const tiku_input_event_t *e)
 { return e->x >= r.x && e->y >= r.y &&
          e->x < r.x + r.w && e->y < r.y + r.h; }
@@ -61,6 +63,7 @@ tiku_rect_t tiku_choice_popup(const tiku_choice_t *c, tiku_rect_t a,
     if (r.y < s.y) r.y = s.y;
     return r;
 }
+/** @brief Scroll the popup so that the hot row shows. */
 static void reveal(tiku_choice_t *c, tiku_rect_t popup)
 {
     int rows = (popup.h - 4) / tiku_measure_row_h();
@@ -69,6 +72,8 @@ static void reveal(tiku_choice_t *c, tiku_rect_t popup)
     if (c->hot >= c->top + rows) c->top = c->hot - rows + 1;
     if (c->top < 0) c->top = 0;
 }
+/** @brief Move the hot row by @p dir to the next enabled option,
+ *         wrapping round; it stays put when none is enabled. */
 static void step(tiku_choice_t *c, int dir)
 {
     int at = c->hot;
@@ -77,6 +82,8 @@ static void step(tiku_choice_t *c, int dir)
         if (c->item[at].enabled) { c->hot = at; return; }
     }
 }
+/** @brief Take the hot row as the selection when it is enabled, then
+ *         close the popup. */
 static tiku_choice_result_t accept(tiku_choice_t *c)
 {
     int valid_hot = c->hot >= 0 && c->hot < c->count &&
@@ -93,8 +100,8 @@ tiku_choice_result_t tiku_choice_event(tiku_choice_t *c,
     if (!c->enabled || e->type == TIKU_EVENT_DEACTIVATED) {
         tiku_choice_close(c); return TIKU_CHOICE_IGNORED;
     }
-    /* A list with nothing chosen yet is still a list to choose FROM: a
-     * caller that cleared its selection must not be left a dead control. */
+    /* An empty list ignores input; a list with nothing selected still
+     * opens. */
     if (!c->count) return TIKU_CHOICE_IGNORED;
     if (e->type == TIKU_EVENT_KEY_DOWN && (focused || c->open)) {
         if (c->open && (e->key == TIKU_KEY_ESCAPE || e->key == TIKU_KEY_TAB)) {

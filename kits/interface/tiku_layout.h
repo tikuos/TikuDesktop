@@ -4,15 +4,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_layout.h - a rectangle divided as it was DESCRIBED, rather than
+ * tiku_layout.h - a rectangle divided as it was described.
+ *
  * A window says what its parts are: this one as tall as a button, that
  * one taking what is left, this one never narrower than its word.  Then
  * it asks where part three went, and the draw and the click get the
- * same answer because there is only one.  A rectangle written down in
- * the drawing and again, differently, in the hit test is the shape of
- * every layout bug; one asked for rather than recalled cannot have it.
- * Nothing is cached, since caching goes stale: the arithmetic is a few
- * adds, and a face that just changed size needs nothing invalidated.
+ * same answer from the same description.  Nothing is cached: the
+ * arithmetic is a few adds, so a face that changed size needs nothing
+ * invalidated.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,8 +23,8 @@
 /**
  * @brief How many parts one description holds.
  *
- * A window that wants more than this is describing a window, not a row
- * -- it should be describing rows of rows, which nests for free.
+ * More parts than this are rows of rows: a part's slot is laid out with
+ * a description of its own.
  */
 #define TIKU_LAYOUT_MAX 16
 
@@ -36,6 +35,7 @@ typedef struct {
     int least;      /* never smaller than this, share or not       */
 } tiku_layout_item_t;
 
+/** @brief A description: its direction, gap, padding and parts. */
 typedef struct {
     int horiz;      /* nonzero lays a row across; zero lays a stack */
     int gap;        /* between parts                               */
@@ -62,9 +62,8 @@ int tiku_layout_add(tiku_layout_t *l, int size, int weight, int least);
 /**
  * @brief Where part @p i falls when the description is laid in @p r.
  *
- * A part the description does not have comes back degenerate (zero
- * extent) rather than off the end, so a caller looping past the count
- * draws and hits nothing.
+ * A part the description does not have comes back with zero extent, so a
+ * caller looping past the count draws and hits nothing.
  */
 tiku_rect_t tiku_layout_slot(const tiku_layout_t *l, tiku_rect_t r, int i);
 
@@ -75,8 +74,8 @@ int tiku_layout_at(const tiku_layout_t *l, tiku_rect_t r, int x, int y);
  * @brief The smallest @p r may be before parts start losing their
  *        least: every fixed size, every least, the gaps and the pad.
  *
- * What a window asks when it is deciding how big to open -- so a window
- * grows with the face rather than clipping what the face grew.
+ * What a window asks when it is deciding how big to open, so that it
+ * grows with the face.
  */
 int tiku_layout_least(const tiku_layout_t *l);
 

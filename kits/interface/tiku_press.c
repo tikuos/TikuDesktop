@@ -4,7 +4,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_press.c - a button held under the hand.
+ * tiku_press.c - a button held down under the pointer.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

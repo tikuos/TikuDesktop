@@ -1,8 +1,19 @@
-/* Platform-neutral UI input, distinct from the kernel's byte-sized event ID. */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_input.h - the interface's input event record and its types,
+ * apart from the kernel's byte-sized event ids.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #ifndef TIKU_INPUT_H_
 #define TIKU_INPUT_H_
 #include <stdint.h>
 
+/** @brief What an input event is. */
 typedef enum {
     TIKU_EVENT_NONE = 0,
     TIKU_EVENT_EXPOSE,
@@ -21,6 +32,15 @@ typedef enum {
     TIKU_EVENT_TEXT_INPUT
 } tiku_event_type_t;
 
+/**
+ * @brief One input event.
+ *
+ * @c key is a TIKU_KEY_* value or a character, and for TIKU_EVENT_CLIPBOARD
+ * a TIKU_CLIPBOARD_* status.  @c button is a pointer button, numbered as X
+ * numbers them, and for TIKU_EVENT_TEXT_INPUT the TIKU_TEXT_* flags; @c dx
+ * and @c dy are a wheel's travel, or a text commit's offset and length.
+ * @c x and @c y are logical; @c width and @c height a resize's new size.
+ */
 typedef struct {
     tiku_event_type_t type;
     int64_t                time_us;

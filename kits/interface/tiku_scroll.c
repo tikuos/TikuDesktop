@@ -63,10 +63,10 @@ tiku_scroll_set_range(tiku_scroll_t *sb, int total, int visible)
     if (total < 0) { total = 0; }
     if (visible < 0) { visible = 0; }
     if (tiku_scroll_busy(sb)) {
-        /* Held, or mid-rebuild: remembered rather than taken.  A range
-         * applied under the user's thumb makes the thumb jump out from
-         * under it, and one applied mid-rebuild describes a listing that
-         * exists for one frame (PVL-052, PVL-060). */
+        /* Held, or mid-rebuild: the range waits.  A range applied under
+         * a held thumb moves the thumb from under the pointer, and one
+         * applied mid-rebuild describes a listing that lasts one frame
+         * (PVL-052, PVL-060). */
         sb->pend_total = total;
         sb->pend_visible = visible;
         sb->pending = 1;
@@ -101,8 +101,8 @@ tiku_scroll_line(const tiku_scroll_t *sb)
     if (sb == NULL) {
         return 1;
     }
-    /* Half a line, rounded UP: half of one is not none, and a stepper that
-     * moved nothing would be a stepper that looks broken (PVL-051). */
+    /* Half a line, rounded up, so a step of one unit still moves
+     * (PVL-051). */
     half = (sb->step + 1) / 2;
     return (half > 0) ? half : 1;
 }
@@ -115,8 +115,7 @@ tiku_scroll_page(const tiku_scroll_t *sb)
     if (sb == NULL) {
         return 1;
     }
-    /* A page keeps one line of what was on screen, so the eye has
-     * something to land on across the jump. */
+    /* A page keeps one line of what was on screen. */
     page = sb->visible - sb->step;
     return (page > 0) ? page : 1;
 }
@@ -135,8 +134,8 @@ tiku_scroll_thumb(const tiku_scroll_t *sb, int len, int *pos,
     }
     t = (int)(((long)len * sb->visible) / sb->total);
     if (t < TIKU_SCROLL_MIN_THUMB) {
-        /* A thumb proportional to ten thousand rows is a thumb nobody can
-         * catch, so the proportion has a floor. */
+        /* The proportion has a floor, so a long listing's thumb can still
+         * be caught. */
         t = TIKU_SCROLL_MIN_THUMB;
     }
     if (t > len) {
@@ -185,8 +184,8 @@ tiku_scroll_press(tiku_scroll_t *sb, int len, int at)
         return tiku_scroll_to(sb, sb->value + tiku_scroll_page(sb));
     case TIKU_SCROLL_HIT_THUMB:
         (void)tiku_scroll_thumb(sb, len, &pos, &thick);
-        /* Where IN the thumb it was grabbed, so the content does not jump
-         * to put the thumb's top under the pointer. */
+        /* Where in the thumb it was grabbed; a drag keeps that point
+         * under the pointer. */
         sb->grab_off = at - pos;
         sb->tracking = 1;
         return sb->value;
@@ -245,8 +244,8 @@ tiku_scroll_arrow_repeat(tiku_scroll_t *sb)
         return 0;
     }
     sb->arrow_pulses++;
-    /* An initial hesitation, then a steady walk: the pause is what keeps
-     * a plain click from stepping twice. */
+    /* A pause, then a steady repeat; the pause keeps a plain click from
+     * stepping twice. */
     if (sb->arrow_pulses < 12 || (sb->arrow_pulses - 12) % 4 != 0) {
         return 0;
     }

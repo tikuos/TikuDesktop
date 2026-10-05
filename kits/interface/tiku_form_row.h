@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_form_row.h - a labelled row, split without a pixel named.
+ * tiku_form_row.h - a labelled row split into its label and its
+ * control.
  *
  * A row of a form is a label and the control beside it.  The label is
  * given as much as its words need, measured through the seam, and the

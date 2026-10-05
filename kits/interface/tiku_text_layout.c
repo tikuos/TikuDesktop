@@ -12,7 +12,10 @@
 #include "tiku_text_layout.h"
 #include <string.h>
 
-/* Decode just enough to preserve complete, valid codepoints in output. */
+/**
+ * @brief Copy the codepoint at @p s into @p out and return the source bytes
+ *        it took: a control byte as a space, a malformed sequence as '?'.
+ */
 static size_t unit(const char *s, char out[5])
 {
     const unsigned char *p = (const unsigned char *)s;
@@ -34,6 +37,7 @@ invalid:
     out[0] = '?'; out[1] = 0; return 1;
 }
 
+/** @brief Start of the codepoint before byte @p n of @p s. */
 static size_t previous(const char *s, size_t n)
 {
     if (n) n--;
@@ -41,6 +45,10 @@ static size_t previous(const char *s, size_t n)
     return n;
 }
 
+/**
+ * @brief Cut @p out back until it and the ellipsis fit @p width and @p cap,
+ *        then append the ellipsis; empty when the ellipsis alone does not.
+ */
 static void ellipsis(int face, char *out, size_t cap, int width)
 {
     size_t n = strlen(out);
@@ -53,7 +61,13 @@ static void ellipsis(int face, char *out, size_t cap, int width)
     memcpy(out + n, mark, 4);
 }
 
-/* Fit a prefix; bytes consumed may differ from output for malformed input. */
+/**
+ * @brief Copy into @p out the longest start of the line at @p s that fits
+ *        @p width and @p cap.
+ *
+ * @return The source bytes taken, which differ from the bytes written
+ *         when the input is malformed
+ */
 static size_t prefix(int face, const char *s, int width, char *out, size_t cap)
 {
     size_t used = 0, n = 0;
@@ -99,7 +113,8 @@ int tiku_text_wrap_next(int face, const char **text, int width,
         size_t split = used;
         while (split && s[split] != ' ' && s[split] != '\t') split--;
         if (split) used = prefix(face, s, width, out, split + 1);
-        /* Even an impossibly narrow box must consume a whole codepoint. */
+        /* A box too narrow for one codepoint still takes one, so the
+         * caller always advances. */
         if (!used) { char ch[5]; used = unit(s, ch); }
         while (s[used] == ' ' || s[used] == '\t') used++;
     } else if (s[used] == '\r' || s[used] == '\n') {

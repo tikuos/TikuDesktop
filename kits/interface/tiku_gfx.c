@@ -6,10 +6,9 @@
  *
  * tiku_gfx.c - surface primitives and the PNG writer.
  *
- * Every primitive clips against the surface's rectangle, so callers draw in
- * widget coordinates and never test bounds themselves.  The PNG writer emits
- * stored (uncompressed) deflate blocks: a few lines of code instead of a zlib
- * dependency, and screenshots are not a size-critical path.
+ * Every primitive clips against the surface's clip rectangle, so callers
+ * draw in widget coordinates without testing bounds.  The PNG writer emits
+ * stored (uncompressed) deflate blocks and needs no zlib.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,16 +16,6 @@
 #include "tiku_dl.h"
 #include "tiku_gfx.h"
 
-/*
- * Recording.  A surface may carry a display list, and then every drawing
- * call writes itself down as well as painting -- one pass, two ways of
- * saying what it did, so a stream cannot drift from the picture it is
- * supposed to be of.
- *
- * Only the OUTERMOST call is written down.  A frame is four lines and a
- * line is a fill, so without the depth the list would carry the frame AND
- * everything the frame is made of, and the far end would draw it twice.
- */
 int
 tiku_gfx_rec_enter(tiku_surface_t *s)
 {
@@ -40,20 +29,6 @@ tiku_gfx_rec_enter(tiku_surface_t *s)
 void
 tiku_gfx_rec_miss(tiku_surface_t *s)
 {
-    /*
-     * The one call a painter of PICTURES owes the list.
-     *
-     * Everything in this kit reduces to commands that record; a picture
-     * does not, and a list that quietly leaves one out is worse than no
-     * list at all -- it is a window that arrives looking finished and is
-     * not.  So whoever writes pixels the vocabulary cannot say says so
-     * here, and whoever is about to put the list on a wire sends the
-     * frame instead.
-     *
-     * It lives beside rec_enter because the depth rule is the same one:
-     * a picture drawn INSIDE a command that is already being recorded is
-     * part of that command, and the outer op carries it.
-     */
     if (s != NULL && s->record != NULL && s->record_depth == 0) {
         tiku_dl_miss(s->record);
     }
@@ -336,9 +311,8 @@ tiku_ink(tiku_ink_t which)
 {
     switch (which) {
     case TIKU_INK_FAINT:
-        /* Derived, not named: ordinary ink standing back on the ground it
-         * is read against.  A named grey would be right on one table and
-         * invisible on the other. */
+        /* Ordinary ink pulled halfway toward the ground it is read on, so
+         * it recedes on every table. */
         return tiku_dim(TIKU_C_TEXT, TIKU_C_DOC);
     case TIKU_INK_WORD:   return TIKU_C_CODE_WORD;
     case TIKU_INK_NUM:    return TIKU_C_CODE_NUM;
@@ -346,20 +320,16 @@ tiku_ink(tiku_ink_t which)
     case TIKU_INK_REMARK: return TIKU_C_CODE_REM;
     case TIKU_INK_WRONG:  return TIKU_C_DANGER;
     case TIKU_INK_PATH:
-        /* A string that is also an ADDRESS: the string's ink met
-         * halfway with the shade the desk gives a thing pointed at, so
-         * a path reads as a path on every table and names no fourth
-         * colour of its own. */
+        /* A string that is also an address: the string's ink met
+         * halfway with the selection colour. */
         return tiku_dim(TIKU_C_CODE_STR, TIKU_C_SELECT);
     case TIKU_INK_LINK:
-        /* The shade the desk already gives a thing pointed at.  A table
-         * with no hue makes it nearly the document's own ink, which is
-         * why a link is underlined as well as tinted. */
+        /* The selection colour, which under a table with no hue is close
+         * to the document's own ink. */
         return TIKU_C_SELECT;
     case TIKU_INK_PLAIN:
     default:
-        /* An ink this build does not know reads as the document's own,
-         * which is legible by construction -- never as nothing. */
+        /* An ink this build does not know reads as the document's own. */
         return TIKU_C_TEXT;
     }
 }
@@ -368,9 +338,7 @@ void
 tiku_pixel(tiku_surface_t *s, int x, int y, tiku_rgb_t c)
 {
     /* Before the clip test, so a pixel clipped away still marks the list
-     * not-whole: the only primitive that forgot the one call a painter
-     * of pictures owes, and a marked menu row or a title tab's boxes
-     * crossed the wire looking finished with their marks missing. */
+     * not whole. */
     tiku_gfx_rec_miss(s);
     int sc, ry, rx;
     long stride;
@@ -401,12 +369,11 @@ tiku_picture(tiku_surface_t *s, int x, int y, int w, int h,
     }
     {
         /*
-         * Recorded at the OUTERMOST call only, like every other command:
+         * Recorded at the outermost call only, like every other command:
          * a picture drawn inside a control that is already recording is
-         * part of that control.  Entering also puts the pixels below out
-         * of the recorder's reach, so they neither double-record nor --
-         * since tiku_pixel confesses what it cannot carry -- mark a
-         * miss for a picture that WAS carried.
+         * part of that control.  Entering also keeps the pixels below from
+         * recording, so tiku_pixel() marks no miss for a picture that was
+         * carried.
          */
         int rec = tiku_gfx_rec_enter(s);
 
@@ -432,7 +399,7 @@ void
 tiku_blit(tiku_surface_t *dst, int x, int y,
                const tiku_surface_t *src)
 {
-    tiku_gfx_rec_miss(dst);  /* a surface copied in IS a picture */
+    tiku_gfx_rec_miss(dst);  /* a surface copied in is a picture */
 
     int y0, y1, x0, x1, row;
 
@@ -484,18 +451,18 @@ void
 tiku_copy_bits(tiku_surface_t *s, tiku_rect_t src, int dx,
                     int dy)
 {
-    tiku_gfx_rec_miss(s);   /* moving pixels about is not a drawing the list can say */
+    tiku_gfx_rec_miss(s);   /* no command moves pixels */
 
     int y, x0, y0, x1, y1, w;
 
     if (s == NULL || (dx == 0 && dy == 0) || src.w <= 0 || src.h <= 0) {
         return;
     }
-    /* Clipped on BOTH ends: the source is read from the surface and the
+    /* Clipped on both ends: the source is read from the surface and the
      * destination is written into the clip, so a block that would run off
-     * either is trimmed before a single pixel moves.  The destination
-     * answers to the clip like every other way of drawing -- a list that
-     * slides its rows must not carry them over its own border. */
+     * either is trimmed before a pixel moves.  The destination answers to
+     * the clip as every other drawing does, so a list that slides its
+     * rows does not carry them over its own border. */
     x0 = src.x;
     y0 = src.y;
     x1 = src.x + src.w;
@@ -560,8 +527,7 @@ blend_px(tiku_rgb_t *px, tiku_rgb_t c, unsigned a)
  *
  * The corner is the quarter disc of radius @p r whose centre is at
  * (@p cx, @p cy); the pixel is the unit square at (@p x, @p y), sampled
- * four by four.  Whole numbers in, a byte out, so the corner of every
- * window costs sixteen compares a pixel and no floating point.
+ * four by four, in integer arithmetic: sixteen compares a pixel.
  */
 static unsigned
 corner_coverage(int x, int y, int cx, int cy, int r)
@@ -585,8 +551,7 @@ corner_coverage(int x, int y, int cx, int cy, int r)
  *
  * With @p ring set, what is drawn is the hairline: the difference
  * between the corner at @p radius and the corner one pixel inside it.
- * Native pixels throughout, so a scaled surface gets a smoother curve
- * rather than a bigger jaggy one.
+ * Native pixels throughout, so a scaled surface gets a finer curve.
  */
 static void
 round_corners(tiku_surface_t *s, tiku_rect_t r, int radius, unsigned corners,
@@ -745,8 +710,8 @@ tiku_blend_scaled(tiku_surface_t *dst, tiku_rect_t at,
     }
     dstride = (long)dst->w * sc;
     sstride = sw;
-    /* Nearest source pixel for each native destination pixel: a ghost
-     * is on its way out, and a moment's softness is not worth a filter. */
+    /* Nearest source pixel for each native destination pixel, with no
+     * filtering. */
     for (row = y0 * sc; row < y1 * sc; row++) {
         tiku_rgb_t *out = dst->px + (long)row * dstride;
         long sy = (long)(row - at.y * sc) * sh / ((long)at.h * sc);
@@ -780,7 +745,7 @@ tiku_fill_round(tiku_surface_t *s, tiku_rect_t r, int radius,
     }
     rec = tiku_gfx_rec_enter(s);
     if (rec) {
-        (void)tiku_dl_fill(s->record, r, c);   /* a fill, to the facts */
+        (void)tiku_dl_fill(s->record, r, c);   /* recorded as a fill */
     }
     /* The cross the corners leave, opaque; a corner kept square is
      * filled whole; the rest are laid by cover. */
@@ -881,8 +846,8 @@ void
 tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
             float strength)
 {
-    /* rad is at most 4 * radius on a scale-4 surface; the table holds a
-     * whole radius of 32 native pixels, which every caller is under. */
+    /* The table holds a radius of 32 native pixels; rad is clamped to
+     * it below. */
     static unsigned char alpha[32 * 32 + 1];
     int sc, rad, drop, x0, y0, x1, y1, bx0, by0, bx1, by1, cr;
     int rx0, ry0, rx1, ry1, cx0, cy0, cx1, cy1;
@@ -905,8 +870,7 @@ tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
     drop = 2 * sc;                      /* the light is a little above */
     /*
      * Falling off as the square of the distance left: dark at the edge,
-     * gone at the radius.  The same arithmetic as before, done once per
-     * distance rather than once per pixel.
+     * gone at the radius, tabulated once per distance.
      */
     for (d2 = 0; d2 < rad2; d2++) {
         long t = rad2 - d2;
@@ -927,8 +891,8 @@ tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
     /*
      * The window covers its own box, so nothing is laid under it: the
      * band is the strip above the box, the strip below, and the two
-     * beside it.  Walking only those is what keeps a large window from
-     * costing its whole area per frame.
+     * beside it.  Walking only those keeps a large window's shadow from
+     * costing its whole area.
      */
     rx0 = r.x * sc; ry0 = r.y * sc;
     rx1 = (r.x + r.w) * sc; ry1 = (r.y + r.h) * sc;
@@ -1004,12 +968,8 @@ tiku_veil(tiku_surface_t *s, tiku_rect_t r, tiku_rgb_t c, float amount)
     if (amount > 1.0f) {
         amount = 1.0f;
     }
-    /*
-     * Eight bits of it, so the arithmetic below is integer.  A veil is
-     * laid over every pixel of a screen, and doing that in floating
-     * point once per channel is the difference between a fade that
-     * keeps up and one that stutters.
-     */
+    /* Eight bits of it, so that the arithmetic below is integer: a veil
+     * is laid over every pixel of a screen. */
     a = (unsigned)(amount * 255.0f + 0.5f);
     if (a == 0u) {
         return;
@@ -1163,6 +1123,7 @@ tiku_inset(tiku_rect_t r, int n)
 /* PNG                                                                       */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Run the PNG CRC-32 over @p n bytes of @p b from @p crc. */
 static unsigned long
 png_crc(const unsigned char *b, size_t n, unsigned long crc)
 {
@@ -1188,6 +1149,7 @@ png_crc(const unsigned char *b, size_t n, unsigned long crc)
     return crc;
 }
 
+/** @brief Write @p v big-endian at @p p. */
 static void
 png_be32(unsigned char *p, unsigned long v)
 {
@@ -1197,6 +1159,8 @@ png_be32(unsigned char *p, unsigned long v)
     p[3] = (unsigned char)v;
 }
 
+/** @brief Write one chunk: length, @p tag, @p n bytes of @p data, CRC.
+ *  @return 0, or -1 when a write fails. */
 static int
 png_chunk(FILE *f, const char *tag, const unsigned char *data, size_t n)
 {
@@ -1332,7 +1296,7 @@ invert_pixel(tiku_surface_t *s, int x, int y)
 void
 tiku_invert_frame(tiku_surface_t *s, tiku_rect_t r)
 {
-    tiku_gfx_rec_miss(s);   /* an inversion is not a colour a command can name */
+    tiku_gfx_rec_miss(s);   /* no command inverts */
 
     int i;
 

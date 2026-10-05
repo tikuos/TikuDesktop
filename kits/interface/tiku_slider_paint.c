@@ -27,13 +27,11 @@ tiku_slider_draw(const tiku_slider_t *sl, tiku_surface_t *s, tiku_rect_t r)
     }
     rec = tiku_gfx_rec_enter(s);
     if (rec) {
-        /* The value on its own scale, not a groove and a box: a reader
-         * that gets SUNKEN + RAISED learns nothing about the number. */
+        /* Recorded as a slider with its range and value. */
         (void)tiku_dl_slider(s->record, r, sl->min, sl->max, sl->value);
     }
-    /* The groove is a thin sunken line down the middle of the track; the
-     * knob rides over it, which is what makes the track read as a rail
-     * rather than as a well the knob is sunk into. */
+    /* The groove is a thin sunken line along the middle of the track,
+     * and the knob is drawn over it. */
     groove = (tiku_rect_t){ r.x + r.h / 2, r.y + r.h / 2 - 2,
                             (r.w > r.h) ? r.w - r.h : 0, 4 };
     tiku_ui_sunken(s, groove, TIKU_C_DOC);
@@ -59,17 +57,11 @@ tiku_stepper_draw(const tiku_slider_t *sl, tiku_surface_t *s, tiku_rect_t r)
 
     tiku_ui_sunken(s, field, TIKU_C_DOC);
     snprintf(digits, sizeof digits, "%d", sl->value);
-    /* Right against the arrows, the way a number reads: the digits grow
-     * leftward from the place the eye already is. */
+    /* The digits are right-aligned against the arrows. */
     tiku_text(s, f, field.x + field.w - 6 - tiku_text_width(f, digits),
               field.y + (field.h - f->height) / 2 + f->ascent, digits,
               TIKU_C_TEXT);
-    /*
-     * The arrows, and each one dimmed when the value cannot move that
-     * way.  Drawn as raised boxes with nothing in them at first, which
-     * is a stepper whose arrows are not arrows: it looked pressable at
-     * both ends of its range and did nothing at either.
-     */
+    /* Each arrow is dimmed when the value cannot move that way. */
     tiku_ui_raised(s, up);
     tiku_ui_arrow(s, up, 0, sl->value < sl->max);
     tiku_ui_raised(s, down);

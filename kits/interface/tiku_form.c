@@ -43,8 +43,8 @@ word(const char *p, char *out, size_t max)
 /**
  * @brief The rest of the line, blanks trimmed off both ends.
  *
- * A label is words with spaces in them, so it cannot be read as one
- * word -- but it is the LAST thing on its line for exactly that reason.
+ * A text row's words and a title hold spaces, so they are read to the
+ * end of their line.
  */
 static const char *
 tail(const char *p, char *out, size_t max)
@@ -68,6 +68,7 @@ tail(const char *p, char *out, size_t max)
     return p;
 }
 
+/** @brief Past the end of the line @p p is on. */
 static const char *
 line_end(const char *p)
 {
@@ -118,7 +119,7 @@ tiku_form_parse(tiku_form_t *f, const char *text, int *unknown)
             row->kind = TIKU_FORM_TEXT;
             (void)tail(rest, row->label, sizeof row->label);
             /* One path and nothing else: the row shows what that place
-             * says, so a status line from a board stays live. */
+             * says. */
             if (row->label[0] == '/' && strchr(row->label, ' ') == NULL) {
                 snprintf(row->bind, sizeof row->bind, "%s", row->label);
                 row->label[0] = '\0';
@@ -136,7 +137,7 @@ tiku_form_parse(tiku_form_t *f, const char *text, int *unknown)
             row->lo = atoi(lo);
             row->hi = (hi[0] != '\0') ? atoi(hi) : 100;
             if (row->hi <= row->lo) {
-                row->hi = row->lo + 1;  /* a range of nothing shows nothing */
+                row->hi = row->lo + 1;  /* an empty range is one wide */
             }
         } else if (strcmp(kind, "toggle") == 0) {
             row->kind = TIKU_FORM_TOGGLE;
@@ -159,18 +160,15 @@ tiku_form_parse(tiku_form_t *f, const char *text, int *unknown)
             row->kind = TIKU_FORM_BUTTON;
             rest = word(rest, row->label, sizeof row->label);
             rest = word(rest, row->bind, sizeof row->bind);
-            /* What pressing it writes.  A button with nothing to write
-             * writes the one thing that always means "now": a 1. */
+            /* What pressing it writes: 1 when the description gives
+             * nothing. */
             (void)word(rest, row->value, sizeof row->value);
             if (row->value[0] == '\0') {
                 snprintf(row->value, sizeof row->value, "1");
             }
             row->known = 1;
         } else {
-            /* A row this build has never heard of.  Passed over rather
-             * than refusing the panel: a device built later will have
-             * rows this desktop does not know, and showing the ones it
-             * does know is better than showing none of them. */
+            /* A row this build does not know: skipped, and counted. */
             skipped++;
             p = line_end(p);
             continue;
@@ -184,7 +182,7 @@ tiku_form_parse(tiku_form_t *f, const char *text, int *unknown)
     return f->nrow;
 }
 
-/** @brief One row's height: a control's, with room to breathe. */
+/** @brief One row's height: a control's, and 6 pixels. */
 static int
 row_h(void)
 {
@@ -236,7 +234,8 @@ tiku_form_at(const tiku_form_t *f, tiku_rect_t body, int x, int y)
     return -1;
 }
 
-/** @brief A row's label half and control half, described once. */
+/** @brief Split a row into its words (2 shares, at least 60 wide) and
+ *         its control (3 shares, at least 80). */
 static void
 halves(tiku_rect_t row, tiku_rect_t *label, tiku_rect_t *control)
 {
@@ -278,11 +277,7 @@ tiku_form_draw(const tiku_form_t *f, tiku_surface_t *s, tiku_rect_t body)
         }
         switch (row->kind) {
         case TIKU_FORM_GAUGE: {
-            /*
-             * A place that has not answered yet is drawn EMPTY rather
-             * than at zero: those look the same and mean opposite
-             * things, so the words say which.
-             */
+            /* A place that has not answered yet is drawn empty. */
             int v = row->known ? atoi(row->value) : row->lo;
             float part = (float)(v - row->lo) /
                          (float)(row->hi - row->lo);
@@ -357,17 +352,15 @@ tiku_form_press(tiku_form_t *f, int i)
         return row->value;
     }
     if (row->kind == TIKU_FORM_TOGGLE) {
-        /* The other of the two, from what the place last said -- so a
-         * toggle whose place has not answered turns ON, which is what a
-         * person pressing an off-looking switch means. */
+        /* The other of the two, from what the place last said: a toggle
+         * whose place has not answered is drawn off, so it turns on. */
         snprintf(row->value, sizeof row->value, "%d",
                  (row->known && atoi(row->value) != 0) ? 0 : 1);
         row->known = 1;
         return row->value;
     }
     if (row->kind == TIKU_FORM_CHOICE) {
-        /* The word after the one the place says, round to the first: a
-         * choice is pressed through rather than dropped down. */
+        /* The word after the one the place says, round to the first. */
         char list[TIKU_FORM_VALUE];
         char *save, *w, *first = NULL, *next = NULL;
         int seen = 0;

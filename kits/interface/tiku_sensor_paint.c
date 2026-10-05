@@ -1,5 +1,14 @@
-/* Classic inset sensor displays, built from the existing display-list ops.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_sensor_paint.c - sensor displays in sunken frames, drawn with lines,
+ * fills and text only.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_sensor_paint.h"
 #include "tiku_font.h"
 #include "tiku_text_layout_paint.h"
@@ -7,29 +16,36 @@
 #include <math.h>
 #include <stdio.h>
 
+/* One trace being painted; x and y are the previous span's last point. */
 typedef struct {
     tiku_surface_t *surface;
     tiku_rect_t area;
     double min, max;
     tiku_rgb_t ink;
-    int dashed, x, y;            /* previous span's last point */
+    int dashed, x, y;
 } trace_paint_t;
 
-/** Safe normalized coordinate even for extreme finite float endpoints. */
+/**
+ * @brief Where @p value lies from @p min to @p max, clamped to 0..1;
+ *        worked in doubles, so no finite float range overflows.
+ */
 static double fraction(double value, double min, double max)
 {
     double f = (value - min) / (max - min);
     return f < 0 ? 0 : f > 1 ? 1 : f;
 }
 
-/** Y increases downward on a surface. */
+/** @brief The surface y of @p value in the plot area; y grows downward. */
 static int ordinate(const trace_paint_t *p, float value)
 {
     return p->area.y + p->area.h - 1 -
         (int)(fraction(value, p->min, p->max) * (p->area.h - 1));
 }
 
-/** Join two columns with vertical runs, portable to recording surfaces. */
+/**
+ * @brief Join the previous span's last point to (@p x, @p y) with vertical
+ *        runs, which cross the display list.
+ */
 static void join(trace_paint_t *p, int x, int y)
 {
     int previous = p->y;
@@ -44,7 +60,10 @@ static void join(trace_paint_t *p, int x, int y)
     }
 }
 
-/** A span preserves min/max rather than losing short spikes to averaging. */
+/**
+ * @brief Draw one span from its min to its max, joined to the previous one,
+ *        so a short spike is not averaged away.
+ */
 static void span_draw(void *ctx, const tiku_sensor_span_t *span)
 {
     trace_paint_t *p = ctx;
@@ -92,14 +111,17 @@ int tiku_sensor_plot_scale(const tiku_sensor_plot_t *plot, double *min, double *
     return 1;
 }
 
-/** An elided text cell respects its own bounds at all font sizes. */
+/** @brief @p text as one elided line inside @p r, at any font size. */
 static void label(tiku_surface_t *s, tiku_rect_t r, const char *text,
                    tiku_rgb_t ink)
 {
     tiku_text_line_draw(s, r, TIKU_MEASURE_PLAIN, text ? text : "", ink);
 }
 
-/** Labelled traces and one unit for the shared Y axis. */
+/**
+ * @brief Draw the unit, and each trace's number, label and line sample,
+ *        along the top.
+ */
 static void legend(const tiku_sensor_plot_t *plot, tiku_surface_t *s,
                    tiku_rect_t bounds)
 {
@@ -121,7 +143,10 @@ static void legend(const tiku_sensor_plot_t *plot, tiku_surface_t *s,
     }
 }
 
-/** Quiet quarter-grid with values and relative-time labels. */
+/**
+ * @brief Draw the grid: value labels at the quarters, and time labels at
+ *        the ends and the middle, in seconds before @c to_us.
+ */
 static void axes(const tiku_sensor_plot_t *plot, trace_paint_t *p)
 {
     tiku_rect_t r = p->area;
@@ -204,7 +229,10 @@ void tiku_sensor_spark_draw(const tiku_history_t *h, tiku_surface_t *s,
     tiku_history_reduce(h, from, to, p.area.w, gap, span_draw, &p);
 }
 
-/** Prefer large digits; fall back to an elided bold cell when space is tight. */
+/**
+ * @brief Draw @p text in large digits, or as an elided bold line when they
+ *        do not fit.
+ */
 static void digits(tiku_surface_t *s, tiku_rect_t r, const char *text)
 {
 #ifdef TIKU_DISPLAYLESS

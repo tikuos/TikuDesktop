@@ -9,12 +9,11 @@
  * The artwork is strokes and the rasteriser fills, so every line here is
  * turned into the quadrilateral it covers: a rectangle of the stroke's
  * width laid along the segment, extended half a width past each end so
- * the corners meet.  Where two overlap at a joint the accumulator adds
- * them and clamps, which is the union wanted, at the cost of the overlap.
+ * the corners meet.  Where two quads overlap at a joint the rasteriser
+ * adds their coverage and clamps it, which fills the joint once.
  *
- * Colours are drawn back to front in the order the artwork has them,
- * each as one path of many quads: six coverage maps for the whole mark
- * rather than one per line.
+ * Runs are drawn in the artwork's own paint order, each as its own path
+ * and coverage map.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,21 +23,16 @@
 #include "tiku_glyphpath.h"
 #include "tiku_logo.h"
 
-/* The artwork's own space.  Every number below is read straight off it. */
+/* The artwork's 1024-unit space; every coordinate below is in it. */
 #define U      1024.0f
 #define STROKE   23.34f
 
 /*
- * The sets.  The first is the artwork as drawn and is what the mark IS;
- * the others keep its structure -- a light ground, near-black near edges,
- * a muted far cube, one saturated accent on the lit edges and a pale
- * version of it on the face -- and change only the hue.  Structure is
- * what makes a mark recognisable at a glance; hue is what makes it worth
- * looking at twice.
- *
- * The ground travels with the set rather than following the theme: a
- * logo whose colours are chosen by the furniture around it is not doing
- * a logo's job.
+ * The sets.  The first is the artwork as drawn; the others keep its
+ * structure -- a light ground, near-black near edges, a muted far cube,
+ * one saturated accent on the lit edges and a pale version of it on the
+ * face -- and change only the hue.  The ground belongs to the set and
+ * does not follow the theme.
  */
 static const tiku_logo_palette_t palettes[] = {
     {   /* as drawn */
@@ -47,7 +41,7 @@ static const tiku_logo_palette_t palettes[] = {
         TIKU_RGB(0xF7, 0xE6, 0x89), TIKU_RGB(0xCE, 0xB1, 0x09),
         TIKU_RGB(0xCE, 0xB6, 0x22)
     },
-    {   /* the Be blue the selection has always been */
+    {   /* blue */
         TIKU_RGB(0xEC, 0xF0, 0xF4), TIKU_RGB(0x1B, 0x27, 0x33),
         TIKU_RGB(0x5A, 0x71, 0x84), TIKU_RGB(0x2E, 0x86, 0xDE),
         TIKU_RGB(0xBF, 0xDC, 0xF7), TIKU_RGB(0x2C, 0x6E, 0xA8),
@@ -76,8 +70,7 @@ typedef struct {
     const float *pt;                /* n pairs, in artwork units */
 } run_t;
 
-/* The near cube: the one that survives on its own when there is no room
- * for both. */
+/* The near cube, which is drawn alone when the mark is under 32 pixels. */
 static const float near_hex[] = {
     385.67f, 118.15f, 638.33f, 264.02f, 638.33f, 555.76f,
     385.67f, 701.63f, 133.02f, 555.76f, 133.02f, 264.02f
@@ -101,8 +94,8 @@ static const float far_spine[] = { 638.33f, 322.37f, 638.33f, 905.85f };
 static const float far_diag1[] = { 385.67f, 468.24f, 890.98f, 759.98f };
 static const float far_diag2[] = { 890.98f, 468.24f, 385.67f, 759.98f };
 
-/* The lit edges: where the two cubes meet, and the amber is the whole
- * reason the mark reads as two solids rather than a tangle of lines. */
+/* The lit edges, where the two cubes meet, and the half-lit edge beside
+ * each. */
 static const float lit_near[] = { 385.67f, 701.63f, 638.33f, 555.76f };
 static const float lit_far[]  = { 385.67f, 468.24f, 638.33f, 322.37f };
 static const float mix_a[]    = { 436.20f, 439.07f, 638.33f, 555.76f };
@@ -116,23 +109,22 @@ static const float face[] = {
 /**
  * @brief Where the artwork sits on the surface, and how big.
  *
- * The unit square is not always the whole of it: with both cubes drawn
- * the artwork spans the full 1024, but the near cube alone lives in
- * x 133..638, y 118..701, and mapping that through the full square
- * would put a two-thirds-size mark in the corner of the room it was
- * given.  So the window into unit space is part of the fit: @c ox,
- * @c oy and @c span say which square is mapped onto @c side.
+ * @c ox, @c oy and @c span pick the square of artwork space that is
+ * mapped onto the @c side pixels at @c x, @c y: the whole 1024 units with
+ * both cubes drawn, and the near cube's own bounds when it is drawn alone.
  */
 typedef struct {
     float x, y, side, ox, oy, span;
 } fit_t;
 
+/** @brief Artwork x @p u, in surface pixels. */
 static float
 at_x(const fit_t *f, float u)
 {
     return f->x + (u - f->ox) * f->side / f->span;
 }
 
+/** @brief Artwork y @p u, in surface pixels. */
 static float
 at_y(const fit_t *f, float u)
 {
@@ -144,7 +136,8 @@ at_y(const fit_t *f, float u)
  *
  * Extended half a width past each end, which squares the cap and fills
  * the joint at the same time: the next segment's own extension overlaps
- * it, and overlapping coverage is added and clamped rather than cancelled.
+ * it.  Every quad is wound the same way, so overlapping coverage adds and
+ * is clamped.
  */
 static void
 segment(tiku_path_t *p, const fit_t *f, float ax, float ay, float bx,
@@ -190,7 +183,7 @@ stroke_run(tiku_path_t *p, const fit_t *f, const run_t *r, float w)
     }
 }
 
-/** @brief Lay the coverage @p cov down in @p c, blended by its own alpha. */
+/** @brief Blend colour @p c onto the surface through coverage @p cov. */
 static void
 ink(tiku_surface_t *s, const unsigned char *cov, int x0, int y0, int w,
     int h, tiku_rgb_t c)
@@ -217,7 +210,7 @@ ink(tiku_surface_t *s, const unsigned char *cov, int x0, int y0, int w,
     }
 }
 
-/** @brief Build, render and lay down one colour's worth of the mark. */
+/** @brief Render path @p p to coverage and lay it down in colour @p c. */
 static void
 draw_path(tiku_surface_t *s, tiku_path_t *p, tiku_rgb_t c, int mono,
           float shade)
@@ -237,11 +230,8 @@ draw_path(tiku_surface_t *s, tiku_path_t *p, tiku_rgb_t c, int mono,
         return;
     }
     /*
-     * The two runtime transforms, in the one place every colour passes
-     * through: the shade the caller asked for, and the drain a palette
-     * without hue asks for on its behalf.  Shade first, so lightening
-     * the mark for a dark button and draining it for a grey desktop
-     * compose rather than fight.
+     * Every colour passes through here: the caller's shade first, then
+     * the drain to grey when the theme has no hue, so the two compose.
      */
     if (shade != 1.0f) {
         c = tiku_tint(c, shade);
@@ -371,8 +361,7 @@ tiku_logo_paint_with(tiku_surface_t *s, tiku_rect_t r, unsigned flags,
     /*
      * Which square of unit space is being shown.  Both cubes: the whole
      * of it, as laid out.  The near cube on its own: its own bounds,
-     * squared off about their centre so the cube keeps its proportions
-     * and is merely bigger, not stretched.
+     * squared off about their centre so the cube keeps its proportions.
      */
     if (both) {
         f.ox = 0.0f;
@@ -385,22 +374,16 @@ tiku_logo_paint_with(tiku_surface_t *s, tiku_rect_t r, unsigned flags,
         float k;
 
         /*
-         * Room for the stroke as well as the geometry.  A stroke is drawn
-         * half either side of the line it follows, so a fit made to the
-         * bare bounds hangs half a stroke past the rectangle the caller
-         * gave -- and a mark that paints outside its own box is one that
-         * will paint over its neighbour.
+         * The fit leaves room for the stroke, which reaches half its
+         * width past the line it follows, so the mark stays inside the
+         * caller's rectangle.  The room is reserved in pixels, because
+         * the stroke is never drawn thinner than one pixel: at 26 pixels
+         * and under the scaled stroke is thinner than that, so the fit
+         * reserves the one pixel drawn.
          *
-         * The reservation has to be made in PIXELS rather than in units,
-         * because the stroke is not allowed thinner than a pixel: below
-         * about twenty-six the drawn line is wider than its share of the
-         * unit square, and a fit that reserved the unit width would still
-         * spill.  So the thin case is solved for what will actually be
-         * drawn -- one pixel -- and the rest divides as it scales.
-         *
-         * One pixel over that, half at each end, because the spine's cap
-         * is squared off exactly at the bounds and lands on the boundary:
-         * without the slack it rounds into the row past it.
+         * One pixel more, half at each end, keeps the spine's cap, which
+         * is squared off exactly at the bounds, from rounding into the
+         * row past them.
          */
         k = ((float)side - 1.0f) / (b + STROKE);
         if (STROKE * k < 1.0f) {
@@ -430,9 +413,8 @@ tiku_logo_paint_with(tiku_surface_t *s, tiku_rect_t r, unsigned flags,
     }
 
     /*
-     * The stroke as drawn, but never thinner than a pixel: below that a
-     * line is not a faint line, it is a line that is missing in places,
-     * and the mark comes apart into dashes.
+     * The stroke scaled, but never thinner than a pixel: a thinner line
+     * drops out in places and the mark breaks into dashes.
      */
     w = STROKE * (float)side / f.span;
     if (w < 1.0f) {
@@ -440,9 +422,8 @@ tiku_logo_paint_with(tiku_surface_t *s, tiku_rect_t r, unsigned flags,
     }
 
     /*
-     * Small, the near cube is filled before it is drawn: at sixteen
-     * pixels an outline is four grey lines and a hole, and a solid with
-     * one lit face is still recognisably this mark.
+     * Under 22 pixels the near cube is filled before its edges are drawn,
+     * so it reads as a solid with one lit face.
      */
     if (solid) {
         fill_run(s, &f, near_hex, 6, use.tint, mono, shade);
@@ -451,9 +432,7 @@ tiku_logo_paint_with(tiku_surface_t *s, tiku_rect_t r, unsigned flags,
     lay(s, &f, near_hex, 6, 1, w, use.dark, mono, shade);
     lay(s, &f, near_spine, 2, 0, w, use.dark, mono, shade);
     if (!solid) {
-        /* The two diagonals are what make a wireframe read as a cube.
-         * Over the filled small rendition they only crowd it: the
-         * silhouette and the lit face are already doing that work. */
+        /* The diagonals, left off the filled small mark. */
         lay(s, &f, near_diag1, 2, 0, w, use.dark, mono, shade);
         lay(s, &f, near_diag2, 2, 0, w, use.dark, mono, shade);
     }

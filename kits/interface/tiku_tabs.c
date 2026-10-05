@@ -4,7 +4,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_tabs.c - the tab strip's state, layout, hit-test and look.
+ * tiku_tabs.c - the tab strip's state, layout and hit test.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -73,8 +73,8 @@ tiku_tabs_next(tiku_tabs_t *t, int dir)
     if (t == NULL || t->count == 0) {
         return -1;
     }
-    /* Wrap both ways: the modulo is written to stay non-negative for a
-     * dir of -1, where a plain % would land on a negative index. */
+    /* Wrap both ways; adding the count keeps the result non-negative
+     * for a negative dir. */
     t->current = ((t->current + dir) % t->count + t->count) % t->count;
     return t->current;
 }
@@ -90,10 +90,9 @@ tiku_tabs_rect(const tiku_tabs_t *t, tiku_rect_t strip, int index)
         return r;
     }
     /*
-     * Even division, and the LAST tab takes whatever the division could
-     * not share out, so the tabs together cover the strip exactly rather
-     * than leaving a sliver of body-coloured gap at the right edge that a
-     * click could fall into.
+     * Even division, and the last tab takes what the division could not
+     * share out, so the tabs cover the strip exactly and no click falls
+     * into a gap at the right edge.
      */
     r.w = strip.w / n;
     r.x = strip.x + index * r.w;

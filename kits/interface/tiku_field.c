@@ -16,12 +16,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/** @brief Where the code point before the caret starts. */
 static int field_previous(const tiku_field_t *e)
 {
     int at = e->caret > 0 ? e->caret - 1 : 0;
     while (at > 0 && ((unsigned char)e->text[at] & 0xc0) == 0x80) at--;
     return at;
 }
+/** @brief Where the code point after the caret ends. */
 static int field_next(const tiku_field_t *e)
 {
     int at = e->caret < e->len ? e->caret + 1 : e->len;
@@ -52,13 +54,8 @@ tiku_field_result_t tiku_field_commit(tiku_field_t *e, const char *text)
     return TIKU_FIELD_HANDLED;
 }
 
-/* Every field speaks the DESK's one text clipboard, so what was cut
- * from a rename can be pasted into a program and back.  It is still a
- * TEXT clipboard only -- a rename's Cut must never cut the selected
- * files, which is why the file clipboard is a different thing. */
-
-/* With nothing selected there is nothing to copy, and the clipboard keeps
- * what it holds. */
+/** @brief Put the selection on the desk's text clipboard; with nothing
+ *         selected the clipboard keeps what it holds. */
 static void
 copy_selection(tiku_field_t *e)
 {
@@ -85,7 +82,7 @@ tiku_field_start(tiku_field_t *e, const char *text)
     if (e == NULL) {
         return;
     }
-    /* Copied aside first: @p text may be this field's own text. */
+    /* Copied aside first: text may be this field's own text. */
     snprintf(kept, sizeof kept, "%s", (text != NULL) ? text : "");
     memset(e, 0, sizeof *e);
     e->deny = NULL;
@@ -133,9 +130,9 @@ tiku_field_metrics(const tiku_field_t *e, int min_w, int max_w,
     if (w < min_w) { w = min_w; }
     if (w > max_w) { w = max_w; }
     if (want > w) {
-        /* The box is full: slide so the caret stays visible, but never
-         * past the text's own end -- a slide that left blank space would
-         * hide text for nothing. */
+        /* The box is full: slide so that the caret stays visible, but
+         * not past the text's end, which would leave blank space and hide
+         * text. */
         if (caret_px + 8 > w - 8) {
             scroll = caret_px + 8 - (w - 8);
         }
@@ -173,7 +170,8 @@ tiku_field_selection(const tiku_field_t *e, int *from, int *to)
     return 1;
 }
 
-/** @brief Remove the selected range, leaving the caret where it was. */
+/** @brief Remove the selected range, leaving the caret where it
+ *         began. */
 static void
 delete_selection(tiku_field_t *e)
 {
@@ -196,7 +194,7 @@ move_caret(tiku_field_t *e, int to, int shift)
     if (to > e->len)  { to = e->len; }
     if (shift) {
         /* The anchor stays where the selection began, so shift-left after
-         * shift-right shrinks the range rather than starting a new one. */
+         * shift-right shrinks the range. */
         if (e->sel_a == e->sel_b) {
             e->sel_a = e->caret;
         }
@@ -223,9 +221,8 @@ tiku_field_key(tiku_field_t *e, tiku_field_key_t key, int shift,
             return TIKU_FIELD_IGNORED;
         }
         if (e->deny != NULL && strchr(e->deny, ch) != NULL) {
-            /* Swallowed as it is typed, not refused at commit: a character
-             * that cannot be in the name should never appear in the field,
-             * or the user finishes typing and is then told to start again. */
+            /* Swallowed as it is typed, so the field never shows a
+             * character the name cannot hold. */
             return TIKU_FIELD_IGNORED;
         }
         delete_selection(e);

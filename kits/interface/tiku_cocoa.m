@@ -6,11 +6,11 @@
  *
  * tiku_cocoa.m - the native window backend on a Mac.
  *
- * AppKit, held the way tiku_x11.c holds Xlib: the interface layer owns
+ * AppKit, used the way tiku_x11.c uses Xlib: the interface layer owns
  * every pixel, so the window is one view that shows a buffer, and the
- * shell's own loop pumps the application's events from inside wait()
- * and poll() rather than handing the loop to AppKit.  Nothing above
- * this file knows which of the two is underneath.
+ * shell's own loop pumps AppKit's events from inside tiku_host_wait()
+ * and tiku_host_poll().  Nothing above this file knows which of the two
+ * is underneath.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,7 +31,8 @@
 
 #define QUEUE_MAX 256           /* events between two polls              */
 #define REFRESH_US 250000       /* a click re-reads the pasteboard this  */
-                                /* often at most, an activation always   */
+                                /* often at most, an activation or a     */
+                                /* paste always                          */
 #define NOTCH_PX 12.0           /* precise wheel travel that is one notch */
 
 @class TikuView;
@@ -61,7 +62,8 @@ struct tiku_host {
     uint64_t presented_frames, presented_bytes, presented_rects;
 };
 
-/** @brief Clipboard deadlines use elapsed time, not event timestamps. */
+/** @brief The monotonic clock in microseconds: clipboard deadlines use
+ *         elapsed time, not event timestamps. */
 static int64_t
 monotonic_us(void)
 {
@@ -101,9 +103,8 @@ event_modifiers(NSEventModifierFlags flags)
     unsigned modifiers = 0u;
 
     if (flags & NSEventModifierFlagShift) { modifiers |= TIKU_MOD_SHIFT; }
-    /* Command, and Control as well: every shortcut this desktop has is
-     * a Control chord where the command key is Control, and a Mac adds
-     * its own key rather than taking that one away. */
+    /* Command and Control both give TIKU_MOD_CMD, so a shortcut works
+     * with either key. */
     if (flags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) {
         modifiers |= TIKU_MOD_CMD;
     }
@@ -112,7 +113,9 @@ event_modifiers(NSEventModifierFlags flags)
     return modifiers;
 }
 
-/** @brief Translate navigation keys; printable values remain characters. */
+/** @brief Translate navigation and modifier keys; printable ASCII stays
+ *         a character, capitals folded to lower case, and anything else
+ *         is 0. */
 static unsigned
 event_key(unsigned short code, NSString *plain)
 {
@@ -157,7 +160,8 @@ event_key(unsigned short code, NSString *plain)
     return (c >= 0x20 && c < 0x7f) ? (unsigned)c : 0u;
 }
 
-/** @brief Map a point in the view onto the logical framebuffer. */
+/** @brief Map one coordinate in the view onto the logical framebuffer:
+ *         -1 before it, @p logical_extent past it. */
 static int
 logical_coord(double value, int logical_extent)
 {
@@ -170,7 +174,8 @@ logical_coord(double value, int logical_extent)
 /* The clipboard: the pasteboard behind the same rules as the X glue         */
 /*---------------------------------------------------------------------------*/
 
-/** @brief A local copy since the last look goes onto the pasteboard. */
+/** @brief Put the store's text on the pasteboard when it changed since
+ *         the last look. */
 static void
 clipboard_publish(tiku_host_t *host)
 {
@@ -192,8 +197,9 @@ clipboard_publish(tiku_host_t *host)
  * @brief Bring what the pasteboard holds into the store, when it changed.
  *
  * Forced for an activation and a paste, since either may follow a copy
- * in another application; a click looks at most every quarter second.
- * A failure nobody asked about keeps to itself, as the X glue's does.
+ * in another application; a click looks at most every REFRESH_US.  An
+ * unforced failure changes nothing and queues nothing; a forced one
+ * empties the store and queues the failure.
  *
  * @return 1 when a TIKU_EVENT_CLIPBOARD was queued.
  */
@@ -217,7 +223,7 @@ clipboard_refresh(tiku_host_t *host, int force)
     host->refreshed = now;
     text = [board stringForType:NSPasteboardTypeString];
     if (text == nil) {
-        /* Nothing textual there is no host text, as no owner is. */
+        /* No text on the pasteboard empties the store. */
         tiku_clipboard_set("");
         result = TIKU_CLIPBOARD_OK;
     } else {
@@ -239,7 +245,7 @@ clipboard_refresh(tiku_host_t *host, int force)
     if (result != TIKU_CLIPBOARD_OK) {
         tiku_clipboard_set("");
     }
-    host->stamp = tiku_clipboard_stamp();  /* imports never claim ownership */
+    host->stamp = tiku_clipboard_stamp();  /* not published back */
     memset(&event, 0, sizeof event);
     event.type = TIKU_EVENT_CLIPBOARD;
     event.key = (unsigned)result;
@@ -248,7 +254,7 @@ clipboard_refresh(tiku_host_t *host, int force)
 }
 
 /*---------------------------------------------------------------------------*/
-/* The view: the buffer on screen, and the hand and keyboard off it          */
+/* The view: the buffer on screen, and the pointer and keyboard off it      */
 /*---------------------------------------------------------------------------*/
 
 @interface TikuView : NSView <NSTextInputClient> {
@@ -369,7 +375,8 @@ clipboard_refresh(tiku_host_t *host, int force)
     out->y = logical_coord(p.y, host->logical_height);
 }
 
-/** @brief X's numbering, which is what the shells count in: 1, 2, 3. */
+/** @brief The button in X's numbering, which the shells use: 1 left,
+ *         2 middle, 3 right. */
 - (unsigned)buttonOf:(NSEvent *)e
 {
     switch ([e buttonNumber]) {
@@ -410,7 +417,8 @@ clipboard_refresh(tiku_host_t *host, int force)
     push(host, &ev);
 }
 
-/** @brief Consecutive moves collapse into the latest; never across a press. */
+/** @brief Consecutive moves with the same modifiers collapse into the
+ *         latest; never across a press. */
 - (void)pointerMove:(NSEvent *)e
 {
     tiku_event_t ev, *tail;
@@ -478,7 +486,7 @@ clipboard_refresh(tiku_host_t *host, int force)
  * @brief A key down: a command, a navigation key, or text.
  *
  * With Command or Option held the key is an instruction and its letter
- * rides along in text, as the X host sends it.  Otherwise AppKit is
+ * rides along in text.  Otherwise AppKit is
  * asked what the key means on this keyboard: a dead key starts a
  * composition and says nothing yet; a character lands in text when it
  * is ASCII and as a text commit when it is not, so an accent or an
@@ -524,8 +532,8 @@ clipboard_refresh(tiku_host_t *host, int force)
         } else if (n > 0 && tiku_text_input_set(&host->commit, utf8, n)) {
             tiku_event_t piece;
 
-            /* The commit replaces the key, as it does under an X input
-             * method: the field hears text, not a keystroke. */
+            /* The commit replaces the key: the field gets text events
+             * and no key-down. */
             while (tiku_text_input_next(&host->commit, &piece)) {
                 push(host, &piece);
             }
@@ -539,7 +547,7 @@ clipboard_refresh(tiku_host_t *host, int force)
         return;
     }
     if (marked) {
-        return;                     /* the composition will say, later */
+        return;                     /* a composition sends its text when done */
     }
     push(host, &ev);
 }
@@ -628,7 +636,7 @@ clipboard_refresh(tiku_host_t *host, int force)
 
     (void)range; (void)actual;
     /* Where a candidate window may open: near the pointer, since the
-     * caret's place is the field's secret. */
+     * caret's place is not known here. */
     r.origin = [NSEvent mouseLocation];
     return r;
 }
@@ -650,7 +658,6 @@ clipboard_refresh(tiku_host_t *host, int force)
 /* The delegate: what the window and the application are told               */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Replace the native frame when the window changes size. */
 static int resize_frame(tiku_host_t *host, int width, int height);
 
 @interface TikuHostDelegate : NSObject <NSWindowDelegate,
@@ -753,6 +760,12 @@ static int resize_frame(tiku_host_t *host, int width, int height);
 /* The seam                                                                  */
 /*---------------------------------------------------------------------------*/
 
+/**
+ * @brief Replace the native frame with a blank one of @p width by
+ *        @p height device pixels, the logical size following it.
+ * @return 0, or -1 when it is too large or memory runs out, the old frame
+ *         kept.
+ */
 static int
 resize_frame(tiku_host_t *host, int width, int height)
 {
@@ -794,8 +807,8 @@ application_prepare(TikuHostDelegate *delegate)
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [NSApp setDelegate:delegate];
-    /* One menu, one row: Quit, which asks the shell rather than ending
-     * the process, the way the window's close box does. */
+    /* One menu with one item, Quit, which queues TIKU_EVENT_CLOSE for
+     * the shell as the window's close box does. */
     bar = [[NSMenu alloc] initWithTitle:@""];
     item = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     menu = [[NSMenu alloc] initWithTitle:@"TikuDesktop"];
@@ -810,7 +823,8 @@ application_prepare(TikuHostDelegate *delegate)
     [NSApp finishLaunching];
 }
 
-/** @brief How many device pixels make one drawn pixel, whole, 1 to 4. */
+/** @brief How many device pixels make one drawn pixel, whole, 1 to 4:
+ *         TIKU_SCALE when it is set, else the screen's backing scale. */
 static int
 display_scale(NSScreen *screen)
 {
@@ -942,18 +956,11 @@ tiku_host_scale(const tiku_host_t *host)
     return (host != NULL && host->scale > 1) ? host->scale : 1;
 }
 
-/**
- * @brief Copy the software surface into the native window.
- *
- * The damaged tiles are marked on the view and drawn at once, so a
- * frame is on its way to the screen before this returns; the first one
- * is what reveals the window, and a fullscreen asked for before that
- * is taken then, since a window has to be visible to become the screen.
- */
 int
 tiku_host_present_in(tiku_host_t *host, const tiku_surface_t *surface,
                      const tiku_rect_t *bounds)
 {
+    /* The whole surface is compared: the bounds go unused here. */
     (void)bounds;
     return tiku_host_present(host, surface);
 }
@@ -979,6 +986,10 @@ tiku_host_present(tiku_host_t *host, const tiku_surface_t *surface)
     host->force_present = 0;
     host->presented_frames++;
     sc = host->scale;
+    /* The damaged tiles are marked on the view and drawn at once, so the
+     * frame is on its way to the screen before this returns.  The first
+     * frame reveals the window, and a fullscreen asked for before it is
+     * taken then: a window has to be visible to become the screen. */
     @autoreleasepool {
         for (i = 0; i < n; i++) {
             tiku_rect_t r = rects[i];
@@ -1015,7 +1026,6 @@ tiku_host_present_stats(tiku_host_t *host, uint64_t *frames,
     if (rectangles) { *rectangles = host ? host->presented_rects : 0; }
 }
 
-/** @brief Pump the application until something is queued or time is up. */
 void
 tiku_host_wait(tiku_host_t *host, int64_t timeout_us)
 {
@@ -1036,6 +1046,8 @@ tiku_host_wait(tiku_host_t *host, int64_t timeout_us)
         host->head != host->tail) {
         return;
     }
+    /* AppKit's events are pumped until one of them queues something,
+     * or the time is up. */
     @autoreleasepool {
         NSDate *until = [NSDate dateWithTimeIntervalSinceNow:
                                     (double)timeout_us / 1000000.0];
