@@ -264,7 +264,7 @@ color_of(const char *v)
 }
 
 /** @brief A MathML length @p v in ems at size @p size: em, ex, pt, px,
- *         or a named math space.  @p dflt when it says none. */
+ *         %, or a named math space.  @p dflt when it says none. */
 static float
 length_of(const char *v, float size, float dflt)
 {
@@ -364,8 +364,8 @@ token(mm_t *m, const tiku_xml_node_t *e)
 }
 
 /** @brief Element @p e's child elements from the @p from-th on as nodes,
- *         in @p a's memory, their count in @p n; those showing nothing
- *         left out. */
+ *         in the formula's memory, their count in @p n; those showing
+ *         nothing left out. */
 static of_mnode_t **
 kids(mm_t *m, const tiku_xml_node_t *e, int from, int *n)
 {
@@ -521,8 +521,9 @@ accent_tok(const of_mnode_t *n)
             c == 0x2192 || c == 0x2190 || c == 0x2194 || c == 0x203e);
 }
 
-/** @brief An mover or munder (or munderover) with an accent, a bar, or
- *         limits; NULL for none of these. */
+/** @brief An mover, munder or munderover: an accent or a bar over or
+ *         under its base, else its parts as a large operator's limits or
+ *         as what stands under and over the base. */
 static of_mnode_t *
 over(mm_t *m, const tiku_xml_node_t *e)
 {
@@ -781,7 +782,7 @@ mm_node(mm_t *m, const tiku_xml_node_t *e)
         is(e, "maction") ? mm_node(m, nth(e, tiku_xml_attr(e, "selection")
                                        ? atoi(tiku_xml_attr(e, "selection"))
                                          - 1 : 0)) : row(m, e);
-    if (n != NULL && n->color == 0) {   /* each its own, never inherited */
+    if (n != NULL && n->color == 0) {   /* every node carries its colour */
         n->color = m->color != 0 ? m->color : m->ink;
     }
     m->color = was;

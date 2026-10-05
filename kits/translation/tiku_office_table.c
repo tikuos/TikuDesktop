@@ -8,7 +8,7 @@
  *
  * Every cell is laid out first, as a column as wide as the grid columns
  * it spans, so each row's height is known before any is placed: the
- * tallest cell, or what the row insists on, and a merged cell's rows
+ * tallest cell, or what the row asks for, and a merged cell's rows
  * stretched to hold it.  Rows then go down the page, a new page taking
  * the rows that do not fit, with the table's heading rows again on top.
  * A row is not split: one taller than a page is left to run over.

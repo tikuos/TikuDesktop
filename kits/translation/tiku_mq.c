@@ -102,7 +102,7 @@ tiku_mq_bit(tiku_mq_t *d, tiku_mq_cx_t *cx)
 
     d->a -= qe;
     if ((d->c >> 16) < qe) {        /* the LPS's part of the interval */
-        if (d->a < qe) {            /* LPS_EXCHANGE: the MPS after all */
+        if (d->a < qe) {            /* LPS_EXCHANGE: decided as the MPS */
             bit = cx->mps;
             cx->i = qe_tab[cx->i].nmps;
         } else {
@@ -118,7 +118,7 @@ tiku_mq_bit(tiku_mq_t *d, tiku_mq_cx_t *cx)
         if (d->a & 0x8000u) {
             return cx->mps;
         }
-        if (d->a < qe) {            /* MPS_EXCHANGE: the LPS after all */
+        if (d->a < qe) {            /* MPS_EXCHANGE: decided as the LPS */
             bit = !cx->mps;
             if (qe_tab[cx->i].swap) {
                 cx->mps = (unsigned char)!cx->mps;

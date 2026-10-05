@@ -176,7 +176,7 @@ tiku_office_export(const char *path, const char *pdf, char *why, size_t max)
         free(b);
         return -1;
     }
-    (void)fchmod(fd, 0644);         /* a document, not a secret */
+    (void)fchmod(fd, 0644);         /* mkstemp() made it 0600 */
     while (done < len) {
         ssize_t n = write(fd, b + done, len - done);
 

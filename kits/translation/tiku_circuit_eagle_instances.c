@@ -242,7 +242,8 @@ eagle_instance(circuit_eagle_t *e, eagle_node_t *n)
             memcpy(e->m, matrix, sizeof matrix);
         }
     }
-    /* Everything but the failure and the work done goes back. */
+    /* The state saved before the instance comes back, except the failure
+     * and the work done. */
     tiku_circuit_err_t error = e->error;
     unsigned work = e->work;
 

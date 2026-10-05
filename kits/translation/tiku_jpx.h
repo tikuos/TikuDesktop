@@ -21,10 +21,10 @@
 
 /** @brief How the components are to be seen, as the file says. */
 enum {
-    TIKU_JPX_UNKNOWN,               /* a bare codestream: by count      */
+    TIKU_JPX_UNKNOWN,               /* none named: decode picks by count */
     TIKU_JPX_GRAY,
     TIKU_JPX_SRGB,
-    TIKU_JPX_SYCC,                  /* Y, Cb, Cr: not yet RGB            */
+    TIKU_JPX_SYCC,                  /* Y, Cb, Cr, left unconverted       */
     TIKU_JPX_CMYK,
     TIKU_JPX_OTHER                  /* an ICC profile or a space unread  */
 };
@@ -44,10 +44,10 @@ typedef struct {
 /**
  * @brief Decode a JP2 file or a bare codestream: its first codestream,
  *        every tile, each component at full resolution unless one would
- *        have more than @p max_pixels samples, then as many resolutions
- *        down as make them fit.
- * @return 0 with @p out to give back with tiku_jpx_free(); -1 when it
- *         will not read, or cannot come down that far.
+ *        have more than @p max_pixels samples, or all of them more than
+ *        four times that, then as many resolutions down as make them fit.
+ * @return 0, or -1 when it will not read or cannot come down that far.
+ * @note After a 0, the caller gives @p out back with tiku_jpx_free().
  */
 int tiku_jpx_decode(const unsigned char *data, long n, long max_pixels,
                     tiku_jpx_t *out);

@@ -4,7 +4,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_thumb.c - the thumbnail rules and the two queues.
+ * tiku_thumb.c - the thumbnail rules, the two queues, and the cache
+ * file that holds each thumbnail's pixels.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,14 +21,13 @@
 #include <sys/types.h>
 
 /**
- * @brief Where a thumbnail's PIXELS live.
+ * @brief The cache file that holds @p path's thumbnail pixels,
+ *        $HOME/.cache/tiku-tracker/<hash>.raw.
  *
- * Not on the file.  Tracker stores a WebP thumbnail as an attribute;
- * this port has no encoder, so the choice is 64 KB of raw pixels per
- * file in an attribute store built for small values, or a cache beside
- * the state store.  The cache wins, since the store's 4 KB cap is a
- * decision about what attributes are for.  The stamp and the dimensions
- * stay attributes, so freshness is still a property of the file.
+ * The raw pixels, 64 KB a thumbnail, exceed the attribute store's 4 KB
+ * value cap; the stamp and the image's size are attributes of the file.
+ *
+ * @return 0, or -1 when HOME is not set.
  */
 static int
 blob_path(const char *path, char *out, size_t max)
@@ -42,9 +42,9 @@ blob_path(const char *path, char *out, size_t max)
     for (p = (const unsigned char *)path; *p != '\0'; p++) {
         h = ((h << 5) + h) ^ (unsigned long)*p;   /* djb2 */
     }
-    /* No mkdir here: this is called by mere freshness CHECKS, and a
-     * check must not conjure the cache the setting says not to build
-     * (TS-053).  The save makes the directory when it writes. */
+    /* No mkdir here: tiku_thumb_load() calls this too, and a read must
+     * not create the cache while thumbnails are switched off (TS-053).
+     * tiku_thumb_landed() makes the directory when it writes. */
     return (snprintf(out, max, "%s/.cache/tiku-tracker/%08lx.raw", home,
                      h & 0xffffffffful) > 0) ? 0 : -1;
 }
@@ -93,8 +93,6 @@ tiku_thumb_fresh(tiku_store_t *store, const char *path, int64_t mtime)
                             sizeof made) != (int)sizeof made) {
         return 0;
     }
-    /* STRICTLY newer.  A thumbnail stamped in the same second as an edit is
-     * not evidence that the edit is in it. */
     return (made > mtime);
 }
 
@@ -129,8 +127,8 @@ tiku_thumb_queue(tiku_thumb_q_t *q, const char *path, int64_t bytes,
     if (q == NULL || !q->enabled || path == NULL || path[0] == '\0') {
         return -1;
     }
-    /* The same file is not worked twice at once: two windows showing one
-     * folder would otherwise both queue it (IV-033). */
+    /* The same file is not queued twice: two windows showing one folder
+     * both ask for it (IV-033). */
     if (in_flight(q, path)) {
         return 0;
     }
@@ -218,8 +216,8 @@ tiku_thumb_landed(tiku_thumb_q_t *q, tiku_store_t *store, const char *path,
         char blob[TIKU_PATH_MAX];
 
         if (blob_path(path, blob, sizeof blob) == 0) {
-            {   /* The write conjures the cache directory; nothing else
-                 * makes it. */
+            {   /* The cache directory is made here, on a write, and
+                 * nowhere else. */
                 char dir[TIKU_PATH_MAX];
                 const char *home = getenv("HOME");
 

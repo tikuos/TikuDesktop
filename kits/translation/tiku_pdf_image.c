@@ -5,14 +5,13 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_pdf_image.c - a picture on the page: its samples decoded, its
- * soft mask or stencil made an alpha, and the lot laid over the unit
+ * soft mask or stencil made an alpha, and the image laid over the unit
  * square the CTM places.
  *
  * ISO 32000 8.9: samples of 1 to 16 bits in a colour space, or a
  * one-bit stencil that paints the fill colour.  JPEGs and JPEG 2000s go
- * through the kit's decoders; what they cannot read stays a grey box,
- * which is what a datasheet's logo becomes rather than a hole where a
- * caption points.
+ * through the kit's decoders; what they cannot read becomes a grey box
+ * of the image's size.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -143,9 +142,9 @@ jpx_grey(const unsigned char *data, long n, int w, int h, unsigned char *out)
 }
 
 /**
- * @brief The samples of @p dict (its own stream, or @p raw) as one
- *        grey per pixel into @p out, sized @p w by @p h: how a soft
- *        mask and a stencil are both read.
+ * @brief The samples of @p dict (its own stream, or @p raw) as one grey
+ *        per pixel, @p w by @p h: how a soft mask and a stencil are both
+ *        read.  @return them, or NULL.
  */
 static unsigned char *
 grey_samples(tiku_pdf_t *doc, pdf_obj_t *dict, const unsigned char *raw,
@@ -474,8 +473,8 @@ pdf_image_free(pdf_img_t *img)
 
 /**
  * @brief @p img shrunk by whole factors to about the size it is drawn
- *        at, each new sample the mean of its box, so a large picture
- *        drawn small does not shimmer.
+ *        at, each new sample the mean of its box.  @return 0, or -1 out
+ *        of memory.
  */
 static int
 shrink(const pdf_img_t *img, int fx, int fy, pdf_img_t *out)

@@ -96,8 +96,8 @@ space(parser_t *p)
     return 1;
 }
 
-/** @brief Whether @p s is strict UTF-8: no overlong forms, surrogates or
- *         control characters but tab and newline. */
+/** @brief Whether @p s is strict UTF-8: no overlong forms or surrogates,
+ *         and no character below space but tab and newline. */
 static int
 utf8(const unsigned char *s)
 {

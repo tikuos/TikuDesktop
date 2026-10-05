@@ -7,8 +7,9 @@
  * tiku_archive_tar.c - tar (POSIX ustar and pax, GNU's long names and
  * big numbers, and the old v7 headers under them all), read as a stream,
  * a 512-byte header at a time: a plain one skipped through by seeking, a
- * gzipped one by decoding.  Pax and GNU records only change the entry
- * after them, so they are folded into it, never listed.
+ * gzipped one by decoding.  Pax and GNU records change the entry after
+ * them, so they are folded into it, never listed; pax's global records
+ * and volume labels are skipped.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,7 +28,7 @@
 typedef struct {
     char   *path, *link;            /* pax's or GNU's, or NULL           */
     int64_t size, mtime;            /* pax's, or -1 / INT64_MIN          */
-    int     sparse;                 /* GNU sparse: data not laid out     */
+    int     sparse;                 /* GNU sparse: data kept in pieces   */
 } pending_t;
 
 /** @brief A header field's number: octal, or GNU's base-256 when its
@@ -77,7 +78,7 @@ arc_tar_header_ok(const unsigned char *block)
         ssum += (signed char)c;
         zero &= block[i] == 0;
     }
-    /* Old writers summed signed chars; both are honest. */
+    /* Old writers summed signed chars; either sum is taken. */
     return !zero && want >= 0 &&
            (want == (int64_t)sum || want == (int64_t)ssum);
 }
@@ -188,7 +189,8 @@ header_name(const unsigned char *h, pending_t *p)
     return arc_strdup(buf);
 }
 
-/** @brief A tar kind as an entry's kind. */
+/** @brief The entry kind for tar type flag @p flag; devices, FIFOs and
+ *         sparse or continued files are marked unreadable in @p flags. */
 static int
 kind(int flag, const char *raw_name, unsigned *flags)
 {
@@ -207,14 +209,15 @@ kind(int flag, const char *raw_name, unsigned *flags)
     case 'S':
     case 'M':
         *flags |= TIKU_ARC_UNREADABLE;
-        return TIKU_ARC_FILE;       /* sparse, continued: laid out apart */
+        return TIKU_ARC_FILE;       /* sparse, continued: in pieces */
     }
     /* Anything else is a file (POSIX); an old one ends in '/' for a folder. */
     return flag == '\0' && n > 0 && raw_name[n - 1] == '/' ? TIKU_ARC_DIR
                                                            : TIKU_ARC_FILE;
 }
 
-/** @brief A listed entry from its header and what came before it. */
+/** @brief A listed entry from its header and the records before it.
+ *  @return 1, or -1 for a bad size or name, or no memory. */
 static int
 entry_from(arc_tar_t *t, const unsigned char *h, pending_t *p,
            arc_entry_t *e)
@@ -362,7 +365,7 @@ arc_tar_list(tiku_archive_t *a, tiku_archive_progress_t progress, void *ctx)
         arc_entry_t *slot;
 
         if (e.pub.path[0] == '\0' && e.pub.type == TIKU_ARC_DIR) {
-            free((char *)e.pub.path);   /* "." itself: the folder made */
+            free((char *)e.pub.path);   /* "." is the destination itself */
             free((char *)e.pub.link);
             memset(&e, 0, sizeof e);
             continue;
@@ -385,7 +388,8 @@ arc_tar_list(tiku_archive_t *a, tiku_archive_progress_t progress, void *ctx)
         }
     }
     if (got < 0 && err == TIKU_ARCHIVE_OK) {
-        /* What came before a break stays listed; nothing is no tar. */
+        /* What came before a break stays listed; with nothing before
+         * it, the tar is damaged. */
         a->damaged = 1;
         err = a->count > 0 ? TIKU_ARCHIVE_OK : TIKU_ARCHIVE_DAMAGED;
     }

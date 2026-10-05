@@ -32,6 +32,7 @@
 #define PDF_PAGES_MAX   20000
 #define PDF_SUBST_MAX   12          /* stand-in faces one document opens */
 
+/** @brief What an object is: one of PDF's kinds, or an operator. */
 typedef enum {
     PDF_NULL, PDF_BOOL, PDF_INT, PDF_REAL, PDF_STRING, PDF_NAME,
     PDF_ARRAY, PDF_DICT, PDF_REF, PDF_STREAM, PDF_OP
@@ -48,12 +49,12 @@ typedef struct pdf_obj pdf_obj_t;
  * An operator (PDF_OP) only occurs while reading a content stream.
  */
 struct pdf_obj {
-    pdf_kind_t kind;                /* which member of u is live         */
+    pdf_kind_t kind;                /**< which member of u is live       */
     union {
-        int    b;                   /* PDF_BOOL                          */
-        long   i;                   /* PDF_INT                           */
-        double r;                   /* PDF_REAL                          */
-        struct { unsigned char *p; size_t n; } s;         /* string, name, op */
+        int    b;                   /**< PDF_BOOL                        */
+        long   i;                   /**< PDF_INT                         */
+        double r;                   /**< PDF_REAL                        */
+        struct { unsigned char *p; size_t n; } s;       /**< string, name, op */
         struct { pdf_obj_t **item; int n; } a;
         struct { char **key; pdf_obj_t **val; int n; } d;
         struct { long num, gen; } ref;
@@ -64,77 +65,81 @@ struct pdf_obj {
 
 /** @brief Where an indirect object lives, from the cross-reference. */
 typedef struct {
-    long off;                       /* file offset, or the object stream */
-    long idx;                       /* index within that stream          */
-    unsigned char kind;             /* 0 free, 1 in file, 2 in a stream  */
-    unsigned char set;              /* an entry has been read for it     */
-    unsigned char seen;             /* set while parsing: a cycle guard  */
+    long off;                       /**< file offset, or the object stream */
+    long idx;                       /**< index within that stream        */
+    unsigned char kind;             /**< 0 free, 1 in file, 2 in a stream */
+    unsigned char set;              /**< an entry has been read for it   */
+    unsigned char seen;             /**< set while parsing: a cycle guard */
 } pdf_xref_t;
 
 /** @brief One object stream, decoded once and kept while it is used. */
 typedef struct {
-    long           num;             /* the stream's object number        */
-    unsigned char *data;            /* decoded, or NULL for a free slot  */
-    long           len, first, count;   /* bytes; /First; /N            */
+    long           num;             /**< the stream's object number      */
+    unsigned char *data;            /**< decoded, or NULL for a free slot */
+    long           len, first, count;   /**< bytes; /First; /N          */
 } pdf_objstm_t;
 
+/** @brief Object streams a document keeps decoded at once. */
 #define PDF_OBJSTM_KEEP 8
 
 typedef struct pdf_crypt pdf_crypt_t;
 
 /** @brief A page's dictionary and its number, sorted by address. */
 typedef struct {
-    pdf_obj_t *dict;                /* the page's dictionary, cached     */
-    int        index;               /* its number, from 0                */
+    pdf_obj_t *dict;                /**< the page's dictionary, cached   */
+    int        index;               /**< its number, from 0              */
 } pdf_pageref_t;
 
+/** @brief An open document: its bytes, its table and objects, and what
+ *         reading and drawing it keep. */
 struct tiku_pdf {
-    unsigned char *data;            /* the whole file, NUL-terminated    */
+    unsigned char *data;            /**< the whole file, NUL-terminated  */
     long           len;
-    pdf_xref_t    *xref;            /* one entry per object number       */
+    pdf_xref_t    *xref;            /**< one entry per object number     */
     long           nxref;
-    pdf_obj_t    **cache;           /* parsed indirect objects, by number */
-    pdf_obj_t     *trailer;         /* the newest, with Root and Info    */
-    pdf_obj_t     *old_trailer;     /* the one before a repair, kept     */
-    pdf_obj_t    **grave;           /* the cache before a repair, kept   */
+    pdf_obj_t    **cache;           /**< parsed indirect objects, by number */
+    pdf_obj_t     *trailer;         /**< the newest, with Root and Info  */
+    pdf_obj_t     *old_trailer;     /**< the one before a repair, kept   */
+    pdf_obj_t    **grave;           /**< the cache before a repair, kept */
     long           ngrave;
-    pdf_objstm_t   objstm[PDF_OBJSTM_KEEP];  /* decoded object streams  */
-    int            objstm_next;     /* the slot the next one takes       */
-    pdf_obj_t    **page;            /* each page's dictionary, cached    */
+    pdf_objstm_t   objstm[PDF_OBJSTM_KEEP];  /**< decoded object streams */
+    int            objstm_next;     /**< the slot the next one takes     */
+    pdf_obj_t    **page;            /**< each page's dictionary, cached  */
     int            npage;
-    pdf_pageref_t *pageref;         /* the same, by object; made on use  */
-    int            repaired;        /* the table was rebuilt by scanning */
+    pdf_pageref_t *pageref;         /**< the same, by object; made on use */
+    int            repaired;        /**< the table was rebuilt by scanning */
     int            encrypted;
-    pdf_crypt_t   *crypt;           /* its key, when it is encrypted     */
-    int            depth;           /* resolve() recursion, a cycle guard */
-    int            nested;          /* a filter reading its parameters'  */
-    char           fontdir[512];    /* faces to stand in for fonts     */
-    tiku_ttf_t    *subst[PDF_SUBST_MAX];    /* the stand-ins opened    */
-    char           subst_path[PDF_SUBST_MAX][512];  /* each one's file */
+    pdf_crypt_t   *crypt;           /**< its key, when it is encrypted   */
+    int            depth;           /**< resolve() recursion, a cycle guard */
+    int            nested;          /**< filters reading a parameter's
+                                       stream, one within another        */
+    char           fontdir[512];    /**< faces to stand in for fonts   */
+    tiku_ttf_t    *subst[PDF_SUBST_MAX];    /**< the stand-ins opened  */
+    char           subst_path[PDF_SUBST_MAX][512];  /**< each one's file */
     int            nsubst;
-    char           subst_pick[6][512];  /* sans, serif, fixed; x bold  */
-    unsigned char  subst_chosen[6]; /* that pick was made ("" is none)  */
-    char           cjk_pick[8][512];    /* CJK stand-ins, by collection */
+    char           subst_pick[6][512];  /**< sans, serif, fixed; x bold */
+    unsigned char  subst_chosen[6]; /**< that pick was made ("" is none) */
+    char           cjk_pick[8][512];    /**< CJK stand-ins, by collection */
     unsigned char  cjk_chosen[8];
-    char           cmapdir[512];    /* CMaps the file names ("": none)  */
-    int            cmapdir_set;     /* it replaces poppler-data's       */
-    uint32_t      *cid_uni[6];      /* CID -> Unicode, by collection    */
+    char           cmapdir[512];    /**< CMaps the file names ("": none) */
+    int            cmapdir_set;     /**< it replaces poppler-data's     */
+    uint32_t      *cid_uni[6];      /**< CID -> Unicode, by collection  */
     unsigned char  cid_uni_tried[6];
-    struct pdf_fontkeep *fonts;     /* fonts read, kept between pages    */
+    struct pdf_fontkeep *fonts;     /**< fonts read, kept between pages  */
     int            nfonts, cfonts;
-    unsigned long  epoch;           /* pages read or drawn so far        */
-    pdf_obj_t    **oc_off;          /* optional content groups set off  */
+    unsigned long  epoch;           /**< pages read or drawn so far      */
+    pdf_obj_t    **oc_off;          /**< optional content groups set off */
     int            noc_off;
-    int            oc_read;         /* the configuration has been read  */
-    pdf_obj_t     *annot_res;       /* what drawn annotations' text uses */
+    int            oc_read;         /**< the configuration has been read */
+    pdf_obj_t     *annot_res;       /**< what drawn annotations' text uses */
 };
 
 /* The lexer and the objects it makes: tiku_pdf_lex.c                        */
 
 /** @brief A cursor over bytes; the lexer and parser read through one. */
 typedef struct {
-    const unsigned char *p;         /* the bytes                         */
-    long                 n, pos;    /* how many, and where the reader is */
+    const unsigned char *p;         /**< the bytes                       */
+    long                 n, pos;    /**< how many, and where the reader is */
 } pdf_cur_t;
 
 /** @brief A new object of @p kind, empty; NULL when memory is short. */
@@ -146,18 +151,20 @@ void pdf_free(pdf_obj_t *o);
  *
  * A keyword the syntax has no place for (an operator in a content
  * stream, "endobj", "stream") comes back as PDF_OP for the caller to
- * judge; the cursor is always moved on, so a caller never loops.
+ * judge.  The cursor always moves past what was read.
  */
 pdf_obj_t *pdf_parse(pdf_cur_t *c, int depth);
 /** @brief Skip white space and comments.  @return 0 at the end. */
 int pdf_skip_ws(pdf_cur_t *c);
 /** @brief Whether @p word stands whole at the cursor. */
 int pdf_keyword_at(const pdf_cur_t *c, const char *word);
-/** @brief Set @p key of @p d to @p val, which @p d now owns; -1 when full. */
+/** @brief Set @p key of @p d to @p val, which @p d now owns; -1 when
+ *         full or memory is short. */
 int pdf_dict_set(pdf_obj_t *d, const char *key, pdf_obj_t *val);
 /** @brief The value under @p key, unresolved; NULL when absent. */
 pdf_obj_t *pdf_dict_raw(const pdf_obj_t *d, const char *key);
-/** @brief Append @p item to @p a, which owns it from here; -1 when full. */
+/** @brief Append @p item to @p a, which owns it from here; -1 when full
+ *         or memory is short. */
 int pdf_array_push(pdf_obj_t *a, pdf_obj_t *item);
 /** @brief Whether @p o is the name @p name. */
 int pdf_is_name(const pdf_obj_t *o, const char *name);
@@ -173,8 +180,9 @@ long pdf_find(const unsigned char *p, long n, long from, const char *word);
 
 /** @brief @p o with references followed; NULL for one that goes nowhere. */
 pdf_obj_t *pdf_resolve(tiku_pdf_t *doc, pdf_obj_t *o);
-/** @brief A text string (a title, an outline entry) as UTF-8 the caller
- *        frees: UTF-16 or UTF-8 with its mark, else PDFDocEncoding. */
+/** @brief A text string (a title, an outline entry) as UTF-8: UTF-16 or
+ *        UTF-8 with its mark, else PDFDocEncoding.
+ *  @note The caller frees it. */
 char *pdf_text_string(const pdf_obj_t *s);
 /** @brief UTF-8 @p in in PDFDocEncoding, as a password of revisions 2 to
  *         4 is hashed, into @p out (@p cap bytes, no NUL).  @return its
@@ -206,9 +214,11 @@ int pdf_stream_raw(tiku_pdf_t *doc, pdf_obj_t *stream,
 /**
  * @brief The decoded bytes of @p stream, through every standard filter.
  *
- * An image filter (DCT, CCITT, JPX, JBIG2) ends the chain: what is left
- * is returned as it stands and @p image names the filter; NULL when the
- * chain ended in bytes.  The caller frees @p out.
+ * DCT and JPX end the chain: what is left is returned as it stands and
+ * @p image names the filter; NULL when the chain ended in bytes.  CCITT
+ * fax and JBIG2 are decoded here, into rows of bits.
+ *
+ * @note The caller frees @p out.
  */
 int pdf_stream_data(tiku_pdf_t *doc, pdf_obj_t *stream, unsigned char **out,
                     long *n, const char **image);
@@ -222,8 +232,8 @@ int pdf_filter_bytes(tiku_pdf_t *doc, pdf_obj_t *dict,
 
 /**
  * @brief The security handler for @p doc: the standard one with
- *        @p password (UTF-8; "" is the empty password most documents
- *        use), or Adobe.PubSec with @p key (NULL for none).
+ *        @p password (UTF-8; "" for the empty password), or Adobe.PubSec
+ *        with @p key (NULL for none).
  * @return 0 with doc->crypt set; -1 for a handler or cipher this does
  *         not read; -2 when the password opens it neither as its user nor
  *         as its owner; -3 when @p key is none it was sealed to.
@@ -232,6 +242,7 @@ int pdf_crypt_open(tiku_pdf_t *doc, const char *password,
                    const tiku_key_t *key);
 /** @brief Whether @p doc is sealed to certificates (Adobe.PubSec). */
 int pdf_crypt_certificate(tiku_pdf_t *doc);
+/** @brief The handler given back; @p c may be NULL. */
 void pdf_crypt_free(pdf_crypt_t *c);
 /** @brief Whether the author lets text be copied out (P bit 5), or the
  *         owner's password opened it; 1 for a document not encrypted. */
@@ -252,7 +263,8 @@ pdf_obj_t *pdf_page_dict(tiku_pdf_t *doc, int page);
 /** @brief @p key on @p page or the nearest ancestor that has it. */
 pdf_obj_t *pdf_page_inherited(tiku_pdf_t *doc, pdf_obj_t *page,
                               const char *key);
-/** @brief The page's content streams decoded and joined; caller frees. */
+/** @brief The page's content streams decoded and joined.
+ *  @note The caller frees @p out. */
 int pdf_page_content(tiku_pdf_t *doc, pdf_obj_t *page, unsigned char **out,
                      long *n);
 /** @brief Which page @p page (a reference, dictionary or number) is, or
@@ -271,6 +283,7 @@ typedef struct pdf_cmap pdf_cmap_t;
  * knows no CIDs.  NULL only when memory is short.
  */
 pdf_cmap_t *pdf_cmap_load(tiku_pdf_t *doc, pdf_obj_t *enc);
+/** @brief The map given back; @p m may be NULL. */
 void pdf_cmap_free(pdf_cmap_t *m);
 /** @brief The code at @p s, @p n bytes left, by the map's code space.
  *  @return its bytes (1 to 4), or 0 when the string cuts it short. */
@@ -298,7 +311,7 @@ void pdf_cid_unicode_free(tiku_pdf_t *doc);
 /** @brief A run of CIDs written down the page with the same metrics. */
 typedef struct {
     long   first, last;
-    double w1, vx, vy;              /* advance, and the vertical origin  */
+    double w1, vx, vy;              /**< advance, and the vertical origin */
 } pdf_vrun_t;
 
 /**
@@ -309,31 +322,32 @@ typedef struct {
  * and its CIDs are not known (by_unicode).  Widths go by that name.
  */
 typedef struct {
-    int       two_byte;             /* composite (Type 0): read by CMap  */
+    int       two_byte;             /**< composite (Type 0): read by CMap */
     int       type3;
-    double    missing;              /* width of a code without one       */
-    double    matrix_x;             /* Type 3: FontMatrix's x scale      */
-    uint32_t *uni;                  /* code -> Unicode, 0 for none       */
-    uint32_t *uni2;                 /* a second character (a ligature)   */
-    double   *width;                /* glyph -> advance in text space, -1 */
-    long      codes;                /* 256 or 65536 entries              */
-    pdf_cmap_t *cmap;               /* composite: codes to CIDs          */
-    const uint32_t *cid_uni;        /* CID -> Unicode, its collection's  */
-    int       by_unicode;           /* glyphs named by character         */
-    int       vertical;             /* written down the page             */
-    double    dw2_vy, dw2_w1;       /* DW2: the origin and advance usual */
-    pdf_vrun_t *w2;                 /* W2, sorted by CID                 */
+    double    missing;              /**< width of a code without one     */
+    double    matrix_x;             /**< unused: pdf_tfont_load() keeps the
+                                       Type 3 FontMatrix scale itself    */
+    uint32_t *uni;                  /**< code -> Unicode, 0 for none     */
+    uint32_t *uni2;                 /**< a second character (a ligature) */
+    double   *width;                /**< glyph -> advance in text space, -1 */
+    long      codes;                /**< 256 or 65536 entries            */
+    pdf_cmap_t *cmap;               /**< composite: codes to CIDs        */
+    const uint32_t *cid_uni;        /**< CID -> Unicode, its collection's */
+    int       by_unicode;           /**< glyphs named by character       */
+    int       vertical;             /**< written down the page           */
+    double    dw2_vy, dw2_w1;       /**< DW2: the origin and advance usual */
+    pdf_vrun_t *w2;                 /**< W2, sorted by CID               */
     long      nw2;
 } pdf_tfont_t;
 
 /** @brief One glyph of a shown string, as reading and drawing need it. */
 typedef struct {
-    uint32_t code;                  /* as the string holds it            */
-    int      len, word;             /* its bytes; a one-byte space (Tw)  */
-    long     key;                   /* the glyph: code, CID or character */
-    double   w;                     /* its advance across, in ems        */
-    double   w1, vx, vy;            /* down the page: advance and origin */
-    uint32_t uni, uni2;             /* its characters, 0 for none known  */
+    uint32_t code;                  /**< as the string holds it          */
+    int      len, word;             /**< its bytes; a one-byte space (Tw) */
+    long     key;                   /**< the glyph: code, CID or character */
+    double   w;                     /**< its advance across, in ems      */
+    double   w1, vx, vy;            /**< down the page: advance and origin */
+    uint32_t uni, uni2;             /**< its characters, 0 for none known */
 } pdf_shown_t;
 
 /** @brief The glyph at @p s, @p n bytes left, in @p f (NULL: a byte,
@@ -341,7 +355,8 @@ typedef struct {
 int pdf_tfont_next(const pdf_tfont_t *f, const unsigned char *s, size_t n,
                    pdf_shown_t *g);
 /** @brief A composite font's glyphs to characters, for a stand-in that
- *         draws them by character: 65536 the caller frees, or NULL. */
+ *         draws them by character: 65536 of them, or NULL.
+ *  @note The caller frees the table. */
 uint32_t *pdf_tfont_glyph_unicode(const pdf_tfont_t *f);
 
 /** @brief Read @p font's mapping and widths; NULL when memory is short. */
@@ -359,8 +374,9 @@ uint32_t pdf_glyph_unicode(const char *name);
 /** @brief A matrix as PDF writes one: [a b c d e f], row vectors. */
 typedef tiku_vector_mat_t pdf_mat_t;
 
-/** @brief @p m then @p n, as "cm" composes them; and one from its six. */
+/** @brief @p m then @p n, as "cm" composes them. */
 pdf_mat_t pdf_mat_mul(pdf_mat_t m, pdf_mat_t n);
+/** @brief The matrix [@p a @p b @p c @p d @p e @p f]. */
 pdf_mat_t pdf_mat(double a, double b, double c, double d, double e,
                   double f);
 /** @brief The point (x, y) through @p m. */
@@ -373,8 +389,8 @@ double pdf_mat_scale(const pdf_mat_t *m);
  *        @p turn degrees clockwise more applied and y downwards, with the
  *        window's corner (@p x0, @p y0) at (0, 0); and the whole page's
  *        size in pixels.  Text boxes and links use it at scale 1 and no
- *        turn: the page as drawn, in points.  -1 unless @p turn is a
- *        multiple of 90.
+ *        turn: the page as drawn, in points.
+ * @return 0, or -1 for no such page or a @p turn not a multiple of 90.
  */
 int pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int turn,
                     int x0, int y0, pdf_mat_t *m, int *w, int *h);
@@ -382,13 +398,15 @@ int pdf_page_matrix(tiku_pdf_t *doc, int page, double scale, int turn,
 /** @brief A page's pixels, 0xAARRGGBB, how paints go onto them now; and
  *         a coverage mask over them. */
 typedef struct {
-    int       w, h;                 /* the pixels across and down        */
-    uint32_t *px;                   /* w * h of them                     */
-    int       blend;                /* the blend mode paints use         */
-    int       knockout;             /* each paint on the ground instead,
+    int       w, h;                 /**< the pixels across and down      */
+    uint32_t *px;                   /**< w * h of them                   */
+    int       blend;                /**< the blend mode paints use       */
+    int       knockout;             /**< each paint on the ground instead,
                                        in place of what was put before   */
-    uint32_t  ground;               /* a knockout group's backdrop       */
+    uint32_t  ground;               /**< a knockout group's backdrop     */
 } pdf_pix_t;
+/** @brief Coverage over a box of device pixels, as the rasteriser makes
+ *         it. */
 typedef tiku_vector_mask_t pdf_mask_t;
 
 /**
@@ -405,18 +423,22 @@ typedef tiku_vector_path_t pdf_path_t;
 /** @brief The dash entries a stroke reads; any past these are not read. */
 #define PDF_DASH_MAX    16
 
-/** @brief A path's life: made empty, holding up to PDF_POINTS_MAX
- *         points; emptied again; given back. */
+/** @brief @p p made empty, to hold up to PDF_POINTS_MAX points. */
 void pdf_path_init(pdf_path_t *p);
+/** @brief @p p emptied for the next path, its memory kept. */
 void pdf_path_clear(pdf_path_t *p);
+/** @brief @p p's memory given back, @p p left as pdf_path_init() leaves
+ *         it. */
 void pdf_path_free(pdf_path_t *p);
-/** @brief The builders, in device space: a new subpath, a line, a cubic
- *        flattened as its size needs, and the subpath shut. */
+/** @brief A new subpath at device point (@p x, @p y). */
 void pdf_path_moveto(pdf_path_t *p, double x, double y);
+/** @brief A straight piece to device point (@p x, @p y). */
 void pdf_path_lineto(pdf_path_t *p, double x, double y);
+/** @brief A cubic in device space, flattened as its size needs. */
 void pdf_path_curveto(pdf_path_t *p, double x1, double y1, double x2,
                       double y2, double x3, double y3);
-/** @brief Shut the subpath: a line back to where it began. */
+/** @brief Shut the subpath: marked closed, the current point back where
+ *         it began. */
 void pdf_path_close(pdf_path_t *p);
 /** @brief The path's extent in whole pixels, clipped to @p w by @p h. */
 int pdf_path_bounds(const pdf_path_t *p, int w, int h, int *x0, int *y0,
@@ -424,8 +446,9 @@ int pdf_path_bounds(const pdf_path_t *p, int w, int h, int *x0, int *y0,
 
 /**
  * @brief Coverage of @p p within the box, by @p evenodd or nonzero.
- * @return a mask the caller frees with pdf_mask_free(), or a mask with
- *         no bytes when nothing is covered.
+ * @return the mask; one with no bytes when nothing is covered, the path
+ *         failed, or memory is short.
+ * @note The caller frees the mask with pdf_mask_free().
  */
 pdf_mask_t pdf_path_fill(const pdf_path_t *p, int evenodd, int x0, int y0,
                          int w, int h);
@@ -471,8 +494,10 @@ void pdf_blend(const pdf_pix_t *pix, uint32_t *d, uint32_t colour, int a,
 
 typedef struct pdf_shade pdf_shade_t;
 /** @brief Shading @p dict, its colour space named in @p res: types 1 to 3
- *        drawn, the meshes as their Background. */
+ *        drawn per pixel, the meshes (4 to 7) read into triangles; a mesh
+ *        that cannot be read paints its Background or one tone. */
 pdf_shade_t *pdf_shade_load(tiku_pdf_t *doc, pdf_obj_t *dict, pdf_obj_t *res);
+/** @brief The shading given back; @p s may be NULL. */
 void pdf_shade_free(pdf_shade_t *s);
 /**
  * @brief Paint @p s, its space taken to the device by @p to, through
@@ -487,28 +512,32 @@ void pdf_shade_paint(pdf_pix_t *pix, const pdf_shade_t *s,
 
 /* Glyphs: tiku_pdf_glyph.c                                                  */
 
+/** @brief The program a drawn font has: none, TrueType or OpenType,
+ *         bare CFF, Type 1, or Type 3 glyph procedures. */
 enum { GF_NONE, GF_TTF, GF_CFF, GF_T1, GF_T3 };
 /** @brief A font as drawing needs it: its program, and how a code
  *        reaches a glyph in it. */
 typedef struct {
-    int            kind;            /* GF_TTF, GF_CFF, GF_T1, GF_T3       */
-    tiku_ttf_t    *ttf;             /* TrueType, OpenType, or a stand-in  */
-    tiku_cff_t    *cff;             /* a bare CFF (FontFile3)             */
-    tiku_t1_t     *t1;              /* Type 1 (FontFile)                  */
-    unsigned char *blob;            /* the program's bytes the CFF borrows */
+    int            kind;            /**< GF_TTF, GF_CFF, GF_T1, GF_T3     */
+    tiku_ttf_t    *ttf;             /**< TrueType, OpenType, or a stand-in */
+    tiku_cff_t    *cff;             /**< a bare CFF (FontFile3)           */
+    tiku_t1_t     *t1;              /**< Type 1 (FontFile)                */
+    unsigned char *blob;            /**< the program's bytes the CFF borrows */
     long           bloblen;
     int            two_byte, symbolic, substitute, owns_ttf;
-    int            by_unicode;      /* composite glyphs are characters    */
-    uint32_t      *own_uni;         /* a stand-in's glyph to character    */
-    char          *names[256];      /* a simple font's code to glyph name */
-    int            names_from_pdf;  /* the PDF gave an Encoding           */
-    const uint32_t *uni;            /* code to character, borrowed        */
-    const double  *width;           /* code to advance, borrowed          */
-    unsigned short *cid2gid;        /* a CID font's map, NULL: identity   */
+                                    /* composite; symbolic; ttf a stand-in;
+                                       ttf freed with the font           */
+    int            by_unicode;      /**< composite glyphs are characters  */
+    uint32_t      *own_uni;         /**< a stand-in's glyph to character  */
+    char          *names[256];      /**< a simple font's code to glyph name */
+    int            names_from_pdf;  /**< the PDF gave an Encoding         */
+    const uint32_t *uni;            /**< code to character, borrowed      */
+    const double  *width;           /**< code to advance, borrowed        */
+    unsigned short *cid2gid;        /**< a CID font's map, NULL: identity */
     long           ncid2gid;
-    double         upem;            /* the program's units per em         */
-    pdf_obj_t     *charprocs, *t3res;   /* Type 3: its glyph programs    */
-    pdf_mat_t      fontmatrix;
+    double         upem;            /**< the program's units per em       */
+    pdf_obj_t     *charprocs, *t3res;   /**< Type 3: its glyph programs  */
+    pdf_mat_t      fontmatrix;      /**< Type 3: glyph space to text space */
 } pdf_gfont_t;
 
 /** @brief Font @p dict as drawn, borrowing its text view @p tf. */
@@ -517,9 +546,9 @@ pdf_gfont_t *pdf_gfont_load(tiku_pdf_t *doc, pdf_obj_t *dict,
 /** @brief Given back; the borrowed text view is left alone. */
 void pdf_gfont_free(pdf_gfont_t *g);
 /**
- * @brief Widths for a simple font that gives none (the standard 14 as
- *        old files use them): the stand-in's advances, which faces made
- *        metric-compatible with those 14 make the right ones.
+ * @brief Widths for a simple font with no /Widths and no embedded
+ *        program, such as one of the standard 14: the stand-in face's
+ *        advances.
  * @return 1 when any were set into @p width, by code through @p uni.
  */
 int pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
@@ -530,7 +559,8 @@ int pdf_standin_char_widths(tiku_pdf_t *doc, pdf_obj_t *font, double *width);
 /**
  * @brief Coverage of glyph @p code drawn through @p m, which takes text
  *        space (one unit the em) to the device.
- * @return 1 with @p out to free with pdf_mask_free(), 0 for no ink.
+ * @return 1 with @p out, 0 for no ink.
+ * @note The caller frees @p out with pdf_mask_free().
  */
 int pdf_gfont_mask(pdf_gfont_t *g, long code, const pdf_mat_t *m,
                    pdf_mask_t *out);
@@ -545,21 +575,23 @@ pdf_obj_t *pdf_oc_props(tiku_pdf_t *doc, pdf_obj_t *operand, pdf_obj_t *res);
 
 /* Annotations drawn without an appearance: tiku_pdf_annot.c               */
 
-/** @brief Content in page space drawing annotation @p a as a viewer
- *         draws its kind when it stores no appearance; NULL for a kind
- *         with nothing to draw.  The caller frees it. */
+/** @brief Content in page space that draws annotation @p a, which
+ *         stores no appearance, from its kind, rectangle, colours, points
+ *         or text; NULL for a kind with nothing to draw.
+ *  @note The caller frees it. */
 unsigned char *pdf_annot_content(tiku_pdf_t *doc, pdf_obj_t *a, long *n);
 /** @brief The resources that content names: Helvetica, and the
  *         opacities, plain and multiplying, made once for the document. */
 pdf_obj_t *pdf_annot_resources(tiku_pdf_t *doc);
-/** @brief Whether widget @p a is to be drawn afresh from its field's
- *         value, its appearance stale: the form's NeedAppearances. */
+/** @brief Whether widget @p a, a text or choice field's, is to be drawn
+ *         afresh from its value, its appearance stale: the form's
+ *         NeedAppearances. */
 int pdf_annot_redraw(tiku_pdf_t *doc, pdf_obj_t *a);
 
 /* Fonts kept for the document: tiku_pdf_glyph.c                             */
 
 /** @brief A page is about to be read or drawn: of the fonts kept, those
- *         pages have left longest go, past a few dozen. */
+ *         pages have left longest go, until 48 are left. */
 void pdf_fonts_page(tiku_pdf_t *doc);
 /** @brief Font @p dict's text view, read once for the document; NULL
  *         when it is no font. */
@@ -575,19 +607,18 @@ void pdf_fonts_free(tiku_pdf_t *doc);
  *        alpha per sample when it has one, or a stencil alone. */
 typedef struct {
     int            w, h;
-    unsigned char *rgb;             /* w*h*3; NULL for a stencil        */
-    unsigned char *alpha;           /* w*h, or NULL when opaque         */
-    int            stencil;         /* an ImageMask: alpha is the shape */
+    unsigned char *rgb;             /**< w*h*3; NULL for a stencil      */
+    unsigned char *alpha;           /**< w*h, or NULL when opaque       */
+    int            stencil;         /**< an ImageMask: alpha is the shape */
 } pdf_img_t;
 
 /**
  * @brief Decode the image @p dict describes: an XObject stream, or with
  *        @p raw an inline image's bytes.
  *
- * What cannot be decoded comes back as a grey box of the right size, so
- * the page keeps its layout; a JPEG 2000 comes at the size it decodes
- * to, which is smaller when it is too big.  @return 0, or -1 when there
- * is no image to draw.
+ * What cannot be decoded comes back as a grey box of the image's size; a
+ * JPEG 2000 comes at the size it decodes to, which is smaller when it is
+ * too big.  @return 0, or -1 when there is no image to draw.
  */
 int pdf_image_decode(tiku_pdf_t *doc, pdf_obj_t *dict,
                      const unsigned char *raw, long rawn, pdf_obj_t *res,
@@ -604,8 +635,11 @@ void pdf_image_draw(pdf_pix_t *pix, const pdf_img_t *img,
 
 /* Colour: tiku_pdf_color.c                                                  */
 
+/** @brief A colour space's kind (pdf_cs_t.kind); DeviceN is a CS_SEP. */
 enum { CS_GRAY = 1, CS_RGB, CS_CMYK, CS_INDEXED, CS_SEP, CS_LAB, CS_PATTERN };
+/** @brief A function's inputs at most, and a colour's numbers. */
 #define PDF_FUNC_MAX_IN  8
+/** @brief A function's outputs at most. */
 #define PDF_FUNC_MAX_OUT 8
 
 typedef struct pdf_func pdf_func_t;
@@ -613,11 +647,11 @@ typedef struct pdf_func pdf_func_t;
  *        for Indexed and Separation what those numbers go through. */
 typedef struct pdf_cs {
     int            kind, n;
-    struct pdf_cs *base;            /* Indexed and Separation: the target */
-    unsigned char *lookup;          /* Indexed: hival+1 base colours     */
+    struct pdf_cs *base;            /**< Indexed and Separation: the target */
+    unsigned char *lookup;          /**< Indexed: hival+1 base colours   */
     int            hival;
-    pdf_func_t    *tint;            /* Separation: tint transform        */
-    double         initial[PDF_FUNC_MAX_IN];    /* set by cs/CS      */
+    pdf_func_t    *tint;            /**< Separation: tint transform      */
+    double         initial[PDF_FUNC_MAX_IN];    /**< set by cs/CS    */
 } pdf_cs_t;
 
 /** @brief The colour space @p spec names or defines; @p res answers a
@@ -626,6 +660,8 @@ pdf_cs_t *pdf_cs_load(tiku_pdf_t *doc, pdf_obj_t *spec, pdf_obj_t *res);
 /** @brief The device space of @p n parts: CMYK for four, RGB for three,
  *         else Gray. */
 pdf_cs_t *pdf_cs_device(int n);
+/** @brief The space and those it is built on given back; @p cs may be
+ *         NULL. */
 void pdf_cs_free(pdf_cs_t *cs);
 /** @brief The device colour for @p v, @p n numbers in @p cs. */
 uint32_t pdf_cs_colour(const pdf_cs_t *cs, const double *v, int n);
@@ -636,6 +672,7 @@ void pdf_cs_sample(const pdf_cs_t *cs, const unsigned char *s, int bpc,
 /** @brief A PDF function (ISO 32000 7.10), of any of the four types,
  *        or an array of them side by side. */
 pdf_func_t *pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec);
+/** @brief The function and its parts given back; @p f may be NULL. */
 void pdf_func_free(pdf_func_t *f);
 /** @brief @p f at @p in; @return how many outputs were written. */
 int pdf_func_eval(const pdf_func_t *f, const double *in, int nin,

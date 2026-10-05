@@ -8,8 +8,8 @@
  *
  * The text operators (ISO 32000 9.4) are followed with the transforms
  * that place them, and nothing is drawn: each glyph's position decides
- * whether it continues the line, starts a word, or starts a line.
- * Forms are entered, since headings and figures often live in one.
+ * whether it continues the line, starts a word, or starts a line.  Form
+ * XObjects are entered and their text read with the page's.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,6 +34,8 @@ typedef struct {
     pdf_tfont_t *font;
 } gstate_t;
 
+/** @brief A page's text being read: the states, the text so far and,
+ *         when asked for, each character's box. */
 typedef struct {
     tiku_pdf_t *doc;
     gstate_t    gs[STACK_MAX];
@@ -277,9 +279,9 @@ emit(tx_t *t, const mat_t *trm, const pdf_shown_t *gl, int down)
  * @brief Place the glyphs of one string.
  *
  * Where each lands against where the last one ended says whether a
- * space or a line break comes first; a page written out of order still
- * reads as its stream wrote it.  The font's CMap says how many bytes
- * each code takes.
+ * space or a line break comes first; the text is in the stream's order,
+ * wherever the glyphs land.  The font's CMap says how many bytes each
+ * code takes.
  */
 static void
 show(tx_t *t, const unsigned char *s, size_t n)
@@ -317,7 +319,7 @@ show(tx_t *t, const unsigned char *s, size_t n)
     }
 }
 
-/** @brief Operand @p i of @p n as a number. */
+/** @brief Operand @p i of @p n as a number, or @p dflt. */
 static double
 num(pdf_obj_t **ops, int n, int i, double dflt)
 {

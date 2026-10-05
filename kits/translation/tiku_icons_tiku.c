@@ -4,12 +4,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_icons_tiku.c - the icons TikuOS draws that Haiku's set has no word
- * for: a board, the machine it is plugged into, and the look that finds
- * one.  HVIF like the rest, so one definition serves every size.
+ * tiku_icons_tiku.c - TikuOS's own icons beside Haiku's set: a board, the
+ * machine it is plugged into and a magnifier drawn here, the rest from the
+ * tiku_icons_*.inl fragments included below, and the table that registers
+ * them all.  HVIF like the rest, so one definition serves every size.
  *
- * AUTHORED by tools/icons/mkicons.py -- edit the shapes there and
- * run it again rather than editing the bytes below.
+ * The three blobs here are converted from the .hvif files that
+ * tools/icons/mkicons.py writes; their shapes are defined there.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -100,7 +101,7 @@ static const uint8_t tiku_icon_computer[107] = {
     0x00, 0x0A, 0x03, 0x01, 0x03, 0x00, 0x0A, 0x04, 0x01, 0x04, 0x00
 };
 
-/* magnifier -- looking again: a glass over the bus */
+/* magnifier -- finding: a pale glass in a steel ring, on a handle */
 static const uint8_t tiku_icon_magnifier[318] = {
     0x6E, 0x63, 0x69, 0x66, 0x03, 0x01, 0x5A, 0x4A, 0x36, 0xFF, 0x01, 0xBF,
     0xD8, 0xEC, 0xFF, 0x01, 0x6E, 0x76, 0x80, 0xFF, 0x03, 0x0A, 0x04, 0x44,
@@ -131,8 +132,7 @@ static const uint8_t tiku_icon_magnifier[318] = {
     0x00, 0x0A, 0x02, 0x01, 0x02, 0x00
 };
 
-/* TikuOS's own icons, named for what they ARE beside Haiku's vocabulary:
- * a shell asks for "microcontroller" the way it asks for "folder". */
+/* TikuOS's own icons, by the names tiku_icons_find() takes. */
 static const struct {
     const char *name;
     const uint8_t *blob;
@@ -214,8 +214,8 @@ static const struct {
     ((int)(sizeof tiku_icons_tiku / sizeof tiku_icons_tiku[0]))
 
 /* The set takes TIKU_ICON_EXTRA icons past the baked ones, and a person's
- * own icon directory shares them: past this, the last registered were
- * dropped without a word, which is how four application marks vanished. */
+ * own icon directory shares them: TIKU_ICONS_DIRECTORY_ROOM stay free for
+ * the directory, and the build fails when TikuOS's icons leave fewer. */
 #define TIKU_ICONS_DIRECTORY_ROOM 32
 _Static_assert(sizeof tiku_icons_tiku / sizeof tiku_icons_tiku[0] +
                TIKU_ICONS_DIRECTORY_ROOM <= TIKU_ICON_EXTRA,
@@ -227,12 +227,6 @@ tiku_icons_tiku_count(void)
     return TIKU_ICONS_TIKU_COUNT;
 }
 
-/**
- * @brief Put TikuOS's own icons into the set, once.
- *
- * @return how many were taken: tiku_icons_tiku_count() unless the set
- *         refused one, which a caller that cares compares.
- */
 int
 tiku_icons_tiku_register(void)
 {

@@ -26,7 +26,7 @@
 #define JPX_COMPS   16384           /* components a codestream may have  */
 
 /* Code-block styles (A.6.1, Table A.19). */
-#define JPX_BYPASS  0x01            /* raw refinement after 4 planes     */
+#define JPX_BYPASS  0x01            /* first two passes raw after plane 4 */
 #define JPX_RESET   0x02            /* contexts reset each pass          */
 #define JPX_TERMALL 0x04            /* each pass its own segment         */
 #define JPX_VSC     0x08            /* vertically causal contexts        */
@@ -37,138 +37,138 @@ enum { JPX_LRCP, JPX_RLCP, JPX_RPCL, JPX_PCRP, JPX_CPRL };
 
 /** @brief A component as SIZ gives it (A.5.1). */
 typedef struct {
-    int prec, sgnd;                 /* its bits; whether signed          */
-    int dx, dy;                     /* its sampling of the reference grid */
+    int prec, sgnd;                 /**< its bits; whether signed       */
+    int dx, dy;                     /**< its sampling of the reference grid */
 } jpx_comp_t;
 
 /** @brief How one component is coded (COD, COC: A.6.1, A.6.2). */
 typedef struct {
-    int           nl;               /* decomposition levels              */
-    int           cbw, cbh;         /* code-block size exponents         */
-    int           style;            /* JPX_BYPASS ...                    */
-    int           reversible;       /* 5/3 (1) or 9/7 (0)                */
+    int           nl;               /**< decomposition levels           */
+    int           cbw, cbh;         /**< code-block size exponents      */
+    int           style;            /**< JPX_BYPASS ...                 */
+    int           reversible;       /**< 5/3 (1) or 9/7 (0)             */
     unsigned char ppx[JPX_LEVELS + 1], ppy[JPX_LEVELS + 1];
-                                    /* precinct exponents by resolution  */
+                                    /**< precinct exponents by resolution */
 } jpx_ccod_t;
 
 /** @brief How one component is quantized (QCD, QCC: A.6.4, A.6.5). */
 typedef struct {
-    int      style;                 /* 0 none, 1 derived, 2 expounded    */
-    int      guard;                 /* guard bits                        */
-    int      n;                     /* step sizes given                  */
-    uint16_t step[3 * JPX_LEVELS + 1];  /* exponent and mantissa each  */
+    int      style;                 /**< 0 none, 1 derived, 2 expounded */
+    int      guard;                 /**< guard bits                     */
+    int      n;                     /**< step sizes given               */
+    uint16_t step[3 * JPX_LEVELS + 1];  /**< exponent and mantissa each */
 } jpx_quant_t;
 
 /** @brief A progression and the range it runs over (COD, POC). */
 typedef struct {
-    int order;                      /* JPX_LRCP ...                      */
-    int rs, re, cs, ce, le;         /* resolutions, components, layers   */
+    int order;                      /**< JPX_LRCP ...                   */
+    int rs, re, cs, ce, le;         /**< resolutions, components, layers */
 } jpx_prog_t;
 
 /** @brief The styles a tile is coded by: the main header's, overridden
- *         by its own first tile-part header. */
+ *         by its own tile-part headers. */
 typedef struct {
-    int          order, layers, mct; /* progression, layers, transform   */
-    int          sop, eph;          /* SOP and EPH markers used          */
-    jpx_ccod_t  *ccod;              /* each component's coding           */
-    jpx_quant_t *quant;             /* each component's quantization     */
-    int         *roi;               /* each component's ROI shift        */
-    jpx_prog_t  *poc;               /* progression changes, in order     */
-    int          npoc, cappoc;      /* how many; room for                */
+    int          order, layers, mct; /**< progression, layers, transform */
+    int          sop, eph;          /**< SOP and EPH markers used       */
+    jpx_ccod_t  *ccod;              /**< each component's coding        */
+    jpx_quant_t *quant;             /**< each component's quantization  */
+    int         *roi;               /**< each component's ROI shift     */
+    jpx_prog_t  *poc;               /**< progression changes, in order  */
+    int          npoc, cappoc;      /**< how many; room for             */
 } jpx_style_t;
 
 /** @brief A codeword segment of a code-block (B.10.7). */
 typedef struct {
-    long len, newlen;               /* its bytes; this packet's          */
-    int  npasses, maxpasses;        /* coding passes it holds, can hold  */
+    long len, newlen;               /**< its bytes; this packet's       */
+    int  npasses, maxpasses;        /**< coding passes it holds, can hold */
 } jpx_seg_t;
 
 /** @brief A code-block and what the packets brought for it. */
 typedef struct {
-    int            x0, y0, x1, y1;  /* in its subband                    */
-    int            incl;            /* included in a layer yet           */
-    int            numbps;          /* magnitude bitplanes it codes      */
-    int            lblock;          /* Lblock (B.10.7.1)                 */
-    int            npasses;         /* coding passes so far              */
-    int            nseg, capseg;    /* codeword segments; room for       */
-    int            nnew, pfirst;    /* in this packet; its first segment */
-    jpx_seg_t     *seg;
-    unsigned char *data;            /* every segment's bytes, in order   */
-    long           len, cap;
+    int            x0, y0, x1, y1;  /**< in its subband                 */
+    int            incl;            /**< already included in a layer    */
+    int            numbps;          /**< magnitude bitplanes it codes   */
+    int            lblock;          /**< Lblock (B.10.7.1)              */
+    int            npasses;         /**< coding passes so far           */
+    int            nseg, capseg;    /**< codeword segments; room for    */
+    int            nnew, pfirst;    /**< in this packet; its first segment */
+    jpx_seg_t     *seg;             /**< its codeword segments          */
+    unsigned char *data;            /**< every segment's bytes, in order */
+    long           len, cap;        /**< data's bytes; room for         */
 } jpx_cblk_t;
 
 /** @brief A tag tree over a precinct's code-blocks in one subband. */
 typedef struct {
-    int  w, h, nnodes;              /* leaves across and down; all       */
-    int *value, *low, *parent;      /* each node's                       */
+    int  w, h, nnodes;              /**< leaves across and down; all    */
+    int *value, *low, *parent;      /**< each node's                    */
 } jpx_tag_t;
 
 /** @brief A precinct's part of one subband: its code-blocks. */
 typedef struct {
-    int         cw, ch;             /* code-blocks across and down       */
-    jpx_cblk_t *cblk;
-    jpx_tag_t   incl, zbp;          /* inclusion and zero bitplanes      */
+    int         cw, ch;             /**< code-blocks across and down    */
+    jpx_cblk_t *cblk;               /**< cw * ch of them, row by row    */
+    jpx_tag_t   incl, zbp;          /**< inclusion and zero bitplanes   */
 } jpx_pband_t;
 
 /** @brief A subband of a resolution. */
 typedef struct {
-    int    orient;                  /* JPX_LL ...                        */
-    int    x0, y0, x1, y1;          /* its extent                        */
-    int    mb;                      /* magnitude bitplanes, Mb           */
-    double delta;                   /* its quantization step             */
-    int    xcb, ycb;                /* code-block exponents here         */
+    int    orient;                  /**< JPX_LL ...                     */
+    int    x0, y0, x1, y1;          /**< its extent                     */
+    int    mb;                      /**< magnitude bitplanes, Mb        */
+    double delta;                   /**< its quantization step          */
+    int    xcb, ycb;                /**< code-block exponents here      */
 } jpx_band_t;
 
 /** @brief A resolution of a tile-component. */
 typedef struct {
-    int          x0, y0, x1, y1;    /* its extent                        */
-    int          nbands;            /* 1 at resolution 0, else 3         */
-    jpx_band_t   band[3];
-    int          ppx, ppy;          /* precinct exponents                */
-    int          pw, ph;            /* precincts across and down         */
-    jpx_pband_t *prec;              /* pw * ph * nbands                  */
-    int         *layers;            /* each precinct's layers read       */
+    int          x0, y0, x1, y1;    /**< its extent                     */
+    int          nbands;            /**< 1 at resolution 0, else 3      */
+    jpx_band_t   band[3];           /**< LL alone, or HL, LH and HH     */
+    int          ppx, ppy;          /**< precinct exponents             */
+    int          pw, ph;            /**< precincts across and down      */
+    jpx_pband_t *prec;              /**< pw * ph * nbands               */
+    int         *layers;            /**< each precinct's layers read    */
 } jpx_res_t;
 
 /** @brief A tile's share of one component, and its coefficients. */
 typedef struct {
-    int        x0, y0, x1, y1;      /* in the component's own samples    */
-    int        nl;                  /* its decomposition levels          */
-    int        top;                 /* the resolution decoded up to      */
-    jpx_res_t *res;                 /* nl + 1 resolutions                */
-    float     *coef;                /* the top resolution's, its subbands
-                                       laid as the transform leaves them */
-    long       stride;              /* coef's samples a row              */
+    int        x0, y0, x1, y1;      /**< in the component's own samples */
+    int        nl;                  /**< its decomposition levels       */
+    int        top;                 /**< the resolution decoded up to   */
+    jpx_res_t *res;                 /**< nl + 1 resolutions             */
+    float     *coef;                /**< the top resolution's, its subbands
+                                         laid as the transform leaves them */
+    long       stride;              /**< coef's samples a row           */
 } jpx_tcomp_t;
 
 /** @brief A tile: where it is, its styles and the bytes of its parts. */
 typedef struct {
-    int            x0, y0, x1, y1;  /* on the reference grid             */
-    int            ownst, ownpoc;   /* its styles, its progression
-                                       changes its own, not the main's   */
-    jpx_style_t    st;              /* its styles                        */
-    jpx_tcomp_t   *comp;            /* each component's share            */
-    unsigned char *data;            /* its tile-parts' bodies, joined    */
-    long           len, cap;
-    unsigned char *hdr;             /* packet headers PPT/PPM carry      */
-    long           hlen, hcap;
+    int            x0, y0, x1, y1;  /**< on the reference grid          */
+    int            ownst, ownpoc;   /**< its styles, its progression
+                                         changes its own, not the main's */
+    jpx_style_t    st;              /**< its styles                     */
+    jpx_tcomp_t   *comp;            /**< each component's share         */
+    unsigned char *data;            /**< its tile-parts' bodies, joined */
+    long           len, cap;        /**< data's bytes; room for         */
+    unsigned char *hdr;             /**< packet headers PPT/PPM carry   */
+    long           hlen, hcap;      /**< hdr's bytes; room for          */
 } jpx_tile_t;
 
 /** @brief A decode: the image's geometry, its styles, its tiles. */
 typedef struct {
-    uint32_t     xsiz, ysiz, xosiz, yosiz; /* the image on the grid     */
-    uint32_t     xtsiz, ytsiz, xtosiz, ytosiz; /* the tiles on it       */
-    int          ncomp;             /* components                        */
-    jpx_comp_t  *cm;                /* each one's                        */
-    int          reduce;            /* resolutions left out, to fit      */
-    long         max_pixels;        /* samples a component may come to   */
-    int          ntx, nty;          /* tiles across and down             */
-    jpx_style_t  main;              /* the main header's styles          */
-    jpx_tile_t **tile;              /* each, once a part of it came      */
-    unsigned char *ppm;             /* PPM's headers, for the tile-parts */
-    long         ppmlen;
-    int64_t      work;              /* coefficient bitplanes decoded     */
-    long         layout;            /* bytes the tile's layout took      */
+    uint32_t     xsiz, ysiz, xosiz, yosiz; /**< the image on the grid  */
+    uint32_t     xtsiz, ytsiz, xtosiz, ytosiz; /**< the tiles on it    */
+    int          ncomp;             /**< components                     */
+    jpx_comp_t  *cm;                /**< each one's                     */
+    int          reduce;            /**< resolutions left out, to fit   */
+    long         max_pixels;        /**< samples a component may come to */
+    int          ntx, nty;          /**< tiles across and down          */
+    jpx_style_t  main;              /**< the main header's styles       */
+    jpx_tile_t **tile;              /**< each, once a part of it came   */
+    unsigned char *ppm;             /**< PPM's headers, for the tile-parts */
+    long         ppmlen;            /**< their bytes                    */
+    int64_t      work;              /**< coefficient bitplanes decoded  */
+    long         layout;            /**< bytes the tile's layout took   */
 } jpx_t;
 
 /* tiku_jpx_t2.c */
@@ -178,6 +178,7 @@ typedef struct {
 int jpx_t2_decode(jpx_t *j, jpx_tile_t *t);
 /** @brief A tag tree of @p w by @p h leaves.  @return 0, or -1. */
 int jpx_tag_init(jpx_tag_t *tt, int w, int h);
+/** @brief Tag tree @p tt's nodes given back, and @p tt left empty. */
 void jpx_tag_free(jpx_tag_t *tt);
 
 /* tiku_jpx_dwt.c */

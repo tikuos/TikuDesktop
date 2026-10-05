@@ -11,9 +11,9 @@
  * once and cut as the document cuts them -- a Windows metafile drawn as
  * its records say, wherever it is shown; boxes, rules and the text
  * boxes' grounds; a drawing is its reader's to draw.  A picture this
- * cannot read is a grey box where it would be.
- * Links go out only to the web and to mail; a bookmark's link leads to
- * the page it landed on.
+ * cannot read is a grey box where it would be.  Links go out only to the
+ * web, FTP, mail and telephone numbers; a bookmark's link leads to the
+ * page it landed on.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -158,8 +158,8 @@ box(const of_frag_t *g, tiku_pdf_writer_t *w)
     tiku_pdf_writer_paint(w, &p);
 }
 
-/** @brief Whether @p uri may be followed from a document: the web and
- *         mail, never a file or a script. */
+/** @brief Whether @p uri may be followed from a document: http, https,
+ *         ftp, mailto or tel, never a file or a script. */
 static int
 safe_link(const char *uri)
 {

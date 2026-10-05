@@ -10,8 +10,8 @@
  * end (ISO 32000 7.5.4) or a stream of packed entries (7.5.8), with
  * older ones chained behind by Prev; objects may be packed together in
  * an object stream (7.5.7).  A table that lies about even one object is
- * dropped and the whole file read for "N G obj" instead, because a
- * damaged datasheet that still opens is worth more than a strict one.
+ * dropped and the whole file read for "N G obj" instead, so a damaged
+ * file still opens.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -76,10 +76,8 @@ xref_put(tiku_pdf_t *doc, long num, int kind, long off, long idx, int force)
 /* ------------------------------------------------------- one object  */
 
 /**
- * @brief "N G obj <object>" at @p off.
- *
- * @param num  Receives N.  @return the object, or NULL when the bytes
- *             there are not an object.
+ * @brief "N G obj <object>" at @p off, N into @p num and G into @p gen.
+ * @return the object, or NULL when the bytes there are not an object.
  */
 static pdf_obj_t *
 parse_at(tiku_pdf_t *doc, long off, long *num, long *gen)
@@ -422,7 +420,8 @@ xref_stream(tiku_pdf_t *doc, pdf_obj_t *st)
     return 0;
 }
 
-/** @brief Keep the first trailer; fill Root and Info from later ones. */
+/** @brief Keep the first trailer; fill its Root, Info, Encrypt and ID
+ *         from later ones when it has none. */
 static void
 trailer_merge(tiku_pdf_t *doc, pdf_obj_t *t)
 {
@@ -1009,7 +1008,7 @@ tiku_pdf_repaired(const tiku_pdf_t *doc)
     return doc != NULL && doc->repaired;
 }
 
-/* PDFDocEncoding's 0x80..0x9f: the punctuation a title is likely to use. */
+/* PDFDocEncoding's 0x80..0x9f as characters; 0x9f stands for none. */
 static const unsigned short pdfdoc_high[32] = {
     0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x0192, 0x2044,
     0x2039, 0x203a, 0x2212, 0x2030, 0x201e, 0x201c, 0x201d, 0x2018,

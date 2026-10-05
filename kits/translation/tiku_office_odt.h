@@ -99,16 +99,17 @@ const tiku_xml_node_t *od_list_style(const od_t *x, const char *name);
 /**
  * @brief The next label of level @p lvl (0 first) of list style @p ls,
  *        counted in @p list (@p start overriding when not -1), into @p p:
- *        its text, its look over @p base, what follows it; and, unless
- *        @p own_indent, the level's indents.  A heading's number, with
- *        the outline style for @p ls.  @return 0, or -1 out of memory.
+ *        its text, its look over @p base, what follows it, and the
+ *        level's indents -- an aligned label's only unless @p own_indent.
+ *        A heading's number, with the outline style for @p ls.
+ *        @return 0, or -1 out of memory.
  */
 int od_label(od_t *x, const tiku_xml_node_t *ls, od_list_t *list, int lvl,
              int start, const of_style_t *base, int own_indent,
              of_para_t *p);
-/** @brief The sections' pages and margins, headers and footers, from the
- *         master page called @p master (NULL for the first); @p read
- *         reads a header's contents. */
+/** @brief Section @p s's page, margins, headers and footers, from the
+ *         master page called @p master (the first for NULL or a name not
+ *         found); @p read reads a header's contents. */
 void od_page(od_t *x, const char *master, of_section_t *s,
              of_story_t *(*read)(od_t *x, const tiku_xml_node_t *e));
 

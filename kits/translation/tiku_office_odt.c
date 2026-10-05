@@ -145,9 +145,10 @@ object(od_t *x, od_para_t *pp, int kind, const of_style_t *st,
 
 /* -------------------------------------------------------------- frames  */
 
-/** @brief A frame's picture: its draw:image's part, @p w by @p h -- a
- *         chart object's drawing instead, when the frame holds one; a
- *         grey box when it has none, or one outside the package. */
+/** @brief A frame's picture: its draw:image's part, @p w by @p h -- the
+ *         drawing of a chart or formula object instead, when the frame
+ *         holds one; a grey box when it has none, or one outside the
+ *         package. */
 static of_image_t *
 picture(od_t *x, const tiku_xml_node_t *fr, float w, float h)
 {
@@ -321,8 +322,9 @@ cite(od_t *x, of_story_t *s, const char *mark)
     return 0;
 }
 
-/** @brief A text:note: a footnote's number, counted for the page it lands
- *         on, or an endnote's, its text kept for the document's end. */
+/** @brief A text:note: a footnote's number, its note set at the foot of
+ *         the page the citation lands on, or an endnote's, its text kept
+ *         for the document's end. */
 static int
 note(od_t *x, const tiku_xml_node_t *n, od_para_t *pp, const of_style_t *st)
 {
@@ -601,7 +603,7 @@ paragraph(od_t *x, const tiku_xml_node_t *e, const od_item_t *item)
 
 /* -------------------------------------------------------------- blocks  */
 
-/** @brief A header's or footer's contents: of_page()'s reader. */
+/** @brief A header's or footer's contents: od_page()'s reader. */
 static of_story_t *
 band_story(od_t *x, const tiku_xml_node_t *e)
 {
@@ -683,8 +685,8 @@ list(od_t *x, const tiku_xml_node_t *e, of_vec_t *blocks, of_vec_t *sects,
     return err;
 }
 
-/** @brief An index -- contents, figures, bibliography -- as its body's
- *         paragraphs. */
+/** @brief Whether @p c is an index -- contents, figures, a bibliography
+ *         -- whose body's paragraphs are read in its place. */
 static int
 is_index(const tiku_xml_node_t *c)
 {

@@ -5,10 +5,10 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_circuit_artwork.c - the renderer's drawing helpers.  An aperture
- * hole is a contour of its own flash, so it shows what lies beneath
- * instead of clearing earlier artwork; a clear operation takes coverage
- * away within its own layer.  Paths reach the rasteriser through a pen
- * that clips them to the viewport.
+ * hole is a contour of its own flash, through which earlier artwork
+ * shows; a clear operation takes coverage away within its own layer.
+ * Paths reach the rasteriser through a pen that clips them to the
+ * viewport.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,7 +18,7 @@
 #include <math.h>
 #include <string.h>
 
-#define OUTLINE_PIECES_MIN 4    /* points on each half of a small outline */
+#define OUTLINE_PIECES_MIN 4    /* segments in each half of a small outline */
 
 /** @brief Append the closed capsule of radius @p r whose ends are centred
  *         on (@p x + @p dx, @p y + @p dy) and (@p x - @p dx, @p y - @p dy):

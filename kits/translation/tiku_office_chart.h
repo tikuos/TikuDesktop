@@ -5,16 +5,16 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_office_chart.h - what the chart drawer's parts share: a chart as
- * its values and looks, whatever file it came from -- groups of series
- * of one kind (bars, lines, areas, pies, points), the axes they are
- * measured against, a title and a legend.  DrawingML's chart parts are
- * read in tiku_office_chart_read.c, OpenDocument's chart objects in
- * tiku_office_chart_odf.c; charts are laid out and drawn in
- * tiku_office_chart.c, their axes in tiku_office_chart_axis.c, their
- * series in tiku_office_chart_plot.c, a radar's in
- * tiku_office_chart_radar.c, trendlines in tiku_office_chart_trend.c,
- * data tables in tiku_office_chart_table.c, numbers written by
- * tiku_office_chart_num.c; all with the pen of tiku_office_chart_ink.c.
+ * its values and looks, whatever file it came from -- groups of series of
+ * one kind (bars, lines, areas, pies, points), the axes they are measured
+ * against, a title and a legend.  DrawingML's chart parts are read in
+ * tiku_office_chart_read.c, OpenDocument's in tiku_office_chart_odf.c;
+ * charts are laid out and drawn in tiku_office_chart.c, their axes in
+ * tiku_office_chart_axis.c, their series in tiku_office_chart_plot.c, a
+ * radar's in tiku_office_chart_radar.c, trendlines in
+ * tiku_office_chart_trend.c, error bars in tiku_office_chart_err.c, data
+ * tables in tiku_office_chart_table.c, numbers by tiku_office_chart_num.c;
+ * all with the pen of tiku_office_chart_ink.c.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -307,9 +307,13 @@ int ch_read_dml(ch_chart_t *k, const tiku_xml_node_t *cs);
  *  @return as ch_read_dml(). */
 int ch_read_odf(ch_chart_t *k, const tiku_xml_node_t *doc,
                 const tiku_xml_node_t *styles);
-/** @brief That chart drawn into the frame @p w by @p h through @p m, as
- *         dml_chart() draws a DrawingML one.  @return 1 drawn, 0 not a
- *         chart drawn here, -1 out of memory. */
+
+/* Drawing an OpenDocument chart: tiku_office_chart.c */
+
+/** @brief An embedded chart object's content.xml @p doc, with the styles
+ *         of its styles.xml @p styles, read and drawn into the frame @p w
+ *         by @p h through @p m, as dml_chart() draws a DrawingML one.
+ *  @return 1 drawn, 0 not a chart drawn here, -1 out of memory. */
 int ch_draw_odf(dml_ctx_t *c, const tiku_xml_node_t *doc,
                 const tiku_xml_node_t *styles, const dml_mat_t *m, float w,
                 float h);
@@ -349,7 +353,8 @@ int ch_intervals(const ch_axis_t *a);
 /** @brief Tick @p i's value along value axis @p a. */
 double ch_tick(const ch_axis_t *a, int i);
 /** @brief The number format value axis @p a writes its labels in: its
- *         own, or its first series' when it follows the data. */
+ *         own, or, when it follows the data, "0%" for a group stacked to a
+ *         hundred percent, else its first series'. */
 const char *ch_value_fmt(const ch_chart_t *k, const ch_axis_t *a);
 /** @brief Gridlines across plot box @p p. */
 void ch_grid(ch_chart_t *k, const ch_box_t *p);
@@ -455,17 +460,22 @@ void ch_block_size(ch_chart_t *k, const ch_font_t *f, const char *s,
  *         block's point @p x, @p y where @p align and @p valign say. */
 void ch_text_block(ch_chart_t *k, const ch_font_t *f, const char *s, float x,
                    float y, int align, int valign);
-/** @brief A path begun at the box whose top left is @p ox, @p oy. */
+/** @brief A path begun, measured from the box whose top left is @p ox,
+ *         @p oy, filled and stroked as @p fill and @p stroke say. */
 void ch_path(ch_path_t *p, float ox, float oy, int fill, int stroke);
-/** @brief The path's pen moved, a line drawn, its piece shut, a curve
- *         drawn through two control points. */
+/** @brief The path's pen moved to (@p x, @p y), beginning a piece. */
 void ch_move(ch_path_t *p, float x, float y);
+/** @brief A line drawn from the pen to (@p x, @p y). */
 void ch_line(ch_path_t *p, float x, float y);
+/** @brief The path's piece shut. */
 void ch_close(ch_path_t *p);
+/** @brief A curve drawn from the pen to (@p x3, @p y3) through control
+ *         points (@p x1, @p y1) and (@p x2, @p y2). */
 void ch_curve(ch_path_t *p, float x1, float y1, float x2, float y2, float x3,
               float y3);
 /** @brief An arc about (@p cx, @p cy), radius @p r, from angle @p a0 to
- *         @p a1: radians clockwise from twelve o'clock. */
+ *         @p a1: radians clockwise from twelve o'clock.
+ *  @note The pen is already at the arc's start. */
 void ch_arc(ch_path_t *p, float cx, float cy, float r, double a0, double a1);
 /** @brief The path filled with @p f (may be NULL), measured over its box
  *         @p w by @p h, then outlined with @p l (may be NULL); given back. */
@@ -477,8 +487,9 @@ void ch_rect(ch_chart_t *k, const ch_box_t *b, const dml_fill_t *f,
 /** @brief A straight line from one point to another. */
 void ch_segment(ch_chart_t *k, float x0, float y0, float x1, float y1,
                 const dml_line_t *l);
-/** @brief Series or point @p i's colour from the palette: the theme's
- *         accents, darker and lighter as they come round again. */
+/** @brief Series or point @p i's colour from the palette: the file's own
+ *         when it gives one, else the theme's accents, darker and lighter
+ *         as they come round again. */
 uint32_t ch_palette(ch_chart_t *k, int i);
 
 #endif /* TIKU_OFFICE_CHART_H_ */

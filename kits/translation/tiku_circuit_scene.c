@@ -17,7 +17,7 @@
 #include <string.h>
 
 #define FIT_MARGIN       24     /* most pixels fit leaves round a drawing */
-#define FIT_MARGIN_SHARE 8.0    /* nor more than this share of the window */
+#define FIT_MARGIN_SHARE 8.0    /* nor more than the shorter side / this  */
 #define FIT_EXTENT_MIN   0.01   /* mm: a narrower drawing fits as this    */
 
 /** @brief Distance from (@p x, @p y) to the segment from @p a to @p b. */

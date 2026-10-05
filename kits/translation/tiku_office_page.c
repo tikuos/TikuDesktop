@@ -6,12 +6,13 @@
  *
  * tiku_office_page.c - paragraphs placed on pages.
  *
- * Lines are taken one at a time and put where the page is: beside the
- * floats on it, above its footnotes.  A line that does not fit begins the
- * next column or page, as word processors break: no paragraph leaves one
- * line alone at either end of a page, one kept together moves whole, and
- * a heading kept with what follows goes over with it.  Headers, footers
- * and the notes each page refers to are placed last, the pages counted.
+ * Lines are placed one at a time where the page is: beside the floats on
+ * it, above its footnotes.  A line that does not fit begins the next
+ * column or page.  A paragraph with widow control leaves no line alone at
+ * either end of a page, one kept together moves whole, and a heading kept
+ * with what follows goes over with it.  A page's footnotes are placed when
+ * it closes; headers and footers are placed last, once the pages are
+ * counted.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,9 +24,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NOTE_RULE  12               /* the rule above a page's notes     */
+#define NOTE_RULE  12               /* room for the rule above the notes */
 #define MIN_SPAN   36               /* a line beside a float, at least   */
-#define KEEP_CHAIN 6                /* headings kept with what follows   */
+#define KEEP_CHAIN 6                /* paragraphs one keep chain holds   */
 
 /** @brief A line placed on this page, remembered so it can be taken back
  *         when the page breaks badly. */
@@ -248,7 +249,7 @@ pg_new_page(of_pager_t *pg)
     pg->num++;
     info->sect = pg->nsect;
     info->num = pg->num;
-    info->first = pg->content < 0;  /* a section's first page is asked */
+    info->first = pg->content < 0;  /* -1 from section_begin()         */
     columns(pg, pg->page_top);
     pg->content = 0;
     pg->after = 0;
@@ -426,9 +427,9 @@ place_float(of_pager_t *pg, const of_float_t *fl, float py)
 
 /* --------------------------------------------------------------- lines  */
 
-/** @brief The notes line atoms @p from to @p to refer to, into @p list
- *         (the vector of the page's).  @return the height they need, the
- *         rule above them too when they are the page's first. */
+/** @brief The notes line atoms @p from to @p to refer to, into @p list,
+ *         @p max at most, their count in @p n.  @return the height they
+ *         need, the rule above them too when they are the page's first. */
 static float
 line_notes(of_pager_t *pg, const of_flow_t *f, int from, int to, int *list,
            int *n, int max)
@@ -510,8 +511,9 @@ place_floats(of_pager_t *pg, const of_flow_t *f)
     return 0;
 }
 
-/** @brief A line laid out at the column's (@p x, y) kept: its fragments
- *         moved there, its bookmarks and notes noted. */
+/** @brief A line laid out by of_flow_line() kept at the column's x and
+ *         the pager's y: its fragments moved there, its heading, bookmarks
+ *         and notes noted.  @return 0, or -1 out of memory. */
 static int
 commit(of_pager_t *pg, const of_flow_t *f, int from, const of_line_t *l,
        int first)
@@ -542,8 +544,8 @@ commit(of_pager_t *pg, const of_flow_t *f, int from, const of_line_t *l,
     return 0;
 }
 
-/** @brief How many lines the paragraph has from atom @p from, at this
- *         column's width.  Laid out and thrown away. */
+/** @brief How many lines, up to four, the paragraph has from atom
+ *         @p from at this column's width.  Laid out and thrown away. */
 static int
 lines_left(of_pager_t *pg, of_flow_t *f, int from, int first)
 {
@@ -607,10 +609,10 @@ para_box(of_pager_t *pg, const of_pstyle_t *ps, int at, float y0, float y1)
     return err;
 }
 
-/** @brief What to do with a line that does not fit, @p placed lines of
- *         the paragraph already on this page: go on at the next page,
- *         or take back lines so none is left alone.  @return the atom to
- *         go on from. */
+/** @brief What to do with a line that does not fit, @p back holding the
+ *         lines of the paragraph already on this page: go on at the next
+ *         page, or take back lines so none is left alone.  @return the
+ *         atom to go on from. */
 static int
 bad_break(of_pager_t *pg, of_flow_t *f, int from, int first,
           of_vec_t *back, int began_here)
@@ -708,7 +710,8 @@ place_lines(of_pager_t *pg, of_flow_t *f, int *box_at, float *box_y)
 }
 
 /** @brief Space above a paragraph: the last one's after and this one's
- *         before, both dropped between two of a style that says so. */
+ *         before, each dropped between two of a style that says so; the
+ *         last one's after is dropped at the top of a page. */
 static void
 space_before(of_pager_t *pg, const of_pstyle_t *ps)
 {
@@ -764,7 +767,8 @@ pg_para(of_pager_t *pg, const of_para_t *p)
 /* -------------------------------------------------------------- stories  */
 
 /** @brief How tall paragraph @p p is, all its lines or its first @p max,
- *         in this column, spacing above it included. */
+ *         in this column: the space above it included, and the space below
+ *         when all its lines are counted. */
 static float
 para_height(of_pager_t *pg, const of_para_t *p, int max)
 {
@@ -798,8 +802,9 @@ para_height(of_pager_t *pg, const of_para_t *p, int max)
 }
 
 /** @brief Headings kept with what follows them, from block @p i: when
- *         they and the first line after them do not fit what is left of
- *         the page but would fit a page, they begin the next one. */
+ *         they and the first two lines after them (24 points of a table)
+ *         do not fit what is left of the page but would fit a page, they
+ *         begin the next column or page. */
 static void
 keep_chain(of_pager_t *pg, const of_story_t *s, int i)
 {
@@ -983,8 +988,9 @@ section_begin(of_pager_t *pg, int i)
     return pg_new_page(pg);
 }
 
-/** @brief One of a page's headers or footers laid out and placed: at the
- *         top from @p edge, or at the bottom above it. */
+/** @brief One of a page's headers or footers laid out and placed: its
+ *         top at the header distance, or, when @p bottom, its foot at the
+ *         footer distance from the page's bottom. */
 static int
 header(of_pager_t *pg, const of_story_t *s, const of_section_t *sec,
        const of_pageno_t *no, of_vec_t *frags, int bottom)

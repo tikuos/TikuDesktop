@@ -1,5 +1,16 @@
-/* What the document says, as the view uses it: links followed, text
- * selected and copied, and found. */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_pdf_view_text.inl - the PDF view's use of a document's text and
+ * links: links followed, text selected and copied, matches found and
+ * marked, and the pointer on the pages.  Included by tiku_pdf_view.c
+ * alone.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 /* -------------------------------------------------------------- links  */
 
@@ -14,8 +25,8 @@ static double vw_dest_y(const tiku_pdf_view_t *v, const tiku_pdf_dest_t *to)
     return y;
 }
 
-/** @brief An address a link gives: to the program when it takes them,
- *         else onto the clipboard, and said. */
+/** @brief An address a link gives: to host->address when there is one,
+ *         else onto the clipboard; said either way. */
 static void vw_open_address(tiku_pdf_view_t *v, const char *uri)
 {
     char said[320];
@@ -85,7 +96,7 @@ static void vw_follow_link(tiku_pdf_view_t *v, int p, int i)
     }
 }
 
-/** @brief What the link under the pointer would do, as the hint. */
+/** @brief Where the link under the pointer leads, as the hint. */
 static void vw_hover(tiku_pdf_view_t *v, tiku_rect_t canvas, int x, int y)
 {
     int page = -1, i = vw_in(canvas, x, y)
@@ -413,8 +424,9 @@ static void vw_find_step(tiku_pdf_view_t *v, int dir)
 }
 
 /** @brief Find @p text in @p dir: new text, or new @p flags, start a
- *         search of the whole document in stretches; the same steps on.
- *  @return 0 when nothing was asked. */
+ *         search of the whole document in stretches; the same text and
+ *         flags step to the next match.  @return 0 with nothing open, an
+ *         empty @p text, or no worker free. */
 static int vw_find(tiku_pdf_view_t *v, const char *text, int dir,
                    unsigned flags)
 {

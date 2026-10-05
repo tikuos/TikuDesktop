@@ -42,21 +42,24 @@ static const short fallback[MC_COUNT] = {
 
 /* ---------------------------------------------------------------- bytes  */
 
-/** @brief Big-endian numbers of @p b (@p n bytes) at @p off; 0 past it. */
+/** @brief Big-endian unsigned 16 bits of @p b (@p n bytes) at @p off; 0
+ *         past its end. */
 static unsigned
 u16(const unsigned char *b, size_t n, size_t off)
 {
     return off + 2 <= n ? (unsigned)(b[off] << 8 | b[off + 1]) : 0;
 }
 
-/** @brief The same, signed. */
+/** @brief Big-endian signed 16 bits of @p b (@p n bytes) at @p off; 0
+ *         past its end. */
 static int
 s16(const unsigned char *b, size_t n, size_t off)
 {
     return (int)(int16_t)u16(b, n, off);
 }
 
-/** @brief The same, 32 bits. */
+/** @brief Big-endian unsigned 32 bits of @p b (@p n bytes) at @p off; 0
+ *         past its end. */
 static uint32_t
 u32(const unsigned char *b, size_t n, size_t off)
 {
@@ -64,7 +67,8 @@ u32(const unsigned char *b, size_t n, size_t off)
                           | (uint32_t)b[off + 2] << 8 | b[off + 3] : 0;
 }
 
-/** @brief @p n bytes of file @p f at @p off into @p buf.  @return 0. */
+/** @brief @p n bytes of file @p f at @p off into @p buf.  @return 0, or
+ *         -1. */
 static int
 read_at(FILE *f, long off, unsigned char *buf, size_t n)
 {
@@ -352,8 +356,9 @@ coverage(const mf_t *m, size_t off, unsigned gid)
     return -1;
 }
 
-/** @brief A value of the MathGlyphInfo subtable @p which (0 italics
- *         corrections, 1 accents' attachments) for glyph @p gid. */
+/** @brief A value of the MathGlyphInfo subtable @p which (0 italic
+ *         corrections, 1 accents' attachments) for glyph @p gid; @p dflt
+ *         when it has none. */
 static int
 glyph_value(const mf_t *m, int which, unsigned gid, int dflt)
 {

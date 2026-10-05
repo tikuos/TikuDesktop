@@ -6,11 +6,10 @@
  *
  * tiku_pdf_view.c - a PDF shown in any program's window, ready made.
  *
- * Every read of a document is a worker's, one at a time per document
+ * Every read of a document runs on a worker, one at a time per document
  * (its jobs share a key); only their done callbacks touch the view, on
- * the program's loop, so a thousand-page datasheet scrolls while its
- * pages are drawn.  The view keeps no window: it is laid out afresh in
- * whatever rectangle it is drawn in, and events arrive in that one.
+ * the program's loop.  The view keeps no window: it is laid out afresh in
+ * the rectangle it is drawn in, and takes events in that rectangle.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -83,6 +82,8 @@ typedef struct {
     tiku_rect_t canvas, vbar, hbar;
 } vw_layout_t;
 
+/** @brief A view: its document, its layout and the pages drawn for it,
+ *         and what is selected, found and marked. */
 struct tiku_pdf_view {
     tiku_pdf_view_host_t host;
     int refs, generation, loading;
@@ -138,7 +139,8 @@ static void vw_say(tiku_pdf_view_t *v, const char *text)
     vw_changed(v);
 }
 
-/** @brief The same half-open rectangle rule for every hit. */
+/** @brief Whether (@p x, @p y) is in @p r, its right and bottom edges
+ *         left out. */
 static int vw_in(tiku_rect_t r, int x, int y)
 {
     return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;

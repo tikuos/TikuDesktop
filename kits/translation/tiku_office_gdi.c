@@ -784,7 +784,8 @@ bounds(const gdi_t *g, double *b)
 }
 
 /** @brief The path filled with hatch @p h in colour @p c: rules 8 of
- *         the device's pixels apart, across the path's bounds. */
+ *         the device's pixels apart (6 points in a WMF), across the
+ *         path's bounds. */
 static void
 hatch(gdi_t *g, int h, uint32_t c)
 {

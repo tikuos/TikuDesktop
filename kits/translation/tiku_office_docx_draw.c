@@ -9,10 +9,9 @@
  * draws them), the old VML shapes and text boxes, and tables.  A
  * picture's part is found through the relationships of the part it is
  * in.  A chart is drawn as a drawing is, from the values its part
- * keeps; one of a kind not read, a grey box of its size.  A table's
- * cells take
- * their borders, shading and text from its style, by row and column, as
- * Word's table styles say.
+ * keeps; one of a kind not read, a grey box of its size.  A table's cells
+ * take their borders, shading and text from its style, by row and
+ * column, as Word's table styles say.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

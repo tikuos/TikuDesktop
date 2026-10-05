@@ -45,7 +45,8 @@ gdi_rect(gdi_t *g, double l, double t, double r, double b)
 
 /** @brief The ellipse centred (@p cx, @p cy), radii @p rx, @p ry, from
  *         angle @p t0 through @p sweep radians, as Béziers of a quarter
- *         turn at most; the path already at its start. */
+ *         turn at most.
+ *  @note The path is already at the arc's start. */
 static void
 arc_path(gdi_t *g, double cx, double cy, double rx, double ry, double t0,
          double sweep)

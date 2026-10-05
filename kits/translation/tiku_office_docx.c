@@ -156,9 +156,10 @@ field_link(const dx_t *x, const char *link)
 }
 
 /**
- * @brief A field's code read: PAGE and NUMPAGES are counted here, so
- *        OF_FIELD_*; a HYPERLINK gives its target in @p link ("#name"
- *        for one within the document).  @return 0 for anything else.
+ * @brief A field's code read; a HYPERLINK's target goes into @p link
+ *        ("#name" for one within the document).
+ * @return OF_FIELD_PAGE for PAGE, OF_FIELD_PAGES for NUMPAGES and
+ *         SECTIONPAGES, which the layout counts; 0 for anything else.
  */
 static int
 field_code(dx_t *x, const char *code, const char **link)
@@ -288,9 +289,9 @@ take_note(dx_t *x, const tiku_xml_t *notes, const char *part, const char *id,
     return 0;
 }
 
-/** @brief A footnote or endnote reference: a footnote's number, counted
- *         for the page it lands on; an endnote's small numeral, its text
- *         kept for the document's end. */
+/** @brief A footnote or endnote reference: a footnote's number, its note
+ *         set at the foot of the page the reference lands on; an endnote's
+ *         small numeral, its text kept for the document's end. */
 static int
 note_ref(dx_t *x, const tiku_xml_node_t *c, dx_para_t *pp,
          const of_style_t *st, int foot)

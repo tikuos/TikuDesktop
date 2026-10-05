@@ -6,8 +6,9 @@
  *
  * tiku_office_util.c - what every office reader stands on: memory given
  * back all at once, arrays that grow while built, the document itself,
- * one copy of each look however many runs share it, and numbers written
- * as lists and page footers write them.
+ * one copy of each look however many runs share it, numbers written as
+ * lists and page footers write them, the symbol fonts' characters, and
+ * the branch of an mc:AlternateContent to read.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

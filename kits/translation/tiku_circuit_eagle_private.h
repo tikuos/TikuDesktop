@@ -21,43 +21,44 @@
 #define EAGLE_INK_SYMBOL  0xff9c4935    /* pins, rectangles, polygons    */
 #define EAGLE_LINE_WIDTH  .15           /* a hairline's width, mm        */
 
+/** @brief A read-only element of the parsed EAGLE XML. */
 typedef const tiku_xml_node_t eagle_node_t;
 
 /** @brief One connect of the drawn instance's gate: a pin and its pads. */
 typedef struct {
-    const char *pin;                /* the symbol pin's name             */
-    const char *pad;                /* the package pads it reaches       */
-    size_t order;                   /* its place among those connects    */
+    const char *pin;                /**< the symbol pin's name           */
+    const char *pad;                /**< the package pads it reaches     */
+    size_t order;                   /**< its place among those connects  */
 } eagle_connect_t;
 
 /** @brief The reader's state: the document's sections, the sheet being
  *         drawn, and the instance and net being drawn on it. */
 typedef struct {
-    tiku_circuit_t *doc;            /* the sheet's scene                 */
-    eagle_node_t *schematic;        /* <schematic>                       */
-    eagle_node_t *libraries;        /* its <libraries>                   */
-    eagle_node_t *parts;            /* its <parts>                       */
-    eagle_node_t *instance;         /* the <instance> drawn, or NULL     */
-    eagle_node_t *part;             /* its <part>                        */
-    eagle_node_t *device;           /* the part's <device>               */
-    const char *name;               /* object name: part, net or Drawing */
-    const char *value;              /* object value                      */
-    const char *net;                /* the net or bus drawn, or NULL     */
-    const char *gate;               /* the instance's gate, or NULL      */
-    eagle_connect_t *connects;      /* the gate's connects, by pin name;
-                                       malloc'd while an instance draws  */
-    size_t connect_count;           /* how many                          */
-    const char *path;               /* the source path, for DRAWING_NAME */
-    unsigned sheet_number;          /* this sheet, from 1                */
-    unsigned sheet_total;           /* sheets in the schematic           */
-    char display_name[256];         /* part name with its gate, if many  */
-    double m[6];                    /* symbol-local source mm to sheet
-                                       source mm: x' = m0 x + m2 y + m4,
-                                       y' = m1 x + m3 y + m5            */
-    unsigned work;                  /* steps taken, against the budget   */
-    const tiku_circuit_import_t *options;   /* cancellation; may be NULL */
-    tiku_circuit_diagnostic_t *diag;        /* the caller's; may be NULL */
-    tiku_circuit_err_t error;       /* the first failure; 0 while none   */
+    tiku_circuit_t *doc;            /**< the sheet's scene               */
+    eagle_node_t *schematic;        /**< <schematic>                     */
+    eagle_node_t *libraries;        /**< its <libraries>                 */
+    eagle_node_t *parts;            /**< its <parts>                     */
+    eagle_node_t *instance;         /**< the <instance> drawn, or NULL   */
+    eagle_node_t *part;             /**< its <part>                      */
+    eagle_node_t *device;           /**< the part's <device>             */
+    const char *name;               /**< object name: part, net or Drawing */
+    const char *value;              /**< object value                    */
+    const char *net;                /**< the net or bus drawn, or NULL   */
+    const char *gate;               /**< the instance's gate, or NULL    */
+    eagle_connect_t *connects;      /**< the gate's connects, by pin name;
+                                         malloc'd while an instance draws */
+    size_t connect_count;           /**< how many                        */
+    const char *path;               /**< the source path, for DRAWING_NAME */
+    unsigned sheet_number;          /**< this sheet, from 1              */
+    unsigned sheet_total;           /**< sheets in the schematic         */
+    char display_name[256];         /**< part name with its gate, if many */
+    double m[6];                    /**< symbol-local source mm to sheet
+                                         source mm: x' = m0 x + m2 y + m4,
+                                         y' = m1 x + m3 y + m5          */
+    unsigned work;                  /**< steps taken, against the budget */
+    const tiku_circuit_import_t *options;   /**< cancellation; may be NULL */
+    tiku_circuit_diagnostic_t *diag;        /**< the caller's; may be NULL */
+    tiku_circuit_err_t error;       /**< the first failure; 0 while none */
 } circuit_eagle_t;
 
 /** @brief Record the first failure in @p e and the caller's diagnostic;

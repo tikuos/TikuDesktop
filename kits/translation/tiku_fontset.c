@@ -4,13 +4,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_fontset.c - a family asked for, a face given.
+ * tiku_fontset.c - faces chosen for the family names documents use.
  *
- * In a family, the face nearest the slant, weight and width asked; a
- * family the machine lacks goes to a stand-in drawn to its widths, so
- * lines break where the document's author saw them break, then to one of
- * its kind.  A character none of those draws goes to a face made for its
- * script.  The tables below are names folded as fs_fold() folds them.
+ * Within a family the face nearest the slant and weight asked is chosen,
+ * normal width preferred.  A family the machine lacks goes to a stand-in
+ * with the same advance widths, which keeps the document's line breaks,
+ * then to a face of its kind: serif, sans or monospaced.  A character a
+ * face does not draw goes to a face for its script.  The tables hold
+ * names folded as fs_fold() folds them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -76,7 +77,8 @@ static const struct { const char *family, *alts; } stand_ins[] = {
     {"batang", "applemyungjo|nanummyeongjo|notoserifcjkkr"},
 };
 
-/** @brief The faces of each kind a machine is likely to have. */
+/** @brief The faces of each kind a machine is likely to have: sans,
+ *         monospaced and serif, in the order kind_of() numbers them. */
 static const char *const kinds[] = {
     "helvetica|arial|liberationsans|arimo|dejavusans|notosans|freesans|"
     "nimbussans|helveticaneue|lucidagrande|verdana|opensans|roboto",
@@ -123,9 +125,10 @@ named(const char *names, const char *key)
     return 0;
 }
 
-/** @brief How far @p f is from what is asked: the slant first, then the
- *         weight (heavier preferred for bold, lighter otherwise), then
- *         the width; lower is nearer. */
+/** @brief How far @p f is from what is asked, lower nearer: a slant that
+ *         differs outweighs the rest; weight and width count together,
+ *         one width step as much as 200 of weight, with heavier preferred
+ *         for bold and lighter otherwise. */
 static int
 distance(const fs_face_t *f, int weight, int italic)
 {
@@ -140,7 +143,8 @@ distance(const fs_face_t *f, int weight, int italic)
            (f->width > 5 ? f->width - 5 : 5 - f->width) * 400;
 }
 
-/** @brief Face @p f given as @p out, what it lacks said. */
+/** @brief Face @p f into @p out, with what it lacks of @p weight and
+ *         @p italic marked for synthesis. */
 static void
 give(const fs_face_t *f, int weight, int italic, tiku_fontset_face_t *out)
 {
@@ -157,7 +161,8 @@ give(const fs_face_t *f, int weight, int italic, tiku_fontset_face_t *out)
 
 /**
  * @brief The nearest face of the family folded to @p key -- that draws
- *        @p cp, when it is not 0.  @return 1 with @p out filled.
+ *        @p cp, when it is not 0.  @return 1 with @p out filled, 0 when
+ *        the family has no such face.
  */
 static int
 family_best(fs_index_t *ix, const char *key, int weight, int italic,
@@ -186,7 +191,7 @@ family_best(fs_index_t *ix, const char *key, int weight, int italic,
 }
 
 /** @brief The first family of the '|'-joined @p list the machine has.
- *  @return 1 with @p out filled. */
+ *  @return 1 with @p out filled, 0 when it has none of them. */
 static int
 list_best(fs_index_t *ix, const char *list, int weight, int italic,
           uint32_t cp, tiku_fontset_face_t *out)

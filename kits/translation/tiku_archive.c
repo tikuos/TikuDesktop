@@ -4,10 +4,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_archive.c - an archive opened: what it is found by its bytes, not
- * its name; the streams the readers stack (a file, DEFLATE, gzip with
- * every member's CRC and size checked); names made safe to show and to
- * make; and the folder an extraction goes into.
+ * tiku_archive.c - an archive opened and listed, its format found from
+ * its first bytes; the streams the readers stack (a file, DEFLATE, gzip
+ * with every member's CRC and size checked); stored names cleaned into
+ * paths; and the folder an extraction goes into.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -101,7 +101,7 @@ typedef struct {
     int            fd;
     int64_t        pos, end;        /* the next byte to read; the limit  */
     unsigned char *buf;
-    long           at, len;         /* buffered bytes not yet handed out */
+    long           at, len;         /* buffered bytes still to hand out  */
 } file_stream_t;
 
 /** @brief Up to @p max of the file's bytes, from the buffer first. */
@@ -124,7 +124,7 @@ file_read(arc_stream_t *s, unsigned char *buf, long max)
                         (off_t)f->pos);
         } while (got < 0 && errno == EINTR);
         if (got <= 0) {
-            s->err = TIKU_ARCHIVE_DAMAGED;  /* shorter than it said */
+            s->err = TIKU_ARCHIVE_DAMAGED;  /* short file, or a failed read */
             return -1;
         }
         f->pos += got;
@@ -164,7 +164,7 @@ file_skip(arc_stream_t *s, int64_t n)
     return 0;
 }
 
-/** @brief Let the stream go; the file stays the archive's. */
+/** @brief Free the stream; the file stays open, the archive's. */
 static void
 file_close(arc_stream_t *s)
 {
@@ -205,7 +205,8 @@ inflate_fill(void *ctx, unsigned char *buf, long max)
     return arc_read(((inflate_stream_t *)ctx)->under, buf, max);
 }
 
-/** @brief Decoded bytes; a failure below is told as it was. */
+/** @brief Decoded bytes.  On failure @c err is the stream below's error,
+ *         or DAMAGED when that has none. */
 static long
 inflate_read(arc_stream_t *s, unsigned char *buf, long max)
 {
@@ -219,7 +220,7 @@ inflate_read(arc_stream_t *s, unsigned char *buf, long max)
     return n;
 }
 
-/** @brief The decoder and the stream below it. */
+/** @brief Free the decoder and the stream below it. */
 static void
 inflate_close(arc_stream_t *s)
 {
@@ -298,7 +299,8 @@ gz_byte(gzip_stream_t *g)
     return gz_under(g, &c, 1) == 1 ? c : -1;
 }
 
-/** @brief Past a NUL-terminated field, kept in @p out when it is given. */
+/** @brief Past a NUL-terminated field, kept in @p out when it is given.
+ *  @return 0, or -1 when the bytes end first. */
 static int
 gz_string(gzip_stream_t *g, char *out, size_t max)
 {
@@ -441,7 +443,8 @@ gz_read(arc_stream_t *s, unsigned char *buf, long max)
     return 0;
 }
 
-/** @brief The decoder, the stream below, the bytes read past. */
+/** @brief Free the decoder, the stream below and the bytes read past a
+ *         member's end. */
 static void
 gz_close(arc_stream_t *s)
 {
@@ -484,7 +487,7 @@ arc_strdup(const char *s)
 }
 
 /** @brief Whether @p part, @p n bytes, may be made on a disk: not "..",
- *         no control character, not longer than a name may be. */
+ *         no control character, at most ARC_PART_MAX bytes. */
 static int
 part_ok(const char *part, size_t n)
 {
@@ -634,7 +637,8 @@ gz_single(tiku_archive_t *a, const char *stored)
     return TIKU_ARCHIVE_OK;
 }
 
-/** @brief A gzip: tar inside it, found by its first header, or one file. */
+/** @brief List a gzip: a tar when its first 512 decoded bytes are a tar
+ *         header, else one file. */
 static tiku_archive_err_t
 open_gzip(tiku_archive_t *a, tiku_archive_progress_t progress, void *ctx)
 {
@@ -658,7 +662,11 @@ open_gzip(tiku_archive_t *a, tiku_archive_progress_t progress, void *ctx)
     return arc_tar_list(a, progress, ctx);
 }
 
-/** @brief What the first bytes say the file is, and it listed. */
+/** @brief Find the format from the first @p n bytes and list the archive;
+ *         a file that is no gzip, ZIP or tar is tried as a ZIP with
+ *         something before it.  @return OK, the listing's error, or
+ *         NOT_YET for a format tiku_archive_identify() names, else
+ *         UNKNOWN. */
 static tiku_archive_err_t
 sniff(tiku_archive_t *a, const unsigned char *head, long n,
       tiku_archive_progress_t progress, void *ctx)
@@ -675,7 +683,7 @@ sniff(tiku_archive_t *a, const unsigned char *head, long n,
         a->format = TIKU_ARCHIVE_TAR;
         return arc_tar_list(a, progress, ctx);
     }
-    a->format = TIKU_ARCHIVE_ZIP;   /* one with something before it */
+    a->format = TIKU_ARCHIVE_ZIP;   /* with data before it */
     if (arc_zip_list(a) == TIKU_ARCHIVE_OK) {
         return TIKU_ARCHIVE_OK;
     }

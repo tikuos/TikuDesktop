@@ -9,9 +9,9 @@
  * operators with their limits, fenced groups, matrices and arrays of
  * equations, accents, bars and braces.  Office Math (Word's, and
  * PowerPoint's) is read into it by tiku_office_omml.c, MathML (as
- * OpenDocument keeps it) by tiku_office_mathml.c; tiku_office_math.c sets
- * it as TeX would, with the face and the MATH table of
- * tiku_office_math_font.c, and draws it.
+ * OpenDocument keeps it) by tiku_office_mathml.c; tiku_office_math.c and
+ * tiku_office_math_set.c set it as TeX would, with the face and the MATH
+ * table of tiku_office_math_font.c, and tiku_office_math.c draws it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -48,7 +48,7 @@ enum { OV_AUTO, OV_NORMAL, OV_ITALIC, OV_BOLD, OV_BOLD_ITALIC, OV_SCRIPT,
 #define OMF_TOP     0x01            /* a bar or brace over, not under    */
 #define OMF_BOTTOM  0x02
 #define OMF_BORDER  0x01            /* a box drawn round                 */
-#define OMF_SHOW    0x01            /* a phantom seen after all          */
+#define OMF_SHOW    0x01            /* a phantom's contents drawn        */
 #define OMF_ZEROW   0x02            /* ... taking no width               */
 #define OMF_ZEROH   0x04            /* ... no height or depth            */
 #define OMF_DISPLAY 0x01            /* a style: display, not text        */
@@ -177,8 +177,9 @@ typedef struct {
 } mf_t;
 
 /** @brief The math face for faces @p fs: @p want first when it has a
- *         MATH table, then the faces that are known to.  @return 0, or
- *         -1 when there is no face at all. */
+ *         MATH table, then the faces known to have one, else Times New
+ *         Roman or its stand-in with TeX's lengths.  @return 0, or -1 when
+ *         there is no face at all. */
 int mf_open(mf_t *m, of_faces_t *fs, const char *want);
 /** @brief What mf_open() took, given back. */
 void mf_close(mf_t *m);
@@ -194,8 +195,9 @@ int mf_italic(const mf_t *m, unsigned gid);
 int mf_accent_at(const mf_t *m, unsigned gid);
 /** @brief Glyph @p gid of the math face grown along an axis (@p vert:
  *         up, else across) to @p size font units: the first variant that
- *         reaches it, else its parts assembled.  @return 0 with @p out
- *         filled, or -1 when the table has nothing for it. */
+ *         reaches it, else its parts assembled, else its biggest variant.
+ *         @return 0 with @p out filled, or -1 when the table has nothing
+ *         for it. */
 int mf_stretch(mf_t *m, unsigned gid, int vert, int size, mf_parts_t *out);
 /** @brief The widest (or tallest) variant of glyph @p gid of the math
  *         face along an axis no bigger than @p size font units: as TeX
@@ -292,15 +294,30 @@ void ml_order(ml_t *ml, int start, const mb_t *seg, int nseg);
 
 /* Structures: tiku_office_math_set.c */
 
-/** @brief Each structure set: a fraction, scripts, a root, a large
- *         operator, a fence, a matrix or array, what stands over or
- *         under a base (accents, limits, bars, braces). */
+/** @brief Fraction @p n set: its numerator over its denominator about the
+ *         axis, a rule between unless OMF_NOBAR; along the line when
+ *         OMF_LINEAR, across a slash when OMF_SKEW. */
 void ml_frac(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out);
+/** @brief Scripts @p n set: its base, sub- and superscripts after it and
+ *         pre-scripts before it, clear of each other. */
 void ml_scripts(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out);
+/** @brief Root @p n set: its sign grown to the radicand, a rule over the
+ *         radicand, the degree before the sign. */
 void ml_root(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out);
+/** @brief Large operator @p n set: its limits over and under it in a
+ *         display, beside it otherwise, then its operand; grown to the
+ *         operand when OMF_GROW. */
 void ml_nary(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out);
+/** @brief Fenced group @p n set: its parts between its fences, separators
+ *         between the parts, the fences grown to what they hold when
+ *         OMF_GROW. */
 void ml_fence(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out);
+/** @brief Matrix or array @p n set, centred on the axis: a matrix's cells
+ *         as its columns align them, an array's rows cut at their marks
+ *         and lined up there. */
 void ml_grid(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out);
+/** @brief Accent, bar or brace @p n set over or under its base, or the
+ *         limits and marks of an OM_UNDEROVER put under and over it. */
 void ml_over(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out);
 
 #endif /* TIKU_OFFICE_MATH_H_ */

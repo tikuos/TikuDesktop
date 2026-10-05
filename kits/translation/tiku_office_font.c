@@ -8,10 +8,10 @@
  *
  * A family, weight and slant asked for is found once (tiku_fontset.h)
  * and opened once, its line measured in font units.  A character the
- * face has no glyph for goes to a face that has, found for its script,
- * and remembered: a Chinese paragraph in a Latin font asks for the same
- * fallback a thousand times.  Faces here are one document's: nothing is
- * shared between documents, so workers need no locks.
+ * face has no glyph for goes to a face that has one, found for its
+ * script; each face and character's fallback is found once and kept.
+ * Faces here are one document's: nothing is shared between documents,
+ * so workers need no locks.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

@@ -41,7 +41,7 @@ typedef struct {
     long                 csn;
 } jp2_t;
 
-/** @brief Big-endian 16 and 32 bits. */
+/** @brief Big-endian 16 bits. */
 static uint32_t
 be16(const unsigned char *p)
 {
@@ -226,7 +226,7 @@ sampling(const jpx_t *j, int c, int64_t *sx, int64_t *sy)
 }
 
 /**
- * @brief Channel @p ch into @p out: component @p c of @p planes, or the
+ * @brief A channel into @p out: component @p c of @p planes, or the
  *        palette column @p col it indexes, on grid @p g, eight bits kept
  *        when there are more.  @return its bits.
  */
@@ -294,7 +294,8 @@ grid(const jpx_t *j, const jp2_t *f, int n, grid_t *g)
 }
 
 /** @brief The channels in the order the channel definitions give: the
- *         colours by what they are the colour of, the opacity last. */
+ *         colours by what they are the colour of, then the opacity, then
+ *         the rest. */
 static void
 reorder(const jp2_t *f, tiku_jpx_t *out)
 {
@@ -390,7 +391,7 @@ channels(const jpx_t *j, const jp2_t *f, uint16_t **planes, tiku_jpx_t *out)
         out->prec[i] = channel(j, f, planes, c, col, &g, out->comp[i]);
     }
     out->space = f->space;
-    if (out->space == TIKU_JPX_UNKNOWN) {       /* a bare codestream */
+    if (out->space == TIKU_JPX_UNKNOWN) {       /* no colr: by count */
         out->space = n <= 2 ? TIKU_JPX_GRAY : n == 4 ? TIKU_JPX_CMYK
                                                     : TIKU_JPX_SRGB;
     }

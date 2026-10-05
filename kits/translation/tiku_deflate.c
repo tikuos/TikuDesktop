@@ -4,15 +4,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_deflate.c - DEFLATE written: LZ77 and fixed Huffman codes.
+ * tiku_deflate.c - DEFLATE written (RFC 1951): LZ77 and the fixed Huffman
+ * codes, in a zlib wrapper (RFC 1950), for the PNG and PDF writers.
  *
- * RFC 1951's other half, as small as it can be and still earn its keep:
- * each place is looked up by its next three bytes in a table of chains
- * over the last 32 KB, the longest match found is sent as a length and a
- * distance, and everything goes in one block of the fixed codes.  What a
- * screenshot is -- rows alike after PNG's filters -- is long matches, and
- * those the fixed codes carry for a couple of bytes each.  RFC 1950's
- * zlib wrapping around it, for PNG.
+ * Each place is looked up by its next three bytes in hash chains over the
+ * last 32 KB, trying at most DF_CHAIN earlier places; the longest match
+ * found is sent as a length and a distance, and everything goes in one
+ * block of the fixed codes.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -37,7 +35,8 @@ typedef struct {
     int nbits, bad;
 } df_out_t;
 
-/** @brief One byte onto @p o, the buffer grown as it fills. */
+/** @brief One byte onto @p o, the buffer grown as it fills.  A failed
+ *         allocation sets o->bad, and later bytes are dropped. */
 static void df_byte(df_out_t *o, unsigned char b)
 {
     if (o->bad) return;
@@ -55,7 +54,7 @@ static void df_byte(df_out_t *o, unsigned char b)
     o->p[o->n++] = b;
 }
 
-/** @brief The low @p n bits of @p v, first bit first. */
+/** @brief The low @p n bits of @p v, least significant first. */
 static void df_bits(df_out_t *o, uint32_t v, int n)
 {
     o->bits |= v << o->nbits;
@@ -67,8 +66,8 @@ static void df_bits(df_out_t *o, uint32_t v, int n)
     }
 }
 
-/** @brief A Huffman code of @p len bits, which go most significant
- *         first: turned round, then written as bits are. */
+/** @brief A Huffman code of @p len bits, which DEFLATE sends most
+ *         significant first: reversed, then written by df_bits(). */
 static void df_code(df_out_t *o, uint32_t code, int len)
 {
     uint32_t r = 0;
@@ -117,14 +116,15 @@ static void df_match(df_out_t *o, int len, int dist)
     df_bits(o, (uint32_t)(dist - dist_base[d]), dist_extra[d]);
 }
 
-/** @brief The table a place's next three bytes go in. */
+/** @brief The chain a place's next three bytes hash to. */
 static uint32_t df_hash(const unsigned char *p)
 {
     return ((uint32_t)p[0] << 10 ^ (uint32_t)p[1] << 5 ^ p[2]) & (DF_HASH - 1);
 }
 
-/** @brief The chains: each hash's latest place, and each place's last
- *         one with the same hash, one more than the place, 0 for none. */
+/** @brief The hash chains: @c head holds each hash's latest place, and
+ *         @c prev each place's previous one with the same hash, indexed
+ *         modulo the window.  Places are stored plus one; 0 is none. */
 typedef struct {
     uint32_t *head, *prev;
 } df_chains_t;
@@ -191,7 +191,7 @@ tiku_deflate_zlib(const unsigned char *in, size_t n, size_t *outlen)
         }
     }
     df_symbol(&o, 256);
-    df_bits(&o, 0, 7);              /* to the byte */
+    df_bits(&o, 0, 7);              /* to a byte boundary */
     for (i = 0; i < n; i++) {       /* Adler-32 of what went in */
         a = (a + in[i]) % 65521u;
         b = (b + a) % 65521u;

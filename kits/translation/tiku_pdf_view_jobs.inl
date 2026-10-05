@@ -1,6 +1,17 @@
-/* Jobs: everything that reads a document, one job at a time for each
- * document (they share its key); only their done callbacks touch the
- * view, and only while the program still holds it. */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_pdf_view_jobs.inl - the PDF view's jobs: opening a document,
+ * drawing a page and reading its links and text, and searching a stretch
+ * of pages.  The jobs of one document share its key, so they run one at a
+ * time; only their done callbacks touch the view, and only while the
+ * program still holds it.  Included by tiku_pdf_view.c alone.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 /** @brief Page @p p's size as drawn at scale 1: its rotation applied. */
 static void vw_page_size(tiku_pdf_t *pdf, int p, float *w, float *h)
@@ -164,7 +175,8 @@ static void vw_load_done(void *ctx)
     if (v->host.opened) v->host.opened(v->host.ctx, err);
 }
 
-/** @brief After done, or instead of it: give back what was not taken. */
+/** @brief After done, or alone when the job is cancelled: what was not
+ *         taken given back. */
 static void vw_load_free(void *ctx)
 {
     vw_load_t *j = ctx;
@@ -412,7 +424,8 @@ static int vw_slot(tiku_pdf_view_t *v, long pixels)
     }
 }
 
-/** @brief Ask a worker to draw page @p p at the view's scale. */
+/** @brief Ask a worker to draw page @p p at vw_draw_scale(), and to read
+ *         its links and text the first time.  @return 1 when asked. */
 static int vw_request(tiku_pdf_view_t *v, int p)
 {
     vw_render_t *j;
@@ -532,8 +545,9 @@ static int vw_search_room(vw_search_t *j)
 }
 
 /** @brief Every place on page @p p where the query stands, spaces folded
- *         to one so a phrase broken over two lines is still found; with
- *         Whole Words, only where no letter touches either end. */
+ *         to one, so a phrase broken over two lines is found; with
+ *         TIKU_PDF_FIND_WORDS, only where no letter or digit touches
+ *         either end. */
 static void vw_search_page(vw_search_t *j, int p, const tiku_pdf_char_t *ch,
                            long n)
 {

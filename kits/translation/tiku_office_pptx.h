@@ -31,6 +31,7 @@ typedef struct {
     const tiku_xml_node_t *master;  /* and its master's                  */
     const tiku_xml_node_t *styles;  /* the master's p:txStyles           */
     const char            *layout_part, *master_part, *slide_part;
+                                    /* the parts the trees come from     */
     of_doc_t              *d;       /* looks and memory for text         */
 } px_t;
 

@@ -31,7 +31,7 @@
 struct pdf_shade {
     int         type;
     pdf_cs_t   *cs;
-    pdf_func_t *fn;                 /* NULL: the colour is the Background */
+    pdf_func_t *fn;                 /* NULL: mesh vertices carry colours  */
     double      coords[6];          /* axis ends, or circle centres, radii */
     double      domain[4];          /* t0 t1, or type 1's x0 x1 y0 y1     */
     int         extend[2];
@@ -522,7 +522,7 @@ pdf_shade_free(pdf_shade_t *s)
 
 /* -------------------------------------------------------------- colour  */
 
-/** @brief The table's colour at @p s along the axis, 0 to 1. */
+/** @brief The table's colour at @p t along the axis, 0 to 1. */
 static uint32_t
 along(const pdf_shade_t *s, double t)
 {

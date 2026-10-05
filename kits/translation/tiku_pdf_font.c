@@ -180,7 +180,7 @@ cmap_dst(const pdf_obj_t *s, uint32_t *first, uint32_t *second)
         cp[k++] = u;
     }
     if (s->u.s.n == 1) {
-        cp[0] = s->u.s.p[0];        /* one byte: seen in the wild */
+        cp[0] = s->u.s.p[0];        /* one byte: that byte's character */
     }
     *first = cp[0];
     *second = cp[1];
@@ -644,7 +644,7 @@ pdf_tfont_next(const pdf_tfont_t *f, const unsigned char *s, size_t n,
     g->word = g->len == 1 && g->code == 32;
     g->key = cid >= 0 ? cid : f->by_unicode && u < 65536 ? (long)u : 0;
     if (g->key >= f->codes) {
-        g->key = 0;                 /* no glyph a table of 65536 names */
+        g->key = 0;                 /* past the width table: .notdef */
     }
     g->w = f->width[g->key] >= 0 ? f->width[g->key] : f->missing;
     if (g->code < 65536 && f->uni[g->code] != 0) {

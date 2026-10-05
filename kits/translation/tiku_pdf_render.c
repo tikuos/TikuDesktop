@@ -82,6 +82,8 @@ typedef struct {
     unsigned char *a;
 } tile_t;
 
+/** @brief A page being drawn: its pixels, the graphics states, the path
+ *         being built, and what the page keeps while it runs. */
 typedef struct {
     tiku_pdf_t *doc;
     pdf_pix_t   pix;
@@ -236,7 +238,7 @@ pop(rs_t *r)
     }
 }
 
-/** @brief Keep @p cs alive for the page; NULL when there is no room. */
+/** @brief Keep @p cs alive for the page.  @return @p cs. */
 static pdf_cs_t *
 keep_cs(rs_t *r, pdf_cs_t *cs)
 {
@@ -356,7 +358,6 @@ fill_path(rs_t *r, int evenodd)
     pdf_mask_free(&m);
 }
 
-/** @brief Stroke the current path with the line state and stroke colour. */
 /** @brief The dash pattern in device units; @return how many entries,
  *        0 for a solid line (an all-zero pattern is solid too). */
 static int
@@ -825,9 +826,9 @@ side(double v)
 }
 
 /**
- * @brief Tiling pattern @p pat's cell at the resolution @p to gives it:
- *        drawn on white and on black, the two giving each pixel's
- *        coverage and its colour without a painter that knows alpha.
+ * @brief Tiling pattern @p pat's cell at the resolution @p to gives it,
+ *        drawn on white and on black: the difference gives each pixel's
+ *        coverage, the black pass its colour.  @return it, or NULL.
  */
 static tile_t *
 tile_make(rs_t *r, pdf_obj_t *pat, const pdf_mat_t *to)
@@ -1405,7 +1406,9 @@ op_text(rs_t *r, const char *o, pdf_obj_t **ops, int n, pdf_obj_t *res,
 
 /* ---------------------------------------------------------------- forms  */
 
-/** @brief A form XObject: its matrix, its box as a clip, its stream. */
+/** @brief A form XObject: its matrix, its box as a clip, its stream.  A
+ *         transparency group under an alpha, a soft mask, a blend mode or
+ *         a knockout is painted as one, by group_paint(). */
 static void
 form(rs_t *r, pdf_obj_t *xo, pdf_obj_t *res, int depth)
 {
@@ -1845,8 +1848,8 @@ appearance_matrix(rs_t *r, pdf_obj_t *ap, const double *rect, pdf_mat_t *out)
     return 1;
 }
 
-/** @brief Annotation @p a, which stores no appearance, drawn as a viewer
- *         draws its kind, in page space. */
+/** @brief Annotation @p a, which stores no appearance, drawn from what it
+ *         is, in page space. */
 static void
 unstored(rs_t *r, pdf_obj_t *a, pdf_mat_t base)
 {
@@ -1871,8 +1874,9 @@ unstored(rs_t *r, pdf_obj_t *a, pdf_mat_t base)
 
 /**
  * @brief The page's annotations over it: each one's normal appearance in
- *        its Rect, as filled forms, stamps and notes have them; popups,
- *        and those Hidden or NoView, left out.
+ *        its Rect, as filled forms, stamps and notes have them, or, with
+ *        none or a stale one, drawn from what it is; popups, and those
+ *        Hidden or NoView, left out.
  */
 static void
 annotations(rs_t *r, pdf_obj_t *page, pdf_mat_t base)

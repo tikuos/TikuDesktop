@@ -11,8 +11,8 @@
  * picture lies on its reference device; that device's pixels are mapped
  * so the frame fills the box.  Records are read only within their own
  * size, their counts checked against it.  EMF+ records ride in comments
- * beside the GDI ones Office also writes, which are what is drawn; a
- * file with EMF+ alone draws nothing here, and says so.
+ * beside the GDI ones Office also writes, which are what is drawn; for a
+ * file with EMF+ alone, which draws nothing, of_emf_draw() returns -1.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -638,8 +638,9 @@ text_at(gdi_t *g, const rec_t *r, size_t at, int wide)
     free(dx);
 }
 
-/** @brief EMR_SMALLTEXTOUT: a string with no advances, bytes or wide
- *         characters, its clip box there unless ETO_NO_RECT. */
+/** @brief EMR_SMALLTEXTOUT: a string of bytes or of wide characters, with
+ *         no advances; the record holds a clip box unless ETO_NO_RECT is
+ *         set. */
 static void
 small_text(gdi_t *g, const rec_t *r)
 {

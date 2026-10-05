@@ -133,7 +133,8 @@ typedef struct {
 
 /* Colours and the theme: tiku_office_dml_color.c */
 
-/** @brief The theme part @p part read.  @return 0, or -1 for none. */
+/** @brief The theme part @p part read into @p t, over Office's own theme,
+ *         which @p t keeps when there is none.  @return 0, or -1 for none. */
 int dml_theme_load(of_pkg_t *pkg, const char *part, dml_theme_t *t);
 /** @brief Theme @p base with the schemes of override part @p part (a
  *         chart's a:themeOverride) over it, into @p t, which owns only the
@@ -154,7 +155,8 @@ uint32_t dml_color_of(const dml_ctx_t *c, const tiku_xml_node_t *e);
  *         a:lumMod and a:lumOff, as a palette darkens and lightens. */
 uint32_t dml_lum(uint32_t argb, double mod, double off);
 /** @brief A theme font name as a face: "+mj-lt" the headings', "+mn-lt"
- *         the body's, else @p name itself. */
+ *         the body's, "+mj-ea" and "+mn-ea" their East Asian ones; NULL for
+ *         a theme font the theme lacks, @p name itself for any other. */
 const char *dml_font(const dml_ctx_t *c, const char *name);
 
 /* Geometry: tiku_office_dml_geom.c */
@@ -175,8 +177,9 @@ int dml_fill(const dml_ctx_t *c, const tiku_xml_node_t *e, dml_fill_t *f);
 /** @brief The line @p ln (an a:ln) states, over @p l.  @return 1 when
  *         there was one. */
 int dml_line(const dml_ctx_t *c, const tiku_xml_node_t *ln, dml_line_t *l);
-/** @brief A style reference (a:fillRef, a:lnRef) looked up in the theme:
- *         the fill or line it names, its colour as phClr. */
+/** @brief A fill reference (a:fillRef; a:bgRef when @p bg) looked up in
+ *         the theme: the fill it names into @p f, its colour as phClr.
+ *  @return 1 when it names one. */
 int dml_ref_fill(dml_ctx_t *c, const tiku_xml_node_t *ref, int bg,
                  dml_fill_t *f);
 /** @brief The same for a line: the one a:lnRef @p ref names, into @p l. */
@@ -188,18 +191,24 @@ void dml_paint_fill(dml_ctx_t *c, const dml_fill_t *f, const dml_geom_t *g,
 /** @brief Line @p l along geometry @p g through @p m, with its ends. */
 void dml_paint_line(dml_ctx_t *c, const dml_line_t *l, const dml_geom_t *g,
                     const dml_mat_t *m);
+
 /* Pictures: tiku_office_dml_pic.c */
 
 /** @brief What a:blip @p blip does to its picture, into @p fx. */
 void dml_blip(const dml_ctx_t *c, const tiku_xml_node_t *blip,
               dml_blip_t *fx);
 /** @brief A picture part given to the writer, once for each way @p fx
- *         (may be NULL) changes it.  -1 unreadable, or a metafile. */
+ *         (may be NULL) changes it.  @return its number in the writer;
+ *         -1 when it cannot be read, or is a metafile. */
 int dml_picture(dml_ctx_t *c, const char *part, const dml_blip_t *fx);
 /** @brief Part @p part's bytes when dml_picture() found it a metafile,
  *         their length in @p len; NULL when it was not. */
 const unsigned char *dml_metafile(const dml_ctx_t *c, const char *part,
                                   size_t *len);
+
+/* Shapes and frames: tiku_office_dml_draw.c; dml_chart() is in
+ * tiku_office_chart.c and dml_done() in tiku_office_dml_pic.c */
+
 /** @brief The transform of an a:xfrm within @p parent: its offset, size,
  *         turn and flips, into @p m and its size into @p w, @p h.  For a
  *         group, @p child gets the transform its children's space takes. */
@@ -231,8 +240,9 @@ int dml_diagram(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m);
 int dml_chart(dml_ctx_t *c, const tiku_xml_node_t *gd, const dml_mat_t *m,
               float w, float h);
 /** @brief A graphic frame @p e drawn through @p m: a chart from its
- *         values, a diagram from its saved drawing, else a grey box of
- *         its place.  @return 0, or -1 out of memory. */
+ *         values, a diagram from its saved drawing, an embedded object
+ *         from the picture kept of it, else a grey box of its place.
+ *  @return 0, or -1 out of memory. */
 int dml_frame(dml_ctx_t *c, const tiku_xml_node_t *e, const dml_mat_t *m);
 /** @brief The context's own memory given back. */
 void dml_done(dml_ctx_t *c);

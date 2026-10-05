@@ -5,9 +5,9 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_office_docx_art.c - Word's drawings drawn as DrawingML: shapes,
- * groups, canvases, diagrams as Word saved them, pictures that are more
- * than a picture -- cut to a shape, outlined, turned, recoloured; and
- * VML WordArt, which is how Word still writes a watermark.
+ * groups, canvases, charts, diagrams as Word saved them, pictures that
+ * are more than a picture -- cut to a shape, outlined, turned, recoloured;
+ * and VML WordArt, which is how Word writes a watermark.
  *
  * A drawing is kept as its XML and drawn when its page is, by the engine
  * slides are drawn with, in the document theme's colours.  The text in
@@ -54,8 +54,8 @@ emu(const tiku_xml_node_t *e, const char *name, float dflt)
 
 /* ----------------------------------------------------------- choosing  */
 
-/** @brief Whether picture @p pic is only a picture: square, upright, not
- *         outlined, its colours as they are. */
+/** @brief Whether picture @p pic is only a picture: rectangular, upright,
+ *         not mirrored or outlined, its colours as they are. */
 static int
 plain_pic(const tiku_xml_node_t *pic)
 {
@@ -316,8 +316,7 @@ wa_place(const tiku_xml_node_t *s, const float *box, const float *ink)
 }
 
 /** @brief VML WordArt @p s: its words, in its textpath's face, stretched
- *         to fill @p box and turned as its style says, in its fill.  A
- *         watermark, mostly. */
+ *         to fill @p box and turned as its style says, in its fill. */
 static void
 wordart(of_faces_t *fs, const tiku_xml_node_t *s, const float *box,
         tiku_pdf_writer_t *w)

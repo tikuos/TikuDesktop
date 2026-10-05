@@ -41,7 +41,7 @@ next_cp(const unsigned char **p)
 
     for (k = 0; k < more; k++) {
         if ((s[k] & 0xc0) != 0x80) {
-            more = 0;               /* not UTF-8 after all */
+            more = 0;               /* no continuation: not UTF-8 */
             break;
         }
     }
@@ -151,7 +151,7 @@ faces_for(of_faces_t *fs, const of_style_t *st, int *latin, int *ea)
 }
 
 /** @brief The extent atom @p a takes above and below its baseline, in
- *         face @p face at its size. */
+ *         its face at @p size. */
 static void
 extent(const of_faces_t *fs, of_atom_t *a, float size)
 {
@@ -646,7 +646,8 @@ same_run(const of_faces_t *fs, const of_atom_t *a, const of_atom_t *b)
                                      sa->italic == sb->italic));
 }
 
-/** @brief The colour atom @p a is drawn in: its run's, black if none. */
+/** @brief The colour atom @p a is drawn in: its run's, or @p label's when
+ *         it has no run; black when that look sets none. */
 static uint32_t
 ink_of(const of_atom_t *a, const of_style_t *label)
 {
@@ -698,8 +699,8 @@ glyph_frag(of_faces_t *fs, const of_flow_t *f, int i, int j, float base,
     return 0;
 }
 
-/** @brief A rule under, through or over atoms @p i to @p j: at @p y
- *         below the baseline @p base, @p thick thick. */
+/** @brief A rule under or through atoms @p i to @p j: at @p y, @p thick
+ *         thick, in @p color, dotted or dashed as @p style says. */
 static int
 rule(of_vec_t *frags, const of_flow_t *f, int i, int j, float y,
      float thick, uint32_t color, int style)

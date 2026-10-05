@@ -6,12 +6,13 @@
  *
  * tiku_fontset.h - the machine's faces, found by the names documents use.
  *
- * A document names its fonts -- "Calibri", "Times New Roman", "ＭＳ 明朝"
- * -- and expects them.  This looks in the fonts folder, the system's
- * folders and an installed Office's own, and answers with the face that
- * family has at the weight and slant asked; failing that a stand-in with
- * the same widths (Carlito for Calibri), then one of the same kind.  What
- * a face lacks -- bold, a slant, a script -- is said so it can be made.
+ * A document names its fonts: "Calibri", "Times New Roman", "ＭＳ 明朝".
+ * tiku_fontset_find() answers with that family's face nearest the weight
+ * and slant asked, else a stand-in with the same widths (Carlito for
+ * Calibri), else a face of the same kind, and marks what the face lacks
+ * for synthesis; tiku_fontset_cover() finds a face for a character.
+ * Faces come from the folders given, the fonts folder and the system's
+ * folders, a Mac Office's own among them.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,6 +21,7 @@
 
 #include <stdint.h>
 
+/** @brief Room for a face's path, its terminator included. */
 #define TIKU_FONTSET_PATH 1024
 
 /** @brief A face found, and what drawing with it has to make up. */
@@ -35,20 +37,23 @@ typedef struct {
 } tiku_fontset_face_t;
 
 /**
- * @brief Look in @p dirs (folders joined by ':') before anywhere else.
- *        Called before the first search; the fonts folder, $TIKU_FONTS,
- *        is looked in first without asking.  $TIKU_FONTSET_ONLY, when set,
- *        names the only folders looked in -- for tests.
+ * @brief Look in @p dirs (folders joined by ':') first, then in the fonts
+ *        folder (tiku_fonts_dir()) and the system's folders.
+ *        $TIKU_FONTSET_ONLY, when set, names the only folders looked in.
+ * @note Call before the first search: the faces are found once, by the
+ *       first call that needs them.
  */
 void tiku_fontset_dirs(const char *dirs);
 
-/** @brief How many faces were found.  The first call looks for them. */
+/** @brief How many faces were found; the first call of this module that
+ *         needs them looks for them. */
 int tiku_fontset_count(void);
 
 /**
  * @brief The face for @p family (as a document names it), @p weight (400
  *        regular, 700 bold) and @p italic: the family's own, a stand-in
- *        with its widths, or one of its kind -- serif, sans, monospaced.
+ *        with its widths, or one of its kind -- serif, sans, monospaced --
+ *        and failing those the nearest face of any family.
  * @return 0 with @p out filled; -1 when the machine has no faces at all.
  */
 int tiku_fontset_find(const char *family, int weight, int italic,
@@ -57,7 +62,8 @@ int tiku_fontset_find(const char *family, int weight, int italic,
 /**
  * @brief A face that draws @p cp, when the one @p family found does not:
  *        of the character's script first, then of the family's kind,
- *        then any.  @return 0 with @p out filled, -1 when none has it.
+ *        then any upright face.  @return 0 with @p out filled, -1 when
+ *        none has it.
  */
 int tiku_fontset_cover(uint32_t cp, const char *family, int weight,
                        int italic, tiku_fontset_face_t *out);

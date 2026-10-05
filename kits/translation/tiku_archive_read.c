@@ -4,13 +4,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_archive_read.c - one entry read into memory.
+ * tiku_archive_read.c - an entry found by its path, and an entry read
+ * whole into memory, as an office document's XML and pictures are read
+ * from its ZIP.
  *
- * An office document is a ZIP whose parts a reader wants whole: its XML,
- * its pictures.  The entry's bytes come through the same streams an
- * extraction uses, bounded by what the caller will hold and by what the
- * entry said it was, and are checked against its CRC before anyone sees
- * them.  A tar's entry is found by reading the tar up to it.
+ * The bytes come through the streams an extraction uses, bounded by the
+ * caller's limit and by the entry's size, and are checked against that
+ * size and, where the format keeps one, its CRC before they are returned.
+ * A tar's entry is found by reading the tar up to it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,10 +23,11 @@
 #include <string.h>
 #include <strings.h>
 
-#define READ_STEP 65536             /* room grown by, size unknown       */
+#define READ_STEP 65536             /* first room for an unknown size    */
 
-/** @brief Room for more of an entry of unknown size, at most @p max of
- *         it and a zero byte.  @return 0, or -1 with @p *buf let go. */
+/** @brief Twice the room for an entry of unknown size, at most room for
+ *         @p max + 1 bytes, one past the limit, and a zero byte.
+ *  @return 0, or -1 with @p *buf freed. */
 static int
 grow(unsigned char **buf, size_t *cap, size_t max)
 {
@@ -45,8 +47,9 @@ grow(unsigned char **buf, size_t *cap, size_t max)
 /**
  * @brief @p s read to its end, at most @p max bytes of it, checked against
  *        @p e's size and CRC.  A stated size is read into room for exactly
- *        that and nothing past it is taken; an unknown one grows.
- * @return OK with the buffer in @p out, a zero byte after its end.
+ *        that, and a byte past it fails the check; an unknown one grows.
+ * @return OK with the buffer in @p out, a zero byte after its end; else
+ *         TOO_LARGE, NOMEM, CHECKSUM or the stream's error.
  */
 static tiku_archive_err_t
 slurp(arc_stream_t *s, const arc_entry_t *e, size_t max,

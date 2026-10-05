@@ -81,7 +81,7 @@ od_border(const char *v, of_border_t *b)
                strcmp(kind, "dotted") == 0 ? OF_LS_DOTTED :
                strcmp(kind, "dashed") == 0 ? OF_LS_DASHED : OF_LS_SINGLE;
     if (b->width <= 0) {
-        b->width = 0.5f;            /* "thin": a hairline, drawn */
+        b->width = 0.5f;            /* zero: a hairline, drawn */
     }
 }
 
@@ -133,8 +133,8 @@ family_of(const char *v)
 }
 
 /** @brief The styles in container @p c (office:styles, automatic ones)
- *         added to @p v; defaults and list styles noted.  @return 0, or -1
- *         out of memory. */
+ *         added to @p v; defaults and the outline style noted.  @return 0,
+ *         or -1 out of memory. */
 static int
 gather(od_t *x, const tiku_xml_node_t *c, int automatic, of_vec_t *v)
 {
@@ -292,7 +292,8 @@ line_kind(const char *style, const char *type, const char *width)
                                                        : OF_UL_SINGLE;
 }
 
-/** @brief The size, weight, slant and colour @p tp states, over @p st. */
+/** @brief The fonts, size, weight, slant and colours @p tp states, over
+ *         @p st. */
 static void
 text_face(od_t *x, const tiku_xml_node_t *tp, of_style_t *st)
 {
@@ -584,8 +585,9 @@ level_of(const tiku_xml_node_t *ls, int lvl)
     return NULL;
 }
 
-/** @brief The number @p list counts at level @p lvl, then the levels
- *         above it that @p lv displays, as its format says, into @p out. */
+/** @brief The numbers @p list counts at level @p lvl and at the levels
+ *         above it that @p lv displays, outermost first, each as its
+ *         format says, into @p out. */
 static void
 number(const tiku_xml_node_t *ls, const od_list_t *list, int lvl,
        const tiku_xml_node_t *lv, char *out, size_t max)

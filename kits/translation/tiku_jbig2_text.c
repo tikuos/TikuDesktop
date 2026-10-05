@@ -190,7 +190,7 @@ ids_get(jb_bits_t *b, const ids_t *d)
 /* -------------------------------------------------------- text regions  */
 
 /** @brief A value of the text region's fields: @p ia arithmetically, by
- *         table @p t Huffman coded.  @return 0, 1 for OOB, -1. */
+ *         table @p tab Huffman coded.  @return 0, 1 for OOB, -1. */
 static int
 field(const text_t *t, jb_ar_t *ar, jb_bits_t *b, jb_iax_t *ia,
       const jb_table_t *tab, int32_t *v)
@@ -730,7 +730,8 @@ new_symbol(jb_dec_t *jd, const dict_t *d, jb_ar_t *ar, jb_bits_t *b,
 /**
  * @brief The new symbols (6.5.5 step 4): height classes, each a change
  *        of height and then widths until OOB, a bitmap for each or,
- *        Huffman coded, one for the class.  @return 0, or -1.
+ *        Huffman coded without aggregation, one for the class.
+ *        @return 0, or -1.
  */
 static int
 dict_decode(jb_dec_t *jd, dict_t *d, jb_ar_t *ar, jb_bits_t *b)

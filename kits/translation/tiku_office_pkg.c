@@ -6,7 +6,7 @@
  *
  * tiku_office_pkg.c - a document's package: a ZIP of parts that name
  * each other through relationships (ECMA-376 part 2, OPC).  A part is
- * read whole with a ceiling, and every part together with another, so a
+ * read whole under a ceiling, and all parts together under another, so a
  * small file cannot inflate into all of memory.  A relationship's target
  * is resolved against its part's folder and never above the package's
  * root; one that leaves the package is only ever an address, not read.
@@ -170,8 +170,9 @@ of_part_join(const char *base, const char *target, char *out, size_t max)
     }
 }
 
-/** @brief The relationships part for @p part: "word/_rels/document.xml.
- *         rels", or "_rels/.rels" for the package's own. */
+/** @brief The relationships part for @p part, as
+ *         "word/_rels/document.xml.rels"; "_rels/.rels" for the package's
+ *         own. */
 static void
 rels_name(const char *part, char *out, size_t max)
 {

@@ -11,7 +11,7 @@
  * the rest left empty -- so a glyph's number is its CID and nothing is
  * renumbered.  A face with PostScript outlines goes in whole, as OpenType.
  * Each is a composite font: Identity-H, its widths, and a ToUnicode map
- * saying what each glyph stands for, which is how its text is found.
+ * from each glyph to the character it stands for.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -52,7 +52,7 @@ be32(const unsigned char *p)
            (uint32_t)p[2] << 8 | p[3];
 }
 
-/** @brief @p v put big-endian in two bytes, and in four. */
+/** @brief @p v put big-endian in two bytes. */
 static void
 put16(unsigned char *p, unsigned v)
 {
@@ -377,7 +377,7 @@ rebuild(const unsigned char *d, const sf_table_t *loca,
 /**
  * @brief Face @p f from its file's bytes as a file of its own: TrueType
  *        cut to the glyphs used, or every table of a PostScript one.
- * @return its bytes, with their length in @p len; NULL when it cannot be.
+ * @return its bytes, with their length in @p out; NULL when it cannot be.
  */
 static unsigned char *
 program(const unsigned char *d, size_t len, pw_font_t *f, size_t *out)
@@ -603,7 +603,7 @@ pw_font_write(tiku_pdf_writer_t *w, pw_font_t *f)
 
     prog = d != NULL ? program(d, len, f, &plen) : NULL;
     if (prog == NULL || file == 0 || uni == 0) {
-        w->out.bad = 1;             /* a face read once, gone since */
+        w->out.bad = 1;             /* its file unreadable now, or no room */
         free(d);
         free(prog);
         return;

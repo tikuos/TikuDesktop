@@ -198,7 +198,8 @@ jb_table_std(int k, jb_table_t *t, jb_line_t *lines)
     jb_table_codes(t);
 }
 
-/** @brief A line of @p t: prefix length @p p, range @p r from @p lo. */
+/** @brief A line added to @p t: prefix length @p p, range length @p r
+ *         from @p lo.  @return 0, or -1 when memory is short. */
 static int
 table_line(jb_table_t *t, int p, int r, int kind, int32_t lo)
 {

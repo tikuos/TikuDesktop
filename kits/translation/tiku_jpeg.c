@@ -7,7 +7,7 @@
  * tiku_jpeg.c - JPEG, sequential and progressive: Huffman, dequantise,
  * IDCT, chroma upsample, YCbCr to RGB.
  *
- * A baseline file of one scan is drawn block by block as it is read.
+ * A sequential file of one scan is drawn block by block as it is read.
  * Anything else -- progressive scans that each add a band of
  * frequencies or one bit more (T.81 Annex G), or components sent in
  * scans of their own -- keeps every block's coefficients until the
@@ -172,19 +172,14 @@ huff_decode(jbits_t *b, const jhuff_t *h)
     return at >= 0 && at < 256 ? h->huffval[at] : -1;
 }
 
-/**
- * @brief Separable 8x8 inverse DCT, integer, rows then columns.
- *
- * The straightforward form rather than a fast factorisation: a thumbnail is
- * decoded once and then cached, so clarity is worth more here than the
- * cycles a butterfly would save.
- */
+/** @brief Separable 8x8 inverse DCT in integers, rows then columns: each
+ *         output the sum of its inputs times a fixed cosine table. */
 static void
 idct8(const int *in, unsigned char *out, int stride)
 {
     int tmp[64], u, x, y;
 
-    /* Immutable tables also allow simultaneous thumbnail/snapshot workers. */
+    /* Read-only: decoders on several threads share it. */
     static const int cs[8][8] = {
             { 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024 },
             { 1420, 1204,  805,  283, -283, -805,-1204,-1420 },
@@ -202,9 +197,9 @@ idct8(const int *in, unsigned char *out, int stride)
             for (u = 0; u < 8; u++) {
                 s += (long)in[y * 8 + u] * cs[u][x];
             }
-            /* Rounded, not truncated: an arithmetic shift of a
-             * negative value biases every block half a level
-             * dark, and it shows as a flat offset. */
+            /* Rounded: without the 512, the arithmetic shift
+             * of a negative sum biases every block half a
+             * level dark. */
             tmp[y * 8 + x] = (int)((s + 512L) >> 10);
         }
     }
@@ -373,8 +368,9 @@ read_sos(jdec_t *d, long i, int len, int *which)
 }
 
 /** @brief The plane each component is drawn into, and with d->kept its
- *         coefficients, all rounded up to whole MCUs so the block loop
- *         never special-cases an edge.  @return 0, or -1. */
+ *         coefficients, sized in whole MCUs: the blocks of an MCU that
+ *         runs past the picture's edge are decoded into it too.
+ *         @return 0, or -1. */
 static int
 planes(jdec_t *d)
 {
@@ -407,7 +403,7 @@ planes(jdec_t *d)
 /* ------------------------------------------------------------- blocks  */
 
 /** @brief A sequential block: the DC difference, then the AC runs, into
- *         @p blk in natural order, not yet dequantised.  @return 0 or -1. */
+ *         @p blk in natural order, still quantised.  @return 0 or -1. */
 static int
 seq_block(jdec_t *d, jcomp_t *c, int *blk)
 {
@@ -607,7 +603,7 @@ block(jdec_t *d, jcomp_t *c, int row, int col)
 /* -------------------------------------------------------------- scans  */
 
 /** @brief At a restart marker: past it, with the predictors and the run
- *         of empty bands reset, which is what restart intervals are for. */
+ *         of empty bands reset. */
 static void
 resync(jdec_t *d, int ns, const int *which)
 {
@@ -673,7 +669,8 @@ scan(jdec_t *d, int ns, const int *which)
     return 0;
 }
 
-/** @brief Where the marker after a scan's data begins, or @p n. */
+/** @brief Where the marker after a scan's data begins, or the data's
+ *         length when none follows. */
 static long
 after_scan(const jdec_t *d)
 {
@@ -880,7 +877,7 @@ tiku_jpeg_decode(const unsigned char *src, long n, int *ow, int *oh,
         i += len;
     }
     if (d->kept && d->scans > 0 && rc < 0) {
-        draw_kept(d);               /* the scans that came, sharpest last */
+        draw_kept(d);               /* the scans that came */
         rc = 0;
     }
     if (rc == 0) {

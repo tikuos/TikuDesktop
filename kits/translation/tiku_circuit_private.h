@@ -60,41 +60,41 @@ enum {
 
 /** @brief One drawing object.  Fields a kind does not use stay zero. */
 typedef struct {
-    tiku_circuit_object_t info;     /* owned name/value; painted bounds  */
-    circuit_point_t *points;        /* owned world-coordinate vertices   */
-    size_t count;                   /* number of vertices                */
-    double width;                   /* stroke width in mm; 0 for fills   */
-    uint32_t colour;                /* opaque ARGB colour                */
-    int closed, fill;               /* close the path; fill, not stroke  */
-    int kind;                       /* CIRCUIT_POLYLINE ...              */
-    /* cx, cy: an arc's, obround's or flash hole's centre; a group's
+    tiku_circuit_object_t info;     /**< owned name/value; painted bounds */
+    circuit_point_t *points;        /**< owned world-coordinate vertices */
+    size_t count;                   /**< number of vertices              */
+    double width;                   /**< stroke width in mm; unused by fills */
+    uint32_t colour;                /**< opaque ARGB colour              */
+    int closed, fill;               /**< close the path; fill, not stroke */
+    int kind;                       /**< CIRCUIT_POLYLINE ...            */
+    /** cx, cy: an arc's, obround's or flash hole's centre; a group's
      * offset; for text, its alignment (-1 left, 0 centre, 1 right) and
      * first baseline in em.  r, start, sweep: arc or obround radius and
      * angles in radians. */
     double cx, cy, r, start, sweep;
-    double end_r;                   /* an arc's radius at its end, or 0  */
-    double matrix[6];               /* text em coordinates to world mm   */
-    char *text;                     /* owned string of a CIRCUIT_TEXT    */
-    char *details;                  /* owned plain-text description      */
-    int bold;                       /* draw a heavier substitute outline */
-    int clear;                      /* removes coverage; artwork only    */
-    double hole;                    /* diameter of a see-through hole    */
-    tiku_circuit_t *group;          /* retained scene of a CIRCUIT_GROUP */
+    double end_r;                   /**< an arc's radius at its end, or 0 */
+    double matrix[6];               /**< text em coordinates to world mm */
+    char *text;                     /**< owned string of a CIRCUIT_TEXT  */
+    char *details;                  /**< owned plain-text description    */
+    int bold;                       /**< draw a heavier substitute outline */
+    int clear;                      /**< removes coverage; artwork only  */
+    double hole;                    /**< diameter of a see-through hole  */
+    tiku_circuit_t *group;          /**< retained scene of a CIRCUIT_GROUP */
 } circuit_shape_t;
 
 /** @brief A scene: shapes, or the layers of a stack. */
 struct tiku_circuit {
-    atomic_uint refs;               /* holders; snapshots retain it      */
-    circuit_shape_t *shapes;        /* owned; immutable once published   */
-    size_t count;                   /* selectable objects                */
-    size_t bytes;                   /* accounted storage                 */
-    size_t points;                  /* stored points                     */
-    tiku_circuit_box_t bounds;      /* union of the painted bounds       */
-    tiku_ttf_t *font;               /* owned copy of the substitute font */
-    char warning[256];              /* what the preview leaves out       */
-    int coverage;                   /* ordered dark/clear artwork layer  */
-    tiku_circuit_layer_t *layers;   /* a stack's owned descriptors       */
-    size_t layer_count;             /* nonzero only for a stack          */
+    atomic_uint refs;               /**< holders; snapshots retain it    */
+    circuit_shape_t *shapes;        /**< owned; immutable once published */
+    size_t count;                   /**< selectable objects              */
+    size_t bytes;                   /**< accounted storage               */
+    size_t points;                  /**< stored points                   */
+    tiku_circuit_box_t bounds;      /**< union of the painted bounds     */
+    tiku_ttf_t *font;               /**< owned copy of the substitute font */
+    char warning[256];              /**< what the preview leaves out     */
+    int coverage;                   /**< ordered dark/clear artwork layer */
+    tiku_circuit_layer_t *layers;   /**< a stack's owned descriptors     */
+    size_t layer_count;             /**< nonzero only for a stack        */
 };
 
 /** @brief A new empty scene with one holder, or NULL without memory. */
@@ -103,10 +103,8 @@ tiku_circuit_t *circuit_new(void);
 /**
  * @brief Append @p child's coverage, offset by (@p x, @p y), as one
  *        object: an aperture macro's flash.
- *
- * @p child must be flat: no font, layers or groups of its own.
- *
  * @return OK, BAD, LIMIT or NOMEM; @p doc gains nothing on failure
+ * @note @p child must be flat: no font, layers or groups of its own.
  */
 tiku_circuit_err_t circuit_group(tiku_circuit_t *doc, const char *name,
     const char *value, tiku_circuit_t *child, double x, double y);
@@ -132,9 +130,11 @@ tiku_circuit_err_t circuit_clone(tiku_circuit_t *doc,
 tiku_circuit_err_t circuit_contour(const circuit_point_t *p, size_t n,
     const tiku_circuit_import_t *options);
 
-/** @brief Give object @p index the description @p text, replacing any;
- *         the scene must not yet be shared.  @return OK, BAD, LIMIT or
- *         NOMEM, the old description kept on failure */
+/**
+ * @brief Give object @p index the description @p text, replacing any.
+ * @return OK, BAD, LIMIT or NOMEM, the old description kept on failure
+ * @note The scene must not yet be shared.
+ */
 tiku_circuit_err_t circuit_details(tiku_circuit_t *doc, size_t index,
                                    const char *text);
 
@@ -151,11 +151,11 @@ int circuit_text_extent(const tiku_circuit_t *doc, const char *text,
 /**
  * @brief Append a path of @p count points, copied, as one object.
  *
- * Bounds include half the stroke unless @p fill.  @p doc must not yet be
- * shared.
+ * Bounds include half the stroke unless @p fill.
  *
- * @return OK; BAD for a bad point or width; LIMIT for a long name or a
- *         full scene; NOMEM
+ * @return OK; BAD for a bad point or width, fewer than two points or a
+ *         shared @p doc; LIMIT for a long name or a full scene; NOMEM
+ * @note @p doc must not yet be shared.
  */
 tiku_circuit_err_t circuit_add(tiku_circuit_t *doc, const char *name,
     const char *value, const circuit_point_t *points, size_t count,

@@ -377,8 +377,8 @@ table_read(oc_t *o, const tiku_xml_node_t *t)
     return 0;
 }
 
-/** @brief One cell's place, "$B$2" after its table's name ("t.", or
- *         just "."), as a column and row from 0.  @return 0, or -1. */
+/** @brief One cell's place, "$B$2" after its table's name ("t.", or "."
+ *         alone), as a column and row from 0.  @return 0, or -1. */
 static int
 cell_at(const char *s, int *col, int *row)
 {
@@ -911,7 +911,7 @@ axes_read(oc_t *o, const tiku_xml_node_t *pa, int xvalues)
         o->k->ax[i].kind = (i == 0 || i == 3) && !xvalues ? CH_CAT_AX
                                                           : CH_VAL_AX;
         o->k->ax[i].pos = pos[i];
-        o->k->ax[i].deleted = 1;    /* until it is there */
+        o->k->ax[i].deleted = 1;    /* unless the file has it */
         o->k->ax[i].tick = 1;
         o->k->ax[i].labels = 1;
         o->k->ax[i].between = 1;
@@ -988,8 +988,8 @@ legend(oc_t *o, const tiku_xml_node_t *ch)
 }
 
 /** @brief The chart's and the plot's grounds and edges: the chart's
- *         style, and the wall's (a pie's has none, drawn); what an empty
- *         cell does to a line. */
+ *         style, and the wall's, which a pie or doughnut does not draw;
+ *         what an empty cell does to a line. */
 static void
 grounds(oc_t *o, const tiku_xml_node_t *ch, const tiku_xml_node_t *pa)
 {

@@ -132,7 +132,8 @@ eagle_rotation(circuit_eagle_t *e, const char *s, double *angle, int *mirror,
     if (*s++ != 'R') {
         return eagle_fail(e, TIKU_CIRCUIT_BAD, "Invalid EAGLE rotation");
     }
-    /* The angle is read as the one attribute of a node made for it. */
+    /* eagle_number() reads a node's attribute, so the angle's text is
+     * wrapped in a node of its own. */
     const char *attrs[] = {"angle", s};
     tiku_xml_node_t n = {.attr = attrs, .nattr = 1};
 

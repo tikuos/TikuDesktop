@@ -4,14 +4,13 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_pdf_view.h - a PDF shown in any program's window, ready made.
+ * tiku_pdf_view.h - a PDF viewer for any program's window, built on
+ * tiku_pdf.h.
  *
- * tiku_pdf.h reads a document and draws a page; a viewer is what sits on
- * top: pages drawn on workers and kept, one under another, scrolled,
- * zoomed and turned, links followed, text found, selected and copied.
- * This is that viewer as a part, for a program that wants a PDF in a
- * window of its own: it lays the view out, draws it, and hands it its
- * events.  Programs that want the pages themselves use tiku_pdf.h.
+ * Pages are drawn on workers and kept, shown one under another, scrolled,
+ * zoomed and turned; links are followed; text is found, selected and
+ * copied.  The program gives the view a rectangle to draw in and the
+ * events that land there.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -42,7 +41,7 @@ typedef enum {
 
 /* How tiku_pdf_view_find() compares. */
 #define TIKU_PDF_FIND_CASE  0x1u    /* capitals matter                   */
-#define TIKU_PDF_FIND_WORDS 0x2u    /* only where no letter touches it   */
+#define TIKU_PDF_FIND_WORDS 0x2u    /* no letter or digit at either end  */
 
 /**
  * @brief What the view tells the program showing it; any may be NULL.
@@ -57,10 +56,11 @@ typedef struct {
 } tiku_pdf_view_host_t;
 
 /**
- * @brief An empty view, drawn blank.  Its reading and drawing are jobs on
- *        the tiku_work pool, so the program's loop calls
- *        tiku_work_collect() for them to land.  With no address callback,
- *        a link out of the document is put on the clipboard and said.
+ * @brief An empty view, drawn blank; NULL out of memory.  With no address
+ *        callback, a link out of the document is put on the clipboard and
+ *        said.
+ * @note Its reading and drawing are jobs on the tiku_work pool: the
+ *       program's loop calls tiku_work_collect() for them to land.
  */
 tiku_pdf_view_t *tiku_pdf_view_new(const tiku_pdf_view_host_t *host);
 
@@ -82,9 +82,9 @@ int tiku_pdf_view_open(tiku_pdf_view_t *v, const char *path,
 int tiku_pdf_view_open_key(tiku_pdf_view_t *v, const char *path,
                            const char *keyfile, const char *password);
 
-/** @brief A file made a PDF, on a worker: its bytes to free(), their
- *         count in @p len; NULL with why said in @p why, in a person's
- *         words. */
+/** @brief A file made a PDF, on a worker: its bytes, their count in
+ *         @p len; NULL with why said in @p why, in a person's words.
+ *  @note The view frees the bytes with free(). */
 typedef unsigned char *(*tiku_pdf_view_translate_fn)(const char *path,
                                                       size_t *len, char *why,
                                                       size_t max);
@@ -114,11 +114,13 @@ void tiku_pdf_view_draw(tiku_pdf_view_t *v, tiku_surface_t *s,
                         tiku_rect_t r);
 
 /**
- * @brief An event for the view drawn at @p r.  The wheel scrolls (zooms
- *        with Command), a click follows a link, a drag selects text, the
- *        bars scroll; arrows, Page Up and Down, Space, Home, End, + and -
- *        move and zoom, Escape lets the selection go, and Command with C,
- *        A, [, +, - and 0 copies, selects the page, goes back and zooms.
+ * @brief An event for the view drawn at @p r.  The wheel scrolls
+ *        (sideways with Shift, zooms with Command), a click follows a
+ *        link, a drag selects text, the bars scroll; arrows, Page Up and
+ *        Down, Space, Home, End, + and - move and zoom, Escape lets the
+ *        selection go; Command with C, A, [, +, - and 0 copies, selects
+ *        the page, goes back and zooms, and with Up or Down goes to the
+ *        first or last page.
  * @return 1 when the view took it.
  */
 int tiku_pdf_view_event(tiku_pdf_view_t *v, tiku_rect_t r,
@@ -136,7 +138,8 @@ int tiku_pdf_view_page(const tiku_pdf_view_t *v);
 void tiku_pdf_view_go(tiku_pdf_view_t *v, int page);
 
 /** @brief Go where @p to leads -- an outline entry's or a link's place, or
- *         an address, which goes to host->address. */
+ *         an address, which goes to host->address or, without one, onto
+ *         the clipboard. */
 void tiku_pdf_view_follow(tiku_pdf_view_t *v, const tiku_pdf_dest_t *to);
 
 /** @brief Back to where the view was before its last jump.
@@ -174,7 +177,9 @@ int tiku_pdf_view_turned(const tiku_pdf_view_t *v);
  * @brief Find @p text in @p dir (1 on, -1 back) with @p flags
  *        (TIKU_PDF_FIND_*).  New text starts a search of the whole
  *        document on workers, every match marked as it is found; the same
- *        text steps to the next match.  @return 0 when nothing was asked.
+ *        text and flags step to the next match.
+ * @return 0 with nothing open, an empty @p text, or no worker free for
+ *         the search.
  */
 int tiku_pdf_view_find(tiku_pdf_view_t *v, const char *text, int dir,
                        unsigned flags);
@@ -189,13 +194,14 @@ int tiku_pdf_view_copy(tiku_pdf_view_t *v);
 int tiku_pdf_view_select_page(tiku_pdf_view_t *v);
 
 /** @brief The document's outline (bookmarks) as read when it opened,
- *         depth first, the view's own: follow an entry with
- *         tiku_pdf_view_follow().  @return how many, into @p items. */
+ *         depth first: follow an entry with tiku_pdf_view_follow().
+ *  @return how many, into @p items.
+ *  @note The entries are the view's, kept until its document closes. */
 int tiku_pdf_view_outline(const tiku_pdf_view_t *v,
                           const tiku_pdf_outline_t **items);
 
-/** @brief Whether command @p what would do anything now: for a program's
- *         menus and buttons. */
+/** @brief Whether command @p what would do anything now; 0 with nothing
+ *         open. */
 int tiku_pdf_view_can(const tiku_pdf_view_t *v, tiku_pdf_view_can_t what);
 
 /** @brief The shown document's path; "" with none. */
@@ -204,9 +210,9 @@ const char *tiku_pdf_view_path(const tiku_pdf_view_t *v);
 /** @brief Its title as it gives it, else its file's name; "" with none. */
 const char *tiku_pdf_view_title(const tiku_pdf_view_t *v);
 
-/** @brief What the view would say in a status line: where the link under
- *         the pointer leads, else what happened last -- "Opening...",
- *         "12 pages.", "Match 2 of 5.", or why something did not work. */
+/** @brief The text for a status line: where the link under the pointer
+ *         leads, else what happened last -- "Opening...", "12 pages.",
+ *         "Match 2 of 5.", or why something did not work. */
 const char *tiku_pdf_view_status(const tiku_pdf_view_t *v);
 
 #endif /* TIKU_PDF_VIEW_H_ */

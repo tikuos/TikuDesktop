@@ -9,8 +9,9 @@
  * A stream is segments, each a header and its data (7.2): dictionaries
  * of symbols and of patterns, Huffman tables, and regions -- coded whole,
  * as symbols placed, as halftone cells, or refined from another -- each
- * drawn onto the page its page information segment makes.  A PDF
- * carries one page's segments, and those its pages share apart.
+ * drawn onto the page its page information segment makes.  A PDF stream
+ * carries one page's segments; the segments its pages share come
+ * separately, as JBIG2Globals.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SEGS_MAX    65536           /* segments one stream holds        */
+#define SEGS_MAX    65536           /* segments one decode holds        */
 #define REFS_MAX    4096            /* segments one refers to           */
 #define PIXELS_MAX  (1LL << 27)     /* every bitmap's pixels together   */
 #define WORK_MAX    (1LL << 29)     /* pixels one decode draws, at most */
@@ -174,7 +175,7 @@ page_info(jb_dec_t *jd, const jb_seg_t *s)
     jd->page_known = h != 0xFFFFFFFFu;
     if (w == 0 || w > SIDE_MAX || (jd->page_known && (h > SIDE_MAX ||
         (long long)(w + 7) / 8 * h > jd->omax))) {
-        return -1;                  /* too big to give back: not made */
+        return -1;                  /* more than omax holds: no page */
     }
     jd->page = jb_new(jd, w, jd->page_known ? h : 0, jd->defpixel);
     return jd->page != NULL ? 0 : -1;
@@ -353,7 +354,7 @@ patterns(jb_dec_t *jd, jb_seg_t *s)
     g.mmr = p[0] & 1;
     g.tmpl = (p[0] >> 1) & 3;
     count = (long)jb_be32(p + 3) + 1;
-    g.at[0] = -p[1];                /* A1 a pattern back, the rest usual */
+    g.at[0] = -p[1];                /* A1 one pattern back, A2-A4 nominal */
     g.at[2] = -3;
     g.at[3] = -1;
     g.at[4] = 2;

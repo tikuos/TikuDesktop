@@ -402,7 +402,7 @@ cm_parse(tiku_pdf_t *doc, pdf_cmap_t *m, const unsigned char *p, long n,
             if (c.pos >= c.n || c.pos == at) {
                 break;
             }
-            continue;               /* a token of PostScript's, not ours */
+            continue;               /* PostScript the PDF lexer skips */
         }
         if (o->kind == PDF_OP) {
             cm_op(doc, m, (const char *)o->u.s.p, st, sp, &mode, depth);

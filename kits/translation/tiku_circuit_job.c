@@ -20,8 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define JOB_LABEL_MAX  256          /* a label's bytes; longer shows the
-                                       path instead                      */
+#define JOB_LABEL_MAX  256          /* a label's bytes; a longer one reads
+                                       "Job file (see path)"             */
 #define JOB_PATH_SHOWN 128          /* path bytes in a job's diagnostic  */
 #define LAYER_OPAQUE   255
 

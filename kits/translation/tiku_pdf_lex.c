@@ -429,7 +429,7 @@ lex_word(pdf_cur_t *c)
         }
         buf_add(&b, ch);
         if (b.n > 4096) {
-            break;                  /* nothing sensible is this long */
+            break;                  /* a longer word is split here */
         }
     }
     if (c->pos == start) {

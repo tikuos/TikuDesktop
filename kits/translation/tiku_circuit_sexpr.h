@@ -40,9 +40,9 @@ typedef struct {
 /**
  * @brief Parse @p bytes of S-expression text into @p out.
  *
- * Strings are unescaped and must be strict UTF-8 without control
- * characters but tab and newline; numbers stay text.  The input size,
- * node count, atom length and nesting are bounded.
+ * Strings are unescaped, and every atom must be strict UTF-8 with no
+ * character below space but tab and newline; numbers stay text.  The
+ * input size, node count, atom length and nesting are bounded.
  *
  * @param options  cancellation, or NULL
  * @param diag     the first failure and its position, or NULL

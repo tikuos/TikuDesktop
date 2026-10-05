@@ -6,7 +6,8 @@
  *
  * tiku_archive_private.h - what the archive readers share: streams that
  * stack (a file, gzip over it, DEFLATE over a ZIP entry), an archive's
- * entries and where each one's data is, and the names made safe.
+ * entries and where each one's data is, stored names cleaned into paths,
+ * and the ZIP and tar readers' entry points.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,16 +21,18 @@
 #define ARC_PART_MAX   255          /* one part of it                     */
 #define ARC_LINK_MAX   4096         /* a link's target                    */
 
-/** @brief Bytes read in order from something below.  @c read gives up to
- *         @p max: how many, 0 at the end, -1 with @c err set. */
+/** @brief Bytes read in order from something below. */
 typedef struct arc_stream arc_stream_t;
 struct arc_stream {
+    /** Up to @p max bytes: how many, 0 at the end, -1 with @c err set. */
     long (*read)(arc_stream_t *s, unsigned char *buf, long max);
-    /* Past @p n bytes without handing them out; NULL reads them. */
+    /** Past @p n bytes without handing them out; when NULL, arc_skip()
+     *  reads and drops them. */
     int  (*skip)(arc_stream_t *s, int64_t n);
+    /** Free the stream and the streams it owns. */
     void (*close)(arc_stream_t *s);
-    tiku_archive_err_t err;         /* why read gave -1                  */
-    int64_t *consumed;              /* the file's bytes read, for progress */
+    tiku_archive_err_t err;         /**< why read gave -1                */
+    int64_t *consumed;              /**< the file's bytes read, for progress */
 };
 
 /** @brief Up to @p max bytes.  @return how many, 0, or -1. */
@@ -38,6 +41,7 @@ long arc_read(arc_stream_t *s, unsigned char *buf, long max);
 int arc_read_all(arc_stream_t *s, unsigned char *buf, long n);
 /** @brief Past @p n bytes.  @return 0, or -1 when fewer were there. */
 int arc_skip(arc_stream_t *s, int64_t n);
+/** @brief Free @p s and the streams it owns; NULL is ignored. */
 void arc_close(arc_stream_t *s);
 
 /** @brief The bytes of @p fd from @p start, @p len of them (-1: to the
@@ -53,37 +57,40 @@ arc_stream_t *arc_gzip_stream(arc_stream_t *under, char *name, size_t max);
 
 /** @brief One entry, and where its data is. */
 typedef struct {
-    tiku_archive_entry_t pub;       /* what the listing shows            */
-    int64_t  offset;                /* ZIP: local header; tar: header no. */
-    uint32_t crc;                   /* ZIP's, to check; 0 none            */
-    int      method;                /* ZIP's method number                */
-    int      has_crc;
+    tiku_archive_entry_t pub;       /**< what the listing shows          */
+    int64_t  offset;                /**< ZIP: data start; tar: entry no. */
+    uint32_t crc;                   /**< ZIP's, checked when has_crc     */
+    int      method;                /**< ZIP's method number             */
+    int      has_crc;               /**< whether crc is to be checked    */
 } arc_entry_t;
 
+/** @brief An open archive. */
 struct tiku_archive {
-    tiku_archive_format_t format;   /* found by its bytes                */
-    int          fd;                /* the archive, open while it is     */
-    int64_t      file_size;
-    char        *path;              /* as it was opened                  */
-    arc_entry_t *entry;             /* listed, in the archive's order    */
-    long         count, cap;
-    int          damaged;           /* listing stopped at a break        */
-    int64_t      zip_base;          /* where the ZIP's offsets count from */
-    int64_t      zip_cd;            /* its central directory's start      */
-    int64_t     *consumed;          /* an extraction's count of bytes read */
+    tiku_archive_format_t format;   /**< found by its bytes              */
+    int          fd;                /**< open until tiku_archive_close() */
+    int64_t      file_size;         /**< its size when opened            */
+    char        *path;              /**< as it was opened                */
+    arc_entry_t *entry;             /**< listed, in the archive's order  */
+    long         count, cap;        /**< entries listed, and room for    */
+    int          damaged;           /**< listing stopped at a break      */
+    int64_t      zip_base;          /**< where the ZIP's offsets count from */
+    int64_t      zip_cd;            /**< its central directory's start   */
+    int64_t     *consumed;          /**< an extraction's bytes read      */
 };
 
-/** @brief Room for one more entry, cleared.  @return it, or NULL. */
+/** @brief Room for one more entry, cleared, its sizes and time unknown.
+ *  @return it, or NULL. */
 arc_entry_t *arc_add(tiku_archive_t *a);
 
 /**
  * @brief @p n bytes of a stored name made a path: separators '/', a
  *        leading '/' or drive taken off, "." parts dropped.  Refused --
  *        TIKU_ARC_REFUSED in @p flags, the name kept printable -- when a
- *        part is "..", holds a control character, or is too long.
+ *        part is "..", holds a control character or is longer than
+ *        ARC_PART_MAX, or the path is longer than ARC_PATH_MAX.
  *        @p backslash: '\' separates too (names from DOS and Windows).
  * @return the path, malloc'd; NULL out of memory.  @p dir is set when it
- *         ended in '/'.
+ *         ended in a separator.
  */
 char *arc_clean_name(const char *raw, size_t n, int backslash,
                      unsigned *flags, int *dir);
@@ -106,14 +113,32 @@ int arc_spans_overlap(int64_t *span, long n);
 /** @brief Whether a 512-byte block is a tar header: its checksum holds. */
 int arc_tar_header_ok(const unsigned char *block);
 
+/**
+ * @brief List a ZIP from its central directory, ZIP64's included, then
+ *        find each entry's data from its local header and read the links'
+ *        targets.
+ * @return OK; NOMEM when the directory cannot be held; else DAMAGED when
+ *         the directory does not hold, a local header is not where it
+ *         says, or entries' data overlap or run into the directory.
+ */
 tiku_archive_err_t arc_zip_list(tiku_archive_t *a);
-/** @brief The symbolic links' targets, read from their data. */
+/** @brief The symbolic links' targets, read from their data; a link whose
+ *         data cannot be read or is longer than ARC_LINK_MAX keeps none.
+ *  @return OK. */
 tiku_archive_err_t arc_zip_links(tiku_archive_t *a);
+/**
+ * @brief List a tar, or a tar in gzip, a header at a time, telling
+ *        @p progress (which may be NULL) the file's bytes read.  The
+ *        archive's own "." folder is left out.
+ * @return OK, NOMEM or CANCELLED.  A break marks @p a damaged and keeps
+ *         what came before, or is DAMAGED when nothing did.
+ */
 tiku_archive_err_t arc_tar_list(tiku_archive_t *a,
                                 tiku_archive_progress_t progress, void *ctx);
 
 /** @brief A ZIP entry's data, decoded.  @return it, or NULL with @p why
- *         set. */
+ *         set: ENCRYPTED, UNSUPPORTED for a method other than stored,
+ *         deflate and deflate64, or NOMEM. */
 arc_stream_t *arc_zip_data(tiku_archive_t *a, const arc_entry_t *e,
                            tiku_archive_err_t *why);
 
@@ -123,10 +148,10 @@ arc_stream_t *arc_tar_stream(tiku_archive_t *a, int64_t *consumed);
 
 /** @brief A tar walked a header at a time. */
 typedef struct {
-    arc_stream_t *s;                /* the tar's bytes, in order         */
-    int64_t       left;             /* the current entry's bytes unread  */
-    int64_t       pad;              /* then padding to 512               */
-    long          index;            /* entries listed so far             */
+    arc_stream_t *s;                /**< the tar's bytes, in order       */
+    int64_t       left;             /**< the current entry's bytes unread */
+    int64_t       pad;              /**< then padding to 512             */
+    long          index;            /**< entries read so far             */
 } arc_tar_t;
 
 /**
@@ -135,7 +160,8 @@ typedef struct {
  * @return 1 for an entry, 0 at the archive's end, -1 for damage.
  */
 int arc_tar_next(arc_tar_t *t, arc_entry_t *e);
-/** @brief Up to @p max of the current entry's bytes.  @return how many. */
+/** @brief Up to @p max of the current entry's bytes.  @return how many,
+ *         0 at its end, or -1 when the tar's bytes fail. */
 long arc_tar_read(arc_tar_t *t, unsigned char *buf, long max);
 
 #endif /* TIKU_ARCHIVE_PRIVATE_H_ */

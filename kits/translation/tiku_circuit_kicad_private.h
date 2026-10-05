@@ -34,35 +34,35 @@
 
 /** @brief One linked sheet, as its parent's sheet object names it. */
 typedef struct {
-    char name[256];                 /* the Sheetname property            */
-    char file[512];                 /* the Sheetfile property            */
-    char uuid[KC_UUID_BYTES];       /* the sheet object's UUID           */
-    char page[64];                  /* this instance's page, or empty    */
-    unsigned line, column;          /* the sheet object's source location */
+    char name[256];                 /**< the Sheetname property          */
+    char file[512];                 /**< the Sheetfile property          */
+    char uuid[KC_UUID_BYTES];       /**< the sheet object's UUID         */
+    char page[64];                  /**< this instance's page, or empty  */
+    unsigned line, column;          /**< the sheet object's source location */
 } circuit_kc_link_t;
 
 /** @brief The sheets a document links, collected for the project loader. */
 typedef struct {
-    circuit_kc_link_t link[TIKU_CIRCUIT_SHEETS_MAX];  /* in file order   */
-    size_t count;                   /* links collected                   */
+    circuit_kc_link_t link[TIKU_CIRCUIT_SHEETS_MAX];  /**< in file order */
+    size_t count;                   /**< links collected                 */
 } circuit_kc_links_t;
 
 /** @brief A decode under way. */
 typedef struct {
-    circuit_sx_t sx;                /* borrowed syntax, unchanged        */
-    tiku_circuit_t *doc;            /* the scene, published on success   */
-    const tiku_circuit_import_t *options;   /* font and cancellation     */
-    tiku_circuit_diagnostic_t *diag;        /* the first failure, or NULL */
-    tiku_circuit_err_t error;       /* the first failure                 */
-    size_t work;                    /* checked operations so far         */
-    size_t libraries;               /* the lib_symbols list, or SX_NONE  */
-    size_t searched;                /* the list a child was last missing */
-                                    /* from: where its absence is noted  */
-    const char *instance;           /* this sheet's UUID path, or NULL   */
-    const char *project;            /* the preferred project bucket      */
-    circuit_kc_links_t *links;      /* collects sheets; NULL refuses them */
-    int child;                      /* a child sheet: instance tables    */
-                                    /* must name every symbol            */
+    circuit_sx_t sx;                /**< borrowed syntax, unchanged      */
+    tiku_circuit_t *doc;            /**< the scene, published on success */
+    const tiku_circuit_import_t *options;   /**< font and cancellation   */
+    tiku_circuit_diagnostic_t *diag;        /**< the first failure, or NULL */
+    tiku_circuit_err_t error;       /**< the first failure               */
+    size_t work;                    /**< checked operations so far       */
+    size_t libraries;               /**< the lib_symbols list, or SX_NONE */
+    size_t searched;                /**< the list a child was last missing
+                                         from: where its absence is noted */
+    const char *instance;           /**< this sheet's UUID path, or NULL */
+    const char *project;            /**< the preferred project bucket    */
+    circuit_kc_links_t *links;      /**< collects sheets; NULL refuses them */
+    int child;                      /**< a child sheet: instance tables
+                                         must name every symbol          */
 } circuit_kc_t;
 
 /** @brief Note the first failure at node @p n's source position.  For

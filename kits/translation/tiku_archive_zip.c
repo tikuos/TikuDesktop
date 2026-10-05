@@ -6,9 +6,11 @@
  *
  * tiku_archive_zip.c - ZIP (PKWARE's APPNOTE 6.3.10): listed from the
  * central directory at its end, ZIP64 included, offsets counted from
- * wherever the archive starts in its file.  Names are UTF-8 when marked
- * or when they read as it, else DOS's code page 437.  Entries whose data
- * overlaps -- the way zip bombs are made -- close the archive.
+ * wherever the archive starts in its file.  A name is UTF-8 when it reads
+ * as UTF-8, else DOS's code page 437 (Latin-1 when marked UTF-8); an
+ * Info-ZIP UTF-8 name whose CRC matches takes its place.  An archive in
+ * which two entries' data overlap, the construction of a zip bomb, is
+ * refused as damaged.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,14 +36,14 @@ le16(const unsigned char *p)
     return (uint32_t)p[0] | (uint32_t)p[1] << 8;
 }
 
-/** @brief A little-endian 32-bit one. */
+/** @brief A little-endian 32-bit number out of a record. */
 static uint32_t
 le32(const unsigned char *p)
 {
     return le16(p) | le16(p + 2) << 16;
 }
 
-/** @brief A little-endian 64-bit one. */
+/** @brief A little-endian 64-bit number out of a record. */
 static uint64_t
 le64(const unsigned char *p)
 {
@@ -61,8 +63,9 @@ read_at(const tiku_archive_t *a, int64_t off, unsigned char *buf, size_t n)
     return got == (ssize_t)n ? 0 : -1;
 }
 
-/** @brief Where the central directory is, and how many entries it has:
- *         from the end record, or ZIP64's when that one points to it.
+/** @brief Where the central directory is, its size and how many entries
+ *         it has, from the end record found nearest the file's end, and
+ *         in @p at where that record is.
  *  @return 0, or -1 when there is no end record that fits. */
 static int
 find_directory(tiku_archive_t *a, int64_t *cd_off, int64_t *cd_size,
@@ -95,8 +98,10 @@ find_directory(tiku_archive_t *a, int64_t *cd_off, int64_t *cd_size,
     return 0;
 }
 
-/** @brief ZIP64's end record, when the end record's fields overflowed
- *         and a locator stands just before it.  @return 0, or -1. */
+/** @brief ZIP64's end record, when its locator stands just before the end
+ *         record at @p at: its fields replace the end record's.
+ *  @return 0, also when there is no locator; -1 when the record it
+ *          locates is not there. */
 static int
 find_zip64(tiku_archive_t *a, int64_t *cd_off, int64_t *cd_size,
            int64_t *entries, int64_t *at)
@@ -109,8 +114,9 @@ find_zip64(tiku_archive_t *a, int64_t *cd_off, int64_t *cd_size,
         return 0;                   /* no locator: not ZIP64 */
     }
     where = (int64_t)le64(loc + 8);
-    /* The record sits just before its locator; where it says it is only
-     * counts when nothing came before the archive. */
+    /* The record is looked for just before its locator first: the
+     * locator's own offset is right only when nothing comes before the
+     * archive in its file. */
     if (read_at(a, *at - 20 - 56, rec, 56) == 0 &&
         le32(rec) == 0x06064b50u) {
         where = *at - 20 - 56;
@@ -146,8 +152,8 @@ static const uint16_t cp437[128] = {
     0x25a0, 0x00a0
 };
 
-/** @brief Whether @p n bytes are well-formed UTF-8, as far as a guess
- *         at a name's encoding needs: lead bytes and their followers. */
+/** @brief Whether @p n bytes have UTF-8's shape: each lead byte followed
+ *         by its continuation bytes.  Overlong forms and surrogates pass. */
 static int
 is_utf8(const unsigned char *s, size_t n)
 {
@@ -230,7 +236,8 @@ method_name(int m)
     return "unknown";
 }
 
-/** @brief DOS's local date and time, in seconds since 1970. */
+/** @brief DOS's local date and time, in seconds since 1970; INT64_MIN
+ *         for no date. */
 static int64_t
 dos_time(uint32_t time, uint32_t date)
 {
@@ -356,14 +363,16 @@ entry_from(tiku_archive_t *a, const unsigned char *r, size_t room)
         e->pub.flags |= TIKU_ARC_METADATA;
     }
     if (e->pub.path[0] == '\0' && e->pub.type == TIKU_ARC_DIR) {
-        free((char *)e->pub.path);  /* "/" itself: the folder made */
+        free((char *)e->pub.path);  /* "/" is the destination itself */
         a->count--;
     }
     return (long)(ENTRY_MIN + nlen + xlen + clen);
 }
 
 /** @brief Where each entry's data starts, from its local header, and
- *         whether any two entries' spans overlap.  @return 0, or -1. */
+ *         whether any two entries' spans overlap.  @return 0, or -1 for a
+ *         missing local header, data running into the directory, an
+ *         overlap or no memory. */
 static int
 place_data(tiku_archive_t *a)
 {

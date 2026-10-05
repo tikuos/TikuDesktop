@@ -91,7 +91,7 @@ group_span(const ch_chart_t *k, const ch_group_t *g, int ai, double *lo,
 /* ----------------------------------------------------------------- scale  */
 
 /** @brief The step one, two or five times a power of ten that parts
- *         @p range into at most @p most intervals, or near it. */
+ *         @p range into at most @p most intervals. */
 static double
 nice(double range, int most)
 {
@@ -132,8 +132,10 @@ log_scale(ch_axis_t *a, double mn, double mx)
 }
 
 /** @brief Where an automatic scale starts and ends about @p mn .. @p mx:
- *         zero kept unless every value sits within a sixth of the top,
- *         and a twentieth of the range spare. */
+ *         values all of one sign are measured from zero, unless all sit
+ *         in the sixth farthest from it, when the scale stops half the
+ *         range short of them; every other end has a twentieth of the
+ *         range spare. */
 static void
 reach(double mn, double mx, double *lo, double *hi)
 {

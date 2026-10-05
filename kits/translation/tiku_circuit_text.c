@@ -6,8 +6,8 @@
  *
  * tiku_circuit_text.c - outline text in a scene: a string placed through
  * a matrix, its box measured in the substitute font, and its glyphs drawn
- * at the view's scale.  A character the font lacks refuses the text
- * rather than leaving a gap in it.
+ * at the view's scale.  Text with a character the font lacks is refused
+ * as TIKU_CIRCUIT_UNSUPPORTED.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

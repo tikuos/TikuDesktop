@@ -4,7 +4,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_iconpaint.c - compositing a rendered icon onto a surface.
+ * tiku_iconpaint.c - icons, thumbnails and pictures composited onto an
+ * opaque surface, tinted and inverted rubber bands, and haloed text; each
+ * recorded on a recording surface's list as a command, or marked there as
+ * a draw the list cannot carry.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,8 +27,7 @@ over(uint32_t src, tiku_rgb_t dst)
     unsigned inv = 255u - a;
     unsigned r, g, b;
 
-    /* Source is already multiplied by its own alpha, so the destination just
-     * loses the same fraction: dst * (1 - a) + src. */
+    /* The source is premultiplied: dst * (1 - a) + src. */
     r = ((src >> 16) & 0xFFu) + (((dst >> 16) & 0xFFu) * inv + 127u) / 255u;
     g = ((src >> 8) & 0xFFu)  + (((dst >> 8) & 0xFFu) * inv + 127u) / 255u;
     b = (src & 0xFFu)         + ((dst & 0xFFu) * inv + 127u) / 255u;
@@ -35,7 +37,8 @@ over(uint32_t src, tiku_rgb_t dst)
     return TIKU_RGB(r, g, b);
 }
 
-/** @brief Composite an already-derived bitmap: the cached-look path. */
+/** @brief Composite a premultiplied @p size square bitmap, such as a cached
+ *         washed render, with its top-left at (@p x, @p y). */
 static int
 paint_bmp(tiku_surface_t *s, const uint32_t *bmp, int x, int y,
           int size)
@@ -66,6 +69,12 @@ paint_bmp(tiku_surface_t *s, const uint32_t *bmp, int x, int y,
     return 1;
 }
 
+/**
+ * @brief Composite icon @p name at @p size with its top-left at (@p x,
+ *        @p y), washed toward @p wash by @p mix (0 to 1), and greyed when
+ *        the theme is achromatic.
+ * @return 1 when it was drawn, 0 for an unknown name or a failed render.
+ */
 static int
 paint(tiku_surface_t *s, const char *name, int x, int y, int size,
       float mix, tiku_rgb_t wash)
@@ -73,13 +82,11 @@ paint(tiku_surface_t *s, const char *name, int x, int y, int size,
     const uint32_t *bmp;
     int row, col;
     unsigned m;
-    /* Asked once for the whole icon, not per pixel: it cannot change
-     * while one is being painted. */
+    /* Asked once per icon; it cannot change while one is painted. */
     int mono = tiku_theme_achromatic();
 
-    /* What this says to a recording list is the ENTRY's business: an
-     * icon has a definition and records as a command, and a miss here
-     * would refuse exactly the lists the command exists to keep. */
+    /* The public entries record the icon as a command; nothing here
+     * marks the list as missing a draw. */
     if (s == NULL || name == NULL || size <= 0) {
         return 0;
     }
@@ -125,16 +132,6 @@ paint(tiku_surface_t *s, const char *name, int x, int y, int size,
     return 1;
 }
 
-/**
- * @brief Draw one icon command from a stream: tiku_dl's injected player.
- *
- * The blob crossed the wire; this end parses and rasterises it at the
- * size asked for, then composites with the SAME loop paint() uses --
- * over, then the wash, then this end's own achromatic answer -- so a
- * played icon is the pixels drawing it here would have made.  Rendering
- * per call rather than through the name cache, because a streamed blob
- * has no name: it is its bytes.
- */
 int
 tiku_icon_stream_play(tiku_surface_t *s, const void *hvif, size_t hlen,
                       int x, int y, int size, unsigned mix,
@@ -200,13 +197,12 @@ tiku_icon_stream_play(tiku_surface_t *s, const void *hvif, size_t hlen,
 }
 
 /**
- * @brief Say to the list what the surface was just given.
+ * @brief Record on @p s's list the icon an entry just painted.
  *
- * Called between rec_enter and rec_leave by the three icon entries, and
- * only when the paint actually happened -- a name nothing carries put
- * nothing on the surface, so there is nothing to say.  tiku_dl_icon
- * keeps its own record-or-miss contract; the one failure it cannot see
- * is a name with no blob behind it, and that is marked here.
+ * Called between rec_enter and rec_leave by the three icon entries.
+ * Nothing is recorded when @p painted is 0.  tiku_dl_icon records or
+ * marks a miss itself; a name with no blob behind it, which it cannot
+ * see, is marked as a miss here.
  */
 static void
 record_icon(tiku_surface_t *s, const char *name, int x, int y, int size,
@@ -266,13 +262,10 @@ tiku_icon_paint_selected(tiku_surface_t *s, const char *name, int x,
     int rec = tiku_gfx_rec_enter(s);
     int done;
 
-    /* The source's exact transform (IV-018): every channel multiplied to
-     * 66% brightness (168/255) with the alpha kept -- a darkened icon, not
-     * a tinted one, so the art stays recognisable in any palette.  Derived
-     * once and CACHED beside the plain render, so a selected composite
-     * costs what a plain one does (IV-019); the wash falls back to the
-     * per-pixel path only when the cache cannot hold.  A wash toward black
-     * at 87/255 IS the 168/255 multiply. */
+    /* Every channel multiplied by 168/255 with the alpha kept (IV-018),
+     * which is a wash toward black at 87/255.  The washed render is cached
+     * beside the plain one (IV-019); the per-pixel wash runs only when it
+     * cannot be made. */
     {
         const uint32_t *w = tiku_icons_bitmap_washed(name, size,
             0x000000u, 87u);
@@ -281,9 +274,7 @@ tiku_icon_paint_selected(tiku_surface_t *s, const char *name, int x,
                            : paint(s, name, x, y, size, 0.341f,
                                    TIKU_RGB(0, 0, 0));
     }
-    /* Recorded whichever internal road drew it, which is the fault the
-     * old arrangement had: the cached road never reached the place the
-     * saying was done. */
+    /* Recorded whichever path drew it, the cached one included. */
     if (rec) {
         record_icon(s, name, x, y, size, 87u, 0u, done);
     }
@@ -302,9 +293,9 @@ tiku_thumb_paint(tiku_surface_t *s, const tiku_image_t *th,
         return;
     }
     if ((long)size * (long)size > TIKU_DL_PICTURE_MAX) {
-        /* Too big to travel as one picture, and too big for the buffer
-         * that scales it: drawn straight, and the recorder is told by
-         * tiku_pixel that the list is not whole. */
+        /* Too big for one display-list picture and for the scaling
+         * buffer: drawn pixel by pixel, and tiku_pixel marks a recording
+         * list as missing a draw. */
         for (py = 0; py < size; py++) {
             long sy = (long)py * th->h / size;
 
@@ -323,12 +314,9 @@ tiku_thumb_paint(tiku_surface_t *s, const tiku_image_t *th,
         return;
     }
     /*
-     * Scaled HERE and drawn as the picture it became, so what crosses
-     * the wire is what a person sees: the far end draws a bitmap rather
-     * than re-deriving a scale it would have to agree with.  The
-     * transparent margin travels with it, which is what makes the
-     * thumbnail sit ON the row instead of inside a square of its own
-     * (IV-034).
+     * Scaled here and drawn with tiku_picture(), so a recording list
+     * carries the scaled bitmap.  Its transparent margin goes with it, and
+     * the row shows through the margin (IV-034).
      */
     for (py = 0; py < size; py++) {
         long sy = (long)py * th->h / size;
@@ -353,12 +341,12 @@ tiku_icon_hit(const char *name, int size, int px, int py)
     }
     bm = tiku_icons_bitmap(name, size);
     if (bm == NULL) {
-        /* No art: the whole square answers, which is better than an icon
-         * that cannot be picked up at all. */
+        /* No art: the whole square answers, so the icon can still be
+         * picked up. */
         return 1;
     }
-    /* Any alpha at all counts.  A threshold would make the antialiased
-     * rim undraggable, and the rim is most of what a small icon is. */
+    /* Any alpha counts, so the antialiased rim, most of a small icon, can
+     * be grabbed. */
     return ((bm[(long)py * size + px] >> 24) != 0u);
 }
 
@@ -366,7 +354,7 @@ void
 tiku_paint_tint(tiku_surface_t *s, tiku_rect_t r,
                     tiku_rgb_t c, int a)
 {
-    tiku_gfx_rec_miss(s);   /* a wash over what is there has no op */
+    tiku_gfx_rec_miss(s);   /* a blend has no display-list command */
 
     int x, y;
     int cr = (int)((c >> 16) & 0xffu), cg = (int)((c >> 8) & 0xffu);
@@ -405,10 +393,8 @@ tiku_paint_band(tiku_surface_t *s, tiku_rect_t r,
                     int transparent)
 {
     /*
-     * No miss of its own: every road out of here is one -- the opaque
-     * band inverts, and the transparent one is five tints -- and each of
-     * those says so for itself.  Saying it again here would count one
-     * band as six.
+     * No miss marked here: tiku_invert_frame and each of the five tints
+     * mark their own.
      */
     if (s == NULL || r.w <= 0 || r.h <= 0) {
         return;
@@ -418,10 +404,9 @@ tiku_paint_band(tiku_surface_t *s, tiku_rect_t r,
         return;
     }
     {
-        /* The edge is tinted harder than the middle, so the band has a
-         * definite boundary without hiding the row under it -- four
-         * strips, because a fill of the whole rect would put the edge
-         * colour under the interior too. */
+        /* The edge is four one-pixel strips of the focus colour at
+         * 128/255, the interior the selection colour at 90/255; the strips
+         * do not overlap the interior. */
         tiku_rect_t in = { r.x + 1, r.y + 1, r.w - 2, r.h - 2 };
         tiku_rect_t e;
 
@@ -450,7 +435,7 @@ tiku_paint_image(tiku_surface_t *s, const tiku_image_t *im,
         return;
     }
     if (s != NULL && s->record != NULL && s->record_depth == 0) {
-        tiku_dl_miss(s->record);        /* a thumbnail is a picture too */
+        tiku_dl_miss(s->record);        /* a picture has no command */
     }
     for (py = 0; py < dst.h; py++) {
         int y = dst.y + py;
@@ -468,15 +453,13 @@ tiku_paint_image(tiku_surface_t *s, const tiku_image_t *im,
                 continue;
             }
             p = im->px[sy * im->w + sx];
-            /* Transparent pixels leave the ground alone, so a picture with
-             * a hole in it shows what is behind rather than black. */
+            /* Transparent pixels are skipped: what is behind shows through
+             * a hole in the picture. */
             if ((p >> 24) != 0u) {
                 tiku_rgb_t c = TIKU_RGB((p >> 16) & 0xffu,
                                              (p >> 8) & 0xffu, p & 0xffu);
 
-                /* A thumbnail is a picture too: on a desktop asked for
-                 * without colour it is the loudest thing on the screen
-                 * if it keeps its own. */
+                /* Greyed with everything else on an achromatic theme. */
                 tiku_pixel(s, x, y,
                                 tiku_theme_achromatic() ? tiku_grey(c) : c);
             }
@@ -493,8 +476,6 @@ tiku_paint_text_halo(tiku_surface_t *s, const tiku_font_t *f,
     int luminance = ((int)((ink >> 16) & 0xffu) * 299 +
                      (int)((ink >> 8) & 0xffu) * 587 +
                      (int)(ink & 0xffu) * 114) / 1000;
-    /* Light ink is haloed in black and dark ink in white, as the source
-     * chooses shine for dark text and black for light. */
     tiku_rgb_t halo = (luminance > 127) ? TIKU_RGB(0, 0, 0)
                                              : TIKU_RGB(255, 255, 255);
     int i;

@@ -7,10 +7,10 @@
  * tiku_fax.c - CCITT Group 3 and Group 4 decoding.
  *
  * A one-dimensional row is runs of white and black, alternating from
- * white, each a Huffman code; a two-dimensional row says instead where
- * its colour changes against the row above (T.4 4.2: the vertical, pass
- * and horizontal modes).  So a row is kept as the columns where its
- * colour changes, which is also how the next row reads it.
+ * white, each a Huffman code; a two-dimensional row gives where its
+ * colour changes against the row above (T.4 4.2: the vertical, pass and
+ * horizontal modes).  So a row is kept as the columns where its colour
+ * changes, which is also how the next row reads it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define COLUMNS_MAX 65536           /* wider than any scanner's row     */
+#define COLUMNS_MAX 65536           /* the widest row read, in pixels   */
 #define PEEK        13              /* the longest run code, in bits    */
 #define EOL         0x001           /* eleven 0s and a 1                */
 #define EOFB        0x001001        /* Group 4's end: two EOLs          */
@@ -378,7 +378,8 @@ row_start(fax_t *f, const tiku_fax_t *p, int *twod)
     return !spent(f);
 }
 
-/** @brief @p buf grown to hold @p want bytes, within @p omax. */
+/** @brief @p buf grown to hold @p want bytes, within @p omax.
+ *  @return 0, or -1 past @p omax or out of memory. */
 static int
 room(unsigned char **buf, long *cap, long want, long omax)
 {
@@ -405,8 +406,9 @@ room(unsigned char **buf, long *cap, long want, long omax)
 }
 
 /** @brief Row after row until the rows asked for, the block or the bits
- *         end, or a row will not read.  @return the bytes, or -1 when
- *         none read or they will not fit. */
+ *         end, or a row will not read; rows asked for and not read are
+ *         white.  @return the bytes, or -1 when they will not fit or, with
+ *         no row count, none read. */
 static long
 rows(fax_t *f, const tiku_fax_t *p, unsigned char **out, long omax)
 {

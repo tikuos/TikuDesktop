@@ -87,7 +87,8 @@ kc_glabel(circuit_kc_t *k, size_t n)
     }
     /* An input tag's point sits on the anchor and an output's at the far
      * end; a bidirectional or tri-state tag has both.  The body's length
-     * follows the substitute font, not KiCad's stroke font. */
+     * follows the substitute font's text, so it can differ from the
+     * length KiCad draws. */
     double near = (input || both) ? TAG_POINT * h : 0;
     double far = (output || both) ? TAG_POINT * h : 0;
     double margin = TAG_MARGIN * h, length = near + far + width + 2 * margin;

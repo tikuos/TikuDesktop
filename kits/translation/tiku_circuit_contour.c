@@ -45,8 +45,8 @@ between(circuit_point_t a, circuit_point_t b, circuit_point_t p)
            p.y <= fmax(a.y, b.y);
 }
 
-/** @brief Even-odd containment of @p q in the loops of @p p but loop
- *         @p exclude: one pass over the edges keeps many holes cheap. */
+/** @brief Even-odd containment of @p q in the loops of @p p other than
+ *         loop @p exclude, in one pass over the edges. */
 static int
 inside(const circuit_point_t *p, const int *loop, size_t n, int exclude,
        circuit_point_t q)

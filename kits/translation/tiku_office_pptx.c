@@ -8,11 +8,11 @@
  *
  * A slide is drawn over its layout, and the layout over its master: the
  * first background any of them has, the master's own shapes unless the
- * layout hides them, the layout's, then the slide's.  A placeholder on a
- * slide takes its place and its look from the layout's placeholder of the
- * same index or type, and that one from the master's; an empty one is not
- * drawn, as a slide show does not draw it.  Each slide's title is kept
- * for the outline, so a viewer can list the slides by name.
+ * layout or the slide hides them, the layout's unless the slide hides
+ * them, then the slide's.  A placeholder on a slide takes its place and
+ * its look from the layout's placeholder of the same index or type, and
+ * that one from the master's; an empty one is not drawn.  Each slide's
+ * title is marked in the PDF's outline.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -118,7 +118,7 @@ background(px_t *x, const tiku_xml_node_t *csld, const char *part)
                      : dml_ref_fill(&x->dml, tiku_xml_child(bg, "p:bgRef"), 1,
                                     &f);
     if (!got) {
-        return 0;                   /* a fill that is none read here */
+        return 0;                   /* no fill, or one not read here */
     }
     if (dml_geometry(NULL, x->w, x->h, &g) == 0) {
         dml_paint_fill(&x->dml, &f, &g, &id, x->w, x->h);
@@ -272,8 +272,8 @@ draw_slide(px_t *x, const char *part, tiku_xml_t *sx, tiku_xml_t *lx,
 }
 
 /** @brief Slide @p part drawn on a page of its own, its title marked in
- *         the outline; a hidden one left out, as PowerPoint's own PDFs
- *         leave it.  @return 0, or -1 when there was no memory. */
+ *         the outline; a hidden one is left out.  @return 0, or -1 when
+ *         there was no memory. */
 static int
 slide(px_t *x, const char *part)
 {
@@ -312,7 +312,8 @@ slide(px_t *x, const char *part)
     return err;
 }
 
-/** @brief The deck's title from its core properties, for the file. */
+/** @brief The deck's title and author from its core properties, for the
+ *         file's Info. */
 static void
 info(px_t *x)
 {
@@ -363,7 +364,7 @@ of_pptx_draw(of_pkg_t *pkg, of_faces_t *fs, tiku_pdf_writer_t *w, char *why,
     x->dml.text_ctx = x;
     x->dml.frame = frame;
     x->dml.frame_ctx = x;
-    x->dml.text_pt = 18;            /* PowerPoint's, for a chart */
+    x->dml.text_pt = 18;            /* a chart's default text size */
     dml_map_read(&x->dml, NULL);
     info(x);
     for (id = tiku_xml_path(root, "p:sldIdLst/p:sldId"); id != NULL &&

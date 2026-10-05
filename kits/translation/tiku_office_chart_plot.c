@@ -751,7 +751,8 @@ hilo(pl_t *q)
 }
 
 /** @brief A line group's up-down bars: from its first series to its last,
- *         light going up, dark going down. */
+ *         in the group's up fill where the last is higher, its down fill
+ *         where lower. */
 static void
 updown(pl_t *q)
 {
@@ -1066,8 +1067,8 @@ other(pl_t *q, const ch_series_t *s, const pl_arc_t *c, double share,
                   c->cy - c->r1 * 0.62f * (float)cos(mid), 1, 1);
 }
 
-/** @brief A bar of pie's second plot: its points stacked in a bar @p w
- *         wide from @p x, @p h tall about @p cy, each its share of
+/** @brief A bar of pie's second plot: its points stacked in the bar
+ *         @p at (x y w h), centred on the pie's middle, each its share of
  *         @p sum. */
 static void
 second_bar(pl_t *q, const ch_series_t *s, double total, double sum,
@@ -1122,10 +1123,11 @@ part_ring(pl_t *q, const ch_series_t *s, int second, pl_arc_t *c,
     }
 }
 
-/** @brief A pie of pie or bar of pie in plot box @p p: the first plot's
- *         points round a pie, the rest gathered as "Other" facing the
- *         second plot (a smaller pie, or a bar) that shows them apart,
- *         the two joined by the group's series lines. */
+/** @brief Draw a pie of pie or bar of pie in plot box @p p: the first
+ *         plot's points go round a pie, and the rest make its "Other"
+ *         slice, which faces the second plot (a pie or a bar, second_size
+ *         percent of the first's size) that shows them one by one.  When
+ *         the group has series lines, they join the two plots. */
 static void
 of_pie(pl_t *q, const ch_box_t *p)
 {

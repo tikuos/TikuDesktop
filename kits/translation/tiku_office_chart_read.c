@@ -639,7 +639,7 @@ errbars_read(ch_chart_t *k, const tiku_xml_node_t *ser, ch_series_t *s)
 }
 
 /** @brief Whether a series' bars below nought are drawn inverted, and in
- *         what (white, unless a later Office said). */
+ *         what: white, or the fill its invertSolidFillFmt extension gives. */
 static void
 invert_read(ch_chart_t *k, const tiku_xml_node_t *ser, ch_series_t *s)
 {

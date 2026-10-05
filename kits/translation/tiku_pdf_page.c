@@ -241,7 +241,7 @@ tiku_pdf_page_size(tiku_pdf_t *doc, int page, double *w, double *h,
                &y1);
     if (rect(doc, pdf_page_inherited(doc, p, "CropBox"), &cx0, &cy0, &cx1,
              &cy1) && cx0 < x1 && cx1 > x0 && cy0 < y1 && cy1 > y0) {
-        /* What a viewer shows is the crop, within the media. */
+        /* The page is the crop box, within the media box. */
         if (cx0 > x0) x0 = cx0;
         if (cy0 > y0) y0 = cy0;
         if (cx1 < x1) x1 = cx1;

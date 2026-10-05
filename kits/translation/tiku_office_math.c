@@ -583,7 +583,8 @@ stroke(ml_t *ml, const unsigned char *op, const float *xy, int n, float lw)
 }
 
 /** @brief Character @p cp drawn as strokes, @p h high (from 0 up) and
- *         @p w wide: a bracket, a brace, a bar, an arrow, a root.
+ *         @p w wide: a bracket (round, square, angled, a ceiling or a
+ *         floor), a bar, a brace or a root.
  *  @return 1 when it was one drawn so, 0 when it was not. */
 static int
 drawn_upright(ml_t *ml, uint32_t cp, float w, float h, float lw)
@@ -793,7 +794,7 @@ ml_stretch(ml_t *ml, uint32_t cp, int vert, float need, const ms_t *st,
         need <= st->size * 1.1f ||
         !(vert ? drawn_upright(ml, cp, wide, high, lw)
                : drawn_across(ml, cp, wide, high, lw))) {
-        return;                     /* big enough, or nothing better */
+        return;                     /* big enough, or no shape for it */
     }
     from = out->from;               /* the drawing alone, the glyph gone */
     memmove(&ml->it[from], &ml->it[end],
@@ -834,7 +835,7 @@ plain(ml_t *ml, const of_mnode_t *n, const ms_t *st, mb_t *out)
     ms_t s = *st;
     float pad = st->size * 0.1f, lw = st->size * 0.04f;
 
-    if (n->kind == OM_SPACE) {      /* within reason, however written */
+    if (n->kind == OM_SPACE) {      /* -4 to 40 ems, whatever is written */
         ml_empty(ml, out);
         out->w = isfinite(n->em) ? fmaxf(-4, fminf(n->em, 40)) * st->size
                                  : 0;

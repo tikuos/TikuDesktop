@@ -35,7 +35,7 @@ typedef struct {
     const char *path, *root;        /* its file; root is empty for an    */
                                     /* explicit file, else the job's     */
     const char *label;              /* file name or the job's declared   */
-                                    /* function, not an inferred role    */
+                                    /* function                          */
     uint32_t colour;                /* display RGB; alpha is ignored     */
     unsigned opacity;               /* 0 to 255                          */
     int visible;                    /* drawn, searched and picked        */
@@ -48,10 +48,12 @@ typedef struct {
  * @brief A stack of @p count layers, front first: descriptors and their
  *        strings copied, scenes retained.
  *
- * Scenes must be flat: neither stacks nor text.  A changed layer needs a
- * new stack; a render still drawing the old one keeps it.
+ * A changed layer needs a new stack; a render still drawing the old one
+ * keeps it.
  *
  * @return OK, or BAD, LIMIT or NOMEM with @p out unchanged
+ * @note Scenes must be flat: neither stacks nor text.  A layer without a
+ *       scene needs a diagnostic code.
  */
 tiku_circuit_err_t tiku_circuit_stack(const tiku_circuit_layer_t *layers,
                                       size_t count, tiku_circuit_t **out);
@@ -77,13 +79,19 @@ int tiku_circuit_stack_incomplete(const tiku_circuit_t *stack);
  *         nothing about the physical layer. */
 uint32_t tiku_circuit_layer_colour(size_t index);
 
-/** @brief Open a Gerber job: read its FilesAttributes through @p resolver
- *         and stack the files in the job's order.  A file that cannot be
- *         read or decoded, one over its own limits included, stays as an
- *         unavailable entry.  Allocation failure, cancellation and the
- *         job's 64 MiB read and scene budgets fail the whole job, leaving
- *         *out untouched; @p diag then reads "<path>[, line N]: <message>".
- *         The resolver keeps reads confined. */
+/**
+ * @brief Open a Gerber job: read its FilesAttributes through @p resolver
+ *        and stack the files in the job's order.
+ *
+ * A file that cannot be read or decoded, one over its own limits
+ * included, stays as an unavailable entry.  Allocation failure,
+ * cancellation and the job's 64 MiB read and scene budgets fail the whole
+ * job, leaving *out untouched; when a file's failure ends the job,
+ * @p diag reads "<path>[, line N]: <message>".
+ *
+ * @note The resolver keeps reads confined; the job passes it the paths
+ *       as written.
+ */
 tiku_circuit_err_t tiku_circuit_job_open(const char *root,
     const tiku_circuit_import_t *options,
     const tiku_circuit_resolver_t *resolver, tiku_circuit_t **out,

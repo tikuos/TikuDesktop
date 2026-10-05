@@ -228,8 +228,9 @@ poc(const jpx_t *j, jpx_style_t *st, const unsigned char *p, long n)
 
 /**
  * @brief One marker segment of a header applied to @p st: COD, COC,
- *        QCD, QCC, RGN or POC (A.6).  The caller gives them in the order
- *        that makes a component's own override the whole's.
+ *        QCD, QCC, RGN or POC (A.6).
+ * @note The caller gives them in the order that makes a component's own
+ *       override the whole's.
  */
 static int
 apply(jpx_t *j, jpx_style_t *st, const mseg_t *s)
@@ -576,8 +577,9 @@ band_quant(const jpx_t *j, int c, const jpx_style_t *st, int r,
 }
 
 /** @brief Precinct (@p i, @p k)'s area in band @p b of resolution @p r
- *         (B.6): the resolution's partition, halved below the top one,
- *         clipped to the band; into @p a as x0, y0, x1, y1. */
+ *         (B.6): the resolution's partition, halved in the bands of any
+ *         resolution above 0, clipped to the band; into @p a as x0, y0,
+ *         x1, y1. */
 static void
 precinct_area(const jpx_res_t *rs, int r, const jpx_band_t *b, int i, int k,
               int64_t a[4])

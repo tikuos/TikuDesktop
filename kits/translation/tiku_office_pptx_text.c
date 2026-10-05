@@ -26,7 +26,7 @@
 #include <strings.h>
 
 #define EMU    12700.0f             /* EMUs to a point                   */
-#define LEVELS 9
+#define LEVELS 9                    /* a list style's levels             */
 
 enum {                              /* which run properties are set      */
     XR_SIZE = 1u << 0, XR_BOLD = 1u << 1, XR_ITALIC = 1u << 2,
@@ -56,7 +56,7 @@ typedef struct {
     unsigned      set;              /* XP_*                              */
     unsigned char align;            /* OF_*                              */
     float         marl, indent;     /* points                            */
-    float         line;             /* a multiple, or points when < 0    */
+    float         line;             /* points, or a multiple when < 0    */
     float         before, after;    /* points, or percent of size < 0    */
     int           bullet;           /* 0 none, 1 a character, 2 numbers  */
     char          buchar[16];       /* the character, UTF-8              */
@@ -480,7 +480,7 @@ bullet_text(const char *s, const char *font, char *out, size_t max)
 typedef struct {
     int      count[LEVELS];         /* each level's number so far        */
     int      numbered[LEVELS];      /* the last at the level had one     */
-    uint32_t color;                 /* text's colour none being said     */
+    uint32_t color;                 /* for text that names no colour     */
     float    scale, lnred;          /* autofit                           */
 } xs_t;
 
@@ -571,8 +571,8 @@ math_tint(void *ctx, const tiku_xml_node_t *r)
     return st != NULL ? st->color : 0;
 }
 
-/** @brief An a14:m's equations as runs of @p runs: a paragraph of them
- *         set apart, each on a line of its own; one alone in the line;
+/** @brief An a14:m's equations as runs of @p runs: an m:oMathPara's set
+ *         apart, each on a line of its own; a lone m:oMath in the line;
  *         each sized as its first run is, in the text's colour.
  *  @return 0, or -1 out of memory. */
 static int
@@ -598,7 +598,7 @@ add_math(const px_t *x, const tiku_xml_node_t *k, const xp_t *p, xs_t *s,
             if ((run = of_vec_push(runs)) == NULL) {
                 return -1;
             }
-            run->kind = OR_BREAK;   /* each of the paragraph's its line */
+            run->kind = OR_BREAK;   /* each on a line of its own */
             run->st = st;
         }
         if (m != NULL && (run = of_vec_push(runs)) == NULL) {
@@ -786,9 +786,10 @@ draw_frags(px_t *x, const of_vec_t *frags, const dml_mat_t *m, float x0,
     tiku_pdf_writer_restore(w);
 }
 
-/** @brief A story set @p lw wide and drawn in the frame: moved as the
- *         frame's anchor says, and back into its box when it does not
- *         wrap.  @return its height, or -1. */
+/** @brief A story set as wide as the frame (as tall, for vertical text)
+ *         and, when @p draw, drawn in it: moved as the frame's anchor says,
+ *         and back into its box when it does not wrap.  @return its height,
+ *         or -1. */
 static float
 set_story(px_t *x, of_story_t *st, const xb_t *b, const float *box,
           const dml_mat_t *m, int draw)

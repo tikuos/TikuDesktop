@@ -27,8 +27,9 @@
 #define XML_ATTRS   512             /* attributes one tag may carry      */
 
 /** @brief The namespaces readers here know, and the prefix each is given
- *         whatever a file calls it: transitional and strict OOXML, the
- *         package's own, and OpenDocument's. */
+ *         whatever a file calls it: OOXML's, transitional and strict, with
+ *         Microsoft's extensions and VML; the package's own and Dublin
+ *         Core; OpenDocument's; XLink and xml. */
 static const struct { const char *uri, *prefix; } known[] = {
     {"http://schemas.openxmlformats.org/wordprocessingml/2006/main", "w"},
     {"http://purl.oclc.org/ooxml/wordprocessingml/main", "w"},
@@ -731,8 +732,9 @@ is_xmlns(const xml_att_t *a)
 
 /**
  * @brief A tag's attributes from @p p: each name, and its value decoded.
- * @return where the tag's end is ('>' or "/>"), or NULL for a tag that
- *         does not close; @p n set to how many.
+ * @return where the tag's end is ('>' or "/>"), or NULL, the parse failed,
+ *         for a tag that is not well formed; @p n set to how many were
+ *         kept, XML_ATTRS at most.
  */
 static char *
 read_attrs(xml_parse_t *x, char *p, int *n)

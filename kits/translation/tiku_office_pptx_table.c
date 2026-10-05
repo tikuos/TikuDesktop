@@ -11,7 +11,7 @@
  * text needs.  Each cell takes its fill, borders and the weight and
  * colour of its text from its own properties, else from the part of the
  * table style it falls in -- the header row, a banded row, the first
- * column -- else from the style's whole table, as PowerPoint's do.
+ * column -- else from the style's whole table.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -47,9 +47,9 @@ on(const tiku_xml_node_t *e, const char *name)
     return v != NULL && (v[0] == '1' || v[0] == 't');
 }
 
-/** @brief The table style part cell (@p r, @p c) falls in, the most
- *         particular first: header and total rows, then first and last
- *         columns, then bands. */
+/** @brief The table style part cell (@p r, @p c) falls in, from kind
+ *         @p n on, the most particular first: header and total rows, then
+ *         first and last columns, then bands, then the whole table. */
 static const tiku_xml_node_t *
 part(const tb_t *t, int r, int c, int n)
 {
@@ -185,7 +185,8 @@ edge(tb_t *t, const dml_line_t *l, float x0, float y0, float x1, float y1,
     dml_paint_line(&t->x->dml, l, &g, m);
 }
 
-/** @brief The weight and colour a cell's text takes from its parts. */
+/** @brief The weight and colour a cell's text takes from its parts; the
+ *         colour, when none gives one, is the theme's text colour. */
 static void
 cell_text_style(tb_t *t, int r, int c, uint32_t *color, int *bold)
 {
@@ -242,8 +243,9 @@ right_of(const tb_t *t, int col, int span)
     return t->xs[end < t->ncol ? end : t->ncol];
 }
 
-/** @brief One cell drawn at (@p x, @p y), @p w by @p h: fill, text,
- *         borders; or measured, its text's height returned. */
+/** @brief One cell drawn in @p box (left, top, right, bottom): fill, text
+ *         and borders; or, when not @p draw, only measured.  @return its
+ *         text's height, its top and bottom margins included. */
 static float
 cell(tb_t *t, const tiku_xml_node_t *tc, int r, int c, const float *box,
      const dml_mat_t *m, int draw)
@@ -314,7 +316,8 @@ rows(tb_t *t, const tiku_xml_node_t *tbl, const dml_mat_t *m, int draw)
     }
 }
 
-/** @brief The table's style from the deck's table styles, by its id. */
+/** @brief The table's style from the deck's table styles, by its id or,
+ *         when it names none, the deck's default. */
 static void
 find_style(tb_t *t, const tiku_xml_node_t *pr)
 {

@@ -6,7 +6,7 @@
  *
  * tiku_circuit_drill.c - XNC/Excellon drill files read a line at a time
  * through explicit header, body and end states, into holes, slots and
- * routes for display.  The commands are read, not sent to a machine.
+ * routes for display.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

@@ -7,10 +7,10 @@
  * tiku_jbig2.h - JBIG2 decoding (ITU-T T.88): a page of a scan from the
  * segments that code it.
  *
- * How scanned datasheets and papers keep black and white pages small:
- * regions of bits coded against their neighbours, and text as glyphs
- * coded once and placed many times.  Rows of bits come out, one bit a
- * pixel, 1 black, as a PDF's JBIG2Decode reads them before inverting.
+ * JBIG2 codes black-and-white pages, such as scanned datasheets: regions
+ * of bits coded against their neighbours, and text as glyphs coded once
+ * and placed many times.  Rows of bits come out, one bit a pixel, 1
+ * black, as a PDF's JBIG2Decode reads them before inverting.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

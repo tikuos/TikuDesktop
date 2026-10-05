@@ -9,8 +9,8 @@
  * Objects go out as soon as they are whole -- a page when the next one
  * begins, a picture when it is given -- and their offsets are kept for
  * the cross-reference table.  What cannot be whole until the end waits:
- * faces, whose subsets hold every glyph drawn with them; links, which may
- * lead to pages not yet drawn; the outline; and the resources.  Each page
+ * faces, which take in every glyph drawn with them; links, which may lead
+ * to pages not yet drawn; the outline; and the resources.  Each page
  * begins by turning its space over, so everything after is y downwards.
  *
  * SPDX-License-Identifier: Apache-2.0

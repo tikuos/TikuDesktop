@@ -108,7 +108,7 @@ tiku_circuit_err_t tiku_circuit_drill(const void *data, size_t bytes,
 
 /**
  * @brief Decode one Gerber artwork layer: the command subset doc/circuit.md
- *        lists, not arbitrary RS-274X.
+ *        lists.
  *
  * The scene keeps the layer's dark and clear operations in order, so it
  * is drawn through tiku_circuit_render() as a whole.
@@ -160,8 +160,7 @@ const tiku_circuit_object_t *tiku_circuit_object(const tiku_circuit_t *doc,
 /**
  * @brief Object @p index's plain-text description, borrowed until
  *        release; an empty string for a bad index or no description.
- *
- * The text is untrusted document data, not markup or a link to follow.
+ * @note The text is untrusted document data, to be shown as plain text.
  */
 const char *tiku_circuit_details(const tiku_circuit_t *doc, size_t index);
 
@@ -210,15 +209,17 @@ int tiku_circuit_world(const tiku_circuit_view_t *view, double x, double y,
 /**
  * @brief Draw @p view of @p doc into new opaque pixels.
  *
- * @p out must be empty.  On success the caller owns out->px and frees it
- * with tiku_image_free(); on failure @p out is untouched.  Geometry past
- * the viewport is clipped before it is drawn.
+ * On success the caller owns out->px and frees it with tiku_image_free();
+ * on failure @p out is untouched.  Geometry past the viewport is clipped
+ * before it is drawn.
  *
  * @param cancel  checked on the rendering thread, or NULL
  * @param ctx     handed to @p cancel
- * @return OK; BAD for a bad view; LIMIT for a viewport over its limits or
- *         a stroke too wide to draw at this scale; NOMEM; CANCELLED
- * @note Once @p cancel has returned nonzero it must keep doing so.
+ * @return OK; BAD for a bad view or a nonempty @p out; LIMIT for a
+ *         viewport over its limits or a stroke too wide to draw at this
+ *         scale; NOMEM; CANCELLED
+ * @note @p out must be empty.  Once @p cancel has returned nonzero it
+ *       must keep doing so.
  */
 tiku_circuit_err_t tiku_circuit_render(const tiku_circuit_t *doc,
     const tiku_circuit_view_t *view, int (*cancel)(void *), void *ctx,

@@ -476,7 +476,8 @@ end_of(const dml_sub_t *s, int last, double *x, double *y, double *dx,
 }
 
 /** @brief An arrowhead of kind @p kind at (@p x, @p y) pointing along
- *         (@p dx, @p dy), in page space, for a line @p lw wide. */
+ *         (@p dx, @p dy), in page space, for line @p l: @p wide and
+ *         @p len line widths across and long. */
 static void
 arrowhead(dml_ctx_t *c, int kind, double x, double y, double dx, double dy,
           const dml_line_t *l, float wide, float len)

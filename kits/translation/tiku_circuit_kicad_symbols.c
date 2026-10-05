@@ -425,8 +425,8 @@ body(circuit_kc_t *k, size_t lib, const double m[6], const char *ref,
  * @brief Reference @p ref as the sheet shows it, into @p out: with the
  *        unit's letter when library symbol @p lib has several units.
  *
- * A reference that does not fit is refused, not cut, so no character is
- * split.
+ * A reference that does not fit in @p out, unit letters included, is
+ * refused.
  *
  * @return 1, or 0 with LIMIT noted
  */

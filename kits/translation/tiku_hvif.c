@@ -12,9 +12,9 @@
  * the format offers.  The rasteriser accumulates signed edge area into a
  * float buffer and resolves it with a per-row prefix sum, so nonzero
  * winding is one fabsf() and coverage is analytic.  Reimplemented from
- * Haiku's src/libs/icon (haiku-os.org, MIT licensed).  What is left out
- * on purpose, each consuming its bytes and degrading rather than failing,
- * is listed in doc/hvif.md.
+ * Haiku's src/libs/icon (haiku-os.org, MIT licensed).  doc/hvif.md lists
+ * the features left out; each consumes its bytes, and the icon draws
+ * without it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,7 +26,7 @@
 
 #include "tiku_hvif.h"
 
-/* ------------------------------------------------------------------ wire */
+/* ----------------------------------------------------------------- wire  */
 
 #define HVIF_STYLE_SOLID          1
 #define HVIF_STYLE_GRADIENT       2
@@ -66,10 +66,10 @@
 /* The design square every HVIF coordinate is expressed in. */
 #define HVIF_CANVAS 64.0f
 
-/* Flattening tolerance in device pixels; well under the 1/255 quantum. */
+/* Flattening tolerance in device pixels. */
 #define HVIF_TOL 0.1f
 
-/* -------------------------------------------------------------- structs */
+/* ------------------------------------------------------------- structs  */
 
 typedef struct {
     uint8_t c[4];            /* straight R,G,B,A */
@@ -106,7 +106,7 @@ typedef struct {
     int     stroke;
     float   stroke_w;        /* design units */
     uint8_t stroke_cap;      /* 0 butt, 1 square, 2 round */
-    int     ok;              /* 0 = malformed record, drawn as nothing */
+    int     ok;              /* 0: not a path source, drawn as nothing */
 } hvif_shape_t;
 
 struct tiku_hvif {
@@ -116,7 +116,7 @@ struct tiku_hvif {
     int           nstyle, npath, nshape;
 };
 
-/* ------------------------------------------------------------- the reader */
+/* ------------------------------------------------------------ the reader  */
 
 typedef struct {
     const uint8_t *p;
@@ -125,6 +125,7 @@ typedef struct {
     int            bad;
 } hvif_rd_t;
 
+/** @brief The next byte; past the end, 0 with the stream marked bad. */
 static uint8_t
 hvif_u8(hvif_rd_t *r)
 {
@@ -135,6 +136,7 @@ hvif_u8(hvif_rd_t *r)
     return r->p[r->pos++];
 }
 
+/** @brief The next two bytes, low byte first. */
 static uint16_t
 hvif_u16(hvif_rd_t *r)
 {
@@ -157,6 +159,7 @@ hvif_read(hvif_rd_t *r, void *dst, size_t n)
     r->pos += n;
 }
 
+/** @brief Skip @p n bytes, or mark the stream bad and move to its end. */
 static void
 hvif_skip(hvif_rd_t *r, size_t n)
 {
@@ -171,8 +174,8 @@ hvif_skip(hvif_rd_t *r, size_t n)
 /**
  * @brief Read one coordinate in canvas units.
  *
- * The short form covers the integers -32..95; the long form is 15 bits big
- * endian inside its own two bytes, divided by 102 -- not fixed point.
+ * The short form covers the integers -32..95; the long form is 15 bits,
+ * big endian across its two bytes, divided by 102, minus 128.
  */
 static float
 hvif_coord(hvif_rd_t *r)
@@ -213,6 +216,7 @@ hvif_f24(hvif_rd_t *r)
     return out;
 }
 
+/** @brief Read an affine matrix: six 24-bit floats. */
 static void
 hvif_matrix(hvif_rd_t *r, float *m)
 {
@@ -230,7 +234,7 @@ hvif_skip_tagged(hvif_rd_t *r)
     hvif_skip(r, hvif_u16(r));
 }
 
-/* ---------------------------------------------------------------- styles */
+/* --------------------------------------------------------------- styles  */
 
 /** @brief Haiku's ease-in-out; HVIF cannot encode linear stops. */
 static float
@@ -253,8 +257,8 @@ hvif_gauss(float x)
  *
  * Mirrors Gradient::MakeGradient: stops are not assumed sorted, so the
  * lowest offset is searched for and each following stop is the nearest one
- * ahead.  A gradient with no stops is legal on the wire and leaves Haiku's
- * ramp uninitialised; here it is transparent.
+ * ahead.  A gradient with no stops is legal on the wire; its ramp is
+ * transparent.
  */
 static void
 hvif_ramp(uint8_t ramp[256][4], const hvif_stop_t *st, int n)
@@ -339,6 +343,11 @@ hvif_color(hvif_rd_t *r, uint8_t *c, int no_alpha, int gray)
     c[3] = no_alpha ? 255u : hvif_u8(r);
 }
 
+/**
+ * @brief Read a gradient style into @p s: its kind, flags, matrix when
+ *        flagged and stops, baked into its ramp.
+ * @return 0, or -1 with @p err set for 16-bit stops or a short stream.
+ */
 static int
 hvif_read_gradient(hvif_rd_t *r, hvif_style_t *s, char *err, size_t errlen)
 {
@@ -370,6 +379,8 @@ hvif_read_gradient(hvif_rd_t *r, hvif_style_t *s, char *err, size_t errlen)
     return 0;
 }
 
+/** @brief Read the style table into @p ic.
+ *  @return 0, or -1 with @p err set. */
 static int
 hvif_read_styles(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
                  size_t errlen)
@@ -409,9 +420,7 @@ hvif_read_styles(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
         default:
             /* Unknown style: skip its tagged length and leave a fully
              * transparent placeholder, so every later style index still
-             * lands on the style the file meant.  Haiku drops the slot
-             * instead and shifts the rest -- a bug no shipped icon
-             * reaches, and not one worth reproducing. */
+             * lands on the style the file meant. */
             hvif_skip_tagged(r);
             break;
         }
@@ -423,7 +432,7 @@ hvif_read_styles(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
     return 0;
 }
 
-/* ----------------------------------------------------------------- paths */
+/* ---------------------------------------------------------------- paths  */
 
 /**
  * @brief Drop degenerate points, as VectorPath::CleanUp does.
@@ -460,6 +469,8 @@ hvif_path_cleanup(hvif_path_t *p)
     p->n = w;
 }
 
+/** @brief Read the path table into @p ic, each path cleaned up as
+ *         Haiku's importer does.  @return 0, or -1 with @p err set. */
 static int
 hvif_read_paths(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
                 size_t errlen)
@@ -492,10 +503,10 @@ hvif_read_paths(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
                 p->pt[k].iy = p->pt[k].oy = p->pt[k].y;
             }
         } else if ((flags & HVIF_PATH_COMMANDS) != 0u) {
-            /* Two bits per point, packed LSB-first, and the point count is
-             * a single byte -- so the block is ceil(count / 4) bytes and
-             * can never outrun 64.  Read it before the coordinates: the
-             * coordinate stream is variable width and cannot be indexed. */
+            /* Two bits per point, packed LSB-first; the point count is one
+             * byte, so the block is ceil(count / 4) bytes, at most 64.  It
+             * is read before the coordinates, whose stream is variable
+             * width and cannot be indexed. */
             uint8_t cmd[64];
             size_t nc = ((size_t)count + 3u) / 4u;
             float px = 0.0f, py = 0.0f;
@@ -503,7 +514,7 @@ hvif_read_paths(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
             _Static_assert(sizeof cmd >= (255 + 3) / 4, "command block cap");
             hvif_read(r, cmd, nc);
             if (r->bad) {
-                break;          /* cmd holds nothing; do not decode from it */
+                break;          /* cmd was not read; the parse fails */
             }
             for (k = 0; k < count; k++) {
                 int op = (cmd[k >> 2] >> ((k & 3) * 2)) & 0x03;
@@ -556,8 +567,10 @@ hvif_read_paths(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
     return 0;
 }
 
-/* ---------------------------------------------------------------- shapes */
+/* --------------------------------------------------------------- shapes  */
 
+/** @brief Read a shape's transformers: a stroke is kept on @p sh, the
+ *         others are skipped.  @return 0, or -1 for a short stream. */
 static int
 hvif_read_transformers(hvif_rd_t *r, hvif_shape_t *sh)
 {
@@ -581,9 +594,7 @@ hvif_read_transformers(hvif_rd_t *r, hvif_shape_t *sh)
             hvif_skip(r, 3);
             break;
         case HVIF_XF_AFFINE:
-            /* 18 bytes: the exporter writes six float24s.  Haiku's own
-             * importer reads six float32s and desynchronises, which is why
-             * no file in the tree carries one. */
+            /* 18 bytes: six float24s, as Haiku's exporter writes them. */
             hvif_skip(r, 18);
             break;
         case HVIF_XF_PERSPECTIVE:
@@ -600,6 +611,9 @@ hvif_read_transformers(hvif_rd_t *r, hvif_shape_t *sh)
     return 0;
 }
 
+/** @brief Read the shape table into @p ic; a shape that is not a path
+ *         source is skipped and draws nothing.
+ *  @return 0, or -1 with @p err set. */
 static int
 hvif_read_shapes(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
                  size_t errlen)
@@ -661,7 +675,7 @@ hvif_read_shapes(hvif_rd_t *r, struct tiku_hvif *ic, char *err,
     return 0;
 }
 
-/* ----------------------------------------------------------------- parse */
+/* ---------------------------------------------------------------- parse  */
 
 tiku_hvif_t *
 tiku_hvif_parse(const void *data, size_t len, char *err, size_t errlen)
@@ -699,10 +713,9 @@ tiku_hvif_parse(const void *data, size_t len, char *err, size_t errlen)
         tiku_hvif_free(ic);
         return NULL;
     }
-    /* A read that ran off the end leaves pos where it was, so the
-     * consumed-everything test alone would pass a blob truncated exactly at a
-     * section's count byte: the count reads as zero, the section loop never
-     * runs, and an empty icon looks structurally valid. */
+    /* A read past the end sets bad and leaves pos at len.  A blob cut at
+     * a section's count byte reads the count as zero and stops with
+     * pos == len, so only bad rejects it. */
     if (r.bad || r.pos != len) {
         snprintf(err, errlen, r.bad ? "truncated" : "%zu of %zu bytes consumed",
                  r.pos, len);
@@ -747,7 +760,7 @@ tiku_hvif_shape_count(const tiku_hvif_t *icon)
     return icon != NULL ? icon->nshape : 0;
 }
 
-/* -------------------------------------------------------------- matrices */
+/* ------------------------------------------------------------- matrices  */
 
 /** @brief Compose so that @p a applies first, then @p b. */
 static void
@@ -767,8 +780,8 @@ hvif_compose(const float *a, const float *b, float *out)
 /**
  * @brief Invert an affine.
  *
- * A collapsed matrix leaves @p out as the identity rather than untouched:
- * the gradient path reads it either way and then throws the result away.
+ * A degenerate matrix sets @p out to the identity; hvif_composite()
+ * transforms through it and then uses ramp entry 0.
  *
  * @return 0 on success, -1 if the matrix is degenerate.
  */
@@ -791,6 +804,7 @@ hvif_invert(const float *m, float *out)
     return 0;
 }
 
+/** @brief Transform the point (@p x, @p y) by @p m. */
 static void
 hvif_xf(const float *m, float x, float y, float *ox, float *oy)
 {
@@ -798,7 +812,7 @@ hvif_xf(const float *m, float x, float y, float *ox, float *oy)
     *oy = x * m[1] + y * m[3] + m[5];
 }
 
-/* ------------------------------------------------------------ rasteriser */
+/* ----------------------------------------------------------- rasteriser  */
 
 typedef struct {
     float *acc;              /* (w + 2) * h signed-area deltas */
@@ -890,6 +904,7 @@ hvif_edge(hvif_raster_t *r, float x0, float y0, float x1, float y1)
     }
 }
 
+/** @brief Clear the accumulator for the next shape. */
 static void
 hvif_raster_begin(hvif_raster_t *r)
 {
@@ -899,10 +914,8 @@ hvif_raster_begin(hvif_raster_t *r)
 /**
  * @brief Resolve the accumulator to nonzero coverage in [0,1].
  *
- * The running sum restarts on every row.  Upstream font-rs runs one sum
- * over the whole buffer, which leaks a full-width streak into the next row
- * as soon as a shape is clipped at the right edge; per-row is identical for
- * well-formed input and immune to that.
+ * The running sum restarts on every row, so a shape clipped at the right
+ * edge leaves no streak in the row below.
  */
 static void
 hvif_raster_end(hvif_raster_t *r)
@@ -918,19 +931,21 @@ hvif_raster_end(hvif_raster_t *r)
             float c;
 
             a += row[x];
-            c = fabsf(a);                              /* NONZERO winding */
+            c = fabsf(a);                              /* nonzero winding */
             out[x] = (c > 1.0f) ? 1.0f : c;
         }
     }
 }
 
-/* ------------------------------------------------------------- polylines */
+/* ------------------------------------------------------------ polylines  */
 
 typedef struct {
     float *v;                /* x,y pairs */
     int    n, cap;
 } hvif_poly_t;
 
+/** @brief Append a vertex, growing the buffer.
+ *  @return 0, or -1 when memory is short. */
 static int
 hvif_poly_push(hvif_poly_t *p, float x, float y)
 {
@@ -953,9 +968,9 @@ hvif_poly_push(hvif_poly_t *p, float x, float y)
 /**
  * @brief Chords needed to hold a cubic within @p tol device pixels.
  *
- * Uniform subdivision into n chords deviates by at most 3M/(4n^2) with M
- * the larger second difference, so the count is closed form -- no
- * de Casteljau recursion and no depth cap to blow.
+ * Uniform subdivision into n chords deviates by at most 3M/(4n^2), with M
+ * the larger second difference, so the count has a closed form.  It is
+ * capped at 64 chords.
  */
 static int
 hvif_curve_steps(const float *c, float tol)
@@ -1002,7 +1017,7 @@ hvif_curve(hvif_poly_t *p, const float *c, int drop)
  * Control points are transformed before flattening, so the tolerance is
  * measured in device pixels and a 16 px icon costs proportionally fewer
  * vertices than a 64 px one.  A path of fewer than two points contributes
- * nothing, exactly as get_path_storage() returns early.
+ * nothing.
  */
 static int
 hvif_flatten(const hvif_path_t *path, const float *m, hvif_poly_t *out)
@@ -1042,15 +1057,14 @@ hvif_flatten(const hvif_path_t *path, const float *m, hvif_poly_t *out)
     return 0;
 }
 
-/* ---------------------------------------------------------------- filling */
+/* --------------------------------------------------------------- filling  */
 
 /**
  * @brief Emit a closed subpath exactly as authored.
  *
- * The direction MUST survive: winding is the only signal that says an inner
- * subpath is a hole rather than more ink, and normalising it fills every
- * cutout solid.  Use hvif_emit_piece() for stroker geometry, which has the
- * opposite requirement.
+ * Edges keep their authored direction: winding is what makes an inner
+ * subpath a hole, and normalising it fills every cutout.  Stroker
+ * geometry goes through hvif_emit_piece(), which normalises.
  */
 static void
 hvif_emit_poly(hvif_raster_t *r, const float *v, int n)
@@ -1101,10 +1115,9 @@ hvif_emit_piece(hvif_raster_t *r, const float *v, int n)
 /**
  * @brief Stroke a polyline by unioning quads and joint discs.
  *
- * Nonzero fill does the union for free, and the fabsf() clamp means the
- * overlaps leave no seam -- the same property that costs a hairline where
- * two separate shapes abut works in favour here.  Every piece is wound the
- * same way, or the overlaps would cancel into holes.
+ * Nonzero fill makes the union, and coverage is clamped at 1, so the
+ * overlaps leave no seam.  Every piece is wound the same way, or the
+ * overlaps would cancel into holes.
  */
 static void
 hvif_stroke(hvif_raster_t *r, const float *v, int n, int closed, float hw,
@@ -1156,8 +1169,7 @@ hvif_stroke(hvif_raster_t *r, const float *v, int n, int closed, float hw,
         hvif_emit_piece(r, quad, 4);
     }
     /* A disc at every joint, plus the ends when the cap is round.  Miter
-     * and bevel joins both land here as round; at these widths it does not
-     * read. */
+     * and bevel joins are drawn round too. */
     for (i = 0; i < n; i++) {
         int interior = closed || (i > 0 && i < n - 1);
 
@@ -1174,9 +1186,9 @@ hvif_stroke(hvif_raster_t *r, const float *v, int n, int closed, float hw,
     }
 }
 
-/* ----------------------------------------------------------- compositing */
+/* ---------------------------------------------------------- compositing  */
 
-/** @brief Exact round(a*b/255); the naive >>8 darkens over stacked shapes. */
+/** @brief Exact round(a*b/255); dividing by 256 darkens stacked shapes. */
 static uint32_t
 hvif_mul255(uint32_t a, uint32_t b)
 {
@@ -1185,6 +1197,8 @@ hvif_mul255(uint32_t a, uint32_t b)
     return (t + (t >> 8)) >> 8;
 }
 
+/** @brief Source-over colour @p c, straight RGBA, at coverage
+ *         @p cov8 / 255 onto the premultiplied pixel at @p dst. */
 static void
 hvif_blend(uint32_t *dst, const uint8_t *c, uint32_t cov8)
 {
@@ -1245,6 +1259,8 @@ hvif_ramp_index(uint8_t kind, float gx, float gy)
     return idx;
 }
 
+/** @brief Paint @p r's coverage into @p bmp in style @p st; a gradient is
+ *         looked up through the inverse of its matrix composed with @p m. */
 static void
 hvif_composite(uint32_t *bmp, const hvif_raster_t *r, const hvif_style_t *st,
                const float *m)
@@ -1298,7 +1314,7 @@ hvif_composite(uint32_t *bmp, const hvif_raster_t *r, const hvif_style_t *st,
     }
 }
 
-/* ---------------------------------------------------------------- render */
+/* --------------------------------------------------------------- render  */
 
 int
 tiku_hvif_render(const tiku_hvif_t *icon, uint32_t *bmp, int w, int h)
@@ -1321,8 +1337,8 @@ tiku_hvif_render(const tiku_hvif_t *icon, uint32_t *bmp, int w, int h)
     if (r.acc == NULL || r.cov == NULL) {
         goto done;
     }
-    /* Fit the 64-unit design square uniformly and centre it, so an
-     * off-square request letterboxes rather than stretching. */
+    /* Fit the 64-unit design square uniformly and centre it: an
+     * off-square bitmap is letterboxed. */
     scale = (float)((w < h) ? w : h) / HVIF_CANVAS;
     g[0] = scale;
     g[1] = 0.0f;
@@ -1339,9 +1355,9 @@ tiku_hvif_render(const tiku_hvif_t *icon, uint32_t *bmp, int w, int h)
         if (!sh->ok || sh->style >= icon->nstyle) {
             continue;             /* unknown record, or a dangling style */
         }
-        /* LOD is not an optimisation: the artwork ships alternate small
-         * and large versions of the same detail, gated on scale.  Ignore
-         * it and both stack. */
+        /* The artwork ships alternate small and large versions of the
+         * same detail, gated on scale by LOD; drawing both would stack
+         * them. */
         if (sh->lod && !(scale >= sh->lod_min &&
                          (scale <= sh->lod_max || sh->lod_max >= 4.0f))) {
             continue;
@@ -1361,9 +1377,9 @@ tiku_hvif_render(const tiku_hvif_t *icon, uint32_t *bmp, int w, int h)
                 goto done;
             }
             if (sh->stroke) {
-                /* A stroke leaves an unflagged path genuinely open; a
-                 * CLOSED one still wraps.  Widths of zero would vanish, so
-                 * they draw as a one-unit hairline instead. */
+                /* A stroke leaves an unflagged path open; one flagged
+                 * closed still wraps.  A width of zero or less draws as a
+                 * one-unit hairline. */
                 float wid = sh->stroke_w > 0.0f ? sh->stroke_w : 1.0f;
 
                 hvif_stroke(&r, poly.v, poly.n, p->closed,

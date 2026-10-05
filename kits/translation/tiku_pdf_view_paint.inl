@@ -1,5 +1,16 @@
-/* The pages one under another at one scale, a canvas composed from the
- * pages drawn so far, and the scrollbars beside it. */
+/*
+ * TikuOS kits -- the foundation TikuDesktop and TikuTracker
+ * both stand on.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_pdf_view_paint.inl - the PDF view's layout and painting: the
+ * pages one under another at one scale, the canvas composed from the
+ * pages drawn so far, and the scrollbars beside it.  Included by
+ * tiku_pdf_view.c alone.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 /** @brief Page @p p's width in pixels at the scale and turn shown. */
 static int vw_page_w(const tiku_pdf_view_t *v, int p)
@@ -114,8 +125,8 @@ static void vw_relayout(tiku_pdf_view_t *v, tiku_rect_t canvas)
                                          (vw_page_h(v, page) + VW_GAP)));
 }
 
-/** @brief Change the fit, or the scale when the fit is none; the page
- *         in view stays in view. */
+/** @brief Change the fit, and with TIKU_PDF_VIEW_FIXED the scale, held
+ *         to 0.25 to 4; the page in view stays in view. */
 static void vw_set_scale(tiku_pdf_view_t *v, int fit, double scale)
 {
     v->fit = fit;
@@ -277,7 +288,8 @@ static void vw_tint_box(tiku_pdf_view_t *v, int p, int px, int py,
             py + (int)ceil(r[3] * v->scale) - y0, argb);
 }
 
-/** @brief The page drawn nearest the scale shown, when none is at it. */
+/** @brief Page @p p as drawn at the scale shown; else, unless @p exact,
+ *         as drawn nearest it.  NULL when there is none. */
 static vw_tile_t *vw_tile(tiku_pdf_view_t *v, int p, int exact)
 {
     vw_tile_t *best = NULL;

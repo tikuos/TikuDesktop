@@ -7,11 +7,10 @@
  * tiku_pdf_color.c - colour spaces and the functions some of them run.
  *
  * Gray, RGB and CMYK are turned to screen colour directly; an ICC
- * profile is taken for the device space with as many parts (ISO 32000
- * 8.6); Indexed looks its number up; a Separation runs its tint through
- * a function.  The functions (7.10) are sampled, exponential, stitched,
- * or a small PostScript calculator, which the datasheets' spot colours
- * use.
+ * profile is taken for its Alternate, else the device space with as many
+ * parts (ISO 32000 8.6); Indexed looks its number up; a Separation runs
+ * its tint through a function.  The functions (7.10) are sampled,
+ * exponential, stitched, or a small PostScript calculator.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -56,7 +55,8 @@ struct pdf_func {
     int         ncode;
 };
 
-/** @brief @p n numbers out of array @p a into @p out, at most @p max. */
+/** @brief The numbers of array @p a into @p out, @p max at most.
+ *  @return how many. */
 static int
 numbers(tiku_pdf_t *doc, pdf_obj_t *a, double *out, int max)
 {
@@ -425,7 +425,7 @@ pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
             cells *= f->size[i];
         }
         if (cells * f->bps > 8.0 * SAMPLES_MAX) {
-            pdf_func_free(f);       /* a table bigger than any is read */
+            pdf_func_free(f);       /* past SAMPLES_MAX bytes: not read */
             return NULL;
         }
     } else if (f->type == 4 && spec->kind == PDF_STREAM) {
@@ -640,7 +640,8 @@ rgb(double r, double g, double b)
     return 0xff000000u | part(r) << 16 | part(g) << 8 | part(b);
 }
 
-/** @brief A space by its family name, for the device families. */
+/** @brief A space by its family name: the device families, and the
+ *         ones read as them (CalGray, CalRGB, Lab, Pattern). */
 static pdf_cs_t *
 device_space(const char *name)
 {
@@ -847,7 +848,7 @@ pdf_cs_colour(const pdf_cs_t *cs, const double *v, int n)
         return rgb((1 - v[0]) * (1 - v[3]), (1 - v[1]) * (1 - v[3]),
                    (1 - v[2]) * (1 - v[3]));
     case CS_LAB: {
-        /* L alone, as lightness: near enough for a chart's colour key. */
+        /* L alone, as a grey: a and b are not read. */
         double l = n >= 1 ? v[0] / 100.0 : 0;
 
         return rgb(l, l, l);

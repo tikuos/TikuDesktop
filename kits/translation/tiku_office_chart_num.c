@@ -10,8 +10,8 @@
  * section for negative numbers and one for zero, and dates and times
  * from the serial numbers spreadsheets keep them as.
  *
- * What a chart's labels need, not all a spreadsheet does: conditions and
- * colours are read past, fractions are not written as fractions.
+ * Conditions and colours are read past; fractions are not written as
+ * fractions.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -249,8 +249,9 @@ science(nb_t *b, double v, const nf_t *f)
     put(b, t, strlen(t));
 }
 
-/** @brief A bracket's words: a currency's symbol, "[$€-2]" writing "€";
- *         colours, conditions and locales nothing. */
+/** @brief Add the text a bracketed section writes: a currency bracket
+ *         writes its symbol ("[$€-2]" writes "€"); a colour, condition or
+ *         locale bracket writes nothing. */
 static void
 bracket(nb_t *b, const char *p, const char *end)
 {

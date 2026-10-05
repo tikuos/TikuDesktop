@@ -11,8 +11,8 @@
  * as far past it, forward and back, as the file asks.
  *
  * A category's x is its number, counted from one.  A polynomial is
- * fitted to x moved and scaled about its middle, so that sixth powers of
- * dates do not swamp the arithmetic.
+ * fitted to x moved and scaled about its middle: the sixth powers of
+ * dates as serial days are too large for the fit to stay exact.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -427,7 +427,7 @@ trend_text(ch_chart_t *k, const ch_trend_t *t, const tr_fit_t *f,
 /* ---------------------------------------------------------------- series  */
 
 /** @brief Series @p s's points with both an x and a y, into @p p (its
- *         arrays of @p s->n from @p mem).  @return how many. */
+ *         arrays of @p s->n from the chart's memory).  @return how many. */
 static int
 points(ch_chart_t *k, const ch_series_t *s, tr_pts_t *p)
 {

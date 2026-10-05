@@ -9,9 +9,10 @@
  * records (tiku_office_emf.c) and a WMF's (tiku_office_wmf.c) become
  * calls here, which keep GDI's state -- the window and viewport, the
  * world transform, pens, brushes and fonts, the clip, a path being
- * built -- and draw with the PDF writer in the picture's box.  Shapes
- * are in tiku_office_gdi.c, text in tiku_office_gdi_text.c, bitmaps in
- * tiku_office_gdi_dib.c.  Lengths the callers give are logical units.
+ * built -- and draw with the PDF writer in the picture's box.  The state
+ * and paths are in tiku_office_gdi.c, shapes in tiku_office_gdi_shape.c,
+ * text in tiku_office_gdi_text.c, bitmaps in tiku_office_gdi_dib.c.
+ * Lengths the callers give are logical units.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -162,12 +163,20 @@ void gdi_begin(gdi_t *g, tiku_pdf_writer_t *wr, of_faces_t *fs, int wmf,
                double x, double y, double w, double h);
 /** @brief The writer given back its state; everything freed. */
 void gdi_end(gdi_t *g);
-/** @brief Little-endian numbers of @p b (@p n bytes) at @p off; 0 past
- *         its end. */
+/** @brief Little-endian unsigned 16 bits of @p b (@p n bytes) at @p off;
+ *         0 past its end. */
 unsigned gdi_u16(const unsigned char *b, size_t n, size_t off);
+/** @brief Little-endian signed 16 bits of @p b (@p n bytes) at @p off; 0
+ *         past its end. */
 int gdi_i16(const unsigned char *b, size_t n, size_t off);
+/** @brief Little-endian unsigned 32 bits of @p b (@p n bytes) at @p off;
+ *         0 past its end. */
 uint32_t gdi_u32(const unsigned char *b, size_t n, size_t off);
+/** @brief Little-endian signed 32 bits of @p b (@p n bytes) at @p off; 0
+ *         past its end. */
 int32_t gdi_i32(const unsigned char *b, size_t n, size_t off);
+/** @brief A little-endian 32-bit float of @p b (@p n bytes) at @p off; 0
+ *         past its end, or for one not finite or past 1e30. */
 double gdi_f32(const unsigned char *b, size_t n, size_t off);
 /** @brief Character @p cp written as UTF-8 into @p out (four bytes of
  *         room).  @return how many it took. */
@@ -188,8 +197,12 @@ gdi_obj_t *gdi_slot(gdi_t *g, int i);
 void gdi_select(gdi_t *g, uint32_t i);
 /** @brief Object @p i deleted. */
 void gdi_delete(gdi_t *g, int i);
-/** @brief SaveDC; RestoreDC to @p n (< 0: that many back). */
+/** @brief SaveDC: the state kept; past GDI_DEPTH, only counted. */
 void gdi_save(gdi_t *g);
+/** @brief RestoreDC: the DC set back to the state saved @p n-th (from 1),
+ *         or -@p n saves back when @p n is negative, and that save and the
+ *         ones after it dropped.  A state saved past GDI_DEPTH was never
+ *         kept: restoring it drops the count and leaves the DC as it is. */
 void gdi_restore(gdi_t *g, int n);
 /** @brief World transform @p x set, or multiplied in (@p how: 1 reset,
  *         2 first, 3 after, 4 set). */
@@ -197,11 +210,13 @@ void gdi_world(gdi_t *g, const gdi_mat_t *x, int how);
 
 /* Paths and painting */
 
-/** @brief The path built on, logical points put in the box's: a figure
- *         begun, a line, a curve (@p p: three points), the figure shut. */
+/** @brief A figure begun in the path at logical (@p x, @p y). */
 void gdi_move(gdi_t *g, double x, double y);
+/** @brief A line in the path to logical (@p x, @p y). */
 void gdi_line(gdi_t *g, double x, double y);
-void gdi_curve(gdi_t *g, const double *p);  /* three points */
+/** @brief A Bézier in the path through @p p's three logical points. */
+void gdi_curve(gdi_t *g, const double *p);
+/** @brief The path's open figure shut. */
 void gdi_close(gdi_t *g);
 /** @brief The path built painted as @p what (GDI_FILL, GDI_STROKE) says,
  *         unless a path bracket is keeping it. */
@@ -228,8 +243,9 @@ void gdi_clip_boxes(gdi_t *g, const double *r, int n, int mode,
                     int device);
 /** @brief The meta region set: resets stop at the clip as it is. */
 void gdi_clip_meta(gdi_t *g);
-/** @brief Boxes @p r filled with @p b (NULL: the brush selected), or
- *         outlined @p lw wide when @p lw > 0. */
+/** @brief Boxes @p r (@p n of them; @p device: in device pixels) filled
+ *         with @p b (NULL: the brush selected), or, when @p lw > 0, a frame
+ *         @p lw wide drawn round their bounds in its colour. */
 void gdi_boxes(gdi_t *g, const double *r, int n, const gdi_brush_t *b,
                int device, double lw);
 /** @brief The writer's clip made the DC's, before drawing. */
@@ -237,10 +253,14 @@ void gdi_clip_apply(gdi_t *g);
 
 /* Shapes: tiku_office_gdi_shape.c */
 
-/** @brief A rectangle, one with corners @p w by @p h round, an ellipse:
- *         each a figure, filled and outlined. */
+/** @brief Rectangle @p l, @p t, @p r, @p b as a figure, filled and
+ *         outlined. */
 void gdi_rect(gdi_t *g, double l, double t, double r, double b);
+/** @brief The ellipse in box @p l, @p t, @p r, @p b as a figure, filled
+ *         and outlined. */
 void gdi_ellipse(gdi_t *g, double l, double t, double r, double b);
+/** @brief Rectangle @p box (l t r b) with corners @p w by @p h round, as a
+ *         figure, filled and outlined. */
 void gdi_round(gdi_t *g, const double *box, double w, double h);
 /** @brief An arc of the ellipse in @p box from the ray through @p p to
  *         the ray through @p q; @p kind 0 an arc, 1 ArcTo, 2 a chord, 3 a
@@ -319,11 +339,13 @@ uint32_t gdi_dib_average(gdi_t *g, const gdi_dib_t *d);
 
 /* The readers: tiku_office_emf.c, tiku_office_wmf.c */
 
-/** @brief An EMF, a WMF, drawn into @p box (x y w h).  @return 0, or -1
- *         when it cannot be read or draws nothing this can draw. */
+/** @brief An EMF drawn into @p box (x y w h).  @return 0, or -1 when it
+ *         cannot be read, or holds EMF+ alone and draws nothing. */
 int of_emf_draw(const unsigned char *b, size_t n, of_faces_t *fs,
                 tiku_pdf_writer_t *w, const double *box);
-/** @brief The same for a WMF, placeable or not. */
+/** @brief A WMF, placeable or not, drawn into @p box (x y w h): the EMF
+ *         it carries when it carries one.  @return 0, or -1 when it
+ *         cannot be read or has no extent. */
 int of_wmf_draw(const unsigned char *b, size_t n, of_faces_t *fs,
                 tiku_pdf_writer_t *w, const double *box);
 

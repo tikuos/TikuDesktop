@@ -34,7 +34,8 @@ void tiku_mq_init(tiku_mq_t *d, const unsigned char *p, long n);
 /** @brief One decision in context @p cx. */
 int tiku_mq_bit(tiku_mq_t *d, tiku_mq_cx_t *cx);
 /** @brief Whether the decoder ran far past its data: a stream that asks
- *         for more than it holds, decoded no further. */
+ *         for more than it holds.
+ *  @note A caller decodes no further once this is nonzero. */
 int tiku_mq_spent(const tiku_mq_t *d);
 
 #endif /* TIKU_MQ_H_ */

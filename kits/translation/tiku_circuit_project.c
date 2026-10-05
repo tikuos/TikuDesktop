@@ -91,8 +91,8 @@ cancelled(loader_t *l)
            l->options->cancel(l->options->ctx);
 }
 
-/** @brief Whether a child sheet's failure @p e ends the whole import,
- *         rather than leaving that sheet unavailable. */
+/** @brief Whether a child sheet's failure @p e ends the whole import;
+ *         any other failure leaves that sheet unavailable. */
 static int
 fatal(tiku_circuit_err_t e)
 {
@@ -151,8 +151,8 @@ root_page(circuit_kc_t *k, char page[PAGE_BYTES])
  *        first read.
  *
  * Syntax is kept once per physical file and geometry decoded per
- * instance.  A later read must match the first byte for byte, so a file
- * changed during the import is refused rather than mixed in.
+ * instance.  A later read must match the first byte for byte: a file
+ * changed during the import fails with TIKU_CIRCUIT_IO.
  *
  * @return OK with @p out set, or why not
  */

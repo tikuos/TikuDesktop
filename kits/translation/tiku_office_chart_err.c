@@ -51,8 +51,8 @@ amount(const ch_err_t *b, int i, double v, double *mid, double *up,
     *down = b->type == CH_EB_PLUS ? 0 : fabs(*down);
 }
 
-/** @brief A line from @p p0 to @p p1 along an axis (across it when
- *         @p horiz), at @p at the other way. */
+/** @brief A line from @p p0 to @p p1: horizontal at y @p at when
+ *         @p horiz, else vertical at x @p at. */
 static void
 along(ch_chart_t *k, int horiz, float p0, float p1, float at,
       const dml_line_t *l)

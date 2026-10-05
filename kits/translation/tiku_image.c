@@ -4,7 +4,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_image.c - bounded raster readers and thumbnail scaling.
+ * tiku_image.c - images read into pixels: BMP and PNG decoded here, JPEG
+ * handed to tiku_jpeg, each bounded in bytes and in pixels; and an image
+ * scaled into a thumbnail's square.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,24 +33,12 @@ tiku_image_is_image(const char *path)
     if (path == NULL) {
         return 0;
     }
-    /* A REGULAR FILE first, and only then its contents.  Asked of the
-     * path rather than of the open file because opening is itself the
-     * risk: a device answers an open and then never answers the read,
-     * and a pipe with nobody at the far end does not answer the open
-     * at all.  Either one stops the turn that asked, which is the whole
-     * desktop, for as long as the thing stays quiet -- forever, in the
-     * case that found this: /dev/console belongs to whoever is logged
-     * in on a Mac and is theirs to read, so the open succeeded and the
-     * read waited for somebody to type.  Linux keeps that node to root
-     * and the open simply failed, which is why it never showed there.
-     * A picture is a regular file on every host. */
+    /* Only a regular file is opened: opening a FIFO with no writer
+     * blocks, and a device such as a Mac's /dev/console can block the
+     * read, stalling the thread that asked. */
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
         return 0;
     }
-    /* By CONTENT, not by name.  A file called .txt that holds a PNG is a
-     * PNG, and one called .jpg that holds nothing is not a picture; the
-     * extension is a hint the file's author may not have meant.  Eight
-     * bytes is one block the filesystem has already fetched. */
     f = fopen(path, "rb");
     if (f == NULL) {
         return 0;
@@ -68,7 +58,8 @@ tiku_image_is_image(const char *path)
     return 0;
 }
 
-/** @brief Read a whole file.  Caller frees.  @return length, or -1. */
+/** @brief Read a whole file of at most TIKU_IMAGE_BYTES_MAX bytes into
+ *         @p out, which the caller frees.  @return its length, or -1. */
 static long
 slurp(const char *path, unsigned char **out)
 {
@@ -100,6 +91,7 @@ slurp(const char *path, unsigned char **out)
     return n;
 }
 
+/** @brief A big-endian 32-bit number. */
 static uint32_t
 be32(const unsigned char *p)
 {
@@ -107,6 +99,7 @@ be32(const unsigned char *p)
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
+/** @brief A little-endian 32-bit number. */
 static uint32_t
 le32(const unsigned char *p)
 {
@@ -118,6 +111,14 @@ le32(const unsigned char *p)
 /* BMP: uncompressed 24- and 32-bit, bottom-up or top-down                   */
 /*---------------------------------------------------------------------------*/
 
+/**
+ * @brief Decode the @p n BMP bytes at @p b into @p out: uncompressed rows
+ *        of 24 or 32 bits, the fourth byte read as alpha, at most 20000
+ *        pixels a side and TIKU_IMAGE_PIXELS_MAX in all.
+ * @return TIKU_IMG_OK; UNSUPPORTED for another depth, a compression or a
+ *         header shorter than BITMAPINFOHEADER; BAD for a malformed file
+ *         or a failed allocation.
+ */
 static tiku_image_err_t
 load_bmp(const unsigned char *b, long n, tiku_image_t *out)
 {
@@ -177,7 +178,7 @@ load_bmp(const unsigned char *b, long n, tiku_image_t *out)
 }
 
 /*---------------------------------------------------------------------------*/
-/* PNG, stored-deflate only                                                  */
+/* PNG: 1 to 8 bits a sample, every filter, Adam7 interlacing                */
 /*---------------------------------------------------------------------------*/
 
 /** @brief Undo one scanline's PNG filter, in place. */
@@ -342,7 +343,7 @@ png_pass(const unsigned char *raw, long avail, int pw, int ph,
     return used;
 }
 
-/** @brief Reject corrupted PNG chunks before they affect snapshot pixels. */
+/** @brief The CRC-32 of @p len bytes, as a PNG chunk carries it. */
 static uint32_t png_crc(const unsigned char *bytes, size_t len)
 {
     uint32_t crc = 0xffffffffu;
@@ -354,6 +355,14 @@ static uint32_t png_crc(const unsigned char *bytes, size_t len)
     return ~crc;
 }
 
+/**
+ * @brief Decode the @p n PNG bytes at @p b into @p out: every chunk's CRC
+ *        checked, the palette's alpha from tRNS, at most 30000 pixels a
+ *        side and TIKU_IMAGE_PIXELS_MAX in all.
+ * @return TIKU_IMG_OK; NOT_IMAGE without the signature; UNSUPPORTED for a
+ *         depth other than 1, 2, 4 or 8, or other than 8 for truecolour
+ *         and alpha; BAD for a malformed file or a failed allocation.
+ */
 static tiku_image_err_t
 load_png(const unsigned char *b, long n, tiku_image_t *out)
 {
@@ -405,9 +414,8 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
         } else if (memcmp(type, "tRNS", 4) == 0 && f.colour == 3) {
             uint32_t k;
 
-            /* Per-entry alpha for a palette: the only transparency a
-             * palette image can carry, and what makes a cut-out icon a
-             * cut-out rather than a white square. */
+            /* Per-entry alpha for the palette.  The other colour types'
+             * tRNS is not read. */
             for (k = 0; k < len && k < 256u; k++) {
                 pal[k] = (pal[k] & 0x00ffffffu) |
                          ((uint32_t)b[i + 8 + k] << 24);
@@ -445,15 +453,15 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
     case 6: f.chan = 4; break;
     default: free(idat); return TIKU_IMG_BAD;
     }
-    /* Truecolour and alpha channels are 8 bits here; the sub-byte depths
-     * belong to greyscale and palette, which is where they buy anything. */
+    /* Truecolour and alpha images are read at 8 bits a sample; PNG allows
+     * the sub-byte depths to greyscale and palette images alone. */
     if ((f.colour == 2 || f.colour == 4 || f.colour == 6) && f.depth != 8) {
         free(idat);
         return TIKU_IMG_UNSUPPORTED;
     }
     if (f.depth != 1 && f.depth != 2 && f.depth != 4 && f.depth != 8) {
         free(idat);
-        return TIKU_IMG_UNSUPPORTED;   /* 16 bits per sample */
+        return TIKU_IMG_UNSUPPORTED;   /* 16 bits, or an undefined depth */
     }
     if (f.colour == 3 && npal == 0) {
         free(idat);
@@ -464,8 +472,8 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
     f.bpp = (f.chan * f.depth + 7) / 8;
     if (f.bpp < 1) { f.bpp = 1; }
 
-    /* Room for every pass's rows plus one filter byte each; the
-     * uninterlaced case is the same sum with one pass. */
+    /* An upper bound on the inflated rows: each row's bytes and filter
+     * byte, doubled to cover Adam7's passes, whose rows round up apart. */
     rawlen = ((long)w * f.chan * f.depth / 8L + f.chan + 1L) * h + h + 64L;
     rawlen *= 2L;
     raw = malloc((size_t)rawlen);
@@ -486,8 +494,8 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
     } else {
         long used = 0;
 
-        /* Adam7: seven sub-images, each filtered on its own rows, which is
-         * why the pass has to know its own width rather than the image's. */
+        /* Adam7: seven sub-images, each with its own width and its own
+         * filtered rows. */
         for (p = 0; p < 7; p++) {
             int x0 = adam7[p][0], y0 = adam7[p][1];
             int dx = adam7[p][2], dy = adam7[p][3];
@@ -531,11 +539,12 @@ tiku_image_load(const char *path, tiku_image_t *out)
     return rc;
 }
 
-/** @brief Decode into a temporary image so a failed load never loses pixels. */
 tiku_image_err_t
 tiku_image_decode(const void *bytes, size_t len, tiku_image_t *result)
 {
     const unsigned char *b = bytes;
+    /* Decoded into a temporary, so a failed decode leaves result as it
+     * was. */
     tiku_image_t decoded = {0};
     tiku_image_t *out = &decoded;
     tiku_image_err_t rc;
@@ -588,9 +597,8 @@ tiku_image_thumb(const tiku_image_t *src, int size,
         src->w <= 0 || src->h <= 0) {
         return -1;
     }
-    /* The longer side sets the scale, so the whole picture fits and its
-     * shape survives -- a stretched thumbnail is harder to recognise than
-     * a small one. */
+    /* The longer side sets the scale, so the whole picture fits and keeps
+     * its shape. */
     if (src->w >= src->h) {
         tw = size;
         th = (int)(((long)src->h * size + src->w / 2) / src->w);
@@ -609,7 +617,7 @@ tiku_image_thumb(const tiku_image_t *src, int size,
     if (out->px == NULL) {
         return -1;
     }
-    /* calloc leaves the margins at 0: fully transparent, not black. */
+    /* calloc leaves the margins at 0, which is fully transparent. */
     for (y = 0; y < th; y++) {
         long sy = (long)y * src->h / th;
 

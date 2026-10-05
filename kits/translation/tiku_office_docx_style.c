@@ -82,8 +82,7 @@ dx_color(const char *v)
     return *end == '\0' ? 0xff000000u | (uint32_t)c : 0;
 }
 
-/** @brief Whether @p hay holds @p needle, ASCII case aside: strcasestr,
- *         which a C library need not declare. */
+/** @brief Whether @p hay holds @p needle, ASCII case aside. */
 static int
 has(const char *hay, const char *needle)
 {
@@ -626,7 +625,8 @@ style_read(dx_t *x, const tiku_xml_node_t *e, dx_style_t *s)
     }
 }
 
-/** @brief @p id's style of type @p type as read, or NULL. */
+/** @brief @p id's style of type @p type as read, the type's default for
+ *         a NULL @p id, or NULL. */
 static dx_style_t *
 find_style(dx_t *x, const char *id, char type)
 {

@@ -9,9 +9,9 @@
  * A .docx or .odt is laid out into pages -- its fonts, or faces drawn to
  * their widths; its paragraphs, lists, tables, pictures, headers and
  * footers, footnotes -- and a .pptx is drawn a slide a page.  Either way
- * what comes out is a PDF, which tiku_pdf_view.h shows and a file keeps
- * (docs/plans/PLAN-office.md).  Everything here reads files from anyone:
- * parts are read with ceilings, and nothing outside the file is fetched.
+ * what comes out is a PDF, which tiku_pdf_view.h shows and a file keeps.
+ * Everything here reads files from anyone: parts are read with ceilings,
+ * and nothing outside the file is fetched.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -33,11 +33,12 @@ typedef enum {
 tiku_office_kind_t tiku_office_kind(const char *path);
 
 /**
- * @brief @p path laid out and written as a PDF, in memory.  It takes as
- *        long as the document is long: call it on a worker.  It fits
+ * @brief @p path laid out and written as a PDF, in memory.  It fits
  *        tiku_pdf_view_open_as().
- * @return the PDF's bytes to free(), with their length in @p len; NULL
- *         with a sentence in @p why (@p max bytes) saying why not.
+ * @return the PDF's bytes, with their length in @p len; NULL with a
+ *         sentence in @p why (@p max bytes) saying why not.
+ * @note It takes as long as the document is long: call it on a worker.
+ *       The caller frees the bytes.
  */
 unsigned char *tiku_office_pdf(const char *path, size_t *len, char *why,
                                size_t max);

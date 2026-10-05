@@ -5,12 +5,11 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_thumb.h - thumbnails: when to make one, where it lives, and the
- * queue that makes it without stopping the window.
+ * two queues that make them one job at a time.
  *
- * The rules here are the ones the rows are about: a cached thumbnail is
- * trusted only while it is newer than the file, a big image must not stall
- * the small ones behind it, the same file is not worked twice at once, and
- * a pose shows a type icon until the picture is ready rather than waiting.
+ * A stored thumbnail is trusted only while it is newer than the file.
+ * Big files wait on a queue of their own, taken only when the small one
+ * is empty, and the same file is not worked twice at once.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,20 +28,21 @@
 #define TIKU_THUMB_SIZE 128
 
 /**
- * @brief Above this size an image goes on the slow queue.
- *
- * Tracker's 128 KB.  The split exists so one enormous file cannot hold up
- * the dozen small ones behind it -- the window fills in the order the eye
- * would want, not the order the directory happened to list.
+ * @brief A file of this many bytes or more goes on the big queue, which
+ *        is taken only when the small queue is empty (Tracker's 128 KB).
  */
 #define TIKU_THUMB_BIG 131072
 
 /** @brief How many jobs may be waiting on each queue. */
 #define TIKU_THUMB_QUEUE 32
 
-/** @brief Where a thumbnail and its stamp live on the file. */
+/** @brief The attribute name for a thumbnail's pixels.  This kit writes
+ *         nothing under it: the pixels are in a cache file under
+ *         $HOME/.cache/tiku-tracker. */
 #define TIKU_ATTR_THUMB      "_trk/thumb"
+/** @brief The attribute that holds a thumbnail's freshness stamp. */
 #define TIKU_ATTR_THUMB_TIME "_trk/thumbtime"
+/** @brief The attribute that holds the image's own width and height. */
 #define TIKU_ATTR_THUMB_DIM  "_trk/thumbdim"
 
 /** @brief One queued piece of work. */
@@ -65,60 +65,75 @@ typedef struct {
                                      * setting; on by default           */
 } tiku_thumb_q_t;
 
+/** @brief Empty both queues, with thumbnails switched on. */
 void tiku_thumb_init(tiku_thumb_q_t *q);
 
-/**
- * @brief Whether @p path should get a thumbnail at all.
- *
- * The setting first, then the kind: only an image earns one.
- */
+/** @brief Whether @p path gets a thumbnail: thumbnails are switched on
+ *         and the file is an image. */
 int tiku_thumb_wanted(const tiku_thumb_q_t *q, const char *path);
 
 /**
  * @brief Whether the stored thumbnail may still be trusted.
  *
- * Strictly newer than the file: a thumbnail made in the same second as an
- * edit is not evidence the edit is in it.
+ * Its stamp must be strictly newer than @p mtime: a thumbnail made in the
+ * same second as an edit may not show the edit.
  */
 int tiku_thumb_fresh(tiku_store_t *store, const char *path,
                          int64_t mtime);
 
 /**
- * @brief Queue @p path.
+ * @brief Queue @p path on the small or the big queue by @p bytes.
  *
  * @return 1 when it was queued, 0 when it was already in flight or queued
- *         (the same file is not worked twice at once), -1 when the queue
- *         is full.
+ *         (the same file is not worked twice at once), -1 when thumbnails
+ *         are switched off or the queue is full.
  */
 int tiku_thumb_queue(tiku_thumb_q_t *q, const char *path,
                          int64_t bytes, int size);
 
 /**
- * @brief Do at most one queued job.
+ * @brief Do at most one queued job on the calling thread:
+ *        tiku_thumb_take(), tiku_thumb_make() and tiku_thumb_landed() in
+ *        a row.
  *
- * Small files first, so a big one cannot stall them.  Called from the
- * shell's idle tick, which is what keeps the window answering while the
- * picture is made.
- *
- * @return 1 when a job ran.
+ * @return 1 when a job ran, whether or not it made a thumbnail.
  */
 int tiku_thumb_step(tiku_thumb_q_t *q, tiku_store_t *store);
 
-/*
- * The step in three, for a shell that decodes elsewhere: take the next
- * path (it becomes the active one), make its thumbnail on any thread,
- * and land it -- the writes, the count, the active one cleared -- on
- * the loop.  tiku_thumb_step() is the three in a row.
+/**
+ * @brief Take the next job, small files first; its path becomes the
+ *        active one until tiku_thumb_landed().
+ *
+ * @return 1 with @p path set, 0 when a job is active or none waits.
  */
 int  tiku_thumb_take(tiku_thumb_q_t *q, char *path, size_t max);
+/**
+ * @brief Decode @p path and fit it into a TIKU_THUMB_SIZE square.
+ *
+ * Touches no queue or store, so it may run on any thread.  @p w and @p h
+ * get the image's own size.
+ *
+ * @return 0, or -1 when the image cannot be read or scaled.
+ */
 int  tiku_thumb_make(const char *path, int *w, int *h, tiku_image_t *thumb);
+/**
+ * @brief Finish the active job: store @p thumb's pixels in the cache and
+ *        its stamp and the image's size as attributes, count it, free it,
+ *        and clear the active job.
+ *
+ * A NULL or empty @p thumb, a failed make, only clears the active job.
+ *
+ * @note Call on the thread that owns @p q and @p store.
+ */
 void tiku_thumb_landed(tiku_thumb_q_t *q, tiku_store_t *store,
                        const char *path, int w, int h, tiku_image_t *thumb);
 
 /**
- * @brief Read a stored thumbnail back into @p out.
+ * @brief Read a stored thumbnail back into @p out, TIKU_THUMB_SIZE
+ *        square.
  *
- * @return 0 on success.
+ * @return 0, or -1 when no whole thumbnail is stored or memory is short.
+ * @note The caller frees @p out with tiku_image_free().
  */
 int tiku_thumb_load(tiku_store_t *store, const char *path,
                         tiku_image_t *out);

@@ -9,7 +9,8 @@
  *
  * Knows no document: the PDF renderer and the circuit viewer each build
  * their paths here.  A strict path refuses a coordinate the rasteriser
- * cannot hold; a lenient one, as PDF draws, clamps it and draws on.
+ * cannot hold; a lenient one, which the PDF renderer uses, clamps it and
+ * draws on.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -124,9 +125,9 @@ int tiku_vector_path_bounds(const tiku_vector_path_t *p, int w, int h,
 
 /**
  * @brief Coverage of @p p within the box, by @p evenodd or nonzero.
- * @return a mask the caller frees with tiku_vector_mask_free(); one with
- *         no bytes and no size for an empty or failed path, a box with no
- *         area, or when memory is short.
+ * @return the mask; one with no bytes and no size for an empty or failed
+ *         path, a box with no area, or when memory is short.
+ * @note The caller frees the mask with tiku_vector_mask_free().
  */
 tiku_vector_mask_t tiku_vector_path_fill(const tiku_vector_path_t *p,
                                          int evenodd, int x0, int y0, int w,

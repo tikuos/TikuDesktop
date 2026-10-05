@@ -5,11 +5,11 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_archive.h - archives read: ZIP, tar, gzip and tar in gzip, listed
- * and extracted.  An archive is read as a stream, never held whole, so
- * its size is the disk's business, not memory's.  Extraction treats every
- * name as a stranger's: nothing lands outside the folder it is given, no
- * link is followed on the way, and each entry's size and CRC are checked.
- * Not thread-safe per archive: one caller at a time.
+ * and extracted.  An archive's data is read as a stream, never held
+ * whole.  Extraction writes nothing outside the folder it is given and
+ * follows no link on the way; each entry's size, and its CRC where the
+ * format keeps one, is checked.  Not thread-safe per archive: one caller
+ * at a time.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/** @brief An open archive: its file, its format and its listed entries. */
 typedef struct tiku_archive tiku_archive_t;
 
 /** @brief What went wrong: with the archive, or with one entry of it. */
@@ -26,19 +27,20 @@ typedef enum {
     TIKU_ARCHIVE_OK = 0,
     TIKU_ARCHIVE_MISSING,           /* the file could not be opened      */
     TIKU_ARCHIVE_UNKNOWN,           /* not an archive read here          */
-    TIKU_ARCHIVE_NOT_YET,           /* one read here later: xz, 7z ...   */
+    TIKU_ARCHIVE_NOT_YET,           /* recognised, not read: xz, 7z ...  */
     TIKU_ARCHIVE_DAMAGED,           /* its structure does not hold       */
     TIKU_ARCHIVE_UNSUPPORTED,       /* an entry's method or kind         */
     TIKU_ARCHIVE_ENCRYPTED,         /* an entry wants a password         */
     TIKU_ARCHIVE_CHECKSUM,          /* an entry's CRC or size is wrong   */
     TIKU_ARCHIVE_UNSAFE,            /* an entry's name or link refused   */
     TIKU_ARCHIVE_WRITE,             /* the disk refused a file           */
-    TIKU_ARCHIVE_REPLACED,          /* a later entry took its name       */
+    TIKU_ARCHIVE_REPLACED,          /* made over a file at its path      */
     TIKU_ARCHIVE_CANCELLED,
     TIKU_ARCHIVE_NOMEM,
     TIKU_ARCHIVE_TOO_LARGE          /* an entry past the size asked for  */
 } tiku_archive_err_t;
 
+/** @brief An archive's format, found from its first bytes. */
 typedef enum {
     TIKU_ARCHIVE_ZIP = 1,
     TIKU_ARCHIVE_TAR,
@@ -75,17 +77,18 @@ typedef int (*tiku_archive_progress_t)(void *ctx, int64_t done,
 
 /**
  * @brief Open and list the archive at @p path.  A ZIP is listed from its
- *        central directory; a tar in gzip is read through once, telling
+ *        central directory.  A tar is read a header at a time, its data
+ *        skipped, or decoded through when it is in gzip, telling
  *        @p progress (which may be NULL) how far.
- * @return OK with @p out set; else why not, @p out NULL.  An archive that
- *         breaks part way is opened with what came before, and says so
- *         through tiku_archive_damaged().
+ * @return OK with @p out set; else why not, @p out NULL.  A tar that
+ *         breaks part way is opened with the entries before the break,
+ *         and tiku_archive_damaged() returns 1 for it.
  */
 tiku_archive_err_t tiku_archive_open(const char *path,
                                      tiku_archive_progress_t progress,
                                      void *ctx, tiku_archive_t **out);
 
-/** @brief Let @p a go: its file, entries and names. */
+/** @brief Close @p a's file and free @p a, its entries and names. */
 void tiku_archive_close(tiku_archive_t *a);
 
 /** @brief What @p a was found to be. */
@@ -95,8 +98,8 @@ tiku_archive_format_t tiku_archive_format(const tiku_archive_t *a);
  *         "gzip-compressed file". */
 const char *tiku_archive_format_name(const tiku_archive_t *a);
 
-/** @brief Whether listing stopped at a break: the entries are those
- *         before it. */
+/** @brief Whether listing a tar stopped at a break: the entries are
+ *         those before it. */
 int tiku_archive_damaged(const tiku_archive_t *a);
 
 /** @brief How many entries were listed. */
@@ -106,21 +109,22 @@ long tiku_archive_count(const tiku_archive_t *a);
 const tiku_archive_entry_t *tiku_archive_entry(const tiku_archive_t *a,
                                                long i);
 
-/** @brief The entry whose path is @p path, as the listing cleaned it:
- *         the same bytes, else the same but for ASCII case, as a package
- *         compares its part names.  @return its index, or -1. */
+/** @brief The first entry whose path, as the listing cleaned it, is
+ *         @p path; failing that, the first equal but for ASCII case, the
+ *         way a package's part names compare.  @return its index, or -1. */
 long tiku_archive_find(const tiku_archive_t *a, const char *path);
 
 /**
- * @brief Entry @p i's bytes into memory, at most @p max of them, its size
- *        and CRC checked: a part of a package, read whole.
+ * @brief Read entry @p i whole into memory, at most @p max bytes of it,
+ *        checking its size and, where the format keeps one, its CRC.
  * @return OK with @p out (to free(), a zero byte after its end) and
- *         @p len; else why not, @p out NULL.
+ *         @p len; else why not, @p out NULL: MISSING for no entry @p i,
+ *         UNSUPPORTED for one that is not a file, TOO_LARGE past @p max.
  */
 tiku_archive_err_t tiku_archive_read(tiku_archive_t *a, long i, size_t max,
                                      unsigned char **out, size_t *len);
 
-/** @brief A sentence for @p e: "the file is damaged" ... */
+/** @brief A phrase for @p e: "the archive is damaged" ... */
 const char *tiku_archive_strerror(tiku_archive_err_t e);
 
 /** @brief What a file not read here is, by its first bytes: "an xz-
@@ -136,27 +140,36 @@ typedef struct {
                                     /* NULL: "src/lib" makes src/lib/a.c */
                                     /* a.c; entries outside it are left  */
     int metadata;                   /* take __MACOSX/ and ._ files too   */
-    tiku_archive_progress_t progress;   /* bytes written, of the total   */
+    tiku_archive_progress_t progress;   /* bytes written, of the total;  */
+                                        /* the file's bytes read, of its */
+                                        /* size, when a size is unknown  */
     void (*report)(void *ctx, long entry, tiku_archive_err_t why);
     void *ctx;                      /* for progress and report           */
 } tiku_archive_extract_t;
 
 /**
  * @brief Extract into the folder @p dest, which exists.  Each entry not
- *        made, or made over, is told to @c report with why.
- * @return OK when every entry chosen was made; CANCELLED or WRITE when
- *         the whole stopped; else the first entry's trouble.
+ *        made, or made over a file already at its path, is passed to
+ *        @c report with why.
+ * @return OK when every entry chosen was made; CANCELLED or NOMEM when
+ *         the extraction stopped, WRITE when @p dest cannot be opened;
+ *         else the first trouble an entry met other than REPLACED, or
+ *         DAMAGED for a tar that ends early.
+ * @note A file or link already at an entry's path in @p dest is removed
+ *       and replaced; a gzip's one file is given a free name, "name 2.ext"
+ *       and on.
  */
 tiku_archive_err_t tiku_archive_extract(tiku_archive_t *a, const char *dest,
                                         const tiku_archive_extract_t *opt);
 
 /** @brief The folder an archive is extracted into: its file's name, the
- *         archive's suffix (.zip, .tar.gz, .tgz ...) taken off. */
+ *         archive's suffix (.zip, .tar.gz, .tgz ...) taken off, or
+ *         "Archive" when nothing is left. */
 void tiku_archive_folder_name(const char *path, char *out, size_t max);
 
 /**
- * @brief Make the folder @p parent/@p name, or "name 2", "name 3" ... when
- *        that is taken: always a new one, never one already there.
+ * @brief Make a new folder @p parent/@p name, or "name 2", "name 3" ...
+ *        up to "name 999" when the name is taken.
  * @return 0 with its path in @p out; -1 when none could be made.
  */
 int tiku_archive_new_folder(const char *parent, const char *name,

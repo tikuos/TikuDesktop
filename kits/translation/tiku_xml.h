@@ -7,11 +7,12 @@
  * tiku_xml.h - XML read into a tree.
  *
  * Office documents are XML in a ZIP.  This reads one part into elements
- * and text, with every namespace a reader here knows given a fixed
- * prefix -- "w:p" whatever the file called WordprocessingML -- so readers
- * match names, not URIs.  No DTD is read and no entity expanded but the
- * five and character references: a file cannot reach outside itself or
- * multiply itself.  Nesting is bounded, so readers may recurse.
+ * and text.  Every namespace a reader here knows gets a fixed prefix --
+ * "w:p", whatever prefix the file gave WordprocessingML -- and readers
+ * match those names.  No DTD is read and no entity expanded but the five
+ * predefined ones and character references, so a file cannot reach
+ * outside itself or multiply itself.  Nesting is bounded by
+ * TIKU_XML_DEPTH, so readers may recurse.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -83,7 +84,8 @@ struct tiku_xml_node {
 };
 
 /**
- * @brief Read @p len bytes of XML (UTF-8, or UTF-16 with its mark).
+ * @brief Read @p len bytes of XML: UTF-8, UTF-16 found by its mark or its
+ *        opening '<', or Latin-1 when the declaration names it.
  * @return the tree, or NULL with a sentence in @p why (which may be
  *         NULL) saying what was wrong and on which line.
  */

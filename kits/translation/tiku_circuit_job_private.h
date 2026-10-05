@@ -16,16 +16,16 @@
 
 /** @brief One FilesAttributes entry; an absent string is empty. */
 typedef struct {
-    char path[4096];                /* Path, as the job wrote it         */
-    char function[192];             /* FileFunction                      */
-    char polarity[32];              /* FilePolarity                      */
-    char format[32];                /* FileFormat                        */
+    char path[4096];                /**< Path, as the job wrote it       */
+    char function[192];             /**< FileFunction                    */
+    char polarity[32];              /**< FilePolarity                    */
+    char format[32];                /**< FileFormat                      */
 } circuit_job_entry_t;
 
 /** @brief A job's entries, in the job's order. */
 typedef struct {
-    circuit_job_entry_t entries[TIKU_CIRCUIT_LAYERS_MAX];  /* the files  */
-    size_t count;                   /* entries read                      */
+    circuit_job_entry_t entries[TIKU_CIRCUIT_LAYERS_MAX];  /**< the files */
+    size_t count;                   /**< entries read                    */
 } circuit_job_list_t;
 
 /**

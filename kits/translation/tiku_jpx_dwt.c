@@ -64,7 +64,8 @@ lift(float *e, int m, int i0, int odd, double c)
  * @brief One line's inverse transform (F.3.6, F.3.7): @p n samples, the
  *        first @p nlow low-pass and the rest high-pass, interleaved by
  *        their place from @p i0, mirrored, lifted and written back in
- *        order.  @p e holds n + 2 * EXT.
+ *        order.
+ * @note @p e holds n + 2 * EXT samples.
  */
 static void
 line_idwt(float *line, int n, int nlow, int i0, int reversible, float *e)

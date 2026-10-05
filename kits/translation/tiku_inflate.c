@@ -4,7 +4,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_inflate.c - DEFLATE: stored, fixed and dynamic Huffman blocks.
+ * tiku_inflate.c - DEFLATE decoded whole: stored, fixed and dynamic
+ * Huffman blocks, into a buffer of known size or one that grows, raw or
+ * after a zlib header.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,7 +22,8 @@
 #define MAXCODES  (MAXLCODES + MAXDCODES)
 #define FIXLCODES 288               /* the fixed table's literal codes     */
 
-/** @brief A bit-at-a-time reader; DEFLATE packs least significant first. */
+/** @brief One decode: the input, read least significant bit first as
+ *         DEFLATE packs it, and the output. */
 typedef struct {
     const unsigned char *src;
     long                 slen;
@@ -38,8 +41,9 @@ typedef struct {
 /**
  * @brief Make room for @p need more bytes of output.
  *
- * A fixed buffer is what it is; a growable one doubles, up to its
- * limit.  @return 1 when the bytes fit.
+ * A fixed buffer is not grown; a growable one doubles, up to its
+ * limit.  @return 1 when the bytes fit, 0 when they do not or memory is
+ * short.
  */
 static int
 room(state_t *s, long need)
@@ -66,13 +70,8 @@ room(state_t *s, long need)
     return 1;
 }
 
-/**
- * @brief A canonical Huffman table: how many codes of each length, and the
- * symbols in code order.
- *
- * Held this way rather than as a tree because the decode below walks
- * lengths, not nodes: no allocation, and the whole table is two arrays.
- */
+/** @brief A canonical Huffman table: how many codes have each length, and
+ *         the symbols in code order, which is all decode() walks. */
 typedef struct {
     short count[MAXBITS + 1];
     short symbol[MAXCODES];
@@ -103,6 +102,8 @@ bits(state_t *s, int need)
  * Walks code lengths shortest-first, tracking the first code of each length
  * and how many there are; a code that falls inside a length's run indexes
  * straight into the symbol array.
+ *
+ * @return the symbol, or -1 for no matching code or the end of the input.
  */
 static int
 decode(state_t *s, const huff_t *h)
@@ -130,8 +131,8 @@ decode(state_t *s, const huff_t *h)
 /**
  * @brief Build a table from code lengths.
  *
- * @return 0 for a complete code, >0 for an incomplete one (legal only for
- *         a single-symbol distance table), -1 for an over-subscribed one.
+ * @return 0 for a complete code, >0 for an incomplete one (legal only
+ *         when a single symbol has a code), -1 for an over-subscribed one.
  */
 static int
 construct(huff_t *h, const short *length, int n)
@@ -148,9 +149,8 @@ construct(huff_t *h, const short *length, int n)
     if (h->count[0] == n) {
         return 0;                   /* no codes at all: complete and empty */
     }
-    /* A code is over-subscribed when its lengths claim more of the code
-     * space than exists -- the one malformity that would otherwise decode
-     * into nonsense rather than failing. */
+    /* Over-subscribed: the lengths claim more of the code space than
+     * exists. */
     left = 1;
     for (len = 1; len <= MAXBITS; len++) {
         left <<= 1;
@@ -171,7 +171,9 @@ construct(huff_t *h, const short *length, int n)
     return left;
 }
 
-/** @brief One length/distance pair, or a run of literals, into out. */
+/** @brief A block's literals and length/distance pairs into out, up to
+ *         its end-of-block code.  @return 0, or -1 for malformed data or
+ *         output that does not fit. */
 static int
 codes(state_t *s, const huff_t *lencode, const huff_t *distcode)
 {
@@ -228,9 +230,8 @@ codes(state_t *s, const huff_t *lencode, const huff_t *distcode)
                 return -1;
             }
             dist = dists[symbol] + e;
-            /* The window is the output written so far, so a distance
-             * reaching before the start is the check that stops a crafted
-             * stream reading memory it does not own. */
+            /* The window is the output written so far: a distance
+             * reaching before its start would read outside the buffer. */
             if (dist > s->owr || !room(s, len)) {
                 return -1;
             }
@@ -247,11 +248,9 @@ codes(state_t *s, const huff_t *lencode, const huff_t *distcode)
 static int
 fixed_block(state_t *s)
 {
-    /* Built on the stack every time, as dynamic_block's are: a static
-     * table filled at first use races between two decoding threads, and
-     * a viewer and a thumbnail are two jobs on the same worker pool.
-     * Building them costs a few hundred stores against a whole block's
-     * decode. */
+    /* The tables are built on the stack on every call: two threads may
+     * decode at once, such as a viewer's job and a thumbnail's on one
+     * worker pool. */
     huff_t lencode, distcode;
     short lengths[FIXLCODES];
     int symbol;
@@ -270,8 +269,8 @@ fixed_block(state_t *s)
 static int
 dynamic_block(state_t *s)
 {
-    /* The order the code-length code's own lengths arrive in: the least
-     * useful lengths last, so a short table can stop early. */
+    /* The order the code-length code's lengths arrive in (RFC 1951
+     * section 3.2.7); those a header does not send are 0. */
     static const short order[19] = {
         16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
     };
@@ -358,7 +357,8 @@ dynamic_block(state_t *s)
     return codes(s, &lencode, &distcode);
 }
 
-/** @brief An uncompressed block: byte-aligned, with a length and its NOT. */
+/** @brief An uncompressed block: byte-aligned, its length LEN and NLEN,
+ *         LEN's one's complement, then the bytes. */
 static int
 stored_block(state_t *s)
 {
@@ -372,7 +372,7 @@ stored_block(state_t *s)
     len = (long)s->src[s->pos] | ((long)s->src[s->pos + 1] << 8);
     if (s->src[s->pos + 2] != (~s->src[s->pos] & 0xffu) ||
         s->src[s->pos + 3] != (~s->src[s->pos + 1] & 0xffu)) {
-        return -1;                  /* the length disagrees with its NOT */
+        return -1;                  /* LEN and NLEN disagree */
     }
     s->pos += 4;
     if (s->pos + len > s->slen || !room(s, len)) {
@@ -384,7 +384,8 @@ stored_block(state_t *s)
     return 0;
 }
 
-/** @brief Every block to the last.  @return 0, or -1 where it broke. */
+/** @brief Every block to the last.  @return 0, or -1 for malformed data
+ *         or output that does not fit. */
 static int
 blocks(state_t *s)
 {
@@ -451,8 +452,8 @@ tiku_inflate_alloc(const unsigned char *src, long slen, unsigned char **out,
     s.src = src;
     s.slen = slen;
     if (zlib) {
-        /* A PDF sometimes carries raw DEFLATE under the Flate name; the
-         * header says which, and a missing one is not fatal. */
+        /* A PDF's Flate stream may be raw DEFLATE: the zlib header is
+         * skipped when it is there. */
         if (zlib_header(src, slen)) {
             s.src += 2;
             s.slen -= 2;
@@ -485,9 +486,9 @@ tiku_inflate_zlib(const unsigned char *src, long slen, unsigned char *out,
     if (src == NULL || slen < 2) {
         return -1;
     }
-    /* CMF/FLG: deflate with a window that need not be honoured (the whole
-     * output is in memory), no preset dictionary, and the pair must be a
-     * multiple of 31. */
+    /* CMF/FLG: method 8, deflate; no preset dictionary; the pair a
+     * multiple of 31.  The window size is not checked: the whole output
+     * is in memory. */
     if ((src[0] & 0x0fu) != 8u || (src[1] & 0x20u) != 0u ||
         (((unsigned)src[0] << 8) | src[1]) % 31u != 0u) {
         return -1;

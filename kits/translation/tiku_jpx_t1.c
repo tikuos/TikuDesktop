@@ -22,8 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Each coefficient's flags: its own state, and its neighbours' told to
- * it as they become significant, so a context is read, not counted. */
+/* Each coefficient's flags: its own state, and its neighbours'
+ * significance and signs, set as each neighbour becomes significant; a
+ * coefficient's contexts are taken from its own flags alone. */
 #define SIG     0x0001u             /* significant                       */
 #define NEG     0x0002u             /* its sign is minus                 */
 #define VISIT   0x0004u             /* coded in this plane's first pass  */

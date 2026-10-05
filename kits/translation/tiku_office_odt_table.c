@@ -5,13 +5,13 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_office_odt_table.c - an OpenDocument table read: its columns,
- * repeated as they say and fitted to the table's width; its rows, the
- * header rows repeated atop each page; and its cells with their spans.
+ * repeated as they say and fitted to the table's width; its rows, header
+ * rows marked to repeat atop each page; and its cells with their spans.
  *
  * A cell spanning columns hides the covered cells after it in its row; a
- * cell spanning rows begins a merge the covered cells below it carry on,
- * as Word's tables merge.  Borders and shading are the cells' own.
- * Repeats are bounded: a file cannot ask for a million empty rows.
+ * cell spanning rows begins a vertical merge that the covered cells below
+ * it continue.  Borders and shading are the cells' own.  Repeats are
+ * bounded: REPEAT_MAX for one row or cell, ROWS_MAX rows in all.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,13 +24,13 @@
 
 #define GRID_MAX 256                /* columns a table may have          */
 #define ROWS_MAX 20000              /* rows, repeats counted             */
-#define REPEAT_MAX 64               /* one row or cell repeated          */
+#define REPEAT_MAX 64               /* times a row or cell is repeated   */
 
 /** @brief A table being read: its rows, and the merges running down. */
 typedef struct {
     of_vec_t rows;                  /* of_row_t                          */
     int      down[GRID_MAX];        /* rows a merge above still covers   */
-    int      span[GRID_MAX];        /* and the columns it spans          */
+    int      span[GRID_MAX];        /* the columns that merge spans      */
 } od_tab_t;
 
 /** @brief Attribute @p name of @p e as a count of at least 1 and at most

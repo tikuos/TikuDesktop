@@ -6,7 +6,8 @@
  *
  * tiku_circuit_gerber_attributes.c - X2 attributes in their file,
  * aperture and object scopes, kept as bounded text for inspection, and
- * the details each object carries.  Polarity attributes are text, not LP.
+ * the details each object carries.  Only LPD and LPC set an object's
+ * polarity; a polarity attribute is kept as text.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

@@ -9,8 +9,8 @@
  * HVIF is the compact vector container Haiku stores in the BEOS:ICON
  * attribute and in #'VICN' resources: a magic word, then a style table, a
  * path table and a shape table, all counted by a single byte.  Geometry
- * lives in a nominal 64x64 design square, so an icon is rasterised straight
- * at the size it will be drawn rather than scaled from a bitmap.
+ * lives in a nominal 64x64 design square, and an icon is rasterised at the
+ * size it is drawn.
  *
  * Format reimplemented from Haiku's src/libs/icon/flat_icon/ (Haiku,
  * haiku-os.org, MIT licensed).  The artwork itself carries the Open Tracker
@@ -35,10 +35,8 @@ typedef struct tiku_hvif tiku_hvif_t;
 /**
  * @brief Parse an HVIF blob into a renderable icon.
  *
- * The parse is strict in the one way the format allows a cheap end-to-end
- * check: it must consume @p data to its exact final byte.  Anything left
- * over means a desynchronisation upstream, so the blob is rejected rather
- * than half-drawn.
+ * The parse must end on the blob's final byte: a blob with bytes left
+ * over, or one that ends inside a record, is rejected.
  *
  * @param data   HVIF bytes, starting with the "ncif" magic.
  * @param len    Length of @p data.
@@ -58,8 +56,8 @@ void tiku_hvif_free(tiku_hvif_t *icon);
  * @p bmp receives @p w * @p h pixels of 0xAARRGGBB with the colour channels
  * already multiplied by alpha -- the layout tiku_rgb_t uses, plus a
  * real alpha byte -- cleared to fully transparent first.  The design square
- * is fitted uniformly into the smaller of @p w and @p h and centred, so a
- * non-square request letterboxes instead of stretching.
+ * is fitted uniformly into the smaller of @p w and @p h and centred: a
+ * non-square bitmap is letterboxed.
  *
  * @param icon Parsed icon.
  * @param bmp  Caller-supplied buffer of at least @p w * @p h uint32_t.

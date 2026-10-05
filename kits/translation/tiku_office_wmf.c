@@ -7,13 +7,13 @@
  * tiku_office_wmf.c - a Windows Metafile's records played into the
  * device context of tiku_office_gdi.c.
  *
- * A WMF knows no device: its window is mapped onto the box, as a
- * program playing one sets the viewport to where it goes.  The window
- * starts as the placeable header's bounds, else the first window the
- * records set, else the bounds of what they draw; records may set it
- * again.  Objects go in the lowest free slot of the table, as GDI puts
- * them.  A WMF made from an EMF carries it in comments; that is drawn
- * instead, all of it being there.
+ * A WMF names no device: its window is mapped onto the box it is drawn
+ * in.  The window starts as the placeable header's bounds, else the first
+ * window the records set, else the bounds of what they draw; records may
+ * set it again.  Objects go in the lowest free slot of the table, as GDI
+ * puts them: records name objects by that index.  A WMF made from an EMF
+ * carries the EMF in comments; when all of it is there, the EMF is drawn
+ * in place of the records.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -373,7 +373,8 @@ polypolygon(gdi_t *g, const rec_t *r)
     free(p);
 }
 
-/** @brief A record that draws a shape.  @return 1 when it was one. */
+/** @brief A record that draws a shape or clips to a box.  @return 1 when
+ *         it was one. */
 static int
 shapes(gdi_t *g, unsigned fn, const rec_t *r)
 {
@@ -432,8 +433,8 @@ shapes(gdi_t *g, unsigned fn, const rec_t *r)
 
 /* --------------------------------------------------------------- text  */
 
-/** @brief @p n bytes of text from byte @p at drawn at (@p x, @p y),
- *         their advances from byte @p dx when the record holds them. */
+/** @brief @p n bytes of text from byte @p at drawn at @p pt, their
+ *         advances from byte @p dx when the record holds them. */
 static void
 text(gdi_t *g, const rec_t *r, size_t at, int n, const double *pt,
      int opts, const double *rect, size_t dx)
@@ -628,8 +629,9 @@ grow(double *lo, double *hi, double x, double y)
     hi[1] = fmax(hi[1], y);
 }
 
-/** @brief The bounds of what the records at @p at draw, into @p bound:
- *         the window for a WMF that sets none. */
+/** @brief The bounds of the lines, polygons, rectangles and ellipses the
+ *         records at @p at draw, into @p bound: the window for a WMF that
+ *         sets none. */
 static void
 measure(const unsigned char *b, size_t n, size_t at, double *bound)
 {

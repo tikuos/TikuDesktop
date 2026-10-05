@@ -7,9 +7,9 @@
  * tiku_fontset_scan.c - finding the faces: every TrueType and OpenType
  * file in the folders fonts are kept in, each face's names, weight,
  * width and slant read from its own tables without loading its outlines.
- * A face's character map is read only when someone asks what it draws.
- * Folders that do not exist are passed over, so one list serves every
- * host: a Mac's, a Linux machine's, and an Office installed on either.
+ * A face's character map is read the first time fs_covers() asks about
+ * it.  The folder list holds a Mac's folders, a Mac Office's and a Linux
+ * machine's; folders that do not exist are passed over.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,15 +26,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define SCAN_DEPTH  4               /* folders below a fonts folder      */
+#define SCAN_DEPTH  4               /* folder levels below a fonts folder */
 #define SCAN_FACES  64              /* faces a collection may hold       */
 #define SCAN_TABLES 256             /* tables a face may list            */
 #define NAME_BYTES  (256 * 1024)    /* a name table read, at most        */
 #define CMAP_BYTES  (8 << 20)       /* a character map read, at most     */
 #define SCAN_NAMES  1024            /* folded names a face keeps, bytes  */
 
-/** @brief Where faces are kept, on every host this runs on; "~" is home.
- *         Office's own folders carry the faces its documents name. */
+/** @brief Where faces are kept on a Mac and on Linux; "~" is home.  A
+ *         Mac Office's own folders carry the faces its documents name. */
 static const char *const system_dirs[] = {
     "~/Library/Fonts", "/Library/Fonts", "/System/Library/Fonts",
     "/Applications/Microsoft Word.app/Contents/Resources/DFonts",
@@ -134,7 +134,8 @@ name_utf8(const unsigned char *p, size_t n, int utf16, char *out,
     out[k] = '\0';
 }
 
-/** @brief @p name, folded, added to the face's list unless there. */
+/** @brief @p name, folded, added to the face's list unless it is there
+ *         or the list's SCAN_NAMES bytes are full. */
 static void
 add_name(char *list, const char *name)
 {
@@ -223,8 +224,9 @@ style_guess(const char *style, fs_face_t *f)
 
 /* ----------------------------------------------------------- tables   */
 
-/** @brief Where face @p dir's tables are.  @return 0, or -1 for a face
- *         that is not one: no outlines this could draw. */
+/** @brief Where the tables of the face whose directory is at @p dir are.
+ *  @return 0, or -1 for a face with no outlines this can draw (glyf or
+ *          CFF), no name table or no head table. */
 static int
 find_tables(int fd, long dir, tables_t *t)
 {
@@ -312,7 +314,7 @@ face_room(void)
 }
 
 /** @brief Face @p index of the file @p path, its tables at @p dir, into
- *         the index when it is one that can be drawn. */
+ *         the index when it can be drawn and names its family. */
 static void
 add_face(int fd, const char *path, int index, long dir)
 {
@@ -354,7 +356,7 @@ add_face(int fd, const char *path, int index, long dir)
 
 /* ------------------------------------------------------------ files   */
 
-/** @brief Whether @p name ends as a font file does. */
+/** @brief Whether @p name ends in .ttf, .ttc, .otf or .otc. */
 static int
 font_file(const char *name)
 {
@@ -446,7 +448,8 @@ dir_seen(scan_t *s, const struct stat *st)
     return 0;
 }
 
-/** @brief The folder @p dir and those under it, @p depth deep more. */
+/** @brief The font files in folder @p dir and in the folders under it,
+ *         @p depth levels down; a folder already walked is passed over. */
 static void
 walk(scan_t *s, const char *dir, int depth)
 {
@@ -500,7 +503,7 @@ walk_list(scan_t *s, const char *dirs)
 }
 
 /** @brief The index built: the folders asked for, the fonts folder, then
- *         the system's -- or the test's folders alone. */
+ *         the system's; or only the folders $TIKU_FONTSET_ONLY names. */
 static void
 build(void)
 {
@@ -555,8 +558,8 @@ tiku_fontset_count(void)
 
 /* ------------------------------------------------------ characters   */
 
-/** @brief Room for range @p lo to @p hi, joined to the last when they
- *         touch.  @return 0, or -1 out of memory. */
+/** @brief Range @p lo to @p hi appended, or joined to the last when they
+ *         touch or overlap.  @return 0, or -1 out of memory. */
 static int
 add_range(uint32_t **r, int *n, int *cap, uint32_t lo, uint32_t hi)
 {
@@ -643,8 +646,9 @@ find_table(int fd, long dir, const char *tag, unsigned long *len)
     return 0;
 }
 
-/** @brief The best subtable of the cmap at @p cmap: the full Unicode
- *         one, else the BMP one, else the symbol one; 0 for none read. */
+/** @brief The best format 4 or 12 subtable of the cmap at @p cmap: the
+ *         full Unicode one, else the BMP one, else the symbol one; 0 for
+ *         none. */
 static long
 best_subtable(int fd, long cmap)
 {
@@ -709,7 +713,7 @@ fs_covers(fs_index_t *ix, fs_face_t *f, uint32_t cp)
 {
     int lo = 0, hi;
 
-    pthread_mutex_lock(&ix->lock);         /* read once, then only read */
+    pthread_mutex_lock(&ix->lock);         /* the map is read once */
     if (f->ncover < 0) {
         read_cover(f);
     }

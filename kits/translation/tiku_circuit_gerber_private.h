@@ -40,69 +40,69 @@
 
 /** @brief One AM definition: its name and the statements after it. */
 typedef struct {
-    char name[GERBER_MACRO_NAME];   /* as written after AM               */
-    char *body;                     /* the statements, malloc'd          */
+    char name[GERBER_MACRO_NAME];   /**< as written after AM             */
+    char *body;                     /**< the statements, malloc'd        */
 } gerber_macro_t;
 
 /** @brief One open SR block. */
 typedef struct {
-    size_t begin;                   /* first scene object in the block   */
-    unsigned x, y;                  /* columns and rows                  */
-    double dx, dy;                  /* their spacing, mm                 */
+    size_t begin;                   /**< first scene object in the block */
+    unsigned x, y;                  /**< columns and rows                */
+    double dx, dy;                  /**< their spacing, mm               */
 } gerber_repeat_t;
 
 /** @brief One attribute in a scope; an empty name is a free slot. */
 typedef struct {
-    char name[GERBER_ATTR_NAME];    /* up to 63 bytes                    */
-    char value[GERBER_ATTR_VALUE];  /* up to 191 bytes                   */
+    char name[GERBER_ATTR_NAME];    /**< up to 63 bytes                  */
+    char value[GERBER_ATTR_VALUE];  /**< up to 191 bytes                 */
 } gerber_attribute_t;
 
 /** @brief One aperture, by its D code. */
 typedef struct {
-    char kind;                      /* C, R, O, P or M (macro); zero for
-                                       an undefined D code               */
-    double w;                       /* width or diameter, mm; a macro's
-                                       bounds width                      */
-    double h;                       /* height, mm; its bounds height     */
-    double hole;                    /* centred hole diameter, mm         */
-    double rotation;                /* polygon rotation, degrees         */
-    int vertices;                   /* regular polygon vertex count      */
-    char attributes[GERBER_ATTRIBUTE_TEXT];  /* TA scope at definition   */
-    tiku_circuit_t *macro;          /* a macro's own scene, or NULL      */
-    char macro_name[GERBER_MACRO_NAME];     /* the macro it instantiates */
+    char kind;                      /**< C, R, O, P or M (macro); zero for
+                                         an undefined D code             */
+    double w;                       /**< width or diameter, mm; a macro's
+                                         bounds width                    */
+    double h;                       /**< height, mm; its bounds height   */
+    double hole;                    /**< centred hole diameter, mm       */
+    double rotation;                /**< polygon rotation, degrees       */
+    int vertices;                   /**< regular polygon vertex count    */
+    char attributes[GERBER_ATTRIBUTE_TEXT];  /**< TA scope at definition */
+    tiku_circuit_t *macro;          /**< a macro's own scene, or NULL    */
+    char macro_name[GERBER_MACRO_NAME];     /**< the macro it instantiates */
 } gerber_aperture_t;
 
 /** @brief The decoder's state for one artwork layer. */
 typedef struct {
-    tiku_circuit_t *doc;            /* the scene being built             */
-    const tiku_circuit_import_t *options;   /* cancellation; may be NULL */
-    tiku_circuit_diagnostic_t *diag;        /* the caller's; may be NULL */
-    tiku_circuit_err_t error;       /* the first failure; 0 while none   */
-    unsigned line;                  /* source line of the command        */
-    int integers;                   /* FS integer digits; 0 before FS    */
-    int decimals;                   /* FS fractional digits              */
-    int aperture;                   /* the selected D code               */
-    int mode;                       /* G01, G02 or G03 as 1 to 3; 0 unset */
-    int operation;                  /* the last D01, D02 or D03 as 1-3   */
-    int have_point;                 /* a current point exists            */
-    int quadrants;                  /* G75 has been seen                 */
-    int clear;                      /* LPC is in effect                  */
-    int ended;                      /* M02 has been seen                 */
-    int region;                     /* inside G36 ... G37                */
-    double unit;                    /* mm per file unit; 0 before MO     */
-    double x, y;                    /* current point, mm, source axes    */
-    gerber_aperture_t apertures[GERBER_APERTURES];  /* by D code         */
-    gerber_attribute_t file[GERBER_ATTRIBUTES];     /* TF scope          */
-    gerber_attribute_t tool[GERBER_ATTRIBUTES];     /* TA scope          */
-    gerber_attribute_t object[GERBER_ATTRIBUTES];   /* TO scope          */
-    circuit_point_t contour[GERBER_REGION_POINTS];  /* region in scene axes */
-    size_t count;                   /* points in contour                 */
-    gerber_macro_t macros[GERBER_MACROS];           /* AM definitions    */
-    size_t macro_count;             /* definitions held                  */
-    size_t macro_bytes;             /* their text, NULs included         */
-    size_t aperture_bytes;          /* scene bytes of macro apertures    */
-    gerber_repeat_t repeats[GERBER_REPEAT_DEPTH];   /* open SR blocks    */
-    size_t repeat_depth;            /* how many are open                 */
+    tiku_circuit_t *doc;            /**< the scene being built           */
+    const tiku_circuit_import_t *options;   /**< cancellation; may be NULL */
+    tiku_circuit_diagnostic_t *diag;        /**< the caller's; may be NULL */
+    tiku_circuit_err_t error;       /**< the first failure; 0 while none */
+    unsigned line;                  /**< source line of the command      */
+    int integers;                   /**< FS integer digits; 0 before FS  */
+    int decimals;                   /**< FS fractional digits            */
+    int aperture;                   /**< the selected D code             */
+    int mode;                       /**< G01, G02 or G03 as 1 to 3; 0 unset */
+    int operation;                  /**< the last D01, D02 or D03 as 1-3 */
+    int have_point;                 /**< a current point exists          */
+    int quadrants;                  /**< G75 has been seen               */
+    int clear;                      /**< LPC is in effect                */
+    int ended;                      /**< M02 has been seen               */
+    int region;                     /**< inside G36 ... G37              */
+    double unit;                    /**< mm per file unit; 0 before MO   */
+    double x, y;                    /**< current point, mm, source axes  */
+    gerber_aperture_t apertures[GERBER_APERTURES];  /**< by D code       */
+    gerber_attribute_t file[GERBER_ATTRIBUTES];     /**< TF scope        */
+    gerber_attribute_t tool[GERBER_ATTRIBUTES];     /**< TA scope        */
+    gerber_attribute_t object[GERBER_ATTRIBUTES];   /**< TO scope        */
+    circuit_point_t contour[GERBER_REGION_POINTS];  /**< region in scene axes */
+    size_t count;                   /**< points in contour               */
+    gerber_macro_t macros[GERBER_MACROS];           /**< AM definitions  */
+    size_t macro_count;             /**< definitions held                */
+    size_t macro_bytes;             /**< their text, NULs included       */
+    size_t aperture_bytes;          /**< scene bytes of macro apertures  */
+    gerber_repeat_t repeats[GERBER_REPEAT_DEPTH];   /**< open SR blocks  */
+    size_t repeat_depth;            /**< how many are open               */
 } circuit_gerber_t;
 
 /** @brief Record an AM definition: @p name and its statements @p body.

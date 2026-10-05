@@ -164,11 +164,14 @@ void dx_rpr_read(dx_t *x, const tiku_xml_node_t *e, dx_rpr_t *r);
 void dx_ppr_read(dx_t *x, const tiku_xml_node_t *e, dx_ppr_t *p);
 /** @brief @p e (a w:tblPr or w:tcPr's borders) read into @p t. */
 void dx_tpr_read(const tiku_xml_node_t *e, dx_tpr_t *t);
-/** @brief What is set in @p src laid over @p dst. */
+/** @brief What is set in run properties @p src laid over @p dst. */
 void dx_rpr_over(dx_rpr_t *dst, const dx_rpr_t *src);
+/** @brief What is set in paragraph properties @p src laid over @p dst;
+ *         its tab stops merged into @p dst's, a clear taking one away. */
 void dx_ppr_over(dx_ppr_t *dst, const dx_ppr_t *src);
 /** @brief The style @p id of type @p type ('p', 'c', 't'), or its type's
- *         default for NULL; resolved with what it is based on. */
+ *         default for NULL or an id not found; resolved with what it is
+ *         based on. */
 const dx_style_t *dx_style(dx_t *x, const char *id, char type);
 /** @brief styles.xml, the theme's fonts and numbering.xml read. */
 void dx_styles_load(dx_t *x, const char *main);
@@ -184,18 +187,20 @@ void dx_layout(dx_t *x, const char *pstyle, const dx_ppr_t *own,
                const dx_rpr_t *mark, of_para_t *p);
 /** @brief A border element (w:top ...) read: width 0 for none. */
 void dx_border(const tiku_xml_node_t *e, of_border_t *b);
-/** @brief A twentieth-of-a-point measure as points; @p dflt when absent. */
+/** @brief A measure as points: twentieths of a point, or a number with
+ *         pt, in, cm, mm, pc or pi after it; @p dflt when absent. */
 float dx_twips(const char *v, float dflt);
 /** @brief Whether an on/off property is on: present, and not "0",
- *         "false" or "off". */
+ *         "false", "off" or "none". */
 int dx_on(const tiku_xml_node_t *e);
 /** @brief "RRGGBB" as ARGB; 0 for "auto" or nonsense. */
 uint32_t dx_color(const char *v);
 
 /* Drawings and tables: tiku_office_docx_draw.c */
 
-/** @brief A w:drawing or w:pict read as a run: a picture in the text, or
- *         a float.  @return 0 when it was one; -1 for nothing to draw. */
+/** @brief A w:drawing, w:pict or w:object read as a run: a picture in the
+ *         text, or a float.  @return 0 when it was one; -1 for nothing to
+ *         draw. */
 int dx_drawing(dx_t *x, const tiku_xml_node_t *e, of_run_t *run);
 /** @brief A w:tbl read into @p t.  @return 0, or -1 out of memory. */
 int dx_table(dx_t *x, const tiku_xml_node_t *e, of_table_t *t);
@@ -209,7 +214,8 @@ uint32_t dx_vml_color(const char *v, uint32_t dflt);
 /* Drawings drawn as DrawingML: tiku_office_docx_art.c */
 
 /** @brief Whether a:graphicData @p gd is drawn as DrawingML: shapes,
- *         groups, a canvas, or a picture with more to it than a picture. */
+ *         groups, a canvas, a diagram, a chart, or a picture cut to a
+ *         shape, turned, mirrored, outlined or recoloured. */
 int dx_art_wants(const tiku_xml_node_t *gd);
 /** @brief @p gd, @p w by @p h points, made a drawing in @p f: what is
  *         drawn and the text boxes in it.  @return 0, or -1 out of memory. */

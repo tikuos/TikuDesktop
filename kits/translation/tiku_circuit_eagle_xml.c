@@ -136,8 +136,7 @@ circuit_eagle_xml(const void *data, size_t n, const tiku_circuit_import_t *opt,
         return e.error;
     }
     const unsigned char *p = data;
-    /* A declaration naming another encoding is refused, not read as
-     * UTF-8. */
+    /* A declaration naming another encoding is refused. */
     size_t declaration = n >= 3 && p[0] == 0xef && p[1] == 0xbb
                          && p[2] == 0xbf ? 3 : 0;
 

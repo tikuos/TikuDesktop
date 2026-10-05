@@ -22,19 +22,19 @@
 
 /** @brief A bitmap, one byte a pixel, 1 black; outside it is white. */
 typedef struct {
-    int            w, h;
-    unsigned char *px;              /* w * h bytes, 0 or 1              */
+    int            w, h;            /**< its size in pixels             */
+    unsigned char *px;              /**< w * h bytes, 0 or 1            */
 } jb_bm_t;
 
 /** @brief An integer procedure's contexts (Annex A.2). */
 typedef struct {
-    tiku_mq_cx_t cx[512];                /* by the bits decoded so far        */
+    tiku_mq_cx_t cx[512];           /**< by the bits decoded so far     */
 } jb_iax_t;
 
 /** @brief Bits read most significant first, for the Huffman coded. */
 typedef struct {
-    const unsigned char *p;         /* the bytes                         */
-    long                 n, bit;    /* how many; the next bit            */
+    const unsigned char *p;         /**< the bytes                       */
+    long                 n, bit;    /**< how many; the next bit          */
 } jb_bits_t;
 
 enum { JB_LINE, JB_LOWER, JB_UPPER, JB_OOB };
@@ -42,15 +42,17 @@ enum { JB_LINE, JB_LOWER, JB_UPPER, JB_OOB };
 /** @brief A line of a Huffman table: its prefix, and the range it
  *         codes as RANGELOW plus RANGELEN more bits. */
 typedef struct {
-    int      prefl, rangel, kind;   /* kind: JB_LINE, _LOWER, _UPPER, _OOB */
-    int32_t  low;
-    uint32_t code;                  /* assigned by jb_table_codes()     */
+    /** PREFLEN, RANGELEN, and JB_LINE, _LOWER, _UPPER or _OOB */
+    int      prefl, rangel, kind;
+    int32_t  low;                   /**< RANGELOW                       */
+    uint32_t code;                  /**< assigned by jb_table_codes()   */
 } jb_line_t;
 
 /** @brief A Huffman table: its lines, with their codes. */
 typedef struct {
-    int        n;                   /* lines                             */
-    jb_line_t *line;                /* in the order codes are given out  */
+    int        n;                   /**< lines                           */
+    jb_line_t *line;                /**< in table order, the order in which
+                                         codes of one length are given */
 } jb_table_t;
 
 /** @brief An integer (A.2).  @return 0 with @p v, 1 for OOB. */
@@ -74,6 +76,7 @@ int jb_huff(jb_bits_t *b, const jb_table_t *t, int32_t *v);
 /** @brief A bitmap @p w by @p h, filled with @p fill; NULL when too big
  *         or memory is short. */
 jb_bm_t *jb_bm_new(int w, int h, int fill);
+/** @brief Free @p b and its pixels; NULL is ignored. */
 void jb_bm_free(jb_bm_t *b);
 /** @brief Pixel @p x, @p y; 0 outside. */
 int jb_px(const jb_bm_t *b, long x, long y);
@@ -83,17 +86,17 @@ void jb_compose(jb_bm_t *dst, const jb_bm_t *src, long x, long y, int op);
 
 /** @brief What a generic region is coded with (6.2). */
 typedef struct {
-    int         mmr, tmpl, tpgdon;
-    int         at[8];              /* A1 to A4, x then y each          */
-    const jb_bm_t *skip;            /* USESKIP: pixels not coded        */
+    int         mmr, tmpl, tpgdon;  /**< MMR, GBTEMPLATE, TPGDON        */
+    int         at[8];              /**< A1 to A4, x then y each        */
+    const jb_bm_t *skip;            /**< USESKIP: pixels not coded      */
 } jb_gen_t;
 
 /** @brief What a refinement is coded against (6.3). */
 typedef struct {
-    int            tmpl, tpgron;
-    int            at[4];           /* A1 in the image, A2 in reference */
-    const jb_bm_t *ref;
-    long           dx, dy;          /* GRREFERENCEDX, GRREFERENCEDY     */
+    int            tmpl, tpgron;    /**< GRTEMPLATE, TPGRON             */
+    int            at[4];           /**< A1 in the image, A2 in reference */
+    const jb_bm_t *ref;             /**< the reference bitmap           */
+    long           dx, dy;          /**< GRREFERENCEDX, GRREFERENCEDY   */
 } jb_ref_t;
 
 /** @brief Decode @p out's pixels arithmetically (6.2.5) in contexts
@@ -110,51 +113,56 @@ int jb_refine(tiku_mq_t *d, tiku_mq_cx_t *gr, const jb_ref_t *r, jb_bm_t *out);
 
 /** @brief A segment (7.2) and what decoding it left for later ones. */
 typedef struct {
-    uint32_t             num;       /* its segment number                */
-    int                  type;      /* 0 symbols, 6 text, 48 page, ...   */
-    uint32_t             page;      /* the page it belongs to, 0 shared  */
-    uint32_t            *ref;       /* the segments it refers to         */
-    int                  nref;
-    const unsigned char *data;      /* its data, in the caller's bytes   */
-    long                 len;
-    jb_bm_t            **sym;       /* a symbol dictionary's exports     */
-    long                 nsym;
-    tiku_mq_cx_t             *gbkeep;    /* its contexts, kept for the next   */
-    tiku_mq_cx_t             *grkeep;
-    jb_bm_t            **pat;       /* a pattern dictionary's patterns   */
-    long                 npat;
-    jb_bm_t             *region;    /* an intermediate region            */
-    jb_table_t           table;     /* a table segment's                 */
+    uint32_t             num;       /**< its segment number              */
+    int                  type;      /**< 0 symbols, 6 text, 48 page, ... */
+    uint32_t             page;      /**< the page it belongs to, 0 shared */
+    uint32_t            *ref;       /**< the segments it refers to       */
+    int                  nref;      /**< how many it refers to           */
+    const unsigned char *data;      /**< its data, in the caller's bytes */
+    long                 len;       /**< its data's length               */
+    jb_bm_t            **sym;       /**< a symbol dictionary's exports   */
+    long                 nsym;      /**< how many it exports             */
+    tiku_mq_cx_t        *gbkeep;    /**< its generic contexts, kept for
+                                         the next dictionary             */
+    tiku_mq_cx_t        *grkeep;    /**< its refinement contexts, kept
+                                         likewise                        */
+    jb_bm_t            **pat;       /**< a pattern dictionary's patterns */
+    long                 npat;      /**< how many patterns               */
+    jb_bm_t             *region;    /**< an intermediate region          */
+    jb_table_t           table;     /**< a table segment's               */
 } jb_seg_t;
 
 /** @brief A decode: its segments, every bitmap made, and the page. */
 typedef struct {
-    jb_seg_t *seg;                  /* in the order they came            */
-    long      nseg, capseg;
-    jb_bm_t **pool;                 /* freed at the end, all together    */
-    long      npool, cappool;
-    long long pixels;               /* in the pool, against the budget   */
-    long long work;                 /* pixels drawn so far, bounded too  */
-    long      omax;                 /* the page's packed bytes, at most  */
-    jb_bm_t  *page;
-    int       page_known;           /* its height given up front         */
+    jb_seg_t *seg;                  /**< in the order they came          */
+    long      nseg, capseg;         /**< segments held, and room         */
+    jb_bm_t **pool;                 /**< freed at the end, all together  */
+    long      npool, cappool;       /**< bitmaps held, and room          */
+    long long pixels;               /**< in the pool, against the budget */
+    long long work;                 /**< pixels drawn so far, bounded too */
+    long      omax;                 /**< the page's packed bytes, at most */
+    jb_bm_t  *page;                 /**< NULL until page information    */
+    int       page_known;           /**< its height given up front       */
+    /** the page's default pixel, its combination operator, and whether a
+     *  region's own operator overrides it (7.4.8) */
     int       defpixel, defop, override;
 } jb_dec_t;
 
 /** @brief Region segment information (7.4.1). */
 typedef struct {
-    uint32_t w, h;                  /* its size                          */
-    int32_t  x, y;                  /* where on the page                 */
-    int      op;                    /* how it combines there: 0 OR ...   */
+    uint32_t w, h;                  /**< its size                        */
+    int32_t  x, y;                  /**< where on the page               */
+    int      op;                    /**< how it combines there: 0 OR ... */
 } jb_rinfo_t;
 
 /** @brief Arithmetic decoding shared through a dictionary or region:
  *         the integer procedures, symbol IDs and both context sets. */
 typedef struct {
-    tiku_mq_t  mq;                    /* the one decoder they all share    */
+    tiku_mq_t  mq;                  /**< the one decoder they all share  */
+    /** the integer procedures, IADH to IARDY (Annex A.2) */
     jb_iax_t dh, dw, ex, ai, dt, fs, ds, it, ri, rdw, rdh, rdx, rdy;
-    tiku_mq_cx_t *id;                    /* 1 << the ID's bits               */
-    tiku_mq_cx_t *gb, *gr;               /* 65536 and 8192                   */
+    tiku_mq_cx_t *id;               /**< 1 << the ID's bits             */
+    tiku_mq_cx_t *gb, *gr;          /**< 65536 and 8192                 */
 } jb_ar_t;
 
 /** @brief A bitmap the decode keeps until its end; NULL past the
@@ -171,6 +179,7 @@ int jb_rinfo(const unsigned char *p, long n, jb_rinfo_t *r);
 int jb_place(jb_dec_t *jd, jb_seg_t *s, jb_bm_t *b, const jb_rinfo_t *r);
 /** @brief Arithmetic state for @p idlen-bit IDs; NULL when short. */
 jb_ar_t *jb_ar_new(int idlen);
+/** @brief Free @p ar and its contexts; NULL is ignored. */
 void jb_ar_free(jb_ar_t *ar);
 /** @brief Big-endian 32 bits. */
 uint32_t jb_be32(const unsigned char *p);

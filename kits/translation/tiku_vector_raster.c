@@ -7,11 +7,11 @@
  * tiku_vector_raster.c - ink on pixels: filling a path, stroking one, and
  * the masks that clip them.
  *
- * A path arrives already flattened into straight pieces in device
- * space.  Filling walks scanlines a few times per pixel row, sorts the
+ * A path is flattened into straight pieces in device space as it is
+ * built.  Filling walks scanlines SUB times per pixel row, sorts the
  * crossings, and lays coverage between the ones the winding rule keeps,
- * exactly at the ends; stroking turns each piece and joint into a small
- * polygon and fills the lot nonzero, which is how their union is drawn.
+ * fractional at the ends; stroking turns each piece and joint into a
+ * small polygon and fills them all nonzero, which draws their union.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,8 +31,8 @@ extern void *tiku_vector_test_realloc(void *p, size_t bytes);
 #endif
 
 #define SUB         4               /* scanlines sampled per pixel row  */
-#define POINTS_MAX  4000000         /* a path this long is not one      */
-#define FLAT_MAX    64              /* pieces one curve becomes at most */
+#define POINTS_MAX  4000000         /* the most points a path takes     */
+#define FLAT_MAX    64              /* pieces a lenient curve becomes   */
 #define JOIN_MIN    1.2             /* lenient device width below which
                                        joints are left out              */
 #define COORD_MAX   1e6             /* the farthest a coordinate goes   */
@@ -142,7 +142,8 @@ room(tiku_vector_path_t *p)
     return 1;
 }
 
-/** @brief A coordinate the rasteriser can hold. */
+/** @brief @p v as a coordinate the rasteriser can hold: clamped to
+ *         COORD_MAX either way, 0 for a NaN. */
 static float
 sane(double v)
 {
@@ -299,7 +300,7 @@ tiku_vector_path_curveto(tiku_vector_path_t *p, double x1, double y1,
     }
     len = hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) +
           hypot(x3 - x2, y3 - y2);
-    len = sqrt(len * 2.0) + 1.0;       /* a NaN, or a huge one, is the most */
+    len = sqrt(len * 2.0) + 1.0;       /* a NaN or huge one takes FLAT_MAX */
     steps = len < FLAT_MAX ? (int)len : FLAT_MAX;
     if (steps < 3) {
         steps = 3;
@@ -731,7 +732,8 @@ joint(tiku_vector_path_t *out, double ax, double ay, double bx, double by,
     }
 }
 
-/** @brief One subpath's pieces, cut by the dash pattern if there is one. */
+/** @brief One subpath's pieces and joints, cut by the dash pattern if
+ *         there is one. */
 static void
 stroke_sub(const tiku_vector_path_t *p, int sub, double hw, int cap, int join,
            double miter, const double *dash, int ndash, double phase,

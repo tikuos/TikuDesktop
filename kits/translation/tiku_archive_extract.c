@@ -4,12 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_archive_extract.c - entries made on a disk, where every name is a
- * stranger's.  Each file is reached by walking down from the folder with
- * openat and O_NOFOLLOW, so no link is followed on the way; a link made
- * must point inside the folder; data stops at the size it said; ZIP CRCs
- * are checked; a failed file is taken away, not left half-written.
- * Folders get their modes and times after their contents.
+ * tiku_archive_extract.c - an archive's chosen entries made under a
+ * destination folder.  Each is reached by walking down from the folder
+ * with openat and O_NOFOLLOW, so no link is followed on the way; a link
+ * made must point inside the folder; a file's data stops at the size its
+ * entry gives, and a ZIP entry's CRC is checked; a file that fails is
+ * removed.  Folders get their modes and times after their contents.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,7 +50,8 @@ typedef struct {
     unsigned char     *buf;         /* COPY_BUF bytes to copy through    */
 } ext_t;
 
-/** @brief Tell @p why about entry @p i, and keep the first trouble. */
+/** @brief Pass @p why for entry @p i to the caller's report, and keep the
+ *         first trouble other than REPLACED. */
 static void
 report(ext_t *x, long i, tiku_archive_err_t why)
 {
@@ -62,7 +63,9 @@ report(ext_t *x, long i, tiku_archive_err_t why)
     }
 }
 
-/** @brief Whether the caller has stopped it, by the bytes done. */
+/** @brief Report progress, by bytes written or, with a size unknown, by
+ *         the archive's bytes read.  @return nonzero when the caller
+ *         cancels. */
 static int
 cancelled(ext_t *x)
 {
@@ -71,8 +74,8 @@ cancelled(ext_t *x)
                             x->by_input ? x->a->file_size : x->total);
 }
 
-/** @brief Entry @p i's path as made: under the strip folder, or NULL
- *         when it is not to be taken at all. */
+/** @brief Entry @p i's path as made, the strip folder taken off; NULL
+ *         when the entry is not chosen. */
 static const char *
 chosen(const ext_t *x, long i)
 {
@@ -119,8 +122,8 @@ walk(ext_t *x, const char *rel, char *leaf, tiku_archive_err_t *why)
         if (next < 0) {
             struct stat st;
 
-            /* A link where a folder should be: never gone through, and
-             * named for what it is, whatever the host's errno says. */
+            /* A link where a folder should be is UNSAFE, whatever errno
+             * the host gives; anything else that stops the walk is WRITE. */
             *why = fstatat(fd, part, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
                    S_ISLNK(st.st_mode) ? TIKU_ARCHIVE_UNSAFE
                                        : TIKU_ARCHIVE_WRITE;
@@ -136,9 +139,11 @@ walk(ext_t *x, const char *rel, char *leaf, tiku_archive_err_t *why)
     return fd;
 }
 
-/** @brief Clear @p leaf in @p dir for a new entry: a file or link there
- *         goes (a later entry wins, as tar means), a folder stays.
- *  @return 0 when the name is free; -1 when a folder holds it. */
+/** @brief Clear @p leaf in @p dir for entry @p i: a file or link there is
+ *         removed and REPLACED reported, so a later entry replaces an
+ *         earlier one of the same name; a folder stays.
+ *  @return 0 when the name is free; -1 when a folder holds it or the
+ *          removal fails. */
 static int
 clear(ext_t *x, long i, int dir, const char *leaf)
 {
@@ -155,9 +160,9 @@ clear(ext_t *x, long i, int dir, const char *leaf)
 }
 
 /**
- * @brief Whether a link at @p rel may point to @p target: relative, and
- *        never climbing above the destination, read part by part from the
- *        link's own folder -- the only place it can be resolved from.
+ * @brief Whether a link at @p rel may point to @p target: relative, with
+ *        no drive or backslash, and never climbing above the destination
+ *        when its parts are read from the link's own folder.
  */
 static int
 link_ok(const char *rel, const char *target)
@@ -190,9 +195,9 @@ link_ok(const char *rel, const char *target)
 /* -------------------------------------------------------------- files */
 
 /**
- * @brief Entry @p i's bytes from @p data into a new file: no more than
- *        it said it had, its CRC checked when it has one.  A file that
- *        fails is taken away.
+ * @brief Entry @p i's bytes from @p data into a new file, checked against
+ *        its size when it is known and its CRC when it has one: CHECKSUM
+ *        when either differs.  A file that fails is removed.
  */
 static tiku_archive_err_t
 make_file(ext_t *x, long i, int dir, const char *leaf, arc_stream_t *data)
@@ -251,7 +256,8 @@ make_file(ext_t *x, long i, int dir, const char *leaf, arc_stream_t *data)
 }
 
 /** @brief A gzip's one file beside others: "name 2.ext" when "name.ext"
- *         is taken, never over it.  @return 0 with @p leaf changed. */
+ *         is taken, never over it.  @return 0 with @p leaf set to a free
+ *         name; -1 when none up to "name 999.ext" is. */
 static int
 unique_leaf(int dir, char *leaf)
 {
@@ -287,7 +293,7 @@ remember_dir(ext_t *x, const char *rel, const tiku_archive_entry_t *e)
         dir_fix_t *more = realloc(x->dirs, (size_t)cap * sizeof *more);
 
         if (more == NULL) {
-            return;                 /* modes are a nicety; skip them */
+            return;                 /* the folder keeps its defaults */
         }
         x->dirs = more;
         x->dcap = cap;
@@ -300,7 +306,8 @@ remember_dir(ext_t *x, const char *rel, const tiku_archive_entry_t *e)
     }
 }
 
-/** @brief A hard link to a file this extraction made, by its path. */
+/** @brief A hard link to a file this extraction made, by its path.
+ *  @return UNSAFE when no file made so far has that path. */
 static tiku_archive_err_t
 make_hardlink(ext_t *x, long i, int dir, const char *leaf)
 {
@@ -395,7 +402,8 @@ makeable(ext_t *x, long i)
     return why == TIKU_ARCHIVE_OK;
 }
 
-/** @brief One entry made, its trouble told; whether the whole must stop. */
+/** @brief Report entry @p i's trouble, if any.  @return 1 when the
+ *         extraction must stop: CANCELLED or NOMEM. */
 static int
 settle(ext_t *x, long i, tiku_archive_err_t why)
 {
@@ -503,7 +511,7 @@ extract_tar(ext_t *x, long wanted)
     return stop;
 }
 
-/** @brief A gzip's one file. */
+/** @brief Extract a gzip's one file. */
 static tiku_archive_err_t
 extract_gz(ext_t *x)
 {
@@ -526,7 +534,7 @@ extract_gz(ext_t *x)
 
 /* ---------------------------------------------------------------- API */
 
-/** @brief The folders' modes and times, deepest first. */
+/** @brief Set the folders' modes and times once every entry is made. */
 static void
 fix_dirs(ext_t *x)
 {

@@ -4,11 +4,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_office_chart.c - a chart in a slide or a Word drawing, drawn from
- * the values its part keeps: read, then laid out in its frame -- the
- * title at the top, the legend on its side, the plot in what is left
- * less the room its axes' labels take, or where the file places them --
- * and drawn: grounds, gridlines, series, axes, labels, legend, title.
+ * tiku_office_chart.c - a chart in a slide, a Word drawing or an
+ * OpenDocument object, drawn from the values its part keeps: read, then
+ * laid out in its frame -- the title at the top, the legend on its side,
+ * the plot in what is left less the room its axes' labels take, or where
+ * the file places them -- and drawn: grounds, gridlines, series, axes,
+ * labels, legend, title.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -151,10 +152,10 @@ table_room(ch_chart_t *k, float *room)
 }
 
 /**
- * @brief The plot box inside @p box: less the room its axes' labels and
- *        titles take when @p reserve (they are inside the box the file
- *        gives, or the room left), measured twice, as the scale their
- *        labels show changes with the room.  Each axis' line placed.
+ * @brief The plot box inside @p box, less the room its axes' labels and
+ *        titles take when @p reserve (the labels lie inside @p box),
+ *        fitted twice, as the scale the labels show changes with the
+ *        room; each axis' line placed.
  */
 static void
 axes_fit(ch_chart_t *k, ch_box_t *box, int reserve)
@@ -490,8 +491,8 @@ look_end(dml_ctx_t *c, ch_look_t *save)
 }
 
 /** @brief Where the title goes, its middle's top at @p at: where the
- *         file puts it, else the top of @p outer, which gives up the
- *         room. */
+ *         file puts it, else the top of @p outer; @p outer gives up the
+ *         title's room either way. */
 static void
 title_place(ch_chart_t *k, ch_box_t *outer, float *at)
 {

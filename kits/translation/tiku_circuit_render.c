@@ -58,8 +58,9 @@ paint(tiku_image_t *im, const tiku_vector_mask_t *m, uint32_t colour)
  * to it, with room for the stroke, so far-off points stay within the
  * rasteriser's coordinates; a shape inside keeps its path as it is.
  *
- * @return OK; LIMIT for a stroke too wide to clip so or an arc needing
- *         too many points; BAD; NOMEM
+ * @return OK; LIMIT for a stroke too wide for its clipped outline to stay
+ *         within the rasteriser's coordinates, or an arc needing too many
+ *         points; BAD; NOMEM
  */
 static tiku_circuit_err_t
 shape_path(const circuit_shape_t *s, const tiku_circuit_view_t *v,

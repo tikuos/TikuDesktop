@@ -6,12 +6,12 @@
  *
  * tiku_pdf_writer.h - pages drawn, written as a PDF.
  *
- * A canvas whose paper is a PDF: paths filled and stroked, gradients,
- * pictures, text in the machine's own faces, links and an outline, on
- * pages of any size, in points from each page's top left, y downwards.
- * Faces go in as subsets of the glyphs drawn, their widths and what each
- * glyph stands for written beside them, so the text is found and copied
- * as well as seen.  What comes out is the bytes of a whole file.
+ * Draws onto PDF pages of any size: paths filled and stroked, gradients,
+ * pictures, text in the machine's own faces, links and an outline, in
+ * points from each page's top left, y downwards.  A TrueType face goes in
+ * as a subset of the glyphs drawn, one with PostScript outlines whole;
+ * each with its widths and a ToUnicode map, so its text can be searched
+ * and copied.  The result is the bytes of a whole file.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -70,7 +70,8 @@ typedef struct {
 /** @brief A writer with no pages.  NULL out of memory. */
 tiku_pdf_writer_t *tiku_pdf_writer_new(void);
 
-/** @brief Let the writer go, and anything not yet finished with it. */
+/** @brief The writer and everything it holds given back; nothing is
+ *         written. */
 void tiku_pdf_writer_free(tiku_pdf_writer_t *w);
 
 /** @brief The document's title and author for its Info (UTF-8; NULL for
@@ -79,15 +80,18 @@ void tiku_pdf_writer_info(tiku_pdf_writer_t *w, const char *title,
                           const char *author);
 
 /** @brief A new page, @p width by @p height points, drawn on from now.
- *  @return its number from 0, or -1 when there is no memory. */
+ *  @return its number from 0, or -1 for a size not above 0 or when there
+ *          is no memory. */
 int tiku_pdf_writer_page(tiku_pdf_writer_t *w, double width, double height);
 
 /** @brief How many pages there are so far. */
 int tiku_pdf_writer_pages(const tiku_pdf_writer_t *w);
 
-/** @brief The drawing state kept, and given back: the transform, the
- *         clip.  Every save is matched by a restore. */
+/** @brief The drawing state kept: the transform and the clip.  A save
+ *         still open when its page ends is restored there. */
 void tiku_pdf_writer_save(tiku_pdf_writer_t *w);
+/** @brief The drawing state of the last open save given back; nothing
+ *         without one. */
 void tiku_pdf_writer_restore(tiku_pdf_writer_t *w);
 
 /** @brief Draw through the matrix [a b c d e f] from now: x' = a x + c y
@@ -95,10 +99,14 @@ void tiku_pdf_writer_restore(tiku_pdf_writer_t *w);
 void tiku_pdf_writer_transform(tiku_pdf_writer_t *w, double a, double b,
                                double c, double d, double e, double f);
 
-/** @brief The path, built a piece at a time and then painted, clipped to
- *         or filled with a gradient, which each use up. */
+/** @brief A new piece of path at (@p x, @p y).  The path is built a
+ *         piece at a time, and painting, clipping or a gradient uses it
+ *         up. */
 void tiku_pdf_writer_move(tiku_pdf_writer_t *w, double x, double y);
+/** @brief A straight line on to (@p x, @p y). */
 void tiku_pdf_writer_line(tiku_pdf_writer_t *w, double x, double y);
+/** @brief A cubic Bezier curve on to (@p x3, @p y3), (@p x1, @p y1) and
+ *         (@p x2, @p y2) its control points. */
 void tiku_pdf_writer_curve(tiku_pdf_writer_t *w, double x1, double y1,
                            double x2, double y2, double x3, double y3);
 /** @brief The piece of path shut, back to where it began. */
@@ -113,15 +121,16 @@ void tiku_pdf_writer_paint(tiku_pdf_writer_t *w, const tiku_pdf_paint_t *p);
 /** @brief The path made the clip, until the state is restored. */
 void tiku_pdf_writer_clip(tiku_pdf_writer_t *w, int evenodd);
 
-/** @brief The path filled with @p g.  A gradient's alpha is its stops'
- *         average: PDF's shadings carry colour, not coverage. */
+/** @brief The path filled with @p g.  The gradient's alpha is its
+ *         stops' average: a PDF shading has colour and no alpha. */
 void tiku_pdf_writer_gradient(tiku_pdf_writer_t *w,
                               const tiku_pdf_gradient_t *g);
 
 /**
  * @brief Face @p index of the TrueType or OpenType file @p path, ready for
- *        text: it goes in as the glyphs drawn with it, when the file is
- *        written.  The same face asked again is the same one.
+ *        text; it is written when the file is: a TrueType face as the
+ *        glyphs drawn with it, one with PostScript outlines whole.  The
+ *        same face asked again is the same one.
  * @return its number, or -1 when it cannot be read.
  */
 int tiku_pdf_writer_font(tiku_pdf_writer_t *w, const char *path, int index);
@@ -131,11 +140,12 @@ void tiku_pdf_writer_text(tiku_pdf_writer_t *w, const tiku_pdf_run_t *run,
                           const tiku_pdf_glyph_t *g, int n);
 
 /**
- * @brief A picture from its file's bytes: a JPEG goes in as it is, PNG
- *        and BMP as their pixels, alpha kept.  Drawn with
- *        tiku_pdf_writer_draw() as often as wanted.
- * @return its number, or -1 when it cannot be read; @p w and @p h (may be
- *         NULL) are given its size in pixels.
+ * @brief A picture from its file's bytes: a JPEG of 8-bit samples and one,
+ *        three or four colours goes in as it is; a PNG, a BMP or another
+ *        JPEG as its pixels, alpha kept.  Drawn with tiku_pdf_writer_draw()
+ *        as often as wanted.
+ * @return its number, or -1 when it cannot be read; @p pw and @p ph (may
+ *         be NULL) are given its size in pixels.
  */
 int tiku_pdf_writer_image(tiku_pdf_writer_t *w, const void *bytes,
                           size_t len, int *pw, int *ph);
@@ -164,10 +174,11 @@ void tiku_pdf_writer_mark(tiku_pdf_writer_t *w, int level, const char *title,
                           int page, double top);
 
 /**
- * @brief The file: every page, the faces as subsets, pictures, links and
- *        outline.  The writer is done with and let go either way.
- * @return its bytes to free(), with their length in @p len; NULL when
- *         there was no memory, or no page.
+ * @brief The file: every page, the faces, pictures, links and outline.
+ * @return its bytes, with their length in @p len; NULL when there was no
+ *         memory, or no page.
+ * @note The writer is freed either way; the caller frees the bytes with
+ *       free().
  */
 unsigned char *tiku_pdf_writer_finish(tiku_pdf_writer_t *w, size_t *len);
 

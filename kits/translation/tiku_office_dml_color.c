@@ -27,17 +27,18 @@ typedef struct {
     double r, g, b, a;
 } rgba_t;
 
-/** @brief The names of the colour map's twelve, and of the theme's. */
+/** @brief The colour map's twelve names, in dml_ctx_t's map order. */
 static const char *const mapped[12] = {"bg1", "tx1", "bg2", "tx2",
     "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
     "hlink", "folHlink"};
+/** @brief The theme's colour names, in DML_* order. */
 static const char *const scheme[DML_COLORS] = {"dk1", "lt1", "dk2", "lt2",
     "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
     "hlink", "folHlink"};
 
 /* ------------------------------------------------------------ spaces  */
 
-/** @brief An sRGB channel in linear light, and back. */
+/** @brief An sRGB channel in linear light. */
 static double
 linear(double c)
 {

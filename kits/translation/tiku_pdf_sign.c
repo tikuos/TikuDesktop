@@ -228,10 +228,10 @@ gap_value(tiku_pdf_t *doc, const tiku_piece_t *p, size_t *n)
     return out;
 }
 
-/** @brief Whether @p der, the value in the gap, is @p v's own /Contents:
- *         a range around another string would sign what it pleases.
- *         An encrypted document's is taken on trust, its strings having
- *         been deciphered as read, and a signature's never enciphered. */
+/** @brief Whether @p der, the value in the gap, is @p v's own /Contents;
+ *         a ByteRange whose gap holds another string fails.  An encrypted
+ *         document passes unchecked: its strings were decrypted as read,
+ *         and a signature's /Contents is never encrypted. */
 static int
 own_value(tiku_pdf_t *doc, pdf_obj_t *v, const unsigned char *der, size_t n)
 {
@@ -284,7 +284,7 @@ pdf_date(pdf_obj_t *o)
     memcpy(text, o->u.s.p, o->u.s.n);
     text[o->u.s.n] = 0;
     s = strncmp(text, "D:", 2) == 0 ? text + 2 : text;
-    while (*s && n < sizeof der - 8) {  /* a GeneralizedTime, near enough */
+    while (*s && n < sizeof der - 8) {  /* as a GeneralizedTime: no ' */
         if (*s != '\'') der[n++] = *s;
         s++;
     }
@@ -301,7 +301,8 @@ pdf_date(pdf_obj_t *o)
 
 /** @brief A bare RSA signature (adbe.x509.rsa_sha1) over @p p: the value
  *         a DER OCTET STRING in the gap, the signer's certificate first
- *         in /Cert; SHA-1 unless another digest makes it good. */
+ *         in /Cert.  SHA-1 is tried first, then SHA-256, SHA-384 and
+ *         SHA-512 while the verdict is TIKU_SIG_CHANGED. */
 static void
 check_raw(tiku_pdf_t *doc, pdf_obj_t *v, const unsigned char *der,
           size_t dn, const tiku_piece_t *p, int n, tiku_cms_sig_t *out)

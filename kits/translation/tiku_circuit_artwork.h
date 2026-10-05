@@ -17,8 +17,8 @@
 #include "tiku_circuit_private.h"
 #include "tiku_vector_raster.h"
 
-/* Radians between the points of a curve so small that CIRCUIT_CURVE_ERROR
- * asks for no more. */
+/* Radians between the points of a curve whose radius is at most
+ * CIRCUIT_CURVE_ERROR, which the error bound leaves unconstrained. */
 #define CIRCUIT_COARSE_STEP (M_PI / 4)
 
 /* The largest coordinate, in pixels, a strict vector path takes
@@ -56,8 +56,9 @@ typedef struct {
  *        viewport, keeping @p margin pixels beyond each side.
  *
  * An @p area is clipped as a filled polygon, which keeps its coverage
- * inside the rectangle; otherwise as lines, cut into pieces, which keeps
- * a stroke no wider than the margin.  With @p pass the caller has found
+ * inside the rectangle; otherwise lines are cut into pieces at the
+ * rectangle, which draw as they would unclipped while a stroke's half
+ * width is within @p margin.  With @p pass the caller has found
  * everything inside, and points go to the path as they are.
  */
 void circuit_clip_start(circuit_clip_t *c, tiku_vector_path_t *path,

@@ -54,8 +54,8 @@ typedef struct {
     int                 num;        /* its number as shown              */
     int                 content;    /* something is on the page         */
     float               after;      /* space the last paragraph wants   */
-    const char         *style;      /* and its style, for contextual    */
-    int                 contextual; /* and whether it said so           */
+    const char         *style;      /* the last paragraph's style       */
+    int                 contextual; /* the last paragraph's contextual  */
     of_vec_t            notes;      /* int: footnotes on this page      */
     float               notes_h;    /* their height, the rule included  */
     float              *note_h;     /* each note's height, once known   */
@@ -78,9 +78,11 @@ int pg_para(of_pager_t *pg, const of_para_t *p);
 /** @brief A table placed.  @return 0, or -1. */
 int pg_table(of_pager_t *pg, const of_table_t *t);
 /** @brief The next column, or the next page after the last.  @return 0,
- *         or -1 past the page ceiling. */
+ *         or -1 out of memory or past the page ceiling. */
 int pg_next_column(of_pager_t *pg);
-/** @brief A new page of the section's setup.  @return 0, or -1. */
+/** @brief A new page of the section's setup, the open one closed with
+ *         its notes placed.  @return 0, or -1 out of memory or past the
+ *         page ceiling. */
 int pg_new_page(of_pager_t *pg);
 /** @brief Fragments @p from on moved by (@p dx, @p dy). */
 void pg_move(of_vec_t *frags, int from, float dx, float dy);

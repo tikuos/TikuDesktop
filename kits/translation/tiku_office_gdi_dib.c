@@ -398,8 +398,8 @@ place(gdi_t *g, int n, const gdi_blit_t *b)
     g->drawn = 1;
 }
 
-/** @brief No bitmap: the box filled with the brush, black or white as
- *         the raster operation says; nothing for one that inverts. */
+/** @brief No bitmap: the box filled with the brush, or black or white,
+ *         as the raster operation says; nothing for any other operation. */
 static void
 fill(gdi_t *g, const gdi_blit_t *b)
 {

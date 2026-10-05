@@ -5,8 +5,9 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_pdf_glyphs.inl - the glyph names a font's encoding uses and the
- * characters they stand for: the part of the Adobe Glyph List that
- * Latin text, LaTeX's fonts and the symbols papers reach for need.
+ * characters they stand for: a sorted subset of the Adobe Glyph List
+ * (Latin, Greek, punctuation, arrows and mathematical symbols); and the
+ * upper halves of the Standard, WinAnsi and MacRoman encodings.
  * Included by tiku_pdf_font.c alone.
  *
  * SPDX-License-Identifier: Apache-2.0

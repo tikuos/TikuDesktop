@@ -6,12 +6,11 @@
  *
  * tiku_pdf_filter.c - a stream's bytes, decoded.
  *
- * Flate is nearly every stream in the documents read here; LZW, the
- * two ASCII forms and run lengths are small and old files use them.
- * A predictor (ISO 32000 7.4.4.4) undoes the row filtering PNG-style
- * writers add before compressing.  CCITT fax and JBIG2 give rows of
- * bits, as a one-bit image's samples are; the other image codecs stop
- * the chain, their bytes going to whoever decodes pictures.
+ * Flate, LZW, ASCIIHex, ASCII85 and RunLength are decoded here.  A
+ * predictor (ISO 32000 7.4.4.4) undoes the row filtering a writer added
+ * before compressing.  CCITT fax and JBIG2 are decoded into rows of bits,
+ * as a one-bit image's samples are; DCT and JPX end the chain, their
+ * bytes left for the picture decoders.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -271,7 +270,7 @@ predict(unsigned char *p, long n, int pred, int colors, int bpc, int columns)
     rowlen = ((long)columns * colors * bpc + 7) / 8;
     if (pred == 2) {
         if (bpc != 8) {
-            return n;               /* the one width worth undoing */
+            return n;               /* undone at 8 bits a sample only */
         }
         for (r = 0; r + rowlen <= n; r += rowlen) {
             for (i = bpp; i < rowlen; i++) {

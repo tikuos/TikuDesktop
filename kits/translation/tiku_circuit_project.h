@@ -20,6 +20,8 @@
 #define TIKU_CIRCUIT_DEPTH_MAX     16u  /* child levels below the root   */
 #define TIKU_CIRCUIT_PROJECT_BYTES (64u * 1024u * 1024u)  /* one import  */
 
+/** @brief A schematic's sheet instances, each with its scene or the
+ *         diagnostic saying why it has none. */
 typedef struct tiku_circuit_project tiku_circuit_project_t;
 
 /** @brief A file the resolver read, borrowed until its release() call.
@@ -103,9 +105,11 @@ int tiku_circuit_project_incomplete(const tiku_circuit_project_t *project);
 const tiku_circuit_sheet_t *tiku_circuit_project_sheet(
     const tiku_circuit_project_t *project, size_t index);
 
-/** @brief Sheet @p index's scene, borrowed from the project, or NULL for
- *         an unavailable sheet or an index out of range.  Retain it to
- *         keep it past the project. */
+/**
+ * @brief Sheet @p index's scene, borrowed from the project, or NULL for
+ *        an unavailable sheet or an index out of range.
+ * @note Retain it to keep it past the project.
+ */
 tiku_circuit_t *tiku_circuit_project_scene(
     const tiku_circuit_project_t *project, size_t index);
 

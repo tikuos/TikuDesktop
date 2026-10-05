@@ -4,15 +4,16 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_pdf_annot.c - annotations with no appearance of their own,
- * drawn as a viewer draws them.
+ * tiku_pdf_annot.c - annotations that store no appearance of their own,
+ * drawn from what they are.
  *
  * A writer should store how each annotation looks (ISO 32000 12.5.5);
  * some store only what it is: a square and its colours, the quads a
  * highlight covers, the strokes of ink, a note's text.  From those this
  * writes the content that draws them, in page space, for the renderer
- * to run as it runs any other; the fonts and blends it names are made
- * once for the document.
+ * to run as it runs any other; the font and opacities it names are made
+ * once for the document.  Under NeedAppearances, text and choice fields
+ * are drawn the same way.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -397,8 +398,8 @@ crosses(const double *p, const double *q, const double *r, const double *s)
 
 /**
  * @brief One quad of QuadPoints as upper left, upper right, lower left,
- *        lower right, the order Acrobat writes: a quad written round
- *        its edge instead (as the standard's text reads) is put so.
+ *        lower right.  A quad written round its edge, lower left, lower
+ *        right, upper right, upper left, is put in that order.
  */
 static void
 quad(const double *in, double *q)
@@ -427,7 +428,7 @@ mark(sb_t *b, const double *q, double at, double w, int wave)
                                                    (x1 - x0) / len : 1;
 
     if (!(len < 1e5)) {
-        return;                     /* a mark no page is wide enough for */
+        return;                     /* longer than any page, or a NaN */
     }
     step = len / step > 2048 ? len / 2048 : step;
 
@@ -547,7 +548,8 @@ show(sb_t *b, const unsigned char *s, int n)
 
 /** @brief Where the line from @p start ends: at a line break, else at
  *         the last space before the words outgrow @p room, else within a
- *         word that alone does.  At least one byte past @p start. */
+ *         word that alone does.  At least one byte past @p start unless a
+ *         line break is there. */
 static int
 line_end(const unsigned char *s, int n, int start, double room, double size)
 {

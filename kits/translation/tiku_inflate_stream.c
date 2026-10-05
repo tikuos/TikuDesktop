@@ -6,9 +6,9 @@
  *
  * tiku_inflate_stream.c - DEFLATE (RFC 1951) decoded as it is read, and
  * Deflate64 beside it: compressed bytes are asked for as they are needed,
- * decoded bytes handed out as asked for, so an archive's gigabyte entry
- * passes through a window of 64 KB.  Codes are looked up ten bits at a
- * time, longer ones finished down a small tree.
+ * decoded bytes handed out as asked for, so an archive entry of any size
+ * passes through a window of 32 KB, 64 KB for Deflate64.  Codes are
+ * looked up ten bits at a time, longer ones finished down a small tree.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,7 +29,7 @@
 /**
  * @brief A Huffman code as looked up: @c fast by a code's first ten bits,
  *        then @c tree a bit at a time for the codes longer than that.
- *        An entry >= 0 is a symbol with its length above bit 9; < 0 is
+ *        An entry > 0 is a symbol with its length from bit 9 up; < 0 is
  *        ~node; 0 is no code at all.
  */
 typedef struct {
@@ -42,10 +42,10 @@ enum { ST_HEADER, ST_STORED, ST_CODES, ST_DONE, ST_ERROR };
 struct tiku_inflater {
     tiku_inflate_fill_t fill;       /* where compressed bytes come from   */
     void          *ctx;
-    unsigned char *in;              /* compressed bytes read, not used    */
-    long           in_pos, in_len;
+    unsigned char *in;              /* compressed bytes from fill         */
+    long           in_pos, in_len;  /* the next one to take; how many     */
     int            in_end;          /* fill said there is no more         */
-    int            broken;          /* fill failed: nothing is trusted    */
+    int            broken;          /* fill failed: decoding ends, -1     */
     uint64_t       bitbuf;          /* bits taken from in, lowest first   */
     int            bitcnt;
     unsigned char *win;             /* the output's last wsize bytes      */
@@ -84,7 +84,7 @@ more(tiku_inflater_t *z)
     return 1;
 }
 
-/** @brief Top the bit buffer up to 56 bits or the input's end. */
+/** @brief Top the bit buffer up past 56 bits, or to the input's end. */
 static void
 refill(tiku_inflater_t *z)
 {
@@ -129,7 +129,7 @@ reverse(unsigned code, int len)
 }
 
 /** @brief Hang a code longer than FAST_BITS off @p h's tree.
- *  @return 0, or -1 when two codes collide (the lengths lied). */
+ *  @return 0, or -1 when two codes collide or the tree is full. */
 static int
 hang(huff_t *h, unsigned rev, int len, int sym, int *nodes)
 {
@@ -156,8 +156,8 @@ hang(huff_t *h, unsigned rev, int len, int sym, int *nodes)
 }
 
 /** @brief The canonical codes for @p n symbols' @p length[] into @p h.
- *  @return 0 for a complete code, 1 for an incomplete one (legal only
- *          for a lone code), -1 for an over-subscribed or broken one. */
+ *  @return 0 for a complete or empty code, 1 for a lone code, -1 for any
+ *          other incomplete code or an over-subscribed or broken one. */
 static int
 build(huff_t *h, const unsigned char *length, int n)
 {
@@ -311,7 +311,7 @@ dynamic_codes(tiku_inflater_t *z)
     if (build(&z->lit, length, 19) != 0 ||
         code_lengths(z, &z->lit, length, (int)(nlit + ndist)) != 0 ||
         length[256] == 0) {
-        return -1;                  /* no end-of-block code is no block */
+        return -1;          /* a bad length code, or no end-of-block code */
     }
     err = build(&z->lit, length, (int)nlit);
     if (err < 0) {
@@ -348,7 +348,7 @@ header(tiku_inflater_t *z)
     len = bits(z, 16);
     nlen = bits(z, 16);
     if (len < 0 || nlen < 0 || len != (~nlen & 0xffff)) {
-        return -1;                  /* the length disagrees with its NOT */
+        return -1;                  /* LEN and NLEN disagree */
     }
     z->stored = len;
     z->state = ST_STORED;
@@ -444,8 +444,8 @@ match(tiku_inflater_t *z, int sym)
         return -1;
     }
     z->copy_dist = (long)dbase[dsym] + e;
-    /* The window is what has been written: reaching before it would
-     * copy bytes nobody wrote. */
+    /* A distance past the history the window holds is refused: those
+     * window bytes were never written. */
     return z->copy_dist > z->have ? -1 : 0;
 }
 
@@ -499,7 +499,7 @@ produce(tiku_inflater_t *z)
         }
         if (z->state == ST_HEADER) {
             if (z->last) {
-                (void)bits(z, z->bitcnt & 7);   /* the end's odd bits */
+                (void)bits(z, z->bitcnt & 7);   /* to a byte boundary */
                 z->state = ST_DONE;
             } else if (header(z) != 0) {
                 z->state = ST_ERROR;

@@ -5,8 +5,7 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_circuit_kicad_instances.c - the reference, unit or page an object
- * takes in this instance of its sheet, chosen by the sheet's UUID path,
- * not by the child file's name.
+ * takes in this instance of its sheet, chosen by the sheet's UUID path.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -78,8 +77,9 @@ kc_instance(circuit_kc_t *k, size_t n, const char *fields)
             }
         }
     }
-    /* A renamed root may take its one stored bucket; several buckets with
-     * no project-name match are ambiguous and are not guessed between. */
+    /* An entry under the preferred project wins.  Without one, a single
+     * matching entry is taken, as for a renamed root; several fail as
+     * MISSING. */
     if (preferred != SX_NONE) {
         return preferred;
     }

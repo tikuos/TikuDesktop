@@ -25,8 +25,8 @@
 
 #define FONT_MAX (16L * 1024L * 1024L)
 
-/* Faces a machine tends to have, tried when the fonts folder has none:
- * sans, serif and fixed, regular and bold. */
+/* Faces on macOS and Linux tried when the fonts folder has none: sans,
+ * serif and fixed, regular and bold. */
 static const char *const fallback[][2] = {
     {"sans", "/System/Library/Fonts/Supplemental/Arial.ttf"},
     {"sans-bold", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"},
@@ -259,8 +259,9 @@ substitute(tiku_pdf_t *doc, const char *base, long flags)
     return file[0] != '\0' ? subst_open(doc, file) : NULL;
 }
 
-/** @brief The language a composite font's name says, from @p words of
- *         four languages' faces: 0 JP, 1 SC, 2 TC, 3 KR; -1 for none. */
+/** @brief The language composite font name @p base says, by words the
+ *         faces of four languages use: 0 JP, 1 SC, 2 TC, 3 KR; -1 for
+ *         none. */
 static int
 cjk_named(const char *base)
 {
@@ -427,7 +428,7 @@ pdf_standin_widths(tiku_pdf_t *doc, pdf_obj_t *font, const uint32_t *uni,
 
     if (pdf_get(doc, desc, "FontFile") || pdf_get(doc, desc, "FontFile2") ||
         pdf_get(doc, desc, "FontFile3")) {
-        return 0;                   /* its own program says, not ours */
+        return 0;                   /* an embedded font gets no stand-in */
     }
     t = substitute(doc, base != NULL && base->kind == PDF_NAME
                         ? (const char *)base->u.s.p : "",

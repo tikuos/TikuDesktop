@@ -25,8 +25,7 @@
 #define KC_FIELDS_MAX     40
 
 /* Format revisions read: from the first S-expression schematic to the
- * largest date-shaped number.  KiCad 7's, which the fixtures carry, is
- * the one tested. */
+ * largest date-shaped number. */
 #define KC_VERSION_MIN    20211123
 #define KC_VERSION_LAST   99999999
 #define KC_VERSION_TESTED 20230121

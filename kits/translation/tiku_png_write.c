@@ -7,10 +7,9 @@
  * tiku_png_write.c - pixels written as a PNG, filtered and deflated.
  *
  * Each row is filtered five ways -- None, Sub, Up, Average, Paeth -- and
- * sent the way whose bytes, read as signed, sum smallest: the rule the PNG
- * specification suggests, and what turns a screenshot's flat panels and
- * repeated rows into the zeros DEFLATE eats.  RGB, or RGBA where the
- * edges of a picture are to show what is behind it.
+ * sent the way whose bytes, read as signed, have the smallest sum of
+ * absolute values: the heuristic the PNG specification suggests.  The
+ * picture is written as RGB, or as RGBA when the caller asks for alpha.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -55,8 +54,9 @@ static int paeth(int a, int b, int c)
 }
 
 /** @brief Row @p cur filtered by @p kind against @p prev (zeros above
- *         the first row) into @p out.  @return the sum of its bytes, read
- *         as signed, which is what the choice is made on. */
+ *         the first row) into @p out.  @return the sum of the filtered
+ *         bytes' absolute values, read as signed, which the choice of
+ *         filter is made on. */
 static long filter(int kind, const unsigned char *cur,
                    const unsigned char *prev, size_t len, int bpp,
                    unsigned char *out)
@@ -124,6 +124,15 @@ static unsigned char *rows(const uint32_t *px, int w, int h, int bpp,
     return raw;
 }
 
+/**
+ * @brief @p px encoded as a PNG and written to @p path, or to @p f when
+ *        @p path is NULL.
+ *
+ * A file at @p path is opened only once the encoding has succeeded, and
+ * removed again when writing it fails.
+ *
+ * @return 0, or -1.
+ */
 static int write_to(const char *path, FILE *f, const uint32_t *px,
                     int w, int h, int alpha)
 {
@@ -142,7 +151,7 @@ static int write_to(const char *path, FILE *f, const uint32_t *px,
     be32(ihdr + 4, (uint32_t)h);
     ihdr[8] = 8;                            /* bits a sample */
     ihdr[9] = alpha ? 6 : 2;                /* RGBA or RGB */
-    ihdr[10] = ihdr[11] = ihdr[12] = 0;     /* deflate, adaptive, straight */
+    ihdr[10] = ihdr[11] = ihdr[12] = 0;     /* deflate, adaptive, no Adam7 */
     /* Do not open/truncate a destination before encoding succeeds. */
     if (z && zlen <= UINT32_MAX && (!path || (f = fopen(path,"wb")) != NULL))
         ok = fwrite(sig, 1, 8, f) == 8 && chunk(f, "IHDR", ihdr, 13) == 0 &&

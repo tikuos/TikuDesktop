@@ -4,7 +4,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_fontdir.c - the faces a person dropped in (see the header).
+ * tiku_fontdir.c - a fonts folder read into families: each file taken as
+ * a font by its first bytes, grouped by the family named in its own
+ * tables as regular or bold, and the families sorted by name.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,7 +19,8 @@
 
 #include "tiku_ttf.h"
 
-/** @brief The entry for @p name, making one if there is room. */
+/** @brief The entry for @p name, making one if there is room.
+ *  @return it, or NULL when the list is full. */
 static tiku_fontdir_entry_t *
 slot_for(tiku_fontdir_t *out, const char *name)
 {
@@ -55,7 +58,7 @@ tiku_fontdir_scan(tiku_fontdir_t *out, const char *dir)
     }
     d = opendir(dir);
     if (d == NULL) {
-        return 0;               /* no folder yet is not an error */
+        return 0;               /* a missing folder holds no families */
     }
     while ((entry = readdir(d)) != NULL) {
         char path[TIKU_PATH_MAX];
@@ -70,8 +73,8 @@ tiku_fontdir_scan(tiku_fontdir_t *out, const char *dir)
                              entry->d_name) >= sizeof path) {
             continue;
         }
-        /* By what the file HOLDS: the folder is a drop target, so it will
-         * have a stray README in it sooner or later. */
+        /* Files are taken as fonts by their first bytes: the folder may
+         * hold files that are not fonts. */
         if (!tiku_ttf_is_font(path)) {
             continue;
         }
@@ -94,8 +97,7 @@ tiku_fontdir_scan(tiku_fontdir_t *out, const char *dir)
     (void)closedir(d);
 
     {
-        /* A family dropped in as its bold alone is still a family: it
-         * would be worse to hide it than to draw both weights from it. */
+        /* A family with only a bold file uses it for both weights. */
         int i, j;
 
         for (i = 0; i < out->count; i++) {
@@ -104,8 +106,7 @@ tiku_fontdir_scan(tiku_fontdir_t *out, const char *dir)
                          out->font[i].bold);
             }
         }
-        /* Named order, so the list a person learns is the list they see
-         * again: a directory hands its entries back however it likes. */
+        /* Sorted by name: readdir() returns entries in no set order. */
         for (i = 1; i < out->count; i++) {
             tiku_fontdir_entry_t hold = out->font[i];
 

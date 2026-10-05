@@ -24,7 +24,7 @@
 typedef struct {
     of_arena_t    *a;               /* where its tree is kept            */
     of_omml_tint_t tint;            /* a run's own colour, by its format */
-    void          *ctx;             /* and what it needs                 */
+    void          *ctx;             /* handed to tint                    */
     uint32_t       color;           /* the equation's ink                */
     int         depth;              /* elements within elements          */
     int         array;              /* in an equation array: & lines up  */
@@ -133,7 +133,8 @@ ctrl_color(const mr_t *m, const tiku_xml_node_t *e)
 }
 
 /** @brief The variant a math run's properties @p pr ask for: a script
- *         (m:scr), else a style (m:sty), else slanted letters. */
+ *         (m:scr), else ordinary text (m:nor), else a style (m:sty), else
+ *         OV_AUTO's slanted letters. */
 static int
 variant(const tiku_xml_node_t *pr)
 {
@@ -493,7 +494,7 @@ columns(mr_t *m, const tiku_xml_node_t *e, int cols)
 }
 
 /** @brief An m:m: its cells row by row, as many columns as its widest
- *         row; NULL for none, or more than a grid sets. */
+ *         row; NULL for none, or for more than 64 rows or columns. */
 static of_mnode_t *
 matrix(mr_t *m, const tiku_xml_node_t *e)
 {
