@@ -332,14 +332,18 @@ dynamic allocation in the hot paths, Doxygen on anything public.
 
 ### Comments
 
-`hygiene/commentstyle.md` at the tikuOS root governs both comments and commit
-messages, but `hygiene/` is gitignored there: a clone of this tree does not
-carry it. Inside a tikuOS checkout, `make lint` at the applications root runs
-the comment checker over this tree (and says SKIPPED, not nothing, when the
-checkout is absent), and the commit-msg hook in `../../hygiene/githooks`
-applies to this repository too. The rule that
-matters: a comment states the **live hazard or the reason**, never the route
-you took to find it. No "used to", no "turned out", no milestone markers.
+Comments follow the TikuOS style guide, `comment-style.md` at the tikuOS
+root (https://github.com/tikuos/tikuOS/blob/main/comment-style.md), with this
+tree's denser limits: a file header of at most 20 lines and a doc comment of
+at most 6 lines of prose. Inside a tikuOS checkout, `make lint` at the
+applications root runs its checker, `tools/check_comment_style.py`, over this
+tree, and says SKIPPED, not nothing, when the checkout is absent. The rule
+that matters: a comment states the **live hazard or the reason**, never the
+route you took to find it. No "used to", no "turned out", no milestone
+markers.
+
+Commit messages are checked by the commit-msg hook in `../../hygiene/githooks`,
+which applies to this repository too inside a tikuOS checkout.
 
 ---
 

@@ -456,7 +456,7 @@ ml_text(ml_t *ml, const char *text, int v, uint32_t color, int cls,
         as = styled(c, vv);
         slant = 0;
         if (as != c && tiku_ttf_glyph(ml->f->fs->face[ml->f->face].ttf, as)
-            == 0) {                 /* the face lacks it: slant our own */
+            == 0) {          /* the face lacks it: slant the plain glyph */
             slant = vv == OV_ITALIC || vv == OV_BOLD_ITALIC;
             as = c;
         }

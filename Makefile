@@ -159,12 +159,12 @@ source-report:
 	@python3 tools/check_style.py --report
 
 lint: check-source-modules
-	@if [ -x $(TIKUOS)/hygiene/check_comment_style.py ]; then \
-	    python3 $(TIKUOS)/hygiene/check_comment_style.py --root=$(CURDIR) \
+	@if [ -x $(TIKUOS)/tools/check_comment_style.py ]; then \
+	    python3 $(TIKUOS)/tools/check_comment_style.py --root=$(CURDIR) \
 	        --prose=6 --header=20; \
 	else \
-	    echo "check_comment_style: SKIPPED -- no hygiene/ at $(TIKUOS)"; \
-	    echo "  comment style is UNCHECKED; see hygiene/commentstyle.md"; \
+	    echo "check_comment_style: SKIPPED -- no tikuOS checkout at $(TIKUOS)"; \
+	    echo "  comment style is UNCHECKED; see comment-style.md in tikuOS"; \
 	fi
 	@python3 tools/check_style.py
 
