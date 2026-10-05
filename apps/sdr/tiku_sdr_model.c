@@ -1,7 +1,8 @@
 /* tiku_sdr_model.c -- TikuSDR's model: a view's range and how the board
  * is asked for it, the board's SPEC lines taken in, slices stitched into
- * one band, averages, peaks and the waterfall kept, and the channel plans
- * of the 2.4 GHz band.  No window and no device.
+ * one band, what each trace type keeps of them, the graticule's scale, the
+ * spectrogram, and the channel plans of the 2.4 GHz band.  No window and
+ * no device.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <math.h>
@@ -26,9 +27,14 @@ static const double rate_mhz[] = {80.0, 40.0, 20.0, 10.0, 8.0, 4.0};
 void sdr_model_init(sdr_model_t *m)
 {
     memset(m, 0, sizeof *m);
-    m->peak_on = m->avg_on = 1;
-    m->scale_lo = 40.0f;
+    m->type[0] = SDR_T_AVG;
+    m->avg_count = 4;
+    m->track = 1;
+    m->mark_held = -1;
+    m->div = 10.0f;
     m->scale_hi = 110.0f;
+    m->scale_lo = m->scale_hi - SDR_DIVS * m->div;
+    m->floor_db = 30.0f;
     sdr_model_range(m, 2437.0 - SDR_LIVE_SPAN / 2, 2437.0 + SDR_LIVE_SPAN / 2);
 }
 
@@ -152,9 +158,15 @@ void sdr_model_field(const sdr_model_t *m, int field, char *out, size_t max)
 {
     double v = field == SDR_F_CENTER ? (m->start + m->stop) / 2 :
                field == SDR_F_SPAN ? m->stop - m->start :
-               field == SDR_F_START ? m->start : m->stop;
+               field == SDR_F_START ? m->start :
+               field == SDR_F_STOP ? m->stop : m->mark[m->mark_sel].mhz;
 
-    sdr_mhz_text(v, out, max);
+    if (field == SDR_F_AVG)
+        snprintf(out, max, "%d", m->avg_count);
+    else if (field == SDR_F_MARK && !m->mark[m->mark_sel].on)
+        out[0] = '\0';
+    else
+        sdr_mhz_text(v, out, max);
 }
 
 int sdr_mhz_parse(const char *text, double *mhz)
@@ -185,6 +197,13 @@ void sdr_model_clear(sdr_model_t *m)
 {
     memcpy(m->avg, m->db, sizeof m->avg);
     memcpy(m->peak, m->db, sizeof m->peak);
+    memcpy(m->low, m->db, sizeof m->low);
+}
+
+const float *sdr_trace(const sdr_model_t *m, int type)
+{
+    return type == SDR_T_WRITE ? m->db : type == SDR_T_AVG ? m->avg :
+           type == SDR_T_MAX ? m->peak : type == SDR_T_MIN ? m->low : NULL;
 }
 
 double sdr_model_freq(const sdr_model_t *m, int bin)
@@ -214,14 +233,19 @@ static int hex2(const char *s)
     return v;
 }
 
-/** @brief A finished frame: averages, peaks and a waterfall row from it. */
+/** @brief A finished frame: the average, the highest and the lowest kept
+ *         from it, a spectrogram row, and markers kept on the peaks they
+ *         follow. */
 static void frame_done(sdr_model_t *m)
 {
+    float a = 1.0f / (float)(m->avg_count > 1 ? m->avg_count : 1);
     unsigned char *row;
 
     for (int j = 0; j < m->n; j++) {
-        m->avg[j] = m->fresh ? m->avg[j] * 0.7f + m->db[j] * 0.3f : m->db[j];
+        m->avg[j] = m->fresh ? m->avg[j] + (m->db[j] - m->avg[j]) * a
+                             : m->db[j];
         if (!m->fresh || m->db[j] > m->peak[j]) m->peak[j] = m->db[j];
+        if (!m->fresh || m->db[j] < m->low[j]) m->low[j] = m->db[j];
     }
     m->wf_head = (m->wf_head + 1) % SDR_ROWS;
     if (m->wf_count < SDR_ROWS) m->wf_count++;
@@ -233,6 +257,7 @@ static void frame_done(sdr_model_t *m)
     }
     m->fresh = 1;
     m->spectra++;
+    sdr_mark_follow(m);
 }
 
 /** @brief A comparison for qsort over bytes. */
@@ -335,37 +360,46 @@ static int by_value(const void *a, const void *b)
 
 void sdr_model_scale(sdr_model_t *m)
 {
-    float sorted[SDR_BINS], lo, hi = 0.0f;
-    const float *src = m->avg_on ? m->avg : m->db;
+    static const float divs[] = {2.0f, 5.0f, 10.0f, 20.0f};
+    float sorted[SDR_BINS], lo = 1e9f, hi = -1e9f, top, need, div = 20.0f;
+    int shown = 0;
 
     if (!m->fresh || m->n <= 0) return;
-    memcpy(sorted, src, sizeof(float) * (size_t)m->n);
-    qsort(sorted, (size_t)m->n, sizeof(float), by_value);
-    lo = sorted[m->n / 10] - 6.0f;
-    for (int j = 0; j < m->n; j++) {
-        float top = m->peak_on ? m->peak[j] : m->db[j];
-        if (top > hi) hi = top;
+    for (int t = 0; t < SDR_TRACES; t++) {
+        const float *v = sdr_trace(m, m->type[t]);
+        if (!v) continue;
+        memcpy(sorted, v, sizeof(float) * (size_t)m->n);
+        qsort(sorted, (size_t)m->n, sizeof(float), by_value);
+        if (sorted[m->n / 10] < lo) lo = sorted[m->n / 10];
+        if (sorted[m->n - 1] > hi) hi = sorted[m->n - 1];
+        shown = 1;
     }
-    hi += 4.0f;
-    if (hi - lo < 36.0f) hi = lo + 36.0f;
-    if (m->spectra <= 1) {
-        m->scale_lo = lo;
-        m->scale_hi = hi;
-    } else {
-        m->scale_lo += (lo - m->scale_lo) * 0.2f;
-        m->scale_hi += (hi - m->scale_hi) * 0.2f;
-    }
+    if (!shown) return;                 /* nothing drawn: the scale stays */
+    top = ceilf((hi + 3.0f) / 10.0f) * 10.0f;
+    need = top - lo + 6.0f;
+    for (int i = 0; i < 4; i++)
+        if (divs[i] * SDR_DIVS >= need) { div = divs[i]; break; }
+    /* Wider at once; narrower, or a lower top, only with room to spare. */
+    if (m->spectra <= 1 || div > m->div ||
+        (div < m->div && need <= div * SDR_DIVS * 0.8f))
+        m->div = div;
+    if (m->spectra <= 1 || top > m->scale_hi ||
+        top <= m->scale_hi - 2 * m->div)
+        m->scale_hi = top;
+    m->scale_lo = m->scale_hi - SDR_DIVS * m->div;
+    m->floor_db = floorf((lo - 6.0f) / 5.0f) * 5.0f;
+    if (m->floor_db > m->scale_hi - 20.0f) m->floor_db = m->scale_hi - 20.0f;
 }
 
 tiku_rgb_t sdr_palette(float t)
 {
-    /* Night to heat: navy, blue, teal, gold, near white. */
-    static const unsigned char stop[5][3] = {
-        {11, 15, 26}, {27, 42, 107}, {31, 122, 140}, {227, 195, 77},
-        {255, 245, 214}
+    /* An analyser's spectrogram: navy, blue, cyan, green, yellow, red. */
+    static const unsigned char stop[6][3] = {
+        {0, 0, 96}, {0, 40, 255}, {0, 210, 255}, {40, 220, 40},
+        {255, 230, 0}, {230, 20, 20}
     };
-    float x = (t < 0 ? 0 : t > 1 ? 1 : t) * 4.0f;
-    int i = (int)x >= 4 ? 3 : (int)x;
+    float x = (t < 0 ? 0 : t > 1 ? 1 : t) * 5.0f;
+    int i = (int)x >= 5 ? 4 : (int)x;
     float f = x - i;
 
     return TIKU_RGB((int)(stop[i][0] + (stop[i + 1][0] - stop[i][0]) * f),

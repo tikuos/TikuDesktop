@@ -1,11 +1,12 @@
 <h1>TikuSDR</h1>
 
-<p>TikuSDR shows what a board&#8217;s radio hears: a live spectrum and,
-beneath it, a waterfall of the spectra that came before. It is opened
-from <b>Device Tools</b> in the Deskbar leaf. The board does the
-listening and the arithmetic itself; TikuSDR draws what it sends, can
-record it to a file and play it back, and exports spectra for a
-spreadsheet or a script.</p>
+<p>TikuSDR shows what a board&#8217;s radio hears, laid out as a spectrum
+analyser: a panel of settings at the left, the spectrogram above, the
+spectrum on a graticule below it, and a bar at the window&#8217;s foot for
+recording, pausing and what is happening. It is opened from <b>Device
+Tools</b> in the Deskbar leaf. The board does the listening and the
+arithmetic itself; TikuSDR draws what it sends, can record it to a file
+and play it back, and exports spectra for a spreadsheet or a script.</p>
 
 <p>It needs an ESP32-C61 whose firmware has the receiver built in
 (<code>TIKU_DRV_SDR_ESP_ENABLE=1</code> beside the Wi-Fi driver).</p>
@@ -33,52 +34,97 @@ menu, then open TikuSDR again. One connected while the message is up is
 borrowed at once, the message gone. A recording opened from Tracker needs
 no board, and no message is shown.</p>
 
-<h2 id="views">Live and Band</h2>
+<h2 id="frequency">Frequency</h2>
 
-<p><b>Live</b> shows 40&#160;MHz around one frequency in 256 bins, about
-ten spectra a second. The receiver&#8217;s filter is flat over the middle
-24&#160;MHz; the shaded edges are its roll-off, not the air. The
-receiver&#8217;s own leakage at the tuned frequency is no signal, so the
-few bins on it show their neighbours&#8217; level. Move the view with
-<b>-5&#160;MHz</b> and <b>+5&#160;MHz</b>, the arrow keys (one megahertz,
-five with Shift), the scroll wheel, or the <b>Tune</b> menu&#8217;s Wi-Fi
-and BLE channels.</p>
+<p><b>Center</b>, <b>Span</b>, <b>Start</b> and <b>Stop</b> say the view
+in MHz, and any of them can be typed in: click one, type, and press Return,
+or Tab or click away. Typing Start or Stop moves Center and Span to match;
+typing Center or Span moves Start and Stop, the other of the two kept. A
+Start past the Stop, or a Stop below the Start, moves the other end with
+the span kept. A number may end in k, M or G, with or without Hz:
+<code>2.437G</code> is 2437&#160;MHz. Escape leaves a field as it was. The
+board tunes 2200 to 2700&#160;MHz, so a view is moved inside that, and is
+at least 1&#160;MHz wide.</p>
 
-<p><b>Band</b> shows the whole 2.4&#160;GHz band, 2396 to 2492&#160;MHz,
-stitched from six slices, about five sweeps a second. Each slice is heard
-at its own automatic gain, so its noise floor is levelled to a common one
-before the slices are joined: in a sweep, a level is a height above the
-floor around it. Click anywhere in a sweep to see 40&#160;MHz there.</p>
+<p><b>Live</b> is 40&#160;MHz about the view&#8217;s centre, <b>Band</b>
+the whole 2.4&#160;GHz band, 2396 to 2492&#160;MHz, and <b>Full</b> all
+500&#160;MHz the board tunes. Up to 40&#160;MHz is one spectrum at the
+narrowest sample rate that holds the view, 4, 8, 10, 20 or 40&#160;MS/s,
+so a narrow span shows finer bins: 2&#160;MHz about a BLE channel is
+15.6&#160;kHz a bin. Wider is swept in 16&#160;MHz slices, each heard at its
+own automatic gain and its noise floor levelled to a common one before the
+slices are joined: in a sweep, a level is a height above the floor around
+it. In a sweep, click the spectrogram -- or the spectrum, with no marker
+out -- to see 40&#160;MHz there.</p>
 
-<h2 id="frequency">Center, Span, Start and Stop</h2>
+<h2 id="traces">Traces</h2>
 
-<p>Beneath the buttons, <b>Center</b>, <b>Span</b>, <b>Start</b> and
-<b>Stop</b> say the view in MHz, and any of them can be typed in: click
-one, type, and press Return, or Tab or click away. Typing Start or Stop
-moves Center and Span to match; typing Center or Span moves Start and
-Stop, the other of the two kept. A Start past the Stop, or a Stop below
-the Start, moves the other end with the span kept. A number may end in
-k, M or G, with or without Hz: <code>2.437G</code> is 2437&#160;MHz. Escape
-leaves a field as it was. The board tunes 2200 to 2700&#160;MHz, so a view
-is moved inside that, and is at least 1&#160;MHz wide.</p>
+<p>Three traces can be shown at once, each in its own ink: trace 1 black,
+trace 2 red, trace 3 blue. Pick one in <b>Trace</b>, then what it shows in
+<b>Type</b>:</p>
 
-<p>Up to 40&#160;MHz is one spectrum at the narrowest sample rate that
-holds the view, 4, 8, 10, 20 or 40&#160;MS/s, so a narrow span shows finer
-bins: 2&#160;MHz about a BLE channel is 15.6&#160;kHz a bin. Wider is
-swept in 16&#160;MHz slices, as Band is, up to the whole 500&#160;MHz.
-The status line says which, and how wide a bin is. Live and Band are two
-such views, and their buttons are held down while one is shown.</p>
+<ul>
+<li><b>Clear &#38; Write</b> -- the latest spectrum, as it arrives.</li>
+<li><b>Average</b> -- the spectra averaged, each new one weighed as one of
+<b>Avg count</b> (1 to 100): the higher, the steadier and the slower.</li>
+<li><b>Max Hold</b> and <b>Min Hold</b> -- the highest and the lowest level
+heard at each frequency since the type was picked or <b>Clear</b>.</li>
+<li><b>Off</b> -- not shown.</li>
+</ul>
+
+<p>Trace 1 opens as the average of four spectra, the others off. Clear &#38;
+Write on one trace with Average on another draws the average over the
+latest, and Max Hold beside them shows the peaks either has reached.
+<b>Clear</b> starts every trace again from the latest spectrum;
+<b>Export</b> is the File menu&#8217;s Export CSV. The <b>Trace</b> menu
+holds the same choices.</p>
+
+<h2 id="markers">Markers</h2>
+
+<p>Four markers read a trace&#8217;s level at a frequency. Pick one in
+<b>Marker</b>, the trace it reads in <b>On trace</b>, and check
+<b>Active</b>: it comes out on the highest peak no other marker stands on.
+Its frequency is in <b>Freq</b>, where one can be typed; its readings stand
+in the graticule&#8217;s top left corner, each marker after the first with
+how far it is from M1, in MHz and dB. The selected marker is drawn in green,
+with a dotted line down the graticule.</p>
+
+<p><b>Peak Search</b> moves the selected marker to the highest peak,
+<b>Next Peak</b> to the highest one below it, and <b>Peak Left</b> and
+<b>Peak Right</b> to the nearest peak that way. A peak is a level that
+rises 6&#160;dB above the lowest ground between it and anything higher.
+<b>To Center</b> moves the view so the marker is its centre, its span kept,
+and <b>All Off</b> takes every marker in.</p>
+
+<p>On the spectrum, press near a marker to take it up, or anywhere else to
+bring the selected one there, and drag; let go and it climbs onto the peak
+it is beside. While <b>Track</b> is checked, markers follow the peak they
+stand on as it drifts from one spectrum to the next. The <b>Marker</b>
+menu holds the same commands.</p>
 
 <h2 id="reading">Reading it</h2>
 
-<p>The bright trace is the average of recent spectra (<b>Average</b> in
-the SDR menu); the amber trace holds each frequency&#8217;s peak while
-<b>Peak</b> is held down, until <b>Clear</b> in the SDR menu. Beneath the
-plot are the band&#8217;s channel plans: Wi-Fi
-channels 1 to 13, BLE&#8217;s advertising channels 37, 38 and 39 (also
-dashed in the plot), and 802.15.4 channels 11 to 26. Point at the plot or
-the waterfall to read a frequency&#8217;s level and the channels it falls
+<p>The graticule has ten divisions each way. <b>Ref</b>, above at the
+left, is the level of its top line, and <b>Div</b> the decibels a division:
+2, 5, 10 or 20, chosen to hold the traces shown, and changed only when they
+leave the room it gives them. <b>RBW</b> is how wide each point is, with
+the sample rate or the slices beneath; the receiver&#8217;s gain and which
+trace is which stand at the right. Beneath the graticule are <b>Start</b>,
+<b>Center</b>, <b>Stop</b> and <b>Span</b>, the number of points, and how
+many spectra or sweeps arrive a second. At 40&#160;MS/s the receiver is
+flat over the middle 24&#160;MHz alone; the edges are shaded.</p>
+
+<p>The spectrogram shows the spectra that came before, newest at the top,
+coloured from just under the noise, blue, through green and yellow to red
+at the reference level; the scale stands at its left. Point at either to
+read a frequency, each trace&#8217;s level there and the channels it falls
 in.</p>
+
+<p><b>Spectrogram</b> in <b>Display</b> switches the spectrogram off, the
+spectrum taking its room, and <b>Channel plans</b> shows the band&#8217;s
+plans beneath the graticule: Wi-Fi channels 1 to 13, BLE&#8217;s
+advertising channels 37, 38 and 39 (also dashed on the graticule), and
+802.15.4 channels 11 to 26.</p>
 
 <p>Levels are the board&#8217;s own decibels, not calibrated to the air,
 and the receiver&#8217;s automatic gain moves them; compare shapes and
@@ -90,46 +136,49 @@ megahertz wide; BLE advertising and 802.15.4 are narrow, two megahertz.</p>
 <p>The <b>File</b> menu holds what reaches a file: recordings, CSV and
 pictures.</p>
 
-<p><b>Record</b>, while a board is connected, asks where to save and then
-writes every spectrum the board sends, with its time, until <b>Record</b>
-is pressed again, the board is disconnected or the window closes. The
-status line shows how long and how large the recording has grown, about
-20 to 30&#160;MB an hour. The name offered is the board&#8217;s and the
-minute it began, ending in <code>.sdrlog</code>.</p>
+<p><b>Record</b>, the red dot in the bar, while a board is connected, asks
+where to save and then writes every spectrum the board sends, with its
+time, until it is pressed again, the board is disconnected or the window
+closes. The bar shows how long and how large the recording has grown,
+about 20 to 30&#160;MB an hour. The name offered is the board&#8217;s and
+the minute it began, ending in <code>.sdrlog</code>.</p>
 
 <p><b>Open Recording&#8230;</b>, with the board given back by
 <b>Disconnect</b>, plays a recording back at the pace it was made, through
-the same spectrum and waterfall. While it plays, the view is the
-recording&#8217;s own, so tuning is off; <b>Pause</b>, <b>Peak</b>,
-<b>Average</b> and <b>Clear</b> work as they do live, and <b>Connect</b>
-goes back to the board. A silence longer than two
-seconds, such as the live view paused while recording, plays in half a
-second. A recording double-clicked in Tracker opens in TikuSDR and plays
-at once.</p>
+the same spectrogram and spectrum. While it plays, the view is the
+recording&#8217;s own, so the frequency settings are off; pausing, the
+traces and the markers work as they do live, and <b>Connect</b> goes back
+to the board. A silence longer than two seconds, such as the live view
+paused while recording, plays in half a second. A recording double-clicked
+in Tracker opens in TikuSDR and plays at once.</p>
 
 <p>A recording is plain text, so a script can read it too. Each line after
 its header is the time in seconds since the start, then what the board
 sent: <code>SPEC</code> with the centre in megahertz, the sample rate, the
 gain step, the number of bins, and two hex digits a bin from the lowest
-frequency up, in half-decibels; <code>SWEEP</code> where a sweep of the
-band ends; and <code>VIEW</code> where the window changed between Live and
-Band.</p>
+frequency up, in half-decibels; <code>SWEEP</code> where a sweep ends; and
+<code>VIEW</code> where the view changed.</p>
 
 <h2 id="export">CSV and pictures</h2>
 
 <p><b>Export CSV&#8230;</b> writes spectra as rows of three columns, the
 time in seconds, the frequency in megahertz and the level in decibels,
 for a spreadsheet or a script. With a recording on screen it writes the
-whole recording, a line of its progress in the status line as it goes;
-otherwise it writes the spectra the waterfall holds, timed from the
-oldest. A minute of Live is about 150&#160;000 rows.</p>
+whole recording, a line of its progress in the bar as it goes; otherwise
+it writes the spectra the spectrogram holds, timed from the oldest. A
+minute of Live is about 150&#160;000 rows.</p>
 
-<p><b>Save Picture&#8230;</b> saves the spectrum, the channel plans, the
-waterfall and the status line, everything below the toolbar, as a PNG.</p>
+<p><b>Save Picture&#8230;</b> saves the spectrogram and the spectrum, with
+their annotations and markers, as a PNG.</p>
 
 <h2 id="keys">Keys</h2>
 
-<p><b>Space</b> pauses and resumes, <b>B</b> shows the band,
-<b>L</b> returns to Live, <b>P</b> toggles the peak hold, <b>C</b> clears
-the peaks and the average, <b>R</b> starts and stops a recording, and
-<b>Escape</b> closes the window.</p>
+<p><b>Space</b> pauses and resumes; <b>L</b>, <b>B</b> and <b>F</b> show
+Live, Band and Full; the arrow keys move the view one megahertz, five with
+Shift, as does the scroll wheel. <b>P</b> makes trace 2 a max hold or takes
+it off, <b>A</b> does the same for the latest on trace 3, and <b>C</b>
+clears the traces. <b>1</b> to <b>4</b> pick a marker, <b>M</b> puts it out
+or takes it in, <b>K</b> is Peak Search, <b>N</b> Next Peak, <b>[</b> and
+<b>]</b> the next peak left and right, and <b>Delete</b> takes it in.
+<b>W</b> switches the spectrogram, <b>R</b> starts and stops a recording,
+and <b>Escape</b> closes the window.</p>

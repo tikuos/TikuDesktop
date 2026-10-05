@@ -1,0 +1,68 @@
+# shell: desktop
+# prefs: factory
+# setup: sdrlog
+# open: /tmp/trk_home/recordings
+# TikuSDR as a spectrum analyser on a recording, which needs no board:
+# trace 2 made a max hold from the Traces lists, its legend in red; marker
+# 1 out on the highest peak by its key, Next Peak moving it down, the
+# Marker menu's Peak Search back up, the n key down again, and a drag let
+# go beside the highest peak climbing onto it; the Spectrogram switch off,
+# the spectrum taking its room.
+wait 20
+click-row 0
+wait 2
+click-row 0
+wait 150
+expect-title TikuSDR
+wait 300
+note The spectrogram on: its switch at the panel's foot
+expect-pixel 209 563 336698
+note Trace 2 a max hold, from the lists: its legend in red
+click 172 239
+wait 4
+key Down
+key Return
+wait 4
+click 172 263
+wait 4
+key Down
+key Down
+key Down
+key Return
+wait 10
+expect-pixel 932 281 d23228
+note Marker 1 out on the highest peak; Next Peak, Peak Search, n
+click-window TikuSDR
+key m
+wait 10
+expect-pixel 840 302 466058
+click 190 461
+wait 10
+shot /tmp/trk_sdranalyser.png
+expect-pixel 828 302 466058
+click 211 8
+wait 8
+menu-pick Peak Search
+wait 10
+expect-pixel 840 302 466058
+click-window TikuSDR
+key n
+wait 10
+expect-pixel 828 302 466058
+note A drag let go beside the highest peak climbs onto it
+press 828 400
+wait 4
+move 700 400
+wait 4
+release 838 400
+wait 10
+expect-pixel 840 302 466058
+note The spectrogram off: the graticule starts at the top
+click 209 563
+wait 10
+expect-pixel 209 563 ffffff
+expect-pixel 840 95 466058
+key Escape
+wait 20
+expect-no-title TikuSDR
+quit

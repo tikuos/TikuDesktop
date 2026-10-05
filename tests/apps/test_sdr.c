@@ -12,6 +12,7 @@
 
 #include "../../apps/sdr/tiku_sdr_app.c"
 #include "../../apps/sdr/tiku_sdr_link.c"
+#include "../../apps/sdr/tiku_sdr_marker.c"
 #include "../../apps/sdr/tiku_sdr_model.c"
 #include "../../apps/sdr/tiku_sdr_tape.c"
 #include "../../apps/sdr/tiku_sdr_view.c"
@@ -62,6 +63,17 @@ static int offered(int command)
         for (int j = 0; j < last_menus.menu[i].nitem; j++)
             if (last_menus.menu[i].item[j].command == command)
                 return last_menus.menu[i].item[j].enabled;
+    return -1;
+}
+
+/** @brief Whether the menus last published mark @p command as on: 1 or 0,
+ *         or -1 when no menu holds it. */
+static int marked(int command)
+{
+    for (int i = 0; i < last_menus.nmenu; i++)
+        for (int j = 0; j < last_menus.menu[i].nitem; j++)
+            if (last_menus.menu[i].item[j].command == command)
+                return last_menus.menu[i].item[j].marked;
     return -1;
 }
 
@@ -259,8 +271,8 @@ static void model_tests(void)
     assert(strstr(ch, "802.15.4 13"));
     sdr_channels(2404.0, ch, sizeof ch);
     assert(strstr(ch, "BLE 0") && !strstr(ch, "advertising"));
-    assert(sdr_palette(-1.0f) == TIKU_RGB(11, 15, 26));
-    assert(sdr_palette(2.0f) == TIKU_RGB(255, 245, 214));
+    assert(sdr_palette(-1.0f) == TIKU_RGB(0, 0, 96));
+    assert(sdr_palette(2.0f) == TIKU_RGB(230, 20, 20));
 }
 
 /** @brief Ranges: fitted to what the board gives; one spectrum at the
@@ -360,6 +372,180 @@ static void range_tests(void)
     assert(!sdr_mhz_parse("2437,5", &v) && !sdr_mhz_parse(".", &v));
     assert(!sdr_mhz_parse("12x", &v) && !sdr_mhz_parse("1.2.3", &v));
     assert(!sdr_mhz_parse("-5", &v) && !sdr_mhz_parse("GHz", &v));
+}
+
+/** @brief One spectrum of the view's tuning, 40 MS/s in 256 bins, of the
+ *         half-decibel values @p v, taken as the board's. */
+static void frame_of(sdr_model_t *m, const unsigned char *v)
+{
+    char line[1200];
+    int k = snprintf(line, sizeof line, "SPEC %d 40000000 76 256 ", m->tune);
+
+    for (int j = 0; j < 256; j++)
+        k += snprintf(line + k, sizeof line - (size_t)k, "%02x", v[j]);
+    assert(sdr_model_line(m, line) == 1);
+}
+
+/** @brief Traces and markers, the model's way: an average over its count,
+ *         the holds; peaks counted by how far they rise, a flat top once at
+ *         its middle; markers on the highest, moved down and across them,
+ *         out on the free peaks, read out against M1; a drifting peak
+ *         followed unless held or no longer asked; a marker let go on a
+ *         peak, kept on a flat floor; a new view; the trace each reads. */
+static void marker_tests(void)
+{
+    sdr_model_t m;
+    unsigned char v[256];
+    int bins[16];
+    char t[96];
+
+    sdr_model_init(&m);
+    assert(m.type[0] == SDR_T_AVG && m.type[1] == SDR_T_OFF &&
+           m.type[2] == SDR_T_OFF && m.avg_count == 4);
+    assert(!sdr_marks_out(&m) && m.track && m.mark_held == -1);
+    memset(v, 100, sizeof v);                   /* a 50 dB floor */
+    frame_of(&m, v);
+    v[10] = 180;                                /* 90 dB, once */
+    frame_of(&m, v);
+    assert(m.avg[10] == 60.0f && m.peak[10] == 90.0f && m.low[10] == 50.0f);
+    assert(sdr_trace(&m, SDR_T_MAX) == m.peak && !sdr_trace(&m, SDR_T_OFF));
+    sdr_model_clear(&m);
+    assert(m.avg[10] == 90.0f && m.peak[10] == 90.0f && m.low[10] == 90.0f);
+
+    m.type[0] = SDR_T_WRITE;                    /* markers on the latest */
+    memset(v, 100, sizeof v);
+    v[60] = 200;                                /* 100 dB */
+    v[139] = v[140] = v[141] = 180;             /* 90 dB, flat on top */
+    v[200] = 160;                               /* 80 dB */
+    v[100] = 110;                               /* 5 dB: no peak */
+    frame_of(&m, v);
+    assert(sdr_peaks(&m, m.db, bins, 16) == 3 && bins[0] == 60 &&
+           bins[1] == 140 && bins[2] == 200);
+    assert(sdr_peaks(&m, m.db, bins, 2) == 2);
+
+    sdr_mark_on(&m, 0);
+    assert(sdr_marks_out(&m) && sdr_mark_bin(&m, 0) == 60);
+    assert(sdr_mark_peak(&m, 0, SDR_TO_NEXT) && sdr_mark_bin(&m, 0) == 140);
+    assert(sdr_mark_peak(&m, 0, SDR_TO_NEXT) && sdr_mark_bin(&m, 0) == 200);
+    assert(!sdr_mark_peak(&m, 0, SDR_TO_NEXT) && sdr_mark_bin(&m, 0) == 200);
+    assert(sdr_mark_peak(&m, 0, SDR_TO_LEFT) && sdr_mark_bin(&m, 0) == 140);
+    assert(sdr_mark_peak(&m, 0, SDR_TO_LEFT) && sdr_mark_bin(&m, 0) == 60);
+    assert(!sdr_mark_peak(&m, 0, SDR_TO_LEFT) && sdr_mark_bin(&m, 0) == 60);
+    assert(sdr_mark_peak(&m, 0, SDR_TO_RIGHT) && sdr_mark_bin(&m, 0) == 140);
+    assert(sdr_mark_peak(&m, 0, SDR_TO_HIGHEST) && sdr_mark_bin(&m, 0) == 60);
+    assert(!sdr_mark_peak(&m, 1, SDR_TO_HIGHEST));      /* not out */
+    sdr_mark_text(&m, 0, t, sizeof t);
+    assert(!strcmp(t, "M1  2426.375 MHz  100.0 dB"));
+
+    /* More come out on the free peaks, highest first, then the middle. */
+    sdr_mark_on(&m, 1);
+    sdr_mark_on(&m, 2);
+    sdr_mark_on(&m, 3);
+    assert(sdr_mark_bin(&m, 1) == 140 && sdr_mark_bin(&m, 2) == 200 &&
+           sdr_mark_bin(&m, 3) == 128);
+    sdr_mark_text(&m, 1, t, sizeof t);
+    assert(!strcmp(t, "M2  2438.875 MHz   90.0 dB   Δ +12.500 MHz  -10.0 dB"));
+    sdr_mark_off(&m, 0);
+    assert(!m.mark[0].on && sdr_marks_out(&m));
+    sdr_mark_text(&m, 1, t, sizeof t);
+    assert(!strcmp(t, "M2  2438.875 MHz   90.0 dB"));
+    for (int k = 1; k < SDR_MARKERS; k++) sdr_mark_off(&m, k);
+    assert(!sdr_marks_out(&m));
+
+    /* Out on a peak that then drifts three bins a frame: followed. */
+    memset(v, 100, sizeof v);
+    v[60] = 200;
+    frame_of(&m, v);
+    sdr_mark_on(&m, 0);
+    assert(sdr_mark_bin(&m, 0) == 60);
+    for (int at = 63; at <= 69; at += 3) {
+        memset(v, 100, sizeof v);
+        v[at] = 200;
+        frame_of(&m, v);
+        assert(sdr_mark_bin(&m, 0) == at);
+    }
+    memset(v, 100, sizeof v);
+    v[72] = 200;
+    m.mark_held = 0;                            /* the pointer has it */
+    frame_of(&m, v);
+    assert(sdr_mark_bin(&m, 0) == 69);
+    m.mark_held = -1;
+    m.track = 0;
+    frame_of(&m, v);
+    assert(sdr_mark_bin(&m, 0) == 69);
+    m.track = 1;
+    frame_of(&m, v);
+    assert(sdr_mark_bin(&m, 0) == 72);
+
+    /* By hand: where it is let go, on the peak there while following,
+     * and kept where it is on a flat floor. */
+    sdr_mark_at(&m, 0, sdr_model_freq(&m, 75), 0);
+    assert(sdr_mark_bin(&m, 0) == 75);
+    sdr_mark_at(&m, 0, sdr_model_freq(&m, 75), 1);
+    assert(sdr_mark_bin(&m, 0) == 72);
+    sdr_mark_at(&m, 0, sdr_model_freq(&m, 30), 1);
+    assert(sdr_mark_bin(&m, 0) == 30);
+    m.track = 0;
+    sdr_mark_at(&m, 0, sdr_model_freq(&m, 75), 1);
+    assert(sdr_mark_bin(&m, 0) == 75);
+    m.track = 1;
+
+    /* A new view keeps its frequency; outside it, the readout says so and
+     * a peak move starts from the highest. */
+    sdr_model_range(&m, 2460, 2500);
+    sdr_mark_text(&m, 0, t, sizeof t);
+    assert(!strcmp(t, "M1  2428.719 MHz"));
+    memset(v, 100, sizeof v);
+    v[50] = 190;
+    frame_of(&m, v);
+    assert(sdr_mark_bin(&m, 0) == -1 && m.mark[0].on && !m.mark[1].on);
+    sdr_mark_text(&m, 0, t, sizeof t);
+    assert(!strcmp(t, "M1  2428.719 MHz  outside the view"));
+    assert(sdr_mark_peak(&m, 0, SDR_TO_NEXT) && sdr_mark_bin(&m, 0) == 50);
+
+    /* Each marker reads its own trace; one that is off, the latest. */
+    assert(sdr_mark_trace(&m, 0) == m.db);
+    m.mark[0].trace = 1;
+    m.type[1] = SDR_T_MAX;
+    assert(sdr_mark_trace(&m, 0) == m.peak);
+    m.type[1] = SDR_T_OFF;
+    assert(sdr_mark_trace(&m, 0) == m.db);
+}
+
+/** @brief The graticule's scale: its top on whole tens over the traces,
+ *         the narrowest division that holds them, wider at once, narrower
+ *         only with a fifth to spare, so it does not flap. */
+static void scale_tests(void)
+{
+    sdr_model_t m;
+    unsigned char v[256];
+
+    sdr_model_init(&m);
+    m.type[0] = SDR_T_WRITE;
+    memset(v, 100, sizeof v);                   /* 50 dB */
+    for (int j = 0; j < 256; j += 8) v[j] = 112;    /* 56 dB, here and there */
+    frame_of(&m, v);
+    sdr_model_scale(&m);
+    assert(m.scale_hi == 60.0f && m.div == 2.0f && m.scale_lo == 40.0f);
+    v[60] = 190;                                /* 95 dB: wider at once */
+    frame_of(&m, v);
+    sdr_model_scale(&m);
+    assert(m.scale_hi == 100.0f && m.div == 10.0f && m.scale_lo == 0.0f);
+    v[60] = 100;                                /* gone: room to spare */
+    frame_of(&m, v);
+    sdr_model_scale(&m);
+    assert(m.scale_hi == 60.0f && m.div == 2.0f);
+    m.div = 5.0f;                               /* 19 dB to hold: kept */
+    memset(v, 94, sizeof v);
+    for (int j = 0; j < 256; j += 8) v[j] = 112;
+    frame_of(&m, v);
+    sdr_model_scale(&m);
+    assert(m.scale_hi == 60.0f && m.div == 5.0f);
+    memset(v, 104, sizeof v);                   /* 14 dB: narrower */
+    for (int j = 0; j < 256; j += 8) v[j] = 112;
+    frame_of(&m, v);
+    sdr_model_scale(&m);
+    assert(m.div == 2.0f && m.floor_db == 40.0f);  /* 20 dB of colour */
 }
 
 /** @brief What the fake board read, up to a return. */
@@ -472,12 +658,10 @@ static void exports(sdr_t *st, const char *dir)
     assert((f = fopen(png, "rb")) && fread(head, 1, 24, f) == 24);
     fclose(f);
     assert(!memcmp(head, "\x89PNG", 4));
-    assert(head[18] * 256 + head[19] == SDR_W);           /* IHDR's size */
-    {
-        tiku_rect_t plot, fall;     /* from the dB label down, no toolbar */
-        sdr_layout(st, &plot, &fall);
-        assert(head[22] * 256 + head[23] == SDR_H - (plot.y - 14));
-    }
+    /* IHDR's size: the instrument alone, from the panel's right to the
+     * window's, above the bar at its foot. */
+    assert(head[18] * 256 + head[19] == SDR_W - 222);
+    assert(head[22] * 256 + head[23] == SDR_H - 34);
     unlink(csv);
     unlink(png);
 }
@@ -505,7 +689,7 @@ static void click_at(sdr_t *st, int x, int y)
 /** @brief A click into field @p i, which selects all of it. */
 static void click_field(sdr_t *st, int i)
 {
-    tiku_rect_t r = sdr_field_rect(i);
+    tiku_rect_t r = sdr_control_rect(st, CMD_FIELD + i);
 
     click_at(st, r.x + r.w / 2, r.y + r.h / 2);
     assert(editing(st) == i && st->field[i].sel_a == 0 &&
@@ -672,9 +856,9 @@ static void opened_with(const tiku_app_services_t *services, const char *dir)
     assert(!strcmp(st->board, "esp32-c61"));
     tiku_sdr_app.board_said(st, TIKU_APP_BOARD_CURRENT, "esp32-c61-2");
     assert(!strcmp(st->board, "esp32-c61-2"));
-    assert(!strcmp(last_menus.menu[3].title, "Device") &&
-           last_menus.menu[3].nitem == 2 && last_menus.menu[3].item[1].marked &&
-           last_menus.menu[3].item[0].enabled);
+    assert(!strcmp(last_menus.menu[5].title, "Device") &&
+           last_menus.menu[5].nitem == 2 && last_menus.menu[5].item[1].marked &&
+           last_menus.menu[5].item[0].enabled);
     ticks(st, &now, 20);
     assert(st->state == SDR_IDLE && released == before);
     assert(offered(CMD_CONNECT) == 1);      /* there now, for the asking */
@@ -809,19 +993,23 @@ static void no_esp32(const tiku_app_services_t *services)
         assert(tiku_peek(st->surface, f.x + 3 + 26 - 10, f.y + 36) ==
                TIKU_C_DANGER);
     }
-    /* The toolbar starts at Live: Connect is the SDR menu's alone; the
-     * four frequency fields follow, held with the rest. */
-    assert(st->dialog.count == SDR_BUTTONS + SDR_FIELDS &&
-           st->dialog.control[0].id == CMD_LIVE &&
-           st->dialog.control[0].rect.x == 16);
-    for (int i = 0; i < st->dialog.count; i++)
-        assert(st->dialog.control[i].id != CMD_CONNECT);
-    for (int i = 0; i < SDR_FIELDS; i++) {
-        const tiku_dialog_control_t *c =
-            &st->dialog.control[SDR_BUTTONS + i];
-        assert(c->id == CMD_FIELD + i && c->kind == TIKU_DIALOG_INPUT &&
-               !c->enabled);
+    /* The panel holds no Connect -- the SDR menu's alone -- and under the
+     * alert nothing in it works: the bar's Pause first, then the
+     * sections, every control inside the panel and above the bar, the
+     * lists filled. */
+    assert(st->dialog.count > SDR_FIELDS + SDR_CHOICES &&
+           st->dialog.control[0].id == CMD_PAUSE &&
+           st->dialog.focus == TIKU_DIALOG_NONE);
+    for (int i = 0; i < st->dialog.count; i++) {
+        const tiku_dialog_control_t *c = &st->dialog.control[i];
+        int bar = c->id == CMD_PAUSE || c->id == CMD_RECORD;
+        assert(c->id != CMD_CONNECT && !c->enabled);
+        assert(c->rect.x >= 8 && c->rect.x + c->rect.w <= 208);
+        assert(bar ? c->rect.y > st->h - 30
+                   : c->rect.y + c->rect.h < st->h - 30);
     }
+    for (int c = 0; c < SDR_CHOICES; c++)
+        assert(!st->choice[c].enabled && st->choice[c].count >= 3);
 
     /* Every answer is OK, and OK ends TikuSDR; a press taken off it does
      * not.  The alert stays up behind each, the client ending the app. */
@@ -851,11 +1039,185 @@ static void no_esp32(const tiku_app_services_t *services)
     ticks(st, &now, 1);
     assert(!st->alert.open && st->state == SDR_RELEASING &&
            !strcmp(lent, "esp32-c61-2") && released == before + 2);
-    assert(!strcmp(last_menus.menu[3].title, "Device") &&
-           last_menus.menu[3].nitem == 2 && last_menus.menu[3].item[1].marked);
+    assert(!strcmp(last_menus.menu[5].title, "Device") &&
+           last_menus.menu[5].nitem == 2 && last_menus.menu[5].item[1].marked);
     tiku_sdr_app.stop(st);
     current = "";
     told = NULL;
+}
+
+/** @brief The pointer at (@p x, @p y): @p type, the first button. */
+static void pointer_at(sdr_t *st, int type, int x, int y)
+{
+    tiku_event_t e = {.type = type, .button = 1, .x = x, .y = y};
+
+    assert(tiku_sdr_app.event(st, &e) == 0);
+}
+
+/** @brief The plot column over bin @p b of the trace. */
+static int column(sdr_t *st, int b)
+{
+    tiku_rect_t plot, fall;
+
+    sdr_layout(st, &plot, &fall);
+    return plot.x + (2 * b + 1) * plot.w / (2 * st->model.n);
+}
+
+/** @brief The middle of toolbar control @p id. */
+static void click_control(sdr_t *st, int id)
+{
+    sdr_controls(st);
+    for (int i = 0; i < st->dialog.count; i++) {
+        tiku_rect_t r = st->dialog.control[i].rect;
+        if (st->dialog.control[i].id != id) continue;
+        click_at(st, r.x + r.w / 2, r.y + r.h / 2);
+        return;
+    }
+    assert(0);
+}
+
+/** @brief List @p c opened by a press and moved @p down rows by key, then
+ *         Return: what it says is chosen. */
+static void choose(sdr_t *st, int c, int down)
+{
+    tiku_rect_t r = sdr_control_rect(st, CMD_CHOICE + c);
+
+    click_at(st, r.x + 10, r.y + r.h / 2);
+    assert(st->choice[c].open);
+    for (int i = 0; i < down; i++) assert(key_in(st, TIKU_KEY_DOWN, NULL) == 0);
+    assert(key_in(st, TIKU_KEY_RETURN, NULL) == 0 && !st->choice[c].open);
+}
+
+/** @brief The window with no board.  Traces: types from the lists or the
+ *         menu, the count typed, every level under the pointer.  Markers:
+ *         out on the highest peak, Next Peak, a drag let go on a peak,
+ *         another from the list, a press near one, a frequency typed,
+ *         Delete, All Off, To Center.  Display: the spectrogram off, the
+ *         plans on.  In a sweep, markers take a press instead of tuning. */
+static void drawn(const tiku_app_services_t *services)
+{
+    void *state = NULL;
+    sdr_t *st;
+    sdr_model_t *m;
+    tiku_rect_t plot, fall, was, r;
+    unsigned char v[256];
+    char line[1200];
+    int mid;
+
+    assert(tiku_sdr_app.start(&state, services) == 0);
+    st = state;
+    m = &st->model;
+    assert(st->fall_on && !st->plans_on && !sdr_marks_out(m));
+    assert(!sdr_enabled(st, CMD_NEXT_PEAK) &&
+           !sdr_enabled(st, CMD_FIELD + SDR_F_MARK));
+    assert(st->dialog.focus == CMD_PAUSE);  /* never a field by itself */
+    memset(v, 100, sizeof v);
+    v[60] = 200;
+    v[140] = 180;
+    frame_of(m, v);
+    sdr_layout(st, &plot, &fall);
+    mid = plot.y + plot.h / 2;
+    assert(fall.y < plot.y && fall.h > 0);      /* above the spectrum */
+
+    /* Trace 2 a max hold from the lists, trace 3 the latest from the
+     * menu; the average over eight; all three said under the pointer. */
+    choose(st, SDR_C_TRACE, 1);
+    assert(st->trace_sel == 1 && marked(CMD_TRACE_SEL + 1) == 1);
+    choose(st, SDR_C_TYPE, 3);
+    assert(m->type[1] == SDR_T_MAX && marked(CMD_TYPE + SDR_T_MAX) == 1);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_TRACE_SEL + 2) == 0);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_TYPE + SDR_T_WRITE) == 0);
+    assert(m->type[2] == SDR_T_WRITE && st->trace_sel == 2);
+    type_field(st, SDR_F_AVG, "8");
+    assert(m->avg_count == 8);
+    type_field(st, SDR_F_AVG, "0");
+    assert(m->avg_count == 8 && strstr(st->note, "1 to 100"));
+    assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0 && editing(st) < 0);
+    pointer_at(st, TIKU_EVENT_POINTER_MOVE, column(st, 60), mid);
+    assert(strstr(st->hover, "1: avg 100.0 dB · 2: max 100.0 dB · 3: 100.0"));
+
+    /* Active puts the marker out on the highest peak; Next Peak moves it
+     * down to the next. */
+    click_control(st, CMD_MARK_ACTIVE);
+    assert(m->mark[0].on && sdr_mark_bin(m, 0) == 60);
+    assert(marked(CMD_MARK_ACTIVE) == 1 && marked(CMD_TRACK) == 1);
+    assert(offered(CMD_PEAK_SEARCH) == 1 &&
+           sdr_enabled(st, CMD_FIELD + SDR_F_MARK));
+    click_control(st, CMD_NEXT_PEAK);
+    assert(sdr_mark_bin(m, 0) == 140);
+
+    /* Pressed away from it, the selected marker comes to the pointer and
+     * is dragged; let go, it climbs onto the peak there. */
+    pointer_at(st, TIKU_EVENT_POINTER_DOWN, column(st, 100), mid);
+    assert(m->mark_held == 0 && sdr_mark_bin(m, 0) == 100);
+    pointer_at(st, TIKU_EVENT_POINTER_MOVE, column(st, 120), mid);
+    assert(sdr_mark_bin(m, 0) == 120);
+    pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 137), mid);
+    assert(m->mark_held == -1 && sdr_mark_bin(m, 0) == 140);
+
+    /* Marker 2 from the list, out by key on the free peak; a press beside
+     * M1 takes M1 up; its frequency typed; Delete takes it in. */
+    choose(st, SDR_C_MARKER, 1);
+    assert(m->mark_sel == 1 && !sdr_enabled(st, CMD_NEXT_PEAK));
+    assert(key_in(st, 'm', "m") == 0 && sdr_mark_bin(m, 1) == 60);
+    pointer_at(st, TIKU_EVENT_POINTER_DOWN, column(st, 141), mid);
+    pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 141), mid);
+    assert(m->mark_sel == 0 && sdr_mark_bin(m, 0) == 140 &&
+           sdr_mark_bin(m, 1) == 60);
+    type_field(st, SDR_F_MARK, "2430");
+    assert(sdr_mark_bin(m, 0) == 83);
+    assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0);
+    assert(key_in(st, TIKU_KEY_DELETE, NULL) == 0);
+    assert(!m->mark[0].on && m->mark[1].on && sdr_marks_out(m));
+    click_control(st, CMD_MARK_CLEAR);
+    assert(!sdr_marks_out(m) && offered(CMD_MARK_CLEAR) == 0);
+
+    /* The spectrogram off: the spectrum takes its room; the plans on. */
+    sdr_layout(st, &was, &fall);
+    click_control(st, CMD_WATERFALL);
+    sdr_layout(st, &plot, &fall);
+    assert(!st->fall_on && fall.h == 0 && plot.y < was.y &&
+           plot.h > was.h * 3 / 2 && marked(CMD_WATERFALL) == 0);
+    r = sdr_control_rect(st, CMD_WATERFALL);
+    sdr_paint(st);
+    assert(tiku_peek(st->surface, r.x + r.w - 34 + 8, r.y + 2 + 9) !=
+           TIKU_C_SELECT);
+    assert(key_in(st, 'w', "w") == 0 && st->fall_on && marked(CMD_WATERFALL));
+    sdr_paint(st);
+    assert(tiku_peek(st->surface, r.x + r.w - 34 + 8, r.y + 2 + 9) ==
+           TIKU_C_SELECT);
+    sdr_layout(st, &was, &fall);
+    click_control(st, CMD_PLANS);
+    sdr_layout(st, &plot, &fall);
+    assert(st->plans_on && plot.h < was.h && marked(CMD_PLANS) == 1);
+
+    /* Marker to Center: the view moved under it, its span kept. */
+    assert(key_in(st, '1', "1") == 0 && m->mark_sel == 0);
+    assert(key_in(st, 'm', "m") == 0 && sdr_mark_bin(m, 0) == 60);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_MARK_CENTER) == 0);
+    assert(m->start == 2406.375 && m->stop == 2446.375);
+
+    /* In a sweep a press on the spectrum moves a marker, not the view;
+     * one on the spectrogram still tunes Live there. */
+    assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0);
+    for (int c = m->first; c <= m->last; c += SDR_SLICE_STEP) {
+        spec_line(line, sizeof line, c, 128, 80, c == 2420 ? 83 : -1, 200);
+        assert(sdr_model_line(m, line) == 0);
+    }
+    assert(sdr_model_line(m, "SWEEP 6") == 1 && sdr_marks_out(m));
+    sdr_layout(st, &plot, &fall);
+    mid = plot.y + plot.h / 2;
+    pointer_at(st, TIKU_EVENT_POINTER_DOWN, column(st, 20), mid);
+    pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 20), mid);
+    assert(sdr_model_is_band(m) && sdr_mark_bin(m, 0) == 20);
+    hover(st, column(st, 20), fall.y + 4);
+    assert(strstr(st->hover, "click to tune here"));
+    hover(st, column(st, 20), mid);
+    assert(!strstr(st->hover, "click to tune here"));
+    pointer_at(st, TIKU_EVENT_POINTER_DOWN, column(st, 20), fall.y + 4);
+    pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 20), fall.y + 4);
+    assert(sdr_model_is_live(m));
+    tiku_sdr_app.stop(st);
 }
 
 int main(void)
@@ -873,6 +1235,8 @@ int main(void)
 
     model_tests();
     range_tests();
+    marker_tests();
+    scale_tests();
     assert(mkdtemp(dir));
     snprintf(rec, sizeof rec, "%s/rec.sdrlog", dir);
     snprintf(rec2, sizeof rec2, "%s/rec2.sdrlog", dir);
@@ -881,6 +1245,7 @@ int main(void)
     assert(!ptsname_r(master, slave_path, sizeof slave_path));
 
     no_esp32(&services);
+    drawn(&services);
     released = 0;
     assert(tiku_sdr_app.start(&state, &services) == 0 && state);
     st = state;

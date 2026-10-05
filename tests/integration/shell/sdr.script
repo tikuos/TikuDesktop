@@ -53,7 +53,7 @@ wait 8
 menu-pick Stop Recording
 wait 20
 note Span typed: 2 MHz about Live's centre, one spectrum at 4 MS/s
-click 279 104
+click 155 112
 wait 4
 key 2
 key Return

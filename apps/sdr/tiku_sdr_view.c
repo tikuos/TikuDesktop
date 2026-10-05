@@ -1,6 +1,8 @@
-/* tiku_sdr_view.c -- TikuSDR's window: a toolbar, the spectrum on an
- * instrument-dark plot with the band's channel plans beneath it, the
- * waterfall, and one status line.  Painting only; no device.
+/* tiku_sdr_view.c -- TikuSDR's window, laid out as a spectrum analyser: a
+ * panel of settings at the left in sections (Frequency, Traces, Markers,
+ * Display), the spectrogram with its colour scale, the spectrum on a
+ * graticule annotated with its scale and range, and a bar at the foot for
+ * recording, pausing and what is happening.  Painting only; no device.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <math.h>
@@ -8,41 +10,139 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tiku_choice_paint.h"
 #include "tiku_font.h"
 #include "tiku_text_layout_paint.h"
 #include "tiku_ui.h"
 #include "tiku_sdr.h"
 
-#define PLOT_BG    TIKU_RGB(14, 18, 23)
-#define GRID       TIKU_RGB(38, 46, 56)
-#define TRACE      TIKU_RGB(87, 211, 176)
-#define TRACE_FILL TIKU_RGB(21, 60, 54)
-#define PEAK       TIKU_RGB(242, 179, 61)
-#define BLE_INK    TIKU_RGB(205, 104, 205)
-#define ZB_INK     TIKU_RGB(104, 176, 104)
-#define WIFI_INK   TIKU_RGB(96, 150, 210)
+#define PLOT_BG    TIKU_RGB(255, 255, 255)
+#define FRAME_INK  TIKU_RGB(140, 140, 140)
+#define GRID_INK   TIKU_RGB(205, 205, 205)
+#define NOTE_INK   TIKU_RGB(28, 28, 28)
+#define DIM_INK    TIKU_RGB(110, 110, 110)
+#define MARK_INK   TIKU_RGB(0, 128, 96)
+#define MARK_DIM   TIKU_RGB(70, 96, 88)
+#define BLE_INK    TIKU_RGB(160, 80, 160)
+#define ZB_INK     TIKU_RGB(60, 140, 60)
+#define WIFI_INK   TIKU_RGB(60, 110, 180)
 #define REC_INK    TIKU_RGB(214, 48, 49)
-#define LEFT       56
-#define TOP        82               /* below the toolbar's two rows    */
-#define ROW2_Y     44               /* the frequency fields' row       */
-#define FIELD_W    88
-#define FIELD_H    26
-#define RULER      14
-#define STATUS_H   26
 
-static const char *const field_name[SDR_FIELDS] = {
-    "Center", "Span", "Start", "Stop"
+#define PANEL_X    8
+#define PANEL_W    200
+#define LABEL_W    66               /* a row's name, before its control */
+#define HEAD_H     20               /* a section's bar                  */
+#define ROW_H      24
+#define CTL_H      22               /* a field, list or button in a row */
+#define AREA_X     (PANEL_X + PANEL_W + 10)  /* the instrument's edge   */
+#define AXIS_W     52               /* the level scale, left of the grid */
+#define BAR_H      30               /* the bar at the window's foot     */
+#define NOTE_H     16               /* an annotation row                */
+#define RULER      12               /* a channel plan's row             */
+
+/* The trace inks, by trace: black, red, blue -- an analyser's on white. */
+static const tiku_rgb_t trace_ink[SDR_TRACES] = {
+    TIKU_RGB(16, 16, 16), TIKU_RGB(210, 50, 40), TIKU_RGB(30, 100, 210)
 };
+static const char *const type_short[SDR_T_TYPES] = {
+    "Off", "Clr/Wr", "Avg", "Max", "Min"
+};
+
+/* The panel's sections: a bar, then rows. */
+enum { S_FREQ, S_TRACE, S_MARK, S_SHOW, SECTIONS };
+static const struct { const char *name; int rows; } section[SECTIONS] = {
+    {"Frequency", 5}, {"Traces", 4}, {"Markers", 7}, {"Display", 2}
+};
+/* Each row's name, by section, "" for none. */
+static const char *const row_name[SECTIONS][7] = {
+    {"Center", "Span", "Start", "Stop", "", "", ""},
+    {"Trace", "Type", "Avg count", "", "", "", ""},
+    {"Marker", "On trace", "", "Freq", "", "", ""},
+    {"", "", "", "", "", "", ""}
+};
+
+/** @brief Section @p s's bar's top. */
+static int section_y(int s)
+{
+    int y = 6;
+
+    for (int i = 0; i < s; i++) y += HEAD_H + 4 + section[i].rows * ROW_H + 6;
+    return y;
+}
+
+/** @brief Row @p row of section @p s, from @p x, @p w wide. */
+static tiku_rect_t row_at(int s, int row, int x, int w)
+{
+    return (tiku_rect_t){x, section_y(s) + HEAD_H + 4 + row * ROW_H + 1, w,
+                         CTL_H};
+}
+
+/** @brief Button @p col of @p cols sharing row @p row of section @p s. */
+static tiku_rect_t button_at(int s, int row, int col, int cols)
+{
+    int w = (PANEL_W - 4 * (cols - 1)) / cols;
+
+    return row_at(s, row, PANEL_X + col * (w + 4), w);
+}
+
+tiku_rect_t sdr_control_rect(const sdr_t *st, int id)
+{
+    int x = PANEL_X + LABEL_W, w = PANEL_W - LABEL_W, fw = w - 30;
+    int bar = st->h - BAR_H + 4;
+
+    switch (id) {
+    case CMD_FIELD + SDR_F_CENTER: return row_at(S_FREQ, 0, x, fw);
+    case CMD_FIELD + SDR_F_SPAN:   return row_at(S_FREQ, 1, x, fw);
+    case CMD_FIELD + SDR_F_START:  return row_at(S_FREQ, 2, x, fw);
+    case CMD_FIELD + SDR_F_STOP:   return row_at(S_FREQ, 3, x, fw);
+    case CMD_LIVE: return button_at(S_FREQ, 4, 0, 3);
+    case CMD_BAND: return button_at(S_FREQ, 4, 1, 3);
+    case CMD_FULL: return button_at(S_FREQ, 4, 2, 3);
+    case CMD_CHOICE + SDR_C_TRACE: return row_at(S_TRACE, 0, x, w);
+    case CMD_CHOICE + SDR_C_TYPE:  return row_at(S_TRACE, 1, x, w);
+    case CMD_FIELD + SDR_F_AVG:    return row_at(S_TRACE, 2, x, 48);
+    case CMD_CLEAR:  return button_at(S_TRACE, 3, 0, 2);
+    case CMD_EXPORT: return button_at(S_TRACE, 3, 1, 2);
+    case CMD_CHOICE + SDR_C_MARKER: return row_at(S_MARK, 0, x, w);
+    case CMD_CHOICE + SDR_C_ON: return row_at(S_MARK, 1, x, w);
+    case CMD_MARK_ACTIVE: return row_at(S_MARK, 2, x, 64);
+    case CMD_TRACK: return row_at(S_MARK, 2, x + 70, w - 70);
+    case CMD_FIELD + SDR_F_MARK: return row_at(S_MARK, 3, x, fw);
+    case CMD_PEAK_SEARCH: return button_at(S_MARK, 4, 0, 2);
+    case CMD_NEXT_PEAK:   return button_at(S_MARK, 4, 1, 2);
+    case CMD_PEAK_LEFT:   return button_at(S_MARK, 5, 0, 2);
+    case CMD_PEAK_RIGHT:  return button_at(S_MARK, 5, 1, 2);
+    case CMD_MARK_CENTER: return button_at(S_MARK, 6, 0, 2);
+    case CMD_MARK_CLEAR:  return button_at(S_MARK, 6, 1, 2);
+    case CMD_WATERFALL: return row_at(S_SHOW, 0, PANEL_X + 4, PANEL_W - 8);
+    case CMD_PLANS:     return row_at(S_SHOW, 1, PANEL_X + 4, PANEL_W - 8);
+    case CMD_RECORD: return (tiku_rect_t){PANEL_X, bar, 30, CTL_H};
+    case CMD_PAUSE:  return (tiku_rect_t){PANEL_X + 34, bar, 30, CTL_H};
+    default: return (tiku_rect_t){0, 0, 0, 0};
+    }
+}
+
+/** @brief The spectrum's frame: the graticule with its annotations. */
+static tiku_rect_t frame_rect(const sdr_t *st)
+{
+    tiku_rect_t plot, fall;
+
+    sdr_layout(st, &plot, &fall);
+    return (tiku_rect_t){AREA_X, plot.y - 2 * NOTE_H - 6, st->w - AREA_X - 8,
+                         st->h - BAR_H - 4 - (plot.y - 2 * NOTE_H - 6)};
+}
 
 void sdr_layout(const sdr_t *st, tiku_rect_t *plot, tiku_rect_t *fall)
 {
-    int w = st->w - LEFT - 16;
-    int room = st->h - TOP - 18 - 3 * RULER - 10 - STATUS_H - 8;
+    int x = AREA_X + AXIS_W, w = st->w - x - 18;
+    int top = 6, bottom = st->h - BAR_H - 4;
+    int fh = st->fall_on ? (bottom - top) * 36 / 100 : 0;
+    int ft = st->fall_on ? top + fh + 6 : top;  /* the frame's top */
+    int py = ft + 2 * NOTE_H + 6;
+    int plans = st->plans_on ? 3 * RULER + 6 : 0;
 
-    *plot = (tiku_rect_t){LEFT, TOP, w, room * 45 / 100};
-    *fall = (tiku_rect_t){LEFT, plot->y + plot->h + 18 + 3 * RULER + 8, w,
-                          st->h - STATUS_H - 8 - (plot->y + plot->h + 18 +
-                                                  3 * RULER + 8)};
+    *fall = (tiku_rect_t){x, top, w, fh};
+    *plot = (tiku_rect_t){x, py, w, bottom - 2 * NOTE_H - 6 - plans - py};
 }
 
 const char *sdr_label(const sdr_t *st, int command)
@@ -53,16 +153,26 @@ const char *sdr_label(const sdr_t *st, int command)
                st->state >= SDR_STOPPING ? "Returning" : "Disconnect";
     case CMD_LIVE: return "Live";
     case CMD_BAND: return "Band";
-    case CMD_DOWN: return "-5 MHz";
-    case CMD_UP: return "+5 MHz";
-    case CMD_PEAK: return "Peak";
+    case CMD_FULL: return "Full";
     case CMD_CLEAR: return "Clear";
+    case CMD_EXPORT: return "Export";
+    case CMD_MARK_ACTIVE: return "Active";
+    case CMD_TRACK: return "Track";
+    case CMD_PEAK_SEARCH: return "Peak Search";
+    case CMD_NEXT_PEAK: return "Next Peak";
+    case CMD_PEAK_LEFT: return "Peak Left";
+    case CMD_PEAK_RIGHT: return "Peak Right";
+    case CMD_MARK_CENTER: return "To Center";
+    case CMD_MARK_CLEAR: return "All Off";
+    case CMD_WATERFALL: return "Spectrogram";
+    case CMD_PLANS: return "Channel plans";
     case CMD_PAUSE: return st->paused ? "Resume" : "Pause";
     case CMD_RECORD: return st->rec.file ? "Recording" : "Record";
     case CMD_REPLAY: return "Open Recording";
-    case CMD_EXPORT: return "Export CSV";
     case CMD_PICTURE: return "Save Picture";
-    case CMD_AVERAGE: return "Average";
+    case CMD_PEAK: return "Max Hold";
+    case CMD_OVERLAY: return "Clear & Write";
+    case CMD_MARK_REMOVE: return "Marker Off";
     default: return "Quit";
     }
 }
@@ -75,61 +185,88 @@ tiku_rect_t sdr_alert_rect(const sdr_t *st)
     return (tiku_rect_t){(st->w - w) / 2, (st->h - h) / 3, w, h};
 }
 
-tiku_rect_t sdr_field_rect(int field)
-{
-    const tiku_font_t *f = tiku_font_plain();
-    int x = 16;
-
-    for (int i = 0; i < field; i++)
-        x += tiku_text_width(f, field_name[i]) + 6 + FIELD_W + 18;
-    x += tiku_text_width(f, field_name[field]) + 6;
-    return (tiku_rect_t){x, ROW2_Y, FIELD_W, FIELD_H};
-}
-
 int sdr_enabled(const sdr_t *st, int command)
 {
+    const sdr_model_t *m = &st->model;
+    int out = m->mark[m->mark_sel].on, peaks = out && m->fresh;
+
     if (st->alert.open) return command == CMD_QUIT;
-    if (command >= CMD_FIELD && command < CMD_FIELD + SDR_FIELDS)
+    if (command == CMD_FIELD + SDR_F_MARK) return out;
+    if (command >= CMD_FIELD && command < CMD_FIELD + SDR_F_AVG)
         return !st->play.file;          /* a recording says what is shown */
     switch (command) {
     case CMD_CONNECT:                   /* Disconnect, or a radio there */
         return st->state == SDR_IDLE ? st->names[0] != '\0' :
                                        st->state < SDR_STOPPING;
-    case CMD_LIVE: case CMD_BAND: case CMD_DOWN: case CMD_UP:
-        return !st->play.file;
+    case CMD_LIVE: case CMD_BAND: case CMD_FULL: return !st->play.file;
     case CMD_RECORD: return st->state == SDR_RUNNING || st->rec.file;
     case CMD_REPLAY: return st->state == SDR_IDLE;
     case CMD_EXPORT:
-        return (st->model.fresh || st->shown[0]) && !st->csv.in;
-    case CMD_PICTURE: return st->model.fresh;
+        return (m->fresh || st->shown[0]) && !st->csv.in;
+    case CMD_PICTURE: return m->fresh;
+    case CMD_PEAK_SEARCH: case CMD_NEXT_PEAK: case CMD_PEAK_LEFT:
+    case CMD_PEAK_RIGHT: return peaks;
+    case CMD_MARK_CENTER: return peaks && !st->play.file;
+    case CMD_MARK_REMOVE: return out;
+    case CMD_MARK_CLEAR: return sdr_marks_out(m);
     default: return 1;
+    }
+}
+
+/** @brief The lists show what they set, unless one is open in the hand. */
+static void sync_choices(sdr_t *st)
+{
+    const sdr_model_t *m = &st->model;
+    int value[SDR_CHOICES] = {st->trace_sel, m->type[st->trace_sel],
+                              m->mark_sel, m->mark[m->mark_sel].trace};
+
+    for (int c = 0; c < SDR_CHOICES; c++) {
+        tiku_choice_t *ch = &st->choice[c];
+        if (!ch->open) ch->selected = ch->hot = value[c];
+        ch->enabled = sdr_enabled(st, CMD_CHOICE + c);
     }
 }
 
 void sdr_controls(sdr_t *st)
 {
-    /* Narrow enough to end clear of the Deskbar, in the desk's top right
-     * corner, where the window opens.  No Connect: the radio is borrowed
-     * as the window opens, and the SDR menu keeps Connect.  Beneath, the
-     * view's range, typed in. */
-    static const int width[SDR_BUTTONS] = {60, 60, 72, 72, 64, 76, 100};
-    int x = 16;
+    /* The bar's buttons first, so the focus the dialog seats by itself
+     * rests on Pause -- Space then pauses -- and never in a field; then
+     * each section down, in the order Tab takes them. */
+    static const struct { int id; tiku_dialog_kind_t kind; } ctl[] = {
+        {CMD_PAUSE, TIKU_DIALOG_BUTTON}, {CMD_RECORD, TIKU_DIALOG_BUTTON},
+        {CMD_FIELD + SDR_F_CENTER, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_SPAN, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_START, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_STOP, TIKU_DIALOG_INPUT},
+        {CMD_LIVE, TIKU_DIALOG_BUTTON}, {CMD_BAND, TIKU_DIALOG_BUTTON},
+        {CMD_FULL, TIKU_DIALOG_BUTTON},
+        {CMD_CHOICE + SDR_C_TRACE, TIKU_DIALOG_INPUT},
+        {CMD_CHOICE + SDR_C_TYPE, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_AVG, TIKU_DIALOG_INPUT},
+        {CMD_CLEAR, TIKU_DIALOG_BUTTON}, {CMD_EXPORT, TIKU_DIALOG_BUTTON},
+        {CMD_CHOICE + SDR_C_MARKER, TIKU_DIALOG_INPUT},
+        {CMD_MARK_ACTIVE, TIKU_DIALOG_TOGGLE},
+        {CMD_CHOICE + SDR_C_ON, TIKU_DIALOG_INPUT},
+        {CMD_TRACK, TIKU_DIALOG_TOGGLE},
+        {CMD_FIELD + SDR_F_MARK, TIKU_DIALOG_INPUT},
+        {CMD_PEAK_SEARCH, TIKU_DIALOG_BUTTON},
+        {CMD_NEXT_PEAK, TIKU_DIALOG_BUTTON},
+        {CMD_PEAK_LEFT, TIKU_DIALOG_BUTTON},
+        {CMD_PEAK_RIGHT, TIKU_DIALOG_BUTTON},
+        {CMD_MARK_CENTER, TIKU_DIALOG_BUTTON},
+        {CMD_MARK_CLEAR, TIKU_DIALOG_BUTTON},
+        {CMD_WATERFALL, TIKU_DIALOG_TOGGLE}, {CMD_PLANS, TIKU_DIALOG_TOGGLE}
+    };
 
+    sync_choices(st);
     tiku_dialog_begin(&st->dialog, TIKU_DIALOG_NONE, CMD_QUIT);
-    for (int i = 0; i < SDR_BUTTONS; i++) {
-        int id = CMD_LIVE + i;
-
-        tiku_dialog_add(&st->dialog, id, (tiku_rect_t){x, 10, width[i], 28},
-                        TIKU_DIALOG_BUTTON, sdr_enabled(st, id));
-        x += width[i] + 8;
-    }
-    for (int i = 0; i < SDR_FIELDS; i++)
-        tiku_dialog_add(&st->dialog, CMD_FIELD + i, sdr_field_rect(i),
-                        TIKU_DIALOG_INPUT, sdr_enabled(st, CMD_FIELD + i));
+    for (size_t i = 0; i < sizeof ctl / sizeof ctl[0]; i++)
+        tiku_dialog_add(&st->dialog, ctl[i].id, sdr_control_rect(st,
+                        ctl[i].id), ctl[i].kind, sdr_enabled(st, ctl[i].id));
     tiku_dialog_end(&st->dialog);
 }
 
-/** @brief The plot's x for @p mhz. */
+/** @brief The x of @p mhz across @p r. */
 static int x_of(tiku_rect_t r, const sdr_model_t *m, double mhz)
 {
     double lo = m->lo_mhz - m->bin_mhz / 2, hi = lo + m->n * m->bin_mhz;
@@ -137,7 +274,7 @@ static int x_of(tiku_rect_t r, const sdr_model_t *m, double mhz)
     return r.x + (int)lround((mhz - lo) / (hi - lo) * (r.w - 1));
 }
 
-/** @brief The plot's y for @p db, clamped inside it. */
+/** @brief The y of @p db in @p r, clamped inside it. */
 static int y_of(tiku_rect_t r, const sdr_model_t *m, float db)
 {
     float t = (db - m->scale_lo) / (m->scale_hi - m->scale_lo);
@@ -159,9 +296,9 @@ static float at_column(tiku_rect_t r, const sdr_model_t *m, const float *v,
     return v[b] + (v[b + 1] - v[b]) * f;
 }
 
-/** @brief A trace as a line of vertical runs, filled beneath on request. */
+/** @brief A trace as a line of vertical runs, one a column. */
 static void trace(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m,
-                  const float *v, tiku_rgb_t ink, int fill)
+                  const float *v, tiku_rgb_t ink)
 {
     int prev = -1;
 
@@ -170,41 +307,44 @@ static void trace(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m,
         int top = prev < 0 ? y : (prev < y ? prev : y);
         int bot = prev < 0 ? y : (prev > y ? prev : y);
 
-        if (fill) tiku_vline(s, x, y, r.y + r.h - y, TRACE_FILL);
         tiku_vline(s, x, top, bot - top + 1, ink);
         prev = y;
     }
 }
 
-/** @brief Grid, decibel labels at the left and megahertz below, about ten
- *         of them whatever the span. */
-static void grid(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
+/** @brief @p t at @p x, its baseline the middle of a row at @p y: left of
+ *         @p x with @p align -1, centred on it with 0, right of it with 1. */
+static void note(tiku_surface_t *s, int x, int y, int align, const char *t,
+                 tiku_rgb_t ink)
 {
-    static const double steps[] = {0.1, 0.2, 0.5, 1, 2, 5, 10, 25, 50};
     const tiku_font_t *f = tiku_font_plain();
-    double lo = sdr_model_freq(m, 0), hi = sdr_model_freq(m, m->n - 1);
-    double step = 50;
-    char t[16];
+    int w = tiku_text_width(f, t);
 
-    for (int d = (int)ceilf(m->scale_lo / 10) * 10; d <= m->scale_hi; d += 10) {
-        int y = y_of(r, m, (float)d);
-        tiku_hline(s, r.x, y, r.w, GRID);
-        snprintf(t, sizeof t, "%d", d);
-        tiku_text(s, f, r.x - 8 - tiku_text_width(f, t), y + 4, t, TIKU_C_TEXT);
-    }
-    for (int i = (int)(sizeof steps / sizeof steps[0]) - 1; i >= 0; i--)
-        if ((hi - lo) / steps[i] <= 12) step = steps[i];
-    for (long k = (long)ceil(lo / step - 1e-9); k * step <= hi + 1e-9; k++) {
-        int x = x_of(r, m, k * step);
-        tiku_vline(s, x, r.y, r.h, GRID);
-        sdr_mhz_text(k * step, t, sizeof t);
-        tiku_text(s, f, x - tiku_text_width(f, t) / 2, r.y + r.h + 14, t,
-                  TIKU_C_TEXT);
-    }
-    tiku_text(s, f, 8, r.y + 12, "dB", TIKU_C_TEXT);
+    x = align < 0 ? x - w : align == 0 ? x - w / 2 : x;
+    tiku_text(s, f, x, y + (NOTE_H - f->height) / 2 + f->ascent, t, ink);
 }
 
-/** @brief One ruler row: a label at the left and marks at @p mhz[]. */
+/** @brief The graticule: ten divisions each way, dotted, in a solid
+ *         frame, the level of each line at its left. */
+static void graticule(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
+{
+    char t[16];
+
+    for (int i = 0; i <= SDR_DIVS; i++) {
+        int y = r.y + i * (r.h - 1) / SDR_DIVS;
+        int x = r.x + i * (r.w - 1) / SDR_DIVS;
+        for (int k = 0; k < r.w; k += 3) tiku_pixel(s, r.x + k, y, GRID_INK);
+        for (int k = 0; k < r.h; k += 3) tiku_pixel(s, x, r.y + k, GRID_INK);
+        snprintf(t, sizeof t, "%.0f",
+                 (double)(m->scale_hi - (float)i * m->div));
+        note(s, r.x - 6, y - NOTE_H / 2, -1, t, NOTE_INK);
+    }
+    tiku_frame(s, (tiku_rect_t){r.x - 1, r.y - 1, r.w + 2, r.h + 2},
+               FRAME_INK);
+}
+
+/** @brief One channel plan's row beneath the graticule: its name at the
+ *         left, a tick and a number at each channel. */
 static void ruler(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m,
                   int y, const char *name, const int *num, const double *mhz,
                   int count, tiku_rgb_t ink)
@@ -212,22 +352,22 @@ static void ruler(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m,
     const tiku_font_t *f = tiku_font_plain();
     char t[8];
 
-    tiku_text(s, f, 8, y + 11, name, TIKU_C_TEXT);
+    tiku_text(s, f, AREA_X + 6, y + 10, name, DIM_INK);
     for (int i = 0; i < count; i++) {
         int x = x_of(r, m, mhz[i]);
         if (x < r.x || x >= r.x + r.w) continue;
         snprintf(t, sizeof t, "%d", num[i]);
-        tiku_vline(s, x, y + 1, 3, ink);
-        tiku_text(s, f, x - tiku_text_width(f, t) / 2, y + 13, t, ink);
+        tiku_vline(s, x, y, 3, ink);
+        tiku_text(s, f, x - tiku_text_width(f, t) / 2, y + 12, t, ink);
     }
 }
 
-/** @brief The band's channel plans beneath the plot. */
+/** @brief The band's channel plans beneath the graticule. */
 static void rulers(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
 {
     int num[16];
     double mhz[16];
-    int y = r.y + r.h + 18;
+    int y = r.y + r.h + 3;
 
     for (int c = 1; c <= 13; c++) {
         num[c - 1] = c;
@@ -245,50 +385,187 @@ static void rulers(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
     ruler(s, r, m, y + 2 * RULER, "15.4", num, mhz, 16, ZB_INK);
 }
 
-/** @brief The spectrum: plot ground, the receiver's flat zone, BLE's
- *         advertising channels, then the average or latest trace and the
- *         peaks over it. */
+/** @brief A dotted line down the graticule at each marker in the view. */
+static void marker_lines(tiku_surface_t *s, tiku_rect_t r,
+                         const sdr_model_t *m)
+{
+    for (int k = 0; k < SDR_MARKERS; k++) {
+        int b = sdr_mark_bin(m, k), x;
+
+        if (b < 0) continue;
+        x = x_of(r, m, sdr_model_freq(m, b));
+        for (int y = r.y; y < r.y + r.h; y += 4)
+            tiku_vline(s, x, y, 2, k == m->mark_sel ? MARK_DIM
+                                                    : GRID_INK);
+    }
+}
+
+/** @brief Each marker as a numbered pointer down onto its trace, kept
+ *         inside the graticule; the selected one darkest. */
+static void marker_pointers(tiku_surface_t *s, tiku_rect_t r,
+                            const sdr_model_t *m)
+{
+    const tiku_font_t *f = tiku_font_bold();
+
+    for (int k = 0; k < SDR_MARKERS; k++) {
+        int b = sdr_mark_bin(m, k), x, base;
+        tiku_rgb_t ink = k == m->mark_sel ? MARK_INK : MARK_DIM;
+        char t[4];
+
+        if (b < 0) continue;
+        x = x_of(r, m, sdr_model_freq(m, b));
+        base = y_of(r, m, sdr_mark_trace(m, k)[b]) - 7;
+        if (base < r.y + 14) base = r.y + 14;
+        for (int i = 0; i < 5; i++)
+            tiku_hline(s, x - 4 + i, base + i, 9 - 2 * i, ink);
+        snprintf(t, sizeof t, "%d", k + 1);
+        tiku_text(s, f, x - tiku_text_width(f, t) / 2, base - 3, t, ink);
+    }
+}
+
+/** @brief The markers' readings in the graticule's top left corner, on
+ *         white, the selected marker's in its ink. */
+static void readout(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    char line[SDR_MARKERS][96];
+    int which[SDR_MARKERS], n = 0, w = 0, row = f->height + 2;
+
+    for (int k = 0; k < SDR_MARKERS; k++) {
+        if (!m->mark[k].on) continue;
+        sdr_mark_text(m, k, line[n], sizeof line[n]);
+        if (tiku_text_width(f, line[n]) > w) w = tiku_text_width(f, line[n]);
+        which[n++] = k;
+    }
+    if (!n) return;
+    tiku_rect_t box = {r.x + 4, r.y + 4, w + 12, n * row + 6};
+    tiku_fill(s, box, PLOT_BG);
+    tiku_frame(s, box, GRID_INK);
+    for (int i = 0; i < n; i++)
+        tiku_text(s, f, box.x + 6, box.y + 3 + i * row + f->ascent, line[i],
+                  which[i] == m->mark_sel ? MARK_INK : NOTE_INK);
+}
+
+/** @brief What the frame says above and below the graticule: the scale,
+ *         how fine and how fast; the range; which trace is which. */
+static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
+{
+    const sdr_model_t *m = &st->model;
+    tiku_surface_t *s = st->surface;
+    int top = f.y + 2, foot = r.y + r.h + (st->plans_on ? 3 * RULER + 6 : 0)
+                              + 3, cx = r.x + r.w / 2, right = f.x + f.w - 8;
+    char t[96], a[24];
+
+    snprintf(t, sizeof t, "Ref %.0f dB", (double)m->scale_hi);
+    note(s, f.x + 8, top, 1, t, NOTE_INK);
+    snprintf(t, sizeof t, "Div %.0f dB", (double)m->div);
+    note(s, f.x + 8, top + NOTE_H, 1, t, NOTE_INK);
+    sdr_mhz_text(m->bin_mhz * 1000.0, a, sizeof a);
+    snprintf(t, sizeof t, "RBW %s kHz", a);
+    note(s, cx, top, 0, t, NOTE_INK);
+    if (m->sweep)
+        snprintf(t, sizeof t, "%d slices at 40 MS/s",
+                 (m->last - m->first) / SDR_SLICE_STEP + 1);
+    else
+        snprintf(t, sizeof t, "%g MS/s", m->bin_mhz * m->nfft);
+    note(s, cx, top + NOTE_H, 0, t, DIM_INK);
+    if (m->fresh) {
+        snprintf(t, sizeof t, "Gain %d", m->gain);
+        note(s, right, top, -1, t, NOTE_INK);
+    }
+    /* Each trace that is on, in its ink: 1 Avg 4, 2 Max. */
+    for (int k = SDR_TRACES - 1, x = right; k >= 0; k--) {
+        if (m->type[k] == SDR_T_OFF) continue;
+        if (m->type[k] == SDR_T_AVG)
+            snprintf(t, sizeof t, "%d %s %d", k + 1, type_short[m->type[k]],
+                     m->avg_count);
+        else
+            snprintf(t, sizeof t, "%d %s", k + 1, type_short[m->type[k]]);
+        note(s, x, top + NOTE_H, -1, t, trace_ink[k]);
+        x -= tiku_text_width(tiku_font_plain(), t) + 12;
+    }
+    sdr_mhz_text(m->start, a, sizeof a);
+    snprintf(t, sizeof t, "Start %s MHz", a);
+    note(s, r.x, foot, 1, t, NOTE_INK);
+    sdr_mhz_text((m->start + m->stop) / 2, a, sizeof a);
+    snprintf(t, sizeof t, "Center %s MHz", a);
+    note(s, cx, foot, 0, t, NOTE_INK);
+    sdr_mhz_text(m->stop, a, sizeof a);
+    snprintf(t, sizeof t, "Stop %s MHz", a);
+    note(s, r.x + r.w, foot, -1, t, NOTE_INK);
+    sdr_mhz_text(m->stop - m->start, a, sizeof a);
+    snprintf(t, sizeof t, "Span %s MHz", a);
+    note(s, cx, foot + NOTE_H, 0, t, NOTE_INK);
+    snprintf(t, sizeof t, "%d pts", m->n);
+    note(s, r.x + r.w, foot + NOTE_H, -1, t, DIM_INK);
+    if (st->state == SDR_RUNNING || st->play.file) {
+        snprintf(t, sizeof t, "%.1f %s/s", (double)st->rate_hz,
+                 m->sweep ? "sweeps" : "spectra");
+        note(s, r.x, foot + NOTE_H, 1, t, DIM_INK);
+    }
+}
+
+/** @brief The spectrum's frame: white, the graticule in it, its notes,
+ *         the receiver's flat zone, BLE's advertising channels with the
+ *         plans, then the traces and the markers. */
 static void spectrum(sdr_t *st, tiku_rect_t r)
 {
     const sdr_model_t *m = &st->model;
     static const double adv[3] = {2402.0, 2426.0, 2480.0};
+    tiku_rect_t f = frame_rect(st);
 
-    tiku_fill(st->surface, r, PLOT_BG);
+    tiku_fill(st->surface, f, PLOT_BG);
+    tiku_frame(st->surface, f, FRAME_INK);
+    graticule(st->surface, r, m);
+    annotations(st, f, r);
     if (!m->fresh) return;
-    grid(st->surface, r, m);
     if (!m->sweep && m->rate == 1) {
-        /* 40 MS/s is flat over its middle 24 MHz alone: the rest dimmed. */
+        /* 40 MS/s is flat over its middle 24 MHz alone: the rest shaded. */
         int a = x_of(r, m, m->tune - 12.0), b = x_of(r, m, m->tune + 12.0);
         if (a > r.x)
             tiku_veil(st->surface, (tiku_rect_t){r.x, r.y, a - r.x, r.h},
-                      TIKU_RGB(0, 0, 0), 0.45f);
+                      TIKU_RGB(0, 0, 0), 0.05f);
         if (b < r.x + r.w)
             tiku_veil(st->surface, (tiku_rect_t){b, r.y, r.x + r.w - b, r.h},
-                      TIKU_RGB(0, 0, 0), 0.45f);
+                      TIKU_RGB(0, 0, 0), 0.05f);
     }
-    for (int i = 0; i < 3; i++) {
-        int x = x_of(r, m, adv[i]);
-        if (x >= r.x && x < r.x + r.w)
-            for (int y = r.y; y < r.y + r.h; y += 4)
-                tiku_vline(st->surface, x, y, 2, BLE_INK);
+    if (st->plans_on) {
+        for (int i = 0; i < 3; i++) {
+            int x = x_of(r, m, adv[i]);
+            if (x >= r.x && x < r.x + r.w)
+                for (int y = r.y; y < r.y + r.h; y += 6)
+                    tiku_vline(st->surface, x, y, 3, BLE_INK);
+        }
+        rulers(st->surface, r, m);
     }
-    trace(st->surface, r, m, m->avg_on ? m->avg : m->db, TRACE, 1);
-    if (m->peak_on) trace(st->surface, r, m, m->peak, PEAK, 0);
-    rulers(st->surface, r, m);
+    marker_lines(st->surface, r, m);
+    tiku_clip_set(st->surface, r);
+    for (int k = SDR_TRACES - 1; k >= 0; k--) {
+        const float *v = sdr_trace(m, m->type[k]);
+        if (v) trace(st->surface, r, m, v, trace_ink[k]);
+    }
+    marker_pointers(st->surface, r, m);
+    tiku_clip_reset(st->surface);
+    readout(st->surface, r, m);
 }
 
-/** @brief The waterfall: newest at the top, one row a spectrum, coloured
- *         over the plot's own range. */
-static void waterfall(sdr_t *st, tiku_rect_t r)
+/** @brief The spectrogram: newest at the top, one row a spectrum, coloured
+ *         from just under the noise to the graticule's top, its colour
+ *         scale at its left. */
+static void spectrogram(sdr_t *st, tiku_rect_t r)
 {
     const sdr_model_t *m = &st->model;
     size_t need = (size_t)r.w * (size_t)r.h;
-    float lo = m->scale_lo * 2.0f, span = (m->scale_hi - m->scale_lo) * 2.0f;
+    float lo = m->floor_db * 2.0f, span = (m->scale_hi - m->floor_db) * 2.0f;
     tiku_rgb_t lut[256];
 
     if (r.w <= 0 || r.h <= 0) return;
+    for (int y = 0; y < r.h; y++)       /* the scale: hot at the top */
+        tiku_hline(st->surface, r.x - 22, r.y + y, 12,
+                   sdr_palette(1.0f - (float)y / (float)(r.h - 1)));
+    tiku_frame(st->surface, (tiku_rect_t){r.x - 23, r.y - 1, 14, r.h + 2},
+               FRAME_INK);
     for (int v = 0; v < 256; v++) lut[v] = sdr_palette(((float)v - lo) / span);
-    tiku_fill(st->surface, r, PLOT_BG);
     if (need > st->pic_n) {
         uint32_t *p = realloc(st->pic, need * sizeof *p);
         if (!p) return;
@@ -299,35 +576,58 @@ static void waterfall(sdr_t *st, tiku_rect_t r)
         const unsigned char *row =
             m->wf[(m->wf_head - y + SDR_ROWS) % SDR_ROWS];
         for (int x = 0; x < r.w; x++) {
-            tiku_rgb_t c = y < m->wf_count ? lut[row[x * m->n / r.w]] : PLOT_BG;
+            tiku_rgb_t c = y < m->wf_count && m->fresh ?
+                           lut[row[x * m->n / r.w]] : sdr_palette(0.0f);
             st->pic[(size_t)y * (size_t)r.w + (size_t)x] = 0xFF000000u | c;
         }
     }
     tiku_picture(st->surface, r.x, r.y, r.w, r.h, st->pic);
+    tiku_frame(st->surface, (tiku_rect_t){r.x - 1, r.y - 1, r.w + 2, r.h + 2},
+               FRAME_INK);
 }
 
-/** @brief Record's dot, red before its word, the button held down while
- *         a recording is being made. */
-static void record_dot(sdr_t *st, tiku_rect_t r, unsigned flags)
+/** @brief A section's bar across the panel, its name in bold. */
+static void section_bar(tiku_surface_t *s, int sec)
 {
-    const char *word = sdr_label(st, CMD_RECORD);
-    int x = r.x + (r.w - tiku_text_width(tiku_font_plain(), word)) / 2 - 14;
-    int y = r.y + r.h / 2 - 4 + ((flags & TIKU_S_PRESSED) ? 1 : 0);
+    const tiku_font_t *f = tiku_font_bold();
+    int y = section_y(sec);
 
-    tiku_fill_round(st->surface, (tiku_rect_t){x, y, 9, 9}, 4,
-                    TIKU_CORNER_ALL, (flags & TIKU_S_DISABLED) ?
-                    tiku_tint(TIKU_C_PANEL, 1.30f) : REC_INK);
+    tiku_fill(s, (tiku_rect_t){PANEL_X, y, PANEL_W, HEAD_H},
+              tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
+    tiku_hline(s, PANEL_X, y + HEAD_H - 1, PANEL_W,
+               tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
+    for (int i = 0; i < 4; i++)         /* a small open triangle */
+        tiku_hline(s, PANEL_X + 5 + i, y + 8 + i, 7 - 2 * i, DIM_INK);
+    tiku_text(s, f, PANEL_X + 17, y + (HEAD_H - f->height) / 2 + f->ascent,
+              section[sec].name, TIKU_C_TEXT);
 }
 
-/** @brief A frequency field and its name before it: while it is being
- *         typed in, what is typed, with its caret; else the view's value. */
+/** @brief The panel's bars, its rows' names and the units after them. */
+static void panel_paint(sdr_t *st)
+{
+    for (int sec = 0; sec < SECTIONS; sec++) {
+        section_bar(st->surface, sec);
+        for (int i = 0; i < section[sec].rows && i < 7; i++)
+            if (row_name[sec][i][0])
+                tiku_text_line_draw(st->surface, row_at(sec, i, PANEL_X + 2,
+                                    LABEL_W - 4), TIKU_MEASURE_PLAIN,
+                                    row_name[sec][i], TIKU_C_TEXT);
+    }
+    for (int id = CMD_FIELD + SDR_F_CENTER; id <= CMD_FIELD + SDR_F_MARK;
+         id++) {
+        tiku_rect_t r = sdr_control_rect(st, id);
+        if (id == CMD_FIELD + SDR_F_AVG) continue;
+        tiku_text_line_draw(st->surface, (tiku_rect_t){r.x + r.w + 4, r.y,
+                            30, r.h}, TIKU_MEASURE_PLAIN, "MHz", TIKU_C_TEXT);
+    }
+}
+
+/** @brief A field: while it is being typed in, what is typed, with its
+ *         caret; else what it says of the window now. */
 static void field(sdr_t *st, int i, tiku_rect_t r, unsigned flags)
 {
-    int w = tiku_text_width(tiku_font_plain(), field_name[i]);
     char t[32];
 
-    tiku_text_line_draw(st->surface, (tiku_rect_t){r.x - 6 - w, r.y, w + 4,
-                        r.h}, TIKU_MEASURE_PLAIN, field_name[i], TIKU_C_TEXT);
     if (st->dialog.focus == CMD_FIELD + i && !(flags & TIKU_S_DISABLED)) {
         const tiku_field_t *e = &st->field[i];
         tiku_ui_textfield_scroll(st->surface, r, e->text, e->caret, e->sel_a,
@@ -339,35 +639,67 @@ static void field(sdr_t *st, int i, tiku_rect_t r, unsigned flags)
     }
 }
 
-/** @brief The toolbar: buttons, then the frequency fields and their unit.
- *         A button that is on (the view shown, peaks held, a recording
- *         made) stays held down. */
-static void toolbar(sdr_t *st)
+/** @brief The bar's two glyphs: a red dot to record, a square while it
+ *         records; two bars to pause, a triangle to resume. */
+static void glyph(sdr_t *st, int id, tiku_rect_t r, unsigned flags)
 {
-    tiku_rect_t stop = sdr_field_rect(SDR_F_STOP);
+    int cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    int off = (flags & TIKU_S_PRESSED) ? 1 : 0;
+    tiku_rgb_t ink = (flags & TIKU_S_DISABLED) ?
+                     tiku_tint(TIKU_C_PANEL, 1.30f) : TIKU_C_TEXT;
+
+    if (id == CMD_RECORD && st->rec.file)
+        tiku_fill(st->surface, (tiku_rect_t){cx - 4 + off, cy - 4 + off, 9, 9},
+                  REC_INK);
+    else if (id == CMD_RECORD)
+        tiku_fill_round(st->surface, (tiku_rect_t){cx - 5 + off, cy - 5 + off,
+                        11, 11}, 5, TIKU_CORNER_ALL, (flags & TIKU_S_DISABLED)
+                        ? ink : REC_INK);
+    else if (st->paused)
+        for (int i = 0; i < 6; i++)
+            tiku_vline(st->surface, cx - 3 + i + off, cy - 6 + i + off,
+                       13 - 2 * i, ink);
+    else {
+        tiku_fill(st->surface, (tiku_rect_t){cx - 4 + off, cy - 5 + off, 3,
+                  11}, ink);
+        tiku_fill(st->surface, (tiku_rect_t){cx + 1 + off, cy - 5 + off, 3,
+                  11}, ink);
+    }
+}
+
+/** @brief The panel's controls and the bar's buttons, each in its state:
+ *         a checkbox or switch on while what it says is. */
+static void controls(sdr_t *st)
+{
+    const sdr_model_t *m = &st->model;
 
     for (int i = 0; i < st->dialog.count; i++) {
         int id = st->dialog.control[i].id;
+        tiku_rect_t r = st->dialog.control[i].rect;
         unsigned flags =
             tiku_dialog_pressed(&st->dialog, id) ? TIKU_S_PRESSED : 0;
         if (tiku_dialog_focused(&st->dialog, id)) flags |= TIKU_S_FOCUS;
         if (!st->dialog.control[i].enabled) flags |= TIKU_S_DISABLED;
         if (id >= CMD_FIELD && id < CMD_FIELD + SDR_FIELDS) {
-            field(st, id - CMD_FIELD, st->dialog.control[i].rect, flags);
-            continue;
+            field(st, id - CMD_FIELD, r, flags);
+        } else if (id >= CMD_CHOICE && id < CMD_CHOICE + SDR_CHOICES) {
+            tiku_choice_draw(&st->choice[id - CMD_CHOICE], st->surface, r,
+                             NULL, flags);
+        } else if (id == CMD_MARK_ACTIVE || id == CMD_TRACK) {
+            if (id == CMD_TRACK ? m->track : m->mark[m->mark_sel].on)
+                flags |= TIKU_S_ON;
+            tiku_ui_checkbox(st->surface, r, sdr_label(st, id), flags);
+        } else if (id == CMD_WATERFALL || id == CMD_PLANS) {
+            if (id == CMD_WATERFALL ? st->fall_on : st->plans_on)
+                flags |= TIKU_S_ON;
+            tiku_ui_switch(st->surface, r, sdr_label(st, id), flags);
+        } else if (id == CMD_RECORD || id == CMD_PAUSE) {
+            tiku_ui_button(st->surface, r, "", flags);
+            glyph(st, id, r, flags);
+        } else {
+            tiku_ui_button(st->surface, r, sdr_label(st, id), flags);
         }
-        if ((id == CMD_LIVE && sdr_model_is_live(&st->model)) ||
-            (id == CMD_BAND && sdr_model_is_band(&st->model)) ||
-            (id == CMD_PEAK && st->model.peak_on) ||
-            (id == CMD_RECORD && st->rec.file)) flags |= TIKU_S_PRESSED;
-        tiku_ui_button(st->surface, st->dialog.control[i].rect,
-                       sdr_label(st, id), flags);
-        if (id == CMD_RECORD)
-            record_dot(st, st->dialog.control[i].rect, flags);
     }
-    tiku_text_line_draw(st->surface, (tiku_rect_t){stop.x + stop.w + 6,
-                        ROW2_Y, 40, FIELD_H}, TIKU_MEASURE_PLAIN, "MHz",
-                        TIKU_C_TEXT);
 }
 
 /** @brief How far a recording has come: being made, or being played. */
@@ -387,55 +719,49 @@ static void tape_progress(const sdr_t *st, char *out, size_t max)
     }
 }
 
-/** @brief One line: what happened last, or what is under the pointer. */
+/** @brief The bar's line: what is under the pointer, or else what happened
+ *         last and how a recording is going. */
 static void status(sdr_t *st)
 {
     char t[400], progress[64];
-    const sdr_model_t *m = &st->model;
 
     tape_progress(st, progress, sizeof progress);
     if (st->hover[0])
         snprintf(t, sizeof t, "%s", st->hover);
-    else if ((st->state == SDR_RUNNING || st->play.file) && m->fresh) {
-        char how[64], khz[16];
-
-        if (m->sweep)
-            snprintf(how, sizeof how, "%d slices, floors levelled",
-                     (m->last - m->first) / SDR_SLICE_STEP + 1);
-        else {
-            sdr_mhz_text(m->bin_mhz * 1000.0, khz, sizeof khz);
-            snprintf(how, sizeof how, "%g MS/s, %d bins of %s kHz",
-                     m->bin_mhz * m->nfft, m->n, khz);
-        }
-        snprintf(t, sizeof t, "%s   |   %s · gain %d · %.1f %s/s%s%s",
-                 st->note, how, m->gain, (double)st->rate_hz,
-                 m->sweep ? "sweeps" : "spectra", progress,
-                 st->paused ? " · paused" : "");
-    }
     else if (st->play.file || st->rec.file)
-        snprintf(t, sizeof t, "%s%s", st->note, progress);
+        snprintf(t, sizeof t, "%s%s%s", st->note, progress,
+                 st->paused ? " · paused" : "");
     else if (st->saved[0] && strcmp(st->note, st->saved))
         snprintf(t, sizeof t, "%s   |   %s", st->note, st->saved);
     else
-        snprintf(t, sizeof t, "%s", st->note);
+        snprintf(t, sizeof t, "%s%s", st->note,
+                 st->paused ? " · paused" : "");
+    tiku_hline(st->surface, 0, st->h - BAR_H, st->w,
+               tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
     tiku_text_line_draw(st->surface,
-                        (tiku_rect_t){16, st->h - STATUS_H, st->w - 32,
-                                      STATUS_H - 4},
+                        (tiku_rect_t){PANEL_X + 72, st->h - BAR_H + 4,
+                                      st->w - PANEL_X - 88, CTL_H},
                         TIKU_MEASURE_PLAIN, t, TIKU_C_TEXT);
 }
 
 void sdr_paint(sdr_t *st)
 {
-    tiku_rect_t plot, fall;
+    tiku_rect_t plot, fall, screen = {0, 0, st->w, st->h};
 
     sdr_layout(st, &plot, &fall);
     sdr_controls(st);
     sdr_model_scale(&st->model);
-    tiku_fill(st->surface, (tiku_rect_t){0, 0, st->w, st->h}, TIKU_C_PANEL);
-    toolbar(st);
+    tiku_fill(st->surface, screen, TIKU_C_PANEL);
+    panel_paint(st);
+    controls(st);
+    spectrogram(st, fall);
     spectrum(st, plot);
-    waterfall(st, fall);
     status(st);
+    for (int c = 0; c < SDR_CHOICES; c++)
+        if (st->choice[c].open)
+            tiku_choice_draw_popup(&st->choice[c], st->surface,
+                                   sdr_control_rect(st, CMD_CHOICE + c),
+                                   screen);
     if (st->alert.open)
         tiku_alert_draw(&st->alert, st->surface, sdr_alert_rect(st));
     st->services->frame(st->services->ctx, st->id, st->surface->px, st->w,
@@ -445,22 +771,25 @@ void sdr_paint(sdr_t *st)
 
 int sdr_picture(sdr_t *st, const char *path)
 {
-    tiku_rect_t plot, fall;
+    tiku_rect_t plot, fall, area;
     tiku_surface_t *pic;
-    int sc, top, rc;
+    int sc, rc;
 
     st->hover[0] = '\0';                /* the pointer is no part of it */
     sdr_paint(st);
     sdr_layout(st, &plot, &fall);
+    area = (tiku_rect_t){AREA_X, 2, st->w - AREA_X - 4, st->h - BAR_H - 4};
     sc = st->surface->scale > 0 ? st->surface->scale : 1;
-    top = plot.y - 14;                  /* the dB label, not the toolbar */
-    pic = tiku_surface_new(st->w * sc, (st->h - top) * sc, PLOT_BG);
+    pic = tiku_surface_new(area.w * sc, area.h * sc, PLOT_BG);
     if (!pic) {
         snprintf(st->note, sizeof st->note, "No memory for a picture.");
         return -1;
     }
-    memcpy(pic->px, st->surface->px + (size_t)top * sc * st->w * sc,
-           sizeof *pic->px * (size_t)pic->w * (size_t)pic->h);
+    for (int y = 0; y < pic->h; y++)
+        memcpy(pic->px + (size_t)y * (size_t)pic->w,
+               st->surface->px + ((size_t)(area.y * sc + y) *
+                                  (size_t)(st->w * sc) + (size_t)(area.x * sc)),
+               sizeof *pic->px * (size_t)pic->w);
     rc = tiku_surface_png(pic, path);
     tiku_surface_free(pic);
     if (rc == 0)
