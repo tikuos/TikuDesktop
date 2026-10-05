@@ -13,15 +13,44 @@ translation kit's circuit kit ([kit guide](../../kits/translation/doc/circuit.md
   advertises them to Tracker's File Associations; existing choices win. The
   contents decide how a file is read, not its name.
 - **Menus.** File: Open..., Open Gerber Job..., Reload, Open Example, Clear
-  Drawing, Close. Edit: Copy Selection Details, Find..., Find Next. View:
+  Drawing, Export View as PNG..., Save View Settings, Close. Edit: Copy Selection Details, Find..., Find Next. View:
   Fit Drawing, Zoom In, Zoom Out, Cancel, Show Sheets (Show Layers for a
   stack), Previous and Next Sheet, Show Selection Details. Layers: Add
-  Layer..., Layer Visible, Raise Layer, Lower Layer, Next Layer Colour,
-  Cycle Layer Opacity, Remove Layer.
+  Layer..., Layer Visible, Raise Layer, Lower Layer, Layer Appearance...,
+  Isolate Layer, Show All Layers, Remove Layer. Tools: Measure Distance,
+  Clear Measurement, Copy Measurement, Millimetres, Inches, Mils.
 - **Keys.** Ctrl+O, Ctrl+R, Ctrl+W, Ctrl+C (outside Find), Ctrl+F, Ctrl+G,
   Ctrl+[ and Ctrl+] (Command on macOS); `+`, `-` and `0` or `F` zoom and
   fit; arrows pan; Escape cancels the work in flight. Drag pans and the
   wheel zooms about the pointer.
+- **Measure.** Choose Tools > Measure Distance (or `M` outside Find), then
+  click two points. The footer shows straight-line distance and signed dX/dY;
+  the first click starts a live preview and a third starts a new measurement.
+  Choose mm, inches or mils in Tools. Coordinates use the viewer's right/down
+  axes, not the source format's CAD axes. Wheel zoom and arrow-key pan keep
+  the endpoints attached to the drawing. Escape clears the measurement; a
+  second Escape leaves measurement mode. Copy Measurement copies the completed
+  result. These are unsnapped screen-picked points, not manufacturing checks.
+- **Layer appearance.** Select a layer and choose Layers > Layer Appearance.
+  Pick a palette colour or enter six hexadecimal RGB digits. Set opacity from
+  0 to 100 with the slider or number field, then Apply; Cancel changes nothing.
+  Isolate Layer hides the other layers. Show All Layers makes them visible
+  again without changing their opacity.
+- **Export.** File > Export View as PNG saves the current rendered viewport,
+  not the whole drawing at a new resolution. It includes a completed visible
+  measurement and a footer identifying the inspection preview and its warnings.
+  Wait for rendering before exporting. Choose a local `.png` destination;
+  existing non-PNG files and symbolic links are refused. Encoding runs on a
+  worker and the destination is replaced atomically only after a complete
+  write. Export is not fabrication output.
+- **Save view settings.** Save the current units, panel visibility, and layer
+  order, visibility, colour and opacity for this document. Settings are applied
+  when you explicitly open that file again. Reload keeps current unsaved choices.
+  Settings do not restore zoom, measurements, selected sheets, removed layers,
+  or manually added files. Only matching layers already loaded from the document
+  receive saved appearance; new layers keep their defaults. Settings live under
+  `$XDG_CONFIG_HOME/TikuCircuit`, or `$HOME/.config/TikuCircuit`. Invalid settings
+  are ignored. No CAD source file is modified and no document opens automatically.
 - **Open and Reload.** Both run on a worker and replace the shown document
   with its first view only when both are ready; a failure says why in the
   status line and keeps what is shown. One import runs at a time and a newer

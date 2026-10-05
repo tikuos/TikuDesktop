@@ -48,6 +48,7 @@ void tiku_circuitview_sheet(tiku_circuitview_t *v, size_t index)
     tiku_circuit_t *doc = tiku_circuit_project_scene(v->project, index);
     tiku_circuit_release(v->document);
     v->document = tiku_circuit_retain(doc);
+    cv_measure_reset(v);
     tiku_image_free(&v->image);
     v->sheet = index;
     v->selected = SIZE_MAX;

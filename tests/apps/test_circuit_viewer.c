@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #define SETTLE_TURNS   10000    /* loop turns before a wait fails */
 #define SETTLE_WAIT_US 1000     /* between two of them */
@@ -38,7 +39,7 @@ static void settle(tiku_circuitview_t *v)
             tiku_circuitview_tick(v);
         }
         if (v ? !v->busy && !v->needs_render && !v->loading &&
-                    !v->needs_load :
+                    !v->needs_load && !v->exporting && !v->saving_view :
                 !tiku_work_busy()) {
             return;
         }
@@ -87,7 +88,8 @@ static int choose_file(void *ctx, uint32_t id, int kind, const char *folder,
 {
     (void)folder;
     (void)name;
-    assert(id == WINDOW_ID && kind == TIKU_APP_PICK_LOCAL_OPEN);
+    assert(id == WINDOW_ID && (kind == TIKU_APP_PICK_LOCAL_OPEN || kind == TIKU_APP_PICK_SAVE));
+    if(kind == TIKU_APP_PICK_SAVE) assert(name && !strcmp(name,"circuit-view.png"));
     ((host_t *)ctx)->pickers++;
     return 1;
 }
@@ -1034,7 +1036,7 @@ static void menus(tiku_circuitview_t *v)
     const tiku_menuset_t *set = tiku_window_menus(v->window);
     const char *const titles[] = {"File", "Edit", "View", "Layers"};
 
-    assert(set && set->nmenu == 4);
+    assert(set && set->nmenu == 5);
     for (int i = 0; i < 4; i++) {
         assert(!strcmp(set->menu[i].title, titles[i]));
     }
@@ -1051,6 +1053,112 @@ static void menus(tiku_circuitview_t *v)
     assert(in && in->sc == '+' && !in->mods);
     assert(out && out->sc == '-' && !out->mods);
     assert(fit && fit->sc == '0' && !fit->mods);
+}
+
+static void key_event(tiku_circuitview_t *v,int key)
+{
+    tiku_event_t e={.type=TIKU_EVENT_KEY_DOWN,.key=key};
+    tiku_circuitview_event(v->window,&e,v);
+}
+
+static void inspection_tools(tiku_circuitview_t *v)
+{
+    v->window->frame.w=800; v->window->frame.h=550;
+    int picks=0; tiku_circuitview_picker(v,request_picker,&picks);
+    tiku_circuitview_file(v,"tests/fixtures/circuit/stack.gbrjob"); settle(v);
+    tiku_circuitview_action(v,CIRCUIT_MEASURE);
+    assert(v->measure);
+    double scale=v->view.scale;
+    int x=v->canvas.x+20,y=v->canvas.y+20;
+    click(v,x,y); click(v,x+30,y+40);
+    assert(v->measure_points==2 && !v->dragging);
+    assert(fabs(hypot(v->measure_x[1]-v->measure_x[0],v->measure_y[1]-v->measure_y[0])-50/scale)<1e-8);
+    tiku_circuitview_action(v,CIRCUIT_MEASURE_COPY);
+    assert(strstr(tiku_clipboard_text(),"Distance") && strstr(tiku_clipboard_text(),"mm"));
+    char expected[64]; snprintf(expected,sizeof expected,"%.4f",50/scale/25.4);
+    tiku_circuitview_action(v,CIRCUIT_UNIT_INCH);
+    tiku_circuitview_action(v,CIRCUIT_MEASURE_COPY);
+    assert(strstr(tiku_clipboard_text(),expected) && strstr(tiku_clipboard_text(),"in"));
+    tiku_circuitview_action(v,CIRCUIT_UNIT_MIL);
+    tiku_circuitview_action(v,CIRCUIT_MEASURE_COPY);
+    assert(strstr(tiku_clipboard_text(),"mil"));
+    double point=v->measure_x[0];
+    key_event(v,TIKU_KEY_RIGHT); settle(v);
+    assert(v->measure_points==2 && v->measure_x[0]==point);
+    tiku_workspace_draw(v->workspace);
+    key_event(v,TIKU_KEY_ESCAPE); assert(!v->measure_points && v->measure);
+    key_event(v,TIKU_KEY_ESCAPE); assert(!v->measure);
+    tiku_circuitview_action(v,CIRCUIT_FIND);
+    tiku_event_t typed={.type=TIKU_EVENT_KEY_DOWN,.key='m',.text="m"};
+    tiku_circuitview_event(v->window,&typed,v); assert(!v->measure);
+    v->dialog.focus=-1;
+
+    tiku_circuit_t *before=tiku_circuit_retain(v->document);
+    tiku_circuitview_action(v,CIRCUIT_LAYER_STYLE); assert(v->style_open);
+    assert(!tiku_circuitview_enabled(v,CIRCUIT_OPEN));
+    tiku_field_start(&v->colour_text,"invalid"); key_event(v,TIKU_KEY_RETURN);
+    assert(v->style_open && v->style_error[0] && v->document==before);
+    tiku_field_start(&v->colour_text,"#123ABC"); tiku_field_start(&v->opacity_text,"101");
+    key_event(v,TIKU_KEY_RETURN); assert(v->style_open && v->document==before);
+    tiku_field_start(&v->opacity_text,"50"); key_event(v,TIKU_KEY_RETURN); settle(v);
+    assert(!v->style_open && v->document!=before);
+    assert(tiku_circuit_layer(v->document,0)->colour==0xff123abc && tiku_circuit_layer(v->document,0)->opacity==128);
+    assert(tiku_circuit_layer(before,0)->opacity==255); tiku_circuit_release(before);
+    tiku_circuitview_action(v,CIRCUIT_LAYER_STYLE);
+    tiku_field_start(&v->colour_text,"#FFFFFF"); key_event(v,TIKU_KEY_ESCAPE);
+    assert(!v->style_open && tiku_circuit_layer(v->document,0)->colour==0xff123abc);
+    tiku_circuitview_action(v,CIRCUIT_LAYER_ISOLATE); settle(v);
+    assert(tiku_circuit_layer(v->document,0)->visible && !tiku_circuit_layer(v->document,1)->visible);
+    tiku_circuitview_action(v,CIRCUIT_LAYER_SHOW_ALL); settle(v);
+    assert(tiku_circuit_layer(v->document,1)->visible);
+
+    char directory[]="/tmp/tiku-circuit-tools-XXXXXX"; assert(mkdtemp(directory));
+    char output[512],alias[512]; snprintf(output,sizeof output,"%s/view.png",directory);
+    tiku_circuitview_action(v,CIRCUIT_EXPORT); assert(tiku_circuitview_picking_export(v));
+    tiku_circuitview_picked(v,output); settle(v);
+    tiku_image_t image={0}; assert(tiku_image_load(output,&image)==TIKU_IMG_OK);
+    assert(image.w==v->image.w && image.h>v->image.h);
+    assert(!memcmp(image.px,v->image.px,(size_t)v->image.w*v->image.h*sizeof(uint32_t)));
+    tiku_image_free(&image);
+    tiku_circuitview_action(v,CIRCUIT_EXPORT); tiku_circuitview_picked(v,output); settle(v);
+    assert(strstr(v->status,"PNG exported"));
+    tiku_circuitview_action(v,CIRCUIT_EXPORT); tiku_circuitview_action(v,CIRCUIT_IN);
+    tiku_circuitview_picked(v,output); assert(strstr(v->status,"view changed")); settle(v);
+    snprintf(alias,sizeof alias,"%s/source.png",directory);
+    copy_file("tests/fixtures/circuit/artwork.gbr",alias);
+    struct stat old,now; assert(!stat(alias,&old));
+    tiku_circuitview_action(v,CIRCUIT_EXPORT); tiku_circuitview_picked(v,alias); settle(v);
+    assert(strstr(v->status,"Export refused") && !stat(alias,&now) && old.st_size==now.st_size);
+    assert(!unlink(alias)); assert(!mkfifo(alias,0600));
+    tiku_circuitview_action(v,CIRCUIT_EXPORT); tiku_circuitview_picked(v,alias); settle(v);
+    assert(strstr(v->status,"Export refused")); assert(!unlink(alias));
+    assert(!symlink(output,alias));
+    tiku_circuitview_action(v,CIRCUIT_EXPORT); tiku_circuitview_picked(v,alias); settle(v);
+    assert(strstr(v->status,"failed")); assert(!unlink(alias));
+
+    tiku_circuitview_settings(v,directory);
+    tiku_circuitview_action(v,CIRCUIT_LAYER_DOWN); settle(v);
+    tiku_circuitview_action(v,CIRCUIT_LAYER_VISIBLE); settle(v);
+    v->units=1; v->show_details=0;
+    tiku_circuitview_action(v,CIRCUIT_SAVE_VIEW); settle(v);
+    assert(strstr(v->status,"settings saved"));
+    tiku_circuitview_action(v,CIRCUIT_EMPTY); assert(!v->document);
+    tiku_circuitview_file(v,"tests/fixtures/circuit/stack.gbrjob"); settle(v);
+    assert(v->units==1 && !v->show_details && tiku_circuit_layer_count(v->document)==3);
+    const tiku_circuit_layer_t *l=tiku_circuit_layer(v->document,1);
+    assert(l->colour==0xff123abc && l->opacity==128 && !l->visible);
+    /* Corrupt settings are ignored, including trailing bytes. */
+    DIR *dir=opendir(directory); assert(dir); struct dirent *entry; char pref[512]="";
+    while((entry=readdir(dir))) if(strstr(entry->d_name,".view")) snprintf(pref,sizeof pref,"%s/%s",directory,entry->d_name);
+    closedir(dir); assert(pref[0]); FILE *f=fopen(pref,"ab"); assert(f && fputs("bad",f)>=0 && !fclose(f));
+    tiku_circuitview_file(v,"tests/fixtures/circuit/stack.gbrjob"); settle(v);
+    assert(tiku_circuit_layer(v->document,0)->opacity==255);
+    tiku_circuitview_settings(v,output); /* Not a directory. */
+    tiku_circuitview_action(v,CIRCUIT_SAVE_VIEW); settle(v);
+    assert(strstr(v->status,"could not be saved"));
+    tiku_circuitview_settings(v,NULL); v->show_details=1; v->units=0;
+    assert(!unlink(pref) && !unlink(output) && !rmdir(directory));
+    tiku_circuitview_picker(v,NULL,NULL);
 }
 
 int main(void)
@@ -1167,6 +1275,7 @@ int main(void)
     menus(v);
     first_view(v);
     large_window(v);
+    inspection_tools(v);
     tiku_circuitview_file(v, "tests/fixtures/circuit/basic.kicad_sch");
     tiku_circuitview_tick(v);
     /* The import's worker outlives the window it was posted for. */
@@ -1188,6 +1297,9 @@ int main(void)
         app->tick(state, 0);
     }
     assert(!tiku_work_busy());
+    assert(!app->pick(state, WINDOW_ID, CIRCUIT_EXPORT) && host.pickers == 1);
+    app->picked(state, WINDOW_ID, NULL);
+    host.pickers = 0;
     assert(!app->pick(state, WINDOW_ID, CIRCUIT_OPEN) && host.pickers == 1);
     app->tick(state, 0);
     /* An answer for another window leaves this one as it was: nothing is
@@ -1207,7 +1319,7 @@ int main(void)
     assert(host.closed == 1);
     app->stop(state);
     settle(NULL);
-    puts("PASS: circuit app ABI and picker, layers, hierarchy/search/"
+    puts("PASS: measurement, appearance, PNG export safety, saved settings; circuit app ABI and picker, layers, hierarchy/search/"
          "navigation, menus, confined paths, atomic reload, first views, "
          "large windows, resize, cancellation and close during work");
     return 0;

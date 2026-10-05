@@ -22,6 +22,8 @@ typedef struct {
     int reload;                     /* Reload of the shown project */
     int layers;                     /* Add Layer, or Reload of a stack */
     int action;                     /* the command that asked, or 0 */
+    char settings_dir[CV_PATH_MAX];
+    int units, sheets, details;
     tiku_circuit_t *base;           /* the stack added to or reread */
     char *instance;                 /* for a reload, the shown sheet's
                                        instance, to show it again */
@@ -187,6 +189,9 @@ static void run(void *ctx)
             tiku_circuit_project_scene(j->project, j->sheet));
     }
 render:
+    if (!j->result && j->action != CIRCUIT_RELOAD && j->action != CIRCUIT_ADD_LAYER)
+        j->result = cv_restore_view(j->settings_dir,j->path,&j->document,
+            &j->units,&j->sheets,&j->details);
     if (!j->result) {
         size_t rows = j->project ? tiku_circuit_project_count(j->project) :
                                    tiku_circuit_layer_count(j->document);
@@ -232,6 +237,10 @@ static void done(void *ctx)
         return;
     }
     tiku_circuitview_changed(v);
+    cv_measure_reset(v);
+    if (j->units >= 0) {
+        v->units = j->units; v->show_sheets = j->sheets; v->show_details = j->details;
+    }
     tiku_circuit_release(v->document);
     tiku_image_free(&v->image);
     tiku_circuit_project_free(v->project);
@@ -323,7 +332,9 @@ void tiku_circuitview_picked(tiku_circuitview_t *v, const char *path)
     int action = v->picker_action;
     v->picker_action = 0;
     if (path && *path) {
-        if (action == CIRCUIT_ADD_LAYER && !tiku_circuitview_layer_room(v)) {
+        if (action == CIRCUIT_EXPORT) {
+            cv_export(v,path);
+        } else if (action == CIRCUIT_ADD_LAYER && !tiku_circuitview_layer_room(v)) {
             tiku_circuitview_note(v, tiku_circuit_layer_count(v->document) ?
                 "The layer stack is full; the chosen file was not added." :
                 "Add Layer needs an open artwork, drill or job drawing; the "
@@ -358,6 +369,8 @@ void tiku_circuitview_files_tick(tiku_circuitview_t *v)
         return;
     }
     j->owner = v;
+    j->units = j->sheets = j->details = -1;
+    snprintf(j->settings_dir,sizeof j->settings_dir,"%s",v->settings_dir);
     j->generation = v->load_generation;
     j->action = v->load_action;
     j->layers = j->action == CIRCUIT_ADD_LAYER ||

@@ -39,6 +39,38 @@ static uint32_t next_colour(uint32_t colour)
     return tiku_circuit_layer_colour(i + 1);
 }
 
+static int publish(tiku_circuitview_t *v, tiku_circuit_layer_t *layers,
+                   size_t count, size_t selected, int named)
+{
+    tiku_circuit_t *replacement = NULL;
+    tiku_circuit_err_t e = tiku_circuit_stack(layers, count, &replacement);
+    if (e) { tiku_circuitview_note(v,tiku_circuit_error(e)); return 0; }
+    tiku_circuit_release(v->document);
+    v->document = replacement;
+    if (named) snprintf(v->path,sizeof v->path,"%s",
+                        tiku_circuit_layer(replacement,0)->path);
+    v->sheet=selected; v->selected=SIZE_MAX;
+    tiku_image_free(&v->image);
+    tiku_list_set_count(&v->sheets,(int)count);
+    tiku_list_select_only(&v->sheets,(int)selected);
+    tiku_circuitview_changed(v);
+    tiku_circuitview_ready(v);
+    tiku_circuitview_menus(v);
+    return 1;
+}
+
+int cv_layer_style(tiku_circuitview_t *v, uint32_t colour, unsigned opacity)
+{
+    size_t count=tiku_circuit_layer_count(v->document);
+    if (!count || v->sheet>=count || opacity>255 ||
+        v->loading || v->needs_load) return 0;
+    tiku_circuit_layer_t layers[TIKU_CIRCUIT_LAYERS_MAX];
+    for (size_t i=0;i<count;i++) layers[i]=*tiku_circuit_layer(v->document,i);
+    layers[v->sheet].colour=0xff000000u|(colour&0xffffffu);
+    layers[v->sheet].opacity=opacity;
+    return publish(v,layers,count,v->sheet,0);
+}
+
 void tiku_circuitview_layers_action(tiku_circuitview_t *v, int command)
 {
     size_t count = tiku_circuit_layer_count(v->document);
@@ -56,7 +88,11 @@ void tiku_circuitview_layers_action(tiku_circuitview_t *v, int command)
      * removed, the stack takes the name of its new front layer. */
     int named = command == CIRCUIT_LAYER_REMOVE && !*l->root &&
                 !strcmp(l->path, v->path);
-    if (command == CIRCUIT_LAYER_VISIBLE) {
+    if (command == CIRCUIT_LAYER_ISOLATE ||
+        command == CIRCUIT_LAYER_SHOW_ALL) {
+        for (size_t i=0;i<count;i++)
+            layers[i].visible=command==CIRCUIT_LAYER_SHOW_ALL || i==selected;
+    } else if (command == CIRCUIT_LAYER_VISIBLE) {
         l->visible = !l->visible;
     } else if (command == CIRCUIT_LAYER_COLOUR) {
         l->colour = next_colour(l->colour);
@@ -91,24 +127,5 @@ void tiku_circuitview_layers_action(tiku_circuitview_t *v, int command)
     } else {
         return;
     }
-    tiku_circuit_t *replacement = NULL;
-    tiku_circuit_err_t e = tiku_circuit_stack(layers, count, &replacement);
-    if (e) {
-        tiku_circuitview_note(v, tiku_circuit_error(e));
-        return;
-    }
-    tiku_circuit_release(v->document);
-    v->document = replacement;
-    if (named) {
-        snprintf(v->path, sizeof v->path, "%s",
-                 tiku_circuit_layer(replacement, 0)->path);
-    }
-    v->sheet = selected;
-    v->selected = SIZE_MAX;
-    tiku_image_free(&v->image);
-    tiku_list_set_count(&v->sheets, (int)count);
-    tiku_list_select_only(&v->sheets, (int)selected);
-    tiku_circuitview_changed(v);
-    tiku_circuitview_ready(v);
-    tiku_circuitview_menus(v);
+    (void)publish(v,layers,count,selected,named);
 }

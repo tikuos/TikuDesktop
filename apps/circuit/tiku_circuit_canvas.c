@@ -346,6 +346,8 @@ void tiku_circuitview_draw(tiku_window_t *window, tiku_surface_t *s,
         snprintf(line, sizeof line,
                  "Read-only circuit viewer - development preview");
     }
+    cv_measure_draw(v, s, v->canvas, &v->view);
+    if (v->measure) cv_measure_text(v, line, sizeof line);
     tiku_rect_t row = v->details;
     row.h = tiku_font_plain()->height + CV_STATUS_PAD;
     tiku_text_line_draw(s, row, TIKU_MEASURE_PLAIN, line, TIKU_C_TEXT);
@@ -359,6 +361,7 @@ void tiku_circuitview_draw(tiku_window_t *window, tiku_surface_t *s,
     tiku_text_line_draw(s, row, TIKU_MEASURE_PLAIN,
                         v->loading || v->needs_load ? "Opening drawing..." :
                         v->busy ? "Rendering..." : v->status, TIKU_C_TEXT);
+    cv_style_draw(v, s);
     tiku_clip_set(s, clip);
 }
 
@@ -385,6 +388,7 @@ int tiku_circuitview_event(tiku_window_t *window, const tiku_event_t *e,
             return 1;
         }
     }
+    if (cv_style_event(v, e)) return 1;
     if (tiku_circuitview_sheets_event(v, e)) {
         return 1;
     }
@@ -423,6 +427,7 @@ int tiku_circuitview_event(tiku_window_t *window, const tiku_event_t *e,
             return 1;
         }
     }
+    if (cv_measure_event(v, e)) return 1;
     if (e->type == TIKU_EVENT_KEY_DOWN) {
         int cmd = 0;
         if ((e->modifiers & TIKU_MOD_CMD) && e->key == 'c') {
@@ -436,8 +441,10 @@ int tiku_circuitview_event(tiku_window_t *window, const tiku_event_t *e,
             cmd = CIRCUIT_OUT;
         } else if (e->key == '0' || e->key == 'f') {
             cmd = CIRCUIT_FIT;
+        } else if (e->key == 'm') {
+            cmd = CIRCUIT_MEASURE;
         } else if (e->key == TIKU_KEY_ESCAPE) {
-            cmd = CIRCUIT_CANCEL;
+            cmd = v->measure ? CIRCUIT_MEASURE_CLEAR : CIRCUIT_CANCEL;
         }
         if (cmd) {
             tiku_circuitview_action(v, cmd);

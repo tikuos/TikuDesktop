@@ -123,6 +123,8 @@ static void gone(tiku_window_t *window, void *ctx)
 
     (void)window;
     v->window = NULL;
+    tiku_work_cancel(v->export_key);
+    cv_measure_reset(v);
     v->dragging = 0;
     tiku_circuitview_files_cancel(v);
     v->path[0] = 0;
@@ -151,6 +153,7 @@ tiku_circuitview_t *tiku_circuitview_new(tiku_workspace_t *workspace,
     v->view.scale = 1;
     snprintf(v->key, sizeof v->key, "circuit:%p", (void *)v);
     snprintf(v->load_key, sizeof v->load_key, "circuit-load:%p", (void *)v);
+    snprintf(v->export_key, sizeof v->export_key, "circuit-export:%p", (void *)v);
     tiku_dialog_init(&v->dialog);
     tiku_icons_tiku_register();
     tiku_field_start(&v->query, "");

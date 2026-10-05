@@ -10,17 +10,45 @@ need converting in a compatible CAD application.</p>
 <h2 id="menus">The menus</h2>
 <ul>
 <li><b>File</b>: Open..., Open Gerber Job..., Reload, Open Example, Clear
-Drawing and Close.</li>
+Drawing, Export View as PNG..., Save View Settings and Close.</li>
 <li><b>Edit</b>: Copy Selection Details, Find... and Find Next.</li>
 <li><b>View</b>: Fit Drawing, Zoom In, Zoom Out, Cancel, Show Sheets (Show
 Layers for a layer stack), Previous Sheet, Next Sheet and Show Selection
 Details.</li>
 <li><b>Layers</b>: Add Layer..., Layer Visible, Raise Layer, Lower Layer,
-Next Layer Colour, Cycle Layer Opacity and Remove Layer.</li>
+Layer Appearance..., Isolate Layer, Show All Layers and Remove Layer.</li>
+<li><b>Tools</b>: Measure Distance, Clear Measurement, Copy Measurement,
+Millimetres, Inches and Mils.</li>
 </ul>
 <p>The shortcuts are shown beside the commands: Ctrl+O, Ctrl+R, Ctrl+W,
 Ctrl+C, Ctrl+F, Ctrl+G, Ctrl+[ and Ctrl+] (Command on macOS), and +, -
 and 0 on their own for Zoom In, Zoom Out and Fit Drawing.</p>
+<h2 id="measurement">Measure a distance</h2>
+<p>Choose Tools &gt; Measure Distance, or press M outside Find. Click a start
+point and an end point. The footer shows distance and signed dX/dY in the chosen
+units. Coordinates use the view's right/down axes. Move the pointer after the
+first click to preview; a third click starts a new measurement. Wheel zoom and
+arrow-key pan preserve the endpoints. Escape clears them; a second Escape
+leaves measurement mode. Copy Measurement copies the completed result. Points
+are not snapped to geometry; this is an inspection aid, not a fabrication check.</p>
+<h2 id="appearance">Set layer appearance</h2>
+<p>Select a layer and choose Layers &gt; Layer Appearance. Choose a palette
+colour or type six hexadecimal RGB digits. Use the opacity slider or enter a
+percentage from 0 to 100. Apply changes the view; Cancel leaves it unchanged.
+Isolate Layer hides the others; Show All Layers restores visibility without
+changing opacity. Source files are never edited.</p>
+<h2 id="export">Export and save settings</h2>
+<p>File &gt; Export View as PNG saves the current rendered viewport, with a
+completed visible measurement and the preview warnings. Wait for rendering to
+finish. Choose a local filename ending in .png. Existing non-PNG files and
+symbolic links are protected. An incomplete write leaves the previous destination
+intact. This is an inspection image, not fabrication output.</p>
+<p>File &gt; Save View Settings remembers units, panel visibility and layer
+order, visibility, colour and opacity. These apply when you explicitly reopen
+the same document. Reload keeps current unsaved settings. Saved settings do not
+reopen documents or additional layer files, remove layers, or restore zoom,
+measurements or the selected sheet. New layers keep their defaults. Settings
+are stored in XDG_CONFIG_HOME/TikuCircuit, or HOME/.config/TikuCircuit.</p>
 <h2 id="open">Open a schematic</h2>
 <p>Choose File &gt; Open, or press Ctrl+O, and select a local root
 .kicad_sch file. The reader uses embedded symbol definitions and reads

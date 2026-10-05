@@ -13,6 +13,8 @@
 #include "tiku_dialog.h"
 #include "tiku_work.h"
 #include "tiku_field_event.h"
+#include "tiku_colors.h"
+#include "tiku_slider.h"
 
 #define CV_STATUS_MAX  512     /* the status line, with its end */
 #define CV_PATH_MAX    4096    /* a document's path, with its end */
@@ -54,7 +56,11 @@ enum {
     CIRCUIT_LAYER_DOWN,     /* move it towards the back */
     CIRCUIT_LAYER_COLOUR,   /* give it the palette's next colour */
     CIRCUIT_LAYER_OPACITY,  /* give it the next opacity step */
-    CIRCUIT_LAYER_REMOVE    /* take it off the stack */
+    CIRCUIT_LAYER_REMOVE,   /* take it off the stack */
+    CIRCUIT_MEASURE, CIRCUIT_MEASURE_CLEAR, CIRCUIT_MEASURE_COPY,
+    CIRCUIT_UNIT_MM, CIRCUIT_UNIT_INCH, CIRCUIT_UNIT_MIL,
+    CIRCUIT_EXPORT, CIRCUIT_LAYER_STYLE, CIRCUIT_LAYER_ISOLATE,
+    CIRCUIT_LAYER_SHOW_ALL, CIRCUIT_SAVE_VIEW
 };
 
 /** @brief Whether (@p x, @p y) lies inside @p r. */
@@ -133,7 +139,52 @@ struct tiku_circuitview {
     int load_action;                /* the command that asked for
                                        requested, or 0 for an open from
                                        outside the window */
+    int measure;                   /* measurement mode rather than drag-pan */
+    int measure_points;            /* zero, one preview point, or two */
+    int cursor_valid;              /* pointer currently inside the canvas */
+    int units;                     /* 0: mm, 1: inches, 2: mils */
+    double measure_x[2], measure_y[2]; /* endpoints in scene millimetres */
+    double cursor_x, cursor_y;     /* last pointer position in scene units */
+    int style_open;                /* modal layer appearance panel */
+    size_t style_layer;            /* layer the panel was opened for */
+    uint64_t style_generation;     /* import generation at panel opening */
+    uint64_t picker_generation;    /* view generation at export request */
+    tiku_dialog_t style_dialog;    /* appearance panel controls and focus */
+    tiku_colors_t palette;         /* suggested display colours */
+    tiku_slider_t opacity;         /* opacity, in whole percentages */
+    tiku_field_t colour_text, opacity_text; /* unapplied appearance values */
+    tiku_field_input_t colour_input, opacity_input; /* field interaction */
+    tiku_rect_t style_rect, palette_rect, opacity_rect; /* panel geometry */
+    char style_error[128];         /* inline validation message */
+    int exporting, saving_view;    /* workers holding a viewer reference */
+    char export_key[TIKU_WORK_KEY]; /* export cancellation key */
+    char settings_dir[CV_PATH_MAX]; /* host-provided directory; empty off */
 };
+
+/** @brief Forget endpoints and dismiss a panel tied to the old document. */
+void cv_measure_reset(tiku_circuitview_t *v);
+/** @brief Track the pointer and accept measurement clicks; return if handled. */
+int cv_measure_event(tiku_circuitview_t *v, const tiku_event_t *e);
+/** @brief Format distance, signed deltas, or the next-step instruction. */
+void cv_measure_text(const tiku_circuitview_t *v, char *out, size_t size);
+/** @brief Draw clipped measurement marks over a viewport or export image. */
+void cv_measure_draw(const tiku_circuitview_t *v, tiku_surface_t *s,
+                     tiku_rect_t canvas, const tiku_circuit_view_t *view);
+/** @brief Edit the selected layer's appearance without changing its scene. */
+void cv_style_open(tiku_circuitview_t *v);
+/** @brief Paint the appearance panel over the normal window content. */
+void cv_style_draw(tiku_circuitview_t *v, tiku_surface_t *s);
+/** @brief Consume input while the appearance panel is open. */
+int cv_style_event(tiku_circuitview_t *v, const tiku_event_t *e);
+/** @brief Publish a copy with new RGB/opacity; return nonzero on success. */
+int cv_layer_style(tiku_circuitview_t *v, uint32_t colour, unsigned opacity);
+/** @brief Snapshot the completed viewport, then atomically export on a worker. */
+void cv_export(tiku_circuitview_t *v, const char *path);
+/** @brief Snapshot presentation settings and save them on a worker. */
+void cv_save_view(tiku_circuitview_t *v);
+/* Worker-only preference loading; only current layer descriptors are changed. */
+tiku_circuit_err_t cv_restore_view(const char *directory, const char *path,
+    tiku_circuit_t **document, int *units, int *sheets, int *details);
 
 /** @brief Place Selection Details at the foot of @p canvas, shortening the
  *         canvas, and add the panel's controls to the dialog. */

@@ -6,6 +6,7 @@
 #include "tiku_window_app.h"
 #include "tiku_work.h"
 #include <stdlib.h>
+#include <stdio.h>
 
 /** @brief The running application: its window and the desktop's calls. */
 typedef struct {
@@ -21,10 +22,12 @@ typedef struct {
 static void choose(void *ctx)
 {
     circuit_app_t *a = ctx;
+    int exporting = tiku_circuitview_picking_export(a->viewer);
 
     if (!a->services.pick || !a->services.pick(a->services.ctx,
         tiku_window_app_id(a->host, tiku_circuitview_handle(a->viewer)),
-        TIKU_APP_PICK_LOCAL_OPEN, getenv("HOME"), NULL)) {
+        exporting ? TIKU_APP_PICK_SAVE : TIKU_APP_PICK_LOCAL_OPEN,
+        getenv("HOME"), exporting ? "circuit-view.png" : NULL)) {
         tiku_circuitview_picked(a->viewer, NULL);
         tiku_circuitview_note(a->viewer,
             "The file picker could not be opened. Try again.");
@@ -46,6 +49,13 @@ static int start(void **state, const tiku_app_services_t *services)
             tiku_window_app_workspace(a->host), &a->dirty);
     }
     if (a->viewer) {
+        char directory[4096];
+        const char *base = getenv("XDG_CONFIG_HOME");
+        int n;
+        if (base && base[0] == '/') n = snprintf(directory,sizeof directory,"%s/TikuCircuit",base);
+        else { base = getenv("HOME"); n = snprintf(directory,sizeof directory,"%s/.config/TikuCircuit",base ? base : ""); }
+        if (base && base[0] == '/' && n > 0 && (size_t)n < sizeof directory)
+            tiku_circuitview_settings(a->viewer,directory);
         tiku_circuitview_picker(a->viewer,
                                 services->pick ? choose : NULL, a);
         tiku_circuitview_open(a->viewer);

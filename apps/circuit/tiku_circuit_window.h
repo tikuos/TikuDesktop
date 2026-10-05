@@ -44,6 +44,11 @@ void tiku_circuitview_note(tiku_circuitview_t *viewer,
  *         Job... and Add Layer...; NULL disables them. */
 void tiku_circuitview_picker(tiku_circuitview_t *viewer,
                              void (*choose)(void *), void *ctx);
+/** Whether the current picker request is Export PNG (otherwise Open). */
+int tiku_circuitview_picking_export(const tiku_circuitview_t *viewer);
+/** Enable per-document view settings in a caller-owned configuration directory.
+ * Does not open a document or create a file. NULL disables persistence. */
+void tiku_circuitview_settings(tiku_circuitview_t *viewer, const char *directory);
 /**
  * @brief Open @p path read-only on a worker.
  *

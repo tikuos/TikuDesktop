@@ -511,6 +511,21 @@ PDF's minimum display width for thin strokes.
 
 Broader KiCad feature and version coverage, generated intersheet references
 and overbars, broader EAGLE coverage, Gerber aperture transforms and blocks,
-fixed-point drill format selection, manual layer alignment, measurement, PNG
-export, recent files and file associations for those formats are not
-implemented. The Open command implies none of them.
+fixed-point drill format selection, manual layer alignment and recent files
+are not implemented. The Open command implies none of them.
+
+## Viewer inspection tools
+
+TikuCircuit supplies two-point distance measurements in mm, inches and mils,
+layer appearance controls, PNG viewport export and per-document presentation
+settings. These belong to the application, not the parsers: a measurement
+does not add geometry, and changing a layer creates a new immutable stack.
+The old scene remains valid for an in-flight render.
+
+PNG export copies the completed viewport, adds a measurement if visible and
+complete, and includes an inspection-preview label and warnings. It uses the
+image kit's stream encoder with the storage kit's atomic file writer. It is
+not a Gerber exporter or fabrication output. Saved settings only style layers
+already loaded by the normal confined resolver; they never introduce paths to
+load. See the [application guide](../../../apps/circuit/README.md) for controls,
+storage location and limits.

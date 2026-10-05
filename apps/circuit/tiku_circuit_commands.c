@@ -6,6 +6,7 @@
 #include "tiku_circuit_window_private.h"
 #include <stdio.h>
 #include <string.h>
+#include "tiku_clipboard.h"
 
 /* The published menus, in their order on the bar. */
 enum {
@@ -13,12 +14,24 @@ enum {
     CV_MENU_EDIT,           /* copying and finding */
     CV_MENU_VIEW,           /* fit, zoom and the panels */
     CV_MENU_LAYERS,         /* the layer stack's commands */
+    CV_MENU_TOOLS,
     CV_MENUS                /* how many there are */
 };
 
 const char *tiku_circuitview_label(int command)
 {
     switch (command) {
+    case CIRCUIT_MEASURE: return "Measure Distance";
+    case CIRCUIT_MEASURE_CLEAR: return "Clear Measurement";
+    case CIRCUIT_MEASURE_COPY: return "Copy Measurement";
+    case CIRCUIT_UNIT_MM: return "Millimetres";
+    case CIRCUIT_UNIT_INCH: return "Inches";
+    case CIRCUIT_UNIT_MIL: return "Mils";
+    case CIRCUIT_EXPORT: return "Export View as PNG...";
+    case CIRCUIT_SAVE_VIEW: return "Save View Settings";
+    case CIRCUIT_LAYER_STYLE: return "Layer Appearance...";
+    case CIRCUIT_LAYER_ISOLATE: return "Isolate Layer";
+    case CIRCUIT_LAYER_SHOW_ALL: return "Show All Layers";
     case CIRCUIT_ADD_LAYER:
         return "Add Layer...";
     case CIRCUIT_OPEN_JOB:
@@ -46,6 +59,15 @@ const char *tiku_circuitview_label(int command)
 
 int tiku_circuitview_enabled(const tiku_circuitview_t *v, int id)
 {
+    if (v->style_open && id != CIRCUIT_CLOSE) return 0;
+    if (id == CIRCUIT_EXPORT) return v->choose && v->document && v->image.px &&
+        !v->exporting && !v->loading && !v->needs_load && !v->busy && !v->needs_render &&
+        v->rendered_generation == v->generation;
+    if (id == CIRCUIT_SAVE_VIEW)
+        return v->document && v->path[0] && v->settings_dir[0] &&
+        !v->saving_view && !v->loading && !v->needs_load;
+    if (id == CIRCUIT_MEASURE_CLEAR) return v->measure_points > 0 || v->measure;
+    if (id == CIRCUIT_MEASURE_COPY) return v->measure_points == 2;
     if (id == CIRCUIT_EXAMPLE || id == CIRCUIT_CLOSE) {
         return 1;
     }
@@ -56,7 +78,9 @@ int tiku_circuitview_enabled(const tiku_circuitview_t *v, int id)
         return v->choose && !v->loading && !v->needs_load &&
                tiku_circuitview_layer_room(v);
     }
-    if (id >= CIRCUIT_LAYER_VISIBLE && id <= CIRCUIT_LAYER_REMOVE) {
+    if ((id >= CIRCUIT_LAYER_VISIBLE && id <= CIRCUIT_LAYER_REMOVE) ||
+        id == CIRCUIT_LAYER_STYLE || id == CIRCUIT_LAYER_ISOLATE ||
+        id == CIRCUIT_LAYER_SHOW_ALL) {
         size_t n = tiku_circuit_layer_count(v->document);
         if (!n || v->sheet >= n || v->loading || v->needs_load) {
             return 0;
@@ -73,7 +97,8 @@ int tiku_circuitview_enabled(const tiku_circuitview_t *v, int id)
         return v->path[0] != 0;
     }
     if (id == CIRCUIT_CANCEL) {
-        return v->busy || v->needs_render || v->loading || v->needs_load;
+        return v->busy || v->needs_render || v->loading ||
+               v->needs_load || v->exporting;
     }
     if (id == CIRCUIT_EMPTY) {
         return v->project || v->document || v->loading || v->needs_load;
@@ -135,7 +160,7 @@ static void menu_add(const tiku_circuitview_t *v, tiku_menu_list_t *list,
 void tiku_circuitview_menus(tiku_circuitview_t *v)
 {
     static const char *const titles[CV_MENUS] = {"File", "Edit", "View",
-                                                 "Layers"};
+                                                 "Layers", "Tools"};
 
     if (!v->window) {
         return;
@@ -150,10 +175,13 @@ void tiku_circuitview_menus(tiku_circuitview_t *v)
     tiku_menu_list_t *edit = &menus.menu[CV_MENU_EDIT];
     tiku_menu_list_t *view = &menus.menu[CV_MENU_VIEW];
     tiku_menu_list_t *layers = &menus.menu[CV_MENU_LAYERS];
+    tiku_menu_list_t *tools = &menus.menu[CV_MENU_TOOLS];
     const tiku_circuit_layer_t *l = tiku_circuit_layer(v->document, v->sheet);
     menu_add(v, file, CIRCUIT_OPEN, 'o', TIKU_MOD_CMD, 0);
     menu_add(v, file, CIRCUIT_OPEN_JOB, 0, 0, 0);
     menu_add(v, file, CIRCUIT_RELOAD, 'r', TIKU_MOD_CMD, 0);
+    menu_add(v, file, CIRCUIT_EXPORT, 0, 0, 0);
+    menu_add(v, file, CIRCUIT_SAVE_VIEW, 0, 0, 0);
     menu_add(v, file, CIRCUIT_EXAMPLE, 0, 0, 0);
     menu_add(v, file, CIRCUIT_EMPTY, 0, 0, 0);
     menu_add(v, file, CIRCUIT_CLOSE, 'w', TIKU_MOD_CMD, 0);
@@ -173,9 +201,16 @@ void tiku_circuitview_menus(tiku_circuitview_t *v)
     menu_add(v, layers, CIRCUIT_LAYER_VISIBLE, 0, 0, l && l->visible);
     menu_add(v, layers, CIRCUIT_LAYER_UP, 0, 0, 0);
     menu_add(v, layers, CIRCUIT_LAYER_DOWN, 0, 0, 0);
-    menu_add(v, layers, CIRCUIT_LAYER_COLOUR, 0, 0, 0);
-    menu_add(v, layers, CIRCUIT_LAYER_OPACITY, 0, 0, 0);
+    menu_add(v, layers, CIRCUIT_LAYER_STYLE, 0, 0, 0);
+    menu_add(v, layers, CIRCUIT_LAYER_ISOLATE, 0, 0, 0);
+    menu_add(v, layers, CIRCUIT_LAYER_SHOW_ALL, 0, 0, 0);
     menu_add(v, layers, CIRCUIT_LAYER_REMOVE, 0, 0, 0);
+    menu_add(v, tools, CIRCUIT_MEASURE, 'm', 0, v->measure);
+    menu_add(v, tools, CIRCUIT_MEASURE_CLEAR, 0, 0, 0);
+    menu_add(v, tools, CIRCUIT_MEASURE_COPY, 0, 0, 0);
+    menu_add(v, tools, CIRCUIT_UNIT_MM, 0, 0, v->units == 0);
+    menu_add(v, tools, CIRCUIT_UNIT_INCH, 0, 0, v->units == 1);
+    menu_add(v, tools, CIRCUIT_UNIT_MIL, 0, 0, v->units == 2);
     tiku_window_publish_menus(v->window, &menus, menu_pick, v);
 }
 
@@ -188,14 +223,31 @@ void tiku_circuitview_action(tiku_circuitview_t *v, int command)
         tiku_workspace_close(v->workspace, v->window);
         return;
     }
+    if (command == CIRCUIT_LAYER_STYLE) { cv_style_open(v); return; }
+    if (command == CIRCUIT_SAVE_VIEW) { cv_save_view(v); return; }
+    if (command >= CIRCUIT_MEASURE && command <= CIRCUIT_UNIT_MIL) {
+        if (command == CIRCUIT_MEASURE) { v->measure = !v->measure; v->dragging = 0; }
+        else if (command == CIRCUIT_MEASURE_CLEAR) {
+            if (!v->measure_points) v->measure = 0;
+            cv_measure_reset(v);
+        } else if (command == CIRCUIT_MEASURE_COPY) {
+            char text[512];
+            cv_measure_text(v,text,sizeof text);
+            tiku_clipboard_set(text);
+        } else v->units = command - CIRCUIT_UNIT_MM;
+        if (v->dirty) *v->dirty = 1;
+        tiku_circuitview_menus(v); return;
+    }
     if (command == CIRCUIT_OPEN || command == CIRCUIT_OPEN_JOB ||
-        command == CIRCUIT_ADD_LAYER) {
+        command == CIRCUIT_ADD_LAYER || command == CIRCUIT_EXPORT) {
         v->picker_action = command;
+        v->picker_generation = v->generation;
         v->choose(v->choose_ctx);
         tiku_circuitview_menus(v);
         return;
     }
-    if (command >= CIRCUIT_LAYER_VISIBLE && command <= CIRCUIT_LAYER_REMOVE) {
+    if ((command >= CIRCUIT_LAYER_VISIBLE && command <= CIRCUIT_LAYER_REMOVE) ||
+        command == CIRCUIT_LAYER_ISOLATE || command == CIRCUIT_LAYER_SHOW_ALL) {
         tiku_circuitview_layers_action(v, command);
         return;
     }
@@ -239,6 +291,7 @@ void tiku_circuitview_action(tiku_circuitview_t *v, int command)
         return;
     }
     if (command == CIRCUIT_CANCEL) {
+        tiku_work_cancel(v->export_key);
         tiku_work_cancel(v->key);
         v->generation++;
         v->needs_render = 0;
@@ -246,6 +299,7 @@ void tiku_circuitview_action(tiku_circuitview_t *v, int command)
         tiku_circuitview_note(v, "Operation cancelled. Drawing "
             "unchanged; navigate or Fit to render again.");
     } else if (command == CIRCUIT_EMPTY) {
+        cv_measure_reset(v);
         tiku_circuitview_files_cancel(v);
         v->path[0] = 0;
         tiku_circuitview_clear_project(v);
@@ -256,6 +310,7 @@ void tiku_circuitview_action(tiku_circuitview_t *v, int command)
         tiku_circuitview_changed(v);
         tiku_circuitview_ready(v);
     } else if (command == CIRCUIT_EXAMPLE) {
+        cv_measure_reset(v);
         tiku_circuit_t *d = NULL;
         tiku_circuit_err_t e = tiku_circuit_example(&d);
         if (e) {
