@@ -14,6 +14,7 @@
 #include "../../apps/sdr/tiku_sdr_link.c"
 #include "../../apps/sdr/tiku_sdr_marker.c"
 #include "../../apps/sdr/tiku_sdr_model.c"
+#include "../../apps/sdr/tiku_sdr_splash.c"
 #include "../../apps/sdr/tiku_sdr_tape.c"
 #include "../../apps/sdr/tiku_sdr_view.c"
 
@@ -21,6 +22,8 @@
 
 static char slave_path[128], lent[64];      /* the board last let go */
 static int frames, released, reclaimed, menus_seen;
+static int cards, abouts, card_frames, raised, placed_as;
+static uint32_t shut;                       /* the window last closed    */
 static const uint32_t *last_px;
 static int asked_mode = -1;                 /* the file panel last asked */
 static tiku_menuset_t last_menus;           /* the menus last published  */
@@ -32,22 +35,70 @@ static int is_band(const sdr_model_t *m)
     return m->start == SDR_BAND_START && m->stop == SDR_BAND_STOP;
 }
 
-/** @brief The desktop's open: the window TikuSDR asks for. */
+/** @brief The desktop's open: the window TikuSDR asks for, 7, its splash
+ *         first, 8, or its About box, 9. */
 static uint32_t opened(void *ctx, const char *title, int w, int h)
 {
     (void)ctx;
+    if (w == SDR_SPLASH_W && h == SDR_SPLASH_H) {
+        if (!strcmp(title, "About TikuSDR")) return abouts++, 9;
+        assert(!strcmp(title, "TikuSDR"));
+        return cards++, 8;
+    }
     assert(!strcmp(title, "TikuSDR") && w == SDR_W && h == SDR_H);
     return 7;
 }
 
-/** @brief A frame shown, its pixels kept. */
+/** @brief A frame shown, the window's pixels kept. */
 static int frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 {
     (void)ctx;
-    assert(id == 7 && w > 0 && h > 0);
+    assert((id == 7 || id == 8 || id == 9) && w > 0 && h > 0);
+    if (id != 7) return card_frames++, 1;
     last_px = px;
     frames++;
     return 1;
+}
+
+/** @brief A window closed by TikuSDR. */
+static void close_window(void *ctx, uint32_t id)
+{
+    (void)ctx;
+    shut = id;
+}
+
+/** @brief A window placed, by role. */
+static int place(void *ctx, uint32_t id, int role)
+{
+    (void)ctx;
+    assert(id == 8 || id == 9);
+    placed_as = role;
+    return 1;
+}
+
+/** @brief A window brought forward. */
+static int raise_window(void *ctx, uint32_t id)
+{
+    (void)ctx;
+    assert(id == 9);
+    raised++;
+    return 1;
+}
+
+/** @brief TikuSDR started, and its splash sent away by a key: the window
+ *         opens in its place. */
+static sdr_t *started(const tiku_app_services_t *services)
+{
+    tiku_event_t key = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_ESCAPE};
+    void *state = NULL;
+    sdr_t *st;
+
+    assert(tiku_sdr_app.start(&state, services) == 0 && state);
+    st = state;
+    assert(st->splash && st->splash_id == 8 && !st->id);
+    assert(tiku_sdr_app.event_in(st, 8, &key) == 0);
+    assert(!st->splash && shut == 8 && st->id == 7);
+    return st;
 }
 
 /** @brief The menus, the first of them SDR, kept. */
@@ -1004,6 +1055,64 @@ static int click_alert(sdr_t *st, int button, int off)
     return done;
 }
 
+/** @brief The splash first and alone, its status moving on, nothing begun
+ *         under it; the window as it leaves, on its own or sent by a key
+ *         or a click; About TikuSDR, one of it, put away by a click or a
+ *         key; a recording from Tracker opening the window at once. */
+static void splash_tests(const tiku_app_services_t *services)
+{
+    tiku_app_services_t with = *services;
+    tiku_event_t click = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                          .x = 40, .y = 40};
+    tiku_event_t ret = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_RETURN};
+    void *state = NULL;
+    sdr_t *st;
+    int64_t now = 0;
+    int was = menus_seen, before = released, stood;
+
+    cards = abouts = card_frames = raised = placed_as = 0;
+    assert(tiku_sdr_app.start(&state, services) == 0);
+    st = state;
+    assert(cards == 1 && st->splash_id == 8 && !st->id && card_frames == 1 &&
+           placed_as == TIKU_APP_PLACE_ANNOUNCE && menus_seen == was);
+    assert(st->splash->px[60 * SDR_SPLASH_W + 280] != TIKU_C_DOC);  /* art */
+    ticks(st, &now, 20);                /* 1.2 s: a stage on, nothing begun */
+    assert(st->splash && !st->id && card_frames == 2 && st->splash_stage == 1);
+    assert(st->looking && released == before && menus_seen == was);
+    ticks(st, &now, 24);                /* past 2.5 s: gone on its own */
+    assert(!st->splash && shut == 8 && st->id == 7 && menus_seen > was);
+    assert(!strcmp(last_menus.menu[0].item[0].label, "About TikuSDR") &&
+           last_menus.menu[0].item[1].separator);
+    ticks(st, &now, 1);                 /* and then the board is looked at */
+    assert(!st->looking && released == before + 1);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_ABOUT) == 0);
+    assert(abouts == 1 && st->about && st->about_id == 9 &&
+           placed_as == TIKU_APP_PLACE_ANNOUNCE);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_ABOUT) == 0);
+    assert(abouts == 1 && raised == 1);     /* forward, not a second one */
+    assert(tiku_sdr_app.event_in(st, 9, &ret) == 0);
+    assert(!st->about && shut == 9 && !st->about_id);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_ABOUT) == 0 && abouts == 2);
+    assert(tiku_sdr_app.event_in(st, 9, &click) == 0 && !st->about);
+    tiku_sdr_app.stop(st);
+
+    assert(tiku_sdr_app.start(&state, services) == 0);  /* a click: gone */
+    st = state;
+    stood = card_frames;
+    assert(tiku_sdr_app.event_in(st, 8, &click) == 0);
+    assert(!st->splash && st->id == 7 && card_frames == stood);
+    tiku_sdr_app.closed(st, 7);         /* the runtime took the window */
+    assert(!st->id);
+    tiku_sdr_app.stop(st);
+
+    with.startup_document = "/nonexistent/x.sdrlog";    /* from Tracker */
+    assert(tiku_sdr_app.start(&state, &with) == 0);
+    st = state;
+    assert(!st->splash && st->id == 7 && cards == 2);
+    tiku_sdr_app.stop(st);
+    released = before;
+}
+
 /** @brief No ESP32-C61 among the boards: nothing said until the desktop
  *         has said which boards it has, then an alert with the stop icon
  *         and one button over a toolbar with no Connect; only Quit works
@@ -1015,7 +1124,6 @@ static void no_esp32(const tiku_app_services_t *services)
     tiku_app_services_t without = *services;
     tiku_event_t ret = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_RETURN};
     tiku_event_t esc = {.type = TIKU_EVENT_KEY_DOWN, .key = TIKU_KEY_ESCAPE};
-    void *state = NULL;
     sdr_t *st;
     int64_t now = 0;
     int before = released;
@@ -1031,8 +1139,7 @@ static void no_esp32(const tiku_app_services_t *services)
     without.board_mcu = mcu_named;
     without.current_device = current_named;
     told = NULL;                    /* just started, out of process */
-    assert(tiku_sdr_app.start(&state, &without) == 0);
-    st = state;
+    st = started(&without);
     ticks(st, &now, 2);
     assert(st->looking && !st->alert.open && !st->note[0]);
     told = "nrf54l15\n";            /* said: a board, but not one with it */
@@ -1098,8 +1205,7 @@ static void no_esp32(const tiku_app_services_t *services)
     /* Two connected while it is up: the desktop's current device is the
      * one borrowed, and the Device menu lists the two, the nRF never. */
     told = "nrf54l15\n";
-    assert(tiku_sdr_app.start(&state, &without) == 0);
-    st = state;
+    st = started(&without);
     ticks(st, &now, 1);
     assert(st->alert.open && released == before + 1);
     told = "esp32-c61\nesp32-c61-2\nnrf54l15\n";
@@ -1164,7 +1270,6 @@ static void choose(sdr_t *st, int c, int down)
  *         plans on.  In a sweep, markers take a press instead of tuning. */
 static void drawn(const tiku_app_services_t *services)
 {
-    void *state = NULL;
     sdr_t *st;
     sdr_model_t *m;
     tiku_rect_t plot, fall, was, r;
@@ -1172,8 +1277,7 @@ static void drawn(const tiku_app_services_t *services)
     char line[1200];
     int mid;
 
-    assert(tiku_sdr_app.start(&state, services) == 0);
-    st = state;
+    st = started(services);
     m = &st->model;
     assert(st->fall_on && !st->plans_on && !sdr_marks_out(m));
     assert(!sdr_enabled(st, CMD_NEXT_PEAK) &&
@@ -1315,10 +1419,10 @@ static void drawn(const tiku_app_services_t *services)
 int main(void)
 {
     tiku_app_services_t services = {.open = opened, .frame = frame,
+        .close = close_window, .place = place, .raise_window = raise_window,
         .menus = menus, .board_names = names, .board_port = port,
         .board_mcu = mcu, .board_release = release,
         .board_reclaim = reclaim_board, .pick = panel};
-    void *state = NULL;
     sdr_t *st;
     char got[256], line[1200], dir[] = "/tmp/test_sdr_XXXXXX", rec[600];
     char rec2[600];
@@ -1337,11 +1441,11 @@ int main(void)
     assert(master >= 0 && !grantpt(master) && !unlockpt(master));
     assert(!ptsname_r(master, slave_path, sizeof slave_path));
 
+    splash_tests(&services);
     no_esp32(&services);
     drawn(&services);
     released = 0;
-    assert(tiku_sdr_app.start(&state, &services) == 0 && state);
-    st = state;
+    st = started(&services);
     assert(frames >= 1 && menus_seen >= 1 && !strcmp(st->board, "c61"));
     assert(st->state == SDR_IDLE && st->note[0] == '\0');    /* nothing said */
     assert(st->looking && !st->alert.open && !released);  /* nothing touched */

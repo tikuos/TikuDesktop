@@ -7,7 +7,7 @@
 # 1 out on the highest peak by its key, Next Peak moving it down, the
 # Marker menu's Peak Search back up, the n key down again, and a drag let
 # go beside the highest peak climbing onto it; the Spectrogram switch off,
-# the spectrum taking its room.
+# the spectrum taking its room; About TikuSDR, put away by a key.
 wait 20
 click-row 0
 wait 2
@@ -62,6 +62,20 @@ click 209 563
 wait 10
 expect-pixel 209 563 ffffff
 expect-pixel 840 95 466058
+note About TikuSDR, hoisted into the Tiku menu: the splash's card, finished
+click 20 8
+wait 8
+expect-menu About TikuSDR
+menu-pick About TikuSDR
+wait 30
+expect-title About TikuSDR
+expect-windows 3
+expect-pixel 300 200 c3c88d
+key Escape
+wait 20
+expect-no-title About
+expect-windows 2
+click-window TikuSDR
 key Escape
 wait 20
 expect-no-title TikuSDR

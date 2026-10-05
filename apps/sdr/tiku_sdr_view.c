@@ -171,6 +171,7 @@ const char *sdr_label(const sdr_t *st, int command)
     case CMD_PEAK: return "Max Hold";
     case CMD_OVERLAY: return "Clear & Write";
     case CMD_MARK_REMOVE: return "Marker Off";
+    case CMD_ABOUT: return "About TikuSDR";
     default: return "Quit";
     }
 }
@@ -766,6 +767,7 @@ void sdr_paint(sdr_t *st)
 {
     tiku_rect_t plot, fall, screen = {0, 0, st->w, st->h};
 
+    if (!st->id) return;                /* the splash still stands */
     sdr_layout(st, &plot, &fall);
     sdr_controls(st);
     sdr_model_scale(&st->model);

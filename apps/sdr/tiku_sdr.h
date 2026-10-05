@@ -22,6 +22,9 @@
 
 #define SDR_W        940
 #define SDR_H        600
+#define SDR_SPLASH_W 560            /* the splash and the About box,   */
+#define SDR_SPLASH_H 300            /* TikuBasic's size                */
+#define SDR_SPLASH_US 2500000       /* how long the splash stands      */
 #define SDR_BINS     512            /* the most one trace holds        */
 #define SDR_ROWS     480            /* spectrogram rows remembered     */
 #define SDR_RX_MAX   8192           /* bytes waiting for a newline     */
@@ -74,7 +77,7 @@ enum {
     CMD_WATERFALL, CMD_PLANS,       /* Display: its two switches        */
     CMD_RECORD, CMD_PAUSE,          /* the bar at the window's foot     */
     CMD_QUIT, CMD_REPLAY, CMD_PICTURE, CMD_PEAK, CMD_OVERLAY,
-    CMD_MARK_REMOVE,                /* menus and keys alone             */
+    CMD_MARK_REMOVE, CMD_ABOUT,     /* menus and keys alone             */
     CMD_TYPE = 60,                  /* + SDR_T_*: the selected trace's  */
     CMD_TRACE_SEL = 70,             /* + trace: the one being set       */
     CMD_MARK_SEL = 80,              /* + marker: the one being set      */
@@ -205,6 +208,12 @@ typedef struct {
     char shown[SDR_PATH];           /* the recording on screen, or ""  */
     sdr_csv_t csv;
     unsigned menu_state;            /* what the menus last showed      */
+    /* The splash, alone while TikuSDR arrives (id is 0 until it leaves),
+     * and the About box: the same card, standing until it is read. */
+    tiku_surface_t *splash, *about;
+    uint32_t splash_id, about_id;
+    int64_t splash_from;
+    int splash_stage;
 } sdr_t;
 
 /* tiku_sdr_model.c */
@@ -339,6 +348,25 @@ int  sdr_csv_start(sdr_t *st, const char *path);
 void sdr_csv_tick(sdr_t *st);
 /** @brief A conversion abandoned: the window is closing. */
 void sdr_csv_stop(sdr_t *st);
+
+/* tiku_sdr_app.c */
+/** @brief The window, its menus and its first frame.  @return 0, or -1
+ *         when the desktop gave none. */
+int  sdr_window_open(sdr_t *st);
+
+/* tiku_sdr_splash.c */
+/** @brief The splash, alone: TikuSDR's name and what is being gathered.
+ *         @return 0, or -1 when it could not be put up. */
+int  sdr_splash_open(sdr_t *st);
+/** @brief The splash's status moved on to @p now, and the splash let go
+ *         once it has stood its time. */
+void sdr_splash_tick(sdr_t *st, int64_t now);
+/** @brief The splash gone, whoever asked, and the window open after it. */
+void sdr_splash_drop(sdr_t *st);
+/** @brief The About box, or the one up brought forward. */
+void sdr_about_open(sdr_t *st);
+/** @brief The About box put away. */
+void sdr_about_drop(sdr_t *st);
 
 /* tiku_sdr_view.c */
 /** @brief Where the traces go -- the graticule -- and the spectrogram

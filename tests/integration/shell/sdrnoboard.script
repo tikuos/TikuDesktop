@@ -1,33 +1,42 @@
 # shell: desktop
 # prefs: factory
 # setup: sdr
-# TikuSDR opened with no ESP32-C61 connected through Devices says no
-# software-defined radio is detected at once, over its own window, with
-# the stop icon and one button: Return closes TikuSDR, and so does a click
-# on OK when it is opened again.
+# TikuSDR arrives as TikuBasic does, its splash alone and then its window.
+# Opened with no ESP32-C61 connected through Devices, it says no
+# software-defined radio is detected over that window, with the stop icon
+# and one button: Return closes TikuSDR, and so does a click on OK when it
+# is opened again, its splash sent away by a key.
 wait 60
 click 980 30
 wait 10
 menu-pick Device Tools
 wait 10
 menu-pick TikuSDR
-wait 200
+wait 25
+note First the splash, alone: the mark's band over the name
 expect-title TikuSDR
-shot /tmp/trk_sdr_noesp32.png
-note The stop icon's red, left of its cross, on the alert's stripe
+expect-windows 2
+expect-pixel 300 200 c3c88d
+expect-pixel 500 140 d4c9de
+shot /tmp/trk_sdr_splash.png
+wait 260
+note Then the window, and over it the stop icon's red, left of its cross
 expect-pixel 309 233 cb3030
 expect-windows 2
 key Return
 wait 30
 expect-no-title TikuSDR
 expect-windows 1
-note Opened again, a click on OK closes it too
+note Opened again, its splash sent away by a key, a click on OK closes it
 click 980 30
 wait 10
 menu-pick Device Tools
 wait 10
 menu-pick TikuSDR
-wait 200
+wait 25
+expect-pixel 300 200 c3c88d
+key Escape
+wait 40
 expect-title TikuSDR
 expect-pixel 309 233 cb3030
 expect-windows 2

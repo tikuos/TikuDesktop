@@ -7,7 +7,11 @@ TikuSDR keeps, stitches and draws them.
 
 The window is laid out as an analyser's: a panel of settings at the left,
 the spectrogram above, the spectrum on a ten-division graticule below it,
-and a bar at the foot to record, pause and say what is happening.
+and a bar at the foot to record, pause and say what is happening.  It
+arrives behind a splash, TikuBasic's card from the interface kit (2.5 s,
+or until a key or a click; the window opens as it leaves, and a recording
+opened from Tracker skips it); About TikuSDR shows the card again, and the
+desktop hoists it into its Tiku menu.
 
 - **Frequency**: Center, Span, Start and Stop in MHz, typed in (k, M or G
   after a number work too).  Start or Stop moves Center and Span to match;

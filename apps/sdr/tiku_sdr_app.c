@@ -157,8 +157,9 @@ static unsigned menu_state(const sdr_t *st)
  *         and pictures -- the traces, the markers, tuning and the boards. */
 static void publish(sdr_t *st)
 {
-    static const int sdr[] = {CMD_CONNECT, 0, CMD_LIVE, 0, CMD_PAUSE, 0,
-                              CMD_WATERFALL, CMD_PLANS, 0, CMD_QUIT};
+    static const int sdr[] = {CMD_ABOUT, 0, CMD_CONNECT, 0, CMD_LIVE, 0,
+                              CMD_PAUSE, 0, CMD_WATERFALL, CMD_PLANS, 0,
+                              CMD_QUIT};
     static const int file[] = {CMD_RECORD, CMD_REPLAY, 0, CMD_EXPORT,
                                CMD_PICTURE};
     static const int trace[] = {CMD_TRACE_SEL, CMD_TRACE_SEL + 1,
@@ -174,6 +175,7 @@ static void publish(sdr_t *st)
                                  CMD_MARK_CLEAR};
     tiku_menuset_t set;
 
+    if (!st->id) return;                /* the splash still stands */
     memset(&set, 0, sizeof set);
     set.nmenu = 6;
     set.menu[0].nitem = menu_rows(st, &set.menu[0], "SDR", sdr,
@@ -417,6 +419,9 @@ static int sdr_pick(void *state, uint32_t window, int command)
         else if (sdr_connect(st) < 0)   /* gone since the menu was drawn */
             snprintf(st->note, sizeof st->note,
                      "No software-defined radio is connected.");
+    } else if (command == CMD_ABOUT) {
+        sdr_about_open(st);
+        return 0;
     } else if (command == CMD_LIVE) {   /* the last view of the other kind */
         const double *v = sdr_model_is_live(m) ? st->wide_view
                                                : st->live_view;
@@ -724,6 +729,47 @@ static int sdr_event(void *state, const tiku_event_t *ev)
     return 0;
 }
 
+/** @brief Input in one of TikuSDR's windows: a key or a click sends the
+ *         splash away, as one closes the About box (Escape and Return too);
+ *         the window's own goes to sdr_event(). */
+static int sdr_event_in(void *state, uint32_t window, const tiku_event_t *ev)
+{
+    sdr_t *st = state;
+    int key = ev->type == TIKU_EVENT_KEY_DOWN;
+
+    if (st->splash && window == st->splash_id) {
+        if (key || ev->type == TIKU_EVENT_POINTER_DOWN) sdr_splash_drop(st);
+        return 0;
+    }
+    if (st->about && window == st->about_id) {
+        if (ev->type == TIKU_EVENT_POINTER_DOWN ||
+            ev->type == TIKU_EVENT_CLOSE ||
+            (key && (ev->key == TIKU_KEY_ESCAPE || ev->key == TIKU_KEY_RETURN)))
+            sdr_about_drop(st);
+        return 0;
+    }
+    return window == st->id ? sdr_event(st, ev) : 0;
+}
+
+/** @brief A window the runtime took.  The window takes the About box with
+ *         it, so the last of them going ends TikuSDR. */
+static void sdr_closed(void *state, uint32_t window)
+{
+    sdr_t *st = state;
+
+    if (st->splash && window == st->splash_id) {
+        tiku_surface_free(st->splash);
+        st->splash = NULL;
+    } else if (st->about && window == st->about_id) {
+        tiku_surface_free(st->about);
+        st->about = NULL;
+        st->about_id = 0;
+    } else if (window == st->id) {
+        st->id = 0;
+        sdr_about_drop(st);
+    }
+}
+
 /** @brief The boards again.  The first time the desktop has said which it
  *         has, an ESP32-C61 among them is borrowed, once, and none is said
  *         over the window; one connected while that is said is borrowed,
@@ -747,6 +793,8 @@ static void sdr_tick(void *state, int64_t now_us)
     sdr_t *st = state;
 
     st->now = now_us;
+    sdr_splash_tick(st, now_us);
+    if (!st->id) return;                /* nothing is begun under the splash */
     if (st->looking || st->alert.open || now_us - st->names_at >= NAMES_US) {
         char before[sizeof st->names];
         snprintf(before, sizeof before, "%s", st->names);
@@ -827,13 +875,27 @@ static void lists_init(sdr_t *st)
     }
 }
 
-/** @brief A window, the model, and the boards: nothing touched yet.  A
- *         recording it was opened with, from Tracker, plays at once and
- *         needs no board; else the tick borrows an ESP32-C61 as soon as
- *         the desktop has said which boards it has, or says there is none. */
+int sdr_window_open(sdr_t *st)
+{
+    const tiku_app_services_t *sv = st->services;
+
+    st->id = sv->open(sv->ctx, "TikuSDR", st->w, st->h);
+    if (!st->id) return -1;
+    if (sv->sizeable) sv->sizeable(sv->ctx, st->id);
+    publish(st);
+    sdr_paint(st);
+    return 0;
+}
+
+/** @brief The model and the boards, nothing touched yet, and the splash:
+ *         the window opens as it leaves.  A recording it was opened with,
+ *         from Tracker, opens the window at once and plays; else the tick
+ *         borrows an ESP32-C61 once the window is up and the desktop has
+ *         said which boards it has, or says there is none. */
 static int sdr_start(void **state, const tiku_app_services_t *services)
 {
     sdr_t *st = calloc(1, sizeof *st);
+    const char *doc = services->startup_document;
 
     if (!st) return -1;
     st->services = services;
@@ -842,9 +904,6 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     st->fd = -1;
     st->surface = tiku_surface_new(SDR_W, SDR_H, TIKU_C_PANEL);
     if (!st->surface) { free(st); return -1; }
-    st->id = services->open(services->ctx, "TikuSDR", SDR_W, SDR_H);
-    if (!st->id) { tiku_surface_free(st->surface); free(st); return -1; }
-    if (services->sizeable) services->sizeable(services->ctx, st->id);
     st->fall_on = 1;
     sdr_model_init(&st->model);
     st->live_view[0] = st->model.start;    /* it opens live */
@@ -854,15 +913,19 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     tiku_dialog_init(&st->dialog);
     lists_init(st);
     tiku_alert_reset(&st->alert);
-    if (services->startup_document && *services->startup_document)
-        (void)sdr_play_start(st, services->startup_document);
-    else
-        st->looking = 1;
-    (void)sdr_targets(st);
-    publish(st);
-    sdr_paint(st);
-    *state = st;
-    return 0;
+    st->looking = !(doc && *doc);
+    if ((st->looking && sdr_splash_open(st) == 0) ||
+        sdr_window_open(st) == 0) {
+        if (!st->looking) (void)sdr_play_start(st, doc);
+        (void)sdr_targets(st);
+        publish(st);
+        sdr_paint(st);
+        *state = st;
+        return 0;
+    }
+    tiku_surface_free(st->surface);
+    free(st);
+    return -1;
 }
 
 /** @brief The board given back, if it was taken, and everything freed. */
@@ -876,6 +939,8 @@ static void sdr_stop(void *state)
     sdr_csv_stop(st);
     sdr_disconnect_now(st);
     tiku_surface_free(st->surface);
+    tiku_surface_free(st->splash);
+    tiku_surface_free(st->about);
     free(st->pic);
     free(st);
 }
@@ -884,6 +949,7 @@ const tiku_app_descriptor_t tiku_sdr_app = {
     .id = "sdr", .name = "TikuSDR",
     .start = sdr_start, .stop = sdr_stop, .event = sdr_event,
     .tick = sdr_tick, .pick = sdr_pick, .picked = sdr_picked,
+    .event_in = sdr_event_in, .closed = sdr_closed,
     .board_said = sdr_board_news
 };
 #ifdef TIKU_APP_SO
