@@ -11,6 +11,12 @@ spectrum; TikuSDR keeps, stitches and draws them.
 - **Band**: 2396-2492 MHz from six slices, about five sweeps a second,
   each slice's noise floor levelled to a common one (each is heard at its
   own automatic gain).  Click anywhere in it to tune Live there.
+- **Center, Span, Start, Stop**: the view in MHz, typed in (k, M or G
+  after a number work too).  Start or Stop moves Center and Span to match;
+  Center or Span moves Start and Stop.  Up to 40 MHz is one spectrum at the
+  narrowest sample rate that holds it (4, 8, 10, 20 or 40 MS/s, so 2 MHz
+  shows 15.6 kHz bins); wider is swept in 16 MHz slices, anywhere from
+  2200 to 2700 MHz.  Live and Band are two such views.
 - Beneath the plot: Wi-Fi channels 1-13, BLE's advertising channels 37-39
   and 802.15.4 channels 11-26.  Hover for a frequency's level and channels.
 
@@ -40,8 +46,8 @@ below its toolbar as a PNG.
 
 | File | What it holds |
 | --- | --- |
-| `tiku_sdr_model.c` | SPEC lines in, the band stitched, averages, peaks, waterfall |
+| `tiku_sdr_model.c` | A view's range and how it is asked for, SPEC lines in, sweeps stitched, averages, peaks, waterfall |
 | `tiku_sdr_link.c` | The board borrowed, spoken to from the tick, given back |
 | `tiku_sdr_tape.c` | Recordings written, played back, and exported as CSV |
-| `tiku_sdr_view.c` | Toolbar, spectrum, channel rulers, waterfall, status, picture |
+| `tiku_sdr_view.c` | Toolbar and frequency fields, spectrum, channel rulers, waterfall, status, picture |
 | `tiku_sdr_app.c` | The descriptor, menus, file panels, keys and pointer |

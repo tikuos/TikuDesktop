@@ -7,8 +7,9 @@
 # TikuSDR on a board whose firmware has the receiver (an ESP32-C61 built
 # with TIKU_DRV_SDR_ESP_ENABLE=1): opening it borrows the board and spectra
 # arrive with nothing pressed, Band stitches the 2.4 GHz band, Record writes
-# it through the Save panel, Disconnect gives the board back, Open Recording
-# plays the file again, and the File menu exports it as CSV and a picture.
+# it through the Save panel, a Span typed asks the board for 4 MS/s,
+# Disconnect gives the board back, Open Recording plays the file again,
+# and the File menu exports it as CSV and a picture.
 wait 60
 click 980 30
 wait 10
@@ -39,7 +40,7 @@ wait 300
 shot /tmp/trk_sdr_band.png
 expect-file /tmp/trk_home/rec
 expect-file-has /tmp/trk_home/rec TikuSDR recording 1
-expect-file-has /tmp/trk_home/rec VIEW band
+expect-file-has /tmp/trk_home/rec VIEW range 2396 2492
 expect-file-has /tmp/trk_home/rec SPEC 2404 40000000
 expect-file-has /tmp/trk_home/rec SWEEP 6
 click-window TikuSDR
@@ -47,6 +48,32 @@ click 71 8
 wait 8
 menu-pick Live
 wait 200
+click 114 8
+wait 8
+menu-pick Stop Recording
+wait 20
+note Span typed: 2 MHz about Live's centre, one spectrum at 4 MS/s
+click 279 104
+wait 4
+key 2
+key Return
+wait 200
+shot /tmp/trk_sdr_span.png
+click 114 8
+wait 8
+menu-pick Record…
+wait 30
+expect-title Save
+key z
+key o
+key o
+key m
+key Return
+wait 200
+expect-file /tmp/trk_home/zoom
+expect-file-has /tmp/trk_home/zoom VIEW range 2443 2445
+expect-file-has /tmp/trk_home/zoom SPEC 2444 4000000
+click-window TikuSDR
 click 114 8
 wait 8
 menu-pick Stop Recording

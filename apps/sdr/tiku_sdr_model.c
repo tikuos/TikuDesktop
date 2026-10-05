@@ -1,6 +1,7 @@
-/* tiku_sdr_model.c -- TikuSDR's model: the board's SPEC lines taken in,
- * slices stitched into one band, averages, peaks and the waterfall kept,
- * and the channel plans of the 2.4 GHz band.  No window and no device.
+/* tiku_sdr_model.c -- TikuSDR's model: a view's range and how the board
+ * is asked for it, the board's SPEC lines taken in, slices stitched into
+ * one band, averages, peaks and the waterfall kept, and the channel plans
+ * of the 2.4 GHz band.  No window and no device.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
 #include <math.h>
@@ -10,42 +11,174 @@
 
 #include "tiku_sdr.h"
 
-/* Live spans 40 MHz (rate code 1).  A band slice keeps 8.2 MHz either side
- * of its centre, so neighbours overlap rather than gap, and its noise
- * floor is moved to 40 dB. */
-#define LIVE_SPAN_MHZ  40.0
+/* A sweep's slice keeps 8.2 MHz either side of its centre, so neighbours
+ * overlap rather than gap, in 312.5 kHz bins (40 MS/s in 128), and its
+ * noise floor is moved to 40 dB. */
 #define SLICE_HALF_MHZ 8.2
+#define SLICE_BIN_MHZ  0.3125
 #define BAND_FLOOR     40.0f
+
+/* The rate codes the board takes, by what one spectrum spans, in MHz.
+ * Below 40 MS/s the whole of it is flat; at 40 the middle 24 MHz. */
+static const double rate_mhz[] = {80.0, 40.0, 20.0, 10.0, 8.0, 4.0};
+#define RATE_NARROWEST 5
 
 void sdr_model_init(sdr_model_t *m)
 {
     memset(m, 0, sizeof *m);
-    m->rate = 1;
-    m->nfft = 256;
     m->peak_on = m->avg_on = 1;
     m->scale_lo = 40.0f;
     m->scale_hi = 110.0f;
-    sdr_model_mode(m, SDR_LIVE, 2437);
+    sdr_model_range(m, 2437.0 - SDR_LIVE_SPAN / 2, 2437.0 + SDR_LIVE_SPAN / 2);
 }
 
-void sdr_model_mode(sdr_model_t *m, int mode, int centre)
+void sdr_range_fit(double *start, double *stop)
 {
-    m->mode = mode;
-    m->centre = centre;
-    if (mode == SDR_BAND) {
-        m->n = SDR_BAND_N;
-        m->bin_mhz = SDR_BAND_BIN;
-        m->lo_mhz = SDR_BAND_LO;
-    } else {
-        m->n = m->nfft;
-        m->bin_mhz = LIVE_SPAN_MHZ / m->nfft;
-        m->lo_mhz = centre - (m->nfft / 2) * m->bin_mhz;
+    double a = *start < *stop ? *start : *stop;
+    double b = *start < *stop ? *stop : *start;
+
+    if (b - a > SDR_TUNE_HI - SDR_TUNE_LO) {
+        a = SDR_TUNE_LO;
+        b = SDR_TUNE_HI;
     }
+    if (b - a < SDR_SPAN_MIN) {
+        a = (a + b - SDR_SPAN_MIN) / 2;
+        b = a + SDR_SPAN_MIN;
+    }
+    if (a < SDR_TUNE_LO) {
+        b += SDR_TUNE_LO - a;
+        a = SDR_TUNE_LO;
+    }
+    if (b > SDR_TUNE_HI) {
+        a -= b - SDR_TUNE_HI;
+        b = SDR_TUNE_HI;
+    }
+    *start = round(a * 1000.0) / 1000.0;
+    *stop = round(b * 1000.0) / 1000.0;
+}
+
+/** @brief One spectrum: tuned to the whole MHz nearest the centre, at the
+ *         narrowest rate that holds the view, 40 MS/s holding any up to
+ *         40 MHz; the view is the bins of it inside start to stop. */
+static void one_spectrum(sdr_model_t *m)
+{
+    double centre = (m->start + m->stop) / 2, span = m->stop - m->start;
+    double off, bin;
+    int r = RATE_NARROWEST, k1;
+
+    m->tune = (int)lround(centre);
+    off = fabs(centre - m->tune);
+    while (r > 1 && rate_mhz[r] < span + 2 * off - 1e-9) r--;
+    m->rate = r;
+    m->nfft = 256;
+    bin = rate_mhz[r] / m->nfft;
+    m->k0 = (int)ceil((m->start - m->tune) / bin + m->nfft / 2 - 1e-6);
+    k1 = (int)floor((m->stop - m->tune) / bin + m->nfft / 2 + 1e-6);
+    if (m->k0 < 0) m->k0 = 0;
+    if (k1 > m->nfft - 1) k1 = m->nfft - 1;
+    m->n = k1 - m->k0 + 1;
+    m->bin_mhz = bin;
+    m->lo_mhz = m->tune + (m->k0 - m->nfft / 2) * bin;
+}
+
+/** @brief A sweep: 40 MS/s slices 16 MHz apart from the first whose kept
+ *         middle reaches the start; one running past the board's top moves
+ *         down whole.  The trace's bins are the slices' own, or wider, a
+ *         trace holding SDR_BINS at most. */
+static void slices(sdr_model_t *m)
+{
+    double span = m->stop - m->start;
+    int count;
+
+    m->rate = 1;
+    m->nfft = 128;
+    m->first = (int)floor(m->start + SLICE_HALF_MHZ);
+    count = (int)ceil((m->stop - m->first - SLICE_HALF_MHZ) / SDR_SLICE_STEP);
+    count = count < 0 ? 1 : count + 1;
+    m->last = m->first + (count - 1) * SDR_SLICE_STEP;
+    if (m->last > (int)SDR_TUNE_HI) {
+        m->last = (int)SDR_TUNE_HI;
+        m->first = m->last - (count - 1) * SDR_SLICE_STEP;
+    }
+    m->bin_mhz = span / SDR_BINS > SLICE_BIN_MHZ ? span / SDR_BINS
+                                                 : SLICE_BIN_MHZ;
+    m->n = (int)(span / m->bin_mhz + 1e-6);
+    if (m->n > SDR_BINS) m->n = SDR_BINS;
+    m->lo_mhz = m->start;
+}
+
+void sdr_model_range(sdr_model_t *m, double start, double stop)
+{
+    sdr_range_fit(&start, &stop);
+    m->start = start;
+    m->stop = stop;
+    m->sweep = stop - start > SDR_LIVE_SPAN + 1e-6;
+    if (m->sweep) slices(m); else one_spectrum(m);
     memset(m->db, 0, sizeof m->db);
     memset(m->seen, 0, sizeof m->seen);
+    m->got = 0;
     m->wf_head = m->wf_count = 0;
     m->fresh = 0;
     sdr_model_clear(m);
+}
+
+int sdr_model_is_live(const sdr_model_t *m)
+{
+    return fabs(m->stop - m->start - SDR_LIVE_SPAN) < 1e-6;
+}
+
+int sdr_model_is_band(const sdr_model_t *m)
+{
+    return fabs(m->start - SDR_BAND_START) < 1e-6 &&
+           fabs(m->stop - SDR_BAND_STOP) < 1e-6;
+}
+
+void sdr_mhz_text(double mhz, char *out, size_t max)
+{
+    long long khz = llround(mhz * 1000.0);
+    char frac[8];
+    int n;
+
+    if (khz % 1000 == 0) {
+        snprintf(out, max, "%lld", khz / 1000);
+        return;
+    }
+    n = snprintf(frac, sizeof frac, "%03lld", khz % 1000);
+    while (n > 0 && frac[n - 1] == '0') frac[--n] = '\0';
+    snprintf(out, max, "%lld.%s", khz / 1000, frac);
+}
+
+void sdr_model_field(const sdr_model_t *m, int field, char *out, size_t max)
+{
+    double v = field == SDR_F_CENTER ? (m->start + m->stop) / 2 :
+               field == SDR_F_SPAN ? m->stop - m->start :
+               field == SDR_F_START ? m->start : m->stop;
+
+    sdr_mhz_text(v, out, max);
+}
+
+int sdr_mhz_parse(const char *text, double *mhz)
+{
+    double v = 0.0, place = 1.0;
+    int digits = 0;
+    const char *p = text;
+
+    while (*p == ' ') p++;
+    for (; *p >= '0' && *p <= '9'; p++, digits++) v = v * 10 + (*p - '0');
+    if (*p == '.')
+        for (p++; *p >= '0' && *p <= '9'; p++, digits++)
+            v += (*p - '0') * (place /= 10);
+    if (!digits || v > 1e6) return 0;
+    while (*p == ' ') p++;
+    if (*p == 'k' || *p == 'K') v /= 1000.0;
+    else if (*p == 'g' || *p == 'G') v *= 1000.0;
+    if (*p == 'k' || *p == 'K' || *p == 'm' || *p == 'M' || *p == 'g' ||
+        *p == 'G') p++;
+    if ((p[0] == 'h' || p[0] == 'H') && (p[1] == 'z' || p[1] == 'Z')) p += 2;
+    while (*p == ' ') p++;
+    if (*p) return 0;
+    *mhz = v;
+    return 1;
 }
 
 void sdr_model_clear(sdr_model_t *m)
@@ -153,14 +286,16 @@ int sdr_model_line(sdr_model_t *m, const char *line)
     long hz;
 
     if (!strncmp(line, "SWEEP ", 6)) {
-        int heard = 0;
+        int count = (m->last - m->first) / SDR_SLICE_STEP + 1;
+        uint64_t all = count >= 64 ? ~0ULL : (1ULL << count) - 1;
+        int whole = m->got == all;
 
-        if (m->mode != SDR_BAND) return 0;
-        for (int j = 0; j < m->n; j++) heard += m->seen[j];
+        if (!m->sweep) return 0;
         memset(m->seen, 0, sizeof m->seen);
-        /* A sweep begun before this view leaves part of the band unheard:
-         * no frame until one whole sweep has been. */
-        if (!m->fresh && heard < m->n) return 0;
+        m->got = 0;
+        /* A sweep begun before this view, or one short of a slice, leaves
+         * part of the range unheard: no frame of it. */
+        if (!whole) return 0;
         frame_done(m);
         return 1;
     }
@@ -173,15 +308,19 @@ int sdr_model_line(sdr_model_t *m, const char *line)
         if (b < 0) return -1;
         v[k] = (unsigned char)b;
     }
+    /* A line asked for by an older view is dropped, not drawn crooked. */
+    if (hz != lround(rate_mhz[m->rate] * 1e6) || n != m->nfft) return 0;
     dc_patch(v, n);
     m->gain = gain;
-    if (m->mode == SDR_BAND) {
+    if (m->sweep) {
+        if (centre >= m->first && centre <= m->last &&
+            (centre - m->first) % SDR_SLICE_STEP == 0)
+            m->got |= 1ULL << ((centre - m->first) / SDR_SLICE_STEP);
         band_slice(m, centre, hz / 1e6 / n, v, n);
         return 0;
     }
-    /* Live: a line for an older tuning is dropped, not drawn crooked. */
-    if (centre != m->centre || n != m->n) return 0;
-    for (int k = 0; k < n; k++) m->db[k] = v[k] / 2.0f;
+    if (centre != m->tune) return 0;
+    for (int j = 0; j < m->n; j++) m->db[j] = v[m->k0 + j] / 2.0f;
     frame_done(m);
     return 1;
 }
@@ -272,10 +411,10 @@ int sdr_channels(double mhz, char *out, size_t max)
 
 const char *sdr_command(const sdr_model_t *m, char *out, size_t max)
 {
-    if (m->mode == SDR_BAND)
-        snprintf(out, max, "sdr sweep %d %d %d 1 128", SDR_BAND_FIRST,
-                 SDR_BAND_LAST, SDR_BAND_STEP);
+    if (m->sweep)
+        snprintf(out, max, "sdr sweep %d %d %d %d %d", m->first, m->last,
+                 SDR_SLICE_STEP, m->rate, m->nfft);
     else
-        snprintf(out, max, "sdr spec %d %d %d", m->centre, m->rate, m->nfft);
+        snprintf(out, max, "sdr spec %d %d %d", m->tune, m->rate, m->nfft);
     return out;
 }

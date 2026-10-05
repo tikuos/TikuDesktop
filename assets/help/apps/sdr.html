@@ -39,7 +39,7 @@ no board, and no message is shown.</p>
 ten spectra a second. The receiver&#8217;s filter is flat over the middle
 24&#160;MHz; the shaded edges are its roll-off, not the air. The
 receiver&#8217;s own leakage at the tuned frequency is no signal, so the
-few bins on it show their neighbours&#8217; level. Tune with
+few bins on it show their neighbours&#8217; level. Move the view with
 <b>-5&#160;MHz</b> and <b>+5&#160;MHz</b>, the arrow keys (one megahertz,
 five with Shift), the scroll wheel, or the <b>Tune</b> menu&#8217;s Wi-Fi
 and BLE channels.</p>
@@ -47,8 +47,27 @@ and BLE channels.</p>
 <p><b>Band</b> shows the whole 2.4&#160;GHz band, 2396 to 2492&#160;MHz,
 stitched from six slices, about five sweeps a second. Each slice is heard
 at its own automatic gain, so its noise floor is levelled to a common one
-before the slices are joined: in Band, a level is a height above the
-floor around it. Click anywhere in the band to tune Live there.</p>
+before the slices are joined: in a sweep, a level is a height above the
+floor around it. Click anywhere in a sweep to see 40&#160;MHz there.</p>
+
+<h2 id="frequency">Center, Span, Start and Stop</h2>
+
+<p>Beneath the buttons, <b>Center</b>, <b>Span</b>, <b>Start</b> and
+<b>Stop</b> say the view in MHz, and any of them can be typed in: click
+one, type, and press Return, or Tab or click away. Typing Start or Stop
+moves Center and Span to match; typing Center or Span moves Start and
+Stop, the other of the two kept. A Start past the Stop, or a Stop below
+the Start, moves the other end with the span kept. A number may end in
+k, M or G, with or without Hz: <code>2.437G</code> is 2437&#160;MHz. Escape
+leaves a field as it was. The board tunes 2200 to 2700&#160;MHz, so a view
+is moved inside that, and is at least 1&#160;MHz wide.</p>
+
+<p>Up to 40&#160;MHz is one spectrum at the narrowest sample rate that
+holds the view, 4, 8, 10, 20 or 40&#160;MS/s, so a narrow span shows finer
+bins: 2&#160;MHz about a BLE channel is 15.6&#160;kHz a bin. Wider is
+swept in 16&#160;MHz slices, as Band is, up to the whole 500&#160;MHz.
+The status line says which, and how wide a bin is. Live and Band are two
+such views, and their buttons are held down while one is shown.</p>
 
 <h2 id="reading">Reading it</h2>
 

@@ -2,6 +2,7 @@
  * for recordings and exports, and what keys, the pointer and the tick do.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0 */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,8 +84,8 @@ static int menu_rows(const sdr_t *st, tiku_menu_list_t *menu,
         snprintf(e->label, sizeof e->label, "%s", menu_label(st, c));
         e->command = c;
         e->enabled = sdr_enabled(st, c);
-        e->marked = (c == CMD_LIVE && st->model.mode == SDR_LIVE) ||
-                    (c == CMD_BAND && st->model.mode == SDR_BAND) ||
+        e->marked = (c == CMD_LIVE && sdr_model_is_live(&st->model)) ||
+                    (c == CMD_BAND && sdr_model_is_band(&st->model)) ||
                     (c == CMD_PEAK && st->model.peak_on) ||
                     (c == CMD_AVERAGE && st->model.avg_on);
         if (c == CMD_QUIT) { e->sc = 'q'; e->mods = TIKU_MOD_CMD; }
@@ -102,10 +103,11 @@ static unsigned menu_state(const sdr_t *st)
            (unsigned)(st->csv.in != NULL) << 6 |
            (unsigned)(st->model.fresh != 0) << 7 |
            (unsigned)(st->shown[0] != '\0') << 8 |
-           (unsigned)st->model.mode << 9 |
+           (unsigned)sdr_model_is_live(&st->model) << 9 |
            (unsigned)(st->model.peak_on != 0) << 10 |
            (unsigned)(st->model.avg_on != 0) << 11 |
-           (unsigned)(st->alert.open != 0) << 12;
+           (unsigned)(st->alert.open != 0) << 12 |
+           (unsigned)sdr_model_is_band(&st->model) << 13;
 }
 
 /** @brief Menus follow the same commands as the toolbar: the receiver's,
@@ -132,23 +134,82 @@ static void publish(sdr_t *st)
     st->services->menus(st->services->ctx, st->id, &set);
 }
 
-/** @brief A new view, the trace and waterfall started afresh and written
- *         into a recording; a recording being played keeps its own. */
-static void show(sdr_t *st, int mode, int mhz)
+/** @brief A new view, @p start to @p stop fitted, the trace and waterfall
+ *         started afresh and written into a recording; the same view again
+ *         is left alone, and a recording being played keeps its own. */
+static void show(sdr_t *st, double start, double stop)
 {
     if (st->play.file) return;
-    if (mhz < 2200) mhz = 2200;
-    if (mhz > 2700) mhz = 2700;
+    sdr_range_fit(&start, &stop);
+    if (start == st->model.start && stop == st->model.stop) return;
     st->shown[0] = '\0';                /* a recording no longer shown */
-    sdr_model_mode(&st->model, mode, mhz);
+    sdr_model_range(&st->model, start, stop);
     sdr_rec_view(st);
     st->dirty = 1;
 }
 
-/** @brief Live at @p mhz, from wherever the view was. */
-static void tune(sdr_t *st, int mhz)
+/** @brief @p span MHz about @p mhz. */
+static void centre_at(sdr_t *st, double mhz, double span)
 {
-    show(st, SDR_LIVE, mhz);
+    show(st, mhz - span / 2, mhz + span / 2);
+}
+
+/** @brief The view moved by @p mhz, its span kept. */
+static void shift(sdr_t *st, double mhz)
+{
+    show(st, st->model.start + mhz, st->model.stop + mhz);
+}
+
+/** @brief Whether (@p x, @p y) is in @p r. */
+static int inside(tiku_rect_t r, int x, int y)
+{
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+/** @brief The field focus is in, as SDR_F_*, or -1. */
+static int editing(const sdr_t *st)
+{
+    int i = st->dialog.focus - CMD_FIELD;
+
+    return i >= 0 && i < SDR_FIELDS ? i : -1;
+}
+
+/** @brief Field @p i opened over the view's value, all of it selected, so
+ *         the first key typed replaces it. */
+static void field_open(sdr_t *st, int i)
+{
+    char t[32];
+
+    sdr_model_field(&st->model, i, t, sizeof t);
+    tiku_field_start(&st->field[i], t);
+    tiku_field_input_init(&st->input[i]);
+}
+
+/** @brief What was typed in field @p i, applied: Center or Span keep the
+ *         other of the two, Start or Stop the other end -- or the span,
+ *         when the end typed passes it.  What is no frequency is said, and
+ *         the field shows the view again. */
+static void field_apply(sdr_t *st, int i)
+{
+    const sdr_model_t *m = &st->model;
+    double v, a = m->start, b = m->stop, span = b - a, c = (a + b) / 2;
+    char now[32];
+
+    sdr_model_field(m, i, now, sizeof now);
+    if (!strcmp(st->field[i].text, now)) return;
+    if (!sdr_mhz_parse(st->field[i].text, &v)) {
+        snprintf(st->note, sizeof st->note, "%.40s is not a frequency.",
+                 st->field[i].text);
+        field_open(st, i);
+        st->dirty = 1;
+        return;
+    }
+    if (i == SDR_F_CENTER) a = v - span / 2, b = v + span / 2;
+    else if (i == SDR_F_SPAN) a = c - v / 2, b = c + v / 2;
+    else if (i == SDR_F_START) a = v, b = b > v ? b : v + span;
+    else b = v, a = a < v ? a : v - span;
+    show(st, a, b);
+    field_open(st, i);                  /* the value as fitted, selected */
 }
 
 /** @brief The desktop's file panel: where a recording, a CSV or a
@@ -230,11 +291,11 @@ static int sdr_pick(void *state, uint32_t window, int command)
         else if (sdr_connect(st) < 0)   /* gone since the menu was drawn */
             snprintf(st->note, sizeof st->note,
                      "No software-defined radio is connected.");
-    } else if (command == CMD_LIVE && m->mode != SDR_LIVE) tune(st, m->centre);
-    else if (command == CMD_BAND && m->mode != SDR_BAND)
-        show(st, SDR_BAND, m->centre);
-    else if (command == CMD_DOWN) tune(st, m->centre - 5);
-    else if (command == CMD_UP) tune(st, m->centre + 5);
+    } else if (command == CMD_LIVE)
+        centre_at(st, (m->start + m->stop) / 2, SDR_LIVE_SPAN);
+    else if (command == CMD_BAND) show(st, SDR_BAND_START, SDR_BAND_STOP);
+    else if (command == CMD_DOWN) shift(st, -5);
+    else if (command == CMD_UP) shift(st, 5);
     else if (command == CMD_PEAK) {
         m->peak_on = !m->peak_on;
         sdr_model_clear(m);
@@ -245,8 +306,10 @@ static int sdr_pick(void *state, uint32_t window, int command)
     else if (command == CMD_RECORD || command == CMD_REPLAY ||
              command == CMD_EXPORT || command == CMD_PICTURE)
         tape(st, command);
-    else if (command >= CMD_TUNE && command < CMD_BOARD)
-        tune(st, 2400 + command - CMD_TUNE);
+    else if (command >= CMD_TUNE && command < CMD_FIELD)
+        /* A channel: a span narrower than a sweep is kept about it. */
+        centre_at(st, 2400 + command - CMD_TUNE,
+                  m->sweep ? SDR_LIVE_SPAN : m->stop - m->start);
     else if (command >= CMD_BOARD && st->state == SDR_IDLE) {
         char names[sizeof st->names], *save = NULL, *p;
         int i = 0;
@@ -280,7 +343,7 @@ static void hover(sdr_t *st, int x, int y)
     snprintf(st->hover, sizeof st->hover,
              "%.2f MHz   %.1f dB (uncalibrated)%s%s%s", mhz,
              (double)(m->avg_on ? m->avg[b] : m->db[b]), *ch ? "   " : "",
-             ch, m->mode == SDR_BAND ? "   · click to tune here" : "");
+             ch, m->sweep ? "   · click to tune here" : "");
 }
 
 /** @brief Keys tune and toggle; the toolbar takes its own. */
@@ -293,14 +356,15 @@ static int keys(sdr_t *st, const tiku_event_t *ev)
                   ev->key == 'r' ? CMD_RECORD : ev->key == 'c' ? CMD_CLEAR :
                   0;
 
-    if (ev->key == TIKU_KEY_LEFT) tune(st, st->model.centre - step);
-    else if (ev->key == TIKU_KEY_RIGHT) tune(st, st->model.centre + step);
+    if (ev->key == TIKU_KEY_LEFT) shift(st, -step);
+    else if (ev->key == TIKU_KEY_RIGHT) shift(st, step);
     else if (command) sdr_pick(st, st->id, command);
     else return 0;
     return 1;
 }
 
-/** @brief The pointer: click the band to tune there, wheel to step. */
+/** @brief The pointer: click a sweep to see 40 MHz about there, wheel to
+ *         step one spectrum's view. */
 static void pointer(sdr_t *st, const tiku_event_t *ev)
 {
     tiku_rect_t plot, fall;
@@ -308,14 +372,13 @@ static void pointer(sdr_t *st, const tiku_event_t *ev)
     sdr_layout(st, &plot, &fall);
     if (ev->type == TIKU_EVENT_POINTER_MOVE) hover(st, ev->x, ev->y);
     else if (ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1 &&
-             st->model.mode == SDR_BAND && st->model.fresh &&
+             st->model.sweep && st->model.fresh &&
              ev->x >= plot.x && ev->x < plot.x + plot.w &&
              ev->y >= plot.y && ev->y < fall.y + fall.h)
-        tune(st, (int)(sdr_model_freq(&st->model,
-                       (ev->x - plot.x) * st->model.n / plot.w) + 0.5));
-    else if (ev->type == TIKU_EVENT_WHEEL && st->model.mode == SDR_LIVE &&
-             ev->dy)
-        tune(st, st->model.centre + (ev->dy > 0 ? -1 : 1));
+        centre_at(st, round(sdr_model_freq(&st->model,
+                  (ev->x - plot.x) * st->model.n / plot.w)), SDR_LIVE_SPAN);
+    else if (ev->type == TIKU_EVENT_WHEEL && !st->model.sweep && ev->dy)
+        shift(st, ev->dy > 0 ? -1 : 1);
     st->dirty = 1;
 }
 
@@ -346,6 +409,7 @@ static int sdr_event(void *state, const tiku_event_t *ev)
 {
     sdr_t *st = state;
     tiku_dialog_result_t result;
+    int was;
 
     if (ev->type == TIKU_EVENT_CLOSE) return 1;
     if (ev->type == TIKU_EVENT_RESIZE && ev->width > 400 && ev->height > 300) {
@@ -358,12 +422,40 @@ static int sdr_event(void *state, const tiku_event_t *ev)
         return 0;
     }
     if (st->alert.open) return answer(st, ev);
-    if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_ESCAPE) return 1;
     sdr_controls(st);
+    was = editing(st);
+    if (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_ESCAPE) {
+        if (was < 0) return 1;
+        st->dialog.focus = TIKU_DIALOG_NONE;    /* the typing given up */
+        sdr_paint(st);
+        return 0;
+    }
     result = tiku_dialog_event(&st->dialog, ev);
+    if (was >= 0 && ev->type == TIKU_EVENT_POINTER_DOWN &&
+        editing(st) == was && !inside(sdr_field_rect(was), ev->x, ev->y))
+        st->dialog.focus = TIKU_DIALOG_NONE;    /* a press elsewhere */
+    if (was >= 0 && editing(st) != was) field_apply(st, was);
+    if (editing(st) >= 0 && editing(st) != was) {
+        field_open(st, editing(st));
+        if (ev->type == TIKU_EVENT_POINTER_DOWN) {  /* it selects it all */
+            sdr_paint(st);
+            return 0;
+        }
+    }
     if (result.activated != TIKU_DIALOG_NONE)
         return sdr_pick(st, st->id, result.activated);
-    if (!result.taken) {
+    if (editing(st) >= 0 && ev->type == TIKU_EVENT_KEY_DOWN) {
+        int i = editing(st);
+        if ((!result.taken || ev->key == TIKU_KEY_RETURN) &&
+            tiku_field_event(&st->field[i], &st->input[i], ev,
+                             sdr_field_rect(i), 1) == TIKU_FIELD_COMMITTED)
+            field_apply(st, i);
+    } else if (editing(st) >= 0) {
+        int i = editing(st);
+        (void)tiku_field_event(&st->field[i], &st->input[i], ev,
+                               sdr_field_rect(i), 1);
+        if (!result.taken) pointer(st, ev);
+    } else if (!result.taken) {
         if (ev->type == TIKU_EVENT_KEY_DOWN) keys(st, ev);
         else pointer(st, ev);
     }

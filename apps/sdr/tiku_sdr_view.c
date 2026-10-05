@@ -23,9 +23,16 @@
 #define WIFI_INK   TIKU_RGB(96, 150, 210)
 #define REC_INK    TIKU_RGB(214, 48, 49)
 #define LEFT       56
-#define TOP        48
+#define TOP        82               /* below the toolbar's two rows    */
+#define ROW2_Y     44               /* the frequency fields' row       */
+#define FIELD_W    88
+#define FIELD_H    26
 #define RULER      14
 #define STATUS_H   26
+
+static const char *const field_name[SDR_FIELDS] = {
+    "Center", "Span", "Start", "Stop"
+};
 
 void sdr_layout(const sdr_t *st, tiku_rect_t *plot, tiku_rect_t *fall)
 {
@@ -68,9 +75,22 @@ tiku_rect_t sdr_alert_rect(const sdr_t *st)
     return (tiku_rect_t){(st->w - w) / 2, (st->h - h) / 3, w, h};
 }
 
+tiku_rect_t sdr_field_rect(int field)
+{
+    const tiku_font_t *f = tiku_font_plain();
+    int x = 16;
+
+    for (int i = 0; i < field; i++)
+        x += tiku_text_width(f, field_name[i]) + 6 + FIELD_W + 18;
+    x += tiku_text_width(f, field_name[field]) + 6;
+    return (tiku_rect_t){x, ROW2_Y, FIELD_W, FIELD_H};
+}
+
 int sdr_enabled(const sdr_t *st, int command)
 {
     if (st->alert.open) return command == CMD_QUIT;
+    if (command >= CMD_FIELD && command < CMD_FIELD + SDR_FIELDS)
+        return !st->play.file;          /* a recording says what is shown */
     switch (command) {
     case CMD_CONNECT:                   /* Disconnect, or a radio there */
         return st->state == SDR_IDLE ? st->names[0] != '\0' :
@@ -90,7 +110,8 @@ void sdr_controls(sdr_t *st)
 {
     /* Narrow enough to end clear of the Deskbar, in the desk's top right
      * corner, where the window opens.  No Connect: the radio is borrowed
-     * as the window opens, and the SDR menu keeps Connect. */
+     * as the window opens, and the SDR menu keeps Connect.  Beneath, the
+     * view's range, typed in. */
     static const int width[SDR_BUTTONS] = {60, 60, 72, 72, 64, 76, 100};
     int x = 16;
 
@@ -98,11 +119,13 @@ void sdr_controls(sdr_t *st)
     for (int i = 0; i < SDR_BUTTONS; i++) {
         int id = CMD_LIVE + i;
 
-        if (id == CMD_UP) x += 112;             /* room for the tuning */
         tiku_dialog_add(&st->dialog, id, (tiku_rect_t){x, 10, width[i], 28},
                         TIKU_DIALOG_BUTTON, sdr_enabled(st, id));
         x += width[i] + 8;
     }
+    for (int i = 0; i < SDR_FIELDS; i++)
+        tiku_dialog_add(&st->dialog, CMD_FIELD + i, sdr_field_rect(i),
+                        TIKU_DIALOG_INPUT, sdr_enabled(st, CMD_FIELD + i));
     tiku_dialog_end(&st->dialog);
 }
 
@@ -153,12 +176,14 @@ static void trace(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m,
     }
 }
 
-/** @brief Grid, decibel labels at the left and megahertz below. */
+/** @brief Grid, decibel labels at the left and megahertz below, about ten
+ *         of them whatever the span. */
 static void grid(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
 {
+    static const double steps[] = {0.1, 0.2, 0.5, 1, 2, 5, 10, 25, 50};
     const tiku_font_t *f = tiku_font_plain();
     double lo = sdr_model_freq(m, 0), hi = sdr_model_freq(m, m->n - 1);
-    int step = m->mode == SDR_BAND ? 10 : 5;
+    double step = 50;
     char t[16];
 
     for (int d = (int)ceilf(m->scale_lo / 10) * 10; d <= m->scale_hi; d += 10) {
@@ -167,10 +192,12 @@ static void grid(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
         snprintf(t, sizeof t, "%d", d);
         tiku_text(s, f, r.x - 8 - tiku_text_width(f, t), y + 4, t, TIKU_C_TEXT);
     }
-    for (int mhz = (int)ceil(lo / step) * step; mhz <= hi; mhz += step) {
-        int x = x_of(r, m, mhz);
+    for (int i = (int)(sizeof steps / sizeof steps[0]) - 1; i >= 0; i--)
+        if ((hi - lo) / steps[i] <= 12) step = steps[i];
+    for (long k = (long)ceil(lo / step - 1e-9); k * step <= hi + 1e-9; k++) {
+        int x = x_of(r, m, k * step);
         tiku_vline(s, x, r.y, r.h, GRID);
-        snprintf(t, sizeof t, "%d", mhz);
+        sdr_mhz_text(k * step, t, sizeof t);
         tiku_text(s, f, x - tiku_text_width(f, t) / 2, r.y + r.h + 14, t,
                   TIKU_C_TEXT);
     }
@@ -229,12 +256,15 @@ static void spectrum(sdr_t *st, tiku_rect_t r)
     tiku_fill(st->surface, r, PLOT_BG);
     if (!m->fresh) return;
     grid(st->surface, r, m);
-    if (m->mode == SDR_LIVE) {
-        int a = x_of(r, m, m->centre - 12.0), b = x_of(r, m, m->centre + 12.0);
-        tiku_veil(st->surface, (tiku_rect_t){r.x, r.y, a - r.x, r.h},
-                  TIKU_RGB(0, 0, 0), 0.45f);
-        tiku_veil(st->surface, (tiku_rect_t){b, r.y, r.x + r.w - b, r.h},
-                  TIKU_RGB(0, 0, 0), 0.45f);
+    if (!m->sweep && m->rate == 1) {
+        /* 40 MS/s is flat over its middle 24 MHz alone: the rest dimmed. */
+        int a = x_of(r, m, m->tune - 12.0), b = x_of(r, m, m->tune + 12.0);
+        if (a > r.x)
+            tiku_veil(st->surface, (tiku_rect_t){r.x, r.y, a - r.x, r.h},
+                      TIKU_RGB(0, 0, 0), 0.45f);
+        if (b < r.x + r.w)
+            tiku_veil(st->surface, (tiku_rect_t){b, r.y, r.x + r.w - b, r.h},
+                      TIKU_RGB(0, 0, 0), 0.45f);
     }
     for (int i = 0; i < 3; i++) {
         int x = x_of(r, m, adv[i]);
@@ -289,13 +319,32 @@ static void record_dot(sdr_t *st, tiku_rect_t r, unsigned flags)
                     tiku_tint(TIKU_C_PANEL, 1.30f) : REC_INK);
 }
 
-/** @brief The toolbar: buttons, and the tuning between them.  A button
- *         that is on (the view shown, peaks held, a recording made) stays
- *         held down. */
+/** @brief A frequency field and its name before it: while it is being
+ *         typed in, what is typed, with its caret; else the view's value. */
+static void field(sdr_t *st, int i, tiku_rect_t r, unsigned flags)
+{
+    int w = tiku_text_width(tiku_font_plain(), field_name[i]);
+    char t[32];
+
+    tiku_text_line_draw(st->surface, (tiku_rect_t){r.x - 6 - w, r.y, w + 4,
+                        r.h}, TIKU_MEASURE_PLAIN, field_name[i], TIKU_C_TEXT);
+    if (st->dialog.focus == CMD_FIELD + i && !(flags & TIKU_S_DISABLED)) {
+        const tiku_field_t *e = &st->field[i];
+        tiku_ui_textfield_scroll(st->surface, r, e->text, e->caret, e->sel_a,
+                                 e->sel_b, flags | TIKU_S_FOCUS,
+                                 st->input[i].scroll);
+    } else {
+        sdr_model_field(&st->model, i, t, sizeof t);
+        tiku_ui_textfield(st->surface, r, t, -1, flags & ~TIKU_S_FOCUS);
+    }
+}
+
+/** @brief The toolbar: buttons, then the frequency fields and their unit.
+ *         A button that is on (the view shown, peaks held, a recording
+ *         made) stays held down. */
 static void toolbar(sdr_t *st)
 {
-    char t[48];
-    tiku_rect_t up = st->dialog.control[CMD_UP - CMD_LIVE].rect;
+    tiku_rect_t stop = sdr_field_rect(SDR_F_STOP);
 
     for (int i = 0; i < st->dialog.count; i++) {
         int id = st->dialog.control[i].id;
@@ -303,8 +352,12 @@ static void toolbar(sdr_t *st)
             tiku_dialog_pressed(&st->dialog, id) ? TIKU_S_PRESSED : 0;
         if (tiku_dialog_focused(&st->dialog, id)) flags |= TIKU_S_FOCUS;
         if (!st->dialog.control[i].enabled) flags |= TIKU_S_DISABLED;
-        if ((id == CMD_LIVE && st->model.mode == SDR_LIVE) ||
-            (id == CMD_BAND && st->model.mode == SDR_BAND) ||
+        if (id >= CMD_FIELD && id < CMD_FIELD + SDR_FIELDS) {
+            field(st, id - CMD_FIELD, st->dialog.control[i].rect, flags);
+            continue;
+        }
+        if ((id == CMD_LIVE && sdr_model_is_live(&st->model)) ||
+            (id == CMD_BAND && sdr_model_is_band(&st->model)) ||
             (id == CMD_PEAK && st->model.peak_on) ||
             (id == CMD_RECORD && st->rec.file)) flags |= TIKU_S_PRESSED;
         tiku_ui_button(st->surface, st->dialog.control[i].rect,
@@ -312,10 +365,9 @@ static void toolbar(sdr_t *st)
         if (id == CMD_RECORD)
             record_dot(st, st->dialog.control[i].rect, flags);
     }
-    if (st->model.mode == SDR_BAND) snprintf(t, sizeof t, "2.4 GHz band");
-    else snprintf(t, sizeof t, "%d MHz", st->model.centre);
-    tiku_text_line_draw(st->surface, (tiku_rect_t){up.x - 108, 12, 100, 24},
-                        TIKU_MEASURE_BOLD, t, TIKU_C_TEXT);
+    tiku_text_line_draw(st->surface, (tiku_rect_t){stop.x + stop.w + 6,
+                        ROW2_Y, 40, FIELD_H}, TIKU_MEASURE_PLAIN, "MHz",
+                        TIKU_C_TEXT);
 }
 
 /** @brief How far a recording has come: being made, or being played. */
@@ -344,12 +396,22 @@ static void status(sdr_t *st)
     tape_progress(st, progress, sizeof progress);
     if (st->hover[0])
         snprintf(t, sizeof t, "%s", st->hover);
-    else if ((st->state == SDR_RUNNING || st->play.file) && m->fresh)
+    else if ((st->state == SDR_RUNNING || st->play.file) && m->fresh) {
+        char how[64], khz[16];
+
+        if (m->sweep)
+            snprintf(how, sizeof how, "%d slices, floors levelled",
+                     (m->last - m->first) / SDR_SLICE_STEP + 1);
+        else {
+            sdr_mhz_text(m->bin_mhz * 1000.0, khz, sizeof khz);
+            snprintf(how, sizeof how, "%g MS/s, %d bins of %s kHz",
+                     m->bin_mhz * m->nfft, m->n, khz);
+        }
         snprintf(t, sizeof t, "%s   |   %s · gain %d · %.1f %s/s%s%s",
-                 st->note, m->mode == SDR_BAND ?
-                 "six slices, floors levelled" : "40 MS/s, 256 bins", m->gain,
-                 (double)st->rate_hz, m->mode == SDR_BAND ? "sweeps" :
-                 "spectra", progress, st->paused ? " · paused" : "");
+                 st->note, how, m->gain, (double)st->rate_hz,
+                 m->sweep ? "sweeps" : "spectra", progress,
+                 st->paused ? " · paused" : "");
+    }
     else if (st->play.file || st->rec.file)
         snprintf(t, sizeof t, "%s%s", st->note, progress);
     else if (st->saved[0] && strcmp(st->note, st->saved))

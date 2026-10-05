@@ -32,7 +32,8 @@ static const char *const format[] = {
     "#     spectrum, a byte a bin from the lowest frequency, in half-",
     "#     decibels (uncalibrated: compare levels within one recording)",
     "#   SWEEP <slices>: the band's slices since the last SWEEP are one",
-    "#   VIEW live <MHz> | VIEW band: what the window showed from here on",
+    "#   VIEW range <start MHz> <stop MHz>: what the window showed from",
+    "#     here on (VIEW live <MHz> and VIEW band in older recordings)",
 };
 
 const char *sdr_tape_leaf(const char *path)
@@ -159,10 +160,11 @@ void sdr_rec_line(sdr_t *st, const char *line, int frame)
 
 void sdr_rec_view(sdr_t *st)
 {
-    char line[32];
+    char line[64], a[24], b[24];
 
-    if (st->model.mode == SDR_BAND) snprintf(line, sizeof line, "VIEW band");
-    else snprintf(line, sizeof line, "VIEW live %d", st->model.centre);
+    sdr_mhz_text(st->model.start, a, sizeof a);
+    sdr_mhz_text(st->model.stop, b, sizeof b);
+    snprintf(line, sizeof line, "VIEW range %s %s", a, b);
     sdr_rec_line(st, line, 0);
 }
 
@@ -279,14 +281,23 @@ static int tape_read(FILE *f, char *line, size_t max, double *at,
  *         @return 1 when it finished a spectrum. */
 static int tape_apply(sdr_model_t *m, const char *line)
 {
+    char a[24], b[24];
+    double start, stop;
     int mhz;
 
+    if (sscanf(line, "VIEW range %23s %23s", a, b) == 2) {
+        if (sdr_mhz_parse(a, &start) && sdr_mhz_parse(b, &stop))
+            sdr_model_range(m, start, stop);
+        return 0;
+    }
     if (!strcmp(line, "VIEW band")) {
-        sdr_model_mode(m, SDR_BAND, m->centre);
+        sdr_model_range(m, SDR_BAND_START, SDR_BAND_STOP);
         return 0;
     }
     if (sscanf(line, "VIEW live %d", &mhz) == 1) {
-        if (mhz >= 2200 && mhz <= 2700) sdr_model_mode(m, SDR_LIVE, mhz);
+        if (mhz >= SDR_TUNE_LO && mhz <= SDR_TUNE_HI)
+            sdr_model_range(m, mhz - SDR_LIVE_SPAN / 2,
+                            mhz + SDR_LIVE_SPAN / 2);
         return 0;
     }
     return sdr_model_line(m, line) == 1;
@@ -347,7 +358,7 @@ int sdr_play_start(sdr_t *st, const char *path)
     p->last = st->now;
     st->paused = 0;
     st->saved[0] = '\0';
-    sdr_model_mode(&st->model, SDR_LIVE, st->model.centre);
+    sdr_model_range(&st->model, st->model.start, st->model.stop);
     st->model.spectra = 0;
     next_line(p);
     if (!p->ready) {

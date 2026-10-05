@@ -15,6 +15,7 @@
 #include "tiku_alert.h"
 #include "tiku_app.h"
 #include "tiku_dialog.h"
+#include "tiku_field_event.h"
 #include "tiku_gfx.h"
 
 #define SDR_W        940
@@ -25,16 +26,20 @@
 #define SDR_PATH     512            /* a recording's path              */
 #define SDR_LINE     2048           /* a recording's longest line      */
 
-/* The band view: 2396 to 2492 MHz in 312.5 kHz bins, six 16 MHz slices of
- * 40 MS/s spectra, each centred where the receiver's filter is flat. */
-#define SDR_BAND_LO      2396.0
-#define SDR_BAND_BIN     0.3125
-#define SDR_BAND_N       307
-#define SDR_BAND_FIRST   2404
-#define SDR_BAND_LAST    2484
-#define SDR_BAND_STEP    16
+/* A view is a range, start to stop in MHz.  The board tunes whole MHz from
+ * 2200 to 2700; one spectrum spans its sample rate, 4 to 40 MHz, and a
+ * wider view is swept in 40 MS/s slices 16 MHz apart.  Live and Band are
+ * two ranges: 40 MHz about a centre, and the 2.4 GHz band. */
+#define SDR_TUNE_LO      2200.0
+#define SDR_TUNE_HI      2700.0
+#define SDR_SPAN_MIN     1.0
+#define SDR_LIVE_SPAN    40.0
+#define SDR_BAND_START   2396.0
+#define SDR_BAND_STOP    2492.0
+#define SDR_SLICE_STEP   16
 
-enum { SDR_LIVE, SDR_BAND };
+/* The frequency fields, in their order. */
+enum { SDR_F_CENTER, SDR_F_SPAN, SDR_F_START, SDR_F_STOP, SDR_FIELDS };
 
 enum {
     SDR_IDLE, SDR_RELEASING, SDR_OPENING, SDR_STARTING, SDR_RUNNING,
@@ -48,6 +53,7 @@ enum {
     CMD_PAUSE, CMD_RECORD,          /* the toolbar's, in its order      */
     CMD_CLEAR, CMD_AVERAGE, CMD_QUIT, CMD_REPLAY, CMD_EXPORT, CMD_PICTURE,
     CMD_TUNE = 100,                 /* + MHz offset from 2400: Tune menu */
+    CMD_FIELD = 250,                /* + SDR_F_*: the frequency fields  */
     CMD_BOARD = 300                 /* + index: Device menu             */
 };
 #define SDR_BUTTONS (CMD_RECORD - CMD_LIVE + 1)
@@ -55,11 +61,17 @@ enum {
 /** @brief What is on screen: the latest trace, its average and peaks, and
  *         the waterfall's history, every value in decibels. */
 typedef struct {
-    int    mode, centre, rate, nfft, gain;
+    double start, stop;             /* the view, MHz                   */
+    int    sweep;                   /* swept in slices, or one spectrum */
+    int    tune, rate, nfft;        /* tuned (MHz), rate code, bins    */
+    int    k0;                      /* one spectrum: its first bin shown */
+    int    first, last;             /* a sweep: its slices' centres    */
+    uint64_t got;                   /* a sweep: slices heard since SWEEP */
+    int    gain;
     int    n;                       /* bins in the trace               */
     double lo_mhz, bin_mhz;         /* bin 0's centre, the spacing     */
     float  db[SDR_BINS], avg[SDR_BINS], peak[SDR_BINS];
-    unsigned char seen[SDR_BINS];   /* band: slices heard this sweep   */
+    unsigned char seen[SDR_BINS];   /* a sweep: bins heard this sweep  */
     int    peak_on, avg_on, fresh;
     float  scale_lo, scale_hi;      /* the display's range, smoothed   */
     unsigned char wf[SDR_ROWS][SDR_BINS];  /* half-dB, newest at head  */
@@ -108,6 +120,9 @@ typedef struct {
     uint32_t id;
     int w, h;
     tiku_dialog_t dialog;
+    tiku_field_t field[SDR_FIELDS]; /* Center, Span, Start, Stop: typed
+                                       in while focused, else the view */
+    tiku_field_input_t input[SDR_FIELDS];
     tiku_alert_t alert;             /* no ESP32-C61: said over the window */
     sdr_model_t model;
     /* The board: names holds the mounted ESP32-C61s alone. */
@@ -139,9 +154,26 @@ typedef struct {
 /* tiku_sdr_model.c */
 /** @brief Live at 2437 MHz, 256 bins, peaks and averages on. */
 void sdr_model_init(sdr_model_t *m);
-/** @brief Switch to @p mode (Live at @p centre, or Band), the trace and the
- *         waterfall started afresh. */
-void sdr_model_mode(sdr_model_t *m, int mode, int centre);
+/** @brief @p start and @p stop made a view the board can give: in order,
+ *         at least 1 MHz apart, inside 2200 to 2700 MHz (moved, not cut,
+ *         where they fit), to the kHz. */
+void sdr_range_fit(double *start, double *stop);
+/** @brief Show @p start to @p stop, fitted: one spectrum at the narrowest
+ *         rate that holds it up to 40 MHz, a sweep of slices beyond; the
+ *         trace and the waterfall start afresh. */
+void sdr_model_range(sdr_model_t *m, double start, double stop);
+/** @brief Whether the view is Live, 40 MHz about a centre, or Band. */
+int  sdr_model_is_live(const sdr_model_t *m);
+int  sdr_model_is_band(const sdr_model_t *m);
+/** @brief @p mhz, at least 0, as a field shows it: to the kHz, with no
+ *         trailing zeros and a point whatever the locale. */
+void sdr_mhz_text(double mhz, char *out, size_t max);
+/** @brief Field @p field (SDR_F_*) of the view, as its text. */
+void sdr_model_field(const sdr_model_t *m, int field, char *out, size_t max);
+/** @brief A frequency as typed: MHz, or k, M or G with an optional Hz
+ *         after it, any case, the point always '.'.  @return 1 with the
+ *         MHz in @p mhz, or 0 for what is not one. */
+int  sdr_mhz_parse(const char *text, double *mhz);
 /** @brief Take one line from the board.  @return 1 when it finished a
  *         frame, 0 when it was kept or set aside, -1 when it was no SPEC */
 int  sdr_model_line(sdr_model_t *m, const char *line);
@@ -220,6 +252,8 @@ void sdr_csv_stop(sdr_t *st);
 void sdr_layout(const sdr_t *st, tiku_rect_t *plot, tiku_rect_t *fall);
 /** @brief Where the alert goes: centred, in the window's upper third. */
 tiku_rect_t sdr_alert_rect(const sdr_t *st);
+/** @brief Where frequency field @p field (SDR_F_*) is, in the second row. */
+tiku_rect_t sdr_field_rect(int field);
 /** @brief The toolbar's buttons, registered for input and paint alike. */
 void sdr_controls(sdr_t *st);
 /** @brief The whole window, handed to the desktop. */

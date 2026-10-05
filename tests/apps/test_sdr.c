@@ -188,14 +188,21 @@ static void say(int master, const char *text)
     assert(write(master, text, n) == (ssize_t)n);
 }
 
-/** @brief A SPEC line: @p n bins of @p base, @p peak at bin @p at. */
-static void spec_line(char *out, size_t max, int centre, int n, int base,
-                      int at, int peak)
+/** @brief A SPEC line at @p hz: @p n bins of @p base, @p peak at bin @p at. */
+static void spec_at(char *out, size_t max, int centre, long hz, int n,
+                    int base, int at, int peak)
 {
-    int k = snprintf(out, max, "SPEC %d 40000000 76 %d ", centre, n);
+    int k = snprintf(out, max, "SPEC %d %ld 76 %d ", centre, hz, n);
 
     for (int j = 0; j < n; j++)
         k += snprintf(out + k, max - (size_t)k, "%02x", j == at ? peak : base);
+}
+
+/** @brief The same at 40 MS/s, Live's rate and a sweep's. */
+static void spec_line(char *out, size_t max, int centre, int n, int base,
+                      int at, int peak)
+{
+    spec_at(out, max, centre, 40000000, n, base, at, peak);
 }
 
 /** @brief Lines, the model's way: parsing, stale tunings, the band. */
@@ -205,7 +212,8 @@ static void model_tests(void)
     char line[1200], ch[96], cmd[64];
 
     sdr_model_init(&m);
-    assert(m.mode == SDR_LIVE && m.centre == 2437 && m.n == 256);
+    assert(!m.sweep && m.start == 2417 && m.stop == 2457 && m.tune == 2437);
+    assert(m.rate == 1 && m.k0 == 0 && m.n == 256 && sdr_model_is_live(&m));
     spec_line(line, sizeof line, 2437, 256, 100, 160, 180);
     assert(sdr_model_line(&m, line) == 1);
     assert(m.db[160] == 90.0f && m.db[0] == 50.0f && m.gain == 76);
@@ -218,14 +226,15 @@ static void model_tests(void)
     assert(sdr_model_line(&m, "hello") == -1);
     assert(!strcmp(sdr_command(&m, cmd, sizeof cmd), "sdr spec 2437 1 256"));
 
-    sdr_model_mode(&m, SDR_BAND, 2437);
-    assert(m.n == SDR_BAND_N && m.wf_count == 0);
+    sdr_model_range(&m, SDR_BAND_START, SDR_BAND_STOP);
+    assert(m.sweep && sdr_model_is_band(&m) && !sdr_model_is_live(&m));
+    assert(m.first == 2404 && m.last == 2484 && m.n == 307 && m.wf_count == 0);
     /* The tail of a sweep begun before Band hears part of the band only:
      * no frame of it, or the rest would read as 0 dB. */
     spec_line(line, sizeof line, 2484, 128, 80, -1, 0);
     assert(sdr_model_line(&m, line) == 0);
     assert(sdr_model_line(&m, "SWEEP 6") == 0 && m.wf_count == 0 && !m.fresh);
-    for (int c = SDR_BAND_FIRST; c <= SDR_BAND_LAST; c += SDR_BAND_STEP) {
+    for (int c = m.first; c <= m.last; c += SDR_SLICE_STEP) {
         /* Slice 2420 carries a narrow peak at +6 MHz: BLE 38, 2426 MHz. */
         spec_line(line, sizeof line, c, 128, 80 + (c - 2404) / 16, c == 2420 ?
                   64 + 6 * 128 / 40 : -1, 200);
@@ -252,6 +261,105 @@ static void model_tests(void)
     assert(strstr(ch, "BLE 0") && !strstr(ch, "advertising"));
     assert(sdr_palette(-1.0f) == TIKU_RGB(11, 15, 26));
     assert(sdr_palette(2.0f) == TIKU_RGB(255, 245, 214));
+}
+
+/** @brief Ranges: fitted to what the board gives; one spectrum at the
+ *         narrowest rate that holds the view, its own bins shown; sweeps
+ *         past 40 MHz, short ones no frame, moved down whole at the
+ *         board's top; frequencies as text, both ways. */
+static void range_tests(void)
+{
+    sdr_model_t m;
+    double a, b, v;
+    char line[1200], cmd[64], t[32];
+
+    a = 2100, b = 2150, sdr_range_fit(&a, &b);
+    assert(a == 2200 && b == 2250);
+    a = 2800, b = 2600, sdr_range_fit(&a, &b);
+    assert(a == 2500 && b == 2700);
+    a = 1000, b = 9000, sdr_range_fit(&a, &b);
+    assert(a == 2200 && b == 2700);
+    a = 2437, b = 2437.2, sdr_range_fit(&a, &b);
+    assert(fabs(a - 2436.6) < 1e-9 && fabs(b - 2437.6) < 1e-9);
+    a = 2437.0004, b = 2440, sdr_range_fit(&a, &b);
+    assert(a == 2437.0);
+
+    sdr_model_init(&m);
+    /* 2 MHz about BLE 38: 4 MS/s in 15.625 kHz bins, 64 to 192 shown. */
+    sdr_model_range(&m, 2425, 2427);
+    assert(!m.sweep && m.tune == 2426 && m.rate == 5);
+    assert(m.k0 == 64 && m.n == 129 && m.lo_mhz == 2425 &&
+           m.bin_mhz == 0.015625);
+    assert(!strcmp(sdr_command(&m, cmd, sizeof cmd), "sdr spec 2426 5 256"));
+    spec_at(line, sizeof line, 2426, 4000000, 256, 100, 160, 180);
+    assert(sdr_model_line(&m, line) == 1);
+    assert(m.db[sdr_model_bin(&m, 2426.5)] == 90.0f && m.db[0] == 50.0f);
+    spec_line(line, sizeof line, 2426, 256, 100, 0, 100);   /* 40 MS/s */
+    assert(sdr_model_line(&m, line) == 0 && m.spectra == 1);
+    sdr_model_field(&m, SDR_F_CENTER, t, sizeof t);
+    assert(!strcmp(t, "2426"));
+    sdr_model_field(&m, SDR_F_SPAN, t, sizeof t);
+    assert(!strcmp(t, "2"));
+    sdr_model_field(&m, SDR_F_START, t, sizeof t);
+    assert(!strcmp(t, "2425"));
+    sdr_model_field(&m, SDR_F_STOP, t, sizeof t);
+    assert(!strcmp(t, "2427"));
+    /* Off the whole MHz by a quarter: 6.5 MHz wants 7 of the 8 MS/s. */
+    sdr_model_range(&m, 2430, 2436.5);
+    assert(!m.sweep && m.tune == 2433 && m.rate == 4);
+    sdr_model_range(&m, 2430, 2440);
+    assert(m.rate == 3 && m.k0 == 0 && m.n == 256);
+    sdr_model_range(&m, 2420, 2440);
+    assert(m.rate == 2 && !sdr_model_is_live(&m));
+    sdr_model_range(&m, 2400, 2440);
+    assert(!m.sweep && m.rate == 1 && sdr_model_is_live(&m));
+
+    /* Past 40 MHz, swept from the first slice that reaches the start. */
+    sdr_model_range(&m, 2417, 2458);
+    assert(m.sweep && m.first == 2425 && m.last == 2457 && m.n == 131);
+    assert(!strcmp(sdr_command(&m, cmd, sizeof cmd),
+                   "sdr sweep 2425 2457 16 1 128"));
+    spec_line(line, sizeof line, 2425, 128, 80, -1, 0);
+    assert(sdr_model_line(&m, line) == 0);
+    spec_line(line, sizeof line, 2457, 128, 80, -1, 0);
+    assert(sdr_model_line(&m, line) == 0);
+    assert(sdr_model_line(&m, "SWEEP 2") == 0 && !m.fresh);  /* one short */
+    for (int c = m.first; c <= m.last; c += SDR_SLICE_STEP) {
+        spec_line(line, sizeof line, c, 128, 80, -1, 0);
+        assert(sdr_model_line(&m, line) == 0);
+    }
+    assert(sdr_model_line(&m, "SWEEP 3") == 1 && m.fresh);
+    for (int j = 0; j < m.n; j++) assert(m.db[j] == 40.0f);  /* no gaps */
+    /* All 500 MHz: 32 slices, the last moved down onto the board's top. */
+    sdr_model_range(&m, 2200, 2700);
+    assert(m.sweep && m.first == 2204 && m.last == 2700 && m.n == SDR_BINS);
+    for (int c = m.first; c <= m.last; c += SDR_SLICE_STEP) {
+        spec_line(line, sizeof line, c, 128, 80, -1, 0);
+        assert(sdr_model_line(&m, line) == 0);
+    }
+    assert(sdr_model_line(&m, "SWEEP 32") == 1);
+    for (int j = 0; j < m.n; j++) assert(m.db[j] == 40.0f);  /* no gaps */
+
+    sdr_mhz_text(2437, t, sizeof t);
+    assert(!strcmp(t, "2437"));
+    sdr_mhz_text(2437.5, t, sizeof t);
+    assert(!strcmp(t, "2437.5"));
+    sdr_mhz_text(2402.125, t, sizeof t);
+    assert(!strcmp(t, "2402.125"));
+    sdr_mhz_text(0.5, t, sizeof t);
+    assert(!strcmp(t, "0.5"));
+    sdr_mhz_text(2437.0004, t, sizeof t);
+    assert(!strcmp(t, "2437"));
+    assert(sdr_mhz_parse("2437", &v) && v == 2437);
+    assert(sdr_mhz_parse(" 2437.5 ", &v) && v == 2437.5);
+    assert(sdr_mhz_parse("2.4375 GHz", &v) && v == 2437.5);
+    assert(sdr_mhz_parse("500k", &v) && v == 0.5);
+    assert(sdr_mhz_parse("40 MHz", &v) && v == 40);
+    assert(sdr_mhz_parse("2426.5mhz", &v) && v == 2426.5);
+    assert(!sdr_mhz_parse("", &v) && !sdr_mhz_parse("abc", &v));
+    assert(!sdr_mhz_parse("2437,5", &v) && !sdr_mhz_parse(".", &v));
+    assert(!sdr_mhz_parse("12x", &v) && !sdr_mhz_parse("1.2.3", &v));
+    assert(!sdr_mhz_parse("-5", &v) && !sdr_mhz_parse("GHz", &v));
 }
 
 /** @brief What the fake board read, up to a return. */
@@ -312,7 +420,7 @@ static void record(sdr_t *st, int master, int64_t *now, const char *dir)
     ticks(st, now, 2);
     board_read(master, got, sizeof got);
     assert(!strcmp(got, "sdr sweep 2404 2484 16 1 128\r"));
-    for (int c = SDR_BAND_FIRST; c <= SDR_BAND_LAST; c += SDR_BAND_STEP) {
+    for (int c = 2404; c <= 2484; c += SDR_SLICE_STEP) {
         spec_line(line, sizeof line, c, 128, 90, c == 2420 ? 83 : -1, 220);
         strcat(line, "\r\n");
         say(master, line);
@@ -328,9 +436,9 @@ static void record(sdr_t *st, int master, int64_t *now, const char *dir)
     assert(strstr(st->saved, "Saved rec.sdrlog: 0:00, 2 spectra, "));
     assert(!strcmp(st->note, st->saved));
     assert(file_has(path, "# TikuSDR recording 1\n# board: c61 (esp32c61)\n"));
-    assert(file_has(path, "\n0.000 VIEW live 2437\n"));
+    assert(file_has(path, "\n0.000 VIEW range 2417 2457\n"));
     assert(file_has(path, " SPEC 2437 40000000 76 256 "));
-    assert(file_has(path, " VIEW band\n"));
+    assert(file_has(path, " VIEW range 2396 2492\n"));
     assert(file_has(path, " SPEC 2484 40000000 76 128 "));
     assert(file_has(path, " SWEEP 6\n"));
 }
@@ -365,9 +473,119 @@ static void exports(sdr_t *st, const char *dir)
     fclose(f);
     assert(!memcmp(head, "\x89PNG", 4));
     assert(head[18] * 256 + head[19] == SDR_W);           /* IHDR's size */
-    assert(head[22] * 256 + head[23] == SDR_H - 34);
+    {
+        tiku_rect_t plot, fall;     /* from the dB label down, no toolbar */
+        sdr_layout(st, &plot, &fall);
+        assert(head[22] * 256 + head[23] == SDR_H - (plot.y - 14));
+    }
     unlink(csv);
     unlink(png);
+}
+
+/** @brief A key, as the desktop sends one: its code and its text. */
+static int key_in(sdr_t *st, unsigned key, const char *text)
+{
+    tiku_event_t e = {.type = TIKU_EVENT_KEY_DOWN, .key = key};
+
+    snprintf(e.text, sizeof e.text, "%s", text ? text : "");
+    return tiku_sdr_app.event(st, &e);
+}
+
+/** @brief A click at (@p x, @p y). */
+static void click_at(sdr_t *st, int x, int y)
+{
+    tiku_event_t e = {.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+                      .x = x, .y = y};
+
+    assert(tiku_sdr_app.event(st, &e) == 0);
+    e.type = TIKU_EVENT_POINTER_UP;
+    assert(tiku_sdr_app.event(st, &e) == 0);
+}
+
+/** @brief A click into field @p i, which selects all of it. */
+static void click_field(sdr_t *st, int i)
+{
+    tiku_rect_t r = sdr_field_rect(i);
+
+    click_at(st, r.x + r.w / 2, r.y + r.h / 2);
+    assert(editing(st) == i && st->field[i].sel_a == 0 &&
+           st->field[i].sel_b == st->field[i].len);
+}
+
+/** @brief @p text typed over field @p i, then Return: a click into it,
+ *         unless it still has the focus from its last Return, which left
+ *         all of it selected too. */
+static void type_field(sdr_t *st, int i, const char *text)
+{
+    if (editing(st) != i) click_field(st, i);
+    assert(st->field[i].sel_a == 0 && st->field[i].sel_b == st->field[i].len);
+    for (const char *p = text; *p; p++) {
+        char c[2] = {*p, '\0'};
+        assert(key_in(st, (unsigned char)*p, c) == 0);
+    }
+    assert(key_in(st, TIKU_KEY_RETURN, NULL) == 0 && editing(st) == i);
+}
+
+/** @brief The frequency fields typed in, a board running: Center and Span
+ *         keep each other, Start and Stop the other end, or the span when
+ *         passed; the board is asked for the view as soon as it is free;
+ *         what is no frequency is said; Tab and a press elsewhere apply
+ *         what was typed, Escape leaves it, and keys in a field are text. */
+static void fields(sdr_t *st, int master, int64_t *now)
+{
+    sdr_model_t *m = &st->model;
+    tiku_rect_t plot, fall;
+    char got[256], line[1200];
+
+    type_field(st, SDR_F_CENTER, "2426");           /* Band's 96 MHz */
+    assert(m->start == 2378 && m->stop == 2474 && m->sweep);
+    assert(!strcmp(st->field[SDR_F_CENTER].text, "2426"));
+    type_field(st, SDR_F_SPAN, "2");
+    assert(m->start == 2425 && m->stop == 2427 && m->rate == 5);
+    say(master, "SWEEP 6" PROMPT);                  /* the one in flight */
+    ticks(st, now, 2);
+    board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr spec 2426 5 256\r"));
+    spec_at(line, sizeof line, 2426, 4000000, 256, 100, 160, 180);
+    strcat(line, PROMPT);
+    say(master, line);
+    ticks(st, now, 3);
+    assert(m->fresh && m->db[sdr_model_bin(m, 2426.5)] == 90.0f);
+    board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr spec 2426 5 256\r"));
+
+    type_field(st, SDR_F_START, "2400");
+    assert(m->start == 2400 && m->stop == 2427 && !m->sweep && m->rate == 1);
+    type_field(st, SDR_F_STOP, "2.492G");
+    assert(m->start == 2400 && m->stop == 2492 && m->sweep);
+    type_field(st, SDR_F_STOP, "2390");             /* below the start */
+    assert(m->start == 2298 && m->stop == 2390);
+    type_field(st, SDR_F_CENTER, "abc");
+    assert(!strcmp(st->note, "abc is not a frequency.") && m->start == 2298);
+    assert(!strcmp(st->field[SDR_F_CENTER].text, "2344"));
+
+    click_field(st, SDR_F_SPAN);                    /* 'b' is text here */
+    assert(key_in(st, 'b', "b") == 0 && !sdr_model_is_band(m));
+    assert(!strcmp(st->field[SDR_F_SPAN].text, "b"));
+    assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0 && editing(st) < 0);
+    assert(m->stop - m->start == 92);
+
+    click_field(st, SDR_F_CENTER);
+    assert(key_in(st, '2', "2") == 0 && key_in(st, '4', "4") == 0);
+    assert(key_in(st, '4', "4") == 0 && key_in(st, '4', "4") == 0);
+    assert(key_in(st, TIKU_KEY_TAB, NULL) == 0 && editing(st) == SDR_F_SPAN);
+    assert(m->start == 2398 && m->stop == 2490);
+    assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0 && editing(st) < 0);
+    click_field(st, SDR_F_CENTER);
+    assert(key_in(st, '2', "2") == 0 && key_in(st, '4', "4") == 0);
+    assert(key_in(st, '0', "0") == 0 && key_in(st, '0', "0") == 0);
+    sdr_layout(st, &plot, &fall);
+    click_at(st, plot.x + 10, plot.y + 10);         /* a press elsewhere */
+    assert(editing(st) < 0 && m->start == 2354 && m->stop == 2446);
+
+    assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0);
+    assert(sdr_model_is_band(m) && !strcmp(sdr_command(m, line, sizeof line),
+                                          "sdr sweep 2404 2484 16 1 128"));
 }
 
 /** @brief The recording played back: the Open panel starts where it was
@@ -391,10 +609,10 @@ static void replay(sdr_t *st, int64_t *now, const char *dir)
     ticks(st, now, 10);
     assert(st->play.clock == 0 && st->model.spectra == 0);
     assert(tiku_sdr_app.pick(st, st->id, CMD_TUNE + 26) == 0);
-    assert(st->model.centre == 2437);
+    assert(st->model.tune == 2437 && sdr_model_is_live(&st->model));
     assert(tiku_sdr_app.pick(st, st->id, CMD_PAUSE) == 0 && !st->paused);
     ticks(st, now, 40);
-    assert(!st->play.file && st->model.mode == SDR_BAND);
+    assert(!st->play.file && sdr_model_is_band(&st->model));
     assert(st->model.spectra == 2);
     assert(!strcmp(st->note, "End of rec.sdrlog: 0:00, 2 spectra."));
     assert(sdr_enabled(st, CMD_LIVE) && !strcmp(st->shown, path));
@@ -502,7 +720,7 @@ static void odd_files(sdr_t *st, int64_t *now, const char *dir)
     tiku_sdr_app.picked(st, st->id, gap);
     assert(st->play.file && st->play.total == 100.0);
     ticks(st, now, 4);                      /* the first spectrum */
-    assert(st->model.spectra == 1 && st->model.centre == 2426);
+    assert(st->model.spectra == 1 && st->model.tune == 2426);
     ticks(st, now, 12);                     /* 99.9 s of silence, cut */
     assert(st->model.spectra == 2 && !st->play.file);
 
@@ -579,7 +797,7 @@ static void no_esp32(const tiku_app_services_t *services)
            offered(CMD_QUIT) == 1 && !sdr_enabled(st, CMD_LIVE));
     assert(!strcmp(last_menus.menu[last_menus.nmenu - 1].title, "Tune"));
     assert(tiku_sdr_app.pick(st, st->id, CMD_BAND) == 0 &&
-           st->model.mode == SDR_LIVE && st->alert.open);
+           sdr_model_is_live(&st->model) && st->alert.open);
     assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0 &&
            released == before && st->alert.open);
     sdr_paint(st);
@@ -591,12 +809,19 @@ static void no_esp32(const tiku_app_services_t *services)
         assert(tiku_peek(st->surface, f.x + 3 + 26 - 10, f.y + 36) ==
                TIKU_C_DANGER);
     }
-    /* The toolbar starts at Live: Connect is the SDR menu's alone. */
-    assert(st->dialog.count == SDR_BUTTONS &&
+    /* The toolbar starts at Live: Connect is the SDR menu's alone; the
+     * four frequency fields follow, held with the rest. */
+    assert(st->dialog.count == SDR_BUTTONS + SDR_FIELDS &&
            st->dialog.control[0].id == CMD_LIVE &&
            st->dialog.control[0].rect.x == 16);
     for (int i = 0; i < st->dialog.count; i++)
         assert(st->dialog.control[i].id != CMD_CONNECT);
+    for (int i = 0; i < SDR_FIELDS; i++) {
+        const tiku_dialog_control_t *c =
+            &st->dialog.control[SDR_BUTTONS + i];
+        assert(c->id == CMD_FIELD + i && c->kind == TIKU_DIALOG_INPUT &&
+               !c->enabled);
+    }
 
     /* Every answer is OK, and OK ends TikuSDR; a press taken off it does
      * not.  The alert stays up behind each, the client ending the app. */
@@ -647,6 +872,7 @@ int main(void)
     int64_t now = 0;
 
     model_tests();
+    range_tests();
     assert(mkdtemp(dir));
     snprintf(rec, sizeof rec, "%s/rec.sdrlog", dir);
     snprintf(rec2, sizeof rec2, "%s/rec2.sdrlog", dir);
@@ -711,6 +937,7 @@ int main(void)
            tiku_surface_png(st->surface, "test_sdr.png") == 0);
     record(st, master, &now, dir);
     exports(st, dir);
+    fields(st, master, &now);
     /* A second recording, still going when the board is given back. */
     assert(tiku_sdr_app.pick(st, st->id, CMD_RECORD) == 0);
     tiku_sdr_app.picked(st, st->id, rec2);
@@ -733,7 +960,7 @@ int main(void)
     /* Closed with the port; the note still says where the board went. */
     assert(!st->rec.file && strstr(st->saved, "Saved rec2.sdrlog: "));
     assert(!strcmp(st->note, "Returning c61 to the desktop..."));
-    assert(file_has(rec2, "\n0.000 VIEW band\n"));
+    assert(file_has(rec2, "\n0.000 VIEW range 2396 2492\n"));
     tiku_sdr_app.board_said(st, TIKU_APP_BOARD_RECLAIMED, "c61");
     assert(st->state == SDR_IDLE && st->saved[0]);
     replay(st, &now, dir);
