@@ -4,8 +4,9 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_trk_desktop_globalbar.c - the global menu bar: the strip along the
- * top of the screen, the menus the focused window publishes into it, and the
- * system menu's own commands
+ * top of the screen, the menus the focused window publishes into it, the
+ * system and Devices menus and their commands; and the key helpers the
+ * responders share.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,8 +25,9 @@ global_bar_rect(desktop_t *app)
 }
 
 /**
- * @brief The status area on the bar's right: a camera that saves a
- *        screenshot.  Its rectangle is kept so a click can find it.
+ * @brief Draw the status area at the bar's right: a camera button that
+ *        takes a screenshot.  Its rectangle is kept in app->shot_btn for
+ *        presses.
  */
 void
 global_bar_status_draw(desktop_t *app, tiku_rect_t strip)
@@ -38,17 +40,17 @@ global_bar_status_draw(desktop_t *app, tiku_rect_t strip)
     int cx = bx + bw / 2, cy = by + bh / 2 + 1, r = 4, i;
 
     app->shot_btn = (tiku_rect_t){ x0, strip.y, cell, strip.h };
-    /* Carve the cell: a little darker than the bar, held darker still,
-     * with an engraved separator down its left -- a groove then a
-     * highlight, the way a sunken edge reads. */
+    /* The cell is a little darker than the bar, darker still while
+     * pressed, with an engraved line down its left: a groove, then a
+     * highlight. */
     tiku_fill(app->surf, app->shot_btn,
               tiku_tint(TIKU_C_PANEL, app->shot_pressed ? 0.82f : 0.95f));
     tiku_vline(app->surf, x0, strip.y, strip.h - 1,
                tiku_tint(TIKU_C_PANEL, 0.72f));
     tiku_vline(app->surf, x0 + 1, strip.y, strip.h - 1,
                tiku_tint(TIKU_C_PANEL, 1.18f));
-    /* The camera, in line art so it reads at this size: a body outline,
-     * a viewfinder bump, a lens ring, and a flash dot. */
+    /* The camera in line art: a body outline, a viewfinder bump, a lens
+     * ring and a flash dot. */
     tiku_hline(app->surf, bx, by, bw, TIKU_C_TEXT);
     tiku_hline(app->surf, bx, by + bh - 1, bw, TIKU_C_TEXT);
     tiku_vline(app->surf, bx, by, bh, TIKU_C_TEXT);
@@ -67,7 +69,12 @@ global_bar_status_draw(desktop_t *app, tiku_rect_t strip)
                   TIKU_C_TEXT);
     }
     tiku_fill(app->surf, (tiku_rect_t){ cx - 1, cy - 1, 2, 2 }, TIKU_C_TEXT);
-}/** @brief A published pick lands back in the shell's one command path. */
+}
+
+/**
+ * @brief A pick from a folder window's published menus: run the command on
+ *        that folder through menu_invoke().
+ */
 static void
 folder_menu_pick(tiku_window_t *window, int command, void *context)
 {
@@ -79,7 +86,11 @@ folder_menu_pick(tiku_window_t *window, int command, void *context)
     }
 }
 
-/** @brief Describe the focused folder's menus and publish them (phase 2). */
+/**
+ * @brief Describe folder @p fl's menu bar as a flat menu set, a submenu as
+ *        level-1 entries under its holder, and publish it on the folder's
+ *        window.
+ */
 void
 publish_folder_menus(desktop_t *app, folder_t *fl)
 {
@@ -114,8 +125,7 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
             ti->separator = (unsigned char)!!fi->separator;
             ti->level = 0;
             if (fi->submenu != NULL) {
-                /* The submenu rides along as level-1 entries under its
-                 * holder, which is all the flat description needs. */
+                /* The submenu follows its holder as level-1 entries. */
                 const tiku_menu_t *sub = fi->submenu;
                 int k;
 
@@ -140,8 +150,11 @@ publish_folder_menus(desktop_t *app, folder_t *fl)
     tiku_window_publish_menus(fl->win, &set, folder_menu_pick, app);
 }
 
-/** @brief The i-th connected device leaf, in the same name order the
- *         Devices menu is built in, so a pick's index maps back. */
+/**
+ * @brief The @p idx-th connected board's leaf, in the name order the
+ *        Devices menu is built in, so a pick's index maps back.
+ * @return 1 when there is one.
+ */
 static int
 device_leaf_at(desktop_t *app, int idx, char *out, size_t max)
 {
@@ -175,9 +188,10 @@ device_leaf_at(desktop_t *app, int idx, char *out, size_t max)
 }
 
 /**
- * @brief Separate connection actions from the default destination.
- *        Checks belong only to the default submenu; the main menu names
- *        each connection state and says what picking a device will do.
+ * @brief Build the Devices menu: the Default device submenu (this machine
+ *        and each connected board, the current one checked), a Disconnect
+ *        row per connected board, a Connect row per port a board answered
+ *        on, and Scan for devices.
  */
 static void
 build_devices_menu(desktop_t *app)
@@ -209,8 +223,8 @@ build_devices_menu(desktop_t *app)
             (void)tiku_menu_add_separator(&app->devsub);
             any = 1;
         }
-        /* Name first; retain the port to distinguish identical boards.
-         * Bound both so the action and port survive the menu label cap. */
+        /* The name, then the port's tty leaf, which tells identical
+         * boards apart; both are bounded to fit the menu's label. */
         if (desktop_board_port(app, leaf, port, sizeof port) > 0) {
             char where[32];
 
@@ -242,9 +256,9 @@ build_devices_menu(desktop_t *app)
         if (port_is_mounted(app, app->candidates[i].port)) {
             continue;           /* already connected, shown above */
         }
-        /* Only a port a board ANSWERED on is worth offering: a name is
-         * the proof one is there.  The ports a debug probe puts up
-         * beside the console answer nothing and are not devices. */
+        /* Only a port a board answered on is offered: a candidate gets
+         * its name from a look's probe.  A debug probe's extra ports
+         * answer nothing and are left out. */
         if (app->candidates[i].name[0] == '\0') {
             continue;
         }
@@ -269,7 +283,10 @@ build_devices_menu(desktop_t *app)
     tiku_menu_set_icon(&app->devmenu, TIKU_TRK_CMD_DEVICE_SCAN, "magnifier");
 }
 
-/** @brief Rebuild the strip's scratch menus from the PUBLISHED data. */
+/**
+ * @brief Rebuild the strip's menus from what the focused window published,
+ *        with the system menu first and the Devices menu last.
+ */
 void
 rebuild_global_bar(desktop_t *app)
 {
@@ -281,12 +298,9 @@ rebuild_global_bar(desktop_t *app)
 
     tiku_menubar_init(&app->gbar);
     /*
-     * The focused program's About, HOISTED: a program that published a
-     * row called "About <itself>" meant the one thing every program
-     * means by it, and that row belongs in the system menu beside the
-     * system's own -- not wherever the program happened to file it.
-     * The label is the protocol, which is what lets a program built
-     * yesterday take part without a word of new wire.
+     * The first top-level row whose label starts with "About " moves from
+     * the focused window's menus into the system menu.  The label is all
+     * that marks it.
      */
     app->about_hoist = 0;
     if (set != NULL) {
@@ -306,17 +320,15 @@ rebuild_global_bar(desktop_t *app)
         }
     }
     /*
-     * The system menu first, where the corner ritual lives -- but WHOSE
-     * corner depends on who is in front.  With a hosted program's
-     * window focused, the desktop's own gestures -- Find, Preferences,
-     * Shut down -- are not the program's to wear: the menu is the
-     * PROGRAM's then, and says About it and no more.  The desktop's
-     * whole menu is one click on its own ground away, and the Deskbar's
-     * leaf carries Shut down whoever is in front.
+     * The system menu: About (the focused window's, when it published
+     * one) and Help (when desktop_help_page_of() has a page for the
+     * focused window); with no application window focused, also Find,
+     * Preferences, Take Screenshot and Shut down.  The Deskbar's leaf menu
+     * always has Shut down.
      */
     tiku_menu_clear(&app->sysmenu);
     snprintf(app->sysmenu.title, sizeof app->sysmenu.title, "Tiku");
-    app->sysmenu.mark = 1;      /* the system's menu wears its mark */
+    app->sysmenu.mark = 1;      /* drawn with the system mark */
     {
         int program = (fw != NULL &&
                        (embed_win_of_window(app, fw) != NULL ||
@@ -335,10 +347,9 @@ rebuild_global_bar(desktop_t *app)
             tiku_menu_set_icon(&app->sysmenu, TIKU_TRK_CMD_ABOUT,
                                     MARK_ICON);
         }
-        /* The page is the application's own, named by it at start, so
-         * the row is there when there is something behind it and not
-         * otherwise: a Help that says "no such page" is worse than a
-         * menu with no Help in it. */
+        /* The Help row shows only when the focused window has a help page
+         * (its application's own, or a fixed page for one of the desktop's
+         * windows) and a help folder was found. */
         if (page != NULL && desktop_help_ready(app)) {
             snprintf(app->help_row, sizeof app->help_row, "%s", page);
             (void)tiku_menu_add(&app->sysmenu, tiku_str("menu.help"),
@@ -386,24 +397,17 @@ rebuild_global_bar(desktop_t *app)
                 continue;           /* hoisted into the system menu */
             }
             if (fi->separator) {
-                /* Never as the FIRST row: the About above it may have
-                 * been hoisted away, and a menu that opens with a rule
-                 * is ruling off nothing. */
+                /* Not as the first row: the row above it may have been
+                 * hoisted away. */
                 if (to->count > 0) {
                     (void)tiku_menu_add_separator(to);
                 }
             } else if (i + 1 < from->nitem &&
                        from->item[i + 1].level == 1 && nsub < 4) {
                 /*
-                 * Four submenus per published menu, which is what gsub
-                 * holds.  A fifth would fall to the plain-item road
-                 * below and its children would be skipped by the level
-                 * test at the top of this loop -- a row that opens
-                 * nothing.  No application publishes that many today;
-                 * the day one does, the answer is to FLATTEN the extra
-                 * submenu's items into their holder rather than to grow
-                 * the array, because a menu five submenus deep in one
-                 * strip is a menu that wants rethinking.
+                 * At most four submenus per published menu, the size of
+                 * gsub[m].  A fifth holder becomes a plain row, and its
+                 * level-1 entries are skipped at the top of this loop.
                  */
                 tiku_menu_t *sub = &app->gsub[m][nsub++];
                 int k = i + 1;
@@ -438,23 +442,17 @@ rebuild_global_bar(desktop_t *app)
         }
         (void)tiku_menubar_add(&app->gbar, to);
     }
-    /* Devices last, at the right end: the current device is a global
-     * fact so its menu is always on the bar, and putting it after the
-     * focused window's own menus keeps their places (and the clicks
-     * aimed at them) exactly where they were. */
+    /* The Devices menu is always on the bar, last, so the focused
+     * window's menus keep their places. */
     build_devices_menu(app);
     (void)tiku_menubar_add(&app->gbar, &app->devmenu);
     app->gbar.open = was_open;
 }
 
 /**
- * @brief The system menu's own commands, which belong to no window.
- *
- * They are answered here rather than on the folder path, which returns
- * at once when no folder window is focused -- and the system menu is
- * reachable when none is.
- *
- * @return nonzero when the command was one of these.
+ * @brief Carry out the commands of the system and Devices menus.  They act
+ *        with no folder window focused, where menu_invoke() does nothing.
+ * @return nonzero when @p command was one of these.
  */
 static int
 system_invoke(desktop_t *app, int command)
@@ -494,7 +492,7 @@ system_invoke(desktop_t *app, int command)
         return 1;
     case TIKU_TRK_CMD_DEVICE_SCAN:
         (void)device_scan(app);
-        desktop_board_look_begin(app, -1, NULL);   /* name them */
+        desktop_board_look_begin(app, -1, NULL);   /* probe them for names */
         desktop_damage_all(app);
         return 1;
     case TIKU_TRK_CMD_ABOUT:
@@ -508,20 +506,19 @@ system_invoke(desktop_t *app, int command)
         tiku_trk_prefs_window_open(&app->prefs_window);
         return 1;
     case TIKU_TRK_CMD_SCREENSHOT:
-        /* Taken next turn, once the menu is gone, so the shot is of the
-         * desktop and not of the menu that asked for it. */
+        /* Taken from the next frame drawn, after the menu has closed. */
         app->shot_pending = 1;
         return 1;
     case TIKU_TRK_CMD_APP_HELP:
-        /* The page the program in front named for itself, opened in the
-         * desktop's own reader: the help folder is the shell's. */
+        /* The focused window's help page, which rebuild_global_bar() put
+         * in help_row, sent to the installed TikuReader application. */
         if (app->help_row[0] != '\0') {
             (void)desktop_help_open(app, app->help_row);
         }
         return 1;
     case TIKU_TRK_CMD_APP_ABOUT:
-        /* The hoisted row: it looks like the system's but it belongs to
-         * the program that published it, and goes back there. */
+        /* The hoisted About row goes back to the window that published
+         * it. */
         if (app->about_hoist != 0 && app->gbar_from != NULL &&
             app->gbar_from->menu_pick != NULL) {
             app->gbar_from->menu_pick(app->gbar_from, app->about_hoist,
@@ -529,8 +526,8 @@ system_invoke(desktop_t *app, int command)
         }
         return 1;
     case TIKU_TRK_CMD_SHUTDOWN:
-        /* The ellipsis is a promise: Shut down… asks before anything is
-         * taken down (DB-006), the same question the leaf asks. */
+        /* Shut down asks first (DB-006), with the question the
+         * Deskbar's leaf menu asks. */
         tiku_sound_play(TIKU_SOUND_BEEP);
         tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,
@@ -543,9 +540,9 @@ system_invoke(desktop_t *app, int command)
 }
 
 /**
- * @brief Route a pick: a strip pick goes back to whoever PUBLISHED the
- *        menu, which is the other half of the protocol; everything else
- *        (and the system menu) takes the shell's own command path.
+ * @brief Route a menu pick: a pick from a published menu on the strip goes
+ *        back to the window that published it; the system and Devices
+ *        menus' commands, and every other pick, run here.
  */
 void
 global_or_invoke(desktop_t *app, folder_t *ffl, int command)
@@ -563,12 +560,8 @@ global_or_invoke(desktop_t *app, folder_t *ffl, int command)
     menu_invoke(app, ffl, command);
 }
 
-/**
- * @brief The character a key event types, or 0.
- *
- * With no display there is no keyboard map to consult, so a Latin-1 keysym
- * stands for itself -- which is all a script needs in order to type.
- */
+/** @brief The character a key event types, the first byte of its text, or
+ *         0. */
 char
 key_char(const tiku_event_t *event)
 {

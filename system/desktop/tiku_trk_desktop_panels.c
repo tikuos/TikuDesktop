@@ -3,20 +3,23 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_panels.c - the panels: Open/Save, Find and its results,
- * Select, Open-with, and the info window's own open-with list
+ * tiku_trk_desktop_panels.c - the panels and the opening of things: panels
+ * a device describes (.panel files and a board's gui/ forms), opening an
+ * entry, Open With and the Info window's Opens with, Find and its results,
+ * Select, and the file panel's questions, answers and remote picks.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiku_trk_desktop_private.h"
 
-/** @brief Collect a directory's entries into @p out.  @return how many. */
+/* Where list_children() collects a directory's entries. */
 struct collect_ctx { tiku_model_t *out; int n, max; };
 
 /**
- * @brief Rebuild the Open With rows, the pickers and the add-ons menu
- *        for @p fl's selection (for none when @p fl is NULL).
+ * @brief Rebuild for @p fl the Open With rows for its selection, the
+ *        destination pickers, and the add-ons menu for the types in its
+ *        listing; with @p fl NULL, the empty ones.
  */
 void
 build_open_with(desktop_t *app, folder_t *fl)
@@ -38,12 +41,13 @@ build_open_with(desktop_t *app, folder_t *fl)
 }
 
 /**
- * @brief Hand @p paths to an application, and say what happened (AW-039).
+ * @brief Hand @p paths to @p application through the launch controller,
+ *        which reports the result on the status line (AW-039).
  *
- * One place, because the Open-with menu, a double click on a document and
- * a drop on an application are the same act with three ways in -- and a
- * launch that reported differently depending on how it was asked for would
- * be three behaviours wearing one name.
+ * A double click on a document, a drop on an application and the Open With
+ * window launch through here.
+ *
+ * @return the controller's result.
  */
 int
 launch_paths(desktop_t *app, const tiku_trk_app_t *application,
@@ -60,7 +64,10 @@ handler_for(desktop_t *app, const tiku_model_t *model)
     return tiku_trk_launch_controller_handler(&app->launcher, model);
 }
 
-/** @brief The bind of @p row as a path of this namespace. */
+/**
+ * @brief The path @p row is bound to, in the namespace: a /gui/ bind of a
+ *        board's panel is put under the board's mount root.
+ */
 const char *
 bind_path(const tiku_trk_described_t *p, const tiku_form_row_t *row,
           char *buf, size_t max)
@@ -72,7 +79,10 @@ bind_path(const tiku_trk_described_t *p, const tiku_form_row_t *row,
     return row->bind;
 }
 
-/** @brief Read every bound place, so the panel shows what IS. */
+/**
+ * @brief Read every bound row's value from its place; a row whose place
+ *        does not answer shows no value.
+ */
 static void
 panel_refresh(tiku_trk_described_t *p)
 {
@@ -91,8 +101,8 @@ panel_refresh(tiku_trk_described_t *p)
                               bind_path(p, row, path, sizeof path),
                               row->value, sizeof row->value)) {
             answered++;
-            /* Trailing blanks are how a device ends a line, not part of
-             * what it said. */
+            /* A device ends a value with a newline or blanks: they are
+             * trimmed. */
             size_t n = strlen(row->value);
 
             while (n > 0u && (row->value[n - 1u] == '\n' ||
@@ -102,19 +112,16 @@ panel_refresh(tiku_trk_described_t *p)
             }
             row->known = 1;
         } else {
-            row->known = 0;     /* the place went quiet: say so, do not
-                                 * keep showing what it last said */
+            row->known = 0;     /* no answer: the row shows no value */
         }
     }
-    /* Every place quiet at once is the board, not a row: said in the
-     * status line, and the rows are drawn empty rather than stale. */
-        panel_refreshed(p, asked, answered);
+    panel_refreshed(p, asked, answered);
 }
 
 /**
- * @brief The end of a refresh, however the values came: every place
- *        quiet at once is the board, not a row -- said in the status
- *        line, and the rows are drawn empty rather than stale.
+ * @brief End a refresh of @p p, however its values were read: when no bound
+ *        place answered, the panel's own status line says "not answering";
+ *        that status clears once any place answers.
  */
 void
 panel_refreshed(tiku_trk_described_t *p, int asked, int answered)
@@ -128,8 +135,9 @@ panel_refreshed(tiku_trk_described_t *p, int asked, int answered)
 }
 
 /**
- * @brief Paint a described panel: its form, the last refusal, and a note
- *        when the device sent rows this build cannot draw.
+ * @brief Paint a described panel: its form, and at its foot its status (the
+ *        last refusal or "not answering") or, with none, a note when the
+ *        device sent rows this build cannot draw.
  */
 static void
 panel_draw(tiku_window_t *window, tiku_surface_t *surface,
@@ -146,9 +154,7 @@ panel_draw(tiku_window_t *window, tiku_surface_t *surface,
     if (p->status[0] != '\0') {
         snprintf(note, sizeof note, "%s", p->status);
     } else if (p->unknown > 0) {
-        /* Said out loud rather than hidden: a panel from a device this
-         * build is older than has rows it cannot draw, and a person
-         * looking at a short panel deserves to know it is short. */
+        /* The rows this build cannot draw are counted in a note. */
         snprintf(note, sizeof note, "%d row(s) this build does not know",
                  p->unknown);
     }
@@ -164,9 +170,10 @@ static int panel_track(tiku_trk_described_t *p, tiku_window_t *window,
 /* End of the forward declarations. */
 
 /**
- * @brief A press on a described panel: the row under it is pressed and
- *        what it writes goes to the device; a refusal is shown, not
- *        dropped.  @return 1 when a row took it.
+ * @brief A press on a described panel: the row under it is pressed, and
+ *        what it writes goes to the device; a refusal shows in the panel's
+ *        own status line.
+ * @return 1 when a row took the press.
  */
 static int
 panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
@@ -188,17 +195,18 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
         return 0;
     }
     if (p->form.row[row].kind == TIKU_FORM_ENTRY) {
-        /* The caret, and nothing written until Return. */
+        /* An entry takes the caret; nothing is written until Return. */
         tiku_form_focus(&p->form, row);
         desktop_damage_all(app);
         return 1;
     }
     if (tiku_form_editing(&p->form) >= 0) {
-        tiku_form_focus(&p->form, -1);      /* a press elsewhere lets go */
+        tiku_form_focus(&p->form, -1);      /* a press on another row
+                                             * takes the entry's caret */
     }
     if (p->form.row[row].kind == TIKU_FORM_SLIDER) {
-        /* The knob is taken: it follows the pointer, and the value is
-         * written once, when the hand lets go. */
+        /* The knob follows the pointer, and the value is written once,
+         * when the button is released. */
         (void)tiku_form_press_at(&p->form, content, row, event->x);
         p->tracking = 1;
         p->pending = row;
@@ -208,11 +216,9 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
     write = tiku_form_press(&p->form, row);
     if (write != NULL) {
         /*
-         * Working a control WRITES to the place it named.  That is the
-         * whole of the interface: the device published where its switch
-         * lives, and the desktop puts a value there -- on the next idle
-         * turn rather than under the pointer, so a slow cable never holds
-         * the press.
+         * A control writes its value to the place it is bound to, on a
+         * later turn by panels_pump(), so a slow cable does not hold the
+         * press.
          */
         p->pending = row;
         desktop_damage_all(app);
@@ -220,7 +226,8 @@ panel_event(tiku_window_t *window, const tiku_event_t *event, void *context)
     return 1;
 }
 
-/** @brief The slider's knob follows a move; the release writes it. */
+/** @brief The slider's knob follows a move; after the release,
+ *         panels_pump() writes its value. */
 static int
 panel_track(tiku_trk_described_t *p, tiku_window_t *window,
             const tiku_event_t *event)
@@ -242,8 +249,7 @@ panel_track(tiku_trk_described_t *p, tiku_window_t *window,
 
 /**
  * @brief Write a row's value to the place it is bound to, and read the
- *        panel back -- on a worker, since a board's write has a ceiling
- *        of seconds and the loop must not stand for it.
+ *        panel back, on a worker: a board's write can take seconds.
  */
 static void
 panel_write(tiku_trk_described_t *p, int row)
@@ -292,7 +298,7 @@ panels_pump(desktop_t *app)
 
             p->pending = -1;
             panel_write(p, row);
-            return;             /* one write a turn keeps the loop answering */
+            return;             /* one write per turn */
         }
     }
 }
@@ -341,7 +347,8 @@ panel_of_path(desktop_t *app, const char *path)
     return NULL;
 }
 
-/** @brief A free slot, else the first: one panel gives way for another. */
+/** @brief A free panel slot, else the first, whose panel then closes for
+ *         the new one. */
 static tiku_trk_described_t *
 panel_slot(desktop_t *app)
 {
@@ -358,8 +365,9 @@ panel_slot(desktop_t *app)
 }
 
 /**
- * @brief Where a board's binds hang off: for .../gui/<form>/panel the
- *        part before /gui/, else "" (a .panel file binds absolutely).
+ * @brief The prefix a board's binds are relative to: for
+ *        .../gui/<form>/panel the part before /gui/, else "" (a .panel
+ *        file binds absolutely).
  */
 static void
 root_of(const char *path, char *root, size_t max)
@@ -389,7 +397,7 @@ open_panel_path(desktop_t *app, const char *path)
     }
     rows = tiku_form_parse(&form, text, &unknown);
     if (rows == 0 && unknown == 0) {
-        return 0;               /* not a panel after all */
+        return 0;               /* no rows: not a panel */
     }
     p = panel_of_path(app, path);
     if (p != NULL) {
@@ -447,8 +455,8 @@ open_form_entry(const tiku_model_t *m, void *ctx)
 }
 
 /**
- * @brief Keep one record per mount, with the identity of its gui/ node
- *        looked up once; a mount that is not a board is marked so.
+ * @brief Keep one record per mount but the root, with the identity of its
+ *        gui/ node looked up once; a mount with no gui/ node gets ~0.
  */
 static void
 boards_refresh(desktop_t *app)
@@ -479,8 +487,9 @@ boards_refresh(desktop_t *app)
 }
 
 /**
- * @brief Board @p b rang its gui/: re-read its open panels, or open its
- *        forms the first time one is seen.  @return how many changed.
+ * @brief Board @p b's gui/ changed: re-read its open panels, or open its
+ *        forms the first time it is seen.
+ * @return how many panels changed.
  */
 static int
 panels_apply_board(desktop_t *app, int b)
@@ -542,14 +551,11 @@ panels_poll(desktop_t *app, const tiku_model_change_t *ch, int nch)
         return changed;
     }
     /*
-     * The namespace as a whole could not say (a root with no ring beside
-     * a board that has one), so nothing above drained the board: its
-     * ring is asked here, board by board, and the records are the
-     * panels' alone since every view is polling.
+     * The namespace could not say what changed (a local root with no
+     * change ring beside a board with one): each board's own last answer,
+     * as its worker brought it, says whether its gui/ changed.
      */
     for (b = 0; b < TIKU_MOUNT_MAX; b++) {
-        /* The router could not tell: each board's own answer, as the
-         * worker last brought it, says whether its panels moved. */
         if (app->boards[b].root[0] == '\0' ||
             app->boards[b].gui_id == ~(uint64_t)0) {
             continue;
@@ -562,8 +568,9 @@ panels_poll(desktop_t *app, const tiku_model_change_t *ch, int nch)
 }
 
 /**
- * @brief Open the panel a file DESCRIBES: a .panel file, or a board's
+ * @brief Open the panel a file describes: a .panel file, or a board's
  *        gui/<form>/panel node.
+ * @return 1 when a panel opened.
  */
 static int
 open_described_panel(desktop_t *app, const tiku_model_t *model)
@@ -581,8 +588,10 @@ open_described_panel(desktop_t *app, const tiku_model_t *model)
 }
 
 /**
- * @brief Open @p model: a .panel file as a described panel, anything
- *        else through the launcher.  @return 1 when something opened.
+ * @brief Open @p model: a described panel as a panel; a document type in
+ *        its handler; an installed application, or a link to one, started;
+ *        an executable run as itself; anything else in its type's handler.
+ * @return 1 when something opened.
  */
 int
 open_one(desktop_t *app, const tiku_model_t *model)
@@ -619,18 +628,16 @@ open_one(desktop_t *app, const tiku_model_t *model)
         }
     }
     if (tiku_trk_launch_self(model, &itself)) {
-        /* No documents: it is being started, not being given something
-         * to open.  launch_run drops an application's own path anyway. */
+        /* The application itself: it is started with no documents. */
         return launch_paths(app, &itself, NULL, 0);
     }
     return launch_paths(app, handler_for(app, model), one, 1);
 }
 
 /**
- * @brief Fill an Info window's "Opens with" row from the registry (AW-071).
- *
- * The user's preferred handler when one is set, the best candidate when
- * not, and "Default application" when the choice is the ranking's own.
+ * @brief Fill an Info window's "Opens with" row (AW-071): the application
+ *        stored as preferred for the type, else "Default application";
+ *        empty for a folder or an executable.
  */
 void
 info_opens_with_fill(desktop_t *app, tiku_trk_info_t *info)
@@ -664,10 +671,8 @@ info_opens_with_next(desktop_t *app, tiku_trk_info_t *info)
     int count, i, at = -1;
 
     types[0] = info->model.type;
-    /* The ranking's own order, with no store to read the current choice
-     * from: sorted with the choice, the chosen application leads the list
-     * and the walk alternates between the first two, reaching neither the
-     * rest of them nor the default again. */
+    /* The candidates are ranked without the stored preference (no
+     * store), so the walk visits each in turn and then the default. */
     count = tiku_trk_launch_candidates(&app->apps, types, 1, NULL,
                                        cand, 16);
     if (count == 0) {
@@ -702,7 +707,8 @@ info_opens_with_next(desktop_t *app, tiku_trk_info_t *info)
     info_opens_with_fill(app, info);
 }
 
-/** @brief The Open With window's launch: the same one act (AW-039). */
+/** @brief The Open With window's launch, through launch_paths()
+ *         (AW-039). */
 void
 open_with_window_launch(void *context, const tiku_trk_app_t *application,
                         const char *const *paths, int count)
@@ -750,10 +756,9 @@ list_children(tiku_backend_t *b, const char *path, tiku_model_t *out,
 }
 
 /**
- * @brief Adopt a result set into a window, live.
- *
- * The run is handed over rather than copied from and dropped: its lifetime is
- * the subscription's lifetime.
+ * @brief Open a live results window titled @p title on @p run, which the
+ *        window takes over; when no window opens, the run is stopped.
+ * @return the window's folder, or NULL.
  */
 static folder_t *
 open_results(desktop_t *app, const char *title, tiku_qrun_t *run)
@@ -762,7 +767,11 @@ open_results(desktop_t *app, const char *title, tiku_qrun_t *run)
                                                    title, run);
 }
 
-/** @brief Re-run a live window's query and apply what changed. */
+/**
+ * @brief Start a re-walk of a live results window's query; the turn steps
+ *        it and applies the difference when it ends.
+ * @return nonzero when a re-walk began.
+ */
 int
 refresh_results(desktop_t *app, folder_t *fl)
 {
@@ -770,7 +779,11 @@ refresh_results(desktop_t *app, folder_t *fl)
         &app->folder_lifecycle, fl);
 }
 
-/** @brief Apply a Select controller expression to its originating folder. */
+/**
+ * @brief Apply a Select expression to the folder it was opened from.
+ * @return the folder's window; NULL when the window has gone or the
+ *         expression is bad.
+ */
 tiku_window_t *
 apply_select_model(void *context, void *target,
                    const tiku_trk_select_t *selection)
@@ -808,7 +821,12 @@ open_panel(desktop_t *app)
     tiku_trk_find_window_open(&app->find_window);
 }
 
-/** @brief Run what the panel is asking and show the results. */
+/**
+ * @brief Start the Find panel's query and open its live results window; the
+ *        query is saved as a record, temporary unless it replaces a named
+ *        one.
+ * @return 1 when a results window opened.
+ */
 int
 panel_search(void *context, tiku_trk_find_t *panel)
 {
@@ -827,9 +845,8 @@ panel_search(void *context, tiku_trk_find_t *panel)
         desktop_damage_all(app);
         return 0;
     }
-    /* The checkbox stores the choice; the actual Trash path is resolved at
-     * run time because it belongs to this machine and this volume, not to a
-     * portable saved-query record (Q-036). */
+    /* The Trash path is resolved at run time: it belongs to this machine
+     * and volume, not to the saved record (Q-036). */
     (void)tiku_fs_trash_dir(app->fs, desktop_folder(app)->path,
                                 q.trash_path,
                                 sizeof q.trash_path);
@@ -838,19 +855,17 @@ panel_search(void *context, tiku_trk_find_t *panel)
     if (run == NULL) {
         return 0;
     }
-    /* Not walked here.  A search whose scope is a volume is minutes of
-     * work on a real disk, and this is the thread that draws: the window
-     * opens on a run that has found nothing yet and fills as the turn
-     * steps it (tiku_trk_folder_lifecycle_step_results). */
+    /* The run is stepped one turn at a time by
+     * tiku_trk_folder_lifecycle_step_results(): the window opens empty
+     * and fills as the run finds entries. */
     (void)tiku_trk_find_scope_label(panel, scope, sizeof scope);
     replacing = panel->loaded_kind == TIKU_QREC_QUERY &&
                 panel->loaded_name[0] != '\0';
     record_name[0] = '\0';
     {
-        /* Every run leaves a record, marked TEMPORARY: a search is a thing
-         * that can be re-opened and edited, not only a window that appears
-         * -- and one the user never named is swept up later rather than
-         * accumulating for ever (Q-023, MA-053). */
+        /* Every run is saved as a record, so it can be reopened and
+         * edited; a temporary one is reaped later by desktop_sweep()
+         * (Q-023, MA-053). */
         tiku_query_t previous;
         int i;
 
@@ -873,9 +888,8 @@ panel_search(void *context, tiku_trk_find_t *panel)
                 }
             }
         }
-        /* The WALL clock, not the running one: how old a record is has to
-         * mean the same thing after a restart, and it is also the date its
-         * name carries. */
+        /* Wall-clock time, so a record's age holds across a restart; its
+         * default name carries the date too. */
         q.saved_at = (int64_t)time(NULL);
         if (record_name[0] != '\0' ||
             tiku_trk_find_default_name(panel, (long)q.saved_at,
@@ -893,9 +907,8 @@ panel_search(void *context, tiku_trk_find_t *panel)
         if (fl != NULL) {
             snprintf(fl->qname, sizeof fl->qname, "%s", app->last_query);
             snprintf(fl->qscope, sizeof fl->qscope, "%s", scope);
-            /* What is true at this instant: nothing has been looked at
-             * yet.  The turn writes this line again as the walk finds
-             * things and once more when it ends. */
+            /* Set once: the results window's count bar shows the walk's
+             * progress. */
             snprintf(app->status, sizeof app->status,
                      "searching %.30s -- 0 results so far", scope);
         } else {
@@ -907,10 +920,9 @@ panel_search(void *context, tiku_trk_find_t *panel)
 }
 
 /**
- * @brief Run the typed search and open its results in their own window.
- *
- * The scope is the folder the search started from, which is what makes a
- * search from /dev mean "in /dev" without a target menu to set it in.
+ * @brief Run the typed search, walked to the end here, and open its results
+ *        in a window of their own.  The scope is the folder the search
+ *        started from.
  */
 void
 run_find(desktop_t *app, folder_t *from)
@@ -938,8 +950,8 @@ run_find(desktop_t *app, folder_t *from)
             break;
         }
     }
-    /* The window is named for the search, not for a place: two searches for
-     * different things must not collapse onto one window. */
+    /* The window is titled with the search and a serial number, so two
+     * searches open two windows. */
     snprintf(title, sizeof title, "find:%.40s#%d", app->find_buf,
              ++app->find_serial);
     fl = open_folder(app, title);
@@ -962,7 +974,11 @@ run_find(desktop_t *app, folder_t *from)
     desktop_damage_all(app);
 }
 
-/** @brief Map a host directory into the desktop namespace, never a device. */
+/**
+ * @brief Host directory @p path as a path of the desktop's namespace,
+ *        through the local (posix) mount, into @p out.
+ * @return nonzero when there is a local mount and it fits.
+ */
 static int
 local_picker_start(desktop_t *app, const char *path, char *out, size_t max)
 {
@@ -995,12 +1011,13 @@ pick_is_from(const desktop_t *app, int session, uint32_t window)
 }
 
 /**
- * @brief Remember who asked; never answer a reused session.
+ * @brief A remote application asks for the file panel: note who asked (a
+ *        reused session is never answered) and show the panel, in the
+ *        local mount for a local pick.
  *
- * One question at a time.  The window whose question is up may put a
- * newer one, which replaces it: an application keeps one note of what it
- * asked last, and an answer to the older question would be read as the
- * newer one's.  Any other ask is refused while the panel is taken.
+ * One application question at a time: the window whose question is up may
+ * ask a newer one, which replaces it; another application's ask is
+ * ignored while one is up.
  */
 void
 desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
@@ -1039,7 +1056,7 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
     if (mode == TIKU_APP_PICK_SAVE)
         tiku_trk_panel_window_open_save(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
-    else if (mode == TIKU_APP_PICK_LOCAL_FOLDER)  /* the panel's own way */
+    else if (mode == TIKU_APP_PICK_LOCAL_FOLDER)  /* a folder question */
         tiku_trk_panel_window_open(&app->file_panel, &app->pending_pick,
                                    TIKU_TRK_CMD_APP_PICK, start);
     else
@@ -1049,13 +1066,13 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
 }
 
 /**
- * @brief Tell whoever asked what the person chose, and forget the ask.
+ * @brief Tell whoever asked what the person chose, and forget the ask: an
+ *        embedded application through its descriptor, a remote one over its
+ *        session unless the session was reused.
  *
- * Both hosts, one function: an embedded application is called through
- * its descriptor, a remote one is told over its own session.  The note
- * is cleared either way, including when there is nobody left to tell --
- * an application that went away while the panel was up must not leave
- * the shell believing it is still asking.
+ * The note is cleared even when the asker has gone, and a @p path of NULL
+ * tells nobody.  The panel's Cancel does not call here: pick_sweep()
+ * clears the note once the panel has closed.
  */
 static void
 deliver_pick(desktop_t *app, const char *path)
@@ -1103,9 +1120,10 @@ deliver_pick(desktop_t *app, const char *path)
 }
 
 /**
- * @brief The file panel's answer: an application's pick delivered, a
- *        scope added to the search, or the selection moved or copied to
- *        @p destination on behalf of @p target's folder.
+ * @brief The file panel's answer for @p command: open in the reader or the
+ *        image application, an application's pick, a sound, a Find scope, a
+ *        saved query, or the selection of @p target's folder moved or
+ *        copied to @p destination.
  */
 void
 fpanel_commit(void *context, void *target, int command,
@@ -1127,9 +1145,8 @@ fpanel_commit(void *context, void *target, int command,
     }
     if (command == TIKU_TRK_CMD_APP_PICK) {
         /*
-         * An application's ask, answered.  Which application is not the
-         * panel's business -- it carried an opaque target and this is
-         * where the shell reads its own note about who was asking.
+         * An application's question: the panel carried an opaque target,
+         * and deliver_pick() reads the desktop's note of who asked.
          */
         deliver_pick(app, destination);
         return;
@@ -1220,7 +1237,11 @@ sound_choose(void *context, tiku_sound_event_t event)
                                     NULL);
 }
 
-/** @brief Resolve local documents before handing them to the reader process. */
+/**
+ * @brief Open @p path's local file in TikuReader; a path not on the local
+ *        mount is refused.
+ * @return 1 when the reader started.
+ */
 int desktop_reader_file(desktop_t *app, const char *path)
 {
     char local[TIKU_PATH_MAX];
@@ -1230,7 +1251,12 @@ int desktop_reader_file(desktop_t *app, const char *path)
     return desktop_launch_app(app, "reader", local);
 }
 
-/** @brief Resolve namespace paths before handing files to local processes. */
+/**
+ * @brief The launcher's document opener: run @p application on the local
+ *        file of @p path, when that is a readable regular file on the local
+ *        mount and the application is installed.
+ * @return 1 when it started.
+ */
 int desktop_document_open(void *ctx, const tiku_trk_app_t *application,
                            const char *path)
 {
@@ -1248,7 +1274,11 @@ int desktop_document_open(void *ctx, const tiku_trk_app_t *application,
     return tiku_trk_launch_run(application, paths, 1) == TIKU_TRK_LAUNCH_OK;
 }
 
-/** @brief A host filename must not be interpreted against a device root. */
+/**
+ * @brief Open host file @p path through the local mount, whatever is at the
+ *        namespace's root.
+ * @return 1 when something opened.
+ */
 int desktop_document_local(desktop_t *app, const char *path)
 {
     if (!path || path[0] != '/' || strlen(path) >= TIKU_PATH_MAX) return 0;
@@ -1271,7 +1301,11 @@ int desktop_document_local(desktop_t *app, const char *path)
     return 0;
 }
 
-/** @brief Legacy image routing delegates to the installed document app. */
+/**
+ * @brief Open @p path's local file in the image application; a path not on
+ *        the local mount is refused.
+ * @return 1 when it started.
+ */
 int desktop_image_file(desktop_t *app, const char *path)
 {
     char local[TIKU_PATH_MAX];
@@ -1281,7 +1315,8 @@ int desktop_image_file(desktop_t *app, const char *path)
     return desktop_launch_app(app, "image", local);
 }
 
-/** @brief Find's Save with nowhere attached: ask WHERE with the panel. */
+/** @brief Find's Save with no destination: ask for one with the file
+ *         panel. */
 void
 find_save_as(void *context)
 {
@@ -1296,7 +1331,8 @@ find_save_as(void *context)
                                     "query");
 }
 
-/** @brief Ask the reusable panel where an operation should put its items. */
+/** @brief Ask with the file panel where @p command (Move to, Copy to)
+ *         puts @p folder's selection. */
 void
 fpanel_open(desktop_t *app, folder_t *folder, int command)
 {
@@ -1308,9 +1344,7 @@ fpanel_open(desktop_t *app, folder_t *folder, int command)
 
 /**
  * @brief Select the row called @p name in @p fl, and scroll it into view.
- *
- * What "open the parent WITH the item selected" means: landing on the
- * folder with nothing picked would leave the user to find it again.
+ * @return the row's index, or -1.
  */
 int
 select_named(desktop_t *app, folder_t *fl, const char *name)
@@ -1326,9 +1360,8 @@ select_named(desktop_t *app, folder_t *fl, const char *name)
 
         if (p != NULL && strcmp(p->model.name, name) == 0) {
             tiku_trk_poseview_click(fl->view, i, 0u);
-            /* Into view, minimally: the application changed the selection,
-             * so it keeps it visible (NeXT UIG ch3) -- but a row already
-             * on screen must not jump to the top. */
+            /* Scrolled as little as needed: a row already on screen does
+             * not move (NeXT UIG ch3). */
             tiku_trk_poseview_scroll_into_view(fl->view, i,
                 tiku_trk_poseview_visible_rows(fl->view));
             desktop_damage_all(app);
@@ -1339,11 +1372,9 @@ select_named(desktop_t *app, folder_t *fl, const char *name)
 }
 
 /**
- * @brief Where art dropped by hand is taken from, and the Desktop.
- *
- * Both live under the user's own configuration, both are made if they
- * are not there: a directory nobody can find is a directory nobody
- * fills, and an empty Desktop is still a Desktop.
+ * @brief Make the user's icon folder (TIKU_ICONS, else
+ *        ~/.config/tracker/icons) and load its icons, and make the
+ *        desktop's Desktop folder.
  */
 void
 prepare_places(desktop_t *app)
@@ -1362,14 +1393,12 @@ prepare_places(desktop_t *app)
     }
     (void)tiku_state_mkparents(icons);
     (void)mkdir(icons, 0755);
-    /* Whatever is in there wins over what was baked in, by name, so a
-     * device can say what its own folders and programs look like. */
+    /* An icon there replaces the built-in one of the same name. */
     (void)tiku_icons_load_dir(icons);
 
     {
-        /* This Tracker's own Desktop, not the login session's: what a
-         * device shows is the device's, and a host desktop full of
-         * somebody's work is not it. */
+        /* The desktop's own Desktop folder (tiku_desktop_dir()), not the
+         * login session's. */
         char desktop[TIKU_PATH_MAX];
 
         (void)tiku_desktop_dir(desktop, sizeof desktop);

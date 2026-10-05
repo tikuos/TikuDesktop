@@ -1,12 +1,16 @@
 /*
- * tiku_trk_desktop_grab.c -- the screenshots an application asks for.
+ * TikuTracker -- the file manager for TikuOS.
  *
- * An application cannot see the desk: it is a process of its own and
- * sends only its drawing.  So TikuGrab asks, and the desktop answers from
- * here -- the windows there are, or a picture: the desk drawn again
- * without the asker's windows, or one window drawn alone on transparency
- * -- compressed on a worker into Desktop/Screenshots, which Take
- * Screenshot fills the same way.  The asker never names a path.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_desktop_grab.c - screenshots: the desk's own Take Screenshot, and
+ * the pictures an application asks for over its session.
+ *
+ * An application runs in a process of its own and cannot read the desk, so
+ * it asks: for the list of windows, for the desk drawn again without its own
+ * windows, or for one window drawn alone with transparent edges.  Every
+ * picture is compressed on a worker into Desktop/Screenshots; the asker
+ * never names a path.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -36,8 +40,11 @@ typedef struct {
     char path[TIKU_PATH_MAX];
 } grab_shot_t;
 
-/** @brief @p title as a file name's part: letters, digits, dots and
- *         dashes kept, anything else a dash, and not too long. */
+/**
+ * @brief @p title as part of a file name: letters, digits, dots and
+ *        underscores kept, every other run of characters one dash, at most
+ *        40 characters; "window" when nothing is left.
+ */
 static void grab_clean(const char *title, char *out, size_t max)
 {
     size_t n = 0;
@@ -59,8 +66,8 @@ static void grab_clean(const char *title, char *out, size_t max)
  * @brief Where a screenshot of @p what goes: Desktop/Screenshots, made if
  *        need be, "tiku-" @p what and the time, a number after it when a
  *        shot of the same second is there already.
- * @return 0, -1 when there is no such folder to be had or the name
- *         would not fit.
+ * @return 0; -1 when the folder cannot be made, the name does not fit, or
+ *         every numbered name of that second is taken.
  */
 int desktop_shot_path(const char *what, char *out, size_t max)
 {
@@ -74,7 +81,7 @@ int desktop_shot_path(const char *what, char *out, size_t max)
     (void)tiku_state_mkparents(desk);
     (void)mkdir(desk, 0755);
     n = snprintf(dir, sizeof dir, "%s/Screenshots", desk);
-    if (n < 0 || (size_t)n >= sizeof dir) return -1;  /* never cut off */
+    if (n < 0 || (size_t)n >= sizeof dir) return -1;  /* too long */
     (void)mkdir(dir, 0755);
     if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) return -1;
     (void)localtime_r(&now, &when);
@@ -110,7 +117,7 @@ static void grab_tell(desktop_t *app, int session, const grab_shot_t *s,
     tiku_msg_free(m);
 }
 
-/** @brief On a worker: the picture compressed into its file. */
+/** @brief On a worker: compress the picture into its file. */
 static void grab_run(void *ctx)
 {
     grab_shot_t *s = ctx;
@@ -143,7 +150,10 @@ static void grab_done(void *ctx)
     desktop_damage_all(app);
 }
 
-/** @brief After done, or instead of it: the pixels let go. */
+/**
+ * @brief Free the picture, after done or when the job is dropped; a file
+ *        that was not written is removed.
+ */
 static void grab_free(void *ctx)
 {
     grab_shot_t *s = ctx;
@@ -155,8 +165,9 @@ static void grab_free(void *ctx)
 
 /**
  * @brief @p px (w by h, taken over) written as the screenshot @p what, on
- *        a worker; @p session told when it lands, or -1 for the desktop's
- *        own status line.  @return 0 when it was posted.
+ *        a worker; @p session told the outcome once the worker is done,
+ *        or -1 for the desktop's own status line.  @return 0 when it was
+ *        posted.
  */
 static int grab_save(desktop_t *app, int session, const char *what,
                      uint32_t *px, int w, int h, int alpha, int64_t request)
@@ -169,8 +180,9 @@ static int grab_save(desktop_t *app, int session, const char *what,
         free(px);
         return -1;
     }
-    /* Reserve the name before queuing: two pending captures cannot choose
-     * the same not-yet-written file. Never truncate an existing capture. */
+    /* The name is created (O_EXCL) before the job is queued, so two
+     * pending captures cannot take one name and no existing file is
+     * truncated. */
     int fd = open(s->path, O_WRONLY | O_CREAT | O_EXCL, 0666);
     if (fd < 0) { free(s); free(px); return -1; }
     if (close(fd) != 0) { unlink(s->path); free(s); free(px); return -1; }
@@ -197,6 +209,12 @@ static int grab_save(desktop_t *app, int session, const char *what,
     return 0;
 }
 
+/**
+ * @brief Save @p px, @p w by @p h and taken over, as the screenshot @p what
+ *        on a worker; @p alpha keeps its transparency.  Session @p session
+ *        is told the outcome, or with -1 the desktop's status line.
+ * @return 0 when the job was posted.
+ */
 int desktop_shot_save(desktop_t *app, int session, const char *what,
                       uint32_t *px, int w, int h, int alpha)
 {
@@ -228,8 +246,11 @@ static int grab_asker(const desktop_t *app, int session,
     return 0;
 }
 
-/** @brief The whole desk, drawn again with the asker's windows left out,
- *         copied, and drawn as it was before anyone sees a frame. */
+/**
+ * @brief The whole desk drawn again without the asker's windows, and
+ *        copied; the windows are shown again, and the next frame redraws
+ *        the desk before it is presented.
+ */
 static uint32_t *grab_desk(desktop_t *app, int session, int *w, int *h)
 {
     tiku_remote_session_t *s = &app->remote.session[session];
@@ -316,9 +337,11 @@ static uint32_t *grab_window(desktop_t *app, tiku_window_t *win, int *w,
     return px;
 }
 
-/** @brief The windows there are, front first, but the asker's own and
- *         those put away: each one's title, and its generation to name
- *         it by when a picture of it is asked for. */
+/**
+ * @brief Send session @p session the open windows, front first, without its
+ *        own, the minimized and the plain ones: each one's title, and its
+ *        generation, the id a picture of it is asked by.
+ */
 static void grab_list(desktop_t *app, int session)
 {
     tiku_msg_t *m = tiku_msg_new(TIKU_MSG_GRABBED);

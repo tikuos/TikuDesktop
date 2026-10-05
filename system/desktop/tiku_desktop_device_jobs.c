@@ -1,8 +1,18 @@
-/* tiku_desktop_device_jobs.c -- device jobs.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_device_jobs.c - the worker jobs that talk to boards: asking
+ * each what changed, probing ports for a look, a connect or a reclaim,
+ * giving a held shell back after a run, writing a described panel's rows,
+ * and reading the Deskbar's board replicants.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_desktop_jobs_private.h"
 
+/* One "what changed" asking of one mounted board. */
 typedef struct {
     desktop_t          *app;
     int                 slot;
@@ -13,7 +23,11 @@ typedef struct {
     int                 complete;
 } ask_t;
 
-/** @brief The key every job on one board shares. */
+/**
+ * @brief The job key of the board mounted at @p prefix, "board:<prefix>";
+ *        desktop_jobs_path_key() gives the same key to a path under
+ *        /devices/<name>.
+ */
 static void
 board_key(char *out, size_t max, const char *prefix)
 {
@@ -51,7 +65,7 @@ ask_done(void *ctx)
     w->in_flight = 0;
 }
 
-/** @brief The asking is over, answered or dropped. */
+/** @brief Free an asking, answered or dropped; its slot may be asked again. */
 static void
 ask_free(void *ctx)
 {
@@ -61,7 +75,6 @@ ask_free(void *ctx)
     free(a);
 }
 
-/** @brief Whether the backend at a slot is a board on a wire. */
 int
 desktop_jobs_is_board(const tiku_backend_t *b)
 {
@@ -82,7 +95,7 @@ desktop_wire_ask(desktop_t *app)
         tiku_work_job_t job;
         ask_t *a;
 
-        /* Last turn's answer has been read by now; a new one may land. */
+        /* Every reader has had last turn's answer: clear it. */
         w->answered = 0;
         w->n = 0;
         if (!desktop_jobs_is_board(b) || prefix == NULL || w->in_flight) {
@@ -111,8 +124,11 @@ desktop_wire_ask(desktop_t *app)
 }
 
 /**
- * @brief What changed, as the router would say it: the boards' last
- *        answers, the local stores asked now.  -1 when any cannot tell.
+ * @brief What changed across the mounts: each board's last answer from its
+ *        worker and each local store asked now, ids tagged with their mount
+ *        slot.  @p complete is cleared when a source has more to give.
+ * @return how many records; -1 when a source cannot tell or nothing is
+ *         mounted.
  */
 int
 desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
@@ -130,8 +146,8 @@ desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
             continue;
         }
         if (desktop_jobs_is_board(b)) {
-            /* A board's answer is the worker's last: nothing yet is
-             * nothing changed, and "cannot tell" is still that. */
+            /* Until its worker answers, a board adds nothing; an answer
+             * of "cannot tell" is passed on as -1. */
             if (!w->answered) {
                 any = 1;
                 continue;
@@ -146,7 +162,7 @@ desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
             }
             mine = w->complete;
         } else {
-            /* Local stores answer at once, as they always did. */
+            /* A local store is asked now, on the loop. */
             if (b->ops->changes == NULL) {
                 return -1;
             }
@@ -177,14 +193,14 @@ desktop_wire_changed(desktop_t *app, int slot)
 
 #include "tiku_trk_desktop_release.inl"
 
-#define PROBE_MS 3000           /* a port with no prompt may still frame */
+#define PROBE_MS 3000           /* ms the channel probe waits for a board */
 
 typedef struct {
     desktop_t       *app;
     int              kind;
     char             port[256];
     int              baud;
-    int              probe;     /* merely asked, not waited for */
+    int              probe;     /* a short, 800 ms open */
     char             at[TIKU_PATH_MAX];
         tiku_backend_t  *dev;       /* what answered, or NULL */
     tiku_channel_t  *ch;        /* a port that frames but has no shell */
@@ -200,8 +216,8 @@ probe_run(void *ctx)
                                                        800, 0)
                       : tiku_backend_tiku_open(p->port, p->baud);
     if (p->dev == NULL && !p->probe) {
-        /* Named on the command line and no prompt: it may still carry
-         * windows over frames, which is worth three seconds' asking. */
+        /* A connect that found no prompt: the port may carry windows
+         * over frames, and a channel probe waits up to PROBE_MS. */
         p->ch = tiku_channel_open_port(p->port, p->baud);
         if (p->ch != NULL && !tiku_channel_probe(p->ch, PROBE_MS)) {
             tiku_channel_close(p->ch);
@@ -210,7 +226,14 @@ probe_run(void *ctx)
     }
 }
 
-/** @brief On the loop: mount what answered, and count the port answered. */
+/**
+ * @brief On the loop: act on what answered, by kind.  A reclaim's answer
+ *        goes to desktop_board_reclaim_landed(); a look or a boot scan
+ *        records a board that answered as a candidate and closes the port;
+ *        a connect mounts the board, or keeps a channel on a port that
+ *        frames without a shell.  Except after a reclaim, the port then
+ *        counts toward a look in progress.
+ */
 static void
 probe_done(void *ctx)
 {
@@ -223,7 +246,7 @@ probe_done(void *ctx)
         return;
     case DESKTOP_ASK_LOOK:
     case DESKTOP_ASK_BOOT:
-        /* A scan LISTS, it does not mount: a board that answered is
+        /* A look lists, it does not mount: a board that answered is
          * remembered as a candidate under its processor name, and the
          * port is let go until the Devices menu connects it. */
         if (p->dev != NULL) {
@@ -231,8 +254,7 @@ probe_done(void *ctx)
                 tiku_backend_tiku_identity(p->dev);
             char name[64];
 
-            /* The PROCESSOR names it, as the mount does: that is what a
-             * person choosing between two boards chooses by. */
+            /* Named by its processor, as a mount is. */
             if (id != NULL && id->mcu[0] != '\0') {
                 snprintf(name, sizeof name, "%s", id->mcu);
             } else if (id != NULL && id->name[0] != '\0') {
@@ -267,7 +289,7 @@ probe_done(void *ctx)
     }
 }
 
-/** @brief The probe is over. */
+/** @brief Free a probe, finished or cancelled. */
 static void
 probe_free(void *ctx)
 {
@@ -276,8 +298,11 @@ probe_free(void *ctx)
 
 /**
  * @brief Ask a port whether a board is on it, on a worker.
- * @return 0 when asked; -1 when the port is already this shell's, or
- *         no worker could take it.
+ * @param kind  a DESKTOP_ASK_ kind: what to do with the answer
+ * @param probe nonzero for a short 800 ms open, as a look and a reclaim use
+ * @param at    where a connect mounts the board, or NULL for /devices
+ * @return 0 when asked; -1 when the port is already mounted here, or no
+ *         worker could take it.
  */
 int
 desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
@@ -287,7 +312,7 @@ desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
     probe_t *p;
 
     if (port_is_mounted(app, port)) {
-        return -1;              /* already this shell's; leave it alone */
+        return -1;
     }
     p = calloc(1, sizeof *p);
     if (p == NULL) {
@@ -304,7 +329,8 @@ desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
     job.done = probe_done;
     job.free = probe_free;
     job.ctx = p;
-    /* Keyed per port: every port at once, never two hands on one. */
+    /* Keyed per port: ports are probed in parallel, and never two jobs on
+     * one port at once. */
         snprintf(job.key, sizeof job.key, "port:%.40s", p->port);
     if (tiku_work_post(&job) != 0) {
         free(p);
@@ -315,8 +341,8 @@ desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
 }
 
 /**
- * @brief Collect until @p pending reaches zero or @p ms pass -- for the
- *        boot, when the loop is not turning yet.
+ * @brief Collect finished jobs until @p pending reaches zero or @p ms pass;
+ *        used at boot, before the loop runs.
  */
 void
 desktop_wire_wait(desktop_t *app, int *pending, long ms)
@@ -341,7 +367,8 @@ typedef struct {
     char                   name[64];
 } over_t;
 
-/** @brief On a worker: leave the interpreter and give the shell back. */
+/** @brief On a worker: leave the interpreter, give the shell back and free
+ *         the run. */
 static void
 over_run(void *ctx)
 {
@@ -350,7 +377,8 @@ over_run(void *ctx)
     tiku_board_basic_free(o->run);
 }
 
-/** @brief On the loop: the shell is back; the asker hears how it ended. */
+/** @brief On the loop, once the shell is back: tell the asker how the run
+ *         ended, through desktop_board_say(). */
 static void
 over_done(void *ctx)
 {
@@ -363,7 +391,8 @@ over_done(void *ctx)
 
 /**
  * @brief A held run has ended: give the shell back on a worker, and tell
- *        the asker once it is, so the next run finds the shell free.
+ *        the asker once the shell is back.  When no worker takes the job,
+ *        both happen at once, on the loop.
  */
 void
 desktop_wire_run_over(desktop_t *app, tiku_board_basic_t *run, int what,
@@ -398,7 +427,6 @@ desktop_wire_run_over(desktop_t *app, tiku_board_basic_t *run, int what,
     }
 }
 
-/** @brief The key of the board a path under /devices/ belongs to. */
 void
 desktop_jobs_path_key(char *out, size_t max, const char *path)
 {
@@ -450,8 +478,9 @@ pwrite_run(void *ctx)
 }
 
 /**
- * @brief On the loop: the status line and the rows, if the panel is
- *        still the one that asked.
+ * @brief On the loop, when the panel is still the one that asked: put a
+ *        refused write in its status line, give each bound row the value
+ *        read back, and pass the counts to panel_refreshed().
  */
 static void
 pwrite_done(void *ctx)
@@ -500,7 +529,9 @@ pwrite_done(void *ctx)
 
 /**
  * @brief Write row @p row of panel @p p on a worker and read the panel
- *        back.  @return 1 when asked; 0 when nothing serves the place.
+ *        back.
+ * @return 1 when asked; 0 when nothing serves the place or no worker took
+ *         the job.
  */
 int
 desktop_wire_panel_write(desktop_t *app, tiku_trk_described_t *p, int row)
@@ -587,7 +618,8 @@ rread_run(void *ctx)
     }
 }
 
-/** @brief On the loop: the value shown, or the replicant gone. */
+/** @brief On the loop: give the Deskbar the value read, or remove the
+ *         replicant when the read failed. */
 static void
 rread_done(void *ctx)
 {
@@ -599,7 +631,8 @@ rread_done(void *ctx)
     }
 }
 
-/** @brief The asking is over, answered or dropped. */
+/** @brief Count a replicant read finished, answered or dropped, and free
+ *         it. */
 static void
 rread_free(void *ctx)
 {
@@ -611,7 +644,7 @@ rread_free(void *ctx)
 
 /**
  * @brief Read every Deskbar replicant that shows a board's node, on a
- *        worker; the local ones the Deskbar reads itself, cheaply.
+ *        worker; the Deskbar reads the local ones itself.
  */
 void
 desktop_wire_replicants(desktop_t *app)

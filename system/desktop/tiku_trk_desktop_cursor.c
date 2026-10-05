@@ -12,12 +12,12 @@
 #include "tiku_trk_desktop_private.h"
 
 /**
- * @brief The pointer says what is under it: the front window's corner
- *        grip offers the diagonal resize, a window's content the shape it
- *        asked for, anything else the arrow.  Only while nothing is being
- *        tracked -- a click on another window is spent activating it, but
- *        its content still says what a press there would reach.  Kept
- *        with no host as well, where a scripted run reads it.
+ * @brief Choose the pointer's shape for what is under @p x, @p y: the
+ *        diagonal resize over the focused window's resize corner, the shape
+ *        a window's content asked for (focused or not), else the arrow.
+ *
+ * During a drag or with a menu open, the arrow.  The shape is kept in
+ * app->cursor_kind with no host too, for a scripted run to read.
  */
 void
 desktop_pointer_says(desktop_t *app, int x, int y)
@@ -26,9 +26,9 @@ desktop_pointer_says(desktop_t *app, int x, int y)
     int want = TIKU_CURSOR_ARROW, hit;
 
     if (app->resize_track != NULL) {
-        /* A corner in hand keeps the arrow whatever is under the
-         * pointer: a window that will not shrink past its least size
-         * leaves the hand inside it, still resizing. */
+        /* While a corner is held the shape stays the diagonal resize: a
+         * window at its smallest size leaves the pointer inside it, still
+         * resizing. */
         want = TIKU_CURSOR_RESIZE_DIAG;
     } else if (!tiku_trk_drag_active(&app->drag) && app->popup == NULL) {
         hit = tiku_workspace_hit(app->desk, x, y, &under);
@@ -47,9 +47,10 @@ desktop_pointer_says(desktop_t *app, int x, int y)
     }
 }
 
-/** @brief Session @p session's TIKU_MSG_CURSOR: the shape one of its
- *         windows' content asks for, shown at once when the pointer is
- *         over it. */
+/**
+ * @brief Apply session @p session's TIKU_MSG_CURSOR: set the shape one of
+ *        its windows' content asks for, and update the pointer at once.
+ */
 void
 desktop_cursor(desktop_t *app, int session, const tiku_msg_t *msg)
 {

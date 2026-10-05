@@ -1,13 +1,23 @@
 /*
- * tiku_trk_desktop_keys.c - the desk's own keyboard as responders: F1 on
- * one of its own above the windows; the add-on shortcuts, the chords the
- * menus advertise aimed at the focused folder, the switcher, closing a
- * window and the settings on one under the windows' own keys and over
- * the folders' navigation.  SPDX-License-Identifier: Apache-2.0
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_desktop_keys.c - the desk's own keyboard, as two responders: F1
+ * help, above the windows; and, below the windows' own keys and above the
+ * folders' navigation, the add-on shortcuts, the chords the menus show
+ * (aimed at the focused folder), the switcher, closing a window and the
+ * settings.
+ *
+ * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_trk_desktop_private.h"
 
-/** @brief The add-on shortcuts, the Find panel and Select by pattern. */
+/**
+ * @brief The add-on shortcuts, Cmd-F for the Find panel and Shift-Cmd-A for
+ *        Select by pattern.
+ * @return 1 when the key was handled.
+ */
 static int
 keys_panels(desktop_t *app, const tiku_event_t *ev, unsigned key,
            tiku_window_t *w, folder_t *fl)
@@ -34,8 +44,8 @@ keys_panels(desktop_t *app, const tiku_event_t *ev, unsigned key,
     }
     if (key == 'a' && (ev->modifiers & TIKU_MOD_CMD) &&
         (ev->modifiers & TIKU_MOD_SHIFT)) {
-        /* PVK-047: Select by pattern, on the window it was
-         * invoked from, opened near the pointer. */
+        /* Select by pattern, on the focused folder, opened near the
+         * pointer (PVK-047). */
         int wx, wy;
 
         if (!tiku_host_pointer(app->host, &wx, &wy, NULL)) {
@@ -49,9 +59,12 @@ keys_panels(desktop_t *app, const tiku_event_t *ev, unsigned key,
     return 0;
 }
 
-/** @brief The selection's chords: all, unmount, the clipboard's Escape,
- *         Delete, and the Get Info, Open, Edit name, Duplicate and Clean up
- *         chords. */
+/**
+ * @brief The selection's chords: Select All, Unmount, the clipboard's
+ *        Escape, Delete, and Edit Query, Get Info, Open, Edit Name,
+ *        Duplicate and Clean Up.
+ * @return 1 when the key was handled.
+ */
 static int
 keys_selection(desktop_t *app, const tiku_event_t *ev, unsigned key,
            tiku_window_t *w, folder_t *fl)
@@ -72,9 +85,8 @@ keys_selection(desktop_t *app, const tiku_event_t *ev, unsigned key,
     }
     if (key == TIKU_KEY_ESCAPE && fl != NULL &&
         !alert_model(app)->open) {
-        /* The alert's own Escape lives in the overlay, later
-         * in this chain; this one is the clipboard's
-         * (PVK-034). */
+        /* Escape here is the clipboard's (PVK-034); while an alert
+         * is open, Escape is the alert's. */
         if (ev->modifiers & TIKU_MOD_SHIFT) {
             /* Shift+Escape removes the selection from the
              * clipboard, or every pose in the folder when
@@ -96,28 +108,23 @@ keys_selection(desktop_t *app, const tiku_event_t *ev, unsigned key,
             return 1;
         }
         if (tiku_trk_clip_count(&app->clip) > 0) {
-            /* Escape aborts a pending cut before anything
-             * else it means. */
+            /* Escape empties the file clipboard, cut or copy. */
             tiku_trk_clip_clear(&app->clip);
             desktop_damage_all(app);
             return 1;
         }
-        /* Nothing pending: fall through for whoever else
-         * answers to Escape. */
+        /* Nothing pending: Escape goes on to the next handler. */
     }
     if (key == TIKU_KEY_DELETE && fl == NULL) {
-        /* No window focused: the key speaks to the Desktop's
-         * own selection, as it does in Tracker. */
+        /* No window focused: Delete acts on the Desktop's
+         * selection. */
         fl = desktop_folder(app);
     }
     if (key == TIKU_KEY_DELETE && fl != NULL) {
-        /* What the key MEANS depends on where the items are: a
-         * move that can be undone where there is a Trash to
-         * move them to, and a deletion inside it or when Shift
-         * says the user has already decided (PVK-038).  The
-         * key asks the same controller the menu item does, so
-         * the question a delete puts up is one rule and not
-         * one per way of reaching it (FS-046). */
+        /* Delete runs Move to Trash and Shift-Delete runs Delete,
+         * the commands the menu items run, which decide by where
+         * the items are and ask the same questions (PVK-038,
+         * FS-046). */
         menu_invoke(app, fl,
             (ev->modifiers & TIKU_MOD_SHIFT)
                 ? TIKU_TRK_CMD_DELETE
@@ -127,15 +134,16 @@ keys_selection(desktop_t *app, const tiku_event_t *ev, unsigned key,
     }
     if (key == 'g' && (ev->modifiers & TIKU_MOD_CMD) &&
         fl != NULL) {
-        /* Cmd+G, which the menus now advertise (CW-033). */
+        /* Cmd+G runs Edit query; its menu item shows this shortcut
+         * (CW-033). */
         menu_invoke(app, fl, TIKU_TRK_CMD_EDIT_QUERY);
         desktop_damage_all(app);
         return 1;
     }
     if (key == 'i' && (ev->modifiers & TIKU_MOD_CMD) &&
         fl != NULL) {
-        /* The chord the menus have always advertised; until
-         * now nothing was listening for it (AW-065). */
+        /* Cmd+I runs Get info; its menu item shows this shortcut
+         * (AW-065). */
         menu_invoke(app, fl, TIKU_TRK_CMD_GET_INFO);
         desktop_damage_all(app);
         return 1;
@@ -150,8 +158,8 @@ keys_selection(desktop_t *app, const tiku_event_t *ev, unsigned key,
         } else if (p != NULL) {
             begin_edit(app, fl);
         } else {
-            /* Grey in the menu; said out loud for the chord
-             * (NeXT UIG ch6). */
+            /* Open is grey in the menu here; the chord says so on
+             * the status line (NeXT UIG ch6). */
             snprintf(app->status, sizeof app->status,
                      "Open is not available here");
         }
@@ -184,8 +192,11 @@ keys_selection(desktop_t *app, const tiku_event_t *ev, unsigned key,
     return 0;
 }
 
-/** @brief Cut, copy, paste, undo and redo, the standard set the menus
- *         draw their shortcuts from, the view modes and the icon size. */
+/**
+ * @brief Cut, copy, paste, undo and redo, the standard set the menus draw
+ *        their shortcuts from, the view modes and the icon size.
+ * @return 1 when the key was handled.
+ */
 static int
 keys_clipboard(desktop_t *app, const tiku_event_t *ev, unsigned key,
            tiku_window_t *w, folder_t *fl)
@@ -193,9 +204,8 @@ keys_clipboard(desktop_t *app, const tiku_event_t *ev, unsigned key,
     (void)w;
     if ((ev->modifiers & TIKU_MOD_CMD) && fl != NULL &&
         (key == 'x' || key == 'c' || key == 'v')) {
-        /* The clipboard chords, which until now only the menu
-         * could reach here; Shift turns each into its "more"
-         * or "links" variant, as the menu labels do. */
+        /* Cmd-X, Cmd-C and Cmd-V; with Shift, each runs the
+         * variant the menu shows while Shift is held. */
         unsigned m = (ev->modifiers & TIKU_MOD_SHIFT)
                          ? TIKU_TRK_MOD_SHIFT : 0u;
         int base = (key == 'x') ? TIKU_TRK_CMD_CUT
@@ -207,10 +217,9 @@ keys_clipboard(desktop_t *app, const tiku_event_t *ev, unsigned key,
         return 1;
     }
     if ((ev->modifiers & TIKU_MOD_CMD) && key == 'z') {
-        /* Cmd+Z / Shift+Cmd+Z: the file operations' undo and
-         * redo, in this shell too (CW-061).  The inline editor
-         * kept the key above, so a focused text field never
-         * loses it. */
+        /* Cmd+Z undoes and Shift+Cmd+Z redoes the last file
+         * operation (CW-061).  A focused text field gets the key
+         * first, in the windows responder above. */
         char what[64], err[200];
 
         if (ev->modifiers & TIKU_MOD_SHIFT) {
@@ -242,9 +251,9 @@ keys_clipboard(desktop_t *app, const tiku_event_t *ev, unsigned key,
     }
     if ((ev->modifiers & TIKU_MOD_CMD) && fl != NULL &&
         tiku_trk_sc_command_for_key(key, ev->modifiers) != 0) {
-        /* The rest of the standard set, resolved from the one
-         * table the menus draw their shortcuts from -- a
-         * chord the menu advertises must answer (PVK-042). */
+        /* The rest of the standard set, looked up in the table
+         * the menus draw their shortcuts from, so every chord a
+         * menu shows works (PVK-042). */
         menu_invoke(app, fl,
             tiku_trk_sc_command_for_key(key, ev->modifiers));
         desktop_damage_all(app);
@@ -252,10 +261,8 @@ keys_clipboard(desktop_t *app, const tiku_event_t *ev, unsigned key,
     }
     if ((ev->modifiers & TIKU_MOD_CMD) && fl != NULL &&
         (key == '1' || key == '2' || key == '3')) {
-        /* AW-025/CW-065: the same chords the single-window app
-         * binds.  The menu offers these modes; a shortcut that
-         * works in one window and not the other is worse than
-         * no shortcut at all. */
+        /* Cmd-1, Cmd-2 and Cmd-3: icon, mini icon and list view
+         * (AW-025, CW-065). */
         menu_invoke(app, fl,
             (key == '1') ? TIKU_TRK_CMD_ICON_VIEW :
             (key == '2') ? TIKU_TRK_CMD_MINI_ICON_VIEW
@@ -275,8 +282,11 @@ keys_clipboard(desktop_t *app, const tiku_event_t *ev, unsigned key,
     return 0;
 }
 
-/** @brief The Deskbar preferences' keys, the switcher, closing the
- *         window, the desk's own panels and the settings chord. */
+/**
+ * @brief The Deskbar preferences' keys, the switcher, closing the window,
+ *        the desktop's own panels and the settings chord.
+ * @return 1 when the key was handled.
+ */
 static int
 keys_windows(desktop_t *app, const tiku_event_t *ev, unsigned key,
            tiku_window_t *w, folder_t *fl)
@@ -295,8 +305,8 @@ keys_windows(desktop_t *app, const tiku_event_t *ev, unsigned key,
         }
     }
     if (tiku_trk_switcher_window_shown(&app->switcher_window)) {
-        /* Modal while it is up, and every key goes to it: the
-         * switcher IS the focus for as long as it shows. */
+        /* The switcher is modal: while it shows, every key goes to
+         * it. */
         char printable[2];
         const char *nm = key_name(ev, printable);
         tiku_trk_sw_act_t act = tiku_trk_switcher_window_key(
@@ -321,8 +331,7 @@ keys_windows(desktop_t *app, const tiku_event_t *ev, unsigned key,
                      (selected != NULL) ? selected : "");
         }
         if (key == TIKU_KEY_TAB) {
-            /* Tab while it is up moves on, which is the same
-             * gesture that opened it. */
+            /* Tab while it shows moves to the next window. */
             tiku_trk_switcher_window_open(&app->switcher_window,
                 (ev->modifiers & TIKU_MOD_SHIFT) ? 1 : 0);
         }
@@ -346,14 +355,14 @@ keys_windows(desktop_t *app, const tiku_event_t *ev, unsigned key,
                      w == desktop_forcequit_handle(app) ||
                      w == tiku_trk_fonts_window_handle(&app->fonts_window)) &&
         !alert_model(app)->open) {
-        /* Under the desk's own shortcuts: the panel takes every key it is
-         * focused for, but Cmd-Tab above still reaches the switcher. */
+        /* A focused panel of the desktop's own takes every key that
+         * reaches here; Cmd-Tab is handled above. */
         (void)tiku_window_send(w, ev);
         return 1;
     }
     if (key == ',' && (ev->modifiers & TIKU_MOD_CMD)) {
-        /* The settings are the application's, not a window's,
-         * so this works with no folder focused. */
+        /* Cmd-, opens the settings, with or without a folder
+         * focused. */
         tiku_trk_prefs_window_open(&app->prefs_window);
         desktop_damage_all(app);
         return 1;
@@ -362,10 +371,11 @@ keys_windows(desktop_t *app, const tiku_event_t *ev, unsigned key,
 }
 
 /**
- * @brief The desk's chords, in the order they have always been asked:
- *        help, the add-ons, the panels, the selection and clipboard
- *        chords, undo, the standard set, the view modes, the switcher,
- *        closing the window, the settings.
+ * @brief The desk's chords, asked in this order: the add-on shortcuts and
+ *        panels, the selection's chords, the clipboard and undo, the
+ *        standard set, the view modes, the switcher, closing a window, the
+ *        desktop's own panels and the settings.
+ * @return 1 when a chord was handled.
  */
 static int
 keys_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -379,9 +389,6 @@ keys_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     if (ev->type != TIKU_EVENT_KEY_DOWN) {
         return 0;
     }
-    /* The down edge alone: this function is reached on both, and its own
-     * key-up guard is further down, so an unguarded F1 opened the page
-     * twice and left the reader a step of back history to nowhere. */
     if (keys_panels(app, ev, key, w, fl) ||
         keys_selection(app, ev, key, w, fl) ||
         keys_clipboard(app, ev, key, w, fl) ||
@@ -392,9 +399,10 @@ keys_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 }
 
 /**
- * @brief F1 opens the help page of the focused window, whatever it is:
- *        asked before the window's own keys, so an application that
- *        takes every key cannot keep the reader away.
+ * @brief F1, while no menu shows, opens the focused window's help page
+ *        (see desktop_help_page_of()), or the help index.  This responder
+ *        sits above the windows, so an application that takes every key
+ *        never gets F1.
  */
 static int
 help_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -417,7 +425,7 @@ help_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
-/** @brief The desk's keyboard on the responder list. */
+/** @brief Put the desk's chords on the responder list. */
 void
 desktop_keys_attach(desktop_t *app)
 {
@@ -427,7 +435,8 @@ desktop_keys_attach(desktop_t *app)
     (void)tiku_trk_responders_push(&app->responders, &app->keys_responder);
 }
 
-/** @brief The help key, above the Info windows and the frames. */
+/** @brief Put F1 help on the responder list, above the Info windows and
+ *         the frames. */
 void
 desktop_help_attach(desktop_t *app)
 {

@@ -1,6 +1,13 @@
 /*
- * TikuDesktop -- explicit startup choices, without executing app discovery.
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_desktop_startup.c - Startup Preferences: whether the last
+ * session's folders reopen, and which installed applications start with
+ * the desktop, kept in the session store and launched after boot.
+ * Offering an application to the list runs none of its code.
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_trk_desktop_private.h"
@@ -12,16 +19,19 @@
 #define START_PAGE 6
 #define START_ATTR "Tiku:StartupV1"
 
+/* One application's saved choice, by its install id. */
 typedef struct {
     char id[96];
     unsigned char enabled;
 } start_choice_t;
 
+/* What the session store keeps under START_ATTR. */
 typedef struct {
     unsigned char version, restore, fallback, count;
     start_choice_t choice[START_MAX];
 } start_config_t;
 
+/* One installed application on offer; legacy is an older id it had. */
 typedef struct {
     char path[TIKU_PATH_MAX], label[96], id[96], legacy[96];
     int trusted, enabled;
@@ -37,7 +47,7 @@ struct desktop_startup {
     char status[160];
 };
 
-/** @brief Allocate the catalog even on installations with no apps. */
+/** @brief The startup state, allocated on first use; NULL out of memory. */
 static struct desktop_startup *start_get(desktop_t *app)
 {
     if (app->startup == NULL) {
@@ -50,7 +60,7 @@ static struct desktop_startup *start_get(desktop_t *app)
     return app->startup;
 }
 
-/** @brief Locate a stable relative install identity, not a list position. */
+/** @brief The index of saved choice @p id, or -1. */
 static int start_index(const start_config_t *c, const char *id)
 {
     int i;
@@ -60,7 +70,10 @@ static int start_index(const start_config_t *c, const char *id)
     return -1;
 }
 
-/** @brief Validate persisted data before allowing it to influence startup. */
+/**
+ * @brief Whether a saved configuration is well formed: version 1, flags of
+ *        0 or 1, ids terminated, non-empty and unique.
+ */
 static int start_valid(const start_config_t *c)
 {
     int i, j;
@@ -76,7 +89,11 @@ static int start_valid(const start_config_t *c)
     return 1;
 }
 
-/** @brief Reload committed choices; opening or cancelling never writes. */
+/**
+ * @brief Load the saved choices into the draft, or the defaults when none
+ *        are valid; an application with no saved choice is on when it is
+ *        trusted.
+ */
 static void start_load(struct desktop_startup *p)
 {
     int i;
@@ -99,7 +116,11 @@ static void start_load(struct desktop_startup *p)
     }
 }
 
-/** @brief Register an installed app without executing its code. */
+/**
+ * @brief Offer an installed application to the startup list, kept sorted by
+ *        id, without running its code; an id under trusted/ is on by
+ *        default.
+ */
 void desktop_startup_offer_id(desktop_t *app, const char *path,
                              const char *label, const char *id,
                              const char *legacy)
@@ -131,7 +152,7 @@ void desktop_startup_offer_id(desktop_t *app, const char *path,
     p->count++;
 }
 
-/** @brief Compatibility identities for older installs and system panels. */
+/** @brief Offer an application under the id @p group/<its file name>. */
 void desktop_startup_offer(desktop_t *app, const char *path,
                           const char *label, const char *group)
 {
@@ -142,7 +163,11 @@ void desktop_startup_offer(desktop_t *app, const char *path,
         desktop_startup_offer_id(app, path, label, id, NULL);
 }
 
-/** @brief Read folder policy and launch selected apps after boot. */
+/**
+ * @brief Load the startup choices, set @p restore and @p fallback from
+ *        them, and, unless @p safe_mode, start every application that is
+ *        on.
+ */
 void desktop_startup_run(desktop_t *app, int safe_mode,
                         int *restore, int *fallback)
 {
@@ -162,7 +187,11 @@ void desktop_startup_run(desktop_t *app, int safe_mode,
     }
 }
 
-/** @brief Save all choices together, preserving temporarily absent apps. */
+/**
+ * @brief Save the draft, keeping the choices of applications not installed
+ *        now.
+ * @return 1 when saved; 0 with the reason in the status line.
+ */
 static int start_save(struct desktop_startup *p)
 {
     start_config_t c = p->saved;
@@ -198,7 +227,7 @@ static int start_save(struct desktop_startup *p)
     return 1;
 }
 
-/** @brief Compact, font-scaled rows shared by drawing and input. */
+/** @brief A row's height, from the font. */
 static int start_row(void) { return tiku_font_plain()->height + 12; }
 
 typedef struct {
@@ -207,7 +236,7 @@ typedef struct {
     int heading, note;
 } start_layout_t;
 
-/** @brief One geometry for the classic grouped panel and its hit targets. */
+/** @brief The window's layout, shared by drawing and input. */
 static start_layout_t start_layout(tiku_rect_t c)
 {
     start_layout_t l;
@@ -237,7 +266,7 @@ static start_layout_t start_layout(tiku_rect_t c)
     return l;
 }
 
-/** @brief A list row stays inset from the well's two-pixel bevel. */
+/** @brief List row @p visible, inset from the list's bevel. */
 static tiku_rect_t start_app_row(start_layout_t l, int visible)
 {
     return (tiku_rect_t){l.list.x + 8,
@@ -246,7 +275,7 @@ static tiku_rect_t start_app_row(start_layout_t l, int visible)
 
 enum { START_PREVIOUS = 40, START_NEXT, START_CLEAR, START_CANCEL, START_SAVE };
 
-/** @brief Publish the current page's complete focus order and hit targets. */
+/** @brief Register the current page's controls, in focus order. */
 static void start_controls(struct desktop_startup *p, start_layout_t l)
 {
     tiku_dialog_begin(&p->dialog, START_SAVE, START_CANCEL);
@@ -265,14 +294,14 @@ static void start_controls(struct desktop_startup *p, start_layout_t l)
     tiku_dialog_end(&p->dialog);
 }
 
-/** @brief Native control decoration follows shared focus and capture state. */
+/** @brief A control's drawing flags: focused, pressed. */
 static unsigned start_flags(struct desktop_startup *p, int id)
 {
     return (tiku_dialog_focused(&p->dialog, id) ? TIKU_S_FOCUS : 0) |
            (tiku_dialog_pressed(&p->dialog, id) ? TIKU_S_PRESSED : 0);
 }
 
-/** @brief Paint one keyboard-accessible choice. */
+/** @brief Paint one checkbox. */
 static void start_check(tiku_surface_t *s, tiku_rect_t r,
                        const char *label, int on, int focused)
 {
@@ -280,7 +309,7 @@ static void start_check(tiku_surface_t *s, tiku_rect_t r,
                                  (focused ? TIKU_S_FOCUS : 0));
 }
 
-/** @brief Clip long app names to the list, preserving the window's clip. */
+/** @brief Draw an application's name, clipped to its row. */
 static void start_app_label(tiku_surface_t *s, tiku_rect_t r,
                             const char *label)
 {
@@ -288,7 +317,10 @@ static void start_app_label(tiku_surface_t *s, tiku_rect_t r,
                        TIKU_MEASURE_PLAIN, label, TIKU_C_TEXT);
 }
 
-/** @brief Folder policy and a paged checklist of installed applications. */
+/**
+ * @brief Draw the window: the folder choices, a page of the applications'
+ *        checklist, the counts and the buttons.
+ */
 static void start_draw(tiku_window_t *w, tiku_surface_t *s,
                        tiku_rect_t c, void *ctx)
 {
@@ -353,7 +385,7 @@ static void start_draw(tiku_window_t *w, tiku_surface_t *s,
                    TIKU_S_DEFAULT | start_flags(p, START_SAVE));
 }
 
-/** @brief Toggle only the focused draft value. */
+/** @brief Toggle draft choice @p id. */
 static void start_toggle(struct desktop_startup *p, int id)
 {
     if (id == 0) p->restore = !p->restore;
@@ -361,7 +393,10 @@ static void start_toggle(struct desktop_startup *p, int id)
     else p->items[id - 2].enabled = !p->items[id - 2].enabled;
 }
 
-/** @brief Mouse and keyboard take the same draft-and-save path. */
+/**
+ * @brief The window's input: its controls, by pointer or keyboard; Cmd-S
+ *        saves and Cmd-W cancels.
+ */
 static int start_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     struct desktop_startup *p = ctx;
@@ -370,8 +405,8 @@ static int start_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     int id;
     start_controls(p, l);
     id = tiku_dialog_event(&p->dialog, ev).activated;
-    /* Last action's word only: a save that failed must not still be
-     * reported under a row the user merely ticked. */
+    /* The status line clears on every activation, so a failed save's
+     * message does not outlast the next action. */
     if (id >= 0) p->status[0] = '\0';
     if (ev->type == TIKU_EVENT_KEY_DOWN && (ev->modifiers & TIKU_MOD_CMD)) {
         if (ev->key == 's') id = START_SAVE;
@@ -390,7 +425,7 @@ static int start_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     return 1;
 }
 
-/** @brief Return the current Startup Preferences window. */
+/** @brief The Startup Preferences window, or NULL. */
 tiku_window_t *desktop_startup_handle(desktop_t *app)
 {
     return app->startup ? app->startup->window : NULL;
@@ -406,7 +441,8 @@ void desktop_startup_close(desktop_t *app)
     desktop_damage_all(app);
 }
 
-/** @brief Open or raise Startup Preferences. */
+/** @brief Open Startup Preferences on the saved choices, or raise the
+ *         window when it is open. */
 void desktop_startup_open(desktop_t *app)
 {
     struct desktop_startup *p = start_get(app);

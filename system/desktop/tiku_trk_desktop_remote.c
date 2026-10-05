@@ -3,8 +3,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_remote.c - remote sessions: out-of-process windows over
- * the desk socket, and the clipboard and picks that travel with them
+ * tiku_trk_desktop_remote.c - remote sessions: the windows of applications
+ * running in processes of their own, over the desk socket; their messages
+ * (file picks, documents, boards, help, the clipboard, device requests);
+ * and closing what a session leaves behind when it ends.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +16,11 @@
 #include "tiku_trk_desktop_private.h"
 #include "tiku_vfs_rpc.h"
 
-/** @brief A remote window's pixels are whatever its session last sent. */
+/**
+ * @brief Draw a remote window: when recording, its description, or its
+ *        display list when a fresh one came; otherwise the pixels its
+ *        session last sent, on the panel colour.
+ */
 static void
 remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
                    tiku_rect_t content, void *context)
@@ -31,8 +37,8 @@ remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
     }
     if (rw != NULL && rw->list_fresh && rw->list != NULL &&
         surface->record != NULL) {
-        /* A reader, not a screen: the window is what its list says, so
-         * the list is what is recorded, words and controls intact. */
+        /* While recording, the window's display list is copied into the
+         * record as it came, words and controls included. */
         int rec = tiku_gfx_rec_enter(surface);
 
         if (rec) {
@@ -45,8 +51,8 @@ remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
     if (rw == NULL) {
         return;
     }
-    /* A shared surface is drawn out of the application's own pixels; a
-     * copied frame out of the copy.  Nothing else differs. */
+    /* The pixels come from the application's shared surface, or from
+     * the copied frame. */
     px = tiku_remote_pixels(rw);
     if (px == NULL) {
         return;
@@ -63,7 +69,8 @@ remote_window_draw(tiku_window_t *window, tiku_surface_t *surface,
     }
 }
 
-/** @brief A pick in a remote window's published menu rides the wire back. */
+/** @brief Send a pick in a remote window's published menu back to its
+ *         session. */
 static void
 remote_menu_pick(tiku_window_t *window, int command, void *context)
 {
@@ -73,9 +80,11 @@ remote_menu_pick(tiku_window_t *window, int command, void *context)
 }
 
 /**
- * @brief Give every session what it is owed: a window for an OPEN, the
- *        published menus for a MENUS -- the same publish path a linked-in
- *        window uses, which is the whole point.
+ * @brief Apply each session's window requests: close a reaped window, open
+ *        a window for an OPEN, publish its menus, turn on its size
+ *        controls, apply a configuration, a raise or a placement, and
+ *        close a window given back.  Menus are published with
+ *        tiku_window_publish_menus(), as an embedded window's are.
  */
 void
 remote_reconcile(desktop_t *app)
@@ -93,9 +102,8 @@ remote_reconcile(desktop_t *app)
             tiku_remote_window_t *rw = &s->win[j];
 
             if (rw->reap != NULL) {
-                /* A window whose row has already moved on: closed here,
-                 * where the workspace is, before anything else about
-                 * the row is believed. */
+                /* A window whose row was reused: closed before the row's
+                 * new state is read. */
                 if (app->remote_press == rw->reap) {
                     app->remote_press = NULL;
                 }
@@ -111,9 +119,8 @@ remote_reconcile(desktop_t *app)
                           2 * TIKU_WINDOW_BORDER;
                 frame.x = (app->surf->w - frame.w) / 2;
                 frame.y = (app->surf->h - frame.h) / 3;
-                /* Beside each other, and tagged by the WINDOW: a tag
-                 * naming the session handed the second window the
-                 * first one back, wearing a name it never took. */
+                /* A session's windows are laid side by side, each tagged
+                 * by its own window record. */
                 {
                     int across = frame.w + 8;
                     int cols = (across > 0) ? (app->surf->w / across) : 1;
@@ -135,8 +142,8 @@ remote_reconcile(desktop_t *app)
                     if (frame.y < 0) {
                         frame.y = 0;
                     }
-                    /* Never under the global bar: a tab nobody can
-                     * reach is a window nobody can move or zoom. */
+                    /* Never under the global bar, so the tab stays
+                     * reachable. */
                     if (app->gbar_on == 1 &&
                         frame.y < app->menus.bar.height) {
                         frame.y = app->menus.bar.height;
@@ -183,17 +190,16 @@ remote_reconcile(desktop_t *app)
                     (rw->wants_place == TIKU_APP_PLACE_ANNOUNCE);
 
                 if (plain) {
-                    /* The frame was cut for a tab it will not wear:
-                     * taken in, so the hairline hugs the content. */
+                    /* An announcement has no tab: its frame shrinks to
+                     * the content and a hairline. */
                     rw->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
                     rw->window->frame.h -=
                         tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER - 2;
                 }
-                /* Both roles across the wire: centred in the upper
-                 * part and fixed.  A splash is PLAIN -- a card the
-                 * program holds up, taken down by the program.  A
-                 * panel keeps its tab, because a window a person
-                 * opened is a window a person must be able to close. */
+                /* Both roles are centred in the upper third, at a fixed
+                 * size.  An announcement is plain, with no tab, and its
+                 * program takes it down; a panel keeps its tab and its
+                 * close box. */
                 rw->window->frame.x =
                     (app->surf->w - rw->window->frame.w) / 2;
                 rw->window->frame.y =
@@ -203,9 +209,8 @@ remote_reconcile(desktop_t *app)
                 rw->wants_place = 0;
                 desktop_damage_all(app);
             }
-            /* A row the application gave back: the window goes with it.
-             * The session stays -- it has others, or it is about to
-             * say it is leaving. */
+            /* A row the application gave back: its window closes, and
+             * the session stays. */
             if (rw->window != NULL && !rw->opened) {
                 if (app->remote_press == rw->window) {
                     app->remote_press = NULL;
@@ -218,7 +223,11 @@ remote_reconcile(desktop_t *app)
     }
 }
 
-/** @brief Acknowledge local-image dispatch before the client exits. */
+/**
+ * @brief Open the local image the session names through the associations,
+ *        and reply TIKU_MSG_IMAGEOPENED with whether it was accepted; the
+ *        client waits for the reply before it exits.
+ */
 static void remote_image_open(desktop_t *app, int session, tiku_msg_t *m)
 {
     const char *path = tiku_msg_find_string(m, "path", 0);
@@ -233,8 +242,9 @@ static void remote_image_open(desktop_t *app, int session, tiku_msg_t *m)
 
 int desktop_remote_document(const char *path)
 {
-    /* The names tiku_backend_posix.c types as the documents TikuTracker
-     * forwards in browser_open_image(). */
+    /* The extensions of the documents TikuTracker (system/tracker)
+     * forwards from browser_open_image(), as tiku_backend_posix.c types
+     * them. */
     static const char *const known[] = {
         ".bas", ".tiku", ".txt", ".md", ".markdown", ".html", ".htm"
     };
@@ -251,7 +261,11 @@ int desktop_remote_document(const char *path)
     return 0;
 }
 
-/** @brief Dispatch requested local documents through associations. */
+/**
+ * @brief Open the local document the session names, when its name is one
+ *        desktop_remote_document() accepts, through the associations; reply
+ *        TIKU_MSG_DOCUMENTOPENED with whether it was accepted.
+ */
 static void remote_document_open(desktop_t *app, int session, tiku_msg_t *m)
 {
     const char *path = tiku_msg_find_string(m, "path", 0);
@@ -265,7 +279,11 @@ static void remote_document_open(desktop_t *app, int session, tiku_msg_t *m)
     }
 }
 
-/** @brief Native app workspaces cannot infer the desktop's keyboard owner. */
+/**
+ * @brief Tell each remote window whether it has the focus, when that
+ *        changes: an application's own workspace cannot see the desktop's
+ *        keyboard focus.
+ */
 void
 remote_focus(desktop_t *app, tiku_window_t *focused)
 {
@@ -286,12 +304,10 @@ remote_focus(desktop_t *app, tiku_window_t *focused)
 }
 
 /**
- * @brief Take what each session has said, and act on what it asked for.
- *
- * The upward message road existed and nothing drained it: a session
- * could say things into an eight-deep ring for ever and the shell would
- * never look.  The first thing worth saying is "let the person pick a
- * file", so this is where it is heard.
+ * @brief Drain each session's messages and act on them: opening an image, a
+ *        document or a path, a file pick, a device request, a screenshot, a
+ *        tray icon, a cursor, the clipboard, help, and a board run, look,
+ *        release, reclaim, save, input or stop.
  */
 void
 remote_hear(desktop_t *app)
@@ -337,16 +353,15 @@ remote_hear(desktop_t *app)
                            (char)(w >> 8), (char)w, i);
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDLOOK) {
-                /* Begun here, finished over the beats: the asker is told
-                 * when the last port has been asked. */
+                /* The asker is told when the last port has answered. */
                 desktop_board_look_begin(app, i, NULL);
             }
             if (tiku_msg_what(m) == TIKU_MSG_BOARDFREE) {
                 const char *board = tiku_msg_find_string(m, "board", 0);
                 int ok = desktop_board_release(app, board);
 
-                /* Success is acknowledged after the close worker finishes,
-                 * not while another owner still has the serial port open. */
+                /* Success is told (RELEASED) once the close worker has
+                 * closed the port; only a refusal is told here. */
                 if (!ok) desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED,
                                            (board != NULL) ? board : "");
                 desktop_board_names_tell(app);
@@ -355,8 +370,8 @@ remote_hear(desktop_t *app)
                 const char *board =
                     tiku_msg_find_string(m, "board", 0);
 
-                /* Taken: the answer comes when the ports have spoken.
-                 * Not taken: there is nothing to wait for. */
+                /* A reclaim taken is answered when every port has; a
+                 * reclaim refused is answered FAILED now. */
                 if (!desktop_board_reclaim(app, board, i, NULL)) {
                     desktop_board_tell(app, i, TIKU_APP_BOARD_FAILED,
                                        (board != NULL) ? board : "");
@@ -383,9 +398,8 @@ remote_hear(desktop_t *app)
                 (void)desktop_board_stop(app);
             }
             if (tiku_msg_what(m) == TIKU_MSG_CLIP) {
-                /* A session put text on the desk's clipboard.  Taken
-                 * into the one store; the stamp watch below mirrors it
-                 * back out to every session, this one included. */
+                /* Into the desk's clipboard; clip_mirror() sends it on
+                 * to every session, this one included. */
                 const char *text = tiku_msg_find_string(m, "text", 0);
 
                 tiku_clipboard_set((text != NULL) ? text : "");
@@ -423,9 +437,8 @@ remote_hear(desktop_t *app)
     }
 }
 
-/**
- * @brief Tell one session something its board program said.
- */
+/** @brief Tell session @p session something about its board run, as
+ *         TIKU_MSG_BOARDOUT. */
 void
 desktop_board_tell(desktop_t *app, int session, int what, const char *text)
 {
@@ -445,9 +458,8 @@ desktop_board_tell(desktop_t *app, int session, int what, const char *text)
 }
 
 /**
- * @brief Tell every session which boards are mounted, when that changes.
- *
- * Warm before a menu asks, for the same reason the clipboard is.
+ * @brief Tell every session the mounted boards and the current device, when
+ *        either changes or the number of sessions does.
  */
 void
 desktop_board_names_tell(desktop_t *app)
@@ -462,9 +474,8 @@ desktop_board_names_tell(desktop_t *app)
         }
     }
         (void)desktop_board_list(app, names, sizeof names);
-    /* Told when the names change -- AND when the room does.  The boards
-     * were named once at startup, before any application had connected,
-     * and a session arriving after that would never have heard them. */
+    /* Also when the number of sessions changes, so a session that
+     * connects later hears them. */
     if (sessions == app->board_names_sessions &&
         strcmp(names, app->board_names_told) == 0 &&
         strcmp(app->current_device, app->board_current_told) == 0) {
@@ -481,8 +492,8 @@ desktop_board_names_tell(desktop_t *app)
         return;
     }
     (void)tiku_msg_add_string(m, "names", names);
-    /* The current device rides with them: a session out of process has
-     * no other way to know what its work defaults to. */
+    /* The current device goes with them: no other message carries it to
+     * the remote sessions. */
     (void)tiku_msg_add_string(m, "current", app->current_device);
     for (i = 0; i < TIKU_REMOTE_SESSIONS; i++) {
         (void)tiku_remote_tell(&app->remote, i, m);
@@ -491,14 +502,12 @@ desktop_board_names_tell(desktop_t *app)
 }
 
 /**
- * @brief Mirror the desk's clipboard to each session that has not had it.
+ * @brief Send the desk's clipboard to each session that has not had its
+ *        current version: after a change of the clipboard's stamp, or when
+ *        a session joins while text is held.
  *
- * The store cannot say who changed it -- a field's Cmd-C deep in the
- * kit, an embedded application's service, a session over the wire --
- * so the shell WATCHES its stamp once a turn and tells each session
- * what it has not heard: a change, or on joining what is already held.
- * One whose output is too full to take it is told on a later turn, so
- * every session's copy comes warm, and a paste never waits on the wire.
+ * The clipboard does not record who changed it, so its stamp is checked
+ * once a turn.  A session whose output is full is told on a later turn.
  */
 void
 clip_mirror(desktop_t *app)
@@ -533,13 +542,10 @@ clip_mirror(desktop_t *app)
 }
 
 /**
- * @brief Forget an ask whose panel is no longer asking it.
- *
- * The panel says nothing on cancel and the application is owed no
- * answer, but a note of the ask that outlives it refuses every later
- * one.  The panel's target says whose question it holds; the moment
- * that is not the remote's, closed or taken by one of the shell's own
- * askers, the ask is over.
+ * @brief Forget an application's file-panel question once the panel no
+ *        longer asks it (closed, or taken by another question).  The
+ *        panel sends nothing on cancel, and while pending_pick.kind is set
+ *        every question but a newer one from the same window is refused.
  */
 void
 pick_sweep(desktop_t *app)
@@ -551,12 +557,13 @@ pick_sweep(desktop_t *app)
     }
 }
 
-/** @brief Close the windows of sessions that died since the last poll. */
+/** @brief Close the windows of sessions that ended since the last poll. */
 void
 remote_sweep(desktop_t *app)
 {
-    /* A window whose session vanished is swept by tag: the workspace
-     * still holds it, but no session claims it. */
+    /* A window drawn by remote_window_draw() that no session owns any
+     * more belongs to a session that has ended; the workspace still
+     * holds it. */
     tiku_window_t *w;
     int i;
 
@@ -567,9 +574,8 @@ remote_sweep(desktop_t *app)
         }
         if (w->open && w->draw == remote_window_draw &&
             tiku_remote_owner(&app->remote, w) == NULL) {
-            /* Closing compacts the workspace's order, so the next
-             * window is at this index: advancing here would step over
-             * it, and a killed application would leave a ghost. */
+            /* Closing compacts the workspace's order, so the next window
+             * is at this index: the index does not advance. */
             tiku_workspace_close(app->desk, w);
             desktop_damage_all(app);
             continue;

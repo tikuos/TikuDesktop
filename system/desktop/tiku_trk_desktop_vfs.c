@@ -1,9 +1,20 @@
-/* Device access is a desktop service, not an application's private port.
- * SPDX-License-Identifier: Apache-2.0 */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_desktop_vfs.c - applications' requests to a board's namespace:
+ * each is served on a worker against the connected board's backend, under
+ * the board's job key, and the reply goes back to the session that asked.
+ * An application does not open the board's port to make a request.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 #include "tiku_vfs_rpc.h"
 #include "tiku_work.h"
 
+/* One application's request to a board, pending or in flight. */
 struct desktop_vfs_job {
     struct desktop_vfs_job *next;
     desktop_t *app;
@@ -14,7 +25,11 @@ struct desktop_vfs_job {
     char key[TIKU_WORK_KEY];
 };
 
-/** @brief Device operations execute under the same key as mount traffic. */
+/**
+ * @brief On a worker: serve the request against the board, unless it was
+ *        cancelled.  It runs under the board's job key, so it is ordered
+ *        with the mount's own traffic.
+ */
 static void vfs_run(void *ctx)
 {
     struct desktop_vfs_job *j = ctx;
@@ -22,7 +37,11 @@ static void vfs_run(void *ctx)
         j->reply = tiku_vfs_serve(j->backend, j->request);
 }
 
-/** @brief A reused session slot must never receive another app's response. */
+/**
+ * @brief On the loop: send the reply to the session that asked, unless the
+ *        session slot's generation changed: the slot then holds another
+ *        application.
+ */
 static void vfs_done(void *ctx)
 {
     struct desktop_vfs_job *j = ctx;
@@ -32,7 +51,10 @@ static void vfs_done(void *ctx)
         tiku_remote_tell(&j->app->remote, j->session, j->reply);
 }
 
-/** @brief Remove only this request, including work cancelled by unmount. */
+/**
+ * @brief Unlink this request from the pending list and free it; a request
+ *        an unmount cancelled comes here too.
+ */
 static void vfs_free(void *ctx)
 {
     struct desktop_vfs_job *j = ctx;
@@ -44,7 +66,11 @@ static void vfs_free(void *ctx)
     tiku_msg_free(j->request); tiku_msg_free(j->reply); free(j);
 }
 
-/** @brief Unavailable devices never fall back to host files. */
+/**
+ * @brief Answer @p request with the refusal tiku_vfs_serve() gives without
+ *        a backend: a board that is not connected never falls back to the
+ *        host's files.
+ */
 static void vfs_refuse(desktop_t *app, int session, const tiku_msg_t *request)
 {
     tiku_msg_t *reply = tiku_vfs_serve(NULL, request);
@@ -52,7 +78,13 @@ static void vfs_refuse(desktop_t *app, int session, const tiku_msg_t *request)
     tiku_msg_free(reply);
 }
 
-/** @brief Admit bounded requests only for an already connected device. */
+/**
+ * @brief Serve a session's request to a connected board on a worker.
+ *
+ * Refused when the board named is not a plain name of a connected board,
+ * the request is over 8 KB, or 32 are pending.  A second request from a
+ * session that has one pending is ignored.
+ */
 void desktop_vfs_request(desktop_t *app, int session, const tiku_msg_t *request)
 {
     const char *board = tiku_msg_find_string(request, "board", 0);
@@ -89,7 +121,12 @@ void desktop_vfs_request(desktop_t *app, int session, const tiku_msg_t *request)
     }
 }
 
-/** @brief Drain before closing backends; a stuck worker retains ownership. */
+/**
+ * @brief Cancel every pending request and wait up to five seconds for them
+ *        to end, before the backends close.
+ * @return 1 when all ended; 0 when one still runs, and the backend it uses
+ *         must be left open.
+ */
 int desktop_vfs_destroy(desktop_t *app)
 {
     for (struct desktop_vfs_job *j = app->vfs_jobs; j; j = j->next)

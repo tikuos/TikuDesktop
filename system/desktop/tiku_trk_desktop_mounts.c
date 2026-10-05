@@ -3,9 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_mounts.c - devices as mounts: naming a board's namespace,
- * mounting it beside the local files, and what is saved and refreshed around
- * it
+ * tiku_trk_desktop_mounts.c - boards as mounts: naming and mounting them
+ * under /devices, their window channels, boards that dial in, the ports on
+ * offer to connect, and the pumps that carry change notices to the windows.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,10 +22,10 @@
 #include <unistd.h>
 
 /**
- * @brief Re-resolve what a mount may have fixed, half a second on (PVN-042).
- *
- * Deliberately deferred so a link to the arriving volume resolves as a
- * volume rather than a plain directory.
+ * @brief Reload every open folder and the Desktop.  Runs half a second
+ *        after a volume mounts, when a link to the new volume resolves as
+ *        a volume (PVN-042).
+ * @return 1: the task runs once.
  */
 int
 refresh_after_mount(void *ctx)
@@ -45,11 +45,9 @@ refresh_after_mount(void *ctx)
 }
 
 /**
- * @brief Save what is open on the leaving volume, first (AW-096).
- *
- * While the volume is still there to save to: positions flushed for every
- * window on it, and an active query holding the device open is closed so
- * it cannot block the unmount.
+ * @brief Before volume @p dev unmounts (AW-096): save the state of every
+ *        window on it and of the Desktop, and close each query window that
+ *        targets it, since a running query holds the volume busy.
  */
 void
 save_before_unmount(dev_t dev, void *context)
@@ -83,13 +81,13 @@ save_before_unmount(dev_t dev, void *context)
 }
 
 /**
- * @brief What to call a board where the namespace can see it.
+ * @brief The leaf a board mounts under in /devices, into @p out.
  *
- * Its own name where it has one, sanitised into a path component so a
- * board answering to "my/board" cannot mount somewhere nobody asked for.
- * The name is user-settable and so weak: a clash takes a number, and
- * durable state keys on the devid, not on this, so renaming a board
- * keeps the arrangement of its windows.
+ * Its processor, else its own name, else its devid, lower-cased and made
+ * a path component, so a name such as "my/board" cannot reach another
+ * place.  A leaf already mounted takes the port's tty leaf
+ * ("nrf54l15-ttyACM3"), then a number.  Saved window state keys on the
+ * devid, not on this leaf.
  */
 void
 device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
@@ -101,9 +99,9 @@ device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
     const char *from;
     int tries;
 
-    /* The processor names the board -- nrf54l15, nrf54lm20b -- since
-     * that is what a person choosing between two is choosing by; the
-     * board's own name is what every board ships calling itself. */
+    /* The processor names the board (nrf54l15, nrf54lm20b): boards ship
+     * with the same default name, so the processor is what tells two
+     * apart. */
     from = (id != NULL && id->mcu[0] != '\0')  ? id->mcu
          : (id != NULL && id->name[0] != '\0') ? id->name
                                                 : dev->devid;
@@ -134,8 +132,8 @@ device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
         if (tries == 1) {
             snprintf(out, max, "%s", base);
         } else if (tries == 2) {
-            /* Two of one processor: the port tells them apart, as it
-             * does on the bench -- nrf54l15-ttyACM3. */
+            /* Two of one processor: the tty leaf of the port tells them
+             * apart (nrf54l15-ttyACM3). */
             char port[256], real[PATH_MAX];
             const char *leaf = NULL;
 
@@ -192,8 +190,9 @@ channels_attach(desktop_t *app)
     }
 }
 
-/* How long a port with no prompt is given to acknowledge a link: the
- * link's own retries take two and a half seconds to give up. */
+/* How long, in ms, a port with no prompt is given to acknowledge a link;
+ * the link's own retries give up after 2.5 s.  Not used in this file: the
+ * probe in tiku_desktop_device_jobs.c defines its own PROBE_MS. */
 #define PROBE_MS 3000
 
 /** @brief Keep @p ch in a free slot, or close it when there is none.
@@ -216,8 +215,8 @@ channel_keep(desktop_t *app, tiku_channel_t *ch)
 }
 
 
-/** @brief Each turn: pump every channel, and let go of a dialled board
- *         whose link is lost, its mount with it. */
+/** @brief Each turn: pump every channel, and unmount a dialled board whose
+ *         link is lost and close its channel. */
 void
 channels_tend(desktop_t *app)
 {
@@ -230,9 +229,9 @@ channels_tend(desktop_t *app)
             continue;
         }
         (void)tiku_channel_pump(ch);
-        /* A link a board dialled does not come back: the board dials
-         * again and is taken in afresh.  Its mount goes with it, so a
-         * board that rebooted is one place under /devices, not two. */
+        /* A lost dial-in link is not restored: the board dials again and
+         * is taken in as new.  Its mount is removed with the link, so a
+         * rebooted board appears once under /devices. */
         if (app->channel_mount[k][0] != '\0' &&
             tiku_channel_losses(ch) > 0) {
             tiku_trail("unmount %s: the link was lost",
@@ -250,25 +249,24 @@ channels_tend(desktop_t *app)
 /* BOARDS THAT DIAL IN                                                       */
 /*---------------------------------------------------------------------------*/
 
-/** @brief Listen on @p port for boards that dial in rather than being
- *         found on a cable.  @return 1 when the socket is up. */
+/** @brief Listen on TCP @p port for boards that dial in.
+ *  @return 1 when the socket is up. */
 int
 boards_listen(desktop_t *app, int port)
 {
-    /* Zero is "no listener" here, as it is in a desktop that never asked
-     * for one: the shell's own descriptors are open, so the socket is
-     * never 0 in practice. */
+    /* board_listen <= 0 means no listener.  stdin is open, so the socket
+     * is never descriptor 0. */
     app->board_listen = tiku_link_tcp_listen(port);
     return app->board_listen > 0;
 }
 
 /**
- * @brief Mount the shell of a board that dialled in, over the channel it
- *        came on.
+ * @brief Mount the shell of a board that dialled in, over the channel in
+ *        slot @p slot.
  *
- * On the loop, unlike a cable's open: the shell's transport is fed by
- * pumping this channel, and the loop pumps it too, so a worker opening
- * it would be a second hand on one link.
+ * @note Runs on the loop.  The shell's transport is fed by pumping this
+ *       channel, which the loop also pumps, and one link must not be
+ *       pumped from two threads.
  */
 static void
 mount_over(desktop_t *app, int slot)
@@ -297,9 +295,12 @@ mount_over(desktop_t *app, int slot)
 }
 
 /**
- * @brief Take in every board that dialled since the last turn: a channel
- *        on its connection, adopted by the desktop's listener and greeted
- *        where it stands, since it arrived after the boot-time sweep.
+ * @brief Take in every board that dialled since the last turn: wrap its
+ *        connection in a channel, adopt the channel into the remote
+ *        listener, greet it and mount the board's shell over it.
+ *
+ * Boards that dial in arrive after channels_attach() has run at startup,
+ * so each is adopted here.
  */
 void
 boards_accept(desktop_t *app)
@@ -347,9 +348,8 @@ boards_unlisten(desktop_t *app)
 /**
  * @brief Whether a board is already mounted from @p port.
  *
- * Looking again must not open what this shell already has open: two
- * owners on one cable corrupt each other, and the second one would be
- * mounted beside the first as though it were another board.
+ * A port this desktop holds must not be opened again: two owners on one
+ * cable corrupt each other, and the board would be mounted twice.
  */
 int
 port_is_mounted(desktop_t *app, const char *port)
@@ -380,19 +380,6 @@ port_is_mounted(desktop_t *app, const char *port)
 }
 
 
-/**
- * @brief Put every board that answers into the namespace under /devices.
- *
- * One backend per board, each at a name of its own, so two of them are
- * two places in one namespace rather than two desktops.  A board that
- * will not open is skipped rather than fatal: the others are still
- * worth showing, and the shell is not a device tool.  A board named by
- * @p port goes at @p at when that is given, so a namespace a script
- * was written against can be laid over a real board.  A port with no
- * prompt on it may still be a board with windows: see windows_only.
- *
- * @return how many were mounted.
- */
 /** @brief Where a port really is: its tty leaf, ttyACM3. */
 void
 device_port_where(const char *port, char *out, size_t max)
@@ -402,7 +389,7 @@ device_port_where(const char *port, char *out, size_t max)
 
     if (realpath(port, real) != NULL &&
         (leaf = strrchr(real, '/')) != NULL && leaf[1] != '\0') {
-        snprintf(out, max, "%s", leaf + 1);         /* ttyACM3 */
+        snprintf(out, max, "%s", leaf + 1);
         return;
     }
     leaf = strrchr(port, '/');
@@ -411,11 +398,11 @@ device_port_where(const char *port, char *out, size_t max)
 }
 
 /**
- * @brief Remember a port a scan found but nothing mounted: the Devices
- *        menu offers it to connect.
+ * @brief Remember a port that nothing mounted, for the Devices menu to
+ *        offer to connect.
  *
- * A scan knows only where the port is; the probe that follows calls this
- * again with the processor @p name, which is what a person chooses by.
+ * A scan knows only where the port is and passes no @p name; a look's
+ * probe calls this again with the board's processor name.
  */
 void
 device_candidate_record(desktop_t *app, const char *port, const char *name)
@@ -447,9 +434,10 @@ device_candidate_record(desktop_t *app, const char *port, const char *name)
 }
 
 /**
- * @brief Enumerate the ports on the bus into the candidate list, without
+ * @brief Replace the candidate list with the serial ports found, without
  *        opening any.  A port already mounted is connected, not a
- *        candidate.  Returns how many candidates are on offer.
+ *        candidate.
+ * @return how many candidates are on offer.
  */
 int
 device_scan(desktop_t *app)
@@ -474,24 +462,23 @@ device_scan(desktop_t *app)
 /**
  * @brief Bring up the devices at boot.
  *
- * A port named on the command line is a request to mount THAT board now,
- * and the boot waits for it.  With no port named the bus is only LISTED
- * -- a board becomes ours when the Devices menu connects it, never by
- * merely being found.
+ * A port named with -p is mounted now, at @p at when that is given, and
+ * the boot waits up to a minute for it.  With no port named the ports are
+ * only listed: a board is mounted when the Devices menu connects it, not
+ * when it is found.
  *
- * @return how many boards are mounted (the scan path returns how many
- *         are on offer).
+ * @return how many mounts are under /devices, or with no port named, how
+ *         many ports are on offer.
  */
 int
 mount_devices(desktop_t *app, const char *port, int baud, const char *at)
 {
     int i, mounted = 0;
 
-    app->board_baud = baud;     /* what a board let go is found again at */
+    app->board_baud = baud;     /* for later looks, connects, reclaims */
     if (port != NULL && port[0] != '\0') {
-        /* A port named on the command line is a request to mount THAT
-         * board now; the boot waits for the answer since the loop is
-         * not turning yet and the splash is honest about it. */
+        /* The loop does not run during boot: wait here for the probe,
+         * counted with a look's accounting. */
         app->look.going = 1;
         app->look.session = -1;
         app->look.slot = NULL;
@@ -513,14 +500,14 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
         }
         return mounted;
     }
-    /* No port named: list what is on the bus and mount nothing.  A board
-     * becomes ours only when the Devices menu connects it. */
+    /* No port named: list the ports and mount nothing. */
     return device_scan(app);
 }
 
 /**
- * @brief A board answered on @p port: mount it.  The loop's side of a
- *        probe; the open itself was a worker's.
+ * @brief A board answered on @p port: mount it under /devices (or at
+ *        @p at), make it current when no device is, and keep a channel
+ *        for a board with a /gui.  The loop's side of a connect probe.
  * @return 1 when mounted.
  */
 int
@@ -530,7 +517,7 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
     char name[64], prefix[TIKU_PATH_MAX];
 
     if (port_is_mounted(app, port)) {
-        /* Two askings of one cable, and the other landed first. */
+        /* Another probe of this port mounted it first. */
         tiku_backend_close(dev);
         return 0;
     }
@@ -540,8 +527,8 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
         device_mount_name(dev, app->backend, name, sizeof name);
         snprintf(prefix, sizeof prefix, "/devices/%s", name);
     }
-    /* Four seconds: a control's write is a few bytes, and a board
-     * that takes longer is one to say something about, not wait on. */
+    /* A write fails after four seconds; a control's write is a few
+     * bytes. */
     tiku_backend_tiku_set_write_timeout(dev, 4000);
     if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
         tiku_trail("mount %s refused", prefix);
@@ -549,17 +536,15 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
         return 0;
     }
     tiku_trail("mount %s on %s", prefix, port);
-    /* Connecting a board with nothing else current is a person saying
-     * where their work goes: it becomes the current device.  A second
-     * board joins it and does NOT take the place, because the one
-     * already chosen was chosen. */
+    /* A board mounted while no device is current becomes the current
+     * device; a later board does not replace it. */
     if (app->current_device[0] == '\0' &&
         strncmp(prefix, "/devices/", 9) == 0) {
         device_set_current(app, prefix + 9);
     }
-    /* A board with a /gui has windows to show: a channel beside the
-     * shell carries them.  The stat is answered from the manifest just
-     * loaded, so it costs no wire. */
+    /* A board with a /gui has windows: a channel beside its shell carries
+     * them.  The stat is answered from the manifest read at the mount,
+     * with no wire traffic. */
     {
         tiku_model_t gui;
 
@@ -571,9 +556,10 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
             if (slot >= 0) {
                 snprintf(app->channel_board[slot], TIKU_PATH_MAX, "%s",
                          prefix);
-                /* A board taken in after the desktop was up: its
-                 * channel is adopted here, because the one sweep at
-                 * startup is long past and nothing else would. */
+                /* Adopted into the remote listener here: a board
+                 * connected after startup gets no other adoption.  At
+                 * boot the listener is set up later, and channels_attach
+                 * adopts every channel again. */
                 (void)channel_attach(app, slot);
             }
         }
@@ -583,15 +569,14 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
 }
 
 /**
- * @brief The programs launched from here that have died since last
- *        asked: said, with the signal and where the account of it is.
+ * @brief Raise an alert for each program launched from here that ended
+ *        since the last call by a signal or with a nonzero status, unless
+ *        that end was expected: its signal or exit status, and whether its
+ *        exit report was saved.  At most four per call.
  */
 static void
 reap_deaths(desktop_t *app)
 {
-    /* What became of the programs this shell started.  A death
-     * is SAID: an application whose window simply vanished is
-     * the thing nobody could explain. */
     tiku_trk_death_t gone[4];
     int n = tiku_trk_launch_reap(gone, 4), g;
 
@@ -599,7 +584,7 @@ reap_deaths(desktop_t *app)
         char says[256];
 
         if ((!gone[g].signal && !gone[g].status) || gone[g].expected) {
-            continue;   /* it ended; only a death is news */
+            continue;   /* a clean or expected exit raises nothing */
         }
         snprintf(says, sizeof says,
                  "%s stopped: %s %d. %s",
@@ -615,8 +600,11 @@ reap_deaths(desktop_t *app)
 }
 
 /**
- * @brief The notice pump, every 400 ms: what the stores report changed, and
- * which windows that reaches.
+ * @brief Every 400 ms: report programs that ended abnormally, refresh the
+ *        Deskbar's recent lists, hand the stores' change notices to every
+ *        window, act on volumes mounted and unmounted, and refresh the
+ *        Info windows, the Deskbar and its replicants; every 3 s, re-run
+ *        the live queries.
  */
 void
 desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
@@ -628,9 +616,9 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
 
                         reap_deaths(app);
         {
-            /* What the leaf menu offers above the Deskbar folder.
-             * Refreshed on the tick rather than read by the bar: they
-             * are the same lists the Open panel keeps (DB-002). */
+            /* The Deskbar's recent documents, folders and applications,
+             * copied each pump from the lists the Open panel keeps
+             * (DB-002). */
             static const tiku_trk_recent_t kWhich[] = {
                 TIKU_TRK_RECENT_DOCS, TIKU_TRK_RECENT_FOLDERS,
                 TIKU_TRK_RECENT_APPS
@@ -648,17 +636,16 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
             }
         }
         /*
-         * Drained ONCE for the whole desktop: reading the device's ring
-         * takes the records out of it, so a per-window drain would let
-         * the first window consume everyone else's and leave them told
-         * that nothing happened.
+         * Drained once per pump for every reader: reading a device's
+         * ring removes the records, so every window, the Desktop and the
+         * panels are handed this one batch.
          */
                 tiku_model_change_t ch[32];
         int nch = -1, complete = 1;
 
-        /* The boards' answers are the workers' last, the local stores'
-         * at once; the next asking is posted once every reader has had
-         * this one. */
+        /* A board's records are its worker's last answer, a local
+         * store's are read now; the next asking is posted once every
+         * reader has had these. */
         nch = desktop_wire_changes(app, ch, 32, &complete);
         for (i = 0; i < app->folder_count; i++) {
             folder_t *fl = &app->folders[i];
@@ -668,17 +655,15 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
                 continue;
             }
             changed += tiku_trk_poseview_pump(fl->view, 5);
-            /* Membership changes go through the notice handler rather
-             * than a reload: a re-read would rebuild every row and take
-             * the selection, the scroll position and the arrangement
-             * with it. */
+            /* Membership changes go through the notice handler, which
+             * keeps the selection, the scroll position and the
+             * arrangement. */
             nf = tiku_trk_poseview_poll(fl->view, tiku_trk_now(),
                                         ch, nch, complete);
             if ((nf & TIKU_TRK_NOTIFY_GONE) != 0u) {
-                /* The folder is gone.  Its window goes with it, and its
-                 * position is deliberately NOT saved -- there is nothing
-                 * left for it to be the position of, and the teardown
-                 * sweep must not write one either. */
+                /* The folder is gone: its window closes, and fl->gone
+                 * keeps its position from being saved, here and at
+                 * teardown. */
                 fl->gone = 1;
                 tiku_workspace_close(app->desk, fl->win);
                 changed++;
@@ -699,9 +684,7 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
             tiku_trk_now(), ch, nch, complete);
                 changed += panels_poll(app, ch, nch);
         desktop_wire_ask(app);
-        {   /* What has been mounted or unmounted since the last look.
-             * Polled with everything else rather than on a timer of its
-             * own: a volume arriving is a change like any other. */
+        {   /* The volumes mounted or unmounted since the last poll. */
             tiku_volchange_t vc[TIKU_VOLWATCH_MAX];
                         int nv;
 
@@ -711,34 +694,34 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
 
             for (k = 0; k < nv; k++) {
                 if (vc[k].renamed) {
-                    /* Only the label moved: the union rebuild re-reads
-                     * every volume's name, and the relist refreshes
-                     * open listings (MA-021). */
+                    /* Only the label changed: the Desktop union is
+                     * rebuilt, which re-reads every volume's name
+                     * (MA-021). */
                     tiku_trk_desktop_view_rebuild(&app->desktop_view);
                     changed++;
                     continue;
                 }
                 if (vc[k].mounted) {
-                    /* A folder window showing the parent finds it by
-                     * re-listing, which the poll above already did.
-                     * The Desktop union gains the volume's Desktop
-                     * folder as a source, live (PVN-040, PVN-051). */
+                    /* A folder window showing the parent lists the
+                     * volume through the poll above.  The Desktop union
+                     * gains the volume's Desktop folder as a source
+                     * (PVN-040, PVN-051). */
                     tiku_trk_desktop_view_rebuild(&app->desktop_view);
-                    /* And half a second on, broken links get another
-                     * look: by then a link to the new volume resolves
-                     * as a volume (PVN-042). */
+                    /* Half a second later the folders reload, when a
+                     * link to the new volume resolves as a volume
+                     * (PVN-042). */
                     (void)tiku_trk_run_later(app->loop,
                         refresh_after_mount, app, NULL, 500000);
                     changed++;
                     continue;
                 }
-                /* And loses it: a source that has gone must not be
-                 * polled for. */
+                /* Unmounted: the Desktop union drops the volume's
+                 * Desktop folder, so a source that has gone is not
+                 * polled. */
                 tiku_trk_desktop_view_rebuild(&app->desktop_view);
-                /* Unmounted.  A window ON the volume closes -- and its
-                 * arrangement is deliberately NOT saved, because the
-                 * disk it belongs to has gone; a window merely SHOWING
-                 * rows from it drops those rows (PVN-043). */
+                /* A window on the volume closes, and its arrangement is
+                 * not saved, since its disk has gone; a window showing
+                 * rows from the volume drops those rows (PVN-043). */
                 for (i = 0; i < app->folder_count; i++) {
                     folder_t *fl = &app->folders[i];
 
@@ -778,9 +761,8 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
                 changed += tiku_trk_deskbar_refresh_except(app->deskbar,
                                                    "/devices/");
         desktop_wire_replicants(app);
-        /* Live queries re-evaluate on a slower beat than values are
-         * read: a re-walk costs a directory listing per subtree, and a
-         * result set that moves every 400 ms is unreadable anyway. */
+        /* Live queries re-run at most every 3 s: a re-walk costs a
+         * directory listing per subtree. */
         if (tiku_trk_now() - lp->last_requery > 3000000) {
             for (i = 0; i < app->folder_count; i++) {
                 if (app->folders[i].win != NULL &&
@@ -804,8 +786,9 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
 }
 
 /**
- * @brief The minute sweep: every window re-lists, so a store that reports
- * nothing still catches up.
+ * @brief Once a minute, when the machine is not busy: reap the stored
+ *        searches nobody named, keeping those a window shows (Q-037,
+ *        AW-090).
  */
 void
 desktop_sweep(desktop_t *app, desktop_loop_t *lp)
@@ -813,9 +796,8 @@ desktop_sweep(desktop_t *app, desktop_loop_t *lp)
     int i;
 
     if (tiku_trk_now() - lp->last_sweep > 60000000) {
-        /* The reaping of searches nobody named.  On a slow tick of its
-         * own and skipped for the first half hour, because it is the
-         * least urgent work there is (Q-037, AW-090). */
+        /* The searches open in a window are kept.  The sweep itself
+         * skips the first half hour of uptime. */
         const char *open[TIKU_WINDOW_MAX];
         int nopen = 0;
 
@@ -826,9 +808,8 @@ desktop_sweep(desktop_t *app, desktop_loop_t *lp)
             }
         }
         if (!tiku_trk_task_system_busy()) {
-            /* Deleting user data is idle-only work twice over: the
-             * half-hour hold-off AND the machine's own load gate
-             * (AW-090). */
+            /* Deleting user data waits for both the half-hour hold-off
+             * and an idle machine (AW-090). */
             (void)tiku_query_sweep(app->store, (int64_t)time(NULL),
                                        (tiku_trk_now() - lp->started_at) /
                                            1000000, open, nopen);
@@ -838,19 +819,17 @@ desktop_sweep(desktop_t *app, desktop_loop_t *lp)
 }
 
 /**
- * @brief One pump for every window and the tray: a device is read once per turn
- * however many views it has.
+ * @brief Step every view still loading by one batch: each open folder
+ *        window, the file panel and the Desktop.
  */
 void
 desktop_device_pump(desktop_t *app)
 {
     int i;
 
-    /* One pump serves every window and the tray, so a device is read
-     * once per cycle however many windows are showing it. */
     for (i = 0; i < app->folder_count; i++) {
-        /* One batch per window per turn: a folder still arriving keeps
-         * the desktop drawing rather than holding the loop. */
+        /* One batch per window per turn, so the loop keeps turning while
+         * a large folder arrives. */
         if (app->folders[i].win != NULL && app->folders[i].win->open &&
             tiku_trk_poseview_loading(app->folders[i].view)) {
                         (void)tiku_trk_poseview_load_step(app->folders[i].view,
@@ -859,7 +838,7 @@ desktop_device_pump(desktop_t *app)
         }
     }
     /* The file panel and the Desktop hold views too, and a listing that
-     * lands for either is published the same way. */
+     * arrives for either is stepped the same way. */
     if (app->file_panel.view != NULL &&
         tiku_trk_poseview_loading(app->file_panel.view)) {
         (void)tiku_trk_poseview_load_step(app->file_panel.view,

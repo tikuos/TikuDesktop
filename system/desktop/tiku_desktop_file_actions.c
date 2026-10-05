@@ -1,6 +1,15 @@
-/* tiku_desktop_file_actions.c -- file actions.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_file_actions.c - what a folder window does to its entries:
+ * the inline rename and value edit, the progress of file operations, new
+ * folders and entries from templates, and the Move to, Copy to and Create
+ * Link destinations picked from the menus.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 
 /**
@@ -8,6 +17,8 @@
  *
  * Retried on its period until the pose exists or the loop's timeout gives
  * up: the entry may still be arriving through the listing.
+ *
+ * @return 1 when there is nothing more to do, 0 to try again.
  */
 static int
 select_created(void *ctx)
@@ -38,15 +49,15 @@ select_created(void *ctx)
         }
         return 0;               /* the window is there; the entry not yet */
     }
-    return 1;                   /* no window shows the parent: nothing owed */
+    return 1;                   /* no window shows the parent */
 }
 
 /**
- * @brief Finish an edit: check the value, then write it.
+ * @brief Finish a value edit: check the value against the node's
+ *        descriptor, then write it.
  *
- * The descriptor is consulted BEFORE the device is: a refusal that names the
- * range or the expected spelling is worth more than the write error the
- * device would return, and it costs the device nothing.
+ * The check comes before the write, so a refusal names the range or the
+ * spelling expected, and the device is not written to.
  */
 void
 commit_edit(desktop_t *app, folder_t *fl)
@@ -55,10 +66,10 @@ commit_edit(desktop_t *app, folder_t *fl)
 }
 
 /**
- * @brief Start the inline rename the slow-second-click timer armed.
+ * @brief Start the inline rename of row @p row.
  *
- * A namespace node has no name of its own to change; refused here rather
- * than letting an editor open over something the device will not rename.
+ * A namespace node has no name of its own to change, so its rename is
+ * refused before an editor opens over it.
  */
 void
 begin_rename(desktop_t *app, folder_t *fl, int row)
@@ -94,11 +105,15 @@ folder_selection(desktop_t *app, folder_t *fl,
 }
 
 /**
- * @brief Point a new entry at where it was asked for (PVL-025, PVL-098).
+ * @brief Where in the view a new entry goes, into @p vx, @p vy (PVL-025,
+ *        PVL-098).
  *
- * The menu's own corner is where it was opened, which is the click that
- * asked for the folder; a keyboard shortcut has no menu, so the pointer
- * answers instead, and only while it is over the window.
+ * The open menu's corner, which is where the click that asked for the
+ * entry was; for a keyboard shortcut, which has no menu, the pointer's
+ * place.  Either is used only while it is inside the window's content.  A
+ * list view places nothing.
+ *
+ * @return 1 when a place was found.
  */
 static int
 seed_new_entry(desktop_t *app, folder_t *fl, int *vx, int *vy)
@@ -143,7 +158,10 @@ land_new_entry(desktop_t *app, folder_t *fl, const char *made, int seeded,
 }
 
 /**
- * @brief One step of the file work under way, and the progress row it moves.
+ * @brief Each turn: keep the file engine's operation going on a worker,
+ *        raise its questions, update the status line and the progress
+ *        window, select what a finished operation made, and give the focus
+ *        back when the progress window closes.
  */
 void
 desktop_progress_tick(desktop_t *app)
@@ -169,7 +187,7 @@ desktop_progress_tick(desktop_t *app)
         const tiku_progress_t *pr;
 
         if (over) {
-            /* The operation just finished: what it MADE gets selected
+            /* The operation just finished: what it made gets selected
              * where it lives, once it shows up (AW-033). */
             char made[8][TIKU_PATH_MAX];
             int nmade = tiku_fs_last_created(app->fs, made, 8);
@@ -188,13 +206,13 @@ desktop_progress_tick(desktop_t *app)
                                             5000000);
             }
         }
-        /* A mixed paste left its second half waiting for the engine to
-         * go idle; this is where it gets to start (FS-055). */
+        /* The second half of a mixed paste waits for the engine to go
+         * idle, and starts here (FS-055). */
         (void)tiku_trk_folder_file_actions_pump(&app->file_actions);
         pr = tiku_fs_progress(app->fs);
         if (pr->conflict) {
-            /* Asked, not assumed.  The engine worked out which form
-             * the question takes; this puts it up and waits. */
+            /* The engine chose the form of the question; it is put up,
+             * and the work waits for the answer. */
             if (!alert_model(app)->open) {
                 tiku_trk_alert_for_conflict(alert_model(app), pr);
             }
@@ -209,9 +227,8 @@ desktop_progress_tick(desktop_t *app)
                      pr->failed ? " -- some failed" : "");
         }
         if (tiku_trk_progress_wanted(pr->op, pr->total)) {
-            /* Where it is going, which is the other half of "what is
-             * happening": a file name alone does not say whether this
-             * is the copy the user meant (FS-069). */
+            /* The progress window shows the destination beside the file
+             * name (FS-069). */
             tiku_trk_progress_update(progress_model(app), 0, pr, 1,
                                      pr->to[0] != '\0' ? pr->to
                                      : app->prog_dest[0] != '\0'
@@ -224,9 +241,8 @@ desktop_progress_tick(desktop_t *app)
                 &app->status_overlay) == 0) {
             tiku_trk_status_overlay_progress_start(&app->status_overlay,
                                                    tiku_trk_now());
-            /* Whoever was in front when the job began gets the focus
-             * back when it ends: an operation is not a reason to be
-             * left looking at something else (FS-073). */
+            /* The window in front when the job began gets the focus
+             * back when it ends (FS-073). */
             app->prog_was_active = tiku_workspace_focused(app->desk);
         }
     } else if (progress_model(app)->open) {
@@ -242,16 +258,14 @@ desktop_progress_tick(desktop_t *app)
 }
 
 /**
- * @brief Tracker's Pulse: a rename armed by a slow second click starts when its
- * interval is up.
+ * @brief Start each rename a slow second click armed, once its interval
+ *        has passed (MA-043).
  */
 void
 desktop_rename_pulse(desktop_t *app)
 {
     int i;
 
-    /* Tracker's Pulse: a rename armed by a slow second click starts
-     * here rather than on the click itself (MA-043). */
     for (i = 0; i < app->folder_count; i++) {
         folder_t *fl = &app->folders[i];
         int due;
@@ -268,8 +282,9 @@ desktop_rename_pulse(desktop_t *app)
 }
 
 /**
- * @brief a new folder, named and renamed in place.  @return 1 when this was the
- * command
+ * @brief Make a new folder in @p fl, place it where it was asked for,
+ *        select it and start its rename.
+ * @return 1 when @p command was New Folder.
  */
 int
 desktop_cmd_new_folder(desktop_t *app, folder_t *fl, int command, int seeded,
@@ -293,8 +308,8 @@ desktop_cmd_new_folder(desktop_t *app, folder_t *fl, int command, int seeded,
                                slash != NULL ? slash + 1 : made);
             if (row >= 0) {
                 begin_rename(app, fl, row);
-                /* Opening the editor must not hide the operation result;
-                 * scripts and users should still see what was made. */
+                /* Set again: begin_rename() can replace the status
+                 * line, which scripts read for what was made. */
                 snprintf(app->status, sizeof app->status,
                          "created '%.150s'",
                          slash != NULL ? slash + 1 : made);
@@ -311,17 +326,20 @@ desktop_cmd_new_folder(desktop_t *app, folder_t *fl, int command, int seeded,
 }
 
 /**
- * @brief a new entry from a template, and editing the templates.  @return 1
- * when this was the command
+ * @brief Work out where a new entry goes, then make one from
+ *        @p template_path and start its rename, add a submenu folder to the
+ *        templates, or open the templates folder.
+ * @return 1 when @p command was one of these; New Folder only has its
+ *         place worked out here.
  */
 int
 desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
                      const char *template_path, const char **template_parent,
                      int *seeded, int *seed_x, int *seed_y)
 {
-    /* Where the user asked for it, worked out BEFORE the entry exists: the
-     * menu that makes it is still up, and its corner is the click that
-     * opened it (PVL-025, PVL-098). */
+    /* Where the person asked for it, worked out before the entry exists,
+     * while a menu that makes it is still up: seed_new_entry() takes that
+     * menu's corner, or the pointer for a shortcut (PVL-025, PVL-098). */
     if (template_path != NULL || command == TIKU_TRK_CMD_NEW_FOLDER) {
         (*seeded) = seed_new_entry(app, fl, &(*seed_x), &(*seed_y));
     }
@@ -392,8 +410,10 @@ desktop_cmd_template(desktop_t *app, folder_t *fl, int command,
 }
 
 /**
- * @brief Move to and Copy to, the destination chosen from the menu.  @return 1
- * when this was the command
+ * @brief Move to, Copy to or Create Link to a destination picked from the
+ *        menu (CW-035); for any other command, set @p template_path to the
+ *        template it names, or NULL.
+ * @return 1 when @p command was a destination row.
  */
 int
 desktop_cmd_destination(desktop_t *app, folder_t *fl, int command,
@@ -401,8 +421,9 @@ desktop_cmd_destination(desktop_t *app, folder_t *fl, int command,
 {
     if (command >= TIKU_TRK_CMD_DEST_BASE &&
         command < TIKU_TRK_CMD_DEST_BASE + 3 * TIKU_TRK_CMD_DEST_MAX) {
-        /* A picker row IS the destination (CW-035): the same act the
-         * panel commits, aimed where the row points. */
+        /* A picker row's path is the destination (CW-035): Move to and
+         * Copy to go through fpanel_commit(), as the destination panel
+         * does, and Create Link links the selection there. */
         int k = (command - TIKU_TRK_CMD_DEST_BASE) / TIKU_TRK_CMD_DEST_MAX;
         int at = (command - TIKU_TRK_CMD_DEST_BASE) % TIKU_TRK_CMD_DEST_MAX;
         const char *dest = app->menus.picker_path[k][at];

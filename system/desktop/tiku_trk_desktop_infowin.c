@@ -1,8 +1,14 @@
 /*
- * tiku_trk_desktop_infowin.c - the Info window as a responder: its tabs,
- * its name, its permission boxes, its icon (a drag source, a drop target
- * and a menu) and its fields.  The floating field pop-up is the
- * info-hover responder's.  SPDX-License-Identifier: Apache-2.0
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_desktop_infowin.c - the Info window as a responder: its tabs, its
+ * name, its permission boxes, its icon (a drag source, a drop target and a
+ * menu) and its fields.  The floating field pop-up belongs to the
+ * info-hover responder.
+ *
+ * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_trk_desktop_private.h"
 
@@ -14,7 +20,8 @@ focused_slot(desktop_t *app)
                                       tiku_workspace_focused(app->desk));
 }
 
-/** @brief A press is the Info window's when it lands on one of its parts. */
+/** @brief A point on a part of the focused Info window, while no alert is
+ *         open. */
 static int
 info_hit(void *self, int x, int y)
 {
@@ -28,7 +35,12 @@ info_hit(void *self, int x, int y)
                                      &which) != TIKU_TRK_INFO_HIT_NONE;
 }
 
-/** @brief The icon's menu: the context menu, with the rows only it adds. */
+/**
+ * @brief Open the icon's menu: the context menu for the window's item, plus
+ *        Recalculate folder size for a folder and Set new link target for a
+ *        link.
+ * @return 1 when the item could be read.
+ */
 static int
 icon_menu(desktop_t *app, tiku_trk_info_t *info, const tiku_event_t *ev)
 {
@@ -80,7 +92,7 @@ icon_press(desktop_t *app, tiku_window_t *iw, tiku_trk_info_t *info,
     }
     app->press.at = tiku_trk_now();
     if (ev->button == 1u && info->model.kind != TIKU_KIND_TRASH) {
-        /* The Trash can only ever be opened, not carried. */
+        /* The Trash is never carried, only opened. */
         char iparent[TIKU_PATH_MAX];
         tiku_model_t im;
 
@@ -95,8 +107,12 @@ icon_press(desktop_t *app, tiku_window_t *iw, tiku_trk_info_t *info,
     }
 }
 
-/** @brief A press on a field: the handler steps, the size counts, the
- *         location and the link target open where they point. */
+/**
+ * @brief A press on a field: Opens with steps to the next application, a
+ *        folder's size starts counting, and the location and the link
+ *        target open the folder that holds them, with the entry selected;
+ *        a link whose target is gone opens the file panel to re-point it.
+ */
 static void
 field_press(desktop_t *app, int islot, tiku_trk_info_t *info, int which)
 {
@@ -143,7 +159,10 @@ field_press(desktop_t *app, int islot, tiku_trk_info_t *info, int which)
     }
 }
 
-/** @brief A press on the focused Info window's parts. */
+/**
+ * @brief A press on the focused Info window's parts.
+ * @return 1 when a part took the press.
+ */
 static int
 info_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -215,8 +234,8 @@ info_slot_frame(desktop_t *app, int slot)
 }
 
 /**
- * @brief A drag over an Info window's icon lights it as a target and
- *        takes the light away when it leaves (IV-058).
+ * @brief A drag over an Info window's icon highlights it as a target, and
+ *        the highlight goes when the drag leaves (IV-058).
  */
 static int
 info_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -244,7 +263,6 @@ info_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     if (ev->type != TIKU_EVENT_KEY_DOWN) {
         return 0;
     }
-    /* Get Info owns its rename editor and window shortcuts. */
     if (tiku_trk_info_windows_key(&app->info_windows, ev->key,
                                   ev->modifiers,
                                   key_char(ev))) {
@@ -253,7 +271,7 @@ info_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
-/** @brief The Info window's entry on the responder list. */
+/** @brief Put the Info windows' parts on the responder list. */
 void
 desktop_infowin_attach(desktop_t *app)
 {

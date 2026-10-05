@@ -1,6 +1,14 @@
-/* tiku_desktop_folder_windows.c -- folder windows.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_folder_windows.c - opening and closing windows: folder
+ * windows through the folder lifecycle, the union Trash window, the close
+ * that serves every kind of window, and the offer made for a broken link.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 
 /** @brief The directory above @p path into @p out; "/" for the root. */
@@ -22,14 +30,17 @@ parent_path(const char *path, char *out, size_t size)
     out[n] = '\0';
 }
 
-/** @brief Let the launch controller hand Tracker-owned paths to the shell. */
+/** @brief The launch controller's way to open @p path in a folder window. */
 void
 launch_open_path(void *context, const char *path)
 {
     (void)open_folder(context, path);
 }
 
-/** @brief Ensure the editable local menu exists before showing it. */
+/**
+ * @brief Open the Deskbar menu folder at @p path for editing, making its
+ *        directory first when local files serve the path.
+ */
 void
 deskbar_edit_path(void *context, const char *path)
 {
@@ -37,12 +48,9 @@ deskbar_edit_path(void *context, const char *path)
 
     {
         /*
-         * Making the folder is reaching PAST the backend to the local
-         * filesystem, so the question is whether local files are what
-         * answers for this path -- not what the shell's backend happens
-         * to be called.  With a namespace in the way that outer name is
-         * "mount" for everything, and asking it here meant the folder
-         * was never made and the window opened on nothing.
+         * mkdir() acts on the local filesystem, so it runs only when the
+         * backend serving this path is the posix one.  The desktop's own
+         * backend is the mount router, named "mount" for every path.
          */
         char local[TIKU_PATH_MAX];
         tiku_backend_t *serving =
@@ -65,7 +73,7 @@ deskbar_edit_path(void *context, const char *path)
     (void)open_folder(app, path);
 }
 
-/** @brief Close invalidated spatial windows on behalf of file actions. */
+/** @brief The file actions' way to close the windows on @p path and in it. */
 void
 file_actions_close_under(void *context, const char *path)
 {
@@ -75,8 +83,8 @@ file_actions_close_under(void *context, const char *path)
 /**
  * @brief Offer Get Info for a link that leads nowhere (AW-031).
  *
- * Instead of a bare error: the window that can SAY what is wrong -- and
- * re-point it -- is one button away.
+ * Raises an alert whose button opens Get Info on the link, where it can be
+ * re-pointed.
  */
 void
 offer_broken_link(desktop_t *app, const char *path)
@@ -91,11 +99,13 @@ offer_broken_link(desktop_t *app, const char *path)
 }
 
 /**
- * @brief The union every volume's Trash makes (PVN-027).
+ * @brief The union every volume's Trash makes (PVN-027), into @p out.
  *
- * Each Trash on the machine contributes its entries; the models keep
- * their REAL paths, so restore and delete act on the file wherever its
- * volume keeps it.
+ * Each Trash on the machine, up to eight, contributes its entries; the
+ * models keep their real paths, so restore and delete act on the file
+ * wherever its volume keeps it.
+ *
+ * @return how many models.
  */
 static int
 trash_union_models(desktop_t *app, tiku_model_t *out, int max)
@@ -110,7 +120,10 @@ trash_union_models(desktop_t *app, tiku_model_t *out, int max)
     return n;
 }
 
-/** @brief Re-derive a union Trash window from its contributors. */
+/**
+ * @brief Re-derive a union Trash window from its contributors.
+ * @return nonzero when the window's contents changed.
+ */
 int
 trash_union_refresh(desktop_t *app, folder_t *fl)
 {
@@ -130,10 +143,12 @@ trash_union_refresh(desktop_t *app, folder_t *fl)
 }
 
 /**
- * @brief Write a folder window's frame back, if it moved (CW-001, CW-002).
+ * @brief Close window @p w, whatever kind it is: the file panel, an
+ *        application's window, one of the desktop's own windows, an Info
+ *        window, or a folder window.
  *
- * A folder that has GONE keeps no frame, for the same reason it keeps no
- * arrangement: there is nothing left for the position to be the position of.
+ * A folder window saves its state and its frame as it closes (CW-001,
+ * CW-002), unless its folder has gone.
  */
 void
 close_window(desktop_t *app, tiku_window_t *w)
@@ -234,12 +249,9 @@ close_windows_under(desktop_t *app, const char *path)
         return;
     }
     n = strlen(path);
-    /* Backwards, because closing compacts the array. */
     for (i = app->folder_count - 1; i >= 0; i--) {
         const char *p = app->folders[i].path;
 
-        /* The folder itself, or a folder INSIDE it -- matched on a whole
-         * component so a sibling sharing the same prefix is left alone. */
         if (strncmp(p, path, n) == 0 && (p[n] == '\0' || p[n] == '/')) {
             close_window(app, app->folders[i].win);
         }
@@ -247,9 +259,10 @@ close_windows_under(desktop_t *app, const char *path)
 }
 
 /**
- * @brief Open a window on @p path through the folder lifecycle.  A Trash
- *        folder becomes a result set over every volume's trash (PVN-027).
- *        @return the window, or NULL when none could be opened.
+ * @brief Open a window on @p path through the folder lifecycle, or bring
+ *        its open window forward.  A Trash folder becomes a result set over
+ *        every volume's trash (PVN-027).
+ * @return the folder, or NULL when no window could be opened.
  */
 folder_t *
 open_folder(desktop_t *app, const char *path)
@@ -259,11 +272,8 @@ open_folder(desktop_t *app, const char *path)
 
     if (fl != NULL && fl->view != NULL && !fl->trash_union &&
         path != NULL && tiku_fs_in_trash(app->fs, path)) {
-        /* A Trash window shows the UNION of every volume's trash
-         * (PVN-027): the view becomes a result set over the
-         * contributors, refreshed on the query beat, each entry keeping
-         * its real path so restore and delete land on the right
-         * volume. */
+        /* A Trash window shows the union of every volume's trash as a
+         * result set, refreshed with the live queries (PVN-027). */
         tiku_model_t m;
 
         if (app->backend->ops->stat(app->backend, path, &m) == 0 &&

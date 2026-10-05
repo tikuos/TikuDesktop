@@ -1,11 +1,15 @@
 /*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
  * tiku_trk_desktop_surfaces.c - the overlays as responders: the force-quit
  * picker, the alert and progress overlay, the popup menus with the
- * navigator that rides them, the spring navigator's tracking, and the Info
- * window's floating field pop-up.
+ * navigator inside them, the global menu bar's strip, the spring
+ * navigator's tracking and the Info window's floating field pop-up; and
+ * the order of the responder list.
  *
- * Each keeps reading the desktop's own fields for now; the services table
- * of R4 is what narrows that.  SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_trk_desktop_private.h"
 
@@ -19,7 +23,8 @@ forcequit_hit(void *self, int x, int y)
     return desktop_forcequit_picking(self);
 }
 
-/** @brief Every event while picking; the rescue shortcut at any time. */
+/** @brief Take every event while picking, and at any time Cmd-Option-K,
+ *         which opens the Force Quit window. */
 static int
 forcequit_take(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -30,8 +35,9 @@ forcequit_take(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         return 0;
     }
     if (ev->type == TIKU_EVENT_KEY_DOWN) {
-        /* The rescue shortcut must not leave an old menu intercepting
-         * clicks in the newly raised dialog. */
+        /* A key taken here (Cmd-Option-K, or any key while picking)
+         * closes every open menu, so none takes the clicks meant for the
+         * Force Quit window. */
         tiku_trk_deskbar_close_menu(app->deskbar);
         app->popup = app->popup_sub = NULL;
         app->popup_fl = app->bar_fl = NULL;
@@ -46,12 +52,13 @@ forcequit_take(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 
 /* the alert and the progress panel: over everything when they show */
 
-/** @brief A modal layer lies over the whole screen. */
+/** @brief Every point: an alert or the progress window, when it shows, is
+ *         modal over the whole screen. */
 static int
 status_hit(void *self, int x, int y)
 {
     (void)self; (void)x; (void)y;
-    return 1;                   /* a modal layer lies over the whole screen */
+    return 1;
 }
 
 /** @brief A press an alert or a progress control consumes. */
@@ -65,7 +72,8 @@ status_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
                                            ev->y);
 }
 
-/** @brief The alert's button goes down under the hand and up off it. */
+/** @brief The alert's button shows pressed under the pointer and raised
+ *         off it. */
 static int
 status_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -109,19 +117,22 @@ status_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
-/* the popup menu, with the navigator that rides it */
+/* the popup menu, with the navigator inside it */
 
-/** @brief A menu that is showing eats the next click wherever it lands. */
+/** @brief A menu that is showing takes the next press, wherever it is. */
 static int
 popup_hit(void *self, int x, int y)
 {
     desktop_t *app = self;
 
     (void)x; (void)y;
-    return app->popup != NULL;  /* a menu showing eats the next click */
+    return app->popup != NULL;
 }
 
-/** @brief A click inside a navigator level chooses (CW-056).  @return taken. */
+/**
+ * @brief A click inside a navigator level chooses its row (CW-056).
+ * @return 1 when the click was on a row of a level.
+ */
 static int
 nav_press(desktop_t *app, const tiku_event_t *ev)
 {
@@ -137,8 +148,8 @@ nav_press(desktop_t *app, const tiku_event_t *ev)
                            app->surf->h, &r.x, &r.y, &r.w, &r.h);
         at = tiku_trk_nav_item_at(&app->nav, k, r.x, r.y, ev->x, ev->y);
         if (at >= 0) {
-            /* Levels deeper than the one clicked go: the walk follows
-             * the pointer rather than accumulating every branch. */
+            /* Levels deeper than the one clicked close, so only the
+             * clicked branch stays open. */
             while (app->nav.depth > k + 1) {
                 (void)tiku_trk_nav_leave(&app->nav);
             }
@@ -155,7 +166,11 @@ nav_press(desktop_t *app, const tiku_event_t *ev)
     return took;
 }
 
-/** @brief A pick on a row that names a path: the Info window's own rows. */
+/**
+ * @brief Carry out command @p pc from a menu raised on one path, the Info
+ *        window's icon: recalculate a size, re-point a link, or a file
+ *        action on the path.
+ */
 static void
 popup_path_pick(desktop_t *app, int pc)
 {
@@ -172,7 +187,7 @@ popup_path_pick(desktop_t *app, int pc)
     if (pc == TIKU_TRK_CMD_RECALC_SIZE && islot >= 0) {
         tiku_trk_info_calc_start(&app->info_windows.model[islot]);
     } else if (pc == TIKU_TRK_CMD_SET_LINK_TARGET && islot >= 0) {
-        /* The same picker AW-074's broken-link flow raises. */
+        /* The file panel, as the broken-link flow opens it (AW-074). */
         folder_t *ffl2 = folder_of(app, tiku_workspace_focused(app->desk));
 
         app->info_relink = islot;
@@ -203,10 +218,9 @@ popup_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     if (app->popup_sub != NULL) {
         pick = tiku_menu_item_at(app->popup_sub, app->popup_sub_frame,
                                  ev->x, ev->y);
-        /* Enabled, like the parent menu below: a disabled row is drawn
-         * grey and refuses to light under the pointer.  pick stays set
-         * on purpose: the click is then swallowed by the dismissal
-         * rather than offered to the parent menu underneath. */
+        /* Only an enabled row acts; a disabled row is drawn grey and is
+         * not highlighted.  pick stays set for a disabled row, so the
+         * click dismisses the menus and does not reach the parent. */
         if (pick >= 0 && app->popup_sub->item[pick].enabled) {
             if (app->popup_path[0] != '\0') {
                 (void)tiku_trk_folder_file_actions_invoke_path(
@@ -273,8 +287,8 @@ popup_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 }
 
 /**
- * @brief A menu that is open rewrites itself as modifiers move: its
- *        items change label and command together while Shift is held,
+ * @brief A menu that is open rewrites itself as Shift goes down and up:
+ *        its items change label and command together while Shift is held,
  *        on both key edges, since releasing Shift puts the labels back.
  *        Every other key is the menu's while it shows.
  */
@@ -293,9 +307,8 @@ popup_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         unsigned m2 = 0;
         tiku_trk_sc_ctx_t c2;
 
-        /* A key-up reports the state before the release, so the bit
-         * has to be taken out by hand or the menu keeps its shifted
-         * face. */
+        /* A key-up carries the modifiers from before the release, so
+         * the Shift bit is cleared here. */
         if (ev->modifiers & TIKU_MOD_SHIFT) {
             m2 |= TIKU_TRK_MOD_SHIFT;
         }
@@ -317,7 +330,8 @@ popup_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 
 /* the global menu bar: one strip at the top of the screen */
 
-/** @brief The strip is the point's while the bar is on and no menu shows. */
+/** @brief Whether the strip takes a point at @p y: the bar is on, no menu
+ *         shows, and @p y is within the strip. */
 static int
 gbar_hit(void *self, int x, int y)
 {
@@ -329,9 +343,10 @@ gbar_hit(void *self, int x, int y)
 }
 
 /**
- * @brief A primary press on the strip: the camera at its right takes a
- *        screenshot next turn, so the press is not frozen into it; a
- *        title opens its menu, from the published description alone.
+ * @brief A primary press on the strip: the camera at its right sets a
+ *        screenshot pending, taken from the next frame drawn so that the
+ *        press is not in the picture; a title opens its menu, built from
+ *        what the focused window published.
  */
 static int
 gbar_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -368,9 +383,9 @@ gbar_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 1;
 }
 
-/* the spring navigator, tracked while a drag rides over it */
+/* the spring navigator, tracked while a drag moves over it */
 
-/** @brief A drag riding over the spring navigator walks its levels. */
+/** @brief A drag moving over the spring navigator walks its levels. */
 static int
 spring_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -412,7 +427,7 @@ info_hover_box(desktop_t *app, int slot, int field, tiku_rect_t *box,
     }
     tw = tiku_text_width(font, value);
     if (tw <= fw) {
-        return 0;               /* readable as it is: no pop-up */
+        return 0;               /* the text fits: no pop-up */
     }
     *box = (tiku_rect_t){ fx - 4, fy - 2, tw + 12, font->height + 6 };
     if (box->x + box->w > app->surf->w) {
@@ -424,7 +439,7 @@ info_hover_box(desktop_t *app, int slot, int field, tiku_rect_t *box,
     return 1;
 }
 
-/** @brief Where the pop-up stands now, as a damage; none when it does not. */
+/** @brief The pop-up's box as damage; no damage when no pop-up shows. */
 static tiku_rect_t
 info_hover_damage_now(desktop_t *app)
 {
@@ -439,8 +454,8 @@ info_hover_damage_now(desktop_t *app)
     return tiku_trk_damage_none();
 }
 
-/** @brief The pointer resting on a truncated field opens the pop-up
- *         (AW-073). */
+/** @brief The pointer over a truncated field of the focused Info window
+ *         opens the pop-up at once (AW-073); a drag closes it. */
 static int
 info_hover_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -463,8 +478,8 @@ info_hover_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     }
     if (hslot != app->info_windows.hover_slot ||
         hfield != app->info_windows.hover_field) {
-        /* Where it stood and where it stands: the pop-up floats past
-         * its window's frame, so the box is the bound, not the window. */
+        /* The old box and the new one are damaged: the pop-up can
+         * extend past its window's frame. */
         *damage = info_hover_damage_now(app);
         app->info_windows.hover_slot = hslot;
         app->info_windows.hover_field = hfield;
@@ -473,7 +488,7 @@ info_hover_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
-/** @brief A release ends the hover the press began. */
+/** @brief A release closes the pop-up; the next move may open it again. */
 static int
 info_hover_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -506,7 +521,11 @@ info_hover_paint(void *self, tiku_surface_t *s)
               TIKU_C_TEXT);
 }
 
-/** @brief The text the pop-up floats now, for a driver's question. */
+/**
+ * @brief The text the Info field pop-up shows, into @p out, for a driver's
+ *        question.
+ * @return 1, or 0 when no pop-up shows.
+ */
 int
 info_hover_text(desktop_t *app, char *out, size_t max)
 {
@@ -522,12 +541,15 @@ info_hover_text(desktop_t *app, char *out, size_t max)
     return 1;
 }
 
-/* the list */
+/* the responder list */
 
-/** @brief Every surface on the list, bottom first: the folders under the
- *         frames, the frames under the Deskbar, the bar under the global
- *         strip, the strip under the Info windows' parts, those under the
- *         menus, the menus under the alert and the picker. */
+/**
+ * @brief Fill the responder list, bottom first: the Info field pop-up, the
+ *        spring navigator, the folders' content, the desk's keys, the
+ *        window frames, the Deskbar, the global strip, the Info windows'
+ *        parts, F1 help, the menus, the alert and progress overlay, and the
+ *        force-quit picker.
+ */
 void
 desktop_responders_attach(desktop_t *app)
 {

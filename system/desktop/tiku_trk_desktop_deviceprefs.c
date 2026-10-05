@@ -1,9 +1,19 @@
 /*
- * TikuDesktop -- connected-device preferences.
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * A curated VFS settings surface. Reads and writes share the mount's worker
- * key, so disconnect cannot close a backend underneath a pending request.
+ * tiku_trk_desktop_deviceprefs.c - the Devices Preferences window: the
+ * settings and facts of a connected board, read and written through its
+ * namespace.
+ *
+ * The window lists the mounted boards and, under the selected one, its
+ * sections.  The outline shows a section's settings, facts and memory
+ * estates; the groups below it edit a setting and handle configuration
+ * recovery.  Reads and writes run as jobs under the board's worker key.
+ * An unmount cancels them and closes the backend with a job under the
+ * same key, which runs after them.
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_trk_desktop_private.h"
@@ -29,16 +39,16 @@ enum { DP_DEVICE = 10, DP_EDIT = 50,
        DP_SECTION = 70, DP_ROW = 100 };
 enum { DP_READ = -1, DP_ENROLL = -2, DP_RETRY = -3, DP_DISCARD = -4,
        DP_CANCEL_TIER = -5 };
-/* The outline's sections, in the order they are shown.  A setting and a
- * fact each belong to one; a section with nothing on this firmware says
- * so under its heading rather than vanishing. */
+/* The sections of the source list, in display order.  Each setting and
+ * fact belongs to one; a section with nothing on this firmware shows one
+ * row saying so. */
 enum { SEC_IDENTITY, SEC_PROCESSOR, SEC_MEMORY, SEC_STORAGE, SEC_POWER,
        SEC_RADIO, SEC_SECURITY, SEC_BOOT, SEC_COUNT };
 static const char *const section_name[SEC_COUNT] = {
     "Identity", "Processor", "Memory", "Storage", "Power", "Radio",
     "Security", "Boot"
 };
-/* The icon each section wears in the source list, from the kit's set. */
+/* Each section's icon, in the source list and on the outline's heading. */
 static const char *const section_icon[SEC_COUNT] = {
     "section_identity", "section_processor", "section_memory",
     "section_storage", "section_power", "section_radio",
@@ -81,8 +91,8 @@ static const struct {
       "Update opens TikuBench to build and install firmware for this "
       "board, saying first what the update keeps.", 1, SEC_IDENTITY }
 };
-/* The layout service, as /sys/mem/layout reports it: the one knob's
- * bounds and value, what is staged, and how the store stands. */
+/* The layout service as /sys/mem/layout reports it: the nvm.tier knob's
+ * bounds and value, the staged change, and the state of the store. */
 typedef struct {
     int have, writable, erase_ok;
     unsigned long floor, ceiling, step, dflt, current;
@@ -90,19 +100,21 @@ typedef struct {
     int pending, pending_erase;
     unsigned long pending_op, pending_value;
     char store[16], held[32], phase[16], boot[48], last[48];
-    char identity[33];         /* the record's incarnation a request quotes */
+    char identity[33];         /* the record's identity, quoted by a request */
 } dp_tier_t;
-/* Four uint32 decimals, a 32-hex identity and protocol punctuation/method
- * fit in 128 bytes, matching the device's stage parser (including NUL). */
+/* The longest stage request (four 32-bit decimals, a 32-hex-digit identity,
+ * the keys and " method=erase") fits in 128 bytes with its NUL, the size
+ * of the device's stage parser buffer. */
 #define DP_LAYOUT_REQUEST_CAP 128
-/* Each memory by estate, from /sys/mem/sram_map and nvm_map: the rows a
- * person reads as "where the memory goes", with a bar in the group. */
+/* One estate of a memory, from a line of /sys/mem/sram_map or nvm_map: a
+ * row of the Memory or Storage section and a segment of the bar drawn in
+ * the group below the outline. */
 typedef struct {
     int section;               /* SEC_MEMORY for SRAM, SEC_STORAGE for NVM */
-    char key[16];              /* the map's own word */
+    char key[16];              /* the map line's first field */
     char label[28], value[72], help[128];
     unsigned long size, used;
-    int live, bank, in_bar;    /* used is live; which bank; part of the bar */
+    int live, bank, in_bar;    /* has a used figure; bank 1 or 2; in the bar */
     tiku_rgb_t hue;
 } dp_estate_t;
 #define DP_ESTATES 14
@@ -110,7 +122,7 @@ typedef struct {
  * span of seconds, a clock in hertz, or the clock-control mode's name. */
 enum { FMT_PLAIN, FMT_BYTES, FMT_SECONDS, FMT_HZ, FMT_CLOCKMODE };
 /* The read-only facts beside the settings, each under its section.  A
- * path the firmware has not got is simply left out of the outline. */
+ * fact whose path does not read is left out of the outline. */
 static const struct {
     int section, format;
     const char *label, *path, *help;
@@ -173,10 +185,11 @@ static const struct {
       "Starts from power off, among those." },
 };
 #define DP_FACTS ((int)(sizeof facts / sizeof facts[0]))
-/* One section's rows: its heading, its settings and facts, or the word
- * that it has nothing on this firmware. */
+/* The most rows one section's outline can have: its heading, and its
+ * settings, facts and estates or the row saying it has nothing. */
 #define DP_ROWS (2 + DP_COUNT + DP_FACTS + DP_ESTATES)
-/* The source list: every board, and under the chosen one its sections. */
+/* The most rows the source list can have: every board, and the sections
+ * under the selected one. */
 #define DP_TREE (TIKU_MOUNT_MAX + SEC_COUNT)
 
 typedef struct {
@@ -190,8 +203,9 @@ typedef struct {
     int count, writable;
 } dp_clock_t;
 
-/* One line of the outline: a section's heading, a setting, a fact, or
- * the word that a section has nothing here. */
+/* One row of the outline: the section's heading (heading 1), the row
+ * saying the section has nothing (heading 2), or one setting, fact or
+ * estate, the other two fields -1. */
 typedef struct { int section, setting, fact, heading, estate; } dp_row_t;
 
 struct desktop_deviceprefs {
@@ -199,13 +213,13 @@ struct desktop_deviceprefs {
     tiku_window_t *window;
     char names[TIKU_MOUNT_MAX][64];
     int count, selected, setting, busy, refs;
-    int fact;                  /* the fact on show, or -1 for the setting */
+    int fact;                  /* the fact on show, or -1 */
     int estate;                /* the estate on show, or -1 */
     int section;               /* the section the right side shows */
     char sram_map[640], nvm_map[640];
     dp_estate_t estates[DP_ESTATES];
     int nestate;
-    unsigned long estate_total[2];     /* the SRAM bank and the NVM */
+    unsigned long estate_total[2];     /* total bytes of SRAM, then NVM */
     dp_value_t values[DP_COUNT];
     dp_value_t fact_values[DP_FACTS];
     dp_tier_t layout;
@@ -214,12 +228,13 @@ struct desktop_deviceprefs {
     dp_clock_t clock;
     dp_row_t rows[DP_ROWS];
     int nrow;
-    tiku_list_t list;          /* the outline's scrolling and headings */
+    tiku_list_t list;          /* the outline's rows, scrolling and headings */
     tiku_config_snapshot_t config[2];  /* name and CPU target, at the
                                        * revisions on display */
     tiku_config_pending_t pending;
-    int can_enroll, confirm;   /* 1: enrollment, 2: discard; reset on
-                                * a new device or a refresh */
+    int can_enroll, confirm;   /* recovery can be enabled; the question
+                                * asked: 1 enable recovery, 2 forget the
+                                * request, 3 stage with the erase, 0 none */
     tiku_dialog_t dialog;
     tiku_choice_t choice;
     tiku_field_input_t input;
@@ -241,10 +256,11 @@ typedef struct {
     int write_at, completed, can_enroll, need_erase, tier_sent;
 } dp_job_t;
 
-/** @brief Font-scaled row shared by paint and hit testing. */
+/** @brief The height of a source-list or outline row, from the plain font. */
 static int dp_row(void) { return tiku_font_plain()->height + 14; }
 
-/* How many outline rows show when the window opens; the corner adds. */
+/* The outline rows shown at the window's opening size; a taller window
+ * shows more. */
 #define DP_OUTLINE_ROWS 7
 
 typedef struct {
@@ -255,11 +271,12 @@ typedef struct {
 static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l);
 
 /**
- * @brief One font-scaled layout for both drawing and pointer input.
+ * @brief The window's layout in content rectangle @p c, used by drawing
+ *        and by input alike.
  *
- * With a content height the outline takes whatever the groups and the
- * buttons leave; without one (the opening size, or a test asking how
- * tall the window wants to be) it shows DP_OUTLINE_ROWS.
+ * The outline gets the height the groups and buttons leave, and at least
+ * DP_OUTLINE_ROWS rows; with a height of 0 (the opening size) it gets
+ * exactly DP_OUTLINE_ROWS rows.
  */
 static dp_layout_t dp_layout(tiku_rect_t c, int setting)
 {
@@ -316,10 +333,10 @@ static tiku_rect_t dp_device_row(dp_layout_t l, int i)
 }
 
 /**
- * @brief The source list's rows: each board, and under the selected one
- *        its sections, the way a system report lists them.  @return the
- *        count; @p board and @p section say what each row is (-1 for
- *        the other kind).
+ * @brief Fill the source list's rows: each board, and under the selected
+ *        board its sections.  Row i is board @p board[i] or section
+ *        @p section[i], the other one -1.
+ * @return the number of rows.
  */
 static int dp_tree(const struct desktop_deviceprefs *p, int *board,
                    int *section)
@@ -335,9 +352,6 @@ static int dp_tree(const struct desktop_deviceprefs *p, int *board,
     return n;
 }
 
-/*---------------------------------------------------------------------------*/
-/* The outline: sections, the rows under them, and what each row says       */
-/*---------------------------------------------------------------------------*/
 
 /** @brief A count of bytes as a person reads it. */
 static void dp_bytes(unsigned long n, char *out, size_t cap)
@@ -384,8 +398,11 @@ static void dp_fact_text(int format, const char *value, char *out, size_t cap)
     }
 }
 
-/** @brief One map line into an estate; the lines that only name a memory
- *         set its total instead.  @return whether a row was made. */
+/**
+ * @brief Parse one map line into an estate row.  A "bank" or "total" line
+ *        sets @p total, and a "kind" line is skipped.
+ * @return 1 when a row was added.
+ */
 static int dp_estate_line(struct desktop_deviceprefs *p, int section,
                           char *line, unsigned long *total)
 {
@@ -494,7 +511,7 @@ static void dp_estates_build(struct desktop_deviceprefs *p)
     }
 }
 
-/** @brief Build the section's rows from what the last read brought back. */
+/** @brief Build the outline rows of the section on show from the last read. */
 static void dp_outline_build(struct desktop_deviceprefs *p)
 {
     int i, sec = p->section;
@@ -502,8 +519,9 @@ static void dp_outline_build(struct desktop_deviceprefs *p)
     p->nrow = 0;
     p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 1, -1};
     for (i = 0; i < DP_COUNT; i++) {
-        /* A switch for hardware the board has not got is not offered;
-         * the six settings every board answers stay, "Unavailable" said. */
+        /* PSRAM, eMMC and the NVM tier get a row only when the board
+         * reported them; every other setting of the section has one,
+         * which reads "Unavailable" when the board gave no value. */
         int hardware = i == DP_PSRAM || i == DP_EMMC || i == DP_TIER;
         if (settings[i].section == sec && (!hardware || p->values[i].present))
             p->rows[p->nrow++] = (dp_row_t){sec, i, -1, 0, -1};
@@ -515,8 +533,7 @@ static void dp_outline_build(struct desktop_deviceprefs *p)
         if (p->estates[i].section == sec)
             p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 0, i};
     if (p->nrow == 1) {
-        /* Nothing on this firmware: the heading says so on its own
-         * line, in the quiet ink, rather than standing over nothing. */
+        /* Nothing on this firmware: one row under the heading says so. */
         p->rows[p->nrow++] = (dp_row_t){sec, -1, -1, 2, -1};
     }
     tiku_list_set_count(&p->list, p->nrow);
@@ -526,11 +543,9 @@ static void dp_outline_build(struct desktop_deviceprefs *p)
 }
 
 /**
- * @brief Whether the board has anything under @p section.
- *
- * Known only once a read has come back: before that every section is
- * offered, since greying them all out would say the board has nothing
- * when the truth is that nobody has asked it yet.
+ * @brief Whether the board has anything under section @p sec.  Every
+ *        section counts as available while a read is out and until a
+ *        read has brought back a value.
  */
 static int dp_section_available(const struct desktop_deviceprefs *p, int sec)
 {
@@ -547,7 +562,8 @@ static int dp_section_available(const struct desktop_deviceprefs *p, int sec)
     return 0;
 }
 
-/** @brief Show @p section: its first setting, else its first fact. */
+/** @brief Show @p section: its first setting, else its first fact or
+ *         estate. */
 static void dp_show_section(struct desktop_deviceprefs *p, int section)
 {
     int i;
@@ -573,7 +589,11 @@ static int dp_clock_dirty(const struct desktop_deviceprefs *p)
     return p->clock.writable && strcmp(p->field.text, p->clock.target) != 0;
 }
 
-/** @brief Distinguish a pending reboot from small clock-measurement error. */
+/**
+ * @brief Whether a rate saved for restart is still waiting: the clock mode
+ *        is "reboot" and the running rate is more than 2% away from the
+ *        target.  A smaller difference is taken as measurement error.
+ */
 static int dp_clock_pending(const struct desktop_deviceprefs *p)
 {
     unsigned long target = strtoul(p->clock.target, NULL, 10);
@@ -583,7 +603,8 @@ static int dp_clock_pending(const struct desktop_deviceprefs *p)
            p->values[DP_CPU].present && delta > target / 50UL;
 }
 
-/** @brief Explain availability and restart requirements beside the control. */
+/** @brief The CPU clock's help text: whether the clock can change here,
+ *         and whether a change waits for a restart. */
 static const char *dp_clock_help(const struct desktop_deviceprefs *p)
 {
     if (p->busy) return "Reading clock settings from the device…";
@@ -606,7 +627,15 @@ static const char *dp_clock_help(const struct desktop_deviceprefs *p)
         : "Choose a supported clock rate, then Apply.";
 }
 
-/** @brief Start editing the selected setting's last confirmed value. */
+/**
+ * @brief Load the setting on show into the editor and its choice list.
+ *
+ * The text starts as the value last read.  The name and the CPU clock
+ * start at the recovery record's desired value when recovery is on, and
+ * the CPU clock otherwise at its target rate.  The NVM tier starts, in
+ * kilobytes, at the size waiting for the erase, else the staged size,
+ * else the current size.
+ */
 static void dp_edit(struct desktop_deviceprefs *p)
 {
     int ci = p->setting == DP_NAME ? 0 : p->setting == DP_CPU ? 1 : -1;
@@ -648,7 +677,11 @@ static void dp_edit(struct desktop_deviceprefs *p)
     }
 }
 
-/** @brief Read a complete scalar, refusing truncated or failed answers. */
+/**
+ * @brief Read the first line of @p path into @p out.
+ * @return 1 for a non-empty line; 0, with @p out empty, when the read
+ *         fails or its answer fills @p out.
+ */
 static int dp_read(tiku_backend_t *b, const char *path, char *out, size_t max)
 {
     int n = b->ops->read(b, path, out, max - 1);
@@ -661,7 +694,8 @@ static int dp_read(tiku_backend_t *b, const char *path, char *out, size_t max)
     return out[0] != '\0';
 }
 
-/** @brief A whole text, newlines kept: the maps are many lines. */
+/** @brief Read the whole of @p path into @p out, newlines kept; empty
+ *         when the read fails or its answer fills @p out. */
 static void dp_read_text(tiku_backend_t *b, const char *path, char *out,
                          size_t max)
 {
@@ -748,13 +782,8 @@ static void dp_layout_read(tiku_backend_t *b, dp_tier_t *l)
                   tiku_model_is_writable(&m);
 }
 
-/**
- * @brief What a person does about a held store, by the kernel's reason.
- *
- * The device's own words for why, and the one command that resolves it:
- * recovered stores want a restart, lost ownership a recovery by offset,
- * an interrupted move a resume, a foreign store a format.
- */
+/** @brief The help text for a store held for the kernel's reason @p held:
+ *         what happened, and the step or shell command that resolves it. */
 static const char *dp_held_help(const char *held)
 {
     static const struct { const char *reason, *help; } table[] = {
@@ -801,14 +830,20 @@ static const char *dp_held_help(const char *held)
     return "The store is held; 'layout status' in the device's shell says why.";
 }
 
-/** @brief The request the stage file takes: the knob, an id, the state
- *         it expects, and the erase when the person confirmed it. */
+/**
+ * @brief Write the stage request for a tier of @p bytes into @p out: the
+ *        size, operation @p op, the record's identity, the generation and
+ *        revision it expects, and method=erase when @p erase is set.
+ * @return 0, or -1 when a field is out of range or the request does not
+ *         fit in @p cap.
+ */
 static int dp_layout_request(const dp_tier_t *l, unsigned long bytes,
                               unsigned long op, int erase, char *out,
                               size_t cap)
 {
-    /* The identity is the record's incarnation: a request from before a
-     * recovery cannot replay after it, since the counters reset. */
+    /* A recovery restarts the generation and revision counters and gives
+     * the record a new identity: the device refuses a request made before
+     * the recovery. */
     int n;
     if (!out || !cap) return -1;
     out[0] = '\0';
@@ -823,7 +858,11 @@ static int dp_layout_request(const dp_tier_t *l, unsigned long bytes,
     return 0;
 }
 
-/** @brief Discover clock controls; older firmware remains read-only. */
+/**
+ * @brief Read the clock's target, change mode and available rates.  The
+ *        clock is writable when all three read, the mode is "reboot" or
+ *        "live", and freq_target is writable.
+ */
 static void dp_clock_read(tiku_backend_t *b, dp_clock_t *clock)
 {
     char available[192], *next;
@@ -854,9 +893,10 @@ static void dp_clock_read(tiku_backend_t *b, dp_clock_t *clock)
 }
 
 /**
- * @brief On the worker: stage a tier size for the next restart, or cancel
- *        the staged one.  The service's refusals say why; a store that
- *        would lose files asks for the erase rather than being written.
+ * @brief On the worker: send the stage request, or cancel the staged
+ *        change.  A refusal sets the status from the device's error; an
+ *        ECONFLICT on a request without method=erase sets need_erase, and
+ *        the window then asks the person to confirm the erase.
  */
 static void dp_run_tier(dp_job_t *j)
 {
@@ -888,13 +928,17 @@ static void dp_run_tier(dp_job_t *j)
                                         "cancel it first." :
                  err[0] ? err : "device unavailable or value rejected");
     }
-    /* The readback that follows is a read. */
+    /* The rest of dp_run treats the job as a read: DP_TIER is also the
+     * NVM tier setting's index, and dp_run's setting write runs for any
+     * write_at of 0 or more, which for DP_TIER writes the request to
+     * /sys/mem/layout/current. */
     j->write_at = DP_READ;
 }
 
 /**
- * @brief The installed build: an action, never a write, so always offered;
- *        an image too old to name its build is the one it matters most for.
+ * @brief Mark the Installed build row present and writable, so its Update
+ *        button is always offered.  A build that does not report one reads
+ *        "Older than this field".
  */
 static void dp_firmware_value(dp_value_t *v)
 {
@@ -903,7 +947,12 @@ static void dp_firmware_value(dp_value_t *v)
     v->present = v->writable = 1;
 }
 
-/** @brief On a worker: validate permissions, write once, then read back. */
+/**
+ * @brief On a worker: perform the job's action (a recovery action, a tier
+ *        stage or cancel, or one setting's write), then read the settings,
+ *        facts, memory maps, layout and clock back and set the status line
+ *        from the result.
+ */
 static void dp_run(void *ctx)
 {
     dp_job_t *j = ctx;
@@ -957,8 +1006,8 @@ static void dp_run(void *ctx)
                 (void)tiku_config_outbox_inspect(directory, j->backend,
                                                  &pending);
             int managed = ci >= 0 && (current.mode || j->config[ci].mode);
-            /* A record names a device; a bare local fault names none, and
-             * must not stand between a plain board and its setting. */
+            /* A pending record naming a device blocks the save; one naming
+             * none (a local fault) blocks only a board using recovery. */
             int record = ci >= 0 && pending.state && pending.uid[0];
             if (record || (managed && (!local || pending.state))) {
                 snprintf(err, sizeof err,
@@ -984,8 +1033,8 @@ static void dp_run(void *ctx)
             }
         }
     }
-    /* Take the revision before ordinary readbacks. Never pair a later revision
-     * with an earlier displayed desired value: editors use this snapshot. */
+    /* Recovery snapshots are read before the settings: the revision a save
+     * quotes is never newer than the values on show. */
     if (!tiku_work_cancelled(j)) {
         (void)tiku_config_read(j->backend, "/sys/device/name", &j->config[0]);
         (void)tiku_config_read(j->backend, "/sys/cpu/freq_target",
@@ -1042,7 +1091,7 @@ static void dp_run(void *ctx)
                   "confirmed. Refresh to check.");
             j->tier_sent = 0;
         }
-        /* The tier row is the service's, not its file's first line. */
+        /* The tier row is set from the layout service read above. */
         j->values[DP_TIER].present = j->layout.have;
         j->values[DP_TIER].writable = j->layout.have && j->layout.writable;
         snprintf(j->values[DP_TIER].value, sizeof j->values[DP_TIER].value,
@@ -1105,7 +1154,11 @@ static void dp_run(void *ctx)
     }
 }
 
-/** @brief On the loop: only confirmed values become the visible state. */
+/**
+ * @brief On the loop: copy the job's readback into the window, ask for the
+ *        erase when the stage needs one, move off a section that has
+ *        nothing on this board, and reload the editor.
+ */
 static void dp_done(void *ctx)
 {
     dp_job_t *j = ctx;
@@ -1128,8 +1181,8 @@ static void dp_done(void *ctx)
     p->erase = 0;
     snprintf(p->status, sizeof p->status, "%s", j->status);
     if (!dp_section_available(p, p->section)) {
-        /* The section on show has nothing on this board: the first one
-         * that has is shown instead, so the window never opens on grey. */
+        /* The section on show has nothing on this board: show the first
+         * section that has something. */
         int sec;
         for (sec = 0; sec < SEC_COUNT; sec++)
             if (dp_section_available(p, sec)) {
@@ -1141,7 +1194,12 @@ static void dp_done(void *ctx)
     desktop_damage_all(p->app);
 }
 
-/** @brief Retire a job, including cancellation on device disconnect. */
+/**
+ * @brief Release a job and its hold on the window's state, freeing the
+ *        state with the last hold.  A job that did not complete was
+ *        cancelled: the window clears its values and reports the device
+ *        disconnected.
+ */
 static void dp_free(void *ctx)
 {
     dp_job_t *j = ctx;
@@ -1167,7 +1225,12 @@ static void dp_free(void *ctx)
     free(j);
 }
 
-/** @brief Queue one read or explicit Apply against the selected mount. */
+/**
+ * @brief Post a job for the selected board: a read (@p write_at DP_READ),
+ *        a write of setting @p write_at, a tier stage or cancel, or a
+ *        recovery action.  A board that is no longer mounted clears the
+ *        values on show and says so.
+ */
 static void dp_request(struct desktop_deviceprefs *p, int write_at)
 {
     char path[TIKU_PATH_MAX], local[TIKU_PATH_MAX];
@@ -1208,8 +1271,9 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     if (write_at == DP_TIER) {
         int rc;
         if (p->erase) {
-            /* Consent belongs to the original request, including its stale
-             * check and device. Never rebuild it from refreshed UI fields. */
+            /* The erase is added to the request the person confirmed
+             * (tier_request), which keeps the generation and revision it
+             * expected, and goes only to the device it was made for. */
             int n = snprintf(j->input, sizeof j->input, "%s method=erase",
                              p->tier_request);
             rc = p->confirm == 3 && p->tier_request[0] &&
@@ -1261,11 +1325,13 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
 }
 
 /**
- * @brief Whether the shown setting takes typing now.
+ * @brief Whether the setting on show can be edited and applied now.
  *
- * An unresolved record holds the editors of the board it names, and a
- * board using recovery waits on its local outbox.  A board that never
- * heard of recovery keeps its editors whatever the outbox reports.
+ * Not while a job runs, while an erase waits for confirmation, or when
+ * the device reports the setting read-only.  The name and the CPU clock
+ * are also held while the recovery state is unreadable, while a pending
+ * record names a device, and, on a board using recovery, while anything
+ * is pending.
  */
 static int dp_can_edit(const struct desktop_deviceprefs *p)
 {
@@ -1277,7 +1343,11 @@ static int dp_can_edit(const struct desktop_deviceprefs *p)
           (p->config[i].mode < 0 || held));
 }
 
-/** @brief Validate editable input before queuing a device mutation. */
+/**
+ * @brief Apply the edited setting: check the text and post the write.
+ *        Installed build opens TikuBench, and the NVM tier with a change
+ *        staged cancels that change.
+ */
 static void dp_apply(struct desktop_deviceprefs *p)
 {
     char *end;
@@ -1354,7 +1424,12 @@ static void dp_apply(struct desktop_deviceprefs *p)
     dp_request(p, p->setting);
 }
 
-/** @brief Refresh the cached mount list; selection never follows a rename. */
+/**
+ * @brief Reload the board list and post a read of the selected board.  The
+ *        selection stays on the board of the same name, else moves to the
+ *        first; the values on show are cleared until the read's answer
+ *        arrives.
+ */
 static void dp_refresh(struct desktop_deviceprefs *p)
 {
     char names[512], selected[64] = "", *line, *save;
@@ -1386,7 +1461,7 @@ static void dp_refresh(struct desktop_deviceprefs *p)
     dp_request(p, -1);
 }
 
-/** @brief Wrapped explanatory text within a bounded details block. */
+/** @brief Draw @p text wrapped to @p width, in at most @p lines lines. */
 static void dp_explain(tiku_surface_t *s, int x, int y, int width,
                        const char *text, tiku_rgb_t ink, int lines)
 {
@@ -1395,7 +1470,7 @@ static void dp_explain(tiku_surface_t *s, int x, int y, int width,
                          TIKU_MEASURE_PLAIN, text, ink, 2);
 }
 
-/** @brief A clipped single line cannot spill into a neighboring column. */
+/** @brief Draw @p text on one line, clipped to @p r. */
 static void dp_line(tiku_surface_t *s, tiku_rect_t r, const char *text,
                     tiku_rgb_t ink)
 {
@@ -1440,7 +1515,7 @@ static void dp_setting_text(const struct desktop_deviceprefs *p, int i,
                  !strcmp(v->value, "asleep") ? "Asleep" : v->value);
 }
 
-/** @brief Whether the row on show is the setting or a fact. */
+/** @brief Whether row @p r is the setting, fact or estate on show. */
 static int dp_row_is_shown(const struct desktop_deviceprefs *p, dp_row_t r)
 {
     if (p->estate >= 0) return r.estate == p->estate;
@@ -1449,13 +1524,13 @@ static int dp_row_is_shown(const struct desktop_deviceprefs *p, dp_row_t r)
 }
 
 /**
- * @brief The outline: a heading a section, its rows indented under it.
+ * @brief Draw the outline of the section on show.
  *
- * A heading folds with its arrow; a row is its label on the left and its
- * value on the right, the editable ones marked with a chevron, since a
- * person deciding what to press should not have to read the help to
- * learn which rows open an editor.  The pill on a heading says what the
- * section is waiting on.
+ * The heading row has the section's icon and name, and a pill when the
+ * section waits on a restart, a held store or a recovery record.  A
+ * setting, fact or estate row shows its label on the left and its value on
+ * the right, and a writable setting has an arrow at the right end; the row
+ * for a section with nothing says so.
  */
 static void dp_table(struct desktop_deviceprefs *p, tiku_surface_t *s,
                       dp_layout_t l)
@@ -1549,9 +1624,10 @@ static void dp_table(struct desktop_deviceprefs *p, tiku_surface_t *s,
 }
 
 /**
- * @brief The tier's help: what is staged, why the store is held, or its
- *        bounds -- after what the last restart did with a staged change,
- *        since a refused one otherwise leaves only the old size on show.
+ * @brief Write the NVM tier's help into @p help: the staged change when
+ *        there is one, the remedy when the store is held, or else the
+ *        tier's bounds, after what the last restart did with a staged
+ *        operation.
  */
 static void dp_tier_help(const struct desktop_deviceprefs *p, char *help,
                          size_t cap)
@@ -1581,7 +1657,11 @@ static void dp_tier_help(const struct desktop_deviceprefs *p, char *help,
              p->layout.ceiling / 1024UL, p->layout.step / 1024UL);
 }
 
-/** @brief Etched setting group, with explicit writable/read-only state. */
+/**
+ * @brief Draw the group below the outline for what is on show: an estate
+ *        with its figures and the memory's bar, a fact with its value, or
+ *        a setting with its editor and action button; then the help.
+ */
 static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
                        dp_layout_t l)
 {
@@ -1687,7 +1767,8 @@ static void dp_editor(struct desktop_deviceprefs *p, tiku_surface_t *s,
         quiet, 3);
 }
 
-/** @brief The one recovery button this state offers, or none. */
+/** @brief The label of the recovery group's action button, or NULL when
+ *         this state has none. */
 static const char *dp_recovery_action(const struct desktop_deviceprefs *p)
 {
     if (p->confirm == 1) return "Confirm enable";
@@ -1700,12 +1781,14 @@ static const char *dp_recovery_action(const struct desktop_deviceprefs *p)
     if (!p->pending.state && p->can_enroll) return "Enable recovery…";
     return NULL;
 }
-/** @brief Forgetting needs a record with a device and a request in it. */
+/** @brief Whether the pending record can be forgotten: it names a device
+ *         and holds a request. */
 static int dp_can_forget(const struct desktop_deviceprefs *p)
 {
     return p->pending.state && p->pending.uid[0] && p->pending.request[0];
 }
-/** @brief The recovery group: what is enrolled, pending and offered. */
+/** @brief Draw the recovery group: its title, the state of recovery or of
+ *         the pending record, and its buttons. */
 static void dp_recovery_draw(struct desktop_deviceprefs *p,
                              tiku_surface_t *s, dp_layout_t l)
 {
@@ -1767,7 +1850,12 @@ static void dp_recovery_draw(struct desktop_deviceprefs *p,
             (tiku_dialog_pressed(&p->dialog, DP_FORGET) ? TIKU_S_PRESSED : 0));
 }
 
-/** @brief Classic device sidebar, recessed value list and grouped editor. */
+/**
+ * @brief Draw the window: the source list of boards and sections, the
+ *        board's name and part, the outline, the editor and recovery
+ *        groups, the status line and the buttons.  With no board mounted,
+ *        a note says how to connect one.
+ */
 static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
                     void *ctx)
 {
@@ -1783,9 +1871,9 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
               "Devices", TIKU_C_TEXT);
     tiku_ui_sunken(s, l.devices, TIKU_C_DOC);
     {
-        /* The source list: a board in the bold face with its chip, and
-         * under the chosen one its sections, each with its icon; the
-         * section on show is the selection. */
+        /* The source list: each board with the microcontroller icon and
+         * its name in bold, and under the selected board its sections with
+         * their icons; the section on show is highlighted. */
         int board[DP_TREE], section[DP_TREE];
         int n = dp_tree(p, board, section);
         for (i = 0; i < n; i++) {
@@ -1802,8 +1890,9 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
                                     TIKU_MEASURE_BOLD, p->names[board[i]],
                                     TIKU_C_TEXT);
             } else {
-                /* A section the board has nothing for is greyed out:
-                 * its icon washed toward the paper, its word dimmed. */
+                /* A section the board has nothing for is drawn dimmed:
+                 * its icon faded toward the list's background, its name in
+                 * a dim ink. */
                 int have = dp_section_available(p, section[i]);
                 if (have)
                     tiku_icon_paint(s, section_icon[section[i]], r.x + 26,
@@ -1827,8 +1916,8 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
         l.devices.w - 24, "No devices connected", quiet, 2);
     tiku_icon_paint(s, "microcontroller", l.table.x, c.y + 16, 32);
     {
-        /* The board's own name in the bold face, and under it what the
-         * device said it is: the part and the firmware, when it did. */
+        /* The board's name in bold, and under it the MCU and firmware
+         * version when the device reported them. */
         char subtitle[160] = "Select a row to view or change it.";
         const char *mcu = p->fact_values[0].present ? p->fact_values[0].value
                                                     : NULL;
@@ -1875,7 +1964,9 @@ static void dp_draw(tiku_window_t *w, tiku_surface_t *s, tiku_rect_t c,
     tiku_choice_draw_popup(&p->choice, s, l.edit, c);
 }
 
-/** @brief Keyboard focus order, recomputed from current capabilities. */
+/** @brief Register the window's controls with the dialog in focus order,
+ *         each enabled by the current state; run before every draw and
+ *         event. */
 static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
 {
     int writable = dp_can_edit(p);
@@ -1891,8 +1982,9 @@ static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
                                          dp_section_available(p, section[i])));
     }
     {
-        /* Every outline row in view is a button: a heading folds, a
-         * setting or a fact comes onto the group below. */
+        /* Each outline row in view other than the heading and the row
+         * saying the section has nothing is a button: it shows its
+         * setting, fact or estate in the group below. */
         int visible = tiku_list_visible_rows(&p->list, l.table), i;
         dp_outline_build(p);
         for (i = p->list.top; i < p->nrow && i < p->list.top + visible; i++) {
@@ -1925,7 +2017,12 @@ static void dp_controls(struct desktop_deviceprefs *p, dp_layout_t l)
     p->choice.enabled = writable;
 }
 
-/** @brief Dropdown selection updates the draft, never the device. */
+/**
+ * @brief Pass @p ev to the choice list of the CPU clock, cryptography,
+ *        PSRAM or eMMC setting.  A new choice sets the editor's text;
+ *        nothing reaches the device before Apply.
+ * @return whether the choice list took the event.
+ */
 static int dp_choice_event(struct desktop_deviceprefs *p,
                            const tiku_event_t *ev, dp_layout_t l, tiku_rect_t c)
 {
@@ -1949,7 +2046,12 @@ static int dp_choice_event(struct desktop_deviceprefs *p,
     return result != TIKU_CHOICE_IGNORED;
 }
 
-/** @brief Shared controls own gestures; this panel owns only device actions. */
+/**
+ * @brief The window's event handler.  The dialog takes focus and presses,
+ *        and this acts on what was activated: a board, a section, an
+ *        outline row, Apply, the recovery buttons, Refresh or Done.  The
+ *        wheel scrolls the outline and other input goes to the editor.
+ */
 static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     struct desktop_deviceprefs *p = ctx;
@@ -1970,8 +2072,8 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
         return 1;
     }
     result = tiku_dialog_event(&p->dialog, ev);
-    /* Cmd-W closes the panel.  Cmd-Q is the desk's, answered before a
-     * key reaches here, and is not claimed twice. */
+    /* Cmd-W closes the window.  Cmd-Q does not reach it: the desktop's key
+     * handler closes the focused Devices Preferences window itself. */
     if (ev->type == TIKU_EVENT_KEY_DOWN && (ev->modifiers & TIKU_MOD_CMD) &&
         ev->key == 'w') result.activated = DP_DONE;
     if (result.activated == DP_DONE) {
@@ -2054,20 +2156,22 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     return 1;
 }
 
-/** @brief An open dropdown owns outside clicks until dismissed. */
+/** @brief Whether the window's dropdown is open; while it is, the desktop
+ *         sends pointer events to the window. */
 int desktop_deviceprefs_popup(desktop_t *app)
 {
     return app->deviceprefs && app->deviceprefs->window &&
            app->deviceprefs->window->open && app->deviceprefs->choice.open;
 }
 
-/** @brief Return the native window for desktop input routing. */
+/** @brief The Devices Preferences window, or NULL when there is none. */
 tiku_window_t *desktop_deviceprefs_handle(desktop_t *app)
 {
     return app->deviceprefs != NULL ? app->deviceprefs->window : NULL;
 }
 
-/** @brief Close the window without abandoning pending device work. */
+/** @brief Close the Devices Preferences window.  Its state stays, and a
+ *         job already posted still completes into it. */
 void desktop_deviceprefs_close(desktop_t *app)
 {
     tiku_window_t *w = desktop_deviceprefs_handle(app);
@@ -2079,7 +2183,8 @@ void desktop_deviceprefs_close(desktop_t *app)
     desktop_damage_all(app);
 }
 
-/** @brief Open Settings > Devices Preferences, or raise its existing window. */
+/** @brief Open the Devices Preferences window (Deskbar Settings menu), or
+ *         bring it to the front when it is open. */
 void desktop_deviceprefs_open(desktop_t *app)
 {
     struct desktop_deviceprefs *p = app->deviceprefs;
@@ -2113,7 +2218,8 @@ void desktop_deviceprefs_open(desktop_t *app)
     p->window = tiku_workspace_open(app->desk, "Devices Preferences", r,
             dp_draw, p, NULL);
     if (p->window != NULL) {
-        /* The corner: the outline takes the room, the groups keep theirs. */
+        /* Resizable from its corner: the outline takes the extra height
+         * (dp_layout). */
         tiku_window_set_size_controls(p->window, 1, 1);
         tiku_window_set_handlers(p->window, dp_event, NULL, NULL);
         dp_refresh(p);
@@ -2121,7 +2227,8 @@ void desktop_deviceprefs_open(desktop_t *app)
     desktop_damage_all(app);
 }
 
-/** @brief Detach UI ownership; pending jobs keep their snapshots alive. */
+/** @brief Close the window and drop the desktop's hold on its state; the
+ *         state is freed now, or by the last job still holding it. */
 void desktop_deviceprefs_destroy(desktop_t *app)
 {
     struct desktop_deviceprefs *p = app->deviceprefs;

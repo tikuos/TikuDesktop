@@ -1,6 +1,13 @@
-/* tiku_desktop_media_jobs.c -- media jobs.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_media_jobs.c - the worker jobs for pictures and sound:
+ * decoding the next queued thumbnail, and connecting to the sound server.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_desktop_jobs_private.h"
 
 typedef struct {
@@ -20,7 +27,11 @@ thumb_run(void *ctx)
     t->rc = tiku_thumb_make(t->path, &t->w, &t->h, &t->thumb);
 }
 
-/** @brief On the loop: the writes, the count, the next one free to go. */
+/**
+ * @brief On the loop: hand the thumbnail, empty when the decode failed, to
+ *        tiku_thumb_landed(), which caches it and records its size in the
+ *        store, and clear thumb_job so the next picture can be posted.
+ */
 static void
 thumb_done(void *ctx)
 {
@@ -79,14 +90,13 @@ sound_open_run(void *ctx)
     *(int *)ctx = tiku_sound_open_now();
 }
 
-/** @brief On the loop: the device is open, or is not. */
+/** @brief On the loop: tell the sound kit whether the connect worked. */
 static void
 sound_open_done(void *ctx)
 {
     tiku_sound_opened(*(int *)ctx == 0);
 }
 
-/** @brief The sound kit's opener: the connect goes to a worker. */
 int
 desktop_jobs_sound_open(void *ctx)
 {

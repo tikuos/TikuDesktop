@@ -1,6 +1,14 @@
-/* tiku_desktop_commands.c -- commands.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_commands.c - carrying out a folder window's menu commands:
+ * the enablement gate, the dispatch to each family of commands, the ones
+ * handled here, and the long press that opens a context menu.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 
 /** @brief Fill the Attributes menu's per-type submenus. */
@@ -10,7 +18,10 @@ build_per_type(desktop_t *app, folder_t *fl)
     tiku_trk_folder_menu_build_per_type(&app->folder_menu, fl);
 }
 
-/** @brief Carry out a menu choice on the focused folder. */
+/**
+ * @brief Carry out @p command on folder @p fl, whichever route (a menu, a
+ *        chord, a script) it came by.
+ */
 void
 menu_invoke(desktop_t *app, folder_t *fl, int command)
 {
@@ -22,17 +33,16 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         return;
     }
     {
-        /* The one enablement the menus use gates EVERY route here: a
-         * chord for a command the menu would show grey answers out loud
-         * instead of being silently swallowed (NeXT UIG ch6). */
+        /* The menus' enablement gates every route here: a command the
+         * menu shows grey, reached by a chord or a script, puts "<label>
+         * is not available here" on the status line (NeXT UIG ch6). */
         tiku_trk_sc_ctx_t gc = menu_ctx(app, fl, 0u);
 
-        /* Three commands are exempt because their handlers carry WIDER
-         * semantics than the menu rule and say their own refusals:
-         * Unmount acts on the volume being SHOWN when nothing is
-         * selected (AW-096), and the trash/delete pair routes a selected
-         * VOLUME to an unmount with its own boot-volume refusal
-         * (FS-041). */
+        /* Three commands skip the gate, since their handlers accept more
+         * than the menu rule and report their own refusals: Unmount acts
+         * on the volume shown when nothing is selected (AW-096), and Move
+         * to Trash and Delete route a selected volume to an unmount,
+         * which refuses the boot volume (FS-041). */
         if (command != TIKU_TRK_CMD_UNMOUNT &&
             command != TIKU_TRK_CMD_MOVE_TO_TRASH &&
             command != TIKU_TRK_CMD_DELETE &&
@@ -113,9 +123,8 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     case TIKU_TRK_CMD_GET_INFO: {
         tiku_trk_pose_t *p = tiku_trk_poseview_active(fl->view);
 
-        /* The selection if there is one, else the folder itself: asking
-         * about "this window" with nothing picked is asking about the
-         * folder it is showing. */
+        /* Get Info opens on the active pose when it is selected, else
+         * on the folder the window shows. */
         {
             int islot = tiku_trk_info_windows_open(&app->info_windows,
                 (p != NULL && p->selected) ? p->model.path : fl->path);
@@ -127,9 +136,7 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
         break;
     }
     case TIKU_TRK_CMD_EDIT_QUERY: {
-        /* Re-open the panel ON the query rather than running it again:
-         * what the user wants from a result set is usually one more
-         * condition, not the same search a second time (Q-045). */
+        /* Reopen the Find panel on the query, for editing (Q-045). */
         int whole = (fl->qname[0] != '\0')
                         ? tiku_trk_find_load_named(find_model(app), fl->qname)
                         : -1;
@@ -140,8 +147,8 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             break;
         }
         if (!whole) {
-            /* Said rather than swallowed: a scope this panel cannot offer
-             * means the restored search is not the saved one. */
+            /* A place the panel cannot offer means the restored search
+             * is not the saved one: say so. */
             snprintf(app->status, sizeof app->status,
                      "one of its places is no longer here");
         }
@@ -150,14 +157,12 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
     }
     case TIKU_TRK_CMD_MOVE_TO:
     case TIKU_TRK_CMD_COPY_TO:
-        /* Both ask the same question -- WHERE -- so both open the same
-         * picker and it is the command that decides what happens with the
-         * answer. */
+        /* Both open the destination picker; the command decides what is
+         * done with the answer. */
         fpanel_open(app, fl, command);
         break;
     case TIKU_TRK_CMD_SELECT_MATCHING:
-        /* The same window the keyboard opens: an item that named it and
-         * did nothing was the menu disagreeing with the shortcut. */
+        /* The Select window, which Shift-Cmd-A opens near the pointer. */
         tiku_trk_select_window_open(&app->select_window, fl, 520, 300);
         break;
     case TIKU_TRK_CMD_CLOSE:
@@ -185,24 +190,21 @@ menu_invoke(desktop_t *app, folder_t *fl, int command)
             open_with_pick(app, fl, command - TIKU_TRK_CMD_OPEN_WITH_BASE);
             break;
         }
-        /* Everything else is built and enabled correctly but has no
-         * implementation behind it yet; it must do nothing rather than
-         * something approximate. */
+        /* A command with no handler does nothing. */
         break;
     }
     desktop_damage_all(app);
 }
 
 /**
- * @brief A button held still for the click interval opens the context menu, on
- * the bar or on a pose (PVS-017).
+ * @brief A button held still on a folder for the click interval opens the
+ *        context menu without waiting for the release: the pose's, or the
+ *        window's with no pose under it (PVS-017).
+ * @note The Deskbar's own long press is its responder's tick.
  */
 void
 desktop_press_hold(desktop_t *app)
 {
-    /* PVS-017: a button held still for the click interval opens the
-     * context menu without waiting for the release.  The Deskbar's own
-     * long press is its responder's tick. */
     if (app->press.down && !app->press.menu && app->popup == NULL &&
         app->press.folder != NULL &&
         tiku_trk_now() - app->press.at > TIKU_TRK_CLICK_SPEED_US) {
@@ -212,7 +214,7 @@ desktop_press_hold(desktop_t *app)
         tiku_trk_sc_ctx_t c;
 
         tiku_trk_poseview_cancel_edit_wait(pfl->view);
-        commit_rename(app, 1);            /* CW-029: mouse-opened */
+        commit_rename(app, 1);    /* a mouse-opened menu commits (CW-029) */
         (void)tiku_trk_poseview_context_click(pfl->view, app->press.row);
         c = menu_ctx(app, pfl, 0u);
         build_open_with(app, pfl);
@@ -230,7 +232,8 @@ desktop_press_hold(desktop_t *app)
 }
 
 /**
- * @brief the Open With window.  @return 1 when this was the command
+ * @brief Open the Open With window for the selection and its types.
+ * @return 1 when @p command was this one.
  */
 int
 desktop_cmd_open_with(desktop_t *app, folder_t *fl, int command)
@@ -270,8 +273,8 @@ desktop_cmd_open_with(desktop_t *app, folder_t *fl, int command)
 }
 
 /**
- * @brief copying and pasting a window layout.  @return 1 when this was the
- * command
+ * @brief Copy or paste the folder's column layout.
+ * @return 1 when @p command was one of these.
  */
 int
 desktop_cmd_layout(desktop_t *app, folder_t *fl, int command)
@@ -293,16 +296,16 @@ desktop_cmd_layout(desktop_t *app, folder_t *fl, int command)
 }
 
 /**
- * @brief creating and editing a query.  @return 1 when this was the command
+ * @brief Save the current search as a query or a template in the folder the
+ *        Find icon was dropped on, under the first free "New Query" name
+ *        (Q-034).
+ * @return 1 when @p command was one of these.
  */
 int
 desktop_cmd_query(desktop_t *app, folder_t *fl, int command)
 {
     if (command == TIKU_TRK_CMD_CREATE_QUERY ||
         command == TIKU_TRK_CMD_CREATE_QUERY_TPL) {
-        /* The Find icon's drop chose (Q-034): the current search becomes
-         * a record in the folder it was dropped on, under the first free
-         * "New Query" name, as a query or as a template. */
         char dest[TIKU_PATH_MAX];
         tiku_model_t probe;
         int k;
@@ -334,7 +337,8 @@ desktop_cmd_query(desktop_t *app, folder_t *fl, int command)
 }
 
 /**
- * @brief About and Shut down.  @return 1 when this was the command
+ * @brief Open the About window, or ask whether to shut down.
+ * @return 1 when @p command was one of these.
  */
 int
 desktop_cmd_system(desktop_t *app, folder_t *fl, int command)
@@ -345,8 +349,7 @@ desktop_cmd_system(desktop_t *app, folder_t *fl, int command)
         return 1;
     }
     if (command == TIKU_TRK_CMD_SHUTDOWN) {
-        /* The system menu's corner ritual, by the same question the
-         * Deskbar asks (DB-006). */
+        /* The same shut-down question the Deskbar asks (DB-006). */
         tiku_sound_play(TIKU_SOUND_BEEP);
         tiku_alert_open(alert_model(app), TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_SHUTDOWN,

@@ -3,13 +3,12 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_report.c - a report on demand.
+ * tiku_trk_desktop_report.c - the desktop's report on demand.
  *
- * SIGUSR2 asks; the loop writes, on its next turn, what is safe to read
- * from the loop and nowhere else: the mounts and their ports, the
- * channels, the sessions and what they are, the applications hosted in
- * this process, a run in progress and where it is, a look in progress
- * and where it is -- and then the trail.
+ * SIGUSR2 asks, and the loop writes the report on its next turn, since
+ * only the loop may read this state: the frame statistics, the mounts and
+ * their ports, the channels, the sessions, the applications hosted in this
+ * process, a run, a look or a reclaim in progress, and then the trail.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,7 +18,11 @@
 #include "tiku_report.h"
 #include "tiku_trail.h"
 
-/** @brief Software-render cost, bounded history, and actual upload payload. */
+/**
+ * @brief Print the frame statistics to @p out: frame counts and pixels,
+ *        draw and present time, the median and 95th percentile of the last
+ *        128 frames, the content cache, and the bytes presented.
+ */
 void desktop_frame_report(desktop_t *app, FILE *out)
 {
     int64_t samples[128];
@@ -55,7 +58,8 @@ void desktop_frame_report(desktop_t *app, FILE *out)
         (unsigned long long)bytes);
 }
 
-/** @brief A run's state as the trail names it. */
+/** @brief A run's state, a tiku_board_basic_state_t, as an upper-case name;
+ *         "?" out of range. */
 static const char *
 run_state_name(int state)
 {
@@ -66,7 +70,7 @@ run_state_name(int state)
     return (state >= 0 && state < 6) ? names[state] : "?";
 }
 
-/** @brief What the desk holds, printed for the report. */
+/** @brief Print the desktop's state for the report. */
 static void
 snapshot(FILE *f, void *ctx)
 {
@@ -94,8 +98,8 @@ snapshot(FILE *f, void *ctx)
         fprintf(f, "  none\n");
     }
 
-    /* Channels have slots of their own, not the mounts': a window
-     * session on a board's marked channel, counted with what it lost. */
+    /* Each window channel, by its descriptor, with its count of losses;
+     * channels have slots of their own, apart from the mounts'. */
     fprintf(f, "channels:\n");
     for (i = 0, n = 0; i < TIKU_MOUNT_MAX; i++) {
         if (app->channels[i] != NULL) {
@@ -160,7 +164,11 @@ snapshot(FILE *f, void *ctx)
     }
 }
 
-/** @brief Write a report now: the snapshot and the trail.  0 when written. */
+/**
+ * @brief Write a report now, with @p why as its reason: the snapshot and the
+ *        trail; the report's path goes into @p out.
+ * @return 0 when written.
+ */
 int
 desktop_report_write(desktop_t *app, const char *why, char *out,
                      size_t max)
@@ -172,7 +180,7 @@ desktop_report_write(desktop_t *app, const char *why, char *out,
     return rc;
 }
 
-/** @brief Write one if SIGUSR2 asked since the last turn. */
+/** @brief Write a report when SIGUSR2 has asked since the last turn. */
 void
 desktop_report_poll(desktop_t *app)
 {

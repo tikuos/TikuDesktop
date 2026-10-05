@@ -1,11 +1,21 @@
-/* tiku_desktop_automation.c -- automation.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_automation.c - driving the desktop from outside: the add-on
+ * inventory and its shortcuts, the scripting command file, and running an
+ * add-on on the selection.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 
 /**
- * @brief Keep the add-on inventory true to the directory and the user's
- *        shortcut file (AW-022, AW-023, CW-038).
+ * @brief Keep the add-on inventory true to the add-ons directory and the
+ *        user's shortcut file, re-reading either when its modification
+ *        time changes; checked at most every half second unless @p force
+ *        (AW-022, AW-023, CW-038).
  */
 void
 sync_addons(desktop_t *app, int force)
@@ -47,12 +57,13 @@ sync_addons(desktop_t *app, int force)
 }
 
 /**
- * @brief Run one scripting line against the shell (PVK-052).
+ * @brief Run one scripting line against the focused folder window, or the
+ *        first folder (PVK-052).
  *
- * The suite resolves what a verb acts on and NAMES it; the shell is the
- * caller that acts -- execute opens exactly as a double-click would, and
- * delete moves to the Trash.  Replies go beside the command file, in-band
- * (PVK-054's rule: reported, never thrown).
+ * The scripting suite resolves what a verb acts on and names it; this
+ * acts on the names: execute opens each folder with open_folder() and each
+ * other item with open_one(), and delete moves them to the Trash.  The
+ * outcome, errors included, is written to @p reply (PVK-054).
  */
 static void
 script_command_line(desktop_t *app, const char *line, FILE *reply)
@@ -120,7 +131,10 @@ script_command_line(desktop_t *app, const char *line, FILE *reply)
     desktop_damage_all(app);
 }
 
-/** @brief The command FILE is the transport (PVK-052): read, act, reply. */
+/**
+ * @brief Run every line of the command file @p path, skipping blank lines
+ *        and # comments, and write the replies to <path>.reply (PVK-052).
+ */
 void
 script_command_file(desktop_t *app, const char *path)
 {
@@ -153,7 +167,9 @@ script_command_file(desktop_t *app, const char *path)
 /**
  * @brief Run @p addon on the focused folder's selection: an external one
  *        in a process of its own, a built-in one through its command.
- *        @return 1 when it ran.
+ *        A run that fails is reported on the status line.
+ * @return 1 for any @p addon, run or not; 0 when @p addon or @p context is
+ *         NULL.
  */
 int
 desktop_invoke_addon(const tiku_trk_addon_t *addon, void *context)
@@ -164,8 +180,6 @@ desktop_invoke_addon(const tiku_trk_addon_t *addon, void *context)
         return 0;
     }
     if (addon->external) {
-        /* Run against the selection, in a process of its own -- the
-         * port's separate thread (CW-038). */
         char paths[64][TIKU_PATH_MAX];
         const char *sel[64];
         folder_t *fl = folder_of(app,

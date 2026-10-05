@@ -1,20 +1,28 @@
-/* tiku_desktop_volume_commands.c -- volume mount and unmount commands.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_volume_commands.c - a folder window's volume commands:
+ * Unmount, the mount settings, and mounting one partition or all of them.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 
 /**
- * @brief unmounting the folder's volume, refused out loud when it cannot be.
- * @return 1 when this was the command
+ * @brief Unmount the selected volume, or the volume whose root the window
+ *        shows; a refusal is shown in an alert.
+ * @return 1 when @p command was Unmount.
  */
 int
 desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
 {
     if (command == TIKU_TRK_CMD_UNMOUNT) {
-        /* The selection names the volume; with none, the volume ROOT the
-         * window is showing is the one the gesture means (CW-034).
-         * Everything open on it saves itself first (AW-096), and a
-         * refusal or failure is said out loud. */
+        /* The selection names the volume; with none, it is the volume
+         * root the window shows (CW-034).  Everything open on the volume
+         * saves first (AW-096), and a refusal or a failure raises an
+         * alert. */
         char upaths[1][TIKU_PATH_MAX];
         const char *usel[1];
         const char *upath =
@@ -28,8 +36,9 @@ desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
             tiku_volume_is_root(&uvols, upath)) {
                         char umount_at[TIKU_PATH_MAX], uname[128];
 
-            /* Asked and saved here; the umount itself, which flushes
-             * what is dirty, goes to a worker and reports back. */
+            /* The refusal and the saving are done here, on the loop; the
+             * umount itself, which flushes what is dirty, goes to a
+             * worker and reports back. */
             if (tiku_volume_unmount_prepare(&uvols, upath,
                                             save_before_unmount, app,
                                             umount_at, sizeof umount_at,
@@ -43,8 +52,7 @@ desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
                                     "Cancel");
             }
         } else {
-            /* Nothing here IS a volume: said, not swallowed (NeXT UIG
-             * ch6). */
+            /* Not a volume: say so on the status line (NeXT UIG ch6). */
             snprintf(app->status, sizeof app->status,
                      "Unmount is not available here");
         }
@@ -55,16 +63,17 @@ desktop_cmd_unmount(desktop_t *app, folder_t *fl, int command)
 }
 
 /**
- * @brief the mount settings and mounting everything.  @return 1 when this was
- * the command
+ * @brief Open the mount settings, or mount one partition or every one not
+ *        yet mounted, stopping at the first failure.
+ * @return 1 when @p command was one of these.
  */
 int
 desktop_cmd_mount(desktop_t *app, folder_t *fl, int command)
 {
     (void)fl;
     if (command == TIKU_TRK_CMD_MOUNT_SETTINGS) {
-        /* Straight to the Disk mount page: the one caller the jump-to-page
-         * request has (AW-101, CW-034). */
+        /* The preferences, open on the Disk mount page (AW-101,
+         * CW-034). */
         app->prefs_window.page = TIKU_TRK_PAGE_MOUNT;
         tiku_trk_prefs_window_open(&app->prefs_window);
         desktop_damage_all(app);
@@ -74,8 +83,8 @@ desktop_cmd_mount(desktop_t *app, folder_t *fl, int command)
         (command >= TIKU_TRK_CMD_MOUNT_PART_BASE &&
          command < TIKU_TRK_CMD_MOUNT_PART_BASE +
                        TIKU_TRK_MOUNT_PART_MAX)) {
-        /* Asked of the system, and the answer -- on this host, that
-         * mounting needs its leave -- is said out loud (CW-034). */
+        /* The system mounts; its refusal (on this host, mounting needs
+         * permission) is shown in an alert (CW-034). */
         char why[200];
         int failed = 0, tried = 0;
 

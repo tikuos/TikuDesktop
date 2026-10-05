@@ -3,9 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_embed.c - the embedded descriptor host: the services
- * contract an application hosted in the desktop's own process is given, and
- * the windows it holds for it
+ * tiku_trk_desktop_embed.c - hosting an application in the desktop's own
+ * process: the services it is given (windows, menus, placement, the file
+ * panel, the clipboard, boards and help) and the windows held for it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,14 +14,9 @@
 #include "tiku_trail.h"
 
 /**
- * @brief The About box's colour cycle, which only sometimes has news.
- *
- * Runs whether or not the window is open, because a task that has to be
- * registered and unregistered as windows come and go is a task that will
- * one day be left registered.  It costs a compare when there is nothing
- * to say, and it says nothing for the three seconds in four that the
- * mark is holding a colour -- the same discipline the clock keeps, and
- * for the same reason: a blind dirty on a timer repaints the world.
+ * @brief The 75 ms periodic task: pump the board run, then tick every
+ *        running hosted application.
+ * @return 0, so the task stays scheduled.
  */
 int
 tick_embeds(void *ctx)
@@ -29,8 +24,8 @@ tick_embeds(void *ctx)
     desktop_t *app = ctx;
     int e;
 
-    /* The board's program moves on this beat too: the shell owns the
-     * run, and an application only hears about it. */
+    /* The desktop owns the board run; the asking application is sent
+     * what it prints. */
     desktop_board_pump(app);
 
     for (e = 0; e < TIKU_TRK_EMBED_MAX; e++) {
@@ -40,10 +35,11 @@ tick_embeds(void *ctx)
                                             tiku_trk_now());
         }
     }
-    return 0;                       /* periodic: never done */
+    return 0;
 }
 
-/** @brief An in-process application's window shows its latest frame. */
+/** @brief Draw a hosted application's window: its latest frame, on the
+ *         panel colour. */
 static void
 embed_window_draw(tiku_window_t *window, tiku_surface_t *surface,
                   tiku_rect_t content, void *context)
@@ -112,7 +108,8 @@ embed_window_count(const struct desktop_embed *slot)
 
 /**
  * @brief Open a window for the embedded application, @p w by @p h,
- *        titled @p title.  @return its id, 0 when the slot has no room.
+ *        titled @p title.  @return its id; 0 when the slot has no free
+ *        window or the workspace opens none.
  */
 static uint32_t
 embed_svc_open(void *ctx, const char *title, int w, int h)
@@ -130,17 +127,14 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
         }
     }
     if (ew == NULL) {
-        return 0;               /* no room: said with a 0, not a lie */
+        return 0;               /* no free window in the slot */
     }
     frame.w = w + 2 * TIKU_WINDOW_BORDER;
     frame.h = h + tiku_window_tab_h() + 2 * TIKU_WINDOW_BORDER;
     frame.x = (app->surf->w - frame.w) / 2;
     frame.y = (app->surf->h - frame.h) / 3;
-    /* Applications are stepped past each other; the WINDOWS of one
-     * application are set BESIDE each other instead.  A window laid
-     * over another's tab is a window that cannot be reached by the one
-     * gesture that raises it, and an application with several windows
-     * is asking for them to be worked with, not stacked. */
+    /* Each application's windows start offset by its slot, and are laid
+     * side by side in a grid, so none covers another's tab. */
     frame.x += (int)(slot - app->embeds) * 24;
     frame.y += (int)(slot - app->embeds) * 20;
     {
@@ -153,8 +147,8 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
         }
         frame.x += (j % cols) * across;
         frame.y += (j / cols) * down;
-        /* Off the bottom is worse than over the top: a window nobody
-         * can see is a window nobody can close. */
+        /* Kept on the screen; when it does not fit, the top-left corner
+         * stays on and the bottom is cut. */
         if (frame.y + frame.h > app->surf->h) {
             frame.y = app->surf->h - frame.h;
         }
@@ -167,18 +161,17 @@ embed_svc_open(void *ctx, const char *title, int w, int h)
         if (frame.y < 0) {
             frame.y = 0;
         }
-        /* Never under the global bar: a tab nobody can reach is a
-         * window nobody can move, zoom or close.  The bottom may go
-         * short instead; the corner below is the lesser loss. */
+        /* Never under the global bar, so the tab stays reachable; the
+         * bottom may run off the screen. */
         if (app->gbar_on == 1 && frame.y < app->menus.bar.height) {
             frame.y = app->menus.bar.height;
         }
     }
     ew->slot = slot;
     ew->id = slot->next_id++;
-    /* The WINDOW is the tag, not the application: a tag naming the
-     * application would find the first window and hand it back, so the
-     * second window would be the first one wearing a second name. */
+    /* The workspace tag is this window's own entry, so
+     * tiku_workspace_find() by tag, as the Deskbar's window rows use it,
+     * returns this window and not another of the application's. */
     ew->window = tiku_workspace_open(app->desk, title, frame,
                                           embed_window_draw, ew, ew);
     if (ew->window == NULL) {
@@ -226,16 +219,14 @@ embed_menu_pick(tiku_window_t *window, int command, void *context)
     struct desktop_embed *slot = (ew != NULL) ? ew->slot : NULL;
 
     (void)window;
-    /* The window that PUBLISHED the row is the window the pick belongs
-     * to; a host that said "1" here told every application with two
-     * windows that both their menus were the first one's. */
     if (slot != NULL && slot->running && slot->descriptor->pick != NULL &&
         slot->descriptor->pick(slot->state, ew->id, command)) {
         embed_stop(slot);
     }
 }
 
-/** @brief Publish @p set as window @p id's menus; picks come back here. */
+/** @brief Publish @p set as window @p id's menus; a pick goes to
+ *         embed_menu_pick(). */
 static int
 embed_svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 {
@@ -249,11 +240,10 @@ embed_svc_menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
 }
 
 /**
- * @brief The ANNOUNCE and PANEL roles: centred, upper third, fixed size.
- *
- * The application says what KIND of window it opened; where such a
- * window goes on THIS screen is the host's guideline, which is exactly
- * why the contract carries a role and not a coordinate.
+ * @brief Place window @p id by its role: an announcement or a panel goes
+ *        centred in the upper third, at a fixed size.  The application
+ *        names the role; the desktop chooses the place.
+ * @return 0, or -1 for another role or no such window.
  */
 static int
 embed_svc_place(void *ctx, uint32_t id, int role)
@@ -268,31 +258,26 @@ embed_svc_place(void *ctx, uint32_t id, int role)
         return -1;
     }
     if (plain) {
-        /* The frame was cut for a tab it will not wear: taken in, so the
-         * hairline hugs the content exactly.  A PANEL wears the tab the
-         * frame was cut for, so its frame stands as opened. */
+        /* An announcement has no tab: its frame shrinks to the content
+         * and a hairline.  A panel keeps its tab and its frame. */
         ew->window->frame.w -= 2 * TIKU_WINDOW_BORDER - 2;
         ew->window->frame.h -= tiku_window_tab_h() +
                                2 * TIKU_WINDOW_BORDER - 2;
     }
     ew->window->frame.x = (app->surf->w - ew->window->frame.w) / 2;
-    /* The UPPER part of the screen, as the guideline places a panel
-     * that announces something. */
     ew->window->frame.y = (app->surf->h - ew->window->frame.h) / 3;
     tiku_window_set_size_controls(ew->window, 0, 0);
-    /* An announcement wears no tab and no close; a panel keeps both,
-     * because the person who opened it is the one who puts it away. */
+    /* An announcement has no tab and no close box; a panel keeps
+     * both. */
     tiku_window_set_plain(ew->window, plain);
     desktop_damage_all(app);
     return 0;
 }
 
 /**
- * @brief The window's content grew or shrank; the corner stays put.
- *
- * A window that re-placed itself on a refit would jump under the
- * pointer -- the About takes a new size when the face changes, and only
- * the size.
+ * @brief Resize window @p id to content @p w by @p h; its corner stays
+ *        put unless the window would run off the screen.
+ * @return 0, or -1 for no such window or a bad size.
  */
 static int
 embed_svc_resize(void *ctx, uint32_t id, int w, int h)
@@ -307,11 +292,8 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
     ew->window->frame.w = w + 2 * TIKU_WINDOW_BORDER;
     ew->window->frame.h = h + tiku_window_tab_h() +
                           2 * TIKU_WINDOW_BORDER;
-    /* The corner stays where it is -- unless the window now runs off
-     * the screen, where it was clamped when it opened: a window that
-     * grew on a later tick is owed the same.  Off the bottom is worse
-     * than a jump, because a window nobody can see is one nobody can
-     * close. */
+    /* Clamped to the screen as at opening: the top-left corner stays on
+     * when the window does not fit. */
     if (ew->window->frame.y + ew->window->frame.h > app->surf->h) {
         ew->window->frame.y = app->surf->h - ew->window->frame.h;
     }
@@ -329,14 +311,14 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
 }
 
 /**
- * @brief An application asks for the file panel; the shell puts up ITS
+ * @brief An application asks for the file panel: the desktop shows its
  *        panel and answers later.
  *
- * One panel, one question -- the rule the shell already keeps for its
- * own five askers.  Another asker is refused while one is up, rather
- * than queued, and can ask again.  The window whose question is up may
- * put a newer one, which replaces it, so the answer that comes back is
- * always to the question that window asked last.
+ * One question at a time: while an application's question is up, another
+ * application's is refused, not queued, and may be asked again.  The
+ * window whose question is up may ask a newer one, which replaces it.
+ *
+ * @return 1 when the panel opened, 0 when refused.
  */
 static int
 embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
@@ -358,12 +340,13 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
         tiku_trk_panel_window_open_save(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
     } else if (mode == TIKU_APP_PICK_LOCAL_FOLDER) {
-        /* A folder is the answer: the panel as it asks for one itself. */
+        /* A folder is the answer, as in the desktop's own folder
+         * questions. */
         tiku_trk_panel_window_open(&app->file_panel, &app->pending_pick,
                                    TIKU_TRK_CMD_APP_PICK, start);
     } else {
-        /* On the OPEN road the name is a FILTER: the one file name the
-         * asker can accept, every other file greyed out of the offer. */
+        /* To open, a non-empty @p name filters the offer: only that file
+         * name can be chosen, and every other file is greyed. */
         tiku_trk_panel_window_open_file(&app->file_panel,
             &app->pending_pick, TIKU_TRK_CMD_APP_PICK, start, name);
     }
@@ -372,10 +355,11 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
 }
 
 /**
- * @brief Let go of one window of an application.
+ * @brief Close one window of an application; the last one closing stops
+ *        the application.
  *
- * @param tell nonzero when the RUNTIME took it and the application has
- *        yet to hear so; zero when the application asked.
+ * @param tell nonzero when the desktop closed it and the application is to
+ *        be told; zero when the application asked.
  */
 void
 embed_drop_window(struct embed_win *ew, int tell)
@@ -400,15 +384,15 @@ embed_drop_window(struct embed_win *ew, int tell)
         slot->descriptor->closed(slot->state, ew->id);
     }
     desktop_damage_all(slot->app);
-    /* An application with no windows left has nothing to be: the last
-     * window closing is the application ending, which is exactly what
-     * closing the ONE window always meant. */
     if (embed_window_count(slot) == 0) {
         embed_stop(slot);
     }
 }
 
-/** @brief From now on the person may resize this window. */
+/**
+ * @brief Let the person resize window @p id from now on.
+ * @return 0, or -1 for no such window.
+ */
 static int
 embed_svc_sizeable(void *ctx, uint32_t id)
 {
@@ -418,20 +402,21 @@ embed_svc_sizeable(void *ctx, uint32_t id)
     if (ew == NULL || ew->window == NULL) {
         return -1;
     }
-    /* A window that can grow can be zoomed: the box is the corner's
-     * shortcut to the whole desk and back. */
+    /* A resizable window gets the zoom box too: to the whole desk and
+     * back. */
     tiku_window_set_size_controls(ew->window, 1, 1);
     return 0;
 }
 
-/** @brief The desk's clipboard, from an application in this process. */
+/** @brief Set the desk's clipboard to @p text, for an application in this
+ *         process.  @return 1. */
 static int
 embed_svc_clip_set(void *ctx, const char *text)
 {
     (void)ctx;
     tiku_clipboard_set(text);
-    /* The sessions hear about it from the main loop's stamp watch --
-     * the same road a field's copy takes, so there is one road. */
+    /* The new stamp makes clip_mirror() send the text to the remote
+     * sessions on the next turn, as for a field's copy. */
     return 1;
 }
 
@@ -467,14 +452,13 @@ embed_svc_close(void *ctx, uint32_t id)
 {
     struct desktop_embed *slot = ctx;
 
-    /* The application asked, so it already knows: told again it would
-     * be hearing about a window it has just let go of. */
+    /* The application asked, so it is not told. */
     embed_drop_window(embed_win_of_id(slot, id), 0);
 }
 
 /**
  * @brief Stop the embedded application in @p slot: its stop hook, then
- *        every window it still holds.  Nothing happens twice.
+ *        every window it still holds.  A stopped slot is left alone.
  */
 void
 embed_stop(struct desktop_embed *slot)
@@ -507,12 +491,8 @@ embed_stop(struct desktop_embed *slot)
 }
 
 /**
- * @brief Hand @p ev to the application, saying which window it landed in.
- *
- * An application built before windows could be told apart hears the
- * older call and is none the wiser, which is what lets one host carry
- * both.
- *
+ * @brief Hand @p ev to the application with the id of window @p ew; an
+ *        application with no windowed handler gets its plain one.
  * @return nonzero when the application says it is done.
  */
 int
@@ -528,10 +508,10 @@ embed_deliver(struct embed_win *ew, const tiku_event_t *ev)
 }
 
 /*---------------------------------------------------------------------------*/
-/* A PROGRAM ON A BOARD                                                      */
+/* BOARD, PATH AND HELP SERVICES, AND STARTING AN APPLICATION                */
 /*---------------------------------------------------------------------------*/
 
-/** @brief The boards the shell has mounted, for an embedded app. */
+/** @brief The boards the desktop has mounted, for a hosted application. */
 static int
 embed_svc_board_names(void *ctx, char *out, size_t max)
 {
@@ -581,7 +561,8 @@ embed_svc_board_input(void *ctx, const char *text)
     return desktop_board_input(slot->app, text);
 }
 
-/** @brief Keep a program on a board, telling this slot when it is. */
+/** @brief Save a program on a board, telling this slot when it is
+ *         saved. */
 static int
 embed_svc_board_save(void *ctx, const char *board, const char *name,
                      const char *program)
@@ -600,7 +581,7 @@ embed_svc_board_port(void *ctx, const char *board, char *out, size_t max)
     return desktop_board_port(slot->app, board, out, max);
 }
 
-/** @brief What a board is, as its die says. */
+/** @brief The processor a board reports. */
 static int
 embed_svc_board_mcu(void *ctx, const char *board, char *out, size_t max)
 {
@@ -609,7 +590,8 @@ embed_svc_board_mcu(void *ctx, const char *board, char *out, size_t max)
     return desktop_board_mcu(slot->app, board, out, max);
 }
 
-/** @brief Look for boards on this machine's ports. */
+/** @brief Look for boards on this machine's ports; the slot is told when
+ *         the look ends. */
 static int
 embed_svc_board_find(void *ctx)
 {
@@ -619,7 +601,12 @@ embed_svc_board_find(void *ctx)
     return 1;
 }
 
-/** @brief A path, opened as a double click on it would open it. */
+/**
+ * @brief Open @p path for an application: a folder in a folder window,
+ *        anything else through open_one(), and, when nothing opens it, the
+ *        folder that holds it.
+ * @return 1 when something opened.
+ */
 int
 desktop_app_open_path(desktop_t *app, const char *path)
 {
@@ -632,17 +619,15 @@ desktop_app_open_path(desktop_t *app, const char *path)
         return 0;
     }
     tiku_trail("open %s for an application", path);
-    /* A folder is opened AS a folder: falling through to the document
-     * road shows its parent instead, and reports that as success. */
+    /* A folder opens in a folder window of its own. */
     if (tiku_model_is_container(&model)) {
         return open_folder(app, path) ? 1 : 0;
     }
     if (open_one(app, &model)) {
         return 1;
     }
-    /* Nothing registered to open it -- a fresh machine has no
-     * application registry -- so its folder is shown instead, with the
-     * name on the row to find it by: the person still gets there. */
+    /* No application opens it (a fresh machine has no registry): open
+     * the folder holding it. */
     {
         char folder[TIKU_PATH_MAX];
         char *slash;
@@ -657,14 +642,18 @@ desktop_app_open_path(desktop_t *app, const char *path)
     }
 }
 
-/** @brief Use the same namespace opener for an in-process application. */
+/** @brief Open @p path for the hosted application, as
+ *         desktop_app_open_path() does. */
 static int embed_svc_open_path(void *ctx, const char *path)
 {
     struct desktop_embed *slot = ctx;
     return slot && desktop_app_open_path(slot->app, path);
 }
 
-/** @brief Remember the page this application named for itself. */
+/**
+ * @brief Remember the help page this application named for itself.
+ * @return whether the desktop has a help folder.
+ */
 static int embed_svc_help_page(void *ctx, const char *page)
 {
     struct desktop_embed *slot = ctx;
@@ -675,7 +664,8 @@ static int embed_svc_help_page(void *ctx, const char *page)
     return desktop_help_ready(slot->app);
 }
 
-/** @brief Open a topic for a dialog or a requested error explanation. */
+/** @brief Open help page @p page for the application; a name of 256 bytes
+ *         or more is refused. */
 static int embed_svc_help_open(void *ctx, const char *page)
 {
     struct desktop_embed *slot = ctx;
@@ -683,7 +673,11 @@ static int embed_svc_help_open(void *ctx, const char *page)
     return desktop_help_open(slot->app, page);
 }
 
-/** @brief Display a generated report owned by the reader after this call. */
+/**
+ * @brief Show generated HTML under @p title in the reader, which owns it
+ *        from then on; HTML over 15000 bytes or a title over 127 is
+ *        refused.
+ */
 static int embed_svc_help_html(void *ctx, const char *title, const char *html)
 {
     struct desktop_embed *slot = ctx;
@@ -692,7 +686,8 @@ static int embed_svc_help_html(void *ctx, const char *title, const char *html)
     return desktop_help_html(slot->app, title, html);
 }
 
-/** @brief Let a board go, port and all. */
+/** @brief Release a board: unmount it and close its port and its window
+ *         channel, and remember it for a reclaim. */
 static int
 embed_svc_board_release(void *ctx, const char *board)
 {
@@ -701,14 +696,14 @@ embed_svc_board_release(void *ctx, const char *board)
     return desktop_board_release(slot->app, board);
 }
 
-/** @brief And take it back. */
+/** @brief Ask for a released board back. */
 static int
 embed_svc_board_reclaim(void *ctx, const char *board)
 {
     struct desktop_embed *slot = ctx;
 
-        /* Told as board_said(RECLAIMED / FAILED) once the ports have
-     * spoken; here only whether the asking was taken. */
+    /* The slot is told RECLAIMED or FAILED once every port has answered;
+     * this returns only whether the asking was taken. */
     return desktop_board_reclaim(slot->app, board, -1, slot);
 }
 
@@ -745,9 +740,9 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
     slot->app = app;
     slot->descriptor = descriptor;
     slot->next_id = 1;
-    /* The services live in the SLOT: a descriptor keeps the pointer for
-     * its lifetime, and one static set would give every application the
-     * last one's window. */
+    /* The services table lives in the slot: an application keeps the
+     * pointer for its lifetime, and each table's context is its own
+     * slot. */
     slot->services.ctx = slot;
     slot->services.open = embed_svc_open;
     slot->services.frame = embed_svc_frame;
@@ -784,11 +779,9 @@ embed_start(desktop_t *app, const tiku_app_descriptor_t *descriptor)
 }
 
 /**
- * @brief Start @p descriptor, or bring its running window forward.
- *
- * By the descriptor's ID, which is what "the same application" means
- * across every way of reaching it: the second menu pick raises the
- * window the first one opened, rather than opening a twin.
+ * @brief Start @p descriptor, or, when an application with its id runs,
+ *        bring that application's window forward.
+ * @return nonzero when it runs.
  */
 int
 embed_open_or_raise(desktop_t *app, const tiku_app_descriptor_t *descriptor)
@@ -805,10 +798,7 @@ embed_open_or_raise(desktop_t *app, const tiku_app_descriptor_t *descriptor)
             strcmp(slot->descriptor->id, descriptor->id) == 0) {
             int j;
 
-            /* The first window it still holds: an application asked for
-             * again is being asked to come forward, and it is the one
-             * that can say which of its windows means "the application"
-             * -- so the host raises the earliest rather than guessing. */
+            /* The window in the lowest slot the application holds. */
             for (j = 0; j < TIKU_TRK_EMBED_WINDOWS; j++) {
                 if (slot->win[j].window != NULL) {
                     tiku_workspace_activate(app->desk,

@@ -3,9 +3,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_draw.c - one frame: the backdrop, the windows, the bar
- * and the overlays, and putting it on the glass; and the resize and font
- * follow that reshape it
+ * tiku_trk_desktop_draw.c - drawing a frame: the backdrop, the windows, the
+ * Deskbar, the menus and the overlays, and presenting it to the display;
+ * the damage that asks for a frame, the screen resize and the font change
+ * that reshape it, and the background work done each turn.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -36,7 +37,11 @@ set_backdrop_color(void *context, const tiku_trk_color_t *color)
     }
 }
 
-/** @brief The clock's own pulse: a minute must not go stale (DB-044). */
+/**
+ * @brief The clock's periodic task: repaint when the Deskbar clock's text
+ *        changes (DB-044).
+ * @return 0, so the task stays scheduled.
+ */
 int
 tick_clock(void *ctx)
 {
@@ -46,25 +51,27 @@ tick_clock(void *ctx)
     if (tiku_trk_deskbar_clock_stamp(app->deskbar, stamp,
                                      sizeof stamp) &&
         strcmp(stamp, app->clock_stamp) != 0) {
-        /* Only when the displayed time turned over: a blind dirty every
-         * second would repaint rows the economy checks rightly budget.
-         * The FIRST observation is a baseline, not a change -- settings
-         * and the fixture freeze both arrive after the loop starts. */
+        /* The first stamp seen is recorded without a repaint: the
+         * settings and a test fixture's frozen clock arrive after the
+         * loop starts. */
         if (app->clock_stamp[0] != '\0') {
             desktop_damage_all(app);
         }
         snprintf(app->clock_stamp, sizeof app->clock_stamp, "%s", stamp);
     }
-    return 0;                       /* periodic: never done */
+    return 0;
 }
 
-/** @brief Apply the destination panel answer to its opaque folder target. */
+/**
+ * @brief Present the frame on the display, only its damaged region after a
+ *        bounded frame.  With no host nothing is presented: the surface is
+ *        the output, and -shot writes it.
+ */
 void
 blit(desktop_t *app)
 {
     if (app->host == NULL) {
-        return;                     /* displayless: the surface IS the
-                                     * output, and -shot writes it */
+        return;
     }
     (void)tiku_host_present_in(app->host, app->surf,
                                app->frame_partial ? &app->frame_damage : NULL);
@@ -111,14 +118,11 @@ resize_desktop(desktop_t *app, int width, int height)
 }
 
 /**
- * @brief Follow the face, whatever changed it.
- *
- * The face is a preference, changeable at any moment from either of two
- * windows, so a row height worked out once at launch stops fitting its
- * words the moment somebody changes it.  Taken every frame instead and
- * pushed to the copies: one compare until it differs, and then a redraw
- * was owed anyway.  Noticed here rather than at each place that can
- * change the face, so no third window added later can be missed.
+ * @brief Keep the row height in step with the plain font: when the font's
+ *        height changes, set the new row height in every controller that
+ *        keeps a copy, and repaint.
+ * @note Called at the start of every frame, so a font changed from any
+ *       window is followed.
  */
 static void
 follow_font(desktop_t *app)
@@ -135,15 +139,13 @@ follow_font(desktop_t *app)
     app->file_panel.row_h = want;
     app->script_adapter.row_h = want;
     /*
-     * The open views are not touched here: a folder sets its own view's
-     * row height from folder_render every time it draws, and this runs
-     * first.  Reaching into them as well would be a second way of saying
-     * the same thing, and the two would eventually disagree.
+     * The open views are not set here: each folder sets its view's row
+     * height from folder_render when it draws, after this runs.
      */
     desktop_damage_all(app);
 }
 
-/** @brief Ask for the whole screen: the one way a full frame is asked. */
+/** @brief Ask for a full frame. */
 void
 desktop_damage_all(desktop_t *app)
 {
@@ -154,8 +156,8 @@ desktop_damage_all(desktop_t *app)
 void desktop_damage(desktop_t *app, tiku_rect_t rect)
 {
     if (rect.w <= 0 || rect.h <= 0) return;
-    /* Every existing writer of dirty=1 remains a full invalidation.
-     * A later bounded change must never downgrade that request. */
+    /* dirty == 1 asks for a full frame; bounded damage never turns it
+     * into a partial one. */
     if (app->dirty && app->dirty != 2) return;
     /* A window's shadow reaches past its frame: what a move of it
      * dirties is that much more on every side. */
@@ -165,18 +167,19 @@ void desktop_damage(desktop_t *app, tiku_rect_t rect)
     app->dirty = 2;
 }
 
-/** @brief Composite the requested region with safe full-redraw fallbacks. */
+/**
+ * @brief Draw a frame: only the damaged region after bounded damage, else
+ *        the whole screen, from the backdrop up to the force-quit banner;
+ *        and record what the frame cost.
+ */
 void
 draw_all(desktop_t *app)
 {
     follow_font(app);
     int partial = app->dirty == 2;
     int64_t started = tiku_trk_now();
-    /* This frame consumes the request, so the clear comes first: an
-     * animation that asks for the next frame while this one is drawn
-     * keeps that request.  A clear after the draw wipes it, and a
-     * closing window's ghost then stands still until some other event
-     * dirties the screen. */
+    /* The request is cleared before drawing, so an animation that asks
+     * for the next frame while this one is drawn keeps its request. */
     app->dirty = 0;
     tiku_clip_damage(app->surf, partial ? &app->damage : NULL);
     app->frame_partial = partial;
@@ -196,17 +199,16 @@ draw_all(desktop_t *app)
                    (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                    app->backdrop_color);
     desktop_publish_teams(app);    /* a row per application */
-    /* The clock for what moves on its own -- a window rising as it
-     * opens -- and none for a run with nobody to show it to, whose
-     * frames must be still for a script to read. */
+    /* Animations (a window rising as it opens) get the clock only with
+     * a display and Reduce motion off; with no host the frames stay
+     * still for a script to read. */
     int motion = app->host != NULL &&
         !tiku_trk_prefs_get(prefs_model(app), "ReduceMotion");
     tiku_workspace_set_now(app->desk, motion ? started : 0);
     tiku_trk_deskbar_set_now(app->deskbar, motion ? started : 0);
     if (!tiku_trk_deskbar_raised(app->deskbar)) {
-        /* Under the windows: with auto-raise on, a window may cover the
-         * bar until the user reaches for it.  Draw order IS the z-order
-         * here -- there is no window server to ask (DB-052). */
+        /* The bar not raised is drawn under the windows, which may
+         * cover it; the drawing order is the z-order (DB-052). */
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
         tiku_workspace_draw(app->desk);
     } else {
@@ -214,8 +216,7 @@ draw_all(desktop_t *app)
         tiku_trk_deskbar_draw(app->deskbar, app->surf);
     }
     if (tiku_workspace_animating(app->desk)) {
-        /* The next frame moves it again, and only where it moves: a
-         * full frame here is the whole screen for every step of a ghost. */
+        /* The next frame damages only where the animation moves. */
         desktop_damage(app, tiku_workspace_motion(app->desk));
     }
     /* A Deskbar menu still fading in asks for its own rectangle again. */
@@ -236,8 +237,8 @@ draw_all(desktop_t *app)
 }
 
 /**
- * @brief Take the owed screenshot: the current frame to a PNG under
- *        ~/Pictures, named by the time, and say where it went.
+ * @brief Take the screenshot asked for, if one is: the desk, compressed on a
+ *        worker into Desktop/Screenshots.
  */
 void
 desktop_screenshot_tick(desktop_t *app)
@@ -247,15 +248,13 @@ desktop_screenshot_tick(desktop_t *app)
     }
     app->shot_pending = 0;
     app->shot_pressed = 0;
-    /* A Screenshots folder on the desktop itself, so a shot is where a
-     * person looks for it: compressed on a worker, which says where. */
     desktop_shot_desk(app);
     desktop_damage_all(app);
 }
 
 /**
- * @brief Every open nav level, outermost first, each hanging off the row
- *        that opened it -- so the trail back out is on screen (CW-045).
+ * @brief Draw every open navigation level, outermost first, each beside the
+ *        row that opened it, so the path back stays on screen (CW-045).
  */
 static void
 draw_nav_levels(desktop_t *app, int px, int py)
@@ -297,14 +296,13 @@ draw_nav_levels(desktop_t *app, int px, int py)
                                   : tiku_dim(TIKU_C_TEXT,
                                              TIKU_C_PANEL)));
                 if (lv->item[i].is_container) {
-                    /* The arrow says a row goes further, which is the one
-                     * thing a nested menu must announce. */
+                    /* A container row gets a submenu arrow. */
                     tiku_ui_submenu_arrow(app->surf,
                         (tiku_rect_t){ r.x, row2.y, r.w, row2.h },
                         (i == lv->sel) ? TIKU_C_SELTEXT : TIKU_C_TEXT);
                 }
             }
-            /* The next level hangs off this level's chosen row. */
+            /* The next level starts beside this level's chosen row. */
             px = r.x + r.w - 4;
             py = r.y + 2 + ((lv->sel >= 0) ? lv->sel : 0) *
                  TIKU_TRK_NAV_ROW;
@@ -313,18 +311,18 @@ draw_nav_levels(desktop_t *app, int px, int py)
 }
 
 /**
- * @brief Whichever window has focus paints its selection; the others show
- * theirs muted (PVS-023).
+ * @brief Tell the remote applications which window has focus (none while
+ *        an alert is open), and let only the focused folder window paint
+ *        its selection; the others keep theirs unseen, unless inactive
+ *        selections are set to show (PVS-023).
  */
 void
 desktop_focus_paint(desktop_t *app)
 {
     int i;
 
-    /* PVS-023: whichever window has focus paints its selection; the
-     * rest own theirs without showing it.  Done once per cycle so every
-     * path that changes focus is covered rather than each one
-     * remembering to. */
+    /* Run once per turn, so a change of focus is followed whatever made
+     * it. */
     {
         tiku_window_t *fw = tiku_workspace_focused(app->desk);
 
@@ -342,8 +340,10 @@ desktop_focus_paint(desktop_t *app)
 }
 
 /**
- * @brief One step of the work that fills in while the desktop keeps answering:
- * info sizes, thumbnails, the band and the drag.
+ * @brief One step of the background work, each turn: the activation sound,
+ *        the sound and panel pumps, boards dialling in, the channels, a step
+ *        of a folder-size walk, the next thumbnail, a slice of each live
+ *        query, and the band's and the drag's timers.
  */
 void
 desktop_idle_work(desktop_t *app)
@@ -351,8 +351,8 @@ desktop_idle_work(desktop_t *app)
     tiku_window_t *front = tiku_workspace_focused(app->desk);
     int windows = tiku_workspace_count(app->desk);
 
-    /* A window coming to the front is a moment, unless it came there by
-     * opening, which has already sounded. */
+    /* A window coming to the front plays the activation sound, unless it
+     * came there by opening, which played its own. */
     if (front != NULL && front != app->sound_focused &&
         windows <= app->sound_windows) {
         tiku_sound_play(TIKU_SOUND_WINDOW_ACTIVATE);
@@ -366,15 +366,12 @@ desktop_idle_work(desktop_t *app)
     /* One directory of one folder-size walk per turn, so a Get Info
      * window on a deep tree fills in while the desktop keeps answering. */
     (void)tiku_trk_info_windows_calc_step(&app->info_windows);
-        /* One picture at a time, decoded on a worker: the window keeps
+    /* One picture at a time, decoded on a worker: the window keeps
      * answering while a folder of images fills in (IV-031). */
     (void)desktop_wire_thumb(app);
     {
-        /* A live query window's walk, a slice per turn.  A search whose
-         * scope is a volume is minutes of work on a real disk; done here
-         * it costs the turn sixteen directories and the window fills as
-         * it goes, rather than the shell stopping until the disk has been
-         * read (Q-045). */
+        /* A live query window's walk, sixteen directories per turn, so
+         * the window fills as it goes (Q-045). */
         int k;
 
         for (k = 0; k < app->folder_count; k++) {
@@ -392,27 +389,25 @@ desktop_idle_work(desktop_t *app)
 }
 
 /**
- * @brief the boot and closing screens
+ * @brief Draw the boot or the closing screen over the finished frame, and
+ *        ask for the next frame while it shows.
  */
 void
 desktop_draw_splash(desktop_t *app)
 {
-    /*
-     * Last of all, over everything: the boot screen on its way out.  The
-     * desktop underneath is fully drawn by now -- the fade is the black
-     * being lifted off a finished picture, not a picture being built up
-     * behind one.
-     */
+    /* Drawn over the complete frame, so the fade uncovers a finished
+     * picture. */
     if (tiku_trk_splash_visible(&app->splash, tiku_trk_now())) {
         tiku_trk_splash_draw(&app->splash, app->surf,
                              (tiku_rect_t){ 0, 0, app->surf->w, app->surf->h },
                              tiku_trk_now());
-        desktop_damage_all(app);         /* not finished going: come back */
+        desktop_damage_all(app);         /* still showing: next frame */
     }
 }
 
 /**
- * @brief the opened icon's outline, the query drag and the navigation menus
+ * @brief Draw the overlays: the opened icon's outline, the dragged query
+ *        icon, the navigation levels, and the alert and progress overlay.
  */
 void
 desktop_draw_overlays(desktop_t *app)
@@ -432,7 +427,7 @@ desktop_draw_overlays(desktop_t *app)
         }
     }
     if (app->qdrag_on) {
-        /* The query icon in flight (Q-034), riding under the pointer. */
+        /* The dragged query icon, under the pointer (Q-034). */
         (void)tiku_icon_paint(app->surf, "query", app->ptr_x - 16,
                                   app->ptr_y - 16, 32);
     }
@@ -440,7 +435,7 @@ desktop_draw_overlays(desktop_t *app)
         draw_nav_levels(app, app->popup_frame.x + app->popup_frame.w - 4,
                         app->popup_frame.y + 4);
     } else if (app->spring_nav_on) {
-        /* The spring's walk hangs off the sprung pose (PVS-051). */
+        /* The spring's levels start beside the sprung pose (PVS-051). */
         draw_nav_levels(app, app->spring_nav_x, app->spring_nav_y);
     }
     tiku_trk_status_overlay_draw(&app->status_overlay);
@@ -452,8 +447,8 @@ desktop_draw_overlays(desktop_t *app)
  * @brief One menu, fading in where it stands, so its rows take clicks
  *        from the first frame.
  *
- * With no window to show it to, or with Reduce motion on, the menu is
- * drawn as it ends.
+ * With no display, or with Reduce motion on, the menu is drawn complete
+ * at once.
  */
 static void
 draw_popup_menu(desktop_t *app, tiku_menu_t *menu, tiku_rect_t frame,
@@ -479,20 +474,19 @@ draw_popup_menu(desktop_t *app, tiku_menu_t *menu, tiku_rect_t frame,
 }
 
 /**
- * @brief the open menu, drawn last because it is above everything
+ * @brief Draw the open menu and its open submenu, each fading in, over the
+ *        bars.
  */
 void
 desktop_draw_popup(desktop_t *app)
 {
-    /* A menu is drawn last because it is above everything, including the
-     * Deskbar strip. */
     if (app->popup != NULL) {
         if (app->popup != app->popup_seen) {
             app->popup_seen = app->popup;
             app->popup_since = tiku_trk_now();
         }
-        /* Re-aimed here because the menus are rebuilt per draw, which
-         * clears the hot row a moment after the motion set it. */
+        /* The menus are rebuilt on every draw, which clears the hot row,
+         * so it is set again from the pointer here. */
         (void)tiku_menu_track(app->popup, app->popup_frame,
                                   app->ptr_x, app->ptr_y);
         draw_popup_menu(app, app->popup, app->popup_frame,
@@ -517,14 +511,16 @@ desktop_draw_popup(desktop_t *app)
 }
 
 /**
- * @brief the menu bar of the window that has one, and the global bar
+ * @brief Rebuild the shared menu model for the folder that owns the open
+ *        menu, and draw the global bar from the focused folder's published
+ *        menus.
  */
 void
 desktop_draw_bars(desktop_t *app)
 {
     /* Drawing another folder rebuilt the one shared menu model for that
-     * folder.  Put it back on the bar that actually owns the popup before
-     * painting or hit-testing it. */
+     * folder: rebuild it for the folder that owns the popup, before it is
+     * drawn or hit. */
     if (app->bar_fl == NULL && app->bar_open < 0 && app->popup != NULL &&
         app->popup_fl != NULL) {
         tiku_trk_sc_ctx_t c;
@@ -547,9 +543,9 @@ desktop_draw_bars(desktop_t *app)
         }
     }
     if (app->gbar_on == 1) {
-        /* The global bar: the focused folder's menus are REBUILT and
-         * PUBLISHED, and the strip renders only what was published --
-         * the same data a foreign window would hand in. */
+        /* The focused folder's menus are rebuilt and published, and the
+         * strip draws only what was published: the same data an
+         * application's window sends. */
         tiku_rect_t strip;
         tiku_window_t *fw = tiku_workspace_focused(app->desk);
         folder_t *ffl = folder_of(app, fw);
@@ -579,16 +575,15 @@ desktop_draw_bars(desktop_t *app)
 }
 
 /**
- * @brief the drag in progress: the ghost, the band, the drop target
+ * @brief Draw the drag in progress: up to four of the carried items' icons
+ *        at the pointer, faded, and a plus badge when the drop would copy.
  */
 void
 desktop_draw_drag(desktop_t *app)
 {
     if (tiku_trk_drag_active(&app->drag)) {
-        /* What is being carried, drawn at the pointer: a drag with no
-         * picture is a drag the user has to remember the contents of.
-         * Translucent, and faded further the more it holds, so what it is
-         * being dropped ON stays readable (IV-053). */
+        /* The icons are translucent, and fainter for more than three
+         * items, so what is under them stays readable (IV-053). */
         int i, shown = (app->drag.count < 4) ? app->drag.count : 4;
         int alpha = (app->drag.count > 3) ? 120 : 168;
 
@@ -616,17 +611,14 @@ desktop_draw_drag(desktop_t *app)
             box.w = 32;
             box.h = 32;
             (void)tiku_icon_paint(app->surf, art, box.x, box.y, 32);
-            /* Tinted over its own pixels rather than composited in an
-             * offscreen: the picture is what the pointer carries, and it
-             * has to sit over whatever is under it. */
+            /* The fade is a tint of the backdrop colour over the icon's
+             * own pixels. */
             tiku_paint_tint(app->surf, box, app->backdrop_color,
                                 255 - alpha);
             if (app->drag.count > 3) {
-                /* Large selections get a short fade at the edge of the
-                 * pointer picture.  The surface is opaque, so the fade is
-                 * expressed as progressively stronger backdrop tinting over
-                 * the four edge bands rather than an off-screen alpha
-                 * bitmap (PVS-034). */
+                /* For more than three items, each 4-pixel edge band is
+                 * tinted once more, the corners twice, so the picture's
+                 * edge fades (PVS-034). */
                 tiku_rect_t edge = box;
                 edge.w = 4;
                 tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
@@ -639,11 +631,9 @@ desktop_draw_drag(desktop_t *app)
                 tiku_paint_tint(app->surf, edge, app->backdrop_color, 96);
             }
         }
-        /* The copy cursor's spelling here: when the drop in front of the
-         * pointer would COPY -- a directory on another store, or Option
-         * forcing it -- the ghost wears a small plus badge, so the user is
-         * told before the release which of the two acts this is
-         * (PVS-036). */
+        /* When the drop under the pointer would copy (onto another
+         * store, or with Option held), a plus badge is drawn on the
+         * picture (PVS-036). */
         if (app->drag_target.folder != NULL) {
             char dest[TIKU_PATH_MAX];
             unsigned dmods = 0u;
@@ -690,16 +680,16 @@ desktop_draw_drag(desktop_t *app)
 }
 
 /**
- * @brief a column being dragged along the title strip
+ * @brief Draw a column being dragged off the title strip as a dotted
+ *        outline at the pointer (TS-008).
  */
 void
 desktop_draw_strip_drag(desktop_t *app)
 {
     if (tiku_trk_titleview_tracking(&app->tstrip) == TIKU_TRK_TRACK_DRAG &&
         app->tstrip.removed) {
-        /* The torn-out column follows the pointer as a dotted outline
-         * (TS-008): dashes, drawn over everything, the column's own width
-         * and the strip's height. */
+        /* The outline is the column's width by the strip's height; 20
+         * is TITLE_HEIGHT of tiku_trk_folder_window.c, written out. */
         int wds = app->tstrip.removed_width;
         int x0 = app->strip_ptr_x - wds / 2;
         int y0 = app->strip_ptr_y - 20 /* TITLE_HEIGHT */ / 2;

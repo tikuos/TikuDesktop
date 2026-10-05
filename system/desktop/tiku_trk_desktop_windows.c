@@ -1,15 +1,22 @@
 /*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
  * tiku_trk_desktop_windows.c - the workspace as a responder: every window's
  * frame (its tab, its close and zoom boxes, its resize corner), the windows
- * whose content is theirs to answer (preferences, panels, embedded and
- * remote applications, the Find window), and the wheel over any of them.
+ * that answer their own content (preferences, panels, embedded and remote
+ * applications, the Find window), their keys, and the wheel.
  *
- * A folder window's content is the folders responder's; an Info window's
- * parts are the info responder's.  SPDX-License-Identifier: Apache-2.0
+ * A folder window's content belongs to the folders responder, and an Info
+ * window's parts to the Info responder.
+ *
+ * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_trk_desktop_private.h"
 
-/** @brief Tell a window its content size, so it repaints its page to fit. */
+/** @brief Send an embedded or remote application's window a resize event
+ *         carrying its content size. */
 static void
 resize_deliver(desktop_t *app, tiku_window_t *w)
 {
@@ -28,9 +35,14 @@ resize_deliver(desktop_t *app, tiku_window_t *w)
     }
 }
 
-/** @brief The close box or the zoom box, released over the box it was
- *         pressed in: zoom fits the window, close closes it, with CMD every
- *         window and with Option the folder's children too. */
+/**
+ * @brief Act on a close or zoom box released over the box it was pressed in.
+ *
+ * Zoom fits a folder window to its content, and toggles an application's
+ * window between the desk's area and its frame before.  Close closes the
+ * window; with Cmd, every folder window and the Find window; with Option,
+ * a folder window and every window on a folder inside it.
+ */
 static void
 tab_box_act(desktop_t *app, tiku_window_t *w, int hit, unsigned mods)
 {
@@ -102,8 +114,11 @@ tab_box_under(desktop_t *app, int x, int y)
     return hw == app->box_press && hit == app->box_hit;
 }
 
-/** @brief A pressed box goes up when the hand leaves it and down when it
- *         comes back.  @return whether a box is pressed at all. */
+/**
+ * @brief A pressed box is drawn raised while the pointer is off it and
+ *        pressed while the pointer is over it.
+ * @return whether a box is pressed at all.
+ */
 static int
 tab_box_move(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -120,7 +135,10 @@ tab_box_move(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
     return 1;
 }
 
-/** @brief The box acts only when released over itself. */
+/**
+ * @brief End a box press: the box acts only when released over itself.
+ * @return whether a box was pressed.
+ */
 static int
 tab_box_release(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -141,9 +159,10 @@ tab_box_release(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
 }
 
 /**
- * @brief A window that is open takes a press wherever it lands if its own
- *        handler says the point was its; a primary press is then tracked
- *        to that window until the release.
+ * @brief Offer a press to open window @p w, wherever the press is; while
+ *        an alert is up nothing is offered.  A primary press the window
+ *        takes is tracked to it until the release.
+ * @return 1 when the window's handler took the press.
  */
 static int
 offer_press(desktop_t *app, tiku_window_t *w, const tiku_event_t *ev)
@@ -168,10 +187,11 @@ offer_press(desktop_t *app, tiku_window_t *w, const tiku_event_t *ev)
 }
 
 /**
- * @brief The wheel: in an icon mode it moves the pixel origin, in a list
- *        it steps rows; over an application's own page it rides in as a
- *        wheel event in window coordinates, embedded here or across the
- *        wire, the road a click already takes.
+ * @brief The wheel over a folder scrolls it, three rows in a list and three
+ *        row heights in an icon mode.  Over the fonts window, or an
+ *        embedded or remote application's window, it is sent as a wheel
+ *        event, in window coordinates for an application.
+ * @return 1.
  */
 static int
 wheel(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -225,8 +245,10 @@ wheel(desktop_t *app, const tiku_event_t *ev, tiku_rect_t *damage)
     return 1;
 }
 
-/** @brief Every point, since an open preferences window is asked first
- *         wherever the press lands; a press nobody's returns untaken. */
+/**
+ * @brief Every point: an open preferences window is asked first wherever a
+ *        press is, and a press no window takes is returned untaken.
+ */
 static int
 windows_hit(void *self, int x, int y)
 {
@@ -380,8 +402,9 @@ windows_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 
 /**
  * @brief A move: the window a press is tracked to gets it and nobody
- *        else; otherwise the window under the pointer hears a hover, and
- *        a tab or corner in hand moves or resizes.
+ *        else; otherwise an application's window under the pointer is
+ *        sent the move, and a tab or corner being dragged moves or resizes
+ *        its window.
  */
 static int
 windows_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -407,7 +430,7 @@ windows_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         return 1;
     }
     if (tiku_trk_sounds_window_tracking(&app->sounds_window)) {
-        /* The volume knob is in hand: every move is its. */
+        /* The volume knob is held: every move goes to it. */
         (void)tiku_window_send(
             tiku_trk_sounds_window_handle(&app->sounds_window), ev);
         *damage = tiku_trk_damage_all();
@@ -467,8 +490,8 @@ windows_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 
         if (tiku_workspace_track(app->desk, ev->x, ev->y)) {
             if (app->resize_track != NULL) {
-                /* The frame just changed size under the hand: the window
-                 * hears it now, so its page grows with the corner. */
+                /* The frame changed size: the window is told now, so its
+                 * page follows the corner. */
                 resize_deliver(app, app->resize_track);
             }
             *damage = moving ? tiku_rect_union(before, moving->frame)
@@ -479,9 +502,10 @@ windows_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 }
 
 /**
- * @brief A release: the box, the tracked window, the picked-up query icon
- *        each end what their press began; a tab or corner in hand is let
- *        go for everyone.
+ * @brief A release: a pressed box, the tracked window and the picked-up
+ *        query icon each end what their press began; otherwise a tab or
+ *        corner being dragged is released, and a resized window is told
+ *        its new size.
  */
 static int
 windows_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -654,12 +678,9 @@ windows_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
                 embed_win_of_window(app, rfw);
             tiku_event_t rev = *ev;
 
-            /* Closing a window is the RUNTIME's gesture, not
-             * a key the application may swallow: rule 6 gives
-             * the runtime the lifecycle, and an application
-             * that could eat Cmd-W would be unclosable from
-             * the keyboard.  It closes THIS window, which is
-             * the whole window when there is only one. */
+            /* Cmd-W closes the focused window before the
+             * application sees the key, so no application can
+             * keep its window open from the keyboard. */
             if (key == 'w' &&
                 (ev->modifiers & TIKU_MOD_CMD)) {
                 embed_drop_window(ew, 1);
@@ -735,9 +756,8 @@ windows_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         tiku_workspace_focused(app->desk) ==
             tiku_trk_deskbar_prefs_window_handle(
                 &app->deskbar_prefs_window)) {
-        /* Deskbar preferences close; the desktop stays: quit
-         * belongs to the desktop, not to a settings window
-         * (DB-053). */
+        /* Cmd-Q in the Deskbar preferences closes them; the
+         * desktop keeps running (DB-053). */
         tiku_trk_deskbar_prefs_window_close(
             &app->deskbar_prefs_window);
         desktop_damage_all(app);
@@ -746,8 +766,8 @@ windows_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     if (key == 'q' && (ev->modifiers & TIKU_MOD_CMD) &&
         desktop_startup_handle(app) != NULL &&
         tiku_workspace_focused(app->desk) == desktop_startup_handle(app)) {
-        /* Startup preferences close, and the draft with them; the desktop
-         * stays, as it does for the other settings windows (DB-053). */
+        /* Cmd-Q in the startup preferences closes them and drops the
+         * draft; the desktop keeps running (DB-053). */
         desktop_startup_close(app);
         return 1;
     }
@@ -776,7 +796,10 @@ windows_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
-/** @brief The workspace's entry on the responder list. */
+/**
+ * @brief Put the workspace's frames, and the windows that answer their own
+ *        content, on the responder list.
+ */
 void
 desktop_windows_attach(desktop_t *app)
 {

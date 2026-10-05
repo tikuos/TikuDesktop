@@ -3,12 +3,10 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_events.c - what the desktop does with an event.
- *
- * The four cases that carry the weight of the shell's loop: a button
- * down, the pointer moving, a button up, a key down -- each handed the
- * event and the state the loop keeps between events -- and the turn
- * around them: what is done before the events are read and after.
+ * tiku_trk_desktop_events.c - what the desktop does with an event:
+ * committed text, delivered to the focused window; a button down, the
+ * pointer moving, a button up and a key, each handed to the responders; and
+ * the work of a loop turn before the events are read and after.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,7 +15,14 @@
 #include "tiku_work.h"
 
 
-/** @brief Committed text bypasses menus and keyboard command dispatch. */
+/**
+ * @brief Deliver committed text to the focused window, past the menus and
+ *        the key chords: an embedded or remote application, the device
+ *        preferences, or the desktop's own fields in turn.  Nothing is
+ *        delivered while an alert or a menu is open.  Text that is not
+ *        valid, or that a field refuses, puts a refusal on the status line;
+ *        text no field takes is dropped.
+ */
 void desktop_text_input(desktop_t *app, const tiku_event_t *ev)
 {
     tiku_window_t *w = tiku_workspace_focused(app->desk);
@@ -65,7 +70,7 @@ void desktop_text_input(desktop_t *app, const tiku_event_t *ev)
     desktop_damage_all(app);
 }
 
-/** @brief One event to the surfaces, and what they changed to the frame. */
+/** @brief Hand one event to the responders and damage what they changed. */
 static void
 deliver(desktop_t *app, const tiku_event_t *ev)
 {
@@ -84,8 +89,8 @@ desktop_pointer_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 }
 
 /**
- * @brief The pointer moved: where it is now, what the cursor says, and the
- *        surfaces' own tracking.
+ * @brief The pointer moved: record where it is, choose the cursor's shape
+ *        for what is under it, and hand the move to the responders.
  */
 void
 desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
@@ -98,7 +103,7 @@ desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
     desktop_pointer_says(app, ev->x, ev->y);
     deliver(app, ev);
     if (app->qdrag_on) {
-        /* The icon in flight: where it was and where it is, nothing else. */
+        /* The dragged query icon: damage its old and new boxes only. */
         desktop_damage(app, tiku_rect_union(
             (tiku_rect_t){ was_x - 16, was_y - 16, 32, 32 },
             (tiku_rect_t){ ev->x - 16, ev->y - 16, 32, 32 }));
@@ -111,7 +116,7 @@ desktop_pointer_up(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 {
     (void)lp;
     deliver(app, ev);
-    /* The corner let go: the arrow back. */
+    /* A resize may have ended: choose the pointer's shape again. */
     desktop_pointer_says(app, ev->x, ev->y);
 }
 
@@ -127,60 +132,42 @@ desktop_key_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 }
 
 /*
- * How long a scripted turn may spend on a child that has not connected
- * yet.  It can be generous because it is only ever reached in the gap
- * between starting a program and that program saying hello, and it
- * ends the moment it does: a turn pays this in full only when the
- * child is still loading, and nothing at all once it is up.
+ * The most a scripted turn waits, in microseconds, for a child the desktop
+ * started to connect; the wait ends when it connects.
  */
 #define SCRIPT_CHILD_SLICE_US 20000
 
 /**
- * @brief What a turn does before it reads events: the settings file, the
- * script transport, the remote sessions and what travels with them.
+ * @brief What a turn does before it reads events: wait for a scripted
+ * child to connect, write a report SIGUSR2 asked for, collect finished
+ * worker jobs, reload the settings file and run the scripting transport's
+ * commands when they change, poll the remote sessions and the conductor
+ * channel, bring the sessions' windows, clipboard, board names and file
+ * picks up to date, apply the settings to the windows, and reload the
+ * add-ons when their files change.
  */
 void
 desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
 {
     (void)o;
     /*
-     * A scripted wait is counted in TURNS, and turns are this process's
-     * own.  Everything a wait was written for -- a stepped copy, an
-     * armed rename -- is work done a slice of per turn, so counting
-     * them is exactly right for it.  A child that was started and has
-     * not drawn yet is not that: a fork, an exec, a library loaded are
-     * work another process does, and no number of turns here advances
-     * any of it.  Under a script the loop does not sleep, so a wait of
-     * a dozen turns can pass in less time than the fork takes and the
-     * window is simply not there when the next line asks for it.
-     * Whether it was depended on how busy the machine happened to be,
-     * which is why this looked like four flaky tests for so long.
-     *
-     * So when a script is waiting and something this desktop started is
-     * still coming up, the turn is spent ON that child instead of past
-     * it.  "Still coming up" is the test, not "still running": a child
-     * that has connected is one more session, so a desktop with as many
-     * sessions as children has nothing left to wait for and goes back
-     * to counting turns like everything else.  Deliberately CONNECTED
-     * and not "has shown a window", though a script asks about the
-     * window: a session that never opens one would leave this waiting
-     * on every turn for the rest of the run, and a fixed cost on every
-     * wait is a worse thing to own than a rare late window.  Nothing is
-     * read here -- the pump below takes what arrived, as it always
-     * did.
+     * A script's wait counts turns of this loop, and a child the desktop
+     * started advances in another process.  While a script waits and
+     * fewer sessions have connected than children are running, the turn
+     * waits up to SCRIPT_CHILD_SLICE_US for a connection.  A connected
+     * session counts whether or not it has opened a window.  Nothing is
+     * read here: the poll below takes what arrived.
      */
     if (lp != NULL && lp->sc != NULL && tiku_trk_script_waiting(lp->sc) &&
         tiku_trk_launch_running() > tiku_remote_sessions(&app->remote)) {
         (void)tiku_remote_wait(&app->remote, SCRIPT_CHILD_SLICE_US);
     }
     desktop_report_poll(app);
-    /* What the workers finished lands before events are taken, so the
-     * screen a click meets already shows what arrived. */
+    /* Finished worker jobs are collected before the events are read, so
+     * this turn's events are handled with their results applied. */
     (void)tiku_work_collect();
-    {   /* The settings FILE is a doorway too: a change written by
-         * anything -- another shell, a script, an editor -- lands in
-         * the live model, the reload the browser shell already does
-         * (TS-052, TS-047). */
+    {   /* The settings file is reloaded into the live model when its
+         * time or size changes, whoever wrote it (TS-052, TS-047). */
         static time_t settings_mtime;
         static off_t settings_size;
         struct stat sst;
@@ -197,9 +184,9 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
             desktop_damage_all(app);
         }
     }
-    {   /* The scripting suite's transport (PVK-052): a command file
-         * whose change delivers verb/property/specifier lines into
-         * this running shell. */
+    {   /* The scripting transport (PVK-052): when
+         * ~/.config/tracker/command changes, its lines run as
+         * scripting commands. */
         static int64_t command_stamp;
         struct stat cst;
         char cpath[TIKU_PATH_MAX];
@@ -208,8 +195,8 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
         snprintf(cpath, sizeof cpath, "%s/.config/tracker/command",
                  (chome != NULL && chome[0] != '\0') ? chome : "");
         if (stat(cpath, &cst) == 0) {
-            /* Nanoseconds, not seconds: two commands written within
-             * one second are two commands. */
+            /* Compared to the nanosecond, so two commands written
+             * within one second both run. */
             int64_t stamp = (int64_t)cst.st_mtim.tv_sec * 1000000000 +
                             cst.st_mtim.tv_nsec;
 
@@ -228,8 +215,8 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
     remote_reconcile(app);
     remote_hear(app);
     clip_mirror(app);
-    /* The boards a session may choose from, on the same beat and for the
-     * same reason: warm before a menu asks for them. */
+    /* Tell the sessions the board names and the current device when
+     * they change or a session joins. */
     desktop_board_names_tell(app);
     pick_sweep(app);
     remote_sweep(app);
@@ -308,16 +295,15 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     }
     if (app->closing &&
         tiku_trk_splash_closed(&app->splash, tiku_trk_now())) {
-        /* The black has arrived and held.  What is left is the
-         * putting away, and it is named on the screen below. */
+        /* The closing screen is complete: the loop ends, and the
+         * teardown shows its stages on that screen. */
         app->running = 0;
     }
-    /* A script still lets the clock run, just faster: the notice
-     * poll, the armed rename and the barber pole are all timed, and a
-     * loop that spun without time passing would test none of them. */
+    /* Under a script the loop still sleeps between turns, so timed work
+     * (the notice poll, an armed rename, the progress bar) advances. */
     if (app->loop != NULL) {
-        /* A task that changed something on screen dirties the surface
-         * itself; running is not, by itself, a repaint. */
+        /* A task that changes the screen damages it itself; running a
+         * task does not repaint. */
         (void)tiku_trk_loop_pulse(app->loop);
         if (app->sbar_fl != NULL && app->sbar_fl->view != NULL) {
             /* A held arrow keeps stepping (NeXT UIG ch3). */
@@ -332,8 +318,10 @@ desktop_turn_end(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         }
     }
     {
-        /* Sleep until the next task is due, or one heartbeat,
-         * whichever is sooner (AW-086). */
+        /* Sleep until the next task is due or for 10 ms (20 ms under a
+         * script), whichever is sooner (AW-086); without a script, also
+         * no later than the next frame is due, and not while injected
+         * events wait. */
         int64_t nap = (lp->sc != NULL) ? 20000 : 10000;
         int64_t due = (app->loop != NULL)
                           ? tiku_trk_loop_next_due(app->loop) : -1;

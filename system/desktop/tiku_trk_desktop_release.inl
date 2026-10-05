@@ -1,12 +1,25 @@
-/* Board close/handoff completion, shared with the worker-order regression. */
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_desktop_release.inl - taking a board's mount down: the mount goes
+ * at once, and its backend is closed on a worker after any job still asking
+ * the board.  Included by tiku_desktop_device_jobs.c, which defines
+ * board_key(), and by tests/system/test_console_handoff.c.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* One board's close, posted under the board's job key. */
 typedef struct {
     tiku_backend_t *dev;
     desktop_t *app;
     char name[64];
-    int released;
+    int released;               /* tell everyone once the port is closed */
 } close_board_t;
 
-/** @brief On a worker, behind whatever still holds the board: close it. */
+/** @brief On a worker, after every job still asking the board: close it. */
 static void
 close_run(void *ctx)
 {
@@ -14,7 +27,11 @@ close_run(void *ctx)
     tiku_backend_close(c->dev);
 }
 
-/** @brief Only a physically closed port may be handed to another app. */
+/**
+ * @brief On the loop, once the port is closed: for a released board, tell
+ *        every application and every session TIKU_APP_BOARD_RELEASED, since
+ *        only a closed port may be handed to another program.
+ */
 static void
 close_done(void *ctx)
 {
@@ -31,8 +48,12 @@ close_done(void *ctx)
 }
 
 /**
- * @brief Take the mount at @p prefix down now, and close its backend
- *        once nothing is in the middle of asking it.
+ * @brief Take the mount at @p prefix down now, cancel the board's jobs not
+ *        yet started, and close its backend once no job is asking it.
+ * @param released whether to tell everyone the board was released once its
+ *                 port is closed
+ * @return 0 when unmounted; -1 when nothing is mounted at @p prefix or no
+ *         memory is left.
  */
 static int
 board_unmount(desktop_t *app, const char *prefix, int released)
@@ -51,14 +72,14 @@ board_unmount(desktop_t *app, const char *prefix, int released)
         return -1;
     }
     tiku_trail("unmount %s", prefix);
-    /* Closed by a job with the board's key, so it runs after whatever
-     * is still in the middle of asking the board; the loop never waits
-     * for that, and the wire is never closed under a hand. */
+    /* Closed by a job with the board's key, so it runs after whatever is
+     * still asking the board: the loop never waits for that, and the wire
+     * is never closed while a job is using it. */
     memset(&job, 0, sizeof job);
     c->dev = dev; c->app = app; c->released = released;
     {
-        /* A prefix with no slash is not a mount path, and NULL + 1 is not
-         * an address: take the whole thing rather than walk off it. */
+        /* With no slash in the prefix, strrchr() returns NULL and the
+         * whole prefix is the name. */
         const char *leaf = strrchr(prefix, '/');
 
         snprintf(c->name, sizeof c->name, "%s", leaf ? leaf + 1 : prefix);
@@ -74,10 +95,20 @@ board_unmount(desktop_t *app, const char *prefix, int released)
     return 0;
 }
 
-/** @brief Drop a mount without granting ownership to a console or runner. */
+/**
+ * @brief Take the mount at @p prefix down and close its backend, without
+ *        telling anyone the board was released.
+ * @return 0 when unmounted; -1 when nothing is mounted there or no memory
+ *         is left.
+ */
 int desktop_board_unmount(desktop_t *app, const char *prefix)
 { return board_unmount(app, prefix, 0); }
 
-/** @brief Drop a mount and acknowledge release when its port is closed. */
+/**
+ * @brief Take the mount at @p prefix down and close its backend; once the
+ *        port is closed, tell everyone the board was released.
+ * @return 0 when unmounted; -1 when nothing is mounted there or no memory
+ *         is left.
+ */
 int desktop_board_unmount_released(desktop_t *app, const char *prefix)
 { return board_unmount(app, prefix, 1); }

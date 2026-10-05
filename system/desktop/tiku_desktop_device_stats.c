@@ -1,10 +1,18 @@
-/* tiku_desktop_device_stats.c -- device stats.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_device_stats.c - what a connected board says about itself,
+ * for the About box: read from its /sys nodes on a worker, kept, and handed
+ * out without waiting on the wire.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_desktop_jobs_private.h"
 
-/* How long an answer stands before the board is asked again.  The About
- * box reads it while it is open, and a board's own numbers move slowly. */
+/* How long, in microseconds, a board's answer is kept before the board is
+ * asked again.  The About box reads it while it is open. */
 #define STATS_HOLD_US 4000000
 
 typedef struct {
@@ -14,7 +22,7 @@ typedef struct {
     char            text[1024];
 } sread_t;
 
-/** @brief One node of the board, trimmed, or "" when it has none. */
+/** @brief The first line of one node of the board, or "" when it has none. */
 static void
 stat_read(tiku_backend_t *dev, const char *path, char *out, size_t max)
 {
@@ -32,12 +40,12 @@ stat_read(tiku_backend_t *dev, const char *path, char *out, size_t max)
     }
 }
 
-/* What the board is asked for, in the order the facts are shown. */
+/* The nodes the board is asked for, in the order of node[] in sread_run. */
 enum { SR_MCU, SR_FREQ, SR_SRAM, SR_USED, SR_NVM, SR_NVMFREE, SR_KIND,
        SR_UP, SR_BOOTS, SR_BUILD, SR_BOARD, SR_N };
 
-/* The corners of a board's namespace that are there only when the part
- * has the thing: what it HAS, asked by whether it can be seen. */
+/* Nodes a board has only when its part has the hardware: each one that
+ * is there is reported as a "has" line. */
 static const struct { const char *path; const char *say; } sr_has[] = {
     { "/sys/coproc", "coprocessor" },
     { "/sys/npu",    "NPU"         },
@@ -48,7 +56,7 @@ static const struct { const char *path; const char *say; } sr_has[] = {
     { "/sys/emmc",   "eMMC"        },
 };
 
-/** @brief Whether the board has this corner of its namespace. */
+/** @brief Whether the board has the node @p path. */
 static int
 have_node(tiku_backend_t *dev, const char *path)
 {
@@ -69,9 +77,10 @@ node_read(tiku_backend_t *dev, const char *path, char *out, size_t max)
 /**
  * @brief One tier's capacity and use out of /sys/mem/tiers.
  *
- * Matched at the START of a line: "psram" ends in the same four letters
- * as "sram", and a loose search would read one tier's numbers for the
- * other's.
+ * "psram" ends in "sram", so the name is matched at the start of a
+ * line.
+ *
+ * @return 1 when the tier was found with both numbers.
  */
 static int
 tier_room(const char *tiers, const char *name, unsigned long *total,
@@ -101,10 +110,11 @@ tier_room(const char *tiers, const char *name, unsigned long *total,
 /**
  * @brief Forward one memory's map, a line at a time, under @p tag.
  *
- * The board says its estates (code, module, tier, store, persist;
- * static, stack, tier, banks) and this end passes them on untouched:
- * how they are drawn is the reader's business.  @return 1 when the
- * board had a map to give.
+ * The board names its estates (such as code, module, tier, store and
+ * persist for the NVM; static, stack, tier and bank for the SRAM), and
+ * they are passed on as the board said them.
+ *
+ * @return 1 when the board had a map to give.
  */
 static int
 say_map(sread_t *s, size_t *at, const char *tag, const char *path)
@@ -130,12 +140,12 @@ say_map(sread_t *s, size_t *at, const char *tag, const char *path)
 }
 
 /**
- * @brief Say what the board is and what it holds, as raw facts.
+ * @brief Write what the board is and what it holds into s->text, as
+ *        "label<TAB>value" lines.
  *
- * The memories come as MAPS -- each estate of each memory with its size
- * and use -- from /sys/mem/sram_map and /sys/mem/nvm_map.  A board too
- * old to carry those answers with its tiers instead, which is less but
- * is at least each tier's own free against its own total.
+ * The memories come as maps, each estate with its size and use, from
+ * /sys/mem/sram_map and /sys/mem/nvm_map.  For a board without those,
+ * each tier's free and total come from /sys/mem/tiers.
  */
 static void
 sread_say(sread_t *s, char raw[][32], const char *tiers)
@@ -155,8 +165,8 @@ sread_say(sread_t *s, char raw[][32], const char *tiers)
              raw[SR_MCU][0] ? raw[SR_MCU] : "?", raw[SR_FREQ],
              raw[SR_UP], raw[SR_BOOTS], raw[SR_SRAM], raw[SR_NVM],
              raw[SR_KIND][0] ? raw[SR_KIND] : "NVM");
-    /* What the image says it is: an image older than these nodes has
-     * neither row, which is how a reader tells it is old. */
+    /* The image's build and board, when it reports them; an image older
+     * than these nodes has neither row. */
     if (raw[SR_BUILD][0] != '\0' && at < sizeof s->text) {
         at += (size_t)snprintf(s->text + at, sizeof s->text - at,
                                "build\t%s\n", raw[SR_BUILD]);
@@ -210,7 +220,7 @@ sread_run(void *ctx)
     sread_say(s, raw, tiers);
 }
 
-/** @brief On the loop: keep what it said. */
+/** @brief On the loop: keep what the board said, in its entry. */
 static void
 sread_done(void *ctx)
 {
@@ -228,7 +238,8 @@ sread_done(void *ctx)
     }
 }
 
-/** @brief The asking is over. */
+/** @brief Clear the board's asking mark and free the read, answered or
+ *         dropped. */
 static void
 sread_free(void *ctx)
 {
@@ -246,9 +257,9 @@ sread_free(void *ctx)
 /**
  * @brief What @p board last said about itself, into @p out.
  *
- * Answered from what is KEPT, never from the wire: a stale answer sets a
- * worker going and the caller draws what it has until that lands.  So a
- * window showing this is never the reason a frame is late.
+ * Answered from what is kept, never from the wire: an answer older than
+ * STATS_HOLD_US sets a worker asking, and the worker's answer replaces the
+ * kept one when it arrives.
  *
  * @return the bytes written.
  */

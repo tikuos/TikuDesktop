@@ -4,7 +4,8 @@
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
  * tiku_trk_desktop_deskbar.c - the Deskbar's picks: what each row of its
- * menus does, from opening a window to shutting the desktop down
+ * menus does, from opening a window to shutting the desktop down; and the
+ * icons its rows and the menus paint.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,8 +22,7 @@ int deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y);
 int deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick);
 /* End of the forward declarations. */
 
-
-/** @brief Preferences, as this shell shows them: a window of its own. */
+/** @brief Open the Tracker preferences window. */
 void
 open_preferences(void *context)
 {
@@ -31,7 +31,10 @@ open_preferences(void *context)
     tiku_trk_prefs_window_open(&app->prefs_window);
 }
 
-/** @brief The art a Deskbar row named for itself when it was built (DB-002). */
+/**
+ * @brief Paint the icon a Deskbar row named when it was built (DB-002).
+ * @return nonzero when an icon was painted.
+ */
 int
 deskbar_menu_icon(void *context, tiku_surface_t *s,
                   const tiku_trk_db_item_t *item, int x, int y, int size)
@@ -44,14 +47,17 @@ deskbar_menu_icon(void *context, tiku_surface_t *s,
     return tiku_icon_paint(s, item->icon, x, y, size);
 }
 
-/** @brief Real art for menu items, dimmed for a disabled one (IV-054). */
+/**
+ * @brief Paint a menu item's icon, dimmed for a disabled item (IV-054).
+ * @return nonzero when an icon was painted.
+ */
 int
 paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
                 int size, int dimmed)
 {
     if (icon != NULL && strcmp(icon, MARK_ICON) == 0) {
-        /* Not a name in the icon set: the mark is drawn.  Dimming is
-         * moot -- the row it marks is never offered disabled. */
+        /* The system mark is drawn, not looked up, and never dimmed:
+         * the rows it marks are never disabled. */
         tiku_logo_paint(s, (tiku_rect_t){ x, y, size, size }, 0u);
         return 1;
     }
@@ -61,8 +67,8 @@ paint_menu_icon(tiku_surface_t *s, const char *icon, int x, int y,
         : tiku_icon_paint(s, icon, x, y, size);
 }
 
-/** @brief Application @p team to the front: its windows back on the desk,
- *         the topmost of them focused (DB-019). */
+/** @brief Bring application @p team to the front: its windows back on the
+ *         desk, the topmost of them focused (DB-019). */
 static void
 team_activate(desktop_t *app, int team)
 {
@@ -82,8 +88,8 @@ team_activate(desktop_t *app, int team)
     }
 }
 
-/** @brief Another instance of application @p team, the way the Tiku menu
- *         would start one (DB-021). */
+/** @brief Start another instance of application @p team from the
+ *         installed applications (DB-021). */
 static void
 team_launch(desktop_t *app, int team)
 {
@@ -97,8 +103,11 @@ team_launch(desktop_t *app, int team)
     }
 }
 
-/** @brief Every window of application @p team closed: an application's
- *         each told, as its own Close would; this shell's taken down. */
+/**
+ * @brief Close every window of team @p team: an application's windows
+ *        through close_window(), as their own Close does; the desktop's own
+ *        windows directly on the workspace.
+ */
 static void
 team_close(desktop_t *app, int team)
 {
@@ -119,16 +128,17 @@ team_close(desktop_t *app, int team)
 }
 
 /**
- * @brief Carry out what a Deskbar click asked for.
- *
- * Shared by the press path and the armed-dock release path: a CMD press
- * on the bar might be the start of a re-dock drag, so its CLICK meaning
- * is delivered only if the press never moved (DB-049 vs DB-019/021).
+ * @brief Carry out what a Deskbar click asked for: a tray icon's click goes
+ *        to its owner, then the system, team and clock rows.
+ * @note Called on a press; on the release of a Cmd press that never
+ *       moved, since a Cmd press may begin a re-dock drag (DB-049,
+ *       DB-019, DB-021); and on the release of a program's row that was
+ *       not dragged.
  */
 void
 deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
 {
-    if (pick->what == TIKU_TRK_DB_TRAY_ICON) {     /* its owner's to hear */
+    if (pick->what == TIKU_TRK_DB_TRAY_ICON) {     /* told to its owner */
         desktop_tray_hit(app, pick->owner, pick->path);
         return;
     }
@@ -142,8 +152,9 @@ deskbar_pick_dispatch(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
 }
 
 /**
- * @brief A pick on the clock: shown, hidden, seconds, day, zone.  @return 1 for
- * a pick of this group
+ * @brief Apply a clock pick (show, hide, seconds, day, zone) to the Deskbar
+ *        settings, and save them.
+ * @return 1 for a clock pick.
  */
 int
 deskbar_pick_clock(desktop_t *app, tiku_trk_db_pick_t *pick)
@@ -189,7 +200,8 @@ deskbar_pick_clock(desktop_t *app, tiku_trk_db_pick_t *pick)
 
 /**
  * @brief A pick on a team or one of its windows: activate, minimise, close,
- * launch, quit, kill, hide and show all.  @return 1 for a pick of this group
+ *        launch, quit, kill, hide all and show all.
+ * @return 1 for a pick of this group.
  */
 int
 deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
@@ -199,17 +211,16 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     switch (pick->what) {
 
     case TIKU_TRK_DB_ACTIVATE_WINDOW:
-        /* Invoke is a no-op while dragging: the drop
-         * owns the release, and a window that raised
-         * itself under it would steal the target
+        /* Ignored during a drag: the drop takes the release, and a
+         * window raised under the pointer becomes the drop target
          * (DB-030). */
         if (tiku_trk_drag_active(&app->drag)) {
             break;
         }
         t = tiku_workspace_find(app->desk, pick->tag);
         if (t != NULL) {
-            /* Back on the desk, rising as a window just opened does;
-             * only when the state really changes (DB-030). */
+            /* Restored, rising as an opening window does when it was
+             * minimized, and focused (DB-030). */
             tiku_workspace_restore(app->desk, t);
             tiku_workspace_activate(app->desk, t);
         }
@@ -220,8 +231,8 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         }
         t = tiku_workspace_find(app->desk, pick->tag);
         if (t != NULL) {
-            /* Away to the row that keeps it: a ghost of the window
-             * shrinks and fades toward where the hand is. */
+            /* Minimized: a ghost of the window shrinks toward the
+             * pointer. */
             if (!t->minimized) {
                 tiku_workspace_minimize(app->desk, t,
                     (tiku_rect_t){ x - 8, y - 8, 16, 16 });
@@ -234,8 +245,6 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         close_window(app, t);
         break;
     case TIKU_TRK_DB_ACTIVATE_TEAM:
-        /* Activating the application: its windows to
-         * the front, the top one focused (DB-019). */
         team_activate(app, pick->team);
         break;
     case TIKU_TRK_DB_LAUNCH_TEAM: {
@@ -263,15 +272,16 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
     }
     case TIKU_TRK_DB_QUIT_TEAM:
     case TIKU_TRK_DB_KILL_TEAM:
-        /* Quit on an application's own row: its windows asked to close,
-         * the way its own Close would, and it ends with the last. */
+        /* Quit on an application's row closes its windows, as its own
+         * Close does; the application ends with its last window. */
         if (pick->what == TIKU_TRK_DB_QUIT_TEAM &&
             desktop_team_is_app(app, pick->team)) {
             team_close(app, pick->team);
             break;
         }
-        /* Roster names can group unrelated processes, including the shell.
-         * Select an authenticated peer and confirm in the native dialog. */
+        /* Kill, and Quit on other rows, open the Force Quit picker: a
+         * roster name can cover unrelated processes, the desktop among
+         * them, and the picker confirms one authenticated process. */
         desktop_forcequit_open(app);
         break;
     case TIKU_TRK_DB_HIDE_ALL:
@@ -288,10 +298,7 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         break;
     }
     case TIKU_TRK_DB_CLOSE_ALL:
-        /* Closing every window of the file manager is a
-         * request to close its WINDOWS, never to quit
-         * it -- the original makes the same
-         * distinction. */
+        /* Close All closes the team's windows and quits nothing. */
         team_close(app, pick->team);
         break;
     default:
@@ -301,9 +308,10 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
 }
 
 /**
- * @brief A pick on the leaf menu's own rows: Find, the preferences, an
- * application, the theme, About, quit and a path.  @return 1 for a pick of this
- * group
+ * @brief A pick on the leaf menu's own rows: Find, the preferences, Help,
+ *        Force Quit, an application, the theme, About, Shut down, a folder
+ *        and a described panel.
+ * @return 1 for a pick of this group.
  */
 int
 deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
@@ -311,8 +319,7 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
     switch (pick->what) {
 
     case TIKU_TRK_DB_FIND:
-        /* The leaf's Find item is the panel: the same
-         * entry point as Ctrl+F, reachable by mouse. */
+        /* Find opens the Find panel, as Cmd-F does. */
         open_panel(app);
         break;
     case TIKU_TRK_DB_PREFERENCES:
@@ -361,9 +368,8 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
                 !strcmp(pick->path, "builtin:vfs") ? "vfs" : "monitor", NULL);
             break;
         }
-        /* Started, not opened: these are programs, and they place their
-         * own windows through the session the same way any application
-         * does. */
+        /* A program row starts the program, which opens its own
+         * windows through its session. */
         tiku_trk_app_t program;
 
         const char *args[1];
@@ -373,14 +379,13 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         const char *leaf = strrchr(pick->path, '/');
 
         memset(&program, 0, sizeof program);
-        /* Its NAME is its leaf: the field is short, and a path long
-         * enough leaves a fragment of some directory where the name
-         * should be -- in every message that says which program. */
+        /* The program's name is the path's leaf: the name field is
+         * short. */
         snprintf(program.name, sizeof program.name, "%s",
                  (leaf != NULL) ? leaf + 1 : pick->path);
         if (n > 3u && strcmp(pick->path + n - 3, ".so") == 0) {
-            /* A loadable application: the runner gives it the process
-             * this desktop is not giving it. */
+            /* A loadable application (.so) runs in the runner, a
+             * process of its own. */
             snprintf(program.cmd, sizeof program.cmd, "%s", app->runner);
             args[nargs++] = pick->path;
         } else {
@@ -395,14 +400,13 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         break;
     }
     case TIKU_TRK_DB_TOGGLE_DARK: {
-        /* The switch IS the DarkMode setting: flip it, write it down,
-         * and let the one sync path repaint the world -- so the switch,
-         * the checkbox and the settings file can never disagree. */
+        /* The switch is the DarkMode setting: step it, save it, and let
+         * sync_folder_preferences() apply it, so the switch, the
+         * preferences and the settings file agree. */
         tiku_trk_prefs_t *prefs = prefs_model(app);
 
-        /* Three seats, so a press walks to the next one and round: the
-         * switch is the only control most people will ever touch, and a
-         * slider you cannot get back to the start of is a trap. */
+        /* DarkMode has three values; each press steps to the next,
+         * wrapping round. */
         tiku_trk_prefs_set(prefs, "DarkMode",
                            (tiku_trk_prefs_get(prefs, "DarkMode") + 1) % 3);
         (void)tiku_trk_prefs_save(prefs, app->prefs_window.path);
@@ -414,8 +418,7 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         (void)embed_open_or_raise(app, &tiku_trk_about_app);
         break;
     case TIKU_TRK_DB_QUIT:
-        /* The ellipsis is a promise: Shut down… asks
-         * before anything is taken down (DB-006). */
+        /* Shut down asks first (DB-006). */
         tiku_sound_play(TIKU_SOUND_BEEP);
         tiku_alert_open(alert_model(app),
             TIKU_ALERT_WARN,

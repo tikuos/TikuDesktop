@@ -1,6 +1,16 @@
-/* Force Quit: authenticated local processes, never the desktop's roster.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_trk_desktop_forcequit.c - the Force Quit window: the list of
+ * connected applications, where one whose process the desktop holds a
+ * handle on can be ended after a second confirmation; and a pick mode that
+ * chooses an application, or one of the desktop's own windows, by a click
+ * on a window.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 #include "tiku_dialog.h"
 #include "tiku_text_layout_paint.h"
@@ -45,7 +55,7 @@ static fq_layout_t fq_layout(tiku_rect_t c)
     return l;
 }
 
-/** @brief Keep list rows aligned with their text and focus rectangle. */
+/** @brief Row @p i of the list. */
 static tiku_rect_t fq_row_rect(tiku_rect_t list, int i)
 {
     int row = tiku_font_plain()->height + 12;
@@ -53,7 +63,10 @@ static tiku_rect_t fq_row_rect(tiku_rect_t list, int i)
                           list.w - 8, row};
 }
 
-/** @brief Release every pinned process identity on refresh or dismissal. */
+/**
+ * @brief Close every process handle held, and clear the list, the
+ *        selection, the confirmation and the picked window.
+ */
 static void fq_release(struct desktop_forcequit *p)
 {
     for (int i = 0; i < p->count; i++)
@@ -61,7 +74,10 @@ static void fq_release(struct desktop_forcequit *p)
     p->count = 0; p->selected = -1; p->confirm = 0; p->builtin = NULL;
 }
 
-/** @brief Snapshot peers and pin identities before displaying their names. */
+/**
+ * @brief List the connected sessions, taking a handle on each one's process
+ *        before its name is shown, and count its open windows.
+ */
 static void fq_refresh(struct desktop_forcequit *p)
 {
     fq_release(p);
@@ -81,7 +97,11 @@ static void fq_refresh(struct desktop_forcequit *p)
              "Select an application, or choose one of its windows.");
 }
 
-/** @brief Never pass a stale desktop-owned window pointer to close_window. */
+/**
+ * @brief Whether the picked desktop window is still open as it was picked
+ *        (same object, context and title, no session's), so it can be
+ *        passed to close_window().
+ */
 static int fq_builtin_valid(struct desktop_forcequit *p)
 {
     for (int i = 0; p->builtin && i < tiku_workspace_count(p->app->desk); i++) {
@@ -93,7 +113,10 @@ static int fq_builtin_valid(struct desktop_forcequit *p)
     return 0;
 }
 
-/** @brief Only eligible processes get a destructive action; Done is default. */
+/**
+ * @brief Register the controls: Force Quit is enabled only for a process
+ *        the desktop holds a handle on, and Done is the default.
+ */
 static void fq_controls(struct desktop_forcequit *p, fq_layout_t l)
 {
     tiku_dialog_begin(&p->dialog, FQ_DONE, FQ_DONE);
@@ -113,7 +136,7 @@ static void fq_controls(struct desktop_forcequit *p, fq_layout_t l)
     tiku_dialog_end(&p->dialog);
 }
 
-/** @brief Use the kit's focus, disabled and pressed visual states. */
+/** @brief A control's drawing flags: focused, pressed, disabled. */
 static unsigned fq_flags(struct desktop_forcequit *p, int id)
 {
     unsigned f = tiku_dialog_focused(&p->dialog, id) ? TIKU_S_FOCUS : 0;
@@ -124,13 +147,17 @@ static unsigned fq_flags(struct desktop_forcequit *p, int id)
     return f;
 }
 
-/** @brief Clip peer-supplied labels rather than spilling into controls. */
+/** @brief Draw one line of text, clipped to @p r: names come from the
+ *         applications. */
 static void fq_line(tiku_surface_t *s, tiku_rect_t r, const char *text)
 {
     tiku_text_line_draw(s, r, TIKU_MEASURE_PLAIN, text, TIKU_C_TEXT);
 }
 
-/** @brief A compact application list with an explicit unsaved-work warning. */
+/**
+ * @brief Draw the window: the warning, the application list, the
+ *        selection's details, the status line and the buttons.
+ */
 static void fq_draw(tiku_window_t *w, tiku_surface_t *s,
                     tiku_rect_t c, void *ctx)
 {
@@ -174,7 +201,11 @@ static void fq_draw(tiku_window_t *w, tiku_surface_t *s,
                     TIKU_S_DEFAULT | fq_flags(p, FQ_DONE));
 }
 
-/** @brief Destruction requires a second activation; Cancel is the default. */
+/**
+ * @brief Force Quit the selected application: the first activation asks
+ *        for confirmation and makes Cancel the default; the second signals
+ *        the process through its handle.
+ */
 static void fq_kill(struct desktop_forcequit *p)
 {
     if (p->selected < 0 || p->rows[p->selected].handle < 0) return;
@@ -195,7 +226,10 @@ static void fq_kill(struct desktop_forcequit *p)
         "Could not terminate the application. No other process was signalled.");
 }
 
-/** @brief Release-to-activate controls also work with Tab and keyboard. */
+/**
+ * @brief The window's input: its controls, by pointer or keyboard, and
+ *        Cmd-W or Cmd-Q as Done.
+ */
 static int fq_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
 {
     struct desktop_forcequit *p = ctx;
@@ -228,13 +262,16 @@ static int fq_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     return 1;
 }
 
-/** @brief Return the native window for the desktop's input/close routing. */
+/** @brief The Force Quit window, or NULL. */
 tiku_window_t *desktop_forcequit_handle(desktop_t *app)
 {
     return app->forcequit ? app->forcequit->window : NULL;
 }
 
-/** @brief Bulk workspace closes must also release handles and input capture. */
+/**
+ * @brief Called when the workspace destroys the window, by any close:
+ *        release the handles and the press capture.
+ */
 static void fq_destroyed(tiku_window_t *w, void *ctx)
 {
     struct desktop_forcequit *p = ctx;
@@ -255,7 +292,10 @@ void desktop_forcequit_close(desktop_t *app)
     fq_release(p); desktop_damage_all(app);
 }
 
-/** @brief Open a fresh snapshot or raise the existing confirmation safely. */
+/**
+ * @brief Open the window on a fresh list of applications, or raise it when
+ *        it is open, ending a pick.
+ */
 void desktop_forcequit_open(desktop_t *app)
 {
     if (!app->forcequit) {
@@ -285,14 +325,19 @@ void desktop_forcequit_open(desktop_t *app)
     desktop_damage_all(app);
 }
 
-/** @brief Shutdown drops process handles; it never kills applications. */
+/** @brief At shutdown: close the window and drop the handles; no
+ *         application is signalled. */
 void desktop_forcequit_destroy(desktop_t *app)
 {
     desktop_forcequit_close(app);
     free(app->forcequit); app->forcequit = NULL;
 }
 
-/** @brief Pick a window's actual owner, with no click passed to that window. */
+/**
+ * @brief End a pick on the window under the press: its application is
+ *        selected, or a desktop window is held for Close Window.  The press
+ *        reaches no window.
+ */
 static void fq_choose(struct desktop_forcequit *p, const tiku_event_t *ev)
 {
     tiku_window_t *w = NULL;
@@ -316,7 +361,12 @@ static void fq_choose(struct desktop_forcequit *p, const tiku_event_t *ev)
     desktop_damage_all(p->app);
 }
 
-/** @brief Global Ctrl+Alt+K and a cancelable, one-click selection mode. */
+/**
+ * @brief Cmd-Option-K (Ctrl+Alt+K under X11) opens the window from
+ *        anywhere; in pick mode, a click picks, and Escape or a secondary
+ *        click cancels.
+ * @return 1 when the event was taken.
+ */
 int desktop_forcequit_input(desktop_t *app, const tiku_event_t *ev)
 {
     struct desktop_forcequit *p = app->forcequit;
@@ -346,7 +396,7 @@ int desktop_forcequit_picking(desktop_t *app)
     return app->forcequit != NULL && app->forcequit->picking;
 }
 
-/** @brief A visible selection-mode banner; Escape always gets out. */
+/** @brief Draw the pick mode's banner near the bottom of the screen. */
 void desktop_forcequit_overlay(desktop_t *app)
 {
     if (!app->forcequit || !app->forcequit->picking) return;

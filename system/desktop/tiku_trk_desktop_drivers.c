@@ -3,8 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_drivers.c - what an outside driver may do to this shell:
- * the conductor channel, and the redraw check the script adapter asks for
+ * tiku_trk_desktop_drivers.c - what an outside driver may ask of the
+ * desktop: the conductor channel's injected events, pixels and named facts,
+ * and the redraw check the script adapter asks for.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +14,10 @@
 #include "tiku_trail.h"
 #include "tiku_watch.h"
 
-/** @brief Append one menu's rows to @p out, the way a driver reads them. */
+/**
+ * @brief Append the label of each row of @p menu to @p out, each followed
+ *        by '|'; stops when @p out has no room left.
+ */
 static void
 conduct_append_menu(char *out, size_t max, const tiku_menu_t *menu)
 {
@@ -42,9 +46,8 @@ conduct_menu_labels(desktop_t *app)
     conduct_append_menu(labels, sizeof labels, app->popup);
     conduct_append_menu(labels, sizeof labels, app->popup_sub);
     if (labels[0] == '\0') {
-        /* The Deskbar's leaf is a menu too: without it a driver could
-         * only reach those rows by pixel, and they move with whatever
-         * was recently opened. */
+        /* No popup rows: the labels of the Deskbar's leaf menu, then of
+         * its open submenu. */
         size_t used;
 
         (void)tiku_trk_deskbar_menu_labels(app->deskbar, 0, labels,
@@ -63,10 +66,7 @@ conduct_inject(void *context, const tiku_event_t *event)
     desktop_t *app = context;
     int next = (app->cq_tail + 1) % (int)(sizeof app->cq / sizeof app->cq[0]);
 
-    /* A full queue drops the newest rather than overwriting the oldest:
-     * a driver that outruns the shell is told by what it observes next,
-     * and an out-of-order gesture would be a worse lie than a missing
-     * one. */
+    /* A full queue drops the new event; the queued ones stay in order. */
     if (next == app->cq_head) {
         return;
     }
@@ -75,15 +75,13 @@ conduct_inject(void *context, const tiku_event_t *event)
 }
 
 /**
- * @brief The pixel a driver asks about, off the same surface the display
- *        is shown.
+ * @brief The pixel at @p x, @p y of the surface as last drawn, as RGB; 0
+ *        off the surface.
  *
- * The answer is about the LAST PAINTED frame, and the loop paints every
- * turn it owes one -- so a driver reads what a person would see one turn
- * after acting, which is what the grammar's `wait` is for.  Repainting
- * here instead was tried and removed: nothing could be made to fail with
- * it gone, and an answer that quietly paints is an observation that
- * changes what it observes.
+ * The loop draws at the end of a turn that owes a frame, without a script
+ * at most once every 16.7 ms, so a pixel can show an injected event's
+ * result a turn or more after the event is handled.  Reading a pixel
+ * draws nothing.
  */
 unsigned
 conduct_pixel(void *context, int x, int y)
@@ -99,18 +97,18 @@ conduct_pixel(void *context, int x, int y)
 }
 
 /**
- * @brief The chrome nouns: what a menu, a tooltip, the strip or a
- *        minimized window shows, said so a lane about them reads no
- *        pixel.  @return 0 for a name that is not one of them.
+ * @brief Answer question @p name into @p out when it is about the
+ *        desktop's chrome: hot, tip, strip, minimized, cursor or
+ *        menu-bottom.
+ * @return 1 when @p name is one of them, else 0.
  */
 static int
 conduct_chrome(desktop_t *app, const char *name, char *out, size_t max)
 {
     if (strcmp(name, "hot") == 0) {
-        /* The row under the pointer in whatever menu is open, by its
-         * label: the popup's deepest level first, then the Deskbar's
-         * menus.  Empty when no row is hot, which is what a pointer
-         * that left must leave behind. */
+        /* The label of the row under the pointer in the open menu, the
+         * submenu first, else in the Deskbar's menus; empty when no row
+         * is hot. */
         const tiku_menu_t *m = (app->popup_sub != NULL &&
                                 app->popup_sub->hot >= 0)
                                    ? app->popup_sub : app->popup;
@@ -170,8 +168,7 @@ conduct_chrome(desktop_t *app, const char *name, char *out, size_t max)
         return 1;
     }
     if (strcmp(name, "menu-bottom") == 0) {
-        /* Where the Deskbar's leaf menu ends: a lane about the rows'
-         * height reads this and not a pixel below the last row. */
+        /* The y where the Deskbar's leaf menu ends. */
         snprintf(out, max, "%d", tiku_trk_deskbar_menu_bottom(app->deskbar));
         return 1;
     }
@@ -179,12 +176,14 @@ conduct_chrome(desktop_t *app, const char *name, char *out, size_t max)
 }
 
 /**
- * @brief The named things this shell can say about itself.
- *
- * Deliberately a short list of what the shell ALREADY knows -- a title, a
- * count, the labels of the menu that is open.  Everything a driver wants
- * to assert is composed from these on its side; a name this build does
- * not know is refused, so a driver is told rather than guessing.
+ * @brief Answer the conductor channel's question @p name into @p out: a
+ *        conduct_chrome() question, the trail, the longest turn, the focused
+ *        window's title or every window's, the status line, the count, the
+ *        open menu, the alert, the sounds, the mounts, the focused window's
+ *        controls or narration, the running operation, or a path the
+ *        namespace serves.
+ * @return 1 when answered; 0 for a name this build does not know or a path
+ *         nothing serves.
  */
 int
 conduct_text(void *context, const char *name, char *out, size_t max)
@@ -199,18 +198,15 @@ conduct_text(void *context, const char *name, char *out, size_t max)
     }
     if (strncmp(name, "trail", 5) == 0 &&
         (name[5] == '\0' || name[5] == ':')) {
-        /* What this shell has been doing, newest lines last.  A noun
-         * rather than a verb of its own: it is one more thing the shell
-         * already knows, and a driver reads it as it reads a title.
-         * "trail:<word>" is the part of it about that word, because the
-         * ring is longer than any one reader's room. */
+        /* The trail, newest lines last; "trail:<word>" gives only the
+         * lines with that word, since the ring is longer than one answer
+         * holds. */
         (void)tiku_trail_find((name[5] == ':') ? name + 6 : NULL, out, max);
         return 1;
     }
         if (strcmp(name, "turns") == 0) {
-        /* The longest turn since last asked, in ms: the number every
-         * "the loop never waits" proof reads, and reset by the reading
-         * so a script measures the stretch it arranged. */
+        /* The longest loop turn, in ms, since this question was last
+         * answered or the desktop started; answering resets it. */
         snprintf(out, max, "%ld", tiku_watch_longest_ms());
         tiku_watch_longest_reset();
         return 1;
@@ -222,8 +218,8 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         return 1;
     }
     if (strcmp(name, "titles") == 0) {
-        /* Every open window, so a driver can assert that one is GONE --
-         * which no single focused title can answer. */
+        /* Every open window's title, as "a|b|"; a window that has gone
+         * is not in it. */
         int i;
         size_t used = 0u;
 
@@ -257,9 +253,8 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         return 1;
     }
     if (strcmp(name, "alert") == 0) {
-        /* The open question's text, or nothing: an agent must never
-         * learn about a dialog by staring at pixels -- and as ~alert
-         * this is "an alert appeared" pushed, for free. */
+        /* The open alert's text, or empty; watched as ~alert, it reports
+         * an alert appearing. */
         tiku_alert_t *alert = alert_model(app);
 
         snprintf(out, max, "%s", alert->open ? alert->text : "");
@@ -270,9 +265,8 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         int i;
 
         out[0] = '\0';
-        /* name:count:on|off for every moment, then the volume: the
-         * count is the proof a moment happened, the flag the proof of
-         * a preference, and neither depends on a card. */
+        /* name:count:on|off for every moment, then the volume; the
+         * counts and flags work with no sound card. */
         for (i = 0; i < TIKU_SOUND_EVENTS && used < max; i++) {
             used += (size_t)snprintf(out + used, max - used, "%s%s:%u:%s",
                                      i ? " " : "",
@@ -288,8 +282,8 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         return 1;
     }
     if (strcmp(name, "mounts") == 0) {
-        /* Every mounted volume by name: as ~mounts, "a mount arrived"
-         * is a push rather than a poll. */
+        /* Every mounted volume by name; watched as ~mounts, it reports a
+         * mount arriving. */
         tiku_volumes_t vs;
         size_t used = 0u;
         int i;
@@ -307,35 +301,28 @@ conduct_text(void *context, const char *name, char *out, size_t max)
         return 1;
     }
     if (strcmp(name, "controls") == 0) {
-        /* The focused window as machine lines -- kind, label, rect,
-         * state: the walkable form of the feed, for the party that
-         * wants to click the button it heard about. */
+        /* The focused window's controls, a line each of kind, label,
+         * rectangle and state, for a driver that clicks them. */
         (void)tiku_workspace_controls(app->desk,
                                            tiku_workspace_focused(app->desk),
                                            out, max);
         return 1;
     }
     if (strcmp(name, "operation") == 0) {
-        /* The running job's own lifecycle: "idle", or each job's
-         * caption, current leaf and count.  As ~operation, "the copy
-         * finished" is a push -- the fact, not the window about it. */
+        /* "idle", or each running job's caption, current item and
+         * count; watched as ~operation, it reports a job finishing. */
         (void)tiku_trk_progress_say(progress_model(app), out, max);
         return 1;
     }
     if (name[0] == '/') {
-        /* The namespace itself is a noun table: any path the shell's
-         * mount table serves, answered as a node's value or a
-         * container's children -- and through /devices/... that is a
-         * BOARD's file or sensor, which is the device idiom riding
-         * this channel.  ~/path watches it like any other fact. */
+        /* A path: a node's value or a container's children, from any
+         * mount, a board's under /devices included; ~/path watches
+         * it. */
         return tiku_backend_text(app->backend, name, out, max);
     }
     if (strcmp(name, "narrate") == 0) {
-        /* The focused window, said from its own display list -- the
-         * reader's door of AGENT-SURFACE stage 4: a driver that has
-         * never seen a pixel of this window hears what it shows.  No
-         * focused window is an empty answer, not a refusal, the same
-         * shape "title" gives. */
+        /* The focused window described from its display list; empty
+         * with no focused window, as "title" is. */
         (void)tiku_workspace_narrate(app->desk,
                                           tiku_workspace_focused(app->desk),
                                           out, max);
@@ -345,9 +332,10 @@ conduct_text(void *context, const char *name, char *out, size_t max)
 }
 
 /**
- * @brief Redraw the desktop from nothing and count the pixels that came
- *        out different from the frame on screen.  @return that count,
- *        -1 with no surface or no memory for the copy.
+ * @brief Redraw the desktop from nothing and count the pixels that differ
+ *        from the frame on screen (PVL-045).  The copy is taken before
+ *        anything is drawn, and the redrawn frame stays on screen.
+ * @return that count; -1 with no surface or no memory for the copy.
  */
 long
 script_redraw_diff(void *ctx)
@@ -372,7 +360,7 @@ script_redraw_diff(void *ctx)
     for (i = 0u; i < (size_t)app->folder_count; i++) {
         tiku_trk_folder_window_forget(&app->folders[i]);
     }
-    /* The reference rebuilds its content rather than reuse drag pixels. */
+    /* The redraw rebuilds every folder window's content from nothing. */
     desktop_damage_all(app);
     draw_all(app);
     for (i = 0u; i < n; i++) {

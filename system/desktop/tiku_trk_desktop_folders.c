@@ -1,10 +1,15 @@
 /*
+ * TikuTracker -- the file manager for TikuOS.
+ *
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
  * tiku_trk_desktop_folders.c - a folder window's content as a responder,
  * the desk's own folder included: the icon in its bar, the bar's titles,
- * the scrollbar, the title strip, the rows and the band between them, and
- * the drag every one of those can begin and the drop that ends it.
+ * the scrollbar, the title strip, the rows and the band between them, the
+ * drags they begin and the drops that end them, and the folder's keys.
  *
- * The window's frame is the windows responder's.
+ * Window frames belong to the windows responder.
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "tiku_trk_desktop_private.h"
@@ -27,7 +32,8 @@ folder_under(desktop_t *app, int x, int y, tiku_window_t **win)
     return (hit == TIKU_HIT_CONTENT) ? folder_of(app, w) : NULL;
 }
 
-/** @brief A folder's content, when the point is one's. */
+/** @brief Whether @p x, @p y is on a folder's content, the desk's
+ *         included. */
 static int
 folders_hit(void *self, int x, int y)
 {
@@ -65,7 +71,10 @@ press_note(desktop_t *app, folder_t *fl, tiku_window_t *w, int row,
     app->press.menu = 0;
 }
 
-/** @brief Whether the folder is a merged view, which a drag links from. */
+/**
+ * @brief Mark the drag as coming from a merged view (a virtual directory)
+ *        when the folder is one: its drop links by default (FS-078).
+ */
 static void
 drag_source_kind(desktop_t *app, folder_t *fl)
 {
@@ -98,8 +107,11 @@ drag_add_selection(desktop_t *app, folder_t *fl)
     }
 }
 
-/** @brief A press on the folder's own icon in its bar picks the folder up
- *         (IV-057: from a pixel of the picture, not its transparent corner). */
+/**
+ * @brief A press on the folder's own icon in its bar picks the folder up;
+ *        only a press on an opaque pixel of the icon counts (IV-057).
+ * @return 1 when the press was on the icon.
+ */
 static int
 icon_press(desktop_t *app, folder_t *bfl, tiku_window_t *w,
            const tiku_event_t *ev)
@@ -133,7 +145,10 @@ icon_press(desktop_t *app, folder_t *bfl, tiku_window_t *w,
     return 1;
 }
 
-/** @brief A press on a title of the folder's menu bar opens that menu. */
+/**
+ * @brief A press on a title of the folder's menu bar opens that menu.
+ * @return 1 when the press was on a title.
+ */
 static int
 bar_press(desktop_t *app, folder_t *bfl, tiku_window_t *w,
           const tiku_event_t *ev)
@@ -163,7 +178,10 @@ bar_press(desktop_t *app, folder_t *bfl, tiku_window_t *w,
     return 1;
 }
 
-/** @brief A press in the scrollbar: an arrow, the thumb, or a page. */
+/**
+ * @brief A press in the scrollbar: an arrow, the thumb, or a page.
+ * @return 1 when the press was in the scrollbar.
+ */
 static int
 scrollbar_press(desktop_t *app, folder_t *sfl, const tiku_event_t *ev)
 {
@@ -192,7 +210,11 @@ scrollbar_press(desktop_t *app, folder_t *sfl, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief A primary press on the title strip: a column taken hold of. */
+/**
+ * @brief A primary press on the title strip, which may start dragging or
+ *        resizing a column.
+ * @return 1 when the strip is now tracking the press.
+ */
 static int
 strip_press(desktop_t *app, folder_t *tfl, tiku_window_t *w,
             const tiku_event_t *ev)
@@ -225,7 +247,10 @@ strip_press(desktop_t *app, folder_t *tfl, tiku_window_t *w,
     return 1;
 }
 
-/** @brief A secondary press on the title strip: the attributes menu. */
+/**
+ * @brief A secondary press on the title strip opens the attributes menu.
+ * @return 1 when the press was on the strip.
+ */
 static int
 strip_menu(desktop_t *app, folder_t *tfl, tiku_window_t *w,
            const tiku_event_t *ev)
@@ -253,9 +278,14 @@ strip_menu(desktop_t *app, folder_t *tfl, tiku_window_t *w,
     return 1;
 }
 
-/** @brief A double-click on a row: a folder opens, a path column walks
- *         up, a query's hit opens where it lives, a document opens in its
- *         handler; with Option the window that held it closes. */
+/**
+ * @brief A double click on a row.  On the path column, or on a file among
+ *        a query's results, the folder holding the entry opens.  Otherwise
+ *        a folder opens, a broken link is offered to Get Info, and anything
+ *        else opens through open_one(); with Option, the window that held
+ *        the row then closes, after a folder or after an entry that
+ *        open_one() opened.
+ */
 static void
 row_opened(desktop_t *app, folder_t *fl, tiku_window_t *w, int row,
            const tiku_event_t *ev)
@@ -344,8 +374,8 @@ rows_secondary(desktop_t *app, folder_t *fl, tiku_window_t *w, int row,
     (void)tiku_trk_click_press(&app->click, NULL, 0, 0, 3u, 0u, now);
 }
 
-/** @brief A primary press on the rows: the click lands on the selection,
- *         a band begins on empty ground, the selection is armed to be
+/** @brief A primary press on the rows: the click updates the selection,
+ *         a band begins in empty space, the selection is armed to be
  *         carried, a name may begin a rename, a second click opens. */
 static void
 rows_primary(desktop_t *app, folder_t *fl, tiku_window_t *w, int row,
@@ -423,7 +453,7 @@ folders_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         return 1;
     }
     if (ev->button == 1u && tiku_trk_folder_window_count_at(fl, ev->x, ev->y)) {
-        /* The count in the corner walks up a folder (IV-062). */
+        /* A press on the item count opens the parent (IV-062). */
         menu_invoke(app, fl, TIKU_TRK_CMD_OPEN_PARENT);
         return 1;
     }
@@ -436,9 +466,9 @@ folders_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 1;
 }
 
-/** @brief A move: a scrollbar or a title in hand takes it; a press that
- *         moved past the slop is no click; a drag under way tells its
- *         target, and a band grows. */
+/** @brief A move: a tracked scroll bar or column title follows it; a press
+ *         that moved more than four pixels gets no long-press menu and no
+ *         rename; a drag under way tells its target, and a band grows. */
 static int
 folders_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
 {
@@ -448,8 +478,8 @@ folders_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     if (app->press.down &&
         (ev->x - app->press.x > 4 || app->press.x - ev->x > 4 ||
          ev->y - app->press.y > 4 || app->press.y - ev->y > 4)) {
-        /* Moved out of the long-press radius: neither the menu nor the
-         * rename is owed (PVS-015, PVS-017). */
+        /* Moved more than four pixels: no long-press menu and no rename
+         * (PVS-015, PVS-017). */
         if (app->press.folder != NULL) {
             tiku_trk_poseview_cancel_edit_wait(app->press.folder->view);
         }
@@ -482,8 +512,8 @@ folders_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         tiku_trk_drag_active(&app->drag)) {
         (void)tiku_trk_drag_target_motion(&app->drag_target, ev->x, ev->y,
                                           tiku_trk_now());
-        /* Read at the badge, so the copy indication follows the modifier
-         * live, as the cursor did (PVS-036). */
+        /* The drag badge reads the live modifiers, so its copy mark
+         * follows the keys during the drag (PVS-036). */
         if (app->drag_live_mods != ev->modifiers) {
             app->drag_live_mods = ev->modifiers;
             *damage = tiku_trk_damage_all();
@@ -494,7 +524,7 @@ folders_move(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 0;
 }
 
-/** @brief The context menu a secondary press held still is owed. */
+/** @brief Open the context menu for a secondary press held still. */
 static void
 rows_menu(desktop_t *app, const tiku_event_t *ev)
 {
@@ -530,10 +560,11 @@ rows_menu(desktop_t *app, const tiku_event_t *ev)
 }
 
 /**
- * @brief A release: a title in hand is let go, a band ends, a drag lands
- *        (on a spring entry, a panel, an Info icon or the folder under
- *        the hand), a held secondary press offers its menu, a press that
- *        went nowhere raises its window, and the press is over.
+ * @brief A release: a tracked column title is released, a band ends, a
+ *        drag drops (on a spring entry, the file panel, an Info icon or the
+ *        folder under the pointer), a secondary press held still opens its
+ *        menu, a press that did not become a drag raises its window, and
+ *        the press ends.
  */
 static int
 folders_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -580,8 +611,9 @@ folders_release(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     if (!dropped && app->press.down && !app->press.menu &&
         app->press.window != NULL &&
         tiku_workspace_focused(app->desk) == app->press.focus) {
-        /* A press that did not become a drag raises its window now, so
-         * a drag out of a window behind never raised it (PVS-022). */
+        /* A press that did not become a drag raises its window on the
+         * release; a drag out of a window behind leaves it behind
+         * (PVS-022). */
         tiku_workspace_activate(app->desk, app->press.window);
     }
     if (app->sbar_fl != NULL) {
@@ -631,15 +663,14 @@ folders_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     }
     if (key == 's' && (ev->modifiers & TIKU_MOD_CMD) &&
         fl != NULL) {
-        /* PVK-046: invert -- the only way to say "everything
-         * except these" without clicking the rest. */
+        /* Cmd+S inverts the selection (PVK-046). */
         tiku_trk_poseview_invert_selection(fl->view);
         desktop_damage_all(app);
         return 1;
     }
     if (key == TIKU_KEY_TAB && fl != NULL) {
-        /* Tab is a name-order walk over poses.  While filtering
-         * is active it is deliberately swallowed. */
+        /* Tab walks the poses in name order; while a filter is being
+         * typed, Tab is consumed and does nothing. */
         if (!tiku_trk_poseview_is_filtering(fl->view)) {
             (void)tiku_trk_poseview_tab_next(fl->view,
                 (ev->modifiers & TIKU_MOD_SHIFT) != 0u);
@@ -680,8 +711,8 @@ folders_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     }
     if (fl != NULL && key == TIKU_KEY_UP &&
         (ev->modifiers & TIKU_MOD_CMD)) {
-        /* PVK-040/CW-051: Cmd+Up opens the parent; Option
-         * additionally takes the spatial window that was left. */
+        /* Cmd+Up opens the parent; with Option, the window left behind
+         * closes (PVK-040, CW-051). */
         if (strcmp(fl->path, "/") != 0) {
             char parent[TIKU_PATH_MAX];
             char *slash;
@@ -704,10 +735,9 @@ folders_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         return 1;
     }
     if (fl != NULL) {
-        /* Left and Right matter in an icon mode, where the
-         * arrangement is two-dimensional; the pages matter in
-         * both and were bound in neither shell's multi-window
-         * half (PVK-007, PVK-011). */
+        /* The arrows, the pages, Home and End move over the poses;
+         * Left and Right matter in the icon modes, whose arrangement is
+         * two-dimensional (PVK-007, PVK-011). */
         int nav = (key == TIKU_KEY_UP)    ? TIKU_TRK_KEY_UP
                 : (key == TIKU_KEY_DOWN)  ? TIKU_TRK_KEY_DOWN
                 : (key == TIKU_KEY_LEFT)  ? TIKU_TRK_KEY_LEFT
@@ -723,9 +753,9 @@ folders_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
                 tiku_trk_poseview_active(fl->view);
             if (p != NULL &&
                 tiku_model_is_container(&p->model)) {
-                /* Option+Return opens and takes the window it
-                 * came from with it, the keyboard's version of
-                 * an Option double-click (PVK-017). */
+                /* Option+Return opens the folder and closes the
+                 * window it came from, as an Option double click does
+                 * (PVK-017). */
                 int chase = (ev->modifiers & TIKU_MOD_OPTION) != 0;
                 tiku_window_t *from = fl->win;
 
@@ -734,8 +764,7 @@ folders_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
                     close_window(app, from);
                 }
             } else if (p != NULL) {
-                /* Opening a leaf means editing its value: there
-                 * is no other window for it to open. */
+                /* Return on a leaf edits its value. */
                 begin_edit(app, fl);
             }
         } else if (key == TIKU_KEY_BACKSPACE) {
@@ -755,7 +784,10 @@ folders_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     return 1;
 }
 
-/** @brief The folders' entry on the responder list. */
+/**
+ * @brief Put the folder windows' content, the desk's own included, on the
+ *        responder list.
+ */
 void
 desktop_folders_attach(desktop_t *app)
 {

@@ -1,14 +1,19 @@
 /*
- * tiku_trk_desktop_teams.c -- the Deskbar's applications, a row each.
+ * TikuTracker -- the file manager for TikuOS.
  *
- * Every window on the desk is this shell's own or one an application's
- * session opened.  Each application gets a row of its own, wearing the
- * icon its manifest names, with its windows under it, as the original
- * lists its teams; two instances of one application share the row, and
- * the row goes when the last of their windows does.  A click on a row --
- * activate, hide, show, close, quit -- reaches that application alone.
- * An application's own tray icons live here too: set by its session, gone
- * with it, and a click on one told to it.
+ * Authors: Ambuj Varshney <ambuj@tiku-os.org>
+ *
+ * tiku_trk_desktop_teams.c - the Deskbar's applications, a row each, and
+ * their tray icons.
+ *
+ * Every window on the desk is the desktop's own or one an application's
+ * session opened.  Each such application gets a row, while the Deskbar has
+ * room for one, with the icon its manifest names and its windows under it;
+ * the windows of one with no row are listed under TikuTracker's.  Two
+ * instances of one application share the row, which goes with the last of
+ * their windows.  A click on a row reaches that application only.  A tray
+ * icon is set by its session, goes with it, and a click on it is sent to
+ * it.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,7 +34,7 @@ typedef struct {
 /**
  * @brief The application window @p w belongs to, by the name its session
  *        gave: the row it is listed under.  A window no session holds is
- *        this shell's own -- folders, panels, the About box.
+ *        the desktop's own (folders, panels, the About box): TikuTracker.
  */
 const char *
 desktop_window_team(desktop_t *app, tiku_window_t *w)
@@ -54,8 +59,11 @@ team_icon(desktop_t *app, const char *name)
     return NULL;
 }
 
-/** @brief The list for @p name among the @p n gathered so far, added
- *         when it is new and there is room.  @return it, or -1. */
+/**
+ * @brief The list for @p name among the @p n gathered so far, added when
+ *        it is new and there is room.
+ * @return its index, or -1.
+ */
 static int
 team_slot(team_list_t *lists, int *n, const char *name)
 {
@@ -85,9 +93,9 @@ team_listed(const team_list_t *lists, int n, const char *name)
 }
 
 /**
- * @brief The Deskbar's application rows made to match the lists: a row
- *        whose application has no window left goes, and one that has just
- *        opened its first is added, wearing its manifest's icon.
+ * @brief Make the Deskbar's application rows match the lists: a row whose
+ *        application has no window left goes, and a row is added, with its
+ *        manifest's icon, for one that has just opened its first.
  */
 static void
 team_sync(desktop_t *app, const team_list_t *lists, int n)
@@ -122,11 +130,11 @@ team_sync(desktop_t *app, const team_list_t *lists, int n)
         snprintf(app->app_teams[app->napp_teams++], sizeof app->app_teams[0],
                  "%.47s", lists[i].name);
     }
-    /* Rows came and went: this shell's own is found again by name. */
+    /* Rows may have moved: find the desktop's own row again by name. */
     app->team = tiku_trk_deskbar_find_team(app->deskbar, TRACKER_TEAM);
 }
 
-/** @brief Tray icons whose application has gone taken away with it. */
+/** @brief Remove the tray icons of sessions that have ended. */
 static void
 tray_sweep(desktop_t *app)
 {
@@ -144,9 +152,10 @@ tray_sweep(desktop_t *app)
 }
 
 /**
- * @brief Each window on the desk published under its application's row,
- *        its title less the application's name; the row holding the
- *        focused window is the active one.  Called with every frame.
+ * @brief Publish each window on the desk under its application's row, its
+ *        title less the application's name; the row holding the focused
+ *        window is the active one.
+ * @note Called on every frame.
  */
 void
 desktop_publish_teams(desktop_t *app)
@@ -178,7 +187,7 @@ desktop_publish_teams(desktop_t *app)
     }
     team_sync(app, lists, n);
     tray_sweep(app);
-    for (int i = n - 1; i > 0; i--) {   /* no row to be had: Tracker's */
+    for (int i = n - 1; i > 0; i--) {   /* no row: under TikuTracker's */
         if (tiku_trk_deskbar_find_team(app->deskbar, lists[i].name) >= 0) {
             continue;
         }
@@ -206,8 +215,8 @@ desktop_team_has(desktop_t *app, int team, tiku_window_t *w)
            strcasecmp(desktop_window_team(app, w), name) == 0;
 }
 
-/** @brief Whether Deskbar entry @p team is an application's rather than
- *         this shell's own. */
+/** @brief Whether Deskbar entry @p team is an application's row, not the
+ *         desktop's own. */
 int
 desktop_team_is_app(desktop_t *app, int team)
 {
@@ -237,8 +246,11 @@ desktop_tray(desktop_t *app, int session, const tiku_msg_t *msg)
     }
 }
 
-/** @brief The session whose generation is @p owner, while it is still the
- *         one that set a tray item.  @return its index, or -1. */
+/**
+ * @brief The live session whose generation is @p owner: the session that
+ *        set a tray item, while it lasts.
+ * @return its index, or -1.
+ */
 int
 desktop_tray_session(desktop_t *app, uint64_t owner)
 {

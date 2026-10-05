@@ -3,12 +3,14 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_boardrun.c - a program running on a mounted board.
+ * tiku_trk_desktop_boardrun.c - boards for applications: running and saving
+ * BASIC programs on a mounted board, looking for boards, the current device,
+ * and letting a board go and taking it back.
  *
- * The shell owns the mounts and the lease, so it is the shell that runs
- * a program on a board; an application asks for one and is TOLD what it
- * prints.  One at a time, because a board's shell is held while its
- * program runs and there is only one line to hold.
+ * An application asks the desktop to run a program on a board and is sent
+ * what the program prints.  One run at a time, held in app->board_run.  A
+ * board with a window channel runs the program over the channel's
+ * interpreter stream; a board without one has its shell held for the run.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,7 +36,10 @@ leaf_of(const char *prefix)
     return (slash != NULL && slash[1] != '\0') ? slash + 1 : prefix;
 }
 
-/** @brief The boards mounted under /devices, one name a line. */
+/**
+ * @brief The boards mounted under /devices, one name a line, in name order.
+ * @return the bytes written to @p out.
+ */
 int
 desktop_board_names(desktop_t *app, char *out, size_t max)
 {
@@ -57,8 +62,8 @@ desktop_board_names(desktop_t *app, char *out, size_t max)
             strncmp(prefix, "/devices/", 9) != 0) {
             continue;           /* the local files are not a board */
         }
-        /* In name order: the ports are asked at once now, and which
-         * answered first is not an order a menu should show. */
+        /* In name order: ports are probed in parallel, so the mount
+         * order is the order the boards answered in. */
         for (j = nleaves; j > 0 &&
              strcmp(leaves[j - 1], leaf_of(prefix)) > 0; j--) {
             leaves[j] = leaves[j - 1];
@@ -105,8 +110,8 @@ board_named(desktop_t *app, const char *name)
     tiku_backend_t *first = NULL;
     int i, slots = tiku_mount_slots(app->backend);
 
-    /* No name asked: steer to the current device when one is set,
-     * otherwise the first board, as before. */
+    /* No name asked: the current device when one is set, otherwise the
+     * first board. */
     if ((want == NULL || want[0] == '\0') &&
         app->current_device[0] != '\0') {
         want = app->current_device;
@@ -127,8 +132,8 @@ board_named(desktop_t *app, const char *name)
             return b;
         }
     }
-    /* An empty ask still falls back to the first board; a named one that
-     * is not here does not. */
+    /* An empty name falls back to the first board; a name that is not
+     * mounted gets NULL. */
     return (name == NULL || name[0] == '\0') ? first : NULL;
 }
 
@@ -147,21 +152,21 @@ channel_of_board(desktop_t *app, const char *prefix)
     return NULL;
 }
 
-/** @brief To the board's interpreter, on its own stream. */
+/** @brief Send bytes to the board's interpreter over its channel. */
 static int
 stream_send(void *ctx, const void *bytes, size_t len)
 {
     return tiku_channel_basic_send(ctx, bytes, len);
 }
 
-/** @brief What a program on it has printed. */
+/** @brief Read what the program printed, from the board's channel. */
 static int
 stream_recv(void *ctx, void *buf, size_t max)
 {
     return tiku_channel_basic_recv(ctx, buf, max);
 }
 
-/** @brief Move the channel the stream rides on. */
+/** @brief Pump the board's channel, which carries the interpreter stream. */
 static void
 stream_pump(void *ctx)
 {
@@ -169,13 +174,15 @@ stream_pump(void *ctx)
 }
 
 /**
- * @brief The run, over the board's own interpreter stream when it has
- *        one and through its shell when it has not.
+ * @brief Start @p program on board @p b: over the interpreter stream of the
+ *        board's window channel when it has one, through its held shell
+ *        when it has not.
  *
- * A board carrying the overlay answers on a stream beside its console,
- * so its namespace stays live while the program runs; one without is
- * held as before, which is the only way to reach an interpreter that
- * has no other door.
+ * A streamed run leaves the board's shell free, so its namespace answers
+ * while the program runs.  A board without a channel can only be reached
+ * through its shell.
+ *
+ * @return the run, or NULL when it would not start
  */
 static tiku_board_basic_t *
 run_begin(desktop_t *app, const char *board, tiku_backend_t *b,
@@ -200,8 +207,8 @@ run_begin(desktop_t *app, const char *board, tiku_backend_t *b,
 }
 
 /**
- * @brief The board mounts' slots in name order: the ports are asked at
- *        once now, and which answered first is not an order to show.
+ * @brief Fill @p order with the mount slots of the boards under /devices,
+ *        in name order.
  * @return how many.
  */
 static int
@@ -229,10 +236,14 @@ board_slots_sorted(desktop_t *app, int *order)
 }
 
 /**
-  * @brief The boards, one a line, each "name<TAB>port<TAB>part".
+ * @brief The mounted boards in name order, one a line:
+ *        "name<TAB>port<TAB>processor".
  *
- * Told rather than asked for: an application drawing a menu needs both,
- * and neither may cost it a wait on the wire.
+ * The port is the one the board was opened on and the processor is what
+ * the board reported when it mounted: building the list reads nothing from
+ * the wire.
+ *
+ * @return the bytes written to @p out.
  */
 int
 desktop_board_list(desktop_t *app, char *out, size_t max)
@@ -292,7 +303,10 @@ channel_slot_of(desktop_t *app, const char *prefix)
     return -1;
 }
 
-/** @brief The port @p name is on ("/dev/ttyACM0"), into @p out. */
+/**
+ * @brief The port board @p name is on ("/dev/ttyACM0"), into @p out; an
+ *        empty name means the current device, or the first board.
+ */
 int
 desktop_board_port(desktop_t *app, const char *name, char *out, size_t max)
 {
@@ -309,7 +323,10 @@ desktop_board_port(desktop_t *app, const char *name, char *out, size_t max)
     return tiku_backend_tiku_port(b, out, max);
 }
 
-/** @brief What @p name IS, as its die says ("nRF54LM20B"), into @p out. */
+/**
+ * @brief The processor board @p name reports ("nRF54LM20B"), into @p out.
+ * @return its length, or 0 when the board or its identity is unknown.
+ */
 int
 desktop_board_mcu(desktop_t *app, const char *name, char *out, size_t max)
 {
@@ -335,12 +352,15 @@ desktop_board_mcu(desktop_t *app, const char *name, char *out, size_t max)
 
 
 /**
- * @brief Let the board called @p name go, port and all.
+ * @brief Unmount board @p name and close its port, so another program on
+ *        this machine (a bench run that reflashes it) can open the port.
  *
- * Something else on this machine needs it -- a bench run that reflashes
- * it, above all -- and two owners on one port corrupt each other.  What
- * is remembered is the board's DIE, because the thing coming back may
- * be on a different node than the thing that went.
+ * Two owners on one port corrupt each other.  The board's uid is kept in
+ * app->released, since the board may come back on a different port.
+ *
+ * @return 1 when released; 0 while a run is in progress, for an unknown
+ *         board or one with no uid, when the released table is full, or
+ *         when the unmount fails.
  */
 int
 desktop_board_release(desktop_t *app, const char *name)
@@ -354,7 +374,7 @@ desktop_board_release(desktop_t *app, const char *name)
         return 0;
     }
     if (app->board_run != NULL) {
-        return 0;               /* a program is on it: not while it runs */
+        return 0;               /* no release while any run is going */
     }
     b = board_named(app, name);
     if (b == NULL) {
@@ -378,8 +398,8 @@ desktop_board_release(desktop_t *app, const char *name)
                    "%s", id->uid);
     app->released[i].used = 1;
     (void)snprintf(prefix, sizeof prefix, "/devices/%s", name);
-    /* The windows go with the port: a channel on a cable nobody holds
-     * is a channel talking to a board that may be being reflashed. */
+    /* The board's window channel closes with the port: the board may be
+     * reflashed while it is let go. */
     slot = channel_slot_of(app, prefix);
     if (slot >= 0) {
         tiku_channel_close(app->channels[slot]);
@@ -388,8 +408,8 @@ desktop_board_release(desktop_t *app, const char *name)
         app->channel_mount[slot][0] = '\0';
     }
         tiku_trail("release %s", name);
-    /* The router took the obligation when it was mounted, so removing
-     * it closes it: closing again here would be closing it twice. */
+    /* The unmount closes the backend on a worker, after any job still
+     * asking the board, so it is not closed here. */
     if (desktop_board_unmount_released(app, prefix) != 0) {
         app->released[i].used = 0;
         return 0;
@@ -402,9 +422,10 @@ desktop_board_release(desktop_t *app, const char *name)
 /**
  * @brief Start @p program on the board called @p board.
  *
- * @param slot the embedded application to tell, or NULL for a session.
- * @return nonzero when the run began; one at a time, since the board's
- *         shell is held while it runs.
+ * @param slot the embedded application to tell, or NULL when the caller
+ *             sets app->board_run_session to the asking session.
+ * @return 1 when the run began; 0 while another run or save is in
+ *         progress, when no board matches, or when the run does not start.
  */
 int
 desktop_board_run(desktop_t *app, struct desktop_embed *slot,
@@ -413,7 +434,7 @@ desktop_board_run(desktop_t *app, struct desktop_embed *slot,
     tiku_backend_t *b;
 
     if (app == NULL || program == NULL || app->board_run != NULL) {
-        return 0;               /* one line, one program */
+        return 0;               /* one run at a time */
     }
     b = board_named(app, board);
     if (b == NULL) {
@@ -435,9 +456,13 @@ desktop_board_run(desktop_t *app, struct desktop_embed *slot,
 }
 
 /**
- * @brief Keep @p program on the board called @p board under @p name.
+ * @brief Save @p program on the board called @p board under @p name.
  *
- * The same one-at-a-time line a run takes; told as SAVED or FAILED.
+ * A save uses the run slot: it is refused while a run is going, and no
+ * run starts until it ends.  When it ends, the asker is told
+ * TIKU_APP_BOARD_SAVED, TIKU_APP_BOARD_STOPPED or TIKU_APP_BOARD_FAILED.
+ *
+ * @return 1 when the save began.
  */
 int
 desktop_board_save(desktop_t *app, struct desktop_embed *slot,
@@ -508,8 +533,11 @@ say_line(const char *line, void *ctx)
     tell_asker(ctx, TIKU_APP_BOARD_LINE, line);
 }
 
-/** @brief Move the run along and pass on what it printed; called on the
- *         shell's own beat. */
+/**
+ * @brief Pump the run and pass on what it printed, its start and its INPUT
+ *        prompts; when it ends, free it and tell the asker how it ended.
+ * @note Called once per turn of the loop.
+ */
 void
 desktop_board_pump(desktop_t *app)
 {
@@ -523,8 +551,7 @@ desktop_board_pump(desktop_t *app)
     if (app->board_run == NULL) {
         return;
     }
-    /* Short: this rides the shell's own beat, and a board's program is
-     * far slower than the beat is. */
+    /* Five milliseconds at most: this runs on every turn of the loop. */
             st = tiku_board_basic_pump(app->board_run, 5, say_line, app);
     if ((int)st != app->board_run_state) {
         static const char *const NAMED[] = { "sending", "running", "asking",
@@ -534,14 +561,13 @@ desktop_board_pump(desktop_t *app)
         tiku_trail("run: %s", ((int)st >= 0 && (int)st < 6)
                                   ? NAMED[(int)st] : "?");
         if (st == TIKU_BOARD_BASIC_RUNNING) {
-            /* The upload took its seconds; the asker is told the program
-             * is running now, so a console can say so. */
+            /* The program is handed over and RUN, or SAVE, sent. */
             tell_asker(app, TIKU_APP_BOARD_RUNNING, "");
         }
     }
     if (st == TIKU_BOARD_BASIC_ASKING) {
-        /* Told once per question: the prompt the program printed, so
-         * whoever answers sees what they are answering. */
+        /* Each question is told once, with the prompt the program
+         * printed. */
         if (!app->board_run_asked) {
             app->board_run_asked = 1;
             tell_asker(app, TIKU_APP_BOARD_ASKS,
@@ -569,17 +595,19 @@ desktop_board_pump(desktop_t *app)
         app->board_run_session = -1;
         app->board_run_saving = 0;
         if (tiku_board_basic_streamed(run)) {
-            /* The stream is the channel's, and the loop pumps that: left
-             * here.  Freed BEFORE the telling: an application told a run
-             * has ended may ask for the next one in that very call, and
-             * the board's shell has to be its own again by then. */
+            /* A streamed run is freed here, on the loop: leaving the
+             * interpreter pumps the board's channel, which the loop also
+             * pumps.  It is freed before the asker is told, since an
+             * application told the run ended may start the next one from
+             * that call. */
             tiku_board_basic_free(run);
             desktop_board_say(app, session, slot, what,
                               saving ? app->board_run_name : "");
         } else {
-            /* A held shell is given back by a worker -- a drain and a
-             * sync the loop must not stand for -- and the asker hears
-             * once it is back, for the same reason. */
+            /* A held run's shell is given back on a worker, since
+             * leaving drains and syncs the wire.  The asker is told once
+             * the shell is back, and a run it starts then finds the shell
+             * free. */
             desktop_wire_run_over(app, run, what, session, slot, saving,
                                   app->board_run_name);
         }
@@ -587,13 +615,16 @@ desktop_board_pump(desktop_t *app)
 }
 
 /*---------------------------------------------------------------------------*/
-/* LOOKING, AND ASKING BACK                                                  */
+/* LOOKING FOR BOARDS, CONNECTING AND RECLAIMING                             */
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief Look for boards on every port at once.  What answers is mounted
- *        as it lands; the asker -- a session, or an application hosted
- *        here -- hears when the last port has answered.
+ * @brief Probe every serial port at once for boards.
+ *
+ * A board that answers is recorded as a connect candidate under its
+ * processor name and its port is let go; nothing is mounted.  The asker
+ * (a session, or an application hosted here) is told when the last port
+ * has answered.
  */
 void
 desktop_board_look_begin(desktop_t *app, int session,
@@ -606,10 +637,9 @@ desktop_board_look_begin(desktop_t *app, int session,
         return;
     }
     if (app->look.going) {
-        /* One look at a time -- but a look asked during a look is a
-         * look owed, not a look refused: it begins when this one ends,
-         * and its asker hears then.  Pressed twice, the answer came
-         * once and late; now it comes to both. */
+        /* One look at a time: a look asked for during this one is
+         * started by desktop_board_look_done() when this one ends, and
+         * its asker is told when that second look ends. */
         app->look.again = 1;
         app->look.again_session = session;
         app->look.again_slot = slot;
@@ -636,7 +666,11 @@ desktop_board_look_begin(desktop_t *app, int session,
     }
 }
 
-/** @brief The last port answered: say so to whoever asked. */
+/**
+ * @brief End a look: send every remote session the board list, tell the
+ *        asker how many boards are mounted, and start a look asked for
+ *        during this one.
+ */
 void
 desktop_board_look_done(desktop_t *app)
 {
@@ -688,7 +722,7 @@ board_first(desktop_t *app, char *out, size_t max)
 
 /**
  * @brief Tell every open application, and every remote session, that the
- *        current device changed, so a window defaulting to it re-reads.
+ *        current device changed.
  */
 void
 device_current_broadcast(desktop_t *app)
@@ -710,8 +744,9 @@ device_current_broadcast(desktop_t *app)
 }
 
 /**
- * @brief Make @p name the current device (empty for this machine),
- *        remember it and its port, and tell everyone who defaults to it.
+ * @brief Make @p name the current device (empty for this machine), save it
+ *        and its port in the preferences, and tell every open application
+ *        and remote session through device_current_broadcast().
  */
 void
 device_set_current(desktop_t *app, const char *name)
@@ -737,8 +772,11 @@ device_set_current(desktop_t *app, const char *name)
     device_current_broadcast(app);
 }
 
-/** @brief Mount the board on @p port and, when it lands, it can be made
- *         current.  The one path that adds a /devices entry now. */
+/**
+ * @brief Probe @p port on a worker and mount the board that answers under
+ *        /devices; it becomes the current device when none is.
+ * @return 0 when the probe was posted, -1 otherwise.
+ */
 int
 device_connect(desktop_t *app, const char *port)
 {
@@ -751,8 +789,11 @@ device_connect(desktop_t *app, const char *port)
     return desktop_wire_probe(app, DESKTOP_ASK_CONNECT, port, baud, 0, NULL);
 }
 
-/** @brief Let a board go; if it was the current device, fall back to
- *         this machine. */
+/**
+ * @brief Unmount board @p name and offer its port to connect again; when it
+ *        was the current device, the first remaining board becomes
+ *        current, or this machine when none is left.
+ */
 int
 device_disconnect(desktop_t *app, const char *name)
 {
@@ -764,9 +805,8 @@ device_disconnect(desktop_t *app, const char *name)
     }
     was_current = (app->current_device[0] != '\0' &&
                    strcmp(app->current_device, name) == 0);
-    /* Where it is, asked while it is still here: a board let go goes
-     * back on the list of what can be connected, under the name it
-     * already answered to, without a second scan to find it again. */
+    /* The port is read before the unmount, to put the board back on the
+     * connect list under its name. */
     port[0] = '\0';
     (void)desktop_board_port(app, name, port, sizeof port);
     snprintf(prefix, sizeof prefix, "/devices/%s", name);
@@ -775,10 +815,10 @@ device_disconnect(desktop_t *app, const char *name)
         device_candidate_record(app, port, name);
     }
     if (was_current) {
-        /* The current board has gone: the work steps to another board
-         * that is still here, and only falls back to this machine when
-         * none is.  Asked AFTER the unmount, so the board leaving is
-         * not the one it steps to. */
+        /* The current board has gone: another board still mounted
+         * becomes current, or this machine when none is.  board_first()
+         * runs after the unmount, so the board leaving is not the one
+         * chosen. */
         char next[64];
 
         device_set_current(app, board_first(app, next, sizeof next)
@@ -788,12 +828,11 @@ device_disconnect(desktop_t *app, const char *name)
 }
 
 /**
- * @brief Ask for a released board back, wherever it is now: every port
- *        is probed at once and the one with its uid is mounted.  The
- *        asker hears RECLAIMED when it lands, or FAILED when the last
- *        port has answered without it.
- * @return 1 when the asking was taken; 0 for a board this shell never
- *         let go, or a reclaim already under way.
+ * @brief Ask for a released board back, wherever it is now: every port is
+ *        probed at once and the one with its uid is mounted.  The asker
+ *        is told RECLAIMED or FAILED once every port has answered.
+ * @return 1 when the asking was taken; 0 for a board this desktop never
+ *         let go, or while a reclaim is under way.
  */
 int
 desktop_board_reclaim(desktop_t *app, const char *name, int session,
@@ -812,7 +851,7 @@ desktop_board_reclaim(desktop_t *app, const char *name, int session,
         }
     }
     if (i == TIKU_MOUNT_MAX) {
-        return 0;               /* not one this shell let go */
+        return 0;               /* not one this desktop let go */
     }
     app->reclaim.going = 1;
     app->reclaim.session = session;
@@ -838,9 +877,10 @@ desktop_board_reclaim(desktop_t *app, const char *name, int session,
 }
 
 /**
- * @brief A probe for a reclaim answered with @p dev, or NULL.  The one
- *        with the uid is mounted where the board was; the rest are
- *        closed.  Called on the loop.
+ * @brief A probe for a reclaim answered with @p dev, or NULL.  The board
+ *        with the uid is mounted where it was, with a channel kept for a
+ *        board with a /gui; the rest are closed.
+ * @note Called on the loop.
  */
 void
 desktop_board_reclaim_landed(desktop_t *app, tiku_backend_t *dev)
@@ -889,7 +929,10 @@ desktop_board_reclaim_landed(desktop_t *app, tiku_backend_t *dev)
     }
 }
 
-/** @brief Every port has answered the reclaim: say how it went. */
+/**
+ * @brief Every port has answered the reclaim: tell the asker RECLAIMED or
+ *        FAILED, and send every remote session the board list.
+ */
 void
 desktop_board_reclaim_done(desktop_t *app)
 {

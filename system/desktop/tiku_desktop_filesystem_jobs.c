@@ -1,6 +1,14 @@
-/* tiku_desktop_filesystem_jobs.c -- filesystem jobs.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_filesystem_jobs.c - the worker jobs for files and volumes:
+ * listing a folder on a board, running the file engine's operation,
+ * scanning the volumes and unmounting one.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_desktop_jobs_private.h"
 
 typedef struct {
@@ -17,7 +25,10 @@ typedef struct {
     int                    n;
 } listing_t;
 
-/** @brief The walk's callback, on a worker: keep the entry, adopted. */
+/**
+ * @brief The listing's callback, on a worker: keep the entry, adopted into
+ *        the namespace; stop at 4096 entries.
+ */
 static int
 listing_one(const tiku_model_t *m, void *ctx)
 {
@@ -44,7 +55,10 @@ listing_run(void *ctx)
     }
 }
 
-/** @brief On the loop: the entries to the view, if it is still there. */
+/**
+ * @brief On the loop: hand the entries to the view, if the view is alive
+ *        and the slot still holds the mount that was listed.
+ */
 static void
 listing_done(void *ctx)
 {
@@ -70,7 +84,7 @@ listing_done(void *ctx)
     tiku_trail("list: %s landed, %d entries", l->local, l->n);
 }
 
-/** @brief The listing is over. */
+/** @brief Free a listing, finished or cancelled. */
 static void
 listing_free(void *ctx)
 {
@@ -82,7 +96,9 @@ listing_free(void *ctx)
 
 /**
  * @brief The lister every view asks: a folder on a board is listed by a
- *        worker; anything else lists as it always did.
+ *        worker.
+ * @return 1 when a worker took the listing; 0 for anything else, which
+ *         the view lists itself.
  */
 static int
 desktop_lister(void *ctx, tiku_trk_poseview_t *v, int gen, int kind)
@@ -100,7 +116,7 @@ desktop_lister(void *ctx, tiku_trk_poseview_t *v, int gen, int kind)
     }
     dev = tiku_backend_serving(app->backend, path, local, sizeof local);
     if (!desktop_jobs_is_board(dev)) {
-        return 0;               /* the /devices folder itself, or local */
+        return 0;               /* no board serves it: the view lists it */
     }
     for (i = 0; i < TIKU_MOUNT_MAX; i++) {
         if (tiku_mount_at(app->backend, i) == dev) {
@@ -144,7 +160,10 @@ desktop_lister(void *ctx, tiku_trk_poseview_t *v, int gen, int kind)
 }
 
 
-/** @brief From here, every folder on a board is listed by a worker. */
+/**
+ * @brief Install the desktop's workers as the views' lister and as the
+ *        sound kit's opener, and fill the volume cache with a scan.
+ */
 void
 desktop_wire_install(desktop_t *app)
 {
@@ -153,8 +172,8 @@ desktop_wire_install(desktop_t *app)
 
     tiku_trk_poseview_set_lister(desktop_lister, app);
     tiku_sound_set_opener(desktop_jobs_sound_open, app);
-    /* The first scan is the boot's, on the loop, so the cache is never
-     * empty; every later one is a worker's. */
+    /* The first scan is the boot's, on the loop, so the cache is filled
+     * before anything reads it; every later one is a worker's. */
     n = tiku_volumes_scan_now(&vs);
     tiku_volumes_cache_set(&vs, n);
 }
@@ -169,7 +188,8 @@ fs_run(void *ctx)
     }
 }
 
-/** @brief On the loop: the engine has stopped, done or asking. */
+/** @brief On the loop, once the engine has stopped, done or at a question:
+ *         clear fs_job so desktop_wire_fs_run() can post again. */
 static void
 fs_done(void *ctx)
 {
@@ -179,7 +199,7 @@ fs_done(void *ctx)
     desktop_damage_all(app);
 }
 
-/** @brief The asking is over. */
+/** @brief Free the job's context. */
 static void
 fs_free_ctx(void *ctx)
 {
@@ -225,7 +245,7 @@ typedef struct {
     int             count;
 } volscan_t;
 
-/** @brief On a worker: every mount asked how much room it has. */
+/** @brief On a worker: scan the volumes. */
 static void
 volscan_run(void *ctx)
 {
@@ -234,7 +254,10 @@ volscan_run(void *ctx)
     v->count = tiku_volumes_scan_now(&v->vs);
 }
 
-/** @brief On the loop: what was found is what every scan answers now. */
+/**
+ * @brief On the loop: a scan that worked replaces the cache the volume
+ *        readers are answered from.
+ */
 static void
 volscan_done(void *ctx)
 {
@@ -295,7 +318,10 @@ unmount_run(void *ctx)
     u->rc = tiku_volume_umount_now(u->mount, u->name, u->why, sizeof u->why);
 }
 
-/** @brief On the loop: say how it went. */
+/**
+ * @brief On the loop: report the unmount on the status line, or in an
+ *        alert when it was refused, and scan the volumes again.
+ */
 static void
 unmount_done(void *ctx)
 {
@@ -317,8 +343,9 @@ unmount_done(void *ctx)
 }
 
 /**
- * @brief Unmount @p mount on a worker; the status line and the alert
- *        come when it has.  @return 1 when asked.
+ * @brief Unmount @p mount on a worker; the status line or an alert says
+ *        how it went.
+ * @return 1 when asked; 0 while another unmount is out.
  */
 int
 desktop_wire_unmount(desktop_t *app, const char *mount, const char *name)

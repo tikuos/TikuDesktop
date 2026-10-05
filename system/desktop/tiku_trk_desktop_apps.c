@@ -3,9 +3,9 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * tiku_trk_desktop_apps.c - the installed applications: where they are found
- * beside this shell, what they are called and drawn as, and the pickers
- * built from them
+ * tiku_trk_desktop_apps.c - the installed applications: where they are
+ * found, what they are called and drawn as, and how one is started; the help
+ * folder and its pages; and the Move to, Copy to and Create link pickers.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,10 @@
 #include <limits.h>
 #include "tiku_trk_desktop_appgroups.inl"
 
-/** @brief One destination row of a picker (CW-035). */
+/**
+ * @brief Add one destination row to picker @p k (CW-035); Move to (@p k 0)
+ *        takes it only when @p move_dev_ok.
+ */
 static void
 picker_add(desktop_t *app, int k, const char *label, const char *path,
            int move_dev_ok)
@@ -43,11 +46,12 @@ picker_add(desktop_t *app, int k, const char *label, const char *path,
 }
 
 /**
- * @brief The Move to / Copy to / Create link pickers (CW-035, CW-058).
+ * @brief Build the Move to, Copy to and Create link pickers for folder
+ *        @p fl (CW-035, CW-058).
  *
- * Current folder, Recent folders, Desktop, Home, then volumes -- and Move
- * offers only destinations on the item's own device, the addLocalOnly
- * rule: a cross-device move is a copy wearing the wrong name.
+ * The rows: the current folder, recent folders, Desktop, Home, then the
+ * volumes.  Move to offers only destinations on the folder's own device,
+ * since a move across devices is a copy.
  */
 void
 build_pickers(desktop_t *app, folder_t *fl)
@@ -87,8 +91,9 @@ build_pickers(desktop_t *app, folder_t *fl)
             if (stat(recent[i], &rst) != 0) {
                 continue;       /* a destination that went away */
             }
-            /* Two recents can share a leaf name; the one that does gains
-             * the minimum distinguishing path (NeXT UIG ch8). */
+            /* A recent whose leaf name another recent shares is labelled
+             * with its leaf and the shortest trailing path that tells it
+             * apart (NeXT UIG ch8). */
             for (r = 0; r < nrecent; r++) {
                 rows[r] = recent[r];
             }
@@ -96,8 +101,7 @@ build_pickers(desktop_t *app, folder_t *fl)
                                              label, sizeof label);
             if (strcmp(recent[i], desk) == 0 ||
                 (home != NULL && strcmp(recent[i], home) == 0)) {
-                /* Desktop and Home keep their own NAMED rows below; a
-                 * recent that is one of them would shadow the name. */
+                /* Desktop and Home have their own named rows below. */
                 continue;
             }
             (void)leaf;
@@ -127,8 +131,8 @@ build_pickers(desktop_t *app, folder_t *fl)
                        have_here && vst.st_dev == here.st_dev);
         }
         if (k < 2 && app->menus.picker[k].count > 0) {
-            /* Somewhere deeper than a row can name: the panel is the
-             * navigator (AW-050), reached from inside the picker. */
+            /* Choose folder... opens the file panel to pick any folder
+             * (AW-050). */
             (void)tiku_menu_add_separator(&app->menus.picker[k]);
             (void)tiku_menu_add(&app->menus.picker[k],
                 "Choose folder\xe2\x80\xa6",
@@ -139,18 +143,18 @@ build_pickers(desktop_t *app, folder_t *fl)
 }
 
 /**
- * @brief Locate a companion program shipped beside this shell.
+ * @brief Find companion program @p name, shipped with the desktop.
  *
- * Looked for where the build puts it, relative to THIS binary, so a tree
- * that was moved or built elsewhere still finds its own programs.
+ * Looked for where the build and an install put it, relative to this
+ * binary, so a tree that was moved or built elsewhere finds its programs.
  *
- * @return nonzero when @p out names a program that exists.
+ * @return nonzero when @p out names an executable program.
  */
 static int
 find_companion(const char *argv0, const char *name, char *out, size_t max)
 {
     static const char *const where[] = {
-        "%s/%s",                        /* installed beside this shell   */
+        "%s/%s",                        /* beside the desktop's binary   */
         "%s/build/runtime/system/%s",
         "%s/system/%s",
         "%s/build/%s",                  /* the tree's own build          */
@@ -161,10 +165,8 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
     size_t i;
     int up;
 
-    /* TIKU_APPS says where APPLICATIONS are installed, which is not
-     * where this desktop's own companion programs live; a runner looked
-     * for there would be missing on every install that separates the
-     * two. */
+    /* TIKU_APPS names where applications are installed; companion
+     * programs are looked for from this binary, not there. */
     snprintf(dir, sizeof dir, "%s", (argv0 != NULL) ? argv0 : "");
     slash = strrchr(dir, '/');
     if (slash != NULL) {
@@ -172,11 +174,9 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
     } else {
         snprintf(dir, sizeof dir, ".");
     }
-    /* Up the tree rather than a fixed number of dots: a development
-     * build sits one directory deeper than an installed one, and a count
-     * that is right for either is wrong for the other.  Climbing by
-     * APPENDING "/.." rather than trimming keeps a relative argv[0]
-     * working, which one trimmed down to "." cannot. */
+    /* Climb up to four levels, since a development build sits deeper
+     * than an installed one.  The climb appends "/..", which keeps a
+     * relative argv[0] working. */
     for (up = 0; up < 5; up++) {
         char step[TIKU_PATH_MAX];
         int k;
@@ -198,14 +198,10 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
             if (access(found, X_OK) != 0) {
                 continue;
             }
-            /* ABSOLUTE, because everything launched starts in the user's
-             * home: a path relative to this shell's directory names
-             * nothing once the child has moved there.
-             *
-             * Resolved through a buffer of realpath()'s own size, which
-             * is PATH_MAX and not this tree's shorter path limit: handed
-             * a smaller one, a fortified libc aborts the process instead
-             * of truncating. */
+            /* Made absolute: a launched program starts in the user's
+             * home, where a relative path names nothing.  realpath() gets
+             * a PATH_MAX buffer, since a fortified libc aborts on a
+             * smaller one. */
             if (realpath(found, real) != NULL && strlen(real) < max) {
                 memcpy(out, real, strlen(real) + 1);
                 return 1;
@@ -216,7 +212,11 @@ find_companion(const char *argv0, const char *name, char *out, size_t max)
     return 0;
 }
 
-/** @brief Launch resources must stay absolute after the child changes cwd. */
+/**
+ * @brief @p path made absolute into @p out, as a launched program changes
+ *        its working directory.
+ * @return nonzero when it resolved and fits.
+ */
 static int canonical_directory(const char *path, char *out, size_t max)
 {
     char *resolved = realpath(path, NULL);
@@ -228,10 +228,10 @@ static int canonical_directory(const char *path, char *out, size_t max)
 }
 
 /**
- * @brief Find the directory of installed applications, if there is one.
- *
- * Climbed from this binary the same way a companion program is, so a
- * development tree and an installed one both answer.
+ * @brief Find the installed applications' directory: TIKU_APPS when set,
+ *        else apps/ or build/runtime/apps, climbing from this binary as
+ *        find_companion() does.
+ * @return nonzero when found.
  */
 static int
 find_apps_dir(const char *argv0, char *out, size_t max)
@@ -283,8 +283,8 @@ app_label(const char *file, char *out, size_t max)
 {
     size_t i;
 
-    /* From the file's own name: reading it would mean loading it, and a
-     * file the desktop will not load has no name to read. */
+    /* Made from the file name, without loading the file: "tiku_" and
+     * ".so" dropped, underscores as spaces, the first letter capital. */
     if (strncmp(file, "tiku_", 5) == 0) {
         file += 5;
     }
@@ -304,11 +304,9 @@ app_label(const char *file, char *out, size_t max)
 }
 
 /**
- * @brief The art a program's row wears, guessed from its file name.
- *
- * A hint, not a fact: nothing but the file's name is known without
- * loading it, and a program the desktop will not load has nothing else
- * to say for itself.
+ * @brief The icon drawn on a program's row, guessed from its file name
+ *        without loading it: the text file icon for a name with "edit",
+ *        else the application icon.
  */
 static const char *
 app_icon(const char *file)
@@ -327,14 +325,10 @@ desktop_help_ready(desktop_t *app)
 }
 
 /**
- * @brief The page the application owning @p window named for itself.
- *
- * Asked while the system menu is being built, so it answers from what
- * is already in hand: the slot for an application hosted here, the
- * session for one in a process of its own.
- *
- * @return the page name, or NULL when the window belongs to no
- *         application, or to one that named no page.
+ * @brief The help page for @p window: the page its application named (an
+ *        embedded slot's or a session's), or the fixed page of one of the
+ *        desktop's own windows.  Nothing is read from disk.
+ * @return the page, or NULL when there is none.
  */
 const char *
 desktop_help_page_of(desktop_t *app, tiku_window_t *window)
@@ -372,12 +366,9 @@ desktop_help_page_of(desktop_t *app, tiku_window_t *window)
 }
 
 /**
- * @brief The help folder: its own page is what proves it is one.
- *
- * Looked for the way a companion program is, and named outright by
- * TIKU_HELP for a test or an install that keeps its pages elsewhere.
- *
- * @return nonzero when @p out names a folder with pages in it.
+ * @brief Find the help folder, a folder holding an index.html: TIKU_HELP
+ *        when set, else climbing from this binary as find_companion() does.
+ * @return nonzero when @p out names it.
  */
 int
 find_help_dir(const char *argv0, char *out, size_t max)
@@ -394,8 +385,7 @@ find_help_dir(const char *argv0, char *out, size_t max)
         char page[TIKU_PATH_MAX];
 
         if (!canonical_directory(getenv("TIKU_HELP"), out, max)) return 0;
-        /* Named outright, and still asked for its own page: a folder
-         * with nothing in it is not the help folder. */
+        /* TIKU_HELP too must hold an index.html. */
         if (snprintf(page, sizeof page, "%s/index.html", out) <
             (int)sizeof page && access(page, R_OK) == 0) {
             return 1;
@@ -445,11 +435,16 @@ find_help_dir(const char *argv0, char *out, size_t max)
     return 0;
 }
 
-/* The leaf menu's table holds as many programs as the launch registry. */
+/* The leaf menu's table holds at least as many programs as the launch
+ * registry. */
 _Static_assert(TIKU_TRK_DB_APPS_MAX >= TIKU_TRK_APP_MAX,
                "the Deskbar's program table is smaller than the registry");
 
-/** @brief Register metadata without loading the module into the desktop. */
+/**
+ * @brief Offer the application bundle manifest @p m describes, without
+ *        loading its module: to the launch registry, the startup list and
+ *        its category's Deskbar group.  A known id or module is skipped.
+ */
 static void offer_bundle(desktop_t *app, const char *dir,
                          const char *runner, const tiku_manifest_t *m)
 {
@@ -475,7 +470,12 @@ static void offer_bundle(desktop_t *app, const char *dir,
     }
 }
 
-/** @brief Scan in stable order; old flat modules always run out of process. */
+/**
+ * @brief Offer every application in @p root, in name order: a folder with
+ *        an app.manifest, or, when @p legacy is given, a flat .so module
+ *        (by its .manifest, or named from its file).  Each runs in a
+ *        process of its own.
+ */
 static void offer_directory(desktop_t *app, const char *root,
                             const char *runner, const char *legacy)
 {
@@ -515,10 +515,11 @@ static void offer_directory(desktop_t *app, const char *root,
 }
 
 /**
- * @brief Offer every application installed beside this desktop.
+ * @brief Offer every installed application: the apps directory and its
+ *        programming/ and trusted/ subdirectories.
  *
- * A file in `apps` is started in a process of its own through the
- * runner. Legacy directories do not grant in-process execution.
+ * Each runs in a process of its own through the runner, tiku-run; with no
+ * runner found, nothing is offered.
  */
 void
 offer_installed(desktop_t *app, const char *argv0)
@@ -547,8 +548,9 @@ offer_installed(desktop_t *app, const char *argv0)
 }
 
 /**
- * @brief The installed application @p path is the module of, through a
- *        link if it is one; NULL for anything else.
+ * @brief The installed application whose module, command or path @p path
+ *        is, through a link if it is one; NULL for anything else and for
+ *        TikuTracker itself.
  */
 const tiku_trk_app_t *
 desktop_app_at(desktop_t *app, const char *path)
@@ -578,7 +580,11 @@ desktop_app_at(desktop_t *app, const char *path)
     return NULL;
 }
 
-/** @brief The art a pose that is an application wears, or NULL. */
+/**
+ * @brief The art drawn for a pose that is an application: its own icon,
+ *        or the application icon when its own is unknown; NULL for anything
+ *        else.
+ */
 const char *
 desktop_app_art(desktop_t *app, const char *path)
 {
@@ -591,7 +597,11 @@ desktop_app_art(desktop_t *app, const char *path)
                ? a->icon : "application";
 }
 
-/** @brief Start the installed application @p id, on @p document if any. */
+/**
+ * @brief Start the installed application @p id, on @p document if any.
+ * @return 1 when it started; 0, with a note on the status line, when it is
+ *         not installed.
+ */
 int desktop_launch_app(desktop_t *app, const char *id, const char *document)
 {
     for (int i = 0; i < app->apps.count; i++) {
@@ -607,7 +617,11 @@ int desktop_launch_app(desktop_t *app, const char *id, const char *document)
     return 0;
 }
 
-/** @brief TikuBench, told which board and tab to open on, as data. */
+/**
+ * @brief Open TikuBench on its Firmware tab for board @p board, by a
+ *        launch message.
+ * @return 1 when TikuBench was launched with it.
+ */
 int desktop_bench_firmware(desktop_t *app, const char *board)
 {
     tiku_msg_t *m = tiku_msg_new(1);
@@ -627,7 +641,12 @@ int desktop_bench_firmware(desktop_t *app, const char *board)
     return result;
 }
 
-/** @brief Pass help content as bounded data to the installed reader. */
+/**
+ * @brief Send TikuReader the help root and a page, or a title and generated
+ *        HTML, as a launch message.
+ * @return 1 when the reader was launched; else 0, with a note on the
+ *         status line.
+ */
 static int desktop_help_request(desktop_t *app, const char *page,
                                 const char *title, const char *html)
 {
@@ -653,14 +672,23 @@ static int desktop_help_request(desktop_t *app, const char *page,
     return result;
 }
 
-/** @brief The reader owns help navigation, rendering and document state. */
+/**
+ * @brief Open help page @p page, the index when NULL, in TikuReader.
+ * @return 1 when the reader was launched; 0 otherwise, as for a page name
+ *         of 256 bytes or more.
+ */
 int desktop_help_open(desktop_t *app, const char *page)
 {
     if (page && strlen(page) >= 256) return 0;
     return desktop_help_request(app, page ? page : "index.html", NULL, NULL);
 }
 
-/** @brief Generated reports cross the same isolated application boundary. */
+/**
+ * @brief Show generated HTML under @p title in TikuReader, as help pages
+ *        are shown.
+ * @return 1 when the reader was launched; 0 otherwise, as for HTML over
+ *         15000 bytes or a title over 127.
+ */
 int desktop_help_html(desktop_t *app, const char *title, const char *html)
 {
     if (!html || strlen(html) > 15000 || (title && strlen(title) > 127))

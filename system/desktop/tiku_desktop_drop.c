@@ -1,9 +1,18 @@
-/* tiku_desktop_drop.c -- drop.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_drop.c - handling a drop: on an application pose, on the
+ * file panel, on an Info window's icon, or anywhere else through the drop
+ * controller.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 
-/** @brief A drop on an application pose is the same one act (PVS-044). */
+/** @brief A drop on an application pose launches it with the dropped paths
+ *         (PVS-044). */
 int
 drop_launch(void *context, const struct tiku_trk_app *application,
             const char *const *paths, int count)
@@ -15,11 +24,11 @@ drop_launch(void *context, const struct tiku_trk_app *application,
 }
 
 /**
- * @brief A drop landing anywhere on the file panel (AW-059).
+ * @brief Handle a drop anywhere on the file panel (AW-059).
  *
- * Exactly one carried item navigates the panel; any other count is
- * swallowed, exactly as the original's MessageDropFilter swallows it.
- * @return nonzero when the drop was the panel's, handled or swallowed.
+ * One dropped item navigates the panel to it; any other count is ignored.
+ *
+ * @return nonzero when the drop was on the panel, handled or ignored.
  */
 int
 drop_on_panel(desktop_t *app, int x, int y)
@@ -67,7 +76,12 @@ info_icon_drop_slot(desktop_t *app, int x, int y)
     return slot;
 }
 
-/** @brief Drop the drag on an Info window's icon.  @return handled. */
+/**
+ * @brief Move, copy or link the dragged items into the folder an Info
+ *        window's icon stands for.  Option asks for a copy, Cmd for a link
+ *        (relative with Shift); otherwise the drag's own rule decides.
+ * @return 1 when the pointer was over such an icon, 0 otherwise.
+ */
 int
 drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers)
 {
@@ -120,11 +134,11 @@ drop_on_info_icon(desktop_t *app, int x, int y, unsigned modifiers)
 }
 
 /**
- * @brief Resolve and perform the drop the pointer is over.
+ * @brief Perform the drop under the pointer, through the drop controller.
  *
- * The destination is the highlighted pose when there is one and the hovered
- * window's own folder otherwise -- which is also what a drop onto one of the
- * dragged poses means, since such a pose never highlights (PVS-042).
+ * The destination is the highlighted pose when there is one, else the
+ * folder of the window under the pointer.  A dragged pose is never a
+ * target, so a drop on one goes into that window's folder (PVS-042).
  */
 void
 do_drop(desktop_t *app, int x, int y, unsigned state, unsigned button)

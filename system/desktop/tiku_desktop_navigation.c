@@ -1,6 +1,14 @@
-/* tiku_desktop_navigation.c -- navigation.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_desktop_navigation.c - the spring navigator a drag resting on a
+ * folder opens, following the pointer over it and where a drop on it goes;
+ * and the per-turn filling of the navigation menus and the icon hints.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 
 /** @brief Re-apply the spring menu's enabled states from the live drag. */
@@ -18,8 +26,8 @@ spring_nav_states(desktop_t *app)
 }
 
 /**
- * @brief The spring: a drag resting on a folder opens a NAVIGABLE menu of
- *        its contents rather than a window (PVS-051).
+ * @brief The spring: a drag resting on a folder opens a navigable menu of
+ *        its contents (PVS-051).
  */
 void
 spring_open_nav(void *context, const char *path)
@@ -38,7 +46,7 @@ spring_open_nav(void *context, const char *path)
     desktop_damage_all(app);
 }
 
-/** @brief Close every spring level and put the walk away. */
+/** @brief Leave every spring level and mark the spring menu closed. */
 void
 spring_nav_close(desktop_t *app)
 {
@@ -50,7 +58,8 @@ spring_nav_close(desktop_t *app)
 }
 
 /**
- * @brief The frame of spring level @p k, chained the way the draw chains.
+ * @brief The frame of spring level @p k, placed as the drawing places it:
+ *        each level beside the selected row of the one before.
  */
 static tiku_rect_t
 spring_nav_frame(desktop_t *app, int k)
@@ -74,9 +83,9 @@ spring_nav_frame(desktop_t *app, int k)
 /**
  * @brief Follow the pointer over the spring levels (PVS-051, PVS-054).
  *
- * Hovering a row selects it; a container row opens the next level in
- * place; leaving every level (and the sprung pose) by more than the
- * margin closes the whole thing.
+ * Hovering a row selects it; an enabled container row opens the next
+ * level beside it; leaving every level (and the sprung pose) by more than
+ * the margin closes the whole thing.
  */
 void
 spring_nav_track(desktop_t *app, int x, int y)
@@ -106,7 +115,8 @@ spring_nav_track(desktop_t *app, int x, int y)
         tiku_trk_nav_level_t *lv = &app->nav.level[hit_level];
 
         if (lv->sel != hit_item) {
-            /* A new row: anything deeper hung off the OLD row. */
+            /* A new row: the levels deeper than it were opened from the
+             * old row, so they close. */
             while (app->nav.depth > hit_level + 1) {
                 (void)tiku_trk_nav_leave(&app->nav);
             }
@@ -119,8 +129,8 @@ spring_nav_track(desktop_t *app, int x, int y)
         }
         return;
     }
-    /* Off every level: the sprung pose itself keeps it alive too, so the
-     * pointer can travel from the pose into the menu (PVS-054). */
+    /* Off every level: the sprung pose keeps the menu open too, so the
+     * pointer can move from the pose into the menu (PVS-054). */
     if (!inside_margin &&
         !tiku_trk_springmenu_inside(&app->drag_target.spring, x, y)) {
         spring_nav_close(app);
@@ -130,8 +140,9 @@ spring_nav_track(desktop_t *app, int x, int y)
 /**
  * @brief What releasing the drag at @p x,@p y over the spring means.
  *
- * @return 1 with @p dest set for an enabled row, 2 for a disabled row
- *         (the release is swallowed), 0 when the menu was not hit.
+ * @return 1 with @p dest set for an enabled row, 2 for a disabled row or
+ *         a point between rows (the release is swallowed), 0 when the menu
+ *         was not hit.
  */
 int
 spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max)
@@ -159,8 +170,9 @@ spring_nav_hit(desktop_t *app, int x, int y, char *dest, size_t max)
 }
 
 /**
- * @brief The spring-loaded and navigation menus take a chunk of their folder
- * per turn, and ask the entries not yet asked (CW-055).
+ * @brief Each turn: fill the open navigation or spring menu by one chunk of
+ *        its folder (CW-055), and ask up to HINTS_PER_TURN entries of the
+ *        open folders whether they carry a picture of their own.
  */
 void
 desktop_spring_tick(desktop_t *app)
@@ -172,20 +184,19 @@ desktop_spring_tick(desktop_t *app)
          * folder is still arriving (CW-055). */
         if (tiku_trk_nav_fill(&app->nav, app->nav.depth - 1)) {
             if (app->spring_nav_on) {
-                /* What the drag can land on is per entry, so fresh
-                 * entries get their states as they arrive (PVS-052). */
+                /* Whether an entry takes the drop is decided per entry,
+                 * so fresh entries get their states as they arrive
+                 * (PVS-052). */
                 spring_nav_states(app);
             }
             desktop_damage_all(app);
         }
     } else if (app->nav_on && app->popup == NULL) {
-        app->nav_on = 0;         /* the menu went; so does the walk */
+        app->nav_on = 0;         /* the menu closed: end the walk */
     }
-    {   /* Ask the entries that have not been asked whether they have
-         * a picture of their own -- a bounded batch per turn, for the
-         * same reason the thumbnails are made in one: a folder of a
-         * thousand images must not open a thousand files inside one
-         * tick (IV-005, IV-037). */
+    {   /* Ask at most HINTS_PER_TURN unasked entries whether they carry
+         * a picture of their own; each ask opens the file (IV-005,
+         * IV-037). */
         int budget = HINTS_PER_TURN;
 
         for (i = 0; i < app->folder_count && budget > 0; i++) {
@@ -206,10 +217,9 @@ desktop_spring_tick(desktop_t *app)
                 (void)tiku_trk_nodeicon_hint(app->store, &app->thumbs,
                                              &p->model);
                 budget--;
-                /* One pose learned what picture it has, so one row is
-                 * what needs painting: a bare dirty here repainted the
-                 * whole listing and undid the damage the notice had
-                 * just recorded (PVL-075). */
+                /* The view marks only the pose's row, which keeps the
+                 * damage a notice has recorded in it (PVL-075); the
+                 * desktop still asks for a full frame. */
                 tiku_trk_poseview_damage_row(fl->view, k);
                 desktop_damage_all(app);
             }

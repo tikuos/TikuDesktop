@@ -1,6 +1,14 @@
-/* Native File Associations preferences: editable drafts, explicit Save.
+/*
+ * TikuTracker -- the file manager for TikuOS.
+ *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
- * SPDX-License-Identifier: Apache-2.0 */
+ *
+ * tiku_trk_desktop_associations.c - the File Associations window: for each
+ * file type, the application that opens it, edited as a draft that only
+ * Save writes to the store.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "tiku_trk_desktop_private.h"
 #include "tiku_trk_associations.h"
 #include "tiku_dialog.h"
@@ -26,7 +34,8 @@ typedef struct {
     tiku_rect_t detail, status, cancel, save;
 } assoc_layout_t;
 
-/** @brief Shared, font-scaled geometry keeps painting and input aligned. */
+/** @brief The window's layout, scaled to the font; painting and input
+ *         share it. */
 static assoc_layout_t assoc_layout(tiku_rect_t c)
 {
     assoc_layout_t l;
@@ -51,7 +60,7 @@ static assoc_layout_t assoc_layout(tiku_rect_t c)
     return l;
 }
 
-/** @brief A row never paints over the list's bevel. */
+/** @brief Row @p i of a list, inset from the list's bevel. */
 static tiku_rect_t assoc_row(tiku_rect_t list, int i)
 {
     return (tiku_rect_t){list.x + 4,
@@ -59,7 +68,9 @@ static tiku_rect_t assoc_row(tiku_rect_t list, int i)
         tiku_font_plain()->height + 12};
 }
 
-/** @brief App choices come from capabilities, not a second handler table. */
+/** @brief Fill p->candidates with the applications that can open the
+ *         selected type, from their declared capabilities, and go back to
+ *         the first page of them. */
 static void assoc_candidates(struct desktop_associations *p)
 {
     p->count = 0; p->app_page = 0;
@@ -94,7 +105,7 @@ static void assoc_controls(struct desktop_associations *p, assoc_layout_t l)
     tiku_dialog_end(&p->dialog);
 }
 
-/** @brief Reflect focus, press capture, and disabled state consistently. */
+/** @brief A control's drawing flags: focused, pressed, disabled. */
 static unsigned assoc_flags(struct desktop_associations *p, int id)
 {
     unsigned flags = tiku_dialog_focused(&p->dialog, id) ? TIKU_S_FOCUS : 0;
@@ -105,14 +116,15 @@ static unsigned assoc_flags(struct desktop_associations *p, int id)
     return flags;
 }
 
-/** @brief Paint names inside bounded rows, including custom registry labels. */
+/** @brief Paint one line of text, clipped to @p r. */
 static void assoc_line(tiku_surface_t *s, tiku_rect_t r, const char *text,
                         tiku_rgb_t color)
 {
     tiku_text_line_draw(s, r, TIKU_MEASURE_PLAIN, text, color);
 }
 
-/** @brief Show the selected type's MIME identity and unavailable choices. */
+/** @brief Draw the selected type's MIME type, and a note on Save, or on its
+ *         preferred application being unavailable. */
 static void assoc_detail(struct desktop_associations *p, tiku_surface_t *s,
                          assoc_layout_t l)
 {
@@ -136,7 +148,10 @@ static void assoc_detail(struct desktop_associations *p, tiku_surface_t *s,
                tiku_dim(TIKU_C_TEXT, TIKU_C_PANEL));
 }
 
-/** @brief Two compact wells separate the document from its default app. */
+/**
+ * @brief Draw the window: the file types and the applications that open the
+ *        selected one side by side, the paging buttons, Cancel and Save.
+ */
 static void assoc_draw(tiku_window_t *w, tiku_surface_t *s,
                        tiku_rect_t c, void *ctx)
 {
@@ -224,13 +239,14 @@ static int assoc_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     return 1;
 }
 
-/** @brief The current preferences window, if any. */
+/** @brief The File Associations window, or NULL. */
 tiku_window_t *desktop_associations_handle(desktop_t *app)
 {
     return app->associations ? app->associations->window : NULL;
 }
 
-/** @brief Closing discards pending choices without touching the registry. */
+/** @brief Close the window; unsaved choices are dropped and the store is
+ *         not touched. */
 void desktop_associations_close(desktop_t *app)
 {
     tiku_window_t *w = desktop_associations_handle(app);
@@ -240,7 +256,8 @@ void desktop_associations_close(desktop_t *app)
     desktop_damage_all(app);
 }
 
-/** @brief Load current preferences on each new opening; otherwise raise. */
+/** @brief Open the window with the saved associations loaded, or raise it
+ *         when it is open. */
 void desktop_associations_open(desktop_t *app)
 {
     if (!app->associations) {
