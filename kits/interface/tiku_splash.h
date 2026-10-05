@@ -49,4 +49,11 @@ void tiku_splash_paint(tiku_surface_t *s, const char *name,
                             const char *version, const char *status,
                             const tiku_surface_t *art);
 
+/**
+ * @brief The Apache License's notice, small, under the name and the status
+ *        of a splash screen painted with no lines: what a program says
+ *        while it arrives, the About box keeping the credits.
+ */
+void tiku_splash_license(tiku_surface_t *s);
+
 #endif /* TIKU_SPLASH_H_ */

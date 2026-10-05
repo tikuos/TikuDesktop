@@ -41,35 +41,6 @@ tiku_ide_splash_art_load(void)
     return NULL;
 }
 
-#ifndef TIKU_IDE_C
-/** @brief Apache's standard notice in the splash's otherwise empty lower area. */
-void
-tiku_ide_announce_license(tiku_surface_t *sf)
-{
-    /* Verbatim boilerplate from the repository LICENSE, without its
-     * copyright placeholder; only the line breaks differ. */
-    static const char *const notice[] = {
-        "Licensed under the Apache License, Version 2.0 (the \"License\");",
-        "you may not use this file except in compliance with the License. You may obtain a copy of",
-        "the License at http://www.apache.org/licenses/LICENSE-2.0",
-        "Unless required by applicable law or agreed to in writing, software distributed under the",
-        "License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF",
-        "ANY KIND, either express or implied. See the License for the specific language governing",
-        "permissions and limitations under the License."
-    };
-    const tiku_font_t *small = tiku_font_at(10);
-    /* Same banner/name/status metrics as the shared splash painter, with
-     * a four-pixel gap before the fine print. The bottom-right mark stays. */
-    int y = sf->h / 2 + 12 + tiku_font_at(26)->height + 6 +
-            tiku_font_plain()->height + 4;
-    for (size_t i = 0; i < sizeof notice / sizeof *notice; i++) {
-        tiku_text(sf, small, 18, y + small->ascent, notice[i],
-                  TIKU_RGB(128, 128, 128));
-        y += small->height - 1; /* Compact leading keeps the footer clear. */
-    }
-}
-#endif
-
 /** @brief This program's splash screen: its name, and the words that are true. */
 void
 tiku_ide_announce_paint_art(tiku_surface_t *sf, const char *status,
@@ -90,7 +61,7 @@ tiku_ide_announce_paint_art(tiku_surface_t *sf, const char *status,
          * lower space for a quiet license notice rather than credits. */
         tiku_splash_paint(sf, APP_NAME, NULL, 0, NULL, status, art);
 #ifndef TIKU_IDE_C
-        tiku_ide_announce_license(sf);
+        tiku_splash_license(sf);
 #endif
         return;
     }

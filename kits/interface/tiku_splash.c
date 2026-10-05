@@ -166,3 +166,31 @@ tiku_splash_paint(tiku_surface_t *s, const char *name,
     tiku_logo_paint(s, (tiku_rect_t){ s->w - 34, s->h - 34, 22, 22 },
                          0u);
 }
+
+void
+tiku_splash_license(tiku_surface_t *s)
+{
+    /* Verbatim boilerplate from the repository LICENSE, without its
+     * copyright placeholder; only the line breaks differ. */
+    static const char *const notice[] = {
+        "Licensed under the Apache License, Version 2.0 (the \"License\");",
+        "you may not use this file except in compliance with the License. You may obtain a copy of",
+        "the License at http://www.apache.org/licenses/LICENSE-2.0",
+        "Unless required by applicable law or agreed to in writing, software distributed under the",
+        "License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF",
+        "ANY KIND, either express or implied. See the License for the specific language governing",
+        "permissions and limitations under the License."
+    };
+    const tiku_font_t *small = tiku_font_at(10);
+    /* The painter's own band, name and status metrics, then a four-pixel
+     * gap before the fine print. */
+    int y = band_h(s->h) + 12 + tiku_font_at(26)->height + 6 +
+            tiku_font_plain()->height + 4;
+    size_t i;
+
+    for (i = 0; i < sizeof notice / sizeof *notice; i++) {
+        tiku_text(s, small, 18, y + small->ascent, notice[i],
+                  TIKU_RGB(128, 128, 128));
+        y += small->height - 1; /* Compact leading keeps the footer clear. */
+    }
+}

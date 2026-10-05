@@ -460,7 +460,6 @@ void tiku_ide_picked(void *state, uint32_t window, const char *path);
 
 /* Splash. */
 tiku_surface_t * tiku_ide_splash_art_load(void);
-void tiku_ide_announce_license(tiku_surface_t *sf);
 void tiku_ide_announce_paint_art(tiku_surface_t *sf, const char *status, const tiku_surface_t *art);
 void tiku_ide_about_open(ide_t *st);
 void tiku_ide_about_drop(ide_t *st);

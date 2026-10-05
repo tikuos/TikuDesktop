@@ -82,6 +82,31 @@ main(void)
               "and the field below it is still paper");
         tiku_surface_free(art);
     }
+    {
+        /* The license notice: grey fine print under the status, in the
+         * room the credits would have, the band left as it was. */
+        tiku_surface_t *c = tiku_surface_new(560, 300, TIKU_C_DOC);
+        tiku_surface_t *d = tiku_surface_new(560, 300, TIKU_C_DOC);
+        int x, grey = 0, band = 0;
+
+        tiku_splash_paint(c, "Something", NULL, 0, NULL, "gathering…", NULL);
+        tiku_splash_paint(d, "Something", NULL, 0, NULL, "gathering…", NULL);
+        tiku_splash_license(d);
+        for (y = 0; y < 300; y++) {
+            for (x = 0; x < 560; x++) {
+                if (c->px[y * 560 + x] == d->px[y * 560 + x]) {
+                    continue;
+                }
+                band += y < 150;
+                grey += y > 200 && x < 520;
+            }
+        }
+        check(grey > 200 && band == 0,
+              "the license notice is fine print under the status, and the "
+              "band is untouched");
+        tiku_surface_free(c);
+        tiku_surface_free(d);
+    }
     tiku_surface_free(a);
     tiku_surface_free(b);
     printf("\n%s\n", fails ? "FAILURES" : "the splash screen holds its shape");

@@ -1179,7 +1179,7 @@ static void test_splash_license(void)
         snprintf(path, sizeof path, "/tmp/tikubasic-splash-license-%d.png", size);
         assert(!tiku_surface_png(s, path));
         s->record = dl;
-        tiku_ide_announce_license(s);
+        tiku_splash_license(s);
         s->record = NULL;
         tiku_dl_say(dl, words, sizeof words);
         assert(strstr(words, "Apache License, Version 2.0"));
