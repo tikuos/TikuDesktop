@@ -1,7 +1,9 @@
 # Devices Preferences
 
-Open **Settings → Devices Preferences…** in TikuDesktop's Deskbar. Choose a
-connected device by name/icon, choose a setting, and press Apply (or Sync now).
+Open **Settings → Devices Preferences…** in TikuDesktop's Deskbar, or
+**Devices Preferences…** in the menu of a board's chip on the menu bar,
+which opens on that board. Choose a connected device by name/icon, choose a
+setting, and press Apply (or Sync now).
 Refresh devices reloads the mount list and the selected device's values.
 Device connection and the default execution target remain in the Devices menu.
 
