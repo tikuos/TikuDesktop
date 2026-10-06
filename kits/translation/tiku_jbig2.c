@@ -25,7 +25,6 @@
 #define SEGS_MAX    65536           /* segments one decode holds        */
 #define REFS_MAX    4096            /* segments one refers to           */
 #define PIXELS_MAX  (1LL << 27)     /* every bitmap's pixels together   */
-#define WORK_MAX    (1LL << 29)     /* pixels one decode draws, at most */
 #define SIDE_MAX    (1L << 24)      /* a page's or a region's side      */
 
 /** @brief Big-endian 16 bits. */
@@ -84,7 +83,7 @@ int
 jb_work(jb_dec_t *jd, long long pixels)
 {
     jd->work += pixels;
-    return jd->work > WORK_MAX;
+    return jd->work > JB_WORK_MAX;
 }
 
 jb_seg_t *

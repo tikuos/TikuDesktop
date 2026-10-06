@@ -20,6 +20,9 @@
 
 #include "tiku_mq.h"
 
+/** @brief Maximum number of bitmap pixels composed by one decode. */
+#define JB_WORK_MAX (1LL << 29)
+
 /** @brief A bitmap, one byte a pixel, 1 black; outside it is white. */
 typedef struct {
     int            w, h;            /**< its size in pixels             */
@@ -168,8 +171,8 @@ typedef struct {
 /** @brief A bitmap the decode keeps until its end; NULL past the
  *         budget. */
 jb_bm_t *jb_new(jb_dec_t *jd, long w, long h, int fill);
-/** @brief @p pixels more drawn; nonzero once the decode's bound is
- *         passed: a small stream placing a great deal is not drawn. */
+/** @brief Count @p pixels more as drawn.
+ *  @return Nonzero once the decode exceeds JB_WORK_MAX pixels. */
 int jb_work(jb_dec_t *jd, long long pixels);
 /** @brief Referred segment @p i of @p s, decoded before it, or NULL. */
 jb_seg_t *jb_referred(jb_dec_t *jd, const jb_seg_t *s, int i);

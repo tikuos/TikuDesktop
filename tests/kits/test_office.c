@@ -396,6 +396,9 @@ metafile_tests(void)
 
 /* The colours the equation fixtures give the parts the tests look for:
  * gen_office.py's RED ... MAGENTA, FLOATING and SIGMA. */
+/** @brief Pixels a part needs to count as drawn; one stray pixel does not. */
+#define MIN_INK 2
+
 enum { C_RED, C_BLUE, C_GREEN, C_ORANGE, C_PURPLE, C_TEAL, C_BROWN,
        C_AZURE, C_OLIVE, C_MAGENTA, C_FLOAT, C_SIGMA, C_COUNT };
 
@@ -403,15 +406,20 @@ enum { C_RED, C_BLUE, C_GREEN, C_ORANGE, C_PURPLE, C_TEAL, C_BROWN,
  *         colour the fixtures' parts take lie: their mean place into
  *         @p x and @p y, their count into @p n. */
 static void
-places(tiku_pdf_t *doc, int p, double *x, double *y, int *n)
+places(tiku_pdf_t *doc, int p, double *x, double *y, int *n, int *h)
 {
     static const uint32_t rgb[C_COUNT] = {
         0xff0000u, 0x0000ffu, 0x00a000u, 0xff8000u, 0x8000ffu, 0x00a0a0u,
         0xa05000u, 0x0080ffu, 0xa0a000u, 0xc000c0u, 0x804080u,
         0x600060u};
     tiku_pdf_pixmap_t pm;
+    int top[C_COUNT], bottom[C_COUNT];
     int i, k, d;
 
+    for (k = 0; k < C_COUNT; k++) {
+        top[k] = -1;
+        bottom[k] = -1;
+    }
     memset(n, 0, C_COUNT * sizeof *n);
     memset(x, 0, C_COUNT * sizeof *x);
     memset(y, 0, C_COUNT * sizeof *y);
@@ -427,12 +435,19 @@ places(tiku_pdf_t *doc, int p, double *x, double *y, int *n)
                 x[k] += i % pm.w;
                 y[k] += i / pm.w;
                 n[k]++;
+                if (top[k] < 0) {
+                    top[k] = i / pm.w;
+                }
+                bottom[k] = i / pm.w;
             }
         }
     }
     for (k = 0; k < C_COUNT; k++) {
         x[k] /= n[k] > 0 ? n[k] : 1;
         y[k] /= n[k] > 0 ? n[k] : 1;
+        if (h != NULL) {
+            h[k] = n[k] > 0 ? bottom[k] - top[k] + 1 : 0;
+        }
     }
     tiku_pdf_pixmap_free(&pm);
 }
@@ -445,19 +460,28 @@ static int
 two_dimensions(tiku_pdf_t *doc, int all)
 {
     double x[C_COUNT], y[C_COUNT];
-    int n[C_COUNT], frac, sum;
+    int n[C_COUNT], h[C_COUNT], frac, sum;
 
-    places(doc, 0, x, y, n);
-    frac = n[C_RED] > 20 && n[C_BLUE] > 20 && y[C_RED] < y[C_BLUE] - 6 &&
-           fabs(x[C_RED] - x[C_BLUE]) < 12;
-    sum = n[C_PURPLE] > 5 && n[C_SIGMA] > 20 && n[C_ORANGE] > 5 &&
-          n[C_GREEN] > 5 && y[C_PURPLE] < y[C_SIGMA] &&
+    places(doc, 0, x, y, n, h);
+    /* Ink area varies with the host's faces, so a part needs only MIN_INK
+     * pixels; its size is checked through its height against its
+     * neighbours' instead. */
+    frac = n[C_RED] >= MIN_INK && n[C_BLUE] >= MIN_INK &&
+           y[C_RED] < y[C_BLUE] - 6 && fabs(x[C_RED] - x[C_BLUE]) < 12;
+    sum = n[C_PURPLE] >= MIN_INK && n[C_SIGMA] >= MIN_INK &&
+          n[C_ORANGE] >= MIN_INK && n[C_GREEN] >= MIN_INK &&
+          2 * h[C_SIGMA] > 3 * h[C_PURPLE] &&
+          2 * h[C_SIGMA] > 3 * h[C_ORANGE] &&
+          y[C_PURPLE] < y[C_SIGMA] &&
           y[C_SIGMA] < y[C_ORANGE] && fabs(x[C_PURPLE] - x[C_SIGMA]) < 12 &&
           fabs(x[C_ORANGE] - x[C_SIGMA]) < 12 &&
           x[C_GREEN] > x[C_SIGMA] + 10;
-    return frac && sum && (!all || (n[C_TEAL] > 20 && n[C_BROWN] > 5 &&
-                                    n[C_AZURE] > 5 && n[C_OLIVE] > 5 &&
-                                    n[C_MAGENTA] > 3 &&
+    return frac && sum && (!all || (n[C_TEAL] >= MIN_INK &&
+                                    n[C_BROWN] >= MIN_INK &&
+                                    n[C_AZURE] >= MIN_INK &&
+                                    n[C_OLIVE] >= MIN_INK &&
+                                    n[C_MAGENTA] >= MIN_INK &&
+                                    h[C_MAGENTA] < h[C_OLIVE] &&
                                     x[C_BROWN] < x[C_AZURE] - 10 &&
                                     y[C_BROWN] < y[C_AZURE] - 6 &&
                                     y[C_MAGENTA] < y[C_OLIVE] - 3 &&
@@ -478,7 +502,7 @@ math_tests(void)
     check(two_dimensions(w, 1), "OF-048", "Word's equations in two "
           "dimensions: a numerator over its denominator, limits over and "
           "under a sum, a matrix's corners, a power over its base");
-    places(o, 0, x, y, n);
+    places(o, 0, x, y, n, NULL);
     check(two_dimensions(o, 1) && n[C_FLOAT] > 20, "OF-049",
           "OpenDocument's formula objects set the same from their MathML; "
           "a floating one centred in its frame");

@@ -17,7 +17,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "tiku_jbig2.h"
 #include "tiku_pdf.h"
@@ -322,7 +321,8 @@ damage_test(void)
     };
     unsigned long seed = 0x5eed2b16ul;
     unsigned char *copy, *out;
-    clock_t start;
+    jb_dec_t budget = {0};
+    long made;
     size_t i;
     int k, w, h;
 
@@ -353,12 +353,25 @@ damage_test(void)
     out = NULL;
     check(tiku_jbig2_decode(NULL, 0, huge, sizeof huge, &out, OMAX, &w, &h) <
           0 && out == NULL, "a page too big to make is refused, not made");
-    start = clock();
-    (void)tiku_jbig2_decode(NULL, 0, jb_bomb, sizeof jb_bomb, &out, OMAX, &w,
-                            &h);
+    check(!jb_work(&budget, JB_WORK_MAX) && budget.work == JB_WORK_MAX,
+          "the exact work budget is accepted");
+    check(jb_work(&budget, 1) && budget.work == JB_WORK_MAX + 1,
+          "the first pixel past the work budget is refused");
+    made = tiku_jbig2_decode(NULL, 0, jb_bomb, sizeof jb_bomb, &out, OMAX,
+                             &w, &h);
+    check(made > 0 && made <= OMAX && out != NULL && w == 200 && h == 200,
+          "a billion-pixel placement stream returns its bounded page");
+    {
+        long j;
+        int white = out != NULL;
+
+        for (j = 0; white && j < made; j++) {
+            white = out[j] == 0;
+        }
+        check(white, "and the decode stops at the work budget: the "
+              "placements past it draw nothing, so the page stays white");
+    }
     free(out);
-    check((double)(clock() - start) / CLOCKS_PER_SEC < 3.0,
-          "a small stream placing billions of pixels stops at the bound");
     check(1, "every stream cut short or changed reads without harm");
 }
 
