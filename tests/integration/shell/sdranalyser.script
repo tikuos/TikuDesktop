@@ -79,13 +79,13 @@ wait 10
 expect-pixel 209 299 ffffff
 expect-pixel 840 95 466058
 note Manual reference level disables automatic spectrum scaling
-click 155 371
+click 155 347
 key 1
 key 2
 key 0
 key Return
 wait 4
-expect-pixel 209 347 ffffff
+expect-pixel 209 323 ffffff
 note Seek after playback ends, then step and change playback speed
 click 500 586
 wait 10

@@ -26,8 +26,6 @@
 #define MARK_INK   TIKU_RGB(0, 128, 96)
 #define MARK_DIM   TIKU_RGB(70, 96, 88)
 #define BLE_INK    TIKU_RGB(160, 80, 160)
-#define ZB_INK     TIKU_RGB(60, 140, 60)
-#define WIFI_INK   TIKU_RGB(60, 110, 180)
 #define REC_INK    TIKU_RGB(214, 48, 49)
 
 #define PANEL_X    8
@@ -41,7 +39,6 @@
 #define AXIS_W     52               /* the level scale, left of the grid */
 #define BAR_H      76               /* transport, status, pointer readout */
 #define NOTE_H     16               /* an annotation row                */
-#define RULER      12               /* a channel plan's row             */
 
 /* The traces' colours, by trace: black, red and blue, on white. */
 static const tiku_rgb_t trace_ink[SDR_TRACES] = {
@@ -54,7 +51,7 @@ static const char *const type_short[SDR_T_TYPES] = {
 /* The panel's sections: a bar, then rows. */
 enum { S_FREQ, S_TRACE, S_MARK, S_SHOW, S_RECEIVER, S_MEASURE, SECTIONS };
 static const struct { const char *name; int rows; } section[SECTIONS] = {
-    {"Frequency", 5}, {"Traces", 4}, {"Markers", 7}, {"Display", 8},
+    {"Frequency", 5}, {"Traces", 4}, {"Markers", 7}, {"Display", 7},
     {"Receiver", 6}, {"Measurements", 8}
 };
 /* Each row's name, by section, "" for none. */
@@ -62,7 +59,7 @@ static const char *const row_name[SECTIONS][8] = {
     {"Center", "Span", "Start", "Stop", "", "", ""},
     {"Trace", "Type", "Avg count", "", "", "", ""},
     {"Marker", "On trace", "", "Freq", "", "", ""},
-    {"", "", "", "Ref", "dB/div", "", "Floor", "Ceiling"},
+    {"", "", "Ref", "dB/div", "", "Floor", "Ceiling", ""},
     {"", "Index", "", "", "", ""},
     {"", "", "Threshold", "Pre (s)", "Post (s)", "", "Bookmark", ""}
 };
@@ -145,13 +142,12 @@ tiku_rect_t sdr_control_rect(const sdr_t *st, int id)
     case CMD_MARK_CENTER: return button_at(st, S_MARK, 6, 0, 2);
     case CMD_MARK_CLEAR:  return button_at(st, S_MARK, 6, 1, 2);
     case CMD_WATERFALL: return row_at(st, S_SHOW, 0, PANEL_X + 4, PANEL_W - 8);
-    case CMD_PLANS:     return row_at(st, S_SHOW, 1, PANEL_X + 4, PANEL_W - 8);
-    case CMD_SCALE_AUTO: return row_at(st, S_SHOW, 2, PANEL_X + 4, PANEL_W - 8);
-    case CMD_FIELD + SDR_F_REF: return row_at(st, S_SHOW, 3, x, fw);
-    case CMD_FIELD + SDR_F_DIV: return row_at(st, S_SHOW, 4, x, fw);
-    case CMD_COLOR_AUTO: return row_at(st, S_SHOW, 5, PANEL_X + 4, PANEL_W - 8);
-    case CMD_FIELD + SDR_F_FLOOR: return row_at(st, S_SHOW, 6, x, fw);
-    case CMD_FIELD + SDR_F_CEILING: return row_at(st, S_SHOW, 7, x, fw);
+    case CMD_SCALE_AUTO: return row_at(st, S_SHOW, 1, PANEL_X + 4, PANEL_W - 8);
+    case CMD_FIELD + SDR_F_REF: return row_at(st, S_SHOW, 2, x, fw);
+    case CMD_FIELD + SDR_F_DIV: return row_at(st, S_SHOW, 3, x, fw);
+    case CMD_COLOR_AUTO: return row_at(st, S_SHOW, 4, PANEL_X + 4, PANEL_W - 8);
+    case CMD_FIELD + SDR_F_FLOOR: return row_at(st, S_SHOW, 5, x, fw);
+    case CMD_FIELD + SDR_F_CEILING: return row_at(st, S_SHOW, 6, x, fw);
     case CMD_GAIN_AUTO: return row_at(st, S_RECEIVER, 0, PANEL_X + 4, PANEL_W - 8);
     case CMD_FIELD + SDR_F_GAIN: return row_at(st, S_RECEIVER, 1, x, fw);
     case CMD_GAIN_READ: return button_at(st, S_RECEIVER, 2, 0, 1);
@@ -194,10 +190,9 @@ void sdr_layout(const sdr_t *st, tiku_rect_t *plot, tiku_rect_t *fall)
     if (st->fall_on && st->occupancy.visible && fh < 220) fh = 220;
     int ft = st->fall_on ? top + fh + 6 : top;  /* the frame's top */
     int py = ft + 2 * NOTE_H + 6;
-    int plans = st->plans_on ? 3 * RULER + 6 : 0;
 
     *fall = (tiku_rect_t){x, top, w, fh};
-    *plot = (tiku_rect_t){x, py, w, bottom - 2 * NOTE_H - 6 - plans - py};
+    *plot = (tiku_rect_t){x, py, w, bottom - 2 * NOTE_H - 6 - py};
 }
 
 const char *sdr_label(const sdr_t *st, int command)
@@ -218,7 +213,6 @@ const char *sdr_label(const sdr_t *st, int command)
     case CMD_MARK_CENTER: return "To Center";
     case CMD_MARK_CLEAR: return "All Off";
     case CMD_WATERFALL: return "Spectrogram";
-    case CMD_PLANS: return "Channel plans";
     case CMD_PAUSE: return st->paused ||
         (st->state != SDR_RUNNING && !st->play.file) ? "Run" : "Pause";
     case CMD_RECORD: return st->rec.file ? "Recording" : "Record";
@@ -427,7 +421,7 @@ void sdr_controls(sdr_t *st)
         {CMD_PEAK_RIGHT, TIKU_DIALOG_BUTTON},
         {CMD_MARK_CENTER, TIKU_DIALOG_BUTTON},
         {CMD_MARK_CLEAR, TIKU_DIALOG_BUTTON},
-        {CMD_WATERFALL, TIKU_DIALOG_TOGGLE}, {CMD_PLANS, TIKU_DIALOG_TOGGLE},
+        {CMD_WATERFALL, TIKU_DIALOG_TOGGLE},
         {CMD_SCALE_AUTO, TIKU_DIALOG_TOGGLE}, {CMD_COLOR_AUTO, TIKU_DIALOG_TOGGLE},
         {CMD_FIELD + SDR_F_REF, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_DIV, TIKU_DIALOG_INPUT},
@@ -547,48 +541,6 @@ static void graticule(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
                FRAME_INK);
 }
 
-/** @brief One channel plan's row beneath the graticule: its name at the
- *         left, a tick and a number at each channel. */
-static void ruler(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m,
-                  int y, const char *name, const int *num, const double *mhz,
-                  int count, tiku_rgb_t ink)
-{
-    const tiku_font_t *f = tiku_font_plain();
-    char t[8];
-
-    tiku_text(s, f, AREA_X + 6, y + 10, name, DIM_INK);
-    for (int i = 0; i < count; i++) {
-        int x = x_of(r, m, mhz[i]);
-        if (x < r.x || x >= r.x + r.w) continue;
-        snprintf(t, sizeof t, "%d", num[i]);
-        tiku_vline(s, x, y, 3, ink);
-        tiku_text(s, f, x - tiku_text_width(f, t) / 2, y + 12, t, ink);
-    }
-}
-
-/** @brief The band's channel plans beneath the graticule. */
-static void rulers(tiku_surface_t *s, tiku_rect_t r, const sdr_model_t *m)
-{
-    int num[16];
-    double mhz[16];
-    int y = r.y + r.h + 3;
-
-    for (int c = 1; c <= 13; c++) {
-        num[c - 1] = c;
-        mhz[c - 1] = 2407.0 + 5.0 * c;
-    }
-    ruler(s, r, m, y, "Wi-Fi", num, mhz, 13, WIFI_INK);
-    num[0] = 37; mhz[0] = 2402.0;
-    num[1] = 38; mhz[1] = 2426.0;
-    num[2] = 39; mhz[2] = 2480.0;
-    ruler(s, r, m, y + RULER, "BLE", num, mhz, 3, BLE_INK);
-    for (int z = 11; z <= 26; z++) {
-        num[z - 11] = z;
-        mhz[z - 11] = 2405.0 + 5.0 * (z - 11);
-    }
-    ruler(s, r, m, y + 2 * RULER, "15.4", num, mhz, 16, ZB_INK);
-}
-
 /** @brief A dotted line down the graticule at each marker in the view. */
 static void marker_lines(tiku_surface_t *s, tiku_rect_t r,
                          const sdr_model_t *m)
@@ -660,8 +612,8 @@ static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
 {
     const sdr_model_t *m = &st->model;
     tiku_surface_t *s = st->surface;
-    int top = f.y + 2, foot = r.y + r.h + (st->plans_on ? 3 * RULER + 6 : 0)
-                              + 3, cx = r.x + r.w / 2, right = f.x + f.w - 8;
+    int top = f.y + 2, foot = r.y + r.h + 3, cx = r.x + r.w / 2;
+    int right = f.x + f.w - 8;
     char t[96], a[24], b[24];
 
     snprintf(t, sizeof t, "Ref %.0f dB", (double)m->scale_hi);
@@ -716,12 +668,10 @@ static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
 
 /** @brief The spectrum's frame: white, with the graticule and its notes;
  *         once a frame is in, a 40 MS/s spectrum shaded outside its flat
- *         middle, BLE's advertising channels and the channel plans when
- *         shown, then the traces and the markers. */
+ *         middle, then the traces and the markers. */
 static void spectrum(sdr_t *st, tiku_rect_t r)
 {
     const sdr_model_t *m = &st->model;
-    static const double adv[3] = {2402.0, 2426.0, 2480.0};
     tiku_rect_t f = frame_rect(st);
 
     tiku_fill(st->surface, f, PLOT_BG);
@@ -738,15 +688,6 @@ static void spectrum(sdr_t *st, tiku_rect_t r)
         if (b < r.x + r.w)
             tiku_veil(st->surface, (tiku_rect_t){b, r.y, r.x + r.w - b, r.h},
                       TIKU_RGB(0, 0, 0), 0.05f);
-    }
-    if (st->plans_on) {
-        for (int i = 0; i < 3; i++) {
-            int x = x_of(r, m, adv[i]);
-            if (x >= r.x && x < r.x + r.w)
-                for (int y = r.y; y < r.y + r.h; y += 6)
-                    tiku_vline(st->surface, x, y, 3, BLE_INK);
-        }
-        rulers(st->surface, r, m);
     }
     marker_lines(st->surface, r, m);
     tiku_clip_set(st->surface, r);
@@ -978,11 +919,10 @@ static void controls(sdr_t *st)
             if (id == CMD_TRACK ? m->track : m->mark[m->mark_sel].on)
                 flags |= TIKU_S_ON;
             tiku_ui_checkbox(st->surface, r, sdr_label(st, id), flags);
-        } else if (id == CMD_WATERFALL || id == CMD_PLANS ||
+        } else if (id == CMD_WATERFALL ||
                    id == CMD_SCALE_AUTO || id == CMD_COLOR_AUTO ||
                    id == CMD_GAIN_AUTO) {
             if (id == CMD_WATERFALL ? st->fall_on :
-                id == CMD_PLANS ? st->plans_on :
                 id == CMD_SCALE_AUTO ? !m->manual_scale :
                 id == CMD_COLOR_AUTO ? !m->manual_color :
                 st->gain_known == 1 && st->gain_value < 0)

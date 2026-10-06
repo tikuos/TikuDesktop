@@ -41,9 +41,7 @@ desktop hoists it into its Tiku menu.
   centre.  Their readings stand in the graticule's corner, each against
   M1.
 - **Display**: the spectrogram on or off (the spectrum then takes its
-  room), and the band's channel plans beneath the graticule -- Wi-Fi
-  channels 1-13, BLE's advertising channels 37-39 and 802.15.4 channels
-  11-26.
+  room).
 - The graticule's scale: Ref on whole tens over the traces shown, 2, 5, 10 or
   20 dB a division, moved only when the traces leave its room; the frame
   says RBW and bin (the FFT's spacing), the rate, the gain and the range.

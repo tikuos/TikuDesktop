@@ -1284,8 +1284,8 @@ static void choose(sdr_t *st, int c, int down)
  *         menu, the count typed, every level under the pointer.  Markers:
  *         out on the highest peak, Next Peak, a drag let go on a peak,
  *         another from the list, a press near one, a frequency typed,
- *         Delete, All Off, To Center.  Display: the spectrogram off, the
- *         plans on.  In a sweep, markers take a press instead of tuning. */
+ *         Delete, All Off, To Center.  Display: the spectrogram off.  In a
+ *         sweep, markers take a press instead of tuning. */
 static void navigation_tests(const tiku_app_services_t *services, const char *dir)
 {
     char path[512], line[1200];
@@ -1504,7 +1504,7 @@ static void drawn(const tiku_app_services_t *services)
 
     st = started(services);
     m = &st->model;
-    assert(st->fall_on && !st->plans_on && !sdr_marks_out(m));
+    assert(st->fall_on && !sdr_marks_out(m));
     assert(!sdr_enabled(st, CMD_NEXT_PEAK) &&
            !sdr_enabled(st, CMD_FIELD + SDR_F_MARK));
     assert(!sdr_enabled(st, CMD_PAUSE) && st->dialog.focus == CMD_CONNECT);
@@ -1570,7 +1570,7 @@ static void drawn(const tiku_app_services_t *services)
     click_control(st, CMD_MARK_CLEAR);
     assert(!sdr_marks_out(m) && offered(CMD_MARK_CLEAR) == 0);
 
-    /* The spectrogram off: the spectrum takes its room; the plans on. */
+    /* The spectrogram off: the spectrum takes its room. */
     click_control(st, CMD_SECTION + SDR_S_DISPLAY);
     assert(sdr_control_rect(st, CMD_MARK_ACTIVE).w == 0);
     type_field(st, SDR_F_REF, "130");
@@ -1606,10 +1606,6 @@ static void drawn(const tiku_app_services_t *services)
     sdr_paint(st);
     assert(tiku_peek(st->surface, r.x + r.w - 34 + 8, r.y + 2 + 9) ==
            TIKU_C_SELECT);
-    sdr_layout(st, &was, &fall);
-    click_control(st, CMD_PLANS);
-    sdr_layout(st, &plot, &fall);
-    assert(st->plans_on && plot.h < was.h && marked(CMD_PLANS) == 1);
 
     /* Marker to Center: the view moved under it, its span kept. */
     assert(key_in(st, '1', "1") == 0 && m->mark_sel == 0);

@@ -55,7 +55,8 @@ static int setup_write(FILE *f, void *ctx)
     fprintf(f, "TikuSDR-setup 1\n%.9g %.9g\n%d %d %u %d\n"
             "%d %d %d %d %d\n%d %.9g %.9g %d %.9g %.9g\n"
             "%.9g %d %d %d\nEND\n", m->start, m->stop,
-            st->fall_on, st->fall_percent, st->collapsed, st->plans_on,
+            st->fall_on, st->fall_percent, st->collapsed,
+            0,                          /* once the channel plans' switch */
             m->type[0], m->type[1], m->type[2], m->avg_count, m->track,
             m->manual_scale, (double)m->scale_hi, (double)m->div,
             m->manual_color, (double)m->floor_db, (double)m->ceiling_db,
@@ -114,7 +115,7 @@ int sdr_setup_load(sdr_t *st, const char *path)
     double *range = st->model.sweep ? st->wide_view : st->live_view;
     range[0] = a; range[1] = b;
     st->fall_on = fall; st->fall_percent = percent;
-    st->collapsed = collapsed; st->plans_on = plans;
+    st->collapsed = collapsed;          /* plans is read, and left unused */
     memcpy(st->model.type, type, sizeof type);
     st->model.avg_count = avg; st->model.track = track;
     st->model.manual_scale = manual; st->model.scale_hi = (float)hi;

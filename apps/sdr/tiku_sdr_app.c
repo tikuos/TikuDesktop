@@ -66,8 +66,8 @@ static int device_rows(sdr_t *st, tiku_menu_list_t *menu)
 
 /** @brief Write @p command's words for a menu: the traces, the trace types
  *         and the markers by name; the menus' own words for the file
- *         commands, Clear, the marker commands and Channel Plans; and
- *         sdr_label()'s for the rest. */
+ *         commands, Clear and the marker commands; and sdr_label()'s for
+ *         the rest. */
 static void menu_label(const sdr_t *st, int command, char *out, size_t max)
 {
     const char *t = NULL;
@@ -103,7 +103,6 @@ static void menu_label(const sdr_t *st, int command, char *out, size_t max)
     else if (command == CMD_PEAK_RIGHT) t = "Next Peak Right";
     else if (command == CMD_MARK_CENTER) t = "Marker to Center";
     else if (command == CMD_MARK_CLEAR) t = "All Markers Off";
-    else if (command == CMD_PLANS) t = "Channel Plans";
     else if (command == CMD_LIVE) t = "Live";
     else if (command == CMD_SPEED)
         snprintf(out, max, "Speed: %.2gx (Cycle)", st->play.speed > 0 ?
@@ -129,7 +128,6 @@ static int menu_marked(const sdr_t *st, int c)
            (c == CMD_MARK_ACTIVE && m->mark[m->mark_sel].on) ||
            (c == CMD_TRACK && m->track) ||
            (c == CMD_WATERFALL && st->fall_on) ||
-           (c == CMD_PLANS && st->plans_on) ||
            (c == CMD_GAPS && st->play.skip_gaps) ||
            (c == CMD_REF_SHOW && st->reference.visible) ||
            (c == CMD_OCCUPANCY && st->occupancy.visible) ||
@@ -172,7 +170,6 @@ static unsigned menu_state(const sdr_t *st)
                  (unsigned)sdr_model_is_live(m) << 9 |
                  (unsigned)(st->alert.open != 0) << 11 |
                  (unsigned)(st->fall_on != 0) << 12 |
-                 (unsigned)(st->plans_on != 0) << 13 |
                  (unsigned)(m->track != 0) << 14;
 
     v = v * 31u + (unsigned)st->trace_sel;
@@ -200,7 +197,7 @@ static unsigned menu_state(const sdr_t *st)
 static void publish(sdr_t *st)
 {
     static const int sdr[] = {CMD_ABOUT, 0, CMD_CONNECT, 0, CMD_LIVE, 0,
-                              CMD_PAUSE, 0, CMD_WATERFALL, CMD_PLANS, 0,
+                              CMD_PAUSE, 0, CMD_WATERFALL, 0,
                               CMD_ZOOM_IN, CMD_ZOOM_OUT, CMD_VIEW_BACK, 0,
                               CMD_HISTORY_OLDER, CMD_HISTORY_NEWER,
                               CMD_HISTORY_LATEST, 0,
@@ -611,7 +608,6 @@ static int sdr_pick(void *state, uint32_t window, int command)
         mark(st, command);
     else if (command == CMD_MARK_REMOVE) mark(st, command);
     else if (command == CMD_WATERFALL) st->fall_on = !st->fall_on;
-    else if (command == CMD_PLANS) st->plans_on = !st->plans_on;
     else if (command == CMD_PAUSE) st->paused = !st->paused;
     else if (command == CMD_RECORD || command == CMD_REPLAY ||
              command == CMD_EXPORT || command == CMD_PICTURE)

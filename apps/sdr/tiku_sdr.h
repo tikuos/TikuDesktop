@@ -95,7 +95,7 @@ enum {
     CMD_MARK_ACTIVE, CMD_TRACK,     /* Markers: its two checkboxes      */
     CMD_PEAK_SEARCH, CMD_NEXT_PEAK, CMD_PEAK_LEFT, CMD_PEAK_RIGHT,
     CMD_MARK_CENTER, CMD_MARK_CLEAR,            /* and its buttons      */
-    CMD_WATERFALL, CMD_PLANS,       /* Display: its two switches        */
+    CMD_WATERFALL,                  /* Display: its switch              */
     CMD_RECORD, CMD_PAUSE,          /* the bar at the window's foot     */
     CMD_QUIT, CMD_REPLAY, CMD_PICTURE, CMD_PEAK, CMD_OVERLAY,
     CMD_MARK_REMOVE, CMD_ABOUT,     /* in menus or keys only            */
@@ -319,7 +319,6 @@ typedef struct {
     double live_view[2], wide_view[2];  /* the last view of each kind,
                                            start and stop: Live shows the
                                            other kind's                */
-    int plans_on;                   /* the band's channel plans shown  */
     int64_t painted_at, names_at;
     uint32_t *pic;                  /* the spectrogram's bitmap        */
     size_t pic_n;
