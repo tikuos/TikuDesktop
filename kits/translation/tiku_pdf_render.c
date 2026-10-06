@@ -25,7 +25,7 @@
 #define OPERANDS    32
 #define FORM_DEPTH  12
 #define OPS_MAX     4000000L        /* operators one page may run       */
-#define CS_KEEP     64              /* colour spaces alive per page     */
+#define CS_KEEP     (2 * GS_MAX + 1) /* colour spaces alive per page    */
 #define DASH_MAX    16
 #define SHADES_KEEP 128             /* shadings loaded per page         */
 #define TILES_KEEP  8               /* pattern cells drawn per page     */
@@ -238,16 +238,41 @@ pop(rs_t *r)
     }
 }
 
-/** @brief Keep @p cs alive for the page.  @return @p cs. */
+/** @brief Whether a state from the bottom to the top fills or strokes
+ *         in @p cs. */
+static int
+cs_used(const rs_t *r, const pdf_cs_t *cs)
+{
+    int i;
+
+    for (i = 0; i <= r->sp; i++) {
+        if (r->gs[i].fcs == cs || r->gs[i].scs == cs) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief Keep @p cs alive for the page.  When CS_KEEP are kept, the
+ *        oldest that no state uses is freed: the states use at most
+ *        2 * GS_MAX, so there is always one.  @return @p cs.
+ */
 static pdf_cs_t *
 keep_cs(rs_t *r, pdf_cs_t *cs)
 {
+    int i = 0;
+
     if (cs == NULL) {
         return NULL;
     }
     if (r->ncs == CS_KEEP) {
-        pdf_cs_free(r->cs_keep[0]);
-        memmove(r->cs_keep, r->cs_keep + 1, (CS_KEEP - 1) * sizeof cs);
+        while (i < CS_KEEP - 1 && cs_used(r, r->cs_keep[i])) {
+            i++;
+        }
+        pdf_cs_free(r->cs_keep[i]);
+        memmove(r->cs_keep + i, r->cs_keep + i + 1,
+                (size_t)(CS_KEEP - 1 - i) * sizeof cs);
         r->ncs--;
     }
     r->cs_keep[r->ncs++] = cs;

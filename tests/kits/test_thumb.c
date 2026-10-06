@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +39,15 @@ static const unsigned char png_compressed[] = {
 #include "../fixtures/image_fixtures.inc"
 
 static int fails;
+static volatile sig_atomic_t timed_out;
+
+/** @brief SIGALRM: notes that the call it interrupted had blocked. */
+static void
+on_alarm(int sig)
+{
+    (void)sig;
+    timed_out = 1;
+}
 
 static void
 check(int cond, const char *row, const char *what)
@@ -269,6 +279,31 @@ main(void)
         }
         (void)remove(pn);
     }
+    printf("\na path that is not a regular file (IV-028)\n");
+    {   /* A FIFO with no writer: opening it to read waits for one, so a
+         * one-second alarm interrupts the open if the load opens it. */
+        char fifo[128];
+        struct sigaction sa;
+        tiku_image_err_t rc = TIKU_IMG_OK;
+
+        snprintf(fifo, sizeof fifo, "/tmp/trk_thumb_fifo_%ld",
+                 (long)getpid());
+        (void)remove(fifo);
+        memset(&sa, 0, sizeof sa);
+        sa.sa_handler = on_alarm;
+        (void)sigaction(SIGALRM, &sa, NULL);
+        if (mkfifo(fifo, 0600) == 0) {
+            memset(&im, 0, sizeof im);
+            timed_out = 0;
+            (void)alarm(1);
+            rc = tiku_image_load(fifo, &im);
+            (void)alarm(0);
+            (void)remove(fifo);
+        }
+        check(rc == TIKU_IMG_BAD && !timed_out, "IV-028",
+              "a FIFO is refused at once, without waiting for a writer");
+    }
+
     printf("\nwhat earns a thumbnail (IV-028, TS-053)\n");
     tiku_thumb_init(&q);
     check(q.enabled, "TS-053", "the setting is on by default");

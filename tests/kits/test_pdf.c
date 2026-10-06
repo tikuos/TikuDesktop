@@ -528,6 +528,43 @@ shade_test(void)
 }
 
 /**
+ * @brief Fill and stroke spaces set by rg and RG, then 64 gray fills
+ *        inside q...Q, then a green fill and stroke set by sc and SC in
+ *        the spaces the restored state uses.
+ */
+static void
+cs_keep_test(void)
+{
+    pdfw_t b = {0};
+    char content[1024] = "0 0 1 rg 0 0 1 RG q ";
+    tiku_pdf_err_t err;
+    tiku_pdf_t *doc;
+    tiku_pdf_pixmap_t pm = {0, 0, NULL};
+    int i;
+
+    for (i = 0; i < 64; i++) {
+        strcat(content, "0.5 g ");
+    }
+    strcat(content, "Q 0 1 0 sc 0 1 0 SC 0 0 100 100 re f "
+                    "20 w 150 50 m 250 50 l S");
+    ws(&b, "%PDF-1.4\n");
+    obj(&b, 1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(&b, 2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(&b, 3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] "
+               "/Contents 4 0 R >>");
+    stream(&b, 4, "", content, (long)strlen(content));
+    xref(&b, 1, 0);
+    doc = open_bytes(&b, &err);
+    check(doc != NULL && tiku_pdf_render(doc, 0, 1.0, 0, &pm) == 0 &&
+          pixel(&pm, 50, 250) == 0x00ff00u &&
+          pixel(&pm, 200, 250) == 0x00ff00u,
+          "sc and SC after 64 colour spaces in q...Q use the restored ones");
+    tiku_pdf_pixmap_free(&pm);
+    tiku_pdf_close(doc);
+    free(b.p);
+}
+
+/**
  * @brief Transparency and annotations on a 300-point page: Multiply and
  *        Difference, a luminosity and an alpha soft mask and their end, a
  *        group at half its alpha, and four annotations, two of them unseen.
@@ -1643,6 +1680,7 @@ main(void)
     glyph_test();
     render_test();
     shade_test();
+    cs_keep_test();
     transp_test();
     knockout_test();
     nav_test();

@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 int
@@ -58,16 +60,25 @@ tiku_image_is_image(const char *path)
     return 0;
 }
 
-/** @brief Read a whole file of at most TIKU_IMAGE_BYTES_MAX bytes into
- *         @p out, which the caller frees.  @return its length, or -1. */
+/** @brief Read the regular file @p path, at most TIKU_IMAGE_BYTES_MAX
+ *         bytes, into @p out, which the caller frees; any other kind of
+ *         file is refused without waiting on its open.
+ *  @return its length, or -1. */
 static long
 slurp(const char *path, unsigned char **out)
 {
-    FILE *f = fopen(path, "rb");
+    int fd = open(path, O_RDONLY | O_NONBLOCK);
+    struct stat st;
+    FILE *f;
     long n;
     unsigned char *buf;
 
-    if (f == NULL) {
+    if (fd < 0) {
+        return -1;
+    }
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+        (f = fdopen(fd, "rb")) == NULL) {
+        (void)close(fd);
         return -1;
     }
     if (fseek(f, 0, SEEK_END) != 0 || (n = ftell(f)) < 0 ||

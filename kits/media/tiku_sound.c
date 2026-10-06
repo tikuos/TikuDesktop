@@ -90,6 +90,9 @@ tiku_sound_set_clip(tiku_sound_event_t event, const int16_t *pcm,
     if (event < 0 || event >= TIKU_SOUND_EVENTS) {
         return;
     }
+    if (sound.playing == &sound.clip[event]) {
+        sound.playing = NULL;
+    }
     sound.clip[event].pcm = pcm;
     sound.clip[event].frames = (pcm != NULL) ? frames : 0u;
 }

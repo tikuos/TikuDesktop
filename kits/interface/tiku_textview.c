@@ -251,9 +251,9 @@ journal_clear(tiku_textview_t *tv)
  *
  * A single character continuing the run above -- typed just after the
  * last, or rubbed out just before it -- grows that entry, so a word is
- * one step to undo.  Anything else
- * starts a fresh entry, and the redo history above the present is let
- * go the moment a new edit lands.  Quiet while undo/redo is replaying.
+ * one step to undo.  Anything else, or a run that cannot grow, starts a
+ * fresh entry, and the redo history above the present is let go the
+ * moment a new edit lands.  Quiet while undo/redo is replaying.
  */
 static void
 record(tiku_textview_t *tv, int kind, int line, int col,
@@ -282,8 +282,8 @@ record(tiku_textview_t *tv, int kind, int line, int col,
                     free(top->text);
                     top->text = g;
                     top->len++;
+                    return;     /* typing forward: appended */
                 }
-                return;         /* typing forward: appended */
             }
             if (kind == 2 && col == top->col) {
                 char *g = dupn(top->text, top->len + 1);
@@ -293,8 +293,8 @@ record(tiku_textview_t *tv, int kind, int line, int col,
                     free(top->text);
                     top->text = g;
                     top->len++;
+                    return;     /* forward delete at one place: appended */
                 }
-                return;         /* forward delete at one place: appended */
             }
             if (kind == 2 && col + 1 == top->col) {
                 char *g = malloc((size_t)top->len + 2u);
@@ -306,8 +306,8 @@ record(tiku_textview_t *tv, int kind, int line, int col,
                     top->text = g;
                     top->len++;
                     top->col = col;
+                    return;     /* backspace run: prepended */
                 }
-                return;         /* backspace run: prepended */
             }
         }
     }

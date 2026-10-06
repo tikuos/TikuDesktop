@@ -55,9 +55,9 @@ int tiku_image_is_image(const char *path);
  * @brief Read @p path, at most TIKU_IMAGE_BYTES_MAX bytes, into @p out.
  *
  * @return TIKU_IMG_OK on success; @p out is untouched otherwise.
- * @note An image already in @p out is overwritten, not freed.  The path is
- *       opened whatever its type, so a FIFO or a device can block the
- *       call; tiku_image_is_image() opens regular files only.
+ * @note An image already in @p out is overwritten, not freed.  A path
+ *       that is not a regular file, such as a FIFO or a device, is
+ *       refused without waiting.
  */
 tiku_image_err_t tiku_image_load(const char *path,
                                          tiku_image_t *out);

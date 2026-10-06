@@ -176,6 +176,46 @@ main(int argc, char **argv)
     tiku_sound_free();
     check(fake.closed == 1, "free closes the backend once");
 
+    printf("a clip replaced while it plays\n");
+    {   /* Half a second, then 10 ms in its place after two chunks. */
+        char lng[64], shrt[64];
+        FILE *f;
+        size_t before;
+
+        snprintf(lng, sizeof lng, "/tmp/test_sound_long_%ld.score",
+                 (long)getpid());
+        snprintf(shrt, sizeof shrt, "/tmp/test_sound_short_%ld.score",
+                 (long)getpid());
+        if ((f = fopen(lng, "w")) != NULL) {
+            fputs("wave sine\nnote 440 500 0.5\n", f);
+            fclose(f);
+        }
+        if ((f = fopen(shrt, "w")) != NULL) {
+            fputs("wave sine\nnote 440 10 0.5\n", f);
+            fclose(f);
+        }
+        memset(&fake, 0, sizeof fake);
+        fake.room = -1;
+        tiku_sound_init(&FAKE);
+        check(tiku_sound_load_file(TIKU_SOUND_BEEP, lng) == 1,
+              "a half-second score is the beep's clip");
+        tiku_sound_play(TIKU_SOUND_BEEP);
+        tiku_sound_pump();
+        tiku_sound_pump();
+        check(tiku_sound_playing() && fake.frames == 4410u,
+              "and two chunks of it are handed out");
+        check(tiku_sound_load_file(TIKU_SOUND_BEEP, shrt) == 1,
+              "a 10 ms score takes its place");
+        before = fake.frames;
+        tiku_sound_pump();
+        check(!tiku_sound_playing() && fake.frames == before,
+              "the clip in flight stops, and nothing past the new one is "
+              "handed out");
+        tiku_sound_free();
+        (void)remove(lng);
+        (void)remove(shrt);
+    }
+
     if (argc > 1 && strcmp(argv[1], "--play") == 0) {
         const tiku_sound_backend_t *host = tiku_sound_host_backend();
 

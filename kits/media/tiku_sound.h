@@ -61,7 +61,8 @@ typedef struct tiku_sound_backend {
  */
 void tiku_sound_init(const tiku_sound_backend_t *backend);
 
-/** @brief Give @p event its PCM: @p frames mono samples, borrowed. */
+/** @brief Give @p event its PCM: @p frames mono samples, borrowed.  A
+ *         clip of @p event in flight stops. */
 void tiku_sound_set_clip(tiku_sound_event_t event, const int16_t *pcm,
                          size_t frames);
 
