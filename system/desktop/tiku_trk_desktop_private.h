@@ -341,6 +341,9 @@ typedef struct desktop {
                                               *   asked, or NULL */
     char                     board_run_name[64]; /**< the board a run is on, or
                                                   *   the name a save writes */
+    char                     board_run_prefix[TIKU_PATH_MAX]; /**< the mount
+                                                  *   prefix of the board the
+                                                  *   run or save is on */
     int                      board_run_session; /**< the remote session that
                                                  *   asked, or -1 */
     int                      board_run_saving; /**< board_run is a save */
@@ -861,7 +864,7 @@ void desktop_wire_ask(desktop_t *app);
 void desktop_wire_replicants(desktop_t *app);
 void desktop_wire_run_over(desktop_t *app, struct tiku_board_basic *run,
                            int what, int session, struct desktop_embed *slot,
-                           int saving, const char *name);
+                           int saving, const char *name, const char *prefix);
 void desktop_wire_wait(desktop_t *app, int *pending, long ms);
 
 /* tiku_desktop_device_stats.c */

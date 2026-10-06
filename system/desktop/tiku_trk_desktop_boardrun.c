@@ -137,6 +137,24 @@ board_named(desktop_t *app, const char *name)
     return (name == NULL || name[0] == '\0') ? first : NULL;
 }
 
+/** @brief The mount prefix of board @p b into @p out; empty when @p b is
+ *         not mounted. */
+static void
+prefix_of(desktop_t *app, const tiku_backend_t *b, char *out, size_t max)
+{
+    int i, slots = tiku_mount_slots(app->backend);
+
+    out[0] = '\0';
+    for (i = 0; i < slots; i++) {
+        const char *prefix = tiku_mount_prefix_at(app->backend, i);
+
+        if (prefix != NULL && tiku_mount_at(app->backend, i) == b) {
+            (void)snprintf(out, max, "%s", prefix);
+            return;
+        }
+    }
+}
+
 /** @brief The channel of the board mounted at @p prefix, or NULL. */
 static tiku_channel_t *
 channel_of_board(desktop_t *app, const char *prefix)
@@ -452,6 +470,7 @@ desktop_board_run(desktop_t *app, struct desktop_embed *slot,
     app->board_run_asked = 0;
     (void)snprintf(app->board_run_name, sizeof app->board_run_name, "%s",
                    (board != NULL) ? board : "");
+    prefix_of(app, b, app->board_run_prefix, sizeof app->board_run_prefix);
     return 1;
 }
 
@@ -486,6 +505,7 @@ desktop_board_save(desktop_t *app, struct desktop_embed *slot,
     app->board_run_asked = 0;
     (void)snprintf(app->board_run_name, sizeof app->board_run_name, "%s",
                    (name != NULL) ? name : "");
+    prefix_of(app, b, app->board_run_prefix, sizeof app->board_run_prefix);
     return 1;
 }
 
@@ -609,7 +629,8 @@ desktop_board_pump(desktop_t *app)
              * the shell is back, and a run it starts then finds the shell
              * free. */
             desktop_wire_run_over(app, run, what, session, slot, saving,
-                                  app->board_run_name);
+                                  app->board_run_name,
+                                  app->board_run_prefix);
         }
     }
 }

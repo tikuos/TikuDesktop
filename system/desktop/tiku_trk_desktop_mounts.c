@@ -322,12 +322,15 @@ boards_accept(desktop_t *app)
         if (ch == NULL) {
             continue;
         }
-        if (tiku_remote_adopt(&app->remote, tiku_channel_fd(ch)) != 0) {
-            tiku_channel_close(ch);
-            continue;
-        }
+        /* A slot first: channel_keep() closes a channel it has no slot
+         * for, and the remote listener must not hold its descriptor. */
         slot = channel_keep(app, ch);
         if (slot < 0) {
+            continue;
+        }
+        if (tiku_remote_adopt(&app->remote, tiku_channel_fd(ch)) != 0) {
+            tiku_channel_close(ch);
+            app->channels[slot] = NULL;
             continue;
         }
                         tiku_channel_greet(ch);

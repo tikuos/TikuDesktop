@@ -537,7 +537,7 @@ tiku_ns_read(tiku_ns_t *ns, const char *path)
     tiku_node_t *n = ns_find_mut(ns, path);
     char cmd[TIKU_NS_PATH_MAX + 8];
     char arg[TIKU_NS_PATH_MAX + 3];
-    char buf[TIKU_VAL_MAX];
+    char buf[TIKU_VAL_MAX + 1];
     int rc;
 
     if (n == NULL || (n->perm & TIKU_NS_P_READ) == 0u ||
@@ -545,13 +545,16 @@ tiku_ns_read(tiku_ns_t *ns, const char *path)
         return -1;
     }
     snprintf(cmd, sizeof cmd, "cat %s", arg);
+    /* The buffer holds one byte more than a value: a reply that fills it
+     * is longer than the value can hold, and is refused. */
     rc = tiku_session_cmd(ns->s, cmd, buf, sizeof buf, 6000);
-    if (rc < 0 || strstr(buf, "cannot read") != NULL) {
+    if (rc < 0 || rc >= TIKU_VAL_MAX ||
+        strstr(buf, "cannot read") != NULL) {
         n->value_valid = 0;
         return -1;
     }
     if (strcmp(n->value, buf) != 0) {
-        snprintf(n->value, sizeof n->value, "%s", buf);
+        memcpy(n->value, buf, strlen(buf) + 1u);    /* under TIKU_VAL_MAX */
         n->generation++;
     }
     n->value_valid = 1;

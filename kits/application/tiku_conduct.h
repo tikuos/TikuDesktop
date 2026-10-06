@@ -191,7 +191,9 @@ void tiku_conduct_quota(tiku_conduct_t *c, long messages);
  *        the driver of watched facts that changed.
  *
  * Injected events reach the shell through the inject callback during this
- * call, so they land where the shell's own events do.
+ * call, so they land where the shell's own events do.  A reply to a driver
+ * whose socket stays full waits up to two seconds, then the driver is
+ * closed.
  *
  * @return nonzero when anything was injected and a repaint may be owed.
  */

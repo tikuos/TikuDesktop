@@ -1307,8 +1307,13 @@ static void dp_request(struct desktop_deviceprefs *p, int write_at)
     work.done = dp_done;
     work.free = dp_free;
     work.ctx = j;
-    snprintf(work.key, sizeof work.key, "board:/devices/%.30s",
-             p->names[p->selected]);
+    /* board_unmount()'s key: the mount prefix, cut only by the key's
+     * size. */
+    {
+        const char *name = p->names[p->selected];
+
+        snprintf(work.key, sizeof work.key, "board:/devices/%s", name);
+    }
     if (tiku_work_post(&work) != 0) {
         free(j);
         snprintf(p->status, sizeof p->status, "Desktop is busy. Try again.");

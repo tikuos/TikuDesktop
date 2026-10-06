@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -52,6 +53,11 @@
 /* A port of the channel's own that broke is opened again this often. */
 #define REOPEN_MS         1000L
 
+/* How long a listener that has stopped reading is waited for, and the
+ * step the wait is taken in; the wait starts again whenever it reads. */
+#define STALL_MS          2000
+#define STALL_STEP_MS     50
+
 struct tiku_channel {
     tiku_link_t    *link;           /* the board, over its medium */
     tiku_session_t *sess;           /* a port of its own, or NULL */
@@ -67,7 +73,8 @@ struct tiku_channel {
     long            greeted_at;     /* ms, the last one */
     long            last_rx;        /* ms, the board's last message */
     int             regreets;       /* greetings said again since last_rx */
-    int             losses;         /* the link's, in all */
+    int             losses;         /* the link's and stalls, in all */
+    int             stalled;        /* the listener's stream is shut */
     int             shell_desk_fd;  /* the shell road's ends, or -1 */
     int             shell_mine_fd;
 };
@@ -82,23 +89,63 @@ now_ms(void)
     return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-/** @brief Write all of @p bytes to @p fd, retrying at once while the
- *         socket is full; another error drops the rest. */
+/**
+ * @brief Write all of @p bytes to the listener's stream.
+ *
+ * A listener that takes nothing for STALL_MS has its stream shut, and
+ * reads an end there.  The stall counts as a loss, and later messages are
+ * dropped.  Another error drops the rest.
+ */
 static void
-write_all(int fd, const unsigned char *bytes, size_t len)
+write_all(tiku_channel_t *ch, const unsigned char *bytes, size_t len)
+{
+    size_t off = 0;
+    int waited = 0;
+
+    while (!ch->stalled && off < len) {
+        ssize_t n = write(ch->mine_fd, bytes + off, len - off);
+
+        if (n > 0) {
+            off += (size_t)n;
+            waited = 0;
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else if (n < 0 && errno == EAGAIN && waited < STALL_MS) {
+            struct pollfd one = { ch->mine_fd, POLLOUT, 0 };
+
+            (void)poll(&one, 1u, STALL_STEP_MS);
+            waited += STALL_STEP_MS;
+        } else if (n < 0 && errno == EAGAIN) {
+            (void)shutdown(ch->mine_fd, SHUT_WR);
+            ch->stalled = 1;
+            ch->losses++;
+        } else {
+            return;
+        }
+    }
+}
+
+/**
+ * @brief Write what of @p bytes the socket takes now and drop the rest.
+ *
+ * For the shell road, which nobody may be reading: a command discards
+ * whatever arrived before it.
+ */
+static void
+write_fit(int fd, const unsigned char *bytes, size_t len)
 {
     size_t off = 0;
 
     while (off < len) {
         ssize_t n = write(fd, bytes + off, len - off);
 
-        if (n <= 0) {
-            if (n < 0 && (errno == EAGAIN || errno == EINTR)) {
-                continue;
-            }
+        if (n > 0) {
+            off += (size_t)n;
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else {
             return;
         }
-        off += (size_t)n;
     }
 }
 
@@ -127,7 +174,7 @@ on_message(const unsigned char *bytes, size_t len, void *ctx)
         if (len >= MSG_HEAD && bytes[0] == RMSG_SHELL_OUT && bytes[1] == 0u &&
         bytes[2] == 0u && bytes[3] == 0u && MSG_HEAD + len_at(bytes) <= len) {
         if (ch->shell_mine_fd >= 0) {
-            write_all(ch->shell_mine_fd, bytes + MSG_HEAD, len_at(bytes));
+            write_fit(ch->shell_mine_fd, bytes + MSG_HEAD, len_at(bytes));
         }
         return;
     }
@@ -142,7 +189,7 @@ on_message(const unsigned char *bytes, size_t len, void *ctx)
         ch->basic_len += n;
         return;
     }
-    write_all(ch->mine_fd, bytes, len);
+    write_all(ch, bytes, len);
 }
 
 tiku_channel_t *

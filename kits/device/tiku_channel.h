@@ -100,7 +100,8 @@ int tiku_channel_basic_send(tiku_channel_t *ch, const void *bytes, size_t len);
 int tiku_channel_basic_recv(tiku_channel_t *ch, void *buf, size_t max);
 
 /** @brief How many losses the link has reported since the channel
- *         opened. */
+ *         opened, counting a listener whose stream was shut for not
+ *         reading. */
 int tiku_channel_losses(const tiku_channel_t *ch);
 
 /**

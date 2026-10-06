@@ -506,9 +506,14 @@ do_read(tiku_backend_t *b, const char *path, void *buf, size_t max)
     return (int)len;
 }
 
-/** @brief Write @p len bytes to @p path on the device, as one value of at
- *         most 511 bytes; a longer one is cut there.
- *  @return 0, or -1 with @p err filled. */
+/**
+ * @brief Write @p len bytes to @p path on the device, as one value of at
+ *        most TIKU_VAL_MAX - 1 bytes; a longer one is refused.
+ *
+ * A /data file is read back after the write, and a file that does not
+ * hold exactly @p buf fails the write.
+ * @return 0, or -1 with @p err filled.
+ */
 static int
 do_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
          char *err, size_t errmax)
@@ -520,14 +525,45 @@ do_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
         return -1;
     }
     tiku_impl_t *impl = b->impl;
-    char val[512];
-    size_t n = (len < sizeof val - 1u) ? len : sizeof val - 1u;
+    char val[TIKU_VAL_MAX];
+    int got;
 
-    memcpy(val, buf, n);
-    val[n] = '\0';
+    if (len > sizeof val - 1u) {
+        if (err != NULL && errmax > 0u) {
+            snprintf(err, errmax, "%zu bytes is too long for the board: "
+                     "one write carries at most %zu", len, sizeof val - 1u);
+        }
+        return -1;
+    }
+    memcpy(val, buf, len);
+    val[len] = '\0';
     /* The device's own refusal text is the error the user sees: it names the
      * reason (EACCES from the capability gate, ERANGE from a range). */
-    return tiku_ns_write(impl->ns, path, val, err, errmax);
+    if (tiku_ns_write(impl->ns, path, val, err, errmax) != 0) {
+        return -1;
+    }
+    if (!in_store(path)) {
+        return 0;
+    }
+    /* The board's shell keeps only as much of a line as its line buffer
+     * holds, and a NUL ends the value early. */
+    got = do_read(b, path, val, sizeof val);
+    if (got != (int)len || memcmp(val, buf, len) != 0) {
+        if (err != NULL && errmax > 0u) {
+            if (got < 0) {
+                snprintf(err, errmax, "the board did not confirm the "
+                         "%zu bytes written", len);
+            } else if (got != (int)len) {
+                snprintf(err, errmax, "the board kept %d of %zu bytes",
+                         got, len);
+            } else {
+                snprintf(err, errmax, "the board holds a different value "
+                         "from the one written");
+            }
+        }
+        return -1;
+    }
+    return 0;
 }
 
 void

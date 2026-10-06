@@ -19,6 +19,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -34,6 +35,10 @@
 /** @brief The largest payload either end accepts; a longer length ends
  *         the stream. */
 #define CONDUCT_MAX_PAYLOAD (64u * 1024u)
+/** @brief How long, in ms, a write waits on a full socket before the peer
+ *         is closed, and the step it waits in. */
+#define CONDUCT_STALL_MS 2000
+#define CONDUCT_STEP_MS    50
 
 /** @brief Make @p fd nonblocking, and ignore SIGPIPE: a write to a peer
  *         that has gone then fails with EPIPE.  @return 0, or -1. */
@@ -47,31 +52,48 @@ set_nonblock(int fd)
     return (flags >= 0) ? fcntl(fd, F_SETFL, flags | O_NONBLOCK) : -1;
 }
 
-/** @brief Write all of @p data, retrying at once while the socket is full;
- *         a write error ends it early. */
+/**
+ * @brief Write all of @p data to @p *fd, waiting while the socket is full.
+ *
+ * A peer that takes nothing for CONDUCT_STALL_MS, or a write error, closes
+ * the descriptor and sets @p *fd to -1: the rest of a message cannot be
+ * sent later without the far end reading it as a header.
+ */
 static void
-send_all(int fd, const void *data, size_t n)
+send_all(int *fd, const void *data, size_t n)
 {
     const unsigned char *p = data;
+    int waited = 0;
 
-    while (n > 0u) {
-        ssize_t wrote = write(fd, p, n);
+    while (n > 0u && *fd >= 0) {
+        ssize_t wrote = write(*fd, p, n);
 
-        if (wrote <= 0) {
-            if (wrote < 0 && (errno == EAGAIN || errno == EINTR)) {
-                continue;
-            }
-            return;
+        if (wrote > 0) {
+            p += wrote;
+            n -= (size_t)wrote;
+            waited = 0;
+            continue;
         }
-        p += wrote;
-        n -= (size_t)wrote;
+        if (wrote < 0 && errno == EINTR) {
+            continue;
+        }
+        if (wrote < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) &&
+            waited < CONDUCT_STALL_MS) {
+            struct pollfd one = { *fd, POLLOUT, 0 };
+
+            (void)poll(&one, 1u, CONDUCT_STEP_MS);
+            waited += CONDUCT_STEP_MS;
+            continue;
+        }
+        (void)close(*fd);
+        *fd = -1;
     }
 }
 
 /** @brief Write one message: its type and length, then @p n bytes of
- *         @p payload. */
+ *         @p payload.  A stalled peer is closed, as send_all() says. */
 static void
-send_msg(int fd, uint32_t type, const void *payload, uint32_t n)
+send_msg(int *fd, uint32_t type, const void *payload, uint32_t n)
 {
     uint32_t head[2];
 
@@ -415,7 +437,11 @@ conduct_tell(tiku_conduct_t *c)
             memset(out, 0, TIKU_CONDUCT_ARG);
             snprintf((char *)out, TIKU_CONDUCT_ARG, "%s", c->sub_name[i]);
             memcpy(out + TIKU_CONDUCT_ARG, text, sizeof text);
-            send_msg(c->peer, TIKU_CMSG_TOLD, out, sizeof out);
+            send_msg(&c->peer, TIKU_CMSG_TOLD, out, sizeof out);
+            if (c->peer < 0) {
+                c->subs = 0;    /* watches live as long as the peer */
+                return;
+            }
         }
     }
 }
@@ -530,7 +556,10 @@ conduct_message(tiku_conduct_t *c)
             }
             memcpy(out, reply, sizeof reply);
             memcpy(out + 8, text, sizeof text);
-            send_msg(c->peer, TIKU_CMSG_ANSWER, out, sizeof out);
+            send_msg(&c->peer, TIKU_CMSG_ANSWER, out, sizeof out);
+            if (c->peer < 0) {
+                c->subs = 0;
+            }
         }
         break;
     default:
@@ -647,7 +676,7 @@ tiku_conduct_connect_fd_as(tiku_conduct_client_t *c, int fd,
     if (token != NULL) {
         snprintf((char *)hello + 4, TIKU_CONDUCT_TOKEN, "%s", token);
     }
-    send_msg(fd, TIKU_CMSG_HELLO, hello, sizeof hello);
+    send_msg(&c->fd, TIKU_CMSG_HELLO, hello, sizeof hello);
     return 0;
 }
 
@@ -673,8 +702,8 @@ tiku_conduct_inject(tiku_conduct_client_t *c,
     if (c == NULL || c->fd < 0 || event == NULL) {
         return -1;
     }
-    send_msg(c->fd, TIKU_CMSG_INJECT, event, (uint32_t)sizeof *event);
-    return 0;
+    send_msg(&c->fd, TIKU_CMSG_INJECT, event, (uint32_t)sizeof *event);
+    return (c->fd >= 0) ? 0 : -1;
 }
 
 int
@@ -703,7 +732,10 @@ tiku_conduct_query(tiku_conduct_client_t *c, uint32_t what,
     if (arg != NULL) {
         snprintf((char *)msg + 12, TIKU_CONDUCT_ARG, "%s", arg);
     }
-    send_msg(c->fd, TIKU_CMSG_QUERY, msg, (uint32_t)sizeof msg);
+    send_msg(&c->fd, TIKU_CMSG_QUERY, msg, (uint32_t)sizeof msg);
+    if (c->fd < 0) {
+        return 0;
+    }
 
     /* Wait at most TIKU_CONDUCT_ANSWER_MS; a shell that stopped
      * answering makes the query fail. */

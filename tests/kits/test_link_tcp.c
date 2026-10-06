@@ -19,8 +19,10 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -299,6 +301,123 @@ the_channel(int port)
     close(board);
 }
 
+/** @brief The channel never came back from a write to a full socket. */
+static void
+stuck_forever(int sig)
+{
+    static const char said[] =
+        "  [FAIL] the channel's pump never returned: it spun on a full "
+        "socket\n";
+
+    (void)sig;
+    if (write(1, said, sizeof said - 1u) < 0) {
+        _exit(2);
+    }
+    _exit(1);
+}
+
+/**
+ * @brief A board prints far more shell text than a socket holds while
+ *        nobody reads the shell road: the pump still returns each turn.
+ */
+static void
+the_unread_shell(void)
+{
+    static unsigned char msg[8 + 4000];
+    unsigned char got[64];
+    tiku_channel_t *ch;
+    tiku_tx_t *tx;
+    int sv[2], k, pumps = 0;
+    size_t n;
+
+    printf("the shell road, unread\n");
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        check(0, "a socket pair for the channel");
+        return;
+    }
+    ch = tiku_channel_adopt(tiku_link_tcp_open(sv[0]));
+    tx = (ch != NULL) ? tiku_channel_shell_tx(ch) : NULL;
+    check(ch != NULL && tx != NULL, "a channel with its shell road open");
+    if (tx == NULL) {
+        return;
+    }
+    memset(msg, 'x', sizeof msg);
+    memset(msg, 0, 8);
+    msg[0] = 22u;                       /* the board's shell output */
+    msg[4] = (unsigned char)(4000u & 0xFFu);
+    msg[5] = (unsigned char)(4000u >> 8);
+    (void)fflush(stdout);       /* the alarm ends it with _exit */
+    (void)signal(SIGALRM, stuck_forever);
+    (void)alarm(30);
+    for (k = 0; k < 1000; k++) {        /* 4 MB of text, read by nobody */
+        put_msg(sv[1], msg, sizeof msg);
+        (void)tiku_channel_pump(ch);
+        pumps++;
+    }
+    (void)alarm(0);
+    check(pumps == 1000, "every pump returns while the shell road is full");
+    n = 0;
+    {
+        int r = tiku_tx_read(tx, got, sizeof got, 100);
+
+        n = (r > 0) ? (size_t)r : 0u;
+    }
+    check(n > 0u && got[0] == 'x',
+          "and the text that fitted waits for the next reader");
+    tiku_tx_close(tx);
+    tiku_channel_close(ch);
+    close(sv[1]);
+}
+
+/**
+ * @brief A board sends far more than a socket holds while the desktop's
+ *        listener reads nothing: the pump returns, the stream is shut and
+ *        the stall counts as a loss.
+ */
+static void
+the_unread_stream(void)
+{
+    static unsigned char msg[8 + 4000];
+    unsigned char got[4096];
+    tiku_channel_t *ch;
+    int sv[2], k, pumps = 0, fd;
+    ssize_t r;
+
+    printf("the desktop stream, unread\n");
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        check(0, "a socket pair for the channel");
+        return;
+    }
+    ch = tiku_channel_adopt(tiku_link_tcp_open(sv[0]));
+    check(ch != NULL, "a channel on the socket pair");
+    if (ch == NULL) {
+        return;
+    }
+    memset(msg, 'x', sizeof msg);
+    memset(msg, 0, 8);
+    msg[0] = 1u;                        /* a window's message */
+    msg[4] = (unsigned char)(4000u & 0xFFu);
+    msg[5] = (unsigned char)(4000u >> 8);
+    (void)fflush(stdout);       /* the alarm ends it with _exit */
+    (void)signal(SIGALRM, stuck_forever);
+    (void)alarm(30);
+    for (k = 0; k < 300; k++) {         /* 1.2 MB, read by nobody */
+        put_msg(sv[1], msg, sizeof msg);
+        (void)tiku_channel_pump(ch);
+        pumps++;
+    }
+    (void)alarm(0);
+    check(pumps == 300, "every pump returns while the listener is full");
+    check(tiku_channel_losses(ch) == 1, "and the stall counts as one loss");
+    fd = tiku_channel_fd(ch);
+    (void)fcntl(fd, F_SETFL, O_NONBLOCK);
+    while ((r = read(fd, got, sizeof got)) > 0) {
+    }
+    check(r == 0, "and the listener's stream ends");
+    tiku_channel_close(ch);
+    close(sv[1]);
+}
+
 /** @brief The link over a socket, then a channel on one. */
 int
 main(void)
@@ -321,6 +440,8 @@ main(void)
     the_hangup(l, board);
     tiku_link_close(l);
     the_channel(47750);
+    the_unread_shell();
+    the_unread_stream();
     printf("%s\n", fails ? "FAILURES" : "a length in front is enough");
     return fails ? 1 : 0;
 }

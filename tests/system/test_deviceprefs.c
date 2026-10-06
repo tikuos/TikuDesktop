@@ -461,6 +461,33 @@ static void test_firmware_row(struct desktop_deviceprefs *p, tiku_backend_t *b)
     connected_backend = NULL;
 }
 
+/* A board mounted under a name past thirty characters: the panel's job
+ * carries the key board_unmount() cancels and closes under, "board:" and
+ * the mount prefix, cut only by the key's size. */
+static void test_long_board_key(struct desktop_deviceprefs *p,
+                                tiku_backend_t *b)
+{
+    static const char name[] = "a-board-whose-name-runs-past-thirty-chars";
+    char saved[sizeof p->names[0]], unmount_key[TIKU_WORK_KEY];
+    connected_backend = b;
+    snprintf(saved, sizeof saved, "%s", p->names[0]);
+    snprintf(p->names[0], sizeof p->names[0], "%s", name);
+    p->selected = 0; p->fact = p->estate = -1; p->confirm = 0;
+    /* The name is longer than the key holds: it is cut at the key's end. */
+    memcpy(unmount_key, "board:/devices/", 15);
+    memcpy(unmount_key + 15, name, sizeof unmount_key - 16u);
+    unmount_key[sizeof unmount_key - 1u] = '\0';
+    dp_request(p, DP_READ);
+    assert(work_queued);
+    printf("panel job key \"%s\", unmount key \"%s\"\n", queued_work.key,
+           unmount_key);
+    fflush(stdout);
+    assert(!strcmp(queued_work.key, unmount_key));
+    drain_work();
+    snprintf(p->names[0], sizeof p->names[0], "%s", saved);
+    connected_backend = NULL;
+}
+
 static void test_multibank_map(void)
 {
     struct desktop_deviceprefs p = {0};
@@ -1057,6 +1084,7 @@ int main(void)
     memset(&p.pending, 0, sizeof p.pending);
     test_layout_confirmation(&p, &backend);
     test_firmware_row(&p, &backend);
+    test_long_board_key(&p, &backend);
     before = writes;
     p.busy = 1;
     ev = (tiku_event_t){.type=TIKU_EVENT_POINTER_DOWN, .button=1,

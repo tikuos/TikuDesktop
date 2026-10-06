@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <time.h>
@@ -80,6 +81,34 @@ fake_text(void *ctx, const char *name, char *out, size_t max)
         return 1;
     }
     return 0;                   /* every other name is unknown here */
+}
+
+/* A fact whose text is new every time it is read. */
+static int
+ticking_text(void *ctx, const char *name, char *out, size_t max)
+{
+    static unsigned ticks;
+
+    (void)ctx;
+    if (strcmp(name, "ticker") != 0) {
+        return 0;
+    }
+    snprintf(out, max, "tick %u", ++ticks);
+    return 1;
+}
+
+/** @brief The shell never came back from a write to a full socket. */
+static void
+stuck_forever(int sig)
+{
+    static const char said[] =
+        "  [FAIL] the shell's turn never ended: it spun on a full socket\n";
+
+    (void)sig;
+    if (write(1, said, sizeof said - 1u) < 0) {
+        _exit(2);
+    }
+    _exit(1);
 }
 
 static void
@@ -177,7 +206,7 @@ drive(int fd)
         char said[TIKU_CONDUCT_TEXT];
 
         /* The driver now goes silent.  The next thing on the wire must
-         * be the shell speaking first -- the whole point of stage 2. */
+         * be the shell speaking first. */
         if (!tiku_conduct_told(&driver, who, sizeof who, said,
                                     sizeof said, 4000) ||
             strcmp(who, "song") != 0 || strcmp(said, "loud") != 0) {
@@ -260,7 +289,7 @@ grant_drive(const char *sock)
         printf("  [PASS] a QUERY-only credential is answered\n");
     }
     (void)tiku_conduct_inject(&d, &ev);      /* it TRIES -- see parent */
-    /* One more answered question AFTER the try, so the inject cannot
+    /* One more answered question after the try, so the inject cannot
      * still be in flight when the parent counts what arrived. */
     (void)tiku_conduct_query(&d, TIKU_CQ_TEXT, 0, 0, "title",
                                   NULL, text, sizeof text);
@@ -477,6 +506,60 @@ main(void)
               "the cap holds at exactly the number it names");
         tiku_conduct_shutdown(&meter);
         (void)unlink(qsock);
+    }
+
+    printf("\na driver that stops reading is let go\n");
+    {
+        tiku_conduct_t stuck;
+        tiku_conduct_client_t d;
+        unsigned char q[8 + 12 + TIKU_CONDUCT_ARG];
+        uint32_t head[2] = { TIKU_CMSG_QUERY, 12u + TIKU_CONDUCT_ARG };
+        uint32_t what = TIKU_CQ_TEXT;
+        struct timespec t0, t1;
+        int sv[2], small = 4096;
+
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+            printf("  [FAIL] no socket pair\n");
+            return 1;
+        }
+        /* Small buffers, so a few TOLD frames fill the socket. */
+        (void)setsockopt(sv[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof small);
+        (void)setsockopt(sv[1], SOL_SOCKET, SO_RCVBUF, &small, sizeof small);
+        check(tiku_conduct_adopt(&stuck, sv[0], NULL, fake_inject,
+                                 fake_pixel, ticking_text) == 0,
+              "the shell serves a driver that will stop reading");
+        (void)tiku_conduct_connect_fd(&d, sv[1]);
+        /* The driver watches a fact that changes every time it is read,
+         * then reads nothing more. */
+        memset(q, 0, sizeof q);
+        memcpy(q, head, sizeof head);
+        memcpy(q + 8, &what, sizeof what);
+        snprintf((char *)q + 8 + 12, TIKU_CONDUCT_ARG, "~ticker");
+        if (write(sv[1], q, sizeof q) != (ssize_t)sizeof q) {
+            printf("  [FAIL] the watch was not asked\n");
+            fails++;
+        }
+        (void)fflush(stdout);       /* the alarm ends it with _exit */
+        (void)signal(SIGALRM, stuck_forever);
+        (void)alarm(30);
+        (void)clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (turns = 0; turns < 100 && stuck.peer >= 0; turns++) {
+            struct timespec ts;
+
+            (void)tiku_conduct_poll(&stuck);
+            ts.tv_sec = 0;
+            ts.tv_nsec = (TIKU_CONDUCT_TELL_MS + 10) * 1000L * 1000L;
+            (void)nanosleep(&ts, NULL);
+        }
+        (void)alarm(0);
+        (void)clock_gettime(CLOCK_MONOTONIC, &t1);
+        check(stuck.peer < 0,
+              "a driver whose socket stays full is closed, and the loop "
+              "goes on");
+        check(t1.tv_sec - t0.tv_sec < 10,
+              "within seconds, not after every turn waits");
+        tiku_conduct_shutdown(&stuck);
+        tiku_conduct_disconnect(&d);
     }
 
     if (fails > 0) {

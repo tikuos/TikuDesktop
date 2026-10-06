@@ -144,7 +144,8 @@ int tiku_ns_events(tiku_ns_t *ns, tiku_ns_change_t *out, int max,
 /**
  * @brief Read a node's value into the mirror (`cat`).
  *
- * @return 0 on success, -1 if unreadable or the link failed.
+ * @return 0 on success, -1 if unreadable, longer than TIKU_VAL_MAX - 1
+ *         bytes, or the link failed.
  */
 int tiku_ns_read(tiku_ns_t *ns, const char *path);
 

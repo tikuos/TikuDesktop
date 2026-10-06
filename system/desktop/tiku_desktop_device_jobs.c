@@ -393,11 +393,14 @@ over_done(void *ctx)
  * @brief A held run has ended: give the shell back on a worker, and tell
  *        the asker once the shell is back.  When no worker takes the job,
  *        both happen at once, on the loop.
+ *
+ * The job runs under the key of the board mounted at @p prefix, so the
+ * board's close runs after it.
  */
 void
 desktop_wire_run_over(desktop_t *app, tiku_board_basic_t *run, int what,
                       int session, struct desktop_embed *slot, int saving,
-                      const char *name)
+                      const char *name, const char *prefix)
 {
     tiku_work_job_t job;
     over_t *o = calloc(1, sizeof *o);
@@ -419,7 +422,7 @@ desktop_wire_run_over(desktop_t *app, tiku_board_basic_t *run, int what,
     job.done = over_done;
     job.free = free;
     job.ctx = o;
-    snprintf(job.key, sizeof job.key, "board:/devices/%.30s", name);
+    board_key(job.key, sizeof job.key, prefix);
     if (tiku_work_post(&job) != 0) {
         free(o);
         tiku_board_basic_free(run);
@@ -438,7 +441,7 @@ desktop_jobs_path_key(char *out, size_t max, const char *path)
     if (third != NULL) {
         snprintf(out, max, "board:%.*s", (int)(third - path), path);
     } else {
-        snprintf(out, max, "board:%.40s", path);
+        snprintf(out, max, "board:%s", path);
     }
 }
 
