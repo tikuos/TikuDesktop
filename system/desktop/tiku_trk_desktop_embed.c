@@ -314,9 +314,10 @@ embed_svc_resize(void *ctx, uint32_t id, int w, int h)
  * @brief An application asks for the file panel: the desktop shows its
  *        panel and answers later.
  *
- * One question at a time: while an application's question is up, another
- * application's is refused, not queued, and may be asked again.  The
- * window whose question is up may ask a newer one, which replaces it.
+ * One question at a time: while the desktop's own question or an
+ * application's question is up, another application's is refused, not
+ * queued, and may be asked again.  The window whose question is up may ask
+ * a newer one, which replaces it.
  *
  * @return 1 when the panel opened, 0 when refused.
  */
@@ -327,9 +328,10 @@ embed_svc_pick(void *ctx, uint32_t id, int mode, const char *start,
     struct desktop_embed *slot = ctx;
     desktop_t *app = slot->app;
 
-    if (app->pending_pick.kind != 0 &&
-        !(app->pending_pick.kind == 1 && app->pending_pick.slot == slot &&
-          app->pending_pick.window == id)) {
+    if (panel_asks_desktop(app) ||
+        (app->pending_pick.kind != 0 &&
+         !(app->pending_pick.kind == 1 && app->pending_pick.slot == slot &&
+           app->pending_pick.window == id))) {
         return 0;
     }
     app->pending_pick.kind = 1;

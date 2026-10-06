@@ -165,9 +165,28 @@ script_command_file(desktop_t *app, const char *path)
 }
 
 /**
- * @brief Run @p addon on the focused folder's selection: an external one
- *        in a process of its own, a built-in one through its command.
- *        A run that fails is reported on the status line.
+ * @brief An empty add-on table holding the desktop's built-in add-ons, each
+ *        with the command desktop_invoke_addon() runs it by.
+ */
+void
+desktop_addons_register(desktop_t *app)
+{
+    tiku_trk_addons_init(&app->addons);
+    (void)tiku_trk_addons_register(&app->addons, "Open in Tracker", "open",
+                                   "inode/directory", 'o');
+    (void)tiku_trk_addons_register(&app->addons, "Open with Editor",
+                                   "editor", "text/plain,text/markdown",
+                                   'e');
+    (void)tiku_trk_addons_register(&app->addons, "Inspect", "get-info", "*",
+                                   'i');
+}
+
+/**
+ * @brief Run @p addon on the focused folder's selection.  An external one
+ *        runs in a process of its own.  A built-in one runs by its command:
+ *        "open" is the desktop's Open, "get-info" is Get Info, and "editor"
+ *        opens the selection in the Editor application through the
+ *        launcher.  A run that fails is reported on the status line.
  * @return 1 for any @p addon, run or not; 0 when @p addon or @p context is
  *         NULL.
  */
@@ -175,20 +194,40 @@ int
 desktop_invoke_addon(const tiku_trk_addon_t *addon, void *context)
 {
     desktop_t *app = context;
+    char paths[64][TIKU_PATH_MAX];
+    const char *sel[64];
+    folder_t *fl;
+    int n, i;
 
     if (addon == NULL || app == NULL) {
         return 0;
     }
-    if (addon->external) {
-        char paths[64][TIKU_PATH_MAX];
-        const char *sel[64];
-        folder_t *fl = folder_of(app,
-                                 tiku_workspace_focused(app->desk));
-        int n;
-
-        if (fl == NULL) {
-            fl = desktop_folder(app);
+    fl = folder_of(app, tiku_workspace_focused(app->desk));
+    if (fl == NULL) {
+        fl = desktop_folder(app);
+    }
+    if (!addon->external && strcmp(addon->command, "open") == 0) {
+        menu_invoke(app, fl, TIKU_TRK_CMD_OPEN);
+        return 1;
+    }
+    if (!addon->external && strcmp(addon->command, "get-info") == 0) {
+        menu_invoke(app, fl, TIKU_TRK_CMD_GET_INFO);
+        return 1;
+    }
+    if (!addon->external && strcmp(addon->command, "editor") == 0) {
+        n = tiku_trk_folder_file_actions_selection(fl, paths, sel, 64);
+        for (i = 0; i < app->apps.count; i++) {
+            if (strcmp(app->apps.app[i].id, "editor") == 0) {
+                (void)tiku_trk_launch_controller_run(&app->launcher,
+                    &app->apps.app[i], sel, n);
+                return 1;
+            }
         }
+        snprintf(app->status, sizeof app->status,
+                 "Application 'editor' is not installed.");
+        return 1;
+    }
+    if (addon->external) {
         n = tiku_trk_folder_file_actions_selection(fl, paths, sel, 64);
         if (tiku_trk_addons_run_external(addon, sel, n) == 0) {
             snprintf(app->status, sizeof app->status,
@@ -200,7 +239,7 @@ desktop_invoke_addon(const tiku_trk_addon_t *addon, void *context)
         }
         return 1;
     }
-    snprintf(app->status, sizeof app->status, "add-on requested: %.80s",
+    snprintf(app->status, sizeof app->status, "could not run %.60s",
              addon->name);
     return 1;
 }

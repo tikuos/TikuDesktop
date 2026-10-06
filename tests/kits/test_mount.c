@@ -166,7 +166,7 @@ fake_path_of_id(tiku_backend_t *b, uint64_t id, char *out, size_t max)
 
 static const tiku_backend_ops_t fake_ops = {
     "fake", fake_stat, fake_list, fake_read, fake_write, NULL,
-    fake_changes, fake_path_of_id, NULL, NULL, NULL
+    fake_changes, fake_path_of_id, NULL, NULL, NULL, NULL
 };
 
 /* A store with no change ring, which is what a local filesystem is: the
@@ -174,7 +174,7 @@ static const tiku_backend_ops_t fake_ops = {
  * tell you". */
 static const tiku_backend_ops_t mute_ops = {
     "mute", fake_stat, fake_list, fake_read, fake_write, NULL,
-    NULL, NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static void

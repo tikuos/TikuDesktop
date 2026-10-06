@@ -295,6 +295,39 @@ test_board_looks_LDLIBS := $(test_board_jobs_LDLIBS)
 ifeq ($(UNAME_S),Linux)
 test_board_looks_LDLIBS += -Wl,--wrap=tiku_tx_scan_serial
 endif
+# The window responder's and the Deskbar's files, included by the test.
+test_desktop_closes_CFLAGS := -ffunction-sections -fdata-sections \
+    -Wno-unused-parameter -Wno-format-truncation
+test_desktop_closes_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
+    system/desktop/tiku_trk_desktop_windows.c \
+    system/desktop/tiku_trk_desktop_deskbar.c \
+    system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
+test_desktop_closes_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
+# The hosted applications' file, included by the test.
+test_pick_refusal_CFLAGS := -ffunction-sections -fdata-sections \
+    -Wno-unused-parameter
+test_pick_refusal_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
+    system/desktop/tiku_trk_desktop_embed.c \
+    system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
+test_pick_refusal_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
+# The Info window's responder file, included by the test.
+test_info_icon_press_CFLAGS := -ffunction-sections -fdata-sections \
+    -Wno-unused-parameter
+test_info_icon_press_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
+    system/desktop/tiku_trk_desktop_infowin.c \
+    system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
+test_info_icon_press_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
+# The panel window's file is compiled into the test itself.
+test_newfolder_backend_CFLAGS := -ffunction-sections -fdata-sections \
+    -Wno-format-truncation
+test_newfolder_backend_SRCS := $(filter-out \
+    system/shared/ui/windows/tiku_trk_panel_window.c,$(test_frames_SRCS))
+test_newfolder_backend_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+# The desktop as linked, less main's file and the launcher.
+test_builtin_addons_CFLAGS := -ffunction-sections -fdata-sections
+test_builtin_addons_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
+    system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
+test_builtin_addons_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
 # The desk's key responder as linked, its file included by the test.
 test_switcher_keys_CFLAGS := -ffunction-sections -fdata-sections \
     -Wno-unused-parameter

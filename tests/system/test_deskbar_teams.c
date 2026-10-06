@@ -25,6 +25,17 @@ void close_window(desktop_t *app, tiku_window_t *w)
     tiku_workspace_close(app->desk, w);
 }
 
+/** @brief The folder windows' lookup, standing in: no window here is a
+ *         folder's. */
+tiku_trk_folder_window_t *
+tiku_trk_folder_lifecycle_find(tiku_trk_folder_lifecycle_t *controller,
+                               tiku_window_t *window)
+{
+    (void)controller;
+    (void)window;
+    return NULL;
+}
+
 /** @brief The Force Quit panel, standing in: counted. */
 void desktop_forcequit_open(desktop_t *app)
 {

@@ -276,6 +276,15 @@ typedef struct {
 
     /** @brief Release the backend and everything it holds. */
     void (*close)(tiku_backend_t *b);
+
+    /**
+     * @brief Make the folder @p path.  0, or -1 with @p err filled.
+     *
+     * NULL where the backend cannot make folders; tiku_backend_mkdir() then
+     * refuses.
+     */
+    int (*mkdir)(tiku_backend_t *b, const char *path, char *err,
+                 size_t errmax);
 } tiku_backend_ops_t;
 
 /** @brief A backend instance; concrete ones extend this. */
@@ -383,5 +392,13 @@ int tiku_backend_tiku_leased(const tiku_backend_t *b);
 /** @brief Close @p b through its ops; NULL, or a backend with no close,
  *         is left alone. */
 void tiku_backend_close(tiku_backend_t *b);
+
+/**
+ * @brief Make the folder @p path through @p b's mkdir operation.
+ * @return 0, or -1 with @p err filled; a backend with no mkdir operation
+ *         refuses.
+ */
+int tiku_backend_mkdir(tiku_backend_t *b, const char *path, char *err,
+                       size_t errmax);
 
 #endif /* TIKU_MODEL_H_ */

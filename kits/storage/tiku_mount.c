@@ -590,6 +590,23 @@ mount_setperm(tiku_backend_t *b, const char *path, unsigned perm,
                                                perm, err, errmax);
 }
 
+/** @brief Make the folder @p path through the mount that serves it.
+ *         0, or -1 with @p err filled. */
+static int
+mount_mkdir(tiku_backend_t *b, const char *path, char *err, size_t errmax)
+{
+    mount_impl_t *m = impl_of(b);
+    char local[TIKU_PATH_MAX];
+    int slot = (m != NULL) ? route_slot(m, path) : -1;
+
+    if (slot < 0) {
+        snprintf(err, errmax, "nothing is mounted at '%.60s'", path);
+        return -1;
+    }
+    strip(m->slot[slot].prefix, path, local, sizeof local);
+    return tiku_backend_mkdir(m->slot[slot].backend, local, err, errmax);
+}
+
 /** @brief The state store of the mount at "/", or NULL. */
 static struct tiku_store *
 mount_state_store(tiku_backend_t *b)
@@ -641,7 +658,8 @@ static const tiku_backend_ops_t mount_ops = {
     mount_path_of_id,
     mount_setperm,
     mount_state_store,
-    mount_close
+    mount_close,
+    mount_mkdir
 };
 
 /*---------------------------------------------------------------------------*/

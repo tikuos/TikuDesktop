@@ -41,20 +41,24 @@ fop_fs_new_folder_name(tiku_fs_t *fs, const char *dir, char *out,
     }
 }
 
-/** @brief Make a new folder in @p dir, recorded for undo. */
+/** @brief Make a new folder in @p dir through the backend that serves it,
+ *         recorded for undo. */
 int
 fop_fs_new_folder(tiku_fs_t *fs, const char *dir, char *out,
                        size_t max, char *err, size_t errmax)
 {
-    char name[TIKU_PATH_MAX], path[TIKU_PATH_MAX];
+    char name[TIKU_PATH_MAX], path[TIKU_PATH_MAX], why[160];
 
     if (fs == NULL || dir == NULL) {
         return -1;
     }
     tiku_fs_new_folder_name(fs, dir, name, sizeof name);
-    if (fop_join(path, sizeof path, dir, name) != 0 || mkdir(path, 0755) != 0) {
+    why[0] = '\0';
+    if (fop_join(path, sizeof path, dir, name) != 0 ||
+        tiku_backend_mkdir(fs->backend, path, why, sizeof why) != 0) {
         if (err != NULL) {
-            snprintf(err, errmax, "Sorry, could not create a new folder.");
+            snprintf(err, errmax, "Sorry, could not create a new folder%s%s.",
+                     why[0] != '\0' ? ": " : "", why);
         }
         return -1;
     }

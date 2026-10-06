@@ -49,7 +49,7 @@ ro_stat(tiku_backend_t *b, const char *path, tiku_model_t *out)
 
 static const tiku_backend_ops_t RO_OPS = {
     "readonly", ro_stat, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL
+    NULL, NULL
 };
 
 static void

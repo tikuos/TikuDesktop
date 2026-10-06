@@ -127,8 +127,11 @@ tiku_trk_folder_lifecycle_close(tiku_trk_folder_lifecycle_t *controller,
     if (controller == NULL || folder == NULL || folder->win == NULL) {
         return;
     }
-    (void)tiku_trk_poseview_save_state(folder->view);
-    (void)tiku_trk_poseview_save_columns(folder->view);
+    /* The state and columns of a folder that is gone are not saved. */
+    if (!folder->gone) {
+        (void)tiku_trk_poseview_save_state(folder->view);
+        (void)tiku_trk_poseview_save_columns(folder->view);
+    }
     tiku_trk_folder_lifecycle_save_frame(controller, folder);
     tiku_sound_play(TIKU_SOUND_WINDOW_CLOSE);
     tiku_workspace_close(controller->workspace, folder->win);

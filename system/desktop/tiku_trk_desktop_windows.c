@@ -84,8 +84,9 @@ tab_box_act(desktop_t *app, tiku_window_t *w, int hit, unsigned mods)
         int k;
 
         for (k = 0; k < app->folder_count; k++) {
-            if (app->folders[k].win != NULL) {
-                tiku_workspace_close(app->desk, app->folders[k].win);
+            if (app->folders[k].win != NULL &&
+                app->folders[k].win->open) {
+                close_window(app, app->folders[k].win);
             }
         }
         if (tiku_trk_find_window_handle(&app->find_window) != NULL) {

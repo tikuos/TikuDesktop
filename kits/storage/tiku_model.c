@@ -389,3 +389,17 @@ tiku_backend_close(tiku_backend_t *b)
         b->ops->close(b);
     }
 }
+
+int
+tiku_backend_mkdir(tiku_backend_t *b, const char *path, char *err,
+                   size_t errmax)
+{
+    if (b == NULL || b->ops == NULL || b->ops->mkdir == NULL ||
+        path == NULL) {
+        if (err != NULL && errmax > 0u) {
+            snprintf(err, errmax, "this volume does not make folders");
+        }
+        return -1;
+    }
+    return b->ops->mkdir(b, path, err, errmax);
+}

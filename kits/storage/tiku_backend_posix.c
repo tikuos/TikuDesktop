@@ -640,11 +640,25 @@ px_setperm(tiku_backend_t *b, const char *path, unsigned perm, char *err,
     return 0;
 }
 
+/** @brief Make the folder @p path.  0, or -1 with @p err filled. */
+static int
+px_mkdir(tiku_backend_t *b, const char *path, char *err, size_t errmax)
+{
+    (void)b;
+    if (mkdir(path, 0755) != 0) {
+        if (err != NULL && errmax > 0u) {
+            snprintf(err, errmax, "%s", strerror(errno));
+        }
+        return -1;
+    }
+    return 0;
+}
+
 static const tiku_backend_ops_t POSIX_OPS = {
     /* A local filesystem has no change ring: a NULL changes makes the view
      * poll, and with no change records there is no identity to resolve. */
     "posix", px_stat, px_list, px_read, px_write, px_pump, NULL, NULL,
-    px_setperm, px_store, px_close
+    px_setperm, px_store, px_close, px_mkdir
 };
 
 tiku_backend_t *

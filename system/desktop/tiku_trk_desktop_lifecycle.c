@@ -660,12 +660,7 @@ boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp
     tiku_menu_set_icon_painter(paint_menu_icon);
     tiku_trk_deskbar_set_menu_icon_painter(app->deskbar, deskbar_menu_icon,
                                            app);
-    tiku_trk_addons_init(&app->addons);
-    (void)tiku_trk_addons_register(&app->addons, "Open in Tracker", "",
-                                   "inode/directory", 'o');
-    (void)tiku_trk_addons_register(&app->addons, "Open with Editor", "",
-                                   "text/plain,text/markdown", 'e');
-    (void)tiku_trk_addons_register(&app->addons, "Inspect", "", "*", 'i');
+    desktop_addons_register(app);
     {
         const char *home = getenv("HOME");
 

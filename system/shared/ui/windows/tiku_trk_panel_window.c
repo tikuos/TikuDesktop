@@ -10,7 +10,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
@@ -854,7 +853,8 @@ event(tiku_window_t *window, const tiku_event_t *input,
          * folder and puts the name the caller offered back in the
          * field. */
         char at[TIKU_PATH_MAX];
-        struct stat sb;
+        char why[160], says[256];
+        tiku_model_t m;
 
         if (controller->model.name[0] == '\0') {
             if (controller->alert != NULL) {
@@ -869,7 +869,9 @@ event(tiku_window_t *window, const tiku_event_t *input,
         }
         snprintf(at, sizeof at, "%s/%s", controller->model.dir,
                  controller->model.name);
-        if (stat(at, &sb) == 0 && !S_ISDIR(sb.st_mode)) {
+        if (controller->backend->ops->stat(controller->backend, at,
+                                           &m) == 0 &&
+            !tiku_model_is_container(&m)) {
             if (controller->alert != NULL) {
                 tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                                     TIKU_TRK_ALERT_TAG_ERROR,
@@ -880,13 +882,19 @@ event(tiku_window_t *window, const tiku_event_t *input,
             break;
         }
         /* A folder of that name already there is not an error: the
-         * panel goes into it. */
-        if (stat(at, &sb) != 0 && mkdir(at, 0755) != 0) {
+         * panel goes into it.  The folder is made through the backend
+         * that serves the path. */
+        why[0] = '\0';
+        if (controller->backend->ops->stat(controller->backend, at,
+                                           &m) != 0 &&
+            tiku_backend_mkdir(controller->backend, at, why,
+                               sizeof why) != 0) {
             if (controller->alert != NULL) {
+                snprintf(says, sizeof says, "The folder could not be made "
+                         "here: %s.", why[0] != '\0' ? why : "refused");
                 tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
-                                    TIKU_TRK_ALERT_TAG_ERROR,
-                                    "The folder could not be made "
-                                    "here.", "Cancel");
+                                    TIKU_TRK_ALERT_TAG_ERROR, says,
+                                    "Cancel");
             }
             break;
         }

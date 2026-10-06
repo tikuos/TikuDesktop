@@ -162,7 +162,7 @@ slow_pump(tiku_backend_t *b, int timeout_ms)
 
 static const tiku_backend_ops_t SLOW_OPS = {
     "slow", slow_stat, slow_list, slow_read, NULL, slow_pump,
-    NULL, NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static tiku_backend_t slow_backend;

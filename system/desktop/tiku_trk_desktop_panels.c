@@ -1017,7 +1017,8 @@ pick_is_from(const desktop_t *app, int session, uint32_t window)
  *
  * One application question at a time: the window whose question is up may
  * ask a newer one, which replaces it; another application's ask is
- * ignored while one is up.
+ * ignored while one is up, and every ask is ignored while the desktop's
+ * own question is up.
  */
 void
 desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
@@ -1032,7 +1033,9 @@ desktop_remote_pick(desktop_t *app, int session, const tiku_msg_t *msg)
         return;
     (void)tiku_msg_find_int32(msg, "window", 0, &window);
     (void)tiku_msg_find_int32(msg, "mode", 0, &mode);
-    if (app->pending_pick.kind && !pick_is_from(app, session, (uint32_t)window))
+    if (panel_asks_desktop(app) ||
+        (app->pending_pick.kind &&
+         !pick_is_from(app, session, (uint32_t)window)))
         return;
     if (mode < TIKU_APP_PICK_OPEN || mode > TIKU_APP_PICK_LOCAL_FOLDER)
         return;

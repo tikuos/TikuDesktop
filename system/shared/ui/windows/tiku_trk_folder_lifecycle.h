@@ -63,7 +63,10 @@ tiku_trk_folder_window_t *tiku_trk_folder_lifecycle_open(
 tiku_trk_folder_window_t *tiku_trk_folder_lifecycle_find(
     tiku_trk_folder_lifecycle_t *controller, tiku_window_t *window);
 
-/** @brief Save one folder window's state, columns and frame, and close it. */
+/**
+ * @brief Save one folder window's state, columns and frame, unless its
+ *        folder is gone, and close it, emptying its slot.
+ */
 void tiku_trk_folder_lifecycle_close(
     tiku_trk_folder_lifecycle_t *controller,
     tiku_trk_folder_window_t *folder);

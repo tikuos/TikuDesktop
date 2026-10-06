@@ -566,6 +566,58 @@ do_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
     return 0;
 }
 
+/**
+ * @brief Make the folder @p path inside /data with the board's shell
+ *        command mkdir.
+ *
+ * A path outside /data, a board whose shell has no mkdir, and the shell's
+ * own refusal fail with @p err filled.
+ * @return 0, or -1.
+ */
+static int
+do_mkdir(tiku_backend_t *b, const char *path, char *err, size_t errmax)
+{
+    tiku_impl_t *impl = b->impl;
+    char where[TIKU_NS_PATH_MAX + 3];
+    char cmd[TIKU_NS_PATH_MAX + 16];
+    char buf[256];
+    const char *why = NULL;
+
+    if (shell_is_leased(b)) {
+        why = "a program is running on the board";
+    } else if (!in_store(path) || strcmp(path, "/data") == 0) {
+        why = "a board makes folders only inside /data";
+    } else if (tiku_ns_quote(path, where, sizeof where) != 0) {
+        why = "the board's shell cannot carry this name";
+    }
+    if (why == NULL) {
+        snprintf(cmd, sizeof cmd, "mkdir %s", where);
+        if (tiku_session_cmd(impl->sess, cmd, buf, sizeof buf, 4000) < 0) {
+            why = "the board did not answer";
+        } else if (strstr(buf, "Unknown command") != NULL) {
+            why = "this board's shell has no mkdir command";
+        } else if (strstr(buf, "Usage:") != NULL) {
+            why = "the link dropped the command";
+        } else if (strstr(buf, "cannot create") != NULL ||
+                   strstr(buf, "too long") != NULL) {
+            why = buf;
+        }
+    }
+    if (why != NULL) {
+        if (err != NULL && errmax > 0u) {
+            size_t n;
+
+            snprintf(err, errmax, "%s", why);
+            n = strlen(err);
+            while (n > 0u && (err[n - 1] == '\n' || err[n - 1] == '\r')) {
+                err[--n] = '\0';
+            }
+        }
+        return -1;
+    }
+    return 0;
+}
+
 void
 tiku_backend_tiku_set_write_timeout(tiku_backend_t *b, int ms)
 {
@@ -717,6 +769,18 @@ tk_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
     return rc;
 }
 
+/** @brief do_mkdir() with the hand held. */
+static int
+tk_mkdir(tiku_backend_t *b, const char *path, char *err, size_t errmax)
+{
+    int rc;
+
+    pthread_mutex_lock(HAND(b));
+    rc = do_mkdir(b, path, err, errmax);
+    pthread_mutex_unlock(HAND(b));
+    return rc;
+}
+
 /** @brief do_pump(), or nothing while a worker holds the hand. */
 static int
 tk_pump(tiku_backend_t *b, int timeout_ms)
@@ -750,7 +814,7 @@ static const tiku_backend_ops_t TIKU_OPS = {
      * device, and a NULL setperm shows the permissions grid read-only
      * (AW-078). */
     "tiku", tk_stat, tk_list, tk_read, tk_write, tk_pump, tk_changes,
-    tk_path_of_id, NULL, tk_store, tk_close
+    tk_path_of_id, NULL, tk_store, tk_close, tk_mkdir
 };
 
 int

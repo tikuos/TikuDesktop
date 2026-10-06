@@ -676,7 +676,7 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
                  * keeps its position from being saved, here and at
                  * teardown. */
                 fl->gone = 1;
-                tiku_workspace_close(app->desk, fl->win);
+                close_window(app, fl->win);
                 changed++;
             } else if (nf != TIKU_TRK_NOTIFY_NOTHING) {
                 if ((nf & TIKU_TRK_NOTIFY_RETITLE) != 0u) {
@@ -749,12 +749,12 @@ desktop_notice_pump(desktop_t *app, desktop_loop_t *lp)
                         fl->run = NULL;
                         fl->live = 0;
                         fl->gone = 1;
-                        tiku_workspace_close(app->desk, fl->win);
+                        close_window(app, fl->win);
                         changed++;
                     } else if (strncmp(fl->path, vc[k].v.mount,
                                 strlen(vc[k].v.mount)) == 0) {
                         fl->gone = 1;
-                        tiku_workspace_close(app->desk, fl->win);
+                        close_window(app, fl->win);
                         changed++;
                     } else if (tiku_trk_poseview_device_gone(fl->view,
                                    (uint64_t)vc[k].v.dev) > 0) {

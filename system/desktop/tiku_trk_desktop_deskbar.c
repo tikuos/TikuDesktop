@@ -104,9 +104,9 @@ team_launch(desktop_t *app, int team)
 }
 
 /**
- * @brief Close every window of team @p team: an application's windows
- *        through close_window(), as their own Close does; the desktop's own
- *        windows directly on the workspace.
+ * @brief Close every window of team @p team: an application's windows and
+ *        the desktop's folder windows through close_window(), as their own
+ *        Close does; the desktop's other windows directly on the workspace.
  */
 static void
 team_close(desktop_t *app, int team)
@@ -119,7 +119,7 @@ team_close(desktop_t *app, int team)
         if (!desktop_team_has(app, team, ww)) {
             continue;
         }
-        if (shell) {
+        if (shell && folder_of(app, ww) == NULL) {
             tiku_workspace_close(app->desk, ww);
         } else {
             close_window(app, ww);

@@ -577,6 +577,9 @@ typedef struct desktop {
     /** The last press on a pose: for the long press, and to tell a slow second
      * click from a drag. */
     tiku_trk_press_t     press;
+    int64_t              info_icon_at;  /**< when an Info window's icon was
+                                         *   last pressed */
+    tiku_window_t       *info_icon_win; /**< and that Info window */
     tiku_trk_drag_t      drag;          /**< the gesture between
                                          *   press and drop */
     unsigned             drag_live_mods; /**< the modifiers as of
@@ -855,6 +858,16 @@ folder_of(desktop_t *app, tiku_window_t *w)
     return tiku_trk_folder_lifecycle_find(&app->folder_lifecycle, w);
 }
 
+/** @brief Whether the file panel is up with a question the desktop asked,
+ *         not an application's. */
+static inline int
+panel_asks_desktop(desktop_t *app)
+{
+    return app->file_panel.window != NULL &&
+           app->file_panel.target != NULL &&
+           app->file_panel.target != (void *)&app->pending_pick;
+}
+
 /** @brief The folder behind the desktop's own icons. */
 static inline folder_t *
 desktop_folder(desktop_t *app)
@@ -883,6 +896,7 @@ enum {
 
 /* tiku_desktop_automation.c */
 int desktop_invoke_addon(const tiku_trk_addon_t *addon, void *context);
+void desktop_addons_register(desktop_t *app);
 void script_command_file(desktop_t *app, const char *path);
 void sync_addons(desktop_t *app, int force);
 

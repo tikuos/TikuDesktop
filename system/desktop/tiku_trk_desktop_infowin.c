@@ -75,8 +75,9 @@ icon_menu(desktop_t *app, tiku_trk_info_t *info, const tiku_event_t *ev)
     return 1;
 }
 
-/** @brief A press on the icon: its menu, a double-click opens, a press
- *         that moves carries the item (AW-075). */
+/** @brief A press on the icon: its menu, a second press on the same icon
+ *         within half a second opens, a press that moves carries the item
+ *         (AW-075). */
 static void
 icon_press(desktop_t *app, tiku_window_t *iw, tiku_trk_info_t *info,
            const tiku_event_t *ev)
@@ -85,12 +86,14 @@ icon_press(desktop_t *app, tiku_window_t *iw, tiku_trk_info_t *info,
         (void)icon_menu(app, info, ev);
         return;
     }
-    if (tiku_trk_now() - app->press.at < 500000) {
+    if (app->info_icon_win == iw &&
+        tiku_trk_now() - app->info_icon_at < 500000) {
         (void)open_folder(app, info->path);
-        app->press.at = tiku_trk_now();
+        app->info_icon_at = tiku_trk_now();
         return;
     }
-    app->press.at = tiku_trk_now();
+    app->info_icon_at = tiku_trk_now();
+    app->info_icon_win = iw;
     if (ev->button == 1u && info->model.kind != TIKU_KIND_TRASH) {
         /* The Trash is never carried, only opened. */
         char iparent[TIKU_PATH_MAX];
