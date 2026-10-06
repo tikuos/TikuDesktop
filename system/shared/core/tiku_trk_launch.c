@@ -381,13 +381,17 @@ launch_process(const tiku_trk_app_t *app, const char *const *paths,
     int argc = 0, i;
     pid_t pid;
 
-    if (app == NULL || app->cmd[0] == '\0') {
+    if (app == NULL) {
         return TIKU_TRK_LAUNCH_NO_APP;
     }
     if (app->is_tracker) {
         /* Choosing this Tracker is not a launch: the running one takes it,
-         * so no second copy of the desktop starts (AW-035). */
+         * so no second copy of the desktop starts (AW-035).  Its entry may
+         * have no command. */
         return TIKU_TRK_LAUNCH_IS_TRACKER;
+    }
+    if (app->cmd[0] == '\0') {
+        return TIKU_TRK_LAUNCH_NO_APP;
     }
     argv[argc++] = app->cmd;
     if (app->module[0]) {

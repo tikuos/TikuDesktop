@@ -488,6 +488,9 @@ boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         DESK_W, DESK_H, &app->dirty, status_answer, status_stop, app);
     tiku_trk_find_window_init(&app->find_window, app->desk, DESK_W, DESK_H,
         &app->dirty, app->status, sizeof app->status, panel_search, app);
+    /* TikuOS's own icons are registered before the person's icon folder
+     * is loaded, so an icon there replaces TikuOS's of the same name. */
+    (void)tiku_icons_tiku_register();
     prepare_places(app);
     tiku_trk_launch_clear(&app->apps);
     offer_installed(app, o->argv0);
@@ -521,13 +524,14 @@ boot_deskbar(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         /* Empty: the Deskbar's rows need no scan of the machine's
          * processes. */
     }
+    /* The store is open before the Open With window keeps it. */
+    app->store = tiku_trk_session_open_store(app->backend);
     tiku_trk_open_with_window_init(&app->open_with_window, app->desk,
         DESK_W, DESK_H, &app->dirty, open_with_window_launch, app,
         alert_model(app), app->store);
     tiku_trk_select_window_init(&app->select_window, app->desk,
         DESK_W, DESK_H, &app->dirty, apply_select_model, app);
     tiku_trk_clip_init(&app->clip);
-    app->store = tiku_trk_session_open_store(app->backend);
     return -1;
 }
 
@@ -653,8 +657,6 @@ boot_applications(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp
     tiku_trk_folder_menu_init(&app->folder_menu, &app->menus, &app->clip,
         app->backend, app->fs, &app->types, &app->launcher, &app->bar_fl,
         &app->bar_open);
-    /* TikuOS's own icons are registered before any menu is drawn. */
-    (void)tiku_icons_tiku_register();
     tiku_menu_set_icon_painter(paint_menu_icon);
     tiku_trk_deskbar_set_menu_icon_painter(app->deskbar, deskbar_menu_icon,
                                            app);

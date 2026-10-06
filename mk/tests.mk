@@ -302,6 +302,14 @@ test_switcher_keys_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
     system/desktop/tiku_trk_desktop_keys.c \
     system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
 test_switcher_keys_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
+# The desktop's boot stages as linked, their file included by the test;
+# the file's own truncation warnings are reported by its own build.
+test_desktop_boot_CFLAGS := -ffunction-sections -fdata-sections \
+    -Wno-unused-parameter -Wno-unused-function -Wno-format-truncation
+test_desktop_boot_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
+    system/desktop/tiku_trk_desktop_lifecycle.c \
+    system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
+test_desktop_boot_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
 test_device_utilities_SRCS := system/shared/core/tiku_trk_task.c
 test_device_utilities_LDLIBS := $(X11_LIBS) -lm
 test_about_memory_CFLAGS := -ffunction-sections -fdata-sections

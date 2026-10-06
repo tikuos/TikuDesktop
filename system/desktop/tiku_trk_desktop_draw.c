@@ -103,6 +103,14 @@ resize_desktop(desktop_t *app, int width, int height)
     app->prefs_window.screen_h = height;
     app->deskbar_prefs_window.screen_w = width;
     app->deskbar_prefs_window.screen_h = height;
+    app->desktop_prefs_window.screen_w = width;
+    app->desktop_prefs_window.screen_h = height;
+    app->fonts_window.screen_w = width;
+    app->fonts_window.screen_h = height;
+    app->sounds_window.screen_w = width;
+    app->sounds_window.screen_h = height;
+    app->open_with_window.screen_w = width;
+    app->open_with_window.screen_h = height;
     app->switcher_window.screen_w = width;
     app->switcher_window.screen_h = height;
     app->file_panel.screen_w = width;

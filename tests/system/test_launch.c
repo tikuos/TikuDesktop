@@ -187,6 +187,21 @@ main(void)
               "nothing claims the type, nothing to open, could not start "
               "-- three distinct messages, not one");
     }
+    {
+        /* The desktop registers itself with no command. */
+        tiku_trk_apps_t own;
+        int at;
+
+        tiku_trk_launch_clear(&own);
+        at = tiku_trk_launch_add(&own, "TikuTracker", "", "inode/directory");
+        if (at >= 0) {
+            own.app[at].is_tracker = 1;
+        }
+        check(at >= 0 && tiku_trk_launch_run(&own.app[at], NULL, 0) ==
+              TIKU_TRK_LAUNCH_IS_TRACKER, "AW-035",
+              "this Tracker registered with no command is still this "
+              "Tracker, not an application that is missing");
+    }
 
     printf("\nthe registry as a file (AW-013)\n");
     {
