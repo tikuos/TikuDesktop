@@ -201,7 +201,6 @@
   <string name="cmd.icon_size_96">96 x 96</string>
   <string name="cmd.icon_view">Icon view</string>
   <string name="cmd.identify">Identify</string>
-  <string name="cmd.identify_shift">Force identify</string>
   <string name="cmd.invert_selection">Invert selection</string>
   <string name="cmd.link_here">Create link here</string>
   <string name="cmd.link_here_shift">Create relative link here</string>

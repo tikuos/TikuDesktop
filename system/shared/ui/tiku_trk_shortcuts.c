@@ -74,8 +74,6 @@ tiku_trk_sc_label(int command, unsigned mods)
         return tiku_str(sh ? "cmd.create_link_shift" : "cmd.create_link");
     case TIKU_TRK_CMD_LINK_HERE:
         return tiku_str(sh ? "cmd.link_here_shift" : "cmd.link_here");
-    case TIKU_TRK_CMD_IDENTIFY:
-        return tiku_str(sh ? "cmd.identify_shift" : "cmd.identify");
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
         return tiku_str(sh ? "cmd.move_to_trash_shift" : "cmd.move_to_trash");
 
@@ -87,6 +85,8 @@ tiku_trk_sc_label(int command, unsigned mods)
         return tiku_str("cmd.open");
     case TIKU_TRK_CMD_EDIT_QUERY:
         return tiku_str("cmd.edit_query");
+    case TIKU_TRK_CMD_IDENTIFY:
+        return tiku_str("cmd.identify");
     case TIKU_TRK_CMD_OPEN_WITH:
         return tiku_str("cmd.open_with");
     case TIKU_TRK_CMD_GET_INFO:
@@ -224,10 +224,6 @@ tiku_trk_sc_command(int command, unsigned mods)
         return sh ? TIKU_TRK_CMD_REL_LINK_HERE : TIKU_TRK_CMD_LINK_HERE;
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
         return sh ? TIKU_TRK_CMD_DELETE : TIKU_TRK_CMD_MOVE_TO_TRASH;
-    /* Identify keeps its command when Shift renames it; the shift goes
-     * with it as a "force" flag. */
-    case TIKU_TRK_CMD_IDENTIFY:
-        return TIKU_TRK_CMD_IDENTIFY;
     default:
         return canonical(command);
     }
@@ -356,8 +352,7 @@ tiku_trk_sc_enabled(int command, const tiku_trk_sc_ctx_t *c)
     case TIKU_TRK_CMD_MOVE_TO_TRASH:
         return c->selection > 0 && !c->selection_ro;
 
-    /* Only where there is a query to edit: the item clicked is one, or the
-     * window is a results window (CW-033). */
+    /* Only in a query's results window (CW-033). */
     case TIKU_TRK_CMD_EDIT_QUERY:
         return c->is_query;
 

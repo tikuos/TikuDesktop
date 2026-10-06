@@ -16,13 +16,15 @@ struct tiku_trk_app;
 
 /**
  * @brief What a view asks its shell for: which installed application a path
- *        is, the art it wears, a line for the status strip, and a repaint.
- *        Any entry may be NULL in a shell that has no answer.
+ *        or a name is, the art it wears, a line for the status strip, and a
+ *        repaint.  Any entry may be NULL in a shell that has no answer.
  */
 typedef struct tiku_trk_services {
     void *ctx;                  /**< the shell's, handed back to each entry */
     /** @brief The registered application @p path is or links to, or NULL. */
     const struct tiku_trk_app *(*app_of)(void *ctx, const char *path);
+    /** @brief The registered application named @p name, or NULL. */
+    const struct tiku_trk_app *(*app_named)(void *ctx, const char *name);
     /** @brief The art a pose that is an application wears, or NULL. */
     const char *(*art_for)(void *ctx, const char *path);
     /** @brief A line for the status strip. */

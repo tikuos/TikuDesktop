@@ -3,7 +3,8 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * test_drop_controller.c - a drop on a file in the open Deskbar menu.
+ * test_drop_controller.c - a drop on a file in the open Deskbar menu, and
+ * on an application row of the Deskbar.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,6 +15,7 @@
 #include <unistd.h>
 
 #include "tiku_trk_drop_controller.h"
+#include "tiku_trk_deskbar_prefs.h"
 #include "tiku_trk_launch.h"
 
 static int fails;
@@ -25,10 +27,13 @@ check(int cond, const char *row, const char *what)
     if (!cond) { fails++; }
 }
 
-/** The registered application the fake shell knows, and its path. */
+/** The registered applications the fake shell knows: one by its path, one
+ *  by its name. */
 static tiku_trk_app_t editor;
+static tiku_trk_app_t alpha_app;
 static int launches;
 static int launched_count;
+static const tiku_trk_app_t *launched_app;
 static char launched_path[TIKU_PATH_MAX];
 static char status_line[256];
 
@@ -37,6 +42,13 @@ fake_app_of(void *ctx, const char *path)
 {
     (void)ctx;
     return strcmp(path, editor.path) == 0 ? &editor : NULL;
+}
+
+static const tiku_trk_app_t *
+fake_app_named(void *ctx, const char *name)
+{
+    (void)ctx;
+    return strcmp(name, alpha_app.name) == 0 ? &alpha_app : NULL;
 }
 
 static void
@@ -51,12 +63,45 @@ fake_launch(void *ctx, const struct tiku_trk_app *application,
             const char *const *paths, int count)
 {
     (void)ctx;
-    (void)application;
     launches++;
     launched_count = count;
+    launched_app = application;
     snprintf(launched_path, sizeof launched_path, "%s",
              count > 0 ? paths[0] : "");
-    return 0;
+    return 1;
+}
+
+/** @brief The y of team @p team's row at @p x, or -1. */
+static int
+team_row_y(tiku_trk_deskbar_t *db, int x, int team)
+{
+    tiku_rect_t f = tiku_trk_deskbar_frame(db);
+    int which, y;
+
+    for (y = f.y; y < f.y + f.h; y++) {
+        if (tiku_trk_deskbar_drop_at(db, x, y, &which) ==
+                TIKU_TRK_DB_DROP_TEAM && which == team) {
+            return y;
+        }
+    }
+    return -1;
+}
+
+/** @brief The y of a point at @p x on the bar itself, off every row, or
+ *         -1. */
+static int
+bar_y(tiku_trk_deskbar_t *db, int x)
+{
+    tiku_rect_t f = tiku_trk_deskbar_frame(db);
+    int which, y;
+
+    for (y = f.y; y < f.y + f.h; y++) {
+        if (tiku_trk_deskbar_drop_at(db, x, y, &which) ==
+                TIKU_TRK_DB_DROP_BAR) {
+            return y;
+        }
+    }
+    return -1;
 }
 
 /** @brief The y of the menu row whose path is @p want, or -1. */
@@ -148,6 +193,115 @@ main(void)
           "D-005",
           "a row that is not an application refuses the drop on the "
           "status line");
+
+    printf("\na drop on an application row of a sorted list (D-193)\n");
+    {
+        /* Zulu is added first and Alpha second, so in name order the
+         * first row shows the second entry.  Writer is known only by the
+         * image its process was started from. */
+        tiku_trk_deskbar_t *sorted = tiku_trk_deskbar_new(b);
+        tiku_trk_deskbar_settings_t settings;
+        tiku_surface_t *sfc = tiku_surface_new(1000, 700, TIKU_C_BACKDROP);
+        int zulu, alpha, writer, row_y, ry, which = -1;
+
+        snprintf(alpha_app.name, sizeof alpha_app.name, "Alpha");
+        zulu = tiku_trk_deskbar_add_team(sorted, "Zulu");
+        alpha = tiku_trk_deskbar_add_team(sorted, "Alpha");
+        writer = tiku_trk_deskbar_add_team_pid(sorted, "Writer", 4242L,
+                                               editor.path, NULL);
+        tiku_trk_deskbar_settings_default(&settings);
+        settings.sort_apps = 1;
+        tiku_trk_deskbar_apply_settings(sorted, &settings);
+        tiku_trk_deskbar_draw(sorted, sfc);
+        tiku_surface_free(sfc);
+        frame = tiku_trk_deskbar_frame(sorted);
+        x = frame.x + 10;
+        row_y = -1;
+        for (ry = frame.y; ry < frame.y + frame.h && row_y < 0; ry++) {
+            if (tiku_trk_deskbar_drop_at(sorted, x, ry, &which) ==
+                TIKU_TRK_DB_DROP_TEAM) {
+                row_y = ry;
+            }
+        }
+        check(row_y >= 0 && which == alpha && alpha != 0 &&
+              strcmp(tiku_trk_deskbar_team_name(sorted, 0), "Alpha") == 0,
+              "D-193", "the first row shows Alpha, the second entry added");
+
+        services.app_named = fake_app_named;
+        tiku_trk_drop_controller_init(&controller, sorted, b, NULL, NULL,
+            NULL, NULL, &drag, &beneath, &drop_row, &popup, &popup_sub,
+            &popup_frame, progress, sizeof progress, &services, 1000, 700,
+            NULL, NULL);
+        tiku_trk_drop_controller_set_launcher(&controller, fake_launch, NULL);
+        drag.count = 1;
+        snprintf(drag.path[0], sizeof drag.path[0], "%s", plain);
+        status_line[0] = '\0';
+        launches = 0;
+        tiku_trk_drop_controller_execute(&controller, x, row_y, 0u, 1u);
+        check(strcmp(status_line, "Alpha cannot open that") == 0 &&
+              launches == 0, "D-193",
+              "a refused drop names the application under the pointer");
+
+        printf("\na drop on an application row launches it (D-024)\n");
+        launches = 0;
+        launched_app = NULL;
+        tiku_trk_drop_controller_execute(&controller, x, row_y,
+                                         TIKU_MOD_CMD, 1u);
+        check(launches == 1 && launched_app == &alpha_app &&
+              launched_count == 1 && strcmp(launched_path, plain) == 0,
+              "D-024",
+              "a row found by its name launches with the dropped file");
+
+        launches = 0;
+        launched_app = NULL;
+        row_y = team_row_y(sorted, x, writer);
+        tiku_trk_drop_controller_execute(&controller, x, row_y,
+                                         TIKU_MOD_CMD, 1u);
+        check(row_y >= 0 && launches == 1 && launched_app == &editor &&
+              launched_count == 1 && strcmp(launched_path, plain) == 0,
+              "D-024",
+              "a row found by the image it was started from does the same");
+
+        launches = 0;
+        status_line[0] = '\0';
+        row_y = team_row_y(sorted, x, zulu);
+        tiku_trk_drop_controller_execute(&controller, x, row_y,
+                                         TIKU_MOD_CMD, 1u);
+        check(row_y >= 0 && launches == 0 &&
+              strcmp(status_line, "Zulu is not an installed application")
+                  == 0, "D-024",
+              "a row with no installed application refuses, by its name");
+
+        printf("\na drop on the bar launches the applications in it "
+               "(D-024)\n");
+        drag.count = 3;
+        snprintf(drag.path[0], sizeof drag.path[0], "%s", editor.path);
+        snprintf(drag.path[1], sizeof drag.path[1], "%s", plain);
+        snprintf(drag.path[2], sizeof drag.path[2], "%s", dir);
+        launches = 0;
+        launched_app = NULL;
+        status_line[0] = '\0';
+        row_y = bar_y(sorted, x);
+        tiku_trk_drop_controller_execute(&controller, x, row_y, 0u, 1u);
+        check(row_y >= 0 && launches == 1 && launched_app == &editor &&
+              launched_count == 0, "D-024",
+              "an application launches; the folder is passed over");
+        check(strcmp(status_line,
+                     "launching 1 application; 1 item is not one") == 0,
+              "D-024", "and the document is said not to be launched");
+
+        drag.count = 1;
+        snprintf(drag.path[0], sizeof drag.path[0], "%s", plain);
+        launches = 0;
+        status_line[0] = '\0';
+        tiku_trk_drop_controller_execute(&controller, x, row_y, 0u, 1u);
+        check(launches == 0 &&
+              strcmp(status_line,
+                     "nothing launched: 1 item is not an application")
+                  == 0, "D-024",
+              "a drop with no application in it launches nothing");
+        tiku_trk_deskbar_free(sorted);
+    }
 
     tiku_trk_deskbar_free(db);
     tiku_backend_close(b);

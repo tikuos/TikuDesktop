@@ -2131,6 +2131,8 @@ BWindow::AddShortcut implies B_COMMAND_KEY unless B_NO_COMMAND_KEY is passed. Th
 **Menu items relabel themselves live while Shift is held and fire a different command: Copy/Cut -> Copy more/Cut more, Paste -> Paste links, Close -> Close all, Clean up -> Clean up all, Create link -> Create relative link, Move to Trash -> Delete, Identify -> Force identify.**  
 Each pair is a *Label()/*Command() method reading modifiers() at call time; TShortcuts::Update() rewrites item->SetLabel(), item->Message()->what and item->SetShortcut(..., B_COMMAND_KEY | (modifiers() & B_SHIFT_KEY)) for every item it recognises by command code. Identify rewrites the message's "force" bool instead of its what.  
 `Shortcuts.cpp` → `TShortcuts::Update; TShortcuts::CopyLabel/CopyCommand, CutCommand, PasteCommand, CloseCommand, CleanupCommand, CreateLinkCommand, MoveToTrashCommand, IdentifyItem`  
+**PORT:** Identify keeps its label and its command with Shift held: the backends work out an entry's type on every stat and keep no stored type, so a forced identify would do what Identify does.  The other rows relabel and change command as listed.  
+*system/shared/ui/tiku_trk_shortcuts.c:tiku_trk_sc_label; tests/system/test_menu.c*
 
 #### PVK-044 · important · done
 **Menu items enable/disable from live state: Copy needs a selection or a focused text view, Cut/Move to/Delete additionally need a writable volume and are off in root/Trash/virtual dirs, Paste needs clipboard refs and a writable non-Trash target, Unmount needs an unmountable (non-boot) volume selected, Open parent needs CanOpenParent(), Empty Trash needs a full Trash, Arrange by is only enabled outside list mode, Make active printer needs exactly one selection.**  
@@ -2924,6 +2926,8 @@ NewArrangeByMenu clones fAttrMenu items from index 3 onward (skipping Copy/Paste
 **Holding Shift rewrites menu items live while the menu is open: Clean up -> Clean up all, Close -> Close all, Copy -> Copy more, Cut -> Cut more, Paste -> Paste links, Create link -> Create relative link, Move to Trash -> Delete, Identify -> Force identify - and the item's command and shortcut modifiers change with the label.**  
 TLiveMenu/TLivePopUpMenu catch B_MODIFIERS_CHANGED and call Update(), which re-runs the TShortcuts::Update* methods; each Label()/Command() pair is derived from modifiers() at call time. "Close all" also retargets from the window to be_app.  
 `Shortcuts.cpp` → `TShortcuts::CleanupLabel / CloseLabel / CopyLabel / CutLabel / PasteLabel / CreateLinkLabel / MoveToTrashLabel / IdentifyLabel (+ LiveMenu.cpp TLiveMenu::MessageReceived)`  
+**PORT:** Identify is not among the rows Shift rewrites; see PVK-043.  
+*system/shared/ui/tiku_trk_shortcuts.c:tiku_trk_sc_label; tests/system/test_menu.c*
 
 #### CW-029 · polish · differs
 **Opening a menu with the mouse commits an in-progress inline rename; opening it with a keyboard shortcut does not (so Cmd+C during a rename still copies text).**  
@@ -7221,6 +7225,8 @@ Types are cached once per drag (CacheDragData/SpringLoadedFolderCacheDragData); 
 *Shell: desktop*  
 **PORT:** The row a drag would be handed to is lit while hovering, so the promise is visible before the drop is made, and the highlight is held on the BAR rather than in the shell -- one that the drawing had to be told about separately could disagree with the drop.  An application that cannot open the types refuses unless Ctrl forces it, and every type must match.  
 *Shell: desktop*  
+**PORT:** A drop on a row launches that row's installed application with the files, found by the image its process was started from, else by its name or manifest identity.  A running instance is not handed the files, so a new instance or window may open.  A row with no installed application refuses the drop and names itself on the status line.  
+*system/shared/ui/commands/tiku_trk_drop_controller.c:drop_on_deskbar; tests/system/test_drop_controller.c*
 #### DB-036 · polish · done
 **Hovering off an open Deskbar submenu does not close it while the cursor is still within 20px of the menu, or over the leaf menu or any application item**  
 MenuTrackingHook returns 'end the menu' only when the point is outside the menu bounds inset by -kMenuTrackMargin (20) AND not inside the deskbar menu frame AND not over a team item  
@@ -7459,6 +7465,8 @@ Each ref is re-wrapped in its own B_REFS_RECEIVED and passed to TrackerLaunch on
 `BarApp.cpp` → `TBarApp::RefsReceived`  
 **PORT:** A drop on the bar launches the files and passes silently over directories: launching one has no meaning, and complaining about something the user very likely did by accident would be noise.  
 *Shell: desktop*  
+**PORT:** A drop on the bar launches each dropped item that is an installed application, with no documents, and passes folders over silently.  Any other item is not launched, and the status line counts it.  
+*system/shared/ui/commands/tiku_trk_drop_controller.c:launch_on_bar; tests/system/test_drop_controller.c*
 #### DB-067 · polish · differs
 **Changing the system locale re-reads localized application names, reformats the clock and re-flows the tray without a restart**  
 B_LOCALE_CHANGED refreshes BLocaleRoster, updates gLocalizedNamePreferred from the "filesys" field, then falls through to forward to the tray, which calls UpdateTimeFormat/Update and jumps to the realign path. Team names are taken from BLocaleRoster::GetLocalizedFileName when that preference is on, falling back to ref->name  

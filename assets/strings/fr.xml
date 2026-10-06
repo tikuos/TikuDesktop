@@ -158,7 +158,6 @@
   <string name="cmd.get_info">Informations</string>
   <string name="cmd.icon_view">Vue en icônes</string>
   <string name="cmd.identify">Identifier</string>
-  <string name="cmd.identify_shift">Forcer l'identification</string>
   <string name="cmd.invert_selection">Inverser la sélection</string>
   <string name="cmd.link_here">Créer un lien ici</string>
   <string name="cmd.link_here_shift">Créer un lien relatif ici</string>

@@ -8,8 +8,8 @@
  * now.
  *
  * Menus are built and updated through it, so the File menu and the context
- * menus agree on every action.  Nine actions rename themselves while Shift
- * is held; all but Identify change their command with their label.
+ * menus agree on every action.  Eight actions rename themselves while
+ * Shift is held, and each changes its command with its label.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -140,7 +140,7 @@ typedef struct {
     int      is_root;            /* the window shows the root               */
     int      is_trash;           /* the window shows the Trash              */
     int      in_trash;           /* the window shows a folder in the Trash  */
-    int      is_query;           /* a query: the item or the window         */
+    int      is_query;           /* the window shows a query's results      */
     int      is_virtual;         /* a namespace directory: fixed shape      */
     int      is_desktop;         /* the desktop background, not a folder    */
     int      selection_is_volume;    /* the selection is a volume           */

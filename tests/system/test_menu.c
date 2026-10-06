@@ -143,9 +143,9 @@ main(void)
         check(option != shift, "and the mark is not the Shift mark");
     }
 
-    printf("\nlive relabelling: the nine that change with Shift\n");
+    printf("\nlive relabelling: the eight that change with Shift\n");
     {
-        static const struct { int cmd; const char *plain, *shift; } nine[] = {
+        static const struct { int cmd; const char *plain, *shift; } eight[] = {
             { TIKU_TRK_CMD_CLEANUP,       "Clean up",      "Clean up all" },
             { TIKU_TRK_CMD_CLOSE,         "Close",         "Close all" },
             { TIKU_TRK_CMD_COPY,          "Copy",          "Copy more" },
@@ -155,34 +155,36 @@ main(void)
               "Create relative link" },
             { TIKU_TRK_CMD_LINK_HERE,     "Create link here",
               "Create relative link here" },
-            { TIKU_TRK_CMD_IDENTIFY,      "Identify",      "Force identify" },
             { TIKU_TRK_CMD_MOVE_TO_TRASH, "Move to Trash", "Delete" },
         };
         size_t i;
         int changed_cmd = 0;
 
-        for (i = 0; i < sizeof nine / sizeof *nine; i++) {
-            const char *p = tiku_trk_sc_label(nine[i].cmd, 0u);
-            const char *s = tiku_trk_sc_label(nine[i].cmd,
+        for (i = 0; i < sizeof eight / sizeof *eight; i++) {
+            const char *p = tiku_trk_sc_label(eight[i].cmd, 0u);
+            const char *s = tiku_trk_sc_label(eight[i].cmd,
                                               TIKU_TRK_MOD_SHIFT);
             char what[96];
 
             snprintf(what, sizeof what, "\"%s\" becomes \"%s\" on Shift",
-                     nine[i].plain, nine[i].shift);
-            check(strcmp(p, nine[i].plain) == 0 &&
-                  strcmp(s, nine[i].shift) == 0, what);
-            if (tiku_trk_sc_command(nine[i].cmd, TIKU_TRK_MOD_SHIFT) !=
-                tiku_trk_sc_command(nine[i].cmd, 0u)) {
+                     eight[i].plain, eight[i].shift);
+            check(strcmp(p, eight[i].plain) == 0 &&
+                  strcmp(s, eight[i].shift) == 0, what);
+            if (tiku_trk_sc_command(eight[i].cmd, TIKU_TRK_MOD_SHIFT) !=
+                tiku_trk_sc_command(eight[i].cmd, 0u)) {
                 changed_cmd++;
             }
         }
-        /* Eight of the nine also change command; Identify keeps its command
-         * and carries the shift as a flag instead. */
         check(changed_cmd == 8,
-              "eight of the nine change command with their label");
+              "all eight change command with their label");
+        /* Identify re-reads the entry's type, which the backends work out
+         * on every stat; Shift does not change it. */
+        check(strcmp(tiku_trk_sc_label(TIKU_TRK_CMD_IDENTIFY,
+                                       TIKU_TRK_MOD_SHIFT), "Identify") == 0,
+              "Identify keeps its label with Shift held");
         check(tiku_trk_sc_command(TIKU_TRK_CMD_IDENTIFY, TIKU_TRK_MOD_SHIFT)
               == TIKU_TRK_CMD_IDENTIFY,
-              "Force identify keeps the Identify command");
+              "and keeps the Identify command");
         check(strcmp(tiku_trk_sc_label(TIKU_TRK_CMD_DELETE, 0u),
                      "Delete") == 0 &&
               tiku_trk_sc_command(TIKU_TRK_CMD_DELETE, 0u) ==
@@ -591,10 +593,10 @@ main(void)
         /*
          * Menus carry rows nobody wrote a command for: the partitions
          * under Mount, the applications under Open with.  Their label and
-         * their enablement are facts the BUILDER knows and the shortcut
-         * table does not -- and a table that relabels every row it walks
-         * writes the empty string over a name it has never heard of and
-         * turns a row the builder greyed back on.
+         * their enablement come from the code that built the menu, not
+         * from the shortcut table.  These checks fail if an update
+         * changes such a row's label or enables a row its builder
+         * disabled.
          */
         tiku_menu_t m;
         tiku_trk_sc_ctx_t c;

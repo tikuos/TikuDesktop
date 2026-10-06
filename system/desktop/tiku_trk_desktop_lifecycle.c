@@ -13,6 +13,8 @@
 
 #include "tiku_trk_desktop_private.h"
 
+#include <strings.h>
+
 #include "tiku_trail.h"
 
 #include "tiku_link_tcp.h"          /* the port a board dials, for -listen */
@@ -31,6 +33,25 @@ static const struct tiku_trk_app *
 services_app_of(void *ctx, const char *path)
 {
     return desktop_app_at(ctx, path);
+}
+
+/** @brief The services table's app_named: the installed application whose
+ *         name or manifest identity is @p name, matched without regard to
+ *         case, as Deskbar rows are named. */
+static const struct tiku_trk_app *
+services_app_named(void *ctx, const char *name)
+{
+    desktop_t *app = ctx;
+
+    for (int i = 0; name != NULL && name[0] != '\0' && i < app->apps.count;
+         i++) {
+        const tiku_trk_app_t *a = &app->apps.app[i];
+
+        if (strcasecmp(a->name, name) == 0 || strcasecmp(a->id, name) == 0) {
+            return a;
+        }
+    }
+    return NULL;
 }
 
 /** @brief The services table's art_for: the art an application's pose is
@@ -746,7 +767,8 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
         app->deskbar, DESK_W, DESK_H, &app->dirty, app->status,
         sizeof app->status);
     app->services = (tiku_trk_services_t){
-        .ctx = app, .app_of = services_app_of, .art_for = services_art_for,
+        .ctx = app, .app_of = services_app_of,
+        .app_named = services_app_named, .art_for = services_art_for,
         .status = services_status, .damage = services_damage
     };
     app->folder_render = (tiku_trk_folder_render_t){

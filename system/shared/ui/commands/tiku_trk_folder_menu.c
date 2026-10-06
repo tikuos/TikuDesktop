@@ -202,7 +202,9 @@ tiku_trk_folder_menu_build_per_type(tiku_trk_folder_menu_t *controller,
     }
     count = tiku_trk_poseview_types_present(folder->view, types, 4);
     for (i = 0; i < count; i++) {
-        tiku_menu_t *menu = &controller->menus->per_type[i];
+        /* The submenu is built in the slot its name and icon go to. */
+        tiku_menu_t *menu =
+            &controller->menus->per_type[controller->menus->per_type_count];
         const tiku_trk_typerec_t *record =
             tiku_trk_types_find(controller->types, types[i]);
         int k;

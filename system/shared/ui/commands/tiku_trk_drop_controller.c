@@ -109,14 +109,88 @@ drop_paths(tiku_trk_drop_controller_t *controller, const char **paths)
 
 static int drop_on_application(tiku_trk_drop_controller_t *controller,
                                const char *destination, unsigned modifiers);
+static const tiku_trk_app_t *app_behind(
+    const tiku_trk_drop_controller_t *controller, const char *path);
+
+/**
+ * @brief The installed application behind Deskbar entry @p team: the one
+ *        its process was started from, else the one of its name.  NULL
+ *        when there is none.
+ */
+static const tiku_trk_app_t *
+team_application(const tiku_trk_drop_controller_t *controller, int team)
+{
+    const tiku_trk_services_t *services = controller->services;
+    const char *command =
+        tiku_trk_deskbar_team_command(controller->deskbar, team);
+    const char *name = tiku_trk_deskbar_team_app(controller->deskbar, team);
+    const tiku_trk_app_t *application = NULL;
+
+    if (command != NULL && command[0] != '\0') {
+        application = app_behind(controller, command);
+    }
+    if (application == NULL && name != NULL && services != NULL &&
+        services->app_named != NULL) {
+        application = services->app_named(services->ctx, name);
+    }
+    return application;
+}
+
+/**
+ * @brief Launch each dragged item that is an installed application, with
+ *        no documents; a folder is passed over, and the status line counts
+ *        the other items, which are not launched.
+ */
+static void
+launch_on_bar(tiku_trk_drop_controller_t *controller)
+{
+    int launched = 0;
+    int refused = 0;
+    int failed = 0;
+    int i;
+
+    for (i = 0; i < controller->drag->count; i++) {
+        const tiku_trk_app_t *application;
+        tiku_model_t model;
+
+        if (controller->backend->ops->stat(controller->backend,
+                controller->drag->path[i], &model) != 0 ||
+            !tiku_trk_deskbar_launchable(&model)) {
+            continue;
+        }
+        application = app_behind(controller, controller->drag->path[i]);
+        if (application == NULL || controller->launch == NULL) {
+            refused++;
+        } else if (controller->launch(controller->launch_context,
+                                      application, NULL, 0)) {
+            launched++;
+        } else {
+            failed++;
+        }
+    }
+    if (failed > 0) {
+        return;     /* the launcher's status line says why */
+    }
+    if (launched == 0 && refused > 0) {
+        say(controller, "nothing launched: %d item%s %s not an application",
+            refused, refused == 1 ? "" : "s", refused == 1 ? "is" : "are");
+    } else if (refused > 0) {
+        say(controller, "launching %d application%s; %d item%s %s not one",
+            launched, launched == 1 ? "" : "s", refused,
+            refused == 1 ? "" : "s", refused == 1 ? "is" : "are");
+    } else if (launched > 0) {
+        say(controller, "launching %d application%s", launched,
+            launched == 1 ? "" : "s");
+    }
+}
 
 /**
  * @brief A drop that lands on the Deskbar: a menu folder links the items
  *        into it, a menu file launches with them, the logo links them into
  *        the Deskbar folder, the tray subscribes to one node, a team row
- *        hands the items to that application, and the bar itself reports
- *        on the status line how many items can launch.  @return 1 when the
- *        bar took the drop, 0 when it landed elsewhere.
+ *        launches its installed application with the items, and the bar
+ *        itself launches the items that are applications.  @return 1 when
+ *        the bar took the drop, 0 when it landed elsewhere.
  */
 static int
 drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
@@ -194,6 +268,9 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
     }
     if (drop == TIKU_TRK_DB_DROP_TEAM && team >= 0) {
         const char *types[TIKU_TRK_DRAG_TYPES];
+        const char *name = tiku_trk_deskbar_team_app(controller->deskbar,
+                                                     team);
+        const tiku_trk_app_t *application;
         int type_count = tiku_trk_drag_types(controller->drag);
 
         for (i = 0; i < type_count; i++) {
@@ -203,29 +280,22 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
                 types, type_count,
                 (modifiers & TIKU_MOD_CMD) != 0u)) {
             say(controller,
-                     "%.40s cannot open %s",
-                     tiku_trk_deskbar_team_name(controller->deskbar, team),
+                     "%.40s cannot open %s", name,
                      count == 1 ? "that" : "those");
             return 1;
         }
-        say(controller,
-                 "handing %d item%s to %.40s", count,
-                 count == 1 ? "" : "s",
-                 tiku_trk_deskbar_team_name(controller->deskbar, team));
+        application = team_application(controller, team);
+        if (application == NULL || controller->launch == NULL) {
+            say(controller, "%.40s is not an installed application", name);
+            return 1;
+        }
+        /* The launch starts a new instance; the launcher's status line
+         * reports it. */
+        (void)controller->launch(controller->launch_context, application,
+                                 paths, count);
         return 1;
     }
-    count = 0;
-    for (i = 0; i < controller->drag->count; i++) {
-        tiku_model_t model;
-
-        if (controller->backend->ops->stat(controller->backend,
-                controller->drag->path[i], &model) == 0 &&
-            tiku_trk_deskbar_launchable(&model)) {
-            count++;
-        }
-    }
-    say(controller,
-             "launching %d item%s", count, count == 1 ? "" : "s");
+    launch_on_bar(controller);
     return 1;
 }
 

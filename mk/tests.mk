@@ -188,6 +188,10 @@ test_drag_SRCS   := system/shared/core/tiku_trk_drag.c
 test_clip_SRCS   := system/shared/core/tiku_trk_clip.c
 test_edit_SRCS   := system/shared/core/tiku_trk_select.c system/shared/core/tiku_trk_match.c
 test_menu_SRCS   := system/shared/ui/tiku_trk_shortcuts.c system/shared/ui/tiku_trk_cwmenu.c
+test_folder_menu_SRCS := $(COMMON) $(POSEVIEW) \
+    system/shared/ui/commands/tiku_trk_folder_menu.c \
+    system/shared/ui/commands/tiku_trk_launch_controller.c \
+    system/shared/ui/tiku_trk_cwmenu.c system/shared/ui/tiku_trk_shortcuts.c
 test_splash_SRCS   := system/shared/shell/tiku_trk_splash.c
 test_conduct_LDLIBS := $(X11_LIBS) -lm
 # A thread stands in for the desktop's own process, reading the line.
