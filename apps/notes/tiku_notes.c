@@ -99,7 +99,11 @@ notes_dir(char *out, size_t max)
     } else {
         return -1;
     }
-    if (stat(out, &sb) != 0 && mkdir(out, 0777) != 0) {
+    if (stat(out, &sb) != 0) {
+        if (mkdir(out, 0777) != 0) {
+            return -1;
+        }
+    } else if (!S_ISDIR(sb.st_mode)) {
         return -1;
     }
     return 0;

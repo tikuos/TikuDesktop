@@ -267,7 +267,7 @@ int tiku_bench_queue_build(bench_t *st)
             }
             if (used) job->only[used++] = ',';
             memcpy(job->only + used, l->id, n + 1); used += n;
-            if (!strcmp(l->kind, "destructive")) job->destructive = 1;
+            if (!strcmp(l->kind, "destructive")) job->destructive++;
         }
         if (s->selected || used) st->njob++;
     }

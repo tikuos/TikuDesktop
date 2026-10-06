@@ -74,6 +74,7 @@ typedef struct {
     unsigned char                   fg, bg, attr;
     int                             wrap_next;
     int                             cursor_on;
+    int                             app_cursor;     /* CSI ?1h      */
 
     scan_t                          scan;
     int                             param[PARAMS_MAX];
@@ -434,8 +435,12 @@ csi_dispatch(term_state_t *st, char final)
         break;
     case 'h':
     case 'l':
-        if (st->question && param_or(st, 0, 0) == 25) {
-            st->cursor_on = (final == 'h');
+        for (c = 0; st->question && c < st->nparam; c++) {
+            if (param_or(st, c, 0) == 25) {
+                st->cursor_on = (final == 'h');
+            } else if (param_or(st, c, 0) == 1) {
+                st->app_cursor = (final == 'h');
+            }
         }
         break;
     case 's':
@@ -488,18 +493,26 @@ feed(term_state_t *st, unsigned char ch)
         }
         if (ch == 'M') {
             /* Reverse index, which a pager scrolling backwards uses.
-             * ESC c resets; any other escape without a bracket, ESC 7 and
-             * ESC 8 among them, is ignored. */
+             * ESC 7 and ESC 8 save and restore the cursor, ESC c resets;
+             * any other escape without a bracket is ignored. */
             if (st->row == st->top) {
                 scroll_region_down(st);
             } else if (st->row > 0) {
                 st->row--;
             }
+        } else if (ch == '7') {
+            st->save_row = st->row;
+            st->save_col = st->col;
+        } else if (ch == '8') {
+            st->row = st->save_row;
+            st->col = st->save_col;
+            st->wrap_next = 0;
         } else if (ch == 'c') {
             grid_clear(st);
             st->fg = 8u;
             st->bg = 8u;
             st->attr = 0u;
+            st->app_cursor = 0;
         }
         st->scan = SCAN_TEXT;
         return;
@@ -982,18 +995,19 @@ term_event(void *state, const tiku_event_t *event)
         send_bytes(st, &one, 1u);
         return 0;
     /* The sequences line editors and full-screen editors read the arrow
-     * and editing keys from. */
+     * and editing keys from; after CSI ?1h the arrows send ESC O and a
+     * letter, as the vt100 entry's key names give them. */
     case TIKU_KEY_UP:
-        seq = "\x1b[A";
+        seq = st->app_cursor ? "\x1bOA" : "\x1b[A";
         break;
     case TIKU_KEY_DOWN:
-        seq = "\x1b[B";
+        seq = st->app_cursor ? "\x1bOB" : "\x1b[B";
         break;
     case TIKU_KEY_RIGHT:
-        seq = "\x1b[C";
+        seq = st->app_cursor ? "\x1bOC" : "\x1b[C";
         break;
     case TIKU_KEY_LEFT:
-        seq = "\x1b[D";
+        seq = st->app_cursor ? "\x1bOD" : "\x1b[D";
         break;
     case TIKU_KEY_HOME:
         seq = "\x1b[H";
@@ -1045,9 +1059,9 @@ term_pick(void *state, uint32_t window, int command)
         paint(st);
         break;
     case CMD_RESET:
-        /* Colours, attributes, scroll region, parser, cursor and view go
-         * back to where they started, and the screen is cleared; the
-         * shell keeps running. */
+        /* Colours, attributes, scroll region, parser, cursor, cursor
+         * keys and view go back to where they started, and the screen is
+         * cleared; the shell keeps running. */
         st->fg = 8u;
         st->bg = 8u;
         st->attr = 0u;
@@ -1055,6 +1069,7 @@ term_pick(void *state, uint32_t window, int command)
         st->bottom = ROWS - 1;
         st->scan = SCAN_TEXT;
         st->cursor_on = 1;
+        st->app_cursor = 0;
         st->view = 0;
         grid_clear(st);
         paint(st);

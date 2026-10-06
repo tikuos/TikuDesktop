@@ -114,11 +114,11 @@ typedef struct {
 typedef struct {
     char field[8][128];             /**< the record's fields, 0 unused */
 } metric_t;
-/** @brief A job: one suite, the leaves it is narrowed to, and whether any
+/** @brief A job: one suite, the leaves it is narrowed to, and how many
  *         of them may erase the store, which needs the person's consent. */
 typedef struct {
-    int suite, destructive;         /**< the suite's index; a destructive
-                                         leaf is selected */
+    int suite, destructive;         /**< the suite's index; how many
+                                         destructive leaves are selected */
     char key[48], only[ONLY_MAX];   /**< the suite's key; its --only list,
                                          empty for the whole suite */
 } job_t;
@@ -285,7 +285,7 @@ void tiku_bench_notrun_build(bench_t *st);
 void tiku_bench_toggle_entry(bench_t *st, int row, int expand);
 int tiku_bench_queue_build(bench_t *st);
 int tiku_bench_queue_needs_device(const bench_t *st);
-/** How many queued suites have a selected leaf that may erase the store;
+/** How many selected leaves of the queued suites may erase the store;
  *  the run asks about them before it starts. */
 int tiku_bench_queue_destructive(const bench_t *st);
 

@@ -44,7 +44,7 @@ static tiku_app_services_t svc = {.open = opened, .close = closed, .frame = fram
 /**
  * @brief Tick until the child is gone, giving it @p seconds to do it.
  *
- * A round is a millisecond of ours and ten of the app's clock, so the
+ * A round is a millisecond of real time and ten of the app's clock, so the
  * escalation the cancel checks watch for arrives ten times sooner than
  * it would on a desk.  The budget is the caller's because the fixtures
  * answer at once while the real registry imports every suite it lists.
@@ -250,7 +250,7 @@ static void host_run_test(bench_t *st)
     tiku_field_start(&st->field[2], "");
     snprintf(st->target_name, sizeof st->target_name, "%s", device);
     tiku_bench_target_capture(st);
-    /* Host-only still must not release a board when one IS connected. */
+    /* Host-only still must not release a board when one is connected. */
     assert(tiku_bench_queue_build(st)); tiku_bench_run_confirmed(st); pump(st);
     assert(!st->busy && !st->batch_failed && releases == before && reclaims == returned);
     assert(!unlink(st->log_path));
@@ -476,6 +476,30 @@ static void destructive_test(bench_t *st)
     tiku_bench_action(st, RUN);
     assert(st->confirm.open && st->confirm.tag == RUN_DESTRUCTIVE && !st->allow_destructive);
     ev.key = TIKU_KEY_RETURN; tiku_bench_event(st, st->id, &ev);
+    assert(!st->confirm.open);
+    /* Two destructive leaves of one suite: the question counts the
+     * tests, not the suite. */
+    {
+        int other = -1;
+        char kind[sizeof st->leaves[0].kind];
+        for (int i = 0; i < st->nleaf; i++)
+            if (!strcmp(st->leaves[i].id, "other")) other = i;
+        assert(other >= 0);
+        snprintf(kind, sizeof kind, "%s", st->leaves[other].kind);
+        snprintf(st->leaves[other].kind, sizeof kind, "destructive");
+        tiku_bench_clear_selection(st);
+        st->leaves[wipe].selected = st->leaves[other].selected = 1;
+        assert(tiku_bench_queue_build(st) && st->njob == 1);
+        tiku_bench_action(st, RUN);
+        assert(st->confirm.open && st->confirm.tag == RUN_DESTRUCTIVE);
+        if (strncmp(st->confirm.text, "2 selected test(s)", 18)) {
+            fprintf(stderr, "FAIL: two destructive tests asked as: %s\n",
+                    st->confirm.text);
+            exit(1);
+        }
+        ev.key = TIKU_KEY_RETURN; tiku_bench_event(st, st->id, &ev);
+        snprintf(st->leaves[other].kind, sizeof kind, "%s", kind);
+    }
     tiku_bench_clear_selection(st);
     puts("PASS: a destructive leaf is asked about on its own, for one run");
 }

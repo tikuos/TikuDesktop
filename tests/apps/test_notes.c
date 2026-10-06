@@ -154,6 +154,23 @@ int main(void)
     assert(notes_start(&state, &sv) == 0);
     assert(opens == 1 && !strcmp(last_title, "! Get milk"));
     notes_stop(state);
-    puts("PASS: notes persist, select by hand, save after quiet, mark, paper, list, delete, reopen");
+
+    /* A notes path that names a regular file is no folder to use: Notes
+     * does not start. */
+    {
+        FILE *f;
+
+        snprintf(path, sizeof path, "%s/not-a-folder", dir);
+        f = fopen(path, "w");
+        assert(f != NULL && fclose(f) == 0);
+        setenv("TIKU_NOTES", path, 1);
+        opens = 0; state = NULL;
+        if (notes_start(&state, &sv) != -1) {
+            puts("FAIL: Notes started on a regular file as its folder");
+            return 1;
+        }
+        assert(opens == 0 && state == NULL);
+    }
+    puts("PASS: notes persist, select by hand, save after quiet, mark, paper, list, delete, reopen, refuse a file as the folder");
     return 0;
 }
