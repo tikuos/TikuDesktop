@@ -592,9 +592,9 @@ typedef struct desktop {
     tiku_trk_info_windows_t info_windows; /**< every Get Info window */
     /** The broken link an open offered Get Info for (AW-031). */
     char                 broken_open_path[TIKU_PATH_MAX];
-    /** The Info window whose broken link a picker was opened to re-point, or
-     * -1. */
-    int                  info_relink;
+    /** The link a picker was opened to re-point, matched by path to its
+     *  Info window when the answer comes; empty when none. */
+    char                 info_relink_path[TIKU_PATH_MAX];
     tiku_trk_status_overlay_t status_overlay; /**< the alert and the
                                                *   progress window */
     tiku_rect_t              shot_btn;  /**< the camera button at the global

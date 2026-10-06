@@ -250,6 +250,7 @@ tiku_ide_pick(void *state, uint32_t window, int command)
                      (strchr(names, ',') != NULL) ? "hold" : "holds");
             tiku_alert_open(&st->ask, TIKU_ALERT_WARN, 0, says,
                             "Cancel|Discard");
+            st->ask.dflt = 0;       /* Cancel */
         }
         if (st->services->raise_window != NULL) {
             (void)st->services->raise_window(st->services->ctx,

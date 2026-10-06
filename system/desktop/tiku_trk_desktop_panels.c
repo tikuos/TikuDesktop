@@ -1122,8 +1122,8 @@ deliver_pick(desktop_t *app, const char *path)
 /**
  * @brief The file panel's answer for @p command: open in the reader or the
  *        image application, an application's pick, a sound, a Find scope, a
- *        saved query, or the selection of @p target's folder moved or
- *        copied to @p destination.
+ *        saved query, a replacement link target, or the selection of
+ *        @p target's folder moved or copied to @p destination.
  */
 void
 fpanel_commit(void *context, void *target, int command,
@@ -1189,6 +1189,38 @@ fpanel_commit(void *context, void *target, int command,
                                   app->store);
         (void)tiku_store_flush(app->store);
         snprintf(app->status, sizeof app->status, "query saved");
+        return;
+    }
+    if (command == TIKU_TRK_CMD_GET_INFO) {
+        int slot;
+        char err[160];
+
+        /* The answer is for the link the picker was opened for: its Info
+         * window is found by path, so a window closed or replaced while
+         * the picker was up re-points nothing. */
+        for (slot = 0; slot < TIKU_TRK_INFO_WINDOW_MAX; slot++) {
+            if (app->info_windows.model[slot].used &&
+                app->info_relink_path[0] != '\0' &&
+                strcmp(app->info_windows.model[slot].path,
+                       app->info_relink_path) == 0) {
+                break;
+            }
+        }
+        app->info_relink_path[0] = '\0';
+        if (destination == NULL || slot >= TIKU_TRK_INFO_WINDOW_MAX) {
+            return;
+        }
+        err[0] = '\0';
+        if (tiku_trk_info_relink(&app->info_windows.model[slot],
+                                 app->backend, destination, err,
+                                 sizeof err) != 0) {
+            snprintf(app->status, sizeof app->status, "%s",
+                     err[0] != '\0' ? err : "could not set the link target");
+        } else {
+            snprintf(app->status, sizeof app->status,
+                     "link now points to %.120s", destination);
+        }
+        desktop_damage_all(app);
         return;
     }
     if (folder == NULL || destination == NULL) {

@@ -6698,13 +6698,13 @@ OpenToolTipWindow creates a borderless floating window clamped to the screen con
 **Re-pointing a broken symlink from the info window preserves the link's name and all of its attributes.**  
 Node watching is stopped first (so the deletion does not close the window), the old attributes are copied into an AttributeStreamMemoryNode, the old link is removed, a new link with the same name is created via BDirectory::CreateSymLink, attributes are copied back, watching restarts and both views are re-linked. Triggered by kSetLinkTarget, by the file panel's reply, or by dropping an item on the window when the model is a symlink.  
 `infowindow/InfoWindow.cpp` → `BInfoWindow::MessageReceived (case kNewTargetSelected / B_SIMPLE_DATA)`
-**PORT:** The link is replaced under its own name and everything it carried
-is read RAW beforehand and written back after, so a number comes back a
-number rather than the text the window was showing for it.  One clause is
-not falsifiable here and is stated rather than claimed: both of this port's
-stores are keyed by path, so state survives the replace on its own -- the
-carry-across code is what makes it survive on a store keyed by the file.
-*src/core/tiku_trk_info.c:tiku_trk_info_relink/keep_attr; tests/test_info.c*  
+**PORT:** The link is replaced under its own name: a new link is made
+beside it and renamed over it, so the name always resolves.  Its state is
+not copied, which differs from Haiku.  The path-keyed stores keep it under
+the link's path; the xattr store keeps state on the file a link resolves
+to, so after a re-point the new target shows its own.  The picker answers
+with a file, or with the folder it shows when no row is picked.
+*system/shared/core/tiku_trk_info.c:tiku_trk_info_relink; tests/system/test_info.c*  
 *Shell: desktop*  
 
 #### AW-075 · important · done

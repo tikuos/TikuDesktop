@@ -33,10 +33,12 @@ tiku_trk_alert_for_conflict(tiku_alert_t *a, const tiku_progress_t *pr)
         tiku_alert_open(a, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
                             tiku_str("alert.btn.conflict"));
+        a->dflt = 2;  /* Skip all */
     } else {
         tiku_alert_open(a, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_CONFLICT, text,
                             tiku_str("alert.btn.replace"));
+        a->dflt = 0;  /* Cancel. */
     }
 }
 

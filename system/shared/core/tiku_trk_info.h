@@ -255,16 +255,16 @@ int tiku_trk_info_link_target(const tiku_trk_info_t *in,
                               char *select, size_t smax);
 
 /**
- * @brief Point a link at @p target, keeping its name and state.
+ * @brief Point a link at @p target under the same name.
  *
- * The link is replaced, so its attributes are read first and written back,
- * keeping the pose's position and its icon (AW-074).  An attribute over 256
- * bytes is not carried.
+ * The replacement is put in place atomically, and the link's state is not
+ * copied: a path-keyed store keeps it under the link's path, and the xattr
+ * store keeps state on the file a link resolves to, so the new target
+ * shows its own (AW-074).
  *
  * @return 0, or -1 with @p err filled.
  */
 int tiku_trk_info_relink(tiku_trk_info_t *in, tiku_backend_t *b,
-                         tiku_store_t *store, const char *target,
-                         char *err, size_t errmax);
+                         const char *target, char *err, size_t errmax);
 
 #endif /* TIKU_TRK_INFO_H_ */

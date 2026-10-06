@@ -15,8 +15,20 @@ wait 2
 release 148 125 3
 wait 5
 expect-menu Open|Edit query|Open with…|Get info|Edit name|Duplicate|Move to Trash||Move to|Copy to|Create link|Cut|Copy|Paste||Identify|Add-ons|
-note and choosing one acts on the thing the window is about
+note Duplicate acts on the Info window's item
 menu-pick Duplicate
 wait 30
 expect-file /tmp/trk_script/a.txt copy
+note Copy acts on the Info window's item, without needing a folder window
+click 150 132 3
+wait 3
+menu-pick Copy
+wait 5
+expect-status 1 item
+note Paste from the same item menu uses that item's containing folder
+click 150 132 3
+wait 3
+menu-pick Paste
+wait 30
+expect-file /tmp/trk_script/a.txt copy 2
 quit

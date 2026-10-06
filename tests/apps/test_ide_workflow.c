@@ -378,6 +378,13 @@ static void test_ui(ide_t *st, const char *dir)
     ev.key = TIKU_KEY_ESCAPE;
     tiku_ide_event(st, st->proj_id, &ev);
     assert(e->surface && !st->ask.open);
+    /* Closing the project with unsaved changes asks, and Return keeps
+     * them: Cancel is the default, not Discard. */
+    (void)tiku_ide_pick(st, st->proj_id, CMD_SHUT);
+    assert(st->ask.open && strstr(st->ask.text, "Close the project"));
+    assert(st->ask.dflt == 0);
+    tiku_ide_event(st, st->proj_id, &ev);
+    assert(e->surface && !st->ask.open);
     tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     e->surface = NULL;

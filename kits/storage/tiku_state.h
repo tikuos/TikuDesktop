@@ -133,7 +133,9 @@ int tiku_state_forget(tiku_store_t *s, const char *node);
  *
  * @param fn Called with the attribute name and its raw bytes; returning
  *           non-zero stops the walk.
- * @return how many were visited.
+ * @return how many were visited, or -1 when the names could not be read or
+ *         a value could not be read or buffered; such a value is skipped
+ *         and the walk goes on.
  */
 int tiku_state_each(tiku_store_t *s, const char *node,
                         int (*fn)(const char *attr, const void *val,

@@ -115,6 +115,14 @@ void tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
     const char *only);
 
 /**
+ * @brief Open the panel to choose a file or a folder: a file is chosen by
+ *        its row, and a folder by opening it and pressing Open with no row
+ *        selected.
+ */
+void tiku_trk_panel_window_open_any(tiku_trk_panel_window_t *controller,
+    void *target, int command, const char *initial_directory);
+
+/**
  * @brief The Replace question said replace: answer with the checked path
  *        and close (AW-052).
  */

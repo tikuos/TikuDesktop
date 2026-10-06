@@ -189,10 +189,12 @@ popup_path_pick(desktop_t *app, int pc)
     } else if (pc == TIKU_TRK_CMD_SET_LINK_TARGET && islot >= 0) {
         /* The file panel, as the broken-link flow opens it (AW-074). */
         folder_t *ffl2 = folder_of(app, tiku_workspace_focused(app->desk));
+        folder_t *start = (ffl2 != NULL) ? ffl2 : &app->folders[0];
 
-        app->info_relink = islot;
-        fpanel_open(app, (ffl2 != NULL) ? ffl2 : &app->folders[0],
-                    TIKU_TRK_CMD_GET_INFO);
+        snprintf(app->info_relink_path, sizeof app->info_relink_path, "%s",
+                 app->info_windows.model[islot].path);
+        tiku_trk_panel_window_open_any(&app->file_panel, start,
+                                       TIKU_TRK_CMD_GET_INFO, start->path);
     } else {
         (void)tiku_trk_folder_file_actions_invoke_path(&app->file_actions,
                                                        app->popup_path, pc);

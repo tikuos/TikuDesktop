@@ -81,9 +81,10 @@ int tiku_alert_release(tiku_alert_t *a, int w, int h, int x, int y);
  * @brief Raise an alert of @p kind showing @p text, keeping @p tag.
  *
  * @p buttons is a "|"-separated list of at most TIKU_ALERT_BUTTONS
- * labels, laid out left to right: Escape presses the first and Return
- * the last, unless the last is destructive (see dflt).  A text or a label
- * too long for its array is cut short.
+ * labels, laid out left to right.  Escape presses the first; Return presses
+ * dflt, which starts at the last button and steps left past the English
+ * destructive labels.  A caller with translated labels sets dflt after
+ * opening.  Text and labels are truncated to their array lengths.
  */
 void tiku_alert_open(tiku_alert_t *a, tiku_alert_kind_t kind, int tag,
                      const char *text, const char *buttons);

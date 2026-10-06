@@ -1,0 +1,36 @@
+# shell: desktop
+# home: fixture
+# lang: fr
+# mkdir: ~/.Trash ~/.config/tracker
+# file: ~/.Trash/planted.txt hi
+# Return must not permanently delete files in translated alerts.
+wait 12
+click-desk .Trash 3
+wait 4
+menu-pick Vider la corbeille
+wait 5
+expect-alert vider la corbeille
+key Return
+wait 20
+expect-file /tmp/trk_home/.Trash/planted.txt
+click-row 1
+wait 3
+expect-selected-name a.txt
+key Delete
+wait 5
+expect-alert irréversible
+key Return
+wait 25
+expect-file /tmp/trk_home/.Trash/a.txt
+expect-no-file /tmp/trk_script/a.txt
+note Escape cancels deletion of the next file
+click-row 1
+wait 3
+expect-selected-name b.txt
+key Delete
+wait 5
+expect-alert irréversible
+key Escape
+wait 20
+expect-file /tmp/trk_script/b.txt
+quit

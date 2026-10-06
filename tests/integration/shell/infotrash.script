@@ -1,0 +1,38 @@
+# shell: desktop
+# home: fixture
+# mkdir: ~/.Trash ~/.config/tracker
+# Move to Trash from an Info window's icon menu acts on the Info window's
+# item, not on the selection of the folder that has the focus.
+wait 12
+click-row 1
+wait 3
+expect-selected-name a.txt
+key i ctrl
+wait 10
+expect-title info
+note select b.txt in the folder, so the folder's selection is not the item
+click-window trk_script
+wait 3
+click-row 2
+wait 3
+expect-selected-name b.txt
+note move the folder window off the Info window's icon
+drag-window trk_script 560 380
+wait 3
+click 170 90
+wait 3
+press 148 125 3
+wait 2
+release 148 125 3
+wait 5
+expect-menu Move to Trash
+wait 3
+menu-pick Move to Trash
+wait 5
+expect-alert cannot be reverted
+key Return
+wait 25
+expect-file /tmp/trk_home/.Trash/a.txt
+expect-no-file /tmp/trk_script/a.txt
+expect-file /tmp/trk_script/b.txt
+quit

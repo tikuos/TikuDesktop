@@ -1,0 +1,39 @@
+# shell: desktop
+# home: fixture
+# lang: fr
+# Return declines replacement of an existing file in the French Save panel.
+wait 10
+key f ctrl
+wait 6
+key z
+wait 2
+click 642 405
+wait 6
+key Return
+wait 8
+expect-file /tmp/trk_home/query
+expect-file-has /tmp/trk_home/query z
+click 642 405
+wait 6
+press 85 138
+wait 2
+move 300 300
+wait 2
+move 400 300
+wait 2
+release 400 300
+wait 5
+key Return
+wait 5
+expect-alert remplacer
+key Return
+wait 3
+expect-file-has /tmp/trk_script/a.txt hi
+note an explicit replacement still writes the query
+key Return
+wait 5
+expect-alert remplacer
+key r
+wait 8
+expect-file-has /tmp/trk_script/a.txt v4
+quit

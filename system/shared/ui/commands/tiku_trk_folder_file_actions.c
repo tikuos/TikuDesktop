@@ -396,7 +396,15 @@ tiku_trk_folder_file_actions_answer_delete(
     tiku_trk_folder_file_actions_t *controller,
     tiku_trk_folder_window_t *folder, tiku_trk_delete_answer_t answer)
 {
-    if (controller == NULL || folder == NULL) {
+    if (controller == NULL) {
+        return;
+    }
+    if (controller->asked_path[0] != '\0') {
+        /* The question was about one item named by path: the answer acts
+         * on it, whatever window has the focus now. */
+        controller->only_path = controller->asked_path;
+        folder = NULL;
+    } else if (folder == NULL) {
         return;
     }
     if (answer == TIKU_TRK_DELETE_ANSWER_TRASH) {
@@ -404,6 +412,8 @@ tiku_trk_folder_file_actions_answer_delete(
     } else if (answer == TIKU_TRK_DELETE_ANSWER_DELETE) {
         delete_outright(controller, folder);
     }
+    controller->only_path = NULL;
+    controller->asked_path[0] = '\0';
 }
 
 /**
@@ -454,6 +464,10 @@ delete_selection(tiku_trk_folder_file_actions_t *controller,
         tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                             TIKU_TRK_ALERT_TAG_DELETE, message,
                             tiku_str("alert.btn.trash_delete"));
+        controller->alert->dflt = 1;   /* Move to Trash */
+        snprintf(controller->asked_path, sizeof controller->asked_path,
+                 "%s", controller->only_path != NULL ?
+                       controller->only_path : "");
     }
 }
 
@@ -481,19 +495,34 @@ restore_selection(tiku_trk_folder_file_actions_t *controller,
 
 /**
  * @brief Put the selection on the clipboard as a cut or a copy, added to
- *        what is there when @p command says so.
+ *        what is there when @p command says so.  With only_path set, the
+ *        item at that path is put there instead.
  */
 static void
 copy_selection(tiku_trk_folder_file_actions_t *controller,
                tiku_trk_folder_window_t *folder, int command)
 {
     tiku_model_t selection[64];
-    int i, selected = 0, count = tiku_trk_poseview_count(folder->view);
+    int i, selected = 0, count;
     int cut = command == TIKU_TRK_CMD_CUT ||
               command == TIKU_TRK_CMD_CUT_MORE;
     int more = command == TIKU_TRK_CMD_CUT_MORE ||
                command == TIKU_TRK_CMD_COPY_MORE;
 
+    if (controller->only_path != NULL) {
+        if (controller->backend != NULL &&
+            controller->backend->ops != NULL &&
+            controller->backend->ops->stat != NULL &&
+            controller->backend->ops->stat(controller->backend,
+                                            controller->only_path,
+                                            &selection[0]) == 0) {
+            selected = 1;
+        }
+        count = 0;
+    } else {
+        count = (folder != NULL && folder->view != NULL)
+                    ? tiku_trk_poseview_count(folder->view) : 0;
+    }
     for (i = 0; i < count && selected < 64; i++) {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, i);
 
@@ -568,15 +597,18 @@ new_folder(tiku_trk_folder_file_actions_t *controller,
 }
 
 /**
- * @brief Paste the clipboard into the window's folder: cuts move, copies
- *        copy, and the links form pastes links instead.
+ * @brief Paste the clipboard into the window's folder, or into the folder
+ *        holding only_path when it is set: cuts move, copies copy, and the
+ *        links form pastes links instead.
  */
 static void
 paste(tiku_trk_folder_file_actions_t *controller,
       tiku_trk_folder_window_t *folder, int command)
 {
     char paths[64][TIKU_PATH_MAX], here[64][TIKU_PATH_MAX];
+    char path_parent[TIKU_PATH_MAX];
     const char *selection[64], *same[64];
+    const char *destination;
     /* A clipboard holding both cuts and copies is two operations: the cuts
      * move and the copies copy (FS-055). */
     const char *moves[64], *copies[64];
@@ -584,6 +616,26 @@ paste(tiku_trk_folder_file_actions_t *controller,
     int i, count = 0, same_count = 0;
     int links = command == TIKU_TRK_CMD_PASTE_LINKS;
 
+    if (controller->only_path != NULL) {
+        const char *slash = strrchr(controller->only_path, '/');
+        size_t parent_length;
+
+        if (slash == NULL || slash == controller->only_path) {
+            snprintf(path_parent, sizeof path_parent, "/");
+        } else {
+            parent_length = (size_t)(slash - controller->only_path);
+            if (parent_length >= sizeof path_parent) {
+                parent_length = sizeof path_parent - 1u;
+            }
+            memcpy(path_parent, controller->only_path, parent_length);
+            path_parent[parent_length] = '\0';
+        }
+        destination = path_parent;
+    } else if (folder != NULL) {
+        destination = folder->path;
+    } else {
+        return;
+    }
     (void)tiku_trk_clip_prune(controller->clip);
     for (i = 0; i < tiku_trk_clip_count(controller->clip) && count < 64;
          i++) {
@@ -593,8 +645,8 @@ paste(tiku_trk_folder_file_actions_t *controller,
         size_t parent_length = slash != NULL
                              ? (size_t)(slash - entry->path) : 0u;
 
-        if (!links && slash != NULL && strlen(folder->path) == parent_length &&
-            strncmp(folder->path, entry->path, parent_length) == 0) {
+        if (!links && slash != NULL && strlen(destination) == parent_length &&
+            strncmp(destination, entry->path, parent_length) == 0) {
             if (entry->mode != TIKU_TRK_CLIP_MOVE && same_count < 64) {
                 snprintf(here[same_count], sizeof here[same_count], "%s",
                          entry->path);
@@ -626,7 +678,7 @@ paste(tiku_trk_folder_file_actions_t *controller,
                  "the clipboard is empty");
         return;
     }
-    if (tiku_fs_in_trash(controller->fs, folder->path) &&
+    if (tiku_fs_in_trash(controller->fs, destination) &&
         (links || copy_count > 0)) {
         snprintf(controller->status, controller->status_size, "%s",
                  links ? "Sorry, you can't create links in the Trash."
@@ -635,7 +687,7 @@ paste(tiku_trk_folder_file_actions_t *controller,
     }
     if (links) {
         (void)tiku_fs_link(controller->fs, selection, count,
-                               folder->path, 0);
+                               destination, 0);
         snprintf(controller->status, controller->status_size,
                  "linking %d item%s here", count,
                  count == 1 ? "" : "s");
@@ -643,11 +695,11 @@ paste(tiku_trk_folder_file_actions_t *controller,
     }
     if (move_count > 0) {
         (void)tiku_fs_move(controller->fs, moves, move_count,
-                               folder->path, TIKU_CONFLICT_ASK);
+                               destination, TIKU_CONFLICT_ASK);
     }
     if (copy_count > 0 && move_count == 0) {
         (void)tiku_fs_copy(controller->fs, copies, copy_count,
-                               folder->path, TIKU_CONFLICT_ASK);
+                               destination, TIKU_CONFLICT_ASK);
     } else if (copy_count > 0) {
         /* The engine runs one job at a time and refuses a start while
          * busy, so the copy half of a mixed paste waits for
@@ -661,7 +713,7 @@ paste(tiku_trk_folder_file_actions_t *controller,
         }
         controller->deferred_count = copy_count;
         snprintf(controller->deferred_dest, sizeof controller->deferred_dest,
-                 "%s", folder->path);
+                 "%s", destination);
     }
     /* A pasted cut becomes a copy entry, and the copied entries stay
      * (FS-055). */
@@ -728,6 +780,7 @@ tiku_trk_folder_file_actions_invoke(
                 TIKU_TRK_ALERT_TAG_EMPTY_TRASH,
                 tiku_str("alert.msg.empty_trash"),
                 tiku_str("alert.btn.empty_trash"));
+            controller->alert->dflt = 0;  /* Cancel. */
             return 1;
         }
         tiku_trk_folder_file_actions_answer_empty(controller);

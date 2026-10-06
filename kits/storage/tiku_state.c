@@ -452,33 +452,62 @@ tiku_state_each(tiku_store_t *s, const char *node,
     }
     if (s->kind == STORE_XATTR) {
 #if defined(TIKU_HAVE_XATTR)
-        char names[4096];
-        ssize_t len = state_list(node, names, sizeof names);
+        char *names;
+        ssize_t need_names = state_list(node, NULL, 0u);
+        ssize_t len;
         ssize_t at;
+        int bad = 0;
 
-        if (len <= 0) {
+        if (need_names <= 0) {
             return 0;
         }
+        names = malloc((size_t)need_names);
+        if (names == NULL) {
+            return -1;
+        }
+        len = state_list(node, names, (size_t)need_names);
+        if (len < 0) {
+            free(names);
+            return -1;
+        }
         for (at = 0; at < len; at += (ssize_t)strlen(names + at) + 1) {
-            char val[512];
+            unsigned char *val;
             const char *nm = names + at;
-            ssize_t got;
+            ssize_t need, got;
+            int stop;
 
             /* Only the _trk/ attributes; other programs' attributes on the
              * file are skipped. */
             if (strncmp(nm, "user._trk/", 10) != 0) {
                 continue;
             }
-            got = state_get(node, nm, val, sizeof val);
+            /* A value that cannot be read, such as one removed or grown
+             * since the listing, is skipped and the walk reports -1. */
+            need = state_get(node, nm, NULL, 0u);
+            if (need < 0) {
+                bad = 1;
+                continue;
+            }
+            val = malloc(need > 0 ? (size_t)need : 1u);
+            if (val == NULL) {
+                bad = 1;
+                continue;
+            }
+            got = state_get(node, nm, val, (size_t)need);
             if (got < 0) {
-                got = 0;
+                free(val);
+                bad = 1;
+                continue;
             }
             n++;
-            if (fn(nm + 5, val, (size_t)got, ctx) != 0) {
+            stop = fn(nm + 5, val, (size_t)got, ctx);
+            free(val);
+            if (stop != 0) {
                 break;
             }
         }
-        return n;
+        free(names);
+        return bad ? -1 : n;
 #else
         return 0;
 #endif

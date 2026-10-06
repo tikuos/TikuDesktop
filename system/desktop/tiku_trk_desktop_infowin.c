@@ -151,10 +151,13 @@ field_press(desktop_t *app, int islot, tiku_trk_info_t *info, int which)
              * (AW-074). */
             folder_t *ffl = folder_of(app,
                                       tiku_workspace_focused(app->desk));
+            folder_t *start = (ffl != NULL) ? ffl : &app->folders[0];
 
-            app->info_relink = islot;
-            fpanel_open(app, (ffl != NULL) ? ffl : &app->folders[0],
-                        TIKU_TRK_CMD_GET_INFO);
+            snprintf(app->info_relink_path, sizeof app->info_relink_path,
+                     "%s", app->info_windows.model[islot].path);
+            tiku_trk_panel_window_open_any(&app->file_panel, start,
+                                           TIKU_TRK_CMD_GET_INFO,
+                                           start->path);
         }
     }
 }

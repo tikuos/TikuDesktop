@@ -53,6 +53,9 @@ typedef struct {
     /* The path tiku_trk_folder_file_actions_invoke_path() acts on in
      * place of a window's selection, or NULL (AW-076). */
     const char *only_path;
+    /** The path a delete question was asked about when only_path was set,
+     *  answered in place of a window's selection; empty otherwise. */
+    char   asked_path[TIKU_PATH_MAX];
 } tiku_trk_folder_file_actions_t;
 
 /**

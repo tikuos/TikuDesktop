@@ -180,8 +180,8 @@ status_answer(void *context, const tiku_alert_t *alert)
         }
         {
             /* The buttons, in order: Cancel, Move to Trash, Delete
-             * (FS-046).  The alert's default steps left off Delete, so
-             * Return answers Move to Trash. */
+             * (FS-046).  The alert's opener sets Move to Trash as the
+             * default, so Return answers Move to Trash. */
             static const tiku_trk_delete_answer_t by_button[] = {
                 TIKU_TRK_DELETE_ANSWER_CANCEL,
                 TIKU_TRK_DELETE_ANSWER_TRASH,
@@ -674,7 +674,7 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
     (void)lp;
     splash_stage(app, "icons");
     tiku_volwatch_init(&app->volwatch);
-    app->info_relink = -1;
+    app->info_relink_path[0] = '\0';
     tiku_trk_info_windows_init(&app->info_windows, app->desk, app->backend,
         app->store, app->fs, alert_model(app), &app->dirty);
     tiku_trk_panel_window_init(&app->file_panel, app->desk, app->backend,

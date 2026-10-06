@@ -151,8 +151,8 @@ wait 8
 menu-pick blink.bas
 wait 30
 expect-title blink.bas
-note asked again, Return presses the default and the project goes,
-note taking every window it opened with it
+note asked again, Return presses the default, Cancel: unsaved work is
+note never discarded by Return
 click-window Project
 wait 8
 click 71 8
@@ -160,6 +160,17 @@ wait 8
 menu-pick Close Project
 wait 30
 key Return
+wait 20
+expect-title Project
+expect-windows 4
+note and pressing Discard closes the project and every window it opened
+click-window Project
+wait 8
+click 71 8
+wait 8
+menu-pick Close Project
+wait 30
+click 665 317
 wait 40
 expect-no-title blink.bas
 expect-no-title util.bas

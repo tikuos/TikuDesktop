@@ -1,4 +1,5 @@
 # shell: desktop
+# file: work/sub/target.txt target
 # AW-076: the info icon's menu carries the items the source adds for it
 # alone -- a folder offers Recalculate folder size, a symlink offers Set
 # new link target, and choosing it raises the re-point picker.
@@ -34,4 +35,29 @@ expect-menu Set new link target
 menu-pick Set new link target
 wait 5
 expect-title Open
+note choosing sub/target.txt replaces the link target rather than moving a selection
+expect-rows 5
+click 400 200
+click 400 200
+wait 5
+expect-rows 1
+click 400 200
+wait 3
+click 675 413
+wait 20
+expect-link /tmp/trk_script/a.txt link /tmp/trk_script/sub/target.txt
+expect-file /tmp/trk_script/b.txt
+note a link can point at a folder: open it and press Open with no row picked
+click 150 132 3
+wait 3
+menu-pick Set new link target
+wait 5
+expect-title Open
+click 400 200
+click 400 200
+wait 5
+expect-rows 1
+click 675 413
+wait 20
+expect-link /tmp/trk_script/a.txt link /tmp/trk_script/sub
 quit

@@ -14,6 +14,7 @@
 #include "tiku_attr.h"
 #include "tiku_thumb.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -659,47 +660,41 @@ tiku_trk_info_link_target(const tiku_trk_info_t *in, tiku_backend_t *b,
     return 1;
 }
 
-/** @brief One attribute kept aside while a link is replaced. */
-typedef struct {
-    char          name[40];
-    unsigned char val[256];
-    size_t        len;
-} kept_attr_t;
-
-/** @brief The attributes kept aside, in the order they were read. */
-typedef struct {
-    kept_attr_t a[TIKU_TRK_INFO_ATTRS];
-    int         n;
-} kept_t;
-
 /**
- * @brief Keep one attribute, bytes and all, for writing back; one that
- *        will not fit is dropped whole.
+ * @brief Make a new link beside @p path and atomically put it in place.
+ * @return 0, or -1 with the original link left in place.
  */
 static int
-keep_attr(const char *name, const void *val, size_t len, void *ctx)
+replace_link(const char *path, const char *target)
 {
-    kept_t *k = ctx;
+    char temporary[TIKU_PATH_MAX];
+    unsigned attempt;
 
-    if (k->n >= TIKU_TRK_INFO_ATTRS || len > sizeof k->a[0].val) {
-        /* Anything that will not fit is dropped whole, and reported. */
-        return 0;
+    for (attempt = 0; attempt < 100u; attempt++) {
+        int n = snprintf(temporary, sizeof temporary, "%s.relink-%ld-%u",
+                         path, (long)getpid(), attempt);
+
+        if (n < 0 || (size_t)n >= sizeof temporary) {
+            return -1;
+        }
+        if (symlink(target, temporary) == 0) {
+            if (rename(temporary, path) == 0) {
+                return 0;
+            }
+            (void)unlink(temporary);
+            return -1;
+        }
+        if (errno != EEXIST) {
+            return -1;
+        }
     }
-    snprintf(k->a[k->n].name, sizeof k->a[k->n].name, "%s", name);
-    memcpy(k->a[k->n].val, val, len);
-    k->a[k->n].len = len;
-    k->n++;
-    return 0;
+    return -1;
 }
 
 int
 tiku_trk_info_relink(tiku_trk_info_t *in, tiku_backend_t *b,
-                     tiku_store_t *store, const char *target, char *err,
-                     size_t errmax)
+                     const char *target, char *err, size_t errmax)
 {
-    kept_t kept;
-    int i;
-
     if (err != NULL && errmax > 0u) {
         err[0] = '\0';
     }
@@ -711,20 +706,9 @@ tiku_trk_info_relink(tiku_trk_info_t *in, tiku_backend_t *b,
         snprintf(err, errmax, "%s", tiku_str("info.msg.not_a_link"));
         return -1;
     }
-    /* Read before the link is replaced, since a store that keeps state on
-     * the file itself loses it with the old link, and read raw, as bytes
-     * (AW-074). */
-    kept.n = 0;
-    if (store != NULL) {
-        (void)tiku_state_each(store, in->path, keep_attr, &kept);
-    }
-    if (unlink(in->path) != 0 || symlink(target, in->path) != 0) {
+    if (replace_link(in->path, target) != 0) {
         snprintf(err, errmax, "%s", tiku_str("info.msg.repoint_failed"));
         return -1;
-    }
-    for (i = 0; i < kept.n; i++) {
-        (void)tiku_state_write(store, in->path, kept.a[i].name,
-                                   kept.a[i].val, kept.a[i].len);
     }
     if (b != NULL && b->ops != NULL && b->ops->stat != NULL) {
         (void)b->ops->stat(b, in->path, &in->model);

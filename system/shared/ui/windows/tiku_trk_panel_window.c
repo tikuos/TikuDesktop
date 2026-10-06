@@ -596,6 +596,7 @@ commit(tiku_trk_panel_window_t *controller)
             tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_SAVE_REPLACE, ask,
                                 tiku_str("alert.btn.replace"));
+            controller->alert->dflt = 0;  /* Cancel. */
         } else if (controller->alert != NULL) {
             tiku_alert_open(controller->alert, TIKU_ALERT_WARN,
                                 TIKU_TRK_ALERT_TAG_ERROR,
@@ -1044,6 +1045,17 @@ tiku_trk_panel_window_open_file(tiku_trk_panel_window_t *controller,
             snprintf(controller->only, sizeof controller->only, "%s",
                      only);
         }
+    }
+}
+
+void
+tiku_trk_panel_window_open_any(tiku_trk_panel_window_t *controller,
+    void *target, int command, const char *initial_directory)
+{
+    tiku_trk_panel_window_open(controller, target, command,
+                               initial_directory);
+    if (controller->target != NULL) {
+        controller->model.flavors = TIKU_TRK_PANEL_FILE | TIKU_TRK_PANEL_DIR;
     }
 }
 

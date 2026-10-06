@@ -12,6 +12,8 @@
 #include <string.h>
 
 #include "tiku_trk_alert.h"
+#include "tiku_event.h"
+#include "tiku_strings.h"
 
 static int fails;
 
@@ -66,6 +68,20 @@ main(void)
     a.chosen = 1;
     check(tiku_trk_alert_conflict_answer(&a) == TIKU_CONFLICT_REPLACE,
           "FS-018", "and in the short form the second button replaces");
+
+    check(tiku_strings_load_file("assets/strings/fr.xml") > 0,
+          "D-109", "load the French alert labels");
+    pr.conflict_many = 0;
+    tiku_trk_alert_for_conflict(&a, &pr);
+    check(tiku_alert_key(&a, TIKU_KEY_RETURN) == 0,
+          "D-109", "Return cancels a translated replace question");
+    pr.conflict_many = 1;
+    tiku_trk_alert_for_conflict(&a, &pr);
+    check(tiku_alert_key(&a, TIKU_KEY_RETURN) == 2,
+          "D-109", "Return skips all in a translated multi-file conflict");
+    check(tiku_alert_key(&a, TIKU_KEY_ESCAPE) == 0,
+          "D-109", "Escape still chooses Cancel");
+    tiku_strings_reset();
 
     printf("\nan error that cannot be continued (FS-035)\n");
     snprintf(pr.error, sizeof pr.error, "Error deleting \"x\": busy.");

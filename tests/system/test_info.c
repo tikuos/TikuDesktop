@@ -455,12 +455,8 @@ main(void)
                      "broken") != NULL, "AW-072",
               "and the field says it is broken rather than showing a path "
               "that resolves to nothing");
-        /* The path-keyed store, because the file-keyed one cannot hold a
-         * LINK's state at all: an extended attribute written to a symlink
-         * follows it to the target, and a broken link has no target to
-         * follow.  So the carry-across code below is right but cannot be
-         * falsified here -- what this proves is that the state is intact
-         * afterwards, not that the code is what kept it. */
+        /* The path-keyed store keeps a link's state under the link's
+         * path, so the state is intact after the link is replaced. */
         (void)tiku_state_write(st, link, "_trk/note", "kept", 4);
         {
             uint32_t n = 7u;
@@ -468,8 +464,8 @@ main(void)
             (void)tiku_state_write(st, link, "_trk/count", &n,
                                        sizeof n);
         }
-        check(tiku_trk_info_relink(&li, b, st, target, err,
-                                   sizeof err) == 0, "AW-074",
+        check(tiku_trk_info_relink(&li, b, target, err, sizeof err) == 0,
+              "AW-074",
               "it can be pointed at something real");
         check(tiku_trk_info_link_target(&li, b, buf, sizeof buf, sel,
                                         sizeof sel) &&
@@ -500,9 +496,52 @@ main(void)
             tiku_trk_info_t nf;
 
             (void)tiku_trk_info_open(&nf, b, target);
-            check(tiku_trk_info_relink(&nf, b, st, target, err,
+            check(tiku_trk_info_relink(&nf, b, target, err,
                                        sizeof err) != 0, "AW-074",
                   "and a plain file is not a link to re-point");
+        }
+        {
+            /* The xattr store keeps state on the file a link resolves to,
+             * so the new target keeps its own state after a re-point. */
+            tiku_store_t *xs = tiku_store_xattr_open();
+            tiku_trk_info_t xl;
+            char xlink[512], next[512], locked[512], got[512], value[16];
+            ssize_t n;
+
+            snprintf(xlink, sizeof xlink, "%s/xattr-alias", work);
+            snprintf(next, sizeof next, "%s/deep/small.bin", work);
+            sh("ln -sf %s %s", target, xlink);
+            if (xs != NULL &&
+                tiku_state_write(xs, target, "_trk/pos", "old", 3) == 0 &&
+                tiku_state_write(xs, next, "_trk/pos", "mine", 4) == 0) {
+                (void)tiku_trk_info_open(&xl, b, xlink);
+                check(tiku_trk_info_relink(&xl, b, next, err,
+                                           sizeof err) == 0 &&
+                      err[0] == '\0', "AW-074",
+                      "a link with state on its target is re-pointed");
+                memset(value, 0, sizeof value);
+                check(tiku_state_read(xs, next, "_trk/pos", value,
+                                      sizeof value - 1u) == 4 &&
+                      strcmp(value, "mine") == 0, "AW-074",
+                      "and the new target keeps its own state");
+                snprintf(locked, sizeof locked, "%s/locked.bin", work);
+                sh("rm -f %s && touch %s && chmod 0444 %s", locked,
+                   locked, locked);
+                (void)tiku_trk_info_open(&xl, b, xlink);
+                check(tiku_trk_info_relink(&xl, b, locked, err,
+                                           sizeof err) == 0 &&
+                      err[0] == '\0', "AW-074",
+                      "a read-only target takes the link");
+                n = readlink(xlink, got, sizeof got - 1u);
+                if (n > 0) {
+                    got[n] = '\0';
+                }
+                check(n > 0 && strcmp(got, locked) == 0, "AW-074",
+                      "and the link points at it");
+            } else {
+                printf("  [SKIP] AW-074    this filesystem has no xattrs\n");
+            }
+            tiku_store_free(xs);
         }
     }
 
