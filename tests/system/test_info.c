@@ -170,13 +170,15 @@ main(void)
         long long birth;
 
         /* Beside the fixture, not in it: the folder's counts below are
-         * of the fixture's own files. */
+         * of the fixture's own files.  The Modified date is moved forward:
+         * APFS moves the birth time back with a Modified date set before
+         * it, and BSD touch reads only the ISO form. */
         snprintf(madepath, sizeof madepath, "%s-made.bin", work);
-        sh("head -c 10 /dev/zero > %s && touch -m -d 2001-01-01 %s",
+        sh("head -c 10 /dev/zero > %s && touch -m -d 2030-01-01T00:00:00 %s",
            madepath, madepath);
         birth = host_birth(madepath);
         check(tiku_trk_info_open(&made, b, madepath) == 0, "D-007",
-              "a window opens on a file whose date was set back");
+              "a window opens on a file whose date was moved");
         snprintf(created, sizeof created, "%s",
                  field_of(&made, st, TIKU_TRK_INFO_F_CREATED, &label));
         if (birth > 0) {
@@ -186,7 +188,7 @@ main(void)
                   strcmp(created, field_of(&made, st,
                       TIKU_TRK_INFO_F_MODIFIED, &label)) != 0, "D-007",
                   "Created shows the file's birth time, not the Modified "
-                  "date it was set back to");
+                  "date it was moved to");
         } else {
             check(strcmp(created, "-") == 0, "D-007",
                   "on a filesystem with no birth time, Created says \"-\"");

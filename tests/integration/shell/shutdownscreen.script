@@ -21,7 +21,7 @@ note a second later the black has ARRIVED rather than the shell having
 note gone: the backdrop's corner is under it, and the mark stands where
 note it stood on the way in -- pinned on its filled face, the same pixel
 note splash.script holds the way up by
-wait 60
+wait 50
 expect-pixel 5 5 000000
 expect-pixel 507 307 f7e689
 quit
