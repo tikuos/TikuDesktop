@@ -33,6 +33,7 @@
 #define PANEL_X    8
 #define PANEL_W    200
 #define LABEL_W    66               /* a row's name, before its control */
+#define MODE_W     90               /* Mode, left of the RBW list       */
 #define HEAD_H     20               /* a section's bar                  */
 #define ROW_H      24
 #define CTL_H      22               /* a field, list or button in a row */
@@ -123,7 +124,10 @@ tiku_rect_t sdr_control_rect(const sdr_t *st, int id)
     case CMD_FIELD + SDR_F_SPAN:   return row_at(st, S_FREQ, 1, x, fw);
     case CMD_FIELD + SDR_F_START:  return row_at(st, S_FREQ, 2, x, fw);
     case CMD_FIELD + SDR_F_STOP:   return row_at(st, S_FREQ, 3, x, fw);
-    case CMD_LIVE: return button_at(st, S_FREQ, 4, 0, 1);
+    case CMD_LIVE: return row_at(st, S_FREQ, 4, PANEL_X, MODE_W);
+    case CMD_CHOICE + SDR_C_RBW:
+        return row_at(st, S_FREQ, 4, PANEL_X + MODE_W + 4,
+                      PANEL_W - MODE_W - 4);
     case CMD_CHOICE + SDR_C_TRACE: return row_at(st, S_TRACE, 0, x, w);
     case CMD_CHOICE + SDR_C_TYPE:  return row_at(st, S_TRACE, 1, x, w);
     case CMD_FIELD + SDR_F_AVG:    return row_at(st, S_TRACE, 2, x, 48);
@@ -253,6 +257,7 @@ const char *sdr_label(const sdr_t *st, int command)
         "Disarm / Finish Capture" : "Arm Trigger…";
     case CMD_CAPS: return "Read Capabilities";
     case CMD_FFT: return "FFT Size (Cycle)";
+    case CMD_RBW: return "RBW (Cycle)";
     case CMD_RATE: return "Sample Rate (Cycle)";
     case CMD_BOOK_ADD: return "Bookmark";
     case CMD_BOOK_NEXT: return "Next Event";
@@ -279,14 +284,17 @@ int sdr_enabled(const sdr_t *st, int command)
     int out = m->mark[m->mark_sel].on, peaks = out && m->fresh;
 
     if (st->alert.open) return command == CMD_QUIT;
-    if (command >= CMD_PRESET_SAVE && command <= CMD_HEALTH) {
+    if (command == CMD_CHOICE + SDR_C_RBW)
+        return st->state == SDR_RUNNING && st->caps_known == 1;
+    if (command >= CMD_PRESET_SAVE && command <= CMD_RBW) {
         switch (command) {
         case CMD_PRESET_OPEN: case CMD_PRESET_SAVE:
         case CMD_REF_OPEN: case CMD_OCC_EXPORT: return !st->asking;
         case CMD_REF_SAVE: return m->fresh && m->type[st->trace_sel] != SDR_T_OFF && !st->asking;
         case CMD_REF_SHOW: return st->reference.valid;
         case CMD_CAPS: return st->state == SDR_RUNNING && !st->caps_queued && !st->caps_inflight;
-        case CMD_FFT: case CMD_RATE: return st->state == SDR_RUNNING && st->caps_known == 1;
+        case CMD_FFT: case CMD_RATE: case CMD_RBW:
+            return st->state == SDR_RUNNING && st->caps_known == 1;
         case CMD_TRIGGER: return st->trigger.armed || st->trigger.fired ||
             (st->state == SDR_RUNNING && !st->paused && !st->rec.file && !st->asking);
         case CMD_BOOK_ADD: return st->shown[0] && st->book_count < SDR_BOOKS && !st->play.seeking;
@@ -335,13 +343,51 @@ int sdr_enabled(const sdr_t *st, int command)
     }
 }
 
+/** @brief Fill the RBW list unless it is open: Auto, with the RBW it gives
+ *         this view, then each RBW the view can have, coarsest first, and
+ *         the one in use though the list would leave it out.
+ *         @return the row of the RBW in use. */
+static int rbw_items(sdr_t *st)
+{
+    tiku_choice_t *ch = &st->choice[SDR_C_RBW];
+    const sdr_model_t *m = &st->model;
+    double now = sdr_model_bin_khz(m);
+    int manual = m->rbw_bin_khz > 0 || m->rate_override || m->fft_override;
+    int sel = 0, at = 0, found = 0;
+    char a[24], t[48];
+
+    if (ch->open) return ch->selected;
+    st->rbw_count = sdr_model_rbw_options(m, st->rbw_list, SDR_RBW_MAX);
+    for (int i = 0; i < st->rbw_count; i++)
+        found |= fabs(st->rbw_list[i] - now) < 1e-6;
+    if (manual && !found && st->rbw_count < SDR_RBW_MAX) {
+        while (at < st->rbw_count && st->rbw_list[at] > now) at++;
+        memmove(&st->rbw_list[at + 1], &st->rbw_list[at],
+                (size_t)(st->rbw_count - at) * sizeof st->rbw_list[0]);
+        st->rbw_list[at] = now;
+        st->rbw_count++;
+    }
+    tiku_choice_init(ch);
+    sdr_mhz_text(SDR_HANN_RBW * sdr_model_auto_bin_khz(m), a, sizeof a);
+    snprintf(t, sizeof t, "Auto %s kHz", a);
+    tiku_choice_add(ch, t, 1);
+    for (int i = 0; i < st->rbw_count; i++) {
+        sdr_mhz_text(SDR_HANN_RBW * st->rbw_list[i], a, sizeof a);
+        snprintf(t, sizeof t, "%s kHz", a);
+        tiku_choice_add(ch, t, 1);
+        if (manual && fabs(st->rbw_list[i] - now) < 1e-6) sel = i + 1;
+    }
+    return sel;
+}
+
 /** @brief Set each list that is not open to show what it sets, and enable
  *         the lists as sdr_enabled() says. */
 static void sync_choices(sdr_t *st)
 {
     const sdr_model_t *m = &st->model;
+    int rbw = rbw_items(st);
     int value[SDR_CHOICES] = {st->trace_sel, m->type[st->trace_sel],
-                              m->mark_sel, m->mark[m->mark_sel].trace};
+                              m->mark_sel, m->mark[m->mark_sel].trace, rbw};
 
     for (int c = 0; c < SDR_CHOICES; c++) {
         tiku_choice_t *ch = &st->choice[c];
@@ -365,6 +411,7 @@ void sdr_controls(sdr_t *st)
         {CMD_FIELD + SDR_F_START, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_STOP, TIKU_DIALOG_INPUT},
         {CMD_LIVE, TIKU_DIALOG_BUTTON},
+        {CMD_CHOICE + SDR_C_RBW, TIKU_DIALOG_INPUT},
         {CMD_CHOICE + SDR_C_TRACE, TIKU_DIALOG_INPUT},
         {CMD_CHOICE + SDR_C_TYPE, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_AVG, TIKU_DIALOG_INPUT},
@@ -615,20 +662,21 @@ static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
     tiku_surface_t *s = st->surface;
     int top = f.y + 2, foot = r.y + r.h + (st->plans_on ? 3 * RULER + 6 : 0)
                               + 3, cx = r.x + r.w / 2, right = f.x + f.w - 8;
-    char t[96], a[24];
+    char t[96], a[24], b[24];
 
     snprintf(t, sizeof t, "Ref %.0f dB", (double)m->scale_hi);
     note(s, f.x + 8, top, 1, t, NOTE_INK);
     snprintf(t, sizeof t, "Div %.0f dB", (double)m->div);
     note(s, f.x + 8, top + NOTE_H, 1, t, NOTE_INK);
-    sdr_mhz_text(m->bin_mhz * 1000.0, a, sizeof a);
-    snprintf(t, sizeof t, "Bin %s kHz", a);
+    sdr_mhz_text(SDR_HANN_RBW * sdr_model_bin_khz(m), a, sizeof a);
+    sdr_mhz_text(sdr_model_bin_khz(m), b, sizeof b);
+    snprintf(t, sizeof t, "RBW %s kHz · bin %s kHz", a, b);
     note(s, cx, top, 0, t, NOTE_INK);
     if (m->sweep)
-        snprintf(t, sizeof t, "%d slices at 40 MS/s",
-                 (m->last - m->first) / SDR_SLICE_STEP + 1);
+        snprintf(t, sizeof t, "%d slices at %g MS/s", sdr_model_slices(m),
+                 sdr_rate_mhz(m->rate));
     else
-        snprintf(t, sizeof t, "%g MS/s", m->bin_mhz * m->nfft);
+        snprintf(t, sizeof t, "%g MS/s", sdr_rate_mhz(m->rate));
     note(s, cx, top + NOTE_H, 0, t, DIM_INK);
     if (m->fresh) {
         snprintf(t, sizeof t, m->held ? "Gain %d" : "Gain %d auto", m->gain);
@@ -914,6 +962,15 @@ static void controls(sdr_t *st)
         if (!st->dialog.control[i].enabled) flags |= TIKU_S_DISABLED;
         if (id >= CMD_FIELD && id < CMD_FIELD + SDR_FIELDS) {
             field(st, id - CMD_FIELD, r, flags);
+        } else if (id == CMD_CHOICE + SDR_C_RBW) {
+            char a[24], label[32];          /* the list's rows say more */
+            sdr_mhz_text(SDR_HANN_RBW * sdr_model_bin_khz(m), a, sizeof a);
+            if (st->choice[SDR_C_RBW].selected > 0)
+                snprintf(label, sizeof label, "RBW %sk", a);
+            else
+                snprintf(label, sizeof label, "RBW Auto");
+            tiku_choice_draw(&st->choice[SDR_C_RBW], st->surface, r, label,
+                             flags);
         } else if (id >= CMD_CHOICE && id < CMD_CHOICE + SDR_CHOICES) {
             tiku_choice_draw(&st->choice[id - CMD_CHOICE], st->surface, r,
                              NULL, flags);

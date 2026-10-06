@@ -109,6 +109,7 @@ int sdr_setup_load(sdr_t *st, const char *path)
     st->shown[0] = 0;
     st->previous_count = st->nav_drag = 0;
     st->model.fft_override = st->model.rate_override = 0;
+    st->model.rbw_bin_khz = 0;
     sdr_model_range(&st->model, a, b);
     double *range = st->model.sweep ? st->wide_view : st->live_view;
     range[0] = a; range[1] = b;

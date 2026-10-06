@@ -45,8 +45,9 @@ Use <b>File &gt; Save Named Setup</b> to keep several setups as
 <code>.sdrpreset</code> files. The filename is the setup's name. Choose
 <b>Open Setup</b> to restore one; loading a valid setup closes any recording
 being played. Setups do not
-restore receiver gain, arm a trigger, or start recording. FFT and rate
-overrides return to automatic when a setup is loaded or a board reconnects.</p>
+restore receiver gain, arm a trigger, or start recording. The RBW, FFT and
+rate choices return to automatic when a setup is loaded or a board
+reconnects.</p>
 
 <p>Click a section heading to expand or collapse its controls. If there is
 not enough room, other sections collapse to keep the controls visible.
@@ -73,6 +74,21 @@ join as one band and a wide signal keeps its height across them; a slice
 is caught a moment after the one before. A board whose firmware predates
 the held gain hears each slice at its own automatic gain, and each
 slice&#8217;s noise floor is levelled to a common one instead.</p>
+
+<p><b>RBW</b>, beside <b>Mode</b>, sets the resolution bandwidth: how close
+two signals can be and still show as two. It is the 3&#160;dB width of the
+Hann window the board applies before each FFT, 1.44 times the spacing of
+its bins. <b>Auto</b> is the finest one capture gives the view --
+225&#160;kHz for 24&#160;MHz, 22.5&#160;kHz for 2&#160;MHz -- and
+450&#160;kHz in a sweep. The list offers every resolution the board can
+give the view with at least ten across it, finer ones by sweeping narrower
+slices at a lower sample rate: 22.5&#160;kHz across 24&#160;MHz takes nine
+4&#160;MS/s slices and arrives twice a second, and <b>Mode</b> then says
+Sweep. A chosen RBW stays as the view moves, each view getting the rate and
+FFT size that give it in the fewest bins; a view that would take more than
+64 slices goes back to Auto and says so. The list wants the board&#8217;s
+capabilities, read as it connects; <b>RBW (Cycle)</b> in the <b>SDR</b>
+menu steps through it.</p>
 
 <p>The frequency panel shows <b>Mode: Live</b> for a single capture or
 <b>Mode: Sweep</b> for sequential captures across a wider band. Click it

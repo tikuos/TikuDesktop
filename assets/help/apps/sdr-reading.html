@@ -32,13 +32,17 @@ activity percentages should not be compared with held-gain recordings.</p>
 <h3>Receiver controls and capture health</h3>
 
 <p>At connection, TikuSDR asks <code>sdr info</code> for supported sample
-rates, FFT sizes and tuning limits. Expand <b>Receiver</b> to use
-<b>Read Capabilities</b>, <b>FFT</b> and <b>Rate</b>. Each button cycles
-through supported choices that fit the current range, including automatic
-selection. The decoder supports 64-, 128- and 256-point FFTs and rate codes
-for 4, 8, 10, 20, 40 and 80 MS/s. Sweeps keep the existing 40 MS/s,
-16 MHz-step acquisition method; a rate override cannot change that method.
-An unsupported range pauses requests and displays an explanation.</p>
+rates, FFT sizes and tuning limits. The <b>RBW</b> list beside <b>Mode</b>
+chooses a rate and FFT size together, by the resolution they give. Expand
+<b>Receiver</b> to use <b>Read Capabilities</b>, <b>FFT</b> and
+<b>Rate</b>, which set either one alone and leave RBW to them. Each button
+cycles through supported choices that fit the current range, including
+automatic selection. The decoder supports 64-, 128- and 256-point FFTs and
+rate codes for 4, 8, 10, 20, 40 and 80 MS/s. Automatic sweeps are 40 MS/s
+slices 16 MHz apart; a rate whose capture cannot hold the view sweeps at
+that rate instead, in slices 16, 8, 6 or 3 MHz apart at 20, 10, 8 or
+4 MS/s, as long as the view takes no more than 64 of them. An unsupported
+range pauses requests and displays an explanation.</p>
 
 <p>If firmware does not report capabilities, acquisition uses the legacy
 automatic settings and the override buttons stay disabled. Gain controls
@@ -120,8 +124,9 @@ Changing the frequency range or seeking resets the displayed history.</p>
 <p>The graticule has ten divisions each way. <b>Ref</b>, above at the
 left, is the level of its top line, and <b>Div</b> the decibels a division:
 2, 5, 10 or 20, chosen to hold the traces shown, and changed only when they
-leave the room it gives them. <b>Bin</b> is the spacing between FFT points, with
-the sample rate or the slices beneath; the receiver&#8217;s gain and which
+leave the room it gives them. <b>RBW</b> is the resolution bandwidth and
+<b>bin</b> the spacing between FFT points, with the sample rate or the
+slices beneath; the receiver&#8217;s gain and which
 trace is which stand at the right. Beneath the graticule are <b>Start</b>,
 <b>Center</b>, <b>Stop</b> and <b>Span</b>, the number of points, and how
 many spectra or sweeps arrive a second. A recording made before
@@ -135,8 +140,9 @@ separate <b>Floor</b> and <b>Ceiling</b> fields: editing either locks its
 colour scale, so the same level keeps the same colour across captures.
 Use <b>Auto waterfall scale</b> to restore automatic colours. Levels must
 be between -200 and 300 dB, with the floor below the ceiling.
-Bin spacing is not a calibrated resolution bandwidth: the receiver applies
-a Hann window before the FFT.</p>
+The RBW shown is the 3&#160;dB width of the Hann window the board applies
+before each FFT, 1.44 bins; like the levels, it is not measured against a
+calibrated source.</p>
 
 <p>The spectrogram shows the spectra that came before, newest at the top,
 coloured from just under the noise, blue, through green and yellow to red

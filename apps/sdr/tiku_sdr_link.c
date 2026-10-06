@@ -315,6 +315,7 @@ static void take_line(sdr_t *st, const char *line)
             st->last_frame = 0;
             st->model.rejected = st->model.incomplete = st->rx_overflows = 0;
             st->model.fft_override = st->model.rate_override = 0;
+            st->model.rbw_bin_khz = 0;
             sdr_occupancy_reset(st);
             /* Fit the view again with one_max at SDR_LIVE_SPAN: one set while
              * a version 1 recording played can be one spectrum 40 MHz wide. */
@@ -364,6 +365,7 @@ static void take_prompt(sdr_t *st)
             st->caps_known = -1;
             if (st->model.fft_override || st->model.rate_override) {
                 st->model.fft_override = st->model.rate_override = 0;
+                st->model.rbw_bin_khz = 0;
                 sdr_model_range(&st->model, st->model.start, st->model.stop);
                 sdr_rec_view(st);
             }

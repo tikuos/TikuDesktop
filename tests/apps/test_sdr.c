@@ -1813,6 +1813,111 @@ static void acquisition_tests(const char *dir)
     free(st);
 }
 
+/** @brief RBW: the resolutions a view offers, coarsest first, and the
+ *         acquisition each picks -- one capture where one holds the view,
+ *         else narrower slices; kept across a view it can follow, dropped
+ *         from one it cannot; chosen and cycled once the board's caps are
+ *         known, and the FFT cycle taking over from it. */
+static void rbw_tests(const char *dir)
+{
+    sdr_t *st = calloc(1, sizeof *st);
+    sdr_model_t *m;
+    double k[SDR_RBW_MAX];
+    char cmd[64], line[1200], path[600];
+    int n, rate, nfft;
+
+    assert(st);
+    sdr_model_init(&st->model);
+    sdr_tools_init(st);
+    m = &st->model;
+    /* Live, 24 MHz about 2437: every bin spacing the board can give it. */
+    assert(m->start == 2425 && !m->sweep);
+    assert(fabs(sdr_model_auto_bin_khz(m) - 156.25) < 1e-9);
+    n = sdr_model_rbw_options(m, k, SDR_RBW_MAX);
+    assert(n == 10 && k[0] == 1250 && k[n - 1] == 15.625);
+    for (int i = 1; i < n; i++) assert(k[i] < k[i - 1]);
+    assert(!sdr_model_rbw_plan(m, 156.25, &rate, &nfft) && rate == 1 &&
+           nfft == 256);                        /* one capture at 40 MS/s */
+    assert(!sdr_model_rbw_plan(m, 78.125, &rate, &nfft) && rate == 3 &&
+           nfft == 128);                        /* fewest bins: 3 x 128 */
+    assert(!sdr_model_rbw_plan(m, 15.625, &rate, &nfft) && rate == 5 &&
+           nfft == 256);
+    /* 15.625 kHz bins: 4 MS/s slices 3 MHz apart, stitched into a frame. */
+    m->rbw_bin_khz = 15.625;
+    sdr_model_range(m, 2425, 2449);
+    assert(m->sweep && m->rate == 5 && m->nfft == 256 && m->slice_step == 3);
+    assert(sdr_model_slices(m) == 9 && m->first == 2426 && m->last == 2450);
+    assert(!strcmp(sdr_command(m, cmd, sizeof cmd),
+                   "sdr sweep 2426 2450 3 5 256"));
+    assert(fabs(sdr_model_bin_khz(m) - 15.625) < 1e-9 && m->n == SDR_BINS);
+    for (int c = m->first; c <= m->last; c += m->slice_step) {
+        int at = snprintf(line, sizeof line, "SPEC %d 4000000 60 256 ", c);
+        for (int j = 0; j < 256; j++)
+            at += snprintf(line + at, sizeof line - (size_t)at, "%02x", 100);
+        snprintf(line + at, sizeof line - (size_t)at, " held");
+        assert(sdr_model_line(m, line) == 0);
+    }
+    assert(sdr_model_line(m, "SWEEP 9") == 1 && m->db[0] == 50.0f);
+    /* Kept across the band, 33 slices; dropped from all of 2200-2700,
+     * which would take 167, leaving 39.0625 kHz the finest there. */
+    sdr_model_range(m, SDR_BAND_START, SDR_BAND_STOP);
+    assert(m->rbw_bin_khz == 15.625 && sdr_model_slices(m) == 33);
+    sdr_model_range(m, 2200, 2700);
+    assert(m->rbw_bin_khz == 0 && m->acq_dropped && m->rate == 1 &&
+           m->nfft == 128 && sdr_model_slices(m) == 32);
+    m->acq_dropped = 0;
+    n = sdr_model_rbw_options(m, k, SDR_RBW_MAX);
+    assert(n > 0 && k[n - 1] == 39.0625);
+    /* Chosen only with the board running and its caps known. */
+    sdr_model_range(m, 2425, 2449);
+    st->state = SDR_RUNNING;
+    sdr_rbw_choose(st, 15.625);
+    assert(m->rbw_bin_khz == 0 && !m->sweep);
+    assert(sdr_caps_parse(st, "SDR bank 1 rates 80 40 20 10 8 4 nfft 64 128 "
+                              "256 tune 2200 2700"));
+    sdr_rbw_choose(st, 15.625);
+    assert(m->rbw_bin_khz == 15.625 && m->sweep && sdr_acquisition_valid(st));
+    assert(strstr(st->note,
+                  "RBW 22.5 kHz: 256-point FFTs at 4 MS/s, 9 slices"));
+    /* Recorded, it plays back as the same 4 MS/s sweep. */
+    snprintf(path, sizeof path, "%s/rbw.sdrlog", dir);
+    assert(!sdr_rec_start(st, path));
+    for (int c = m->first; c <= m->last; c += m->slice_step) {
+        int at = snprintf(line, sizeof line, "SPEC %d 4000000 60 256 ", c);
+        for (int j = 0; j < 256; j++)
+            at += snprintf(line + at, sizeof line - (size_t)at, "%02x", 100);
+        snprintf(line + at, sizeof line - (size_t)at, " held");
+        assert(sdr_model_line(m, line) == 0);
+        sdr_rec_line(st, line, 0);
+    }
+    st->now += 1000000;
+    assert(sdr_model_line(m, "SWEEP 9") == 1);
+    sdr_rec_line(st, "SWEEP 9", 1);
+    sdr_rec_stop(st);
+    st->state = SDR_IDLE;
+    assert(!sdr_play_start(st, path));
+    assert(m->rbw_bin_khz == 0);                /* the recording's own */
+    sdr_play_seek(st, 2);
+    for (int i = 0; i < 4; i++) sdr_play_tick(st);
+    assert(m->sweep && m->rate == 5 && m->nfft == 256 &&
+           m->slice_step == 3 && m->spectra == 1);
+    sdr_play_stop(st);
+    unlink(path);
+    st->state = SDR_RUNNING;
+    sdr_rbw_choose(st, 15.625);
+    sdr_rbw_cycle(st);                          /* the finest: back to Auto */
+    assert(m->rbw_bin_khz == 0 && !m->sweep && m->rate == 1 && m->nfft == 256);
+    sdr_rbw_cycle(st);                          /* Auto: the coarsest */
+    assert(m->rbw_bin_khz == 1250 && m->rate == 0 && m->nfft == 64);
+    sdr_acquisition_cycle(st, 1);               /* the FFT cycle takes over */
+    assert(m->rbw_bin_khz == 0 && m->fft_override == 128);
+    /* A board that takes 40 MS/s and 256 points alone: one choice. */
+    assert(sdr_caps_parse(st, "SDR bank 1 rates 40 nfft 256 tune 2200 2700"));
+    n = sdr_model_rbw_options(m, k, SDR_RBW_MAX);
+    assert(n == 1 && k[0] == 156.25);
+    free(st);
+}
+
 /** @brief Trigger history survives capture, replays, and stops on its deadline. */
 static void trigger_tests(const char *dir)
 {
@@ -1943,6 +2048,7 @@ int main(void)
     workspace_tests(dir);
     measurement_tests(dir);
     acquisition_tests(dir);
+    rbw_tests(dir);
     trigger_tests(dir);
     bookmark_tests(&services, dir);
     snprintf(rec, sizeof rec, "%s/rec.sdrlog", dir);
@@ -1991,6 +2097,18 @@ int main(void)
     say(master, "SDR bank 1 rates 80 40 20 10 8 4 nfft 64 128 256 tune 2200 2700" PROMPT);
     ticks(st, &now, 2);
     assert(st->caps_known == 1 && sdr_enabled(st, CMD_FFT));
+    /* The RBW list shares Mode's row, at its right: Auto, then ten. */
+    sdr_controls(st);
+    assert(sdr_enabled(st, CMD_CHOICE + SDR_C_RBW) &&
+           st->choice[SDR_C_RBW].count == 11 &&
+           st->choice[SDR_C_RBW].selected == 0 &&
+           !strcmp(st->choice[SDR_C_RBW].item[0].label, "Auto 225 kHz") &&
+           !strcmp(st->choice[SDR_C_RBW].item[10].label, "22.5 kHz"));
+    assert(sdr_control_rect(st, CMD_CHOICE + SDR_C_RBW).y ==
+           sdr_control_rect(st, CMD_LIVE).y &&
+           sdr_control_rect(st, CMD_CHOICE + SDR_C_RBW).x >
+           sdr_control_rect(st, CMD_LIVE).x +
+           sdr_control_rect(st, CMD_LIVE).w);
     board_read(master, got, sizeof got);
     assert(!strcmp(got, "sdr spec 2437 1 256\r"));
     spec_line(line, sizeof line, 2437, 256, 110, 140, 190);

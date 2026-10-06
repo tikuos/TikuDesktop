@@ -399,6 +399,7 @@ int sdr_play_start(sdr_t *st, const char *path)
     st->saved[0] = '\0';
     st->model.one_max = one_max;        /* its views as they were made */
     st->model.fft_override = st->model.rate_override = 0;
+    st->model.rbw_bin_khz = 0;
     st->model.rejected = st->model.incomplete = 0;
     sdr_occupancy_reset(st);
     sdr_model_range(&st->model, st->model.start, st->model.stop);
@@ -526,6 +527,7 @@ void sdr_play_seek(sdr_t *st, double seconds)
     p->last = st->now;
     st->paused = 1;
     st->model.fft_override = st->model.rate_override = 0;
+    st->model.rbw_bin_khz = 0;
     sdr_occupancy_reset(st);
     sdr_model_range(&st->model, p->initial_start, p->initial_stop);
     st->model.spectra = 0;

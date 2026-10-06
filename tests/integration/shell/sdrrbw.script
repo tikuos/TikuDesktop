@@ -1,0 +1,53 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# setup: sdr
+# board: only
+# mount: /devices/board1
+# The RBW list on a board whose firmware has the receiver: opened beside
+# Mode once the board's capabilities are read, its finest resolution for
+# the live view, 22.5 kHz, turns the 24 MHz view into nine 4 MS/s slices
+# 3 MHz apart that the board answers; a recording keeps that acquisition
+# in its VIEW line, the 256-point FFT and rate code 5 beside the range.
+wait 60
+click 980 30
+wait 10
+menu-pick Device Tools
+wait 10
+menu-pick TikuSDR
+wait 200
+expect-title TikuSDR
+wait 800
+note The RBW list, right of Mode in the Frequency section: End picks the finest
+click 185 185
+wait 10
+shot /tmp/trk_sdrrbw_list.png
+key End
+key Return
+wait 500
+shot /tmp/trk_sdrrbw_fine.png
+click 114 8
+wait 8
+menu-pick Record…
+wait 30
+expect-title Save
+key r
+key b
+key w
+key Return
+wait 500
+click-window TikuSDR
+click 114 8
+wait 8
+menu-pick Stop Recording
+wait 20
+expect-file /tmp/trk_home/rbw
+expect-file-has /tmp/trk_home/rbw VIEW range 2425 2449 256 6
+expect-file-has /tmp/trk_home/rbw SPEC 2426 4000000
+click-window TikuSDR
+click 71 8
+wait 8
+menu-pick Quit
+wait 30
+expect-no-title TikuSDR
+quit

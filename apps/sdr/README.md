@@ -24,8 +24,13 @@ desktop hoists it into its Tiku menu.
   floors levelled to a common one). The Mode button distinguishes a single
   capture from a sweep, independently of connection status; it swaps the last
   live view and the last wide one (the 2.4 GHz band, 2396-2492 MHz, until
-  another is typed).  Recordings say their version: a version 1 one held up
-  to 40 MHz in one spectrum, and still plays so.
+  another is typed).  The RBW list beside it chooses the resolution
+  bandwidth (the Hann window's 3 dB width, 1.44 bins): Auto, or any the
+  board can give the view, finer ones swept in narrower slices at lower
+  rates (16, 8, 6 or 3 MHz apart at 20, 10, 8 or 4 MS/s, at most 64);
+  `sdr_model_rbw_plan` picks one capture where one holds the view, else
+  the sweep sending the fewest bins.  Recordings say their version: a
+  version 1 one held up to 40 MHz in one spectrum, and still plays so.
 - **Traces**: three at once, each Off, Clear & Write, Average (over a count
   of spectra), Max Hold or Min Hold, in black, red and blue.  Trace 1
   opens as the average of four.
@@ -41,7 +46,8 @@ desktop hoists it into its Tiku menu.
   11-26.
 - The graticule's scale: Ref on whole tens over the traces shown, 2, 5, 10 or
   20 dB a division, moved only when the traces leave its room; the frame
-  says Bin (FFT bin spacing), the rate, the gain and the range. The spectrogram is coloured
+  says RBW and bin (the FFT's spacing), the rate, the gain and the range.
+  The spectrogram is coloured
   from just under the noise to the reference level.
 
 TikuSDR borrows the board from the desktop as soon as it opens, as
@@ -96,7 +102,8 @@ threshold, not airtime or protocol classification.
 Triggers are one-shot and reserve their destination at arm time. The raw
 pre-trigger ring holds at most 256 lines, trimmed at complete-frame boundaries;
 post-trigger recording ends on a wall-clock deadline. Retuning or changing
-acquisition disarms it. Recordings version 3 preserve FFT/rate overrides;
+acquisition disarms it. Recordings version 3 preserve FFT/rate overrides,
+and with them a chosen RBW;
 versions 1 and 2 remain readable. Playback supports labelled bookmarks and
 interval loops with bounded seeking.
 

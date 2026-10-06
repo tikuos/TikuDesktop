@@ -72,7 +72,12 @@ static void menu_label(const sdr_t *st, int command, char *out, size_t max)
 {
     const char *t = NULL;
 
-    if (command == CMD_FFT)
+    if (command == CMD_RBW) {
+        char a[24];
+        sdr_mhz_text(SDR_HANN_RBW * sdr_model_bin_khz(&st->model), a, sizeof a);
+        snprintf(out, max, "RBW: %s%s kHz (Cycle)",
+                 st->model.rbw_bin_khz > 0 ? "" : "Auto / ", a);
+    } else if (command == CMD_FFT)
         snprintf(out, max, "FFT: %s%d (Cycle)", st->model.fft_override ? "" : "Auto / ", st->model.nfft);
     else if (command == CMD_RATE)
         snprintf(out, max, "Rate: %s%d MS/s (Cycle)", st->model.rate_override ? "" : "Auto / ",
@@ -178,6 +183,8 @@ static unsigned menu_state(const sdr_t *st)
     v = v * 31u + (unsigned)st->play.seeking;
     v = v * 31u + (unsigned)st->previous_count;
     v = v * 31u + (unsigned)(st->caps_known + 1);
+    v = v * 31u + (unsigned)lround(sdr_model_bin_khz(m) * 64);
+    v = v * 31u + (unsigned)(m->rbw_bin_khz > 0);
     v = v * 31u + (unsigned)st->book_count;
     v = v * 31u + (unsigned)st->trigger.armed;
     v = v * 31u + (unsigned)(m->wf_count > 0);
@@ -197,7 +204,8 @@ static void publish(sdr_t *st)
                               CMD_ZOOM_IN, CMD_ZOOM_OUT, CMD_VIEW_BACK, 0,
                               CMD_HISTORY_OLDER, CMD_HISTORY_NEWER,
                               CMD_HISTORY_LATEST, 0,
-                              CMD_HEALTH, CMD_CAPS, CMD_FFT, CMD_RATE, CMD_QUIT};
+                              CMD_HEALTH, CMD_CAPS, CMD_RBW, CMD_FFT, CMD_RATE,
+                              CMD_QUIT};
     static const int file[] = {CMD_RECORD, CMD_REPLAY, 0, CMD_EXPORT,
                                CMD_PICTURE, 0, CMD_REWIND, CMD_FORWARD,
                                CMD_STEP, CMD_SPEED, CMD_GAPS, 0,
@@ -510,7 +518,7 @@ static int sdr_pick(void *state, uint32_t window, int command)
     if (command == CMD_QUIT) return 1;
     if (st->alert.open) return 0;       /* the alert is answered first */
     if (command != CMD_CONNECT && !sdr_enabled(st, command)) return 0;
-    if (command >= CMD_PRESET_SAVE && command <= CMD_HEALTH) {
+    if (command >= CMD_PRESET_SAVE && command <= CMD_RBW) {
         if (command == CMD_PRESET_SAVE || command == CMD_PRESET_OPEN ||
             command == CMD_REF_SAVE || command == CMD_REF_OPEN || command == CMD_OCC_EXPORT)
             ask(st, command);
@@ -528,6 +536,7 @@ static int sdr_pick(void *state, uint32_t window, int command)
             else ask(st, command);
         } else if (command == CMD_CAPS) st->caps_queued = 1;
         else if (command == CMD_FFT || command == CMD_RATE) sdr_acquisition_cycle(st, command == CMD_FFT);
+        else if (command == CMD_RBW) sdr_rbw_cycle(st);
         else if (command == CMD_BOOK_ADD) sdr_book_add(st);
         else if (command == CMD_BOOK_NEXT) sdr_book_next(st);
         else if (command == CMD_BOOK_CLEAR) { st->book_count = 0; (void)sdr_books_save(st); }
@@ -627,8 +636,8 @@ static int sdr_pick(void *state, uint32_t window, int command)
 }
 
 /** @brief Apply list @p c's new selection: the trace or marker the panel
- *         sets, the type of the trace being set, or the trace the selected
- *         marker reads. */
+ *         sets, the type of the trace being set, the trace the selected
+ *         marker reads, or the resolution bandwidth. */
 static void chose(sdr_t *st, int c)
 {
     int v = st->choice[c].selected;
@@ -636,6 +645,9 @@ static void chose(sdr_t *st, int c)
     if (c == SDR_C_TRACE) st->trace_sel = v;
     else if (c == SDR_C_TYPE) set_type(st, st->trace_sel, v);
     else if (c == SDR_C_MARKER) st->model.mark_sel = v;
+    else if (c == SDR_C_RBW)
+        sdr_rbw_choose(st, v > 0 && v <= st->rbw_count ? st->rbw_list[v - 1]
+                                                       : 0);
     else st->model.mark[st->model.mark_sel].trace = v;
 }
 
@@ -1039,6 +1051,13 @@ static void sdr_tick(void *state, int64_t now_us)
     sdr_trigger_tick(st);
     sdr_play_tick(st);
     sdr_csv_tick(st);
+    if (st->model.acq_dropped) {        /* a view the RBW cannot sweep */
+        st->model.acq_dropped = 0;
+        snprintf(st->note, sizeof st->note, "RBW back to automatic: this "
+                 "span needs more than %d slices at that resolution.",
+                 SDR_SLICES_MAX);
+        st->dirty = 1;
+    }
     if (st->hover_valid && spectra_before != st->model.spectra)
         hover(st, st->hover_x, st->hover_y);
     if (second && (st->rec.file || st->state == SDR_RUNNING)) st->dirty = 1;

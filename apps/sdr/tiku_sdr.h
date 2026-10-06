@@ -36,6 +36,11 @@
 #define SDR_EXCURSION 6.0f          /* the least rise a peak needs, dB */
 #define SDR_DIVS     10             /* graticule divisions, each way   */
 #define SDR_VIEWS    16             /* prior tuning ranges remembered */
+#define SDR_SLICES_MAX 64           /* a sweep's slices: a bit each in got */
+#define SDR_RBW_MAX  16             /* resolutions the RBW list offers */
+/* The board windows each FFT with Hann, whose response is 1.44 bins wide
+ * at -3 dB: the resolution bandwidth is that many bins. */
+#define SDR_HANN_RBW 1.44
 
 /* A view runs from start to stop in MHz, inside SDR_TUNE_LO to
  * SDR_TUNE_HI; the board tunes in whole MHz.  A view up to SDR_LIVE_SPAN
@@ -70,8 +75,9 @@ enum { SDR_S_FREQ, SDR_S_TRACE, SDR_S_MARK, SDR_S_DISPLAY, SDR_S_RECEIVER,
 enum { SDR_T_OFF, SDR_T_WRITE, SDR_T_AVG, SDR_T_MAX, SDR_T_MIN, SDR_T_TYPES };
 
 /* The panel's drop-down lists: the trace being set and its type, the
- * marker being set and the trace it reads. */
-enum { SDR_C_TRACE, SDR_C_TYPE, SDR_C_MARKER, SDR_C_ON, SDR_CHOICES };
+ * marker being set and the trace it reads, and the resolution bandwidth. */
+enum { SDR_C_TRACE, SDR_C_TYPE, SDR_C_MARKER, SDR_C_ON, SDR_C_RBW,
+       SDR_CHOICES };
 
 /* The link's states: idle; waiting for the desktop to let go of the board;
  * the port open, waiting for a prompt; the receiver starting; running;
@@ -108,7 +114,8 @@ enum {
     CMD_PRESET_SAVE = 500, CMD_PRESET_OPEN, CMD_REF_SAVE, CMD_REF_OPEN,
     CMD_REF_SHOW, CMD_OCCUPANCY, CMD_OCC_PLAN, CMD_OCC_RESET, CMD_OCC_EXPORT,
     CMD_TRIGGER, CMD_CAPS, CMD_FFT, CMD_RATE, CMD_BOOK_ADD, CMD_BOOK_NEXT,
-    CMD_BOOK_CLEAR, CMD_LOOP_A, CMD_LOOP_B, CMD_LOOP, CMD_OCC_PAGE, CMD_HEALTH
+    CMD_BOOK_CLEAR, CMD_LOOP_A, CMD_LOOP_B, CMD_LOOP, CMD_OCC_PAGE, CMD_HEALTH,
+    CMD_RBW
 };
 
 /* Where marker peak moves go: the highest peak, the highest peak lower
@@ -133,10 +140,20 @@ typedef struct {
     int    sweep;                   /* 1: swept in slices; 0: one spectrum */
     int    tune, rate, nfft;        /* tuned (MHz), rate code, bins    */
     int    fft_override, rate_override; /* 0: auto; rate code + 1 otherwise */
+    double rbw_bin_khz;             /* the bin spacing the chosen RBW needs,
+                                       0 for automatic: each view picks
+                                       the overrides that give it      */
+    unsigned caps_rates, caps_ffts; /* what the board takes: a bit per rate
+                                       code, and per 64, 128 and 256 points */
+    int    acq_dropped;             /* a chosen RBW or rate this view could
+                                       not have went back to automatic */
     unsigned rejected, incomplete; /* local parser counters, not RF loss */
     int    k0;                      /* one spectrum: its first bin shown */
     int    first, last;             /* a sweep: its first and last
                                        slices' centres, MHz            */
+    int    slice_step;              /* a sweep: MHz between slices     */
+    double slice_half;              /* a sweep: MHz kept each side of a
+                                       slice's centre                  */
     uint64_t got;                   /* a sweep: a bit for each slice heard
                                        since the last SWEEP line       */
     int    gain;                    /* the latest line's gain index    */
@@ -272,6 +289,9 @@ typedef struct {
     int caps_queued, caps_inflight, caps_known;
     unsigned caps_rates, caps_ffts;
     int caps_lo, caps_hi;
+    double rbw_list[SDR_RBW_MAX];   /* the RBW list's bin spacings, kHz,
+                                       after its Auto row              */
+    int rbw_count;
     int64_t last_frame;
     unsigned rx_overflows;
     int health_visible;
@@ -368,6 +388,12 @@ int sdr_caps_parse(sdr_t *st, const char *line);
 void sdr_acquisition_cycle(sdr_t *st, int fft);
 /** @brief Whether the requested acquisition fits reported receiver capabilities. */
 int sdr_acquisition_valid(const sdr_t *st);
+/** @brief Choose the resolution bandwidth by the bin spacing that gives it,
+ *         @p bin_khz, or 0 for automatic; the view keeps its range. */
+void sdr_rbw_choose(sdr_t *st, double bin_khz);
+/** @brief Step the RBW to the next the RBW list offers, after the last back
+ *         to automatic. */
+void sdr_rbw_cycle(sdr_t *st);
 /** @brief Explain local capture health without inventing firmware counters. */
 void sdr_health_text(const sdr_t *st, char *out, size_t size);
 
@@ -402,6 +428,26 @@ void sdr_model_range(sdr_model_t *m, double start, double stop);
 /** @brief Whether the view is live: one spectrum caught at once, up to
  *         one_max MHz wide, rather than a sweep of slices. */
 int  sdr_model_is_live(const sdr_model_t *m);
+/** @brief The sample rate rate code @p code selects, in MS/s. */
+double sdr_rate_mhz(int code);
+/** @brief The spacing of the board's FFT bins in this view's acquisition,
+ *         kHz; SDR_HANN_RBW times it is the resolution bandwidth. */
+double sdr_model_bin_khz(const sdr_model_t *m);
+/** @brief The bin spacing, kHz, the view has with no RBW, rate or size
+ *         chosen. */
+double sdr_model_auto_bin_khz(const sdr_model_t *m);
+/** @brief How many slices the view's sweep takes; 1 for one spectrum. */
+int  sdr_model_slices(const sdr_model_t *m);
+/** @brief The rate code and FFT size that give the view bins @p bin_khz
+ *         apart: one capture, at the narrowest rate that holds the view,
+ *         else the sweep that sends the fewest bins, then the fewest slices,
+ *         of the rates and sizes the board takes.  @return 0, or -1 when
+ *         the view cannot have them. */
+int  sdr_model_rbw_plan(const sdr_model_t *m, double bin_khz, int *rate,
+                        int *nfft);
+/** @brief The bin spacings, in kHz, coarsest first, that the view can be
+ *         given at least ten bins across.  @return how many, at most @p max. */
+int  sdr_model_rbw_options(const sdr_model_t *m, double *bin_khz, int max);
 /** @brief Write @p mhz, which must be at least 0, as a field shows it: to
  *         the kHz, with no trailing zeros and '.' as the point in every
  *         locale. */
