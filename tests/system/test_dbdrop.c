@@ -245,6 +245,45 @@ main(void)
         (void)system("rm -rf /tmp/trk_dbmenu");
     }
 
+    printf("\nwhat a drag is over on a horizontal bar (D-061)\n");
+    {
+        static const tiku_trk_db_dock_t docks[2] = {
+            TIKU_TRK_DB_TOP, TIKU_TRK_DB_BOTTOM
+        };
+        int d;
+
+        for (d = 0; d < 2; d++) {
+            tiku_surface_t *sfc =
+                tiku_surface_new(1000, 700, TIKU_C_BACKDROP);
+            int seen[8], nseen = 0, x, mid, k;
+
+            tiku_trk_deskbar_set_dock(db, docks[d]);
+            tiku_trk_deskbar_draw(db, sfc);
+            tiku_surface_free(sfc);
+            f = tiku_trk_deskbar_frame(db);
+            mid = f.y + f.h / 2;
+            check(tiku_trk_deskbar_drop_at(db, f.x + 10, mid, &which) ==
+                  TIKU_TRK_DB_DROP_LEAF,
+                  "D-061", d == 0 ? "top dock: the leaf button takes links"
+                                  : "bottom dock: the leaf button takes "
+                                    "links");
+            for (x = f.x; x < f.x + f.w; x++) {
+                if (tiku_trk_deskbar_drop_at(db, x, mid, &which) ==
+                        TIKU_TRK_DB_DROP_TEAM &&
+                    (nseen == 0 || seen[nseen - 1] != which) && nseen < 8) {
+                    seen[nseen++] = which;
+                }
+            }
+            k = (nseen == 3 && seen[0] == 0 && seen[1] == 1 &&
+                 seen[2] == 2);
+            check(k, "D-061",
+                  d == 0 ? "top dock: each application button is a target, "
+                           "left to right"
+                         : "bottom dock: each application button is a "
+                           "target, left to right");
+        }
+    }
+
     tiku_trk_deskbar_free(db);
     tiku_backend_close(b);
     printf("\n%s\n", fails ? "FAILURES" : "Deskbar drops hold");

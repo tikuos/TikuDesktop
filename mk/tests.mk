@@ -166,6 +166,12 @@ test_nodeicon_SRCS   := $(COMMON)
 test_navmenu_SRCS   := $(COMMON)
 test_navigator_SRCS   := system/shared/ui/tiku_trk_navigator.c
 test_dbdrop_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) system/deskbar/tiku_trk_deskbar_prefs.c system/shared/ui/tiku_trk_shortcuts.c
+test_drop_controller_SRCS := $(test_dbdrop_SRCS) $(POSEVIEW) \
+    system/shared/ui/commands/tiku_trk_drop_controller.c \
+    system/shared/ui/tiku_trk_cwmenu.c system/deskbar/tiku_trk_desktop_view.c \
+    system/shared/ui/windows/tiku_trk_folder_window.c \
+    system/deskbar/tiku_trk_deskicons.c system/shared/ui/tiku_trk_titleview.c
+test_drop_controller_LDLIBS := $(X11_LIBS) -lm
 test_switcher_SRCS   := system/shared/core/tiku_trk_switcher.c
 test_deskicons_SRCS   := $(COMMON) system/deskbar/tiku_trk_deskicons.c $(POSEVIEW)
 test_scripting_SRCS   := $(COMMON) $(POSEVIEW) system/shared/shell/tiku_trk_script_api.c

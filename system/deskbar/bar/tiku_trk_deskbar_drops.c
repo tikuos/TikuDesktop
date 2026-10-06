@@ -25,6 +25,28 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
         return TIKU_TRK_DB_DROP_NONE;
     }
     f = tiku_trk_deskbar_frame(db);
+    if (!tiku_trk_deskbar_vertical(db->dock)) {
+        /* The horizontal strip: the leaf button at the left end, then the
+         * application buttons where the last draw put them (DB-033). */
+        int right = f.x + f.w - (SWITCH_W + 14) - db_hclock_w(db) -
+                    db_trayicons_w(db) - (db->hoverflow ? 12 : 0);
+        int slot;
+
+        if (x < f.x + 2 + HLEAF_W) {
+            return TIKU_TRK_DB_DROP_LEAF;
+        }
+        if (db->hbutton_w <= 0 || x < db->hleft) {
+            return TIKU_TRK_DB_DROP_BAR;
+        }
+        slot = (x - db->hleft) / db->hbutton_w;
+        i = (db->hoverflow ? db->scroll : 0) + slot;
+        if (i < db->team_count &&
+            db->hleft + (slot + 1) * db->hbutton_w <= right) {
+            if (which != NULL) { *which = db->order[i]; }
+            return TIKU_TRK_DB_DROP_TEAM;
+        }
+        return TIKU_TRK_DB_DROP_BAR;
+    }
     ry = y - f.y;
     if (ry < db_leaf_row()) {
         return TIKU_TRK_DB_DROP_LEAF;

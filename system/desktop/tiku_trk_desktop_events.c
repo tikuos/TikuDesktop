@@ -186,8 +186,10 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
     }
     {   /* The scripting transport (PVK-052): when
          * ~/.config/tracker/command changes, its lines run as
-         * scripting commands. */
+         * scripting commands.  The file found at the first turn is the
+         * baseline and does not run. */
         static int64_t command_stamp;
+        static int command_primed;
         struct stat cst;
         char cpath[TIKU_PATH_MAX];
         const char *chome = getenv("HOME");
@@ -200,11 +202,14 @@ desktop_turn_begin(desktop_t *app, const desktop_options_t *o, desktop_loop_t *l
             int64_t stamp = (int64_t)cst.st_mtim.tv_sec * 1000000000 +
                             cst.st_mtim.tv_nsec;
 
-            if (stamp != command_stamp) {
+            if (!command_primed) {
+                command_stamp = stamp;
+            } else if (stamp != command_stamp) {
                 command_stamp = stamp;
                 script_command_file(app, cpath);
             }
         }
+        command_primed = 1;
     }
     if (tiku_remote_poll(&app->remote)) {
         desktop_damage_all(app);

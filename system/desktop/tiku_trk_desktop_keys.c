@@ -374,7 +374,8 @@ keys_windows(desktop_t *app, const tiku_event_t *ev, unsigned key,
  * @brief The desk's chords, asked in this order: the add-on shortcuts and
  *        panels, the selection's chords, the clipboard and undo, the
  *        standard set, the view modes, the switcher, closing a window, the
- *        desktop's own panels and the settings.
+ *        desktop's own panels and the settings.  While the switcher shows,
+ *        every key goes to it.
  * @return 1 when a chord was handled.
  */
 static int
@@ -388,6 +389,9 @@ keys_key(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     *damage = tiku_trk_damage_none();
     if (ev->type != TIKU_EVENT_KEY_DOWN) {
         return 0;
+    }
+    if (tiku_trk_switcher_window_shown(&app->switcher_window)) {
+        return keys_windows(app, ev, key, w, fl);
     }
     if (keys_panels(app, ev, key, w, fl) ||
         keys_selection(app, ev, key, w, fl) ||

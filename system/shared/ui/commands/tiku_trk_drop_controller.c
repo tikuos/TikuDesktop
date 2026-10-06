@@ -107,13 +107,16 @@ drop_paths(tiku_trk_drop_controller_t *controller, const char **paths)
     return controller->drag->count;
 }
 
+static int drop_on_application(tiku_trk_drop_controller_t *controller,
+                               const char *destination, unsigned modifiers);
+
 /**
  * @brief A drop that lands on the Deskbar: a menu folder links the items
- *        into it, the logo links them into the Deskbar folder, the tray
- *        subscribes to one node, a team row hands the items to that
- *        application, and the bar itself reports on the status line how
- *        many items can launch.  @return 1 when the bar took the drop, 0
- *        when it landed elsewhere.
+ *        into it, a menu file launches with them, the logo links them into
+ *        the Deskbar folder, the tray subscribes to one node, a team row
+ *        hands the items to that application, and the bar itself reports
+ *        on the status line how many items can launch.  @return 1 when the
+ *        bar took the drop, 0 when it landed elsewhere.
  */
 static int
 drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
@@ -122,14 +125,17 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
     const char *paths[TIKU_TRK_DRAG_MAX];
     char destination[TIKU_PATH_MAX];
     tiku_trk_db_drop_t drop;
+    tiku_trk_db_drop_t menu_drop = TIKU_TRK_DB_DROP_NONE;
     int team = -1;
     int count;
     int i;
 
     drop = tiku_trk_deskbar_drop_at(controller->deskbar, x, y, &team);
-    if (drop == TIKU_TRK_DB_DROP_NONE &&
-        tiku_trk_deskbar_menu_drop_at(controller->deskbar, x, y,
-            destination, sizeof destination) == TIKU_TRK_DB_DROP_MENU_DIR) {
+    if (drop == TIKU_TRK_DB_DROP_NONE) {
+        menu_drop = tiku_trk_deskbar_menu_drop_at(controller->deskbar, x, y,
+            destination, sizeof destination);
+    }
+    if (menu_drop == TIKU_TRK_DB_DROP_MENU_DIR) {
         count = drop_paths(controller, paths);
         if (count > 0) {
             (void)tiku_fs_link(controller->fs, paths, count,
@@ -138,6 +144,11 @@ drop_on_deskbar(tiku_trk_drop_controller_t *controller, int x, int y,
                      "linking %d item%s into %.40s", count,
                      count == 1 ? "" : "s", destination);
         }
+        return 1;
+    }
+    if (menu_drop == TIKU_TRK_DB_DROP_MENU_FILE) {
+        /* The menu takes the drop whether or not the file launches. */
+        (void)drop_on_application(controller, destination, modifiers);
         return 1;
     }
     if (drop == TIKU_TRK_DB_DROP_TRAY) {

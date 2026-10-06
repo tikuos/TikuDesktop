@@ -1,0 +1,23 @@
+# shell: desktop
+# home: fixture
+# D-198: while the switcher shows, every key goes to it.  Cmd-F does not
+# open Find and Delete does not ask about the Desktop's selection.
+wait 12
+click-desk notes.txt
+wait 3
+expect-desk-selected-name notes.txt
+key Tab ctrl
+wait 3
+expect-title Switcher
+note Cmd-F leaves the switcher focused
+key f ctrl
+wait 5
+expect-title Switcher
+note Delete asks nothing, so Return commits the switcher
+key Delete
+wait 5
+key Return
+wait 8
+expect-file /tmp/trk_home/.config/tracker/Desktop/notes.txt
+expect-desk-icon notes.txt
+quit

@@ -1,0 +1,16 @@
+# shell: desktop
+# apps: fixture
+# mkdir: ~/.config/tracker
+# file: ~/.config/tracker/command delete Entry /tmp/trk_script/b.txt
+# D-197: a command file already there when the shell starts is not run;
+# only a change made while it runs is.
+wait 30
+note the command left from an earlier session did not run
+expect-file /tmp/trk_script/b.txt
+expect-no-file /tmp/trk_home/.config/tracker/command.reply
+note a command written now runs and replies
+write /tmp/trk_home/.config/tracker/command delete Entry /tmp/trk_script/b.txt
+wait 30
+expect-no-file /tmp/trk_script/b.txt
+expect-file-has /tmp/trk_home/.config/tracker/command.reply ok
+quit
