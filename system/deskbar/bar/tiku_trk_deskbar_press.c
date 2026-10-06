@@ -365,6 +365,12 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 if (it->kind == TIKU_TRK_DB_ITEM_ROW) {
                     pick->what = it->command;
                     snprintf(pick->path, sizeof pick->path, "%s", it->path);
+                } else if (it->kind == TIKU_TRK_DB_ITEM_EXPAND &&
+                           it->expand == TIKU_TRK_DB_EXPAND_DIR) {
+                    /* A folder in the submenu opens: a submenu has no
+                     * submenu of its own. */
+                    pick->what = TIKU_TRK_DB_OPEN_PATH;
+                    snprintf(pick->path, sizeof pick->path, "%s", it->path);
                 }
                 db->menu_open = 0;
                 db->sub_of = -1;

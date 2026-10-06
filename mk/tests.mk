@@ -304,8 +304,12 @@ test_board_looks_CFLAGS := $(test_board_jobs_CFLAGS)
 test_board_looks_SRCS := $(test_board_jobs_SRCS)
 test_board_looks_LDLIBS := $(test_board_jobs_LDLIBS)
 ifeq ($(UNAME_S),Linux)
-test_board_looks_LDLIBS += -Wl,--wrap=tiku_tx_scan_serial
+test_board_looks_LDLIBS += -Wl,--wrap=tiku_tx_scan_serial \
+    -Wl,--wrap=tiku_channel_open_port
 endif
+# The supervisor's file is included by the test, with its warnings
+# reported by its own build.
+test_desk_exit_CFLAGS := -Wno-unused-result -Wno-format-truncation
 # The window responder's and the Deskbar's files, included by the test.
 test_desktop_closes_CFLAGS := -ffunction-sections -fdata-sections \
     -Wno-unused-parameter -Wno-format-truncation

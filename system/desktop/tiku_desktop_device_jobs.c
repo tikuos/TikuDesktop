@@ -296,7 +296,9 @@ probe_done(void *ctx)
         } else if (p->ch != NULL) {
             tiku_trail("  %s: windows with no shell", p->port);
             desktop_devtray_forget(app, p->port);
-            (void)channel_keep(app, p->ch);
+            /* Adopted into the remote listener, as mount_landed() adopts
+             * a board's channel. */
+            (void)channel_attach(app, channel_keep(app, p->ch));
         } else {
             tiku_trail("  %s: nothing answered", p->port);
             desktop_devtray_failed(app, p->port, NULL, "nothing answered");

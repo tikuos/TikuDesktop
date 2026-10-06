@@ -1,6 +1,7 @@
 /* Delayed Deskbar submenus, without sleeping or sending real commands.
  * SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 #include "../../system/deskbar/bar/tiku_trk_deskbar_private.h"
 
@@ -124,6 +125,38 @@ static void hot_label(tiku_surface_t *s)
     tiku_trk_deskbar_free(db);
 }
 
+/** @brief The running-apps menu's hot row, sorted by name, is named as
+ *         drawn and as a click picks it (D-207). */
+static void apps_hot_label(tiku_surface_t *s)
+{
+    tiku_trk_deskbar_t *db = tiku_trk_deskbar_new(NULL); assert(db);
+    tiku_trk_deskbar_settings_t set;
+    tiku_trk_db_pick_t pick;
+    char got[TIKU_TRK_DB_LABEL_MAX];
+    int h = tiku_font_plain()->height+6;
+    tiku_trk_deskbar_set_dock(db, TIKU_TRK_DB_RIGHT_MINI);
+    assert(tiku_trk_deskbar_add_team(db, "Zeta") >= 0);
+    assert(tiku_trk_deskbar_add_team(db, "Alpha") >= 0);
+    set = db->settings;
+    set.sort_apps = 1;
+    tiku_trk_deskbar_apply_settings(db, &set);
+    tiku_trk_deskbar_draw(db, s);
+    db->apps_menu_open = 1;
+    int ax = (db->frame.x > 0) ? db->frame.x - 176 - 2
+                               : db->frame.x + db->frame.w + 2;
+    int ay = db->frame.y + 2 + db_leaf_row() + 2 + 2;
+    (void)tiku_trk_deskbar_motion(db, ax + 20, ay + h/2);
+    assert(db->apps_hot == 0);
+    assert(tiku_trk_deskbar_hot_label(db, got, sizeof got));
+    printf("  (the first row of the sorted menu is named \"%s\")\n", got);
+    fflush(stdout);
+    assert(strcmp(got, "Alpha") == 0);
+    assert(tiku_trk_deskbar_click(db, ax + 20, ay + h/2, 0, 1, 1, &pick));
+    assert(pick.what == TIKU_TRK_DB_ACTIVATE_TEAM &&
+           strcmp(db->teams[pick.team].name, got) == 0);
+    tiku_trk_deskbar_free(db);
+}
+
 /** @brief Leaving/reopening cancels old timers; clicks still open immediately. */
 static void cancellation(tiku_surface_t *s)
 {
@@ -206,6 +239,48 @@ static void empty_folder(tiku_surface_t *s)
     (void)tiku_trk_deskbar_motion(db,10,600);
     hover(db,row,6000000);
     assert(!tiku_trk_deskbar_menu_tick(db,6500000) && scans == 2);
+    tiku_trk_deskbar_free(db);
+}
+
+/** @brief A folder "Projects" holding the folder "Old". */
+static int projects_list(tiku_backend_t *b, const char *path,
+                         tiku_entry_fn fn, void *ctx)
+{
+    tiku_model_t m;
+    (void)b; (void)path;
+    memset(&m, 0, sizeof m);
+    m.kind = TIKU_KIND_DIRECTORY;
+    snprintf(m.name, sizeof m.name, "Old");
+    snprintf(m.path, sizeof m.path, "/test/Projects/Old");
+    return fn(&m, ctx);
+}
+
+/** @brief A click on a folder row in a submenu opens the folder (D-208). */
+static void folder_in_submenu(tiku_surface_t *s)
+{
+    tiku_trk_deskbar_t *db = fixture(s, TIKU_TRK_DB_RIGHT_EXPANDED);
+    const tiku_backend_ops_t ops = {.list=projects_list};
+    tiku_backend_t backend = {.ops=&ops};
+    tiku_trk_db_pick_t pick;
+    db->backend = &backend;
+    int row = db->leaf_count++;
+    memset(&db->leaf[row], 0, sizeof db->leaf[row]);
+    db->leaf[row].kind = TIKU_TRK_DB_ITEM_EXPAND;
+    db->leaf[row].expand = TIKU_TRK_DB_EXPAND_DIR;
+    snprintf(db->leaf[row].path, sizeof db->leaf[row].path, "/test/Projects");
+    tiku_rect_t r = row_rect(db, row);
+    assert(tiku_trk_deskbar_click(db, r.x+8, r.y+8, 0, 1, 1, &pick));
+    assert(db->sub_of == row && db->sub_count == 1);
+    assert(db->sub[0].kind == TIKU_TRK_DB_ITEM_EXPAND);
+    tiku_rect_t main = db_leaf_menu_rect(db, r.h, db->leaf_count);
+    tiku_rect_t sub = db_sub_menu_rect(db, main, r.h);
+    assert(tiku_trk_deskbar_click(db, sub.x+8, sub.y+2+r.h/2, 0, 1, 1,
+                                  &pick));
+    printf("  (a click on Old picks %d, path \"%s\")\n", pick.what,
+           pick.path);
+    fflush(stdout);
+    assert(pick.what == TIKU_TRK_DB_OPEN_PATH);
+    assert(strcmp(pick.path, "/test/Projects/Old") == 0);
     tiku_trk_deskbar_free(db);
 }
 
@@ -308,7 +383,8 @@ int main(void)
     tracking(s,TIKU_TRK_DB_RIGHT_EXPANDED);
     tracking(s,TIKU_TRK_DB_LEFT_EXPANDED);
     cancellation(s); categories(s); empty_folder(s); hover_area(s);
-    pressed_look(s); hot_label(s);
+    pressed_look(s); hot_label(s); folder_in_submenu(s);
+    apps_hot_label(s);
     const tiku_theme_t *themes[] = {NULL, tiku_theme_dark(), tiku_theme_mono()};
     for (int theme = 0; theme < 3; theme++) {
         tiku_theme_set(themes[theme]);

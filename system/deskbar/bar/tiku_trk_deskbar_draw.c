@@ -600,7 +600,8 @@ tiku_trk_deskbar_hot_label(const tiku_trk_deskbar_t *db, char *out,
         }
     } else if (db->apps_menu_open) {
         if (db->apps_hot >= 0 && db->apps_hot < db->team_count) {
-            label = db->teams[db->apps_hot].name;
+            /* Row k of the menu is team order[k], as it is drawn. */
+            label = db->teams[db->order[db->apps_hot]].name;
         }
     }
     snprintf(out, cap, "%s", (label != NULL) ? label : "");

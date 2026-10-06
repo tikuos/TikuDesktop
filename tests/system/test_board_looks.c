@@ -3,7 +3,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * test_board_looks.c - looks for boards, and a reclaimed board's windows.
+ * test_board_looks.c - looks for boards, and a board's windows.
  *
  * The port scan is replaced, through the linker's --wrap, by a list of
  * ports that do not exist, and the workers by a queue the test lands by
@@ -11,15 +11,17 @@
  * connect from the Devices menu during a look, or one counted at startup
  * that lands after the startup wait, must not end the look; every
  * hosted application that asks during a look must be told when the next
- * one ends; and a board reclaimed with a /gui must have its channel taken
- * into the remote listener.  Off Linux, where the link has no --wrap,
- * the checks are skipped.
+ * one ends; a board reclaimed with a /gui, and a windows-only board (a
+ * socket pair, through a --wrap of the port open) connected from the
+ * Devices menu, must have its channel taken into the remote listener.
+ * Off Linux, where the link has no --wrap, the checks are skipped.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #define _DEFAULT_SOURCE 1
 #include "../../system/desktop/tiku_trk_desktop_private.h"
 #include "tiku_channel.h"
+#include "tiku_link_tcp.h"
 #include "tiku_mount.h"
 #include "tiku_tx.h"
 #include "tiku_work.h"
@@ -62,6 +64,21 @@ __wrap_tiku_tx_scan_serial(char out[][256], int max)
         snprintf(out[i], 256, "/dev/ttyLOOK%d", i);
     }
     return i;
+}
+
+static int win_fd[2] = { -1, -1 };     /* the windows-only board's port */
+
+/** @brief A channel on the port of a board with windows and no shell: a
+ *         link over one end of a socket pair. */
+tiku_channel_t *
+__wrap_tiku_channel_open_port(const char *port, int baud)
+{
+    (void)port;
+    (void)baud;
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, win_fd) != 0) {
+        return NULL;
+    }
+    return tiku_channel_adopt(tiku_link_tcp_open(win_fd[0]));
 }
 #endif
 
@@ -369,6 +386,51 @@ the_reclaim(desktop_t *app)
     close(sv[1]);
 }
 
+/** @brief A board with windows and no shell, connected from the Devices
+ *         menu. */
+static void
+the_windows_only_connect(desktop_t *app)
+{
+    int k, at = -1, adopted = 0;
+
+    printf("a windows-only board connected from the Devices menu (D-216)\n");
+    /* No session is left from the reclaim, whose descriptor may be
+     * reused. */
+    for (k = 0; k < TIKU_REMOTE_SESSIONS; k++) {
+        app->remote.session[k].used = 0;
+    }
+    check(device_connect(app, "/dev/ttyWIN0") == 0 && njobs == 1,
+          "a connect is chosen from the Devices menu");
+    if (njobs != 1) {
+        drop_jobs();
+        return;
+    }
+    jobs[0].run(jobs[0].ctx);
+    land(0);
+    drop_jobs();
+    for (k = 0; k < TIKU_MOUNT_MAX; k++) {
+        if (app->channels[k] != NULL) {
+            at = k;
+        }
+    }
+    check(at >= 0, "a channel is kept for the port");
+    for (k = 0; at >= 0 && k < TIKU_REMOTE_SESSIONS; k++) {
+        adopted |= app->remote.session[k].used &&
+                   app->remote.session[k].fd ==
+                       tiku_channel_fd(app->channels[at]);
+    }
+    check(adopted,
+          "and the channel is taken into the remote listener, so its "
+          "windows reach the desktop");
+    if (at >= 0) {
+        tiku_channel_close(app->channels[at]);
+        app->channels[at] = NULL;
+    }
+    if (win_fd[1] >= 0) {
+        close(win_fd[1]);
+    }
+}
+
 int
 main(void)
 {
@@ -390,6 +452,7 @@ main(void)
     the_late_startup_connect(app);
     the_askers_during_a_look(app);
     the_reclaim(app);
+    the_windows_only_connect(app);
     tiku_backend_close(app->backend);
     free(app);
     printf("%s\n", fails ? "FAILURES" : "all passed");

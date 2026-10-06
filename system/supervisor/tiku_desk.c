@@ -8,13 +8,14 @@
  *
  * Starts TikuDesktop with its stderr in desk.log and waits.  When the desk
  * ends badly it writes an exit report (the signal or status, the paths of
- * the latest crash and stall reports, and the log's last lines) and
+ * the desk's own crash and stall reports, and the log's last lines) and
  * starts the desk once more, passing -after and the report's path.  A desk
  * that ends badly again is left down, with the reason on stderr.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -37,6 +38,7 @@
                                              * "within a minute" */
 
 static pid_t child;                          /* the running desk, or 0 */
+static pid_t ended;                          /* the desk last waited for */
 static char  folder[512];                    /* the reports folder     */
 static volatile sig_atomic_t asked_to_end;   /* SIGTERM, SIGINT or SIGHUP
                                               * reached this program   */
@@ -139,8 +141,12 @@ log_tail(char *out, size_t max)
     return n;
 }
 
-/** @brief Write exit-<time>.txt for a desk that ended with @p status, its
- *         path into @p path, and point latest-exit.txt at it. */
+/**
+ * @brief Write exit-<time>.txt for a desk that ended with @p status, its
+ *        path into @p path, and point latest-exit.txt at it.  The crash
+ *        and stall reports it names are those whose file names end in the
+ *        desk's pid.
+ */
 static void
 write_exit(int status, char *path, size_t max)
 {
@@ -148,6 +154,8 @@ write_exit(int status, char *path, size_t max)
     char latest[600];
     struct tm when;
     time_t now = time(NULL);
+    char suffix[32];
+    DIR *dir;
     FILE *f;
 
     (void)localtime_r(&now, &when);
@@ -167,16 +175,30 @@ write_exit(int status, char *path, size_t max)
     } else {
         fprintf(f, "stopped by: exit %d\n", WEXITSTATUS(status));
     }
-    /* The latest crash and stall reports in the folder, when there are
-     * any; either may be from an earlier run or from another program
-     * that reports into the same folder. */
-    snprintf(latest, sizeof latest, "%s/latest-crash.txt", folder);
-    if (access(latest, R_OK) == 0) {
-        fprintf(f, "its own account: %s\n", latest);
+    /* tiku_report names a process's crash and stall reports
+     * crash-<time>-<program>-<pid>.txt and stall-<time>-<program>-<pid>.txt;
+     * other programs write theirs into the same folder. */
+    snprintf(suffix, sizeof suffix, "-%ld.txt", (long)ended);
+    dir = opendir(folder);
+    while (dir != NULL) {
+        struct dirent *e = readdir(dir);
+        size_t n, k = strlen(suffix);
+
+        if (e == NULL) {
+            break;
+        }
+        n = strlen(e->d_name);
+        if (n <= k || strcmp(e->d_name + n - k, suffix) != 0) {
+            continue;
+        }
+        if (strncmp(e->d_name, "crash-", 6) == 0) {
+            fprintf(f, "its own account: %s/%s\n", folder, e->d_name);
+        } else if (strncmp(e->d_name, "stall-", 6) == 0) {
+            fprintf(f, "a stall before it: %s/%s\n", folder, e->d_name);
+        }
     }
-    snprintf(latest, sizeof latest, "%s/latest-stall.txt", folder);
-    if (access(latest, R_OK) == 0) {
-        fprintf(f, "a stall before it: %s\n", latest);
+    if (dir != NULL) {
+        (void)closedir(dir);
     }
     fprintf(f, "\nthe last it printed:\n");
     if (log_tail(tail, sizeof tail) > 0u) {
@@ -254,6 +276,7 @@ run_desk(const char *desk, int argc, char **argv, const char *after)
             return -1;
         }
     }
+    ended = child;
     child = 0;
     return status;
 }
