@@ -86,6 +86,12 @@ $(OBJ)/tests/fixtures/circuit_faults/%.o: kits/translation/%.c \
 	      -MMD -MP -c -o $@ $<
 $(BUILD)/tests/test_circuit_faults: $(CIRCUIT_FAULT_OBJS)
 test_circuit_faults_LIBS := $(CIRCUIT_FAULT_OBJS)
+# Graphics allocation failures use an isolated allocator in the fixture.
+$(OBJ)/tests/fixtures/surface_alloc.o: kits/interface/tiku_gfx.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -Dmalloc=tiku_test_surface_malloc \
+	      -MMD -MP -c -o $@ $<
+test_surface_alloc_LIBS := $(OBJ)/tests/fixtures/surface_alloc.o
 test_reader_large_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_LDLIBS := $(X11_LIBS) -lm

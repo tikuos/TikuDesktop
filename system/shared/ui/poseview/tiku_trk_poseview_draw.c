@@ -390,6 +390,7 @@ tiku_trk_poseview_paste_layout(tiku_trk_poseview_t *v)
     if (v->filtering) {
         pv_rebuild_filter(v);
     }
+    v->columns_dirty = 1;
     v->state_dirty = 1;
     return n;
 }
@@ -497,6 +498,7 @@ tiku_trk_poseview_toggle_column(tiku_trk_poseview_t *v, int field)
     /* PVL-081: a new column can only bring rows back, and nothing short of
      * a rebuild can find a row that is not in the filtered list. */
     pv_filter_changed(v, 0);
+    v->columns_dirty = 1;
     v->state_dirty = 1;
     return 1;
 }

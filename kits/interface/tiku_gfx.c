@@ -167,11 +167,18 @@ int
 tiku_surface_rescale(tiku_surface_t *s, int scale,
                           tiku_rgb_t bg)
 {
+    int previous, result;
+
     if (s == NULL || scale < 1 || scale > 4) {
         return -1;
     }
+    previous = s->scale;
     s->scale = scale;
-    return tiku_surface_resize(s, s->w, s->h, bg);
+    result = tiku_surface_resize(s, s->w, s->h, bg);
+    if (result != 0) {
+        s->scale = previous;
+    }
+    return result;
 }
 
 tiku_rgb_t

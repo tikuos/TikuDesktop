@@ -32,16 +32,15 @@ tiku_trk_bg_parse(const char *rec, tiku_trk_bg_t *out)
     if (mode < TIKU_TRK_BG_AT_OFFSET || mode > TIKU_TRK_BG_TILED) {
         return 0;
     }
-    if (rec[used] == '\0') {
-        return 0;               /* a background with no picture is none  */
-    }
     memset(out, 0, sizeof *out);
     out->mode = (tiku_trk_bg_mode_t)mode;
     out->x = x;
     out->y = y;
     /* The path takes the rest of the line, so a name with a space in it
      * survives the round trip. */
-    snprintf(out->path, sizeof out->path, "%s", rec + used);
+    if (rec[used] != '\0') {
+        snprintf(out->path, sizeof out->path, "%s", rec + used);
+    }
     return 1;
 }
 
@@ -84,6 +83,20 @@ tiku_trk_bg_load(tiku_store_t *store, const char *node,
     }
     rec[n] = '\0';
     return tiku_trk_bg_parse(rec, out);
+}
+
+int
+tiku_trk_bg_load_picture(tiku_store_t *store, const char *node,
+                         tiku_trk_bg_t *out)
+{
+    tiku_trk_bg_t bg;
+
+    if (out == NULL || !tiku_trk_bg_load(store, node, &bg) ||
+        bg.path[0] == '\0') {
+        return 0;
+    }
+    *out = bg;
+    return 1;
 }
 
 int

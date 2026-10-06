@@ -1436,6 +1436,8 @@ main(void)
                   "copy publishes one typed application/tracker-columns value");
             check(tiku_trk_poseview_paste_layout(target) >= 2,
                   "PVL-096", "paste replaces the target column set atomically");
+            check(tiku_trk_poseview_save_columns(target) >= 2,
+                  "PVL-096", "and marks the pasted layout for persistence");
             n = tiku_trk_poseview_columns(target, &cols);
             check(n >= 2 && tiku_trk_poseview_has_column(target,
                       TIKU_TRK_COL_PATH) &&
@@ -1733,6 +1735,12 @@ main(void)
 
         if (cv != NULL) {
             (void)tiku_trk_poseview_save_columns(cv);   /* settle */
+            check(!tiku_trk_poseview_has_column(cv, TIKU_TRK_COL_PATH) &&
+                  tiku_trk_poseview_toggle_column(cv, TIKU_TRK_COL_PATH) &&
+                  tiku_trk_poseview_save_columns(cv) > 0, "TS-036",
+                  "adding a column writes the new layout");
+            (void)tiku_trk_poseview_toggle_column(cv, TIKU_TRK_COL_PATH);
+            (void)tiku_trk_poseview_save_columns(cv);
             tiku_trk_poseview_sort_click(cv, TIKU_TRK_COL_KIND, 0);
             check(tiku_trk_poseview_save_columns(cv) == 0, "TS-036",
                   "a click that only re-sorted writes no layout record");

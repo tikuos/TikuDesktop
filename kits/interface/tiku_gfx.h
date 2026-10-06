@@ -173,7 +173,8 @@ tiku_surface_t *tiku_surface_new(int w, int h, tiku_rgb_t bg);
 
 /** @brief Give a surface @p scale (1 to 4) native pixels per logical
  *         one, its pixels replaced and filled with @p bg.
- *  @return 0, or -1 for a scale out of range or no memory. */
+ *  @return 0, or -1 for an invalid scale or no memory, leaving @p s
+ *          unchanged. */
 int tiku_surface_rescale(tiku_surface_t *s, int scale,
                               tiku_rgb_t bg);
 
@@ -183,7 +184,7 @@ tiku_rgb_t tiku_peek(const tiku_surface_t *s, int x, int y);
 /** @brief Replace a surface's pixels with @p w by @p h logical pixels at
  *         its scale, filled with @p bg; the clip is reset and the repaint
  *         region dropped.
- *  @return 0, or -1 for a bad size or no memory. */
+ *  @return 0, or -1 for a bad size or no memory, leaving @p s unchanged. */
 int tiku_surface_resize(tiku_surface_t *s, int w, int h,
                              tiku_rgb_t bg);
 

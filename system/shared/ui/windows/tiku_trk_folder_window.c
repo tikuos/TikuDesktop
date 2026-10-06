@@ -349,8 +349,10 @@ tiku_trk_folder_window_draw_background(tiku_trk_folder_window_t *folder,
     if (store == NULL) {
         return 0;
     }
-    if (!tiku_trk_bg_load(store, folder->path, &bg) &&
-        !tiku_trk_bg_load(store, TIKU_TRK_BG_TEMPLATE_NODE, &bg)) {
+    /* A record that keeps only a layout mode draws no picture, so the
+     * template's picture applies as it does to a node with no record. */
+    if (!tiku_trk_bg_load_picture(store, folder->path, &bg) &&
+        !tiku_trk_bg_load_picture(store, TIKU_TRK_BG_TEMPLATE_NODE, &bg)) {
         return 0;
     }
     if (strcmp(bg.path, folder->bg_shown) != 0) {

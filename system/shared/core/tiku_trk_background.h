@@ -49,8 +49,11 @@ typedef struct {
 /**
  * @brief Read a record, "<mode> <x> <y> <path>".
  *
- * @return 1 for a well-formed record that names a picture, 0 otherwise;
- *         @p out is not touched on 0.
+ * A record with an empty path keeps the chosen layout mode while showing no
+ * picture.
+ *
+ * @return 1 for a well-formed record, 0 otherwise; @p out is not touched on
+ *         0.
  */
 int tiku_trk_bg_parse(const char *rec, tiku_trk_bg_t *out);
 
@@ -63,9 +66,21 @@ int tiku_trk_bg_format(const tiku_trk_bg_t *bg, char *out, size_t max);
  */
 int tiku_trk_bg_have(tiku_store_t *store, const char *node);
 
-/** @brief Read @p node's background.  @return 1 when there is one. */
+/**
+ * @brief Read @p node's background record.
+ * @return 1 for a well-formed record, including one that keeps only a
+ *         layout mode and names no picture; 0 otherwise.
+ */
 int tiku_trk_bg_load(tiku_store_t *store, const char *node,
                      tiku_trk_bg_t *out);
+
+/**
+ * @brief Read @p node's background when the record names a picture.
+ * @return 1 and the record in @p out; 0, with @p out untouched, for no
+ *         record or one with an empty path.
+ */
+int tiku_trk_bg_load_picture(tiku_store_t *store, const char *node,
+                             tiku_trk_bg_t *out);
 
 /** @brief Give @p node a background.  @return 1 when it was written. */
 int tiku_trk_bg_save(tiku_store_t *store, const char *node,

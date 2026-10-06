@@ -155,6 +155,30 @@ main(void)
     tiku_trk_deskprefs_clear_picture(&prefs);
     check(!prefs.value.have_bg && prefs.value.bg.mode == TIKU_TRK_BG_TILED,
           "DEV-009", "removing the picture keeps the way one would be laid");
+    check(tiku_trk_deskprefs_save(&prefs, store, "/desk"), "DEV-009",
+          "the picture-free choice can be saved");
+    {
+        tiku_trk_deskprefs_t again;
+
+        (void)tiku_trk_deskprefs_load(&again, store, "/desk", 32);
+        check(!again.value.have_bg &&
+              again.value.bg.mode == TIKU_TRK_BG_TILED, "DEV-009",
+              "and reopening keeps its layout mode for the next picture");
+    }
+    {
+        tiku_trk_bg_t shown;
+
+        check(!tiku_trk_bg_load_picture(store, "/desk", &shown), "DEV-009",
+              "a record with no picture gives the folder nothing to draw");
+        memset(&shown, 0, sizeof shown);
+        shown.mode = TIKU_TRK_BG_TILED;
+        snprintf(shown.path, sizeof shown.path, "%s", "/tmp/wall.png");
+        (void)tiku_trk_bg_save(store, "/pictured", &shown);
+        memset(&shown, 0, sizeof shown);
+        check(tiku_trk_bg_load_picture(store, "/pictured", &shown) &&
+              strcmp(shown.path, "/tmp/wall.png") == 0, "DEV-009",
+              "a record that names a picture is drawn");
+    }
 
     (void)system("rm -rf /tmp/trk_deskprefs && mkdir -p /tmp/trk_deskprefs");
     plant(dir);
