@@ -376,6 +376,22 @@ def hostile_tar():
     f.data = buf.getvalue()
 
 
+def climb_tar():
+    f = fixture("climb_tar", ".tar",
+                "a link whose target climbs back out through a link made "
+                "before it, and one that only climbs then descends")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.PAX_FORMAT) as t:
+        tar_add(t, f, "a/", kind=tarfile.DIRTYPE, mode=0o755)
+        tar_add(t, f, "a/up", kind=tarfile.SYMTYPE, mode=0o777, link="..")
+        tar_add(t, f, "b/", kind=tarfile.DIRTYPE, mode=0o755)
+        tar_add(t, f, "b/l", kind=tarfile.SYMTYPE, mode=0o777,
+                link="../a/up/..")
+        tar_add(t, f, "b/ok", kind=tarfile.SYMTYPE, mode=0o777,
+                link="../a/up/b")
+    f.data = buf.getvalue()
+
+
 def broken():
     ok = io.BytesIO()
     with zipfile.ZipFile(ok, "w") as z:
@@ -419,7 +435,7 @@ def broken():
 
 for make in (zip_features, zip_windows, zip_descriptor, zip64_by_hand,
              zip_sfx, tar_pax, tar_gnu, tar_v7, tgz, gz_fields, gz_members,
-             hostile_zip, hostile_tar, broken):
+             hostile_zip, hostile_tar, climb_tar, broken):
     make()
 
 def c_string(text):

@@ -104,6 +104,23 @@ fop_leaf_of(const char *path)
     return (slash != NULL && slash[1] != '\0') ? slash + 1 : path;
 }
 
+/** @brief Whether a whole component of @p path is TIKU_TRASH_NAME: the
+ *         path is a Trash or lies inside one. */
+int
+fop_under_trash(const char *path)
+{
+    const char *p = path;
+    size_t n = strlen(TIKU_TRASH_NAME);
+
+    while (p != NULL && (p = strstr(p, "/" TIKU_TRASH_NAME)) != NULL) {
+        p += 1u + n;
+        if (*p == '\0' || *p == '/') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /**
  * @brief Split "<base> <word> N" into its base and the number.
  *

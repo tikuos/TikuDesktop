@@ -83,6 +83,18 @@ changed(tiku_trk_drop_controller_t *controller)
     }
 }
 
+/** @brief Item @p from of @p drag copied down to place @p to. */
+static void
+drag_move_item(tiku_trk_drag_t *drag, int from, int to)
+{
+    if (from != to) {
+        memcpy(drag->path[to], drag->path[from], sizeof drag->path[to]);
+        memcpy(drag->name[to], drag->name[from], sizeof drag->name[to]);
+        drag->ox[to] = drag->ox[from];
+        drag->oy[to] = drag->oy[from];
+    }
+}
+
 /** @brief The drag's paths into @p paths.  @return how many there are. */
 static int
 drop_paths(tiku_trk_drop_controller_t *controller, const char **paths)
@@ -586,7 +598,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
                 scanned = (tiku_volumes_scan(&vols) > 0) ? 1 : -1;
             }
             if (scanned < 0 || !tiku_volume_is_root(&vols, path)) {
-                others++;
+                drag_move_item(controller->drag, di, others++);
                 continue;
             }
             vols_dropped++;
@@ -612,6 +624,7 @@ tiku_trk_drop_controller_execute_into(tiku_trk_drop_controller_t *controller,
                     why, "Cancel");
             }
         }
+        controller->drag->count = others;
         if (vols_dropped > 0 && others == 0) {
             changed(controller);
             return;

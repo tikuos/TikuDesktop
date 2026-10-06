@@ -114,7 +114,7 @@ step_one(tiku_fs_t *fs)
     err[0] = '\0';
 
     if (fs->prog.op == TIKU_OP_TRASH && tiku_fs_has_trash(fs) &&
-        strstr(src, "/" TIKU_TRASH_NAME) == NULL) {
+        !fop_under_trash(src)) {
         /* The item is renamed into the Trash, and where it came from is
          * recorded for a restore.  An item already in the Trash falls
          * through to deletion. */

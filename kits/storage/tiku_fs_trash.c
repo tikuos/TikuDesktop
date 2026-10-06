@@ -290,7 +290,7 @@ fop_fs_delete_question(const tiku_fs_t *fs, const char *path,
             return TIKU_DELETE_STRAIGHT;
         }
     }
-    if (path != NULL && strstr(path, "/" TIKU_TRASH_NAME) != NULL) {
+    if (path != NULL && fop_under_trash(path)) {
         /* Inside the Trash the item is deleted outright (FS-047). */
         return TIKU_DELETE_STRAIGHT;
     }

@@ -183,6 +183,7 @@ int fop_fs_rename(tiku_fs_t *fs, const char *path, const char *new_name,
                   char *err, size_t errmax);
 int fop_join(char *out, size_t max, const char *dir, const char *name);
 void fop_parent_of(const char *path, char *out, size_t max);
+int fop_under_trash(const char *path);
 
 /* tiku_fs_queue.c */
 int fop_fs_copy(tiku_fs_t *fs, const char *const *paths, int n,

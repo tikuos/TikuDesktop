@@ -81,7 +81,7 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
          * holds it, without a message (FS-043).  Other operations keep
          * them, so a folder that holds a Trash can still be copied. */
         if (op == TIKU_OP_TRASH &&
-            (strstr(paths[i], "/.Trash") != NULL ||
+            (fop_under_trash(paths[i]) ||
              contains_trash(fs, paths[i]))) {
             continue;
         }

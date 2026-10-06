@@ -652,6 +652,27 @@ hostile_tar_tests(void)
           "set-uid dropped; nothing beside the folder");
 }
 
+/** @brief A link whose target climbs back up after passing through a
+ *         link made earlier is refused; one that climbs, then descends,
+ *         is made. */
+static void
+climb_tests(void)
+{
+    seen_t s;
+    char dest[PATH_MAX], p[PATH_MAX + 8];
+    struct stat st;
+
+    memset(&s, 0, sizeof s);
+    (void)extract_seen("climb_tar", &s, dest, sizeof dest);
+    snprintf(p, sizeof p, "%s/b/l", dest);
+    check(s.why[3] == TIKU_ARCHIVE_UNSAFE && lstat(p, &st) != 0, "AR-058",
+          "'../a/up/..' through the link a/up -> '..' refused");
+    snprintf(p, sizeof p, "%s/b/ok", dest);
+    check(s.why[1] == TIKU_ARCHIVE_OK && s.why[4] == TIKU_ARCHIVE_OK &&
+          lstat(p, &st) == 0 && S_ISLNK(st.st_mode) && jail_clean(dest),
+          "AR-059", "'..' and '../a/up/b' made; nothing beside the folder");
+}
+
 /** @brief Archives that lie, or are cut short. */
 static void
 broken_tests(void)
@@ -885,6 +906,7 @@ main(void)
     detail_tests();
     hostile_zip_tests();
     hostile_tar_tests();
+    climb_tests();
     broken_tests();
     option_tests();
     helper_tests();

@@ -161,13 +161,15 @@ clear(ext_t *x, long i, int dir, const char *leaf)
 
 /**
  * @brief Whether a link at @p rel may point to @p target: relative, with
- *        no drive or backslash, and never climbing above the destination
- *        when its parts are read from the link's own folder.
+ *        no drive or backslash, never climbing above the destination
+ *        when its parts are read from the link's own folder, and with no
+ *        ".." after a named part, since that part may be a link.
  */
 static int
 link_ok(const char *rel, const char *target)
 {
     long depth = 0;
+    int named = 0;
     const char *p;
 
     if (target[0] == '\0' || target[0] == '/' || strchr(target, '\\') ||
@@ -181,11 +183,11 @@ link_ok(const char *rel, const char *target)
         size_t n = strcspn(p, "/");
 
         if (n == 2 && p[0] == '.' && p[1] == '.') {
-            if (--depth < 0) {
+            if (named || --depth < 0) {
                 return 0;
             }
         } else if (!(n == 0 || (n == 1 && p[0] == '.'))) {
-            depth++;
+            named = 1;
         }
         p += n + (p[n] == '/');
     }

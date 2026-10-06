@@ -249,6 +249,10 @@ test_frames_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
     system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) \
     $(SCRIPT_STUB)
 test_frames_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+# The drop controller as the desktop links it, its shell left out.
+test_drop_trash_CFLAGS := -ffunction-sections -fdata-sections
+test_drop_trash_SRCS := $(test_frames_SRCS)
+test_drop_trash_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
 test_device_utilities_SRCS := system/shared/core/tiku_trk_task.c
 test_device_utilities_LDLIBS := $(X11_LIBS) -lm
 test_about_memory_CFLAGS := -ffunction-sections -fdata-sections

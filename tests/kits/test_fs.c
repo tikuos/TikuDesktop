@@ -120,7 +120,7 @@ run_to_end(tiku_fs_t *fs)
  * @brief Run under a home of this test's own.
  *
  * Everything below resolves the Trash from $HOME, and on a host where
- * ~/.Trash IS the account's real Trash, the setup's empty-trash pass
+ * ~/.Trash is the account's real Trash, the setup's empty-trash pass
  * would empty it for real.  A subdirectory of the real home keeps the
  * property the cross-device cases need -- a filesystem different from
  * /tmp -- while keeping every Trash this binary touches its own.
@@ -227,7 +227,7 @@ main(void)
     check(tiku_fs_progress(fs)->skipped == 1, "FS-005",
           "and the item is silently skipped, not copied onto itself");
 
-    /* --- duplicate lands in the item's OWN parent (FS-008) -------------- */
+    /* --- duplicate lands in the item's own parent (FS-008) -------------- */
     check(tiku_fs_duplicate(fs, list, 1) == 0, "FS-008",
           "duplicate starts");
     run_to_end(fs);
@@ -447,7 +447,7 @@ main(void)
                   "\"skip all\" answers the rest without asking again");
         }
 
-        /* And a plain "skip" is NOT sticky: the next one asks. */
+        /* And a plain "skip" is not sticky: the next one asks. */
         {
             char c1[600], c2[600];
 
@@ -815,9 +815,9 @@ main(void)
                   "emptying the Trash removes what is in it");
             run_to_end(fs);
             {
-                /* EVERY volume's trash at once: a file sitting in another
+                /* Every volume's trash at once: a file sitting in another
                  * volume's trash is emptied with the rest.  Only where
-                 * there IS another one: on a host with a single disk the
+                 * there is another one: on a host with a single disk the
                  * check would pass without crossing anything, which reads
                  * exactly like a check that held. */
                 const char *other = second_volume(work);
@@ -841,6 +841,29 @@ main(void)
                           "and its contents are gone with the rest");
                     (void)unlink(foreign);
                 }
+            }
+            {
+                /* A folder whose name only starts with ".Trash" is not
+                 * the Trash: what it holds is trashed, not deleted. */
+                char look[600], item[700], kept[700];
+
+                snprintf(look, sizeof look, "%s/.Trash-1000", work);
+                (void)mkdir(look, 0755);
+                snprintf(item, sizeof item, "%s/lookalike.txt", look);
+                put(item, "T");
+                sel[0] = item;
+                check(tiku_fs_delete_question(fs, item, 0) ==
+                      TIKU_DELETE_ASK, "FS-047",
+                      "an item under .Trash-1000 still gets the question");
+                (void)tiku_fs_trash(fs, sel, 1);
+                run_to_end(fs);
+                snprintf(kept, sizeof kept, "%s/lookalike.txt", trash);
+                check(!there(item) && there(kept), "FS-043",
+                      "and trashing it moves it to the Trash");
+                (void)unlink(item);
+                (void)rmdir(look);
+                (void)tiku_fs_empty_trash(fs);
+                run_to_end(fs);
             }
             (void)rmdir(work);
         }
