@@ -719,8 +719,8 @@ desktop_board_look_begin(desktop_t *app, int session,
 
 /**
  * @brief End a look: send every remote session the board list, tell each
- *        asker how many boards are mounted, and start a look asked for
- *        during this one.
+ *        asker how many boards are mounted, draw an open menu again, and
+ *        start a look asked for during this one.
  */
 void
 desktop_board_look_done(desktop_t *app)
@@ -738,7 +738,12 @@ desktop_board_look_done(desktop_t *app)
                           how);
     }
     app->look.nasked = 0;
-    desktop_damage_all(app);
+    /* What a look finds shows only in the Devices menu, which is built
+     * as it is drawn: the screen is drawn again only while a menu is
+     * open. */
+    if (app->popup != NULL || tiku_trk_deskbar_menu_open(app->deskbar)) {
+        desktop_damage_all(app);
+    }
     if (app->look.again) {
         memcpy(app->look.asked, app->look.again_by,
                sizeof app->look.asked);

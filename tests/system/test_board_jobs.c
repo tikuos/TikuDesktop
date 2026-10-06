@@ -90,6 +90,13 @@ tiku_work_cancel(const char *key)
     return n;
 }
 
+/** @brief A slow job joins the same queue. */
+int
+tiku_work_post_slow(const tiku_work_job_t *job)
+{
+    return tiku_work_post(job);
+}
+
 int tiku_work_collect(void) { return 0; }
 int tiku_work_cancelled(const void *ctx) { (void)ctx; return 0; }
 int tiku_work_busy(void) { return njobs; }

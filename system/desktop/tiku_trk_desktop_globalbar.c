@@ -195,17 +195,47 @@ device_leaf_at(desktop_t *app, int idx, char *out, size_t max)
     return 0;
 }
 
+/** @brief "<@p lead><@p name> (<@p port>)" into @p out, the name cut so
+ *         the whole fits a menu label. */
+static void
+device_row(char *out, size_t max, const char *lead, const char *name,
+           const char *port)
+{
+    int keep = (TIKU_MENU_LABEL_MAX - 1) - (int)strlen(lead) -
+               (int)strlen(port) - 3;
+
+    snprintf(out, max, "%s%.*s (%s)", lead, (keep > 4) ? keep : 4, name,
+             port);
+}
+
 /**
  * @brief Build the Devices menu: the Default device submenu (this machine
  *        and each connected board, the current one checked), a Disconnect
  *        row per connected board, a Connect row per port a board answered
- *        on, and Scan for devices.
+ *        on, and Scan for devices.  Ports are named so no two read alike.
  */
 static void
 build_devices_menu(desktop_t *app)
 {
-    char leaf[64];
-    int i, any;
+    char leaf[64], wheres[TIKU_MOUNT_MAX][32];
+    const char *all[2 * TIKU_MOUNT_MAX];
+    int i, any, nall = 0;
+
+    /* Every port the menu names, connected or on offer: a port's label
+     * keeps enough of its leaf to tell it from these. */
+    for (i = 0; device_leaf_at(app, i, leaf, sizeof leaf) &&
+                i < TIKU_MOUNT_MAX; i++) {
+        char port[256];
+
+        wheres[i][0] = '\0';
+        if (desktop_board_port(app, leaf, port, sizeof port) > 0) {
+            device_port_where(port, wheres[i], sizeof wheres[i]);
+            all[nall++] = wheres[i];
+        }
+    }
+    for (i = 0; i < app->ncandidates && i < TIKU_MOUNT_MAX; i++) {
+        all[nall++] = app->candidates[i].where;
+    }
 
     tiku_menu_clear(&app->devmenu);
     tiku_menu_clear(&app->devsub);
@@ -225,28 +255,28 @@ build_devices_menu(desktop_t *app)
     for (i = 0; device_leaf_at(app, i, leaf, sizeof leaf) &&
                 i < TIKU_MOUNT_MAX; i++) {
         int cmd = TIKU_TRK_CMD_DEVICE_PICK_BASE + i;
-        char row[48], action[48], port[256];
+        char row[TIKU_MENU_LABEL_MAX], action[TIKU_MENU_LABEL_MAX];
+        char label[32];
 
         if (!any) {
             (void)tiku_menu_add_separator(&app->devsub);
             any = 1;
         }
-        /* The name, then the port's tty leaf, which tells identical
-         * boards apart; both are bounded to fit the menu's label. */
-        if (desktop_board_port(app, leaf, port, sizeof port) > 0) {
-            char where[32];
-
-            device_port_where(port, where, sizeof where);
-            snprintf(row, sizeof row, "%.18s (%.14s)", leaf, where);
+        /* The name, then the port, which tells identical boards apart;
+         * the name is cut to fit the menu's label, the port is not. */
+        if (wheres[i][0] != '\0') {
+            device_port_label(wheres[i], all, nall, label, sizeof label);
+            device_row(row, sizeof row, "", leaf, label);
+            device_row(action, sizeof action, "Disconnect ", leaf, label);
         } else {
             snprintf(row, sizeof row, "%.35s", leaf);
+            snprintf(action, sizeof action, "Disconnect %.35s", leaf);
         }
         (void)tiku_menu_add(&app->devsub, row, cmd, 0, 0u, 1);
         tiku_menu_set_icon(&app->devsub, cmd, "microcontroller");
         if (strcmp(leaf, app->current_device) == 0) {
             tiku_menu_mark(&app->devsub, cmd, 1);
         }
-        snprintf(action, sizeof action, "Disconnect %.35s", row);
         (void)tiku_menu_add(&app->devmenu, action,
                             TIKU_TRK_CMD_DEVICE_DROP_BASE + i, 0, 0u, 1);
         tiku_menu_set_icon(&app->devmenu,
@@ -259,7 +289,7 @@ build_devices_menu(desktop_t *app)
     }
     any = 0;
     for (i = 0; i < app->ncandidates && i < TIKU_MOUNT_MAX; i++) {
-        char row[128];
+        char row[TIKU_MENU_LABEL_MAX], label[32];
 
         if (port_is_mounted(app, app->candidates[i].port)) {
             continue;           /* already connected, shown above */
@@ -276,8 +306,10 @@ build_devices_menu(desktop_t *app)
                                 0, 0, 0u, 0);
             any = 1;
         }
-        snprintf(row, sizeof row, "Connect to %.18s (%.14s)",
-                 app->candidates[i].name, app->candidates[i].where);
+        device_port_label(app->candidates[i].where, all, nall, label,
+                          sizeof label);
+        device_row(row, sizeof row, "Connect to ", app->candidates[i].name,
+                   label);
         (void)tiku_menu_add(&app->devmenu, row,
                             TIKU_TRK_CMD_DEVICE_CONNECT_BASE + i, 0, 0u, 1);
         tiku_menu_set_icon(&app->devmenu,

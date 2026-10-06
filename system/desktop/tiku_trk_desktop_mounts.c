@@ -405,6 +405,64 @@ device_port_where(const char *port, char *out, size_t max)
              (leaf != NULL && leaf[1] != '\0') ? leaf + 1 : port);
 }
 
+/* A port leaf this long or shorter is shown whole; a longer one keeps at
+ * least this many of its last characters. */
+#define PORT_LABEL_FULL 14
+#define PORT_LABEL_TAIL 4
+
+/** @brief Port leaf @p where without the "cu." or "tty." a Mac puts
+ *         first. */
+static const char *
+port_unprefixed(const char *where)
+{
+    if (strncmp(where, "cu.", 3) == 0) {
+        return where + 3;
+    }
+    if (strncmp(where, "tty.", 4) == 0) {
+        return where + 4;
+    }
+    return where;
+}
+
+/**
+ * @brief The name the Devices menu gives the port with leaf @p where among
+ *        the @p n leaves in @p all: the leaf without "cu." or "tty.", and a
+ *        long one cut to its letters, an ellipsis and as many of its last
+ *        characters as tell it from the others ("usbmodem…69363").
+ */
+void
+device_port_label(const char *where, const char *const *all, int n,
+                  char *out, size_t max)
+{
+    const char *base = port_unprefixed(where);
+    size_t len = strlen(base), lead = 0, tail;
+    int i;
+
+    while (lead < len && lead < 12 && (base[lead] < '0' || base[lead] > '9')) {
+        lead++;
+    }
+    for (tail = PORT_LABEL_TAIL; tail < len; tail++) {
+        int clash = 0;
+
+        for (i = 0; i < n && !clash; i++) {
+            const char *other = port_unprefixed(all[i]);
+            size_t olen = strlen(other);
+
+            clash = strcmp(other, base) != 0 && olen >= tail &&
+                    strcmp(other + olen - tail, base + len - tail) == 0;
+        }
+        if (!clash) {
+            break;
+        }
+    }
+    if (len <= PORT_LABEL_FULL || lead + 3u + tail >= len) {
+        snprintf(out, max, "%s", base);
+    } else {
+        snprintf(out, max, "%.*s\xe2\x80\xa6%s", (int)lead, base,
+                 base + len - tail);
+    }
+}
+
 /**
  * @brief Remember a port that nothing mounted, for the Devices menu to
  *        offer to connect.

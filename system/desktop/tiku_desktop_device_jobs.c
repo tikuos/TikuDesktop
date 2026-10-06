@@ -202,18 +202,34 @@ typedef struct {
     int              baud;
     int              probe;     /* a short, 800 ms open */
     char             at[TIKU_PATH_MAX];
-        tiku_backend_t  *dev;       /* what answered, or NULL */
+    char             uid[64];   /* a reclaim: the board it is after */
+    tiku_identity_t  id;        /* who answered a look or a reclaim */
+    int              named;     /* a shell answered and id holds it */
+    tiku_backend_t  *dev;       /* what answered, or NULL */
     tiku_channel_t  *ch;        /* a port that frames but has no shell */
     int              counted;   /* the asker counted it in look.pending */
     unsigned         look_gen;  /* look.gen when it was posted */
 } probe_t;
 
-/** @brief On a worker: open the port, or find it frames without a shell. */
+/**
+ * @brief On a worker: a look or a reclaim asks the port who is on it, and
+ *        a reclaim opens the board with its uid; a connect opens the port,
+ *        or finds it frames without a shell.
+ */
 static void
 probe_run(void *ctx)
 {
-        probe_t *p = ctx;
+    probe_t *p = ctx;
 
+    if (p->kind != DESKTOP_ASK_CONNECT) {
+        p->named = tiku_backend_tiku_identify(p->port, p->baud, 800,
+                                              &p->id) == 0;
+        if (p->named && p->kind == DESKTOP_ASK_RECLAIM &&
+            p->uid[0] != '\0' && strcmp(p->id.uid, p->uid) == 0) {
+            p->dev = tiku_backend_tiku_open(p->port, p->baud);
+        }
+        return;
+    }
     p->dev = p->probe ? tiku_backend_tiku_open_within(p->port, p->baud,
                                                        800, 0)
                       : tiku_backend_tiku_open(p->port, p->baud);
@@ -231,10 +247,10 @@ probe_run(void *ctx)
 /**
  * @brief On the loop: act on what answered, by kind.  A reclaim's answer
  *        goes to desktop_board_reclaim_landed(); a look or a boot scan
- *        records a board that answered as a candidate and closes the port;
- *        a connect mounts the board, or keeps a channel on a port that
- *        frames without a shell.  A probe its asker counted in
- *        look.pending then counts toward the look it was posted in.
+ *        records a board that answered as a candidate; a connect mounts
+ *        the board, or keeps a channel on a port that frames without a
+ *        shell.  A probe its asker counted in look.pending then counts
+ *        toward the look it was posted in.
  */
 static void
 probe_done(void *ctx)
@@ -250,25 +266,19 @@ probe_done(void *ctx)
     case DESKTOP_ASK_BOOT:
         /* A look lists, it does not mount: a board that answered is
          * remembered as a candidate under its processor name, and the
-         * port is let go until the Devices menu connects it. */
-        if (p->dev != NULL) {
-            const tiku_identity_t *id =
-                tiku_backend_tiku_identity(p->dev);
+         * port was closed when it had answered. */
+        if (p->named) {
             char name[64];
 
             /* Named by its processor, as a mount is. */
-            if (id != NULL && id->mcu[0] != '\0') {
-                snprintf(name, sizeof name, "%s", id->mcu);
-            } else if (id != NULL && id->name[0] != '\0') {
-                snprintf(name, sizeof name, "%s", id->name);
+            if (p->id.mcu[0] != '\0') {
+                snprintf(name, sizeof name, "%s", p->id.mcu);
+            } else if (p->id.name[0] != '\0') {
+                snprintf(name, sizeof name, "%s", p->id.name);
             } else {
-                device_mount_name(p->dev, app->backend, name,
-                                  sizeof name);
+                (void)tiku_ident_key(&p->id, name, sizeof name);
             }
             device_candidate_record(app, p->port, name);
-            tiku_backend_close(p->dev);
-        } else if (p->ch != NULL) {
-            tiku_channel_close(p->ch);
         }
         break;
     default:                    /* DESKTOP_ASK_CONNECT: the one that mounts */
@@ -303,7 +313,8 @@ probe_free(void *ctx)
 /**
  * @brief Ask a port whether a board is on it, on a worker.
  * @param kind  a DESKTOP_ASK_ kind: what to do with the answer
- * @param probe nonzero for a short 800 ms open, as a look and a reclaim use
+ * @param probe nonzero for a connect that waits 800 ms for the prompt; a
+ *              look and a reclaim ask only who is on the port
  * @param at    where a connect mounts the board, or NULL for /devices
  * @param counted nonzero when the caller counts the probe in look.pending
  * @return 0 when asked; -1 when the port is already mounted here, or no
@@ -331,15 +342,19 @@ desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
     snprintf(p->at, sizeof p->at, "%s", (at != NULL) ? at : "");
     p->counted = counted;
     p->look_gen = app->look.gen;
+    if (kind == DESKTOP_ASK_RECLAIM) {
+        snprintf(p->uid, sizeof p->uid, "%s", app->reclaim.uid);
+    }
         memset(&job, 0, sizeof job);
     job.run = probe_run;
     job.done = probe_done;
     job.free = probe_free;
     job.ctx = p;
     /* Keyed per port: ports are probed in parallel, and never two jobs on
-     * one port at once. */
+     * one port at once.  A probe waits on its port, so it is posted slow
+     * and never takes the last idle worker. */
         snprintf(job.key, sizeof job.key, "port:%.40s", p->port);
-    if (tiku_work_post(&job) != 0) {
+    if (tiku_work_post_slow(&job) != 0) {
         free(p);
         return -1;
     }

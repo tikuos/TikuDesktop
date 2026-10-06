@@ -1185,6 +1185,8 @@ void device_candidate_record(desktop_t *app, const char *port,
                              const char *label);
 void device_mount_name(const tiku_backend_t *dev, const tiku_backend_t *ns,
                        char *out, size_t max);
+void device_port_label(const char *where, const char *const *all, int n,
+                       char *out, size_t max);
 void device_port_where(const char *port, char *out, size_t max);
 void save_before_unmount(dev_t dev, void *context);
 
