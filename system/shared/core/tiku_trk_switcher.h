@@ -115,11 +115,16 @@ int tiku_trk_switcher_release(tiku_trk_switcher_t *s, int64_t now);
 /**
  * @brief A key while it is up (DB-056).
  *
+ * Tab, Left and Right step the selection as tiku_trk_switcher_open()
+ * does, with the strip following it.
+ *
  * @param key The key's name: "Tab", "Left", "Right", "Up", "Down",
  *            "Escape", "Return", "space", "q" or "h".
+ * @param now When the key arrived: a step's animation starts then.
  */
 tiku_trk_sw_act_t tiku_trk_switcher_key(tiku_trk_switcher_t *s,
-                                        const char *key, int shift);
+                                        const char *key, int shift,
+                                        int64_t now);
 
 /** @brief A click on slot @p slot, or -1 for outside (DB-059). */
 tiku_trk_sw_act_t tiku_trk_switcher_click(tiku_trk_switcher_t *s, int slot);

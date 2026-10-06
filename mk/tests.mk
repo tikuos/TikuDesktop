@@ -284,6 +284,13 @@ test_board_jobs_CFLAGS := -ffunction-sections -fdata-sections
 test_board_jobs_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
     system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
 test_board_jobs_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
+# The desk's key responder as linked, its file included by the test.
+test_switcher_keys_CFLAGS := -ffunction-sections -fdata-sections \
+    -Wno-unused-parameter
+test_switcher_keys_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
+    system/desktop/tiku_trk_desktop_keys.c \
+    system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
+test_switcher_keys_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
 test_device_utilities_SRCS := system/shared/core/tiku_trk_task.c
 test_device_utilities_LDLIBS := $(X11_LIBS) -lm
 test_about_memory_CFLAGS := -ffunction-sections -fdata-sections

@@ -29,6 +29,7 @@ main(void)
     tiku_trk_switcher_t s;
     char title[128];
     int a, bq, c;
+    int64_t at = 20000000;          /* when the keys below arrive */
 
     tiku_trk_switcher_init(&s);
     a  = tiku_trk_switcher_app(&s, "TikuTracker", 1);
@@ -70,7 +71,7 @@ main(void)
         check(strcmp(t.app[0].name, "Three") == 0, "DB-055",
               "opening after a pause sorts most-recently-used first");
         (void)tiku_trk_switcher_release(&t, 10000000 + 10);
-        /* Straight away again: the order must NOT move under the user. */
+        /* Straight away again: the order must not move under the user. */
         for (i = 0; i < 3; i++) {
             tiku_trk_switcher_open(&t, 10000000 + 20 + i, 0);
             (void)tiku_trk_switcher_release(&t, 10000000 + 25 + i);
@@ -84,28 +85,28 @@ main(void)
     printf("\nthe keys (DB-056)\n");
     tiku_trk_switcher_open(&s, 20000000, 0);
     s.sel = 1;
-    check(tiku_trk_switcher_key(&s, "Tab", 0) == TIKU_TRK_SW_MOVED &&
+    check(tiku_trk_switcher_key(&s, "Tab", 0, at) == TIKU_TRK_SW_MOVED &&
           s.sel == 2, "DB-056", "Tab moves on");
-    check(tiku_trk_switcher_key(&s, "Tab", 1) == TIKU_TRK_SW_MOVED &&
+    check(tiku_trk_switcher_key(&s, "Tab", 1, at) == TIKU_TRK_SW_MOVED &&
           s.sel == 1, "DB-056", "and with Shift, back");
-    check(tiku_trk_switcher_key(&s, "Down", 0) == TIKU_TRK_SW_MOVED &&
+    check(tiku_trk_switcher_key(&s, "Down", 0, at) == TIKU_TRK_SW_MOVED &&
           s.selwin == 1, "DB-056", "Down moves between that app's windows");
-    check(tiku_trk_switcher_key(&s, "Down", 0) == TIKU_TRK_SW_NOTHING &&
+    check(tiku_trk_switcher_key(&s, "Down", 0, at) == TIKU_TRK_SW_NOTHING &&
           s.selwin == 1, "DB-056",
           "and they do NOT wrap: past the last window is nothing, which "
           "reads as the key not having been missed");
     s.sel = 0;                      /* Tracker itself */
-    check(tiku_trk_switcher_key(&s, "q", 0) == TIKU_TRK_SW_NOTHING,
+    check(tiku_trk_switcher_key(&s, "q", 0, at) == TIKU_TRK_SW_NOTHING,
           "DB-056", "Q does not quit Tracker from its own switcher");
     s.sel = 1;
-    check(tiku_trk_switcher_key(&s, "q", 0) == TIKU_TRK_SW_QUIT_APP,
+    check(tiku_trk_switcher_key(&s, "q", 0, at) == TIKU_TRK_SW_QUIT_APP,
           "DB-056", "but does quit anything else");
-    check(tiku_trk_switcher_key(&s, "h", 0) == TIKU_TRK_SW_HIDE_APP,
+    check(tiku_trk_switcher_key(&s, "h", 0, at) == TIKU_TRK_SW_HIDE_APP,
           "DB-056", "and H hides");
-    check(tiku_trk_switcher_key(&s, "Escape", 0) == TIKU_TRK_SW_CANCEL &&
+    check(tiku_trk_switcher_key(&s, "Escape", 0, at) == TIKU_TRK_SW_CANCEL &&
           !s.shown, "DB-056", "Escape cancels");
     tiku_trk_switcher_open(&s, 30000000, 0);
-    check(tiku_trk_switcher_key(&s, "space", 0) == TIKU_TRK_SW_COMMIT,
+    check(tiku_trk_switcher_key(&s, "space", 0, at) == TIKU_TRK_SW_COMMIT,
           "DB-056", "Space commits");
 
     printf("\nthe mouse (DB-059)\n");
@@ -234,6 +235,41 @@ main(void)
         check(tiku_trk_switcher_scroll_px(&t, 100,
                   t.moved + 2 * TIKU_TRK_SW_STEP_US) == t.scroll * 100,
               "DB-058", "and settled, it sits exactly on it");
+    }
+
+    printf("\nthe keys move the strip as Ctrl+Tab does (D-008)\n");
+    {
+        tiku_trk_switcher_t t;
+        int64_t t1 = 110000000;
+        int i3;
+
+        tiku_trk_switcher_init(&t);
+        for (i3 = 0; i3 < TIKU_TRK_SW_SLOTS + 2; i3++) {
+            char nm[16];
+
+            snprintf(nm, sizeof nm, "app%d", i3);
+            (void)tiku_trk_switcher_app(&t, nm, 0);
+        }
+        tiku_trk_switcher_open(&t, t1, 0);              /* 0 -> 1 */
+        for (i3 = 0; i3 < TIKU_TRK_SW_SLOTS; i3++) {
+            (void)tiku_trk_switcher_key(&t, "Right", 0,
+                                        t1 + 100000 * (i3 + 1));
+        }
+        check(t.sel == TIKU_TRK_SW_SLOTS + 1 && t.sel >= t.scroll &&
+              t.sel < t.scroll + TIKU_TRK_SW_SLOTS, "D-008",
+              "Right past the last visible slot scrolls the strip to it");
+        check(tiku_trk_switcher_animating(&t,
+                  t1 + 100000 * TIKU_TRK_SW_SLOTS + 1) &&
+              t.scroll_from == t.scroll - 1, "D-008",
+              "and the strip slides there from where it was");
+        (void)tiku_trk_switcher_key(&t, "Right", 0, t1 + 2000000);
+        check(t.sel == 0 && t.scroll == 0, "D-008",
+              "Right on the last application wraps to the first, and the "
+              "strip goes back to the start");
+        (void)tiku_trk_switcher_key(&t, "Left", 0, t1 + 3000000);
+        check(t.sel == TIKU_TRK_SW_SLOTS + 1 &&
+              t.scroll == 2, "D-008",
+              "Left on the first wraps to the last, which is visible");
     }
 
     printf("\n%s\n", fails ? "FAILURES" : "the switcher holds");

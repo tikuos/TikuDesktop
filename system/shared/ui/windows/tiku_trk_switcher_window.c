@@ -172,7 +172,8 @@ tiku_trk_sw_act_t
 tiku_trk_switcher_window_key(tiku_trk_switcher_window_t *controller,
                              const char *key, int shift)
 {
-    return tiku_trk_switcher_key(&controller->model, key, shift);
+    return tiku_trk_switcher_key(&controller->model, key, shift,
+                                 tiku_trk_now());
 }
 
 tiku_trk_sw_act_t

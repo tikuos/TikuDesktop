@@ -330,11 +330,6 @@ keys_windows(desktop_t *app, const tiku_event_t *ev, unsigned key,
                                                    : "hiding",
                      (selected != NULL) ? selected : "");
         }
-        if (key == TIKU_KEY_TAB) {
-            /* Tab while it shows moves to the next window. */
-            tiku_trk_switcher_window_open(&app->switcher_window,
-                (ev->modifiers & TIKU_MOD_SHIFT) ? 1 : 0);
-        }
         desktop_damage_all(app);
         return 1;
     }

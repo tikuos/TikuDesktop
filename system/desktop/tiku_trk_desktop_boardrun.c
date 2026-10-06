@@ -814,12 +814,13 @@ device_connect(desktop_t *app, const char *port)
  * @brief Unmount board @p name and offer its port to connect again; when it
  *        was the current device, the first remaining board becomes
  *        current, or this machine when none is left.
+ * @return 0 when the board was unmounted, -1 otherwise.
  */
 int
 device_disconnect(desktop_t *app, const char *name)
 {
     char prefix[TIKU_PATH_MAX], port[256];
-    int was_current, gone;
+    int was_current, rc;
 
     if (app == NULL || name == NULL || name[0] == '\0') {
         return -1;
@@ -831,8 +832,8 @@ device_disconnect(desktop_t *app, const char *name)
     port[0] = '\0';
     (void)desktop_board_port(app, name, port, sizeof port);
     snprintf(prefix, sizeof prefix, "/devices/%s", name);
-    gone = desktop_board_unmount(app, prefix);
-    if (gone && port[0] != '\0') {
+    rc = desktop_board_unmount(app, prefix);
+    if (rc == 0 && port[0] != '\0') {
         device_candidate_record(app, port, name);
     }
     if (was_current) {
@@ -845,7 +846,7 @@ device_disconnect(desktop_t *app, const char *name)
         device_set_current(app, board_first(app, next, sizeof next)
                                     ? next : "");
     }
-    return gone;
+    return rc;
 }
 
 /**

@@ -11,8 +11,9 @@
  * a save and a run on it end, and the job that gives its shell back must
  * carry the key the unmount cancels and closes under.  Then a board dials
  * in while every channel slot is held, and no remote session may be left
- * on the descriptor its refused channel closed.  The workers are replaced
- * by a queue the test runs by hand.
+ * on the descriptor its refused channel closed.  Last, a board on a serial
+ * port is disconnected and its port is offered to connect again.  The
+ * workers are replaced by a queue the test runs by hand.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -261,6 +262,49 @@ the_board_jobs(desktop_t *app)
     one_ending(app, "/devices/" LONG_NAME, 0);
 }
 
+/** @brief A board on a serial port is disconnected from the Devices menu:
+ *         its port is offered to connect again, under the board's name. */
+static void
+the_disconnect(desktop_t *app)
+{
+    int sv[2], i, offered = 0, rc;
+    char port[256];
+    tiku_backend_t *b;
+    tiku_tx_t *tx;
+
+    printf("a board disconnected from the Devices menu (D-049)\n");
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        check(0, "a socket pair for the board");
+        return;
+    }
+    board_fd = sv[1];
+    in_basic = 0;
+    line_len = 0;
+    app->ncandidates = 0;
+    tx = tiku_tx_open_custom(sv[0], board_hears, NULL, NULL,
+                             "/dev/ttyFAKE7 @115200");
+    b = (tx != NULL) ? tiku_backend_tiku_open_tx(tx) : NULL;
+    check(b != NULL &&
+          tiku_mount_add(app->backend, "/devices/fake", b, 1) == 0 &&
+          desktop_board_port(app, "fake", port, sizeof port) > 0,
+          "the fake board is mounted, on a serial port");
+    rc = device_disconnect(app, "fake");
+    printf("  (device_disconnect gave %d; %d port(s) on offer)\n", rc,
+           app->ncandidates);
+    check(rc == 0 && desktop_board_port(app, "fake", port, sizeof port) == 0,
+          "it is unmounted, and the disconnect says it succeeded");
+    for (i = 0; i < app->ncandidates; i++) {
+        offered |= strcmp(app->candidates[i].port, "/dev/ttyFAKE7") == 0 &&
+                   strcmp(app->candidates[i].name, "fake") == 0;
+    }
+    check(offered, "its port is offered to connect again, under its name");
+    run_jobs();
+    check(device_disconnect(app, "fake") == -1,
+          "and disconnecting a board not mounted fails");
+    close(sv[0]);
+    close(sv[1]);
+}
+
 /** @brief Whether @p fd is an open descriptor. */
 static int
 is_open(int fd)
@@ -336,6 +380,7 @@ main(void)
     app->board_listen = -1;
     the_board_jobs(app);
     the_full_slots(app);
+    the_disconnect(app);
     tiku_backend_close(app->backend);
     free(app);
     printf("%s\n", fails ? "FAILURES" : "all passed");

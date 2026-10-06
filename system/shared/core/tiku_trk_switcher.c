@@ -71,6 +71,32 @@ sort_mru(tiku_trk_switcher_t *s)
     }
 }
 
+/**
+ * @brief Step the selection one application on, or back, wrapping, and
+ *        scroll the strip to it; the slide starts at @p now.
+ */
+static void
+cycle_app(tiku_trk_switcher_t *s, int64_t now, int back)
+{
+    if (s->n == 0) {
+        return;
+    }
+    s->prev = s->sel;
+    s->moved = now;
+    s->sel += back ? -1 : 1;
+    if (s->sel >= s->n) { s->sel = 0; }
+    if (s->sel < 0)     { s->sel = s->n - 1; }
+    s->selwin = 0;
+    /* The strip follows the selection, and slides there, so where it left
+     * from is remembered (DB-058). */
+    s->scroll_from = s->scroll;
+    if (s->sel < s->scroll) {
+        s->scroll = s->sel;
+    } else if (s->sel >= s->scroll + TIKU_TRK_SW_SLOTS) {
+        s->scroll = s->sel - TIKU_TRK_SW_SLOTS + 1;
+    }
+}
+
 void
 tiku_trk_switcher_open(tiku_trk_switcher_t *s, int64_t now, int back)
 {
@@ -88,20 +114,7 @@ tiku_trk_switcher_open(tiku_trk_switcher_t *s, int64_t now, int back)
         s->selwin = 0;
         s->scroll = 0;
     }
-    s->prev = s->sel;
-    s->moved = now;
-    s->sel += back ? -1 : 1;
-    if (s->sel >= s->n) { s->sel = 0; }
-    if (s->sel < 0)     { s->sel = s->n - 1; }
-    s->selwin = 0;
-    /* The strip follows the selection, and slides there, so where it left
-     * from is remembered (DB-058). */
-    s->scroll_from = s->scroll;
-    if (s->sel < s->scroll) {
-        s->scroll = s->sel;
-    } else if (s->sel >= s->scroll + TIKU_TRK_SW_SLOTS) {
-        s->scroll = s->sel - TIKU_TRK_SW_SLOTS + 1;
-    }
+    cycle_app(s, now, back);
 }
 
 int
@@ -147,22 +160,9 @@ tiku_trk_switcher_release(tiku_trk_switcher_t *s, int64_t now)
     return quick;
 }
 
-/** @brief Step the selection one application on, or back, wrapping. */
-static void
-cycle_app(tiku_trk_switcher_t *s, int back)
-{
-    if (s->n == 0) {
-        return;
-    }
-    s->prev = s->sel;
-    s->sel += back ? -1 : 1;
-    if (s->sel >= s->n) { s->sel = 0; }
-    if (s->sel < 0)     { s->sel = s->n - 1; }
-    s->selwin = 0;
-}
-
 tiku_trk_sw_act_t
-tiku_trk_switcher_key(tiku_trk_switcher_t *s, const char *key, int shift)
+tiku_trk_switcher_key(tiku_trk_switcher_t *s, const char *key, int shift,
+                      int64_t now)
 {
     if (s == NULL || !s->shown || key == NULL) {
         return TIKU_TRK_SW_NOTHING;
@@ -177,7 +177,7 @@ tiku_trk_switcher_key(tiku_trk_switcher_t *s, const char *key, int shift)
     }
     if (strcmp(key, "Tab") == 0 || strcmp(key, "Right") == 0 ||
         strcmp(key, "Left") == 0) {
-        cycle_app(s, (strcmp(key, "Left") == 0) || shift);
+        cycle_app(s, now, (strcmp(key, "Left") == 0) || shift);
         return TIKU_TRK_SW_MOVED;
     }
     if (strcmp(key, "Down") == 0 || strcmp(key, "Up") == 0) {
