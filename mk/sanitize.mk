@@ -213,7 +213,7 @@ $(SAN)/tests/%.o: tests/%.c | prepare-build
 
 $(SAN)/$(K)/support/tiku_saslprep.o: $(GEN_SASLPREP)
 
-# The Deskbar's suites and the Tracker outline's, with the shell sources
+# The Deskbar's suites and the Tracker's, with the shell sources
 # they link instrumented too.  Each is a target of its own, built and run
 # by name (make build/sanitize/test_deskbar_motion); check-sanitize does not
 # run them.
@@ -225,8 +225,9 @@ $(addprefix $(SAN)/,test_deskbar_dock test_deskbar_hover \
         $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_DESKBAR_OBJS) $(SAN_OBJS) \
 	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
-$(SAN)/test_tracker_motion: $(SAN)/tests/system/test_tracker_motion.o \
-        $(SAN_TRACKER_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+$(addprefix $(SAN)/,test_tracker_motion test_tracker_columns): $(SAN)/test_%: \
+        $(SAN)/tests/system/test_%.o $(SAN_TRACKER_OBJS) $(SAN_OBJS) \
+        $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_TRACKER_OBJS) $(SAN_OBJS) \
 	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 

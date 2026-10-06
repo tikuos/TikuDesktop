@@ -53,6 +53,9 @@ test_deskbar_motion_LDLIBS := $(X11_LIBS) -lm
 test_tracker_motion_SRCS := $(SCRIPT_ENGINE_TRACKER) $(filter-out \
     system/shared/shell/tiku_trk_launcher.c,$(TRACKER_SRC))
 test_tracker_motion_LDLIBS := $(X11_LIBS) -lm
+# The list rows against the columns as placed, on the same Tracker shell.
+test_tracker_columns_SRCS := $(test_tracker_motion_SRCS)
+test_tracker_columns_LDLIBS := $(X11_LIBS) -lm
 test_deskbar_hover_LDLIBS := $(X11_LIBS) -lm
 test_deskbar_teams_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_teams_CFLAGS := -ffunction-sections -fdata-sections
@@ -280,6 +283,11 @@ test_folder_slots_CFLAGS := -ffunction-sections -fdata-sections \
 test_folder_slots_SRCS := $(filter-out \
     system/shared/ui/windows/tiku_trk_folder_window.c,$(test_frames_SRCS))
 test_folder_slots_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+# The folder window's list rows against the columns as placed; the
+# window's file is compiled into the test itself.
+test_folder_columns_CFLAGS := $(test_folder_slots_CFLAGS)
+test_folder_columns_SRCS := $(test_folder_slots_SRCS)
+test_folder_columns_LDLIBS := $(test_folder_slots_LDLIBS)
 # The Info window's file is compiled into the test itself.
 test_info_panel_CFLAGS := -ffunction-sections -fdata-sections
 test_info_panel_SRCS := $(filter-out \

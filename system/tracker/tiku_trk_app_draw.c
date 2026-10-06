@@ -26,6 +26,20 @@ int browser_paint_title(app_t *a, tiku_surface_t *s,
                         int rows);
 /* End of the forward declarations. */
 
+/** @brief Index of the Name column among @p n columns, or -1. */
+static int
+name_column(const tiku_trk_column_t *cols, int n)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (cols[i].field == TIKU_TRK_COL_NAME) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 /**
  * @brief The barber pole: a small framed box of stripes that move down
  *        (TS-038).
@@ -449,8 +463,9 @@ browser_paint_editor(app_t *a, tiku_surface_t *s,
          * of the row stays visible around it. */
         int i, n = tiku_trk_poseview_count(a->view);
         int scroll = tiku_trk_poseview_scroll(a->view);
+        int nc = name_column(*cols, tiku_trk_poseview_columns(a->view, NULL));
 
-        for (i = 0; i < n; i++) {
+        for (i = 0; i < n && nc >= 0; i++) {
             tiku_trk_pose_t *p = tiku_trk_poseview_at(a->view, i);
             tiku_rect_t box;
 
@@ -461,12 +476,12 @@ browser_paint_editor(app_t *a, tiku_surface_t *s,
                 /* The editor grows with the text and never past the name
                  * column; past the cap the text slides so the caret stays
                  * visible (MA-049). */
-                int bw = (*cols)[0].width, bs = 0;
+                int bw = (*cols)[nc].width, bs = 0;
 
-                tiku_field_metrics(&a->ed, 60, (*cols)[0].width,
+                tiku_field_metrics(&a->ed, 60, (*cols)[nc].width,
                                    browser_measure_prefix_px, NULL, &bw,
                                    &bs);
-                box.x = browser_col_x(a, &(*cols)[0]);
+                box.x = browser_col_x(a, &(*cols)[nc]);
                 box.y = list.y + 2 + (i - scroll) * a->row_h;
                 box.w = bw;
                 box.h = a->row_h;
@@ -548,6 +563,7 @@ browser_paint_rows(app_t *a, tiku_surface_t *s, const tiku_font_t *f,
                    int rows, int scroll, int total)
 {
     int i;
+    int nc = name_column(*cols, ncol);
 
     /* A list whose store refuses writes is tinted (PVL-076). */
     tiku_ui_sunken(s, list, a->read_only
@@ -574,12 +590,12 @@ browser_paint_rows(app_t *a, tiku_surface_t *s, const tiku_font_t *f,
          * sweep. */
         drawn_sel = tiku_trk_poseview_draws_selected(a->view, p);
         tiku_fill(s, row, TIKU_C_DOC);
-        if (drawn_sel && ncol > 0) {
+        if (drawn_sel && nc >= 0) {
             /* IV-024: the selection fill covers the Name cell; the icon
              * is drawn selected and the other cells stay on the document
              * ground. */
-            tiku_rect_t name = { browser_col_x(a, &(*cols)[0]), row.y,
-                                      (*cols)[0].width, row.h };
+            tiku_rect_t name = { browser_col_x(a, &(*cols)[nc]), row.y,
+                                      (*cols)[nc].width, row.h };
             tiku_rect_t inner = tiku_inset(list, 2);
             int x0 = (name.x > inner.x) ? name.x : inner.x;
             int x1 = (name.x + name.w < inner.x + inner.w)
@@ -653,7 +669,7 @@ browser_paint_rows(app_t *a, tiku_surface_t *s, const tiku_font_t *f,
             }
             tiku_text(s, f, text_x,
                            row.y + (a->row_h - f->height) / 2 + f->ascent,
-                           fitted, (drawn_sel && j == 0)
+                           fitted, (drawn_sel && j == nc)
                                       ? TIKU_C_SELTEXT
                                       : TIKU_C_TEXT);
             if ((*cols)[j].field == TIKU_TRK_COL_NAME &&
@@ -663,7 +679,7 @@ browser_paint_rows(app_t *a, tiku_surface_t *s, const tiku_font_t *f,
                 tiku_hline(s, text_x,
                                 row.y + (a->row_h - f->height) / 2 +
                                 f->ascent + 2, tw,
-                                (drawn_sel && j == 0) ? TIKU_C_SELTEXT
+                                (drawn_sel && j == nc) ? TIKU_C_SELTEXT
                                                       : TIKU_C_TEXT);
             }
             tiku_clip_set(s, tiku_inset(list, 2));

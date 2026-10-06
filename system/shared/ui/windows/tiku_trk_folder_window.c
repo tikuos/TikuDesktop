@@ -576,6 +576,33 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
 }
 
 /**
+ * @brief Where a list row's selection runs, for a row from @p row_x that
+ *        is @p row_w wide: the icon and the Name cell when Name is the
+ *        first column, the Name cell alone when it is not, and the whole
+ *        row when there is no Name column.
+ * @return The Name column's index, or -1.
+ */
+static int
+name_span(const tiku_trk_column_t *cols, int ncol, int row_x, int row_w,
+          int hscroll, int *x0, int *x1)
+{
+    int i;
+
+    *x0 = row_x;
+    *x1 = row_x + row_w;
+    for (i = 0; i < ncol; i++) {
+        if (cols[i].field == TIKU_TRK_COL_NAME) {
+            int left = row_x + cols[i].offset - hscroll;
+
+            *x0 = (i == 0 || left < row_x) ? row_x : left;
+            *x1 = left + cols[i].width;
+            return i;
+        }
+    }
+    return -1;
+}
+
+/**
  * @brief The rows on screen: all of them, or, when the frame has damage,
  *        the rows it touches and those that look different.  Each painted
  *        row's hash is kept, except on a recording surface.
@@ -649,7 +676,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
             int ncol = tiku_trk_poseview_columns(folder->view, &cols);
             int hscroll = tiku_trk_poseview_hscroll(folder->view);
             int mini = render->row_h - 2;
-            int name_end = row.x + row.w;
+            int name_x, name_end, name_col;
             int thumbnail = 0, j;
             char art[TIKU_NAME_MAX];
             tiku_trk_icon_from_t source = tiku_trk_nodeicon_resolve(
@@ -658,16 +685,14 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
             if (mini > MINI_ICON_FOR(render->row_h)) {
                 mini = MINI_ICON_FOR(render->row_h);
             }
-            /* The selection covers the icon and the first column,
-             * normally Name, and stops there; the other columns stay
-             * plain (IV-024). */
-            if (ncol > 0) {
-                name_end = list.x + 2 + cols[0].offset + cols[0].width -
-                           hscroll;
-            }
+            /* The selection covers the Name cell, and the icon too when
+             * Name is the first column; the other columns stay plain
+             * (IV-024). */
+            name_col = name_span(cols, ncol, row.x, row.w, hscroll,
+                                 &name_x, &name_end);
             if (selected) {
-                tiku_rect_t name = { row.x, row.y,
-                                          name_end - row.x, row.h };
+                tiku_rect_t name = { name_x, row.y,
+                                          name_end - name_x, row.h };
 
                 if (name.w < 0) {
                     name.w = 0;
@@ -744,7 +769,7 @@ draw_list(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
                     cell_x += cols[j].width - tw;
                 }
                 tiku_text(surface, font, cell_x, text_y, fitted,
-                    (selected && j == 0)
+                    (selected && j == name_col)
                         /* A cut label is greyed even while selected
                          * (IV-023); an inactive window's selection reads
                          * in plain ink over its grey. */
@@ -995,15 +1020,25 @@ draw_transients(tiku_trk_folder_window_t *folder,
         int at = render->edit->rename_row - scroll;
 
         if (at >= 0 && at < rows) {
-            /* Grown with the text, capped at the name column, slid to
-             * keep the caret visible past the cap (MA-049). */
-            int cap = list.w - 4 > 260 ? 260 : list.w - 4;
-            int bw = cap, bs = 0;
+            /* Over the part of the row the selection covers, grown with
+             * the text up to the Name column's end, slid to keep the
+             * caret visible past that cap (MA-049). */
+            const tiku_trk_column_t *cols = NULL;
+            int ncol = tiku_trk_poseview_columns(folder->view, &cols);
+            int x0, x1, cap, bw, bs = 0;
             tiku_rect_t box;
 
+            (void)name_span(cols, ncol, list.x + 2, list.w - 4,
+                            tiku_trk_poseview_hscroll(folder->view), &x0,
+                            &x1);
+            if (x1 > list.x + list.w - 2) {
+                x1 = list.x + list.w - 2;
+            }
+            cap = (x1 > x0) ? x1 - x0 : 0;
+            bw = cap;
             tiku_field_metrics(edit, 60, cap, fw_measure_prefix, NULL, &bw,
                                &bs);
-            box = (tiku_rect_t){ list.x + 2,
+            box = (tiku_rect_t){ x0,
                 list.y + 2 + at * render->row_h, bw, render->row_h };
             tiku_ui_textfield_scroll(surface, box, edit->text, edit->caret,
                                      edit->sel_a, edit->sel_b, TIKU_S_FOCUS,
@@ -1296,7 +1331,13 @@ tiku_trk_folder_window_name_at(const tiku_trk_folder_window_t *folder,
         return 0;
     }
     if (tiku_trk_poseview_mode(folder->view) == TIKU_TRK_MODE_LIST) {
-        return x < content.x + (content.w * 2) / 3;
+        const tiku_trk_column_t *cols = NULL;
+        int ncol = tiku_trk_poseview_columns(folder->view, &cols);
+        int x0, x1;
+
+        (void)name_span(cols, ncol, content.x + 2, content.w - 4,
+                        tiku_trk_poseview_hscroll(folder->view), &x0, &x1);
+        return x >= x0 && x < x1;
     }
     {
         tiku_trk_pose_t *pose = tiku_trk_poseview_at(folder->view, row);

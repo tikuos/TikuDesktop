@@ -109,7 +109,8 @@ browser_script_pixel_at(void *ctx, int x, int y)
  *        @p as_facts, as facts.
  *
  * browser_draw() runs once onto a scratch surface that records.  The shown
- * surface is not touched, and nothing a real frame needs is consumed.
+ * surface is not touched, and the dirty flag browser_draw() clears is put
+ * back, so an owed frame is still drawn.
  */
 static size_t
 script_recite(void *ctx, char *out, size_t max, int as_facts)
@@ -119,6 +120,7 @@ script_recite(void *ctx, char *out, size_t max, int as_facts)
     tiku_surface_t *scratch;
     tiku_dl_t *dl;
     size_t used;
+    int owed;
 
     if (out == NULL || max == 0u) {
         return 0u;
@@ -138,7 +140,9 @@ script_recite(void *ctx, char *out, size_t max, int as_facts)
     }
     scratch->record = dl;
     a->surf = scratch;
+    owed = a->dirty;
     browser_draw(a);
+    a->dirty = owed;
     a->surf = shown;
     scratch->record = NULL;
     used = as_facts ? tiku_dl_facts(dl, out, max)

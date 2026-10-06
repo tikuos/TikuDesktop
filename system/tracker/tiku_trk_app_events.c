@@ -570,15 +570,16 @@ browser_press_list(app_t *app, const tiku_event_t *ev, browser_loop_t *lp)
         {
             const tiku_trk_column_t *cs;
             int nn = tiku_trk_poseview_columns(app->view, &cs);
-            int cx = BORDER, k;
+            int k;
 
             for (k = 0; k < nn; k++) {
+                int cx = browser_col_x(app, &cs[k]);
+
                 if (ev->x >= cx &&
                     ev->x < cx + cs[k].width) {
                     on_name = (cs[k].field == TIKU_TRK_COL_NAME);
                     break;
                 }
-                cx += cs[k].width;
             }
         }
         {

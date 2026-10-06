@@ -232,8 +232,8 @@ int tiku_trk_folder_window_column_at(const tiku_trk_folder_window_t *folder,
                                      int x);
 
 /**
- * @brief Whether a point on @p row counts as on its name: the left two
- *        thirds of the row in list mode, the label in an icon mode.
+ * @brief Whether a point on @p row counts as on its name: in list mode the
+ *        part of the row the selection covers, in an icon mode the label.
  */
 int tiku_trk_folder_window_name_at(const tiku_trk_folder_window_t *folder,
                                    int row, int x, int y);
