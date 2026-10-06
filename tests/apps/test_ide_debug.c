@@ -52,6 +52,28 @@ static void until_paused(ide_t *st, int pc)
     assert(0);
 }
 
+/* Tick the local run until it waits at INPUT, going on from any pause. */
+static void until_asking(ide_t *st)
+{
+    int ticks;
+    for (ticks = 0; ticks < 2000; ticks++) {
+        tiku_ide_debug_tick(st);
+        if (st->asking) { return; }
+        if (st->debug_paused) { tiku_ide_debug_command(st, "DEBUG CONT"); }
+        usleep(1000);
+    }
+    assert(0);
+}
+
+/* Key @p k, typing @p text, to window @p id. */
+static void key_to(ide_t *st, uint32_t id, unsigned k, const char *text)
+{
+    tiku_event_t ev = { .type = TIKU_EVENT_KEY_DOWN, .key = k };
+
+    snprintf(ev.text, sizeof ev.text, "%s", text);
+    (void)tiku_ide_event(st, id, &ev);
+}
+
 int main(void)
 {
     tiku_app_services_t svc = { .frame = frame, .menus = menus,
@@ -130,12 +152,37 @@ int main(void)
     tiku_ide_run_stop(st, "stop test");
     assert(!st->running && !st->local_debug);
     assert(frames > 0);
+    /* With the console closed, an answer typed in the Messages window's
+     * INPUT strip reaches the local run. */
+    tiku_ide_edit_lock(st, e);          /* the stopped run's lock ends */
+    set_text(e, "10 INPUT A\n20 PRINT A*2\n30 END", 0, 0);
+    tiku_ide_debug_start(st, e);
+    until_asking(st);
+    tiku_ide_app.closed(st, st->con_id);
+    assert(st->con_surface == NULL && st->running && st->asking);
+    st->msg_id = 9; st->msg_w = 400; st->msg_h = 200;
+    st->msg_surface = tiku_surface_new(st->msg_w, st->msg_h, TIKU_C_PANEL);
+    assert(st->msg_surface);
+    key_to(st, st->msg_id, '2', "2");
+    key_to(st, st->msg_id, '1', "1");
+    key_to(st, st->msg_id, TIKU_KEY_RETURN, "");
+    assert(!st->asking);
+    until_paused(st, 0);
+    {
+        int i, said = 0;
+        for (i = 0; i < st->ncon; i++) {
+            said |= strstr(st->con[i], "42") != NULL;
+        }
+        assert(said);
+    }
+    tiku_surface_free(st->msg_surface);
     unlink(e->path);
     assert(rmdir(dir) == 0);
     tiku_ide_text_free(e);
     tiku_surface_free(e->surface);
     tiku_surface_free(st->con_surface);
     free(st);
-    puts("PASS: completion/undo, comment guards, real debugger, watches, source lock, stop");
+    puts("PASS: completion/undo, comment guards, real debugger, watches, "
+         "source lock, stop, INPUT answered in the Messages window");
     return 0;
 }

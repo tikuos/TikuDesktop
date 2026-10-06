@@ -214,6 +214,8 @@ typedef struct {
     char                 watch_value[8][112]; /**< their values, shown */
     int                  tip;            /**< tool under the pointer; -1 none */
     int                  cursor;         /**< the pointer shape last set */
+    /** the scrollbar's thumb is held, and how far into it the press was */
+    int                  sb_held, sb_grab;
 } edit_t;
 
 /** @brief One message: a line a run, a build or a search printed, and the
@@ -358,6 +360,7 @@ tiku_syntax_lang_t tiku_ide_lang_of(const char *name);
 int tiku_ide_tb_tool_at(const edit_t *e, int x, int y);
 int tiku_ide_edit_page_top(const edit_t *e);
 int tiku_ide_edit_page_bottom(const edit_t *e);
+int tiku_ide_edit_scrollbar(edit_t *e, tiku_rect_t *bar, tiku_rect_t *thumb);
 void tiku_ide_edit_bounds(edit_t *e);
 void tiku_ide_edit_reveal(edit_t *e);
 void tiku_ide_edit_lock(ide_t *st, edit_t *e);

@@ -6,7 +6,9 @@
  * paused line is marked only for the text the run was given; Renumber
  * edits only the numbers it changes; completion and keyword help are a
  * list and a tip at the caret; the page keeps the view's caret and
- * clipboard rules; and a Command click on a jump target goes to its line.
+ * clipboard rules; a Command click on a jump target goes to its line;
+ * Return over a selection numbers the new line from the selection's first
+ * line; and the page's scrollbar pages by the thumb's side and drags.
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  * SPDX-License-Identifier: Apache-2.0
@@ -813,6 +815,100 @@ static void jumps(ide_t *st)
     unpage(st, e);
 }
 
+/** Return over a selection in BASIC numbers the new line from the line
+ *  the selection starts in, whichever way it was made. */
+static void return_over_selection(ide_t *st)
+{
+    static const char text[] = "10 PRINT 1\n20 PRINT 2\n30 PRINT 3\n";
+    edit_t *e = page(st, "sel.bas", text, sizeof text - 1);
+
+    /* Made downward: the caret is in line 30. */
+    assert(tiku_codeview_select(e->view, 5, 22 + 5) == TIKU_EDIT_OK);
+    key(st, e, TIKU_KEY_RETURN, 0, NULL);
+    assert(holds(e, "10 PR\n20 INT 3\n", 15));
+    assert(tiku_ide_text_load(e, text, sizeof text - 1) == TIKU_EDIT_OK);
+    /* Made upward: the caret is in line 10. */
+    assert(tiku_codeview_select(e->view, 22 + 5, 5) == TIKU_EDIT_OK);
+    key(st, e, TIKU_KEY_RETURN, 0, NULL);
+    assert(holds(e, "10 PR\n20 INT 3\n", 15));
+    unpage(st, e);
+}
+
+/* A pointer event of @p type at @p x, @p y with button 1. */
+static void at(ide_t *st, edit_t *e, tiku_event_type_t type, int x, int y)
+{
+    tiku_event_t ev;
+
+    memset(&ev, 0, sizeof ev);
+    ev.type = type;
+    ev.button = 1;
+    ev.x = x;
+    ev.y = y;
+    (void)tiku_ide_event(st, e->id, &ev);
+}
+
+/* Where the page's scrollbar draws its thumb, from the view's extent;
+ * the first row shown goes to @p top. */
+static tiku_rect_t page_thumb(edit_t *e, int64_t *top)
+{
+    int ptop = tiku_ide_edit_page_top(e);
+    tiku_rect_t bar = { e->w - PAGE_SB, ptop, PAGE_SB,
+                        tiku_ide_edit_page_bottom(e) - ptop };
+    int64_t total, rows;
+
+    tiku_codeview_extent(e->view, 0, &total, &rows, top);
+    assert(total > rows && rows > 0);
+    return tiku_ui_scrollbar_thumb(bar, (float)*top / (float)(total - rows),
+                                   (float)rows / (float)total, 0);
+}
+
+/** A press on the page's scrollbar track pages toward the side of the
+ *  thumb it is on; a press on the thumb takes hold of it, and the thumb
+ *  follows the pointer until it is let go. */
+static void page_scrollbar(ide_t *st)
+{
+    char text[4000];
+    size_t n = 0;
+    int i, x, ptop, mid, grab;
+    int64_t top, now;
+    tiku_rect_t th, moved;
+    edit_t *e;
+
+    for (i = 1; i <= 200; i++) {
+        n += (size_t)snprintf(text + n, sizeof text - n, "%d REM\n", i * 10);
+    }
+    e = page(st, "long.bas", text, n);
+    x = e->w - PAGE_SB / 2;
+    ptop = tiku_ide_edit_page_top(e);
+    mid = ptop + (tiku_ide_edit_page_bottom(e) - ptop) / 2;
+
+    /* The page opens at its end; a press just above the thumb, below the
+     * track's middle, pages up. */
+    th = page_thumb(e, &top);
+    assert(th.y - 2 > mid);
+    at(st, e, TIKU_EVENT_POINTER_DOWN, x, th.y - 2);
+    at(st, e, TIKU_EVENT_POINTER_UP, x, th.y - 2);
+    th = page_thumb(e, &now);
+    assert(now < top);
+    top = now;
+
+    /* A press on the thumb does not page; a drag moves the thumb with
+     * the pointer, and a move after the release does not. */
+    grab = th.y + th.h / 2;
+    at(st, e, TIKU_EVENT_POINTER_DOWN, x, grab);
+    (void)page_thumb(e, &now);
+    assert(now == top);
+    at(st, e, TIKU_EVENT_POINTER_MOVE, x, grab - 40);
+    moved = page_thumb(e, &now);
+    assert(now < top && moved.y >= th.y - 41 && moved.y <= th.y - 39);
+    at(st, e, TIKU_EVENT_POINTER_UP, x, grab - 40);
+    top = now;
+    at(st, e, TIKU_EVENT_POINTER_MOVE, x, grab - 80);
+    (void)page_thumb(e, &now);
+    assert(now == top);
+    unpage(st, e);
+}
+
 int main(void)
 {
     char drafts[600];
@@ -835,12 +931,15 @@ int main(void)
     line_commands(st);
     problems(st);
     jumps(st);
+    return_over_selection(st);
+    page_scrollbar(st);
     tiku_surface_free(st->proj_surface);
     tiku_surface_free(st->msg_surface);
     tiku_surface_free(st->con_surface);
     free(st);
     puts("PASS: kept bytes, BASIC limits at the run, breakpoint markers, "
          "the paused line, renumber edits, completion and help, caret and "
-         "clipboard rules, line commands, problems, jump targets");
+         "clipboard rules, line commands, problems, jump targets, Return "
+         "over a selection, the page's scrollbar");
     return 0;
 }

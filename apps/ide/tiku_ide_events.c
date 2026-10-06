@@ -553,19 +553,28 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
                     return 0;
                 }
             }
-            /* A press on the scrollbar's track pages the view toward the
-             * press and leaves the caret where it is. */
+            /* A press on the scrollbar above or below the thumb pages the
+             * view toward the press, and a press on the thumb takes hold
+             * of it; the caret stays where it is. */
             if (event->x >= e->w - PAGE_SB &&
                 event->y >= tiku_ide_edit_page_top(e) && event->y < tiku_ide_edit_page_bottom(e)) {
-                int64_t rows = tiku_codeview_rows_visible(e->view);
-                int64_t top = tiku_codeview_top(e->view);
-                int ptop = tiku_ide_edit_page_top(e);
-                int mid = ptop + (tiku_ide_edit_page_bottom(e) - ptop) / 2;
-                int64_t step = (rows > 1) ? rows - 1 : 1;
+                tiku_rect_t sb, thumb;
 
-                tiku_codeview_scroll_to(e->view,
-                    top + ((event->y < mid) ? -step : step),
-                    tiku_codeview_left(e->view));
+                if (!tiku_ide_edit_scrollbar(e, &sb, &thumb)) {
+                    return 0;           /* no scrollbar is shown */
+                }
+                if (event->y >= thumb.y && event->y < thumb.y + thumb.h) {
+                    e->sb_held = 1;
+                    e->sb_grab = event->y - thumb.y;
+                } else {
+                    int64_t rows = tiku_codeview_rows_visible(e->view);
+                    int64_t step = (rows > 1) ? rows - 1 : 1;
+
+                    tiku_codeview_scroll_to(e->view,
+                        tiku_codeview_top(e->view) +
+                            ((event->y < thumb.y) ? -step : step),
+                        tiku_codeview_left(e->view));
+                }
                 tiku_ide_edit_paint(st, e);
                 return 0;
             }
@@ -585,6 +594,28 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
             }
             return 0;
         }
+        if (event->type == TIKU_EVENT_POINTER_MOVE && e->sb_held) {
+            /* The held thumb's start follows the pointer, less where in
+             * the thumb the press was, within the track between the
+             * arrows. */
+            tiku_rect_t sb, thumb;
+
+            if (tiku_ide_edit_scrollbar(e, &sb, &thumb)) {
+                int64_t total, rows, top;
+                int travel = sb.h - 2 * sb.w - thumb.h;
+                int at = event->y - (sb.y + sb.w) - e->sb_grab;
+
+                tiku_codeview_extent(e->view, 0, &total, &rows, &top);
+                if (travel > 0) {
+                    at = at < 0 ? 0 : at > travel ? travel : at;
+                    tiku_codeview_scroll_to(e->view,
+                        ((int64_t)at * (total - rows) + travel / 2) / travel,
+                        tiku_codeview_left(e->view));
+                    tiku_ide_edit_paint(st, e);
+                }
+            }
+            return 0;
+        }
         if (event->type == TIKU_EVENT_POINTER_MOVE) {
             /* Over the toolbar, a tip names the tool under the pointer;
              * it goes when the pointer leaves the tool. */
@@ -600,6 +631,10 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
             if (tiku_codeview_event(e->view, event)) {
                 tiku_ide_edit_paint(st, e);
             }
+            return 0;
+        }
+        if (event->type == TIKU_EVENT_POINTER_UP && e->sb_held) {
+            e->sb_held = 0;             /* the thumb is let go */
             return 0;
         }
         if (event->type == TIKU_EVENT_POINTER_UP) {
@@ -701,7 +736,10 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
                 ch = event->key;
             }
             if (event->key == TIKU_KEY_RETURN) {
-                if (st->services->board_input != NULL) {
+                if (st->local_debug) {
+                    (void)tiku_board_basic_input(st->local_debug,
+                                                 st->answer.text);
+                } else if (st->services->board_input != NULL) {
                     (void)st->services->board_input(st->services->ctx,
                                                     st->answer.text);
                 }

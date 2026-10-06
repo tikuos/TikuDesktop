@@ -171,6 +171,30 @@ tiku_ide_edit_page_bottom(const edit_t *e)
 }
 
 /**
+ * @brief The page's scrollbar @p bar, in a gutter at the page's right, and
+ *        the thumb tiku_ui_scrollbar() draws in it for the view's place.
+ *
+ * @return 1 when the listing is longer than the window; otherwise 0, and
+ *         no scrollbar is shown.
+ */
+int
+tiku_ide_edit_scrollbar(edit_t *e, tiku_rect_t *bar, tiku_rect_t *thumb)
+{
+    int ptop = tiku_ide_edit_page_top(e);
+    int64_t total, rows, top;
+
+    *bar = (tiku_rect_t){ e->w - PAGE_SB, ptop, PAGE_SB,
+                          tiku_ide_edit_page_bottom(e) - ptop };
+    tiku_codeview_extent(e->view, 0, &total, &rows, &top);
+    if (total <= rows || rows <= 0) {
+        return 0;
+    }
+    *thumb = tiku_ui_scrollbar_thumb(*bar, (float)top / (float)(total - rows),
+                                     (float)rows / (float)total, 0);
+    return 1;
+}
+
+/**
  * @brief Put the page's view where the page is: its text MARGIN pixels in
  *        from the window's left and the page's top, its right edge at the
  *        page's scrollbar.
