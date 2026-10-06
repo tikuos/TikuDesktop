@@ -87,15 +87,18 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
                                       pv_state_node(v, node, sizeof node),
                                       state_attr(v), rec, sizeof rec - 1);
         if (len > 0) {
-            int px = 0;
-
             rec[len] = '\0';
             /* An unrecognised mode word discards the whole view-state
-             * record, size and sort keys included (MA-063). */
+             * record, size and sort keys included (MA-063); the entries'
+             * own records are still read below. */
             if (strncmp(rec, "icon", 4) == 0) { v->mode = TIKU_TRK_MODE_ICON; }
             else if (strncmp(rec, "mini", 4) == 0) { v->mode = TIKU_TRK_MODE_MINI; }
             else if (strncmp(rec, "list", 4) == 0) { v->mode = TIKU_TRK_MODE_LIST; }
-            else { return 0; }
+            else { len = 0; }
+        }
+        if (len > 0) {
+            int px = 0;
+
             /* IV-014: the size comes back with the mode.  A record without
              * a number leaves the constructor's size standing. */
             {
@@ -175,6 +178,9 @@ tiku_trk_poseview_restore_state(tiku_trk_poseview_t *v)
         v->poses[i].placed = 1;
         v->poses[i].auto_placed = 0;
         n++;
+    }
+    if (n > 0) {
+        pv_extent_clear(v);     /* the box is rebuilt from the positions */
     }
     /* The invisible bit is known only once the saved records are read, so
      * the listing is filtered here. */

@@ -148,7 +148,8 @@ struct tiku_trk_poseview {
     int                 mini_x, mini_y;
     /* The bounding box of everything placed, grown as poses arrive and move
      * and rebuilt after a removal (PVL-050).  While ext_valid is 0 it holds
-     * nothing, and the first pose added defines it. */
+     * nothing, and the next extent query rebuilds it from every placed
+     * pose. */
     int                 ext_x0, ext_y0, ext_x1, ext_y1;
     int                 ext_valid;      /* the box holds at least one pose  */
     /* Notices that arrived before the row they concern, replayed when the

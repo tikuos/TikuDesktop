@@ -26,10 +26,10 @@ int pv_poll_ring(tiku_trk_poseview_t *v, int64_t now,
                  unsigned *flags, unsigned *out);
 /* End of the forward declarations. */
 
-/** @brief Take one placed pose's rectangle into the running bounding
- *         box. */
-void
-pv_extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
+/** @brief Take one placed pose's rectangle into the bounding box, which
+ *         the pose starts when the box is empty. */
+static void
+extent_grow(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
 {
     int px, py, pw, ph;
 
@@ -51,6 +51,17 @@ pv_extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
     if (py + ph > v->ext_y1)      { v->ext_y1 = py + ph; }
 }
 
+/** @brief Take one placed pose's rectangle into the running bounding box.
+ *         A forgotten box is left empty for the next extent query to
+ *         rebuild from every placed pose. */
+void
+pv_extent_add(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
+{
+    if (v->ext_valid) {
+        extent_grow(v, p);
+    }
+}
+
 /** @brief Forget the box; the next extent query rebuilds it from every
  *         placed pose. */
 void
@@ -69,21 +80,19 @@ extent_recalc(tiku_trk_poseview_t *v)
 
     pv_extent_clear(v);
     for (i = 0; i < v->count; i++) {
-        pv_extent_add(v, &v->poses[i]);
+        extent_grow(v, &v->poses[i]);
     }
 }
 
 void
 tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h)
 {
-    if (v != NULL && (v->view_w != w || v->view_h != h)) {
-        /* A new size changes where auto-placement wraps, so placement
-         * starts over (PVL-017). */
-        tiku_trk_poseview_reset_hint(v);
-    }
+    int resized;
+
     if (v == NULL || w < 0 || h < 0) {
         return;
     }
+    resized = (v->view_w != w || v->view_h != h);
     v->view_w = w;
     v->view_h = h;
     /* The horizontal scroll is clamped again: a window grown past its
@@ -100,6 +109,11 @@ tiku_trk_poseview_set_viewport(tiku_trk_poseview_t *v, int w, int h)
 
         tiku_trk_poseview_origin(v, &x, &y);
         tiku_trk_poseview_set_origin(v, x, y);
+    }
+    if (resized) {
+        /* A new size changes where auto-placement wraps, so placement
+         * starts over from the clamped origin (PVL-017). */
+        tiku_trk_poseview_reset_hint(v);
     }
 }
 
@@ -422,6 +436,8 @@ pv_insert_sorted(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
     for (i = 0; i < v->count; i++) {
         v->poses[i].index = i;
     }
+    /* A pose that arrives placed, where a drop landed, grows the box. */
+    pv_extent_add(v, &v->poses[at]);
     return at;
 }
 

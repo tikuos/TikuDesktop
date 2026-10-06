@@ -220,8 +220,25 @@ field_cmp(const tiku_trk_pose_t *a, const tiku_trk_pose_t *b, int field)
     case TIKU_TRK_COL_NAME:
         return natural_cmp(tiku_model_display_name(&a->model),
                            tiku_model_display_name(&b->model));
+    case TIKU_TRK_COL_PATH:
+    case TIKU_TRK_COL_PERM:
+    case TIKU_TRK_COL_ORIGINAL:
+        break;
     default:
-        return 0;
+        if (field < TIKU_TRK_COL_ATTR_BASE) {
+            return 0;
+        }
+        break;
+    }
+    {
+        /* The Location, Permissions, Original path and attribute
+         * columns order by the text the cell shows. */
+        char ta[TIKU_PATH_MAX], tb[TIKU_PATH_MAX];
+
+        return natural_cmp(pv_cell_text_at(pv_g_sorting, a, field, 100000,
+                                           ta, sizeof ta),
+                           pv_cell_text_at(pv_g_sorting, b, field, 100000,
+                                           tb, sizeof tb));
     }
 }
 
@@ -369,6 +386,7 @@ tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now)
      * load carries the old one from here on and is refused. */
     v->load_gen++;
     v->count = 0;
+    pv_extent_clear(v);
     v->pivot = -1;
     v->active = -1;
     v->last_added = -1;
@@ -775,6 +793,9 @@ tiku_trk_poseview_switch_dir(tiku_trk_poseview_t *v, const char *path)
         return -1;
     }
     tiku_trk_poseview_type_clear(v);
+    /* The new folder opens scrolled to its top-left in every mode, and
+     * placement starts there. */
+    v->icon_x = v->icon_y = v->mini_x = v->mini_y = 0;
     tiku_trk_poseview_reset_hint(v);
     /* Parked notices and zombies belong to the folder just left and are
      * dropped: a parked notice could otherwise be replayed into this folder

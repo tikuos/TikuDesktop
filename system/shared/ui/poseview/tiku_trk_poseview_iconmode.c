@@ -142,8 +142,13 @@ map_icons(tiku_trk_poseview_t *v, int old_mode, int old_size)
         px = (px >= 0) ? (px / ogx) * ngx : -(((-px) + ogx - 1) / ogx) * ngx;
         py = (py >= 0) ? (py / ogy) * ngy : -(((-py) + ogy - 1) / ogy) * ngy;
         if (dx != 0 || dy != 0) {
-            dx = (dx >= 0) ? ngx * (dx / ogx) : -ngx * (((-dx) + ogx - 1) / ogx);
-            dy = (dy >= 0) ? ngy * (dy / ogy) : -ngy * (((-dy) + ogy - 1) / ogy);
+            /* The nudge is scaled by the ratio of the cells, rounded to the
+             * nearest pixel. */
+            float sx = (float)dx * (float)ngx / (float)ogx;
+            float sy = (float)dy * (float)ngy / (float)ogy;
+
+            dx = (int)((sx >= 0.0f) ? (sx + 0.5f) : (sx - 0.5f));
+            dy = (int)((sy >= 0.0f) ? (sy + 0.5f) : (sy - 0.5f));
             px += dx;
             py += dy;
         }
@@ -165,20 +170,48 @@ tiku_trk_poseview_hint(const tiku_trk_poseview_t *v, int *x, int *y)
     if (y != NULL) { *y = v->hint_y; }
 }
 
+/** @brief The first grid line at or past @p origin plus the offset @p o,
+ *         on a grid of pitch @p g; the offset itself with no grid. */
+static int
+first_cell(int origin, int g, int o)
+{
+    int k;
+
+    if (g <= 0) {
+        return o;
+    }
+    k = (origin >= 0) ? (origin + g - 1) / g : -((-origin) / g);
+    return k * g + o;
+}
+
+/** @brief The view's horizontal and vertical scroll origin; 0, 0 in list
+ *         mode, which places from the top-left of the document. */
+static void
+place_origin(const tiku_trk_poseview_t *v, int *x, int *y)
+{
+    *x = 0;
+    *y = 0;
+    if (v->mode != TIKU_TRK_MODE_LIST) {
+        tiku_trk_poseview_origin(v, x, y);
+    }
+}
+
 void
 tiku_trk_poseview_reset_hint(tiku_trk_poseview_t *v)
 {
-    int gx, gy, ox, oy;
+    int gx, gy, ox, oy, sx, sy;
 
     if (v == NULL) {
         return;
     }
     /* PVL-017: back to the top-left of what is on screen, so the next
      * folder's auto-placement does not carry on from the last folder's
-     * last icon. */
+     * last icon.  The hint is the first grid point at or past the view's
+     * top-left plus the layout offset. */
     tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
-    v->hint_x = ox;
-    v->hint_y = oy;
+    place_origin(v, &sx, &sy);
+    v->hint_x = first_cell(sx, gx, ox);
+    v->hint_y = first_cell(sy, gy, oy);
 }
 
 void
@@ -410,17 +443,19 @@ tiku_trk_poseview_art_size(const tiku_trk_poseview_t *v)
                                            : TIKU_TRK_MINI_ICON;
 }
 
-/** @brief Advance the hint to the next slot, wrapping at the right edge. */
+/** @brief Advance the hint to the next slot, wrapping at the right edge of
+ *         the view to its left edge. */
 static void
 next_slot(tiku_trk_poseview_t *v, int view_w)
 {
-    int gx, gy, ox, oy, w, h;
+    int gx, gy, ox, oy, w, h, sx, sy;
 
     tiku_trk_poseview_layout_info(v, &gx, &gy, &ox, &oy);
     pose_extent(v, &w, &h);
+    place_origin(v, &sx, &sy);
     v->hint_x += (gx > 0) ? gx : w;
-    if (v->hint_x + w > view_w) {
-        v->hint_x = ox;
+    if (v->hint_x + w > sx + view_w) {
+        v->hint_x = first_cell(sx, gx, ox);
         v->hint_y += (gy > 0) ? gy : h;
         tiku_trk_poseview_pin_to_grid(v, &v->hint_x, &v->hint_y);
     }
@@ -440,7 +475,9 @@ place_pose(tiku_trk_poseview_t *v, tiku_trk_pose_t *p, int view_w)
     }
     if (tries >= 4096) {
         /* PVL-019: nowhere free, so the icon goes to the grid origin. */
-        tiku_trk_poseview_reset_hint(v);
+        int gx, gy;
+
+        tiku_trk_poseview_layout_info(v, &gx, &gy, &v->hint_x, &v->hint_y);
     }
     p->loc_x = (int)((float)v->hint_x / scale);
     p->loc_y = (int)((float)v->hint_y / scale);
@@ -485,10 +522,12 @@ tiku_trk_poseview_place_unplaced(tiku_trk_poseview_t *v, int view_w)
             v->poses[i].loc_y = (int)((float)ly / scale);
             v->poses[i].placed = 1;
             v->poses[i].auto_placed = 0;
+            pv_extent_add(v, &v->poses[i]);
             n++;
             continue;
         }
         place_pose(v, &v->poses[i], view_w);
+        pv_extent_add(v, &v->poses[i]);
         n++;
     }
     return n;
@@ -512,6 +551,8 @@ tiku_trk_poseview_cleanup(tiku_trk_poseview_t *v, int view_w)
     for (i = 0; i < v->count; i++) {
         v->poses[i].placed = 0;
     }
+    /* Every icon moves, so the box is rebuilt from the new layout. */
+    pv_extent_clear(v);
     v->hint_x = ox;
     v->hint_y = oy;
     (void)tiku_trk_poseview_place_unplaced(v, view_w);
@@ -715,6 +756,17 @@ tiku_trk_poseview_fit_label(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
                              v->measure_ctx, out, max);
 }
 
+/** @brief The row a pose is shown on in list mode: its place among the
+ *         filtered rows while filtering, and its index when the view is
+ *         not filtering or the filter leaves it out. */
+static int
+list_row(const tiku_trk_poseview_t *v, const tiku_trk_pose_t *p)
+{
+    int row = pv_display_of(v, p->index);
+
+    return (row >= 0) ? row : p->index;
+}
+
 void
 tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
                              const tiku_trk_pose_t *p, int *ix, int *iy,
@@ -742,11 +794,11 @@ tiku_trk_poseview_pose_parts(tiku_trk_poseview_t *v,
         }
     }
     if (v->mode == TIKU_TRK_MODE_LIST) {
-        /* In list mode a pose's place is its row (p->index); the icon-mode
+        /* In list mode a pose's place is its row as shown; the icon-mode
          * location it also carries is ignored. */
         int rh = tiku_trk_poseview_row_height(v);
 
-        py = p->index * rh;
+        py = list_row(v, p) * rh;
         if (ix != NULL) { *ix = 2; *iy = py; *iw = art; *ih = rh; }
         if (lx != NULL) {
             *lx = 2 + art + 4;
@@ -798,7 +850,7 @@ tiku_trk_poseview_pose_rect(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
         int rh = tiku_trk_poseview_row_height(v);
 
         *x = 0;
-        *y = p->index * rh;
+        *y = list_row(v, p) * rh;
         *w = (v->view_w > 0) ? v->view_w : 1;
         *h = rh;
         return;
