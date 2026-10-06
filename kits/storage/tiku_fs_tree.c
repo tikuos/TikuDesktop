@@ -192,7 +192,8 @@ fop_copy_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
  * folder at the destination is merged into, and the emptied source folders
  * are removed.
  *
- * @return 0, or negative with @p err filled.
+ * @return 0, -1 with @p err filled, or -2 when the copy of a move across
+ *         filesystems or stores is cancelled.
  */
 int
 fop_move_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
@@ -242,9 +243,13 @@ fop_move_tree(tiku_fs_t *fs, const char *src, const char *dstpath, char *err,
             return -1;
         }
         /* Across a filesystem boundary a move is a copy and then a delete
-         * (FS-030). */
-        if (fop_copy_tree(fs, src, dstpath, err, errmax) != 0) {
-            return -1;
+         * (FS-030).  A cancelled copy returns -2 and the source stays. */
+        {
+            int rc = fop_copy_tree(fs, src, dstpath, err, errmax);
+
+            if (rc != 0) {
+                return rc;
+            }
         }
         return fop_remove_tree(src);
     }

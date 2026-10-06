@@ -94,6 +94,20 @@ give_up(tiku_fs_t *fs)
 }
 
 /**
+ * @brief Whether the folder at the cursor is expanded now: on its first
+ *        visit, or on a later one when its children did not all fit and the
+ *        round since its last expansion deleted something.
+ */
+static int
+expand_due(const tiku_fs_t *fs)
+{
+    int c = fs->qcursor;
+
+    return fs->qexpanded[c] == 0 ||
+           (fs->qexpanded[c] == 2 && fs->prog.done > fs->qdone[c]);
+}
+
+/**
  * @brief Process one queued item.
  *
  * @return 1 when the item is done or the job ends, 0 when the job stopped
@@ -170,39 +184,60 @@ step_one(tiku_fs_t *fs)
                      "and write its nodes, but not remove them.",
                      fop_leaf_of(src));
             return fail_ask(fs, msg, 1);
-        } else if (fop_is_dir(src) && !fs->qexpanded[fs->qcursor]) {
+        } else if (fop_is_dir(src) && expand_due(fs)) {
             /* A folder goes children first: each child is queued as an
-             * item of its own, then the folder again, so a child that
-             * cannot go is reported by name and its siblings still go
-             * (FS-049). */
-            DIR *d = opendir(src);
-            int before = fs->qcount;
+             * item of its own in the processed slots before the folder,
+             * and the folder stays in its slot for a second visit after
+             * them, so a child that cannot go is reported by name and its
+             * siblings still go (FS-049).  Children that do not fit wait
+             * for the next round, which the second visit starts. */
+            DIR *d;
+            int slot, more = 0;
 
+            if (fs->qcount < FS_QUEUE_MAX) {
+                /* The items still to run move to the end of the queue,
+                 * leaving every slot before them free. */
+                int live = fs->qcount - fs->qcursor;
+                int at = FS_QUEUE_MAX - live;
+
+                memmove(fs->queue[at], fs->queue[fs->qcursor],
+                        (size_t)live * sizeof fs->queue[0]);
+                memmove(&fs->qexpanded[at], &fs->qexpanded[fs->qcursor],
+                        (size_t)live);
+                memmove(&fs->qdone[at], &fs->qdone[fs->qcursor],
+                        (size_t)live * sizeof fs->qdone[0]);
+                fs->qcursor = at;
+                fs->qcount = FS_QUEUE_MAX;
+                src = fs->queue[at];
+            }
+            slot = fs->qcursor;
+            d = opendir(src);
             if (d != NULL) {
                 struct dirent *e;
 
-                while ((e = readdir(d)) != NULL &&
-                       fs->qcount < FS_QUEUE_MAX - 1) {
+                while ((e = readdir(d)) != NULL) {
                     if (strcmp(e->d_name, ".") == 0 ||
                         strcmp(e->d_name, "..") == 0) {
                         continue;
                     }
-                    if (fop_join(fs->queue[fs->qcount], TIKU_PATH_MAX,
+                    if (slot == 0) {
+                        more = 1;
+                        break;
+                    }
+                    if (fop_join(fs->queue[slot - 1], TIKU_PATH_MAX,
                              src, e->d_name) == 0) {
-                        fs->qexpanded[fs->qcount] = 0;
-                        fs->qcount++;
+                        slot--;
+                        fs->qexpanded[slot] = 0;
                     }
                 }
                 (void)closedir(d);
             }
-            if (fs->qcount > before && fs->qcount < FS_QUEUE_MAX) {
-                /* The folder's second visit, after its children. */
-                fs->qexpanded[fs->qcount] = 1;
-                snprintf(fs->queue[fs->qcount], TIKU_PATH_MAX, "%s",
-                         src);
-                fs->qcount++;
-                fs->prog.total = fs->qcount;
-                fs->qcursor++;
+            if (slot < fs->qcursor) {
+                /* The children and the folder's second visit. */
+                fs->prog.total += fs->qcursor - slot + 1;
+                fs->qexpanded[fs->qcursor] = more ? 2 : 1;
+                fs->qdone[fs->qcursor] = fs->prog.done;
+                fs->qcursor = slot;
                 return 1;
             }
             /* Nothing inside (or no room to expand): fall through to the

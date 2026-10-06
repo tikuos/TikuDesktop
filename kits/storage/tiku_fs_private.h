@@ -77,10 +77,13 @@ typedef struct {
 struct tiku_fs {
     tiku_backend_t  *backend;       /**< the backend it works through   */
     char             queue[FS_QUEUE_MAX][TIKU_PATH_MAX]; /**< the items */
-    unsigned char    qexpanded[FS_QUEUE_MAX]; /**< per item: set on a
-                                       folder's second visit, queued after
-                                       its children, so the folder is not
-                                       expanded again (FS-049)          */
+    unsigned char    qexpanded[FS_QUEUE_MAX]; /**< per item: 0 before a
+                                       folder is expanded; 1 on its second
+                                       visit, after its children (FS-049);
+                                       2 on that visit when its children
+                                       did not all fit in the queue     */
+    int              qdone[FS_QUEUE_MAX]; /**< per item: prog.done when
+                                       the folder was last expanded     */
     int              qcount;        /**< items in queue                 */
     int              qcursor;       /**< the next item to process       */
     char             dst[TIKU_PATH_MAX]; /**< the destination folder, ""

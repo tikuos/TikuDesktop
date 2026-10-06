@@ -227,6 +227,7 @@ int tiku_fs_trash_dirs_of(tiku_fs_t *fs,
  * Whether a store has a Trash is answered by making one, and the
  * trash-or-delete decision depends on that answer.  It is the home folder's
  * when home is on @p path's filesystem, else one at that filesystem's root.
+ * A NULL @p path stands for the home folder.
  *
  * @return 0 on success, -1 on a device or when no Trash can be made.
  */

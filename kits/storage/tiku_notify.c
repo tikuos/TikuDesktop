@@ -12,6 +12,7 @@
 #include "tiku_notify.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 void
@@ -142,14 +143,16 @@ tiku_notify_diff(const tiku_model_t *was, int nwas,
                      const tiku_model_t *now, int nnow, int64_t at,
                      tiku_evlist_t *out)
 {
-    unsigned char paired[256];
+    unsigned char *paired;
     int i, j, before;
 
     if (out == NULL) {
         return 0;
     }
     before = out->count;
-    memset(paired, 0, sizeof paired);
+    /* One mark per entry of the new listing; without the memory, nothing
+     * is paired and a move is reported as a removal and a creation. */
+    paired = calloc((size_t)(nnow > 0 ? nnow : 1), 1u);
 
     /* A removal and a creation sharing a node id in one pass are reported
      * as one MOVED notice, so the row keeps its selection, its place in
@@ -158,7 +161,7 @@ tiku_notify_diff(const tiku_model_t *was, int nwas,
         if (find_path(now, nnow, was[i].path) >= 0) {
             continue;                      /* still there                */
         }
-        for (j = 0; j < nnow && j < (int)sizeof paired; j++) {
+        for (j = 0; paired != NULL && j < nnow; j++) {
             if (paired[j] || was[i].node_id == 0 ||
                 now[j].node_id != was[i].node_id) {
                 continue;
@@ -171,7 +174,7 @@ tiku_notify_diff(const tiku_model_t *was, int nwas,
                                       was[i].path, at);
             break;
         }
-        if (j >= nnow || j >= (int)sizeof paired) {
+        if (paired == NULL || j >= nnow) {
             (void)tiku_evlist_add(out, TIKU_EV_REMOVED, &was[i],
                                       NULL, at);
         }
@@ -179,7 +182,7 @@ tiku_notify_diff(const tiku_model_t *was, int nwas,
     for (j = 0; j < nnow; j++) {
         int k;
 
-        if (j < (int)sizeof paired && paired[j]) {
+        if (paired != NULL && paired[j]) {
             continue;
         }
         k = find_path(was, nwas, now[j].path);
@@ -192,6 +195,7 @@ tiku_notify_diff(const tiku_model_t *was, int nwas,
                                              facts_fields(&was[k], &now[j]));
         }
     }
+    free(paired);
     return out->count - before;
 }
 

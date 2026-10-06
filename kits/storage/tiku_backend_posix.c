@@ -576,7 +576,16 @@ px_write(tiku_backend_t *b, const char *path, const void *buf, size_t len,
         }
         return -1;
     }
-    return (fclose(f) == 0) ? 0 : -1;
+    if (fclose(f) != 0) {
+        /* Buffered bytes are written at close, so a full disk can fail
+         * here. */
+        if (err != NULL && errmax > 0u) {
+            snprintf(err, errmax, "cannot write '%s' (%s)", path,
+                     strerror(errno));
+        }
+        return -1;
+    }
+    return 0;
 }
 
 /** @brief Nothing to service: local files raise no notices, and a view

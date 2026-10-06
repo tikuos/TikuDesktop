@@ -191,8 +191,9 @@ fop_fs_trash_dirs_of(tiku_fs_t *fs, const struct tiku_volumes *v,
     return n;
 }
 
-/** @brief The Trash for @p path, made when absent; see
- *         tiku_fs_trash_dir().  @return 0, or -1. */
+/** @brief The Trash for @p path, or for the home folder when @p path is
+ *         NULL, made when absent; see tiku_fs_trash_dir().  @return 0, or
+ *         -1. */
 int
 fop_fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
                       size_t max)
@@ -201,8 +202,8 @@ fop_fs_trash_dir(tiku_fs_t *fs, const char *path, char *out,
     const char *home = getenv("HOME");
     struct stat rs, hs;
 
-    if (fs == NULL || out == NULL || path == NULL ||
-        !tiku_fs_has_trash(fs) || fop_on_device(fs, path)) {
+    if (fs == NULL || out == NULL || !tiku_fs_has_trash(fs) ||
+        (path != NULL && fop_on_device(fs, path))) {
         /* Asked per item: with a board mounted beside the disk, the disk
          * has a Trash and the board has none. */
         return -1;

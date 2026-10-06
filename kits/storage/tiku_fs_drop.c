@@ -42,17 +42,12 @@ fop_on_device(const tiku_fs_t *fs, const char *path)
 /**
  * @brief The volume @p path is on, as st_dev (its parent's when @p path
  *        does not exist); 0 when neither can be stat'ed.
- *
- * Every device path answers 1, so a drop inside a device is a move.
  */
 static unsigned long
-volume_of(tiku_fs_t *fs, const char *path)
+volume_of(const char *path)
 {
     struct stat st;
 
-    if (fop_on_device(fs, path)) {
-        return 1;
-    }
     if (stat(path, &st) != 0) {
         char dir[TIKU_PATH_MAX];
         fop_parent_of(path, dir, sizeof dir);
@@ -74,8 +69,15 @@ fop_fs_drop_action(tiku_fs_t *fs, const char *src,
     if (force_copy) {
         return TIKU_OP_COPY;
     }
-    a = volume_of(fs, src);
-    b = volume_of(fs, dst_dir);
+    if (fop_on_device(fs, src) || fop_on_device(fs, dst_dir)) {
+        /* With a device on either side, a drop moves only within the
+         * store that serves both paths. */
+        return (fop_store_of(fs, src, NULL, 0) ==
+                fop_store_of(fs, dst_dir, NULL, 0)) ? TIKU_OP_MOVE
+                                                    : TIKU_OP_COPY;
+    }
+    a = volume_of(src);
+    b = volume_of(dst_dir);
     /* Same volume: a move is a rename and costs nothing.  Different volume:
      * the bytes have to travel, so it is a copy and the original stays. */
     return (a != 0 && a == b) ? TIKU_OP_MOVE : TIKU_OP_COPY;
