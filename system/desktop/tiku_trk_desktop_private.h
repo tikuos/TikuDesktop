@@ -129,6 +129,15 @@
 
 typedef tiku_trk_folder_window_t folder_t;
 
+/** @brief One asker of a look: a remote session, or a hosted application. */
+typedef struct {
+    int                   session;  /**< the remote session, or -1 */
+    struct desktop_embed *slot;     /**< or the hosted application */
+} desktop_asker_t;
+/* How many distinct askers a look keeps: every remote session and every
+ * hosted application. */
+#define DESKTOP_ASKERS (TIKU_REMOTE_SESSIONS + TIKU_TRK_EMBED_MAX)
+
 /** @brief How many described panels may be open at once. */
 #define TIKU_TRK_PANELS_MAX 4
 
@@ -386,7 +395,9 @@ typedef struct desktop {
      * port go, and tells the asker when the last port has answered.  A
      * reclaim probes every port for the released board with uid and mounts
      * it.  At startup, the connect of a port named with -p, and of the
-     * current board's port, counts in look.pending. */
+     * current board's port, counts in look.pending.  Each look's askers are
+     * told once, when it ends; one asking during a look is told when the
+     * look after it ends. */
     struct desktop_ask {
         int   going;                    /**< an asking is under way */
         int   pending;                  /**< ports still to answer */
@@ -396,10 +407,15 @@ typedef struct desktop {
         int   session;                  /**< the remote session asking, or -1 */
         struct desktop_embed *slot;     /**< or the hosted application asking */
         int   found;                    /**< a reclaim: the board came back */
+        unsigned gen;                   /**< a look: changed as each
+                                         *   look's counting starts */
         int   again;                    /**< a look: asked again during it */
-        int   again_session;            /**< the remote session that asked it */
-        struct desktop_embed *again_slot; /**< or the hosted application
-                                           *   that asked it */
+        int   nasked;                   /**< a look: askers in asked[] */
+        int   nagain;                   /**< a look: askers in again_by[] */
+        desktop_asker_t asked[DESKTOP_ASKERS];    /**< a look: told when it
+                                                   *   ends */
+        desktop_asker_t again_by[DESKTOP_ASKERS]; /**< a look: told when the
+                                                   *   look after it ends */
         char  name[64];                 /**< a reclaim: the board's name */
         char  uid[64];                  /**< a reclaim: the board's unique id */
     }                        look, reclaim; /**< the look, and the reclaim */
@@ -885,7 +901,7 @@ int desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
                          int *complete);
 int desktop_wire_panel_write(desktop_t *app, tiku_trk_described_t *p, int row);
 int desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
-                       int probe, const char *at);
+                       int probe, const char *at, int counted);
 void desktop_wire_ask(desktop_t *app);
 void desktop_wire_replicants(desktop_t *app);
 void desktop_wire_run_over(desktop_t *app, struct tiku_board_basic *run,

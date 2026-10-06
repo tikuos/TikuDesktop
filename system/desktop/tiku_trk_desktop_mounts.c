@@ -488,13 +488,14 @@ mount_devices(desktop_t *app, const char *port, int baud, const char *at)
         /* The loop does not run during boot: wait here for the probe,
          * counted with a look's accounting. */
         app->look.going = 1;
+        app->look.gen++;
         app->look.session = -1;
         app->look.slot = NULL;
         app->look.pending = 0;
         app->look.count = 0;
         app->look.landed = 0;
         if (desktop_wire_probe(app, DESKTOP_ASK_CONNECT, port, baud, 0,
-                               at) == 0) {
+                               at, 1) == 0) {
             app->look.pending++;
             app->look.count++;
         }

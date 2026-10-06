@@ -288,6 +288,13 @@ test_board_jobs_CFLAGS := -ffunction-sections -fdata-sections
 test_board_jobs_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
     system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
 test_board_jobs_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
+# The same, with the port scan replaced by the test's own.
+test_board_looks_CFLAGS := $(test_board_jobs_CFLAGS)
+test_board_looks_SRCS := $(test_board_jobs_SRCS)
+test_board_looks_LDLIBS := $(test_board_jobs_LDLIBS)
+ifeq ($(UNAME_S),Linux)
+test_board_looks_LDLIBS += -Wl,--wrap=tiku_tx_scan_serial
+endif
 # The desk's key responder as linked, its file included by the test.
 test_switcher_keys_CFLAGS := -ffunction-sections -fdata-sections \
     -Wno-unused-parameter

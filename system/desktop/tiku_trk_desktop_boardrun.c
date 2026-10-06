@@ -639,6 +639,56 @@ desktop_board_pump(desktop_t *app)
 /* LOOKING FOR BOARDS, CONNECTING AND RECLAIMING                             */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Add an asker to @p list unless it is there already; nobody
+ *         (-1, NULL) is not added. */
+static void
+look_asker_add(desktop_asker_t *list, int *n, int session,
+               struct desktop_embed *slot)
+{
+    int i;
+
+    if (session < 0 && slot == NULL) {
+        return;
+    }
+    for (i = 0; i < *n; i++) {
+        if (list[i].session == session && list[i].slot == slot) {
+            return;
+        }
+    }
+    if (*n < DESKTOP_ASKERS) {
+        list[*n].session = session;
+        list[*n].slot = slot;
+        (*n)++;
+    }
+}
+
+/** @brief Start a look for the askers already in look.asked[]. */
+static void
+look_start(desktop_t *app)
+{
+    char scan[TIKU_MOUNT_MAX][256];
+    int found, i;
+
+    found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
+    app->look.going = 1;
+    app->look.gen++;
+    app->look.baud = (app->board_baud > 0) ? app->board_baud : 115200;
+    app->look.pending = 0;
+    app->look.count = 0;
+    app->look.landed = 0;
+    tiku_trail("look: %d ports to ask", found);
+    for (i = 0; i < found; i++) {
+        if (desktop_wire_probe(app, DESKTOP_ASK_LOOK, scan[i],
+                               app->look.baud, 1, NULL, 1) == 0) {
+            app->look.pending++;
+            app->look.count++;
+        }
+    }
+    if (app->look.pending == 0) {
+        desktop_board_look_done(app);
+    }
+}
+
 /**
  * @brief Probe every serial port at once for boards.
  *
@@ -651,44 +701,24 @@ void
 desktop_board_look_begin(desktop_t *app, int session,
                          struct desktop_embed *slot)
 {
-    char scan[TIKU_MOUNT_MAX][256];
-    int found, i;
-
         if (app == NULL) {
         return;
     }
     if (app->look.going) {
         /* One look at a time: a look asked for during this one is
          * started by desktop_board_look_done() when this one ends, and
-         * its asker is told when that second look ends. */
+         * every asker of it is told when that second look ends. */
         app->look.again = 1;
-        app->look.again_session = session;
-        app->look.again_slot = slot;
+        look_asker_add(app->look.again_by, &app->look.nagain, session, slot);
         return;
     }
-    found = tiku_tx_scan_serial(scan, TIKU_MOUNT_MAX);
-    app->look.going = 1;
-    app->look.session = session;
-    app->look.slot = slot;
-    app->look.baud = (app->board_baud > 0) ? app->board_baud : 115200;
-    app->look.pending = 0;
-    app->look.count = 0;
-    app->look.landed = 0;
-    tiku_trail("look: %d ports to ask", found);
-    for (i = 0; i < found; i++) {
-        if (desktop_wire_probe(app, DESKTOP_ASK_LOOK, scan[i],
-                               app->look.baud, 1, NULL) == 0) {
-            app->look.pending++;
-            app->look.count++;
-        }
-    }
-    if (app->look.pending == 0) {
-        desktop_board_look_done(app);
-    }
+    app->look.nasked = 0;
+    look_asker_add(app->look.asked, &app->look.nasked, session, slot);
+    look_start(app);
 }
 
 /**
- * @brief End a look: send every remote session the board list, tell the
+ * @brief End a look: send every remote session the board list, tell each
  *        asker how many boards are mounted, and start a look asked for
  *        during this one.
  */
@@ -696,20 +726,26 @@ void
 desktop_board_look_done(desktop_t *app)
 {
     char how[32];
+    int i;
 
     app->look.going = 0;
     tiku_trail("look: done, %d boards", board_count(app));
     desktop_board_names_tell(app);
     (void)snprintf(how, sizeof how, "%d", board_count(app));
-        desktop_board_say(app, app->look.session, app->look.slot,
-                      TIKU_APP_BOARD_LOOKED, how);
+    for (i = 0; i < app->look.nasked; i++) {
+        desktop_board_say(app, app->look.asked[i].session,
+                          app->look.asked[i].slot, TIKU_APP_BOARD_LOOKED,
+                          how);
+    }
+    app->look.nasked = 0;
     desktop_damage_all(app);
     if (app->look.again) {
-        int session = app->look.again_session;
-        struct desktop_embed *slot = app->look.again_slot;
-
+        memcpy(app->look.asked, app->look.again_by,
+               sizeof app->look.asked);
+        app->look.nasked = app->look.nagain;
         app->look.again = 0;
-        desktop_board_look_begin(app, session, slot);
+        app->look.nagain = 0;
+        look_start(app);
     }
 }
 
@@ -807,7 +843,8 @@ device_connect(desktop_t *app, const char *port)
         return -1;
     }
     baud = (app->board_baud > 0) ? app->board_baud : 115200;
-    return desktop_wire_probe(app, DESKTOP_ASK_CONNECT, port, baud, 0, NULL);
+    return desktop_wire_probe(app, DESKTOP_ASK_CONNECT, port, baud, 0, NULL,
+                              0);
 }
 
 /**
@@ -887,7 +924,7 @@ desktop_board_reclaim(desktop_t *app, const char *name, int session,
     found = tiku_tx_scan_serial(scan, 16);
     for (i = 0; i < found; i++) {
         if (desktop_wire_probe(app, DESKTOP_ASK_RECLAIM, scan[i],
-                               app->reclaim.baud, 1, NULL) == 0) {
+                               app->reclaim.baud, 1, NULL, 0) == 0) {
             app->reclaim.pending++;
         }
     }
@@ -900,8 +937,9 @@ desktop_board_reclaim(desktop_t *app, const char *name, int session,
 
 /**
  * @brief A probe for a reclaim answered with @p dev, or NULL.  The board
- *        with the uid is mounted where it was, with a channel kept for a
- *        board with a /gui; the rest are closed.
+ *        with the uid is mounted where it was, with a channel kept and
+ *        adopted into the remote listener for a board with a /gui; the
+ *        rest are closed.
  * @note Called on the loop.
  */
 void
@@ -931,6 +969,7 @@ desktop_board_reclaim_landed(desktop_t *app, tiku_backend_t *dev)
                 if (slot >= 0) {
                     (void)snprintf(app->channel_board[slot], TIKU_PATH_MAX,
                                    "%s", prefix);
+                    (void)channel_attach(app, slot);
                 }
             }
             for (i = 0; i < TIKU_MOUNT_MAX; i++) {

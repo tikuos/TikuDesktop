@@ -738,10 +738,17 @@ boot_icons(desktop_t *app, const desktop_options_t *o, desktop_loop_t *lp)
                      (dport != NULL) ? dport : "");
             if (app->current_device_port[0] != '\0') {
                 app->look.going = 1;
+                app->look.gen++;
                 app->look.pending = 0;
                 app->look.session = -1;
                 app->look.slot = NULL;
-                if (device_connect(app, app->current_device_port) == 0) {
+                /* The probe device_connect() posts, counted in
+                 * look.pending. */
+                if (desktop_wire_probe(app, DESKTOP_ASK_CONNECT,
+                                       app->current_device_port,
+                                       (app->board_baud > 0)
+                                           ? app->board_baud : 115200,
+                                       0, NULL, 1) == 0) {
                     app->look.pending++;
                 }
                 desktop_wire_wait(app, &app->look.pending, 5000L);

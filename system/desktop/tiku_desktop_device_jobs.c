@@ -204,6 +204,8 @@ typedef struct {
     char             at[TIKU_PATH_MAX];
         tiku_backend_t  *dev;       /* what answered, or NULL */
     tiku_channel_t  *ch;        /* a port that frames but has no shell */
+    int              counted;   /* the asker counted it in look.pending */
+    unsigned         look_gen;  /* look.gen when it was posted */
 } probe_t;
 
 /** @brief On a worker: open the port, or find it frames without a shell. */
@@ -231,8 +233,8 @@ probe_run(void *ctx)
  *        goes to desktop_board_reclaim_landed(); a look or a boot scan
  *        records a board that answered as a candidate and closes the port;
  *        a connect mounts the board, or keeps a channel on a port that
- *        frames without a shell.  Except after a reclaim, the port then
- *        counts toward a look in progress.
+ *        frames without a shell.  A probe its asker counted in
+ *        look.pending then counts toward the look it was posted in.
  */
 static void
 probe_done(void *ctx)
@@ -283,7 +285,7 @@ probe_done(void *ctx)
         }
         break;
     }
-    if (app->look.going) {
+    if (app->look.going && p->counted && p->look_gen == app->look.gen) {
         app->look.landed++;
         if (--app->look.pending <= 0 && p->kind == DESKTOP_ASK_LOOK) {
             desktop_board_look_done(app);
@@ -303,12 +305,13 @@ probe_free(void *ctx)
  * @param kind  a DESKTOP_ASK_ kind: what to do with the answer
  * @param probe nonzero for a short 800 ms open, as a look and a reclaim use
  * @param at    where a connect mounts the board, or NULL for /devices
+ * @param counted nonzero when the caller counts the probe in look.pending
  * @return 0 when asked; -1 when the port is already mounted here, or no
  *         worker could take it.
  */
 int
 desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
-                   int probe, const char *at)
+                   int probe, const char *at, int counted)
 {
     tiku_work_job_t job;
     probe_t *p;
@@ -326,6 +329,8 @@ desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
     p->baud = baud;
     p->probe = probe;
     snprintf(p->at, sizeof p->at, "%s", (at != NULL) ? at : "");
+    p->counted = counted;
+    p->look_gen = app->look.gen;
         memset(&job, 0, sizeof job);
     job.run = probe_run;
     job.done = probe_done;
