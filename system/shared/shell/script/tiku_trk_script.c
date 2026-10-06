@@ -158,7 +158,7 @@ tiku_trk_script_open(const char *path)
         (void)fclose(f);
         return NULL;
     }
-    while (fgets(line, sizeof line, f) != NULL && s->count < SC_MAX_STEPS) {
+    while (fgets(line, sizeof line, f) != NULL) {
         char *w[16];
         char *hash;
         int n, r;
@@ -172,6 +172,12 @@ tiku_trk_script_open(const char *path)
         n = sc_words(line, w, 16);
         if (n == 0) {
             continue;
+        }
+        if (s->count >= SC_MAX_STEPS) {
+            fprintf(stderr, "script:%d: more than %d steps; this line and "
+                    "the rest are not run\n", lineno, SC_MAX_STEPS);
+            s->unread = lineno;
+            break;
         }
         st = &s->step[s->count];
         memset(st, 0, sizeof *st);
@@ -329,6 +335,11 @@ tiku_trk_script_report(const tiku_trk_script_t *s, const char *who)
            s->passes, s->fails);
     /* A script with steps unreached fails: the run was cut short.  One that
      * ran every step without a quit line has finished. */
+    if (s->unread > 0) {
+        printf("%s: lines from %d on were not read, steps unreached\n",
+               (who != NULL) ? who : "script", s->unread);
+        return 1;
+    }
     if (!s->finished) {
         int at = (s->cursor > 0) ? s->step[s->cursor - 1].line : 0;
 

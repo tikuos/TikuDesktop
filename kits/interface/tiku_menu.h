@@ -27,10 +27,11 @@
 #define TIKU_MENU_DEPTH_MAX   4     /**< submenu levels the Tracker builds */
 
 /* Modifier bits; Shift and Cmd have the values of TIKU_MOD_SHIFT and
- * TIKU_MOD_CMD in tiku_event.h. */
+ * TIKU_MOD_CMD in tiku_event.h, and Option does not have TIKU_MOD_OPTION's. */
 #define TIKU_MENU_MOD_SHIFT  0x1u
 #define TIKU_MENU_MOD_CMD    0x2u
 #define TIKU_MENU_MOD_CTRL   0x4u
+#define TIKU_MENU_MOD_OPTION 0x8u
 
 /** @brief One entry.  A separator carries no label and no command. */
 typedef struct tiku_menu_item {

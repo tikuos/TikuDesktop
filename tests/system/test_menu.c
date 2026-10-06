@@ -42,6 +42,34 @@ base_ctx(void)
     return c;
 }
 
+/** @brief Draw a one-item menu, Get info with I and @p mods, and sum its
+ *         pixels. */
+static unsigned
+drawn_sum(unsigned mods)
+{
+    tiku_menu_t m;
+    tiku_surface_t *s;
+    unsigned sum = 0u;
+    int x, y;
+
+    memset(&m, 0, sizeof m);
+    tiku_menu_clear(&m);
+    (void)tiku_menu_add(&m, "Get info", TIKU_TRK_CMD_GET_INFO, 'I', mods, 1);
+    tiku_menu_measure(&m);
+    s = tiku_surface_new(m.width + 20, m.height + 20, 0);
+    if (s == NULL) {
+        return 0u;
+    }
+    tiku_menu_draw(&m, s, (tiku_rect_t){ 0, 0, m.width, m.height });
+    for (y = 0; y < s->h; y++) {
+        for (x = 0; x < s->w; x++) {
+            sum = sum * 31u + (unsigned)tiku_peek(s, x, y);
+        }
+    }
+    tiku_surface_free(s);
+    return sum;
+}
+
 int
 main(void)
 {
@@ -103,6 +131,16 @@ main(void)
               "and the seam between items belongs to neither");
         check(tiku_menu_item_at(&m, f, 5, 50) == -1,
               "a point outside the frame misses");
+    }
+
+    printf("\nshortcut marks\n");
+    {
+        unsigned plain = drawn_sum(TIKU_MENU_MOD_CMD);
+        unsigned option = drawn_sum(TIKU_MENU_MOD_CMD | TIKU_MENU_MOD_OPTION);
+        unsigned shift = drawn_sum(TIKU_MENU_MOD_CMD | TIKU_MENU_MOD_SHIFT);
+
+        check(option != plain, "an Option shortcut draws a mark");
+        check(option != shift, "and the mark is not the Shift mark");
     }
 
     printf("\nlive relabelling: the nine that change with Shift\n");
@@ -556,7 +594,7 @@ main(void)
          * their enablement are facts the BUILDER knows and the shortcut
          * table does not -- and a table that relabels every row it walks
          * writes the empty string over a name it has never heard of and
-         * turns a deliberately greyed row back on.
+         * turns a row the builder greyed back on.
          */
         tiku_menu_t m;
         tiku_trk_sc_ctx_t c;

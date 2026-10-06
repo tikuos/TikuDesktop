@@ -27,7 +27,7 @@
 #include <strings.h>
 #include <sys/stat.h>
 
-/** @brief The most steps a script holds; the lines after that are not read. */
+/** @brief The most steps a script holds; a script with more fails. */
 #define SC_MAX_STEPS 512
 /** @brief The room for a step's first string, and for a note. */
 #define SC_TEXT_MAX  256
@@ -80,6 +80,8 @@ struct tiku_trk_script {
     char      note[SC_TEXT_MAX];        /**< what the next check is for  */
     int       passes, fails;            /**< checks passed and failed    */
     int       finished;                 /**< quit, or the last step, ran */
+    int       unread;                   /**< the first line past the
+                                             table, or 0                 */
 };
 
 

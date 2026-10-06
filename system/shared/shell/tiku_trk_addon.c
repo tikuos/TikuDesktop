@@ -117,6 +117,18 @@ before(const tiku_trk_addon_t *a, const tiku_trk_addon_t *b,
     return strcmp(a->name, b->name) < 0;
 }
 
+/** @brief @p mods, in the key handler's bits (0x1 Option, 0x2 Command), as
+ *         TIKU_MENU_MOD_* bits. */
+static unsigned
+menu_mods(unsigned mods)
+{
+    unsigned m = 0u;
+
+    if (mods & 0x1u) m |= TIKU_MENU_MOD_OPTION;
+    if (mods & 0x2u) m |= TIKU_MENU_MOD_CMD;
+    return m;
+}
+
 int
 tiku_trk_addons_build_menu(const tiku_trk_addons_t *a, const char *const *types,
                            int ntypes, tiku_menu_t *menu, int base)
@@ -134,7 +146,7 @@ tiku_trk_addons_build_menu(const tiku_trk_addons_t *a, const char *const *types,
     for (i = 0; i < a->count && menu->count < TIKU_MENU_ITEMS_MAX; i++) {
         const tiku_trk_addon_t *x = &a->item[order[i]];
         (void)tiku_menu_add(menu, x->name, base + order[i], x->key,
-                                x->mods, 1);
+                                menu_mods(x->mods), 1);
     }
     return menu->count;
 }

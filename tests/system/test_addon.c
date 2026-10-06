@@ -11,7 +11,14 @@ int main(void) {
     tiku_trk_addons_register(&a, "Generic", "/bin/true", "*", 'g');
     tiku_trk_addons_register(&a, "Writer", "/bin/true", "text/plain", 'w');
     if (tiku_trk_addons_build_menu(&a, types, 1, &m, 1000) != 2 ||
-        m.item[0].label[0] != 'W' || m.item[0].mods != 0x3u) return 1;
+        m.item[0].label[0] != 'W') return 1;
+    /* Shown as Option and Command, the chord the key handler runs it on,
+     * with no Shift mark. */
+    if (m.item[0].mods != (TIKU_MENU_MOD_CMD | TIKU_MENU_MOD_OPTION) ||
+        (m.item[0].mods & TIKU_MENU_MOD_SHIFT) != 0u) {
+        puts("[FAIL] the Add-ons menu shows Option and Command, not Shift");
+        return 1;
+    }
     if (tiku_trk_addons_rebind(&a, "Writer=x\n") != 1 || m.item[0].shortcut != 'w') return 1;
     tiku_trk_addons_build_menu(&a, types, 1, &m, 1000);
     if (m.item[0].shortcut != 'x') return 1;

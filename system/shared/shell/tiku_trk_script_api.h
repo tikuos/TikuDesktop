@@ -66,6 +66,8 @@ typedef struct {
                                                  * NEXT                  */
     const char    **paths;                      /* the npath paths named */
     int             npath;
+    const char     *pathv[8];                   /* what parse points
+                                                 * paths at              */
 } tiku_trk_req_t;
 
 /** @brief What came back. */

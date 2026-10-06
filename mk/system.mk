@@ -18,8 +18,8 @@
 # Separate paths rather than one path built two ways: a flag that changes
 # no timestamp would leave an instrumented binary under the shipping name,
 # which is the exact accident this split exists to stop.  The objects are
-# shared because the only source that reads TRK_SCRIPT_ENABLE is the stub,
-# which the development flavour does not link.
+# shared because no source is compiled differently for the two: they differ
+# only in linking the stub or the engine.
 #
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 

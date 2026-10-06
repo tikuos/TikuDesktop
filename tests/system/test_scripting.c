@@ -60,7 +60,7 @@ main(void)
     tiku_trk_poseview_t *v;
     char dir[] = "/tmp/trk_scr";
     tiku_trk_rep_t r;
-    char p0[600], p1[600];
+    char p0[600], p1[600], p2[600];
 
     (void)system("rm -rf /tmp/trk_scr");
     (void)mkdir(dir, 0755);
@@ -99,6 +99,7 @@ main(void)
     check(r.nresult == 3, "PVK-050", "'get Entry' returns them all");
     snprintf(p0, sizeof p0, "%s", r.result[0]);
     snprintf(p1, sizeof p1, "%s", r.result[1]);
+    snprintf(p2, sizeof p2, "%s", r.result[2]);
     r = run(v, "get Entry 1");
     check(r.error == TIKU_TRK_ERR_OK && strcmp(r.result[0], p1) == 0,
           "PVK-050", "an index picks one out, in the CURRENT order");
@@ -156,6 +157,18 @@ main(void)
         r = run(v, "count Selection");
         check(r.count == 1, "PVK-051", "while 'set' replaces it");
     }
+    {
+        char line[1300];
+
+        snprintf(line, sizeof line, "set Selection %s %s", p0, p2);
+        r = run(v, line);
+        check(r.error == TIKU_TRK_ERR_OK && r.count == 2, "PVK-051",
+              "'set' with two paths answers two");
+        r = run(v, "get Selection");
+        check(r.nresult == 2 && strcmp(r.result[0], p0) == 0 &&
+              strcmp(r.result[1], p2) == 0, "PVK-051",
+              "and selects both paths it names");
+    }
     r = run(v, "delete Selection");
     r = run(v, "count Selection");
     check(r.count == 0, "PVK-051", "and 'delete Selection' clears it");
@@ -166,13 +179,18 @@ main(void)
           strcmp(r.result[0], p0) == 0, "PVK-052",
           "'execute Entry' resolves what to open, by index");
     {
-        char line[700];
+        char line[1300];
 
         snprintf(line, sizeof line, "delete Entry %s", p1);
         r = run(v, line);
         check(r.error == TIKU_TRK_ERR_OK && r.nresult == 1, "PVK-052",
               "'delete Entry' resolves what to TRASH -- naming it, so the "
               "caller trashes rather than destroys");
+        snprintf(line, sizeof line, "delete Entry %s %s", p0, p2);
+        r = run(v, line);
+        check(r.error == TIKU_TRK_ERR_OK && r.nresult == 2 &&
+              strcmp(r.result[0], p0) == 0 && strcmp(r.result[1], p2) == 0,
+              "PVK-052", "'delete Entry' with two paths names each once");
     }
     r = run(v, "execute Entry 9");
     check(r.error == TIKU_TRK_ERR_BAD_INDEX, "PVK-054",

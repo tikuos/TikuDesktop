@@ -27,8 +27,8 @@ tiku_trk_script_open(const char *path)
 {
     fprintf(stderr,
             "tracker: this build has no script engine (-script %s "
-            "refused).\ntracker: build the development flavour with "
-            "TRK_SCRIPT_ENABLE=1 -- see tests/shell/run.sh.\n",
+            "refused).\ntracker: scripts run under build/dev/TikuDesktop, "
+            "which make all builds; see tests/integration/shell/run.sh.\n",
             (path != NULL) ? path : "");
     return NULL;
 }

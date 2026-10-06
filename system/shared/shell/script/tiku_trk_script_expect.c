@@ -81,6 +81,9 @@ sc_pump_file_state(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
  * @brief Run a Desktop check: expect-desk-selected, its -name form, and
  *        expect-desk-icon and expect-no-desk-icon.
  *
+ * The icon checks look up the name with pose_desk_at, the Desktop's poses
+ * only, or with pose_at when the shell sets no pose_desk_at.
+ *
  * @return 1 for a step of this group, 0 for another group's.
  */
 int
@@ -108,23 +111,29 @@ sc_pump_desktop(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         return 1;
     case OP_EXPECT_NO_DESKICON: {
         int px = 0, py = 0, got = 0;
+        int (*at)(void *, const char *, int *, int *) =
+            (st != NULL && st->pose_desk_at != NULL) ? st->pose_desk_at
+            : (st != NULL) ? st->pose_at : NULL;
 
-        if (st != NULL && st->pose_at != NULL) {
-            got = st->pose_at(st->pose_ctx, cur->text, &px, &py);
+        if (at != NULL) {
+            got = at(st->pose_ctx, cur->text, &px, &py);
         }
         sc_verdict(s, !got, "gone from the Desktop:", cur->text);
         return 1;
     }
     case OP_EXPECT_DESKICON: {
         int px = 0, py = 0, got = 0;
-        char at[64];
+        int (*at)(void *, const char *, int *, int *) =
+            (st != NULL && st->pose_desk_at != NULL) ? st->pose_desk_at
+            : (st != NULL) ? st->pose_at : NULL;
+        char said[64];
 
-        if (st != NULL && st->pose_at != NULL) {
-            got = st->pose_at(st->pose_ctx, cur->text, &px, &py);
+        if (at != NULL) {
+            got = at(st->pose_ctx, cur->text, &px, &py);
         }
-        snprintf(at, sizeof at, "%s %s", cur->text,
+        snprintf(said, sizeof said, "%s %s", cur->text,
                  got ? "is on the Desktop" : "is not there");
-        sc_verdict(s, got, "desktop:", at);
+        sc_verdict(s, got, "desktop:", said);
         return 1;
     }
     default:

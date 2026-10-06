@@ -116,9 +116,11 @@ tiku_trk_script_parse(const char *line, tiku_trk_req_t *req,
             if (store != NULL) {
                 for (i = 2; i < n && i - 2 < 8; i++) {
                     snprintf(store[i - 2], TIKU_PATH_MAX, "%s", w[i]);
+                    req->pathv[i - 2] = store[i - 2];
                 }
                 req->npath = n - 2;
                 req->path = store[0];
+                req->paths = req->pathv;
             }
         }
     }
