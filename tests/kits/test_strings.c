@@ -168,6 +168,63 @@ main(void)
     tiku_strings_reset();
 
     /*
+     * A '*' width or precision takes an int argument, and a length
+     * modifier changes the argument's type, so a line that adds either
+     * reads arguments the English line does not pass.
+     */
+    p = plant("<strings>\n"
+              "  <string name=\"prefs.deskbar.dock_n\">Quai : %lld</string>\n"
+              "  <string name=\"status.selected\">%*d/%d choisis</string>\n"
+              "  <string name=\"alert.msg.exists_here\">%ls existe</string>\n"
+              "  <string name=\"alert.msg.exists_replace\">"
+              "%.*s existe</string>\n"
+              "</strings>\n");
+    (void)(p != NULL && tiku_strings_load_file(p));
+    check(strcmp(tiku_str("prefs.deskbar.dock_n"), "Dock: %d") == 0,
+          "a translation that turns %d into %lld is refused");
+    check(strcmp(tiku_str("status.selected"), "%d/%d selected") == 0,
+          "a translation that adds a * width is refused");
+    check(strstr(tiku_str("alert.msg.exists_here"), "%.80s") != NULL,
+          "a translation that turns %s into %ls is refused");
+    check(strstr(tiku_str("alert.msg.exists_replace"), "%.64s") != NULL,
+          "a translation that adds a * precision is refused");
+    if (p != NULL) {
+        (void)remove(p);
+    }
+    tiku_strings_reset();
+
+    /* A specifier longer than the signature's buffer is cut short and
+     * refused, without writing past the buffer. */
+    p = plant("<strings>\n"
+              "  <string name=\"prefs.deskbar.dock_n\">Quai : "
+              "%****************************************d</string>\n"
+              "</strings>\n");
+    (void)(p != NULL && tiku_strings_load_file(p));
+    check(strcmp(tiku_str("prefs.deskbar.dock_n"), "Dock: %d") == 0,
+          "a specifier longer than the signature is refused");
+    if (p != NULL) {
+        (void)remove(p);
+    }
+    tiku_strings_reset();
+
+    /* Flags, a fixed width and a fixed precision take no argument. */
+    p = plant("<strings>\n"
+              "  <string name=\"alert.msg.exists_here\">"
+              "&quot;%-20s&quot; existe ici.</string>\n"
+              "  <string name=\"prefs.deskbar.dock_n\">Quai : %03d</string>\n"
+              "</strings>\n");
+    (void)(p != NULL && tiku_strings_load_file(p));
+    check(strcmp(tiku_str("alert.msg.exists_here"),
+                 "\"%-20s\" existe ici.") == 0,
+          "a translation that changes only flags and widths is taken");
+    check(strcmp(tiku_str("prefs.deskbar.dock_n"), "Quai : %03d") == 0,
+          "and so is one that pads a number");
+    if (p != NULL) {
+        (void)remove(p);
+    }
+    tiku_strings_reset();
+
+    /*
      * A catalogue built to hurt.  These files arrive by being dropped in
      * a folder; an unterminated tag, an entity with no semicolon, a value
      * that never closes -- each must be read without running off the end,

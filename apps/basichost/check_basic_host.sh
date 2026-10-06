@@ -22,6 +22,16 @@ printf '10 GOTO 10\n' > "$prog"
 if [ $? -eq 3 ]; then say PASS "an endless program is stopped and SAYS so, rather than sat in"
 else say FAIL "an endless program was not refused"; fails=1; fi
 
+# A batch run has no keys: INPUT waits until the run is stopped, and the
+# wait sleeps rather than spinning.  times prints the children's CPU last.
+printf '10 PRINT "before"\n20 INPUT "n"; A\n30 PRINT "after"\n' > "$prog"
+cpu=$( ( "$tool" "$prog" "$box" >/dev/null 2>&1 & pid=$!
+         sleep 3; kill "$pid"; wait "$pid"; times ) 2>/dev/null | tail -n 1)
+if printf '%s\n' "$cpu" |
+   awk '{ gsub(/[ms]/, " "); exit !($1*60 + $2 + $3*60 + $4 < 0.5) }'; then
+    say PASS "INPUT in a batch run waits without spinning"
+else say FAIL "INPUT in a batch run used $cpu of CPU in 3 s"; fails=1; fi
+
 rm -rf "$box"
 if [ $fails -ne 0 ]; then echo; echo FAILURES; exit 1; fi
 echo; echo "the interpreter keeps its word on the host"

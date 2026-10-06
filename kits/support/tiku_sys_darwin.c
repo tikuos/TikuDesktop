@@ -13,6 +13,7 @@
  */
 
 #include "tiku_sys.h"
+#include "tiku_sys_pinned.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -255,17 +256,10 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
 /*
  * The pinned processes.  A handle is a kqueue watching the process's
  * exit, close-on-exec and the caller's to close.  The process is known by
- * its pid and its start time, which a later process given the same pid
- * does not share.  A slot is freed only by tiku_sys_process_kill(), not by
- * closing the handle.
+ * its pid and its start time in microseconds, which a later process given
+ * the same pid does not share.
  */
-#define PINNED_MAX 64
-
-static struct {
-    int       handle;           /* the kqueue, and what the caller holds */
-    pid_t     pid;              /* the process pinned */
-    long long started;          /* microseconds, from the process itself */
-} pinned[PINNED_MAX];
+static tiku_sys_pinned_t pinned[TIKU_SYS_PINNED_MAX];
 
 /** @brief When @p pid began, or -1 when there is no such process now. */
 static long long
@@ -290,7 +284,7 @@ tiku_sys_process_pin(int fd, long *pid)
     socklen_t psize = sizeof peer;
     long long start;
     struct kevent watch;
-    int slot, kq;
+    int kq;
 
     if (getsockopt(fd, SOL_LOCAL, LOCAL_PEERCRED, &cred, &size) != 0) {
         return -1;
@@ -302,13 +296,6 @@ tiku_sys_process_pin(int fd, long *pid)
     if (cred.cr_version != XUCRED_VERSION || cred.cr_uid != geteuid() ||
         peer <= 1 || peer == getpid()) {
         errno = EPERM;
-        return -1;
-    }
-    for (slot = 0; slot < PINNED_MAX && pinned[slot].handle > 0; slot++) {
-        ;
-    }
-    if (slot == PINNED_MAX) {
-        errno = ENOMEM;
         return -1;
     }
     start = began(peer);
@@ -330,9 +317,11 @@ tiku_sys_process_pin(int fd, long *pid)
         errno = keep;
         return -1;
     }
-    pinned[slot].handle = kq;
-    pinned[slot].pid = peer;
-    pinned[slot].started = start;
+    if (tiku_sys_pinned_add(pinned, kq, (long)peer, start) != 0) {
+        (void)close(kq);
+        errno = ENOMEM;
+        return -1;
+    }
     if (pid != NULL) {
         *pid = (long)peer;
     }
@@ -342,30 +331,25 @@ tiku_sys_process_pin(int fd, long *pid)
 int
 tiku_sys_process_kill(int handle)
 {
-    int i;
+    tiku_sys_pinned_t *row = tiku_sys_pinned_find(pinned, handle);
 
-    for (i = 0; i < PINNED_MAX; i++) {
-        if (pinned[i].handle == handle && handle > 0) {
-            break;
-        }
-    }
-    if (i == PINNED_MAX) {
+    if (row == NULL) {
         /* A handle this file did not issue, such as a copy of one:
          * nothing is killed. */
         errno = ESRCH;
         return -1;
     }
-    if (began(pinned[i].pid) != pinned[i].started) {
+    if (began((pid_t)row->pid) != row->started) {
         /* The pinned process has exited, and its pid may now name
          * another. */
-        pinned[i].handle = 0;
+        row->handle = 0;
         errno = ESRCH;
         return -1;
     }
-    if (kill(pinned[i].pid, SIGKILL) != 0) {
+    if (kill((pid_t)row->pid, SIGKILL) != 0) {
         return -1;
     }
-    pinned[i].handle = 0;
+    row->handle = 0;
     return 0;
 }
 

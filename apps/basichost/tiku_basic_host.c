@@ -29,6 +29,9 @@ static int host_prompted;
 static int host_spoke;
 /* --interactive: stdin streams to the REPL; set once stdin has ended. */
 static int host_stream, host_eof;
+/* A batch run: nonzero while INPUT's "? " is the last thing printed and
+ * the clock has not been read since, so INPUT is the one polling. */
+static int host_asked;
 
 void
 tiku_basic_host_printf(const char *fmt, ...)
@@ -40,6 +43,7 @@ tiku_basic_host_printf(const char *fmt, ...)
     (void)vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
     if (host_stream) { fputs(buf, stdout); fflush(stdout); return; }
+    host_asked = (strcmp(buf, "? ") == 0);
     /* A batch run prints only what the program says: the REPL's prompt
      * and banner are dropped, and the prompt's return marks the end of
      * the program. */
@@ -67,6 +71,7 @@ tiku_clock_time(void)
 {
     struct timespec ts;
 
+    host_asked = 0;     /* a timed wait, such as DELAY, is not INPUT */
     (void)clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
@@ -78,15 +83,23 @@ tiku_clock_seconds(void)
     return (unsigned long)(tiku_clock_time() / 1000u);
 }
 
-/* The console.  A batch run has no keys waiting, and INPUT is to answer
- * end-of-file there.  With --interactive stdin is the keyboard, and its
- * end arrives as Ctrl-C (3), which releases a waiting INPUT. */
+/* The console.  A batch run has no keys: INPUT waits until the run is
+ * stopped, sleeping 10 ms per poll rather than spinning.  With
+ * --interactive stdin is the keyboard, and its end arrives as Ctrl-C (3),
+ * which releases a waiting INPUT. */
 #include <poll.h>
 #include <unistd.h>
 int tiku_shell_io_rx_ready(void)
 {
     struct pollfd fd = { STDIN_FILENO, POLLIN, 0 };
-    return host_stream && poll(&fd, 1, 0) > 0;
+    if (!host_stream) {
+        if (host_asked) {
+            struct timespec nap = { 0, 10000000L };
+            (void)nanosleep(&nap, NULL);
+        }
+        return 0;
+    }
+    return poll(&fd, 1, 0) > 0;
 }
 int tiku_shell_io_getc(void)
 {

@@ -112,7 +112,8 @@ tiku_strings_builtin_count(void)
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief The sequence of conversions in @p fmt, e.g. "ds" for "%d of %s".
+ * @brief The arguments @p fmt reads, e.g. "ds" for "%d of %s" and "*ls"
+ *        for "%.*ls": each '*', length modifier and conversion, in order.
  *
  * A translated line is used as a printf format with the English line's
  * arguments; put() lets it in only when the two sequences match.
@@ -134,8 +135,12 @@ format_sig(const char *fmt, char *out, size_t max)
                 continue;
             }
             /* past the flags, width, precision and length to the
-             * conversion */
+             * conversion; a '*' and a length modifier are kept, leaving
+             * room for the conversion */
             while (*fmt != '\0' && strchr("-+ #0123456789.*hlLqjzt", *fmt)) {
+                if (strchr("*hlLqjzt", *fmt) != NULL && at + 2 < max) {
+                    out[at++] = *fmt;
+                }
                 fmt++;
             }
             if (*fmt != '\0') {

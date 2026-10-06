@@ -22,7 +22,8 @@ void tiku_basic_host_printf(const char *fmt, ...);
 #define SH_DIM    ""
 #define SH_RST    ""
 #define SHELL_POLL_TICKS 1
-/** @brief Whether a key is waiting on stdin; always 0 in a batch run. */
+/** @brief Whether a key is waiting on stdin; always 0 in a batch run,
+ *         after a 10 ms sleep when INPUT is the one asking. */
 int  tiku_shell_io_rx_ready(void);
 /** @brief The next byte of stdin, Ctrl-C (3) once it has ended, or -1 in
  *         a batch run. */
