@@ -339,6 +339,9 @@ test_builtin_addons_CFLAGS := -ffunction-sections -fdata-sections
 test_builtin_addons_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
     system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) $(SCRIPT_STUB)
 test_builtin_addons_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
+test_port_label_CFLAGS := -ffunction-sections -fdata-sections
+test_port_label_SRCS := $(test_board_jobs_SRCS)
+test_port_label_LDLIBS := $(test_board_jobs_LDLIBS)
 # The desk's key responder as linked, its file included by the test.
 test_switcher_keys_CFLAGS := -ffunction-sections -fdata-sections \
     -Wno-unused-parameter
