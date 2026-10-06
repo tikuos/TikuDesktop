@@ -137,12 +137,20 @@ desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
     int i, n = 0, any = 0, k;
 
     *complete = 1;
-    for (i = 0; i < TIKU_MOUNT_MAX && n < max; i++) {
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
         tiku_backend_t *b = tiku_mount_at(app->backend, i);
         desktop_wire_t *w = &app->wire[i];
         int got, mine = 1;
 
         if (b == NULL) {
+            continue;
+        }
+        if (n >= max) {
+            /* No room: a board's answer is dropped, so the whole answer
+             * is incomplete.  A local store is not asked. */
+            if (desktop_jobs_is_board(b) && w->answered && w->n != 0) {
+                *complete = 0;
+            }
             continue;
         }
         if (desktop_jobs_is_board(b)) {
@@ -160,7 +168,7 @@ desktop_wire_changes(desktop_t *app, tiku_model_change_t *out, int max,
                 out[n + k] = w->ch[k];
                 out[n + k].id = tiku_mount_tag_id(i, out[n + k].id);
             }
-            mine = w->complete;
+            mine = w->complete && got == w->n;
         } else {
             /* A local store is asked now, on the loop. */
             if (b->ops->changes == NULL) {

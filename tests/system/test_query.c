@@ -605,6 +605,16 @@ main(void)
         n = tiku_query_list(st, names, 8);
         check(n == 1 && strcmp(names[0], "big memory") == 0,
               "forgetting removes it from the list");
+        (void)tiku_query_save(&a, "Old Logs", st);
+        (void)tiku_query_save(&a, "Logs", st);
+        n = tiku_query_list(st, names, 8);
+        check(n == 3 && strcmp(names[0], "Logs") == 0,
+              "D-132: a name inside an indexed name is listed too");
+        (void)tiku_query_save(&a, "Logs", st);
+        n = tiku_query_list(st, names, 8);
+        check(n == 3, "and saving it again does not list it twice");
+        (void)tiku_query_forget("Logs", st);
+        (void)tiku_query_forget("Old Logs", st);
 
         /* What a record has to carry to be re-openable and sweepable. */
         a.kind = TIKU_QREC_TEMPLATE;

@@ -12,8 +12,9 @@
  * carry the key the unmount cancels and closes under.  Then a board dials
  * in while every channel slot is held, and no remote session may be left
  * on the descriptor its refused channel closed.  Last, a board on a serial
- * port is disconnected and its port is offered to connect again.  The
- * workers are replaced by a queue the test runs by hand.
+ * port is disconnected and its port is offered to connect again, and two
+ * boards' changes that exceed the caller's buffer are reported incomplete.
+ * The workers are replaced by a queue the test runs by hand.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -312,6 +313,94 @@ the_disconnect(desktop_t *app)
     close(sv[1]);
 }
 
+/** @brief A board's changes, as its worker would have asked them. */
+static int
+stand_in_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
+                 int *complete)
+{
+    (void)b;
+    (void)out;
+    (void)max;
+    *complete = 1;
+    return 0;
+}
+
+static const tiku_backend_ops_t STAND_IN_OPS = {
+    .name = "tiku",
+    .changes = stand_in_changes
+};
+
+/** @brief The slot @p b is mounted in, or -1. */
+static int
+slot_of(desktop_t *app, const tiku_backend_t *b)
+{
+    int i;
+
+    for (i = 0; i < TIKU_MOUNT_MAX; i++) {
+        if (tiku_mount_at(app->backend, i) == b) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** @brief Give the board in @p slot an answer of @p n changes. */
+static void
+answer(desktop_t *app, int slot, int n)
+{
+    int k;
+
+    app->wire[slot].answered = 1;
+    app->wire[slot].complete = 1;
+    app->wire[slot].n = n;
+    for (k = 0; k < n; k++) {
+        app->wire[slot].ch[k].id = (uint64_t)(k + 1);
+        app->wire[slot].ch[k].op = TIKU_CH_CREATED;
+    }
+}
+
+/** @brief Two boards' answers that do not fit the caller's buffer are
+ *         reported incomplete (D-138). */
+static void
+the_wire_buffer(desktop_t *app)
+{
+    tiku_backend_t one = { &STAND_IN_OPS, "", NULL };
+    tiku_backend_t two = { &STAND_IN_OPS, "", NULL };
+    tiku_model_change_t out[4];
+    int s1, s2, n, complete;
+
+    printf("changes across boards that exceed the buffer (D-138)\n");
+    if (tiku_mount_add(app->backend, "/devices/one", &one, 0) != 0 ||
+        tiku_mount_add(app->backend, "/devices/two", &two, 0) != 0) {
+        check(0, "two stand-in boards are mounted");
+        return;
+    }
+    s1 = slot_of(app, &one);
+    s2 = slot_of(app, &two);
+    answer(app, s1, 3);
+    answer(app, s2, 2);
+    n = desktop_wire_changes(app, out, 4, &complete);
+    check(n == 4 && complete == 0,
+          "five changes into a buffer of four: the answer is incomplete");
+    answer(app, s1, 6);
+    answer(app, s2, 0);
+    n = desktop_wire_changes(app, out, 4, &complete);
+    check(n == 4 && complete == 0,
+          "one board's six changes into four: the answer is incomplete");
+    answer(app, s1, 4);
+    answer(app, s2, 1);
+    n = desktop_wire_changes(app, out, 4, &complete);
+    check(n == 4 && complete == 0,
+          "a board after the buffer is full: the answer is incomplete");
+    answer(app, s1, 2);
+    answer(app, s2, 2);
+    n = desktop_wire_changes(app, out, 4, &complete);
+    check(n == 4 && complete == 1, "four changes into four are complete");
+    memset(app->wire, 0, sizeof app->wire);
+    (void)tiku_mount_remove(app->backend, "/devices/one");
+    (void)tiku_mount_remove(app->backend, "/devices/two");
+}
+
 /** @brief Whether @p fd is an open descriptor. */
 static int
 is_open(int fd)
@@ -388,6 +477,7 @@ main(void)
     the_board_jobs(app);
     the_full_slots(app);
     the_disconnect(app);
+    the_wire_buffer(app);
     tiku_backend_close(app->backend);
     free(app);
     printf("%s\n", fails ? "FAILURES" : "all passed");

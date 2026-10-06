@@ -1469,6 +1469,28 @@ tiku_query_serialise(const tiku_query_t *q, char *buf, size_t max)
     return serialise(q, buf, max);
 }
 
+/* 1 when one line of the newline-separated index is exactly name. */
+static int
+index_has(const char *index, const char *name)
+{
+    size_t want = strlen(name);
+    const char *p;
+
+    for (p = index; *p != '\0'; ) {
+        const char *nl = strchr(p, '\n');
+        size_t len = (nl != NULL) ? (size_t)(nl - p) : strlen(p);
+
+        if (len == want && strncmp(p, name, len) == 0) {
+            return 1;
+        }
+        if (nl == NULL) {
+            break;
+        }
+        p = nl + 1;
+    }
+    return 0;
+}
+
 int
 tiku_query_save(const tiku_query_t *q, const char *name,
                     struct tiku_store *store)
@@ -1495,7 +1517,7 @@ tiku_query_save(const tiku_query_t *q, const char *name,
         n = 0;
     }
     index[n] = '\0';
-    if (strstr(index, name) == NULL) {
+    if (!index_has(index, name)) {
         /* Newest first. */
         char merged[2048];
 

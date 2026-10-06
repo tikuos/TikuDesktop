@@ -29,6 +29,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <unistd.h>
 
 /** @brief The leaf of a mount point, which is the name a volume shows;
  *         "/" is "Boot". */
@@ -612,12 +613,37 @@ tiku_volwatch_poll(tiku_volwatch_t *w, tiku_volchange_t *out,
     return n;
 }
 
+int
+tiku_partition_carves(const char *disk, const char *part)
+{
+    size_t ld = strlen(disk);
+    const char *tail;
+
+    if (ld == 0u || strncmp(part, disk, ld) != 0) {
+        return 0;
+    }
+    tail = part + ld;
+    if (disk[ld - 1] >= '0' && disk[ld - 1] <= '9') {
+        if (*tail != 'p' && *tail != 's') {
+            return 0;
+        }
+        tail++;
+    }
+    if (*tail == '\0') {
+        return 0;
+    }
+    for (; *tail != '\0'; tail++) {
+        if (*tail < '0' || *tail > '9') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /**
- * @brief Drop any entry whose name another entry's name extends.
- *
- * Both hosts name a partition by extending its disk's name (sda and sda1,
- * disk2 and disk2s5), and a disk carved into partitions is not itself
- * mountable.
+ * @brief Drop any entry another entry is a partition of, by
+ *        tiku_partition_carves(): a disk carved into partitions is not
+ *        itself mountable.
  *
  * @return how many are left.
  */
@@ -628,10 +654,7 @@ drop_carved(tiku_partition_t *out, int n)
 
     for (i = 0; i < n; i++) {
         for (j = 0; j < n; j++) {
-            size_t li = strlen(out[i].name);
-
-            if (i != j && strncmp(out[j].name, out[i].name, li) == 0 &&
-                strlen(out[j].name) > li) {
+            if (i != j && tiku_partition_carves(out[i].name, out[j].name)) {
                 out[i] = out[--n];
                 i--;
                 break;
@@ -834,6 +857,36 @@ tiku_partitions_scan(tiku_partition_t *out, int max)
 #endif
 
 
+#ifndef __APPLE__
+/*
+ * The filesystems a partition is tried as, in turn.  mount(2) loads a
+ * filesystem's module when asked for it by name, and refuses a superblock
+ * that is not its own with EINVAL.
+ */
+static const char *const FS_TYPES[] = {
+    "ext4", "btrfs", "xfs", "exfat", "ntfs3", "ntfs", "vfat", "f2fs",
+    "iso9660", "udf", "hfsplus"
+};
+
+/** @brief Mount @p dev at @p at as each of FS_TYPES until one takes it.
+ *  @return 0, or -1 with errno from the last attempt. */
+static int
+mount_any_type(const char *dev, const char *at)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof FS_TYPES / sizeof FS_TYPES[0]; i++) {
+        if (mount(dev, at, FS_TYPES[i], 0, NULL) == 0) {
+            return 0;
+        }
+        if (errno != EINVAL && errno != ENODEV) {
+            return -1;          /* not a question of the type */
+        }
+    }
+    return -1;
+}
+#endif
+
 int
 tiku_volume_mount(const char *devname, char *why, size_t max)
 {
@@ -846,11 +899,27 @@ tiku_volume_mount(const char *devname, char *why, size_t max)
         return -1;
     }
     snprintf(dev, sizeof dev, "/dev/%s", devname);
-    /* mount(2) checks privilege first, so an unprivileged caller gets
-     * EPERM, which @p why words as needing the system's leave. */
+    /* An unprivileged caller gets EPERM from mount(2) or EACCES from
+     * mkdir(2) under /mnt, which @p why words as needing the system's
+     * leave. */
 #ifndef __APPLE__
-    if (mount(dev, "/mnt", "ext4", 0, NULL) == 0) {
-        return 0;
+    {
+        char at[96];
+        int made, err;
+
+        /* Each partition has its own directory under /mnt. */
+        snprintf(at, sizeof at, "/mnt/%s", devname);
+        made = mkdir(at, 0755) == 0;
+        if (made || errno == EEXIST) {
+            if (mount_any_type(dev, at) == 0) {
+                return 0;
+            }
+            err = errno;
+            if (made) {
+                (void)rmdir(at);
+            }
+            errno = err;
+        }
     }
 #else
     (void)dev;
@@ -859,7 +928,7 @@ tiku_volume_mount(const char *devname, char *why, size_t max)
     }
 #endif
     if (why != NULL) {
-        snprintf(why, max, (errno == EPERM)
+        snprintf(why, max, (errno == EPERM || errno == EACCES)
                      ? "Mounting \"%.40s\" needs the system's leave."
                      : "\"%.40s\" could not be mounted.", devname);
     }

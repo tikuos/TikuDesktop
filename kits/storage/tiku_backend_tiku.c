@@ -229,6 +229,10 @@ do_changes(tiku_backend_t *b, tiku_model_change_t *out, int max,
         }
         w++;
     }
+    /* The read drained the ring: records past @p max are gone. */
+    if (w < n && complete != NULL) {
+        *complete = 0;
+    }
     return w;
 }
 

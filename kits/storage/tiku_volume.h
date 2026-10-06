@@ -105,12 +105,22 @@ typedef struct {
 int tiku_partitions_scan(tiku_partition_t *out, int max);
 
 /**
+ * @brief Whether @p part names a partition of the disk @p disk.
+ *
+ * A partition's name is its disk's name and a number, with "p" (Linux) or
+ * "s" (Darwin) between them when the disk's name ends in a digit: sda1,
+ * nvme0n1p2, disk2s5.  sdaa, dm-10 and md10 are not partitions of sda,
+ * dm-1 and md1.
+ */
+int tiku_partition_carves(const char *disk, const char *part);
+
+/**
  * @brief Try to mount @p devname (a kernel partition name).
  *
- * On Linux it is mounted at /mnt as ext4; on macOS the arbitration service
- * picks the filesystem and the place.  Mounting needs the system's leave;
- * a refusal or failure comes back in @p why, worded for a person
- * (CW-034).
+ * On Linux it is mounted at /mnt/<devname>, tried as each common
+ * filesystem in turn; on macOS the arbitration service picks the
+ * filesystem and the place.  Mounting needs the system's leave; a refusal
+ * or failure comes back in @p why, worded for a person (CW-034).
  *
  * @return 0 on success.
  */
