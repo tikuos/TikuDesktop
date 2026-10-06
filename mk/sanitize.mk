@@ -73,7 +73,8 @@ SAN_LEAK_TESTS := test_editdoc_storage test_editdoc_lines test_editdoc \
                   test_circuit_faults test_circuit_drill \
                   test_circuit_gerber test_circuit_stack \
                   test_circuit_job test_circuit_eagle \
-                  test_circuit_gerber_extended test_circuit_viewer
+                  test_circuit_gerber_extended test_circuit_viewer \
+                  $(if $(filter Linux,$(UNAME_S)),test_sys_frames)
 # The timing suite is left out: it times large fixtures, which the
 # sanitizers slow many times over.
 SAN_TESTS += $(SAN_LEAK_TESTS)
@@ -123,6 +124,9 @@ $(SAN)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
 	      -MMD -MP -c -o $@ $<
 $(SAN)/test_vector_faults: $(SAN)/tests/kits/test_vector_faults.o \
         $(SAN)/tests/fixtures/vector_faults.o $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
+$(SAN)/test_sys_frames: $(SAN)/tests/kits/test_sys_frames.o \
+        $(SAN)/kits/support/tiku_sys_linux.o $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 SAN_CIRCUIT_FAULT_OBJS := $(patsubst kits/translation/%.c,\
                               $(SAN)/tests/fixtures/circuit_faults/%.o,\

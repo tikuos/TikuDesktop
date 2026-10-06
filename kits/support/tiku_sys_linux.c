@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <locale.h>
+#include <spawn.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -30,6 +31,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -228,6 +230,107 @@ tiku_sys_self_path(char *out, size_t max)
     return 0;
 }
 
+/**
+ * @brief Copy a frame offset, "+" and an optional "0x" then hex digits up to
+ *        ")", into @p out.
+ * @return 1, or 0 for any other text or one that does not fit.
+ */
+static int
+frame_offset(const char *text, char *out, size_t max)
+{
+    size_t length = strcspn(text, ")"), start = 1;
+
+    if (text[0] != '+' || text[length] != ')' || length >= max) {
+        return 0;
+    }
+    if (text[1] == '0' && (text[2] == 'x' || text[2] == 'X')) {
+        start = 3;
+    }
+    if (length <= start || length - start > sizeof(uintptr_t) * 2) {
+        return 0;
+    }
+    for (size_t i = start; i < length; i++) {
+        if (strchr("0123456789abcdefABCDEF", text[i]) == NULL) {
+            return 0;
+        }
+    }
+    memcpy(out, text, length);
+    out[length] = '\0';
+    return 1;
+}
+
+/** @brief Read addr2line output with the image and offset as arguments. */
+static int
+frame_symbol(char *image, char *offset, char *line, size_t max)
+{
+    int fd[2], status, result = 0;
+    pid_t child, waited;
+    FILE *stream;
+    posix_spawn_file_actions_t actions;
+    char *argv[] = {"addr2line", "-e", image, "-f", "-C", "-p",
+                    offset, NULL};
+
+    if (pipe2(fd, O_CLOEXEC) != 0) {
+        return 0;
+    }
+    /* Keep pipe descriptors separate from the child's standard streams. */
+    for (int i = 0; i < 2; i++) {
+        if (fd[i] <= STDERR_FILENO) {
+            int duplicate = fcntl(fd[i], F_DUPFD_CLOEXEC, 3);
+
+            if (duplicate < 0) {
+                goto close_pipe;
+            }
+            close(fd[i]);
+            fd[i] = duplicate;
+        }
+    }
+    if (posix_spawn_file_actions_init(&actions) != 0) {
+        goto close_pipe;
+    }
+    status = posix_spawn_file_actions_addopen(&actions, STDIN_FILENO,
+                                              "/dev/null", O_RDONLY, 0);
+    if (!status) {
+        status = posix_spawn_file_actions_addopen(&actions, STDERR_FILENO,
+                                                  "/dev/null", O_WRONLY, 0);
+    }
+    if (!status) {
+        status = posix_spawn_file_actions_adddup2(&actions, fd[1],
+                                                  STDOUT_FILENO);
+    }
+    if (!status) {
+        status = posix_spawn_file_actions_addclose(&actions, fd[0]);
+    }
+    if (!status) {
+        status = posix_spawn_file_actions_addclose(&actions, fd[1]);
+    }
+    if (!status) {
+        status = posix_spawnp(&child, argv[0], &actions, NULL, argv, environ);
+    }
+    posix_spawn_file_actions_destroy(&actions);
+    if (status != 0) {
+        goto close_pipe;
+    }
+    close(fd[1]);
+    stream = fdopen(fd[0], "r");
+    if (stream != NULL) {
+        result = fgets(line, (int)max, stream) != NULL;
+        fclose(stream);
+    } else {
+        close(fd[0]);
+    }
+    do {
+        waited = waitpid(child, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    return result && waited == child && WIFEXITED(status) &&
+           WEXITSTATUS(status) == 0;
+
+close_pipe:
+    close(fd[0]);
+    close(fd[1]);
+    return 0;
+}
+
 void
 tiku_sys_frame_name(const char *raw, char *out, size_t max)
 {
@@ -242,17 +345,13 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
      * printed as it is. */
     if (paren != NULL && paren[1] == '+' &&
         strcmp(leaf, "TikuDesktop") == 0) {
-        char image[512], cmd[700], line[160];
-        FILE *p;
+        char image[512], offset[2 * sizeof(uintptr_t) + 4], line[160];
 
         if (tiku_sys_self_path(image, sizeof image) != 0) {
             snprintf(image, sizeof image, "/proc/self/exe");
         }
-        snprintf(cmd, sizeof cmd, "addr2line -e %.500s -f -C -p %.*s "
-                 "2>/dev/null", image,
-                 (int)strcspn(paren + 1, ")"), paren + 1);
-        p = popen(cmd, "r");
-        if (p != NULL && fgets(line, sizeof line, p) != NULL) {
+        if (frame_offset(paren + 1, offset, sizeof offset) &&
+            frame_symbol(image, offset, line, sizeof line)) {
             char *at = strstr(line, " at ");
 
             if (at != NULL) {
@@ -267,11 +366,7 @@ tiku_sys_frame_name(const char *raw, char *out, size_t max)
             } else {
                 snprintf(out, max, "%.119s", line);
             }
-            (void)pclose(p);
             return;
-        }
-        if (p != NULL) {
-            (void)pclose(p);
         }
     }
     if (paren != NULL && paren[1] != '+' && paren[1] != ')') {
