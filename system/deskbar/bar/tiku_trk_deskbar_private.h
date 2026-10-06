@@ -214,6 +214,8 @@ int db_list_y(const tiku_trk_deskbar_t *db);
 int db_tray_y(const tiku_trk_deskbar_t *db);
 int db_tray_h(const tiku_trk_deskbar_t *db);
 int db_tray_top(const tiku_trk_deskbar_t *db);
+int db_list_bottom(const tiku_trk_deskbar_t *db);
+int db_list_first(const tiku_trk_deskbar_t *db);
 int db_trayicons_w(const tiku_trk_deskbar_t *db);
 int db_hclock_w(const tiku_trk_deskbar_t *db);
 int db_trayicon_at(const tiku_trk_deskbar_t *db, int x, int y);
@@ -231,6 +233,7 @@ void db_calendar_shift(tiku_trk_deskbar_t *db, int months, int years);
 int db_win_menu_items(const tiku_trk_deskbar_t *db, int team,
                       const char **items, int *enabled);
 tiku_rect_t db_calendar_rect(const tiku_trk_deskbar_t *db);
+tiku_rect_t db_clock_menu_rect(const tiku_trk_deskbar_t *db);
 tiku_rect_t db_win_menu_rect(const tiku_trk_deskbar_t *db, int rows, int rowh);
 void db_reset_menu_hots(tiku_trk_deskbar_t *db);
 void db_team_action(tiku_trk_deskbar_t *db, int team, unsigned mods, int button,

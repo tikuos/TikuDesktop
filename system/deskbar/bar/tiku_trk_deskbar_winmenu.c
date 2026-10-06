@@ -52,6 +52,22 @@ db_win_menu_items(const tiku_trk_deskbar_t *db, int team, const char **items,
     return 4;
 }
 
+/**
+ * @brief The left edge of a popup @p w wide that opens @p off px left of a
+ *        side-docked bar's left edge.  Beside a bar docked left it opens on
+ *        the bar's right side, mirrored; it never starts left of x 0.
+ */
+static int
+popup_x(const tiku_trk_deskbar_t *db, int off, int w)
+{
+    int x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
+             db->dock == TIKU_TRK_DB_LEFT_MINI)
+                ? db->frame.x + db->frame.w + off - w
+                : db->frame.x - off;
+
+    return (x < 0) ? 0 : x;
+}
+
 /** @brief Where the window menu sits: beside the bar, whichever way it is
  *         docked. */
 tiku_rect_t
@@ -62,7 +78,7 @@ db_win_menu_rect(const tiku_trk_deskbar_t *db, int rows, int rowh)
     m.w = 128;
     m.h = rows * rowh + 4;
     if (tiku_trk_deskbar_vertical(db->dock)) {
-        m.x = db->frame.x - 130;
+        m.x = popup_x(db, 130, m.w);
         m.y = db_list_y(db) + db_team_row();
     } else {
         m.x = db->frame.x + HLEAF_W + 8;
@@ -114,13 +130,26 @@ db_team_action(tiku_trk_deskbar_t *db, int team, unsigned mods, int button,
 tiku_rect_t
 db_calendar_rect(const tiku_trk_deskbar_t *db)
 {
-    tiku_rect_t c = { db->frame.x - 190, 0, 186, 148 };
+    tiku_rect_t c = { 0, 0, 186, 148 };
 
+    c.x = popup_x(db, 190, c.w);
     c.y = db->frame.y + db->frame.h + 4;
     if (db->screen_h > 0 && c.y + c.h > db->screen_h) {
         c.y = db->frame.y + db->frame.h - db_clock_row() - PAD - 4 - c.h;
     }
     return c;
+}
+
+/** @brief Where the clock's four-row menu opens: beside the bar, its
+ *         bottom row level with the clock. */
+tiku_rect_t
+db_clock_menu_rect(const tiku_trk_deskbar_t *db)
+{
+    tiku_rect_t m = { 0, db->frame.y + db->frame.h - db_clock_row() - 32,
+                      170, 4 * 28 };
+
+    m.x = popup_x(db, 130, m.w);
+    return m;
 }
 
 /** @brief Clear every menu's hot row and the pending submenu dwell: no row

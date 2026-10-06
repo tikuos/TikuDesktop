@@ -64,7 +64,8 @@ draw_win_icon(tiku_surface_t *s, int x, int y, int minimized,
 
 /**
  * @brief Where the leaf menu goes: right of the bar when it is docked
- *        left, otherwise left of it, clamped at x 0 (DB-010).
+ *        left, otherwise left of it, clamped at x 0 (DB-010).  It opens
+ *        below the leaf button, or above it on a bottom dock.
  */
 tiku_rect_t
 db_leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
@@ -73,7 +74,9 @@ db_leaf_menu_rect(const tiku_trk_deskbar_t *db, int rowh, int rows)
 
     m.w = 176;
     m.h = rows * rowh + 4;
-    m.y = db->frame.y + db_leaf_row() + 2;
+    m.y = (db->dock == TIKU_TRK_DB_BOTTOM)
+              ? db->frame.y + 2 - m.h
+              : db->frame.y + db_leaf_row() + 2;
     m.x = (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
            db->dock == TIKU_TRK_DB_LEFT_MINI)
           ? db->frame.x + db->frame.w + 2
@@ -154,12 +157,15 @@ tiku_trk_deskbar_release(tiku_trk_deskbar_t *db, int x, int y)
     if (db->settings.show_expander &&
         x > db->frame.x + db->frame.w - EXPANDER_W - 6) {
         ry = db_list_y(db);
-        for (i = 0; i < db->team_count; i++) {
+        for (i = db_list_first(db); i < db->team_count; i++) {
             int at = db->order[i];
             tiku_trk_team_t *t = &db->teams[at];
             int team_h = (db->settings.icon_size + 4 > db_team_row())
                              ? db->settings.icon_size + 4 : db_team_row();
 
+            if (ry + team_h > db_list_bottom(db)) {
+                break;
+            }
             if (y >= ry && y < ry + team_h) {
                 if (at == team) {
                     t->expanded = !t->expanded;
@@ -339,8 +345,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
         }
     }
     if (db->clock_menu_open) {
-        tiku_rect_t m = { db->frame.x - 130, db->frame.y +
-                               db->frame.h - db_clock_row() - 32, 170, 4 * 28 };
+        tiku_rect_t m = db_clock_menu_rect(db);
 
         if (x >= m.x && x < m.x + m.w && y >= m.y + 2 &&
             y < m.y + 2 + 4 * 28) {
@@ -377,10 +382,14 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
             int team_h = (db->settings.icon_size + 4 > db_team_row())
                              ? db->settings.icon_size + 4 : db_team_row();
 
-            for (i = 0; i < db->team_count && tip_y < 0; i++) {
+            for (i = db_list_first(db); i < db->team_count && tip_y < 0;
+                 i++) {
                 tiku_trk_team_t *t = &db->teams[db->order[i]];
                 int j;
 
+                if (ry + team_h > db_list_bottom(db)) {
+                    break;
+                }
                 if (y >= ry && y < ry + team_h) {
                     char cut[TIKU_TRK_DB_LABEL_MAX];
 
@@ -399,6 +408,9 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
                     continue;
                 }
                 for (j = 0; j < t->win_count; j++) {
+                    if (ry + db_win_row() > db_list_bottom(db)) {
+                        break;
+                    }
                     if (y >= ry && y < ry + db_win_row()) {
                         char cut[TIKU_TRK_DB_LABEL_MAX];
 
@@ -447,8 +459,7 @@ tiku_trk_deskbar_motion(tiku_trk_deskbar_t *db, int x, int y)
         changed = 1;
     }
     if (clock != db->clock_hot) {
-        tiku_rect_t m = { db->frame.x - 130, db->frame.y +
-                          db->frame.h - db_clock_row() - 32, 170, 4 * 28 };
+        tiku_rect_t m = db_clock_menu_rect(db);
 
         db->clock_hot = clock;
         hover_touch(db, m);
@@ -1066,8 +1077,7 @@ db_draw_switch_strip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
          * direction it points (DB-034). */
         int up = 0, down = 0, k;
         int ly = db_list_y(db);
-        int lb = db->frame.y + db->frame.h - db_tray_h(db) -
-                 (db->settings.show_clock ? db_clock_row() : 0) - PAD;
+        int lb = db_list_bottom(db);
         int cx = db->frame.x + db->frame.w / 2;
 
         tiku_trk_deskbar_arrows(db, &up, &down);
@@ -1090,8 +1100,7 @@ db_draw_clock_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s)
 {
     if (db->clock_menu_open) {
         const char *items[4];
-        tiku_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
-                               db_clock_row() - 32, 170, 4 * 28 };
+        tiku_rect_t m = db_clock_menu_rect(db);
 
         clock_menu_items(db, items);
         tiku_ui_menu(s, m, items, 4, db->clock_hot);
@@ -1474,8 +1483,12 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
     }
     if (!tiku_trk_deskbar_mini(db->dock) &&
         tiku_trk_deskbar_vertical(db->dock)) {
+        int lb = db_list_bottom(db);
+
+        /* From the first row shown, and only the rows that end above the
+         * list's bottom (DB-034). */
         (*y) = db_list_y(db);
-        for (i = 0; i < db->team_count; i++) {
+        for (i = db_list_first(db); i < db->team_count; i++) {
             int team = db->order[i];
             tiku_trk_team_t *t = &db->teams[team];
             tiku_rect_t row = { db->frame.x + 2, (*y), db->frame.w - 4,
@@ -1486,6 +1499,9 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
                                       icon_size, icon_size };
             char label[TIKU_TRK_DB_LABEL_MAX];
 
+            if ((*y) + team_h > lb) {
+                break;
+            }
             /* A hovering drag lights the row it would be handed to
              * (DB-035). */
             if (db->drop_team == team) {
@@ -1524,6 +1540,9 @@ db_draw_teams(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
                                         db_win_row() };
                 char wl[TIKU_TRK_DB_LABEL_MAX];
 
+                if ((*y) + db_win_row() > lb) {
+                    break;
+                }
                 draw_row_bg(s, wr, w->current);
                 draw_win_icon(s, wr.x + WIN_INDENT,
                               (*y) + (db_win_row() - 9) / 2,
@@ -1714,7 +1733,7 @@ db_draw_frame(tiku_trk_deskbar_t *db, tiku_surface_t *s, int *rows)
             }
             db->frame.w = TIKU_TRK_DB_SLIVER;
         } else {
-            if (db->frame.y > 0) {
+            if (db->dock == TIKU_TRK_DB_BOTTOM) {
                 db->frame.y = s->h - TIKU_TRK_DB_SLIVER;
             }
             db->frame.h = TIKU_TRK_DB_SLIVER;

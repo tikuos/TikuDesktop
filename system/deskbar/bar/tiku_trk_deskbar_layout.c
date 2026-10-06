@@ -131,6 +131,22 @@ db_tray_top(const tiku_trk_deskbar_t *db)
            db_tray_h(db);
 }
 
+/** @brief Where the application list ends on a bar docked down a side
+ *         edge: PAD above the tray.  No row is drawn or hit below it. */
+int
+db_list_bottom(const tiku_trk_deskbar_t *db)
+{
+    return db_tray_top(db) - PAD;
+}
+
+/** @brief The order[] index of the first application row shown: the
+ *         scrolled-to row while the list overflows, else 0. */
+int
+db_list_first(const tiku_trk_deskbar_t *db)
+{
+    return db->overflow ? db->scroll : 0;
+}
+
 tiku_rect_t
 tiku_trk_deskbar_trayicon_rect(const tiku_trk_deskbar_t *db, int i)
 {

@@ -47,30 +47,40 @@ tiku_trk_deskbar_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
         }
         return TIKU_TRK_DB_DROP_BAR;
     }
-    ry = y - f.y;
-    if (ry < db_leaf_row()) {
+    if (y - f.y < db_leaf_row()) {
         return TIKU_TRK_DB_DROP_LEAF;
     }
-    ry -= db_leaf_row() + PAD;
-    for (i = 0; i < db->team_count; i++) {
+    /* The rows as drawn: from the first one shown, down to the list's
+     * bottom (DB-034). */
+    ry = db_list_y(db);
+    for (i = db_list_first(db); i < db->team_count; i++) {
         int team = db->order[i];
         int team_h = (db->settings.icon_size + 4 > db_team_row())
                          ? db->settings.icon_size + 4 : db_team_row();
+        int wins = db->teams[team].expanded ? db->teams[team].win_count : 0;
 
-        if (ry >= 0 && ry < team_h) {
+        if (ry + team_h > db_list_bottom(db)) {
+            break;
+        }
+        if (y >= ry && y < ry + team_h) {
             if (which != NULL) { *which = team; }
             return TIKU_TRK_DB_DROP_TEAM;
         }
-        ry -= team_h + SEAM;
-        if (db->teams[team].expanded) {
-            /* A window row is not a drop target of its own: a drop there
-             * belongs to the application that owns it. */
-            ry -= db->teams[team].win_count * (db_win_row() + SEAM);
+        ry += team_h + SEAM;
+        /* A window row is not a drop target of its own: a drop there
+         * belongs to the application that owns it. */
+        for (int j = 0; j < wins; j++) {
+            if (ry + db_win_row() > db_list_bottom(db)) {
+                break;
+            }
+            if (y >= ry && y < ry + db_win_row()) {
+                if (which != NULL) { *which = team; }
+                return TIKU_TRK_DB_DROP_TEAM;
+            }
+            ry += db_win_row() + SEAM;
         }
     }
-    if (tiku_trk_deskbar_vertical(db->dock) &&
-        y >= f.y + f.h - db_tray_h(db) -
-            (db->settings.show_clock ? db_clock_row() : 0) - PAD) {
+    if (tiku_trk_deskbar_vertical(db->dock) && y >= db_tray_top(db)) {
         /* The tray and its clock: a dropped node is a subscription
          * request (DB-038). */
         return TIKU_TRK_DB_DROP_TRAY;

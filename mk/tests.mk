@@ -57,6 +57,7 @@ test_deskbar_hover_LDLIBS := $(X11_LIBS) -lm
 test_deskbar_teams_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_teams_CFLAGS := -ffunction-sections -fdata-sections
 test_deskbar_teams_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
+test_deskbar_geometry_SRCS := $(test_deskbar_dock_SRCS)
 test_desk_cursor_SRCS := system/shared/core/tiku_trk_drag.c
 test_desk_cursor_LDLIBS := $(X11_LIBS) -lm
 test_fontprefs_SRCS   := system/deskbar/tiku_trk_deskbar_prefs.c system/deskbar/tiku_trk_fontprefs.c

@@ -151,8 +151,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         int astep = ((mods & (TIKU_TRK_MOD_SHIFT | TIKU_TRK_MOD_CMD |
                               TIKU_MOD_OPTION)) != 0u) ? 3 : 1;
         int ly = db_list_y(db);
-        int lb = db->frame.y + db->frame.h - db_tray_h(db) -
-                 (db->settings.show_clock ? db_clock_row() : 0) - PAD;
+        int lb = db_list_bottom(db);
 
         if (y >= ly && y < ly + 8) {
             (void)tiku_trk_deskbar_scroll(db, -astep);
@@ -170,7 +169,7 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     }
     /* The clock: a secondary click opens its menu and a primary one the
      * calendar (DB-043, DB-070); a secondary click on the tray row above
-     * it opens the menu too. */
+     * the switch strip opens the menu too. */
     if (db->settings.show_clock && y >= db->frame.y + db->frame.h -
         db_clock_row() - PAD) {
         if (secondary) {
@@ -186,8 +185,9 @@ tiku_trk_deskbar_click(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
             db->calendar_day = tmv.tm_mday;
             db->calendar_open = 1;
         }
-    } else if (secondary && y >= db->frame.y + db->frame.h -
-               db_clock_row() - PAD - TRAY_ROW) {
+    } else if (secondary &&
+               y >= db_tray_top(db) + db_tray_h(db) - TRAY_ROW &&
+               y < db_tray_top(db) + db_tray_h(db)) {
         db->clock_menu_open = 1;
         db_reset_menu_hots(db);
     }
@@ -220,11 +220,15 @@ db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods, int button,
      * it minimises it, with Cmd+Option it hides the application, and a
      * secondary or Shift+middle click closes it. */
     (*ry) = db_list_y(db);
-    for (i = 0; i < db->team_count; i++) {
+    for (i = db_list_first(db); i < db->team_count; i++) {
         int team = db->order[i];
         tiku_trk_team_t *t = &db->teams[team];
         int team_h = (db->settings.icon_size + 4 > db_team_row())
                          ? db->settings.icon_size + 4 : db_team_row();
+
+        if ((*ry) + team_h > db_list_bottom(db)) {
+            break;              /* below the list's bottom: not shown */
+        }
 
         /* The seam belongs to neither row; a click on it is a miss, which
          * is why hit-testing uses the row height and stepping uses the
@@ -250,6 +254,9 @@ db_click_list(tiku_trk_deskbar_t *db, int x, int y, unsigned mods, int button,
             continue;
         }
         for (j = 0; j < t->win_count; j++) {
+            if ((*ry) + db_win_row() > db_list_bottom(db)) {
+                break;
+            }
             if (y >= (*ry) && y < (*ry) + db_win_row()) {
                 pick->tag = t->wins[j].tag;
                 if (secondary || (button == 2 &&
@@ -445,8 +452,7 @@ db_click_clock_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
     (void)button;
     (void)clicks;
     if (db->clock_menu_open) {
-        tiku_rect_t m = { db->frame.x - 130, db->frame.y + db->frame.h -
-                               db_clock_row() - 32, 170, 4 * 28 };
+        tiku_rect_t m = db_clock_menu_rect(db);
         int inside = x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h;
         int item = inside ? (y - m.y) / 28 : -1;
         db->clock_menu_open = 0;
