@@ -90,6 +90,11 @@ typedef struct {
     unsigned vol_flags;
     int64_t  size;
     int64_t  mtime;
+    /* When the entry was made, in seconds since the epoch, valid when
+     * btime_known is set.  A store that does not report a birth time
+     * leaves both zero. */
+    int64_t  btime;
+    int      btime_known;
     /* Whether the node carries a picture of its own (TIKU_ICONHINT_*),
      * asked once when the entry is taken in.  A zeroed model is UNASKED:
      * it has not been probed, and reading it as NONE hides the node's own

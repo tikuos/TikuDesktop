@@ -8,12 +8,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifdef __linux__
+#define _GNU_SOURCE 1           /* statx() and its STATX_BTIME */
+#endif
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#include "tiku_attr.h"
 #include "tiku_trk_info.h"
 #include "tiku_mount.h"
 #include "tiku_thumb.h"
@@ -56,6 +62,32 @@ sh(const char *fmt, ...)
     (void)vsnprintf(cmd, sizeof cmd, fmt, ap);
     va_end(ap);
     if (system(cmd) != 0) { /* the caller checks the effect */ }
+}
+
+/**
+ * @brief The birth time the host reports for @p path, in seconds, or 0
+ *        when its filesystem reports none.
+ */
+static long long
+host_birth(const char *path)
+{
+#if defined(__linux__) && defined(STATX_BTIME)
+    struct statx sx;
+
+    if (statx(AT_FDCWD, path, 0, STATX_BTIME, &sx) == 0 &&
+        (sx.stx_mask & STATX_BTIME) != 0u) {
+        return (long long)sx.stx_btime.tv_sec;
+    }
+#elif defined(__APPLE__)
+    struct stat sb;
+
+    if (stat(path, &sb) == 0 && sb.st_birthtimespec.tv_sec > 0) {
+        return (long long)sb.st_birthtimespec.tv_sec;
+    }
+#else
+    (void)path;
+#endif
+    return 0;
 }
 
 /** @brief The value of the first field of kind @p want, or "". */
@@ -129,6 +161,47 @@ main(void)
     check(field_of(&in, st, TIKU_TRK_INFO_F_MODIFIED, &label)[0] != '\0' &&
           strcmp(label, "Modified") == 0, "MA-041",
           "and Modified reads through the columns' date formatter");
+    printf("\nthe Created row (D-007)\n");
+    {
+        tiku_trk_info_t made, bare;
+        char created[TIKU_TRK_INFO_VAL_MAX];
+        char when[TIKU_TRK_INFO_VAL_MAX];
+        char madepath[512];
+        long long birth;
+
+        /* Beside the fixture, not in it: the folder's counts below are
+         * of the fixture's own files. */
+        snprintf(madepath, sizeof madepath, "%s-made.bin", work);
+        sh("head -c 10 /dev/zero > %s && touch -m -d 2001-01-01 %s",
+           madepath, madepath);
+        birth = host_birth(madepath);
+        check(tiku_trk_info_open(&made, b, madepath) == 0, "D-007",
+              "a window opens on a file whose date was set back");
+        snprintf(created, sizeof created, "%s",
+                 field_of(&made, st, TIKU_TRK_INFO_F_CREATED, &label));
+        if (birth > 0) {
+            (void)tiku_attr_time_fit(birth, 40, NULL, NULL, when,
+                                     sizeof when);
+            check(strcmp(created, when) == 0 &&
+                  strcmp(created, field_of(&made, st,
+                      TIKU_TRK_INFO_F_MODIFIED, &label)) != 0, "D-007",
+                  "Created shows the file's birth time, not the Modified "
+                  "date it was set back to");
+        } else {
+            check(strcmp(created, "-") == 0, "D-007",
+                  "on a filesystem with no birth time, Created says \"-\"");
+        }
+        memset(&bare, 0, sizeof bare);
+        bare.used = 1;
+        bare.model.kind = TIKU_KIND_FILE;
+        bare.model.facts.mtime = 1000000000;
+        (void)unlink(madepath);
+        check(strcmp(field_of(&bare, st, TIKU_TRK_INFO_F_CREATED, &label),
+                     "-") == 0 &&
+              strcmp(label, "Created") == 0, "D-007",
+              "an entry whose store reports no birth time shows \"-\" "
+              "for Created, not its Modified date");
+    }
     check(field_of(&in, st, TIKU_TRK_INFO_F_CAPACITY, &label)[0] == '\0',
           "AW-067",
           "a FILE has no capacity row: capacity is what a volume reports "
@@ -211,8 +284,8 @@ main(void)
         tiku_trk_info_t folder;
 
         (void)tiku_trk_info_open(&folder, b, work);
-        /* Held facts made deliberately wrong, so a re-stat could not fail
-         * to notice.  Nothing is reported anyway, which is the rule. */
+        /* The held facts are set wrong, so a re-stat would see a change.
+         * A folder is not re-polled, so nothing is reported. */
         folder.model.facts.mtime = 0;
         folder.model.facts.size = -12345;
         check(!tiku_trk_info_refresh(&folder, b,

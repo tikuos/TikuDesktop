@@ -266,6 +266,18 @@ test_frames_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
 test_drop_trash_CFLAGS := -ffunction-sections -fdata-sections
 test_drop_trash_SRCS := $(test_frames_SRCS)
 test_drop_trash_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+# The folder windows' slots, row hash and drag target as the desktop
+# links them; the window's file is compiled into the test itself.
+test_folder_slots_CFLAGS := -ffunction-sections -fdata-sections \
+    -Wno-unused-parameter
+test_folder_slots_SRCS := $(filter-out \
+    system/shared/ui/windows/tiku_trk_folder_window.c,$(test_frames_SRCS))
+test_folder_slots_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+# The Info window's file is compiled into the test itself.
+test_info_panel_CFLAGS := -ffunction-sections -fdata-sections
+test_info_panel_SRCS := $(filter-out \
+    system/shared/ui/windows/tiku_trk_info_window.c,$(test_frames_SRCS))
+test_info_panel_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
 # The desktop's board jobs and dial-ins as linked, less main's file and
 # the launcher; the test stands in for the workers.
 test_board_jobs_CFLAGS := -ffunction-sections -fdata-sections

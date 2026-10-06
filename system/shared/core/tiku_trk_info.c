@@ -179,11 +179,17 @@ tiku_trk_info_field(const tiku_trk_info_t *in, tiku_store_t *store,
         break;
     }
     case TIKU_TRK_INFO_F_CREATED:
-    case TIKU_TRK_INFO_F_MODIFIED:
-        if (label != NULL) {
-            *label = (f == TIKU_TRK_INFO_F_CREATED) ? tiku_str("info.created")
-                                           : tiku_str("label.modified");
+        if (label != NULL) { *label = tiku_str("info.created"); }
+        /* "-" when the store reports no birth time. */
+        if (in->model.facts.btime_known) {
+            (void)tiku_attr_time_fit(in->model.facts.btime, 40, chars, NULL,
+                                     value, max);
+        } else {
+            snprintf(value, max, "-");
         }
+        break;
+    case TIKU_TRK_INFO_F_MODIFIED:
+        if (label != NULL) { *label = tiku_str("label.modified"); }
         /* Through the columns' own formatter, so a date reads the same
          * here as it does in the list (MA-041). */
         (void)tiku_attr_time_fit(in->model.facts.mtime, 40, chars, NULL,

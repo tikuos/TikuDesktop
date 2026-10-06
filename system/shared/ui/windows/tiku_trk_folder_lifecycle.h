@@ -20,7 +20,7 @@
 typedef struct {
     tiku_trk_folder_window_t *folders;     /**< the shell's window slots */
     int                       capacity;
-    int                      *count;       /**< slots in use */
+    int                      *count;       /**< slots taken; closed: win NULL */
     int                      *cascade_x;   /**< the cascade's next x */
     int                      *cascade_y;   /**< the cascade's next y */
     tiku_workspace_t    *workspace;

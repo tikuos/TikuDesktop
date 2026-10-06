@@ -535,6 +535,7 @@ tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
                                  int *h)
 {
     tiku_rect_t content, icon, name, tabs, body;
+    int at;
 
     if (slot < 0 || slot >= TIKU_TRK_INFO_WINDOW_MAX ||
         controller->window[slot] == NULL ||
@@ -543,9 +544,11 @@ tiku_trk_info_windows_field_rect(tiku_trk_info_windows_t *controller,
     }
     content = tiku_window_content(controller->window[slot]);
     layout(content, &icon, &name, &tabs, &body);
-    if (x != NULL) { *x = body.x + 96; }
+    /* The value's column as draw() places it. */
+    at = value_column(&controller->model[slot], controller->store);
+    if (x != NULL) { *x = body.x + at; }
     if (y != NULL) { *y = body.y + 6 + i * row_h(); }
-    if (w != NULL) { *w = body.w - 96 - 12; }
+    if (w != NULL) { *w = body.w - at - 12; }
     if (h != NULL) { *h = row_h(); }
     return 1;
 }

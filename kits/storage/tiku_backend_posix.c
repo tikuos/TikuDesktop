@@ -13,12 +13,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifdef __linux__
+#define _GNU_SOURCE 1           /* statx() and its STATX_BTIME */
+#endif
+
 #include "tiku_model.h"
 #include "tiku_volume.h"
 #include "tiku_state.h"
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -331,6 +336,38 @@ is_tiku_app(const char *path)
     return found;
 }
 
+/**
+ * @brief Set @p m's birth time for @p path when the filesystem reports one:
+ *        statx() on Linux, st_birthtimespec on macOS.  The time is the
+ *        link target's when @p path resolves, else the link's own.
+ */
+static void
+birth_time(tiku_model_t *m, const char *path, const struct stat *st)
+{
+#if defined(__linux__) && defined(STATX_BTIME)
+    struct statx sx;
+
+    (void)st;
+    if ((statx(AT_FDCWD, path, 0, STATX_BTIME, &sx) == 0 ||
+         statx(AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, STATX_BTIME,
+               &sx) == 0) &&
+        (sx.stx_mask & STATX_BTIME) != 0u) {
+        m->facts.btime = (int64_t)sx.stx_btime.tv_sec;
+        m->facts.btime_known = 1;
+    }
+#elif defined(__APPLE__)
+    (void)path;
+    if (st->st_birthtimespec.tv_sec > 0) {
+        m->facts.btime = (int64_t)st->st_birthtimespec.tv_sec;
+        m->facts.btime_known = 1;
+    }
+#else
+    (void)m;
+    (void)path;
+    (void)st;
+#endif
+}
+
 /** @brief Fill a Model for @p path from a stat buffer; @p is_link makes it
  *         a SYMLINK whatever @p st describes. */
 static void
@@ -351,6 +388,7 @@ from_stat(tiku_model_t *m, const char *path, const struct stat *st,
     m->facts.mode = (unsigned)st->st_mode;
     m->facts.mode_known = 1;
     m->facts.mtime = (int64_t)st->st_mtime;
+    birth_time(m, path, st);
     m->facts.cap_known = 1;
     snprintf(m->facts.req_cap, sizeof m->facts.req_cap, "-");
     snprintf(m->facts.meta, sizeof m->facts.meta, "-");

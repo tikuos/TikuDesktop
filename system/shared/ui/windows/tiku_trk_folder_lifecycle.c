@@ -194,7 +194,7 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
 {
     tiku_trk_folder_window_t *folder;
     tiku_rect_t frame;
-    int i;
+    int i, slot;
 
     if (controller == NULL || path == NULL) {
         return NULL;
@@ -237,11 +237,24 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
             return folder;
         }
     }
-    if (*controller->count >= controller->capacity) {
+    /* A slot whose window was closed is taken first; its view and query
+     * run are released before the slot is cleared. */
+    for (slot = 0; slot < *controller->count; slot++) {
+        if (controller->folders[slot].win == NULL) {
+            break;
+        }
+    }
+    if (slot >= controller->capacity) {
         return NULL;
     }
-    folder = &controller->folders[*controller->count];
+    folder = &controller->folders[slot];
     tiku_trk_folder_window_forget(folder);
+    if (slot < *controller->count) {
+        tiku_trk_poseview_free(folder->view);
+        if (folder->run != NULL) {
+            tiku_query_stop(folder->run);
+        }
+    }
     memset(folder, 0, sizeof *folder);
     snprintf(folder->path, sizeof folder->path, "%s", path);
     snprintf(folder->state_path, sizeof folder->state_path, "%s", path);
@@ -291,7 +304,9 @@ tiku_trk_folder_lifecycle_open(tiku_trk_folder_lifecycle_t *controller,
         folder->view = NULL;
         return NULL;
     }
-    (*controller->count)++;
+    if (slot == *controller->count) {
+        (*controller->count)++;
+    }
     *controller->dirty = 1;
     tiku_sound_play(TIKU_SOUND_WINDOW_OPEN);
     return folder;

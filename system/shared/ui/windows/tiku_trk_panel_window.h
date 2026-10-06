@@ -177,9 +177,9 @@ int tiku_trk_panel_window_poll(tiku_trk_panel_window_t *controller,
 int tiku_trk_panel_window_device_gone(tiku_trk_panel_window_t *controller,
                                       const char *mount);
 
-/** @brief The list's scroll position, 0 with no list. */
+/** @brief The first row shown, counted in the shown rows; 0 with no list. */
 int tiku_trk_panel_window_scroll(const tiku_trk_panel_window_t *controller);
-/** @brief How many rows the list holds, 0 with no list. */
+/** @brief How many rows the list shows (nvis), 0 with no list. */
 int tiku_trk_panel_window_rows(const tiku_trk_panel_window_t *controller);
 
 /**

@@ -1,7 +1,9 @@
 # shell: desktop
 # AW-060/PVN-029: the folder a picker is showing goes away.  A folder WINDOW
 # closes; the picker falls back and stays up, because closing it would answer
-# the question the user is in the middle of.
+# the question the user is in the middle of.  Home, where it falls back,
+# holds one visible folder.
+# mkdir: ~/Documents
 note the picker is showing sub
 click-row 1 3
 wait 3

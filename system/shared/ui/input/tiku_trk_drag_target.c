@@ -114,10 +114,17 @@ tiku_trk_drag_target_motion(tiku_trk_drag_target_t *controller,
                 tiku_trk_folder_window_content(folder);
 
             if (pose != NULL) {
+                int ox = 0, oy = 0;
+
+                /* The pose's rect is in view coordinates; the spring area
+                 * is on screen, as tiku_trk_folder_window_row_at() maps a
+                 * point: past the 2-pixel inset, less the scroll origin. */
                 tiku_trk_poseview_pose_rect(folder->view, pose, &px, &py,
                                             &pw, &ph);
+                tiku_trk_poseview_origin(folder->view, &ox, &oy);
                 tiku_trk_springmenu_enter(&controller->spring,
-                    content.x + px, content.y + py, pw, ph, now);
+                    content.x + 2 + px - ox, content.y + 2 + py - oy,
+                    pw, ph, now);
             }
         }
         changed = 1;

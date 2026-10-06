@@ -545,6 +545,7 @@ row_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose,
     h = sig_bytes(h, &pose->model.kind, sizeof pose->model.kind);
     h = sig_bytes(h, &pose->model.facts.link_broken,
                   sizeof pose->model.facts.link_broken);
+    h = sig_bytes(h, &pose->model.facts.total, sizeof pose->model.facts.total);
     h = sig_bytes(h, &pose->model.facts.avail, sizeof pose->model.facts.avail);
     h = sig_bytes(h, &hscroll, sizeof hscroll);
     h = sig_bytes(h, &render->row_h, sizeof render->row_h);

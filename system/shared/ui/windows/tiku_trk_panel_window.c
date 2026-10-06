@@ -1342,6 +1342,9 @@ tiku_trk_panel_window_poll(tiku_trk_panel_window_t *controller, int64_t now,
             controller->model.dir, tiku_trk_poseview_path(controller->view));
     }
     if (result != TIKU_TRK_NOTIFY_NOTHING) {
+        /* The poll can add and remove poses: the shown rows are taken
+         * again, so vis[] indexes only poses that exist. */
+        rebuild_visible(controller);
         mark_dirty(controller);
         return 1;
     }
@@ -1372,15 +1375,13 @@ tiku_trk_panel_window_device_gone(tiku_trk_panel_window_t *controller,
 int
 tiku_trk_panel_window_scroll(const tiku_trk_panel_window_t *controller)
 {
-    return controller->view != NULL
-        ? tiku_trk_poseview_scroll(controller->view) : 0;
+    return controller->view != NULL ? controller->scroll : 0;
 }
 
 int
 tiku_trk_panel_window_rows(const tiku_trk_panel_window_t *controller)
 {
-    return controller->view != NULL
-        ? tiku_trk_poseview_count(controller->view) : 0;
+    return controller->view != NULL ? controller->nvis : 0;
 }
 
 int
