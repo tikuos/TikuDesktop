@@ -105,8 +105,16 @@ db_trayicons_w(const tiku_trk_deskbar_t *db)
     return w;
 }
 
+/** @brief How many replicant rows the tray shows: none while the
+ *         replicants are hidden (DB-007). */
+int
+db_tray_rows(const tiku_trk_deskbar_t *db)
+{
+    return db->settings.show_replicants ? db->tray_count : 0;
+}
+
 /** @brief The tray's height: the rows of application icons (down a side
- *         edge only), then a row per replicant. */
+ *         edge only), then a row per shown replicant. */
 int
 db_tray_h(const tiku_trk_deskbar_t *db)
 {
@@ -116,7 +124,7 @@ db_tray_h(const tiku_trk_deskbar_t *db)
         (void)icon_place(db, 0, 0, tiku_trk_deskbar_width(db) - 8, -1,
                          &rows);
     }
-    return rows * ICON_ROW + db->tray_count * TRAY_ROW;
+    return rows * ICON_ROW + db_tray_rows(db) * TRAY_ROW;
 }
 
 /** @brief Where the tray starts on a bar docked down a side edge, measured
@@ -320,7 +328,8 @@ int
 tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db)
 {
     return (db != NULL) ? (db->menu_open || db->calendar_open ||
-                           db->clock_menu_open) : 0;
+                           db->clock_menu_open || db->win_menu_team >= 0 ||
+                           db->apps_menu_open) : 0;
 }
 
 void
@@ -346,6 +355,7 @@ tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db)
         db->calendar_open = 0;
         db->clock_menu_open = 0;
         db->win_menu_team = -1;
+        db->apps_menu_open = 0;
         db->sub_of = -1;
         db->sub_count = 0;
         db_reset_menu_hots(db);

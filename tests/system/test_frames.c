@@ -258,6 +258,24 @@ int main(void)
            !desktop_remote_document("/tmp/markdown") &&
            !desktop_remote_document(NULL));
     motion_preference(app);
+    {
+        /* Hide replicants in the leaf menu: the bar flips the setting and
+         * the desktop saves it with the Deskbar's other settings. */
+        tiku_trk_db_pick_t pick = {.what = TIKU_TRK_DB_TOGGLE_REPLICANTS};
+        tiku_trk_deskbar_prefs_t saved;
+
+        app->store = tiku_store_memory_open();
+        assert(app->store);
+        tiku_trk_deskbar_prefs_init(&app->deskbar_prefs_window.model);
+        tiku_trk_deskbar_set_show_replicants(app->deskbar, 0);
+        deskbar_pick_dispatch(app, &pick, 0, 0);
+        assert(!app->deskbar_prefs_window.model.value.show_replicants);
+        tiku_trk_deskbar_prefs_init(&saved);
+        assert(!tiku_trk_deskbar_prefs_load(&saved, app->store) &&
+               !saved.value.show_replicants);
+        tiku_store_free(app->store);
+        app->store = NULL;
+    }
     tiku_trk_prefs_free(prefs_model(app));
     tiku_trk_deskbar_free(app->deskbar);
     tiku_workspace_free(app->desk); tiku_surface_free(app->surf); free(app);

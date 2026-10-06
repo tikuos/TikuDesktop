@@ -69,8 +69,8 @@ tiku_trk_rect_t tiku_trk_desktop_view_area(
 int tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
     int screen_w, int screen_h);
 /**
- * @brief Bring every pose lying off the screen or under the bar back into
- *        the area.
+ * @brief Bring every pose lying off the screen, in the top inset or
+ *        under the bar back into the area.
  * @return How many poses moved.
  */
 int tiku_trk_desktop_view_ensure_visible(

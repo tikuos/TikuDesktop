@@ -309,8 +309,8 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
 
 /**
  * @brief A pick on the leaf menu's own rows: Find, the preferences, Help,
- *        Force Quit, an application, the theme, About, Shut down, a folder
- *        and a described panel.
+ *        Force Quit, an application, the theme, the replicants, About,
+ *        Shut down, a folder and a described panel.
  * @return 1 for a pick of this group.
  */
 int
@@ -414,6 +414,15 @@ deskbar_pick_system(desktop_t *app, tiku_trk_db_pick_t *pick)
         desktop_damage_all(app);
         break;
     }
+    case TIKU_TRK_DB_TOGGLE_REPLICANTS:
+        /* The bar has already flipped it; the setting is saved with the
+         * rest of the Deskbar's. */
+        app->deskbar_prefs_window.model.value.show_replicants =
+            tiku_trk_deskbar_show_replicants(app->deskbar);
+        (void)tiku_trk_deskbar_prefs_save(
+            &app->deskbar_prefs_window.model, app->store);
+        desktop_damage_all(app);
+        break;
     case TIKU_TRK_DB_SHOW_ABOUT:
         (void)embed_open_or_raise(app, &tiku_trk_about_app);
         break;

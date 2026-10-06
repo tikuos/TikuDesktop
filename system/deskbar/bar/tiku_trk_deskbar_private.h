@@ -95,8 +95,6 @@ struct tiku_trk_deskbar {
     int                  autohide;  /**< hidden until the pointer reaches
                                      *   its screen edge                */
     int                  autoraise; /**< raised over windows on hover    */
-    int                  show_replicants;   /**< the Show replicants row's
-                                             *   state (DB-007)          */
     int                  pointer_on;  /**< the pointer is over the bar    */
     int                  pointer_x;   /**< last pointer x; -1 when away   */
     int                  pointer_y;   /**< last pointer y; -1 when away   */
@@ -212,6 +210,7 @@ void db_open_sub(tiku_trk_deskbar_t *db, int at);
 int db_list_rows(const tiku_trk_deskbar_t *db);
 int db_list_y(const tiku_trk_deskbar_t *db);
 int db_tray_y(const tiku_trk_deskbar_t *db);
+int db_tray_rows(const tiku_trk_deskbar_t *db);
 int db_tray_h(const tiku_trk_deskbar_t *db);
 int db_tray_top(const tiku_trk_deskbar_t *db);
 int db_list_bottom(const tiku_trk_deskbar_t *db);

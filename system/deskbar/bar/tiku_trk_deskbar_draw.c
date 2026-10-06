@@ -755,8 +755,9 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
         /* The label names the action: the opposite of the current
          * state. */
         sub_row(db, TIKU_TRK_DB_TOGGLE_REPLICANTS,
-                tiku_str(db->show_replicants ? "menu.hide_replicants"
-                                             : "menu.show_replicants"),
+                tiku_str(db->settings.show_replicants
+                             ? "menu.hide_replicants"
+                             : "menu.show_replicants"),
                 "package");
         break;
     case TIKU_TRK_DB_EXPAND_APPS: {
@@ -1363,7 +1364,8 @@ db_draw_trayicons(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 
 /**
  * @brief The tray: the applications' tray icons, then down a side edge a
- *        row per replicant, leaving @p y at the tray's foot.
+ *        row per replicant while they are shown, leaving @p y at the
+ *        tray's foot.
  */
 void
 db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
@@ -1388,8 +1390,8 @@ db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
                     tiku_tint(TIKU_C_PANEL,
                                    TIKU_LIGHTEN_MAX));
     db_draw_trayicons(db, s, f);
-    (*y) += db_tray_h(db) - db->tray_count * TRAY_ROW;
-    for (i = 0; i < db->tray_count; i++) {
+    (*y) += db_tray_h(db) - db_tray_rows(db) * TRAY_ROW;
+    for (i = 0; i < db_tray_rows(db); i++) {
         const tiku_trk_replicant_t *r = &db->tray[i];
         int ty = (*y) + (TRAY_ROW - f->height) / 2 + f->ascent;
         char val[32];

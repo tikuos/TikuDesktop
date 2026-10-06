@@ -116,7 +116,9 @@ tiku_trk_deskbar_add_team(tiku_trk_deskbar_t *db, const char *name)
     snprintf(db->teams[i].name, sizeof db->teams[i].name, "%s", name);
     /* Tracker's entry takes files of any type. */
     db->teams[i].takes_anything = (strcmp(name, "TikuTracker") == 0);
-    db->teams[i].expanded = db->settings.expand_new_apps;
+    /* With no expander a row opened here could not be folded (DB-023). */
+    db->teams[i].expanded = db->settings.show_expander &&
+                            db->settings.expand_new_apps;
     /* Added without a pid: the shell's own seed, never pruned away. */
     db->teams[i].shell = 1;
     sort_teams(db);

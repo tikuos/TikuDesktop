@@ -40,6 +40,7 @@ typedef struct tiku_trk_deskbar_settings {
     int show_timezone;      /* the clock with the zone */
     int font_size;      /* UI text size in px: even, 10 to 16 */
     int font_family;    /* which baked family the interface is drawn in */
+    int show_replicants;    /* the tray's replicant rows are shown */
 } tiku_trk_deskbar_settings_t;
 
 /** @brief The settings being edited, and what they were when the window

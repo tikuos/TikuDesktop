@@ -230,6 +230,6 @@ tiku_trk_deskbar_raised(const tiku_trk_deskbar_t *db)
     if (db == NULL) {
         return 1;
     }
-    return (db->settings.always_on_top || db->pointer_on || db->menu_open ||
-            db->calendar_open || db->clock_menu_open);
+    return (db->settings.always_on_top || (db->autoraise && db->pointer_on) ||
+            tiku_trk_deskbar_menu_open(db));
 }

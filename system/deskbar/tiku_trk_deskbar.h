@@ -348,9 +348,9 @@ void tiku_trk_deskbar_arrows(const tiku_trk_deskbar_t *db, int *up,
 /**
  * @brief Whether the bar should be drawn above the windows.
  *
- * With Always on top it always is; otherwise only while the pointer is on
- * the bar or its leaf menu, calendar or clock menu is open (DB-052,
- * DB-072).
+ * With Always on top it always is; otherwise only while one of its popups
+ * is open, or, with Auto-raise on, while the pointer is on the bar
+ * (DB-052, DB-072).
  */
 int tiku_trk_deskbar_raised(const tiku_trk_deskbar_t *db);
 
@@ -389,7 +389,7 @@ typedef enum {
     TIKU_TRK_DB_TOGGLE_DARK,      /* the tray's theme switch        */
     TIKU_TRK_DB_LAUNCH_APP,       /* `path` is the program to start */
     TIKU_TRK_DB_HELP,             /* the desktop's help pages       */
-    TIKU_TRK_DB_TOGGLE_REPLICANTS, /* the bar flips it; never picked */
+    TIKU_TRK_DB_TOGGLE_REPLICANTS, /* the bar flips it; the shell saves */
     TIKU_TRK_DB_FORCE_QUIT,       /* the Force Quit window          */
     TIKU_TRK_DB_TRAY_ICON,        /* an application's own tray item:
                                      `owner` set it, `path` is its id */
@@ -752,9 +752,10 @@ void tiku_trk_deskbar_set_dragging(tiku_trk_deskbar_t *db, int dragging);
  *
  * @param path Receives the entry's path for DROP_MENU_DIR and
  *             DROP_MENU_FILE.
- * @return DROP_MENU_DIR for a folder entry or an open-path row labelled by
- *         its absolute path, DROP_MENU_FILE for any other open-path row,
- *         DROP_NONE for a fixed row or a point off the menu.
+ * @return DROP_MENU_DIR for a folder entry or an open-path row with the
+ *         "folder" icon (a mounted store's row), DROP_MENU_FILE for any
+ *         other open-path row, DROP_NONE for a fixed row or a point off
+ *         the menu.
  */
 tiku_trk_db_drop_t tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db,
                                                  int x, int y, char *path,
@@ -801,20 +802,17 @@ int tiku_trk_deskbar_team_type(tiku_trk_deskbar_t *db, int i,
 int tiku_trk_deskbar_launchable(const tiku_model_t *m);
 
 /**
- * @brief Whether any popup of the bar is open.
- *
- * @note Only the leaf menu, the calendar and the clock menu are counted;
- *       the window menu and the mini dock's running-apps menu are not.
+ * @brief Whether any popup of the bar is open: the leaf menu, the
+ *        calendar, the clock menu, a window menu or the mini dock's
+ *        running-apps menu.
  */
 int tiku_trk_deskbar_menu_open(const tiku_trk_deskbar_t *db);
 /** @brief Open the leaf menu, as the Menu key does (DB-011). */
 void tiku_trk_deskbar_open_menu(tiku_trk_deskbar_t *db);
 
 /**
- * @brief Close every popup of the bar.
- *
- * @note The leaf menu, the calendar, the clock menu and the window menu
- *       close; the mini dock's running-apps menu stays open.
+ * @brief Close every popup of the bar: the leaf menu, the calendar, the
+ *        clock menu, the window menu and the mini dock's running-apps menu.
  */
 void tiku_trk_deskbar_close_menu(tiku_trk_deskbar_t *db);
 

@@ -208,14 +208,14 @@ void
 tiku_trk_deskbar_set_show_replicants(tiku_trk_deskbar_t *db, int show)
 {
     if (db != NULL) {
-        db->show_replicants = !!show;
+        db->settings.show_replicants = !!show;
     }
 }
 
 int
 tiku_trk_deskbar_show_replicants(const tiku_trk_deskbar_t *db)
 {
-    return db != NULL ? db->show_replicants : 0;
+    return db != NULL ? db->settings.show_replicants : 0;
 }
 
 void

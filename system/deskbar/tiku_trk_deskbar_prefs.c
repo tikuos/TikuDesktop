@@ -15,8 +15,9 @@
 #include "tiku_font.h"
 #include "tiku_trk_deskbar_prefs.h"
 
-#define PREF_VERSION 5
-#define PREF_FIELDS  22
+#define PREF_VERSION 6
+#define PREF_FIELDS  23
+#define PREF_FIELDS_V5 22
 #define PREF_FIELDS_V4 21
 #define PREF_FIELDS_V3 20
 #define PREF_FIELDS_V2 17
@@ -42,7 +43,8 @@ same(const tiku_trk_deskbar_settings_t *a,
         a->show_day_of_week != b->show_day_of_week ||
         a->show_timezone != b->show_timezone ||
         a->font_size != b->font_size ||
-        a->font_family != b->font_family) {
+        a->font_family != b->font_family ||
+        a->show_replicants != b->show_replicants) {
         return 0;
     }
     for (i = 0; i < TIKU_TRK_DB_RECENT_KINDS; i++) {
@@ -71,6 +73,7 @@ tiku_trk_deskbar_settings_default(tiku_trk_deskbar_settings_t *settings)
     settings->always_on_top = 1;
     settings->show_clock = 1;
     settings->font_size = 12;
+    settings->show_replicants = 1;
 }
 
 void
@@ -107,6 +110,7 @@ tiku_trk_deskbar_settings_normalize(tiku_trk_deskbar_settings_t *settings)
     settings->show_seconds = !!settings->show_seconds;
     settings->show_day_of_week = !!settings->show_day_of_week;
     settings->show_timezone = !!settings->show_timezone;
+    settings->show_replicants = !!settings->show_replicants;
     if (settings->font_size < 10) { settings->font_size = 10; }
     if (settings->font_size > 16) { settings->font_size = 16; }
     settings->font_size &= ~1;      /* the baked faces are even-sized */
@@ -208,6 +212,7 @@ pack(const tiku_trk_deskbar_settings_t *s, int32_t v[PREF_FIELDS])
     v[at++] = s->show_timezone;
     v[at++] = s->font_size;
     v[at++] = s->font_family;
+    v[at++] = s->show_replicants;
 }
 
 /**
@@ -236,6 +241,7 @@ unpack(tiku_trk_deskbar_settings_t *s, const int32_t v[PREF_FIELDS])
     s->show_timezone = (v[0] >= 3) ? v[at++] : 0;
     s->font_size = (v[0] >= 4) ? v[at++] : 12;
     s->font_family = (v[0] >= 5) ? v[at++] : 0;
+    s->show_replicants = (v[0] >= 6) ? v[at++] : 1;
     tiku_trk_deskbar_settings_normalize(s);
 }
 
@@ -258,6 +264,7 @@ tiku_trk_deskbar_prefs_load(tiku_trk_deskbar_prefs_t *prefs,
                                 PREF_FIELDS_V1 * sizeof *record);
     }
     if (n != (int)sizeof record &&
+        n != PREF_FIELDS_V5 * (int)sizeof *record &&
         n != PREF_FIELDS_V4 * (int)sizeof *record &&
         n != PREF_FIELDS_V3 * (int)sizeof *record &&
         n != PREF_FIELDS_V2 * (int)sizeof *record &&

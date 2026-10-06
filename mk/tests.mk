@@ -180,6 +180,8 @@ test_drop_controller_SRCS := $(test_dbdrop_SRCS) $(POSEVIEW) \
     system/shared/ui/windows/tiku_trk_folder_window.c \
     system/deskbar/tiku_trk_deskicons.c system/shared/ui/tiku_trk_titleview.c
 test_drop_controller_LDLIBS := $(X11_LIBS) -lm
+test_deskbar_menus_SRCS := $(test_drop_controller_SRCS)
+test_deskbar_menus_LDLIBS := $(X11_LIBS) -lm
 test_switcher_SRCS   := system/shared/core/tiku_trk_switcher.c
 test_deskicons_SRCS   := $(COMMON) system/deskbar/tiku_trk_deskicons.c $(POSEVIEW)
 test_scripting_SRCS   := $(COMMON) $(POSEVIEW) system/shared/shell/tiku_trk_script_api.c

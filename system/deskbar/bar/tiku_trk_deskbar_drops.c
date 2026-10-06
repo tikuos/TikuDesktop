@@ -207,14 +207,16 @@ tiku_trk_deskbar_menu_drop_at(const tiku_trk_deskbar_t *db, int x, int y,
     if (i < 0 || i >= db->leaf_count) {
         return TIKU_TRK_DB_DROP_NONE;
     }
-    /* A folder entry, or an open-path row labelled by its absolute path,
-     * takes the links; any other open-path row is a file, launched with
-     * them; every other row is fixed and takes nothing (DB-008). */
+    /* A folder entry, or an open-path row with the folder icon (a mounted
+     * store's row), takes the links; any other open-path row is a file,
+     * launched with them; every other row is fixed and takes nothing
+     * (DB-008). */
     if ((db->leaf[i].kind == TIKU_TRK_DB_ITEM_EXPAND &&
          db->leaf[i].expand == TIKU_TRK_DB_EXPAND_DIR) ||
         (db->leaf[i].kind == TIKU_TRK_DB_ITEM_ROW &&
          db->leaf[i].command == TIKU_TRK_DB_OPEN_PATH &&
-         db->leaf[i].path[0] == '/' && db->leaf[i].label[0] == '/')) {
+         db->leaf[i].path[0] == '/' &&
+         strcmp(db->leaf[i].icon, "folder") == 0)) {
         if (path != NULL) {
             snprintf(path, max, "%s", db->leaf[i].path);
         }

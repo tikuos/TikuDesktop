@@ -52,7 +52,7 @@ EXEMPT_LOCALS = {
     # work from: the kernel's ten is a smell test, and these read as a
     # table of rectangles rather than as several jobs.  Cut when next
     # worked on.
-    'tiku_trk_desktop_view_resize': 'the desktop view\'s rectangles',
+    'reflow_poses': 'the desktop view\'s rectangles',
     'build_pickers': 'the file panel\'s parts',
     'browser_draw': 'the browser window\'s rectangles',
     'paste': 'source, destination and the names in flight',

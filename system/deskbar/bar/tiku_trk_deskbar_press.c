@@ -353,10 +353,12 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
 
                 if (it->command == TIKU_TRK_DB_TOGGLE_REPLICANTS) {
                     /* The toggle leaves the menu open, the row
-                     * relabelled. */
+                     * relabelled; the pick tells the shell to save it. */
                     int of = db->sub_of;
 
-                    db->show_replicants = !db->show_replicants;
+                    db->settings.show_replicants =
+                        !db->settings.show_replicants;
+                    pick->what = TIKU_TRK_DB_TOGGLE_REPLICANTS;
                     db_open_sub(db, of);
                     return 1;
                 }
@@ -383,7 +385,9 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
                 break;
             }
             if (it->command == TIKU_TRK_DB_TOGGLE_REPLICANTS) {
-                db->show_replicants = !db->show_replicants;
+                db->settings.show_replicants =
+                    !db->settings.show_replicants;
+                pick->what = TIKU_TRK_DB_TOGGLE_REPLICANTS;
                 db_build_leaf(db);
                 return 1;
             }

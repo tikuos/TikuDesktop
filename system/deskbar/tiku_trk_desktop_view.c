@@ -157,8 +157,11 @@ tiku_trk_desktop_view_ensure_visible(tiku_trk_desktop_view_t *controller)
     if (controller == NULL || controller->folder.view == NULL) {
         return 0;
     }
-    screen = (tiku_trk_rect_t){ 0, 0, controller->screen_w,
-                                controller->screen_h };
+    /* The strip of the top inset is not part of the screen a pose may
+     * use. */
+    screen = (tiku_trk_rect_t){ 0, controller->top_inset,
+                                controller->screen_w,
+                                controller->screen_h - controller->top_inset };
     area = tiku_trk_desktop_view_area(controller);
     frame = deskbar_frame_at(controller, controller->screen_w,
                             controller->screen_h);
@@ -194,29 +197,19 @@ tiku_trk_desktop_view_ensure_visible(tiku_trk_desktop_view_t *controller)
     return moved;
 }
 
-int
-tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
-                             int screen_w, int screen_h)
+/**
+ * @brief Move every placed pose from its place in @p old_area to the same
+ *        relative place in the current area, a taken place giving way to
+ *        the nearest free grid slot, then bring any off the screen back.
+ * @return How many poses moved.
+ */
+static int
+reflow_poses(tiku_trk_desktop_view_t *controller, tiku_trk_rect_t old_area)
 {
     tiku_trk_rect_t *occupied;
-    tiku_trk_rect_t old_area, new_area;
+    tiku_trk_rect_t new_area = tiku_trk_desktop_view_area(controller);
     int grid_x, grid_y, off_x, off_y;
     int i, count, occupied_count = 0, moved = 0;
-
-    if (controller == NULL || controller->folder.view == NULL ||
-        screen_w <= 0 || screen_h <= 0) {
-        return 0;
-    }
-    if (screen_w == controller->screen_w &&
-        screen_h == controller->screen_h) {
-        return 0;
-    }
-    old_area = tiku_trk_desktop_view_area(controller);
-    new_area = desktop_area_at(controller, screen_w, screen_h);
-    controller->screen_w = screen_w;
-    controller->screen_h = screen_h;
-    tiku_trk_poseview_set_viewport(controller->folder.view,
-                                   screen_w, screen_h);
 
     count = tiku_trk_poseview_count(controller->folder.view);
     occupied = calloc((size_t)count, sizeof *occupied);
@@ -284,6 +277,28 @@ tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
     free(occupied);
     moved += tiku_trk_desktop_view_ensure_visible(controller);
     return moved;
+}
+
+int
+tiku_trk_desktop_view_resize(tiku_trk_desktop_view_t *controller,
+                             int screen_w, int screen_h)
+{
+    tiku_trk_rect_t old_area;
+
+    if (controller == NULL || controller->folder.view == NULL ||
+        screen_w <= 0 || screen_h <= 0) {
+        return 0;
+    }
+    if (screen_w == controller->screen_w &&
+        screen_h == controller->screen_h) {
+        return 0;
+    }
+    old_area = tiku_trk_desktop_view_area(controller);
+    controller->screen_w = screen_w;
+    controller->screen_h = screen_h;
+    tiku_trk_poseview_set_viewport(controller->folder.view,
+                                   screen_w, screen_h);
+    return reflow_poses(controller, old_area);
 }
 
 void
@@ -420,14 +435,18 @@ void
 tiku_trk_desktop_view_set_top_inset(tiku_trk_desktop_view_t *controller,
                                     int inset)
 {
+    tiku_trk_rect_t old_area;
+
     if (controller == NULL || controller->top_inset == inset) {
         return;
     }
+    old_area = tiku_trk_desktop_view_area(controller);
     controller->top_inset = inset;
     /* The poses move out from under the strip (or reclaim it): the same
      * reflow a screen resize runs. */
-    (void)tiku_trk_desktop_view_resize(controller, controller->screen_w,
-                                       controller->screen_h);
+    if (controller->folder.view != NULL) {
+        (void)reflow_poses(controller, old_area);
+    }
 }
 
 int
