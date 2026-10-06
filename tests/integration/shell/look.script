@@ -16,7 +16,7 @@ shot /tmp/trk_look.png
 note the menu's corner is cut the same way
 expect-pixel 54 421 4d6379
 note and the window's panel beside the menu is in the menu's shadow
-expect-pixel 196 300 cdcdcd
+expect-pixel 198 300 cdcdcd
 key Escape
 wait 4
 quit

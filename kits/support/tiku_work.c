@@ -7,8 +7,9 @@
  * tiku_work.c - workers for anything that waits.
  *
  * One table of slots under one lock.  A worker takes the oldest QUEUED
- * slot whose key has nothing RUNNING, runs it unlocked, and marks it
- * FINISHED; the loop takes the FINISHED slots at collect and runs their
+ * slot whose key has nothing RUNNING, and for a slow job only while fewer
+ * than SLOW_MAX slow jobs run; it runs the job unlocked and marks it
+ * FINISHED.  The loop takes the FINISHED slots at collect and runs their
  * done unlocked.  Nothing here allocates: the slots are a fixed table,
  * and what a job needs it brought in its own context.
  *
@@ -29,6 +30,8 @@
 
 #define SLOTS    64
 #define WORKERS  4
+/* Slow jobs run on at most this many workers at once. */
+#define SLOW_MAX (WORKERS - 1)
 
 enum { FREE = 0, QUEUED, RUNNING, FINISHED };
 
@@ -36,6 +39,7 @@ typedef struct {
     tiku_work_job_t job;
     int             state;
     int             cancelled;
+    int             slow;           /* posted by tiku_work_post_slow() */
     unsigned long   order;          /* posted when; oldest runs first */
     long            posted_ms, began_ms, ended_ms;
 } slot_t;
@@ -77,9 +81,23 @@ key_running(const char *key)
     return 0;
 }
 
+/** @brief How many slow jobs are running now.
+ *  @note Call with the lock held. */
+static int
+slow_running(void)
+{
+    int i, n = 0;
+
+    for (i = 0; i < SLOTS; i++) {
+        n += (slots[i].state == RUNNING && slots[i].slow);
+    }
+    return n;
+}
+
 /**
  * @brief The oldest QUEUED slot a worker may take, cancelled or with no
- *        job of its key running; -1 when there is none.
+ *        job of its key running, and a slow one only while fewer than
+ *        SLOW_MAX slow jobs run; -1 when there is none.
  *
  * Oldest by the order posted: a freed slot is refilled by a later post,
  * so a slot's index does not give its order.
@@ -88,7 +106,7 @@ key_running(const char *key)
 static int
 next_runnable(void)
 {
-    int i, best = -1;
+    int i, best = -1, slow_room = slow_running() < SLOW_MAX;
 
     for (i = 0; i < SLOTS; i++) {
         if (slots[i].state != QUEUED) {
@@ -97,7 +115,10 @@ next_runnable(void)
         if (best >= 0 && slots[i].order > slots[best].order) {
             continue;
         }
-        if (slots[i].cancelled || !key_running(slots[i].job.key)) {
+        if (slots[i].cancelled) {
+            best = i;
+        } else if (!key_running(slots[i].job.key) &&
+                   (!slots[i].slow || slow_room)) {
             best = i;
         }
     }
@@ -166,8 +187,11 @@ start_workers(void)
 /* THE LOOP'S SIDE                                                           */
 /*---------------------------------------------------------------------------*/
 
-int
-tiku_work_post(const tiku_work_job_t *job)
+/** @brief Queue @p job in a free slot, @p slow or not, and wake a worker.
+ *  @return 0 when queued; -1 when the table is full or the job has no
+ *          run. */
+static int
+post(const tiku_work_job_t *job, int slow)
 {
     int i;
 
@@ -189,13 +213,26 @@ tiku_work_post(const tiku_work_job_t *job)
     slots[i].job.key[TIKU_WORK_KEY - 1] = '\0';
     slots[i].state = QUEUED;
     slots[i].cancelled = 0;
+    slots[i].slow = slow;
     slots[i].order = ++posted;
     slots[i].posted_ms = now_ms();
     busy++;
     pthread_cond_broadcast(&more);
     pthread_mutex_unlock(&lock);
-    tiku_trail("work: post %s", job->key);
+    tiku_trail("work: post %s%s", job->key, slow ? ", slow" : "");
     return 0;
+}
+
+int
+tiku_work_post(const tiku_work_job_t *job)
+{
+    return post(job, 0);
+}
+
+int
+tiku_work_post_slow(const tiku_work_job_t *job)
+{
+    return post(job, 1);
 }
 
 int

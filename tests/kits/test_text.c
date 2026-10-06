@@ -263,9 +263,25 @@ main(void)
           "two of them take two letters' room: the bytes are not counted");
 
     /* What is NOT baked must still be harmless. */
-    check(tiku_text_width(f, "a\xe2\x80\xa6") ==
+    check(tiku_text_width(f, "a\xe4\xb8\x80") ==
           tiku_text_width(f, "a "), "DEV-011",
           "a letter the face does not carry takes a space's room");
+
+    /* Punctuation past the baked range is drawn from a letter that is
+     * there: the ellipsis as three periods, the dashes from the hyphen,
+     * curly quotes as straight ones. */
+    check(tiku_text_width(f, "a\xe2\x80\xa6") ==
+          tiku_text_width(f, "a...") &&
+          ink_of("\xe2\x80\xa6", 1) == ink_of("...", 1) &&
+          ink_of("\xe2\x80\xa6", 2) == ink_of("...", 2), "DEV-011",
+          "an ellipsis is three periods, at 1x and 2x");
+    check(ink_of("\xe2\x80\x93", 1) == ink_of("-", 1) &&
+          tiku_text_width(f, "\xe2\x80\x94") > tiku_text_width(f, "-") &&
+          ink_of("\xe2\x80\x94", 1) > ink_of("-", 1), "DEV-011",
+          "an en dash is a hyphen, and an em dash a longer one");
+    check(tiku_text_width(f, "\xe2\x80\x99") == tiku_text_width(f, "'") &&
+          ink_of("\xe2\x80\x9c", 1) == ink_of("\"", 1), "DEV-011",
+          "curly quotes are drawn straight");
     check(tiku_text_width(f, "\xc3" "A") >
           tiku_text_width(f, "A") &&
           tiku_text_width(f, "\xf0\x9f" "A") >

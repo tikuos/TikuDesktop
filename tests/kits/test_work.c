@@ -9,8 +9,8 @@
  * ON the loop; that jobs under one key never overlap and keep their
  * order, while jobs under different keys do overlap; that a cancelled
  * job's done never runs and its free always does; that a job posted
- * from a done is legal and lands next turn; and that a job cannot beat
- * the watchdog.
+ * from a done is legal and lands next turn; that slow jobs leave a
+ * worker for the rest; and that a job cannot beat the watchdog.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -158,6 +158,21 @@ post(probe_t *p, const char *key)
     check(tiku_work_post(&job) == 0, "posted");
 }
 
+/** @brief The same, as a job that waits on a device. */
+static void
+post_slow(probe_t *p, const char *key)
+{
+    tiku_work_job_t job;
+
+    memset(&job, 0, sizeof job);
+    job.run = probe_run;
+    job.done = probe_done;
+    job.free = probe_free;
+    job.ctx = p;
+    snprintf(job.key, sizeof job.key, "%s", key);
+    check(tiku_work_post_slow(&job) == 0, "posted slow");
+}
+
 /* A done that posts: legal, and collected next turn. */
 static probe_t chained;
 static int chained_collected_same_turn;
@@ -272,7 +287,45 @@ main(void)
               "its beat was refused: a worker cannot hide a stall");
     }
 
-    /* 6. The longest turn is measured on the loop. */
+    /* 6. Slow jobs never take the last idle worker: four ports asked at
+     *    once run three at a time, and a job posted behind them starts at
+     *    once. */
+    {
+        static const char *const ports[4] = { "port:a", "port:b",
+                                              "port:c", "port:d" };
+        probe_t s[4], q;
+        long posted_at, first_end;
+        int k;
+
+        for (k = 0; k < 4; k++) {
+            memset(&s[k], 0, sizeof s[k]);
+            s[k].id = 10 + k;
+            s[k].hold = 300;
+            post_slow(&s[k], ports[k]);
+        }
+        hold_ms(40);
+        memset(&q, 0, sizeof q);
+        q.id = 20;
+        q.hold = 1;
+        posted_at = ms_now();
+        post(&q, "files");
+        turn_until(0, 5000);
+        first_end = s[0].ended;
+        for (k = 1; k < 3; k++) {
+            if (s[k].ended < first_end) {
+                first_end = s[k].ended;
+            }
+        }
+        check(s[0].began < s[1].ended && s[1].began < s[2].ended &&
+              s[2].began < s[0].ended,
+              "three slow jobs under different keys ran at once");
+        check(s[3].began + 5 >= first_end,
+              "the fourth waited for one of them to end");
+        check(q.ran && q.began - posted_at < 150,
+              "a job posted behind four slow ones started at once");
+    }
+
+    /* 7. The longest turn is measured on the loop. */
     tiku_watch_longest_reset();
     tiku_watch_beat();
     hold_ms(120);

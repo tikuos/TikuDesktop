@@ -927,6 +927,61 @@ tiku_backend_tiku_port(const tiku_backend_t *b, char *out, size_t max)
     return (int)n;
 }
 
+/** @brief The first line of what @p s says to "cat @p path", into @p out;
+ *         empty when the board cannot read it. */
+static void
+ident_cat(tiku_session_t *s, const char *path, char *out, size_t max)
+{
+    char cmd[64], buf[TIKU_VAL_MAX + 1];
+    int n;
+    size_t i = 0;
+
+    out[0] = '\0';
+    snprintf(cmd, sizeof cmd, "cat %s", path);
+    n = tiku_session_cmd(s, cmd, buf, sizeof buf, 1500);
+    if (n <= 0 || n >= TIKU_VAL_MAX || strstr(buf, "cannot read") != NULL) {
+        return;
+    }
+    while (buf[i] != '\0' && buf[i] != '\r' && buf[i] != '\n' &&
+           i + 1u < max) {
+        out[i] = buf[i];
+        i++;
+    }
+    out[i] = '\0';
+}
+
+int
+tiku_backend_tiku_identify(const char *port, int baud, int sync_ms,
+                           tiku_identity_t *out)
+{
+    tiku_tx_t *tx;
+    tiku_session_t *s;
+    int rc = -1;
+
+    if (out == NULL) {
+        return -1;
+    }
+    memset(out, 0, sizeof *out);
+    tx = (port != NULL) ? tiku_tx_open_serial(port, baud) : NULL;
+    if (tx == NULL) {
+        return -1;
+    }
+    s = tiku_session_new(tx);
+    if (s == NULL) {
+        tiku_tx_close(tx);
+        return -1;
+    }
+    if (tiku_session_sync(s, sync_ms) == 0) {
+        ident_cat(s, "/sys/device/uid", out->uid, sizeof out->uid);
+        ident_cat(s, "/sys/device/id", out->id, sizeof out->id);
+        ident_cat(s, "/sys/device/mcu", out->mcu, sizeof out->mcu);
+        ident_cat(s, "/sys/device/name", out->name, sizeof out->name);
+        rc = 0;
+    }
+    tiku_session_free(s);       /* closes the port */
+    return rc;
+}
+
 tiku_backend_t *
 tiku_backend_tiku_open_uid(const char *uid, int baud)
 {
@@ -936,20 +991,16 @@ tiku_backend_tiku_open_uid(const char *uid, int baud)
     if (uid == NULL || uid[0] == '\0') {
         return NULL;
     }
+    /* Each port is asked who it is; only the board with the uid has its
+     * namespace read. */
     found = tiku_tx_scan_serial(scan, 16);
     for (i = 0; i < found; i++) {
-        tiku_backend_t *dev =
-            tiku_backend_tiku_open_within(scan[i], baud, 800, 0);
-        const tiku_identity_t *id;
+        tiku_identity_t id;
 
-        if (dev == NULL) {
-            continue;
+        if (tiku_backend_tiku_identify(scan[i], baud, 800, &id) == 0 &&
+            strcmp(id.uid, uid) == 0) {
+            return tiku_backend_tiku_open(scan[i], baud);
         }
-        id = tiku_backend_tiku_identity(dev);
-        if (id != NULL && strcmp(id->uid, uid) == 0) {
-            return dev;
-        }
-        tiku_backend_close(dev);
     }
     return NULL;
 }

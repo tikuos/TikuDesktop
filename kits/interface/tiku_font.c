@@ -624,18 +624,82 @@ struct face_glyph {
     int                  adv;
     int                  w, h, ox, oy;
     const unsigned char *cover;
+    int                  times;     /* copies of the ink drawn, 1 or more */
+    int                  step;      /* logical pixels between the copies */
 };
 
+/*
+ * Punctuation past the baked range, drawn from a letter the face carries:
+ * the ellipsis as three periods, the dashes from the hyphen, curly quotes
+ * as straight ones and the bullet as a middle dot.  A joined stand-in
+ * places its copies the base's inked width apart, less a column, so they
+ * meet.
+ */
+static const struct stand_in {
+    unsigned cp;
+    unsigned base;
+    int      times;
+    int      joined;
+} stand_ins[] = {
+    { 0x2013u, '-', 1, 0 },     /* en dash */
+    { 0x2014u, '-', 2, 1 },     /* em dash */
+    { 0x2018u, '\'', 1, 0 },
+    { 0x2019u, '\'', 1, 0 },
+    { 0x201Cu, '"', 1, 0 },
+    { 0x201Du, '"', 1, 0 },
+    { 0x2022u, 0xB7u, 1, 0 },   /* bullet */
+    { 0x2026u, '.', 3, 0 },     /* horizontal ellipsis */
+};
+
+/** @brief How many columns of @p g's coverage carry ink: its width
+ *         without the blank columns at either side. */
+static int
+inked_width(const tiku_font_t *f, const tiku_glyph_t *g)
+{
+    const unsigned char *cover = f->bits + g->off;
+    int x, y, lo = g->w, hi = -1;
+
+    for (y = 0; y < g->h; y++) {
+        for (x = 0; x < g->w; x++) {
+            if (cover[(long)y * g->w + x] != 0u) {
+                lo = (x < lo) ? x : lo;
+                hi = (x > hi) ? x : hi;
+            }
+        }
+    }
+    return (hi >= lo) ? hi - lo + 1 : g->w;
+}
+
+/** @brief The stand-in for @p cp in baked face @p f: a rule whose letter
+ *         @p f carries, or NULL. */
+static const struct stand_in *
+stand_in_of(const tiku_font_t *f, unsigned cp)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof stand_ins / sizeof stand_ins[0]; i++) {
+        long b = (long)stand_ins[i].base - (long)f->first;
+
+        if (stand_ins[i].cp == cp) {
+            return (b >= 0 && b < (long)f->count) ? &stand_ins[i] : NULL;
+        }
+    }
+    return NULL;
+}
+
 /**
- * @brief Fill @p out with @p cp from @p f.
+ * @brief Fill @p out with @p cp from @p f; punctuation a baked face lacks
+ *        is drawn from the letter stand_ins names for it.
  *
- * @return 1 when the face has that letter; 0 when it does not, with
- *         @p out holding a stand-in: the face's first glyph, or an empty
- *         one a third of the height wide.
+ * @return 1 when the face has that letter or its stand-in; 0 when it does
+ *         not, with @p out holding the face's first glyph, or an empty one
+ *         a third of the height wide.
  */
 static int
 face_glyph(const tiku_font_t *f, unsigned cp, face_glyph_t *out)
 {
+    out->times = 1;
+    out->step = 0;
 
     if (f->src != NULL) {
         const tiku_ttf_glyph_t *g = cache_glyph(f->src, cp);
@@ -672,19 +736,33 @@ face_glyph(const tiku_font_t *f, unsigned cp, face_glyph_t *out)
     {
         long i = (long)cp - (long)f->first;
         int have = (i >= 0 && i < (long)f->count);
-        const tiku_glyph_t *g = &f->glyphs[have ? i : 0];
+        const struct stand_in *si = have ? NULL : stand_in_of(f, cp);
+        const tiku_glyph_t *g;
 
+        if (si != NULL) {
+            i = (long)si->base - (long)f->first;
+            have = 1;
+        }
+        g = &f->glyphs[have ? i : 0];
         out->adv = g->adv;
         out->w = g->w;
         out->h = g->h;
         out->ox = g->ox;
         out->oy = g->oy;
         out->cover = f->bits + g->off;
+        if (si != NULL) {
+            int inked = inked_width(f, g);
+
+            out->times = si->times;
+            out->step = si->joined ? ((inked > 2) ? inked - 1 : inked)
+                                   : g->adv;
+            out->adv += (si->times - 1) * out->step;
+        }
         return have;
     }
 }
 
-/** @brief Whether @p f carries @p cp at all. */
+/** @brief Whether @p f carries @p cp at all, itself or by a stand-in. */
 static int
 face_has(const tiku_font_t *f, unsigned cp)
 {
@@ -694,7 +772,7 @@ face_has(const tiku_font_t *f, unsigned cp)
     {
         long i = (long)cp - (long)f->first;
 
-        return i >= 0 && i < (long)f->count;
+        return (i >= 0 && i < (long)f->count) || stand_in_of(f, cp) != NULL;
     }
 }
 
@@ -855,7 +933,7 @@ tiku_text(tiku_surface_t *s, const tiku_font_t *f, int x, int y,
     while (*text != '\0') {
         unsigned cp = utf8_next(&text);
         face_glyph_t logical, ink;
-        int gx, gy, rx, ry, rep = sc;
+        int gx, gy, rx, ry, k, rep = sc;
 
         (void)face_glyph(f, cp, &logical);
         ink = logical;
@@ -866,16 +944,20 @@ tiku_text(tiku_surface_t *s, const tiku_font_t *f, int x, int y,
             rep = sc / 2;
         }
 
-        for (gy = 0; ink.cover != NULL && gy < ink.h; gy++) {
-            const unsigned char *row = ink.cover + (long)gy * ink.w;
+        for (k = 0; k < ink.times; k++) {
+            int at = pen + k * ink.step * rep;
 
-            for (gx = 0; gx < ink.w; gx++) {
-                int nx = pen + (ink.ox + gx) * rep;
-                int ny = y * sc + (ink.oy + gy) * rep;
+            for (gy = 0; ink.cover != NULL && gy < ink.h; gy++) {
+                const unsigned char *row = ink.cover + (long)gy * ink.w;
 
-                for (ry = 0; ry < rep; ry++) {
-                    for (rx = 0; rx < rep; rx++) {
-                        blend(s, sc, nx + rx, ny + ry, c, row[gx]);
+                for (gx = 0; gx < ink.w; gx++) {
+                    int nx = at + (ink.ox + gx) * rep;
+                    int ny = y * sc + (ink.oy + gy) * rep;
+
+                    for (ry = 0; ry < rep; ry++) {
+                        for (rx = 0; rx < rep; rx++) {
+                            blend(s, sc, nx + rx, ny + ry, c, row[gx]);
+                        }
                     }
                 }
             }

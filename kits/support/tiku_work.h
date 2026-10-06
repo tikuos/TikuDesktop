@@ -48,6 +48,15 @@ typedef struct tiku_work_job {
 int tiku_work_post(const tiku_work_job_t *job);
 
 /**
+ * @brief The same for a job that waits on a device, such as asking a port
+ *        who is on it.  Slow jobs never take the last idle worker, so a
+ *        job posted with tiku_work_post() always finds one.
+ * @return 0 when queued; -1 when the table is full or the job has no run.
+ * @note Loop thread only.
+ */
+int tiku_work_post_slow(const tiku_work_job_t *job);
+
+/**
  * @brief Run @c done, then @c free, for every job finished since last
  *        time, and free its slot.
  *

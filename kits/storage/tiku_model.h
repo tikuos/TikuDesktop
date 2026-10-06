@@ -319,6 +319,17 @@ tiku_backend_t *tiku_backend_tiku_open(const char *port, int baud);
  */
 tiku_backend_t *tiku_backend_tiku_open_within(const char *port, int baud,
                                               int sync_ms, int recover);
+
+/**
+ * @brief Ask the board on @p port who it is, without opening its
+ *        namespace: the shell's prompt within @p sync_ms, then the four
+ *        identity nodes, and the port is closed again.
+ *
+ * A port that does not answer is sent only the newline.
+ * @return 0 with @p out filled when a shell answered, -1 otherwise.
+ */
+int tiku_backend_tiku_identify(const char *port, int baud, int sync_ms,
+                               tiku_identity_t *out);
 struct tiku_tx;
 /**
  * @brief The same device over a transport already open, such as a board
