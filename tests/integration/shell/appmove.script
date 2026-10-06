@@ -9,9 +9,7 @@ wait 4
 menu-pick Development
 wait 4
 expect-menu TikuBasic
-press 520 134
-wait 2
-release 520 134
+menu-pick TikuBasic
 wait 150
 expect-title Project
 drag-window Project 400 300

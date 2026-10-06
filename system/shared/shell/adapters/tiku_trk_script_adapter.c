@@ -626,6 +626,7 @@ tiku_trk_script_adapter_next(tiku_trk_script_adapter_t *adapter,
         return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
     case TIKU_TRK_SC_PRESS:
     case TIKU_TRK_SC_RELEASE:
+        adapter->menu_held = 0;
         event->type = step.what == TIKU_TRK_SC_PRESS
             ? TIKU_EVENT_POINTER_DOWN : TIKU_EVENT_POINTER_UP;
         event->x = step.x;
@@ -635,8 +636,25 @@ tiku_trk_script_adapter_next(tiku_trk_script_adapter_t *adapter,
         event->time_us = tiku_trk_now();
         return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
     case TIKU_TRK_SC_MENU_PICK:
-        return menu_pick(adapter, step.path, event)
-            ? TIKU_TRK_SCRIPT_ADAPTER_EVENT : TIKU_TRK_SCRIPT_ADAPTER_IDLE;
+    case TIKU_TRK_SC_MENU_PRESS:
+        if (!menu_pick(adapter, step.path, event)) {
+            return TIKU_TRK_SCRIPT_ADAPTER_IDLE;
+        }
+        adapter->release_owed = step.what == TIKU_TRK_SC_MENU_PICK;
+        adapter->menu_held = step.what == TIKU_TRK_SC_MENU_PRESS;
+        return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
+    case TIKU_TRK_SC_MENU_RELEASE:
+        if (!adapter->menu_held) {
+            fprintf(stderr, "script: menu-release needs menu-press\n");
+            return TIKU_TRK_SCRIPT_ADAPTER_IDLE;
+        }
+        adapter->menu_held = 0;
+        event->type = TIKU_EVENT_POINTER_UP;
+        event->x = adapter->release_x;
+        event->y = adapter->release_y;
+        event->button = 1u;
+        event->time_us = tiku_trk_now();
+        return TIKU_TRK_SCRIPT_ADAPTER_EVENT;
     case TIKU_TRK_SC_SHOT:
         snprintf(adapter->shot_path, sizeof adapter->shot_path, "%s",
                  step.path);

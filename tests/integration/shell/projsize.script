@@ -9,9 +9,7 @@ click 980 20
 wait 4
 menu-pick Development
 wait 4
-press 520 134
-wait 2
-release 520 134
+menu-pick TikuBasic
 wait 150
 expect-title Project
 expect-window-at 275 116

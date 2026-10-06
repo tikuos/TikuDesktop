@@ -1,26 +1,24 @@
 # shell: desktop
 # home: fixture
-# The Deskbar preferences carry the text size: two clicks and the whole
-# interface reads bigger, proven by the leaf menu growing taller.
+# Increasing the Deskbar font enlarges the same menu's rows.
 wait 12
 click 980 20
 wait 2
-note at 12 px the leaf menu ends at 228, above the line below
-expect-under menu-bottom 238
+expect-font Sans 12
+note the 12 px menu ends at 271, below the 14 px menu's bottom of 295
+expect-under menu-bottom 283
 menu-pick Settings
 wait 3
 menu-pick Deskbar preferences
 wait 5
-note the PLUS, which is now a button a press can land on: the row used
-note to be the string "-  12 px  +" split at a written-down pixel, and
-note which half a click fell in moved with the face and the number
+note increase the text size with the plus button
 click 715 270
 wait 3
 key w ctrl
 wait 3
 click 980 20
 wait 3
-note at 14 px the same rows reach past it: the menu ran to 228,
-note and now runs past 238 -- taller rows, the same number of them
-expect-over menu-bottom 238
+expect-font Sans 14
+note the larger font moves the menu bottom past the same boundary
+expect-over menu-bottom 283
 quit

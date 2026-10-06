@@ -47,6 +47,7 @@ typedef struct {
      * row starts its program only when the button comes up, and a press
      * without its release leaves a surface holding the capture. */
     int release_owed;
+    int menu_held;                  /* a named menu press awaits release */
     int release_x, release_y;
     int row_h;                      /* a list row's height */
     /* The shell's own full redraw, for the check that what the frames

@@ -12,7 +12,7 @@ menu-pick Development
 wait 4
 expect-menu TikuBasic
 note picked up from its row and carried to the desk
-press 520 134
+menu-press TikuBasic
 wait 2
 move 400 300
 wait 2
@@ -22,12 +22,12 @@ release 300 500
 wait 80
 expect-desk-icon TikuBasic
 expect-link /tmp/trk_home/.config/tracker/Desktop/TikuBasic /tmp/trk_apps/programming/basic/TikuBasic.so
-shot /tmp/claude-1000/-home-ambuj-tikuOS/d163cf18-488f-4da3-bf79-19a2cda9f363/scratchpad/applink-desk.png
+shot /tmp/trk_applink_desk.png
 note and opened from the desk it is the program, not a file
 click-desk TikuBasic
 wait 2
 click-desk TikuBasic
 wait 150
 expect-title Project
-shot /tmp/claude-1000/-home-ambuj-tikuOS/d163cf18-488f-4da3-bf79-19a2cda9f363/scratchpad/applink-open.png
+shot /tmp/trk_applink_open.png
 quit

@@ -9,9 +9,9 @@ wait 4
 menu-pick Development
 wait 4
 expect-menu TikuBasic
-press 520 134
+menu-press TikuBasic
 wait 2
-release 520 134
+menu-release
 wait 150
 expect-title Project
 expect-no-file /tmp/trk_home/.config/tracker/Desktop/TikuBasic

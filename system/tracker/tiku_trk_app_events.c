@@ -1040,6 +1040,7 @@ browser_script_step(app_t *app, browser_loop_t *lp, tiku_event_t *ev, int *have)
             break;
         case TIKU_TRK_SC_PRESS:
         case TIKU_TRK_SC_RELEASE:
+            app->script_menu_held = 0;
             (*ev).type = (sp.what == TIKU_TRK_SC_PRESS)
                           ? TIKU_EVENT_POINTER_DOWN
                           : TIKU_EVENT_POINTER_UP;
@@ -1054,6 +1055,20 @@ browser_script_step(app_t *app, browser_loop_t *lp, tiku_event_t *ev, int *have)
             browser_draw(app);
             (void)tiku_surface_png(app->surf, sp.path);
             break;
+        case TIKU_TRK_SC_MENU_RELEASE:
+            if (!app->script_menu_held) {
+                fprintf(stderr, "script: menu-release needs menu-press\n");
+                break;
+            }
+            app->script_menu_held = 0;
+            (*ev).type = TIKU_EVENT_POINTER_UP;
+            (*ev).x = app->script_menu_x;
+            (*ev).y = app->script_menu_y;
+            (*ev).button = 1u;
+            (*ev).time_us = tiku_trk_now();
+            (*have) = 1;
+            break;
+        case TIKU_TRK_SC_MENU_PRESS:
         case TIKU_TRK_SC_MENU_PICK: {
             tiku_menu_t *m = (app->popup_sub != NULL)
                                      ? app->popup_sub : app->popup;
@@ -1078,6 +1093,12 @@ browser_script_step(app_t *app, browser_loop_t *lp, tiku_event_t *ev, int *have)
                     (*ev).button = 1u;
                     (*ev).time_us = tiku_trk_now();
                     (*have) = 1;
+                    /* A menu-press holds the button for a menu-release at
+                     * the same point. */
+                    app->script_menu_held =
+                        sp.what == TIKU_TRK_SC_MENU_PRESS;
+                    app->script_menu_x = (*ev).x;
+                    app->script_menu_y = (*ev).y;
                     break;
                 }
             }

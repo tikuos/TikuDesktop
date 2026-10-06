@@ -220,6 +220,8 @@ click-window|drag-window <title> [x y]  -- raise or move a window by title
 wait <turns>
 shot <path>
 menu-pick <label>             -- popups, menu bars, and the Deskbar leaf menu
+menu-press <label>            -- press a named row without releasing it
+menu-release                  -- release at the last menu-press point
 note <text>                   -- the sentence printed with the next verdict
 expect-status|-title|-alert|-menu|-count <substring>
 expect-rows|-selected|-windows|-columns|-scroll <n>

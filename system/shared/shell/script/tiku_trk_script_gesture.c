@@ -174,7 +174,11 @@ sc_pump_gesture(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
         s->waiting = 1;
         return 1;
     case OP_MENU_PICK:
-        out->what = TIKU_TRK_SC_MENU_PICK;
+    case OP_MENU_PRESS:
+    case OP_MENU_RELEASE:
+        out->what = cur->op == OP_MENU_PRESS ? TIKU_TRK_SC_MENU_PRESS
+                  : cur->op == OP_MENU_RELEASE ? TIKU_TRK_SC_MENU_RELEASE
+                                              : TIKU_TRK_SC_MENU_PICK;
         out->path = cur->text;
         return 1;
     case OP_SHOT:
@@ -199,7 +203,7 @@ sc_pump_gesture(tiku_trk_script_t *s, const tiku_trk_script_state_t *st,
 /**
  * @brief Parse a gesture line: key, click, press, move, release,
  *        click-window, drag-window, press-row, move-row, release-row,
- *        click-cell, click-row, wait, report, menu-pick, shot or resize.
+ *        click-cell, click-row, wait, report, menu gestures, shot or resize.
  *
  * @return 1 for a verb of this group, -1 for one whose line is bad and has
  *         been reported, 0 for a verb of another group.
@@ -271,8 +275,12 @@ sc_parse_gesture(sc_step_t *st, char **w, int n, int lineno)
         st->count = atoi(w[1]);
     } else if (strcmp(w[0], "report") == 0) {
         st->op = OP_REPORT;
-    } else if (strcmp(w[0], "menu-pick") == 0 && n >= 2) {
-        st->op = OP_MENU_PICK;
+    } else if (strcmp(w[0], "menu-release") == 0 && n == 1) {
+        st->op = OP_MENU_RELEASE;
+    } else if ((strcmp(w[0], "menu-pick") == 0 ||
+                strcmp(w[0], "menu-press") == 0) && n >= 2) {
+        st->op = strcmp(w[0], "menu-press") == 0 ? OP_MENU_PRESS
+                                               : OP_MENU_PICK;
         sc_rest(w, n, 1, st->text, sizeof st->text);
     } else if (strcmp(w[0], "shot") == 0 && n >= 2) {
         st->op = OP_SHOT;

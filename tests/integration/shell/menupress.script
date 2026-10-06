@@ -1,0 +1,12 @@
+# shell: both
+# A script's menu-press and menu-release choose a menu row in two steps,
+# in the desktop and in Tracker alike.
+click-row 1 3
+wait 3
+expect-menu Duplicate
+menu-press Duplicate
+wait 2
+menu-release
+wait 20
+expect-file /tmp/trk_script/a.txt copy
+quit

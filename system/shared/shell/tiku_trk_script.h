@@ -26,6 +26,8 @@ typedef enum {
     TIKU_TRK_SC_MOVE,
     TIKU_TRK_SC_RELEASE,
     TIKU_TRK_SC_MENU_PICK,
+    TIKU_TRK_SC_MENU_PRESS,
+    TIKU_TRK_SC_MENU_RELEASE,
     TIKU_TRK_SC_SHOT,
     TIKU_TRK_SC_QUIT
 } tiku_trk_script_do_t;
@@ -37,7 +39,7 @@ typedef struct {
     unsigned    modifiers;  /* platform-neutral modifier mask          */
     int         x, y;       /* PRESS, MOVE and RELEASE                  */
     unsigned    button;     /* the mouse button                         */
-    const char *path;       /* SHOT: where to write; MENU_PICK: label   */
+    const char *path;       /* SHOT: output path; MENU_*: label         */
 } tiku_trk_script_step_t;
 
 /** @brief What the driver can tell the script about itself. */

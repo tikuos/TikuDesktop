@@ -118,6 +118,10 @@ typedef struct {
     tiku_menu_t     *popup_sub;      /**< its open submenu, or NULL       */
     tiku_rect_t     popup_frame;     /**< where the menu is drawn         */
     tiku_rect_t     popup_sub_frame; /**< where the submenu is drawn      */
+    int                 script_menu_held; /**< a script's menu-press is
+                                           *   waiting for its release */
+    int                 script_menu_x;    /**< x of that press          */
+    int                 script_menu_y;    /**< y of that press          */
     tiku_rect_t     viewbtn_rect;    /**< the gutter's view-mode button   */
     int                  theme_mode; /**< DarkMode in force: 0 light,
                                       *   1 dark, 2 no hue                */

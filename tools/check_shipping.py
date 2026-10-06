@@ -26,7 +26,8 @@ DEVELOPMENT = ["build/dev/TikuTracker", "build/dev/TikuDesktop"]
 # ("click", "wait") would appear for a hundred innocent reasons; these are
 # script ops, spelled the way only the parser spells them.
 VOCABULARY = [b"expect-pixel", b"expect-title", b"click-desk",
-              b"expect-same-as-redraw", b"menu-pick"]
+              b"expect-same-as-redraw", b"menu-pick", b"menu-press",
+              b"menu-release"]
 
 
 def words_in(path: Path) -> list[bytes]:
