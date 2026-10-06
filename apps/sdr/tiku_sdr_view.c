@@ -29,8 +29,6 @@
 #define ZB_INK     TIKU_RGB(60, 140, 60)
 #define WIFI_INK   TIKU_RGB(60, 110, 180)
 #define REC_INK    TIKU_RGB(214, 48, 49)
-#define LIVE_ON    TIKU_RGB(40, 186, 72)
-#define LIVE_OFF   TIKU_RGB(150, 150, 150)
 
 #define PANEL_X    8
 #define PANEL_W    200
@@ -40,7 +38,7 @@
 #define CTL_H      22               /* a field, list or button in a row */
 #define AREA_X     (PANEL_X + PANEL_W + 10)  /* the display area's left edge */
 #define AXIS_W     52               /* the level scale, left of the grid */
-#define BAR_H      30               /* the bar at the window's foot     */
+#define BAR_H      76               /* transport, status, pointer readout */
 #define NOTE_H     16               /* an annotation row                */
 #define RULER      12               /* a channel plan's row             */
 
@@ -53,40 +51,62 @@ static const char *const type_short[SDR_T_TYPES] = {
 };
 
 /* The panel's sections: a bar, then rows. */
-enum { S_FREQ, S_TRACE, S_MARK, S_SHOW, SECTIONS };
+enum { S_FREQ, S_TRACE, S_MARK, S_SHOW, S_RECEIVER, S_MEASURE, SECTIONS };
 static const struct { const char *name; int rows; } section[SECTIONS] = {
-    {"Frequency", 5}, {"Traces", 4}, {"Markers", 7}, {"Display", 2}
+    {"Frequency", 5}, {"Traces", 4}, {"Markers", 7}, {"Display", 8},
+    {"Receiver", 6}, {"Measurements", 8}
 };
 /* Each row's name, by section, "" for none. */
-static const char *const row_name[SECTIONS][7] = {
+static const char *const row_name[SECTIONS][8] = {
     {"Center", "Span", "Start", "Stop", "", "", ""},
     {"Trace", "Type", "Avg count", "", "", "", ""},
     {"Marker", "On trace", "", "Freq", "", "", ""},
-    {"", "", "", "", "", "", ""}
+    {"", "", "", "Ref", "dB/div", "", "Floor", "Ceiling"},
+    {"", "Index", "", "", "", ""},
+    {"", "", "Threshold", "Pre (s)", "Post (s)", "", "Bookmark", ""}
 };
 
 /** @brief Section @p s's bar's top. */
-static int section_y(int s)
+static int section_y(const sdr_t *st, int s)
 {
     int y = 6;
 
-    for (int i = 0; i < s; i++) y += HEAD_H + 4 + section[i].rows * ROW_H + 6;
+    for (int i = 0; i < s; i++)
+        y += HEAD_H + 10 + ((st->collapsed & (1u << i)) ? 0 :
+                            section[i].rows * ROW_H);
     return y;
 }
 
 /** @brief Row @p row of section @p s, from @p x, @p w wide. */
-static tiku_rect_t row_at(int s, int row, int x, int w)
+static tiku_rect_t row_at(const sdr_t *st, int s, int row, int x, int w)
 {
-    return (tiku_rect_t){x, section_y(s) + HEAD_H + 4 + row * ROW_H + 1, w,
+    if (st->collapsed & (1u << s)) return (tiku_rect_t){0, 0, 0, 0};
+    return (tiku_rect_t){x, section_y(st, s) + HEAD_H + 4 + row * ROW_H + 1, w,
                          CTL_H};
 }
 
 /** @brief Button @p col of @p cols sharing row @p row of section @p s. */
-static tiku_rect_t button_at(int s, int row, int col, int cols)
+static tiku_rect_t button_at(const sdr_t *st, int s, int row, int col, int cols)
 {
     int w = (PANEL_W - 4 * (cols - 1)) / cols;
 
-    return row_at(s, row, PANEL_X + col * (w + 4), w);
+    return row_at(st, s, row, PANEL_X + col * (w + 4), w);
+}
+
+void sdr_section_toggle(sdr_t *st, int sec)
+{
+    if (sec < 0 || sec >= SECTIONS) return;
+    st->collapsed ^= 1u << sec;
+    for (int i = SECTIONS - 1; i >= 0 &&
+         section_y(st, SECTIONS) > st->h - BAR_H - 4; i--)
+        if (i != sec) st->collapsed |= 1u << i;
+    st->dialog.focus = TIKU_DIALOG_NONE;
+    for (int c = 0; c < SDR_CHOICES; c++) st->choice[c].open = 0;
+}
+
+tiku_rect_t sdr_timeline_rect(const sdr_t *st)
+{
+    return (tiku_rect_t){250, st->h - BAR_H + 4, st->w - 265, CTL_H};
 }
 
 tiku_rect_t sdr_control_rect(const sdr_t *st, int id)
@@ -94,32 +114,59 @@ tiku_rect_t sdr_control_rect(const sdr_t *st, int id)
     int x = PANEL_X + LABEL_W, w = PANEL_W - LABEL_W, fw = w - 30;
     int bar = st->h - BAR_H + 4;
 
+    if (id >= CMD_SECTION && id < CMD_SECTION + SECTIONS)
+        return (tiku_rect_t){PANEL_X, section_y(st, id - CMD_SECTION),
+                             PANEL_W, HEAD_H};
+
     switch (id) {
-    case CMD_FIELD + SDR_F_CENTER: return row_at(S_FREQ, 0, x, fw);
-    case CMD_FIELD + SDR_F_SPAN:   return row_at(S_FREQ, 1, x, fw);
-    case CMD_FIELD + SDR_F_START:  return row_at(S_FREQ, 2, x, fw);
-    case CMD_FIELD + SDR_F_STOP:   return row_at(S_FREQ, 3, x, fw);
-    case CMD_LIVE: return button_at(S_FREQ, 4, 0, 1);
-    case CMD_CHOICE + SDR_C_TRACE: return row_at(S_TRACE, 0, x, w);
-    case CMD_CHOICE + SDR_C_TYPE:  return row_at(S_TRACE, 1, x, w);
-    case CMD_FIELD + SDR_F_AVG:    return row_at(S_TRACE, 2, x, 48);
-    case CMD_CLEAR:  return button_at(S_TRACE, 3, 0, 2);
-    case CMD_EXPORT: return button_at(S_TRACE, 3, 1, 2);
-    case CMD_CHOICE + SDR_C_MARKER: return row_at(S_MARK, 0, x, w);
-    case CMD_CHOICE + SDR_C_ON: return row_at(S_MARK, 1, x, w);
-    case CMD_MARK_ACTIVE: return row_at(S_MARK, 2, x, 64);
-    case CMD_TRACK: return row_at(S_MARK, 2, x + 70, w - 70);
-    case CMD_FIELD + SDR_F_MARK: return row_at(S_MARK, 3, x, fw);
-    case CMD_PEAK_SEARCH: return button_at(S_MARK, 4, 0, 2);
-    case CMD_NEXT_PEAK:   return button_at(S_MARK, 4, 1, 2);
-    case CMD_PEAK_LEFT:   return button_at(S_MARK, 5, 0, 2);
-    case CMD_PEAK_RIGHT:  return button_at(S_MARK, 5, 1, 2);
-    case CMD_MARK_CENTER: return button_at(S_MARK, 6, 0, 2);
-    case CMD_MARK_CLEAR:  return button_at(S_MARK, 6, 1, 2);
-    case CMD_WATERFALL: return row_at(S_SHOW, 0, PANEL_X + 4, PANEL_W - 8);
-    case CMD_PLANS:     return row_at(S_SHOW, 1, PANEL_X + 4, PANEL_W - 8);
-    case CMD_RECORD: return (tiku_rect_t){PANEL_X, bar, 30, CTL_H};
-    case CMD_PAUSE:  return (tiku_rect_t){PANEL_X + 34, bar, 30, CTL_H};
+    case CMD_FIELD + SDR_F_CENTER: return row_at(st, S_FREQ, 0, x, fw);
+    case CMD_FIELD + SDR_F_SPAN:   return row_at(st, S_FREQ, 1, x, fw);
+    case CMD_FIELD + SDR_F_START:  return row_at(st, S_FREQ, 2, x, fw);
+    case CMD_FIELD + SDR_F_STOP:   return row_at(st, S_FREQ, 3, x, fw);
+    case CMD_LIVE: return button_at(st, S_FREQ, 4, 0, 1);
+    case CMD_CHOICE + SDR_C_TRACE: return row_at(st, S_TRACE, 0, x, w);
+    case CMD_CHOICE + SDR_C_TYPE:  return row_at(st, S_TRACE, 1, x, w);
+    case CMD_FIELD + SDR_F_AVG:    return row_at(st, S_TRACE, 2, x, 48);
+    case CMD_CLEAR:  return button_at(st, S_TRACE, 3, 0, 2);
+    case CMD_EXPORT: return button_at(st, S_TRACE, 3, 1, 2);
+    case CMD_CHOICE + SDR_C_MARKER: return row_at(st, S_MARK, 0, x, w);
+    case CMD_CHOICE + SDR_C_ON: return row_at(st, S_MARK, 1, x, w);
+    case CMD_MARK_ACTIVE: return row_at(st, S_MARK, 2, x, 64);
+    case CMD_TRACK: return row_at(st, S_MARK, 2, x + 70, w - 70);
+    case CMD_FIELD + SDR_F_MARK: return row_at(st, S_MARK, 3, x, fw);
+    case CMD_PEAK_SEARCH: return button_at(st, S_MARK, 4, 0, 2);
+    case CMD_NEXT_PEAK:   return button_at(st, S_MARK, 4, 1, 2);
+    case CMD_PEAK_LEFT:   return button_at(st, S_MARK, 5, 0, 2);
+    case CMD_PEAK_RIGHT:  return button_at(st, S_MARK, 5, 1, 2);
+    case CMD_MARK_CENTER: return button_at(st, S_MARK, 6, 0, 2);
+    case CMD_MARK_CLEAR:  return button_at(st, S_MARK, 6, 1, 2);
+    case CMD_WATERFALL: return row_at(st, S_SHOW, 0, PANEL_X + 4, PANEL_W - 8);
+    case CMD_PLANS:     return row_at(st, S_SHOW, 1, PANEL_X + 4, PANEL_W - 8);
+    case CMD_SCALE_AUTO: return row_at(st, S_SHOW, 2, PANEL_X + 4, PANEL_W - 8);
+    case CMD_FIELD + SDR_F_REF: return row_at(st, S_SHOW, 3, x, fw);
+    case CMD_FIELD + SDR_F_DIV: return row_at(st, S_SHOW, 4, x, fw);
+    case CMD_COLOR_AUTO: return row_at(st, S_SHOW, 5, PANEL_X + 4, PANEL_W - 8);
+    case CMD_FIELD + SDR_F_FLOOR: return row_at(st, S_SHOW, 6, x, fw);
+    case CMD_FIELD + SDR_F_CEILING: return row_at(st, S_SHOW, 7, x, fw);
+    case CMD_GAIN_AUTO: return row_at(st, S_RECEIVER, 0, PANEL_X + 4, PANEL_W - 8);
+    case CMD_FIELD + SDR_F_GAIN: return row_at(st, S_RECEIVER, 1, x, fw);
+    case CMD_GAIN_READ: return button_at(st, S_RECEIVER, 2, 0, 1);
+    case CMD_CAPS: return button_at(st, S_RECEIVER, 3, 0, 1);
+    case CMD_FFT: return button_at(st, S_RECEIVER, 4, 0, 1);
+    case CMD_RATE: return button_at(st, S_RECEIVER, 5, 0, 1);
+    case CMD_OCCUPANCY: return button_at(st, S_MEASURE, 0, 0, 1);
+    case CMD_OCC_PLAN: return row_at(st, S_MEASURE, 1, PANEL_X, 134);
+    case CMD_OCC_PAGE: return row_at(st, S_MEASURE, 1, PANEL_X + 138, 62);
+    case CMD_FIELD + SDR_F_THRESHOLD: return row_at(st, S_MEASURE, 2, x, w);
+    case CMD_FIELD + SDR_F_PRE: return row_at(st, S_MEASURE, 3, x, w);
+    case CMD_FIELD + SDR_F_POST: return row_at(st, S_MEASURE, 4, x, w);
+    case CMD_TRIGGER: return button_at(st, S_MEASURE, 5, 0, 1);
+    case CMD_FIELD + SDR_F_BOOK: return row_at(st, S_MEASURE, 6, x, w);
+    case CMD_BOOK_ADD: return button_at(st, S_MEASURE, 7, 0, 2);
+    case CMD_BOOK_NEXT: return button_at(st, S_MEASURE, 7, 1, 2);
+    case CMD_RECORD: return (tiku_rect_t){PANEL_X, bar, 70, CTL_H};
+    case CMD_PAUSE:  return (tiku_rect_t){PANEL_X + 74, bar, 66, CTL_H};
+    case CMD_CONNECT: return (tiku_rect_t){PANEL_X + 144, bar, 88, CTL_H};
     default: return (tiku_rect_t){0, 0, 0, 0};
     }
 }
@@ -138,7 +185,9 @@ void sdr_layout(const sdr_t *st, tiku_rect_t *plot, tiku_rect_t *fall)
 {
     int x = AREA_X + AXIS_W, w = st->w - x - 18;
     int top = 6, bottom = st->h - BAR_H - 4;
-    int fh = st->fall_on ? (bottom - top) * 36 / 100 : 0;
+    int percent = st->fall_percent ? st->fall_percent : 36;
+    int fh = st->fall_on ? (bottom - top) * percent / 100 : 0;
+    if (st->fall_on && st->occupancy.visible && fh < 220) fh = 220;
     int ft = st->fall_on ? top + fh + 6 : top;  /* the frame's top */
     int py = ft + 2 * NOTE_H + 6;
     int plans = st->plans_on ? 3 * RULER + 6 : 0;
@@ -153,7 +202,7 @@ const char *sdr_label(const sdr_t *st, int command)
     case CMD_CONNECT:
         return st->state == SDR_IDLE ? "Connect" :
                st->state >= SDR_STOPPING ? "Returning" : "Disconnect";
-    case CMD_LIVE: return "Live";
+    case CMD_LIVE: return sdr_model_is_live(&st->model) ? "Mode: Live" : "Mode: Sweep";
     case CMD_CLEAR: return "Clear";
     case CMD_EXPORT: return "Export";
     case CMD_MARK_ACTIVE: return "Active";
@@ -166,7 +215,8 @@ const char *sdr_label(const sdr_t *st, int command)
     case CMD_MARK_CLEAR: return "All Off";
     case CMD_WATERFALL: return "Spectrogram";
     case CMD_PLANS: return "Channel plans";
-    case CMD_PAUSE: return st->paused ? "Resume" : "Pause";
+    case CMD_PAUSE: return st->paused ||
+        (st->state != SDR_RUNNING && !st->play.file) ? "Run" : "Pause";
     case CMD_RECORD: return st->rec.file ? "Recording" : "Record";
     case CMD_REPLAY: return "Open Recording";
     case CMD_PICTURE: return "Save Picture";
@@ -174,6 +224,43 @@ const char *sdr_label(const sdr_t *st, int command)
     case CMD_OVERLAY: return "Clear & Write";
     case CMD_MARK_REMOVE: return "Marker Off";
     case CMD_ABOUT: return "About TikuSDR";
+    case CMD_SCALE_AUTO: return "Auto spectrum scale";
+    case CMD_COLOR_AUTO: return "Auto waterfall scale";
+    case CMD_GAIN_AUTO: return "Automatic gain";
+    case CMD_GAIN_READ: return "Read receiver gain";
+    case CMD_REWIND: return "Back 10 Seconds";
+    case CMD_FORWARD: return "Forward 10 Seconds";
+    case CMD_STEP: return "Next Frame";
+    case CMD_SPEED: return "Playback Speed";
+    case CMD_GAPS: return "Skip Long Gaps";
+    case CMD_ZOOM_IN: return "Zoom In";
+    case CMD_ZOOM_OUT: return "Zoom Out";
+    case CMD_VIEW_BACK: return "Previous View";
+    case CMD_HISTORY_OLDER: return "Older Waterfall Rows";
+    case CMD_HISTORY_NEWER: return "Newer Waterfall Rows";
+    case CMD_HISTORY_LATEST: return "Return to Latest";
+    case CMD_PRESET_SAVE: return "Save Named Setup…";
+    case CMD_PRESET_OPEN: return "Open Setup…";
+    case CMD_REF_SAVE: return "Save Trace as Reference…";
+    case CMD_REF_OPEN: return "Open Reference Trace…";
+    case CMD_REF_SHOW: return "Show Reference Trace";
+    case CMD_OCCUPANCY: return "Channel Activity";
+    case CMD_OCC_PLAN: return "Channel Plan (Cycle)";
+    case CMD_OCC_PAGE: return "Next Page";
+    case CMD_OCC_RESET: return "Reset Activity Counts";
+    case CMD_OCC_EXPORT: return "Export Activity CSV…";
+    case CMD_TRIGGER: return st && (st->trigger.armed || st->trigger.fired) ?
+        "Disarm / Finish Capture" : "Arm Trigger…";
+    case CMD_CAPS: return "Read Capabilities";
+    case CMD_FFT: return "FFT Size (Cycle)";
+    case CMD_RATE: return "Sample Rate (Cycle)";
+    case CMD_BOOK_ADD: return "Bookmark";
+    case CMD_BOOK_NEXT: return "Next Event";
+    case CMD_BOOK_CLEAR: return "Clear Bookmarks";
+    case CMD_LOOP_A: return "Set Loop Start Here";
+    case CMD_LOOP_B: return "Set Loop End Here";
+    case CMD_LOOP: return "Loop Selected Interval";
+    case CMD_HEALTH: return "Show Capture Health";
     default: return "Quit";
     }
 }
@@ -192,10 +279,44 @@ int sdr_enabled(const sdr_t *st, int command)
     int out = m->mark[m->mark_sel].on, peaks = out && m->fresh;
 
     if (st->alert.open) return command == CMD_QUIT;
+    if (command >= CMD_PRESET_SAVE && command <= CMD_HEALTH) {
+        switch (command) {
+        case CMD_PRESET_OPEN: case CMD_PRESET_SAVE:
+        case CMD_REF_OPEN: case CMD_OCC_EXPORT: return !st->asking;
+        case CMD_REF_SAVE: return m->fresh && m->type[st->trace_sel] != SDR_T_OFF && !st->asking;
+        case CMD_REF_SHOW: return st->reference.valid;
+        case CMD_CAPS: return st->state == SDR_RUNNING && !st->caps_queued && !st->caps_inflight;
+        case CMD_FFT: case CMD_RATE: return st->state == SDR_RUNNING && st->caps_known == 1;
+        case CMD_TRIGGER: return st->trigger.armed || st->trigger.fired ||
+            (st->state == SDR_RUNNING && !st->paused && !st->rec.file && !st->asking);
+        case CMD_BOOK_ADD: return st->shown[0] && st->book_count < SDR_BOOKS && !st->play.seeking;
+        case CMD_BOOK_NEXT: case CMD_BOOK_CLEAR: return st->shown[0] && st->book_count > 0;
+        case CMD_LOOP_A: case CMD_LOOP_B: return st->shown[0] && !st->play.seeking;
+        case CMD_LOOP: return st->shown[0] && st->play.loop_b > st->play.loop_a;
+        default: return 1;
+        }
+    }
     if (command == CMD_FIELD + SDR_F_MARK) return out;
+    if (command == CMD_FIELD + SDR_F_GAIN || command == CMD_GAIN_AUTO)
+        return st->state == SDR_RUNNING && st->gain_known == 1 &&
+               !st->gain_queued && !st->gain_inflight;
     if (command >= CMD_FIELD && command < CMD_FIELD + SDR_F_AVG)
         return !st->play.file;          /* a recording playing sets the view */
     switch (command) {
+    case CMD_ZOOM_IN: case CMD_ZOOM_OUT: case CMD_VIEW_BACK:
+        return !st->play.file && !st->shown[0] &&
+            (command != CMD_VIEW_BACK || st->previous_count > 0);
+    case CMD_HISTORY_OLDER: case CMD_HISTORY_NEWER: case CMD_HISTORY_LATEST:
+        return m->wf_count > 0;
+    case CMD_PAUSE: return !st->play.seeking &&
+        (st->state == SDR_RUNNING || st->play.file);
+    case CMD_GAIN_READ:
+        return st->state == SDR_RUNNING && !st->gain_queued && !st->gain_inflight;
+    case CMD_REWIND: case CMD_FORWARD: case CMD_STEP: case CMD_SPEED:
+    case CMD_GAPS:
+        return st->play.file != NULL ||
+            ((command == CMD_REWIND || command == CMD_FORWARD) &&
+             st->state == SDR_IDLE && st->shown[0]);
     case CMD_CONNECT:                   /* idle: Connect; else Disconnect */
         return st->state == SDR_IDLE ? st->names[0] != '\0' :
                                        st->state < SDR_STOPPING;
@@ -231,12 +352,14 @@ static void sync_choices(sdr_t *st)
 
 void sdr_controls(sdr_t *st)
 {
+    int previous_focus = st->dialog.focus;
     /* The bar's buttons come first: a focus the dialog places itself goes
      * to the first enabled control, Pause, so Space pauses and keys are
      * not typed into a field.  Then each section from the top, in the
      * order Tab takes them. */
     static const struct { int id; tiku_dialog_kind_t kind; } ctl[] = {
         {CMD_PAUSE, TIKU_DIALOG_BUTTON}, {CMD_RECORD, TIKU_DIALOG_BUTTON},
+        {CMD_CONNECT, TIKU_DIALOG_BUTTON},
         {CMD_FIELD + SDR_F_CENTER, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_SPAN, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_START, TIKU_DIALOG_INPUT},
@@ -257,15 +380,47 @@ void sdr_controls(sdr_t *st)
         {CMD_PEAK_RIGHT, TIKU_DIALOG_BUTTON},
         {CMD_MARK_CENTER, TIKU_DIALOG_BUTTON},
         {CMD_MARK_CLEAR, TIKU_DIALOG_BUTTON},
-        {CMD_WATERFALL, TIKU_DIALOG_TOGGLE}, {CMD_PLANS, TIKU_DIALOG_TOGGLE}
+        {CMD_WATERFALL, TIKU_DIALOG_TOGGLE}, {CMD_PLANS, TIKU_DIALOG_TOGGLE},
+        {CMD_SCALE_AUTO, TIKU_DIALOG_TOGGLE}, {CMD_COLOR_AUTO, TIKU_DIALOG_TOGGLE},
+        {CMD_FIELD + SDR_F_REF, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_DIV, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_FLOOR, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_CEILING, TIKU_DIALOG_INPUT},
+        {CMD_GAIN_AUTO, TIKU_DIALOG_TOGGLE}, {CMD_GAIN_READ, TIKU_DIALOG_BUTTON},
+        {CMD_FIELD + SDR_F_GAIN, TIKU_DIALOG_INPUT},
+        {CMD_CAPS, TIKU_DIALOG_BUTTON}, {CMD_FFT, TIKU_DIALOG_BUTTON},
+        {CMD_RATE, TIKU_DIALOG_BUTTON}, {CMD_OCCUPANCY, TIKU_DIALOG_BUTTON},
+        {CMD_OCC_PLAN, TIKU_DIALOG_BUTTON}, {CMD_TRIGGER, TIKU_DIALOG_BUTTON},
+        {CMD_OCC_PAGE, TIKU_DIALOG_BUTTON},
+        {CMD_FIELD + SDR_F_THRESHOLD, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_PRE, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_POST, TIKU_DIALOG_INPUT},
+        {CMD_FIELD + SDR_F_BOOK, TIKU_DIALOG_INPUT},
+        {CMD_BOOK_ADD, TIKU_DIALOG_BUTTON}, {CMD_BOOK_NEXT, TIKU_DIALOG_BUTTON}
     };
 
+    for (int i = SECTIONS - 1; i >= 0 &&
+         section_y(st, SECTIONS) > st->h - BAR_H - 4; i--)
+        st->collapsed |= 1u << i;
     sync_choices(st);
     tiku_dialog_begin(&st->dialog, TIKU_DIALOG_NONE, CMD_QUIT);
-    for (size_t i = 0; i < sizeof ctl / sizeof ctl[0]; i++)
-        tiku_dialog_add(&st->dialog, ctl[i].id, sdr_control_rect(st,
-                        ctl[i].id), ctl[i].kind, sdr_enabled(st, ctl[i].id));
+    for (size_t i = 0; i < sizeof ctl / sizeof ctl[0]; i++) {
+        tiku_rect_t r = sdr_control_rect(st, ctl[i].id);
+        if (r.w > 0 && r.h > 0)
+            tiku_dialog_add(&st->dialog, ctl[i].id, r,
+                           ctl[i].kind, sdr_enabled(st, ctl[i].id));
+    }
+    for (int i = 0; i < SECTIONS; i++)
+        tiku_dialog_add(&st->dialog, CMD_SECTION + i,
+                       sdr_control_rect(st, CMD_SECTION + i),
+                       TIKU_DIALOG_BUTTON, !st->alert.open);
     tiku_dialog_end(&st->dialog);
+    /* An acquisition ending or a section closing must not start editing a
+     * frequency. Only an explicit click or Tab should enter a text field. */
+    if (st->dialog.focus >= CMD_FIELD &&
+        st->dialog.focus < CMD_FIELD + SDR_FIELDS &&
+        st->dialog.focus != previous_focus)
+        st->dialog.focus = CMD_SECTION + SDR_S_FREQ;
 }
 
 /** @brief The x of @p mhz across @p r. */
@@ -467,7 +622,7 @@ static void annotations(sdr_t *st, tiku_rect_t f, tiku_rect_t r)
     snprintf(t, sizeof t, "Div %.0f dB", (double)m->div);
     note(s, f.x + 8, top + NOTE_H, 1, t, NOTE_INK);
     sdr_mhz_text(m->bin_mhz * 1000.0, a, sizeof a);
-    snprintf(t, sizeof t, "RBW %s kHz", a);
+    snprintf(t, sizeof t, "Bin %s kHz", a);
     note(s, cx, top, 0, t, NOTE_INK);
     if (m->sweep)
         snprintf(t, sizeof t, "%d slices at 40 MS/s",
@@ -551,19 +706,41 @@ static void spectrum(sdr_t *st, tiku_rect_t r)
         const float *v = sdr_trace(m, m->type[k]);
         if (v) trace(st->surface, r, m, v, trace_ink[k]);
     }
+    int row = sdr_history_row(m, m->wf_selected);
+    if (sdr_reference_matches(st)) trace(st->surface, r, m, st->reference.db, BLE_INK);
+    if (row >= 0) {
+        float history[SDR_BINS];
+        for (int b = 0; b < m->n; b++) history[b] = m->wf[row][b] / 2.0f;
+        trace(st->surface, r, m, history, MARK_INK);
+    }
     marker_pointers(st->surface, r, m);
     tiku_clip_reset(st->surface);
     readout(st->surface, r, m);
+    if (st->reference.valid && st->reference.visible) {
+        char text[160];
+        snprintf(text, sizeof text, "Ref: %.60s · %s", st->reference.name,
+                 sdr_reference_matches(st) ? "relative dB; gain/device may differ" : "hidden: acquisition grid differs");
+        tiku_text_line_draw(st->surface,
+                            (tiku_rect_t){r.x + 4, r.y + r.h - (row >= 0 ? 40 : 20), r.w - 8, 18},
+                            TIKU_MEASURE_PLAIN, text, BLE_INK);
+    }
+    if (row >= 0) {
+        char text[96];
+        snprintf(text, sizeof text, "History overlay: %.3f s ago",
+                 m->wf_at[m->wf_head] - m->wf_at[row]);
+        tiku_text_line_draw(st->surface,
+            (tiku_rect_t){r.x + 6, r.y + r.h - 20, r.w - 12, 18},
+            TIKU_MEASURE_PLAIN, text, MARK_INK);
+    }
 }
 
-/** @brief The spectrogram: newest at the top, one row a spectrum, coloured
- *         from just under the noise to the graticule's top, its colour
- *         scale at its left. */
+/** @brief Paint retained captures from the history offset, with age labels,
+ *         gaps, the selected row, and the independent colour scale. */
 static void spectrogram(sdr_t *st, tiku_rect_t r)
 {
     const sdr_model_t *m = &st->model;
     size_t need = (size_t)r.w * (size_t)r.h;
-    float lo = m->floor_db * 2.0f, span = (m->scale_hi - m->floor_db) * 2.0f;
+    float lo = m->floor_db * 2.0f, span = (m->ceiling_db - m->floor_db) * 2.0f;
     tiku_rgb_t lut[256];
 
     if (r.w <= 0 || r.h <= 0) return;
@@ -580,31 +757,59 @@ static void spectrogram(sdr_t *st, tiku_rect_t r)
         st->pic_n = need;
     }
     for (int y = 0; y < r.h; y++) {
-        const unsigned char *row =
-            m->wf[(m->wf_head - y + SDR_ROWS) % SDR_ROWS];
+        int at = sdr_history_row(m, m->wf_offset + y);
         for (int x = 0; x < r.w; x++) {
-            tiku_rgb_t c = y < m->wf_count && m->fresh ?
-                           lut[row[x * m->n / r.w]] : sdr_palette(0.0f);
+            tiku_rgb_t c = at >= 0 && m->fresh ?
+                           lut[m->wf[at][x * m->n / r.w]] : sdr_palette(0.0f);
             st->pic[(size_t)y * (size_t)r.w + (size_t)x] = 0xFF000000u | c;
         }
     }
     tiku_picture(st->surface, r.x, r.y, r.w, r.h, st->pic);
     tiku_frame(st->surface, (tiku_rect_t){r.x - 1, r.y - 1, r.w + 2, r.h + 2},
                FRAME_INK);
+    int rows = m->wf_count - m->wf_offset;
+    if (rows > r.h) rows = r.h;
+    for (int y = 0; y < rows; y++) {
+        int at = sdr_history_row(m, m->wf_offset + y);
+        int newer = sdr_history_row(m, m->wf_offset + y - 1);
+        if (newer >= 0 && m->wf_at[newer] - m->wf_at[at] > 2.0)
+            for (int x = 0; x < r.w; x += 8)
+                tiku_hline(st->surface, r.x + x, r.y + y, 3, GRID_INK);
+        if (m->wf_offset + y == m->wf_selected)
+            tiku_hline(st->surface, r.x, r.y + y, r.w, TIKU_C_SELECT);
+        if (y == 0 || (rows > 48 && y == rows / 2) ||
+            (rows > 40 && y == rows - 18)) {
+            char text[48];
+            if (m->wf_offset + y == 0) snprintf(text, sizeof text, "Latest");
+            else snprintf(text, sizeof text, "-%.2fs",
+                          m->wf_at[m->wf_head] - m->wf_at[at]);
+            tiku_rect_t label = {r.x + 3, r.y + y, 84, 16};
+            tiku_fill(st->surface, label, TIKU_RGB(0, 0, 50));
+            tiku_text_line_draw(st->surface, label, TIKU_MEASURE_PLAIN,
+                               text, TIKU_RGB(255, 255, 255));
+        }
+    }
 }
 
 /** @brief A section's bar across the panel, its name in bold. */
-static void section_bar(tiku_surface_t *s, int sec)
+static void section_bar(sdr_t *st, int sec)
 {
+    tiku_surface_t *s = st->surface;
     const tiku_font_t *f = tiku_font_bold();
-    int y = section_y(sec);
+    int y = section_y(st, sec);
 
     tiku_fill(s, (tiku_rect_t){PANEL_X, y, PANEL_W, HEAD_H},
               tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_2));
     tiku_hline(s, PANEL_X, y + HEAD_H - 1, PANEL_W,
                tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
-    for (int i = 0; i < 4; i++)         /* a small triangle, point down */
-        tiku_hline(s, PANEL_X + 5 + i, y + 8 + i, 7 - 2 * i, DIM_INK);
+    for (int i = 0; i < 4; i++) {
+        if (st->collapsed & (1u << sec))
+            tiku_vline(s, PANEL_X + 6 + i, y + 6 + i, 7 - 2 * i, DIM_INK);
+        else
+            tiku_hline(s, PANEL_X + 5 + i, y + 8 + i, 7 - 2 * i, DIM_INK);
+    }
+    if (tiku_dialog_focused(&st->dialog, CMD_SECTION + sec))
+        tiku_frame(s, sdr_control_rect(st, CMD_SECTION + sec), TIKU_C_SELECT);
     tiku_text(s, f, PANEL_X + 17, y + (HEAD_H - f->height) / 2 + f->ascent,
               section[sec].name, TIKU_C_TEXT);
 }
@@ -613,20 +818,33 @@ static void section_bar(tiku_surface_t *s, int sec)
 static void panel_paint(sdr_t *st)
 {
     for (int sec = 0; sec < SECTIONS; sec++) {
-        section_bar(st->surface, sec);
-        for (int i = 0; i < section[sec].rows && i < 7; i++)
+        section_bar(st, sec);
+        if (st->collapsed & (1u << sec)) continue;
+        for (int i = 0; i < section[sec].rows && i < 8; i++)
             if (row_name[sec][i][0])
-                tiku_text_line_draw(st->surface, row_at(sec, i, PANEL_X + 2,
+                tiku_text_line_draw(st->surface, row_at(st, sec, i, PANEL_X + 2,
                                     LABEL_W - 4), TIKU_MEASURE_PLAIN,
                                     row_name[sec][i], TIKU_C_TEXT);
     }
     for (int id = CMD_FIELD + SDR_F_CENTER; id <= CMD_FIELD + SDR_F_MARK;
          id++) {
         tiku_rect_t r = sdr_control_rect(st, id);
-        if (id == CMD_FIELD + SDR_F_AVG) continue;
+        if (id == CMD_FIELD + SDR_F_AVG || r.w <= 0) continue;
         tiku_text_line_draw(st->surface, (tiku_rect_t){r.x + r.w + 4, r.y,
                             30, r.h}, TIKU_MEASURE_PLAIN, "MHz", TIKU_C_TEXT);
     }
+}
+
+void sdr_field_text(const sdr_t *st, int i, char *out, size_t size)
+{
+    if (i == SDR_F_THRESHOLD) snprintf(out, size, "%.1f", (double)st->occupancy.threshold);
+    else if (i == SDR_F_PRE) snprintf(out, size, "%d", st->trigger.pre_seconds);
+    else if (i == SDR_F_POST) snprintf(out, size, "%d", st->trigger.post_seconds);
+    else if (i == SDR_F_BOOK) snprintf(out, size, "%s", st->book_label);
+    else if (i == SDR_F_GAIN) {
+        if (st->gain_known != 1 || st->gain_value < 0) out[0] = '\0';
+        else snprintf(out, size, "%d", st->gain_value);
+    } else sdr_model_field(&st->model, i, out, size);
 }
 
 /** @brief Draw field @p i: while it has the focus, the text being typed,
@@ -641,7 +859,7 @@ static void field(sdr_t *st, int i, tiku_rect_t r, unsigned flags)
                                  e->sel_b, flags | TIKU_S_FOCUS,
                                  st->input[i].scroll);
     } else {
-        sdr_model_field(&st->model, i, t, sizeof t);
+        sdr_field_text(st, i, t, sizeof t);
         tiku_ui_textfield(st->surface, r, t, -1, flags & ~TIKU_S_FOCUS);
     }
 }
@@ -650,7 +868,7 @@ static void field(sdr_t *st, int i, tiku_rect_t r, unsigned flags)
  *         records; two bars to pause, a triangle to resume. */
 static void glyph(sdr_t *st, int id, tiku_rect_t r, unsigned flags)
 {
-    int cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    int cx = r.x + 12, cy = r.y + r.h / 2;
     int off = (flags & TIKU_S_PRESSED) ? 1 : 0;
     tiku_rgb_t ink = (flags & TIKU_S_DISABLED) ?
                      tiku_tint(TIKU_C_PANEL, 1.30f) : TIKU_C_TEXT;
@@ -662,7 +880,7 @@ static void glyph(sdr_t *st, int id, tiku_rect_t r, unsigned flags)
         tiku_fill_round(st->surface, (tiku_rect_t){cx - 5 + off, cy - 5 + off,
                         11, 11}, 5, TIKU_CORNER_ALL, (flags & TIKU_S_DISABLED)
                         ? ink : REC_INK);
-    else if (st->paused)
+    else if (st->paused || (st->state != SDR_RUNNING && !st->play.file))
         for (int i = 0; i < 6; i++)
             tiku_vline(st->surface, cx - 3 + i + off, cy - 6 + i + off,
                        13 - 2 * i, ink);
@@ -674,24 +892,10 @@ static void glyph(sdr_t *st, int id, tiku_rect_t r, unsigned flags)
     }
 }
 
-/** @brief Draw the Live button: a round light, green while the view is
- *         one spectrum and grey while it is swept, before the word, the
- *         two centred together. */
+/** @brief Name the acquisition mode without implying a connection state. */
 static void live_button(sdr_t *st, tiku_rect_t r, unsigned flags)
 {
-    const tiku_font_t *f = tiku_font_plain();
-    const char *word = sdr_label(st, CMD_LIVE);
-    int off = (flags & TIKU_S_PRESSED) ? 1 : 0;
-    int x = r.x + (r.w - 16 - tiku_text_width(f, word)) / 2 + off;
-    int y = r.y + r.h / 2 + off;
-    int dim = (flags & TIKU_S_DISABLED) != 0;
-
-    tiku_ui_button(st->surface, r, "", flags);
-    tiku_fill_round(st->surface, (tiku_rect_t){x, y - 5, 10, 10}, 5,
-                    TIKU_CORNER_ALL, dim ? tiku_tint(TIKU_C_PANEL, 1.20f) :
-                    sdr_model_is_live(&st->model) ? LIVE_ON : LIVE_OFF);
-    tiku_text(st->surface, f, x + 16, y - f->height / 2 + f->ascent, word,
-              dim ? tiku_tint(TIKU_C_PANEL, 1.30f) : TIKU_C_TEXT);
+    tiku_ui_button(st->surface, r, sdr_label(st, CMD_LIVE), flags);
 }
 
 /** @brief The panel's controls and the bar's buttons, each in its state:
@@ -702,6 +906,7 @@ static void controls(sdr_t *st)
 
     for (int i = 0; i < st->dialog.count; i++) {
         int id = st->dialog.control[i].id;
+        if (id >= CMD_SECTION && id < CMD_SECTION + SECTIONS) continue;
         tiku_rect_t r = st->dialog.control[i].rect;
         unsigned flags =
             tiku_dialog_pressed(&st->dialog, id) ? TIKU_S_PRESSED : 0;
@@ -716,8 +921,14 @@ static void controls(sdr_t *st)
             if (id == CMD_TRACK ? m->track : m->mark[m->mark_sel].on)
                 flags |= TIKU_S_ON;
             tiku_ui_checkbox(st->surface, r, sdr_label(st, id), flags);
-        } else if (id == CMD_WATERFALL || id == CMD_PLANS) {
-            if (id == CMD_WATERFALL ? st->fall_on : st->plans_on)
+        } else if (id == CMD_WATERFALL || id == CMD_PLANS ||
+                   id == CMD_SCALE_AUTO || id == CMD_COLOR_AUTO ||
+                   id == CMD_GAIN_AUTO) {
+            if (id == CMD_WATERFALL ? st->fall_on :
+                id == CMD_PLANS ? st->plans_on :
+                id == CMD_SCALE_AUTO ? !m->manual_scale :
+                id == CMD_COLOR_AUTO ? !m->manual_color :
+                st->gain_known == 1 && st->gain_value < 0)
                 flags |= TIKU_S_ON;
             tiku_ui_switch(st->surface, r, sdr_label(st, id), flags);
         } else if (id == CMD_LIVE) {
@@ -725,6 +936,18 @@ static void controls(sdr_t *st)
         } else if (id == CMD_RECORD || id == CMD_PAUSE) {
             tiku_ui_button(st->surface, r, "", flags);
             glyph(st, id, r, flags);
+            tiku_text_line_draw(st->surface,
+                (tiku_rect_t){r.x + 23, r.y, r.w - 25, r.h},
+                TIKU_MEASURE_PLAIN, id == CMD_RECORD ?
+                (st->rec.file ? "Stop" : "Rec") : sdr_label(st, id),
+                flags & TIKU_S_DISABLED ? DIM_INK : TIKU_C_TEXT);
+        } else if (id == CMD_FFT || id == CMD_RATE || id == CMD_OCC_PLAN) {
+            char label[80];
+            if (id == CMD_FFT) snprintf(label, sizeof label, "FFT: %s%d", m->fft_override ? "" : "Auto / ", m->nfft);
+            else if (id == CMD_RATE) snprintf(label, sizeof label, "Rate: %s%d MS/s", m->rate_override ? "" : "Auto / ",
+                                             (int[]){80,40,20,10,8,4}[m->rate]);
+            else snprintf(label, sizeof label, "%s channels", (const char *[]){"Wi-Fi", "BLE", "802.15.4"}[st->occupancy.plan]);
+            tiku_ui_button(st->surface, r, label, flags);
         } else {
             tiku_ui_button(st->surface, r, sdr_label(st, id), flags);
         }
@@ -740,7 +963,8 @@ static void tape_progress(const sdr_t *st, char *out, size_t max)
     if (st->rec.file) {
         sdr_tape_clock((double)(st->now - st->rec.began) / 1e6, at, sizeof at);
         sdr_tape_size(st->rec.bytes, end, sizeof end);
-        snprintf(out, max, " · recording %s, %s", at, end);
+        snprintf(out, max, st->trigger.armed ? " · trigger ARMED, %s" :
+                 " · recording %s, %s", at, end);
     } else if (st->play.file) {
         sdr_tape_clock((double)st->play.clock / 1e6, at, sizeof at);
         sdr_tape_clock(st->play.total, end, sizeof end);
@@ -748,30 +972,119 @@ static void tape_progress(const sdr_t *st, char *out, size_t max)
     }
 }
 
-/** @brief The bar's line: what is under the pointer, or else the note,
- *         with how a recording is going, or beside it what the last
- *         recording became. */
+/** @brief Keep connection and recording status separate from pointer readings. */
 static void status(sdr_t *st)
 {
     char t[400], progress[64];
+    int recording_view = st->play.file || (st->shown[0] && st->state == SDR_IDLE);
+    const char *state = recording_view ? "Recording" :
+        st->state == SDR_RUNNING ? "Connected" :
+        st->state == SDR_IDLE ? "Disconnected" :
+        st->state >= SDR_STOPPING ? "Returning device" : "Connecting";
 
     tape_progress(st, progress, sizeof progress);
-    if (st->hover[0])
-        snprintf(t, sizeof t, "%s", st->hover);
-    else if (st->play.file || st->rec.file)
-        snprintf(t, sizeof t, "%s%s%s", st->note, progress,
-                 st->paused ? " · paused" : "");
-    else if (st->saved[0] && strcmp(st->note, st->saved))
-        snprintf(t, sizeof t, "%s   |   %s", st->note, st->saved);
-    else
-        snprintf(t, sizeof t, "%s%s", st->note,
-                 st->paused ? " · paused" : "");
+    snprintf(t, sizeof t, "%s%s%s · %s%s · Relative dB (uncalibrated)",
+             state, !recording_view && st->board[0] ? ": " : "",
+             recording_view ? "" : st->board,
+             recording_view && !st->play.file ? "Finished" :
+             st->paused ? "Paused" : st->state == SDR_RUNNING || st->play.file ?
+             "Running" : "Idle", progress);
     tiku_hline(st->surface, 0, st->h - BAR_H, st->w,
                tiku_tint(TIKU_C_PANEL, TIKU_DARKEN_4));
     tiku_text_line_draw(st->surface,
-                        (tiku_rect_t){PANEL_X + 72, st->h - BAR_H + 4,
-                                      st->w - PANEL_X - 88, CTL_H},
+                        (tiku_rect_t){PANEL_X, st->h - 48,
+                                      st->w - 16, CTL_H},
                         TIKU_MEASURE_PLAIN, t, TIKU_C_TEXT);
+    int note_w = st->hover[0] && st->shown[0] ? st->w / 3 : st->w - 16;
+    tiku_text_line_draw(st->surface,
+        (tiku_rect_t){PANEL_X, st->h - 24, note_w, CTL_H},
+        TIKU_MEASURE_PLAIN, st->note, TIKU_C_TEXT);
+    if (note_w != st->w - 16)
+        tiku_text_line_draw(st->surface,
+            (tiku_rect_t){PANEL_X + note_w + 8, st->h - 24,
+                         st->w - note_w - 32, CTL_H},
+            TIKU_MEASURE_PLAIN, st->hover, TIKU_C_TEXT);
+    tiku_rect_t r = sdr_timeline_rect(st);
+    if (st->play.file || (st->shown[0] && st->state == SDR_IDLE)) {
+        double ratio = st->play.total > 0 ?
+            (st->play.seeking ? st->play.seek_to : st->play.clock / 1e6) /
+            st->play.total : 0;
+        if (ratio < 0) ratio = 0;
+        if (ratio > 1) ratio = 1;
+        tiku_fill(st->surface, r, PLOT_BG);
+        tiku_fill(st->surface, (tiku_rect_t){r.x, r.y,
+            (int)(r.w * ratio), r.h}, tiku_tint(TIKU_C_SELECT, 0.5f));
+        tiku_frame(st->surface, r, FRAME_INK);
+        if (st->play.total > 0) {
+            for (int i = 0; i < st->book_count; i++)
+                tiku_vline(st->surface, r.x + (int)((r.w - 1) * st->books[i].at / st->play.total), r.y, 5, REC_INK);
+            if (st->play.loop_b > st->play.loop_a) {
+                int left = r.x + (int)((r.w - 1) * st->play.loop_a / st->play.total);
+                int right = r.x + (int)((r.w - 1) * st->play.loop_b / st->play.total);
+                tiku_hline(st->surface, left, r.y + r.h - 3, right - left + 1, MARK_INK);
+            }
+        }
+        snprintf(t, sizeof t, "%s · %.2gx · %s", st->play.seeking ?
+                 "Seeking" : st->play.loop ? "Looping" : "Click to seek", st->play.speed,
+                 st->play.skip_gaps ? "skip gaps" : "original timing");
+        tiku_text_line_draw(st->surface, r, TIKU_MEASURE_PLAIN, t, TIKU_C_TEXT);
+    } else {
+        char health[200];
+        sdr_health_text(st, health, sizeof health);
+        tiku_text_line_draw(st->surface, r, TIKU_MEASURE_PLAIN,
+                           st->hover[0] ? st->hover :
+                           st->health_visible ? health :
+                           "Wheel: zoom · Shift-drag: range · Middle-drag: pan",
+                           TIKU_C_TEXT);
+    }
+}
+
+/** @brief Activity bars replace the waterfall, with unobserved channels explicit. */
+static void occupancy_paint(sdr_t *st, tiku_rect_t r)
+{
+    const sdr_occupancy_t *o = &st->occupancy;
+    int first = o->plan == 0 ? 0 : o->plan == 1 ? 13 : 53;
+    int count = o->plan == 0 ? 13 : o->plan == 1 ? 40 : 16;
+    int rows = (r.h - 42) / 18;
+    if (r.w <= 0 || rows < 1) return;
+    int cols = r.w / 125;
+    if (cols < 1) cols = 1;
+    if (cols > (count + rows - 1) / rows) cols = (count + rows - 1) / rows;
+    int width = r.w / cols, per_page = cols * rows;
+    int pages = (count + per_page - 1) / per_page;
+    st->occupancy.page %= pages;
+    int offset = st->occupancy.page * per_page;
+    char text[200];
+    double span = 0;
+    uint64_t observations = 0;
+    for (int i = first; i < first + count; i++) {
+        if (o->seen[i] > observations) observations = o->seen[i];
+        if (o->last[i] - o->first[i] > span) span = o->last[i] - o->first[i];
+    }
+    tiku_fill(st->surface, r, PLOT_BG);
+    tiku_frame(st->surface, r, FRAME_INK);
+    tiku_clip_set(st->surface, r);
+    snprintf(text, sizeof text, "Observed activity >= %.1f relative dB · %.1f s · up to %llu observations",
+             (double)o->threshold, span, (unsigned long long)observations);
+    tiku_text_line_draw(st->surface, (tiku_rect_t){r.x + 5, r.y + 2, r.w - 10, 18},
+                        TIKU_MEASURE_PLAIN, text, NOTE_INK);
+    for (int j = 0; j < per_page && offset + j < count; j++) {
+        int i = first + offset + j, x = r.x + (j / rows) * width + 5, y = r.y + 23 + (j % rows) * 18;
+        double center, bandwidth, percent = o->seen[i] ? 100.0 * o->busy[i] / o->seen[i] : 0;
+        char name[24];
+        sdr_channel(i, name, sizeof name, &center, &bandwidth);
+        if (o->seen[i]) snprintf(text, sizeof text, "%s  %.0f%%", name, percent);
+        else snprintf(text, sizeof text, "%s  n/a", name);
+        tiku_fill(st->surface, (tiku_rect_t){x, y + 1, (int)((width - 10) * percent / 100), 15},
+                  TIKU_RGB(204, 224, 245));
+        tiku_text_line_draw(st->surface, (tiku_rect_t){x, y, width - 10, 17},
+                            TIKU_MEASURE_PLAIN, text, o->seen[i] ? NOTE_INK : DIM_INK);
+    }
+    snprintf(text, sizeof text, "Page %d/%d · n/a = not fully observed · Observations, not airtime or decoded traffic",
+             st->occupancy.page + 1, pages);
+    tiku_text_line_draw(st->surface, (tiku_rect_t){r.x + 5, r.y + r.h - 18, r.w - 10, 17},
+                        TIKU_MEASURE_PLAIN, text, DIM_INK);
+    tiku_clip_reset(st->surface);
 }
 
 void sdr_paint(sdr_t *st)
@@ -785,8 +1098,32 @@ void sdr_paint(sdr_t *st)
     tiku_fill(st->surface, screen, TIKU_C_PANEL);
     panel_paint(st);
     controls(st);
-    spectrogram(st, fall);
+    if (st->occupancy.visible) occupancy_paint(st, fall);
+    else spectrogram(st, fall);
+    if (fall.h > 0)
+        for (int dx = -8; dx <= 8; dx += 4)
+            tiku_hline(st->surface, fall.x + fall.w / 2 + dx,
+                       fall.y + fall.h + 3, 2, FRAME_INK);
     spectrum(st, plot);
+    if (st->nav_drag) {
+        tiku_rect_t selection = plot;
+        if (st->nav_drag == 1) {
+            selection.x = st->nav_x < st->nav_anchor ? st->nav_x : st->nav_anchor;
+            selection.w = abs(st->nav_x - st->nav_anchor) + 1;
+        }
+        tiku_clip_set(st->surface, plot);
+        tiku_veil(st->surface, selection, TIKU_C_SELECT, 0.15f);
+        tiku_frame(st->surface, selection, TIKU_C_SELECT);
+        tiku_clip_reset(st->surface);
+        if (fall.h) {
+            selection.y = fall.y;
+            selection.h = fall.h;
+            tiku_clip_set(st->surface, fall);
+            tiku_veil(st->surface, selection, TIKU_C_SELECT, 0.15f);
+            tiku_frame(st->surface, selection, TIKU_C_SELECT);
+            tiku_clip_reset(st->surface);
+        }
+    }
     status(st);
     for (int c = 0; c < SDR_CHOICES; c++)
         if (st->choice[c].open)

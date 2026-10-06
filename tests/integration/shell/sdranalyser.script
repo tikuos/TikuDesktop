@@ -15,8 +15,19 @@ click-row 0
 wait 150
 expect-title TikuSDR
 wait 300
-note The spectrogram on: its switch at the panel's foot
-expect-pixel 209 563 336698
+note The waterfall stays visible while its settings section is collapsed
+expect-pixel 400 200 000060
+note Inspect a retained waterfall row without retuning the recording
+press 800 63 1 alt
+release 800 63 1 alt
+wait 8
+expect-pixel 800 63 336698
+shot /tmp/trk_sdr_history.png
+click 71 8
+wait 4
+expect-menu Return to Latest
+menu-pick Return to Latest
+wait 6
 note Trace 2 a max hold, from the lists: its legend in red
 click 172 239
 wait 4
@@ -30,25 +41,28 @@ key Down
 key Down
 key Return
 wait 10
-expect-pixel 932 281 d23228
+expect-pixel 932 265 d23228
 note Marker 1 out on the highest peak; Next Peak, Peak Search, n
 click-window TikuSDR
 key m
 wait 10
-expect-pixel 840 302 466058
-click 190 461
+expect-pixel 840 286 466058
+note Expand Markers; Traces folds to keep its controls inside the window
+click 80 339
+wait 4
+click 190 354
 wait 10
 shot /tmp/trk_sdranalyser.png
-expect-pixel 828 302 466058
+expect-pixel 828 286 466058
 click 211 8
 wait 8
 menu-pick Peak Search
 wait 10
-expect-pixel 840 302 466058
+expect-pixel 840 286 466058
 click-window TikuSDR
 key n
 wait 10
-expect-pixel 828 302 466058
+expect-pixel 828 286 466058
 note A drag let go beside the highest peak climbs onto it
 press 828 400
 wait 4
@@ -56,12 +70,36 @@ move 700 400
 wait 4
 release 838 400
 wait 10
-expect-pixel 840 302 466058
+expect-pixel 840 286 466058
 note The spectrogram off: the graticule starts at the top
-click 209 563
+click 80 441
+wait 4
+click 209 299
 wait 10
-expect-pixel 209 563 ffffff
+expect-pixel 209 299 ffffff
 expect-pixel 840 95 466058
+note Manual reference level disables automatic spectrum scaling
+click 155 371
+key 1
+key 2
+key 0
+key Return
+wait 4
+expect-pixel 209 347 ffffff
+note Seek after playback ends, then step and change playback speed
+click 500 586
+wait 10
+click 114 8
+wait 4
+expect-menu Next Frame
+menu-pick Next Frame
+wait 10
+click 114 8
+wait 4
+expect-menu Speed: 1x (Cycle)
+menu-pick Speed: 1x (Cycle)
+wait 4
+shot /tmp/trk_sdr_navigation.png
 note About TikuSDR, hoisted into the Tiku menu: the splash's card, finished
 click 20 8
 wait 8

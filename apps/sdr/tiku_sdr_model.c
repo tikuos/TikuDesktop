@@ -45,6 +45,7 @@ void sdr_model_init(sdr_model_t *m)
     m->scale_hi = 110.0f;
     m->scale_lo = m->scale_hi - SDR_DIVS * m->div;
     m->floor_db = 30.0f;
+    m->ceiling_db = m->scale_hi;
     sdr_model_range(m, 2437.0 - SDR_LIVE_SPAN / 2, 2437.0 + SDR_LIVE_SPAN / 2);
 }
 
@@ -86,13 +87,16 @@ static void one_spectrum(sdr_model_t *m)
     m->tune = (int)lround(centre);
     off = fabs(centre - m->tune);
     while (r > 1 && rate_mhz[r] < span + 2 * off - 1e-9) r--;
+    if (m->rate_override) r = m->rate_override - 1;
     m->rate = r;
-    m->nfft = 256;
+    m->nfft = m->fft_override ? m->fft_override : 256;
     bin = rate_mhz[r] / m->nfft;
     m->k0 = (int)ceil((m->start - m->tune) / bin + m->nfft / 2 - 1e-6);
     k1 = (int)floor((m->stop - m->tune) / bin + m->nfft / 2 + 1e-6);
     if (m->k0 < 0) m->k0 = 0;
+    if (m->k0 >= m->nfft) m->k0 = m->nfft - 1;
     if (k1 > m->nfft - 1) k1 = m->nfft - 1;
+    if (k1 < m->k0) k1 = m->k0;
     m->n = k1 - m->k0 + 1;
     m->bin_mhz = bin;
     m->lo_mhz = m->tune + (m->k0 - m->nfft / 2) * bin;
@@ -108,8 +112,8 @@ static void slices(sdr_model_t *m)
     double span = m->stop - m->start;
     int count;
 
-    m->rate = 1;
-    m->nfft = 128;
+    m->rate = m->rate_override ? m->rate_override - 1 : 1;
+    m->nfft = m->fft_override ? m->fft_override : 128;
     m->first = (int)floor(m->start + SLICE_HALF_MHZ);
     count = (int)ceil((m->stop - m->first - SLICE_HALF_MHZ) / SDR_SLICE_STEP);
     count = count < 0 ? 1 : count + 1;
@@ -118,8 +122,8 @@ static void slices(sdr_model_t *m)
         m->last = (int)SDR_TUNE_HI;
         m->first = m->last - (count - 1) * SDR_SLICE_STEP;
     }
-    m->bin_mhz = span / SDR_BINS > SLICE_BIN_MHZ ? span / SDR_BINS
-                                                 : SLICE_BIN_MHZ;
+    double spacing = rate_mhz[m->rate] / m->nfft;
+    m->bin_mhz = span / SDR_BINS > spacing ? span / SDR_BINS : spacing;
     m->n = (int)(span / m->bin_mhz + 1e-6);
     if (m->n > SDR_BINS) m->n = SDR_BINS;
     m->lo_mhz = m->start;
@@ -136,6 +140,8 @@ void sdr_model_range(sdr_model_t *m, double start, double stop)
     memset(m->seen, 0, sizeof m->seen);
     m->got = 0;
     m->wf_head = m->wf_count = 0;
+    m->wf_offset = 0;
+    m->wf_selected = -1;
     m->fresh = 0;
     sdr_model_clear(m);
 }
@@ -167,7 +173,12 @@ void sdr_model_field(const sdr_model_t *m, int field, char *out, size_t max)
                field == SDR_F_START ? m->start :
                field == SDR_F_STOP ? m->stop : m->mark[m->mark_sel].mhz;
 
-    if (field == SDR_F_AVG)
+    if (field >= SDR_F_REF && field <= SDR_F_CEILING) {
+        float value = field == SDR_F_REF ? m->scale_hi :
+                      field == SDR_F_DIV ? m->div :
+                      field == SDR_F_FLOOR ? m->floor_db : m->ceiling_db;
+        snprintf(out, max, "%g", (double)value);
+    } else if (field == SDR_F_AVG)
         snprintf(out, max, "%d", m->avg_count);
     else if (field == SDR_F_MARK && !m->mark[m->mark_sel].on)
         out[0] = '\0';
@@ -257,6 +268,9 @@ static void frame_done(sdr_model_t *m)
     }
     m->wf_head = (m->wf_head + 1) % SDR_ROWS;
     if (m->wf_count < SDR_ROWS) m->wf_count++;
+    if (m->wf_offset > 0 && m->wf_offset < m->wf_count - 1) m->wf_offset++;
+    if (m->wf_selected >= 0 && ++m->wf_selected >= m->wf_count)
+        m->wf_selected = -1;
     m->wf_at[m->wf_head] = m->clock;
     row = m->wf[m->wf_head];
     for (int j = 0; j < m->n; j++) {
@@ -339,33 +353,44 @@ int sdr_model_line(sdr_model_t *m, const char *line)
         m->got = 0;
         /* A sweep that began before this view, or that missed a slice,
          * left part of the range unheard and makes no frame. */
-        if (!whole) return 0;
+        if (!whole) { m->incomplete++; return 0; }
         frame_done(m);
         return 1;
     }
     if (sscanf(line, "SPEC %d %ld %d %d %n", &centre, &hz, &gain, &n,
                &at) != 4 || at == 0 || n <= 0 || n > SDR_BINS || hz <= 0 ||
-        strlen(line + at) < (size_t)n * 2u)
+        gain < 0 || gain > 255 ||
+        strlen(line + at) < (size_t)n * 2u) {
+        if (!strncmp(line, "SPEC", 4)) m->rejected++;
         return -1;
+    }
     for (int k = 0; k < n; k++) {
         int b = hex2(line + at + 2 * k);
-        if (b < 0) return -1;
+        if (b < 0) { m->rejected++; return -1; }
         v[k] = (unsigned char)b;
     }
     /* A line at another rate or size was asked for by an earlier view:
      * it is dropped. */
-    if (hz != lround(rate_mhz[m->rate] * 1e6) || n != m->nfft) return 0;
+    if (hz != lround(rate_mhz[m->rate] * 1e6) || n != m->nfft) {
+        m->rejected++;
+        return 0;
+    }
     dc_patch(v, n);
     m->gain = gain;
     m->held = !strncmp(line + at + 2 * n, " held", 5);
     if (m->sweep) {
+        if (centre < m->first || centre > m->last ||
+            (centre - m->first) % SDR_SLICE_STEP != 0) {
+            m->rejected++;
+            return 0;
+        }
         if (centre >= m->first && centre <= m->last &&
             (centre - m->first) % SDR_SLICE_STEP == 0)
             m->got |= 1ULL << ((centre - m->first) / SDR_SLICE_STEP);
         band_slice(m, centre, hz / 1e6 / n, v, n);
         return 0;
     }
-    if (centre != m->tune) return 0;
+    if (centre != m->tune) { m->rejected++; return 0; }
     for (int j = 0; j < m->n; j++) m->db[j] = v[m->k0 + j] / 2.0f + lift(m);
     frame_done(m);
     return 1;
@@ -377,6 +402,19 @@ static int by_value(const void *a, const void *b)
     float x = *(const float *)a, y = *(const float *)b;
 
     return (x > y) - (x < y);
+}
+
+int sdr_history_row(const sdr_model_t *m, int age)
+{
+    if (age < 0 || age >= m->wf_count || age >= SDR_ROWS) return -1;
+    return (m->wf_head - age + SDR_ROWS) % SDR_ROWS;
+}
+
+void sdr_history_scroll(sdr_model_t *m, int rows)
+{
+    int maximum = m->wf_count > 0 ? m->wf_count - 1 : 0;
+    long next = (long)m->wf_offset + rows;
+    m->wf_offset = next < 0 ? 0 : next > maximum ? maximum : (int)next;
 }
 
 void sdr_model_scale(sdr_model_t *m)
@@ -395,6 +433,14 @@ void sdr_model_scale(sdr_model_t *m)
         if (sorted[m->n - 1] > hi) hi = sorted[m->n - 1];
         shown = 1;
     }
+    int row = sdr_history_row(m, m->wf_selected);
+    if (row >= 0) {
+        for (int b = 0; b < m->n; b++) sorted[b] = m->wf[row][b] / 2.0f;
+        qsort(sorted, (size_t)m->n, sizeof(float), by_value);
+        if (sorted[m->n / 10] < lo) lo = sorted[m->n / 10];
+        if (sorted[m->n - 1] > hi) hi = sorted[m->n - 1];
+        shown = 1;
+    }
     if (!shown) return;                 /* every trace off: the scale stays */
     top = ceilf((hi + 3.0f) / 10.0f) * 10.0f;
     need = top - lo + 6.0f;
@@ -402,15 +448,21 @@ void sdr_model_scale(sdr_model_t *m)
         if (divs[i] * SDR_DIVS >= need) { div = divs[i]; break; }
     /* A wider division or a higher top applies at once; a narrower
      * division or a lower top only with room to spare. */
-    if (m->spectra <= 1 || div > m->div ||
-        (div < m->div && need <= div * SDR_DIVS * 0.8f))
-        m->div = div;
-    if (m->spectra <= 1 || top > m->scale_hi ||
-        top <= m->scale_hi - 2 * m->div)
-        m->scale_hi = top;
-    m->scale_lo = m->scale_hi - SDR_DIVS * m->div;
-    m->floor_db = floorf((lo - 6.0f) / 5.0f) * 5.0f;
-    if (m->floor_db > m->scale_hi - 20.0f) m->floor_db = m->scale_hi - 20.0f;
+    if (!m->manual_scale) {
+        if (m->spectra <= 1 || div > m->div ||
+            (div < m->div && need <= div * SDR_DIVS * 0.8f))
+            m->div = div;
+        if (m->spectra <= 1 || top > m->scale_hi ||
+            top <= m->scale_hi - 2 * m->div)
+            m->scale_hi = top;
+        m->scale_lo = m->scale_hi - SDR_DIVS * m->div;
+    }
+    if (!m->manual_color) {
+        m->floor_db = floorf((lo - 6.0f) / 5.0f) * 5.0f;
+        if (m->floor_db > m->scale_hi - 20.0f)
+            m->floor_db = m->scale_hi - 20.0f;
+        m->ceiling_db = m->scale_hi;
+    }
 }
 
 tiku_rgb_t sdr_palette(float t)

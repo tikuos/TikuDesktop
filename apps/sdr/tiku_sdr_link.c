@@ -123,6 +123,7 @@ static void reclaim(sdr_t *st)
         st->fd = -1;
     }
     st->pending = 0;
+    st->gain_queued = st->gain_inflight = 0;
     st->state = SDR_RECLAIMING;
     st->deadline = st->now + RECLAIM_US;
     if (!sv->board_reclaim || !sv->board_reclaim(sv->ctx, st->board)) {
@@ -191,6 +192,7 @@ int sdr_connect(sdr_t *st)
         return 0;
     }
     sdr_play_stop(st);
+    st->gain_known = st->gain_queued = st->gain_inflight = 0;
     st->closing = 0;
     st->shown[0] = '\0';                /* the board's spectra from now on */
     st->state = SDR_RELEASING;
@@ -208,6 +210,7 @@ int sdr_connect(sdr_t *st)
 
 void sdr_disconnect(sdr_t *st)
 {
+    st->gain_queued = st->gain_inflight = 0;
     if (st->state == SDR_RELEASING) {
         st->closing = 1;               /* given back as soon as it is let go */
         return;
@@ -273,15 +276,46 @@ void sdr_board_said(void *state, int what, const char *text)
     st->dirty = 1;
 }
 
-/** @brief Act on one whole line from the board: SDR ready or an error
- *         while starting, SDR stopped while stopping; while running, a
- *         SPEC or SWEEP line goes to the model and the recording, and an
- *         ERR line to the note. */
+int sdr_gain_request(sdr_t *st, int gain)
+{
+    if (st->state != SDR_RUNNING || gain < -2 || gain > 255 ||
+        st->gain_queued || st->gain_inflight ||
+        (gain != -2 && st->gain_known != 1)) return 0;
+    st->gain_request = gain;
+    st->gain_queued = 1;
+    st->dirty = 1;
+    return 1;
+}
+
+/** @brief Read a startup, gain, capture, or shutdown reply from the board. */
 static void take_line(sdr_t *st, const char *line)
 {
+    if (st->state == SDR_RUNNING && st->caps_inflight) {
+        (void)sdr_caps_parse(st, line);
+        return;
+    }
+    if (st->state == SDR_RUNNING && st->gain_inflight) {
+        int gain, used = 0;
+        if (!strcmp(line, "SDR gain auto")) gain = -1;
+        else if (sscanf(line, "SDR gain %d%n", &gain, &used) != 1 ||
+                 line[used] || gain < 0 || gain > 255) return;
+        st->gain_value = gain;
+        st->gain_known = st->gain_answered = 1;
+        snprintf(st->note, sizeof st->note, gain < 0 ?
+                 "Receiver gain is automatic." : "Receiver gain index: %d.", gain);
+        st->dirty = 1;
+        return;
+    }
     if (st->state == SDR_STARTING) {
         if (!strncmp(line, "SDR ready", 9)) {
             st->state = SDR_RUNNING;
+            st->caps_known = 0;
+            st->caps_queued = 1;
+            st->caps_inflight = 0;
+            st->last_frame = 0;
+            st->model.rejected = st->model.incomplete = st->rx_overflows = 0;
+            st->model.fft_override = st->model.rate_override = 0;
+            sdr_occupancy_reset(st);
             /* Fit the view again with one_max at SDR_LIVE_SPAN: one set while
              * a version 1 recording played can be one spectrum 40 MHz wide. */
             sdr_model_range(&st->model, st->model.start, st->model.stop);
@@ -306,8 +340,10 @@ static void take_line(sdr_t *st, const char *line)
         st->model.clock = (double)st->now / 1e6;
         took = sdr_model_line(&st->model, line);
 
-        if (took >= 0) sdr_rec_line(st, line, took == 1);
+        if (took >= 0) sdr_trigger_line(st, line, took == 1);
         if (took == 1) {
+            st->last_frame = st->now;
+            sdr_observe(st);
             st->rate_count++;
             st->dirty = 1;
         } else if (!strncmp(line, "ERR ", 4)) {
@@ -322,6 +358,33 @@ static void take_line(sdr_t *st, const char *line)
 static void take_prompt(sdr_t *st)
 {
     st->pending = 0;
+    if (st->caps_inflight) {
+        st->caps_inflight = 0;
+        if (!st->caps_known) {
+            st->caps_known = -1;
+            if (st->model.fft_override || st->model.rate_override) {
+                st->model.fft_override = st->model.rate_override = 0;
+                sdr_model_range(&st->model, st->model.start, st->model.stop);
+                sdr_rec_view(st);
+            }
+            snprintf(st->note, sizeof st->note,
+                     "Firmware did not report capabilities; using legacy automatic acquisition.");
+        } else snprintf(st->note, sizeof st->note,
+                        "Receiver capabilities read. FFT and sample-rate controls are available.");
+        st->dirty = 1;
+    }
+    if (st->gain_inflight) {
+        if (!st->gain_answered) {
+            st->gain_known = -1;
+            snprintf(st->note, sizeof st->note,
+                     "Receiver did not confirm gain; controls disabled. Use Read receiver gain to retry.");
+        } else if (st->gain_request != -2) {
+            sdr_model_range(&st->model, st->model.start, st->model.stop);
+            sdr_rec_view(st);
+        }
+        st->gain_inflight = 0;
+        st->dirty = 1;
+    }
     if (st->state == SDR_STOPPING && st->stopped) {
         snprintf(st->note, sizeof st->note, "Returning %s to the desktop...",
                  st->board);
@@ -348,7 +411,10 @@ static void take_bytes(sdr_t *st, const char *bytes, size_t n)
 {
     size_t start = 0;
 
-    if (n > sizeof st->rx - st->rx_n) st->rx_n = 0;   /* a runaway line */
+    if (n > sizeof st->rx - st->rx_n) {
+        st->rx_n = 0;
+        st->rx_overflows++;
+    }
     memcpy(st->rx + st->rx_n, bytes, n);
     st->rx_n += n;
     for (size_t i = 0; i < st->rx_n && st->fd >= 0; i++) {
@@ -413,10 +479,33 @@ void sdr_link_tick(sdr_t *st)
         take_bytes(st, buf, (size_t)r);
         got += (size_t)r;
     }
+    if (st->state == SDR_RUNNING && !st->pending && st->caps_queued && st->fd >= 0) {
+        st->caps_queued = 0;
+        st->caps_inflight = 1;
+        st->caps_known = 0;
+        send_line(st, "sdr info");
+    }
+    if (st->state == SDR_RUNNING && !st->pending && st->gain_queued &&
+        st->fd >= 0) {
+        char cmd[64];
+        if (st->gain_request == -2) snprintf(cmd, sizeof cmd, "sdr gain");
+        else if (st->gain_request == -1) snprintf(cmd, sizeof cmd, "sdr gain auto");
+        else snprintf(cmd, sizeof cmd, "sdr gain %d", st->gain_request);
+        st->gain_queued = 0;
+        st->gain_inflight = 1;
+        st->gain_answered = 0;
+        send_line(st, cmd);
+    }
     if (st->state == SDR_RUNNING && !st->pending && !st->paused &&
         st->fd >= 0) {
         char cmd[64];
-        send_line(st, sdr_command(&st->model, cmd, sizeof cmd));
+        if (sdr_acquisition_valid(st))
+            send_line(st, sdr_command(&st->model, cmd, sizeof cmd));
+        else {
+            snprintf(st->note, sizeof st->note,
+                     "Range or acquisition is unsupported. Choose a supported rate / FFT or a narrower range.");
+            st->dirty = 1;
+        }
     }
     if (st->now - st->rate_at >= 1000000) {
         st->rate_hz = st->rate_count * 1e6f / (float)(st->now - st->rate_at);

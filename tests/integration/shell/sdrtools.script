@@ -1,0 +1,56 @@
+# shell: desktop
+# prefs: factory
+# setup: sdrlog
+# open: /tmp/trk_home/recordings
+# Measurement controls and recording annotations need no physical receiver.
+wait 20
+click-row 0
+wait 2
+click-row 0
+wait 180
+expect-title TikuSDR
+click 114 8
+wait 4
+expect-menu Save Named Setup…
+expect-menu Open Reference Trace…
+expect-menu Bookmark
+expect-menu Set Loop Start Here
+menu-pick Bookmark
+wait 6
+click 158 8
+wait 4
+expect-menu Channel Activity
+menu-pick Channel Activity
+wait 8
+expect-pixel 400 200 ffffff
+shot /tmp/trk_sdr_activity.png
+click 158 8
+wait 4
+expect-menu Channels: Wi-Fi (Cycle)
+menu-pick Channels: Wi-Fi (Cycle)
+wait 8
+shot /tmp/trk_sdr_ble.png
+click 158 8
+wait 4
+expect-menu Channels: BLE (Cycle)
+menu-pick Channels: BLE (Cycle)
+wait 8
+shot /tmp/trk_sdr_154.png
+click 114 8
+wait 4
+menu-pick Bookmark
+wait 6
+click 114 8
+wait 4
+expect-menu Next Event
+menu-pick Next Event
+wait 8
+shot /tmp/trk_sdr_bookmark.png
+click 71 8
+wait 4
+expect-menu Show Capture Health
+menu-pick Show Capture Health
+wait 6
+click 80 429
+wait 8
+shot /tmp/trk_sdr_tools.png

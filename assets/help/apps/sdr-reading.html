@@ -1,0 +1,161 @@
+<h1>TikuSDR: reading it</h1>
+
+<p>How to read what TikuSDR shows, and the measurement tools that
+work on it. The rest of the application is described on the
+<a href="apps/sdr.html">TikuSDR</a> page.</p>
+
+<h3>Channel activity</h3>
+
+<p>Choose <b>Trace &gt; Channel Activity</b>, or expand <b>Measurements</b>
+and press <b>Channel Activity</b>. Activity bars replace the waterfall;
+press it again to return. <b>Channels</b> cycles through Wi-Fi channels
+1–13 (20 MHz), BLE channels 0–39 (2 MHz), and 802.15.4 channels 11–26
+(2 MHz). In a narrow window, <b>Next Page</b> shows the remaining channels.
+Set <b>Threshold</b> in relative dB in Measurements.</p>
+
+<p>A completed capture counts as active for a channel if any bin in that
+channel reaches the threshold. Only channels fully inside the captured
+frequency range count. <b>n/a</b> means not observed, not zero activity.
+The percentage is active observations divided by total observations:
+it is <b>not airtime</b>, packet count, or proof of Wi-Fi/BLE/802.15.4
+traffic. Channel bands overlap, and a sweep observes its slices at different
+times. The heading reports the elapsed span and maximum observation count;
+<b>Export Activity CSV</b> includes each channel's own counts and span.</p>
+
+<p>Changing range, FFT, rate, gain mode or threshold resets the counts.
+<b>Reset Activity Counts</b> starts a new observation period. During
+playback, observations use recorded timestamps; seeking rebuilds counts
+from the beginning to the selected time. Looping rebuilds them each pass.
+Older automatic-gain sweep recordings are noise-floor-normalized, so their
+activity percentages should not be compared with held-gain recordings.</p>
+
+<h3>Receiver controls and capture health</h3>
+
+<p>At connection, TikuSDR asks <code>sdr info</code> for supported sample
+rates, FFT sizes and tuning limits. Expand <b>Receiver</b> to use
+<b>Read Capabilities</b>, <b>FFT</b> and <b>Rate</b>. Each button cycles
+through supported choices that fit the current range, including automatic
+selection. The decoder supports 64-, 128- and 256-point FFTs and rate codes
+for 4, 8, 10, 20, 40 and 80 MS/s. Sweeps keep the existing 40 MS/s,
+16 MHz-step acquisition method; a rate override cannot change that method.
+An unsupported range pauses requests and displays an explanation.</p>
+
+<p>If firmware does not report capabilities, acquisition uses the legacy
+automatic settings and the override buttons stay disabled. Gain controls
+still require their own confirmed reply. Acquisition changes are stored
+in version 3 recordings; current TikuSDR can also read versions 1 and 2.</p>
+
+<p><b>SDR &gt; Show Capture Health</b> displays the receive state, rejected
+spectra, incomplete sweeps and local receive-buffer overflows in the
+transport bar when the pointer is not inspecting a plot. <b>STALE</b>
+means no complete frame for more than three seconds while running; a long
+sweep can also cause this indication. Rejections include obsolete replies
+after a range change. These are local diagnostics, not radio packet-loss
+statistics. Clipping is shown as <b>not reported</b> because current
+firmware does not supply a clipping counter; a high spectral value alone
+does not prove clipping.</p>
+
+<h3>Triggered recording</h3>
+
+<p>Connect and run the receiver, then expand <b>Measurements</b>. Set the
+threshold, <b>Pre (s)</b> (0–30 seconds), and <b>Post (s)</b> (1–300
+seconds). Choose <b>Arm Trigger</b> and a destination. The destination is
+opened immediately, so write errors are reported before waiting for an
+event. The trigger is one-shot: the first complete frame with any bin at
+or above the threshold starts the capture, including retained history.</p>
+
+<p>Pre-trigger history is limited to <b>256 protocol lines</b>, or the
+requested duration, whichever is shorter. A sweep uses several lines;
+retention therefore depends on acquisition speed and range. History starts
+at a complete-frame boundary. Recording stops after the post-trigger
+duration, even if no further frames arrive. Changing acquisition, range,
+gain, threshold or trigger timing disarms the trigger; disconnecting or
+closing the app also closes its file. <b>Disarm / Finish Capture</b> or the
+Record stop button ends it manually. If no event occurs, the file contains
+only recording metadata, not captured spectra. There is no automatic
+re-arming or overwrite on a later event.</p>
+
+<h3>Bookmarks and playback loops</h3>
+
+<p>With a recording open, enter a label in <b>Measurements &gt; Bookmark</b>
+and press <b>Bookmark</b>. Up to 32 labelled positions are supported;
+red ticks mark them on the timeline. <b>Next Event</b> seeks to the next
+bookmark and wraps to the earliest. <b>Clear Bookmarks</b> removes the
+annotations, not the recording.</p>
+
+<p>Seek to the beginning of an interval and choose <b>File &gt; Set Loop
+Start Here</b>. Seek to its end and choose <b>Set Loop End Here</b>, then
+<b>Loop Selected Interval</b>. A green line marks the interval. Looping
+uses original timing rather than skipping gaps and works after playback
+has reached the end. Seeking is performed in bounded batches; a long
+recording can take a moment to rebuild before each repeat.</p>
+
+<p>Bookmarks and interval endpoints are saved beside the recording as
+<code>recording.sdrlog.sdrmarks</code>. Keep that file with the recording
+when moving it. The recording itself is unchanged. An unwritable folder
+produces a save error; the annotations remain available for the current
+session. Looping is not automatically enabled when reopening a recording.</p>
+
+<p>The waterfall's time labels show seconds before the newest capture.
+Each pixel row represents one capture, not a fixed time interval. Dashed
+horizontal lines mark intervals longer than two seconds between captures;
+they do not imply that the radio observed the signal during that interval.
+Pointing at a waterfall row shows that row's stored level and age, rather
+than the latest spectrum's level.</p>
+
+<p>Hold <b>Alt</b> (Option on macOS) and turn the wheel over the waterfall
+to browse older or newer rows. Alt/Option-click a row to overlay its spectrum
+in green, labelled <b>History overlay</b>; live traces and their markers
+remain separate. The selected capture stays selected as new captures arrive.
+The history holds at most 480 captures for the current frequency range;
+the overlay disappears when its capture is overwritten. This display history
+has half-decibel precision and levels stored between 0 and 127.5 dB.</p>
+
+<p>The <b>SDR</b> menu also offers <b>Older Waterfall Rows</b>,
+<b>Newer Waterfall Rows</b>, and <b>Return to Latest</b>. Return to Latest
+scrolls back to the newest capture and removes the historical overlay.
+History inspection works with live data, paused acquisition, and recordings.
+Changing the frequency range or seeking resets the displayed history.</p>
+
+<p>The graticule has ten divisions each way. <b>Ref</b>, above at the
+left, is the level of its top line, and <b>Div</b> the decibels a division:
+2, 5, 10 or 20, chosen to hold the traces shown, and changed only when they
+leave the room it gives them. <b>Bin</b> is the spacing between FFT points, with
+the sample rate or the slices beneath; the receiver&#8217;s gain and which
+trace is which stand at the right. Beneath the graticule are <b>Start</b>,
+<b>Center</b>, <b>Stop</b> and <b>Span</b>, the number of points, and how
+many spectra or sweeps arrive a second. A recording made before
+TikuSDR swept past 24&#160;MHz may show 40&#160;MHz in one spectrum; its
+edges, beyond the middle 24&#160;MHz, are shaded.</p>
+
+<p>Expand <b>Display</b> to set <b>Ref</b> and <b>dB/div</b> yourself.
+Editing either turns off automatic spectrum scaling. Re-enable
+<b>Auto spectrum scale</b> to fit the traces again. The waterfall has
+separate <b>Floor</b> and <b>Ceiling</b> fields: editing either locks its
+colour scale, so the same level keeps the same colour across captures.
+Use <b>Auto waterfall scale</b> to restore automatic colours. Levels must
+be between -200 and 300 dB, with the floor below the ceiling.
+Bin spacing is not a calibrated resolution bandwidth: the receiver applies
+a Hann window before the FFT.</p>
+
+<p>The spectrogram shows the spectra that came before, newest at the top,
+coloured from just under the noise, blue, through green and yellow to red
+at the reference level; the scale stands at its left. Point at either to
+read a frequency, each trace&#8217;s level there and the channels it falls
+in.</p>
+
+<p><b>Spectrogram</b> in <b>Display</b> switches the spectrogram off, the
+spectrum taking its room, and <b>Channel plans</b> shows the band&#8217;s
+plans beneath the graticule: Wi-Fi channels 1 to 13, BLE&#8217;s
+advertising channels 37, 38 and 39 (also dashed on the graticule), and
+802.15.4 channels 11 to 26.</p>
+
+<p>Levels are the board&#8217;s own decibels, not calibrated to the air;
+compare shapes and neighbours rather than absolute numbers. The board holds
+its receiver&#8217;s gain still, at step 60, rather than letting it chase
+every burst, so a level stays put from one spectrum to the next; a capture
+loud enough to clip is taken again 16 steps lower and raised back by as
+many decibels. <b>Gain</b> is the step it was heard at, or says
+<b>auto</b> on a board whose gain still moves on its own. Wi-Fi frames are
+bursts twenty megahertz wide; BLE advertising and 802.15.4 are narrow, two
+megahertz.</p>

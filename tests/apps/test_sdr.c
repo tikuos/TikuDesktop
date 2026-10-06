@@ -14,6 +14,10 @@
 #include "../../apps/sdr/tiku_sdr_link.c"
 #include "../../apps/sdr/tiku_sdr_marker.c"
 #include "../../apps/sdr/tiku_sdr_model.c"
+#include "../../apps/sdr/tiku_sdr_navigation.c"
+#include "../../apps/sdr/tiku_sdr_workspace.c"
+#include "../../apps/sdr/tiku_sdr_measure.c"
+#include "../../apps/sdr/tiku_sdr_acquisition.c"
 #include "../../apps/sdr/tiku_sdr_splash.c"
 #include "../../apps/sdr/tiku_sdr_tape.c"
 #include "../../apps/sdr/tiku_sdr_view.c"
@@ -662,6 +666,20 @@ static void scale_tests(void)
     frame_of(&m, v);
     sdr_model_scale(&m);
     assert(m.div == 2.0f && m.floor_db == 40.0f);  /* 20 dB of colour */
+    m.manual_scale = m.manual_color = 1;
+    m.scale_hi = 120; m.scale_lo = 20; m.div = 10;
+    m.floor_db = 25; m.ceiling_db = 115;
+    memset(v, 240, sizeof v);
+    frame_of(&m, v);
+    sdr_model_scale(&m);
+    assert(m.scale_hi == 120 && m.scale_lo == 20 && m.div == 10);
+    assert(m.floor_db == 25 && m.ceiling_db == 115);
+    m.manual_scale = 0;
+    sdr_model_scale(&m);
+    assert(m.scale_hi > 120 && m.floor_db == 25 && m.ceiling_db == 115);
+    m.manual_color = 0;
+    sdr_model_scale(&m);
+    assert(m.ceiling_db == m.scale_hi && m.floor_db != 25);
 }
 
 /** @brief What the fake board read, up to a return. */
@@ -737,7 +755,7 @@ static void record(sdr_t *st, int master, int64_t *now, const char *dir)
     assert(tiku_sdr_app.event(st, &r) == 0 && !st->rec.file);
     assert(strstr(st->saved, "Saved rec.sdrlog: 0:00, 2 spectra, "));
     assert(!strcmp(st->note, st->saved));
-    assert(file_has(path, "# TikuSDR recording 2\n# board: c61 (esp32c61)\n"));
+    assert(file_has(path, "# TikuSDR recording 3\n# board: c61 (esp32c61)\n"));
     assert(file_has(path, "\n0.000 VIEW range 2425 2449\n"));
     assert(file_has(path, " SPEC 2437 40000000 76 256 "));
     assert(file_has(path, " VIEW range 2396 2492\n"));
@@ -777,7 +795,7 @@ static void exports(sdr_t *st, const char *dir)
     /* IHDR's size: the instrument alone, from the panel's right to the
      * window's, above the bar at its foot. */
     assert(head[18] * 256 + head[19] == SDR_W - 222);
-    assert(head[22] * 256 + head[23] == SDR_H - 34);
+    assert(head[22] * 256 + head[23] == SDR_H - BAR_H - 4);
     unlink(csv);
     unlink(png);
 }
@@ -913,6 +931,7 @@ static void replay(sdr_t *st, int64_t *now, const char *dir)
     assert(tiku_sdr_app.pick(st, st->id, CMD_PAUSE) == 0 && !st->paused);
     ticks(st, now, 40);
     assert(!st->play.file && is_band(&st->model));
+    assert(editing(st) < 0);                 /* EOF must not focus a text field */
     assert(st->model.spectra == 2);
     assert(!strcmp(st->note, "End of rec.sdrlog: 0:00, 2 spectra."));
     assert(sdr_enabled(st, CMD_LIVE) && !strcmp(st->shown, path));
@@ -1168,20 +1187,19 @@ static void no_esp32(const tiku_app_services_t *services)
         assert(tiku_peek(st->surface, f.x + 3 + 26 - 10, f.y + 36) ==
                TIKU_C_DANGER);
     }
-    /* The panel holds no Connect -- the SDR menu's alone -- and under the
-     * alert nothing in it works: the bar's Pause first, then the
+    /* Under the alert nothing in the panel works: Pause first, then the
      * sections, every control inside the panel and above the bar, the
      * lists filled. */
-    assert(st->dialog.count > SDR_FIELDS + SDR_CHOICES &&
+    assert(st->dialog.count > 10 &&
            st->dialog.control[0].id == CMD_PAUSE &&
            st->dialog.focus == TIKU_DIALOG_NONE);
     for (int i = 0; i < st->dialog.count; i++) {
         const tiku_dialog_control_t *c = &st->dialog.control[i];
-        int bar = c->id == CMD_PAUSE || c->id == CMD_RECORD;
-        assert(c->id != CMD_CONNECT && !c->enabled);
-        assert(c->rect.x >= 8 && c->rect.x + c->rect.w <= 208);
-        assert(bar ? c->rect.y > st->h - 30
-                   : c->rect.y + c->rect.h < st->h - 30);
+        int bar = c->id == CMD_PAUSE || c->id == CMD_RECORD || c->id == CMD_CONNECT;
+        assert(!c->enabled);
+        assert(c->rect.x >= 8 && c->rect.x + c->rect.w <= (bar ? 240 : 208));
+        assert(bar ? c->rect.y > st->h - BAR_H
+                   : c->rect.y + c->rect.h < st->h - BAR_H);
     }
     for (int c = 0; c < SDR_CHOICES; c++)
         assert(!st->choice[c].enabled && st->choice[c].count >= 3);
@@ -1268,6 +1286,213 @@ static void choose(sdr_t *st, int c, int down)
  *         another from the list, a press near one, a frequency typed,
  *         Delete, All Off, To Center.  Display: the spectrogram off, the
  *         plans on.  In a sweep, markers take a press instead of tuning. */
+static void navigation_tests(const tiku_app_services_t *services, const char *dir)
+{
+    char path[512], line[1200];
+    snprintf(path, sizeof path, "%s/navigation.sdrlog", dir);
+    FILE *f = fopen(path, "w");
+    assert(f);
+    fputs("# TikuSDR recording 2\n0 VIEW range 2425 2449\n", f);
+    spec_line(line, sizeof line, 2437, 256, 100, 140, 190);
+    fprintf(f, "0.1 %s\n4 VIEW range 2436 2438\n", line);
+    spec_at(line, sizeof line, 2437, 4000000, 256, 100, 140, 190);
+    fprintf(f, "4.1 %s\n4.2 %s\n", line, line);
+    for (int i = 0; i < 130; i++) fprintf(f, "%d %s\n", 10 + i, line);
+    assert(!fclose(f));
+    sdr_t *st = started(services);
+    st->looking = 0;
+    assert(!sdr_play_start(st, path));
+    st->play.skip_gaps = 0;
+    sdr_play_seek(st, 4.1);
+    sdr_play_tick(st);
+    assert(!st->play.seeking && st->paused && st->model.spectra == 2);
+    assert(st->model.start == 2436 && st->model.rate == 5);
+    assert(!sdr_enabled(st, CMD_ZOOM_IN));
+    st->model.wf_selected = 0;
+    double recorded_start = st->model.start;
+    sdr_zoom(st, 0.5, 0.5);
+    assert(st->model.start == recorded_start);
+    sdr_play_step(st);
+    sdr_play_tick(st);
+    assert(!st->play.stepping && st->model.spectra == 3 && st->paused);
+    assert(st->model.wf_selected == 1);
+    int64_t at = st->play.clock;
+    st->now += 2000000;
+    sdr_play_tick(st);
+    assert(st->play.clock == at && st->model.spectra == 3);
+    sdr_play_seek(st, 110);
+    sdr_play_tick(st);
+    assert(st->play.seeking);              /* bounded work, not a blocking scan */
+    sdr_play_tick(st);
+    assert(!st->play.seeking && st->play.clock == 110000000);
+    sdr_play_seek(st, 0);
+    sdr_play_tick(st);
+    assert(st->model.spectra == 0 && st->model.start == 2425);
+    st->play.speed = 2;
+    st->paused = 0;
+    st->now += 50000;
+    sdr_play_tick(st);
+    assert(st->play.clock == 100000 && st->model.spectra == 1);
+    sdr_play_seek(st, 1e6);                 /* seek beyond EOF is clamped */
+    for (int i = 0; i < 4; i++) sdr_play_tick(st);
+    assert(!st->play.seeking && st->play.clock == 139000000);
+    st->paused = 0;
+    sdr_play_tick(st);
+    assert(!st->play.file);
+    assert(sdr_enabled(st, CMD_REWIND));
+    sdr_play_seek(st, 4.1);                 /* reopen and seek after EOF */
+    sdr_play_tick(st);
+    assert(st->play.file && st->model.spectra == 2);
+    sdr_play_seek(st, NAN);
+    assert(!st->play.seeking);
+    sdr_play_stop(st);
+    tiku_sdr_app.stop(st);
+    unlink(path);
+}
+
+static void gain_tests(sdr_t *st, int master, int64_t *now)
+{
+    char got[256];
+    st->paused = 1;
+    assert(!sdr_gain_request(st, 50));       /* query support before changing it */
+    assert(sdr_gain_request(st, -2));
+    ticks(st, now, 1);
+    assert(st->gain_queued && !st->gain_inflight); /* a spectrum is pending */
+    say(master, PROMPT);
+    ticks(st, now, 2);
+    board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr gain\r") && st->gain_inflight);
+    say(master, "SDR gain 60" PROMPT);
+    ticks(st, now, 2);
+    assert(st->gain_known == 1 && st->gain_value == 60 && !st->gain_inflight);
+    assert(!sdr_gain_request(st, 256));
+    assert(sdr_gain_request(st, 42));
+    ticks(st, now, 1);
+    board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr gain 42\r"));
+    assert(!sdr_gain_request(st, 43));       /* one command at a time */
+    say(master, "SDR gain 42" PROMPT);
+    ticks(st, now, 2);
+    assert(st->gain_value == 42 && !st->model.fresh);
+    assert(sdr_gain_request(st, -1));
+    ticks(st, now, 1);
+    board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr gain auto\r"));
+    say(master, "SDR gain auto" PROMPT);
+    ticks(st, now, 2);
+    assert(st->gain_value == -1 && st->gain_known == 1);
+    assert(sdr_gain_request(st, -2));
+    ticks(st, now, 1);
+    board_read(master, got, sizeof got);
+    say(master, "Unknown command" PROMPT);
+    ticks(st, now, 2);
+    assert(st->gain_known == -1 && !sdr_enabled(st, CMD_GAIN_AUTO));
+    assert(strstr(st->note, "did not confirm"));
+    assert(sdr_gain_request(st, -2));        /* a failed query can be retried */
+    ticks(st, now, 1);
+    board_read(master, got, sizeof got);
+    say(master, "SDR gain 60" PROMPT);
+    ticks(st, now, 2);
+    assert(st->gain_known == 1);
+    /* A legacy/failed capabilities reply must not leave hidden overrides. */
+    st->model.fft_override = 64;
+    st->caps_queued = 1;
+    ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr info\r"));
+    say(master, "Unknown command" PROMPT);
+    ticks(st, now, 2);
+    assert(st->caps_known == -1 && !st->model.fft_override &&
+           !sdr_enabled(st, CMD_FFT) && sdr_acquisition_valid(st));
+    st->paused = 0;
+    ticks(st, now, 1);
+    board_read(master, got, sizeof got);
+    assert(strstr(got, "sdr spec "));
+}
+
+static void plot_navigation_tests(const tiku_app_services_t *services)
+{
+    sdr_t *st = started(services);
+    sdr_model_t *m = &st->model;
+    tiku_rect_t plot, fall;
+    tiku_event_t e = {.type = TIKU_EVENT_WHEEL, .dy = -1};
+    sdr_layout(st, &plot, &fall);
+    double start = m->start, stop = m->stop;
+    e.x = plot.x + plot.w / 4; e.y = plot.y + 30;
+    double fraction = (double)(e.x - plot.x) / plot.w;
+    double anchor = start + fraction * (stop - start);
+    assert(!tiku_sdr_app.event(st, &e));
+    assert(fabs((m->stop - m->start) - 19.2) < 0.002);
+    assert(fabs(m->start + fraction * (m->stop - m->start) - anchor) < 0.002);
+    assert(st->previous_count == 1);
+    sdr_view_back(st);
+    assert(m->start == start && m->stop == stop && !st->previous_count);
+    e.type = TIKU_EVENT_POINTER_DOWN; e.button = 1; e.modifiers = TIKU_MOD_SHIFT;
+    assert(!tiku_sdr_app.event(st, &e) && st->nav_drag == 1);
+    e.type = TIKU_EVENT_POINTER_MOVE; e.x = plot.x + plot.w * 3 / 4;
+    assert(!tiku_sdr_app.event(st, &e));
+    assert(m->start == start && m->stop == stop); /* no retune until release */
+    e.type = TIKU_EVENT_POINTER_UP;
+    assert(!tiku_sdr_app.event(st, &e) && !st->nav_drag);
+    assert(fabs(m->stop - m->start - 12) < 0.05 && st->previous_count == 1);
+    sdr_view_back(st);
+    e.type = TIKU_EVENT_POINTER_DOWN; e.button = 2; e.modifiers = 0;
+    e.x = plot.x + plot.w / 2;
+    assert(!tiku_sdr_app.event(st, &e) && st->nav_drag == 2);
+    e.type = TIKU_EVENT_POINTER_UP; e.x += 60;
+    assert(!tiku_sdr_app.event(st, &e));
+    assert(m->start < start && fabs(m->stop - m->start - 24) < 0.002);
+    sdr_view_back(st);
+    e.type = TIKU_EVENT_POINTER_DOWN;
+    assert(!tiku_sdr_app.event(st, &e) && st->nav_drag);
+    assert(!key_in(st, TIKU_KEY_ESCAPE, NULL) && !st->nav_drag);
+    assert(m->start == start && m->stop == stop);
+    for (int i = 0; i < 60; i++) sdr_zoom(st, 0.25, 0.5);
+    assert(m->stop - m->start == SDR_SPAN_MIN && st->previous_count <= SDR_VIEWS);
+    sdr_zoom(st, 0, 1e6);
+    assert(m->start == SDR_TUNE_LO && m->stop == SDR_TUNE_HI);
+    sdr_zoom(st, NAN, 0.5);
+    assert(m->start == SDR_TUNE_LO);
+    snprintf(st->shown, sizeof st->shown, "recording.sdrlog");
+    assert(!sdr_enabled(st, CMD_ZOOM_IN) && !sdr_enabled(st, CMD_VIEW_BACK));
+    sdr_zoom(st, 0.5, 0.5);
+    assert(m->start == SDR_TUNE_LO && m->stop == SDR_TUNE_HI);
+    st->shown[0] = '\0';
+    sdr_model_range(m, start, stop);
+    unsigned char values[256];
+    memset(values, 100, sizeof values);
+    m->clock = 10; frame_of(m, values);
+    memset(values, 120, sizeof values);
+    m->clock = 20; frame_of(m, values);
+    memset(values, 180, sizeof values);
+    m->clock = 30; frame_of(m, values);
+    hover(st, plot.x + 200, fall.y + 2);
+    assert(strstr(st->hover, "stored 50.0 dB") && strstr(st->hover, "20.000 s ago"));
+    hover(st, plot.x + 200, fall.y + 3);
+    assert(!st->hover[0]);                   /* blank area isn't a capture */
+    e = (tiku_event_t){.type = TIKU_EVENT_POINTER_DOWN, .button = 1,
+        .modifiers = TIKU_MOD_OPTION, .x = plot.x + 200, .y = fall.y + 2};
+    assert(!tiku_sdr_app.event(st, &e) && m->wf_selected == 2);
+    int row = sdr_history_row(m, m->wf_selected);
+    assert(m->wf_at[row] == 10);
+    sdr_history_scroll(m, 2);
+    m->clock = 40; frame_of(m, values);
+    assert(m->wf_selected == 3 && m->wf_offset == 3);
+    assert(sdr_history_row(m, m->wf_selected) == row);
+    sdr_paint(st);
+    assert(!tiku_surface_png(st->surface, "build/tests/test_sdr_history.png"));
+    for (int i = 0; i < SDR_ROWS; i++) {
+        m->clock = 41 + i;
+        frame_of(m, values);
+    }
+    assert(m->wf_selected == -1 && m->wf_count == SDR_ROWS);
+    assert(sdr_history_row(m, -1) == -1 && sdr_history_row(m, SDR_ROWS) == -1);
+    sdr_history_scroll(m, -10000);
+    assert(m->wf_offset == 0);
+    sdr_model_range(m, 2436, 2438);
+    assert(!m->wf_count && m->wf_selected == -1 && !m->wf_offset);
+    tiku_sdr_app.stop(st);
+}
+
 static void drawn(const tiku_app_services_t *services)
 {
     sdr_t *st;
@@ -1282,7 +1507,7 @@ static void drawn(const tiku_app_services_t *services)
     assert(st->fall_on && !st->plans_on && !sdr_marks_out(m));
     assert(!sdr_enabled(st, CMD_NEXT_PEAK) &&
            !sdr_enabled(st, CMD_FIELD + SDR_F_MARK));
-    assert(st->dialog.focus == CMD_PAUSE);  /* never a field by itself */
+    assert(!sdr_enabled(st, CMD_PAUSE) && st->dialog.focus == CMD_CONNECT);
     memset(v, 100, sizeof v);
     v[m->k0 + 60] = 200;                    /* the view's bins 60 and 140 */
     v[m->k0 + 140] = 180;
@@ -1310,6 +1535,7 @@ static void drawn(const tiku_app_services_t *services)
 
     /* Active puts the marker out on the highest peak; Next Peak moves it
      * down to the next. */
+    click_control(st, CMD_SECTION + SDR_S_MARK);
     click_control(st, CMD_MARK_ACTIVE);
     assert(m->mark[0].on && sdr_mark_bin(m, 0) == 60);
     assert(marked(CMD_MARK_ACTIVE) == 1 && marked(CMD_TRACK) == 1);
@@ -1345,6 +1571,28 @@ static void drawn(const tiku_app_services_t *services)
     assert(!sdr_marks_out(m) && offered(CMD_MARK_CLEAR) == 0);
 
     /* The spectrogram off: the spectrum takes its room; the plans on. */
+    click_control(st, CMD_SECTION + SDR_S_DISPLAY);
+    assert(sdr_control_rect(st, CMD_MARK_ACTIVE).w == 0);
+    type_field(st, SDR_F_REF, "130");
+    type_field(st, SDR_F_DIV, "5");
+    assert(m->manual_scale && m->scale_hi == 130 && m->scale_lo == 80);
+    type_field(st, SDR_F_DIV, "3");
+    assert(m->div == 5 && strstr(st->note, "per division"));
+    type_field(st, SDR_F_REF, "nan");
+    assert(m->scale_hi == 130);
+    type_field(st, SDR_F_CEILING, "120");
+    type_field(st, SDR_F_FLOOR, "30");
+    type_field(st, SDR_F_FLOOR, "121");
+    assert(m->manual_color && m->floor_db == 30 && m->ceiling_db == 120);
+    assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0);
+    click_control(st, CMD_SCALE_AUTO);
+    click_control(st, CMD_COLOR_AUTO);
+    assert(!m->manual_scale && !m->manual_color);
+    assert(tiku_surface_png(st->surface, "build/tests/test_sdr_scales.png") == 0);
+    for (int i = 0; i < st->dialog.count; i++) {
+        const tiku_dialog_control_t *c = &st->dialog.control[i];
+        assert(c->rect.w > 0 && c->rect.h > 0 && c->rect.y >= 0);
+    }
     sdr_layout(st, &was, &fall);
     click_control(st, CMD_WATERFALL);
     sdr_layout(st, &plot, &fall);
@@ -1382,7 +1630,7 @@ static void drawn(const tiku_app_services_t *services)
     pointer_at(st, TIKU_EVENT_POINTER_DOWN, column(st, 20), mid);
     pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 20), mid);
     assert(is_band(m) && sdr_mark_bin(m, 0) == 20);
-    hover(st, column(st, 20), fall.y + 4);
+    hover(st, column(st, 20), fall.y);
     assert(strstr(st->hover, "click to tune here"));
     hover(st, column(st, 20), mid);
     assert(!strstr(st->hover, "click to tune here"));
@@ -1390,30 +1638,285 @@ static void drawn(const tiku_app_services_t *services)
     pointer_at(st, TIKU_EVENT_POINTER_UP, column(st, 20), fall.y + 4);
     assert(sdr_model_is_live(m));
 
-    /* Live's light: green over one capture, grey over a sweep; pressed,
-     * Live goes to the last view of the other kind, by hand or by key. */
+    /* Acquisition mode names do not double as a connection indicator. */
     {
         double a = m->start, b = m->stop;
-        int lx, ly;
-
-        r = sdr_control_rect(st, CMD_LIVE);
-        lx = r.x + (r.w - 16 - tiku_text_width(tiku_font_plain(), "Live")) /
-             2 + 5;
-        ly = r.y + r.h / 2;
+        if (st->collapsed & (1u << SDR_S_FREQ))
+            click_control(st, CMD_SECTION + SDR_S_FREQ);
         sdr_paint(st);
         publish(st);                    /* as the tick does on a change */
-        assert(tiku_peek(st->surface, lx, ly) == LIVE_ON && marked(CMD_LIVE));
+        assert(!strcmp(sdr_label(st, CMD_LIVE), "Mode: Live") && marked(CMD_LIVE));
         click_control(st, CMD_LIVE);
         assert(is_band(m) && !sdr_model_is_live(m) && !marked(CMD_LIVE));
         sdr_paint(st);
-        assert(tiku_peek(st->surface, lx, ly) == LIVE_OFF);
+        assert(!strcmp(sdr_label(st, CMD_LIVE), "Mode: Sweep"));
         type_field(st, SDR_F_STOP, "2500");       /* another wide view */
         assert(key_in(st, TIKU_KEY_ESCAPE, NULL) == 0 && m->stop == 2500);
         assert(key_in(st, 'l', "l") == 0 && m->start == a && m->stop == b);
         assert(key_in(st, 'l', "l") == 0 && m->start == SDR_BAND_START &&
                m->stop == 2500);
     }
+    /* Divider drag changes the split, and large windows do not index past
+     * the bounded waterfall history. */
+    sdr_layout(st, &plot, &fall);
+    int old_height = fall.h;
+    pointer_at(st, TIKU_EVENT_POINTER_DOWN, fall.x + 50, fall.y + fall.h + 3);
+    assert(st->divider_drag);
+    pointer_at(st, TIKU_EVENT_POINTER_MOVE, fall.x + 50, 300);
+    pointer_at(st, TIKU_EVENT_POINTER_UP, fall.x + 50, 300);
+    sdr_layout(st, &plot, &fall);
+    assert(!st->divider_drag && fall.h > old_height);
+    tiku_event_t resize = {.type = TIKU_EVENT_RESIZE, .width = 1200, .height = 1800};
+    assert(tiku_sdr_app.event(st, &resize) == 0);
+    sdr_layout(st, &plot, &fall);
+    assert(fall.h > SDR_ROWS);
+    resize.width = 650; resize.height = 570;
+    assert(tiku_sdr_app.event(st, &resize) == 0);
+    for (int i = 0; i < st->dialog.count; i++) {
+        const tiku_dialog_control_t *ctl = &st->dialog.control[i];
+        assert(ctl->rect.y + ctl->rect.h <= st->h);
+        assert(ctl->rect.x + ctl->rect.w <= st->w);
+    }
     tiku_sdr_app.stop(st);
+}
+
+/** @brief Saved setups and references validate before changing the model. */
+static void workspace_tests(const char *dir)
+{
+    sdr_t *st = calloc(1, sizeof *st);
+    char path[600], line[1200];
+    assert(st);
+    sdr_model_init(&st->model); sdr_tools_init(st);
+    st->fall_on = 1; st->fall_percent = 42;
+    st->model.type[1] = SDR_T_MAX;
+    st->occupancy.threshold = 71;
+    st->trigger.pre_seconds = 7;
+    snprintf(path, sizeof path, "%s/setup.sdrpreset", dir);
+    assert(!sdr_setup_save(st, path));
+    st->fall_percent = 20; st->model.type[1] = SDR_T_OFF;
+    assert(!sdr_setup_load(st, path));
+    assert(st->fall_percent == 42 && st->model.type[1] == SDR_T_MAX &&
+           st->occupancy.threshold == 71 && st->trigger.pre_seconds == 7);
+    FILE *f = fopen(path, "w"); assert(f);
+    fputs("TikuSDR-setup 1\nnan 2449\n", f); fclose(f);
+    assert(sdr_setup_load(st, path) == -1 && st->fall_percent == 42);
+    unlink(path);
+    snprintf(path, sizeof path, "%s/reference.sdrref", dir);
+    spec_line(line, sizeof line, 2437, 256, 100, 140, 190);
+    assert(sdr_model_line(&st->model, line) == 1);
+    assert(!sdr_reference_save(st, path) && !sdr_reference_load(st, path));
+    assert(sdr_reference_matches(st));
+    assert(st->reference.db[140 - st->model.k0] == st->model.avg[140 - st->model.k0]);
+    sdr_model_range(&st->model, 2400, 2424);
+    assert(!sdr_reference_matches(st));
+    f = fopen(path, "w"); assert(f);
+    fputs("TikuSDR-reference 1\n513 2400 0.1 1 256 60 1\nc61\n", f); fclose(f);
+    assert(sdr_reference_load(st, path) == -1 && st->reference.valid);
+    unlink(path);
+    assert(mkfifo(path, 0600) == 0);
+    assert(sdr_reference_load(st, path) == -1); /* does not block on a pipe */
+    unlink(path);
+    assert(setenv("HOME", dir, 1) == 0);
+    st->fall_percent = 51;
+    sdr_preferences(st, 1);
+    st->fall_percent = 20;
+    sdr_preferences(st, 0);
+    assert(st->fall_percent == 51);
+    snprintf(path, sizeof path, "%s/.config/TikuDesktop/TikuSDR.prefs", dir); unlink(path);
+    snprintf(path, sizeof path, "%s/.config/TikuDesktop", dir); assert(!rmdir(path));
+    snprintf(path, sizeof path, "%s/.config", dir); assert(!rmdir(path));
+    assert(setenv("HOME", "/dev/null", 1) == 0);
+    free(st);
+}
+
+/** @brief Activity counts exclude uncovered channels and reset on grid changes. */
+static void measurement_tests(const char *dir)
+{
+    sdr_t *st = calloc(1, sizeof *st);
+    char path[600], line[1200], health[200], name[32];
+    double center, width;
+    assert(st);
+    sdr_model_init(&st->model); sdr_tools_init(st);
+    st->model.clock = 1;
+    spec_line(line, sizeof line, 2437, 256, 100, 140, 190);
+    assert(sdr_model_line(&st->model, line) == 1);
+    sdr_observe(st);
+    assert(st->occupancy.seen[5] == 1 && st->occupancy.busy[5] == 1);
+    assert(st->occupancy.seen[0] == 0); /* Wi-Fi 1 outside the observed range */
+    st->model.clock = 4;
+    spec_line(line, sizeof line, 2437, 256, 80, -1, 80);
+    assert(sdr_model_line(&st->model, line) == 1);
+    sdr_observe(st);
+    assert(st->occupancy.seen[5] == 2 && st->occupancy.busy[5] == 1 &&
+           st->occupancy.last[5] - st->occupancy.first[5] == 3);
+    sdr_channel(13 + 38, name, sizeof name, &center, &width);
+    assert(center == 2426 && width == 2 && !strcmp(name, "BLE 38"));
+    sdr_channel(68, name, sizeof name, &center, &width);
+    assert(center == 2480 && !strcmp(name, "15.4 26"));
+    snprintf(path, sizeof path, "%s/activity.csv", dir);
+    assert(!sdr_occupancy_export(st, path));
+    assert(file_has(path, "Wi-Fi 6,2437.000,20.000,60.000,2,1,50.000,3.000"));
+    assert(file_has(path, ",0,0,NA,NA\n"));
+    unlink(path);
+    sdr_model_range(&st->model, 2396, 2492);
+    assert(sdr_model_line(&st->model, "SWEEP 6") == 0 && st->model.incomplete == 1);
+    assert(sdr_model_line(&st->model, "SPEC broken") == -1 && st->model.rejected == 1);
+    st->state = SDR_RUNNING; st->last_frame = 1000000; st->now = 5000000;
+    sdr_health_text(st, health, sizeof health);
+    assert(strstr(health, "STALE") && strstr(health, "clipping: not reported"));
+    st->paused = 1;
+    sdr_health_text(st, health, sizeof health); assert(strstr(health, "Paused"));
+    free(st);
+}
+
+/** @brief Capabilities gate acquisition; recordings preserve explicit settings. */
+static void acquisition_tests(const char *dir)
+{
+    sdr_t *st = calloc(1, sizeof *st);
+    char path[600], line[1200];
+    assert(st);
+    sdr_model_init(&st->model); sdr_tools_init(st); st->state = SDR_RUNNING;
+    assert(!sdr_caps_parse(st, "SDR bank 1 rates 40 nfft 256 tune 2700 2200"));
+    assert(!sdr_caps_parse(st, "SDR bank 1 rates 40 nfft 256 tune 2200"));
+    assert(sdr_caps_parse(st, "SDR bank 1 rates 40 20 4 nfft 64 256 tune 2200 2700"));
+    assert(st->caps_rates == 38 && st->caps_ffts == 5);
+    assert(sdr_acquisition_valid(st));
+    sdr_acquisition_cycle(st, 1); assert(st->model.nfft == 64);
+    sdr_acquisition_cycle(st, 1); assert(st->model.nfft == 256);
+    sdr_acquisition_cycle(st, 0); assert(st->model.rate == 1);
+    sdr_model_range(&st->model, 2436, 2438);
+    sdr_acquisition_cycle(st, 0); assert(st->model.rate == 2);
+    assert(sdr_acquisition_valid(st));
+    snprintf(path, sizeof path, "%s/explicit.sdrlog", dir);
+    assert(!sdr_rec_start(st, path));
+    spec_at(line, sizeof line, 2437, 20000000, 256, 90, 130, 150);
+    st->now += 1000000;
+    assert(sdr_model_line(&st->model, line) == 1);
+    sdr_rec_line(st, line, 1); sdr_rec_stop(st);
+    st->state = SDR_IDLE;
+    assert(!sdr_play_start(st, path));
+    sdr_play_seek(st, 1); sdr_play_tick(st);
+    assert(st->model.rate == 2 && st->model.nfft == 256 && st->model.spectra == 1);
+    sdr_play_stop(st); unlink(path);
+    /* Every implemented FFT size also stitches the complete wide-band sweep. */
+    st->model.rate_override = 0;
+    for (int fft = 64; fft <= 256; fft *= 2) {
+        st->model.fft_override = fft;
+        sdr_model_range(&st->model, 2396, 2492);
+        for (int c = st->model.first; c <= st->model.last; c += SDR_SLICE_STEP) {
+            held_line(line, sizeof line, c, fft, 100, 60);
+            assert(sdr_model_line(&st->model, line) == 0);
+        }
+        assert(sdr_model_line(&st->model, "SWEEP 6") == 1);
+        assert(st->model.n > 0 && st->model.n <= SDR_BINS && st->model.db[20] == 50);
+    }
+    free(st);
+}
+
+/** @brief Trigger history survives capture, replays, and stops on its deadline. */
+static void trigger_tests(const char *dir)
+{
+    sdr_t *st = calloc(1, sizeof *st);
+    char path[600], line[1200];
+    assert(st);
+    sdr_model_init(&st->model); sdr_tools_init(st);
+    st->state = SDR_RUNNING; st->trigger.pre_seconds = 2; st->trigger.post_seconds = 1;
+    if (access("/dev/full", W_OK) == 0) {
+        assert(sdr_trigger_arm(st, "/dev/full") == -1);
+        assert(!st->trigger.armed && !st->rec.file);
+    }
+    snprintf(path, sizeof path, "%s/trigger.sdrlog", dir);
+    assert(!sdr_trigger_arm(st, path));
+    for (int i = 0; i < 5; i++) {
+        st->now = (int64_t)i * 1000000;
+        spec_line(line, sizeof line, 2437, 256, 80, 140, i == 4 ? 180 : 80);
+        assert(sdr_model_line(&st->model, line) == 1);
+        sdr_trigger_line(st, line, 1);
+    }
+    assert(!st->trigger.armed && st->trigger.fired && st->rec.frames == 3);
+    assert(st->rec.began == 2000000 && file_has(path, "2.000 TRIGGER threshold"));
+    st->now = 4999999; sdr_trigger_tick(st); assert(st->rec.file);
+    st->now++; sdr_trigger_tick(st); assert(!st->rec.file && !st->trigger.fired);
+    st->state = SDR_IDLE;
+    assert(!sdr_play_start(st, path));
+    sdr_play_seek(st, st->play.total); sdr_play_tick(st);
+    assert(st->model.spectra == 3 && st->play.total == 2);
+    sdr_play_stop(st); st->shown[0] = 0; st->state = SDR_RUNNING; st->paused = 0;
+    assert(!sdr_trigger_arm(st, path));
+    for (int i = 0; i < SDR_PRE_LINES + 20; i++) {
+        st->now += 1000;
+        spec_line(line, sizeof line, 2437, 256, 80, -1, 80);
+        assert(sdr_model_line(&st->model, line) == 1);
+        sdr_trigger_line(st, line, 1);
+    }
+    assert(st->trigger.count == SDR_PRE_LINES && st->trigger.armed);
+    spec_line(line, sizeof line, 2437, 256, 80, 140, 180);
+    assert(sdr_model_line(&st->model, line) == 1);
+    sdr_trigger_line(st, line, 1);
+    assert(st->trigger.fired && st->rec.frames <= SDR_PRE_LINES);
+    sdr_navigate(st, 2436, 2438, 0);
+    assert(!st->trigger.armed && !st->rec.file);
+    unlink(path); free(st);
+}
+
+/** @brief Bookmarks persist beside a recording; looping uses bounded seeking. */
+static void bookmark_tests(const tiku_app_services_t *services, const char *dir)
+{
+    char path[600], sidecar[620], line[1200];
+    snprintf(path, sizeof path, "%s/bookmarks.sdrlog", dir);
+    FILE *f = fopen(path, "w"); assert(f);
+    fputs("# TikuSDR recording 3\n0 VIEW range 2425 2449\n", f);
+    spec_line(line, sizeof line, 2437, 256, 90, 140, 180);
+    for (int i = 0; i < 10; i++) fprintf(f, "%d %s\n", i, line);
+    fclose(f);
+    sdr_t *st = started(services); st->looking = 0;
+    assert(!sdr_play_start(st, path));
+    sdr_play_seek(st, 2); sdr_play_tick(st);
+    snprintf(st->book_label, sizeof st->book_label, "Interference peak");
+    sdr_book_add(st); assert(st->book_count == 1 && st->books[0].at == 2);
+    sdr_pick(st, st->id, CMD_LOOP_A);
+    sdr_play_seek(st, 4); sdr_play_tick(st);
+    sdr_pick(st, st->id, CMD_LOOP_B);
+    sdr_book_add(st);
+    assert(st->play.loop_a == 2 && st->play.loop_b == 4);
+    assert(!sdr_play_start(st, path));
+    assert(st->book_count == 2 && !strcmp(st->books[0].label, "Interference peak"));
+    sdr_book_next(st); sdr_play_tick(st);
+    assert(st->play.clock == 2000000 && st->paused);
+    assert(strstr(st->note, "Interference peak"));
+    sdr_pick(st, st->id, CMD_LOOP); sdr_play_tick(st);
+    assert(st->play.loop && !st->paused);
+    st->now += 3000000; sdr_play_tick(st);
+    assert(st->play.seeking && st->play.resume_seek);
+    sdr_play_tick(st);
+    assert(st->play.clock == 2000000 && !st->paused);
+    /* The same command also loops a recording that already reached EOF. */
+    st->play.loop = 0;
+    sdr_play_seek(st, 9); sdr_play_tick(st); st->paused = 0;
+    sdr_play_tick(st); assert(!st->play.file);
+    sdr_pick(st, st->id, CMD_LOOP); sdr_play_tick(st);
+    assert(st->play.loop && st->play.file && !st->paused);
+    sdr_pick(st, st->id, CMD_SECTION + SDR_S_MEASURE);
+    type_field(st, SDR_F_BOOK, "A new event");
+    assert(!strcmp(st->book_label, "A new event"));
+    sdr_pick(st, st->id, CMD_OCCUPANCY);
+    assert(st->occupancy.visible);
+    for (int i = 0; i < 3; i++) { sdr_pick(st, st->id, CMD_OCC_PLAN); sdr_paint(st); }
+    tiku_event_t resize = {.type = TIKU_EVENT_RESIZE, .width = 610, .height = 570};
+    sdr_event(st, &resize);
+    st->occupancy.plan = 1;
+    sdr_paint(st);
+    sdr_pick(st, st->id, CMD_OCC_PAGE);
+    assert(st->occupancy.page == 1); /* BLE remains readable at minimum width */
+    snprintf(sidecar, sizeof sidecar, "%s/restore.sdrpreset", dir);
+    assert(!sdr_setup_save(st, sidecar));
+    assert(!sdr_setup_load(st, sidecar) && !st->play.file && !st->shown[0]);
+    assert(!sdr_play_start(st, path));
+    unlink(sidecar);
+    sdr_pick(st, st->id, CMD_BOOK_CLEAR); assert(!st->book_count);
+    tiku_sdr_app.stop(st);
+    snprintf(sidecar, sizeof sidecar, "%s.sdrmarks", path); unlink(sidecar);
+    unlink(path);
 }
 
 int main(void)
@@ -1429,12 +1932,19 @@ int main(void)
     int master;
     int64_t now = 0;
 
+    /* Unit tests must never read or replace the user's saved workspace. */
+    assert(setenv("HOME", "/dev/null", 1) == 0);
     model_tests();
     held_tests();
     range_tests();
     marker_tests();
     scale_tests();
     assert(mkdtemp(dir));
+    workspace_tests(dir);
+    measurement_tests(dir);
+    acquisition_tests(dir);
+    trigger_tests(dir);
+    bookmark_tests(&services, dir);
     snprintf(rec, sizeof rec, "%s/rec.sdrlog", dir);
     snprintf(rec2, sizeof rec2, "%s/rec2.sdrlog", dir);
     master = posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK);
@@ -1444,6 +1954,8 @@ int main(void)
     splash_tests(&services);
     no_esp32(&services);
     drawn(&services);
+    plot_navigation_tests(&services);
+    navigation_tests(&services, dir);
     released = 0;
     st = started(&services);
     assert(frames >= 1 && menus_seen >= 1 && !strcmp(st->board, "c61"));
@@ -1474,6 +1986,12 @@ int main(void)
     /* The menus follow the board between commands, with nothing picked. */
     assert(offered(CMD_RECORD) == 1 && offered(CMD_EXPORT) == 0);
     board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr info\r"));
+    assert(!sdr_enabled(st, CMD_FFT));
+    say(master, "SDR bank 1 rates 80 40 20 10 8 4 nfft 64 128 256 tune 2200 2700" PROMPT);
+    ticks(st, &now, 2);
+    assert(st->caps_known == 1 && sdr_enabled(st, CMD_FFT));
+    board_read(master, got, sizeof got);
     assert(!strcmp(got, "sdr spec 2437 1 256\r"));
     spec_line(line, sizeof line, 2437, 256, 110, 140, 190);
     strcat(line, "\r\ntikuOS:/> ");
@@ -1502,12 +2020,18 @@ int main(void)
     record(st, master, &now, dir);
     exports(st, dir);
     fields(st, master, &now);
+    /* Return to a live view for the receiver-control protocol test. */
+    assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
+    gain_tests(st, master, &now);
+    assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
     /* A second recording, still going when the board is given back. */
     assert(tiku_sdr_app.pick(st, st->id, CMD_RECORD) == 0);
     tiku_sdr_app.picked(st, st->id, rec2);
     assert(st->rec.file && !st->saved[0]);
 
+    assert(sdr_gain_request(st, -2));
     assert(tiku_sdr_app.pick(st, st->id, CMD_CONNECT) == 0);   /* disconnect */
+    assert(!st->gain_queued && !st->gain_inflight);
     assert(st->state == SDR_STOPPING && st->fd >= 0 && !reclaimed);
     board_read(master, got, sizeof got);
     assert(strstr(got, "sdr stop\r"));

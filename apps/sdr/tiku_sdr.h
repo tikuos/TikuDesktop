@@ -35,6 +35,7 @@
 #define SDR_TRACES   3              /* traces at once                  */
 #define SDR_EXCURSION 6.0f          /* the least rise a peak needs, dB */
 #define SDR_DIVS     10             /* graticule divisions, each way   */
+#define SDR_VIEWS    16             /* prior tuning ranges remembered */
 
 /* A view runs from start to stop in MHz, inside SDR_TUNE_LO to
  * SDR_TUNE_HI; the board tunes in whole MHz.  A view up to SDR_LIVE_SPAN
@@ -56,7 +57,13 @@
 /* The panel's fields, in its order: the view's range, the spectra an
  * average spans, and the selected marker's frequency. */
 enum { SDR_F_CENTER, SDR_F_SPAN, SDR_F_START, SDR_F_STOP, SDR_F_AVG,
-       SDR_F_MARK, SDR_FIELDS };
+       SDR_F_MARK, SDR_F_REF, SDR_F_DIV, SDR_F_FLOOR, SDR_F_CEILING,
+       SDR_F_GAIN, SDR_F_THRESHOLD, SDR_F_PRE, SDR_F_POST, SDR_F_BOOK,
+       SDR_FIELDS };
+
+enum { SDR_S_FREQ, SDR_S_TRACE, SDR_S_MARK, SDR_S_DISPLAY, SDR_S_RECEIVER,
+       SDR_S_MEASURE,
+       SDR_SECTIONS };
 
 /* What a trace shows: nothing, the latest spectrum, the average, or the
  * highest or lowest level held at each bin. */
@@ -76,7 +83,7 @@ enum {
 
 /* Commands: the panel's buttons, menus and keys share them. */
 enum {
-    CMD_CONNECT = 1,                /* in the SDR menu only             */
+    CMD_CONNECT = 1,                /* SDR menu and transport bar       */
     CMD_LIVE,                       /* Frequency: live, or the wide view */
     CMD_CLEAR, CMD_EXPORT,          /* Traces                           */
     CMD_MARK_ACTIVE, CMD_TRACK,     /* Markers: its two checkboxes      */
@@ -86,13 +93,22 @@ enum {
     CMD_RECORD, CMD_PAUSE,          /* the bar at the window's foot     */
     CMD_QUIT, CMD_REPLAY, CMD_PICTURE, CMD_PEAK, CMD_OVERLAY,
     CMD_MARK_REMOVE, CMD_ABOUT,     /* in menus or keys only            */
+    CMD_SCALE_AUTO, CMD_COLOR_AUTO, CMD_GAIN_AUTO, CMD_GAIN_READ,
+    CMD_REWIND, CMD_FORWARD, CMD_STEP, CMD_SPEED, CMD_GAPS,
+    CMD_ZOOM_IN, CMD_ZOOM_OUT, CMD_VIEW_BACK,
+    CMD_HISTORY_OLDER, CMD_HISTORY_NEWER, CMD_HISTORY_LATEST,
     CMD_TYPE = 60,                  /* + SDR_T_*: the selected trace's type */
     CMD_TRACE_SEL = 70,             /* + trace: the one being set       */
     CMD_MARK_SEL = 80,              /* + marker: the one being set      */
     CMD_TUNE = 100,                 /* + MHz offset from 2400: Tune menu */
     CMD_CHOICE = 240,               /* + SDR_C_*: the drop-down lists   */
     CMD_FIELD = 250,                /* + SDR_F_*: the fields            */
-    CMD_BOARD = 300                 /* + index: Device menu             */
+    CMD_BOARD = 300,                /* + index: Device menu             */
+    CMD_SECTION = 400,              /* + SDR_S_*: collapsible sections */
+    CMD_PRESET_SAVE = 500, CMD_PRESET_OPEN, CMD_REF_SAVE, CMD_REF_OPEN,
+    CMD_REF_SHOW, CMD_OCCUPANCY, CMD_OCC_PLAN, CMD_OCC_RESET, CMD_OCC_EXPORT,
+    CMD_TRIGGER, CMD_CAPS, CMD_FFT, CMD_RATE, CMD_BOOK_ADD, CMD_BOOK_NEXT,
+    CMD_BOOK_CLEAR, CMD_LOOP_A, CMD_LOOP_B, CMD_LOOP, CMD_OCC_PAGE, CMD_HEALTH
 };
 
 /* Where marker peak moves go: the highest peak, the highest peak lower
@@ -116,6 +132,8 @@ typedef struct {
     double one_max;                 /* the widest view one spectrum shows */
     int    sweep;                   /* 1: swept in slices; 0: one spectrum */
     int    tune, rate, nfft;        /* tuned (MHz), rate code, bins    */
+    int    fft_override, rate_override; /* 0: auto; rate code + 1 otherwise */
+    unsigned rejected, incomplete; /* local parser counters, not RF loss */
     int    k0;                      /* one spectrum: its first bin shown */
     int    first, last;             /* a sweep: its first and last
                                        slices' centres, MHz            */
@@ -140,11 +158,14 @@ typedef struct {
     float  div;                     /* dB a division                   */
     float  floor_db;                /* the spectrogram's lowest colour:
                                        under the noise, in 5 dB steps  */
+    float  ceiling_db;              /* the spectrogram's highest colour */
+    int    manual_scale, manual_color;
     unsigned char wf[SDR_ROWS][SDR_BINS];  /* half-dB, newest at head  */
     double wf_at[SDR_ROWS];         /* each row's time, in seconds     */
     double clock;                   /* seconds, given to a frame that
                                        finishes now                    */
     int    wf_head, wf_count;
+    int    wf_offset, wf_selected;  /* ages in captured rows; -1: no selection */
     unsigned spectra;               /* frames finished since the board
                                        started or playing began        */
 } sdr_model_t;
@@ -171,7 +192,46 @@ typedef struct {
     double   at, total;             /* line's time and the last, in s  */
     int64_t  clock, last;           /* played so far (us), and st->now
                                        at the last tick                */
+    int      skip_gaps, seeking, stepping;
+    double   speed, seek_to, initial_start, initial_stop;
+    int loop, resume_seek;
+    double loop_a, loop_b;
 } sdr_play_t;
+
+#define SDR_CHANNELS 69             /* Wi-Fi 13, BLE 40, 802.15.4 16 */
+#define SDR_PRE_LINES 256           /* bounded pre-trigger protocol history */
+#define SDR_BOOKS 32
+
+/** @brief A reference retains its frequency grid and receiver metadata. */
+typedef struct {
+    int n, rate, nfft, gain, held, visible, valid;
+    double lo, bin;
+    float db[SDR_BINS];
+    char name[96], board[64];
+} sdr_reference_t;
+
+/** @brief Measurement counts are per completed observation, not airtime. */
+typedef struct {
+    uint64_t seen[SDR_CHANNELS], busy[SDR_CHANNELS];
+    double first[SDR_CHANNELS], last[SDR_CHANNELS];
+    double start, stop;
+    int rate, nfft, gain, held, initialized;
+    float threshold;
+    int visible, plan, page;
+} sdr_occupancy_t;
+
+/** @brief One-shot trigger: the destination is opened when armed. */
+typedef struct {
+    int armed, fired, count, head;
+    int pre_seconds, post_seconds;
+    int64_t fired_at;
+    struct { int64_t at; int frame; char text[SDR_LINE]; } lines[SDR_PRE_LINES];
+} sdr_trigger_t;
+
+typedef struct {
+    double at;
+    char label[64];
+} sdr_bookmark_t;
 
 /** @brief An export to CSV: a recording on screen is converted over
  *         several ticks. */
@@ -207,14 +267,35 @@ typedef struct {
     int looking;                    /* the first look at the boards is
                                        due                             */
     int state, fd, paused, pending, closing, stopped;
+    int gain_known, gain_value, gain_queued, gain_inflight, gain_answered;
+    int gain_request;               /* -2 queries; -1 automatic; 0..255 held */
+    int caps_queued, caps_inflight, caps_known;
+    unsigned caps_rates, caps_ffts;
+    int caps_lo, caps_hi;
+    int64_t last_frame;
+    unsigned rx_overflows;
+    int health_visible;
+    sdr_reference_t reference;
+    sdr_occupancy_t occupancy;
+    sdr_trigger_t trigger;
+    sdr_bookmark_t books[SDR_BOOKS];
+    int book_count;
+    char book_label[64];
     int64_t now, deadline, sent_at, rate_at;
     unsigned rate_count;
     float rate_hz;
     char rx[SDR_RX_MAX];
     size_t rx_n;
     char note[160], hover[160];
+    int hover_x, hover_y, hover_valid;
     int dirty;
     int fall_on;                    /* the spectrogram shown           */
+    unsigned collapsed;            /* one bit per SDR_S_* section */
+    int fall_percent, divider_drag;
+    double previous[SDR_VIEWS][2];
+    int previous_count;
+    int nav_drag, nav_anchor, nav_x; /* 1: range selection; 2: pan */
+    double nav_start, nav_stop;     /* range when the gesture began */
     double live_view[2], wide_view[2];  /* the last view of each kind,
                                            start and stop: Live shows the
                                            other kind's                */
@@ -239,6 +320,70 @@ typedef struct {
     int64_t splash_from;
     int splash_stage;
 } sdr_t;
+
+/* Saved workspace and measurement tools. Files are versioned text. */
+/** @brief Atomically save a small text document using locale-independent numbers. */
+int sdr_document_save(const char *path, int (*write_doc)(FILE *, void *), void *ctx);
+/** @brief Save display preferences and range; do not store receiver commands. */
+int sdr_setup_save(sdr_t *st, const char *path);
+/** @brief Validate an entire setup before applying any of its settings. */
+int sdr_setup_load(sdr_t *st, const char *path);
+/** @brief Load or save the per-user setup under .config/TikuDesktop. */
+void sdr_preferences(sdr_t *st, int save);
+/** @brief Save the selected trace with its frequency grid and receiver metadata. */
+int sdr_reference_save(sdr_t *st, const char *path);
+/** @brief Load a validated reference, keeping the old one on failure. */
+int sdr_reference_load(sdr_t *st, const char *path);
+/** @brief Whether the reference can be overlaid without changing its grid. */
+int sdr_reference_matches(const sdr_t *st);
+/** @brief Read bookmarks and loop endpoints from the recording's sidecar. */
+void sdr_books_load(sdr_t *st);
+/** @brief Atomically save annotations without modifying the recording. */
+int sdr_books_save(sdr_t *st);
+/** @brief Bookmark the playback position with the label in Measurements. */
+void sdr_book_add(sdr_t *st);
+/** @brief Seek to the next bookmark, wrapping to the earliest one. */
+void sdr_book_next(sdr_t *st);
+/** @brief Initialize measurement and trigger defaults. */
+void sdr_tools_init(sdr_t *st);
+/** @brief Count fully covered channels after one complete spectrum or sweep. */
+void sdr_observe(sdr_t *st);
+/** @brief Clear observations without changing the threshold or selected plan. */
+void sdr_occupancy_reset(sdr_t *st);
+/** @brief Describe channel 0..68 across Wi-Fi, BLE and 802.15.4 plans. */
+void sdr_channel(int index, char *name, size_t size, double *center, double *width);
+/** @brief Export channel activity counts and observation spans as CSV. */
+int sdr_occupancy_export(sdr_t *st, const char *path);
+/** @brief Open the destination now, then arm a one-shot threshold trigger. */
+int sdr_trigger_arm(sdr_t *st, const char *path);
+/** @brief Buffer pre-trigger lines or append them to the active recording. */
+void sdr_trigger_line(sdr_t *st, const char *line, int frame);
+/** @brief Disarm or finish a triggered recording; ordinary recordings remain open. */
+void sdr_trigger_cancel(sdr_t *st);
+/** @brief Stop a triggered recording after its post-trigger deadline. */
+void sdr_trigger_tick(sdr_t *st);
+/** @brief Parse supported rates, FFT sizes and tuning limits from sdr info. */
+int sdr_caps_parse(sdr_t *st, const char *line);
+/** @brief Cycle through supported FFT sizes or rates that fit the current view. */
+void sdr_acquisition_cycle(sdr_t *st, int fft);
+/** @brief Whether the requested acquisition fits reported receiver capabilities. */
+int sdr_acquisition_valid(const sdr_t *st);
+/** @brief Explain local capture health without inventing firmware counters. */
+void sdr_health_text(const sdr_t *st, char *out, size_t size);
+
+/* tiku_sdr_navigation.c */
+/** @brief Change the acquisition range; optionally remember its predecessor. */
+void sdr_navigate(sdr_t *st, double start, double stop, int remember);
+/** @brief Zoom around a fractional position in the plot (0 left, 1 right). */
+void sdr_zoom(sdr_t *st, double fraction, double factor);
+/** @brief Restore the most recently saved acquisition range. */
+void sdr_view_back(sdr_t *st);
+/** @brief Handle zoom, selection, pan, and waterfall history gestures. */
+int sdr_navigation_event(sdr_t *st, const tiku_event_t *event);
+/** @brief Ring index for a row's age, or -1 outside retained history. */
+int sdr_history_row(const sdr_model_t *model, int age);
+/** @brief Move the waterfall viewport by captured rows, clamped to history. */
+void sdr_history_scroll(sdr_model_t *model, int rows);
 
 /* tiku_sdr_model.c */
 /** @brief Set @p m to its opening state: 24 MHz about 2437 MHz in
@@ -370,6 +515,9 @@ void sdr_board_said(void *state, int what, const char *text);
  *         frame while the board runs, nothing is pending and the view is not
  *         paused, and count the frame rate each second. */
 void sdr_link_tick(sdr_t *st);
+/** @brief Queue a gain query (-2), automatic gain (-1), or held index.
+ *         Writes wait for the preceding command's prompt. */
+int sdr_gain_request(sdr_t *st, int gain);
 
 /* tiku_sdr_tape.c */
 /** @brief Write a name to offer for a new file: "TikuSDR", the board and
@@ -400,6 +548,11 @@ void sdr_play_tick(sdr_t *st);
 /** @brief Close the recording being played and set one_max back to
  *         SDR_LIVE_SPAN. */
 void sdr_play_stop(sdr_t *st);
+/** @brief Rebuild playback state up to a time, in bounded batches per tick.
+ *         Seeking leaves playback paused. */
+void sdr_play_seek(sdr_t *st, double seconds);
+/** @brief Advance a paused recording through the next complete frame. */
+void sdr_play_step(sdr_t *st);
 /** @brief @p path's last part, the file's own name. */
 const char *sdr_tape_leaf(const char *path);
 /** @brief @p seconds as "m:ss", or "h:mm:ss" past an hour. */
@@ -452,10 +605,16 @@ tiku_rect_t sdr_alert_rect(const sdr_t *st);
  *         the panel or the bar, CMD_FIELD + SDR_F_* or CMD_CHOICE +
  *         SDR_C_*; an empty rectangle for anything else. */
 tiku_rect_t sdr_control_rect(const sdr_t *st, int id);
+/** @brief Toggle a section, collapsing others if needed to fit the panel. */
+void sdr_section_toggle(sdr_t *st, int section);
+/** @brief Rectangle of the recording timeline. */
+tiku_rect_t sdr_timeline_rect(const sdr_t *st);
 /** @brief Register the panel's and the bar's controls with the dialog, for
  *         input and painting alike, each enabled as sdr_enabled() says;
  *         each list that is not open shows what it sets. */
 void sdr_controls(sdr_t *st);
+/** @brief Current field text, including the receiver's confirmed gain. */
+void sdr_field_text(const sdr_t *st, int field, char *out, size_t size);
 /** @brief Paint the whole window and hand it to the desktop; nothing while
  *         the window is not open. */
 void sdr_paint(sdr_t *st);

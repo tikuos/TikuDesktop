@@ -39,6 +39,20 @@ no board, and no message is shown.</p>
 
 <h2 id="frequency">Frequency</h2>
 
+<p>Your frequency range, collapsed sections, waterfall height, trace types,
+averaging, scales, and measurement threshold are saved when TikuSDR closes.
+Use <b>File &gt; Save Named Setup</b> to keep several setups as
+<code>.sdrpreset</code> files. The filename is the setup's name. Choose
+<b>Open Setup</b> to restore one; loading a valid setup closes any recording
+being played. Setups do not
+restore receiver gain, arm a trigger, or start recording. FFT and rate
+overrides return to automatic when a setup is loaded or a board reconnects.</p>
+
+<p>Click a section heading to expand or collapse its controls. If there is
+not enough room, other sections collapse to keep the controls visible.
+Headings also work with Tab and Return. Drag the small handle between the
+waterfall and spectrum to change their relative heights.</p>
+
 <p><b>Center</b>, <b>Span</b>, <b>Start</b> and <b>Stop</b> say the view
 in MHz, and any of them can be typed in: click one, type, and press Return,
 or Tab or click away. Typing Start or Stop moves Center and Span to match;
@@ -60,14 +74,18 @@ is caught a moment after the one before. A board whose firmware predates
 the held gain hears each slice at its own automatic gain, and each
 slice&#8217;s noise floor is levelled to a common one instead.</p>
 
-<p><b>Live</b>&#8217;s light is green while the view is one spectrum
-caught at once, and grey while it is swept. Pressed, Live goes back to the
+<p>The frequency panel shows <b>Mode: Live</b> for a single capture or
+<b>Mode: Sweep</b> for sequential captures across a wider band. Click it
+to switch modes. This is independent of the <b>Run/Pause</b> button and
+the connection status at the bottom. The <b>Live</b> menu command goes back to the
 last view of the other kind: from a live view to the last wide one -- the
 2.4&#160;GHz band, 2396 to 2492&#160;MHz, until another is typed -- and from
 a wide view to the last live one. In a sweep, click the spectrogram -- or
 the spectrum, with no marker out -- to see 24&#160;MHz there, live.</p>
 
 <h2 id="traces">Traces</h2>
+
+<p>For tuning gestures, see <a href="#navigation">Zoom and pan</a> below.</p>
 
 <p>Three traces can be shown at once, each in its own ink: trace 1 black,
 trace 2 red, trace 3 blue. Pick one in <b>Trace</b>, then what it shows in
@@ -89,7 +107,25 @@ latest, and Max Hold beside them shows the peaks either has reached.
 <b>Export</b> is the File menu&#8217;s Export CSV. The <b>Trace</b> menu
 holds the same choices.</p>
 
+<h3>Saved reference traces</h3>
+
+<p>Select a trace, then choose <b>File &gt; Save Trace as Reference</b>.
+This saves the selected trace's current values, including an average or
+hold, to a <code>.sdrref</code> file. <b>Open Reference Trace</b> loads it;
+<b>Trace &gt; Show Reference Trace</b> toggles its purple overlay.</p>
+
+<p>A reference is drawn only when its frequency grid, sample rate and FFT
+size match the current acquisition. A different grid produces a visible
+message instead of a misleading overlay. Values retain floating-point
+precision rather than the waterfall's half-decibel storage. The file also
+keeps the board name and reported gain. Levels are relative, not calibrated
+dBm: changing boards, gain behavior, antennas or receiver conditions can
+affect the comparison.</p>
+
 <h2 id="markers">Markers</h2>
+
+<p>Ordinary left-button drags move markers. Shift-drag selects a tuning
+range instead; Alt/Option-click on the waterfall inspects history.</p>
 
 <p>Four markers read a trace&#8217;s level at a frequency. Pick one in
 <b>Marker</b>, the trace it reads in <b>On trace</b>, and check
@@ -114,38 +150,26 @@ menu holds the same commands.</p>
 
 <h2 id="reading">Reading it</h2>
 
-<p>The graticule has ten divisions each way. <b>Ref</b>, above at the
-left, is the level of its top line, and <b>Div</b> the decibels a division:
-2, 5, 10 or 20, chosen to hold the traces shown, and changed only when they
-leave the room it gives them. <b>RBW</b> is how wide each point is, with
-the sample rate or the slices beneath; the receiver&#8217;s gain and which
-trace is which stand at the right. Beneath the graticule are <b>Start</b>,
-<b>Center</b>, <b>Stop</b> and <b>Span</b>, the number of points, and how
-many spectra or sweeps arrive a second. A recording made before
-TikuSDR swept past 24&#160;MHz may show 40&#160;MHz in one spectrum; its
-edges, beyond the middle 24&#160;MHz, are shaded.</p>
+<p>Channel activity, triggers, capture health and how to read the
+graticule are described on their own page,
+<a href="apps/sdr-reading.html">Reading it</a>.</p>
 
-<p>The spectrogram shows the spectra that came before, newest at the top,
-coloured from just under the noise, blue, through green and yellow to red
-at the reference level; the scale stands at its left. Point at either to
-read a frequency, each trace&#8217;s level there and the channels it falls
-in.</p>
+<h2 id="receiver">Receiver gain</h2>
 
-<p><b>Spectrogram</b> in <b>Display</b> switches the spectrogram off, the
-spectrum taking its room, and <b>Channel plans</b> shows the band&#8217;s
-plans beneath the graticule: Wi-Fi channels 1 to 13, BLE&#8217;s
-advertising channels 37, 38 and 39 (also dashed on the graticule), and
-802.15.4 channels 11 to 26.</p>
+<p>Expand <b>Receiver</b> while connected to read the current gain setting.
+You can also click <b>Read receiver gain</b>. Controls become available
+only after the firmware confirms its setting. Enable <b>Automatic gain</b>
+to use the receiver's AGC, or enter a whole-number <b>Index</b> from 0 to
+255 to hold the gain. Disabling automatic gain selects index 60. These
+are hardware indices, not calibrated gain values in decibels.</p>
 
-<p>Levels are the board&#8217;s own decibels, not calibrated to the air;
-compare shapes and neighbours rather than absolute numbers. The board holds
-its receiver&#8217;s gain still, at step 60, rather than letting it chase
-every burst, so a level stays put from one spectrum to the next; a capture
-loud enough to clip is taken again 16 steps lower and raised back by as
-many decibels. <b>Gain</b> is the step it was heard at, or says
-<b>auto</b> on a board whose gain still moves on its own. Wi-Fi frames are
-bursts twenty megahertz wide; BLE advertising and 802.15.4 are narrow, two
-megahertz.</p>
+<p>Changes wait for the active capture to finish. The field shows the
+confirmed setting, not an unacknowledged request. A confirmed gain change
+clears the old traces and waterfall; recordings include a view reset at
+that point. Capture protection may still reduce gain for a strong signal,
+so the gain displayed above the spectrum can be lower than the requested
+index. Unsupported or unconfirmed commands disable gain editing until a
+successful read. These settings are not saved as desktop preferences.</p>
 
 <h2 id="record">Recording and playing back</h2>
 
@@ -168,6 +192,20 @@ to the board. A silence longer than two seconds, such as the live view
 paused while recording, plays in half a second. A recording double-clicked
 in Tracker opens in TikuSDR and plays at once.</p>
 
+<p>Click the timeline to seek. TikuSDR rebuilds the trace history up to that
+time in small batches, then pauses; click <b>Run</b> to continue. Long
+recordings can take time to seek, but the window remains responsive.
+The timeline also works after playback reaches the end.</p>
+
+<p>The <b>File</b> menu provides <b>Back 10 Seconds</b>,
+<b>Forward 10 Seconds</b>, and <b>Next Frame</b>. Next Frame pauses and
+advances through one complete spectrum or sweep. <b>Speed</b> cycles
+through 0.25x, 0.5x, 1x, 2x and 4x playback. Turn off <b>Skip Long Gaps</b>
+to preserve recorded timing instead of shortening long silences. Seeking
+and frame stepping use the recorded timestamps regardless of that option.
+Connection, pause, and recording status stay visible while inspecting
+the plots with the pointer.</p>
+
 <p>A recording is plain text, so a script can read it too. Each line after
 its header is the time in seconds since the start, then what the board
 sent: <code>SPEC</code> with the centre in megahertz, the sample rate, the
@@ -188,10 +226,28 @@ minute of Live is about 150&#160;000 rows.</p>
 <p><b>Save Picture&#8230;</b> saves the spectrogram and the spectrum, with
 their annotations and markers, as a PNG.</p>
 
+<h2 id="navigation">Zoom and pan</h2>
+
+<p>Over the spectrum or waterfall, turn the wheel to zoom around the pointer.
+Hold Shift while turning the wheel to move left or right by a tenth of the
+current span. Hold Shift and drag with the left button to select a frequency
+range; release to tune to that range. Drag with the middle button to pan.
+The highlighted preview does not retune the receiver until you release it.
+Escape cancels a drag without closing TikuSDR.</p>
+
+<p><b>Zoom In</b>, <b>Zoom Out</b>, and <b>Previous View</b> are in the
+<b>SDR</b> menu. The keyboard equivalents are <b>+</b>, <b>-</b>, and
+<b>B</b>. Previous View remembers up to 16 tuning ranges. These operations
+respect the receiver's frequency and span limits. They change acquisition,
+not just the drawing: existing traces and waterfall history start afresh.
+They are disabled while a recording is displayed. Use the recording's
+timeline and history inspection instead; no additional frequency detail
+can be recovered from the saved spectra.</p>
+
 <h2 id="keys">Keys</h2>
 
 <p><b>Space</b> pauses and resumes; <b>L</b> presses Live; the arrow keys
-move the view one megahertz, five with Shift, as does the scroll wheel. <b>P</b> makes trace 2 a max hold or takes
+move the view one megahertz, five with Shift. <b>P</b> makes trace 2 a max hold or takes
 it off, <b>A</b> does the same for the latest on trace 3, and <b>C</b>
 clears the traces. <b>1</b> to <b>4</b> pick a marker, <b>M</b> puts it out
 or takes it in, <b>K</b> is Peak Search, <b>N</b> Next Peak, <b>[</b> and

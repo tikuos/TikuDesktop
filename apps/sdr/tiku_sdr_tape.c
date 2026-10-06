@@ -113,19 +113,23 @@ static void rec_head(sdr_t *st)
 
     if (localtime_r(&now, &tm))
         strftime(began, sizeof began, "%Y-%m-%d %H:%M:%S %z", &tm);
-    n = fprintf(r->file, TAPE_MAGIC " 2\n# board: %s%s%s%s\n# began: %s\n",
+    n = fprintf(r->file, TAPE_MAGIC " 3\n# board: %s%s%s%s\n# began: %s\n",
                 st->board, *st->mcu ? " (" : "", st->mcu, *st->mcu ? ")" : "",
                 began);
     r->bytes = n > 0 ? n : 0;
     for (size_t i = 0; i < sizeof format / sizeof format[0]; i++)
         if ((n = fprintf(r->file, "%s\n", format[i])) > 0) r->bytes += n;
+    n = fprintf(r->file, "# Version 3 VIEW range adds FFT override and rate-code+1; 0 means auto.\n"
+                        "# TRIGGER threshold marks the detection time.\n");
+    if (n > 0) r->bytes += n;
 }
 
 int sdr_rec_start(sdr_t *st, const char *path)
 {
     sdr_rec_t *r = &st->rec;
 
-    if (r->file || st->state != SDR_RUNNING) return -1;
+    if (r->file || st->state != SDR_RUNNING || !path || strlen(path) >= sizeof r->path)
+        return -1;
     snprintf(r->path, sizeof r->path, "%s", path);
     if (!(r->file = create(r->path))) {
         snprintf(st->note, sizeof st->note, "Cannot record to %s: %s.",
@@ -138,6 +142,7 @@ int sdr_rec_start(sdr_t *st, const char *path)
     r->failed = 0;
     rec_head(st);
     sdr_rec_view(st);
+    if (!r->file || r->failed) return -1;
     st->saved[0] = '\0';
     snprintf(st->note, sizeof st->note, "Recording to %s.",
              sdr_tape_leaf(r->path));
@@ -166,11 +171,16 @@ void sdr_rec_line(sdr_t *st, const char *line, int frame)
 
 void sdr_rec_view(sdr_t *st)
 {
-    char line[64], a[24], b[24];
+    char line[96], a[24], b[24];
 
+    sdr_trigger_cancel(st);
+    sdr_occupancy_reset(st);
     sdr_mhz_text(st->model.start, a, sizeof a);
     sdr_mhz_text(st->model.stop, b, sizeof b);
-    snprintf(line, sizeof line, "VIEW range %s %s", a, b);
+    if (st->model.fft_override || st->model.rate_override)
+        snprintf(line, sizeof line, "VIEW range %s %s %d %d", a, b,
+                 st->model.fft_override, st->model.rate_override);
+    else snprintf(line, sizeof line, "VIEW range %s %s", a, b);
     sdr_rec_line(st, line, 0);
 }
 
@@ -178,6 +188,8 @@ void sdr_rec_stop(sdr_t *st)
 {
     sdr_rec_t *r = &st->rec;
     char took[16], size[24];
+
+    st->trigger.armed = st->trigger.fired = 0;
 
     if (!r->file) return;
     if (fclose(r->file) != 0) r->failed = 1;
@@ -294,11 +306,15 @@ static int tape_apply(sdr_model_t *m, const char *line)
 {
     char a[24], b[24];
     double start, stop;
-    int mhz;
+    int mhz, fft = 0, rate = 0;
 
-    if (sscanf(line, "VIEW range %23s %23s", a, b) == 2) {
-        if (sdr_mhz_parse(a, &start) && sdr_mhz_parse(b, &stop))
+    if (sscanf(line, "VIEW range %23s %23s %d %d", a, b, &fft, &rate) >= 2) {
+        if (sdr_mhz_parse(a, &start) && sdr_mhz_parse(b, &stop) &&
+            (fft == 0 || fft == 64 || fft == 128 || fft == 256) &&
+            rate >= 0 && rate <= 6 && (stop - start <= m->one_max || rate <= 2)) {
+            m->fft_override = fft; m->rate_override = rate;
             sdr_model_range(m, start, stop);
+        }
         return 0;
     }
     if (!strcmp(line, "VIEW band")) {
@@ -353,7 +369,7 @@ static void next_line(sdr_play_t *p)
     p->ready = 0;
     while (tape_read(p->file, p->line, sizeof p->line, &at, p)) {
         if (at < p->at) continue;
-        if (at - p->at > GAP_MAX)
+        if (p->skip_gaps && !p->seeking && !p->stepping && at - p->at > GAP_MAX)
             p->clock += (int64_t)((at - p->at - GAP_LEFT) * 1e6);
         p->at = at;
         p->ready = 1;
@@ -369,14 +385,22 @@ int sdr_play_start(sdr_t *st, const char *path)
 
     sdr_play_stop(st);
     if (!(f = tape_open(st, path, &one_max))) return -1;
+    st->nav_drag = st->previous_count = 0;
     memset(p, 0, sizeof *p);
     p->file = f;
+    p->speed = 1;
+    p->skip_gaps = 1;
+    p->initial_start = st->model.start;
+    p->initial_stop = st->model.stop;
     snprintf(p->path, sizeof p->path, "%s", path);
     p->total = last_time(f);
     p->last = st->now;
     st->paused = 0;
     st->saved[0] = '\0';
     st->model.one_max = one_max;        /* its views as they were made */
+    st->model.fft_override = st->model.rate_override = 0;
+    st->model.rejected = st->model.incomplete = 0;
+    sdr_occupancy_reset(st);
     sdr_model_range(&st->model, st->model.start, st->model.stop);
     st->model.spectra = 0;
     next_line(p);
@@ -387,6 +411,7 @@ int sdr_play_start(sdr_t *st, const char *path)
         return -1;
     }
     snprintf(st->shown, sizeof st->shown, "%s", path);
+    sdr_books_load(st);
     snprintf(st->note, sizeof st->note, "Playing %s%s%s%s.",
              sdr_tape_leaf(path), *p->from ? " (" : "", p->from,
              *p->from ? ")" : "");
@@ -399,7 +424,10 @@ int sdr_play_start(sdr_t *st, const char *path)
 static void play_line(sdr_t *st, const char *line)
 {
     st->model.clock = st->play.at;
-    if (tape_apply(&st->model, line)) st->rate_count++;
+    if (tape_apply(&st->model, line)) {
+        st->rate_count++;
+        sdr_observe(st);
+    }
 }
 
 void sdr_play_tick(sdr_t *st)
@@ -410,9 +438,58 @@ void sdr_play_tick(sdr_t *st)
     char took[16];
 
     if (!p->file) return;
-    if (!st->paused) p->clock += st->now - p->last;
+    if (p->seeking) {
+        while (p->ready && burst < PLAY_BURST && p->at <= p->seek_to) {
+            play_line(st, p->line);
+            next_line(p);
+            burst++;
+        }
+        if (!p->ready || p->at > p->seek_to) {
+            p->seeking = 0;
+            p->clock = (int64_t)(p->seek_to * 1e6);
+            if (p->resume_seek) { st->paused = 0; p->resume_seek = 0; }
+            snprintf(st->note, sizeof st->note, "Seek complete. Paused; Run resumes playback.");
+            for (int i = 0; i < st->book_count; i++)
+                if (fabs(st->books[i].at - p->seek_to) < .001)
+                    snprintf(st->note, sizeof st->note, "Bookmark: %.63s (%.3f s). %s",
+                             st->books[i].label, p->seek_to,
+                             st->paused ? "Paused." : "Playing.");
+        }
+        p->last = st->now;
+        st->dirty = 1;
+        return;
+    }
+    if (p->stepping) {
+        unsigned before = st->model.spectra;
+        while (p->ready && burst++ < PLAY_BURST) {
+            p->clock = (int64_t)(p->at * 1e6);
+            play_line(st, p->line);
+            next_line(p);
+            if (st->model.spectra != before) break;
+        }
+        if (!p->ready || st->model.spectra != before) p->stepping = 0;
+        p->last = st->now;
+        st->dirty = 1;
+        return;
+    }
+    if (!st->paused) p->clock += (int64_t)((st->now - p->last) * p->speed);
     p->last = st->now;
-    while (p->ready && burst < PLAY_BURST && p->at * 1e6 <= (double)p->clock) {
+    if (st->paused) {
+        while (p->ready && burst++ < PLAY_BURST &&
+               p->at * 1e6 <= (double)p->clock && !strncmp(p->line, "VIEW ", 5)) {
+            play_line(st, p->line);
+            next_line(p);
+            st->dirty = 1;
+        }
+        return;
+    }
+    if (p->loop && p->loop_b > p->loop_a && p->clock / 1e6 >= p->loop_b) {
+        sdr_play_seek(st, p->loop_a);
+        p->resume_seek = 1;
+        return;
+    }
+    while (p->ready && burst < PLAY_BURST && p->at * 1e6 <= (double)p->clock &&
+           (!p->loop || p->at < p->loop_b)) {
         play_line(st, p->line);
         next_line(p);
         burst++;
@@ -424,6 +501,47 @@ void sdr_play_tick(sdr_t *st)
              sdr_tape_leaf(p->path), took, st->model.spectra,
              spectra(st->model.spectra));
     sdr_play_stop(st);
+}
+
+void sdr_play_seek(sdr_t *st, double seconds)
+{
+    sdr_play_t *p = &st->play;
+    if (!isfinite(seconds)) return;
+    if (!p->file) {
+        char path[SDR_PATH];
+        if (!st->shown[0] || st->state != SDR_IDLE) return;
+        snprintf(path, sizeof path, "%s", st->shown);
+        if (sdr_play_start(st, path) != 0) return;
+    }
+    if (fseek(p->file, 0, SEEK_SET) != 0) {
+        snprintf(st->note, sizeof st->note, "Cannot seek in this recording.");
+        return;
+    }
+    p->seek_to = seconds < 0 ? 0 : seconds > p->total ? p->total : seconds;
+    p->seeking = 1;
+    p->stepping = 0;
+    p->resume_seek = 0;
+    p->at = 0;
+    p->clock = 0;
+    p->last = st->now;
+    st->paused = 1;
+    st->model.fft_override = st->model.rate_override = 0;
+    sdr_occupancy_reset(st);
+    sdr_model_range(&st->model, p->initial_start, p->initial_stop);
+    st->model.spectra = 0;
+    st->rate_count = 0;
+    next_line(p);
+    snprintf(st->note, sizeof st->note, "Seeking to %.1f seconds...", p->seek_to);
+    st->dirty = 1;
+}
+
+void sdr_play_step(sdr_t *st)
+{
+    if (!st->play.file || st->play.seeking) return;
+    st->paused = 1;
+    st->play.stepping = 1;
+    st->play.last = st->now;
+    st->dirty = 1;
 }
 
 void sdr_play_stop(sdr_t *st)

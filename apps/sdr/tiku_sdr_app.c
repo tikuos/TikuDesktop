@@ -72,7 +72,14 @@ static void menu_label(const sdr_t *st, int command, char *out, size_t max)
 {
     const char *t = NULL;
 
-    if (command >= CMD_TYPE && command < CMD_TYPE + SDR_T_TYPES)
+    if (command == CMD_FFT)
+        snprintf(out, max, "FFT: %s%d (Cycle)", st->model.fft_override ? "" : "Auto / ", st->model.nfft);
+    else if (command == CMD_RATE)
+        snprintf(out, max, "Rate: %s%d MS/s (Cycle)", st->model.rate_override ? "" : "Auto / ",
+                 (int[]){80,40,20,10,8,4}[st->model.rate]);
+    else if (command == CMD_OCC_PLAN)
+        snprintf(out, max, "Channels: %s (Cycle)", (const char *[]){"Wi-Fi", "BLE", "802.15.4"}[st->occupancy.plan]);
+    else if (command >= CMD_TYPE && command < CMD_TYPE + SDR_T_TYPES)
         t = type_name[command - CMD_TYPE];
     else if (command >= CMD_TRACE_SEL && command < CMD_TRACE_SEL + SDR_TRACES)
         snprintf(out, max, "Trace %d", command - CMD_TRACE_SEL + 1);
@@ -92,6 +99,10 @@ static void menu_label(const sdr_t *st, int command, char *out, size_t max)
     else if (command == CMD_MARK_CENTER) t = "Marker to Center";
     else if (command == CMD_MARK_CLEAR) t = "All Markers Off";
     else if (command == CMD_PLANS) t = "Channel Plans";
+    else if (command == CMD_LIVE) t = "Live";
+    else if (command == CMD_SPEED)
+        snprintf(out, max, "Speed: %.2gx (Cycle)", st->play.speed > 0 ?
+                 st->play.speed : 1.0);
     else t = sdr_label(st, command);
     if (t) snprintf(out, max, "%s", t);
 }
@@ -113,7 +124,12 @@ static int menu_marked(const sdr_t *st, int c)
            (c == CMD_MARK_ACTIVE && m->mark[m->mark_sel].on) ||
            (c == CMD_TRACK && m->track) ||
            (c == CMD_WATERFALL && st->fall_on) ||
-           (c == CMD_PLANS && st->plans_on);
+           (c == CMD_PLANS && st->plans_on) ||
+           (c == CMD_GAPS && st->play.skip_gaps) ||
+           (c == CMD_REF_SHOW && st->reference.visible) ||
+           (c == CMD_OCCUPANCY && st->occupancy.visible) ||
+           (c == CMD_TRIGGER && (st->trigger.armed || st->trigger.fired)) ||
+           (c == CMD_LOOP && st->play.loop) || (c == CMD_HEALTH && st->health_visible);
 }
 
 /** @brief Fill @p menu, titled @p title, from @p commands, 0 being a
@@ -155,6 +171,16 @@ static unsigned menu_state(const sdr_t *st)
                  (unsigned)(m->track != 0) << 14;
 
     v = v * 31u + (unsigned)st->trace_sel;
+    v = v * 31u + (unsigned)(st->gain_known + 1);
+    v = v * 31u + (unsigned)(st->gain_queued || st->gain_inflight);
+    v = v * 31u + (unsigned)(st->play.speed * 4);
+    v = v * 31u + (unsigned)st->play.skip_gaps;
+    v = v * 31u + (unsigned)st->play.seeking;
+    v = v * 31u + (unsigned)st->previous_count;
+    v = v * 31u + (unsigned)(st->caps_known + 1);
+    v = v * 31u + (unsigned)st->book_count;
+    v = v * 31u + (unsigned)st->trigger.armed;
+    v = v * 31u + (unsigned)(m->wf_count > 0);
     v = v * 31u + (unsigned)m->mark_sel;
     for (int t = 0; t < SDR_TRACES; t++) v = v * 31u + (unsigned)m->type[t];
     for (int k = 0; k < SDR_MARKERS; k++) v = v * 31u + (unsigned)m->mark[k].on;
@@ -168,14 +194,23 @@ static void publish(sdr_t *st)
 {
     static const int sdr[] = {CMD_ABOUT, 0, CMD_CONNECT, 0, CMD_LIVE, 0,
                               CMD_PAUSE, 0, CMD_WATERFALL, CMD_PLANS, 0,
-                              CMD_QUIT};
+                              CMD_ZOOM_IN, CMD_ZOOM_OUT, CMD_VIEW_BACK, 0,
+                              CMD_HISTORY_OLDER, CMD_HISTORY_NEWER,
+                              CMD_HISTORY_LATEST, 0,
+                              CMD_HEALTH, CMD_CAPS, CMD_FFT, CMD_RATE, CMD_QUIT};
     static const int file[] = {CMD_RECORD, CMD_REPLAY, 0, CMD_EXPORT,
-                               CMD_PICTURE};
+                               CMD_PICTURE, 0, CMD_REWIND, CMD_FORWARD,
+                               CMD_STEP, CMD_SPEED, CMD_GAPS, 0,
+                               CMD_PRESET_SAVE, CMD_PRESET_OPEN, CMD_REF_SAVE,
+                               CMD_REF_OPEN, 0, CMD_TRIGGER, CMD_BOOK_ADD,
+                               CMD_BOOK_NEXT, CMD_BOOK_CLEAR, CMD_LOOP_A,
+                               CMD_LOOP_B, CMD_LOOP};
     static const int trace[] = {CMD_TRACE_SEL, CMD_TRACE_SEL + 1,
                                 CMD_TRACE_SEL + 2, 0, CMD_TYPE + SDR_T_OFF,
                                 CMD_TYPE + SDR_T_WRITE, CMD_TYPE + SDR_T_AVG,
                                 CMD_TYPE + SDR_T_MAX, CMD_TYPE + SDR_T_MIN, 0,
-                                CMD_CLEAR};
+                                CMD_CLEAR, CMD_REF_SHOW, 0, CMD_OCCUPANCY,
+                                CMD_OCC_PLAN, CMD_OCC_PAGE, CMD_OCC_RESET, CMD_OCC_EXPORT};
     static const int marker[] = {CMD_MARK_SEL, CMD_MARK_SEL + 1,
                                  CMD_MARK_SEL + 2, CMD_MARK_SEL + 3, 0,
                                  CMD_MARK_ACTIVE, CMD_TRACK, 0,
@@ -208,17 +243,7 @@ static void publish(sdr_t *st)
  *         recording plays, or when the fitted view is the one shown. */
 static void show(sdr_t *st, double start, double stop)
 {
-    if (st->play.file) return;
-    sdr_range_fit(&start, &stop);
-    if (start == st->model.start && stop == st->model.stop) return;
-    st->shown[0] = '\0';                /* a recording no longer shown */
-    sdr_model_range(&st->model, start, stop);
-    double *kept = sdr_model_is_live(&st->model) ? st->live_view
-                                                 : st->wide_view;
-    kept[0] = start;
-    kept[1] = stop;
-    sdr_rec_view(st);
-    st->dirty = 1;
+    sdr_navigate(st, start, stop, 1);
 }
 
 /** @brief Show @p span MHz about @p mhz. */
@@ -253,7 +278,7 @@ static void field_open(sdr_t *st, int i)
 {
     char t[32];
 
-    sdr_model_field(&st->model, i, t, sizeof t);
+    sdr_field_text(st, i, t, sizeof t);
     tiku_field_start(&st->field[i], t);
     tiku_field_input_init(&st->input[i]);
 }
@@ -285,8 +310,58 @@ static void field_apply(sdr_t *st, int i)
     char now[32], *end;
     long count;
 
-    sdr_model_field(m, i, now, sizeof now);
+    sdr_field_text(st, i, now, sizeof now);
     if (!strcmp(st->field[i].text, now)) return;
+    if (i == SDR_F_BOOK) {
+        snprintf(st->book_label, sizeof st->book_label, "%.63s", st->field[i].text);
+        st->dirty = 1;
+        return;
+    }
+    if (i >= SDR_F_THRESHOLD) {
+        v = strtod(st->field[i].text, &end);
+        int valid = end != st->field[i].text && !*end && isfinite(v);
+        if (i == SDR_F_THRESHOLD) valid = valid && v >= -200 && v <= 300;
+        else valid = valid && floor(v) == v && v >= (i == SDR_F_PRE ? 0 : 1) &&
+                     v <= (i == SDR_F_PRE ? 30 : 300);
+        if (valid) {
+            sdr_trigger_cancel(st);
+            if (i == SDR_F_THRESHOLD) { st->occupancy.threshold = (float)v; sdr_occupancy_reset(st); }
+            else if (i == SDR_F_PRE) st->trigger.pre_seconds = (int)v;
+            else st->trigger.post_seconds = (int)v;
+        } else snprintf(st->note, sizeof st->note,
+                        "Threshold: -200..300 relative dB; pre: 0..30 s; post: 1..300 s.");
+        field_open(st, i); st->dirty = 1;
+        return;
+    }
+    if (i >= SDR_F_REF) {
+        v = strtod(st->field[i].text, &end);
+        int valid = end != st->field[i].text && !*end && isfinite(v);
+        if (i == SDR_F_GAIN) {
+            valid = valid && v >= 0 && v <= 255 && floor(v) == v;
+            if (valid) valid = sdr_gain_request(st, (int)v);
+        } else if (i == SDR_F_DIV) {
+            valid = valid && (v == 2 || v == 5 || v == 10 || v == 20);
+            if (valid) m->div = (float)v, m->manual_scale = 1;
+        } else {
+            valid = valid && v >= -200 && v <= 300;
+            if (i == SDR_F_FLOOR) valid = valid && v < m->ceiling_db;
+            if (i == SDR_F_CEILING) valid = valid && v > m->floor_db;
+            if (valid && i == SDR_F_REF)
+                m->scale_hi = (float)v, m->manual_scale = 1;
+            if (valid && i == SDR_F_FLOOR)
+                m->floor_db = (float)v, m->manual_color = 1;
+            if (valid && i == SDR_F_CEILING)
+                m->ceiling_db = (float)v, m->manual_color = 1;
+        }
+        m->scale_lo = m->scale_hi - SDR_DIVS * m->div;
+        if (!valid) snprintf(st->note, sizeof st->note, "%s",
+            i == SDR_F_GAIN ? "Read receiver gain first; use an index from 0 to 255." :
+            i == SDR_F_DIV ? "Use 2, 5, 10 or 20 dB per division." :
+            "Use -200 to 300 dB; waterfall floor must be below its ceiling.");
+        field_open(st, i);
+        st->dirty = 1;
+        return;
+    }
     if (i == SDR_F_AVG) {
         count = strtol(st->field[i].text, &end, 10);
         if (end == st->field[i].text || *end || count < 1 || count > 100)
@@ -338,10 +413,13 @@ static void ask(sdr_t *st, int command)
         return;
     }
     st->asking = command;
-    if (command == CMD_REPLAY) {
+    if (command == CMD_REPLAY || command == CMD_PRESET_OPEN || command == CMD_REF_OPEN) {
         put = sv->pick(sv->ctx, st->id, TIKU_APP_PICK_LOCAL_OPEN, start, NULL);
     } else {
-        sdr_tape_name(st, ext[command == CMD_EXPORT ? 1 :
+        sdr_tape_name(st, command == CMD_PRESET_SAVE ? ".sdrpreset" :
+                      command == CMD_REF_SAVE ? ".sdrref" :
+                      command == CMD_OCC_EXPORT ? ".occupancy.csv" :
+                      ext[command == CMD_EXPORT ? 1 :
                               command == CMD_PICTURE ? 2 : 0],
                       name, sizeof name);
         put = sv->pick(sv->ctx, st->id, TIKU_APP_PICK_SAVE, start, name);
@@ -364,7 +442,7 @@ static void tape(sdr_t *st, int command)
         ask(st, CMD_RECORD);
     } else if (command == CMD_REPLAY && st->play.file) {
         sdr_play_stop(st);
-        snprintf(st->note, sizeof st->note, "Closed %s.",
+        snprintf(st->note, sizeof st->note, "Closed %.140s.",
                  sdr_tape_leaf(st->play.path));
     } else if (command == CMD_REPLAY && st->state == SDR_IDLE) {
         ask(st, CMD_REPLAY);
@@ -431,7 +509,47 @@ static int sdr_pick(void *state, uint32_t window, int command)
     (void)window;
     if (command == CMD_QUIT) return 1;
     if (st->alert.open) return 0;       /* the alert is answered first */
-    if (command == CMD_CONNECT) {
+    if (command != CMD_CONNECT && !sdr_enabled(st, command)) return 0;
+    if (command >= CMD_PRESET_SAVE && command <= CMD_HEALTH) {
+        if (command == CMD_PRESET_SAVE || command == CMD_PRESET_OPEN ||
+            command == CMD_REF_SAVE || command == CMD_REF_OPEN || command == CMD_OCC_EXPORT)
+            ask(st, command);
+        else if (command == CMD_REF_SHOW) st->reference.visible = !st->reference.visible;
+        else if (command == CMD_OCCUPANCY) {
+            st->occupancy.visible = !st->occupancy.visible;
+            if (st->occupancy.visible) st->fall_on = 1;
+        } else if (command == CMD_OCC_PLAN) {
+            st->occupancy.plan = (st->occupancy.plan + 1) % 3;
+            st->occupancy.page = 0;
+        } else if (command == CMD_OCC_PAGE) st->occupancy.page = (st->occupancy.page + 1) % 40;
+        else if (command == CMD_OCC_RESET) sdr_occupancy_reset(st);
+        else if (command == CMD_TRIGGER) {
+            if (st->trigger.armed || st->trigger.fired) sdr_trigger_cancel(st);
+            else ask(st, command);
+        } else if (command == CMD_CAPS) st->caps_queued = 1;
+        else if (command == CMD_FFT || command == CMD_RATE) sdr_acquisition_cycle(st, command == CMD_FFT);
+        else if (command == CMD_BOOK_ADD) sdr_book_add(st);
+        else if (command == CMD_BOOK_NEXT) sdr_book_next(st);
+        else if (command == CMD_BOOK_CLEAR) { st->book_count = 0; (void)sdr_books_save(st); }
+        else if (command == CMD_LOOP_A || command == CMD_LOOP_B) {
+            double at = fmin(st->play.clock / 1e6, st->play.total);
+            if (command == CMD_LOOP_A) {
+                st->play.loop_a = at;
+                if (st->play.loop_b <= at) st->play.loop_b = st->play.total;
+            } else if (at > st->play.loop_a) st->play.loop_b = at;
+            st->play.loop = 0;
+            (void)sdr_books_save(st);
+        } else if (command == CMD_LOOP) {
+            st->play.loop = !st->play.loop;
+            if (st->play.loop) {
+                st->play.skip_gaps = 0;
+                sdr_play_seek(st, st->play.loop_a);
+                st->play.loop = 1;
+                st->play.skip_gaps = 0;
+                st->play.resume_seek = 1;
+            }
+        } else if (command == CMD_HEALTH) st->health_visible = !st->health_visible;
+    } else if (command == CMD_CONNECT) {
         if (st->state != SDR_IDLE) sdr_disconnect(st);
         else if (sdr_connect(st) < 0)   /* gone since the menu was drawn */
             snprintf(st->note, sizeof st->note,
@@ -439,7 +557,32 @@ static int sdr_pick(void *state, uint32_t window, int command)
     } else if (command == CMD_ABOUT) {
         sdr_about_open(st);
         return 0;
-    } else if (command == CMD_LIVE) {   /* the last view of the other kind */
+    } else if (command >= CMD_SECTION && command < CMD_SECTION + SDR_SECTIONS) {
+        sdr_section_toggle(st, command - CMD_SECTION);
+        if (command == CMD_SECTION + SDR_S_RECEIVER &&
+            !(st->collapsed & (1u << SDR_S_RECEIVER)))
+            (void)sdr_gain_request(st, -2);
+    } else if (command == CMD_GAIN_READ) (void)sdr_gain_request(st, -2);
+    else if (command == CMD_GAIN_AUTO)
+        (void)sdr_gain_request(st, st->gain_value < 0 ? 60 : -1);
+    else if (command == CMD_SCALE_AUTO) m->manual_scale = !m->manual_scale;
+    else if (command == CMD_COLOR_AUTO) m->manual_color = !m->manual_color;
+    else if (command == CMD_REWIND || command == CMD_FORWARD)
+        sdr_play_seek(st, st->play.clock / 1e6 + (command == CMD_REWIND ? -10 : 10));
+    else if (command == CMD_STEP) sdr_play_step(st);
+    else if (command == CMD_SPEED)
+        st->play.speed = st->play.speed >= 4 ? 0.25 : st->play.speed * 2;
+    else if (command == CMD_GAPS) st->play.skip_gaps = !st->play.skip_gaps;
+    else if (command == CMD_ZOOM_IN) sdr_zoom(st, 0.5, 0.5);
+    else if (command == CMD_ZOOM_OUT) sdr_zoom(st, 0.5, 2);
+    else if (command == CMD_VIEW_BACK) sdr_view_back(st);
+    else if (command == CMD_HISTORY_OLDER) sdr_history_scroll(m, 40);
+    else if (command == CMD_HISTORY_NEWER) sdr_history_scroll(m, -40);
+    else if (command == CMD_HISTORY_LATEST) {
+        m->wf_offset = 0;
+        m->wf_selected = -1;
+    }
+    else if (command == CMD_LIVE) {   /* the last view of the other kind */
         const double *v = sdr_model_is_live(m) ? st->wide_view
                                                : st->live_view;
         show(st, v[0], v[1]);
@@ -469,7 +612,7 @@ static int sdr_pick(void *state, uint32_t window, int command)
          * of a sweep. */
         centre_at(st, 2400 + command - CMD_TUNE,
                   m->sweep ? SDR_LIVE_SPAN : m->stop - m->start);
-    else if (command >= CMD_BOARD && st->state == SDR_IDLE) {
+    else if (command >= CMD_BOARD && command < CMD_BOARD + TIKU_MENUSET_ITEMS && st->state == SDR_IDLE) {
         char names[sizeof st->names], *save = NULL, *p;
         int i = 0;
         snprintf(names, sizeof names, "%s", st->names);
@@ -527,12 +670,22 @@ static void hover(sdr_t *st, int x, int y)
 
     sdr_layout(st, &plot, &fall);
     st->hover[0] = '\0';
-    if (!m->fresh || x < plot.x || x >= plot.x + plot.w ||
-        ((y < plot.y || y >= plot.y + plot.h) &&
-         (y < fall.y || y >= fall.y + fall.h)))
-        return;
+    st->hover_x = x; st->hover_y = y;
+    st->hover_valid = inside(plot, x, y) || inside(fall, x, y);
+    if (st->occupancy.visible && inside(fall, x, y)) { st->hover_valid = 0; return; }
+    if (!m->fresh || !st->hover_valid) return;
     int b = bin_at(m, plot, x);
     double mhz = sdr_model_freq(m, b);
+    if (inside(fall, x, y)) {
+        int row = sdr_history_row(m, m->wf_offset + y - fall.y);
+        if (row < 0) return;
+        snprintf(st->hover, sizeof st->hover,
+                 "%.3f MHz · stored %.1f dB · %.3f s ago%s", mhz,
+                 m->wf[row][b] / 2.0, m->wf_at[m->wf_head] - m->wf_at[row],
+                 m->sweep && !st->play.file ? " · click to tune here" :
+                 " · Option-click to inspect");
+        return;
+    }
     level[0] = '\0';
     for (int t = 0; t < SDR_TRACES && n < (int)sizeof level - 32; t++) {
         const float *v = sdr_trace(m, m->type[t]);
@@ -546,6 +699,18 @@ static void hover(sdr_t *st, int x, int y)
              *ch ? "   " : "", ch,
              m->sweep && !marking(st, plot, x, y) ? "   · click to tune here"
                                                   : "");
+    int row = sdr_history_row(m, m->wf_selected);
+    if (sdr_reference_matches(st)) {
+        size_t used = strlen(st->hover);
+        snprintf(st->hover + used, sizeof st->hover - used,
+                 " · Ref %.1f, delta %+.1f dB", st->reference.db[b],
+                 m->db[b] - st->reference.db[b]);
+    }
+    if (row >= 0) {
+        size_t used = strlen(st->hover);
+        snprintf(st->hover + used, sizeof st->hover - used,
+                 " · History %.1f dB", m->wf[row][b] / 2.0);
+    }
 }
 
 /** @brief The window's keys: Left and Right move the view 1 MHz, 5 with
@@ -564,6 +729,9 @@ static int keys(sdr_t *st, const tiku_event_t *ev)
                   ev->key == '[' ? CMD_PEAK_LEFT :
                   ev->key == ']' ? CMD_PEAK_RIGHT :
                   ev->key == 'w' ? CMD_WATERFALL :
+                  ev->key == '+' || ev->key == '=' ? CMD_ZOOM_IN :
+                  ev->key == '-' ? CMD_ZOOM_OUT :
+                  ev->key == 'b' ? CMD_VIEW_BACK :
                   ev->key == TIKU_KEY_DELETE || ev->key == TIKU_KEY_BACKSPACE ?
                   CMD_MARK_REMOVE : 0;
 
@@ -598,18 +766,41 @@ static void grab(sdr_t *st, tiku_rect_t plot, int x)
     sdr_mark_at(m, k, sdr_model_freq(m, at), 0);
 }
 
-/** @brief The pointer.  With a marker on, a press on the graticule takes a
- *         marker and drags it, and the release, while markers follow
- *         peaks, puts it on the top of the peak there.  In a sweep, a press
- *         on the spectrogram, or on the graticule with no marker on, shows
- *         SDR_LIVE_SPAN about that whole MHz.  The wheel moves a
- *         one-spectrum view 1 MHz, and a move sets the hover text. */
+/** @brief Route navigation gestures, divider and marker drags, timeline
+ *         seeks, and pointer readings. An ordinary click in a sweep tunes
+ *         a live range unless a marker takes the click. */
 static void pointer(sdr_t *st, const tiku_event_t *ev)
 {
     tiku_rect_t plot, fall;
     sdr_model_t *m = &st->model;
 
     sdr_layout(st, &plot, &fall);
+    if (!st->divider_drag && sdr_navigation_event(st, ev)) {
+        if (!st->nav_drag) hover(st, ev->x, ev->y);
+        return;
+    }
+    if (ev->type == TIKU_EVENT_DEACTIVATED) st->divider_drag = 0;
+    if (st->divider_drag && (ev->type == TIKU_EVENT_POINTER_MOVE ||
+                             ev->type == TIKU_EVENT_POINTER_UP)) {
+        int percent = (ev->y - fall.y) * 100 / (st->h - 86);
+        st->fall_percent = percent < 15 ? 15 : percent > 60 ? 60 : percent;
+        if (ev->type == TIKU_EVENT_POINTER_UP) st->divider_drag = 0;
+        st->dirty = 1;
+        return;
+    }
+    if (ev->type == TIKU_EVENT_POINTER_DOWN && ev->button == 1) {
+        if ((st->play.file || (st->shown[0] && st->state == SDR_IDLE)) &&
+            inside(sdr_timeline_rect(st), ev->x, ev->y)) {
+            tiku_rect_t r = sdr_timeline_rect(st);
+            sdr_play_seek(st, st->play.total * (ev->x - r.x) / r.w);
+            return;
+        }
+        if (fall.h && ev->x >= fall.x && ev->x < fall.x + fall.w &&
+            ev->y >= fall.y + fall.h && ev->y < fall.y + fall.h + 6) {
+            st->divider_drag = 1;
+            return;
+        }
+    }
     if (m->mark_held >= 0 && (ev->type == TIKU_EVENT_POINTER_MOVE ||
                               ev->type == TIKU_EVENT_POINTER_UP)) {
         int up = ev->type == TIKU_EVENT_POINTER_UP;
@@ -629,9 +820,6 @@ static void pointer(sdr_t *st, const tiku_event_t *ev)
                (inside(plot, ev->x, ev->y) || inside(fall, ev->x, ev->y))) {
         centre_at(st, round(sdr_model_freq(m, bin_at(m, plot, ev->x))),
                   SDR_LIVE_SPAN);
-    } else if (ev->type == TIKU_EVENT_WHEEL && !m->sweep && ev->dy &&
-               (inside(plot, ev->x, ev->y) || inside(fall, ev->x, ev->y))) {
-        shift(st, ev->dy > 0 ? -1 : 1);
     }
     st->dirty = 1;
 }
@@ -696,6 +884,15 @@ static int sdr_event(void *state, const tiku_event_t *ev)
     int was;
 
     if (ev->type == TIKU_EVENT_CLOSE) return 1;
+    if (ev->type == TIKU_EVENT_RESIZE ||
+        (ev->type == TIKU_EVENT_KEY_DOWN && ev->key == TIKU_KEY_ESCAPE &&
+         st->nav_drag)) {
+        int cancelled = sdr_navigation_event(st, ev);
+        if (ev->type != TIKU_EVENT_RESIZE && cancelled) {
+            sdr_paint(st);
+            return 0;
+        }
+    }
     if (ev->type == TIKU_EVENT_RESIZE && ev->width > 600 &&
         ev->height > 560) {
         if (tiku_surface_resize(st->surface, ev->width, ev->height,
@@ -825,6 +1022,8 @@ static void look(sdr_t *st)
 static void sdr_tick(void *state, int64_t now_us)
 {
     sdr_t *st = state;
+    int second = now_us / 1000000 != st->now / 1000000;
+    unsigned spectra_before = st->model.spectra;
 
     st->now = now_us;
     sdr_splash_tick(st, now_us);
@@ -837,8 +1036,12 @@ static void sdr_tick(void *state, int64_t now_us)
         if (strcmp(before, st->names)) publish(st);
     }
     sdr_link_tick(st);
+    sdr_trigger_tick(st);
     sdr_play_tick(st);
     sdr_csv_tick(st);
+    if (st->hover_valid && spectra_before != st->model.spectra)
+        hover(st, st->hover_x, st->hover_y);
+    if (second && (st->rec.file || st->state == SDR_RUNNING)) st->dirty = 1;
     if (menu_state(st) != st->menu_state) publish(st);
     if (st->dirty && now_us - st->painted_at >= REPAINT_US) {
         st->painted_at = now_us;
@@ -862,7 +1065,13 @@ static void sdr_picked(void *state, uint32_t window, const char *path)
     snprintf(st->tape_dir, sizeof st->tape_dir, "%s", path);
     slash = strrchr(st->tape_dir, '/');
     if (slash) slash[slash == st->tape_dir] = '\0';
-    if (asked == CMD_RECORD && st->state != SDR_RUNNING)
+    if (asked == CMD_PRESET_SAVE) (void)sdr_setup_save(st, path);
+    else if (asked == CMD_PRESET_OPEN) (void)sdr_setup_load(st, path);
+    else if (asked == CMD_REF_SAVE) (void)sdr_reference_save(st, path);
+    else if (asked == CMD_REF_OPEN) (void)sdr_reference_load(st, path);
+    else if (asked == CMD_OCC_EXPORT) (void)sdr_occupancy_export(st, path);
+    else if (asked == CMD_TRIGGER) (void)sdr_trigger_arm(st, path);
+    else if (asked == CMD_RECORD && st->state != SDR_RUNNING)
         snprintf(st->note, sizeof st->note,
                  "Nothing was recorded: the board is no longer connected.");
     else if (asked == CMD_RECORD)
@@ -943,7 +1152,12 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     st->surface = tiku_surface_new(SDR_W, SDR_H, TIKU_C_PANEL);
     if (!st->surface) { free(st); return -1; }
     st->fall_on = 1;
+    st->fall_percent = 36;
+    st->collapsed = (1u << SDR_S_MARK) | (1u << SDR_S_DISPLAY) |
+                    (1u << SDR_S_RECEIVER) | (1u << SDR_S_MEASURE);
     sdr_model_init(&st->model);
+    sdr_tools_init(st);
+    sdr_preferences(st, 0);
     st->live_view[0] = st->model.start;    /* it opens live */
     st->live_view[1] = st->model.stop;
     st->wide_view[0] = SDR_BAND_START;     /* Live's first wide view */
@@ -973,6 +1187,7 @@ static void sdr_stop(void *state)
     sdr_t *st = state;
 
     if (!st) return;
+    sdr_preferences(st, 1);
     sdr_rec_stop(st);
     sdr_play_stop(st);
     sdr_csv_stop(st);
