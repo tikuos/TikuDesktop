@@ -41,7 +41,8 @@ typedef struct tiku_work_job {
 
 /**
  * @brief Copy @p job into the table for a worker, starting the workers on
- *        the first call; a key is cut to TIKU_WORK_KEY - 1 bytes.
+ *        the first call and on each later one until a worker starts; a
+ *        key is cut to TIKU_WORK_KEY - 1 bytes.
  * @return 0 when queued; -1 when the table is full or the job has no run.
  * @note Loop thread only.
  */

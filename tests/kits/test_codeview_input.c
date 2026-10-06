@@ -359,6 +359,22 @@ select_all_and_reveal(void)
     check(tiku_codeview_left(v) == caret_of(v) * c - width + 8, "NAV-007",
           "reveal brings a scrolled-away caret back");
     tiku_codeview_destroy(v);
+
+    /* With line numbers and a vertical scrollbar, the text area ends at
+     * the bar's left edge, 15 pixels inside the bounds' right. */
+    v = view_of(line);
+    tiku_codeview_set_options(v, TIKU_CODEVIEW_LINE_NUMBERS |
+                                 TIKU_CODEVIEW_VSCROLL);
+    key(v, TIKU_KEY_END, 0);
+    {
+        int64_t x = -1, y = -1;
+
+        check(tiku_codeview_point(v, caret_of(v), &x, &y) == TIKU_EDIT_OK &&
+              x == 10 + 400 - 15 - 8, "NAV-007",
+              "past a gutter and a scrollbar, the caret scrolls to 8 "
+              "pixels inside the text area's right edge");
+    }
+    tiku_codeview_destroy(v);
 }
 
 /** @brief A press puts the caret, a drag extends from it, Shift extends

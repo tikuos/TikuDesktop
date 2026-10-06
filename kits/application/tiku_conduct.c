@@ -616,6 +616,15 @@ tiku_conduct_poll(tiku_conduct_t *c)
 /* THE DRIVER'S SIDE                                                         */
 /*---------------------------------------------------------------------------*/
 
+/** @brief Free the frame @p c holds and set it to read a header next. */
+static void
+client_drop_frame(tiku_conduct_client_t *c)
+{
+    free(c->buf);
+    c->buf = NULL;
+    c->got = c->want = c->hgot = 0u;
+}
+
 int
 tiku_conduct_connect_as(tiku_conduct_client_t *c, const char *path,
                              int wait_ms, const char *token)
@@ -664,10 +673,14 @@ tiku_conduct_connect_fd_as(tiku_conduct_client_t *c, int fd,
     unsigned char hello[4 + TIKU_CONDUCT_TOKEN];
     uint32_t version = TIKU_CONDUCT_VERSION;
 
-    if (c == NULL || fd < 0) {
+    if (c == NULL) {
         return -1;
     }
     memset(c, 0, sizeof *c);
+    c->fd = -1;
+    if (fd < 0) {
+        return -1;
+    }
     (void)signal(SIGPIPE, SIG_IGN);
     (void)set_nonblock(fd);
     c->fd = fd;
@@ -693,6 +706,9 @@ tiku_conduct_disconnect(tiku_conduct_client_t *c)
         (void)close(c->fd);
         c->fd = -1;
     }
+    if (c != NULL) {
+        client_drop_frame(c);
+    }
 }
 
 int
@@ -713,11 +729,6 @@ tiku_conduct_query(tiku_conduct_client_t *c, uint32_t what,
 {
     unsigned char msg[12 + TIKU_CONDUCT_ARG];
     int32_t ab[2];
-    unsigned char *buf = NULL;
-    size_t got = 0u, want = 0u;
-    uint32_t type = 0u;
-    unsigned char hbuf[8];
-    size_t hgot = 0u;
     int ok = 0;
     int waited;
 
@@ -740,10 +751,11 @@ tiku_conduct_query(tiku_conduct_client_t *c, uint32_t what,
     /* Wait at most TIKU_CONDUCT_ANSWER_MS; a shell that stopped
      * answering makes the query fail. */
     for (waited = 0; waited < TIKU_CONDUCT_ANSWER_MS; ) {
-        int r = stream_read(c->fd, hbuf, &hgot, &buf, &got, &want, &type);
+        int r = stream_read(c->fd, c->hbuf, &c->hgot, &c->buf, &c->got,
+                            &c->want, &c->cur_type);
 
         if (r < 0) {
-            free(buf);
+            client_drop_frame(c);
             return 0;
         }
         if (r == 0) {
@@ -755,24 +767,23 @@ tiku_conduct_query(tiku_conduct_client_t *c, uint32_t what,
             waited += 2;
             continue;
         }
-        if (type == TIKU_CMSG_ANSWER &&
-            want >= 8u + TIKU_CONDUCT_TEXT) {
+        if (c->cur_type == TIKU_CMSG_ANSWER &&
+            c->want >= 8u + TIKU_CONDUCT_TEXT) {
             int32_t reply[2];
 
-            memcpy(reply, buf, sizeof reply);
+            memcpy(reply, c->buf, sizeof reply);
             ok = (reply[0] != 0);
             if (num != NULL) {
                 *num = (int)reply[1];
             }
             if (text != NULL && max > 0u) {
-                snprintf(text, max, "%s", (const char *)buf + 8);
+                snprintf(text, max, "%s", (const char *)c->buf + 8);
             }
-            free(buf);
+            client_drop_frame(c);
             return ok;
         }
-        want = 0u;              /* another frame: dropped, keep waiting */
+        client_drop_frame(c);   /* another frame: dropped, keep waiting */
     }
-    free(buf);
     return 0;                   /* it never answered */
 }
 
@@ -781,11 +792,6 @@ tiku_conduct_told(tiku_conduct_client_t *c, char *name,
                        size_t name_max, char *text, size_t text_max,
                        int wait_ms)
 {
-    unsigned char *buf = NULL;
-    size_t got = 0u, want = 0u;
-    uint32_t type = 0u;
-    unsigned char hbuf[8];
-    size_t hgot = 0u;
     int waited;
 
     if (c == NULL || c->fd < 0) {
@@ -800,10 +806,11 @@ tiku_conduct_told(tiku_conduct_client_t *c, char *name,
     /* Nothing is sent: the QUERY that set the watch arranged the telling,
      * and this only listens, for at most wait_ms. */
     for (waited = 0; waited < wait_ms; ) {
-        int r = stream_read(c->fd, hbuf, &hgot, &buf, &got, &want, &type);
+        int r = stream_read(c->fd, c->hbuf, &c->hgot, &c->buf, &c->got,
+                            &c->want, &c->cur_type);
 
         if (r < 0) {
-            free(buf);
+            client_drop_frame(c);
             return 0;
         }
         if (r == 0) {
@@ -815,22 +822,21 @@ tiku_conduct_told(tiku_conduct_client_t *c, char *name,
             waited += 2;
             continue;
         }
-        if (type == TIKU_CMSG_TOLD &&
-            want >= TIKU_CONDUCT_ARG + TIKU_CONDUCT_TEXT) {
+        if (c->cur_type == TIKU_CMSG_TOLD &&
+            c->want >= TIKU_CONDUCT_ARG + TIKU_CONDUCT_TEXT) {
             if (name != NULL && name_max > 0u) {
                 snprintf(name, name_max, "%.*s", TIKU_CONDUCT_ARG,
-                         (const char *)buf);
+                         (const char *)c->buf);
             }
             if (text != NULL && text_max > 0u) {
                 snprintf(text, text_max, "%.*s", TIKU_CONDUCT_TEXT,
-                         (const char *)buf + TIKU_CONDUCT_ARG);
+                         (const char *)c->buf + TIKU_CONDUCT_ARG);
             }
-            free(buf);
+            client_drop_frame(c);
             return 1;
         }
-        want = 0u;              /* another frame: dropped, keep listening */
+        client_drop_frame(c);   /* another frame: dropped, keep listening */
     }
-    free(buf);
     return 0;                   /* the notice never came */
 }
 

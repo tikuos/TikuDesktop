@@ -203,11 +203,15 @@ int tiku_conduct_poll(tiku_conduct_t *c);
 /* THE DRIVER'S SIDE                                                         */
 /*---------------------------------------------------------------------------*/
 
-/** @brief The driver's end of the channel. */
+/** @brief The driver's end of the channel.  A frame read in part when a
+ *         wait ends is kept here, and the next wait reads on from it. */
 typedef struct {
-    int           fd;
-    unsigned char hbuf[8];
-    size_t        hgot;
+    int            fd;
+    unsigned char  hbuf[8];
+    size_t         hgot;
+    unsigned char *buf;
+    size_t         got, want;
+    uint32_t       cur_type;
 } tiku_conduct_client_t;
 
 /** @brief Connect to the shell's socket at @p path, retrying every 20 ms

@@ -562,6 +562,47 @@ main(void)
         tiku_conduct_disconnect(&d);
     }
 
+    printf("\na wait that ends inside a frame keeps its place\n");
+    {
+        tiku_conduct_client_t d;
+        static unsigned char frame[8 + TIKU_CONDUCT_ARG + TIKU_CONDUCT_TEXT];
+        uint32_t head[2] = { TIKU_CMSG_TOLD,
+                             TIKU_CONDUCT_ARG + TIKU_CONDUCT_TEXT };
+        char name[TIKU_CONDUCT_ARG], text[TIKU_CONDUCT_TEXT];
+        int sv[2], told;
+
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+            printf("  [FAIL] no socket pair\n");
+            return 1;
+        }
+        (void)tiku_conduct_connect_fd(&d, sv[1]);
+        memset(frame, 0, sizeof frame);
+        memcpy(frame, head, sizeof head);
+        snprintf((char *)frame + 8, TIKU_CONDUCT_ARG, "fact");
+        snprintf((char *)frame + 8 + TIKU_CONDUCT_ARG, TIKU_CONDUCT_TEXT,
+                 "said");
+        /* The header and part of the body, then a wait that runs out. */
+        if (write(sv[0], frame, 20) != 20) {
+            printf("  [FAIL] the first part was not written\n");
+            fails++;
+        }
+        told = tiku_conduct_told(&d, name, sizeof name, text, sizeof text,
+                                 20);
+        check(told == 0, "a wait that ends inside a frame tells nothing");
+        if (write(sv[0], frame + 20, sizeof frame - 20) !=
+            (ssize_t)(sizeof frame - 20)) {
+            printf("  [FAIL] the rest was not written\n");
+            fails++;
+        }
+        told = tiku_conduct_told(&d, name, sizeof name, text, sizeof text,
+                                 500);
+        check(told == 1 && strcmp(name, "fact") == 0 &&
+              strcmp(text, "said") == 0,
+              "the next wait reads the rest of that frame as its body");
+        tiku_conduct_disconnect(&d);
+        (void)close(sv[0]);
+    }
+
     if (fails > 0) {
         printf("\nFAILURES\n");
         return 1;

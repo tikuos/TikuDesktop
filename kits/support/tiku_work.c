@@ -165,8 +165,8 @@ working(void *ignored)
     return NULL;
 }
 
-/** @brief Start WORKERS detached worker threads and mark the pool
- *         started.
+/** @brief Start WORKERS detached worker threads, and mark the pool
+ *         started when at least one of them was created.
  *  @note Call with the lock held. */
 static void
 start_workers(void)
@@ -178,9 +178,9 @@ start_workers(void)
 
         if (pthread_create(&t, NULL, working, NULL) == 0) {
             (void)pthread_detach(t);
+            started = 1;
         }
     }
-    started = 1;
 }
 
 /*---------------------------------------------------------------------------*/

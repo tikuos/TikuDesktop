@@ -160,7 +160,7 @@ tiku_codeview_reveal(tiku_codeview_t *view)
     }
     if (row >= rows)
         (void)tiku_cv_rows_step(view, &view->top, &view->top_sub, 1 - rows);
-    width = view->bounds.w - TIKU_CV_PAD_X;
+    width = tiku_cv_text_w(view);
     if (x < view->left)
         view->left = x;
     else if (x >= view->left + width - 4)
@@ -172,22 +172,23 @@ tiku_codeview_reveal(tiku_codeview_t *view)
 
 /** @brief The caret @p rows rows up or down, at the x kept from the
  *         rows' starts; @p upstream says it lands at a row's end.  Rows of
- *         annotations are passed over: going down to the next line's
- *         first row, going up to their line's last. */
+ *         annotations are passed over: going down to the next shown
+ *         line's first row, going up to their line's last. */
 static tiku_edit_pos_t
 vertical(tiku_codeview_t *v, tiku_edit_pos_t caret, int64_t rows,
          int *upstream)
 {
     tiku_cv_row_t r;
-    int64_t x = caret_x(v, caret, &r), line = r.line, sub = r.sub;
+    int64_t x = caret_x(v, caret, &r), line = r.line, sub = r.sub, next;
 
     if (v->goal < 0)
         v->goal = x;
     (void)tiku_cv_rows_step(v, &line, &sub, rows);
     tiku_cv_row(v, line, sub, &r);
     if (r.ann >= 0) {
-        if (rows > 0 && line + 1 < tiku_editdoc_lines(v->doc))
-            tiku_cv_row(v, line + 1, 0, &r);
+        next = rows > 0 ? tiku_cv_shown_line(v, line + 1, 0) : -1;
+        if (next >= 0)
+            tiku_cv_row(v, next, 0, &r);
         else
             tiku_cv_row(v, line, tiku_cv_text_rows(v, line) - 1, &r);
     }

@@ -449,9 +449,14 @@ tiku_ns_children(const tiku_ns_t *ns, const char *path,
     return n;
 }
 
-int
-tiku_ns_ls_kinds(tiku_ns_t *ns, const char *path, char out[][64],
-                      char *is_dir, int max)
+/**
+ * @brief List @p path with `ls`, as tiku_ns_ls_kinds() does, also filling
+ *        the optional @p perm with each entry's TIKU_NS_P_* bits: a file's
+ *        from its perm column, a directory's TIKU_NS_P_READ.
+ */
+static int
+ns_ls_entries(tiku_ns_t *ns, const char *path, char out[][64],
+              char *is_dir, unsigned *perm, int max)
 {
     char buf[8192];
     char cmd[TIKU_NS_PATH_MAX + 8];
@@ -472,35 +477,51 @@ tiku_ns_ls_kinds(tiku_ns_t *ns, const char *path, char out[][64],
     /* `ls` prints "  <perm> <name>" per entry, directories with a slash. */
     for (p = buf; *p != '\0' && n < max; ) {
         const char *e = strchr(p, '\n');
-        const char *q = p;
+        const char *q = p, *col;
         size_t len;
         char last[64];
+        int dir = 0;
 
         if (e == NULL) {
             e = p + strlen(p);
         }
         while (q < e && *q == ' ') { q++; }
-        while (q < e && *q != ' ') { q++; }   /* skip the perm column */
+        col = q;
+        while (q < e && *q != ' ') { q++; }   /* past the perm column */
         while (q < e && *q == ' ') { q++; }
         len = (size_t)(e - q);
         while (len > 0u && q[len - 1u] == '\r') {
             len--;
         }
         if (len > 0u && q[len - 1u] == '/') {   /* ls marks dirs this way */
-            if (is_dir != NULL) { is_dir[n] = 1; }
+            dir = 1;
             len--;
-        } else if (is_dir != NULL) {
-            is_dir[n] = 0;
+        }
+        if (is_dir != NULL) {
+            is_dir[n] = (char)dir;
         }
         if (len > 0u && len < sizeof last) {
             memcpy(last, q, len);
             last[len] = '\0';
             snprintf(out[n], 64, "%s", last);
+            if (perm != NULL && dir) {
+                perm[n] = TIKU_NS_P_READ;
+            } else if (perm != NULL) {
+                perm[n] = (col[0] == 'r' ? TIKU_NS_P_READ : 0u) |
+                          (col[1] == 'w' ? TIKU_NS_P_WRITE : 0u);
+            }
             n++;
         }
         p = (*e == '\0') ? e : e + 1;
     }
     return n;
+}
+
+int
+tiku_ns_ls_kinds(tiku_ns_t *ns, const char *path, char out[][64],
+                      char *is_dir, int max)
+{
+    return ns_ls_entries(ns, path, out, is_dir, NULL, max);
 }
 
 int
@@ -716,10 +737,11 @@ ns_join(char *out, size_t max, const char *parent, const char *name)
     return 0;
 }
 
-/** @brief Append a node discovered by ls, with metadata left unknown. */
+/** @brief Append a node discovered by ls with the read and write bits
+ *         @p perm, its other metadata left unknown. */
 static tiku_node_t *
 ns_add_walked(tiku_ns_t *ns, const char *parent, const char *name,
-              int is_dir)
+              int is_dir, unsigned perm)
 {
     tiku_node_t *n;
     char path[TIKU_NS_PATH_MAX];
@@ -739,7 +761,7 @@ ns_add_walked(tiku_ns_t *ns, const char *parent, const char *name,
     snprintf(n->meta, sizeof n->meta, "-");
     snprintf(n->cap, sizeof n->cap, "?");
     n->is_dir = is_dir;
-    n->perm = TIKU_NS_P_READ;           /* refined by the first read */
+    n->perm = perm;
     n->depth = path_depth(n->path);
     set_name(n);
     return n;
@@ -757,17 +779,18 @@ ns_walk(tiku_ns_t *ns, const char *path, int depth, int max_depth)
 {
     char names[64][64];
     char kinds[64];
+    unsigned perms[64];
     int n, i, added = 0;
 
     if (depth > max_depth) {
         return 0;
     }
-    n = tiku_ns_ls_kinds(ns, path, names, kinds, 64);
+    n = ns_ls_entries(ns, path, names, kinds, perms, 64);
     if (n < 0) {
         return 0;
     }
     for (i = 0; i < n; i++) {
-        if (ns_add_walked(ns, path, names[i], kinds[i]) != NULL) {
+        if (ns_add_walked(ns, path, names[i], kinds[i], perms[i]) != NULL) {
             added++;
         }
     }

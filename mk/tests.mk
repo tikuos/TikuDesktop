@@ -221,6 +221,12 @@ test_watchdog_CFLAGS := -I$(K)/support
 test_watchdog_LDLIBS := -rdynamic
 test_work_CFLAGS := -I$(K)/support
 test_work_LDLIBS := -lpthread
+# Thread creation replaced by the test's own, which can fail.
+test_work_start_CFLAGS := -I$(K)/support
+test_work_start_LDLIBS := -lpthread
+ifeq ($(UNAME_S),Linux)
+test_work_start_LDLIBS += -Wl,--wrap=pthread_create
+endif
 test_report_LDLIBS := -rdynamic
 test_reap_CFLAGS := -I$(K)/support -Isystem/shared/core
 test_reap_SRCS := system/shared/core/tiku_trk_launch.c

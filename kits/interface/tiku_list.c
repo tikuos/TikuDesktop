@@ -244,8 +244,13 @@ tiku_list_select_all(tiku_list_t *l)
         return;
     }
     if (l->single) {
-        /* Holding one row at a time, "all" is row 0. */
-        tiku_list_select_only(l, 0);
+        /* Holding one row at a time, "all" is the first non-heading row. */
+        int i = 0;
+
+        while (i < l->count && l->head[i]) {
+            i++;
+        }
+        tiku_list_select_only(l, i);
         return;
     }
     {

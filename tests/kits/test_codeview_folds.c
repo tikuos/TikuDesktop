@@ -469,6 +469,23 @@ with_rows(void)
     tiku_codeview_destroy(v);
 }
 
+/** @brief Down from a folded head line with an annotation passes the
+ *         annotation and the folded lines, leaving the region folded. */
+static void
+annotated_head(void)
+{
+    tiku_codeview_t *v = view_in(c_text, TIKU_SYNTAX_C);
+
+    tiku_codeview_set_options(v, TIKU_CODEVIEW_ANNOTATIONS);
+    (void)tiku_editdoc_annotation_add(tiku_codeview_doc(v), 1, "note", 0);
+    (void)tiku_codeview_fold(v, 1, 0);
+    put_line(v, 1);
+    (void)tiku_codeview_move(v, TIKU_CODEVIEW_LINE_DOWN, 0);
+    check(caret_line(v) == 3 && tiku_codeview_folded(v, 1), "FLD-012",
+          "Down from an annotated folded line lands past its region");
+    tiku_codeview_destroy(v);
+}
+
 int
 main(void)
 {
@@ -481,6 +498,7 @@ main(void)
     column();
     keys();
     with_rows();
+    annotated_head();
     if (fails) {
         printf("FAIL: %d checks\n", fails);
         return 1;

@@ -341,7 +341,7 @@ main(void)
 
     /*
      * Headings: furniture among the rows.  A project window names its
-     * groups this way, and the whole of what a heading IS lives here --
+     * groups this way, and the whole of what a heading is lives here --
      * it cannot be picked by any road, travel steps over it, spelling
      * passes it by, and it crosses the wire as words rather than as a
      * row a reader would think it could open.
@@ -373,6 +373,20 @@ main(void)
              "taking it");
         tiku_list_select_all(&l);
         same(&l, ".**.**", "and neither does taking everything");
+        {
+            tiku_list_t one;
+
+            tiku_list_init(&one, 1);
+            tiku_list_set_row_h(&one, 20);
+            (void)tiku_list_set_count(&one, 6);
+            tiku_list_set_heading(&one, 0, 1);
+            tiku_list_set_heading(&one, 3, 1);
+            tiku_list_select_only(&one, 4);
+            tiku_list_select_all(&one);
+            same(&one, ".*....",
+                 "select-all holding one row takes the first row under "
+                 "a leading heading");
+        }
         tiku_list_select_none(&l);
         tiku_list_invert(&l);
         same(&l, ".**.**", "nor does turning the selection inside out");

@@ -141,6 +141,13 @@ main(void)
 
         check(option != plain, "an Option shortcut draws a mark");
         check(option != shift, "and the mark is not the Shift mark");
+        {
+            unsigned ctrl = drawn_sum(TIKU_MENU_MOD_CMD | TIKU_MENU_MOD_CTRL);
+
+            check(ctrl != plain, "a Ctrl shortcut draws a mark");
+            check(ctrl != shift && ctrl != option,
+                  "and the mark is neither the Shift nor the Option mark");
+        }
     }
 
     printf("\nlive relabelling: the eight that change with Shift\n");

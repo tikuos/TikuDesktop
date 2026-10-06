@@ -482,8 +482,10 @@ tiku_menu_draw(tiku_menu_t *m, tiku_surface_t *s,
             char sc[8];
             int n = 0;
 
-            /* The modifiers read before the key, Option as '~' and Shift
-             * as '^', and the text is placed from the right edge inward. */
+            /* The modifiers read before the key, Ctrl as '#', Option as
+             * '~' and Shift as '^'; Cmd draws no mark.  The text is placed
+             * from the right edge inward. */
+            if (it->mods & TIKU_MENU_MOD_CTRL) { sc[n++] = '#'; }
             if (it->mods & TIKU_MENU_MOD_OPTION) { sc[n++] = '~'; }
             if (it->mods & TIKU_MENU_MOD_SHIFT) { sc[n++] = '^'; }
             sc[n++] = it->shortcut;

@@ -194,8 +194,8 @@ int tiku_ns_truncated(const tiku_ns_t *ns);
  * @brief Fill in the directories the manifest lists empty by walking
  *        them with `ls`: a dynamic directory (gui/, proc/, data/) has no
  *        static children to render, and what it holds is only found by
- *        asking.  Nodes found this way carry no metadata, as with
- *        tiku_ns_complete().
+ *        asking.  Nodes found this way carry the metadata
+ *        tiku_ns_complete() describes.
  *
  * @param max_depth  How far below each such directory to walk; 2 if 0.
  * @return Nodes added, or -1.
@@ -218,8 +218,9 @@ int tiku_ns_complete_dir(tiku_ns_t *ns, const char *path, int max_depth);
  * @brief Complete a truncated mirror by walking the tree with `ls`, to
  *        @p max_depth levels, 4 if 0.
  *
- * Nodes discovered this way carry no descriptor or capability metadata; their
- * permissions are probed by a read.
+ * Nodes discovered this way carry no descriptor or capability metadata; a
+ * file's read and write bits are those of its `ls` perm column, and a
+ * directory's are read only.
  *
  * @return Nodes added, or -1 when @p ns is NULL.
  */

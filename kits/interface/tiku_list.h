@@ -124,7 +124,8 @@ int tiku_list_chosen(const tiku_list_t *l);
 void tiku_list_select_only(tiku_list_t *l, int row);
 
 /** @brief Select every row but the headings, with the anchors on the
- *         first and last rows; holding one at a time, row 0 only. */
+ *         first and last rows; holding one at a time, the first row that
+ *         is not a heading only. */
 void tiku_list_select_all(tiku_list_t *l);
 
 /** @brief No row, and no anchors either. */
